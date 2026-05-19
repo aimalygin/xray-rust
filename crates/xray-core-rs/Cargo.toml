@@ -1,0 +1,13 @@
+[package]
+name = "xray-core-rs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+xray-config = { path = "../xray-config" }
+xray-proxy = { path = "../xray-proxy" }
+xray-routing = { path = "../xray-routing" }
+xray-runtime = { path = "../xray-runtime" }
+xray-transport = { path = "../xray-transport" }
+xray-tun = { path = "../xray-tun" }

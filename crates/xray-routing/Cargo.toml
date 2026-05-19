@@ -1,0 +1,9 @@
+[package]
+name = "xray-routing"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+bytes.workspace = true
+thiserror.workspace = true

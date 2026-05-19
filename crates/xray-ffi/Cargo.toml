@@ -1,0 +1,13 @@
+[package]
+name = "xray-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["rlib", "staticlib", "cdylib"]
+
+[dependencies]
+libc.workspace = true
+xray-config = { path = "../xray-config" }
+xray-core-rs = { path = "../xray-core-rs" }

@@ -1,0 +1,17 @@
+[package]
+name = "xray-transport"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+aes-gcm.workspace = true
+async-trait.workspace = true
+hkdf.workspace = true
+rustls.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-rustls.workspace = true
+x25519-dalek.workspace = true
+xray-routing = { path = "../xray-routing" }
