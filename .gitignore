@@ -1,6 +1,9 @@
 # External reference implementation.
 Xray-core/
 
+# Local implementation worktrees.
+.worktrees/
+
 # Rust build outputs.
 /target/
 **/*.rs.bk
