@@ -1,0 +1,28 @@
+# External reference implementation.
+Xray-core/
+
+# Rust build outputs.
+/target/
+**/*.rs.bk
+
+# Native/mobile build outputs.
+*.a
+*.so
+*.dylib
+*.framework/
+*.xcframework/
+*.xcarchive/
+*.apk
+*.aar
+
+# Local/editor noise.
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs and temporary files.
+*.log
+tmp/
+temp/
