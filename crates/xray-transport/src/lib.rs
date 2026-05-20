@@ -32,6 +32,14 @@ pub struct RealityClientConfig {
 pub enum TransportError {
     #[error("domain resolution is required for {0}")]
     NeedsDns(String),
+    #[error("dns lookup failed for {domain}:{port}: {source}")]
+    Dns {
+        domain: String,
+        port: u16,
+        source: std::io::Error,
+    },
+    #[error("dns lookup returned no addresses for {0}:{1}")]
+    NoResolvedAddress(String, u16),
     #[error("tcp connect failed: {0}")]
     Tcp(std::io::Error),
     #[error("tls connect failed")]
@@ -40,6 +48,32 @@ pub enum TransportError {
     UnsupportedConnectorConfig(&'static str),
     #[error("unsupported REALITY fingerprint {0}")]
     UnsupportedRealityFingerprint(String),
+}
+
+#[async_trait]
+pub trait DnsResolver: Send + Sync {
+    async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError>;
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct SystemDnsResolver;
+
+#[async_trait]
+impl DnsResolver for SystemDnsResolver {
+    async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+        let mut addrs =
+            tokio::net::lookup_host((domain, port))
+                .await
+                .map_err(|source| TransportError::Dns {
+                    domain: domain.to_owned(),
+                    port,
+                    source,
+                })?;
+
+        addrs
+            .next()
+            .ok_or_else(|| TransportError::NoResolvedAddress(domain.to_owned(), port))
+    }
 }
 
 #[async_trait]
