@@ -147,16 +147,47 @@ pub unsafe extern "C" fn xray_error_free(error: *mut XrayError) {
     }
 
     unsafe {
-        let error = Box::from_raw(error);
-        if !error.message.is_null() {
-            drop(CString::from_raw(error.message));
-        }
+        free_error(error);
     }
+}
+
+/// Returns the status code stored in an error.
+///
+/// # Safety
+///
+/// `error` must be null or a valid borrowed pointer returned by this library.
+#[no_mangle]
+pub unsafe extern "C" fn xray_error_code(error: *const XrayError) -> XrayStatus {
+    if error.is_null() {
+        return XrayStatus::Ok;
+    }
+
+    unsafe { (*error).code }
+}
+
+/// Returns a borrowed, read-only error message pointer.
+///
+/// The returned pointer is owned by `error` and is only valid until
+/// `xray_error_free(error)` is called.
+///
+/// # Safety
+///
+/// `error` must be null or a valid borrowed pointer returned by this library.
+#[no_mangle]
+pub unsafe extern "C" fn xray_error_message(error: *const XrayError) -> *const c_char {
+    if error.is_null() {
+        return ptr::null();
+    }
+
+    unsafe { (*error).message.cast_const() }
 }
 
 unsafe fn clear_error(error: *mut *mut XrayError) {
     if !error.is_null() {
         unsafe {
+            if !(*error).is_null() {
+                free_error(*error);
+            }
             *error = ptr::null_mut();
         }
     }
@@ -167,6 +198,10 @@ unsafe fn set_error(error: *mut *mut XrayError, code: XrayStatus, message: impl 
         return;
     }
 
+    unsafe {
+        clear_error(error);
+    }
+
     let message = c_string_lossy_without_nuls(message.as_ref());
     let ffi_error = Box::new(XrayError {
         code,
@@ -175,6 +210,15 @@ unsafe fn set_error(error: *mut *mut XrayError, code: XrayStatus, message: impl 
 
     unsafe {
         *error = Box::into_raw(ffi_error);
+    }
+}
+
+unsafe fn free_error(error: *mut XrayError) {
+    let error = unsafe { Box::from_raw(error) };
+    if !error.message.is_null() {
+        unsafe {
+            drop(CString::from_raw(error.message));
+        }
     }
 }
 

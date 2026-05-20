@@ -1,7 +1,8 @@
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 
 use xray_ffi::{
-    xray_core_free, xray_core_load_config_json, xray_core_new, xray_error_free, XrayStatus,
+    xray_core_free, xray_core_load_config_json, xray_core_new, xray_error_code, xray_error_free,
+    xray_error_message, XrayStatus,
 };
 
 #[test]
@@ -23,4 +24,110 @@ fn ffi_loads_config_and_returns_handle() {
         xray_core_free(core);
         xray_error_free(err);
     }
+}
+
+#[test]
+fn ffi_reports_null_handle_error() {
+    let mut err = std::ptr::null_mut();
+    let raw = CString::new("{}").unwrap();
+
+    let status =
+        unsafe { xray_core_load_config_json(std::ptr::null_mut(), raw.as_ptr(), &mut err) };
+
+    assert_eq!(status, XrayStatus::NullArgument);
+    assert_error(&mut err, XrayStatus::NullArgument, "core handle is null");
+}
+
+#[test]
+fn ffi_reports_null_json_error() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+
+    let status = unsafe { xray_core_load_config_json(core, std::ptr::null(), &mut err) };
+
+    assert_eq!(status, XrayStatus::NullArgument);
+    assert_error(&mut err, XrayStatus::NullArgument, "config JSON is null");
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_reports_invalid_utf8_error() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    let raw = CString::new(vec![0xff]).unwrap();
+
+    let status = unsafe { xray_core_load_config_json(core, raw.as_ptr(), &mut err) };
+
+    assert_eq!(status, XrayStatus::InvalidUtf8);
+    assert_error(&mut err, XrayStatus::InvalidUtf8, "not valid UTF-8");
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_reports_invalid_config_error() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    let raw = CString::new("{").unwrap();
+
+    let status = unsafe { xray_core_load_config_json(core, raw.as_ptr(), &mut err) };
+
+    assert_eq!(status, XrayStatus::ConfigError);
+    assert_error(&mut err, XrayStatus::ConfigError, "EOF");
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_replaces_reused_error_pointer() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+
+    let status = unsafe { xray_core_load_config_json(core, std::ptr::null(), &mut err) };
+    assert_eq!(status, XrayStatus::NullArgument);
+    assert_error_message(err, "config JSON is null");
+
+    let raw = CString::new("{").unwrap();
+    let status = unsafe { xray_core_load_config_json(core, raw.as_ptr(), &mut err) };
+
+    assert_eq!(status, XrayStatus::ConfigError);
+    assert_error(&mut err, XrayStatus::ConfigError, "EOF");
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_error_accessors_handle_null() {
+    assert_eq!(unsafe { xray_error_code(std::ptr::null()) }, XrayStatus::Ok);
+    assert!(unsafe { xray_error_message(std::ptr::null()) }.is_null());
+}
+
+fn assert_error(error: &mut *mut xray_ffi::XrayError, code: XrayStatus, message: &str) {
+    assert_eq!(unsafe { xray_error_code(*error) }, code);
+    assert_error_message(*error, message);
+
+    unsafe {
+        xray_error_free(*error);
+    }
+    *error = std::ptr::null_mut();
+}
+
+fn assert_error_message(error: *const xray_ffi::XrayError, message: &str) {
+    let raw_message = unsafe { xray_error_message(error) };
+    assert!(!raw_message.is_null());
+
+    let actual = unsafe { CStr::from_ptr(raw_message) }.to_str().unwrap();
+    assert!(
+        actual.contains(message),
+        "expected `{actual}` to contain `{message}`"
+    );
 }
