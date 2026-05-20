@@ -10,7 +10,10 @@ use xray_tun::{TunConfig, TunEndpoint};
 mod outbound;
 mod socks;
 
-pub use outbound::{open_vless_tcp_stream, select_vless_tcp_outbound, VlessTcpOutbound};
+pub use outbound::{
+    open_vless_tcp_stream, open_vless_tcp_stream_with_resolver, select_vless_tcp_outbound,
+    VlessTcpOutbound,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CoreState {

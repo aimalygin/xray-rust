@@ -2,7 +2,9 @@ use tokio::io::AsyncWriteExt;
 use xray_config::{CoreConfig, Network, OutboundSettings, StreamSecurity, TargetAddr, VlessUser};
 use xray_proxy::vless::{encode_request_header, VlessCommand, VlessRequest};
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
-use xray_transport::{ConnectorConfig, TcpConnector, TransportConnector};
+use xray_transport::{
+    ConnectorConfig, DnsResolver, SystemDnsResolver, TcpConnector, TransportConnector,
+};
 
 use crate::CoreError;
 
@@ -49,9 +51,9 @@ pub fn select_vless_tcp_outbound(config: &CoreConfig) -> Result<VlessTcpOutbound
         return Err(CoreError::UnsupportedOutboundFlow);
     }
 
-    let addr = match settings.server {
-        TargetAddr::Ip(ip) => RoutingTargetAddr::Ip(ip),
-        TargetAddr::Domain(_) => return Err(CoreError::UnsupportedOutboundServerAddress),
+    let addr = match &settings.server {
+        TargetAddr::Ip(ip) => RoutingTargetAddr::Ip(*ip),
+        TargetAddr::Domain(domain) => RoutingTargetAddr::Domain(domain.clone()),
     };
 
     Ok(VlessTcpOutbound {
@@ -60,16 +62,39 @@ pub fn select_vless_tcp_outbound(config: &CoreConfig) -> Result<VlessTcpOutbound
     })
 }
 
-pub async fn open_vless_tcp_stream(
+async fn resolve_server_target(
+    server: &Target,
+    dns_resolver: &dyn DnsResolver,
+) -> Result<Target, CoreError> {
+    match &server.addr {
+        RoutingTargetAddr::Ip(ip) => Ok(Target::new(
+            RoutingTargetAddr::Ip(*ip),
+            server.port,
+            server.network,
+        )),
+        RoutingTargetAddr::Domain(domain) => {
+            let resolved = dns_resolver.resolve(domain, server.port).await?;
+            Ok(Target::new(
+                RoutingTargetAddr::Ip(resolved.ip()),
+                resolved.port(),
+                server.network,
+            ))
+        }
+    }
+}
+
+pub async fn open_vless_tcp_stream_with_resolver(
     outbound: &VlessTcpOutbound,
     target: &Target,
+    dns_resolver: &dyn DnsResolver,
 ) -> Result<tokio::net::TcpStream, CoreError> {
     if outbound.user.flow.is_some() {
         return Err(CoreError::UnsupportedOutboundFlow);
     }
 
+    let resolved_server = resolve_server_target(&outbound.server, dns_resolver).await?;
     let connector = TcpConnector::new(ConnectorConfig::Tcp);
-    let mut stream = connector.connect(&outbound.server).await?;
+    let mut stream = connector.connect(&resolved_server).await?;
     let request = VlessRequest {
         user_id: outbound.user.id,
         command: VlessCommand::Tcp,
@@ -81,6 +106,13 @@ pub async fn open_vless_tcp_stream(
     stream.write_all(&header).await?;
 
     Ok(stream)
+}
+
+pub async fn open_vless_tcp_stream(
+    outbound: &VlessTcpOutbound,
+    target: &Target,
+) -> Result<tokio::net::TcpStream, CoreError> {
+    open_vless_tcp_stream_with_resolver(outbound, target, &SystemDnsResolver).await
 }
 
 #[cfg(test)]

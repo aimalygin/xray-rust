@@ -15,4 +15,5 @@ xray-transport = { path = "../xray-transport" }
 xray-tun = { path = "../xray-tun" }
 
 [dev-dependencies]
+async-trait.workspace = true
 uuid.workspace = true

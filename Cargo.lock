@@ -1181,6 +1181,7 @@ dependencies = [
 name = "xray-core-rs"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "thiserror",
  "tokio",
  "uuid",

@@ -1,5 +1,6 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
+use async_trait::async_trait;
 use tokio::io::{copy_bidirectional, AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinHandle;
@@ -11,6 +12,8 @@ use xray_config::{
     VlessOutboundSettings, VlessUser,
 };
 use xray_core_rs::{select_vless_tcp_outbound, Core, CoreError};
+use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
+use xray_transport::{DnsResolver, TransportError};
 
 const TEST_UUID_BYTES: [u8; 16] = [
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
@@ -40,6 +43,16 @@ fn config_with_outbound(outbound: OutboundConfig) -> CoreConfig {
         inbounds: Vec::new(),
         outbounds: vec![outbound],
         default_outbound_tag: None,
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct EmptyDnsResolver;
+
+#[async_trait]
+impl DnsResolver for EmptyDnsResolver {
+    async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+        Err(TransportError::NoResolvedAddress(domain.to_owned(), port))
     }
 }
 
@@ -148,19 +161,20 @@ fn rejects_tls_outbound_for_raw_tcp_runtime_path() {
 }
 
 #[test]
-fn rejects_domain_vless_server_until_dns_exists() {
+fn selects_domain_vless_server_for_dns_resolution() {
     let config = config_with_outbound(vless_outbound(
         StreamSecurity::None,
-        TargetAddr::Domain("example.com".to_owned()),
+        TargetAddr::Domain("vless.test".to_owned()),
         443,
     ));
 
-    let result = select_vless_tcp_outbound(&config);
+    let selected = select_vless_tcp_outbound(&config).unwrap();
 
-    assert!(matches!(
-        result,
-        Err(CoreError::UnsupportedOutboundServerAddress)
-    ));
+    assert_eq!(selected.server().port, 443);
+    assert_eq!(
+        selected.server().addr,
+        RoutingTargetAddr::Domain("vless.test".to_owned())
+    );
 }
 
 #[test]
@@ -177,6 +191,31 @@ fn rejects_vision_flow_for_raw_tcp_runtime_path() {
     let result = select_vless_tcp_outbound(&config);
 
     assert!(matches!(result, Err(CoreError::UnsupportedOutboundFlow)));
+}
+
+#[tokio::test]
+async fn vless_tcp_open_reports_dns_failure_for_unresolved_server_domain() {
+    let config = config_with_outbound(vless_outbound(
+        StreamSecurity::None,
+        TargetAddr::Domain("missing.test".to_owned()),
+        443,
+    ));
+    let outbound = select_vless_tcp_outbound(&config).unwrap();
+    let target = Target::new(
+        RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
+        80,
+        RoutingNetwork::Tcp,
+    );
+
+    let result =
+        xray_core_rs::open_vless_tcp_stream_with_resolver(&outbound, &target, &EmptyDnsResolver)
+            .await;
+
+    assert!(matches!(
+        result,
+        Err(CoreError::Transport(TransportError::NoResolvedAddress(domain, 443)))
+            if domain == "missing.test"
+    ));
 }
 
 #[tokio::test]
