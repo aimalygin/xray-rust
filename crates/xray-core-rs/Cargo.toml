@@ -16,4 +16,7 @@ xray-tun = { path = "../xray-tun" }
 
 [dev-dependencies]
 async-trait.workspace = true
+rcgen.workspace = true
+rustls.workspace = true
+tokio-rustls.workspace = true
 uuid.workspace = true

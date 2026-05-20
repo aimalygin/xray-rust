@@ -1,10 +1,15 @@
+use std::io::ErrorKind;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::Arc;
 
 use async_trait::async_trait;
-use tokio::io::{copy_bidirectional, AsyncReadExt, AsyncWriteExt};
+use rcgen::{generate_simple_self_signed, CertifiedKey};
+use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
+use tokio::io::{copy_bidirectional, AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinHandle;
 use tokio::time::{timeout, Duration};
+use tokio_rustls::TlsAcceptor;
 use uuid::Uuid;
 use xray_config::{
     CoreConfig, InboundConfig, InboundProtocol, Network, OutboundConfig, OutboundSettings,
@@ -13,7 +18,7 @@ use xray_config::{
 };
 use xray_core_rs::{select_vless_tcp_outbound, Core, CoreError};
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
-use xray_transport::{DnsResolver, TransportError};
+use xray_transport::{DnsResolver, TlsConnector, TransportDialer, TransportError};
 
 const TEST_UUID_BYTES: [u8; 16] = [
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
@@ -100,6 +105,30 @@ fn runtime_config_with_vless_domain_server(domain: &str, port: u16) -> CoreConfi
         }],
         outbounds: vec![vless_outbound(
             StreamSecurity::None,
+            TargetAddr::Domain(domain.to_owned()),
+            port,
+        )],
+        default_outbound_tag: None,
+    }
+}
+
+fn runtime_config_with_tls_vless_domain_server(
+    domain: &str,
+    port: u16,
+    server_name: &str,
+) -> CoreConfig {
+    CoreConfig {
+        inbounds: vec![InboundConfig {
+            tag: Some("socks-in".to_owned()),
+            protocol: InboundProtocol::Socks,
+            listen: "127.0.0.1".to_owned(),
+            port: 0,
+        }],
+        outbounds: vec![vless_outbound(
+            StreamSecurity::Tls(TlsSettings {
+                server_name: Some(server_name.to_owned()),
+                fingerprint: None,
+            }),
             TargetAddr::Domain(domain.to_owned()),
             port,
         )],
@@ -394,6 +423,16 @@ async fn socks_client_preserves_domain_target_through_domain_vless_server() {
     .unwrap();
 }
 
+#[tokio::test]
+async fn socks_client_reaches_echo_target_through_vless_tls_outbound() {
+    timeout(
+        Duration::from_secs(2),
+        run_socks_to_vless_tls_echo_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
 async fn run_socks_to_vless_echo_scenario() {
     let (echo_addr, echo_handle) = spawn_echo_server().await;
     let (vless_addr, vless_handle) = spawn_fake_vless_server().await;
@@ -424,6 +463,45 @@ async fn run_socks_to_vless_echo_scenario() {
         .unwrap();
 }
 
+async fn run_socks_to_vless_tls_echo_scenario() {
+    let (echo_addr, echo_handle) = spawn_echo_server().await;
+    let (client_config, server_config) = tls_test_configs();
+    let (vless_addr, vless_handle) = spawn_fake_tls_vless_server(server_config).await;
+    let resolver = StaticDnsResolver {
+        domain: "vless.test",
+        addr: vless_addr,
+    };
+    let config =
+        runtime_config_with_tls_vless_domain_server("vless.test", vless_addr.port(), "vless.test");
+    let dialer =
+        TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config));
+
+    let mut core =
+        Core::with_runtime_dependencies(config, Arc::new(resolver), Arc::new(dialer)).unwrap();
+    core.start().await.unwrap();
+    let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
+
+    let mut client = TcpStream::connect(socks_addr).await.unwrap();
+    socks5_connect(&mut client, echo_addr).await;
+
+    client.write_all(b"hello tls runtime").await.unwrap();
+    let mut echoed = vec![0; "hello tls runtime".len()];
+    client.read_exact(&mut echoed).await.unwrap();
+
+    assert_eq!(echoed, b"hello tls runtime");
+    drop(client);
+    core.stop().await.unwrap();
+
+    timeout(Duration::from_secs(1), vless_handle)
+        .await
+        .unwrap()
+        .unwrap();
+    timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
 async fn run_domain_vless_server_echo_scenario() {
     let (echo_addr, echo_handle) = spawn_echo_server().await;
     let (vless_addr, vless_handle) = spawn_fake_vless_server().await;
@@ -433,7 +511,7 @@ async fn run_domain_vless_server_echo_scenario() {
     };
     let config = runtime_config_with_vless_domain_server("vless.test", vless_addr.port());
 
-    let mut core = Core::with_dns_resolver(config, std::sync::Arc::new(resolver)).unwrap();
+    let mut core = Core::with_dns_resolver(config, Arc::new(resolver)).unwrap();
     core.start().await.unwrap();
     let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
 
@@ -471,7 +549,7 @@ async fn run_domain_target_preservation_scenario() {
     };
     let config = runtime_config_with_vless_domain_server("vless.test", vless_addr.port());
 
-    let mut core = Core::with_dns_resolver(config, std::sync::Arc::new(resolver)).unwrap();
+    let mut core = Core::with_dns_resolver(config, Arc::new(resolver)).unwrap();
     core.start().await.unwrap();
     let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
 
@@ -527,6 +605,55 @@ async fn spawn_vless_target_assertion_server(
     (addr, handle)
 }
 
+fn tls_test_configs() -> (Arc<rustls::ClientConfig>, Arc<rustls::ServerConfig>) {
+    let CertifiedKey { cert, signing_key } =
+        generate_simple_self_signed(vec!["vless.test".to_owned()])
+            .expect("generate self-signed certificate");
+    let cert_der = cert.der().clone();
+    let key_der = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(signing_key.serialize_der()));
+
+    let mut roots = rustls::RootCertStore::empty();
+    roots.add(cert_der.clone()).expect("add test root");
+    let client_config = rustls::ClientConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .expect("ring provider should support default TLS versions")
+    .with_root_certificates(roots)
+    .with_no_client_auth();
+
+    let server_config = rustls::ServerConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .expect("ring provider should support default TLS versions")
+    .with_no_client_auth()
+    .with_single_cert(vec![cert_der], key_der)
+    .expect("build TLS server config");
+
+    (Arc::new(client_config), Arc::new(server_config))
+}
+
+async fn spawn_fake_tls_vless_server(
+    server_config: Arc<rustls::ServerConfig>,
+) -> (SocketAddr, JoinHandle<()>) {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let acceptor = TlsAcceptor::from(server_config);
+
+    let handle = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let mut inbound = acceptor.accept(stream).await.unwrap();
+        let target = read_vless_header(&mut inbound).await;
+        let mut target_stream = TcpStream::connect(target).await.unwrap();
+        if let Err(error) = copy_bidirectional(&mut inbound, &mut target_stream).await {
+            assert_eq!(error.kind(), ErrorKind::UnexpectedEof);
+        }
+    });
+
+    (addr, handle)
+}
+
 async fn socks5_connect(client: &mut TcpStream, target: SocketAddr) {
     let SocketAddr::V4(target) = target else {
         panic!("this E2E covers IPv4 SOCKS targets only");
@@ -565,7 +692,10 @@ async fn socks5_connect_domain(client: &mut TcpStream, domain: &str, port: u16) 
     assert_eq!(reply, [5, 0, 0, 1, 0, 0, 0, 0, 0, 0]);
 }
 
-async fn read_vless_target(stream: &mut TcpStream) -> Target {
+async fn read_vless_target<S>(stream: &mut S) -> Target
+where
+    S: AsyncRead + Unpin,
+{
     let version = stream.read_u8().await.unwrap();
     assert_eq!(version, 0);
 
@@ -606,7 +736,10 @@ async fn read_vless_target(stream: &mut TcpStream) -> Target {
     Target::new(addr, port, RoutingNetwork::Tcp)
 }
 
-async fn read_vless_header(stream: &mut TcpStream) -> SocketAddr {
+async fn read_vless_header<S>(stream: &mut S) -> SocketAddr
+where
+    S: AsyncRead + Unpin,
+{
     let target = read_vless_target(stream).await;
     let RoutingTargetAddr::Ip(ip) = target.addr else {
         panic!("this E2E expects an IP VLESS target");

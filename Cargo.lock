@@ -1364,8 +1364,11 @@ name = "xray-core-rs"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "rcgen",
+ "rustls",
  "thiserror",
  "tokio",
+ "tokio-rustls",
  "uuid",
  "xray-config",
  "xray-proxy",
