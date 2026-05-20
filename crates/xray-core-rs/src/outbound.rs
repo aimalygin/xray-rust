@@ -19,10 +19,17 @@ impl VlessTcpOutbound {
 }
 
 pub fn select_vless_tcp_outbound(config: &CoreConfig) -> Result<VlessTcpOutbound, CoreError> {
-    let outbound = config
-        .outbounds
-        .first()
-        .ok_or(CoreError::NoSupportedOutbound)?;
+    let outbound = match &config.default_outbound_tag {
+        Some(tag) => config
+            .outbounds
+            .iter()
+            .find(|outbound| outbound.tag.as_deref() == Some(tag.as_str()))
+            .ok_or(CoreError::NoSupportedOutbound)?,
+        None => config
+            .outbounds
+            .first()
+            .ok_or(CoreError::NoSupportedOutbound)?,
+    };
 
     if outbound.stream.network != Network::Tcp {
         return Err(CoreError::UnsupportedOutboundNetwork);

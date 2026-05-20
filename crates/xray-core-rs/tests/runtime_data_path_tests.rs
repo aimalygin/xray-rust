@@ -7,7 +7,7 @@ use tokio::time::{timeout, Duration};
 use uuid::Uuid;
 use xray_config::{
     CoreConfig, InboundConfig, InboundProtocol, Network, OutboundConfig, OutboundSettings,
-    RealitySettings, RealityShortId, StreamSecurity, StreamSettings, TargetAddr,
+    RealitySettings, RealityShortId, StreamSecurity, StreamSettings, TargetAddr, TlsSettings,
     VlessOutboundSettings, VlessUser,
 };
 use xray_core_rs::{select_vless_tcp_outbound, Core, CoreError};
@@ -70,6 +70,13 @@ fn reality_security() -> StreamSecurity {
     })
 }
 
+fn tls_security() -> StreamSecurity {
+    StreamSecurity::Tls(TlsSettings {
+        server_name: Some("example.com".to_owned()),
+        fingerprint: Some("chrome".to_owned()),
+    })
+}
+
 #[test]
 fn selects_raw_tcp_vless_outbound_with_ip_server() {
     let config = config_with_outbound(vless_outbound(
@@ -84,9 +91,50 @@ fn selects_raw_tcp_vless_outbound_with_ip_server() {
 }
 
 #[test]
+fn selects_default_outbound_tag_when_present() {
+    let mut first = vless_outbound(
+        StreamSecurity::None,
+        TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
+        1080,
+    );
+    first.tag = Some("direct".to_owned());
+    let mut second = vless_outbound(
+        StreamSecurity::None,
+        TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 20))),
+        443,
+    );
+    second.tag = Some("proxy".to_owned());
+    let config = CoreConfig {
+        inbounds: Vec::new(),
+        outbounds: vec![first, second],
+        default_outbound_tag: Some("proxy".to_owned()),
+    };
+
+    let selected = select_vless_tcp_outbound(&config).unwrap();
+
+    assert_eq!(selected.server().port, 443);
+}
+
+#[test]
 fn rejects_reality_outbound_for_raw_tcp_runtime_path() {
     let config = config_with_outbound(vless_outbound(
         reality_security(),
+        TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
+        443,
+    ));
+
+    let result = select_vless_tcp_outbound(&config);
+
+    assert!(matches!(
+        result,
+        Err(CoreError::UnsupportedOutboundSecurity)
+    ));
+}
+
+#[test]
+fn rejects_tls_outbound_for_raw_tcp_runtime_path() {
+    let config = config_with_outbound(vless_outbound(
+        tls_security(),
         TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
         443,
     ));
