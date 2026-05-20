@@ -1,9 +1,14 @@
+use std::{net::SocketAddr, sync::Arc};
+
 use thiserror::Error;
-use xray_config::CoreConfig;
+use tokio::net::TcpListener;
+use tokio::task::JoinHandle;
+use xray_config::{CoreConfig, InboundProtocol};
 use xray_runtime::Shutdown;
 use xray_tun::{TunConfig, TunEndpoint};
 
 mod outbound;
+mod socks;
 
 pub use outbound::{open_vless_tcp_stream, select_vless_tcp_outbound, VlessTcpOutbound};
 
@@ -12,6 +17,18 @@ pub enum CoreState {
     Created,
     Running,
     Stopped,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BoundInbound {
+    pub tag: Option<String>,
+    pub addr: SocketAddr,
+}
+
+#[derive(Debug)]
+struct RuntimeState {
+    inbounds: Vec<BoundInbound>,
+    tasks: Vec<JoinHandle<()>>,
 }
 
 #[derive(Debug, Error)]
@@ -45,6 +62,7 @@ pub struct Core {
     state: CoreState,
     shutdown: Shutdown,
     tun: TunEndpoint,
+    runtime: Option<RuntimeState>,
 }
 
 impl Core {
@@ -60,11 +78,21 @@ impl Core {
             state: CoreState::Created,
             shutdown,
             tun,
+            runtime: None,
         })
     }
 
     pub fn state(&self) -> CoreState {
         self.state
+    }
+
+    pub fn inbound_addr(&self, tag: Option<&str>) -> Option<SocketAddr> {
+        self.runtime
+            .as_ref()?
+            .inbounds
+            .iter()
+            .find(|inbound| inbound.tag.as_deref() == tag)
+            .map(|inbound| inbound.addr)
     }
 
     pub async fn start(&mut self) -> Result<(), CoreError> {
@@ -75,13 +103,53 @@ impl Core {
             return Err(CoreError::AlreadyStopped);
         }
 
-        let _configured_outbounds = self.config.outbounds.len();
+        let mut bound_listeners = Vec::new();
+        for inbound in &self.config.inbounds {
+            if inbound.protocol != InboundProtocol::Socks {
+                continue;
+            }
+
+            let listener = TcpListener::bind((inbound.listen.as_str(), inbound.port)).await?;
+            let addr = listener.local_addr()?;
+            bound_listeners.push((
+                BoundInbound {
+                    tag: inbound.tag.clone(),
+                    addr,
+                },
+                listener,
+            ));
+        }
+
+        if bound_listeners.is_empty() {
+            return Err(CoreError::NoSupportedInbound);
+        }
+
+        let config = Arc::new(self.config.clone());
+        let mut inbounds = Vec::with_capacity(bound_listeners.len());
+        let mut tasks = Vec::with_capacity(bound_listeners.len());
+        for (bound, listener) in bound_listeners {
+            let task = tokio::spawn(socks::serve_socks_listener(
+                listener,
+                Arc::clone(&config),
+                self.shutdown.subscribe(),
+            ));
+            inbounds.push(bound);
+            tasks.push(task);
+        }
+
+        self.runtime = Some(RuntimeState { inbounds, tasks });
         self.state = CoreState::Running;
         Ok(())
     }
 
     pub async fn stop(&mut self) -> Result<(), CoreError> {
         self.shutdown.signal();
+        if let Some(runtime) = self.runtime.take() {
+            for task in runtime.tasks {
+                task.abort();
+                let _ = task.await;
+            }
+        }
         self.tun.close();
         self.state = CoreState::Stopped;
         Ok(())
