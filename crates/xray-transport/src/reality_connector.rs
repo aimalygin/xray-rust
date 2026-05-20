@@ -1,5 +1,7 @@
 //! REALITY connector boundary.
 //!
+//! Oracle/source: `Xray-core/transport/internet/reality/reality.go::UClient`.
+//!
 //! Future `RealityConnector::connect` implementation notes:
 //!
 //! 1. Build a Chrome-compatible TLS 1.3 ClientHello.
