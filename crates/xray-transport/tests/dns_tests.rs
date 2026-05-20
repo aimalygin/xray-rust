@@ -5,7 +5,7 @@ use xray_transport::{
 
 #[tokio::test]
 async fn system_dns_resolver_resolves_localhost_without_tcp_io() {
-    let resolver = SystemDnsResolver::default();
+    let resolver = SystemDnsResolver;
 
     let addr = resolver.resolve("localhost", 443).await.unwrap();
 
