@@ -1,17 +1,17 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use async_trait::async_trait;
-use tokio::io::{copy_bidirectional, AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, copy_bidirectional};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinHandle;
-use tokio::time::{timeout, Duration};
+use tokio::time::{Duration, timeout};
 use uuid::Uuid;
 use xray_config::{
     CoreConfig, InboundConfig, InboundProtocol, Network, OutboundConfig, OutboundSettings,
     RealitySettings, RealityShortId, StreamSecurity, StreamSettings, TargetAddr, TlsSettings,
     VlessOutboundSettings, VlessUser,
 };
-use xray_core_rs::{select_vless_tcp_outbound, Core, CoreError};
+use xray_core_rs::{Core, CoreError, select_vless_tcp_outbound};
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::{DnsResolver, TransportError};
 
@@ -269,6 +269,16 @@ async fn socks_client_reaches_echo_target_through_domain_vless_server() {
     .unwrap();
 }
 
+#[tokio::test]
+async fn socks_client_preserves_domain_target_through_domain_vless_server() {
+    timeout(
+        Duration::from_secs(2),
+        run_domain_target_preservation_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
 async fn run_socks_to_vless_echo_scenario() {
     let (echo_addr, echo_handle) = spawn_echo_server().await;
     let (vless_addr, vless_handle) = spawn_fake_vless_server().await;
@@ -333,6 +343,35 @@ async fn run_domain_vless_server_echo_scenario() {
         .unwrap();
 }
 
+async fn run_domain_target_preservation_scenario() {
+    let expected_target = Target::new(
+        RoutingTargetAddr::Domain("example.com".to_owned()),
+        443,
+        RoutingNetwork::Tcp,
+    );
+    let (vless_addr, vless_handle) = spawn_vless_target_assertion_server(expected_target).await;
+    let resolver = StaticDnsResolver {
+        domain: "vless.test",
+        addr: vless_addr,
+    };
+    let config = runtime_config_with_vless_domain_server("vless.test", vless_addr.port());
+
+    let mut core = Core::with_dns_resolver(config, std::sync::Arc::new(resolver)).unwrap();
+    core.start().await.unwrap();
+    let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
+
+    let mut client = TcpStream::connect(socks_addr).await.unwrap();
+    socks5_connect_domain(&mut client, "example.com", 443).await;
+
+    drop(client);
+    core.stop().await.unwrap();
+
+    timeout(Duration::from_secs(1), vless_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
 async fn spawn_echo_server() -> (SocketAddr, JoinHandle<()>) {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -360,6 +399,19 @@ async fn spawn_fake_vless_server() -> (SocketAddr, JoinHandle<()>) {
     (addr, handle)
 }
 
+async fn spawn_vless_target_assertion_server(
+    expected_target: Target,
+) -> (SocketAddr, JoinHandle<()>) {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let handle = tokio::spawn(async move {
+        let (mut inbound, _) = listener.accept().await.unwrap();
+        let target = read_vless_target(&mut inbound).await;
+        assert_eq!(target, expected_target);
+    });
+    (addr, handle)
+}
+
 async fn socks5_connect(client: &mut TcpStream, target: SocketAddr) {
     let SocketAddr::V4(target) = target else {
         panic!("this E2E covers IPv4 SOCKS targets only");
@@ -380,7 +432,25 @@ async fn socks5_connect(client: &mut TcpStream, target: SocketAddr) {
     assert_eq!(reply, [5, 0, 0, 1, 0, 0, 0, 0, 0, 0]);
 }
 
-async fn read_vless_header(stream: &mut TcpStream) -> SocketAddr {
+async fn socks5_connect_domain(client: &mut TcpStream, domain: &str, port: u16) {
+    let domain_len = u8::try_from(domain.len()).unwrap();
+
+    client.write_all(&[5, 1, 0]).await.unwrap();
+    let mut method = [0; 2];
+    client.read_exact(&mut method).await.unwrap();
+    assert_eq!(method, [5, 0]);
+
+    let mut request = vec![5, 1, 0, 3, domain_len];
+    request.extend_from_slice(domain.as_bytes());
+    request.extend_from_slice(&port.to_be_bytes());
+    client.write_all(&request).await.unwrap();
+
+    let mut reply = [0; 10];
+    client.read_exact(&mut reply).await.unwrap();
+    assert_eq!(reply, [5, 0, 0, 1, 0, 0, 0, 0, 0, 0]);
+}
+
+async fn read_vless_target(stream: &mut TcpStream) -> Target {
     let version = stream.read_u8().await.unwrap();
     assert_eq!(version, 0);
 
@@ -398,9 +468,33 @@ async fn read_vless_header(stream: &mut TcpStream) -> SocketAddr {
 
     let port = stream.read_u16().await.unwrap();
     let address_type = stream.read_u8().await.unwrap();
-    assert_eq!(address_type, 1);
+    let addr = match address_type {
+        1 => {
+            let mut octets = [0; 4];
+            stream.read_exact(&mut octets).await.unwrap();
+            RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::from(octets)))
+        }
+        2 => {
+            let len = stream.read_u8().await.unwrap();
+            let mut domain = vec![0; usize::from(len)];
+            stream.read_exact(&mut domain).await.unwrap();
+            RoutingTargetAddr::Domain(String::from_utf8(domain).unwrap())
+        }
+        3 => {
+            let mut octets = [0; 16];
+            stream.read_exact(&mut octets).await.unwrap();
+            RoutingTargetAddr::Ip(IpAddr::V6(std::net::Ipv6Addr::from(octets)))
+        }
+        other => panic!("unsupported VLESS address type {other}"),
+    };
 
-    let mut octets = [0; 4];
-    stream.read_exact(&mut octets).await.unwrap();
-    SocketAddr::new(IpAddr::V4(Ipv4Addr::from(octets)), port)
+    Target::new(addr, port, RoutingNetwork::Tcp)
+}
+
+async fn read_vless_header(stream: &mut TcpStream) -> SocketAddr {
+    let target = read_vless_target(stream).await;
+    let RoutingTargetAddr::Ip(ip) = target.addr else {
+        panic!("this E2E expects an IP VLESS target");
+    };
+    SocketAddr::new(ip, target.port)
 }
