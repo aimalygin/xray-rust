@@ -2,6 +2,8 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use tokio::io::{copy_bidirectional, AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::task::JoinHandle;
+use tokio::time::{timeout, Duration};
 use uuid::Uuid;
 use xray_config::{
     CoreConfig, InboundConfig, InboundProtocol, Network, OutboundConfig, OutboundSettings,
@@ -131,8 +133,14 @@ fn rejects_vision_flow_for_raw_tcp_runtime_path() {
 
 #[tokio::test]
 async fn socks_client_reaches_echo_target_through_vless_tcp_outbound() {
-    let echo_addr = spawn_echo_server().await;
-    let vless_addr = spawn_fake_vless_server().await;
+    timeout(Duration::from_secs(2), run_socks_to_vless_echo_scenario())
+        .await
+        .unwrap();
+}
+
+async fn run_socks_to_vless_echo_scenario() {
+    let (echo_addr, echo_handle) = spawn_echo_server().await;
+    let (vless_addr, vless_handle) = spawn_fake_vless_server().await;
     let config = runtime_config_with_vless_server(vless_addr);
 
     let mut core = Core::new(config).unwrap();
@@ -147,26 +155,36 @@ async fn socks_client_reaches_echo_target_through_vless_tcp_outbound() {
     client.read_exact(&mut echoed).await.unwrap();
 
     assert_eq!(echoed, b"hello runtime");
+    drop(client);
     core.stop().await.unwrap();
+
+    timeout(Duration::from_secs(1), vless_handle)
+        .await
+        .unwrap()
+        .unwrap();
+    timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .unwrap()
+        .unwrap();
 }
 
-async fn spawn_echo_server() -> SocketAddr {
+async fn spawn_echo_server() -> (SocketAddr, JoinHandle<()>) {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let addr = listener.local_addr().unwrap();
-    tokio::spawn(async move {
+    let handle = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
         let (mut read_half, mut write_half) = stream.split();
         tokio::io::copy(&mut read_half, &mut write_half)
             .await
             .unwrap();
     });
-    addr
+    (addr, handle)
 }
 
-async fn spawn_fake_vless_server() -> SocketAddr {
+async fn spawn_fake_vless_server() -> (SocketAddr, JoinHandle<()>) {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let addr = listener.local_addr().unwrap();
-    tokio::spawn(async move {
+    let handle = tokio::spawn(async move {
         let (mut inbound, _) = listener.accept().await.unwrap();
         let target = read_vless_header(&mut inbound).await;
         let mut target_stream = TcpStream::connect(target).await.unwrap();
@@ -174,7 +192,7 @@ async fn spawn_fake_vless_server() -> SocketAddr {
             .await
             .unwrap();
     });
-    addr
+    (addr, handle)
 }
 
 async fn socks5_connect(client: &mut TcpStream, target: SocketAddr) {
@@ -194,7 +212,7 @@ async fn socks5_connect(client: &mut TcpStream, target: SocketAddr) {
 
     let mut reply = [0; 10];
     client.read_exact(&mut reply).await.unwrap();
-    assert_eq!(reply[1], 0);
+    assert_eq!(reply, [5, 0, 0, 1, 0, 0, 0, 0, 0, 0]);
 }
 
 async fn read_vless_header(stream: &mut TcpStream) -> SocketAddr {
@@ -206,6 +224,7 @@ async fn read_vless_header(stream: &mut TcpStream) -> SocketAddr {
     assert_eq!(uuid, TEST_UUID_BYTES);
 
     let addons_len = stream.read_u8().await.unwrap();
+    assert_eq!(addons_len, 0);
     let mut addons = vec![0; usize::from(addons_len)];
     stream.read_exact(&mut addons).await.unwrap();
 
