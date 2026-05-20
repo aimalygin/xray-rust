@@ -1,8 +1,8 @@
 use std::net::{IpAddr, Ipv4Addr};
 
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio::time::{sleep, timeout, Duration};
+use tokio::time::{timeout, Duration};
 use uuid::Uuid;
 use xray_config::{
     CoreConfig, InboundConfig, InboundProtocol, Network, OutboundConfig, OutboundSettings,
@@ -103,7 +103,11 @@ async fn core_stop_closes_idle_accepted_socks_connections() {
     core.start().await.unwrap();
     let addr = core.inbound_addr(Some("socks-in")).unwrap();
     let mut client = TcpStream::connect(addr).await.unwrap();
-    sleep(Duration::from_millis(20)).await;
+
+    client.write_all(&[5, 1, 0]).await.unwrap();
+    let mut method = [0; 2];
+    client.read_exact(&mut method).await.unwrap();
+    assert_eq!(method, [5, 0]);
 
     core.stop().await.unwrap();
 
