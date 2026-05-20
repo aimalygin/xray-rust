@@ -1181,6 +1181,8 @@ dependencies = [
 name = "xray-core-rs"
 version = "0.1.0"
 dependencies = [
+ "thiserror",
+ "tokio",
  "xray-config",
  "xray-proxy",
  "xray-routing",
