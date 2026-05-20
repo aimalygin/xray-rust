@@ -111,3 +111,43 @@ async fn tun_endpoint_poll_returns_queue_closed_after_close() {
         TunError::QueueClosed
     );
 }
+
+#[tokio::test]
+async fn tun_endpoint_rejects_pushes_after_close() {
+    let tun = TunEndpoint::new(TunConfig {
+        mtu: 1500,
+        queue_depth: 1,
+    });
+
+    tun.close();
+
+    assert_eq!(
+        tun.push_inbound(Bytes::from_static(&[1]))
+            .await
+            .unwrap_err(),
+        TunError::QueueClosed
+    );
+    assert_eq!(
+        tun.push_outbound(Bytes::from_static(&[2]))
+            .await
+            .unwrap_err(),
+        TunError::QueueClosed
+    );
+}
+
+#[tokio::test]
+async fn tun_endpoint_drains_queued_packet_after_close_then_reports_closed() {
+    let tun = TunEndpoint::new(TunConfig {
+        mtu: 1500,
+        queue_depth: 1,
+    });
+
+    tun.push_inbound(Bytes::from_static(&[0x45])).await.unwrap();
+    tun.close();
+
+    assert_eq!(
+        tun.poll_inbound().await.unwrap(),
+        Bytes::from_static(&[0x45])
+    );
+    assert_eq!(tun.poll_inbound().await.unwrap_err(), TunError::QueueClosed);
+}

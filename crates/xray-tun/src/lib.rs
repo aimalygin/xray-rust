@@ -129,6 +129,8 @@ impl TunEndpoint {
         let mut rx = rx.lock().await;
 
         loop {
+            let closed = self.closed_notify.notified();
+
             if self.closed.load(Ordering::Acquire) {
                 return match rx.try_recv() {
                     Ok(packet) => Ok(packet),
@@ -140,7 +142,7 @@ impl TunEndpoint {
 
             tokio::select! {
                 packet = rx.recv() => return packet.ok_or(TunError::QueueClosed),
-                () = self.closed_notify.notified() => {}
+                () = closed => {}
             }
         }
     }
