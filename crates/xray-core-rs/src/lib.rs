@@ -49,6 +49,7 @@ pub enum CoreError {
     UnsupportedOutboundNetwork,
     #[error("outbound security is not supported")]
     UnsupportedOutboundSecurity,
+    // Reserved for future config address kinds; current VLESS TCP selection supports IP and domain servers.
     #[error("outbound server address is not supported")]
     UnsupportedOutboundServerAddress,
     #[error("outbound flow is not supported")]
@@ -75,6 +76,10 @@ impl Core {
         Self::with_dns_resolver(config, Arc::new(SystemDnsResolver))
     }
 
+    /// Creates a core with an injected DNS resolver.
+    ///
+    /// The resolver is currently used by runtime outbound dialers to resolve
+    /// configured outbound server domains. It is not a full Xray DNS policy hook.
     pub fn with_dns_resolver(
         config: CoreConfig,
         dns_resolver: Arc<dyn DnsResolver>,

@@ -50,6 +50,10 @@ pub enum TransportError {
     UnsupportedRealityFingerprint(String),
 }
 
+/// Resolves a domain and configured port into the concrete socket address to dial.
+///
+/// Callers pass the configured port and dial the returned `SocketAddr` as-is.
+/// This keeps platform-specific DNS and deterministic test resolvers explicit.
 #[async_trait]
 pub trait DnsResolver: Send + Sync {
     async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError>;
