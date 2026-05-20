@@ -3,6 +3,7 @@ use thiserror::Error;
 
 const HEADER_LEN: usize = 5;
 const USER_ID_LEN: usize = 16;
+const MAX_CONTENT_LEN: usize = u16::MAX as usize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VisionCommand {
@@ -40,10 +41,13 @@ pub enum VisionError {
     UnknownCommand(u8),
     #[error("vision block length is inconsistent")]
     LengthMismatch,
+    #[error("vision payload length {len} exceeds u16 content length limit")]
+    PayloadTooLarge { len: usize },
 }
 
 pub struct VisionPadding {
     user_id: [u8; USER_ID_LEN],
+    /// Keeps the full planned seed shape; this deterministic slice currently uses indices 0 and 2.
     seed: [u32; 4],
     user_id_emitted: bool,
 }
@@ -62,8 +66,12 @@ impl VisionPadding {
         payload: BytesMut,
         command: VisionCommand,
         deterministic_extra_padding: u16,
-    ) -> BytesMut {
-        let content_len = payload.len().min(u16::MAX as usize);
+    ) -> Result<BytesMut, VisionError> {
+        let content_len = payload.len();
+        if content_len > MAX_CONTENT_LEN {
+            return Err(VisionError::PayloadTooLarge { len: content_len });
+        }
+
         let padding_len = self.padding_len(content_len, deterministic_extra_padding);
         let user_prefix_len = if self.user_id_emitted { 0 } else { USER_ID_LEN };
         let mut padded =
@@ -80,7 +88,7 @@ impl VisionPadding {
         padded.extend_from_slice(&payload[..content_len]);
         padded.resize(padded.len() + padding_len, 0);
 
-        padded
+        Ok(padded)
     }
 
     fn padding_len(&self, content_len: usize, deterministic_extra_padding: u16) -> usize {
@@ -90,7 +98,7 @@ impl VisionPadding {
 
         if content_len < self.seed[0] as usize {
             let padding_len = (self.seed[2] as usize).saturating_sub(content_len);
-            padding_len.min(u16::MAX as usize)
+            padding_len.min(MAX_CONTENT_LEN)
         } else {
             0
         }
@@ -109,6 +117,9 @@ pub fn unpad_vision_block(
         Some(user_id) if user_id == expected_user_id => USER_ID_LEN,
         _ => match parse_header(padded, 0) {
             Ok(header) if header.total_len == padded.len() => 0,
+            Err(VisionError::UnknownCommand(command)) => {
+                return Err(VisionError::UnknownCommand(command));
+            }
             _ if padded.len() >= USER_ID_LEN + HEADER_LEN => {
                 return Err(VisionError::UserMismatch);
             }
