@@ -10,8 +10,12 @@ pub enum SocksParseError {
     UnsupportedVersion(u8),
     #[error("unsupported socks command {0}")]
     UnsupportedCommand(u8),
+    #[error("invalid socks reserved byte {0}")]
+    InvalidReserved(u8),
     #[error("unsupported socks address type {0}")]
     UnsupportedAddressType(u8),
+    #[error("invalid socks domain")]
+    InvalidDomain,
     #[error("io error")]
     Io,
 }
@@ -41,7 +45,11 @@ pub async fn parse_socks5_connect<R: AsyncRead + Unpin>(
         return Err(SocksParseError::UnsupportedCommand(command));
     }
 
-    let _reserved = reader.read_u8().await.map_err(|_| SocksParseError::Io)?;
+    let reserved = reader.read_u8().await.map_err(|_| SocksParseError::Io)?;
+    if reserved != 0 {
+        return Err(SocksParseError::InvalidReserved(reserved));
+    }
+
     let address_type = reader.read_u8().await.map_err(|_| SocksParseError::Io)?;
     let addr = match address_type {
         1 => {
@@ -54,12 +62,18 @@ pub async fn parse_socks5_connect<R: AsyncRead + Unpin>(
         }
         3 => {
             let len = reader.read_u8().await.map_err(|_| SocksParseError::Io)?;
+            if len == 0 {
+                return Err(SocksParseError::InvalidDomain);
+            }
+
             let mut domain = vec![0; usize::from(len)];
             reader
                 .read_exact(&mut domain)
                 .await
                 .map_err(|_| SocksParseError::Io)?;
-            TargetAddr::Domain(String::from_utf8_lossy(&domain).into_owned())
+            TargetAddr::Domain(
+                String::from_utf8(domain).map_err(|_| SocksParseError::InvalidDomain)?,
+            )
         }
         4 => {
             let mut octets = [0; 16];
