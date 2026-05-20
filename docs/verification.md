@@ -35,7 +35,13 @@ Current Rust compatibility coverage:
 cargo test -p xray-core-rs compat_smoke
 ```
 
-This smoke test verifies that the `Xray-core/` oracle checkout is present and contains expected reference files.
+When the ignored `Xray-core/` checkout is present, this smoke test verifies that the oracle checkout contains expected reference files. In a clean checkout without `Xray-core/`, the smoke test prints a skip message and passes so the default workspace test suite does not depend on ignored local files.
+
+To require the oracle checkout during local compatibility work:
+
+```sh
+XRAY_RUST_REQUIRE_XRAY_CORE=1 cargo test -p xray-core-rs compat_smoke
+```
 
 An ignored Rust shell exists at `tests/compat/vless_reality_vision.rs` for the future REALITY connector phase. It currently lives at workspace-root `tests/compat` and is not wired as a Cargo test target, so it is not CI coverage yet. In particular, this command is not currently valid:
 
