@@ -1,0 +1,39 @@
+{
+  "log": {
+    "loglevel": "debug"
+  },
+  "inbounds": [
+    {
+      "tag": "vless-in",
+      "listen": "127.0.0.1",
+      "port": 24443,
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "id": "00010203-0405-0607-0809-0a0b0c0d0e0f",
+            "flow": "xtls-rprx-vision"
+          }
+        ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {
+          "show": false,
+          "dest": "www.example.com:443",
+          "serverNames": ["www.example.com"],
+          "privateKey": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "shortIds": ["02030405"]
+        }
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "direct",
+      "protocol": "freedom"
+    }
+  ]
+}
