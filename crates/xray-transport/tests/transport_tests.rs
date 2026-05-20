@@ -197,6 +197,50 @@ mod transport_tests {
     }
 
     #[tokio::test]
+    async fn transport_dialer_routes_tcp_configs_to_tcp_connector() {
+        let (client_config, _) = tls_test_configs();
+        let (addr, handle) = spawn_echo_once().await;
+        let dialer =
+            TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config));
+        let target = Target::new(TargetAddr::Ip(addr.ip()), addr.port(), Network::Tcp);
+        let config = ConnectorConfig::Tcp;
+
+        let stream = dialer
+            .connect(&config, &target)
+            .await
+            .expect("dial TCP target");
+
+        assert_boxed_transport_stream(stream).await;
+        handle.await.expect("echo task should complete");
+    }
+
+    #[tokio::test]
+    async fn transport_dialer_rejects_reality_configs_without_plaintext_downgrade() {
+        let (client_config, _) = tls_test_configs();
+        let dialer =
+            TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config));
+        let target = Target::new(
+            TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
+            9,
+            Network::Tcp,
+        );
+        let config = ConnectorConfig::Reality(RealityClientConfig {
+            server_name: "www.example.com".to_owned(),
+            fingerprint: "chrome".to_owned(),
+            public_key: [1; 32],
+            short_id: vec![2, 3, 4, 5],
+            spider_x: "/".to_owned(),
+        });
+
+        let result = dialer.connect(&config, &target).await;
+
+        assert!(matches!(
+            result,
+            Err(TransportError::UnsupportedConnectorConfig("reality"))
+        ));
+    }
+
+    #[tokio::test]
     async fn tcp_connector_requires_dns_for_domain_targets() {
         let config = ConnectorConfig::Tcp;
         let connector = TcpConnector::new(config);
