@@ -53,7 +53,7 @@ fn selects_raw_tcp_vless_outbound_with_ip_server() {
 
     let selected = select_vless_tcp_outbound(&config).unwrap();
 
-    assert_eq!(selected.server.port, 443);
+    assert_eq!(selected.server().port, 443);
 }
 
 #[test]
