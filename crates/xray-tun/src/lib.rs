@@ -1,10 +1,13 @@
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+
 use bytes::Bytes;
 use thiserror::Error;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, Mutex, Notify};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TunConfig {
     pub mtu: usize,
+    /// Queue depths of zero are treated as a minimum capacity of one packet.
     pub queue_depth: usize,
 }
 
@@ -31,13 +34,18 @@ pub struct TunEndpoint {
     inbound_rx: Mutex<mpsc::Receiver<Bytes>>,
     outbound_tx: mpsc::Sender<Bytes>,
     outbound_rx: Mutex<mpsc::Receiver<Bytes>>,
-    stats: Mutex<TunStats>,
+    inbound_packets: AtomicU64,
+    outbound_packets: AtomicU64,
+    dropped_packets: AtomicU64,
+    closed: AtomicBool,
+    closed_notify: Notify,
 }
 
 impl TunEndpoint {
     pub fn new(config: TunConfig) -> Self {
-        let (inbound_tx, inbound_rx) = mpsc::channel(config.queue_depth);
-        let (outbound_tx, outbound_rx) = mpsc::channel(config.queue_depth);
+        let queue_depth = config.queue_depth.max(1);
+        let (inbound_tx, inbound_rx) = mpsc::channel(queue_depth);
+        let (outbound_tx, outbound_rx) = mpsc::channel(queue_depth);
 
         Self {
             config,
@@ -45,7 +53,11 @@ impl TunEndpoint {
             inbound_rx: Mutex::new(inbound_rx),
             outbound_tx,
             outbound_rx: Mutex::new(outbound_rx),
-            stats: Mutex::new(TunStats::default()),
+            inbound_packets: AtomicU64::new(0),
+            outbound_packets: AtomicU64::new(0),
+            dropped_packets: AtomicU64::new(0),
+            closed: AtomicBool::new(false),
+            closed_notify: Notify::new(),
         }
     }
 
@@ -54,7 +66,7 @@ impl TunEndpoint {
     }
 
     pub async fn poll_inbound(&self) -> Result<Bytes, TunError> {
-        Self::poll_packet(&self.inbound_rx).await
+        self.poll_packet(&self.inbound_rx).await
     }
 
     pub async fn push_outbound(&self, packet: Bytes) -> Result<(), TunError> {
@@ -62,17 +74,30 @@ impl TunEndpoint {
     }
 
     pub async fn poll_outbound(&self) -> Result<Bytes, TunError> {
-        Self::poll_packet(&self.outbound_rx).await
+        self.poll_packet(&self.outbound_rx).await
     }
 
     pub async fn stats(&self) -> TunStats {
-        *self.stats.lock().await
+        TunStats {
+            inbound_packets: self.inbound_packets.load(Ordering::Relaxed),
+            outbound_packets: self.outbound_packets.load(Ordering::Relaxed),
+            dropped_packets: self.dropped_packets.load(Ordering::Relaxed),
+        }
+    }
+
+    pub fn close(&self) {
+        self.closed.store(true, Ordering::Release);
+        self.closed_notify.notify_waiters();
     }
 
     async fn push_packet(&self, packet: Bytes, direction: Direction) -> Result<(), TunError> {
+        if self.closed.load(Ordering::Acquire) {
+            return Err(TunError::QueueClosed);
+        }
+
         let len = packet.len();
         if len > self.config.mtu {
-            self.record_drop().await;
+            self.record_drop();
             return Err(TunError::PacketTooLarge {
                 len,
                 mtu: self.config.mtu,
@@ -86,27 +111,42 @@ impl TunEndpoint {
 
         match send_result {
             Ok(()) => {
-                let mut stats = self.stats.lock().await;
                 match direction {
-                    Direction::Inbound => stats.inbound_packets += 1,
-                    Direction::Outbound => stats.outbound_packets += 1,
-                }
+                    Direction::Inbound => self.inbound_packets.fetch_add(1, Ordering::Relaxed),
+                    Direction::Outbound => self.outbound_packets.fetch_add(1, Ordering::Relaxed),
+                };
                 Ok(())
             }
             Err(mpsc::error::TrySendError::Full(_)) => {
-                self.record_drop().await;
+                self.record_drop();
                 Err(TunError::QueueFull)
             }
             Err(mpsc::error::TrySendError::Closed(_)) => Err(TunError::QueueClosed),
         }
     }
 
-    async fn poll_packet(rx: &Mutex<mpsc::Receiver<Bytes>>) -> Result<Bytes, TunError> {
-        rx.lock().await.recv().await.ok_or(TunError::QueueClosed)
+    async fn poll_packet(&self, rx: &Mutex<mpsc::Receiver<Bytes>>) -> Result<Bytes, TunError> {
+        let mut rx = rx.lock().await;
+
+        loop {
+            if self.closed.load(Ordering::Acquire) {
+                return match rx.try_recv() {
+                    Ok(packet) => Ok(packet),
+                    Err(
+                        mpsc::error::TryRecvError::Empty | mpsc::error::TryRecvError::Disconnected,
+                    ) => Err(TunError::QueueClosed),
+                };
+            }
+
+            tokio::select! {
+                packet = rx.recv() => return packet.ok_or(TunError::QueueClosed),
+                () = self.closed_notify.notified() => {}
+            }
+        }
     }
 
-    async fn record_drop(&self) {
-        self.stats.lock().await.dropped_packets += 1;
+    fn record_drop(&self) {
+        self.dropped_packets.fetch_add(1, Ordering::Relaxed);
     }
 }
 
