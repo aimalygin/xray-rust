@@ -1,18 +1,89 @@
 use std::io::Cursor;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use xray_proxy::inbound::{
-    parse_http_connect, parse_socks5_connect, HttpParseError, SocksParseError,
+    negotiate_socks5_no_auth, parse_http_connect, parse_socks5_connect, parse_socks5_request,
+    write_socks5_failure, write_socks5_success, HttpParseError, SocksParseError,
 };
 use xray_routing::{Network, TargetAddr};
 
 #[tokio::test]
-async fn parses_socks5_connect_domain_target() {
+async fn socks5_negotiate_no_auth_writes_method_selection() {
+    let (mut client, server) = tokio::io::duplex(64);
+    let server_task = tokio::spawn(async move { negotiate_socks5_no_auth(server).await });
+
+    client.write_all(&[5, 1, 0]).await.unwrap();
+    let mut reply = [0; 2];
+    client.read_exact(&mut reply).await.unwrap();
+
+    assert_eq!(reply, [5, 0]);
+    server_task.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn socks5_negotiate_rejects_when_no_auth_is_absent() {
+    let (mut client, server) = tokio::io::duplex(64);
+    let server_task = tokio::spawn(async move { negotiate_socks5_no_auth(server).await });
+
+    client.write_all(&[5, 1, 2]).await.unwrap();
+    let mut reply = [0; 2];
+    client.read_exact(&mut reply).await.unwrap();
+
+    assert_eq!(reply, [5, 0xff]);
+    assert_eq!(
+        server_task.await.unwrap(),
+        Err(SocksParseError::NoAcceptableMethods)
+    );
+}
+
+#[tokio::test]
+async fn socks5_request_parser_reads_connect_after_greeting() {
     let bytes = [
-        0x05, 0x01, 0x00, 0x05, 0x01, 0x00, 0x03, 0x0b, b'e', b'x', b'a', b'm', b'p', b'l', b'e',
-        b'.', b'c', b'o', b'm', 0x01, 0xbb,
+        5, 1, 0, 3, 11, b'e', b'x', b'a', b'm', b'p', b'l', b'e', b'.', b'c', b'o', b'm', 0x01,
+        0xbb,
     ];
 
-    let target = parse_socks5_connect(Cursor::new(bytes)).await.unwrap();
+    let target = parse_socks5_request(&bytes[..]).await.unwrap();
+
+    assert_eq!(target.port, 443);
+    assert_eq!(target.addr, TargetAddr::Domain("example.com".to_owned()));
+}
+
+#[tokio::test]
+async fn socks5_reply_writers_emit_ipv4_success_and_failure() {
+    let mut output = Vec::new();
+
+    write_socks5_success(&mut output).await.unwrap();
+    write_socks5_failure(&mut output).await.unwrap();
+
+    assert_eq!(
+        output,
+        vec![
+            5, 0, 0, 1, 0, 0, 0, 0, 0, 0, // success
+            5, 1, 0, 1, 0, 0, 0, 0, 0, 0, // general failure
+        ]
+    );
+}
+
+#[tokio::test]
+async fn parses_socks5_connect_domain_target() {
+    let (mut client, server) = tokio::io::duplex(64);
+    let server_task = tokio::spawn(async move { parse_socks5_connect(server).await });
+
+    client.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+    let mut reply = [0; 2];
+    client.read_exact(&mut reply).await.unwrap();
+    assert_eq!(reply, [5, 0]);
+
+    client
+        .write_all(&[
+            0x05, 0x01, 0x00, 0x03, 0x0b, b'e', b'x', b'a', b'm', b'p', b'l', b'e', b'.', b'c',
+            b'o', b'm', 0x01, 0xbb,
+        ])
+        .await
+        .unwrap();
+
+    let target = server_task.await.unwrap().unwrap();
 
     assert_eq!(target.network, Network::Tcp);
     assert_eq!(target.port, 443);
@@ -20,12 +91,10 @@ async fn parses_socks5_connect_domain_target() {
 }
 
 #[tokio::test]
-async fn parses_socks5_connect_ipv4_target() {
-    let bytes = [
-        0x05, 0x01, 0x00, 0x05, 0x01, 0x00, 0x01, 192, 0, 2, 1, 0x00, 0x50,
-    ];
+async fn parses_socks5_request_ipv4_target() {
+    let bytes = [0x05, 0x01, 0x00, 0x01, 192, 0, 2, 1, 0x00, 0x50];
 
-    let target = parse_socks5_connect(Cursor::new(bytes)).await.unwrap();
+    let target = parse_socks5_request(Cursor::new(bytes)).await.unwrap();
 
     assert_eq!(target.network, Network::Tcp);
     assert_eq!(target.port, 80);
@@ -36,13 +105,13 @@ async fn parses_socks5_connect_ipv4_target() {
 }
 
 #[tokio::test]
-async fn parses_socks5_connect_ipv6_target() {
+async fn parses_socks5_request_ipv6_target() {
     let bytes = [
-        0x05, 0x01, 0x00, 0x05, 0x01, 0x00, 0x04, 0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0xbb,
+        0x05, 0x01, 0x00, 0x04, 0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0xbb,
     ];
 
-    let target = parse_socks5_connect(Cursor::new(bytes)).await.unwrap();
+    let target = parse_socks5_request(Cursor::new(bytes)).await.unwrap();
 
     assert_eq!(target.network, Network::Tcp);
     assert_eq!(target.port, 443);
@@ -54,18 +123,18 @@ async fn parses_socks5_connect_ipv6_target() {
 
 #[tokio::test]
 async fn rejects_socks5_unsupported_version() {
-    let bytes = [0x04, 0x01, 0x00];
+    let bytes = [0x04, 0x01, 0x00, 0x01, 127, 0, 0, 1, 0, 80];
 
-    let err = parse_socks5_connect(Cursor::new(bytes)).await.unwrap_err();
+    let err = parse_socks5_request(Cursor::new(bytes)).await.unwrap_err();
 
     assert_eq!(err, SocksParseError::UnsupportedVersion(0x04));
 }
 
 #[tokio::test]
 async fn rejects_socks5_unsupported_command() {
-    let bytes = [0x05, 0x01, 0x00, 0x05, 0x02];
+    let bytes = [0x05, 0x02, 0x00, 0x01, 127, 0, 0, 1, 0, 80];
 
-    let err = parse_socks5_connect(Cursor::new(bytes)).await.unwrap_err();
+    let err = parse_socks5_request(Cursor::new(bytes)).await.unwrap_err();
 
     assert_eq!(err, SocksParseError::UnsupportedCommand(0x02));
 }
@@ -73,49 +142,47 @@ async fn rejects_socks5_unsupported_command() {
 #[tokio::test]
 async fn rejects_socks5_nonzero_reserved_byte() {
     let bytes = [
-        0x05, 0x01, 0x00, 0x05, 0x01, 0x01, 0x03, 0x0b, b'e', b'x', b'a', b'm', b'p', b'l', b'e',
-        b'.', b'c', b'o', b'm', 0x01, 0xbb,
+        0x05, 0x01, 0x01, 0x03, 0x0b, b'e', b'x', b'a', b'm', b'p', b'l', b'e', b'.', b'c', b'o',
+        b'm', 0x01, 0xbb,
     ];
 
-    let err = parse_socks5_connect(Cursor::new(bytes)).await.unwrap_err();
+    let err = parse_socks5_request(Cursor::new(bytes)).await.unwrap_err();
 
     assert_eq!(err, SocksParseError::InvalidReserved(0x01));
 }
 
 #[tokio::test]
 async fn rejects_socks5_unsupported_address_type() {
-    let bytes = [0x05, 0x01, 0x00, 0x05, 0x01, 0x00, 0x05];
+    let bytes = [0x05, 0x01, 0x00, 0x05];
 
-    let err = parse_socks5_connect(Cursor::new(bytes)).await.unwrap_err();
+    let err = parse_socks5_request(Cursor::new(bytes)).await.unwrap_err();
 
     assert_eq!(err, SocksParseError::UnsupportedAddressType(0x05));
 }
 
 #[tokio::test]
 async fn rejects_socks5_empty_domain() {
-    let bytes = [0x05, 0x01, 0x00, 0x05, 0x01, 0x00, 0x03, 0x00, 0x01, 0xbb];
+    let bytes = [0x05, 0x01, 0x00, 0x03, 0x00, 0x01, 0xbb];
 
-    let err = parse_socks5_connect(Cursor::new(bytes)).await.unwrap_err();
+    let err = parse_socks5_request(Cursor::new(bytes)).await.unwrap_err();
 
     assert_eq!(err, SocksParseError::InvalidDomain);
 }
 
 #[tokio::test]
 async fn rejects_socks5_invalid_utf8_domain() {
-    let bytes = [
-        0x05, 0x01, 0x00, 0x05, 0x01, 0x00, 0x03, 0x01, 0xff, 0x01, 0xbb,
-    ];
+    let bytes = [0x05, 0x01, 0x00, 0x03, 0x01, 0xff, 0x01, 0xbb];
 
-    let err = parse_socks5_connect(Cursor::new(bytes)).await.unwrap_err();
+    let err = parse_socks5_request(Cursor::new(bytes)).await.unwrap_err();
 
     assert_eq!(err, SocksParseError::InvalidDomain);
 }
 
 #[tokio::test]
 async fn rejects_socks5_truncated_input_as_io() {
-    let bytes = [0x05, 0x01, 0x00, 0x05, 0x01, 0x00, 0x01, 127, 0, 0];
+    let bytes = [0x05, 0x01, 0x00, 0x01, 127, 0, 0];
 
-    let err = parse_socks5_connect(Cursor::new(bytes)).await.unwrap_err();
+    let err = parse_socks5_request(Cursor::new(bytes)).await.unwrap_err();
 
     assert_eq!(err, SocksParseError::Io);
 }
