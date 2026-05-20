@@ -1,12 +1,16 @@
 mod transport_tests {
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::sync::Arc;
 
+    use rcgen::{generate_simple_self_signed, CertifiedKey};
+    use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
+    use tokio_rustls::TlsAcceptor;
     use xray_routing::{Network, Target, TargetAddr};
     use xray_transport::{
         BoxedTransportStream, ConnectorConfig, RealityClientConfig, TcpConnector, TlsClientConfig,
-        TransportConnector, TransportError,
+        TlsConnector, TransportConnector, TransportDialer, TransportError,
     };
 
     async fn spawn_echo_once() -> (SocketAddr, tokio::task::JoinHandle<()>) {
@@ -37,6 +41,55 @@ mod transport_tests {
         assert_eq!(&echoed, b"ping");
     }
 
+    fn tls_test_configs() -> (Arc<rustls::ClientConfig>, Arc<rustls::ServerConfig>) {
+        let CertifiedKey { cert, signing_key } =
+            generate_simple_self_signed(vec!["server.test".to_owned()])
+                .expect("generate self-signed certificate");
+        let cert_der = cert.der().clone();
+        let key_der = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(signing_key.serialize_der()));
+
+        let mut roots = rustls::RootCertStore::empty();
+        roots.add(cert_der.clone()).expect("add test root");
+        let client_config = rustls::ClientConfig::builder_with_provider(Arc::new(
+            rustls::crypto::ring::default_provider(),
+        ))
+        .with_safe_default_protocol_versions()
+        .expect("ring provider should support default TLS versions")
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+
+        let server_config = rustls::ServerConfig::builder_with_provider(Arc::new(
+            rustls::crypto::ring::default_provider(),
+        ))
+        .with_safe_default_protocol_versions()
+        .expect("ring provider should support default TLS versions")
+        .with_no_client_auth()
+        .with_single_cert(vec![cert_der], key_der)
+        .expect("build TLS server config");
+
+        (Arc::new(client_config), Arc::new(server_config))
+    }
+
+    async fn spawn_tls_echo_once(
+        server_config: Arc<rustls::ServerConfig>,
+    ) -> (SocketAddr, tokio::task::JoinHandle<()>) {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind TLS echo listener");
+        let addr = listener.local_addr().expect("read listener address");
+        let acceptor = TlsAcceptor::from(server_config);
+
+        let handle = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("accept TLS echo client");
+            let mut stream = acceptor.accept(stream).await.expect("accept TLS stream");
+            let mut buf = [0u8; 4];
+            stream.read_exact(&mut buf).await.expect("read ping");
+            stream.write_all(&buf).await.expect("write pong");
+        });
+
+        (addr, handle)
+    }
+
     #[tokio::test]
     async fn tcp_connector_reports_target_without_network_io_when_resolved() {
         let config = ConnectorConfig::Tcp;
@@ -63,6 +116,84 @@ mod transport_tests {
 
         assert_boxed_transport_stream(stream).await;
         handle.await.expect("echo task should complete");
+    }
+
+    #[tokio::test]
+    async fn tls_connector_returns_boxed_transport_stream() {
+        let (client_config, server_config) = tls_test_configs();
+        let (addr, handle) = spawn_tls_echo_once(server_config).await;
+        let connector = TlsConnector::with_client_config(client_config);
+        let target = Target::new(TargetAddr::Ip(addr.ip()), addr.port(), Network::Tcp);
+        let config = TlsClientConfig {
+            server_name: "server.test".to_owned(),
+        };
+
+        let stream = connector
+            .connect(&target, &config)
+            .await
+            .expect("connect TLS target");
+
+        assert_boxed_transport_stream(stream).await;
+        handle.await.expect("TLS echo task should complete");
+    }
+
+    #[tokio::test]
+    async fn tls_connector_requires_dns_for_domain_targets() {
+        let (client_config, _) = tls_test_configs();
+        let connector = TlsConnector::with_client_config(client_config);
+        let target = Target::new(
+            TargetAddr::Domain("server.test".to_owned()),
+            443,
+            Network::Tcp,
+        );
+        let config = TlsClientConfig {
+            server_name: "server.test".to_owned(),
+        };
+
+        let result = connector.connect(&target, &config).await;
+
+        assert!(matches!(result, Err(TransportError::NeedsDns(domain)) if domain == "server.test"));
+    }
+
+    #[tokio::test]
+    async fn tls_connector_rejects_invalid_server_name_before_network_io() {
+        let (client_config, _) = tls_test_configs();
+        let connector = TlsConnector::with_client_config(client_config);
+        let target = Target::new(
+            TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
+            9,
+            Network::Tcp,
+        );
+        let config = TlsClientConfig {
+            server_name: "bad name".to_owned(),
+        };
+
+        let result = connector.connect(&target, &config).await;
+
+        assert!(matches!(
+            result,
+            Err(TransportError::InvalidTlsServerName(name)) if name == "bad name"
+        ));
+    }
+
+    #[tokio::test]
+    async fn transport_dialer_routes_tls_configs_to_tls_connector() {
+        let (client_config, server_config) = tls_test_configs();
+        let (addr, handle) = spawn_tls_echo_once(server_config).await;
+        let dialer =
+            TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config));
+        let target = Target::new(TargetAddr::Ip(addr.ip()), addr.port(), Network::Tcp);
+        let config = ConnectorConfig::Tls(TlsClientConfig {
+            server_name: "server.test".to_owned(),
+        });
+
+        let stream = dialer
+            .connect(&config, &target)
+            .await
+            .expect("dial TLS target");
+
+        assert_boxed_transport_stream(stream).await;
+        handle.await.expect("TLS echo task should complete");
     }
 
     #[tokio::test]

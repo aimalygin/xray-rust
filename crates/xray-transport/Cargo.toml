@@ -13,5 +13,9 @@ sha2.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-rustls.workspace = true
+webpki-roots.workspace = true
 x25519-dalek.workspace = true
 xray-routing = { path = "../xray-routing" }
+
+[dev-dependencies]
+rcgen.workspace = true

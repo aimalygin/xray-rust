@@ -5,8 +5,13 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use xray_routing::{Target, TargetAddr};
 
+mod dialer;
 pub mod reality;
 pub mod reality_connector;
+mod tls;
+
+pub use dialer::TransportDialer;
+pub use tls::TlsConnector;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConnectorConfig {
@@ -43,8 +48,12 @@ pub enum TransportError {
     NoResolvedAddress(String, u16),
     #[error("tcp connect failed: {0}")]
     Tcp(std::io::Error),
-    #[error("tls connect failed")]
-    Tls,
+    #[error("tls connect failed: {0}")]
+    Tls(std::io::Error),
+    #[error("tls configuration failed: {0}")]
+    TlsConfig(String),
+    #[error("invalid tls server name `{0}`")]
+    InvalidTlsServerName(String),
     #[error("{0} connector config is not supported by TcpConnector")]
     UnsupportedConnectorConfig(&'static str),
     #[error("unsupported REALITY fingerprint {0}")]
