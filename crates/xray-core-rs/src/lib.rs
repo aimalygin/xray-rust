@@ -14,6 +14,8 @@ pub enum CoreState {
 pub enum CoreError {
     #[error("core is already running")]
     AlreadyRunning,
+    #[error("core is already stopped")]
+    AlreadyStopped,
 }
 
 pub struct Core {
@@ -46,6 +48,9 @@ impl Core {
     pub async fn start(&mut self) -> Result<(), CoreError> {
         if self.state == CoreState::Running {
             return Err(CoreError::AlreadyRunning);
+        }
+        if self.state == CoreState::Stopped {
+            return Err(CoreError::AlreadyStopped);
         }
 
         let _configured_outbounds = self.config.outbounds.len();
