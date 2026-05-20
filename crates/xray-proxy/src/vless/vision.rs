@@ -105,22 +105,23 @@ pub fn unpad_vision_block(
         return Err(VisionError::ShortBlock);
     }
 
-    let offset = match parse_header(padded, 0) {
-        Ok(header) if header.total_len == padded.len() => 0,
-        _ if padded.len() >= USER_ID_LEN + HEADER_LEN => {
-            if &padded[..USER_ID_LEN] != expected_user_id {
+    let offset = match padded.get(..USER_ID_LEN) {
+        Some(user_id) if user_id == expected_user_id => USER_ID_LEN,
+        _ => match parse_header(padded, 0) {
+            Ok(header) if header.total_len == padded.len() => 0,
+            _ if padded.len() >= USER_ID_LEN + HEADER_LEN => {
                 return Err(VisionError::UserMismatch);
             }
-            USER_ID_LEN
-        }
+            Ok(_) => return Err(VisionError::LengthMismatch),
+            Err(err) => return Err(err),
+        },
+    };
+
+    let header = match parse_header(padded, offset) {
+        Ok(header) if header.total_len == padded.len() - offset => header,
         Ok(_) => return Err(VisionError::LengthMismatch),
         Err(err) => return Err(err),
     };
-
-    let header = parse_header(padded, offset)?;
-    if header.total_len != padded.len() - offset {
-        return Err(VisionError::LengthMismatch);
-    }
 
     let payload_start = offset + HEADER_LEN;
     let payload_end = payload_start + header.content_len;

@@ -43,6 +43,32 @@ fn vision_unpadding_accepts_block_without_user_uuid() {
 }
 
 #[test]
+fn vision_unpadding_accepts_long_block_without_user_uuid() {
+    let user = [9; 16];
+    let mut padding = VisionPadding::new(user, [0, 0, 0, 0]);
+    let _first = padding.pad(BytesMut::from(&b"first"[..]), VisionCommand::Continue, 0);
+    let payload = BytesMut::from(&b"this payload is longer than sixteen bytes"[..]);
+    let second = padding.pad(payload.clone(), VisionCommand::End, 0);
+
+    let unpadded = unpad_vision_block(&second, &user).unwrap();
+
+    assert_eq!(unpadded.command, VisionCommand::End);
+    assert_eq!(unpadded.payload, payload);
+}
+
+#[test]
+fn vision_unpadding_prefers_matching_user_uuid_over_ambiguous_header() {
+    let user = [0, 0, 16, 0, 5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+    let mut padding = VisionPadding::new(user, [0, 0, 0, 0]);
+    let padded = padding.pad(BytesMut::from(&b"hello"[..]), VisionCommand::Continue, 0);
+
+    let unpadded = unpad_vision_block(&padded, &user).unwrap();
+
+    assert_eq!(unpadded.command, VisionCommand::Continue);
+    assert_eq!(unpadded.payload, BytesMut::from(&b"hello"[..]));
+}
+
+#[test]
 fn vision_unpadding_rejects_unknown_command() {
     let user = [1; 16];
     let padded = [3, 0, 0, 0, 0];
@@ -50,6 +76,17 @@ fn vision_unpadding_rejects_unknown_command() {
     let err = unpad_vision_block(&padded, &user).unwrap_err();
 
     assert_eq!(err, VisionError::UnknownCommand(3));
+}
+
+#[test]
+fn vision_unpadding_rejects_mismatched_user_uuid() {
+    let user = [1; 16];
+    let mut padded = BytesMut::from(&[2; 16][..]);
+    padded.extend_from_slice(&[VisionCommand::Continue as u8, 0, 0, 0, 0]);
+
+    let err = unpad_vision_block(&padded, &user).unwrap_err();
+
+    assert_eq!(err, VisionError::UserMismatch);
 }
 
 #[test]
