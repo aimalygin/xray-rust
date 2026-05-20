@@ -3,6 +3,7 @@ use std::sync::Arc;
 use tokio::io::copy_bidirectional;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
+use tokio::task::JoinSet;
 use xray_config::CoreConfig;
 use xray_proxy::inbound::{
     negotiate_socks5_no_auth, parse_socks5_request, write_socks5_failure, write_socks5_success,
@@ -15,6 +16,8 @@ pub async fn serve_socks_listener(
     config: Arc<CoreConfig>,
     mut shutdown: watch::Receiver<bool>,
 ) {
+    let mut connections = JoinSet::new();
+
     loop {
         if *shutdown.borrow() {
             break;
@@ -32,12 +35,18 @@ pub async fn serve_socks_listener(
                     Err(_) => continue,
                 };
                 let config = Arc::clone(&config);
-                tokio::spawn(async move {
+                connections.spawn(async move {
                     handle_socks_connection(stream, config).await;
                 });
             }
+            joined = connections.join_next(), if !connections.is_empty() => {
+                let _ = joined;
+            }
         }
     }
+
+    connections.abort_all();
+    while connections.join_next().await.is_some() {}
 }
 
 async fn handle_socks_connection(mut inbound: TcpStream, config: Arc<CoreConfig>) {

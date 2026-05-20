@@ -1,5 +1,8 @@
 use std::net::{IpAddr, Ipv4Addr};
 
+use tokio::io::AsyncReadExt;
+use tokio::net::TcpStream;
+use tokio::time::{sleep, timeout, Duration};
 use uuid::Uuid;
 use xray_config::{
     CoreConfig, InboundConfig, InboundProtocol, Network, OutboundConfig, OutboundSettings,
@@ -91,4 +94,23 @@ async fn core_start_fails_without_supported_socks_inbound() {
         Err(CoreError::NoSupportedInbound)
     ));
     assert_eq!(core.state(), CoreState::Created);
+}
+
+#[tokio::test]
+async fn core_stop_closes_idle_accepted_socks_connections() {
+    let mut core = Core::new(runtime_config()).unwrap();
+
+    core.start().await.unwrap();
+    let addr = core.inbound_addr(Some("socks-in")).unwrap();
+    let mut client = TcpStream::connect(addr).await.unwrap();
+    sleep(Duration::from_millis(20)).await;
+
+    core.stop().await.unwrap();
+
+    let mut one_byte = [0; 1];
+    let read = timeout(Duration::from_millis(200), client.read(&mut one_byte))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(read, 0);
 }
