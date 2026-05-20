@@ -20,7 +20,13 @@ Run the first live Rust runtime data-path test:
 cargo test -p xray-core-rs --test runtime_data_path_tests socks_client_reaches_echo_target_through_vless_tcp_outbound
 ```
 
-This proves the current local/test path: SOCKS5 client traffic enters `xray-core-rs`, is encoded as VLESS over raw TCP, reaches a fake VLESS server, and returns bytes from an echo target. It does not prove TLS, REALITY, or Vision live interoperability yet.
+Run the resolver-injected domain outbound server data-path test:
+
+```sh
+cargo test -p xray-core-rs --test runtime_data_path_tests socks_client_reaches_echo_target_through_domain_vless_server
+```
+
+These prove the current local/test paths: SOCKS5 client traffic enters `xray-core-rs`, is encoded as VLESS over raw TCP, reaches a fake VLESS server configured either as an IP outbound server or through a resolver-injected domain outbound server, and returns bytes from an echo target. They do not prove full Xray DNS behavior, TLS, REALITY, or Vision live interoperability yet.
 
 ## Go Xray-core Oracle
 
