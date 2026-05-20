@@ -3,8 +3,9 @@ mod model;
 
 pub use diagnostic::{Diagnostic, DiagnosticSeverity};
 pub use model::{
-    CoreConfig, InboundConfig, InboundProtocol, Network, OutboundConfig, OutboundProtocol,
-    RealitySettings, StreamSecurity, StreamSettings, TargetAddr, TlsSettings, VlessUser,
+    ConfigModelError, CoreConfig, InboundConfig, InboundProtocol, Network, OutboundConfig,
+    OutboundProtocol, OutboundSettings, RealitySettings, RealityShortId, StreamSecurity,
+    StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
 };
 
 pub fn version() -> &'static str {
