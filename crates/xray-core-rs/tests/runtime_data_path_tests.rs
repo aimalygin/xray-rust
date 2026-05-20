@@ -56,6 +56,23 @@ impl DnsResolver for EmptyDnsResolver {
     }
 }
 
+#[derive(Debug, Clone)]
+struct StaticDnsResolver {
+    domain: &'static str,
+    addr: SocketAddr,
+}
+
+#[async_trait]
+impl DnsResolver for StaticDnsResolver {
+    async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+        if domain == self.domain && port == self.addr.port() {
+            Ok(self.addr)
+        } else {
+            Err(TransportError::NoResolvedAddress(domain.to_owned(), port))
+        }
+    }
+}
+
 fn runtime_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig {
     CoreConfig {
         inbounds: vec![InboundConfig {
@@ -68,6 +85,23 @@ fn runtime_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig {
             StreamSecurity::None,
             TargetAddr::Ip(vless_addr.ip()),
             vless_addr.port(),
+        )],
+        default_outbound_tag: None,
+    }
+}
+
+fn runtime_config_with_vless_domain_server(domain: &str, port: u16) -> CoreConfig {
+    CoreConfig {
+        inbounds: vec![InboundConfig {
+            tag: Some("socks-in".to_owned()),
+            protocol: InboundProtocol::Socks,
+            listen: "127.0.0.1".to_owned(),
+            port: 0,
+        }],
+        outbounds: vec![vless_outbound(
+            StreamSecurity::None,
+            TargetAddr::Domain(domain.to_owned()),
+            port,
         )],
         default_outbound_tag: None,
     }
@@ -225,6 +259,16 @@ async fn socks_client_reaches_echo_target_through_vless_tcp_outbound() {
         .unwrap();
 }
 
+#[tokio::test]
+async fn socks_client_reaches_echo_target_through_domain_vless_server() {
+    timeout(
+        Duration::from_secs(2),
+        run_domain_vless_server_echo_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
 async fn run_socks_to_vless_echo_scenario() {
     let (echo_addr, echo_handle) = spawn_echo_server().await;
     let (vless_addr, vless_handle) = spawn_fake_vless_server().await;
@@ -242,6 +286,40 @@ async fn run_socks_to_vless_echo_scenario() {
     client.read_exact(&mut echoed).await.unwrap();
 
     assert_eq!(echoed, b"hello runtime");
+    drop(client);
+    core.stop().await.unwrap();
+
+    timeout(Duration::from_secs(1), vless_handle)
+        .await
+        .unwrap()
+        .unwrap();
+    timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+async fn run_domain_vless_server_echo_scenario() {
+    let (echo_addr, echo_handle) = spawn_echo_server().await;
+    let (vless_addr, vless_handle) = spawn_fake_vless_server().await;
+    let resolver = StaticDnsResolver {
+        domain: "vless.test",
+        addr: vless_addr,
+    };
+    let config = runtime_config_with_vless_domain_server("vless.test", vless_addr.port());
+
+    let mut core = Core::with_dns_resolver(config, std::sync::Arc::new(resolver)).unwrap();
+    core.start().await.unwrap();
+    let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
+
+    let mut client = TcpStream::connect(socks_addr).await.unwrap();
+    socks5_connect(&mut client, echo_addr).await;
+
+    client.write_all(b"hello dns runtime").await.unwrap();
+    let mut echoed = vec![0; "hello dns runtime".len()];
+    client.read_exact(&mut echoed).await.unwrap();
+
+    assert_eq!(echoed, b"hello dns runtime");
     drop(client);
     core.stop().await.unwrap();
 

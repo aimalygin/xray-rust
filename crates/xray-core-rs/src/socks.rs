@@ -8,12 +8,14 @@ use xray_config::CoreConfig;
 use xray_proxy::inbound::{
     negotiate_socks5_no_auth, parse_socks5_request, write_socks5_failure, write_socks5_success,
 };
+use xray_transport::DnsResolver;
 
-use crate::{open_vless_tcp_stream, select_vless_tcp_outbound};
+use crate::{open_vless_tcp_stream_with_resolver, select_vless_tcp_outbound};
 
 pub async fn serve_socks_listener(
     listener: TcpListener,
     config: Arc<CoreConfig>,
+    dns_resolver: Arc<dyn DnsResolver>,
     mut shutdown: watch::Receiver<bool>,
 ) {
     let mut connections = JoinSet::new();
@@ -35,8 +37,9 @@ pub async fn serve_socks_listener(
                     Err(_) => continue,
                 };
                 let config = Arc::clone(&config);
+                let dns_resolver = Arc::clone(&dns_resolver);
                 connections.spawn(async move {
-                    handle_socks_connection(stream, config).await;
+                    handle_socks_connection(stream, config, dns_resolver).await;
                 });
             }
             joined = connections.join_next(), if !connections.is_empty() => {
@@ -49,7 +52,11 @@ pub async fn serve_socks_listener(
     while connections.join_next().await.is_some() {}
 }
 
-async fn handle_socks_connection(mut inbound: TcpStream, config: Arc<CoreConfig>) {
+async fn handle_socks_connection(
+    mut inbound: TcpStream,
+    config: Arc<CoreConfig>,
+    dns_resolver: Arc<dyn DnsResolver>,
+) {
     if negotiate_socks5_no_auth(&mut inbound).await.is_err() {
         return;
     }
@@ -70,7 +77,13 @@ async fn handle_socks_connection(mut inbound: TcpStream, config: Arc<CoreConfig>
         }
     };
 
-    let mut outbound_stream = match open_vless_tcp_stream(&outbound, &target).await {
+    let mut outbound_stream = match open_vless_tcp_stream_with_resolver(
+        &outbound,
+        &target,
+        dns_resolver.as_ref(),
+    )
+    .await
+    {
         Ok(stream) => stream,
         Err(_) => {
             let _ = write_socks5_failure(&mut inbound).await;

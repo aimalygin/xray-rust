@@ -5,6 +5,7 @@ use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 use xray_config::{CoreConfig, InboundProtocol};
 use xray_runtime::Shutdown;
+use xray_transport::{DnsResolver, SystemDnsResolver};
 use xray_tun::{TunConfig, TunEndpoint};
 
 mod outbound;
@@ -66,10 +67,18 @@ pub struct Core {
     shutdown: Shutdown,
     tun: TunEndpoint,
     runtime: Option<RuntimeState>,
+    dns_resolver: Arc<dyn DnsResolver>,
 }
 
 impl Core {
     pub fn new(config: CoreConfig) -> Result<Self, CoreError> {
+        Self::with_dns_resolver(config, Arc::new(SystemDnsResolver))
+    }
+
+    pub fn with_dns_resolver(
+        config: CoreConfig,
+        dns_resolver: Arc<dyn DnsResolver>,
+    ) -> Result<Self, CoreError> {
         let shutdown = Shutdown::new();
         let tun = TunEndpoint::new(TunConfig {
             mtu: 1500,
@@ -82,6 +91,7 @@ impl Core {
             shutdown,
             tun,
             runtime: None,
+            dns_resolver,
         })
     }
 
@@ -131,9 +141,11 @@ impl Core {
         let mut inbounds = Vec::with_capacity(bound_listeners.len());
         let mut tasks = Vec::with_capacity(bound_listeners.len());
         for (bound, listener) in bound_listeners {
+            let dns_resolver = Arc::clone(&self.dns_resolver);
             let task = tokio::spawn(socks::serve_socks_listener(
                 listener,
                 Arc::clone(&config),
+                dns_resolver,
                 self.shutdown.subscribe(),
             ));
             inbounds.push(bound);
