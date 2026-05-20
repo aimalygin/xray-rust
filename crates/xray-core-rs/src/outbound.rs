@@ -3,8 +3,8 @@ use xray_config::{CoreConfig, Network, OutboundSettings, StreamSecurity, TargetA
 use xray_proxy::vless::{encode_request_header, VlessCommand, VlessRequest};
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::{
-    BoxedTransportStream, ConnectorConfig, DnsResolver, SystemDnsResolver, TcpConnector,
-    TransportConnector,
+    BoxedTransportStream, ConnectorConfig, DnsResolver, SystemDnsResolver, TlsClientConfig,
+    TransportDialer,
 };
 
 use crate::CoreError;
@@ -13,11 +13,16 @@ use crate::CoreError;
 pub struct VlessTcpOutbound {
     server: Target,
     user: VlessUser,
+    transport: ConnectorConfig,
 }
 
 impl VlessTcpOutbound {
     pub fn server(&self) -> &Target {
         &self.server
+    }
+
+    pub fn transport(&self) -> &ConnectorConfig {
+        &self.transport
     }
 }
 
@@ -38,11 +43,27 @@ pub fn select_vless_tcp_outbound(config: &CoreConfig) -> Result<VlessTcpOutbound
         return Err(CoreError::UnsupportedOutboundNetwork);
     }
 
-    if !matches!(outbound.stream.security, StreamSecurity::None) {
-        return Err(CoreError::UnsupportedOutboundSecurity);
-    }
-
     let OutboundSettings::Vless(settings) = &outbound.settings;
+    let transport = match &outbound.stream.security {
+        StreamSecurity::None => ConnectorConfig::Tcp,
+        StreamSecurity::Tls(tls) => {
+            if tls.fingerprint.is_some() {
+                return Err(CoreError::UnsupportedOutboundSecurity);
+            }
+
+            let server_name = match tls.server_name.as_deref() {
+                Some(name) if !name.is_empty() => name.to_owned(),
+                Some(_) => return Err(CoreError::UnsupportedOutboundSecurity),
+                None => match &settings.server {
+                    TargetAddr::Domain(domain) => domain.clone(),
+                    TargetAddr::Ip(_) => return Err(CoreError::UnsupportedOutboundSecurity),
+                },
+            };
+
+            ConnectorConfig::Tls(TlsClientConfig { server_name })
+        }
+        StreamSecurity::Reality(_) => return Err(CoreError::UnsupportedOutboundSecurity),
+    };
     let user = settings
         .users
         .first()
@@ -60,6 +81,7 @@ pub fn select_vless_tcp_outbound(config: &CoreConfig) -> Result<VlessTcpOutbound
     Ok(VlessTcpOutbound {
         server: Target::new(addr, settings.port, RoutingNetwork::Tcp),
         user,
+        transport,
     })
 }
 
@@ -89,13 +111,30 @@ pub async fn open_vless_tcp_stream_with_resolver(
     target: &Target,
     dns_resolver: &dyn DnsResolver,
 ) -> Result<BoxedTransportStream, CoreError> {
+    let transport_dialer = TransportDialer::system()?;
+    open_vless_tcp_stream_with_resolver_and_dialer(
+        outbound,
+        target,
+        dns_resolver,
+        &transport_dialer,
+    )
+    .await
+}
+
+pub async fn open_vless_tcp_stream_with_resolver_and_dialer(
+    outbound: &VlessTcpOutbound,
+    target: &Target,
+    dns_resolver: &dyn DnsResolver,
+    transport_dialer: &TransportDialer,
+) -> Result<BoxedTransportStream, CoreError> {
     if outbound.user.flow.is_some() {
         return Err(CoreError::UnsupportedOutboundFlow);
     }
 
     let resolved_server = resolve_server_target(&outbound.server, dns_resolver).await?;
-    let connector = TcpConnector::new(ConnectorConfig::Tcp);
-    let mut stream = connector.connect(&resolved_server).await?;
+    let mut stream = transport_dialer
+        .connect(&outbound.transport, &resolved_server)
+        .await?;
     let request = VlessRequest {
         user_id: outbound.user.id,
         command: VlessCommand::Tcp,
@@ -137,6 +176,7 @@ mod tests {
                 encryption: "none".to_owned(),
                 flow: Some("xtls-rprx-vision".to_owned()),
             },
+            transport: ConnectorConfig::Tcp,
         };
         let target = Target::new(
             RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),

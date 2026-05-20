@@ -5,15 +5,15 @@ use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 use xray_config::{CoreConfig, InboundProtocol};
 use xray_runtime::Shutdown;
-use xray_transport::{DnsResolver, SystemDnsResolver};
+use xray_transport::{DnsResolver, SystemDnsResolver, TransportDialer};
 use xray_tun::{TunConfig, TunEndpoint};
 
 mod outbound;
 mod socks;
 
 pub use outbound::{
-    open_vless_tcp_stream, open_vless_tcp_stream_with_resolver, select_vless_tcp_outbound,
-    VlessTcpOutbound,
+    open_vless_tcp_stream, open_vless_tcp_stream_with_resolver,
+    open_vless_tcp_stream_with_resolver_and_dialer, select_vless_tcp_outbound, VlessTcpOutbound,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,6 +69,7 @@ pub struct Core {
     tun: TunEndpoint,
     runtime: Option<RuntimeState>,
     dns_resolver: Arc<dyn DnsResolver>,
+    transport_dialer: Arc<TransportDialer>,
 }
 
 impl Core {
@@ -84,6 +85,14 @@ impl Core {
         config: CoreConfig,
         dns_resolver: Arc<dyn DnsResolver>,
     ) -> Result<Self, CoreError> {
+        Self::with_runtime_dependencies(config, dns_resolver, Arc::new(TransportDialer::system()?))
+    }
+
+    pub fn with_runtime_dependencies(
+        config: CoreConfig,
+        dns_resolver: Arc<dyn DnsResolver>,
+        transport_dialer: Arc<TransportDialer>,
+    ) -> Result<Self, CoreError> {
         let shutdown = Shutdown::new();
         let tun = TunEndpoint::new(TunConfig {
             mtu: 1500,
@@ -97,6 +106,7 @@ impl Core {
             tun,
             runtime: None,
             dns_resolver,
+            transport_dialer,
         })
     }
 
@@ -147,10 +157,12 @@ impl Core {
         let mut tasks = Vec::with_capacity(bound_listeners.len());
         for (bound, listener) in bound_listeners {
             let dns_resolver = Arc::clone(&self.dns_resolver);
+            let transport_dialer = Arc::clone(&self.transport_dialer);
             let task = tokio::spawn(socks::serve_socks_listener(
                 listener,
                 Arc::clone(&config),
                 dns_resolver,
+                transport_dialer,
                 self.shutdown.subscribe(),
             ));
             inbounds.push(bound);

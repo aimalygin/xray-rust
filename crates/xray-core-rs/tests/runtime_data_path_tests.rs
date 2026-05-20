@@ -179,10 +179,87 @@ fn rejects_reality_outbound_for_raw_tcp_runtime_path() {
 }
 
 #[test]
-fn rejects_tls_outbound_for_raw_tcp_runtime_path() {
+fn rejects_tls_fingerprint_for_runtime_path() {
     let config = config_with_outbound(vless_outbound(
         tls_security(),
         TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
+        443,
+    ));
+
+    let result = select_vless_tcp_outbound(&config);
+
+    assert!(matches!(
+        result,
+        Err(CoreError::UnsupportedOutboundSecurity)
+    ));
+}
+
+#[test]
+fn selects_tls_vless_outbound_without_fingerprint() {
+    let config = config_with_outbound(vless_outbound(
+        StreamSecurity::Tls(TlsSettings {
+            server_name: Some("server.example".to_owned()),
+            fingerprint: None,
+        }),
+        TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
+        443,
+    ));
+
+    let selected = select_vless_tcp_outbound(&config).unwrap();
+
+    assert_eq!(selected.server().port, 443);
+    assert!(matches!(
+        selected.transport(),
+        xray_transport::ConnectorConfig::Tls(config) if config.server_name == "server.example"
+    ));
+}
+
+#[test]
+fn selects_tls_server_name_from_domain_outbound_when_missing() {
+    let config = config_with_outbound(vless_outbound(
+        StreamSecurity::Tls(TlsSettings {
+            server_name: None,
+            fingerprint: None,
+        }),
+        TargetAddr::Domain("vless.test".to_owned()),
+        443,
+    ));
+
+    let selected = select_vless_tcp_outbound(&config).unwrap();
+
+    assert!(matches!(
+        selected.transport(),
+        xray_transport::ConnectorConfig::Tls(config) if config.server_name == "vless.test"
+    ));
+}
+
+#[test]
+fn rejects_tls_ip_server_without_server_name() {
+    let config = config_with_outbound(vless_outbound(
+        StreamSecurity::Tls(TlsSettings {
+            server_name: None,
+            fingerprint: None,
+        }),
+        TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
+        443,
+    ));
+
+    let result = select_vless_tcp_outbound(&config);
+
+    assert!(matches!(
+        result,
+        Err(CoreError::UnsupportedOutboundSecurity)
+    ));
+}
+
+#[test]
+fn rejects_tls_fingerprint_without_plain_rustls_downgrade() {
+    let config = config_with_outbound(vless_outbound(
+        StreamSecurity::Tls(TlsSettings {
+            server_name: Some("server.example".to_owned()),
+            fingerprint: Some("chrome".to_owned()),
+        }),
+        TargetAddr::Domain("vless.test".to_owned()),
         443,
     ));
 
