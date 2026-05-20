@@ -32,7 +32,9 @@ pub extern "C" fn xray_ffi_version_major() -> u32 {
 ///
 /// # Safety
 ///
-/// If `error` is non-null, it must be valid to write a single `*mut XrayError`.
+/// If `error` is non-null, it must point to an initialized `*mut XrayError`
+/// value that is either null or a live error pointer returned by this library.
+/// This function may free and replace that error pointer.
 #[no_mangle]
 pub unsafe extern "C" fn xray_core_new(error: *mut *mut XrayError) -> *mut XrayCoreHandle {
     unsafe {
@@ -48,8 +50,10 @@ pub unsafe extern "C" fn xray_core_new(error: *mut *mut XrayError) -> *mut XrayC
 ///
 /// `handle` must either be null or a pointer returned by `xray_core_new` that
 /// has not been freed. `json` must either be null or point to a valid
-/// NUL-terminated C string. If `error` is non-null, it must be valid to write a
-/// single `*mut XrayError`.
+/// NUL-terminated C string. If `error` is non-null, it must point to an
+/// initialized `*mut XrayError` value that is either null or a live error
+/// pointer returned by this library. This function may free and replace that
+/// error pointer.
 #[no_mangle]
 pub unsafe extern "C" fn xray_core_load_config_json(
     handle: *mut XrayCoreHandle,
