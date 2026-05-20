@@ -1,11 +1,41 @@
 mod transport_tests {
-    use std::net::{IpAddr, Ipv4Addr};
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
     use xray_routing::{Network, Target, TargetAddr};
     use xray_transport::{
-        ConnectorConfig, RealityClientConfig, TcpConnector, TlsClientConfig, TransportConnector,
-        TransportError,
+        BoxedTransportStream, ConnectorConfig, RealityClientConfig, TcpConnector, TlsClientConfig,
+        TransportConnector, TransportError,
     };
+
+    async fn spawn_echo_once() -> (SocketAddr, tokio::task::JoinHandle<()>) {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind echo listener");
+        let addr = listener.local_addr().expect("read listener address");
+
+        let handle = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept echo client");
+            let mut buf = [0u8; 4];
+            stream.read_exact(&mut buf).await.expect("read ping");
+            stream.write_all(&buf).await.expect("write pong");
+        });
+
+        (addr, handle)
+    }
+
+    async fn assert_boxed_transport_stream(mut stream: BoxedTransportStream) {
+        stream.write_all(b"ping").await.expect("write ping");
+
+        let mut echoed = [0u8; 4];
+        stream
+            .read_exact(&mut echoed)
+            .await
+            .expect("read echoed bytes");
+
+        assert_eq!(&echoed, b"ping");
+    }
 
     #[tokio::test]
     async fn tcp_connector_reports_target_without_network_io_when_resolved() {
@@ -18,6 +48,21 @@ mod transport_tests {
         );
 
         assert_eq!(connector.describe_target(&target), "127.0.0.1:9");
+    }
+
+    #[tokio::test]
+    async fn tcp_connector_returns_boxed_transport_stream() {
+        let (addr, handle) = spawn_echo_once().await;
+        let connector = TcpConnector::new(ConnectorConfig::Tcp);
+        let target = Target::new(TargetAddr::Ip(addr.ip()), addr.port(), Network::Tcp);
+
+        let stream = connector
+            .connect(&target)
+            .await
+            .expect("connect TCP target");
+
+        assert_boxed_transport_stream(stream).await;
+        handle.await.expect("echo task should complete");
     }
 
     #[tokio::test]

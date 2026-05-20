@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use std::net::SocketAddr;
 use thiserror::Error;
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use xray_routing::{Target, TargetAddr};
 
@@ -79,11 +80,15 @@ impl DnsResolver for SystemDnsResolver {
     }
 }
 
+pub trait TransportStream: AsyncRead + AsyncWrite + Send + Unpin {}
+
+impl<T> TransportStream for T where T: AsyncRead + AsyncWrite + Send + Unpin {}
+
+pub type BoxedTransportStream = Box<dyn TransportStream>;
+
 #[async_trait]
 pub trait TransportConnector: Send + Sync {
-    type Stream;
-
-    async fn connect(&self, target: &Target) -> Result<Self::Stream, TransportError>;
+    async fn connect(&self, target: &Target) -> Result<BoxedTransportStream, TransportError>;
 
     fn describe_target(&self, target: &Target) -> String {
         match &target.addr {
@@ -106,9 +111,7 @@ impl TcpConnector {
 
 #[async_trait]
 impl TransportConnector for TcpConnector {
-    type Stream = TcpStream;
-
-    async fn connect(&self, target: &Target) -> Result<Self::Stream, TransportError> {
+    async fn connect(&self, target: &Target) -> Result<BoxedTransportStream, TransportError> {
         match &self.config {
             ConnectorConfig::Tcp => {}
             ConnectorConfig::Tls(_) => {
@@ -124,7 +127,10 @@ impl TransportConnector for TcpConnector {
             TargetAddr::Domain(domain) => return Err(TransportError::NeedsDns(domain.clone())),
         };
 
-        TcpStream::connect(addr).await.map_err(TransportError::Tcp)
+        let stream = TcpStream::connect(addr)
+            .await
+            .map_err(TransportError::Tcp)?;
+        Ok(Box::new(stream))
     }
 }
 

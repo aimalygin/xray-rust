@@ -3,7 +3,8 @@ use xray_config::{CoreConfig, Network, OutboundSettings, StreamSecurity, TargetA
 use xray_proxy::vless::{encode_request_header, VlessCommand, VlessRequest};
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::{
-    ConnectorConfig, DnsResolver, SystemDnsResolver, TcpConnector, TransportConnector,
+    BoxedTransportStream, ConnectorConfig, DnsResolver, SystemDnsResolver, TcpConnector,
+    TransportConnector,
 };
 
 use crate::CoreError;
@@ -87,7 +88,7 @@ pub async fn open_vless_tcp_stream_with_resolver(
     outbound: &VlessTcpOutbound,
     target: &Target,
     dns_resolver: &dyn DnsResolver,
-) -> Result<tokio::net::TcpStream, CoreError> {
+) -> Result<BoxedTransportStream, CoreError> {
     if outbound.user.flow.is_some() {
         return Err(CoreError::UnsupportedOutboundFlow);
     }
@@ -111,7 +112,7 @@ pub async fn open_vless_tcp_stream_with_resolver(
 pub async fn open_vless_tcp_stream(
     outbound: &VlessTcpOutbound,
     target: &Target,
-) -> Result<tokio::net::TcpStream, CoreError> {
+) -> Result<BoxedTransportStream, CoreError> {
     open_vless_tcp_stream_with_resolver(outbound, target, &SystemDnsResolver).await
 }
 
