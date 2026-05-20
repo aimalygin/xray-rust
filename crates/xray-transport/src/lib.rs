@@ -4,6 +4,8 @@ use thiserror::Error;
 use tokio::net::TcpStream;
 use xray_routing::{Target, TargetAddr};
 
+pub mod reality;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConnectorConfig {
     Tcp,
