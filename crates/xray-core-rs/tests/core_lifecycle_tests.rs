@@ -23,7 +23,7 @@ async fn stopped_core_cannot_restart() {
     core.start().await.unwrap();
     core.stop().await.unwrap();
 
-    assert_eq!(core.start().await, Err(CoreError::AlreadyStopped));
+    assert!(matches!(core.start().await, Err(CoreError::AlreadyStopped)));
     assert_eq!(core.state(), CoreState::Stopped);
 }
 
@@ -35,6 +35,6 @@ async fn running_core_cannot_start_again() {
 
     core.start().await.unwrap();
 
-    assert_eq!(core.start().await, Err(CoreError::AlreadyRunning));
+    assert!(matches!(core.start().await, Err(CoreError::AlreadyRunning)));
     assert_eq!(core.state(), CoreState::Running);
 }

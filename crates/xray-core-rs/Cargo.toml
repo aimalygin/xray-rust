@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 thiserror.workspace = true
+tokio.workspace = true
 xray-config = { path = "../xray-config" }
 xray-proxy = { path = "../xray-proxy" }
 xray-routing = { path = "../xray-routing" }
@@ -14,4 +15,4 @@ xray-transport = { path = "../xray-transport" }
 xray-tun = { path = "../xray-tun" }
 
 [dev-dependencies]
-tokio.workspace = true
+uuid.workspace = true

@@ -3,6 +3,10 @@ use xray_config::CoreConfig;
 use xray_runtime::Shutdown;
 use xray_tun::{TunConfig, TunEndpoint};
 
+mod outbound;
+
+pub use outbound::{open_vless_tcp_stream, select_vless_tcp_outbound, VlessTcpOutbound};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CoreState {
     Created,
@@ -10,12 +14,28 @@ pub enum CoreState {
     Stopped,
 }
 
-#[derive(Debug, Error, PartialEq, Eq)]
+#[derive(Debug, Error)]
 pub enum CoreError {
     #[error("core is already running")]
     AlreadyRunning,
     #[error("core is already stopped")]
     AlreadyStopped,
+    #[error("no supported inbound found")]
+    NoSupportedInbound,
+    #[error("no supported outbound found")]
+    NoSupportedOutbound,
+    #[error("outbound network is not supported")]
+    UnsupportedOutboundNetwork,
+    #[error("outbound security is not supported")]
+    UnsupportedOutboundSecurity,
+    #[error("outbound server address is not supported")]
+    UnsupportedOutboundServerAddress,
+    #[error("transport error: {0}")]
+    Transport(#[from] xray_transport::TransportError),
+    #[error("vless header error: {0}")]
+    VlessHeader(#[from] xray_proxy::vless::WireError),
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 pub struct Core {

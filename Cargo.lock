@@ -1183,6 +1183,7 @@ version = "0.1.0"
 dependencies = [
  "thiserror",
  "tokio",
+ "uuid",
  "xray-config",
  "xray-proxy",
  "xray-routing",
