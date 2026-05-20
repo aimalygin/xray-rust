@@ -1,7 +1,7 @@
 use std::path::Path;
 
 #[test]
-fn xray_core_reference_checkout_is_available() {
+fn compat_smoke_xray_core_reference_checkout_is_available() {
     let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(Path::parent)
