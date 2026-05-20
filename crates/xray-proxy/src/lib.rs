@@ -1,3 +1,4 @@
+pub mod inbound;
 pub mod vless;
 
 pub fn version() -> &'static str {
