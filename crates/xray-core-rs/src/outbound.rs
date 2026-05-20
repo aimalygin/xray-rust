@@ -32,6 +32,9 @@ pub fn select_vless_tcp_outbound(config: &CoreConfig) -> Result<VlessTcpOutbound
         .first()
         .cloned()
         .ok_or(CoreError::NoSupportedOutbound)?;
+    if user.flow.is_some() {
+        return Err(CoreError::UnsupportedOutboundFlow);
+    }
 
     let addr = match settings.server {
         TargetAddr::Ip(ip) => RoutingTargetAddr::Ip(ip),

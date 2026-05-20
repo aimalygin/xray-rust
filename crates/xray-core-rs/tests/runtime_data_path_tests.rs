@@ -85,3 +85,18 @@ fn rejects_domain_vless_server_until_dns_exists() {
         Err(CoreError::UnsupportedOutboundServerAddress)
     ));
 }
+
+#[test]
+fn rejects_vision_flow_for_raw_tcp_runtime_path() {
+    let mut outbound = vless_outbound(
+        StreamSecurity::None,
+        TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
+    );
+    let OutboundSettings::Vless(settings) = &mut outbound.settings;
+    settings.users[0].flow = Some("xtls-rprx-vision".to_owned());
+    let config = config_with_outbound(outbound);
+
+    let result = select_vless_tcp_outbound(&config);
+
+    assert!(matches!(result, Err(CoreError::UnsupportedOutboundFlow)));
+}

@@ -30,6 +30,8 @@ pub enum CoreError {
     UnsupportedOutboundSecurity,
     #[error("outbound server address is not supported")]
     UnsupportedOutboundServerAddress,
+    #[error("outbound flow is not supported")]
+    UnsupportedOutboundFlow,
     #[error("transport error: {0}")]
     Transport(#[from] xray_transport::TransportError),
     #[error("vless header error: {0}")]
