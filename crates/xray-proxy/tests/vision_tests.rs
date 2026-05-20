@@ -1,0 +1,73 @@
+use bytes::BytesMut;
+use xray_proxy::vless::{unpad_vision_block, VisionCommand, VisionError, VisionPadding};
+
+#[test]
+fn vision_padding_round_trips_user_uuid_once() {
+    let user = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+    let mut padding = VisionPadding::new(user, [900, 500, 900, 256]);
+    let payload = BytesMut::from(&b"hello"[..]);
+
+    let padded = padding.pad(payload.clone(), VisionCommand::Continue, 3);
+    assert_eq!(&padded[..16], &user);
+
+    let unpadded = unpad_vision_block(&padded, &user).unwrap();
+    assert_eq!(unpadded.payload, payload);
+    assert_eq!(unpadded.command, VisionCommand::Continue);
+
+    let second = padding.pad(BytesMut::from(&b"world"[..]), VisionCommand::End, 0);
+    assert_ne!(&second[..16], &user);
+}
+
+#[test]
+fn vision_padding_uses_seed_padding_when_no_override() {
+    let user = [7; 16];
+    let mut padding = VisionPadding::new(user, [900, 500, 900, 256]);
+
+    let padded = padding.pad(BytesMut::from(&b"hello"[..]), VisionCommand::Continue, 0);
+
+    assert_eq!(u16::from_be_bytes([padded[19], padded[20]]), 895);
+    assert_eq!(padded.len(), 16 + 5 + 5 + 895);
+}
+
+#[test]
+fn vision_unpadding_accepts_block_without_user_uuid() {
+    let user = [9; 16];
+    let mut padding = VisionPadding::new(user, [0, 0, 0, 0]);
+    let _first = padding.pad(BytesMut::from(&b"first"[..]), VisionCommand::Continue, 0);
+    let second = padding.pad(BytesMut::from(&b"second"[..]), VisionCommand::End, 0);
+
+    let unpadded = unpad_vision_block(&second, &user).unwrap();
+
+    assert_eq!(unpadded.command, VisionCommand::End);
+    assert_eq!(unpadded.payload, BytesMut::from(&b"second"[..]));
+}
+
+#[test]
+fn vision_unpadding_rejects_unknown_command() {
+    let user = [1; 16];
+    let padded = [3, 0, 0, 0, 0];
+
+    let err = unpad_vision_block(&padded, &user).unwrap_err();
+
+    assert_eq!(err, VisionError::UnknownCommand(3));
+}
+
+#[test]
+fn vision_unpadding_rejects_length_mismatch() {
+    let user = [1; 16];
+    let padded = [VisionCommand::Continue as u8, 0, 2, 0, 0, b'a'];
+
+    let err = unpad_vision_block(&padded, &user).unwrap_err();
+
+    assert_eq!(err, VisionError::LengthMismatch);
+}
+
+#[test]
+fn vision_unpadding_rejects_short_block() {
+    let user = [1; 16];
+    let padded = [VisionCommand::Continue as u8, 0, 1, 0];
+
+    let err = unpad_vision_block(&padded, &user).unwrap_err();
+
+    assert_eq!(err, VisionError::ShortBlock);
+}
