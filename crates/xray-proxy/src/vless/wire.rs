@@ -29,6 +29,8 @@ pub struct VlessRequest {
 pub enum WireError {
     #[error("domain length {0} exceeds vless single-byte domain limit")]
     DomainTooLong(usize),
+    #[error("addons length {0} exceeds vless single-byte addons limit")]
+    AddonsTooLong(usize),
 }
 
 #[derive(Clone, PartialEq, Message)]
@@ -38,29 +40,39 @@ struct Addons {
 }
 
 pub fn encode_request_header(request: &VlessRequest) -> Result<Vec<u8>, WireError> {
-    let mut encoded = Vec::new();
+    let mut encoded = Vec::with_capacity(64);
     encoded.push(VLESS_VERSION);
     encoded.extend_from_slice(request.user_id.as_bytes());
-    encode_addons(request, &mut encoded);
+    encode_addons(request, &mut encoded)?;
     encoded.push(request.command as u8);
-    encoded.extend_from_slice(&request.target.port.to_be_bytes());
-    encode_addr(&request.target.addr, &mut encoded)?;
+
+    match request.command {
+        VlessCommand::Tcp | VlessCommand::Udp => {
+            encoded.extend_from_slice(&request.target.port.to_be_bytes());
+            encode_addr(&request.target.addr, &mut encoded)?;
+        }
+        VlessCommand::Mux | VlessCommand::Reverse => {}
+    }
 
     Ok(encoded)
 }
 
-fn encode_addons(request: &VlessRequest, encoded: &mut Vec<u8>) {
+fn encode_addons(request: &VlessRequest, encoded: &mut Vec<u8>) -> Result<(), WireError> {
     if request.flow.as_deref() != Some(VISION_FLOW) {
         encoded.push(0);
-        return;
+        return Ok(());
     }
 
     let addons = Addons {
         flow: VISION_FLOW.to_owned(),
     };
     let addons_bytes = addons.encode_to_vec();
-    encoded.push(addons_bytes.len() as u8);
+    let addons_len = u8::try_from(addons_bytes.len())
+        .map_err(|_| WireError::AddonsTooLong(addons_bytes.len()))?;
+    encoded.push(addons_len);
     encoded.extend_from_slice(&addons_bytes);
+
+    Ok(())
 }
 
 fn encode_addr(addr: &TargetAddr, encoded: &mut Vec<u8>) -> Result<(), WireError> {
@@ -77,12 +89,10 @@ fn encode_addr(addr: &TargetAddr, encoded: &mut Vec<u8>) -> Result<(), WireError
         },
         TargetAddr::Domain(domain) => {
             let len = domain.len();
-            if len > u8::MAX as usize {
-                return Err(WireError::DomainTooLong(len));
-            }
+            let len = u8::try_from(len).map_err(|_| WireError::DomainTooLong(len))?;
 
             encoded.push(ADDR_DOMAIN);
-            encoded.push(len as u8);
+            encoded.push(len);
             encoded.extend_from_slice(domain.as_bytes());
         }
     }
