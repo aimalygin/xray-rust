@@ -215,6 +215,25 @@ fn selects_tls_vless_outbound_without_fingerprint() {
 }
 
 #[test]
+fn selects_tls_explicit_server_name_over_domain_outbound() {
+    let config = config_with_outbound(vless_outbound(
+        StreamSecurity::Tls(TlsSettings {
+            server_name: Some("override.example".to_owned()),
+            fingerprint: None,
+        }),
+        TargetAddr::Domain("vless.test".to_owned()),
+        443,
+    ));
+
+    let selected = select_vless_tcp_outbound(&config).unwrap();
+
+    assert!(matches!(
+        selected.transport(),
+        xray_transport::ConnectorConfig::Tls(config) if config.server_name == "override.example"
+    ));
+}
+
+#[test]
 fn selects_tls_server_name_from_domain_outbound_when_missing() {
     let config = config_with_outbound(vless_outbound(
         StreamSecurity::Tls(TlsSettings {
@@ -230,6 +249,25 @@ fn selects_tls_server_name_from_domain_outbound_when_missing() {
     assert!(matches!(
         selected.transport(),
         xray_transport::ConnectorConfig::Tls(config) if config.server_name == "vless.test"
+    ));
+}
+
+#[test]
+fn rejects_tls_empty_server_name() {
+    let config = config_with_outbound(vless_outbound(
+        StreamSecurity::Tls(TlsSettings {
+            server_name: Some("".to_owned()),
+            fingerprint: None,
+        }),
+        TargetAddr::Domain("vless.test".to_owned()),
+        443,
+    ));
+
+    let result = select_vless_tcp_outbound(&config);
+
+    assert!(matches!(
+        result,
+        Err(CoreError::UnsupportedOutboundSecurity)
     ));
 }
 
