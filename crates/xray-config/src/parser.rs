@@ -152,13 +152,25 @@ impl Parser<'_> {
         outbound: &Value,
         index: usize,
     ) -> Option<VlessOutboundSettings> {
-        let vnext_path = format!("$.outbounds[{index}].settings.vnext[0]");
-        let Some(vnext) = outbound
+        let vnext_array_path = format!("$.outbounds[{index}].settings.vnext");
+        let Some(vnext_array) = outbound
             .get("settings")
             .and_then(|settings| settings.get("vnext"))
             .and_then(Value::as_array)
-            .and_then(|vnext| vnext.first())
         else {
+            self.error(vnext_array_path, "missing vless vnext servers");
+            return None;
+        };
+        if vnext_array.len() > 1 {
+            self.error(
+                vnext_array_path,
+                "multiple vless vnext servers are unsupported",
+            );
+            return None;
+        }
+
+        let vnext_path = format!("$.outbounds[{index}].settings.vnext[0]");
+        let Some(vnext) = vnext_array.first() else {
             self.error(vnext_path, "missing vless vnext server");
             return None;
         };
@@ -178,7 +190,7 @@ impl Parser<'_> {
             format!("$.outbounds[{index}].settings.vnext[0].port"),
         )?;
 
-        let users = self.parse_vless_users(vnext, index);
+        let users = self.parse_vless_users(vnext, index)?;
 
         Some(VlessOutboundSettings {
             server,
@@ -187,18 +199,34 @@ impl Parser<'_> {
         })
     }
 
-    fn parse_vless_users(&mut self, vnext: &Value, outbound_index: usize) -> Vec<VlessUser> {
+    fn parse_vless_users(
+        &mut self,
+        vnext: &Value,
+        outbound_index: usize,
+    ) -> Option<Vec<VlessUser>> {
+        let users_path = format!("$.outbounds[{outbound_index}].settings.vnext[0].users");
         let Some(users) = vnext.get("users").and_then(Value::as_array) else {
-            return Vec::new();
+            self.error(users_path, "vless users must be a non-empty array");
+            return None;
         };
+        if users.is_empty() {
+            self.error(users_path, "vless users must be a non-empty array");
+            return None;
+        }
 
-        users
+        let parsed_users = users
             .iter()
             .enumerate()
             .filter_map(|(user_index, user)| {
                 self.parse_vless_user(user, outbound_index, user_index)
             })
-            .collect()
+            .collect::<Vec<_>>();
+
+        if parsed_users.is_empty() {
+            None
+        } else {
+            Some(parsed_users)
+        }
     }
 
     fn parse_vless_user(
@@ -421,8 +449,16 @@ fn decode_base64url_no_padding(encoded: &str) -> Result<Vec<u8>, String> {
     match chunk_len {
         0 => {}
         1 => return Err("invalid base64url length".to_owned()),
-        2 => output.push((chunk[0] << 2) | (chunk[1] >> 4)),
+        2 => {
+            if chunk[1] & 0x0f != 0 {
+                return Err("invalid base64url tail bits".to_owned());
+            }
+            output.push((chunk[0] << 2) | (chunk[1] >> 4));
+        }
         3 => {
+            if chunk[2] & 0x03 != 0 {
+                return Err("invalid base64url tail bits".to_owned());
+            }
             output.push((chunk[0] << 2) | (chunk[1] >> 4));
             output.push((chunk[1] << 4) | (chunk[2] >> 2));
         }
