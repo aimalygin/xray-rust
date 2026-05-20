@@ -36,6 +36,8 @@ pub enum TransportError {
     Tcp(std::io::Error),
     #[error("tls connect failed")]
     Tls,
+    #[error("{0} connector config is not supported by TcpConnector")]
+    UnsupportedConnectorConfig(&'static str),
     #[error("unsupported REALITY fingerprint {0}")]
     UnsupportedRealityFingerprint(String),
 }
@@ -70,7 +72,16 @@ impl TransportConnector for TcpConnector {
     type Stream = TcpStream;
 
     async fn connect(&self, target: &Target) -> Result<Self::Stream, TransportError> {
-        let _config = &self.config;
+        match &self.config {
+            ConnectorConfig::Tcp => {}
+            ConnectorConfig::Tls(_) => {
+                return Err(TransportError::UnsupportedConnectorConfig("tls"));
+            }
+            ConnectorConfig::Reality(_) => {
+                return Err(TransportError::UnsupportedConnectorConfig("reality"));
+            }
+        }
+
         let addr = match &target.addr {
             TargetAddr::Ip(ip) => SocketAddr::new(*ip, target.port),
             TargetAddr::Domain(domain) => return Err(TransportError::NeedsDns(domain.clone())),
