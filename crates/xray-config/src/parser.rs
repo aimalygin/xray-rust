@@ -180,15 +180,20 @@ impl Parser<'_> {
             self.error(address_path, "missing vless server address");
             return None;
         };
+        if address.is_empty() {
+            self.error(address_path, "vless server address must not be empty");
+            return None;
+        }
         let server = address
             .parse::<IpAddr>()
             .map_or_else(|_| TargetAddr::Domain(address.to_owned()), TargetAddr::Ip);
 
-        let port = self.u16_at(
-            vnext,
-            "port",
-            format!("$.outbounds[{index}].settings.vnext[0].port"),
-        )?;
+        let port_path = format!("$.outbounds[{index}].settings.vnext[0].port");
+        let port = self.u16_at(vnext, "port", port_path.clone())?;
+        if port == 0 {
+            self.error(port_path, "vless server port must not be 0");
+            return None;
+        }
 
         let users = self.parse_vless_users(vnext, index)?;
 
@@ -249,13 +254,33 @@ impl Parser<'_> {
             }
         };
 
+        let encryption_path = format!(
+            "$.outbounds[{outbound_index}].settings.vnext[0].users[{user_index}].encryption"
+        );
+        let encryption = self.string_at(user, "encryption").unwrap_or("none");
+        if encryption != "none" {
+            self.error(
+                encryption_path,
+                format!("unsupported vless user encryption `{encryption}`"),
+            );
+            return None;
+        }
+
+        let flow_path =
+            format!("$.outbounds[{outbound_index}].settings.vnext[0].users[{user_index}].flow");
+        let flow = match self.string_at(user, "flow") {
+            Some("") | None => None,
+            Some("xtls-rprx-vision") => Some("xtls-rprx-vision".to_owned()),
+            Some(flow) => {
+                self.error(flow_path, format!("unsupported vless user flow `{flow}`"));
+                return None;
+            }
+        };
+
         Some(VlessUser {
             id,
-            encryption: self
-                .string_at(user, "encryption")
-                .unwrap_or("none")
-                .to_owned(),
-            flow: self.string_at(user, "flow").map(ToOwned::to_owned),
+            encryption: encryption.to_owned(),
+            flow,
         })
     }
 
@@ -275,7 +300,6 @@ impl Parser<'_> {
             .unwrap_or("tcp")
         {
             "tcp" => Some(Network::Tcp),
-            "udp" => Some(Network::Udp),
             network => {
                 self.error(
                     network_path,
@@ -327,16 +351,36 @@ impl Parser<'_> {
         let public_key_path = format!("{base_path}.publicKey");
         let public_key = self.parse_reality_public_key(settings, &public_key_path)?;
         let short_id = self.parse_reality_short_id(settings, &format!("{base_path}.shortId"))?;
+        let server_name_path = format!("{base_path}.serverName");
+        let Some(server_name) =
+            settings.and_then(|settings| self.string_at(settings, "serverName"))
+        else {
+            self.error(server_name_path, "missing reality server name");
+            return None;
+        };
+        if server_name.is_empty() {
+            self.error(server_name_path, "reality server name must not be empty");
+            return None;
+        }
+
+        let fingerprint_path = format!("{base_path}.fingerprint");
+        let Some(fingerprint) =
+            settings.and_then(|settings| self.string_at(settings, "fingerprint"))
+        else {
+            self.error(fingerprint_path, "missing reality fingerprint");
+            return None;
+        };
+        if fingerprint != "chrome" {
+            self.error(
+                fingerprint_path,
+                format!("unsupported reality fingerprint `{fingerprint}`"),
+            );
+            return None;
+        }
 
         Some(RealitySettings {
-            server_name: settings
-                .and_then(|settings| self.string_at(settings, "serverName"))
-                .unwrap_or_default()
-                .to_owned(),
-            fingerprint: settings
-                .and_then(|settings| self.string_at(settings, "fingerprint"))
-                .unwrap_or_default()
-                .to_owned(),
+            server_name: server_name.to_owned(),
+            fingerprint: fingerprint.to_owned(),
             public_key,
             short_id,
             spider_x: settings
