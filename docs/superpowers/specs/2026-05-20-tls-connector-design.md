@@ -40,7 +40,7 @@ pub struct TransportDialer {
 }
 
 impl TransportDialer {
-    pub fn system() -> Self;
+    pub fn system() -> Result<Self, TransportError>;
 
     pub async fn connect(
         &self,
@@ -64,10 +64,11 @@ Use `rustls` and `tokio-rustls`, with `webpki-roots` as the default root source.
 
 Reasons:
 
-- pure Rust dependency stack;
 - no OpenSSL or platform TLS binding;
 - predictable cross-compilation path for iOS, tvOS, Android, macOS, Linux, and Windows;
 - compatible with the existing mobile-first memory/resource constraints.
+
+`rustls` 0.23 defaults to `aws-lc-rs`. For this mobile-first baseline, configure the workspace `rustls` and `tokio-rustls` dependencies with `default-features = false` and the `ring` provider feature. This avoids the `aws-lc-sys`/CMake default path while keeping the provider choice explicit. If later mobile build-matrix testing or FIPS requirements favor `aws-lc-rs`, that decision should stay behind the same `TlsConnector` boundary.
 
 Build the default `rustls::ClientConfig` once per `TlsConnector` and store it behind `Arc<rustls::ClientConfig>`. Do not rebuild the root store per connection.
 
@@ -75,7 +76,7 @@ For tests, expose a constructor that accepts a custom `Arc<rustls::ClientConfig>
 
 ```rust
 impl TlsConnector {
-    pub fn system() -> Self;
+    pub fn system() -> Result<Self, TransportError>;
 
     pub fn with_client_config(client_config: Arc<rustls::ClientConfig>) -> Self;
 }
@@ -141,6 +142,18 @@ The SOCKS runtime should not need a semantic rewrite. It should still relay with
 ```rust
 copy_bidirectional(&mut inbound, &mut outbound_stream).await
 ```
+
+`Core` will store an `Arc<TransportDialer>` alongside the existing injected DNS resolver. `Core::new` and `Core::with_dns_resolver` use `TransportDialer::system()`. Add a constructor for tests and future embedders that need custom TLS roots:
+
+```rust
+pub fn with_runtime_dependencies(
+    config: CoreConfig,
+    dns_resolver: Arc<dyn DnsResolver>,
+    transport_dialer: Arc<TransportDialer>,
+) -> Result<Self, CoreError>
+```
+
+This keeps production behavior simple while allowing the TLS runtime E2E test to use a self-signed local certificate without disabling verification.
 
 ## Error Handling
 
