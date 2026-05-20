@@ -1,17 +1,17 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use async_trait::async_trait;
-use tokio::io::{AsyncReadExt, AsyncWriteExt, copy_bidirectional};
+use tokio::io::{copy_bidirectional, AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinHandle;
-use tokio::time::{Duration, timeout};
+use tokio::time::{timeout, Duration};
 use uuid::Uuid;
 use xray_config::{
     CoreConfig, InboundConfig, InboundProtocol, Network, OutboundConfig, OutboundSettings,
     RealitySettings, RealityShortId, StreamSecurity, StreamSettings, TargetAddr, TlsSettings,
     VlessOutboundSettings, VlessUser,
 };
-use xray_core_rs::{Core, CoreError, select_vless_tcp_outbound};
+use xray_core_rs::{select_vless_tcp_outbound, Core, CoreError};
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::{DnsResolver, TransportError};
 
