@@ -5,6 +5,7 @@ use tokio::net::TcpStream;
 use xray_routing::{Target, TargetAddr};
 
 pub mod reality;
+pub mod reality_connector;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConnectorConfig {
@@ -35,6 +36,8 @@ pub enum TransportError {
     Tcp(std::io::Error),
     #[error("tls connect failed")]
     Tls,
+    #[error("unsupported REALITY fingerprint {0}")]
+    UnsupportedRealityFingerprint(String),
 }
 
 #[async_trait]
