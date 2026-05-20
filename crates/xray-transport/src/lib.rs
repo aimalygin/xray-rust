@@ -61,14 +61,13 @@ pub struct SystemDnsResolver;
 #[async_trait]
 impl DnsResolver for SystemDnsResolver {
     async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
-        let mut addrs =
-            tokio::net::lookup_host((domain, port))
-                .await
-                .map_err(|source| TransportError::Dns {
-                    domain: domain.to_owned(),
-                    port,
-                    source,
-                })?;
+        let mut addrs = tokio::net::lookup_host((domain, port))
+            .await
+            .map_err(|source| TransportError::Dns {
+                domain: domain.to_owned(),
+                port,
+                source,
+            })?;
 
         addrs
             .next()
