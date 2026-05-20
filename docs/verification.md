@@ -14,6 +14,14 @@ cargo test --workspace --all-targets
 
 The clippy command uses `--locked` and denies warnings so local verification matches the strict form expected before committing documentation or code changes.
 
+Run the first live Rust runtime data-path test:
+
+```sh
+cargo test -p xray-core-rs --test runtime_data_path_tests socks_client_reaches_echo_target_through_vless_tcp_outbound
+```
+
+This proves the current local/test path: SOCKS5 client traffic enters `xray-core-rs`, is encoded as VLESS over raw TCP, reaches a fake VLESS server, and returns bytes from an echo target. It does not prove TLS, REALITY, or Vision live interoperability yet.
+
 ## Go Xray-core Oracle
 
 `Xray-core/` is a read-only checkout of the Go reference implementation. It is ignored by the root Git repository and used as a compatibility oracle, not edited as part of this Rust workspace.
