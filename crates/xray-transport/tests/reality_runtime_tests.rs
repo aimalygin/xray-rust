@@ -5,12 +5,13 @@ use std::{
 };
 
 use async_trait::async_trait;
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 use xray_routing::{Network, Target, TargetAddr};
 use xray_transport::{
-    reality::RealityPreparedClientHello,
+    reality::{RealityPreparedClientHello, RealityPreparedHandshake},
     reality_connector::{
-        RealityClientHelloProvider, RealityClientHelloRequest, RealityHandshakeContext,
+        RealityClientHelloRequest, RealityHandshakeContext, RealityTlsSession,
+        RealityTlsSessionProvider,
     },
     DnsResolver, RealityClientConfig, RealityHandshakeContextProvider, RealityRuntimeEngine,
     RealityTlsEngine, TransportError,
@@ -19,7 +20,7 @@ use xray_transport::{
 const CLIENTHELLO_FIXTURE_JSON: &str =
     include_str!("../../../tests/fixtures/reality/clienthello_chrome_auto.json");
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize)]
 struct ClientHelloFixture {
     raw_client_hello_hex: String,
     hello_random_hex: String,
@@ -27,47 +28,119 @@ struct ClientHelloFixture {
     local_x25519_private_key_hex: String,
 }
 
-#[derive(Debug)]
-struct RecordingClientHelloProvider {
-    fixture: ClientHelloFixture,
-    seen: Mutex<Vec<(String, String)>>,
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CompletionRecord {
+    original_session_id: Vec<u8>,
+    patched_session_id: Vec<u8>,
+    session_id: [u8; 32],
+    auth_key: [u8; 32],
 }
 
-impl RecordingClientHelloProvider {
+#[derive(Debug)]
+struct RecordingSessionProvider {
+    fixture: ClientHelloFixture,
+    seen: Mutex<Vec<(String, String)>>,
+    completions: Arc<Mutex<Vec<CompletionRecord>>>,
+}
+
+impl RecordingSessionProvider {
     fn new(fixture: ClientHelloFixture) -> Self {
         Self {
             fixture,
             seen: Mutex::new(Vec::new()),
+            completions: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
     fn seen(&self) -> Vec<(String, String)> {
         self.seen.lock().expect("provider seen lock").clone()
     }
+
+    fn completions(&self) -> Vec<CompletionRecord> {
+        self.completions
+            .lock()
+            .expect("completion records lock")
+            .clone()
+    }
 }
 
-impl RealityClientHelloProvider for RecordingClientHelloProvider {
-    fn prepare_client_hello(
+impl RealityTlsSessionProvider for RecordingSessionProvider {
+    fn create_session(
         &self,
         request: RealityClientHelloRequest<'_>,
-    ) -> Result<RealityPreparedClientHello, xray_transport::reality::RealityError> {
+    ) -> Result<Box<dyn RealityTlsSession>, xray_transport::reality::RealityError> {
         self.seen.lock().expect("provider seen lock").push((
             request.server_name.to_owned(),
             request.fingerprint.to_owned(),
         ));
-        Ok(prepared_from_fixture(&self.fixture))
+
+        let raw_client_hello = decode_hex(&self.fixture.raw_client_hello_hex);
+        let original_session_id = raw_client_hello
+            [self.fixture.session_id_offset..self.fixture.session_id_offset + 32]
+            .to_vec();
+
+        Ok(Box::new(RecordingRealityTlsSession {
+            prepared_client_hello: Mutex::new(Some(prepared_from_fixture(&self.fixture))),
+            session_id_offset: self.fixture.session_id_offset,
+            original_session_id,
+            completions: self.completions.clone(),
+        }))
+    }
+}
+
+#[derive(Debug)]
+struct RecordingRealityTlsSession {
+    prepared_client_hello: Mutex<Option<RealityPreparedClientHello>>,
+    session_id_offset: usize,
+    original_session_id: Vec<u8>,
+    completions: Arc<Mutex<Vec<CompletionRecord>>>,
+}
+
+#[async_trait]
+impl RealityTlsSession for RecordingRealityTlsSession {
+    fn prepared_client_hello(
+        &self,
+    ) -> Result<RealityPreparedClientHello, xray_transport::reality::RealityError> {
+        Ok(self
+            .prepared_client_hello
+            .lock()
+            .expect("prepared ClientHello lock")
+            .take()
+            .expect("prepared ClientHello should be consumed once"))
+    }
+
+    async fn complete(
+        self: Box<Self>,
+        _tcp_stream: TcpStream,
+        prepared: RealityPreparedHandshake,
+    ) -> Result<xray_transport::BoxedTransportStream, TransportError> {
+        let patched_session_id = prepared.patched_client_hello
+            [self.session_id_offset..self.session_id_offset + 32]
+            .to_vec();
+
+        self.completions
+            .lock()
+            .expect("completion records lock")
+            .push(CompletionRecord {
+                original_session_id: self.original_session_id.clone(),
+                patched_session_id,
+                session_id: prepared.session_id,
+                auth_key: prepared.auth_key,
+            });
+
+        Err(TransportError::RealityTlsCompletionUnsupported)
     }
 }
 
 #[derive(Debug, Default)]
-struct PanickingClientHelloProvider;
+struct PanickingSessionProvider;
 
-impl RealityClientHelloProvider for PanickingClientHelloProvider {
-    fn prepare_client_hello(
+impl RealityTlsSessionProvider for PanickingSessionProvider {
+    fn create_session(
         &self,
         _request: RealityClientHelloRequest<'_>,
-    ) -> Result<RealityPreparedClientHello, xray_transport::reality::RealityError> {
-        panic!("unsupported fingerprint must be rejected before ClientHello provider use")
+    ) -> Result<Box<dyn RealityTlsSession>, xray_transport::reality::RealityError> {
+        panic!("unsupported fingerprint must be rejected before REALITY TLS session creation")
     }
 }
 
@@ -220,7 +293,7 @@ async fn assert_accept_completed(handle: tokio::task::JoinHandle<()>) {
 
 #[tokio::test]
 async fn reality_runtime_rejects_unsupported_fingerprint_before_dependencies() {
-    let engine = RealityRuntimeEngine::new(Arc::new(PanickingClientHelloProvider))
+    let engine = RealityRuntimeEngine::new(Arc::new(PanickingSessionProvider))
         .with_dns_resolver(Arc::new(PanickingDnsResolver))
         .with_context_provider(Arc::new(PanickingContextProvider));
     let mut config = reality_config();
@@ -242,9 +315,41 @@ async fn reality_runtime_rejects_unsupported_fingerprint_before_dependencies() {
 }
 
 #[tokio::test]
+async fn reality_runtime_rejects_invalid_session_clienthello_before_dns_or_tcp() {
+    let mut fixture = clienthello_fixture();
+    fixture.hello_random_hex.replace_range(0..2, "ff");
+    let provider = Arc::new(RecordingSessionProvider::new(fixture));
+    let context = Arc::new(FixedContextProvider::new(fixed_context()));
+    let engine = RealityRuntimeEngine::new(provider.clone())
+        .with_dns_resolver(Arc::new(PanickingDnsResolver))
+        .with_context_provider(context.clone());
+    let config = reality_config();
+    let target = Target::new(
+        TargetAddr::Domain("origin.example".to_owned()),
+        443,
+        Network::Tcp,
+    );
+
+    let result = engine.connect(&config, &target).await;
+
+    assert!(matches!(
+        result,
+        Err(TransportError::Reality(
+            xray_transport::reality::RealityError::ClientHelloRandomMismatch
+        ))
+    ));
+    assert_eq!(
+        provider.seen(),
+        vec![("www.example.com".to_owned(), "chrome".to_owned())]
+    );
+    assert_eq!(provider.completions(), Vec::<CompletionRecord>::new());
+    assert_eq!(context.calls(), 1);
+}
+
+#[tokio::test]
 async fn reality_runtime_prepares_handshake_and_connects_ip_before_live_tls_gate() {
     let (addr, handle) = spawn_accept_once().await;
-    let provider = Arc::new(RecordingClientHelloProvider::new(clienthello_fixture()));
+    let provider = Arc::new(RecordingSessionProvider::new(clienthello_fixture()));
     let context = Arc::new(FixedContextProvider::new(fixed_context()));
     let resolver = Arc::new(RecordingDnsResolver::new(addr));
     let engine = RealityRuntimeEngine::new(provider.clone())
@@ -266,12 +371,23 @@ async fn reality_runtime_prepares_handshake_and_connects_ip_before_live_tls_gate
         vec![("www.example.com".to_owned(), "chrome".to_owned())]
     );
     assert_eq!(context.calls(), 1);
+    let completions = provider.completions();
+    assert_eq!(completions.len(), 1);
+    assert_eq!(
+        completions[0].patched_session_id.as_slice(),
+        &completions[0].session_id[..]
+    );
+    assert_ne!(
+        completions[0].patched_session_id,
+        completions[0].original_session_id
+    );
+    assert_ne!(completions[0].auth_key, [0u8; 32]);
 }
 
 #[tokio::test]
 async fn reality_runtime_resolves_domain_targets_before_tcp_connect() {
     let (addr, handle) = spawn_accept_once().await;
-    let provider = Arc::new(RecordingClientHelloProvider::new(clienthello_fixture()));
+    let provider = Arc::new(RecordingSessionProvider::new(clienthello_fixture()));
     let context = Arc::new(FixedContextProvider::new(fixed_context()));
     let resolver = Arc::new(RecordingDnsResolver::new(addr));
     let engine = RealityRuntimeEngine::new(provider.clone())
@@ -297,4 +413,10 @@ async fn reality_runtime_resolves_domain_targets_before_tcp_connect() {
         vec![("www.example.com".to_owned(), "chrome".to_owned())]
     );
     assert_eq!(context.calls(), 1);
+    let completions = provider.completions();
+    assert_eq!(completions.len(), 1);
+    assert_eq!(
+        completions[0].patched_session_id.as_slice(),
+        &completions[0].session_id[..]
+    );
 }
