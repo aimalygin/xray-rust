@@ -262,9 +262,10 @@ mod reality_tests {
 
         assert!(debug.contains("version: [1, 2, 3]"));
         assert!(debug.contains("unix_time: 42"));
-        assert!(debug.contains("short_id: [4, 5, 6]"));
+        assert!(debug.contains("short_id: \"<redacted>\""));
         assert!(debug.contains("shared_secret: \"<redacted>\""));
         assert!(debug.contains("hello_random: \"<redacted>\""));
+        assert!(!debug.contains("short_id: [4, 5, 6]"));
         assert!(!debug.contains("171, 171, 171, 171"));
         assert!(!debug.contains("205, 205, 205, 205"));
     }

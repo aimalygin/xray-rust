@@ -31,7 +31,7 @@ impl fmt::Debug for RealitySessionIdInput {
             .debug_struct("RealitySessionIdInput")
             .field("version", &self.version)
             .field("unix_time", &self.unix_time)
-            .field("short_id", &self.short_id)
+            .field("short_id", &"<redacted>")
             .field("shared_secret", &"<redacted>")
             .field("hello_random", &"<redacted>")
             .finish()
@@ -72,7 +72,7 @@ pub fn build_reality_session_id(
 ) -> Result<[u8; 32], RealityError> {
     validate_reality_short_id(input)?;
 
-    let mut session_id_prefix = [0u8; 16];
+    let mut session_id_prefix = Zeroizing::new([0u8; 16]);
     session_id_prefix[..3].copy_from_slice(&input.version);
     session_id_prefix[4..8].copy_from_slice(&input.unix_time.to_be_bytes());
     session_id_prefix[8..8 + input.short_id.len()].copy_from_slice(&input.short_id);
@@ -85,11 +85,15 @@ pub fn build_reality_session_id(
     let cipher = Aes256Gcm::new_from_slice(&auth_key[..]).map_err(|_| RealityError::Aead)?;
     let nonce = Nonce::from_slice(&input.hello_random[20..]);
     let tag = cipher
-        .encrypt_in_place_detached(nonce, raw_client_hello_before_seal, &mut session_id_prefix)
+        .encrypt_in_place_detached(
+            nonce,
+            raw_client_hello_before_seal,
+            session_id_prefix.as_mut(),
+        )
         .map_err(|_| RealityError::Aead)?;
 
     let mut session_id = [0u8; 32];
-    session_id[..16].copy_from_slice(&session_id_prefix);
+    session_id[..16].copy_from_slice(session_id_prefix.as_ref());
     session_id[16..].copy_from_slice(&tag);
     Ok(session_id)
 }
