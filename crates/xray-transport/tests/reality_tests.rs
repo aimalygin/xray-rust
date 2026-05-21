@@ -4,13 +4,23 @@ mod reality_tests {
     use serde::Deserialize;
     use sha2::Sha512;
     use xray_transport::reality::{
-        build_reality_session_id, seal_reality_client_hello, verify_reality_certificate_binding,
-        verify_reality_certificate_der, RealityCertificateInput, RealityCertificateVerification,
-        RealityClientHelloPatch, RealityError, RealitySessionIdInput,
+        build_reality_session_id, derive_reality_auth_key, seal_reality_client_hello,
+        verify_reality_certificate_binding, verify_reality_certificate_der,
+        RealityCertificateInput, RealityCertificateVerification, RealityClientHelloPatch,
+        RealityError, RealitySessionIdInput,
     };
 
     const SESSION_ID_VECTORS_JSON: &str =
         include_str!("../../../tests/fixtures/reality/session_id_vectors.json");
+    const HANDSHAKE_HELLO_RANDOM: [u8; 32] = [
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
+        0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d,
+        0x1e, 0x1f,
+    ];
+    const HANDSHAKE_SHARED_SECRET_HEX: &str =
+        "9e004098efc091d4ec2663b4e9f5cfd4d7064571690b4bea97ab146ab9f35056";
+    const HANDSHAKE_EXPECTED_AUTH_KEY_HEX: &str =
+        "f8248fa0d41d35ebabbe29b095788941bb71f1dfc0bdb70f4641412772351a48";
 
     #[derive(Debug, Deserialize)]
     struct SessionIdVector {
@@ -176,6 +186,16 @@ mod reality_tests {
 
             assert_eq!(session_id, expected_session_id, "{}", vector.name);
         }
+    }
+
+    #[test]
+    fn derive_reality_auth_key_uses_xray_hkdf_contract() {
+        let shared_secret = decode_hex_array::<32>(HANDSHAKE_SHARED_SECRET_HEX);
+        let expected_auth_key = decode_hex_array::<32>(HANDSHAKE_EXPECTED_AUTH_KEY_HEX);
+
+        let auth_key = derive_reality_auth_key(&shared_secret, &HANDSHAKE_HELLO_RANDOM).unwrap();
+
+        assert_eq!(auth_key, expected_auth_key);
     }
 
     #[test]

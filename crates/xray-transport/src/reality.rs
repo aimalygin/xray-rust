@@ -98,6 +98,22 @@ pub enum RealityError {
     InvalidRealityCertificatePublicKey { len: usize },
 }
 
+/// Derives Xray-core's REALITY auth key from the X25519 shared secret.
+///
+/// Xray-core uses HKDF-SHA256 with `hello.Random[..20]` as salt and
+/// `REALITY` as info. The resulting key is used both for ClientHello
+/// session-id sealing and REALITY certificate binding.
+pub fn derive_reality_auth_key(
+    shared_secret: &[u8; 32],
+    hello_random: &[u8; 32],
+) -> Result<[u8; 32], RealityError> {
+    let hkdf = Hkdf::<Sha256>::new(Some(&hello_random[..20]), shared_secret);
+    let mut auth_key = [0u8; 32];
+    hkdf.expand(b"REALITY", &mut auth_key[..])
+        .map_err(|_| RealityError::Hkdf)?;
+    Ok(auth_key)
+}
+
 /// Builds the sealed 32-byte REALITY session id.
 ///
 /// `raw_client_hello_before_seal` must be the pre-seal raw ClientHello bytes
@@ -114,10 +130,10 @@ pub fn build_reality_session_id(
     session_id_prefix[4..8].copy_from_slice(&input.unix_time.to_be_bytes());
     session_id_prefix[8..8 + input.short_id.len()].copy_from_slice(&input.short_id);
 
-    let hkdf = Hkdf::<Sha256>::new(Some(&input.hello_random[..20]), &input.shared_secret);
-    let mut auth_key = Zeroizing::new([0u8; 32]);
-    hkdf.expand(b"REALITY", &mut auth_key[..])
-        .map_err(|_| RealityError::Hkdf)?;
+    let auth_key = Zeroizing::new(derive_reality_auth_key(
+        &input.shared_secret,
+        &input.hello_random,
+    )?);
 
     let cipher = Aes256Gcm::new_from_slice(&auth_key[..]).map_err(|_| RealityError::Aead)?;
     let nonce = Nonce::from_slice(&input.hello_random[20..]);
