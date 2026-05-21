@@ -4,11 +4,11 @@ mod reality_tests {
     use serde::Deserialize;
     use sha2::Sha512;
     use xray_transport::reality::{
-        build_reality_session_id, derive_reality_auth_key, seal_reality_client_hello,
-        verify_reality_certificate_binding, verify_reality_certificate_der,
-        RealityCertificateInput, RealityCertificateVerification, RealityClientHelloPatch,
-        RealityError, RealityHandshakeInput, RealityPreparedClientHello, RealityPreparedHandshake,
-        RealitySessionIdInput,
+        build_reality_session_id, derive_reality_auth_key, prepare_reality_handshake,
+        seal_reality_client_hello, verify_reality_certificate_binding,
+        verify_reality_certificate_der, RealityCertificateInput, RealityCertificateVerification,
+        RealityClientHelloPatch, RealityError, RealityHandshakeInput, RealityPreparedClientHello,
+        RealityPreparedHandshake, RealitySessionIdInput,
     };
 
     const SESSION_ID_VECTORS_JSON: &str =
@@ -477,6 +477,113 @@ mod reality_tests {
         assert!(!output_debug.contains("171, 171, 171, 171"));
         assert!(!output_debug.contains("205, 205, 205, 205"));
         assert!(!output_debug.contains("239, 239, 239, 239"));
+    }
+
+    #[test]
+    fn prepare_reality_handshake_patches_client_hello_and_returns_auth_key() {
+        let mut expected_client_hello = raw_client_hello_fixture();
+        let expected_session_id = seal_reality_client_hello(
+            &RealitySessionIdInput {
+                version: HANDSHAKE_VERSION,
+                unix_time: HANDSHAKE_UNIX_TIME,
+                short_id: vec![0xaa, 0xbb, 0xcc],
+                shared_secret: decode_hex_array(HANDSHAKE_SHARED_SECRET_HEX),
+                hello_random: HANDSHAKE_HELLO_RANDOM,
+            },
+            RealityClientHelloPatch {
+                session_id_offset: HANDSHAKE_SESSION_ID_OFFSET,
+            },
+            &mut expected_client_hello,
+        )
+        .unwrap();
+
+        let prepared = prepare_reality_handshake(handshake_input_fixture()).unwrap();
+
+        assert_eq!(prepared.patched_client_hello, expected_client_hello);
+        assert_eq!(
+            prepared.auth_key,
+            decode_hex_array::<32>(HANDSHAKE_EXPECTED_AUTH_KEY_HEX)
+        );
+        assert_eq!(prepared.session_id, expected_session_id);
+    }
+
+    #[test]
+    fn prepare_reality_handshake_auth_key_verifies_certificate_binding() {
+        let prepared = prepare_reality_handshake(handshake_input_fixture()).unwrap();
+        let public_key = [0x42; 32];
+        let signature = reality_certificate_signature(&prepared.auth_key, &public_key);
+
+        let result = verify_reality_certificate_binding(RealityCertificateInput {
+            auth_key: &prepared.auth_key,
+            ed25519_public_key: &public_key,
+            certificate_signature: &signature,
+        });
+
+        assert_eq!(result, RealityCertificateVerification::Verified);
+    }
+
+    #[test]
+    fn prepare_reality_handshake_changes_when_server_public_key_changes() {
+        let baseline = prepare_reality_handshake(handshake_input_fixture()).unwrap();
+        let changed = prepare_reality_handshake(handshake_input_with_server_public_key(
+            decode_hex_array(HANDSHAKE_ALT_SERVER_PUBLIC_KEY_HEX),
+        ))
+        .unwrap();
+
+        assert_ne!(baseline.auth_key, changed.auth_key);
+        assert_ne!(baseline.session_id, changed.session_id);
+        assert_ne!(baseline.patched_client_hello, changed.patched_client_hello);
+    }
+
+    #[test]
+    fn prepare_reality_handshake_rejects_invalid_session_id_offset() {
+        let mut input = handshake_input_fixture();
+        input.prepared_client_hello.session_id_offset = raw_client_hello_fixture().len() - 31;
+
+        let err = prepare_reality_handshake(input).unwrap_err();
+
+        assert_eq!(
+            err,
+            RealityError::InvalidSessionIdRange {
+                offset: 65,
+                end: 97,
+                len: 96,
+            }
+        );
+    }
+
+    #[test]
+    fn prepare_reality_handshake_rejects_overlong_short_id() {
+        let mut input = handshake_input_fixture();
+        input.short_id = vec![0, 1, 2, 3, 4, 5, 6, 7, 8];
+
+        let err = prepare_reality_handshake(input).unwrap_err();
+
+        assert_eq!(err, RealityError::ShortIdTooLong);
+    }
+
+    #[test]
+    fn prepare_reality_handshake_rejects_unsupported_fingerprint() {
+        let mut input = handshake_input_fixture();
+        input.prepared_client_hello.fingerprint = "firefox".to_owned();
+        input.prepared_client_hello.session_id_offset = raw_client_hello_fixture().len() - 31;
+
+        let err = prepare_reality_handshake(input).unwrap_err();
+
+        assert_eq!(
+            err,
+            RealityError::UnsupportedRealityFingerprint("firefox".to_owned())
+        );
+    }
+
+    #[test]
+    fn prepare_reality_handshake_rejects_all_zero_shared_secret() {
+        let mut input = handshake_input_fixture();
+        input.server_public_key = [0; 32];
+
+        let err = prepare_reality_handshake(input).unwrap_err();
+
+        assert_eq!(err, RealityError::AllZeroSharedSecret);
     }
 
     #[test]

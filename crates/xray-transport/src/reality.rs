@@ -8,6 +8,7 @@ use hkdf::Hkdf;
 use hmac::{Hmac, Mac};
 use sha2::{Sha256, Sha512};
 use thiserror::Error;
+use x25519_dalek::{PublicKey, StaticSecret};
 use x509_parser::{
     oid_registry::OID_SIG_ED25519,
     prelude::{FromDer, X509Certificate},
@@ -18,6 +19,7 @@ type HmacSha512 = Hmac<Sha512>;
 
 const REALITY_SESSION_ID_LEN: usize = 32;
 const REALITY_MAX_SHORT_ID_LEN: usize = 8;
+const REALITY_CHROME_FINGERPRINT: &str = "chrome";
 
 pub struct RealitySessionIdInput {
     pub version: [u8; 3],
@@ -194,6 +196,62 @@ pub fn derive_reality_auth_key(
     hkdf.expand(b"REALITY", &mut auth_key[..])
         .map_err(|_| RealityError::Hkdf)?;
     Ok(auth_key)
+}
+
+/// Prepares a REALITY ClientHello for the future live connector.
+///
+/// This function does not perform network I/O. The caller supplies raw
+/// ClientHello metadata produced by a Chrome/uTLS-compatible provider.
+pub fn prepare_reality_handshake(
+    mut input: RealityHandshakeInput,
+) -> Result<RealityPreparedHandshake, RealityError> {
+    if input.prepared_client_hello.fingerprint != REALITY_CHROME_FINGERPRINT {
+        return Err(RealityError::UnsupportedRealityFingerprint(
+            input.prepared_client_hello.fingerprint.clone(),
+        ));
+    }
+
+    let local_x25519_private_key =
+        Zeroizing::new(input.prepared_client_hello.local_x25519_private_key);
+    input
+        .prepared_client_hello
+        .local_x25519_private_key
+        .zeroize();
+
+    let local_secret = StaticSecret::from(*local_x25519_private_key);
+    let server_public_key = PublicKey::from(input.server_public_key);
+    let shared_secret = local_secret.diffie_hellman(&server_public_key);
+    if !shared_secret.was_contributory() {
+        return Err(RealityError::AllZeroSharedSecret);
+    }
+
+    let shared_secret = Zeroizing::new(shared_secret.to_bytes());
+    let auth_key = Zeroizing::new(derive_reality_auth_key(
+        &shared_secret,
+        &input.prepared_client_hello.hello_random,
+    )?);
+
+    let session_input = RealitySessionIdInput {
+        version: input.version,
+        unix_time: input.unix_time,
+        short_id: std::mem::take(&mut input.short_id),
+        shared_secret: *shared_secret,
+        hello_random: input.prepared_client_hello.hello_random,
+    };
+    let mut raw_client_hello = std::mem::take(&mut input.prepared_client_hello.raw_client_hello);
+    let session_id = seal_reality_client_hello(
+        &session_input,
+        RealityClientHelloPatch {
+            session_id_offset: input.prepared_client_hello.session_id_offset,
+        },
+        &mut raw_client_hello,
+    )?;
+
+    Ok(RealityPreparedHandshake {
+        patched_client_hello: raw_client_hello,
+        auth_key: *auth_key,
+        session_id,
+    })
 }
 
 /// Builds the sealed 32-byte REALITY session id.
