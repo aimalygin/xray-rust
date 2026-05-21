@@ -65,6 +65,8 @@ func main() {
 }
 
 func buildVectors() []vector {
+	xrayHelloRandom := append(repeat(0x09, 20), repeat(0x0b, 12)...)
+
 	return []vector{
 		buildVector(input{
 			name:            "xray_offset_39_short_id_4",
@@ -72,9 +74,9 @@ func buildVectors() []vector {
 			unixTime:        1700000000,
 			shortID:         []byte{2, 3, 4, 5},
 			sharedSecret:    repeat(0x07, 32),
-			helloRandom:     append(repeat(0x09, 20), repeat(0x0b, 12)...),
+			helloRandom:     xrayHelloRandom,
 			sessionIDOffset: 39,
-			rawClientHello:  xrayOffset39ClientHello(),
+			rawClientHello:  xrayOffset39ClientHello(xrayHelloRandom),
 		}),
 		buildVector(input{
 			name:            "explicit_offset_13_short_id_8",
@@ -147,9 +149,16 @@ func hkdfSha256(secret []byte, salt []byte, info []byte, length int) []byte {
 	return okm[:length]
 }
 
-func xrayOffset39ClientHello() []byte {
-	raw := []byte{0x16, 0x03, 0x01, 0x00, 0x4b, 0x01, 0x00, 0x00, 0x47, 0x03, 0x03}
-	raw = append(raw, sequence(0xa0, 28)...)
+func xrayOffset39ClientHello(helloRandom []byte) []byte {
+	if len(helloRandom) != 32 {
+		panic("xray ClientHello random must be 32 bytes")
+	}
+
+	// Xray-core seals utls `hello.Raw`, which starts at the TLS handshake
+	// ClientHello message, not at the outer TLS record header.
+	raw := []byte{0x01, 0x00, 0x00, 0x4f, 0x03, 0x03}
+	raw = append(raw, helloRandom...)
+	raw = append(raw, 0x20)
 	raw = append(raw, repeat(0x00, 32)...)
 	raw = append(raw, sequence(0xe0, 12)...)
 	return raw

@@ -7,7 +7,7 @@ use aes_gcm::{
 use hkdf::Hkdf;
 use sha2::Sha256;
 use thiserror::Error;
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 const REALITY_SESSION_ID_LEN: usize = 32;
 const REALITY_MAX_SHORT_ID_LEN: usize = 8;
@@ -38,6 +38,13 @@ impl fmt::Debug for RealitySessionIdInput {
     }
 }
 
+impl Drop for RealitySessionIdInput {
+    fn drop(&mut self) {
+        self.short_id.zeroize();
+        self.shared_secret.zeroize();
+    }
+}
+
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum RealityError {
     #[error("reality short id cannot exceed 8 bytes")]
@@ -54,6 +61,11 @@ pub enum RealityError {
     Aead,
 }
 
+/// Builds the sealed 32-byte REALITY session id.
+///
+/// `raw_client_hello_before_seal` must be the pre-seal raw ClientHello bytes
+/// with the target session-id range already zeroed. Xray-core uses those bytes
+/// as AEAD associated data before copying the sealed session id back.
 pub fn build_reality_session_id(
     input: &RealitySessionIdInput,
     raw_client_hello_before_seal: &[u8],
