@@ -125,6 +125,21 @@ impl RealityConnector {
             server_name: &self.config.server_name,
             fingerprint: &self.config.fingerprint,
         })?;
+
+        self.prepare_handshake_with_client_hello(prepared_client_hello, context)
+    }
+
+    pub fn prepare_handshake_with_client_hello(
+        &self,
+        prepared_client_hello: RealityPreparedClientHello,
+        context: RealityHandshakeContext,
+    ) -> Result<RealityPreparedHandshake, RealityError> {
+        if !self.is_fingerprint_supported() {
+            return Err(RealityError::UnsupportedRealityFingerprint(
+                self.config.fingerprint.clone(),
+            ));
+        }
+
         validate_reality_client_hello_metadata(&prepared_client_hello)?;
 
         prepare_reality_handshake(RealityHandshakeInput {

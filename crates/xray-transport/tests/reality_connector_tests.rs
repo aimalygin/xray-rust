@@ -180,6 +180,47 @@ fn reality_connector_prepares_handshake_from_validated_clienthello_provider() {
 }
 
 #[test]
+fn reality_connector_prepares_handshake_from_prepared_clienthello() {
+    let fixture = clienthello_fixture();
+    let original_client_hello = decode_hex(&fixture.raw_client_hello_hex);
+    let session_id_offset = fixture.session_id_offset;
+    let prepared_client_hello = prepared_from_fixture(&fixture);
+    let connector = RealityConnector::new(reality_config_with_short_id(vec![2, 3, 4, 5]));
+
+    let prepared = connector
+        .prepare_handshake_with_client_hello(prepared_client_hello, handshake_context())
+        .expect("valid prepared ClientHello should prepare REALITY handshake");
+
+    assert_ne!(prepared.auth_key, [0u8; 32]);
+    assert_ne!(prepared.session_id, [0u8; 32]);
+    assert_eq!(
+        &prepared.patched_client_hello[session_id_offset..session_id_offset + 32],
+        &prepared.session_id[..]
+    );
+    assert_ne!(
+        &prepared.patched_client_hello[session_id_offset..session_id_offset + 32],
+        &original_client_hello[session_id_offset..session_id_offset + 32]
+    );
+}
+
+#[test]
+fn reality_connector_rejects_invalid_prepared_clienthello_metadata() {
+    let fixture = clienthello_fixture();
+    let mut prepared_client_hello = prepared_from_fixture(&fixture);
+    prepared_client_hello.hello_random[0] ^= 0xff;
+    let connector = RealityConnector::new(reality_config_with_short_id(vec![2, 3, 4, 5]));
+
+    let err = connector
+        .prepare_handshake_with_client_hello(prepared_client_hello, handshake_context())
+        .unwrap_err();
+
+    assert_eq!(
+        err,
+        xray_transport::reality::RealityError::ClientHelloRandomMismatch
+    );
+}
+
+#[test]
 fn reality_connector_rejects_invalid_provider_clienthello_metadata() {
     let mut fixture = clienthello_fixture();
     fixture.hello_random_hex.replace_range(0..2, "ff");
