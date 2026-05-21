@@ -194,10 +194,53 @@ pub async fn open_vless_tcp_stream(
 #[cfg(test)]
 mod tests {
     use std::net::{IpAddr, Ipv4Addr};
+    use std::sync::{Arc, Mutex};
 
+    use async_trait::async_trait;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use uuid::Uuid;
+    use xray_proxy::vless::{unpad_vision_block, VisionCommand};
+    use xray_transport::{RealityTlsEngine, TransportError};
 
     use super::*;
+
+    #[derive(Debug)]
+    struct DuplexRealityEngine {
+        stream: Mutex<Option<tokio::io::DuplexStream>>,
+        seen: Mutex<Option<(RealityClientConfig, Target)>>,
+    }
+
+    impl DuplexRealityEngine {
+        fn new(stream: tokio::io::DuplexStream) -> Self {
+            Self {
+                stream: Mutex::new(Some(stream)),
+                seen: Mutex::new(None),
+            }
+        }
+
+        fn seen(&self) -> Option<(RealityClientConfig, Target)> {
+            self.seen.lock().expect("seen lock").clone()
+        }
+    }
+
+    #[async_trait]
+    impl RealityTlsEngine for DuplexRealityEngine {
+        async fn connect(
+            &self,
+            config: &RealityClientConfig,
+            target: &Target,
+        ) -> Result<BoxedTransportStream, TransportError> {
+            *self.seen.lock().expect("seen lock") = Some((config.clone(), target.clone()));
+            let stream = self
+                .stream
+                .lock()
+                .expect("stream lock")
+                .take()
+                .expect("fake REALITY stream should be consumed once");
+
+            Ok(Box::new(stream))
+        }
+    }
 
     #[tokio::test]
     async fn open_vless_tcp_stream_rejects_outbound_with_flow_before_connecting() {
@@ -226,7 +269,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn open_vless_tcp_stream_reaches_reality_transport_gate_for_vision_flow() {
+    async fn open_vless_tcp_stream_keeps_default_reality_transport_gate_for_vision_flow() {
         let outbound = VlessTcpOutbound {
             server: Target::new(
                 RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
@@ -260,5 +303,80 @@ mod tests {
                 xray_transport::TransportError::UnsupportedConnectorConfig("reality")
             ))
         ));
+    }
+
+    #[tokio::test]
+    async fn open_vless_tcp_stream_wraps_injected_reality_stream_with_vision() {
+        let reality_config = RealityClientConfig {
+            server_name: "example.com".to_owned(),
+            fingerprint: "chrome".to_owned(),
+            public_key: [7; 32],
+            short_id: vec![1, 2, 3, 4],
+            spider_x: "/".to_owned(),
+        };
+        let outbound = VlessTcpOutbound {
+            server: Target::new(
+                RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+                443,
+                RoutingNetwork::Tcp,
+            ),
+            user: VlessUser {
+                id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
+                encryption: "none".to_owned(),
+                flow: Some(VISION_FLOW.to_owned()),
+            },
+            transport: ConnectorConfig::Reality(reality_config.clone()),
+        };
+        let target = Target::new(
+            RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
+            443,
+            RoutingNetwork::Tcp,
+        );
+        let (client, mut protected_side) = tokio::io::duplex(4096);
+        let engine = Arc::new(DuplexRealityEngine::new(client));
+        let transport_dialer = TransportDialer::system()
+            .unwrap()
+            .with_reality_engine(engine.clone());
+
+        let mut stream = open_vless_tcp_stream_with_resolver_and_dialer(
+            &outbound,
+            &target,
+            &SystemDnsResolver,
+            &transport_dialer,
+        )
+        .await
+        .expect("open VLESS over injected REALITY stream");
+
+        let expected_header = encode_request_header(&VlessRequest {
+            user_id: outbound.user.id,
+            command: VlessCommand::Tcp,
+            target: target.clone(),
+            flow: outbound.user.flow.clone(),
+        })
+        .unwrap();
+        let mut received_header = vec![0; expected_header.len()];
+        protected_side
+            .read_exact(&mut received_header)
+            .await
+            .expect("read VLESS header from protected stream");
+        assert_eq!(received_header, expected_header);
+
+        stream.write_all(b"vision payload").await.unwrap();
+        stream.flush().await.unwrap();
+
+        let mut padded = vec![0; 16 + 5 + "vision payload".len()];
+        protected_side
+            .read_exact(&mut padded)
+            .await
+            .expect("read first Vision block");
+        let unpadded = unpad_vision_block(&padded, outbound.user.id.as_bytes()).unwrap();
+        assert_eq!(unpadded.command, VisionCommand::Continue);
+        assert_eq!(&unpadded.payload[..], b"vision payload");
+
+        let (seen_config, seen_target) = engine.seen().expect("engine saw config and target");
+        assert_eq!(seen_config, reality_config);
+        assert_eq!(seen_target.addr, outbound.server.addr);
+        assert_eq!(seen_target.port, outbound.server.port);
+        assert_eq!(seen_target.network, outbound.server.network);
     }
 }

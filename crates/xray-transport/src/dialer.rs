@@ -1,23 +1,42 @@
+use std::{fmt, sync::Arc};
+
 use crate::{
-    BoxedTransportStream, ConnectorConfig, TcpConnector, TlsConnector, TransportConnector,
-    TransportError,
+    BoxedTransportStream, ConnectorConfig, RealityTlsEngine, TcpConnector, TlsConnector,
+    TransportConnector, TransportError,
 };
 use xray_routing::Target;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TransportDialer {
     tls: TlsConnector,
+    reality: Option<Arc<dyn RealityTlsEngine>>,
+}
+
+impl fmt::Debug for TransportDialer {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TransportDialer")
+            .field("tls", &self.tls)
+            .field("reality_engine", &self.reality.is_some())
+            .finish()
+    }
 }
 
 impl TransportDialer {
     pub fn system() -> Result<Self, TransportError> {
         Ok(Self {
             tls: TlsConnector::system()?,
+            reality: None,
         })
     }
 
     pub fn with_tls_connector(tls: TlsConnector) -> Self {
-        Self { tls }
+        Self { tls, reality: None }
+    }
+
+    pub fn with_reality_engine(mut self, reality: Arc<dyn RealityTlsEngine>) -> Self {
+        self.reality = Some(reality);
+        self
     }
 
     pub async fn connect(
@@ -32,9 +51,10 @@ impl TransportDialer {
                     .await
             }
             ConnectorConfig::Tls(tls_config) => self.tls.connect(target, tls_config).await,
-            ConnectorConfig::Reality(_) => {
-                Err(TransportError::UnsupportedConnectorConfig("reality"))
-            }
+            ConnectorConfig::Reality(reality_config) => match &self.reality {
+                Some(reality) => reality.connect(reality_config, target).await,
+                None => Err(TransportError::UnsupportedConnectorConfig("reality")),
+            },
         }
     }
 }

@@ -117,6 +117,15 @@ impl<T> TransportStream for T where T: AsyncRead + AsyncWrite + Send + Unpin {}
 pub type BoxedTransportStream = Box<dyn TransportStream>;
 
 #[async_trait]
+pub trait RealityTlsEngine: Send + Sync {
+    async fn connect(
+        &self,
+        config: &RealityClientConfig,
+        target: &Target,
+    ) -> Result<BoxedTransportStream, TransportError>;
+}
+
+#[async_trait]
 pub trait TransportConnector: Send + Sync {
     async fn connect(&self, target: &Target) -> Result<BoxedTransportStream, TransportError>;
 

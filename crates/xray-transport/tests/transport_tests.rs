@@ -1,7 +1,8 @@
 mod transport_tests {
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
+    use async_trait::async_trait;
     use rcgen::{generate_simple_self_signed, CertifiedKey};
     use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -9,9 +10,57 @@ mod transport_tests {
     use tokio_rustls::TlsAcceptor;
     use xray_routing::{Network, Target, TargetAddr};
     use xray_transport::{
-        BoxedTransportStream, ConnectorConfig, RealityClientConfig, TcpConnector, TlsClientConfig,
-        TlsConnector, TransportConnector, TransportDialer, TransportError,
+        BoxedTransportStream, ConnectorConfig, RealityClientConfig, RealityTlsEngine, TcpConnector,
+        TlsClientConfig, TlsConnector, TransportConnector, TransportDialer, TransportError,
     };
+
+    #[derive(Debug)]
+    struct RecordingRealityEngine {
+        stream: Mutex<Option<tokio::io::DuplexStream>>,
+        seen: Mutex<Option<(RealityClientConfig, Target)>>,
+    }
+
+    impl RecordingRealityEngine {
+        fn new(stream: tokio::io::DuplexStream) -> Self {
+            Self {
+                stream: Mutex::new(Some(stream)),
+                seen: Mutex::new(None),
+            }
+        }
+
+        fn seen(&self) -> Option<(RealityClientConfig, Target)> {
+            self.seen.lock().expect("seen lock").clone()
+        }
+    }
+
+    #[async_trait]
+    impl RealityTlsEngine for RecordingRealityEngine {
+        async fn connect(
+            &self,
+            config: &RealityClientConfig,
+            target: &Target,
+        ) -> Result<BoxedTransportStream, TransportError> {
+            *self.seen.lock().expect("seen lock") = Some((config.clone(), target.clone()));
+            let stream = self
+                .stream
+                .lock()
+                .expect("stream lock")
+                .take()
+                .expect("fake reality stream should be used once");
+
+            Ok(Box::new(stream))
+        }
+    }
+
+    fn reality_test_config() -> RealityClientConfig {
+        RealityClientConfig {
+            server_name: "www.example.com".to_owned(),
+            fingerprint: "chrome".to_owned(),
+            public_key: [1; 32],
+            short_id: vec![2, 3, 4, 5],
+            spider_x: "/".to_owned(),
+        }
+    }
 
     async fn spawn_echo_once() -> (SocketAddr, tokio::task::JoinHandle<()>) {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
@@ -224,13 +273,7 @@ mod transport_tests {
             9,
             Network::Tcp,
         );
-        let config = ConnectorConfig::Reality(RealityClientConfig {
-            server_name: "www.example.com".to_owned(),
-            fingerprint: "chrome".to_owned(),
-            public_key: [1; 32],
-            short_id: vec![2, 3, 4, 5],
-            spider_x: "/".to_owned(),
-        });
+        let config = ConnectorConfig::Reality(reality_test_config());
 
         let result = dialer.connect(&config, &target).await;
 
@@ -238,6 +281,43 @@ mod transport_tests {
             result,
             Err(TransportError::UnsupportedConnectorConfig("reality"))
         ));
+    }
+
+    #[tokio::test]
+    async fn transport_dialer_routes_reality_configs_to_injected_engine() {
+        let (client_config, _) = tls_test_configs();
+        let (client, mut server) = tokio::io::duplex(1024);
+        let engine = Arc::new(RecordingRealityEngine::new(client));
+        let dialer =
+            TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config))
+                .with_reality_engine(engine.clone());
+        let target = Target::new(
+            TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
+            443,
+            Network::Tcp,
+        );
+        let reality_config = reality_test_config();
+        let config = ConnectorConfig::Reality(reality_config.clone());
+
+        let mut stream = dialer
+            .connect(&config, &target)
+            .await
+            .expect("dial injected REALITY engine");
+        stream.write_all(b"ping").await.expect("write ping");
+        stream.flush().await.expect("flush ping");
+
+        let mut received = [0u8; 4];
+        server
+            .read_exact(&mut received)
+            .await
+            .expect("read protected stream bytes");
+        assert_eq!(&received, b"ping");
+
+        let (seen_config, seen_target) = engine.seen().expect("engine saw config and target");
+        assert_eq!(seen_config, reality_config);
+        assert_eq!(seen_target.addr, target.addr);
+        assert_eq!(seen_target.port, target.port);
+        assert_eq!(seen_target.network, target.network);
     }
 
     #[tokio::test]
