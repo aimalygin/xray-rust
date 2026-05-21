@@ -14,6 +14,8 @@ mod reality_clienthello_tests {
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
     const PLAIN_X25519_PUBLIC_KEY_HEX: &str =
         "8f40c5adb68f25624ae5b214ea767a6ec94d829d3d7b5e1ad1ba6f3e2138285f";
+    const TLS_GROUP_X25519: u16 = 0x001d;
+    const TLS_GROUP_X25519_MLKEM768: u16 = 0x11ec;
 
     #[derive(Debug, Deserialize)]
     struct ClientHelloFixture {
@@ -61,7 +63,9 @@ mod reality_clienthello_tests {
         }
     }
 
-    fn plain_x25519_prepared_client_hello() -> (RealityPreparedClientHello, usize) {
+    fn prepared_client_hello_with_key_shares(
+        key_shares: &[(u16, Vec<u8>)],
+    ) -> (RealityPreparedClientHello, Vec<usize>) {
         let hello_random = [0x10; 32];
         let mut raw_client_hello = Vec::new();
 
@@ -85,11 +89,21 @@ mod reality_clienthello_tests {
         raw_client_hello.extend_from_slice(&[0x00, 0x00]);
         let key_share_extension_data_start = raw_client_hello.len();
 
-        raw_client_hello.extend_from_slice(&[0x00, 0x24]);
-        raw_client_hello.extend_from_slice(&[0x00, 0x1d]);
-        raw_client_hello.extend_from_slice(&[0x00, 0x20]);
-        let public_key_offset = raw_client_hello.len();
-        raw_client_hello.extend_from_slice(&decode_hex_array::<32>(PLAIN_X25519_PUBLIC_KEY_HEX));
+        let key_share_vector_length_offset = raw_client_hello.len();
+        raw_client_hello.extend_from_slice(&[0x00, 0x00]);
+        let key_share_vector_start = raw_client_hello.len();
+        let mut key_exchange_offsets = Vec::new();
+        for (group, key_exchange) in key_shares {
+            assert!(key_exchange.len() <= u16::MAX as usize);
+            raw_client_hello.extend_from_slice(&group.to_be_bytes());
+            raw_client_hello.extend_from_slice(&(key_exchange.len() as u16).to_be_bytes());
+            key_exchange_offsets.push(raw_client_hello.len());
+            raw_client_hello.extend_from_slice(key_exchange);
+        }
+
+        let key_share_vector_length = raw_client_hello.len() - key_share_vector_start;
+        raw_client_hello[key_share_vector_length_offset..key_share_vector_length_offset + 2]
+            .copy_from_slice(&(key_share_vector_length as u16).to_be_bytes());
 
         let key_share_extension_length = raw_client_hello.len() - key_share_extension_data_start;
         raw_client_hello[key_share_extension_length_offset..key_share_extension_length_offset + 2]
@@ -114,22 +128,24 @@ mod reality_clienthello_tests {
                 session_id_offset,
                 local_x25519_private_key: decode_hex_array(PLAIN_X25519_PRIVATE_KEY_HEX),
             },
-            public_key_offset,
+            key_exchange_offsets,
         )
+    }
+
+    fn plain_x25519_prepared_client_hello() -> (RealityPreparedClientHello, usize) {
+        let key_shares = [(
+            TLS_GROUP_X25519,
+            decode_hex_array::<32>(PLAIN_X25519_PUBLIC_KEY_HEX).to_vec(),
+        )];
+        let (prepared, key_exchange_offsets) = prepared_client_hello_with_key_shares(&key_shares);
+
+        (prepared, key_exchange_offsets[0])
     }
 
     fn expected_group(fixture: &ClientHelloFixture) -> RealityClientHelloKeyShareGroup {
         match fixture.key_share_group.as_str() {
             "x25519" => RealityClientHelloKeyShareGroup::X25519,
             "x25519mlkem768" => RealityClientHelloKeyShareGroup::X25519MlKem768,
-            value => panic!("unexpected key-share group {value}"),
-        }
-    }
-
-    fn key_share_group_offset(fixture: &ClientHelloFixture) -> usize {
-        match fixture.key_share_group.as_str() {
-            "x25519" => fixture.key_share_x25519_public_key_offset - 4,
-            "x25519mlkem768" => fixture.key_share_x25519_public_key_offset - 1184 - 4,
             value => panic!("unexpected key-share group {value}"),
         }
     }
@@ -192,6 +208,26 @@ mod reality_clienthello_tests {
             validation.key_share.public_key,
             decode_hex_array::<32>(PLAIN_X25519_PUBLIC_KEY_HEX)
         );
+    }
+
+    #[test]
+    fn validator_accepts_later_x25519_key_share_after_unsupported_group() {
+        let key_shares = [
+            (0x1234, vec![0xaa]),
+            (
+                TLS_GROUP_X25519,
+                decode_hex_array::<32>(PLAIN_X25519_PUBLIC_KEY_HEX).to_vec(),
+            ),
+        ];
+        let (prepared, key_exchange_offsets) = prepared_client_hello_with_key_shares(&key_shares);
+
+        let validation = validate_reality_client_hello_metadata(&prepared).unwrap();
+
+        assert_eq!(
+            validation.key_share.group,
+            RealityClientHelloKeyShareGroup::X25519
+        );
+        assert_eq!(validation.key_share.offset, key_exchange_offsets[1]);
     }
 
     #[test]
@@ -260,14 +296,30 @@ mod reality_clienthello_tests {
 
     #[test]
     fn validator_rejects_missing_x25519_key_share() {
-        let fixture = fixture();
-        let mut prepared = prepared_from_fixture(&fixture);
-        let group_offset = key_share_group_offset(&fixture);
+        let (mut prepared, public_key_offset) = plain_x25519_prepared_client_hello();
+        let group_offset = public_key_offset - 4;
         prepared.raw_client_hello[group_offset..group_offset + 2].copy_from_slice(&[0x12, 0x34]);
 
         let err = validate_reality_client_hello_metadata(&prepared).unwrap_err();
 
         assert_eq!(err, RealityError::MissingClientHelloX25519KeyShare);
+    }
+
+    #[test]
+    fn validator_rejects_hybrid_key_share_with_invalid_length() {
+        let mut key_exchange = vec![0u8; 1217 - 32];
+        key_exchange.extend_from_slice(&decode_hex_array::<32>(PLAIN_X25519_PUBLIC_KEY_HEX));
+        let key_shares = [(TLS_GROUP_X25519_MLKEM768, key_exchange)];
+        let (prepared, _) = prepared_client_hello_with_key_shares(&key_shares);
+
+        let err = validate_reality_client_hello_metadata(&prepared).unwrap_err();
+
+        assert!(matches!(
+            err,
+            RealityError::InvalidClientHello {
+                reason: "invalid X25519MLKEM768 key-share length"
+            }
+        ));
     }
 
     #[test]

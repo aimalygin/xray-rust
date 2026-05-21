@@ -20,6 +20,11 @@ type HmacSha512 = Hmac<Sha512>;
 const REALITY_SESSION_ID_LEN: usize = 32;
 const REALITY_MAX_SHORT_ID_LEN: usize = 8;
 const REALITY_CHROME_FINGERPRINT: &str = "chrome";
+const TLS_HANDSHAKE_CLIENT_HELLO: u8 = 0x01;
+const TLS_EXTENSION_KEY_SHARE: u16 = 0x0033;
+const TLS_GROUP_X25519: u16 = 0x001d;
+const TLS_GROUP_X25519_MLKEM768: u16 = 0x11ec;
+const TLS_GROUP_X25519_MLKEM768_KEY_EXCHANGE_LEN: usize = 1216;
 
 pub struct RealitySessionIdInput {
     pub version: [u8; 3],
@@ -32,6 +37,25 @@ pub struct RealitySessionIdInput {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RealityClientHelloPatch {
     pub session_id_offset: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RealityClientHelloKeyShare {
+    pub group: RealityClientHelloKeyShareGroup,
+    pub offset: usize,
+    pub public_key: [u8; 32],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RealityClientHelloKeyShareGroup {
+    X25519,
+    X25519MlKem768,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RealityClientHelloValidation {
+    pub session_id_offset: usize,
+    pub key_share: RealityClientHelloKeyShare,
 }
 
 pub struct RealityPreparedClientHello {
@@ -168,6 +192,20 @@ pub enum RealityError {
     },
     #[error("unsupported REALITY fingerprint {0}")]
     UnsupportedRealityFingerprint(String),
+    #[error("invalid ClientHello: {reason}")]
+    InvalidClientHello { reason: &'static str },
+    #[error("ClientHello random does not match prepared metadata")]
+    ClientHelloRandomMismatch,
+    #[error("ClientHello does not contain a 32-byte session id")]
+    MissingClientHelloSessionId,
+    #[error(
+        "prepared ClientHello session-id offset {actual} does not match parsed offset {expected}"
+    )]
+    ClientHelloSessionIdOffsetMismatch { expected: usize, actual: usize },
+    #[error("ClientHello does not contain an X25519-compatible key share")]
+    MissingClientHelloX25519KeyShare,
+    #[error("ClientHello key-share public key does not match local private key")]
+    ClientHelloKeyShareMismatch,
     #[error("reality X25519 shared secret was all zero")]
     AllZeroSharedSecret,
     #[error("hkdf expand failed")]
@@ -180,6 +218,257 @@ pub enum RealityError {
     InvalidRealityCertificateBitString,
     #[error("invalid reality Ed25519 public key length {len}")]
     InvalidRealityCertificatePublicKey { len: usize },
+}
+
+struct ParsedClientHello {
+    random: [u8; 32],
+    session_id_offset: usize,
+    key_share: Option<RealityClientHelloKeyShare>,
+}
+
+struct ClientHelloCursor<'a> {
+    raw: &'a [u8],
+    offset: usize,
+    base: usize,
+}
+
+impl<'a> ClientHelloCursor<'a> {
+    fn new(raw: &'a [u8]) -> Self {
+        Self {
+            raw,
+            offset: 0,
+            base: 0,
+        }
+    }
+
+    fn with_base(raw: &'a [u8], base: usize) -> Self {
+        Self {
+            raw,
+            offset: 0,
+            base,
+        }
+    }
+
+    fn absolute_offset(&self) -> usize {
+        self.base + self.offset
+    }
+
+    fn checked_end(&self, len: usize, reason: &'static str) -> Result<usize, RealityError> {
+        let end = self
+            .offset
+            .checked_add(len)
+            .ok_or(RealityError::InvalidClientHello { reason })?;
+        if end > self.raw.len() {
+            return Err(RealityError::InvalidClientHello { reason });
+        }
+
+        Ok(end)
+    }
+
+    fn take(&mut self, len: usize, reason: &'static str) -> Result<&'a [u8], RealityError> {
+        let end = self.checked_end(len, reason)?;
+        let value = &self.raw[self.offset..end];
+        self.offset = end;
+        Ok(value)
+    }
+
+    fn read_u8(&mut self, reason: &'static str) -> Result<u8, RealityError> {
+        Ok(self.take(1, reason)?[0])
+    }
+
+    fn read_u16(&mut self, reason: &'static str) -> Result<u16, RealityError> {
+        let bytes = self.take(2, reason)?;
+        Ok(u16::from_be_bytes([bytes[0], bytes[1]]))
+    }
+
+    fn read_u24(&mut self, reason: &'static str) -> Result<usize, RealityError> {
+        let bytes = self.take(3, reason)?;
+        Ok(((bytes[0] as usize) << 16) | ((bytes[1] as usize) << 8) | bytes[2] as usize)
+    }
+}
+
+impl ParsedClientHello {
+    fn parse(raw: &[u8]) -> Result<Self, RealityError> {
+        let mut cursor = ClientHelloCursor::new(raw);
+
+        let handshake_type = cursor.read_u8("missing handshake type")?;
+        if handshake_type != TLS_HANDSHAKE_CLIENT_HELLO {
+            return Err(RealityError::InvalidClientHello {
+                reason: "unexpected handshake type",
+            });
+        }
+
+        let handshake_len = cursor.read_u24("missing handshake length")?;
+        let expected_handshake_len =
+            raw.len()
+                .checked_sub(4)
+                .ok_or(RealityError::InvalidClientHello {
+                    reason: "missing handshake header",
+                })?;
+        if handshake_len != expected_handshake_len {
+            return Err(RealityError::InvalidClientHello {
+                reason: "handshake length mismatch",
+            });
+        }
+
+        cursor.take(2, "missing legacy version")?;
+        let mut random = [0u8; 32];
+        random.copy_from_slice(cursor.take(32, "missing random")?);
+
+        let session_id_len = usize::from(cursor.read_u8("missing session id length")?);
+        if session_id_len != REALITY_SESSION_ID_LEN {
+            return Err(RealityError::MissingClientHelloSessionId);
+        }
+        let session_id_offset = cursor.absolute_offset();
+        cursor.take(REALITY_SESSION_ID_LEN, "truncated session id")?;
+
+        let cipher_suites_len = usize::from(cursor.read_u16("missing cipher suites length")?);
+        if cipher_suites_len % 2 != 0 {
+            return Err(RealityError::InvalidClientHello {
+                reason: "cipher suites length is not even",
+            });
+        }
+        cursor.take(cipher_suites_len, "truncated cipher suites")?;
+
+        let compression_methods_len =
+            usize::from(cursor.read_u8("missing compression methods length")?);
+        cursor.take(compression_methods_len, "truncated compression methods")?;
+
+        let extensions_len = usize::from(cursor.read_u16("missing extensions length")?);
+        let extensions_start = cursor.absolute_offset();
+        if cursor.checked_end(extensions_len, "truncated extensions")? != raw.len() {
+            return Err(RealityError::InvalidClientHello {
+                reason: "extensions length mismatch",
+            });
+        }
+        let extensions = cursor.take(extensions_len, "truncated extensions")?;
+
+        let mut extensions_cursor = ClientHelloCursor::with_base(extensions, extensions_start);
+        let mut key_share = None;
+        while extensions_cursor.offset < extensions.len() {
+            let extension_type = extensions_cursor.read_u16("missing extension type")?;
+            let extension_len =
+                usize::from(extensions_cursor.read_u16("missing extension length")?);
+            let extension_offset = extensions_cursor.absolute_offset();
+            let extension_data =
+                extensions_cursor.take(extension_len, "truncated extension data")?;
+            if extension_type == TLS_EXTENSION_KEY_SHARE {
+                key_share = parse_key_share_extension(extension_data, extension_offset)?;
+                if key_share.is_some() {
+                    break;
+                }
+            }
+        }
+
+        Ok(Self {
+            random,
+            session_id_offset,
+            key_share,
+        })
+    }
+}
+
+fn parse_key_share_extension(
+    extension_data: &[u8],
+    extension_offset: usize,
+) -> Result<Option<RealityClientHelloKeyShare>, RealityError> {
+    let mut cursor = ClientHelloCursor::with_base(extension_data, extension_offset);
+    let client_shares_len = usize::from(cursor.read_u16("missing key-share vector length")?);
+    if cursor.checked_end(client_shares_len, "truncated key-share vector")? != extension_data.len()
+    {
+        return Err(RealityError::InvalidClientHello {
+            reason: "key-share vector length mismatch",
+        });
+    }
+
+    while cursor.offset < extension_data.len() {
+        let group = cursor.read_u16("missing key-share group")?;
+        let key_exchange_len = usize::from(cursor.read_u16("missing key-share length")?);
+        let key_exchange_offset = cursor.absolute_offset();
+        let key_exchange = cursor.take(key_exchange_len, "truncated key-share bytes")?;
+
+        if is_tls_grease_value(group) {
+            continue;
+        }
+
+        match group {
+            TLS_GROUP_X25519 => {
+                if key_exchange.len() != 32 {
+                    return Err(RealityError::InvalidClientHello {
+                        reason: "invalid X25519 key-share length",
+                    });
+                }
+
+                let mut public_key = [0u8; 32];
+                public_key.copy_from_slice(key_exchange);
+                return Ok(Some(RealityClientHelloKeyShare {
+                    group: RealityClientHelloKeyShareGroup::X25519,
+                    offset: key_exchange_offset,
+                    public_key,
+                }));
+            }
+            TLS_GROUP_X25519_MLKEM768 => {
+                if key_exchange.len() != TLS_GROUP_X25519_MLKEM768_KEY_EXCHANGE_LEN {
+                    return Err(RealityError::InvalidClientHello {
+                        reason: "invalid X25519MLKEM768 key-share length",
+                    });
+                }
+
+                let public_key_offset = key_exchange_offset + key_exchange.len() - 32;
+                let mut public_key = [0u8; 32];
+                public_key.copy_from_slice(&key_exchange[key_exchange.len() - 32..]);
+                return Ok(Some(RealityClientHelloKeyShare {
+                    group: RealityClientHelloKeyShareGroup::X25519MlKem768,
+                    offset: public_key_offset,
+                    public_key,
+                }));
+            }
+            _ => {}
+        }
+    }
+
+    Ok(None)
+}
+
+fn is_tls_grease_value(value: u16) -> bool {
+    let [high, low] = value.to_be_bytes();
+    high == low && high & 0x0f == 0x0a
+}
+
+pub fn validate_reality_client_hello_metadata(
+    prepared: &RealityPreparedClientHello,
+) -> Result<RealityClientHelloValidation, RealityError> {
+    if prepared.fingerprint != REALITY_CHROME_FINGERPRINT {
+        return Err(RealityError::UnsupportedRealityFingerprint(
+            prepared.fingerprint.clone(),
+        ));
+    }
+
+    let parsed = ParsedClientHello::parse(&prepared.raw_client_hello)?;
+    if parsed.random != prepared.hello_random {
+        return Err(RealityError::ClientHelloRandomMismatch);
+    }
+    if parsed.session_id_offset != prepared.session_id_offset {
+        return Err(RealityError::ClientHelloSessionIdOffsetMismatch {
+            expected: parsed.session_id_offset,
+            actual: prepared.session_id_offset,
+        });
+    }
+
+    let key_share = parsed
+        .key_share
+        .ok_or(RealityError::MissingClientHelloX25519KeyShare)?;
+    let local_x25519_private_key = Zeroizing::new(prepared.local_x25519_private_key);
+    let local_secret = StaticSecret::from(*local_x25519_private_key);
+    let local_public_key = PublicKey::from(&local_secret).to_bytes();
+    if local_public_key != key_share.public_key {
+        return Err(RealityError::ClientHelloKeyShareMismatch);
+    }
+
+    Ok(RealityClientHelloValidation {
+        session_id_offset: parsed.session_id_offset,
+        key_share,
+    })
 }
 
 /// Derives Xray-core's REALITY auth key from the X25519 shared secret.
