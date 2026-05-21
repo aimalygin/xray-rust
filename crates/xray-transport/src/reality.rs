@@ -82,6 +82,11 @@ pub fn build_reality_session_id(
     Ok(session_id)
 }
 
+/// Seals and patches the REALITY session id bytes into a raw ClientHello.
+///
+/// Invalid session-id ranges and overlong `short_id` values return before mutating
+/// `raw_client_hello`. On success, the configured session-id range is first zeroed
+/// for associated-data construction and then rewritten with the sealed bytes.
 pub fn seal_reality_client_hello(
     input: &RealitySessionIdInput,
     patch: RealityClientHelloPatch,

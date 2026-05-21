@@ -28,6 +28,17 @@ cargo test -p xray-core-rs --test runtime_data_path_tests socks_client_reaches_e
 
 These prove the current local/test paths: SOCKS5 client traffic enters `xray-core-rs`, is encoded as VLESS over raw TCP, reaches a fake VLESS server configured either as an IP outbound server or through a resolver-injected domain outbound server, and returns bytes from an echo target. They do not prove full Xray DNS behavior, TLS, REALITY, or Vision live interoperability yet.
 
+## REALITY Primitive Oracle
+
+Run the deterministic REALITY primitive checks from the repository root:
+
+```sh
+go run ./tools/reality-oracle/session_id_vectors.go --check tests/fixtures/reality/session_id_vectors.json
+cargo test -p xray-transport reality_tests
+```
+
+These checks validate deterministic Xray-core-compatible session-id sealing and ClientHello patching. They do not validate the live REALITY connector, Chrome/uTLS ClientHello synthesis, certificate HMAC verification, or Vision flow.
+
 ## Go Xray-core Oracle
 
 `Xray-core/` is a read-only checkout of the Go reference implementation. It is ignored by the root Git repository and used as a compatibility oracle, not edited as part of this Rust workspace.

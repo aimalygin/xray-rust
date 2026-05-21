@@ -1,19 +1,21 @@
 //! REALITY connector boundary.
 //!
 //! Oracle/source: `Xray-core/transport/internet/reality/reality.go::UClient`.
+//! Pure session-id sealing and ClientHello patching live in `crate::reality`.
+//!
+//! This connector remains non-networked until Chrome/uTLS-compatible ClientHello generation
+//! and REALITY certificate verification exist.
 //!
 //! Future `RealityConnector::connect` implementation notes:
 //!
-//! 1. Build a Chrome-compatible TLS 1.3 ClientHello.
-//! 2. Put Xray version, unix time, and `shortId` into the 32-byte session id.
-//! 3. Compute X25519 shared secret with the server public key.
-//! 4. Derive the auth key with HKDF-SHA256, salt `hello.random[..20]`, info `REALITY`.
-//! 5. AES-GCM seal the first 16 bytes of the session id with nonce `hello.random[20..32]`
-//!    and associated data equal to the raw ClientHello.
-//! 6. Replace the session id bytes in the raw ClientHello.
-//! 7. Complete TLS handshake and verify the REALITY certificate HMAC.
+//! 1. Build a Chrome-compatible TLS 1.3 ClientHello and expose its raw bytes,
+//!    random, session-id offset, and ECDHE key share.
+//! 2. Compute the X25519 shared secret with the server public key.
+//! 3. Call `seal_reality_client_hello`.
+//! 4. Complete the TLS handshake.
+//! 5. Verify the REALITY certificate HMAC.
 //!
-//! This logic stays inside `xray-transport`; VLESS should only see an async byte stream.
+//! VLESS should only see an async byte stream once live REALITY is implemented.
 
 use crate::RealityClientConfig;
 
