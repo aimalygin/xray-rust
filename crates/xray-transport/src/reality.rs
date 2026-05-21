@@ -32,6 +32,84 @@ pub struct RealityClientHelloPatch {
     pub session_id_offset: usize,
 }
 
+pub struct RealityPreparedClientHello {
+    pub fingerprint: String,
+    pub raw_client_hello: Vec<u8>,
+    pub hello_random: [u8; 32],
+    pub session_id_offset: usize,
+    pub local_x25519_private_key: [u8; 32],
+}
+
+impl fmt::Debug for RealityPreparedClientHello {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RealityPreparedClientHello")
+            .field("fingerprint", &self.fingerprint)
+            .field("raw_client_hello_len", &self.raw_client_hello.len())
+            .field("hello_random", &"<redacted>")
+            .field("session_id_offset", &self.session_id_offset)
+            .field("local_x25519_private_key", &"<redacted>")
+            .finish()
+    }
+}
+
+impl Drop for RealityPreparedClientHello {
+    fn drop(&mut self) {
+        self.local_x25519_private_key.zeroize();
+    }
+}
+
+pub struct RealityHandshakeInput {
+    pub version: [u8; 3],
+    pub unix_time: u32,
+    pub short_id: Vec<u8>,
+    pub server_public_key: [u8; 32],
+    pub prepared_client_hello: RealityPreparedClientHello,
+}
+
+impl fmt::Debug for RealityHandshakeInput {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RealityHandshakeInput")
+            .field("version", &self.version)
+            .field("unix_time", &self.unix_time)
+            .field("short_id", &"<redacted>")
+            .field("server_public_key", &self.server_public_key)
+            .field("prepared_client_hello", &self.prepared_client_hello)
+            .finish()
+    }
+}
+
+impl Drop for RealityHandshakeInput {
+    fn drop(&mut self) {
+        self.short_id.zeroize();
+    }
+}
+
+pub struct RealityPreparedHandshake {
+    pub patched_client_hello: Vec<u8>,
+    pub auth_key: [u8; 32],
+    pub session_id: [u8; 32],
+}
+
+impl fmt::Debug for RealityPreparedHandshake {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RealityPreparedHandshake")
+            .field("patched_client_hello_len", &self.patched_client_hello.len())
+            .field("auth_key", &"<redacted>")
+            .field("session_id", &"<redacted>")
+            .finish()
+    }
+}
+
+impl Drop for RealityPreparedHandshake {
+    fn drop(&mut self) {
+        self.auth_key.zeroize();
+        self.session_id.zeroize();
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct RealityCertificateInput<'a> {
     pub auth_key: &'a [u8; 32],
@@ -86,6 +164,10 @@ pub enum RealityError {
         end: usize,
         len: usize,
     },
+    #[error("unsupported REALITY fingerprint {0}")]
+    UnsupportedRealityFingerprint(String),
+    #[error("reality X25519 shared secret was all zero")]
+    AllZeroSharedSecret,
     #[error("hkdf expand failed")]
     Hkdf,
     #[error("aead seal failed")]

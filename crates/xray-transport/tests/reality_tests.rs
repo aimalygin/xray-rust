@@ -7,7 +7,8 @@ mod reality_tests {
         build_reality_session_id, derive_reality_auth_key, seal_reality_client_hello,
         verify_reality_certificate_binding, verify_reality_certificate_der,
         RealityCertificateInput, RealityCertificateVerification, RealityClientHelloPatch,
-        RealityError, RealitySessionIdInput,
+        RealityError, RealityHandshakeInput, RealityPreparedClientHello, RealityPreparedHandshake,
+        RealitySessionIdInput,
     };
 
     const SESSION_ID_VECTORS_JSON: &str =
@@ -21,6 +22,14 @@ mod reality_tests {
         "9e004098efc091d4ec2663b4e9f5cfd4d7064571690b4bea97ab146ab9f35056";
     const HANDSHAKE_EXPECTED_AUTH_KEY_HEX: &str =
         "f8248fa0d41d35ebabbe29b095788941bb71f1dfc0bdb70f4641412772351a48";
+    const HANDSHAKE_VERSION: [u8; 3] = [0x00, 0x01, 0x02];
+    const HANDSHAKE_UNIX_TIME: u32 = 0x0102_0304;
+    const HANDSHAKE_SESSION_ID_OFFSET: usize = 40;
+    const HANDSHAKE_LOCAL_PRIVATE_KEY: [u8; 32] = [0x11; 32];
+    const HANDSHAKE_SERVER_PUBLIC_KEY_HEX: &str =
+        "0faa684ed28867b97f4a6a2dee5df8ce974e76b7018e3f22a1c4cf2678570f20";
+    const HANDSHAKE_ALT_SERVER_PUBLIC_KEY_HEX: &str =
+        "7b0d47d93427f8311160781c7c733fd89f88970aef490d8aa0ee19a4cb8a1b14";
 
     #[derive(Debug, Deserialize)]
     struct SessionIdVector {
@@ -172,6 +181,38 @@ mod reality_tests {
             shared_secret: decode_hex_array(&vector.shared_secret_hex),
             hello_random: decode_hex_array(&vector.hello_random_hex),
         }
+    }
+
+    fn raw_client_hello_fixture() -> Vec<u8> {
+        let mut raw_client_hello: Vec<u8> = (0u8..96).collect();
+        raw_client_hello[HANDSHAKE_SESSION_ID_OFFSET..HANDSHAKE_SESSION_ID_OFFSET + 32].fill(0xa5);
+        raw_client_hello
+    }
+
+    fn prepared_client_hello_fixture() -> RealityPreparedClientHello {
+        RealityPreparedClientHello {
+            fingerprint: "chrome".to_owned(),
+            raw_client_hello: raw_client_hello_fixture(),
+            hello_random: HANDSHAKE_HELLO_RANDOM,
+            session_id_offset: HANDSHAKE_SESSION_ID_OFFSET,
+            local_x25519_private_key: HANDSHAKE_LOCAL_PRIVATE_KEY,
+        }
+    }
+
+    fn handshake_input_with_server_public_key(
+        server_public_key: [u8; 32],
+    ) -> RealityHandshakeInput {
+        RealityHandshakeInput {
+            version: HANDSHAKE_VERSION,
+            unix_time: HANDSHAKE_UNIX_TIME,
+            short_id: vec![0xaa, 0xbb, 0xcc],
+            server_public_key,
+            prepared_client_hello: prepared_client_hello_fixture(),
+        }
+    }
+
+    fn handshake_input_fixture() -> RealityHandshakeInput {
+        handshake_input_with_server_public_key(decode_hex_array(HANDSHAKE_SERVER_PUBLIC_KEY_HEX))
     }
 
     #[test]
@@ -397,6 +438,45 @@ mod reality_tests {
         assert!(!debug.contains("short_id: [4, 5, 6]"));
         assert!(!debug.contains("171, 171, 171, 171"));
         assert!(!debug.contains("205, 205, 205, 205"));
+    }
+
+    #[test]
+    fn reality_handshake_debug_redacts_secret_fields() {
+        let prepared_client_hello = prepared_client_hello_fixture();
+        let prepared_debug = format!("{prepared_client_hello:?}");
+        assert!(prepared_debug.contains("fingerprint: \"chrome\""));
+        assert!(prepared_debug.contains("raw_client_hello_len: 96"));
+        assert!(prepared_debug.contains("hello_random: \"<redacted>\""));
+        assert!(prepared_debug.contains("local_x25519_private_key: \"<redacted>\""));
+        assert!(!prepared_debug.contains("17, 17, 17, 17"));
+        assert!(!prepared_debug.contains("0, 1, 2, 3"));
+
+        let input = handshake_input_fixture();
+        let input_debug = format!("{input:?}");
+        assert!(input_debug.contains("short_id: \"<redacted>\""));
+        assert!(input_debug.contains("prepared_client_hello"));
+        assert!(!input_debug.contains("170, 187, 204"));
+        assert!(!input_debug.contains("17, 17, 17, 17"));
+        let alt_input_debug = format!(
+            "{:?}",
+            handshake_input_with_server_public_key(decode_hex_array(
+                HANDSHAKE_ALT_SERVER_PUBLIC_KEY_HEX
+            ))
+        );
+        assert_ne!(input_debug, alt_input_debug);
+
+        let prepared_handshake = RealityPreparedHandshake {
+            patched_client_hello: vec![0xab; 96],
+            auth_key: [0xcd; 32],
+            session_id: [0xef; 32],
+        };
+        let output_debug = format!("{prepared_handshake:?}");
+        assert!(output_debug.contains("patched_client_hello_len: 96"));
+        assert!(output_debug.contains("auth_key: \"<redacted>\""));
+        assert!(output_debug.contains("session_id: \"<redacted>\""));
+        assert!(!output_debug.contains("171, 171, 171, 171"));
+        assert!(!output_debug.contains("205, 205, 205, 205"));
+        assert!(!output_debug.contains("239, 239, 239, 239"));
     }
 
     #[test]
