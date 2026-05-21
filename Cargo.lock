@@ -1441,6 +1441,7 @@ dependencies = [
  "tokio-rustls",
  "webpki-roots",
  "x25519-dalek",
+ "x509-parser",
  "xray-routing",
  "zeroize",
 ]

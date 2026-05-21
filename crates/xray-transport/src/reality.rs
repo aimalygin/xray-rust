@@ -8,6 +8,10 @@ use hkdf::Hkdf;
 use hmac::{Hmac, Mac};
 use sha2::{Sha256, Sha512};
 use thiserror::Error;
+use x509_parser::{
+    oid_registry::OID_SIG_ED25519,
+    prelude::{FromDer, X509Certificate},
+};
 use zeroize::{Zeroize, Zeroizing};
 
 type HmacSha512 = Hmac<Sha512>;
@@ -86,6 +90,12 @@ pub enum RealityError {
     Hkdf,
     #[error("aead seal failed")]
     Aead,
+    #[error("invalid reality certificate DER")]
+    InvalidRealityCertificateDer,
+    #[error("invalid reality certificate bit string")]
+    InvalidRealityCertificateBitString,
+    #[error("invalid reality Ed25519 public key length {len}")]
+    InvalidRealityCertificatePublicKey { len: usize },
 }
 
 /// Builds the sealed 32-byte REALITY session id.
@@ -143,6 +153,53 @@ pub fn verify_reality_certificate_binding(
     } else {
         RealityCertificateVerification::NotReality
     }
+}
+
+/// Parses a leaf certificate DER and verifies Xray-core's REALITY HMAC binding.
+///
+/// This is only the REALITY recognition step. Normal x509 fallback validation
+/// stays outside this primitive.
+pub fn verify_reality_certificate_der(
+    auth_key: &[u8; 32],
+    leaf_der: &[u8],
+) -> Result<RealityCertificateVerification, RealityError> {
+    let (remaining, certificate) = X509Certificate::from_der(leaf_der)
+        .map_err(|_| RealityError::InvalidRealityCertificateDer)?;
+    if !remaining.is_empty() {
+        return Err(RealityError::InvalidRealityCertificateDer);
+    }
+
+    let public_key_info = certificate.public_key();
+    if public_key_info.algorithm.algorithm != OID_SIG_ED25519 {
+        return Ok(RealityCertificateVerification::NotReality);
+    }
+    if public_key_info.algorithm.parameters.is_some()
+        || (certificate.signature_algorithm.algorithm == OID_SIG_ED25519
+            && certificate.signature_algorithm.parameters.is_some())
+    {
+        return Err(RealityError::InvalidRealityCertificateDer);
+    }
+    if public_key_info.subject_public_key.unused_bits != 0
+        || certificate.signature_value.unused_bits != 0
+    {
+        return Err(RealityError::InvalidRealityCertificateBitString);
+    }
+
+    let public_key = public_key_info.subject_public_key.data.as_ref();
+    let public_key: &[u8; 32] =
+        public_key
+            .try_into()
+            .map_err(|_| RealityError::InvalidRealityCertificatePublicKey {
+                len: public_key.len(),
+            })?;
+
+    Ok(verify_reality_certificate_binding(
+        RealityCertificateInput {
+            auth_key,
+            ed25519_public_key: public_key,
+            certificate_signature: certificate.signature_value.data.as_ref(),
+        },
+    ))
 }
 
 /// Seals and patches the REALITY session id bytes into a raw ClientHello.

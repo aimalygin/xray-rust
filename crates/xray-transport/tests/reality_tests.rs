@@ -1,11 +1,12 @@
 mod reality_tests {
     use hmac::{Hmac, Mac};
+    use rcgen::generate_simple_self_signed;
     use serde::Deserialize;
     use sha2::Sha512;
     use xray_transport::reality::{
         build_reality_session_id, seal_reality_client_hello, verify_reality_certificate_binding,
-        RealityCertificateInput, RealityCertificateVerification, RealityClientHelloPatch,
-        RealityError, RealitySessionIdInput,
+        verify_reality_certificate_der, RealityCertificateInput, RealityCertificateVerification,
+        RealityClientHelloPatch, RealityError, RealitySessionIdInput,
     };
 
     const SESSION_ID_VECTORS_JSON: &str =
@@ -57,6 +58,100 @@ mod reality_tests {
         let mut mac = <HmacSha512 as Mac>::new_from_slice(auth_key).unwrap();
         mac.update(ed25519_public_key);
         mac.finalize().into_bytes().into()
+    }
+
+    fn push_der_length(out: &mut Vec<u8>, len: usize) {
+        match len {
+            0..=127 => out.push(len as u8),
+            128..=255 => {
+                out.push(0x81);
+                out.push(len as u8);
+            }
+            _ => panic!("test DER helper only supports lengths up to 255 bytes"),
+        }
+    }
+
+    fn push_der_tlv(out: &mut Vec<u8>, tag: u8, content: &[u8]) {
+        out.push(tag);
+        push_der_length(out, content.len());
+        out.extend_from_slice(content);
+    }
+
+    fn der_tlv(tag: u8, content: &[u8]) -> Vec<u8> {
+        let mut out = Vec::new();
+        push_der_tlv(&mut out, tag, content);
+        out
+    }
+
+    fn der_sequence(content: &[u8]) -> Vec<u8> {
+        der_tlv(0x30, content)
+    }
+
+    fn der_bit_string(unused_bits: u8, bytes: &[u8]) -> Vec<u8> {
+        let mut content = Vec::with_capacity(bytes.len() + 1);
+        content.push(unused_bits);
+        content.extend_from_slice(bytes);
+        der_tlv(0x03, &content)
+    }
+
+    fn der_utc_time(value: &[u8; 13]) -> Vec<u8> {
+        der_tlv(0x17, value)
+    }
+
+    fn ed25519_algorithm_identifier() -> Vec<u8> {
+        vec![0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70]
+    }
+
+    fn ed25519_algorithm_identifier_with_null_params() -> Vec<u8> {
+        vec![0x30, 0x07, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x05, 0x00]
+    }
+
+    fn ed25519_leaf_der(public_key: &[u8], signature: &[u8]) -> Vec<u8> {
+        ed25519_leaf_der_with_options(
+            public_key,
+            0,
+            signature,
+            0,
+            &ed25519_algorithm_identifier(),
+            &ed25519_algorithm_identifier(),
+        )
+    }
+
+    fn ed25519_leaf_der_with_options(
+        public_key: &[u8],
+        public_key_unused_bits: u8,
+        signature: &[u8],
+        signature_unused_bits: u8,
+        spki_algorithm: &[u8],
+        signature_algorithm: &[u8],
+    ) -> Vec<u8> {
+        let algorithm = ed25519_algorithm_identifier();
+
+        let mut validity_content = Vec::new();
+        validity_content.extend_from_slice(&der_utc_time(b"250101000000Z"));
+        validity_content.extend_from_slice(&der_utc_time(b"260101000000Z"));
+        let validity = der_sequence(&validity_content);
+
+        let mut spki_content = Vec::new();
+        spki_content.extend_from_slice(spki_algorithm);
+        spki_content.extend_from_slice(&der_bit_string(public_key_unused_bits, public_key));
+        let spki = der_sequence(&spki_content);
+
+        let mut tbs_content = Vec::new();
+        tbs_content.extend_from_slice(&[0xa0, 0x03, 0x02, 0x01, 0x02]);
+        tbs_content.extend_from_slice(&[0x02, 0x01, 0x01]);
+        tbs_content.extend_from_slice(&algorithm);
+        tbs_content.extend_from_slice(&[0x30, 0x00]);
+        tbs_content.extend_from_slice(&validity);
+        tbs_content.extend_from_slice(&[0x30, 0x00]);
+        tbs_content.extend_from_slice(&spki);
+        let tbs = der_sequence(&tbs_content);
+
+        let mut cert_content = Vec::new();
+        cert_content.extend_from_slice(&tbs);
+        cert_content.extend_from_slice(signature_algorithm);
+        cert_content.extend_from_slice(&der_bit_string(signature_unused_bits, signature));
+        der_sequence(&cert_content)
     }
 
     fn input_from_vector(vector: &SessionIdVector) -> RealitySessionIdInput {
@@ -350,5 +445,155 @@ mod reality_tests {
         assert!(!debug.contains("171, 171, 171, 171"));
         assert!(!debug.contains("205, 205, 205, 205"));
         assert!(!debug.contains("239, 239, 239, 239"));
+    }
+
+    #[test]
+    fn reality_certificate_der_adapter_verifies_ed25519_hmac_fixture() {
+        let auth_key = [0x31; 32];
+        let public_key = [0x42; 32];
+        let signature = reality_certificate_signature(&auth_key, &public_key);
+        let leaf_der = ed25519_leaf_der(&public_key, &signature);
+
+        let result = verify_reality_certificate_der(&auth_key, &leaf_der).unwrap();
+
+        assert_eq!(result, RealityCertificateVerification::Verified);
+    }
+
+    #[test]
+    fn reality_certificate_der_adapter_rejects_mismatched_signature() {
+        let auth_key = [0x31; 32];
+        let public_key = [0x42; 32];
+        let wrong_signature = [0x55; 64];
+        let leaf_der = ed25519_leaf_der(&public_key, &wrong_signature);
+
+        let result = verify_reality_certificate_der(&auth_key, &leaf_der).unwrap();
+
+        assert_eq!(result, RealityCertificateVerification::NotReality);
+    }
+
+    #[test]
+    fn reality_certificate_der_adapter_returns_not_reality_for_non_ed25519_leaf() {
+        let auth_key = [0x31; 32];
+        let cert = generate_simple_self_signed(vec!["example.test".to_owned()])
+            .expect("generate non-Ed25519 certificate");
+
+        let result = verify_reality_certificate_der(&auth_key, cert.cert.der().as_ref()).unwrap();
+
+        assert_eq!(result, RealityCertificateVerification::NotReality);
+    }
+
+    #[test]
+    fn reality_certificate_der_adapter_rejects_malformed_der() {
+        let auth_key = [0x31; 32];
+
+        let err = verify_reality_certificate_der(&auth_key, &[0x30, 0x03, 0x02])
+            .expect_err("malformed DER should fail");
+
+        assert_eq!(err, RealityError::InvalidRealityCertificateDer);
+    }
+
+    #[test]
+    fn reality_certificate_der_adapter_rejects_trailing_der_bytes() {
+        let auth_key = [0x31; 32];
+        let public_key = [0x42; 32];
+        let signature = reality_certificate_signature(&auth_key, &public_key);
+        let mut leaf_der = ed25519_leaf_der(&public_key, &signature);
+        leaf_der.push(0x00);
+
+        let err = verify_reality_certificate_der(&auth_key, &leaf_der)
+            .expect_err("trailing DER bytes should fail");
+
+        assert_eq!(err, RealityError::InvalidRealityCertificateDer);
+    }
+
+    #[test]
+    fn reality_certificate_der_adapter_rejects_invalid_ed25519_key_length() {
+        let auth_key = [0x31; 32];
+        let public_key = [0x42; 31];
+        let signature = [0x55; 64];
+        let leaf_der = ed25519_leaf_der(&public_key, &signature);
+
+        let err = verify_reality_certificate_der(&auth_key, &leaf_der)
+            .expect_err("invalid Ed25519 public key length should fail");
+
+        assert_eq!(
+            err,
+            RealityError::InvalidRealityCertificatePublicKey { len: 31 }
+        );
+    }
+
+    #[test]
+    fn reality_certificate_der_adapter_rejects_public_key_bit_string_unused_bits() {
+        let auth_key = [0x31; 32];
+        let public_key = [0x42; 32];
+        let signature = reality_certificate_signature(&auth_key, &public_key);
+        let algorithm = ed25519_algorithm_identifier();
+        let leaf_der =
+            ed25519_leaf_der_with_options(&public_key, 1, &signature, 0, &algorithm, &algorithm);
+
+        let err = verify_reality_certificate_der(&auth_key, &leaf_der)
+            .expect_err("public key unused bits should fail");
+
+        assert_eq!(err, RealityError::InvalidRealityCertificateBitString);
+    }
+
+    #[test]
+    fn reality_certificate_der_adapter_rejects_spki_ed25519_null_params() {
+        let auth_key = [0x31; 32];
+        let public_key = [0x42; 32];
+        let signature = reality_certificate_signature(&auth_key, &public_key);
+        let algorithm = ed25519_algorithm_identifier();
+        let algorithm_with_null_params = ed25519_algorithm_identifier_with_null_params();
+        let leaf_der = ed25519_leaf_der_with_options(
+            &public_key,
+            0,
+            &signature,
+            0,
+            &algorithm_with_null_params,
+            &algorithm,
+        );
+
+        let err = verify_reality_certificate_der(&auth_key, &leaf_der)
+            .expect_err("SPKI Ed25519 NULL params should fail");
+
+        assert_eq!(err, RealityError::InvalidRealityCertificateDer);
+    }
+
+    #[test]
+    fn reality_certificate_der_adapter_rejects_signature_algorithm_ed25519_null_params() {
+        let auth_key = [0x31; 32];
+        let public_key = [0x42; 32];
+        let signature = reality_certificate_signature(&auth_key, &public_key);
+        let algorithm = ed25519_algorithm_identifier();
+        let algorithm_with_null_params = ed25519_algorithm_identifier_with_null_params();
+        let leaf_der = ed25519_leaf_der_with_options(
+            &public_key,
+            0,
+            &signature,
+            0,
+            &algorithm,
+            &algorithm_with_null_params,
+        );
+
+        let err = verify_reality_certificate_der(&auth_key, &leaf_der)
+            .expect_err("signature Ed25519 NULL params should fail");
+
+        assert_eq!(err, RealityError::InvalidRealityCertificateDer);
+    }
+
+    #[test]
+    fn reality_certificate_der_adapter_rejects_signature_bit_string_unused_bits() {
+        let auth_key = [0x31; 32];
+        let public_key = [0x42; 32];
+        let mut signature = reality_certificate_signature(&auth_key, &public_key);
+        signature[63] &= 0xfe;
+        let algorithm = ed25519_algorithm_identifier();
+        let leaf_der =
+            ed25519_leaf_der_with_options(&public_key, 0, &signature, 1, &algorithm, &algorithm);
+
+        let err = verify_reality_certificate_der(&auth_key, &leaf_der)
+            .expect_err("signature unused bits should fail");
+
+        assert_eq!(err, RealityError::InvalidRealityCertificateBitString);
     }
 }
