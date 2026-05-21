@@ -1,11 +1,13 @@
 use std::{
     fmt,
+    net::SocketAddr,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use async_trait::async_trait;
-use xray_routing::Target;
+use tokio::net::TcpStream;
+use xray_routing::{Target, TargetAddr};
 
 use crate::{
     reality::RealityError,
@@ -75,6 +77,13 @@ impl RealityRuntimeEngine {
         self.context_provider = context_provider;
         self
     }
+
+    async fn resolve_socket_addr(&self, target: &Target) -> Result<SocketAddr, TransportError> {
+        match &target.addr {
+            TargetAddr::Ip(ip) => Ok(SocketAddr::new(*ip, target.port)),
+            TargetAddr::Domain(domain) => self.dns_resolver.resolve(domain, target.port).await,
+        }
+    }
 }
 
 #[async_trait]
@@ -82,7 +91,7 @@ impl RealityTlsEngine for RealityRuntimeEngine {
     async fn connect(
         &self,
         config: &RealityClientConfig,
-        _target: &Target,
+        target: &Target,
     ) -> Result<BoxedTransportStream, TransportError> {
         let connector = RealityConnector::new(config.clone());
         if !connector.is_fingerprint_supported() {
@@ -91,7 +100,13 @@ impl RealityTlsEngine for RealityRuntimeEngine {
             );
         }
 
-        let _ = &self.client_hello_provider;
+        let context = self.context_provider.context();
+        let _prepared =
+            connector.prepare_handshake(self.client_hello_provider.as_ref(), context)?;
+        let addr = self.resolve_socket_addr(target).await?;
+        let _stream = TcpStream::connect(addr)
+            .await
+            .map_err(TransportError::Tcp)?;
 
         Err(TransportError::RealityTlsCompletionUnsupported)
     }
