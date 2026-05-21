@@ -24,6 +24,7 @@ async-trait = "0.1"
 bytes = "1"
 ghash = { version = "0.5", features = ["zeroize"] }
 hkdf = "0.12"
+hmac = "0.12"
 libc = "0.2"
 polyval = { version = "0.6", features = ["zeroize"] }
 prost = "0.13"

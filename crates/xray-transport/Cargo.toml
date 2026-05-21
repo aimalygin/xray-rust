@@ -11,6 +11,7 @@ aes-gcm.workspace = true
 async-trait.workspace = true
 ghash.workspace = true
 hkdf.workspace = true
+hmac.workspace = true
 polyval.workspace = true
 rustls.workspace = true
 sha2.workspace = true

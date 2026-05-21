@@ -1,8 +1,11 @@
 mod reality_tests {
+    use hmac::{Hmac, Mac};
     use serde::Deserialize;
+    use sha2::Sha512;
     use xray_transport::reality::{
-        build_reality_session_id, seal_reality_client_hello, RealityClientHelloPatch, RealityError,
-        RealitySessionIdInput,
+        build_reality_session_id, seal_reality_client_hello, verify_reality_certificate_binding,
+        RealityCertificateInput, RealityCertificateVerification, RealityClientHelloPatch,
+        RealityError, RealitySessionIdInput,
     };
 
     const SESSION_ID_VECTORS_JSON: &str =
@@ -43,6 +46,17 @@ mod reality_tests {
         bytes.try_into().unwrap_or_else(|bytes: Vec<u8>| {
             panic!("expected {N} bytes, got {}", bytes.len());
         })
+    }
+
+    type HmacSha512 = Hmac<Sha512>;
+
+    fn reality_certificate_signature(
+        auth_key: &[u8; 32],
+        ed25519_public_key: &[u8; 32],
+    ) -> [u8; 64] {
+        let mut mac = <HmacSha512 as Mac>::new_from_slice(auth_key).unwrap();
+        mac.update(ed25519_public_key);
+        mac.finalize().into_bytes().into()
     }
 
     fn input_from_vector(vector: &SessionIdVector) -> RealitySessionIdInput {
@@ -268,5 +282,73 @@ mod reality_tests {
         assert!(!debug.contains("short_id: [4, 5, 6]"));
         assert!(!debug.contains("171, 171, 171, 171"));
         assert!(!debug.contains("205, 205, 205, 205"));
+    }
+
+    #[test]
+    fn reality_certificate_binding_verifies_hmac_signature() {
+        let auth_key = [0x11; 32];
+        let public_key = [0x22; 32];
+        let signature = reality_certificate_signature(&auth_key, &public_key);
+
+        let result = verify_reality_certificate_binding(RealityCertificateInput {
+            auth_key: &auth_key,
+            ed25519_public_key: &public_key,
+            certificate_signature: &signature,
+        });
+
+        assert_eq!(result, RealityCertificateVerification::Verified);
+    }
+
+    #[test]
+    fn reality_certificate_binding_rejects_changed_signature() {
+        let auth_key = [0x11; 32];
+        let public_key = [0x22; 32];
+        let mut signature = reality_certificate_signature(&auth_key, &public_key);
+        signature[0] ^= 0xff;
+
+        let result = verify_reality_certificate_binding(RealityCertificateInput {
+            auth_key: &auth_key,
+            ed25519_public_key: &public_key,
+            certificate_signature: &signature,
+        });
+
+        assert_eq!(result, RealityCertificateVerification::NotReality);
+    }
+
+    #[test]
+    fn reality_certificate_binding_rejects_changed_public_key() {
+        let auth_key = [0x11; 32];
+        let public_key = [0x22; 32];
+        let changed_public_key = [0x23; 32];
+        let signature = reality_certificate_signature(&auth_key, &public_key);
+
+        let result = verify_reality_certificate_binding(RealityCertificateInput {
+            auth_key: &auth_key,
+            ed25519_public_key: &changed_public_key,
+            certificate_signature: &signature,
+        });
+
+        assert_eq!(result, RealityCertificateVerification::NotReality);
+    }
+
+    #[test]
+    fn reality_certificate_input_debug_redacts_secret_fields() {
+        let auth_key = [0xab; 32];
+        let public_key = [0xcd; 32];
+        let signature = [0xef; 64];
+        let input = RealityCertificateInput {
+            auth_key: &auth_key,
+            ed25519_public_key: &public_key,
+            certificate_signature: &signature,
+        };
+
+        let debug = format!("{input:?}");
+
+        assert!(debug.contains("auth_key: \"<redacted>\""));
+        assert!(debug.contains("ed25519_public_key: \"<redacted>\""));
+        assert!(debug.contains("certificate_signature: \"<redacted>\""));
+        assert!(!debug.contains("171, 171, 171, 171"));
+        assert!(!debug.contains("205, 205, 205, 205"));
+        assert!(!debug.contains("239, 239, 239, 239"));
     }
 }

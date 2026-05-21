@@ -5,9 +5,12 @@ use aes_gcm::{
     Aes256Gcm, Nonce,
 };
 use hkdf::Hkdf;
-use sha2::Sha256;
+use hmac::{Hmac, Mac};
+use sha2::{Sha256, Sha512};
 use thiserror::Error;
 use zeroize::{Zeroize, Zeroizing};
+
+type HmacSha512 = Hmac<Sha512>;
 
 const REALITY_SESSION_ID_LEN: usize = 32;
 const REALITY_MAX_SHORT_ID_LEN: usize = 8;
@@ -23,6 +26,30 @@ pub struct RealitySessionIdInput {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RealityClientHelloPatch {
     pub session_id_offset: usize,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct RealityCertificateInput<'a> {
+    pub auth_key: &'a [u8; 32],
+    pub ed25519_public_key: &'a [u8; 32],
+    pub certificate_signature: &'a [u8],
+}
+
+impl fmt::Debug for RealityCertificateInput<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RealityCertificateInput")
+            .field("auth_key", &"<redacted>")
+            .field("ed25519_public_key", &"<redacted>")
+            .field("certificate_signature", &"<redacted>")
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RealityCertificateVerification {
+    Verified,
+    NotReality,
 }
 
 impl fmt::Debug for RealitySessionIdInput {
@@ -96,6 +123,26 @@ pub fn build_reality_session_id(
     session_id[..16].copy_from_slice(session_id_prefix.as_ref());
     session_id[16..].copy_from_slice(&tag);
     Ok(session_id)
+}
+
+/// Verifies Xray-core's non-ML-DSA REALITY certificate binding.
+///
+/// Xray-core recognizes a REALITY peer certificate when
+/// `HMAC-SHA512(auth_key, ed25519_public_key)` equals the leaf certificate
+/// signature bytes. The auth key is the derived REALITY auth key, not the raw
+/// X25519 shared secret.
+pub fn verify_reality_certificate_binding(
+    input: RealityCertificateInput<'_>,
+) -> RealityCertificateVerification {
+    let mut mac = <HmacSha512 as Mac>::new_from_slice(input.auth_key)
+        .expect("HMAC-SHA512 accepts any key length");
+    mac.update(input.ed25519_public_key);
+
+    if mac.verify_slice(input.certificate_signature).is_ok() {
+        RealityCertificateVerification::Verified
+    } else {
+        RealityCertificateVerification::NotReality
+    }
 }
 
 /// Seals and patches the REALITY session id bytes into a raw ClientHello.

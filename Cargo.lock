@@ -1429,6 +1429,7 @@ dependencies = [
  "async-trait",
  "ghash",
  "hkdf",
+ "hmac",
  "polyval",
  "rcgen",
  "rustls",
