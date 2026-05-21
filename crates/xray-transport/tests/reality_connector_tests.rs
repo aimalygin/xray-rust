@@ -1,6 +1,6 @@
 use xray_transport::{
     reality_connector::{RealityConnector, RealityHandshakePlan},
-    RealityClientConfig,
+    ConnectorConfig, RealityClientConfig,
 };
 
 fn reality_config_with_short_id(short_id: Vec<u8>) -> RealityClientConfig {
@@ -54,4 +54,27 @@ fn reality_connector_handshake_plan_clones_short_id_bytes_exactly() {
             spider_x: "/".to_owned(),
         }
     );
+}
+
+#[test]
+fn reality_debug_output_redacts_short_id_bytes() {
+    let config = reality_config_with_short_id(vec![2, 3, 4, 5]);
+    let config_debug = format!("{config:?}");
+    assert!(config_debug.contains("short_id: \"<redacted>\""));
+    assert!(!config_debug.contains("short_id: [2, 3, 4, 5]"));
+
+    let connector_config = ConnectorConfig::Reality(reality_config_with_short_id(vec![2, 3, 4, 5]));
+    let connector_config_debug = format!("{connector_config:?}");
+    assert!(connector_config_debug.contains("short_id: \"<redacted>\""));
+    assert!(!connector_config_debug.contains("short_id: [2, 3, 4, 5]"));
+
+    let connector = RealityConnector::new(reality_config_with_short_id(vec![2, 3, 4, 5]));
+    let connector_debug = format!("{connector:?}");
+    assert!(connector_debug.contains("short_id: \"<redacted>\""));
+    assert!(!connector_debug.contains("short_id: [2, 3, 4, 5]"));
+
+    let plan = connector.handshake_plan();
+    let plan_debug = format!("{plan:?}");
+    assert!(plan_debug.contains("short_id: \"<redacted>\""));
+    assert!(!plan_debug.contains("short_id: [2, 3, 4, 5]"));
 }

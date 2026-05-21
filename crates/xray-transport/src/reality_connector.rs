@@ -17,9 +17,12 @@
 //!
 //! VLESS should only see an async byte stream once live REALITY is implemented.
 
-use crate::RealityClientConfig;
+use std::fmt;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+use crate::RealityClientConfig;
+use zeroize::Zeroize;
+
+#[derive(Clone, PartialEq, Eq)]
 pub struct RealityHandshakePlan {
     pub server_name: String,
     pub fingerprint: String,
@@ -28,9 +31,37 @@ pub struct RealityHandshakePlan {
     pub spider_x: String,
 }
 
-#[derive(Debug, Clone)]
+impl fmt::Debug for RealityHandshakePlan {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RealityHandshakePlan")
+            .field("server_name", &self.server_name)
+            .field("fingerprint", &self.fingerprint)
+            .field("public_key", &self.public_key)
+            .field("short_id", &"<redacted>")
+            .field("spider_x", &self.spider_x)
+            .finish()
+    }
+}
+
+impl Drop for RealityHandshakePlan {
+    fn drop(&mut self) {
+        self.short_id.zeroize();
+    }
+}
+
+#[derive(Clone)]
 pub struct RealityConnector {
     config: RealityClientConfig,
+}
+
+impl fmt::Debug for RealityConnector {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RealityConnector")
+            .field("config", &self.config)
+            .finish()
+    }
 }
 
 impl RealityConnector {

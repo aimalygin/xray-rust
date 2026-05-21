@@ -1,9 +1,11 @@
 use async_trait::async_trait;
+use std::fmt;
 use std::net::SocketAddr;
 use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use xray_routing::{Target, TargetAddr};
+use zeroize::Zeroize;
 
 mod dialer;
 pub mod reality;
@@ -25,13 +27,32 @@ pub struct TlsClientConfig {
     pub server_name: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct RealityClientConfig {
     pub server_name: String,
     pub fingerprint: String,
     pub public_key: [u8; 32],
     pub short_id: Vec<u8>,
     pub spider_x: String,
+}
+
+impl fmt::Debug for RealityClientConfig {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RealityClientConfig")
+            .field("server_name", &self.server_name)
+            .field("fingerprint", &self.fingerprint)
+            .field("public_key", &self.public_key)
+            .field("short_id", &"<redacted>")
+            .field("spider_x", &self.spider_x)
+            .finish()
+    }
+}
+
+impl Drop for RealityClientConfig {
+    fn drop(&mut self) {
+        self.short_id.zeroize();
+    }
 }
 
 #[derive(Debug, Error)]
