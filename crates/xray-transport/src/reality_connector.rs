@@ -26,8 +26,10 @@ use crate::{
         prepare_reality_handshake, validate_reality_client_hello_metadata, RealityError,
         RealityHandshakeInput, RealityPreparedClientHello, RealityPreparedHandshake,
     },
-    RealityClientConfig,
+    BoxedTransportStream, RealityClientConfig, TransportError,
 };
+use async_trait::async_trait;
+use tokio::net::TcpStream;
 use zeroize::Zeroize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,6 +43,24 @@ pub trait RealityClientHelloProvider: Send + Sync {
         &self,
         request: RealityClientHelloRequest<'_>,
     ) -> Result<RealityPreparedClientHello, RealityError>;
+}
+
+pub trait RealityTlsSessionProvider: Send + Sync {
+    fn create_session(
+        &self,
+        request: RealityClientHelloRequest<'_>,
+    ) -> Result<Box<dyn RealityTlsSession>, RealityError>;
+}
+
+#[async_trait]
+pub trait RealityTlsSession: Send {
+    fn prepared_client_hello(&self) -> Result<RealityPreparedClientHello, RealityError>;
+
+    async fn complete(
+        self: Box<Self>,
+        tcp_stream: TcpStream,
+        prepared: RealityPreparedHandshake,
+    ) -> Result<BoxedTransportStream, TransportError>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

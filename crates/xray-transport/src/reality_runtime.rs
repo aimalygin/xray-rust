@@ -11,7 +11,10 @@ use xray_routing::{Target, TargetAddr};
 
 use crate::{
     reality::RealityError,
-    reality_connector::{RealityClientHelloProvider, RealityConnector, RealityHandshakeContext},
+    reality_connector::{
+        RealityClientHelloRequest, RealityConnector, RealityHandshakeContext,
+        RealityTlsSessionProvider,
+    },
     BoxedTransportStream, DnsResolver, RealityClientConfig, RealityTlsEngine, SystemDnsResolver,
     TransportError,
 };
@@ -40,7 +43,7 @@ impl RealityHandshakeContextProvider for SystemRealityHandshakeContextProvider {
 
 #[derive(Clone)]
 pub struct RealityRuntimeEngine {
-    client_hello_provider: Arc<dyn RealityClientHelloProvider>,
+    session_provider: Arc<dyn RealityTlsSessionProvider>,
     dns_resolver: Arc<dyn DnsResolver>,
     context_provider: Arc<dyn RealityHandshakeContextProvider>,
 }
@@ -49,7 +52,7 @@ impl fmt::Debug for RealityRuntimeEngine {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("RealityRuntimeEngine")
-            .field("client_hello_provider", &"<dyn RealityClientHelloProvider>")
+            .field("session_provider", &"<dyn RealityTlsSessionProvider>")
             .field("dns_resolver", &"<dyn DnsResolver>")
             .field("context_provider", &"<dyn RealityHandshakeContextProvider>")
             .finish()
@@ -57,9 +60,9 @@ impl fmt::Debug for RealityRuntimeEngine {
 }
 
 impl RealityRuntimeEngine {
-    pub fn new(client_hello_provider: Arc<dyn RealityClientHelloProvider>) -> Self {
+    pub fn new(session_provider: Arc<dyn RealityTlsSessionProvider>) -> Self {
         Self {
-            client_hello_provider,
+            session_provider,
             dns_resolver: Arc::new(SystemDnsResolver),
             context_provider: Arc::new(SystemRealityHandshakeContextProvider),
         }
@@ -100,14 +103,21 @@ impl RealityTlsEngine for RealityRuntimeEngine {
             );
         }
 
+        let session = self
+            .session_provider
+            .create_session(RealityClientHelloRequest {
+                server_name: &config.server_name,
+                fingerprint: &config.fingerprint,
+            })?;
+        let prepared_client_hello = session.prepared_client_hello()?;
         let context = self.context_provider.context();
-        let _prepared =
-            connector.prepare_handshake(self.client_hello_provider.as_ref(), context)?;
+        let prepared =
+            connector.prepare_handshake_with_client_hello(prepared_client_hello, context)?;
         let addr = self.resolve_socket_addr(target).await?;
-        let _stream = TcpStream::connect(addr)
+        let stream = TcpStream::connect(addr)
             .await
             .map_err(TransportError::Tcp)?;
 
-        Err(TransportError::RealityTlsCompletionUnsupported)
+        session.complete(stream, prepared).await
     }
 }

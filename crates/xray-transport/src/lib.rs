@@ -14,6 +14,7 @@ pub mod reality_runtime;
 mod tls;
 
 pub use dialer::TransportDialer;
+pub use reality_connector::{RealityTlsSession, RealityTlsSessionProvider};
 pub use reality_runtime::{
     RealityHandshakeContextProvider, RealityRuntimeEngine, SystemRealityHandshakeContextProvider,
 };
