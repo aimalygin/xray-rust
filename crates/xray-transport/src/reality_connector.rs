@@ -9,14 +9,13 @@
 //!
 //! Future `RealityConnector::connect` implementation notes:
 //!
-//! 1. Build a Chrome-compatible TLS 1.3 ClientHello and expose its raw bytes,
-//!    random, session-id offset, and ECDHE key share.
-//! 2. Compute the X25519 shared secret with the server public key and derive the
-//!    REALITY auth key.
-//! 3. Call `seal_reality_client_hello`.
-//! 4. Complete the TLS handshake.
-//! 5. Call `verify_reality_certificate_der` on the leaf certificate.
-//! 6. Expose the protected stream to VLESS only after REALITY verification.
+//! 1. Build or integrate a Chrome-compatible TLS 1.3 ClientHello provider that
+//!    exposes raw bytes, random, session-id offset, and local ECDHE private key.
+//! 2. Feed that provider output into `prepare_reality_handshake`.
+//! 3. Write the patched ClientHello to the network stream and complete TLS.
+//! 4. Call `verify_reality_certificate_der` on the leaf certificate with the
+//!    derived auth key from `RealityPreparedHandshake`.
+//! 5. Expose the protected stream to VLESS only after REALITY verification.
 //!
 //! VLESS should only see an async byte stream once live REALITY is implemented.
 
