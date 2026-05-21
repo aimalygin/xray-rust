@@ -131,6 +131,7 @@ impl fmt::Debug for RealityPreparedHandshake {
 
 impl Drop for RealityPreparedHandshake {
     fn drop(&mut self) {
+        self.patched_client_hello.zeroize();
         self.auth_key.zeroize();
         self.session_id.zeroize();
     }
@@ -435,6 +436,12 @@ fn is_tls_grease_value(value: u16) -> bool {
     high == low && high & 0x0f == 0x0a
 }
 
+/// Validates uTLS `hello.Raw` ClientHello metadata for REALITY preparation.
+///
+/// The input must be TLS handshake ClientHello bytes, not a TLS record. This
+/// boundary is intentionally separate from `prepare_reality_handshake` so the
+/// current synthetic preparation tests can remain narrow while the future live
+/// provider can validate real Chrome/uTLS output before sealing.
 pub fn validate_reality_client_hello_metadata(
     prepared: &RealityPreparedClientHello,
 ) -> Result<RealityClientHelloValidation, RealityError> {
