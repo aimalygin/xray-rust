@@ -10,9 +10,13 @@ use zeroize::Zeroize;
 mod dialer;
 pub mod reality;
 pub mod reality_connector;
+pub mod reality_runtime;
 mod tls;
 
 pub use dialer::TransportDialer;
+pub use reality_runtime::{
+    RealityHandshakeContextProvider, RealityRuntimeEngine, SystemRealityHandshakeContextProvider,
+};
 pub use tls::TlsConnector;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,6 +83,10 @@ pub enum TransportError {
     UnsupportedConnectorConfig(&'static str),
     #[error("unsupported REALITY fingerprint {0}")]
     UnsupportedRealityFingerprint(String),
+    #[error("reality handshake failed: {0}")]
+    Reality(#[from] reality::RealityError),
+    #[error("REALITY live TLS completion is not implemented")]
+    RealityTlsCompletionUnsupported,
 }
 
 /// Resolves a domain and configured port into the concrete socket address to dial.
