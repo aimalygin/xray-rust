@@ -36,6 +36,7 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["loggin
 uuid = { version = "1", features = ["serde", "v4"] }
 webpki-roots = "1"
 x25519-dalek = { version = "2", features = ["static_secrets"] }
+zeroize = "1"
 
 [profile.release]
 codegen-units = 1

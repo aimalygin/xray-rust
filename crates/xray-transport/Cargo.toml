@@ -16,6 +16,9 @@ tokio-rustls.workspace = true
 webpki-roots.workspace = true
 x25519-dalek.workspace = true
 xray-routing = { path = "../xray-routing" }
+zeroize.workspace = true
 
 [dev-dependencies]
 rcgen.workspace = true
+serde.workspace = true
+serde_json.workspace = true

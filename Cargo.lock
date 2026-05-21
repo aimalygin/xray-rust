@@ -1425,6 +1425,8 @@ dependencies = [
  "hkdf",
  "rcgen",
  "rustls",
+ "serde",
+ "serde_json",
  "sha2",
  "thiserror",
  "tokio",
@@ -1432,6 +1434,7 @@ dependencies = [
  "webpki-roots",
  "x25519-dalek",
  "xray-routing",
+ "zeroize",
 ]
 
 [[package]]
