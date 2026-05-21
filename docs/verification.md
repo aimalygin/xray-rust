@@ -38,7 +38,7 @@ cargo test -p xray-core-rs --test runtime_data_path_tests vision
 cargo test -p xray-core-rs outbound::tests
 ```
 
-These verify that `VisionStream` pads outbound bytes, unpads inbound bytes, the default system dialer still rejects live REALITY networking, an explicitly injected REALITY protected-stream engine can carry runtime bytes, the gated `RealityRuntimeEngine` can prepare a REALITY handshake and drive DNS/TCP setup before stopping at the live TLS completion boundary, `VLESS + REALITY + xtls-rprx-vision` reaches the protected transport boundary, and raw TCP/TLS Vision flows are still rejected. They do not validate a real Chrome/uTLS-compatible REALITY TLS completion path or local Xray-core interoperability yet.
+These verify that `VisionStream` pads outbound bytes, unpads inbound bytes, the default system dialer still rejects live REALITY networking, an explicitly injected REALITY protected-stream engine can carry runtime bytes, the gated `RealityRuntimeEngine` can prepare a REALITY handshake, drive DNS/TCP setup, and hand completion to a one-shot REALITY TLS session before stopping at the live TLS gate, `VLESS + REALITY + xtls-rprx-vision` reaches the protected transport boundary, and raw TCP/TLS Vision flows are still rejected. They do not validate a real Chrome/uTLS-compatible REALITY TLS completion path or local Xray-core interoperability yet.
 
 ## REALITY Primitive Oracle
 
@@ -53,7 +53,7 @@ cargo test -p xray-transport --test reality_connector_tests
 cargo test -p xray-transport --test reality_runtime_tests
 ```
 
-These checks validate deterministic Xray-core-compatible session-id sealing, ClientHello patching, certificate binding primitives, a uTLS Chrome ClientHello fixture that can be validated as `RealityPreparedClientHello` metadata, the non-networked provider-to-handshake boundary in `RealityConnector`, and the gated runtime setup path in `RealityRuntimeEngine`. They do not validate the live REALITY TLS completion path, a production Chrome/uTLS provider, or local Xray-core server interoperability.
+These checks validate deterministic Xray-core-compatible session-id sealing, ClientHello patching, certificate binding primitives, a uTLS Chrome ClientHello fixture that can be validated as `RealityPreparedClientHello` metadata, the non-networked provider-to-handshake boundary in `RealityConnector`, the prepared-ClientHello connector path, and the gated stateful runtime setup path in `RealityRuntimeEngine`. They do not validate the live REALITY TLS completion path, a production Chrome/uTLS provider, or local Xray-core server interoperability.
 
 ## Go Xray-core Oracle
 
