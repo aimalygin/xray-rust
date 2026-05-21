@@ -34,10 +34,12 @@ Run the deterministic REALITY primitive checks from the repository root:
 
 ```sh
 go run ./tools/reality-oracle/session_id_vectors.go --check tests/fixtures/reality/session_id_vectors.json
+go run ./tools/reality-oracle/clienthello_fixture.go --check tests/fixtures/reality/clienthello_chrome_auto.json
 cargo test -p xray-transport reality_tests
+cargo test -p xray-transport --test reality_clienthello_tests
 ```
 
-These checks validate deterministic Xray-core-compatible session-id sealing and ClientHello patching. They do not validate the live REALITY connector, Chrome/uTLS ClientHello synthesis, certificate HMAC verification, or Vision flow.
+These checks validate deterministic Xray-core-compatible session-id sealing, ClientHello patching, certificate binding primitives, and a uTLS Chrome ClientHello fixture that can be validated as `RealityPreparedClientHello` metadata. They do not validate the live REALITY connector, a runtime Chrome/uTLS provider, local Xray-core server interoperability, or Vision flow.
 
 ## Go Xray-core Oracle
 
