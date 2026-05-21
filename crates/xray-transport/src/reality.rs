@@ -9,12 +9,20 @@ use sha2::Sha256;
 use thiserror::Error;
 use zeroize::Zeroizing;
 
+const REALITY_SESSION_ID_LEN: usize = 32;
+const REALITY_MAX_SHORT_ID_LEN: usize = 8;
+
 pub struct RealitySessionIdInput {
     pub version: [u8; 3],
     pub unix_time: u32,
     pub short_id: Vec<u8>,
     pub shared_secret: [u8; 32],
     pub hello_random: [u8; 32],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RealityClientHelloPatch {
+    pub session_id_offset: usize,
 }
 
 impl fmt::Debug for RealitySessionIdInput {
@@ -50,9 +58,7 @@ pub fn build_reality_session_id(
     input: &RealitySessionIdInput,
     raw_client_hello_before_seal: &[u8],
 ) -> Result<[u8; 32], RealityError> {
-    if input.short_id.len() > 8 {
-        return Err(RealityError::ShortIdTooLong);
-    }
+    validate_reality_short_id(input)?;
 
     let mut session_id_prefix = [0u8; 16];
     session_id_prefix[..3].copy_from_slice(&input.version);
@@ -74,4 +80,41 @@ pub fn build_reality_session_id(
     session_id[..16].copy_from_slice(&session_id_prefix);
     session_id[16..].copy_from_slice(&tag);
     Ok(session_id)
+}
+
+pub fn seal_reality_client_hello(
+    input: &RealitySessionIdInput,
+    patch: RealityClientHelloPatch,
+    raw_client_hello: &mut [u8],
+) -> Result<[u8; REALITY_SESSION_ID_LEN], RealityError> {
+    validate_reality_short_id(input)?;
+
+    let offset = patch.session_id_offset;
+    let len = raw_client_hello.len();
+    let end =
+        offset
+            .checked_add(REALITY_SESSION_ID_LEN)
+            .ok_or(RealityError::InvalidSessionIdRange {
+                offset,
+                end: usize::MAX,
+                len,
+            })?;
+
+    if end > len {
+        return Err(RealityError::InvalidSessionIdRange { offset, end, len });
+    }
+
+    raw_client_hello[offset..end].fill(0);
+    let session_id = build_reality_session_id(input, raw_client_hello)?;
+    raw_client_hello[offset..end].copy_from_slice(&session_id);
+
+    Ok(session_id)
+}
+
+fn validate_reality_short_id(input: &RealitySessionIdInput) -> Result<(), RealityError> {
+    if input.short_id.len() > REALITY_MAX_SHORT_ID_LEN {
+        return Err(RealityError::ShortIdTooLong);
+    }
+
+    Ok(())
 }

@@ -1,6 +1,9 @@
 mod reality_tests {
     use serde::Deserialize;
-    use xray_transport::reality::{build_reality_session_id, RealityError, RealitySessionIdInput};
+    use xray_transport::reality::{
+        build_reality_session_id, seal_reality_client_hello, RealityClientHelloPatch, RealityError,
+        RealitySessionIdInput,
+    };
 
     const SESSION_ID_VECTORS_JSON: &str =
         include_str!("../../../tests/fixtures/reality/session_id_vectors.json");
@@ -64,6 +67,134 @@ mod reality_tests {
 
             assert_eq!(session_id, expected_session_id, "{}", vector.name);
         }
+    }
+
+    #[test]
+    fn reality_client_hello_patch_matches_oracle_vectors() {
+        for vector in session_id_vectors() {
+            let input = input_from_vector(&vector);
+            let patch = RealityClientHelloPatch {
+                session_id_offset: vector.session_id_offset,
+            };
+            let mut raw_client_hello = decode_hex(&vector.raw_client_hello_before_hex);
+            let expected_session_id = decode_hex_array(&vector.expected_session_id_hex);
+            let expected_client_hello_after = decode_hex(&vector.expected_client_hello_after_hex);
+
+            let session_id =
+                seal_reality_client_hello(&input, patch, &mut raw_client_hello).unwrap();
+
+            assert_eq!(session_id, expected_session_id, "{}", vector.name);
+            assert_eq!(
+                raw_client_hello, expected_client_hello_after,
+                "{}",
+                vector.name
+            );
+        }
+    }
+
+    #[test]
+    fn reality_client_hello_patch_zeroes_session_id_before_sealing() {
+        let vector = session_id_vectors().remove(0);
+        let input = input_from_vector(&vector);
+        let patch = RealityClientHelloPatch {
+            session_id_offset: vector.session_id_offset,
+        };
+        let mut raw_client_hello = decode_hex(&vector.raw_client_hello_before_hex);
+        let end = vector.session_id_offset + 32;
+        raw_client_hello[vector.session_id_offset..end].fill(0xa5);
+        let expected_session_id = decode_hex_array(&vector.expected_session_id_hex);
+        let expected_client_hello_after = decode_hex(&vector.expected_client_hello_after_hex);
+
+        let session_id = seal_reality_client_hello(&input, patch, &mut raw_client_hello).unwrap();
+
+        assert_eq!(session_id, expected_session_id);
+        assert_eq!(raw_client_hello, expected_client_hello_after);
+    }
+
+    #[test]
+    fn reality_client_hello_patch_rejects_invalid_offsets() {
+        let vector = session_id_vectors().remove(0);
+        let input = input_from_vector(&vector);
+        let mut raw_client_hello = decode_hex(&vector.raw_client_hello_before_hex);
+        let original_client_hello = raw_client_hello.clone();
+        let len = raw_client_hello.len();
+
+        let err = seal_reality_client_hello(
+            &input,
+            RealityClientHelloPatch {
+                session_id_offset: len - 31,
+            },
+            &mut raw_client_hello,
+        )
+        .unwrap_err();
+        assert_eq!(
+            err,
+            RealityError::InvalidSessionIdRange {
+                offset: len - 31,
+                end: len + 1,
+                len
+            }
+        );
+        assert_eq!(raw_client_hello, original_client_hello);
+
+        let err = seal_reality_client_hello(
+            &input,
+            RealityClientHelloPatch {
+                session_id_offset: usize::MAX,
+            },
+            &mut raw_client_hello,
+        )
+        .unwrap_err();
+        assert_eq!(
+            err,
+            RealityError::InvalidSessionIdRange {
+                offset: usize::MAX,
+                end: usize::MAX,
+                len
+            }
+        );
+        assert_eq!(raw_client_hello, original_client_hello);
+    }
+
+    #[test]
+    fn reality_client_hello_patch_rejects_long_short_id_without_mutating() {
+        let vector = session_id_vectors().remove(0);
+        let mut input = input_from_vector(&vector);
+        input.short_id = vec![0, 1, 2, 3, 4, 5, 6, 7, 8];
+        let patch = RealityClientHelloPatch {
+            session_id_offset: vector.session_id_offset,
+        };
+        let mut raw_client_hello = decode_hex(&vector.raw_client_hello_before_hex);
+        let end = vector.session_id_offset + 32;
+        raw_client_hello[vector.session_id_offset..end].fill(0xa5);
+        let original_client_hello = raw_client_hello.clone();
+
+        let err = seal_reality_client_hello(&input, patch, &mut raw_client_hello).unwrap_err();
+
+        assert_eq!(err, RealityError::ShortIdTooLong);
+        assert_eq!(raw_client_hello, original_client_hello);
+    }
+
+    #[test]
+    fn reality_client_hello_patch_accepts_exact_boundary_offset() {
+        let vector = session_id_vectors().remove(0);
+        let input = input_from_vector(&vector);
+        let mut raw_client_hello = decode_hex(&vector.raw_client_hello_before_hex);
+        raw_client_hello.resize(vector.session_id_offset + 32, 0);
+        let patch = RealityClientHelloPatch {
+            session_id_offset: raw_client_hello.len() - 32,
+        };
+        let mut expected_client_hello_after = raw_client_hello.clone();
+        expected_client_hello_after[vector.session_id_offset..].fill(0);
+        let expected_session_id =
+            build_reality_session_id(&input, &expected_client_hello_after).unwrap();
+        expected_client_hello_after[vector.session_id_offset..]
+            .copy_from_slice(&expected_session_id);
+
+        let session_id = seal_reality_client_hello(&input, patch, &mut raw_client_hello).unwrap();
+
+        assert_eq!(session_id, expected_session_id);
+        assert_eq!(raw_client_hello, expected_client_hello_after);
     }
 
     #[test]
