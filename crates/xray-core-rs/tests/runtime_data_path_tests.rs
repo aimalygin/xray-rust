@@ -378,9 +378,12 @@ fn rejects_vision_flow_for_raw_tcp_runtime_path() {
 }
 
 #[test]
-fn rejects_vision_flow_for_reality_until_vision_wrapper_exists() {
+fn rejects_vision_flow_for_tls_runtime_path() {
     let mut outbound = vless_outbound(
-        reality_security(),
+        StreamSecurity::Tls(TlsSettings {
+            server_name: Some("example.com".to_owned()),
+            fingerprint: None,
+        }),
         TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
         443,
     );
@@ -391,6 +394,26 @@ fn rejects_vision_flow_for_reality_until_vision_wrapper_exists() {
     let result = select_vless_tcp_outbound(&config);
 
     assert!(matches!(result, Err(CoreError::UnsupportedOutboundFlow)));
+}
+
+#[test]
+fn selects_reality_vision_outbound_for_protected_stream_boundary() {
+    let mut outbound = vless_outbound(
+        reality_security(),
+        TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
+        443,
+    );
+    let OutboundSettings::Vless(settings) = &mut outbound.settings;
+    settings.users[0].flow = Some("xtls-rprx-vision".to_owned());
+    let config = config_with_outbound(outbound);
+
+    let selected = select_vless_tcp_outbound(&config).unwrap();
+
+    assert_eq!(selected.user().flow.as_deref(), Some("xtls-rprx-vision"));
+    assert!(matches!(
+        selected.transport(),
+        xray_transport::ConnectorConfig::Reality(_)
+    ));
 }
 
 #[tokio::test]

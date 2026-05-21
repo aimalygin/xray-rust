@@ -28,6 +28,16 @@ cargo test -p xray-core-rs --test runtime_data_path_tests socks_client_reaches_e
 
 These prove the current local/test paths: SOCKS5 client traffic enters `xray-core-rs`, is encoded as VLESS over raw TCP, reaches a fake VLESS server configured either as an IP outbound server or through a resolver-injected domain outbound server, and returns bytes from an echo target. They do not prove full Xray DNS behavior, TLS, REALITY, or Vision live interoperability yet.
 
+Run the Vision runtime boundary checks:
+
+```sh
+cargo test -p xray-proxy --test vision_stream_tests
+cargo test -p xray-core-rs --test runtime_data_path_tests vision
+cargo test -p xray-core-rs outbound::tests
+```
+
+These verify that `VisionStream` pads outbound bytes, unpads inbound bytes, `VLESS + REALITY + xtls-rprx-vision` reaches the protected transport boundary, and raw TCP/TLS Vision flows are still rejected. They do not validate live REALITY networking or local Xray-core interoperability yet.
+
 ## REALITY Primitive Oracle
 
 Run the deterministic REALITY primitive checks from the repository root:
@@ -40,7 +50,7 @@ cargo test -p xray-transport --test reality_clienthello_tests
 cargo test -p xray-transport --test reality_connector_tests
 ```
 
-These checks validate deterministic Xray-core-compatible session-id sealing, ClientHello patching, certificate binding primitives, a uTLS Chrome ClientHello fixture that can be validated as `RealityPreparedClientHello` metadata, and the non-networked provider-to-handshake boundary in `RealityConnector`. They do not validate the live REALITY connector, a production Chrome/uTLS provider, local Xray-core server interoperability, or Vision flow.
+These checks validate deterministic Xray-core-compatible session-id sealing, ClientHello patching, certificate binding primitives, a uTLS Chrome ClientHello fixture that can be validated as `RealityPreparedClientHello` metadata, and the non-networked provider-to-handshake boundary in `RealityConnector`. They do not validate the live REALITY connector, a production Chrome/uTLS provider, or local Xray-core server interoperability.
 
 ## Go Xray-core Oracle
 

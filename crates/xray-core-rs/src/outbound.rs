@@ -1,6 +1,6 @@
 use tokio::io::AsyncWriteExt;
 use xray_config::{CoreConfig, Network, OutboundSettings, StreamSecurity, TargetAddr, VlessUser};
-use xray_proxy::vless::{encode_request_header, VlessCommand, VlessRequest};
+use xray_proxy::vless::{encode_request_header, VisionStream, VlessCommand, VlessRequest};
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::{
     BoxedTransportStream, ConnectorConfig, DnsResolver, RealityClientConfig, SystemDnsResolver,
@@ -8,6 +8,8 @@ use xray_transport::{
 };
 
 use crate::CoreError;
+
+const VISION_FLOW: &str = "xtls-rprx-vision";
 
 #[derive(Debug, Clone)]
 pub struct VlessTcpOutbound {
@@ -23,6 +25,10 @@ impl VlessTcpOutbound {
 
     pub fn transport(&self) -> &ConnectorConfig {
         &self.transport
+    }
+
+    pub fn user(&self) -> &VlessUser {
+        &self.user
     }
 }
 
@@ -49,9 +55,7 @@ pub fn select_vless_tcp_outbound(config: &CoreConfig) -> Result<VlessTcpOutbound
         .first()
         .cloned()
         .ok_or(CoreError::NoSupportedOutbound)?;
-    if user.flow.is_some() {
-        return Err(CoreError::UnsupportedOutboundFlow);
-    }
+    validate_stream_flow(user.flow.as_deref(), &outbound.stream.security)?;
 
     let transport = match &outbound.stream.security {
         StreamSecurity::None => ConnectorConfig::Tcp,
@@ -90,6 +94,25 @@ pub fn select_vless_tcp_outbound(config: &CoreConfig) -> Result<VlessTcpOutbound
         user,
         transport,
     })
+}
+
+fn validate_stream_flow(flow: Option<&str>, security: &StreamSecurity) -> Result<(), CoreError> {
+    validate_vision_flow(flow, matches!(security, StreamSecurity::Reality(_))).map(|_| ())
+}
+
+fn validate_connector_flow(
+    flow: Option<&str>,
+    transport: &ConnectorConfig,
+) -> Result<bool, CoreError> {
+    validate_vision_flow(flow, matches!(transport, ConnectorConfig::Reality(_)))
+}
+
+fn validate_vision_flow(flow: Option<&str>, is_reality: bool) -> Result<bool, CoreError> {
+    match flow {
+        None => Ok(false),
+        Some(VISION_FLOW) if is_reality => Ok(true),
+        Some(_) => Err(CoreError::UnsupportedOutboundFlow),
+    }
 }
 
 async fn resolve_server_target(
@@ -134,9 +157,7 @@ pub async fn open_vless_tcp_stream_with_resolver_and_dialer(
     dns_resolver: &dyn DnsResolver,
     transport_dialer: &TransportDialer,
 ) -> Result<BoxedTransportStream, CoreError> {
-    if outbound.user.flow.is_some() {
-        return Err(CoreError::UnsupportedOutboundFlow);
-    }
+    let uses_vision = validate_connector_flow(outbound.user.flow.as_deref(), &outbound.transport)?;
 
     let resolved_server = resolve_server_target(&outbound.server, dns_resolver).await?;
     let mut stream = transport_dialer
@@ -151,6 +172,14 @@ pub async fn open_vless_tcp_stream_with_resolver_and_dialer(
     let header = encode_request_header(&request)?;
 
     stream.write_all(&header).await?;
+
+    if uses_vision {
+        return Ok(Box::new(VisionStream::new(
+            stream,
+            *outbound.user.id.as_bytes(),
+            [0, 0, 0, 0],
+        )));
+    }
 
     Ok(stream)
 }
@@ -194,5 +223,42 @@ mod tests {
         let result = open_vless_tcp_stream(&outbound, &target).await;
 
         assert!(matches!(result, Err(CoreError::UnsupportedOutboundFlow)));
+    }
+
+    #[tokio::test]
+    async fn open_vless_tcp_stream_reaches_reality_transport_gate_for_vision_flow() {
+        let outbound = VlessTcpOutbound {
+            server: Target::new(
+                RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+                0,
+                RoutingNetwork::Tcp,
+            ),
+            user: VlessUser {
+                id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
+                encryption: "none".to_owned(),
+                flow: Some(VISION_FLOW.to_owned()),
+            },
+            transport: ConnectorConfig::Reality(RealityClientConfig {
+                server_name: "example.com".to_owned(),
+                fingerprint: "chrome".to_owned(),
+                public_key: [7; 32],
+                short_id: vec![1, 2, 3, 4],
+                spider_x: "/".to_owned(),
+            }),
+        };
+        let target = Target::new(
+            RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
+            443,
+            RoutingNetwork::Tcp,
+        );
+
+        let result = open_vless_tcp_stream(&outbound, &target).await;
+
+        assert!(matches!(
+            result,
+            Err(CoreError::Transport(
+                xray_transport::TransportError::UnsupportedConnectorConfig("reality")
+            ))
+        ));
     }
 }
