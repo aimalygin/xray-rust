@@ -18,11 +18,14 @@ license = "MPL-2.0"
 repository = "local"
 
 [workspace.dependencies]
-aes-gcm = "0.10"
+aes = { version = "0.8", features = ["zeroize"] }
+aes-gcm = { version = "0.10", features = ["zeroize"] }
 async-trait = "0.1"
 bytes = "1"
+ghash = { version = "0.5", features = ["zeroize"] }
 hkdf = "0.12"
 libc = "0.2"
+polyval = { version = "0.6", features = ["zeroize"] }
 prost = "0.13"
 rand = "0.8"
 rcgen = { version = "0.14", default-features = false, features = ["ring"] }

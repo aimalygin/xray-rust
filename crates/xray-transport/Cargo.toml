@@ -5,9 +5,13 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+# Direct RustCrypto deps enable zeroize feature unification for AES-GCM internal state.
+aes.workspace = true
 aes-gcm.workspace = true
 async-trait.workspace = true
+ghash.workspace = true
 hkdf.workspace = true
+polyval.workspace = true
 rustls.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
