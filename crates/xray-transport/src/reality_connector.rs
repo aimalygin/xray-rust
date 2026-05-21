@@ -1,19 +1,22 @@
 //! REALITY connector boundary.
 //!
 //! Oracle/source: `Xray-core/transport/internet/reality/reality.go::UClient`.
-//! Pure session-id sealing and ClientHello patching live in `crate::reality`.
+//! Pure session-id sealing, ClientHello patching, and certificate HMAC
+//! verification live in `crate::reality`.
 //!
 //! This connector remains non-networked until Chrome/uTLS-compatible ClientHello generation
-//! and REALITY certificate verification exist.
+//! and a complete REALITY TLS handshake exist.
 //!
 //! Future `RealityConnector::connect` implementation notes:
 //!
 //! 1. Build a Chrome-compatible TLS 1.3 ClientHello and expose its raw bytes,
 //!    random, session-id offset, and ECDHE key share.
-//! 2. Compute the X25519 shared secret with the server public key.
+//! 2. Compute the X25519 shared secret with the server public key and derive the
+//!    REALITY auth key.
 //! 3. Call `seal_reality_client_hello`.
 //! 4. Complete the TLS handshake.
-//! 5. Verify the REALITY certificate HMAC.
+//! 5. Call `verify_reality_certificate_der` on the leaf certificate.
+//! 6. Expose the protected stream to VLESS only after REALITY verification.
 //!
 //! VLESS should only see an async byte stream once live REALITY is implemented.
 
