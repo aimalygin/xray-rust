@@ -21,8 +21,33 @@
 
 use std::fmt;
 
-use crate::RealityClientConfig;
+use crate::{
+    reality::{
+        prepare_reality_handshake, validate_reality_client_hello_metadata, RealityError,
+        RealityHandshakeInput, RealityPreparedClientHello, RealityPreparedHandshake,
+    },
+    RealityClientConfig,
+};
 use zeroize::Zeroize;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RealityClientHelloRequest<'a> {
+    pub server_name: &'a str,
+    pub fingerprint: &'a str,
+}
+
+pub trait RealityClientHelloProvider: Send + Sync {
+    fn prepare_client_hello(
+        &self,
+        request: RealityClientHelloRequest<'_>,
+    ) -> Result<RealityPreparedClientHello, RealityError>;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RealityHandshakeContext {
+    pub version: [u8; 3],
+    pub unix_time: u32,
+}
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct RealityHandshakePlan {
@@ -83,5 +108,31 @@ impl RealityConnector {
             short_id: self.config.short_id.clone(),
             spider_x: self.config.spider_x.clone(),
         }
+    }
+
+    pub fn prepare_handshake(
+        &self,
+        provider: &dyn RealityClientHelloProvider,
+        context: RealityHandshakeContext,
+    ) -> Result<RealityPreparedHandshake, RealityError> {
+        if !self.is_fingerprint_supported() {
+            return Err(RealityError::UnsupportedRealityFingerprint(
+                self.config.fingerprint.clone(),
+            ));
+        }
+
+        let prepared_client_hello = provider.prepare_client_hello(RealityClientHelloRequest {
+            server_name: &self.config.server_name,
+            fingerprint: &self.config.fingerprint,
+        })?;
+        validate_reality_client_hello_metadata(&prepared_client_hello)?;
+
+        prepare_reality_handshake(RealityHandshakeInput {
+            version: context.version,
+            unix_time: context.unix_time,
+            short_id: self.config.short_id.clone(),
+            server_public_key: self.config.public_key,
+            prepared_client_hello,
+        })
     }
 }

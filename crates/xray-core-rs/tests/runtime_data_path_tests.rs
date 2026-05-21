@@ -192,18 +192,24 @@ fn selects_default_outbound_tag_when_present() {
 }
 
 #[test]
-fn rejects_reality_outbound_for_raw_tcp_runtime_path() {
+fn selects_reality_vless_outbound_for_handshake_provider_path() {
     let config = config_with_outbound(vless_outbound(
         reality_security(),
         TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
         443,
     ));
 
-    let result = select_vless_tcp_outbound(&config);
+    let selected = select_vless_tcp_outbound(&config).unwrap();
 
+    assert_eq!(selected.server().port, 443);
     assert!(matches!(
-        result,
-        Err(CoreError::UnsupportedOutboundSecurity)
+        selected.transport(),
+        xray_transport::ConnectorConfig::Reality(config)
+            if config.server_name == "example.com"
+                && config.fingerprint == "chrome"
+                && config.public_key == [7; 32]
+                && config.short_id == vec![1, 2, 3, 4]
+                && config.spider_x == "/"
     ));
 }
 
@@ -359,6 +365,22 @@ fn selects_domain_vless_server_for_dns_resolution() {
 fn rejects_vision_flow_for_raw_tcp_runtime_path() {
     let mut outbound = vless_outbound(
         StreamSecurity::None,
+        TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
+        443,
+    );
+    let OutboundSettings::Vless(settings) = &mut outbound.settings;
+    settings.users[0].flow = Some("xtls-rprx-vision".to_owned());
+    let config = config_with_outbound(outbound);
+
+    let result = select_vless_tcp_outbound(&config);
+
+    assert!(matches!(result, Err(CoreError::UnsupportedOutboundFlow)));
+}
+
+#[test]
+fn rejects_vision_flow_for_reality_until_vision_wrapper_exists() {
+    let mut outbound = vless_outbound(
+        reality_security(),
         TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
         443,
     );

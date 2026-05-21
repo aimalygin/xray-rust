@@ -3,8 +3,8 @@ use xray_config::{CoreConfig, Network, OutboundSettings, StreamSecurity, TargetA
 use xray_proxy::vless::{encode_request_header, VlessCommand, VlessRequest};
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::{
-    BoxedTransportStream, ConnectorConfig, DnsResolver, SystemDnsResolver, TlsClientConfig,
-    TransportDialer,
+    BoxedTransportStream, ConnectorConfig, DnsResolver, RealityClientConfig, SystemDnsResolver,
+    TlsClientConfig, TransportDialer,
 };
 
 use crate::CoreError;
@@ -44,6 +44,15 @@ pub fn select_vless_tcp_outbound(config: &CoreConfig) -> Result<VlessTcpOutbound
     }
 
     let OutboundSettings::Vless(settings) = &outbound.settings;
+    let user = settings
+        .users
+        .first()
+        .cloned()
+        .ok_or(CoreError::NoSupportedOutbound)?;
+    if user.flow.is_some() {
+        return Err(CoreError::UnsupportedOutboundFlow);
+    }
+
     let transport = match &outbound.stream.security {
         StreamSecurity::None => ConnectorConfig::Tcp,
         StreamSecurity::Tls(tls) => {
@@ -62,16 +71,14 @@ pub fn select_vless_tcp_outbound(config: &CoreConfig) -> Result<VlessTcpOutbound
 
             ConnectorConfig::Tls(TlsClientConfig { server_name })
         }
-        StreamSecurity::Reality(_) => return Err(CoreError::UnsupportedOutboundSecurity),
+        StreamSecurity::Reality(reality) => ConnectorConfig::Reality(RealityClientConfig {
+            server_name: reality.server_name.clone(),
+            fingerprint: reality.fingerprint.clone(),
+            public_key: reality.public_key,
+            short_id: reality.short_id.as_slice().to_vec(),
+            spider_x: reality.spider_x.clone(),
+        }),
     };
-    let user = settings
-        .users
-        .first()
-        .cloned()
-        .ok_or(CoreError::NoSupportedOutbound)?;
-    if user.flow.is_some() {
-        return Err(CoreError::UnsupportedOutboundFlow);
-    }
 
     let addr = match &settings.server {
         TargetAddr::Ip(ip) => RoutingTargetAddr::Ip(*ip),

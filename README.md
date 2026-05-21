@@ -14,7 +14,7 @@ First implementation targets:
 - `xtls-rprx-vision`.
 - C ABI for mobile embedding.
 
-Current runtime status: the raw TCP VLESS path is executable for a local SOCKS5 client and covered by end-to-end Rust tests with a fake VLESS server. VLESS outbound servers may be configured as IP addresses or, when a resolver is available, domains. Full Xray DNS behavior, TLS, REALITY, and Vision live traffic remain future work; protected modes are rejected by the raw runtime path rather than silently falling back to plaintext.
+Current runtime status: raw TCP VLESS and plain rustls-backed VLESS over TLS are executable for local/test traffic and covered by end-to-end Rust tests with fake VLESS servers. VLESS outbound servers may be configured as IP addresses or, when a resolver is available, domains. REALITY configs can be selected into the transport boundary and prepared from a validated ClientHello provider without network I/O, but the live REALITY connector, Vision wrapping, full Xray DNS behavior, and local Xray-core interoperability run remain future work.
 
 See:
 
