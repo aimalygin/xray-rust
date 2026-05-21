@@ -45,6 +45,11 @@ pub trait RealityClientHelloProvider: Send + Sync {
     ) -> Result<RealityPreparedClientHello, RealityError>;
 }
 
+/// Creates one-shot REALITY TLS sessions for runtime connections.
+///
+/// The provider is shared by the runtime engine, but each call must return a
+/// fresh session whose ClientHello state can later be consumed by
+/// `RealityTlsSession::complete`.
 pub trait RealityTlsSessionProvider: Send + Sync {
     fn create_session(
         &self,
@@ -52,6 +57,11 @@ pub trait RealityTlsSessionProvider: Send + Sync {
     ) -> Result<Box<dyn RealityTlsSession>, RealityError>;
 }
 
+/// A single REALITY TLS handshake session.
+///
+/// Implementations expose the ClientHello metadata needed for REALITY
+/// session-id sealing, then consume themselves to complete TLS over the TCP
+/// stream with the patched `RealityPreparedHandshake`.
 #[async_trait]
 pub trait RealityTlsSession: Send {
     fn prepared_client_hello(&self) -> Result<RealityPreparedClientHello, RealityError>;

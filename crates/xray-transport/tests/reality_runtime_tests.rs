@@ -41,6 +41,7 @@ struct RecordingSessionProvider {
     fixture: ClientHelloFixture,
     seen: Mutex<Vec<(String, String)>>,
     completions: Arc<Mutex<Vec<CompletionRecord>>>,
+    completion_error: Option<String>,
 }
 
 impl RecordingSessionProvider {
@@ -49,7 +50,13 @@ impl RecordingSessionProvider {
             fixture,
             seen: Mutex::new(Vec::new()),
             completions: Arc::new(Mutex::new(Vec::new())),
+            completion_error: None,
         }
+    }
+
+    fn with_completion_error(mut self, message: impl Into<String>) -> Self {
+        self.completion_error = Some(message.into());
+        self
     }
 
     fn seen(&self) -> Vec<(String, String)> {
@@ -84,6 +91,7 @@ impl RealityTlsSessionProvider for RecordingSessionProvider {
             session_id_offset: self.fixture.session_id_offset,
             original_session_id,
             completions: self.completions.clone(),
+            completion_error: self.completion_error.clone(),
         }))
     }
 }
@@ -94,6 +102,7 @@ struct RecordingRealityTlsSession {
     session_id_offset: usize,
     original_session_id: Vec<u8>,
     completions: Arc<Mutex<Vec<CompletionRecord>>>,
+    completion_error: Option<String>,
 }
 
 #[async_trait]
@@ -128,7 +137,10 @@ impl RealityTlsSession for RecordingRealityTlsSession {
                 auth_key: prepared.auth_key,
             });
 
-        Err(TransportError::RealityTlsCompletionUnsupported)
+        match self.completion_error {
+            Some(message) => Err(TransportError::TlsConfig(message)),
+            None => Err(TransportError::RealityTlsCompletionUnsupported),
+        }
     }
 }
 
@@ -419,4 +431,35 @@ async fn reality_runtime_resolves_domain_targets_before_tcp_connect() {
         completions[0].patched_session_id.as_slice(),
         &completions[0].session_id[..]
     );
+}
+
+#[tokio::test]
+async fn reality_runtime_propagates_session_completion_errors_unchanged() {
+    let (addr, handle) = spawn_accept_once().await;
+    let provider = Arc::new(
+        RecordingSessionProvider::new(clienthello_fixture())
+            .with_completion_error("scripted completion failure"),
+    );
+    let context = Arc::new(FixedContextProvider::new(fixed_context()));
+    let resolver = Arc::new(RecordingDnsResolver::new(addr));
+    let engine = RealityRuntimeEngine::new(provider.clone())
+        .with_dns_resolver(resolver.clone())
+        .with_context_provider(context.clone());
+    let config = reality_config();
+    let target = Target::new(TargetAddr::Ip(addr.ip()), addr.port(), Network::Tcp);
+
+    let result = engine.connect(&config, &target).await;
+
+    assert!(matches!(
+        result,
+        Err(TransportError::TlsConfig(message)) if message == "scripted completion failure"
+    ));
+    assert_accept_completed(handle).await;
+    assert_eq!(resolver.seen(), Vec::<(String, u16)>::new());
+    assert_eq!(
+        provider.seen(),
+        vec![("www.example.com".to_owned(), "chrome".to_owned())]
+    );
+    assert_eq!(context.calls(), 1);
+    assert_eq!(provider.completions().len(), 1);
 }
