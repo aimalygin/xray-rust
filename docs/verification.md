@@ -32,11 +32,12 @@ Run the Vision runtime boundary checks:
 
 ```sh
 cargo test -p xray-proxy --test vision_stream_tests
+cargo test -p xray-transport --test transport_tests reality
 cargo test -p xray-core-rs --test runtime_data_path_tests vision
 cargo test -p xray-core-rs outbound::tests
 ```
 
-These verify that `VisionStream` pads outbound bytes, unpads inbound bytes, `VLESS + REALITY + xtls-rprx-vision` reaches the protected transport boundary, and raw TCP/TLS Vision flows are still rejected. They do not validate live REALITY networking or local Xray-core interoperability yet.
+These verify that `VisionStream` pads outbound bytes, unpads inbound bytes, the default system dialer still rejects live REALITY networking, an explicitly injected REALITY protected-stream engine can carry runtime bytes, `VLESS + REALITY + xtls-rprx-vision` reaches the protected transport boundary, and raw TCP/TLS Vision flows are still rejected. They do not validate a real Chrome/uTLS-compatible REALITY TLS engine or local Xray-core interoperability yet.
 
 ## REALITY Primitive Oracle
 

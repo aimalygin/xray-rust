@@ -14,7 +14,7 @@ First implementation targets:
 - `xtls-rprx-vision`.
 - C ABI for mobile embedding.
 
-Current runtime status: raw TCP VLESS and plain rustls-backed VLESS over TLS are executable for local/test traffic and covered by end-to-end Rust tests with fake VLESS servers. VLESS outbound servers may be configured as IP addresses or, when a resolver is available, domains. REALITY configs can be selected into the transport boundary and prepared from a validated ClientHello provider without network I/O. `xtls-rprx-vision` now has a bounded Tokio stream wrapper and `VLESS + REALITY + Vision` selection reaches the protected transport boundary, while raw TCP/TLS Vision flows remain rejected. The live REALITY connector, full Xray DNS behavior, and local Xray-core interoperability run remain future work.
+Current runtime status: raw TCP VLESS and plain rustls-backed VLESS over TLS are executable for local/test traffic and covered by end-to-end Rust tests with fake VLESS servers. VLESS outbound servers may be configured as IP addresses or, when a resolver is available, domains. REALITY configs can be selected into the transport boundary and prepared from a validated ClientHello provider without network I/O. `xtls-rprx-vision` has a bounded Tokio stream wrapper, and `VLESS + REALITY + Vision` can now be exercised through an explicitly injected REALITY protected-stream engine. The default system dialer still rejects live REALITY networking until a real Chrome/uTLS-compatible TLS engine exists. Full Xray DNS behavior and local Xray-core interoperability run remain future work.
 
 See:
 
