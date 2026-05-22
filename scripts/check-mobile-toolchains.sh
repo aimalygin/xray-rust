@@ -2,6 +2,7 @@
 set -euo pipefail
 
 APPLE_TARGETS=(
+  "aarch64-apple-darwin"
   "aarch64-apple-ios"
   "aarch64-apple-ios-sim"
   "x86_64-apple-ios"
@@ -18,6 +19,7 @@ ANDROID_TARGETS=(
 )
 
 APPLE_SDKS=(
+  "macosx"
   "iphoneos"
   "iphonesimulator"
   "appletvos"

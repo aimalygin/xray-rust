@@ -10,6 +10,11 @@ Xray-core/
 **/*.rs.bk
 
 # Native/mobile build outputs.
+platform/apple/.build/
+platform/android/.gradle/
+platform/android/build/
+platform/android/xraymobile/.cxx/
+platform/android/xraymobile/build/
 *.a
 *.so
 *.dylib

@@ -12,7 +12,7 @@ scripts/check-mobile-toolchains.sh
 
 The script checks:
 
-- Rust iOS targets: `aarch64-apple-ios`, `aarch64-apple-ios-sim`, `x86_64-apple-ios`.
+- Rust Apple host/mobile targets: `aarch64-apple-darwin`, `aarch64-apple-ios`, `aarch64-apple-ios-sim`, `x86_64-apple-ios`.
 - Rust Android targets: `aarch64-linux-android`, `armv7-linux-androideabi`, `i686-linux-android`, `x86_64-linux-android`.
 - tvOS build-std fallback through `TVOS_BUILD_STD=auto`, `TVOS_RUST_TOOLCHAIN=nightly`, and `rust-src`.
 - Apple SDKs for iOS, iOS simulator, tvOS, and tvOS simulator.
@@ -55,6 +55,7 @@ The generated XCFramework contains:
 - `ios-arm64_x86_64-simulator`
 - `tvos-arm64`
 - `tvos-arm64_x86_64-simulator`
+- `macos-arm64`, used as a local SwiftPM host-build slice for adapter checks.
 
 Useful environment overrides:
 
@@ -83,6 +84,14 @@ It provides:
 - `crates/xray-ffi/include/module.modulemap`, so the generated XCFramework can be imported as `XrayRust` from Swift.
 
 The package expects `target/mobile/apple/XrayRust.xcframework` to exist. Build it first with `scripts/build-apple-xcframework.sh`.
+
+Run the adapter host-build check with:
+
+```sh
+scripts/build-apple-adapter.sh
+```
+
+This builds the Swift package against the generated XCFramework. The macOS slice in the XCFramework is included for this local SwiftPM check; the mobile runtime targets remain iOS and tvOS.
 
 ## Android Artifacts
 
@@ -130,6 +139,14 @@ It provides:
 
 The Android skeleton expects generated `libxray_ffi.so` files under `target/mobile/android/jniLibs`. Build them first with `scripts/build-android-libs.sh`. The JNI bridge can also use `XRAY_FFI_ANDROID_DIR=/path/to/mobile/android` when the artifact directory lives elsewhere.
 
+Run the adapter build check with:
+
+```sh
+scripts/build-android-adapter.sh
+```
+
+This builds the Android library AAR, compiles the JNI bridge through CMake for all configured ABIs, and compiles the Kotlin wrapper. The script discovers `ANDROID_HOME` and `ANDROID_NDK_HOME` when they are not already set.
+
 ## What Can Be Tested Now
 
 Mobile harnesses can now test:
@@ -147,6 +164,7 @@ Mobile harnesses can now test:
 - Linking iOS/tvOS apps against `XrayRust.xcframework`.
 - Packaging Android apps with the generated `jniLibs` tree.
 - Driving first iOS/tvOS `NEPacketTunnelProvider` and Android `VpnService` harnesses through the checked-in adapter skeletons.
+- Compiling the checked-in Swift and Android adapter projects locally with `scripts/build-apple-adapter.sh` and `scripts/build-android-adapter.sh`.
 - Proxy-mode local behavior with SOCKS/HTTP inbounds, Freedom direct egress, and VLESS TCP/TLS/REALITY+Vision profiles that match the current supported config subset.
 
 Current limits:

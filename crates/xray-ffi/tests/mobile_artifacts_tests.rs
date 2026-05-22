@@ -97,6 +97,8 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
     assert!(settings.contains(":xraymobile"));
     assert!(build.contains("com.android.library"));
     assert!(build.contains("externalNativeBuild"));
+    assert!(build.contains("ndkVersion"));
+    assert!(build.contains("JvmTarget.JVM_1_8"));
     assert!(core.contains("System.loadLibrary(\"xray_ffi\")"));
     assert!(core.contains("nativeSetSocketProtector"));
     assert!(service.contains("VpnService"));
@@ -105,6 +107,34 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
     assert!(service.contains("pollPacket"));
     assert!(jni.contains("xray_core_set_socket_protect_callback"));
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetSocketProtector"));
+}
+
+#[test]
+fn apple_adapter_build_script_covers_swiftpm_host_build() {
+    let script = fs::read_to_string(workspace_root().join("scripts/build-apple-adapter.sh"))
+        .expect("read Apple adapter build script");
+
+    assert!(script.contains("scripts/build-apple-xcframework.sh"));
+    assert!(script.contains("SWIFT_BIN"));
+    assert!(script.contains("build --disable-sandbox"));
+    assert!(script.contains("--disable-sandbox"));
+    assert!(script.contains("CLANG_MODULE_CACHE_PATH"));
+    assert!(script.contains("XrayRust.xcframework"));
+    assert!(script.contains("platform/apple"));
+}
+
+#[test]
+fn android_adapter_build_script_covers_gradle_sdk_and_artifacts() {
+    let script = fs::read_to_string(workspace_root().join("scripts/build-android-adapter.sh"))
+        .expect("read Android adapter build script");
+
+    assert!(script.contains("scripts/build-android-libs.sh"));
+    assert!(script.contains("ANDROID_HOME"));
+    assert!(script.contains("ANDROID_NDK_HOME"));
+    assert!(script.contains("GRADLE_USER_HOME"));
+    assert!(script.contains("XRAY_FFI_ANDROID_DIR"));
+    assert!(script.contains(":xraymobile:assembleDebug"));
+    assert!(script.contains("platform/android"));
 }
 
 #[test]
@@ -219,6 +249,7 @@ const EXPORTED_SYMBOLS: &[&str] = &[
 ];
 
 const APPLE_TARGETS: &[&str] = &[
+    "aarch64-apple-darwin",
     "aarch64-apple-ios",
     "aarch64-apple-ios-sim",
     "x86_64-apple-ios",
@@ -280,10 +311,12 @@ fn apple_xcframework_script_covers_ios_and_tvos_targets() {
         "aarch64-apple-tvos",
         "aarch64-apple-tvos-sim",
         "x86_64-apple-tvos",
+        "aarch64-apple-darwin",
     ] {
         assert!(script.contains(target), "Apple script missing `{target}`");
     }
 
+    assert!(script.contains("MACOS_TARGETS"));
     assert!(script.contains("xcodebuild"));
     assert!(script.contains("-create-xcframework"));
     assert!(script.contains("lipo"));
@@ -345,6 +378,7 @@ fn mobile_toolchain_preflight_script_covers_required_targets() {
     }
 
     for sdk in [
+        "macosx",
         "iphoneos",
         "iphonesimulator",
         "appletvos",

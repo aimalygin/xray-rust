@@ -26,14 +26,14 @@ public struct XrayTunStatsSnapshot: Equatable, Sendable {
 
 public final class XrayCore: @unchecked Sendable {
     private let lock = NSLock()
-    private var handle: UnsafeMutablePointer<XrayCoreHandle>?
+    private var handle: OpaquePointer?
 
     public init(
         configJSON: String,
         socketProtectCallback: XraySocketProtectCallback? = nil,
         socketProtectUserData: UnsafeMutableRawPointer? = nil
     ) throws {
-        var error: UnsafeMutablePointer<XrayError>?
+        var error: OpaquePointer?
         guard let handle = xray_core_new(&error) else {
             throw XrayCore.takeError(error)
         }
@@ -75,21 +75,21 @@ public final class XrayCore: @unchecked Sendable {
 
     public func start() throws {
         try withHandle { handle in
-            var error: UnsafeMutablePointer<XrayError>?
+            var error: OpaquePointer?
             try check(xray_core_start(handle, &error), error: error)
         }
     }
 
     public func stop() throws {
         try withHandle { handle in
-            var error: UnsafeMutablePointer<XrayError>?
+            var error: OpaquePointer?
             try check(xray_core_stop(handle, &error), error: error)
         }
     }
 
     public func pushPacket(_ packet: Data) throws {
         try withHandle { handle in
-            var error: UnsafeMutablePointer<XrayError>?
+            var error: OpaquePointer?
             try packet.withUnsafeBytes { rawBuffer in
                 let pointer = rawBuffer.bindMemory(to: UInt8.self).baseAddress
                 try check(
@@ -102,7 +102,7 @@ public final class XrayCore: @unchecked Sendable {
 
     public func pollPacket(maxBytes: Int = 65_535) throws -> Data? {
         try withHandle { handle in
-            var error: UnsafeMutablePointer<XrayError>?
+            var error: OpaquePointer?
             var written = 0
             var buffer = [UInt8](repeating: 0, count: maxBytes)
             let status = buffer.withUnsafeMutableBufferPointer { mutableBuffer in
@@ -126,7 +126,7 @@ public final class XrayCore: @unchecked Sendable {
 
     public func stats() throws -> XrayTunStatsSnapshot {
         try withHandle { handle in
-            var error: UnsafeMutablePointer<XrayError>?
+            var error: OpaquePointer?
             var stats = XrayTunStats()
             try check(xray_tun_stats(handle, &stats, &error), error: error)
             return XrayTunStatsSnapshot(
@@ -137,7 +137,7 @@ public final class XrayCore: @unchecked Sendable {
         }
     }
 
-    private func withHandle<T>(_ body: (UnsafeMutablePointer<XrayCoreHandle>) throws -> T) throws -> T {
+    private func withHandle<T>(_ body: (OpaquePointer) throws -> T) throws -> T {
         lock.lock()
         defer { lock.unlock() }
 
@@ -147,7 +147,7 @@ public final class XrayCore: @unchecked Sendable {
         return try body(handle)
     }
 
-    private func check(_ status: XrayStatus, error: UnsafeMutablePointer<XrayError>?) throws {
+    private func check(_ status: XrayStatus, error: OpaquePointer?) throws {
         guard status != XRAY_STATUS_OK else {
             if let error {
                 xray_error_free(error)
@@ -159,7 +159,7 @@ public final class XrayCore: @unchecked Sendable {
     }
 
     private static func takeError(
-        _ error: UnsafeMutablePointer<XrayError>?,
+        _ error: OpaquePointer?,
         fallbackStatus: XrayStatus = XRAY_STATUS_PANIC
     ) -> XrayCoreError {
         defer {

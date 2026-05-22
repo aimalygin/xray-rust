@@ -18,6 +18,7 @@ IOS_DEVICE_TARGETS=("aarch64-apple-ios")
 IOS_SIMULATOR_TARGETS=("aarch64-apple-ios-sim" "x86_64-apple-ios")
 TVOS_DEVICE_TARGETS=("aarch64-apple-tvos")
 TVOS_SIMULATOR_TARGETS=("aarch64-apple-tvos-sim" "x86_64-apple-tvos")
+MACOS_TARGETS=("aarch64-apple-darwin")
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -133,16 +134,19 @@ main() {
   build_targets "${IOS_SIMULATOR_TARGETS[@]}"
   build_targets "${TVOS_DEVICE_TARGETS[@]}"
   build_targets "${TVOS_SIMULATOR_TARGETS[@]}"
+  build_targets "${MACOS_TARGETS[@]}"
 
   local ios_device_lib="$OUT_DIR/ios-device/$LIB_NAME"
   local ios_simulator_lib="$OUT_DIR/ios-simulator/$LIB_NAME"
   local tvos_device_lib="$OUT_DIR/tvos-device/$LIB_NAME"
   local tvos_simulator_lib="$OUT_DIR/tvos-simulator/$LIB_NAME"
+  local macos_lib="$OUT_DIR/macos/$LIB_NAME"
 
   group_libs "$ios_device_lib" "${IOS_DEVICE_TARGETS[@]}"
   group_libs "$ios_simulator_lib" "${IOS_SIMULATOR_TARGETS[@]}"
   group_libs "$tvos_device_lib" "${TVOS_DEVICE_TARGETS[@]}"
   group_libs "$tvos_simulator_lib" "${TVOS_SIMULATOR_TARGETS[@]}"
+  group_libs "$macos_lib" "${MACOS_TARGETS[@]}"
 
   rm -rf "$OUT_DIR/$XCFRAMEWORK_NAME"
   xcodebuild -create-xcframework \
@@ -150,6 +154,7 @@ main() {
     -library "$ios_simulator_lib" -headers "$HEADER_DIR" \
     -library "$tvos_device_lib" -headers "$HEADER_DIR" \
     -library "$tvos_simulator_lib" -headers "$HEADER_DIR" \
+    -library "$macos_lib" -headers "$HEADER_DIR" \
     -output "$OUT_DIR/$XCFRAMEWORK_NAME"
 
   echo "$OUT_DIR/$XCFRAMEWORK_NAME"
