@@ -1,8 +1,12 @@
 use std::fs;
+use std::net::{Ipv4Addr, SocketAddr, TcpListener as StdTcpListener};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::process::{Child, Command, Stdio};
+use std::time::{Duration, Instant};
 
 use thiserror::Error;
+use tokio::net::TcpStream;
+use tokio::time::sleep;
 
 const USAGE: &str = "usage: xray-bench run|compare [options]";
 
@@ -10,6 +14,20 @@ const USAGE: &str = "usage: xray-bench run|compare [options]";
 pub enum BenchError {
     #[error("{0}")]
     InvalidArguments(String),
+    #[error("io error while {action}: {source}")]
+    Io {
+        action: String,
+        source: std::io::Error,
+    },
+    #[error(
+        "process `{program}` failed with status {status}\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    )]
+    Process {
+        program: String,
+        status: String,
+        stdout: String,
+        stderr: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -89,6 +107,24 @@ pub struct BenchResult {
     pub peak_rss_kib: u64,
     pub cpu_millis: u64,
     pub samples: usize,
+}
+
+#[derive(Debug)]
+pub struct RunningEngine {
+    pub kind: EngineKind,
+    child: Child,
+    pub pid: u32,
+    pub socks_addr: SocketAddr,
+    pub run_dir: PathBuf,
+    pub stdout_path: PathBuf,
+    pub stderr_path: PathBuf,
+}
+
+impl Drop for RunningEngine {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
 }
 
 impl Default for BenchOptions {
@@ -342,6 +378,269 @@ pub fn write_samples_csv(path: &Path, samples: &[ProcessSample]) -> Result<(), B
     })
 }
 
+pub fn xray_rust_freedom_config(port: u16) -> String {
+    freedom_config(port)
+}
+
+pub fn xray_core_freedom_config(port: u16) -> String {
+    freedom_config(port)
+}
+
+fn freedom_config(port: u16) -> String {
+    format!(
+        r#"{{
+  "log": {{ "loglevel": "warning" }},
+  "inbounds": [
+    {{
+      "tag": "socks-in",
+      "protocol": "socks",
+      "listen": "127.0.0.1",
+      "port": {port},
+      "settings": {{ "auth": "noauth", "udp": false }}
+    }}
+  ],
+  "outbounds": [
+    {{
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {{}}
+    }}
+  ]
+}}"#
+    )
+}
+
+pub fn allocate_loopback_port() -> Result<u16, BenchError> {
+    let listener =
+        StdTcpListener::bind((Ipv4Addr::LOCALHOST, 0)).map_err(|source| BenchError::Io {
+            action: "binding ephemeral loopback port".to_owned(),
+            source,
+        })?;
+    Ok(listener
+        .local_addr()
+        .map_err(|source| BenchError::Io {
+            action: "reading ephemeral loopback port".to_owned(),
+            source,
+        })?
+        .port())
+}
+
+pub async fn wait_for_tcp_listener(
+    child: &mut Child,
+    addr: SocketAddr,
+    stdout_path: &Path,
+    stderr_path: &Path,
+) -> Result<(), BenchError> {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Some(status) = child.try_wait().map_err(|source| BenchError::Io {
+            action: "checking child process status".to_owned(),
+            source,
+        })? {
+            return Err(BenchError::Process {
+                program: "engine".to_owned(),
+                status: status.to_string(),
+                stdout: fs::read_to_string(stdout_path).unwrap_or_default(),
+                stderr: fs::read_to_string(stderr_path).unwrap_or_default(),
+            });
+        }
+
+        match TcpStream::connect(addr).await {
+            Ok(stream) => {
+                drop(stream);
+                return Ok(());
+            }
+            Err(_) if Instant::now() < deadline => {
+                sleep(Duration::from_millis(25)).await;
+            }
+            Err(source) => {
+                return Err(BenchError::Io {
+                    action: format!("waiting for TCP listener at {addr}"),
+                    source,
+                });
+            }
+        }
+    }
+}
+
+pub fn ensure_xray_rust_binary(options: &BenchOptions) -> Result<PathBuf, BenchError> {
+    if let Some(path) = &options.xray_rust_bin {
+        return Ok(path.clone());
+    }
+
+    let root = workspace_root()?;
+    let binary = root
+        .join("target")
+        .join("debug")
+        .join(format!("xray-rust{}", std::env::consts::EXE_SUFFIX));
+    if binary.exists() {
+        return Ok(binary);
+    }
+    if options.no_auto_build {
+        return Err(BenchError::InvalidArguments(format!(
+            "xray-rust binary not found at `{}`",
+            binary.display()
+        )));
+    }
+
+    run_command(
+        "cargo",
+        Command::new("cargo")
+            .arg("build")
+            .arg("-p")
+            .arg("xray-cli")
+            .arg("--bin")
+            .arg("xray-rust")
+            .current_dir(&root),
+    )?;
+    Ok(binary)
+}
+
+pub fn ensure_xray_core_binary(
+    options: &BenchOptions,
+    bin_dir: &Path,
+) -> Result<PathBuf, BenchError> {
+    if let Some(path) = &options.xray_core_bin {
+        return Ok(path.clone());
+    }
+    if options.no_auto_build {
+        return Err(BenchError::InvalidArguments(
+            "xray-core binary requires --xray-core-bin when --no-auto-build is set".to_owned(),
+        ));
+    }
+
+    let checkout = options
+        .xray_core_dir
+        .clone()
+        .or_else(default_xray_core_dir)
+        .ok_or_else(|| {
+            BenchError::InvalidArguments(
+                "xray-core checkout not found; pass --xray-core-dir or --xray-core-bin".to_owned(),
+            )
+        })?;
+    fs::create_dir_all(bin_dir).map_err(|source| BenchError::Io {
+        action: format!("creating binary directory `{}`", bin_dir.display()),
+        source,
+    })?;
+    let binary = bin_dir.join(format!("xray-core{}", std::env::consts::EXE_SUFFIX));
+    run_command(
+        "go",
+        Command::new("go")
+            .arg("build")
+            .arg("-o")
+            .arg(&binary)
+            .arg("./main")
+            .current_dir(&checkout),
+    )?;
+    Ok(binary)
+}
+
+pub async fn start_engine(
+    kind: EngineKind,
+    options: &BenchOptions,
+    run_dir: &Path,
+) -> Result<RunningEngine, BenchError> {
+    fs::create_dir_all(run_dir).map_err(|source| BenchError::Io {
+        action: format!("creating run directory `{}`", run_dir.display()),
+        source,
+    })?;
+    let port = allocate_loopback_port()?;
+    let socks_addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
+    let config = match kind {
+        EngineKind::XrayRust => xray_rust_freedom_config(port),
+        EngineKind::XrayCore => xray_core_freedom_config(port),
+    };
+    let config_path = run_dir.join("config.json");
+    fs::write(&config_path, config).map_err(|source| BenchError::Io {
+        action: format!("writing config `{}`", config_path.display()),
+        source,
+    })?;
+    let stdout_path = run_dir.join("stdout.log");
+    let stderr_path = run_dir.join("stderr.log");
+    let binary = match kind {
+        EngineKind::XrayRust => ensure_xray_rust_binary(options)?,
+        EngineKind::XrayCore => ensure_xray_core_binary(options, &run_dir.join("bin"))?,
+    };
+    let mut child = Command::new(&binary)
+        .arg("run")
+        .arg("-config")
+        .arg(&config_path)
+        .stdout(Stdio::from(fs::File::create(&stdout_path).map_err(
+            |source| BenchError::Io {
+                action: format!("creating stdout log `{}`", stdout_path.display()),
+                source,
+            },
+        )?))
+        .stderr(Stdio::from(fs::File::create(&stderr_path).map_err(
+            |source| BenchError::Io {
+                action: format!("creating stderr log `{}`", stderr_path.display()),
+                source,
+            },
+        )?))
+        .spawn()
+        .map_err(|source| BenchError::Io {
+            action: format!("spawning `{}`", binary.display()),
+            source,
+        })?;
+    let pid = child.id();
+    wait_for_tcp_listener(&mut child, socks_addr, &stdout_path, &stderr_path).await?;
+
+    Ok(RunningEngine {
+        kind,
+        child,
+        pid,
+        socks_addr,
+        run_dir: run_dir.to_path_buf(),
+        stdout_path,
+        stderr_path,
+    })
+}
+
+fn run_command(program: &str, command: &mut Command) -> Result<(), BenchError> {
+    let output = command.output().map_err(|source| BenchError::Io {
+        action: format!("running `{program}`"),
+        source,
+    })?;
+    if output.status.success() {
+        return Ok(());
+    }
+    Err(BenchError::Process {
+        program: program.to_owned(),
+        status: output.status.to_string(),
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+    })
+}
+
+fn workspace_root() -> Result<PathBuf, BenchError> {
+    let mut dir = std::env::current_dir().map_err(|source| BenchError::Io {
+        action: "reading current directory".to_owned(),
+        source,
+    })?;
+    loop {
+        if dir.join("Cargo.toml").exists() && dir.join("crates").exists() {
+            return Ok(dir);
+        }
+        if !dir.pop() {
+            return Err(BenchError::InvalidArguments(
+                "failed to find workspace root".to_owned(),
+            ));
+        }
+    }
+}
+
+fn default_xray_core_dir() -> Option<PathBuf> {
+    let root = workspace_root().ok()?;
+    let candidates = [
+        root.join("Xray-core"),
+        root.parent()?.join("Xray-core"),
+        root.parent()?.parent()?.join("Xray-core"),
+    ];
+    candidates
+        .into_iter()
+        .find(|path| path.join("go.mod").exists())
+}
+
 pub async fn run_cli<I, S>(args: I) -> Result<(), BenchError>
 where
     I: IntoIterator<Item = S>,
@@ -436,5 +735,21 @@ mod tests {
     fn parses_ps_time_with_hours() {
         let sample = parse_ps_sample(" 2048 01:02:03 9").unwrap();
         assert_eq!(sample.cpu_millis, 3_723_000);
+    }
+
+    #[test]
+    fn xray_rust_freedom_config_uses_requested_socks_port() {
+        let config = xray_rust_freedom_config(18080);
+        assert!(config.contains(r#""protocol": "socks""#));
+        assert!(config.contains(r#""port": 18080"#));
+        assert!(config.contains(r#""protocol": "freedom""#));
+    }
+
+    #[test]
+    fn xray_core_freedom_config_uses_requested_socks_port() {
+        let config = xray_core_freedom_config(18081);
+        assert!(config.contains(r#""protocol": "socks""#));
+        assert!(config.contains(r#""port": 18081"#));
+        assert!(config.contains(r#""protocol": "freedom""#));
     }
 }
