@@ -55,11 +55,54 @@ struct Parser<'a> {
 
 impl Parser<'_> {
     fn parse_config(&mut self) -> CoreConfig {
+        self.validate_top_level_fields();
+        let inbounds = self.parse_inbounds();
+        let outbounds = self.parse_outbounds();
+        self.validate_routing();
+        let default_outbound_tag = outbounds.first().and_then(|outbound| outbound.tag.clone());
+
         CoreConfig {
-            inbounds: self.parse_inbounds(),
-            outbounds: self.parse_outbounds(),
-            default_outbound_tag: None,
+            inbounds,
+            outbounds,
+            default_outbound_tag,
         }
+    }
+
+    fn validate_top_level_fields(&mut self) {
+        self.reject_unknown_fields(self.root, "$", &["log", "inbounds", "outbounds", "routing"]);
+    }
+
+    fn validate_routing(&mut self) {
+        let Some(routing) = self.root.get("routing") else {
+            return;
+        };
+        let routing_path = "$.routing";
+        if !routing.is_object() {
+            self.error(routing_path, "routing must be an object");
+            return;
+        }
+
+        self.reject_unknown_fields(
+            routing,
+            routing_path,
+            &["domainStrategy", "rules", "balancers"],
+        );
+
+        if let Some(strategy) = self.optional_string_at(
+            routing,
+            "domainStrategy",
+            "$.routing.domainStrategy".to_owned(),
+        ) {
+            if strategy != "AsIs" {
+                self.error(
+                    "$.routing.domainStrategy",
+                    format!("unsupported routing domainStrategy `{strategy}`"),
+                );
+            }
+        }
+
+        self.reject_non_empty_array(routing, "rules", "$.routing.rules".to_owned());
+        self.reject_non_empty_array(routing, "balancers", "$.routing.balancers".to_owned());
     }
 
     fn parse_inbounds(&mut self) -> Vec<InboundConfig> {
@@ -92,6 +135,7 @@ impl Parser<'_> {
                 return None;
             }
         };
+        self.validate_inbound_compatibility(inbound, index, &protocol);
 
         let port = self
             .u16_at(inbound, "port", format!("$.inbounds[{index}].port"))
@@ -106,6 +150,115 @@ impl Parser<'_> {
                 .to_owned(),
             port,
         })
+    }
+
+    fn validate_inbound_compatibility(
+        &mut self,
+        inbound: &Value,
+        index: usize,
+        protocol: &InboundProtocol,
+    ) {
+        let inbound_path = format!("$.inbounds[{index}]");
+        self.reject_unknown_fields(
+            inbound,
+            &inbound_path,
+            &["tag", "protocol", "listen", "port", "settings", "sniffing"],
+        );
+        self.validate_inbound_sniffing(inbound, index);
+
+        let Some(settings) = inbound.get("settings") else {
+            return;
+        };
+
+        match protocol {
+            InboundProtocol::Socks => self.validate_socks_inbound_settings(settings, index),
+            InboundProtocol::Http => self.validate_http_inbound_settings(settings, index),
+            InboundProtocol::Tun => {}
+        }
+    }
+
+    fn validate_inbound_sniffing(&mut self, inbound: &Value, index: usize) {
+        let Some(sniffing) = inbound.get("sniffing") else {
+            return;
+        };
+        let sniffing_path = format!("$.inbounds[{index}].sniffing");
+        if !sniffing.is_object() {
+            self.error(sniffing_path, "inbound sniffing must be an object");
+            return;
+        }
+
+        if matches!(
+            self.optional_bool_at(sniffing, "enabled", format!("{sniffing_path}.enabled")),
+            Some(true)
+        ) {
+            self.error(
+                format!("{sniffing_path}.enabled"),
+                "inbound sniffing is unsupported",
+            );
+        }
+    }
+
+    fn validate_socks_inbound_settings(&mut self, settings: &Value, index: usize) {
+        let settings_path = format!("$.inbounds[{index}].settings");
+        if !settings.is_object() {
+            self.error(settings_path, "socks inbound settings must be an object");
+            return;
+        }
+
+        self.reject_unknown_fields(
+            settings,
+            &settings_path,
+            &["auth", "accounts", "udp", "ip", "userLevel"],
+        );
+
+        if let Some(auth) =
+            self.optional_string_at(settings, "auth", format!("{settings_path}.auth"))
+        {
+            if auth != "noauth" {
+                self.error(
+                    format!("{settings_path}.auth"),
+                    format!("unsupported socks auth `{auth}`"),
+                );
+            }
+        }
+
+        self.reject_non_empty_array(settings, "accounts", format!("{settings_path}.accounts"));
+
+        if matches!(
+            self.optional_bool_at(settings, "udp", format!("{settings_path}.udp")),
+            Some(true)
+        ) {
+            self.error(format!("{settings_path}.udp"), "socks udp is unsupported");
+        }
+    }
+
+    fn validate_http_inbound_settings(&mut self, settings: &Value, index: usize) {
+        let settings_path = format!("$.inbounds[{index}].settings");
+        if !settings.is_object() {
+            self.error(settings_path, "http inbound settings must be an object");
+            return;
+        }
+
+        self.reject_unknown_fields(
+            settings,
+            &settings_path,
+            &["timeout", "accounts", "allowTransparent", "userLevel"],
+        );
+        self.reject_non_empty_array(settings, "accounts", format!("{settings_path}.accounts"));
+
+        if matches!(
+            self.optional_bool_at(
+                settings,
+                "allowTransparent",
+                format!("{settings_path}.allowTransparent"),
+            ),
+            Some(true)
+        ) {
+            self.error(
+                format!("{settings_path}.allowTransparent"),
+                "http transparent proxy mode is unsupported",
+            );
+        }
     }
 
     fn parse_outbounds(&mut self) -> Vec<OutboundConfig> {
@@ -136,6 +289,7 @@ impl Parser<'_> {
                 return None;
             }
         }
+        self.validate_outbound_compatibility(outbound, index);
 
         let settings = self.parse_vless_settings(outbound, index)?;
         let stream = self.parse_stream_settings(outbound, index)?;
@@ -147,11 +301,62 @@ impl Parser<'_> {
         })
     }
 
+    fn validate_outbound_compatibility(&mut self, outbound: &Value, index: usize) {
+        let outbound_path = format!("$.outbounds[{index}]");
+        self.reject_unknown_fields(
+            outbound,
+            &outbound_path,
+            &[
+                "tag",
+                "protocol",
+                "settings",
+                "streamSettings",
+                "mux",
+                "proxySettings",
+                "sendThrough",
+            ],
+        );
+
+        if outbound.get("sendThrough").is_some() {
+            self.error(
+                format!("{outbound_path}.sendThrough"),
+                "outbound sendThrough is unsupported",
+            );
+        }
+
+        if outbound.get("proxySettings").is_some() {
+            self.error(
+                format!("{outbound_path}.proxySettings"),
+                "outbound proxySettings is unsupported",
+            );
+        }
+
+        let Some(mux) = outbound.get("mux") else {
+            return;
+        };
+        let mux_path = format!("{outbound_path}.mux");
+        if !mux.is_object() {
+            self.error(mux_path, "outbound mux must be an object");
+            return;
+        }
+        if matches!(
+            self.optional_bool_at(mux, "enabled", format!("{mux_path}.enabled")),
+            Some(true)
+        ) {
+            self.error(format!("{mux_path}.enabled"), "outbound mux is unsupported");
+        }
+    }
+
     fn parse_vless_settings(
         &mut self,
         outbound: &Value,
         index: usize,
     ) -> Option<VlessOutboundSettings> {
+        let settings_path = format!("$.outbounds[{index}].settings");
+        if let Some(settings) = outbound.get("settings") {
+            self.reject_unknown_fields(settings, &settings_path, &["vnext"]);
+        }
+
         let vnext_array_path = format!("$.outbounds[{index}].settings.vnext");
         let Some(vnext_array) = outbound
             .get("settings")
@@ -174,6 +379,7 @@ impl Parser<'_> {
             self.error(vnext_path, "missing vless vnext server");
             return None;
         };
+        self.reject_unknown_fields(vnext, &vnext_path, &["address", "port", "users"]);
 
         let address_path = format!("$.outbounds[{index}].settings.vnext[0].address");
         let Some(address) = self.string_at(vnext, "address") else {
@@ -242,6 +448,14 @@ impl Parser<'_> {
     ) -> Option<VlessUser> {
         let id_path =
             format!("$.outbounds[{outbound_index}].settings.vnext[0].users[{user_index}].id");
+        let user_path =
+            format!("$.outbounds[{outbound_index}].settings.vnext[0].users[{user_index}]");
+        self.reject_unknown_fields(
+            user,
+            &user_path,
+            &["id", "encryption", "flow", "level", "email"],
+        );
+
         let Some(id) = self.string_at(user, "id") else {
             self.error(id_path, "missing vless user id");
             return None;
@@ -288,6 +502,9 @@ impl Parser<'_> {
         let stream = outbound.get("streamSettings");
         let network = self.parse_network(stream, index)?;
         let security = self.parse_security(stream, index)?;
+        if let Some(stream) = stream {
+            self.validate_stream_settings_compatibility(stream, index);
+        }
 
         Some(StreamSettings { network, security })
     }
@@ -318,16 +535,18 @@ impl Parser<'_> {
             .unwrap_or("none")
         {
             "none" => Some(StreamSecurity::None),
-            "tls" => Some(StreamSecurity::Tls(TlsSettings {
-                server_name: stream
-                    .and_then(|stream| stream.get("tlsSettings"))
-                    .and_then(|settings| self.string_at(settings, "serverName"))
-                    .map(ToOwned::to_owned),
-                fingerprint: stream
-                    .and_then(|stream| stream.get("tlsSettings"))
-                    .and_then(|settings| self.string_at(settings, "fingerprint"))
-                    .map(ToOwned::to_owned),
-            })),
+            "tls" => {
+                let tls_settings = stream.and_then(|stream| stream.get("tlsSettings"));
+                self.validate_tls_settings(tls_settings, index);
+                Some(StreamSecurity::Tls(TlsSettings {
+                    server_name: tls_settings
+                        .and_then(|settings| self.string_at(settings, "serverName"))
+                        .map(ToOwned::to_owned),
+                    fingerprint: tls_settings
+                        .and_then(|settings| self.string_at(settings, "fingerprint"))
+                        .map(ToOwned::to_owned),
+                }))
+            }
             "reality" => self
                 .parse_reality_settings(stream, index)
                 .map(StreamSecurity::Reality),
@@ -337,6 +556,107 @@ impl Parser<'_> {
                     format!("unsupported stream security `{security}`"),
                 );
                 None
+            }
+        }
+    }
+
+    fn validate_stream_settings_compatibility(&mut self, stream: &Value, index: usize) {
+        let stream_path = format!("$.outbounds[{index}].streamSettings");
+        if !stream.is_object() {
+            self.error(stream_path, "streamSettings must be an object");
+            return;
+        }
+
+        self.reject_unknown_fields(
+            stream,
+            &stream_path,
+            &[
+                "network",
+                "security",
+                "tlsSettings",
+                "realitySettings",
+                "tcpSettings",
+            ],
+        );
+        self.validate_tcp_settings(stream, index);
+    }
+
+    fn validate_tls_settings(&mut self, settings: Option<&Value>, index: usize) {
+        let Some(settings) = settings else {
+            return;
+        };
+        let settings_path = format!("$.outbounds[{index}].streamSettings.tlsSettings");
+        if !settings.is_object() {
+            self.error(settings_path, "tlsSettings must be an object");
+            return;
+        }
+
+        self.reject_unknown_fields(
+            settings,
+            &settings_path,
+            &["serverName", "allowInsecure", "fingerprint", "alpn"],
+        );
+
+        if matches!(
+            self.optional_bool_at(
+                settings,
+                "allowInsecure",
+                format!("{settings_path}.allowInsecure")
+            ),
+            Some(true)
+        ) {
+            self.error(
+                format!("{settings_path}.allowInsecure"),
+                "tls allowInsecure is unsupported",
+            );
+        }
+
+        if settings.get("fingerprint").is_some() {
+            self.error(
+                format!("{settings_path}.fingerprint"),
+                "tls fingerprint is unsupported",
+            );
+        }
+
+        if let Some(alpn) = settings.get("alpn") {
+            match alpn.as_array() {
+                Some(values) if values.is_empty() => {}
+                Some(_) => self.error(format!("{settings_path}.alpn"), "tls alpn is unsupported"),
+                None => self.error(format!("{settings_path}.alpn"), "tls alpn must be an array"),
+            }
+        }
+    }
+
+    fn validate_tcp_settings(&mut self, stream: &Value, index: usize) {
+        let Some(settings) = stream.get("tcpSettings") else {
+            return;
+        };
+        let settings_path = format!("$.outbounds[{index}].streamSettings.tcpSettings");
+        if !settings.is_object() {
+            self.error(settings_path, "tcpSettings must be an object");
+            return;
+        }
+
+        self.reject_unknown_fields(settings, &settings_path, &["header", "acceptProxyProtocol"]);
+
+        let Some(header) = settings.get("header") else {
+            return;
+        };
+        let header_path = format!("{settings_path}.header");
+        if !header.is_object() {
+            self.error(header_path, "tcpSettings header must be an object");
+            return;
+        }
+        self.reject_unknown_fields(header, &header_path, &["type", "request", "response"]);
+
+        if let Some(header_type) =
+            self.optional_string_at(header, "type", format!("{header_path}.type"))
+        {
+            if !header_type.is_empty() && header_type != "none" {
+                self.error(
+                    format!("{header_path}.type"),
+                    format!("unsupported tcp header type `{header_type}`"),
+                );
             }
         }
     }
@@ -450,6 +770,33 @@ impl Parser<'_> {
         value.get(key).and_then(Value::as_str)
     }
 
+    fn optional_string_at<'a>(
+        &mut self,
+        value: &'a Value,
+        key: &str,
+        path: String,
+    ) -> Option<&'a str> {
+        match value.get(key) {
+            None => None,
+            Some(Value::String(value)) => Some(value),
+            Some(_) => {
+                self.error(path, format!("field `{key}` must be a string"));
+                None
+            }
+        }
+    }
+
+    fn optional_bool_at(&mut self, value: &Value, key: &str, path: String) -> Option<bool> {
+        match value.get(key) {
+            None => None,
+            Some(Value::Bool(value)) => Some(*value),
+            Some(_) => {
+                self.error(path, format!("field `{key}` must be a boolean"));
+                None
+            }
+        }
+    }
+
     fn u16_at(&mut self, value: &Value, key: &str, path: String) -> Option<u16> {
         let Some(raw) = value.get(key).and_then(Value::as_u64) else {
             self.error(path, format!("missing numeric field `{key}`"));
@@ -466,6 +813,40 @@ impl Parser<'_> {
 
     fn error(&mut self, path: impl Into<String>, message: impl Into<String>) {
         self.diagnostics.push(Diagnostic::error(path, message));
+    }
+
+    fn reject_unknown_fields(&mut self, value: &Value, base_path: &str, allowed: &[&str]) {
+        let Some(object) = value.as_object() else {
+            return;
+        };
+
+        for key in object.keys() {
+            if !allowed.contains(&key.as_str()) {
+                self.error(
+                    child_path(base_path, key),
+                    format!("unsupported field `{key}`"),
+                );
+            }
+        }
+    }
+
+    fn reject_non_empty_array(&mut self, value: &Value, key: &str, path: String) {
+        let Some(raw) = value.get(key) else {
+            return;
+        };
+        match raw.as_array() {
+            Some(values) if values.is_empty() => {}
+            Some(_) => self.error(path, format!("field `{key}` is unsupported")),
+            None => self.error(path, format!("field `{key}` must be an array")),
+        }
+    }
+}
+
+fn child_path(base_path: &str, key: &str) -> String {
+    if base_path == "$" {
+        format!("$.{key}")
+    } else {
+        format!("{base_path}.{key}")
     }
 }
 

@@ -11,6 +11,7 @@ fn parses_vless_reality_vision_subset() {
     assert_eq!(parsed.config.inbounds.len(), 2);
     assert_eq!(parsed.config.outbounds.len(), 1);
     assert!(parsed.diagnostics.is_empty());
+    assert_eq!(parsed.config.default_outbound_tag.as_deref(), Some("proxy"));
     assert_eq!(parsed.config.outbounds[0].tag.as_deref(), Some("proxy"));
 
     let OutboundSettings::Vless(vless) = &parsed.config.outbounds[0].settings;
@@ -28,6 +29,100 @@ fn parses_vless_reality_vision_subset() {
     assert_eq!(
         reality.short_id,
         RealityShortId::try_from_slice(&[2, 3, 4, 5]).unwrap()
+    );
+}
+
+#[test]
+fn sets_default_outbound_tag_to_first_outbound_tag() {
+    let raw = vless_raw(
+        r#""users": [{ "id": "00010203-0405-0607-0809-0a0b0c0d0e0f" }]"#,
+        "",
+        443,
+        valid_public_key(),
+        "02030405",
+    );
+
+    let parsed = parse_xray_json(&raw).expect("config should parse");
+
+    assert_eq!(parsed.config.default_outbound_tag.as_deref(), Some("proxy"));
+}
+
+#[test]
+fn rejects_non_as_is_routing_domain_strategy_with_path() {
+    let raw = raw_with_routing(r#""domainStrategy": "IPIfNonMatch""#);
+
+    assert_parse_error_path(&raw, "$.routing.domainStrategy");
+}
+
+#[test]
+fn rejects_non_empty_routing_rules_with_path() {
+    let raw = raw_with_routing(r#""rules": [{ "type": "field", "outboundTag": "proxy" }]"#);
+
+    assert_parse_error_path(&raw, "$.routing.rules");
+}
+
+#[test]
+fn rejects_enabled_inbound_sniffing_with_path() {
+    let raw = raw_with_inbound_extra(r#""sniffing": { "enabled": true }"#);
+
+    assert_parse_error_path(&raw, "$.inbounds[0].sniffing.enabled");
+}
+
+#[test]
+fn rejects_socks_password_auth_with_path() {
+    let raw = raw_with_socks_settings(r#""auth": "password""#);
+
+    assert_parse_error_path(&raw, "$.inbounds[0].settings.auth");
+}
+
+#[test]
+fn rejects_socks_udp_enabled_with_path() {
+    let raw = raw_with_socks_settings(r#""udp": true"#);
+
+    assert_parse_error_path(&raw, "$.inbounds[0].settings.udp");
+}
+
+#[test]
+fn rejects_enabled_mux_with_path() {
+    let raw = raw_with_outbound_extra(r#""mux": { "enabled": true }"#);
+
+    assert_parse_error_path(&raw, "$.outbounds[0].mux.enabled");
+}
+
+#[test]
+fn rejects_send_through_with_path() {
+    let raw = raw_with_outbound_extra(r#""sendThrough": "127.0.0.2""#);
+
+    assert_parse_error_path(&raw, "$.outbounds[0].sendThrough");
+}
+
+#[test]
+fn rejects_tls_allow_insecure_with_path() {
+    let raw = raw_with_tls_settings(r#""serverName": "server.example", "allowInsecure": true"#);
+
+    assert_parse_error_path(
+        &raw,
+        "$.outbounds[0].streamSettings.tlsSettings.allowInsecure",
+    );
+}
+
+#[test]
+fn rejects_tls_fingerprint_with_path() {
+    let raw = raw_with_tls_settings(r#""serverName": "server.example", "fingerprint": "chrome""#);
+
+    assert_parse_error_path(
+        &raw,
+        "$.outbounds[0].streamSettings.tlsSettings.fingerprint",
+    );
+}
+
+#[test]
+fn rejects_tcp_header_type_with_path() {
+    let raw = raw_with_tcp_settings(r#""header": { "type": "http" }"#);
+
+    assert_parse_error_path(
+        &raw,
+        "$.outbounds[0].streamSettings.tcpSettings.header.type",
     );
 }
 
@@ -317,6 +412,119 @@ fn assert_parse_error_path(raw: &str, path: &str) {
 
 fn valid_public_key() -> &'static str {
     "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE"
+}
+
+fn raw_with_routing(routing: &str) -> String {
+    let mut raw = vless_raw(
+        r#""users": [{ "id": "00010203-0405-0607-0809-0a0b0c0d0e0f" }]"#,
+        "",
+        443,
+        valid_public_key(),
+        "02030405",
+    );
+    raw.insert_str(
+        raw.rfind('}').expect("config object end"),
+        &format!(r#","routing":{{{routing}}}"#),
+    );
+    raw
+}
+
+fn raw_with_inbound_extra(extra: &str) -> String {
+    let extra_comma = if extra.is_empty() { "" } else { "," };
+    format!(
+        r#"{{
+          "inbounds": [{{
+            "tag": "socks-in",
+            "protocol": "socks",
+            "listen": "127.0.0.1",
+            "port": 1080
+            {extra_comma}
+            {extra}
+          }}],
+          "outbounds": []
+        }}"#
+    )
+}
+
+fn raw_with_socks_settings(settings: &str) -> String {
+    raw_with_inbound_extra(&format!(r#""settings": {{{settings}}}"#))
+}
+
+fn raw_with_outbound_extra(extra: &str) -> String {
+    let extra_comma = if extra.is_empty() { "" } else { "," };
+    format!(
+        r#"{{
+          "inbounds": [],
+          "outbounds": [{{
+            "tag": "proxy",
+            "protocol": "vless",
+            "settings": {{
+              "vnext": [
+                {{
+                  "address": "server.example",
+                  "port": 443,
+                  "users": [{{ "id": "00010203-0405-0607-0809-0a0b0c0d0e0f" }}]
+                }}
+              ]
+            }},
+            "streamSettings": {{ "network": "tcp", "security": "none" }}
+            {extra_comma}
+            {extra}
+          }}]
+        }}"#
+    )
+}
+
+fn raw_with_tls_settings(tls_settings: &str) -> String {
+    format!(
+        r#"{{
+          "inbounds": [],
+          "outbounds": [{{
+            "tag": "proxy",
+            "protocol": "vless",
+            "settings": {{
+              "vnext": [
+                {{
+                  "address": "server.example",
+                  "port": 443,
+                  "users": [{{ "id": "00010203-0405-0607-0809-0a0b0c0d0e0f" }}]
+                }}
+              ]
+            }},
+            "streamSettings": {{
+              "network": "tcp",
+              "security": "tls",
+              "tlsSettings": {{ {tls_settings} }}
+            }}
+          }}]
+        }}"#
+    )
+}
+
+fn raw_with_tcp_settings(tcp_settings: &str) -> String {
+    format!(
+        r#"{{
+          "inbounds": [],
+          "outbounds": [{{
+            "tag": "proxy",
+            "protocol": "vless",
+            "settings": {{
+              "vnext": [
+                {{
+                  "address": "server.example",
+                  "port": 443,
+                  "users": [{{ "id": "00010203-0405-0607-0809-0a0b0c0d0e0f" }}]
+                }}
+              ]
+            }},
+            "streamSettings": {{
+              "network": "tcp",
+              "security": "none",
+              "tcpSettings": {{ {tcp_settings} }}
+            }}
+          }}]
+        }}"#
+    )
 }
 
 fn vless_raw(
