@@ -632,8 +632,6 @@ fn ps_args(pid: u32) -> Vec<String> {
         "rss=".to_owned(),
         "-o".to_owned(),
         "time=".to_owned(),
-        "-o".to_owned(),
-        "thcount=".to_owned(),
         "-p".to_owned(),
         pid.to_string(),
     ]
@@ -805,7 +803,8 @@ pub fn ensure_xray_core_binary(
                 "xray-core checkout not found; pass --xray-core-dir or --xray-core-bin".to_owned(),
             )
         })?;
-    fs::create_dir_all(bin_dir).map_err(|source| BenchError::Io {
+    let bin_dir = absolute_path(bin_dir)?;
+    fs::create_dir_all(&bin_dir).map_err(|source| BenchError::Io {
         action: format!("creating binary directory `{}`", bin_dir.display()),
         source,
     })?;
@@ -820,6 +819,17 @@ pub fn ensure_xray_core_binary(
             .current_dir(&checkout),
     )?;
     Ok(binary)
+}
+
+fn absolute_path(path: &Path) -> Result<PathBuf, BenchError> {
+    if path.is_absolute() {
+        return Ok(path.to_path_buf());
+    }
+    let cwd = std::env::current_dir().map_err(|source| BenchError::Io {
+        action: "resolving current directory".to_owned(),
+        source,
+    })?;
+    Ok(cwd.join(path))
 }
 
 pub async fn start_engine(
@@ -1114,6 +1124,30 @@ mod tests {
     fn parses_ps_time_with_hours() {
         let sample = parse_ps_sample(" 2048 01:02:03 9").unwrap();
         assert_eq!(sample.cpu_millis, 3_723_000);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_ps_args_omit_unsupported_thread_count_column() {
+        let args = ps_args(123);
+        assert_eq!(
+            args,
+            vec![
+                "-o".to_owned(),
+                "rss=".to_owned(),
+                "-o".to_owned(),
+                "time=".to_owned(),
+                "-p".to_owned(),
+                "123".to_owned(),
+            ]
+        );
+    }
+
+    #[test]
+    fn absolute_path_resolves_relative_paths_from_current_directory() {
+        let path = absolute_path(Path::new("target/benchmarks/bin")).unwrap();
+        assert!(path.is_absolute());
+        assert!(path.ends_with(Path::new("target/benchmarks/bin")));
     }
 
     #[test]
