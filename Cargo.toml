@@ -9,6 +9,7 @@ members = [
     "crates/xray-core-rs",
     "crates/xray-ffi",
     "crates/xray-cli",
+    "crates/xray-bench",
 ]
 resolver = "2"
 
