@@ -3,7 +3,7 @@ use std::future::Future;
 use std::net::{Ipv4Addr, SocketAddr, TcpListener as StdTcpListener};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use thiserror::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -45,6 +45,13 @@ pub enum EngineKind {
 }
 
 impl EngineKind {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::XrayRust => "xray-rust",
+            Self::XrayCore => "xray-core",
+        }
+    }
+
     fn parse(raw: &str) -> Result<Self, BenchError> {
         match raw {
             "xray-rust" => Ok(Self::XrayRust),
@@ -63,6 +70,13 @@ pub enum WorkloadKind {
 }
 
 impl WorkloadKind {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Idle => "idle",
+            Self::TcpFreedom => "tcp-freedom",
+        }
+    }
+
     fn parse(raw: &str) -> Result<Self, BenchError> {
         match raw {
             "idle" => Ok(Self::Idle),
@@ -919,10 +933,102 @@ where
     I: IntoIterator<Item = S>,
     S: Into<String>,
 {
-    let _args = parse_cli_args(args)?;
-    Err(BenchError::InvalidArguments(
-        "benchmark execution is not implemented yet".to_owned(),
-    ))
+    match parse_cli_args(args)? {
+        CliArgs::Run(options) => {
+            let engine = options.engine.ok_or_else(|| {
+                BenchError::InvalidArguments("run requires --engine xray-rust|xray-core".to_owned())
+            })?;
+            let run_id = new_run_id();
+            let result = run_single_engine(engine, &options, &run_id).await?;
+            print_result(&result);
+            Ok(())
+        }
+        CliArgs::Compare(options) => run_compare(options).await,
+    }
+}
+
+pub async fn run_compare(options: BenchOptions) -> Result<(), BenchError> {
+    let run_id = new_run_id();
+    let rust_result = run_single_engine(EngineKind::XrayRust, &options, &run_id).await?;
+    print_result(&rust_result);
+    let xray_result = run_single_engine(EngineKind::XrayCore, &options, &run_id).await?;
+    print_result(&xray_result);
+    Ok(())
+}
+
+pub async fn run_single_engine(
+    kind: EngineKind,
+    options: &BenchOptions,
+    run_id: &str,
+) -> Result<BenchResult, BenchError> {
+    let run_dir = run_directory(&options.out_dir, run_id, kind, options.workload);
+    fs::create_dir_all(&run_dir).map_err(|source| BenchError::Io {
+        action: format!("creating run directory `{}`", run_dir.display()),
+        source,
+    })?;
+    let engine = start_engine(kind, options, &run_dir).await?;
+    let started = Instant::now();
+    let workload = async {
+        match options.workload {
+            WorkloadKind::Idle => run_idle_workload(options.duration).await,
+            WorkloadKind::TcpFreedom => run_tcp_freedom_workload(engine.socks_addr, options).await,
+        }
+    };
+    let ((bytes_sent, bytes_received), samples) =
+        sample_while(engine.pid, options.sample_interval, workload).await?;
+    let mut summary = summarize_samples(&samples);
+    summary.bytes_sent = bytes_sent;
+    summary.bytes_received = bytes_received;
+
+    let result = BenchResult {
+        engine: kind.as_str().to_owned(),
+        workload: options.workload.as_str().to_owned(),
+        status: "ok".to_owned(),
+        duration_ms: started.elapsed().as_millis(),
+        bytes_sent,
+        bytes_received,
+        peak_rss_kib: summary.peak_rss_kib,
+        cpu_millis: summary.cpu_millis,
+        samples: samples.len(),
+    };
+    write_samples_csv(&run_dir.join("samples.csv"), &samples)?;
+    write_result_json(&run_dir.join("result.json"), &result)?;
+    drop(engine);
+
+    Ok(result)
+}
+
+pub fn run_directory(
+    base: &Path,
+    run_id: &str,
+    engine: EngineKind,
+    workload: WorkloadKind,
+) -> PathBuf {
+    base.join(run_id)
+        .join(engine.as_str())
+        .join(workload.as_str())
+}
+
+fn new_run_id() -> String {
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    millis.to_string()
+}
+
+fn print_result(result: &BenchResult) {
+    println!(
+        "{} {} status={} peak_rss_kib={} cpu_millis={} bytes_sent={} bytes_received={} samples={}",
+        result.engine,
+        result.workload,
+        result.status,
+        result.peak_rss_kib,
+        result.cpu_millis,
+        result.bytes_sent,
+        result.bytes_received,
+        result.samples
+    );
 }
 
 #[cfg(test)]
@@ -1045,5 +1151,16 @@ mod tests {
         let summary = summarize_samples(&samples);
         assert_eq!(summary.peak_rss_kib, 150);
         assert_eq!(summary.cpu_millis, 15);
+    }
+
+    #[test]
+    fn run_directory_contains_engine_and_workload() {
+        let dir = run_directory(
+            Path::new("target/benchmarks"),
+            "123",
+            EngineKind::XrayRust,
+            WorkloadKind::Idle,
+        );
+        assert_eq!(dir, PathBuf::from("target/benchmarks/123/xray-rust/idle"));
     }
 }
