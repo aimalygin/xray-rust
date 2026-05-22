@@ -1,5 +1,5 @@
-use std::io::ErrorKind;
 use std::collections::VecDeque;
+use std::io::ErrorKind;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
@@ -7,7 +7,9 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use rcgen::{generate_simple_self_signed, CertifiedKey};
 use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
-use smoltcp::iface::{Config as SmolInterfaceConfig, Interface as SmolInterface, SocketHandle, SocketSet};
+use smoltcp::iface::{
+    Config as SmolInterfaceConfig, Interface as SmolInterface, SocketHandle, SocketSet,
+};
 use smoltcp::phy::{
     ChecksumCapabilities, Device as SmolDevice, DeviceCapabilities as SmolDeviceCapabilities,
     Medium as SmolMedium, RxToken as SmolRxToken, TxToken as SmolTxToken,
@@ -15,8 +17,8 @@ use smoltcp::phy::{
 use smoltcp::socket::tcp as smol_tcp;
 use smoltcp::time::Instant as SmolInstant;
 use smoltcp::wire::{
-    HardwareAddress as SmolHardwareAddress, IpAddress as SmolIpAddress,
-    IpCidr as SmolIpCidr, Ipv4Address as SmolIpv4Address,
+    HardwareAddress as SmolHardwareAddress, IpAddress as SmolIpAddress, IpCidr as SmolIpCidr,
+    Ipv4Address as SmolIpv4Address,
 };
 use tokio::io::{copy_bidirectional, AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -704,9 +706,12 @@ async fn tun_tcp_client_reaches_echo_target_through_vless_tcp_outbound() {
 
 #[tokio::test]
 async fn tun_tcp_client_uses_inbound_tag_routing_rule_to_reach_freedom_outbound() {
-    timeout(Duration::from_secs(2), run_tun_tcp_routed_freedom_echo_scenario())
-        .await
-        .unwrap();
+    timeout(
+        Duration::from_secs(2),
+        run_tun_tcp_routed_freedom_echo_scenario(),
+    )
+    .await
+    .unwrap();
 }
 
 #[tokio::test]
@@ -1161,10 +1166,7 @@ impl TunTcpClient {
         let mut iface = SmolInterface::new(iface_config, &mut device, SmolInstant::now());
         iface.update_ip_addrs(|addrs| {
             addrs
-                .push(SmolIpCidr::new(
-                    SmolIpAddress::v4(10, 10, 0, 2),
-                    24,
-                ))
+                .push(SmolIpCidr::new(SmolIpAddress::v4(10, 10, 0, 2), 24))
                 .unwrap();
         });
         iface
@@ -1198,9 +1200,7 @@ impl TunTcpClient {
     }
 
     fn may_send(&mut self) -> bool {
-        self.sockets
-            .get::<smol_tcp::Socket>(self.tcp)
-            .may_send()
+        self.sockets.get::<smol_tcp::Socket>(self.tcp).may_send()
     }
 
     fn send_payload(&mut self, payload: &[u8]) {
@@ -1241,11 +1241,8 @@ async fn pump_tun_until(
         while let Some(packet) = client.device.pop_outbound() {
             tun.push_inbound(packet).await.unwrap();
         }
-        loop {
-            match tun.try_poll_outbound().await.unwrap() {
-                Some(packet) => client.device.push_inbound(packet),
-                None => break,
-            }
+        while let Some(packet) = tun.try_poll_outbound().await.unwrap() {
+            client.device.push_inbound(packet);
         }
         client.poll();
 

@@ -1,6 +1,13 @@
 {
   "inbounds": [
     {
+      "tag": "tun-in",
+      "protocol": "tun",
+      "listen": "127.0.0.1",
+      "port": 0,
+      "settings": {}
+    },
+    {
       "tag": "socks-in",
       "protocol": "socks",
       "listen": "127.0.0.1",

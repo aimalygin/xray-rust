@@ -41,6 +41,13 @@ pub(crate) async fn serve_tun_endpoint(
     let mut tcp_listeners = HashMap::new();
     let mut tcp_flows = HashMap::new();
     let (stack_tx, mut stack_rx) = mpsc::channel(BRIDGE_CHANNEL_DEPTH);
+    let runtime_context = TunRuntimeContext {
+        inbound_tag,
+        config,
+        dns_resolver,
+        transport_dialer,
+        stack_tx,
+    };
 
     loop {
         tokio::select! {
@@ -78,11 +85,7 @@ pub(crate) async fn serve_tun_endpoint(
             &mut sockets,
             &mut tcp_listeners,
             &mut tcp_flows,
-            &stack_tx,
-            inbound_tag.clone(),
-            Arc::clone(&config),
-            Arc::clone(&dns_resolver),
-            Arc::clone(&transport_dialer),
+            &runtime_context,
             shutdown.clone(),
         );
         read_socket_data_to_remote(&mut sockets, &mut tcp_flows);
@@ -96,6 +99,15 @@ pub(crate) async fn serve_tun_endpoint(
     }
 }
 
+#[derive(Clone)]
+struct TunRuntimeContext {
+    inbound_tag: Option<String>,
+    config: Arc<CoreConfig>,
+    dns_resolver: Arc<dyn DnsResolver>,
+    transport_dialer: Arc<TransportDialer>,
+    stack_tx: mpsc::Sender<StackEvent>,
+}
+
 #[derive(Debug)]
 struct TcpFlow {
     to_remote: mpsc::Sender<Bytes>,
@@ -105,24 +117,15 @@ struct TcpFlow {
 
 #[derive(Debug)]
 enum StackEvent {
-    RemoteData {
-        handle: SocketHandle,
-        data: Bytes,
-    },
-    RemoteClosed {
-        handle: SocketHandle,
-    },
+    RemoteData { handle: SocketHandle, data: Bytes },
+    RemoteClosed { handle: SocketHandle },
 }
 
 fn open_ready_tcp_flows(
     sockets: &mut SocketSet<'static>,
     listeners: &mut HashMap<IpEndpoint, SocketHandle>,
     flows: &mut HashMap<SocketHandle, TcpFlow>,
-    stack_tx: &mpsc::Sender<StackEvent>,
-    inbound_tag: Option<String>,
-    config: Arc<CoreConfig>,
-    dns_resolver: Arc<dyn DnsResolver>,
-    transport_dialer: Arc<TransportDialer>,
+    context: &TunRuntimeContext,
     shutdown: watch::Receiver<bool>,
 ) {
     let ready = listeners
@@ -151,12 +154,8 @@ fn open_ready_tcp_flows(
         tokio::spawn(bridge_tcp_flow(
             handle,
             target,
-            inbound_tag.clone(),
-            Arc::clone(&config),
-            Arc::clone(&dns_resolver),
-            Arc::clone(&transport_dialer),
+            context.clone(),
             from_stack,
-            stack_tx.clone(),
             shutdown.clone(),
         ));
     }
@@ -269,32 +268,38 @@ fn cleanup_closed_tcp_flows(
 async fn bridge_tcp_flow(
     handle: SocketHandle,
     target: Target,
-    inbound_tag: Option<String>,
-    config: Arc<CoreConfig>,
-    dns_resolver: Arc<dyn DnsResolver>,
-    transport_dialer: Arc<TransportDialer>,
+    context: TunRuntimeContext,
     mut from_stack: mpsc::Receiver<Bytes>,
-    stack_tx: mpsc::Sender<StackEvent>,
     mut shutdown: watch::Receiver<bool>,
 ) {
-    let outbound = match select_tcp_outbound_for_session(&config, inbound_tag.as_deref(), &target) {
+    let outbound = match select_tcp_outbound_for_session(
+        &context.config,
+        context.inbound_tag.as_deref(),
+        &target,
+    ) {
         Ok(outbound) => outbound,
         Err(_) => {
-            let _ = stack_tx.send(StackEvent::RemoteClosed { handle }).await;
+            let _ = context
+                .stack_tx
+                .send(StackEvent::RemoteClosed { handle })
+                .await;
             return;
         }
     };
     let stream = match open_tcp_stream_with_resolver_and_dialer(
         &outbound,
         &target,
-        dns_resolver.as_ref(),
-        &transport_dialer,
+        context.dns_resolver.as_ref(),
+        &context.transport_dialer,
     )
     .await
     {
         Ok(stream) => stream,
         Err(_) => {
-            let _ = stack_tx.send(StackEvent::RemoteClosed { handle }).await;
+            let _ = context
+                .stack_tx
+                .send(StackEvent::RemoteClosed { handle })
+                .await;
             return;
         }
     };
@@ -327,7 +332,8 @@ async fn bridge_tcp_flow(
                 if read == 0 {
                     break;
                 }
-                if stack_tx
+                if context
+                    .stack_tx
                     .send(StackEvent::RemoteData {
                         handle,
                         data: Bytes::copy_from_slice(&read_buffer[..read]),
@@ -341,7 +347,10 @@ async fn bridge_tcp_flow(
         }
     }
 
-    let _ = stack_tx.send(StackEvent::RemoteClosed { handle }).await;
+    let _ = context
+        .stack_tx
+        .send(StackEvent::RemoteClosed { handle })
+        .await;
 }
 
 fn ensure_tcp_listener(
@@ -536,7 +545,9 @@ mod tests {
         let mut device = PacketDevice::new(1500);
 
         let tx = device.transmit(Instant::from_millis(0)).unwrap();
-        tx.consume(4, |packet| packet.copy_from_slice(&[0x45, 0x00, 0x00, 0x14]));
+        tx.consume(4, |packet| {
+            packet.copy_from_slice(&[0x45, 0x00, 0x00, 0x14])
+        });
 
         assert_eq!(
             device.pop_outbound(),
@@ -547,9 +558,46 @@ mod tests {
     #[test]
     fn tcp_syn_destination_extracts_ipv4_destination() {
         let packet = [
-            0x45, 0x00, 0x00, 0x28, 0x00, 0x00, 0x00, 0x00, 64, TCP_PROTOCOL, 0x00, 0x00, 10,
-            10, 0, 2, 127, 0, 0, 1, 0xc0, 0x00, 0x1f, 0x90, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x50, 0x02, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x45,
+            0x00,
+            0x00,
+            0x28,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            64,
+            TCP_PROTOCOL,
+            0x00,
+            0x00,
+            10,
+            10,
+            0,
+            2,
+            127,
+            0,
+            0,
+            1,
+            0xc0,
+            0x00,
+            0x1f,
+            0x90,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x50,
+            0x02,
+            0x04,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
         ];
 
         let endpoint = tcp_syn_destination(&packet).unwrap();

@@ -104,13 +104,14 @@ Mobile harnesses can now test:
 - Loading an Xray JSON config through the C ABI.
 - Starting and stopping the embedded core through the C ABI.
 - Accessing structured FFI errors.
-- Passing raw TUN packets through the current packet boundary and reading packet counters.
+- Passing raw TUN packets through the C ABI and reading packet counters.
+- Running TCP sessions through the TUN packet boundary: mobile code pushes raw IP packets with `xray_tun_push_packet`, polls response packets with `xray_tun_poll_packet`, and the Rust core bridges accepted TCP sessions through routing plus Freedom/VLESS TCP outbounds.
 - Linking iOS/tvOS apps against `XrayRust.xcframework`.
 - Packaging Android apps with the generated `jniLibs` tree.
 - Proxy-mode local behavior with SOCKS/HTTP inbounds, Freedom direct egress, and VLESS TCP/TLS/REALITY+Vision profiles that match the current supported config subset.
 
 Current limits:
 
-- The TUN ABI is a packet boundary, not a full VPN packet-to-session dispatcher yet.
+- TUN TCP is runnable; UDP session forwarding, VLESS UDP framing, Vision XUDP/Mux, and ICMP echo parity are still pending.
 - Platform adapters for `NEPacketTunnelProvider`, tvOS app lifecycle, and Android `VpnService` are still outside this repository.
 - Broader Xray-core protocols, DNS app behavior, geosite/geoip data loading, and full routing parity remain future work.

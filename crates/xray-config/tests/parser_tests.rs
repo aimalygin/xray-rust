@@ -1,8 +1,8 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use xray_config::{
-    parse_xray_json, DiagnosticSeverity, OutboundSettings, RealityShortId, StreamSecurity,
-    TargetAddr,
+    parse_xray_json, DiagnosticSeverity, InboundProtocol, OutboundSettings, RealityShortId,
+    StreamSecurity, TargetAddr,
 };
 
 #[test]
@@ -43,7 +43,9 @@ fn parses_mobile_vless_reality_vision_split_routing_fixture() {
     );
     let parsed = parse_xray_json(raw).expect("config should parse");
 
-    assert_eq!(parsed.config.inbounds.len(), 2);
+    assert_eq!(parsed.config.inbounds.len(), 3);
+    assert_eq!(parsed.config.inbounds[0].tag.as_deref(), Some("tun-in"));
+    assert_eq!(parsed.config.inbounds[0].protocol, InboundProtocol::Tun);
     assert_eq!(parsed.config.outbounds.len(), 2);
     assert!(parsed.diagnostics.is_empty());
     assert_eq!(parsed.config.default_outbound_tag.as_deref(), Some("proxy"));
