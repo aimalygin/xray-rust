@@ -95,6 +95,23 @@ fn runtime_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig {
     }
 }
 
+fn runtime_http_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig {
+    CoreConfig {
+        inbounds: vec![InboundConfig {
+            tag: Some("http-in".to_owned()),
+            protocol: InboundProtocol::Http,
+            listen: "127.0.0.1".to_owned(),
+            port: 0,
+        }],
+        outbounds: vec![vless_outbound(
+            StreamSecurity::None,
+            TargetAddr::Ip(vless_addr.ip()),
+            vless_addr.port(),
+        )],
+        default_outbound_tag: None,
+    }
+}
+
 fn runtime_config_with_vless_domain_server(domain: &str, port: u16) -> CoreConfig {
     CoreConfig {
         inbounds: vec![InboundConfig {
@@ -482,6 +499,13 @@ async fn socks_client_reaches_echo_target_through_vless_tls_outbound() {
     .unwrap();
 }
 
+#[tokio::test]
+async fn http_client_reaches_echo_target_through_vless_tcp_outbound() {
+    timeout(Duration::from_secs(2), run_http_to_vless_echo_scenario())
+        .await
+        .unwrap();
+}
+
 async fn run_socks_to_vless_echo_scenario() {
     let (echo_addr, echo_handle) = spawn_echo_server().await;
     let (vless_addr, vless_handle) = spawn_fake_vless_server().await;
@@ -499,6 +523,36 @@ async fn run_socks_to_vless_echo_scenario() {
     client.read_exact(&mut echoed).await.unwrap();
 
     assert_eq!(echoed, b"hello runtime");
+    drop(client);
+    core.stop().await.unwrap();
+
+    timeout(Duration::from_secs(1), vless_handle)
+        .await
+        .unwrap()
+        .unwrap();
+    timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+async fn run_http_to_vless_echo_scenario() {
+    let (echo_addr, echo_handle) = spawn_echo_server().await;
+    let (vless_addr, vless_handle) = spawn_fake_vless_server().await;
+    let config = runtime_http_config_with_vless_server(vless_addr);
+
+    let mut core = Core::new(config).unwrap();
+    core.start().await.unwrap();
+    let http_addr = core.inbound_addr(Some("http-in")).unwrap();
+
+    let mut client = TcpStream::connect(http_addr).await.unwrap();
+    http_connect(&mut client, echo_addr).await;
+
+    client.write_all(b"hello http runtime").await.unwrap();
+    let mut echoed = vec![0; "hello http runtime".len()];
+    client.read_exact(&mut echoed).await.unwrap();
+
+    assert_eq!(echoed, b"hello http runtime");
     drop(client);
     core.stop().await.unwrap();
 
@@ -741,6 +795,29 @@ async fn socks5_connect_domain(client: &mut TcpStream, domain: &str, port: u16) 
     let mut reply = [0; 10];
     client.read_exact(&mut reply).await.unwrap();
     assert_eq!(reply, [5, 0, 0, 1, 0, 0, 0, 0, 0, 0]);
+}
+
+async fn http_connect(client: &mut TcpStream, target: SocketAddr) {
+    let authority = target.to_string();
+    let request = format!("CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\n\r\n");
+    client.write_all(request.as_bytes()).await.unwrap();
+
+    let response = read_http_response_head(client).await;
+    let response = std::str::from_utf8(&response).unwrap();
+    assert!(
+        response.starts_with("HTTP/1.1 200 Connection Established\r\n"),
+        "unexpected HTTP CONNECT response: {response:?}"
+    );
+}
+
+async fn read_http_response_head(client: &mut TcpStream) -> Vec<u8> {
+    let mut response = Vec::new();
+    loop {
+        response.push(client.read_u8().await.unwrap());
+        if response.ends_with(b"\r\n\r\n") {
+            return response;
+        }
+    }
 }
 
 async fn read_vless_target<S>(stream: &mut S) -> Target

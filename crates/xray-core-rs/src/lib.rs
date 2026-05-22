@@ -8,6 +8,7 @@ use xray_runtime::Shutdown;
 use xray_transport::{DnsResolver, SystemDnsResolver, TransportDialer};
 use xray_tun::{TunConfig, TunEndpoint};
 
+mod http;
 mod outbound;
 mod socks;
 
@@ -133,8 +134,9 @@ impl Core {
 
         let mut bound_listeners = Vec::new();
         for inbound in &self.config.inbounds {
-            if inbound.protocol != InboundProtocol::Socks {
-                continue;
+            match inbound.protocol {
+                InboundProtocol::Socks | InboundProtocol::Http => {}
+                InboundProtocol::Tun => continue,
             }
 
             let listener = TcpListener::bind((inbound.listen.as_str(), inbound.port)).await?;
@@ -144,6 +146,7 @@ impl Core {
                     tag: inbound.tag.clone(),
                     addr,
                 },
+                inbound.protocol.clone(),
                 listener,
             ));
         }
@@ -155,16 +158,26 @@ impl Core {
         let config = Arc::new(self.config.clone());
         let mut inbounds = Vec::with_capacity(bound_listeners.len());
         let mut tasks = Vec::with_capacity(bound_listeners.len());
-        for (bound, listener) in bound_listeners {
+        for (bound, protocol, listener) in bound_listeners {
             let dns_resolver = Arc::clone(&self.dns_resolver);
             let transport_dialer = Arc::clone(&self.transport_dialer);
-            let task = tokio::spawn(socks::serve_socks_listener(
-                listener,
-                Arc::clone(&config),
-                dns_resolver,
-                transport_dialer,
-                self.shutdown.subscribe(),
-            ));
+            let task = match protocol {
+                InboundProtocol::Socks => tokio::spawn(socks::serve_socks_listener(
+                    listener,
+                    Arc::clone(&config),
+                    dns_resolver,
+                    transport_dialer,
+                    self.shutdown.subscribe(),
+                )),
+                InboundProtocol::Http => tokio::spawn(http::serve_http_listener(
+                    listener,
+                    Arc::clone(&config),
+                    dns_resolver,
+                    transport_dialer,
+                    self.shutdown.subscribe(),
+                )),
+                InboundProtocol::Tun => continue,
+            };
             inbounds.push(bound);
             tasks.push(task);
         }

@@ -25,20 +25,7 @@ pub enum HttpParseError {
 pub async fn parse_http_connect<R: AsyncRead + Unpin>(
     mut reader: R,
 ) -> Result<Target, HttpParseError> {
-    let mut request_line = Vec::new();
-
-    loop {
-        if request_line.len() >= MAX_REQUEST_LINE_LEN {
-            return Err(HttpParseError::LineTooLong);
-        }
-
-        let byte = reader.read_u8().await.map_err(|_| HttpParseError::Io)?;
-        request_line.push(byte);
-        if byte == b'\n' {
-            break;
-        }
-    }
-
+    let request_line = read_line_limited(&mut reader).await?;
     let request_line =
         std::str::from_utf8(&request_line).map_err(|_| HttpParseError::NotConnect)?;
     let request_line = request_line.trim_end_matches(['\r', '\n']);
@@ -52,8 +39,36 @@ pub async fn parse_http_connect<R: AsyncRead + Unpin>(
     let (host, port) = parse_authority(authority)?;
     let port = parse_port(port)?;
     let addr = parse_host(host)?;
+    consume_headers(&mut reader).await?;
 
     Ok(Target::new(addr, port, Network::Tcp))
+}
+
+async fn consume_headers<R: AsyncRead + Unpin>(reader: &mut R) -> Result<(), HttpParseError> {
+    loop {
+        let line = read_line_limited(reader).await?;
+        if line == b"\r\n" || line == b"\n" {
+            return Ok(());
+        }
+    }
+}
+
+async fn read_line_limited<R: AsyncRead + Unpin>(
+    reader: &mut R,
+) -> Result<Vec<u8>, HttpParseError> {
+    let mut line = Vec::new();
+
+    loop {
+        if line.len() >= MAX_REQUEST_LINE_LEN {
+            return Err(HttpParseError::LineTooLong);
+        }
+
+        let byte = reader.read_u8().await.map_err(|_| HttpParseError::Io)?;
+        line.push(byte);
+        if byte == b'\n' {
+            return Ok(line);
+        }
+    }
 }
 
 fn parse_authority(authority: &str) -> Result<(&str, &str), HttpParseError> {

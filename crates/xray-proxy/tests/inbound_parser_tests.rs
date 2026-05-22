@@ -198,6 +198,21 @@ async fn parses_http_connect_domain_target() {
 }
 
 #[tokio::test]
+async fn parses_http_connect_consumes_headers_before_payload() {
+    let mut input = Cursor::new(
+        b"CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\npayload".to_vec(),
+    );
+
+    let target = parse_http_connect(&mut input).await.unwrap();
+    let mut remaining = Vec::new();
+    input.read_to_end(&mut remaining).await.unwrap();
+
+    assert_eq!(target.port, 443);
+    assert_eq!(target.addr, TargetAddr::Domain("example.com".to_owned()));
+    assert_eq!(remaining, b"payload");
+}
+
+#[tokio::test]
 async fn parses_http_connect_ipv4_literal_target() {
     let raw = b"CONNECT 127.0.0.1:8080 HTTP/1.1\r\n\r\n";
 
