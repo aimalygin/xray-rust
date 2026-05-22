@@ -1,0 +1,15 @@
+[package]
+name = "xray-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "xray-rust"
+path = "src/main.rs"
+
+[dependencies]
+thiserror.workspace = true
+tokio.workspace = true
+xray-config = { path = "../xray-config" }
+xray-core-rs = { path = "../xray-core-rs" }
