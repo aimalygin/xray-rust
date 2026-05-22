@@ -1,11 +1,13 @@
 use std::fs;
+use std::future::Future;
 use std::net::{Ipv4Addr, SocketAddr, TcpListener as StdTcpListener};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use thiserror::Error;
-use tokio::net::TcpStream;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
 use tokio::time::sleep;
 
 const USAGE: &str = "usage: xray-bench run|compare [options]";
@@ -107,6 +109,14 @@ pub struct BenchResult {
     pub peak_rss_kib: u64,
     pub cpu_millis: u64,
     pub samples: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkloadSummary {
+    pub bytes_sent: u64,
+    pub bytes_received: u64,
+    pub peak_rss_kib: u64,
+    pub cpu_millis: u64,
 }
 
 #[derive(Debug)]
@@ -376,6 +386,269 @@ pub fn write_samples_csv(path: &Path, samples: &[ProcessSample]) -> Result<(), B
             path.display()
         ))
     })
+}
+
+pub fn summarize_samples(samples: &[ProcessSample]) -> WorkloadSummary {
+    let peak_rss_kib = samples
+        .iter()
+        .map(|sample| sample.rss_kib)
+        .max()
+        .unwrap_or_default();
+    let cpu_millis = match (samples.first(), samples.last()) {
+        (Some(first), Some(last)) => last.cpu_millis.saturating_sub(first.cpu_millis),
+        _ => 0,
+    };
+    WorkloadSummary {
+        bytes_sent: 0,
+        bytes_received: 0,
+        peak_rss_kib,
+        cpu_millis,
+    }
+}
+
+pub async fn run_idle_workload(duration: Duration) -> Result<(u64, u64), BenchError> {
+    sleep(duration).await;
+    Ok((0, 0))
+}
+
+pub async fn run_tcp_freedom_workload(
+    socks_addr: SocketAddr,
+    options: &BenchOptions,
+) -> Result<(u64, u64), BenchError> {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "binding TCP echo server".to_owned(),
+            source,
+        })?;
+    let echo_addr = listener.local_addr().map_err(|source| BenchError::Io {
+        action: "reading TCP echo server address".to_owned(),
+        source,
+    })?;
+    let echo_task = tokio::spawn(async move {
+        loop {
+            let Ok((mut stream, _peer)) = listener.accept().await else {
+                break;
+            };
+            tokio::spawn(async move {
+                let (mut reader, mut writer) = stream.split();
+                let _ = tokio::io::copy(&mut reader, &mut writer).await;
+            });
+        }
+    });
+
+    let mut tasks = Vec::with_capacity(options.connections);
+    for _ in 0..options.connections {
+        let options = options.clone();
+        tasks.push(tokio::spawn(async move {
+            run_tcp_freedom_connection(socks_addr, echo_addr, &options).await
+        }));
+    }
+
+    let mut sent = 0;
+    let mut received = 0;
+    for task in tasks {
+        let (task_sent, task_received) = task.await.map_err(|error| {
+            BenchError::InvalidArguments(format!("tcp workload task failed: {error}"))
+        })??;
+        sent += task_sent;
+        received += task_received;
+    }
+    echo_task.abort();
+
+    Ok((sent, received))
+}
+
+async fn run_tcp_freedom_connection(
+    socks_addr: SocketAddr,
+    echo_addr: SocketAddr,
+    options: &BenchOptions,
+) -> Result<(u64, u64), BenchError> {
+    let mut client = TcpStream::connect(socks_addr)
+        .await
+        .map_err(|source| BenchError::Io {
+            action: format!("connecting to SOCKS inbound at {socks_addr}"),
+            source,
+        })?;
+    socks5_connect(&mut client, echo_addr).await?;
+
+    let payload = vec![0x5a; options.payload_size];
+    let mut echoed = vec![0; options.payload_size];
+    let mut sent = 0;
+    let mut received = 0;
+    for _ in 0..options.iterations {
+        client
+            .write_all(&payload)
+            .await
+            .map_err(|source| BenchError::Io {
+                action: "writing benchmark payload".to_owned(),
+                source,
+            })?;
+        sent += payload.len() as u64;
+        client
+            .read_exact(&mut echoed)
+            .await
+            .map_err(|source| BenchError::Io {
+                action: "reading benchmark echo".to_owned(),
+                source,
+            })?;
+        if echoed != payload {
+            return Err(BenchError::InvalidArguments(
+                "echo payload mismatch".to_owned(),
+            ));
+        }
+        received += echoed.len() as u64;
+    }
+
+    Ok((sent, received))
+}
+
+async fn socks5_connect(client: &mut TcpStream, target: SocketAddr) -> Result<(), BenchError> {
+    let SocketAddr::V4(target) = target else {
+        return Err(BenchError::InvalidArguments(
+            "tcp-freedom workload currently uses IPv4 echo targets".to_owned(),
+        ));
+    };
+
+    client
+        .write_all(&[5, 1, 0])
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "writing SOCKS greeting".to_owned(),
+            source,
+        })?;
+    let mut method = [0; 2];
+    client
+        .read_exact(&mut method)
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "reading SOCKS method".to_owned(),
+            source,
+        })?;
+    if method != [5, 0] {
+        return Err(BenchError::InvalidArguments(format!(
+            "unexpected SOCKS method response {method:?}"
+        )));
+    }
+
+    let mut request = vec![5, 1, 0, 1];
+    request.extend_from_slice(&target.ip().octets());
+    request.extend_from_slice(&target.port().to_be_bytes());
+    client
+        .write_all(&request)
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "writing SOCKS connect".to_owned(),
+            source,
+        })?;
+    let mut reply = [0; 10];
+    client
+        .read_exact(&mut reply)
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "reading SOCKS connect response".to_owned(),
+            source,
+        })?;
+    if reply[..2] != [5, 0] {
+        return Err(BenchError::InvalidArguments(format!(
+            "unexpected SOCKS connect response {reply:?}"
+        )));
+    }
+
+    Ok(())
+}
+
+pub async fn sample_while<F, T>(
+    pid: u32,
+    interval: Duration,
+    future: F,
+) -> Result<(T, Vec<ProcessSample>), BenchError>
+where
+    F: Future<Output = Result<T, BenchError>>,
+{
+    let start = Instant::now();
+    let mut samples = Vec::new();
+    samples.push(sample_process(pid, start)?);
+    let mut future = Box::pin(future);
+    loop {
+        tokio::select! {
+            result = &mut future => {
+                let result = result?;
+                samples.push(sample_process(pid, start)?);
+                return Ok((result, samples));
+            }
+            () = sleep(interval) => {
+                samples.push(sample_process(pid, start)?);
+            }
+        }
+    }
+}
+
+fn sample_process(pid: u32, start: Instant) -> Result<ProcessSample, BenchError> {
+    let args = ps_args(pid);
+    let output = Command::new("ps")
+        .args(args)
+        .output()
+        .map_err(|source| BenchError::Io {
+            action: format!("sampling process {pid} with ps"),
+            source,
+        })?;
+    if !output.status.success() {
+        return Err(BenchError::Process {
+            program: "ps".to_owned(),
+            status: output.status.to_string(),
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        });
+    }
+    let raw = String::from_utf8_lossy(&output.stdout);
+    let line = raw
+        .lines()
+        .find(|line| !line.trim().is_empty())
+        .ok_or_else(|| BenchError::InvalidArguments(format!("ps returned no sample for {pid}")))?;
+    let mut sample = parse_ps_sample(line)?;
+    sample.elapsed_ms = start.elapsed().as_millis();
+    Ok(sample)
+}
+
+#[cfg(target_os = "macos")]
+fn ps_args(pid: u32) -> Vec<String> {
+    vec![
+        "-o".to_owned(),
+        "rss=".to_owned(),
+        "-o".to_owned(),
+        "time=".to_owned(),
+        "-o".to_owned(),
+        "thcount=".to_owned(),
+        "-p".to_owned(),
+        pid.to_string(),
+    ]
+}
+
+#[cfg(target_os = "linux")]
+fn ps_args(pid: u32) -> Vec<String> {
+    vec![
+        "-o".to_owned(),
+        "rss=".to_owned(),
+        "-o".to_owned(),
+        "time=".to_owned(),
+        "-o".to_owned(),
+        "nlwp=".to_owned(),
+        "-p".to_owned(),
+        pid.to_string(),
+    ]
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+fn ps_args(pid: u32) -> Vec<String> {
+    vec![
+        "-o".to_owned(),
+        "rss=".to_owned(),
+        "-o".to_owned(),
+        "time=".to_owned(),
+        "-p".to_owned(),
+        pid.to_string(),
+    ]
 }
 
 pub fn xray_rust_freedom_config(port: u16) -> String {
@@ -751,5 +1024,26 @@ mod tests {
         assert!(config.contains(r#""protocol": "socks""#));
         assert!(config.contains(r#""port": 18081"#));
         assert!(config.contains(r#""protocol": "freedom""#));
+    }
+
+    #[test]
+    fn summarizes_samples_with_peak_rss_and_cpu_delta() {
+        let samples = vec![
+            ProcessSample {
+                elapsed_ms: 0,
+                rss_kib: 100,
+                cpu_millis: 10,
+                threads: Some(2),
+            },
+            ProcessSample {
+                elapsed_ms: 10,
+                rss_kib: 150,
+                cpu_millis: 25,
+                threads: Some(2),
+            },
+        ];
+        let summary = summarize_samples(&samples);
+        assert_eq!(summary.peak_rss_kib, 150);
+        assert_eq!(summary.cpu_millis, 15);
     }
 }
