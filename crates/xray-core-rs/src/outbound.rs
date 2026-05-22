@@ -1,6 +1,8 @@
 use tokio::io::AsyncWriteExt;
 use xray_config::{CoreConfig, Network, OutboundSettings, StreamSecurity, TargetAddr, VlessUser};
-use xray_proxy::vless::{encode_request_header, VisionStream, VlessCommand, VlessRequest};
+use xray_proxy::vless::{
+    encode_request_header, VisionStream, VlessCommand, VlessRequest, VlessResponseStream,
+};
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::{
     BoxedTransportStream, ConnectorConfig, DnsResolver, RealityClientConfig, SystemDnsResolver,
@@ -173,6 +175,8 @@ pub async fn open_vless_tcp_stream_with_resolver_and_dialer(
 
     stream.write_all(&header).await?;
 
+    let stream = VlessResponseStream::new(stream);
+
     if uses_vision {
         return Ok(Box::new(VisionStream::new(
             stream,
@@ -181,7 +185,7 @@ pub async fn open_vless_tcp_stream_with_resolver_and_dialer(
         )));
     }
 
-    Ok(stream)
+    Ok(Box::new(stream))
 }
 
 pub async fn open_vless_tcp_stream(
