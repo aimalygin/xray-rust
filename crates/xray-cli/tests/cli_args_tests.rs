@@ -52,10 +52,8 @@ fn rejects_missing_config_path() {
 
 #[test]
 fn load_config_reports_json_parse_diagnostics() {
-    let temp_dir = std::env::temp_dir().join(format!(
-        "xray-cli-invalid-config-{}",
-        std::process::id()
-    ));
+    let temp_dir =
+        std::env::temp_dir().join(format!("xray-cli-invalid-config-{}", std::process::id()));
     fs::create_dir_all(&temp_dir).unwrap();
     let config_path = temp_dir.join("bad.json");
     fs::write(&config_path, "{").unwrap();
@@ -78,10 +76,8 @@ fn format_bound_inbounds_includes_tag_and_address() {
 
 #[tokio::test]
 async fn run_with_shutdown_starts_and_stops_core() {
-    let temp_dir = std::env::temp_dir().join(format!(
-        "xray-cli-runtime-config-{}",
-        std::process::id()
-    ));
+    let temp_dir =
+        std::env::temp_dir().join(format!("xray-cli-runtime-config-{}", std::process::id()));
     fs::create_dir_all(&temp_dir).unwrap();
     let config_path = temp_dir.join("client.json");
     fs::write(
@@ -129,5 +125,8 @@ async fn run_cli_with_shutdown_rejects_missing_config() {
     let result = run_cli_with_shutdown(["xray-rust", "run", "-config"], async {}).await;
 
     assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("missing config path"));
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("missing config path"));
 }

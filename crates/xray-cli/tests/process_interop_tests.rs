@@ -277,7 +277,11 @@ fn write_xray_vless_config(path: &Path, port: u16, server_config: &XrayVlessServ
     fs::write(path, config).expect("write xray config");
 }
 
-fn write_xray_rust_client_config(path: &Path, xray_addr: SocketAddr, security: XrayInboundSecurity) {
+fn write_xray_rust_client_config(
+    path: &Path,
+    xray_addr: SocketAddr,
+    security: XrayInboundSecurity,
+) {
     let flow = security
         .flow()
         .map(|flow| format!(r#", "flow": "{flow}""#))

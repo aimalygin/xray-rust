@@ -46,11 +46,9 @@ where
                 config_path: PathBuf::from(config_path),
             })
         }
-        [_program, command, flag] if command == "run" && is_config_flag(flag) => {
-            Err(CliError::InvalidArguments(format!(
-                "missing config path\n{USAGE}"
-            )))
-        }
+        [_program, command, flag] if command == "run" && is_config_flag(flag) => Err(
+            CliError::InvalidArguments(format!("missing config path\n{USAGE}")),
+        ),
         _ => Err(CliError::InvalidArguments(USAGE.to_owned())),
     }
 }
