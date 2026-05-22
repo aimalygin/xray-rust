@@ -96,8 +96,19 @@ pub async fn run_with_shutdown<F>(config: CoreConfig, shutdown: F) -> Result<(),
 where
     F: Future<Output = ()>,
 {
+    let configured_inbounds = config.inbounds.clone();
     let mut core = Core::new(config)?;
     core.start().await?;
+    let bound = configured_inbounds
+        .iter()
+        .filter_map(|inbound| {
+            core.inbound_addr(inbound.tag.as_deref())
+                .map(|addr| (inbound.tag.clone(), addr))
+        })
+        .collect::<Vec<_>>();
+    if !bound.is_empty() {
+        eprintln!("{}", format_bound_inbounds(&bound));
+    }
     shutdown.await;
     core.stop().await?;
 
