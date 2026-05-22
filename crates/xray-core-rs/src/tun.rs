@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{hash_map::Entry, HashMap, VecDeque};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 
@@ -480,12 +480,12 @@ fn handle_udp_packet(
 ) {
     let key = UdpFlowKey::new(packet.client, packet.target);
 
-    if !flows.contains_key(&key) {
+    if let Entry::Vacant(entry) = flows.entry(key) {
         let Some(target) = udp_target_from_endpoint(packet.target) else {
             return;
         };
         let (to_remote, from_stack) = mpsc::channel(BRIDGE_CHANNEL_DEPTH);
-        flows.insert(key, UdpFlow { to_remote });
+        entry.insert(UdpFlow { to_remote });
         tokio::spawn(bridge_udp_flow(
             key,
             target,

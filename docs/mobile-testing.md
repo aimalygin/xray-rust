@@ -106,12 +106,17 @@ Mobile harnesses can now test:
 - Accessing structured FFI errors.
 - Passing raw TUN packets through the C ABI and reading packet counters.
 - Running TCP sessions through the TUN packet boundary: mobile code pushes raw IP packets with `xray_tun_push_packet`, polls response packets with `xray_tun_poll_packet`, and the Rust core bridges accepted TCP sessions through routing plus Freedom/VLESS TCP outbounds.
+- Running UDP sessions through the same TUN packet boundary for:
+  - Freedom/direct UDP targets.
+  - VLESS UDP length-prefixed datagrams over TCP transport.
+  - Vision UDP through VLESS Mux/XUDP framing over a protected TLS/REALITY-capable stream boundary.
+- Receiving ICMP echo replies for IPv4 and IPv6 ping-style probes through the TUN packet boundary.
 - Linking iOS/tvOS apps against `XrayRust.xcframework`.
 - Packaging Android apps with the generated `jniLibs` tree.
 - Proxy-mode local behavior with SOCKS/HTTP inbounds, Freedom direct egress, and VLESS TCP/TLS/REALITY+Vision profiles that match the current supported config subset.
 
 Current limits:
 
-- TUN TCP is runnable; UDP session forwarding, VLESS UDP framing, Vision XUDP/Mux, and ICMP echo parity are still pending.
+- The platform-neutral TUN runtime is runnable for TCP, UDP, VLESS UDP, Vision XUDP, and ICMP echo. Host apps still need to supply the OS adapter loop that reads/writes packets from `NEPacketTunnelProvider`, tvOS lifecycle code, or Android `VpnService`.
 - Platform adapters for `NEPacketTunnelProvider`, tvOS app lifecycle, and Android `VpnService` are still outside this repository.
 - Broader Xray-core protocols, DNS app behavior, geosite/geoip data loading, and full routing parity remain future work.
