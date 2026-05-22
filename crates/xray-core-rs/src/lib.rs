@@ -13,8 +13,9 @@ mod outbound;
 mod socks;
 
 pub use outbound::{
-    open_vless_tcp_stream, open_vless_tcp_stream_with_resolver,
-    open_vless_tcp_stream_with_resolver_and_dialer, select_vless_tcp_outbound, VlessTcpOutbound,
+    open_tcp_stream_with_resolver_and_dialer, open_vless_tcp_stream,
+    open_vless_tcp_stream_with_resolver, open_vless_tcp_stream_with_resolver_and_dialer,
+    select_tcp_outbound, select_vless_tcp_outbound, TcpOutbound, VlessTcpOutbound,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

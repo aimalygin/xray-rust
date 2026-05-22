@@ -8,7 +8,7 @@ use xray_config::CoreConfig;
 use xray_proxy::inbound::parse_http_connect;
 use xray_transport::{DnsResolver, TransportDialer};
 
-use crate::{open_vless_tcp_stream_with_resolver_and_dialer, select_vless_tcp_outbound};
+use crate::{open_tcp_stream_with_resolver_and_dialer, select_tcp_outbound};
 
 const HTTP_CONNECT_ESTABLISHED: &[u8] = b"HTTP/1.1 200 Connection Established\r\n\r\n";
 const HTTP_BAD_REQUEST: &[u8] = b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n";
@@ -70,7 +70,7 @@ async fn handle_http_connection(
         }
     };
 
-    let outbound = match select_vless_tcp_outbound(&config) {
+    let outbound = match select_tcp_outbound(&config) {
         Ok(outbound) => outbound,
         Err(_) => {
             let _ = inbound.write_all(HTTP_BAD_GATEWAY).await;
@@ -78,7 +78,7 @@ async fn handle_http_connection(
         }
     };
 
-    let mut outbound_stream = match open_vless_tcp_stream_with_resolver_and_dialer(
+    let mut outbound_stream = match open_tcp_stream_with_resolver_and_dialer(
         &outbound,
         &target,
         dns_resolver.as_ref(),

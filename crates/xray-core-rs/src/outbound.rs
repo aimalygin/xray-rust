@@ -1,5 +1,7 @@
 use tokio::io::AsyncWriteExt;
-use xray_config::{CoreConfig, Network, OutboundSettings, StreamSecurity, TargetAddr, VlessUser};
+use xray_config::{
+    CoreConfig, Network, OutboundConfig, OutboundSettings, StreamSecurity, TargetAddr, VlessUser,
+};
 use xray_proxy::vless::{
     encode_request_header, VisionStream, VlessCommand, VlessRequest, VlessResponseStream,
 };
@@ -20,6 +22,12 @@ pub struct VlessTcpOutbound {
     transport: ConnectorConfig,
 }
 
+#[derive(Debug, Clone)]
+pub enum TcpOutbound {
+    Freedom,
+    Vless(Box<VlessTcpOutbound>),
+}
+
 impl VlessTcpOutbound {
     pub fn server(&self) -> &Target {
         &self.server
@@ -34,7 +42,30 @@ impl VlessTcpOutbound {
     }
 }
 
+pub fn select_tcp_outbound(config: &CoreConfig) -> Result<TcpOutbound, CoreError> {
+    let outbound = select_configured_outbound(config)?;
+    if outbound.stream.network != Network::Tcp {
+        return Err(CoreError::UnsupportedOutboundNetwork);
+    }
+
+    match &outbound.settings {
+        OutboundSettings::Freedom => {
+            if outbound.stream.security != StreamSecurity::None {
+                return Err(CoreError::UnsupportedOutboundSecurity);
+            }
+            Ok(TcpOutbound::Freedom)
+        }
+        OutboundSettings::Vless(_) => build_vless_tcp_outbound(outbound)
+            .map(|outbound| TcpOutbound::Vless(Box::new(outbound))),
+    }
+}
+
 pub fn select_vless_tcp_outbound(config: &CoreConfig) -> Result<VlessTcpOutbound, CoreError> {
+    let outbound = select_configured_outbound(config)?;
+    build_vless_tcp_outbound(outbound)
+}
+
+fn select_configured_outbound(config: &CoreConfig) -> Result<&OutboundConfig, CoreError> {
     let outbound = match &config.default_outbound_tag {
         Some(tag) => config
             .outbounds
@@ -47,11 +78,17 @@ pub fn select_vless_tcp_outbound(config: &CoreConfig) -> Result<VlessTcpOutbound
             .ok_or(CoreError::NoSupportedOutbound)?,
     };
 
+    Ok(outbound)
+}
+
+fn build_vless_tcp_outbound(outbound: &OutboundConfig) -> Result<VlessTcpOutbound, CoreError> {
     if outbound.stream.network != Network::Tcp {
         return Err(CoreError::UnsupportedOutboundNetwork);
     }
 
-    let OutboundSettings::Vless(settings) = &outbound.settings;
+    let OutboundSettings::Vless(settings) = &outbound.settings else {
+        return Err(CoreError::NoSupportedOutbound);
+    };
     let user = settings
         .users
         .first()
@@ -164,6 +201,31 @@ pub async fn open_vless_tcp_stream_with_resolver(
         &transport_dialer,
     )
     .await
+}
+
+pub async fn open_tcp_stream_with_resolver_and_dialer(
+    outbound: &TcpOutbound,
+    target: &Target,
+    dns_resolver: &dyn DnsResolver,
+    transport_dialer: &TransportDialer,
+) -> Result<BoxedTransportStream, CoreError> {
+    match outbound {
+        TcpOutbound::Freedom => {
+            let resolved_target = resolve_server_target(target, dns_resolver).await?;
+            Ok(transport_dialer
+                .connect(&ConnectorConfig::Tcp, &resolved_target)
+                .await?)
+        }
+        TcpOutbound::Vless(outbound) => {
+            open_vless_tcp_stream_with_resolver_and_dialer(
+                outbound,
+                target,
+                dns_resolver,
+                transport_dialer,
+            )
+            .await
+        }
+    }
 }
 
 pub async fn open_vless_tcp_stream_with_resolver_and_dialer(

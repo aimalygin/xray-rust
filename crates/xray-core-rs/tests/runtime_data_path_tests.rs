@@ -43,6 +43,17 @@ fn vless_outbound(security: StreamSecurity, server: TargetAddr, port: u16) -> Ou
     }
 }
 
+fn freedom_outbound() -> OutboundConfig {
+    OutboundConfig {
+        tag: Some("direct".to_owned()),
+        stream: StreamSettings {
+            network: Network::Tcp,
+            security: StreamSecurity::None,
+        },
+        settings: OutboundSettings::Freedom,
+    }
+}
+
 fn config_with_outbound(outbound: OutboundConfig) -> CoreConfig {
     CoreConfig {
         inbounds: Vec::new(),
@@ -75,6 +86,19 @@ impl DnsResolver for StaticDnsResolver {
         } else {
             Err(TransportError::NoResolvedAddress(domain.to_owned(), port))
         }
+    }
+}
+
+fn runtime_config_with_freedom_outbound() -> CoreConfig {
+    CoreConfig {
+        inbounds: vec![InboundConfig {
+            tag: Some("socks-in".to_owned()),
+            protocol: InboundProtocol::Socks,
+            listen: "127.0.0.1".to_owned(),
+            port: 0,
+        }],
+        outbounds: vec![freedom_outbound()],
+        default_outbound_tag: Some("direct".to_owned()),
     }
 }
 
@@ -385,7 +409,9 @@ fn rejects_vision_flow_for_raw_tcp_runtime_path() {
         TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
         443,
     );
-    let OutboundSettings::Vless(settings) = &mut outbound.settings;
+    let OutboundSettings::Vless(settings) = &mut outbound.settings else {
+        panic!("expected vless outbound");
+    };
     settings.users[0].flow = Some("xtls-rprx-vision".to_owned());
     let config = config_with_outbound(outbound);
 
@@ -404,7 +430,9 @@ fn selects_tls_vision_outbound_for_protected_stream_boundary() {
         TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
         443,
     );
-    let OutboundSettings::Vless(settings) = &mut outbound.settings;
+    let OutboundSettings::Vless(settings) = &mut outbound.settings else {
+        panic!("expected vless outbound");
+    };
     settings.users[0].flow = Some("xtls-rprx-vision".to_owned());
     let config = config_with_outbound(outbound);
 
@@ -424,7 +452,9 @@ fn selects_reality_vision_outbound_for_protected_stream_boundary() {
         TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
         443,
     );
-    let OutboundSettings::Vless(settings) = &mut outbound.settings;
+    let OutboundSettings::Vless(settings) = &mut outbound.settings else {
+        panic!("expected vless outbound");
+    };
     settings.users[0].flow = Some("xtls-rprx-vision".to_owned());
     let config = config_with_outbound(outbound);
 
@@ -465,6 +495,13 @@ async fn vless_tcp_open_reports_dns_failure_for_unresolved_server_domain() {
 #[tokio::test]
 async fn socks_client_reaches_echo_target_through_vless_tcp_outbound() {
     timeout(Duration::from_secs(2), run_socks_to_vless_echo_scenario())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn socks_client_reaches_echo_target_through_freedom_outbound() {
+    timeout(Duration::from_secs(2), run_socks_to_freedom_echo_scenario())
         .await
         .unwrap();
 }
@@ -530,6 +567,31 @@ async fn run_socks_to_vless_echo_scenario() {
         .await
         .unwrap()
         .unwrap();
+    timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+async fn run_socks_to_freedom_echo_scenario() {
+    let (echo_addr, echo_handle) = spawn_echo_server().await;
+    let config = runtime_config_with_freedom_outbound();
+
+    let mut core = Core::new(config).unwrap();
+    core.start().await.unwrap();
+    let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
+
+    let mut client = TcpStream::connect(socks_addr).await.unwrap();
+    socks5_connect(&mut client, echo_addr).await;
+
+    client.write_all(b"hello freedom runtime").await.unwrap();
+    let mut echoed = vec![0; "hello freedom runtime".len()];
+    client.read_exact(&mut echoed).await.unwrap();
+
+    assert_eq!(echoed, b"hello freedom runtime");
+    drop(client);
+    core.stop().await.unwrap();
+
     timeout(Duration::from_secs(1), echo_handle)
         .await
         .unwrap()

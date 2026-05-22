@@ -91,7 +91,9 @@ fn normalized_model_can_represent_vless_reality_vision() {
         OutboundProtocol::Vless
     );
 
-    let OutboundSettings::Vless(settings) = &config.outbounds[0].settings;
+    let OutboundSettings::Vless(settings) = &config.outbounds[0].settings else {
+        panic!("expected vless outbound");
+    };
     assert_eq!(
         settings.server,
         TargetAddr::Domain("server.example".to_owned())
@@ -102,6 +104,20 @@ fn normalized_model_can_represent_vless_reality_vision() {
     };
     assert_eq!(reality.public_key, [1; 32]);
     assert_eq!(reality.short_id.as_slice(), &[2, 3, 4, 5]);
+}
+
+#[test]
+fn normalized_model_can_represent_freedom_outbound() {
+    let outbound = OutboundConfig {
+        tag: Some("direct".to_owned()),
+        stream: StreamSettings {
+            network: Network::Tcp,
+            security: StreamSecurity::None,
+        },
+        settings: OutboundSettings::Freedom,
+    };
+
+    assert_eq!(outbound.settings.protocol(), OutboundProtocol::Freedom);
 }
 
 #[test]

@@ -5,8 +5,8 @@ use uuid::Uuid;
 
 use crate::{
     CoreConfig, Diagnostic, InboundConfig, InboundProtocol, Network, OutboundConfig,
-    OutboundSettings, RealitySettings, RealityShortId, StreamSecurity, StreamSettings, TargetAddr,
-    TlsSettings, VlessOutboundSettings, VlessUser,
+    OutboundProtocol, OutboundSettings, RealitySettings, RealityShortId, StreamSecurity,
+    StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -275,8 +275,9 @@ impl Parser<'_> {
 
     fn parse_outbound(&mut self, outbound: &Value, index: usize) -> Option<OutboundConfig> {
         let protocol_path = format!("$.outbounds[{index}].protocol");
-        match self.string_at(outbound, "protocol") {
-            Some("vless") => {}
+        let protocol = match self.string_at(outbound, "protocol") {
+            Some("freedom") => OutboundProtocol::Freedom,
+            Some("vless") => OutboundProtocol::Vless,
             Some(protocol) => {
                 self.error(
                     protocol_path,
@@ -288,16 +289,24 @@ impl Parser<'_> {
                 self.error(protocol_path, "missing outbound protocol");
                 return None;
             }
-        }
+        };
         self.validate_outbound_compatibility(outbound, index);
 
-        let settings = self.parse_vless_settings(outbound, index)?;
+        let settings = match protocol {
+            OutboundProtocol::Freedom => {
+                self.validate_freedom_settings(outbound.get("settings"), index);
+                OutboundSettings::Freedom
+            }
+            OutboundProtocol::Vless => {
+                OutboundSettings::Vless(self.parse_vless_settings(outbound, index)?)
+            }
+        };
         let stream = self.parse_stream_settings(outbound, index)?;
 
         Some(OutboundConfig {
             tag: self.string_at(outbound, "tag").map(ToOwned::to_owned),
             stream,
-            settings: OutboundSettings::Vless(settings),
+            settings,
         })
     }
 
@@ -345,6 +354,19 @@ impl Parser<'_> {
         ) {
             self.error(format!("{mux_path}.enabled"), "outbound mux is unsupported");
         }
+    }
+
+    fn validate_freedom_settings(&mut self, settings: Option<&Value>, index: usize) {
+        let Some(settings) = settings else {
+            return;
+        };
+        let settings_path = format!("$.outbounds[{index}].settings");
+        if !settings.is_object() {
+            self.error(settings_path, "freedom settings must be an object");
+            return;
+        }
+
+        self.reject_unknown_fields(settings, &settings_path, &[]);
     }
 
     fn parse_vless_settings(

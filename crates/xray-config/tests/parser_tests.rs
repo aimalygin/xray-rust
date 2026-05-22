@@ -14,7 +14,9 @@ fn parses_vless_reality_vision_subset() {
     assert_eq!(parsed.config.default_outbound_tag.as_deref(), Some("proxy"));
     assert_eq!(parsed.config.outbounds[0].tag.as_deref(), Some("proxy"));
 
-    let OutboundSettings::Vless(vless) = &parsed.config.outbounds[0].settings;
+    let OutboundSettings::Vless(vless) = &parsed.config.outbounds[0].settings else {
+        panic!("expected vless outbound");
+    };
     assert_eq!(
         vless.server,
         TargetAddr::Domain("server.example".to_owned())
@@ -45,6 +47,44 @@ fn sets_default_outbound_tag_to_first_outbound_tag() {
     let parsed = parse_xray_json(&raw).expect("config should parse");
 
     assert_eq!(parsed.config.default_outbound_tag.as_deref(), Some("proxy"));
+}
+
+#[test]
+fn parses_freedom_outbound_as_direct_tcp_default() {
+    let raw = r#"{
+        "inbounds": [],
+        "outbounds": [
+            { "tag": "direct", "protocol": "freedom" }
+        ]
+    }"#;
+
+    let parsed = parse_xray_json(raw).expect("config should parse");
+
+    assert_eq!(
+        parsed.config.default_outbound_tag.as_deref(),
+        Some("direct")
+    );
+    assert_eq!(parsed.config.outbounds[0].tag.as_deref(), Some("direct"));
+    assert!(matches!(
+        parsed.config.outbounds[0].settings,
+        OutboundSettings::Freedom
+    ));
+}
+
+#[test]
+fn rejects_freedom_redirect_with_path() {
+    let raw = r#"{
+        "inbounds": [],
+        "outbounds": [
+            {
+              "tag": "direct",
+              "protocol": "freedom",
+              "settings": { "redirect": "127.0.0.1:80" }
+            }
+        ]
+    }"#;
+
+    assert_parse_error_path(raw, "$.outbounds[0].settings.redirect");
 }
 
 #[test]
@@ -242,7 +282,9 @@ fn accepts_missing_none_and_explicit_none_vless_user_encryption() {
         let raw = vless_raw(users, "", 443, valid_public_key(), "02030405");
 
         let parsed = parse_xray_json(&raw).expect("config should parse");
-        let OutboundSettings::Vless(vless) = &parsed.config.outbounds[0].settings;
+        let OutboundSettings::Vless(vless) = &parsed.config.outbounds[0].settings else {
+            panic!("expected vless outbound");
+        };
         assert_eq!(vless.users[0].encryption, "none");
     }
 }
@@ -279,7 +321,9 @@ fn accepts_missing_empty_and_vision_vless_user_flow() {
         let raw = vless_raw(users, "", 443, valid_public_key(), "02030405");
 
         let parsed = parse_xray_json(&raw).expect("config should parse");
-        let OutboundSettings::Vless(vless) = &parsed.config.outbounds[0].settings;
+        let OutboundSettings::Vless(vless) = &parsed.config.outbounds[0].settings else {
+            panic!("expected vless outbound");
+        };
         assert_eq!(vless.users[0].flow.as_deref(), expected_flow);
     }
 }

@@ -37,17 +37,20 @@ pub struct OutboundConfig {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OutboundProtocol {
+    Freedom,
     Vless,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OutboundSettings {
+    Freedom,
     Vless(VlessOutboundSettings),
 }
 
 impl OutboundSettings {
     pub fn protocol(&self) -> OutboundProtocol {
         match self {
+            Self::Freedom => OutboundProtocol::Freedom,
             Self::Vless(_) => OutboundProtocol::Vless,
         }
     }

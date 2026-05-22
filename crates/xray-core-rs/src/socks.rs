@@ -10,7 +10,7 @@ use xray_proxy::inbound::{
 };
 use xray_transport::{DnsResolver, TransportDialer};
 
-use crate::{open_vless_tcp_stream_with_resolver_and_dialer, select_vless_tcp_outbound};
+use crate::{open_tcp_stream_with_resolver_and_dialer, select_tcp_outbound};
 
 pub async fn serve_socks_listener(
     listener: TcpListener,
@@ -72,7 +72,7 @@ async fn handle_socks_connection(
         }
     };
 
-    let outbound = match select_vless_tcp_outbound(&config) {
+    let outbound = match select_tcp_outbound(&config) {
         Ok(outbound) => outbound,
         Err(_) => {
             let _ = write_socks5_failure(&mut inbound).await;
@@ -80,7 +80,7 @@ async fn handle_socks_connection(
         }
     };
 
-    let mut outbound_stream = match open_vless_tcp_stream_with_resolver_and_dialer(
+    let mut outbound_stream = match open_tcp_stream_with_resolver_and_dialer(
         &outbound,
         &target,
         dns_resolver.as_ref(),
