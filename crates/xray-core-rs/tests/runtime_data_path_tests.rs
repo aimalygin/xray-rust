@@ -21,7 +21,7 @@ use smoltcp::wire::{
     Ipv4Address as SmolIpv4Address,
 };
 use tokio::io::{copy_bidirectional, AsyncRead, AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout, Duration, Instant as TokioInstant};
 use tokio_rustls::TlsAcceptor;
@@ -38,6 +38,7 @@ use xray_tun::TunEndpoint;
 
 const ICMPV4_PROTOCOL: u8 = 1;
 const ICMPV6_PROTOCOL: u8 = 58;
+const UDP_PROTOCOL: u8 = 17;
 const TEST_UUID_BYTES: [u8; 16] = [
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
 ];
@@ -731,6 +732,13 @@ async fn tun_replies_to_ipv6_icmp_echo_request() {
 }
 
 #[tokio::test]
+async fn tun_udp_client_reaches_echo_target_through_freedom_outbound() {
+    timeout(Duration::from_secs(2), run_tun_udp_freedom_echo_scenario())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
 async fn socks_client_uses_inbound_tag_routing_rule_to_reach_freedom_outbound() {
     timeout(
         Duration::from_secs(2),
@@ -989,6 +997,45 @@ async fn run_tun_icmpv6_echo_scenario() {
     let reply = poll_tun_outbound_until(core.tun(), is_ipv6_icmp_echo_reply).await;
     assert_ipv6_icmp_echo_reply(&reply, destination, source, 0x2201, 9, b"mobile ping v6");
     core.stop().await.unwrap();
+}
+
+async fn run_tun_udp_freedom_echo_scenario() {
+    let (echo_addr, echo_handle) = spawn_udp_echo_server().await;
+    let SocketAddr::V4(echo_addr_v4) = echo_addr else {
+        panic!("UDP TUN test expects IPv4 echo server");
+    };
+    let mut core = Core::new(runtime_tun_config_with_freedom_outbound()).unwrap();
+    core.start().await.unwrap();
+
+    let client_addr = Ipv4Addr::new(10, 10, 0, 2);
+    let request = ipv4_udp_packet(
+        client_addr,
+        49152,
+        *echo_addr_v4.ip(),
+        echo_addr_v4.port(),
+        b"hello tun udp",
+    );
+    core.tun().push_inbound(Bytes::from(request)).await.unwrap();
+
+    let reply = poll_tun_outbound_until(core.tun(), |packet| {
+        ipv4_udp_payload(packet)
+            .map(|payload| payload == b"hello tun udp")
+            .unwrap_or(false)
+    })
+    .await;
+    assert_ipv4_udp_packet(
+        &reply,
+        *echo_addr_v4.ip(),
+        echo_addr_v4.port(),
+        client_addr,
+        49152,
+        b"hello tun udp",
+    );
+    core.stop().await.unwrap();
+    timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .unwrap()
+        .unwrap();
 }
 
 async fn run_socks_to_routed_freedom_echo_scenario() {
@@ -1390,12 +1437,57 @@ fn ipv6_icmp_echo_request(
     packet
 }
 
+fn ipv4_udp_packet(
+    source: Ipv4Addr,
+    source_port: u16,
+    destination: Ipv4Addr,
+    destination_port: u16,
+    payload: &[u8],
+) -> Vec<u8> {
+    let udp_len = 8 + payload.len();
+    let total_len = 20 + udp_len;
+    let mut packet = vec![0; total_len];
+    packet[0] = 0x45;
+    packet[2..4].copy_from_slice(&(total_len as u16).to_be_bytes());
+    packet[8] = 64;
+    packet[9] = UDP_PROTOCOL;
+    packet[12..16].copy_from_slice(&source.octets());
+    packet[16..20].copy_from_slice(&destination.octets());
+    let ip_checksum = internet_checksum(&packet[..20]);
+    packet[10..12].copy_from_slice(&ip_checksum.to_be_bytes());
+
+    let udp = &mut packet[20..];
+    udp[0..2].copy_from_slice(&source_port.to_be_bytes());
+    udp[2..4].copy_from_slice(&destination_port.to_be_bytes());
+    udp[4..6].copy_from_slice(&(udp_len as u16).to_be_bytes());
+    udp[8..].copy_from_slice(payload);
+    let checksum = nonzero_udp_checksum(ipv4_udp_checksum(source, destination, udp));
+    udp[6..8].copy_from_slice(&checksum.to_be_bytes());
+
+    packet
+}
+
 fn is_ipv4_icmp_echo_reply(packet: &[u8]) -> bool {
     packet.len() >= 28 && packet[0] >> 4 == 4 && packet[9] == ICMPV4_PROTOCOL && packet[20] == 0
 }
 
 fn is_ipv6_icmp_echo_reply(packet: &[u8]) -> bool {
     packet.len() >= 48 && packet[0] >> 4 == 6 && packet[6] == ICMPV6_PROTOCOL && packet[40] == 129
+}
+
+fn ipv4_udp_payload(packet: &[u8]) -> Option<&[u8]> {
+    if packet.len() < 28 || packet[0] >> 4 != 4 || packet[9] != UDP_PROTOCOL {
+        return None;
+    }
+    let header_len = usize::from(packet[0] & 0x0f) * 4;
+    let udp_len = usize::from(u16::from_be_bytes([
+        packet[header_len + 4],
+        packet[header_len + 5],
+    ]));
+    if udp_len < 8 || packet.len() < header_len + udp_len {
+        return None;
+    }
+    Some(&packet[header_len + 8..header_len + udp_len])
 }
 
 fn assert_ipv4_icmp_echo_reply(
@@ -1446,6 +1538,31 @@ fn assert_ipv6_icmp_echo_reply(
     assert_eq!(&icmp[8..], payload);
 }
 
+fn assert_ipv4_udp_packet(
+    packet: &[u8],
+    source: Ipv4Addr,
+    source_port: u16,
+    destination: Ipv4Addr,
+    destination_port: u16,
+    payload: &[u8],
+) {
+    assert_eq!(packet[0] >> 4, 4);
+    assert_eq!(packet[9], UDP_PROTOCOL);
+    assert_eq!(&packet[12..16], &source.octets());
+    assert_eq!(&packet[16..20], &destination.octets());
+    assert_eq!(internet_checksum(&packet[..20]), 0);
+
+    let udp = &packet[20..];
+    assert_eq!(u16::from_be_bytes([udp[0], udp[1]]), source_port);
+    assert_eq!(u16::from_be_bytes([udp[2], udp[3]]), destination_port);
+    assert_eq!(
+        u16::from_be_bytes([udp[4], udp[5]]),
+        (8 + payload.len()) as u16
+    );
+    assert_eq!(ipv4_udp_checksum(source, destination, udp), 0);
+    assert_eq!(&udp[8..], payload);
+}
+
 fn internet_checksum(data: &[u8]) -> u16 {
     let mut sum = 0u32;
     let mut chunks = data.chunks_exact(2);
@@ -1474,6 +1591,24 @@ fn ipv6_transport_checksum(
     pseudo.extend_from_slice(&[0, 0, 0, next_header]);
     pseudo.extend_from_slice(payload);
     internet_checksum(&pseudo)
+}
+
+fn ipv4_udp_checksum(source: Ipv4Addr, destination: Ipv4Addr, udp: &[u8]) -> u16 {
+    let mut pseudo = Vec::with_capacity(12 + udp.len());
+    pseudo.extend_from_slice(&source.octets());
+    pseudo.extend_from_slice(&destination.octets());
+    pseudo.extend_from_slice(&[0, UDP_PROTOCOL]);
+    pseudo.extend_from_slice(&(udp.len() as u16).to_be_bytes());
+    pseudo.extend_from_slice(udp);
+    internet_checksum(&pseudo)
+}
+
+fn nonzero_udp_checksum(checksum: u16) -> u16 {
+    if checksum == 0 {
+        u16::MAX
+    } else {
+        checksum
+    }
 }
 
 #[derive(Debug)]
@@ -1583,6 +1718,17 @@ async fn spawn_echo_server() -> (SocketAddr, JoinHandle<()>) {
         tokio::io::copy(&mut read_half, &mut write_half)
             .await
             .unwrap();
+    });
+    (addr, handle)
+}
+
+async fn spawn_udp_echo_server() -> (SocketAddr, JoinHandle<()>) {
+    let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let addr = socket.local_addr().unwrap();
+    let handle = tokio::spawn(async move {
+        let mut buffer = [0; 2048];
+        let (len, peer) = socket.recv_from(&mut buffer).await.unwrap();
+        socket.send_to(&buffer[..len], peer).await.unwrap();
     });
     (addr, handle)
 }

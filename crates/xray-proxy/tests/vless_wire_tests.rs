@@ -182,8 +182,7 @@ fn encodes_xudp_new_packet_with_target_and_global_id() {
         Network::Udp,
     );
 
-    let encoded =
-        encode_xudp_new_packet(&target, b"q", [1, 2, 3, 4, 5, 6, 7, 8]).unwrap();
+    let encoded = encode_xudp_new_packet(&target, b"q", [1, 2, 3, 4, 5, 6, 7, 8]).unwrap();
     let expected = hex_bytes(
         "0014\
          0000\

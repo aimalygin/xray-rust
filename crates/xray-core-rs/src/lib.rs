@@ -16,8 +16,8 @@ mod tun;
 pub use outbound::{
     open_tcp_stream_with_resolver_and_dialer, open_vless_tcp_stream,
     open_vless_tcp_stream_with_resolver, open_vless_tcp_stream_with_resolver_and_dialer,
-    select_tcp_outbound, select_tcp_outbound_for_session, select_vless_tcp_outbound, TcpOutbound,
-    VlessTcpOutbound,
+    select_tcp_outbound, select_tcp_outbound_for_session, select_udp_outbound_for_session,
+    select_vless_tcp_outbound, TcpOutbound, UdpOutbound, VlessTcpOutbound,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

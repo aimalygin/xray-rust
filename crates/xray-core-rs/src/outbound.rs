@@ -30,6 +30,12 @@ pub enum TcpOutbound {
     Vless(Box<VlessTcpOutbound>),
 }
 
+#[derive(Debug, Clone)]
+pub enum UdpOutbound {
+    Freedom,
+    Vless(Box<VlessTcpOutbound>),
+}
+
 impl VlessTcpOutbound {
     pub fn server(&self) -> &Target {
         &self.server
@@ -63,6 +69,20 @@ pub fn select_tcp_outbound_for_session(
     build_tcp_outbound(outbound)
 }
 
+pub fn select_udp_outbound_for_session(
+    config: &CoreConfig,
+    inbound_tag: Option<&str>,
+    target: &Target,
+) -> Result<UdpOutbound, CoreError> {
+    let outbound = select_configured_outbound(
+        config,
+        inbound_tag,
+        target_domain(target),
+        target_ip(target),
+    )?;
+    build_udp_outbound(outbound)
+}
+
 fn build_tcp_outbound(outbound: &OutboundConfig) -> Result<TcpOutbound, CoreError> {
     if outbound.stream.network != Network::Tcp {
         return Err(CoreError::UnsupportedOutboundNetwork);
@@ -77,6 +97,24 @@ fn build_tcp_outbound(outbound: &OutboundConfig) -> Result<TcpOutbound, CoreErro
         }
         OutboundSettings::Vless(_) => build_vless_tcp_outbound(outbound)
             .map(|outbound| TcpOutbound::Vless(Box::new(outbound))),
+    }
+}
+
+fn build_udp_outbound(outbound: &OutboundConfig) -> Result<UdpOutbound, CoreError> {
+    match &outbound.settings {
+        OutboundSettings::Freedom => {
+            if outbound.stream.security != StreamSecurity::None {
+                return Err(CoreError::UnsupportedOutboundSecurity);
+            }
+            Ok(UdpOutbound::Freedom)
+        }
+        OutboundSettings::Vless(_) => {
+            if outbound.stream.network != Network::Tcp {
+                return Err(CoreError::UnsupportedOutboundNetwork);
+            }
+            build_vless_tcp_outbound(outbound)
+                .map(|outbound| UdpOutbound::Vless(Box::new(outbound)))
+        }
     }
 }
 

@@ -1,5 +1,5 @@
 use std::collections::{HashMap, VecDeque};
-use std::net::{Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 
 use bytes::Bytes;
@@ -9,6 +9,7 @@ use smoltcp::socket::tcp;
 use smoltcp::time::Instant;
 use smoltcp::wire::{HardwareAddress, IpAddress, IpEndpoint};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::UdpSocket;
 use tokio::sync::{mpsc, watch};
 use tokio::time::{sleep, Duration};
 use xray_config::CoreConfig;
@@ -16,15 +17,20 @@ use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTarge
 use xray_transport::{DnsResolver, TransportDialer};
 use xray_tun::{TunEndpoint, TunError};
 
-use crate::outbound::{open_tcp_stream_with_resolver_and_dialer, select_tcp_outbound_for_session};
+use crate::outbound::{
+    open_tcp_stream_with_resolver_and_dialer, select_tcp_outbound_for_session,
+    select_udp_outbound_for_session, UdpOutbound,
+};
 
 const DEFAULT_RANDOM_SEED: u64 = 0x7872_6179_7275_7374;
 const ICMPV4_PROTOCOL: u8 = 1;
 const ICMPV6_PROTOCOL: u8 = 58;
 const TCP_PROTOCOL: u8 = 6;
+const UDP_PROTOCOL: u8 = 17;
 const TCP_BUFFER_SIZE: usize = 32 * 1024;
 const BRIDGE_CHANNEL_DEPTH: usize = 64;
 const BRIDGE_READ_BUFFER_SIZE: usize = 16 * 1024;
+const UDP_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub(crate) async fn serve_tun_endpoint(
     tun: Arc<TunEndpoint>,
@@ -42,6 +48,7 @@ pub(crate) async fn serve_tun_endpoint(
     let mut sockets = SocketSet::new(Vec::new());
     let mut tcp_listeners = HashMap::new();
     let mut tcp_flows = HashMap::new();
+    let mut udp_flows = HashMap::new();
     let (stack_tx, mut stack_rx) = mpsc::channel(BRIDGE_CHANNEL_DEPTH);
     let runtime_context = TunRuntimeContext {
         inbound_tag,
@@ -67,6 +74,15 @@ pub(crate) async fn serve_tun_endpoint(
                             }
                             continue;
                         }
+                        if let Some(packet) = parse_udp_packet(&packet) {
+                            handle_udp_packet(
+                                packet,
+                                &mut udp_flows,
+                                &runtime_context,
+                                shutdown.clone(),
+                            );
+                            continue;
+                        }
                         if let Some(endpoint) = tcp_syn_destination(&packet) {
                             ensure_tcp_listener(&mut sockets, &mut tcp_listeners, endpoint);
                         }
@@ -78,14 +94,14 @@ pub(crate) async fn serve_tun_endpoint(
             }
             event = stack_rx.recv() => {
                 if let Some(event) = event {
-                    apply_stack_event(event, &mut tcp_flows);
+                    apply_stack_event(event, &mut tcp_flows, &mut udp_flows, &mut device);
                 }
             }
             () = sleep(Duration::from_millis(25)) => {}
         }
 
         while let Ok(event) = stack_rx.try_recv() {
-            apply_stack_event(event, &mut tcp_flows);
+            apply_stack_event(event, &mut tcp_flows, &mut udp_flows, &mut device);
         }
         write_remote_data_to_sockets(&mut sockets, &mut tcp_flows);
         iface.poll(Instant::now(), &mut device, &mut sockets);
@@ -124,9 +140,71 @@ struct TcpFlow {
 }
 
 #[derive(Debug)]
+struct UdpFlow {
+    to_remote: mpsc::Sender<Bytes>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct UdpFlowKey {
+    client: EndpointKey,
+    target: EndpointKey,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct EndpointKey {
+    addr: IpAddr,
+    port: u16,
+}
+
+impl UdpFlowKey {
+    fn new(client: IpEndpoint, target: IpEndpoint) -> Self {
+        Self {
+            client: EndpointKey::from_endpoint(client),
+            target: EndpointKey::from_endpoint(target),
+        }
+    }
+}
+
+impl EndpointKey {
+    fn from_endpoint(endpoint: IpEndpoint) -> Self {
+        Self {
+            addr: match endpoint.addr {
+                IpAddress::Ipv4(ip) => IpAddr::V4(ip),
+                IpAddress::Ipv6(ip) => IpAddr::V6(ip),
+            },
+            port: endpoint.port,
+        }
+    }
+
+    fn into_endpoint(self) -> IpEndpoint {
+        IpEndpoint::new(IpAddress::from(self.addr), self.port)
+    }
+}
+
+#[derive(Debug)]
+struct UdpTunPacket {
+    client: IpEndpoint,
+    target: IpEndpoint,
+    payload: Bytes,
+}
+
+#[derive(Debug)]
 enum StackEvent {
-    RemoteData { handle: SocketHandle, data: Bytes },
-    RemoteClosed { handle: SocketHandle },
+    RemoteData {
+        handle: SocketHandle,
+        data: Bytes,
+    },
+    RemoteClosed {
+        handle: SocketHandle,
+    },
+    UdpDatagram {
+        client: IpEndpoint,
+        source: IpEndpoint,
+        payload: Bytes,
+    },
+    UdpClosed {
+        key: UdpFlowKey,
+    },
 }
 
 fn open_ready_tcp_flows(
@@ -170,28 +248,56 @@ fn open_ready_tcp_flows(
 }
 
 fn target_from_endpoint(endpoint: IpEndpoint) -> Option<Target> {
+    target_from_endpoint_with_network(endpoint, RoutingNetwork::Tcp)
+}
+
+fn udp_target_from_endpoint(endpoint: IpEndpoint) -> Option<Target> {
+    target_from_endpoint_with_network(endpoint, RoutingNetwork::Udp)
+}
+
+fn target_from_endpoint_with_network(
+    endpoint: IpEndpoint,
+    network: RoutingNetwork,
+) -> Option<Target> {
     let ip = match endpoint.addr {
-        IpAddress::Ipv4(ip) => std::net::IpAddr::V4(ip),
-        IpAddress::Ipv6(ip) => std::net::IpAddr::V6(ip),
+        IpAddress::Ipv4(ip) => IpAddr::V4(ip),
+        IpAddress::Ipv6(ip) => IpAddr::V6(ip),
     };
     Some(Target::new(
         RoutingTargetAddr::Ip(ip),
         endpoint.port,
-        RoutingNetwork::Tcp,
+        network,
     ))
 }
 
-fn apply_stack_event(event: StackEvent, flows: &mut HashMap<SocketHandle, TcpFlow>) {
+fn apply_stack_event(
+    event: StackEvent,
+    tcp_flows: &mut HashMap<SocketHandle, TcpFlow>,
+    udp_flows: &mut HashMap<UdpFlowKey, UdpFlow>,
+    device: &mut PacketDevice,
+) {
     match event {
         StackEvent::RemoteData { handle, data } => {
-            if let Some(flow) = flows.get_mut(&handle) {
+            if let Some(flow) = tcp_flows.get_mut(&handle) {
                 flow.pending_remote.push_back(data);
             }
         }
         StackEvent::RemoteClosed { handle } => {
-            if let Some(flow) = flows.get_mut(&handle) {
+            if let Some(flow) = tcp_flows.get_mut(&handle) {
                 flow.remote_closed = true;
             }
+        }
+        StackEvent::UdpDatagram {
+            client,
+            source,
+            payload,
+        } => {
+            if let Some(packet) = build_udp_packet(source, client, &payload) {
+                device.push_outbound(packet);
+            }
+        }
+        StackEvent::UdpClosed { key } => {
+            udp_flows.remove(&key);
         }
     }
 }
@@ -361,6 +467,124 @@ async fn bridge_tcp_flow(
         .await;
 }
 
+fn handle_udp_packet(
+    packet: UdpTunPacket,
+    flows: &mut HashMap<UdpFlowKey, UdpFlow>,
+    context: &TunRuntimeContext,
+    shutdown: watch::Receiver<bool>,
+) {
+    let key = UdpFlowKey::new(packet.client, packet.target);
+
+    if !flows.contains_key(&key) {
+        let Some(target) = udp_target_from_endpoint(packet.target) else {
+            return;
+        };
+        let (to_remote, from_stack) = mpsc::channel(BRIDGE_CHANNEL_DEPTH);
+        flows.insert(key, UdpFlow { to_remote });
+        tokio::spawn(bridge_udp_flow(
+            key,
+            target,
+            context.clone(),
+            from_stack,
+            shutdown,
+        ));
+    }
+
+    if let Some(flow) = flows.get(&key) {
+        if flow.to_remote.try_send(packet.payload).is_err() {
+            flows.remove(&key);
+        }
+    }
+}
+
+async fn bridge_udp_flow(
+    key: UdpFlowKey,
+    target: Target,
+    context: TunRuntimeContext,
+    from_stack: mpsc::Receiver<Bytes>,
+    shutdown: watch::Receiver<bool>,
+) {
+    let outbound = match select_udp_outbound_for_session(
+        &context.config,
+        context.inbound_tag.as_deref(),
+        &target,
+    ) {
+        Ok(outbound) => outbound,
+        Err(_) => {
+            let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
+            return;
+        }
+    };
+
+    match outbound {
+        UdpOutbound::Freedom => {
+            bridge_udp_freedom_flow(key, context, from_stack, shutdown).await;
+        }
+        UdpOutbound::Vless(_) => {
+            let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
+        }
+    }
+}
+
+async fn bridge_udp_freedom_flow(
+    key: UdpFlowKey,
+    context: TunRuntimeContext,
+    mut from_stack: mpsc::Receiver<Bytes>,
+    mut shutdown: watch::Receiver<bool>,
+) {
+    let bind_addr = match key.target.addr {
+        IpAddr::V4(_) => SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
+        IpAddr::V6(_) => SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0),
+    };
+    let Ok(socket) = UdpSocket::bind(bind_addr).await else {
+        let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
+        return;
+    };
+    let target = SocketAddr::new(key.target.addr, key.target.port);
+    let client = key.client.into_endpoint();
+    let mut read_buffer = vec![0; BRIDGE_READ_BUFFER_SIZE];
+
+    loop {
+        tokio::select! {
+            changed = shutdown.changed() => {
+                if changed.is_err() || *shutdown.borrow() {
+                    break;
+                }
+            }
+            () = sleep(UDP_IDLE_TIMEOUT) => {
+                break;
+            }
+            payload = from_stack.recv() => {
+                let Some(payload) = payload else {
+                    break;
+                };
+                if socket.send_to(&payload, target).await.is_err() {
+                    break;
+                }
+            }
+            received = socket.recv_from(&mut read_buffer) => {
+                let Ok((len, source)) = received else {
+                    break;
+                };
+                if context
+                    .stack_tx
+                    .send(StackEvent::UdpDatagram {
+                        client,
+                        source: IpEndpoint::new(IpAddress::from(source.ip()), source.port()),
+                        payload: Bytes::copy_from_slice(&read_buffer[..len]),
+                    })
+                    .await
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        }
+    }
+
+    let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
+}
+
 fn ensure_tcp_listener(
     sockets: &mut SocketSet<'static>,
     listeners: &mut HashMap<IpEndpoint, SocketHandle>,
@@ -378,6 +602,180 @@ fn ensure_tcp_listener(
     if socket.listen(endpoint).is_ok() {
         listeners.insert(endpoint, sockets.add(socket));
     }
+}
+
+fn parse_udp_packet(packet: &[u8]) -> Option<UdpTunPacket> {
+    match packet.first()? >> 4 {
+        4 => parse_ipv4_udp_packet(packet),
+        6 => parse_ipv6_udp_packet(packet),
+        _ => None,
+    }
+}
+
+fn parse_ipv4_udp_packet(packet: &[u8]) -> Option<UdpTunPacket> {
+    if packet.len() < 28 {
+        return None;
+    }
+
+    let header_len = usize::from(packet[0] & 0x0f) * 4;
+    if header_len < 20 || packet.len() < header_len + 8 || packet[9] != UDP_PROTOCOL {
+        return None;
+    }
+
+    let fragment = u16::from_be_bytes([packet[6], packet[7]]);
+    if fragment & 0x3fff != 0 {
+        return None;
+    }
+
+    let total_len = usize::from(u16::from_be_bytes([packet[2], packet[3]]));
+    if total_len < header_len + 8 || packet.len() < total_len {
+        return None;
+    }
+
+    let udp = &packet[header_len..total_len];
+    let udp_len = usize::from(u16::from_be_bytes([udp[4], udp[5]]));
+    if udp_len < 8 || udp.len() < udp_len {
+        return None;
+    }
+
+    let source = Ipv4Addr::new(packet[12], packet[13], packet[14], packet[15]);
+    let destination = Ipv4Addr::new(packet[16], packet[17], packet[18], packet[19]);
+    let checksum = u16::from_be_bytes([udp[6], udp[7]]);
+    if checksum != 0 && ipv4_udp_checksum(source, destination, &udp[..udp_len]) != 0 {
+        return None;
+    }
+
+    Some(UdpTunPacket {
+        client: IpEndpoint::new(
+            IpAddress::Ipv4(source),
+            u16::from_be_bytes([udp[0], udp[1]]),
+        ),
+        target: IpEndpoint::new(
+            IpAddress::Ipv4(destination),
+            u16::from_be_bytes([udp[2], udp[3]]),
+        ),
+        payload: Bytes::copy_from_slice(&udp[8..udp_len]),
+    })
+}
+
+fn parse_ipv6_udp_packet(packet: &[u8]) -> Option<UdpTunPacket> {
+    if packet.len() < 48 || packet[6] != UDP_PROTOCOL {
+        return None;
+    }
+
+    let payload_len = usize::from(u16::from_be_bytes([packet[4], packet[5]]));
+    if payload_len < 8 || packet.len() < 40 + payload_len {
+        return None;
+    }
+
+    let source = <[u8; 16]>::try_from(&packet[8..24]).ok()?;
+    let destination = <[u8; 16]>::try_from(&packet[24..40]).ok()?;
+    let udp = &packet[40..40 + payload_len];
+    let udp_len = usize::from(u16::from_be_bytes([udp[4], udp[5]]));
+    if udp_len < 8 || udp.len() < udp_len {
+        return None;
+    }
+    if ipv6_transport_checksum(source, destination, UDP_PROTOCOL, &udp[..udp_len]) != 0 {
+        return None;
+    }
+
+    Some(UdpTunPacket {
+        client: IpEndpoint::new(
+            IpAddress::Ipv6(Ipv6Addr::from(source)),
+            u16::from_be_bytes([udp[0], udp[1]]),
+        ),
+        target: IpEndpoint::new(
+            IpAddress::Ipv6(Ipv6Addr::from(destination)),
+            u16::from_be_bytes([udp[2], udp[3]]),
+        ),
+        payload: Bytes::copy_from_slice(&udp[8..udp_len]),
+    })
+}
+
+fn build_udp_packet(source: IpEndpoint, destination: IpEndpoint, payload: &[u8]) -> Option<Bytes> {
+    match (source.addr, destination.addr) {
+        (IpAddress::Ipv4(source_addr), IpAddress::Ipv4(destination_addr)) => {
+            Some(Bytes::from(build_ipv4_udp_packet(
+                source_addr,
+                source.port,
+                destination_addr,
+                destination.port,
+                payload,
+            )?))
+        }
+        (IpAddress::Ipv6(source_addr), IpAddress::Ipv6(destination_addr)) => {
+            Some(Bytes::from(build_ipv6_udp_packet(
+                source_addr,
+                source.port,
+                destination_addr,
+                destination.port,
+                payload,
+            )?))
+        }
+        _ => None,
+    }
+}
+
+fn build_ipv4_udp_packet(
+    source: Ipv4Addr,
+    source_port: u16,
+    destination: Ipv4Addr,
+    destination_port: u16,
+    payload: &[u8],
+) -> Option<Vec<u8>> {
+    let udp_len = 8usize.checked_add(payload.len())?;
+    let total_len = 20usize.checked_add(udp_len)?;
+    let total_len = u16::try_from(total_len).ok()?;
+    let udp_len_u16 = u16::try_from(udp_len).ok()?;
+
+    let mut packet = vec![0; usize::from(total_len)];
+    packet[0] = 0x45;
+    packet[2..4].copy_from_slice(&total_len.to_be_bytes());
+    packet[8] = 64;
+    packet[9] = UDP_PROTOCOL;
+    packet[12..16].copy_from_slice(&source.octets());
+    packet[16..20].copy_from_slice(&destination.octets());
+    let ip_checksum = internet_checksum(&packet[..20]);
+    packet[10..12].copy_from_slice(&ip_checksum.to_be_bytes());
+
+    let udp = &mut packet[20..];
+    udp[0..2].copy_from_slice(&source_port.to_be_bytes());
+    udp[2..4].copy_from_slice(&destination_port.to_be_bytes());
+    udp[4..6].copy_from_slice(&udp_len_u16.to_be_bytes());
+    udp[8..].copy_from_slice(payload);
+    let checksum = nonzero_udp_checksum(ipv4_udp_checksum(source, destination, udp));
+    udp[6..8].copy_from_slice(&checksum.to_be_bytes());
+
+    Some(packet)
+}
+
+fn build_ipv6_udp_packet(
+    source: Ipv6Addr,
+    source_port: u16,
+    destination: Ipv6Addr,
+    destination_port: u16,
+    payload: &[u8],
+) -> Option<Vec<u8>> {
+    let udp_len = 8usize.checked_add(payload.len())?;
+    let udp_len_u16 = u16::try_from(udp_len).ok()?;
+    let mut packet = vec![0; 40 + udp_len];
+    packet[0] = 0x60;
+    packet[4..6].copy_from_slice(&udp_len_u16.to_be_bytes());
+    packet[6] = UDP_PROTOCOL;
+    packet[7] = 64;
+    packet[8..24].copy_from_slice(&source.octets());
+    packet[24..40].copy_from_slice(&destination.octets());
+
+    let udp = &mut packet[40..];
+    udp[0..2].copy_from_slice(&source_port.to_be_bytes());
+    udp[2..4].copy_from_slice(&destination_port.to_be_bytes());
+    udp[4..6].copy_from_slice(&udp_len_u16.to_be_bytes());
+    udp[8..].copy_from_slice(payload);
+    let checksum =
+        ipv6_transport_checksum(source.octets(), destination.octets(), UDP_PROTOCOL, udp);
+    udp[6..8].copy_from_slice(&checksum.to_be_bytes());
+
+    Some(packet)
 }
 
 fn tcp_syn_destination(packet: &[u8]) -> Option<IpEndpoint> {
@@ -554,6 +952,24 @@ fn internet_checksum(data: &[u8]) -> u16 {
     !(sum as u16)
 }
 
+fn ipv4_udp_checksum(source: Ipv4Addr, destination: Ipv4Addr, udp: &[u8]) -> u16 {
+    let mut pseudo = Vec::with_capacity(12 + udp.len());
+    pseudo.extend_from_slice(&source.octets());
+    pseudo.extend_from_slice(&destination.octets());
+    pseudo.extend_from_slice(&[0, UDP_PROTOCOL]);
+    pseudo.extend_from_slice(&(udp.len() as u16).to_be_bytes());
+    pseudo.extend_from_slice(udp);
+    internet_checksum(&pseudo)
+}
+
+fn nonzero_udp_checksum(checksum: u16) -> u16 {
+    if checksum == 0 {
+        u16::MAX
+    } else {
+        checksum
+    }
+}
+
 fn ipv6_transport_checksum(
     source: [u8; 16],
     destination: [u8; 16],
@@ -587,6 +1003,10 @@ impl PacketDevice {
 
     pub(crate) fn push_inbound(&mut self, packet: Bytes) {
         self.inbound.push_back(packet);
+    }
+
+    pub(crate) fn push_outbound(&mut self, packet: Bytes) {
+        self.outbound.push_back(packet);
     }
 
     pub(crate) fn pop_outbound(&mut self) -> Option<Bytes> {
