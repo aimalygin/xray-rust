@@ -1,14 +1,27 @@
 use std::io::ErrorKind;
+use std::collections::VecDeque;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use bytes::Bytes;
 use rcgen::{generate_simple_self_signed, CertifiedKey};
 use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
+use smoltcp::iface::{Config as SmolInterfaceConfig, Interface as SmolInterface, SocketHandle, SocketSet};
+use smoltcp::phy::{
+    ChecksumCapabilities, Device as SmolDevice, DeviceCapabilities as SmolDeviceCapabilities,
+    Medium as SmolMedium, RxToken as SmolRxToken, TxToken as SmolTxToken,
+};
+use smoltcp::socket::tcp as smol_tcp;
+use smoltcp::time::Instant as SmolInstant;
+use smoltcp::wire::{
+    HardwareAddress as SmolHardwareAddress, IpAddress as SmolIpAddress,
+    IpCidr as SmolIpCidr, Ipv4Address as SmolIpv4Address,
+};
 use tokio::io::{copy_bidirectional, AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinHandle;
-use tokio::time::{timeout, Duration};
+use tokio::time::{sleep, timeout, Duration, Instant as TokioInstant};
 use tokio_rustls::TlsAcceptor;
 use uuid::Uuid;
 use xray_config::{
@@ -19,6 +32,7 @@ use xray_config::{
 use xray_core_rs::{select_vless_tcp_outbound, Core, CoreError};
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::{DnsResolver, TlsConnector, TransportDialer, TransportError};
+use xray_tun::TunEndpoint;
 
 const TEST_UUID_BYTES: [u8; 16] = [
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
@@ -103,6 +117,20 @@ fn runtime_config_with_freedom_outbound() -> CoreConfig {
         inbounds: vec![InboundConfig {
             tag: Some("socks-in".to_owned()),
             protocol: InboundProtocol::Socks,
+            listen: "127.0.0.1".to_owned(),
+            port: 0,
+        }],
+        outbounds: vec![freedom_outbound()],
+        default_outbound_tag: Some("direct".to_owned()),
+        routing: RoutingConfig::default(),
+    }
+}
+
+fn runtime_tun_config_with_freedom_outbound() -> CoreConfig {
+    CoreConfig {
+        inbounds: vec![InboundConfig {
+            tag: Some("tun-in".to_owned()),
+            protocol: InboundProtocol::Tun,
             listen: "127.0.0.1".to_owned(),
             port: 0,
         }],
@@ -608,6 +636,13 @@ async fn socks_client_reaches_echo_target_through_freedom_outbound() {
 }
 
 #[tokio::test]
+async fn tun_tcp_client_completes_handshake_through_freedom_outbound() {
+    timeout(Duration::from_secs(2), run_tun_tcp_handshake_scenario())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
 async fn socks_client_uses_inbound_tag_routing_rule_to_reach_freedom_outbound() {
     timeout(
         Duration::from_secs(2),
@@ -727,6 +762,21 @@ async fn run_socks_to_freedom_echo_scenario() {
         .await
         .unwrap()
         .unwrap();
+}
+
+async fn run_tun_tcp_handshake_scenario() {
+    let (echo_addr, echo_handle) = spawn_echo_server().await;
+    let mut core = Core::new(runtime_tun_config_with_freedom_outbound()).unwrap();
+    core.start().await.unwrap();
+
+    let mut client = TunTcpClient::new();
+    client.connect(echo_addr);
+
+    pump_tun_until(&mut client, core.tun(), TunTcpClient::may_send).await;
+
+    assert!(client.may_send());
+    core.stop().await.unwrap();
+    echo_handle.abort();
 }
 
 async fn run_socks_to_routed_freedom_echo_scenario() {
@@ -942,6 +992,197 @@ async fn run_domain_target_preservation_scenario() {
         .await
         .unwrap()
         .unwrap();
+}
+
+struct TunTcpClient {
+    iface: SmolInterface,
+    device: TestPacketDevice,
+    sockets: SocketSet<'static>,
+    tcp: SocketHandle,
+}
+
+impl TunTcpClient {
+    fn new() -> Self {
+        let mut device = TestPacketDevice::new(1500);
+        let mut iface_config = SmolInterfaceConfig::new(SmolHardwareAddress::Ip);
+        iface_config.random_seed = 0x7475_6e74_6573_7401;
+        let mut iface = SmolInterface::new(iface_config, &mut device, SmolInstant::now());
+        iface.update_ip_addrs(|addrs| {
+            addrs
+                .push(SmolIpCidr::new(
+                    SmolIpAddress::v4(10, 10, 0, 2),
+                    24,
+                ))
+                .unwrap();
+        });
+        iface
+            .routes_mut()
+            .add_default_ipv4_route(SmolIpv4Address::new(10, 10, 0, 1))
+            .unwrap();
+
+        let tcp_socket = smol_tcp::Socket::new(
+            smol_tcp::SocketBuffer::new(vec![0; 8192]),
+            smol_tcp::SocketBuffer::new(vec![0; 8192]),
+        );
+        let mut sockets = SocketSet::new(Vec::new());
+        let tcp = sockets.add(tcp_socket);
+
+        Self {
+            iface,
+            device,
+            sockets,
+            tcp,
+        }
+    }
+
+    fn connect(&mut self, target: SocketAddr) {
+        let SocketAddr::V4(target) = target else {
+            panic!("TUN TCP test client currently covers IPv4 targets only");
+        };
+        self.sockets
+            .get_mut::<smol_tcp::Socket>(self.tcp)
+            .connect(self.iface.context(), (*target.ip(), target.port()), 49152)
+            .unwrap();
+    }
+
+    fn may_send(&mut self) -> bool {
+        self.sockets
+            .get::<smol_tcp::Socket>(self.tcp)
+            .may_send()
+    }
+
+    fn poll(&mut self) {
+        self.iface
+            .poll(SmolInstant::now(), &mut self.device, &mut self.sockets);
+    }
+}
+
+async fn pump_tun_until(
+    client: &mut TunTcpClient,
+    tun: &TunEndpoint,
+    mut is_done: impl FnMut(&mut TunTcpClient) -> bool,
+) {
+    let deadline = TokioInstant::now() + Duration::from_millis(750);
+    loop {
+        client.poll();
+        while let Some(packet) = client.device.pop_outbound() {
+            tun.push_inbound(packet).await.unwrap();
+        }
+        loop {
+            match tun.try_poll_outbound().await.unwrap() {
+                Some(packet) => client.device.push_inbound(packet),
+                None => break,
+            }
+        }
+        client.poll();
+
+        if is_done(client) {
+            return;
+        }
+        assert!(
+            TokioInstant::now() < deadline,
+            "timed out waiting for TUN TCP client state"
+        );
+        sleep(Duration::from_millis(5)).await;
+    }
+}
+
+#[derive(Debug)]
+struct TestPacketDevice {
+    mtu: usize,
+    inbound: VecDeque<Bytes>,
+    outbound: VecDeque<Bytes>,
+}
+
+impl TestPacketDevice {
+    fn new(mtu: usize) -> Self {
+        Self {
+            mtu,
+            inbound: VecDeque::new(),
+            outbound: VecDeque::new(),
+        }
+    }
+
+    fn push_inbound(&mut self, packet: Bytes) {
+        self.inbound.push_back(packet);
+    }
+
+    fn pop_outbound(&mut self) -> Option<Bytes> {
+        self.outbound.pop_front()
+    }
+}
+
+impl SmolDevice for TestPacketDevice {
+    type RxToken<'a>
+        = TestRxToken
+    where
+        Self: 'a;
+    type TxToken<'a>
+        = TestTxToken<'a>
+    where
+        Self: 'a;
+
+    fn receive(
+        &mut self,
+        _timestamp: SmolInstant,
+    ) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
+        let packet = self.inbound.pop_front()?;
+        Some((
+            TestRxToken { packet },
+            TestTxToken {
+                mtu: self.mtu,
+                outbound: &mut self.outbound,
+            },
+        ))
+    }
+
+    fn transmit(&mut self, _timestamp: SmolInstant) -> Option<Self::TxToken<'_>> {
+        Some(TestTxToken {
+            mtu: self.mtu,
+            outbound: &mut self.outbound,
+        })
+    }
+
+    fn capabilities(&self) -> SmolDeviceCapabilities {
+        let mut capabilities = SmolDeviceCapabilities::default();
+        capabilities.medium = SmolMedium::Ip;
+        capabilities.max_transmission_unit = self.mtu;
+        capabilities.max_burst_size = None;
+        capabilities.checksum = ChecksumCapabilities::default();
+        capabilities
+    }
+}
+
+#[derive(Debug)]
+struct TestRxToken {
+    packet: Bytes,
+}
+
+impl SmolRxToken for TestRxToken {
+    fn consume<R, F>(self, f: F) -> R
+    where
+        F: FnOnce(&[u8]) -> R,
+    {
+        f(&self.packet)
+    }
+}
+
+#[derive(Debug)]
+struct TestTxToken<'a> {
+    mtu: usize,
+    outbound: &'a mut VecDeque<Bytes>,
+}
+
+impl SmolTxToken for TestTxToken<'_> {
+    fn consume<R, F>(self, len: usize, f: F) -> R
+    where
+        F: FnOnce(&mut [u8]) -> R,
+    {
+        let mut packet = vec![0; len.min(self.mtu)];
+        let result = f(&mut packet);
+        self.outbound.push_back(Bytes::from(packet));
+        result
+    }
 }
 
 async fn spawn_echo_server() -> (SocketAddr, JoinHandle<()>) {
