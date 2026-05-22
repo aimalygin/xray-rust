@@ -7,7 +7,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use thiserror::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::time::sleep;
 
 const USAGE: &str = "usage: xray-bench run|compare [options]";
@@ -67,6 +67,7 @@ impl EngineKind {
 pub enum WorkloadKind {
     Idle,
     TcpFreedom,
+    UdpFreedom,
 }
 
 impl WorkloadKind {
@@ -74,6 +75,7 @@ impl WorkloadKind {
         match self {
             Self::Idle => "idle",
             Self::TcpFreedom => "tcp-freedom",
+            Self::UdpFreedom => "udp-freedom",
         }
     }
 
@@ -81,6 +83,7 @@ impl WorkloadKind {
         match raw {
             "idle" => Ok(Self::Idle),
             "tcp-freedom" => Ok(Self::TcpFreedom),
+            "udp-freedom" => Ok(Self::UdpFreedom),
             other => Err(BenchError::InvalidArguments(format!(
                 "unsupported workload `{other}`"
             ))),
@@ -588,6 +591,49 @@ pub async fn run_tcp_freedom_workload(
     Ok((sent, received))
 }
 
+pub async fn run_udp_freedom_workload(
+    socks_addr: SocketAddr,
+    options: &BenchOptions,
+) -> Result<(u64, u64), BenchError> {
+    let echo_socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "binding UDP echo server".to_owned(),
+            source,
+        })?;
+    let echo_addr = echo_socket.local_addr().map_err(|source| BenchError::Io {
+        action: "reading UDP echo server address".to_owned(),
+        source,
+    })?;
+    let echo_task = tokio::spawn(async move {
+        let mut buffer = vec![0; 65_536];
+        while let Ok((len, peer)) = echo_socket.recv_from(&mut buffer).await {
+            let _ = echo_socket.send_to(&buffer[..len], peer).await;
+        }
+    });
+
+    let mut tasks = Vec::with_capacity(options.connections);
+    for _ in 0..options.connections {
+        let options = options.clone();
+        tasks.push(tokio::spawn(async move {
+            run_udp_freedom_connection(socks_addr, echo_addr, &options).await
+        }));
+    }
+
+    let mut sent = 0;
+    let mut received = 0;
+    for task in tasks {
+        let (task_sent, task_received) = task.await.map_err(|error| {
+            BenchError::InvalidArguments(format!("udp workload task failed: {error}"))
+        })??;
+        sent += task_sent;
+        received += task_received;
+    }
+    echo_task.abort();
+
+    Ok((sent, received))
+}
+
 async fn run_tcp_freedom_connection(
     socks_addr: SocketAddr,
     echo_addr: SocketAddr,
@@ -629,6 +675,59 @@ async fn run_tcp_freedom_connection(
         received += echoed.len() as u64;
     }
 
+    Ok((sent, received))
+}
+
+async fn run_udp_freedom_connection(
+    socks_addr: SocketAddr,
+    echo_addr: SocketAddr,
+    options: &BenchOptions,
+) -> Result<(u64, u64), BenchError> {
+    let mut control = TcpStream::connect(socks_addr)
+        .await
+        .map_err(|source| BenchError::Io {
+            action: format!("connecting to SOCKS inbound at {socks_addr}"),
+            source,
+        })?;
+    let relay_addr = socks5_udp_associate(&mut control).await?;
+    let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "binding UDP benchmark client".to_owned(),
+            source,
+        })?;
+    let payload = vec![0x5a; options.payload_size];
+    let request = encode_socks5_udp_datagram(echo_addr, &payload)?;
+    let mut response = vec![0; request.len() + 64];
+    let mut sent = 0;
+    let mut received = 0;
+
+    for _ in 0..options.iterations {
+        socket
+            .send_to(&request, relay_addr)
+            .await
+            .map_err(|source| BenchError::Io {
+                action: "sending SOCKS UDP benchmark payload".to_owned(),
+                source,
+            })?;
+        sent += payload.len() as u64;
+        let (len, _) = socket
+            .recv_from(&mut response)
+            .await
+            .map_err(|source| BenchError::Io {
+                action: "receiving SOCKS UDP benchmark echo".to_owned(),
+                source,
+            })?;
+        let echoed = decode_socks5_udp_payload(&response[..len])?;
+        if echoed != payload {
+            return Err(BenchError::InvalidArguments(
+                "udp echo payload mismatch".to_owned(),
+            ));
+        }
+        received += echoed.len() as u64;
+    }
+
+    drop(control);
     Ok((sent, received))
 }
 
@@ -685,6 +784,96 @@ async fn socks5_connect(client: &mut TcpStream, target: SocketAddr) -> Result<()
     }
 
     Ok(())
+}
+
+async fn socks5_udp_associate(client: &mut TcpStream) -> Result<SocketAddr, BenchError> {
+    client
+        .write_all(&[5, 1, 0])
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "writing SOCKS UDP greeting".to_owned(),
+            source,
+        })?;
+    let mut method = [0; 2];
+    client
+        .read_exact(&mut method)
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "reading SOCKS UDP method".to_owned(),
+            source,
+        })?;
+    if method != [5, 0] {
+        return Err(BenchError::InvalidArguments(format!(
+            "unexpected SOCKS UDP method response {method:?}"
+        )));
+    }
+
+    client
+        .write_all(&[5, 3, 0, 1, 0, 0, 0, 0, 0, 0])
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "writing SOCKS UDP associate".to_owned(),
+            source,
+        })?;
+    let mut head = [0; 4];
+    client
+        .read_exact(&mut head)
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "reading SOCKS UDP associate response".to_owned(),
+            source,
+        })?;
+    if head[..3] != [5, 0, 0] {
+        return Err(BenchError::InvalidArguments(format!(
+            "unexpected SOCKS UDP associate response header {head:?}"
+        )));
+    }
+    match head[3] {
+        1 => {
+            let mut rest = [0; 6];
+            client
+                .read_exact(&mut rest)
+                .await
+                .map_err(|source| BenchError::Io {
+                    action: "reading SOCKS UDP IPv4 bind".to_owned(),
+                    source,
+                })?;
+            Ok(SocketAddr::from((
+                Ipv4Addr::new(rest[0], rest[1], rest[2], rest[3]),
+                u16::from_be_bytes([rest[4], rest[5]]),
+            )))
+        }
+        other => Err(BenchError::InvalidArguments(format!(
+            "unsupported SOCKS UDP bind address type {other}"
+        ))),
+    }
+}
+
+fn encode_socks5_udp_datagram(target: SocketAddr, payload: &[u8]) -> Result<Vec<u8>, BenchError> {
+    let SocketAddr::V4(target) = target else {
+        return Err(BenchError::InvalidArguments(
+            "udp-freedom workload currently uses IPv4 echo targets".to_owned(),
+        ));
+    };
+    let mut datagram = vec![0, 0, 0, 1];
+    datagram.extend_from_slice(&target.ip().octets());
+    datagram.extend_from_slice(&target.port().to_be_bytes());
+    datagram.extend_from_slice(payload);
+    Ok(datagram)
+}
+
+fn decode_socks5_udp_payload(datagram: &[u8]) -> Result<&[u8], BenchError> {
+    if datagram.len() < 10 {
+        return Err(BenchError::InvalidArguments(
+            "truncated SOCKS UDP response".to_owned(),
+        ));
+    }
+    if datagram[..4] != [0, 0, 0, 1] {
+        return Err(BenchError::InvalidArguments(
+            "unexpected SOCKS UDP response header".to_owned(),
+        ));
+    }
+    Ok(&datagram[10..])
 }
 
 pub async fn sample_while<F, T>(
@@ -779,14 +968,27 @@ fn ps_args(pid: u32) -> Vec<String> {
 }
 
 pub fn xray_rust_freedom_config(port: u16) -> String {
-    freedom_config(port)
+    freedom_config(port, false)
 }
 
 pub fn xray_core_freedom_config(port: u16) -> String {
-    freedom_config(port)
+    freedom_config(port, false)
 }
 
-fn freedom_config(port: u16) -> String {
+pub fn xray_rust_config(port: u16, workload: WorkloadKind) -> String {
+    freedom_config(port, workload == WorkloadKind::UdpFreedom)
+}
+
+pub fn xray_core_config(port: u16, workload: WorkloadKind) -> String {
+    freedom_config(port, workload == WorkloadKind::UdpFreedom)
+}
+
+fn freedom_config(port: u16, socks_udp: bool) -> String {
+    let socks_settings = if socks_udp {
+        r#"{ "auth": "noauth", "udp": true, "ip": "127.0.0.1" }"#
+    } else {
+        r#"{ "auth": "noauth", "udp": false }"#
+    };
     format!(
         r#"{{
   "log": {{ "loglevel": "warning" }},
@@ -796,7 +998,7 @@ fn freedom_config(port: u16) -> String {
       "protocol": "socks",
       "listen": "127.0.0.1",
       "port": {port},
-      "settings": {{ "auth": "noauth", "udp": false }}
+      "settings": {socks_settings}
     }}
   ],
   "outbounds": [
@@ -963,8 +1165,8 @@ pub async fn start_engine(
     let port = allocate_loopback_port()?;
     let socks_addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
     let config = match kind {
-        EngineKind::XrayRust => xray_rust_freedom_config(port),
-        EngineKind::XrayCore => xray_core_freedom_config(port),
+        EngineKind::XrayRust => xray_rust_config(port, options.workload),
+        EngineKind::XrayCore => xray_core_config(port, options.workload),
     };
     let config_path = run_dir.join("config.json");
     fs::write(&config_path, config).map_err(|source| BenchError::Io {
@@ -1136,6 +1338,7 @@ async fn run_engine_once(
         match options.workload {
             WorkloadKind::Idle => run_idle_workload(options.duration).await,
             WorkloadKind::TcpFreedom => run_tcp_freedom_workload(engine.socks_addr, options).await,
+            WorkloadKind::UdpFreedom => run_udp_freedom_workload(engine.socks_addr, options).await,
         }
     };
     let ((bytes_sent, bytes_received), samples) =
@@ -1304,6 +1507,31 @@ mod tests {
     }
 
     #[test]
+    fn parses_compare_udp_freedom() {
+        let args = parse_cli_args([
+            "xray-bench",
+            "compare",
+            "--workload",
+            "udp-freedom",
+            "--connections",
+            "2",
+            "--iterations",
+            "3",
+            "--payload-size",
+            "64",
+        ])
+        .unwrap();
+
+        let CliArgs::Compare(options) = args else {
+            panic!("expected compare args");
+        };
+        assert_eq!(options.workload, WorkloadKind::UdpFreedom);
+        assert_eq!(options.connections, 2);
+        assert_eq!(options.iterations, 3);
+        assert_eq!(options.payload_size, 64);
+    }
+
+    #[test]
     fn parses_compare_with_repeated_runs() {
         let args = parse_cli_args([
             "xray-bench",
@@ -1380,6 +1608,14 @@ mod tests {
         let config = xray_core_freedom_config(18081);
         assert!(config.contains(r#""protocol": "socks""#));
         assert!(config.contains(r#""port": 18081"#));
+        assert!(config.contains(r#""protocol": "freedom""#));
+    }
+
+    #[test]
+    fn udp_freedom_config_enables_socks_udp() {
+        let config = xray_rust_config(18082, WorkloadKind::UdpFreedom);
+        assert!(config.contains(r#""protocol": "socks""#));
+        assert!(config.contains(r#""udp": true"#));
         assert!(config.contains(r#""protocol": "freedom""#));
     }
 

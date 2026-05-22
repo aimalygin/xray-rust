@@ -32,6 +32,7 @@ use xray_config::{
     StreamSecurity, StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
 };
 use xray_core_rs::{select_vless_tcp_outbound, Core, CoreError};
+use xray_proxy::inbound::{encode_socks5_udp_datagram, parse_socks5_udp_datagram};
 use xray_proxy::vless::{
     encode_udp_packet, encode_xudp_keep_packet, read_udp_packet, read_xudp_packet,
     unpad_vision_block, VisionCommand, VisionPadding,
@@ -195,6 +196,24 @@ fn runtime_tun_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig {
     }
 }
 
+fn runtime_socks_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig {
+    CoreConfig {
+        inbounds: vec![InboundConfig {
+            tag: Some("socks-in".to_owned()),
+            protocol: InboundProtocol::Socks,
+            listen: "127.0.0.1".to_owned(),
+            port: 0,
+        }],
+        outbounds: vec![vless_outbound(
+            StreamSecurity::None,
+            TargetAddr::Ip(vless_addr.ip()),
+            vless_addr.port(),
+        )],
+        default_outbound_tag: None,
+        routing: RoutingConfig::default(),
+    }
+}
+
 fn runtime_tun_config_with_tls_vision_vless_domain_server(
     domain: &str,
     port: u16,
@@ -224,6 +243,18 @@ fn runtime_tun_config_with_tls_vision_vless_domain_server(
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
     }
+}
+
+fn runtime_socks_config_with_tls_vision_vless_domain_server(
+    domain: &str,
+    port: u16,
+    server_name: &str,
+) -> CoreConfig {
+    let mut config =
+        runtime_tun_config_with_tls_vision_vless_domain_server(domain, port, server_name);
+    config.inbounds[0].tag = Some("socks-in".to_owned());
+    config.inbounds[0].protocol = InboundProtocol::Socks;
+    config
 }
 
 fn runtime_config_with_routed_freedom_outbound(unused_proxy_port: u16) -> CoreConfig {
@@ -722,6 +753,33 @@ async fn socks_client_reaches_echo_target_through_freedom_outbound() {
 }
 
 #[tokio::test]
+async fn socks_udp_client_reaches_echo_target_through_freedom_outbound() {
+    timeout(
+        Duration::from_secs(2),
+        run_socks_udp_freedom_echo_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn socks_udp_client_reaches_echo_target_through_vless_udp_outbound() {
+    timeout(Duration::from_secs(2), run_socks_udp_vless_echo_scenario())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn socks_udp_client_reaches_echo_target_through_vision_xudp_outbound() {
+    timeout(
+        Duration::from_secs(2),
+        run_socks_udp_vision_xudp_echo_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
 async fn tun_tcp_client_completes_handshake_through_freedom_outbound() {
     timeout(Duration::from_secs(2), run_tun_tcp_handshake_scenario())
         .await
@@ -907,6 +965,115 @@ async fn run_socks_to_freedom_echo_scenario() {
     core.stop().await.unwrap();
 
     timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+async fn run_socks_udp_freedom_echo_scenario() {
+    let (echo_addr, echo_handle) = spawn_udp_echo_server().await;
+    let config = runtime_config_with_freedom_outbound();
+
+    let mut core = Core::new(config).unwrap();
+    core.start().await.unwrap();
+    let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
+
+    let mut control = TcpStream::connect(socks_addr).await.unwrap();
+    let relay_addr = socks5_udp_associate(&mut control).await;
+    let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let target = Target::new(
+        RoutingTargetAddr::Ip(echo_addr.ip()),
+        echo_addr.port(),
+        RoutingNetwork::Udp,
+    );
+    let request = encode_socks5_udp_datagram(&target, b"hello socks udp").unwrap();
+
+    socket.send_to(&request, relay_addr).await.unwrap();
+    let mut response = vec![0; 2048];
+    let (len, _) = socket.recv_from(&mut response).await.unwrap();
+    let response = parse_socks5_udp_datagram(&response[..len]).unwrap();
+
+    assert_eq!(&response.payload[..], b"hello socks udp");
+    drop(socket);
+    drop(control);
+    core.stop().await.unwrap();
+    echo_handle.abort();
+}
+
+async fn socks_udp_roundtrip(
+    socks_addr: SocketAddr,
+    target_addr: SocketAddr,
+    payload: &[u8],
+) -> Bytes {
+    let mut control = TcpStream::connect(socks_addr).await.unwrap();
+    let relay_addr = socks5_udp_associate(&mut control).await;
+    let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let target = Target::new(
+        RoutingTargetAddr::Ip(target_addr.ip()),
+        target_addr.port(),
+        RoutingNetwork::Udp,
+    );
+    let request = encode_socks5_udp_datagram(&target, payload).unwrap();
+
+    socket.send_to(&request, relay_addr).await.unwrap();
+    let mut response = vec![0; 2048];
+    let (len, _) = socket.recv_from(&mut response).await.unwrap();
+    let response = parse_socks5_udp_datagram(&response[..len]).unwrap();
+    drop(socket);
+    drop(control);
+    response.payload
+}
+
+async fn run_socks_udp_vless_echo_scenario() {
+    let (vless_addr, vless_handle) =
+        spawn_fake_vless_udp_server_for_payload(b"hello socks vless udp").await;
+    let echo_addr = SocketAddr::new(
+        IpAddr::V4(Ipv4Addr::LOCALHOST),
+        allocate_unused_loopback_port(),
+    );
+    let mut core = Core::new(runtime_socks_config_with_vless_server(vless_addr)).unwrap();
+    core.start().await.unwrap();
+    let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
+
+    let payload = socks_udp_roundtrip(socks_addr, echo_addr, b"hello socks vless udp").await;
+
+    assert_eq!(&payload[..], b"hello socks vless udp");
+    core.stop().await.unwrap();
+    timeout(Duration::from_secs(1), vless_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+async fn run_socks_udp_vision_xudp_echo_scenario() {
+    let (client_config, server_config) = tls_test_configs();
+    let echo_addr = SocketAddr::new(
+        IpAddr::V4(Ipv4Addr::LOCALHOST),
+        allocate_unused_loopback_port(),
+    );
+    let (vless_addr, vless_handle) =
+        spawn_fake_tls_vision_xudp_server(server_config, echo_addr).await;
+    let resolver = StaticDnsResolver {
+        domain: "vless.test",
+        addr: vless_addr,
+    };
+    let config = runtime_socks_config_with_tls_vision_vless_domain_server(
+        "vless.test",
+        vless_addr.port(),
+        "vless.test",
+    );
+    let dialer =
+        TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config));
+    let mut core =
+        Core::with_runtime_dependencies(config, Arc::new(resolver), Arc::new(dialer)).unwrap();
+    core.start().await.unwrap();
+    let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
+
+    let payload = socks_udp_roundtrip(socks_addr, echo_addr, b"hello vision xudp").await;
+
+    assert_eq!(&payload[..], b"hello vision xudp");
+    core.stop().await.unwrap();
+    timeout(Duration::from_secs(1), vless_handle)
         .await
         .unwrap()
         .unwrap();
@@ -1898,6 +2065,12 @@ async fn spawn_fake_vless_server() -> (SocketAddr, JoinHandle<()>) {
 }
 
 async fn spawn_fake_vless_udp_server() -> (SocketAddr, JoinHandle<()>) {
+    spawn_fake_vless_udp_server_for_payload(b"hello tun vless udp").await
+}
+
+async fn spawn_fake_vless_udp_server_for_payload(
+    expected_payload: &'static [u8],
+) -> (SocketAddr, JoinHandle<()>) {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let addr = listener.local_addr().unwrap();
     let handle = tokio::spawn(async move {
@@ -1907,7 +2080,7 @@ async fn spawn_fake_vless_udp_server() -> (SocketAddr, JoinHandle<()>) {
         inbound.write_all(&[0, 0]).await.unwrap();
 
         let payload = read_udp_packet(&mut inbound).await.unwrap();
-        assert_eq!(&payload[..], b"hello tun vless udp");
+        assert_eq!(&payload[..], expected_payload);
         inbound
             .write_all(&encode_udp_packet(&payload).unwrap())
             .await
@@ -2052,6 +2225,26 @@ async fn socks5_connect_domain(client: &mut TcpStream, domain: &str, port: u16) 
     let mut reply = [0; 10];
     client.read_exact(&mut reply).await.unwrap();
     assert_eq!(reply, [5, 0, 0, 1, 0, 0, 0, 0, 0, 0]);
+}
+
+async fn socks5_udp_associate(client: &mut TcpStream) -> SocketAddr {
+    client.write_all(&[5, 1, 0]).await.unwrap();
+    let mut method = [0; 2];
+    client.read_exact(&mut method).await.unwrap();
+    assert_eq!(method, [5, 0]);
+
+    client
+        .write_all(&[5, 3, 0, 1, 0, 0, 0, 0, 0, 0])
+        .await
+        .unwrap();
+
+    let mut reply = [0; 10];
+    client.read_exact(&mut reply).await.unwrap();
+    assert_eq!(&reply[..4], &[5, 0, 0, 1]);
+    SocketAddr::from((
+        Ipv4Addr::new(reply[4], reply[5], reply[6], reply[7]),
+        u16::from_be_bytes([reply[8], reply[9]]),
+    ))
 }
 
 async fn http_connect(client: &mut TcpStream, target: SocketAddr) {

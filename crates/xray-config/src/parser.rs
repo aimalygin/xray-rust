@@ -322,12 +322,7 @@ impl Parser<'_> {
 
         self.reject_non_empty_array(settings, "accounts", format!("{settings_path}.accounts"));
 
-        if matches!(
-            self.optional_bool_at(settings, "udp", format!("{settings_path}.udp")),
-            Some(true)
-        ) {
-            self.error(format!("{settings_path}.udp"), "socks udp is unsupported");
-        }
+        self.optional_bool_at(settings, "udp", format!("{settings_path}.udp"));
     }
 
     fn validate_http_inbound_settings(&mut self, settings: &Value, index: usize) {

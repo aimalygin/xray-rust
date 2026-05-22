@@ -101,6 +101,29 @@ fn parses_freedom_outbound_as_direct_tcp_default() {
 }
 
 #[test]
+fn parses_socks_inbound_with_udp_enabled() {
+    let raw = r#"{
+        "inbounds": [
+            {
+              "tag": "socks-in",
+              "protocol": "socks",
+              "listen": "127.0.0.1",
+              "port": 1080,
+              "settings": { "auth": "noauth", "udp": true }
+            }
+        ],
+        "outbounds": [
+            { "tag": "direct", "protocol": "freedom" }
+        ]
+    }"#;
+
+    let parsed = parse_xray_json(raw).expect("config should parse");
+
+    assert_eq!(parsed.config.inbounds[0].protocol, InboundProtocol::Socks);
+    assert!(parsed.diagnostics.is_empty());
+}
+
+#[test]
 fn rejects_freedom_redirect_with_path() {
     let raw = r#"{
         "inbounds": [],
@@ -271,8 +294,8 @@ fn rejects_socks_password_auth_with_path() {
 }
 
 #[test]
-fn rejects_socks_udp_enabled_with_path() {
-    let raw = raw_with_socks_settings(r#""udp": true"#);
+fn rejects_socks_udp_non_bool_with_path() {
+    let raw = raw_with_socks_settings(r#""udp": "yes""#);
 
     assert_parse_error_path(&raw, "$.inbounds[0].settings.udp");
 }

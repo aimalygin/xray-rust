@@ -1,11 +1,13 @@
 use std::io::Cursor;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use xray_proxy::inbound::{
-    negotiate_socks5_no_auth, parse_http_connect, parse_socks5_connect, parse_socks5_request,
-    write_socks5_failure, write_socks5_success, HttpParseError, SocksParseError,
+    encode_socks5_udp_datagram, negotiate_socks5_no_auth, parse_http_connect, parse_socks5_connect,
+    parse_socks5_request, parse_socks5_request_message, parse_socks5_udp_datagram,
+    write_socks5_failure, write_socks5_success, write_socks5_success_with_bind, HttpParseError,
+    SocksCommand, SocksParseError,
 };
-use xray_routing::{Network, TargetAddr};
+use xray_routing::{Network, Target, TargetAddr};
 
 #[tokio::test]
 async fn socks5_negotiate_no_auth_writes_method_selection() {
@@ -50,6 +52,21 @@ async fn socks5_request_parser_reads_connect_after_greeting() {
 }
 
 #[tokio::test]
+async fn socks5_request_parser_reads_udp_associate_command() {
+    let bytes = [5, 3, 0, 1, 0, 0, 0, 0, 0, 0];
+
+    let request = parse_socks5_request_message(&bytes[..]).await.unwrap();
+
+    assert_eq!(request.command, SocksCommand::UdpAssociate);
+    assert_eq!(request.target.network, Network::Udp);
+    assert_eq!(request.target.port, 0);
+    assert_eq!(
+        request.target.addr,
+        TargetAddr::Ip(IpAddr::V4(Ipv4Addr::UNSPECIFIED))
+    );
+}
+
+#[tokio::test]
 async fn socks5_reply_writers_emit_ipv4_success_and_failure() {
     let mut output = Vec::new();
 
@@ -63,6 +80,33 @@ async fn socks5_reply_writers_emit_ipv4_success_and_failure() {
             5, 1, 0, 1, 0, 0, 0, 0, 0, 0, // general failure
         ]
     );
+}
+
+#[tokio::test]
+async fn socks5_success_writer_can_emit_bound_udp_address() {
+    let mut output = Vec::new();
+    let bind = SocketAddr::from((Ipv4Addr::new(127, 0, 0, 1), 53000));
+
+    write_socks5_success_with_bind(&mut output, bind)
+        .await
+        .unwrap();
+
+    assert_eq!(output, vec![5, 0, 0, 1, 127, 0, 0, 1, 0xcf, 0x08]);
+}
+
+#[test]
+fn socks5_udp_datagram_round_trips_ipv4_target() {
+    let target = Target::new(
+        TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
+        5353,
+        Network::Udp,
+    );
+
+    let encoded = encode_socks5_udp_datagram(&target, b"dns-ish").unwrap();
+    let decoded = parse_socks5_udp_datagram(&encoded).unwrap();
+
+    assert_eq!(decoded.target, target);
+    assert_eq!(&decoded.payload[..], b"dns-ish");
 }
 
 #[tokio::test]
