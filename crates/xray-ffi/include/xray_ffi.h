@@ -1,0 +1,68 @@
+#ifndef XRAY_FFI_H
+#define XRAY_FFI_H
+
+#include <stddef.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef enum XrayStatus {
+  XRAY_STATUS_OK = 0,
+  XRAY_STATUS_NULL_ARGUMENT = 1,
+  XRAY_STATUS_INVALID_UTF8 = 2,
+  XRAY_STATUS_CONFIG_ERROR = 3,
+  XRAY_STATUS_CORE_NOT_LOADED = 4,
+  XRAY_STATUS_RUNTIME_ERROR = 5,
+  XRAY_STATUS_NO_PACKET = 6,
+  XRAY_STATUS_BUFFER_TOO_SMALL = 7,
+  XRAY_STATUS_TUN_ERROR = 8,
+  XRAY_STATUS_PANIC = 255
+} XrayStatus;
+
+typedef struct XrayTunStats {
+  uint64_t inbound_packets;
+  uint64_t outbound_packets;
+  uint64_t dropped_packets;
+} XrayTunStats;
+
+typedef struct XrayCoreHandle XrayCoreHandle;
+typedef struct XrayError XrayError;
+
+uint32_t xray_ffi_version_major(void);
+
+XrayCoreHandle *xray_core_new(XrayError **error);
+XrayStatus xray_core_load_config_json(
+    XrayCoreHandle *handle,
+    const char *json,
+    XrayError **error);
+XrayStatus xray_core_start(XrayCoreHandle *handle, XrayError **error);
+XrayStatus xray_core_stop(XrayCoreHandle *handle, XrayError **error);
+void xray_core_free(XrayCoreHandle *handle);
+
+XrayStatus xray_error_code(const XrayError *error);
+const char *xray_error_message(const XrayError *error);
+void xray_error_free(XrayError *error);
+
+XrayStatus xray_tun_push_packet(
+    XrayCoreHandle *handle,
+    const uint8_t *data,
+    size_t len,
+    XrayError **error);
+XrayStatus xray_tun_poll_packet(
+    XrayCoreHandle *handle,
+    uint8_t *buffer,
+    size_t buffer_len,
+    size_t *written,
+    XrayError **error);
+XrayStatus xray_tun_stats(
+    XrayCoreHandle *handle,
+    XrayTunStats *stats,
+    XrayError **error);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif
