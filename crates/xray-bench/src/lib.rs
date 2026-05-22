@@ -8,9 +8,17 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
+use tokio::task::JoinHandle;
 use tokio::time::sleep;
+use xray_proxy::vless::{
+    encode_udp_packet, encode_xudp_keep_packet, read_udp_packet, read_xudp_packet,
+};
+use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 
 const USAGE: &str = "usage: xray-bench run|compare [options]";
+const TEST_VLESS_UUID: [u8; 16] = [
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+];
 
 #[derive(Debug, Error)]
 pub enum BenchError {
@@ -68,6 +76,8 @@ pub enum WorkloadKind {
     Idle,
     TcpFreedom,
     UdpFreedom,
+    UdpVless,
+    UdpXudp,
 }
 
 impl WorkloadKind {
@@ -76,6 +86,8 @@ impl WorkloadKind {
             Self::Idle => "idle",
             Self::TcpFreedom => "tcp-freedom",
             Self::UdpFreedom => "udp-freedom",
+            Self::UdpVless => "udp-vless",
+            Self::UdpXudp => "udp-xudp",
         }
     }
 
@@ -84,6 +96,8 @@ impl WorkloadKind {
             "idle" => Ok(Self::Idle),
             "tcp-freedom" => Ok(Self::TcpFreedom),
             "udp-freedom" => Ok(Self::UdpFreedom),
+            "udp-vless" => Ok(Self::UdpVless),
+            "udp-xudp" => Ok(Self::UdpXudp),
             other => Err(BenchError::InvalidArguments(format!(
                 "unsupported workload `{other}`"
             ))),
@@ -174,6 +188,52 @@ impl Drop for RunningEngine {
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
+}
+
+#[derive(Debug, Default)]
+struct WorkloadFixture {
+    vless_addr: Option<SocketAddr>,
+    tasks: Vec<JoinHandle<()>>,
+}
+
+impl WorkloadFixture {
+    async fn start(workload: WorkloadKind) -> Result<Self, BenchError> {
+        match workload {
+            WorkloadKind::UdpVless => {
+                let (vless_addr, task) =
+                    spawn_fake_vless_udp_server(VlessUdpServerMode::Udp).await?;
+                Ok(Self {
+                    vless_addr: Some(vless_addr),
+                    tasks: vec![task],
+                })
+            }
+            WorkloadKind::UdpXudp => {
+                let (vless_addr, task) =
+                    spawn_fake_vless_udp_server(VlessUdpServerMode::Xudp).await?;
+                Ok(Self {
+                    vless_addr: Some(vless_addr),
+                    tasks: vec![task],
+                })
+            }
+            WorkloadKind::Idle | WorkloadKind::TcpFreedom | WorkloadKind::UdpFreedom => {
+                Ok(Self::default())
+            }
+        }
+    }
+}
+
+impl Drop for WorkloadFixture {
+    fn drop(&mut self) {
+        for task in &self.tasks {
+            task.abort();
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VlessUdpServerMode {
+    Udp,
+    Xudp,
 }
 
 impl Default for BenchOptions {
@@ -634,6 +694,58 @@ pub async fn run_udp_freedom_workload(
     Ok((sent, received))
 }
 
+pub async fn run_udp_vless_workload(
+    socks_addr: SocketAddr,
+    options: &BenchOptions,
+) -> Result<(u64, u64), BenchError> {
+    let echo_addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 53));
+    let mut tasks = Vec::with_capacity(options.connections);
+    for _ in 0..options.connections {
+        let options = options.clone();
+        tasks.push(tokio::spawn(async move {
+            run_udp_freedom_connection(socks_addr, echo_addr, &options).await
+        }));
+    }
+
+    let mut sent = 0;
+    let mut received = 0;
+    for task in tasks {
+        let (task_sent, task_received) = task.await.map_err(|error| {
+            BenchError::InvalidArguments(format!("udp vless workload task failed: {error}"))
+        })??;
+        sent += task_sent;
+        received += task_received;
+    }
+
+    Ok((sent, received))
+}
+
+pub async fn run_udp_xudp_workload(
+    socks_addr: SocketAddr,
+    options: &BenchOptions,
+) -> Result<(u64, u64), BenchError> {
+    let echo_addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 9));
+    let mut tasks = Vec::with_capacity(options.connections);
+    for _ in 0..options.connections {
+        let options = options.clone();
+        tasks.push(tokio::spawn(async move {
+            run_udp_freedom_connection(socks_addr, echo_addr, &options).await
+        }));
+    }
+
+    let mut sent = 0;
+    let mut received = 0;
+    for task in tasks {
+        let (task_sent, task_received) = task.await.map_err(|error| {
+            BenchError::InvalidArguments(format!("udp xudp workload task failed: {error}"))
+        })??;
+        sent += task_sent;
+        received += task_received;
+    }
+
+    Ok((sent, received))
+}
+
 async fn run_tcp_freedom_connection(
     socks_addr: SocketAddr,
     echo_addr: SocketAddr,
@@ -876,6 +988,225 @@ fn decode_socks5_udp_payload(datagram: &[u8]) -> Result<&[u8], BenchError> {
     Ok(&datagram[10..])
 }
 
+async fn spawn_fake_vless_udp_server(
+    mode: VlessUdpServerMode,
+) -> Result<(SocketAddr, JoinHandle<()>), BenchError> {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "binding fake VLESS UDP server".to_owned(),
+            source,
+        })?;
+    let addr = listener.local_addr().map_err(|source| BenchError::Io {
+        action: "reading fake VLESS UDP server address".to_owned(),
+        source,
+    })?;
+
+    let task = tokio::spawn(async move {
+        while let Ok((stream, _peer)) = listener.accept().await {
+            tokio::spawn(async move {
+                let _ = handle_fake_vless_udp_connection(stream, mode).await;
+            });
+        }
+    });
+
+    Ok((addr, task))
+}
+
+async fn handle_fake_vless_udp_connection(
+    mut inbound: TcpStream,
+    mode: VlessUdpServerMode,
+) -> Result<(), BenchError> {
+    match mode {
+        VlessUdpServerMode::Udp => {
+            let _target = read_vless_udp_target(&mut inbound).await?;
+        }
+        VlessUdpServerMode::Xudp => {
+            read_vless_mux_header(&mut inbound).await?;
+        }
+    }
+    inbound
+        .write_all(&[0, 0])
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "writing fake VLESS UDP response header".to_owned(),
+            source,
+        })?;
+
+    match mode {
+        VlessUdpServerMode::Udp => handle_fake_vless_udp_frames(&mut inbound).await?,
+        VlessUdpServerMode::Xudp => handle_fake_vless_xudp_frames(&mut inbound).await?,
+    }
+
+    Ok(())
+}
+
+async fn handle_fake_vless_udp_frames(inbound: &mut TcpStream) -> Result<(), BenchError> {
+    loop {
+        let payload = match read_udp_packet(inbound).await {
+            Ok(payload) => payload,
+            Err(_) => break,
+        };
+        let frame = encode_udp_packet(&payload).map_err(|error| {
+            BenchError::InvalidArguments(format!("encoding fake VLESS UDP packet: {error}"))
+        })?;
+        inbound
+            .write_all(&frame)
+            .await
+            .map_err(|source| BenchError::Io {
+                action: "writing fake VLESS UDP echo packet".to_owned(),
+                source,
+            })?;
+    }
+
+    Ok(())
+}
+
+async fn handle_fake_vless_xudp_frames(inbound: &mut TcpStream) -> Result<(), BenchError> {
+    loop {
+        let packet = match read_xudp_packet(inbound).await {
+            Ok(packet) => packet,
+            Err(_) => break,
+        };
+        let source = packet.source.unwrap_or_else(|| {
+            Target::new(
+                RoutingTargetAddr::Ip(Ipv4Addr::LOCALHOST.into()),
+                9,
+                RoutingNetwork::Udp,
+            )
+        });
+        let frame = encode_xudp_keep_packet(Some(&source), &packet.payload).map_err(|error| {
+            BenchError::InvalidArguments(format!("encoding fake VLESS XUDP packet: {error}"))
+        })?;
+        inbound
+            .write_all(&frame)
+            .await
+            .map_err(|source| BenchError::Io {
+                action: "writing fake VLESS XUDP echo packet".to_owned(),
+                source,
+            })?;
+    }
+
+    Ok(())
+}
+
+async fn read_vless_mux_header(stream: &mut TcpStream) -> Result<(), BenchError> {
+    let command = read_vless_common_header(stream).await?;
+    if command != 3 {
+        return Err(BenchError::InvalidArguments(format!(
+            "unexpected VLESS command {command}"
+        )));
+    }
+    Ok(())
+}
+
+async fn read_vless_udp_target(stream: &mut TcpStream) -> Result<SocketAddr, BenchError> {
+    let command = read_vless_common_header(stream).await?;
+    if command != 2 {
+        return Err(BenchError::InvalidArguments(format!(
+            "unexpected VLESS command {command}"
+        )));
+    }
+    read_vless_target(stream).await
+}
+
+async fn read_vless_common_header(stream: &mut TcpStream) -> Result<u8, BenchError> {
+    let mut version = [0; 1];
+    stream
+        .read_exact(&mut version)
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "reading VLESS version".to_owned(),
+            source,
+        })?;
+    if version[0] != 0 {
+        return Err(BenchError::InvalidArguments(format!(
+            "unexpected VLESS version {}",
+            version[0]
+        )));
+    }
+
+    let mut uuid = [0; 16];
+    stream
+        .read_exact(&mut uuid)
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "reading VLESS user id".to_owned(),
+            source,
+        })?;
+    if uuid != TEST_VLESS_UUID {
+        return Err(BenchError::InvalidArguments(
+            "unexpected VLESS user id".to_owned(),
+        ));
+    }
+
+    let mut addons_len = [0; 1];
+    stream
+        .read_exact(&mut addons_len)
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "reading VLESS addons length".to_owned(),
+            source,
+        })?;
+    if addons_len[0] != 0 {
+        let mut addons = vec![0; usize::from(addons_len[0])];
+        stream
+            .read_exact(&mut addons)
+            .await
+            .map_err(|source| BenchError::Io {
+                action: "reading VLESS addons".to_owned(),
+                source,
+            })?;
+    }
+
+    let mut command = [0; 1];
+    stream
+        .read_exact(&mut command)
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "reading VLESS command".to_owned(),
+            source,
+        })?;
+    Ok(command[0])
+}
+
+async fn read_vless_target(stream: &mut TcpStream) -> Result<SocketAddr, BenchError> {
+    let mut port = [0; 2];
+    stream
+        .read_exact(&mut port)
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "reading VLESS target port".to_owned(),
+            source,
+        })?;
+    let port = u16::from_be_bytes(port);
+
+    let mut addr_type = [0; 1];
+    stream
+        .read_exact(&mut addr_type)
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "reading VLESS address type".to_owned(),
+            source,
+        })?;
+    match addr_type[0] {
+        1 => {
+            let mut ip = [0; 4];
+            stream
+                .read_exact(&mut ip)
+                .await
+                .map_err(|source| BenchError::Io {
+                    action: "reading VLESS IPv4 address".to_owned(),
+                    source,
+                })?;
+            Ok(SocketAddr::from((Ipv4Addr::from(ip), port)))
+        }
+        other => Err(BenchError::InvalidArguments(format!(
+            "unsupported fake VLESS UDP address type {other}"
+        ))),
+    }
+}
+
 pub async fn sample_while<F, T>(
     pid: u32,
     interval: Duration,
@@ -976,11 +1307,38 @@ pub fn xray_core_freedom_config(port: u16) -> String {
 }
 
 pub fn xray_rust_config(port: u16, workload: WorkloadKind) -> String {
-    freedom_config(port, workload == WorkloadKind::UdpFreedom)
+    match workload {
+        WorkloadKind::UdpVless | WorkloadKind::UdpXudp => {
+            vless_udp_config(port, SocketAddr::from((Ipv4Addr::LOCALHOST, 443)))
+        }
+        WorkloadKind::Idle | WorkloadKind::TcpFreedom | WorkloadKind::UdpFreedom => {
+            freedom_config(port, workload == WorkloadKind::UdpFreedom)
+        }
+    }
 }
 
 pub fn xray_core_config(port: u16, workload: WorkloadKind) -> String {
-    freedom_config(port, workload == WorkloadKind::UdpFreedom)
+    xray_rust_config(port, workload)
+}
+
+fn engine_config(
+    port: u16,
+    workload: WorkloadKind,
+    fixture: &WorkloadFixture,
+) -> Result<String, BenchError> {
+    match workload {
+        WorkloadKind::UdpVless | WorkloadKind::UdpXudp => {
+            let vless_addr = fixture.vless_addr.ok_or_else(|| {
+                BenchError::InvalidArguments(
+                    "vless udp workload requires a fake VLESS server fixture".to_owned(),
+                )
+            })?;
+            Ok(vless_udp_config(port, vless_addr))
+        }
+        WorkloadKind::Idle | WorkloadKind::TcpFreedom | WorkloadKind::UdpFreedom => {
+            Ok(freedom_config(port, workload == WorkloadKind::UdpFreedom))
+        }
+    }
 }
 
 fn freedom_config(port: u16, socks_udp: bool) -> String {
@@ -1009,6 +1367,46 @@ fn freedom_config(port: u16, socks_udp: bool) -> String {
     }}
   ]
 }}"#
+    )
+}
+
+fn vless_udp_config(port: u16, vless_addr: SocketAddr) -> String {
+    format!(
+        r#"{{
+  "log": {{ "loglevel": "warning" }},
+  "inbounds": [
+    {{
+      "tag": "socks-in",
+      "protocol": "socks",
+      "listen": "127.0.0.1",
+      "port": {port},
+      "settings": {{ "auth": "noauth", "udp": true, "ip": "127.0.0.1" }}
+    }}
+  ],
+  "outbounds": [
+    {{
+      "tag": "proxy",
+      "protocol": "vless",
+      "settings": {{
+        "vnext": [
+          {{
+            "address": "{}",
+            "port": {},
+            "users": [
+              {{
+                "id": "00010203-0405-0607-0809-0a0b0c0d0e0f",
+                "encryption": "none"
+              }}
+            ]
+          }}
+        ]
+      }},
+      "streamSettings": {{ "network": "tcp", "security": "none" }}
+    }}
+  ]
+}}"#,
+        vless_addr.ip(),
+        vless_addr.port()
     )
 }
 
@@ -1152,11 +1550,12 @@ fn absolute_path(path: &Path) -> Result<PathBuf, BenchError> {
     Ok(cwd.join(path))
 }
 
-pub async fn start_engine(
+async fn start_engine(
     kind: EngineKind,
     options: &BenchOptions,
     run_dir: &Path,
     binary_dir: &Path,
+    fixture: &WorkloadFixture,
 ) -> Result<RunningEngine, BenchError> {
     fs::create_dir_all(run_dir).map_err(|source| BenchError::Io {
         action: format!("creating run directory `{}`", run_dir.display()),
@@ -1165,8 +1564,9 @@ pub async fn start_engine(
     let port = allocate_loopback_port()?;
     let socks_addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
     let config = match kind {
-        EngineKind::XrayRust => xray_rust_config(port, options.workload),
-        EngineKind::XrayCore => xray_core_config(port, options.workload),
+        EngineKind::XrayRust | EngineKind::XrayCore => {
+            engine_config(port, options.workload, fixture)?
+        }
     };
     let config_path = run_dir.join("config.json");
     fs::write(&config_path, config).map_err(|source| BenchError::Io {
@@ -1179,27 +1579,25 @@ pub async fn start_engine(
         EngineKind::XrayRust => ensure_xray_rust_binary(options)?,
         EngineKind::XrayCore => ensure_xray_core_binary(options, binary_dir)?,
     };
-    let mut child = Command::new(&binary)
+    let stdout = fs::File::create(&stdout_path).map_err(|source| BenchError::Io {
+        action: format!("creating stdout log `{}`", stdout_path.display()),
+        source,
+    })?;
+    let stderr = fs::File::create(&stderr_path).map_err(|source| BenchError::Io {
+        action: format!("creating stderr log `{}`", stderr_path.display()),
+        source,
+    })?;
+    let mut command = Command::new(&binary);
+    command
         .arg("run")
         .arg("-config")
         .arg(&config_path)
-        .stdout(Stdio::from(fs::File::create(&stdout_path).map_err(
-            |source| BenchError::Io {
-                action: format!("creating stdout log `{}`", stdout_path.display()),
-                source,
-            },
-        )?))
-        .stderr(Stdio::from(fs::File::create(&stderr_path).map_err(
-            |source| BenchError::Io {
-                action: format!("creating stderr log `{}`", stderr_path.display()),
-                source,
-            },
-        )?))
-        .spawn()
-        .map_err(|source| BenchError::Io {
-            action: format!("spawning `{}`", binary.display()),
-            source,
-        })?;
+        .stdout(Stdio::from(stdout))
+        .stderr(Stdio::from(stderr));
+    let mut child = command.spawn().map_err(|source| BenchError::Io {
+        action: format!("spawning `{}`", binary.display()),
+        source,
+    })?;
     let pid = child.id();
     wait_for_tcp_listener(&mut child, socks_addr, &stdout_path, &stderr_path).await?;
 
@@ -1332,13 +1730,16 @@ async fn run_engine_once(
         action: format!("creating run directory `{}`", run_dir.display()),
         source,
     })?;
-    let engine = start_engine(kind, options, run_dir, binary_dir).await?;
+    let fixture = WorkloadFixture::start(options.workload).await?;
+    let engine = start_engine(kind, options, run_dir, binary_dir, &fixture).await?;
     let started = Instant::now();
     let workload = async {
         match options.workload {
             WorkloadKind::Idle => run_idle_workload(options.duration).await,
             WorkloadKind::TcpFreedom => run_tcp_freedom_workload(engine.socks_addr, options).await,
             WorkloadKind::UdpFreedom => run_udp_freedom_workload(engine.socks_addr, options).await,
+            WorkloadKind::UdpVless => run_udp_vless_workload(engine.socks_addr, options).await,
+            WorkloadKind::UdpXudp => run_udp_xudp_workload(engine.socks_addr, options).await,
         }
     };
     let ((bytes_sent, bytes_received), samples) =
@@ -1532,6 +1933,56 @@ mod tests {
     }
 
     #[test]
+    fn parses_compare_udp_vless() {
+        let args = parse_cli_args([
+            "xray-bench",
+            "compare",
+            "--workload",
+            "udp-vless",
+            "--connections",
+            "2",
+            "--iterations",
+            "3",
+            "--payload-size",
+            "64",
+        ])
+        .unwrap();
+
+        let CliArgs::Compare(options) = args else {
+            panic!("expected compare args");
+        };
+        assert_eq!(options.workload, WorkloadKind::UdpVless);
+        assert_eq!(options.connections, 2);
+        assert_eq!(options.iterations, 3);
+        assert_eq!(options.payload_size, 64);
+    }
+
+    #[test]
+    fn parses_compare_udp_xudp() {
+        let args = parse_cli_args([
+            "xray-bench",
+            "compare",
+            "--workload",
+            "udp-xudp",
+            "--connections",
+            "2",
+            "--iterations",
+            "3",
+            "--payload-size",
+            "64",
+        ])
+        .unwrap();
+
+        let CliArgs::Compare(options) = args else {
+            panic!("expected compare args");
+        };
+        assert_eq!(options.workload, WorkloadKind::UdpXudp);
+        assert_eq!(options.connections, 2);
+        assert_eq!(options.iterations, 3);
+        assert_eq!(options.payload_size, 64);
+    }
+
+    #[test]
     fn parses_compare_with_repeated_runs() {
         let args = parse_cli_args([
             "xray-bench",
@@ -1617,6 +2068,19 @@ mod tests {
         assert!(config.contains(r#""protocol": "socks""#));
         assert!(config.contains(r#""udp": true"#));
         assert!(config.contains(r#""protocol": "freedom""#));
+    }
+
+    #[test]
+    fn udp_vless_config_routes_to_vless_outbound() {
+        let config = vless_udp_config(
+            18083,
+            SocketAddr::from((Ipv4Addr::new(127, 0, 0, 1), 19090)),
+        );
+        assert!(config.contains(r#""protocol": "socks""#));
+        assert!(config.contains(r#""udp": true"#));
+        assert!(config.contains(r#""protocol": "vless""#));
+        assert!(config.contains(r#""port": 19090"#));
+        assert!(config.contains("00010203-0405-0607-0809-0a0b0c0d0e0f"));
     }
 
     #[test]

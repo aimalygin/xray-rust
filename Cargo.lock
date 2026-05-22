@@ -1502,6 +1502,8 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
+ "xray-proxy",
+ "xray-routing",
 ]
 
 [[package]]

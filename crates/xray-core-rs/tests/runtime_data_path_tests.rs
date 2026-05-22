@@ -770,6 +770,16 @@ async fn socks_udp_client_reaches_echo_target_through_vless_udp_outbound() {
 }
 
 #[tokio::test]
+async fn socks_udp_client_reaches_echo_target_through_vless_xudp_outbound() {
+    timeout(
+        Duration::from_secs(2),
+        run_socks_udp_vless_xudp_echo_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
 async fn socks_udp_client_reaches_echo_target_through_vision_xudp_outbound() {
     timeout(
         Duration::from_secs(2),
@@ -836,6 +846,16 @@ async fn tun_udp_client_reaches_echo_target_through_vless_udp_outbound() {
     timeout(Duration::from_secs(2), run_tun_udp_vless_echo_scenario())
         .await
         .unwrap();
+}
+
+#[tokio::test]
+async fn tun_udp_client_reaches_echo_target_through_vless_xudp_outbound() {
+    timeout(
+        Duration::from_secs(2),
+        run_tun_udp_vless_xudp_echo_scenario(),
+    )
+    .await
+    .unwrap();
 }
 
 #[tokio::test]
@@ -1027,6 +1047,24 @@ async fn socks_udp_roundtrip(
 async fn run_socks_udp_vless_echo_scenario() {
     let (vless_addr, vless_handle) =
         spawn_fake_vless_udp_server_for_payload(b"hello socks vless udp").await;
+    let echo_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 53);
+    let mut core = Core::new(runtime_socks_config_with_vless_server(vless_addr)).unwrap();
+    core.start().await.unwrap();
+    let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
+
+    let payload = socks_udp_roundtrip(socks_addr, echo_addr, b"hello socks vless udp").await;
+
+    assert_eq!(&payload[..], b"hello socks vless udp");
+    core.stop().await.unwrap();
+    timeout(Duration::from_secs(1), vless_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+async fn run_socks_udp_vless_xudp_echo_scenario() {
+    let (vless_addr, vless_handle) =
+        spawn_fake_vless_xudp_server_for_payload(b"hello socks vless xudp").await;
     let echo_addr = SocketAddr::new(
         IpAddr::V4(Ipv4Addr::LOCALHOST),
         allocate_unused_loopback_port(),
@@ -1035,9 +1073,9 @@ async fn run_socks_udp_vless_echo_scenario() {
     core.start().await.unwrap();
     let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
 
-    let payload = socks_udp_roundtrip(socks_addr, echo_addr, b"hello socks vless udp").await;
+    let payload = socks_udp_roundtrip(socks_addr, echo_addr, b"hello socks vless xudp").await;
 
-    assert_eq!(&payload[..], b"hello socks vless udp");
+    assert_eq!(&payload[..], b"hello socks vless xudp");
     core.stop().await.unwrap();
     timeout(Duration::from_secs(1), vless_handle)
         .await
@@ -1259,10 +1297,7 @@ async fn run_tun_udp_freedom_echo_scenario() {
 
 async fn run_tun_udp_vless_echo_scenario() {
     let (vless_addr, vless_handle) = spawn_fake_vless_udp_server().await;
-    let echo_addr = SocketAddr::new(
-        IpAddr::V4(Ipv4Addr::LOCALHOST),
-        allocate_unused_loopback_port(),
-    );
+    let echo_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 53);
     let mut core = Core::new(runtime_tun_config_with_vless_server(vless_addr)).unwrap();
     core.start().await.unwrap();
 
@@ -1289,6 +1324,47 @@ async fn run_tun_udp_vless_echo_scenario() {
         client_addr,
         49153,
         b"hello tun vless udp",
+    );
+    core.stop().await.unwrap();
+
+    timeout(Duration::from_secs(1), vless_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+async fn run_tun_udp_vless_xudp_echo_scenario() {
+    let (vless_addr, vless_handle) = spawn_fake_vless_xudp_server().await;
+    let echo_addr = SocketAddr::new(
+        IpAddr::V4(Ipv4Addr::LOCALHOST),
+        allocate_unused_loopback_port(),
+    );
+    let mut core = Core::new(runtime_tun_config_with_vless_server(vless_addr)).unwrap();
+    core.start().await.unwrap();
+
+    let client_addr = Ipv4Addr::new(10, 10, 0, 2);
+    let request = ipv4_udp_packet(
+        client_addr,
+        49154,
+        Ipv4Addr::LOCALHOST,
+        echo_addr.port(),
+        b"hello tun vless xudp",
+    );
+    core.tun().push_inbound(Bytes::from(request)).await.unwrap();
+
+    let reply = poll_tun_outbound_until(core.tun(), |packet| {
+        ipv4_udp_payload(packet)
+            .map(|payload| payload == b"hello tun vless xudp")
+            .unwrap_or(false)
+    })
+    .await;
+    assert_ipv4_udp_packet(
+        &reply,
+        Ipv4Addr::LOCALHOST,
+        echo_addr.port(),
+        client_addr,
+        49154,
+        b"hello tun vless xudp",
     );
     core.stop().await.unwrap();
 
@@ -2089,6 +2165,31 @@ async fn spawn_fake_vless_udp_server_for_payload(
     (addr, handle)
 }
 
+async fn spawn_fake_vless_xudp_server() -> (SocketAddr, JoinHandle<()>) {
+    spawn_fake_vless_xudp_server_for_payload(b"hello tun vless xudp").await
+}
+
+async fn spawn_fake_vless_xudp_server_for_payload(
+    expected_payload: &'static [u8],
+) -> (SocketAddr, JoinHandle<()>) {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let handle = tokio::spawn(async move {
+        let (mut inbound, _) = listener.accept().await.unwrap();
+        read_vless_mux_header(&mut inbound).await;
+        inbound.write_all(&[0, 0]).await.unwrap();
+
+        let packet = read_xudp_packet(&mut inbound).await.unwrap();
+        let target = packet.source.expect("xudp new frame carries target");
+        assert_eq!(target.network, RoutingNetwork::Udp);
+        assert_eq!(&packet.payload[..], expected_payload);
+
+        let response = encode_xudp_keep_packet(Some(&target), &packet.payload).unwrap();
+        inbound.write_all(&response).await.unwrap();
+    });
+    (addr, handle)
+}
+
 async fn spawn_vless_target_assertion_server(
     expected_target: Target,
 ) -> (SocketAddr, JoinHandle<()>) {
@@ -2338,7 +2439,6 @@ where
     assert_eq!(uuid, TEST_UUID_BYTES);
 
     let addons_len = stream.read_u8().await.unwrap();
-    assert!(addons_len > 0);
     let mut addons = vec![0; usize::from(addons_len)];
     stream.read_exact(&mut addons).await.unwrap();
 

@@ -360,6 +360,7 @@ pub async fn open_vless_udp_stream_with_resolver_and_dialer(
     transport_dialer: &TransportDialer,
 ) -> Result<(BoxedTransportStream, VlessUdpFraming), CoreError> {
     let uses_vision = validate_connector_flow(outbound.user.flow.as_deref(), &outbound.transport)?;
+    let uses_xudp = uses_vision || should_use_xudp_for_udp_target(target);
 
     let resolved_server = resolve_server_target(&outbound.server, dns_resolver).await?;
     let mut stream = transport_dialer
@@ -367,7 +368,7 @@ pub async fn open_vless_udp_stream_with_resolver_and_dialer(
         .await?;
     let request = VlessRequest {
         user_id: outbound.user.id,
-        command: if uses_vision {
+        command: if uses_xudp {
             VlessCommand::Mux
         } else {
             VlessCommand::Udp
@@ -392,7 +393,15 @@ pub async fn open_vless_udp_stream_with_resolver_and_dialer(
         ));
     }
 
+    if uses_xudp {
+        return Ok((Box::new(stream), VlessUdpFraming::Xudp));
+    }
+
     Ok((Box::new(stream), VlessUdpFraming::LengthPrefixed))
+}
+
+fn should_use_xudp_for_udp_target(target: &Target) -> bool {
+    target.network == xray_routing::Network::Udp && target.port != 53 && target.port != 443
 }
 
 pub async fn open_vless_tcp_stream(
