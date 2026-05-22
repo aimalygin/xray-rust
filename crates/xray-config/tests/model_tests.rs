@@ -1,6 +1,6 @@
 use xray_config::{
-    CoreConfig, Diagnostic, DiagnosticSeverity, InboundConfig, InboundProtocol, Network,
-    OutboundConfig, OutboundProtocol, OutboundSettings, RealitySettings, RealityShortId,
+    CoreConfig, Diagnostic, DiagnosticSeverity, DomainMatcher, InboundConfig, InboundProtocol,
+    Network, OutboundConfig, OutboundProtocol, OutboundSettings, RealitySettings, RealityShortId,
     RoutingConfig, RoutingRule, StreamSecurity, StreamSettings, TargetAddr, VlessOutboundSettings,
     VlessUser,
 };
@@ -128,6 +128,7 @@ fn normalized_model_can_represent_inbound_tag_routing_rule() {
     let routing = RoutingConfig {
         rules: vec![RoutingRule {
             inbound_tags: vec!["socks-in".to_owned()],
+            domain_matchers: Vec::new(),
             outbound_tag: "direct".to_owned(),
         }],
     };
@@ -135,6 +136,26 @@ fn normalized_model_can_represent_inbound_tag_routing_rule() {
     assert!(routing.rules[0].matches_inbound(Some("socks-in")));
     assert!(!routing.rules[0].matches_inbound(Some("http-in")));
     assert!(!routing.rules[0].matches_inbound(None));
+}
+
+#[test]
+fn normalized_model_can_represent_domain_routing_rule() {
+    let routing = RoutingConfig {
+        rules: vec![RoutingRule {
+            inbound_tags: Vec::new(),
+            domain_matchers: vec![
+                DomainMatcher::Suffix("example.com".to_owned()),
+                DomainMatcher::Full("exact.test".to_owned()),
+            ],
+            outbound_tag: "proxy".to_owned(),
+        }],
+    };
+
+    assert!(routing.rules[0].matches_domain(Some("api.example.com")));
+    assert!(routing.rules[0].matches_domain(Some("example.com")));
+    assert!(routing.rules[0].matches_domain(Some("EXACT.test")));
+    assert!(!routing.rules[0].matches_domain(Some("notexact.test")));
+    assert!(!routing.rules[0].matches_domain(None));
 }
 
 #[test]

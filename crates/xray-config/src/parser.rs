@@ -4,7 +4,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::{
-    CoreConfig, Diagnostic, InboundConfig, InboundProtocol, Network, OutboundConfig,
+    CoreConfig, Diagnostic, DomainMatcher, InboundConfig, InboundProtocol, Network, OutboundConfig,
     OutboundProtocol, OutboundSettings, RealitySettings, RealityShortId, RoutingConfig,
     RoutingRule, StreamSecurity, StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings,
     VlessUser,
@@ -141,7 +141,11 @@ impl Parser<'_> {
             return None;
         }
 
-        self.reject_unknown_fields(rule, &rule_path, &["type", "inboundTag", "outboundTag"]);
+        self.reject_unknown_fields(
+            rule,
+            &rule_path,
+            &["type", "inboundTag", "domain", "outboundTag"],
+        );
 
         let type_path = format!("{rule_path}.type");
         let Some(rule_type) = self.optional_string_at(rule, "type", type_path.clone()) else {
@@ -187,9 +191,12 @@ impl Parser<'_> {
 
         let inbound_tags =
             self.optional_string_array_at(rule, "inboundTag", format!("{rule_path}.inboundTag"))?;
+        let domain_matchers =
+            self.parse_domain_matchers(rule, "domain", format!("{rule_path}.domain"))?;
 
         Some(RoutingRule {
             inbound_tags,
+            domain_matchers,
             outbound_tag: outbound_tag.to_owned(),
         })
     }
@@ -942,6 +949,44 @@ impl Parser<'_> {
         }
 
         Some(strings)
+    }
+
+    fn parse_domain_matchers(
+        &mut self,
+        value: &Value,
+        key: &str,
+        path: String,
+    ) -> Option<Vec<DomainMatcher>> {
+        let values = self.optional_string_array_at(value, key, path.clone())?;
+        let mut matchers = Vec::with_capacity(values.len());
+
+        for (index, value) in values.iter().enumerate() {
+            let Some((kind, domain)) = value.split_once(':') else {
+                self.error(
+                    format!("{path}[{index}]"),
+                    "routing domain matcher must use domain: or full:",
+                );
+                return None;
+            };
+            if domain.is_empty() {
+                self.error(format!("{path}[{index}]"), "routing domain cannot be empty");
+                return None;
+            }
+
+            match kind {
+                "domain" => matchers.push(DomainMatcher::Suffix(domain.to_owned())),
+                "full" => matchers.push(DomainMatcher::Full(domain.to_owned())),
+                _ => {
+                    self.error(
+                        format!("{path}[{index}]"),
+                        format!("unsupported routing domain matcher `{kind}`"),
+                    );
+                    return None;
+                }
+            }
+        }
+
+        Some(matchers)
     }
 
     fn u16_at(&mut self, value: &Value, key: &str, path: String) -> Option<u16> {

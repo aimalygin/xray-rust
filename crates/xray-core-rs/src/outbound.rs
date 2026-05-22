@@ -43,16 +43,16 @@ impl VlessTcpOutbound {
 }
 
 pub fn select_tcp_outbound(config: &CoreConfig) -> Result<TcpOutbound, CoreError> {
-    let outbound = select_configured_outbound(config, None)?;
+    let outbound = select_configured_outbound(config, None, None)?;
     build_tcp_outbound(outbound)
 }
 
 pub fn select_tcp_outbound_for_session(
     config: &CoreConfig,
     inbound_tag: Option<&str>,
-    _target: &Target,
+    target: &Target,
 ) -> Result<TcpOutbound, CoreError> {
-    let outbound = select_configured_outbound(config, inbound_tag)?;
+    let outbound = select_configured_outbound(config, inbound_tag, target_domain(target))?;
     build_tcp_outbound(outbound)
 }
 
@@ -74,19 +74,20 @@ fn build_tcp_outbound(outbound: &OutboundConfig) -> Result<TcpOutbound, CoreErro
 }
 
 pub fn select_vless_tcp_outbound(config: &CoreConfig) -> Result<VlessTcpOutbound, CoreError> {
-    let outbound = select_configured_outbound(config, None)?;
+    let outbound = select_configured_outbound(config, None, None)?;
     build_vless_tcp_outbound(outbound)
 }
 
 fn select_configured_outbound<'a>(
     config: &'a CoreConfig,
     inbound_tag: Option<&str>,
+    target_domain: Option<&str>,
 ) -> Result<&'a OutboundConfig, CoreError> {
     let routed_tag = config
         .routing
         .rules
         .iter()
-        .find(|rule| rule.matches_inbound(inbound_tag))
+        .find(|rule| rule.matches(inbound_tag, target_domain))
         .map(|rule| rule.outbound_tag.as_str());
 
     let outbound = match routed_tag.or(config.default_outbound_tag.as_deref()) {
@@ -102,6 +103,13 @@ fn select_configured_outbound<'a>(
     };
 
     Ok(outbound)
+}
+
+fn target_domain(target: &Target) -> Option<&str> {
+    match &target.addr {
+        RoutingTargetAddr::Domain(domain) => Some(domain.as_str()),
+        RoutingTargetAddr::Ip(_) => None,
+    }
 }
 
 fn build_vless_tcp_outbound(outbound: &OutboundConfig) -> Result<VlessTcpOutbound, CoreError> {
