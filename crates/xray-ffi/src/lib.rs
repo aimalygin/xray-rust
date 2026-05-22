@@ -1,6 +1,8 @@
 use libc::c_char;
 use std::ffi::{CStr, CString};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr;
+use tokio::runtime::{Builder, Runtime};
 use xray_config::parse_xray_json;
 use xray_core_rs::Core;
 
@@ -11,6 +13,9 @@ pub enum XrayStatus {
     NullArgument = 1,
     InvalidUtf8 = 2,
     ConfigError = 3,
+    CoreNotLoaded = 4,
+    RuntimeError = 5,
+    Panic = 255,
 }
 
 #[repr(C)]
@@ -21,6 +26,7 @@ pub struct XrayError {
 
 pub struct XrayCoreHandle {
     core: Option<Core>,
+    runtime: Runtime,
 }
 
 #[no_mangle]
@@ -37,11 +43,43 @@ pub extern "C" fn xray_ffi_version_major() -> u32 {
 /// This function may free and replace that error pointer.
 #[no_mangle]
 pub unsafe extern "C" fn xray_core_new(error: *mut *mut XrayError) -> *mut XrayCoreHandle {
+    match catch_unwind(AssertUnwindSafe(|| unsafe { xray_core_new_inner(error) })) {
+        Ok(handle) => handle,
+        Err(_) => unsafe {
+            set_error(error, XrayStatus::Panic, "panic crossed FFI boundary");
+            ptr::null_mut()
+        },
+    }
+}
+
+unsafe fn xray_core_new_inner(error: *mut *mut XrayError) -> *mut XrayCoreHandle {
     unsafe {
         clear_error(error);
     }
 
-    Box::into_raw(Box::new(XrayCoreHandle { core: None }))
+    let runtime = match Builder::new_multi_thread()
+        .enable_all()
+        .thread_name("xray-ffi")
+        .worker_threads(2)
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(err) => {
+            unsafe {
+                set_error(
+                    error,
+                    XrayStatus::RuntimeError,
+                    format!("failed to create tokio runtime: {err}"),
+                );
+            }
+            return ptr::null_mut();
+        }
+    };
+
+    Box::into_raw(Box::new(XrayCoreHandle {
+        core: None,
+        runtime,
+    }))
 }
 
 /// Loads an Xray JSON config into a core handle.
@@ -56,6 +94,18 @@ pub unsafe extern "C" fn xray_core_new(error: *mut *mut XrayError) -> *mut XrayC
 /// error pointer.
 #[no_mangle]
 pub unsafe extern "C" fn xray_core_load_config_json(
+    handle: *mut XrayCoreHandle,
+    json: *const c_char,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            xray_core_load_config_json_inner(handle, json, error)
+        })
+    }
+}
+
+unsafe fn xray_core_load_config_json_inner(
     handle: *mut XrayCoreHandle,
     json: *const c_char,
     error: *mut *mut XrayError,
@@ -123,6 +173,114 @@ pub unsafe extern "C" fn xray_core_load_config_json(
     XrayStatus::Ok
 }
 
+/// Starts a loaded core.
+///
+/// # Safety
+///
+/// `handle` must either be null or a pointer returned by `xray_core_new` that
+/// has not been freed. If `error` is non-null, it must point to an initialized
+/// `*mut XrayError` value that is either null or a live error pointer returned
+/// by this library. This function may free and replace that error pointer.
+#[no_mangle]
+pub unsafe extern "C" fn xray_core_start(
+    handle: *mut XrayCoreHandle,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe { ffi_status(error, || xray_core_start_inner(handle, error)) }
+}
+
+unsafe fn xray_core_start_inner(
+    handle: *mut XrayCoreHandle,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        clear_error(error);
+    }
+
+    if handle.is_null() {
+        unsafe {
+            set_error(error, XrayStatus::NullArgument, "core handle is null");
+        }
+        return XrayStatus::NullArgument;
+    }
+
+    let handle = unsafe { &mut *handle };
+    let Some(core) = handle.core.as_mut() else {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::CoreNotLoaded,
+                "core config is not loaded",
+            );
+        }
+        return XrayStatus::CoreNotLoaded;
+    };
+
+    match handle.runtime.block_on(core.start()) {
+        Ok(()) => XrayStatus::Ok,
+        Err(err) => {
+            unsafe {
+                set_error(error, XrayStatus::RuntimeError, err.to_string());
+            }
+            XrayStatus::RuntimeError
+        }
+    }
+}
+
+/// Stops a loaded core.
+///
+/// # Safety
+///
+/// `handle` must either be null or a pointer returned by `xray_core_new` that
+/// has not been freed. If `error` is non-null, it must point to an initialized
+/// `*mut XrayError` value that is either null or a live error pointer returned
+/// by this library. This function may free and replace that error pointer.
+#[no_mangle]
+pub unsafe extern "C" fn xray_core_stop(
+    handle: *mut XrayCoreHandle,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe { ffi_status(error, || xray_core_stop_inner(handle, error)) }
+}
+
+unsafe fn xray_core_stop_inner(
+    handle: *mut XrayCoreHandle,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        clear_error(error);
+    }
+
+    if handle.is_null() {
+        unsafe {
+            set_error(error, XrayStatus::NullArgument, "core handle is null");
+        }
+        return XrayStatus::NullArgument;
+    }
+
+    let handle = unsafe { &mut *handle };
+    let Some(core) = handle.core.as_mut() else {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::CoreNotLoaded,
+                "core config is not loaded",
+            );
+        }
+        return XrayStatus::CoreNotLoaded;
+    };
+
+    match handle.runtime.block_on(core.stop()) {
+        Ok(()) => XrayStatus::Ok,
+        Err(err) => {
+            unsafe {
+                set_error(error, XrayStatus::RuntimeError, err.to_string());
+            }
+            XrayStatus::RuntimeError
+        }
+    }
+}
+
 /// Frees a core handle returned by `xray_core_new`.
 ///
 /// # Safety
@@ -131,9 +289,16 @@ pub unsafe extern "C" fn xray_core_load_config_json(
 /// already been freed.
 #[no_mangle]
 pub unsafe extern "C" fn xray_core_free(handle: *mut XrayCoreHandle) {
+    let _ = catch_unwind(AssertUnwindSafe(|| unsafe {
+        xray_core_free_inner(handle);
+    }));
+}
+
+unsafe fn xray_core_free_inner(handle: *mut XrayCoreHandle) {
     if !handle.is_null() {
-        unsafe {
-            drop(Box::from_raw(handle));
+        let mut handle = unsafe { Box::from_raw(handle) };
+        if let Some(core) = handle.core.as_mut() {
+            let _ = handle.runtime.block_on(core.stop());
         }
     }
 }
@@ -222,6 +387,21 @@ unsafe fn free_error(error: *mut XrayError) {
     if !error.message.is_null() {
         unsafe {
             drop(CString::from_raw(error.message));
+        }
+    }
+}
+
+unsafe fn ffi_status(
+    error: *mut *mut XrayError,
+    action: impl FnOnce() -> XrayStatus,
+) -> XrayStatus {
+    match catch_unwind(AssertUnwindSafe(action)) {
+        Ok(status) => status,
+        Err(_) => {
+            unsafe {
+                set_error(error, XrayStatus::Panic, "panic crossed FFI boundary");
+            }
+            XrayStatus::Panic
         }
     }
 }

@@ -1,8 +1,8 @@
 use std::ffi::{CStr, CString};
 
 use xray_ffi::{
-    xray_core_free, xray_core_load_config_json, xray_core_new, xray_error_code, xray_error_free,
-    xray_error_message, XrayStatus,
+    xray_core_free, xray_core_load_config_json, xray_core_new, xray_core_start, xray_core_stop,
+    xray_error_code, xray_error_free, xray_error_message, XrayStatus,
 };
 
 #[test]
@@ -36,6 +36,68 @@ fn ffi_reports_null_handle_error() {
 
     assert_eq!(status, XrayStatus::NullArgument);
     assert_error(&mut err, XrayStatus::NullArgument, "core handle is null");
+}
+
+#[test]
+fn ffi_start_reports_unloaded_core() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+
+    let status = unsafe { xray_core_start(core, &mut err) };
+
+    assert_eq!(status, XrayStatus::CoreNotLoaded);
+    assert_error(
+        &mut err,
+        XrayStatus::CoreNotLoaded,
+        "core config is not loaded",
+    );
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_stop_reports_unloaded_core() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+
+    let status = unsafe { xray_core_stop(core, &mut err) };
+
+    assert_eq!(status, XrayStatus::CoreNotLoaded);
+    assert_error(
+        &mut err,
+        XrayStatus::CoreNotLoaded,
+        "core config is not loaded",
+    );
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_starts_and_stops_loaded_core() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    assert!(!core.is_null());
+
+    let raw = CString::new(client_config_with_ephemeral_socks_port()).unwrap();
+    let status = unsafe { xray_core_load_config_json(core, raw.as_ptr(), &mut err) };
+    assert_eq!(status, XrayStatus::Ok);
+    assert!(err.is_null());
+
+    let status = unsafe { xray_core_start(core, &mut err) };
+    assert_eq!(status, XrayStatus::Ok);
+    assert!(err.is_null());
+
+    let status = unsafe { xray_core_stop(core, &mut err) };
+    assert_eq!(status, XrayStatus::Ok);
+    assert!(err.is_null());
+
+    unsafe {
+        xray_core_free(core);
+    }
 }
 
 #[test]
@@ -130,4 +192,37 @@ fn assert_error_message(error: *const xray_ffi::XrayError, message: &str) {
         actual.contains(message),
         "expected `{actual}` to contain `{message}`"
     );
+}
+
+fn client_config_with_ephemeral_socks_port() -> String {
+    r#"{
+      "inbounds": [
+        {
+          "tag": "socks-in",
+          "protocol": "socks",
+          "listen": "127.0.0.1",
+          "port": 0,
+          "settings": { "udp": false }
+        }
+      ],
+      "outbounds": [
+        {
+          "tag": "proxy",
+          "protocol": "vless",
+          "settings": {
+            "vnext": [
+              {
+                "address": "127.0.0.1",
+                "port": 1,
+                "users": [
+                  { "id": "00010203-0405-0607-0809-0a0b0c0d0e0f" }
+                ]
+              }
+            ]
+          },
+          "streamSettings": { "network": "tcp", "security": "none" }
+        }
+      ]
+    }"#
+    .to_owned()
 }

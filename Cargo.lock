@@ -1418,6 +1418,7 @@ name = "xray-ffi"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "tokio",
  "xray-config",
  "xray-core-rs",
 ]

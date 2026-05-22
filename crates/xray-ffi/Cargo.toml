@@ -9,5 +9,6 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 
 [dependencies]
 libc.workspace = true
+tokio.workspace = true
 xray-config = { path = "../xray-config" }
 xray-core-rs = { path = "../xray-core-rs" }
