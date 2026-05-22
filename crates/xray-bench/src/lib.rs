@@ -97,6 +97,7 @@ pub struct BenchOptions {
     pub connections: usize,
     pub iterations: usize,
     pub payload_size: usize,
+    pub runs: usize,
     pub out_dir: PathBuf,
     pub xray_rust_bin: Option<PathBuf>,
     pub xray_core_bin: Option<PathBuf>,
@@ -123,6 +124,27 @@ pub struct BenchResult {
     pub peak_rss_kib: u64,
     pub cpu_millis: u64,
     pub samples: usize,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct MetricSummary {
+    pub min: u128,
+    pub median: u128,
+    pub p95: u128,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct BenchSummary {
+    pub engine: String,
+    pub workload: String,
+    pub status: String,
+    pub runs: usize,
+    pub duration_ms: MetricSummary,
+    pub peak_rss_kib: MetricSummary,
+    pub cpu_millis: MetricSummary,
+    pub bytes_sent: MetricSummary,
+    pub bytes_received: MetricSummary,
+    pub results: Vec<BenchResult>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -161,6 +183,7 @@ impl Default for BenchOptions {
             connections: 1,
             iterations: 1,
             payload_size: 1024,
+            runs: 1,
             out_dir: PathBuf::from("target/benchmarks"),
             xray_rust_bin: None,
             xray_core_bin: None,
@@ -214,6 +237,9 @@ where
             }
             "--payload-size" => {
                 options.payload_size = parse_usize(required_value(&rest, &mut index, flag)?, flag)?;
+            }
+            "--runs" => {
+                options.runs = parse_nonzero_usize(required_value(&rest, &mut index, flag)?, flag)?;
             }
             "--out-dir" => {
                 options.out_dir = PathBuf::from(required_value(&rest, &mut index, flag)?);
@@ -287,6 +313,16 @@ fn parse_u64(raw: &str, flag: &str) -> Result<u64, BenchError> {
 fn parse_usize(raw: &str, flag: &str) -> Result<usize, BenchError> {
     raw.parse::<usize>()
         .map_err(|_| BenchError::InvalidArguments(format!("invalid integer `{raw}` for {flag}")))
+}
+
+fn parse_nonzero_usize(raw: &str, flag: &str) -> Result<usize, BenchError> {
+    let value = parse_usize(raw, flag)?;
+    if value == 0 {
+        return Err(BenchError::InvalidArguments(format!(
+            "{flag} must be greater than zero"
+        )));
+    }
+    Ok(value)
 }
 
 pub fn parse_ps_sample(raw: &str) -> Result<ProcessSample, BenchError> {
@@ -382,6 +418,18 @@ pub fn write_result_json(path: &Path, result: &BenchResult) -> Result<(), BenchE
     })
 }
 
+pub fn write_summary_json(path: &Path, summary: &BenchSummary) -> Result<(), BenchError> {
+    let data = serde_json::to_vec_pretty(summary).map_err(|error| {
+        BenchError::InvalidArguments(format!("failed to encode summary json: {error}"))
+    })?;
+    fs::write(path, data).map_err(|error| {
+        BenchError::InvalidArguments(format!(
+            "failed to write summary json `{}`: {error}",
+            path.display()
+        ))
+    })
+}
+
 pub fn write_samples_csv(path: &Path, samples: &[ProcessSample]) -> Result<(), BenchError> {
     let mut csv = String::from("elapsed_ms,rss_kib,cpu_millis,threads\n");
     for sample in samples {
@@ -418,6 +466,73 @@ pub fn summarize_samples(samples: &[ProcessSample]) -> WorkloadSummary {
         peak_rss_kib,
         cpu_millis,
     }
+}
+
+pub fn summarize_results(results: &[BenchResult]) -> Result<BenchSummary, BenchError> {
+    let Some(first) = results.first() else {
+        return Err(BenchError::InvalidArguments(
+            "cannot summarize an empty benchmark result set".to_owned(),
+        ));
+    };
+    if results
+        .iter()
+        .any(|result| result.engine != first.engine || result.workload != first.workload)
+    {
+        return Err(BenchError::InvalidArguments(
+            "cannot summarize mixed benchmark engines or workloads".to_owned(),
+        ));
+    }
+
+    let status = if results.iter().all(|result| result.status == "ok") {
+        "ok"
+    } else {
+        "mixed"
+    };
+
+    Ok(BenchSummary {
+        engine: first.engine.clone(),
+        workload: first.workload.clone(),
+        status: status.to_owned(),
+        runs: results.len(),
+        duration_ms: summarize_metric(results.iter().map(|result| result.duration_ms)),
+        peak_rss_kib: summarize_metric(
+            results.iter().map(|result| u128::from(result.peak_rss_kib)),
+        ),
+        cpu_millis: summarize_metric(results.iter().map(|result| u128::from(result.cpu_millis))),
+        bytes_sent: summarize_metric(results.iter().map(|result| u128::from(result.bytes_sent))),
+        bytes_received: summarize_metric(
+            results
+                .iter()
+                .map(|result| u128::from(result.bytes_received)),
+        ),
+        results: results.to_vec(),
+    })
+}
+
+fn summarize_metric(values: impl IntoIterator<Item = u128>) -> MetricSummary {
+    let mut values = values.into_iter().collect::<Vec<_>>();
+    values.sort_unstable();
+    MetricSummary {
+        min: values.first().copied().unwrap_or_default(),
+        median: median(&values),
+        p95: percentile_nearest_rank(&values, 95),
+    }
+}
+
+fn median(sorted_values: &[u128]) -> u128 {
+    match sorted_values.len() {
+        0 => 0,
+        len if len % 2 == 1 => sorted_values[len / 2],
+        len => (sorted_values[len / 2 - 1] + sorted_values[len / 2]) / 2,
+    }
+}
+
+fn percentile_nearest_rank(sorted_values: &[u128], percentile: usize) -> u128 {
+    if sorted_values.is_empty() {
+        return 0;
+    }
+    let rank = (sorted_values.len() * percentile).div_ceil(100);
+    sorted_values[rank.saturating_sub(1)]
 }
 
 pub async fn run_idle_workload(duration: Duration) -> Result<(u64, u64), BenchError> {
@@ -809,6 +924,9 @@ pub fn ensure_xray_core_binary(
         source,
     })?;
     let binary = bin_dir.join(format!("xray-core{}", std::env::consts::EXE_SUFFIX));
+    if binary.exists() {
+        return Ok(binary);
+    }
     run_command(
         "go",
         Command::new("go")
@@ -836,6 +954,7 @@ pub async fn start_engine(
     kind: EngineKind,
     options: &BenchOptions,
     run_dir: &Path,
+    binary_dir: &Path,
 ) -> Result<RunningEngine, BenchError> {
     fs::create_dir_all(run_dir).map_err(|source| BenchError::Io {
         action: format!("creating run directory `{}`", run_dir.display()),
@@ -856,7 +975,7 @@ pub async fn start_engine(
     let stderr_path = run_dir.join("stderr.log");
     let binary = match kind {
         EngineKind::XrayRust => ensure_xray_rust_binary(options)?,
-        EngineKind::XrayCore => ensure_xray_core_binary(options, &run_dir.join("bin"))?,
+        EngineKind::XrayCore => ensure_xray_core_binary(options, binary_dir)?,
     };
     let mut child = Command::new(&binary)
         .arg("run")
@@ -949,8 +1068,8 @@ where
                 BenchError::InvalidArguments("run requires --engine xray-rust|xray-core".to_owned())
             })?;
             let run_id = new_run_id();
-            let result = run_single_engine(engine, &options, &run_id).await?;
-            print_result(&result);
+            let summary = run_engine_series(engine, &options, &run_id).await?;
+            print_summary(&summary);
             Ok(())
         }
         CliArgs::Compare(options) => run_compare(options).await,
@@ -959,11 +1078,36 @@ where
 
 pub async fn run_compare(options: BenchOptions) -> Result<(), BenchError> {
     let run_id = new_run_id();
-    let rust_result = run_single_engine(EngineKind::XrayRust, &options, &run_id).await?;
-    print_result(&rust_result);
-    let xray_result = run_single_engine(EngineKind::XrayCore, &options, &run_id).await?;
-    print_result(&xray_result);
+    let rust_summary = run_engine_series(EngineKind::XrayRust, &options, &run_id).await?;
+    print_summary(&rust_summary);
+    let xray_summary = run_engine_series(EngineKind::XrayCore, &options, &run_id).await?;
+    print_summary(&xray_summary);
     Ok(())
+}
+
+pub async fn run_engine_series(
+    kind: EngineKind,
+    options: &BenchOptions,
+    run_id: &str,
+) -> Result<BenchSummary, BenchError> {
+    let base_dir = run_directory(&options.out_dir, run_id, kind, options.workload);
+    fs::create_dir_all(&base_dir).map_err(|source| BenchError::Io {
+        action: format!("creating run directory `{}`", base_dir.display()),
+        source,
+    })?;
+    let binary_dir = base_dir.join("bin");
+    let mut results = Vec::with_capacity(options.runs);
+    for run_index in 1..=options.runs {
+        let run_dir = if options.runs == 1 {
+            base_dir.clone()
+        } else {
+            numbered_run_directory(&base_dir, run_index)
+        };
+        results.push(run_engine_once(kind, options, &run_dir, &binary_dir).await?);
+    }
+    let summary = summarize_results(&results)?;
+    write_summary_json(&base_dir.join("summary.json"), &summary)?;
+    Ok(summary)
 }
 
 pub async fn run_single_engine(
@@ -972,11 +1116,21 @@ pub async fn run_single_engine(
     run_id: &str,
 ) -> Result<BenchResult, BenchError> {
     let run_dir = run_directory(&options.out_dir, run_id, kind, options.workload);
-    fs::create_dir_all(&run_dir).map_err(|source| BenchError::Io {
+    let binary_dir = run_dir.join("bin");
+    run_engine_once(kind, options, &run_dir, &binary_dir).await
+}
+
+async fn run_engine_once(
+    kind: EngineKind,
+    options: &BenchOptions,
+    run_dir: &Path,
+    binary_dir: &Path,
+) -> Result<BenchResult, BenchError> {
+    fs::create_dir_all(run_dir).map_err(|source| BenchError::Io {
         action: format!("creating run directory `{}`", run_dir.display()),
         source,
     })?;
-    let engine = start_engine(kind, options, &run_dir).await?;
+    let engine = start_engine(kind, options, run_dir, binary_dir).await?;
     let started = Instant::now();
     let workload = async {
         match options.workload {
@@ -1006,6 +1160,10 @@ pub async fn run_single_engine(
     drop(engine);
 
     Ok(result)
+}
+
+pub fn numbered_run_directory(base: &Path, run_index: usize) -> PathBuf {
+    base.join(format!("run-{run_index:03}"))
 }
 
 pub fn run_directory(
@@ -1038,6 +1196,37 @@ fn print_result(result: &BenchResult) {
         result.bytes_sent,
         result.bytes_received,
         result.samples
+    );
+}
+
+fn print_summary(summary: &BenchSummary) {
+    if summary.runs == 1 {
+        if let Some(result) = summary.results.first() {
+            print_result(result);
+            return;
+        }
+    }
+    println!(
+        "{} {} runs={} status={} duration_ms[min/median/p95]={}/{}/{} peak_rss_kib[min/median/p95]={}/{}/{} cpu_millis[min/median/p95]={}/{}/{} bytes_sent[min/median/p95]={}/{}/{} bytes_received[min/median/p95]={}/{}/{}",
+        summary.engine,
+        summary.workload,
+        summary.runs,
+        summary.status,
+        summary.duration_ms.min,
+        summary.duration_ms.median,
+        summary.duration_ms.p95,
+        summary.peak_rss_kib.min,
+        summary.peak_rss_kib.median,
+        summary.peak_rss_kib.p95,
+        summary.cpu_millis.min,
+        summary.cpu_millis.median,
+        summary.cpu_millis.p95,
+        summary.bytes_sent.min,
+        summary.bytes_sent.median,
+        summary.bytes_sent.p95,
+        summary.bytes_received.min,
+        summary.bytes_received.median,
+        summary.bytes_received.p95,
     );
 }
 
@@ -1075,6 +1264,7 @@ mod tests {
                 connections: 1,
                 iterations: 1,
                 payload_size: 1024,
+                runs: 1,
                 out_dir: PathBuf::from("target/benchmarks/test"),
                 xray_rust_bin: None,
                 xray_core_bin: None,
@@ -1109,7 +1299,34 @@ mod tests {
         assert_eq!(options.connections, 2);
         assert_eq!(options.iterations, 3);
         assert_eq!(options.payload_size, 64);
+        assert_eq!(options.runs, 1);
         assert_eq!(options.xray_core_dir, Some(PathBuf::from("../Xray-core")));
+    }
+
+    #[test]
+    fn parses_compare_with_repeated_runs() {
+        let args = parse_cli_args([
+            "xray-bench",
+            "compare",
+            "--workload",
+            "tcp-freedom",
+            "--runs",
+            "5",
+        ])
+        .unwrap();
+
+        let CliArgs::Compare(options) = args else {
+            panic!("expected compare args");
+        };
+        assert_eq!(options.runs, 5);
+    }
+
+    #[test]
+    fn rejects_zero_runs() {
+        let error = parse_cli_args(["xray-bench", "compare", "--runs", "0"]).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("--runs must be greater than zero"));
     }
 
     #[test]
@@ -1196,5 +1413,83 @@ mod tests {
             WorkloadKind::Idle,
         );
         assert_eq!(dir, PathBuf::from("target/benchmarks/123/xray-rust/idle"));
+    }
+
+    #[test]
+    fn numbered_run_directory_uses_stable_one_based_padding() {
+        let dir = numbered_run_directory(Path::new("target/benchmarks/123/xray-rust/idle"), 2);
+        assert_eq!(
+            dir,
+            PathBuf::from("target/benchmarks/123/xray-rust/idle/run-002")
+        );
+    }
+
+    #[test]
+    fn summarizes_repeated_results_with_min_median_and_p95() {
+        let results = vec![
+            BenchResult {
+                engine: "xray-rust".to_owned(),
+                workload: "tcp-freedom".to_owned(),
+                status: "ok".to_owned(),
+                duration_ms: 40,
+                bytes_sent: 1024,
+                bytes_received: 1024,
+                peak_rss_kib: 3000,
+                cpu_millis: 20,
+                samples: 2,
+            },
+            BenchResult {
+                engine: "xray-rust".to_owned(),
+                workload: "tcp-freedom".to_owned(),
+                status: "ok".to_owned(),
+                duration_ms: 10,
+                bytes_sent: 1024,
+                bytes_received: 1024,
+                peak_rss_kib: 2700,
+                cpu_millis: 10,
+                samples: 2,
+            },
+            BenchResult {
+                engine: "xray-rust".to_owned(),
+                workload: "tcp-freedom".to_owned(),
+                status: "ok".to_owned(),
+                duration_ms: 30,
+                bytes_sent: 1024,
+                bytes_received: 1024,
+                peak_rss_kib: 2900,
+                cpu_millis: 30,
+                samples: 2,
+            },
+        ];
+
+        let summary = summarize_results(&results).unwrap();
+
+        assert_eq!(summary.engine, "xray-rust");
+        assert_eq!(summary.workload, "tcp-freedom");
+        assert_eq!(summary.runs, 3);
+        assert_eq!(
+            summary.duration_ms,
+            MetricSummary {
+                min: 10,
+                median: 30,
+                p95: 40,
+            }
+        );
+        assert_eq!(
+            summary.peak_rss_kib,
+            MetricSummary {
+                min: 2700,
+                median: 2900,
+                p95: 3000,
+            }
+        );
+        assert_eq!(
+            summary.cpu_millis,
+            MetricSummary {
+                min: 10,
+                median: 20,
+                p95: 30,
+            }
+        );
     }
 }

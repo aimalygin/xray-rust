@@ -15,18 +15,28 @@ The harness writes results under:
 target/benchmarks/<run-id>/<engine>/<workload>/
 ```
 
-Each run directory contains:
+For one run, the workload directory contains:
 
 - `config.json`: generated engine config.
 - `result.json`: summary RSS, CPU, throughput bytes, status, and workload metadata.
 - `samples.csv`: raw timestamped process samples.
 - `stdout.log` and `stderr.log`: child process logs.
+- `summary.json`: min/median/p95 aggregate summary. With one run, all three values match the single run.
+
+When `--runs N` is greater than `1`, the workload directory contains `summary.json` plus one subdirectory per raw run:
+
+```text
+target/benchmarks/<run-id>/<engine>/<workload>/run-001/
+target/benchmarks/<run-id>/<engine>/<workload>/run-002/
+target/benchmarks/<run-id>/<engine>/<workload>/run-003/
+```
 
 ## Run xray-rust Only
 
 ```sh
 cargo run -p xray-bench -- run --engine xray-rust --workload idle --duration-ms 1000
 cargo run -p xray-bench -- run --engine xray-rust --workload tcp-freedom --connections 1 --iterations 10 --payload-size 1024
+cargo run -p xray-bench -- run --engine xray-rust --workload tcp-freedom --runs 5 --connections 8 --iterations 1000 --payload-size 4096
 ```
 
 By default, the harness uses `target/debug/xray-rust` or builds it with:
@@ -42,16 +52,16 @@ Use `--xray-rust-bin <path>` to point at an already built binary.
 From the main repository checkout:
 
 ```sh
-cargo run -p xray-bench -- compare --workload tcp-freedom --xray-core-dir Xray-core --connections 1 --iterations 10 --payload-size 1024
+cargo run -p xray-bench -- compare --workload tcp-freedom --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 10 --payload-size 1024
 ```
 
 From an isolated worktree under `.worktrees/`, pass the main checkout's Xray-core path:
 
 ```sh
-cargo run -p xray-bench -- compare --workload tcp-freedom --xray-core-dir ../../Xray-core --connections 1 --iterations 10 --payload-size 1024
+cargo run -p xray-bench -- compare --workload tcp-freedom --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 10 --payload-size 1024
 ```
 
-The compare command auto-builds `target/debug/xray-rust` and an Xray-core binary under the run directory unless `--no-auto-build` is provided. Use `--xray-core-bin <path>` to benchmark an existing Xray-core binary without rebuilding.
+The compare command auto-builds `target/debug/xray-rust` and an Xray-core binary under the run directory unless `--no-auto-build` is provided. Repeated runs reuse the Xray-core binary built for that benchmark group. Use `--xray-core-bin <path>` to benchmark an existing Xray-core binary without rebuilding.
 
 ## Metrics
 
@@ -61,5 +71,6 @@ The first scoreboard is intentionally portable and comparable across Go and Rust
 - CPU time delta from `ps` cumulative process time.
 - thread count when the local `ps` implementation exposes it.
 - validated bytes sent and received by the workload.
+- min, median, and p95 aggregates across repeated runs.
 
 Later benchmark slices should add UDP/XUDP, VLESS/Vision, TUN packet-path workloads, latency percentiles, and mobile-native traces from Instruments or Perfetto. This first harness keeps those paths open without putting benchmark logic into the production runtime.
