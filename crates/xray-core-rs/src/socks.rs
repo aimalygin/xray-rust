@@ -10,10 +10,11 @@ use xray_proxy::inbound::{
 };
 use xray_transport::{DnsResolver, TransportDialer};
 
-use crate::{open_tcp_stream_with_resolver_and_dialer, select_tcp_outbound};
+use crate::{open_tcp_stream_with_resolver_and_dialer, select_tcp_outbound_for_session};
 
 pub async fn serve_socks_listener(
     listener: TcpListener,
+    inbound_tag: Option<String>,
     config: Arc<CoreConfig>,
     dns_resolver: Arc<dyn DnsResolver>,
     transport_dialer: Arc<TransportDialer>,
@@ -37,11 +38,18 @@ pub async fn serve_socks_listener(
                     Ok(accepted) => accepted,
                     Err(_) => continue,
                 };
+                let inbound_tag = inbound_tag.clone();
                 let config = Arc::clone(&config);
                 let dns_resolver = Arc::clone(&dns_resolver);
                 let transport_dialer = Arc::clone(&transport_dialer);
                 connections.spawn(async move {
-                    handle_socks_connection(stream, config, dns_resolver, transport_dialer).await;
+                    handle_socks_connection(
+                        stream,
+                        inbound_tag,
+                        config,
+                        dns_resolver,
+                        transport_dialer,
+                    ).await;
                 });
             }
             joined = connections.join_next(), if !connections.is_empty() => {
@@ -56,6 +64,7 @@ pub async fn serve_socks_listener(
 
 async fn handle_socks_connection(
     mut inbound: TcpStream,
+    inbound_tag: Option<String>,
     config: Arc<CoreConfig>,
     dns_resolver: Arc<dyn DnsResolver>,
     transport_dialer: Arc<TransportDialer>,
@@ -72,7 +81,7 @@ async fn handle_socks_connection(
         }
     };
 
-    let outbound = match select_tcp_outbound(&config) {
+    let outbound = match select_tcp_outbound_for_session(&config, inbound_tag.as_deref(), &target) {
         Ok(outbound) => outbound,
         Err(_) => {
             let _ = write_socks5_failure(&mut inbound).await;

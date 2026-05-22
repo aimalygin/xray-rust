@@ -6,7 +6,7 @@ use tokio::time::{timeout, Duration};
 use uuid::Uuid;
 use xray_config::{
     CoreConfig, InboundConfig, InboundProtocol, Network, OutboundConfig, OutboundSettings,
-    StreamSecurity, StreamSettings, TargetAddr, VlessOutboundSettings, VlessUser,
+    RoutingConfig, StreamSecurity, StreamSettings, TargetAddr, VlessOutboundSettings, VlessUser,
 };
 use xray_core_rs::{Core, CoreError, CoreState};
 
@@ -35,6 +35,7 @@ fn runtime_config() -> CoreConfig {
             }),
         }],
         default_outbound_tag: None,
+        routing: RoutingConfig::default(),
     }
 }
 

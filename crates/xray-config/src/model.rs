@@ -11,6 +11,34 @@ pub struct CoreConfig {
     pub inbounds: Vec<InboundConfig>,
     pub outbounds: Vec<OutboundConfig>,
     pub default_outbound_tag: Option<String>,
+    pub routing: RoutingConfig,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RoutingConfig {
+    pub rules: Vec<RoutingRule>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RoutingRule {
+    pub inbound_tags: Vec<String>,
+    pub outbound_tag: String,
+}
+
+impl RoutingRule {
+    pub fn matches_inbound(&self, inbound_tag: Option<&str>) -> bool {
+        if self.inbound_tags.is_empty() {
+            return true;
+        }
+
+        let Some(inbound_tag) = inbound_tag else {
+            return false;
+        };
+
+        self.inbound_tags
+            .iter()
+            .any(|candidate| candidate == inbound_tag)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

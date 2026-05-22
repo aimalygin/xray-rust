@@ -1,7 +1,8 @@
 use xray_config::{
     CoreConfig, Diagnostic, DiagnosticSeverity, InboundConfig, InboundProtocol, Network,
     OutboundConfig, OutboundProtocol, OutboundSettings, RealitySettings, RealityShortId,
-    StreamSecurity, StreamSettings, TargetAddr, VlessOutboundSettings, VlessUser,
+    RoutingConfig, RoutingRule, StreamSecurity, StreamSettings, TargetAddr, VlessOutboundSettings,
+    VlessUser,
 };
 
 #[test]
@@ -51,6 +52,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
         inbounds: vec![inbound],
         outbounds: vec![outbound],
         default_outbound_tag: Some("proxy".to_owned()),
+        routing: RoutingConfig::default(),
     };
 
     let expected = CoreConfig {
@@ -83,6 +85,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
             }),
         }],
         default_outbound_tag: Some("proxy".to_owned()),
+        routing: RoutingConfig::default(),
     };
 
     assert_eq!(config, expected);
@@ -118,6 +121,20 @@ fn normalized_model_can_represent_freedom_outbound() {
     };
 
     assert_eq!(outbound.settings.protocol(), OutboundProtocol::Freedom);
+}
+
+#[test]
+fn normalized_model_can_represent_inbound_tag_routing_rule() {
+    let routing = RoutingConfig {
+        rules: vec![RoutingRule {
+            inbound_tags: vec!["socks-in".to_owned()],
+            outbound_tag: "direct".to_owned(),
+        }],
+    };
+
+    assert!(routing.rules[0].matches_inbound(Some("socks-in")));
+    assert!(!routing.rules[0].matches_inbound(Some("http-in")));
+    assert!(!routing.rules[0].matches_inbound(None));
 }
 
 #[test]

@@ -95,10 +95,50 @@ fn rejects_non_as_is_routing_domain_strategy_with_path() {
 }
 
 #[test]
-fn rejects_non_empty_routing_rules_with_path() {
-    let raw = raw_with_routing(r#""rules": [{ "type": "field", "outboundTag": "proxy" }]"#);
+fn parses_field_routing_rule_with_inbound_tag() {
+    let raw = raw_with_routing(
+        r#""rules": [{
+          "type": "field",
+          "inboundTag": ["socks-in"],
+          "outboundTag": "proxy"
+        }]"#,
+    );
 
-    assert_parse_error_path(&raw, "$.routing.rules");
+    let parsed = parse_xray_json(&raw).expect("config should parse");
+
+    assert_eq!(parsed.config.routing.rules.len(), 1);
+    assert_eq!(
+        parsed.config.routing.rules[0].inbound_tags,
+        vec!["socks-in".to_owned()]
+    );
+    assert_eq!(parsed.config.routing.rules[0].outbound_tag, "proxy");
+}
+
+#[test]
+fn rejects_unsupported_routing_rule_field_with_path() {
+    let raw = raw_with_routing(
+        r#""rules": [{
+          "type": "field",
+          "domain": ["example.com"],
+          "outboundTag": "proxy"
+        }]"#,
+    );
+
+    assert_parse_error_path(&raw, "$.routing.rules[0].domain");
+}
+
+#[test]
+fn rejects_missing_routing_rule_outbound_tag_with_path() {
+    let raw = raw_with_routing(r#""rules": [{ "type": "field" }]"#);
+
+    assert_parse_error_path(&raw, "$.routing.rules[0].outboundTag");
+}
+
+#[test]
+fn rejects_non_empty_routing_balancers_with_path() {
+    let raw = raw_with_routing(r#""balancers": [{ "tag": "fallback" }]"#);
+
+    assert_parse_error_path(&raw, "$.routing.balancers");
 }
 
 #[test]

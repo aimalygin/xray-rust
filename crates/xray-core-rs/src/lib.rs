@@ -15,7 +15,8 @@ mod socks;
 pub use outbound::{
     open_tcp_stream_with_resolver_and_dialer, open_vless_tcp_stream,
     open_vless_tcp_stream_with_resolver, open_vless_tcp_stream_with_resolver_and_dialer,
-    select_tcp_outbound, select_vless_tcp_outbound, TcpOutbound, VlessTcpOutbound,
+    select_tcp_outbound, select_tcp_outbound_for_session, select_vless_tcp_outbound, TcpOutbound,
+    VlessTcpOutbound,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -160,11 +161,13 @@ impl Core {
         let mut inbounds = Vec::with_capacity(bound_listeners.len());
         let mut tasks = Vec::with_capacity(bound_listeners.len());
         for (bound, protocol, listener) in bound_listeners {
+            let inbound_tag = bound.tag.clone();
             let dns_resolver = Arc::clone(&self.dns_resolver);
             let transport_dialer = Arc::clone(&self.transport_dialer);
             let task = match protocol {
                 InboundProtocol::Socks => tokio::spawn(socks::serve_socks_listener(
                     listener,
+                    inbound_tag,
                     Arc::clone(&config),
                     dns_resolver,
                     transport_dialer,
@@ -172,6 +175,7 @@ impl Core {
                 )),
                 InboundProtocol::Http => tokio::spawn(http::serve_http_listener(
                     listener,
+                    inbound_tag,
                     Arc::clone(&config),
                     dns_resolver,
                     transport_dialer,

@@ -43,7 +43,20 @@ impl VlessTcpOutbound {
 }
 
 pub fn select_tcp_outbound(config: &CoreConfig) -> Result<TcpOutbound, CoreError> {
-    let outbound = select_configured_outbound(config)?;
+    let outbound = select_configured_outbound(config, None)?;
+    build_tcp_outbound(outbound)
+}
+
+pub fn select_tcp_outbound_for_session(
+    config: &CoreConfig,
+    inbound_tag: Option<&str>,
+    _target: &Target,
+) -> Result<TcpOutbound, CoreError> {
+    let outbound = select_configured_outbound(config, inbound_tag)?;
+    build_tcp_outbound(outbound)
+}
+
+fn build_tcp_outbound(outbound: &OutboundConfig) -> Result<TcpOutbound, CoreError> {
     if outbound.stream.network != Network::Tcp {
         return Err(CoreError::UnsupportedOutboundNetwork);
     }
@@ -61,16 +74,26 @@ pub fn select_tcp_outbound(config: &CoreConfig) -> Result<TcpOutbound, CoreError
 }
 
 pub fn select_vless_tcp_outbound(config: &CoreConfig) -> Result<VlessTcpOutbound, CoreError> {
-    let outbound = select_configured_outbound(config)?;
+    let outbound = select_configured_outbound(config, None)?;
     build_vless_tcp_outbound(outbound)
 }
 
-fn select_configured_outbound(config: &CoreConfig) -> Result<&OutboundConfig, CoreError> {
-    let outbound = match &config.default_outbound_tag {
+fn select_configured_outbound<'a>(
+    config: &'a CoreConfig,
+    inbound_tag: Option<&str>,
+) -> Result<&'a OutboundConfig, CoreError> {
+    let routed_tag = config
+        .routing
+        .rules
+        .iter()
+        .find(|rule| rule.matches_inbound(inbound_tag))
+        .map(|rule| rule.outbound_tag.as_str());
+
+    let outbound = match routed_tag.or(config.default_outbound_tag.as_deref()) {
         Some(tag) => config
             .outbounds
             .iter()
-            .find(|outbound| outbound.tag.as_deref() == Some(tag.as_str()))
+            .find(|outbound| outbound.tag.as_deref() == Some(tag))
             .ok_or(CoreError::NoSupportedOutbound)?,
         None => config
             .outbounds

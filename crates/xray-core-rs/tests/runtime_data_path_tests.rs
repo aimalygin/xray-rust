@@ -13,8 +13,8 @@ use tokio_rustls::TlsAcceptor;
 use uuid::Uuid;
 use xray_config::{
     CoreConfig, InboundConfig, InboundProtocol, Network, OutboundConfig, OutboundSettings,
-    RealitySettings, RealityShortId, StreamSecurity, StreamSettings, TargetAddr, TlsSettings,
-    VlessOutboundSettings, VlessUser,
+    RealitySettings, RealityShortId, RoutingConfig, RoutingRule, StreamSecurity, StreamSettings,
+    TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
 };
 use xray_core_rs::{select_vless_tcp_outbound, Core, CoreError};
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
@@ -59,7 +59,16 @@ fn config_with_outbound(outbound: OutboundConfig) -> CoreConfig {
         inbounds: Vec::new(),
         outbounds: vec![outbound],
         default_outbound_tag: None,
+        routing: RoutingConfig::default(),
     }
+}
+
+fn allocate_unused_loopback_port() -> u16 {
+    std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .expect("bind ephemeral port")
+        .local_addr()
+        .expect("read local addr")
+        .port()
 }
 
 #[derive(Debug, Clone, Default)]
@@ -99,6 +108,33 @@ fn runtime_config_with_freedom_outbound() -> CoreConfig {
         }],
         outbounds: vec![freedom_outbound()],
         default_outbound_tag: Some("direct".to_owned()),
+        routing: RoutingConfig::default(),
+    }
+}
+
+fn runtime_config_with_routed_freedom_outbound(unused_proxy_port: u16) -> CoreConfig {
+    CoreConfig {
+        inbounds: vec![InboundConfig {
+            tag: Some("socks-in".to_owned()),
+            protocol: InboundProtocol::Socks,
+            listen: "127.0.0.1".to_owned(),
+            port: 0,
+        }],
+        outbounds: vec![
+            vless_outbound(
+                StreamSecurity::None,
+                TargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+                unused_proxy_port,
+            ),
+            freedom_outbound(),
+        ],
+        default_outbound_tag: Some("proxy".to_owned()),
+        routing: RoutingConfig {
+            rules: vec![RoutingRule {
+                inbound_tags: vec!["socks-in".to_owned()],
+                outbound_tag: "direct".to_owned(),
+            }],
+        },
     }
 }
 
@@ -116,6 +152,7 @@ fn runtime_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig {
             vless_addr.port(),
         )],
         default_outbound_tag: None,
+        routing: RoutingConfig::default(),
     }
 }
 
@@ -133,6 +170,7 @@ fn runtime_http_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig {
             vless_addr.port(),
         )],
         default_outbound_tag: None,
+        routing: RoutingConfig::default(),
     }
 }
 
@@ -150,6 +188,7 @@ fn runtime_config_with_vless_domain_server(domain: &str, port: u16) -> CoreConfi
             port,
         )],
         default_outbound_tag: None,
+        routing: RoutingConfig::default(),
     }
 }
 
@@ -174,6 +213,7 @@ fn runtime_config_with_tls_vless_domain_server(
             port,
         )],
         default_outbound_tag: None,
+        routing: RoutingConfig::default(),
     }
 }
 
@@ -225,6 +265,7 @@ fn selects_default_outbound_tag_when_present() {
         inbounds: Vec::new(),
         outbounds: vec![first, second],
         default_outbound_tag: Some("proxy".to_owned()),
+        routing: RoutingConfig::default(),
     };
 
     let selected = select_vless_tcp_outbound(&config).unwrap();
@@ -507,6 +548,16 @@ async fn socks_client_reaches_echo_target_through_freedom_outbound() {
 }
 
 #[tokio::test]
+async fn socks_client_uses_inbound_tag_routing_rule_to_reach_freedom_outbound() {
+    timeout(
+        Duration::from_secs(2),
+        run_socks_to_routed_freedom_echo_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
 async fn socks_client_reaches_echo_target_through_domain_vless_server() {
     timeout(
         Duration::from_secs(2),
@@ -589,6 +640,31 @@ async fn run_socks_to_freedom_echo_scenario() {
     client.read_exact(&mut echoed).await.unwrap();
 
     assert_eq!(echoed, b"hello freedom runtime");
+    drop(client);
+    core.stop().await.unwrap();
+
+    timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+async fn run_socks_to_routed_freedom_echo_scenario() {
+    let (echo_addr, echo_handle) = spawn_echo_server().await;
+    let config = runtime_config_with_routed_freedom_outbound(allocate_unused_loopback_port());
+
+    let mut core = Core::new(config).unwrap();
+    core.start().await.unwrap();
+    let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
+
+    let mut client = TcpStream::connect(socks_addr).await.unwrap();
+    socks5_connect(&mut client, echo_addr).await;
+
+    client.write_all(b"hello routed freedom").await.unwrap();
+    let mut echoed = vec![0; "hello routed freedom".len()];
+    client.read_exact(&mut echoed).await.unwrap();
+
+    assert_eq!(echoed, b"hello routed freedom");
     drop(client);
     core.stop().await.unwrap();
 

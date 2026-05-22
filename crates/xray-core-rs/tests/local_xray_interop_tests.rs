@@ -13,8 +13,8 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::time::{sleep, timeout, Duration, Instant};
 use xray_config::{
     CoreConfig, InboundConfig, InboundProtocol, Network, OutboundConfig, OutboundSettings,
-    RealitySettings, RealityShortId, StreamSecurity, StreamSettings, TargetAddr, TlsSettings,
-    VlessOutboundSettings, VlessUser,
+    RealitySettings, RealityShortId, RoutingConfig, StreamSecurity, StreamSettings, TargetAddr,
+    TlsSettings, VlessOutboundSettings, VlessUser,
 };
 use xray_core_rs::Core;
 use xray_transport::{SystemDnsResolver, TlsConnector, TransportDialer};
@@ -586,6 +586,7 @@ fn rust_core_config_with_security(
             }),
         }],
         default_outbound_tag: None,
+        routing: RoutingConfig::default(),
     }
 }
 

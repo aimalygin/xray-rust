@@ -5,8 +5,9 @@ use uuid::Uuid;
 
 use crate::{
     CoreConfig, Diagnostic, InboundConfig, InboundProtocol, Network, OutboundConfig,
-    OutboundProtocol, OutboundSettings, RealitySettings, RealityShortId, StreamSecurity,
-    StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
+    OutboundProtocol, OutboundSettings, RealitySettings, RealityShortId, RoutingConfig,
+    RoutingRule, StreamSecurity, StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings,
+    VlessUser,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,13 +59,14 @@ impl Parser<'_> {
         self.validate_top_level_fields();
         let inbounds = self.parse_inbounds();
         let outbounds = self.parse_outbounds();
-        self.validate_routing();
+        let routing = self.parse_routing(&outbounds);
         let default_outbound_tag = outbounds.first().and_then(|outbound| outbound.tag.clone());
 
         CoreConfig {
             inbounds,
             outbounds,
             default_outbound_tag,
+            routing,
         }
     }
 
@@ -72,14 +74,14 @@ impl Parser<'_> {
         self.reject_unknown_fields(self.root, "$", &["log", "inbounds", "outbounds", "routing"]);
     }
 
-    fn validate_routing(&mut self) {
+    fn parse_routing(&mut self, outbounds: &[OutboundConfig]) -> RoutingConfig {
         let Some(routing) = self.root.get("routing") else {
-            return;
+            return RoutingConfig::default();
         };
         let routing_path = "$.routing";
         if !routing.is_object() {
             self.error(routing_path, "routing must be an object");
-            return;
+            return RoutingConfig::default();
         }
 
         self.reject_unknown_fields(
@@ -101,8 +103,95 @@ impl Parser<'_> {
             }
         }
 
-        self.reject_non_empty_array(routing, "rules", "$.routing.rules".to_owned());
         self.reject_non_empty_array(routing, "balancers", "$.routing.balancers".to_owned());
+        RoutingConfig {
+            rules: self.parse_routing_rules(routing, outbounds),
+        }
+    }
+
+    fn parse_routing_rules(
+        &mut self,
+        routing: &Value,
+        outbounds: &[OutboundConfig],
+    ) -> Vec<RoutingRule> {
+        let Some(raw_rules) = routing.get("rules") else {
+            return Vec::new();
+        };
+        let Some(rules) = raw_rules.as_array() else {
+            self.error("$.routing.rules", "field `rules` must be an array");
+            return Vec::new();
+        };
+
+        rules
+            .iter()
+            .enumerate()
+            .filter_map(|(index, rule)| self.parse_routing_rule(rule, index, outbounds))
+            .collect()
+    }
+
+    fn parse_routing_rule(
+        &mut self,
+        rule: &Value,
+        index: usize,
+        outbounds: &[OutboundConfig],
+    ) -> Option<RoutingRule> {
+        let rule_path = format!("$.routing.rules[{index}]");
+        if !rule.is_object() {
+            self.error(&rule_path, "routing rule must be an object");
+            return None;
+        }
+
+        self.reject_unknown_fields(rule, &rule_path, &["type", "inboundTag", "outboundTag"]);
+
+        let type_path = format!("{rule_path}.type");
+        let Some(rule_type) = self.optional_string_at(rule, "type", type_path.clone()) else {
+            if rule.get("type").is_none() {
+                self.error(type_path, "missing routing rule type");
+            }
+            return None;
+        };
+        if rule_type != "field" {
+            self.error(
+                type_path,
+                format!("unsupported routing rule type `{rule_type}`"),
+            );
+            return None;
+        }
+
+        let outbound_tag_path = format!("{rule_path}.outboundTag");
+        let Some(outbound_tag) =
+            self.optional_string_at(rule, "outboundTag", outbound_tag_path.clone())
+        else {
+            if rule.get("outboundTag").is_none() {
+                self.error(outbound_tag_path, "missing routing rule outboundTag");
+            }
+            return None;
+        };
+        if outbound_tag.is_empty() {
+            self.error(
+                outbound_tag_path,
+                "routing rule outboundTag cannot be empty",
+            );
+            return None;
+        }
+        if !outbounds
+            .iter()
+            .any(|outbound| outbound.tag.as_deref() == Some(outbound_tag))
+        {
+            self.error(
+                outbound_tag_path,
+                format!("routing rule references unknown outboundTag `{outbound_tag}`"),
+            );
+            return None;
+        }
+
+        let inbound_tags =
+            self.optional_string_array_at(rule, "inboundTag", format!("{rule_path}.inboundTag"))?;
+
+        Some(RoutingRule {
+            inbound_tags,
+            outbound_tag: outbound_tag.to_owned(),
+        })
     }
 
     fn parse_inbounds(&mut self) -> Vec<InboundConfig> {
@@ -817,6 +906,42 @@ impl Parser<'_> {
                 None
             }
         }
+    }
+
+    fn optional_string_array_at(
+        &mut self,
+        value: &Value,
+        key: &str,
+        path: String,
+    ) -> Option<Vec<String>> {
+        let Some(raw) = value.get(key) else {
+            return Some(Vec::new());
+        };
+        let Some(values) = raw.as_array() else {
+            self.error(path, format!("field `{key}` must be an array"));
+            return None;
+        };
+
+        let mut strings = Vec::with_capacity(values.len());
+        for (index, value) in values.iter().enumerate() {
+            let Some(value) = value.as_str() else {
+                self.error(
+                    format!("{path}[{index}]"),
+                    "routing matcher must be a string",
+                );
+                return None;
+            };
+            if value.is_empty() {
+                self.error(
+                    format!("{path}[{index}]"),
+                    "routing matcher cannot be empty",
+                );
+                return None;
+            }
+            strings.push(value.to_owned());
+        }
+
+        Some(strings)
     }
 
     fn u16_at(&mut self, value: &Value, key: &str, path: String) -> Option<u16> {

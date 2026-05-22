@@ -8,7 +8,7 @@ use xray_config::CoreConfig;
 use xray_proxy::inbound::parse_http_connect;
 use xray_transport::{DnsResolver, TransportDialer};
 
-use crate::{open_tcp_stream_with_resolver_and_dialer, select_tcp_outbound};
+use crate::{open_tcp_stream_with_resolver_and_dialer, select_tcp_outbound_for_session};
 
 const HTTP_CONNECT_ESTABLISHED: &[u8] = b"HTTP/1.1 200 Connection Established\r\n\r\n";
 const HTTP_BAD_REQUEST: &[u8] = b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n";
@@ -16,6 +16,7 @@ const HTTP_BAD_GATEWAY: &[u8] = b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\
 
 pub async fn serve_http_listener(
     listener: TcpListener,
+    inbound_tag: Option<String>,
     config: Arc<CoreConfig>,
     dns_resolver: Arc<dyn DnsResolver>,
     transport_dialer: Arc<TransportDialer>,
@@ -39,11 +40,18 @@ pub async fn serve_http_listener(
                     Ok(accepted) => accepted,
                     Err(_) => continue,
                 };
+                let inbound_tag = inbound_tag.clone();
                 let config = Arc::clone(&config);
                 let dns_resolver = Arc::clone(&dns_resolver);
                 let transport_dialer = Arc::clone(&transport_dialer);
                 connections.spawn(async move {
-                    handle_http_connection(stream, config, dns_resolver, transport_dialer).await;
+                    handle_http_connection(
+                        stream,
+                        inbound_tag,
+                        config,
+                        dns_resolver,
+                        transport_dialer,
+                    ).await;
                 });
             }
             joined = connections.join_next(), if !connections.is_empty() => {
@@ -58,6 +66,7 @@ pub async fn serve_http_listener(
 
 async fn handle_http_connection(
     mut inbound: TcpStream,
+    inbound_tag: Option<String>,
     config: Arc<CoreConfig>,
     dns_resolver: Arc<dyn DnsResolver>,
     transport_dialer: Arc<TransportDialer>,
@@ -70,7 +79,7 @@ async fn handle_http_connection(
         }
     };
 
-    let outbound = match select_tcp_outbound(&config) {
+    let outbound = match select_tcp_outbound_for_session(&config, inbound_tag.as_deref(), &target) {
         Ok(outbound) => outbound,
         Err(_) => {
             let _ = inbound.write_all(HTTP_BAD_GATEWAY).await;
