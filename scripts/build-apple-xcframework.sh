@@ -8,6 +8,11 @@ HEADER_DIR="$WORKSPACE_ROOT/crates/xray-ffi/include"
 XCFRAMEWORK_NAME="${XCFRAMEWORK_NAME:-XrayRust.xcframework}"
 CRATE_PACKAGE="xray-ffi"
 LIB_NAME="libxray_ffi.a"
+CARGO_BIN="${CARGO_BIN:-cargo}"
+TVOS_BUILD_STD="${TVOS_BUILD_STD:-auto}"
+TVOS_RUST_TOOLCHAIN="${TVOS_RUST_TOOLCHAIN:-nightly}"
+export IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-13.0}"
+export TVOS_DEPLOYMENT_TARGET="${TVOS_DEPLOYMENT_TARGET:-14.0}"
 
 IOS_DEVICE_TARGETS=("aarch64-apple-ios")
 IOS_SIMULATOR_TARGETS=("aarch64-apple-ios-sim" "x86_64-apple-ios")
@@ -38,9 +43,53 @@ target_lib_path() {
   echo "$WORKSPACE_ROOT/target/$target/$profile_dir/$LIB_NAME"
 }
 
+is_tvos_target() {
+  local target="$1"
+  [[ "$target" == *"apple-tvos"* ]]
+}
+
+rust_target_is_installed() {
+  local target="$1"
+  rustup target list --installed 2>/dev/null | grep -Fxq "$target"
+}
+
+use_build_std_for_target() {
+  local target="$1"
+  if ! is_tvos_target "$target"; then
+    return 1
+  fi
+
+  case "$TVOS_BUILD_STD" in
+    1|true|yes)
+      return 0
+      ;;
+    0|false|no)
+      return 1
+      ;;
+    auto)
+      if rust_target_is_installed "$target"; then
+        return 1
+      fi
+      return 0
+      ;;
+    *)
+      echo "invalid TVOS_BUILD_STD value: $TVOS_BUILD_STD" >&2
+      exit 1
+      ;;
+  esac
+}
+
 build_target() {
   local target="$1"
-  cargo build --package xray-ffi --target "$target" $(cargo_profile_args)
+  if use_build_std_for_target "$target"; then
+    "$CARGO_BIN" "+$TVOS_RUST_TOOLCHAIN" build \
+      -Z build-std=std,panic_abort \
+      --package xray-ffi \
+      --target "$target" \
+      $(cargo_profile_args)
+  else
+    cargo build --package xray-ffi --target "$target" $(cargo_profile_args)
+  fi
 }
 
 build_targets() {
@@ -74,6 +123,7 @@ group_libs() {
 
 main() {
   require_command cargo
+  require_command rustup
   require_command lipo
   require_command xcodebuild
 

@@ -14,6 +14,22 @@ cargo test --workspace --all-targets
 
 The clippy command uses `--locked` and denies warnings so local verification matches the strict form expected before committing documentation or code changes.
 
+Run the mobile ABI and artifact contract tests:
+
+```sh
+cargo test -p xray-ffi --test mobile_artifacts_tests -- --nocapture
+```
+
+Run the mobile toolchain preflight and artifact builders on a provisioned macOS host:
+
+```sh
+scripts/check-mobile-toolchains.sh
+scripts/build-apple-xcframework.sh
+scripts/build-android-libs.sh
+```
+
+These produce `target/mobile/apple/XrayRust.xcframework` for iOS/tvOS and `target/mobile/android/jniLibs` for Android. The tvOS path uses nightly `rust-src` with `-Z build-std` when the stable toolchain does not ship prebuilt tvOS std components.
+
 Run the first live Rust runtime data-path test:
 
 ```sh

@@ -69,7 +69,7 @@ Implemented:
 - Supported Freedom outbound for direct TCP egress.
 - Supported SOCKS and HTTP inbound settings for the runnable path.
 - TLS and REALITY stream settings needed by the current VLESS client slice.
-- Routing rules for the supported `field` subset: `inboundTag`, `domain:` and `full:` domain matchers, and `outboundTag`.
+- Routing rules for the supported `field` subset: `inboundTag`, `domain:`, `full:`, literal IP, CIDR, built-in `geoip:private`, and `outboundTag`.
 - Structured diagnostics foundation.
 
 The config layer is intentionally not complete yet. It accepts enough of the Xray JSON surface to drive the current local interop scenarios.
@@ -120,11 +120,13 @@ Implemented:
 - `inboundTag` matcher.
 - `domain:` suffix matcher.
 - `full:` exact-domain matcher.
+- Literal IP and CIDR matchers.
+- Built-in `geoip:private` matcher for common private/local IPv4 and IPv6 ranges.
 - Parser diagnostics for unsupported routing fields and unsupported domain matcher families.
 
 Current limits:
 
-- No IP/CIDR, port, network, protocol, user, geosite, geoip, balancer, or `domainStrategy` behavior yet.
+- No port, network, protocol, user, geosite, external geoip data loading, balancer, or `domainStrategy` behavior yet.
 - Domain matching is used for target domains already present in the inbound request; DNS-driven route fallback is not implemented.
 
 ### TLS
@@ -202,12 +204,17 @@ Implemented:
 - TUN packet push/poll FFI functions.
 - TUN packet stats and bounded queue behavior.
 - Public C header checked by tests.
+- C header harness test that compiles `xray_ffi.h` as C11.
+- Native staticlib exported-symbol smoke test.
+- Mobile toolchain preflight script for iOS, tvOS, and Android.
 - Apple XCFramework build script covering iOS device/simulator and tvOS device/simulator targets.
 - Android `jniLibs` build script covering arm64-v8a, armeabi-v7a, x86, and x86_64.
+- Verified Apple `XrayRust.xcframework` build on the current macOS host.
+- Verified Android `jniLibs` build on the current macOS host with NDK 26.3.
 
 Current limits:
 
-- Cross-target artifact scripts are present and syntax-tested; full platform builds still depend on installed Rust targets, Xcode SDKs, and Android NDK in the host environment.
+- Cross-target artifact builds depend on installed Rust targets, Xcode SDKs, Android NDK, and nightly `rust-src` for tvOS build-std on toolchains that do not ship prebuilt tvOS std components.
 - The TUN boundary moves packets across the ABI, but does not yet include a user-space TCP/IP stack or packet-to-session dispatcher.
 
 ## Verification Evidence
@@ -219,6 +226,7 @@ cargo fmt --all -- --check
 cargo test -p xray-config --all-targets
 cargo test -p xray-core-rs --all-targets
 cargo test -p xray-cli --all-targets
+cargo test -p xray-ffi --test mobile_artifacts_tests -- --nocapture
 XRAY_CORE_CHECKOUT=/Users/antonmalygin/xray-rust/Xray-core cargo test -p xray-cli --test process_interop_tests -- --ignored --nocapture
 cargo clippy -p xray-config -p xray-core-rs -p xray-cli --all-targets --locked -- -D warnings
 ```
@@ -233,6 +241,9 @@ cargo test -p xray-ffi --all-targets
 cargo test -p xray-tun --all-targets
 bash -n scripts/build-apple-xcframework.sh
 bash -n scripts/build-android-libs.sh
+scripts/check-mobile-toolchains.sh
+scripts/build-apple-xcframework.sh
+scripts/build-android-libs.sh
 ```
 
 Verified local interop scenarios:
@@ -244,10 +255,12 @@ Verified local interop scenarios:
 - Spawned `xray-rust` process to real local Xray-core: VLESS TCP.
 - Spawned `xray-rust` process to real local Xray-core: VLESS REALITY+Vision.
 - Spawned `xray-rust` process with no Go dependency: SOCKS -> Freedom -> local echo.
+- Spawned `xray-rust` process with no Go dependency: HTTP CONNECT -> Freedom -> local echo.
 - In-process Rust core: SOCKS -> Freedom -> local echo.
 - In-process Rust core: HTTP CONNECT -> VLESS TCP -> local echo.
 - In-process Rust core: routing by `inboundTag` -> Freedom -> local echo.
 - In-process Rust core: routing by `domain:` matcher -> Freedom -> local echo.
+- In-process Rust core: routing by IP/CIDR matcher -> Freedom -> local echo.
 
 ## Compatibility Surface Today
 
@@ -261,9 +274,9 @@ The project can currently be treated as a runnable proof for this compatibility 
 - TLS transport.
 - REALITY transport with `chrome` fingerprint.
 - `xtls-rprx-vision` over protected streams.
-- Routing by `inboundTag`, `domain:`, and `full:` for the supported field-rule subset.
+- Routing by `inboundTag`, `domain:`, `full:`, literal IP, CIDR, and built-in `geoip:private` for the supported field-rule subset.
 - C ABI lifecycle/config/TUN packet boundary for embedding.
-- Apple iOS/tvOS and Android artifact scripts.
+- Verified Apple iOS/tvOS `XrayRust.xcframework` and Android `jniLibs` artifact scripts on a provisioned macOS host.
 - Xray JSON configs for this subset.
 - Local process-level execution through `xray-rust`.
 
@@ -302,9 +315,9 @@ Needed:
 
 - Log callback with bounded queue behavior.
 - Bound inbound inspection or event callback.
-- C harness tests.
-- Cross-target artifact build verification on machines with the required SDK/NDK targets.
 - ABI stability/versioning checks.
+- Minimal Swift/Kotlin harnesses that call lifecycle and error APIs.
+- Host integration rules for app process lifecycle and background/network-extension constraints.
 
 This is the highest-priority product layer once the config path is stable enough for real profiles.
 
@@ -312,8 +325,8 @@ This is the highest-priority product layer once the config path is stable enough
 
 Needed:
 
-- Validate the existing XCFramework script on a host with the required Apple Rust targets and SDKs.
-- Add CI or local automation that fails cleanly when targets/SDKs are missing.
+- Add CI coverage for the verified XCFramework build path.
+- Add a minimal Swift harness or sample target that links the generated XCFramework.
 - ABI stability checks for the generated header.
 - App-extension-safe runtime assumptions.
 - No reliance on process signals for embedded lifecycle.
@@ -324,7 +337,7 @@ The core lifecycle already points in this direction because the CLI uses the sam
 
 Needed:
 
-- Validate the existing `jniLibs` script on a host with Android NDK and all Rust Android targets.
+- Add CI coverage for the verified `jniLibs` build path.
 - Add Gradle-facing sample layout or fixture.
 - Runtime initialization rules that work inside Android app processes.
 - ABI stability checks for the generated header.
@@ -456,11 +469,13 @@ Needed:
 
 Goal: make routing/config behavior safe enough for practical Xray client profiles.
 
+Status: partially complete for the first mobile subset. Literal IP, CIDR, and built-in `geoip:private` routing are implemented, and a practical mobile VLESS REALITY/Vision split-routing fixture is in the corpus.
+
 Deliverables:
 
 - Fixture corpus for current VLESS TCP/TLS/REALITY/Vision configs.
 - More complete diagnostics for unsupported fields.
-- IP/CIDR, port, network, and protocol routing matchers for the supported subset.
+- Port, network, and protocol routing matchers for the supported subset.
 - Explicit `geoip:`/`geosite:` unsupported-or-supported policy with tests.
 - Default outbound/routing semantics checked against Xray-core for the supported subset.
 - Regression tests for parse success, parse rejection, and warnings.
@@ -471,13 +486,15 @@ Why first: every mobile and runtime surface depends on config load behavior, and
 
 Goal: prove the existing ABI and scripts on actual Apple and Android target matrices.
 
+Status: artifact validation is complete on the current macOS host. The remaining work is host-language harnessing and CI.
+
 Deliverables:
 
-- C harness tests.
-- Apple iOS/tvOS XCFramework build on a prepared macOS host.
-- Android `jniLibs` build on a host with NDK.
+- Swift lifecycle/error harness for iOS and tvOS.
+- Kotlin/JNI lifecycle/error harness for Android.
+- CI or documented release job for Apple iOS/tvOS XCFramework builds.
+- CI or documented release job for Android `jniLibs` builds.
 - ABI/version checks for `xray_ffi.h`.
-- Minimal Swift/Kotlin smoke harnesses if kept outside this repo.
 
 Why second: the ABI exists; the product risk has moved to cross-target builds, host integration, and lifecycle behavior inside app processes.
 
@@ -485,9 +502,10 @@ Why second: the ABI exists; the product risk has moved to cross-target builds, h
 
 Goal: prove the CLI process path for the newly implemented HTTP/Freedom/routing surface.
 
+Status: HTTP CONNECT -> Freedom process coverage is implemented. Remaining process coverage should focus on HTTP -> VLESS and routing selection from JSON.
+
 Deliverables:
 
-- Spawned `xray-rust` process test for HTTP CONNECT -> Freedom.
 - Spawned `xray-rust` process test for HTTP CONNECT -> local Xray-core VLESS.
 - Spawned `xray-rust` process test for routing rule selection from JSON config.
 
@@ -524,9 +542,9 @@ Why fifth: this is the expansion phase and should build on stable config, runtim
 The next detailed implementation spec should be:
 
 ```text
-Routing IP/CIDR And Practical Config Corpus
+Mobile Host Harness Samples
 ```
 
-It should define the exact supported fixture set, diagnostics policy, `ip`/CIDR/private-range behavior, unsupported `geoip:`/`geosite:` policy, and the test matrix for practical VLESS REALITY/Vision client configs.
+It should define minimal Swift and Kotlin/JNI harnesses that load the generated artifacts, call `xray_core_new`, `xray_core_load_config_json`, `xray_core_start`, `xray_core_stop`, error accessors, and TUN packet stats, without adding platform-specific VPN packet forwarding yet.
 
 After that, the next detailed implementation plan should be generated from that spec and executed task by task.

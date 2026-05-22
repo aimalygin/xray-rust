@@ -14,10 +14,11 @@ First implementation targets:
 - `xtls-rprx-vision`.
 - C ABI for mobile embedding.
 
-Current runtime status: raw TCP VLESS and plain rustls-backed VLESS over TLS are executable for local/test traffic and covered by end-to-end Rust tests with fake VLESS servers. VLESS outbound servers may be configured as IP addresses or, when a resolver is available, domains. REALITY configs can be selected into the transport boundary, prepared through a stateful one-shot REALITY TLS session boundary, and driven through an explicitly injected runtime engine up to DNS/TCP connection setup and gated TLS completion handoff. `xtls-rprx-vision` has a bounded Tokio stream wrapper, and `VLESS + REALITY + Vision` can be exercised through an explicitly injected REALITY protected-stream engine. The default system dialer still rejects live REALITY networking until a real Chrome/uTLS-compatible TLS completion path exists. Full Xray DNS behavior and local Xray-core interoperability run remain future work.
+Current runtime status: local SOCKS and HTTP CONNECT inbounds can route traffic to Freedom direct egress or VLESS outbounds over TCP, TLS, TLS+Vision, and REALITY+Vision for the supported client-side profile. Process-level tests exercise the `xray-rust` binary against local echo targets and the cloned Go Xray-core oracle, including REALITY+Vision. The mobile FFI exposes lifecycle, structured errors, and a platform-neutral TUN packet boundary. Apple iOS/tvOS and Android artifact scripts can build `XrayRust.xcframework` and Android `jniLibs` on a provisioned macOS host. Full VPN packet-to-session TUN flow, full Xray DNS behavior, geosite/geoip data loading, and broad protocol parity remain future work.
 
 See:
 
 - [Mobile client core design](docs/superpowers/specs/2026-05-19-mobile-client-core-design.md)
 - [Mobile client core implementation plan](docs/superpowers/plans/2026-05-19-mobile-client-core.md)
+- [Mobile testing](docs/mobile-testing.md)
 - [Verification matrix](docs/verification.md)
