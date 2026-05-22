@@ -19,7 +19,8 @@ The first practical product remains a mobile/client core:
 - Xray JSON config as the public compatibility format.
 - Local SOCKS and HTTP proxy inbounds.
 - Platform-neutral TUN packet boundary.
-- VLESS outbound.
+- VLESS and Freedom outbounds.
+- Rule-based routing for the first practical matchers.
 - TCP, TLS, REALITY, and Vision for the first protected transport path.
 - Stable C ABI for iOS, tvOS, Android, and desktop embedding.
 - A thin CLI binary for local development and process-level interop testing.
@@ -32,12 +33,11 @@ The current runnable slice is:
 
 ```text
 xray-rust run -config config.json
-  local SOCKS inbound
-    -> VLESS outbound
-      -> TCP, TLS, TLS+Vision, or REALITY+Vision
-        -> real local Xray-core server
-          -> freedom outbound
-            -> local echo server
+  local SOCKS or HTTP inbound
+    -> routing rule/default outbound selection
+      -> Freedom direct TCP or VLESS outbound
+        -> TCP, TLS, TLS+Vision, or REALITY+Vision
+          -> real local Xray-core server or local echo target
 ```
 
 This is no longer only unit-level code. The core has been exercised both in-process and as a spawned `xray-rust` process against the cloned Go Xray-core checkout.
@@ -49,13 +49,13 @@ This is no longer only unit-level code. The core has been exercised both in-proc
 Implemented crates:
 
 - `xray-config`: Xray JSON subset parser, diagnostics, and normalized config model.
-- `xray-core-rs`: core lifecycle, SOCKS listener runtime, outbound selection, and data path orchestration.
+- `xray-core-rs`: core lifecycle, SOCKS/HTTP listener runtime, routing-aware outbound selection, and data path orchestration.
 - `xray-proxy`: SOCKS and HTTP parser foundations, VLESS wire encoding, response handling, and Vision stream wrapper.
 - `xray-transport`: TCP/TLS/REALITY transport boundaries, DNS resolver abstraction, rustls TLS connector, REALITY runtime abstractions, and live REALITY rustls provider.
 - `xray-routing`: early routing foundation.
 - `xray-runtime`: runtime integration foundation.
-- `xray-tun`: platform-neutral TUN foundation.
-- `xray-ffi`: initial FFI foundation.
+- `xray-tun`: platform-neutral TUN packet queues, packet validation, and stats.
+- `xray-ffi`: mobile/desktop C ABI for core lifecycle, config validation, and TUN packet push/poll.
 - `xray-cli`: runnable `xray-rust` binary crate.
 
 The crate split matches the original mobile-first design: FFI does not own protocol logic, protocol code does not depend on mobile embedding, and the CLI stays a thin lifecycle shell over the core.
@@ -66,8 +66,10 @@ Implemented:
 
 - JSON parsing into typed Rust config structures.
 - Supported VLESS outbound settings for the first interop profile.
-- Supported SOCKS inbound settings for the runnable path.
+- Supported Freedom outbound for direct TCP egress.
+- Supported SOCKS and HTTP inbound settings for the runnable path.
 - TLS and REALITY stream settings needed by the current VLESS client slice.
+- Routing rules for the supported `field` subset: `inboundTag`, `domain:` and `full:` domain matchers, and `outboundTag`.
 - Structured diagnostics foundation.
 
 The config layer is intentionally not complete yet. It accepts enough of the Xray JSON surface to drive the current local interop scenarios.
@@ -77,9 +79,9 @@ The config layer is intentionally not complete yet. It accepts enough of the Xra
 Implemented:
 
 - `Core` lifecycle with `start` and `stop`.
-- SOCKS listener startup from config.
+- SOCKS and HTTP listener startup from config.
 - Bound inbound address reporting for tests and CLI startup output.
-- Stream dispatch from local SOCKS connections to VLESS outbounds.
+- Routing-aware stream dispatch from local SOCKS/HTTP connections to Freedom or VLESS outbounds.
 - Runtime data path for local TCP proxying.
 - Graceful process-level lifecycle through the CLI.
 
@@ -97,6 +99,33 @@ Implemented:
 - Flow-aware outbound path for `xtls-rprx-vision`.
 
 The current VLESS path is verified against real local Xray-core for the covered transport combinations.
+
+### Freedom
+
+Implemented:
+
+- Xray JSON `freedom` outbound parsing for the strict direct-TCP subset.
+- Runtime dispatch from SOCKS/HTTP to direct TCP targets.
+- Domain target resolution through the injected DNS resolver.
+- Process-level `xray-rust` coverage for SOCKS -> Freedom -> local echo.
+
+Unsupported behavior-changing Freedom settings such as redirect remain rejected instead of being ignored.
+
+### Routing
+
+Implemented:
+
+- Default outbound tag selection from the first tagged outbound.
+- Rule-ordered outbound selection for the supported field-rule subset.
+- `inboundTag` matcher.
+- `domain:` suffix matcher.
+- `full:` exact-domain matcher.
+- Parser diagnostics for unsupported routing fields and unsupported domain matcher families.
+
+Current limits:
+
+- No IP/CIDR, port, network, protocol, user, geosite, geoip, balancer, or `domainStrategy` behavior yet.
+- Domain matching is used for target domains already present in the inbound request; DNS-driven route fallback is not implemented.
 
 ### TLS
 
@@ -161,15 +190,37 @@ The binary:
 
 The CLI deliberately contains no protocol logic. It exists to validate the same lifecycle that mobile FFI will expose later.
 
+### FFI, TUN, And Mobile Artifacts
+
+Implemented:
+
+- Opaque FFI core handle.
+- Config validation/loading surface.
+- Start/stop lifecycle boundary.
+- Error object allocation and release.
+- Panic boundary protection for exported C ABI calls.
+- TUN packet push/poll FFI functions.
+- TUN packet stats and bounded queue behavior.
+- Public C header checked by tests.
+- Apple XCFramework build script covering iOS device/simulator and tvOS device/simulator targets.
+- Android `jniLibs` build script covering arm64-v8a, armeabi-v7a, x86, and x86_64.
+
+Current limits:
+
+- Cross-target artifact scripts are present and syntax-tested; full platform builds still depend on installed Rust targets, Xcode SDKs, and Android NDK in the host environment.
+- The TUN boundary moves packets across the ABI, but does not yet include a user-space TCP/IP stack or packet-to-session dispatcher.
+
 ## Verification Evidence
 
 Recent verified commands:
 
 ```bash
 cargo fmt --all -- --check
+cargo test -p xray-config --all-targets
+cargo test -p xray-core-rs --all-targets
 cargo test -p xray-cli --all-targets
 XRAY_CORE_CHECKOUT=/Users/antonmalygin/xray-rust/Xray-core cargo test -p xray-cli --test process_interop_tests -- --ignored --nocapture
-cargo clippy -p xray-cli -p xray-transport -p xray-proxy -p xray-core-rs --all-targets --locked -- -D warnings
+cargo clippy -p xray-config -p xray-core-rs -p xray-cli --all-targets --locked -- -D warnings
 ```
 
 Additional targeted checks from the protected transport work:
@@ -178,6 +229,10 @@ Additional targeted checks from the protected transport work:
 cargo test -p xray-transport reality
 cargo test -p xray-core-rs --all-targets
 cargo test -p xray-proxy --test vless_response_stream_tests
+cargo test -p xray-ffi --all-targets
+cargo test -p xray-tun --all-targets
+bash -n scripts/build-apple-xcframework.sh
+bash -n scripts/build-android-libs.sh
 ```
 
 Verified local interop scenarios:
@@ -188,21 +243,31 @@ Verified local interop scenarios:
 - In-process Rust core to real local Xray-core: VLESS REALITY+Vision.
 - Spawned `xray-rust` process to real local Xray-core: VLESS TCP.
 - Spawned `xray-rust` process to real local Xray-core: VLESS REALITY+Vision.
+- Spawned `xray-rust` process with no Go dependency: SOCKS -> Freedom -> local echo.
+- In-process Rust core: SOCKS -> Freedom -> local echo.
+- In-process Rust core: HTTP CONNECT -> VLESS TCP -> local echo.
+- In-process Rust core: routing by `inboundTag` -> Freedom -> local echo.
+- In-process Rust core: routing by `domain:` matcher -> Freedom -> local echo.
 
 ## Compatibility Surface Today
 
 The project can currently be treated as a runnable proof for this compatibility profile:
 
 - Client-side local SOCKS inbound.
+- Client-side local HTTP CONNECT inbound.
 - Client-side VLESS outbound.
+- Client-side Freedom outbound.
 - TCP transport.
 - TLS transport.
 - REALITY transport with `chrome` fingerprint.
 - `xtls-rprx-vision` over protected streams.
+- Routing by `inboundTag`, `domain:`, and `full:` for the supported field-rule subset.
+- C ABI lifecycle/config/TUN packet boundary for embedding.
+- Apple iOS/tvOS and Android artifact scripts.
 - Xray JSON configs for this subset.
 - Local process-level execution through `xray-rust`.
 
-This is a real milestone: the first local proxy process can be launched and can move bytes through a real Xray server with REALITY+Vision.
+This is a real milestone: the first local proxy process can be launched, can move bytes through a real Xray server with REALITY+Vision, and can also run direct Freedom egress locally without the Go reference process.
 
 ## Remaining Work
 
@@ -215,7 +280,7 @@ Needed:
 - Better handling of unsupported behavior-changing fields.
 - Clearer warning versus error rules for ignored fields.
 - More inbound and outbound fields from real Xray configs.
-- Routing default behavior aligned with Xray-core.
+- More routing fields aligned with Xray-core.
 - A fixture corpus from Xray examples and practical client configs.
 - Golden parse tests that assert normalized internal config and diagnostics.
 
@@ -223,33 +288,23 @@ This should be the next hardening layer because every later feature depends on s
 
 ### HTTP Inbound Runtime
 
-The HTTP parser foundation exists in `xray-proxy`, but the runtime currently starts only SOCKS listeners.
+HTTP CONNECT is implemented in-process. Remaining HTTP work is narrower now:
 
-Needed:
-
-- HTTP listener startup from config.
-- HTTP CONNECT support through the existing session/outbound path.
+- Process-level HTTP inbound interop test using the `xray-rust` binary.
 - Plain HTTP proxy request support if included in the first compatibility profile.
-- Process-level interop test using HTTP inbound to VLESS outbound.
-
-This closes the original local proxy target of SOCKS plus HTTP.
+- More HTTP inbound settings from real Xray configs.
 
 ### Mobile FFI
 
-The `xray-ffi` crate exists as a foundation, but the mobile embedding ABI is not yet complete.
+The `xray-ffi` crate now exposes the first lifecycle/config/TUN ABI. The remaining work is to make it production-grade for app embedding and packaging.
 
 Needed:
 
-- Opaque core handle.
-- Config load from JSON bytes/string.
-- Start and stop lifecycle.
-- Error object allocation and release.
-- Panic boundary protection.
 - Log callback with bounded queue behavior.
 - Bound inbound inspection or event callback.
 - C harness tests.
-- Static library output for Apple platforms.
-- Android shared library output.
+- Cross-target artifact build verification on machines with the required SDK/NDK targets.
+- ABI stability/versioning checks.
 
 This is the highest-priority product layer once the config path is stable enough for real profiles.
 
@@ -257,10 +312,9 @@ This is the highest-priority product layer once the config path is stable enough
 
 Needed:
 
-- Rust target matrix for iOS device, iOS simulator, tvOS device, and tvOS simulator.
-- `staticlib` or compatible artifact generation.
-- XCFramework packaging script.
-- Header generation and ABI stability checks.
+- Validate the existing XCFramework script on a host with the required Apple Rust targets and SDKs.
+- Add CI or local automation that fails cleanly when targets/SDKs are missing.
+- ABI stability checks for the generated header.
 - App-extension-safe runtime assumptions.
 - No reliance on process signals for embedded lifecycle.
 
@@ -270,26 +324,22 @@ The core lifecycle already points in this direction because the CLI uses the sam
 
 Needed:
 
-- Android target matrix for arm64 and x86_64.
-- `cdylib` artifact generation.
-- Header generation for JNI or direct native integration.
+- Validate the existing `jniLibs` script on a host with Android NDK and all Rust Android targets.
+- Add Gradle-facing sample layout or fixture.
 - Runtime initialization rules that work inside Android app processes.
-- Basic Gradle-facing artifact layout.
+- ABI stability checks for the generated header.
 
 The Rust core should not assume Android-specific APIs in protocol crates.
 
 ### TUN Runtime
 
-The `xray-tun` crate exists, but full packet flow is not yet implemented.
+The `xray-tun` crate and FFI packet boundary exist, but full packet-to-session flow is not yet implemented.
 
 Needed:
 
-- Bounded packet ingress and egress queues.
-- Packet size validation.
 - Flow dispatch from IP packets into outbound sessions.
-- Backpressure and drop counters.
-- FFI packet push/poll functions.
 - Later integration point for a user-space TCP/IP stack.
+- Platform adapters for iOS `NEPacketTunnelProvider` and Android `VpnService` outside the protocol crates.
 
 TUN must stay platform-neutral. iOS `NEPacketTunnelProvider` and Android `VpnService` adapters should sit outside the core ABI.
 
@@ -297,13 +347,12 @@ TUN must stay platform-neutral. iOS `NEPacketTunnelProvider` and Android `VpnSer
 
 Needed:
 
-- Xray-compatible routing rules.
-- Domain, IP, port, network, and inbound/outbound tag matching.
+- IP, CIDR, port, network, protocol, user, and source matchers.
+- `geoip:` and `geosite:` data loading.
 - Default outbound behavior compatible with Xray-core.
 - DNS app behavior.
 - Domain strategy handling.
 - Sniffing and fake DNS in later slices.
-- Geosite and geoip data loading.
 
 Routing should evolve as a rule engine, not as ad hoc checks in individual protocol handlers.
 
@@ -311,7 +360,6 @@ Routing should evolve as a rule engine, not as ad hoc checks in individual proto
 
 Outbound protocols still needed for broader Xray-core compatibility:
 
-- Freedom.
 - Blackhole.
 - Trojan.
 - Shadowsocks.
@@ -321,7 +369,6 @@ Outbound protocols still needed for broader Xray-core compatibility:
 
 Inbound protocols still needed:
 
-- HTTP runtime.
 - Dokodemo.
 - VLESS inbound.
 - Trojan inbound.
@@ -405,81 +452,81 @@ Needed:
 
 ## Recommended Roadmap
 
-### Milestone 1: Config Compatibility Hardening
+### Milestone 1: Routing And Config Corpus Hardening
 
-Goal: make the config layer safe enough for practical Xray client profiles.
+Goal: make routing/config behavior safe enough for practical Xray client profiles.
 
 Deliverables:
 
 - Fixture corpus for current VLESS TCP/TLS/REALITY/Vision configs.
 - More complete diagnostics for unsupported fields.
-- Default outbound/routing semantics aligned with Xray-core for the supported subset.
+- IP/CIDR, port, network, and protocol routing matchers for the supported subset.
+- Explicit `geoip:`/`geosite:` unsupported-or-supported policy with tests.
+- Default outbound/routing semantics checked against Xray-core for the supported subset.
 - Regression tests for parse success, parse rejection, and warnings.
 
-Why first: every mobile and runtime surface depends on config load behavior. Hardening this now reduces churn in CLI, FFI, and interop tests.
+Why first: every mobile and runtime surface depends on config load behavior, and routing is where practical client profiles start to diverge.
 
-### Milestone 2: Mobile FFI Lifecycle
+### Milestone 2: Mobile Artifact Validation And Embedding Harness
 
-Goal: expose the already-proven core lifecycle to iOS, tvOS, Android, and desktop hosts through a stable ABI.
+Goal: prove the existing ABI and scripts on actual Apple and Android target matrices.
 
 Deliverables:
 
-- C ABI for create, load config, start, stop, free, and error release.
-- Panic-safe FFI boundary.
 - C harness tests.
-- Apple and Android build artifact scripts.
-- Minimal header generation.
+- Apple iOS/tvOS XCFramework build on a prepared macOS host.
+- Android `jniLibs` build on a host with NDK.
+- ABI/version checks for `xray_ffi.h`.
+- Minimal Swift/Kotlin smoke harnesses if kept outside this repo.
 
-Why second: the process binary has proven the lifecycle. The next product-critical step is letting mobile apps embed the same lifecycle directly.
+Why second: the ABI exists; the product risk has moved to cross-target builds, host integration, and lifecycle behavior inside app processes.
 
-### Milestone 3: HTTP Inbound Runtime
+### Milestone 3: Process-Level HTTP And Routing Interop
 
-Goal: complete the original local proxy pair of SOCKS and HTTP.
-
-Deliverables:
-
-- HTTP listener startup from config.
-- HTTP CONNECT data path through existing outbound routing.
-- Process-level HTTP inbound interop test.
-
-Why third: it expands user-visible local proxy compatibility without disturbing VLESS, TLS, REALITY, or Vision.
-
-### Milestone 4: TUN Packet Boundary
-
-Goal: expose a platform-neutral packet API that mobile VPN adapters can use.
+Goal: prove the CLI process path for the newly implemented HTTP/Freedom/routing surface.
 
 Deliverables:
 
-- Bounded packet queues.
-- Packet validation.
-- FFI push/poll functions.
-- Drop counters and backpressure behavior.
-- Initial tests for queue and packet limits.
+- Spawned `xray-rust` process test for HTTP CONNECT -> Freedom.
+- Spawned `xray-rust` process test for HTTP CONNECT -> local Xray-core VLESS.
+- Spawned `xray-rust` process test for routing rule selection from JSON config.
 
-Why fourth: TUN is essential for mobile VPN mode, but it benefits from having FFI lifecycle and config behavior already settled.
+Why third: in-process tests already cover the behavior; process-level tests catch config/CLI/lifecycle regressions.
+
+### Milestone 4: TUN Flow Integration
+
+Goal: move from packet queues over FFI to actual VPN packet forwarding.
+
+Deliverables:
+
+- Packet parser and flow table.
+- User-space TCP/IP stack integration decision.
+- Packet-to-session dispatch into existing routing/outbound selection.
+- Backpressure and memory-budget tests under mobile-sized queues.
+
+Why fourth: TUN is essential for mobile VPN mode, but it should reuse the proven routing/outbound path instead of inventing a parallel runtime.
 
 ### Milestone 5: Routing, DNS, And Protocol Expansion
 
-Goal: move from the first VLESS client slice toward broader Xray-core compatibility.
+Goal: move from the first client slice toward broader Xray-core compatibility.
 
 Deliverables:
 
-- Rule-based routing.
 - DNS behavior compatible with supported profiles.
 - Additional outbound protocols.
 - Additional inbound protocols.
 - Additional transports behind the existing transport abstraction.
 
-Why fifth: this is the expansion phase and should build on stable config, runtime, and mobile boundaries.
+Why fifth: this is the expansion phase and should build on stable config, runtime, routing, and mobile boundaries.
 
 ## Immediate Next Spec Recommendation
 
 The next detailed implementation spec should be:
 
 ```text
-Config Compatibility Hardening
+Routing IP/CIDR And Practical Config Corpus
 ```
 
-It should define the exact supported config fixture set, diagnostics policy, routing/default outbound behavior, and the test matrix for practical VLESS REALITY/Vision client configs.
+It should define the exact supported fixture set, diagnostics policy, `ip`/CIDR/private-range behavior, unsupported `geoip:`/`geosite:` policy, and the test matrix for practical VLESS REALITY/Vision client configs.
 
 After that, the next detailed implementation plan should be generated from that spec and executed task by task.
