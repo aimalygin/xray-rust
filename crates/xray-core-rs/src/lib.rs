@@ -135,10 +135,14 @@ impl Core {
         }
 
         let mut bound_listeners = Vec::new();
+        let mut tun_inbound_count = 0usize;
         for inbound in &self.config.inbounds {
             match inbound.protocol {
                 InboundProtocol::Socks | InboundProtocol::Http => {}
-                InboundProtocol::Tun => continue,
+                InboundProtocol::Tun => {
+                    tun_inbound_count += 1;
+                    continue;
+                }
             }
 
             let listener = TcpListener::bind((inbound.listen.as_str(), inbound.port)).await?;
@@ -153,7 +157,7 @@ impl Core {
             ));
         }
 
-        if bound_listeners.is_empty() {
+        if bound_listeners.is_empty() && tun_inbound_count == 0 {
             return Err(CoreError::NoSupportedInbound);
         }
 

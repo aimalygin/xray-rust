@@ -39,6 +39,17 @@ fn runtime_config() -> CoreConfig {
     }
 }
 
+fn tun_runtime_config() -> CoreConfig {
+    let mut config = runtime_config();
+    config.inbounds = vec![InboundConfig {
+        tag: Some("tun-in".to_owned()),
+        protocol: InboundProtocol::Tun,
+        listen: "127.0.0.1".to_owned(),
+        port: 0,
+    }];
+    config
+}
+
 #[tokio::test]
 async fn core_starts_and_stops_from_config() {
     let mut core = Core::new(runtime_config()).unwrap();
@@ -46,6 +57,18 @@ async fn core_starts_and_stops_from_config() {
     assert_eq!(core.state(), CoreState::Created);
     core.start().await.unwrap();
     assert_eq!(core.state(), CoreState::Running);
+    core.stop().await.unwrap();
+    assert_eq!(core.state(), CoreState::Stopped);
+}
+
+#[tokio::test]
+async fn core_starts_and_stops_with_only_tun_inbound() {
+    let mut core = Core::new(tun_runtime_config()).unwrap();
+
+    core.start().await.unwrap();
+    assert_eq!(core.state(), CoreState::Running);
+    assert_eq!(core.inbound_addr(Some("tun-in")), None);
+
     core.stop().await.unwrap();
     assert_eq!(core.state(), CoreState::Stopped);
 }
