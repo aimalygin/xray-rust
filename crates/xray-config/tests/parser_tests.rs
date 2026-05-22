@@ -37,6 +37,31 @@ fn parses_vless_reality_vision_subset() {
 }
 
 #[test]
+fn parses_mobile_vless_reality_vision_split_routing_fixture() {
+    let raw = include_str!(
+        "../../../tests/fixtures/configs/mobile_vless_reality_vision_split_routing.json"
+    );
+    let parsed = parse_xray_json(raw).expect("config should parse");
+
+    assert_eq!(parsed.config.inbounds.len(), 2);
+    assert_eq!(parsed.config.outbounds.len(), 2);
+    assert!(parsed.diagnostics.is_empty());
+    assert_eq!(parsed.config.default_outbound_tag.as_deref(), Some("proxy"));
+    assert_eq!(parsed.config.routing.rules.len(), 2);
+    assert!(matches!(
+        parsed.config.outbounds[1].settings,
+        OutboundSettings::Freedom
+    ));
+    assert!(
+        parsed.config.routing.rules[0].matches_ip(Some(&IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))))
+    );
+    assert!(parsed.config.routing.rules[0]
+        .matches_ip(Some(&IpAddr::V6("fd12:3456:789a::1".parse().unwrap()))));
+    assert!(parsed.config.routing.rules[1].matches_domain(Some("captive.apple.com")));
+    assert!(parsed.config.routing.rules[1].matches_domain(Some("printer.lan.example")));
+}
+
+#[test]
 fn sets_default_outbound_tag_to_first_outbound_tag() {
     let raw = vless_raw(
         r#""users": [{ "id": "00010203-0405-0607-0809-0a0b0c0d0e0f" }]"#,
