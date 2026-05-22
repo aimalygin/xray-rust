@@ -8,7 +8,7 @@ use smoltcp::phy::{ChecksumCapabilities, Device, DeviceCapabilities, Medium, RxT
 use smoltcp::socket::tcp;
 use smoltcp::time::Instant;
 use smoltcp::wire::{HardwareAddress, IpAddress, IpEndpoint};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::net::UdpSocket;
 use tokio::sync::{mpsc, watch};
 use tokio::time::{sleep, Duration};
@@ -18,8 +18,13 @@ use xray_transport::{DnsResolver, TransportDialer};
 use xray_tun::{TunEndpoint, TunError};
 
 use crate::outbound::{
-    open_tcp_stream_with_resolver_and_dialer, select_tcp_outbound_for_session,
-    select_udp_outbound_for_session, UdpOutbound,
+    open_tcp_stream_with_resolver_and_dialer, open_vless_udp_stream_with_resolver_and_dialer,
+    select_tcp_outbound_for_session, select_udp_outbound_for_session, UdpOutbound,
+    VlessTcpOutbound, VlessUdpFraming,
+};
+use xray_proxy::vless::{
+    encode_udp_packet, encode_xudp_keep_packet, encode_xudp_new_packet, read_udp_packet,
+    read_xudp_packet,
 };
 
 const DEFAULT_RANDOM_SEED: u64 = 0x7872_6179_7275_7374;
@@ -520,8 +525,8 @@ async fn bridge_udp_flow(
         UdpOutbound::Freedom => {
             bridge_udp_freedom_flow(key, context, from_stack, shutdown).await;
         }
-        UdpOutbound::Vless(_) => {
-            let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
+        UdpOutbound::Vless(outbound) => {
+            bridge_udp_vless_flow(key, target, outbound, context, from_stack, shutdown).await;
         }
     }
 }
@@ -572,6 +577,90 @@ async fn bridge_udp_freedom_flow(
                         client,
                         source: IpEndpoint::new(IpAddress::from(source.ip()), source.port()),
                         payload: Bytes::copy_from_slice(&read_buffer[..len]),
+                    })
+                    .await
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        }
+    }
+
+    let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
+}
+
+async fn bridge_udp_vless_flow(
+    key: UdpFlowKey,
+    target: Target,
+    outbound: Box<VlessTcpOutbound>,
+    context: TunRuntimeContext,
+    mut from_stack: mpsc::Receiver<Bytes>,
+    mut shutdown: watch::Receiver<bool>,
+) {
+    let Ok((stream, framing)) = open_vless_udp_stream_with_resolver_and_dialer(
+        &outbound,
+        &target,
+        context.dns_resolver.as_ref(),
+        &context.transport_dialer,
+    )
+    .await
+    else {
+        let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
+        return;
+    };
+
+    let (mut remote_reader, mut remote_writer) = tokio::io::split(stream);
+    let fallback_source = key.target.into_endpoint();
+    let client = key.client.into_endpoint();
+    let global_id = udp_flow_global_id(key);
+    let mut sent_xudp_new = false;
+
+    loop {
+        tokio::select! {
+            changed = shutdown.changed() => {
+                if changed.is_err() || *shutdown.borrow() {
+                    break;
+                }
+            }
+            () = sleep(UDP_IDLE_TIMEOUT) => {
+                break;
+            }
+            payload = from_stack.recv() => {
+                let Some(payload) = payload else {
+                    break;
+                };
+                let frame = match framing {
+                    VlessUdpFraming::LengthPrefixed => encode_udp_packet(&payload),
+                    VlessUdpFraming::Xudp => {
+                        if sent_xudp_new {
+                            encode_xudp_keep_packet(Some(&target), &payload)
+                        } else {
+                            sent_xudp_new = true;
+                            encode_xudp_new_packet(&target, &payload, global_id)
+                        }
+                    }
+                };
+                let Ok(frame) = frame else {
+                    break;
+                };
+                if remote_writer.write_all(&frame).await.is_err() {
+                    break;
+                }
+                if remote_writer.flush().await.is_err() {
+                    break;
+                }
+            }
+            packet = read_vless_udp_response(&mut remote_reader, framing, fallback_source) => {
+                let Ok((source, payload)) = packet else {
+                    break;
+                };
+                if context
+                    .stack_tx
+                    .send(StackEvent::UdpDatagram {
+                        client,
+                        source,
+                        payload,
                     })
                     .await
                     .is_err()
@@ -714,6 +803,39 @@ fn build_udp_packet(source: IpEndpoint, destination: IpEndpoint, payload: &[u8])
         }
         _ => None,
     }
+}
+
+async fn read_vless_udp_response<R>(
+    reader: &mut R,
+    framing: VlessUdpFraming,
+    fallback_source: IpEndpoint,
+) -> std::io::Result<(IpEndpoint, Bytes)>
+where
+    R: AsyncRead + Unpin,
+{
+    match framing {
+        VlessUdpFraming::LengthPrefixed => {
+            let payload = read_udp_packet(reader).await?;
+            Ok((fallback_source, payload))
+        }
+        VlessUdpFraming::Xudp => {
+            let packet = read_xudp_packet(reader).await?;
+            let source = packet
+                .source
+                .as_ref()
+                .and_then(target_to_endpoint)
+                .unwrap_or(fallback_source);
+            Ok((source, packet.payload))
+        }
+    }
+}
+
+fn target_to_endpoint(target: &Target) -> Option<IpEndpoint> {
+    let addr = match &target.addr {
+        RoutingTargetAddr::Ip(ip) => IpAddress::from(*ip),
+        RoutingTargetAddr::Domain(_) => return None,
+    };
+    Some(IpEndpoint::new(addr, target.port))
 }
 
 fn build_ipv4_udp_packet(
@@ -968,6 +1090,36 @@ fn nonzero_udp_checksum(checksum: u16) -> u16 {
     } else {
         checksum
     }
+}
+
+fn udp_flow_global_id(key: UdpFlowKey) -> [u8; 8] {
+    let mut hash = 0xcbf2_9ce4_8422_2325u64;
+    hash_endpoint(&mut hash, key.client);
+    hash_endpoint(&mut hash, key.target);
+    hash.to_be_bytes()
+}
+
+fn hash_endpoint(hash: &mut u64, endpoint: EndpointKey) {
+    match endpoint.addr {
+        IpAddr::V4(ip) => {
+            for byte in ip.octets() {
+                hash_byte(hash, byte);
+            }
+        }
+        IpAddr::V6(ip) => {
+            for byte in ip.octets() {
+                hash_byte(hash, byte);
+            }
+        }
+    }
+    for byte in endpoint.port.to_be_bytes() {
+        hash_byte(hash, byte);
+    }
+}
+
+fn hash_byte(hash: &mut u64, byte: u8) {
+    *hash ^= u64::from(byte);
+    *hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
 }
 
 fn ipv6_transport_checksum(

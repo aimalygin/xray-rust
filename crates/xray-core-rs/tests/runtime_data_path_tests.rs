@@ -32,6 +32,7 @@ use xray_config::{
     StreamSecurity, StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
 };
 use xray_core_rs::{select_vless_tcp_outbound, Core, CoreError};
+use xray_proxy::vless::{encode_udp_packet, read_udp_packet};
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::{DnsResolver, TlsConnector, TransportDialer, TransportError};
 use xray_tun::TunEndpoint;
@@ -739,6 +740,13 @@ async fn tun_udp_client_reaches_echo_target_through_freedom_outbound() {
 }
 
 #[tokio::test]
+async fn tun_udp_client_reaches_echo_target_through_vless_udp_outbound() {
+    timeout(Duration::from_secs(2), run_tun_udp_vless_echo_scenario())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
 async fn socks_client_uses_inbound_tag_routing_rule_to_reach_freedom_outbound() {
     timeout(
         Duration::from_secs(2),
@@ -1033,6 +1041,47 @@ async fn run_tun_udp_freedom_echo_scenario() {
     );
     core.stop().await.unwrap();
     timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+async fn run_tun_udp_vless_echo_scenario() {
+    let (vless_addr, vless_handle) = spawn_fake_vless_udp_server().await;
+    let echo_addr = SocketAddr::new(
+        IpAddr::V4(Ipv4Addr::LOCALHOST),
+        allocate_unused_loopback_port(),
+    );
+    let mut core = Core::new(runtime_tun_config_with_vless_server(vless_addr)).unwrap();
+    core.start().await.unwrap();
+
+    let client_addr = Ipv4Addr::new(10, 10, 0, 2);
+    let request = ipv4_udp_packet(
+        client_addr,
+        49153,
+        Ipv4Addr::LOCALHOST,
+        echo_addr.port(),
+        b"hello tun vless udp",
+    );
+    core.tun().push_inbound(Bytes::from(request)).await.unwrap();
+
+    let reply = poll_tun_outbound_until(core.tun(), |packet| {
+        ipv4_udp_payload(packet)
+            .map(|payload| payload == b"hello tun vless udp")
+            .unwrap_or(false)
+    })
+    .await;
+    assert_ipv4_udp_packet(
+        &reply,
+        Ipv4Addr::LOCALHOST,
+        echo_addr.port(),
+        client_addr,
+        49153,
+        b"hello tun vless udp",
+    );
+    core.stop().await.unwrap();
+
+    timeout(Duration::from_secs(1), vless_handle)
         .await
         .unwrap()
         .unwrap();
@@ -1748,6 +1797,25 @@ async fn spawn_fake_vless_server() -> (SocketAddr, JoinHandle<()>) {
     (addr, handle)
 }
 
+async fn spawn_fake_vless_udp_server() -> (SocketAddr, JoinHandle<()>) {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let handle = tokio::spawn(async move {
+        let (mut inbound, _) = listener.accept().await.unwrap();
+        let target = read_vless_target_with_command(&mut inbound, 2).await;
+        assert_eq!(target.network, RoutingNetwork::Udp);
+        inbound.write_all(&[0, 0]).await.unwrap();
+
+        let payload = read_udp_packet(&mut inbound).await.unwrap();
+        assert_eq!(&payload[..], b"hello tun vless udp");
+        inbound
+            .write_all(&encode_udp_packet(&payload).unwrap())
+            .await
+            .unwrap();
+    });
+    (addr, handle)
+}
+
 async fn spawn_vless_target_assertion_server(
     expected_target: Target,
 ) -> (SocketAddr, JoinHandle<()>) {
@@ -1876,6 +1944,13 @@ async fn read_vless_target<S>(stream: &mut S) -> Target
 where
     S: AsyncRead + Unpin,
 {
+    read_vless_target_with_command(stream, 1).await
+}
+
+async fn read_vless_target_with_command<S>(stream: &mut S, expected_command: u8) -> Target
+where
+    S: AsyncRead + Unpin,
+{
     let version = stream.read_u8().await.unwrap();
     assert_eq!(version, 0);
 
@@ -1889,7 +1964,7 @@ where
     stream.read_exact(&mut addons).await.unwrap();
 
     let command = stream.read_u8().await.unwrap();
-    assert_eq!(command, 1);
+    assert_eq!(command, expected_command);
 
     let port = stream.read_u16().await.unwrap();
     let address_type = stream.read_u8().await.unwrap();
@@ -1913,7 +1988,12 @@ where
         other => panic!("unsupported VLESS address type {other}"),
     };
 
-    Target::new(addr, port, RoutingNetwork::Tcp)
+    let network = match command {
+        1 => RoutingNetwork::Tcp,
+        2 => RoutingNetwork::Udp,
+        other => panic!("unsupported VLESS command {other}"),
+    };
+    Target::new(addr, port, network)
 }
 
 async fn read_vless_header<S>(stream: &mut S) -> SocketAddr

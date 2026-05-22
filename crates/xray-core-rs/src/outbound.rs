@@ -36,6 +36,12 @@ pub enum UdpOutbound {
     Vless(Box<VlessTcpOutbound>),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VlessUdpFraming {
+    LengthPrefixed,
+    Xudp,
+}
+
 impl VlessTcpOutbound {
     pub fn server(&self) -> &Target {
         &self.server
@@ -345,6 +351,48 @@ pub async fn open_vless_tcp_stream_with_resolver_and_dialer(
     }
 
     Ok(Box::new(stream))
+}
+
+pub async fn open_vless_udp_stream_with_resolver_and_dialer(
+    outbound: &VlessTcpOutbound,
+    target: &Target,
+    dns_resolver: &dyn DnsResolver,
+    transport_dialer: &TransportDialer,
+) -> Result<(BoxedTransportStream, VlessUdpFraming), CoreError> {
+    let uses_vision = validate_connector_flow(outbound.user.flow.as_deref(), &outbound.transport)?;
+
+    let resolved_server = resolve_server_target(&outbound.server, dns_resolver).await?;
+    let mut stream = transport_dialer
+        .connect(&outbound.transport, &resolved_server)
+        .await?;
+    let request = VlessRequest {
+        user_id: outbound.user.id,
+        command: if uses_vision {
+            VlessCommand::Mux
+        } else {
+            VlessCommand::Udp
+        },
+        target: target.clone(),
+        flow: outbound.user.flow.clone(),
+    };
+    let header = encode_request_header(&request)?;
+
+    stream.write_all(&header).await?;
+
+    let stream = VlessResponseStream::new(stream);
+
+    if uses_vision {
+        return Ok((
+            Box::new(VisionStream::new(
+                stream,
+                *outbound.user.id.as_bytes(),
+                [0, 0, 0, 0],
+            )),
+            VlessUdpFraming::Xudp,
+        ));
+    }
+
+    Ok((Box::new(stream), VlessUdpFraming::LengthPrefixed))
 }
 
 pub async fn open_vless_tcp_stream(
