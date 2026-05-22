@@ -1,7 +1,9 @@
+use bytes::Bytes;
 use libc::c_char;
 use std::ffi::{CStr, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr;
+use std::slice;
 use tokio::runtime::{Builder, Runtime};
 use xray_config::parse_xray_json;
 use xray_core_rs::Core;
@@ -15,6 +17,9 @@ pub enum XrayStatus {
     ConfigError = 3,
     CoreNotLoaded = 4,
     RuntimeError = 5,
+    NoPacket = 6,
+    BufferTooSmall = 7,
+    TunError = 8,
     Panic = 255,
 }
 
@@ -22,6 +27,14 @@ pub enum XrayStatus {
 pub struct XrayError {
     code: XrayStatus,
     message: *mut c_char,
+}
+
+#[repr(C)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct XrayTunStats {
+    pub inbound_packets: u64,
+    pub outbound_packets: u64,
+    pub dropped_packets: u64,
 }
 
 pub struct XrayCoreHandle {
@@ -279,6 +292,253 @@ unsafe fn xray_core_stop_inner(
             XrayStatus::RuntimeError
         }
     }
+}
+
+/// Pushes one raw IP packet from the host TUN adapter into the core.
+///
+/// # Safety
+///
+/// `handle` must either be null or a pointer returned by `xray_core_new` that
+/// has not been freed. `data` must point to `len` readable bytes unless `len`
+/// is zero. If `error` is non-null, it must point to an initialized
+/// `*mut XrayError` value that is either null or a live error pointer returned
+/// by this library. This function may free and replace that error pointer.
+#[no_mangle]
+pub unsafe extern "C" fn xray_tun_push_packet(
+    handle: *mut XrayCoreHandle,
+    data: *const u8,
+    len: usize,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            xray_tun_push_packet_inner(handle, data, len, error)
+        })
+    }
+}
+
+unsafe fn xray_tun_push_packet_inner(
+    handle: *mut XrayCoreHandle,
+    data: *const u8,
+    len: usize,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        clear_error(error);
+    }
+
+    if handle.is_null() {
+        unsafe {
+            set_error(error, XrayStatus::NullArgument, "core handle is null");
+        }
+        return XrayStatus::NullArgument;
+    }
+    if data.is_null() && len > 0 {
+        unsafe {
+            set_error(error, XrayStatus::NullArgument, "packet data is null");
+        }
+        return XrayStatus::NullArgument;
+    }
+
+    let handle = unsafe { &mut *handle };
+    let Some(core) = handle.core.as_ref() else {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::CoreNotLoaded,
+                "core config is not loaded",
+            );
+        }
+        return XrayStatus::CoreNotLoaded;
+    };
+
+    let packet = if len == 0 {
+        Bytes::new()
+    } else {
+        let data = unsafe { slice::from_raw_parts(data, len) };
+        Bytes::copy_from_slice(data)
+    };
+
+    match handle.runtime.block_on(core.tun().push_inbound(packet)) {
+        Ok(()) => XrayStatus::Ok,
+        Err(err) => {
+            unsafe {
+                set_error(error, XrayStatus::TunError, err.to_string());
+            }
+            XrayStatus::TunError
+        }
+    }
+}
+
+/// Polls one raw IP packet emitted by the core for the host TUN adapter.
+///
+/// This function is nonblocking. If no packet is currently available, it
+/// returns `XrayStatus::NoPacket` and writes `0` to `written`.
+///
+/// # Safety
+///
+/// `handle` must either be null or a pointer returned by `xray_core_new` that
+/// has not been freed. `buffer` must point to `buffer_len` writable bytes.
+/// `written` must point to one writable `usize`. If `error` is non-null, it
+/// must point to an initialized `*mut XrayError` value that is either null or a
+/// live error pointer returned by this library. This function may free and
+/// replace that error pointer.
+#[no_mangle]
+pub unsafe extern "C" fn xray_tun_poll_packet(
+    handle: *mut XrayCoreHandle,
+    buffer: *mut u8,
+    buffer_len: usize,
+    written: *mut usize,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            xray_tun_poll_packet_inner(handle, buffer, buffer_len, written, error)
+        })
+    }
+}
+
+unsafe fn xray_tun_poll_packet_inner(
+    handle: *mut XrayCoreHandle,
+    buffer: *mut u8,
+    buffer_len: usize,
+    written: *mut usize,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        clear_error(error);
+    }
+
+    if !written.is_null() {
+        unsafe {
+            *written = 0;
+        }
+    }
+
+    if handle.is_null() {
+        unsafe {
+            set_error(error, XrayStatus::NullArgument, "core handle is null");
+        }
+        return XrayStatus::NullArgument;
+    }
+    if buffer.is_null() {
+        unsafe {
+            set_error(error, XrayStatus::NullArgument, "packet buffer is null");
+        }
+        return XrayStatus::NullArgument;
+    }
+    if written.is_null() {
+        unsafe {
+            set_error(error, XrayStatus::NullArgument, "written pointer is null");
+        }
+        return XrayStatus::NullArgument;
+    }
+
+    let handle = unsafe { &mut *handle };
+    let Some(core) = handle.core.as_ref() else {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::CoreNotLoaded,
+                "core config is not loaded",
+            );
+        }
+        return XrayStatus::CoreNotLoaded;
+    };
+
+    match handle.runtime.block_on(core.tun().try_poll_outbound()) {
+        Ok(Some(packet)) if packet.len() <= buffer_len => {
+            unsafe {
+                ptr::copy_nonoverlapping(packet.as_ptr(), buffer, packet.len());
+                *written = packet.len();
+            }
+            XrayStatus::Ok
+        }
+        Ok(Some(packet)) => {
+            unsafe {
+                set_error(
+                    error,
+                    XrayStatus::BufferTooSmall,
+                    format!(
+                        "packet length {} exceeds output buffer length {buffer_len}",
+                        packet.len()
+                    ),
+                );
+            }
+            XrayStatus::BufferTooSmall
+        }
+        Ok(None) => XrayStatus::NoPacket,
+        Err(err) => {
+            unsafe {
+                set_error(error, XrayStatus::TunError, err.to_string());
+            }
+            XrayStatus::TunError
+        }
+    }
+}
+
+/// Writes a TUN packet counter snapshot to `stats`.
+///
+/// # Safety
+///
+/// `handle` must either be null or a pointer returned by `xray_core_new` that
+/// has not been freed. `stats` must point to writable memory for one
+/// `XrayTunStats`. If `error` is non-null, it must point to an initialized
+/// `*mut XrayError` value that is either null or a live error pointer returned
+/// by this library. This function may free and replace that error pointer.
+#[no_mangle]
+pub unsafe extern "C" fn xray_tun_stats(
+    handle: *mut XrayCoreHandle,
+    stats: *mut XrayTunStats,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe { ffi_status(error, || xray_tun_stats_inner(handle, stats, error)) }
+}
+
+unsafe fn xray_tun_stats_inner(
+    handle: *mut XrayCoreHandle,
+    stats: *mut XrayTunStats,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        clear_error(error);
+    }
+
+    if handle.is_null() {
+        unsafe {
+            set_error(error, XrayStatus::NullArgument, "core handle is null");
+        }
+        return XrayStatus::NullArgument;
+    }
+    if stats.is_null() {
+        unsafe {
+            set_error(error, XrayStatus::NullArgument, "tun stats pointer is null");
+        }
+        return XrayStatus::NullArgument;
+    }
+
+    let handle = unsafe { &mut *handle };
+    let Some(core) = handle.core.as_ref() else {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::CoreNotLoaded,
+                "core config is not loaded",
+            );
+        }
+        return XrayStatus::CoreNotLoaded;
+    };
+
+    let snapshot = handle.runtime.block_on(core.tun().stats());
+    unsafe {
+        *stats = XrayTunStats {
+            inbound_packets: snapshot.inbound_packets,
+            outbound_packets: snapshot.outbound_packets,
+            dropped_packets: snapshot.dropped_packets,
+        };
+    }
+
+    XrayStatus::Ok
 }
 
 /// Frees a core handle returned by `xray_core_new`.

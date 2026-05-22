@@ -2,7 +2,8 @@ use std::ffi::{CStr, CString};
 
 use xray_ffi::{
     xray_core_free, xray_core_load_config_json, xray_core_new, xray_core_start, xray_core_stop,
-    xray_error_code, xray_error_free, xray_error_message, XrayStatus,
+    xray_error_code, xray_error_free, xray_error_message, xray_tun_poll_packet,
+    xray_tun_push_packet, xray_tun_stats, XrayStatus, XrayTunStats,
 };
 
 #[test]
@@ -93,6 +94,69 @@ fn ffi_starts_and_stops_loaded_core() {
 
     let status = unsafe { xray_core_stop(core, &mut err) };
     assert_eq!(status, XrayStatus::Ok);
+    assert!(err.is_null());
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_tun_push_packet_updates_stats() {
+    let mut err = std::ptr::null_mut();
+    let core = loaded_core(&mut err);
+    let packet = [0x45, 0, 0, 20];
+
+    let status = unsafe { xray_tun_push_packet(core, packet.as_ptr(), packet.len(), &mut err) };
+    assert_eq!(status, XrayStatus::Ok);
+    assert!(err.is_null());
+
+    let mut stats = XrayTunStats::default();
+    let status = unsafe { xray_tun_stats(core, &mut stats, &mut err) };
+    assert_eq!(status, XrayStatus::Ok);
+    assert_eq!(stats.inbound_packets, 1);
+    assert_eq!(stats.outbound_packets, 0);
+    assert_eq!(stats.dropped_packets, 0);
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_tun_push_packet_rejects_null_data() {
+    let mut err = std::ptr::null_mut();
+    let core = loaded_core(&mut err);
+
+    let status = unsafe { xray_tun_push_packet(core, std::ptr::null(), 20, &mut err) };
+
+    assert_eq!(status, XrayStatus::NullArgument);
+    assert_error(&mut err, XrayStatus::NullArgument, "packet data is null");
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_tun_poll_packet_reports_no_packet() {
+    let mut err = std::ptr::null_mut();
+    let core = loaded_core(&mut err);
+    let mut written = 7usize;
+    let mut buffer = [0_u8; 1500];
+
+    let status = unsafe {
+        xray_tun_poll_packet(
+            core,
+            buffer.as_mut_ptr(),
+            buffer.len(),
+            &mut written,
+            &mut err,
+        )
+    };
+
+    assert_eq!(status, XrayStatus::NoPacket);
+    assert_eq!(written, 0);
     assert!(err.is_null());
 
     unsafe {
@@ -192,6 +256,19 @@ fn assert_error_message(error: *const xray_ffi::XrayError, message: &str) {
         actual.contains(message),
         "expected `{actual}` to contain `{message}`"
     );
+}
+
+fn loaded_core(err: &mut *mut xray_ffi::XrayError) -> *mut xray_ffi::XrayCoreHandle {
+    let core = unsafe { xray_core_new(err) };
+    assert!(!core.is_null());
+    assert!(err.is_null());
+
+    let raw = CString::new(client_config_with_ephemeral_socks_port()).unwrap();
+    let status = unsafe { xray_core_load_config_json(core, raw.as_ptr(), err) };
+    assert_eq!(status, XrayStatus::Ok);
+    assert!(err.is_null());
+
+    core
 }
 
 fn client_config_with_ephemeral_socks_port() -> String {

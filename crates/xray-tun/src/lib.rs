@@ -69,12 +69,20 @@ impl TunEndpoint {
         self.poll_packet(&self.inbound_rx).await
     }
 
+    pub async fn try_poll_inbound(&self) -> Result<Option<Bytes>, TunError> {
+        self.try_poll_packet(&self.inbound_rx).await
+    }
+
     pub async fn push_outbound(&self, packet: Bytes) -> Result<(), TunError> {
         self.push_packet(packet, Direction::Outbound).await
     }
 
     pub async fn poll_outbound(&self) -> Result<Bytes, TunError> {
         self.poll_packet(&self.outbound_rx).await
+    }
+
+    pub async fn try_poll_outbound(&self) -> Result<Option<Bytes>, TunError> {
+        self.try_poll_packet(&self.outbound_rx).await
     }
 
     pub async fn stats(&self) -> TunStats {
@@ -143,6 +151,23 @@ impl TunEndpoint {
             tokio::select! {
                 packet = rx.recv() => return packet.ok_or(TunError::QueueClosed),
                 () = closed => {}
+            }
+        }
+    }
+
+    async fn try_poll_packet(
+        &self,
+        rx: &Mutex<mpsc::Receiver<Bytes>>,
+    ) -> Result<Option<Bytes>, TunError> {
+        let mut rx = rx.lock().await;
+
+        match rx.try_recv() {
+            Ok(packet) => Ok(Some(packet)),
+            Err(mpsc::error::TryRecvError::Empty) if !self.closed.load(Ordering::Acquire) => {
+                Ok(None)
+            }
+            Err(mpsc::error::TryRecvError::Empty | mpsc::error::TryRecvError::Disconnected) => {
+                Err(TunError::QueueClosed)
             }
         }
     }

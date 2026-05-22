@@ -70,6 +70,33 @@ async fn tun_endpoint_rejects_packets_when_queue_is_full() {
 }
 
 #[tokio::test]
+async fn tun_endpoint_try_poll_returns_none_when_queue_is_empty() {
+    let tun = TunEndpoint::new(TunConfig {
+        mtu: 1500,
+        queue_depth: 1,
+    });
+
+    assert_eq!(tun.try_poll_outbound().await.unwrap(), None);
+}
+
+#[tokio::test]
+async fn tun_endpoint_try_poll_returns_queued_packet() {
+    let tun = TunEndpoint::new(TunConfig {
+        mtu: 1500,
+        queue_depth: 1,
+    });
+
+    tun.push_outbound(Bytes::from_static(&[1, 2, 3]))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        tun.try_poll_outbound().await.unwrap(),
+        Some(Bytes::from_static(&[1, 2, 3]))
+    );
+}
+
+#[tokio::test]
 async fn tun_endpoint_stats_track_accepted_and_dropped_packets() {
     let tun = TunEndpoint::new(TunConfig {
         mtu: 2,

@@ -8,6 +8,7 @@ license.workspace = true
 crate-type = ["rlib", "staticlib", "cdylib"]
 
 [dependencies]
+bytes.workspace = true
 libc.workspace = true
 tokio.workspace = true
 xray-config = { path = "../xray-config" }
