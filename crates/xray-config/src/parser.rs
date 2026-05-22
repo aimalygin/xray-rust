@@ -4,10 +4,10 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::{
-    CoreConfig, Diagnostic, DomainMatcher, InboundConfig, InboundProtocol, Network, OutboundConfig,
-    OutboundProtocol, OutboundSettings, RealitySettings, RealityShortId, RoutingConfig,
-    RoutingRule, StreamSecurity, StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings,
-    VlessUser,
+    CoreConfig, Diagnostic, DomainMatcher, InboundConfig, InboundProtocol, IpCidr, IpMatcher,
+    Network, OutboundConfig, OutboundProtocol, OutboundSettings, RealitySettings, RealityShortId,
+    RoutingConfig, RoutingRule, StreamSecurity, StreamSettings, TargetAddr, TlsSettings,
+    VlessOutboundSettings, VlessUser,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -144,7 +144,7 @@ impl Parser<'_> {
         self.reject_unknown_fields(
             rule,
             &rule_path,
-            &["type", "inboundTag", "domain", "outboundTag"],
+            &["type", "inboundTag", "domain", "ip", "outboundTag"],
         );
 
         let type_path = format!("{rule_path}.type");
@@ -193,10 +193,12 @@ impl Parser<'_> {
             self.optional_string_array_at(rule, "inboundTag", format!("{rule_path}.inboundTag"))?;
         let domain_matchers =
             self.parse_domain_matchers(rule, "domain", format!("{rule_path}.domain"))?;
+        let ip_matchers = self.parse_ip_matchers(rule, "ip", format!("{rule_path}.ip"))?;
 
         Some(RoutingRule {
             inbound_tags,
             domain_matchers,
+            ip_matchers,
             outbound_tag: outbound_tag.to_owned(),
         })
     }
@@ -987,6 +989,73 @@ impl Parser<'_> {
         }
 
         Some(matchers)
+    }
+
+    fn parse_ip_matchers(
+        &mut self,
+        value: &Value,
+        key: &str,
+        path: String,
+    ) -> Option<Vec<IpMatcher>> {
+        let values = self.optional_string_array_at(value, key, path.clone())?;
+        let mut matchers = Vec::with_capacity(values.len());
+
+        for (index, value) in values.iter().enumerate() {
+            let item_path = format!("{path}[{index}]");
+            match self.parse_ip_matcher(value, &item_path) {
+                Some(matcher) => matchers.push(matcher),
+                None => return None,
+            }
+        }
+
+        Some(matchers)
+    }
+
+    fn parse_ip_matcher(&mut self, value: &str, path: &str) -> Option<IpMatcher> {
+        if let Some(code) = value.strip_prefix("geoip:") {
+            if code == "private" {
+                return Some(IpMatcher::Private);
+            }
+            self.error(
+                path,
+                format!("unsupported routing ip matcher `geoip:{code}`"),
+            );
+            return None;
+        }
+
+        if value.starts_with("ext:") || value.starts_with("ext-ip:") {
+            self.error(path, "external routing ip data is unsupported");
+            return None;
+        }
+
+        let (ip, prefix) = match value.split_once('/') {
+            Some((ip, prefix)) => {
+                let Some(prefix) = prefix.parse::<u8>().ok() else {
+                    self.error(path, format!("invalid routing CIDR prefix `{prefix}`"));
+                    return None;
+                };
+                (ip, Some(prefix))
+            }
+            None => (value, None),
+        };
+
+        let Some(ip) = ip.parse::<IpAddr>().ok() else {
+            self.error(path, format!("invalid routing IP matcher `{value}`"));
+            return None;
+        };
+
+        let cidr = match prefix {
+            Some(prefix) => match IpCidr::new(ip, prefix) {
+                Ok(cidr) => cidr,
+                Err(error) => {
+                    self.error(path, error.to_string());
+                    return None;
+                }
+            },
+            None => IpCidr::full(ip),
+        };
+
+        Some(IpMatcher::Cidr(cidr))
     }
 
     fn u16_at(&mut self, value: &Value, key: &str, path: String) -> Option<u16> {

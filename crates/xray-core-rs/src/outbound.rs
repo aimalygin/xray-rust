@@ -1,3 +1,5 @@
+use std::net::IpAddr;
+
 use tokio::io::AsyncWriteExt;
 use xray_config::{
     CoreConfig, Network, OutboundConfig, OutboundSettings, StreamSecurity, TargetAddr, VlessUser,
@@ -43,7 +45,7 @@ impl VlessTcpOutbound {
 }
 
 pub fn select_tcp_outbound(config: &CoreConfig) -> Result<TcpOutbound, CoreError> {
-    let outbound = select_configured_outbound(config, None, None)?;
+    let outbound = select_configured_outbound(config, None, None, None)?;
     build_tcp_outbound(outbound)
 }
 
@@ -52,7 +54,12 @@ pub fn select_tcp_outbound_for_session(
     inbound_tag: Option<&str>,
     target: &Target,
 ) -> Result<TcpOutbound, CoreError> {
-    let outbound = select_configured_outbound(config, inbound_tag, target_domain(target))?;
+    let outbound = select_configured_outbound(
+        config,
+        inbound_tag,
+        target_domain(target),
+        target_ip(target),
+    )?;
     build_tcp_outbound(outbound)
 }
 
@@ -74,7 +81,7 @@ fn build_tcp_outbound(outbound: &OutboundConfig) -> Result<TcpOutbound, CoreErro
 }
 
 pub fn select_vless_tcp_outbound(config: &CoreConfig) -> Result<VlessTcpOutbound, CoreError> {
-    let outbound = select_configured_outbound(config, None, None)?;
+    let outbound = select_configured_outbound(config, None, None, None)?;
     build_vless_tcp_outbound(outbound)
 }
 
@@ -82,12 +89,13 @@ fn select_configured_outbound<'a>(
     config: &'a CoreConfig,
     inbound_tag: Option<&str>,
     target_domain: Option<&str>,
+    target_ip: Option<&IpAddr>,
 ) -> Result<&'a OutboundConfig, CoreError> {
     let routed_tag = config
         .routing
         .rules
         .iter()
-        .find(|rule| rule.matches(inbound_tag, target_domain))
+        .find(|rule| rule.matches(inbound_tag, target_domain, target_ip))
         .map(|rule| rule.outbound_tag.as_str());
 
     let outbound = match routed_tag.or(config.default_outbound_tag.as_deref()) {
@@ -109,6 +117,13 @@ fn target_domain(target: &Target) -> Option<&str> {
     match &target.addr {
         RoutingTargetAddr::Domain(domain) => Some(domain.as_str()),
         RoutingTargetAddr::Ip(_) => None,
+    }
+}
+
+fn target_ip(target: &Target) -> Option<&IpAddr> {
+    match &target.addr {
+        RoutingTargetAddr::Ip(ip) => Some(ip),
+        RoutingTargetAddr::Domain(_) => None,
     }
 }
 

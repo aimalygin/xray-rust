@@ -12,9 +12,9 @@ use tokio::time::{timeout, Duration};
 use tokio_rustls::TlsAcceptor;
 use uuid::Uuid;
 use xray_config::{
-    CoreConfig, DomainMatcher, InboundConfig, InboundProtocol, Network, OutboundConfig,
-    OutboundSettings, RealitySettings, RealityShortId, RoutingConfig, RoutingRule, StreamSecurity,
-    StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
+    CoreConfig, DomainMatcher, InboundConfig, InboundProtocol, IpCidr, IpMatcher, Network,
+    OutboundConfig, OutboundSettings, RealitySettings, RealityShortId, RoutingConfig, RoutingRule,
+    StreamSecurity, StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
 };
 use xray_core_rs::{select_vless_tcp_outbound, Core, CoreError};
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
@@ -133,6 +133,7 @@ fn runtime_config_with_routed_freedom_outbound(unused_proxy_port: u16) -> CoreCo
             rules: vec![RoutingRule {
                 inbound_tags: vec!["socks-in".to_owned()],
                 domain_matchers: Vec::new(),
+                ip_matchers: Vec::new(),
                 outbound_tag: "direct".to_owned(),
             }],
         },
@@ -160,6 +161,37 @@ fn runtime_config_with_domain_routed_freedom_outbound(unused_proxy_port: u16) ->
             rules: vec![RoutingRule {
                 inbound_tags: Vec::new(),
                 domain_matchers: vec![DomainMatcher::Suffix("example.com".to_owned())],
+                ip_matchers: Vec::new(),
+                outbound_tag: "direct".to_owned(),
+            }],
+        },
+    }
+}
+
+fn runtime_config_with_ip_routed_freedom_outbound(unused_proxy_port: u16) -> CoreConfig {
+    CoreConfig {
+        inbounds: vec![InboundConfig {
+            tag: Some("socks-in".to_owned()),
+            protocol: InboundProtocol::Socks,
+            listen: "127.0.0.1".to_owned(),
+            port: 0,
+        }],
+        outbounds: vec![
+            vless_outbound(
+                StreamSecurity::None,
+                TargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+                unused_proxy_port,
+            ),
+            freedom_outbound(),
+        ],
+        default_outbound_tag: Some("proxy".to_owned()),
+        routing: RoutingConfig {
+            rules: vec![RoutingRule {
+                inbound_tags: Vec::new(),
+                domain_matchers: Vec::new(),
+                ip_matchers: vec![IpMatcher::Cidr(
+                    IpCidr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 0)), 8).unwrap(),
+                )],
                 outbound_tag: "direct".to_owned(),
             }],
         },
@@ -596,6 +628,16 @@ async fn socks_client_uses_domain_routing_rule_to_reach_freedom_outbound() {
 }
 
 #[tokio::test]
+async fn socks_client_uses_ip_routing_rule_to_reach_freedom_outbound() {
+    timeout(
+        Duration::from_secs(2),
+        run_socks_to_ip_routed_freedom_echo_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
 async fn socks_client_reaches_echo_target_through_domain_vless_server() {
     timeout(
         Duration::from_secs(2),
@@ -736,6 +778,31 @@ async fn run_socks_to_domain_routed_freedom_echo_scenario() {
     client.read_exact(&mut echoed).await.unwrap();
 
     assert_eq!(echoed, b"hello domain routed freedom");
+    drop(client);
+    core.stop().await.unwrap();
+
+    timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+async fn run_socks_to_ip_routed_freedom_echo_scenario() {
+    let (echo_addr, echo_handle) = spawn_echo_server().await;
+    let config = runtime_config_with_ip_routed_freedom_outbound(allocate_unused_loopback_port());
+
+    let mut core = Core::new(config).unwrap();
+    core.start().await.unwrap();
+    let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
+
+    let mut client = TcpStream::connect(socks_addr).await.unwrap();
+    socks5_connect(&mut client, echo_addr).await;
+
+    client.write_all(b"hello ip routed freedom").await.unwrap();
+    let mut echoed = vec![0; "hello ip routed freedom".len()];
+    client.read_exact(&mut echoed).await.unwrap();
+
+    assert_eq!(echoed, b"hello ip routed freedom");
     drop(client);
     core.stop().await.unwrap();
 

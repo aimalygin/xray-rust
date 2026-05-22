@@ -1,8 +1,10 @@
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
 use xray_config::{
     CoreConfig, Diagnostic, DiagnosticSeverity, DomainMatcher, InboundConfig, InboundProtocol,
-    Network, OutboundConfig, OutboundProtocol, OutboundSettings, RealitySettings, RealityShortId,
-    RoutingConfig, RoutingRule, StreamSecurity, StreamSettings, TargetAddr, VlessOutboundSettings,
-    VlessUser,
+    IpCidr, IpMatcher, Network, OutboundConfig, OutboundProtocol, OutboundSettings,
+    RealitySettings, RealityShortId, RoutingConfig, RoutingRule, StreamSecurity, StreamSettings,
+    TargetAddr, VlessOutboundSettings, VlessUser,
 };
 
 #[test]
@@ -129,6 +131,7 @@ fn normalized_model_can_represent_inbound_tag_routing_rule() {
         rules: vec![RoutingRule {
             inbound_tags: vec!["socks-in".to_owned()],
             domain_matchers: Vec::new(),
+            ip_matchers: Vec::new(),
             outbound_tag: "direct".to_owned(),
         }],
     };
@@ -147,6 +150,7 @@ fn normalized_model_can_represent_domain_routing_rule() {
                 DomainMatcher::Suffix("example.com".to_owned()),
                 DomainMatcher::Full("exact.test".to_owned()),
             ],
+            ip_matchers: Vec::new(),
             outbound_tag: "proxy".to_owned(),
         }],
     };
@@ -156,6 +160,27 @@ fn normalized_model_can_represent_domain_routing_rule() {
     assert!(routing.rules[0].matches_domain(Some("EXACT.test")));
     assert!(!routing.rules[0].matches_domain(Some("notexact.test")));
     assert!(!routing.rules[0].matches_domain(None));
+}
+
+#[test]
+fn normalized_model_can_represent_ip_routing_rule() {
+    let routing = RoutingConfig {
+        rules: vec![RoutingRule {
+            inbound_tags: Vec::new(),
+            domain_matchers: Vec::new(),
+            ip_matchers: vec![
+                IpMatcher::Cidr(IpCidr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 0)), 8).unwrap()),
+                IpMatcher::Private,
+            ],
+            outbound_tag: "direct".to_owned(),
+        }],
+    };
+
+    assert!(routing.rules[0].matches_ip(Some(&IpAddr::V4(Ipv4Addr::new(10, 42, 0, 1)))));
+    assert!(routing.rules[0].matches_ip(Some(&IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)))));
+    assert!(routing.rules[0].matches_ip(Some(&IpAddr::V6(Ipv6Addr::LOCALHOST))));
+    assert!(!routing.rules[0].matches_ip(Some(&IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)))));
+    assert!(!routing.rules[0].matches_ip(None));
 }
 
 #[test]

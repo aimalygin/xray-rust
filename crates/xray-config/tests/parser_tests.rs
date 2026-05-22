@@ -1,3 +1,5 @@
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
 use xray_config::{
     parse_xray_json, DiagnosticSeverity, OutboundSettings, RealityShortId, StreamSecurity,
     TargetAddr,
@@ -112,6 +114,7 @@ fn parses_field_routing_rule_with_inbound_tag() {
         vec!["socks-in".to_owned()]
     );
     assert!(parsed.config.routing.rules[0].domain_matchers.is_empty());
+    assert!(parsed.config.routing.rules[0].ip_matchers.is_empty());
     assert_eq!(parsed.config.routing.rules[0].outbound_tag, "proxy");
 }
 
@@ -131,6 +134,59 @@ fn parses_field_routing_rule_with_domain_suffix() {
     assert!(parsed.config.routing.rules[0].matches_domain(Some("api.example.com")));
     assert!(parsed.config.routing.rules[0].matches_domain(Some("example.com")));
     assert!(!parsed.config.routing.rules[0].matches_domain(Some("other.test")));
+}
+
+#[test]
+fn parses_field_routing_ip_matchers() {
+    let raw = raw_with_routing(
+        r#""rules": [{
+          "type": "field",
+          "ip": ["10.0.0.0/8", "192.168.1.1", "geoip:private", "fd00::/8"],
+          "outboundTag": "proxy"
+        }]"#,
+    );
+
+    let parsed = parse_xray_json(&raw).expect("config should parse");
+
+    assert_eq!(parsed.config.routing.rules.len(), 1);
+    assert!(
+        parsed.config.routing.rules[0].matches_ip(Some(&IpAddr::V4(Ipv4Addr::new(10, 42, 0, 1))))
+    );
+    assert!(
+        parsed.config.routing.rules[0].matches_ip(Some(&IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))))
+    );
+    assert!(parsed.config.routing.rules[0].matches_ip(Some(&IpAddr::V6(Ipv6Addr::LOCALHOST))));
+    assert!(parsed.config.routing.rules[0]
+        .matches_ip(Some(&IpAddr::V6("fd12:3456:789a::1".parse().unwrap()))));
+    assert!(
+        !parsed.config.routing.rules[0].matches_ip(Some(&IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))))
+    );
+}
+
+#[test]
+fn rejects_unsupported_routing_ip_geoip_with_path() {
+    let raw = raw_with_routing(
+        r#""rules": [{
+          "type": "field",
+          "ip": ["geoip:cn"],
+          "outboundTag": "proxy"
+        }]"#,
+    );
+
+    assert_parse_error_path(&raw, "$.routing.rules[0].ip[0]");
+}
+
+#[test]
+fn rejects_invalid_routing_ip_cidr_with_path() {
+    let raw = raw_with_routing(
+        r#""rules": [{
+          "type": "field",
+          "ip": ["10.0.0.0/33"],
+          "outboundTag": "proxy"
+        }]"#,
+    );
+
+    assert_parse_error_path(&raw, "$.routing.rules[0].ip[0]");
 }
 
 #[test]
