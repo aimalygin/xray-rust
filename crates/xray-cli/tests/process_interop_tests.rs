@@ -48,6 +48,16 @@ async fn xray_rust_process_reaches_echo_server_through_freedom_outbound() {
     .unwrap();
 }
 
+#[tokio::test]
+async fn xray_rust_process_http_connect_reaches_echo_server_through_freedom_outbound() {
+    timeout(
+        Duration::from_secs(20),
+        run_xray_rust_process_http_freedom_interop(),
+    )
+    .await
+    .unwrap();
+}
+
 async fn run_xray_rust_process_interop(security: XrayInboundSecurity) {
     let xray_checkout = resolve_xray_checkout();
     let xray = timeout(
@@ -129,6 +139,49 @@ async fn run_xray_rust_process_freedom_interop() {
     .expect("socks connect timeout");
 
     let payload = b"hello xray-rust freedom process";
+    timeout(Duration::from_secs(5), client.write_all(payload))
+        .await
+        .expect("write payload timeout")
+        .expect("write payload");
+    let mut echoed = vec![0; payload.len()];
+    match timeout(Duration::from_secs(5), client.read_exact(&mut echoed)).await {
+        Ok(result) => {
+            result.expect("read echo");
+        }
+        Err(error) => {
+            eprintln!("{}", xray_rust.logs());
+            panic!("read echo timeout: {error}");
+        }
+    }
+    assert_eq!(echoed, payload);
+
+    drop(client);
+    drop(xray_rust);
+    timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .expect("echo task should finish")
+        .expect("echo task should not panic");
+}
+
+async fn run_xray_rust_process_http_freedom_interop() {
+    let (echo_addr, echo_handle) = spawn_echo_server().await;
+    let client_temp_dir = create_temp_dir("xray-rust-cli-http-freedom-process-interop");
+    let client_config_path = client_temp_dir.path.join("client.json");
+    write_xray_rust_http_freedom_client_config(&client_config_path);
+    let (xray_rust, http_addr) =
+        start_xray_rust_process_for_inbound(client_temp_dir, &client_config_path, "http-in")
+            .await
+            .expect("start xray-rust process");
+
+    let mut client = timeout(Duration::from_secs(5), TcpStream::connect(http_addr))
+        .await
+        .expect("connect xray-rust http timeout")
+        .expect("connect xray-rust http");
+    timeout(Duration::from_secs(5), http_connect(&mut client, echo_addr))
+        .await
+        .expect("http connect timeout");
+
+    let payload = b"hello xray-rust http freedom process";
     timeout(Duration::from_secs(5), client.write_all(payload))
         .await
         .expect("write payload timeout")
@@ -416,6 +469,27 @@ fn write_xray_rust_freedom_client_config(path: &Path) {
     fs::write(path, config).expect("write xray-rust freedom client config");
 }
 
+fn write_xray_rust_http_freedom_client_config(path: &Path) {
+    let config = r#"{
+  "inbounds": [
+    {
+      "tag": "http-in",
+      "protocol": "http",
+      "listen": "127.0.0.1",
+      "port": 0
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {}
+    }
+  ]
+}"#;
+    fs::write(path, config).expect("write xray-rust http freedom client config");
+}
+
 async fn start_xray_vless_server(
     xray_checkout: &Path,
     server_config: XrayVlessServerConfig,
@@ -474,6 +548,14 @@ async fn start_xray_rust_process(
     temp_dir: TempDir,
     config_path: &Path,
 ) -> Result<(XrayRustProcess, SocketAddr), String> {
+    start_xray_rust_process_for_inbound(temp_dir, config_path, "socks-in").await
+}
+
+async fn start_xray_rust_process_for_inbound(
+    temp_dir: TempDir,
+    config_path: &Path,
+    inbound_tag: &str,
+) -> Result<(XrayRustProcess, SocketAddr), String> {
     let stdout_path = temp_dir.path.join("xray-rust.stdout.log");
     let stderr_path = temp_dir.path.join("xray-rust.stderr.log");
     let mut child = Command::new(env!("CARGO_BIN_EXE_xray-rust"))
@@ -488,7 +570,9 @@ async fn start_xray_rust_process(
         ))
         .spawn()
         .expect("start xray-rust process");
-    let socks_addr = wait_for_xray_rust_socks_addr(&mut child, &stdout_path, &stderr_path).await?;
+    let inbound_addr =
+        wait_for_xray_rust_inbound_addr(&mut child, &stdout_path, &stderr_path, inbound_tag)
+            .await?;
 
     Ok((
         XrayRustProcess {
@@ -497,7 +581,7 @@ async fn start_xray_rust_process(
             stdout_path,
             stderr_path,
         },
-        socks_addr,
+        inbound_addr,
     ))
 }
 
@@ -531,29 +615,30 @@ async fn wait_for_tcp_listener(
     }
 }
 
-async fn wait_for_xray_rust_socks_addr(
+async fn wait_for_xray_rust_inbound_addr(
     child: &mut Child,
     stdout_path: &Path,
     stderr_path: &Path,
+    inbound_tag: &str,
 ) -> Result<SocketAddr, String> {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         if let Some(status) = child.try_wait().expect("check xray-rust status") {
             return Err(format!(
-                "xray-rust exited before reporting socks addr: {status}\nstdout:\n{}\nstderr:\n{}",
+                "xray-rust exited before reporting inbound addr: {status}\nstdout:\n{}\nstderr:\n{}",
                 fs::read_to_string(stdout_path).unwrap_or_default(),
                 fs::read_to_string(stderr_path).unwrap_or_default()
             ));
         }
 
         let stderr = fs::read_to_string(stderr_path).unwrap_or_default();
-        if let Some(addr) = parse_bound_socks_addr(&stderr) {
+        if let Some(addr) = parse_bound_inbound_addr(&stderr, inbound_tag) {
             return Ok(addr);
         }
 
         if Instant::now() >= deadline {
             return Err(format!(
-                "xray-rust did not report socks addr\nstdout:\n{}\nstderr:\n{}",
+                "xray-rust did not report inbound addr for {inbound_tag}\nstdout:\n{}\nstderr:\n{}",
                 fs::read_to_string(stdout_path).unwrap_or_default(),
                 stderr
             ));
@@ -563,9 +648,10 @@ async fn wait_for_xray_rust_socks_addr(
     }
 }
 
-fn parse_bound_socks_addr(log: &str) -> Option<SocketAddr> {
+fn parse_bound_inbound_addr(log: &str, inbound_tag: &str) -> Option<SocketAddr> {
+    let prefix = format!("bound inbound {inbound_tag} at ");
     log.lines().find_map(|line| {
-        line.strip_prefix("bound inbound socks-in at ")
+        line.strip_prefix(&prefix)
             .and_then(|addr| addr.parse().ok())
     })
 }
@@ -615,4 +701,21 @@ async fn socks5_connect(client: &mut TcpStream, target: SocketAddr) {
         .await
         .expect("read socks reply");
     assert_eq!(reply, [5, 0, 0, 1, 0, 0, 0, 0, 0, 0]);
+}
+
+async fn http_connect(client: &mut TcpStream, target: SocketAddr) {
+    let authority = target.to_string();
+    let request = format!("CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\n\r\n");
+    client
+        .write_all(request.as_bytes())
+        .await
+        .expect("write http connect");
+
+    let expected = b"HTTP/1.1 200 Connection Established\r\n\r\n";
+    let mut response = vec![0; expected.len()];
+    client
+        .read_exact(&mut response)
+        .await
+        .expect("read http connect response");
+    assert_eq!(response, expected);
 }
