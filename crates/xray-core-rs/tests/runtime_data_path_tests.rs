@@ -140,6 +140,52 @@ fn runtime_tun_config_with_freedom_outbound() -> CoreConfig {
     }
 }
 
+fn runtime_tun_config_with_routed_freedom_outbound(unused_proxy_port: u16) -> CoreConfig {
+    CoreConfig {
+        inbounds: vec![InboundConfig {
+            tag: Some("tun-in".to_owned()),
+            protocol: InboundProtocol::Tun,
+            listen: "127.0.0.1".to_owned(),
+            port: 0,
+        }],
+        outbounds: vec![
+            vless_outbound(
+                StreamSecurity::None,
+                TargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+                unused_proxy_port,
+            ),
+            freedom_outbound(),
+        ],
+        default_outbound_tag: Some("proxy".to_owned()),
+        routing: RoutingConfig {
+            rules: vec![RoutingRule {
+                inbound_tags: vec!["tun-in".to_owned()],
+                domain_matchers: Vec::new(),
+                ip_matchers: Vec::new(),
+                outbound_tag: "direct".to_owned(),
+            }],
+        },
+    }
+}
+
+fn runtime_tun_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig {
+    CoreConfig {
+        inbounds: vec![InboundConfig {
+            tag: Some("tun-in".to_owned()),
+            protocol: InboundProtocol::Tun,
+            listen: "127.0.0.1".to_owned(),
+            port: 0,
+        }],
+        outbounds: vec![vless_outbound(
+            StreamSecurity::None,
+            TargetAddr::Ip(vless_addr.ip()),
+            vless_addr.port(),
+        )],
+        default_outbound_tag: None,
+        routing: RoutingConfig::default(),
+    }
+}
+
 fn runtime_config_with_routed_freedom_outbound(unused_proxy_port: u16) -> CoreConfig {
     CoreConfig {
         inbounds: vec![InboundConfig {
@@ -650,6 +696,20 @@ async fn tun_tcp_client_reaches_echo_target_through_freedom_outbound() {
 }
 
 #[tokio::test]
+async fn tun_tcp_client_reaches_echo_target_through_vless_tcp_outbound() {
+    timeout(Duration::from_secs(2), run_tun_tcp_vless_echo_scenario())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn tun_tcp_client_uses_inbound_tag_routing_rule_to_reach_freedom_outbound() {
+    timeout(Duration::from_secs(2), run_tun_tcp_routed_freedom_echo_scenario())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
 async fn socks_client_uses_inbound_tag_routing_rule_to_reach_freedom_outbound() {
     timeout(
         Duration::from_secs(2),
@@ -804,6 +864,66 @@ async fn run_tun_tcp_freedom_echo_scenario() {
     .await;
 
     assert_eq!(received, b"hello tun");
+    core.stop().await.unwrap();
+    timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+async fn run_tun_tcp_vless_echo_scenario() {
+    let (echo_addr, echo_handle) = spawn_echo_server().await;
+    let (vless_addr, vless_handle) = spawn_fake_vless_server().await;
+    let mut core = Core::new(runtime_tun_config_with_vless_server(vless_addr)).unwrap();
+    core.start().await.unwrap();
+
+    let mut client = TunTcpClient::new();
+    client.connect(echo_addr);
+    pump_tun_until(&mut client, core.tun(), TunTcpClient::may_send).await;
+
+    client.send_payload(b"hello tun vless");
+    let mut received = Vec::new();
+    pump_tun_until(&mut client, core.tun(), |client| {
+        received.extend_from_slice(&client.recv_available());
+        received.len() >= "hello tun vless".len()
+    })
+    .await;
+
+    assert_eq!(received, b"hello tun vless");
+    core.stop().await.unwrap();
+
+    timeout(Duration::from_secs(1), vless_handle)
+        .await
+        .unwrap()
+        .unwrap();
+    timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+async fn run_tun_tcp_routed_freedom_echo_scenario() {
+    let unused_proxy_port = allocate_unused_loopback_port();
+    let (echo_addr, echo_handle) = spawn_echo_server().await;
+    let mut core = Core::new(runtime_tun_config_with_routed_freedom_outbound(
+        unused_proxy_port,
+    ))
+    .unwrap();
+    core.start().await.unwrap();
+
+    let mut client = TunTcpClient::new();
+    client.connect(echo_addr);
+    pump_tun_until(&mut client, core.tun(), TunTcpClient::may_send).await;
+
+    client.send_payload(b"hello tun routed");
+    let mut received = Vec::new();
+    pump_tun_until(&mut client, core.tun(), |client| {
+        received.extend_from_slice(&client.recv_available());
+        received.len() >= "hello tun routed".len()
+    })
+    .await;
+
+    assert_eq!(received, b"hello tun routed");
     core.stop().await.unwrap();
     timeout(Duration::from_secs(1), echo_handle)
         .await
