@@ -1,4 +1,5 @@
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use thiserror::Error;
@@ -67,6 +68,27 @@ pub struct BenchOptions {
     pub xray_core_bin: Option<PathBuf>,
     pub xray_core_dir: Option<PathBuf>,
     pub no_auto_build: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct ProcessSample {
+    pub elapsed_ms: u128,
+    pub rss_kib: u64,
+    pub cpu_millis: u64,
+    pub threads: Option<u64>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct BenchResult {
+    pub engine: String,
+    pub workload: String,
+    pub status: String,
+    pub duration_ms: u128,
+    pub bytes_sent: u64,
+    pub bytes_received: u64,
+    pub peak_rss_kib: u64,
+    pub cpu_millis: u64,
+    pub samples: usize,
 }
 
 impl Default for BenchOptions {
@@ -207,6 +229,119 @@ fn parse_usize(raw: &str, flag: &str) -> Result<usize, BenchError> {
         .map_err(|_| BenchError::InvalidArguments(format!("invalid integer `{raw}` for {flag}")))
 }
 
+pub fn parse_ps_sample(raw: &str) -> Result<ProcessSample, BenchError> {
+    let fields = raw.split_whitespace().collect::<Vec<_>>();
+    if fields.len() < 2 {
+        return Err(BenchError::InvalidArguments(format!(
+            "invalid ps sample `{raw}`"
+        )));
+    }
+    let rss_kib = fields[0].parse::<u64>().map_err(|_| {
+        BenchError::InvalidArguments(format!("invalid ps rss field `{}`", fields[0]))
+    })?;
+    let cpu_millis = parse_ps_time_to_millis(fields[1])?;
+    let threads = fields
+        .get(2)
+        .map(|raw| {
+            raw.parse::<u64>().map_err(|_| {
+                BenchError::InvalidArguments(format!("invalid ps thread field `{raw}`"))
+            })
+        })
+        .transpose()?;
+
+    Ok(ProcessSample {
+        elapsed_ms: 0,
+        rss_kib,
+        cpu_millis,
+        threads,
+    })
+}
+
+fn parse_ps_time_to_millis(raw: &str) -> Result<u64, BenchError> {
+    let (days, time) = match raw.split_once('-') {
+        Some((days, time)) => (
+            days.parse::<u64>().map_err(|_| {
+                BenchError::InvalidArguments(format!("invalid ps day field `{days}`"))
+            })?,
+            time,
+        ),
+        None => (0, raw),
+    };
+    let parts = time.split(':').collect::<Vec<_>>();
+    let (hours, minutes, seconds) = match parts.as_slice() {
+        [minutes, seconds] => (0, parse_time_part(minutes)?, parse_seconds(seconds)?),
+        [hours, minutes, seconds] => (
+            parse_time_part(hours)?,
+            parse_time_part(minutes)?,
+            parse_seconds(seconds)?,
+        ),
+        _ => {
+            return Err(BenchError::InvalidArguments(format!(
+                "invalid ps time field `{raw}`"
+            )));
+        }
+    };
+
+    Ok(days * 24 * 60 * 60 * 1000 + hours * 60 * 60 * 1000 + minutes * 60 * 1000 + seconds)
+}
+
+fn parse_time_part(raw: &str) -> Result<u64, BenchError> {
+    raw.parse::<u64>()
+        .map_err(|_| BenchError::InvalidArguments(format!("invalid ps time component `{raw}`")))
+}
+
+fn parse_seconds(raw: &str) -> Result<u64, BenchError> {
+    let (whole, fractional) = raw.split_once('.').unwrap_or((raw, ""));
+    let whole = parse_time_part(whole)?;
+    let mut millis = 0;
+    for (index, byte) in fractional.as_bytes().iter().take(3).enumerate() {
+        if !byte.is_ascii_digit() {
+            return Err(BenchError::InvalidArguments(format!(
+                "invalid ps second component `{raw}`"
+            )));
+        }
+        let digit = u64::from(byte - b'0');
+        millis += match index {
+            0 => digit * 100,
+            1 => digit * 10,
+            _ => digit,
+        };
+    }
+    Ok(whole * 1000 + millis)
+}
+
+pub fn write_result_json(path: &Path, result: &BenchResult) -> Result<(), BenchError> {
+    let data = serde_json::to_vec_pretty(result).map_err(|error| {
+        BenchError::InvalidArguments(format!("failed to encode result json: {error}"))
+    })?;
+    fs::write(path, data).map_err(|error| {
+        BenchError::InvalidArguments(format!(
+            "failed to write result json `{}`: {error}",
+            path.display()
+        ))
+    })
+}
+
+pub fn write_samples_csv(path: &Path, samples: &[ProcessSample]) -> Result<(), BenchError> {
+    let mut csv = String::from("elapsed_ms,rss_kib,cpu_millis,threads\n");
+    for sample in samples {
+        let threads = sample
+            .threads
+            .map(|threads| threads.to_string())
+            .unwrap_or_default();
+        csv.push_str(&format!(
+            "{},{},{},{}\n",
+            sample.elapsed_ms, sample.rss_kib, sample.cpu_millis, threads
+        ));
+    }
+    fs::write(path, csv).map_err(|error| {
+        BenchError::InvalidArguments(format!(
+            "failed to write samples csv `{}`: {error}",
+            path.display()
+        ))
+    })
+}
+
 pub async fn run_cli<I, S>(args: I) -> Result<(), BenchError>
 where
     I: IntoIterator<Item = S>,
@@ -287,5 +422,19 @@ mod tests {
         assert_eq!(options.iterations, 3);
         assert_eq!(options.payload_size, 64);
         assert_eq!(options.xray_core_dir, Some(PathBuf::from("../Xray-core")));
+    }
+
+    #[test]
+    fn parses_ps_sample_line_with_thread_count() {
+        let sample = parse_ps_sample(" 12345 00:01.23 7").unwrap();
+        assert_eq!(sample.rss_kib, 12345);
+        assert_eq!(sample.cpu_millis, 1230);
+        assert_eq!(sample.threads, Some(7));
+    }
+
+    #[test]
+    fn parses_ps_time_with_hours() {
+        let sample = parse_ps_sample(" 2048 01:02:03 9").unwrap();
+        assert_eq!(sample.cpu_millis, 3_723_000);
     }
 }
