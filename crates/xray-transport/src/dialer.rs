@@ -2,8 +2,8 @@ use std::{fmt, sync::Arc};
 
 use crate::{
     BoxedTransportStream, ConnectorConfig, RealityRuntimeEngine, RealityTlsEngine,
-    RustlsRealityTlsSessionProvider, TcpConnector, TlsConnector, TransportConnector,
-    TransportError,
+    RustlsRealityTlsSessionProvider, SocketProtector, TcpConnector, TlsConnector,
+    TransportConnector, TransportError,
 };
 use xray_routing::Target;
 
@@ -11,6 +11,7 @@ use xray_routing::Target;
 pub struct TransportDialer {
     tls: TlsConnector,
     reality: Option<Arc<dyn RealityTlsEngine>>,
+    socket_protector: Option<Arc<dyn SocketProtector>>,
 }
 
 impl fmt::Debug for TransportDialer {
@@ -19,27 +20,57 @@ impl fmt::Debug for TransportDialer {
             .debug_struct("TransportDialer")
             .field("tls", &self.tls)
             .field("reality_engine", &self.reality.is_some())
+            .field("socket_protector", &self.socket_protector.is_some())
             .finish()
     }
 }
 
 impl TransportDialer {
     pub fn system() -> Result<Self, TransportError> {
+        Self::system_with_socket_protector(None)
+    }
+
+    pub fn system_with_socket_protector(
+        socket_protector: Option<Arc<dyn SocketProtector>>,
+    ) -> Result<Self, TransportError> {
+        let tls = match socket_protector.clone() {
+            Some(protector) => TlsConnector::system()?.with_socket_protector(protector),
+            None => TlsConnector::system()?,
+        };
+        let mut reality =
+            RealityRuntimeEngine::new(Arc::new(RustlsRealityTlsSessionProvider::new()));
+        if let Some(protector) = socket_protector.clone() {
+            reality = reality.with_socket_protector(protector);
+        }
+
         Ok(Self {
-            tls: TlsConnector::system()?,
-            reality: Some(Arc::new(RealityRuntimeEngine::new(Arc::new(
-                RustlsRealityTlsSessionProvider::new(),
-            )))),
+            tls,
+            reality: Some(Arc::new(reality)),
+            socket_protector,
         })
     }
 
     pub fn with_tls_connector(tls: TlsConnector) -> Self {
-        Self { tls, reality: None }
+        Self {
+            tls,
+            reality: None,
+            socket_protector: None,
+        }
     }
 
     pub fn with_reality_engine(mut self, reality: Arc<dyn RealityTlsEngine>) -> Self {
         self.reality = Some(reality);
         self
+    }
+
+    pub fn with_socket_protector(mut self, protector: Arc<dyn SocketProtector>) -> Self {
+        self.tls = self.tls.with_socket_protector(Arc::clone(&protector));
+        self.socket_protector = Some(protector);
+        self
+    }
+
+    pub fn socket_protector(&self) -> Option<&dyn SocketProtector> {
+        self.socket_protector.as_deref()
     }
 
     pub async fn connect(
@@ -49,9 +80,12 @@ impl TransportDialer {
     ) -> Result<BoxedTransportStream, TransportError> {
         match config {
             ConnectorConfig::Tcp => {
-                TcpConnector::new(ConnectorConfig::Tcp)
-                    .connect(target)
-                    .await
+                let connector = match &self.socket_protector {
+                    Some(protector) => TcpConnector::new(ConnectorConfig::Tcp)
+                        .with_socket_protector(Arc::clone(protector)),
+                    None => TcpConnector::new(ConnectorConfig::Tcp),
+                };
+                connector.connect(target).await
             }
             ConnectorConfig::Tls(tls_config) => self.tls.connect(target, tls_config).await,
             ConnectorConfig::Reality(reality_config) => match &self.reality {

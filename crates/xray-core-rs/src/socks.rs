@@ -19,7 +19,7 @@ use xray_proxy::vless::{
     read_xudp_packet,
 };
 use xray_routing::{Target, TargetAddr};
-use xray_transport::{DnsResolver, TransportDialer};
+use xray_transport::{protect_udp_socket, DnsResolver, TransportDialer};
 
 use crate::{
     open_tcp_stream_with_resolver_and_dialer, open_vless_udp_stream_with_resolver_and_dialer,
@@ -327,6 +327,9 @@ async fn bridge_socks_udp_freedom_flow(
     let Ok(remote_socket) = UdpSocket::bind(bind_addr).await else {
         return;
     };
+    if protect_udp_socket(&remote_socket, context.transport_dialer.socket_protector()).is_err() {
+        return;
+    }
     let mut buffer = vec![0; SOCKS_UDP_BUFFER_SIZE];
 
     loop {

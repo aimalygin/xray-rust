@@ -29,6 +29,7 @@ typedef struct XrayTunStats {
 
 typedef struct XrayCoreHandle XrayCoreHandle;
 typedef struct XrayError XrayError;
+typedef int32_t (*XraySocketProtectCallback)(int32_t fd, void *user_data);
 
 uint32_t xray_ffi_version_major(void);
 
@@ -39,6 +40,11 @@ XrayStatus xray_core_load_config_json(
     XrayError **error);
 XrayStatus xray_core_start(XrayCoreHandle *handle, XrayError **error);
 XrayStatus xray_core_stop(XrayCoreHandle *handle, XrayError **error);
+XrayStatus xray_core_set_socket_protect_callback(
+    XrayCoreHandle *handle,
+    XraySocketProtectCallback callback,
+    void *user_data,
+    XrayError **error);
 void xray_core_free(XrayCoreHandle *handle);
 
 XrayStatus xray_error_code(const XrayError *error);

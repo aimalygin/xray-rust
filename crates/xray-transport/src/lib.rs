@@ -1,11 +1,17 @@
 use async_trait::async_trait;
-use std::fmt;
 use std::net::SocketAddr;
+use std::{fmt, io, sync::Arc};
 use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::net::TcpStream;
+use tokio::net::{TcpSocket, TcpStream, UdpSocket};
 use xray_routing::{Target, TargetAddr};
 use zeroize::Zeroize;
+
+#[cfg(unix)]
+use std::os::fd::AsRawFd;
+
+#[cfg(windows)]
+use std::os::windows::io::AsRawSocket;
 
 mod dialer;
 pub mod reality;
@@ -77,6 +83,8 @@ pub enum TransportError {
     NoResolvedAddress(String, u16),
     #[error("tcp connect failed: {0}")]
     Tcp(std::io::Error),
+    #[error("socket protection failed: {0}")]
+    SocketProtection(std::io::Error),
     #[error("tls connect failed: {0}")]
     Tls(std::io::Error),
     #[error("tls configuration failed: {0}")]
@@ -128,6 +136,49 @@ impl<T> TransportStream for T where T: AsyncRead + AsyncWrite + Send + Unpin {}
 
 pub type BoxedTransportStream = Box<dyn TransportStream>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SocketHandle {
+    raw: i64,
+}
+
+impl SocketHandle {
+    pub fn raw(self) -> i64 {
+        self.raw
+    }
+
+    #[cfg(unix)]
+    fn from_tcp_socket(socket: &TcpSocket) -> Self {
+        Self {
+            raw: socket.as_raw_fd() as i64,
+        }
+    }
+
+    #[cfg(unix)]
+    fn from_udp_socket(socket: &UdpSocket) -> Self {
+        Self {
+            raw: socket.as_raw_fd() as i64,
+        }
+    }
+
+    #[cfg(windows)]
+    fn from_tcp_socket(socket: &TcpSocket) -> Self {
+        Self {
+            raw: socket.as_raw_socket() as i64,
+        }
+    }
+
+    #[cfg(windows)]
+    fn from_udp_socket(socket: &UdpSocket) -> Self {
+        Self {
+            raw: socket.as_raw_socket() as i64,
+        }
+    }
+}
+
+pub trait SocketProtector: Send + Sync {
+    fn protect(&self, socket: SocketHandle) -> io::Result<()>;
+}
+
 #[async_trait]
 pub trait RealityTlsEngine: Send + Sync {
     async fn connect(
@@ -149,14 +200,41 @@ pub trait TransportConnector: Send + Sync {
     }
 }
 
-#[derive(Debug, Clone)]
 pub struct TcpConnector {
     config: ConnectorConfig,
+    socket_protector: Option<Arc<dyn SocketProtector>>,
+}
+
+impl fmt::Debug for TcpConnector {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TcpConnector")
+            .field("config", &self.config)
+            .field("socket_protector", &self.socket_protector.is_some())
+            .finish()
+    }
+}
+
+impl Clone for TcpConnector {
+    fn clone(&self) -> Self {
+        Self {
+            config: self.config.clone(),
+            socket_protector: self.socket_protector.clone(),
+        }
+    }
 }
 
 impl TcpConnector {
     pub fn new(config: ConnectorConfig) -> Self {
-        Self { config }
+        Self {
+            config,
+            socket_protector: None,
+        }
+    }
+
+    pub fn with_socket_protector(mut self, protector: Arc<dyn SocketProtector>) -> Self {
+        self.socket_protector = Some(protector);
+        self
     }
 }
 
@@ -178,11 +256,42 @@ impl TransportConnector for TcpConnector {
             TargetAddr::Domain(domain) => return Err(TransportError::NeedsDns(domain.clone())),
         };
 
-        let stream = TcpStream::connect(addr)
-            .await
-            .map_err(TransportError::Tcp)?;
+        let stream = connect_tcp_stream(addr, self.socket_protector.as_deref()).await?;
         Ok(Box::new(stream))
     }
+}
+
+pub async fn connect_tcp_stream(
+    addr: SocketAddr,
+    socket_protector: Option<&dyn SocketProtector>,
+) -> Result<TcpStream, TransportError> {
+    let socket = if addr.is_ipv4() {
+        TcpSocket::new_v4()
+    } else {
+        TcpSocket::new_v6()
+    }
+    .map_err(TransportError::Tcp)?;
+
+    if let Some(protector) = socket_protector {
+        protector
+            .protect(SocketHandle::from_tcp_socket(&socket))
+            .map_err(TransportError::SocketProtection)?;
+    }
+
+    socket.connect(addr).await.map_err(TransportError::Tcp)
+}
+
+pub fn protect_udp_socket(
+    socket: &UdpSocket,
+    socket_protector: Option<&dyn SocketProtector>,
+) -> Result<(), TransportError> {
+    if let Some(protector) = socket_protector {
+        protector
+            .protect(SocketHandle::from_udp_socket(socket))
+            .map_err(TransportError::SocketProtection)?;
+    }
+
+    Ok(())
 }
 
 pub fn version() -> &'static str {

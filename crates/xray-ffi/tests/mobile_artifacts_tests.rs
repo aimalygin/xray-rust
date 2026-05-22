@@ -25,6 +25,8 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
         "xray_core_start",
         "xray_core_stop",
         "xray_core_free",
+        "XraySocketProtectCallback",
+        "xray_core_set_socket_protect_callback",
         "xray_error_code",
         "xray_error_message",
         "xray_error_free",
@@ -34,6 +36,75 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
     ] {
         assert!(header.contains(symbol), "header missing `{symbol}`");
     }
+}
+
+#[test]
+fn apple_c_module_map_exports_xrayrust_module() {
+    let module_map =
+        fs::read_to_string(workspace_root().join("crates/xray-ffi/include/module.modulemap"))
+            .expect("read Apple C module map");
+
+    assert!(module_map.contains("module XrayRust"));
+    assert!(module_map.contains("umbrella header \"xray_ffi.h\""));
+    assert!(module_map.contains("export *"));
+}
+
+#[test]
+fn apple_adapter_declares_packet_tunnel_pump() {
+    let root = workspace_root();
+    let package =
+        fs::read_to_string(root.join("platform/apple/Package.swift")).expect("read Apple package");
+    let core =
+        fs::read_to_string(root.join("platform/apple/Sources/XrayMobileAdapter/XrayCore.swift"))
+            .expect("read Swift core wrapper");
+    let pump = fs::read_to_string(
+        root.join("platform/apple/Sources/XrayMobileAdapter/XrayPacketTunnelPump.swift"),
+    )
+    .expect("read Swift packet tunnel pump");
+
+    assert!(package.contains("XrayMobileAdapter"));
+    assert!(package.contains("XrayRust.xcframework"));
+    assert!(core.contains("import XrayRust"));
+    assert!(core.contains("xray_core_set_socket_protect_callback"));
+    assert!(core.contains("xray_tun_push_packet"));
+    assert!(core.contains("xray_tun_poll_packet"));
+    assert!(pump.contains("NEPacketTunnelProvider"));
+    assert!(pump.contains("packetFlow.readPackets"));
+    assert!(pump.contains("packetFlow.writePackets"));
+}
+
+#[test]
+fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
+    let root = workspace_root();
+    let settings = fs::read_to_string(root.join("platform/android/settings.gradle.kts"))
+        .expect("read Android settings");
+    let build = fs::read_to_string(root.join("platform/android/xraymobile/build.gradle.kts"))
+        .expect("read Android library build");
+    let core = fs::read_to_string(
+        root.join("platform/android/xraymobile/src/main/java/org/xrayrust/mobile/XrayCore.kt"),
+    )
+    .expect("read Kotlin core wrapper");
+    let service =
+        fs::read_to_string(root.join(
+            "platform/android/xraymobile/src/main/java/org/xrayrust/mobile/XrayVpnService.kt",
+        ))
+        .expect("read Kotlin VPN service");
+    let jni = fs::read_to_string(
+        root.join("platform/android/xraymobile/src/main/cpp/xray_mobile_jni.cpp"),
+    )
+    .expect("read JNI bridge");
+
+    assert!(settings.contains(":xraymobile"));
+    assert!(build.contains("com.android.library"));
+    assert!(build.contains("externalNativeBuild"));
+    assert!(core.contains("System.loadLibrary(\"xray_ffi\")"));
+    assert!(core.contains("nativeSetSocketProtector"));
+    assert!(service.contains("VpnService"));
+    assert!(service.contains("protect(fd)"));
+    assert!(service.contains("read(packetBuffer)"));
+    assert!(service.contains("pollPacket"));
+    assert!(jni.contains("xray_core_set_socket_protect_callback"));
+    assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetSocketProtector"));
 }
 
 #[test]
@@ -138,6 +209,7 @@ const EXPORTED_SYMBOLS: &[&str] = &[
     "xray_core_start",
     "xray_core_stop",
     "xray_core_free",
+    "xray_core_set_socket_protect_callback",
     "xray_error_code",
     "xray_error_message",
     "xray_error_free",
@@ -177,6 +249,7 @@ static void use_xray_ffi_api(void) {
   size_t written = 0;
 
   (void)xray_ffi_version_major();
+  (void)xray_core_set_socket_protect_callback(handle, NULL, NULL, &error);
   (void)xray_core_load_config_json(handle, "{}", &error);
   (void)xray_core_start(handle, &error);
   (void)xray_core_stop(handle, &error);

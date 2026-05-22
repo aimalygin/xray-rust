@@ -14,7 +14,7 @@ use tokio::sync::{mpsc, watch};
 use tokio::time::{sleep, Duration};
 use xray_config::CoreConfig;
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
-use xray_transport::{DnsResolver, TransportDialer};
+use xray_transport::{protect_udp_socket, DnsResolver, TransportDialer};
 use xray_tun::{TunEndpoint, TunError};
 
 use crate::outbound::{
@@ -545,6 +545,10 @@ async fn bridge_udp_freedom_flow(
         let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
         return;
     };
+    if protect_udp_socket(&socket, context.transport_dialer.socket_protector()).is_err() {
+        let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
+        return;
+    }
     let target = SocketAddr::new(key.target.addr, key.target.port);
     let client = key.client.into_endpoint();
     let mut read_buffer = vec![0; BRIDGE_READ_BUFFER_SIZE];

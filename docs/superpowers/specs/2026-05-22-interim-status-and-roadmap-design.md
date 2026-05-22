@@ -201,6 +201,7 @@ Implemented:
 - Start/stop lifecycle boundary.
 - Error object allocation and release.
 - Panic boundary protection for exported C ABI calls.
+- Outbound socket-protection callback registration for Android VPN embedding.
 - TUN packet push/poll FFI functions.
 - TUN packet stats and bounded queue behavior.
 - Public C header checked by tests.
@@ -209,13 +210,15 @@ Implemented:
 - Mobile toolchain preflight script for iOS, tvOS, and Android.
 - Apple XCFramework build script covering iOS device/simulator and tvOS device/simulator targets.
 - Android `jniLibs` build script covering arm64-v8a, armeabi-v7a, x86, and x86_64.
+- Apple Swift adapter skeleton with `XrayCore` and `NEPacketTunnelProvider` packet pump.
+- Android Kotlin/JNI adapter skeleton with `VpnService`, TUN packet pump, and `VpnService.protect(fd)` wiring.
 - Verified Apple `XrayRust.xcframework` build on the current macOS host.
 - Verified Android `jniLibs` build on the current macOS host with NDK 26.3.
 
 Current limits:
 
 - Cross-target artifact builds depend on installed Rust targets, Xcode SDKs, Android NDK, and nightly `rust-src` for tvOS build-std on toolchains that do not ship prebuilt tvOS std components.
-- The TUN boundary moves packets across the ABI, but does not yet include a user-space TCP/IP stack or packet-to-session dispatcher.
+- The checked-in Apple and Android adapters are first harness skeletons, not complete production host apps with entitlements, provisioning, foreground-service policy, profile UI, or release packaging.
 
 ## Verification Evidence
 
@@ -309,14 +312,14 @@ HTTP CONNECT is implemented in-process. Remaining HTTP work is narrower now:
 
 ### Mobile FFI
 
-The `xray-ffi` crate now exposes the first lifecycle/config/TUN ABI. The remaining work is to make it production-grade for app embedding and packaging.
+The `xray-ffi` crate now exposes lifecycle/config/TUN ABI plus socket-protection callback wiring. The remaining work is to make it production-grade for app embedding and packaging.
 
 Needed:
 
 - Log callback with bounded queue behavior.
 - Bound inbound inspection or event callback.
 - ABI stability/versioning checks.
-- Minimal Swift/Kotlin harnesses that call lifecycle and error APIs.
+- Device-level Swift/Kotlin harness runs that exercise TUN packets against local test targets.
 - Host integration rules for app process lifecycle and background/network-extension constraints.
 
 This is the highest-priority product layer once the config path is stable enough for real profiles.
@@ -326,7 +329,7 @@ This is the highest-priority product layer once the config path is stable enough
 Needed:
 
 - Add CI coverage for the verified XCFramework build path.
-- Add a minimal Swift harness or sample target that links the generated XCFramework.
+- Turn the checked-in Swift adapter skeleton into a host app/extension sample with real entitlements and provisioning.
 - ABI stability checks for the generated header.
 - App-extension-safe runtime assumptions.
 - No reliance on process signals for embedded lifecycle.
@@ -338,7 +341,7 @@ The core lifecycle already points in this direction because the CLI uses the sam
 Needed:
 
 - Add CI coverage for the verified `jniLibs` build path.
-- Add Gradle-facing sample layout or fixture.
+- Turn the checked-in Gradle/Kotlin/JNI skeleton into a host app sample with VPN consent flow and foreground-service behavior.
 - Runtime initialization rules that work inside Android app processes.
 - ABI stability checks for the generated header.
 
@@ -346,13 +349,13 @@ The Rust core should not assume Android-specific APIs in protocol crates.
 
 ### TUN Runtime
 
-The `xray-tun` crate and FFI packet boundary exist, but full packet-to-session flow is not yet implemented.
+The `xray-tun` crate and FFI packet boundary now route TCP, UDP, VLESS UDP, Vision XUDP, and ICMP through the core runtime.
 
 Needed:
 
-- Flow dispatch from IP packets into outbound sessions.
-- Later integration point for a user-space TCP/IP stack.
-- Platform adapters for iOS `NEPacketTunnelProvider` and Android `VpnService` outside the protocol crates.
+- Device-level TUN harness runs through iOS/tvOS `NEPacketTunnelProvider` and Android `VpnService`.
+- Backpressure and memory-budget profiling under mobile-sized queues.
+- Later packet-path refinements for DNS app behavior, split routing, and unsupported protocols.
 
 TUN must stay platform-neutral. iOS `NEPacketTunnelProvider` and Android `VpnService` adapters should sit outside the core ABI.
 
@@ -486,12 +489,12 @@ Why first: every mobile and runtime surface depends on config load behavior, and
 
 Goal: prove the existing ABI and scripts on actual Apple and Android target matrices.
 
-Status: artifact validation is complete on the current macOS host. The remaining work is host-language harnessing and CI.
+Status: artifact validation is complete on the current macOS host, and first Swift/Kotlin/JNI adapter skeletons are checked in. The remaining work is device execution, host app packaging, and CI.
 
 Deliverables:
 
-- Swift lifecycle/error harness for iOS and tvOS.
-- Kotlin/JNI lifecycle/error harness for Android.
+- iOS/tvOS packet tunnel extension sample that links `XrayRust.xcframework`.
+- Android app sample that packages `jniLibs`, loads the JNI bridge, and confirms `protect(fd)` is invoked for Rust-created outbound sockets.
 - CI or documented release job for Apple iOS/tvOS XCFramework builds.
 - CI or documented release job for Android `jniLibs` builds.
 - ABI/version checks for `xray_ffi.h`.
@@ -545,6 +548,6 @@ The next detailed implementation spec should be:
 Mobile Host Harness Samples
 ```
 
-It should define minimal Swift and Kotlin/JNI harnesses that load the generated artifacts, call `xray_core_new`, `xray_core_load_config_json`, `xray_core_start`, `xray_core_stop`, error accessors, and TUN packet stats, without adding platform-specific VPN packet forwarding yet.
+It should execute the checked-in Swift and Kotlin/JNI skeletons on real or simulator/emulator targets, load the generated artifacts, start a TUN-only config, move at least ICMP and UDP packets through the packet pump, and confirm Android outbound sockets pass through `VpnService.protect(fd)`.
 
 After that, the next detailed implementation plan should be generated from that spec and executed task by task.

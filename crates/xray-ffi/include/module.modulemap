@@ -1,0 +1,4 @@
+module XrayRust {
+  umbrella header "xray_ffi.h"
+  export *
+}

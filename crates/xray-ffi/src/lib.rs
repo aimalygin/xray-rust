@@ -1,12 +1,15 @@
 use bytes::Bytes;
-use libc::c_char;
+use libc::{c_char, c_int, c_void};
 use std::ffi::{CStr, CString};
+use std::io;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr;
 use std::slice;
+use std::sync::Arc;
 use tokio::runtime::{Builder, Runtime};
 use xray_config::parse_xray_json;
 use xray_core_rs::Core;
+use xray_transport::{SocketHandle, SocketProtector, SystemDnsResolver, TransportDialer};
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,6 +43,39 @@ pub struct XrayTunStats {
 pub struct XrayCoreHandle {
     core: Option<Core>,
     runtime: Runtime,
+    socket_protector: Option<Arc<dyn SocketProtector>>,
+}
+
+pub type XraySocketProtectCallback =
+    Option<unsafe extern "C" fn(fd: c_int, user_data: *mut c_void) -> c_int>;
+
+struct FfiSocketProtector {
+    callback: unsafe extern "C" fn(fd: c_int, user_data: *mut c_void) -> c_int,
+    user_data: usize,
+}
+
+unsafe impl Send for FfiSocketProtector {}
+unsafe impl Sync for FfiSocketProtector {}
+
+impl SocketProtector for FfiSocketProtector {
+    fn protect(&self, socket: SocketHandle) -> io::Result<()> {
+        let raw = socket.raw();
+        let fd = c_int::try_from(raw).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("socket handle {raw} cannot be represented as c_int fd"),
+            )
+        })?;
+        let ok = unsafe { (self.callback)(fd, self.user_data as *mut c_void) };
+        if ok == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "socket protect callback returned false",
+            ));
+        }
+
+        Ok(())
+    }
 }
 
 #[no_mangle]
@@ -92,6 +128,7 @@ unsafe fn xray_core_new_inner(error: *mut *mut XrayError) -> *mut XrayCoreHandle
     Box::into_raw(Box::new(XrayCoreHandle {
         core: None,
         runtime,
+        socket_protector: None,
     }))
 }
 
@@ -169,7 +206,22 @@ unsafe fn xray_core_load_config_json_inner(
         }
     };
 
-    let core = match Core::new(parsed.config) {
+    let transport_dialer =
+        match TransportDialer::system_with_socket_protector((*handle).socket_protector.clone()) {
+            Ok(dialer) => Arc::new(dialer),
+            Err(err) => {
+                unsafe {
+                    set_error(error, XrayStatus::RuntimeError, err.to_string());
+                }
+                return XrayStatus::RuntimeError;
+            }
+        };
+
+    let core = match Core::with_runtime_dependencies(
+        parsed.config,
+        Arc::new(SystemDnsResolver),
+        transport_dialer,
+    ) {
         Ok(core) => core,
         Err(err) => {
             unsafe {
@@ -182,6 +234,75 @@ unsafe fn xray_core_load_config_json_inner(
     unsafe {
         (*handle).core = Some(core);
     }
+
+    XrayStatus::Ok
+}
+
+/// Registers an outbound socket protection callback for mobile VPN adapters.
+///
+/// Android callers should set this before loading config so sockets opened by
+/// the Rust core can be passed through `VpnService.protect(fd)` before connect
+/// or first UDP use. Passing a null callback clears the registration. The
+/// callback must be fast and thread-safe; it may be called from runtime worker
+/// threads while the core is running.
+///
+/// # Safety
+///
+/// `handle` must either be null or a pointer returned by `xray_core_new` that
+/// has not been freed. `user_data` is stored as an opaque pointer and must stay
+/// valid for as long as the loaded core may dial outbound sockets. If `error`
+/// is non-null, it must point to an initialized `*mut XrayError` value that is
+/// either null or a live error pointer returned by this library. This function
+/// may free and replace that error pointer.
+#[no_mangle]
+pub unsafe extern "C" fn xray_core_set_socket_protect_callback(
+    handle: *mut XrayCoreHandle,
+    callback: XraySocketProtectCallback,
+    user_data: *mut c_void,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            xray_core_set_socket_protect_callback_inner(handle, callback, user_data, error)
+        })
+    }
+}
+
+unsafe fn xray_core_set_socket_protect_callback_inner(
+    handle: *mut XrayCoreHandle,
+    callback: XraySocketProtectCallback,
+    user_data: *mut c_void,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        clear_error(error);
+    }
+
+    if handle.is_null() {
+        unsafe {
+            set_error(error, XrayStatus::NullArgument, "core handle is null");
+        }
+        return XrayStatus::NullArgument;
+    }
+
+    let handle = unsafe { &mut *handle };
+    if handle.core.is_some() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::RuntimeError,
+                "socket protect callback must be set before config load",
+            );
+        }
+        return XrayStatus::RuntimeError;
+    }
+
+    handle.socket_protector = callback.map(|callback| {
+        Arc::new(FfiSocketProtector {
+            callback,
+            user_data: user_data as usize,
+        }) as Arc<dyn SocketProtector>
+    });
 
     XrayStatus::Ok
 }

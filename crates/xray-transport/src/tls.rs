@@ -3,16 +3,27 @@ use std::{net::SocketAddr, sync::Arc};
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{crypto, DigitallySignedStruct, Error as RustlsError, SignatureScheme};
-use tokio::net::TcpStream;
 use tokio_rustls::TlsConnector as TokioTlsConnector;
 use xray_routing::{Target, TargetAddr};
 
-use crate::{BoxedTransportStream, TlsClientConfig, TransportError};
+use crate::{
+    connect_tcp_stream, BoxedTransportStream, SocketProtector, TlsClientConfig, TransportError,
+};
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TlsConnector {
     client_config: Arc<rustls::ClientConfig>,
     insecure_client_config: Arc<rustls::ClientConfig>,
+    socket_protector: Option<Arc<dyn SocketProtector>>,
+}
+
+impl std::fmt::Debug for TlsConnector {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("TlsConnector")
+            .field("socket_protector", &self.socket_protector.is_some())
+            .finish_non_exhaustive()
+    }
 }
 
 impl TlsConnector {
@@ -25,6 +36,7 @@ impl TlsConnector {
         Ok(Self {
             client_config: Arc::new(client_config),
             insecure_client_config: Arc::new(insecure_rustls_client_config()?),
+            socket_protector: None,
         })
     }
 
@@ -32,7 +44,13 @@ impl TlsConnector {
         Self {
             insecure_client_config: Arc::clone(&client_config),
             client_config,
+            socket_protector: None,
         }
+    }
+
+    pub fn with_socket_protector(mut self, protector: Arc<dyn SocketProtector>) -> Self {
+        self.socket_protector = Some(protector);
+        self
     }
 
     pub async fn connect(
@@ -48,9 +66,7 @@ impl TlsConnector {
             TargetAddr::Domain(domain) => return Err(TransportError::NeedsDns(domain.clone())),
         };
 
-        let stream = TcpStream::connect(addr)
-            .await
-            .map_err(TransportError::Tcp)?;
+        let stream = connect_tcp_stream(addr, self.socket_protector.as_deref()).await?;
         let client_config = if config.allow_insecure {
             &self.insecure_client_config
         } else {

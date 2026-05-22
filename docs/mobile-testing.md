@@ -68,6 +68,22 @@ Useful environment overrides:
 
 The current stable Rust toolchain exposes tvOS target specs but does not ship prebuilt tvOS std components through `rustup target add`, so the script uses nightly `-Z build-std=std,panic_abort` for tvOS when needed.
 
+## Apple Adapter Skeleton
+
+The repository now includes a Swift Package adapter under:
+
+```text
+platform/apple
+```
+
+It provides:
+
+- `XrayCore`, a Swift wrapper over the C ABI lifecycle, TUN packet push/poll, stats, errors, and socket-protection registration hook.
+- `XrayPacketTunnelPump`, a `NEPacketTunnelProvider` packet pump that reads OS tunnel packets into the Rust TUN boundary and writes emitted packets back through `packetFlow`.
+- `crates/xray-ffi/include/module.modulemap`, so the generated XCFramework can be imported as `XrayRust` from Swift.
+
+The package expects `target/mobile/apple/XrayRust.xcframework` to exist. Build it first with `scripts/build-apple-xcframework.sh`.
+
 ## Android Artifacts
 
 Run:
@@ -97,6 +113,23 @@ Useful environment overrides:
 
 The script discovers the NDK LLVM toolchain and sets Cargo/cc linker variables for each Android target before building.
 
+## Android Adapter Skeleton
+
+The repository now includes an Android library skeleton under:
+
+```text
+platform/android
+```
+
+It provides:
+
+- `XrayCore`, a Kotlin wrapper over JNI lifecycle, TUN packet push/poll, stats, and errors.
+- `XrayVpnService`, a minimal `VpnService` packet pump with separate TUN read/write loops.
+- `xray_mobile_jni.cpp`, a JNI bridge from Kotlin to the stable C ABI.
+- Android socket protection wiring: Kotlin passes `VpnService.protect(fd)` through JNI to `xray_core_set_socket_protect_callback`, and Rust invokes it before outbound TCP connects and before outbound UDP socket use.
+
+The Android skeleton expects generated `libxray_ffi.so` files under `target/mobile/android/jniLibs`. Build them first with `scripts/build-android-libs.sh`. The JNI bridge can also use `XRAY_FFI_ANDROID_DIR=/path/to/mobile/android` when the artifact directory lives elsewhere.
+
 ## What Can Be Tested Now
 
 Mobile harnesses can now test:
@@ -113,10 +146,12 @@ Mobile harnesses can now test:
 - Receiving ICMP echo replies for IPv4 and IPv6 ping-style probes through the TUN packet boundary.
 - Linking iOS/tvOS apps against `XrayRust.xcframework`.
 - Packaging Android apps with the generated `jniLibs` tree.
+- Driving first iOS/tvOS `NEPacketTunnelProvider` and Android `VpnService` harnesses through the checked-in adapter skeletons.
 - Proxy-mode local behavior with SOCKS/HTTP inbounds, Freedom direct egress, and VLESS TCP/TLS/REALITY+Vision profiles that match the current supported config subset.
 
 Current limits:
 
-- The platform-neutral TUN runtime is runnable for TCP, UDP, VLESS UDP, Vision XUDP, and ICMP echo. Host apps still need to supply the OS adapter loop that reads/writes packets from `NEPacketTunnelProvider`, tvOS lifecycle code, or Android `VpnService`.
-- Platform adapters for `NEPacketTunnelProvider`, tvOS app lifecycle, and Android `VpnService` are still outside this repository.
+- The platform-neutral TUN runtime is runnable for TCP, UDP, VLESS UDP, Vision XUDP, and ICMP echo. The checked-in Apple and Android adapters are first harness skeletons for device testing, not complete app templates with entitlements, foreground-service notification policy, user profile storage, or production UI.
+- iOS/tvOS `NEPacketTunnelProvider` packaging still needs a host app/extension target with the correct Apple entitlements and provisioning profile.
+- Android packaging still needs a host app that requests VPN user consent and provides foreground-service behavior appropriate for the target Android version.
 - Broader Xray-core protocols, DNS app behavior, geosite/geoip data loading, and full routing parity remain future work.

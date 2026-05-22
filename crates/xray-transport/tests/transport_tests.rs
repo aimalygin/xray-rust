@@ -10,8 +10,9 @@ mod transport_tests {
     use tokio_rustls::TlsAcceptor;
     use xray_routing::{Network, Target, TargetAddr};
     use xray_transport::{
-        BoxedTransportStream, ConnectorConfig, RealityClientConfig, RealityTlsEngine, TcpConnector,
-        TlsClientConfig, TlsConnector, TransportConnector, TransportDialer, TransportError,
+        BoxedTransportStream, ConnectorConfig, RealityClientConfig, RealityTlsEngine, SocketHandle,
+        SocketProtector, TcpConnector, TlsClientConfig, TlsConnector, TransportConnector,
+        TransportDialer, TransportError,
     };
 
     #[derive(Debug)]
@@ -49,6 +50,27 @@ mod transport_tests {
                 .expect("fake reality stream should be used once");
 
             Ok(Box::new(stream))
+        }
+    }
+
+    #[derive(Debug, Default)]
+    struct RecordingSocketProtector {
+        seen: Mutex<Vec<i64>>,
+    }
+
+    impl RecordingSocketProtector {
+        fn seen(&self) -> Vec<i64> {
+            self.seen.lock().expect("seen socket lock").clone()
+        }
+    }
+
+    impl SocketProtector for RecordingSocketProtector {
+        fn protect(&self, socket: SocketHandle) -> std::io::Result<()> {
+            self.seen
+                .lock()
+                .expect("seen socket lock")
+                .push(socket.raw());
+            Ok(())
         }
     }
 
@@ -168,6 +190,25 @@ mod transport_tests {
     }
 
     #[tokio::test]
+    async fn tcp_connector_invokes_socket_protector_before_connect() {
+        let (addr, handle) = spawn_echo_once().await;
+        let protector = Arc::new(RecordingSocketProtector::default());
+        let connector =
+            TcpConnector::new(ConnectorConfig::Tcp).with_socket_protector(protector.clone());
+        let target = Target::new(TargetAddr::Ip(addr.ip()), addr.port(), Network::Tcp);
+
+        let stream = connector
+            .connect(&target)
+            .await
+            .expect("connect protected TCP target");
+
+        assert_boxed_transport_stream(stream).await;
+        handle.await.expect("echo task should complete");
+        assert_eq!(protector.seen().len(), 1);
+        assert!(protector.seen()[0] >= 0);
+    }
+
+    #[tokio::test]
     async fn tls_connector_returns_boxed_transport_stream() {
         let (client_config, server_config) = tls_test_configs();
         let (addr, handle) = spawn_tls_echo_once(server_config).await;
@@ -185,6 +226,30 @@ mod transport_tests {
 
         assert_boxed_transport_stream(stream).await;
         handle.await.expect("TLS echo task should complete");
+    }
+
+    #[tokio::test]
+    async fn tls_connector_invokes_socket_protector_before_connect() {
+        let (client_config, server_config) = tls_test_configs();
+        let (addr, handle) = spawn_tls_echo_once(server_config).await;
+        let protector = Arc::new(RecordingSocketProtector::default());
+        let connector = TlsConnector::with_client_config(client_config)
+            .with_socket_protector(protector.clone());
+        let target = Target::new(TargetAddr::Ip(addr.ip()), addr.port(), Network::Tcp);
+        let config = TlsClientConfig {
+            server_name: "server.test".to_owned(),
+            allow_insecure: false,
+        };
+
+        let stream = connector
+            .connect(&target, &config)
+            .await
+            .expect("connect protected TLS target");
+
+        assert_boxed_transport_stream(stream).await;
+        handle.await.expect("TLS echo task should complete");
+        assert_eq!(protector.seen().len(), 1);
+        assert!(protector.seen()[0] >= 0);
     }
 
     #[tokio::test]
@@ -265,6 +330,27 @@ mod transport_tests {
 
         assert_boxed_transport_stream(stream).await;
         handle.await.expect("echo task should complete");
+    }
+
+    #[tokio::test]
+    async fn transport_dialer_carries_socket_protector_to_tcp_connects() {
+        let (client_config, _) = tls_test_configs();
+        let (addr, handle) = spawn_echo_once().await;
+        let protector = Arc::new(RecordingSocketProtector::default());
+        let dialer =
+            TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config))
+                .with_socket_protector(protector.clone());
+        let target = Target::new(TargetAddr::Ip(addr.ip()), addr.port(), Network::Tcp);
+        let config = ConnectorConfig::Tcp;
+
+        let stream = dialer
+            .connect(&config, &target)
+            .await
+            .expect("dial protected TCP target");
+
+        assert_boxed_transport_stream(stream).await;
+        handle.await.expect("echo task should complete");
+        assert_eq!(protector.seen().len(), 1);
     }
 
     #[tokio::test]

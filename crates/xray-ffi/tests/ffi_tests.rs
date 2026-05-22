@@ -1,9 +1,10 @@
 use std::ffi::{CStr, CString};
 
 use xray_ffi::{
-    xray_core_free, xray_core_load_config_json, xray_core_new, xray_core_start, xray_core_stop,
-    xray_error_code, xray_error_free, xray_error_message, xray_tun_poll_packet,
-    xray_tun_push_packet, xray_tun_stats, XrayStatus, XrayTunStats,
+    xray_core_free, xray_core_load_config_json, xray_core_new,
+    xray_core_set_socket_protect_callback, xray_core_start, xray_core_stop, xray_error_code,
+    xray_error_free, xray_error_message, xray_tun_poll_packet, xray_tun_push_packet,
+    xray_tun_stats, XrayStatus, XrayTunStats,
 };
 
 #[test]
@@ -95,6 +96,55 @@ fn ffi_starts_and_stops_loaded_core() {
     let status = unsafe { xray_core_stop(core, &mut err) };
     assert_eq!(status, XrayStatus::Ok);
     assert!(err.is_null());
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_registers_socket_protect_callback_before_config_load() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    assert!(!core.is_null());
+
+    let status = unsafe {
+        xray_core_set_socket_protect_callback(
+            core,
+            Some(record_socket_protect_call),
+            std::ptr::null_mut(),
+            &mut err,
+        )
+    };
+
+    assert_eq!(status, XrayStatus::Ok);
+    assert!(err.is_null());
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_rejects_socket_protect_callback_after_config_load() {
+    let mut err = std::ptr::null_mut();
+    let core = loaded_core(&mut err);
+
+    let status = unsafe {
+        xray_core_set_socket_protect_callback(
+            core,
+            Some(record_socket_protect_call),
+            std::ptr::null_mut(),
+            &mut err,
+        )
+    };
+
+    assert_eq!(status, XrayStatus::RuntimeError);
+    assert_error(
+        &mut err,
+        XrayStatus::RuntimeError,
+        "socket protect callback must be set before config load",
+    );
 
     unsafe {
         xray_core_free(core);
@@ -256,6 +306,13 @@ fn assert_error_message(error: *const xray_ffi::XrayError, message: &str) {
         actual.contains(message),
         "expected `{actual}` to contain `{message}`"
     );
+}
+
+unsafe extern "C" fn record_socket_protect_call(
+    _fd: libc::c_int,
+    _user_data: *mut libc::c_void,
+) -> libc::c_int {
+    1
 }
 
 fn loaded_core(err: &mut *mut xray_ffi::XrayError) -> *mut xray_ffi::XrayCoreHandle {
