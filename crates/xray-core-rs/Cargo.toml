@@ -5,6 +5,8 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+bytes.workspace = true
+smoltcp.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 xray-config = { path = "../xray-config" }

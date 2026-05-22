@@ -11,6 +11,7 @@ use xray_tun::{TunConfig, TunEndpoint};
 mod http;
 mod outbound;
 mod socks;
+mod tun;
 
 pub use outbound::{
     open_tcp_stream_with_resolver_and_dialer, open_vless_tcp_stream,
@@ -69,7 +70,7 @@ pub struct Core {
     config: CoreConfig,
     state: CoreState,
     shutdown: Shutdown,
-    tun: TunEndpoint,
+    tun: Arc<TunEndpoint>,
     runtime: Option<RuntimeState>,
     dns_resolver: Arc<dyn DnsResolver>,
     transport_dialer: Arc<TransportDialer>,
@@ -97,10 +98,10 @@ impl Core {
         transport_dialer: Arc<TransportDialer>,
     ) -> Result<Self, CoreError> {
         let shutdown = Shutdown::new();
-        let tun = TunEndpoint::new(TunConfig {
+        let tun = Arc::new(TunEndpoint::new(TunConfig {
             mtu: 1500,
             queue_depth: 128,
-        });
+        }));
 
         Ok(Self {
             config,
@@ -135,12 +136,12 @@ impl Core {
         }
 
         let mut bound_listeners = Vec::new();
-        let mut tun_inbound_count = 0usize;
+        let mut tun_inbounds = Vec::new();
         for inbound in &self.config.inbounds {
             match inbound.protocol {
                 InboundProtocol::Socks | InboundProtocol::Http => {}
                 InboundProtocol::Tun => {
-                    tun_inbound_count += 1;
+                    tun_inbounds.push(inbound.tag.clone());
                     continue;
                 }
             }
@@ -157,13 +158,13 @@ impl Core {
             ));
         }
 
-        if bound_listeners.is_empty() && tun_inbound_count == 0 {
+        if bound_listeners.is_empty() && tun_inbounds.is_empty() {
             return Err(CoreError::NoSupportedInbound);
         }
 
         let config = Arc::new(self.config.clone());
         let mut inbounds = Vec::with_capacity(bound_listeners.len());
-        let mut tasks = Vec::with_capacity(bound_listeners.len());
+        let mut tasks = Vec::with_capacity(bound_listeners.len() + tun_inbounds.len().min(1));
         for (bound, protocol, listener) in bound_listeners {
             let inbound_tag = bound.tag.clone();
             let dns_resolver = Arc::clone(&self.dns_resolver);
@@ -190,6 +191,12 @@ impl Core {
             inbounds.push(bound);
             tasks.push(task);
         }
+        if !tun_inbounds.is_empty() {
+            tasks.push(tokio::spawn(tun::serve_tun_endpoint(
+                Arc::clone(&self.tun),
+                self.shutdown.subscribe(),
+            )));
+        }
 
         self.runtime = Some(RuntimeState { inbounds, tasks });
         self.state = CoreState::Running;
@@ -210,7 +217,7 @@ impl Core {
     }
 
     pub fn tun(&self) -> &TunEndpoint {
-        &self.tun
+        self.tun.as_ref()
     }
 }
 
