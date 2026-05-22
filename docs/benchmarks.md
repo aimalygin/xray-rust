@@ -11,6 +11,7 @@ Supported workloads:
 - `udp-freedom`
 - `udp-vless`
 - `udp-xudp`
+- `vision-xudp`
 
 The harness writes results under:
 
@@ -42,6 +43,7 @@ cargo run -p xray-bench -- run --engine xray-rust --workload tcp-freedom --conne
 cargo run -p xray-bench -- run --engine xray-rust --workload udp-freedom --connections 1 --iterations 10 --payload-size 512
 cargo run -p xray-bench -- run --engine xray-rust --workload udp-vless --connections 1 --iterations 10 --payload-size 512
 cargo run -p xray-bench -- run --engine xray-rust --workload udp-xudp --connections 1 --iterations 10 --payload-size 512
+cargo run -p xray-bench -- run --engine xray-rust --workload vision-xudp --connections 1 --iterations 10 --payload-size 512
 cargo run -p xray-bench -- run --engine xray-rust --workload tcp-freedom --runs 5 --connections 8 --iterations 1000 --payload-size 4096
 ```
 
@@ -62,6 +64,7 @@ cargo run -p xray-bench -- compare --workload tcp-freedom --xray-core-dir Xray-c
 cargo run -p xray-bench -- compare --workload udp-freedom --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload udp-vless --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload udp-xudp --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
+cargo run -p xray-bench -- compare --workload vision-xudp --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 ```
 
 From an isolated worktree under `.worktrees/`, pass the main checkout's Xray-core path:
@@ -71,6 +74,7 @@ cargo run -p xray-bench -- compare --workload tcp-freedom --xray-core-dir ../../
 cargo run -p xray-bench -- compare --workload udp-freedom --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload udp-vless --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload udp-xudp --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
+cargo run -p xray-bench -- compare --workload vision-xudp --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 ```
 
 The compare command auto-builds `target/debug/xray-rust` and an Xray-core binary under the run directory unless `--no-auto-build` is provided. Repeated runs reuse the Xray-core binary built for that benchmark group. Use `--xray-core-bin <path>` to benchmark an existing Xray-core binary without rebuilding.
@@ -88,5 +92,6 @@ The first scoreboard is intentionally portable and comparable across Go and Rust
 `udp-freedom` uses SOCKS5 UDP ASSOCIATE with the inbound configured as `{ "udp": true, "ip": "127.0.0.1" }`, then validates echoed UDP payloads through a local UDP target.
 `udp-vless` uses the same SOCKS5 UDP client path, but routes through a local fake VLESS UDP server over TCP before validating echoed UDP payloads. It targets UDP/53 to keep the VLESS UDP framing length-prefixed.
 `udp-xudp` targets a non-DNS UDP port and validates XUDP/Mux frames through the local fake VLESS server.
+`vision-xudp` uses VLESS over local TLS with `xtls-rprx-vision`, `allowInsecure`, and XUDP/Mux frames against a local fake Vision server.
 
 Later benchmark slices should add VLESS UDP, Vision XUDP, TUN packet-path workloads, latency percentiles, and mobile-native traces from Instruments or Perfetto. This first harness keeps those paths open without putting benchmark logic into the production runtime.

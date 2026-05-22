@@ -308,6 +308,7 @@ pub enum StreamSecurity {
 pub struct TlsSettings {
     pub server_name: Option<String>,
     pub fingerprint: Option<String>,
+    pub allow_insecure: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

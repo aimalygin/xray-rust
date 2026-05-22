@@ -202,7 +202,10 @@ fn build_vless_tcp_outbound(outbound: &OutboundConfig) -> Result<VlessTcpOutboun
                 },
             };
 
-            ConnectorConfig::Tls(TlsClientConfig { server_name })
+            ConnectorConfig::Tls(TlsClientConfig {
+                server_name,
+                allow_insecure: tls.allow_insecure,
+            })
         }
         StreamSecurity::Reality(reality) => ConnectorConfig::Reality(RealityClientConfig {
             server_name: reality.server_name.clone(),

@@ -10,9 +10,13 @@ name = "xray-bench"
 path = "src/main.rs"
 
 [dependencies]
+bytes.workspace = true
+rcgen.workspace = true
+rustls.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tokio-rustls.workspace = true
 xray-proxy = { path = "../xray-proxy" }
 xray-routing = { path = "../xray-routing" }

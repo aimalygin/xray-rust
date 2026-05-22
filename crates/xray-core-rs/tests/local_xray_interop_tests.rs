@@ -114,6 +114,7 @@ async fn run_local_xray_vless_tls_interop(flow: Option<&'static str>) {
         StreamSecurity::Tls(TlsSettings {
             server_name: Some(TLS_SERVER_NAME.to_owned()),
             fingerprint: None,
+            allow_insecure: false,
         }),
         flow,
     );

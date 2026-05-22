@@ -315,8 +315,19 @@ fn rejects_send_through_with_path() {
 }
 
 #[test]
-fn rejects_tls_allow_insecure_with_path() {
+fn parses_tls_allow_insecure_for_compatibility() {
     let raw = raw_with_tls_settings(r#""serverName": "server.example", "allowInsecure": true"#);
+    let parsed = parse_xray_json(&raw).unwrap();
+
+    let StreamSecurity::Tls(tls) = &parsed.config.outbounds[0].stream.security else {
+        panic!("expected tls security");
+    };
+    assert!(tls.allow_insecure);
+}
+
+#[test]
+fn rejects_tls_allow_insecure_non_bool_with_path() {
+    let raw = raw_with_tls_settings(r#""serverName": "server.example", "allowInsecure": "yes""#);
 
     assert_parse_error_path(
         &raw,

@@ -1,5 +1,8 @@
 use std::{net::SocketAddr, sync::Arc};
 
+use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
+use rustls::{crypto, DigitallySignedStruct, Error as RustlsError, SignatureScheme};
 use tokio::net::TcpStream;
 use tokio_rustls::TlsConnector as TokioTlsConnector;
 use xray_routing::{Target, TargetAddr};
@@ -9,6 +12,7 @@ use crate::{BoxedTransportStream, TlsClientConfig, TransportError};
 #[derive(Debug, Clone)]
 pub struct TlsConnector {
     client_config: Arc<rustls::ClientConfig>,
+    insecure_client_config: Arc<rustls::ClientConfig>,
 }
 
 impl TlsConnector {
@@ -18,11 +22,17 @@ impl TlsConnector {
         };
         let client_config = rustls_client_config(root_store)?;
 
-        Ok(Self::with_client_config(Arc::new(client_config)))
+        Ok(Self {
+            client_config: Arc::new(client_config),
+            insecure_client_config: Arc::new(insecure_rustls_client_config()?),
+        })
     }
 
     pub fn with_client_config(client_config: Arc<rustls::ClientConfig>) -> Self {
-        Self { client_config }
+        Self {
+            insecure_client_config: Arc::clone(&client_config),
+            client_config,
+        }
     }
 
     pub async fn connect(
@@ -41,12 +51,69 @@ impl TlsConnector {
         let stream = TcpStream::connect(addr)
             .await
             .map_err(TransportError::Tcp)?;
-        let stream = TokioTlsConnector::from(Arc::clone(&self.client_config))
+        let client_config = if config.allow_insecure {
+            &self.insecure_client_config
+        } else {
+            &self.client_config
+        };
+        let stream = TokioTlsConnector::from(Arc::clone(client_config))
             .connect(server_name, stream)
             .await
             .map_err(TransportError::Tls)?;
 
         Ok(Box::new(stream))
+    }
+}
+
+#[derive(Debug)]
+struct NoCertificateVerification;
+
+impl ServerCertVerifier for NoCertificateVerification {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: UnixTime,
+    ) -> Result<ServerCertVerified, RustlsError> {
+        Ok(ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, RustlsError> {
+        let provider = crypto::ring::default_provider();
+        crypto::verify_tls12_signature(
+            message,
+            cert,
+            dss,
+            &provider.signature_verification_algorithms,
+        )
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, RustlsError> {
+        let provider = crypto::ring::default_provider();
+        crypto::verify_tls13_signature(
+            message,
+            cert,
+            dss,
+            &provider.signature_verification_algorithms,
+        )
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        crypto::ring::default_provider()
+            .signature_verification_algorithms
+            .supported_schemes()
     }
 }
 
@@ -59,6 +126,18 @@ fn rustls_client_config(
         .map(|builder| {
             builder
                 .with_root_certificates(root_store)
+                .with_no_client_auth()
+        })
+}
+
+fn insecure_rustls_client_config() -> Result<rustls::ClientConfig, TransportError> {
+    rustls::ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+        .with_safe_default_protocol_versions()
+        .map_err(|error| TransportError::TlsConfig(error.to_string()))
+        .map(|builder| {
+            builder
+                .dangerous()
+                .with_custom_certificate_verifier(Arc::new(NoCertificateVerification))
                 .with_no_client_auth()
         })
 }

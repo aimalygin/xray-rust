@@ -175,6 +175,7 @@ mod transport_tests {
         let target = Target::new(TargetAddr::Ip(addr.ip()), addr.port(), Network::Tcp);
         let config = TlsClientConfig {
             server_name: "server.test".to_owned(),
+            allow_insecure: false,
         };
 
         let stream = connector
@@ -197,6 +198,7 @@ mod transport_tests {
         );
         let config = TlsClientConfig {
             server_name: "server.test".to_owned(),
+            allow_insecure: false,
         };
 
         let result = connector.connect(&target, &config).await;
@@ -215,6 +217,7 @@ mod transport_tests {
         );
         let config = TlsClientConfig {
             server_name: "bad name".to_owned(),
+            allow_insecure: false,
         };
 
         let result = connector.connect(&target, &config).await;
@@ -234,6 +237,7 @@ mod transport_tests {
         let target = Target::new(TargetAddr::Ip(addr.ip()), addr.port(), Network::Tcp);
         let config = ConnectorConfig::Tls(TlsClientConfig {
             server_name: "server.test".to_owned(),
+            allow_insecure: false,
         });
 
         let stream = dialer
@@ -339,6 +343,7 @@ mod transport_tests {
     async fn tcp_connector_rejects_tls_config_without_plaintext_downgrade() {
         let connector = TcpConnector::new(ConnectorConfig::Tls(TlsClientConfig {
             server_name: "example.com".to_owned(),
+            allow_insecure: false,
         }));
         let target = Target::new(
             TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),

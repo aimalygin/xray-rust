@@ -223,6 +223,7 @@ fn runtime_tun_config_with_tls_vision_vless_domain_server(
         StreamSecurity::Tls(TlsSettings {
             server_name: Some(server_name.to_owned()),
             fingerprint: None,
+            allow_insecure: false,
         }),
         TargetAddr::Domain(domain.to_owned()),
         port,
@@ -413,6 +414,7 @@ fn runtime_config_with_tls_vless_domain_server(
             StreamSecurity::Tls(TlsSettings {
                 server_name: Some(server_name.to_owned()),
                 fingerprint: None,
+                allow_insecure: false,
             }),
             TargetAddr::Domain(domain.to_owned()),
             port,
@@ -436,6 +438,7 @@ fn tls_security() -> StreamSecurity {
     StreamSecurity::Tls(TlsSettings {
         server_name: Some("example.com".to_owned()),
         fingerprint: Some("chrome".to_owned()),
+        allow_insecure: false,
     })
 }
 
@@ -522,6 +525,7 @@ fn selects_tls_vless_outbound_without_fingerprint() {
         StreamSecurity::Tls(TlsSettings {
             server_name: Some("server.example".to_owned()),
             fingerprint: None,
+            allow_insecure: false,
         }),
         TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
         443,
@@ -542,6 +546,7 @@ fn selects_tls_explicit_server_name_over_domain_outbound() {
         StreamSecurity::Tls(TlsSettings {
             server_name: Some("override.example".to_owned()),
             fingerprint: None,
+            allow_insecure: false,
         }),
         TargetAddr::Domain("vless.test".to_owned()),
         443,
@@ -561,6 +566,7 @@ fn selects_tls_server_name_from_domain_outbound_when_missing() {
         StreamSecurity::Tls(TlsSettings {
             server_name: None,
             fingerprint: None,
+            allow_insecure: false,
         }),
         TargetAddr::Domain("vless.test".to_owned()),
         443,
@@ -580,6 +586,7 @@ fn rejects_tls_empty_server_name() {
         StreamSecurity::Tls(TlsSettings {
             server_name: Some("".to_owned()),
             fingerprint: None,
+            allow_insecure: false,
         }),
         TargetAddr::Domain("vless.test".to_owned()),
         443,
@@ -599,6 +606,7 @@ fn rejects_tls_ip_server_without_server_name() {
         StreamSecurity::Tls(TlsSettings {
             server_name: None,
             fingerprint: None,
+            allow_insecure: false,
         }),
         TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
         443,
@@ -618,6 +626,7 @@ fn rejects_tls_fingerprint_without_plain_rustls_downgrade() {
         StreamSecurity::Tls(TlsSettings {
             server_name: Some("server.example".to_owned()),
             fingerprint: Some("chrome".to_owned()),
+            allow_insecure: false,
         }),
         TargetAddr::Domain("vless.test".to_owned()),
         443,
@@ -672,6 +681,7 @@ fn selects_tls_vision_outbound_for_protected_stream_boundary() {
         StreamSecurity::Tls(TlsSettings {
             server_name: Some("example.com".to_owned()),
             fingerprint: None,
+            allow_insecure: false,
         }),
         TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
         443,

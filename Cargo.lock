@@ -1498,10 +1498,14 @@ dependencies = [
 name = "xray-bench"
 version = "0.1.0"
 dependencies = [
+ "bytes",
+ "rcgen",
+ "rustls",
  "serde",
  "serde_json",
  "thiserror",
  "tokio",
+ "tokio-rustls",
  "xray-proxy",
  "xray-routing",
 ]

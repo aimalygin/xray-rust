@@ -660,6 +660,17 @@ impl Parser<'_> {
                     fingerprint: tls_settings
                         .and_then(|settings| self.string_at(settings, "fingerprint"))
                         .map(ToOwned::to_owned),
+                    allow_insecure: tls_settings
+                        .and_then(|settings| {
+                            self.optional_bool_at(
+                                settings,
+                                "allowInsecure",
+                                format!(
+                                    "$.outbounds[{index}].streamSettings.tlsSettings.allowInsecure"
+                                ),
+                            )
+                        })
+                        .unwrap_or(false),
                 }))
             }
             "reality" => self
@@ -711,20 +722,6 @@ impl Parser<'_> {
             &settings_path,
             &["serverName", "allowInsecure", "fingerprint", "alpn"],
         );
-
-        if matches!(
-            self.optional_bool_at(
-                settings,
-                "allowInsecure",
-                format!("{settings_path}.allowInsecure")
-            ),
-            Some(true)
-        ) {
-            self.error(
-                format!("{settings_path}.allowInsecure"),
-                "tls allowInsecure is unsupported",
-            );
-        }
 
         if settings.get("fingerprint").is_some() {
             self.error(

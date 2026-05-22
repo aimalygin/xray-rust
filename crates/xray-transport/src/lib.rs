@@ -32,6 +32,7 @@ pub enum ConnectorConfig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TlsClientConfig {
     pub server_name: String,
+    pub allow_insecure: bool,
 }
 
 #[derive(Clone, PartialEq, Eq)]

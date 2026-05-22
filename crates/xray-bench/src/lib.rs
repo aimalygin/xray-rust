@@ -3,15 +3,21 @@ use std::future::Future;
 use std::net::{Ipv4Addr, SocketAddr, TcpListener as StdTcpListener};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use bytes::BytesMut;
+use rcgen::{generate_simple_self_signed, CertifiedKey};
+use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
 use thiserror::Error;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
+use tokio_rustls::TlsAcceptor;
 use xray_proxy::vless::{
     encode_udp_packet, encode_xudp_keep_packet, read_udp_packet, read_xudp_packet,
+    unpad_vision_block, VisionCommand, VisionPadding,
 };
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 
@@ -78,6 +84,7 @@ pub enum WorkloadKind {
     UdpFreedom,
     UdpVless,
     UdpXudp,
+    VisionXudp,
 }
 
 impl WorkloadKind {
@@ -88,6 +95,7 @@ impl WorkloadKind {
             Self::UdpFreedom => "udp-freedom",
             Self::UdpVless => "udp-vless",
             Self::UdpXudp => "udp-xudp",
+            Self::VisionXudp => "vision-xudp",
         }
     }
 
@@ -98,6 +106,7 @@ impl WorkloadKind {
             "udp-freedom" => Ok(Self::UdpFreedom),
             "udp-vless" => Ok(Self::UdpVless),
             "udp-xudp" => Ok(Self::UdpXudp),
+            "vision-xudp" => Ok(Self::VisionXudp),
             other => Err(BenchError::InvalidArguments(format!(
                 "unsupported workload `{other}`"
             ))),
@@ -215,6 +224,14 @@ impl WorkloadFixture {
                     tasks: vec![task],
                 })
             }
+            WorkloadKind::VisionXudp => {
+                let (vless_addr, task) =
+                    spawn_fake_vless_udp_server(VlessUdpServerMode::VisionXudp).await?;
+                Ok(Self {
+                    vless_addr: Some(vless_addr),
+                    tasks: vec![task],
+                })
+            }
             WorkloadKind::Idle | WorkloadKind::TcpFreedom | WorkloadKind::UdpFreedom => {
                 Ok(Self::default())
             }
@@ -234,6 +251,7 @@ impl Drop for WorkloadFixture {
 enum VlessUdpServerMode {
     Udp,
     Xudp,
+    VisionXudp,
 }
 
 impl Default for BenchOptions {
@@ -746,6 +764,13 @@ pub async fn run_udp_xudp_workload(
     Ok((sent, received))
 }
 
+pub async fn run_vision_xudp_workload(
+    socks_addr: SocketAddr,
+    options: &BenchOptions,
+) -> Result<(u64, u64), BenchError> {
+    run_udp_xudp_workload(socks_addr, options).await
+}
+
 async fn run_tcp_freedom_connection(
     socks_addr: SocketAddr,
     echo_addr: SocketAddr,
@@ -1001,11 +1026,25 @@ async fn spawn_fake_vless_udp_server(
         action: "reading fake VLESS UDP server address".to_owned(),
         source,
     })?;
+    let tls_acceptor = match mode {
+        VlessUdpServerMode::VisionXudp => Some(TlsAcceptor::from(fake_tls_server_config()?)),
+        VlessUdpServerMode::Udp | VlessUdpServerMode::Xudp => None,
+    };
 
     let task = tokio::spawn(async move {
         while let Ok((stream, _peer)) = listener.accept().await {
+            let tls_acceptor = tls_acceptor.clone();
             tokio::spawn(async move {
-                let _ = handle_fake_vless_udp_connection(stream, mode).await;
+                if let Some(tls_acceptor) = tls_acceptor {
+                    let Ok(stream) = tls_acceptor.accept(stream).await else {
+                        return;
+                    };
+                    if let Err(error) = handle_fake_vless_udp_connection(stream, mode).await {
+                        eprintln!("fake VLESS UDP server error: {error}");
+                    }
+                } else if let Err(error) = handle_fake_vless_udp_connection(stream, mode).await {
+                    eprintln!("fake VLESS UDP server error: {error}");
+                }
             });
         }
     });
@@ -1013,15 +1052,18 @@ async fn spawn_fake_vless_udp_server(
     Ok((addr, task))
 }
 
-async fn handle_fake_vless_udp_connection(
-    mut inbound: TcpStream,
+async fn handle_fake_vless_udp_connection<S>(
+    mut inbound: S,
     mode: VlessUdpServerMode,
-) -> Result<(), BenchError> {
+) -> Result<(), BenchError>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     match mode {
         VlessUdpServerMode::Udp => {
             let _target = read_vless_udp_target(&mut inbound).await?;
         }
-        VlessUdpServerMode::Xudp => {
+        VlessUdpServerMode::Xudp | VlessUdpServerMode::VisionXudp => {
             read_vless_mux_header(&mut inbound).await?;
         }
     }
@@ -1036,12 +1078,18 @@ async fn handle_fake_vless_udp_connection(
     match mode {
         VlessUdpServerMode::Udp => handle_fake_vless_udp_frames(&mut inbound).await?,
         VlessUdpServerMode::Xudp => handle_fake_vless_xudp_frames(&mut inbound).await?,
+        VlessUdpServerMode::VisionXudp => {
+            handle_fake_vless_vision_xudp_frames(&mut inbound).await?
+        }
     }
 
     Ok(())
 }
 
-async fn handle_fake_vless_udp_frames(inbound: &mut TcpStream) -> Result<(), BenchError> {
+async fn handle_fake_vless_udp_frames<S>(inbound: &mut S) -> Result<(), BenchError>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     loop {
         let payload = match read_udp_packet(inbound).await {
             Ok(payload) => payload,
@@ -1062,7 +1110,10 @@ async fn handle_fake_vless_udp_frames(inbound: &mut TcpStream) -> Result<(), Ben
     Ok(())
 }
 
-async fn handle_fake_vless_xudp_frames(inbound: &mut TcpStream) -> Result<(), BenchError> {
+async fn handle_fake_vless_xudp_frames<S>(inbound: &mut S) -> Result<(), BenchError>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     loop {
         let packet = match read_xudp_packet(inbound).await {
             Ok(packet) => packet,
@@ -1090,7 +1141,134 @@ async fn handle_fake_vless_xudp_frames(inbound: &mut TcpStream) -> Result<(), Be
     Ok(())
 }
 
-async fn read_vless_mux_header(stream: &mut TcpStream) -> Result<(), BenchError> {
+async fn handle_fake_vless_vision_xudp_frames<S>(inbound: &mut S) -> Result<(), BenchError>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    let mut inbound_user_id_seen = false;
+    let mut padding = VisionPadding::new(TEST_VLESS_UUID, [0, 0, 0, 0]);
+    loop {
+        let vision_payload = match read_vision_payload(inbound, &mut inbound_user_id_seen).await {
+            Ok(payload) => payload,
+            Err(_) => break,
+        };
+        let mut cursor = std::io::Cursor::new(vision_payload.to_vec());
+        let packet = read_xudp_packet(&mut cursor)
+            .await
+            .map_err(|source| BenchError::Io {
+                action: "reading fake VLESS Vision XUDP packet".to_owned(),
+                source,
+            })?;
+        let source = packet.source.unwrap_or_else(|| {
+            Target::new(
+                RoutingTargetAddr::Ip(Ipv4Addr::LOCALHOST.into()),
+                9,
+                RoutingNetwork::Udp,
+            )
+        });
+        let frame = encode_xudp_keep_packet(Some(&source), &packet.payload).map_err(|error| {
+            BenchError::InvalidArguments(format!("encoding fake VLESS Vision XUDP packet: {error}"))
+        })?;
+        let padded = padding
+            .pad(BytesMut::from(&frame[..]), VisionCommand::Continue, 0)
+            .map_err(|error| {
+                BenchError::InvalidArguments(format!("padding fake Vision response: {error}"))
+            })?;
+        inbound
+            .write_all(&padded)
+            .await
+            .map_err(|source| BenchError::Io {
+                action: "writing fake VLESS Vision XUDP echo packet".to_owned(),
+                source,
+            })?;
+    }
+
+    Ok(())
+}
+
+async fn read_vision_payload<S>(
+    stream: &mut S,
+    user_id_seen: &mut bool,
+) -> Result<BytesMut, BenchError>
+where
+    S: AsyncRead + Unpin,
+{
+    let mut frame = Vec::new();
+    if !*user_id_seen {
+        let mut user_id = [0; 16];
+        stream
+            .read_exact(&mut user_id)
+            .await
+            .map_err(|source| BenchError::Io {
+                action: "reading Vision user id".to_owned(),
+                source,
+            })?;
+        if user_id != TEST_VLESS_UUID {
+            return Err(BenchError::InvalidArguments(
+                "unexpected Vision user id".to_owned(),
+            ));
+        }
+        frame.extend_from_slice(&user_id);
+        *user_id_seen = true;
+    }
+
+    let mut header = [0; 5];
+    stream
+        .read_exact(&mut header)
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "reading Vision header".to_owned(),
+            source,
+        })?;
+    frame.extend_from_slice(&header);
+
+    let content_len = usize::from(u16::from_be_bytes([header[1], header[2]]));
+    let padding_len = usize::from(u16::from_be_bytes([header[3], header[4]]));
+    let mut rest = vec![0; content_len + padding_len];
+    stream
+        .read_exact(&mut rest)
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "reading Vision payload block".to_owned(),
+            source,
+        })?;
+    frame.extend_from_slice(&rest);
+
+    let block = unpad_vision_block(&frame, &TEST_VLESS_UUID).map_err(|error| {
+        BenchError::InvalidArguments(format!("unpadding fake Vision request: {error}"))
+    })?;
+    if block.command != VisionCommand::Continue {
+        return Err(BenchError::InvalidArguments(format!(
+            "unexpected Vision command {:?}",
+            block.command
+        )));
+    }
+    Ok(block.payload)
+}
+
+fn fake_tls_server_config() -> Result<Arc<rustls::ServerConfig>, BenchError> {
+    let CertifiedKey { cert, signing_key } =
+        generate_simple_self_signed(vec!["vless.test".to_owned()]).map_err(|error| {
+            BenchError::InvalidArguments(format!("generating fake TLS certificate: {error}"))
+        })?;
+    let cert_der = cert.der().clone();
+    let key_der = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(signing_key.serialize_der()));
+
+    let config = rustls::ServerConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .map_err(|error| BenchError::InvalidArguments(format!("building TLS versions: {error}")))?
+    .with_no_client_auth()
+    .with_single_cert(vec![cert_der], key_der)
+    .map_err(|error| BenchError::InvalidArguments(format!("building TLS server: {error}")))?;
+    Ok(Arc::new(config))
+}
+
+async fn read_vless_mux_header<S>(stream: &mut S) -> Result<(), BenchError>
+where
+    S: AsyncRead + Unpin,
+{
     let command = read_vless_common_header(stream).await?;
     if command != 3 {
         return Err(BenchError::InvalidArguments(format!(
@@ -1100,7 +1278,10 @@ async fn read_vless_mux_header(stream: &mut TcpStream) -> Result<(), BenchError>
     Ok(())
 }
 
-async fn read_vless_udp_target(stream: &mut TcpStream) -> Result<SocketAddr, BenchError> {
+async fn read_vless_udp_target<S>(stream: &mut S) -> Result<SocketAddr, BenchError>
+where
+    S: AsyncRead + Unpin,
+{
     let command = read_vless_common_header(stream).await?;
     if command != 2 {
         return Err(BenchError::InvalidArguments(format!(
@@ -1110,7 +1291,10 @@ async fn read_vless_udp_target(stream: &mut TcpStream) -> Result<SocketAddr, Ben
     read_vless_target(stream).await
 }
 
-async fn read_vless_common_header(stream: &mut TcpStream) -> Result<u8, BenchError> {
+async fn read_vless_common_header<S>(stream: &mut S) -> Result<u8, BenchError>
+where
+    S: AsyncRead + Unpin,
+{
     let mut version = [0; 1];
     stream
         .read_exact(&mut version)
@@ -1170,7 +1354,10 @@ async fn read_vless_common_header(stream: &mut TcpStream) -> Result<u8, BenchErr
     Ok(command[0])
 }
 
-async fn read_vless_target(stream: &mut TcpStream) -> Result<SocketAddr, BenchError> {
+async fn read_vless_target<S>(stream: &mut S) -> Result<SocketAddr, BenchError>
+where
+    S: AsyncRead + Unpin,
+{
     let mut port = [0; 2];
     stream
         .read_exact(&mut port)
@@ -1311,6 +1498,9 @@ pub fn xray_rust_config(port: u16, workload: WorkloadKind) -> String {
         WorkloadKind::UdpVless | WorkloadKind::UdpXudp => {
             vless_udp_config(port, SocketAddr::from((Ipv4Addr::LOCALHOST, 443)))
         }
+        WorkloadKind::VisionXudp => {
+            vision_xudp_config(port, SocketAddr::from((Ipv4Addr::LOCALHOST, 443)))
+        }
         WorkloadKind::Idle | WorkloadKind::TcpFreedom | WorkloadKind::UdpFreedom => {
             freedom_config(port, workload == WorkloadKind::UdpFreedom)
         }
@@ -1334,6 +1524,14 @@ fn engine_config(
                 )
             })?;
             Ok(vless_udp_config(port, vless_addr))
+        }
+        WorkloadKind::VisionXudp => {
+            let vless_addr = fixture.vless_addr.ok_or_else(|| {
+                BenchError::InvalidArguments(
+                    "vision-xudp workload requires a fake VLESS server fixture".to_owned(),
+                )
+            })?;
+            Ok(vision_xudp_config(port, vless_addr))
         }
         WorkloadKind::Idle | WorkloadKind::TcpFreedom | WorkloadKind::UdpFreedom => {
             Ok(freedom_config(port, workload == WorkloadKind::UdpFreedom))
@@ -1402,6 +1600,51 @@ fn vless_udp_config(port: u16, vless_addr: SocketAddr) -> String {
         ]
       }},
       "streamSettings": {{ "network": "tcp", "security": "none" }}
+    }}
+  ]
+}}"#,
+        vless_addr.ip(),
+        vless_addr.port()
+    )
+}
+
+fn vision_xudp_config(port: u16, vless_addr: SocketAddr) -> String {
+    format!(
+        r#"{{
+  "log": {{ "loglevel": "warning" }},
+  "inbounds": [
+    {{
+      "tag": "socks-in",
+      "protocol": "socks",
+      "listen": "127.0.0.1",
+      "port": {port},
+      "settings": {{ "auth": "noauth", "udp": true, "ip": "127.0.0.1" }}
+    }}
+  ],
+  "outbounds": [
+    {{
+      "tag": "proxy",
+      "protocol": "vless",
+      "settings": {{
+        "vnext": [
+          {{
+            "address": "{}",
+            "port": {},
+            "users": [
+              {{
+                "id": "00010203-0405-0607-0809-0a0b0c0d0e0f",
+                "encryption": "none",
+                "flow": "xtls-rprx-vision"
+              }}
+            ]
+          }}
+        ]
+      }},
+      "streamSettings": {{
+        "network": "tcp",
+        "security": "tls",
+        "tlsSettings": {{ "serverName": "vless.test", "allowInsecure": true }}
+      }}
     }}
   ]
 }}"#,
@@ -1740,6 +1983,7 @@ async fn run_engine_once(
             WorkloadKind::UdpFreedom => run_udp_freedom_workload(engine.socks_addr, options).await,
             WorkloadKind::UdpVless => run_udp_vless_workload(engine.socks_addr, options).await,
             WorkloadKind::UdpXudp => run_udp_xudp_workload(engine.socks_addr, options).await,
+            WorkloadKind::VisionXudp => run_vision_xudp_workload(engine.socks_addr, options).await,
         }
     };
     let ((bytes_sent, bytes_received), samples) =
@@ -1983,6 +2227,31 @@ mod tests {
     }
 
     #[test]
+    fn parses_compare_vision_xudp() {
+        let args = parse_cli_args([
+            "xray-bench",
+            "compare",
+            "--workload",
+            "vision-xudp",
+            "--connections",
+            "2",
+            "--iterations",
+            "3",
+            "--payload-size",
+            "64",
+        ])
+        .unwrap();
+
+        let CliArgs::Compare(options) = args else {
+            panic!("expected compare args");
+        };
+        assert_eq!(options.workload, WorkloadKind::VisionXudp);
+        assert_eq!(options.connections, 2);
+        assert_eq!(options.iterations, 3);
+        assert_eq!(options.payload_size, 64);
+    }
+
+    #[test]
     fn parses_compare_with_repeated_runs() {
         let args = parse_cli_args([
             "xray-bench",
@@ -2081,6 +2350,19 @@ mod tests {
         assert!(config.contains(r#""protocol": "vless""#));
         assert!(config.contains(r#""port": 19090"#));
         assert!(config.contains("00010203-0405-0607-0809-0a0b0c0d0e0f"));
+    }
+
+    #[test]
+    fn vision_xudp_config_enables_tls_vision_flow() {
+        let config = vision_xudp_config(
+            18084,
+            SocketAddr::from((Ipv4Addr::new(127, 0, 0, 1), 19091)),
+        );
+        assert!(config.contains(r#""protocol": "vless""#));
+        assert!(config.contains(r#""flow": "xtls-rprx-vision""#));
+        assert!(config.contains(r#""security": "tls""#));
+        assert!(config.contains(r#""allowInsecure": true"#));
+        assert!(config.contains(r#""port": 19091"#));
     }
 
     #[test]
