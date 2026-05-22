@@ -193,6 +193,8 @@ pub enum RealityError {
     },
     #[error("unsupported REALITY fingerprint {0}")]
     UnsupportedRealityFingerprint(String),
+    #[error("failed to generate REALITY ClientHello: {0}")]
+    ClientHelloGenerationFailed(String),
     #[error("invalid ClientHello: {reason}")]
     InvalidClientHello { reason: &'static str },
     #[error("ClientHello random does not match prepared metadata")]

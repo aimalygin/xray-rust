@@ -1,8 +1,9 @@
 use std::{fmt, sync::Arc};
 
 use crate::{
-    BoxedTransportStream, ConnectorConfig, RealityTlsEngine, TcpConnector, TlsConnector,
-    TransportConnector, TransportError,
+    BoxedTransportStream, ConnectorConfig, RealityRuntimeEngine, RealityTlsEngine,
+    RustlsRealityTlsSessionProvider, TcpConnector, TlsConnector, TransportConnector,
+    TransportError,
 };
 use xray_routing::Target;
 
@@ -26,7 +27,9 @@ impl TransportDialer {
     pub fn system() -> Result<Self, TransportError> {
         Ok(Self {
             tls: TlsConnector::system()?,
-            reality: None,
+            reality: Some(Arc::new(RealityRuntimeEngine::new(Arc::new(
+                RustlsRealityTlsSessionProvider::new(),
+            )))),
         })
     }
 

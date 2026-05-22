@@ -286,7 +286,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn open_vless_tcp_stream_keeps_default_reality_transport_gate_for_vision_flow() {
+    async fn open_vless_tcp_stream_uses_default_live_reality_transport_for_vision_flow() {
         let outbound = VlessTcpOutbound {
             server: Target::new(
                 RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
@@ -316,9 +316,7 @@ mod tests {
 
         assert!(matches!(
             result,
-            Err(CoreError::Transport(
-                xray_transport::TransportError::UnsupportedConnectorConfig("reality")
-            ))
+            Err(CoreError::Transport(xray_transport::TransportError::Tcp(_)))
         ));
     }
 

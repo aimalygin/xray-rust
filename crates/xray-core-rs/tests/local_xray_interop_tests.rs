@@ -13,13 +13,22 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::time::{sleep, timeout, Duration, Instant};
 use xray_config::{
     CoreConfig, InboundConfig, InboundProtocol, Network, OutboundConfig, OutboundSettings,
-    StreamSecurity, StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
+    RealitySettings, RealityShortId, StreamSecurity, StreamSettings, TargetAddr, TlsSettings,
+    VlessOutboundSettings, VlessUser,
 };
 use xray_core_rs::Core;
 use xray_transport::{SystemDnsResolver, TlsConnector, TransportDialer};
 
 const TEST_UUID: &str = "00010203-0405-0607-0809-0a0b0c0d0e0f";
 const TLS_SERVER_NAME: &str = "vless.test";
+const REALITY_SERVER_NAME: &str = "www.example.com";
+const REALITY_PRIVATE_KEY: &str = "aGSYystUbf59_9_6LKRxD27rmSW_-2_nyd9YG_Gwbks";
+const REALITY_PUBLIC_KEY: [u8; 32] = [
+    19, 159, 86, 142, 123, 217, 113, 3, 46, 238, 212, 123, 252, 24, 50, 135, 39, 46, 17, 208, 82,
+    248, 43, 74, 197, 242, 38, 68, 39, 64, 188, 83,
+];
+const REALITY_SHORT_ID: [u8; 8] = [1, 35, 69, 103, 137, 171, 205, 239];
+const REALITY_SHORT_ID_HEX: &str = "0123456789abcdef";
 
 #[tokio::test]
 #[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
@@ -46,6 +55,17 @@ async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_tls_visi
     timeout(
         Duration::from_secs(120),
         run_local_xray_vless_tls_interop(Some("xtls-rprx-vision")),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
+async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_reality_vision() {
+    timeout(
+        Duration::from_secs(120),
+        run_local_xray_vless_reality_vision_interop(),
     )
     .await
     .unwrap();
@@ -101,6 +121,36 @@ async fn run_local_xray_vless_tls_interop(flow: Option<&'static str>) {
         TransportDialer::with_tls_connector(TlsConnector::with_client_config(tls_client_config));
 
     run_local_xray_vless_interop_scenario(xray, rust_config, Some(dialer)).await;
+}
+
+async fn run_local_xray_vless_reality_vision_interop() {
+    let xray_checkout = resolve_xray_checkout();
+    let xray = timeout(
+        Duration::from_secs(60),
+        start_xray_vless_server(
+            &xray_checkout,
+            XrayVlessServerConfig {
+                security: XrayInboundSecurity::Reality,
+                flow: Some("xtls-rprx-vision"),
+            },
+        ),
+    )
+    .await
+    .expect("start xray timeout");
+    let rust_config = rust_core_config_with_security(
+        xray.addr,
+        StreamSecurity::Reality(RealitySettings {
+            server_name: REALITY_SERVER_NAME.to_owned(),
+            fingerprint: "chrome".to_owned(),
+            public_key: REALITY_PUBLIC_KEY,
+            short_id: RealityShortId::try_from_slice(&REALITY_SHORT_ID)
+                .expect("static REALITY short id"),
+            spider_x: "/".to_owned(),
+        }),
+        Some("xtls-rprx-vision"),
+    );
+
+    run_local_xray_vless_interop_scenario(xray, rust_config, None).await;
 }
 
 async fn run_local_xray_vless_interop_scenario(
@@ -181,6 +231,7 @@ struct XrayServer {
 enum XrayInboundSecurity {
     None,
     Tls,
+    Reality,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -370,6 +421,21 @@ fn write_xray_vless_config(
       }}"#
             )
         }
+        XrayInboundSecurity::Reality => format!(
+            r#",
+      "streamSettings": {{
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {{
+          "show": true,
+          "dest": "{REALITY_SERVER_NAME}:443",
+          "serverNames": ["{REALITY_SERVER_NAME}"],
+          "privateKey": "{REALITY_PRIVATE_KEY}",
+          "shortIds": ["{REALITY_SHORT_ID_HEX}"],
+          "type": "tcp"
+        }}
+      }}"#
+        ),
     };
     let config = format!(
         r#"{{
@@ -413,6 +479,7 @@ async fn start_xray_vless_server(
     let tls_identity = match server_config.security {
         XrayInboundSecurity::None => None,
         XrayInboundSecurity::Tls => Some(generate_tls_identity(&temp_dir)),
+        XrayInboundSecurity::Reality => None,
     };
     let tls_client_config = tls_identity
         .as_ref()
