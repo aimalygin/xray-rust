@@ -19,6 +19,8 @@ use xray_tun::{TunEndpoint, TunError};
 use crate::outbound::{open_tcp_stream_with_resolver_and_dialer, select_tcp_outbound_for_session};
 
 const DEFAULT_RANDOM_SEED: u64 = 0x7872_6179_7275_7374;
+const ICMPV4_PROTOCOL: u8 = 1;
+const ICMPV6_PROTOCOL: u8 = 58;
 const TCP_PROTOCOL: u8 = 6;
 const TCP_BUFFER_SIZE: usize = 32 * 1024;
 const BRIDGE_CHANNEL_DEPTH: usize = 64;
@@ -59,6 +61,12 @@ pub(crate) async fn serve_tun_endpoint(
             packet = tun.poll_inbound() => {
                 match packet {
                     Ok(packet) => {
+                        if let Some(reply) = icmp_echo_reply(&packet) {
+                            if tun.push_outbound(reply).await.is_err() {
+                                break;
+                            }
+                            continue;
+                        }
                         if let Some(endpoint) = tcp_syn_destination(&packet) {
                             ensure_tcp_listener(&mut sockets, &mut tcp_listeners, endpoint);
                         }
@@ -429,6 +437,136 @@ fn is_initial_tcp_syn(tcp: &[u8]) -> bool {
     }
     let flags = tcp[13];
     flags & 0x02 != 0 && flags & 0x10 == 0
+}
+
+fn icmp_echo_reply(packet: &[u8]) -> Option<Bytes> {
+    match packet.first()? >> 4 {
+        4 => ipv4_icmp_echo_reply(packet),
+        6 => ipv6_icmp_echo_reply(packet),
+        _ => None,
+    }
+}
+
+fn ipv4_icmp_echo_reply(packet: &[u8]) -> Option<Bytes> {
+    if packet.len() < 28 {
+        return None;
+    }
+
+    let header_len = usize::from(packet[0] & 0x0f) * 4;
+    if header_len < 20 || packet.len() < header_len + 8 {
+        return None;
+    }
+    if packet[9] != ICMPV4_PROTOCOL {
+        return None;
+    }
+    if internet_checksum(&packet[..header_len]) != 0 {
+        return None;
+    }
+
+    let fragment = u16::from_be_bytes([packet[6], packet[7]]);
+    if fragment & 0x3fff != 0 {
+        return None;
+    }
+
+    let total_len = usize::from(u16::from_be_bytes([packet[2], packet[3]]));
+    if total_len < header_len + 8 || packet.len() < total_len {
+        return None;
+    }
+
+    let icmp = &packet[header_len..total_len];
+    if icmp[0] != 8 || icmp[1] != 0 || internet_checksum(icmp) != 0 {
+        return None;
+    }
+
+    let icmp_len = icmp.len();
+    let total_len = 20 + icmp_len;
+    let mut reply = vec![0; total_len];
+    reply[0] = 0x45;
+    reply[2..4].copy_from_slice(&(total_len as u16).to_be_bytes());
+    reply[8] = 64;
+    reply[9] = ICMPV4_PROTOCOL;
+    reply[12..16].copy_from_slice(&packet[16..20]);
+    reply[16..20].copy_from_slice(&packet[12..16]);
+
+    reply[20..].copy_from_slice(icmp);
+    reply[20] = 0;
+    reply[22] = 0;
+    reply[23] = 0;
+    let icmp_checksum = internet_checksum(&reply[20..]);
+    reply[22..24].copy_from_slice(&icmp_checksum.to_be_bytes());
+    let ip_checksum = internet_checksum(&reply[..20]);
+    reply[10..12].copy_from_slice(&ip_checksum.to_be_bytes());
+
+    Some(Bytes::from(reply))
+}
+
+fn ipv6_icmp_echo_reply(packet: &[u8]) -> Option<Bytes> {
+    if packet.len() < 48 || packet[6] != ICMPV6_PROTOCOL {
+        return None;
+    }
+
+    let payload_len = usize::from(u16::from_be_bytes([packet[4], packet[5]]));
+    if payload_len < 8 || packet.len() < 40 + payload_len {
+        return None;
+    }
+
+    let source = <[u8; 16]>::try_from(&packet[8..24]).ok()?;
+    let destination = <[u8; 16]>::try_from(&packet[24..40]).ok()?;
+    let icmp = &packet[40..40 + payload_len];
+    if icmp[0] != 128
+        || icmp[1] != 0
+        || ipv6_transport_checksum(source, destination, ICMPV6_PROTOCOL, icmp) != 0
+    {
+        return None;
+    }
+
+    let total_len = 40 + payload_len;
+    let mut reply = vec![0; total_len];
+    reply[0] = 0x60;
+    reply[4..6].copy_from_slice(&(payload_len as u16).to_be_bytes());
+    reply[6] = ICMPV6_PROTOCOL;
+    reply[7] = 64;
+    reply[8..24].copy_from_slice(&destination);
+    reply[24..40].copy_from_slice(&source);
+
+    reply[40..].copy_from_slice(icmp);
+    reply[40] = 129;
+    reply[42] = 0;
+    reply[43] = 0;
+    let checksum = ipv6_transport_checksum(destination, source, ICMPV6_PROTOCOL, &reply[40..]);
+    reply[42..44].copy_from_slice(&checksum.to_be_bytes());
+
+    Some(Bytes::from(reply))
+}
+
+fn internet_checksum(data: &[u8]) -> u16 {
+    let mut sum = 0u32;
+    let mut chunks = data.chunks_exact(2);
+    for chunk in &mut chunks {
+        sum += u32::from(u16::from_be_bytes([chunk[0], chunk[1]]));
+    }
+    if let Some(&byte) = chunks.remainder().first() {
+        sum += u32::from(byte) << 8;
+    }
+    while sum >> 16 != 0 {
+        sum = (sum & 0xffff) + (sum >> 16);
+    }
+    !(sum as u16)
+}
+
+fn ipv6_transport_checksum(
+    source: [u8; 16],
+    destination: [u8; 16],
+    next_header: u8,
+    payload: &[u8],
+) -> u16 {
+    let mut pseudo = Vec::with_capacity(40 + payload.len());
+    pseudo.extend_from_slice(&source);
+    pseudo.extend_from_slice(&destination);
+    pseudo.extend_from_slice(&(payload.len() as u32).to_be_bytes());
+    pseudo.extend_from_slice(&[0, 0, 0, next_header]);
+    pseudo.extend_from_slice(payload);
+    internet_checksum(&pseudo)
 }
 
 #[derive(Debug)]

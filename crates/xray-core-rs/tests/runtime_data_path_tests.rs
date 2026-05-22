@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 use std::io::ErrorKind;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -36,6 +36,8 @@ use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTarge
 use xray_transport::{DnsResolver, TlsConnector, TransportDialer, TransportError};
 use xray_tun::TunEndpoint;
 
+const ICMPV4_PROTOCOL: u8 = 1;
+const ICMPV6_PROTOCOL: u8 = 58;
 const TEST_UUID_BYTES: [u8; 16] = [
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
 ];
@@ -715,6 +717,20 @@ async fn tun_tcp_client_uses_inbound_tag_routing_rule_to_reach_freedom_outbound(
 }
 
 #[tokio::test]
+async fn tun_replies_to_ipv4_icmp_echo_request() {
+    timeout(Duration::from_secs(2), run_tun_icmp_echo_scenario())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn tun_replies_to_ipv6_icmp_echo_request() {
+    timeout(Duration::from_secs(2), run_tun_icmpv6_echo_scenario())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
 async fn socks_client_uses_inbound_tag_routing_rule_to_reach_freedom_outbound() {
     timeout(
         Duration::from_secs(2),
@@ -934,6 +950,45 @@ async fn run_tun_tcp_routed_freedom_echo_scenario() {
         .await
         .unwrap()
         .unwrap();
+}
+
+async fn run_tun_icmp_echo_scenario() {
+    let mut core = Core::new(runtime_tun_config_with_freedom_outbound()).unwrap();
+    core.start().await.unwrap();
+
+    let request = ipv4_icmp_echo_request(
+        Ipv4Addr::new(10, 10, 0, 2),
+        Ipv4Addr::new(10, 10, 0, 1),
+        0x1201,
+        7,
+        b"mobile ping",
+    );
+    core.tun().push_inbound(Bytes::from(request)).await.unwrap();
+
+    let reply = poll_tun_outbound_until(core.tun(), is_ipv4_icmp_echo_reply).await;
+    assert_ipv4_icmp_echo_reply(
+        &reply,
+        Ipv4Addr::new(10, 10, 0, 1),
+        Ipv4Addr::new(10, 10, 0, 2),
+        0x1201,
+        7,
+        b"mobile ping",
+    );
+    core.stop().await.unwrap();
+}
+
+async fn run_tun_icmpv6_echo_scenario() {
+    let mut core = Core::new(runtime_tun_config_with_freedom_outbound()).unwrap();
+    core.start().await.unwrap();
+
+    let source = Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 2);
+    let destination = Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 1);
+    let request = ipv6_icmp_echo_request(source, destination, 0x2201, 9, b"mobile ping v6");
+    core.tun().push_inbound(Bytes::from(request)).await.unwrap();
+
+    let reply = poll_tun_outbound_until(core.tun(), is_ipv6_icmp_echo_reply).await;
+    assert_ipv6_icmp_echo_reply(&reply, destination, source, 0x2201, 9, b"mobile ping v6");
+    core.stop().await.unwrap();
 }
 
 async fn run_socks_to_routed_freedom_echo_scenario() {
@@ -1255,6 +1310,170 @@ async fn pump_tun_until(
         );
         sleep(Duration::from_millis(5)).await;
     }
+}
+
+async fn poll_tun_outbound_until(
+    tun: &TunEndpoint,
+    mut is_done: impl FnMut(&[u8]) -> bool,
+) -> Bytes {
+    let deadline = TokioInstant::now() + Duration::from_millis(750);
+    loop {
+        while let Some(packet) = tun.try_poll_outbound().await.unwrap() {
+            if is_done(&packet) {
+                return packet;
+            }
+        }
+
+        assert!(
+            TokioInstant::now() < deadline,
+            "timed out waiting for TUN outbound packet"
+        );
+        sleep(Duration::from_millis(5)).await;
+    }
+}
+
+fn ipv4_icmp_echo_request(
+    source: Ipv4Addr,
+    destination: Ipv4Addr,
+    ident: u16,
+    sequence: u16,
+    payload: &[u8],
+) -> Vec<u8> {
+    let icmp_len = 8 + payload.len();
+    let total_len = 20 + icmp_len;
+    let mut packet = vec![0; total_len];
+    packet[0] = 0x45;
+    packet[2..4].copy_from_slice(&(total_len as u16).to_be_bytes());
+    packet[8] = 64;
+    packet[9] = ICMPV4_PROTOCOL;
+    packet[12..16].copy_from_slice(&source.octets());
+    packet[16..20].copy_from_slice(&destination.octets());
+    let ip_checksum = internet_checksum(&packet[..20]);
+    packet[10..12].copy_from_slice(&ip_checksum.to_be_bytes());
+
+    let icmp = &mut packet[20..];
+    icmp[0] = 8;
+    icmp[4..6].copy_from_slice(&ident.to_be_bytes());
+    icmp[6..8].copy_from_slice(&sequence.to_be_bytes());
+    icmp[8..].copy_from_slice(payload);
+    let icmp_checksum = internet_checksum(icmp);
+    icmp[2..4].copy_from_slice(&icmp_checksum.to_be_bytes());
+
+    packet
+}
+
+fn ipv6_icmp_echo_request(
+    source: Ipv6Addr,
+    destination: Ipv6Addr,
+    ident: u16,
+    sequence: u16,
+    payload: &[u8],
+) -> Vec<u8> {
+    let icmp_len = 8 + payload.len();
+    let total_len = 40 + icmp_len;
+    let mut packet = vec![0; total_len];
+    packet[0] = 0x60;
+    packet[4..6].copy_from_slice(&(icmp_len as u16).to_be_bytes());
+    packet[6] = ICMPV6_PROTOCOL;
+    packet[7] = 64;
+    packet[8..24].copy_from_slice(&source.octets());
+    packet[24..40].copy_from_slice(&destination.octets());
+
+    let icmp = &mut packet[40..];
+    icmp[0] = 128;
+    icmp[4..6].copy_from_slice(&ident.to_be_bytes());
+    icmp[6..8].copy_from_slice(&sequence.to_be_bytes());
+    icmp[8..].copy_from_slice(payload);
+    let checksum = ipv6_transport_checksum(source, destination, ICMPV6_PROTOCOL, icmp);
+    icmp[2..4].copy_from_slice(&checksum.to_be_bytes());
+
+    packet
+}
+
+fn is_ipv4_icmp_echo_reply(packet: &[u8]) -> bool {
+    packet.len() >= 28 && packet[0] >> 4 == 4 && packet[9] == ICMPV4_PROTOCOL && packet[20] == 0
+}
+
+fn is_ipv6_icmp_echo_reply(packet: &[u8]) -> bool {
+    packet.len() >= 48 && packet[0] >> 4 == 6 && packet[6] == ICMPV6_PROTOCOL && packet[40] == 129
+}
+
+fn assert_ipv4_icmp_echo_reply(
+    packet: &[u8],
+    source: Ipv4Addr,
+    destination: Ipv4Addr,
+    ident: u16,
+    sequence: u16,
+    payload: &[u8],
+) {
+    assert_eq!(packet[0] >> 4, 4);
+    assert_eq!(packet[9], ICMPV4_PROTOCOL);
+    assert_eq!(&packet[12..16], &source.octets());
+    assert_eq!(&packet[16..20], &destination.octets());
+    assert_eq!(internet_checksum(&packet[..20]), 0);
+
+    let icmp = &packet[20..];
+    assert_eq!(icmp[0], 0);
+    assert_eq!(icmp[1], 0);
+    assert_eq!(internet_checksum(icmp), 0);
+    assert_eq!(u16::from_be_bytes([icmp[4], icmp[5]]), ident);
+    assert_eq!(u16::from_be_bytes([icmp[6], icmp[7]]), sequence);
+    assert_eq!(&icmp[8..], payload);
+}
+
+fn assert_ipv6_icmp_echo_reply(
+    packet: &[u8],
+    source: Ipv6Addr,
+    destination: Ipv6Addr,
+    ident: u16,
+    sequence: u16,
+    payload: &[u8],
+) {
+    assert_eq!(packet[0] >> 4, 6);
+    assert_eq!(packet[6], ICMPV6_PROTOCOL);
+    assert_eq!(&packet[8..24], &source.octets());
+    assert_eq!(&packet[24..40], &destination.octets());
+
+    let icmp = &packet[40..];
+    assert_eq!(icmp[0], 129);
+    assert_eq!(icmp[1], 0);
+    assert_eq!(
+        ipv6_transport_checksum(source, destination, ICMPV6_PROTOCOL, icmp),
+        0
+    );
+    assert_eq!(u16::from_be_bytes([icmp[4], icmp[5]]), ident);
+    assert_eq!(u16::from_be_bytes([icmp[6], icmp[7]]), sequence);
+    assert_eq!(&icmp[8..], payload);
+}
+
+fn internet_checksum(data: &[u8]) -> u16 {
+    let mut sum = 0u32;
+    let mut chunks = data.chunks_exact(2);
+    for chunk in &mut chunks {
+        sum += u32::from(u16::from_be_bytes([chunk[0], chunk[1]]));
+    }
+    if let Some(&byte) = chunks.remainder().first() {
+        sum += u32::from(byte) << 8;
+    }
+    while sum >> 16 != 0 {
+        sum = (sum & 0xffff) + (sum >> 16);
+    }
+    !(sum as u16)
+}
+
+fn ipv6_transport_checksum(
+    source: Ipv6Addr,
+    destination: Ipv6Addr,
+    next_header: u8,
+    payload: &[u8],
+) -> u16 {
+    let mut pseudo = Vec::with_capacity(40 + payload.len());
+    pseudo.extend_from_slice(&source.octets());
+    pseudo.extend_from_slice(&destination.octets());
+    pseudo.extend_from_slice(&(payload.len() as u32).to_be_bytes());
+    pseudo.extend_from_slice(&[0, 0, 0, next_header]);
+    pseudo.extend_from_slice(payload);
+    internet_checksum(&pseudo)
 }
 
 #[derive(Debug)]
