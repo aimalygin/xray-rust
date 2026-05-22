@@ -1,6 +1,9 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use uuid::Uuid;
-use xray_proxy::vless::{encode_request_header, VlessCommand, VlessRequest, WireError};
+use xray_proxy::vless::{
+    encode_request_header, encode_udp_packet, encode_xudp_keep_packet, encode_xudp_new_packet,
+    read_udp_packet, read_xudp_packet, VlessCommand, VlessRequest, WireError,
+};
 use xray_routing::{Network, Target, TargetAddr};
 
 #[test]
@@ -152,6 +155,76 @@ fn encodes_udp_command_with_target_bytes() {
     );
 
     assert_eq!(encoded, expected);
+}
+
+#[test]
+fn encodes_vless_udp_length_prefixed_packet() {
+    let encoded = encode_udp_packet(b"dns query").unwrap();
+
+    assert_eq!(encoded, hex_bytes("0009 646e73207175657279"));
+}
+
+#[tokio::test]
+async fn reads_vless_udp_length_prefixed_packet() {
+    let encoded = hex_bytes("0005 68656c6c6f");
+    let mut input = encoded.as_slice();
+
+    let packet = read_udp_packet(&mut input).await.unwrap();
+
+    assert_eq!(&packet[..], b"hello");
+}
+
+#[test]
+fn encodes_xudp_new_packet_with_target_and_global_id() {
+    let target = Target::new(
+        TargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+        53,
+        Network::Udp,
+    );
+
+    let encoded =
+        encode_xudp_new_packet(&target, b"q", [1, 2, 3, 4, 5, 6, 7, 8]).unwrap();
+    let expected = hex_bytes(
+        "0014\
+         0000\
+         01\
+         01\
+         02\
+         0035\
+         01\
+         7f000001\
+         0102030405060708\
+         0001\
+         71",
+    );
+
+    assert_eq!(encoded, expected);
+}
+
+#[tokio::test]
+async fn reads_xudp_keep_packet_with_source_target() {
+    let frame = encode_xudp_keep_packet(
+        Some(&Target::new(
+            TargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            53,
+            Network::Udp,
+        )),
+        b"answer",
+    )
+    .unwrap();
+    let mut input = frame.as_slice();
+
+    let packet = read_xudp_packet(&mut input).await.unwrap();
+
+    assert_eq!(packet.payload.as_ref(), b"answer");
+    assert_eq!(
+        packet.source,
+        Some(Target::new(
+            TargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            53,
+            Network::Udp,
+        ))
+    );
 }
 
 #[test]

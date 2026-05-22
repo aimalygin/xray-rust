@@ -31,6 +31,8 @@ pub enum WireError {
     DomainTooLong(usize),
     #[error("addons length {0} exceeds vless single-byte addons limit")]
     AddonsTooLong(usize),
+    #[error("packet length {0} exceeds vless two-byte packet limit")]
+    PacketTooLong(usize),
 }
 
 #[derive(Clone, PartialEq, Message)]
