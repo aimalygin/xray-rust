@@ -4,18 +4,22 @@ use std::io::ErrorKind;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use rcgen::{generate_simple_self_signed, CertifiedKey};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::time::{sleep, timeout, Duration, Instant};
 use xray_config::{
     CoreConfig, InboundConfig, InboundProtocol, Network, OutboundConfig, OutboundSettings,
-    StreamSecurity, StreamSettings, TargetAddr, VlessOutboundSettings, VlessUser,
+    StreamSecurity, StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
 };
 use xray_core_rs::Core;
+use xray_transport::{SystemDnsResolver, TlsConnector, TransportDialer};
 
 const TEST_UUID: &str = "00010203-0405-0607-0809-0a0b0c0d0e0f";
+const TLS_SERVER_NAME: &str = "vless.test";
 
 #[tokio::test]
 #[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
@@ -25,17 +29,84 @@ async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_tcp() {
         .unwrap();
 }
 
+#[tokio::test]
+#[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
+async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_tls() {
+    timeout(
+        Duration::from_secs(120),
+        run_local_xray_vless_tls_interop(None),
+    )
+    .await
+    .unwrap();
+}
+
 async fn run_local_xray_vless_interop() {
     let xray_checkout = resolve_xray_checkout();
     let xray = timeout(
         Duration::from_secs(60),
-        start_xray_vless_server(&xray_checkout),
+        start_xray_vless_server(
+            &xray_checkout,
+            XrayVlessServerConfig {
+                security: XrayInboundSecurity::None,
+                flow: None,
+            },
+        ),
     )
     .await
     .expect("start xray timeout");
 
+    let rust_config = rust_core_config_with_security(xray.addr, StreamSecurity::None, None);
+    run_local_xray_vless_interop_scenario(xray, rust_config, None).await;
+}
+
+async fn run_local_xray_vless_tls_interop(flow: Option<&'static str>) {
+    let xray_checkout = resolve_xray_checkout();
+    let xray = timeout(
+        Duration::from_secs(60),
+        start_xray_vless_server(
+            &xray_checkout,
+            XrayVlessServerConfig {
+                security: XrayInboundSecurity::Tls,
+                flow,
+            },
+        ),
+    )
+    .await
+    .expect("start xray timeout");
+    let tls_client_config = Arc::clone(
+        xray.tls_client_config
+            .as_ref()
+            .expect("TLS Xray server should expose trusted client config"),
+    );
+    let rust_config = rust_core_config_with_security(
+        xray.addr,
+        StreamSecurity::Tls(TlsSettings {
+            server_name: Some(TLS_SERVER_NAME.to_owned()),
+            fingerprint: None,
+        }),
+        flow,
+    );
+    let dialer =
+        TransportDialer::with_tls_connector(TlsConnector::with_client_config(tls_client_config));
+
+    run_local_xray_vless_interop_scenario(xray, rust_config, Some(dialer)).await;
+}
+
+async fn run_local_xray_vless_interop_scenario(
+    xray: XrayServer,
+    rust_config: CoreConfig,
+    transport_dialer: Option<TransportDialer>,
+) {
     let (echo_addr, echo_handle) = spawn_echo_server().await;
-    let mut core = Core::new(rust_core_config(xray.addr)).expect("create rust core");
+    let mut core = match transport_dialer {
+        Some(dialer) => Core::with_runtime_dependencies(
+            rust_config,
+            Arc::new(SystemDnsResolver),
+            Arc::new(dialer),
+        ),
+        None => Core::new(rust_config),
+    }
+    .expect("create rust core");
 
     timeout(Duration::from_secs(5), core.start())
         .await
@@ -92,6 +163,25 @@ struct XrayServer {
     addr: SocketAddr,
     stdout_path: PathBuf,
     stderr_path: PathBuf,
+    tls_client_config: Option<Arc<rustls::ClientConfig>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum XrayInboundSecurity {
+    None,
+    Tls,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct XrayVlessServerConfig {
+    security: XrayInboundSecurity,
+    flow: Option<&'static str>,
+}
+
+struct GeneratedTlsIdentity {
+    cert_path: PathBuf,
+    key_path: PathBuf,
+    client_config: Arc<rustls::ClientConfig>,
 }
 
 impl Drop for TempDir {
@@ -166,7 +256,110 @@ fn allocate_loopback_port() -> u16 {
         .port()
 }
 
-fn write_xray_vless_config(path: &Path, port: u16) {
+fn generate_tls_identity(temp_dir: &TempDir) -> GeneratedTlsIdentity {
+    let CertifiedKey { cert, signing_key } =
+        generate_simple_self_signed(vec![TLS_SERVER_NAME.to_owned()])
+            .expect("generate self-signed certificate");
+    let cert_der = cert.der().clone();
+    let key_der = signing_key.serialize_der();
+    let cert_path = temp_dir.path.join("server.crt.pem");
+    let key_path = temp_dir.path.join("server.key.pem");
+
+    fs::write(&cert_path, pem_block("CERTIFICATE", cert_der.as_ref())).expect("write tls cert");
+    fs::write(&key_path, pem_block("PRIVATE KEY", &key_der)).expect("write tls key");
+
+    let mut roots = rustls::RootCertStore::empty();
+    roots.add(cert_der).expect("add generated cert root");
+    let client_config = rustls::ClientConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .expect("ring provider should support default TLS versions")
+    .with_root_certificates(roots)
+    .with_no_client_auth();
+
+    GeneratedTlsIdentity {
+        cert_path,
+        key_path,
+        client_config: Arc::new(client_config),
+    }
+}
+
+fn pem_block(label: &str, der: &[u8]) -> String {
+    let encoded = base64_standard(der);
+    let mut pem = String::with_capacity(encoded.len() + label.len() * 2 + 32);
+    pem.push_str("-----BEGIN ");
+    pem.push_str(label);
+    pem.push_str("-----\n");
+    for chunk in encoded.as_bytes().chunks(64) {
+        pem.push_str(std::str::from_utf8(chunk).expect("base64 is utf8"));
+        pem.push('\n');
+    }
+    pem.push_str("-----END ");
+    pem.push_str(label);
+    pem.push_str("-----\n");
+    pem
+}
+
+fn base64_standard(input: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut output = String::with_capacity(input.len().div_ceil(3) * 4);
+
+    for chunk in input.chunks(3) {
+        let b0 = chunk[0];
+        let b1 = chunk.get(1).copied().unwrap_or(0);
+        let b2 = chunk.get(2).copied().unwrap_or(0);
+
+        output.push(TABLE[(b0 >> 2) as usize] as char);
+        output.push(TABLE[(((b0 & 0x03) << 4) | (b1 >> 4)) as usize] as char);
+        if chunk.len() > 1 {
+            output.push(TABLE[(((b1 & 0x0f) << 2) | (b2 >> 6)) as usize] as char);
+        } else {
+            output.push('=');
+        }
+        if chunk.len() > 2 {
+            output.push(TABLE[(b2 & 0x3f) as usize] as char);
+        } else {
+            output.push('=');
+        }
+    }
+
+    output
+}
+
+fn write_xray_vless_config(
+    path: &Path,
+    port: u16,
+    server_config: &XrayVlessServerConfig,
+    tls_identity: Option<&GeneratedTlsIdentity>,
+) {
+    let client = match server_config.flow {
+        Some(flow) => format!(r#"{{ "id": "{TEST_UUID}", "flow": "{flow}" }}"#),
+        None => format!(r#"{{ "id": "{TEST_UUID}" }}"#),
+    };
+    let stream_settings = match server_config.security {
+        XrayInboundSecurity::None => String::new(),
+        XrayInboundSecurity::Tls => {
+            let identity = tls_identity.expect("TLS config requires generated identity");
+            let cert_path = identity.cert_path.to_string_lossy();
+            let key_path = identity.key_path.to_string_lossy();
+            format!(
+                r#",
+      "streamSettings": {{
+        "network": "tcp",
+        "security": "tls",
+        "tlsSettings": {{
+          "certificates": [
+            {{
+              "certificateFile": "{cert_path}",
+              "keyFile": "{key_path}"
+            }}
+          ]
+        }}
+      }}"#
+            )
+        }
+    };
     let config = format!(
         r#"{{
   "log": {{ "loglevel": "warning" }},
@@ -176,9 +369,9 @@ fn write_xray_vless_config(path: &Path, port: u16) {
       "port": {port},
       "protocol": "vless",
       "settings": {{
-        "clients": [{{ "id": "{TEST_UUID}" }}],
+        "clients": [{client}],
         "decryption": "none"
-      }}
+      }}{stream_settings}
     }}
   ],
   "outbounds": [
@@ -194,7 +387,10 @@ fn write_xray_vless_config(path: &Path, port: u16) {
     fs::write(path, config).expect("write xray config");
 }
 
-async fn start_xray_vless_server(xray_checkout: &Path) -> XrayServer {
+async fn start_xray_vless_server(
+    xray_checkout: &Path,
+    server_config: XrayVlessServerConfig,
+) -> XrayServer {
     let temp_dir = create_temp_dir("xray-rust-local-interop");
     let binary = temp_dir
         .path
@@ -203,7 +399,14 @@ async fn start_xray_vless_server(xray_checkout: &Path) -> XrayServer {
     let stdout_path = temp_dir.path.join("xray.stdout.log");
     let stderr_path = temp_dir.path.join("xray.stderr.log");
     let port = allocate_loopback_port();
-    write_xray_vless_config(&config_path, port);
+    let tls_identity = match server_config.security {
+        XrayInboundSecurity::None => None,
+        XrayInboundSecurity::Tls => Some(generate_tls_identity(&temp_dir)),
+    };
+    let tls_client_config = tls_identity
+        .as_ref()
+        .map(|identity| Arc::clone(&identity.client_config));
+    write_xray_vless_config(&config_path, port, &server_config, tls_identity.as_ref());
 
     let build_output = Command::new("go")
         .arg("build")
@@ -242,6 +445,7 @@ async fn start_xray_vless_server(xray_checkout: &Path) -> XrayServer {
         addr,
         stdout_path,
         stderr_path,
+        tls_client_config,
     }
 }
 
@@ -275,7 +479,11 @@ async fn wait_for_tcp_listener(
     }
 }
 
-fn rust_core_config(xray_addr: SocketAddr) -> CoreConfig {
+fn rust_core_config_with_security(
+    xray_addr: SocketAddr,
+    security: StreamSecurity,
+    flow: Option<&str>,
+) -> CoreConfig {
     CoreConfig {
         inbounds: vec![InboundConfig {
             tag: Some("socks-in".to_owned()),
@@ -287,7 +495,7 @@ fn rust_core_config(xray_addr: SocketAddr) -> CoreConfig {
             tag: Some("proxy".to_owned()),
             stream: StreamSettings {
                 network: Network::Tcp,
-                security: StreamSecurity::None,
+                security,
             },
             settings: OutboundSettings::Vless(VlessOutboundSettings {
                 server: TargetAddr::Ip(xray_addr.ip()),
@@ -295,7 +503,7 @@ fn rust_core_config(xray_addr: SocketAddr) -> CoreConfig {
                 users: vec![VlessUser {
                     id: TEST_UUID.parse().expect("static uuid"),
                     encryption: "none".to_owned(),
-                    flow: None,
+                    flow: flow.map(ToOwned::to_owned),
                 }],
             }),
         }],
