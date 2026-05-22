@@ -1,10 +1,10 @@
 use std::collections::VecDeque;
-use std::io::ErrorKind;
+use std::io::{Cursor, ErrorKind};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use rcgen::{generate_simple_self_signed, CertifiedKey};
 use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
 use smoltcp::iface::{
@@ -32,7 +32,10 @@ use xray_config::{
     StreamSecurity, StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
 };
 use xray_core_rs::{select_vless_tcp_outbound, Core, CoreError};
-use xray_proxy::vless::{encode_udp_packet, read_udp_packet};
+use xray_proxy::vless::{
+    encode_udp_packet, encode_xudp_keep_packet, read_udp_packet, read_xudp_packet,
+    unpad_vision_block, VisionCommand, VisionPadding,
+};
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::{DnsResolver, TlsConnector, TransportDialer, TransportError};
 use xray_tun::TunEndpoint;
@@ -187,6 +190,37 @@ fn runtime_tun_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig {
             TargetAddr::Ip(vless_addr.ip()),
             vless_addr.port(),
         )],
+        default_outbound_tag: None,
+        routing: RoutingConfig::default(),
+    }
+}
+
+fn runtime_tun_config_with_tls_vision_vless_domain_server(
+    domain: &str,
+    port: u16,
+    server_name: &str,
+) -> CoreConfig {
+    let mut outbound = vless_outbound(
+        StreamSecurity::Tls(TlsSettings {
+            server_name: Some(server_name.to_owned()),
+            fingerprint: None,
+        }),
+        TargetAddr::Domain(domain.to_owned()),
+        port,
+    );
+    let OutboundSettings::Vless(settings) = &mut outbound.settings else {
+        panic!("expected vless outbound");
+    };
+    settings.users[0].flow = Some("xtls-rprx-vision".to_owned());
+
+    CoreConfig {
+        inbounds: vec![InboundConfig {
+            tag: Some("tun-in".to_owned()),
+            protocol: InboundProtocol::Tun,
+            listen: "127.0.0.1".to_owned(),
+            port: 0,
+        }],
+        outbounds: vec![outbound],
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
     }
@@ -747,6 +781,16 @@ async fn tun_udp_client_reaches_echo_target_through_vless_udp_outbound() {
 }
 
 #[tokio::test]
+async fn tun_udp_client_reaches_echo_target_through_vision_xudp_outbound() {
+    timeout(
+        Duration::from_secs(2),
+        run_tun_udp_vision_xudp_echo_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
 async fn socks_client_uses_inbound_tag_routing_rule_to_reach_freedom_outbound() {
     timeout(
         Duration::from_secs(2),
@@ -1078,6 +1122,62 @@ async fn run_tun_udp_vless_echo_scenario() {
         client_addr,
         49153,
         b"hello tun vless udp",
+    );
+    core.stop().await.unwrap();
+
+    timeout(Duration::from_secs(1), vless_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+async fn run_tun_udp_vision_xudp_echo_scenario() {
+    let (client_config, server_config) = tls_test_configs();
+    let echo_addr = SocketAddr::new(
+        IpAddr::V4(Ipv4Addr::LOCALHOST),
+        allocate_unused_loopback_port(),
+    );
+    let (vless_addr, vless_handle) =
+        spawn_fake_tls_vision_xudp_server(server_config, echo_addr).await;
+    let resolver = StaticDnsResolver {
+        domain: "vless.test",
+        addr: vless_addr,
+    };
+    let config = runtime_tun_config_with_tls_vision_vless_domain_server(
+        "vless.test",
+        vless_addr.port(),
+        "vless.test",
+    );
+    let dialer =
+        TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config));
+
+    let mut core =
+        Core::with_runtime_dependencies(config, Arc::new(resolver), Arc::new(dialer)).unwrap();
+    core.start().await.unwrap();
+
+    let client_addr = Ipv4Addr::new(10, 10, 0, 2);
+    let request = ipv4_udp_packet(
+        client_addr,
+        49154,
+        Ipv4Addr::LOCALHOST,
+        echo_addr.port(),
+        b"hello vision xudp",
+    );
+    core.tun().push_inbound(Bytes::from(request)).await.unwrap();
+
+    let reply = poll_tun_outbound_until(core.tun(), |packet| {
+        ipv4_udp_payload(packet)
+            .map(|payload| payload == b"hello vision xudp")
+            .unwrap_or(false)
+    })
+    .await;
+    assert_ipv4_udp_packet(
+        &reply,
+        Ipv4Addr::LOCALHOST,
+        echo_addr.port(),
+        client_addr,
+        49154,
+        b"hello vision xudp",
     );
     core.stop().await.unwrap();
 
@@ -1879,6 +1979,43 @@ async fn spawn_fake_tls_vless_server(
     (addr, handle)
 }
 
+async fn spawn_fake_tls_vision_xudp_server(
+    server_config: Arc<rustls::ServerConfig>,
+    expected_target: SocketAddr,
+) -> (SocketAddr, JoinHandle<()>) {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let acceptor = TlsAcceptor::from(server_config);
+
+    let handle = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let mut inbound = acceptor.accept(stream).await.unwrap();
+        read_vless_mux_header(&mut inbound).await;
+        inbound.write_all(&[0, 0]).await.unwrap();
+
+        let vision_payload = read_vision_payload(&mut inbound).await;
+        let mut cursor = Cursor::new(vision_payload.to_vec());
+        let packet = read_xudp_packet(&mut cursor).await.unwrap();
+        let target = packet.source.expect("xudp new frame carries target");
+        assert_eq!(target.network, RoutingNetwork::Udp);
+        assert_eq!(target.port, expected_target.port());
+        assert_eq!(
+            target.addr,
+            RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST))
+        );
+        assert_eq!(&packet.payload[..], b"hello vision xudp");
+
+        let response = encode_xudp_keep_packet(Some(&target), &packet.payload).unwrap();
+        let mut padding = VisionPadding::new(TEST_UUID_BYTES, [0, 0, 0, 0]);
+        let padded = padding
+            .pad(BytesMut::from(&response[..]), VisionCommand::Continue, 0)
+            .unwrap();
+        inbound.write_all(&padded).await.unwrap();
+    });
+
+    (addr, handle)
+}
+
 async fn socks5_connect(client: &mut TcpStream, target: SocketAddr) {
     let SocketAddr::V4(target) = target else {
         panic!("this E2E covers IPv4 SOCKS targets only");
@@ -1994,6 +2131,45 @@ where
         other => panic!("unsupported VLESS command {other}"),
     };
     Target::new(addr, port, network)
+}
+
+async fn read_vless_mux_header<S>(stream: &mut S)
+where
+    S: AsyncRead + Unpin,
+{
+    let version = stream.read_u8().await.unwrap();
+    assert_eq!(version, 0);
+
+    let mut uuid = [0; 16];
+    stream.read_exact(&mut uuid).await.unwrap();
+    assert_eq!(uuid, TEST_UUID_BYTES);
+
+    let addons_len = stream.read_u8().await.unwrap();
+    assert!(addons_len > 0);
+    let mut addons = vec![0; usize::from(addons_len)];
+    stream.read_exact(&mut addons).await.unwrap();
+
+    let command = stream.read_u8().await.unwrap();
+    assert_eq!(command, 3);
+}
+
+async fn read_vision_payload<S>(stream: &mut S) -> BytesMut
+where
+    S: AsyncRead + Unpin,
+{
+    let mut header = vec![0; 21];
+    stream.read_exact(&mut header).await.unwrap();
+    assert_eq!(&header[..16], &TEST_UUID_BYTES);
+
+    let content_len = usize::from(u16::from_be_bytes([header[17], header[18]]));
+    let padding_len = usize::from(u16::from_be_bytes([header[19], header[20]]));
+    let mut rest = vec![0; content_len + padding_len];
+    stream.read_exact(&mut rest).await.unwrap();
+    header.extend_from_slice(&rest);
+
+    let block = unpad_vision_block(&header, &TEST_UUID_BYTES).unwrap();
+    assert_eq!(block.command, VisionCommand::Continue);
+    block.payload
 }
 
 async fn read_vless_header<S>(stream: &mut S) -> SocketAddr
