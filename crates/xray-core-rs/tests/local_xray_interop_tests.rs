@@ -40,6 +40,17 @@ async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_tls() {
     .unwrap();
 }
 
+#[tokio::test]
+#[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
+async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_tls_vision() {
+    timeout(
+        Duration::from_secs(120),
+        run_local_xray_vless_tls_interop(Some("xtls-rprx-vision")),
+    )
+    .await
+    .unwrap();
+}
+
 async fn run_local_xray_vless_interop() {
     let xray_checkout = resolve_xray_checkout();
     let xray = timeout(

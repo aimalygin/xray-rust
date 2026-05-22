@@ -99,20 +99,33 @@ pub fn select_vless_tcp_outbound(config: &CoreConfig) -> Result<VlessTcpOutbound
 }
 
 fn validate_stream_flow(flow: Option<&str>, security: &StreamSecurity) -> Result<(), CoreError> {
-    validate_vision_flow(flow, matches!(security, StreamSecurity::Reality(_))).map(|_| ())
+    validate_vision_flow(
+        flow,
+        matches!(
+            security,
+            StreamSecurity::Tls(_) | StreamSecurity::Reality(_)
+        ),
+    )
+    .map(|_| ())
 }
 
 fn validate_connector_flow(
     flow: Option<&str>,
     transport: &ConnectorConfig,
 ) -> Result<bool, CoreError> {
-    validate_vision_flow(flow, matches!(transport, ConnectorConfig::Reality(_)))
+    validate_vision_flow(
+        flow,
+        matches!(
+            transport,
+            ConnectorConfig::Tls(_) | ConnectorConfig::Reality(_)
+        ),
+    )
 }
 
-fn validate_vision_flow(flow: Option<&str>, is_reality: bool) -> Result<bool, CoreError> {
+fn validate_vision_flow(flow: Option<&str>, is_protected: bool) -> Result<bool, CoreError> {
     match flow {
         None => Ok(false),
-        Some(VISION_FLOW) if is_reality => Ok(true),
+        Some(VISION_FLOW) if is_protected => Ok(true),
         Some(_) => Err(CoreError::UnsupportedOutboundFlow),
     }
 }
