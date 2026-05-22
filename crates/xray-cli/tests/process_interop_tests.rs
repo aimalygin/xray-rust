@@ -38,6 +38,16 @@ async fn xray_rust_process_reaches_echo_server_through_local_xray_vless_reality_
     .unwrap();
 }
 
+#[tokio::test]
+async fn xray_rust_process_reaches_echo_server_through_freedom_outbound() {
+    timeout(
+        Duration::from_secs(20),
+        run_xray_rust_process_freedom_interop(),
+    )
+    .await
+    .unwrap();
+}
+
 async fn run_xray_rust_process_interop(security: XrayInboundSecurity) {
     let xray_checkout = resolve_xray_checkout();
     let xray = timeout(
@@ -92,6 +102,51 @@ async fn run_xray_rust_process_interop(security: XrayInboundSecurity) {
     drop(client);
     drop(xray_rust);
     drop(xray);
+    timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .expect("echo task should finish")
+        .expect("echo task should not panic");
+}
+
+async fn run_xray_rust_process_freedom_interop() {
+    let (echo_addr, echo_handle) = spawn_echo_server().await;
+    let client_temp_dir = create_temp_dir("xray-rust-cli-freedom-process-interop");
+    let client_config_path = client_temp_dir.path.join("client.json");
+    write_xray_rust_freedom_client_config(&client_config_path);
+    let (xray_rust, socks_addr) = start_xray_rust_process(client_temp_dir, &client_config_path)
+        .await
+        .expect("start xray-rust process");
+
+    let mut client = timeout(Duration::from_secs(5), TcpStream::connect(socks_addr))
+        .await
+        .expect("connect xray-rust socks timeout")
+        .expect("connect xray-rust socks");
+    timeout(
+        Duration::from_secs(5),
+        socks5_connect(&mut client, echo_addr),
+    )
+    .await
+    .expect("socks connect timeout");
+
+    let payload = b"hello xray-rust freedom process";
+    timeout(Duration::from_secs(5), client.write_all(payload))
+        .await
+        .expect("write payload timeout")
+        .expect("write payload");
+    let mut echoed = vec![0; payload.len()];
+    match timeout(Duration::from_secs(5), client.read_exact(&mut echoed)).await {
+        Ok(result) => {
+            result.expect("read echo");
+        }
+        Err(error) => {
+            eprintln!("{}", xray_rust.logs());
+            panic!("read echo timeout: {error}");
+        }
+    }
+    assert_eq!(echoed, payload);
+
+    drop(client);
+    drop(xray_rust);
     timeout(Duration::from_secs(1), echo_handle)
         .await
         .expect("echo task should finish")
@@ -338,6 +393,27 @@ fn write_xray_rust_client_config(
         xray_addr.port(),
     );
     fs::write(path, config).expect("write xray-rust client config");
+}
+
+fn write_xray_rust_freedom_client_config(path: &Path) {
+    let config = r#"{
+  "inbounds": [
+    {
+      "tag": "socks-in",
+      "protocol": "socks",
+      "listen": "127.0.0.1",
+      "port": 0
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {}
+    }
+  ]
+}"#;
+    fs::write(path, config).expect("write xray-rust freedom client config");
 }
 
 async fn start_xray_vless_server(
