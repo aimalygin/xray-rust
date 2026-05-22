@@ -2,7 +2,8 @@ use std::{fs, net::SocketAddr, path::PathBuf};
 
 use tokio::sync::oneshot;
 use xray_cli::{
-    format_bound_inbounds, load_config, parse_cli_args, run_with_shutdown, CliArgs, CliError,
+    format_bound_inbounds, load_config, parse_cli_args, run_cli_with_shutdown, run_with_shutdown,
+    CliArgs, CliError,
 };
 
 #[test]
@@ -121,4 +122,12 @@ async fn run_with_shutdown_starts_and_stops_core() {
 
     assert!(result.is_ok());
     let _ = fs::remove_dir_all(temp_dir);
+}
+
+#[tokio::test]
+async fn run_cli_with_shutdown_rejects_missing_config() {
+    let result = run_cli_with_shutdown(["xray-rust", "run", "-config"], async {}).await;
+
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("missing config path"));
 }

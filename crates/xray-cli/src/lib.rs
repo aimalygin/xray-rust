@@ -103,3 +103,17 @@ where
 
     Ok(())
 }
+
+pub async fn run_cli_with_shutdown<I, S, F>(args: I, shutdown: F) -> Result<(), CliError>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+    F: Future<Output = ()>,
+{
+    match parse_cli_args(args)? {
+        CliArgs::Run { config_path } => {
+            let config = load_config(&config_path)?;
+            run_with_shutdown(config, shutdown).await
+        }
+    }
+}
