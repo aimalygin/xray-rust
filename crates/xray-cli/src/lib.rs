@@ -1,6 +1,13 @@
-use std::path::PathBuf;
+use std::{
+    fs,
+    future::Future,
+    net::SocketAddr,
+    path::{Path, PathBuf},
+};
 
 use thiserror::Error;
+use xray_config::{parse_xray_json, CoreConfig, Diagnostic};
+use xray_core_rs::{Core, CoreError};
 
 const USAGE: &str = "usage: xray-rust run -config <config.json>";
 
@@ -13,6 +20,15 @@ pub enum CliArgs {
 pub enum CliError {
     #[error("{0}")]
     InvalidArguments(String),
+    #[error("failed to read config `{path}`: {source}")]
+    ReadConfig {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    #[error("config parse failed: {0}")]
+    ConfigParse(String),
+    #[error("core error: {0}")]
+    Core(#[from] CoreError),
 }
 
 pub fn parse_cli_args<I, S>(args: I) -> Result<CliArgs, CliError>
@@ -41,4 +57,49 @@ where
 
 fn is_config_flag(flag: &str) -> bool {
     flag == "-config" || flag == "--config"
+}
+
+pub fn load_config(path: &Path) -> Result<CoreConfig, CliError> {
+    let raw = fs::read_to_string(path).map_err(|source| CliError::ReadConfig {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let parsed = parse_xray_json(&raw)
+        .map_err(|error| CliError::ConfigParse(format_diagnostics(&error.diagnostics)))?;
+
+    Ok(parsed.config)
+}
+
+fn format_diagnostics(diagnostics: &[Diagnostic]) -> String {
+    diagnostics
+        .iter()
+        .map(|diagnostic| match &diagnostic.path {
+            Some(path) => format!("{path}: {}", diagnostic.message),
+            None => diagnostic.message.clone(),
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+pub fn format_bound_inbounds(inbounds: &[(Option<String>, SocketAddr)]) -> String {
+    inbounds
+        .iter()
+        .map(|(tag, addr)| {
+            let tag = tag.as_deref().unwrap_or("<untagged>");
+            format!("bound inbound {tag} at {addr}")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+pub async fn run_with_shutdown<F>(config: CoreConfig, shutdown: F) -> Result<(), CliError>
+where
+    F: Future<Output = ()>,
+{
+    let mut core = Core::new(config)?;
+    core.start().await?;
+    shutdown.await;
+    core.stop().await?;
+
+    Ok(())
 }
