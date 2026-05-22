@@ -643,6 +643,13 @@ async fn tun_tcp_client_completes_handshake_through_freedom_outbound() {
 }
 
 #[tokio::test]
+async fn tun_tcp_client_reaches_echo_target_through_freedom_outbound() {
+    timeout(Duration::from_secs(2), run_tun_tcp_freedom_echo_scenario())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
 async fn socks_client_uses_inbound_tag_routing_rule_to_reach_freedom_outbound() {
     timeout(
         Duration::from_secs(2),
@@ -777,6 +784,31 @@ async fn run_tun_tcp_handshake_scenario() {
     assert!(client.may_send());
     core.stop().await.unwrap();
     echo_handle.abort();
+}
+
+async fn run_tun_tcp_freedom_echo_scenario() {
+    let (echo_addr, echo_handle) = spawn_echo_server().await;
+    let mut core = Core::new(runtime_tun_config_with_freedom_outbound()).unwrap();
+    core.start().await.unwrap();
+
+    let mut client = TunTcpClient::new();
+    client.connect(echo_addr);
+    pump_tun_until(&mut client, core.tun(), TunTcpClient::may_send).await;
+
+    client.send_payload(b"hello tun");
+    let mut received = Vec::new();
+    pump_tun_until(&mut client, core.tun(), |client| {
+        received.extend_from_slice(&client.recv_available());
+        received.len() >= "hello tun".len()
+    })
+    .await;
+
+    assert_eq!(received, b"hello tun");
+    core.stop().await.unwrap();
+    timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .unwrap()
+        .unwrap();
 }
 
 async fn run_socks_to_routed_freedom_echo_scenario() {
@@ -1049,6 +1081,27 @@ impl TunTcpClient {
         self.sockets
             .get::<smol_tcp::Socket>(self.tcp)
             .may_send()
+    }
+
+    fn send_payload(&mut self, payload: &[u8]) {
+        self.sockets
+            .get_mut::<smol_tcp::Socket>(self.tcp)
+            .send_slice(payload)
+            .unwrap();
+    }
+
+    fn recv_available(&mut self) -> Vec<u8> {
+        let mut received = Vec::new();
+        let socket = self.sockets.get_mut::<smol_tcp::Socket>(self.tcp);
+        while socket.can_recv() {
+            socket
+                .recv(|data| {
+                    received.extend_from_slice(data);
+                    (data.len(), ())
+                })
+                .unwrap();
+        }
+        received
     }
 
     fn poll(&mut self) {

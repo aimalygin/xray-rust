@@ -8,15 +8,28 @@ use smoltcp::phy::{ChecksumCapabilities, Device, DeviceCapabilities, Medium, RxT
 use smoltcp::socket::tcp;
 use smoltcp::time::Instant;
 use smoltcp::wire::{HardwareAddress, IpAddress, IpEndpoint};
-use tokio::sync::watch;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::sync::{mpsc, watch};
+use tokio::time::{sleep, Duration};
+use xray_config::CoreConfig;
+use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
+use xray_transport::{DnsResolver, TransportDialer};
 use xray_tun::{TunEndpoint, TunError};
+
+use crate::outbound::{open_tcp_stream_with_resolver_and_dialer, select_tcp_outbound_for_session};
 
 const DEFAULT_RANDOM_SEED: u64 = 0x7872_6179_7275_7374;
 const TCP_PROTOCOL: u8 = 6;
 const TCP_BUFFER_SIZE: usize = 32 * 1024;
+const BRIDGE_CHANNEL_DEPTH: usize = 64;
+const BRIDGE_READ_BUFFER_SIZE: usize = 16 * 1024;
 
 pub(crate) async fn serve_tun_endpoint(
     tun: Arc<TunEndpoint>,
+    inbound_tag: Option<String>,
+    config: Arc<CoreConfig>,
+    dns_resolver: Arc<dyn DnsResolver>,
+    transport_dialer: Arc<TransportDialer>,
     mut shutdown: watch::Receiver<bool>,
 ) {
     let mut device = PacketDevice::new(1500);
@@ -26,6 +39,8 @@ pub(crate) async fn serve_tun_endpoint(
     iface.set_any_ip(true);
     let mut sockets = SocketSet::new(Vec::new());
     let mut tcp_listeners = HashMap::new();
+    let mut tcp_flows = HashMap::new();
+    let (stack_tx, mut stack_rx) = mpsc::channel(BRIDGE_CHANNEL_DEPTH);
 
     loop {
         tokio::select! {
@@ -46,8 +61,32 @@ pub(crate) async fn serve_tun_endpoint(
                     Err(_) => {}
                 }
             }
+            event = stack_rx.recv() => {
+                if let Some(event) = event {
+                    apply_stack_event(event, &mut tcp_flows);
+                }
+            }
+            () = sleep(Duration::from_millis(25)) => {}
         }
 
+        while let Ok(event) = stack_rx.try_recv() {
+            apply_stack_event(event, &mut tcp_flows);
+        }
+        write_remote_data_to_sockets(&mut sockets, &mut tcp_flows);
+        iface.poll(Instant::now(), &mut device, &mut sockets);
+        open_ready_tcp_flows(
+            &mut sockets,
+            &mut tcp_listeners,
+            &mut tcp_flows,
+            &stack_tx,
+            inbound_tag.clone(),
+            Arc::clone(&config),
+            Arc::clone(&dns_resolver),
+            Arc::clone(&transport_dialer),
+            shutdown.clone(),
+        );
+        read_socket_data_to_remote(&mut sockets, &mut tcp_flows);
+        cleanup_closed_tcp_flows(&mut sockets, &mut tcp_flows);
         iface.poll(Instant::now(), &mut device, &mut sockets);
         while let Some(packet) = device.pop_outbound() {
             if tun.push_outbound(packet).await.is_err() {
@@ -55,6 +94,254 @@ pub(crate) async fn serve_tun_endpoint(
             }
         }
     }
+}
+
+#[derive(Debug)]
+struct TcpFlow {
+    to_remote: mpsc::Sender<Bytes>,
+    pending_remote: VecDeque<Bytes>,
+    remote_closed: bool,
+}
+
+#[derive(Debug)]
+enum StackEvent {
+    RemoteData {
+        handle: SocketHandle,
+        data: Bytes,
+    },
+    RemoteClosed {
+        handle: SocketHandle,
+    },
+}
+
+fn open_ready_tcp_flows(
+    sockets: &mut SocketSet<'static>,
+    listeners: &mut HashMap<IpEndpoint, SocketHandle>,
+    flows: &mut HashMap<SocketHandle, TcpFlow>,
+    stack_tx: &mpsc::Sender<StackEvent>,
+    inbound_tag: Option<String>,
+    config: Arc<CoreConfig>,
+    dns_resolver: Arc<dyn DnsResolver>,
+    transport_dialer: Arc<TransportDialer>,
+    shutdown: watch::Receiver<bool>,
+) {
+    let ready = listeners
+        .iter()
+        .filter_map(|(endpoint, handle)| {
+            let socket = sockets.get::<tcp::Socket>(*handle);
+            if socket.is_listening() || flows.contains_key(handle) {
+                return None;
+            }
+            let local_endpoint = socket.local_endpoint()?;
+            Some((*endpoint, *handle, target_from_endpoint(local_endpoint)?))
+        })
+        .collect::<Vec<_>>();
+
+    for (endpoint, handle, target) in ready {
+        listeners.remove(&endpoint);
+        let (to_remote, from_stack) = mpsc::channel(BRIDGE_CHANNEL_DEPTH);
+        flows.insert(
+            handle,
+            TcpFlow {
+                to_remote,
+                pending_remote: VecDeque::new(),
+                remote_closed: false,
+            },
+        );
+        tokio::spawn(bridge_tcp_flow(
+            handle,
+            target,
+            inbound_tag.clone(),
+            Arc::clone(&config),
+            Arc::clone(&dns_resolver),
+            Arc::clone(&transport_dialer),
+            from_stack,
+            stack_tx.clone(),
+            shutdown.clone(),
+        ));
+    }
+}
+
+fn target_from_endpoint(endpoint: IpEndpoint) -> Option<Target> {
+    let ip = match endpoint.addr {
+        IpAddress::Ipv4(ip) => std::net::IpAddr::V4(ip),
+        IpAddress::Ipv6(ip) => std::net::IpAddr::V6(ip),
+    };
+    Some(Target::new(
+        RoutingTargetAddr::Ip(ip),
+        endpoint.port,
+        RoutingNetwork::Tcp,
+    ))
+}
+
+fn apply_stack_event(event: StackEvent, flows: &mut HashMap<SocketHandle, TcpFlow>) {
+    match event {
+        StackEvent::RemoteData { handle, data } => {
+            if let Some(flow) = flows.get_mut(&handle) {
+                flow.pending_remote.push_back(data);
+            }
+        }
+        StackEvent::RemoteClosed { handle } => {
+            if let Some(flow) = flows.get_mut(&handle) {
+                flow.remote_closed = true;
+            }
+        }
+    }
+}
+
+fn write_remote_data_to_sockets(
+    sockets: &mut SocketSet<'static>,
+    flows: &mut HashMap<SocketHandle, TcpFlow>,
+) {
+    for (handle, flow) in flows {
+        let socket = sockets.get_mut::<tcp::Socket>(*handle);
+        while socket.can_send() {
+            let Some(front) = flow.pending_remote.front_mut() else {
+                break;
+            };
+            let written = match socket.send_slice(front) {
+                Ok(written) => written,
+                Err(_) => {
+                    socket.abort();
+                    break;
+                }
+            };
+            if written == 0 {
+                break;
+            }
+            if written == front.len() {
+                flow.pending_remote.pop_front();
+            } else {
+                *front = front.slice(written..);
+                break;
+            }
+        }
+        if flow.remote_closed && flow.pending_remote.is_empty() && socket.may_send() {
+            socket.close();
+        }
+    }
+}
+
+fn read_socket_data_to_remote(
+    sockets: &mut SocketSet<'static>,
+    flows: &mut HashMap<SocketHandle, TcpFlow>,
+) {
+    for (handle, flow) in flows {
+        let socket = sockets.get_mut::<tcp::Socket>(*handle);
+        while socket.can_recv() {
+            let data = match socket.recv(|data| {
+                let len = data.len();
+                (len, Bytes::copy_from_slice(data))
+            }) {
+                Ok(data) => data,
+                Err(_) => {
+                    socket.abort();
+                    break;
+                }
+            };
+            if data.is_empty() {
+                break;
+            }
+            if flow.to_remote.try_send(data).is_err() {
+                socket.abort();
+                break;
+            }
+        }
+    }
+}
+
+fn cleanup_closed_tcp_flows(
+    sockets: &mut SocketSet<'static>,
+    flows: &mut HashMap<SocketHandle, TcpFlow>,
+) {
+    let closed = flows
+        .keys()
+        .copied()
+        .filter(|handle| !sockets.get::<tcp::Socket>(*handle).is_open())
+        .collect::<Vec<_>>();
+
+    for handle in closed {
+        flows.remove(&handle);
+        sockets.remove(handle);
+    }
+}
+
+async fn bridge_tcp_flow(
+    handle: SocketHandle,
+    target: Target,
+    inbound_tag: Option<String>,
+    config: Arc<CoreConfig>,
+    dns_resolver: Arc<dyn DnsResolver>,
+    transport_dialer: Arc<TransportDialer>,
+    mut from_stack: mpsc::Receiver<Bytes>,
+    stack_tx: mpsc::Sender<StackEvent>,
+    mut shutdown: watch::Receiver<bool>,
+) {
+    let outbound = match select_tcp_outbound_for_session(&config, inbound_tag.as_deref(), &target) {
+        Ok(outbound) => outbound,
+        Err(_) => {
+            let _ = stack_tx.send(StackEvent::RemoteClosed { handle }).await;
+            return;
+        }
+    };
+    let stream = match open_tcp_stream_with_resolver_and_dialer(
+        &outbound,
+        &target,
+        dns_resolver.as_ref(),
+        &transport_dialer,
+    )
+    .await
+    {
+        Ok(stream) => stream,
+        Err(_) => {
+            let _ = stack_tx.send(StackEvent::RemoteClosed { handle }).await;
+            return;
+        }
+    };
+
+    let (mut remote_reader, mut remote_writer) = tokio::io::split(stream);
+    let mut read_buffer = vec![0; BRIDGE_READ_BUFFER_SIZE];
+
+    loop {
+        tokio::select! {
+            changed = shutdown.changed() => {
+                if changed.is_err() || *shutdown.borrow() {
+                    break;
+                }
+            }
+            data = from_stack.recv() => {
+                let Some(data) = data else {
+                    break;
+                };
+                if remote_writer.write_all(&data).await.is_err() {
+                    break;
+                }
+                if remote_writer.flush().await.is_err() {
+                    break;
+                }
+            }
+            read = remote_reader.read(&mut read_buffer) => {
+                let Ok(read) = read else {
+                    break;
+                };
+                if read == 0 {
+                    break;
+                }
+                if stack_tx
+                    .send(StackEvent::RemoteData {
+                        handle,
+                        data: Bytes::copy_from_slice(&read_buffer[..read]),
+                    })
+                    .await
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        }
+    }
+
+    let _ = stack_tx.send(StackEvent::RemoteClosed { handle }).await;
 }
 
 fn ensure_tcp_listener(

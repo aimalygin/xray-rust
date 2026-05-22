@@ -194,6 +194,10 @@ impl Core {
         if !tun_inbounds.is_empty() {
             tasks.push(tokio::spawn(tun::serve_tun_endpoint(
                 Arc::clone(&self.tun),
+                tun_inbounds.first().cloned().flatten(),
+                Arc::clone(&config),
+                Arc::clone(&self.dns_resolver),
+                Arc::clone(&self.transport_dialer),
                 self.shutdown.subscribe(),
             )));
         }
