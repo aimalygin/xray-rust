@@ -31,7 +31,10 @@ public final class XrayCore: @unchecked Sendable {
     public init(
         configJSON: String,
         socketProtectCallback: XraySocketProtectCallback? = nil,
-        socketProtectUserData: UnsafeMutableRawPointer? = nil
+        socketProtectUserData: UnsafeMutableRawPointer? = nil,
+        tunFileDescriptor: Int32? = nil,
+        tunPacketFormat: XrayTunFdPacketFormat = XRAY_TUN_FD_PACKET_FORMAT_RAW_IP,
+        tunClosePolicy: XrayTunFdClosePolicy = XRAY_TUN_FD_CLOSE_POLICY_BORROWED
     ) throws {
         var error: OpaquePointer?
         guard let handle = xray_core_new(&error) else {
@@ -46,6 +49,18 @@ public final class XrayCore: @unchecked Sendable {
                         handle,
                         socketProtectCallback,
                         socketProtectUserData,
+                        &error
+                    ),
+                    error: error
+                )
+            }
+            if let tunFileDescriptor {
+                try check(
+                    xray_core_set_tun_fd(
+                        handle,
+                        tunFileDescriptor,
+                        tunPacketFormat,
+                        tunClosePolicy,
                         &error
                     ),
                     error: error

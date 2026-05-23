@@ -1561,6 +1561,7 @@ dependencies = [
  "xray-config",
  "xray-core-rs",
  "xray-transport",
+ "xray-tun",
 ]
 
 [[package]]

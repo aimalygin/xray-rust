@@ -6,6 +6,11 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.concurrent.atomic.AtomicBoolean
 
+enum class XrayTunBackend {
+    PacketPump,
+    FileDescriptor,
+}
+
 open class XrayVpnService : VpnService() {
     private val running = AtomicBoolean(false)
     private var core: XrayCore? = null
@@ -13,23 +18,39 @@ open class XrayVpnService : VpnService() {
     private var inboundThread: Thread? = null
     private var outboundThread: Thread? = null
 
-    open fun startXrayTunnel(configJson: String) {
+    open fun startXrayTunnel(
+        configJson: String,
+        tunBackend: XrayTunBackend = XrayTunBackend.PacketPump,
+    ) {
         if (!running.compareAndSet(false, true)) {
             return
         }
 
         val tunnel = buildTunnel().establish()
             ?: error("failed to establish Android VPN tunnel")
-        val xrayCore = XrayCore.create(configJson, this)
+        val xrayCore = XrayCore.create(
+            configJson = configJson,
+            vpnService = this,
+            tunFileDescriptor = when (tunBackend) {
+                XrayTunBackend.PacketPump -> null
+                XrayTunBackend.FileDescriptor -> XrayTunFileDescriptor(
+                    fd = tunnel.fd,
+                    packetFormat = XrayTunFdPacketFormat.RawIp,
+                    closePolicy = XrayTunFdClosePolicy.Borrowed,
+                )
+            },
+        )
         xrayCore.start()
 
         tun = tunnel
         core = xrayCore
-        inboundThread = Thread({ readTunPackets(tunnel, xrayCore) }, "xray-tun-in").also {
-            it.start()
-        }
-        outboundThread = Thread({ writeTunPackets(tunnel, xrayCore) }, "xray-tun-out").also {
-            it.start()
+        if (tunBackend == XrayTunBackend.PacketPump) {
+            inboundThread = Thread({ readTunPackets(tunnel, xrayCore) }, "xray-tun-in").also {
+                it.start()
+            }
+            outboundThread = Thread({ writeTunPackets(tunnel, xrayCore) }, "xray-tun-out").also {
+                it.start()
+            }
         }
     }
 

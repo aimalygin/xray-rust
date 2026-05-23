@@ -204,6 +204,29 @@ Java_org_xrayrust_mobile_XrayCore_nativeSetSocketProtector(
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_org_xrayrust_mobile_XrayCore_nativeSetTunFd(
+    JNIEnv *env,
+    jobject,
+    jlong handle,
+    jint fd,
+    jint packet_format,
+    jint close_policy) {
+  NativeCore *native = core_from_handle(handle);
+  if (native == nullptr || native->core == nullptr) {
+    return;
+  }
+
+  XrayError *error = nullptr;
+  XrayStatus status = xray_core_set_tun_fd(
+      native->core,
+      static_cast<int32_t>(fd),
+      static_cast<XrayTunFdPacketFormat>(packet_format),
+      static_cast<XrayTunFdClosePolicy>(close_policy),
+      &error);
+  check_status(env, status, error);
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativeStart(JNIEnv *env, jobject, jlong handle) {
   NativeCore *native = core_from_handle(handle);
   if (native == nullptr || native->core == nullptr) {

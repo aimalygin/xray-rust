@@ -30,7 +30,7 @@ cargo test -p xray-ffi --test mobile_artifacts_tests -- --nocapture
 
 This validates that:
 
-- `xray_ffi.h` declares the lifecycle, error, and TUN packet ABI.
+- `xray_ffi.h` declares the lifecycle, error, TUN packet ABI, and optional fd-backed TUN ABI.
 - The public C header compiles as a C11 harness.
 - The native `libxray_ffi.a` exports the expected C symbols.
 - The Apple, tvOS, and Android artifact scripts keep the expected target matrix.
@@ -79,8 +79,9 @@ platform/apple
 
 It provides:
 
-- `XrayCore`, a Swift wrapper over the C ABI lifecycle, TUN packet push/poll, stats, errors, and socket-protection registration hook.
+- `XrayCore`, a Swift wrapper over the C ABI lifecycle, TUN packet push/poll, optional fd-backed TUN registration, stats, errors, and socket-protection registration hook.
 - `XrayPacketTunnelPump`, a `NEPacketTunnelProvider` packet pump that reads OS tunnel packets into the Rust TUN boundary and writes emitted packets back through `packetFlow`.
+- `XrayDarwinTunFileDescriptor`, an advanced helper for discovering an existing utun fd for `XRAY_TUN_FD_PACKET_FORMAT_DARWIN_UTUN` integrations.
 - `crates/xray-ffi/include/module.modulemap`, so the generated XCFramework can be imported as `XrayRust` from Swift.
 
 The package expects `target/mobile/apple/XrayRust.xcframework` to exist. Build it first with `scripts/build-apple-xcframework.sh`.
@@ -133,9 +134,10 @@ platform/android
 It provides:
 
 - `XrayCore`, a Kotlin wrapper over JNI lifecycle, TUN packet push/poll, stats, and errors.
-- `XrayVpnService`, a minimal `VpnService` packet pump with separate TUN read/write loops.
+- `XrayVpnService`, a minimal `VpnService` integration that defaults to separate TUN read/write loops and can use `XrayTunBackend.FileDescriptor` for direct fd-backed Rust TUN I/O.
 - `xray_mobile_jni.cpp`, a JNI bridge from Kotlin to the stable C ABI.
 - Android socket protection wiring: Kotlin passes `VpnService.protect(fd)` through JNI to `xray_core_set_socket_protect_callback`, and Rust invokes it before outbound TCP connects and before outbound UDP socket use.
+- Android fd-backed TUN wiring: Kotlin passes `ParcelFileDescriptor.fd` through JNI to `xray_core_set_tun_fd` before config load when `XrayTunBackend.FileDescriptor` is selected.
 
 The Android skeleton expects generated `libxray_ffi.so` files under `target/mobile/android/jniLibs`. Build them first with `scripts/build-android-libs.sh`. The JNI bridge can also use `XRAY_FFI_ANDROID_DIR=/path/to/mobile/android` when the artifact directory lives elsewhere.
 
@@ -155,6 +157,7 @@ Mobile harnesses can now test:
 - Starting and stopping the embedded core through the C ABI.
 - Accessing structured FFI errors.
 - Passing raw TUN packets through the C ABI and reading packet counters.
+- Passing a platform TUN fd through `xray_core_set_tun_fd` so Rust reads and writes the fd directly instead of crossing the Swift/Kotlin/JNI packet boundary for every packet.
 - Running TCP sessions through the TUN packet boundary: mobile code pushes raw IP packets with `xray_tun_push_packet`, polls response packets with `xray_tun_poll_packet`, and the Rust core bridges accepted TCP sessions through routing plus Freedom/VLESS TCP outbounds.
 - Running UDP sessions through the same TUN packet boundary for:
   - Freedom/direct UDP targets.
@@ -170,6 +173,7 @@ Mobile harnesses can now test:
 Current limits:
 
 - The platform-neutral TUN runtime is runnable for TCP, UDP, VLESS UDP, Vision XUDP, and ICMP echo. The checked-in Apple and Android adapters are first harness skeletons for device testing, not complete app templates with entitlements, foreground-service notification policy, user profile storage, or production UI.
+- The fd-backed TUN backend is optional. The packet pump remains the default Apple path, while Android can opt into direct fd-backed mode through `XrayTunBackend.FileDescriptor`.
 - iOS/tvOS `NEPacketTunnelProvider` packaging still needs a host app/extension target with the correct Apple entitlements and provisioning profile.
 - Android packaging still needs a host app that requests VPN user consent and provides foreground-service behavior appropriate for the target Android version.
 - Broader Xray-core protocols, DNS app behavior, geosite/geoip data loading, and full routing parity remain future work.

@@ -224,6 +224,10 @@ impl Core {
     pub fn tun(&self) -> &TunEndpoint {
         self.tun.as_ref()
     }
+
+    pub fn tun_handle(&self) -> Arc<TunEndpoint> {
+        Arc::clone(&self.tun)
+    }
 }
 
 pub fn version() -> &'static str {

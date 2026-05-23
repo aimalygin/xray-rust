@@ -11,6 +11,10 @@ use xray_config::parse_xray_json;
 use xray_core_rs::Core;
 use xray_transport::{SocketHandle, SocketProtector, SystemDnsResolver, TransportDialer};
 
+mod tun_fd;
+
+use tun_fd::{TunFdConfig, TunFdRuntime};
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum XrayStatus {
@@ -24,6 +28,20 @@ pub enum XrayStatus {
     BufferTooSmall = 7,
     TunError = 8,
     Panic = 255,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum XrayTunFdPacketFormat {
+    RawIp = 0,
+    DarwinUtun = 1,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum XrayTunFdClosePolicy {
+    Borrowed = 0,
+    Owned = 1,
 }
 
 #[repr(C)]
@@ -44,6 +62,8 @@ pub struct XrayCoreHandle {
     core: Option<Core>,
     runtime: Runtime,
     socket_protector: Option<Arc<dyn SocketProtector>>,
+    tun_fd_config: Option<TunFdConfig>,
+    tun_fd_runtime: Option<TunFdRuntime>,
 }
 
 pub type XraySocketProtectCallback =
@@ -129,6 +149,8 @@ unsafe fn xray_core_new_inner(error: *mut *mut XrayError) -> *mut XrayCoreHandle
         core: None,
         runtime,
         socket_protector: None,
+        tun_fd_config: None,
+        tun_fd_runtime: None,
     }))
 }
 
@@ -307,6 +329,88 @@ unsafe fn xray_core_set_socket_protect_callback_inner(
     XrayStatus::Ok
 }
 
+/// Registers a platform TUN file descriptor for direct fd-backed packet I/O.
+///
+/// This is an optional alternative to `xray_tun_push_packet` and
+/// `xray_tun_poll_packet`. Mobile hosts can pass Android `VpnService` fds as
+/// `RawIp`, or Darwin utun fds as `DarwinUtun` when the 4-byte utun address
+/// family header is present. The fd bridge starts with `xray_core_start` and
+/// stops with `xray_core_stop`.
+///
+/// # Safety
+///
+/// `handle` must either be null or a pointer returned by `xray_core_new` that
+/// has not been freed. If `close_policy` is `Owned`, the fd must not be closed
+/// by the caller after this function succeeds. If `error` is non-null, it must
+/// point to an initialized `*mut XrayError` value that is either null or a live
+/// error pointer returned by this library. This function may free and replace
+/// that error pointer.
+#[no_mangle]
+pub unsafe extern "C" fn xray_core_set_tun_fd(
+    handle: *mut XrayCoreHandle,
+    fd: c_int,
+    packet_format: XrayTunFdPacketFormat,
+    close_policy: XrayTunFdClosePolicy,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            xray_core_set_tun_fd_inner(handle, fd, packet_format, close_policy, error)
+        })
+    }
+}
+
+unsafe fn xray_core_set_tun_fd_inner(
+    handle: *mut XrayCoreHandle,
+    fd: c_int,
+    packet_format: XrayTunFdPacketFormat,
+    close_policy: XrayTunFdClosePolicy,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        clear_error(error);
+    }
+
+    if handle.is_null() {
+        unsafe {
+            set_error(error, XrayStatus::NullArgument, "core handle is null");
+        }
+        return XrayStatus::NullArgument;
+    }
+    if fd < 0 {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::RuntimeError,
+                "tun fd must be non-negative",
+            );
+        }
+        return XrayStatus::RuntimeError;
+    }
+
+    let handle = unsafe { &mut *handle };
+    if handle.core.is_some() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::RuntimeError,
+                "tun fd must be set before config load",
+            );
+        }
+        return XrayStatus::RuntimeError;
+    }
+
+    if let Some(old) =
+        handle
+            .tun_fd_config
+            .replace(TunFdConfig::new(fd, packet_format, close_policy))
+    {
+        old.close_if_owned();
+    }
+
+    XrayStatus::Ok
+}
+
 /// Starts a loaded core.
 ///
 /// # Safety
@@ -351,7 +455,29 @@ unsafe fn xray_core_start_inner(
     };
 
     match handle.runtime.block_on(core.start()) {
-        Ok(()) => XrayStatus::Ok,
+        Ok(()) => {
+            if let Some(config) = handle.tun_fd_config.take() {
+                let tun = core.tun_handle();
+                match handle
+                    .runtime
+                    .block_on(async move { TunFdRuntime::start(config, tun) })
+                {
+                    Ok(runtime) => handle.tun_fd_runtime = Some(runtime),
+                    Err(err) => {
+                        let _ = handle.runtime.block_on(core.stop());
+                        unsafe {
+                            set_error(
+                                error,
+                                XrayStatus::RuntimeError,
+                                format!("failed to start fd-backed TUN: {err}"),
+                            );
+                        }
+                        return XrayStatus::RuntimeError;
+                    }
+                }
+            }
+            XrayStatus::Ok
+        }
         Err(err) => {
             unsafe {
                 set_error(error, XrayStatus::RuntimeError, err.to_string());
@@ -403,6 +529,10 @@ unsafe fn xray_core_stop_inner(
         }
         return XrayStatus::CoreNotLoaded;
     };
+
+    if let Some(runtime) = handle.tun_fd_runtime.take() {
+        handle.runtime.block_on(runtime.stop());
+    }
 
     match handle.runtime.block_on(core.stop()) {
         Ok(()) => XrayStatus::Ok,
@@ -678,8 +808,14 @@ pub unsafe extern "C" fn xray_core_free(handle: *mut XrayCoreHandle) {
 unsafe fn xray_core_free_inner(handle: *mut XrayCoreHandle) {
     if !handle.is_null() {
         let mut handle = unsafe { Box::from_raw(handle) };
+        if let Some(runtime) = handle.tun_fd_runtime.take() {
+            handle.runtime.block_on(runtime.stop());
+        }
         if let Some(core) = handle.core.as_mut() {
             let _ = handle.runtime.block_on(core.stop());
+        }
+        if let Some(config) = handle.tun_fd_config.take() {
+            config.close_if_owned();
         }
     }
 }

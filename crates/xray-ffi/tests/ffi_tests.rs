@@ -2,9 +2,10 @@ use std::ffi::{CStr, CString};
 
 use xray_ffi::{
     xray_core_free, xray_core_load_config_json, xray_core_new,
-    xray_core_set_socket_protect_callback, xray_core_start, xray_core_stop, xray_error_code,
-    xray_error_free, xray_error_message, xray_tun_poll_packet, xray_tun_push_packet,
-    xray_tun_stats, XrayStatus, XrayTunStats,
+    xray_core_set_socket_protect_callback, xray_core_set_tun_fd, xray_core_start, xray_core_stop,
+    xray_error_code, xray_error_free, xray_error_message, xray_tun_poll_packet,
+    xray_tun_push_packet, xray_tun_stats, XrayStatus, XrayTunFdClosePolicy, XrayTunFdPacketFormat,
+    XrayTunStats,
 };
 
 #[test]
@@ -145,6 +146,113 @@ fn ffi_rejects_socket_protect_callback_after_config_load() {
         XrayStatus::RuntimeError,
         "socket protect callback must be set before config load",
     );
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn ffi_registers_tun_fd_before_config_load() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    assert!(!core.is_null());
+    let fds = socket_pair();
+
+    let status = unsafe {
+        xray_core_set_tun_fd(
+            core,
+            fds[0].raw(),
+            XrayTunFdPacketFormat::RawIp,
+            XrayTunFdClosePolicy::Borrowed,
+            &mut err,
+        )
+    };
+
+    assert_eq!(status, XrayStatus::Ok);
+    assert!(err.is_null());
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn ffi_rejects_tun_fd_after_config_load() {
+    let mut err = std::ptr::null_mut();
+    let core = loaded_core(&mut err);
+    let fds = socket_pair();
+
+    let status = unsafe {
+        xray_core_set_tun_fd(
+            core,
+            fds[0].raw(),
+            XrayTunFdPacketFormat::RawIp,
+            XrayTunFdClosePolicy::Borrowed,
+            &mut err,
+        )
+    };
+
+    assert_eq!(status, XrayStatus::RuntimeError);
+    assert_error(
+        &mut err,
+        XrayStatus::RuntimeError,
+        "tun fd must be set before config load",
+    );
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn ffi_fd_tun_raw_ip_bridges_icmp_echo_reply() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    assert!(!core.is_null());
+    let fds = socket_pair();
+    set_nonblocking(fds[1].raw());
+
+    let status = unsafe {
+        xray_core_set_tun_fd(
+            core,
+            fds[0].raw(),
+            XrayTunFdPacketFormat::RawIp,
+            XrayTunFdClosePolicy::Borrowed,
+            &mut err,
+        )
+    };
+    assert_eq!(status, XrayStatus::Ok);
+    assert!(err.is_null());
+
+    let raw = CString::new(tun_config_with_freedom_outbound()).unwrap();
+    let status = unsafe { xray_core_load_config_json(core, raw.as_ptr(), &mut err) };
+    assert_eq!(status, XrayStatus::Ok);
+    assert!(err.is_null());
+
+    let status = unsafe { xray_core_start(core, &mut err) };
+    assert_eq!(status, XrayStatus::Ok);
+    assert!(err.is_null());
+
+    let request = ipv4_icmp_echo_request([10, 10, 0, 2], [10, 10, 0, 1], 0x1201, 7, b"ffi fd ping");
+    write_fd(fds[1].raw(), &request);
+
+    let reply = read_fd_until(fds[1].raw(), is_ipv4_icmp_echo_reply);
+    assert_ipv4_icmp_echo_reply(
+        &reply,
+        [10, 10, 0, 1],
+        [10, 10, 0, 2],
+        0x1201,
+        7,
+        b"ffi fd ping",
+    );
+
+    let status = unsafe { xray_core_stop(core, &mut err) };
+    assert_eq!(status, XrayStatus::Ok);
+    assert!(err.is_null());
 
     unsafe {
         xray_core_free(core);
@@ -359,4 +467,177 @@ fn client_config_with_ephemeral_socks_port() -> String {
       ]
     }"#
     .to_owned()
+}
+
+fn tun_config_with_freedom_outbound() -> String {
+    r#"{
+      "inbounds": [
+        {
+          "tag": "tun-in",
+          "protocol": "tun",
+          "listen": "127.0.0.1",
+          "port": 0,
+          "settings": {}
+        }
+      ],
+      "outbounds": [
+        { "tag": "direct", "protocol": "freedom" }
+      ]
+    }"#
+    .to_owned()
+}
+
+#[cfg(unix)]
+struct FdGuard(libc::c_int);
+
+#[cfg(unix)]
+impl FdGuard {
+    fn raw(&self) -> libc::c_int {
+        self.0
+    }
+}
+
+#[cfg(unix)]
+impl Drop for FdGuard {
+    fn drop(&mut self) {
+        unsafe {
+            libc::close(self.0);
+        }
+    }
+}
+
+#[cfg(unix)]
+fn socket_pair() -> [FdGuard; 2] {
+    let mut fds = [-1; 2];
+    let rc = unsafe { libc::socketpair(libc::AF_UNIX, libc::SOCK_DGRAM, 0, fds.as_mut_ptr()) };
+    assert_eq!(
+        rc,
+        0,
+        "socketpair failed: {}",
+        std::io::Error::last_os_error()
+    );
+    [FdGuard(fds[0]), FdGuard(fds[1])]
+}
+
+#[cfg(unix)]
+fn set_nonblocking(fd: libc::c_int) {
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+    assert!(
+        flags >= 0,
+        "F_GETFL failed: {}",
+        std::io::Error::last_os_error()
+    );
+    let rc = unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) };
+    assert_eq!(rc, 0, "F_SETFL failed: {}", std::io::Error::last_os_error());
+}
+
+#[cfg(unix)]
+fn write_fd(fd: libc::c_int, packet: &[u8]) {
+    let written = unsafe { libc::write(fd, packet.as_ptr().cast(), packet.len()) };
+    assert_eq!(
+        written,
+        packet.len() as libc::ssize_t,
+        "write failed: {}",
+        std::io::Error::last_os_error()
+    );
+}
+
+#[cfg(unix)]
+fn read_fd_until(fd: libc::c_int, mut predicate: impl FnMut(&[u8]) -> bool) -> Vec<u8> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    let mut buffer = vec![0_u8; 65_535];
+
+    loop {
+        let read = unsafe { libc::read(fd, buffer.as_mut_ptr().cast(), buffer.len()) };
+        if read > 0 {
+            let packet = &buffer[..read as usize];
+            if predicate(packet) {
+                return packet.to_vec();
+            }
+        } else {
+            let err = std::io::Error::last_os_error();
+            assert!(
+                err.kind() == std::io::ErrorKind::WouldBlock,
+                "read failed: {err}"
+            );
+        }
+
+        assert!(
+            std::time::Instant::now() < deadline,
+            "timed out waiting for fd TUN packet"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+}
+
+fn ipv4_icmp_echo_request(
+    source: [u8; 4],
+    destination: [u8; 4],
+    ident: u16,
+    sequence: u16,
+    payload: &[u8],
+) -> Vec<u8> {
+    let icmp_len = 8 + payload.len();
+    let total_len = 20 + icmp_len;
+    let mut packet = vec![0; total_len];
+    packet[0] = 0x45;
+    packet[2..4].copy_from_slice(&(total_len as u16).to_be_bytes());
+    packet[8] = 64;
+    packet[9] = 1;
+    packet[12..16].copy_from_slice(&source);
+    packet[16..20].copy_from_slice(&destination);
+    let ip_checksum = internet_checksum(&packet[..20]);
+    packet[10..12].copy_from_slice(&ip_checksum.to_be_bytes());
+
+    let icmp = &mut packet[20..];
+    icmp[0] = 8;
+    icmp[4..6].copy_from_slice(&ident.to_be_bytes());
+    icmp[6..8].copy_from_slice(&sequence.to_be_bytes());
+    icmp[8..].copy_from_slice(payload);
+    let icmp_checksum = internet_checksum(icmp);
+    icmp[2..4].copy_from_slice(&icmp_checksum.to_be_bytes());
+
+    packet
+}
+
+fn is_ipv4_icmp_echo_reply(packet: &[u8]) -> bool {
+    packet.len() >= 28 && packet[0] >> 4 == 4 && packet[9] == 1 && packet[20] == 0
+}
+
+fn assert_ipv4_icmp_echo_reply(
+    packet: &[u8],
+    source: [u8; 4],
+    destination: [u8; 4],
+    ident: u16,
+    sequence: u16,
+    payload: &[u8],
+) {
+    assert_eq!(packet[0] >> 4, 4);
+    assert_eq!(packet[9], 1);
+    assert_eq!(&packet[12..16], &source);
+    assert_eq!(&packet[16..20], &destination);
+    assert_eq!(internet_checksum(&packet[..20]), 0);
+
+    let icmp = &packet[20..];
+    assert_eq!(icmp[0], 0);
+    assert_eq!(icmp[1], 0);
+    assert_eq!(internet_checksum(icmp), 0);
+    assert_eq!(u16::from_be_bytes([icmp[4], icmp[5]]), ident);
+    assert_eq!(u16::from_be_bytes([icmp[6], icmp[7]]), sequence);
+    assert_eq!(&icmp[8..], payload);
+}
+
+fn internet_checksum(bytes: &[u8]) -> u16 {
+    let mut sum = 0_u32;
+    let mut chunks = bytes.chunks_exact(2);
+    for chunk in &mut chunks {
+        sum += u32::from(u16::from_be_bytes([chunk[0], chunk[1]]));
+    }
+    if let Some(&byte) = chunks.remainder().first() {
+        sum += u32::from(byte) << 8;
+    }
+    while (sum >> 16) != 0 {
+        sum = (sum & 0xffff) + (sum >> 16);
+    }
+    !(sum as u16)
 }

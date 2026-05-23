@@ -10,11 +10,18 @@ class XrayCore private constructor(private var nativeHandle: Long) : Closeable {
             System.loadLibrary("xray_mobile_jni")
         }
 
-        fun create(configJson: String, vpnService: VpnService? = null): XrayCore {
+        fun create(
+            configJson: String,
+            vpnService: VpnService? = null,
+            tunFileDescriptor: XrayTunFileDescriptor? = null,
+        ): XrayCore {
             val core = XrayCore(nativeNew())
             try {
                 if (vpnService != null) {
                     core.setSocketProtector(SocketProtector(vpnService))
+                }
+                if (tunFileDescriptor != null) {
+                    core.setTunFd(tunFileDescriptor)
                 }
                 core.loadConfig(configJson)
                 return core
@@ -61,6 +68,15 @@ class XrayCore private constructor(private var nativeHandle: Long) : Closeable {
         nativeSetSocketProtector(requireHandle(), protector)
     }
 
+    private fun setTunFd(tunFileDescriptor: XrayTunFileDescriptor) {
+        nativeSetTunFd(
+            requireHandle(),
+            tunFileDescriptor.fd,
+            tunFileDescriptor.packetFormat.ffiValue,
+            tunFileDescriptor.closePolicy.ffiValue,
+        )
+    }
+
     private fun requireHandle(): Long {
         check(nativeHandle != 0L) { "xray core is closed" }
         return nativeHandle
@@ -71,9 +87,31 @@ class XrayCore private constructor(private var nativeHandle: Long) : Closeable {
     private external fun nativeStop(handle: Long)
     private external fun nativeFree(handle: Long)
     private external fun nativeSetSocketProtector(handle: Long, protector: SocketProtector)
+    private external fun nativeSetTunFd(
+        handle: Long,
+        fd: Int,
+        packetFormat: Int,
+        closePolicy: Int,
+    )
     private external fun nativePushPacket(handle: Long, packet: ByteArray)
     private external fun nativePollPacket(handle: Long, maxBytes: Int): ByteArray?
     private external fun nativeStats(handle: Long): LongArray
+}
+
+data class XrayTunFileDescriptor(
+    val fd: Int,
+    val packetFormat: XrayTunFdPacketFormat = XrayTunFdPacketFormat.RawIp,
+    val closePolicy: XrayTunFdClosePolicy = XrayTunFdClosePolicy.Borrowed,
+)
+
+enum class XrayTunFdPacketFormat(val ffiValue: Int) {
+    RawIp(0),
+    DarwinUtun(1),
+}
+
+enum class XrayTunFdClosePolicy(val ffiValue: Int) {
+    Borrowed(0),
+    Owned(1),
 }
 
 data class XrayTunStats(

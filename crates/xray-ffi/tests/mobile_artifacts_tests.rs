@@ -27,6 +27,9 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
         "xray_core_free",
         "XraySocketProtectCallback",
         "xray_core_set_socket_protect_callback",
+        "XrayTunFdPacketFormat",
+        "XrayTunFdClosePolicy",
+        "xray_core_set_tun_fd",
         "xray_error_code",
         "xray_error_message",
         "xray_error_free",
@@ -61,13 +64,22 @@ fn apple_adapter_declares_packet_tunnel_pump() {
         root.join("platform/apple/Sources/XrayMobileAdapter/XrayPacketTunnelPump.swift"),
     )
     .expect("read Swift packet tunnel pump");
+    let fd_helper = fs::read_to_string(
+        root.join("platform/apple/Sources/XrayMobileAdapter/XrayDarwinTunFileDescriptor.swift"),
+    )
+    .expect("read Swift Darwin TUN fd helper");
 
     assert!(package.contains("XrayMobileAdapter"));
     assert!(package.contains("XrayRust.xcframework"));
     assert!(core.contains("import XrayRust"));
     assert!(core.contains("xray_core_set_socket_protect_callback"));
+    assert!(core.contains("xray_core_set_tun_fd"));
+    assert!(core.contains("tunFileDescriptor"));
     assert!(core.contains("xray_tun_push_packet"));
     assert!(core.contains("xray_tun_poll_packet"));
+    assert!(fd_helper.contains("XrayDarwinTunFileDescriptor"));
+    assert!(fd_helper.contains("discoverUtunFileDescriptor"));
+    assert!(fd_helper.contains("getsockopt"));
     assert!(pump.contains("NEPacketTunnelProvider"));
     assert!(pump.contains("packetFlow.readPackets"));
     assert!(pump.contains("packetFlow.writePackets"));
@@ -101,12 +113,17 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
     assert!(build.contains("JvmTarget.JVM_1_8"));
     assert!(core.contains("System.loadLibrary(\"xray_ffi\")"));
     assert!(core.contains("nativeSetSocketProtector"));
+    assert!(core.contains("nativeSetTunFd"));
     assert!(service.contains("VpnService"));
+    assert!(service.contains("XrayTunBackend"));
+    assert!(service.contains("FileDescriptor"));
     assert!(service.contains("protect(fd)"));
     assert!(service.contains("read(packetBuffer)"));
     assert!(service.contains("pollPacket"));
     assert!(jni.contains("xray_core_set_socket_protect_callback"));
+    assert!(jni.contains("xray_core_set_tun_fd"));
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetSocketProtector"));
+    assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetTunFd"));
 }
 
 #[test]
@@ -240,6 +257,7 @@ const EXPORTED_SYMBOLS: &[&str] = &[
     "xray_core_stop",
     "xray_core_free",
     "xray_core_set_socket_protect_callback",
+    "xray_core_set_tun_fd",
     "xray_error_code",
     "xray_error_message",
     "xray_error_free",
@@ -281,6 +299,12 @@ static void use_xray_ffi_api(void) {
 
   (void)xray_ffi_version_major();
   (void)xray_core_set_socket_protect_callback(handle, NULL, NULL, &error);
+  (void)xray_core_set_tun_fd(
+      handle,
+      -1,
+      XRAY_TUN_FD_PACKET_FORMAT_RAW_IP,
+      XRAY_TUN_FD_CLOSE_POLICY_BORROWED,
+      &error);
   (void)xray_core_load_config_json(handle, "{}", &error);
   (void)xray_core_start(handle, &error);
   (void)xray_core_stop(handle, &error);

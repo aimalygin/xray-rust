@@ -27,6 +27,16 @@ typedef struct XrayTunStats {
   uint64_t dropped_packets;
 } XrayTunStats;
 
+typedef enum XrayTunFdPacketFormat {
+  XRAY_TUN_FD_PACKET_FORMAT_RAW_IP = 0,
+  XRAY_TUN_FD_PACKET_FORMAT_DARWIN_UTUN = 1
+} XrayTunFdPacketFormat;
+
+typedef enum XrayTunFdClosePolicy {
+  XRAY_TUN_FD_CLOSE_POLICY_BORROWED = 0,
+  XRAY_TUN_FD_CLOSE_POLICY_OWNED = 1
+} XrayTunFdClosePolicy;
+
 typedef struct XrayCoreHandle XrayCoreHandle;
 typedef struct XrayError XrayError;
 typedef int32_t (*XraySocketProtectCallback)(int32_t fd, void *user_data);
@@ -44,6 +54,12 @@ XrayStatus xray_core_set_socket_protect_callback(
     XrayCoreHandle *handle,
     XraySocketProtectCallback callback,
     void *user_data,
+    XrayError **error);
+XrayStatus xray_core_set_tun_fd(
+    XrayCoreHandle *handle,
+    int32_t fd,
+    XrayTunFdPacketFormat packet_format,
+    XrayTunFdClosePolicy close_policy,
     XrayError **error);
 void xray_core_free(XrayCoreHandle *handle);
 

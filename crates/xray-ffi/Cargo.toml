@@ -13,4 +13,5 @@ libc.workspace = true
 tokio.workspace = true
 xray-config = { path = "../xray-config" }
 xray-core-rs = { path = "../xray-core-rs" }
+xray-tun = { path = "../xray-tun" }
 xray-transport = { path = "../xray-transport" }
