@@ -1504,6 +1504,7 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
+ "smoltcp",
  "thiserror",
  "tokio",
  "tokio-rustls",

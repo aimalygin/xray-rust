@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::fs;
 use std::future::Future;
 use std::io;
@@ -9,9 +10,28 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use bytes::BytesMut;
+use bytes::{Bytes, BytesMut};
 use rcgen::{generate_simple_self_signed, CertifiedKey};
 use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
+#[cfg(unix)]
+use smoltcp::iface::{
+    Config as SmolInterfaceConfig, Interface as SmolInterface, SocketHandle, SocketSet,
+};
+#[cfg(unix)]
+use smoltcp::phy::{
+    ChecksumCapabilities as SmolChecksumCapabilities, Device as SmolDevice,
+    DeviceCapabilities as SmolDeviceCapabilities, Medium as SmolMedium, RxToken as SmolRxToken,
+    TxToken as SmolTxToken,
+};
+#[cfg(unix)]
+use smoltcp::socket::tcp as smol_tcp;
+#[cfg(unix)]
+use smoltcp::time::Instant as SmolInstant;
+#[cfg(unix)]
+use smoltcp::wire::{
+    HardwareAddress as SmolHardwareAddress, IpAddress as SmolIpAddress, IpCidr as SmolIpCidr,
+    Ipv4Address as SmolIpv4Address,
+};
 use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
@@ -89,8 +109,11 @@ pub enum WorkloadKind {
     Idle,
     TcpFreedom,
     ManyIdleFlows,
+    ReconnectBurst,
+    MixedLongLived,
     UdpFreedom,
     TunUdpFreedom,
+    TunTcpFreedom,
     UdpVless,
     UdpXudp,
     VisionXudp,
@@ -102,8 +125,11 @@ impl WorkloadKind {
             Self::Idle => "idle",
             Self::TcpFreedom => "tcp-freedom",
             Self::ManyIdleFlows => "many-idle-flows",
+            Self::ReconnectBurst => "reconnect-burst",
+            Self::MixedLongLived => "mixed-long-lived",
             Self::UdpFreedom => "udp-freedom",
             Self::TunUdpFreedom => "tun-udp-freedom",
+            Self::TunTcpFreedom => "tun-tcp-freedom",
             Self::UdpVless => "udp-vless",
             Self::UdpXudp => "udp-xudp",
             Self::VisionXudp => "vision-xudp",
@@ -115,8 +141,11 @@ impl WorkloadKind {
             "idle" => Ok(Self::Idle),
             "tcp-freedom" => Ok(Self::TcpFreedom),
             "many-idle-flows" => Ok(Self::ManyIdleFlows),
+            "reconnect-burst" => Ok(Self::ReconnectBurst),
+            "mixed-long-lived" => Ok(Self::MixedLongLived),
             "udp-freedom" => Ok(Self::UdpFreedom),
             "tun-udp-freedom" => Ok(Self::TunUdpFreedom),
+            "tun-tcp-freedom" => Ok(Self::TunTcpFreedom),
             "udp-vless" => Ok(Self::UdpVless),
             "udp-xudp" => Ok(Self::UdpXudp),
             "vision-xudp" => Ok(Self::VisionXudp),
@@ -127,7 +156,7 @@ impl WorkloadKind {
     }
 
     fn uses_tun_fd(&self) -> bool {
-        matches!(self, Self::TunUdpFreedom)
+        matches!(self, Self::TunUdpFreedom | Self::TunTcpFreedom)
     }
 }
 
@@ -169,6 +198,7 @@ pub struct BenchResult {
     pub cpu_millis: u64,
     pub cpu_millis_per_gib: Option<u128>,
     pub latency_us: Option<LatencySummary>,
+    pub setup_us: Option<FlowSetupSummary>,
     pub samples: usize,
 }
 
@@ -196,6 +226,27 @@ pub struct LatencySummaryAggregate {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct FlowSetupSample {
+    pub tcp_connect_us: u128,
+    pub socks_setup_us: u128,
+    pub total_us: u128,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct FlowSetupSummary {
+    pub tcp_connect_us: LatencySummary,
+    pub socks_setup_us: LatencySummary,
+    pub total_us: LatencySummary,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct FlowSetupSummaryAggregate {
+    pub tcp_connect_us: LatencySummaryAggregate,
+    pub socks_setup_us: LatencySummaryAggregate,
+    pub total_us: LatencySummaryAggregate,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct BenchSummary {
     pub engine: String,
     pub workload: String,
@@ -206,6 +257,7 @@ pub struct BenchSummary {
     pub cpu_millis: MetricSummary,
     pub cpu_millis_per_gib: Option<MetricSummary>,
     pub latency_us: Option<LatencySummaryAggregate>,
+    pub setup_us: Option<FlowSetupSummaryAggregate>,
     pub bytes_sent: MetricSummary,
     pub bytes_received: MetricSummary,
     pub results: Vec<BenchResult>,
@@ -224,6 +276,7 @@ pub struct WorkloadOutcome {
     pub bytes_sent: u64,
     pub bytes_received: u64,
     pub latencies_us: Vec<u128>,
+    pub setup_samples: Vec<FlowSetupSample>,
 }
 
 impl WorkloadOutcome {
@@ -235,6 +288,7 @@ impl WorkloadOutcome {
         self.bytes_sent += other.bytes_sent;
         self.bytes_received += other.bytes_received;
         self.latencies_us.extend(other.latencies_us);
+        self.setup_samples.extend(other.setup_samples);
     }
 }
 
@@ -361,8 +415,11 @@ impl WorkloadFixture {
             WorkloadKind::Idle
             | WorkloadKind::TcpFreedom
             | WorkloadKind::ManyIdleFlows
+            | WorkloadKind::ReconnectBurst
+            | WorkloadKind::MixedLongLived
             | WorkloadKind::UdpFreedom
-            | WorkloadKind::TunUdpFreedom => Ok(Self::default()),
+            | WorkloadKind::TunUdpFreedom
+            | WorkloadKind::TunTcpFreedom => Ok(Self::default()),
         }
     }
 }
@@ -729,6 +786,7 @@ pub fn summarize_results(results: &[BenchResult]) -> Result<BenchSummary, BenchE
             results.iter().map(|result| result.cpu_millis_per_gib),
         ),
         latency_us: summarize_latency_results(results),
+        setup_us: summarize_setup_results(results),
         bytes_sent: summarize_metric(results.iter().map(|result| u128::from(result.bytes_sent))),
         bytes_received: summarize_metric(
             results
@@ -753,6 +811,21 @@ pub fn summarize_latency_us(values: impl IntoIterator<Item = u128>) -> Option<La
     })
 }
 
+pub fn summarize_flow_setup_us(
+    samples: impl IntoIterator<Item = FlowSetupSample>,
+) -> Option<FlowSetupSummary> {
+    let samples = samples.into_iter().collect::<Vec<_>>();
+    if samples.is_empty() {
+        return None;
+    }
+
+    Some(FlowSetupSummary {
+        tcp_connect_us: summarize_latency_us(samples.iter().map(|sample| sample.tcp_connect_us))?,
+        socks_setup_us: summarize_latency_us(samples.iter().map(|sample| sample.socks_setup_us))?,
+        total_us: summarize_latency_us(samples.iter().map(|sample| sample.total_us))?,
+    })
+}
+
 fn summarize_optional_metric(
     values: impl IntoIterator<Item = Option<u128>>,
 ) -> Option<MetricSummary> {
@@ -761,6 +834,18 @@ fn summarize_optional_metric(
         return None;
     }
     Some(summarize_metric(values))
+}
+
+fn summarize_latency_aggregates<'a>(
+    latencies: impl IntoIterator<Item = &'a LatencySummary>,
+) -> LatencySummaryAggregate {
+    let latencies = latencies.into_iter().collect::<Vec<_>>();
+    LatencySummaryAggregate {
+        min: summarize_metric(latencies.iter().map(|latency| latency.min)),
+        median: summarize_metric(latencies.iter().map(|latency| latency.median)),
+        p95: summarize_metric(latencies.iter().map(|latency| latency.p95)),
+        p99: summarize_metric(latencies.iter().map(|latency| latency.p99)),
+    }
 }
 
 fn summarize_latency_results(results: &[BenchResult]) -> Option<LatencySummaryAggregate> {
@@ -772,11 +857,26 @@ fn summarize_latency_results(results: &[BenchResult]) -> Option<LatencySummaryAg
         return None;
     }
 
-    Some(LatencySummaryAggregate {
-        min: summarize_metric(latencies.iter().map(|latency| latency.min)),
-        median: summarize_metric(latencies.iter().map(|latency| latency.median)),
-        p95: summarize_metric(latencies.iter().map(|latency| latency.p95)),
-        p99: summarize_metric(latencies.iter().map(|latency| latency.p99)),
+    Some(summarize_latency_aggregates(latencies))
+}
+
+fn summarize_setup_results(results: &[BenchResult]) -> Option<FlowSetupSummaryAggregate> {
+    let setup = results
+        .iter()
+        .filter_map(|result| result.setup_us.as_ref())
+        .collect::<Vec<_>>();
+    if setup.is_empty() {
+        return None;
+    }
+
+    Some(FlowSetupSummaryAggregate {
+        tcp_connect_us: summarize_latency_aggregates(
+            setup.iter().map(|summary| &summary.tcp_connect_us),
+        ),
+        socks_setup_us: summarize_latency_aggregates(
+            setup.iter().map(|summary| &summary.socks_setup_us),
+        ),
+        total_us: summarize_latency_aggregates(setup.iter().map(|summary| &summary.total_us)),
     })
 }
 
@@ -898,12 +998,14 @@ pub async fn run_many_idle_flows_workload(
 
     let mut held_flows = Vec::with_capacity(options.connections);
     let mut latencies_us = Vec::with_capacity(options.connections);
+    let mut setup_samples = Vec::with_capacity(options.connections);
     for task in tasks {
-        let (stream, latency_us) = task.await.map_err(|error| {
+        let (stream, setup_sample) = task.await.map_err(|error| {
             BenchError::InvalidArguments(format!("idle-flow workload task failed: {error}"))
         })??;
         held_flows.push(stream);
-        latencies_us.push(latency_us);
+        latencies_us.push(setup_sample.total_us);
+        setup_samples.push(setup_sample);
     }
 
     sleep(options.duration).await;
@@ -914,7 +1016,130 @@ pub async fn run_many_idle_flows_workload(
         bytes_sent: 0,
         bytes_received: 0,
         latencies_us,
+        setup_samples,
     })
+}
+
+pub async fn run_reconnect_burst_workload(
+    socks_addr: SocketAddr,
+    options: &BenchOptions,
+) -> Result<WorkloadOutcome, BenchError> {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "binding reconnect-burst TCP target".to_owned(),
+            source,
+        })?;
+    let target_addr = listener.local_addr().map_err(|source| BenchError::Io {
+        action: "reading reconnect-burst TCP target address".to_owned(),
+        source,
+    })?;
+    let accept_task = tokio::spawn(async move {
+        while let Ok((stream, _peer)) = listener.accept().await {
+            tokio::spawn(async move {
+                let mut stream = stream;
+                let mut byte = [0; 1];
+                let _ = stream.read(&mut byte).await;
+            });
+        }
+    });
+
+    let mut tasks = Vec::with_capacity(options.connections);
+    for _ in 0..options.connections {
+        let options = options.clone();
+        tasks.push(tokio::spawn(async move {
+            let mut outcome = WorkloadOutcome::empty();
+            for _ in 0..options.iterations {
+                let (stream, setup_sample) = open_idle_socks_flow(socks_addr, target_addr).await?;
+                drop(stream);
+                outcome.latencies_us.push(setup_sample.total_us);
+                outcome.setup_samples.push(setup_sample);
+            }
+            Ok::<_, BenchError>(outcome)
+        }));
+    }
+
+    let mut outcome = WorkloadOutcome::empty();
+    for task in tasks {
+        let task_outcome = task.await.map_err(|error| {
+            BenchError::InvalidArguments(format!("reconnect-burst workload task failed: {error}"))
+        })??;
+        outcome.extend(task_outcome);
+    }
+    accept_task.abort();
+
+    Ok(outcome)
+}
+
+pub async fn run_mixed_long_lived_workload(
+    socks_addr: SocketAddr,
+    options: &BenchOptions,
+) -> Result<WorkloadOutcome, BenchError> {
+    let tcp_listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "binding mixed TCP echo server".to_owned(),
+            source,
+        })?;
+    let tcp_echo_addr = tcp_listener.local_addr().map_err(|source| BenchError::Io {
+        action: "reading mixed TCP echo server address".to_owned(),
+        source,
+    })?;
+    let tcp_echo_task = tokio::spawn(async move {
+        loop {
+            let Ok((mut stream, _peer)) = tcp_listener.accept().await else {
+                break;
+            };
+            tokio::spawn(async move {
+                let (mut reader, mut writer) = stream.split();
+                let _ = tokio::io::copy(&mut reader, &mut writer).await;
+            });
+        }
+    });
+
+    let udp_socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "binding mixed UDP echo server".to_owned(),
+            source,
+        })?;
+    let udp_echo_addr = udp_socket.local_addr().map_err(|source| BenchError::Io {
+        action: "reading mixed UDP echo server address".to_owned(),
+        source,
+    })?;
+    let udp_echo_task = tokio::spawn(async move {
+        let mut buffer = vec![0; 65_536];
+        while let Ok((len, peer)) = udp_socket.recv_from(&mut buffer).await {
+            let _ = udp_socket.send_to(&buffer[..len], peer).await;
+        }
+    });
+
+    let (tcp_connections, udp_connections) = mixed_connection_counts(options.connections);
+    let mut tasks = Vec::with_capacity(tcp_connections + udp_connections);
+    for _ in 0..tcp_connections {
+        let options = options.clone();
+        tasks.push(tokio::spawn(async move {
+            run_mixed_long_lived_tcp_connection(socks_addr, tcp_echo_addr, &options).await
+        }));
+    }
+    for _ in 0..udp_connections {
+        let options = options.clone();
+        tasks.push(tokio::spawn(async move {
+            run_mixed_long_lived_udp_connection(socks_addr, udp_echo_addr, &options).await
+        }));
+    }
+
+    let mut outcome = WorkloadOutcome::empty();
+    for task in tasks {
+        let task_outcome = task.await.map_err(|error| {
+            BenchError::InvalidArguments(format!("mixed workload task failed: {error}"))
+        })??;
+        outcome.extend(task_outcome);
+    }
+    tcp_echo_task.abort();
+    udp_echo_task.abort();
+
+    Ok(outcome)
 }
 
 pub async fn run_udp_freedom_workload(
@@ -993,6 +1218,46 @@ pub async fn run_tun_udp_freedom_workload(
     Ok(outcome)
 }
 
+#[cfg(unix)]
+pub async fn run_tun_tcp_freedom_workload(
+    tun_fd: RawFd,
+    options: &BenchOptions,
+) -> Result<WorkloadOutcome, BenchError> {
+    let listener = TcpListener::bind((Ipv4Addr::UNSPECIFIED, 0))
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "binding TUN TCP echo server".to_owned(),
+            source,
+        })?;
+    let echo_bind_addr = listener.local_addr().map_err(|source| BenchError::Io {
+        action: "reading TUN TCP echo server address".to_owned(),
+        source,
+    })?;
+    let echo_target = SocketAddr::from((local_non_loopback_ipv4()?, echo_bind_addr.port()));
+    let echo_task = tokio::spawn(async move {
+        loop {
+            let Ok((mut stream, _peer)) = listener.accept().await else {
+                break;
+            };
+            tokio::spawn(async move {
+                let (mut reader, mut writer) = stream.split();
+                let _ = tokio::io::copy(&mut reader, &mut writer).await;
+            });
+        }
+    });
+
+    let mut outcome = WorkloadOutcome::empty();
+    for connection_index in 0..options.connections {
+        let source_port = 49_152 + (connection_index % 10_000) as u16;
+        let connection_outcome =
+            run_tun_tcp_freedom_connection(tun_fd, echo_target, source_port, options).await?;
+        outcome.extend(connection_outcome);
+    }
+    echo_task.abort();
+
+    Ok(outcome)
+}
+
 #[cfg(not(unix))]
 pub async fn run_tun_udp_freedom_workload(
     _tun_fd: i32,
@@ -1000,6 +1265,16 @@ pub async fn run_tun_udp_freedom_workload(
 ) -> Result<WorkloadOutcome, BenchError> {
     Err(BenchError::InvalidArguments(
         "tun-udp-freedom workload requires Unix fd support".to_owned(),
+    ))
+}
+
+#[cfg(not(unix))]
+pub async fn run_tun_tcp_freedom_workload(
+    _tun_fd: i32,
+    _options: &BenchOptions,
+) -> Result<WorkloadOutcome, BenchError> {
+    Err(BenchError::InvalidArguments(
+        "tun-tcp-freedom workload requires Unix fd support".to_owned(),
     ))
 }
 
@@ -1106,22 +1381,152 @@ async fn run_tcp_freedom_connection(
         bytes_sent: sent,
         bytes_received: received,
         latencies_us,
+        setup_samples: Vec::new(),
     })
+}
+
+fn mixed_connection_counts(connections: usize) -> (usize, usize) {
+    let total = connections.max(2);
+    let tcp = total.div_ceil(2);
+    let udp = total - tcp;
+    (tcp, udp.max(1))
+}
+
+fn workload_pace(duration: Duration, iterations: usize) -> Option<Duration> {
+    if iterations <= 1 || duration.is_zero() {
+        return None;
+    }
+    Some(duration / iterations as u32)
+}
+
+async fn maybe_sleep_pace(pace: Option<Duration>) {
+    if let Some(pace) = pace.filter(|pace| !pace.is_zero()) {
+        sleep(pace).await;
+    }
+}
+
+async fn run_mixed_long_lived_tcp_connection(
+    socks_addr: SocketAddr,
+    echo_addr: SocketAddr,
+    options: &BenchOptions,
+) -> Result<WorkloadOutcome, BenchError> {
+    let (mut client, setup_sample) = open_idle_socks_flow(socks_addr, echo_addr).await?;
+    let payload = vec![0x5a; options.payload_size];
+    let mut echoed = vec![0; options.payload_size];
+    let mut outcome = WorkloadOutcome::empty();
+    outcome.latencies_us.push(setup_sample.total_us);
+    outcome.setup_samples.push(setup_sample);
+    let pace = workload_pace(options.duration, options.iterations);
+
+    for _ in 0..options.iterations {
+        let started = Instant::now();
+        client
+            .write_all(&payload)
+            .await
+            .map_err(|source| BenchError::Io {
+                action: "writing mixed TCP payload".to_owned(),
+                source,
+            })?;
+        outcome.bytes_sent += payload.len() as u64;
+        client
+            .read_exact(&mut echoed)
+            .await
+            .map_err(|source| BenchError::Io {
+                action: "reading mixed TCP echo".to_owned(),
+                source,
+            })?;
+        if echoed != payload {
+            return Err(BenchError::InvalidArguments(
+                "mixed TCP echo payload mismatch".to_owned(),
+            ));
+        }
+        outcome.bytes_received += echoed.len() as u64;
+        outcome.latencies_us.push(started.elapsed().as_micros());
+        maybe_sleep_pace(pace).await;
+    }
+
+    Ok(outcome)
+}
+
+async fn run_mixed_long_lived_udp_connection(
+    socks_addr: SocketAddr,
+    echo_addr: SocketAddr,
+    options: &BenchOptions,
+) -> Result<WorkloadOutcome, BenchError> {
+    let mut control = TcpStream::connect(socks_addr)
+        .await
+        .map_err(|source| BenchError::Io {
+            action: format!("connecting to SOCKS inbound at {socks_addr}"),
+            source,
+        })?;
+    let relay_addr = socks5_udp_associate(&mut control).await?;
+    let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "binding mixed UDP benchmark client".to_owned(),
+            source,
+        })?;
+    let payload = vec![0x5a; options.payload_size];
+    let request = encode_socks5_udp_datagram(echo_addr, &payload)?;
+    let mut response = vec![0; request.len() + 64];
+    let pace = workload_pace(options.duration, options.iterations);
+    let mut outcome = WorkloadOutcome::empty();
+
+    for _ in 0..options.iterations {
+        let started = Instant::now();
+        socket
+            .send_to(&request, relay_addr)
+            .await
+            .map_err(|source| BenchError::Io {
+                action: "sending mixed UDP benchmark payload".to_owned(),
+                source,
+            })?;
+        outcome.bytes_sent += payload.len() as u64;
+        let (len, _) = socket
+            .recv_from(&mut response)
+            .await
+            .map_err(|source| BenchError::Io {
+                action: "receiving mixed UDP benchmark echo".to_owned(),
+                source,
+            })?;
+        let echoed = decode_socks5_udp_payload(&response[..len])?;
+        if echoed != payload {
+            return Err(BenchError::InvalidArguments(
+                "mixed UDP echo payload mismatch".to_owned(),
+            ));
+        }
+        outcome.bytes_received += echoed.len() as u64;
+        outcome.latencies_us.push(started.elapsed().as_micros());
+        maybe_sleep_pace(pace).await;
+    }
+
+    drop(control);
+    Ok(outcome)
 }
 
 async fn open_idle_socks_flow(
     socks_addr: SocketAddr,
     target_addr: SocketAddr,
-) -> Result<(TcpStream, u128), BenchError> {
+) -> Result<(TcpStream, FlowSetupSample), BenchError> {
     let started = Instant::now();
+    let tcp_started = Instant::now();
     let mut client = TcpStream::connect(socks_addr)
         .await
         .map_err(|source| BenchError::Io {
             action: format!("connecting to SOCKS inbound at {socks_addr}"),
             source,
         })?;
+    let tcp_connect_us = tcp_started.elapsed().as_micros();
+    let socks_started = Instant::now();
     socks5_connect(&mut client, target_addr).await?;
-    Ok((client, started.elapsed().as_micros()))
+    Ok((
+        client,
+        FlowSetupSample {
+            tcp_connect_us,
+            socks_setup_us: socks_started.elapsed().as_micros(),
+            total_us: started.elapsed().as_micros(),
+        },
+    ))
 }
 
 async fn run_udp_freedom_connection(
@@ -1181,6 +1586,7 @@ async fn run_udp_freedom_connection(
         bytes_sent: sent,
         bytes_received: received,
         latencies_us,
+        setup_samples: Vec::new(),
     })
 }
 
@@ -1231,7 +1637,47 @@ async fn run_tun_udp_freedom_connection(
         bytes_sent: sent,
         bytes_received: received,
         latencies_us,
+        setup_samples: Vec::new(),
     })
+}
+
+#[cfg(unix)]
+async fn run_tun_tcp_freedom_connection(
+    tun_fd: RawFd,
+    echo_addr: SocketAddr,
+    source_port: u16,
+    options: &BenchOptions,
+) -> Result<WorkloadOutcome, BenchError> {
+    let mut client = TunTcpBenchmarkClient::new(source_port);
+    let setup_started = Instant::now();
+    client.connect(echo_addr)?;
+    pump_tun_tcp_until(tun_fd, &mut client, TunTcpBenchmarkClient::may_send).await?;
+    let setup_us = setup_started.elapsed().as_micros();
+
+    let payload = vec![0x5a; options.payload_size];
+    let mut outcome = WorkloadOutcome::empty();
+    outcome.latencies_us.push(setup_us);
+
+    for _ in 0..options.iterations {
+        client.send_payload(&payload)?;
+        let mut received = Vec::with_capacity(payload.len());
+        let started = Instant::now();
+        pump_tun_tcp_until(tun_fd, &mut client, |client| {
+            received.extend_from_slice(&client.recv_available());
+            received.len() >= payload.len()
+        })
+        .await?;
+        if received != payload {
+            return Err(BenchError::InvalidArguments(
+                "TUN TCP echo payload mismatch".to_owned(),
+            ));
+        }
+        outcome.bytes_sent += payload.len() as u64;
+        outcome.bytes_received += received.len() as u64;
+        outcome.latencies_us.push(started.elapsed().as_micros());
+    }
+
+    Ok(outcome)
 }
 
 async fn socks5_connect(client: &mut TcpStream, target: SocketAddr) -> Result<(), BenchError> {
@@ -1629,6 +2075,237 @@ fn nonzero_udp_checksum(checksum: u16) -> u16 {
         u16::MAX
     } else {
         checksum
+    }
+}
+
+#[cfg(unix)]
+struct TunTcpBenchmarkClient {
+    iface: SmolInterface,
+    device: TunTcpPacketDevice,
+    sockets: SocketSet<'static>,
+    tcp: SocketHandle,
+    source_port: u16,
+}
+
+#[cfg(unix)]
+impl TunTcpBenchmarkClient {
+    fn new(source_port: u16) -> Self {
+        let mut device = TunTcpPacketDevice::new(1500);
+        let mut iface_config = SmolInterfaceConfig::new(SmolHardwareAddress::Ip);
+        iface_config.random_seed = 0x7872_6179_7463_7001;
+        let mut iface = SmolInterface::new(iface_config, &mut device, SmolInstant::now());
+        iface.update_ip_addrs(|addrs| {
+            addrs
+                .push(SmolIpCidr::new(SmolIpAddress::v4(10, 10, 0, 2), 24))
+                .expect("benchmark client has one IP address");
+        });
+        iface
+            .routes_mut()
+            .add_default_ipv4_route(SmolIpv4Address::new(10, 10, 0, 1))
+            .expect("benchmark client default route is valid");
+
+        let tcp_socket = smol_tcp::Socket::new(
+            smol_tcp::SocketBuffer::new(vec![0; 64 * 1024]),
+            smol_tcp::SocketBuffer::new(vec![0; 64 * 1024]),
+        );
+        let mut sockets = SocketSet::new(Vec::new());
+        let tcp = sockets.add(tcp_socket);
+
+        Self {
+            iface,
+            device,
+            sockets,
+            tcp,
+            source_port,
+        }
+    }
+
+    fn connect(&mut self, target: SocketAddr) -> Result<(), BenchError> {
+        let SocketAddr::V4(target) = target else {
+            return Err(BenchError::InvalidArguments(
+                "tun-tcp-freedom workload currently uses IPv4 echo targets".to_owned(),
+            ));
+        };
+        self.sockets
+            .get_mut::<smol_tcp::Socket>(self.tcp)
+            .connect(
+                self.iface.context(),
+                (*target.ip(), target.port()),
+                self.source_port,
+            )
+            .map_err(|error| {
+                BenchError::InvalidArguments(format!("starting TUN TCP connect: {error}"))
+            })
+    }
+
+    fn may_send(&mut self) -> bool {
+        self.sockets.get::<smol_tcp::Socket>(self.tcp).may_send()
+    }
+
+    fn send_payload(&mut self, payload: &[u8]) -> Result<(), BenchError> {
+        self.sockets
+            .get_mut::<smol_tcp::Socket>(self.tcp)
+            .send_slice(payload)
+            .map(|_| ())
+            .map_err(|error| {
+                BenchError::InvalidArguments(format!("sending TUN TCP payload: {error}"))
+            })
+    }
+
+    fn recv_available(&mut self) -> Vec<u8> {
+        let mut received = Vec::new();
+        let socket = self.sockets.get_mut::<smol_tcp::Socket>(self.tcp);
+        while socket.can_recv() {
+            if socket
+                .recv(|data| {
+                    received.extend_from_slice(data);
+                    (data.len(), ())
+                })
+                .is_err()
+            {
+                break;
+            }
+        }
+        received
+    }
+
+    fn poll(&mut self) {
+        let _ = self
+            .iface
+            .poll(SmolInstant::now(), &mut self.device, &mut self.sockets);
+    }
+}
+
+#[cfg(unix)]
+async fn pump_tun_tcp_until(
+    tun_fd: RawFd,
+    client: &mut TunTcpBenchmarkClient,
+    mut is_done: impl FnMut(&mut TunTcpBenchmarkClient) -> bool,
+) -> Result<(), BenchError> {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut buffer = vec![0; 65_535 + DARWIN_UTUN_HEADER_LEN];
+    loop {
+        client.poll();
+        while let Some(packet) = client.device.pop_outbound() {
+            write_tun_frame(tun_fd, &encode_darwin_utun_frame(&packet))?;
+        }
+        while let Some(len) = read_tun_frame(tun_fd, &mut buffer)? {
+            let packet = decode_darwin_utun_frame(&buffer[..len])?;
+            client.device.push_inbound(Bytes::copy_from_slice(packet));
+        }
+        client.poll();
+
+        if is_done(client) {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            return Err(BenchError::InvalidArguments(
+                "timed out waiting for TUN TCP client state".to_owned(),
+            ));
+        }
+        sleep(Duration::from_millis(1)).await;
+    }
+}
+
+#[cfg(unix)]
+struct TunTcpPacketDevice {
+    mtu: usize,
+    inbound: VecDeque<Bytes>,
+    outbound: VecDeque<Bytes>,
+}
+
+#[cfg(unix)]
+impl TunTcpPacketDevice {
+    fn new(mtu: usize) -> Self {
+        Self {
+            mtu,
+            inbound: VecDeque::new(),
+            outbound: VecDeque::new(),
+        }
+    }
+
+    fn push_inbound(&mut self, packet: Bytes) {
+        self.inbound.push_back(packet);
+    }
+
+    fn pop_outbound(&mut self) -> Option<Bytes> {
+        self.outbound.pop_front()
+    }
+}
+
+#[cfg(unix)]
+impl SmolDevice for TunTcpPacketDevice {
+    type RxToken<'a>
+        = TunTcpRxToken
+    where
+        Self: 'a;
+    type TxToken<'a>
+        = TunTcpTxToken<'a>
+    where
+        Self: 'a;
+
+    fn receive(
+        &mut self,
+        _timestamp: SmolInstant,
+    ) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
+        let packet = self.inbound.pop_front()?;
+        Some((
+            TunTcpRxToken { packet },
+            TunTcpTxToken {
+                mtu: self.mtu,
+                outbound: &mut self.outbound,
+            },
+        ))
+    }
+
+    fn transmit(&mut self, _timestamp: SmolInstant) -> Option<Self::TxToken<'_>> {
+        Some(TunTcpTxToken {
+            mtu: self.mtu,
+            outbound: &mut self.outbound,
+        })
+    }
+
+    fn capabilities(&self) -> SmolDeviceCapabilities {
+        let mut capabilities = SmolDeviceCapabilities::default();
+        capabilities.medium = SmolMedium::Ip;
+        capabilities.max_transmission_unit = self.mtu;
+        capabilities.max_burst_size = None;
+        capabilities.checksum = SmolChecksumCapabilities::default();
+        capabilities
+    }
+}
+
+#[cfg(unix)]
+struct TunTcpRxToken {
+    packet: Bytes,
+}
+
+#[cfg(unix)]
+impl SmolRxToken for TunTcpRxToken {
+    fn consume<R, F>(self, f: F) -> R
+    where
+        F: FnOnce(&[u8]) -> R,
+    {
+        f(&self.packet)
+    }
+}
+
+#[cfg(unix)]
+struct TunTcpTxToken<'a> {
+    mtu: usize,
+    outbound: &'a mut VecDeque<Bytes>,
+}
+
+#[cfg(unix)]
+impl SmolTxToken for TunTcpTxToken<'_> {
+    fn consume<R, F>(self, len: usize, f: F) -> R
+    where
+        F: FnOnce(&mut [u8]) -> R,
+    {
+        let mut packet = vec![0; len.min(self.mtu)];
+        let result = f(&mut packet);
+        self.outbound.push_back(Bytes::from(packet));
+        result
     }
 }
 
@@ -2178,11 +2855,19 @@ pub fn xray_rust_config(port: u16, workload: WorkloadKind) -> String {
         WorkloadKind::VisionXudp => {
             vision_xudp_config(port, SocketAddr::from((Ipv4Addr::LOCALHOST, 443)))
         }
-        WorkloadKind::TunUdpFreedom => tun_freedom_config(),
+        WorkloadKind::TunUdpFreedom | WorkloadKind::TunTcpFreedom => tun_freedom_config(),
         WorkloadKind::Idle
         | WorkloadKind::TcpFreedom
         | WorkloadKind::ManyIdleFlows
-        | WorkloadKind::UdpFreedom => freedom_config(port, workload == WorkloadKind::UdpFreedom),
+        | WorkloadKind::ReconnectBurst
+        | WorkloadKind::MixedLongLived
+        | WorkloadKind::UdpFreedom => freedom_config(
+            port,
+            matches!(
+                workload,
+                WorkloadKind::UdpFreedom | WorkloadKind::MixedLongLived
+            ),
+        ),
     }
 }
 
@@ -2212,13 +2897,19 @@ fn engine_config(
             })?;
             Ok(vision_xudp_config(port, vless_addr))
         }
-        WorkloadKind::TunUdpFreedom => Ok(tun_freedom_config()),
+        WorkloadKind::TunUdpFreedom | WorkloadKind::TunTcpFreedom => Ok(tun_freedom_config()),
         WorkloadKind::Idle
         | WorkloadKind::TcpFreedom
         | WorkloadKind::ManyIdleFlows
-        | WorkloadKind::UdpFreedom => {
-            Ok(freedom_config(port, workload == WorkloadKind::UdpFreedom))
-        }
+        | WorkloadKind::ReconnectBurst
+        | WorkloadKind::MixedLongLived
+        | WorkloadKind::UdpFreedom => Ok(freedom_config(
+            port,
+            matches!(
+                workload,
+                WorkloadKind::UdpFreedom | WorkloadKind::MixedLongLived
+            ),
+        )),
     }
 }
 
@@ -2837,9 +3528,18 @@ async fn run_engine_once(
             WorkloadKind::ManyIdleFlows => {
                 run_many_idle_flows_workload(engine.socks_addr, options).await
             }
+            WorkloadKind::ReconnectBurst => {
+                run_reconnect_burst_workload(engine.socks_addr, options).await
+            }
+            WorkloadKind::MixedLongLived => {
+                run_mixed_long_lived_workload(engine.socks_addr, options).await
+            }
             WorkloadKind::UdpFreedom => run_udp_freedom_workload(engine.socks_addr, options).await,
             WorkloadKind::TunUdpFreedom => {
                 run_tun_udp_freedom_workload(engine.tun_fd()?, options).await
+            }
+            WorkloadKind::TunTcpFreedom => {
+                run_tun_tcp_freedom_workload(engine.tun_fd()?, options).await
             }
             WorkloadKind::UdpVless => run_udp_vless_workload(engine.socks_addr, options).await,
             WorkloadKind::UdpXudp => run_udp_xudp_workload(engine.socks_addr, options).await,
@@ -2863,6 +3563,7 @@ async fn run_engine_once(
     summary.bytes_sent = workload_outcome.bytes_sent;
     summary.bytes_received = workload_outcome.bytes_received;
     let latency_us = summarize_latency_us(workload_outcome.latencies_us);
+    let setup_us = summarize_flow_setup_us(workload_outcome.setup_samples);
     let cpu_millis_per_gib = cpu_millis_per_gib(
         summary.cpu_millis,
         summary.bytes_sent,
@@ -2880,6 +3581,7 @@ async fn run_engine_once(
         cpu_millis: summary.cpu_millis,
         cpu_millis_per_gib,
         latency_us,
+        setup_us,
         samples: samples.len(),
     };
     write_samples_csv(&run_dir.join("samples.csv"), &samples)?;
@@ -2927,8 +3629,23 @@ fn print_result(result: &BenchResult) {
         .cpu_millis_per_gib
         .map(|value| format!(" cpu_millis_per_gib={value}"))
         .unwrap_or_default();
+    let setup = result
+        .setup_us
+        .as_ref()
+        .map(|setup| {
+            format!(
+                " setup_total_us[min/median/p95/p99]={}/{}/{}/{} setup_tcp_us[median]={} setup_socks_us[median]={}",
+                setup.total_us.min,
+                setup.total_us.median,
+                setup.total_us.p95,
+                setup.total_us.p99,
+                setup.tcp_connect_us.median,
+                setup.socks_setup_us.median,
+            )
+        })
+        .unwrap_or_default();
     println!(
-        "{} {} status={} peak_rss_kib={} cpu_millis={} bytes_sent={} bytes_received={} samples={}{}{}",
+        "{} {} status={} peak_rss_kib={} cpu_millis={} bytes_sent={} bytes_received={} samples={}{}{}{}",
         result.engine,
         result.workload,
         result.status,
@@ -2938,7 +3655,8 @@ fn print_result(result: &BenchResult) {
         result.bytes_received,
         result.samples,
         cpu_per_gib,
-        latency
+        latency,
+        setup
     );
 }
 
@@ -2977,8 +3695,26 @@ fn print_summary(summary: &BenchSummary) {
             )
         })
         .unwrap_or_default();
+    let setup = summary
+        .setup_us
+        .as_ref()
+        .map(|setup| {
+            format!(
+                " setup_total_us[median:min/median/p95]={}/{}/{} setup_tcp_us[median:min/median/p95]={}/{}/{} setup_socks_us[median:min/median/p95]={}/{}/{}",
+                setup.total_us.median.min,
+                setup.total_us.median.median,
+                setup.total_us.median.p95,
+                setup.tcp_connect_us.median.min,
+                setup.tcp_connect_us.median.median,
+                setup.tcp_connect_us.median.p95,
+                setup.socks_setup_us.median.min,
+                setup.socks_setup_us.median.median,
+                setup.socks_setup_us.median.p95,
+            )
+        })
+        .unwrap_or_default();
     println!(
-        "{} {} runs={} status={} duration_ms[min/median/p95]={}/{}/{} peak_rss_kib[min/median/p95]={}/{}/{} cpu_millis[min/median/p95]={}/{}/{} bytes_sent[min/median/p95]={}/{}/{} bytes_received[min/median/p95]={}/{}/{}{}{}",
+        "{} {} runs={} status={} duration_ms[min/median/p95]={}/{}/{} peak_rss_kib[min/median/p95]={}/{}/{} cpu_millis[min/median/p95]={}/{}/{} bytes_sent[min/median/p95]={}/{}/{} bytes_received[min/median/p95]={}/{}/{}{}{}{}",
         summary.engine,
         summary.workload,
         summary.runs,
@@ -3000,6 +3736,7 @@ fn print_summary(summary: &BenchSummary) {
         summary.bytes_received.p95,
         cpu_per_gib,
         latency,
+        setup,
     );
 }
 
@@ -3240,6 +3977,26 @@ mod tests {
         assert_eq!(options.workload, WorkloadKind::ManyIdleFlows);
         assert_eq!(options.connections, 100);
         assert_eq!(options.duration, Duration::from_millis(1000));
+    }
+
+    #[test]
+    fn parses_mobile_scenario_workloads() {
+        for (raw, expected) in [
+            ("reconnect-burst", WorkloadKind::ReconnectBurst),
+            ("mixed-long-lived", WorkloadKind::MixedLongLived),
+            ("tun-tcp-freedom", WorkloadKind::TunTcpFreedom),
+        ] {
+            let args = parse_cli_args(["xray-bench", "compare", "--workload", raw]).unwrap();
+            let CliArgs::Compare(options) = args else {
+                panic!("expected compare args");
+            };
+            assert_eq!(options.workload, expected);
+        }
+    }
+
+    #[test]
+    fn tun_tcp_freedom_uses_fd_backed_tun() {
+        assert!(WorkloadKind::TunTcpFreedom.uses_tun_fd());
     }
 
     #[test]
@@ -3490,6 +4247,40 @@ mod tests {
     }
 
     #[test]
+    fn summarizes_flow_setup_samples_with_stage_percentiles() {
+        let summary = summarize_flow_setup_us([
+            FlowSetupSample {
+                tcp_connect_us: 100,
+                socks_setup_us: 400,
+                total_us: 500,
+            },
+            FlowSetupSample {
+                tcp_connect_us: 200,
+                socks_setup_us: 600,
+                total_us: 800,
+            },
+            FlowSetupSample {
+                tcp_connect_us: 150,
+                socks_setup_us: 500,
+                total_us: 650,
+            },
+        ])
+        .unwrap();
+
+        assert_eq!(summary.tcp_connect_us.median, 150);
+        assert_eq!(summary.socks_setup_us.median, 500);
+        assert_eq!(summary.total_us.median, 650);
+    }
+
+    #[test]
+    fn mixed_long_lived_config_enables_socks_udp() {
+        let config = xray_rust_config(18085, WorkloadKind::MixedLongLived);
+        assert!(config.contains(r#""protocol": "socks""#));
+        assert!(config.contains(r#""udp": true"#));
+        assert!(config.contains(r#""protocol": "freedom""#));
+    }
+
+    #[test]
     fn run_directory_contains_engine_and_workload() {
         let dir = run_directory(
             Path::new("target/benchmarks"),
@@ -3528,6 +4319,7 @@ mod tests {
                     p95: 30,
                     p99: 40,
                 }),
+                setup_us: None,
                 samples: 2,
             },
             BenchResult {
@@ -3546,6 +4338,7 @@ mod tests {
                     p95: 20,
                     p99: 30,
                 }),
+                setup_us: None,
                 samples: 2,
             },
             BenchResult {
@@ -3564,6 +4357,7 @@ mod tests {
                     p95: 40,
                     p99: 50,
                 }),
+                setup_us: None,
                 samples: 2,
             },
         ];
