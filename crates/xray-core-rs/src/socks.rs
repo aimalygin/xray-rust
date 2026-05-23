@@ -19,11 +19,11 @@ use xray_proxy::vless::{
     read_xudp_packet,
 };
 use xray_routing::{Target, TargetAddr};
-use xray_transport::{protect_udp_socket, DnsResolver, TransportDialer};
+use xray_transport::{connect_tcp_stream, protect_udp_socket, DnsResolver, TransportDialer};
 
 use crate::{
-    open_tcp_stream_with_resolver_and_dialer, open_vless_udp_stream_with_resolver_and_dialer,
-    select_tcp_outbound_for_session, select_udp_outbound_for_session, UdpOutbound,
+    open_vless_tcp_stream_with_resolver_and_dialer, open_vless_udp_stream_with_resolver_and_dialer,
+    select_tcp_outbound_for_session, select_udp_outbound_for_session, TcpOutbound, UdpOutbound,
     VlessTcpOutbound, VlessUdpFraming,
 };
 
@@ -156,26 +156,69 @@ async fn handle_socks_connect(
         }
     };
 
-    let mut outbound_stream = match open_tcp_stream_with_resolver_and_dialer(
-        &outbound,
-        &target,
-        dns_resolver.as_ref(),
-        transport_dialer.as_ref(),
-    )
-    .await
-    {
-        Ok(stream) => stream,
-        Err(_) => {
-            let _ = write_socks5_failure(&mut inbound).await;
-            return;
+    match outbound {
+        TcpOutbound::Freedom => {
+            let mut outbound_stream = match open_freedom_tcp_stream(
+                &target,
+                dns_resolver.as_ref(),
+                transport_dialer.as_ref(),
+            )
+            .await
+            {
+                Ok(stream) => stream,
+                Err(_) => {
+                    let _ = write_socks5_failure(&mut inbound).await;
+                    return;
+                }
+            };
+
+            if write_socks5_success(&mut inbound).await.is_err() {
+                return;
+            }
+
+            let _ = copy_bidirectional(&mut inbound, &mut outbound_stream).await;
         }
+        TcpOutbound::Vless(outbound) => {
+            let mut outbound_stream = match open_vless_tcp_stream_with_resolver_and_dialer(
+                &outbound,
+                &target,
+                dns_resolver.as_ref(),
+                transport_dialer.as_ref(),
+            )
+            .await
+            {
+                Ok(stream) => stream,
+                Err(_) => {
+                    let _ = write_socks5_failure(&mut inbound).await;
+                    return;
+                }
+            };
+
+            if write_socks5_success(&mut inbound).await.is_err() {
+                return;
+            }
+
+            let _ = copy_bidirectional(&mut inbound, &mut outbound_stream).await;
+        }
+    }
+}
+
+async fn open_freedom_tcp_stream(
+    target: &Target,
+    dns_resolver: &dyn DnsResolver,
+    transport_dialer: &TransportDialer,
+) -> Result<TcpStream, ()> {
+    let addr = match &target.addr {
+        TargetAddr::Ip(ip) => SocketAddr::new(*ip, target.port),
+        TargetAddr::Domain(domain) => dns_resolver
+            .resolve(domain, target.port)
+            .await
+            .map_err(|_| ())?,
     };
 
-    if write_socks5_success(&mut inbound).await.is_err() {
-        return;
-    }
-
-    let _ = copy_bidirectional(&mut inbound, &mut outbound_stream).await;
+    connect_tcp_stream(addr, transport_dialer.socket_protector())
+        .await
+        .map_err(|_| ())
 }
 
 async fn handle_socks_udp_associate(

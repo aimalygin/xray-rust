@@ -51,15 +51,22 @@ pub async fn negotiate_socks5_no_auth<S>(mut stream: S) -> Result<(), SocksParse
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    let version = stream.read_u8().await.map_err(|_| SocksParseError::Io)?;
+    let mut head = [0; 2];
+    stream
+        .read_exact(&mut head)
+        .await
+        .map_err(|_| SocksParseError::Io)?;
+
+    let version = head[0];
     if version != 5 {
         return Err(SocksParseError::UnsupportedVersion(version));
     }
 
-    let method_count = stream.read_u8().await.map_err(|_| SocksParseError::Io)?;
-    let mut methods = vec![0; usize::from(method_count)];
+    let method_count = head[1];
+    let mut methods = [0; u8::MAX as usize];
+    let methods = &mut methods[..usize::from(method_count)];
     stream
-        .read_exact(&mut methods)
+        .read_exact(methods)
         .await
         .map_err(|_| SocksParseError::Io)?;
 
@@ -81,61 +88,87 @@ where
 pub async fn parse_socks5_request_message<R: AsyncRead + Unpin>(
     mut reader: R,
 ) -> Result<SocksRequest, SocksParseError> {
-    let request_version = reader.read_u8().await.map_err(|_| SocksParseError::Io)?;
+    let mut head = [0; 4];
+    reader
+        .read_exact(&mut head)
+        .await
+        .map_err(|_| SocksParseError::Io)?;
+
+    let request_version = head[0];
     if request_version != 5 {
         return Err(SocksParseError::UnsupportedVersion(request_version));
     }
 
-    let command = match reader.read_u8().await.map_err(|_| SocksParseError::Io)? {
+    let command = match head[1] {
         1 => SocksCommand::Connect,
         3 => SocksCommand::UdpAssociate,
         other => return Err(SocksParseError::UnsupportedCommand(other)),
     };
 
-    let reserved = reader.read_u8().await.map_err(|_| SocksParseError::Io)?;
+    let reserved = head[2];
     if reserved != 0 {
         return Err(SocksParseError::InvalidReserved(reserved));
     }
 
-    let address_type = reader.read_u8().await.map_err(|_| SocksParseError::Io)?;
-    let addr = match address_type {
+    let network = match command {
+        SocksCommand::Connect => Network::Tcp,
+        SocksCommand::UdpAssociate => Network::Udp,
+    };
+    let address_type = head[3];
+    let (addr, port) = match address_type {
         1 => {
-            let mut octets = [0; 4];
+            let mut raw = [0; 6];
             reader
-                .read_exact(&mut octets)
+                .read_exact(&mut raw)
                 .await
                 .map_err(|_| SocksParseError::Io)?;
-            TargetAddr::Ip(IpAddr::V4(Ipv4Addr::from(octets)))
+            let port = u16::from_be_bytes([raw[4], raw[5]]);
+            (
+                TargetAddr::Ip(IpAddr::V4(Ipv4Addr::from([raw[0], raw[1], raw[2], raw[3]]))),
+                port,
+            )
         }
         3 => {
-            let len = reader.read_u8().await.map_err(|_| SocksParseError::Io)?;
+            let mut len = [0; 1];
+            reader
+                .read_exact(&mut len)
+                .await
+                .map_err(|_| SocksParseError::Io)?;
+            let len = usize::from(len[0]);
             if len == 0 {
                 return Err(SocksParseError::InvalidDomain);
             }
 
-            let mut domain = vec![0; usize::from(len)];
+            let mut domain_and_port = vec![0; len + 2];
             reader
-                .read_exact(&mut domain)
+                .read_exact(&mut domain_and_port)
                 .await
                 .map_err(|_| SocksParseError::Io)?;
-            TargetAddr::Domain(
-                String::from_utf8(domain).map_err(|_| SocksParseError::InvalidDomain)?,
+            let port = u16::from_be_bytes([domain_and_port[len], domain_and_port[len + 1]]);
+            (
+                TargetAddr::Domain(
+                    String::from_utf8(domain_and_port[..len].to_vec())
+                        .map_err(|_| SocksParseError::InvalidDomain)?,
+                ),
+                port,
             )
         }
         4 => {
-            let mut octets = [0; 16];
+            let mut raw = [0; 18];
             reader
-                .read_exact(&mut octets)
+                .read_exact(&mut raw)
                 .await
                 .map_err(|_| SocksParseError::Io)?;
-            TargetAddr::Ip(IpAddr::V6(Ipv6Addr::from(octets)))
+            let port = u16::from_be_bytes([raw[16], raw[17]]);
+            (
+                TargetAddr::Ip(IpAddr::V6(Ipv6Addr::from([
+                    raw[0], raw[1], raw[2], raw[3], raw[4], raw[5], raw[6], raw[7], raw[8], raw[9],
+                    raw[10], raw[11], raw[12], raw[13], raw[14], raw[15],
+                ]))),
+                port,
+            )
         }
         other => return Err(SocksParseError::UnsupportedAddressType(other)),
-    };
-    let port = reader.read_u16().await.map_err(|_| SocksParseError::Io)?;
-    let network = match command {
-        SocksCommand::Connect => Network::Tcp,
-        SocksCommand::UdpAssociate => Network::Udp,
     };
 
     Ok(SocksRequest {

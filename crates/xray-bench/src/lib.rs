@@ -1,8 +1,9 @@
 use std::collections::VecDeque;
 use std::fs;
 use std::future::Future;
+use std::hint::black_box;
 use std::io;
-use std::net::{Ipv4Addr, SocketAddr, TcpListener as StdTcpListener};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener as StdTcpListener};
 #[cfg(unix)]
 use std::os::fd::RawFd;
 use std::path::{Path, PathBuf};
@@ -38,13 +39,18 @@ use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
 use tokio_rustls::TlsAcceptor;
+use xray_config::{
+    CoreConfig, InboundConfig, InboundProtocol, IpCidr, IpMatcher, Network as ConfigNetwork,
+    OutboundConfig, OutboundSettings, RoutingConfig, RoutingRule, StreamSecurity, StreamSettings,
+};
+use xray_core_rs::select_tcp_outbound_for_session;
 use xray_proxy::vless::{
     encode_udp_packet, encode_xudp_keep_packet, read_udp_packet, read_xudp_packet,
     unpad_vision_block, VisionCommand, VisionPadding,
 };
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 
-const USAGE: &str = "usage: xray-bench run|compare [options]";
+const USAGE: &str = "usage: xray-bench run|compare|route-probe [options]";
 const TEST_VLESS_UUID: [u8; 16] = [
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
 ];
@@ -77,6 +83,7 @@ pub enum BenchError {
 pub enum CliArgs {
     Run(BenchOptions),
     Compare(BenchOptions),
+    RouteProbe(RouteProbeOptions),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -178,6 +185,14 @@ pub struct BenchOptions {
     pub no_auto_build: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RouteProbeOptions {
+    pub iterations: usize,
+    pub rules: usize,
+    pub outbounds: usize,
+    pub out_dir: PathBuf,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct ProcessSample {
     pub elapsed_ms: u128,
@@ -228,6 +243,8 @@ pub struct LatencySummaryAggregate {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct FlowSetupSample {
     pub tcp_connect_us: u128,
+    pub socks_method_us: u128,
+    pub socks_connect_us: u128,
     pub socks_setup_us: u128,
     pub total_us: u128,
 }
@@ -235,6 +252,8 @@ pub struct FlowSetupSample {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct FlowSetupSummary {
     pub tcp_connect_us: LatencySummary,
+    pub socks_method_us: LatencySummary,
+    pub socks_connect_us: LatencySummary,
     pub socks_setup_us: LatencySummary,
     pub total_us: LatencySummary,
 }
@@ -242,6 +261,8 @@ pub struct FlowSetupSummary {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct FlowSetupSummaryAggregate {
     pub tcp_connect_us: LatencySummaryAggregate,
+    pub socks_method_us: LatencySummaryAggregate,
+    pub socks_connect_us: LatencySummaryAggregate,
     pub socks_setup_us: LatencySummaryAggregate,
     pub total_us: LatencySummaryAggregate,
 }
@@ -277,6 +298,13 @@ pub struct WorkloadOutcome {
     pub bytes_received: u64,
     pub latencies_us: Vec<u128>,
     pub setup_samples: Vec<FlowSetupSample>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SocksSetupStageSample {
+    method_us: u128,
+    connect_us: u128,
+    total_us: u128,
 }
 
 impl WorkloadOutcome {
@@ -460,6 +488,27 @@ impl Default for BenchOptions {
     }
 }
 
+impl Default for RouteProbeOptions {
+    fn default() -> Self {
+        Self {
+            iterations: 100_000,
+            rules: 64,
+            outbounds: 8,
+            out_dir: PathBuf::from("target/benchmarks"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct RouteProbeResult {
+    pub iterations: usize,
+    pub rules: usize,
+    pub outbounds: usize,
+    pub selected: usize,
+    pub total_us: u128,
+    pub avg_ns: u128,
+}
+
 pub fn parse_cli_args<I, S>(args: I) -> Result<CliArgs, BenchError>
 where
     I: IntoIterator<Item = S>,
@@ -473,6 +522,10 @@ where
 
     let mut options = BenchOptions::default();
     let rest = args.collect::<Vec<_>>();
+    if command == "route-probe" {
+        return parse_route_probe_args(&rest).map(CliArgs::RouteProbe);
+    }
+
     let mut index = 0;
     while index < rest.len() {
         let flag = rest[index].as_str();
@@ -553,10 +606,42 @@ where
             options.engine = None;
             Ok(CliArgs::Compare(options))
         }
+        "route-probe" => unreachable!("route-probe is parsed before engine benchmark options"),
         other => Err(BenchError::InvalidArguments(format!(
             "unknown command `{other}`\n{USAGE}"
         ))),
     }
+}
+
+fn parse_route_probe_args(args: &[String]) -> Result<RouteProbeOptions, BenchError> {
+    let mut options = RouteProbeOptions::default();
+    let mut index = 0;
+    while index < args.len() {
+        let flag = args[index].as_str();
+        index += 1;
+        match flag {
+            "--iterations" => {
+                options.iterations =
+                    parse_nonzero_usize(required_value(args, &mut index, flag)?, flag)?;
+            }
+            "--rules" => {
+                options.rules = parse_usize(required_value(args, &mut index, flag)?, flag)?;
+            }
+            "--outbounds" => {
+                options.outbounds =
+                    parse_nonzero_usize(required_value(args, &mut index, flag)?, flag)?;
+            }
+            "--out-dir" => {
+                options.out_dir = PathBuf::from(required_value(args, &mut index, flag)?);
+            }
+            other => {
+                return Err(BenchError::InvalidArguments(format!(
+                    "unknown argument `{other}`\n{USAGE}"
+                )));
+            }
+        }
+    }
+    Ok(options)
 }
 
 fn required_value<'a>(
@@ -713,6 +798,17 @@ pub fn write_summary_json(path: &Path, summary: &BenchSummary) -> Result<(), Ben
     })
 }
 
+fn write_json<T: serde::Serialize>(path: &Path, value: &T) -> Result<(), BenchError> {
+    let data = serde_json::to_vec_pretty(value)
+        .map_err(|error| BenchError::InvalidArguments(format!("failed to encode json: {error}")))?;
+    fs::write(path, data).map_err(|error| {
+        BenchError::InvalidArguments(format!(
+            "failed to write json `{}`: {error}",
+            path.display()
+        ))
+    })
+}
+
 pub fn write_samples_csv(path: &Path, samples: &[ProcessSample]) -> Result<(), BenchError> {
     let mut csv = String::from("elapsed_ms,rss_kib,cpu_millis,threads\n");
     for sample in samples {
@@ -821,6 +917,10 @@ pub fn summarize_flow_setup_us(
 
     Some(FlowSetupSummary {
         tcp_connect_us: summarize_latency_us(samples.iter().map(|sample| sample.tcp_connect_us))?,
+        socks_method_us: summarize_latency_us(samples.iter().map(|sample| sample.socks_method_us))?,
+        socks_connect_us: summarize_latency_us(
+            samples.iter().map(|sample| sample.socks_connect_us),
+        )?,
         socks_setup_us: summarize_latency_us(samples.iter().map(|sample| sample.socks_setup_us))?,
         total_us: summarize_latency_us(samples.iter().map(|sample| sample.total_us))?,
     })
@@ -872,6 +972,12 @@ fn summarize_setup_results(results: &[BenchResult]) -> Option<FlowSetupSummaryAg
     Some(FlowSetupSummaryAggregate {
         tcp_connect_us: summarize_latency_aggregates(
             setup.iter().map(|summary| &summary.tcp_connect_us),
+        ),
+        socks_method_us: summarize_latency_aggregates(
+            setup.iter().map(|summary| &summary.socks_method_us),
+        ),
+        socks_connect_us: summarize_latency_aggregates(
+            setup.iter().map(|summary| &summary.socks_connect_us),
         ),
         socks_setup_us: summarize_latency_aggregates(
             setup.iter().map(|summary| &summary.socks_setup_us),
@@ -1517,13 +1623,14 @@ async fn open_idle_socks_flow(
             source,
         })?;
     let tcp_connect_us = tcp_started.elapsed().as_micros();
-    let socks_started = Instant::now();
-    socks5_connect(&mut client, target_addr).await?;
+    let socks = socks5_connect_measured(&mut client, target_addr).await?;
     Ok((
         client,
         FlowSetupSample {
             tcp_connect_us,
-            socks_setup_us: socks_started.elapsed().as_micros(),
+            socks_method_us: socks.method_us,
+            socks_connect_us: socks.connect_us,
+            socks_setup_us: socks.total_us,
             total_us: started.elapsed().as_micros(),
         },
     ))
@@ -1681,12 +1788,21 @@ async fn run_tun_tcp_freedom_connection(
 }
 
 async fn socks5_connect(client: &mut TcpStream, target: SocketAddr) -> Result<(), BenchError> {
+    socks5_connect_measured(client, target).await.map(|_| ())
+}
+
+async fn socks5_connect_measured(
+    client: &mut TcpStream,
+    target: SocketAddr,
+) -> Result<SocksSetupStageSample, BenchError> {
     let SocketAddr::V4(target) = target else {
         return Err(BenchError::InvalidArguments(
             "tcp-freedom workload currently uses IPv4 echo targets".to_owned(),
         ));
     };
 
+    let started = Instant::now();
+    let method_started = Instant::now();
     client
         .write_all(&[5, 1, 0])
         .await
@@ -1707,10 +1823,12 @@ async fn socks5_connect(client: &mut TcpStream, target: SocketAddr) -> Result<()
             "unexpected SOCKS method response {method:?}"
         )));
     }
+    let method_us = method_started.elapsed().as_micros();
 
     let mut request = vec![5, 1, 0, 1];
     request.extend_from_slice(&target.ip().octets());
     request.extend_from_slice(&target.port().to_be_bytes());
+    let connect_started = Instant::now();
     client
         .write_all(&request)
         .await
@@ -1731,8 +1849,13 @@ async fn socks5_connect(client: &mut TcpStream, target: SocketAddr) -> Result<()
             "unexpected SOCKS connect response {reply:?}"
         )));
     }
+    let connect_us = connect_started.elapsed().as_micros();
 
-    Ok(())
+    Ok(SocksSetupStageSample {
+        method_us,
+        connect_us,
+        total_us: started.elapsed().as_micros(),
+    })
 }
 
 async fn socks5_udp_associate(client: &mut TcpStream) -> Result<SocketAddr, BenchError> {
@@ -3461,7 +3584,96 @@ where
             Ok(())
         }
         CliArgs::Compare(options) => run_compare(options).await,
+        CliArgs::RouteProbe(options) => {
+            let result = run_route_probe(&options)?;
+            print_route_probe_result(&result);
+            Ok(())
+        }
     }
+}
+
+pub fn run_route_probe(options: &RouteProbeOptions) -> Result<RouteProbeResult, BenchError> {
+    let config = route_probe_config(options.rules, options.outbounds)?;
+    let target = Target::new(
+        RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7))),
+        443,
+        RoutingNetwork::Tcp,
+    );
+    let inbound_tag = Some("bench-in");
+    let started = Instant::now();
+    let mut selected = 0;
+    for _ in 0..options.iterations {
+        let outbound =
+            select_tcp_outbound_for_session(black_box(&config), inbound_tag, black_box(&target))
+                .map_err(|error| {
+                    BenchError::InvalidArguments(format!("route probe failed: {error}"))
+                })?;
+        if matches!(black_box(outbound), xray_core_rs::TcpOutbound::Freedom) {
+            selected += 1;
+        }
+    }
+    let elapsed = started.elapsed();
+    let result = RouteProbeResult {
+        iterations: options.iterations,
+        rules: options.rules,
+        outbounds: options.outbounds,
+        selected,
+        total_us: elapsed.as_micros(),
+        avg_ns: elapsed.as_nanos() / options.iterations as u128,
+    };
+
+    let run_dir = options.out_dir.join(new_run_id()).join("route-probe");
+    fs::create_dir_all(&run_dir).map_err(|source| BenchError::Io {
+        action: format!("creating route-probe directory `{}`", run_dir.display()),
+        source,
+    })?;
+    write_json(&run_dir.join("result.json"), &result)?;
+    Ok(result)
+}
+
+fn route_probe_config(rules: usize, outbounds: usize) -> Result<CoreConfig, BenchError> {
+    let outbound_count = outbounds.max(1);
+    let selected_tag = format!("out-{}", outbound_count - 1);
+    let outbounds = (0..outbound_count)
+        .map(|index| OutboundConfig {
+            tag: Some(format!("out-{index}")),
+            stream: StreamSettings {
+                network: ConfigNetwork::Tcp,
+                security: StreamSecurity::None,
+            },
+            settings: OutboundSettings::Freedom,
+        })
+        .collect::<Vec<_>>();
+
+    let mut routing_rules = Vec::with_capacity(rules);
+    for index in 0..rules {
+        let cidr = if index + 1 == rules {
+            IpCidr::full(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7)))
+        } else {
+            IpCidr::new(IpAddr::V4(Ipv4Addr::new(10, (index % 256) as u8, 0, 0)), 16)
+                .map_err(|error| BenchError::InvalidArguments(error.to_string()))?
+        };
+        routing_rules.push(RoutingRule {
+            inbound_tags: vec!["bench-in".to_owned()],
+            domain_matchers: Vec::new(),
+            ip_matchers: vec![IpMatcher::Cidr(cidr)],
+            outbound_tag: selected_tag.clone(),
+        });
+    }
+
+    Ok(CoreConfig {
+        inbounds: vec![InboundConfig {
+            tag: Some("bench-in".to_owned()),
+            protocol: InboundProtocol::Socks,
+            listen: "127.0.0.1".to_owned(),
+            port: 0,
+        }],
+        outbounds,
+        default_outbound_tag: Some(selected_tag),
+        routing: RoutingConfig {
+            rules: routing_rules,
+        },
+    })
 }
 
 pub async fn run_compare(options: BenchOptions) -> Result<(), BenchError> {
@@ -3634,12 +3846,14 @@ fn print_result(result: &BenchResult) {
         .as_ref()
         .map(|setup| {
             format!(
-                " setup_total_us[min/median/p95/p99]={}/{}/{}/{} setup_tcp_us[median]={} setup_socks_us[median]={}",
+                " setup_total_us[min/median/p95/p99]={}/{}/{}/{} setup_tcp_us[median]={} setup_socks_method_us[median]={} setup_socks_connect_us[median]={} setup_socks_us[median]={}",
                 setup.total_us.min,
                 setup.total_us.median,
                 setup.total_us.p95,
                 setup.total_us.p99,
                 setup.tcp_connect_us.median,
+                setup.socks_method_us.median,
+                setup.socks_connect_us.median,
                 setup.socks_setup_us.median,
             )
         })
@@ -3657,6 +3871,18 @@ fn print_result(result: &BenchResult) {
         cpu_per_gib,
         latency,
         setup
+    );
+}
+
+fn print_route_probe_result(result: &RouteProbeResult) {
+    println!(
+        "route-probe iterations={} rules={} outbounds={} selected={} total_us={} avg_ns={}",
+        result.iterations,
+        result.rules,
+        result.outbounds,
+        result.selected,
+        result.total_us,
+        result.avg_ns
     );
 }
 
@@ -3700,13 +3926,19 @@ fn print_summary(summary: &BenchSummary) {
         .as_ref()
         .map(|setup| {
             format!(
-                " setup_total_us[median:min/median/p95]={}/{}/{} setup_tcp_us[median:min/median/p95]={}/{}/{} setup_socks_us[median:min/median/p95]={}/{}/{}",
+                " setup_total_us[median:min/median/p95]={}/{}/{} setup_tcp_us[median:min/median/p95]={}/{}/{} setup_socks_method_us[median:min/median/p95]={}/{}/{} setup_socks_connect_us[median:min/median/p95]={}/{}/{} setup_socks_us[median:min/median/p95]={}/{}/{}",
                 setup.total_us.median.min,
                 setup.total_us.median.median,
                 setup.total_us.median.p95,
                 setup.tcp_connect_us.median.min,
                 setup.tcp_connect_us.median.median,
                 setup.tcp_connect_us.median.p95,
+                setup.socks_method_us.median.min,
+                setup.socks_method_us.median.median,
+                setup.socks_method_us.median.p95,
+                setup.socks_connect_us.median.min,
+                setup.socks_connect_us.median.median,
+                setup.socks_connect_us.median.p95,
                 setup.socks_setup_us.median.min,
                 setup.socks_setup_us.median.median,
                 setup.socks_setup_us.median.p95,
@@ -4251,16 +4483,22 @@ mod tests {
         let summary = summarize_flow_setup_us([
             FlowSetupSample {
                 tcp_connect_us: 100,
+                socks_method_us: 40,
+                socks_connect_us: 360,
                 socks_setup_us: 400,
                 total_us: 500,
             },
             FlowSetupSample {
                 tcp_connect_us: 200,
+                socks_method_us: 60,
+                socks_connect_us: 540,
                 socks_setup_us: 600,
                 total_us: 800,
             },
             FlowSetupSample {
                 tcp_connect_us: 150,
+                socks_method_us: 50,
+                socks_connect_us: 450,
                 socks_setup_us: 500,
                 total_us: 650,
             },
@@ -4268,8 +4506,37 @@ mod tests {
         .unwrap();
 
         assert_eq!(summary.tcp_connect_us.median, 150);
+        assert_eq!(summary.socks_method_us.median, 50);
+        assert_eq!(summary.socks_connect_us.median, 450);
         assert_eq!(summary.socks_setup_us.median, 500);
         assert_eq!(summary.total_us.median, 650);
+    }
+
+    #[test]
+    fn parses_route_probe_command() {
+        let args = parse_cli_args([
+            "xray-bench",
+            "route-probe",
+            "--iterations",
+            "500",
+            "--rules",
+            "64",
+            "--outbounds",
+            "8",
+            "--out-dir",
+            "target/benchmarks/route-probe",
+        ])
+        .unwrap();
+
+        assert_eq!(
+            args,
+            CliArgs::RouteProbe(RouteProbeOptions {
+                iterations: 500,
+                rules: 64,
+                outbounds: 8,
+                out_dir: PathBuf::from("target/benchmarks/route-probe"),
+            })
+        );
     }
 
     #[test]

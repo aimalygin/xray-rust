@@ -1,6 +1,8 @@
-use std::io::Cursor;
+use std::io::{self, Cursor};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use xray_proxy::inbound::{
     encode_socks5_udp_datagram, negotiate_socks5_no_auth, parse_http_connect, parse_socks5_connect,
     parse_socks5_request, parse_socks5_request_message, parse_socks5_udp_datagram,
@@ -8,6 +10,65 @@ use xray_proxy::inbound::{
     SocksCommand, SocksParseError,
 };
 use xray_routing::{Network, Target, TargetAddr};
+
+#[derive(Debug)]
+struct CountingIo {
+    input: Cursor<Vec<u8>>,
+    output: Vec<u8>,
+    read_calls: usize,
+    write_calls: usize,
+}
+
+impl CountingIo {
+    fn new(input: impl Into<Vec<u8>>) -> Self {
+        Self {
+            input: Cursor::new(input.into()),
+            output: Vec::new(),
+            read_calls: 0,
+            write_calls: 0,
+        }
+    }
+}
+
+impl AsyncRead for CountingIo {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        self.read_calls += 1;
+        let source = self.input.get_ref();
+        let start = self.input.position() as usize;
+        if start >= source.len() {
+            return Poll::Ready(Ok(()));
+        }
+
+        let len = buf.remaining().min(source.len() - start);
+        buf.put_slice(&source[start..start + len]);
+        self.input.set_position((start + len) as u64);
+        Poll::Ready(Ok(()))
+    }
+}
+
+impl AsyncWrite for CountingIo {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        self.write_calls += 1;
+        self.output.extend_from_slice(buf);
+        Poll::Ready(Ok(buf.len()))
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+}
 
 #[tokio::test]
 async fn socks5_negotiate_no_auth_writes_method_selection() {
@@ -36,6 +97,32 @@ async fn socks5_negotiate_rejects_when_no_auth_is_absent() {
         server_task.await.unwrap(),
         Err(SocksParseError::NoAcceptableMethods)
     );
+}
+
+#[tokio::test]
+async fn socks5_negotiate_no_auth_reads_greeting_with_two_io_reads() {
+    let mut stream = CountingIo::new([5, 2, 2, 0]);
+
+    negotiate_socks5_no_auth(&mut stream).await.unwrap();
+
+    assert_eq!(stream.read_calls, 2);
+    assert_eq!(stream.write_calls, 1);
+    assert_eq!(stream.output, [5, 0]);
+}
+
+#[tokio::test]
+async fn socks5_request_parser_reads_ipv4_request_with_two_io_reads() {
+    let mut reader = CountingIo::new([5, 1, 0, 1, 192, 0, 2, 1, 0, 80]);
+
+    let request = parse_socks5_request_message(&mut reader).await.unwrap();
+
+    assert_eq!(request.command, SocksCommand::Connect);
+    assert_eq!(request.target.port, 80);
+    assert_eq!(
+        request.target.addr,
+        TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1)))
+    );
+    assert_eq!(reader.read_calls, 2);
 }
 
 #[tokio::test]

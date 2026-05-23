@@ -1,9 +1,9 @@
 use std::{fmt, sync::Arc};
 
 use crate::{
-    BoxedTransportStream, ConnectorConfig, RealityRuntimeEngine, RealityTlsEngine,
-    RustlsRealityTlsSessionProvider, SocketProtector, TcpConnector, TlsConnector,
-    TransportConnector, TransportError,
+    connect_tcp_target, BoxedTransportStream, ConnectorConfig, RealityRuntimeEngine,
+    RealityTlsEngine, RustlsRealityTlsSessionProvider, SocketProtector, TlsConnector,
+    TransportError,
 };
 use xray_routing::Target;
 
@@ -79,14 +79,9 @@ impl TransportDialer {
         target: &Target,
     ) -> Result<BoxedTransportStream, TransportError> {
         match config {
-            ConnectorConfig::Tcp => {
-                let connector = match &self.socket_protector {
-                    Some(protector) => TcpConnector::new(ConnectorConfig::Tcp)
-                        .with_socket_protector(Arc::clone(protector)),
-                    None => TcpConnector::new(ConnectorConfig::Tcp),
-                };
-                connector.connect(target).await
-            }
+            ConnectorConfig::Tcp => Ok(Box::new(
+                connect_tcp_target(target, self.socket_protector.as_deref()).await?,
+            )),
             ConnectorConfig::Tls(tls_config) => self.tls.connect(target, tls_config).await,
             ConnectorConfig::Reality(reality_config) => match &self.reality {
                 Some(reality) => reality.connect(reality_config, target).await,

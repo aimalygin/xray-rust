@@ -20,5 +20,7 @@ smoltcp.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-rustls.workspace = true
+xray-config = { path = "../xray-config" }
+xray-core-rs = { path = "../xray-core-rs" }
 xray-proxy = { path = "../xray-proxy" }
 xray-routing = { path = "../xray-routing" }

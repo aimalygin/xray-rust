@@ -251,20 +251,31 @@ impl TransportConnector for TcpConnector {
             }
         }
 
-        let addr = match &target.addr {
-            TargetAddr::Ip(ip) => SocketAddr::new(*ip, target.port),
-            TargetAddr::Domain(domain) => return Err(TransportError::NeedsDns(domain.clone())),
-        };
-
-        let stream = connect_tcp_stream(addr, self.socket_protector.as_deref()).await?;
+        let stream = connect_tcp_target(target, self.socket_protector.as_deref()).await?;
         Ok(Box::new(stream))
     }
+}
+
+pub async fn connect_tcp_target(
+    target: &Target,
+    socket_protector: Option<&dyn SocketProtector>,
+) -> Result<TcpStream, TransportError> {
+    let addr = match &target.addr {
+        TargetAddr::Ip(ip) => SocketAddr::new(*ip, target.port),
+        TargetAddr::Domain(domain) => return Err(TransportError::NeedsDns(domain.clone())),
+    };
+
+    connect_tcp_stream(addr, socket_protector).await
 }
 
 pub async fn connect_tcp_stream(
     addr: SocketAddr,
     socket_protector: Option<&dyn SocketProtector>,
 ) -> Result<TcpStream, TransportError> {
+    let Some(socket_protector) = socket_protector else {
+        return TcpStream::connect(addr).await.map_err(TransportError::Tcp);
+    };
+
     let socket = if addr.is_ipv4() {
         TcpSocket::new_v4()
     } else {
@@ -272,11 +283,9 @@ pub async fn connect_tcp_stream(
     }
     .map_err(TransportError::Tcp)?;
 
-    if let Some(protector) = socket_protector {
-        protector
-            .protect(SocketHandle::from_tcp_socket(&socket))
-            .map_err(TransportError::SocketProtection)?;
-    }
+    socket_protector
+        .protect(SocketHandle::from_tcp_socket(&socket))
+        .map_err(TransportError::SocketProtection)?;
 
     socket.connect(addr).await.map_err(TransportError::Tcp)
 }

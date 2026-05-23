@@ -55,6 +55,7 @@ cargo run -p xray-bench -- run --engine xray-rust --workload udp-vless --connect
 cargo run -p xray-bench -- run --engine xray-rust --workload udp-xudp --connections 1 --iterations 10 --payload-size 512
 cargo run -p xray-bench -- run --engine xray-rust --workload vision-xudp --connections 1 --iterations 10 --payload-size 512
 cargo run -p xray-bench -- run --engine xray-rust --workload tcp-freedom --runs 5 --connections 8 --iterations 1000 --payload-size 4096
+cargo run -p xray-bench -- route-probe --iterations 100000 --rules 64 --outbounds 8
 ```
 
 By default, the harness uses `target/debug/xray-rust` or builds it with:
@@ -114,7 +115,7 @@ The first scoreboard is intentionally portable and comparable across Go and Rust
 - thread count when the local `ps` implementation exposes it.
 - validated bytes sent and received by the workload.
 - latency microsecond percentiles for traffic workloads. For `many-idle-flows`, latency is SOCKS TCP flow setup time.
-- setup microsecond breakdown for SOCKS TCP setup workloads: local TCP connect to the inbound, SOCKS setup including CONNECT response, and total setup time.
+- setup microsecond breakdown for SOCKS TCP setup workloads: local TCP connect to the inbound, SOCKS method negotiation, SOCKS CONNECT request/response, full SOCKS setup, and total setup time.
 - min, median, and p95 aggregates across repeated runs.
 
 `tcp-freedom`, `udp-freedom`, `tun-udp-freedom`, `udp-vless`, `udp-xudp`, and `vision-xudp` record one round-trip latency sample per validated payload iteration. `summary.json` aggregates each run's latency min/median/p95/p99 across repeated runs.
@@ -127,5 +128,7 @@ The first scoreboard is intentionally portable and comparable across Go and Rust
 `udp-vless` uses the same SOCKS5 UDP client path, but routes through a local fake VLESS UDP server over TCP before validating echoed UDP payloads. It targets UDP/53 to keep the VLESS UDP framing length-prefixed.
 `udp-xudp` targets a non-DNS UDP port and validates XUDP/Mux frames through the local fake VLESS server.
 `vision-xudp` uses VLESS over local TLS with `xtls-rprx-vision`, `allowInsecure`, and XUDP/Mux frames against a local fake Vision server.
+
+`route-probe` is an in-process xray-rust microprobe for setup-path routing cost. It builds a synthetic config with IP/CIDR routing rules and tagged freedom outbounds, then repeatedly calls the same TCP outbound selection path used by SOCKS CONNECT. This isolates routing/outbound selection from TCP accept, SOCKS parsing, and outbound socket connect noise.
 
 Later benchmark slices should add TCP-over-TUN workloads and mobile-native traces from Instruments or Perfetto. This harness keeps those paths open without putting benchmark logic into the production runtime.
