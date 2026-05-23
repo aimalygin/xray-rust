@@ -57,6 +57,11 @@ cargo build -p xray-cli --bin xray-rust
 
 Use `--xray-rust-bin <path>` to point at an already built binary.
 
+Each run has a watchdog timeout. The default is 30 seconds; override it with
+`--run-timeout-ms <milliseconds>` when exercising intentionally slow workloads.
+On timeout, the harness drops the running engine handle so the child process is
+terminated instead of leaving a stuck benchmark behind.
+
 ## Compare With Xray-core
 
 From the main repository checkout:

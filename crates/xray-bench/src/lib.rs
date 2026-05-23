@@ -16,7 +16,7 @@ use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::task::JoinHandle;
-use tokio::time::sleep;
+use tokio::time::{sleep, timeout};
 use tokio_rustls::TlsAcceptor;
 use xray_proxy::vless::{
     encode_udp_packet, encode_xudp_keep_packet, read_udp_packet, read_xudp_packet,
@@ -49,6 +49,8 @@ pub enum BenchError {
         stdout: String,
         stderr: String,
     },
+    #[error("benchmark run timed out after {timeout_ms} ms")]
+    Timeout { timeout_ms: u128 },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -132,6 +134,7 @@ pub struct BenchOptions {
     pub workload: WorkloadKind,
     pub duration: Duration,
     pub sample_interval: Duration,
+    pub run_timeout: Duration,
     pub connections: usize,
     pub iterations: usize,
     pub payload_size: usize,
@@ -343,6 +346,7 @@ impl Default for BenchOptions {
             workload: WorkloadKind::Idle,
             duration: Duration::from_secs(2),
             sample_interval: Duration::from_millis(100),
+            run_timeout: Duration::from_secs(30),
             connections: 1,
             iterations: 1,
             payload_size: 1024,
@@ -388,6 +392,12 @@ where
             }
             "--sample-interval-ms" => {
                 options.sample_interval = Duration::from_millis(parse_u64(
+                    required_value(&rest, &mut index, flag)?,
+                    flag,
+                )?);
+            }
+            "--run-timeout-ms" => {
+                options.run_timeout = Duration::from_millis(parse_nonzero_u64(
                     required_value(&rest, &mut index, flag)?,
                     flag,
                 )?);
@@ -471,6 +481,16 @@ fn required_value<'a>(
 fn parse_u64(raw: &str, flag: &str) -> Result<u64, BenchError> {
     raw.parse::<u64>()
         .map_err(|_| BenchError::InvalidArguments(format!("invalid integer `{raw}` for {flag}")))
+}
+
+fn parse_nonzero_u64(raw: &str, flag: &str) -> Result<u64, BenchError> {
+    let value = parse_u64(raw, flag)?;
+    if value == 0 {
+        return Err(BenchError::InvalidArguments(format!(
+            "{flag} must be greater than zero"
+        )));
+    }
+    Ok(value)
 }
 
 fn parse_usize(raw: &str, flag: &str) -> Result<usize, BenchError> {
@@ -1570,51 +1590,116 @@ async fn handle_fake_vless_vision_xudp_frames<S>(inbound: &mut S) -> Result<(), 
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    let mut inbound_user_id_seen = false;
+    let mut read_state = VisionXudpReadState::default();
     let mut padding = VisionPadding::new(TEST_VLESS_UUID, [0, 0, 0, 0]);
     loop {
-        let vision_payload = match read_vision_payload(inbound, &mut inbound_user_id_seen).await {
-            Ok(payload) => payload,
+        let packets = match read_next_vision_xudp_packets(inbound, &mut read_state).await {
+            Ok(Some(packets)) => packets,
+            Ok(None) => break,
             Err(_) => break,
         };
-        let mut cursor = std::io::Cursor::new(vision_payload.to_vec());
-        let packet = read_xudp_packet(&mut cursor)
-            .await
-            .map_err(|source| BenchError::Io {
-                action: "reading fake VLESS Vision XUDP packet".to_owned(),
-                source,
-            })?;
-        let source = packet.source.unwrap_or_else(|| {
-            Target::new(
-                RoutingTargetAddr::Ip(Ipv4Addr::LOCALHOST.into()),
-                9,
-                RoutingNetwork::Udp,
-            )
-        });
-        let frame = encode_xudp_keep_packet(Some(&source), &packet.payload).map_err(|error| {
-            BenchError::InvalidArguments(format!("encoding fake VLESS Vision XUDP packet: {error}"))
-        })?;
-        let padded = padding
-            .pad(BytesMut::from(&frame[..]), VisionCommand::Continue, 0)
-            .map_err(|error| {
-                BenchError::InvalidArguments(format!("padding fake Vision response: {error}"))
-            })?;
-        inbound
-            .write_all(&padded)
-            .await
-            .map_err(|source| BenchError::Io {
-                action: "writing fake VLESS Vision XUDP echo packet".to_owned(),
-                source,
-            })?;
+        for packet in packets {
+            let source = packet.source.unwrap_or_else(|| {
+                Target::new(
+                    RoutingTargetAddr::Ip(Ipv4Addr::LOCALHOST.into()),
+                    9,
+                    RoutingNetwork::Udp,
+                )
+            });
+            let frame =
+                encode_xudp_keep_packet(Some(&source), &packet.payload).map_err(|error| {
+                    BenchError::InvalidArguments(format!(
+                        "encoding fake VLESS Vision XUDP packet: {error}"
+                    ))
+                })?;
+            let padded = padding
+                .pad(BytesMut::from(&frame[..]), VisionCommand::Continue, 0)
+                .map_err(|error| {
+                    BenchError::InvalidArguments(format!("padding fake Vision response: {error}"))
+                })?;
+            inbound
+                .write_all(&padded)
+                .await
+                .map_err(|source| BenchError::Io {
+                    action: "writing fake VLESS Vision XUDP echo packet".to_owned(),
+                    source,
+                })?;
+        }
     }
 
     Ok(())
 }
 
-async fn read_vision_payload<S>(
+#[derive(Debug, Default)]
+struct VisionXudpReadState {
+    user_id_seen: bool,
+    raw_xudp: bool,
+}
+
+async fn read_next_vision_xudp_packets<S>(
+    inbound: &mut S,
+    state: &mut VisionXudpReadState,
+) -> Result<Option<Vec<xray_proxy::vless::XudpPacket>>, BenchError>
+where
+    S: AsyncRead + Unpin,
+{
+    loop {
+        if state.raw_xudp {
+            return match read_xudp_packet(inbound).await {
+                Ok(packet) => Ok(Some(vec![packet])),
+                Err(source) if source.kind() == std::io::ErrorKind::UnexpectedEof => Ok(None),
+                Err(source) => Err(BenchError::Io {
+                    action: "reading raw fake VLESS Vision XUDP packet".to_owned(),
+                    source,
+                }),
+            };
+        }
+
+        let block = match read_vision_block(inbound, &mut state.user_id_seen).await {
+            Ok(block) => block,
+            Err(BenchError::Io { source, .. })
+                if source.kind() == std::io::ErrorKind::UnexpectedEof =>
+            {
+                return Ok(None);
+            }
+            Err(error) => return Err(error),
+        };
+        if matches!(block.command, VisionCommand::End | VisionCommand::Direct) {
+            state.raw_xudp = true;
+        }
+
+        let packets = read_xudp_packets_from_payload(&block.payload).await?;
+        if packets.is_empty() {
+            continue;
+        }
+        return Ok(Some(packets));
+    }
+}
+
+async fn read_xudp_packets_from_payload(
+    payload: &[u8],
+) -> Result<Vec<xray_proxy::vless::XudpPacket>, BenchError> {
+    let mut cursor = std::io::Cursor::new(payload.to_vec());
+    let mut packets = Vec::new();
+    while cursor.position() < payload.len() as u64 {
+        match read_xudp_packet(&mut cursor).await {
+            Ok(packet) => packets.push(packet),
+            Err(source) if source.kind() == std::io::ErrorKind::UnexpectedEof => break,
+            Err(source) => {
+                return Err(BenchError::Io {
+                    action: "reading fake VLESS Vision XUDP packet".to_owned(),
+                    source,
+                })
+            }
+        }
+    }
+    Ok(packets)
+}
+
+async fn read_vision_block<S>(
     stream: &mut S,
     user_id_seen: &mut bool,
-) -> Result<BytesMut, BenchError>
+) -> Result<xray_proxy::vless::UnpaddedVisionBlock, BenchError>
 where
     S: AsyncRead + Unpin,
 {
@@ -1659,16 +1744,9 @@ where
         })?;
     frame.extend_from_slice(&rest);
 
-    let block = unpad_vision_block(&frame, &TEST_VLESS_UUID).map_err(|error| {
+    unpad_vision_block(&frame, &TEST_VLESS_UUID).map_err(|error| {
         BenchError::InvalidArguments(format!("unpadding fake Vision request: {error}"))
-    })?;
-    if block.command != VisionCommand::Continue {
-        return Err(BenchError::InvalidArguments(format!(
-            "unexpected Vision command {:?}",
-            block.command
-        )));
-    }
-    Ok(block.payload)
+    })
 }
 
 fn fake_tls_server_config() -> Result<Arc<rustls::ServerConfig>, BenchError> {
@@ -2587,8 +2665,19 @@ async fn run_engine_once(
             WorkloadKind::VisionXudp => run_vision_xudp_workload(engine.socks_addr, options).await,
         }
     };
-    let ((bytes_sent, bytes_received), samples) =
-        sample_while(engine.pid, options.sample_interval, workload).await?;
+    let ((bytes_sent, bytes_received), samples) = match timeout(
+        options.run_timeout,
+        sample_while(engine.pid, options.sample_interval, workload),
+    )
+    .await
+    {
+        Ok(result) => result?,
+        Err(_) => {
+            return Err(BenchError::Timeout {
+                timeout_ms: options.run_timeout.as_millis(),
+            })
+        }
+    };
     let mut summary = summarize_samples(&samples);
     summary.bytes_sent = bytes_sent;
     summary.bytes_received = bytes_received;
@@ -2710,6 +2799,7 @@ mod tests {
                 workload: WorkloadKind::Idle,
                 duration: Duration::from_millis(250),
                 sample_interval: Duration::from_millis(50),
+                run_timeout: Duration::from_secs(30),
                 connections: 1,
                 iterations: 1,
                 payload_size: 1024,
@@ -2721,6 +2811,24 @@ mod tests {
                 no_auto_build: false,
             })
         );
+    }
+
+    #[test]
+    fn parses_run_timeout_ms() {
+        let args = parse_cli_args([
+            "xray-bench",
+            "compare",
+            "--workload",
+            "vision-xudp",
+            "--run-timeout-ms",
+            "1500",
+        ])
+        .unwrap();
+
+        let CliArgs::Compare(options) = args else {
+            panic!("expected compare args");
+        };
+        assert_eq!(options.run_timeout, Duration::from_millis(1500));
     }
 
     #[test]
@@ -2901,6 +3009,92 @@ mod tests {
         assert!(error
             .to_string()
             .contains("--runs must be greater than zero"));
+    }
+
+    #[tokio::test]
+    async fn fake_vision_xudp_reader_skips_empty_padding_blocks() {
+        let source = Target::new(
+            RoutingTargetAddr::Ip(Ipv4Addr::LOCALHOST.into()),
+            9,
+            RoutingNetwork::Udp,
+        );
+        let frame = encode_xudp_keep_packet(Some(&source), b"hello vision").unwrap();
+        let mut padding = VisionPadding::new(TEST_VLESS_UUID, [0, 0, 0, 0]);
+        let empty = padding
+            .pad(BytesMut::new(), VisionCommand::Continue, 32)
+            .unwrap();
+        let payload = padding
+            .pad(BytesMut::from(&frame[..]), VisionCommand::Continue, 0)
+            .unwrap();
+        let mut stream = std::io::Cursor::new([empty.to_vec(), payload.to_vec()].concat());
+        let mut state = VisionXudpReadState::default();
+
+        let packets = read_next_vision_xudp_packets(&mut stream, &mut state)
+            .await
+            .unwrap()
+            .expect("xudp packets");
+
+        assert_eq!(packets.len(), 1);
+        assert_eq!(packets[0].payload.as_ref(), b"hello vision");
+        assert_eq!(packets[0].source, Some(source));
+    }
+
+    #[tokio::test]
+    async fn fake_vision_xudp_reader_preserves_batched_xudp_frames() {
+        let source = Target::new(
+            RoutingTargetAddr::Ip(Ipv4Addr::LOCALHOST.into()),
+            9,
+            RoutingNetwork::Udp,
+        );
+        let first = encode_xudp_keep_packet(Some(&source), b"first").unwrap();
+        let second = encode_xudp_keep_packet(Some(&source), b"second").unwrap();
+        let mut batched = Vec::new();
+        batched.extend_from_slice(&first);
+        batched.extend_from_slice(&second);
+        let mut padding = VisionPadding::new(TEST_VLESS_UUID, [0, 0, 0, 0]);
+        let payload = padding
+            .pad(BytesMut::from(&batched[..]), VisionCommand::Continue, 0)
+            .unwrap();
+        let mut stream = std::io::Cursor::new(payload.to_vec());
+        let mut state = VisionXudpReadState::default();
+
+        let packets = read_next_vision_xudp_packets(&mut stream, &mut state)
+            .await
+            .unwrap()
+            .expect("xudp packets");
+
+        assert_eq!(packets.len(), 2);
+        assert_eq!(packets[0].payload.as_ref(), b"first");
+        assert_eq!(packets[1].payload.as_ref(), b"second");
+    }
+
+    #[tokio::test]
+    async fn fake_vision_xudp_reader_switches_to_raw_after_end_block() {
+        let source = Target::new(
+            RoutingTargetAddr::Ip(Ipv4Addr::LOCALHOST.into()),
+            9,
+            RoutingNetwork::Udp,
+        );
+        let padded_frame = encode_xudp_keep_packet(Some(&source), b"padded").unwrap();
+        let raw_frame = encode_xudp_keep_packet(Some(&source), b"raw").unwrap();
+        let mut padding = VisionPadding::new(TEST_VLESS_UUID, [0, 0, 0, 0]);
+        let end_block = padding
+            .pad(BytesMut::from(&padded_frame[..]), VisionCommand::End, 0)
+            .unwrap();
+        let mut stream = std::io::Cursor::new([end_block.to_vec(), raw_frame].concat());
+        let mut state = VisionXudpReadState::default();
+
+        let padded_packets = read_next_vision_xudp_packets(&mut stream, &mut state)
+            .await
+            .unwrap()
+            .expect("padded packet");
+        let raw_packets = read_next_vision_xudp_packets(&mut stream, &mut state)
+            .await
+            .unwrap()
+            .expect("raw packet");
+
+        assert_eq!(padded_packets[0].payload.as_ref(), b"padded");
+        assert_eq!(raw_packets[0].payload.as_ref(), b"raw");
     }
 
     #[test]
