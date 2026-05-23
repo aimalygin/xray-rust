@@ -88,6 +88,7 @@ impl EngineKind {
 pub enum WorkloadKind {
     Idle,
     TcpFreedom,
+    ManyIdleFlows,
     UdpFreedom,
     TunUdpFreedom,
     UdpVless,
@@ -100,6 +101,7 @@ impl WorkloadKind {
         match self {
             Self::Idle => "idle",
             Self::TcpFreedom => "tcp-freedom",
+            Self::ManyIdleFlows => "many-idle-flows",
             Self::UdpFreedom => "udp-freedom",
             Self::TunUdpFreedom => "tun-udp-freedom",
             Self::UdpVless => "udp-vless",
@@ -112,6 +114,7 @@ impl WorkloadKind {
         match raw {
             "idle" => Ok(Self::Idle),
             "tcp-freedom" => Ok(Self::TcpFreedom),
+            "many-idle-flows" => Ok(Self::ManyIdleFlows),
             "udp-freedom" => Ok(Self::UdpFreedom),
             "tun-udp-freedom" => Ok(Self::TunUdpFreedom),
             "udp-vless" => Ok(Self::UdpVless),
@@ -164,6 +167,8 @@ pub struct BenchResult {
     pub bytes_received: u64,
     pub peak_rss_kib: u64,
     pub cpu_millis: u64,
+    pub cpu_millis_per_gib: Option<u128>,
+    pub latency_us: Option<LatencySummary>,
     pub samples: usize,
 }
 
@@ -175,6 +180,22 @@ pub struct MetricSummary {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct LatencySummary {
+    pub min: u128,
+    pub median: u128,
+    pub p95: u128,
+    pub p99: u128,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct LatencySummaryAggregate {
+    pub min: MetricSummary,
+    pub median: MetricSummary,
+    pub p95: MetricSummary,
+    pub p99: MetricSummary,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct BenchSummary {
     pub engine: String,
     pub workload: String,
@@ -183,6 +204,8 @@ pub struct BenchSummary {
     pub duration_ms: MetricSummary,
     pub peak_rss_kib: MetricSummary,
     pub cpu_millis: MetricSummary,
+    pub cpu_millis_per_gib: Option<MetricSummary>,
+    pub latency_us: Option<LatencySummaryAggregate>,
     pub bytes_sent: MetricSummary,
     pub bytes_received: MetricSummary,
     pub results: Vec<BenchResult>,
@@ -194,6 +217,25 @@ pub struct WorkloadSummary {
     pub bytes_received: u64,
     pub peak_rss_kib: u64,
     pub cpu_millis: u64,
+}
+
+#[derive(Debug, Default)]
+pub struct WorkloadOutcome {
+    pub bytes_sent: u64,
+    pub bytes_received: u64,
+    pub latencies_us: Vec<u128>,
+}
+
+impl WorkloadOutcome {
+    fn empty() -> Self {
+        Self::default()
+    }
+
+    fn extend(&mut self, other: Self) {
+        self.bytes_sent += other.bytes_sent;
+        self.bytes_received += other.bytes_received;
+        self.latencies_us.extend(other.latencies_us);
+    }
 }
 
 #[derive(Debug)]
@@ -318,6 +360,7 @@ impl WorkloadFixture {
             }
             WorkloadKind::Idle
             | WorkloadKind::TcpFreedom
+            | WorkloadKind::ManyIdleFlows
             | WorkloadKind::UdpFreedom
             | WorkloadKind::TunUdpFreedom => Ok(Self::default()),
         }
@@ -682,6 +725,10 @@ pub fn summarize_results(results: &[BenchResult]) -> Result<BenchSummary, BenchE
             results.iter().map(|result| u128::from(result.peak_rss_kib)),
         ),
         cpu_millis: summarize_metric(results.iter().map(|result| u128::from(result.cpu_millis))),
+        cpu_millis_per_gib: summarize_optional_metric(
+            results.iter().map(|result| result.cpu_millis_per_gib),
+        ),
+        latency_us: summarize_latency_results(results),
         bytes_sent: summarize_metric(results.iter().map(|result| u128::from(result.bytes_sent))),
         bytes_received: summarize_metric(
             results
@@ -689,6 +736,47 @@ pub fn summarize_results(results: &[BenchResult]) -> Result<BenchSummary, BenchE
                 .map(|result| u128::from(result.bytes_received)),
         ),
         results: results.to_vec(),
+    })
+}
+
+pub fn summarize_latency_us(values: impl IntoIterator<Item = u128>) -> Option<LatencySummary> {
+    let mut values = values.into_iter().collect::<Vec<_>>();
+    if values.is_empty() {
+        return None;
+    }
+    values.sort_unstable();
+    Some(LatencySummary {
+        min: values.first().copied().unwrap_or_default(),
+        median: median(&values),
+        p95: percentile_nearest_rank(&values, 95),
+        p99: percentile_nearest_rank(&values, 99),
+    })
+}
+
+fn summarize_optional_metric(
+    values: impl IntoIterator<Item = Option<u128>>,
+) -> Option<MetricSummary> {
+    let values = values.into_iter().flatten().collect::<Vec<_>>();
+    if values.is_empty() {
+        return None;
+    }
+    Some(summarize_metric(values))
+}
+
+fn summarize_latency_results(results: &[BenchResult]) -> Option<LatencySummaryAggregate> {
+    let latencies = results
+        .iter()
+        .filter_map(|result| result.latency_us.as_ref())
+        .collect::<Vec<_>>();
+    if latencies.is_empty() {
+        return None;
+    }
+
+    Some(LatencySummaryAggregate {
+        min: summarize_metric(latencies.iter().map(|latency| latency.min)),
+        median: summarize_metric(latencies.iter().map(|latency| latency.median)),
+        p95: summarize_metric(latencies.iter().map(|latency| latency.p95)),
+        p99: summarize_metric(latencies.iter().map(|latency| latency.p99)),
     })
 }
 
@@ -718,15 +806,23 @@ fn percentile_nearest_rank(sorted_values: &[u128], percentile: usize) -> u128 {
     sorted_values[rank.saturating_sub(1)]
 }
 
-pub async fn run_idle_workload(duration: Duration) -> Result<(u64, u64), BenchError> {
+fn cpu_millis_per_gib(cpu_millis: u64, bytes_sent: u64, bytes_received: u64) -> Option<u128> {
+    let bytes = u128::from(bytes_sent) + u128::from(bytes_received);
+    if bytes == 0 {
+        return None;
+    }
+    Some((u128::from(cpu_millis) * 1024 * 1024 * 1024).div_ceil(bytes))
+}
+
+pub async fn run_idle_workload(duration: Duration) -> Result<WorkloadOutcome, BenchError> {
     sleep(duration).await;
-    Ok((0, 0))
+    Ok(WorkloadOutcome::empty())
 }
 
 pub async fn run_tcp_freedom_workload(
     socks_addr: SocketAddr,
     options: &BenchOptions,
-) -> Result<(u64, u64), BenchError> {
+) -> Result<WorkloadOutcome, BenchError> {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
         .await
         .map_err(|source| BenchError::Io {
@@ -757,24 +853,74 @@ pub async fn run_tcp_freedom_workload(
         }));
     }
 
-    let mut sent = 0;
-    let mut received = 0;
+    let mut outcome = WorkloadOutcome::empty();
     for task in tasks {
-        let (task_sent, task_received) = task.await.map_err(|error| {
+        let task_outcome = task.await.map_err(|error| {
             BenchError::InvalidArguments(format!("tcp workload task failed: {error}"))
         })??;
-        sent += task_sent;
-        received += task_received;
+        outcome.extend(task_outcome);
     }
     echo_task.abort();
 
-    Ok((sent, received))
+    Ok(outcome)
+}
+
+pub async fn run_many_idle_flows_workload(
+    socks_addr: SocketAddr,
+    options: &BenchOptions,
+) -> Result<WorkloadOutcome, BenchError> {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "binding idle-flow TCP target".to_owned(),
+            source,
+        })?;
+    let target_addr = listener.local_addr().map_err(|source| BenchError::Io {
+        action: "reading idle-flow TCP target address".to_owned(),
+        source,
+    })?;
+    let accept_task = tokio::spawn(async move {
+        while let Ok((stream, _peer)) = listener.accept().await {
+            tokio::spawn(async move {
+                let mut stream = stream;
+                let mut byte = [0; 1];
+                let _ = stream.read(&mut byte).await;
+            });
+        }
+    });
+
+    let mut tasks = Vec::with_capacity(options.connections);
+    for _ in 0..options.connections {
+        tasks.push(tokio::spawn(async move {
+            open_idle_socks_flow(socks_addr, target_addr).await
+        }));
+    }
+
+    let mut held_flows = Vec::with_capacity(options.connections);
+    let mut latencies_us = Vec::with_capacity(options.connections);
+    for task in tasks {
+        let (stream, latency_us) = task.await.map_err(|error| {
+            BenchError::InvalidArguments(format!("idle-flow workload task failed: {error}"))
+        })??;
+        held_flows.push(stream);
+        latencies_us.push(latency_us);
+    }
+
+    sleep(options.duration).await;
+    drop(held_flows);
+    accept_task.abort();
+
+    Ok(WorkloadOutcome {
+        bytes_sent: 0,
+        bytes_received: 0,
+        latencies_us,
+    })
 }
 
 pub async fn run_udp_freedom_workload(
     socks_addr: SocketAddr,
     options: &BenchOptions,
-) -> Result<(u64, u64), BenchError> {
+) -> Result<WorkloadOutcome, BenchError> {
     let echo_socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
         .await
         .map_err(|source| BenchError::Io {
@@ -800,25 +946,23 @@ pub async fn run_udp_freedom_workload(
         }));
     }
 
-    let mut sent = 0;
-    let mut received = 0;
+    let mut outcome = WorkloadOutcome::empty();
     for task in tasks {
-        let (task_sent, task_received) = task.await.map_err(|error| {
+        let task_outcome = task.await.map_err(|error| {
             BenchError::InvalidArguments(format!("udp workload task failed: {error}"))
         })??;
-        sent += task_sent;
-        received += task_received;
+        outcome.extend(task_outcome);
     }
     echo_task.abort();
 
-    Ok((sent, received))
+    Ok(outcome)
 }
 
 #[cfg(unix)]
 pub async fn run_tun_udp_freedom_workload(
     tun_fd: RawFd,
     options: &BenchOptions,
-) -> Result<(u64, u64), BenchError> {
+) -> Result<WorkloadOutcome, BenchError> {
     let echo_socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))
         .await
         .map_err(|source| BenchError::Io {
@@ -837,25 +981,23 @@ pub async fn run_tun_udp_freedom_workload(
         }
     });
 
-    let mut sent = 0;
-    let mut received = 0;
+    let mut outcome = WorkloadOutcome::empty();
     for connection_index in 0..options.connections {
         let source_port = 40_000 + (connection_index % 20_000) as u16;
-        let (connection_sent, connection_received) =
+        let connection_outcome =
             run_tun_udp_freedom_connection(tun_fd, echo_target, source_port, options).await?;
-        sent += connection_sent;
-        received += connection_received;
+        outcome.extend(connection_outcome);
     }
     echo_task.abort();
 
-    Ok((sent, received))
+    Ok(outcome)
 }
 
 #[cfg(not(unix))]
 pub async fn run_tun_udp_freedom_workload(
     _tun_fd: i32,
     _options: &BenchOptions,
-) -> Result<(u64, u64), BenchError> {
+) -> Result<WorkloadOutcome, BenchError> {
     Err(BenchError::InvalidArguments(
         "tun-udp-freedom workload requires Unix fd support".to_owned(),
     ))
@@ -864,7 +1006,7 @@ pub async fn run_tun_udp_freedom_workload(
 pub async fn run_udp_vless_workload(
     socks_addr: SocketAddr,
     options: &BenchOptions,
-) -> Result<(u64, u64), BenchError> {
+) -> Result<WorkloadOutcome, BenchError> {
     let echo_addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 53));
     let mut tasks = Vec::with_capacity(options.connections);
     for _ in 0..options.connections {
@@ -874,23 +1016,21 @@ pub async fn run_udp_vless_workload(
         }));
     }
 
-    let mut sent = 0;
-    let mut received = 0;
+    let mut outcome = WorkloadOutcome::empty();
     for task in tasks {
-        let (task_sent, task_received) = task.await.map_err(|error| {
+        let task_outcome = task.await.map_err(|error| {
             BenchError::InvalidArguments(format!("udp vless workload task failed: {error}"))
         })??;
-        sent += task_sent;
-        received += task_received;
+        outcome.extend(task_outcome);
     }
 
-    Ok((sent, received))
+    Ok(outcome)
 }
 
 pub async fn run_udp_xudp_workload(
     socks_addr: SocketAddr,
     options: &BenchOptions,
-) -> Result<(u64, u64), BenchError> {
+) -> Result<WorkloadOutcome, BenchError> {
     let echo_addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 9));
     let mut tasks = Vec::with_capacity(options.connections);
     for _ in 0..options.connections {
@@ -900,23 +1040,21 @@ pub async fn run_udp_xudp_workload(
         }));
     }
 
-    let mut sent = 0;
-    let mut received = 0;
+    let mut outcome = WorkloadOutcome::empty();
     for task in tasks {
-        let (task_sent, task_received) = task.await.map_err(|error| {
+        let task_outcome = task.await.map_err(|error| {
             BenchError::InvalidArguments(format!("udp xudp workload task failed: {error}"))
         })??;
-        sent += task_sent;
-        received += task_received;
+        outcome.extend(task_outcome);
     }
 
-    Ok((sent, received))
+    Ok(outcome)
 }
 
 pub async fn run_vision_xudp_workload(
     socks_addr: SocketAddr,
     options: &BenchOptions,
-) -> Result<(u64, u64), BenchError> {
+) -> Result<WorkloadOutcome, BenchError> {
     run_udp_xudp_workload(socks_addr, options).await
 }
 
@@ -924,7 +1062,7 @@ async fn run_tcp_freedom_connection(
     socks_addr: SocketAddr,
     echo_addr: SocketAddr,
     options: &BenchOptions,
-) -> Result<(u64, u64), BenchError> {
+) -> Result<WorkloadOutcome, BenchError> {
     let mut client = TcpStream::connect(socks_addr)
         .await
         .map_err(|source| BenchError::Io {
@@ -937,7 +1075,9 @@ async fn run_tcp_freedom_connection(
     let mut echoed = vec![0; options.payload_size];
     let mut sent = 0;
     let mut received = 0;
+    let mut latencies_us = Vec::with_capacity(options.iterations);
     for _ in 0..options.iterations {
+        let started = Instant::now();
         client
             .write_all(&payload)
             .await
@@ -959,16 +1099,36 @@ async fn run_tcp_freedom_connection(
             ));
         }
         received += echoed.len() as u64;
+        latencies_us.push(started.elapsed().as_micros());
     }
 
-    Ok((sent, received))
+    Ok(WorkloadOutcome {
+        bytes_sent: sent,
+        bytes_received: received,
+        latencies_us,
+    })
+}
+
+async fn open_idle_socks_flow(
+    socks_addr: SocketAddr,
+    target_addr: SocketAddr,
+) -> Result<(TcpStream, u128), BenchError> {
+    let started = Instant::now();
+    let mut client = TcpStream::connect(socks_addr)
+        .await
+        .map_err(|source| BenchError::Io {
+            action: format!("connecting to SOCKS inbound at {socks_addr}"),
+            source,
+        })?;
+    socks5_connect(&mut client, target_addr).await?;
+    Ok((client, started.elapsed().as_micros()))
 }
 
 async fn run_udp_freedom_connection(
     socks_addr: SocketAddr,
     echo_addr: SocketAddr,
     options: &BenchOptions,
-) -> Result<(u64, u64), BenchError> {
+) -> Result<WorkloadOutcome, BenchError> {
     let mut control = TcpStream::connect(socks_addr)
         .await
         .map_err(|source| BenchError::Io {
@@ -987,8 +1147,10 @@ async fn run_udp_freedom_connection(
     let mut response = vec![0; request.len() + 64];
     let mut sent = 0;
     let mut received = 0;
+    let mut latencies_us = Vec::with_capacity(options.iterations);
 
     for _ in 0..options.iterations {
+        let started = Instant::now();
         socket
             .send_to(&request, relay_addr)
             .await
@@ -1011,10 +1173,15 @@ async fn run_udp_freedom_connection(
             ));
         }
         received += echoed.len() as u64;
+        latencies_us.push(started.elapsed().as_micros());
     }
 
     drop(control);
-    Ok((sent, received))
+    Ok(WorkloadOutcome {
+        bytes_sent: sent,
+        bytes_received: received,
+        latencies_us,
+    })
 }
 
 #[cfg(unix)]
@@ -1023,7 +1190,7 @@ async fn run_tun_udp_freedom_connection(
     echo_addr: SocketAddr,
     source_port: u16,
     options: &BenchOptions,
-) -> Result<(u64, u64), BenchError> {
+) -> Result<WorkloadOutcome, BenchError> {
     let SocketAddr::V4(echo_addr) = echo_addr else {
         return Err(BenchError::InvalidArguments(
             "tun-udp-freedom workload currently uses IPv4 echo targets".to_owned(),
@@ -1033,6 +1200,7 @@ async fn run_tun_udp_freedom_connection(
     let payload = vec![0x5a; options.payload_size];
     let mut sent = 0;
     let mut received = 0;
+    let mut latencies_us = Vec::with_capacity(options.iterations);
 
     for _ in 0..options.iterations {
         let packet = ipv4_udp_packet(
@@ -1043,6 +1211,7 @@ async fn run_tun_udp_freedom_connection(
             &payload,
         )?;
         let frame = encode_darwin_utun_frame(&packet);
+        let started = Instant::now();
         write_tun_frame(tun_fd, &frame)?;
         sent += payload.len() as u64;
         let echoed = read_tun_udp_echo(
@@ -1055,9 +1224,14 @@ async fn run_tun_udp_freedom_connection(
         )
         .await?;
         received += echoed.len() as u64;
+        latencies_us.push(started.elapsed().as_micros());
     }
 
-    Ok((sent, received))
+    Ok(WorkloadOutcome {
+        bytes_sent: sent,
+        bytes_received: received,
+        latencies_us,
+    })
 }
 
 async fn socks5_connect(client: &mut TcpStream, target: SocketAddr) -> Result<(), BenchError> {
@@ -2005,9 +2179,10 @@ pub fn xray_rust_config(port: u16, workload: WorkloadKind) -> String {
             vision_xudp_config(port, SocketAddr::from((Ipv4Addr::LOCALHOST, 443)))
         }
         WorkloadKind::TunUdpFreedom => tun_freedom_config(),
-        WorkloadKind::Idle | WorkloadKind::TcpFreedom | WorkloadKind::UdpFreedom => {
-            freedom_config(port, workload == WorkloadKind::UdpFreedom)
-        }
+        WorkloadKind::Idle
+        | WorkloadKind::TcpFreedom
+        | WorkloadKind::ManyIdleFlows
+        | WorkloadKind::UdpFreedom => freedom_config(port, workload == WorkloadKind::UdpFreedom),
     }
 }
 
@@ -2038,7 +2213,10 @@ fn engine_config(
             Ok(vision_xudp_config(port, vless_addr))
         }
         WorkloadKind::TunUdpFreedom => Ok(tun_freedom_config()),
-        WorkloadKind::Idle | WorkloadKind::TcpFreedom | WorkloadKind::UdpFreedom => {
+        WorkloadKind::Idle
+        | WorkloadKind::TcpFreedom
+        | WorkloadKind::ManyIdleFlows
+        | WorkloadKind::UdpFreedom => {
             Ok(freedom_config(port, workload == WorkloadKind::UdpFreedom))
         }
     }
@@ -2656,6 +2834,9 @@ async fn run_engine_once(
         match options.workload {
             WorkloadKind::Idle => run_idle_workload(options.duration).await,
             WorkloadKind::TcpFreedom => run_tcp_freedom_workload(engine.socks_addr, options).await,
+            WorkloadKind::ManyIdleFlows => {
+                run_many_idle_flows_workload(engine.socks_addr, options).await
+            }
             WorkloadKind::UdpFreedom => run_udp_freedom_workload(engine.socks_addr, options).await,
             WorkloadKind::TunUdpFreedom => {
                 run_tun_udp_freedom_workload(engine.tun_fd()?, options).await
@@ -2665,7 +2846,7 @@ async fn run_engine_once(
             WorkloadKind::VisionXudp => run_vision_xudp_workload(engine.socks_addr, options).await,
         }
     };
-    let ((bytes_sent, bytes_received), samples) = match timeout(
+    let (workload_outcome, samples) = match timeout(
         options.run_timeout,
         sample_while(engine.pid, options.sample_interval, workload),
     )
@@ -2679,18 +2860,26 @@ async fn run_engine_once(
         }
     };
     let mut summary = summarize_samples(&samples);
-    summary.bytes_sent = bytes_sent;
-    summary.bytes_received = bytes_received;
+    summary.bytes_sent = workload_outcome.bytes_sent;
+    summary.bytes_received = workload_outcome.bytes_received;
+    let latency_us = summarize_latency_us(workload_outcome.latencies_us);
+    let cpu_millis_per_gib = cpu_millis_per_gib(
+        summary.cpu_millis,
+        summary.bytes_sent,
+        summary.bytes_received,
+    );
 
     let result = BenchResult {
         engine: kind.as_str().to_owned(),
         workload: options.workload.as_str().to_owned(),
         status: "ok".to_owned(),
         duration_ms: started.elapsed().as_millis(),
-        bytes_sent,
-        bytes_received,
+        bytes_sent: summary.bytes_sent,
+        bytes_received: summary.bytes_received,
         peak_rss_kib: summary.peak_rss_kib,
         cpu_millis: summary.cpu_millis,
+        cpu_millis_per_gib,
+        latency_us,
         samples: samples.len(),
     };
     write_samples_csv(&run_dir.join("samples.csv"), &samples)?;
@@ -2724,8 +2913,22 @@ fn new_run_id() -> String {
 }
 
 fn print_result(result: &BenchResult) {
+    let latency = result
+        .latency_us
+        .as_ref()
+        .map(|latency| {
+            format!(
+                " latency_us[min/median/p95/p99]={}/{}/{}/{}",
+                latency.min, latency.median, latency.p95, latency.p99
+            )
+        })
+        .unwrap_or_default();
+    let cpu_per_gib = result
+        .cpu_millis_per_gib
+        .map(|value| format!(" cpu_millis_per_gib={value}"))
+        .unwrap_or_default();
     println!(
-        "{} {} status={} peak_rss_kib={} cpu_millis={} bytes_sent={} bytes_received={} samples={}",
+        "{} {} status={} peak_rss_kib={} cpu_millis={} bytes_sent={} bytes_received={} samples={}{}{}",
         result.engine,
         result.workload,
         result.status,
@@ -2733,7 +2936,9 @@ fn print_result(result: &BenchResult) {
         result.cpu_millis,
         result.bytes_sent,
         result.bytes_received,
-        result.samples
+        result.samples,
+        cpu_per_gib,
+        latency
     );
 }
 
@@ -2744,8 +2949,36 @@ fn print_summary(summary: &BenchSummary) {
             return;
         }
     }
+    let cpu_per_gib = summary
+        .cpu_millis_per_gib
+        .as_ref()
+        .map(|metric| {
+            format!(
+                " cpu_millis_per_gib[min/median/p95]={}/{}/{}",
+                metric.min, metric.median, metric.p95
+            )
+        })
+        .unwrap_or_default();
+    let latency = summary
+        .latency_us
+        .as_ref()
+        .map(|latency| {
+            format!(
+                " latency_us[median:min/median/p95]={}/{}/{} latency_us[p95:min/median/p95]={}/{}/{} latency_us[p99:min/median/p95]={}/{}/{}",
+                latency.median.min,
+                latency.median.median,
+                latency.median.p95,
+                latency.p95.min,
+                latency.p95.median,
+                latency.p95.p95,
+                latency.p99.min,
+                latency.p99.median,
+                latency.p99.p95,
+            )
+        })
+        .unwrap_or_default();
     println!(
-        "{} {} runs={} status={} duration_ms[min/median/p95]={}/{}/{} peak_rss_kib[min/median/p95]={}/{}/{} cpu_millis[min/median/p95]={}/{}/{} bytes_sent[min/median/p95]={}/{}/{} bytes_received[min/median/p95]={}/{}/{}",
+        "{} {} runs={} status={} duration_ms[min/median/p95]={}/{}/{} peak_rss_kib[min/median/p95]={}/{}/{} cpu_millis[min/median/p95]={}/{}/{} bytes_sent[min/median/p95]={}/{}/{} bytes_received[min/median/p95]={}/{}/{}{}{}",
         summary.engine,
         summary.workload,
         summary.runs,
@@ -2765,6 +2998,8 @@ fn print_summary(summary: &BenchSummary) {
         summary.bytes_received.min,
         summary.bytes_received.median,
         summary.bytes_received.p95,
+        cpu_per_gib,
+        latency,
     );
 }
 
@@ -2983,6 +3218,28 @@ mod tests {
         assert_eq!(options.connections, 2);
         assert_eq!(options.iterations, 3);
         assert_eq!(options.payload_size, 64);
+    }
+
+    #[test]
+    fn parses_compare_many_idle_flows() {
+        let args = parse_cli_args([
+            "xray-bench",
+            "compare",
+            "--workload",
+            "many-idle-flows",
+            "--connections",
+            "100",
+            "--duration-ms",
+            "1000",
+        ])
+        .unwrap();
+
+        let CliArgs::Compare(options) = args else {
+            panic!("expected compare args");
+        };
+        assert_eq!(options.workload, WorkloadKind::ManyIdleFlows);
+        assert_eq!(options.connections, 100);
+        assert_eq!(options.duration, Duration::from_millis(1000));
     }
 
     #[test]
@@ -3218,6 +3475,21 @@ mod tests {
     }
 
     #[test]
+    fn summarizes_latency_samples_with_percentiles() {
+        let summary = summarize_latency_us([500, 100, 900, 700, 300]).unwrap();
+
+        assert_eq!(
+            summary,
+            LatencySummary {
+                min: 100,
+                median: 500,
+                p95: 900,
+                p99: 900,
+            }
+        );
+    }
+
+    #[test]
     fn run_directory_contains_engine_and_workload() {
         let dir = run_directory(
             Path::new("target/benchmarks"),
@@ -3249,6 +3521,13 @@ mod tests {
                 bytes_received: 1024,
                 peak_rss_kib: 3000,
                 cpu_millis: 20,
+                cpu_millis_per_gib: Some(10_485_760),
+                latency_us: Some(LatencySummary {
+                    min: 10,
+                    median: 20,
+                    p95: 30,
+                    p99: 40,
+                }),
                 samples: 2,
             },
             BenchResult {
@@ -3260,6 +3539,13 @@ mod tests {
                 bytes_received: 1024,
                 peak_rss_kib: 2700,
                 cpu_millis: 10,
+                cpu_millis_per_gib: Some(5_242_880),
+                latency_us: Some(LatencySummary {
+                    min: 5,
+                    median: 10,
+                    p95: 20,
+                    p99: 30,
+                }),
                 samples: 2,
             },
             BenchResult {
@@ -3271,6 +3557,13 @@ mod tests {
                 bytes_received: 1024,
                 peak_rss_kib: 2900,
                 cpu_millis: 30,
+                cpu_millis_per_gib: Some(15_728_640),
+                latency_us: Some(LatencySummary {
+                    min: 15,
+                    median: 30,
+                    p95: 40,
+                    p99: 50,
+                }),
                 samples: 2,
             },
         ];
@@ -3303,6 +3596,39 @@ mod tests {
                 median: 20,
                 p95: 30,
             }
+        );
+        assert_eq!(
+            summary.cpu_millis_per_gib,
+            Some(MetricSummary {
+                min: 5_242_880,
+                median: 10_485_760,
+                p95: 15_728_640,
+            })
+        );
+        assert_eq!(
+            summary.latency_us,
+            Some(LatencySummaryAggregate {
+                min: MetricSummary {
+                    min: 5,
+                    median: 10,
+                    p95: 15,
+                },
+                median: MetricSummary {
+                    min: 10,
+                    median: 20,
+                    p95: 30,
+                },
+                p95: MetricSummary {
+                    min: 20,
+                    median: 30,
+                    p95: 40,
+                },
+                p99: MetricSummary {
+                    min: 30,
+                    median: 40,
+                    p95: 50,
+                },
+            })
         );
     }
 }

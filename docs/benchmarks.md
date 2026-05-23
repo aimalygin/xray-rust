@@ -8,6 +8,7 @@ Supported workloads:
 
 - `idle`
 - `tcp-freedom`
+- `many-idle-flows`
 - `udp-freedom`
 - `tun-udp-freedom`
 - `udp-vless`
@@ -41,6 +42,7 @@ target/benchmarks/<run-id>/<engine>/<workload>/run-003/
 ```sh
 cargo run -p xray-bench -- run --engine xray-rust --workload idle --duration-ms 1000
 cargo run -p xray-bench -- run --engine xray-rust --workload tcp-freedom --connections 1 --iterations 10 --payload-size 1024
+cargo run -p xray-bench -- run --engine xray-rust --workload many-idle-flows --connections 100 --duration-ms 1000
 cargo run -p xray-bench -- run --engine xray-rust --workload udp-freedom --connections 1 --iterations 10 --payload-size 512
 cargo run -p xray-bench -- run --engine xray-rust --workload tun-udp-freedom --connections 1 --iterations 10 --payload-size 512
 cargo run -p xray-bench -- run --engine xray-rust --workload udp-vless --connections 1 --iterations 10 --payload-size 512
@@ -68,6 +70,7 @@ From the main repository checkout:
 
 ```sh
 cargo run -p xray-bench -- compare --workload tcp-freedom --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 10 --payload-size 1024
+cargo run -p xray-bench -- compare --workload many-idle-flows --xray-core-dir Xray-core --runs 5 --connections 100 --duration-ms 1000
 cargo run -p xray-bench -- compare --workload udp-freedom --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload tun-udp-freedom --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload udp-vless --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
@@ -79,6 +82,7 @@ From an isolated worktree under `.worktrees/`, pass the main checkout's Xray-cor
 
 ```sh
 cargo run -p xray-bench -- compare --workload tcp-freedom --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 10 --payload-size 1024
+cargo run -p xray-bench -- compare --workload many-idle-flows --xray-core-dir ../../Xray-core --runs 5 --connections 100 --duration-ms 1000
 cargo run -p xray-bench -- compare --workload udp-freedom --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload tun-udp-freedom --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload udp-vless --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
@@ -94,14 +98,18 @@ The first scoreboard is intentionally portable and comparable across Go and Rust
 
 - peak resident set size from `ps` RSS.
 - CPU time delta from `ps` cumulative process time.
+- CPU milliseconds per GiB transferred when a workload moves payload bytes.
 - thread count when the local `ps` implementation exposes it.
 - validated bytes sent and received by the workload.
+- latency microsecond percentiles for traffic workloads. For `many-idle-flows`, latency is SOCKS TCP flow setup time.
 - min, median, and p95 aggregates across repeated runs.
 
+`tcp-freedom`, `udp-freedom`, `tun-udp-freedom`, `udp-vless`, `udp-xudp`, and `vision-xudp` record one round-trip latency sample per validated payload iteration. `summary.json` aggregates each run's latency min/median/p95/p99 across repeated runs.
+`many-idle-flows` opens `--connections` SOCKS TCP flows to a local target, keeps them idle for `--duration-ms`, and reports RSS/CPU while those flows are held. This is the first local memory-slope workload; compare its peak RSS against `idle` and divide the delta by the connection count for an approximate per-flow resident-memory cost.
 `udp-freedom` uses SOCKS5 UDP ASSOCIATE with the inbound configured as `{ "udp": true, "ip": "127.0.0.1" }`, then validates echoed UDP payloads through a local UDP target.
 `tun-udp-freedom` uses a Unix `socketpair` as an inherited fd-backed TUN device, sends Darwin utun-framed IPv4/UDP packets into a `tun` inbound, and validates echoed payloads from a local UDP server. It does not create a real system utun interface, install routes, or require root. To stay compatible with Xray-core's gVisor martian-packet filter, the UDP target is the host's local non-loopback IPv4 address rather than `127.0.0.1`.
 `udp-vless` uses the same SOCKS5 UDP client path, but routes through a local fake VLESS UDP server over TCP before validating echoed UDP payloads. It targets UDP/53 to keep the VLESS UDP framing length-prefixed.
 `udp-xudp` targets a non-DNS UDP port and validates XUDP/Mux frames through the local fake VLESS server.
 `vision-xudp` uses VLESS over local TLS with `xtls-rprx-vision`, `allowInsecure`, and XUDP/Mux frames against a local fake Vision server.
 
-Later benchmark slices should add latency percentiles, TCP-over-TUN workloads, and mobile-native traces from Instruments or Perfetto. This harness keeps those paths open without putting benchmark logic into the production runtime.
+Later benchmark slices should add TCP-over-TUN workloads and mobile-native traces from Instruments or Perfetto. This harness keeps those paths open without putting benchmark logic into the production runtime.
