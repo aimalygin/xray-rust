@@ -1499,6 +1499,7 @@ name = "xray-bench"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "libc",
  "rcgen",
  "rustls",
  "serde",
@@ -1536,6 +1537,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bytes",
+ "libc",
  "rcgen",
  "rustls",
  "smoltcp",

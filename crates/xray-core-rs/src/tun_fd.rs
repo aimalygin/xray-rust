@@ -1,21 +1,31 @@
 use libc::c_int;
 
-use crate::{XrayTunFdClosePolicy, XrayTunFdPacketFormat};
-
 const MAX_IP_PACKET_SIZE: usize = 65_535;
 
-#[derive(Debug)]
-pub(crate) struct TunFdConfig {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TunFdPacketFormat {
+    RawIp,
+    DarwinUtun,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TunFdClosePolicy {
+    Borrowed,
+    Owned,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TunFdConfig {
     fd: c_int,
-    packet_format: XrayTunFdPacketFormat,
-    close_policy: XrayTunFdClosePolicy,
+    packet_format: TunFdPacketFormat,
+    close_policy: TunFdClosePolicy,
 }
 
 impl TunFdConfig {
-    pub(crate) fn new(
+    pub fn new(
         fd: c_int,
-        packet_format: XrayTunFdPacketFormat,
-        close_policy: XrayTunFdClosePolicy,
+        packet_format: TunFdPacketFormat,
+        close_policy: TunFdClosePolicy,
     ) -> Self {
         Self {
             fd,
@@ -24,8 +34,20 @@ impl TunFdConfig {
         }
     }
 
-    pub(crate) fn close_if_owned(&self) {
-        if self.close_policy == XrayTunFdClosePolicy::Owned && self.fd >= 0 {
+    pub fn fd(&self) -> c_int {
+        self.fd
+    }
+
+    pub fn packet_format(&self) -> TunFdPacketFormat {
+        self.packet_format
+    }
+
+    pub fn close_policy(&self) -> TunFdClosePolicy {
+        self.close_policy
+    }
+
+    pub fn close_if_owned(&self) {
+        if self.close_policy == TunFdClosePolicy::Owned && self.fd >= 0 {
             unsafe {
                 libc::close(self.fd);
             }
@@ -47,18 +69,18 @@ mod platform {
     use xray_tun::{TunEndpoint, TunError};
 
     use super::{TunFdConfig, MAX_IP_PACKET_SIZE};
-    use crate::{XrayTunFdClosePolicy, XrayTunFdPacketFormat};
+    use crate::{TunFdClosePolicy, TunFdPacketFormat};
 
     const DARWIN_UTUN_HEADER_LEN: usize = 4;
 
-    pub(crate) struct TunFdRuntime {
+    pub struct TunFdRuntime {
         shutdown: watch::Sender<bool>,
         read_task: JoinHandle<()>,
         write_task: JoinHandle<()>,
     }
 
     impl TunFdRuntime {
-        pub(crate) fn start(config: TunFdConfig, tun: Arc<TunEndpoint>) -> io::Result<Self> {
+        pub fn start(config: TunFdConfig, tun: Arc<TunEndpoint>) -> io::Result<Self> {
             if let Err(err) = set_nonblocking(config.fd) {
                 config.close_if_owned();
                 return Err(err);
@@ -81,7 +103,7 @@ mod platform {
             })
         }
 
-        pub(crate) async fn stop(self) {
+        pub async fn stop(self) {
             let _ = self.shutdown.send(true);
             self.read_task.abort();
             self.write_task.abort();
@@ -92,7 +114,7 @@ mod platform {
 
     struct TunFd {
         fd: RawFd,
-        close_policy: XrayTunFdClosePolicy,
+        close_policy: TunFdClosePolicy,
     }
 
     impl TunFd {
@@ -112,7 +134,7 @@ mod platform {
 
     impl Drop for TunFd {
         fn drop(&mut self) {
-            if self.close_policy == XrayTunFdClosePolicy::Owned && self.fd >= 0 {
+            if self.close_policy == TunFdClosePolicy::Owned && self.fd >= 0 {
                 unsafe {
                     libc::close(self.fd);
                 }
@@ -125,7 +147,7 @@ mod platform {
         fd: Arc<AsyncFd<TunFd>>,
         tun: Arc<TunEndpoint>,
         mut shutdown: watch::Receiver<bool>,
-        packet_format: XrayTunFdPacketFormat,
+        packet_format: TunFdPacketFormat,
     ) {
         let mut buffer = vec![0_u8; read_buffer_len(packet_format)];
 
@@ -155,7 +177,7 @@ mod platform {
         fd: Arc<AsyncFd<TunFd>>,
         tun: Arc<TunEndpoint>,
         mut shutdown: watch::Receiver<bool>,
-        packet_format: XrayTunFdPacketFormat,
+        packet_format: TunFdPacketFormat,
     ) {
         loop {
             tokio::select! {
@@ -181,7 +203,7 @@ mod platform {
 
     async fn read_packet(
         fd: &AsyncFd<TunFd>,
-        packet_format: XrayTunFdPacketFormat,
+        packet_format: TunFdPacketFormat,
         buffer: &mut [u8],
     ) -> io::Result<Option<Bytes>> {
         loop {
@@ -218,7 +240,7 @@ mod platform {
 
     async fn write_packet(
         fd: &AsyncFd<TunFd>,
-        packet_format: XrayTunFdPacketFormat,
+        packet_format: TunFdPacketFormat,
         packet: &[u8],
     ) -> io::Result<()> {
         let packet = encode_packet(packet_format, packet)?;
@@ -257,33 +279,31 @@ mod platform {
         }
     }
 
-    fn read_buffer_len(packet_format: XrayTunFdPacketFormat) -> usize {
+    fn read_buffer_len(packet_format: TunFdPacketFormat) -> usize {
         match packet_format {
-            XrayTunFdPacketFormat::RawIp => MAX_IP_PACKET_SIZE,
-            XrayTunFdPacketFormat::DarwinUtun => MAX_IP_PACKET_SIZE + DARWIN_UTUN_HEADER_LEN,
+            TunFdPacketFormat::RawIp => MAX_IP_PACKET_SIZE,
+            TunFdPacketFormat::DarwinUtun => MAX_IP_PACKET_SIZE + DARWIN_UTUN_HEADER_LEN,
         }
     }
 
-    fn decode_packet(packet_format: XrayTunFdPacketFormat, packet: &[u8]) -> Option<Bytes> {
+    fn decode_packet(packet_format: TunFdPacketFormat, packet: &[u8]) -> Option<Bytes> {
         match packet_format {
-            XrayTunFdPacketFormat::RawIp if !packet.is_empty() => {
-                Some(Bytes::copy_from_slice(packet))
-            }
-            XrayTunFdPacketFormat::RawIp => None,
-            XrayTunFdPacketFormat::DarwinUtun if packet.len() > DARWIN_UTUN_HEADER_LEN => {
+            TunFdPacketFormat::RawIp if !packet.is_empty() => Some(Bytes::copy_from_slice(packet)),
+            TunFdPacketFormat::RawIp => None,
+            TunFdPacketFormat::DarwinUtun if packet.len() > DARWIN_UTUN_HEADER_LEN => {
                 Some(Bytes::copy_from_slice(&packet[DARWIN_UTUN_HEADER_LEN..]))
             }
-            XrayTunFdPacketFormat::DarwinUtun => None,
+            TunFdPacketFormat::DarwinUtun => None,
         }
     }
 
     fn encode_packet<'a>(
-        packet_format: XrayTunFdPacketFormat,
+        packet_format: TunFdPacketFormat,
         packet: &'a [u8],
     ) -> io::Result<Cow<'a, [u8]>> {
         match packet_format {
-            XrayTunFdPacketFormat::RawIp => Ok(Cow::Borrowed(packet)),
-            XrayTunFdPacketFormat::DarwinUtun => {
+            TunFdPacketFormat::RawIp => Ok(Cow::Borrowed(packet)),
+            TunFdPacketFormat::DarwinUtun => {
                 let family = match packet.first().map(|byte| byte >> 4) {
                     Some(4) => libc::AF_INET,
                     Some(6) => libc::AF_INET6,
@@ -333,10 +353,10 @@ mod platform {
 
     use super::TunFdConfig;
 
-    pub(crate) struct TunFdRuntime;
+    pub struct TunFdRuntime;
 
     impl TunFdRuntime {
-        pub(crate) fn start(config: TunFdConfig, _tun: Arc<TunEndpoint>) -> io::Result<Self> {
+        pub fn start(config: TunFdConfig, _tun: Arc<TunEndpoint>) -> io::Result<Self> {
             config.close_if_owned();
             Err(io::Error::new(
                 io::ErrorKind::Unsupported,
@@ -344,8 +364,8 @@ mod platform {
             ))
         }
 
-        pub(crate) async fn stop(self) {}
+        pub async fn stop(self) {}
     }
 }
 
-pub(crate) use platform::TunFdRuntime;
+pub use platform::TunFdRuntime;

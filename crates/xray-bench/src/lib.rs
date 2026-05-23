@@ -1,6 +1,9 @@
 use std::fs;
 use std::future::Future;
+use std::io;
 use std::net::{Ipv4Addr, SocketAddr, TcpListener as StdTcpListener};
+#[cfg(unix)]
+use std::os::fd::RawFd;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
@@ -25,6 +28,8 @@ const USAGE: &str = "usage: xray-bench run|compare [options]";
 const TEST_VLESS_UUID: [u8; 16] = [
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
 ];
+const UDP_PROTOCOL: u8 = 17;
+const DARWIN_UTUN_HEADER_LEN: usize = 4;
 
 #[derive(Debug, Error)]
 pub enum BenchError {
@@ -82,6 +87,7 @@ pub enum WorkloadKind {
     Idle,
     TcpFreedom,
     UdpFreedom,
+    TunUdpFreedom,
     UdpVless,
     UdpXudp,
     VisionXudp,
@@ -93,6 +99,7 @@ impl WorkloadKind {
             Self::Idle => "idle",
             Self::TcpFreedom => "tcp-freedom",
             Self::UdpFreedom => "udp-freedom",
+            Self::TunUdpFreedom => "tun-udp-freedom",
             Self::UdpVless => "udp-vless",
             Self::UdpXudp => "udp-xudp",
             Self::VisionXudp => "vision-xudp",
@@ -104,6 +111,7 @@ impl WorkloadKind {
             "idle" => Ok(Self::Idle),
             "tcp-freedom" => Ok(Self::TcpFreedom),
             "udp-freedom" => Ok(Self::UdpFreedom),
+            "tun-udp-freedom" => Ok(Self::TunUdpFreedom),
             "udp-vless" => Ok(Self::UdpVless),
             "udp-xudp" => Ok(Self::UdpXudp),
             "vision-xudp" => Ok(Self::VisionXudp),
@@ -111,6 +119,10 @@ impl WorkloadKind {
                 "unsupported workload `{other}`"
             ))),
         }
+    }
+
+    fn uses_tun_fd(&self) -> bool {
+        matches!(self, Self::TunUdpFreedom)
     }
 }
 
@@ -187,6 +199,7 @@ pub struct RunningEngine {
     child: Child,
     pub pid: u32,
     pub socks_addr: SocketAddr,
+    tun_fd: Option<FdGuard>,
     pub run_dir: PathBuf,
     pub stdout_path: PathBuf,
     pub stderr_path: PathBuf,
@@ -198,6 +211,74 @@ impl Drop for RunningEngine {
         let _ = self.child.wait();
     }
 }
+
+impl RunningEngine {
+    #[cfg(unix)]
+    fn tun_fd(&self) -> Result<RawFd, BenchError> {
+        self.tun_fd
+            .as_ref()
+            .map(FdGuard::raw)
+            .ok_or_else(|| BenchError::InvalidArguments("engine has no TUN workload fd".to_owned()))
+    }
+
+    #[cfg(not(unix))]
+    fn tun_fd(&self) -> Result<i32, BenchError> {
+        Err(BenchError::InvalidArguments(
+            "tun-udp-freedom workload requires Unix fd support".to_owned(),
+        ))
+    }
+}
+
+#[cfg(unix)]
+#[derive(Debug)]
+struct FdGuard {
+    fd: RawFd,
+}
+
+#[cfg(unix)]
+impl FdGuard {
+    fn new(fd: RawFd) -> Self {
+        Self { fd }
+    }
+
+    fn raw(&self) -> RawFd {
+        self.fd
+    }
+}
+
+#[cfg(unix)]
+impl Drop for FdGuard {
+    fn drop(&mut self) {
+        if self.fd >= 0 {
+            unsafe {
+                libc::close(self.fd);
+            }
+            self.fd = -1;
+        }
+    }
+}
+
+#[cfg(not(unix))]
+#[derive(Debug)]
+struct FdGuard;
+
+#[cfg(unix)]
+#[derive(Debug)]
+struct TunSocketPair {
+    engine_fd: FdGuard,
+    workload_fd: FdGuard,
+}
+
+#[cfg(unix)]
+impl TunSocketPair {
+    fn into_workload_fd(self) -> FdGuard {
+        self.workload_fd
+    }
+}
+
+#[cfg(not(unix))]
+#[derive(Debug)]
+struct TunSocketPair;
 
 #[derive(Debug, Default)]
 struct WorkloadFixture {
@@ -232,9 +313,10 @@ impl WorkloadFixture {
                     tasks: vec![task],
                 })
             }
-            WorkloadKind::Idle | WorkloadKind::TcpFreedom | WorkloadKind::UdpFreedom => {
-                Ok(Self::default())
-            }
+            WorkloadKind::Idle
+            | WorkloadKind::TcpFreedom
+            | WorkloadKind::UdpFreedom
+            | WorkloadKind::TunUdpFreedom => Ok(Self::default()),
         }
     }
 }
@@ -712,6 +794,53 @@ pub async fn run_udp_freedom_workload(
     Ok((sent, received))
 }
 
+#[cfg(unix)]
+pub async fn run_tun_udp_freedom_workload(
+    tun_fd: RawFd,
+    options: &BenchOptions,
+) -> Result<(u64, u64), BenchError> {
+    let echo_socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "binding TUN UDP echo server".to_owned(),
+            source,
+        })?;
+    let echo_bind_addr = echo_socket.local_addr().map_err(|source| BenchError::Io {
+        action: "reading TUN UDP echo server address".to_owned(),
+        source,
+    })?;
+    let echo_target = SocketAddr::from((local_non_loopback_ipv4()?, echo_bind_addr.port()));
+    let echo_task = tokio::spawn(async move {
+        let mut buffer = vec![0; 65_536];
+        while let Ok((len, peer)) = echo_socket.recv_from(&mut buffer).await {
+            let _ = echo_socket.send_to(&buffer[..len], peer).await;
+        }
+    });
+
+    let mut sent = 0;
+    let mut received = 0;
+    for connection_index in 0..options.connections {
+        let source_port = 40_000 + (connection_index % 20_000) as u16;
+        let (connection_sent, connection_received) =
+            run_tun_udp_freedom_connection(tun_fd, echo_target, source_port, options).await?;
+        sent += connection_sent;
+        received += connection_received;
+    }
+    echo_task.abort();
+
+    Ok((sent, received))
+}
+
+#[cfg(not(unix))]
+pub async fn run_tun_udp_freedom_workload(
+    _tun_fd: i32,
+    _options: &BenchOptions,
+) -> Result<(u64, u64), BenchError> {
+    Err(BenchError::InvalidArguments(
+        "tun-udp-freedom workload requires Unix fd support".to_owned(),
+    ))
+}
+
 pub async fn run_udp_vless_workload(
     socks_addr: SocketAddr,
     options: &BenchOptions,
@@ -868,6 +997,49 @@ async fn run_udp_freedom_connection(
     Ok((sent, received))
 }
 
+#[cfg(unix)]
+async fn run_tun_udp_freedom_connection(
+    tun_fd: RawFd,
+    echo_addr: SocketAddr,
+    source_port: u16,
+    options: &BenchOptions,
+) -> Result<(u64, u64), BenchError> {
+    let SocketAddr::V4(echo_addr) = echo_addr else {
+        return Err(BenchError::InvalidArguments(
+            "tun-udp-freedom workload currently uses IPv4 echo targets".to_owned(),
+        ));
+    };
+    let source_ip = Ipv4Addr::new(10, 10, 0, 2);
+    let payload = vec![0x5a; options.payload_size];
+    let mut sent = 0;
+    let mut received = 0;
+
+    for _ in 0..options.iterations {
+        let packet = ipv4_udp_packet(
+            source_ip,
+            source_port,
+            *echo_addr.ip(),
+            echo_addr.port(),
+            &payload,
+        )?;
+        let frame = encode_darwin_utun_frame(&packet);
+        write_tun_frame(tun_fd, &frame)?;
+        sent += payload.len() as u64;
+        let echoed = read_tun_udp_echo(
+            tun_fd,
+            *echo_addr.ip(),
+            echo_addr.port(),
+            source_ip,
+            source_port,
+            &payload,
+        )
+        .await?;
+        received += echoed.len() as u64;
+    }
+
+    Ok((sent, received))
+}
+
 async fn socks5_connect(client: &mut TcpStream, target: SocketAddr) -> Result<(), BenchError> {
     let SocketAddr::V4(target) = target else {
         return Err(BenchError::InvalidArguments(
@@ -1011,6 +1183,259 @@ fn decode_socks5_udp_payload(datagram: &[u8]) -> Result<&[u8], BenchError> {
         ));
     }
     Ok(&datagram[10..])
+}
+
+#[cfg(unix)]
+async fn read_tun_udp_echo(
+    tun_fd: RawFd,
+    source: Ipv4Addr,
+    source_port: u16,
+    destination: Ipv4Addr,
+    destination_port: u16,
+    expected_payload: &[u8],
+) -> Result<Vec<u8>, BenchError> {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut buffer = vec![0; 65_535 + DARWIN_UTUN_HEADER_LEN];
+    loop {
+        match read_tun_frame(tun_fd, &mut buffer)? {
+            Some(len) => {
+                let packet = decode_darwin_utun_frame(&buffer[..len])?;
+                if let Some(datagram) = parse_ipv4_udp_datagram(packet) {
+                    if datagram.source == source
+                        && datagram.source_port == source_port
+                        && datagram.destination == destination
+                        && datagram.destination_port == destination_port
+                        && datagram.payload == expected_payload
+                    {
+                        return Ok(datagram.payload.to_vec());
+                    }
+                }
+            }
+            None if Instant::now() < deadline => {
+                sleep(Duration::from_millis(1)).await;
+            }
+            None => {
+                return Err(BenchError::InvalidArguments(
+                    "timed out waiting for TUN UDP echo".to_owned(),
+                ));
+            }
+        }
+    }
+}
+
+#[cfg(unix)]
+fn write_tun_frame(fd: RawFd, frame: &[u8]) -> Result<(), BenchError> {
+    let written = unsafe { libc::write(fd, frame.as_ptr().cast(), frame.len()) };
+    if written < 0 {
+        return Err(BenchError::Io {
+            action: "writing benchmark TUN frame".to_owned(),
+            source: io::Error::last_os_error(),
+        });
+    }
+    if written as usize != frame.len() {
+        return Err(BenchError::InvalidArguments(format!(
+            "short TUN frame write: wrote {written} of {} bytes",
+            frame.len()
+        )));
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn read_tun_frame(fd: RawFd, buffer: &mut [u8]) -> Result<Option<usize>, BenchError> {
+    let read = unsafe { libc::read(fd, buffer.as_mut_ptr().cast(), buffer.len()) };
+    if read < 0 {
+        let source = io::Error::last_os_error();
+        if source.kind() == io::ErrorKind::WouldBlock || source.kind() == io::ErrorKind::Interrupted
+        {
+            return Ok(None);
+        }
+        return Err(BenchError::Io {
+            action: "reading benchmark TUN frame".to_owned(),
+            source,
+        });
+    }
+    if read == 0 {
+        return Err(BenchError::InvalidArguments(
+            "benchmark TUN fd reached EOF".to_owned(),
+        ));
+    }
+    Ok(Some(read as usize))
+}
+
+#[cfg(unix)]
+fn encode_darwin_utun_frame(packet: &[u8]) -> Vec<u8> {
+    let family = match packet.first().map(|byte| byte >> 4) {
+        Some(6) => libc::AF_INET6,
+        _ => libc::AF_INET,
+    };
+    let mut frame = Vec::with_capacity(DARWIN_UTUN_HEADER_LEN + packet.len());
+    frame.extend_from_slice(&[0, 0, 0, family as u8]);
+    frame.extend_from_slice(packet);
+    frame
+}
+
+#[cfg(unix)]
+fn decode_darwin_utun_frame(frame: &[u8]) -> Result<&[u8], BenchError> {
+    if frame.len() <= DARWIN_UTUN_HEADER_LEN {
+        return Err(BenchError::InvalidArguments(
+            "truncated Darwin utun frame".to_owned(),
+        ));
+    }
+    Ok(&frame[DARWIN_UTUN_HEADER_LEN..])
+}
+
+#[cfg(unix)]
+fn local_non_loopback_ipv4() -> Result<Ipv4Addr, BenchError> {
+    let socket =
+        std::net::UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).map_err(|source| BenchError::Io {
+            action: "binding IPv4 probe socket".to_owned(),
+            source,
+        })?;
+    socket
+        .connect((Ipv4Addr::new(8, 8, 8, 8), 80))
+        .map_err(|source| BenchError::Io {
+            action: "probing local non-loopback IPv4 address".to_owned(),
+            source,
+        })?;
+    let SocketAddr::V4(addr) = socket.local_addr().map_err(|source| BenchError::Io {
+        action: "reading local IPv4 probe address".to_owned(),
+        source,
+    })?
+    else {
+        return Err(BenchError::InvalidArguments(
+            "TUN UDP benchmark requires an IPv4 local address".to_owned(),
+        ));
+    };
+    let ip = *addr.ip();
+    if ip.is_loopback() || ip.is_unspecified() || ip.is_multicast() {
+        return Err(BenchError::InvalidArguments(format!(
+            "TUN UDP benchmark requires a non-loopback local IPv4 address, got {ip}"
+        )));
+    }
+    Ok(ip)
+}
+
+#[cfg(unix)]
+struct Ipv4UdpDatagram<'a> {
+    source: Ipv4Addr,
+    source_port: u16,
+    destination: Ipv4Addr,
+    destination_port: u16,
+    payload: &'a [u8],
+}
+
+#[cfg(unix)]
+fn parse_ipv4_udp_datagram(packet: &[u8]) -> Option<Ipv4UdpDatagram<'_>> {
+    if packet.len() < 28 || packet[0] >> 4 != 4 || packet[9] != UDP_PROTOCOL {
+        return None;
+    }
+    let header_len = usize::from(packet[0] & 0x0f) * 4;
+    if header_len < 20 || packet.len() < header_len + 8 {
+        return None;
+    }
+    let total_len = usize::from(u16::from_be_bytes([packet[2], packet[3]]));
+    if total_len < header_len + 8 || packet.len() < total_len {
+        return None;
+    }
+    if internet_checksum(&packet[..header_len]) != 0 {
+        return None;
+    }
+
+    let source = Ipv4Addr::new(packet[12], packet[13], packet[14], packet[15]);
+    let destination = Ipv4Addr::new(packet[16], packet[17], packet[18], packet[19]);
+    let udp = &packet[header_len..total_len];
+    let udp_len = usize::from(u16::from_be_bytes([udp[4], udp[5]]));
+    if udp_len < 8 || udp_len > udp.len() {
+        return None;
+    }
+    let udp = &udp[..udp_len];
+    let checksum = u16::from_be_bytes([udp[6], udp[7]]);
+    if checksum != 0 && ipv4_udp_checksum(source, destination, udp) != 0 {
+        return None;
+    }
+
+    Some(Ipv4UdpDatagram {
+        source,
+        source_port: u16::from_be_bytes([udp[0], udp[1]]),
+        destination,
+        destination_port: u16::from_be_bytes([udp[2], udp[3]]),
+        payload: &udp[8..],
+    })
+}
+
+#[cfg(unix)]
+fn ipv4_udp_packet(
+    source: Ipv4Addr,
+    source_port: u16,
+    destination: Ipv4Addr,
+    destination_port: u16,
+    payload: &[u8],
+) -> Result<Vec<u8>, BenchError> {
+    let udp_len = 8 + payload.len();
+    let total_len = 20 + udp_len;
+    if total_len > usize::from(u16::MAX) {
+        return Err(BenchError::InvalidArguments(format!(
+            "TUN UDP payload is too large: {} bytes",
+            payload.len()
+        )));
+    }
+
+    let mut packet = vec![0; total_len];
+    packet[0] = 0x45;
+    packet[2..4].copy_from_slice(&(total_len as u16).to_be_bytes());
+    packet[8] = 64;
+    packet[9] = UDP_PROTOCOL;
+    packet[12..16].copy_from_slice(&source.octets());
+    packet[16..20].copy_from_slice(&destination.octets());
+    let ip_checksum = internet_checksum(&packet[..20]);
+    packet[10..12].copy_from_slice(&ip_checksum.to_be_bytes());
+
+    let udp = &mut packet[20..];
+    udp[0..2].copy_from_slice(&source_port.to_be_bytes());
+    udp[2..4].copy_from_slice(&destination_port.to_be_bytes());
+    udp[4..6].copy_from_slice(&(udp_len as u16).to_be_bytes());
+    udp[8..].copy_from_slice(payload);
+    let checksum = nonzero_udp_checksum(ipv4_udp_checksum(source, destination, udp));
+    udp[6..8].copy_from_slice(&checksum.to_be_bytes());
+
+    Ok(packet)
+}
+
+#[cfg(unix)]
+fn internet_checksum(data: &[u8]) -> u16 {
+    let mut sum = 0u32;
+    let mut chunks = data.chunks_exact(2);
+    for chunk in &mut chunks {
+        sum += u32::from(u16::from_be_bytes([chunk[0], chunk[1]]));
+    }
+    if let Some(&byte) = chunks.remainder().first() {
+        sum += u32::from(byte) << 8;
+    }
+    while sum >> 16 != 0 {
+        sum = (sum & 0xffff) + (sum >> 16);
+    }
+    !(sum as u16)
+}
+
+#[cfg(unix)]
+fn ipv4_udp_checksum(source: Ipv4Addr, destination: Ipv4Addr, udp: &[u8]) -> u16 {
+    let mut pseudo = Vec::with_capacity(12 + udp.len());
+    pseudo.extend_from_slice(&source.octets());
+    pseudo.extend_from_slice(&destination.octets());
+    pseudo.extend_from_slice(&[0, UDP_PROTOCOL]);
+    pseudo.extend_from_slice(&(udp.len() as u16).to_be_bytes());
+    pseudo.extend_from_slice(udp);
+    internet_checksum(&pseudo)
+}
+
+#[cfg(unix)]
+fn nonzero_udp_checksum(checksum: u16) -> u16 {
+    if checksum == 0 {
+        u16::MAX
+    } else {
+        checksum
+    }
 }
 
 async fn spawn_fake_vless_udp_server(
@@ -1501,6 +1926,7 @@ pub fn xray_rust_config(port: u16, workload: WorkloadKind) -> String {
         WorkloadKind::VisionXudp => {
             vision_xudp_config(port, SocketAddr::from((Ipv4Addr::LOCALHOST, 443)))
         }
+        WorkloadKind::TunUdpFreedom => tun_freedom_config(),
         WorkloadKind::Idle | WorkloadKind::TcpFreedom | WorkloadKind::UdpFreedom => {
             freedom_config(port, workload == WorkloadKind::UdpFreedom)
         }
@@ -1533,10 +1959,34 @@ fn engine_config(
             })?;
             Ok(vision_xudp_config(port, vless_addr))
         }
+        WorkloadKind::TunUdpFreedom => Ok(tun_freedom_config()),
         WorkloadKind::Idle | WorkloadKind::TcpFreedom | WorkloadKind::UdpFreedom => {
             Ok(freedom_config(port, workload == WorkloadKind::UdpFreedom))
         }
     }
+}
+
+fn tun_freedom_config() -> String {
+    r#"{
+  "log": { "loglevel": "warning" },
+  "inbounds": [
+    {
+      "tag": "tun-in",
+      "protocol": "tun",
+      "listen": "127.0.0.1",
+      "port": 0,
+      "settings": { "name": "utun9", "MTU": 1500 }
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {}
+    }
+  ]
+}"#
+    .to_owned()
 }
 
 fn freedom_config(port: u16, socks_udp: bool) -> String {
@@ -1668,6 +2118,120 @@ pub fn allocate_loopback_port() -> Result<u16, BenchError> {
         .port())
 }
 
+#[cfg(unix)]
+fn create_tun_socket_pair() -> Result<TunSocketPair, BenchError> {
+    let mut fds = [-1; 2];
+    let rc = unsafe { libc::socketpair(libc::AF_UNIX, libc::SOCK_DGRAM, 0, fds.as_mut_ptr()) };
+    if rc < 0 {
+        return Err(BenchError::Io {
+            action: "creating benchmark TUN socketpair".to_owned(),
+            source: io::Error::last_os_error(),
+        });
+    }
+
+    if let Err(source) = clear_fd_cloexec(fds[0]) {
+        unsafe {
+            libc::close(fds[0]);
+            libc::close(fds[1]);
+        }
+        return Err(BenchError::Io {
+            action: "clearing close-on-exec on benchmark TUN fd".to_owned(),
+            source,
+        });
+    }
+    if let Err(source) = set_fd_cloexec(fds[1]) {
+        unsafe {
+            libc::close(fds[0]);
+            libc::close(fds[1]);
+        }
+        return Err(BenchError::Io {
+            action: "setting close-on-exec on benchmark-side TUN fd".to_owned(),
+            source,
+        });
+    }
+    if let Err(source) = set_fd_nonblocking(fds[1]) {
+        unsafe {
+            libc::close(fds[0]);
+            libc::close(fds[1]);
+        }
+        return Err(BenchError::Io {
+            action: "setting benchmark TUN fd nonblocking".to_owned(),
+            source,
+        });
+    }
+
+    Ok(TunSocketPair {
+        engine_fd: FdGuard::new(fds[0]),
+        workload_fd: FdGuard::new(fds[1]),
+    })
+}
+
+#[cfg(not(unix))]
+fn create_tun_socket_pair() -> Result<TunSocketPair, BenchError> {
+    Err(BenchError::InvalidArguments(
+        "tun-udp-freedom workload requires Unix socketpair support".to_owned(),
+    ))
+}
+
+#[cfg(unix)]
+fn clear_fd_cloexec(fd: RawFd) -> io::Result<()> {
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
+    if flags < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let rc = unsafe { libc::fcntl(fd, libc::F_SETFD, flags & !libc::FD_CLOEXEC) };
+    if rc < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn set_fd_cloexec(fd: RawFd) -> io::Result<()> {
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
+    if flags < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let rc = unsafe { libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC) };
+    if rc < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn set_fd_nonblocking(fd: RawFd) -> io::Result<()> {
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+    if flags < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let rc = unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) };
+    if rc < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn configure_tun_fd_env(command: &mut Command, pair: &TunSocketPair) {
+    command
+        .env("XRAY_TUN_FD", pair.engine_fd.raw().to_string())
+        .env("XRAY_TUN_FD_PACKET_FORMAT", "darwin-utun");
+}
+
+#[cfg(not(unix))]
+fn configure_tun_fd_env(_command: &mut Command, _pair: &TunSocketPair) {}
+
+#[cfg(unix)]
+fn into_tun_workload_fd(pair: TunSocketPair) -> Option<FdGuard> {
+    Some(pair.into_workload_fd())
+}
+
+#[cfg(not(unix))]
+fn into_tun_workload_fd(_pair: TunSocketPair) -> Option<FdGuard> {
+    None
+}
+
 pub async fn wait_for_tcp_listener(
     child: &mut Child,
     addr: SocketAddr,
@@ -1704,6 +2268,26 @@ pub async fn wait_for_tcp_listener(
             }
         }
     }
+}
+
+pub async fn wait_for_process_started(
+    child: &mut Child,
+    stdout_path: &Path,
+    stderr_path: &Path,
+) -> Result<(), BenchError> {
+    sleep(Duration::from_millis(150)).await;
+    if let Some(status) = child.try_wait().map_err(|source| BenchError::Io {
+        action: "checking child process status".to_owned(),
+        source,
+    })? {
+        return Err(BenchError::Process {
+            program: "engine".to_owned(),
+            status: status.to_string(),
+            stdout: fs::read_to_string(stdout_path).unwrap_or_default(),
+            stderr: fs::read_to_string(stderr_path).unwrap_or_default(),
+        });
+    }
+    Ok(())
 }
 
 pub fn ensure_xray_rust_binary(options: &BenchOptions) -> Result<PathBuf, BenchError> {
@@ -1806,6 +2390,11 @@ async fn start_engine(
     })?;
     let port = allocate_loopback_port()?;
     let socks_addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
+    let tun_pair = if options.workload.uses_tun_fd() {
+        Some(create_tun_socket_pair()?)
+    } else {
+        None
+    };
     let config = match kind {
         EngineKind::XrayRust | EngineKind::XrayCore => {
             engine_config(port, options.workload, fixture)?
@@ -1837,18 +2426,27 @@ async fn start_engine(
         .arg(&config_path)
         .stdout(Stdio::from(stdout))
         .stderr(Stdio::from(stderr));
+    if let Some(pair) = tun_pair.as_ref() {
+        configure_tun_fd_env(&mut command, pair);
+    }
     let mut child = command.spawn().map_err(|source| BenchError::Io {
         action: format!("spawning `{}`", binary.display()),
         source,
     })?;
     let pid = child.id();
-    wait_for_tcp_listener(&mut child, socks_addr, &stdout_path, &stderr_path).await?;
+    let tun_fd = tun_pair.and_then(into_tun_workload_fd);
+    if options.workload.uses_tun_fd() {
+        wait_for_process_started(&mut child, &stdout_path, &stderr_path).await?;
+    } else {
+        wait_for_tcp_listener(&mut child, socks_addr, &stdout_path, &stderr_path).await?;
+    }
 
     Ok(RunningEngine {
         kind,
         child,
         pid,
         socks_addr,
+        tun_fd,
         run_dir: run_dir.to_path_buf(),
         stdout_path,
         stderr_path,
@@ -1981,6 +2579,9 @@ async fn run_engine_once(
             WorkloadKind::Idle => run_idle_workload(options.duration).await,
             WorkloadKind::TcpFreedom => run_tcp_freedom_workload(engine.socks_addr, options).await,
             WorkloadKind::UdpFreedom => run_udp_freedom_workload(engine.socks_addr, options).await,
+            WorkloadKind::TunUdpFreedom => {
+                run_tun_udp_freedom_workload(engine.tun_fd()?, options).await
+            }
             WorkloadKind::UdpVless => run_udp_vless_workload(engine.socks_addr, options).await,
             WorkloadKind::UdpXudp => run_udp_xudp_workload(engine.socks_addr, options).await,
             WorkloadKind::VisionXudp => run_vision_xudp_workload(engine.socks_addr, options).await,
@@ -2252,6 +2853,31 @@ mod tests {
     }
 
     #[test]
+    fn parses_compare_tun_udp_freedom() {
+        let args = parse_cli_args([
+            "xray-bench",
+            "compare",
+            "--workload",
+            "tun-udp-freedom",
+            "--connections",
+            "2",
+            "--iterations",
+            "3",
+            "--payload-size",
+            "64",
+        ])
+        .unwrap();
+
+        let CliArgs::Compare(options) = args else {
+            panic!("expected compare args");
+        };
+        assert_eq!(options.workload, WorkloadKind::TunUdpFreedom);
+        assert_eq!(options.connections, 2);
+        assert_eq!(options.iterations, 3);
+        assert_eq!(options.payload_size, 64);
+    }
+
+    #[test]
     fn parses_compare_with_repeated_runs() {
         let args = parse_cli_args([
             "xray-bench",
@@ -2363,6 +2989,17 @@ mod tests {
         assert!(config.contains(r#""security": "tls""#));
         assert!(config.contains(r#""allowInsecure": true"#));
         assert!(config.contains(r#""port": 19091"#));
+    }
+
+    #[test]
+    fn tun_udp_freedom_config_uses_tun_inbound_without_socks() {
+        let fixture = WorkloadFixture::default();
+        let config = engine_config(0, WorkloadKind::TunUdpFreedom, &fixture).unwrap();
+        let value = serde_json::from_str::<serde_json::Value>(&config).unwrap();
+
+        assert_eq!(value["inbounds"][0]["protocol"], "tun");
+        assert_eq!(value["outbounds"][0]["protocol"], "freedom");
+        assert!(!config.contains(r#""protocol": "socks""#));
     }
 
     #[test]

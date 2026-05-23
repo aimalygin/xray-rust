@@ -9,6 +9,7 @@ Supported workloads:
 - `idle`
 - `tcp-freedom`
 - `udp-freedom`
+- `tun-udp-freedom`
 - `udp-vless`
 - `udp-xudp`
 - `vision-xudp`
@@ -41,6 +42,7 @@ target/benchmarks/<run-id>/<engine>/<workload>/run-003/
 cargo run -p xray-bench -- run --engine xray-rust --workload idle --duration-ms 1000
 cargo run -p xray-bench -- run --engine xray-rust --workload tcp-freedom --connections 1 --iterations 10 --payload-size 1024
 cargo run -p xray-bench -- run --engine xray-rust --workload udp-freedom --connections 1 --iterations 10 --payload-size 512
+cargo run -p xray-bench -- run --engine xray-rust --workload tun-udp-freedom --connections 1 --iterations 10 --payload-size 512
 cargo run -p xray-bench -- run --engine xray-rust --workload udp-vless --connections 1 --iterations 10 --payload-size 512
 cargo run -p xray-bench -- run --engine xray-rust --workload udp-xudp --connections 1 --iterations 10 --payload-size 512
 cargo run -p xray-bench -- run --engine xray-rust --workload vision-xudp --connections 1 --iterations 10 --payload-size 512
@@ -62,6 +64,7 @@ From the main repository checkout:
 ```sh
 cargo run -p xray-bench -- compare --workload tcp-freedom --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 10 --payload-size 1024
 cargo run -p xray-bench -- compare --workload udp-freedom --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
+cargo run -p xray-bench -- compare --workload tun-udp-freedom --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload udp-vless --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload udp-xudp --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload vision-xudp --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
@@ -72,6 +75,7 @@ From an isolated worktree under `.worktrees/`, pass the main checkout's Xray-cor
 ```sh
 cargo run -p xray-bench -- compare --workload tcp-freedom --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 10 --payload-size 1024
 cargo run -p xray-bench -- compare --workload udp-freedom --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
+cargo run -p xray-bench -- compare --workload tun-udp-freedom --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload udp-vless --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload udp-xudp --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload vision-xudp --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
@@ -90,8 +94,9 @@ The first scoreboard is intentionally portable and comparable across Go and Rust
 - min, median, and p95 aggregates across repeated runs.
 
 `udp-freedom` uses SOCKS5 UDP ASSOCIATE with the inbound configured as `{ "udp": true, "ip": "127.0.0.1" }`, then validates echoed UDP payloads through a local UDP target.
+`tun-udp-freedom` uses a Unix `socketpair` as an inherited fd-backed TUN device, sends Darwin utun-framed IPv4/UDP packets into a `tun` inbound, and validates echoed payloads from a local UDP server. It does not create a real system utun interface, install routes, or require root. To stay compatible with Xray-core's gVisor martian-packet filter, the UDP target is the host's local non-loopback IPv4 address rather than `127.0.0.1`.
 `udp-vless` uses the same SOCKS5 UDP client path, but routes through a local fake VLESS UDP server over TCP before validating echoed UDP payloads. It targets UDP/53 to keep the VLESS UDP framing length-prefixed.
 `udp-xudp` targets a non-DNS UDP port and validates XUDP/Mux frames through the local fake VLESS server.
 `vision-xudp` uses VLESS over local TLS with `xtls-rprx-vision`, `allowInsecure`, and XUDP/Mux frames against a local fake Vision server.
 
-Later benchmark slices should add VLESS UDP, Vision XUDP, TUN packet-path workloads, latency percentiles, and mobile-native traces from Instruments or Perfetto. This first harness keeps those paths open without putting benchmark logic into the production runtime.
+Later benchmark slices should add latency percentiles, TCP-over-TUN workloads, and mobile-native traces from Instruments or Perfetto. This harness keeps those paths open without putting benchmark logic into the production runtime.

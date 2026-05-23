@@ -12,6 +12,7 @@ mod http;
 mod outbound;
 mod socks;
 mod tun;
+mod tun_fd;
 
 pub use outbound::{
     open_tcp_stream_with_resolver_and_dialer, open_vless_tcp_stream,
@@ -20,6 +21,7 @@ pub use outbound::{
     select_tcp_outbound_for_session, select_udp_outbound_for_session, select_vless_tcp_outbound,
     TcpOutbound, UdpOutbound, VlessTcpOutbound, VlessUdpFraming,
 };
+pub use tun_fd::{TunFdClosePolicy, TunFdConfig, TunFdPacketFormat, TunFdRuntime};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CoreState {

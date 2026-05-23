@@ -8,12 +8,8 @@ use std::slice;
 use std::sync::Arc;
 use tokio::runtime::{Builder, Runtime};
 use xray_config::parse_xray_json;
-use xray_core_rs::Core;
+use xray_core_rs::{Core, TunFdClosePolicy, TunFdConfig, TunFdPacketFormat, TunFdRuntime};
 use xray_transport::{SocketHandle, SocketProtector, SystemDnsResolver, TransportDialer};
-
-mod tun_fd;
-
-use tun_fd::{TunFdConfig, TunFdRuntime};
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,6 +38,24 @@ pub enum XrayTunFdPacketFormat {
 pub enum XrayTunFdClosePolicy {
     Borrowed = 0,
     Owned = 1,
+}
+
+impl From<XrayTunFdPacketFormat> for TunFdPacketFormat {
+    fn from(value: XrayTunFdPacketFormat) -> Self {
+        match value {
+            XrayTunFdPacketFormat::RawIp => Self::RawIp,
+            XrayTunFdPacketFormat::DarwinUtun => Self::DarwinUtun,
+        }
+    }
+}
+
+impl From<XrayTunFdClosePolicy> for TunFdClosePolicy {
+    fn from(value: XrayTunFdClosePolicy) -> Self {
+        match value {
+            XrayTunFdClosePolicy::Borrowed => Self::Borrowed,
+            XrayTunFdClosePolicy::Owned => Self::Owned,
+        }
+    }
 }
 
 #[repr(C)]
@@ -400,11 +414,11 @@ unsafe fn xray_core_set_tun_fd_inner(
         return XrayStatus::RuntimeError;
     }
 
-    if let Some(old) =
-        handle
-            .tun_fd_config
-            .replace(TunFdConfig::new(fd, packet_format, close_policy))
-    {
+    if let Some(old) = handle.tun_fd_config.replace(TunFdConfig::new(
+        fd,
+        packet_format.into(),
+        close_policy.into(),
+    )) {
         old.close_if_owned();
     }
 

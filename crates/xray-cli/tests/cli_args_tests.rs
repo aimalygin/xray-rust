@@ -2,9 +2,10 @@ use std::{fs, net::SocketAddr, path::PathBuf};
 
 use tokio::sync::oneshot;
 use xray_cli::{
-    format_bound_inbounds, load_config, parse_cli_args, run_cli_with_shutdown, run_with_shutdown,
-    CliArgs, CliError,
+    format_bound_inbounds, load_config, parse_cli_args, parse_tun_fd_env_from_pairs,
+    run_cli_with_shutdown, run_with_shutdown, CliArgs, CliError,
 };
+use xray_core_rs::{TunFdClosePolicy, TunFdPacketFormat};
 
 #[test]
 fn parses_run_dash_config() {
@@ -74,6 +75,40 @@ fn format_bound_inbounds_includes_tag_and_address() {
     assert_eq!(rendered, "bound inbound socks-in at 127.0.0.1:1080");
 }
 
+#[test]
+fn tun_fd_env_is_absent_without_fd() {
+    let config = parse_tun_fd_env_from_pairs([] as [(&str, &str); 0]).unwrap();
+
+    assert!(config.is_none());
+}
+
+#[test]
+fn tun_fd_env_parses_darwin_utun_fd() {
+    let config = parse_tun_fd_env_from_pairs([
+        ("XRAY_TUN_FD", "7"),
+        ("XRAY_TUN_FD_PACKET_FORMAT", "darwin-utun"),
+    ])
+    .unwrap()
+    .expect("tun fd config");
+
+    assert_eq!(config.fd(), 7);
+    assert_eq!(config.packet_format(), TunFdPacketFormat::DarwinUtun);
+    assert_eq!(config.close_policy(), TunFdClosePolicy::Borrowed);
+}
+
+#[test]
+fn tun_fd_env_rejects_unknown_packet_format() {
+    let error = parse_tun_fd_env_from_pairs([
+        ("XRAY_TUN_FD", "7"),
+        ("XRAY_TUN_FD_PACKET_FORMAT", "tun-pi"),
+    ])
+    .unwrap_err();
+
+    assert!(error
+        .to_string()
+        .contains("unsupported TUN fd packet format"));
+}
+
 #[tokio::test]
 async fn run_with_shutdown_starts_and_stops_core() {
     let temp_dir =
@@ -116,7 +151,7 @@ async fn run_with_shutdown_starts_and_stops_core() {
     })
     .await;
 
-    assert!(result.is_ok());
+    assert!(result.is_ok(), "{result:?}");
     let _ = fs::remove_dir_all(temp_dir);
 }
 

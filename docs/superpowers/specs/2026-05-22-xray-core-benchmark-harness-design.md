@@ -86,15 +86,20 @@ Start with workloads that match current Rust support and mobile priorities:
    - Datagram sizes: 32 B, 128 B, 1200 B.
    - Packet rates: fixed low-rate mobile-like, medium, and saturation.
 
-6. VLESS UDP echo
+6. TUN UDP Freedom echo
+   - Use inherited fd-backed TUN instead of a real OS route so local runs stay safe and rootless.
+   - macOS/iOS-style runs use Darwin utun framing around raw IPv4 packets.
+   - The local UDP target must avoid `127.0.0.1` for Xray-core because its gVisor stack drops loopback destinations as martian packets.
+
+7. VLESS UDP echo
    - Length-prefixed VLESS UDP over TCP transport.
    - Same UDP payload sizes and rates.
 
-7. Vision XUDP UDP echo
+8. Vision XUDP UDP echo
    - Protected stream boundary with Vision padding and XUDP framing.
    - Local TLS test mode first; REALITY/uTLS live comparisons become a later slice once the production REALITY provider is implemented.
 
-8. Many idle flows
+9. Many idle flows
    - Establish N flows and keep them mostly idle.
    - Primary output is memory slope and task/thread/goroutine behavior.
 

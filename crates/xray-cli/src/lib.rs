@@ -1,5 +1,5 @@
 use std::{
-    fs,
+    env, fs,
     future::Future,
     net::SocketAddr,
     path::{Path, PathBuf},
@@ -7,7 +7,9 @@ use std::{
 
 use thiserror::Error;
 use xray_config::{parse_xray_json, CoreConfig, Diagnostic};
-use xray_core_rs::{Core, CoreError};
+use xray_core_rs::{
+    Core, CoreError, TunFdClosePolicy, TunFdConfig, TunFdPacketFormat, TunFdRuntime,
+};
 
 const USAGE: &str = "usage: xray-rust run -config <config.json>";
 
@@ -29,6 +31,8 @@ pub enum CliError {
     ConfigParse(String),
     #[error("core error: {0}")]
     Core(#[from] CoreError),
+    #[error("TUN fd error: {source}")]
+    TunFd { source: std::io::Error },
 }
 
 pub fn parse_cli_args<I, S>(args: I) -> Result<CliArgs, CliError>
@@ -90,13 +94,87 @@ pub fn format_bound_inbounds(inbounds: &[(Option<String>, SocketAddr)]) -> Strin
         .join("\n")
 }
 
+pub fn parse_tun_fd_env_from_pairs<I, K, V>(vars: I) -> Result<Option<TunFdConfig>, CliError>
+where
+    I: IntoIterator<Item = (K, V)>,
+    K: AsRef<str>,
+    V: AsRef<str>,
+{
+    let mut fd = None;
+    let mut packet_format = None;
+    let mut close_policy = None;
+
+    for (key, value) in vars {
+        match key.as_ref() {
+            "XRAY_TUN_FD" | "xray.tun.fd" => fd = Some(value.as_ref().to_owned()),
+            "XRAY_TUN_FD_PACKET_FORMAT" => packet_format = Some(value.as_ref().to_owned()),
+            "XRAY_TUN_FD_CLOSE_POLICY" => close_policy = Some(value.as_ref().to_owned()),
+            _ => {}
+        }
+    }
+
+    let Some(fd) = fd else {
+        return Ok(None);
+    };
+
+    let fd = fd.parse::<i32>().map_err(|_| {
+        CliError::InvalidArguments(format!("invalid TUN fd value `{fd}` in XRAY_TUN_FD"))
+    })?;
+    if fd < 0 {
+        return Err(CliError::InvalidArguments(
+            "XRAY_TUN_FD must be non-negative".to_owned(),
+        ));
+    }
+
+    Ok(Some(TunFdConfig::new(
+        fd,
+        parse_tun_fd_packet_format(packet_format.as_deref().unwrap_or("raw-ip"))?,
+        parse_tun_fd_close_policy(close_policy.as_deref().unwrap_or("borrowed"))?,
+    )))
+}
+
+fn parse_tun_fd_env() -> Result<Option<TunFdConfig>, CliError> {
+    parse_tun_fd_env_from_pairs(env::vars())
+}
+
+fn parse_tun_fd_packet_format(raw: &str) -> Result<TunFdPacketFormat, CliError> {
+    match raw {
+        "raw-ip" | "raw_ip" | "raw" => Ok(TunFdPacketFormat::RawIp),
+        "darwin-utun" | "darwin_utun" | "utun" => Ok(TunFdPacketFormat::DarwinUtun),
+        other => Err(CliError::InvalidArguments(format!(
+            "unsupported TUN fd packet format `{other}`"
+        ))),
+    }
+}
+
+fn parse_tun_fd_close_policy(raw: &str) -> Result<TunFdClosePolicy, CliError> {
+    match raw {
+        "borrowed" => Ok(TunFdClosePolicy::Borrowed),
+        "owned" => Ok(TunFdClosePolicy::Owned),
+        other => Err(CliError::InvalidArguments(format!(
+            "unsupported TUN fd close policy `{other}`"
+        ))),
+    }
+}
+
 pub async fn run_with_shutdown<F>(config: CoreConfig, shutdown: F) -> Result<(), CliError>
 where
     F: Future<Output = ()>,
 {
     let configured_inbounds = config.inbounds.clone();
+    let tun_fd_config = parse_tun_fd_env()?;
     let mut core = Core::new(config)?;
     core.start().await?;
+    let mut tun_fd_runtime = None;
+    if let Some(config) = tun_fd_config {
+        match TunFdRuntime::start(config, core.tun_handle()) {
+            Ok(runtime) => tun_fd_runtime = Some(runtime),
+            Err(source) => {
+                let _ = core.stop().await;
+                return Err(CliError::TunFd { source });
+            }
+        }
+    }
     let bound = configured_inbounds
         .iter()
         .filter_map(|inbound| {
@@ -108,6 +186,9 @@ where
         eprintln!("{}", format_bound_inbounds(&bound));
     }
     shutdown.await;
+    if let Some(runtime) = tun_fd_runtime.take() {
+        runtime.stop().await;
+    }
     core.stop().await?;
 
     Ok(())
