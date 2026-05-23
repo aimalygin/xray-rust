@@ -2,6 +2,7 @@ import Darwin
 import Foundation
 
 public enum XrayDarwinTunFileDescriptor {
+    private static let sysprotoControl: Int32 = 2
     private static let utunOptionInterfaceName: Int32 = 2
 
     public static func discoverUtunFileDescriptor(maximum: Int32 = 1024) -> Int32? {
@@ -13,7 +14,7 @@ public enum XrayDarwinTunFileDescriptor {
             let result = buffer.withUnsafeMutableBufferPointer { pointer in
                 getsockopt(
                     fd,
-                    SYSPROTO_CONTROL,
+                    sysprotoControl,
                     utunOptionInterfaceName,
                     pointer.baseAddress,
                     &length

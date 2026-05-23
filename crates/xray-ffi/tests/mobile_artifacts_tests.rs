@@ -141,6 +141,45 @@ fn apple_adapter_build_script_covers_swiftpm_host_build() {
 }
 
 #[test]
+fn apple_adapter_link_script_covers_mobile_triples() {
+    let script = fs::read_to_string(workspace_root().join("scripts/check-apple-adapter-link.sh"))
+        .expect("read Apple adapter link script");
+
+    for triple in [
+        "arm64-apple-ios${IPHONEOS_DEPLOYMENT_TARGET}",
+        "arm64-apple-ios${IPHONEOS_DEPLOYMENT_TARGET}-simulator",
+        "x86_64-apple-ios${IPHONEOS_DEPLOYMENT_TARGET}-simulator",
+        "arm64-apple-tvos${TVOS_DEPLOYMENT_TARGET}",
+        "arm64-apple-tvos${TVOS_DEPLOYMENT_TARGET}-simulator",
+        "x86_64-apple-tvos${TVOS_DEPLOYMENT_TARGET}-simulator",
+    ] {
+        assert!(
+            script.contains(triple),
+            "Apple link script missing `{triple}`"
+        );
+    }
+
+    for sdk in [
+        "iphoneos",
+        "iphonesimulator",
+        "appletvos",
+        "appletvsimulator",
+    ] {
+        assert!(
+            script.contains(sdk),
+            "Apple link script missing SDK `{sdk}`"
+        );
+    }
+
+    assert!(script.contains("swift"));
+    assert!(script.contains("xcrun --sdk"));
+    assert!(script.contains("--sdk"));
+    assert!(script.contains("--triple"));
+    assert!(script.contains("XrayRust.xcframework"));
+    assert!(script.contains("build-apple-xcframework.sh"));
+}
+
+#[test]
 fn android_adapter_build_script_covers_gradle_sdk_and_artifacts() {
     let script = fs::read_to_string(workspace_root().join("scripts/build-android-adapter.sh"))
         .expect("read Android adapter build script");
