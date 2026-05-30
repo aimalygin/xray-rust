@@ -3,6 +3,16 @@ import Darwin
 import Foundation
 import NetworkExtension
 
+private enum XrayMobileLog {
+    static func info(_ category: String, _ message: String) {
+        NSLog("[XrayRust][\(category)] \(message)")
+    }
+
+    static func error(_ category: String, _ message: String) {
+        NSLog("[XrayRust][\(category)][error] \(message)")
+    }
+}
+
 @available(iOS 9.0, tvOS 17.0, macOS 10.11, *)
 public final class XrayPacketTunnelPump: @unchecked Sendable {
     private let provider: NEPacketTunnelProvider
@@ -10,6 +20,8 @@ public final class XrayPacketTunnelPump: @unchecked Sendable {
     private let queue: DispatchQueue
     private let lock = NSLock()
     private var running = false
+    private var pushPacketErrorCount = 0
+    private var pollPacketErrorCount = 0
 
     public init(
         provider: NEPacketTunnelProvider,
@@ -30,6 +42,7 @@ public final class XrayPacketTunnelPump: @unchecked Sendable {
         running = true
         lock.unlock()
 
+        XrayMobileLog.info("PacketPump", "Starting packet pump")
         readPackets()
         pollPackets()
     }
@@ -38,6 +51,7 @@ public final class XrayPacketTunnelPump: @unchecked Sendable {
         lock.lock()
         running = false
         lock.unlock()
+        XrayMobileLog.info("PacketPump", "Stopping packet pump")
     }
 
     private func readPackets() {
@@ -50,7 +64,17 @@ public final class XrayPacketTunnelPump: @unchecked Sendable {
                 return
             }
             for packet in packets {
-                try? self.core.pushPacket(packet)
+                do {
+                    try self.core.pushPacket(packet)
+                } catch {
+                    let count = self.incrementPushPacketErrorCount()
+                    if Self.shouldLogPacketError(count) {
+                        XrayMobileLog.error(
+                            "PacketPump",
+                            "pushPacket failed count=\(count) bytes=\(packet.count) error=\(error)"
+                        )
+                    }
+                }
             }
             self.readPackets()
         }
@@ -65,7 +89,20 @@ public final class XrayPacketTunnelPump: @unchecked Sendable {
             while self.isRunning {
                 autoreleasepool {
                     while self.isRunning {
-                        guard let packet = try? self.core.pollPacket() else {
+                        let packet: Data?
+                        do {
+                            packet = try self.core.pollPacket()
+                        } catch {
+                            let count = self.incrementPollPacketErrorCount()
+                            if Self.shouldLogPacketError(count) {
+                                XrayMobileLog.error(
+                                    "PacketPump",
+                                    "pollPacket failed count=\(count) error=\(error)"
+                                )
+                            }
+                            break
+                        }
+                        guard let packet else {
                             break
                         }
                         let protocolFamily = NSNumber(value: Self.protocolFamily(for: packet))
@@ -77,6 +114,7 @@ public final class XrayPacketTunnelPump: @unchecked Sendable {
                 }
                 Thread.sleep(forTimeInterval: 0.005)
             }
+            XrayMobileLog.info("PacketPump", "Packet pump poll loop exited")
         }
     }
 
@@ -84,6 +122,24 @@ public final class XrayPacketTunnelPump: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return running
+    }
+
+    private func incrementPushPacketErrorCount() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        pushPacketErrorCount += 1
+        return pushPacketErrorCount
+    }
+
+    private func incrementPollPacketErrorCount() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        pollPacketErrorCount += 1
+        return pollPacketErrorCount
+    }
+
+    private static func shouldLogPacketError(_ count: Int) -> Bool {
+        count <= 5 || count.isMultiple(of: 100)
     }
 
     private static func protocolFamily(for packet: Data) -> Int32 {

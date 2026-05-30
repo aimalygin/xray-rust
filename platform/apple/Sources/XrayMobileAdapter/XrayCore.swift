@@ -1,6 +1,16 @@
 import Foundation
 import XrayRust
 
+private enum XrayMobileLog {
+    static func info(_ category: String, _ message: String) {
+        NSLog("[XrayRust][\(category)] \(message)")
+    }
+
+    static func error(_ category: String, _ message: String) {
+        NSLog("[XrayRust][\(category)][error] \(message)")
+    }
+}
+
 public enum XrayCoreError: Error, CustomStringConvertible {
     case status(code: XrayStatus, message: String)
     case missingHandle
@@ -37,8 +47,14 @@ public final class XrayCore: @unchecked Sendable {
         tunClosePolicy: XrayTunFdClosePolicy = XRAY_TUN_FD_CLOSE_POLICY_BORROWED
     ) throws {
         var error: OpaquePointer?
+        XrayMobileLog.info(
+            "Core",
+            "Creating core configBytes=\(configJSON.utf8.count) socketProtect=\(socketProtectCallback != nil) tunFd=\(tunFileDescriptor.map(String.init) ?? "none")"
+        )
         guard let handle = xray_core_new(&error) else {
-            throw XrayCore.takeError(error)
+            let coreError = XrayCore.takeError(error)
+            XrayMobileLog.error("Core", "xray_core_new failed: \(coreError.description)")
+            throw coreError
         }
 
         self.handle = handle
@@ -69,7 +85,9 @@ public final class XrayCore: @unchecked Sendable {
             try configJSON.withCString { pointer in
                 try check(xray_core_load_config_json(handle, pointer, &error), error: error)
             }
+            XrayMobileLog.info("Core", "Core config loaded")
         } catch {
+            XrayMobileLog.error("Core", "Core init failed: \(error)")
             xray_core_free(handle)
             self.handle = nil
             throw error
@@ -83,22 +101,37 @@ public final class XrayCore: @unchecked Sendable {
         lock.unlock()
 
         if let handle {
+            XrayMobileLog.info("Core", "Deinit stopping and freeing core")
             _ = xray_core_stop(handle, nil)
             xray_core_free(handle)
         }
     }
 
     public func start() throws {
-        try withHandle { handle in
-            var error: OpaquePointer?
-            try check(xray_core_start(handle, &error), error: error)
+        do {
+            try withHandle { handle in
+                var error: OpaquePointer?
+                XrayMobileLog.info("Core", "Starting core")
+                try check(xray_core_start(handle, &error), error: error)
+                XrayMobileLog.info("Core", "Core started")
+            }
+        } catch {
+            XrayMobileLog.error("Core", "Core start failed: \(error)")
+            throw error
         }
     }
 
     public func stop() throws {
-        try withHandle { handle in
-            var error: OpaquePointer?
-            try check(xray_core_stop(handle, &error), error: error)
+        do {
+            try withHandle { handle in
+                var error: OpaquePointer?
+                XrayMobileLog.info("Core", "Stopping core")
+                try check(xray_core_stop(handle, &error), error: error)
+                XrayMobileLog.info("Core", "Core stopped")
+            }
+        } catch {
+            XrayMobileLog.error("Core", "Core stop failed: \(error)")
+            throw error
         }
     }
 

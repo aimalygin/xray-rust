@@ -11,6 +11,9 @@ let package = Package(
     ],
     products: [
         .library(name: "XrayMobileAdapter", targets: ["XrayMobileAdapter"]),
+        .library(name: "XrayAppleShared", targets: ["XrayAppleShared"]),
+        .library(name: "XrayAppleClient", targets: ["XrayAppleClient"]),
+        .library(name: "XrayAppleTunnel", targets: ["XrayAppleTunnel"]),
     ],
     targets: [
         .binaryTarget(
@@ -20,6 +23,27 @@ let package = Package(
         .target(
             name: "XrayMobileAdapter",
             dependencies: ["XrayRust"]
+        ),
+        .target(
+            name: "XrayAppleShared"
+        ),
+        .target(
+            name: "XrayAppleClient",
+            dependencies: [
+                "XrayAppleShared",
+                "XrayMobileAdapter",
+            ]
+        ),
+        .target(
+            name: "XrayAppleTunnel",
+            dependencies: [
+                "XrayAppleShared",
+                "XrayMobileAdapter",
+            ]
+        ),
+        .testTarget(
+            name: "XrayAppleSharedTests",
+            dependencies: ["XrayAppleShared"]
         ),
     ]
 )

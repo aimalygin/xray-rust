@@ -1,0 +1,808 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		044523C52FCA246000EB1099 /* XrayAppleClient in Frameworks */ = {isa = PBXBuildFile; productRef = 044523C42FCA246000EB1099 /* XrayAppleClient */; };
+		044523D32FCA253F00EB1099 /* NetworkExtension.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 044523D22FCA253F00EB1099 /* NetworkExtension.framework */; };
+		044523DB2FCA253F00EB1099 /* Tunnel.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 044523D02FCA253F00EB1099 /* Tunnel.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		044523E22FCA256700EB1099 /* XrayAppleTunnel in Frameworks */ = {isa = PBXBuildFile; productRef = 044523E12FCA256700EB1099 /* XrayAppleTunnel */; };
+		044523E82FCA257F00EB1099 /* PacketTunnelProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 044523E42FCA257F00EB1099 /* PacketTunnelProvider.swift */; };
+		044523EB2FCA258300EB1099 /* XrayClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 044523E92FCA258300EB1099 /* XrayClientTests.swift */; };
+		044523EF2FCA258500EB1099 /* XrayClientUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 044523EC2FCA258500EB1099 /* XrayClientUITests.swift */; };
+		044523F02FCA258500EB1099 /* XrayClientUITestsLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 044523ED2FCA258500EB1099 /* XrayClientUITestsLaunchTests.swift */; };
+		044523F52FCA258700EB1099 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 044523F12FCA258700EB1099 /* Assets.xcassets */; };
+		044523F62FCA258700EB1099 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 044523F22FCA258700EB1099 /* ContentView.swift */; };
+		044523F72FCA258700EB1099 /* XrayClientApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 044523F32FCA258700EB1099 /* XrayClientApp.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		044523A72FCA23EA00EB1099 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 044523912FCA23E800EB1099 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 044523982FCA23E800EB1099;
+			remoteInfo = XrayClient;
+		};
+		044523B12FCA23EA00EB1099 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 044523912FCA23E800EB1099 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 044523982FCA23E800EB1099;
+			remoteInfo = XrayClient;
+		};
+		044523D92FCA253F00EB1099 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 044523912FCA23E800EB1099 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 044523CF2FCA253F00EB1099;
+			remoteInfo = Tunnel;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		044523E02FCA253F00EB1099 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				044523DB2FCA253F00EB1099 /* Tunnel.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		043796982FCB5C1600B85452 /* XrayClient.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = XrayClient.entitlements; sourceTree = "<group>"; };
+		044523992FCA23E800EB1099 /* XrayClient.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = XrayClient.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		044523A62FCA23EA00EB1099 /* XrayClientTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = XrayClientTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		044523B02FCA23EA00EB1099 /* XrayClientUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = XrayClientUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		044523D02FCA253F00EB1099 /* Tunnel.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = Tunnel.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		044523D22FCA253F00EB1099 /* NetworkExtension.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = NetworkExtension.framework; path = System/Library/Frameworks/NetworkExtension.framework; sourceTree = SDKROOT; };
+		044523E32FCA257F00EB1099 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		044523E42FCA257F00EB1099 /* PacketTunnelProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PacketTunnelProvider.swift; sourceTree = "<group>"; };
+		044523E52FCA257F00EB1099 /* Tunnel.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Tunnel.entitlements; sourceTree = "<group>"; };
+		044523E92FCA258300EB1099 /* XrayClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XrayClientTests.swift; sourceTree = "<group>"; };
+		044523EC2FCA258500EB1099 /* XrayClientUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XrayClientUITests.swift; sourceTree = "<group>"; };
+		044523ED2FCA258500EB1099 /* XrayClientUITestsLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XrayClientUITestsLaunchTests.swift; sourceTree = "<group>"; };
+		044523F12FCA258700EB1099 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		044523F22FCA258700EB1099 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		044523F32FCA258700EB1099 /* XrayClientApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XrayClientApp.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		044523962FCA23E800EB1099 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				044523C52FCA246000EB1099 /* XrayAppleClient in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		044523A32FCA23EA00EB1099 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		044523AD2FCA23EA00EB1099 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		044523CD2FCA253F00EB1099 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				044523D32FCA253F00EB1099 /* NetworkExtension.framework in Frameworks */,
+				044523E22FCA256700EB1099 /* XrayAppleTunnel in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		044523902FCA23E800EB1099 = {
+			isa = PBXGroup;
+			children = (
+				044523F42FCA258700EB1099 /* XrayClient */,
+				044523EA2FCA258300EB1099 /* XrayClientTests */,
+				044523EE2FCA258500EB1099 /* XrayClientUITests */,
+				044523E62FCA257F00EB1099 /* Tunnel */,
+				044523D12FCA253F00EB1099 /* Frameworks */,
+				0445239A2FCA23E800EB1099 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		0445239A2FCA23E800EB1099 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				044523992FCA23E800EB1099 /* XrayClient.app */,
+				044523A62FCA23EA00EB1099 /* XrayClientTests.xctest */,
+				044523B02FCA23EA00EB1099 /* XrayClientUITests.xctest */,
+				044523D02FCA253F00EB1099 /* Tunnel.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		044523D12FCA253F00EB1099 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				044523D22FCA253F00EB1099 /* NetworkExtension.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		044523E62FCA257F00EB1099 /* Tunnel */ = {
+			isa = PBXGroup;
+			children = (
+				044523E32FCA257F00EB1099 /* Info.plist */,
+				044523E42FCA257F00EB1099 /* PacketTunnelProvider.swift */,
+				044523E52FCA257F00EB1099 /* Tunnel.entitlements */,
+			);
+			path = Tunnel;
+			sourceTree = "<group>";
+		};
+		044523EA2FCA258300EB1099 /* XrayClientTests */ = {
+			isa = PBXGroup;
+			children = (
+				044523E92FCA258300EB1099 /* XrayClientTests.swift */,
+			);
+			path = XrayClientTests;
+			sourceTree = "<group>";
+		};
+		044523EE2FCA258500EB1099 /* XrayClientUITests */ = {
+			isa = PBXGroup;
+			children = (
+				044523EC2FCA258500EB1099 /* XrayClientUITests.swift */,
+				044523ED2FCA258500EB1099 /* XrayClientUITestsLaunchTests.swift */,
+			);
+			path = XrayClientUITests;
+			sourceTree = "<group>";
+		};
+		044523F42FCA258700EB1099 /* XrayClient */ = {
+			isa = PBXGroup;
+			children = (
+				043796982FCB5C1600B85452 /* XrayClient.entitlements */,
+				044523F12FCA258700EB1099 /* Assets.xcassets */,
+				044523F22FCA258700EB1099 /* ContentView.swift */,
+				044523F32FCA258700EB1099 /* XrayClientApp.swift */,
+			);
+			path = XrayClient;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		044523982FCA23E800EB1099 /* XrayClient */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 044523BA2FCA23EA00EB1099 /* Build configuration list for PBXNativeTarget "XrayClient" */;
+			buildPhases = (
+				044523952FCA23E800EB1099 /* Sources */,
+				044523962FCA23E800EB1099 /* Frameworks */,
+				044523972FCA23E800EB1099 /* Resources */,
+				044523E02FCA253F00EB1099 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				044523DA2FCA253F00EB1099 /* PBXTargetDependency */,
+			);
+			name = XrayClient;
+			packageProductDependencies = (
+				044523C42FCA246000EB1099 /* XrayAppleClient */,
+			);
+			productName = XrayClient;
+			productReference = 044523992FCA23E800EB1099 /* XrayClient.app */;
+			productType = "com.apple.product-type.application";
+		};
+		044523A52FCA23EA00EB1099 /* XrayClientTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 044523BD2FCA23EA00EB1099 /* Build configuration list for PBXNativeTarget "XrayClientTests" */;
+			buildPhases = (
+				044523A22FCA23EA00EB1099 /* Sources */,
+				044523A32FCA23EA00EB1099 /* Frameworks */,
+				044523A42FCA23EA00EB1099 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				044523A82FCA23EA00EB1099 /* PBXTargetDependency */,
+			);
+			name = XrayClientTests;
+			packageProductDependencies = (
+			);
+			productName = XrayClientTests;
+			productReference = 044523A62FCA23EA00EB1099 /* XrayClientTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		044523AF2FCA23EA00EB1099 /* XrayClientUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 044523C02FCA23EA00EB1099 /* Build configuration list for PBXNativeTarget "XrayClientUITests" */;
+			buildPhases = (
+				044523AC2FCA23EA00EB1099 /* Sources */,
+				044523AD2FCA23EA00EB1099 /* Frameworks */,
+				044523AE2FCA23EA00EB1099 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				044523B22FCA23EA00EB1099 /* PBXTargetDependency */,
+			);
+			name = XrayClientUITests;
+			packageProductDependencies = (
+			);
+			productName = XrayClientUITests;
+			productReference = 044523B02FCA23EA00EB1099 /* XrayClientUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		044523CF2FCA253F00EB1099 /* Tunnel */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 044523DD2FCA253F00EB1099 /* Build configuration list for PBXNativeTarget "Tunnel" */;
+			buildPhases = (
+				044523CC2FCA253F00EB1099 /* Sources */,
+				044523CD2FCA253F00EB1099 /* Frameworks */,
+				044523CE2FCA253F00EB1099 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Tunnel;
+			packageProductDependencies = (
+				044523E12FCA256700EB1099 /* XrayAppleTunnel */,
+			);
+			productName = Tunnel;
+			productReference = 044523D02FCA253F00EB1099 /* Tunnel.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		044523912FCA23E800EB1099 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2650;
+				LastUpgradeCheck = 2650;
+				TargetAttributes = {
+					044523982FCA23E800EB1099 = {
+						CreatedOnToolsVersion = 26.5;
+					};
+					044523A52FCA23EA00EB1099 = {
+						CreatedOnToolsVersion = 26.5;
+						TestTargetID = 044523982FCA23E800EB1099;
+					};
+					044523AF2FCA23EA00EB1099 = {
+						CreatedOnToolsVersion = 26.5;
+						TestTargetID = 044523982FCA23E800EB1099;
+					};
+					044523CF2FCA253F00EB1099 = {
+						CreatedOnToolsVersion = 26.5;
+					};
+				};
+			};
+			buildConfigurationList = 044523942FCA23E800EB1099 /* Build configuration list for PBXProject "XrayClient" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 044523902FCA23E800EB1099;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				044523C32FCA246000EB1099 /* XCLocalSwiftPackageReference "../../apple" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 0445239A2FCA23E800EB1099 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				044523982FCA23E800EB1099 /* XrayClient */,
+				044523A52FCA23EA00EB1099 /* XrayClientTests */,
+				044523AF2FCA23EA00EB1099 /* XrayClientUITests */,
+				044523CF2FCA253F00EB1099 /* Tunnel */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		044523972FCA23E800EB1099 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				044523F52FCA258700EB1099 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		044523A42FCA23EA00EB1099 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		044523AE2FCA23EA00EB1099 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		044523CE2FCA253F00EB1099 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		044523952FCA23E800EB1099 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				044523F62FCA258700EB1099 /* ContentView.swift in Sources */,
+				044523F72FCA258700EB1099 /* XrayClientApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		044523A22FCA23EA00EB1099 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				044523EB2FCA258300EB1099 /* XrayClientTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		044523AC2FCA23EA00EB1099 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				044523EF2FCA258500EB1099 /* XrayClientUITests.swift in Sources */,
+				044523F02FCA258500EB1099 /* XrayClientUITestsLaunchTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		044523CC2FCA253F00EB1099 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				044523E82FCA257F00EB1099 /* PacketTunnelProvider.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		044523A82FCA23EA00EB1099 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 044523982FCA23E800EB1099 /* XrayClient */;
+			targetProxy = 044523A72FCA23EA00EB1099 /* PBXContainerItemProxy */;
+		};
+		044523B22FCA23EA00EB1099 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 044523982FCA23E800EB1099 /* XrayClient */;
+			targetProxy = 044523B12FCA23EA00EB1099 /* PBXContainerItemProxy */;
+		};
+		044523DA2FCA253F00EB1099 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 044523CF2FCA253F00EB1099 /* Tunnel */;
+			targetProxy = 044523D92FCA253F00EB1099 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		044523B82FCA23EA00EB1099 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 9QF29ADW72;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		044523B92FCA23EA00EB1099 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 9QF29ADW72;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		044523BB2FCA23EA00EB1099 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = XrayClient/XrayClient.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9QF29ADW72;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.texforge.XrayClient;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		044523BC2FCA23EA00EB1099 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = XrayClient/XrayClient.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9QF29ADW72;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.texforge.XrayClient;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		044523BE2FCA23EA00EB1099 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9QF29ADW72;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.texforge.XrayClientTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/XrayClient.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/XrayClient";
+			};
+			name = Debug;
+		};
+		044523BF2FCA23EA00EB1099 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9QF29ADW72;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.texforge.XrayClientTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/XrayClient.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/XrayClient";
+			};
+			name = Release;
+		};
+		044523C12FCA23EA00EB1099 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9QF29ADW72;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.texforge.XrayClientUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = XrayClient;
+			};
+			name = Debug;
+		};
+		044523C22FCA23EA00EB1099 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9QF29ADW72;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.texforge.XrayClientUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = XrayClient;
+			};
+			name = Release;
+		};
+		044523DE2FCA253F00EB1099 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Tunnel/Tunnel.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9QF29ADW72;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Tunnel/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Tunnel;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.texforge.XrayClient.Tunnel;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		044523DF2FCA253F00EB1099 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Tunnel/Tunnel.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9QF29ADW72;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Tunnel/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Tunnel;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.texforge.XrayClient.Tunnel;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		044523942FCA23E800EB1099 /* Build configuration list for PBXProject "XrayClient" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				044523B82FCA23EA00EB1099 /* Debug */,
+				044523B92FCA23EA00EB1099 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		044523BA2FCA23EA00EB1099 /* Build configuration list for PBXNativeTarget "XrayClient" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				044523BB2FCA23EA00EB1099 /* Debug */,
+				044523BC2FCA23EA00EB1099 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		044523BD2FCA23EA00EB1099 /* Build configuration list for PBXNativeTarget "XrayClientTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				044523BE2FCA23EA00EB1099 /* Debug */,
+				044523BF2FCA23EA00EB1099 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		044523C02FCA23EA00EB1099 /* Build configuration list for PBXNativeTarget "XrayClientUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				044523C12FCA23EA00EB1099 /* Debug */,
+				044523C22FCA23EA00EB1099 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		044523DD2FCA253F00EB1099 /* Build configuration list for PBXNativeTarget "Tunnel" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				044523DE2FCA253F00EB1099 /* Debug */,
+				044523DF2FCA253F00EB1099 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		044523C32FCA246000EB1099 /* XCLocalSwiftPackageReference "../../apple" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../../apple;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		044523C42FCA246000EB1099 /* XrayAppleClient */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = XrayAppleClient;
+		};
+		044523E12FCA256700EB1099 /* XrayAppleTunnel */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 044523C32FCA246000EB1099 /* XCLocalSwiftPackageReference "../../apple" */;
+			productName = XrayAppleTunnel;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 044523912FCA23E800EB1099 /* Project object */;
+}
