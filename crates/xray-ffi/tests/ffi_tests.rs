@@ -284,6 +284,8 @@ fn ffi_tun_push_packet_updates_stats() {
     assert_eq!(stats.tcp_pending_remote_bytes, 0);
     assert_eq!(stats.tcp_pending_remote_flows, 0);
     assert_eq!(stats.tcp_pending_remote_max_bytes, 0);
+    assert_eq!(stats.tcp_remote_buffer_limit_bytes, 0);
+    assert_eq!(stats.tcp_remote_buffer_pressure_active, 0);
     assert_eq!(stats.tcp_remote_write_errors, 0);
     assert_eq!(stats.tcp_remote_closed_events, 0);
     assert_eq!(stats.tcp_remote_read_errors, 0);

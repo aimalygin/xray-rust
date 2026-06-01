@@ -35,6 +35,8 @@ pub struct TunStats {
     pub tcp_pending_remote_bytes: u64,
     pub tcp_pending_remote_flows: u64,
     pub tcp_pending_remote_max_bytes: u64,
+    pub tcp_remote_buffer_limit_bytes: u64,
+    pub tcp_remote_buffer_pressure_active: bool,
     pub tcp_remote_write_errors: u64,
     pub tcp_remote_closed_events: u64,
     pub tcp_remote_read_errors: u64,
@@ -59,6 +61,8 @@ pub struct TunEndpoint {
     tcp_pending_remote_bytes: AtomicU64,
     tcp_pending_remote_flows: AtomicU64,
     tcp_pending_remote_max_bytes: AtomicU64,
+    tcp_remote_buffer_limit_bytes: AtomicU64,
+    tcp_remote_buffer_pressure_active: AtomicBool,
     tcp_remote_write_errors: AtomicU64,
     tcp_remote_closed_events: AtomicU64,
     tcp_remote_read_errors: AtomicU64,
@@ -91,6 +95,8 @@ impl TunEndpoint {
             tcp_pending_remote_bytes: AtomicU64::new(0),
             tcp_pending_remote_flows: AtomicU64::new(0),
             tcp_pending_remote_max_bytes: AtomicU64::new(0),
+            tcp_remote_buffer_limit_bytes: AtomicU64::new(0),
+            tcp_remote_buffer_pressure_active: AtomicBool::new(false),
             tcp_remote_write_errors: AtomicU64::new(0),
             tcp_remote_closed_events: AtomicU64::new(0),
             tcp_remote_read_errors: AtomicU64::new(0),
@@ -138,6 +144,12 @@ impl TunEndpoint {
             tcp_pending_remote_bytes: self.tcp_pending_remote_bytes.load(Ordering::Relaxed),
             tcp_pending_remote_flows: self.tcp_pending_remote_flows.load(Ordering::Relaxed),
             tcp_pending_remote_max_bytes: self.tcp_pending_remote_max_bytes.load(Ordering::Relaxed),
+            tcp_remote_buffer_limit_bytes: self
+                .tcp_remote_buffer_limit_bytes
+                .load(Ordering::Relaxed),
+            tcp_remote_buffer_pressure_active: self
+                .tcp_remote_buffer_pressure_active
+                .load(Ordering::Relaxed),
             tcp_remote_write_errors: self.tcp_remote_write_errors.load(Ordering::Relaxed),
             tcp_remote_closed_events: self.tcp_remote_closed_events.load(Ordering::Relaxed),
             tcp_remote_read_errors: self.tcp_remote_read_errors.load(Ordering::Relaxed),
@@ -164,13 +176,24 @@ impl TunEndpoint {
         self.tcp_backpressure_events.fetch_add(1, Ordering::Relaxed);
     }
 
-    pub fn record_tcp_pending_remote(&self, bytes: usize, flows: usize, max_bytes: usize) {
+    pub fn record_tcp_pending_remote(
+        &self,
+        bytes: usize,
+        flows: usize,
+        max_bytes: usize,
+        limit_bytes: usize,
+        pressure_active: bool,
+    ) {
         self.tcp_pending_remote_bytes
             .store(bytes as u64, Ordering::Relaxed);
         self.tcp_pending_remote_flows
             .store(flows as u64, Ordering::Relaxed);
         self.tcp_pending_remote_max_bytes
             .store(max_bytes as u64, Ordering::Relaxed);
+        self.tcp_remote_buffer_limit_bytes
+            .store(limit_bytes as u64, Ordering::Relaxed);
+        self.tcp_remote_buffer_pressure_active
+            .store(pressure_active, Ordering::Relaxed);
     }
 
     pub fn record_tcp_remote_write_error(&self) {

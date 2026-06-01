@@ -41,6 +41,8 @@ public struct XrayTunStatsSnapshot: Equatable, Sendable {
     public let tcpPendingRemoteBytes: UInt64
     public let tcpPendingRemoteFlows: UInt64
     public let tcpPendingRemoteMaxBytes: UInt64
+    public let tcpRemoteBufferLimitBytes: UInt64
+    public let tcpRemoteBufferPressureActive: Bool
     public let tcpRemoteWriteErrors: UInt64
     public let tcpRemoteClosedEvents: UInt64
     public let tcpRemoteReadErrors: UInt64
@@ -215,6 +217,8 @@ public final class XrayCore: @unchecked Sendable {
                 tcpPendingRemoteBytes: stats.tcp_pending_remote_bytes,
                 tcpPendingRemoteFlows: stats.tcp_pending_remote_flows,
                 tcpPendingRemoteMaxBytes: stats.tcp_pending_remote_max_bytes,
+                tcpRemoteBufferLimitBytes: stats.tcp_remote_buffer_limit_bytes,
+                tcpRemoteBufferPressureActive: stats.tcp_remote_buffer_pressure_active != 0,
                 tcpRemoteWriteErrors: stats.tcp_remote_write_errors,
                 tcpRemoteClosedEvents: stats.tcp_remote_closed_events,
                 tcpRemoteReadErrors: stats.tcp_remote_read_errors,

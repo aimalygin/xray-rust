@@ -79,6 +79,8 @@ pub struct XrayTunStats {
     pub tcp_pending_remote_bytes: u64,
     pub tcp_pending_remote_flows: u64,
     pub tcp_pending_remote_max_bytes: u64,
+    pub tcp_remote_buffer_limit_bytes: u64,
+    pub tcp_remote_buffer_pressure_active: u64,
     pub tcp_remote_write_errors: u64,
     pub tcp_remote_closed_events: u64,
     pub tcp_remote_read_errors: u64,
@@ -822,6 +824,12 @@ unsafe fn xray_tun_stats_inner(
             tcp_pending_remote_bytes: snapshot.tcp_pending_remote_bytes,
             tcp_pending_remote_flows: snapshot.tcp_pending_remote_flows,
             tcp_pending_remote_max_bytes: snapshot.tcp_pending_remote_max_bytes,
+            tcp_remote_buffer_limit_bytes: snapshot.tcp_remote_buffer_limit_bytes,
+            tcp_remote_buffer_pressure_active: if snapshot.tcp_remote_buffer_pressure_active {
+                1
+            } else {
+                0
+            },
             tcp_remote_write_errors: snapshot.tcp_remote_write_errors,
             tcp_remote_closed_events: snapshot.tcp_remote_closed_events,
             tcp_remote_read_errors: snapshot.tcp_remote_read_errors,

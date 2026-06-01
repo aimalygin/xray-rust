@@ -331,7 +331,7 @@ const C_HARNESS_SOURCE: &str = r#"
 static void use_xray_ffi_api(void) {
   XrayError *error = NULL;
   XrayCoreHandle *handle = xray_core_new(&error);
-  XrayTunStats stats = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+  XrayTunStats stats = {0};
   uint8_t packet[1] = {0};
   uint8_t buffer[64] = {0};
   size_t written = 0;

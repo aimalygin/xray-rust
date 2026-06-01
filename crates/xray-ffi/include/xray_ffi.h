@@ -34,6 +34,8 @@ typedef struct XrayTunStats {
   uint64_t tcp_pending_remote_bytes;
   uint64_t tcp_pending_remote_flows;
   uint64_t tcp_pending_remote_max_bytes;
+  uint64_t tcp_remote_buffer_limit_bytes;
+  uint64_t tcp_remote_buffer_pressure_active;
   uint64_t tcp_remote_write_errors;
   uint64_t tcp_remote_closed_events;
   uint64_t tcp_remote_read_errors;
