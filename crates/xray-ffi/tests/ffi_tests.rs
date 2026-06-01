@@ -275,6 +275,19 @@ fn ffi_tun_push_packet_updates_stats() {
     assert_eq!(stats.inbound_packets, 1);
     assert_eq!(stats.outbound_packets, 0);
     assert_eq!(stats.dropped_packets, 0);
+    assert_eq!(stats.inbound_dropped_packets, 0);
+    assert_eq!(stats.outbound_dropped_packets, 0);
+    assert_eq!(stats.tcp_stack_to_remote_bytes, 0);
+    assert_eq!(stats.tcp_remote_written_bytes, 0);
+    assert_eq!(stats.tcp_remote_read_bytes, 0);
+    assert_eq!(stats.tcp_backpressure_events, 0);
+    assert_eq!(stats.tcp_pending_remote_bytes, 0);
+    assert_eq!(stats.tcp_pending_remote_flows, 0);
+    assert_eq!(stats.tcp_pending_remote_max_bytes, 0);
+    assert_eq!(stats.tcp_remote_write_errors, 0);
+    assert_eq!(stats.tcp_remote_closed_events, 0);
+    assert_eq!(stats.tcp_remote_read_errors, 0);
+    assert_eq!(stats.tcp_open_errors, 0);
 
     unsafe {
         xray_core_free(core);

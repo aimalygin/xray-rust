@@ -54,6 +54,12 @@ const USAGE: &str = "usage: xray-bench run|compare|route-probe [options]";
 const TEST_VLESS_UUID: [u8; 16] = [
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
 ];
+const TEST_VLESS_UUID_STRING: &str = "00010203-0405-0607-0809-0a0b0c0d0e0f";
+const REALITY_SERVER_NAME: &str = "www.example.com";
+const REALITY_PRIVATE_KEY: &str = "aGSYystUbf59_9_6LKRxD27rmSW_-2_nyd9YG_Gwbks";
+const REALITY_PUBLIC_KEY: &str = "E59WjnvZcQMu7tR7_BgyhycuEdBS-CtKxfImRCdAvFM";
+const REALITY_SHORT_ID_HEX: &str = "0123456789abcdef";
+const SING_BOX_BUILD_TAGS: &str = "with_gvisor,with_utls,badlinkname,tfogo_checklinkname0";
 const UDP_PROTOCOL: u8 = 17;
 const DARWIN_UTUN_HEADER_LEN: usize = 4;
 
@@ -90,6 +96,7 @@ pub enum CliArgs {
 pub enum EngineKind {
     XrayRust,
     XrayCore,
+    SingBox,
 }
 
 impl EngineKind {
@@ -97,6 +104,7 @@ impl EngineKind {
         match self {
             Self::XrayRust => "xray-rust",
             Self::XrayCore => "xray-core",
+            Self::SingBox => "sing-box",
         }
     }
 
@@ -104,6 +112,7 @@ impl EngineKind {
         match raw {
             "xray-rust" => Ok(Self::XrayRust),
             "xray-core" => Ok(Self::XrayCore),
+            "sing-box" => Ok(Self::SingBox),
             other => Err(BenchError::InvalidArguments(format!(
                 "unsupported engine `{other}`"
             ))),
@@ -124,6 +133,7 @@ pub enum WorkloadKind {
     UdpVless,
     UdpXudp,
     VisionXudp,
+    RealityVisionXudp,
 }
 
 impl WorkloadKind {
@@ -140,6 +150,7 @@ impl WorkloadKind {
             Self::UdpVless => "udp-vless",
             Self::UdpXudp => "udp-xudp",
             Self::VisionXudp => "vision-xudp",
+            Self::RealityVisionXudp => "reality-vision-xudp",
         }
     }
 
@@ -156,6 +167,7 @@ impl WorkloadKind {
             "udp-vless" => Ok(Self::UdpVless),
             "udp-xudp" => Ok(Self::UdpXudp),
             "vision-xudp" => Ok(Self::VisionXudp),
+            "reality-vision-xudp" => Ok(Self::RealityVisionXudp),
             other => Err(BenchError::InvalidArguments(format!(
                 "unsupported workload `{other}`"
             ))),
@@ -164,6 +176,19 @@ impl WorkloadKind {
 
     fn uses_tun_fd(&self) -> bool {
         matches!(self, Self::TunUdpFreedom | Self::TunTcpFreedom)
+    }
+
+    fn supports_sing_box_process_engine(&self) -> bool {
+        matches!(
+            self,
+            Self::Idle
+                | Self::TcpFreedom
+                | Self::ManyIdleFlows
+                | Self::ReconnectBurst
+                | Self::MixedLongLived
+                | Self::UdpFreedom
+                | Self::RealityVisionXudp
+        )
     }
 }
 
@@ -182,6 +207,8 @@ pub struct BenchOptions {
     pub xray_rust_bin: Option<PathBuf>,
     pub xray_core_bin: Option<PathBuf>,
     pub xray_core_dir: Option<PathBuf>,
+    pub sing_box_bin: Option<PathBuf>,
+    pub sing_box_dir: Option<PathBuf>,
     pub no_auto_build: bool,
 }
 
@@ -411,10 +438,28 @@ struct TunSocketPair;
 struct WorkloadFixture {
     vless_addr: Option<SocketAddr>,
     tasks: Vec<JoinHandle<()>>,
+    processes: Vec<FixtureProcess>,
+}
+
+#[derive(Debug)]
+struct FixtureProcess {
+    child: Child,
+}
+
+impl FixtureProcess {
+    fn stop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
 }
 
 impl WorkloadFixture {
-    async fn start(workload: WorkloadKind) -> Result<Self, BenchError> {
+    async fn start(
+        workload: WorkloadKind,
+        options: &BenchOptions,
+        run_dir: &Path,
+        binary_dir: &Path,
+    ) -> Result<Self, BenchError> {
         match workload {
             WorkloadKind::UdpVless => {
                 let (vless_addr, task) =
@@ -422,6 +467,7 @@ impl WorkloadFixture {
                 Ok(Self {
                     vless_addr: Some(vless_addr),
                     tasks: vec![task],
+                    processes: Vec::new(),
                 })
             }
             WorkloadKind::UdpXudp => {
@@ -430,6 +476,7 @@ impl WorkloadFixture {
                 Ok(Self {
                     vless_addr: Some(vless_addr),
                     tasks: vec![task],
+                    processes: Vec::new(),
                 })
             }
             WorkloadKind::VisionXudp => {
@@ -438,6 +485,16 @@ impl WorkloadFixture {
                 Ok(Self {
                     vless_addr: Some(vless_addr),
                     tasks: vec![task],
+                    processes: Vec::new(),
+                })
+            }
+            WorkloadKind::RealityVisionXudp => {
+                let (vless_addr, process) =
+                    start_xray_core_reality_vision_server(options, run_dir, binary_dir).await?;
+                Ok(Self {
+                    vless_addr: Some(vless_addr),
+                    tasks: Vec::new(),
+                    processes: vec![process],
                 })
             }
             WorkloadKind::Idle
@@ -456,6 +513,9 @@ impl Drop for WorkloadFixture {
     fn drop(&mut self) {
         for task in &self.tasks {
             task.abort();
+        }
+        for process in &mut self.processes {
+            process.stop();
         }
     }
 }
@@ -483,6 +543,8 @@ impl Default for BenchOptions {
             xray_rust_bin: None,
             xray_core_bin: None,
             xray_core_dir: None,
+            sing_box_bin: None,
+            sing_box_dir: None,
             no_auto_build: false,
         }
     }
@@ -582,6 +644,14 @@ where
                 options.xray_core_dir =
                     Some(PathBuf::from(required_value(&rest, &mut index, flag)?));
             }
+            "--sing-box-bin" => {
+                options.sing_box_bin =
+                    Some(PathBuf::from(required_value(&rest, &mut index, flag)?));
+            }
+            "--sing-box-dir" => {
+                options.sing_box_dir =
+                    Some(PathBuf::from(required_value(&rest, &mut index, flag)?));
+            }
             "--no-auto-build" => {
                 options.no_auto_build = true;
             }
@@ -597,7 +667,7 @@ where
         "run" => {
             if options.engine.is_none() {
                 return Err(BenchError::InvalidArguments(
-                    "run requires --engine xray-rust|xray-core".to_owned(),
+                    "run requires --engine xray-rust|xray-core|sing-box".to_owned(),
                 ));
             }
             Ok(CliArgs::Run(options))
@@ -1437,6 +1507,49 @@ pub async fn run_vision_xudp_workload(
     options: &BenchOptions,
 ) -> Result<WorkloadOutcome, BenchError> {
     run_udp_xudp_workload(socks_addr, options).await
+}
+
+pub async fn run_reality_vision_xudp_workload(
+    socks_addr: SocketAddr,
+    options: &BenchOptions,
+) -> Result<WorkloadOutcome, BenchError> {
+    let echo_socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "binding Reality Vision UDP echo server".to_owned(),
+            source,
+        })?;
+    let echo_addr = echo_socket.local_addr().map_err(|source| BenchError::Io {
+        action: "reading Reality Vision UDP echo server address".to_owned(),
+        source,
+    })?;
+    let echo_task = tokio::spawn(async move {
+        let mut buffer = vec![0; 65_536];
+        while let Ok((len, peer)) = echo_socket.recv_from(&mut buffer).await {
+            let _ = echo_socket.send_to(&buffer[..len], peer).await;
+        }
+    });
+
+    let mut tasks = Vec::with_capacity(options.connections);
+    for _ in 0..options.connections {
+        let options = options.clone();
+        tasks.push(tokio::spawn(async move {
+            run_udp_freedom_connection(socks_addr, echo_addr, &options).await
+        }));
+    }
+
+    let mut outcome = WorkloadOutcome::empty();
+    for task in tasks {
+        let task_outcome = task.await.map_err(|error| {
+            BenchError::InvalidArguments(format!(
+                "reality vision xudp workload task failed: {error}"
+            ))
+        })??;
+        outcome.extend(task_outcome);
+    }
+    echo_task.abort();
+
+    Ok(outcome)
 }
 
 async fn run_tcp_freedom_connection(
@@ -2978,6 +3091,9 @@ pub fn xray_rust_config(port: u16, workload: WorkloadKind) -> String {
         WorkloadKind::VisionXudp => {
             vision_xudp_config(port, SocketAddr::from((Ipv4Addr::LOCALHOST, 443)))
         }
+        WorkloadKind::RealityVisionXudp => {
+            reality_vision_xudp_config(port, SocketAddr::from((Ipv4Addr::LOCALHOST, 443)))
+        }
         WorkloadKind::TunUdpFreedom | WorkloadKind::TunTcpFreedom => tun_freedom_config(),
         WorkloadKind::Idle
         | WorkloadKind::TcpFreedom
@@ -2996,6 +3112,29 @@ pub fn xray_rust_config(port: u16, workload: WorkloadKind) -> String {
 
 pub fn xray_core_config(port: u16, workload: WorkloadKind) -> String {
     xray_rust_config(port, workload)
+}
+
+fn sing_box_config(
+    port: u16,
+    workload: WorkloadKind,
+    fixture: &WorkloadFixture,
+) -> Result<String, BenchError> {
+    match workload {
+        WorkloadKind::RealityVisionXudp => {
+            let vless_addr = fixture.vless_addr.ok_or_else(|| {
+                BenchError::InvalidArguments(
+                    "reality-vision-xudp workload requires a VLESS Reality server fixture"
+                        .to_owned(),
+                )
+            })?;
+            Ok(sing_box_reality_vision_xudp_config(port, vless_addr))
+        }
+        _ if workload.supports_sing_box_process_engine() => Ok(sing_box_direct_config(port)),
+        _ => Err(BenchError::InvalidArguments(format!(
+            "unsupported sing-box workload `{}` in process-level comparison",
+            workload.as_str()
+        ))),
+    }
 }
 
 fn engine_config(
@@ -3020,6 +3159,15 @@ fn engine_config(
             })?;
             Ok(vision_xudp_config(port, vless_addr))
         }
+        WorkloadKind::RealityVisionXudp => {
+            let vless_addr = fixture.vless_addr.ok_or_else(|| {
+                BenchError::InvalidArguments(
+                    "reality-vision-xudp workload requires a VLESS Reality server fixture"
+                        .to_owned(),
+                )
+            })?;
+            Ok(reality_vision_xudp_config(port, vless_addr))
+        }
         WorkloadKind::TunUdpFreedom | WorkloadKind::TunTcpFreedom => Ok(tun_freedom_config()),
         WorkloadKind::Idle
         | WorkloadKind::TcpFreedom
@@ -3034,6 +3182,72 @@ fn engine_config(
             ),
         )),
     }
+}
+
+fn sing_box_direct_config(port: u16) -> String {
+    format!(
+        r#"{{
+  "log": {{ "level": "warn" }},
+  "inbounds": [
+    {{
+      "type": "socks",
+      "tag": "socks-in",
+      "listen": "127.0.0.1",
+      "listen_port": {port}
+    }}
+  ],
+  "outbounds": [
+    {{
+      "type": "direct",
+      "tag": "direct"
+    }}
+  ],
+  "route": {{ "final": "direct" }}
+}}"#
+    )
+}
+
+fn sing_box_reality_vision_xudp_config(port: u16, vless_addr: SocketAddr) -> String {
+    format!(
+        r#"{{
+  "log": {{ "level": "warn" }},
+  "inbounds": [
+    {{
+      "type": "socks",
+      "tag": "socks-in",
+      "listen": "127.0.0.1",
+      "listen_port": {port}
+    }}
+  ],
+  "outbounds": [
+    {{
+      "type": "vless",
+      "tag": "proxy",
+      "server": "{}",
+      "server_port": {},
+      "uuid": "{TEST_VLESS_UUID_STRING}",
+      "flow": "xtls-rprx-vision",
+      "packet_encoding": "xudp",
+      "tls": {{
+        "enabled": true,
+        "server_name": "{REALITY_SERVER_NAME}",
+        "utls": {{
+          "enabled": true,
+          "fingerprint": "chrome"
+        }},
+        "reality": {{
+          "enabled": true,
+          "public_key": "{REALITY_PUBLIC_KEY}",
+          "short_id": "{REALITY_SHORT_ID_HEX}"
+        }}
+      }}
+    }}
+  ],
+  "route": {{ "final": "proxy" }}
+}}"#,
+        vless_addr.ip(),
+        vless_addr.port()
+    )
 }
 
 fn tun_freedom_config() -> String {
@@ -3170,6 +3384,101 @@ fn vision_xudp_config(port: u16, vless_addr: SocketAddr) -> String {
 }}"#,
         vless_addr.ip(),
         vless_addr.port()
+    )
+}
+
+fn reality_vision_xudp_config(port: u16, vless_addr: SocketAddr) -> String {
+    format!(
+        r#"{{
+  "log": {{ "loglevel": "warning" }},
+  "inbounds": [
+    {{
+      "tag": "socks-in",
+      "protocol": "socks",
+      "listen": "127.0.0.1",
+      "port": {port},
+      "settings": {{ "auth": "noauth", "udp": true, "ip": "127.0.0.1" }}
+    }}
+  ],
+  "outbounds": [
+    {{
+      "tag": "proxy",
+      "protocol": "vless",
+      "settings": {{
+        "vnext": [
+          {{
+            "address": "{}",
+            "port": {},
+            "users": [
+              {{
+                "id": "{TEST_VLESS_UUID_STRING}",
+                "encryption": "none",
+                "flow": "xtls-rprx-vision"
+              }}
+            ]
+          }}
+        ]
+      }},
+      "streamSettings": {{
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {{
+          "serverName": "{REALITY_SERVER_NAME}",
+          "fingerprint": "chrome",
+          "publicKey": "{REALITY_PUBLIC_KEY}",
+          "shortId": "{REALITY_SHORT_ID_HEX}",
+          "spiderX": "/"
+        }}
+      }}
+    }}
+  ]
+}}"#,
+        vless_addr.ip(),
+        vless_addr.port()
+    )
+}
+
+fn xray_core_reality_vision_server_config(port: u16) -> String {
+    format!(
+        r#"{{
+  "log": {{ "loglevel": "warning" }},
+  "inbounds": [
+    {{
+      "listen": "127.0.0.1",
+      "port": {port},
+      "protocol": "vless",
+      "settings": {{
+        "clients": [
+          {{
+            "id": "{TEST_VLESS_UUID_STRING}",
+            "flow": "xtls-rprx-vision"
+          }}
+        ],
+        "decryption": "none"
+      }},
+      "streamSettings": {{
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {{
+          "show": true,
+          "dest": "{REALITY_SERVER_NAME}:443",
+          "serverNames": ["{REALITY_SERVER_NAME}"],
+          "privateKey": "{REALITY_PRIVATE_KEY}",
+          "shortIds": ["{REALITY_SHORT_ID_HEX}"],
+          "type": "tcp"
+        }}
+      }}
+    }}
+  ],
+  "outbounds": [
+    {{
+      "protocol": "freedom",
+      "settings": {{
+        "finalRules": [{{ "action": "allow" }}]
+      }}
+    }}
+  ]
+}}"#
     )
 }
 
@@ -3360,6 +3669,54 @@ pub async fn wait_for_process_started(
     Ok(())
 }
 
+async fn start_xray_core_reality_vision_server(
+    options: &BenchOptions,
+    run_dir: &Path,
+    binary_dir: &Path,
+) -> Result<(SocketAddr, FixtureProcess), BenchError> {
+    let fixture_dir = run_dir.join("fixture").join("reality-vision-server");
+    fs::create_dir_all(&fixture_dir).map_err(|source| BenchError::Io {
+        action: format!("creating fixture directory `{}`", fixture_dir.display()),
+        source,
+    })?;
+    let port = allocate_loopback_port()?;
+    let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
+    let config_path = fixture_dir.join("config.json");
+    fs::write(&config_path, xray_core_reality_vision_server_config(port)).map_err(|source| {
+        BenchError::Io {
+            action: format!("writing fixture config `{}`", config_path.display()),
+            source,
+        }
+    })?;
+    let stdout_path = fixture_dir.join("stdout.log");
+    let stderr_path = fixture_dir.join("stderr.log");
+    let stdout = fs::File::create(&stdout_path).map_err(|source| BenchError::Io {
+        action: format!("creating fixture stdout log `{}`", stdout_path.display()),
+        source,
+    })?;
+    let stderr = fs::File::create(&stderr_path).map_err(|source| BenchError::Io {
+        action: format!("creating fixture stderr log `{}`", stderr_path.display()),
+        source,
+    })?;
+    let fixture_binary_dir = binary_dir.join("xray-core-fixture");
+    let binary = ensure_xray_core_binary(options, &fixture_binary_dir)?;
+    let mut child = Command::new(&binary)
+        .arg("run")
+        .arg("-config")
+        .arg(&config_path)
+        .stdout(Stdio::from(stdout))
+        .stderr(Stdio::from(stderr))
+        .spawn()
+        .map_err(|source| BenchError::Io {
+            action: format!("spawning fixture `{}`", binary.display()),
+            source,
+        })?;
+
+    wait_for_tcp_listener(&mut child, addr, &stdout_path, &stderr_path).await?;
+
+    Ok((addr, FixtureProcess { child }))
+}
+
 pub fn ensure_xray_rust_binary(options: &BenchOptions) -> Result<PathBuf, BenchError> {
     if let Some(path) = &options.xray_rust_bin {
         return Ok(path.clone());
@@ -3436,6 +3793,61 @@ pub fn ensure_xray_core_binary(
     Ok(binary)
 }
 
+pub fn ensure_sing_box_binary(
+    options: &BenchOptions,
+    bin_dir: &Path,
+) -> Result<PathBuf, BenchError> {
+    if let Some(path) = &options.sing_box_bin {
+        return Ok(path.clone());
+    }
+
+    let checkout = options
+        .sing_box_dir
+        .clone()
+        .or_else(default_sing_box_dir)
+        .ok_or_else(|| {
+            BenchError::InvalidArguments(
+                "sing-box checkout not found; pass --sing-box-dir or --sing-box-bin".to_owned(),
+            )
+        })?;
+
+    let checkout_binary = checkout.join(format!("sing-box{}", std::env::consts::EXE_SUFFIX));
+    if checkout_binary.exists() {
+        return Ok(checkout_binary);
+    }
+    if options.no_auto_build {
+        return Err(BenchError::InvalidArguments(
+            "sing-box binary requires --sing-box-bin when --no-auto-build is set".to_owned(),
+        ));
+    }
+
+    let bin_dir = absolute_path(bin_dir)?;
+    fs::create_dir_all(&bin_dir).map_err(|source| BenchError::Io {
+        action: format!("creating binary directory `{}`", bin_dir.display()),
+        source,
+    })?;
+    let binary = bin_dir.join(format!("sing-box{}", std::env::consts::EXE_SUFFIX));
+    if binary.exists() {
+        return Ok(binary);
+    }
+    run_command(
+        "go",
+        Command::new("go")
+            .arg("build")
+            .arg("-tags")
+            .arg(sing_box_build_tags())
+            .arg("-o")
+            .arg(&binary)
+            .arg("./cmd/sing-box")
+            .current_dir(&checkout),
+    )?;
+    Ok(binary)
+}
+
+fn sing_box_build_tags() -> &'static str {
+    SING_BOX_BUILD_TAGS
+}
+
 fn absolute_path(path: &Path) -> Result<PathBuf, BenchError> {
     if path.is_absolute() {
         return Ok(path.to_path_buf());
@@ -3469,6 +3881,7 @@ async fn start_engine(
         EngineKind::XrayRust | EngineKind::XrayCore => {
             engine_config(port, options.workload, fixture)?
         }
+        EngineKind::SingBox => sing_box_config(port, options.workload, fixture)?,
     };
     let config_path = run_dir.join("config.json");
     fs::write(&config_path, config).map_err(|source| BenchError::Io {
@@ -3480,6 +3893,7 @@ async fn start_engine(
     let binary = match kind {
         EngineKind::XrayRust => ensure_xray_rust_binary(options)?,
         EngineKind::XrayCore => ensure_xray_core_binary(options, binary_dir)?,
+        EngineKind::SingBox => ensure_sing_box_binary(options, binary_dir)?,
     };
     let stdout = fs::File::create(&stdout_path).map_err(|source| BenchError::Io {
         action: format!("creating stdout log `{}`", stdout_path.display()),
@@ -3490,9 +3904,16 @@ async fn start_engine(
         source,
     })?;
     let mut command = Command::new(&binary);
+    command.arg("run");
+    match kind {
+        EngineKind::XrayRust | EngineKind::XrayCore => {
+            command.arg("-config");
+        }
+        EngineKind::SingBox => {
+            command.arg("-c");
+        }
+    };
     command
-        .arg("run")
-        .arg("-config")
         .arg(&config_path)
         .stdout(Stdio::from(stdout))
         .stderr(Stdio::from(stderr));
@@ -3568,6 +3989,18 @@ fn default_xray_core_dir() -> Option<PathBuf> {
         .find(|path| path.join("go.mod").exists())
 }
 
+fn default_sing_box_dir() -> Option<PathBuf> {
+    let root = workspace_root().ok()?;
+    let candidates = [
+        root.join("sing-box"),
+        root.parent()?.join("sing-box"),
+        root.parent()?.parent()?.join("sing-box"),
+    ];
+    candidates
+        .into_iter()
+        .find(|path| path.join("go.mod").exists())
+}
+
 pub async fn run_cli<I, S>(args: I) -> Result<(), BenchError>
 where
     I: IntoIterator<Item = S>,
@@ -3576,7 +4009,9 @@ where
     match parse_cli_args(args)? {
         CliArgs::Run(options) => {
             let engine = options.engine.ok_or_else(|| {
-                BenchError::InvalidArguments("run requires --engine xray-rust|xray-core".to_owned())
+                BenchError::InvalidArguments(
+                    "run requires --engine xray-rust|xray-core|sing-box".to_owned(),
+                )
             })?;
             let run_id = new_run_id();
             let summary = run_engine_series(engine, &options, &run_id).await?;
@@ -3682,6 +4117,15 @@ pub async fn run_compare(options: BenchOptions) -> Result<(), BenchError> {
     print_summary(&rust_summary);
     let xray_summary = run_engine_series(EngineKind::XrayCore, &options, &run_id).await?;
     print_summary(&xray_summary);
+    if options.workload.supports_sing_box_process_engine() {
+        let sing_box_summary = run_engine_series(EngineKind::SingBox, &options, &run_id).await?;
+        print_summary(&sing_box_summary);
+    } else {
+        eprintln!(
+            "sing-box {} skipped: workload uses topology outside the process-level sing-box slice",
+            options.workload.as_str()
+        );
+    }
     Ok(())
 }
 
@@ -3730,7 +4174,7 @@ async fn run_engine_once(
         action: format!("creating run directory `{}`", run_dir.display()),
         source,
     })?;
-    let fixture = WorkloadFixture::start(options.workload).await?;
+    let fixture = WorkloadFixture::start(options.workload, options, run_dir, binary_dir).await?;
     let engine = start_engine(kind, options, run_dir, binary_dir, &fixture).await?;
     let started = Instant::now();
     let workload = async {
@@ -3756,6 +4200,9 @@ async fn run_engine_once(
             WorkloadKind::UdpVless => run_udp_vless_workload(engine.socks_addr, options).await,
             WorkloadKind::UdpXudp => run_udp_xudp_workload(engine.socks_addr, options).await,
             WorkloadKind::VisionXudp => run_vision_xudp_workload(engine.socks_addr, options).await,
+            WorkloadKind::RealityVisionXudp => {
+                run_reality_vision_xudp_workload(engine.socks_addr, options).await
+            }
         }
     };
     let (workload_outcome, samples) = match timeout(
@@ -4012,8 +4459,61 @@ mod tests {
                 xray_rust_bin: None,
                 xray_core_bin: None,
                 xray_core_dir: None,
+                sing_box_bin: None,
+                sing_box_dir: None,
                 no_auto_build: false,
             })
+        );
+    }
+
+    #[test]
+    fn parses_run_idle_for_sing_box() {
+        let args = parse_cli_args([
+            "xray-bench",
+            "run",
+            "--engine",
+            "sing-box",
+            "--workload",
+            "idle",
+            "--sing-box-bin",
+            "/private/tmp/sing-box-bench/sing-box",
+        ])
+        .unwrap();
+
+        let CliArgs::Run(options) = args else {
+            panic!("expected run args");
+        };
+        assert_eq!(options.engine, Some(EngineKind::SingBox));
+        assert_eq!(
+            options.sing_box_bin,
+            Some(PathBuf::from("/private/tmp/sing-box-bench/sing-box"))
+        );
+    }
+
+    #[test]
+    fn parses_compare_sing_box_binary_and_checkout_options() {
+        let args = parse_cli_args([
+            "xray-bench",
+            "compare",
+            "--workload",
+            "many-idle-flows",
+            "--sing-box-bin",
+            "/private/tmp/sing-box-bench/sing-box",
+            "--sing-box-dir",
+            "/private/tmp/sing-box-bench",
+        ])
+        .unwrap();
+
+        let CliArgs::Compare(options) = args else {
+            panic!("expected compare args");
+        };
+        assert_eq!(
+            options.sing_box_bin,
+            Some(PathBuf::from("/private/tmp/sing-box-bench/sing-box"))
+        );
+        assert_eq!(
+            options.sing_box_dir,
+            Some(PathBuf::from("/private/tmp/sing-box-bench"))
         );
     }
 
@@ -4159,6 +4659,31 @@ mod tests {
             panic!("expected compare args");
         };
         assert_eq!(options.workload, WorkloadKind::VisionXudp);
+        assert_eq!(options.connections, 2);
+        assert_eq!(options.iterations, 3);
+        assert_eq!(options.payload_size, 64);
+    }
+
+    #[test]
+    fn parses_compare_reality_vision_xudp() {
+        let args = parse_cli_args([
+            "xray-bench",
+            "compare",
+            "--workload",
+            "reality-vision-xudp",
+            "--connections",
+            "2",
+            "--iterations",
+            "3",
+            "--payload-size",
+            "64",
+        ])
+        .unwrap();
+
+        let CliArgs::Compare(options) = args else {
+            panic!("expected compare args");
+        };
+        assert_eq!(options.workload, WorkloadKind::RealityVisionXudp);
         assert_eq!(options.connections, 2);
         assert_eq!(options.iterations, 3);
         assert_eq!(options.payload_size, 64);
@@ -4432,6 +4957,60 @@ mod tests {
     }
 
     #[test]
+    fn reality_vision_xudp_config_enables_reality_vision_flow() {
+        let config = reality_vision_xudp_config(
+            18085,
+            SocketAddr::from((Ipv4Addr::new(127, 0, 0, 1), 19092)),
+        );
+        let value = serde_json::from_str::<serde_json::Value>(&config).unwrap();
+
+        assert_eq!(value["inbounds"][0]["protocol"], "socks");
+        assert_eq!(value["outbounds"][0]["protocol"], "vless");
+        assert_eq!(
+            value["outbounds"][0]["settings"]["vnext"][0]["users"][0]["flow"],
+            "xtls-rprx-vision"
+        );
+        assert_eq!(
+            value["outbounds"][0]["streamSettings"]["security"],
+            "reality"
+        );
+        assert_eq!(
+            value["outbounds"][0]["streamSettings"]["realitySettings"]["publicKey"],
+            REALITY_PUBLIC_KEY
+        );
+        assert_eq!(
+            value["outbounds"][0]["streamSettings"]["realitySettings"]["shortId"],
+            REALITY_SHORT_ID_HEX
+        );
+        assert_eq!(value["outbounds"][0]["settings"]["vnext"][0]["port"], 19092);
+    }
+
+    #[test]
+    fn xray_core_reality_fixture_config_enables_reality_vision_inbound() {
+        let config = xray_core_reality_vision_server_config(19093);
+        let value = serde_json::from_str::<serde_json::Value>(&config).unwrap();
+
+        assert_eq!(value["inbounds"][0]["protocol"], "vless");
+        assert_eq!(
+            value["inbounds"][0]["settings"]["clients"][0]["flow"],
+            "xtls-rprx-vision"
+        );
+        assert_eq!(
+            value["inbounds"][0]["streamSettings"]["security"],
+            "reality"
+        );
+        assert_eq!(
+            value["inbounds"][0]["streamSettings"]["realitySettings"]["privateKey"],
+            REALITY_PRIVATE_KEY
+        );
+        assert_eq!(value["outbounds"][0]["protocol"], "freedom");
+        assert_eq!(
+            value["outbounds"][0]["settings"]["finalRules"][0]["action"],
+            "allow"
+        );
+    }
+
+    #[test]
     fn tun_udp_freedom_config_uses_tun_inbound_without_socks() {
         let fixture = WorkloadFixture::default();
         let config = engine_config(0, WorkloadKind::TunUdpFreedom, &fixture).unwrap();
@@ -4440,6 +5019,72 @@ mod tests {
         assert_eq!(value["inbounds"][0]["protocol"], "tun");
         assert_eq!(value["outbounds"][0]["protocol"], "freedom");
         assert!(!config.contains(r#""protocol": "socks""#));
+    }
+
+    #[test]
+    fn sing_box_freedom_config_uses_sing_box_schema() {
+        let fixture = WorkloadFixture::default();
+        let config = sing_box_config(18086, WorkloadKind::ManyIdleFlows, &fixture).unwrap();
+        let value = serde_json::from_str::<serde_json::Value>(&config).unwrap();
+
+        assert_eq!(value["log"]["level"], "warn");
+        assert_eq!(value["inbounds"][0]["type"], "socks");
+        assert_eq!(value["inbounds"][0]["listen"], "127.0.0.1");
+        assert_eq!(value["inbounds"][0]["listen_port"], 18086);
+        assert_eq!(value["outbounds"][0]["type"], "direct");
+        assert_eq!(value["route"]["final"], "direct");
+    }
+
+    #[test]
+    fn sing_box_reality_vision_xudp_config_uses_vless_reality_schema() {
+        let fixture = WorkloadFixture {
+            vless_addr: Some(SocketAddr::from((Ipv4Addr::new(127, 0, 0, 1), 19094))),
+            tasks: Vec::new(),
+            processes: Vec::new(),
+        };
+        let config = sing_box_config(18087, WorkloadKind::RealityVisionXudp, &fixture).unwrap();
+        let value = serde_json::from_str::<serde_json::Value>(&config).unwrap();
+
+        assert_eq!(value["inbounds"][0]["type"], "socks");
+        assert_eq!(value["outbounds"][0]["type"], "vless");
+        assert_eq!(value["outbounds"][0]["server"], "127.0.0.1");
+        assert_eq!(value["outbounds"][0]["server_port"], 19094);
+        assert_eq!(value["outbounds"][0]["flow"], "xtls-rprx-vision");
+        assert_eq!(value["outbounds"][0]["packet_encoding"], "xudp");
+        assert_eq!(value["outbounds"][0]["tls"]["enabled"], true);
+        assert_eq!(
+            value["outbounds"][0]["tls"]["server_name"],
+            REALITY_SERVER_NAME
+        );
+        assert_eq!(value["outbounds"][0]["tls"]["utls"]["enabled"], true);
+        assert_eq!(
+            value["outbounds"][0]["tls"]["reality"]["public_key"],
+            REALITY_PUBLIC_KEY
+        );
+        assert_eq!(
+            value["outbounds"][0]["tls"]["reality"]["short_id"],
+            REALITY_SHORT_ID_HEX
+        );
+    }
+
+    #[test]
+    fn sing_box_auto_build_tags_include_utls_for_reality() {
+        assert!(sing_box_build_tags()
+            .split(',')
+            .any(|tag| tag == "with_utls"));
+    }
+
+    #[test]
+    fn reality_vision_xudp_supports_sing_box_compare() {
+        assert!(WorkloadKind::RealityVisionXudp.supports_sing_box_process_engine());
+    }
+
+    #[test]
+    fn sing_box_tun_workloads_are_explicitly_unsupported() {
+        let fixture = WorkloadFixture::default();
+        let error = sing_box_config(0, WorkloadKind::TunUdpFreedom, &fixture).unwrap_err();
+
+        assert!(error.to_string().contains("unsupported sing-box workload"));
     }
 
     #[test]

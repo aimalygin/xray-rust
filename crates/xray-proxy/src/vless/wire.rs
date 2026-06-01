@@ -8,6 +8,7 @@ const ADDR_IPV4: u8 = 1;
 const ADDR_DOMAIN: u8 = 2;
 const ADDR_IPV6: u8 = 3;
 const VISION_FLOW: &str = "xtls-rprx-vision";
+const VISION_UDP443_FLOW: &str = "xtls-rprx-vision-udp443";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VlessCommand {
@@ -60,7 +61,7 @@ pub fn encode_request_header(request: &VlessRequest) -> Result<Vec<u8>, WireErro
 }
 
 fn encode_addons(request: &VlessRequest, encoded: &mut Vec<u8>) -> Result<(), WireError> {
-    if request.flow.as_deref() != Some(VISION_FLOW) {
+    if !is_vision_flow(request.flow.as_deref()) {
         encoded.push(0);
         return Ok(());
     }
@@ -75,6 +76,10 @@ fn encode_addons(request: &VlessRequest, encoded: &mut Vec<u8>) -> Result<(), Wi
     encoded.extend_from_slice(&addons_bytes);
 
     Ok(())
+}
+
+fn is_vision_flow(flow: Option<&str>) -> bool {
+    matches!(flow, Some(VISION_FLOW | VISION_UDP443_FLOW))
 }
 
 fn encode_addr(addr: &TargetAddr, encoded: &mut Vec<u8>) -> Result<(), WireError> {

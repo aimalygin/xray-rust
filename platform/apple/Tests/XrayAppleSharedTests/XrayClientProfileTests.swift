@@ -2,6 +2,8 @@ import XCTest
 @testable import XrayAppleShared
 
 final class XrayClientProfileTests: XCTestCase {
+    private static let sampleVlessURL = "vless://41dac315-fc32-4957-aded-6010b8f62fef@217.154.252.68:32134?type=tcp&encryption=none&security=reality&pbk=3jNx5A3WTFKhvCj3IPljaxbcBjCxhH2dVCNobKv_X1c&fp=chrome&sni=google.com&sid=1c5694e878&spx=%2F&pqv=ignored-for-now&flow=xtls-rprx-vision#other-port-test-xray-rust"
+
     func testDefaultProviderBundleIdentifierUsesHostBundleIdentifier() {
         XCTAssertEqual(
             XrayClientProfile.defaultProviderBundleIdentifier(
@@ -49,9 +51,74 @@ final class XrayClientProfileTests: XCTestCase {
         XCTAssertTrue(json is [String: Any])
     }
 
+    func testDebugLoggingDefaultsToDisabled() {
+        let profile = XrayClientProfile.defaultProfile(
+            hostBundleIdentifier: "org.example.XrayClient"
+        )
+
+        XCTAssertFalse(profile.debugLoggingEnabled)
+    }
+
+    func testTunFileDescriptorDefaultsToEnabled() {
+        let profile = XrayClientProfile.defaultProfile(
+            hostBundleIdentifier: "org.example.XrayClient"
+        )
+
+        XCTAssertTrue(profile.useTunFileDescriptor)
+    }
+
+    func testQuicBlockingDefaultsToDisabled() {
+        let profile = XrayClientProfile.defaultProfile(
+            hostBundleIdentifier: "org.example.XrayClient"
+        )
+
+        XCTAssertFalse(profile.blockQUIC)
+    }
+
+    func testProfileDecodesLegacyPayloadWithoutDebugLoggingFlag() throws {
+        let legacyPayload = """
+        {
+          "id": "00000000-0000-0000-0000-000000000001",
+          "name": "Legacy",
+          "providerBundleIdentifier": "org.example.XrayClient.Tunnel",
+          "serverAddress": "xray-rust",
+          "configJSON": "{}"
+        }
+        """
+
+        let profile = try JSONDecoder().decode(
+            XrayClientProfile.self,
+            from: Data(legacyPayload.utf8)
+        )
+
+        XCTAssertFalse(profile.debugLoggingEnabled)
+        XCTAssertTrue(profile.useTunFileDescriptor)
+        XCTAssertFalse(profile.blockQUIC)
+    }
+
+    func testProfileEncodesDebugFlags() throws {
+        let profile = XrayClientProfile(
+            name: "Debug",
+            providerBundleIdentifier: "org.example.XrayClient.Tunnel",
+            serverAddress: "xray-rust",
+            configJSON: "{}",
+            debugLoggingEnabled: true,
+            useTunFileDescriptor: false,
+            blockQUIC: true
+        )
+
+        let root = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: JSONEncoder().encode(profile)) as? [String: Any]
+        )
+
+        XCTAssertEqual(root["debugLoggingEnabled"] as? Bool, true)
+        XCTAssertEqual(root["useTunFileDescriptor"] as? Bool, false)
+        XCTAssertEqual(root["blockQUIC"] as? Bool, true)
+    }
+
     func testVlessURLImporterBuildsMobileRealityProfile() throws {
         let profile = try XrayVlessURLImporter.profile(
-            from: "vless://41dac315-fc32-4957-aded-6010b8f62fef@217.154.252.68:32134?type=tcp&encryption=none&security=reality&pbk=3jNx5A3WTFKhvCj3IPljaxbcBjCxhH2dVCNobKv_X1c&fp=chrome&sni=google.com&sid=1c5694e878&spx=%2F&pqv=ignored-for-now&flow=xtls-rprx-vision#other-port-test-xray-rust",
+            from: Self.sampleVlessURL,
             hostBundleIdentifier: "org.example.XrayClient"
         )
 
@@ -97,6 +164,85 @@ final class XrayClientProfileTests: XCTestCase {
         XCTAssertEqual(reality["shortId"] as? String, "1c5694e878")
         XCTAssertEqual(reality["spiderX"] as? String, "/")
         XCTAssertNil(reality["pqv"])
+    }
+
+    func testVlessURLImporterExtractsURLFromPastedText() throws {
+        let pastedText = "configuration url:\n\(Self.sampleVlessURL)\n"
+
+        let profile = try XrayVlessURLImporter.profile(
+            from: pastedText,
+            hostBundleIdentifier: "org.example.XrayClient"
+        )
+
+        XCTAssertEqual(profile.name, "other-port-test-xray-rust")
+        XCTAssertEqual(profile.serverAddress, "217.154.252.68")
+    }
+
+    func testVlessURLImporterAcceptsSchemeLessAuthority() throws {
+        let schemeLessURL = String(Self.sampleVlessURL.dropFirst("vless://".count))
+
+        let profile = try XrayVlessURLImporter.profile(
+            from: schemeLessURL,
+            hostBundleIdentifier: "org.example.XrayClient"
+        )
+
+        XCTAssertEqual(profile.name, "other-port-test-xray-rust")
+        XCTAssertEqual(profile.serverAddress, "217.154.252.68")
+    }
+
+    func testVlessURLImporterExtractsSchemeLessAuthorityFromPastedText() throws {
+        let schemeLessURL = String(Self.sampleVlessURL.dropFirst("vless://".count))
+        let pastedText = "configuration url:\n\(schemeLessURL)\n"
+
+        let profile = try XrayVlessURLImporter.profile(
+            from: pastedText,
+            hostBundleIdentifier: "org.example.XrayClient"
+        )
+
+        XCTAssertEqual(profile.name, "other-port-test-xray-rust")
+        XCTAssertEqual(profile.serverAddress, "217.154.252.68")
+    }
+
+    func testVlessURLImporterAcceptsVisionUdp443Flow() throws {
+        let url = Self.sampleVlessURL.replacingOccurrences(
+            of: "flow=xtls-rprx-vision",
+            with: "flow=xtls-rprx-vision-udp443"
+        )
+
+        let profile = try XrayVlessURLImporter.profile(
+            from: url,
+            hostBundleIdentifier: "org.example.XrayClient"
+        )
+
+        let root = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(profile.configJSON.utf8)) as? [String: Any]
+        )
+        let outbounds = try XCTUnwrap(root["outbounds"] as? [[String: Any]])
+        let settings = try XCTUnwrap(outbounds[0]["settings"] as? [String: Any])
+        let vnext = try XCTUnwrap(settings["vnext"] as? [[String: Any]])
+        let users = try XCTUnwrap(vnext.first?["users"] as? [[String: Any]])
+        XCTAssertEqual(users.first?["flow"] as? String, "xtls-rprx-vision-udp443")
+    }
+
+    func testVlessURLImporterDefaultsRealityFlowToVisionWhenOmitted() throws {
+        let url = Self.sampleVlessURL.replacingOccurrences(
+            of: "&flow=xtls-rprx-vision",
+            with: ""
+        )
+
+        let profile = try XrayVlessURLImporter.profile(
+            from: url,
+            hostBundleIdentifier: "org.example.XrayClient"
+        )
+
+        let root = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(profile.configJSON.utf8)) as? [String: Any]
+        )
+        let outbounds = try XCTUnwrap(root["outbounds"] as? [[String: Any]])
+        let settings = try XCTUnwrap(outbounds[0]["settings"] as? [String: Any])
+        let vnext = try XCTUnwrap(settings["vnext"] as? [[String: Any]])
+        let users = try XCTUnwrap(vnext.first?["users"] as? [[String: Any]])
+        XCTAssertEqual(users.first?["flow"] as? String, "xtls-rprx-vision")
     }
 
     func testVlessURLImporterRejectsUnsupportedSecurity() {

@@ -1,21 +1,223 @@
+use std::io;
 use std::net::IpAddr;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
 use xray_config::{
     CoreConfig, Network, OutboundConfig, OutboundSettings, StreamSecurity, TargetAddr, VlessUser,
 };
 use xray_proxy::vless::{
-    encode_request_header, VisionStream, VlessCommand, VlessRequest, VlessResponseStream,
+    encode_request_header, VisionStream, VisionStreamIo, VlessCommand, VlessRequest,
+    VlessResponseStream,
 };
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::{
     BoxedTransportStream, ConnectorConfig, DnsResolver, RealityClientConfig, SystemDnsResolver,
-    TlsClientConfig, TransportDialer,
+    TlsClientConfig, TransportDialer, TransportStream,
 };
 
 use crate::CoreError;
 
 const VISION_FLOW: &str = "xtls-rprx-vision";
+const VISION_UDP443_FLOW: &str = "xtls-rprx-vision-udp443";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VisionFlow {
+    None,
+    Vision,
+    VisionUdp443,
+}
+
+impl VisionFlow {
+    fn uses_vision(self) -> bool {
+        matches!(self, Self::Vision | Self::VisionUdp443)
+    }
+
+    fn allows_udp443(self) -> bool {
+        matches!(self, Self::VisionUdp443)
+    }
+
+    fn request_flow(self) -> Option<String> {
+        self.uses_vision().then(|| VISION_FLOW.to_owned())
+    }
+}
+
+struct VlessOutboundStream {
+    inner: VlessResponseStream<BoxedTransportStream>,
+}
+
+impl VlessOutboundStream {
+    fn new(inner: VlessResponseStream<BoxedTransportStream>) -> Self {
+        Self { inner }
+    }
+}
+
+impl AsyncRead for VlessOutboundStream {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        output: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.get_mut().inner).poll_read(cx, output)
+    }
+}
+
+impl AsyncWrite for VlessOutboundStream {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        input: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.get_mut().inner).poll_write(cx, input)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.get_mut().inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.get_mut().inner).poll_shutdown(cx)
+    }
+}
+
+impl TransportStream for VlessOutboundStream {
+    fn poll_read_direct(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        output: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        AsyncRead::poll_read(self, cx, output)
+    }
+
+    fn poll_write_direct(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        input: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        AsyncWrite::poll_write(self, cx, input)
+    }
+}
+
+struct VisionTransportStream {
+    inner: BoxedTransportStream,
+}
+
+impl VisionTransportStream {
+    fn new(inner: BoxedTransportStream) -> Self {
+        Self { inner }
+    }
+}
+
+impl AsyncRead for VisionTransportStream {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        output: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        Pin::new(&mut *self.get_mut().inner).poll_read(cx, output)
+    }
+}
+
+impl AsyncWrite for VisionTransportStream {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        input: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut *self.get_mut().inner).poll_write(cx, input)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut *self.get_mut().inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut *self.get_mut().inner).poll_shutdown(cx)
+    }
+}
+
+impl VisionStreamIo for VisionTransportStream {
+    fn poll_read_direct(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        output: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        Pin::new(&mut *self.get_mut().inner).poll_read_direct(cx, output)
+    }
+
+    fn poll_write_direct(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        input: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut *self.get_mut().inner).poll_write_direct(cx, input)
+    }
+
+    fn poll_flush_direct(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut *self.get_mut().inner).poll_flush_direct(cx)
+    }
+
+    fn poll_shutdown_direct(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut *self.get_mut().inner).poll_shutdown_direct(cx)
+    }
+}
+
+struct VisionOutboundStream {
+    inner: VisionStream<VlessResponseStream<VisionTransportStream>>,
+}
+
+impl VisionOutboundStream {
+    fn new(inner: VisionStream<VlessResponseStream<VisionTransportStream>>) -> Self {
+        Self { inner }
+    }
+}
+
+impl AsyncRead for VisionOutboundStream {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        output: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.get_mut().inner).poll_read(cx, output)
+    }
+}
+
+impl AsyncWrite for VisionOutboundStream {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        input: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.get_mut().inner).poll_write(cx, input)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.get_mut().inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.get_mut().inner).poll_shutdown(cx)
+    }
+}
+
+impl TransportStream for VisionOutboundStream {
+    fn poll_read_direct(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        output: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        AsyncRead::poll_read(self, cx, output)
+    }
+
+    fn poll_write_direct(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        input: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        AsyncWrite::poll_write(self, cx, input)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct VlessTcpOutbound {
@@ -242,7 +444,7 @@ fn validate_stream_flow(flow: Option<&str>, security: &StreamSecurity) -> Result
 fn validate_connector_flow(
     flow: Option<&str>,
     transport: &ConnectorConfig,
-) -> Result<bool, CoreError> {
+) -> Result<VisionFlow, CoreError> {
     validate_vision_flow(
         flow,
         matches!(
@@ -252,10 +454,11 @@ fn validate_connector_flow(
     )
 }
 
-fn validate_vision_flow(flow: Option<&str>, is_protected: bool) -> Result<bool, CoreError> {
+fn validate_vision_flow(flow: Option<&str>, is_protected: bool) -> Result<VisionFlow, CoreError> {
     match flow {
-        None => Ok(false),
-        Some(VISION_FLOW) if is_protected => Ok(true),
+        None => Ok(VisionFlow::None),
+        Some(VISION_FLOW) if is_protected => Ok(VisionFlow::Vision),
+        Some(VISION_UDP443_FLOW) if is_protected => Ok(VisionFlow::VisionUdp443),
         Some(_) => Err(CoreError::UnsupportedOutboundFlow),
     }
 }
@@ -327,7 +530,7 @@ pub async fn open_vless_tcp_stream_with_resolver_and_dialer(
     dns_resolver: &dyn DnsResolver,
     transport_dialer: &TransportDialer,
 ) -> Result<BoxedTransportStream, CoreError> {
-    let uses_vision = validate_connector_flow(outbound.user.flow.as_deref(), &outbound.transport)?;
+    let flow = validate_connector_flow(outbound.user.flow.as_deref(), &outbound.transport)?;
 
     let resolved_server = resolve_server_target(&outbound.server, dns_resolver).await?;
     let mut stream = transport_dialer
@@ -337,23 +540,23 @@ pub async fn open_vless_tcp_stream_with_resolver_and_dialer(
         user_id: outbound.user.id,
         command: VlessCommand::Tcp,
         target: target.clone(),
-        flow: outbound.user.flow.clone(),
+        flow: flow.request_flow(),
     };
     let header = encode_request_header(&request)?;
 
     stream.write_all(&header).await?;
 
-    let stream = VlessResponseStream::new(stream);
-
-    if uses_vision {
-        return Ok(Box::new(VisionStream::new(
+    if flow.uses_vision() {
+        let stream = VlessResponseStream::new(VisionTransportStream::new(stream));
+        return Ok(Box::new(VisionOutboundStream::new(VisionStream::new(
             stream,
             *outbound.user.id.as_bytes(),
             [0, 0, 0, 0],
-        )));
+        ))));
     }
 
-    Ok(Box::new(stream))
+    let stream = VlessResponseStream::new(stream);
+    Ok(Box::new(VlessOutboundStream::new(stream)))
 }
 
 pub async fn open_vless_udp_stream_with_resolver_and_dialer(
@@ -362,7 +565,11 @@ pub async fn open_vless_udp_stream_with_resolver_and_dialer(
     dns_resolver: &dyn DnsResolver,
     transport_dialer: &TransportDialer,
 ) -> Result<(BoxedTransportStream, VlessUdpFraming), CoreError> {
-    let uses_vision = validate_connector_flow(outbound.user.flow.as_deref(), &outbound.transport)?;
+    let flow = validate_connector_flow(outbound.user.flow.as_deref(), &outbound.transport)?;
+    let uses_vision = flow.uses_vision();
+    if uses_vision && !flow.allows_udp443() && is_udp443_target(target) {
+        return Err(CoreError::VisionUdp443Rejected);
+    }
     let uses_xudp = uses_vision || should_use_xudp_for_udp_target(target);
 
     let resolved_server = resolve_server_target(&outbound.server, dns_resolver).await?;
@@ -377,34 +584,44 @@ pub async fn open_vless_udp_stream_with_resolver_and_dialer(
             VlessCommand::Udp
         },
         target: target.clone(),
-        flow: outbound.user.flow.clone(),
+        flow: flow.request_flow(),
     };
     let header = encode_request_header(&request)?;
 
     stream.write_all(&header).await?;
 
-    let stream = VlessResponseStream::new(stream);
-
     if uses_vision {
+        let stream = VlessResponseStream::new(VisionTransportStream::new(stream));
         return Ok((
-            Box::new(VisionStream::new(
+            Box::new(VisionOutboundStream::new(VisionStream::new(
                 stream,
                 *outbound.user.id.as_bytes(),
                 [0, 0, 0, 0],
-            )),
+            ))),
             VlessUdpFraming::Xudp,
         ));
     }
 
+    let stream = VlessResponseStream::new(stream);
     if uses_xudp {
-        return Ok((Box::new(stream), VlessUdpFraming::Xudp));
+        return Ok((
+            Box::new(VlessOutboundStream::new(stream)),
+            VlessUdpFraming::Xudp,
+        ));
     }
 
-    Ok((Box::new(stream), VlessUdpFraming::LengthPrefixed))
+    Ok((
+        Box::new(VlessOutboundStream::new(stream)),
+        VlessUdpFraming::LengthPrefixed,
+    ))
 }
 
 fn should_use_xudp_for_udp_target(target: &Target) -> bool {
     target.network == xray_routing::Network::Udp && target.port != 53 && target.port != 443
+}
+
+fn is_udp443_target(target: &Target) -> bool {
+    target.network == xray_routing::Network::Udp && target.port == 443
 }
 
 pub async fn open_vless_tcp_stream(
@@ -599,5 +816,113 @@ mod tests {
         assert_eq!(seen_target.addr, outbound.server.addr);
         assert_eq!(seen_target.port, outbound.server.port);
         assert_eq!(seen_target.network, outbound.server.network);
+    }
+
+    #[tokio::test]
+    async fn open_vless_udp_stream_rejects_udp443_for_regular_vision_flow_before_connecting() {
+        let outbound = VlessTcpOutbound {
+            server: Target::new(
+                RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+                443,
+                RoutingNetwork::Tcp,
+            ),
+            user: VlessUser {
+                id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
+                encryption: "none".to_owned(),
+                flow: Some(VISION_FLOW.to_owned()),
+            },
+            transport: ConnectorConfig::Reality(RealityClientConfig {
+                server_name: "example.com".to_owned(),
+                fingerprint: "chrome".to_owned(),
+                public_key: [7; 32],
+                short_id: vec![1, 2, 3, 4],
+                spider_x: "/".to_owned(),
+            }),
+        };
+        let target = Target::new(
+            RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
+            443,
+            RoutingNetwork::Udp,
+        );
+        let (client, _protected_side) = tokio::io::duplex(4096);
+        let engine = Arc::new(DuplexRealityEngine::new(client));
+        let transport_dialer = TransportDialer::system()
+            .unwrap()
+            .with_reality_engine(engine.clone());
+
+        let result = open_vless_udp_stream_with_resolver_and_dialer(
+            &outbound,
+            &target,
+            &SystemDnsResolver,
+            &transport_dialer,
+        )
+        .await;
+
+        match result {
+            Err(error) => assert_eq!(error.to_string(), "XTLS rejected UDP/443 traffic"),
+            Ok(_) => panic!("expected UDP/443 rejection for regular Vision flow"),
+        }
+        assert!(
+            engine.seen().is_none(),
+            "UDP/443 rejection should happen before dialing the VLESS server"
+        );
+    }
+
+    #[tokio::test]
+    async fn open_vless_udp_stream_allows_udp443_flow_and_sends_vision_addons() {
+        let outbound = VlessTcpOutbound {
+            server: Target::new(
+                RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+                443,
+                RoutingNetwork::Tcp,
+            ),
+            user: VlessUser {
+                id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
+                encryption: "none".to_owned(),
+                flow: Some("xtls-rprx-vision-udp443".to_owned()),
+            },
+            transport: ConnectorConfig::Reality(RealityClientConfig {
+                server_name: "example.com".to_owned(),
+                fingerprint: "chrome".to_owned(),
+                public_key: [7; 32],
+                short_id: vec![1, 2, 3, 4],
+                spider_x: "/".to_owned(),
+            }),
+        };
+        let target = Target::new(
+            RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
+            443,
+            RoutingNetwork::Udp,
+        );
+        let (client, mut protected_side) = tokio::io::duplex(4096);
+        let engine = Arc::new(DuplexRealityEngine::new(client));
+        let transport_dialer = TransportDialer::system()
+            .unwrap()
+            .with_reality_engine(engine.clone());
+
+        let (_stream, framing) = open_vless_udp_stream_with_resolver_and_dialer(
+            &outbound,
+            &target,
+            &SystemDnsResolver,
+            &transport_dialer,
+        )
+        .await
+        .expect("open VLESS UDP/443 stream with explicit udp443 Vision flow");
+
+        assert_eq!(framing, VlessUdpFraming::Xudp);
+        let expected_header = encode_request_header(&VlessRequest {
+            user_id: outbound.user.id,
+            command: VlessCommand::Mux,
+            target: target.clone(),
+            flow: Some(VISION_FLOW.to_owned()),
+        })
+        .unwrap();
+        let mut received_header = vec![0; expected_header.len()];
+        protected_side
+            .read_exact(&mut received_header)
+            .await
+            .expect("read VLESS header from protected stream");
+        assert_eq!(received_header, expected_header);
+        assert!(engine.seen().is_some());
     }
 }

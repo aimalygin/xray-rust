@@ -1,8 +1,10 @@
 use async_trait::async_trait;
 use std::net::SocketAddr;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use std::{fmt, io, sync::Arc};
 use thiserror::Error;
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::{TcpSocket, TcpStream, UdpSocket};
 use xray_routing::{Target, TargetAddr};
 use zeroize::Zeroize;
@@ -14,6 +16,7 @@ use std::os::fd::AsRawFd;
 use std::os::windows::io::AsRawSocket;
 
 mod dialer;
+mod penetrating_tls;
 pub mod reality;
 pub mod reality_connector;
 pub mod reality_runtime;
@@ -21,6 +24,7 @@ mod reality_rustls;
 mod tls;
 
 pub use dialer::TransportDialer;
+pub(crate) use penetrating_tls::PenetratingTlsStream;
 pub use reality_connector::{RealityTlsSession, RealityTlsSessionProvider};
 pub use reality_runtime::{
     RealityHandshakeContextProvider, RealityRuntimeEngine, SystemRealityHandshakeContextProvider,
@@ -130,9 +134,81 @@ impl DnsResolver for SystemDnsResolver {
     }
 }
 
-pub trait TransportStream: AsyncRead + AsyncWrite + Send + Unpin {}
+pub trait TransportStream: AsyncRead + AsyncWrite + Send + Unpin {
+    fn poll_read_direct(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        output: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>>;
 
-impl<T> TransportStream for T where T: AsyncRead + AsyncWrite + Send + Unpin {}
+    fn poll_write_direct(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        input: &[u8],
+    ) -> Poll<io::Result<usize>>;
+
+    fn poll_flush_direct(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        AsyncWrite::poll_flush(self, cx)
+    }
+
+    fn poll_shutdown_direct(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        AsyncWrite::poll_shutdown(self, cx)
+    }
+}
+
+impl TransportStream for TcpStream {
+    fn poll_read_direct(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        output: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        AsyncRead::poll_read(self, cx, output)
+    }
+
+    fn poll_write_direct(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        input: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        AsyncWrite::poll_write(self, cx, input)
+    }
+}
+
+impl TransportStream for tokio::io::DuplexStream {
+    fn poll_read_direct(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        output: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        AsyncRead::poll_read(self, cx, output)
+    }
+
+    fn poll_write_direct(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        input: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        AsyncWrite::poll_write(self, cx, input)
+    }
+}
+
+impl TransportStream for tokio_rustls::client::TlsStream<TcpStream> {
+    fn poll_read_direct(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        output: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        AsyncRead::poll_read(self, cx, output)
+    }
+
+    fn poll_write_direct(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        input: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        AsyncWrite::poll_write(self, cx, input)
+    }
+}
 
 pub type BoxedTransportStream = Box<dyn TransportStream>;
 

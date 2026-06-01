@@ -7,6 +7,17 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		043796C92FCC883700B85452 /* NetworkExtension.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 044523D22FCA253F00EB1099 /* NetworkExtension.framework */; };
+		043796D12FCC883700B85452 /* TunnelTv.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 043796C82FCC883700B85452 /* TunnelTv.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		043796D92FCC889F00B85452 /* XrayAppleClient in Frameworks */ = {isa = PBXBuildFile; productRef = 043796D82FCC889F00B85452 /* XrayAppleClient */; };
+		043796DB2FCC88A900B85452 /* XrayAppleTunnel in Frameworks */ = {isa = PBXBuildFile; productRef = 043796DA2FCC88A900B85452 /* XrayAppleTunnel */; };
+		043796DE2FCC88B500B85452 /* XrayClientTvTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 043796DC2FCC88B500B85452 /* XrayClientTvTests.swift */; };
+		043796E22FCC88B500B85452 /* XrayClientTvUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 043796DF2FCC88B500B85452 /* XrayClientTvUITests.swift */; };
+		043796E32FCC88B500B85452 /* XrayClientTvUITestsLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 043796E02FCC88B500B85452 /* XrayClientTvUITestsLaunchTests.swift */; };
+		043796E92FCC88B500B85452 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 043796E42FCC88B500B85452 /* Assets.xcassets */; };
+		043796EA2FCC88B500B85452 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 043796E52FCC88B500B85452 /* ContentView.swift */; };
+		043796EB2FCC88B500B85452 /* XrayClientTvApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 043796E72FCC88B500B85452 /* XrayClientTvApp.swift */; };
+		043796F12FCC88B500B85452 /* PacketTunnelProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 043796ED2FCC88B500B85452 /* PacketTunnelProvider.swift */; };
 		044523C52FCA246000EB1099 /* XrayAppleClient in Frameworks */ = {isa = PBXBuildFile; productRef = 044523C42FCA246000EB1099 /* XrayAppleClient */; };
 		044523D32FCA253F00EB1099 /* NetworkExtension.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 044523D22FCA253F00EB1099 /* NetworkExtension.framework */; };
 		044523DB2FCA253F00EB1099 /* Tunnel.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 044523D02FCA253F00EB1099 /* Tunnel.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -21,6 +32,27 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		043796AA2FCB6C3100B85452 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 044523912FCA23E800EB1099 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0437969C2FCB6C2F00B85452;
+			remoteInfo = XrayClientTv;
+		};
+		043796B42FCB6C3100B85452 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 044523912FCA23E800EB1099 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0437969C2FCB6C2F00B85452;
+			remoteInfo = XrayClientTv;
+		};
+		043796CF2FCC883700B85452 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 044523912FCA23E800EB1099 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 043796C72FCC883700B85452;
+			remoteInfo = TunnelTv;
+		};
 		044523A72FCA23EA00EB1099 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 044523912FCA23E800EB1099 /* Project object */;
@@ -45,6 +77,17 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
+		043796D62FCC883700B85452 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				043796D12FCC883700B85452 /* TunnelTv.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		044523E02FCA253F00EB1099 /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -60,6 +103,20 @@
 
 /* Begin PBXFileReference section */
 		043796982FCB5C1600B85452 /* XrayClient.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = XrayClient.entitlements; sourceTree = "<group>"; };
+		0437969D2FCB6C2F00B85452 /* XrayClientTv.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = XrayClientTv.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		043796A92FCB6C3100B85452 /* XrayClientTvTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = XrayClientTvTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		043796B32FCB6C3100B85452 /* XrayClientTvUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = XrayClientTvUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		043796C82FCC883700B85452 /* TunnelTv.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = TunnelTv.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		043796DC2FCC88B500B85452 /* XrayClientTvTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XrayClientTvTests.swift; sourceTree = "<group>"; };
+		043796DF2FCC88B500B85452 /* XrayClientTvUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XrayClientTvUITests.swift; sourceTree = "<group>"; };
+		043796E02FCC88B500B85452 /* XrayClientTvUITestsLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XrayClientTvUITestsLaunchTests.swift; sourceTree = "<group>"; };
+		043796E42FCC88B500B85452 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		043796E52FCC88B500B85452 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		043796E62FCC88B500B85452 /* XrayClientTv.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = XrayClientTv.entitlements; sourceTree = "<group>"; };
+		043796E72FCC88B500B85452 /* XrayClientTvApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XrayClientTvApp.swift; sourceTree = "<group>"; };
+		043796EC2FCC88B500B85452 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		043796ED2FCC88B500B85452 /* PacketTunnelProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PacketTunnelProvider.swift; sourceTree = "<group>"; };
+		043796EE2FCC88B500B85452 /* TunnelTv.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TunnelTv.entitlements; sourceTree = "<group>"; };
 		044523992FCA23E800EB1099 /* XrayClient.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = XrayClient.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		044523A62FCA23EA00EB1099 /* XrayClientTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = XrayClientTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		044523B02FCA23EA00EB1099 /* XrayClientUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = XrayClientUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -77,6 +134,37 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		0437969A2FCB6C2F00B85452 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				043796D92FCC889F00B85452 /* XrayAppleClient in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		043796A62FCB6C3100B85452 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		043796B02FCB6C3100B85452 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		043796C52FCC883700B85452 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				043796C92FCC883700B85452 /* NetworkExtension.framework in Frameworks */,
+				043796DB2FCC88A900B85452 /* XrayAppleTunnel in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		044523962FCA23E800EB1099 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -111,6 +199,44 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		043796DD2FCC88B500B85452 /* XrayClientTvTests */ = {
+			isa = PBXGroup;
+			children = (
+				043796DC2FCC88B500B85452 /* XrayClientTvTests.swift */,
+			);
+			path = XrayClientTvTests;
+			sourceTree = "<group>";
+		};
+		043796E12FCC88B500B85452 /* XrayClientTvUITests */ = {
+			isa = PBXGroup;
+			children = (
+				043796DF2FCC88B500B85452 /* XrayClientTvUITests.swift */,
+				043796E02FCC88B500B85452 /* XrayClientTvUITestsLaunchTests.swift */,
+			);
+			path = XrayClientTvUITests;
+			sourceTree = "<group>";
+		};
+		043796E82FCC88B500B85452 /* XrayClientTv */ = {
+			isa = PBXGroup;
+			children = (
+				043796E42FCC88B500B85452 /* Assets.xcassets */,
+				043796E52FCC88B500B85452 /* ContentView.swift */,
+				043796E62FCC88B500B85452 /* XrayClientTv.entitlements */,
+				043796E72FCC88B500B85452 /* XrayClientTvApp.swift */,
+			);
+			path = XrayClientTv;
+			sourceTree = "<group>";
+		};
+		043796EF2FCC88B500B85452 /* TunnelTv */ = {
+			isa = PBXGroup;
+			children = (
+				043796EC2FCC88B500B85452 /* Info.plist */,
+				043796ED2FCC88B500B85452 /* PacketTunnelProvider.swift */,
+				043796EE2FCC88B500B85452 /* TunnelTv.entitlements */,
+			);
+			path = TunnelTv;
+			sourceTree = "<group>";
+		};
 		044523902FCA23E800EB1099 = {
 			isa = PBXGroup;
 			children = (
@@ -118,6 +244,10 @@
 				044523EA2FCA258300EB1099 /* XrayClientTests */,
 				044523EE2FCA258500EB1099 /* XrayClientUITests */,
 				044523E62FCA257F00EB1099 /* Tunnel */,
+				043796E82FCC88B500B85452 /* XrayClientTv */,
+				043796DD2FCC88B500B85452 /* XrayClientTvTests */,
+				043796E12FCC88B500B85452 /* XrayClientTvUITests */,
+				043796EF2FCC88B500B85452 /* TunnelTv */,
 				044523D12FCA253F00EB1099 /* Frameworks */,
 				0445239A2FCA23E800EB1099 /* Products */,
 			);
@@ -130,6 +260,10 @@
 				044523A62FCA23EA00EB1099 /* XrayClientTests.xctest */,
 				044523B02FCA23EA00EB1099 /* XrayClientUITests.xctest */,
 				044523D02FCA253F00EB1099 /* Tunnel.appex */,
+				0437969D2FCB6C2F00B85452 /* XrayClientTv.app */,
+				043796A92FCB6C3100B85452 /* XrayClientTvTests.xctest */,
+				043796B32FCB6C3100B85452 /* XrayClientTvUITests.xctest */,
+				043796C82FCC883700B85452 /* TunnelTv.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -183,6 +317,88 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		0437969C2FCB6C2F00B85452 /* XrayClientTv */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 043796BB2FCB6C3100B85452 /* Build configuration list for PBXNativeTarget "XrayClientTv" */;
+			buildPhases = (
+				043796992FCB6C2F00B85452 /* Sources */,
+				0437969A2FCB6C2F00B85452 /* Frameworks */,
+				0437969B2FCB6C2F00B85452 /* Resources */,
+				043796D62FCC883700B85452 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				043796D02FCC883700B85452 /* PBXTargetDependency */,
+			);
+			name = XrayClientTv;
+			packageProductDependencies = (
+				043796D82FCC889F00B85452 /* XrayAppleClient */,
+			);
+			productName = XrayClientTv;
+			productReference = 0437969D2FCB6C2F00B85452 /* XrayClientTv.app */;
+			productType = "com.apple.product-type.application";
+		};
+		043796A82FCB6C3100B85452 /* XrayClientTvTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 043796BE2FCB6C3100B85452 /* Build configuration list for PBXNativeTarget "XrayClientTvTests" */;
+			buildPhases = (
+				043796A52FCB6C3100B85452 /* Sources */,
+				043796A62FCB6C3100B85452 /* Frameworks */,
+				043796A72FCB6C3100B85452 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				043796AB2FCB6C3100B85452 /* PBXTargetDependency */,
+			);
+			name = XrayClientTvTests;
+			packageProductDependencies = (
+			);
+			productName = XrayClientTvTests;
+			productReference = 043796A92FCB6C3100B85452 /* XrayClientTvTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		043796B22FCB6C3100B85452 /* XrayClientTvUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 043796C12FCB6C3100B85452 /* Build configuration list for PBXNativeTarget "XrayClientTvUITests" */;
+			buildPhases = (
+				043796AF2FCB6C3100B85452 /* Sources */,
+				043796B02FCB6C3100B85452 /* Frameworks */,
+				043796B12FCB6C3100B85452 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				043796B52FCB6C3100B85452 /* PBXTargetDependency */,
+			);
+			name = XrayClientTvUITests;
+			packageProductDependencies = (
+			);
+			productName = XrayClientTvUITests;
+			productReference = 043796B32FCB6C3100B85452 /* XrayClientTvUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		043796C72FCC883700B85452 /* TunnelTv */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 043796D32FCC883700B85452 /* Build configuration list for PBXNativeTarget "TunnelTv" */;
+			buildPhases = (
+				043796C42FCC883700B85452 /* Sources */,
+				043796C52FCC883700B85452 /* Frameworks */,
+				043796C62FCC883700B85452 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = TunnelTv;
+			packageProductDependencies = (
+				043796DA2FCC88A900B85452 /* XrayAppleTunnel */,
+			);
+			productName = TunnelTv;
+			productReference = 043796C82FCC883700B85452 /* TunnelTv.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		044523982FCA23E800EB1099 /* XrayClient */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 044523BA2FCA23EA00EB1099 /* Build configuration list for PBXNativeTarget "XrayClient" */;
@@ -275,6 +491,20 @@
 				LastSwiftUpdateCheck = 2650;
 				LastUpgradeCheck = 2650;
 				TargetAttributes = {
+					0437969C2FCB6C2F00B85452 = {
+						CreatedOnToolsVersion = 26.5;
+					};
+					043796A82FCB6C3100B85452 = {
+						CreatedOnToolsVersion = 26.5;
+						TestTargetID = 0437969C2FCB6C2F00B85452;
+					};
+					043796B22FCB6C3100B85452 = {
+						CreatedOnToolsVersion = 26.5;
+						TestTargetID = 0437969C2FCB6C2F00B85452;
+					};
+					043796C72FCC883700B85452 = {
+						CreatedOnToolsVersion = 26.5;
+					};
 					044523982FCA23E800EB1099 = {
 						CreatedOnToolsVersion = 26.5;
 					};
@@ -312,11 +542,44 @@
 				044523A52FCA23EA00EB1099 /* XrayClientTests */,
 				044523AF2FCA23EA00EB1099 /* XrayClientUITests */,
 				044523CF2FCA253F00EB1099 /* Tunnel */,
+				0437969C2FCB6C2F00B85452 /* XrayClientTv */,
+				043796A82FCB6C3100B85452 /* XrayClientTvTests */,
+				043796B22FCB6C3100B85452 /* XrayClientTvUITests */,
+				043796C72FCC883700B85452 /* TunnelTv */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		0437969B2FCB6C2F00B85452 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				043796E92FCC88B500B85452 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		043796A72FCB6C3100B85452 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		043796B12FCB6C3100B85452 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		043796C62FCC883700B85452 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		044523972FCA23E800EB1099 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -349,6 +612,40 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		043796992FCB6C2F00B85452 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				043796EA2FCC88B500B85452 /* ContentView.swift in Sources */,
+				043796EB2FCC88B500B85452 /* XrayClientTvApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		043796A52FCB6C3100B85452 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				043796DE2FCC88B500B85452 /* XrayClientTvTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		043796AF2FCB6C3100B85452 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				043796E22FCC88B500B85452 /* XrayClientTvUITests.swift in Sources */,
+				043796E32FCC88B500B85452 /* XrayClientTvUITestsLaunchTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		043796C42FCC883700B85452 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				043796F12FCC88B500B85452 /* PacketTunnelProvider.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		044523952FCA23E800EB1099 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -386,6 +683,21 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		043796AB2FCB6C3100B85452 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 0437969C2FCB6C2F00B85452 /* XrayClientTv */;
+			targetProxy = 043796AA2FCB6C3100B85452 /* PBXContainerItemProxy */;
+		};
+		043796B52FCB6C3100B85452 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 0437969C2FCB6C2F00B85452 /* XrayClientTv */;
+			targetProxy = 043796B42FCB6C3100B85452 /* PBXContainerItemProxy */;
+		};
+		043796D02FCC883700B85452 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 043796C72FCC883700B85452 /* TunnelTv */;
+			targetProxy = 043796CF2FCC883700B85452 /* PBXContainerItemProxy */;
+		};
 		044523A82FCA23EA00EB1099 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 044523982FCA23E800EB1099 /* XrayClient */;
@@ -404,6 +716,222 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		043796BC2FCB6C3100B85452 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = XrayClientTv/XrayClientTv.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9QF29ADW72;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIUserInterfaceStyle = Automatic;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.texforge.XrayClientTv;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = appletvos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 3;
+				TVOS_DEPLOYMENT_TARGET = 26.5;
+			};
+			name = Debug;
+		};
+		043796BD2FCB6C3100B85452 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = XrayClientTv/XrayClientTv.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9QF29ADW72;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIUserInterfaceStyle = Automatic;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.texforge.XrayClientTv;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = appletvos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 3;
+				TVOS_DEPLOYMENT_TARGET = 26.5;
+			};
+			name = Release;
+		};
+		043796BF2FCB6C3100B85452 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9QF29ADW72;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.texforge.XrayClientTvTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = appletvos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 3;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/XrayClientTv.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/XrayClientTv";
+				TVOS_DEPLOYMENT_TARGET = 26.5;
+			};
+			name = Debug;
+		};
+		043796C02FCB6C3100B85452 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9QF29ADW72;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.texforge.XrayClientTvTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = appletvos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 3;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/XrayClientTv.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/XrayClientTv";
+				TVOS_DEPLOYMENT_TARGET = 26.5;
+			};
+			name = Release;
+		};
+		043796C22FCB6C3100B85452 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9QF29ADW72;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.texforge.XrayClientTvUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = appletvos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 3;
+				TEST_TARGET_NAME = XrayClientTv;
+				TVOS_DEPLOYMENT_TARGET = 26.5;
+			};
+			name = Debug;
+		};
+		043796C32FCB6C3100B85452 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9QF29ADW72;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.texforge.XrayClientTvUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = appletvos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 3;
+				TEST_TARGET_NAME = XrayClientTv;
+				TVOS_DEPLOYMENT_TARGET = 26.5;
+			};
+			name = Release;
+		};
+		043796D42FCC883700B85452 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = TunnelTv/TunnelTv.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9QF29ADW72;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = TunnelTv/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = TunnelTv;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.texforge.XrayClientTv.Tunnel;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = appletvos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 3;
+				TVOS_DEPLOYMENT_TARGET = 26.5;
+			};
+			name = Debug;
+		};
+		043796D52FCC883700B85452 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = TunnelTv/TunnelTv.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9QF29ADW72;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = TunnelTv/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = TunnelTv;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.texforge.XrayClientTv.Tunnel;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = appletvos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 3;
+				TVOS_DEPLOYMENT_TARGET = 26.5;
+			};
+			name = Release;
+		};
 		044523B82FCA23EA00EB1099 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -738,6 +1266,42 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		043796BB2FCB6C3100B85452 /* Build configuration list for PBXNativeTarget "XrayClientTv" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				043796BC2FCB6C3100B85452 /* Debug */,
+				043796BD2FCB6C3100B85452 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		043796BE2FCB6C3100B85452 /* Build configuration list for PBXNativeTarget "XrayClientTvTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				043796BF2FCB6C3100B85452 /* Debug */,
+				043796C02FCB6C3100B85452 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		043796C12FCB6C3100B85452 /* Build configuration list for PBXNativeTarget "XrayClientTvUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				043796C22FCB6C3100B85452 /* Debug */,
+				043796C32FCB6C3100B85452 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		043796D32FCC883700B85452 /* Build configuration list for PBXNativeTarget "TunnelTv" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				043796D42FCC883700B85452 /* Debug */,
+				043796D52FCC883700B85452 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		044523942FCA23E800EB1099 /* Build configuration list for PBXProject "XrayClient" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -793,6 +1357,16 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		043796D82FCC889F00B85452 /* XrayAppleClient */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 044523C32FCA246000EB1099 /* XCLocalSwiftPackageReference "../../apple" */;
+			productName = XrayAppleClient;
+		};
+		043796DA2FCC88A900B85452 /* XrayAppleTunnel */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 044523C32FCA246000EB1099 /* XCLocalSwiftPackageReference "../../apple" */;
+			productName = XrayAppleTunnel;
+		};
 		044523C42FCA246000EB1099 /* XrayAppleClient */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = XrayAppleClient;

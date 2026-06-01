@@ -1,6 +1,6 @@
 # Benchmarks
 
-The benchmark harness compares `xray-rust` and the cloned Xray-core under the same local workloads. It is a process-level harness: each engine runs as a child process with an equivalent generated Xray JSON config, the workload sends validated traffic through SOCKS5, and the harness samples OS RSS/CPU counters while the process is alive.
+The benchmark harness compares `xray-rust`, the cloned Xray-core, and sing-box under the same local workloads. It is a process-level harness: each engine runs as a child process with an equivalent generated config, the workload sends validated traffic through SOCKS5, and the harness samples OS RSS/CPU counters while the process is alive.
 
 ## First Slice
 
@@ -17,6 +17,7 @@ Supported workloads:
 - `udp-vless`
 - `udp-xudp`
 - `vision-xudp`
+- `reality-vision-xudp`
 
 The harness writes results under:
 
@@ -54,6 +55,7 @@ cargo run -p xray-bench -- run --engine xray-rust --workload tun-tcp-freedom --c
 cargo run -p xray-bench -- run --engine xray-rust --workload udp-vless --connections 1 --iterations 10 --payload-size 512
 cargo run -p xray-bench -- run --engine xray-rust --workload udp-xudp --connections 1 --iterations 10 --payload-size 512
 cargo run -p xray-bench -- run --engine xray-rust --workload vision-xudp --connections 1 --iterations 10 --payload-size 512
+cargo run -p xray-bench -- run --engine xray-rust --workload reality-vision-xudp --xray-core-bin /path/to/xray-core --connections 1 --iterations 10 --payload-size 512
 cargo run -p xray-bench -- run --engine xray-rust --workload tcp-freedom --runs 5 --connections 8 --iterations 1000 --payload-size 4096
 cargo run -p xray-bench -- route-probe --iterations 100000 --rules 64 --outbounds 8
 ```
@@ -66,21 +68,36 @@ cargo build -p xray-cli --bin xray-rust
 
 Use `--xray-rust-bin <path>` to point at an already built binary.
 
+## Run sing-box Only
+
+```sh
+cargo run -p xray-bench -- run --engine sing-box --sing-box-bin /private/tmp/sing-box-bench/sing-box --workload idle --duration-ms 1000 --no-auto-build
+cargo run -p xray-bench -- run --engine sing-box --sing-box-bin /private/tmp/sing-box-bench/sing-box --workload many-idle-flows --connections 100 --duration-ms 1000 --no-auto-build
+```
+
+The first sing-box slice supports the SOCKS/process-level workloads: `idle`, `tcp-freedom`, `many-idle-flows`, `reconnect-burst`, `mixed-long-lived`, `udp-freedom`, and `reality-vision-xudp`. The Reality/Vision workload starts an Xray-core VLESS Reality server fixture and samples only the client engine process. The sing-box binary must include `with_utls`; the harness uses `with_gvisor,with_utls,badlinkname,tfogo_checklinkname0` when auto-building sing-box. TUN and fake VLESS/XUDP sing-box workloads are intentionally not part of this slice because they need a different topology than the rootless fd-backed harness.
+
 Each run has a watchdog timeout. The default is 30 seconds; override it with
 `--run-timeout-ms <milliseconds>` when exercising intentionally slow workloads.
 On timeout, the harness drops the running engine handle so the child process is
 terminated instead of leaving a stuck benchmark behind.
 
-## Compare With Xray-core
+## Compare Engines
 
-From the main repository checkout:
+From the main repository checkout, these process-level workloads compare all three engines:
 
 ```sh
-cargo run -p xray-bench -- compare --workload tcp-freedom --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 10 --payload-size 1024
-cargo run -p xray-bench -- compare --workload many-idle-flows --xray-core-dir Xray-core --runs 5 --connections 100 --duration-ms 1000
-cargo run -p xray-bench -- compare --workload reconnect-burst --xray-core-dir Xray-core --runs 5 --connections 16 --iterations 25
-cargo run -p xray-bench -- compare --workload mixed-long-lived --xray-core-dir Xray-core --runs 5 --connections 8 --iterations 20 --duration-ms 1000 --payload-size 512
-cargo run -p xray-bench -- compare --workload udp-freedom --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
+cargo run -p xray-bench -- compare --workload tcp-freedom --xray-core-dir Xray-core --sing-box-bin /private/tmp/sing-box-bench/sing-box --runs 5 --connections 1 --iterations 10 --payload-size 1024
+cargo run -p xray-bench -- compare --workload many-idle-flows --xray-core-dir Xray-core --sing-box-bin /private/tmp/sing-box-bench/sing-box --runs 5 --connections 100 --duration-ms 1000
+cargo run -p xray-bench -- compare --workload reconnect-burst --xray-core-dir Xray-core --sing-box-bin /private/tmp/sing-box-bench/sing-box --runs 5 --connections 16 --iterations 25
+cargo run -p xray-bench -- compare --workload mixed-long-lived --xray-core-dir Xray-core --sing-box-bin /private/tmp/sing-box-bench/sing-box --runs 5 --connections 8 --iterations 20 --duration-ms 1000 --payload-size 512
+cargo run -p xray-bench -- compare --workload udp-freedom --xray-core-dir Xray-core --sing-box-bin /private/tmp/sing-box-bench/sing-box --runs 5 --connections 1 --iterations 1000 --payload-size 512
+cargo run -p xray-bench -- compare --workload reality-vision-xudp --xray-core-dir Xray-core --sing-box-bin /private/tmp/sing-box-bench/sing-box --runs 5 --connections 1 --iterations 1000 --payload-size 512
+```
+
+The TUN and fake VLESS/XUDP workloads remain comparable between `xray-rust` and Xray-core in this slice. The compare command skips sing-box for these workloads because sing-box's CLI TUN path uses a real platform TUN topology, while the older VLESS/XUDP fake-server workloads use Xray JSON configs instead of sing-box outbound schema.
+
+```sh
 cargo run -p xray-bench -- compare --workload tun-udp-freedom --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload tun-tcp-freedom --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 100 --payload-size 512
 cargo run -p xray-bench -- compare --workload udp-vless --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
@@ -91,11 +108,12 @@ cargo run -p xray-bench -- compare --workload vision-xudp --xray-core-dir Xray-c
 From an isolated worktree under `.worktrees/`, pass the main checkout's Xray-core path:
 
 ```sh
-cargo run -p xray-bench -- compare --workload tcp-freedom --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 10 --payload-size 1024
-cargo run -p xray-bench -- compare --workload many-idle-flows --xray-core-dir ../../Xray-core --runs 5 --connections 100 --duration-ms 1000
+cargo run -p xray-bench -- compare --workload tcp-freedom --xray-core-dir ../../Xray-core --sing-box-bin /private/tmp/sing-box-bench/sing-box --runs 5 --connections 1 --iterations 10 --payload-size 1024
+cargo run -p xray-bench -- compare --workload many-idle-flows --xray-core-dir ../../Xray-core --sing-box-bin /private/tmp/sing-box-bench/sing-box --runs 5 --connections 100 --duration-ms 1000
 cargo run -p xray-bench -- compare --workload reconnect-burst --xray-core-dir ../../Xray-core --runs 5 --connections 16 --iterations 25
 cargo run -p xray-bench -- compare --workload mixed-long-lived --xray-core-dir ../../Xray-core --runs 5 --connections 8 --iterations 20 --duration-ms 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload udp-freedom --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
+cargo run -p xray-bench -- compare --workload reality-vision-xudp --xray-core-dir ../../Xray-core --sing-box-bin /private/tmp/sing-box-bench/sing-box --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload tun-udp-freedom --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload tun-tcp-freedom --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 100 --payload-size 512
 cargo run -p xray-bench -- compare --workload udp-vless --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
@@ -103,7 +121,7 @@ cargo run -p xray-bench -- compare --workload udp-xudp --xray-core-dir ../../Xra
 cargo run -p xray-bench -- compare --workload vision-xudp --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 ```
 
-The compare command auto-builds `target/debug/xray-rust` and an Xray-core binary under the run directory unless `--no-auto-build` is provided. Repeated runs reuse the Xray-core binary built for that benchmark group. Use `--xray-core-bin <path>` to benchmark an existing Xray-core binary without rebuilding.
+The compare command auto-builds `target/debug/xray-rust`, an Xray-core binary, and a sing-box binary under the run directory unless `--no-auto-build` is provided. Repeated runs reuse binaries built for that benchmark group. Use `--xray-core-bin <path>` and `--sing-box-bin <path>` to benchmark existing binaries without rebuilding.
 
 ## Metrics
 
@@ -118,7 +136,7 @@ The first scoreboard is intentionally portable and comparable across Go and Rust
 - setup microsecond breakdown for SOCKS TCP setup workloads: local TCP connect to the inbound, SOCKS method negotiation, SOCKS CONNECT request/response, full SOCKS setup, and total setup time.
 - min, median, and p95 aggregates across repeated runs.
 
-`tcp-freedom`, `udp-freedom`, `tun-udp-freedom`, `udp-vless`, `udp-xudp`, and `vision-xudp` record one round-trip latency sample per validated payload iteration. `summary.json` aggregates each run's latency min/median/p95/p99 across repeated runs.
+`tcp-freedom`, `udp-freedom`, `tun-udp-freedom`, `udp-vless`, `udp-xudp`, `vision-xudp`, and `reality-vision-xudp` record one round-trip latency sample per validated payload iteration. `summary.json` aggregates each run's latency min/median/p95/p99 across repeated runs.
 `many-idle-flows` opens `--connections` SOCKS TCP flows to a local target, keeps them idle for `--duration-ms`, and reports RSS/CPU while those flows are held. This is the first local memory-slope workload; compare its peak RSS against `idle` and divide the delta by the connection count for an approximate per-flow resident-memory cost.
 `reconnect-burst` repeatedly opens and closes SOCKS TCP flows with `--connections` parallel workers and `--iterations` reconnects per worker. It is intended to separate base setup cost from the memory slope of held idle flows.
 `mixed-long-lived` keeps TCP and UDP SOCKS flows open together, paces `--iterations` across `--duration-ms`, and validates both echo paths. It is a local mobile-like foreground/background traffic mix.
@@ -128,6 +146,7 @@ The first scoreboard is intentionally portable and comparable across Go and Rust
 `udp-vless` uses the same SOCKS5 UDP client path, but routes through a local fake VLESS UDP server over TCP before validating echoed UDP payloads. It targets UDP/53 to keep the VLESS UDP framing length-prefixed.
 `udp-xudp` targets a non-DNS UDP port and validates XUDP/Mux frames through the local fake VLESS server.
 `vision-xudp` uses VLESS over local TLS with `xtls-rprx-vision`, `allowInsecure`, and XUDP/Mux frames against a local fake Vision server.
+`reality-vision-xudp` uses VLESS Reality with `xtls-rprx-vision` and XUDP/Mux frames against an Xray-core server fixture, then validates echoed UDP payloads through the same SOCKS5 UDP client path. The fixture process is not sampled in RSS/CPU; only the selected client engine is sampled.
 
 `route-probe` is an in-process xray-rust microprobe for setup-path routing cost. It builds a synthetic config with IP/CIDR routing rules and tagged freedom outbounds, then repeatedly calls the same TCP outbound selection path used by SOCKS CONNECT. This isolates routing/outbound selection from TCP accept, SOCKS parsing, and outbound socket connect noise.
 

@@ -119,6 +119,79 @@ async fn tun_endpoint_stats_track_accepted_and_dropped_packets() {
             inbound_packets: 1,
             outbound_packets: 1,
             dropped_packets: 2,
+            inbound_dropped_packets: 2,
+            outbound_dropped_packets: 0,
+            ..TunStats::default()
+        }
+    );
+}
+
+#[tokio::test]
+async fn tun_endpoint_stats_track_outbound_dropped_packets() {
+    let tun = TunEndpoint::new(TunConfig {
+        mtu: 2,
+        queue_depth: 1,
+    });
+
+    tun.push_outbound(Bytes::from_static(&[1])).await.unwrap();
+    let oversized = tun.push_outbound(Bytes::from_static(&[1, 2, 3])).await;
+    let full = tun.push_outbound(Bytes::from_static(&[2])).await;
+
+    assert_eq!(
+        oversized.unwrap_err(),
+        TunError::PacketTooLarge { len: 3, mtu: 2 }
+    );
+    assert_eq!(full.unwrap_err(), TunError::QueueFull);
+    assert_eq!(
+        tun.stats().await,
+        TunStats {
+            inbound_packets: 0,
+            outbound_packets: 1,
+            dropped_packets: 2,
+            inbound_dropped_packets: 0,
+            outbound_dropped_packets: 2,
+            ..TunStats::default()
+        }
+    );
+}
+
+#[tokio::test]
+async fn tun_endpoint_stats_track_tcp_bridge_counters() {
+    let tun = TunEndpoint::new(TunConfig {
+        mtu: 1500,
+        queue_depth: 1,
+    });
+
+    tun.record_tcp_stack_to_remote(120);
+    tun.record_tcp_remote_written(100);
+    tun.record_tcp_remote_read(80);
+    tun.record_tcp_backpressure();
+    tun.record_tcp_pending_remote(4096, 3, 2048);
+    tun.record_tcp_pending_remote(1024, 1, 512);
+    tun.record_tcp_remote_write_error();
+    tun.record_tcp_remote_closed();
+    tun.record_tcp_remote_read_error();
+    tun.record_tcp_open_error();
+
+    assert_eq!(
+        tun.stats().await,
+        TunStats {
+            inbound_packets: 0,
+            outbound_packets: 0,
+            dropped_packets: 0,
+            inbound_dropped_packets: 0,
+            outbound_dropped_packets: 0,
+            tcp_stack_to_remote_bytes: 120,
+            tcp_remote_written_bytes: 100,
+            tcp_remote_read_bytes: 80,
+            tcp_backpressure_events: 1,
+            tcp_pending_remote_bytes: 1024,
+            tcp_pending_remote_flows: 1,
+            tcp_pending_remote_max_bytes: 512,
+            tcp_remote_write_errors: 1,
+            tcp_remote_closed_events: 1,
+            tcp_remote_read_errors: 1,
+            tcp_open_errors: 1,
         }
     );
 }

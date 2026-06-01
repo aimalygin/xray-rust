@@ -9,6 +9,7 @@ license.workspace = true
 aes.workspace = true
 aes-gcm.workspace = true
 async-trait.workspace = true
+bytes.workspace = true
 ghash.workspace = true
 hkdf.workspace = true
 hmac.workspace = true

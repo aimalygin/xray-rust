@@ -506,6 +506,10 @@ fn accepts_missing_empty_and_vision_vless_user_flow() {
             r#""users": [{ "id": "00010203-0405-0607-0809-0a0b0c0d0e0f", "flow": "xtls-rprx-vision" }]"#,
             Some("xtls-rprx-vision"),
         ),
+        (
+            r#""users": [{ "id": "00010203-0405-0607-0809-0a0b0c0d0e0f", "flow": "xtls-rprx-vision-udp443" }]"#,
+            Some("xtls-rprx-vision-udp443"),
+        ),
     ] {
         let raw = vless_raw(users, "", 443, valid_public_key(), "02030405");
 

@@ -55,6 +55,9 @@ public enum XrayVlessURLImporter {
 }
 
 private struct VlessEndpoint {
+    private static let visionFlow = XrayClientProfile.defaultRealityVisionFlow
+    private static let visionUdp443Flow = "xtls-rprx-vision-udp443"
+
     var userID: String
     var host: String
     var port: Int
@@ -70,8 +73,8 @@ private struct VlessEndpoint {
     var profileName: String
 
     init(rawURL: String) throws {
-        let trimmedURL = rawURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let components = URLComponents(string: trimmedURL) else {
+        let normalizedURL = Self.normalizedVlessURL(from: rawURL)
+        guard let components = URLComponents(string: normalizedURL) else {
             throw XrayVlessURLImportError.invalidURL
         }
 
@@ -104,9 +107,13 @@ private struct VlessEndpoint {
         let security = query.optional("security", default: "none")
         try Self.require(security, named: "security", toEqual: "reality")
 
-        let flow = query.optional("flow", default: "")
+        let flow = query.optional("flow", default: Self.visionFlow)
         if !flow.isEmpty {
-            try Self.require(flow, named: "flow", toEqual: "xtls-rprx-vision")
+            try Self.require(
+                flow,
+                named: "flow",
+                toEqualOneOf: [Self.visionFlow, Self.visionUdp443Flow]
+            )
         }
 
         self.userID = userID
@@ -215,6 +222,45 @@ private struct VlessEndpoint {
                 expected: expected
             )
         }
+    }
+
+    private static func require(
+        _ value: String,
+        named name: String,
+        toEqualOneOf expectedValues: [String]
+    ) throws {
+        guard expectedValues.contains(value) else {
+            throw XrayVlessURLImportError.unsupportedQueryValue(
+                name: name,
+                value: value,
+                expected: expectedValues.joined(separator: " or ")
+            )
+        }
+    }
+
+    private static func normalizedVlessURL(from rawURL: String) -> String {
+        let trimmedURL = rawURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedURL.isEmpty else {
+            return trimmedURL
+        }
+
+        if let schemeRange = trimmedURL.range(of: "vless://", options: .caseInsensitive) {
+            return Self.firstToken(in: String(trimmedURL[schemeRange.lowerBound...]))
+        }
+
+        if let authorityRange = trimmedURL.range(
+            of: #"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}@"#,
+            options: .regularExpression
+        ) {
+            return "vless://\(Self.firstToken(in: String(trimmedURL[authorityRange.lowerBound...])))"
+        }
+
+        return trimmedURL
+    }
+
+    private static func firstToken(in text: String) -> String {
+        let token = text.split(whereSeparator: { $0.isWhitespace }).first.map(String.init) ?? text
+        return token.trimmingCharacters(in: CharacterSet(charactersIn: "\"',;"))
     }
 }
 

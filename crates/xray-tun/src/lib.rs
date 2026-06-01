@@ -26,6 +26,19 @@ pub struct TunStats {
     pub inbound_packets: u64,
     pub outbound_packets: u64,
     pub dropped_packets: u64,
+    pub inbound_dropped_packets: u64,
+    pub outbound_dropped_packets: u64,
+    pub tcp_stack_to_remote_bytes: u64,
+    pub tcp_remote_written_bytes: u64,
+    pub tcp_remote_read_bytes: u64,
+    pub tcp_backpressure_events: u64,
+    pub tcp_pending_remote_bytes: u64,
+    pub tcp_pending_remote_flows: u64,
+    pub tcp_pending_remote_max_bytes: u64,
+    pub tcp_remote_write_errors: u64,
+    pub tcp_remote_closed_events: u64,
+    pub tcp_remote_read_errors: u64,
+    pub tcp_open_errors: u64,
 }
 
 pub struct TunEndpoint {
@@ -37,6 +50,19 @@ pub struct TunEndpoint {
     inbound_packets: AtomicU64,
     outbound_packets: AtomicU64,
     dropped_packets: AtomicU64,
+    inbound_dropped_packets: AtomicU64,
+    outbound_dropped_packets: AtomicU64,
+    tcp_stack_to_remote_bytes: AtomicU64,
+    tcp_remote_written_bytes: AtomicU64,
+    tcp_remote_read_bytes: AtomicU64,
+    tcp_backpressure_events: AtomicU64,
+    tcp_pending_remote_bytes: AtomicU64,
+    tcp_pending_remote_flows: AtomicU64,
+    tcp_pending_remote_max_bytes: AtomicU64,
+    tcp_remote_write_errors: AtomicU64,
+    tcp_remote_closed_events: AtomicU64,
+    tcp_remote_read_errors: AtomicU64,
+    tcp_open_errors: AtomicU64,
     closed: AtomicBool,
     closed_notify: Notify,
 }
@@ -56,6 +82,19 @@ impl TunEndpoint {
             inbound_packets: AtomicU64::new(0),
             outbound_packets: AtomicU64::new(0),
             dropped_packets: AtomicU64::new(0),
+            inbound_dropped_packets: AtomicU64::new(0),
+            outbound_dropped_packets: AtomicU64::new(0),
+            tcp_stack_to_remote_bytes: AtomicU64::new(0),
+            tcp_remote_written_bytes: AtomicU64::new(0),
+            tcp_remote_read_bytes: AtomicU64::new(0),
+            tcp_backpressure_events: AtomicU64::new(0),
+            tcp_pending_remote_bytes: AtomicU64::new(0),
+            tcp_pending_remote_flows: AtomicU64::new(0),
+            tcp_pending_remote_max_bytes: AtomicU64::new(0),
+            tcp_remote_write_errors: AtomicU64::new(0),
+            tcp_remote_closed_events: AtomicU64::new(0),
+            tcp_remote_read_errors: AtomicU64::new(0),
+            tcp_open_errors: AtomicU64::new(0),
             closed: AtomicBool::new(false),
             closed_notify: Notify::new(),
         }
@@ -90,7 +129,65 @@ impl TunEndpoint {
             inbound_packets: self.inbound_packets.load(Ordering::Relaxed),
             outbound_packets: self.outbound_packets.load(Ordering::Relaxed),
             dropped_packets: self.dropped_packets.load(Ordering::Relaxed),
+            inbound_dropped_packets: self.inbound_dropped_packets.load(Ordering::Relaxed),
+            outbound_dropped_packets: self.outbound_dropped_packets.load(Ordering::Relaxed),
+            tcp_stack_to_remote_bytes: self.tcp_stack_to_remote_bytes.load(Ordering::Relaxed),
+            tcp_remote_written_bytes: self.tcp_remote_written_bytes.load(Ordering::Relaxed),
+            tcp_remote_read_bytes: self.tcp_remote_read_bytes.load(Ordering::Relaxed),
+            tcp_backpressure_events: self.tcp_backpressure_events.load(Ordering::Relaxed),
+            tcp_pending_remote_bytes: self.tcp_pending_remote_bytes.load(Ordering::Relaxed),
+            tcp_pending_remote_flows: self.tcp_pending_remote_flows.load(Ordering::Relaxed),
+            tcp_pending_remote_max_bytes: self.tcp_pending_remote_max_bytes.load(Ordering::Relaxed),
+            tcp_remote_write_errors: self.tcp_remote_write_errors.load(Ordering::Relaxed),
+            tcp_remote_closed_events: self.tcp_remote_closed_events.load(Ordering::Relaxed),
+            tcp_remote_read_errors: self.tcp_remote_read_errors.load(Ordering::Relaxed),
+            tcp_open_errors: self.tcp_open_errors.load(Ordering::Relaxed),
         }
+    }
+
+    pub fn record_tcp_stack_to_remote(&self, bytes: usize) {
+        self.tcp_stack_to_remote_bytes
+            .fetch_add(bytes as u64, Ordering::Relaxed);
+    }
+
+    pub fn record_tcp_remote_written(&self, bytes: usize) {
+        self.tcp_remote_written_bytes
+            .fetch_add(bytes as u64, Ordering::Relaxed);
+    }
+
+    pub fn record_tcp_remote_read(&self, bytes: usize) {
+        self.tcp_remote_read_bytes
+            .fetch_add(bytes as u64, Ordering::Relaxed);
+    }
+
+    pub fn record_tcp_backpressure(&self) {
+        self.tcp_backpressure_events.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_tcp_pending_remote(&self, bytes: usize, flows: usize, max_bytes: usize) {
+        self.tcp_pending_remote_bytes
+            .store(bytes as u64, Ordering::Relaxed);
+        self.tcp_pending_remote_flows
+            .store(flows as u64, Ordering::Relaxed);
+        self.tcp_pending_remote_max_bytes
+            .store(max_bytes as u64, Ordering::Relaxed);
+    }
+
+    pub fn record_tcp_remote_write_error(&self) {
+        self.tcp_remote_write_errors.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_tcp_remote_closed(&self) {
+        self.tcp_remote_closed_events
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_tcp_remote_read_error(&self) {
+        self.tcp_remote_read_errors.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_tcp_open_error(&self) {
+        self.tcp_open_errors.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn close(&self) {
@@ -105,7 +202,7 @@ impl TunEndpoint {
 
         let len = packet.len();
         if len > self.config.mtu {
-            self.record_drop();
+            self.record_drop(direction);
             return Err(TunError::PacketTooLarge {
                 len,
                 mtu: self.config.mtu,
@@ -126,7 +223,7 @@ impl TunEndpoint {
                 Ok(())
             }
             Err(mpsc::error::TrySendError::Full(_)) => {
-                self.record_drop();
+                self.record_drop(direction);
                 Err(TunError::QueueFull)
             }
             Err(mpsc::error::TrySendError::Closed(_)) => Err(TunError::QueueClosed),
@@ -172,8 +269,14 @@ impl TunEndpoint {
         }
     }
 
-    fn record_drop(&self) {
+    fn record_drop(&self, direction: Direction) {
         self.dropped_packets.fetch_add(1, Ordering::Relaxed);
+        match direction {
+            Direction::Inbound => self.inbound_dropped_packets.fetch_add(1, Ordering::Relaxed),
+            Direction::Outbound => self
+                .outbound_dropped_packets
+                .fetch_add(1, Ordering::Relaxed),
+        };
     }
 }
 

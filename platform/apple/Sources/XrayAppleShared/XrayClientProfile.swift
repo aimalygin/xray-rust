@@ -1,24 +1,67 @@
 import Foundation
 
 public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
+    public static let defaultRealityVisionFlow = "xtls-rprx-vision"
+
     public var id: UUID
     public var name: String
     public var providerBundleIdentifier: String
     public var serverAddress: String
     public var configJSON: String
+    public var debugLoggingEnabled: Bool
+    public var useTunFileDescriptor: Bool
+    public var blockQUIC: Bool
 
     public init(
         id: UUID = UUID(),
         name: String,
         providerBundleIdentifier: String,
         serverAddress: String,
-        configJSON: String
+        configJSON: String,
+        debugLoggingEnabled: Bool = false,
+        useTunFileDescriptor: Bool = true,
+        blockQUIC: Bool = false
     ) {
         self.id = id
         self.name = name
         self.providerBundleIdentifier = providerBundleIdentifier
         self.serverAddress = serverAddress
         self.configJSON = configJSON
+        self.debugLoggingEnabled = debugLoggingEnabled
+        self.useTunFileDescriptor = useTunFileDescriptor
+        self.blockQUIC = blockQUIC
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case providerBundleIdentifier
+        case serverAddress
+        case configJSON
+        case debugLoggingEnabled
+        case useTunFileDescriptor
+        case blockQUIC
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        providerBundleIdentifier = try container.decode(
+            String.self,
+            forKey: .providerBundleIdentifier
+        )
+        serverAddress = try container.decode(String.self, forKey: .serverAddress)
+        configJSON = try container.decode(String.self, forKey: .configJSON)
+        debugLoggingEnabled = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .debugLoggingEnabled
+        ) ?? false
+        useTunFileDescriptor = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .useTunFileDescriptor
+        ) ?? true
+        blockQUIC = try container.decodeIfPresent(Bool.self, forKey: .blockQUIC) ?? false
     }
 
     public static func defaultProfile(
@@ -63,6 +106,70 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
         var migrated = self
         migrated.providerBundleIdentifier = currentDefault
         return migrated
+    }
+
+    public func addingDefaultRealityVisionFlowIfMissing() -> XrayClientProfile {
+        guard let normalizedConfigJSON = Self.configJSONAddingDefaultRealityVisionFlowIfMissing(
+            configJSON
+        ) else {
+            return self
+        }
+
+        var profile = self
+        profile.configJSON = normalizedConfigJSON
+        return profile
+    }
+
+    private static func configJSONAddingDefaultRealityVisionFlowIfMissing(
+        _ configJSON: String
+    ) -> String? {
+        guard let data = configJSON.data(using: .utf8),
+              var root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              var outbounds = root["outbounds"] as? [[String: Any]]
+        else {
+            return nil
+        }
+
+        var didChange = false
+        for outboundIndex in outbounds.indices {
+            guard outbounds[outboundIndex]["protocol"] as? String == "vless",
+                  let streamSettings = outbounds[outboundIndex]["streamSettings"] as? [String: Any],
+                  streamSettings["security"] as? String == "reality",
+                  var settings = outbounds[outboundIndex]["settings"] as? [String: Any],
+                  var vnext = settings["vnext"] as? [[String: Any]]
+            else {
+                continue
+            }
+
+            for serverIndex in vnext.indices {
+                guard var users = vnext[serverIndex]["users"] as? [[String: Any]] else {
+                    continue
+                }
+
+                for userIndex in users.indices where (users[userIndex]["flow"] as? String)?.isEmpty ?? true {
+                    users[userIndex]["flow"] = Self.defaultRealityVisionFlow
+                    didChange = true
+                }
+
+                vnext[serverIndex]["users"] = users
+            }
+
+            settings["vnext"] = vnext
+            outbounds[outboundIndex]["settings"] = settings
+        }
+
+        guard didChange else {
+            return nil
+        }
+
+        root["outbounds"] = outbounds
+        guard let normalizedData = try? JSONSerialization.data(
+            withJSONObject: root,
+            options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        ) else {
+            return nil
+        }
+        return String(data: normalizedData, encoding: .utf8)
     }
 
     public static let directTunConfigJSON = """

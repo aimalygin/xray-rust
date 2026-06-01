@@ -69,7 +69,7 @@ Useful environment overrides:
 
 The current stable Rust toolchain exposes tvOS target specs but does not ship prebuilt tvOS std components through `rustup target add`, so the script uses nightly `-Z build-std=std,panic_abort` for tvOS when needed.
 
-## Apple Adapter Skeleton
+## Apple Client Skeleton
 
 The repository now includes a Swift Package adapter under:
 
@@ -82,6 +82,10 @@ It provides:
 - `XrayCore`, a Swift wrapper over the C ABI lifecycle, TUN packet push/poll, optional fd-backed TUN registration, stats, errors, and socket-protection registration hook.
 - `XrayPacketTunnelPump`, a `NEPacketTunnelProvider` packet pump that reads OS tunnel packets into the Rust TUN boundary and writes emitted packets back through `packetFlow`.
 - `XrayDarwinTunFileDescriptor`, an advanced helper for discovering an existing utun fd for `XRAY_TUN_FD_PACKET_FORMAT_DARWIN_UTUN` integrations.
+- `XrayAppleShared`, shared host-app/extension profile, status, stats, and message contracts.
+- `XrayAppleClient`, a simple SwiftUI iOS/tvOS control-plane UI with profile persistence, config validation, and `NETunnelProviderManager` connect/disconnect wiring.
+- `XrayAppleTunnel`, a reusable Packet Tunnel provider that starts `XrayCore`, pumps packets through `packetFlow`, and answers stats messages from the host app.
+- `platform/apple/HostApp`, thin Xcode target templates for app entry, extension provider, entitlements, and extension plist.
 - `crates/xray-ffi/include/module.modulemap`, so the generated XCFramework can be imported as `XrayRust` from Swift.
 
 The package expects `target/mobile/apple/XrayRust.xcframework` to exist. Build it first with `scripts/build-apple-xcframework.sh`.

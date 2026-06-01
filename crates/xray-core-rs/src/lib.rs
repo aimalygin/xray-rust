@@ -61,6 +61,8 @@ pub enum CoreError {
     UnsupportedOutboundServerAddress,
     #[error("outbound flow is not supported")]
     UnsupportedOutboundFlow,
+    #[error("XTLS rejected UDP/443 traffic")]
+    VisionUdp443Rejected,
     #[error("transport error: {0}")]
     Transport(#[from] xray_transport::TransportError),
     #[error("vless header error: {0}")]
@@ -103,7 +105,7 @@ impl Core {
         let shutdown = Shutdown::new();
         let tun = Arc::new(TunEndpoint::new(TunConfig {
             mtu: 1500,
-            queue_depth: 128,
+            queue_depth: 1024,
         }));
 
         Ok(Self {

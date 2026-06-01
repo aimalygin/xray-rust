@@ -35,7 +35,59 @@ const UDP_PROTOCOL: u8 = 17;
 const TCP_BUFFER_SIZE: usize = 32 * 1024;
 const BRIDGE_CHANNEL_DEPTH: usize = 64;
 const BRIDGE_READ_BUFFER_SIZE: usize = 16 * 1024;
+const MAX_TUN_INBOUND_DRAIN_PER_TICK: usize = 256;
 const UDP_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TcpRemoteBufferPolicy {
+    global_budget_bytes: usize,
+    min_per_flow_bytes: usize,
+    max_per_flow_bytes: usize,
+}
+
+#[cfg(any(
+    test,
+    target_os = "android",
+    target_os = "ios",
+    target_os = "tvos",
+    target_os = "watchos"
+))]
+const MOBILE_TCP_REMOTE_BUFFER_POLICY: TcpRemoteBufferPolicy = TcpRemoteBufferPolicy {
+    global_budget_bytes: 40 * 1024 * 1024,
+    min_per_flow_bytes: 64 * 1024,
+    max_per_flow_bytes: 1024 * 1024,
+};
+
+#[cfg(any(
+    test,
+    not(any(
+        target_os = "android",
+        target_os = "ios",
+        target_os = "tvos",
+        target_os = "watchos"
+    ))
+))]
+const DESKTOP_TCP_REMOTE_BUFFER_POLICY: TcpRemoteBufferPolicy = TcpRemoteBufferPolicy {
+    global_budget_bytes: 96 * 1024 * 1024,
+    min_per_flow_bytes: 128 * 1024,
+    max_per_flow_bytes: 4 * 1024 * 1024,
+};
+
+#[cfg(any(
+    target_os = "android",
+    target_os = "ios",
+    target_os = "tvos",
+    target_os = "watchos"
+))]
+const TCP_REMOTE_BUFFER_POLICY: TcpRemoteBufferPolicy = MOBILE_TCP_REMOTE_BUFFER_POLICY;
+
+#[cfg(not(any(
+    target_os = "android",
+    target_os = "ios",
+    target_os = "tvos",
+    target_os = "watchos"
+)))]
+const TCP_REMOTE_BUFFER_POLICY: TcpRemoteBufferPolicy = DESKTOP_TCP_REMOTE_BUFFER_POLICY;
 
 pub(crate) async fn serve_tun_endpoint(
     tun: Arc<TunEndpoint>,
@@ -54,6 +106,7 @@ pub(crate) async fn serve_tun_endpoint(
     let mut tcp_listeners = HashMap::new();
     let mut tcp_flows = HashMap::new();
     let mut udp_flows = HashMap::new();
+    let mut delayed_stack_events = VecDeque::new();
     let (stack_tx, mut stack_rx) = mpsc::channel(BRIDGE_CHANNEL_DEPTH);
     let runtime_context = TunRuntimeContext {
         inbound_tag,
@@ -61,9 +114,10 @@ pub(crate) async fn serve_tun_endpoint(
         dns_resolver,
         transport_dialer,
         stack_tx,
+        tun: Arc::clone(&tun),
     };
 
-    loop {
+    'runtime: loop {
         tokio::select! {
             changed = shutdown.changed() => {
                 if changed.is_err() || *shutdown.borrow() {
@@ -73,42 +127,82 @@ pub(crate) async fn serve_tun_endpoint(
             packet = tun.poll_inbound() => {
                 match packet {
                     Ok(packet) => {
-                        if let Some(reply) = icmp_echo_reply(&packet) {
-                            if tun.push_outbound(reply).await.is_err() {
-                                break;
-                            }
-                            continue;
+                        if !process_tun_packet(
+                            packet,
+                            &tun,
+                            &mut sockets,
+                            &mut tcp_listeners,
+                            &mut udp_flows,
+                            &runtime_context,
+                            shutdown.clone(),
+                            &mut device,
+                        )
+                        .await
+                        {
+                            break;
                         }
-                        if let Some(packet) = parse_udp_packet(&packet) {
-                            handle_udp_packet(
-                                packet,
-                                &mut udp_flows,
-                                &runtime_context,
-                                shutdown.clone(),
-                            );
-                            continue;
-                        }
-                        if let Some(endpoint) = tcp_syn_destination(&packet) {
-                            ensure_tcp_listener(&mut sockets, &mut tcp_listeners, endpoint);
-                        }
-                        device.push_inbound(packet);
                     }
                     Err(TunError::QueueClosed) => break,
                     Err(_) => {}
                 }
             }
-            event = stack_rx.recv() => {
+            event = stack_rx.recv(), if delayed_stack_events.is_empty() => {
                 if let Some(event) = event {
-                    apply_stack_event(event, &mut tcp_flows, &mut udp_flows, &mut device);
+                    apply_or_delay_stack_event(
+                        event,
+                        &mut delayed_stack_events,
+                        &mut tcp_flows,
+                        &mut udp_flows,
+                        &mut device,
+                        Some(tun.as_ref()),
+                    );
                 }
             }
             () = sleep(Duration::from_millis(25)) => {}
         }
 
-        while let Ok(event) = stack_rx.try_recv() {
-            apply_stack_event(event, &mut tcp_flows, &mut udp_flows, &mut device);
+        for _ in 0..MAX_TUN_INBOUND_DRAIN_PER_TICK {
+            match tun.try_poll_inbound().await {
+                Ok(Some(packet)) => {
+                    if !process_tun_packet(
+                        packet,
+                        &tun,
+                        &mut sockets,
+                        &mut tcp_listeners,
+                        &mut udp_flows,
+                        &runtime_context,
+                        shutdown.clone(),
+                        &mut device,
+                    )
+                    .await
+                    {
+                        break 'runtime;
+                    }
+                }
+                Ok(None) => break,
+                Err(TunError::QueueClosed) => break 'runtime,
+                Err(_) => {}
+            }
         }
+
+        drain_stack_events(
+            &mut stack_rx,
+            &mut delayed_stack_events,
+            &mut tcp_flows,
+            &mut udp_flows,
+            &mut device,
+            Some(tun.as_ref()),
+        );
         write_remote_data_to_sockets(&mut sockets, &mut tcp_flows);
+        drain_stack_events(
+            &mut stack_rx,
+            &mut delayed_stack_events,
+            &mut tcp_flows,
+            &mut udp_flows,
+            &mut device,
+            Some(tun.as_ref()),
+        );
+        record_tcp_pending_remote_stats(tun.as_ref(), &tcp_flows);
         iface.poll(Instant::now(), &mut device, &mut sockets);
         open_ready_tcp_flows(
             &mut sockets,
@@ -117,7 +211,7 @@ pub(crate) async fn serve_tun_endpoint(
             &runtime_context,
             shutdown.clone(),
         );
-        read_socket_data_to_remote(&mut sockets, &mut tcp_flows);
+        read_socket_data_to_remote(&tun, &mut sockets, &mut tcp_flows);
         cleanup_closed_tcp_flows(&mut sockets, &mut tcp_flows);
         iface.poll(Instant::now(), &mut device, &mut sockets);
         while let Some(packet) = device.pop_outbound() {
@@ -128,6 +222,30 @@ pub(crate) async fn serve_tun_endpoint(
     }
 }
 
+async fn process_tun_packet(
+    packet: Bytes,
+    tun: &TunEndpoint,
+    sockets: &mut SocketSet<'static>,
+    tcp_listeners: &mut HashMap<IpEndpoint, SocketHandle>,
+    udp_flows: &mut HashMap<UdpFlowKey, UdpFlow>,
+    context: &TunRuntimeContext,
+    shutdown: watch::Receiver<bool>,
+    device: &mut PacketDevice,
+) -> bool {
+    if let Some(reply) = icmp_echo_reply(&packet) {
+        return !matches!(tun.push_outbound(reply).await, Err(TunError::QueueClosed));
+    }
+    if let Some(packet) = parse_udp_packet(&packet) {
+        handle_udp_packet(packet, udp_flows, context, shutdown);
+        return true;
+    }
+    if let Some(endpoint) = tcp_syn_destination(&packet) {
+        ensure_tcp_listener(sockets, tcp_listeners, endpoint);
+    }
+    device.push_inbound(packet);
+    true
+}
+
 #[derive(Clone)]
 struct TunRuntimeContext {
     inbound_tag: Option<String>,
@@ -135,12 +253,14 @@ struct TunRuntimeContext {
     dns_resolver: Arc<dyn DnsResolver>,
     transport_dialer: Arc<TransportDialer>,
     stack_tx: mpsc::Sender<StackEvent>,
+    tun: Arc<TunEndpoint>,
 }
 
 #[derive(Debug)]
 struct TcpFlow {
     to_remote: mpsc::Sender<Bytes>,
     pending_remote: VecDeque<Bytes>,
+    pending_remote_bytes: usize,
     remote_closed: bool,
 }
 
@@ -239,6 +359,7 @@ fn open_ready_tcp_flows(
             TcpFlow {
                 to_remote,
                 pending_remote: VecDeque::new(),
+                pending_remote_bytes: 0,
                 remote_closed: false,
             },
         );
@@ -275,15 +396,89 @@ fn target_from_endpoint_with_network(
     ))
 }
 
-fn apply_stack_event(
+fn drain_stack_events(
+    stack_rx: &mut mpsc::Receiver<StackEvent>,
+    delayed_stack_events: &mut VecDeque<StackEvent>,
+    tcp_flows: &mut HashMap<SocketHandle, TcpFlow>,
+    udp_flows: &mut HashMap<UdpFlowKey, UdpFlow>,
+    device: &mut PacketDevice,
+    tun: Option<&TunEndpoint>,
+) {
+    while let Some(event) = delayed_stack_events.pop_front() {
+        if !apply_or_delay_stack_event(
+            event,
+            delayed_stack_events,
+            tcp_flows,
+            udp_flows,
+            device,
+            tun,
+        ) {
+            return;
+        }
+    }
+
+    while let Ok(event) = stack_rx.try_recv() {
+        if !apply_or_delay_stack_event(
+            event,
+            delayed_stack_events,
+            tcp_flows,
+            udp_flows,
+            device,
+            tun,
+        ) {
+            return;
+        }
+    }
+}
+
+fn apply_or_delay_stack_event(
+    event: StackEvent,
+    delayed_stack_events: &mut VecDeque<StackEvent>,
+    tcp_flows: &mut HashMap<SocketHandle, TcpFlow>,
+    udp_flows: &mut HashMap<UdpFlowKey, UdpFlow>,
+    device: &mut PacketDevice,
+    tun: Option<&TunEndpoint>,
+) -> bool {
+    match try_apply_stack_event(event, tcp_flows, udp_flows, device) {
+        Ok(()) => true,
+        Err(event) => {
+            if let Some(tun) = tun {
+                tun.record_tcp_backpressure();
+            }
+            delayed_stack_events.push_front(event);
+            false
+        }
+    }
+}
+
+fn try_apply_stack_event(
     event: StackEvent,
     tcp_flows: &mut HashMap<SocketHandle, TcpFlow>,
     udp_flows: &mut HashMap<UdpFlowKey, UdpFlow>,
     device: &mut PacketDevice,
-) {
+) -> Result<(), StackEvent> {
     match event {
         StackEvent::RemoteData { handle, data } => {
+            if !tcp_flows.contains_key(&handle) {
+                return Ok(());
+            }
+            let active_flow_count = tcp_remote_active_flow_count(tcp_flows, handle);
+            let per_flow_limit = tcp_remote_pending_limit_for_active_flows(
+                TCP_REMOTE_BUFFER_POLICY,
+                active_flow_count,
+            );
+            let total_pending = tcp_remote_total_pending_bytes(tcp_flows);
+            if total_pending.saturating_add(data.len())
+                > TCP_REMOTE_BUFFER_POLICY.global_budget_bytes
+            {
+                return Err(StackEvent::RemoteData { handle, data });
+            }
             if let Some(flow) = tcp_flows.get_mut(&handle) {
+                let next_pending_bytes = flow.pending_remote_bytes.saturating_add(data.len());
+                if next_pending_bytes > per_flow_limit {
+                    return Err(StackEvent::RemoteData { handle, data });
+                }
+                flow.pending_remote_bytes = next_pending_bytes;
                 flow.pending_remote.push_back(data);
             }
         }
@@ -305,6 +500,50 @@ fn apply_stack_event(
             udp_flows.remove(&key);
         }
     }
+    Ok(())
+}
+
+fn tcp_remote_pending_limit_for_active_flows(
+    policy: TcpRemoteBufferPolicy,
+    active_flow_count: usize,
+) -> usize {
+    let active_flow_count = active_flow_count.max(1);
+    let fair_share = policy.global_budget_bytes / active_flow_count;
+    fair_share.clamp(policy.min_per_flow_bytes, policy.max_per_flow_bytes)
+}
+
+fn tcp_remote_active_flow_count(
+    flows: &HashMap<SocketHandle, TcpFlow>,
+    current_handle: SocketHandle,
+) -> usize {
+    let active_flow_count = flows
+        .iter()
+        .filter(|(handle, flow)| **handle == current_handle || flow.pending_remote_bytes > 0)
+        .count();
+    active_flow_count.max(1)
+}
+
+fn tcp_remote_total_pending_bytes(flows: &HashMap<SocketHandle, TcpFlow>) -> usize {
+    flows
+        .values()
+        .map(|flow| flow.pending_remote_bytes)
+        .sum::<usize>()
+}
+
+fn record_tcp_pending_remote_stats(tun: &TunEndpoint, flows: &HashMap<SocketHandle, TcpFlow>) {
+    let mut total_pending_bytes = 0usize;
+    let mut pending_flow_count = 0usize;
+    let mut max_pending_bytes = 0usize;
+
+    for flow in flows.values() {
+        if flow.pending_remote_bytes > 0 {
+            pending_flow_count += 1;
+            total_pending_bytes = total_pending_bytes.saturating_add(flow.pending_remote_bytes);
+            max_pending_bytes = max_pending_bytes.max(flow.pending_remote_bytes);
+        }
+    }
+
+    tun.record_tcp_pending_remote(total_pending_bytes, pending_flow_count, max_pending_bytes);
 }
 
 fn write_remote_data_to_sockets(
@@ -328,9 +567,11 @@ fn write_remote_data_to_sockets(
                 break;
             }
             if written == front.len() {
+                flow.pending_remote_bytes = flow.pending_remote_bytes.saturating_sub(front.len());
                 flow.pending_remote.pop_front();
             } else {
                 *front = front.slice(written..);
+                flow.pending_remote_bytes = flow.pending_remote_bytes.saturating_sub(written);
                 break;
             }
         }
@@ -341,12 +582,24 @@ fn write_remote_data_to_sockets(
 }
 
 fn read_socket_data_to_remote(
+    tun: &TunEndpoint,
     sockets: &mut SocketSet<'static>,
     flows: &mut HashMap<SocketHandle, TcpFlow>,
 ) {
     for (handle, flow) in flows {
         let socket = sockets.get_mut::<tcp::Socket>(*handle);
         while socket.can_recv() {
+            let permit = match flow.to_remote.try_reserve() {
+                Ok(permit) => permit,
+                Err(mpsc::error::TrySendError::Full(_)) => {
+                    tun.record_tcp_backpressure();
+                    break;
+                }
+                Err(mpsc::error::TrySendError::Closed(_)) => {
+                    socket.abort();
+                    break;
+                }
+            };
             let data = match socket.recv(|data| {
                 let len = data.len();
                 (len, Bytes::copy_from_slice(data))
@@ -360,10 +613,8 @@ fn read_socket_data_to_remote(
             if data.is_empty() {
                 break;
             }
-            if flow.to_remote.try_send(data).is_err() {
-                socket.abort();
-                break;
-            }
+            tun.record_tcp_stack_to_remote(data.len());
+            permit.send(data);
         }
     }
 }
@@ -398,6 +649,7 @@ async fn bridge_tcp_flow(
     ) {
         Ok(outbound) => outbound,
         Err(_) => {
+            context.tun.record_tcp_open_error();
             let _ = context
                 .stack_tx
                 .send(StackEvent::RemoteClosed { handle })
@@ -415,6 +667,7 @@ async fn bridge_tcp_flow(
     {
         Ok(stream) => stream,
         Err(_) => {
+            context.tun.record_tcp_open_error();
             let _ = context
                 .stack_tx
                 .send(StackEvent::RemoteClosed { handle })
@@ -437,20 +690,30 @@ async fn bridge_tcp_flow(
                 let Some(data) = data else {
                     break;
                 };
+                let data_len = data.len();
                 if remote_writer.write_all(&data).await.is_err() {
+                    context.tun.record_tcp_remote_write_error();
                     break;
                 }
+                context.tun.record_tcp_remote_written(data_len);
                 if remote_writer.flush().await.is_err() {
+                    context.tun.record_tcp_remote_write_error();
                     break;
                 }
             }
             read = remote_reader.read(&mut read_buffer) => {
-                let Ok(read) = read else {
-                    break;
+                let read = match read {
+                    Ok(read) => read,
+                    Err(_) => {
+                        context.tun.record_tcp_remote_read_error();
+                        break;
+                    }
                 };
                 if read == 0 {
+                    context.tun.record_tcp_remote_closed();
                     break;
                 }
+                context.tun.record_tcp_remote_read(read);
                 if context
                     .stack_tx
                     .send(StackEvent::RemoteData {
@@ -1267,6 +1530,235 @@ mod tests {
             device.pop_outbound(),
             Some(Bytes::from_static(&[0x45, 0x00, 0x00, 0x14]))
         );
+    }
+
+    #[test]
+    fn mobile_remote_buffer_policy_uses_40mib_global_budget() {
+        assert_eq!(
+            MOBILE_TCP_REMOTE_BUFFER_POLICY.global_budget_bytes,
+            40 * 1024 * 1024
+        );
+        assert_eq!(
+            MOBILE_TCP_REMOTE_BUFFER_POLICY.min_per_flow_bytes,
+            64 * 1024
+        );
+        assert_eq!(
+            MOBILE_TCP_REMOTE_BUFFER_POLICY.max_per_flow_bytes,
+            1024 * 1024
+        );
+    }
+
+    #[test]
+    fn remote_buffer_policy_shares_budget_between_active_flows() {
+        assert_eq!(
+            tcp_remote_pending_limit_for_active_flows(MOBILE_TCP_REMOTE_BUFFER_POLICY, 1),
+            1024 * 1024
+        );
+        assert_eq!(
+            tcp_remote_pending_limit_for_active_flows(MOBILE_TCP_REMOTE_BUFFER_POLICY, 80),
+            512 * 1024
+        );
+        assert_eq!(
+            tcp_remote_pending_limit_for_active_flows(MOBILE_TCP_REMOTE_BUFFER_POLICY, 640),
+            64 * 1024
+        );
+    }
+
+    #[test]
+    fn remote_tcp_data_is_deferred_when_pending_flow_buffer_is_full() {
+        let mut sockets = SocketSet::new(Vec::new());
+        let handle = sockets.add(tcp::Socket::new(
+            tcp::SocketBuffer::new(vec![0; TCP_BUFFER_SIZE]),
+            tcp::SocketBuffer::new(vec![0; TCP_BUFFER_SIZE]),
+        ));
+        let (to_remote, _from_stack) = mpsc::channel(1);
+        let mut tcp_flows = HashMap::new();
+        tcp_flows.insert(
+            handle,
+            TcpFlow {
+                to_remote,
+                pending_remote: VecDeque::new(),
+                pending_remote_bytes: TCP_REMOTE_BUFFER_POLICY.max_per_flow_bytes,
+                remote_closed: false,
+            },
+        );
+        let mut udp_flows = HashMap::new();
+        let mut device = PacketDevice::new(1500);
+        let (stack_tx, mut stack_rx) = mpsc::channel(1);
+        let mut delayed_stack_events = VecDeque::new();
+        stack_tx
+            .try_send(StackEvent::RemoteData {
+                handle,
+                data: Bytes::from_static(&[1, 2, 3, 4]),
+            })
+            .unwrap();
+
+        drain_stack_events(
+            &mut stack_rx,
+            &mut delayed_stack_events,
+            &mut tcp_flows,
+            &mut udp_flows,
+            &mut device,
+            None,
+        );
+
+        let flow = tcp_flows.get(&handle).unwrap();
+        assert!(flow.pending_remote.is_empty());
+        assert_eq!(
+            flow.pending_remote_bytes,
+            TCP_REMOTE_BUFFER_POLICY.max_per_flow_bytes
+        );
+        assert_eq!(delayed_stack_events.len(), 1);
+    }
+
+    #[test]
+    fn deferred_remote_tcp_data_is_applied_after_pending_flow_buffer_has_room() {
+        let mut sockets = SocketSet::new(Vec::new());
+        let handle = sockets.add(tcp::Socket::new(
+            tcp::SocketBuffer::new(vec![0; TCP_BUFFER_SIZE]),
+            tcp::SocketBuffer::new(vec![0; TCP_BUFFER_SIZE]),
+        ));
+        let (to_remote, _from_stack) = mpsc::channel(1);
+        let mut tcp_flows = HashMap::new();
+        tcp_flows.insert(
+            handle,
+            TcpFlow {
+                to_remote,
+                pending_remote: VecDeque::new(),
+                pending_remote_bytes: 0,
+                remote_closed: false,
+            },
+        );
+        let mut udp_flows = HashMap::new();
+        let mut device = PacketDevice::new(1500);
+        let (_stack_tx, mut stack_rx) = mpsc::channel(1);
+        let mut delayed_stack_events = VecDeque::from([StackEvent::RemoteData {
+            handle,
+            data: Bytes::from_static(&[1, 2, 3, 4]),
+        }]);
+
+        drain_stack_events(
+            &mut stack_rx,
+            &mut delayed_stack_events,
+            &mut tcp_flows,
+            &mut udp_flows,
+            &mut device,
+            None,
+        );
+
+        let flow = tcp_flows.get(&handle).unwrap();
+        assert_eq!(flow.pending_remote.len(), 1);
+        assert_eq!(flow.pending_remote_bytes, 4);
+        assert!(delayed_stack_events.is_empty());
+    }
+
+    #[test]
+    fn remote_tcp_data_can_exceed_512kib_when_few_flows_are_active() {
+        let mut sockets = SocketSet::new(Vec::new());
+        let handle = sockets.add(tcp::Socket::new(
+            tcp::SocketBuffer::new(vec![0; TCP_BUFFER_SIZE]),
+            tcp::SocketBuffer::new(vec![0; TCP_BUFFER_SIZE]),
+        ));
+        let (to_remote, _from_stack) = mpsc::channel(1);
+        let mut pending_remote = VecDeque::new();
+        pending_remote.push_back(Bytes::from(vec![0; 512 * 1024]));
+        let mut tcp_flows = HashMap::new();
+        tcp_flows.insert(
+            handle,
+            TcpFlow {
+                to_remote,
+                pending_remote,
+                pending_remote_bytes: 512 * 1024,
+                remote_closed: false,
+            },
+        );
+        let mut udp_flows = HashMap::new();
+        let mut device = PacketDevice::new(1500);
+        let (stack_tx, mut stack_rx) = mpsc::channel(1);
+        let mut delayed_stack_events = VecDeque::new();
+        stack_tx
+            .try_send(StackEvent::RemoteData {
+                handle,
+                data: Bytes::from_static(&[1, 2, 3, 4]),
+            })
+            .unwrap();
+
+        drain_stack_events(
+            &mut stack_rx,
+            &mut delayed_stack_events,
+            &mut tcp_flows,
+            &mut udp_flows,
+            &mut device,
+            None,
+        );
+
+        let flow = tcp_flows.get(&handle).unwrap();
+        assert_eq!(flow.pending_remote.len(), 2);
+        assert_eq!(flow.pending_remote_bytes, 512 * 1024 + 4);
+        assert!(delayed_stack_events.is_empty());
+    }
+
+    #[test]
+    fn remote_tcp_data_is_deferred_when_global_pending_budget_is_full() {
+        let mut sockets = SocketSet::new(Vec::new());
+        let current_handle = sockets.add(tcp::Socket::new(
+            tcp::SocketBuffer::new(vec![0; TCP_BUFFER_SIZE]),
+            tcp::SocketBuffer::new(vec![0; TCP_BUFFER_SIZE]),
+        ));
+        let mut tcp_flows = HashMap::new();
+        let mut remaining = TCP_REMOTE_BUFFER_POLICY.global_budget_bytes;
+        while remaining > 0 {
+            let handle = sockets.add(tcp::Socket::new(
+                tcp::SocketBuffer::new(vec![0; TCP_BUFFER_SIZE]),
+                tcp::SocketBuffer::new(vec![0; TCP_BUFFER_SIZE]),
+            ));
+            let (to_remote, _from_stack) = mpsc::channel(1);
+            let pending_remote_bytes = remaining.min(TCP_REMOTE_BUFFER_POLICY.max_per_flow_bytes);
+            remaining -= pending_remote_bytes;
+            tcp_flows.insert(
+                handle,
+                TcpFlow {
+                    to_remote,
+                    pending_remote: VecDeque::new(),
+                    pending_remote_bytes,
+                    remote_closed: false,
+                },
+            );
+        }
+        let (to_remote, _from_stack) = mpsc::channel(1);
+        tcp_flows.insert(
+            current_handle,
+            TcpFlow {
+                to_remote,
+                pending_remote: VecDeque::new(),
+                pending_remote_bytes: 0,
+                remote_closed: false,
+            },
+        );
+        let mut udp_flows = HashMap::new();
+        let mut device = PacketDevice::new(1500);
+        let (stack_tx, mut stack_rx) = mpsc::channel(1);
+        let mut delayed_stack_events = VecDeque::new();
+        stack_tx
+            .try_send(StackEvent::RemoteData {
+                handle: current_handle,
+                data: Bytes::from_static(&[1, 2, 3, 4]),
+            })
+            .unwrap();
+
+        drain_stack_events(
+            &mut stack_rx,
+            &mut delayed_stack_events,
+            &mut tcp_flows,
+            &mut udp_flows,
+            &mut device,
+            None,
+        );
+
+        let flow = tcp_flows.get(&current_handle).unwrap();
+        assert!(flow.pending_remote.is_empty());
+        assert_eq!(flow.pending_remote_bytes, 0);
+        assert_eq!(delayed_stack_events.len(), 1);
     }
 
     #[test]

@@ -32,11 +32,36 @@ public struct XrayTunStatsSnapshot: Equatable, Sendable {
     public let inboundPackets: UInt64
     public let outboundPackets: UInt64
     public let droppedPackets: UInt64
+    public let inboundDroppedPackets: UInt64
+    public let outboundDroppedPackets: UInt64
+    public let tcpStackToRemoteBytes: UInt64
+    public let tcpRemoteWrittenBytes: UInt64
+    public let tcpRemoteReadBytes: UInt64
+    public let tcpBackpressureEvents: UInt64
+    public let tcpPendingRemoteBytes: UInt64
+    public let tcpPendingRemoteFlows: UInt64
+    public let tcpPendingRemoteMaxBytes: UInt64
+    public let tcpRemoteWriteErrors: UInt64
+    public let tcpRemoteClosedEvents: UInt64
+    public let tcpRemoteReadErrors: UInt64
+    public let tcpOpenErrors: UInt64
 }
 
 public final class XrayCore: @unchecked Sendable {
     private let lock = NSLock()
     private var handle: OpaquePointer?
+
+    public convenience init(
+        configJSON: String,
+        borrowedDarwinTunFileDescriptor fd: Int32
+    ) throws {
+        try self.init(
+            configJSON: configJSON,
+            tunFileDescriptor: fd,
+            tunPacketFormat: XRAY_TUN_FD_PACKET_FORMAT_DARWIN_UTUN,
+            tunClosePolicy: XRAY_TUN_FD_CLOSE_POLICY_BORROWED
+        )
+    }
 
     public init(
         configJSON: String,
@@ -148,7 +173,7 @@ public final class XrayCore: @unchecked Sendable {
         }
     }
 
-    public func pollPacket(maxBytes: Int = 65_535) throws -> Data? {
+    public func pollPacket(maxBytes: Int = 1_500) throws -> Data? {
         try withHandle { handle in
             var error: OpaquePointer?
             var written = 0
@@ -180,7 +205,20 @@ public final class XrayCore: @unchecked Sendable {
             return XrayTunStatsSnapshot(
                 inboundPackets: stats.inbound_packets,
                 outboundPackets: stats.outbound_packets,
-                droppedPackets: stats.dropped_packets
+                droppedPackets: stats.dropped_packets,
+                inboundDroppedPackets: stats.inbound_dropped_packets,
+                outboundDroppedPackets: stats.outbound_dropped_packets,
+                tcpStackToRemoteBytes: stats.tcp_stack_to_remote_bytes,
+                tcpRemoteWrittenBytes: stats.tcp_remote_written_bytes,
+                tcpRemoteReadBytes: stats.tcp_remote_read_bytes,
+                tcpBackpressureEvents: stats.tcp_backpressure_events,
+                tcpPendingRemoteBytes: stats.tcp_pending_remote_bytes,
+                tcpPendingRemoteFlows: stats.tcp_pending_remote_flows,
+                tcpPendingRemoteMaxBytes: stats.tcp_pending_remote_max_bytes,
+                tcpRemoteWriteErrors: stats.tcp_remote_write_errors,
+                tcpRemoteClosedEvents: stats.tcp_remote_closed_events,
+                tcpRemoteReadErrors: stats.tcp_remote_read_errors,
+                tcpOpenErrors: stats.tcp_open_errors
             )
         }
     }

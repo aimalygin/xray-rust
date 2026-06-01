@@ -1,7 +1,9 @@
 use std::collections::VecDeque;
 use std::io::{Cursor, ErrorKind};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 
 use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
@@ -20,7 +22,7 @@ use smoltcp::wire::{
     HardwareAddress as SmolHardwareAddress, IpAddress as SmolIpAddress, IpCidr as SmolIpCidr,
     Ipv4Address as SmolIpv4Address,
 };
-use tokio::io::{copy_bidirectional, AsyncRead, AsyncReadExt, AsyncWriteExt};
+use tokio::io::{copy_bidirectional, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout, Duration, Instant as TokioInstant};
@@ -38,7 +40,10 @@ use xray_proxy::vless::{
     unpad_vision_block, VisionCommand, VisionPadding,
 };
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
-use xray_transport::{DnsResolver, TlsConnector, TransportDialer, TransportError};
+use xray_transport::{
+    BoxedTransportStream, DnsResolver, RealityClientConfig, RealityTlsEngine, TlsConnector,
+    TransportDialer, TransportError, TransportStream,
+};
 use xray_tun::TunEndpoint;
 
 const ICMPV4_PROTOCOL: u8 = 1;
@@ -119,6 +124,77 @@ impl DnsResolver for StaticDnsResolver {
         } else {
             Err(TransportError::NoResolvedAddress(domain.to_owned(), port))
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct StalledWriteRealityEngine;
+
+#[async_trait]
+impl RealityTlsEngine for StalledWriteRealityEngine {
+    async fn connect(
+        &self,
+        _config: &RealityClientConfig,
+        _target: &Target,
+    ) -> Result<BoxedTransportStream, TransportError> {
+        Ok(Box::new(StalledAfterFirstWriteStream {
+            accepted_first_write: false,
+        }))
+    }
+}
+
+struct StalledAfterFirstWriteStream {
+    accepted_first_write: bool,
+}
+
+impl AsyncRead for StalledAfterFirstWriteStream {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        _output: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        Poll::Pending
+    }
+}
+
+impl AsyncWrite for StalledAfterFirstWriteStream {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        input: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        if self.accepted_first_write {
+            Poll::Pending
+        } else {
+            self.accepted_first_write = true;
+            Poll::Ready(Ok(input.len()))
+        }
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+}
+
+impl TransportStream for StalledAfterFirstWriteStream {
+    fn poll_read_direct(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        output: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        AsyncRead::poll_read(self, cx, output)
+    }
+
+    fn poll_write_direct(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        input: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        AsyncWrite::poll_write(self, cx, input)
     }
 }
 
@@ -242,6 +318,30 @@ fn runtime_tun_config_with_tls_vision_vless_domain_server(
         }],
         outbounds: vec![outbound],
         default_outbound_tag: None,
+        routing: RoutingConfig::default(),
+    }
+}
+
+fn runtime_tun_config_with_reality_vision_vless_server(port: u16) -> CoreConfig {
+    let mut outbound = vless_outbound(
+        reality_security(),
+        TargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+        port,
+    );
+    let OutboundSettings::Vless(settings) = &mut outbound.settings else {
+        panic!("expected vless outbound");
+    };
+    settings.users[0].flow = Some("xtls-rprx-vision".to_owned());
+
+    CoreConfig {
+        inbounds: vec![InboundConfig {
+            tag: Some("tun-in".to_owned()),
+            protocol: InboundProtocol::Tun,
+            listen: "127.0.0.1".to_owned(),
+            port: 0,
+        }],
+        outbounds: vec![outbound],
+        default_outbound_tag: Some("proxy".to_owned()),
         routing: RoutingConfig::default(),
     }
 }
@@ -821,6 +921,16 @@ async fn tun_tcp_client_reaches_echo_target_through_vless_tcp_outbound() {
 }
 
 #[tokio::test]
+async fn tun_tcp_upload_backpressures_instead_of_aborting_when_remote_write_stalls() {
+    timeout(
+        Duration::from_secs(2),
+        run_tun_tcp_upload_backpressure_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
 async fn tun_tcp_client_uses_inbound_tag_routing_rule_to_reach_freedom_outbound() {
     timeout(
         Duration::from_secs(2),
@@ -1196,6 +1306,50 @@ async fn run_tun_tcp_vless_echo_scenario() {
         .await
         .unwrap()
         .unwrap();
+}
+
+async fn run_tun_tcp_upload_backpressure_scenario() {
+    let (client_config, _) = tls_test_configs();
+    let dialer =
+        TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config))
+            .with_reality_engine(Arc::new(StalledWriteRealityEngine));
+    let mut core = Core::with_runtime_dependencies(
+        runtime_tun_config_with_reality_vision_vless_server(443),
+        Arc::new(EmptyDnsResolver),
+        Arc::new(dialer),
+    )
+    .unwrap();
+    core.start().await.unwrap();
+
+    let mut client = TunTcpClient::new();
+    client.connect(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 8443));
+    pump_tun_until(&mut client, core.tun(), TunTcpClient::may_send).await;
+
+    let payload = vec![0x5a; 1024 * 1024];
+    let mut sent = 0;
+    let deadline = TokioInstant::now() + Duration::from_millis(750);
+
+    while sent < payload.len() {
+        client.poll();
+        if client.may_send() {
+            let remaining = payload.len() - sent;
+            let chunk_len = remaining.min(8192);
+            client.send_payload(&payload[sent..sent + chunk_len]);
+            sent += chunk_len;
+        }
+        pump_tun_once(&mut client, core.tun()).await;
+
+        assert!(
+            client.is_open(),
+            "TUN TCP flow should stay open and apply backpressure when remote writes stall"
+        );
+        assert!(
+            TokioInstant::now() < deadline,
+            "timed out filling stalled upload path"
+        );
+    }
+
+    core.stop().await.unwrap();
 }
 
 async fn run_tun_tcp_routed_freedom_echo_scenario() {
@@ -1707,6 +1861,10 @@ impl TunTcpClient {
         self.sockets.get::<smol_tcp::Socket>(self.tcp).may_send()
     }
 
+    fn is_open(&mut self) -> bool {
+        self.sockets.get::<smol_tcp::Socket>(self.tcp).is_open()
+    }
+
     fn send_payload(&mut self, payload: &[u8]) {
         self.sockets
             .get_mut::<smol_tcp::Socket>(self.tcp)
@@ -1759,6 +1917,18 @@ async fn pump_tun_until(
         );
         sleep(Duration::from_millis(5)).await;
     }
+}
+
+async fn pump_tun_once(client: &mut TunTcpClient, tun: &TunEndpoint) {
+    client.poll();
+    while let Some(packet) = client.device.pop_outbound() {
+        tun.push_inbound(packet).await.unwrap();
+    }
+    while let Some(packet) = tun.try_poll_outbound().await.unwrap() {
+        client.device.push_inbound(packet);
+    }
+    client.poll();
+    sleep(Duration::from_millis(1)).await;
 }
 
 async fn poll_tun_outbound_until(

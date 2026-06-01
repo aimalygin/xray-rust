@@ -4,6 +4,7 @@ import XrayAppleShared
 @available(iOS 16.0, tvOS 17.0, macOS 13.0, *)
 public struct XrayClientRootView: View {
     @StateObject private var viewModel: XrayClientViewModel
+    @State private var vlessURLInput = ""
 
     public init(
         store: XrayClientProfileStore = XrayClientProfileStore(),
@@ -67,7 +68,18 @@ public struct XrayClientRootView: View {
             }
 
             Button {
-                Task { await viewModel.connectOrDisconnect() }
+                Task {
+                    #if os(tvOS)
+                    let acceptedPendingInput = await viewModel.connectOrDisconnect(
+                        importingVlessURLIfPresent: vlessURLInput
+                    )
+                    if acceptedPendingInput {
+                        vlessURLInput = ""
+                    }
+                    #else
+                    await viewModel.connectOrDisconnect()
+                    #endif
+                }
             } label: {
                 Label(
                     viewModel.connectionStatus.isActive ? "Disconnect" : "Connect",
@@ -83,12 +95,32 @@ public struct XrayClientRootView: View {
             TextField("Name", text: $viewModel.profile.name)
             TextField("Provider Bundle ID", text: $viewModel.profile.providerBundleIdentifier)
             TextField("Server Address", text: $viewModel.profile.serverAddress)
+            Toggle("Debug Logging", isOn: $viewModel.profile.debugLoggingEnabled)
+            Toggle("TUN File Descriptor", isOn: $viewModel.profile.useTunFileDescriptor)
+            Toggle("Block QUIC", isOn: $viewModel.profile.blockQUIC)
         }
     }
 
     private var configurationSection: some View {
         Section("Configuration") {
-            #if os(iOS) || os(macOS)
+            #if os(tvOS)
+            TextField("VLESS URL", text: $vlessURLInput)
+
+            Button {
+                _ = importPendingVlessURL()
+            } label: {
+                Label("Import VLESS URL", systemImage: "square.and.arrow.down")
+            }
+            .disabled(vlessURLInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+            ScrollView {
+                Text(viewModel.profile.configJSON)
+                    .font(.system(.body, design: .monospaced))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(minHeight: 260)
+            .accessibilityLabel("Xray JSON configuration")
+            #else
             PasteButton(payloadType: String.self) { strings in
                 guard let vlessURL = strings.first else {
                     return
@@ -96,13 +128,29 @@ public struct XrayClientRootView: View {
                 viewModel.importVlessURL(vlessURL)
             }
             .accessibilityLabel("Paste VLESS URL")
-            #endif
 
             TextEditor(text: $viewModel.profile.configJSON)
                 .font(.system(.body, design: .monospaced))
                 .frame(minHeight: 260)
                 .accessibilityLabel("Xray JSON configuration")
+            #endif
         }
+    }
+
+    private func importPendingVlessURL() -> Bool {
+        #if os(tvOS)
+        let trimmedURL = vlessURLInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedURL.isEmpty else {
+            return true
+        }
+        guard viewModel.importVlessURLIfPresent(trimmedURL) else {
+            return false
+        }
+        vlessURLInput = ""
+        return true
+        #else
+        return true
+        #endif
     }
 
     @ViewBuilder

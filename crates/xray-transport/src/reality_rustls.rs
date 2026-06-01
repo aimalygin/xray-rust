@@ -22,7 +22,7 @@ use crate::{
         RealityPreparedClientHello,
     },
     reality_connector::{RealityClientHelloRequest, RealityTlsSession, RealityTlsSessionProvider},
-    BoxedTransportStream, TransportError,
+    BoxedTransportStream, PenetratingTlsStream, TransportError,
 };
 
 const TLS_RECORD_HANDSHAKE: u8 = 0x16;
@@ -226,7 +226,7 @@ impl RealityTlsSession for RustlsRealityTlsSession {
         };
         let stream = connect.await.map_err(TransportError::Tls)?;
 
-        Ok(Box::new(stream))
+        Ok(Box::new(PenetratingTlsStream::new(stream)))
     }
 }
 

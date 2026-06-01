@@ -2,7 +2,13 @@ import Foundation
 
 public enum XrayTunnelProviderMessage {
     public static let configJSONOptionKey = "xrayConfigJSON"
+    public static let debugLoggingOptionKey = "xrayDebugLogging"
+    public static let useTunFileDescriptorOptionKey = "xrayUseTunFileDescriptor"
+    public static let blockQUICOptionKey = "xrayBlockQUIC"
     public static let providerConfigJSONKey = "configJSON"
+    public static let providerDebugLoggingKey = "debugLogging"
+    public static let providerUseTunFileDescriptorKey = "useTunFileDescriptor"
+    public static let providerBlockQUICKey = "blockQUIC"
     public static let statsRequest = "stats"
 
     public static func encodeStatsResponse(_ stats: XrayClientRuntimeStats) throws -> Data {

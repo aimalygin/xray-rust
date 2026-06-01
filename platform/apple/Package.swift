@@ -45,5 +45,20 @@ let package = Package(
             name: "XrayAppleSharedTests",
             dependencies: ["XrayAppleShared"]
         ),
+        .testTarget(
+            name: "XrayAppleClientTests",
+            dependencies: [
+                "XrayAppleClient",
+                "XrayAppleShared",
+            ]
+        ),
+        .testTarget(
+            name: "XrayAppleTunnelTests",
+            dependencies: ["XrayAppleTunnel"]
+        ),
+        .testTarget(
+            name: "XrayMobileAdapterTests",
+            dependencies: ["XrayMobileAdapter"]
+        ),
     ]
 )

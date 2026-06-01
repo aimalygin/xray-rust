@@ -38,6 +38,9 @@ cargo_profile_args() {
 target_lib_path() {
   local target="$1"
   local profile_dir="$PROFILE"
+  if [[ "$PROFILE" == "dev" ]]; then
+    profile_dir="debug"
+  fi
   if [[ "$PROFILE" == "release" ]]; then
     profile_dir="release"
   fi

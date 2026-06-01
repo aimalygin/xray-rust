@@ -25,6 +25,19 @@ typedef struct XrayTunStats {
   uint64_t inbound_packets;
   uint64_t outbound_packets;
   uint64_t dropped_packets;
+  uint64_t inbound_dropped_packets;
+  uint64_t outbound_dropped_packets;
+  uint64_t tcp_stack_to_remote_bytes;
+  uint64_t tcp_remote_written_bytes;
+  uint64_t tcp_remote_read_bytes;
+  uint64_t tcp_backpressure_events;
+  uint64_t tcp_pending_remote_bytes;
+  uint64_t tcp_pending_remote_flows;
+  uint64_t tcp_pending_remote_max_bytes;
+  uint64_t tcp_remote_write_errors;
+  uint64_t tcp_remote_closed_events;
+  uint64_t tcp_remote_read_errors;
+  uint64_t tcp_open_errors;
 } XrayTunStats;
 
 typedef enum XrayTunFdPacketFormat {

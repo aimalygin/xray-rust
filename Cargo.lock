@@ -1605,6 +1605,7 @@ dependencies = [
  "aes",
  "aes-gcm",
  "async-trait",
+ "bytes",
  "ghash",
  "hkdf",
  "hmac",

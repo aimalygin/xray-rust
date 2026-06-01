@@ -35,6 +35,34 @@ fn encodes_vless_tcp_header_with_vision_flow() {
 }
 
 #[test]
+fn encodes_vless_tcp_header_with_udp443_vision_flow_as_vision_addons() {
+    let request = VlessRequest {
+        user_id: test_uuid(),
+        command: VlessCommand::Tcp,
+        target: Target::new(
+            TargetAddr::Domain("example.com".to_owned()),
+            443,
+            Network::Tcp,
+        ),
+        flow: Some("xtls-rprx-vision-udp443".to_owned()),
+    };
+
+    let encoded = encode_request_header(&request).unwrap();
+    let expected = hex_bytes(
+        "00\
+         000102030405060708090a0b0c0d0e0f\
+         12\
+         0a1078746c732d727072782d766973696f6e\
+         01\
+         01bb\
+         02\
+         0b6578616d706c652e636f6d",
+    );
+
+    assert_eq!(encoded, expected);
+}
+
+#[test]
 fn encodes_no_flow_as_zero_length_addons() {
     let request = VlessRequest {
         user_id: test_uuid(),

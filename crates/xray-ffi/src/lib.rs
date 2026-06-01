@@ -70,6 +70,19 @@ pub struct XrayTunStats {
     pub inbound_packets: u64,
     pub outbound_packets: u64,
     pub dropped_packets: u64,
+    pub inbound_dropped_packets: u64,
+    pub outbound_dropped_packets: u64,
+    pub tcp_stack_to_remote_bytes: u64,
+    pub tcp_remote_written_bytes: u64,
+    pub tcp_remote_read_bytes: u64,
+    pub tcp_backpressure_events: u64,
+    pub tcp_pending_remote_bytes: u64,
+    pub tcp_pending_remote_flows: u64,
+    pub tcp_pending_remote_max_bytes: u64,
+    pub tcp_remote_write_errors: u64,
+    pub tcp_remote_closed_events: u64,
+    pub tcp_remote_read_errors: u64,
+    pub tcp_open_errors: u64,
 }
 
 pub struct XrayCoreHandle {
@@ -800,6 +813,19 @@ unsafe fn xray_tun_stats_inner(
             inbound_packets: snapshot.inbound_packets,
             outbound_packets: snapshot.outbound_packets,
             dropped_packets: snapshot.dropped_packets,
+            inbound_dropped_packets: snapshot.inbound_dropped_packets,
+            outbound_dropped_packets: snapshot.outbound_dropped_packets,
+            tcp_stack_to_remote_bytes: snapshot.tcp_stack_to_remote_bytes,
+            tcp_remote_written_bytes: snapshot.tcp_remote_written_bytes,
+            tcp_remote_read_bytes: snapshot.tcp_remote_read_bytes,
+            tcp_backpressure_events: snapshot.tcp_backpressure_events,
+            tcp_pending_remote_bytes: snapshot.tcp_pending_remote_bytes,
+            tcp_pending_remote_flows: snapshot.tcp_pending_remote_flows,
+            tcp_pending_remote_max_bytes: snapshot.tcp_pending_remote_max_bytes,
+            tcp_remote_write_errors: snapshot.tcp_remote_write_errors,
+            tcp_remote_closed_events: snapshot.tcp_remote_closed_events,
+            tcp_remote_read_errors: snapshot.tcp_remote_read_errors,
+            tcp_open_errors: snapshot.tcp_open_errors,
         };
     }
 

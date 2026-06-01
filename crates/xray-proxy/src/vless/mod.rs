@@ -12,5 +12,5 @@ pub use udp::{
 pub use vision::{
     unpad_vision_block, UnpaddedVisionBlock, VisionCommand, VisionError, VisionPadding,
 };
-pub use vision_stream::VisionStream;
+pub use vision_stream::{VisionStream, VisionStreamIo};
 pub use wire::{encode_request_header, VlessCommand, VlessRequest, WireError};

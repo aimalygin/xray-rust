@@ -1,4 +1,6 @@
 #if canImport(NetworkExtension)
+import Darwin
+import Dispatch
 import Foundation
 import NetworkExtension
 import XrayAppleShared
@@ -19,6 +21,10 @@ public enum XrayPacketTunnelProviderError: Error, LocalizedError {
 open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
     private var core: XrayCore?
     private var pump: XrayPacketTunnelPump?
+    private var debugStatsTimer: DispatchSourceTimer?
+    private let debugStatsQueue = DispatchQueue(
+        label: "org.xrayrust.apple.packet-tunnel.debug-stats"
+    )
 
     open override func startTunnel(
         options: [String: NSObject]?,
@@ -40,10 +46,16 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         }
         XrayAppleLog.info(
             "PacketTunnelProvider",
-            "Resolved config source=\(resolvedConfig.source) bytes=\(resolvedConfig.json.utf8.count)"
+            "Resolved config source=\(resolvedConfig.source) bytes=\(resolvedConfig.json.utf8.count) debugLogging=\(resolvedConfig.debugLoggingEnabled) useTunFileDescriptor=\(resolvedConfig.useTunFileDescriptor) blockQUIC=\(resolvedConfig.blockQUIC)"
+        )
+        XrayAppleLog.info(
+            "PacketTunnelProvider",
+            "Config summary \(Self.configSummary(resolvedConfig.json))"
         )
 
-        setTunnelNetworkSettings(Self.networkSettings()) { [weak self] error in
+        setTunnelNetworkSettings(
+            Self.networkSettings(excludingServerAddress: resolvedConfig.serverAddress)
+        ) { [weak self] error in
             guard let self else {
                 XrayAppleLog.error("PacketTunnelProvider", "Provider released before network settings completed")
                 completionHandler(CocoaError(.userCancelled))
@@ -60,16 +72,63 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             XrayAppleLog.info("PacketTunnelProvider", "Tunnel network settings applied")
 
             do {
+                let backend = Self.packetIOBackend(
+                    discoveredTunFileDescriptor: XrayDarwinTunFileDescriptor.discoverUtunFileDescriptor(),
+                    useTunFileDescriptor: resolvedConfig.useTunFileDescriptor,
+                    blockQUIC: resolvedConfig.blockQUIC
+                )
                 XrayAppleLog.info("PacketTunnelProvider", "Creating XrayCore")
-                let core = try XrayCore(configJSON: resolvedConfig.json)
-                let pump = XrayPacketTunnelPump(provider: self, core: core)
+                let core: XrayCore
+                let pump: XrayPacketTunnelPump?
+                switch backend {
+                case let .darwinUtunFileDescriptor(fd):
+                    XrayAppleLog.info(
+                        "PacketTunnelProvider",
+                        "Using Darwin utun fd=\(fd) for packet I/O"
+                    )
+                    core = try XrayCore(
+                        configJSON: resolvedConfig.json,
+                        borrowedDarwinTunFileDescriptor: fd
+                    )
+                    pump = nil
+                case .packetFlowPump:
+                    if resolvedConfig.blockQUIC {
+                        XrayAppleLog.info(
+                            "PacketTunnelProvider",
+                            "QUIC blocking enabled; using packetFlow pump for packet I/O"
+                        )
+                    } else if resolvedConfig.useTunFileDescriptor {
+                        XrayAppleLog.info(
+                            "PacketTunnelProvider",
+                            "No Darwin utun fd found; using packetFlow pump for packet I/O"
+                        )
+                    } else {
+                        XrayAppleLog.info(
+                            "PacketTunnelProvider",
+                            "Darwin utun fd disabled; using packetFlow pump for packet I/O"
+                        )
+                    }
+                    core = try XrayCore(configJSON: resolvedConfig.json)
+                    pump = XrayPacketTunnelPump(
+                        provider: self,
+                        core: core,
+                        options: XrayPacketTunnelPumpOptions(blockQUIC: resolvedConfig.blockQUIC)
+                    )
+                }
                 XrayAppleLog.info("PacketTunnelProvider", "Starting XrayCore")
                 try core.start()
-                XrayAppleLog.info("PacketTunnelProvider", "Starting packet pump")
-                pump.start()
+                if let pump {
+                    XrayAppleLog.info("PacketTunnelProvider", "Starting packet pump")
+                    pump.start()
+                }
 
                 self.core = core
                 self.pump = pump
+                if resolvedConfig.debugLoggingEnabled {
+                    self.startDebugStatsLogging()
+                } else {
+                    self.stopDebugStatsLogging()
+                }
                 XrayAppleLog.info("PacketTunnelProvider", "startTunnel completed successfully")
                 completionHandler(nil)
             } catch {
@@ -90,6 +149,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             "PacketTunnelProvider",
             "stopTunnel invoked reason=\(reason.xrayDescription)"
         )
+        stopDebugStatsLogging()
         pump?.stop()
         pump = nil
         do {
@@ -133,29 +193,173 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         completionHandler?(try? XrayTunnelProviderMessage.encodeStatsResponse(runtimeStats))
     }
 
+    static func packetIOBackend(
+        discoveredTunFileDescriptor: Int32?,
+        useTunFileDescriptor: Bool = true,
+        blockQUIC: Bool = false
+    ) -> XrayPacketTunnelIOBackend {
+        guard !blockQUIC, useTunFileDescriptor, let discoveredTunFileDescriptor else {
+            return .packetFlowPump
+        }
+        return .darwinUtunFileDescriptor(discoveredTunFileDescriptor)
+    }
+
     private struct ResolvedConfig {
         var json: String
         var source: String
+        var serverAddress: String?
+        var debugLoggingEnabled: Bool
+        var useTunFileDescriptor: Bool
+        var blockQUIC: Bool
     }
 
     private static func configJSON(
         options: [String: NSObject]?,
         protocolConfiguration: NEVPNProtocol
     ) -> ResolvedConfig? {
+        let tunnelProtocol = protocolConfiguration as? NETunnelProviderProtocol
+        let serverAddress = tunnelProtocol?.serverAddress
+        let isDebugLoggingEnabled = debugLoggingEnabled(
+            options: options,
+            providerConfiguration: tunnelProtocol?.providerConfiguration
+        )
+        let shouldUseTunFileDescriptor = tunFileDescriptorEnabled(
+            options: options,
+            providerConfiguration: tunnelProtocol?.providerConfiguration
+        )
+        let shouldBlockQUIC = quicBlockingEnabled(
+            options: options,
+            providerConfiguration: tunnelProtocol?.providerConfiguration
+        )
+
         if let configJSON = options?[XrayTunnelProviderMessage.configJSONOptionKey] as? String {
-            return ResolvedConfig(json: configJSON, source: "startTunnelOptions")
+            return ResolvedConfig(
+                json: configJSON,
+                source: "startTunnelOptions",
+                serverAddress: serverAddress,
+                debugLoggingEnabled: isDebugLoggingEnabled,
+                useTunFileDescriptor: shouldUseTunFileDescriptor,
+                blockQUIC: shouldBlockQUIC
+            )
         }
 
-        let tunnelProtocol = protocolConfiguration as? NETunnelProviderProtocol
         guard let configJSON = tunnelProtocol?.providerConfiguration?[
             XrayTunnelProviderMessage.providerConfigJSONKey
         ] as? String else {
             return nil
         }
-        return ResolvedConfig(json: configJSON, source: "providerConfiguration")
+        return ResolvedConfig(
+            json: configJSON,
+            source: "providerConfiguration",
+            serverAddress: serverAddress,
+            debugLoggingEnabled: isDebugLoggingEnabled,
+            useTunFileDescriptor: shouldUseTunFileDescriptor,
+            blockQUIC: shouldBlockQUIC
+        )
     }
 
-    private static func networkSettings() -> NEPacketTunnelNetworkSettings {
+    static func debugLoggingEnabled(
+        options: [String: NSObject]?,
+        providerConfiguration: [String: Any]?
+    ) -> Bool {
+        if let optionValue = options?[XrayTunnelProviderMessage.debugLoggingOptionKey],
+           let isEnabled = boolValue(optionValue) {
+            return isEnabled
+        }
+
+        if let configurationValue = providerConfiguration?[
+            XrayTunnelProviderMessage.providerDebugLoggingKey
+        ],
+            let isEnabled = boolValue(configurationValue) {
+            return isEnabled
+        }
+
+        return false
+    }
+
+    static func configSummary(_ json: String) -> String {
+        guard let data = json.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            return "invalidJSON"
+        }
+
+        let inbounds = (root["inbounds"] as? [[String: Any]] ?? []).map { inbound in
+            let tag = inbound["tag"] as? String ?? "untagged"
+            let protocolName = inbound["protocol"] as? String ?? "unknown"
+            return "\(tag):\(protocolName)"
+        }
+
+        let outbounds = (root["outbounds"] as? [[String: Any]] ?? []).map { outbound in
+            outboundSummary(outbound)
+        }
+
+        let routing = root["routing"] as? [String: Any]
+        let routingRules = (routing?["rules"] as? [Any])?.count ?? 0
+
+        return "inbounds=\(inbounds.isEmpty ? "none" : inbounds.joined(separator: ",")) outbounds=\(outbounds.isEmpty ? "none" : outbounds.joined(separator: ", ")) routingRules=\(routingRules)"
+    }
+
+    private static func outboundSummary(_ outbound: [String: Any]) -> String {
+        let tag = outbound["tag"] as? String ?? "untagged"
+        let protocolName = outbound["protocol"] as? String ?? "unknown"
+        guard protocolName == "vless" else {
+            return "\(tag):\(protocolName)"
+        }
+
+        let settings = outbound["settings"] as? [String: Any]
+        let vnext = settings?["vnext"] as? [[String: Any]]
+        let firstServer = vnext?.first
+        let address = firstServer?["address"] as? String ?? "unknown"
+        let port = firstServer?["port"].map { "\($0)" } ?? "unknown"
+        let users = firstServer?["users"] as? [[String: Any]]
+        let flow = users?.first?["flow"] as? String ?? "none"
+        let streamSettings = outbound["streamSettings"] as? [String: Any]
+        let network = streamSettings?["network"] as? String ?? "unknown"
+        let security = streamSettings?["security"] as? String ?? "unknown"
+
+        return "\(tag):\(protocolName)@\(address):\(port) network=\(network) security=\(security) flow=\(flow)"
+    }
+
+    static func tunFileDescriptorEnabled(
+        options: [String: NSObject]?,
+        providerConfiguration: [String: Any]?
+    ) -> Bool {
+        if let optionValue = options?[XrayTunnelProviderMessage.useTunFileDescriptorOptionKey],
+           let isEnabled = boolValue(optionValue) {
+            return isEnabled
+        }
+
+        if let configurationValue = providerConfiguration?[
+            XrayTunnelProviderMessage.providerUseTunFileDescriptorKey
+        ],
+            let isEnabled = boolValue(configurationValue) {
+            return isEnabled
+        }
+
+        return true
+    }
+
+    static func quicBlockingEnabled(
+        options: [String: NSObject]?,
+        providerConfiguration: [String: Any]?
+    ) -> Bool {
+        if let optionValue = options?[XrayTunnelProviderMessage.blockQUICOptionKey],
+           let isEnabled = boolValue(optionValue) {
+            return isEnabled
+        }
+
+        if let configurationValue = providerConfiguration?[
+            XrayTunnelProviderMessage.providerBlockQUICKey
+        ],
+            let isEnabled = boolValue(configurationValue) {
+            return isEnabled
+        }
+
+        return false
+    }
+
+    static func networkSettings(excludingServerAddress serverAddress: String? = nil) -> NEPacketTunnelNetworkSettings {
         let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: "198.18.0.1")
         settings.mtu = 1500
 
@@ -164,18 +368,103 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             subnetMasks: ["255.255.255.0"]
         )
         ipv4Settings.includedRoutes = [NEIPv4Route.default()]
+        if let excludedRoute = ipv4ExcludedRoute(for: serverAddress) {
+            XrayAppleLog.info(
+                "PacketTunnelProvider",
+                "Excluding proxy server IPv4 route \(excludedRoute.destinationAddress)/32 from tunnel"
+            )
+            ipv4Settings.excludedRoutes = [excludedRoute]
+        }
         settings.ipv4Settings = ipv4Settings
 
-        let ipv6Settings = NEIPv6Settings(
-            addresses: ["fd00:7872::2"],
-            networkPrefixLengths: [64]
-        )
-        ipv6Settings.includedRoutes = [NEIPv6Route.default()]
-        settings.ipv6Settings = ipv6Settings
-
-        settings.dnsSettings = NEDNSSettings(servers: ["1.1.1.1", "8.8.8.8"])
+        let dnsSettings = NEDNSSettings(servers: ["1.1.1.1", "8.8.8.8"])
+        dnsSettings.matchDomains = [""]
+        settings.dnsSettings = dnsSettings
         return settings
     }
+
+    private static func ipv4ExcludedRoute(for serverAddress: String?) -> NEIPv4Route? {
+        guard let serverAddress, isIPAddress(serverAddress, family: AF_INET) else {
+            return nil
+        }
+        return NEIPv4Route(
+            destinationAddress: serverAddress,
+            subnetMask: "255.255.255.255"
+        )
+    }
+
+    private static func isIPAddress(_ address: String, family: Int32) -> Bool {
+        var storage = sockaddr_storage()
+        return withUnsafeMutablePointer(to: &storage) { pointer in
+            address.withCString { rawAddress in
+                inet_pton(family, rawAddress, pointer) == 1
+            }
+        }
+    }
+
+    private static func boolValue(_ value: Any) -> Bool? {
+        switch value {
+        case let value as Bool:
+            return value
+        case let value as NSNumber:
+            return value.boolValue
+        case let value as NSString:
+            return boolValue(String(value))
+        case let value as String:
+            let normalizedValue = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            switch normalizedValue {
+            case "1", "true", "yes":
+                return true
+            case "0", "false", "no":
+                return false
+            default:
+                return nil
+            }
+        default:
+            return nil
+        }
+    }
+
+    private func startDebugStatsLogging() {
+        stopDebugStatsLogging()
+
+        XrayAppleLog.info("PacketTunnelProvider", "Debug stats logging enabled")
+        let timer = DispatchSource.makeTimerSource(queue: debugStatsQueue)
+        timer.schedule(deadline: .now() + 5, repeating: 5)
+        timer.setEventHandler { [weak self] in
+            guard let self else {
+                return
+            }
+            do {
+                guard let stats = try self.core?.stats() else {
+                    XrayAppleLog.info("PacketTunnelProvider", "Debug stats unavailable: no core")
+                    return
+                }
+                XrayAppleLog.info(
+                    "PacketTunnelProvider",
+                    "Debug stats inbound=\(stats.inboundPackets) outbound=\(stats.outboundPackets) dropped=\(stats.droppedPackets) inboundDropped=\(stats.inboundDroppedPackets) outboundDropped=\(stats.outboundDroppedPackets) tcpStackToRemoteBytes=\(stats.tcpStackToRemoteBytes) tcpRemoteWrittenBytes=\(stats.tcpRemoteWrittenBytes) tcpRemoteReadBytes=\(stats.tcpRemoteReadBytes) tcpBackpressure=\(stats.tcpBackpressureEvents) tcpPendingRemoteBytes=\(stats.tcpPendingRemoteBytes) tcpPendingRemoteFlows=\(stats.tcpPendingRemoteFlows) tcpPendingRemoteMaxBytes=\(stats.tcpPendingRemoteMaxBytes) tcpWriteErrors=\(stats.tcpRemoteWriteErrors) tcpRemoteClosed=\(stats.tcpRemoteClosedEvents) tcpReadErrors=\(stats.tcpRemoteReadErrors) tcpOpenErrors=\(stats.tcpOpenErrors)"
+                )
+            } catch {
+                XrayAppleLog.error(
+                    "PacketTunnelProvider",
+                    "Failed to read debug stats: \(error.localizedDescription)"
+                )
+            }
+        }
+        debugStatsTimer = timer
+        timer.resume()
+    }
+
+    private func stopDebugStatsLogging() {
+        debugStatsTimer?.setEventHandler {}
+        debugStatsTimer?.cancel()
+        debugStatsTimer = nil
+    }
+}
+
+enum XrayPacketTunnelIOBackend: Equatable {
+    case darwinUtunFileDescriptor(Int32)
+    case packetFlowPump
 }
 
 @available(iOSApplicationExtension 16.0, tvOSApplicationExtension 17.0, macOSApplicationExtension 13.0, *)

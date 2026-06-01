@@ -600,6 +600,7 @@ impl Parser<'_> {
         let flow = match self.string_at(user, "flow") {
             Some("") | None => None,
             Some("xtls-rprx-vision") => Some("xtls-rprx-vision".to_owned()),
+            Some("xtls-rprx-vision-udp443") => Some("xtls-rprx-vision-udp443".to_owned()),
             Some(flow) => {
                 self.error(flow_path, format!("unsupported vless user flow `{flow}`"));
                 return None;
