@@ -259,6 +259,59 @@ fn ffi_fd_tun_raw_ip_bridges_icmp_echo_reply() {
     }
 }
 
+#[cfg(unix)]
+#[test]
+fn ffi_fd_tun_darwin_utun_bridges_icmp_echo_reply() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    assert!(!core.is_null());
+    let fds = socket_pair();
+    set_nonblocking(fds[1].raw());
+
+    let status = unsafe {
+        xray_core_set_tun_fd(
+            core,
+            fds[0].raw(),
+            XrayTunFdPacketFormat::DarwinUtun,
+            XrayTunFdClosePolicy::Borrowed,
+            &mut err,
+        )
+    };
+    assert_eq!(status, XrayStatus::Ok);
+    assert!(err.is_null());
+
+    let raw = CString::new(tun_config_with_freedom_outbound()).unwrap();
+    let status = unsafe { xray_core_load_config_json(core, raw.as_ptr(), &mut err) };
+    assert_eq!(status, XrayStatus::Ok);
+    assert!(err.is_null());
+
+    let status = unsafe { xray_core_start(core, &mut err) };
+    assert_eq!(status, XrayStatus::Ok);
+    assert!(err.is_null());
+
+    let request = ipv4_icmp_echo_request([10, 10, 0, 2], [10, 10, 0, 1], 0x1202, 8, b"utun ping");
+    write_fd(fds[1].raw(), &darwin_utun_ipv4_packet(&request));
+
+    let reply = read_fd_until(fds[1].raw(), is_darwin_utun_ipv4_icmp_echo_reply);
+    assert_eq!(&reply[..4], &[0, 0, 0, libc::AF_INET as u8]);
+    assert_ipv4_icmp_echo_reply(
+        &reply[4..],
+        [10, 10, 0, 1],
+        [10, 10, 0, 2],
+        0x1202,
+        8,
+        b"utun ping",
+    );
+
+    let status = unsafe { xray_core_stop(core, &mut err) };
+    assert_eq!(status, XrayStatus::Ok);
+    assert!(err.is_null());
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
 #[test]
 fn ffi_tun_push_packet_updates_stats() {
     let mut err = std::ptr::null_mut();
@@ -281,6 +334,12 @@ fn ffi_tun_push_packet_updates_stats() {
     assert_eq!(stats.tcp_remote_written_bytes, 0);
     assert_eq!(stats.tcp_remote_read_bytes, 0);
     assert_eq!(stats.tcp_backpressure_events, 0);
+    assert_eq!(stats.tcp_stack_to_remote_backpressure_events, 0);
+    assert_eq!(stats.tcp_remote_to_stack_backpressure_events, 0);
+    assert_eq!(stats.tcp_remote_write_batches, 0);
+    assert_eq!(stats.tcp_remote_write_batch_messages, 0);
+    assert_eq!(stats.tcp_remote_write_batch_max_messages, 0);
+    assert_eq!(stats.tcp_remote_write_batch_max_bytes, 0);
     assert_eq!(stats.tcp_pending_remote_bytes, 0);
     assert_eq!(stats.tcp_pending_remote_flows, 0);
     assert_eq!(stats.tcp_pending_remote_max_bytes, 0);
@@ -617,6 +676,21 @@ fn ipv4_icmp_echo_request(
 
 fn is_ipv4_icmp_echo_reply(packet: &[u8]) -> bool {
     packet.len() >= 28 && packet[0] >> 4 == 4 && packet[9] == 1 && packet[20] == 0
+}
+
+#[cfg(unix)]
+fn darwin_utun_ipv4_packet(packet: &[u8]) -> Vec<u8> {
+    let mut encoded = Vec::with_capacity(4 + packet.len());
+    encoded.extend_from_slice(&[0, 0, 0, libc::AF_INET as u8]);
+    encoded.extend_from_slice(packet);
+    encoded
+}
+
+#[cfg(unix)]
+fn is_darwin_utun_ipv4_icmp_echo_reply(packet: &[u8]) -> bool {
+    packet.len() > 4
+        && packet[..4] == [0, 0, 0, libc::AF_INET as u8]
+        && is_ipv4_icmp_echo_reply(&packet[4..])
 }
 
 fn assert_ipv4_icmp_echo_reply(

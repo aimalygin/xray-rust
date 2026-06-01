@@ -38,6 +38,12 @@ public struct XrayTunStatsSnapshot: Equatable, Sendable {
     public let tcpRemoteWrittenBytes: UInt64
     public let tcpRemoteReadBytes: UInt64
     public let tcpBackpressureEvents: UInt64
+    public let tcpStackToRemoteBackpressureEvents: UInt64
+    public let tcpRemoteToStackBackpressureEvents: UInt64
+    public let tcpRemoteWriteBatches: UInt64
+    public let tcpRemoteWriteBatchMessages: UInt64
+    public let tcpRemoteWriteBatchMaxMessages: UInt64
+    public let tcpRemoteWriteBatchMaxBytes: UInt64
     public let tcpPendingRemoteBytes: UInt64
     public let tcpPendingRemoteFlows: UInt64
     public let tcpPendingRemoteMaxBytes: UInt64
@@ -214,6 +220,12 @@ public final class XrayCore: @unchecked Sendable {
                 tcpRemoteWrittenBytes: stats.tcp_remote_written_bytes,
                 tcpRemoteReadBytes: stats.tcp_remote_read_bytes,
                 tcpBackpressureEvents: stats.tcp_backpressure_events,
+                tcpStackToRemoteBackpressureEvents: stats.tcp_stack_to_remote_backpressure_events,
+                tcpRemoteToStackBackpressureEvents: stats.tcp_remote_to_stack_backpressure_events,
+                tcpRemoteWriteBatches: stats.tcp_remote_write_batches,
+                tcpRemoteWriteBatchMessages: stats.tcp_remote_write_batch_messages,
+                tcpRemoteWriteBatchMaxMessages: stats.tcp_remote_write_batch_max_messages,
+                tcpRemoteWriteBatchMaxBytes: stats.tcp_remote_write_batch_max_bytes,
                 tcpPendingRemoteBytes: stats.tcp_pending_remote_bytes,
                 tcpPendingRemoteFlows: stats.tcp_pending_remote_flows,
                 tcpPendingRemoteMaxBytes: stats.tcp_pending_remote_max_bytes,

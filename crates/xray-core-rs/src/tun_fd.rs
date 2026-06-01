@@ -57,7 +57,6 @@ impl TunFdConfig {
 
 #[cfg(unix)]
 mod platform {
-    use std::borrow::Cow;
     use std::io;
     use std::os::fd::{AsRawFd, RawFd};
     use std::sync::Arc;
@@ -243,18 +242,12 @@ mod platform {
         packet_format: TunFdPacketFormat,
         packet: &[u8],
     ) -> io::Result<()> {
-        let packet = encode_packet(packet_format, packet)?;
+        let packet = EncodedPacket::new(packet_format, packet)?;
 
         loop {
             let mut guard = fd.writable().await?;
             let result = guard.try_io(|inner| {
-                let written = unsafe {
-                    libc::write(
-                        inner.get_ref().as_raw_fd(),
-                        packet.as_ptr().cast(),
-                        packet.len(),
-                    )
-                };
+                let written = packet.write_to_fd(inner.get_ref().as_raw_fd());
                 if written < 0 {
                     return Err(io::Error::last_os_error());
                 }
@@ -297,27 +290,75 @@ mod platform {
         }
     }
 
-    fn encode_packet<'a>(
-        packet_format: TunFdPacketFormat,
-        packet: &'a [u8],
-    ) -> io::Result<Cow<'a, [u8]>> {
-        match packet_format {
-            TunFdPacketFormat::RawIp => Ok(Cow::Borrowed(packet)),
-            TunFdPacketFormat::DarwinUtun => {
-                let family = match packet.first().map(|byte| byte >> 4) {
-                    Some(4) => libc::AF_INET,
-                    Some(6) => libc::AF_INET6,
-                    _ => {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            "tun packet is not IPv4 or IPv6",
-                        ))
-                    }
-                };
-                let mut encoded = Vec::with_capacity(DARWIN_UTUN_HEADER_LEN + packet.len());
-                encoded.extend_from_slice(&[0, 0, 0, family as u8]);
-                encoded.extend_from_slice(packet);
-                Ok(Cow::Owned(encoded))
+    enum EncodedPacket<'a> {
+        RawIp(&'a [u8]),
+        DarwinUtun { header: [u8; 4], payload: &'a [u8] },
+    }
+
+    impl<'a> EncodedPacket<'a> {
+        fn new(packet_format: TunFdPacketFormat, packet: &'a [u8]) -> io::Result<Self> {
+            match packet_format {
+                TunFdPacketFormat::RawIp => Ok(Self::RawIp(packet)),
+                TunFdPacketFormat::DarwinUtun => {
+                    let family = match packet.first().map(|byte| byte >> 4) {
+                        Some(4) => libc::AF_INET,
+                        Some(6) => libc::AF_INET6,
+                        _ => {
+                            return Err(io::Error::new(
+                                io::ErrorKind::InvalidData,
+                                "tun packet is not IPv4 or IPv6",
+                            ))
+                        }
+                    };
+                    Ok(Self::DarwinUtun {
+                        header: [0, 0, 0, family as u8],
+                        payload: packet,
+                    })
+                }
+            }
+        }
+
+        fn len(&self) -> usize {
+            match self {
+                Self::RawIp(packet) => packet.len(),
+                Self::DarwinUtun { payload, .. } => DARWIN_UTUN_HEADER_LEN + payload.len(),
+            }
+        }
+
+        #[cfg(test)]
+        fn header(&self) -> Option<[u8; 4]> {
+            match self {
+                Self::RawIp(_) => None,
+                Self::DarwinUtun { header, .. } => Some(*header),
+            }
+        }
+
+        #[cfg(test)]
+        fn payload(&self) -> &'a [u8] {
+            match self {
+                Self::RawIp(packet) => packet,
+                Self::DarwinUtun { payload, .. } => payload,
+            }
+        }
+
+        fn write_to_fd(&self, fd: RawFd) -> libc::ssize_t {
+            match self {
+                Self::RawIp(packet) => unsafe {
+                    libc::write(fd, packet.as_ptr().cast(), packet.len())
+                },
+                Self::DarwinUtun { header, payload } => {
+                    let iov = [
+                        libc::iovec {
+                            iov_base: header.as_ptr().cast_mut().cast(),
+                            iov_len: header.len(),
+                        },
+                        libc::iovec {
+                            iov_base: payload.as_ptr().cast_mut().cast(),
+                            iov_len: payload.len(),
+                        },
+                    ];
+                    unsafe { libc::writev(fd, iov.as_ptr(), iov.len() as libc::c_int) }
+                }
             }
         }
     }
@@ -341,6 +382,21 @@ mod platform {
         }
 
         Ok(())
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn darwin_utun_encoded_packet_borrows_payload_and_adds_family_header() {
+            let packet = [0x45, 0x00, 0x00, 0x14];
+            let encoded = EncodedPacket::new(TunFdPacketFormat::DarwinUtun, &packet).unwrap();
+
+            assert_eq!(encoded.len(), DARWIN_UTUN_HEADER_LEN + packet.len());
+            assert_eq!(encoded.header(), Some([0, 0, 0, libc::AF_INET as u8]));
+            assert!(std::ptr::eq(encoded.payload().as_ptr(), packet.as_ptr()));
+        }
     }
 }
 

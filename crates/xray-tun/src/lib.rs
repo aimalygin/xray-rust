@@ -32,6 +32,12 @@ pub struct TunStats {
     pub tcp_remote_written_bytes: u64,
     pub tcp_remote_read_bytes: u64,
     pub tcp_backpressure_events: u64,
+    pub tcp_stack_to_remote_backpressure_events: u64,
+    pub tcp_remote_to_stack_backpressure_events: u64,
+    pub tcp_remote_write_batches: u64,
+    pub tcp_remote_write_batch_messages: u64,
+    pub tcp_remote_write_batch_max_messages: u64,
+    pub tcp_remote_write_batch_max_bytes: u64,
     pub tcp_pending_remote_bytes: u64,
     pub tcp_pending_remote_flows: u64,
     pub tcp_pending_remote_max_bytes: u64,
@@ -58,6 +64,12 @@ pub struct TunEndpoint {
     tcp_remote_written_bytes: AtomicU64,
     tcp_remote_read_bytes: AtomicU64,
     tcp_backpressure_events: AtomicU64,
+    tcp_stack_to_remote_backpressure_events: AtomicU64,
+    tcp_remote_to_stack_backpressure_events: AtomicU64,
+    tcp_remote_write_batches: AtomicU64,
+    tcp_remote_write_batch_messages: AtomicU64,
+    tcp_remote_write_batch_max_messages: AtomicU64,
+    tcp_remote_write_batch_max_bytes: AtomicU64,
     tcp_pending_remote_bytes: AtomicU64,
     tcp_pending_remote_flows: AtomicU64,
     tcp_pending_remote_max_bytes: AtomicU64,
@@ -92,6 +104,12 @@ impl TunEndpoint {
             tcp_remote_written_bytes: AtomicU64::new(0),
             tcp_remote_read_bytes: AtomicU64::new(0),
             tcp_backpressure_events: AtomicU64::new(0),
+            tcp_stack_to_remote_backpressure_events: AtomicU64::new(0),
+            tcp_remote_to_stack_backpressure_events: AtomicU64::new(0),
+            tcp_remote_write_batches: AtomicU64::new(0),
+            tcp_remote_write_batch_messages: AtomicU64::new(0),
+            tcp_remote_write_batch_max_messages: AtomicU64::new(0),
+            tcp_remote_write_batch_max_bytes: AtomicU64::new(0),
             tcp_pending_remote_bytes: AtomicU64::new(0),
             tcp_pending_remote_flows: AtomicU64::new(0),
             tcp_pending_remote_max_bytes: AtomicU64::new(0),
@@ -141,6 +159,22 @@ impl TunEndpoint {
             tcp_remote_written_bytes: self.tcp_remote_written_bytes.load(Ordering::Relaxed),
             tcp_remote_read_bytes: self.tcp_remote_read_bytes.load(Ordering::Relaxed),
             tcp_backpressure_events: self.tcp_backpressure_events.load(Ordering::Relaxed),
+            tcp_stack_to_remote_backpressure_events: self
+                .tcp_stack_to_remote_backpressure_events
+                .load(Ordering::Relaxed),
+            tcp_remote_to_stack_backpressure_events: self
+                .tcp_remote_to_stack_backpressure_events
+                .load(Ordering::Relaxed),
+            tcp_remote_write_batches: self.tcp_remote_write_batches.load(Ordering::Relaxed),
+            tcp_remote_write_batch_messages: self
+                .tcp_remote_write_batch_messages
+                .load(Ordering::Relaxed),
+            tcp_remote_write_batch_max_messages: self
+                .tcp_remote_write_batch_max_messages
+                .load(Ordering::Relaxed),
+            tcp_remote_write_batch_max_bytes: self
+                .tcp_remote_write_batch_max_bytes
+                .load(Ordering::Relaxed),
             tcp_pending_remote_bytes: self.tcp_pending_remote_bytes.load(Ordering::Relaxed),
             tcp_pending_remote_flows: self.tcp_pending_remote_flows.load(Ordering::Relaxed),
             tcp_pending_remote_max_bytes: self.tcp_pending_remote_max_bytes.load(Ordering::Relaxed),
@@ -174,6 +208,29 @@ impl TunEndpoint {
 
     pub fn record_tcp_backpressure(&self) {
         self.tcp_backpressure_events.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_tcp_stack_to_remote_backpressure(&self) {
+        self.record_tcp_backpressure();
+        self.tcp_stack_to_remote_backpressure_events
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_tcp_remote_to_stack_backpressure(&self) {
+        self.record_tcp_backpressure();
+        self.tcp_remote_to_stack_backpressure_events
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_tcp_remote_write_batch(&self, messages: usize, bytes: usize) {
+        self.tcp_remote_write_batches
+            .fetch_add(1, Ordering::Relaxed);
+        self.tcp_remote_write_batch_messages
+            .fetch_add(messages as u64, Ordering::Relaxed);
+        self.tcp_remote_write_batch_max_messages
+            .fetch_max(messages as u64, Ordering::Relaxed);
+        self.tcp_remote_write_batch_max_bytes
+            .fetch_max(bytes as u64, Ordering::Relaxed);
     }
 
     pub fn record_tcp_pending_remote(

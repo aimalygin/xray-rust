@@ -8,7 +8,7 @@ use smoltcp::phy::{ChecksumCapabilities, Device, DeviceCapabilities, Medium, RxT
 use smoltcp::socket::tcp;
 use smoltcp::time::Instant;
 use smoltcp::wire::{HardwareAddress, IpAddress, IpEndpoint};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::UdpSocket;
 use tokio::sync::{mpsc, watch};
 use tokio::time::{sleep, Duration};
@@ -35,6 +35,8 @@ const UDP_PROTOCOL: u8 = 17;
 const TCP_BUFFER_SIZE: usize = 32 * 1024;
 const BRIDGE_CHANNEL_DEPTH: usize = 64;
 const BRIDGE_READ_BUFFER_SIZE: usize = 16 * 1024;
+const BRIDGE_WRITE_BATCH_MAX_MESSAGES: usize = BRIDGE_CHANNEL_DEPTH + 1;
+const BRIDGE_WRITE_BATCH_MAX_BYTES: usize = 1024 * 1024;
 const MAX_TUN_INBOUND_DRAIN_PER_TICK: usize = 256;
 const UDP_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -550,7 +552,7 @@ fn apply_or_delay_stack_event(
         Ok(()) => true,
         Err(event) => {
             if let Some(tun) = tun {
-                tun.record_tcp_backpressure();
+                tun.record_tcp_remote_to_stack_backpressure();
             }
             delayed_stack_events.push_front(event);
             false
@@ -674,7 +676,7 @@ fn read_socket_data_to_remote(
             let permit = match flow.to_remote.try_reserve() {
                 Ok(permit) => permit,
                 Err(mpsc::error::TrySendError::Full(_)) => {
-                    tun.record_tcp_backpressure();
+                    tun.record_tcp_stack_to_remote_backpressure();
                     break;
                 }
                 Err(mpsc::error::TrySendError::Closed(_)) => {
@@ -775,13 +777,15 @@ async fn bridge_tcp_flow(
                 let Some(data) = data else {
                     break;
                 };
-                let data_len = data.len();
-                if remote_writer.write_all(&data).await.is_err() {
-                    context.tun.record_tcp_remote_write_error();
-                    break;
-                }
-                context.tun.record_tcp_remote_written(data_len);
-                if remote_writer.flush().await.is_err() {
+                if write_stack_batch_to_remote(
+                    &mut remote_writer,
+                    data,
+                    &mut from_stack,
+                    context.tun.as_ref(),
+                )
+                .await
+                .is_err()
+                {
                     context.tun.record_tcp_remote_write_error();
                     break;
                 }
@@ -818,6 +822,43 @@ async fn bridge_tcp_flow(
         .stack_tx
         .send(StackEvent::RemoteClosed { handle })
         .await;
+}
+
+async fn write_stack_batch_to_remote<W>(
+    remote_writer: &mut W,
+    first: Bytes,
+    from_stack: &mut mpsc::Receiver<Bytes>,
+    tun: &TunEndpoint,
+) -> std::io::Result<()>
+where
+    W: AsyncWrite + Unpin,
+{
+    let mut batch_messages = 0usize;
+    let mut batch_bytes = 0usize;
+    let mut next = Some(first);
+
+    while let Some(data) = next {
+        let data_len = data.len();
+        remote_writer.write_all(&data).await?;
+        tun.record_tcp_remote_written(data_len);
+
+        batch_messages += 1;
+        batch_bytes = batch_bytes.saturating_add(data_len);
+        if batch_messages >= BRIDGE_WRITE_BATCH_MAX_MESSAGES
+            || batch_bytes >= BRIDGE_WRITE_BATCH_MAX_BYTES
+        {
+            break;
+        }
+
+        next = match from_stack.try_recv() {
+            Ok(data) => Some(data),
+            Err(mpsc::error::TryRecvError::Empty | mpsc::error::TryRecvError::Disconnected) => None,
+        };
+    }
+
+    remote_writer.flush().await?;
+    tun.record_tcp_remote_write_batch(batch_messages, batch_bytes);
+    Ok(())
 }
 
 fn handle_udp_packet(
@@ -1591,12 +1632,104 @@ impl TxToken for PacketTxToken<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+    use tokio::io::AsyncWrite;
 
     const NORMAL_TCP_REMOTE_PENDING_LIMIT: usize = 2 * 1024 * 1024;
     const PRESSURE_TCP_REMOTE_PENDING_LIMIT: usize = 1024 * 1024;
 
+    #[derive(Debug, Default)]
+    struct CountingWrite {
+        written: Vec<u8>,
+        flushes: usize,
+    }
+
+    impl AsyncWrite for CountingWrite {
+        fn poll_write(
+            mut self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            input: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            self.written.extend_from_slice(input);
+            Poll::Ready(Ok(input.len()))
+        }
+
+        fn poll_flush(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            self.flushes += 1;
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
     fn mobile_tcp_remote_buffer_state() -> TcpRemoteBufferState {
         TcpRemoteBufferState::new(MOBILE_TCP_REMOTE_BUFFER_POLICY)
+    }
+
+    #[tokio::test]
+    async fn stack_to_remote_write_batches_queued_chunks_before_flushing() {
+        let (tx, mut rx) = mpsc::channel(BRIDGE_CHANNEL_DEPTH);
+        tx.try_send(Bytes::from_static(b"two")).unwrap();
+        tx.try_send(Bytes::from_static(b"three")).unwrap();
+        let mut writer = CountingWrite::default();
+        let tun = TunEndpoint::new(xray_tun::TunConfig {
+            mtu: 1500,
+            queue_depth: 1,
+        });
+
+        write_stack_batch_to_remote(&mut writer, Bytes::from_static(b"one"), &mut rx, &tun)
+            .await
+            .unwrap();
+
+        assert_eq!(writer.written, b"onetwothree");
+        assert_eq!(writer.flushes, 1);
+        let stats = tun.stats().await;
+        assert_eq!(stats.tcp_remote_written_bytes, b"onetwothree".len() as u64);
+        assert_eq!(stats.tcp_remote_write_batches, 1);
+        assert_eq!(stats.tcp_remote_write_batch_messages, 3);
+        assert_eq!(stats.tcp_remote_write_batch_max_messages, 3);
+        assert_eq!(
+            stats.tcp_remote_write_batch_max_bytes,
+            b"onetwothree".len() as u64
+        );
+    }
+
+    #[tokio::test]
+    async fn stack_to_remote_write_batch_drains_a_full_channel_before_flushing() {
+        let (tx, mut rx) = mpsc::channel(BRIDGE_CHANNEL_DEPTH);
+        for _ in 0..BRIDGE_CHANNEL_DEPTH {
+            tx.try_send(Bytes::from_static(&[0x5a; 1024])).unwrap();
+        }
+        let mut writer = CountingWrite::default();
+        let tun = TunEndpoint::new(xray_tun::TunConfig {
+            mtu: 1500,
+            queue_depth: 1,
+        });
+
+        write_stack_batch_to_remote(
+            &mut writer,
+            Bytes::from_static(&[0x7b; 1024]),
+            &mut rx,
+            &tun,
+        )
+        .await
+        .unwrap();
+
+        let stats = tun.stats().await;
+        assert_eq!(stats.tcp_remote_write_batches, 1);
+        assert_eq!(
+            stats.tcp_remote_write_batch_messages,
+            BRIDGE_CHANNEL_DEPTH as u64 + 1
+        );
+        assert_eq!(
+            stats.tcp_remote_write_batch_max_bytes,
+            ((BRIDGE_CHANNEL_DEPTH + 1) * 1024) as u64
+        );
+        assert_eq!(writer.flushes, 1);
     }
 
     #[test]

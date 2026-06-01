@@ -76,6 +76,12 @@ pub struct XrayTunStats {
     pub tcp_remote_written_bytes: u64,
     pub tcp_remote_read_bytes: u64,
     pub tcp_backpressure_events: u64,
+    pub tcp_stack_to_remote_backpressure_events: u64,
+    pub tcp_remote_to_stack_backpressure_events: u64,
+    pub tcp_remote_write_batches: u64,
+    pub tcp_remote_write_batch_messages: u64,
+    pub tcp_remote_write_batch_max_messages: u64,
+    pub tcp_remote_write_batch_max_bytes: u64,
     pub tcp_pending_remote_bytes: u64,
     pub tcp_pending_remote_flows: u64,
     pub tcp_pending_remote_max_bytes: u64,
@@ -158,7 +164,7 @@ unsafe fn xray_core_new_inner(error: *mut *mut XrayError) -> *mut XrayCoreHandle
     let runtime = match Builder::new_multi_thread()
         .enable_all()
         .thread_name("xray-ffi")
-        .worker_threads(2)
+        .worker_threads(runtime_worker_threads())
         .build()
     {
         Ok(runtime) => runtime,
@@ -821,6 +827,14 @@ unsafe fn xray_tun_stats_inner(
             tcp_remote_written_bytes: snapshot.tcp_remote_written_bytes,
             tcp_remote_read_bytes: snapshot.tcp_remote_read_bytes,
             tcp_backpressure_events: snapshot.tcp_backpressure_events,
+            tcp_stack_to_remote_backpressure_events: snapshot
+                .tcp_stack_to_remote_backpressure_events,
+            tcp_remote_to_stack_backpressure_events: snapshot
+                .tcp_remote_to_stack_backpressure_events,
+            tcp_remote_write_batches: snapshot.tcp_remote_write_batches,
+            tcp_remote_write_batch_messages: snapshot.tcp_remote_write_batch_messages,
+            tcp_remote_write_batch_max_messages: snapshot.tcp_remote_write_batch_max_messages,
+            tcp_remote_write_batch_max_bytes: snapshot.tcp_remote_write_batch_max_bytes,
             tcp_pending_remote_bytes: snapshot.tcp_pending_remote_bytes,
             tcp_pending_remote_flows: snapshot.tcp_pending_remote_flows,
             tcp_pending_remote_max_bytes: snapshot.tcp_pending_remote_max_bytes,
@@ -994,4 +1008,29 @@ fn c_string_lossy_without_nuls(message: &str) -> CString {
         .collect::<Vec<_>>();
 
     CString::new(filtered).unwrap_or_else(|_| CString::default())
+}
+
+fn runtime_worker_threads() -> usize {
+    let available = std::thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(2);
+    runtime_worker_threads_for_available_parallelism(available)
+}
+
+fn runtime_worker_threads_for_available_parallelism(available: usize) -> usize {
+    available.clamp(2, 4)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::runtime_worker_threads_for_available_parallelism;
+
+    #[test]
+    fn runtime_worker_threads_use_available_parallelism_with_mobile_bounds() {
+        assert_eq!(runtime_worker_threads_for_available_parallelism(1), 2);
+        assert_eq!(runtime_worker_threads_for_available_parallelism(2), 2);
+        assert_eq!(runtime_worker_threads_for_available_parallelism(3), 3);
+        assert_eq!(runtime_worker_threads_for_available_parallelism(4), 4);
+        assert_eq!(runtime_worker_threads_for_available_parallelism(8), 4);
+    }
 }

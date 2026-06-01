@@ -165,7 +165,10 @@ async fn tun_endpoint_stats_track_tcp_bridge_counters() {
     tun.record_tcp_stack_to_remote(120);
     tun.record_tcp_remote_written(100);
     tun.record_tcp_remote_read(80);
-    tun.record_tcp_backpressure();
+    tun.record_tcp_stack_to_remote_backpressure();
+    tun.record_tcp_remote_to_stack_backpressure();
+    tun.record_tcp_remote_write_batch(3, 96);
+    tun.record_tcp_remote_write_batch(5, 160);
     tun.record_tcp_pending_remote(4096, 3, 2048, 2 * 1024 * 1024, false);
     tun.record_tcp_pending_remote(1024, 1, 512, 1024 * 1024, true);
     tun.record_tcp_remote_write_error();
@@ -184,7 +187,13 @@ async fn tun_endpoint_stats_track_tcp_bridge_counters() {
             tcp_stack_to_remote_bytes: 120,
             tcp_remote_written_bytes: 100,
             tcp_remote_read_bytes: 80,
-            tcp_backpressure_events: 1,
+            tcp_backpressure_events: 2,
+            tcp_stack_to_remote_backpressure_events: 1,
+            tcp_remote_to_stack_backpressure_events: 1,
+            tcp_remote_write_batches: 2,
+            tcp_remote_write_batch_messages: 8,
+            tcp_remote_write_batch_max_messages: 5,
+            tcp_remote_write_batch_max_bytes: 160,
             tcp_pending_remote_bytes: 1024,
             tcp_pending_remote_flows: 1,
             tcp_pending_remote_max_bytes: 512,
