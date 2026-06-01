@@ -113,11 +113,43 @@ xcodebuild -project platform/apple/XrayClient/XrayClient.xcodeproj \
 Starting the system VPN requires a signed build with the Packet Tunnel
 NetworkExtension entitlement and local user approval in macOS System Settings.
 
-For local debugging, run the `XrayClientMac` or `XrayClientMacTunnel` scheme to
-start the containing macOS app. The Packet Tunnel provider is launched by macOS
-only after the app starts the VPN configuration. To debug provider code, choose
-**Debug > Attach to Process by PID or Name...** in Xcode, enter
-`XrayClientMacTunnel`, then press Connect in the app.
+For local debugging, install the signed debug app into a stable app location
+before starting the VPN. macOS discovers Packet Tunnel providers from installed
+containing apps; running the app only from Xcode's DerivedData can leave Xcode
+waiting for a provider process that macOS never launches.
+
+```sh
+platform/apple/scripts/install-macos-debug-app.sh
+open "$HOME/Applications/XrayClientMac.app"
+```
+
+The helper builds the `XrayClientMac` scheme with signing enabled, copies the
+app to `~/Applications/XrayClientMac.app`, and registers it with
+LaunchServices. Pass extra `xcodebuild` settings at the end if your local
+signing setup needs them, for example:
+
+```sh
+platform/apple/scripts/install-macos-debug-app.sh DEVELOPMENT_TEAM=9QF29ADW72
+```
+
+After the installed app is running, choose **Debug > Attach to Process by PID or
+Name...** in Xcode, enter `XrayClientMacTunnel`, then press Connect in the app.
+The Packet Tunnel provider is launched by macOS only after the app starts the
+VPN configuration.
+
+If Xcode stays at "Waiting to attach to XrayClientMacTunnel", check the
+NetworkExtension logs:
+
+```sh
+/usr/bin/log show --last 5m --style compact --predicate \
+  'eventMessage CONTAINS[c] "org.texforge.XrayClientMac.Tunnel" OR eventMessage CONTAINS[c] "[XrayRust]"'
+```
+
+Messages such as `Found 0 extension(s)` or `The VPN app used by the VPN
+configuration is not installed` mean macOS has not discovered the embedded
+`.appex`. Quit the DerivedData-launched app, run the installed app from
+`~/Applications`, and delete the old "Xray Rust" entry in System Settings > VPN
+once if the stale configuration keeps being reused.
 
 ## Current Limits
 
