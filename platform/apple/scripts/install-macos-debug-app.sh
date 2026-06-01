@@ -9,12 +9,15 @@ SCHEME="${XRAY_MACOS_SCHEME:-XrayClientMac}"
 CONFIGURATION="${XRAY_MACOS_CONFIGURATION:-Debug}"
 SDK="${XRAY_MACOS_SDK:-macosx}"
 DERIVED_DATA_PATH="${XRAY_MACOS_DERIVED_DATA_PATH:-${TMPDIR:-/tmp}/xray-rust-macos-debug-derived-data}"
-INSTALL_DIR="${XRAY_MACOS_INSTALL_DIR:-$HOME/Applications}"
+INSTALL_DIR="${XRAY_MACOS_INSTALL_DIR:-/Applications}"
 APP_NAME="XrayClientMac.app"
 TUNNEL_NAME="XrayClientMacTunnel.appex"
 BUILT_APP="$DERIVED_DATA_PATH/Build/Products/$CONFIGURATION/$APP_NAME"
 INSTALL_APP="$INSTALL_DIR/$APP_NAME"
+BUILT_TUNNEL="$BUILT_APP/Contents/PlugIns/$TUNNEL_NAME"
+INSTALL_TUNNEL="$INSTALL_APP/Contents/PlugIns/$TUNNEL_NAME"
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister"
+CODE_SIGN_IDENTITY="${XRAY_MACOS_CODE_SIGN_IDENTITY:-Apple Development}"
 
 echo "Building $SCHEME ($CONFIGURATION) with signing enabled..."
 xcodebuild \
@@ -24,6 +27,8 @@ xcodebuild \
   -configuration "$CONFIGURATION" \
   -derivedDataPath "$DERIVED_DATA_PATH" \
   CODE_SIGNING_ALLOWED=YES \
+  CODE_SIGN_IDENTITY="$CODE_SIGN_IDENTITY" \
+  ENABLE_DEBUG_DYLIB=NO \
   "$@" \
   build
 
@@ -32,8 +37,8 @@ if [[ ! -d "$BUILT_APP" ]]; then
   exit 1
 fi
 
-if [[ ! -d "$BUILT_APP/Contents/PlugIns/$TUNNEL_NAME" ]]; then
-  echo "error: expected embedded tunnel was not built at $BUILT_APP/Contents/PlugIns/$TUNNEL_NAME" >&2
+if [[ ! -d "$BUILT_TUNNEL" ]]; then
+  echo "error: expected embedded tunnel was not built at $BUILT_TUNNEL" >&2
   exit 1
 fi
 
@@ -54,6 +59,19 @@ echo "Installing $APP_NAME to $INSTALL_APP..."
 
 echo "Registering $APP_NAME with LaunchServices..."
 "$LSREGISTER" -f -R -trusted "$INSTALL_APP"
+
+PROVIDER_BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INSTALL_TUNNEL/Contents/Info.plist")"
+PLUGIN_MATCHES="$(/usr/bin/pluginkit -m -A -p com.apple.networkextension.packet-tunnel -i "$PROVIDER_BUNDLE_ID" -v || true)"
+
+if [[ "$PLUGIN_MATCHES" == *"$PROVIDER_BUNDLE_ID"* ]]; then
+  echo "PlugInKit found packet tunnel provider: $PROVIDER_BUNDLE_ID"
+else
+  cat >&2 <<EOF
+warning: PlugInKit did not find packet tunnel provider $PROVIDER_BUNDLE_ID.
+Make sure both the app and the tunnel extension are sandboxed and signed with
+the Packet Tunnel NetworkExtension entitlement.
+EOF
+fi
 
 cat <<EOF
 

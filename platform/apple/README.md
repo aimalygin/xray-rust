@@ -116,16 +116,20 @@ NetworkExtension entitlement and local user approval in macOS System Settings.
 For local debugging, install the signed debug app into a stable app location
 before starting the VPN. macOS discovers Packet Tunnel providers from installed
 containing apps; running the app only from Xcode's DerivedData can leave Xcode
-waiting for a provider process that macOS never launches.
+waiting for a provider process that macOS never launches. The macOS app and
+tunnel extension must also be sandboxed for PlugInKit to return the provider.
 
 ```sh
 platform/apple/scripts/install-macos-debug-app.sh
-open "$HOME/Applications/XrayClientMac.app"
+open "/Applications/XrayClientMac.app"
 ```
 
 The helper builds the `XrayClientMac` scheme with signing enabled, copies the
-app to `~/Applications/XrayClientMac.app`, and registers it with
-LaunchServices. Pass extra `xcodebuild` settings at the end if your local
+app to `/Applications/XrayClientMac.app`, registers it with LaunchServices, and
+checks that PlugInKit can match `org.texforge.XrayClientMac.Tunnel` as a packet
+tunnel provider. It also disables Xcode's debug-dylib mode for this install,
+because NetworkExtension provider discovery should use a normal embedded
+`.appex` executable. Pass extra `xcodebuild` settings at the end if your local
 signing setup needs them, for example:
 
 ```sh
@@ -148,8 +152,14 @@ NetworkExtension logs:
 Messages such as `Found 0 extension(s)` or `The VPN app used by the VPN
 configuration is not installed` mean macOS has not discovered the embedded
 `.appex`. Quit the DerivedData-launched app, run the installed app from
-`~/Applications`, and delete the old "Xray Rust" entry in System Settings > VPN
-once if the stale configuration keeps being reused.
+`/Applications`, and delete the old "Xray Rust" entry in System Settings > VPN
+once if the stale configuration keeps being reused. You can verify discovery
+directly with:
+
+```sh
+/usr/bin/pluginkit -m -A -p com.apple.networkextension.packet-tunnel \
+  -i org.texforge.XrayClientMac.Tunnel -v
+```
 
 ## Current Limits
 
