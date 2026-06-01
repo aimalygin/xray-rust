@@ -113,6 +113,12 @@ xcodebuild -project platform/apple/XrayClient/XrayClient.xcodeproj \
 Starting the system VPN requires a signed build with the Packet Tunnel
 NetworkExtension entitlement and local user approval in macOS System Settings.
 
+For local debugging, run the `XrayClientMac` or `XrayClientMacTunnel` scheme to
+start the containing macOS app. The Packet Tunnel provider is launched by macOS
+only after the app starts the VPN configuration. To debug provider code, choose
+**Debug > Attach to Process by PID or Name...** in Xcode, enter
+`XrayClientMacTunnel`, then press Connect in the app.
+
 ## Current Limits
 
 - Provisioning profiles and signing are still local Apple Developer account
