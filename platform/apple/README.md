@@ -79,6 +79,40 @@ The default provider bundle identifier is derived as:
 The in-app profile editor exposes this value so local development builds can
 match whatever bundle identifier Xcode and provisioning use.
 
+## macOS System VPN Target
+
+The Xcode project also contains native macOS targets:
+
+```text
+XrayClientMac
+XrayClientMacTunnel
+```
+
+`XrayClientMac` is a normal macOS app with a main window and a SwiftUI
+`MenuBarExtra`. `XrayClientMacTunnel` is the macOS Packet Tunnel extension and
+depends on the shared `XrayAppleTunnel` package product.
+
+The default macOS provider bundle identifier follows the same convention as the
+iOS and tvOS hosts:
+
+```text
+org.texforge.XrayClientMac.Tunnel
+```
+
+Build locally without signing checks:
+
+```sh
+xcodebuild -project platform/apple/XrayClient/XrayClient.xcodeproj \
+  -scheme XrayClientMac \
+  -sdk macosx \
+  -configuration Debug \
+  CODE_SIGNING_ALLOWED=NO \
+  build
+```
+
+Starting the system VPN requires a signed build with the Packet Tunnel
+NetworkExtension entitlement and local user approval in macOS System Settings.
+
 ## Current Limits
 
 - Provisioning profiles and signing are still local Apple Developer account
