@@ -136,10 +136,16 @@ signing setup needs them, for example:
 platform/apple/scripts/install-macos-debug-app.sh DEVELOPMENT_TEAM=9QF29ADW72
 ```
 
-After the installed app is running, choose **Debug > Attach to Process by PID or
+Use the `XrayClientMac` scheme when you want to launch or debug the containing
+app itself. Use the `XrayClientMacTunnel` scheme when you want Xcode to debug
+the Packet Tunnel extension; Xcode may ask for the containing app because macOS
+still launches Packet Tunnel providers through the installed app. Choose
+`/Applications/XrayClientMac.app`, then press Connect in the app.
+
+You can also attach manually: choose **Debug > Attach to Process by PID or
 Name...** in Xcode, enter `XrayClientMacTunnel`, then press Connect in the app.
-The Packet Tunnel provider is launched by macOS only after the app starts the
-VPN configuration.
+The Packet Tunnel provider process is launched by macOS only after the app
+starts the VPN configuration.
 
 If Xcode stays at "Waiting to attach to XrayClientMacTunnel", check the
 NetworkExtension logs:
