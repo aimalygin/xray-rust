@@ -11,6 +11,7 @@ Xray-core/
 
 # Native/mobile build outputs.
 platform/apple/.build/
+platform/apple/target/
 platform/android/.gradle/
 platform/android/build/
 platform/android/xraymobile/.cxx/

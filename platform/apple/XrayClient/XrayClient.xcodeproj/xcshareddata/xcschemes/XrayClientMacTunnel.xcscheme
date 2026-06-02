@@ -65,8 +65,8 @@
       debugDocumentVersioning = "YES"
       debugServiceExtension = "internal"
       allowLocationSimulation = "YES"
-      queueDebuggingEnableBacktraceRecording = "Yes"
-      launchAutomaticallySubstyle = "2">
+      launchAutomaticallySubstyle = "2"
+      queueDebuggingEnableBacktraceRecording = "Yes">
       <RemoteRunnable
          runnableDebuggingMode = "2"
          BundleIdentifier = "org.texforge.XrayClientMac">
