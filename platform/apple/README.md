@@ -137,15 +137,21 @@ platform/apple/scripts/install-macos-debug-app.sh DEVELOPMENT_TEAM=9QF29ADW72
 ```
 
 Use the `XrayClientMac` scheme when you want to launch or debug the containing
-app itself. Use the `XrayClientMacTunnel` scheme when you want Xcode to debug
-the Packet Tunnel extension; Xcode may ask for the containing app because macOS
-still launches Packet Tunnel providers through the installed app. Choose
-`/Applications/XrayClientMac.app`, then press Connect in the app.
+app itself.
 
-You can also attach manually: choose **Debug > Attach to Process by PID or
-Name...** in Xcode, enter `XrayClientMacTunnel`, then press Connect in the app.
-The Packet Tunnel provider process is launched by macOS only after the app
-starts the VPN configuration.
+For the most reliable Packet Tunnel provider debugging flow, use the installed
+app and attach manually: choose **Debug > Attach to Process by PID or Name...**
+in Xcode, enter `XrayClientMacTunnel`, then press Connect in the app. The Packet
+Tunnel provider process is launched by macOS only after the app starts the VPN
+configuration.
+
+If you use the `XrayClientMacTunnel` scheme for automatic extension debugging,
+Xcode may ask for the containing app because macOS launches Packet Tunnel
+providers through an app bundle. Choose the `XrayClientMac.app` build product
+that Xcode just built under `DerivedData/.../Build/Products/Debug`, not an older
+copy from `/Applications` or `~/Applications`. If multiple copies with the same
+bundle id are registered, Xcode can wait for one extension instance while macOS
+starts another one.
 
 If Xcode stays at "Waiting to attach to XrayClientMacTunnel", check the
 NetworkExtension logs:
@@ -157,10 +163,10 @@ NetworkExtension logs:
 
 Messages such as `Found 0 extension(s)` or `The VPN app used by the VPN
 configuration is not installed` mean macOS has not discovered the embedded
-`.appex`. Quit the DerivedData-launched app, run the installed app from
-`/Applications`, and delete the old "Xray Rust" entry in System Settings > VPN
-once if the stale configuration keeps being reused. You can verify discovery
-directly with:
+`.appex`. Quit stale `XrayClientMac` copies, prefer a single app location for
+the current debug session, and delete the old "Xray Rust" entry in System
+Settings > VPN once if the stale configuration keeps being reused. You can
+verify discovery directly with:
 
 ```sh
 /usr/bin/pluginkit -m -A -p com.apple.networkextension.packet-tunnel \
