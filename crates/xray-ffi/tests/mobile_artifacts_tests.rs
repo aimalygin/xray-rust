@@ -30,6 +30,7 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
         "XrayTunFdPacketFormat",
         "XrayTunFdClosePolicy",
         "xray_core_set_tun_fd",
+        "xray_core_set_tun_block_quic",
         "xray_error_code",
         "xray_error_message",
         "xray_error_free",
@@ -74,6 +75,7 @@ fn apple_adapter_declares_packet_tunnel_pump() {
     assert!(core.contains("import XrayRust"));
     assert!(core.contains("xray_core_set_socket_protect_callback"));
     assert!(core.contains("xray_core_set_tun_fd"));
+    assert!(core.contains("xray_core_set_tun_block_quic"));
     assert!(core.contains("tunFileDescriptor"));
     assert!(core.contains("xray_tun_push_packet"));
     assert!(core.contains("xray_tun_poll_packet"));
@@ -297,6 +299,7 @@ const EXPORTED_SYMBOLS: &[&str] = &[
     "xray_core_free",
     "xray_core_set_socket_protect_callback",
     "xray_core_set_tun_fd",
+    "xray_core_set_tun_block_quic",
     "xray_error_code",
     "xray_error_message",
     "xray_error_free",
@@ -344,6 +347,7 @@ static void use_xray_ffi_api(void) {
       XRAY_TUN_FD_PACKET_FORMAT_RAW_IP,
       XRAY_TUN_FD_CLOSE_POLICY_BORROWED,
       &error);
+  (void)xray_core_set_tun_block_quic(handle, 1, &error);
   (void)xray_core_load_config_json(handle, "{}", &error);
   (void)xray_core_start(handle, &error);
   (void)xray_core_stop(handle, &error);

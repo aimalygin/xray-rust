@@ -236,14 +236,50 @@ public struct XrayClientRuntimeStats: Codable, Equatable, Sendable {
     public var inboundPackets: UInt64
     public var outboundPackets: UInt64
     public var droppedPackets: UInt64
+    public var activeTCPFlows: UInt64
+    public var activeUDPFlows: UInt64
+    public var udpFlowLimit: UInt64
+    public var udpBudgetDrops: UInt64
+    public var udpEvictedFlows: UInt64
+    public var udpChannelDroppedPackets: UInt64
+    public var udpOpenErrors: UInt64
+    public var udpVisionUDP443Rejections: UInt64
+    public var udpRemoteWriteErrors: UInt64
+    public var udpRemoteReadErrors: UInt64
+    public var udpRemoteClosedEvents: UInt64
+    public var udpQuicBlockedPackets: UInt64
 
     public init(
         inboundPackets: UInt64,
         outboundPackets: UInt64,
-        droppedPackets: UInt64
+        droppedPackets: UInt64,
+        activeTCPFlows: UInt64 = 0,
+        activeUDPFlows: UInt64 = 0,
+        udpFlowLimit: UInt64 = 0,
+        udpBudgetDrops: UInt64 = 0,
+        udpEvictedFlows: UInt64 = 0,
+        udpChannelDroppedPackets: UInt64 = 0,
+        udpOpenErrors: UInt64 = 0,
+        udpVisionUDP443Rejections: UInt64 = 0,
+        udpRemoteWriteErrors: UInt64 = 0,
+        udpRemoteReadErrors: UInt64 = 0,
+        udpRemoteClosedEvents: UInt64 = 0,
+        udpQuicBlockedPackets: UInt64 = 0
     ) {
         self.inboundPackets = inboundPackets
         self.outboundPackets = outboundPackets
         self.droppedPackets = droppedPackets
+        self.activeTCPFlows = activeTCPFlows
+        self.activeUDPFlows = activeUDPFlows
+        self.udpFlowLimit = udpFlowLimit
+        self.udpBudgetDrops = udpBudgetDrops
+        self.udpEvictedFlows = udpEvictedFlows
+        self.udpChannelDroppedPackets = udpChannelDroppedPackets
+        self.udpOpenErrors = udpOpenErrors
+        self.udpVisionUDP443Rejections = udpVisionUDP443Rejections
+        self.udpRemoteWriteErrors = udpRemoteWriteErrors
+        self.udpRemoteReadErrors = udpRemoteReadErrors
+        self.udpRemoteClosedEvents = udpRemoteClosedEvents
+        self.udpQuicBlockedPackets = udpQuicBlockedPackets
     }
 }

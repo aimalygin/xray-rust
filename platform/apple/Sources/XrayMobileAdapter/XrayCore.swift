@@ -53,6 +53,18 @@ public struct XrayTunStatsSnapshot: Equatable, Sendable {
     public let tcpRemoteClosedEvents: UInt64
     public let tcpRemoteReadErrors: UInt64
     public let tcpOpenErrors: UInt64
+    public let activeTCPFlows: UInt64
+    public let activeUDPFlows: UInt64
+    public let udpFlowLimit: UInt64
+    public let udpBudgetDrops: UInt64
+    public let udpEvictedFlows: UInt64
+    public let udpChannelDroppedPackets: UInt64
+    public let udpOpenErrors: UInt64
+    public let udpVisionUDP443Rejections: UInt64
+    public let udpRemoteWriteErrors: UInt64
+    public let udpRemoteReadErrors: UInt64
+    public let udpRemoteClosedEvents: UInt64
+    public let udpQuicBlockedPackets: UInt64
 }
 
 public final class XrayCore: @unchecked Sendable {
@@ -61,10 +73,12 @@ public final class XrayCore: @unchecked Sendable {
 
     public convenience init(
         configJSON: String,
-        borrowedDarwinTunFileDescriptor fd: Int32
+        borrowedDarwinTunFileDescriptor fd: Int32,
+        blockQUIC: Bool = false
     ) throws {
         try self.init(
             configJSON: configJSON,
+            blockQUIC: blockQUIC,
             tunFileDescriptor: fd,
             tunPacketFormat: XRAY_TUN_FD_PACKET_FORMAT_DARWIN_UTUN,
             tunClosePolicy: XRAY_TUN_FD_CLOSE_POLICY_BORROWED
@@ -73,6 +87,7 @@ public final class XrayCore: @unchecked Sendable {
 
     public init(
         configJSON: String,
+        blockQUIC: Bool = false,
         socketProtectCallback: XraySocketProtectCallback? = nil,
         socketProtectUserData: UnsafeMutableRawPointer? = nil,
         tunFileDescriptor: Int32? = nil,
@@ -82,7 +97,7 @@ public final class XrayCore: @unchecked Sendable {
         var error: OpaquePointer?
         XrayMobileLog.info(
             "Core",
-            "Creating core configBytes=\(configJSON.utf8.count) socketProtect=\(socketProtectCallback != nil) tunFd=\(tunFileDescriptor.map(String.init) ?? "none")"
+            "Creating core configBytes=\(configJSON.utf8.count) socketProtect=\(socketProtectCallback != nil) tunFd=\(tunFileDescriptor.map(String.init) ?? "none") blockQUIC=\(blockQUIC)"
         )
         guard let handle = xray_core_new(&error) else {
             let coreError = XrayCore.takeError(error)
@@ -115,6 +130,10 @@ public final class XrayCore: @unchecked Sendable {
                     error: error
                 )
             }
+            try check(
+                xray_core_set_tun_block_quic(handle, blockQUIC ? 1 : 0, &error),
+                error: error
+            )
             try configJSON.withCString { pointer in
                 try check(xray_core_load_config_json(handle, pointer, &error), error: error)
             }
@@ -234,7 +253,19 @@ public final class XrayCore: @unchecked Sendable {
                 tcpRemoteWriteErrors: stats.tcp_remote_write_errors,
                 tcpRemoteClosedEvents: stats.tcp_remote_closed_events,
                 tcpRemoteReadErrors: stats.tcp_remote_read_errors,
-                tcpOpenErrors: stats.tcp_open_errors
+                tcpOpenErrors: stats.tcp_open_errors,
+                activeTCPFlows: stats.active_tcp_flows,
+                activeUDPFlows: stats.active_udp_flows,
+                udpFlowLimit: stats.udp_flow_limit,
+                udpBudgetDrops: stats.udp_budget_drops,
+                udpEvictedFlows: stats.udp_evicted_flows,
+                udpChannelDroppedPackets: stats.udp_channel_dropped_packets,
+                udpOpenErrors: stats.udp_open_errors,
+                udpVisionUDP443Rejections: stats.udp_vision_udp443_rejections,
+                udpRemoteWriteErrors: stats.udp_remote_write_errors,
+                udpRemoteReadErrors: stats.udp_remote_read_errors,
+                udpRemoteClosedEvents: stats.udp_remote_closed_events,
+                udpQuicBlockedPackets: stats.udp_quic_blocked_packets
             )
         }
     }

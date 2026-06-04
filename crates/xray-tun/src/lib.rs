@@ -47,6 +47,18 @@ pub struct TunStats {
     pub tcp_remote_closed_events: u64,
     pub tcp_remote_read_errors: u64,
     pub tcp_open_errors: u64,
+    pub active_tcp_flows: u64,
+    pub active_udp_flows: u64,
+    pub udp_flow_limit: u64,
+    pub udp_budget_drops: u64,
+    pub udp_evicted_flows: u64,
+    pub udp_channel_dropped_packets: u64,
+    pub udp_open_errors: u64,
+    pub udp_vision_udp443_rejections: u64,
+    pub udp_remote_write_errors: u64,
+    pub udp_remote_read_errors: u64,
+    pub udp_remote_closed_events: u64,
+    pub udp_quic_blocked_packets: u64,
 }
 
 pub struct TunEndpoint {
@@ -79,6 +91,18 @@ pub struct TunEndpoint {
     tcp_remote_closed_events: AtomicU64,
     tcp_remote_read_errors: AtomicU64,
     tcp_open_errors: AtomicU64,
+    active_tcp_flows: AtomicU64,
+    active_udp_flows: AtomicU64,
+    udp_flow_limit: AtomicU64,
+    udp_budget_drops: AtomicU64,
+    udp_evicted_flows: AtomicU64,
+    udp_channel_dropped_packets: AtomicU64,
+    udp_open_errors: AtomicU64,
+    udp_vision_udp443_rejections: AtomicU64,
+    udp_remote_write_errors: AtomicU64,
+    udp_remote_read_errors: AtomicU64,
+    udp_remote_closed_events: AtomicU64,
+    udp_quic_blocked_packets: AtomicU64,
     closed: AtomicBool,
     closed_notify: Notify,
 }
@@ -119,6 +143,18 @@ impl TunEndpoint {
             tcp_remote_closed_events: AtomicU64::new(0),
             tcp_remote_read_errors: AtomicU64::new(0),
             tcp_open_errors: AtomicU64::new(0),
+            active_tcp_flows: AtomicU64::new(0),
+            active_udp_flows: AtomicU64::new(0),
+            udp_flow_limit: AtomicU64::new(0),
+            udp_budget_drops: AtomicU64::new(0),
+            udp_evicted_flows: AtomicU64::new(0),
+            udp_channel_dropped_packets: AtomicU64::new(0),
+            udp_open_errors: AtomicU64::new(0),
+            udp_vision_udp443_rejections: AtomicU64::new(0),
+            udp_remote_write_errors: AtomicU64::new(0),
+            udp_remote_read_errors: AtomicU64::new(0),
+            udp_remote_closed_events: AtomicU64::new(0),
+            udp_quic_blocked_packets: AtomicU64::new(0),
             closed: AtomicBool::new(false),
             closed_notify: Notify::new(),
         }
@@ -188,6 +224,18 @@ impl TunEndpoint {
             tcp_remote_closed_events: self.tcp_remote_closed_events.load(Ordering::Relaxed),
             tcp_remote_read_errors: self.tcp_remote_read_errors.load(Ordering::Relaxed),
             tcp_open_errors: self.tcp_open_errors.load(Ordering::Relaxed),
+            active_tcp_flows: self.active_tcp_flows.load(Ordering::Relaxed),
+            active_udp_flows: self.active_udp_flows.load(Ordering::Relaxed),
+            udp_flow_limit: self.udp_flow_limit.load(Ordering::Relaxed),
+            udp_budget_drops: self.udp_budget_drops.load(Ordering::Relaxed),
+            udp_evicted_flows: self.udp_evicted_flows.load(Ordering::Relaxed),
+            udp_channel_dropped_packets: self.udp_channel_dropped_packets.load(Ordering::Relaxed),
+            udp_open_errors: self.udp_open_errors.load(Ordering::Relaxed),
+            udp_vision_udp443_rejections: self.udp_vision_udp443_rejections.load(Ordering::Relaxed),
+            udp_remote_write_errors: self.udp_remote_write_errors.load(Ordering::Relaxed),
+            udp_remote_read_errors: self.udp_remote_read_errors.load(Ordering::Relaxed),
+            udp_remote_closed_events: self.udp_remote_closed_events.load(Ordering::Relaxed),
+            udp_quic_blocked_packets: self.udp_quic_blocked_packets.load(Ordering::Relaxed),
         }
     }
 
@@ -268,6 +316,58 @@ impl TunEndpoint {
 
     pub fn record_tcp_open_error(&self) {
         self.tcp_open_errors.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_flow_budget(
+        &self,
+        active_tcp_flows: usize,
+        active_udp_flows: usize,
+        udp_flow_limit: usize,
+        udp_budget_drops: u64,
+        udp_evicted_flows: u64,
+        udp_channel_dropped_packets: u64,
+    ) {
+        self.active_tcp_flows
+            .store(active_tcp_flows as u64, Ordering::Relaxed);
+        self.active_udp_flows
+            .store(active_udp_flows as u64, Ordering::Relaxed);
+        self.udp_flow_limit
+            .store(udp_flow_limit as u64, Ordering::Relaxed);
+        self.udp_budget_drops
+            .store(udp_budget_drops, Ordering::Relaxed);
+        self.udp_evicted_flows
+            .store(udp_evicted_flows, Ordering::Relaxed);
+        self.udp_channel_dropped_packets
+            .store(udp_channel_dropped_packets, Ordering::Relaxed);
+    }
+
+    pub fn record_udp_open_error(&self) {
+        self.udp_open_errors.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_udp_vision_udp443_rejection(&self) {
+        self.udp_vision_udp443_rejections
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_udp_remote_write_error(&self) {
+        self.udp_remote_write_errors.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_udp_remote_read_error(&self) {
+        self.udp_remote_read_errors.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_udp_remote_closed(&self) {
+        self.udp_remote_closed_events
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_udp_quic_blocked(&self) {
+        self.dropped_packets.fetch_add(1, Ordering::Relaxed);
+        self.inbound_dropped_packets.fetch_add(1, Ordering::Relaxed);
+        self.udp_quic_blocked_packets
+            .fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn close(&self) {

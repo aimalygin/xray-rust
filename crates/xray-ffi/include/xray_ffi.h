@@ -46,6 +46,18 @@ typedef struct XrayTunStats {
   uint64_t tcp_remote_closed_events;
   uint64_t tcp_remote_read_errors;
   uint64_t tcp_open_errors;
+  uint64_t active_tcp_flows;
+  uint64_t active_udp_flows;
+  uint64_t udp_flow_limit;
+  uint64_t udp_budget_drops;
+  uint64_t udp_evicted_flows;
+  uint64_t udp_channel_dropped_packets;
+  uint64_t udp_open_errors;
+  uint64_t udp_vision_udp443_rejections;
+  uint64_t udp_remote_write_errors;
+  uint64_t udp_remote_read_errors;
+  uint64_t udp_remote_closed_events;
+  uint64_t udp_quic_blocked_packets;
 } XrayTunStats;
 
 typedef enum XrayTunFdPacketFormat {
@@ -81,6 +93,10 @@ XrayStatus xray_core_set_tun_fd(
     int32_t fd,
     XrayTunFdPacketFormat packet_format,
     XrayTunFdClosePolicy close_policy,
+    XrayError **error);
+XrayStatus xray_core_set_tun_block_quic(
+    XrayCoreHandle *handle,
+    int32_t block_quic,
     XrayError **error);
 void xray_core_free(XrayCoreHandle *handle);
 

@@ -30,6 +30,11 @@ pub enum CoreState {
     Stopped,
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct TunRuntimeOptions {
+    pub block_quic: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BoundInbound {
     pub tag: Option<String>,
@@ -79,6 +84,7 @@ pub struct Core {
     runtime: Option<RuntimeState>,
     dns_resolver: Arc<dyn DnsResolver>,
     transport_dialer: Arc<TransportDialer>,
+    tun_runtime_options: TunRuntimeOptions,
 }
 
 impl Core {
@@ -102,6 +108,20 @@ impl Core {
         dns_resolver: Arc<dyn DnsResolver>,
         transport_dialer: Arc<TransportDialer>,
     ) -> Result<Self, CoreError> {
+        Self::with_runtime_dependencies_and_tun_options(
+            config,
+            dns_resolver,
+            transport_dialer,
+            TunRuntimeOptions::default(),
+        )
+    }
+
+    pub fn with_runtime_dependencies_and_tun_options(
+        config: CoreConfig,
+        dns_resolver: Arc<dyn DnsResolver>,
+        transport_dialer: Arc<TransportDialer>,
+        tun_runtime_options: TunRuntimeOptions,
+    ) -> Result<Self, CoreError> {
         let shutdown = Shutdown::new();
         let tun = Arc::new(TunEndpoint::new(TunConfig {
             mtu: 1500,
@@ -116,6 +136,7 @@ impl Core {
             runtime: None,
             dns_resolver,
             transport_dialer,
+            tun_runtime_options,
         })
     }
 
@@ -203,6 +224,7 @@ impl Core {
                 Arc::clone(&config),
                 Arc::clone(&self.dns_resolver),
                 Arc::clone(&self.transport_dialer),
+                self.tun_runtime_options,
                 self.shutdown.subscribe(),
             )));
         }

@@ -88,7 +88,8 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                     )
                     core = try XrayCore(
                         configJSON: resolvedConfig.json,
-                        borrowedDarwinTunFileDescriptor: fd
+                        borrowedDarwinTunFileDescriptor: fd,
+                        blockQUIC: resolvedConfig.blockQUIC
                     )
                     pump = nil
                 case .packetFlowPump:
@@ -108,7 +109,10 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                             "Darwin utun fd disabled; using packetFlow pump for packet I/O"
                         )
                     }
-                    core = try XrayCore(configJSON: resolvedConfig.json)
+                    core = try XrayCore(
+                        configJSON: resolvedConfig.json,
+                        blockQUIC: resolvedConfig.blockQUIC
+                    )
                     pump = XrayPacketTunnelPump(
                         provider: self,
                         core: core,
@@ -184,7 +188,19 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         let runtimeStats = XrayClientRuntimeStats(
             inboundPackets: stats.inboundPackets,
             outboundPackets: stats.outboundPackets,
-            droppedPackets: stats.droppedPackets
+            droppedPackets: stats.droppedPackets,
+            activeTCPFlows: stats.activeTCPFlows,
+            activeUDPFlows: stats.activeUDPFlows,
+            udpFlowLimit: stats.udpFlowLimit,
+            udpBudgetDrops: stats.udpBudgetDrops,
+            udpEvictedFlows: stats.udpEvictedFlows,
+            udpChannelDroppedPackets: stats.udpChannelDroppedPackets,
+            udpOpenErrors: stats.udpOpenErrors,
+            udpVisionUDP443Rejections: stats.udpVisionUDP443Rejections,
+            udpRemoteWriteErrors: stats.udpRemoteWriteErrors,
+            udpRemoteReadErrors: stats.udpRemoteReadErrors,
+            udpRemoteClosedEvents: stats.udpRemoteClosedEvents,
+            udpQuicBlockedPackets: stats.udpQuicBlockedPackets
         )
         XrayAppleLog.info(
             "PacketTunnelProvider",
@@ -198,7 +214,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         useTunFileDescriptor: Bool = true,
         blockQUIC: Bool = false
     ) -> XrayPacketTunnelIOBackend {
-        guard !blockQUIC, useTunFileDescriptor, let discoveredTunFileDescriptor else {
+        guard useTunFileDescriptor, let discoveredTunFileDescriptor else {
             return .packetFlowPump
         }
         return .darwinUtunFileDescriptor(discoveredTunFileDescriptor)
@@ -442,7 +458,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                 }
                 XrayAppleLog.info(
                     "PacketTunnelProvider",
-                    "Debug stats inbound=\(stats.inboundPackets) outbound=\(stats.outboundPackets) dropped=\(stats.droppedPackets) inboundDropped=\(stats.inboundDroppedPackets) outboundDropped=\(stats.outboundDroppedPackets) tcpStackToRemoteBytes=\(stats.tcpStackToRemoteBytes) tcpRemoteWrittenBytes=\(stats.tcpRemoteWrittenBytes) tcpRemoteReadBytes=\(stats.tcpRemoteReadBytes) tcpBackpressure=\(stats.tcpBackpressureEvents) tcpStackToRemoteBackpressure=\(stats.tcpStackToRemoteBackpressureEvents) tcpRemoteToStackBackpressure=\(stats.tcpRemoteToStackBackpressureEvents) tcpRemoteWriteBatches=\(stats.tcpRemoteWriteBatches) tcpRemoteWriteBatchMessages=\(stats.tcpRemoteWriteBatchMessages) tcpRemoteWriteBatchMaxMessages=\(stats.tcpRemoteWriteBatchMaxMessages) tcpRemoteWriteBatchMaxBytes=\(stats.tcpRemoteWriteBatchMaxBytes) tcpPendingRemoteBytes=\(stats.tcpPendingRemoteBytes) tcpPendingRemoteFlows=\(stats.tcpPendingRemoteFlows) tcpPendingRemoteMaxBytes=\(stats.tcpPendingRemoteMaxBytes) tcpRemoteBufferLimitBytes=\(stats.tcpRemoteBufferLimitBytes) tcpRemoteBufferPressureActive=\(stats.tcpRemoteBufferPressureActive) tcpWriteErrors=\(stats.tcpRemoteWriteErrors) tcpRemoteClosed=\(stats.tcpRemoteClosedEvents) tcpReadErrors=\(stats.tcpRemoteReadErrors) tcpOpenErrors=\(stats.tcpOpenErrors)"
+                    "Debug stats inbound=\(stats.inboundPackets) outbound=\(stats.outboundPackets) dropped=\(stats.droppedPackets) inboundDropped=\(stats.inboundDroppedPackets) outboundDropped=\(stats.outboundDroppedPackets) tcpStackToRemoteBytes=\(stats.tcpStackToRemoteBytes) tcpRemoteWrittenBytes=\(stats.tcpRemoteWrittenBytes) tcpRemoteReadBytes=\(stats.tcpRemoteReadBytes) tcpBackpressure=\(stats.tcpBackpressureEvents) tcpStackToRemoteBackpressure=\(stats.tcpStackToRemoteBackpressureEvents) tcpRemoteToStackBackpressure=\(stats.tcpRemoteToStackBackpressureEvents) tcpRemoteWriteBatches=\(stats.tcpRemoteWriteBatches) tcpRemoteWriteBatchMessages=\(stats.tcpRemoteWriteBatchMessages) tcpRemoteWriteBatchMaxMessages=\(stats.tcpRemoteWriteBatchMaxMessages) tcpRemoteWriteBatchMaxBytes=\(stats.tcpRemoteWriteBatchMaxBytes) tcpPendingRemoteBytes=\(stats.tcpPendingRemoteBytes) tcpPendingRemoteFlows=\(stats.tcpPendingRemoteFlows) tcpPendingRemoteMaxBytes=\(stats.tcpPendingRemoteMaxBytes) tcpRemoteBufferLimitBytes=\(stats.tcpRemoteBufferLimitBytes) tcpRemoteBufferPressureActive=\(stats.tcpRemoteBufferPressureActive) tcpWriteErrors=\(stats.tcpRemoteWriteErrors) tcpRemoteClosed=\(stats.tcpRemoteClosedEvents) tcpReadErrors=\(stats.tcpRemoteReadErrors) tcpOpenErrors=\(stats.tcpOpenErrors) activeTCPFlows=\(stats.activeTCPFlows) activeUDPFlows=\(stats.activeUDPFlows) udpFlowLimit=\(stats.udpFlowLimit) udpBudgetDrops=\(stats.udpBudgetDrops) udpEvictedFlows=\(stats.udpEvictedFlows) udpChannelDroppedPackets=\(stats.udpChannelDroppedPackets) udpOpenErrors=\(stats.udpOpenErrors) udpVisionUDP443Rejections=\(stats.udpVisionUDP443Rejections) udpWriteErrors=\(stats.udpRemoteWriteErrors) udpReadErrors=\(stats.udpRemoteReadErrors) udpRemoteClosed=\(stats.udpRemoteClosedEvents) udpQuicBlockedPackets=\(stats.udpQuicBlockedPackets)"
                 )
             } catch {
                 XrayAppleLog.error(

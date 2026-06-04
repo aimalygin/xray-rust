@@ -48,14 +48,14 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         )
     }
 
-    func testPacketIOBackendUsesPacketFlowPumpWhenQuicBlockingIsEnabled() {
+    func testPacketIOBackendKeepsFileDescriptorWhenQuicBlockingIsEnabled() {
         XCTAssertEqual(
             XrayPacketTunnelProvider.packetIOBackend(
                 discoveredTunFileDescriptor: 42,
                 useTunFileDescriptor: true,
                 blockQUIC: true
             ),
-            .packetFlowPump
+            .darwinUtunFileDescriptor(42)
         )
     }
 

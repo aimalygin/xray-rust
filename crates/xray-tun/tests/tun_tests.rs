@@ -203,6 +203,44 @@ async fn tun_endpoint_stats_track_tcp_bridge_counters() {
             tcp_remote_closed_events: 1,
             tcp_remote_read_errors: 1,
             tcp_open_errors: 1,
+            ..TunStats::default()
+        }
+    );
+}
+
+#[tokio::test]
+async fn tun_endpoint_stats_track_flow_budget_counters() {
+    let tun = TunEndpoint::new(TunConfig {
+        mtu: 1500,
+        queue_depth: 1,
+    });
+
+    tun.record_flow_budget(12, 34, 256, 5, 6, 7);
+    tun.record_udp_open_error();
+    tun.record_udp_vision_udp443_rejection();
+    tun.record_udp_remote_write_error();
+    tun.record_udp_remote_read_error();
+    tun.record_udp_remote_closed();
+    tun.record_udp_quic_blocked();
+
+    assert_eq!(
+        tun.stats().await,
+        TunStats {
+            dropped_packets: 1,
+            inbound_dropped_packets: 1,
+            active_tcp_flows: 12,
+            active_udp_flows: 34,
+            udp_flow_limit: 256,
+            udp_budget_drops: 5,
+            udp_evicted_flows: 6,
+            udp_channel_dropped_packets: 7,
+            udp_open_errors: 1,
+            udp_vision_udp443_rejections: 1,
+            udp_remote_write_errors: 1,
+            udp_remote_read_errors: 1,
+            udp_remote_closed_events: 1,
+            udp_quic_blocked_packets: 1,
+            ..TunStats::default()
         }
     );
 }

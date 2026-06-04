@@ -2,10 +2,10 @@ use std::ffi::{CStr, CString};
 
 use xray_ffi::{
     xray_core_free, xray_core_load_config_json, xray_core_new,
-    xray_core_set_socket_protect_callback, xray_core_set_tun_fd, xray_core_start, xray_core_stop,
-    xray_error_code, xray_error_free, xray_error_message, xray_tun_poll_packet,
-    xray_tun_push_packet, xray_tun_stats, XrayStatus, XrayTunFdClosePolicy, XrayTunFdPacketFormat,
-    XrayTunStats,
+    xray_core_set_socket_protect_callback, xray_core_set_tun_block_quic, xray_core_set_tun_fd,
+    xray_core_start, xray_core_stop, xray_error_code, xray_error_free, xray_error_message,
+    xray_tun_poll_packet, xray_tun_push_packet, xray_tun_stats, XrayStatus, XrayTunFdClosePolicy,
+    XrayTunFdPacketFormat, XrayTunStats,
 };
 
 #[test]
@@ -200,6 +200,41 @@ fn ffi_rejects_tun_fd_after_config_load() {
         &mut err,
         XrayStatus::RuntimeError,
         "tun fd must be set before config load",
+    );
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_registers_tun_quic_blocking_before_config_load() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    assert!(!core.is_null());
+
+    let status = unsafe { xray_core_set_tun_block_quic(core, 1, &mut err) };
+
+    assert_eq!(status, XrayStatus::Ok);
+    assert!(err.is_null());
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_rejects_tun_quic_blocking_after_config_load() {
+    let mut err = std::ptr::null_mut();
+    let core = loaded_core(&mut err);
+
+    let status = unsafe { xray_core_set_tun_block_quic(core, 1, &mut err) };
+
+    assert_eq!(status, XrayStatus::RuntimeError);
+    assert_error(
+        &mut err,
+        XrayStatus::RuntimeError,
+        "tun QUIC blocking must be set before config load",
     );
 
     unsafe {

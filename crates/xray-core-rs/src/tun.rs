@@ -1,4 +1,4 @@
-use std::collections::{hash_map::Entry, HashMap, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 
@@ -22,6 +22,7 @@ use crate::outbound::{
     select_tcp_outbound_for_session, select_udp_outbound_for_session, UdpOutbound,
     VlessTcpOutbound, VlessUdpFraming,
 };
+use crate::TunRuntimeOptions;
 use xray_proxy::vless::{
     encode_udp_packet, encode_xudp_keep_packet, encode_xudp_new_packet, read_udp_packet,
     read_xudp_packet,
@@ -81,13 +82,54 @@ const DESKTOP_TCP_REMOTE_BUFFER_POLICY: TcpRemoteBufferPolicy = TcpRemoteBufferP
     hard_total_bytes: 160 * 1024 * 1024,
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct UdpFlowBudgetPolicy {
+    max_active_flows: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FlowBudgetPolicy {
+    tcp_remote: TcpRemoteBufferPolicy,
+    udp: UdpFlowBudgetPolicy,
+}
+
+#[cfg(any(
+    test,
+    target_os = "android",
+    target_os = "ios",
+    target_os = "tvos",
+    target_os = "watchos"
+))]
+const MOBILE_FLOW_BUDGET_POLICY: FlowBudgetPolicy = FlowBudgetPolicy {
+    tcp_remote: MOBILE_TCP_REMOTE_BUFFER_POLICY,
+    udp: UdpFlowBudgetPolicy {
+        max_active_flows: 256,
+    },
+};
+
+#[cfg(any(
+    test,
+    not(any(
+        target_os = "android",
+        target_os = "ios",
+        target_os = "tvos",
+        target_os = "watchos"
+    ))
+))]
+const DESKTOP_FLOW_BUDGET_POLICY: FlowBudgetPolicy = FlowBudgetPolicy {
+    tcp_remote: DESKTOP_TCP_REMOTE_BUFFER_POLICY,
+    udp: UdpFlowBudgetPolicy {
+        max_active_flows: 1024,
+    },
+};
+
 #[cfg(any(
     target_os = "android",
     target_os = "ios",
     target_os = "tvos",
     target_os = "watchos"
 ))]
-const TCP_REMOTE_BUFFER_POLICY: TcpRemoteBufferPolicy = MOBILE_TCP_REMOTE_BUFFER_POLICY;
+const FLOW_BUDGET_POLICY: FlowBudgetPolicy = MOBILE_FLOW_BUDGET_POLICY;
 
 #[cfg(not(any(
     target_os = "android",
@@ -95,7 +137,7 @@ const TCP_REMOTE_BUFFER_POLICY: TcpRemoteBufferPolicy = MOBILE_TCP_REMOTE_BUFFER
     target_os = "tvos",
     target_os = "watchos"
 )))]
-const TCP_REMOTE_BUFFER_POLICY: TcpRemoteBufferPolicy = DESKTOP_TCP_REMOTE_BUFFER_POLICY;
+const FLOW_BUDGET_POLICY: FlowBudgetPolicy = DESKTOP_FLOW_BUDGET_POLICY;
 
 #[derive(Debug)]
 struct TcpRemoteBufferState {
@@ -190,12 +232,140 @@ impl TcpRemoteBufferState {
     }
 }
 
+#[derive(Debug)]
+struct FlowBudgetState {
+    policy: FlowBudgetPolicy,
+    tcp_remote: TcpRemoteBufferState,
+    udp_sequence: u64,
+    udp_budget_drops: u64,
+    udp_evicted_flows: u64,
+    udp_channel_dropped_packets: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UdpFlowAdmission {
+    Existing,
+    Admit { sequence: u64 },
+    Drop,
+}
+
+impl FlowBudgetState {
+    fn new(policy: FlowBudgetPolicy) -> Self {
+        Self {
+            policy,
+            tcp_remote: TcpRemoteBufferState::new(policy.tcp_remote),
+            udp_sequence: 0,
+            udp_budget_drops: 0,
+            udp_evicted_flows: 0,
+            udp_channel_dropped_packets: 0,
+        }
+    }
+
+    fn can_enqueue_remote_data(&self, flow_pending_bytes: usize, data_len: usize) -> bool {
+        self.tcp_remote
+            .can_enqueue_remote_data(flow_pending_bytes, data_len)
+    }
+
+    fn record_pending_remote_enqueue(&mut self, flow_pending_bytes: usize, data_len: usize) {
+        self.tcp_remote
+            .record_pending_remote_enqueue(flow_pending_bytes, data_len);
+    }
+
+    fn record_pending_remote_dequeue(&mut self, flow_pending_bytes: usize, data_len: usize) {
+        self.tcp_remote
+            .record_pending_remote_dequeue(flow_pending_bytes, data_len);
+    }
+
+    fn record_pending_remote_remove_flow(&mut self, flow_pending_bytes: usize) {
+        self.tcp_remote
+            .record_pending_remote_remove_flow(flow_pending_bytes);
+    }
+
+    fn pending_total_bytes(&self) -> usize {
+        self.tcp_remote.pending_total_bytes()
+    }
+
+    fn pending_flow_count(&self) -> usize {
+        self.tcp_remote.pending_flow_count()
+    }
+
+    fn per_flow_limit(&self) -> usize {
+        self.tcp_remote.per_flow_limit()
+    }
+
+    fn pressure_active(&self) -> bool {
+        self.tcp_remote.pressure_active()
+    }
+
+    fn udp_flow_limit(&self) -> usize {
+        self.policy.udp.max_active_flows
+    }
+
+    fn udp_budget_drops(&self) -> u64 {
+        self.udp_budget_drops
+    }
+
+    fn udp_evicted_flows(&self) -> u64 {
+        self.udp_evicted_flows
+    }
+
+    fn udp_channel_dropped_packets(&self) -> u64 {
+        self.udp_channel_dropped_packets
+    }
+
+    fn admit_udp_flow(
+        &mut self,
+        flows: &mut HashMap<UdpFlowKey, UdpFlow>,
+        key: UdpFlowKey,
+    ) -> UdpFlowAdmission {
+        let sequence = self.next_udp_sequence();
+        if let Some(flow) = flows.get_mut(&key) {
+            flow.last_used_sequence = sequence;
+            return UdpFlowAdmission::Existing;
+        }
+
+        let limit = self.policy.udp.max_active_flows;
+        if limit == 0 {
+            self.udp_budget_drops = self.udp_budget_drops.saturating_add(1);
+            return UdpFlowAdmission::Drop;
+        }
+
+        if flows.len() >= limit {
+            if let Some(oldest_key) = flows
+                .iter()
+                .min_by_key(|(_, flow)| flow.last_used_sequence)
+                .map(|(key, _)| *key)
+            {
+                flows.remove(&oldest_key);
+                self.udp_evicted_flows = self.udp_evicted_flows.saturating_add(1);
+            }
+        }
+
+        if flows.len() >= limit {
+            self.udp_budget_drops = self.udp_budget_drops.saturating_add(1);
+            return UdpFlowAdmission::Drop;
+        }
+
+        UdpFlowAdmission::Admit { sequence }
+    }
+
+    fn record_udp_channel_drop(&mut self) {
+        self.udp_channel_dropped_packets = self.udp_channel_dropped_packets.saturating_add(1);
+    }
+
+    fn next_udp_sequence(&mut self) -> u64 {
+        self.udp_sequence = self.udp_sequence.saturating_add(1);
+        self.udp_sequence
+    }
+}
+
 pub(crate) async fn serve_tun_endpoint(
     tun: Arc<TunEndpoint>,
     inbound_tag: Option<String>,
     config: Arc<CoreConfig>,
     dns_resolver: Arc<dyn DnsResolver>,
     transport_dialer: Arc<TransportDialer>,
+    tun_runtime_options: TunRuntimeOptions,
     mut shutdown: watch::Receiver<bool>,
 ) {
     let mut device = PacketDevice::new(1500);
@@ -206,7 +376,7 @@ pub(crate) async fn serve_tun_endpoint(
     let mut sockets = SocketSet::new(Vec::new());
     let mut tcp_listeners = HashMap::new();
     let mut tcp_flows = HashMap::new();
-    let mut tcp_remote_buffer_state = TcpRemoteBufferState::new(TCP_REMOTE_BUFFER_POLICY);
+    let mut flow_budget_state = FlowBudgetState::new(FLOW_BUDGET_POLICY);
     let mut udp_flows = HashMap::new();
     let mut delayed_stack_events = VecDeque::new();
     let (stack_tx, mut stack_rx) = mpsc::channel(BRIDGE_CHANNEL_DEPTH);
@@ -217,6 +387,7 @@ pub(crate) async fn serve_tun_endpoint(
         transport_dialer,
         stack_tx,
         tun: Arc::clone(&tun),
+        tun_runtime_options,
     };
 
     'runtime: loop {
@@ -235,6 +406,7 @@ pub(crate) async fn serve_tun_endpoint(
                             &mut sockets,
                             &mut tcp_listeners,
                             &mut udp_flows,
+                            &mut flow_budget_state,
                             &runtime_context,
                             shutdown.clone(),
                             &mut device,
@@ -254,7 +426,7 @@ pub(crate) async fn serve_tun_endpoint(
                         event,
                         &mut delayed_stack_events,
                         &mut tcp_flows,
-                        &mut tcp_remote_buffer_state,
+                        &mut flow_budget_state,
                         &mut udp_flows,
                         &mut device,
                         Some(tun.as_ref()),
@@ -273,6 +445,7 @@ pub(crate) async fn serve_tun_endpoint(
                         &mut sockets,
                         &mut tcp_listeners,
                         &mut udp_flows,
+                        &mut flow_budget_state,
                         &runtime_context,
                         shutdown.clone(),
                         &mut device,
@@ -292,22 +465,22 @@ pub(crate) async fn serve_tun_endpoint(
             &mut stack_rx,
             &mut delayed_stack_events,
             &mut tcp_flows,
-            &mut tcp_remote_buffer_state,
+            &mut flow_budget_state,
             &mut udp_flows,
             &mut device,
             Some(tun.as_ref()),
         );
-        write_remote_data_to_sockets(&mut sockets, &mut tcp_flows, &mut tcp_remote_buffer_state);
+        write_remote_data_to_sockets(&mut sockets, &mut tcp_flows, &mut flow_budget_state);
         drain_stack_events(
             &mut stack_rx,
             &mut delayed_stack_events,
             &mut tcp_flows,
-            &mut tcp_remote_buffer_state,
+            &mut flow_budget_state,
             &mut udp_flows,
             &mut device,
             Some(tun.as_ref()),
         );
-        record_tcp_pending_remote_stats(tun.as_ref(), &tcp_remote_buffer_state, &tcp_flows);
+        record_flow_budget_stats(tun.as_ref(), &flow_budget_state, &tcp_flows, &udp_flows);
         iface.poll(Instant::now(), &mut device, &mut sockets);
         open_ready_tcp_flows(
             &mut sockets,
@@ -317,7 +490,7 @@ pub(crate) async fn serve_tun_endpoint(
             shutdown.clone(),
         );
         read_socket_data_to_remote(&tun, &mut sockets, &mut tcp_flows);
-        cleanup_closed_tcp_flows(&mut sockets, &mut tcp_flows, &mut tcp_remote_buffer_state);
+        cleanup_closed_tcp_flows(&mut sockets, &mut tcp_flows, &mut flow_budget_state);
         iface.poll(Instant::now(), &mut device, &mut sockets);
         while let Some(packet) = device.pop_outbound() {
             if tun.push_outbound(packet).await.is_err() {
@@ -333,6 +506,7 @@ async fn process_tun_packet(
     sockets: &mut SocketSet<'static>,
     tcp_listeners: &mut HashMap<IpEndpoint, SocketHandle>,
     udp_flows: &mut HashMap<UdpFlowKey, UdpFlow>,
+    flow_budget_state: &mut FlowBudgetState,
     context: &TunRuntimeContext,
     shutdown: watch::Receiver<bool>,
     device: &mut PacketDevice,
@@ -340,8 +514,12 @@ async fn process_tun_packet(
     if let Some(reply) = icmp_echo_reply(&packet) {
         return !matches!(tun.push_outbound(reply).await, Err(TunError::QueueClosed));
     }
+    if context.tun_runtime_options.block_quic && is_likely_quic_udp443_packet(&packet) {
+        tun.record_udp_quic_blocked();
+        return true;
+    }
     if let Some(packet) = parse_udp_packet(&packet) {
-        handle_udp_packet(packet, udp_flows, context, shutdown);
+        handle_udp_packet(packet, udp_flows, flow_budget_state, context, shutdown);
         return true;
     }
     if let Some(endpoint) = tcp_syn_destination(&packet) {
@@ -359,6 +537,7 @@ struct TunRuntimeContext {
     transport_dialer: Arc<TransportDialer>,
     stack_tx: mpsc::Sender<StackEvent>,
     tun: Arc<TunEndpoint>,
+    tun_runtime_options: TunRuntimeOptions,
 }
 
 #[derive(Debug)]
@@ -372,6 +551,7 @@ struct TcpFlow {
 #[derive(Debug)]
 struct UdpFlow {
     to_remote: mpsc::Sender<Bytes>,
+    last_used_sequence: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -505,7 +685,7 @@ fn drain_stack_events(
     stack_rx: &mut mpsc::Receiver<StackEvent>,
     delayed_stack_events: &mut VecDeque<StackEvent>,
     tcp_flows: &mut HashMap<SocketHandle, TcpFlow>,
-    tcp_remote_buffer_state: &mut TcpRemoteBufferState,
+    flow_budget_state: &mut FlowBudgetState,
     udp_flows: &mut HashMap<UdpFlowKey, UdpFlow>,
     device: &mut PacketDevice,
     tun: Option<&TunEndpoint>,
@@ -515,7 +695,7 @@ fn drain_stack_events(
             event,
             delayed_stack_events,
             tcp_flows,
-            tcp_remote_buffer_state,
+            flow_budget_state,
             udp_flows,
             device,
             tun,
@@ -529,7 +709,7 @@ fn drain_stack_events(
             event,
             delayed_stack_events,
             tcp_flows,
-            tcp_remote_buffer_state,
+            flow_budget_state,
             udp_flows,
             device,
             tun,
@@ -543,12 +723,12 @@ fn apply_or_delay_stack_event(
     event: StackEvent,
     delayed_stack_events: &mut VecDeque<StackEvent>,
     tcp_flows: &mut HashMap<SocketHandle, TcpFlow>,
-    tcp_remote_buffer_state: &mut TcpRemoteBufferState,
+    flow_budget_state: &mut FlowBudgetState,
     udp_flows: &mut HashMap<UdpFlowKey, UdpFlow>,
     device: &mut PacketDevice,
     tun: Option<&TunEndpoint>,
 ) -> bool {
-    match try_apply_stack_event(event, tcp_flows, tcp_remote_buffer_state, udp_flows, device) {
+    match try_apply_stack_event(event, tcp_flows, flow_budget_state, udp_flows, device) {
         Ok(()) => true,
         Err(event) => {
             if let Some(tun) = tun {
@@ -563,7 +743,7 @@ fn apply_or_delay_stack_event(
 fn try_apply_stack_event(
     event: StackEvent,
     tcp_flows: &mut HashMap<SocketHandle, TcpFlow>,
-    tcp_remote_buffer_state: &mut TcpRemoteBufferState,
+    flow_budget_state: &mut FlowBudgetState,
     udp_flows: &mut HashMap<UdpFlowKey, UdpFlow>,
     device: &mut PacketDevice,
 ) -> Result<(), StackEvent> {
@@ -572,15 +752,13 @@ fn try_apply_stack_event(
             let Some(flow) = tcp_flows.get_mut(&handle) else {
                 return Ok(());
             };
-            if !tcp_remote_buffer_state
-                .can_enqueue_remote_data(flow.pending_remote_bytes, data.len())
-            {
+            if !flow_budget_state.can_enqueue_remote_data(flow.pending_remote_bytes, data.len()) {
                 return Err(StackEvent::RemoteData { handle, data });
             }
             let pending_before = flow.pending_remote_bytes;
             let next_pending_bytes = pending_before.saturating_add(data.len());
             flow.pending_remote_bytes = next_pending_bytes;
-            tcp_remote_buffer_state.record_pending_remote_enqueue(pending_before, data.len());
+            flow_budget_state.record_pending_remote_enqueue(pending_before, data.len());
             flow.pending_remote.push_back(data);
         }
         StackEvent::RemoteClosed { handle } => {
@@ -604,10 +782,11 @@ fn try_apply_stack_event(
     Ok(())
 }
 
-fn record_tcp_pending_remote_stats(
+fn record_flow_budget_stats(
     tun: &TunEndpoint,
-    tcp_remote_buffer_state: &TcpRemoteBufferState,
+    flow_budget_state: &FlowBudgetState,
     flows: &HashMap<SocketHandle, TcpFlow>,
+    udp_flows: &HashMap<UdpFlowKey, UdpFlow>,
 ) {
     let mut max_pending_bytes = 0usize;
 
@@ -618,18 +797,26 @@ fn record_tcp_pending_remote_stats(
     }
 
     tun.record_tcp_pending_remote(
-        tcp_remote_buffer_state.pending_total_bytes(),
-        tcp_remote_buffer_state.pending_flow_count(),
+        flow_budget_state.pending_total_bytes(),
+        flow_budget_state.pending_flow_count(),
         max_pending_bytes,
-        tcp_remote_buffer_state.per_flow_limit(),
-        tcp_remote_buffer_state.pressure_active(),
+        flow_budget_state.per_flow_limit(),
+        flow_budget_state.pressure_active(),
+    );
+    tun.record_flow_budget(
+        flows.len(),
+        udp_flows.len(),
+        flow_budget_state.udp_flow_limit(),
+        flow_budget_state.udp_budget_drops(),
+        flow_budget_state.udp_evicted_flows(),
+        flow_budget_state.udp_channel_dropped_packets(),
     );
 }
 
 fn write_remote_data_to_sockets(
     sockets: &mut SocketSet<'static>,
     flows: &mut HashMap<SocketHandle, TcpFlow>,
-    tcp_remote_buffer_state: &mut TcpRemoteBufferState,
+    flow_budget_state: &mut FlowBudgetState,
 ) {
     for (handle, flow) in flows {
         let socket = sockets.get_mut::<tcp::Socket>(*handle);
@@ -650,12 +837,12 @@ fn write_remote_data_to_sockets(
             let pending_before = flow.pending_remote_bytes;
             if written == front.len() {
                 flow.pending_remote_bytes = flow.pending_remote_bytes.saturating_sub(front.len());
-                tcp_remote_buffer_state.record_pending_remote_dequeue(pending_before, front.len());
+                flow_budget_state.record_pending_remote_dequeue(pending_before, front.len());
                 flow.pending_remote.pop_front();
             } else {
                 *front = front.slice(written..);
                 flow.pending_remote_bytes = flow.pending_remote_bytes.saturating_sub(written);
-                tcp_remote_buffer_state.record_pending_remote_dequeue(pending_before, written);
+                flow_budget_state.record_pending_remote_dequeue(pending_before, written);
                 break;
             }
         }
@@ -706,7 +893,7 @@ fn read_socket_data_to_remote(
 fn cleanup_closed_tcp_flows(
     sockets: &mut SocketSet<'static>,
     flows: &mut HashMap<SocketHandle, TcpFlow>,
-    tcp_remote_buffer_state: &mut TcpRemoteBufferState,
+    flow_budget_state: &mut FlowBudgetState,
 ) {
     let closed = flows
         .keys()
@@ -716,7 +903,7 @@ fn cleanup_closed_tcp_flows(
 
     for handle in closed {
         if let Some(flow) = flows.remove(&handle) {
-            tcp_remote_buffer_state.record_pending_remote_remove_flow(flow.pending_remote_bytes);
+            flow_budget_state.record_pending_remote_remove_flow(flow.pending_remote_bytes);
         }
         sockets.remove(handle);
     }
@@ -864,28 +1051,40 @@ where
 fn handle_udp_packet(
     packet: UdpTunPacket,
     flows: &mut HashMap<UdpFlowKey, UdpFlow>,
+    flow_budget_state: &mut FlowBudgetState,
     context: &TunRuntimeContext,
     shutdown: watch::Receiver<bool>,
 ) {
     let key = UdpFlowKey::new(packet.client, packet.target);
 
-    if let Entry::Vacant(entry) = flows.entry(key) {
-        let Some(target) = udp_target_from_endpoint(packet.target) else {
-            return;
-        };
-        let (to_remote, from_stack) = mpsc::channel(BRIDGE_CHANNEL_DEPTH);
-        entry.insert(UdpFlow { to_remote });
-        tokio::spawn(bridge_udp_flow(
-            key,
-            target,
-            context.clone(),
-            from_stack,
-            shutdown,
-        ));
+    match flow_budget_state.admit_udp_flow(flows, key) {
+        UdpFlowAdmission::Existing => {}
+        UdpFlowAdmission::Admit { sequence } => {
+            let Some(target) = udp_target_from_endpoint(packet.target) else {
+                return;
+            };
+            let (to_remote, from_stack) = mpsc::channel(BRIDGE_CHANNEL_DEPTH);
+            flows.insert(
+                key,
+                UdpFlow {
+                    to_remote,
+                    last_used_sequence: sequence,
+                },
+            );
+            tokio::spawn(bridge_udp_flow(
+                key,
+                target,
+                context.clone(),
+                from_stack,
+                shutdown,
+            ));
+        }
+        UdpFlowAdmission::Drop => return,
     }
 
     if let Some(flow) = flows.get(&key) {
         if flow.to_remote.try_send(packet.payload).is_err() {
+            flow_budget_state.record_udp_channel_drop();
             flows.remove(&key);
         }
     }
@@ -905,6 +1104,7 @@ async fn bridge_udp_flow(
     ) {
         Ok(outbound) => outbound,
         Err(_) => {
+            context.tun.record_udp_open_error();
             let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
             return;
         }
@@ -930,11 +1130,16 @@ async fn bridge_udp_freedom_flow(
         IpAddr::V4(_) => SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
         IpAddr::V6(_) => SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0),
     };
-    let Ok(socket) = UdpSocket::bind(bind_addr).await else {
-        let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
-        return;
+    let socket = match UdpSocket::bind(bind_addr).await {
+        Ok(socket) => socket,
+        Err(_) => {
+            context.tun.record_udp_open_error();
+            let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
+            return;
+        }
     };
     if protect_udp_socket(&socket, context.transport_dialer.socket_protector()).is_err() {
+        context.tun.record_udp_open_error();
         let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
         return;
     }
@@ -957,11 +1162,13 @@ async fn bridge_udp_freedom_flow(
                     break;
                 };
                 if socket.send_to(&payload, target).await.is_err() {
+                    context.tun.record_udp_remote_write_error();
                     break;
                 }
             }
             received = socket.recv_from(&mut read_buffer) => {
                 let Ok((len, source)) = received else {
+                    context.tun.record_udp_remote_read_error();
                     break;
                 };
                 if context
@@ -991,16 +1198,23 @@ async fn bridge_udp_vless_flow(
     mut from_stack: mpsc::Receiver<Bytes>,
     mut shutdown: watch::Receiver<bool>,
 ) {
-    let Ok((stream, framing)) = open_vless_udp_stream_with_resolver_and_dialer(
+    let (stream, framing) = match open_vless_udp_stream_with_resolver_and_dialer(
         &outbound,
         &target,
         context.dns_resolver.as_ref(),
         &context.transport_dialer,
     )
     .await
-    else {
-        let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
-        return;
+    {
+        Ok(opened) => opened,
+        Err(error) => {
+            context.tun.record_udp_open_error();
+            if matches!(error, crate::CoreError::VisionUdp443Rejected) {
+                context.tun.record_udp_vision_udp443_rejection();
+            }
+            let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
+            return;
+        }
     };
 
     let (mut remote_reader, mut remote_writer) = tokio::io::split(stream);
@@ -1038,15 +1252,25 @@ async fn bridge_udp_vless_flow(
                     break;
                 };
                 if remote_writer.write_all(&frame).await.is_err() {
+                    context.tun.record_udp_remote_write_error();
                     break;
                 }
                 if remote_writer.flush().await.is_err() {
+                    context.tun.record_udp_remote_write_error();
                     break;
                 }
             }
             packet = read_vless_udp_response(&mut remote_reader, framing, fallback_source) => {
-                let Ok((source, payload)) = packet else {
-                    break;
+                let (source, payload) = match packet {
+                    Ok(packet) => packet,
+                    Err(error) => {
+                        if error.kind() == std::io::ErrorKind::UnexpectedEof {
+                            context.tun.record_udp_remote_closed();
+                        } else {
+                            context.tun.record_udp_remote_read_error();
+                        }
+                        break;
+                    }
                 };
                 if context
                     .stack_tx
@@ -1084,6 +1308,89 @@ fn ensure_tcp_listener(
     if socket.listen(endpoint).is_ok() {
         listeners.insert(endpoint, sockets.add(socket));
     }
+}
+
+fn is_likely_quic_udp443_packet(packet: &[u8]) -> bool {
+    udp_payload_for_destination(packet, 443).is_some_and(is_likely_quic_long_header)
+}
+
+fn udp_payload_for_destination(packet: &[u8], destination_port: u16) -> Option<&[u8]> {
+    match packet.first()? >> 4 {
+        4 => ipv4_udp_payload_for_destination(packet, destination_port),
+        6 => ipv6_udp_payload_for_destination(packet, destination_port),
+        _ => None,
+    }
+}
+
+fn ipv4_udp_payload_for_destination(packet: &[u8], destination_port: u16) -> Option<&[u8]> {
+    if packet.len() < 28 {
+        return None;
+    }
+
+    let header_len = usize::from(packet[0] & 0x0f) * 4;
+    if header_len < 20 || packet.len() < header_len + 8 || packet[9] != UDP_PROTOCOL {
+        return None;
+    }
+
+    let fragment = u16::from_be_bytes([packet[6], packet[7]]);
+    if fragment & 0x3fff != 0 {
+        return None;
+    }
+
+    let total_len = usize::from(u16::from_be_bytes([packet[2], packet[3]]));
+    if total_len < header_len + 8 || packet.len() < total_len {
+        return None;
+    }
+
+    let udp = &packet[header_len..total_len];
+    let udp_len = usize::from(u16::from_be_bytes([udp[4], udp[5]]));
+    if udp_len < 8 || udp.len() < udp_len {
+        return None;
+    }
+    if u16::from_be_bytes([udp[2], udp[3]]) != destination_port {
+        return None;
+    }
+
+    Some(&udp[8..udp_len])
+}
+
+fn ipv6_udp_payload_for_destination(packet: &[u8], destination_port: u16) -> Option<&[u8]> {
+    if packet.len() < 48 || packet[6] != UDP_PROTOCOL {
+        return None;
+    }
+
+    let payload_len = usize::from(u16::from_be_bytes([packet[4], packet[5]]));
+    if payload_len < 8 || packet.len() < 40 + payload_len {
+        return None;
+    }
+
+    let udp = &packet[40..40 + payload_len];
+    let udp_len = usize::from(u16::from_be_bytes([udp[4], udp[5]]));
+    if udp_len < 8 || udp.len() < udp_len {
+        return None;
+    }
+    if u16::from_be_bytes([udp[2], udp[3]]) != destination_port {
+        return None;
+    }
+
+    Some(&udp[8..udp_len])
+}
+
+fn is_likely_quic_long_header(payload: &[u8]) -> bool {
+    if payload.len() < 7 || payload[0] & 0xc0 != 0xc0 {
+        return false;
+    }
+
+    if payload[1..5].iter().all(|byte| *byte == 0) {
+        return false;
+    }
+
+    let dcid_len = usize::from(payload[5]);
+    if dcid_len > 20 || payload.len() <= 6 + dcid_len {
+        return false;
+    }
+
+    usize::from(payload[6 + dcid_len]) <= 20
 }
 
 fn parse_udp_packet(packet: &[u8]) -> Option<UdpTunPacket> {
@@ -1666,7 +1973,7 @@ mod tests {
         }
     }
 
-    fn mobile_tcp_remote_buffer_state() -> TcpRemoteBufferState {
+    fn mobile_tcp_flow_budget_state() -> TcpRemoteBufferState {
         TcpRemoteBufferState::new(MOBILE_TCP_REMOTE_BUFFER_POLICY)
     }
 
@@ -1782,8 +2089,8 @@ mod tests {
     }
 
     #[test]
-    fn remote_buffer_state_uses_hysteresis_for_memory_pressure() {
-        let mut state = mobile_tcp_remote_buffer_state();
+    fn flow_budget_state_uses_hysteresis_for_memory_pressure() {
+        let mut state = mobile_tcp_flow_budget_state();
 
         assert_eq!(state.per_flow_limit(), NORMAL_TCP_REMOTE_PENDING_LIMIT);
 
@@ -1798,16 +2105,16 @@ mod tests {
     }
 
     #[test]
-    fn remote_buffer_state_rejects_data_over_hard_total_budget() {
-        let mut state = mobile_tcp_remote_buffer_state();
+    fn flow_budget_state_rejects_data_over_hard_total_budget() {
+        let mut state = mobile_tcp_flow_budget_state();
         state.record_pending_remote_enqueue(0, MOBILE_TCP_REMOTE_BUFFER_POLICY.hard_total_bytes);
 
         assert!(!state.can_enqueue_remote_data(0, 1));
     }
 
     #[test]
-    fn remote_buffer_state_applies_pressure_limit_after_soft_budget() {
-        let mut state = mobile_tcp_remote_buffer_state();
+    fn flow_budget_state_applies_pressure_limit_after_soft_budget() {
+        let mut state = mobile_tcp_flow_budget_state();
         state.record_pending_remote_enqueue(
             0,
             MOBILE_TCP_REMOTE_BUFFER_POLICY.pressure_start_total_bytes,
@@ -1818,16 +2125,16 @@ mod tests {
     }
 
     #[test]
-    fn remote_buffer_state_allows_2mib_per_flow_below_soft_budget() {
-        let state = mobile_tcp_remote_buffer_state();
+    fn flow_budget_state_allows_2mib_per_flow_below_soft_budget() {
+        let state = mobile_tcp_flow_budget_state();
 
         assert!(state.can_enqueue_remote_data(1024 * 1024, 1024 * 1024));
         assert!(!state.can_enqueue_remote_data(NORMAL_TCP_REMOTE_PENDING_LIMIT, 1));
     }
 
     #[test]
-    fn remote_buffer_state_tracks_total_pending_bytes_without_flow_scans() {
-        let mut state = mobile_tcp_remote_buffer_state();
+    fn flow_budget_state_tracks_total_pending_bytes_without_flow_scans() {
+        let mut state = mobile_tcp_flow_budget_state();
 
         state.record_pending_remote_enqueue(0, 4096);
         state.record_pending_remote_enqueue(4096, 2048);
@@ -1838,8 +2145,8 @@ mod tests {
     }
 
     #[test]
-    fn remote_buffer_state_removes_pending_bytes_when_flow_is_cleaned_up() {
-        let mut state = mobile_tcp_remote_buffer_state();
+    fn flow_budget_state_removes_pending_bytes_when_flow_is_cleaned_up() {
+        let mut state = mobile_tcp_flow_budget_state();
 
         state.record_pending_remote_enqueue(0, 4096);
         state.record_pending_remote_remove_flow(4096);
@@ -1847,6 +2154,98 @@ mod tests {
         assert_eq!(state.pending_total_bytes(), 0);
         assert_eq!(state.pending_flow_count(), 0);
         assert_eq!(state.per_flow_limit(), NORMAL_TCP_REMOTE_PENDING_LIMIT);
+    }
+
+    fn test_flow_budget(max_active_udp_flows: usize) -> FlowBudgetState {
+        FlowBudgetState::new(FlowBudgetPolicy {
+            tcp_remote: MOBILE_TCP_REMOTE_BUFFER_POLICY,
+            udp: UdpFlowBudgetPolicy {
+                max_active_flows: max_active_udp_flows,
+            },
+        })
+    }
+
+    fn test_udp_key(octet: u8) -> UdpFlowKey {
+        UdpFlowKey {
+            client: EndpointKey {
+                addr: IpAddr::V4(Ipv4Addr::new(10, 0, 0, octet)),
+                port: 40_000 + u16::from(octet),
+            },
+            target: EndpointKey {
+                addr: IpAddr::V4(Ipv4Addr::new(203, 0, 113, octet)),
+                port: 443,
+            },
+        }
+    }
+
+    fn insert_udp_flow(
+        flows: &mut HashMap<UdpFlowKey, UdpFlow>,
+        key: UdpFlowKey,
+        last_used_sequence: u64,
+    ) {
+        let (to_remote, _from_stack) = mpsc::channel(1);
+        flows.insert(
+            key,
+            UdpFlow {
+                to_remote,
+                last_used_sequence,
+            },
+        );
+    }
+
+    #[test]
+    fn mobile_flow_budget_keeps_udp_capacity_high_but_bounded() {
+        assert_eq!(MOBILE_FLOW_BUDGET_POLICY.udp.max_active_flows, 256);
+        assert_eq!(DESKTOP_FLOW_BUDGET_POLICY.udp.max_active_flows, 1024);
+    }
+
+    #[test]
+    fn flow_budget_accepts_existing_udp_flow_without_eviction() {
+        let mut budget = test_flow_budget(1);
+        let mut flows = HashMap::new();
+        let key = test_udp_key(1);
+        let UdpFlowAdmission::Admit { sequence } = budget.admit_udp_flow(&mut flows, key) else {
+            panic!("first packet should admit a new UDP flow");
+        };
+        insert_udp_flow(&mut flows, key, sequence);
+
+        let admission = budget.admit_udp_flow(&mut flows, key);
+
+        assert!(matches!(admission, UdpFlowAdmission::Existing));
+        assert_eq!(flows.len(), 1);
+        assert_eq!(budget.udp_budget_drops(), 0);
+        assert_eq!(budget.udp_evicted_flows(), 0);
+    }
+
+    #[test]
+    fn flow_budget_evicts_oldest_udp_flow_when_limit_is_full() {
+        let mut budget = test_flow_budget(2);
+        let mut flows = HashMap::new();
+        let oldest = test_udp_key(1);
+        let newest = test_udp_key(2);
+        insert_udp_flow(&mut flows, oldest, 1);
+        insert_udp_flow(&mut flows, newest, 2);
+
+        let admitted = budget.admit_udp_flow(&mut flows, test_udp_key(3));
+
+        assert!(matches!(admitted, UdpFlowAdmission::Admit { .. }));
+        assert!(!flows.contains_key(&oldest));
+        assert!(flows.contains_key(&newest));
+        assert_eq!(budget.udp_evicted_flows(), 1);
+        assert_eq!(budget.udp_budget_drops(), 0);
+    }
+
+    #[test]
+    fn flow_budget_drops_new_udp_flow_when_limit_is_zero() {
+        let mut budget = test_flow_budget(0);
+        let mut flows = HashMap::new();
+
+        let admitted = budget.admit_udp_flow(&mut flows, test_udp_key(1));
+
+        assert!(matches!(admitted, UdpFlowAdmission::Drop));
+        assert!(flows.is_empty());
+        assert_eq!(budget.udp_budget_drops(), 1);
+        assert_eq!(budget.udp_evicted_flows(), 0);
     }
 
     #[test]
@@ -1857,8 +2256,8 @@ mod tests {
             tcp::SocketBuffer::new(vec![0; TCP_BUFFER_SIZE]),
         ));
         let (to_remote, _from_stack) = mpsc::channel(1);
-        let mut remote_buffer_state = mobile_tcp_remote_buffer_state();
-        remote_buffer_state.record_pending_remote_enqueue(0, NORMAL_TCP_REMOTE_PENDING_LIMIT);
+        let mut flow_budget_state = test_flow_budget(256);
+        flow_budget_state.record_pending_remote_enqueue(0, NORMAL_TCP_REMOTE_PENDING_LIMIT);
         let mut tcp_flows = HashMap::new();
         tcp_flows.insert(
             handle,
@@ -1884,7 +2283,7 @@ mod tests {
             &mut stack_rx,
             &mut delayed_stack_events,
             &mut tcp_flows,
-            &mut remote_buffer_state,
+            &mut flow_budget_state,
             &mut udp_flows,
             &mut device,
             None,
@@ -1904,7 +2303,7 @@ mod tests {
             tcp::SocketBuffer::new(vec![0; TCP_BUFFER_SIZE]),
         ));
         let (to_remote, _from_stack) = mpsc::channel(1);
-        let mut remote_buffer_state = mobile_tcp_remote_buffer_state();
+        let mut flow_budget_state = test_flow_budget(256);
         let mut tcp_flows = HashMap::new();
         tcp_flows.insert(
             handle,
@@ -1927,7 +2326,7 @@ mod tests {
             &mut stack_rx,
             &mut delayed_stack_events,
             &mut tcp_flows,
-            &mut remote_buffer_state,
+            &mut flow_budget_state,
             &mut udp_flows,
             &mut device,
             None,
@@ -1947,8 +2346,8 @@ mod tests {
             tcp::SocketBuffer::new(vec![0; TCP_BUFFER_SIZE]),
         ));
         let (to_remote, _from_stack) = mpsc::channel(1);
-        let mut remote_buffer_state = mobile_tcp_remote_buffer_state();
-        remote_buffer_state.record_pending_remote_enqueue(0, 1024 * 1024);
+        let mut flow_budget_state = test_flow_budget(256);
+        flow_budget_state.record_pending_remote_enqueue(0, 1024 * 1024);
         let mut pending_remote = VecDeque::new();
         pending_remote.push_back(Bytes::from(vec![0; 1024 * 1024]));
         let mut tcp_flows = HashMap::new();
@@ -1976,7 +2375,7 @@ mod tests {
             &mut stack_rx,
             &mut delayed_stack_events,
             &mut tcp_flows,
-            &mut remote_buffer_state,
+            &mut flow_budget_state,
             &mut udp_flows,
             &mut device,
             None,
@@ -1996,8 +2395,8 @@ mod tests {
             tcp::SocketBuffer::new(vec![0; TCP_BUFFER_SIZE]),
         ));
         let (to_remote, _from_stack) = mpsc::channel(1);
-        let mut remote_buffer_state = mobile_tcp_remote_buffer_state();
-        remote_buffer_state
+        let mut flow_budget_state = test_flow_budget(256);
+        flow_budget_state
             .record_pending_remote_enqueue(0, MOBILE_TCP_REMOTE_BUFFER_POLICY.hard_total_bytes);
         let mut tcp_flows = HashMap::new();
         tcp_flows.insert(
@@ -2024,7 +2423,7 @@ mod tests {
             &mut stack_rx,
             &mut delayed_stack_events,
             &mut tcp_flows,
-            &mut remote_buffer_state,
+            &mut flow_budget_state,
             &mut udp_flows,
             &mut device,
             None,
@@ -2044,8 +2443,8 @@ mod tests {
             tcp::SocketBuffer::new(vec![0; TCP_BUFFER_SIZE]),
         ));
         let (to_remote, _from_stack) = mpsc::channel(1);
-        let mut remote_buffer_state = mobile_tcp_remote_buffer_state();
-        remote_buffer_state.record_pending_remote_enqueue(
+        let mut flow_budget_state = test_flow_budget(256);
+        flow_budget_state.record_pending_remote_enqueue(
             0,
             MOBILE_TCP_REMOTE_BUFFER_POLICY.pressure_start_total_bytes,
         );
@@ -2076,7 +2475,7 @@ mod tests {
             &mut stack_rx,
             &mut delayed_stack_events,
             &mut tcp_flows,
-            &mut remote_buffer_state,
+            &mut flow_budget_state,
             &mut udp_flows,
             &mut device,
             None,
@@ -2086,6 +2485,55 @@ mod tests {
         assert_eq!(flow.pending_remote.len(), 1);
         assert_eq!(flow.pending_remote_bytes, PRESSURE_TCP_REMOTE_PENDING_LIMIT);
         assert_eq!(delayed_stack_events.len(), 1);
+    }
+
+    #[test]
+    fn quic_blocker_detects_udp443_long_header() {
+        let packet = build_ipv4_udp_packet(
+            Ipv4Addr::new(10, 10, 0, 2),
+            49_152,
+            Ipv4Addr::new(203, 0, 113, 7),
+            443,
+            likely_quic_long_header_payload(),
+        )
+        .unwrap();
+
+        assert!(is_likely_quic_udp443_packet(&packet));
+    }
+
+    #[test]
+    fn quic_blocker_ignores_udp443_non_quic_payload() {
+        let packet = build_ipv4_udp_packet(
+            Ipv4Addr::new(10, 10, 0, 2),
+            49_152,
+            Ipv4Addr::new(203, 0, 113, 7),
+            443,
+            b"not-quic",
+        )
+        .unwrap();
+
+        assert!(!is_likely_quic_udp443_packet(&packet));
+    }
+
+    #[test]
+    fn quic_blocker_ignores_quic_payload_on_other_udp_ports() {
+        let packet = build_ipv4_udp_packet(
+            Ipv4Addr::new(10, 10, 0, 2),
+            49_152,
+            Ipv4Addr::new(203, 0, 113, 7),
+            8443,
+            likely_quic_long_header_payload(),
+        )
+        .unwrap();
+
+        assert!(!is_likely_quic_udp443_packet(&packet));
+    }
+
+    fn likely_quic_long_header_payload() -> &'static [u8] {
+        &[
+            0xc3, 0x00, 0x00, 0x00, 0x01, 8, 1, 2, 3, 4, 5, 6, 7, 8, 8, 9, 10, 11, 12, 13, 14, 15,
+            16,
+        ]
     }
 
     #[test]

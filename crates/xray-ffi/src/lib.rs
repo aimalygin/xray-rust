@@ -8,7 +8,9 @@ use std::slice;
 use std::sync::Arc;
 use tokio::runtime::{Builder, Runtime};
 use xray_config::parse_xray_json;
-use xray_core_rs::{Core, TunFdClosePolicy, TunFdConfig, TunFdPacketFormat, TunFdRuntime};
+use xray_core_rs::{
+    Core, TunFdClosePolicy, TunFdConfig, TunFdPacketFormat, TunFdRuntime, TunRuntimeOptions,
+};
 use xray_transport::{SocketHandle, SocketProtector, SystemDnsResolver, TransportDialer};
 
 #[repr(C)]
@@ -91,6 +93,18 @@ pub struct XrayTunStats {
     pub tcp_remote_closed_events: u64,
     pub tcp_remote_read_errors: u64,
     pub tcp_open_errors: u64,
+    pub active_tcp_flows: u64,
+    pub active_udp_flows: u64,
+    pub udp_flow_limit: u64,
+    pub udp_budget_drops: u64,
+    pub udp_evicted_flows: u64,
+    pub udp_channel_dropped_packets: u64,
+    pub udp_open_errors: u64,
+    pub udp_vision_udp443_rejections: u64,
+    pub udp_remote_write_errors: u64,
+    pub udp_remote_read_errors: u64,
+    pub udp_remote_closed_events: u64,
+    pub udp_quic_blocked_packets: u64,
 }
 
 pub struct XrayCoreHandle {
@@ -99,6 +113,7 @@ pub struct XrayCoreHandle {
     socket_protector: Option<Arc<dyn SocketProtector>>,
     tun_fd_config: Option<TunFdConfig>,
     tun_fd_runtime: Option<TunFdRuntime>,
+    tun_runtime_options: TunRuntimeOptions,
 }
 
 pub type XraySocketProtectCallback =
@@ -186,6 +201,7 @@ unsafe fn xray_core_new_inner(error: *mut *mut XrayError) -> *mut XrayCoreHandle
         socket_protector: None,
         tun_fd_config: None,
         tun_fd_runtime: None,
+        tun_runtime_options: TunRuntimeOptions::default(),
     }))
 }
 
@@ -274,10 +290,11 @@ unsafe fn xray_core_load_config_json_inner(
             }
         };
 
-    let core = match Core::with_runtime_dependencies(
+    let core = match Core::with_runtime_dependencies_and_tun_options(
         parsed.config,
         Arc::new(SystemDnsResolver),
         transport_dialer,
+        (*handle).tun_runtime_options,
     ) {
         Ok(core) => core,
         Err(err) => {
@@ -443,6 +460,63 @@ unsafe fn xray_core_set_tun_fd_inner(
         old.close_if_owned();
     }
 
+    XrayStatus::Ok
+}
+
+/// Enables or disables Rust-side QUIC blocking in the TUN packet path.
+///
+/// When enabled, UDP/443 packets that look like QUIC long-header packets are
+/// dropped before a UDP flow or outbound stream is opened. Set this before
+/// loading config.
+///
+/// # Safety
+///
+/// `handle` must either be null or a pointer returned by `xray_core_new` that
+/// has not been freed. If `error` is non-null, it must point to an initialized
+/// `*mut XrayError` value that is either null or a live error pointer returned
+/// by this library. This function may free and replace that error pointer.
+#[no_mangle]
+pub unsafe extern "C" fn xray_core_set_tun_block_quic(
+    handle: *mut XrayCoreHandle,
+    block_quic: c_int,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            xray_core_set_tun_block_quic_inner(handle, block_quic, error)
+        })
+    }
+}
+
+unsafe fn xray_core_set_tun_block_quic_inner(
+    handle: *mut XrayCoreHandle,
+    block_quic: c_int,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        clear_error(error);
+    }
+
+    if handle.is_null() {
+        unsafe {
+            set_error(error, XrayStatus::NullArgument, "core handle is null");
+        }
+        return XrayStatus::NullArgument;
+    }
+
+    let handle = unsafe { &mut *handle };
+    if handle.core.is_some() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::RuntimeError,
+                "tun QUIC blocking must be set before config load",
+            );
+        }
+        return XrayStatus::RuntimeError;
+    }
+
+    handle.tun_runtime_options.block_quic = block_quic != 0;
     XrayStatus::Ok
 }
 
@@ -848,6 +922,18 @@ unsafe fn xray_tun_stats_inner(
             tcp_remote_closed_events: snapshot.tcp_remote_closed_events,
             tcp_remote_read_errors: snapshot.tcp_remote_read_errors,
             tcp_open_errors: snapshot.tcp_open_errors,
+            active_tcp_flows: snapshot.active_tcp_flows,
+            active_udp_flows: snapshot.active_udp_flows,
+            udp_flow_limit: snapshot.udp_flow_limit,
+            udp_budget_drops: snapshot.udp_budget_drops,
+            udp_evicted_flows: snapshot.udp_evicted_flows,
+            udp_channel_dropped_packets: snapshot.udp_channel_dropped_packets,
+            udp_open_errors: snapshot.udp_open_errors,
+            udp_vision_udp443_rejections: snapshot.udp_vision_udp443_rejections,
+            udp_remote_write_errors: snapshot.udp_remote_write_errors,
+            udp_remote_read_errors: snapshot.udp_remote_read_errors,
+            udp_remote_closed_events: snapshot.udp_remote_closed_events,
+            udp_quic_blocked_packets: snapshot.udp_quic_blocked_packets,
         };
     }
 
