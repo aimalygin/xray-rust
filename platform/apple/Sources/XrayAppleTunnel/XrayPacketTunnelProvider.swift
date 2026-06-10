@@ -46,7 +46,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         }
         XrayAppleLog.info(
             "PacketTunnelProvider",
-            "Resolved config source=\(resolvedConfig.source) bytes=\(resolvedConfig.json.utf8.count) debugLogging=\(resolvedConfig.debugLoggingEnabled) useTunFileDescriptor=\(resolvedConfig.useTunFileDescriptor) blockQUIC=\(resolvedConfig.blockQUIC)"
+            "Resolved config source=\(resolvedConfig.source) bytes=\(resolvedConfig.json.utf8.count) debugLogging=\(resolvedConfig.debugLoggingEnabled) useTunFileDescriptor=\(resolvedConfig.useTunFileDescriptor) blockQUIC=\(resolvedConfig.blockQUIC) tunRuntimeProfile=\(resolvedConfig.tunRuntimeProfile.rawValue)"
         )
         XrayAppleLog.info(
             "PacketTunnelProvider",
@@ -89,7 +89,11 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                     core = try XrayCore(
                         configJSON: resolvedConfig.json,
                         borrowedDarwinTunFileDescriptor: fd,
-                        blockQUIC: resolvedConfig.blockQUIC
+                        blockQUIC: resolvedConfig.blockQUIC,
+                        collectTcpTimings: resolvedConfig.debugLoggingEnabled,
+                        tunRuntimeProfile: XrayCore.tunRuntimeProfile(
+                            named: resolvedConfig.tunRuntimeProfile.rawValue
+                        )
                     )
                     pump = nil
                 case .packetFlowPump:
@@ -111,7 +115,11 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                     }
                     core = try XrayCore(
                         configJSON: resolvedConfig.json,
-                        blockQUIC: resolvedConfig.blockQUIC
+                        blockQUIC: resolvedConfig.blockQUIC,
+                        collectTcpTimings: resolvedConfig.debugLoggingEnabled,
+                        tunRuntimeProfile: XrayCore.tunRuntimeProfile(
+                            named: resolvedConfig.tunRuntimeProfile.rawValue
+                        )
                     )
                     pump = XrayPacketTunnelPump(
                         provider: self,
@@ -189,18 +197,41 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             inboundPackets: stats.inboundPackets,
             outboundPackets: stats.outboundPackets,
             droppedPackets: stats.droppedPackets,
+            tcpOpenEvents: stats.tcpOpenEvents,
+            tcpOpenDurationMsTotal: stats.tcpOpenDurationMsTotal,
+            tcpOpenDurationMsMax: stats.tcpOpenDurationMsMax,
+            tcpFirstByteEvents: stats.tcpFirstByteEvents,
+            tcpFirstByteDurationMsTotal: stats.tcpFirstByteDurationMsTotal,
+            tcpFirstByteDurationMsMax: stats.tcpFirstByteDurationMsMax,
+            tcp443OpenEvents: stats.tcp443OpenEvents,
+            tcp443OpenDurationMsTotal: stats.tcp443OpenDurationMsTotal,
+            tcp443OpenDurationMsMax: stats.tcp443OpenDurationMsMax,
+            tcp443FirstByteEvents: stats.tcp443FirstByteEvents,
+            tcp443FirstByteDurationMsTotal: stats.tcp443FirstByteDurationMsTotal,
+            tcp443FirstByteDurationMsMax: stats.tcp443FirstByteDurationMsMax,
             activeTCPFlows: stats.activeTCPFlows,
             activeUDPFlows: stats.activeUDPFlows,
             udpFlowLimit: stats.udpFlowLimit,
             udpBudgetDrops: stats.udpBudgetDrops,
             udpEvictedFlows: stats.udpEvictedFlows,
             udpChannelDroppedPackets: stats.udpChannelDroppedPackets,
+            udpRemoteOpenEvents: stats.udpRemoteOpenEvents,
+            udpRemoteUDP443OpenEvents: stats.udpRemoteUDP443OpenEvents,
+            udpRemoteWrittenBytes: stats.udpRemoteWrittenBytes,
+            udpRemoteReadBytes: stats.udpRemoteReadBytes,
             udpOpenErrors: stats.udpOpenErrors,
             udpVisionUDP443Rejections: stats.udpVisionUDP443Rejections,
             udpRemoteWriteErrors: stats.udpRemoteWriteErrors,
             udpRemoteReadErrors: stats.udpRemoteReadErrors,
             udpRemoteClosedEvents: stats.udpRemoteClosedEvents,
-            udpQuicBlockedPackets: stats.udpQuicBlockedPackets
+            udpQuicBlockedPackets: stats.udpQuicBlockedPackets,
+            inboundQueueDepth: stats.inboundQueueDepth,
+            outboundQueueDepth: stats.outboundQueueDepth,
+            inboundQueueMaxPackets: stats.inboundQueueMaxPackets,
+            outboundQueueMaxPackets: stats.outboundQueueMaxPackets,
+            tunFdWriteBatches: stats.tunFdWriteBatches,
+            tunFdWriteBatchPackets: stats.tunFdWriteBatchPackets,
+            tunFdWriteBatchMaxPackets: stats.tunFdWriteBatchMaxPackets
         )
         XrayAppleLog.info(
             "PacketTunnelProvider",
@@ -227,6 +258,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         var debugLoggingEnabled: Bool
         var useTunFileDescriptor: Bool
         var blockQUIC: Bool
+        var tunRuntimeProfile: XrayTunRuntimeProfileSetting
     }
 
     private static func configJSON(
@@ -247,6 +279,10 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             options: options,
             providerConfiguration: tunnelProtocol?.providerConfiguration
         )
+        let selectedTunRuntimeProfile = tunRuntimeProfile(
+            options: options,
+            providerConfiguration: tunnelProtocol?.providerConfiguration
+        )
 
         if let configJSON = options?[XrayTunnelProviderMessage.configJSONOptionKey] as? String {
             return ResolvedConfig(
@@ -255,7 +291,8 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                 serverAddress: serverAddress,
                 debugLoggingEnabled: isDebugLoggingEnabled,
                 useTunFileDescriptor: shouldUseTunFileDescriptor,
-                blockQUIC: shouldBlockQUIC
+                blockQUIC: shouldBlockQUIC,
+                tunRuntimeProfile: selectedTunRuntimeProfile
             )
         }
 
@@ -270,7 +307,8 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             serverAddress: serverAddress,
             debugLoggingEnabled: isDebugLoggingEnabled,
             useTunFileDescriptor: shouldUseTunFileDescriptor,
-            blockQUIC: shouldBlockQUIC
+            blockQUIC: shouldBlockQUIC,
+            tunRuntimeProfile: selectedTunRuntimeProfile
         )
     }
 
@@ -375,6 +413,25 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         return false
     }
 
+    static func tunRuntimeProfile(
+        options: [String: NSObject]?,
+        providerConfiguration: [String: Any]?
+    ) -> XrayTunRuntimeProfileSetting {
+        if let optionValue = options?[XrayTunnelProviderMessage.tunRuntimeProfileOptionKey],
+           let profile = tunRuntimeProfileValue(optionValue) {
+            return profile
+        }
+
+        if let configurationValue = providerConfiguration?[
+            XrayTunnelProviderMessage.providerTunRuntimeProfileKey
+        ],
+            let profile = tunRuntimeProfileValue(configurationValue) {
+            return profile
+        }
+
+        return .default
+    }
+
     static func networkSettings(excludingServerAddress serverAddress: String? = nil) -> NEPacketTunnelNetworkSettings {
         let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: "198.18.0.1")
         settings.mtu = 1500
@@ -441,6 +498,17 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         }
     }
 
+    private static func tunRuntimeProfileValue(_ value: Any) -> XrayTunRuntimeProfileSetting? {
+        switch value {
+        case let value as NSString:
+            return XrayTunRuntimeProfileSetting(configurationValue: String(value))
+        case let value as String:
+            return XrayTunRuntimeProfileSetting(configurationValue: value)
+        default:
+            return nil
+        }
+    }
+
     private func startDebugStatsLogging() {
         stopDebugStatsLogging()
 
@@ -456,10 +524,24 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                     XrayAppleLog.info("PacketTunnelProvider", "Debug stats unavailable: no core")
                     return
                 }
-                XrayAppleLog.info(
-                    "PacketTunnelProvider",
-                    "Debug stats inbound=\(stats.inboundPackets) outbound=\(stats.outboundPackets) dropped=\(stats.droppedPackets) inboundDropped=\(stats.inboundDroppedPackets) outboundDropped=\(stats.outboundDroppedPackets) tcpStackToRemoteBytes=\(stats.tcpStackToRemoteBytes) tcpRemoteWrittenBytes=\(stats.tcpRemoteWrittenBytes) tcpRemoteReadBytes=\(stats.tcpRemoteReadBytes) tcpBackpressure=\(stats.tcpBackpressureEvents) tcpStackToRemoteBackpressure=\(stats.tcpStackToRemoteBackpressureEvents) tcpRemoteToStackBackpressure=\(stats.tcpRemoteToStackBackpressureEvents) tcpRemoteWriteBatches=\(stats.tcpRemoteWriteBatches) tcpRemoteWriteBatchMessages=\(stats.tcpRemoteWriteBatchMessages) tcpRemoteWriteBatchMaxMessages=\(stats.tcpRemoteWriteBatchMaxMessages) tcpRemoteWriteBatchMaxBytes=\(stats.tcpRemoteWriteBatchMaxBytes) tcpPendingRemoteBytes=\(stats.tcpPendingRemoteBytes) tcpPendingRemoteFlows=\(stats.tcpPendingRemoteFlows) tcpPendingRemoteMaxBytes=\(stats.tcpPendingRemoteMaxBytes) tcpRemoteBufferLimitBytes=\(stats.tcpRemoteBufferLimitBytes) tcpRemoteBufferPressureActive=\(stats.tcpRemoteBufferPressureActive) tcpWriteErrors=\(stats.tcpRemoteWriteErrors) tcpRemoteClosed=\(stats.tcpRemoteClosedEvents) tcpReadErrors=\(stats.tcpRemoteReadErrors) tcpOpenErrors=\(stats.tcpOpenErrors) activeTCPFlows=\(stats.activeTCPFlows) activeUDPFlows=\(stats.activeUDPFlows) udpFlowLimit=\(stats.udpFlowLimit) udpBudgetDrops=\(stats.udpBudgetDrops) udpEvictedFlows=\(stats.udpEvictedFlows) udpChannelDroppedPackets=\(stats.udpChannelDroppedPackets) udpOpenErrors=\(stats.udpOpenErrors) udpVisionUDP443Rejections=\(stats.udpVisionUDP443Rejections) udpWriteErrors=\(stats.udpRemoteWriteErrors) udpReadErrors=\(stats.udpRemoteReadErrors) udpRemoteClosed=\(stats.udpRemoteClosedEvents) udpQuicBlockedPackets=\(stats.udpQuicBlockedPackets)"
-                )
+                for message in stats.debugLogMessages() {
+                    XrayAppleLog.info("PacketTunnelProvider", message)
+                }
+                for event in try self.core?.pollTcpSlowFlowEvents() ?? [] {
+                    XrayAppleLog.info("PacketTunnelProvider", event.debugLogMessage())
+                }
+                for event in try self.core?.pollTcpFlowSummaryEvents() ?? [] {
+                    XrayAppleLog.info("PacketTunnelProvider", event.debugLogMessage())
+                }
+                for event in try self.core?.pollUdpSlowFlowEvents() ?? [] {
+                    XrayAppleLog.info("PacketTunnelProvider", event.debugLogMessage())
+                }
+                for event in try self.core?.pollUdpResponseGapEvents() ?? [] {
+                    XrayAppleLog.info("PacketTunnelProvider", event.debugLogMessage())
+                }
+                for event in try self.core?.pollUdpQuicBlockedEvents() ?? [] {
+                    XrayAppleLog.info("PacketTunnelProvider", event.debugLogMessage())
+                }
             } catch {
                 XrayAppleLog.error(
                     "PacketTunnelProvider",

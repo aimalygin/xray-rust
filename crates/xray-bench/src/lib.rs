@@ -209,6 +209,7 @@ pub struct BenchOptions {
     pub xray_core_dir: Option<PathBuf>,
     pub sing_box_bin: Option<PathBuf>,
     pub sing_box_dir: Option<PathBuf>,
+    pub tun_profile: Option<String>,
     pub no_auto_build: bool,
 }
 
@@ -545,6 +546,7 @@ impl Default for BenchOptions {
             xray_core_dir: None,
             sing_box_bin: None,
             sing_box_dir: None,
+            tun_profile: None,
             no_auto_build: false,
         }
     }
@@ -647,6 +649,9 @@ where
             "--sing-box-bin" => {
                 options.sing_box_bin =
                     Some(PathBuf::from(required_value(&rest, &mut index, flag)?));
+            }
+            "--tun-profile" => {
+                options.tun_profile = Some(required_value(&rest, &mut index, flag)?.to_owned());
             }
             "--sing-box-dir" => {
                 options.sing_box_dir =
@@ -3920,6 +3925,9 @@ async fn start_engine(
     if let Some(pair) = tun_pair.as_ref() {
         configure_tun_fd_env(&mut command, pair);
     }
+    if let Some(profile) = options.tun_profile.as_deref() {
+        command.env("XRAY_TUN_PROFILE", profile);
+    }
     let mut child = command.spawn().map_err(|source| BenchError::Io {
         action: format!("spawning `{}`", binary.display()),
         source,
@@ -4108,6 +4116,7 @@ fn route_probe_config(rules: usize, outbounds: usize) -> Result<CoreConfig, Benc
         routing: RoutingConfig {
             rules: routing_rules,
         },
+        dns: Default::default(),
     })
 }
 
@@ -4461,9 +4470,30 @@ mod tests {
                 xray_core_dir: None,
                 sing_box_bin: None,
                 sing_box_dir: None,
+                tun_profile: None,
                 no_auto_build: false,
             })
         );
+    }
+
+    #[test]
+    fn parses_tun_profile_arg() {
+        let args = parse_cli_args([
+            "xray-bench",
+            "run",
+            "--engine",
+            "xray-rust",
+            "--workload",
+            "tun-udp-freedom",
+            "--tun-profile",
+            "low-memory",
+        ])
+        .unwrap();
+
+        let CliArgs::Run(options) = args else {
+            panic!("expected run args");
+        };
+        assert_eq!(options.tun_profile.as_deref(), Some("low-memory"));
     }
 
     #[test]

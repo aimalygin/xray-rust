@@ -46,7 +46,7 @@ public final class NetworkExtensionTunnelController: XrayClientTunnelControlling
     public func start(profile: XrayClientProfile) async throws {
         XrayAppleLog.info(
             "TunnelController",
-            "Preparing start provider=\(profile.providerBundleIdentifier) server=\(profile.serverAddress) configBytes=\(profile.configJSON.utf8.count) debugLogging=\(profile.debugLoggingEnabled) useTunFileDescriptor=\(profile.useTunFileDescriptor) blockQUIC=\(profile.blockQUIC)"
+            "Preparing start provider=\(profile.providerBundleIdentifier) server=\(profile.serverAddress) configBytes=\(profile.configJSON.utf8.count) debugLogging=\(profile.debugLoggingEnabled) useTunFileDescriptor=\(profile.useTunFileDescriptor) blockQUIC=\(profile.blockQUIC) tunRuntimeProfile=\(profile.tunRuntimeProfile.rawValue)"
         )
         do {
             let manager = try await configuredManager(for: profile)
@@ -63,6 +63,9 @@ public final class NetworkExtensionTunnelController: XrayClientTunnelControlling
                     XrayTunnelProviderMessage.blockQUICOptionKey: NSNumber(
                         value: profile.blockQUIC
                     ),
+                    XrayTunnelProviderMessage.tunRuntimeProfileOptionKey: profile
+                        .tunRuntimeProfile
+                        .rawValue as NSString,
                 ])
                 XrayAppleLog.info("TunnelController", "NETunnelProviderSession.startTunnel returned")
             } else {
@@ -132,6 +135,7 @@ public final class NetworkExtensionTunnelController: XrayClientTunnelControlling
             XrayTunnelProviderMessage.providerDebugLoggingKey: profile.debugLoggingEnabled,
             XrayTunnelProviderMessage.providerUseTunFileDescriptorKey: profile.useTunFileDescriptor,
             XrayTunnelProviderMessage.providerBlockQUICKey: profile.blockQUIC,
+            XrayTunnelProviderMessage.providerTunRuntimeProfileKey: profile.tunRuntimeProfile.rawValue,
         ]
 
         manager.localizedDescription = managerDescription
@@ -140,7 +144,7 @@ public final class NetworkExtensionTunnelController: XrayClientTunnelControlling
 
         XrayAppleLog.info(
             "TunnelController",
-            "Saving preferences description=\(managerDescription) provider=\(profile.providerBundleIdentifier) server=\(profile.serverAddress) debugLogging=\(profile.debugLoggingEnabled) useTunFileDescriptor=\(profile.useTunFileDescriptor) blockQUIC=\(profile.blockQUIC)"
+            "Saving preferences description=\(managerDescription) provider=\(profile.providerBundleIdentifier) server=\(profile.serverAddress) debugLogging=\(profile.debugLoggingEnabled) useTunFileDescriptor=\(profile.useTunFileDescriptor) blockQUIC=\(profile.blockQUIC) tunRuntimeProfile=\(profile.tunRuntimeProfile.rawValue)"
         )
         try await manager.saveToPreferencesAsync()
         XrayAppleLog.info("TunnelController", "Saved preferences; reloading")

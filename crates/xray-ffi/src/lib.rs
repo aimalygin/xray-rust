@@ -10,8 +10,10 @@ use tokio::runtime::{Builder, Runtime};
 use xray_config::parse_xray_json;
 use xray_core_rs::{
     Core, TunFdClosePolicy, TunFdConfig, TunFdPacketFormat, TunFdRuntime, TunRuntimeOptions,
+    TunRuntimeProfile,
 };
 use xray_transport::{SocketHandle, SocketProtector, SystemDnsResolver, TransportDialer};
+use xray_tun::TunTcpSlowFlowKind;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,11 +44,51 @@ pub enum XrayTunFdClosePolicy {
     Owned = 1,
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum XrayTunRuntimeProfile {
+    Default = 0,
+    Mobile = 1,
+    Desktop = 2,
+    LowMemory = 3,
+    Throughput = 4,
+}
+
+#[repr(C)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum XrayTcpSlowFlowKind {
+    #[default]
+    Unknown = 0,
+    Open = 1,
+    FirstByte = 2,
+}
+
+impl From<TunTcpSlowFlowKind> for XrayTcpSlowFlowKind {
+    fn from(value: TunTcpSlowFlowKind) -> Self {
+        match value {
+            TunTcpSlowFlowKind::Open => Self::Open,
+            TunTcpSlowFlowKind::FirstByte => Self::FirstByte,
+        }
+    }
+}
+
 impl From<XrayTunFdPacketFormat> for TunFdPacketFormat {
     fn from(value: XrayTunFdPacketFormat) -> Self {
         match value {
             XrayTunFdPacketFormat::RawIp => Self::RawIp,
             XrayTunFdPacketFormat::DarwinUtun => Self::DarwinUtun,
+        }
+    }
+}
+
+impl From<XrayTunRuntimeProfile> for TunRuntimeProfile {
+    fn from(value: XrayTunRuntimeProfile) -> Self {
+        match value {
+            XrayTunRuntimeProfile::Default => Self::Default,
+            XrayTunRuntimeProfile::Mobile => Self::Mobile,
+            XrayTunRuntimeProfile::Desktop => Self::Desktop,
+            XrayTunRuntimeProfile::LowMemory => Self::LowMemory,
+            XrayTunRuntimeProfile::Throughput => Self::Throughput,
         }
     }
 }
@@ -93,18 +135,86 @@ pub struct XrayTunStats {
     pub tcp_remote_closed_events: u64,
     pub tcp_remote_read_errors: u64,
     pub tcp_open_errors: u64,
+    pub tcp_open_events: u64,
+    pub tcp_open_duration_ms_total: u64,
+    pub tcp_open_duration_ms_max: u64,
+    pub tcp_first_byte_events: u64,
+    pub tcp_first_byte_duration_ms_total: u64,
+    pub tcp_first_byte_duration_ms_max: u64,
+    pub tcp443_open_events: u64,
+    pub tcp443_open_duration_ms_total: u64,
+    pub tcp443_open_duration_ms_max: u64,
+    pub tcp443_first_byte_events: u64,
+    pub tcp443_first_byte_duration_ms_total: u64,
+    pub tcp443_first_byte_duration_ms_max: u64,
     pub active_tcp_flows: u64,
     pub active_udp_flows: u64,
     pub udp_flow_limit: u64,
     pub udp_budget_drops: u64,
     pub udp_evicted_flows: u64,
     pub udp_channel_dropped_packets: u64,
+    pub udp_remote_open_events: u64,
+    pub udp_remote_udp443_open_events: u64,
+    pub udp_remote_written_bytes: u64,
+    pub udp_remote_read_bytes: u64,
     pub udp_open_errors: u64,
     pub udp_vision_udp443_rejections: u64,
     pub udp_remote_write_errors: u64,
     pub udp_remote_read_errors: u64,
     pub udp_remote_closed_events: u64,
     pub udp_quic_blocked_packets: u64,
+    pub inbound_queue_depth: u64,
+    pub outbound_queue_depth: u64,
+    pub inbound_queue_max_packets: u64,
+    pub outbound_queue_max_packets: u64,
+    pub tun_fd_write_batches: u64,
+    pub tun_fd_write_batch_packets: u64,
+    pub tun_fd_write_batch_max_packets: u64,
+}
+
+#[repr(C)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct XrayTcpSlowFlowEvent {
+    pub kind: XrayTcpSlowFlowKind,
+    pub open_duration_ms: u64,
+    pub first_byte_duration_ms: u64,
+}
+
+#[repr(C)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct XrayTcpFlowSummaryEvent {
+    pub closed: u64,
+    pub duration_ms: u64,
+    pub open_duration_ms: u64,
+    pub first_byte_duration_ms: u64,
+    pub remote_read_bytes: u64,
+    pub ms_to_64kib: u64,
+    pub ms_to_128kib: u64,
+    pub ms_to_256kib: u64,
+    pub ms_to_512kib: u64,
+    pub ms_to_1mib: u64,
+}
+
+#[repr(C)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct XrayUdpSlowFlowEvent {
+    pub first_response_duration_ms: u64,
+    pub written_bytes: u64,
+    pub read_bytes: u64,
+}
+
+#[repr(C)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct XrayUdpResponseGapEvent {
+    pub response_gap_duration_ms: u64,
+    pub written_bytes: u64,
+    pub read_bytes: u64,
+}
+
+#[repr(C)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct XrayUdpQuicBlockedEvent {
+    pub bytes: u64,
 }
 
 pub struct XrayCoreHandle {
@@ -466,8 +576,8 @@ unsafe fn xray_core_set_tun_fd_inner(
 /// Enables or disables Rust-side QUIC blocking in the TUN packet path.
 ///
 /// When enabled, UDP/443 packets that look like QUIC long-header packets are
-/// dropped before a UDP flow or outbound stream is opened. Set this before
-/// loading config.
+/// rejected with ICMP unreachable before a UDP flow or outbound stream is
+/// opened. Set this before loading config.
 ///
 /// # Safety
 ///
@@ -517,6 +627,113 @@ unsafe fn xray_core_set_tun_block_quic_inner(
     }
 
     handle.tun_runtime_options.block_quic = block_quic != 0;
+    XrayStatus::Ok
+}
+
+/// Enables or disables TCP timing diagnostics in the TUN TCP bridge.
+///
+/// When disabled, the TCP bridge does not read clocks or update timing
+/// counters. Set this before loading config.
+///
+/// # Safety
+///
+/// `handle` must either be null or a pointer returned by `xray_core_new` that
+/// has not been freed. If `error` is non-null, it must point to an initialized
+/// `*mut XrayError` value that is either null or a live error pointer returned
+/// by this library. This function may free and replace that error pointer.
+#[no_mangle]
+pub unsafe extern "C" fn xray_core_set_tun_collect_tcp_timings(
+    handle: *mut XrayCoreHandle,
+    collect_tcp_timings: c_int,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            xray_core_set_tun_collect_tcp_timings_inner(handle, collect_tcp_timings, error)
+        })
+    }
+}
+
+unsafe fn xray_core_set_tun_collect_tcp_timings_inner(
+    handle: *mut XrayCoreHandle,
+    collect_tcp_timings: c_int,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        clear_error(error);
+    }
+
+    if handle.is_null() {
+        unsafe {
+            set_error(error, XrayStatus::NullArgument, "core handle is null");
+        }
+        return XrayStatus::NullArgument;
+    }
+
+    let handle = unsafe { &mut *handle };
+    if handle.core.is_some() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::RuntimeError,
+                "tun TCP timing collection must be set before config load",
+            );
+        }
+        return XrayStatus::RuntimeError;
+    }
+
+    handle.tun_runtime_options.collect_tcp_timings = collect_tcp_timings != 0;
+    XrayStatus::Ok
+}
+
+/// Selects the TUN runtime performance profile.
+///
+/// # Safety
+///
+/// `handle` must either be null or a pointer returned by `xray_core_new` that
+/// has not been freed. The profile must be one of `XrayTunRuntimeProfile`.
+#[no_mangle]
+pub unsafe extern "C" fn xray_core_set_tun_runtime_profile(
+    handle: *mut XrayCoreHandle,
+    profile: XrayTunRuntimeProfile,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            xray_core_set_tun_runtime_profile_inner(handle, profile, error)
+        })
+    }
+}
+
+unsafe fn xray_core_set_tun_runtime_profile_inner(
+    handle: *mut XrayCoreHandle,
+    profile: XrayTunRuntimeProfile,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        clear_error(error);
+    }
+
+    if handle.is_null() {
+        unsafe {
+            set_error(error, XrayStatus::NullArgument, "core handle is null");
+        }
+        return XrayStatus::NullArgument;
+    }
+
+    let handle = unsafe { &mut *handle };
+    if handle.core.is_some() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::RuntimeError,
+                "tun runtime profile must be set before config load",
+            );
+        }
+        return XrayStatus::RuntimeError;
+    }
+
+    handle.tun_runtime_options.profile = profile.into();
     XrayStatus::Ok
 }
 
@@ -837,6 +1054,757 @@ unsafe fn xray_tun_poll_packet_inner(
     }
 }
 
+/// Polls one debug-only TCP slow-flow event from the TUN endpoint.
+///
+/// Returns `XRAY_STATUS_NO_PACKET` when no event is buffered. `target_buffer`
+/// and `outbound_tag_buffer` receive NUL-terminated labels, truncated if needed.
+///
+/// # Safety
+///
+/// `handle` must either be null or a pointer returned by `xray_core_new` that
+/// has not been freed. `event`, `target_buffer`, `target_written`,
+/// `outbound_tag_buffer`, and `outbound_tag_written` must point to writable
+/// memory. If `error` is non-null, it must point to an
+/// initialized `*mut XrayError` value that is either null or a live error
+/// pointer returned by this library. This function may free and replace that
+/// error pointer.
+#[no_mangle]
+pub unsafe extern "C" fn xray_tun_poll_tcp_slow_flow_event(
+    handle: *mut XrayCoreHandle,
+    event: *mut XrayTcpSlowFlowEvent,
+    target_buffer: *mut c_char,
+    target_buffer_len: usize,
+    target_written: *mut usize,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            xray_tun_poll_tcp_slow_flow_event_inner(
+                handle,
+                event,
+                target_buffer,
+                target_buffer_len,
+                target_written,
+                error,
+            )
+        })
+    }
+}
+
+unsafe fn xray_tun_poll_tcp_slow_flow_event_inner(
+    handle: *mut XrayCoreHandle,
+    event: *mut XrayTcpSlowFlowEvent,
+    target_buffer: *mut c_char,
+    target_buffer_len: usize,
+    target_written: *mut usize,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        clear_error(error);
+    }
+
+    if !target_written.is_null() {
+        unsafe {
+            *target_written = 0;
+        }
+    }
+    if !target_buffer.is_null() && target_buffer_len > 0 {
+        unsafe {
+            *target_buffer = 0;
+        }
+    }
+
+    if handle.is_null() {
+        unsafe {
+            set_error(error, XrayStatus::NullArgument, "core handle is null");
+        }
+        return XrayStatus::NullArgument;
+    }
+    if event.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "slow-flow event pointer is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+    if target_buffer.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "slow-flow target buffer is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+    if target_written.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "slow-flow target written pointer is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+    if target_buffer_len == 0 {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::BufferTooSmall,
+                "slow-flow target buffer length is zero",
+            );
+        }
+        return XrayStatus::BufferTooSmall;
+    }
+
+    let handle = unsafe { &mut *handle };
+    let Some(core) = handle.core.as_ref() else {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::CoreNotLoaded,
+                "core config is not loaded",
+            );
+        }
+        return XrayStatus::CoreNotLoaded;
+    };
+
+    let Some(slow_flow) = core.tun().poll_tcp_slow_flow_event() else {
+        return XrayStatus::NoPacket;
+    };
+
+    unsafe {
+        *event = XrayTcpSlowFlowEvent {
+            kind: slow_flow.kind.into(),
+            open_duration_ms: slow_flow.open_duration_ms,
+            first_byte_duration_ms: slow_flow.first_byte_duration_ms,
+        };
+        write_c_string_truncated(
+            &slow_flow.target,
+            target_buffer,
+            target_buffer_len,
+            target_written,
+        );
+    }
+    XrayStatus::Ok
+}
+
+/// Polls one debug-only TCP flow-summary event from the TUN endpoint.
+///
+/// Returns `XRAY_STATUS_NO_PACKET` when no event is buffered. `target_buffer`
+/// receives a NUL-terminated target label, truncated if needed.
+///
+/// # Safety
+///
+/// `handle` must either be null or a pointer returned by `xray_core_new` that
+/// has not been freed. `event`, `target_buffer`, and `target_written` must
+/// point to writable memory. If `error` is non-null, it must point to an
+/// initialized `*mut XrayError` value that is either null or a live error
+/// pointer returned by this library. This function may free and replace that
+/// error pointer.
+#[no_mangle]
+pub unsafe extern "C" fn xray_tun_poll_tcp_flow_summary_event(
+    handle: *mut XrayCoreHandle,
+    event: *mut XrayTcpFlowSummaryEvent,
+    target_buffer: *mut c_char,
+    target_buffer_len: usize,
+    target_written: *mut usize,
+    outbound_tag_buffer: *mut c_char,
+    outbound_tag_buffer_len: usize,
+    outbound_tag_written: *mut usize,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            xray_tun_poll_tcp_flow_summary_event_inner(
+                handle,
+                event,
+                target_buffer,
+                target_buffer_len,
+                target_written,
+                outbound_tag_buffer,
+                outbound_tag_buffer_len,
+                outbound_tag_written,
+                error,
+            )
+        })
+    }
+}
+
+unsafe fn xray_tun_poll_tcp_flow_summary_event_inner(
+    handle: *mut XrayCoreHandle,
+    event: *mut XrayTcpFlowSummaryEvent,
+    target_buffer: *mut c_char,
+    target_buffer_len: usize,
+    target_written: *mut usize,
+    outbound_tag_buffer: *mut c_char,
+    outbound_tag_buffer_len: usize,
+    outbound_tag_written: *mut usize,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        clear_error(error);
+    }
+
+    if !target_written.is_null() {
+        unsafe {
+            *target_written = 0;
+        }
+    }
+    if !target_buffer.is_null() && target_buffer_len > 0 {
+        unsafe {
+            *target_buffer = 0;
+        }
+    }
+    if !outbound_tag_written.is_null() {
+        unsafe {
+            *outbound_tag_written = 0;
+        }
+    }
+    if !outbound_tag_buffer.is_null() && outbound_tag_buffer_len > 0 {
+        unsafe {
+            *outbound_tag_buffer = 0;
+        }
+    }
+
+    if handle.is_null() {
+        unsafe {
+            set_error(error, XrayStatus::NullArgument, "core handle is null");
+        }
+        return XrayStatus::NullArgument;
+    }
+    if event.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "TCP flow-summary event pointer is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+    if target_buffer.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "TCP flow-summary target buffer is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+    if target_written.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "TCP flow-summary target written pointer is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+    if outbound_tag_buffer.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "TCP flow-summary outbound tag buffer is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+    if outbound_tag_written.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "TCP flow-summary outbound tag written pointer is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+    if target_buffer_len == 0 {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::BufferTooSmall,
+                "TCP flow-summary target buffer length is zero",
+            );
+        }
+        return XrayStatus::BufferTooSmall;
+    }
+    if outbound_tag_buffer_len == 0 {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::BufferTooSmall,
+                "TCP flow-summary outbound tag buffer length is zero",
+            );
+        }
+        return XrayStatus::BufferTooSmall;
+    }
+
+    let handle = unsafe { &mut *handle };
+    let Some(core) = handle.core.as_ref() else {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::CoreNotLoaded,
+                "core config is not loaded",
+            );
+        }
+        return XrayStatus::CoreNotLoaded;
+    };
+
+    let Some(summary) = core.tun().poll_tcp_flow_summary_event() else {
+        return XrayStatus::NoPacket;
+    };
+
+    unsafe {
+        *event = XrayTcpFlowSummaryEvent {
+            closed: u64::from(summary.closed),
+            duration_ms: summary.duration_ms,
+            open_duration_ms: summary.open_duration_ms,
+            first_byte_duration_ms: summary.first_byte_duration_ms,
+            remote_read_bytes: summary.remote_read_bytes,
+            ms_to_64kib: summary.ms_to_64kib,
+            ms_to_128kib: summary.ms_to_128kib,
+            ms_to_256kib: summary.ms_to_256kib,
+            ms_to_512kib: summary.ms_to_512kib,
+            ms_to_1mib: summary.ms_to_1mib,
+        };
+        write_c_string_truncated(
+            &summary.target,
+            target_buffer,
+            target_buffer_len,
+            target_written,
+        );
+        write_c_string_truncated(
+            summary.outbound_tag.as_deref().unwrap_or(""),
+            outbound_tag_buffer,
+            outbound_tag_buffer_len,
+            outbound_tag_written,
+        );
+    }
+    XrayStatus::Ok
+}
+
+/// Polls one debug-only UDP slow-flow event from the TUN endpoint.
+///
+/// Returns `XRAY_STATUS_NO_PACKET` when no event is buffered. `target_buffer`
+/// receives a NUL-terminated target label, truncated if needed.
+///
+/// # Safety
+///
+/// `handle` must either be null or a pointer returned by `xray_core_new` that
+/// has not been freed. `event`, `target_buffer`, and `target_written` must
+/// point to writable memory. If `error` is non-null, it must point to an
+/// initialized `*mut XrayError` value that is either null or a live error
+/// pointer returned by this library. This function may free and replace that
+/// error pointer.
+#[no_mangle]
+pub unsafe extern "C" fn xray_tun_poll_udp_slow_flow_event(
+    handle: *mut XrayCoreHandle,
+    event: *mut XrayUdpSlowFlowEvent,
+    target_buffer: *mut c_char,
+    target_buffer_len: usize,
+    target_written: *mut usize,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            xray_tun_poll_udp_slow_flow_event_inner(
+                handle,
+                event,
+                target_buffer,
+                target_buffer_len,
+                target_written,
+                error,
+            )
+        })
+    }
+}
+
+unsafe fn xray_tun_poll_udp_slow_flow_event_inner(
+    handle: *mut XrayCoreHandle,
+    event: *mut XrayUdpSlowFlowEvent,
+    target_buffer: *mut c_char,
+    target_buffer_len: usize,
+    target_written: *mut usize,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        clear_error(error);
+    }
+
+    if !target_written.is_null() {
+        unsafe {
+            *target_written = 0;
+        }
+    }
+    if !target_buffer.is_null() && target_buffer_len > 0 {
+        unsafe {
+            *target_buffer = 0;
+        }
+    }
+
+    if handle.is_null() {
+        unsafe {
+            set_error(error, XrayStatus::NullArgument, "core handle is null");
+        }
+        return XrayStatus::NullArgument;
+    }
+    if event.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "slow-flow event pointer is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+    if target_buffer.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "slow-flow target buffer is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+    if target_written.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "slow-flow target written pointer is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+    if target_buffer_len == 0 {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::BufferTooSmall,
+                "slow-flow target buffer length is zero",
+            );
+        }
+        return XrayStatus::BufferTooSmall;
+    }
+
+    let handle = unsafe { &mut *handle };
+    let Some(core) = handle.core.as_ref() else {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::CoreNotLoaded,
+                "core config is not loaded",
+            );
+        }
+        return XrayStatus::CoreNotLoaded;
+    };
+
+    let Some(slow_flow) = core.tun().poll_udp_slow_flow_event() else {
+        return XrayStatus::NoPacket;
+    };
+
+    unsafe {
+        *event = XrayUdpSlowFlowEvent {
+            first_response_duration_ms: slow_flow.first_response_duration_ms,
+            written_bytes: slow_flow.written_bytes,
+            read_bytes: slow_flow.read_bytes,
+        };
+        write_c_string_truncated(
+            &slow_flow.target,
+            target_buffer,
+            target_buffer_len,
+            target_written,
+        );
+    }
+    XrayStatus::Ok
+}
+
+/// Polls one debug-only UDP response-gap event from the TUN endpoint.
+///
+/// Returns `XRAY_STATUS_NO_PACKET` when no event is buffered. `target_buffer`
+/// receives a NUL-terminated target label, truncated if needed.
+///
+/// # Safety
+///
+/// `handle` must either be null or a pointer returned by `xray_core_new` that
+/// has not been freed. `event`, `target_buffer`, and `target_written` must
+/// point to writable memory. If `error` is non-null, it must point to an
+/// initialized `*mut XrayError` value that is either null or a live error
+/// pointer returned by this library. This function may free and replace that
+/// error pointer.
+#[no_mangle]
+pub unsafe extern "C" fn xray_tun_poll_udp_response_gap_event(
+    handle: *mut XrayCoreHandle,
+    event: *mut XrayUdpResponseGapEvent,
+    target_buffer: *mut c_char,
+    target_buffer_len: usize,
+    target_written: *mut usize,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            xray_tun_poll_udp_response_gap_event_inner(
+                handle,
+                event,
+                target_buffer,
+                target_buffer_len,
+                target_written,
+                error,
+            )
+        })
+    }
+}
+
+unsafe fn xray_tun_poll_udp_response_gap_event_inner(
+    handle: *mut XrayCoreHandle,
+    event: *mut XrayUdpResponseGapEvent,
+    target_buffer: *mut c_char,
+    target_buffer_len: usize,
+    target_written: *mut usize,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        clear_error(error);
+    }
+
+    if !target_written.is_null() {
+        unsafe {
+            *target_written = 0;
+        }
+    }
+    if !target_buffer.is_null() && target_buffer_len > 0 {
+        unsafe {
+            *target_buffer = 0;
+        }
+    }
+
+    if handle.is_null() {
+        unsafe {
+            set_error(error, XrayStatus::NullArgument, "core handle is null");
+        }
+        return XrayStatus::NullArgument;
+    }
+    if event.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "response-gap event pointer is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+    if target_buffer.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "response-gap target buffer is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+    if target_written.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "response-gap target written pointer is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+    if target_buffer_len == 0 {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::BufferTooSmall,
+                "response-gap target buffer length is zero",
+            );
+        }
+        return XrayStatus::BufferTooSmall;
+    }
+
+    let handle = unsafe { &mut *handle };
+    let Some(core) = handle.core.as_ref() else {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::CoreNotLoaded,
+                "core config is not loaded",
+            );
+        }
+        return XrayStatus::CoreNotLoaded;
+    };
+
+    let Some(response_gap) = core.tun().poll_udp_response_gap_event() else {
+        return XrayStatus::NoPacket;
+    };
+
+    unsafe {
+        *event = XrayUdpResponseGapEvent {
+            response_gap_duration_ms: response_gap.response_gap_duration_ms,
+            written_bytes: response_gap.written_bytes,
+            read_bytes: response_gap.read_bytes,
+        };
+        write_c_string_truncated(
+            &response_gap.target,
+            target_buffer,
+            target_buffer_len,
+            target_written,
+        );
+    }
+    XrayStatus::Ok
+}
+
+/// Polls one debug-only UDP QUIC-blocked event from the TUN endpoint.
+///
+/// Returns `XRAY_STATUS_NO_PACKET` when no event is buffered. `target_buffer`
+/// receives a NUL-terminated target label, truncated if needed.
+///
+/// # Safety
+///
+/// `handle` must either be null or a pointer returned by `xray_core_new` that
+/// has not been freed. `event`, `target_buffer`, and `target_written` must
+/// point to writable memory. If `error` is non-null, it must point to an
+/// initialized `*mut XrayError` value that is either null or a live error
+/// pointer returned by this library. This function may free and replace that
+/// error pointer.
+#[no_mangle]
+pub unsafe extern "C" fn xray_tun_poll_udp_quic_blocked_event(
+    handle: *mut XrayCoreHandle,
+    event: *mut XrayUdpQuicBlockedEvent,
+    target_buffer: *mut c_char,
+    target_buffer_len: usize,
+    target_written: *mut usize,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            xray_tun_poll_udp_quic_blocked_event_inner(
+                handle,
+                event,
+                target_buffer,
+                target_buffer_len,
+                target_written,
+                error,
+            )
+        })
+    }
+}
+
+unsafe fn xray_tun_poll_udp_quic_blocked_event_inner(
+    handle: *mut XrayCoreHandle,
+    event: *mut XrayUdpQuicBlockedEvent,
+    target_buffer: *mut c_char,
+    target_buffer_len: usize,
+    target_written: *mut usize,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        clear_error(error);
+    }
+
+    if !target_written.is_null() {
+        unsafe {
+            *target_written = 0;
+        }
+    }
+    if !target_buffer.is_null() && target_buffer_len > 0 {
+        unsafe {
+            *target_buffer = 0;
+        }
+    }
+
+    if handle.is_null() {
+        unsafe {
+            set_error(error, XrayStatus::NullArgument, "core handle is null");
+        }
+        return XrayStatus::NullArgument;
+    }
+    if event.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "QUIC-blocked event pointer is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+    if target_buffer.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "QUIC-blocked target buffer is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+    if target_written.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "QUIC-blocked target written pointer is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+    if target_buffer_len == 0 {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::BufferTooSmall,
+                "QUIC-blocked target buffer length is zero",
+            );
+        }
+        return XrayStatus::BufferTooSmall;
+    }
+
+    let handle = unsafe { &mut *handle };
+    let Some(core) = handle.core.as_ref() else {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::CoreNotLoaded,
+                "core config is not loaded",
+            );
+        }
+        return XrayStatus::CoreNotLoaded;
+    };
+
+    let Some(blocked) = core.tun().poll_udp_quic_blocked_event() else {
+        return XrayStatus::NoPacket;
+    };
+
+    unsafe {
+        *event = XrayUdpQuicBlockedEvent {
+            bytes: blocked.bytes,
+        };
+        write_c_string_truncated(
+            &blocked.target,
+            target_buffer,
+            target_buffer_len,
+            target_written,
+        );
+    }
+    XrayStatus::Ok
+}
+
 /// Writes a TUN packet counter snapshot to `stats`.
 ///
 /// # Safety
@@ -922,18 +1890,41 @@ unsafe fn xray_tun_stats_inner(
             tcp_remote_closed_events: snapshot.tcp_remote_closed_events,
             tcp_remote_read_errors: snapshot.tcp_remote_read_errors,
             tcp_open_errors: snapshot.tcp_open_errors,
+            tcp_open_events: snapshot.tcp_open_events,
+            tcp_open_duration_ms_total: snapshot.tcp_open_duration_ms_total,
+            tcp_open_duration_ms_max: snapshot.tcp_open_duration_ms_max,
+            tcp_first_byte_events: snapshot.tcp_first_byte_events,
+            tcp_first_byte_duration_ms_total: snapshot.tcp_first_byte_duration_ms_total,
+            tcp_first_byte_duration_ms_max: snapshot.tcp_first_byte_duration_ms_max,
+            tcp443_open_events: snapshot.tcp443_open_events,
+            tcp443_open_duration_ms_total: snapshot.tcp443_open_duration_ms_total,
+            tcp443_open_duration_ms_max: snapshot.tcp443_open_duration_ms_max,
+            tcp443_first_byte_events: snapshot.tcp443_first_byte_events,
+            tcp443_first_byte_duration_ms_total: snapshot.tcp443_first_byte_duration_ms_total,
+            tcp443_first_byte_duration_ms_max: snapshot.tcp443_first_byte_duration_ms_max,
             active_tcp_flows: snapshot.active_tcp_flows,
             active_udp_flows: snapshot.active_udp_flows,
             udp_flow_limit: snapshot.udp_flow_limit,
             udp_budget_drops: snapshot.udp_budget_drops,
             udp_evicted_flows: snapshot.udp_evicted_flows,
             udp_channel_dropped_packets: snapshot.udp_channel_dropped_packets,
+            udp_remote_open_events: snapshot.udp_remote_open_events,
+            udp_remote_udp443_open_events: snapshot.udp_remote_udp443_open_events,
+            udp_remote_written_bytes: snapshot.udp_remote_written_bytes,
+            udp_remote_read_bytes: snapshot.udp_remote_read_bytes,
             udp_open_errors: snapshot.udp_open_errors,
             udp_vision_udp443_rejections: snapshot.udp_vision_udp443_rejections,
             udp_remote_write_errors: snapshot.udp_remote_write_errors,
             udp_remote_read_errors: snapshot.udp_remote_read_errors,
             udp_remote_closed_events: snapshot.udp_remote_closed_events,
             udp_quic_blocked_packets: snapshot.udp_quic_blocked_packets,
+            inbound_queue_depth: snapshot.inbound_queue_depth,
+            outbound_queue_depth: snapshot.outbound_queue_depth,
+            inbound_queue_max_packets: snapshot.inbound_queue_max_packets,
+            outbound_queue_max_packets: snapshot.outbound_queue_max_packets,
+            tun_fd_write_batches: snapshot.tun_fd_write_batches,
+            tun_fd_write_batch_packets: snapshot.tun_fd_write_batch_packets,
+            tun_fd_write_batch_max_packets: snapshot.tun_fd_write_batch_max_packets,
         };
     }
 
@@ -1053,6 +2044,21 @@ unsafe fn free_error(error: *mut XrayError) {
         unsafe {
             drop(CString::from_raw(error.message));
         }
+    }
+}
+
+unsafe fn write_c_string_truncated(
+    value: &str,
+    buffer: *mut c_char,
+    buffer_len: usize,
+    written: *mut usize,
+) {
+    let bytes = value.as_bytes();
+    let copy_len = bytes.len().min(buffer_len.saturating_sub(1));
+    unsafe {
+        ptr::copy_nonoverlapping(bytes.as_ptr(), buffer.cast::<u8>(), copy_len);
+        *buffer.add(copy_len) = 0;
+        *written = copy_len;
     }
 }
 

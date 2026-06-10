@@ -71,6 +71,7 @@ mod platform {
     use crate::{TunFdClosePolicy, TunFdPacketFormat};
 
     const DARWIN_UTUN_HEADER_LEN: usize = 4;
+    const TUN_FD_WRITE_BATCH_MAX_PACKETS: usize = 128;
 
     pub struct TunFdRuntime {
         shutdown: watch::Sender<bool>,
@@ -178,6 +179,8 @@ mod platform {
         mut shutdown: watch::Receiver<bool>,
         packet_format: TunFdPacketFormat,
     ) {
+        let mut batch = Vec::with_capacity(TUN_FD_WRITE_BATCH_MAX_PACKETS);
+
         loop {
             tokio::select! {
                 changed = shutdown.changed() => {
@@ -188,7 +191,15 @@ mod platform {
                 packet = tun.poll_outbound() => {
                     match packet {
                         Ok(packet) => {
-                            if write_packet(&fd, packet_format, &packet).await.is_err() {
+                            batch.clear();
+                            batch.push(packet);
+                            let queue_closed = drain_outbound_batch(&tun, &mut batch).await;
+
+                            if write_packet_batch(&fd, packet_format, &batch).await.is_err() {
+                                break;
+                            }
+                            tun.record_tun_fd_write_batch(batch.len());
+                            if queue_closed {
                                 break;
                             }
                         }
@@ -198,6 +209,18 @@ mod platform {
                 }
             }
         }
+    }
+
+    async fn drain_outbound_batch(tun: &TunEndpoint, batch: &mut Vec<Bytes>) -> bool {
+        while batch.len() < TUN_FD_WRITE_BATCH_MAX_PACKETS {
+            match tun.try_poll_outbound().await {
+                Ok(Some(packet)) => batch.push(packet),
+                Ok(None) => return false,
+                Err(TunError::QueueClosed) => return true,
+                Err(TunError::QueueFull | TunError::PacketTooLarge { .. }) => return false,
+            }
+        }
+        false
     }
 
     async fn read_packet(
@@ -237,39 +260,50 @@ mod platform {
         }
     }
 
-    async fn write_packet(
+    async fn write_packet_batch(
         fd: &AsyncFd<TunFd>,
         packet_format: TunFdPacketFormat,
-        packet: &[u8],
+        packets: &[Bytes],
     ) -> io::Result<()> {
-        let packet = EncodedPacket::new(packet_format, packet)?;
+        let mut packet_index = 0;
 
-        loop {
+        while packet_index < packets.len() {
             let mut guard = fd.writable().await?;
-            let result = guard.try_io(|inner| {
-                let written = packet.write_to_fd(inner.get_ref().as_raw_fd());
-                if written < 0 {
-                    return Err(io::Error::last_os_error());
-                }
-                if written as usize != packet.len() {
-                    return Err(io::Error::new(
-                        io::ErrorKind::WriteZero,
-                        format!(
-                            "short tun fd write: wrote {written} of {} bytes",
-                            packet.len()
-                        ),
-                    ));
-                }
-                Ok(())
-            });
 
-            match result {
-                Ok(Ok(())) => return Ok(()),
-                Ok(Err(err)) if err.kind() == io::ErrorKind::WouldBlock => continue,
-                Ok(Err(err)) => return Err(err),
-                Err(_) => continue,
+            loop {
+                let packet = EncodedPacket::new(packet_format, packets[packet_index].as_ref())?;
+                let result = guard.try_io(|inner| {
+                    let written = packet.write_to_fd(inner.get_ref().as_raw_fd());
+                    if written < 0 {
+                        return Err(io::Error::last_os_error());
+                    }
+                    if written as usize != packet.len() {
+                        return Err(io::Error::new(
+                            io::ErrorKind::WriteZero,
+                            format!(
+                                "short tun fd write: wrote {written} of {} bytes",
+                                packet.len()
+                            ),
+                        ));
+                    }
+                    Ok(())
+                });
+
+                match result {
+                    Ok(Ok(())) => {
+                        packet_index += 1;
+                        if packet_index == packets.len() {
+                            return Ok(());
+                        }
+                    }
+                    Ok(Err(err)) if err.kind() == io::ErrorKind::WouldBlock => break,
+                    Ok(Err(err)) => return Err(err),
+                    Err(_) => break,
+                }
             }
         }
+
+        Ok(())
     }
 
     fn read_buffer_len(packet_format: TunFdPacketFormat) -> usize {
@@ -387,6 +421,7 @@ mod platform {
     #[cfg(test)]
     mod tests {
         use super::*;
+        use xray_tun::TunConfig;
 
         #[test]
         fn darwin_utun_encoded_packet_borrows_payload_and_adds_family_header() {
@@ -396,6 +431,33 @@ mod platform {
             assert_eq!(encoded.len(), DARWIN_UTUN_HEADER_LEN + packet.len());
             assert_eq!(encoded.header(), Some([0, 0, 0, libc::AF_INET as u8]));
             assert!(std::ptr::eq(encoded.payload().as_ptr(), packet.as_ptr()));
+        }
+
+        #[tokio::test]
+        async fn outbound_batch_drains_queued_packets_up_to_limit() {
+            let tun = TunEndpoint::new(TunConfig {
+                mtu: 1500,
+                queue_depth: TUN_FD_WRITE_BATCH_MAX_PACKETS + 2,
+            });
+            for index in 0..TUN_FD_WRITE_BATCH_MAX_PACKETS + 1 {
+                tun.push_outbound(Bytes::from(vec![0x45, index as u8]))
+                    .await
+                    .unwrap();
+            }
+
+            let first = tun.poll_outbound().await.unwrap();
+            let mut batch = vec![first];
+            let queue_closed = drain_outbound_batch(&tun, &mut batch).await;
+
+            assert!(!queue_closed);
+            assert_eq!(batch.len(), TUN_FD_WRITE_BATCH_MAX_PACKETS);
+            assert_eq!(
+                tun.try_poll_outbound().await.unwrap(),
+                Some(Bytes::from(vec![
+                    0x45,
+                    TUN_FD_WRITE_BATCH_MAX_PACKETS as u8
+                ]))
+            );
         }
     }
 }

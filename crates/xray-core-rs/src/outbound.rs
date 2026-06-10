@@ -233,6 +233,12 @@ pub enum TcpOutbound {
 }
 
 #[derive(Debug, Clone)]
+pub(crate) struct SelectedTcpOutbound {
+    pub(crate) outbound: TcpOutbound,
+    pub(crate) tag: Option<String>,
+}
+
+#[derive(Debug, Clone)]
 pub enum UdpOutbound {
     Freedom,
     Vless(Box<VlessTcpOutbound>),
@@ -275,6 +281,23 @@ pub fn select_tcp_outbound_for_session(
         target_ip(target),
     )?;
     build_tcp_outbound(outbound)
+}
+
+pub(crate) fn select_tcp_outbound_for_session_with_tag(
+    config: &CoreConfig,
+    inbound_tag: Option<&str>,
+    target: &Target,
+    include_tag: bool,
+) -> Result<SelectedTcpOutbound, CoreError> {
+    let outbound = select_configured_outbound(
+        config,
+        inbound_tag,
+        target_domain(target),
+        target_ip(target),
+    )?;
+    let tag = include_tag.then(|| outbound.tag.clone()).flatten();
+    let outbound = build_tcp_outbound(outbound)?;
+    Ok(SelectedTcpOutbound { outbound, tag })
 }
 
 pub fn select_udp_outbound_for_session(
@@ -565,9 +588,43 @@ pub async fn open_vless_udp_stream_with_resolver_and_dialer(
     dns_resolver: &dyn DnsResolver,
     transport_dialer: &TransportDialer,
 ) -> Result<(BoxedTransportStream, VlessUdpFraming), CoreError> {
+    open_vless_udp_stream_with_resolver_dialer_and_options(
+        outbound,
+        target,
+        dns_resolver,
+        transport_dialer,
+        VlessUdpOpenOptions::default(),
+    )
+    .await
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct VlessUdpOpenOptions {
+    pub(crate) reject_udp443_for_regular_vision: bool,
+}
+
+impl Default for VlessUdpOpenOptions {
+    fn default() -> Self {
+        Self {
+            reject_udp443_for_regular_vision: true,
+        }
+    }
+}
+
+pub(crate) async fn open_vless_udp_stream_with_resolver_dialer_and_options(
+    outbound: &VlessTcpOutbound,
+    target: &Target,
+    dns_resolver: &dyn DnsResolver,
+    transport_dialer: &TransportDialer,
+    options: VlessUdpOpenOptions,
+) -> Result<(BoxedTransportStream, VlessUdpFraming), CoreError> {
     let flow = validate_connector_flow(outbound.user.flow.as_deref(), &outbound.transport)?;
     let uses_vision = flow.uses_vision();
-    if uses_vision && !flow.allows_udp443() && is_udp443_target(target) {
+    if options.reject_udp443_for_regular_vision
+        && uses_vision
+        && !flow.allows_udp443()
+        && is_udp443_target(target)
+    {
         return Err(CoreError::VisionUdp443Rejected);
     }
     let uses_xudp = uses_vision || should_use_xudp_for_udp_target(target);

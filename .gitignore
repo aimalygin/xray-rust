@@ -32,6 +32,12 @@ platform/android/xraymobile/build/
 *.swp
 *.swo
 
+# Local agent tooling and working context.
+.agents/
+.codex/
+skills-lock.json
+AGENT_CONTEXT.md
+
 # Logs and temporary files.
 *.log
 tmp/

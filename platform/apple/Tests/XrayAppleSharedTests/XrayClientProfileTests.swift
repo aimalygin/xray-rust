@@ -33,7 +33,23 @@ final class XrayClientProfileTests: XCTestCase {
         let stats = XrayClientRuntimeStats(
             inboundPackets: 1,
             outboundPackets: 2,
-            droppedPackets: 3
+            droppedPackets: 3,
+            tcpOpenEvents: 8,
+            tcpOpenDurationMsTotal: 900,
+            tcpOpenDurationMsMax: 300,
+            tcpFirstByteEvents: 9,
+            tcpFirstByteDurationMsTotal: 1_200,
+            tcpFirstByteDurationMsMax: 400,
+            tcp443OpenEvents: 5,
+            tcp443OpenDurationMsTotal: 700,
+            tcp443OpenDurationMsMax: 250,
+            tcp443FirstByteEvents: 6,
+            tcp443FirstByteDurationMsTotal: 1_000,
+            tcp443FirstByteDurationMsMax: 500,
+            udpRemoteOpenEvents: 4,
+            udpRemoteUDP443OpenEvents: 5,
+            udpRemoteWrittenBytes: 6,
+            udpRemoteReadBytes: 7
         )
 
         let data = try XrayTunnelProviderMessage.encodeStatsResponse(stats)
@@ -75,6 +91,14 @@ final class XrayClientProfileTests: XCTestCase {
         XCTAssertFalse(profile.blockQUIC)
     }
 
+    func testTunRuntimeProfileDefaultsToDefault() {
+        let profile = XrayClientProfile.defaultProfile(
+            hostBundleIdentifier: "org.example.XrayClient"
+        )
+
+        XCTAssertEqual(profile.tunRuntimeProfile, .default)
+    }
+
     func testProfileDecodesLegacyPayloadWithoutDebugLoggingFlag() throws {
         let legacyPayload = """
         {
@@ -94,6 +118,7 @@ final class XrayClientProfileTests: XCTestCase {
         XCTAssertFalse(profile.debugLoggingEnabled)
         XCTAssertTrue(profile.useTunFileDescriptor)
         XCTAssertFalse(profile.blockQUIC)
+        XCTAssertEqual(profile.tunRuntimeProfile, .default)
     }
 
     func testProfileEncodesDebugFlags() throws {
@@ -104,7 +129,8 @@ final class XrayClientProfileTests: XCTestCase {
             configJSON: "{}",
             debugLoggingEnabled: true,
             useTunFileDescriptor: false,
-            blockQUIC: true
+            blockQUIC: true,
+            tunRuntimeProfile: .throughput
         )
 
         let root = try XCTUnwrap(
@@ -114,6 +140,7 @@ final class XrayClientProfileTests: XCTestCase {
         XCTAssertEqual(root["debugLoggingEnabled"] as? Bool, true)
         XCTAssertEqual(root["useTunFileDescriptor"] as? Bool, false)
         XCTAssertEqual(root["blockQUIC"] as? Bool, true)
+        XCTAssertEqual(root["tunRuntimeProfile"] as? String, "throughput")
     }
 
     func testVlessURLImporterBuildsMobileRealityProfile() throws {

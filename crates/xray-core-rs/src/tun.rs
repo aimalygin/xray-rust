@@ -1,6 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::Instant as StdInstant;
 
 use bytes::Bytes;
 use smoltcp::iface::{Config as InterfaceConfig, Interface, SocketHandle, SocketSet};
@@ -12,17 +13,21 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::UdpSocket;
 use tokio::sync::{mpsc, watch};
 use tokio::time::{sleep, Duration};
-use xray_config::CoreConfig;
+use xray_config::{CoreConfig, DnsFakeIpConfig};
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::{protect_udp_socket, DnsResolver, TransportDialer};
-use xray_tun::{TunEndpoint, TunError};
+use xray_tun::{
+    TunEndpoint, TunError, TunTcpFlowSummaryEvent, TunTcpSlowFlowEvent, TunTcpSlowFlowKind,
+    TunUdpQuicBlockedEvent, TunUdpResponseGapEvent, TunUdpSlowFlowEvent,
+};
 
 use crate::outbound::{
-    open_tcp_stream_with_resolver_and_dialer, open_vless_udp_stream_with_resolver_and_dialer,
-    select_tcp_outbound_for_session, select_udp_outbound_for_session, UdpOutbound,
-    VlessTcpOutbound, VlessUdpFraming,
+    open_tcp_stream_with_resolver_and_dialer,
+    open_vless_udp_stream_with_resolver_dialer_and_options, select_tcp_outbound_for_session,
+    select_tcp_outbound_for_session_with_tag, select_udp_outbound_for_session, UdpOutbound,
+    VlessTcpOutbound, VlessUdpFraming, VlessUdpOpenOptions,
 };
-use crate::TunRuntimeOptions;
+use crate::{TunRuntimeOptions, TunRuntimeProfile};
 use xray_proxy::vless::{
     encode_udp_packet, encode_xudp_keep_packet, encode_xudp_new_packet, read_udp_packet,
     read_xudp_packet,
@@ -33,12 +38,28 @@ const ICMPV4_PROTOCOL: u8 = 1;
 const ICMPV6_PROTOCOL: u8 = 58;
 const TCP_PROTOCOL: u8 = 6;
 const UDP_PROTOCOL: u8 = 17;
+const DNS_PORT: u16 = 53;
+const DNS_TYPE_A: u16 = 1;
+const DNS_TYPE_AAAA: u16 = 28;
+const DNS_CLASS_IN: u16 = 1;
 const TCP_BUFFER_SIZE: usize = 32 * 1024;
-const BRIDGE_CHANNEL_DEPTH: usize = 64;
+const STACK_EVENT_CHANNEL_DEPTH: usize = 64;
+const TCP_BRIDGE_CHANNEL_DEPTH: usize = 128;
+const UDP_BRIDGE_CHANNEL_DEPTH: usize = 64;
 const BRIDGE_READ_BUFFER_SIZE: usize = 16 * 1024;
-const BRIDGE_WRITE_BATCH_MAX_MESSAGES: usize = BRIDGE_CHANNEL_DEPTH + 1;
-const BRIDGE_WRITE_BATCH_MAX_BYTES: usize = 1024 * 1024;
+const TCP_BRIDGE_WRITE_BATCH_MAX_MESSAGES: usize = TCP_BRIDGE_CHANNEL_DEPTH + 1;
+const TCP_BRIDGE_WRITE_BATCH_MAX_BYTES: usize = 2 * 1024 * 1024;
 const MAX_TUN_INBOUND_DRAIN_PER_TICK: usize = 256;
+const TCP_REMOTE_DRAIN_MAX_PASSES_PER_TICK: usize = 4;
+const TCP_REMOTE_DRAIN_MAX_BYTES_PER_TICK: usize = 4 * 1024 * 1024;
+const TCP_SLOW_FLOW_THRESHOLD_MS: u64 = 500;
+const TCP_FLOW_SUMMARY_64KIB_BYTES: u64 = 64 * 1024;
+const TCP_FLOW_SUMMARY_128KIB_BYTES: u64 = 128 * 1024;
+const TCP_FLOW_SUMMARY_256KIB_BYTES: u64 = 256 * 1024;
+const TCP_FLOW_SUMMARY_MIN_BYTES: u64 = 512 * 1024;
+const TCP_FLOW_SUMMARY_MILESTONE_BYTES: u64 = 1024 * 1024;
+const UDP_SLOW_FLOW_THRESHOLD_MS: u64 = 500;
+const UDP_RESPONSE_GAP_THRESHOLD_MS: u64 = 500;
 const UDP_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,13 +71,6 @@ struct TcpRemoteBufferPolicy {
     hard_total_bytes: usize,
 }
 
-#[cfg(any(
-    test,
-    target_os = "android",
-    target_os = "ios",
-    target_os = "tvos",
-    target_os = "watchos"
-))]
 const MOBILE_TCP_REMOTE_BUFFER_POLICY: TcpRemoteBufferPolicy = TcpRemoteBufferPolicy {
     normal_per_flow_bytes: 2 * 1024 * 1024,
     pressure_per_flow_bytes: 1024 * 1024,
@@ -65,15 +79,6 @@ const MOBILE_TCP_REMOTE_BUFFER_POLICY: TcpRemoteBufferPolicy = TcpRemoteBufferPo
     hard_total_bytes: 40 * 1024 * 1024,
 };
 
-#[cfg(any(
-    test,
-    not(any(
-        target_os = "android",
-        target_os = "ios",
-        target_os = "tvos",
-        target_os = "watchos"
-    ))
-))]
 const DESKTOP_TCP_REMOTE_BUFFER_POLICY: TcpRemoteBufferPolicy = TcpRemoteBufferPolicy {
     normal_per_flow_bytes: 4 * 1024 * 1024,
     pressure_per_flow_bytes: 2 * 1024 * 1024,
@@ -93,13 +98,6 @@ struct FlowBudgetPolicy {
     udp: UdpFlowBudgetPolicy,
 }
 
-#[cfg(any(
-    test,
-    target_os = "android",
-    target_os = "ios",
-    target_os = "tvos",
-    target_os = "watchos"
-))]
 const MOBILE_FLOW_BUDGET_POLICY: FlowBudgetPolicy = FlowBudgetPolicy {
     tcp_remote: MOBILE_TCP_REMOTE_BUFFER_POLICY,
     udp: UdpFlowBudgetPolicy {
@@ -107,19 +105,30 @@ const MOBILE_FLOW_BUDGET_POLICY: FlowBudgetPolicy = FlowBudgetPolicy {
     },
 };
 
-#[cfg(any(
-    test,
-    not(any(
-        target_os = "android",
-        target_os = "ios",
-        target_os = "tvos",
-        target_os = "watchos"
-    ))
-))]
 const DESKTOP_FLOW_BUDGET_POLICY: FlowBudgetPolicy = FlowBudgetPolicy {
     tcp_remote: DESKTOP_TCP_REMOTE_BUFFER_POLICY,
     udp: UdpFlowBudgetPolicy {
         max_active_flows: 1024,
+    },
+};
+
+const LOW_MEMORY_FLOW_BUDGET_POLICY: FlowBudgetPolicy = FlowBudgetPolicy {
+    tcp_remote: TcpRemoteBufferPolicy {
+        normal_per_flow_bytes: 1024 * 1024,
+        pressure_per_flow_bytes: 512 * 1024,
+        pressure_start_total_bytes: 12 * 1024 * 1024,
+        pressure_release_total_bytes: 8 * 1024 * 1024,
+        hard_total_bytes: 20 * 1024 * 1024,
+    },
+    udp: UdpFlowBudgetPolicy {
+        max_active_flows: 128,
+    },
+};
+
+const THROUGHPUT_FLOW_BUDGET_POLICY: FlowBudgetPolicy = FlowBudgetPolicy {
+    tcp_remote: DESKTOP_TCP_REMOTE_BUFFER_POLICY,
+    udp: UdpFlowBudgetPolicy {
+        max_active_flows: 2048,
     },
 };
 
@@ -138,6 +147,16 @@ const FLOW_BUDGET_POLICY: FlowBudgetPolicy = MOBILE_FLOW_BUDGET_POLICY;
     target_os = "watchos"
 )))]
 const FLOW_BUDGET_POLICY: FlowBudgetPolicy = DESKTOP_FLOW_BUDGET_POLICY;
+
+fn flow_budget_policy_for_runtime_options(options: TunRuntimeOptions) -> FlowBudgetPolicy {
+    match options.profile {
+        TunRuntimeProfile::Default => FLOW_BUDGET_POLICY,
+        TunRuntimeProfile::Mobile => MOBILE_FLOW_BUDGET_POLICY,
+        TunRuntimeProfile::Desktop => DESKTOP_FLOW_BUDGET_POLICY,
+        TunRuntimeProfile::LowMemory => LOW_MEMORY_FLOW_BUDGET_POLICY,
+        TunRuntimeProfile::Throughput => THROUGHPUT_FLOW_BUDGET_POLICY,
+    }
+}
 
 #[derive(Debug)]
 struct TcpRemoteBufferState {
@@ -240,6 +259,144 @@ struct FlowBudgetState {
     udp_budget_drops: u64,
     udp_evicted_flows: u64,
     udp_channel_dropped_packets: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FakeIpRuntimeConfig {
+    ipv4_network: Ipv4Addr,
+    ipv4_prefix: u8,
+    ttl: u32,
+}
+
+impl FakeIpRuntimeConfig {
+    fn from_config(config: &DnsFakeIpConfig) -> Option<Self> {
+        let IpAddr::V4(ipv4_network) = config.ipv4_pool.network() else {
+            return None;
+        };
+        Some(Self {
+            ipv4_network,
+            ipv4_prefix: config.ipv4_pool.prefix(),
+            ttl: config.ttl,
+        })
+    }
+}
+
+#[derive(Debug)]
+struct FakeIpMapper {
+    config: FakeIpRuntimeConfig,
+    network_base: u32,
+    first_offset: u64,
+    usable_addresses: u64,
+    next_offset: u64,
+    by_domain: HashMap<String, Ipv4Addr>,
+    by_ipv4: HashMap<Ipv4Addr, String>,
+}
+
+impl FakeIpMapper {
+    fn new(config: FakeIpRuntimeConfig) -> Option<Self> {
+        if config.ipv4_prefix > 32 {
+            return None;
+        }
+
+        let address_count = 1_u64 << u32::from(32 - config.ipv4_prefix);
+        let first_offset = if address_count > 2 { 1 } else { 0 };
+        let usable_addresses = if address_count > 2 {
+            address_count - 2
+        } else {
+            address_count
+        };
+        if usable_addresses == 0 {
+            return None;
+        }
+
+        let mask = if config.ipv4_prefix == 0 {
+            0
+        } else {
+            u32::MAX << u32::from(32 - config.ipv4_prefix)
+        };
+        let network_base = u32::from(config.ipv4_network) & mask;
+
+        Some(Self {
+            config,
+            network_base,
+            first_offset,
+            usable_addresses,
+            next_offset: 0,
+            by_domain: HashMap::new(),
+            by_ipv4: HashMap::new(),
+        })
+    }
+
+    fn fake_ipv4_for_domain(&mut self, domain: &str) -> Option<Ipv4Addr> {
+        let domain = normalize_dns_domain(domain)?;
+        if let Some(ip) = self.by_domain.get(&domain) {
+            return Some(*ip);
+        }
+        if self.by_domain.len() as u64 >= self.usable_addresses {
+            return None;
+        }
+
+        for _ in 0..self.usable_addresses {
+            let offset = self.first_offset + (self.next_offset % self.usable_addresses);
+            self.next_offset = self.next_offset.saturating_add(1);
+            let Some(raw_ip) = self.network_base.checked_add(u32::try_from(offset).ok()?) else {
+                continue;
+            };
+            let ip = Ipv4Addr::from(raw_ip);
+            if self.by_ipv4.contains_key(&ip) {
+                continue;
+            }
+
+            self.by_domain.insert(domain.clone(), ip);
+            self.by_ipv4.insert(ip, domain);
+            return Some(ip);
+        }
+
+        None
+    }
+
+    fn domain_for_ipv4(&self, ip: Ipv4Addr) -> Option<&str> {
+        self.by_ipv4.get(&ip).map(String::as_str)
+    }
+
+    fn target_for_endpoint(&self, endpoint: IpEndpoint, network: RoutingNetwork) -> Option<Target> {
+        let IpAddress::Ipv4(ip) = endpoint.addr else {
+            return target_from_endpoint_with_network(endpoint, network);
+        };
+        let Some(domain) = self.domain_for_ipv4(ip) else {
+            return target_from_endpoint_with_network(endpoint, network);
+        };
+        Some(Target::new(
+            RoutingTargetAddr::Domain(domain.to_owned()),
+            endpoint.port,
+            network,
+        ))
+    }
+
+    fn fake_dns_response(&mut self, query: &[u8]) -> Option<Bytes> {
+        let question = parse_dns_question(query)?;
+        match question.qtype {
+            DNS_TYPE_A => {
+                let ip = self.fake_ipv4_for_domain(&question.domain)?;
+                Some(build_dns_response(
+                    query,
+                    &question,
+                    Some(ip),
+                    self.config.ttl,
+                ))
+            }
+            DNS_TYPE_AAAA => Some(build_dns_response(query, &question, None, self.config.ttl)),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DnsQuestion {
+    domain: String,
+    question_end: usize,
+    qtype: u16,
+    qclass: u16,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -376,10 +533,18 @@ pub(crate) async fn serve_tun_endpoint(
     let mut sockets = SocketSet::new(Vec::new());
     let mut tcp_listeners = HashMap::new();
     let mut tcp_flows = HashMap::new();
-    let mut flow_budget_state = FlowBudgetState::new(FLOW_BUDGET_POLICY);
+    let mut flow_budget_state =
+        FlowBudgetState::new(flow_budget_policy_for_runtime_options(tun_runtime_options));
     let mut udp_flows = HashMap::new();
     let mut delayed_stack_events = VecDeque::new();
-    let (stack_tx, mut stack_rx) = mpsc::channel(BRIDGE_CHANNEL_DEPTH);
+    let (stack_tx, mut stack_rx) = mpsc::channel(STACK_EVENT_CHANNEL_DEPTH);
+    let fake_ip_mapper = config
+        .dns
+        .fake_ip
+        .as_ref()
+        .and_then(FakeIpRuntimeConfig::from_config)
+        .and_then(FakeIpMapper::new)
+        .map(|mapper| Arc::new(Mutex::new(mapper)));
     let runtime_context = TunRuntimeContext {
         inbound_tag,
         config,
@@ -388,6 +553,7 @@ pub(crate) async fn serve_tun_endpoint(
         stack_tx,
         tun: Arc::clone(&tun),
         tun_runtime_options,
+        fake_ip_mapper,
     };
 
     'runtime: loop {
@@ -470,7 +636,13 @@ pub(crate) async fn serve_tun_endpoint(
             &mut device,
             Some(tun.as_ref()),
         );
-        write_remote_data_to_sockets(&mut sockets, &mut tcp_flows, &mut flow_budget_state);
+        drain_tcp_remote_data_to_sockets(
+            &mut iface,
+            &mut device,
+            &mut sockets,
+            &mut tcp_flows,
+            &mut flow_budget_state,
+        );
         drain_stack_events(
             &mut stack_rx,
             &mut delayed_stack_events,
@@ -479,6 +651,13 @@ pub(crate) async fn serve_tun_endpoint(
             &mut udp_flows,
             &mut device,
             Some(tun.as_ref()),
+        );
+        drain_tcp_remote_data_to_sockets(
+            &mut iface,
+            &mut device,
+            &mut sockets,
+            &mut tcp_flows,
+            &mut flow_budget_state,
         );
         record_flow_budget_stats(tun.as_ref(), &flow_budget_state, &tcp_flows, &udp_flows);
         iface.poll(Instant::now(), &mut device, &mut sockets);
@@ -491,6 +670,13 @@ pub(crate) async fn serve_tun_endpoint(
         );
         read_socket_data_to_remote(&tun, &mut sockets, &mut tcp_flows);
         cleanup_closed_tcp_flows(&mut sockets, &mut tcp_flows, &mut flow_budget_state);
+        drain_tcp_remote_data_to_sockets(
+            &mut iface,
+            &mut device,
+            &mut sockets,
+            &mut tcp_flows,
+            &mut flow_budget_state,
+        );
         iface.poll(Instant::now(), &mut device, &mut sockets);
         while let Some(packet) = device.pop_outbound() {
             if tun.push_outbound(packet).await.is_err() {
@@ -514,11 +700,19 @@ async fn process_tun_packet(
     if let Some(reply) = icmp_echo_reply(&packet) {
         return !matches!(tun.push_outbound(reply).await, Err(TunError::QueueClosed));
     }
-    if context.tun_runtime_options.block_quic && is_likely_quic_udp443_packet(&packet) {
-        tun.record_udp_quic_blocked();
-        return true;
+    if context.tun_runtime_options.block_quic {
+        if let Some(reply) = record_quic_blocked_packet(
+            tun,
+            &packet,
+            context.tun_runtime_options.collect_tcp_timings,
+        ) {
+            return !matches!(tun.push_outbound(reply).await, Err(TunError::QueueClosed));
+        }
     }
     if let Some(packet) = parse_udp_packet(&packet) {
+        if let Some(reply) = context.fake_dns_reply_packet(&packet) {
+            return !matches!(tun.push_outbound(reply).await, Err(TunError::QueueClosed));
+        }
         handle_udp_packet(packet, udp_flows, flow_budget_state, context, shutdown);
         return true;
     }
@@ -538,6 +732,29 @@ struct TunRuntimeContext {
     stack_tx: mpsc::Sender<StackEvent>,
     tun: Arc<TunEndpoint>,
     tun_runtime_options: TunRuntimeOptions,
+    fake_ip_mapper: Option<Arc<Mutex<FakeIpMapper>>>,
+}
+
+impl TunRuntimeContext {
+    fn target_from_endpoint(
+        &self,
+        endpoint: IpEndpoint,
+        network: RoutingNetwork,
+    ) -> Option<Target> {
+        let Some(mapper) = &self.fake_ip_mapper else {
+            return target_from_endpoint_with_network(endpoint, network);
+        };
+        mapper.lock().ok()?.target_for_endpoint(endpoint, network)
+    }
+
+    fn fake_dns_reply_packet(&self, packet: &UdpTunPacket) -> Option<Bytes> {
+        if packet.target.port != DNS_PORT {
+            return None;
+        }
+        let mapper = self.fake_ip_mapper.as_ref()?;
+        let response = mapper.lock().ok()?.fake_dns_response(&packet.payload)?;
+        build_udp_packet(packet.target, packet.client, &response)
+    }
 }
 
 #[derive(Debug)]
@@ -632,13 +849,17 @@ fn open_ready_tcp_flows(
                 return None;
             }
             let local_endpoint = socket.local_endpoint()?;
-            Some((*endpoint, *handle, target_from_endpoint(local_endpoint)?))
+            Some((
+                *endpoint,
+                *handle,
+                context.target_from_endpoint(local_endpoint, RoutingNetwork::Tcp)?,
+            ))
         })
         .collect::<Vec<_>>();
 
     for (endpoint, handle, target) in ready {
         listeners.remove(&endpoint);
-        let (to_remote, from_stack) = mpsc::channel(BRIDGE_CHANNEL_DEPTH);
+        let (to_remote, from_stack) = mpsc::channel(TCP_BRIDGE_CHANNEL_DEPTH);
         flows.insert(
             handle,
             TcpFlow {
@@ -658,14 +879,6 @@ fn open_ready_tcp_flows(
     }
 }
 
-fn target_from_endpoint(endpoint: IpEndpoint) -> Option<Target> {
-    target_from_endpoint_with_network(endpoint, RoutingNetwork::Tcp)
-}
-
-fn udp_target_from_endpoint(endpoint: IpEndpoint) -> Option<Target> {
-    target_from_endpoint_with_network(endpoint, RoutingNetwork::Udp)
-}
-
 fn target_from_endpoint_with_network(
     endpoint: IpEndpoint,
     network: RoutingNetwork,
@@ -679,6 +892,83 @@ fn target_from_endpoint_with_network(
         endpoint.port,
         network,
     ))
+}
+
+fn normalize_dns_domain(domain: &str) -> Option<String> {
+    let domain = domain.trim_end_matches('.').to_ascii_lowercase();
+    (!domain.is_empty()).then_some(domain)
+}
+
+fn parse_dns_question(packet: &[u8]) -> Option<DnsQuestion> {
+    if packet.len() < 12 {
+        return None;
+    }
+    let flags = u16::from_be_bytes([packet[2], packet[3]]);
+    if flags & 0x8000 != 0 {
+        return None;
+    }
+    let question_count = u16::from_be_bytes([packet[4], packet[5]]);
+    if question_count != 1 {
+        return None;
+    }
+
+    let mut offset = 12usize;
+    let mut labels = Vec::new();
+    loop {
+        let len = usize::from(*packet.get(offset)?);
+        offset += 1;
+        if len == 0 {
+            break;
+        }
+        if len & 0xc0 != 0 || len > 63 {
+            return None;
+        }
+        let label_end = offset.checked_add(len)?;
+        let label = std::str::from_utf8(packet.get(offset..label_end)?).ok()?;
+        labels.push(label.to_owned());
+        offset = label_end;
+    }
+
+    let qtype = u16::from_be_bytes([*packet.get(offset)?, *packet.get(offset + 1)?]);
+    let qclass = u16::from_be_bytes([*packet.get(offset + 2)?, *packet.get(offset + 3)?]);
+    let domain = normalize_dns_domain(&labels.join("."))?;
+
+    Some(DnsQuestion {
+        domain,
+        question_end: offset + 4,
+        qtype,
+        qclass,
+    })
+}
+
+fn build_dns_response(
+    query: &[u8],
+    question: &DnsQuestion,
+    answer: Option<Ipv4Addr>,
+    ttl: u32,
+) -> Bytes {
+    let has_answer = answer.is_some() && question.qclass == DNS_CLASS_IN;
+    let request_flags = u16::from_be_bytes([query[2], query[3]]);
+    let response_flags = 0x8000 | (request_flags & 0x0100) | 0x0080;
+    let mut response = Vec::with_capacity(question.question_end + 16);
+    response.extend_from_slice(&query[0..2]);
+    response.extend_from_slice(&response_flags.to_be_bytes());
+    response.extend_from_slice(&1_u16.to_be_bytes());
+    response.extend_from_slice(&(has_answer as u16).to_be_bytes());
+    response.extend_from_slice(&0_u16.to_be_bytes());
+    response.extend_from_slice(&0_u16.to_be_bytes());
+    response.extend_from_slice(&query[12..question.question_end]);
+
+    if let Some(ip) = answer.filter(|_| has_answer) {
+        response.extend_from_slice(&[0xc0, 0x0c]);
+        response.extend_from_slice(&DNS_TYPE_A.to_be_bytes());
+        response.extend_from_slice(&DNS_CLASS_IN.to_be_bytes());
+        response.extend_from_slice(&ttl.to_be_bytes());
+        response.extend_from_slice(&4_u16.to_be_bytes());
+        response.extend_from_slice(&ip.octets());
+    }
+
+    Bytes::from(response)
 }
 
 fn drain_stack_events(
@@ -813,11 +1103,44 @@ fn record_flow_budget_stats(
     );
 }
 
-fn write_remote_data_to_sockets(
+fn drain_tcp_remote_data_to_sockets(
+    iface: &mut Interface,
+    device: &mut PacketDevice,
     sockets: &mut SocketSet<'static>,
     flows: &mut HashMap<SocketHandle, TcpFlow>,
     flow_budget_state: &mut FlowBudgetState,
 ) {
+    let mut drained_bytes = 0usize;
+    let mut polled_after_stall = false;
+
+    for _ in 0..TCP_REMOTE_DRAIN_MAX_PASSES_PER_TICK {
+        let written = write_remote_data_to_sockets(sockets, flows, flow_budget_state);
+        drained_bytes = drained_bytes.saturating_add(written);
+
+        let has_pending_remote_data = flow_budget_state.pending_total_bytes() > 0;
+        if written == 0 && !has_pending_remote_data {
+            break;
+        }
+        if written == 0 && polled_after_stall {
+            break;
+        }
+
+        iface.poll(Instant::now(), device, sockets);
+
+        if drained_bytes >= TCP_REMOTE_DRAIN_MAX_BYTES_PER_TICK {
+            break;
+        }
+        polled_after_stall = written == 0;
+    }
+}
+
+fn write_remote_data_to_sockets(
+    sockets: &mut SocketSet<'static>,
+    flows: &mut HashMap<SocketHandle, TcpFlow>,
+    flow_budget_state: &mut FlowBudgetState,
+) -> usize {
+    let mut written_bytes = 0usize;
+
     for (handle, flow) in flows {
         let socket = sockets.get_mut::<tcp::Socket>(*handle);
         while socket.can_send() {
@@ -834,6 +1157,7 @@ fn write_remote_data_to_sockets(
             if written == 0 {
                 break;
             }
+            written_bytes = written_bytes.saturating_add(written);
             let pending_before = flow.pending_remote_bytes;
             if written == front.len() {
                 flow.pending_remote_bytes = flow.pending_remote_bytes.saturating_sub(front.len());
@@ -850,6 +1174,8 @@ fn write_remote_data_to_sockets(
             socket.close();
         }
     }
+
+    written_bytes
 }
 
 fn read_socket_data_to_remote(
@@ -909,19 +1235,34 @@ fn cleanup_closed_tcp_flows(
     }
 }
 
+fn elapsed_ms_since(start: &StdInstant) -> u64 {
+    u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX)
+}
+
 async fn bridge_tcp_flow(
     handle: SocketHandle,
     target: Target,
     context: TunRuntimeContext,
-    mut from_stack: mpsc::Receiver<Bytes>,
-    mut shutdown: watch::Receiver<bool>,
+    from_stack: mpsc::Receiver<Bytes>,
+    shutdown: watch::Receiver<bool>,
 ) {
-    let outbound = match select_tcp_outbound_for_session(
-        &context.config,
-        context.inbound_tag.as_deref(),
-        &target,
-    ) {
-        Ok(outbound) => outbound,
+    let collect_tcp_timings = context.tun_runtime_options.collect_tcp_timings;
+    let tcp_timing_start = collect_tcp_timings.then(StdInstant::now);
+    let is_tcp443 = target.port == 443;
+    let outbound_result = if collect_tcp_timings {
+        select_tcp_outbound_for_session_with_tag(
+            &context.config,
+            context.inbound_tag.as_deref(),
+            &target,
+            true,
+        )
+        .map(|selection| (selection.outbound, selection.tag))
+    } else {
+        select_tcp_outbound_for_session(&context.config, context.inbound_tag.as_deref(), &target)
+            .map(|outbound| (outbound, None))
+    };
+    let (outbound, outbound_tag) = match outbound_result {
+        Ok(selection) => selection,
         Err(_) => {
             context.tun.record_tcp_open_error();
             let _ = context
@@ -949,8 +1290,66 @@ async fn bridge_tcp_flow(
             return;
         }
     };
+    let tcp_open_duration_ms = if let Some(start) = tcp_timing_start.as_ref() {
+        let duration_ms = elapsed_ms_since(start);
+        context.tun.record_tcp_open_timing(duration_ms, is_tcp443);
+        record_tcp_slow_flow_event(
+            context.tun.as_ref(),
+            &target,
+            TunTcpSlowFlowKind::Open,
+            duration_ms,
+            0,
+        );
+        Some(duration_ms)
+    } else {
+        None
+    };
 
     let (mut remote_reader, mut remote_writer) = tokio::io::split(stream);
+    if let (Some(start), Some(open_duration_ms)) = (tcp_timing_start, tcp_open_duration_ms) {
+        let mut timing =
+            TcpFirstByteTimingEnabled::new(start, is_tcp443, open_duration_ms, outbound_tag);
+        bridge_tcp_flow_loop(
+            handle,
+            &target,
+            context,
+            from_stack,
+            shutdown,
+            &mut remote_reader,
+            &mut remote_writer,
+            &mut timing,
+        )
+        .await;
+    } else {
+        let mut timing = TcpFirstByteTimingDisabled;
+        bridge_tcp_flow_loop(
+            handle,
+            &target,
+            context,
+            from_stack,
+            shutdown,
+            &mut remote_reader,
+            &mut remote_writer,
+            &mut timing,
+        )
+        .await;
+    }
+}
+
+async fn bridge_tcp_flow_loop<R, W, T>(
+    handle: SocketHandle,
+    target: &Target,
+    context: TunRuntimeContext,
+    mut from_stack: mpsc::Receiver<Bytes>,
+    mut shutdown: watch::Receiver<bool>,
+    remote_reader: &mut R,
+    remote_writer: &mut W,
+    timing: &mut T,
+) where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+    T: TcpFirstByteTiming,
+{
     let mut read_buffer = vec![0; BRIDGE_READ_BUFFER_SIZE];
 
     loop {
@@ -965,7 +1364,7 @@ async fn bridge_tcp_flow(
                     break;
                 };
                 if write_stack_batch_to_remote(
-                    &mut remote_writer,
+                    remote_writer,
                     data,
                     &mut from_stack,
                     context.tun.as_ref(),
@@ -989,7 +1388,9 @@ async fn bridge_tcp_flow(
                     context.tun.record_tcp_remote_closed();
                     break;
                 }
+                timing.record_first_byte(context.tun.as_ref(), target);
                 context.tun.record_tcp_remote_read(read);
+                timing.record_remote_read(context.tun.as_ref(), target, read);
                 if context
                     .stack_tx
                     .send(StackEvent::RemoteData {
@@ -1009,6 +1410,362 @@ async fn bridge_tcp_flow(
         .stack_tx
         .send(StackEvent::RemoteClosed { handle })
         .await;
+    timing.record_flow_summary(context.tun.as_ref(), target, true);
+}
+
+fn record_tcp_slow_flow_event(
+    tun: &TunEndpoint,
+    target: &Target,
+    kind: TunTcpSlowFlowKind,
+    open_duration_ms: u64,
+    first_byte_duration_ms: u64,
+) {
+    if target.port != 443 {
+        return;
+    }
+    let measured_duration_ms = match kind {
+        TunTcpSlowFlowKind::Open => open_duration_ms,
+        TunTcpSlowFlowKind::FirstByte => first_byte_duration_ms,
+    };
+    if measured_duration_ms <= TCP_SLOW_FLOW_THRESHOLD_MS {
+        return;
+    }
+
+    tun.record_tcp_slow_flow_event(TunTcpSlowFlowEvent {
+        kind,
+        target: slow_flow_target_label(target),
+        open_duration_ms,
+        first_byte_duration_ms,
+    });
+}
+
+fn record_tcp_flow_summary_event(
+    tun: &TunEndpoint,
+    target: &Target,
+    outbound_tag: Option<&str>,
+    closed: bool,
+    duration_ms: u64,
+    open_duration_ms: u64,
+    first_byte_duration_ms: u64,
+    remote_read_bytes: u64,
+    ms_to_64kib: u64,
+    ms_to_128kib: u64,
+    ms_to_256kib: u64,
+    ms_to_512kib: u64,
+    ms_to_1mib: u64,
+) {
+    if target.port != 443 {
+        return;
+    }
+    if remote_read_bytes < TCP_FLOW_SUMMARY_MIN_BYTES {
+        return;
+    }
+
+    tun.record_tcp_flow_summary_event(TunTcpFlowSummaryEvent {
+        target: slow_flow_target_label(target),
+        outbound_tag: outbound_tag.map(ToOwned::to_owned),
+        closed,
+        duration_ms,
+        open_duration_ms,
+        first_byte_duration_ms,
+        remote_read_bytes,
+        ms_to_64kib,
+        ms_to_128kib,
+        ms_to_256kib,
+        ms_to_512kib,
+        ms_to_1mib,
+    });
+}
+
+fn record_udp_slow_flow_event(
+    tun: &TunEndpoint,
+    target: &Target,
+    first_response_duration_ms: u64,
+    written_bytes: u64,
+    read_bytes: u64,
+) {
+    if target.port != 443 {
+        return;
+    }
+    if first_response_duration_ms <= UDP_SLOW_FLOW_THRESHOLD_MS {
+        return;
+    }
+
+    tun.record_udp_slow_flow_event(TunUdpSlowFlowEvent {
+        target: slow_flow_target_label(target),
+        first_response_duration_ms,
+        written_bytes,
+        read_bytes,
+    });
+}
+
+fn record_udp_response_gap_event(
+    tun: &TunEndpoint,
+    target: &Target,
+    response_gap_duration_ms: u64,
+    written_bytes: u64,
+    read_bytes: u64,
+) {
+    if target.port != 443 {
+        return;
+    }
+    if response_gap_duration_ms <= UDP_RESPONSE_GAP_THRESHOLD_MS {
+        return;
+    }
+
+    tun.record_udp_response_gap_event(TunUdpResponseGapEvent {
+        target: slow_flow_target_label(target),
+        response_gap_duration_ms,
+        written_bytes,
+        read_bytes,
+    });
+}
+
+fn slow_flow_target_label(target: &Target) -> String {
+    match &target.addr {
+        RoutingTargetAddr::Ip(IpAddr::V6(ip)) => format!("[{ip}]:{}", target.port),
+        RoutingTargetAddr::Ip(ip) => format!("{ip}:{}", target.port),
+        RoutingTargetAddr::Domain(domain) => format!("{domain}:{}", target.port),
+    }
+}
+
+fn ip_endpoint_target_label(endpoint: IpEndpoint) -> String {
+    let ip = match endpoint.addr {
+        IpAddress::Ipv4(ip) => IpAddr::V4(ip),
+        IpAddress::Ipv6(ip) => IpAddr::V6(ip),
+    };
+    match ip {
+        IpAddr::V6(ip) => format!("[{ip}]:{}", endpoint.port),
+        ip => format!("{ip}:{}", endpoint.port),
+    }
+}
+
+trait TcpFirstByteTiming {
+    fn record_first_byte(&mut self, tun: &TunEndpoint, target: &Target);
+    fn record_remote_read(&mut self, tun: &TunEndpoint, target: &Target, bytes: usize);
+    fn record_flow_summary(&mut self, tun: &TunEndpoint, target: &Target, closed: bool);
+}
+
+struct TcpFirstByteTimingDisabled;
+
+impl TcpFirstByteTiming for TcpFirstByteTimingDisabled {
+    #[inline]
+    fn record_first_byte(&mut self, _tun: &TunEndpoint, _target: &Target) {}
+
+    #[inline]
+    fn record_remote_read(&mut self, _tun: &TunEndpoint, _target: &Target, _bytes: usize) {}
+
+    #[inline]
+    fn record_flow_summary(&mut self, _tun: &TunEndpoint, _target: &Target, _closed: bool) {}
+}
+
+struct TcpFirstByteTimingEnabled {
+    start: StdInstant,
+    is_tcp443: bool,
+    outbound_tag: Option<String>,
+    open_duration_ms: u64,
+    first_byte_duration_ms: u64,
+    remote_read_bytes: u64,
+    ms_to_64kib: u64,
+    ms_to_128kib: u64,
+    ms_to_256kib: u64,
+    ms_to_512kib: u64,
+    ms_to_1mib: u64,
+    recorded: bool,
+    milestone_512kib_recorded: bool,
+    milestone_1mib_recorded: bool,
+}
+
+impl TcpFirstByteTimingEnabled {
+    fn new(
+        start: StdInstant,
+        is_tcp443: bool,
+        open_duration_ms: u64,
+        outbound_tag: Option<String>,
+    ) -> Self {
+        Self {
+            start,
+            is_tcp443,
+            outbound_tag,
+            open_duration_ms,
+            first_byte_duration_ms: 0,
+            remote_read_bytes: 0,
+            ms_to_64kib: 0,
+            ms_to_128kib: 0,
+            ms_to_256kib: 0,
+            ms_to_512kib: 0,
+            ms_to_1mib: 0,
+            recorded: false,
+            milestone_512kib_recorded: false,
+            milestone_1mib_recorded: false,
+        }
+    }
+}
+
+impl TcpFirstByteTiming for TcpFirstByteTimingEnabled {
+    #[inline]
+    fn record_first_byte(&mut self, tun: &TunEndpoint, target: &Target) {
+        if self.recorded {
+            return;
+        }
+        let first_byte_duration_ms = elapsed_ms_since(&self.start);
+        self.first_byte_duration_ms = first_byte_duration_ms;
+        tun.record_tcp_first_byte_timing(first_byte_duration_ms, self.is_tcp443);
+        record_tcp_slow_flow_event(
+            tun,
+            target,
+            TunTcpSlowFlowKind::FirstByte,
+            self.open_duration_ms,
+            first_byte_duration_ms,
+        );
+        self.recorded = true;
+    }
+
+    #[inline]
+    fn record_remote_read(&mut self, tun: &TunEndpoint, target: &Target, bytes: usize) {
+        let previous_read_bytes = self.remote_read_bytes;
+        let read_bytes = u64::try_from(bytes).unwrap_or(u64::MAX);
+        self.remote_read_bytes = self.remote_read_bytes.saturating_add(read_bytes);
+
+        if self.ms_to_64kib == 0
+            && previous_read_bytes < TCP_FLOW_SUMMARY_64KIB_BYTES
+            && self.remote_read_bytes >= TCP_FLOW_SUMMARY_64KIB_BYTES
+        {
+            self.ms_to_64kib = elapsed_ms_since(&self.start);
+        }
+        if self.ms_to_128kib == 0
+            && previous_read_bytes < TCP_FLOW_SUMMARY_128KIB_BYTES
+            && self.remote_read_bytes >= TCP_FLOW_SUMMARY_128KIB_BYTES
+        {
+            self.ms_to_128kib = elapsed_ms_since(&self.start);
+        }
+        if self.ms_to_256kib == 0
+            && previous_read_bytes < TCP_FLOW_SUMMARY_256KIB_BYTES
+            && self.remote_read_bytes >= TCP_FLOW_SUMMARY_256KIB_BYTES
+        {
+            self.ms_to_256kib = elapsed_ms_since(&self.start);
+        }
+        if self.ms_to_512kib == 0
+            && previous_read_bytes < TCP_FLOW_SUMMARY_MIN_BYTES
+            && self.remote_read_bytes >= TCP_FLOW_SUMMARY_MIN_BYTES
+        {
+            self.ms_to_512kib = elapsed_ms_since(&self.start);
+        }
+        if self.ms_to_1mib == 0
+            && previous_read_bytes < TCP_FLOW_SUMMARY_MILESTONE_BYTES
+            && self.remote_read_bytes >= TCP_FLOW_SUMMARY_MILESTONE_BYTES
+        {
+            self.ms_to_1mib = elapsed_ms_since(&self.start);
+        }
+
+        if !self.milestone_512kib_recorded && self.remote_read_bytes >= TCP_FLOW_SUMMARY_MIN_BYTES {
+            self.milestone_512kib_recorded = true;
+            self.record_flow_summary(tun, target, false);
+        }
+        if !self.milestone_1mib_recorded
+            && self.remote_read_bytes >= TCP_FLOW_SUMMARY_MILESTONE_BYTES
+        {
+            self.milestone_1mib_recorded = true;
+            self.record_flow_summary(tun, target, false);
+        }
+    }
+
+    #[inline]
+    fn record_flow_summary(&mut self, tun: &TunEndpoint, target: &Target, closed: bool) {
+        record_tcp_flow_summary_event(
+            tun,
+            target,
+            self.outbound_tag.as_deref(),
+            closed,
+            elapsed_ms_since(&self.start),
+            self.open_duration_ms,
+            self.first_byte_duration_ms,
+            self.remote_read_bytes,
+            self.ms_to_64kib,
+            self.ms_to_128kib,
+            self.ms_to_256kib,
+            self.ms_to_512kib,
+            self.ms_to_1mib,
+        );
+    }
+}
+
+trait UdpFirstResponseTiming {
+    fn record_written(&mut self, bytes: usize);
+    fn record_first_response(&mut self, tun: &TunEndpoint, target: &Target, read_bytes: usize);
+}
+
+struct UdpFirstResponseTimingDisabled;
+
+impl UdpFirstResponseTiming for UdpFirstResponseTimingDisabled {
+    #[inline]
+    fn record_written(&mut self, _bytes: usize) {}
+
+    #[inline]
+    fn record_first_response(&mut self, _tun: &TunEndpoint, _target: &Target, _read_bytes: usize) {}
+}
+
+struct UdpFirstResponseTimingEnabled {
+    start: StdInstant,
+    written_bytes: u64,
+    pending_gap_start: Option<StdInstant>,
+    pending_gap_written_bytes: u64,
+    recorded: bool,
+}
+
+impl UdpFirstResponseTimingEnabled {
+    fn new(start: StdInstant) -> Self {
+        Self {
+            start,
+            written_bytes: 0,
+            pending_gap_start: None,
+            pending_gap_written_bytes: 0,
+            recorded: false,
+        }
+    }
+}
+
+impl UdpFirstResponseTiming for UdpFirstResponseTimingEnabled {
+    #[inline]
+    fn record_written(&mut self, bytes: usize) {
+        if !self.recorded {
+            self.written_bytes = self.written_bytes.saturating_add(bytes as u64);
+            return;
+        }
+        if self.pending_gap_start.is_none() {
+            self.pending_gap_start = Some(StdInstant::now());
+        }
+        self.pending_gap_written_bytes =
+            self.pending_gap_written_bytes.saturating_add(bytes as u64);
+    }
+
+    #[inline]
+    fn record_first_response(&mut self, tun: &TunEndpoint, target: &Target, read_bytes: usize) {
+        if !self.recorded {
+            self.recorded = true;
+            record_udp_slow_flow_event(
+                tun,
+                target,
+                elapsed_ms_since(&self.start),
+                self.written_bytes,
+                read_bytes as u64,
+            );
+            return;
+        }
+
+        let Some(gap_start) = self.pending_gap_start.take() else {
+            return;
+        };
+        let written_bytes = self.pending_gap_written_bytes;
+        self.pending_gap_written_bytes = 0;
+        record_udp_response_gap_event(
+            tun,
+            target,
+            elapsed_ms_since(&gap_start),
+            written_bytes,
+            read_bytes as u64,
+        );
+    }
 }
 
 async fn write_stack_batch_to_remote<W>(
@@ -1031,8 +1788,8 @@ where
 
         batch_messages += 1;
         batch_bytes = batch_bytes.saturating_add(data_len);
-        if batch_messages >= BRIDGE_WRITE_BATCH_MAX_MESSAGES
-            || batch_bytes >= BRIDGE_WRITE_BATCH_MAX_BYTES
+        if batch_messages >= TCP_BRIDGE_WRITE_BATCH_MAX_MESSAGES
+            || batch_bytes >= TCP_BRIDGE_WRITE_BATCH_MAX_BYTES
         {
             break;
         }
@@ -1060,10 +1817,15 @@ fn handle_udp_packet(
     match flow_budget_state.admit_udp_flow(flows, key) {
         UdpFlowAdmission::Existing => {}
         UdpFlowAdmission::Admit { sequence } => {
-            let Some(target) = udp_target_from_endpoint(packet.target) else {
+            let Some(target) = context.target_from_endpoint(packet.target, RoutingNetwork::Udp)
+            else {
                 return;
             };
-            let (to_remote, from_stack) = mpsc::channel(BRIDGE_CHANNEL_DEPTH);
+            let udp_timing_start = context
+                .tun_runtime_options
+                .collect_tcp_timings
+                .then(StdInstant::now);
+            let (to_remote, from_stack) = mpsc::channel(UDP_BRIDGE_CHANNEL_DEPTH);
             flows.insert(
                 key,
                 UdpFlow {
@@ -1077,6 +1839,7 @@ fn handle_udp_packet(
                 context.clone(),
                 from_stack,
                 shutdown,
+                udp_timing_start,
             ));
         }
         UdpFlowAdmission::Drop => return,
@@ -1096,6 +1859,7 @@ async fn bridge_udp_flow(
     context: TunRuntimeContext,
     from_stack: mpsc::Receiver<Bytes>,
     shutdown: watch::Receiver<bool>,
+    udp_timing_start: Option<StdInstant>,
 ) {
     let outbound = match select_udp_outbound_for_session(
         &context.config,
@@ -1112,19 +1876,31 @@ async fn bridge_udp_flow(
 
     match outbound {
         UdpOutbound::Freedom => {
-            bridge_udp_freedom_flow(key, context, from_stack, shutdown).await;
+            bridge_udp_freedom_flow(key, target, context, from_stack, shutdown, udp_timing_start)
+                .await;
         }
         UdpOutbound::Vless(outbound) => {
-            bridge_udp_vless_flow(key, target, outbound, context, from_stack, shutdown).await;
+            bridge_udp_vless_flow(
+                key,
+                target,
+                outbound,
+                context,
+                from_stack,
+                shutdown,
+                udp_timing_start,
+            )
+            .await;
         }
     }
 }
 
 async fn bridge_udp_freedom_flow(
     key: UdpFlowKey,
+    target: Target,
     context: TunRuntimeContext,
-    mut from_stack: mpsc::Receiver<Bytes>,
-    mut shutdown: watch::Receiver<bool>,
+    from_stack: mpsc::Receiver<Bytes>,
+    shutdown: watch::Receiver<bool>,
+    udp_timing_start: Option<StdInstant>,
 ) {
     let bind_addr = match key.target.addr {
         IpAddr::V4(_) => SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
@@ -1143,8 +1919,59 @@ async fn bridge_udp_freedom_flow(
         let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
         return;
     }
-    let target = SocketAddr::new(key.target.addr, key.target.port);
+    let target_addr = match resolve_udp_freedom_target(&target, context.dns_resolver.as_ref()).await
+    {
+        Ok(target) => target,
+        Err(_) => {
+            context.tun.record_udp_open_error();
+            let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
+            return;
+        }
+    };
+    context.tun.record_udp_remote_open(target.port == 443);
+    if let Some(start) = udp_timing_start {
+        let mut timing = UdpFirstResponseTimingEnabled::new(start);
+        bridge_udp_freedom_flow_loop(
+            key,
+            target,
+            target_addr,
+            socket,
+            context,
+            from_stack,
+            shutdown,
+            &mut timing,
+        )
+        .await;
+    } else {
+        let mut timing = UdpFirstResponseTimingDisabled;
+        bridge_udp_freedom_flow_loop(
+            key,
+            target,
+            target_addr,
+            socket,
+            context,
+            from_stack,
+            shutdown,
+            &mut timing,
+        )
+        .await;
+    }
+}
+
+async fn bridge_udp_freedom_flow_loop<T>(
+    key: UdpFlowKey,
+    target: Target,
+    target_addr: SocketAddr,
+    socket: UdpSocket,
+    context: TunRuntimeContext,
+    mut from_stack: mpsc::Receiver<Bytes>,
+    mut shutdown: watch::Receiver<bool>,
+    timing: &mut T,
+) where
+    T: UdpFirstResponseTiming,
+{
     let client = key.client.into_endpoint();
+    let response_source = key.target.into_endpoint();
     let mut read_buffer = vec![0; BRIDGE_READ_BUFFER_SIZE];
 
     loop {
@@ -1161,21 +1988,26 @@ async fn bridge_udp_freedom_flow(
                 let Some(payload) = payload else {
                     break;
                 };
-                if socket.send_to(&payload, target).await.is_err() {
+                let payload_len = payload.len();
+                if socket.send_to(&payload, target_addr).await.is_err() {
                     context.tun.record_udp_remote_write_error();
                     break;
                 }
+                context.tun.record_udp_remote_written(payload_len);
+                timing.record_written(payload_len);
             }
             received = socket.recv_from(&mut read_buffer) => {
-                let Ok((len, source)) = received else {
+                let Ok((len, _source)) = received else {
                     context.tun.record_udp_remote_read_error();
                     break;
                 };
+                timing.record_first_response(context.tun.as_ref(), &target, len);
+                context.tun.record_udp_remote_read(len);
                 if context
                     .stack_tx
                     .send(StackEvent::UdpDatagram {
                         client,
-                        source: IpEndpoint::new(IpAddress::from(source.ip()), source.port()),
+                        source: response_source,
                         payload: Bytes::copy_from_slice(&read_buffer[..len]),
                     })
                     .await
@@ -1190,19 +2022,34 @@ async fn bridge_udp_freedom_flow(
     let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
 }
 
+async fn resolve_udp_freedom_target(
+    target: &Target,
+    dns_resolver: &dyn DnsResolver,
+) -> Result<SocketAddr, crate::CoreError> {
+    match &target.addr {
+        RoutingTargetAddr::Ip(ip) => Ok(SocketAddr::new(*ip, target.port)),
+        RoutingTargetAddr::Domain(domain) => Ok(dns_resolver.resolve(domain, target.port).await?),
+    }
+}
+
 async fn bridge_udp_vless_flow(
     key: UdpFlowKey,
     target: Target,
     outbound: Box<VlessTcpOutbound>,
     context: TunRuntimeContext,
-    mut from_stack: mpsc::Receiver<Bytes>,
-    mut shutdown: watch::Receiver<bool>,
+    from_stack: mpsc::Receiver<Bytes>,
+    shutdown: watch::Receiver<bool>,
+    udp_timing_start: Option<StdInstant>,
 ) {
-    let (stream, framing) = match open_vless_udp_stream_with_resolver_and_dialer(
+    let options = VlessUdpOpenOptions {
+        reject_udp443_for_regular_vision: context.tun_runtime_options.block_quic,
+    };
+    let (stream, framing) = match open_vless_udp_stream_with_resolver_dialer_and_options(
         &outbound,
         &target,
         context.dns_resolver.as_ref(),
         &context.transport_dialer,
+        options,
     )
     .await
     {
@@ -1216,8 +2063,55 @@ async fn bridge_udp_vless_flow(
             return;
         }
     };
+    context.tun.record_udp_remote_open(target.port == 443);
 
     let (mut remote_reader, mut remote_writer) = tokio::io::split(stream);
+    if let Some(start) = udp_timing_start {
+        let mut timing = UdpFirstResponseTimingEnabled::new(start);
+        bridge_udp_vless_flow_loop(
+            key,
+            target,
+            context,
+            from_stack,
+            shutdown,
+            framing,
+            &mut remote_reader,
+            &mut remote_writer,
+            &mut timing,
+        )
+        .await;
+    } else {
+        let mut timing = UdpFirstResponseTimingDisabled;
+        bridge_udp_vless_flow_loop(
+            key,
+            target,
+            context,
+            from_stack,
+            shutdown,
+            framing,
+            &mut remote_reader,
+            &mut remote_writer,
+            &mut timing,
+        )
+        .await;
+    }
+}
+
+async fn bridge_udp_vless_flow_loop<R, W, T>(
+    key: UdpFlowKey,
+    target: Target,
+    context: TunRuntimeContext,
+    mut from_stack: mpsc::Receiver<Bytes>,
+    mut shutdown: watch::Receiver<bool>,
+    framing: VlessUdpFraming,
+    remote_reader: &mut R,
+    remote_writer: &mut W,
+    timing: &mut T,
+) where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+    T: UdpFirstResponseTiming,
+{
     let fallback_source = key.target.into_endpoint();
     let client = key.client.into_endpoint();
     let global_id = udp_flow_global_id(key);
@@ -1237,6 +2131,7 @@ async fn bridge_udp_vless_flow(
                 let Some(payload) = payload else {
                     break;
                 };
+                let payload_len = payload.len();
                 let frame = match framing {
                     VlessUdpFraming::LengthPrefixed => encode_udp_packet(&payload),
                     VlessUdpFraming::Xudp => {
@@ -1259,8 +2154,10 @@ async fn bridge_udp_vless_flow(
                     context.tun.record_udp_remote_write_error();
                     break;
                 }
+                context.tun.record_udp_remote_written(payload_len);
+                timing.record_written(payload_len);
             }
-            packet = read_vless_udp_response(&mut remote_reader, framing, fallback_source) => {
+            packet = read_vless_udp_response(remote_reader, framing, fallback_source) => {
                 let (source, payload) = match packet {
                     Ok(packet) => packet,
                     Err(error) => {
@@ -1272,6 +2169,8 @@ async fn bridge_udp_vless_flow(
                         break;
                     }
                 };
+                timing.record_first_response(context.tun.as_ref(), &target, payload.len());
+                context.tun.record_udp_remote_read(payload.len());
                 if context
                     .stack_tx
                     .send(StackEvent::UdpDatagram {
@@ -1310,19 +2209,55 @@ fn ensure_tcp_listener(
     }
 }
 
-fn is_likely_quic_udp443_packet(packet: &[u8]) -> bool {
-    udp_payload_for_destination(packet, 443).is_some_and(is_likely_quic_long_header)
+fn record_quic_blocked_packet(
+    tun: &TunEndpoint,
+    packet: &[u8],
+    collect_details: bool,
+) -> Option<Bytes> {
+    let blocked = quic_udp443_packet_view(packet)?;
+    let reply = icmp_port_unreachable_reply(packet)?;
+
+    tun.record_udp_quic_blocked();
+    if collect_details {
+        tun.record_udp_quic_blocked_event(TunUdpQuicBlockedEvent {
+            target: ip_endpoint_target_label(blocked.target),
+            bytes: blocked.payload.len() as u64,
+        });
+    }
+    Some(reply)
 }
 
-fn udp_payload_for_destination(packet: &[u8], destination_port: u16) -> Option<&[u8]> {
+fn quic_udp443_packet_view(packet: &[u8]) -> Option<UdpPacketView<'_>> {
+    udp_packet_view_for_destination(packet, 443)
+        .filter(|blocked| is_likely_quic_long_header(blocked.payload))
+}
+
+#[cfg(test)]
+fn is_likely_quic_udp443_packet(packet: &[u8]) -> bool {
+    quic_udp443_packet_view(packet).is_some()
+}
+
+#[derive(Debug, Clone, Copy)]
+struct UdpPacketView<'a> {
+    target: IpEndpoint,
+    payload: &'a [u8],
+}
+
+fn udp_packet_view_for_destination(
+    packet: &[u8],
+    destination_port: u16,
+) -> Option<UdpPacketView<'_>> {
     match packet.first()? >> 4 {
-        4 => ipv4_udp_payload_for_destination(packet, destination_port),
-        6 => ipv6_udp_payload_for_destination(packet, destination_port),
+        4 => ipv4_udp_packet_view_for_destination(packet, destination_port),
+        6 => ipv6_udp_packet_view_for_destination(packet, destination_port),
         _ => None,
     }
 }
 
-fn ipv4_udp_payload_for_destination(packet: &[u8], destination_port: u16) -> Option<&[u8]> {
+fn ipv4_udp_packet_view_for_destination(
+    packet: &[u8],
+    destination_port: u16,
+) -> Option<UdpPacketView<'_>> {
     if packet.len() < 28 {
         return None;
     }
@@ -1351,10 +2286,22 @@ fn ipv4_udp_payload_for_destination(packet: &[u8], destination_port: u16) -> Opt
         return None;
     }
 
-    Some(&udp[8..udp_len])
+    let destination = Ipv4Addr::new(packet[16], packet[17], packet[18], packet[19]);
+    Some(UdpPacketView {
+        target: IpEndpoint::new(IpAddress::Ipv4(destination), destination_port),
+        payload: &udp[8..udp_len],
+    })
 }
 
-fn ipv6_udp_payload_for_destination(packet: &[u8], destination_port: u16) -> Option<&[u8]> {
+#[cfg(test)]
+fn ipv4_udp_payload_for_destination(packet: &[u8], destination_port: u16) -> Option<&[u8]> {
+    ipv4_udp_packet_view_for_destination(packet, destination_port).map(|view| view.payload)
+}
+
+fn ipv6_udp_packet_view_for_destination(
+    packet: &[u8],
+    destination_port: u16,
+) -> Option<UdpPacketView<'_>> {
     if packet.len() < 48 || packet[6] != UDP_PROTOCOL {
         return None;
     }
@@ -1373,7 +2320,14 @@ fn ipv6_udp_payload_for_destination(packet: &[u8], destination_port: u16) -> Opt
         return None;
     }
 
-    Some(&udp[8..udp_len])
+    let destination = <[u8; 16]>::try_from(&packet[24..40]).ok()?;
+    Some(UdpPacketView {
+        target: IpEndpoint::new(
+            IpAddress::Ipv6(Ipv6Addr::from(destination)),
+            destination_port,
+        ),
+        payload: &udp[8..udp_len],
+    })
 }
 
 fn is_likely_quic_long_header(payload: &[u8]) -> bool {
@@ -1667,6 +2621,14 @@ fn icmp_echo_reply(packet: &[u8]) -> Option<Bytes> {
     }
 }
 
+fn icmp_port_unreachable_reply(packet: &[u8]) -> Option<Bytes> {
+    match packet.first()? >> 4 {
+        4 => ipv4_icmp_port_unreachable_reply(packet),
+        6 => ipv6_icmp_port_unreachable_reply(packet),
+        _ => None,
+    }
+}
+
 fn ipv4_icmp_echo_reply(packet: &[u8]) -> Option<Bytes> {
     if packet.len() < 28 {
         return None;
@@ -1753,6 +2715,89 @@ fn ipv6_icmp_echo_reply(packet: &[u8]) -> Option<Bytes> {
     reply[40] = 129;
     reply[42] = 0;
     reply[43] = 0;
+    let checksum = ipv6_transport_checksum(destination, source, ICMPV6_PROTOCOL, &reply[40..]);
+    reply[42..44].copy_from_slice(&checksum.to_be_bytes());
+
+    Some(Bytes::from(reply))
+}
+
+fn ipv4_icmp_port_unreachable_reply(packet: &[u8]) -> Option<Bytes> {
+    if packet.len() < 28 {
+        return None;
+    }
+
+    let header_len = usize::from(packet[0] & 0x0f) * 4;
+    if header_len < 20 || packet.len() < header_len + 8 || packet[9] != UDP_PROTOCOL {
+        return None;
+    }
+
+    let fragment = u16::from_be_bytes([packet[6], packet[7]]);
+    if fragment & 0x3fff != 0 {
+        return None;
+    }
+
+    let original_len = usize::from(u16::from_be_bytes([packet[2], packet[3]]));
+    if original_len < header_len + 8 || packet.len() < original_len {
+        return None;
+    }
+
+    let quote_len = (header_len + 8).min(original_len);
+    let icmp_len = 8 + quote_len;
+    let total_len = 20 + icmp_len;
+    let mut reply = vec![0; total_len];
+    reply[0] = 0x45;
+    reply[2..4].copy_from_slice(&(total_len as u16).to_be_bytes());
+    reply[8] = 64;
+    reply[9] = ICMPV4_PROTOCOL;
+    reply[12..16].copy_from_slice(&packet[16..20]);
+    reply[16..20].copy_from_slice(&packet[12..16]);
+
+    {
+        let icmp = &mut reply[20..];
+        icmp[0] = 3;
+        icmp[1] = 3;
+        icmp[8..].copy_from_slice(&packet[..quote_len]);
+        let checksum = internet_checksum(icmp);
+        icmp[2..4].copy_from_slice(&checksum.to_be_bytes());
+    }
+
+    let ip_checksum = internet_checksum(&reply[..20]);
+    reply[10..12].copy_from_slice(&ip_checksum.to_be_bytes());
+
+    Some(Bytes::from(reply))
+}
+
+fn ipv6_icmp_port_unreachable_reply(packet: &[u8]) -> Option<Bytes> {
+    if packet.len() < 48 || packet[6] != UDP_PROTOCOL {
+        return None;
+    }
+
+    let payload_len = usize::from(u16::from_be_bytes([packet[4], packet[5]]));
+    if payload_len < 8 || packet.len() < 40 + payload_len {
+        return None;
+    }
+
+    let source = <[u8; 16]>::try_from(&packet[8..24]).ok()?;
+    let destination = <[u8; 16]>::try_from(&packet[24..40]).ok()?;
+    let original_len = 40 + payload_len;
+    let quote_len = original_len.min(1232);
+    let icmp_len = 8 + quote_len;
+    let total_len = 40 + icmp_len;
+    let mut reply = vec![0; total_len];
+    reply[0] = 0x60;
+    reply[4..6].copy_from_slice(&(icmp_len as u16).to_be_bytes());
+    reply[6] = ICMPV6_PROTOCOL;
+    reply[7] = 64;
+    reply[8..24].copy_from_slice(&destination);
+    reply[24..40].copy_from_slice(&source);
+
+    {
+        let icmp = &mut reply[40..];
+        icmp[0] = 1;
+        icmp[1] = 4;
+        icmp[8..].copy_from_slice(&packet[..quote_len]);
+    }
+
     let checksum = ipv6_transport_checksum(destination, source, ICMPV6_PROTOCOL, &reply[40..]);
     reply[42..44].copy_from_slice(&checksum.to_be_bytes());
 
@@ -1943,6 +2988,7 @@ mod tests {
     use std::pin::Pin;
     use std::task::{Context, Poll};
     use tokio::io::AsyncWrite;
+    use xray_tun::TunConfig;
 
     const NORMAL_TCP_REMOTE_PENDING_LIMIT: usize = 2 * 1024 * 1024;
     const PRESSURE_TCP_REMOTE_PENDING_LIMIT: usize = 1024 * 1024;
@@ -1977,9 +3023,287 @@ mod tests {
         TcpRemoteBufferState::new(MOBILE_TCP_REMOTE_BUFFER_POLICY)
     }
 
+    #[test]
+    fn tcp_slow_flow_event_records_only_slow_tcp443_targets() {
+        let tun = TunEndpoint::new(xray_tun::TunConfig {
+            mtu: 1500,
+            queue_depth: 1,
+        });
+        let tcp443 = Target::new(
+            RoutingTargetAddr::Domain("speedtest.example".to_owned()),
+            443,
+            RoutingNetwork::Tcp,
+        );
+        let tcp8443 = Target::new(
+            RoutingTargetAddr::Domain("speedtest.example".to_owned()),
+            8443,
+            RoutingNetwork::Tcp,
+        );
+
+        record_tcp_slow_flow_event(
+            &tun,
+            &tcp443,
+            TunTcpSlowFlowKind::Open,
+            TCP_SLOW_FLOW_THRESHOLD_MS,
+            0,
+        );
+        record_tcp_slow_flow_event(
+            &tun,
+            &tcp8443,
+            TunTcpSlowFlowKind::Open,
+            TCP_SLOW_FLOW_THRESHOLD_MS + 1,
+            0,
+        );
+        record_tcp_slow_flow_event(
+            &tun,
+            &tcp443,
+            TunTcpSlowFlowKind::FirstByte,
+            450,
+            TCP_SLOW_FLOW_THRESHOLD_MS + 1,
+        );
+
+        assert_eq!(
+            tun.poll_tcp_slow_flow_event(),
+            Some(TunTcpSlowFlowEvent {
+                kind: TunTcpSlowFlowKind::FirstByte,
+                target: "speedtest.example:443".to_owned(),
+                open_duration_ms: 450,
+                first_byte_duration_ms: TCP_SLOW_FLOW_THRESHOLD_MS + 1,
+            })
+        );
+        assert_eq!(tun.poll_tcp_slow_flow_event(), None);
+    }
+
+    #[test]
+    fn tcp_slow_flow_event_uses_500ms_threshold_for_tcp443_targets() {
+        let tun = TunEndpoint::new(xray_tun::TunConfig {
+            mtu: 1500,
+            queue_depth: 1,
+        });
+        let tcp443 = Target::new(
+            RoutingTargetAddr::Domain("speedtest.example".to_owned()),
+            443,
+            RoutingNetwork::Tcp,
+        );
+
+        record_tcp_slow_flow_event(&tun, &tcp443, TunTcpSlowFlowKind::Open, 500, 0);
+        assert_eq!(tun.poll_tcp_slow_flow_event(), None);
+
+        record_tcp_slow_flow_event(&tun, &tcp443, TunTcpSlowFlowKind::Open, 501, 0);
+        assert_eq!(
+            tun.poll_tcp_slow_flow_event(),
+            Some(TunTcpSlowFlowEvent {
+                kind: TunTcpSlowFlowKind::Open,
+                target: "speedtest.example:443".to_owned(),
+                open_duration_ms: 501,
+                first_byte_duration_ms: 0,
+            })
+        );
+        assert_eq!(tun.poll_tcp_slow_flow_event(), None);
+    }
+
+    #[test]
+    fn tcp_flow_summary_event_records_only_large_tcp443_flows() {
+        let tun = TunEndpoint::new(xray_tun::TunConfig {
+            mtu: 1500,
+            queue_depth: 1,
+        });
+        let tcp443 = Target::new(
+            RoutingTargetAddr::Domain("speedtest.example".to_owned()),
+            443,
+            RoutingNetwork::Tcp,
+        );
+        let tcp8443 = Target::new(
+            RoutingTargetAddr::Domain("speedtest.example".to_owned()),
+            8443,
+            RoutingNetwork::Tcp,
+        );
+
+        record_tcp_flow_summary_event(
+            &tun,
+            &tcp8443,
+            Some("proxy"),
+            true,
+            3_000,
+            300,
+            500,
+            TCP_FLOW_SUMMARY_MIN_BYTES,
+            700,
+            750,
+            800,
+            900,
+            0,
+        );
+        record_tcp_flow_summary_event(
+            &tun,
+            &tcp443,
+            Some("proxy"),
+            true,
+            3_000,
+            300,
+            500,
+            TCP_FLOW_SUMMARY_MIN_BYTES - 1,
+            700,
+            750,
+            800,
+            900,
+            0,
+        );
+        record_tcp_flow_summary_event(
+            &tun,
+            &tcp443,
+            Some("proxy"),
+            true,
+            3_288,
+            320,
+            650,
+            TCP_FLOW_SUMMARY_MIN_BYTES,
+            850,
+            1_050,
+            1_400,
+            1_900,
+            0,
+        );
+
+        assert_eq!(
+            tun.poll_tcp_flow_summary_event(),
+            Some(TunTcpFlowSummaryEvent {
+                target: "speedtest.example:443".to_owned(),
+                outbound_tag: Some("proxy".to_owned()),
+                closed: true,
+                duration_ms: 3_288,
+                open_duration_ms: 320,
+                first_byte_duration_ms: 650,
+                remote_read_bytes: TCP_FLOW_SUMMARY_MIN_BYTES,
+                ms_to_64kib: 850,
+                ms_to_128kib: 1_050,
+                ms_to_256kib: 1_400,
+                ms_to_512kib: 1_900,
+                ms_to_1mib: 0,
+            })
+        );
+        assert_eq!(tun.poll_tcp_flow_summary_event(), None);
+    }
+
+    #[test]
+    fn tcp_flow_summary_timing_records_early_thresholds_and_outbound_tag() {
+        let tun = TunEndpoint::new(xray_tun::TunConfig {
+            mtu: 1500,
+            queue_depth: 1,
+        });
+        let target = Target::new(
+            RoutingTargetAddr::Domain("speedtest.example".to_owned()),
+            443,
+            RoutingNetwork::Tcp,
+        );
+        let start = StdInstant::now() - Duration::from_millis(100);
+        let mut timing = TcpFirstByteTimingEnabled::new(start, true, 30, Some("proxy".to_owned()));
+
+        timing.record_first_byte(&tun, &target);
+        timing.record_remote_read(&tun, &target, TCP_FLOW_SUMMARY_64KIB_BYTES as usize);
+        timing.record_remote_read(&tun, &target, TCP_FLOW_SUMMARY_64KIB_BYTES as usize);
+        timing.record_remote_read(
+            &tun,
+            &target,
+            (TCP_FLOW_SUMMARY_MIN_BYTES - TCP_FLOW_SUMMARY_128KIB_BYTES) as usize,
+        );
+
+        let Some(summary) = tun.poll_tcp_flow_summary_event() else {
+            panic!("expected TCP flow summary after crossing 512KiB");
+        };
+        assert_eq!(summary.target, "speedtest.example:443");
+        assert_eq!(summary.outbound_tag.as_deref(), Some("proxy"));
+        assert!(!summary.closed);
+        assert_eq!(summary.remote_read_bytes, TCP_FLOW_SUMMARY_MIN_BYTES);
+        assert!(summary.ms_to_64kib >= 100);
+        assert!(summary.ms_to_128kib >= 100);
+        assert!(summary.ms_to_256kib >= 100);
+        assert!(summary.ms_to_512kib >= 100);
+        assert_eq!(summary.ms_to_1mib, 0);
+        assert_eq!(tun.poll_tcp_flow_summary_event(), None);
+    }
+
+    #[test]
+    fn udp_slow_flow_event_records_only_slow_udp443_targets() {
+        let tun = TunEndpoint::new(xray_tun::TunConfig {
+            mtu: 1500,
+            queue_depth: 1,
+        });
+        let udp443 = Target::new(
+            RoutingTargetAddr::Domain("speedtest.example".to_owned()),
+            443,
+            RoutingNetwork::Udp,
+        );
+        let udp8443 = Target::new(
+            RoutingTargetAddr::Domain("speedtest.example".to_owned()),
+            8443,
+            RoutingNetwork::Udp,
+        );
+
+        record_udp_slow_flow_event(&tun, &udp443, UDP_SLOW_FLOW_THRESHOLD_MS, 1_200, 900);
+        record_udp_slow_flow_event(&tun, &udp8443, UDP_SLOW_FLOW_THRESHOLD_MS + 1, 1_200, 900);
+        record_udp_slow_flow_event(&tun, &udp443, UDP_SLOW_FLOW_THRESHOLD_MS + 1, 2_400, 1_400);
+
+        assert_eq!(
+            tun.poll_udp_slow_flow_event(),
+            Some(TunUdpSlowFlowEvent {
+                target: "speedtest.example:443".to_owned(),
+                first_response_duration_ms: UDP_SLOW_FLOW_THRESHOLD_MS + 1,
+                written_bytes: 2_400,
+                read_bytes: 1_400,
+            })
+        );
+        assert_eq!(tun.poll_udp_slow_flow_event(), None);
+    }
+
+    #[test]
+    fn udp_response_gap_event_records_only_slow_udp443_targets() {
+        let tun = TunEndpoint::new(xray_tun::TunConfig {
+            mtu: 1500,
+            queue_depth: 1,
+        });
+        let udp443 = Target::new(
+            RoutingTargetAddr::Domain("speedtest.example".to_owned()),
+            443,
+            RoutingNetwork::Udp,
+        );
+        let udp8443 = Target::new(
+            RoutingTargetAddr::Domain("speedtest.example".to_owned()),
+            8443,
+            RoutingNetwork::Udp,
+        );
+
+        record_udp_response_gap_event(&tun, &udp443, UDP_RESPONSE_GAP_THRESHOLD_MS, 1_200, 900);
+        record_udp_response_gap_event(
+            &tun,
+            &udp8443,
+            UDP_RESPONSE_GAP_THRESHOLD_MS + 1,
+            1_200,
+            900,
+        );
+        record_udp_response_gap_event(
+            &tun,
+            &udp443,
+            UDP_RESPONSE_GAP_THRESHOLD_MS + 1,
+            2_400,
+            1_400,
+        );
+
+        assert_eq!(
+            tun.poll_udp_response_gap_event(),
+            Some(TunUdpResponseGapEvent {
+                target: "speedtest.example:443".to_owned(),
+                response_gap_duration_ms: UDP_RESPONSE_GAP_THRESHOLD_MS + 1,
+                written_bytes: 2_400,
+                read_bytes: 1_400,
+            })
+        );
+        assert_eq!(tun.poll_udp_response_gap_event(), None);
+    }
+
     #[tokio::test]
     async fn stack_to_remote_write_batches_queued_chunks_before_flushing() {
-        let (tx, mut rx) = mpsc::channel(BRIDGE_CHANNEL_DEPTH);
+        let (tx, mut rx) = mpsc::channel(TCP_BRIDGE_CHANNEL_DEPTH);
         tx.try_send(Bytes::from_static(b"two")).unwrap();
         tx.try_send(Bytes::from_static(b"three")).unwrap();
         let mut writer = CountingWrite::default();
@@ -2007,8 +3331,8 @@ mod tests {
 
     #[tokio::test]
     async fn stack_to_remote_write_batch_drains_a_full_channel_before_flushing() {
-        let (tx, mut rx) = mpsc::channel(BRIDGE_CHANNEL_DEPTH);
-        for _ in 0..BRIDGE_CHANNEL_DEPTH {
+        let (tx, mut rx) = mpsc::channel(TCP_BRIDGE_CHANNEL_DEPTH);
+        for _ in 0..TCP_BRIDGE_CHANNEL_DEPTH {
             tx.try_send(Bytes::from_static(&[0x5a; 1024])).unwrap();
         }
         let mut writer = CountingWrite::default();
@@ -2030,12 +3354,65 @@ mod tests {
         assert_eq!(stats.tcp_remote_write_batches, 1);
         assert_eq!(
             stats.tcp_remote_write_batch_messages,
-            BRIDGE_CHANNEL_DEPTH as u64 + 1
+            TCP_BRIDGE_CHANNEL_DEPTH as u64 + 1
         );
         assert_eq!(
             stats.tcp_remote_write_batch_max_bytes,
-            ((BRIDGE_CHANNEL_DEPTH + 1) * 1024) as u64
+            ((TCP_BRIDGE_CHANNEL_DEPTH + 1) * 1024) as u64
         );
+        assert_eq!(writer.flushes, 1);
+    }
+
+    #[tokio::test]
+    async fn stack_to_remote_write_batch_drains_larger_tcp_upload_burst_before_flushing() {
+        let expected_queued_messages = 128usize;
+        let (tx, mut rx) = mpsc::channel(expected_queued_messages);
+        for _ in 0..expected_queued_messages {
+            tx.try_send(Bytes::from_static(&[0x5a; 1024])).unwrap();
+        }
+        let mut writer = CountingWrite::default();
+        let tun = TunEndpoint::new(xray_tun::TunConfig {
+            mtu: 1500,
+            queue_depth: 1,
+        });
+
+        write_stack_batch_to_remote(
+            &mut writer,
+            Bytes::from_static(&[0x7b; 1024]),
+            &mut rx,
+            &tun,
+        )
+        .await
+        .unwrap();
+
+        let stats = tun.stats().await;
+        assert_eq!(stats.tcp_remote_write_batches, 1);
+        assert_eq!(stats.tcp_remote_write_batch_messages, 129);
+        assert_eq!(stats.tcp_remote_write_batch_max_bytes, 129 * 1024);
+        assert_eq!(writer.flushes, 1);
+    }
+
+    #[tokio::test]
+    async fn stack_to_remote_write_batch_allows_two_mib_before_flushing() {
+        let chunk = Bytes::from_static(&[0x5a; 16 * 1024]);
+        let (tx, mut rx) = mpsc::channel(TCP_BRIDGE_CHANNEL_DEPTH);
+        for _ in 0..TCP_BRIDGE_CHANNEL_DEPTH {
+            tx.try_send(chunk.clone()).unwrap();
+        }
+        let mut writer = CountingWrite::default();
+        let tun = TunEndpoint::new(xray_tun::TunConfig {
+            mtu: 1500,
+            queue_depth: 1,
+        });
+
+        write_stack_batch_to_remote(&mut writer, chunk, &mut rx, &tun)
+            .await
+            .unwrap();
+
+        let stats = tun.stats().await;
+        assert_eq!(stats.tcp_remote_write_batches, 1);
+        assert_eq!(stats.tcp_remote_write_batch_messages, 128);
+        assert_eq!(stats.tcp_remote_write_batch_max_bytes, 2 * 1024 * 1024);
         assert_eq!(writer.flushes, 1);
     }
 
@@ -2197,6 +3574,17 @@ mod tests {
     fn mobile_flow_budget_keeps_udp_capacity_high_but_bounded() {
         assert_eq!(MOBILE_FLOW_BUDGET_POLICY.udp.max_active_flows, 256);
         assert_eq!(DESKTOP_FLOW_BUDGET_POLICY.udp.max_active_flows, 1024);
+    }
+
+    #[test]
+    fn low_memory_profile_reduces_tun_flow_budgets() {
+        let policy = flow_budget_policy_for_runtime_options(TunRuntimeOptions::with_profile(
+            TunRuntimeProfile::LowMemory,
+        ));
+
+        assert_eq!(policy.udp.max_active_flows, 128);
+        assert_eq!(policy.tcp_remote.normal_per_flow_bytes, 1024 * 1024);
+        assert_eq!(policy.tcp_remote.hard_total_bytes, 20 * 1024 * 1024);
     }
 
     #[test]
@@ -2488,6 +3876,111 @@ mod tests {
     }
 
     #[test]
+    fn remote_tcp_drain_polls_queued_ack_after_send_buffer_stalls() {
+        let client_ip = Ipv4Addr::new(10, 10, 0, 2);
+        let server_ip = Ipv4Addr::new(203, 0, 113, 7);
+        let client_port = 49_152;
+        let server_port = 443;
+        let client_seq = 1_000u32;
+        let endpoint = IpEndpoint::new(IpAddress::Ipv4(server_ip), server_port);
+
+        let mut device = PacketDevice::new(1500);
+        let mut iface_config = InterfaceConfig::new(HardwareAddress::Ip);
+        iface_config.random_seed = DEFAULT_RANDOM_SEED;
+        let mut iface = Interface::new(iface_config, &mut device, Instant::now());
+        iface.set_any_ip(true);
+        let mut sockets = SocketSet::new(Vec::new());
+        let mut listeners = HashMap::new();
+        ensure_tcp_listener(&mut sockets, &mut listeners, endpoint);
+        let handle = *listeners.get(&endpoint).unwrap();
+
+        device.push_inbound(Bytes::from(build_ipv4_tcp_packet(
+            client_ip,
+            client_port,
+            server_ip,
+            server_port,
+            client_seq,
+            0,
+            TCP_SYN,
+            &[],
+        )));
+        iface.poll(Instant::now(), &mut device, &mut sockets);
+        let syn_ack = device.pop_outbound().unwrap();
+        let server_seq = ipv4_tcp_sequence(&syn_ack).unwrap();
+
+        device.push_inbound(Bytes::from(build_ipv4_tcp_packet(
+            client_ip,
+            client_port,
+            server_ip,
+            server_port,
+            client_seq + 1,
+            server_seq + 1,
+            TCP_ACK,
+            &[],
+        )));
+        iface.poll(Instant::now(), &mut device, &mut sockets);
+        while device.pop_outbound().is_some() {}
+
+        let (to_remote, _from_stack) = mpsc::channel(1);
+        let mut pending_remote = VecDeque::new();
+        pending_remote.push_back(Bytes::from(vec![0x5a; TCP_BUFFER_SIZE]));
+        let mut flow_budget_state = test_flow_budget(256);
+        flow_budget_state.record_pending_remote_enqueue(0, TCP_BUFFER_SIZE);
+        let mut tcp_flows = HashMap::new();
+        tcp_flows.insert(
+            handle,
+            TcpFlow {
+                to_remote,
+                pending_remote,
+                pending_remote_bytes: TCP_BUFFER_SIZE,
+                remote_closed: false,
+            },
+        );
+
+        assert_eq!(
+            write_remote_data_to_sockets(&mut sockets, &mut tcp_flows, &mut flow_budget_state),
+            TCP_BUFFER_SIZE
+        );
+        iface.poll(Instant::now(), &mut device, &mut sockets);
+
+        let mut sent_payload_bytes = 0usize;
+        while let Some(packet) = device.pop_outbound() {
+            sent_payload_bytes += ipv4_tcp_payload_len(&packet).unwrap_or(0);
+        }
+        assert!(sent_payload_bytes >= 1024);
+
+        {
+            let flow = tcp_flows.get_mut(&handle).unwrap();
+            flow.pending_remote.push_back(Bytes::from(vec![0x7b; 1024]));
+            flow.pending_remote_bytes = 1024;
+        }
+        flow_budget_state.record_pending_remote_enqueue(0, 1024);
+        device.push_inbound(Bytes::from(build_ipv4_tcp_packet(
+            client_ip,
+            client_port,
+            server_ip,
+            server_port,
+            client_seq + 1,
+            server_seq + 1 + sent_payload_bytes as u32,
+            TCP_ACK,
+            &[],
+        )));
+
+        drain_tcp_remote_data_to_sockets(
+            &mut iface,
+            &mut device,
+            &mut sockets,
+            &mut tcp_flows,
+            &mut flow_budget_state,
+        );
+
+        let flow = tcp_flows.get(&handle).unwrap();
+        assert!(flow.pending_remote.is_empty());
+        assert_eq!(flow.pending_remote_bytes, 0);
+        assert_eq!(flow_budget_state.pending_total_bytes(), 0);
+    }
+
+    #[test]
     fn quic_blocker_detects_udp443_long_header() {
         let packet = build_ipv4_udp_packet(
             Ipv4Addr::new(10, 10, 0, 2),
@@ -2499,6 +3992,99 @@ mod tests {
         .unwrap();
 
         assert!(is_likely_quic_udp443_packet(&packet));
+    }
+
+    #[tokio::test]
+    async fn quic_blocker_records_target_when_detail_collection_enabled() {
+        let tun = TunEndpoint::new(TunConfig {
+            mtu: 1500,
+            queue_depth: 1,
+        });
+        let packet = build_ipv4_udp_packet(
+            Ipv4Addr::new(10, 10, 0, 2),
+            49_152,
+            Ipv4Addr::new(203, 0, 113, 7),
+            443,
+            likely_quic_long_header_payload(),
+        )
+        .unwrap();
+
+        let reply = record_quic_blocked_packet(&tun, &packet, true)
+            .expect("blocked QUIC packet should produce an ICMP reject");
+
+        assert_eq!(tun.stats().await.udp_quic_blocked_packets, 1);
+        assert_ipv4_icmp_port_unreachable(
+            &reply,
+            Ipv4Addr::new(203, 0, 113, 7),
+            Ipv4Addr::new(10, 10, 0, 2),
+            &packet,
+        );
+        assert_eq!(
+            tun.poll_udp_quic_blocked_event(),
+            Some(TunUdpQuicBlockedEvent {
+                target: "203.0.113.7:443".to_owned(),
+                bytes: likely_quic_long_header_payload().len() as u64,
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn quic_blocker_skips_target_collection_when_disabled() {
+        let tun = TunEndpoint::new(TunConfig {
+            mtu: 1500,
+            queue_depth: 1,
+        });
+        let packet = build_ipv4_udp_packet(
+            Ipv4Addr::new(10, 10, 0, 2),
+            49_152,
+            Ipv4Addr::new(203, 0, 113, 7),
+            443,
+            likely_quic_long_header_payload(),
+        )
+        .unwrap();
+
+        let reply = record_quic_blocked_packet(&tun, &packet, false)
+            .expect("blocked QUIC packet should produce an ICMP reject");
+
+        assert_eq!(tun.stats().await.udp_quic_blocked_packets, 1);
+        assert_ipv4_icmp_port_unreachable(
+            &reply,
+            Ipv4Addr::new(203, 0, 113, 7),
+            Ipv4Addr::new(10, 10, 0, 2),
+            &packet,
+        );
+        assert_eq!(tun.poll_udp_quic_blocked_event(), None);
+    }
+
+    #[tokio::test]
+    async fn quic_blocker_rejects_ipv6_quic_with_icmpv6_port_unreachable() {
+        let tun = TunEndpoint::new(TunConfig {
+            mtu: 1500,
+            queue_depth: 1,
+        });
+        let source = Ipv6Addr::LOCALHOST;
+        let destination = Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 7);
+        let packet = build_ipv6_udp_packet(
+            source,
+            49_152,
+            destination,
+            443,
+            likely_quic_long_header_payload(),
+        )
+        .unwrap();
+
+        let reply = record_quic_blocked_packet(&tun, &packet, true)
+            .expect("blocked IPv6 QUIC packet should produce an ICMPv6 reject");
+
+        assert_eq!(tun.stats().await.udp_quic_blocked_packets, 1);
+        assert_ipv6_icmp_port_unreachable(&reply, destination, source, &packet);
+        assert_eq!(
+            tun.poll_udp_quic_blocked_event(),
+            Some(TunUdpQuicBlockedEvent {
+                target: "[2001:db8::7]:443".to_owned(),
+                bytes: likely_quic_long_header_payload().len() as u64,
+            })
+        );
     }
 
     #[test]
@@ -2529,11 +4115,273 @@ mod tests {
         assert!(!is_likely_quic_udp443_packet(&packet));
     }
 
+    #[test]
+    fn fake_ip_mapper_allocates_stable_ipv4_and_restores_domain_target() {
+        let mut mapper = FakeIpMapper::new(FakeIpRuntimeConfig {
+            ipv4_network: Ipv4Addr::new(198, 18, 0, 0),
+            ipv4_prefix: 15,
+            ttl: 60,
+        })
+        .unwrap();
+
+        let first = mapper.fake_ipv4_for_domain("Example.COM").unwrap();
+        let second = mapper.fake_ipv4_for_domain("example.com").unwrap();
+        let target = mapper
+            .target_for_endpoint(
+                IpEndpoint::new(IpAddress::Ipv4(first), 443),
+                RoutingNetwork::Tcp,
+            )
+            .unwrap();
+
+        assert_eq!(first, Ipv4Addr::new(198, 18, 0, 1));
+        assert_eq!(second, first);
+        assert_eq!(
+            target,
+            Target::new(
+                RoutingTargetAddr::Domain("example.com".to_owned()),
+                443,
+                RoutingNetwork::Tcp,
+            )
+        );
+    }
+
+    #[test]
+    fn fake_dns_response_answers_a_query_and_records_mapping() {
+        let mut mapper = FakeIpMapper::new(FakeIpRuntimeConfig {
+            ipv4_network: Ipv4Addr::new(198, 18, 0, 0),
+            ipv4_prefix: 15,
+            ttl: 120,
+        })
+        .unwrap();
+        let query = build_dns_a_query(0x1203, "www.example.com");
+
+        let response = mapper.fake_dns_response(&query).unwrap();
+        let fake_ip = mapper.domain_for_ipv4(Ipv4Addr::new(198, 18, 0, 1));
+
+        assert_eq!(dns_response_id(&response), Some(0x1203));
+        assert_eq!(
+            dns_response_answer_ipv4(&response),
+            Some(Ipv4Addr::new(198, 18, 0, 1))
+        );
+        assert_eq!(fake_ip, Some("www.example.com"));
+    }
+
+    #[test]
+    fn fake_dns_udp_packet_builds_tun_reply_packet() {
+        let mut mapper = FakeIpMapper::new(FakeIpRuntimeConfig {
+            ipv4_network: Ipv4Addr::new(198, 18, 0, 0),
+            ipv4_prefix: 15,
+            ttl: 60,
+        })
+        .unwrap();
+        let request = build_ipv4_udp_packet(
+            Ipv4Addr::new(10, 10, 0, 2),
+            53_000,
+            Ipv4Addr::new(1, 1, 1, 1),
+            DNS_PORT,
+            &build_dns_a_query(0x1203, "www.example.com"),
+        )
+        .unwrap();
+        let parsed = parse_udp_packet(&request).unwrap();
+        let response = mapper.fake_dns_response(&parsed.payload).unwrap();
+        let reply = build_udp_packet(parsed.target, parsed.client, &response).unwrap();
+
+        assert_eq!(
+            ipv4_udp_payload_for_destination(&reply, 53_000).and_then(dns_response_answer_ipv4),
+            Some(Ipv4Addr::new(198, 18, 0, 1))
+        );
+    }
+
     fn likely_quic_long_header_payload() -> &'static [u8] {
         &[
             0xc3, 0x00, 0x00, 0x00, 0x01, 8, 1, 2, 3, 4, 5, 6, 7, 8, 8, 9, 10, 11, 12, 13, 14, 15,
             16,
         ]
+    }
+
+    fn build_dns_a_query(id: u16, domain: &str) -> Vec<u8> {
+        let mut packet = Vec::new();
+        packet.extend_from_slice(&id.to_be_bytes());
+        packet.extend_from_slice(&0x0100_u16.to_be_bytes());
+        packet.extend_from_slice(&1_u16.to_be_bytes());
+        packet.extend_from_slice(&0_u16.to_be_bytes());
+        packet.extend_from_slice(&0_u16.to_be_bytes());
+        packet.extend_from_slice(&0_u16.to_be_bytes());
+        for label in domain.split('.') {
+            packet.push(label.len() as u8);
+            packet.extend_from_slice(label.as_bytes());
+        }
+        packet.push(0);
+        packet.extend_from_slice(&1_u16.to_be_bytes());
+        packet.extend_from_slice(&1_u16.to_be_bytes());
+        packet
+    }
+
+    fn dns_response_id(packet: &[u8]) -> Option<u16> {
+        Some(u16::from_be_bytes([*packet.first()?, *packet.get(1)?]))
+    }
+
+    fn dns_response_answer_ipv4(packet: &[u8]) -> Option<Ipv4Addr> {
+        if packet.len() < 16 {
+            return None;
+        }
+        let answer_count = u16::from_be_bytes([packet[6], packet[7]]);
+        if answer_count == 0 {
+            return None;
+        }
+        let mut offset = 12usize;
+        loop {
+            let len = *packet.get(offset)? as usize;
+            offset += 1;
+            if len == 0 {
+                break;
+            }
+            offset = offset.checked_add(len)?;
+            if offset > packet.len() {
+                return None;
+            }
+        }
+        offset = offset.checked_add(4)?;
+        if packet.get(offset)? & 0xc0 != 0xc0 {
+            return None;
+        }
+        offset = offset.checked_add(2 + 2 + 2 + 4)?;
+        let rdlen = u16::from_be_bytes([*packet.get(offset)?, *packet.get(offset + 1)?]);
+        offset += 2;
+        if rdlen != 4 {
+            return None;
+        }
+        Some(Ipv4Addr::new(
+            *packet.get(offset)?,
+            *packet.get(offset + 1)?,
+            *packet.get(offset + 2)?,
+            *packet.get(offset + 3)?,
+        ))
+    }
+
+    const TCP_SYN: u8 = 0x02;
+    const TCP_ACK: u8 = 0x10;
+
+    fn assert_ipv4_icmp_port_unreachable(
+        packet: &[u8],
+        source: Ipv4Addr,
+        destination: Ipv4Addr,
+        original: &[u8],
+    ) {
+        assert!(packet.len() >= 56);
+        assert_eq!(packet[0] >> 4, 4);
+        assert_eq!(packet[9], ICMPV4_PROTOCOL);
+        assert_eq!(packet[12..16], source.octets());
+        assert_eq!(packet[16..20], destination.octets());
+        assert_eq!(internet_checksum(&packet[..20]), 0);
+
+        let total_len = usize::from(u16::from_be_bytes([packet[2], packet[3]]));
+        assert_eq!(total_len, packet.len());
+        let icmp = &packet[20..];
+        assert_eq!(icmp[0], 3);
+        assert_eq!(icmp[1], 3);
+        assert_eq!(&icmp[4..8], &[0, 0, 0, 0]);
+        assert_eq!(internet_checksum(icmp), 0);
+        assert_eq!(&icmp[8..], &original[..28]);
+    }
+
+    fn assert_ipv6_icmp_port_unreachable(
+        packet: &[u8],
+        source: Ipv6Addr,
+        destination: Ipv6Addr,
+        original: &[u8],
+    ) {
+        assert!(packet.len() >= 88);
+        assert_eq!(packet[0] >> 4, 6);
+        assert_eq!(packet[6], ICMPV6_PROTOCOL);
+        assert_eq!(packet[8..24], source.octets());
+        assert_eq!(packet[24..40], destination.octets());
+
+        let payload_len = usize::from(u16::from_be_bytes([packet[4], packet[5]]));
+        assert_eq!(packet.len(), 40 + payload_len);
+        let icmp = &packet[40..];
+        assert_eq!(icmp[0], 1);
+        assert_eq!(icmp[1], 4);
+        assert_eq!(&icmp[4..8], &[0, 0, 0, 0]);
+        assert_eq!(
+            ipv6_transport_checksum(source.octets(), destination.octets(), ICMPV6_PROTOCOL, icmp),
+            0
+        );
+        assert_eq!(&icmp[8..], &original[..original.len().min(1232)]);
+    }
+
+    fn build_ipv4_tcp_packet(
+        source: Ipv4Addr,
+        source_port: u16,
+        destination: Ipv4Addr,
+        destination_port: u16,
+        sequence: u32,
+        acknowledgement: u32,
+        flags: u8,
+        payload: &[u8],
+    ) -> Vec<u8> {
+        let tcp_len = 20 + payload.len();
+        let total_len = 20 + tcp_len;
+        let mut packet = vec![0; total_len];
+        packet[0] = 0x45;
+        packet[2..4].copy_from_slice(&(total_len as u16).to_be_bytes());
+        packet[8] = 64;
+        packet[9] = TCP_PROTOCOL;
+        packet[12..16].copy_from_slice(&source.octets());
+        packet[16..20].copy_from_slice(&destination.octets());
+
+        let tcp = &mut packet[20..];
+        tcp[0..2].copy_from_slice(&source_port.to_be_bytes());
+        tcp[2..4].copy_from_slice(&destination_port.to_be_bytes());
+        tcp[4..8].copy_from_slice(&sequence.to_be_bytes());
+        tcp[8..12].copy_from_slice(&acknowledgement.to_be_bytes());
+        tcp[12] = 5 << 4;
+        tcp[13] = flags;
+        tcp[14..16].copy_from_slice(&u16::MAX.to_be_bytes());
+        tcp[20..].copy_from_slice(payload);
+        let tcp_checksum = ipv4_tcp_checksum(source, destination, tcp);
+        tcp[16..18].copy_from_slice(&tcp_checksum.to_be_bytes());
+
+        let ip_checksum = internet_checksum(&packet[..20]);
+        packet[10..12].copy_from_slice(&ip_checksum.to_be_bytes());
+
+        packet
+    }
+
+    fn ipv4_tcp_checksum(source: Ipv4Addr, destination: Ipv4Addr, tcp: &[u8]) -> u16 {
+        let mut pseudo = Vec::with_capacity(12 + tcp.len());
+        pseudo.extend_from_slice(&source.octets());
+        pseudo.extend_from_slice(&destination.octets());
+        pseudo.extend_from_slice(&[0, TCP_PROTOCOL]);
+        pseudo.extend_from_slice(&(tcp.len() as u16).to_be_bytes());
+        pseudo.extend_from_slice(tcp);
+        internet_checksum(&pseudo)
+    }
+
+    fn ipv4_tcp_sequence(packet: &[u8]) -> Option<u32> {
+        let tcp = ipv4_tcp_header_and_payload(packet)?;
+        Some(u32::from_be_bytes([tcp[4], tcp[5], tcp[6], tcp[7]]))
+    }
+
+    fn ipv4_tcp_payload_len(packet: &[u8]) -> Option<usize> {
+        let tcp = ipv4_tcp_header_and_payload(packet)?;
+        let header_len = usize::from(tcp[12] >> 4) * 4;
+        if header_len < 20 || tcp.len() < header_len {
+            return None;
+        }
+        Some(tcp.len() - header_len)
+    }
+
+    fn ipv4_tcp_header_and_payload(packet: &[u8]) -> Option<&[u8]> {
+        if packet.len() < 40 || packet[0] >> 4 != 4 || packet[9] != TCP_PROTOCOL {
+            return None;
+        }
+        let header_len = usize::from(packet[0] & 0x0f) * 4;
+        let total_len = usize::from(u16::from_be_bytes([packet[2], packet[3]]));
+        if header_len < 20 || total_len < header_len + 20 || packet.len() < total_len {
+            return None;
+        }
+        Some(&packet[header_len..total_len])
     }
 
     #[test]

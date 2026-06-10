@@ -1,8 +1,8 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use xray_config::{
-    parse_xray_json, DiagnosticSeverity, InboundProtocol, OutboundSettings, RealityShortId,
-    StreamSecurity, TargetAddr,
+    parse_xray_json, DiagnosticSeverity, DnsFakeIpConfig, InboundProtocol, IpCidr,
+    OutboundSettings, RealityShortId, StreamSecurity, TargetAddr,
 };
 
 #[test]
@@ -121,6 +121,47 @@ fn parses_socks_inbound_with_udp_enabled() {
 
     assert_eq!(parsed.config.inbounds[0].protocol, InboundProtocol::Socks);
     assert!(parsed.diagnostics.is_empty());
+}
+
+#[test]
+fn parses_dns_fake_ip_ipv4_pool() {
+    let raw = r#"{
+        "dns": {
+          "fakeIp": {
+            "enabled": true,
+            "ipv4Pool": "198.18.0.0/15",
+            "ttl": 120
+          }
+        },
+        "inbounds": [
+            { "tag": "tun-in", "protocol": "tun", "port": 0, "settings": {} }
+        ],
+        "outbounds": [
+            { "tag": "direct", "protocol": "freedom" }
+        ]
+    }"#;
+
+    let parsed = parse_xray_json(raw).expect("config should parse");
+
+    assert_eq!(
+        parsed.config.dns.fake_ip,
+        Some(DnsFakeIpConfig {
+            enabled: true,
+            ipv4_pool: IpCidr::new(IpAddr::V4(Ipv4Addr::new(198, 18, 0, 0)), 15).unwrap(),
+            ttl: 120,
+        })
+    );
+}
+
+#[test]
+fn rejects_dns_fake_ip_without_ipv4_pool_when_enabled() {
+    let raw = r#"{
+        "dns": { "fakeIp": { "enabled": true } },
+        "inbounds": [],
+        "outbounds": [{ "tag": "direct", "protocol": "freedom" }]
+    }"#;
+
+    assert_parse_error_path(raw, "$.dns.fakeIp.ipv4Pool");
 }
 
 #[test]

@@ -4,10 +4,10 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::{
-    CoreConfig, Diagnostic, DomainMatcher, InboundConfig, InboundProtocol, IpCidr, IpMatcher,
-    Network, OutboundConfig, OutboundProtocol, OutboundSettings, RealitySettings, RealityShortId,
-    RoutingConfig, RoutingRule, StreamSecurity, StreamSettings, TargetAddr, TlsSettings,
-    VlessOutboundSettings, VlessUser,
+    CoreConfig, Diagnostic, DnsConfig, DnsFakeIpConfig, DomainMatcher, InboundConfig,
+    InboundProtocol, IpCidr, IpMatcher, Network, OutboundConfig, OutboundProtocol,
+    OutboundSettings, RealitySettings, RealityShortId, RoutingConfig, RoutingRule, StreamSecurity,
+    StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,6 +60,7 @@ impl Parser<'_> {
         let inbounds = self.parse_inbounds();
         let outbounds = self.parse_outbounds();
         let routing = self.parse_routing(&outbounds);
+        let dns = self.parse_dns();
         let default_outbound_tag = outbounds.first().and_then(|outbound| outbound.tag.clone());
 
         CoreConfig {
@@ -67,11 +68,75 @@ impl Parser<'_> {
             outbounds,
             default_outbound_tag,
             routing,
+            dns,
         }
     }
 
     fn validate_top_level_fields(&mut self) {
-        self.reject_unknown_fields(self.root, "$", &["log", "inbounds", "outbounds", "routing"]);
+        self.reject_unknown_fields(
+            self.root,
+            "$",
+            &["log", "inbounds", "outbounds", "routing", "dns"],
+        );
+    }
+
+    fn parse_dns(&mut self) -> DnsConfig {
+        let Some(dns) = self.root.get("dns") else {
+            return DnsConfig::default();
+        };
+        let dns_path = "$.dns";
+        if !dns.is_object() {
+            self.error(dns_path, "dns must be an object");
+            return DnsConfig::default();
+        }
+
+        self.reject_unknown_fields(dns, dns_path, &["fakeIp"]);
+        DnsConfig {
+            fake_ip: self.parse_dns_fake_ip(dns),
+        }
+    }
+
+    fn parse_dns_fake_ip(&mut self, dns: &Value) -> Option<DnsFakeIpConfig> {
+        let fake_ip = dns.get("fakeIp")?;
+        let fake_ip_path = "$.dns.fakeIp";
+        if !fake_ip.is_object() {
+            self.error(fake_ip_path, "dns fakeIp must be an object");
+            return None;
+        }
+
+        self.reject_unknown_fields(fake_ip, fake_ip_path, &["enabled", "ipv4Pool", "ttl"]);
+        let enabled = self
+            .optional_bool_at(fake_ip, "enabled", format!("{fake_ip_path}.enabled"))
+            .unwrap_or(false);
+        let ttl = self
+            .optional_u32_at(fake_ip, "ttl", format!("{fake_ip_path}.ttl"))
+            .unwrap_or(60);
+
+        if !enabled {
+            return None;
+        }
+
+        let ipv4_pool_path = format!("{fake_ip_path}.ipv4Pool");
+        let Some(raw_pool) = self.optional_string_at(fake_ip, "ipv4Pool", ipv4_pool_path.clone())
+        else {
+            if fake_ip.get("ipv4Pool").is_none() {
+                self.error(ipv4_pool_path, "missing fakeIp ipv4Pool");
+            }
+            return None;
+        };
+        let Some(pool) = self.parse_ip_cidr(raw_pool, &ipv4_pool_path) else {
+            return None;
+        };
+        if !matches!(pool.network(), IpAddr::V4(_)) {
+            self.error(ipv4_pool_path, "fakeIp ipv4Pool must be an IPv4 CIDR");
+            return None;
+        }
+
+        Some(DnsFakeIpConfig {
+            enabled,
+            ipv4_pool: pool,
+            ttl,
+        })
     }
 
     fn parse_routing(&mut self, outbounds: &[OutboundConfig]) -> RoutingConfig {
@@ -1021,6 +1086,10 @@ impl Parser<'_> {
             return None;
         }
 
+        self.parse_ip_cidr(value, path).map(IpMatcher::Cidr)
+    }
+
+    fn parse_ip_cidr(&mut self, value: &str, path: &str) -> Option<IpCidr> {
         let (ip, prefix) = match value.split_once('/') {
             Some((ip, prefix)) => {
                 let Some(prefix) = prefix.parse::<u8>().ok() else {
@@ -1048,7 +1117,7 @@ impl Parser<'_> {
             None => IpCidr::full(ip),
         };
 
-        Some(IpMatcher::Cidr(cidr))
+        Some(cidr)
     }
 
     fn u16_at(&mut self, value: &Value, key: &str, path: String) -> Option<u16> {
@@ -1062,6 +1131,19 @@ impl Parser<'_> {
                 self.error(path, format!("field `{key}` must fit in u16"));
                 None
             }
+        }
+    }
+
+    fn optional_u32_at(&mut self, value: &Value, key: &str, path: String) -> Option<u32> {
+        match value.get(key) {
+            None => None,
+            Some(raw) => match raw.as_u64().and_then(|value| u32::try_from(value).ok()) {
+                Some(value) => Some(value),
+                None => {
+                    self.error(path, format!("field `{key}` must fit in u32"));
+                    None
+                }
+            },
         }
     }
 

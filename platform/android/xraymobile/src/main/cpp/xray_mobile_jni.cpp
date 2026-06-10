@@ -227,6 +227,44 @@ Java_org_xrayrust_mobile_XrayCore_nativeSetTunFd(
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_org_xrayrust_mobile_XrayCore_nativeSetTunRuntimeProfile(
+    JNIEnv *env,
+    jobject,
+    jlong handle,
+    jint profile) {
+  NativeCore *native = core_from_handle(handle);
+  if (native == nullptr || native->core == nullptr) {
+    return;
+  }
+
+  XrayError *error = nullptr;
+  XrayStatus status = xray_core_set_tun_runtime_profile(
+      native->core,
+      static_cast<XrayTunRuntimeProfile>(profile),
+      &error);
+  check_status(env, status, error);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_org_xrayrust_mobile_XrayCore_nativeSetTunCollectTcpTimings(
+    JNIEnv *env,
+    jobject,
+    jlong handle,
+    jboolean collect) {
+  NativeCore *native = core_from_handle(handle);
+  if (native == nullptr || native->core == nullptr) {
+    return;
+  }
+
+  XrayError *error = nullptr;
+  XrayStatus status = xray_core_set_tun_collect_tcp_timings(
+      native->core,
+      collect == JNI_TRUE ? 1 : 0,
+      &error);
+  check_status(env, status, error);
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativeStart(JNIEnv *env, jobject, jlong handle) {
   NativeCore *native = core_from_handle(handle);
   if (native == nullptr || native->core == nullptr) {
@@ -330,12 +368,28 @@ Java_org_xrayrust_mobile_XrayCore_nativeStats(JNIEnv *env, jobject, jlong handle
     return nullptr;
   }
 
-  jlong values[3] = {
+  jlong values[19] = {
       static_cast<jlong>(stats.inbound_packets),
       static_cast<jlong>(stats.outbound_packets),
       static_cast<jlong>(stats.dropped_packets),
+      static_cast<jlong>(stats.udp_remote_open_events),
+      static_cast<jlong>(stats.udp_remote_udp443_open_events),
+      static_cast<jlong>(stats.udp_remote_written_bytes),
+      static_cast<jlong>(stats.udp_remote_read_bytes),
+      static_cast<jlong>(stats.tcp_open_events),
+      static_cast<jlong>(stats.tcp_open_duration_ms_total),
+      static_cast<jlong>(stats.tcp_open_duration_ms_max),
+      static_cast<jlong>(stats.tcp_first_byte_events),
+      static_cast<jlong>(stats.tcp_first_byte_duration_ms_total),
+      static_cast<jlong>(stats.tcp_first_byte_duration_ms_max),
+      static_cast<jlong>(stats.tcp443_open_events),
+      static_cast<jlong>(stats.tcp443_open_duration_ms_total),
+      static_cast<jlong>(stats.tcp443_open_duration_ms_max),
+      static_cast<jlong>(stats.tcp443_first_byte_events),
+      static_cast<jlong>(stats.tcp443_first_byte_duration_ms_total),
+      static_cast<jlong>(stats.tcp443_first_byte_duration_ms_max),
   };
-  jlongArray array = env->NewLongArray(3);
-  env->SetLongArrayRegion(array, 0, 3, values);
+  jlongArray array = env->NewLongArray(19);
+  env->SetLongArrayRegion(array, 0, 19, values);
   return array;
 }

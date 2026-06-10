@@ -53,32 +53,182 @@ public struct XrayTunStatsSnapshot: Equatable, Sendable {
     public let tcpRemoteClosedEvents: UInt64
     public let tcpRemoteReadErrors: UInt64
     public let tcpOpenErrors: UInt64
+    public let tcpOpenEvents: UInt64
+    public let tcpOpenDurationMsTotal: UInt64
+    public let tcpOpenDurationMsMax: UInt64
+    public let tcpFirstByteEvents: UInt64
+    public let tcpFirstByteDurationMsTotal: UInt64
+    public let tcpFirstByteDurationMsMax: UInt64
+    public let tcp443OpenEvents: UInt64
+    public let tcp443OpenDurationMsTotal: UInt64
+    public let tcp443OpenDurationMsMax: UInt64
+    public let tcp443FirstByteEvents: UInt64
+    public let tcp443FirstByteDurationMsTotal: UInt64
+    public let tcp443FirstByteDurationMsMax: UInt64
     public let activeTCPFlows: UInt64
     public let activeUDPFlows: UInt64
     public let udpFlowLimit: UInt64
     public let udpBudgetDrops: UInt64
     public let udpEvictedFlows: UInt64
     public let udpChannelDroppedPackets: UInt64
+    public let udpRemoteOpenEvents: UInt64
+    public let udpRemoteUDP443OpenEvents: UInt64
+    public let udpRemoteWrittenBytes: UInt64
+    public let udpRemoteReadBytes: UInt64
     public let udpOpenErrors: UInt64
     public let udpVisionUDP443Rejections: UInt64
     public let udpRemoteWriteErrors: UInt64
     public let udpRemoteReadErrors: UInt64
     public let udpRemoteClosedEvents: UInt64
     public let udpQuicBlockedPackets: UInt64
+    public let inboundQueueDepth: UInt64
+    public let outboundQueueDepth: UInt64
+    public let inboundQueueMaxPackets: UInt64
+    public let outboundQueueMaxPackets: UInt64
+    public let tunFdWriteBatches: UInt64
+    public let tunFdWriteBatchPackets: UInt64
+    public let tunFdWriteBatchMaxPackets: UInt64
+}
+
+public extension XrayTunStatsSnapshot {
+    func debugLogMessages(prefix: String = "Debug stats") -> [String] {
+        [
+            "\(prefix) core inbound=\(inboundPackets) outbound=\(outboundPackets) dropped=\(droppedPackets) inboundDropped=\(inboundDroppedPackets) outboundDropped=\(outboundDroppedPackets) activeTCPFlows=\(activeTCPFlows) activeUDPFlows=\(activeUDPFlows)",
+            "\(prefix) queues inboundQueueDepth=\(inboundQueueDepth) outboundQueueDepth=\(outboundQueueDepth) inboundQueueMaxPackets=\(inboundQueueMaxPackets) outboundQueueMaxPackets=\(outboundQueueMaxPackets) tunFdWriteBatches=\(tunFdWriteBatches) tunFdWriteBatchPackets=\(tunFdWriteBatchPackets) tunFdWriteBatchMaxPackets=\(tunFdWriteBatchMaxPackets)",
+            "\(prefix) tcpBytes tcpStackToRemoteBytes=\(tcpStackToRemoteBytes) tcpRemoteWrittenBytes=\(tcpRemoteWrittenBytes) tcpRemoteReadBytes=\(tcpRemoteReadBytes) tcpBackpressure=\(tcpBackpressureEvents) tcpStackToRemoteBackpressure=\(tcpStackToRemoteBackpressureEvents) tcpRemoteToStackBackpressure=\(tcpRemoteToStackBackpressureEvents)",
+            "\(prefix) tcpBuffers tcpRemoteWriteBatches=\(tcpRemoteWriteBatches) tcpRemoteWriteBatchMessages=\(tcpRemoteWriteBatchMessages) tcpRemoteWriteBatchMaxMessages=\(tcpRemoteWriteBatchMaxMessages) tcpRemoteWriteBatchMaxBytes=\(tcpRemoteWriteBatchMaxBytes) tcpPendingRemoteBytes=\(tcpPendingRemoteBytes) tcpPendingRemoteFlows=\(tcpPendingRemoteFlows) tcpPendingRemoteMaxBytes=\(tcpPendingRemoteMaxBytes) tcpRemoteBufferLimitBytes=\(tcpRemoteBufferLimitBytes) tcpRemoteBufferPressureActive=\(tcpRemoteBufferPressureActive) tcpWriteErrors=\(tcpRemoteWriteErrors) tcpRemoteClosed=\(tcpRemoteClosedEvents) tcpReadErrors=\(tcpRemoteReadErrors) tcpOpenErrors=\(tcpOpenErrors)",
+            "\(prefix) tcpTiming tcpOpenEvents=\(tcpOpenEvents) tcpOpenAvgMs=\(averageDurationMs(total: tcpOpenDurationMsTotal, events: tcpOpenEvents)) tcpOpenMaxMs=\(tcpOpenDurationMsMax) tcpFirstByteEvents=\(tcpFirstByteEvents) tcpFirstByteAvgMs=\(averageDurationMs(total: tcpFirstByteDurationMsTotal, events: tcpFirstByteEvents)) tcpFirstByteMaxMs=\(tcpFirstByteDurationMsMax) tcp443OpenEvents=\(tcp443OpenEvents) tcp443OpenAvgMs=\(averageDurationMs(total: tcp443OpenDurationMsTotal, events: tcp443OpenEvents)) tcp443OpenMaxMs=\(tcp443OpenDurationMsMax) tcp443FirstByteEvents=\(tcp443FirstByteEvents) tcp443FirstByteAvgMs=\(averageDurationMs(total: tcp443FirstByteDurationMsTotal, events: tcp443FirstByteEvents)) tcp443FirstByteMaxMs=\(tcp443FirstByteDurationMsMax)",
+            "\(prefix) udpFlows udpFlowLimit=\(udpFlowLimit) udpBudgetDrops=\(udpBudgetDrops) udpEvictedFlows=\(udpEvictedFlows) udpChannelDroppedPackets=\(udpChannelDroppedPackets)",
+            "\(prefix) udpRemote udpOpenEvents=\(udpRemoteOpenEvents) udpUDP443OpenEvents=\(udpRemoteUDP443OpenEvents) udpWrittenBytes=\(udpRemoteWrittenBytes) udpReadBytes=\(udpRemoteReadBytes) udpOpenErrors=\(udpOpenErrors) udpVisionUDP443Rejections=\(udpVisionUDP443Rejections) udpWriteErrors=\(udpRemoteWriteErrors) udpReadErrors=\(udpRemoteReadErrors) udpRemoteClosed=\(udpRemoteClosedEvents) udpQuicBlockedPackets=\(udpQuicBlockedPackets)",
+        ]
+    }
+}
+
+private func averageDurationMs(total: UInt64, events: UInt64) -> UInt64 {
+    events == 0 ? 0 : total / events
+}
+
+public enum XrayTcpSlowFlowEventKind: String, Sendable {
+    case open
+    case firstByte
+    case unknown
+}
+
+public struct XrayTcpSlowFlowEventSnapshot: Equatable, Sendable {
+    public let kind: XrayTcpSlowFlowEventKind
+    public let target: String
+    public let openDurationMs: UInt64
+    public let firstByteDurationMs: UInt64
+}
+
+public extension XrayTcpSlowFlowEventSnapshot {
+    func debugLogMessage(prefix: String = "Debug tcpSlowFlow") -> String {
+        "\(prefix) kind=\(kind.rawValue) target=\(target) openMs=\(openDurationMs) firstByteMs=\(firstByteDurationMs)"
+    }
+}
+
+public struct XrayTcpFlowSummaryEventSnapshot: Equatable, Sendable {
+    public let target: String
+    public let outboundTag: String?
+    public let closed: Bool
+    public let durationMs: UInt64
+    public let openDurationMs: UInt64
+    public let firstByteDurationMs: UInt64
+    public let remoteReadBytes: UInt64
+    public let msTo64KiB: UInt64
+    public let msTo128KiB: UInt64
+    public let msTo256KiB: UInt64
+    public let msTo512KiB: UInt64
+    public let msTo1MiB: UInt64
+}
+
+public extension XrayTcpFlowSummaryEventSnapshot {
+    func debugLogMessage(prefix: String = "Debug tcpFlowSummary") -> String {
+        "\(prefix) target=\(target) outbound=\(outboundTag ?? "untagged") closed=\(closed) durationMs=\(durationMs) openMs=\(openDurationMs) firstByteMs=\(firstByteDurationMs) remoteReadBytes=\(remoteReadBytes) msTo64KiB=\(msTo64KiB) msTo128KiB=\(msTo128KiB) msTo256KiB=\(msTo256KiB) msTo512KiB=\(msTo512KiB) msTo1MiB=\(msTo1MiB)"
+    }
+}
+
+public struct XrayUdpSlowFlowEventSnapshot: Equatable, Sendable {
+    public let target: String
+    public let firstResponseDurationMs: UInt64
+    public let writtenBytes: UInt64
+    public let readBytes: UInt64
+}
+
+public extension XrayUdpSlowFlowEventSnapshot {
+    func debugLogMessage(prefix: String = "Debug udpSlowFlow") -> String {
+        "\(prefix) target=\(target) firstResponseMs=\(firstResponseDurationMs) writtenBytes=\(writtenBytes) readBytes=\(readBytes)"
+    }
+}
+
+public struct XrayUdpResponseGapEventSnapshot: Equatable, Sendable {
+    public let target: String
+    public let responseGapDurationMs: UInt64
+    public let writtenBytes: UInt64
+    public let readBytes: UInt64
+}
+
+public extension XrayUdpResponseGapEventSnapshot {
+    func debugLogMessage(prefix: String = "Debug udpResponseGap") -> String {
+        "\(prefix) target=\(target) responseGapMs=\(responseGapDurationMs) writtenBytes=\(writtenBytes) readBytes=\(readBytes)"
+    }
+}
+
+public struct XrayUdpQuicBlockedEventSnapshot: Equatable, Sendable {
+    public let target: String
+    public let bytes: UInt64
+}
+
+public extension XrayUdpQuicBlockedEventSnapshot {
+    func debugLogMessage(prefix: String = "Debug quicBlocked") -> String {
+        "\(prefix) target=\(target) bytes=\(bytes)"
+    }
+}
+
+private extension XrayTcpSlowFlowKind {
+    var snapshotKind: XrayTcpSlowFlowEventKind {
+        switch rawValue {
+        case XRAY_TCP_SLOW_FLOW_KIND_OPEN.rawValue:
+            return .open
+        case XRAY_TCP_SLOW_FLOW_KIND_FIRST_BYTE.rawValue:
+            return .firstByte
+        default:
+            return .unknown
+        }
+    }
 }
 
 public final class XrayCore: @unchecked Sendable {
     private let lock = NSLock()
     private var handle: OpaquePointer?
 
+    public static func tunRuntimeProfile(named rawValue: String) -> XrayTunRuntimeProfile {
+        switch rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "mobile":
+            return XRAY_TUN_RUNTIME_PROFILE_MOBILE
+        case "desktop":
+            return XRAY_TUN_RUNTIME_PROFILE_DESKTOP
+        case "low-memory", "low_memory", "lowmemory":
+            return XRAY_TUN_RUNTIME_PROFILE_LOW_MEMORY
+        case "throughput":
+            return XRAY_TUN_RUNTIME_PROFILE_THROUGHPUT
+        default:
+            return XRAY_TUN_RUNTIME_PROFILE_DEFAULT
+        }
+    }
+
     public convenience init(
         configJSON: String,
         borrowedDarwinTunFileDescriptor fd: Int32,
-        blockQUIC: Bool = false
+        blockQUIC: Bool = false,
+        collectTcpTimings: Bool = false,
+        tunRuntimeProfile: XrayTunRuntimeProfile = XRAY_TUN_RUNTIME_PROFILE_DEFAULT
     ) throws {
         try self.init(
             configJSON: configJSON,
             blockQUIC: blockQUIC,
+            collectTcpTimings: collectTcpTimings,
+            tunRuntimeProfile: tunRuntimeProfile,
             tunFileDescriptor: fd,
             tunPacketFormat: XRAY_TUN_FD_PACKET_FORMAT_DARWIN_UTUN,
             tunClosePolicy: XRAY_TUN_FD_CLOSE_POLICY_BORROWED
@@ -88,6 +238,8 @@ public final class XrayCore: @unchecked Sendable {
     public init(
         configJSON: String,
         blockQUIC: Bool = false,
+        collectTcpTimings: Bool = false,
+        tunRuntimeProfile: XrayTunRuntimeProfile = XRAY_TUN_RUNTIME_PROFILE_DEFAULT,
         socketProtectCallback: XraySocketProtectCallback? = nil,
         socketProtectUserData: UnsafeMutableRawPointer? = nil,
         tunFileDescriptor: Int32? = nil,
@@ -97,7 +249,7 @@ public final class XrayCore: @unchecked Sendable {
         var error: OpaquePointer?
         XrayMobileLog.info(
             "Core",
-            "Creating core configBytes=\(configJSON.utf8.count) socketProtect=\(socketProtectCallback != nil) tunFd=\(tunFileDescriptor.map(String.init) ?? "none") blockQUIC=\(blockQUIC)"
+            "Creating core configBytes=\(configJSON.utf8.count) socketProtect=\(socketProtectCallback != nil) tunFd=\(tunFileDescriptor.map(String.init) ?? "none") blockQUIC=\(blockQUIC) collectTcpTimings=\(collectTcpTimings) tunRuntimeProfile=\(tunRuntimeProfile.rawValue)"
         )
         guard let handle = xray_core_new(&error) else {
             let coreError = XrayCore.takeError(error)
@@ -132,6 +284,18 @@ public final class XrayCore: @unchecked Sendable {
             }
             try check(
                 xray_core_set_tun_block_quic(handle, blockQUIC ? 1 : 0, &error),
+                error: error
+            )
+            try check(
+                xray_core_set_tun_collect_tcp_timings(
+                    handle,
+                    collectTcpTimings ? 1 : 0,
+                    &error
+                ),
+                error: error
+            )
+            try check(
+                xray_core_set_tun_runtime_profile(handle, tunRuntimeProfile, &error),
                 error: error
             )
             try configJSON.withCString { pointer in
@@ -254,19 +418,241 @@ public final class XrayCore: @unchecked Sendable {
                 tcpRemoteClosedEvents: stats.tcp_remote_closed_events,
                 tcpRemoteReadErrors: stats.tcp_remote_read_errors,
                 tcpOpenErrors: stats.tcp_open_errors,
+                tcpOpenEvents: stats.tcp_open_events,
+                tcpOpenDurationMsTotal: stats.tcp_open_duration_ms_total,
+                tcpOpenDurationMsMax: stats.tcp_open_duration_ms_max,
+                tcpFirstByteEvents: stats.tcp_first_byte_events,
+                tcpFirstByteDurationMsTotal: stats.tcp_first_byte_duration_ms_total,
+                tcpFirstByteDurationMsMax: stats.tcp_first_byte_duration_ms_max,
+                tcp443OpenEvents: stats.tcp443_open_events,
+                tcp443OpenDurationMsTotal: stats.tcp443_open_duration_ms_total,
+                tcp443OpenDurationMsMax: stats.tcp443_open_duration_ms_max,
+                tcp443FirstByteEvents: stats.tcp443_first_byte_events,
+                tcp443FirstByteDurationMsTotal: stats.tcp443_first_byte_duration_ms_total,
+                tcp443FirstByteDurationMsMax: stats.tcp443_first_byte_duration_ms_max,
                 activeTCPFlows: stats.active_tcp_flows,
                 activeUDPFlows: stats.active_udp_flows,
                 udpFlowLimit: stats.udp_flow_limit,
                 udpBudgetDrops: stats.udp_budget_drops,
                 udpEvictedFlows: stats.udp_evicted_flows,
                 udpChannelDroppedPackets: stats.udp_channel_dropped_packets,
+                udpRemoteOpenEvents: stats.udp_remote_open_events,
+                udpRemoteUDP443OpenEvents: stats.udp_remote_udp443_open_events,
+                udpRemoteWrittenBytes: stats.udp_remote_written_bytes,
+                udpRemoteReadBytes: stats.udp_remote_read_bytes,
                 udpOpenErrors: stats.udp_open_errors,
                 udpVisionUDP443Rejections: stats.udp_vision_udp443_rejections,
                 udpRemoteWriteErrors: stats.udp_remote_write_errors,
                 udpRemoteReadErrors: stats.udp_remote_read_errors,
                 udpRemoteClosedEvents: stats.udp_remote_closed_events,
-                udpQuicBlockedPackets: stats.udp_quic_blocked_packets
+                udpQuicBlockedPackets: stats.udp_quic_blocked_packets,
+                inboundQueueDepth: stats.inbound_queue_depth,
+                outboundQueueDepth: stats.outbound_queue_depth,
+                inboundQueueMaxPackets: stats.inbound_queue_max_packets,
+                outboundQueueMaxPackets: stats.outbound_queue_max_packets,
+                tunFdWriteBatches: stats.tun_fd_write_batches,
+                tunFdWriteBatchPackets: stats.tun_fd_write_batch_packets,
+                tunFdWriteBatchMaxPackets: stats.tun_fd_write_batch_max_packets
             )
+        }
+    }
+
+    public func pollTcpSlowFlowEvents(maxEvents: Int = 16) throws -> [XrayTcpSlowFlowEventSnapshot] {
+        try withHandle { handle in
+            var events: [XrayTcpSlowFlowEventSnapshot] = []
+            while events.count < maxEvents {
+                var error: OpaquePointer?
+                var event = XrayTcpSlowFlowEvent()
+                var targetWritten = 0
+                var targetBuffer = [CChar](repeating: 0, count: 256)
+                let status = targetBuffer.withUnsafeMutableBufferPointer { mutableBuffer in
+                    xray_tun_poll_tcp_slow_flow_event(
+                        handle,
+                        &event,
+                        mutableBuffer.baseAddress,
+                        mutableBuffer.count,
+                        &targetWritten,
+                        &error
+                    )
+                }
+
+                if status == XRAY_STATUS_NO_PACKET {
+                    return events
+                }
+
+                try check(status, error: error)
+                events.append(
+                    XrayTcpSlowFlowEventSnapshot(
+                        kind: event.kind.snapshotKind,
+                        target: String(cString: targetBuffer),
+                        openDurationMs: event.open_duration_ms,
+                        firstByteDurationMs: event.first_byte_duration_ms
+                    )
+                )
+            }
+            return events
+        }
+    }
+
+    public func pollTcpFlowSummaryEvents(maxEvents: Int = 16) throws -> [XrayTcpFlowSummaryEventSnapshot] {
+        try withHandle { handle in
+            var events: [XrayTcpFlowSummaryEventSnapshot] = []
+            while events.count < maxEvents {
+                var error: OpaquePointer?
+                var event = XrayTcpFlowSummaryEvent()
+                var targetWritten = 0
+                var targetBuffer = [CChar](repeating: 0, count: 256)
+                var outboundTagWritten = 0
+                var outboundTagBuffer = [CChar](repeating: 0, count: 64)
+                let status = targetBuffer.withUnsafeMutableBufferPointer { targetMutableBuffer in
+                    outboundTagBuffer.withUnsafeMutableBufferPointer { outboundTagMutableBuffer in
+                        xray_tun_poll_tcp_flow_summary_event(
+                            handle,
+                            &event,
+                            targetMutableBuffer.baseAddress,
+                            targetMutableBuffer.count,
+                            &targetWritten,
+                            outboundTagMutableBuffer.baseAddress,
+                            outboundTagMutableBuffer.count,
+                            &outboundTagWritten,
+                            &error
+                        )
+                    }
+                }
+
+                if status == XRAY_STATUS_NO_PACKET {
+                    return events
+                }
+
+                try check(status, error: error)
+                let outboundTag = String(cString: outboundTagBuffer)
+                events.append(
+                    XrayTcpFlowSummaryEventSnapshot(
+                        target: String(cString: targetBuffer),
+                        outboundTag: outboundTag.isEmpty ? nil : outboundTag,
+                        closed: event.closed != 0,
+                        durationMs: event.duration_ms,
+                        openDurationMs: event.open_duration_ms,
+                        firstByteDurationMs: event.first_byte_duration_ms,
+                        remoteReadBytes: event.remote_read_bytes,
+                        msTo64KiB: event.ms_to_64kib,
+                        msTo128KiB: event.ms_to_128kib,
+                        msTo256KiB: event.ms_to_256kib,
+                        msTo512KiB: event.ms_to_512kib,
+                        msTo1MiB: event.ms_to_1mib
+                    )
+                )
+            }
+            return events
+        }
+    }
+
+    public func pollUdpSlowFlowEvents(maxEvents: Int = 16) throws -> [XrayUdpSlowFlowEventSnapshot] {
+        try withHandle { handle in
+            var events: [XrayUdpSlowFlowEventSnapshot] = []
+            while events.count < maxEvents {
+                var error: OpaquePointer?
+                var event = XrayUdpSlowFlowEvent()
+                var targetWritten = 0
+                var targetBuffer = [CChar](repeating: 0, count: 256)
+                let status = targetBuffer.withUnsafeMutableBufferPointer { mutableBuffer in
+                    xray_tun_poll_udp_slow_flow_event(
+                        handle,
+                        &event,
+                        mutableBuffer.baseAddress,
+                        mutableBuffer.count,
+                        &targetWritten,
+                        &error
+                    )
+                }
+
+                if status == XRAY_STATUS_NO_PACKET {
+                    return events
+                }
+
+                try check(status, error: error)
+                events.append(
+                    XrayUdpSlowFlowEventSnapshot(
+                        target: String(cString: targetBuffer),
+                        firstResponseDurationMs: event.first_response_duration_ms,
+                        writtenBytes: event.written_bytes,
+                        readBytes: event.read_bytes
+                    )
+                )
+            }
+            return events
+        }
+    }
+
+    public func pollUdpResponseGapEvents(maxEvents: Int = 16) throws -> [XrayUdpResponseGapEventSnapshot] {
+        try withHandle { handle in
+            var events: [XrayUdpResponseGapEventSnapshot] = []
+            while events.count < maxEvents {
+                var error: OpaquePointer?
+                var event = XrayUdpResponseGapEvent()
+                var targetWritten = 0
+                var targetBuffer = [CChar](repeating: 0, count: 256)
+                let status = targetBuffer.withUnsafeMutableBufferPointer { mutableBuffer in
+                    xray_tun_poll_udp_response_gap_event(
+                        handle,
+                        &event,
+                        mutableBuffer.baseAddress,
+                        mutableBuffer.count,
+                        &targetWritten,
+                        &error
+                    )
+                }
+
+                if status == XRAY_STATUS_NO_PACKET {
+                    return events
+                }
+
+                try check(status, error: error)
+                events.append(
+                    XrayUdpResponseGapEventSnapshot(
+                        target: String(cString: targetBuffer),
+                        responseGapDurationMs: event.response_gap_duration_ms,
+                        writtenBytes: event.written_bytes,
+                        readBytes: event.read_bytes
+                    )
+                )
+            }
+            return events
+        }
+    }
+
+    public func pollUdpQuicBlockedEvents(maxEvents: Int = 16) throws -> [XrayUdpQuicBlockedEventSnapshot] {
+        try withHandle { handle in
+            var events: [XrayUdpQuicBlockedEventSnapshot] = []
+            while events.count < maxEvents {
+                var error: OpaquePointer?
+                var event = XrayUdpQuicBlockedEvent()
+                var targetWritten = 0
+                var targetBuffer = [CChar](repeating: 0, count: 256)
+                let status = targetBuffer.withUnsafeMutableBufferPointer { mutableBuffer in
+                    xray_tun_poll_udp_quic_blocked_event(
+                        handle,
+                        &event,
+                        mutableBuffer.baseAddress,
+                        mutableBuffer.count,
+                        &targetWritten,
+                        &error
+                    )
+                }
+
+                if status == XRAY_STATUS_NO_PACKET {
+                    return events
+                }
+
+                try check(status, error: error)
+                events.append(
+                    XrayUdpQuicBlockedEventSnapshot(
+                        target: String(cString: targetBuffer),
+                        bytes: event.bytes
+                    )
+                )
+            }
+            return events
         }
     }
 

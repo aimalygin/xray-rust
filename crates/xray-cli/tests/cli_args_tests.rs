@@ -3,9 +3,10 @@ use std::{fs, net::SocketAddr, path::PathBuf};
 use tokio::sync::oneshot;
 use xray_cli::{
     format_bound_inbounds, load_config, parse_cli_args, parse_tun_fd_env_from_pairs,
-    run_cli_with_shutdown, run_with_shutdown, CliArgs, CliError,
+    parse_tun_runtime_options_env_from_pairs, run_cli_with_shutdown, run_with_shutdown, CliArgs,
+    CliError,
 };
-use xray_core_rs::{TunFdClosePolicy, TunFdPacketFormat};
+use xray_core_rs::{TunFdClosePolicy, TunFdPacketFormat, TunRuntimeProfile};
 
 #[test]
 fn parses_run_dash_config() {
@@ -107,6 +108,30 @@ fn tun_fd_env_rejects_unknown_packet_format() {
     assert!(error
         .to_string()
         .contains("unsupported TUN fd packet format"));
+}
+
+#[test]
+fn tun_runtime_options_env_parses_profile_and_quic_blocking() {
+    let options = parse_tun_runtime_options_env_from_pairs([
+        ("XRAY_TUN_PROFILE", "low-memory"),
+        ("XRAY_TUN_BLOCK_QUIC", "true"),
+        ("XRAY_TUN_COLLECT_TCP_TIMINGS", "true"),
+    ])
+    .unwrap();
+
+    assert_eq!(options.profile, TunRuntimeProfile::LowMemory);
+    assert!(options.block_quic);
+    assert!(options.collect_tcp_timings);
+}
+
+#[test]
+fn tun_runtime_options_env_rejects_unknown_profile() {
+    let error =
+        parse_tun_runtime_options_env_from_pairs([("XRAY_TUN_PROFILE", "tiny")]).unwrap_err();
+
+    assert!(error
+        .to_string()
+        .contains("unsupported TUN runtime profile"));
 }
 
 #[tokio::test]

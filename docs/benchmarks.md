@@ -105,6 +105,16 @@ cargo run -p xray-bench -- compare --workload udp-xudp --xray-core-dir Xray-core
 cargo run -p xray-bench -- compare --workload vision-xudp --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 ```
 
+The TUN workloads can also be run with xray-rust runtime profiles. The harness
+passes `--tun-profile` through as `XRAY_TUN_PROFILE` for the engine process, so
+the same TUN fd workload can be sampled under `default`, `low-memory`, or
+`throughput` queue/budget presets:
+
+```bash
+cargo run -p xray-bench -- run --engine xray-rust --workload tun-udp-freedom --tun-profile low-memory --connections 1 --iterations 1000 --payload-size 512
+cargo run -p xray-bench -- run --engine xray-rust --workload tun-tcp-freedom --tun-profile throughput --connections 1 --iterations 100 --payload-size 1024
+```
+
 From an isolated worktree under `.worktrees/`, pass the main checkout's Xray-core path:
 
 ```sh

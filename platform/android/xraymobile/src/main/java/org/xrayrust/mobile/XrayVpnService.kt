@@ -1,5 +1,6 @@
 package org.xrayrust.mobile
 
+import android.content.pm.PackageManager.NameNotFoundException
 import android.net.VpnService
 import android.os.ParcelFileDescriptor
 import java.io.FileInputStream
@@ -21,6 +22,7 @@ open class XrayVpnService : VpnService() {
     open fun startXrayTunnel(
         configJson: String,
         tunBackend: XrayTunBackend = XrayTunBackend.PacketPump,
+        tunRuntimeProfile: XrayTunRuntimeProfile = XrayTunRuntimeProfile.Default,
     ) {
         if (!running.compareAndSet(false, true)) {
             return
@@ -31,6 +33,7 @@ open class XrayVpnService : VpnService() {
         val xrayCore = XrayCore.create(
             configJson = configJson,
             vpnService = this,
+            tunRuntimeProfile = tunRuntimeProfile,
             tunFileDescriptor = when (tunBackend) {
                 XrayTunBackend.PacketPump -> null
                 XrayTunBackend.FileDescriptor -> XrayTunFileDescriptor(
@@ -77,13 +80,19 @@ open class XrayVpnService : VpnService() {
     }
 
     protected open fun buildTunnel(): Builder {
-        return Builder()
+        val builder = Builder()
             .setSession("xray-rust")
             .setMtu(1500)
             .addAddress("10.7.0.1", 32)
             .addRoute("0.0.0.0", 0)
             .addAddress("fd00:7872::1", 128)
             .addRoute("::", 0)
+        try {
+            builder.addDisallowedApplication(packageName)
+        } catch (_: NameNotFoundException) {
+            // Some host/test contexts may not expose the package to PackageManager.
+        }
+        return builder
     }
 
     private fun readTunPackets(tunnel: ParcelFileDescriptor, xrayCore: XrayCore) {

@@ -16,11 +16,24 @@ pub struct CoreConfig {
     pub outbounds: Vec<OutboundConfig>,
     pub default_outbound_tag: Option<String>,
     pub routing: RoutingConfig,
+    pub dns: DnsConfig,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RoutingConfig {
     pub rules: Vec<RoutingRule>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DnsConfig {
+    pub fake_ip: Option<DnsFakeIpConfig>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DnsFakeIpConfig {
+    pub enabled: bool,
+    pub ipv4_pool: IpCidr,
+    pub ttl: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -160,6 +173,14 @@ impl IpCidr {
             network: ip,
             prefix,
         }
+    }
+
+    pub fn network(&self) -> IpAddr {
+        self.network
+    }
+
+    pub fn prefix(&self) -> u8 {
+        self.prefix
     }
 
     pub fn matches(&self, ip: &IpAddr) -> bool {

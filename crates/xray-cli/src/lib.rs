@@ -9,6 +9,7 @@ use thiserror::Error;
 use xray_config::{parse_xray_json, CoreConfig, Diagnostic};
 use xray_core_rs::{
     Core, CoreError, TunFdClosePolicy, TunFdConfig, TunFdPacketFormat, TunFdRuntime,
+    TunRuntimeOptions, TunRuntimeProfile,
 };
 
 const USAGE: &str = "usage: xray-rust run -config <config.json>";
@@ -137,6 +138,61 @@ fn parse_tun_fd_env() -> Result<Option<TunFdConfig>, CliError> {
     parse_tun_fd_env_from_pairs(env::vars())
 }
 
+pub fn parse_tun_runtime_options_env_from_pairs<I, K, V>(
+    vars: I,
+) -> Result<TunRuntimeOptions, CliError>
+where
+    I: IntoIterator<Item = (K, V)>,
+    K: AsRef<str>,
+    V: AsRef<str>,
+{
+    let mut options = TunRuntimeOptions::default();
+
+    for (key, value) in vars {
+        match key.as_ref() {
+            "XRAY_TUN_PROFILE" | "xray.tun.profile" => {
+                options.profile = parse_tun_runtime_profile(value.as_ref())?;
+            }
+            "XRAY_TUN_BLOCK_QUIC" | "xray.tun.block_quic" => {
+                options.block_quic = parse_bool_env(value.as_ref(), key.as_ref())?;
+            }
+            "XRAY_TUN_COLLECT_TCP_TIMINGS" | "xray.tun.collect_tcp_timings" => {
+                options.collect_tcp_timings = parse_bool_env(value.as_ref(), key.as_ref())?;
+            }
+            _ => {}
+        }
+    }
+
+    Ok(options)
+}
+
+fn parse_tun_runtime_options_env() -> Result<TunRuntimeOptions, CliError> {
+    parse_tun_runtime_options_env_from_pairs(env::vars())
+}
+
+fn parse_tun_runtime_profile(raw: &str) -> Result<TunRuntimeProfile, CliError> {
+    match raw {
+        "default" => Ok(TunRuntimeProfile::Default),
+        "mobile" => Ok(TunRuntimeProfile::Mobile),
+        "desktop" => Ok(TunRuntimeProfile::Desktop),
+        "low-memory" | "low_memory" | "lowmemory" => Ok(TunRuntimeProfile::LowMemory),
+        "throughput" => Ok(TunRuntimeProfile::Throughput),
+        other => Err(CliError::InvalidArguments(format!(
+            "unsupported TUN runtime profile `{other}`"
+        ))),
+    }
+}
+
+fn parse_bool_env(raw: &str, key: &str) -> Result<bool, CliError> {
+    match raw {
+        "1" | "true" | "yes" | "on" => Ok(true),
+        "0" | "false" | "no" | "off" => Ok(false),
+        other => Err(CliError::InvalidArguments(format!(
+            "invalid boolean value `{other}` in {key}"
+        ))),
+    }
+}
+
 fn parse_tun_fd_packet_format(raw: &str) -> Result<TunFdPacketFormat, CliError> {
     match raw {
         "raw-ip" | "raw_ip" | "raw" => Ok(TunFdPacketFormat::RawIp),
@@ -163,7 +219,8 @@ where
 {
     let configured_inbounds = config.inbounds.clone();
     let tun_fd_config = parse_tun_fd_env()?;
-    let mut core = Core::new(config)?;
+    let tun_runtime_options = parse_tun_runtime_options_env()?;
+    let mut core = Core::with_tun_runtime_options(config, tun_runtime_options)?;
     core.start().await?;
     let mut tun_fd_runtime = None;
     if let Some(config) = tun_fd_config {

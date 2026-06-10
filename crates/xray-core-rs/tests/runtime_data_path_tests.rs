@@ -29,11 +29,12 @@ use tokio::time::{sleep, timeout, Duration, Instant as TokioInstant};
 use tokio_rustls::TlsAcceptor;
 use uuid::Uuid;
 use xray_config::{
-    CoreConfig, DomainMatcher, InboundConfig, InboundProtocol, IpCidr, IpMatcher, Network,
-    OutboundConfig, OutboundSettings, RealitySettings, RealityShortId, RoutingConfig, RoutingRule,
-    StreamSecurity, StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
+    CoreConfig, DnsConfig, DnsFakeIpConfig, DomainMatcher, InboundConfig, InboundProtocol, IpCidr,
+    IpMatcher, Network, OutboundConfig, OutboundSettings, RealitySettings, RealityShortId,
+    RoutingConfig, RoutingRule, StreamSecurity, StreamSettings, TargetAddr, TlsSettings,
+    VlessOutboundSettings, VlessUser,
 };
-use xray_core_rs::{select_vless_tcp_outbound, Core, CoreError};
+use xray_core_rs::{select_vless_tcp_outbound, Core, CoreError, TunRuntimeOptions};
 use xray_proxy::inbound::{encode_socks5_udp_datagram, parse_socks5_udp_datagram};
 use xray_proxy::vless::{
     encode_udp_packet, encode_xudp_keep_packet, read_udp_packet, read_xudp_packet,
@@ -44,7 +45,7 @@ use xray_transport::{
     BoxedTransportStream, DnsResolver, RealityClientConfig, RealityTlsEngine, TlsConnector,
     TransportDialer, TransportError, TransportStream,
 };
-use xray_tun::TunEndpoint;
+use xray_tun::{TunEndpoint, TunStats};
 
 const ICMPV4_PROTOCOL: u8 = 1;
 const ICMPV6_PROTOCOL: u8 = 58;
@@ -89,6 +90,7 @@ fn config_with_outbound(outbound: OutboundConfig) -> CoreConfig {
         outbounds: vec![outbound],
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
+        dns: Default::default(),
     }
 }
 
@@ -209,6 +211,7 @@ fn runtime_config_with_freedom_outbound() -> CoreConfig {
         outbounds: vec![freedom_outbound()],
         default_outbound_tag: Some("direct".to_owned()),
         routing: RoutingConfig::default(),
+        dns: Default::default(),
     }
 }
 
@@ -223,6 +226,7 @@ fn runtime_tun_config_with_freedom_outbound() -> CoreConfig {
         outbounds: vec![freedom_outbound()],
         default_outbound_tag: Some("direct".to_owned()),
         routing: RoutingConfig::default(),
+        dns: Default::default(),
     }
 }
 
@@ -251,7 +255,23 @@ fn runtime_tun_config_with_routed_freedom_outbound(unused_proxy_port: u16) -> Co
                 outbound_tag: "direct".to_owned(),
             }],
         },
+        dns: Default::default(),
     }
+}
+
+fn runtime_tun_config_with_fake_ip_domain_routed_freedom_outbound(
+    unused_proxy_port: u16,
+) -> CoreConfig {
+    let mut config = runtime_tun_config_with_routed_freedom_outbound(unused_proxy_port);
+    config.routing.rules[0].domain_matchers = vec![DomainMatcher::Suffix("example.com".to_owned())];
+    config.dns = DnsConfig {
+        fake_ip: Some(DnsFakeIpConfig {
+            enabled: true,
+            ipv4_pool: IpCidr::new(IpAddr::V4(Ipv4Addr::new(198, 18, 0, 0)), 15).unwrap(),
+            ttl: 60,
+        }),
+    };
+    config
 }
 
 fn runtime_tun_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig {
@@ -269,6 +289,7 @@ fn runtime_tun_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig {
         )],
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
+        dns: Default::default(),
     }
 }
 
@@ -287,6 +308,7 @@ fn runtime_socks_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig 
         )],
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
+        dns: Default::default(),
     }
 }
 
@@ -319,6 +341,7 @@ fn runtime_tun_config_with_tls_vision_vless_domain_server(
         outbounds: vec![outbound],
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
+        dns: Default::default(),
     }
 }
 
@@ -343,6 +366,7 @@ fn runtime_tun_config_with_reality_vision_vless_server(port: u16) -> CoreConfig 
         outbounds: vec![outbound],
         default_outbound_tag: Some("proxy".to_owned()),
         routing: RoutingConfig::default(),
+        dns: Default::default(),
     }
 }
 
@@ -383,6 +407,7 @@ fn runtime_config_with_routed_freedom_outbound(unused_proxy_port: u16) -> CoreCo
                 outbound_tag: "direct".to_owned(),
             }],
         },
+        dns: Default::default(),
     }
 }
 
@@ -411,6 +436,7 @@ fn runtime_config_with_domain_routed_freedom_outbound(unused_proxy_port: u16) ->
                 outbound_tag: "direct".to_owned(),
             }],
         },
+        dns: Default::default(),
     }
 }
 
@@ -441,6 +467,7 @@ fn runtime_config_with_ip_routed_freedom_outbound(unused_proxy_port: u16) -> Cor
                 outbound_tag: "direct".to_owned(),
             }],
         },
+        dns: Default::default(),
     }
 }
 
@@ -459,6 +486,7 @@ fn runtime_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig {
         )],
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
+        dns: Default::default(),
     }
 }
 
@@ -477,6 +505,7 @@ fn runtime_http_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig {
         )],
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
+        dns: Default::default(),
     }
 }
 
@@ -495,6 +524,7 @@ fn runtime_config_with_vless_domain_server(domain: &str, port: u16) -> CoreConfi
         )],
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
+        dns: Default::default(),
     }
 }
 
@@ -521,6 +551,7 @@ fn runtime_config_with_tls_vless_domain_server(
         )],
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
+        dns: Default::default(),
     }
 }
 
@@ -574,6 +605,7 @@ fn selects_default_outbound_tag_when_present() {
         outbounds: vec![first, second],
         default_outbound_tag: Some("proxy".to_owned()),
         routing: RoutingConfig::default(),
+        dns: Default::default(),
     };
 
     let selected = select_vless_tcp_outbound(&config).unwrap();
@@ -914,6 +946,35 @@ async fn tun_tcp_client_reaches_echo_target_through_freedom_outbound() {
 }
 
 #[tokio::test]
+async fn tun_tcp_timings_stay_zero_when_collection_disabled() {
+    let stats = timeout(
+        Duration::from_secs(2),
+        run_tun_tcp_freedom_echo_scenario_with_options(TunRuntimeOptions::default()),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(stats.tcp_open_events, 0);
+    assert_eq!(stats.tcp_first_byte_events, 0);
+}
+
+#[tokio::test]
+async fn tun_tcp_timings_record_when_collection_enabled() {
+    let stats = timeout(
+        Duration::from_secs(2),
+        run_tun_tcp_freedom_echo_scenario_with_options(TunRuntimeOptions {
+            collect_tcp_timings: true,
+            ..TunRuntimeOptions::default()
+        }),
+    )
+    .await
+    .unwrap();
+
+    assert!(stats.tcp_open_events >= 1);
+    assert!(stats.tcp_first_byte_events >= 1);
+}
+
+#[tokio::test]
 async fn tun_tcp_client_reaches_echo_target_through_vless_tcp_outbound() {
     timeout(Duration::from_secs(2), run_tun_tcp_vless_echo_scenario())
         .await
@@ -962,6 +1023,16 @@ async fn tun_udp_client_reaches_echo_target_through_freedom_outbound() {
 }
 
 #[tokio::test]
+async fn tun_fake_dns_udp_flow_uses_domain_routing_rule() {
+    timeout(
+        Duration::from_secs(2),
+        run_tun_fake_dns_udp_domain_routing_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
 async fn tun_udp_client_reaches_echo_target_through_vless_udp_outbound() {
     timeout(Duration::from_secs(2), run_tun_udp_vless_echo_scenario())
         .await
@@ -983,6 +1054,16 @@ async fn tun_udp_client_reaches_echo_target_through_vision_xudp_outbound() {
     timeout(
         Duration::from_secs(2),
         run_tun_udp_vision_xudp_echo_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn tun_regular_vision_udp443_passes_when_quic_blocking_is_disabled() {
+    timeout(
+        Duration::from_secs(2),
+        run_tun_regular_vision_udp443_without_quic_block_scenario(),
     )
     .await
     .unwrap();
@@ -1253,8 +1334,18 @@ async fn run_tun_tcp_handshake_scenario() {
 }
 
 async fn run_tun_tcp_freedom_echo_scenario() {
+    let _ = run_tun_tcp_freedom_echo_scenario_with_options(TunRuntimeOptions::default()).await;
+}
+
+async fn run_tun_tcp_freedom_echo_scenario_with_options(
+    tun_runtime_options: TunRuntimeOptions,
+) -> TunStats {
     let (echo_addr, echo_handle) = spawn_echo_server().await;
-    let mut core = Core::new(runtime_tun_config_with_freedom_outbound()).unwrap();
+    let mut core = Core::with_tun_runtime_options(
+        runtime_tun_config_with_freedom_outbound(),
+        tun_runtime_options,
+    )
+    .unwrap();
     core.start().await.unwrap();
 
     let mut client = TunTcpClient::new();
@@ -1270,11 +1361,13 @@ async fn run_tun_tcp_freedom_echo_scenario() {
     .await;
 
     assert_eq!(received, b"hello tun");
+    let stats = core.tun().stats().await;
     core.stop().await.unwrap();
     timeout(Duration::from_secs(1), echo_handle)
         .await
         .unwrap()
         .unwrap();
+    stats
 }
 
 async fn run_tun_tcp_vless_echo_scenario() {
@@ -1459,6 +1552,78 @@ async fn run_tun_udp_freedom_echo_scenario() {
         .unwrap();
 }
 
+async fn run_tun_fake_dns_udp_domain_routing_scenario() {
+    let unused_proxy_port = allocate_unused_loopback_port();
+    let (echo_addr, echo_handle) = spawn_udp_echo_server().await;
+    let SocketAddr::V4(echo_addr_v4) = echo_addr else {
+        panic!("UDP TUN fake DNS test expects IPv4 echo server");
+    };
+    let config = runtime_tun_config_with_fake_ip_domain_routed_freedom_outbound(unused_proxy_port);
+    let mut core = Core::with_dns_resolver(
+        config,
+        Arc::new(StaticDnsResolver {
+            domain: "www.example.com",
+            addr: echo_addr,
+        }),
+    )
+    .unwrap();
+    core.start().await.unwrap();
+
+    let client_addr = Ipv4Addr::new(10, 10, 0, 2);
+    let dns_query = build_dns_a_query(0x1203, "www.example.com");
+    let dns_request = ipv4_udp_packet(
+        client_addr,
+        53_000,
+        Ipv4Addr::new(1, 1, 1, 1),
+        53,
+        &dns_query,
+    );
+    core.tun()
+        .push_inbound(Bytes::from(dns_request))
+        .await
+        .unwrap();
+
+    let dns_reply = poll_tun_outbound_until(core.tun(), |packet| {
+        ipv4_udp_payload(packet)
+            .and_then(dns_response_answer_ipv4)
+            .is_some()
+    })
+    .await;
+    let fake_ip = ipv4_udp_payload(&dns_reply)
+        .and_then(dns_response_answer_ipv4)
+        .unwrap();
+    assert_eq!(fake_ip, Ipv4Addr::new(198, 18, 0, 1));
+
+    let request = ipv4_udp_packet(
+        client_addr,
+        49_152,
+        fake_ip,
+        echo_addr_v4.port(),
+        b"hello fake dns",
+    );
+    core.tun().push_inbound(Bytes::from(request)).await.unwrap();
+
+    let reply = poll_tun_outbound_until(core.tun(), |packet| {
+        ipv4_udp_payload(packet)
+            .map(|payload| payload == b"hello fake dns")
+            .unwrap_or(false)
+    })
+    .await;
+    assert_ipv4_udp_packet(
+        &reply,
+        fake_ip,
+        echo_addr_v4.port(),
+        client_addr,
+        49_152,
+        b"hello fake dns",
+    );
+    core.stop().await.unwrap();
+    timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
 async fn run_tun_udp_vless_echo_scenario() {
     let (vless_addr, vless_handle) = spawn_fake_vless_udp_server().await;
     let echo_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 53);
@@ -1586,6 +1751,70 @@ async fn run_tun_udp_vision_xudp_echo_scenario() {
         49154,
         b"hello vision xudp",
     );
+    core.stop().await.unwrap();
+
+    timeout(Duration::from_secs(1), vless_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+async fn run_tun_regular_vision_udp443_without_quic_block_scenario() {
+    let (client_config, server_config) = tls_test_configs();
+    let echo_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 443);
+    let (vless_addr, vless_handle) =
+        spawn_fake_tls_vision_xudp_server(server_config, echo_addr).await;
+    let resolver = StaticDnsResolver {
+        domain: "vless.test",
+        addr: vless_addr,
+    };
+    let config = runtime_tun_config_with_tls_vision_vless_domain_server(
+        "vless.test",
+        vless_addr.port(),
+        "vless.test",
+    );
+    let dialer =
+        TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config));
+    let options = TunRuntimeOptions {
+        block_quic: false,
+        ..TunRuntimeOptions::default()
+    };
+
+    let mut core = Core::with_runtime_dependencies_and_tun_options(
+        config,
+        Arc::new(resolver),
+        Arc::new(dialer),
+        options,
+    )
+    .unwrap();
+    core.start().await.unwrap();
+
+    let client_addr = Ipv4Addr::new(10, 10, 0, 2);
+    let request = ipv4_udp_packet(
+        client_addr,
+        49155,
+        Ipv4Addr::LOCALHOST,
+        echo_addr.port(),
+        b"hello vision xudp",
+    );
+    core.tun().push_inbound(Bytes::from(request)).await.unwrap();
+
+    let reply = poll_tun_outbound_until(core.tun(), |packet| {
+        ipv4_udp_payload(packet)
+            .map(|payload| payload == b"hello vision xudp")
+            .unwrap_or(false)
+    })
+    .await;
+    assert_ipv4_udp_packet(
+        &reply,
+        Ipv4Addr::LOCALHOST,
+        echo_addr.port(),
+        client_addr,
+        49155,
+        b"hello vision xudp",
+    );
+    let stats = core.tun().stats().await;
+    assert_eq!(stats.udp_vision_udp443_rejections, 0);
     core.stop().await.unwrap();
 
     timeout(Duration::from_secs(1), vless_handle)
@@ -2060,6 +2289,62 @@ fn ipv4_udp_payload(packet: &[u8]) -> Option<&[u8]> {
         return None;
     }
     Some(&packet[header_len + 8..header_len + udp_len])
+}
+
+fn build_dns_a_query(id: u16, domain: &str) -> Vec<u8> {
+    let mut packet = Vec::new();
+    packet.extend_from_slice(&id.to_be_bytes());
+    packet.extend_from_slice(&0x0100_u16.to_be_bytes());
+    packet.extend_from_slice(&1_u16.to_be_bytes());
+    packet.extend_from_slice(&0_u16.to_be_bytes());
+    packet.extend_from_slice(&0_u16.to_be_bytes());
+    packet.extend_from_slice(&0_u16.to_be_bytes());
+    for label in domain.split('.') {
+        packet.push(label.len() as u8);
+        packet.extend_from_slice(label.as_bytes());
+    }
+    packet.push(0);
+    packet.extend_from_slice(&1_u16.to_be_bytes());
+    packet.extend_from_slice(&1_u16.to_be_bytes());
+    packet
+}
+
+fn dns_response_answer_ipv4(packet: &[u8]) -> Option<Ipv4Addr> {
+    if packet.len() < 16 {
+        return None;
+    }
+    let answer_count = u16::from_be_bytes([packet[6], packet[7]]);
+    if answer_count == 0 {
+        return None;
+    }
+    let mut offset = 12usize;
+    loop {
+        let len = usize::from(*packet.get(offset)?);
+        offset += 1;
+        if len == 0 {
+            break;
+        }
+        offset = offset.checked_add(len)?;
+        if offset > packet.len() {
+            return None;
+        }
+    }
+    offset = offset.checked_add(4)?;
+    if packet.get(offset)? & 0xc0 != 0xc0 {
+        return None;
+    }
+    offset = offset.checked_add(2 + 2 + 2 + 4)?;
+    let rdlen = u16::from_be_bytes([*packet.get(offset)?, *packet.get(offset + 1)?]);
+    offset += 2;
+    if rdlen != 4 {
+        return None;
+    }
+    Some(Ipv4Addr::new(
+        *packet.get(offset)?,
+        *packet.get(offset + 1)?,
+        *packet.get(offset + 2)?,
+        *packet.get(offset + 3)?,
+    ))
 }
 
 fn assert_ipv4_icmp_echo_reply(

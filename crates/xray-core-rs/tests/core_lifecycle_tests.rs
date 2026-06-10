@@ -1,4 +1,5 @@
 use std::net::{IpAddr, Ipv4Addr};
+use std::sync::Arc;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -8,7 +9,8 @@ use xray_config::{
     CoreConfig, InboundConfig, InboundProtocol, Network, OutboundConfig, OutboundSettings,
     RoutingConfig, StreamSecurity, StreamSettings, TargetAddr, VlessOutboundSettings, VlessUser,
 };
-use xray_core_rs::{Core, CoreError, CoreState};
+use xray_core_rs::{Core, CoreError, CoreState, TunRuntimeOptions, TunRuntimeProfile};
+use xray_transport::{SystemDnsResolver, TransportDialer};
 
 fn runtime_config() -> CoreConfig {
     CoreConfig {
@@ -36,6 +38,7 @@ fn runtime_config() -> CoreConfig {
         }],
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
+        dns: Default::default(),
     }
 }
 
@@ -59,6 +62,38 @@ async fn core_starts_and_stops_from_config() {
     assert_eq!(core.state(), CoreState::Running);
     core.stop().await.unwrap();
     assert_eq!(core.state(), CoreState::Stopped);
+}
+
+#[tokio::test]
+async fn core_applies_low_memory_tun_queue_profile() {
+    let core = Core::with_runtime_dependencies_and_tun_options(
+        tun_runtime_config(),
+        Arc::new(SystemDnsResolver),
+        Arc::new(TransportDialer::system().unwrap()),
+        TunRuntimeOptions::with_profile(TunRuntimeProfile::LowMemory),
+    )
+    .unwrap();
+
+    let stats = core.tun().stats().await;
+
+    assert_eq!(stats.inbound_queue_depth, 256);
+    assert_eq!(stats.outbound_queue_depth, 512);
+}
+
+#[tokio::test]
+async fn core_applies_throughput_tun_queue_profile() {
+    let core = Core::with_runtime_dependencies_and_tun_options(
+        tun_runtime_config(),
+        Arc::new(SystemDnsResolver),
+        Arc::new(TransportDialer::system().unwrap()),
+        TunRuntimeOptions::with_profile(TunRuntimeProfile::Throughput),
+    )
+    .unwrap();
+
+    let stats = core.tun().stats().await;
+
+    assert_eq!(stats.inbound_queue_depth, 2048);
+    assert_eq!(stats.outbound_queue_depth, 8192);
 }
 
 #[tokio::test]

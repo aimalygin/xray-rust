@@ -14,6 +14,10 @@ mod socks;
 mod tun;
 mod tun_fd;
 
+const TUN_MTU: usize = 1500;
+const TUN_INBOUND_QUEUE_DEPTH: usize = 1024;
+const TUN_OUTBOUND_QUEUE_DEPTH: usize = 4096;
+
 pub use outbound::{
     open_tcp_stream_with_resolver_and_dialer, open_vless_tcp_stream,
     open_vless_tcp_stream_with_resolver, open_vless_tcp_stream_with_resolver_and_dialer,
@@ -33,6 +37,56 @@ pub enum CoreState {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct TunRuntimeOptions {
     pub block_quic: bool,
+    pub collect_tcp_timings: bool,
+    pub profile: TunRuntimeProfile,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum TunRuntimeProfile {
+    #[default]
+    Default,
+    Mobile,
+    Desktop,
+    LowMemory,
+    Throughput,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TunQueueOptions {
+    pub mtu: usize,
+    pub inbound_queue_depth: usize,
+    pub outbound_queue_depth: usize,
+}
+
+impl TunRuntimeOptions {
+    pub fn with_profile(profile: TunRuntimeProfile) -> Self {
+        Self {
+            profile,
+            ..Self::default()
+        }
+    }
+
+    pub fn tun_queue_options(self) -> TunQueueOptions {
+        match self.profile {
+            TunRuntimeProfile::LowMemory => TunQueueOptions {
+                mtu: TUN_MTU,
+                inbound_queue_depth: 256,
+                outbound_queue_depth: 512,
+            },
+            TunRuntimeProfile::Throughput => TunQueueOptions {
+                mtu: TUN_MTU,
+                inbound_queue_depth: 2048,
+                outbound_queue_depth: 8192,
+            },
+            TunRuntimeProfile::Default | TunRuntimeProfile::Mobile | TunRuntimeProfile::Desktop => {
+                TunQueueOptions {
+                    mtu: TUN_MTU,
+                    inbound_queue_depth: TUN_INBOUND_QUEUE_DEPTH,
+                    outbound_queue_depth: TUN_OUTBOUND_QUEUE_DEPTH,
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -103,6 +157,18 @@ impl Core {
         Self::with_runtime_dependencies(config, dns_resolver, Arc::new(TransportDialer::system()?))
     }
 
+    pub fn with_tun_runtime_options(
+        config: CoreConfig,
+        tun_runtime_options: TunRuntimeOptions,
+    ) -> Result<Self, CoreError> {
+        Self::with_runtime_dependencies_and_tun_options(
+            config,
+            Arc::new(SystemDnsResolver),
+            Arc::new(TransportDialer::system()?),
+            tun_runtime_options,
+        )
+    }
+
     pub fn with_runtime_dependencies(
         config: CoreConfig,
         dns_resolver: Arc<dyn DnsResolver>,
@@ -123,10 +189,15 @@ impl Core {
         tun_runtime_options: TunRuntimeOptions,
     ) -> Result<Self, CoreError> {
         let shutdown = Shutdown::new();
-        let tun = Arc::new(TunEndpoint::new(TunConfig {
-            mtu: 1500,
-            queue_depth: 1024,
-        }));
+        let tun_queue_options = tun_runtime_options.tun_queue_options();
+        let tun = Arc::new(TunEndpoint::new_with_queue_depths(
+            TunConfig {
+                mtu: tun_queue_options.mtu,
+                queue_depth: tun_queue_options.inbound_queue_depth,
+            },
+            tun_queue_options.inbound_queue_depth,
+            tun_queue_options.outbound_queue_depth,
+        ));
 
         Ok(Self {
             config,

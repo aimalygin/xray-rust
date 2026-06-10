@@ -18,6 +18,12 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
     for symbol in [
         "XrayStatus",
         "XrayTunStats",
+        "XrayTcpFlowSummaryEvent",
+        "XrayTcpSlowFlowEvent",
+        "XrayTcpSlowFlowKind",
+        "XrayUdpSlowFlowEvent",
+        "XrayUdpResponseGapEvent",
+        "XrayUdpQuicBlockedEvent",
         "XrayCoreHandle",
         "XrayError",
         "xray_core_new",
@@ -29,16 +35,34 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
         "xray_core_set_socket_protect_callback",
         "XrayTunFdPacketFormat",
         "XrayTunFdClosePolicy",
+        "XrayTunRuntimeProfile",
         "xray_core_set_tun_fd",
         "xray_core_set_tun_block_quic",
+        "xray_core_set_tun_collect_tcp_timings",
+        "xray_core_set_tun_runtime_profile",
         "xray_error_code",
         "xray_error_message",
         "xray_error_free",
         "xray_tun_push_packet",
         "xray_tun_poll_packet",
+        "xray_tun_poll_tcp_flow_summary_event",
+        "xray_tun_poll_tcp_slow_flow_event",
+        "xray_tun_poll_udp_slow_flow_event",
+        "xray_tun_poll_udp_response_gap_event",
+        "xray_tun_poll_udp_quic_blocked_event",
         "xray_tun_stats",
     ] {
         assert!(header.contains(symbol), "header missing `{symbol}`");
+    }
+
+    for field in [
+        "ms_to_64kib",
+        "ms_to_128kib",
+        "ms_to_256kib",
+        "ms_to_512kib",
+        "ms_to_1mib",
+    ] {
+        assert!(header.contains(field), "header missing `{field}`");
     }
 }
 
@@ -76,9 +100,16 @@ fn apple_adapter_declares_packet_tunnel_pump() {
     assert!(core.contains("xray_core_set_socket_protect_callback"));
     assert!(core.contains("xray_core_set_tun_fd"));
     assert!(core.contains("xray_core_set_tun_block_quic"));
+    assert!(core.contains("xray_core_set_tun_collect_tcp_timings"));
+    assert!(core.contains("xray_core_set_tun_runtime_profile"));
     assert!(core.contains("tunFileDescriptor"));
     assert!(core.contains("xray_tun_push_packet"));
     assert!(core.contains("xray_tun_poll_packet"));
+    assert!(core.contains("xray_tun_poll_tcp_flow_summary_event"));
+    assert!(core.contains("xray_tun_poll_tcp_slow_flow_event"));
+    assert!(core.contains("xray_tun_poll_udp_slow_flow_event"));
+    assert!(core.contains("xray_tun_poll_udp_response_gap_event"));
+    assert!(core.contains("xray_tun_poll_udp_quic_blocked_event"));
     assert!(fd_helper.contains("XrayDarwinTunFileDescriptor"));
     assert!(fd_helper.contains("discoverUtunFileDescriptor"));
     assert!(fd_helper.contains("getsockopt"));
@@ -116,16 +147,24 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
     assert!(core.contains("System.loadLibrary(\"xray_ffi\")"));
     assert!(core.contains("nativeSetSocketProtector"));
     assert!(core.contains("nativeSetTunFd"));
+    assert!(core.contains("nativeSetTunCollectTcpTimings"));
+    assert!(core.contains("nativeSetTunRuntimeProfile"));
+    assert!(core.contains("XrayTunRuntimeProfile"));
     assert!(service.contains("VpnService"));
     assert!(service.contains("XrayTunBackend"));
     assert!(service.contains("FileDescriptor"));
     assert!(service.contains("protect(fd)"));
+    assert!(service.contains("addDisallowedApplication(packageName)"));
     assert!(service.contains("read(packetBuffer)"));
     assert!(service.contains("pollPacket"));
     assert!(jni.contains("xray_core_set_socket_protect_callback"));
     assert!(jni.contains("xray_core_set_tun_fd"));
+    assert!(jni.contains("xray_core_set_tun_collect_tcp_timings"));
+    assert!(jni.contains("xray_core_set_tun_runtime_profile"));
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetSocketProtector"));
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetTunFd"));
+    assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetTunCollectTcpTimings"));
+    assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetTunRuntimeProfile"));
 }
 
 #[test]
@@ -300,11 +339,18 @@ const EXPORTED_SYMBOLS: &[&str] = &[
     "xray_core_set_socket_protect_callback",
     "xray_core_set_tun_fd",
     "xray_core_set_tun_block_quic",
+    "xray_core_set_tun_collect_tcp_timings",
+    "xray_core_set_tun_runtime_profile",
     "xray_error_code",
     "xray_error_message",
     "xray_error_free",
     "xray_tun_push_packet",
     "xray_tun_poll_packet",
+    "xray_tun_poll_tcp_flow_summary_event",
+    "xray_tun_poll_tcp_slow_flow_event",
+    "xray_tun_poll_udp_slow_flow_event",
+    "xray_tun_poll_udp_response_gap_event",
+    "xray_tun_poll_udp_quic_blocked_event",
     "xray_tun_stats",
 ];
 
@@ -335,9 +381,17 @@ static void use_xray_ffi_api(void) {
   XrayError *error = NULL;
   XrayCoreHandle *handle = xray_core_new(&error);
   XrayTunStats stats = {0};
+  XrayTcpFlowSummaryEvent tcp_flow_summary = {0};
+  XrayTcpSlowFlowEvent slow_flow = {0};
+  XrayUdpSlowFlowEvent udp_slow_flow = {0};
+  XrayUdpResponseGapEvent udp_response_gap = {0};
+  XrayUdpQuicBlockedEvent udp_quic_blocked = {0};
   uint8_t packet[1] = {0};
   uint8_t buffer[64] = {0};
+  char target[256] = {0};
+  char outbound[64] = {0};
   size_t written = 0;
+  size_t outbound_written = 0;
 
   (void)xray_ffi_version_major();
   (void)xray_core_set_socket_protect_callback(handle, NULL, NULL, &error);
@@ -348,11 +402,54 @@ static void use_xray_ffi_api(void) {
       XRAY_TUN_FD_CLOSE_POLICY_BORROWED,
       &error);
   (void)xray_core_set_tun_block_quic(handle, 1, &error);
+  (void)xray_core_set_tun_collect_tcp_timings(handle, 1, &error);
+  (void)xray_core_set_tun_runtime_profile(
+      handle,
+      XRAY_TUN_RUNTIME_PROFILE_LOW_MEMORY,
+      &error);
   (void)xray_core_load_config_json(handle, "{}", &error);
   (void)xray_core_start(handle, &error);
   (void)xray_core_stop(handle, &error);
   (void)xray_tun_push_packet(handle, packet, sizeof(packet), &error);
   (void)xray_tun_poll_packet(handle, buffer, sizeof(buffer), &written, &error);
+  (void)xray_tun_poll_tcp_flow_summary_event(
+      handle,
+      &tcp_flow_summary,
+      target,
+      sizeof(target),
+      &written,
+      outbound,
+      sizeof(outbound),
+      &outbound_written,
+      &error);
+  (void)xray_tun_poll_tcp_slow_flow_event(
+      handle,
+      &slow_flow,
+      target,
+      sizeof(target),
+      &written,
+      &error);
+  (void)xray_tun_poll_udp_slow_flow_event(
+      handle,
+      &udp_slow_flow,
+      target,
+      sizeof(target),
+      &written,
+      &error);
+  (void)xray_tun_poll_udp_response_gap_event(
+      handle,
+      &udp_response_gap,
+      target,
+      sizeof(target),
+      &written,
+      &error);
+  (void)xray_tun_poll_udp_quic_blocked_event(
+      handle,
+      &udp_quic_blocked,
+      target,
+      sizeof(target),
+      &written,
+      &error);
   (void)xray_tun_stats(handle, &stats, &error);
   (void)xray_error_code(error);
   (void)xray_error_message(error);

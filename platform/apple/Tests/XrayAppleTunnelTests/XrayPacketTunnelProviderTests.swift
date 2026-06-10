@@ -143,6 +143,42 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         )
     }
 
+    func testTunRuntimeProfileDefaultsToDefault() {
+        XCTAssertEqual(
+            XrayPacketTunnelProvider.tunRuntimeProfile(
+                options: nil,
+                providerConfiguration: nil
+            ),
+            .default
+        )
+    }
+
+    func testTunRuntimeProfileReadsProviderConfiguration() {
+        XCTAssertEqual(
+            XrayPacketTunnelProvider.tunRuntimeProfile(
+                options: nil,
+                providerConfiguration: [
+                    XrayTunnelProviderMessage.providerTunRuntimeProfileKey: "low-memory",
+                ]
+            ),
+            .lowMemory
+        )
+    }
+
+    func testTunRuntimeProfileStartOptionsOverrideProviderConfiguration() {
+        XCTAssertEqual(
+            XrayPacketTunnelProvider.tunRuntimeProfile(
+                options: [
+                    XrayTunnelProviderMessage.tunRuntimeProfileOptionKey: "throughput" as NSString,
+                ],
+                providerConfiguration: [
+                    XrayTunnelProviderMessage.providerTunRuntimeProfileKey: "low-memory",
+                ]
+            ),
+            .throughput
+        )
+    }
+
     func testConfigSummaryIncludesRoutingSurfaceWithoutSecrets() {
         let summary = XrayPacketTunnelProvider.configSummary(
             """

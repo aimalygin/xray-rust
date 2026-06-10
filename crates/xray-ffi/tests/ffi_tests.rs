@@ -2,10 +2,15 @@ use std::ffi::{CStr, CString};
 
 use xray_ffi::{
     xray_core_free, xray_core_load_config_json, xray_core_new,
-    xray_core_set_socket_protect_callback, xray_core_set_tun_block_quic, xray_core_set_tun_fd,
+    xray_core_set_socket_protect_callback, xray_core_set_tun_block_quic,
+    xray_core_set_tun_collect_tcp_timings, xray_core_set_tun_fd, xray_core_set_tun_runtime_profile,
     xray_core_start, xray_core_stop, xray_error_code, xray_error_free, xray_error_message,
-    xray_tun_poll_packet, xray_tun_push_packet, xray_tun_stats, XrayStatus, XrayTunFdClosePolicy,
-    XrayTunFdPacketFormat, XrayTunStats,
+    xray_tun_poll_packet, xray_tun_poll_tcp_flow_summary_event, xray_tun_poll_tcp_slow_flow_event,
+    xray_tun_poll_udp_quic_blocked_event, xray_tun_poll_udp_response_gap_event,
+    xray_tun_poll_udp_slow_flow_event, xray_tun_push_packet, xray_tun_stats, XrayStatus,
+    XrayTcpFlowSummaryEvent, XrayTcpSlowFlowEvent, XrayTunFdClosePolicy, XrayTunFdPacketFormat,
+    XrayTunRuntimeProfile, XrayTunStats, XrayUdpQuicBlockedEvent, XrayUdpResponseGapEvent,
+    XrayUdpSlowFlowEvent,
 };
 
 #[test]
@@ -242,6 +247,80 @@ fn ffi_rejects_tun_quic_blocking_after_config_load() {
     }
 }
 
+#[test]
+fn ffi_registers_tun_tcp_timing_collection_before_config_load() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    assert!(!core.is_null());
+
+    let status = unsafe { xray_core_set_tun_collect_tcp_timings(core, 1, &mut err) };
+
+    assert_eq!(status, XrayStatus::Ok);
+    assert!(err.is_null());
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_rejects_tun_tcp_timing_collection_after_config_load() {
+    let mut err = std::ptr::null_mut();
+    let core = loaded_core(&mut err);
+
+    let status = unsafe { xray_core_set_tun_collect_tcp_timings(core, 1, &mut err) };
+
+    assert_eq!(status, XrayStatus::RuntimeError);
+    assert_error(
+        &mut err,
+        XrayStatus::RuntimeError,
+        "tun TCP timing collection must be set before config load",
+    );
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_registers_tun_runtime_profile_before_config_load() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    assert!(!core.is_null());
+
+    let status = unsafe {
+        xray_core_set_tun_runtime_profile(core, XrayTunRuntimeProfile::LowMemory, &mut err)
+    };
+
+    assert_eq!(status, XrayStatus::Ok);
+    assert!(err.is_null());
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_rejects_tun_runtime_profile_after_config_load() {
+    let mut err = std::ptr::null_mut();
+    let core = loaded_core(&mut err);
+
+    let status = unsafe {
+        xray_core_set_tun_runtime_profile(core, XrayTunRuntimeProfile::Throughput, &mut err)
+    };
+
+    assert_eq!(status, XrayStatus::RuntimeError);
+    assert_error(
+        &mut err,
+        XrayStatus::RuntimeError,
+        "tun runtime profile must be set before config load",
+    );
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
 #[cfg(unix)]
 #[test]
 fn ffi_fd_tun_raw_ip_bridges_icmp_echo_reply() {
@@ -384,6 +463,17 @@ fn ffi_tun_push_packet_updates_stats() {
     assert_eq!(stats.tcp_remote_closed_events, 0);
     assert_eq!(stats.tcp_remote_read_errors, 0);
     assert_eq!(stats.tcp_open_errors, 0);
+    assert_eq!(stats.udp_remote_open_events, 0);
+    assert_eq!(stats.udp_remote_udp443_open_events, 0);
+    assert_eq!(stats.udp_remote_written_bytes, 0);
+    assert_eq!(stats.udp_remote_read_bytes, 0);
+    assert_eq!(stats.inbound_queue_depth, 1024);
+    assert_eq!(stats.outbound_queue_depth, 4096);
+    assert_eq!(stats.inbound_queue_max_packets, 1);
+    assert_eq!(stats.outbound_queue_max_packets, 0);
+    assert_eq!(stats.tun_fd_write_batches, 0);
+    assert_eq!(stats.tun_fd_write_batch_packets, 0);
+    assert_eq!(stats.tun_fd_write_batch_max_packets, 0);
 
     unsafe {
         xray_core_free(core);
@@ -424,6 +514,152 @@ fn ffi_tun_poll_packet_reports_no_packet() {
 
     assert_eq!(status, XrayStatus::NoPacket);
     assert_eq!(written, 0);
+    assert!(err.is_null());
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_tun_poll_tcp_slow_flow_event_reports_no_packet() {
+    let mut err = std::ptr::null_mut();
+    let core = loaded_core(&mut err);
+    let mut event = XrayTcpSlowFlowEvent::default();
+    let mut target = [0_i8; 256];
+    let mut written = 7usize;
+
+    let status = unsafe {
+        xray_tun_poll_tcp_slow_flow_event(
+            core,
+            &mut event,
+            target.as_mut_ptr(),
+            target.len(),
+            &mut written,
+            &mut err,
+        )
+    };
+
+    assert_eq!(status, XrayStatus::NoPacket);
+    assert_eq!(written, 0);
+    assert!(err.is_null());
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_tun_poll_udp_slow_flow_event_reports_no_packet() {
+    let mut err = std::ptr::null_mut();
+    let core = loaded_core(&mut err);
+    let mut event = XrayUdpSlowFlowEvent::default();
+    let mut target = [0_i8; 256];
+    let mut written = 7usize;
+
+    let status = unsafe {
+        xray_tun_poll_udp_slow_flow_event(
+            core,
+            &mut event,
+            target.as_mut_ptr(),
+            target.len(),
+            &mut written,
+            &mut err,
+        )
+    };
+
+    assert_eq!(status, XrayStatus::NoPacket);
+    assert_eq!(written, 0);
+    assert!(err.is_null());
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_tun_poll_udp_response_gap_event_reports_no_packet() {
+    let mut err = std::ptr::null_mut();
+    let core = loaded_core(&mut err);
+    let mut event = XrayUdpResponseGapEvent::default();
+    let mut target = [0_i8; 256];
+    let mut written = 7usize;
+
+    let status = unsafe {
+        xray_tun_poll_udp_response_gap_event(
+            core,
+            &mut event,
+            target.as_mut_ptr(),
+            target.len(),
+            &mut written,
+            &mut err,
+        )
+    };
+
+    assert_eq!(status, XrayStatus::NoPacket);
+    assert_eq!(written, 0);
+    assert!(err.is_null());
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_tun_poll_udp_quic_blocked_event_reports_no_packet() {
+    let mut err = std::ptr::null_mut();
+    let core = loaded_core(&mut err);
+    let mut event = XrayUdpQuicBlockedEvent::default();
+    let mut target = [0_i8; 256];
+    let mut written = 7usize;
+
+    let status = unsafe {
+        xray_tun_poll_udp_quic_blocked_event(
+            core,
+            &mut event,
+            target.as_mut_ptr(),
+            target.len(),
+            &mut written,
+            &mut err,
+        )
+    };
+
+    assert_eq!(status, XrayStatus::NoPacket);
+    assert_eq!(written, 0);
+    assert!(err.is_null());
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_tun_poll_tcp_flow_summary_event_reports_no_packet() {
+    let mut err = std::ptr::null_mut();
+    let core = loaded_core(&mut err);
+    let mut event = XrayTcpFlowSummaryEvent::default();
+    let mut target = [0_i8; 256];
+    let mut outbound = [0_i8; 64];
+    let mut written = 7usize;
+    let mut outbound_written = 9usize;
+
+    let status = unsafe {
+        xray_tun_poll_tcp_flow_summary_event(
+            core,
+            &mut event,
+            target.as_mut_ptr(),
+            target.len(),
+            &mut written,
+            outbound.as_mut_ptr(),
+            outbound.len(),
+            &mut outbound_written,
+            &mut err,
+        )
+    };
+
+    assert_eq!(status, XrayStatus::NoPacket);
+    assert_eq!(written, 0);
+    assert_eq!(outbound_written, 0);
     assert!(err.is_null());
 
     unsafe {

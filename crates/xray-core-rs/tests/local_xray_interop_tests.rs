@@ -588,6 +588,7 @@ fn rust_core_config_with_security(
         }],
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
+        dns: Default::default(),
     }
 }
 

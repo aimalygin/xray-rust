@@ -109,13 +109,36 @@ public final class XrayPacketTunnelPump: @unchecked Sendable {
             }
 
             for packet in packets {
-                if Self.shouldDropPacket(packet, options: self.options) {
+                if let rejectPacket = Self.quicRejectPacket(for: packet, options: self.options) {
                     let count = self.incrementBlockedQUICPacketCount()
                     if Self.shouldLogPacketEvent(count) {
                         XrayMobileLog.info(
                             "PacketPump",
-                            "Blocked UDP/443 packet bytes=\(packet.count) totalBlockedQUIC=\(count)"
+                            "Rejected UDP/443 QUIC packet bytes=\(packet.count) rejectBytes=\(rejectPacket.count) totalBlockedQUIC=\(count)"
                         )
+                    }
+                    let protocolFamily = NSNumber(value: Self.protocolFamily(for: rejectPacket))
+                    let didWrite = self.provider.packetFlow.writePackets(
+                        [rejectPacket],
+                        withProtocols: [protocolFamily]
+                    )
+                    if let snapshot = self.recordWrittenPacket(
+                        byteCount: rejectPacket.count,
+                        didWrite: didWrite
+                    ) {
+                        XrayMobileLog.info(
+                            "PacketPump",
+                            "Wrote QUIC reject packet bytes=\(rejectPacket.count) protocol=\(protocolFamily) didWrite=\(didWrite) totals writtenPackets=\(snapshot.writtenPacketCount) writtenBytes=\(snapshot.writtenByteCount) writeErrors=\(snapshot.writePacketErrorCount)"
+                        )
+                    }
+                    if !didWrite {
+                        let errorCount = self.currentWritePacketErrorCount()
+                        if Self.shouldLogPacketError(errorCount) {
+                            XrayMobileLog.error(
+                                "PacketPump",
+                                "writePackets for QUIC reject returned false count=\(errorCount) bytes=\(rejectPacket.count)"
+                            )
+                        }
                     }
                     continue
                 }
@@ -286,11 +309,17 @@ public final class XrayPacketTunnelPump: @unchecked Sendable {
             return
         }
 
-        let coreStats = try? core.stats()
         XrayMobileLog.info(
             "PacketPump",
-            "Stats readPackets=\(snapshot.readPacketCount) readBytes=\(snapshot.readByteCount) writtenPackets=\(snapshot.writtenPacketCount) writtenBytes=\(snapshot.writtenByteCount) blockedQUIC=\(snapshot.blockedQUICPacketCount) pushErrors=\(snapshot.pushPacketErrorCount) pollErrors=\(snapshot.pollPacketErrorCount) writeErrors=\(snapshot.writePacketErrorCount) coreInbound=\(coreStats?.inboundPackets ?? 0) coreOutbound=\(coreStats?.outboundPackets ?? 0) coreDropped=\(coreStats?.droppedPackets ?? 0) coreInboundDropped=\(coreStats?.inboundDroppedPackets ?? 0) coreOutboundDropped=\(coreStats?.outboundDroppedPackets ?? 0) tcpStackToRemoteBytes=\(coreStats?.tcpStackToRemoteBytes ?? 0) tcpRemoteWrittenBytes=\(coreStats?.tcpRemoteWrittenBytes ?? 0) tcpRemoteReadBytes=\(coreStats?.tcpRemoteReadBytes ?? 0) tcpBackpressure=\(coreStats?.tcpBackpressureEvents ?? 0) tcpStackToRemoteBackpressure=\(coreStats?.tcpStackToRemoteBackpressureEvents ?? 0) tcpRemoteToStackBackpressure=\(coreStats?.tcpRemoteToStackBackpressureEvents ?? 0) tcpRemoteWriteBatches=\(coreStats?.tcpRemoteWriteBatches ?? 0) tcpRemoteWriteBatchMessages=\(coreStats?.tcpRemoteWriteBatchMessages ?? 0) tcpRemoteWriteBatchMaxMessages=\(coreStats?.tcpRemoteWriteBatchMaxMessages ?? 0) tcpRemoteWriteBatchMaxBytes=\(coreStats?.tcpRemoteWriteBatchMaxBytes ?? 0) tcpPendingRemoteBytes=\(coreStats?.tcpPendingRemoteBytes ?? 0) tcpPendingRemoteFlows=\(coreStats?.tcpPendingRemoteFlows ?? 0) tcpPendingRemoteMaxBytes=\(coreStats?.tcpPendingRemoteMaxBytes ?? 0) tcpRemoteBufferLimitBytes=\(coreStats?.tcpRemoteBufferLimitBytes ?? 0) tcpRemoteBufferPressureActive=\(coreStats?.tcpRemoteBufferPressureActive ?? false) tcpWriteErrors=\(coreStats?.tcpRemoteWriteErrors ?? 0) tcpRemoteClosed=\(coreStats?.tcpRemoteClosedEvents ?? 0) tcpReadErrors=\(coreStats?.tcpRemoteReadErrors ?? 0) tcpOpenErrors=\(coreStats?.tcpOpenErrors ?? 0) activeTCPFlows=\(coreStats?.activeTCPFlows ?? 0) activeUDPFlows=\(coreStats?.activeUDPFlows ?? 0) udpFlowLimit=\(coreStats?.udpFlowLimit ?? 0) udpBudgetDrops=\(coreStats?.udpBudgetDrops ?? 0) udpEvictedFlows=\(coreStats?.udpEvictedFlows ?? 0) udpChannelDroppedPackets=\(coreStats?.udpChannelDroppedPackets ?? 0) udpOpenErrors=\(coreStats?.udpOpenErrors ?? 0) udpVisionUDP443Rejections=\(coreStats?.udpVisionUDP443Rejections ?? 0) udpWriteErrors=\(coreStats?.udpRemoteWriteErrors ?? 0) udpReadErrors=\(coreStats?.udpRemoteReadErrors ?? 0) udpRemoteClosed=\(coreStats?.udpRemoteClosedEvents ?? 0) udpQuicBlockedPackets=\(coreStats?.udpQuicBlockedPackets ?? 0)"
+            "Stats packetFlow readPackets=\(snapshot.readPacketCount) readBytes=\(snapshot.readByteCount) writtenPackets=\(snapshot.writtenPacketCount) writtenBytes=\(snapshot.writtenByteCount) blockedQUIC=\(snapshot.blockedQUICPacketCount) pushErrors=\(snapshot.pushPacketErrorCount) pollErrors=\(snapshot.pollPacketErrorCount) writeErrors=\(snapshot.writePacketErrorCount)"
         )
+        guard let coreStats = try? core.stats() else {
+            XrayMobileLog.info("PacketPump", "Stats core unavailable")
+            return
+        }
+        for message in coreStats.debugLogMessages(prefix: "Stats core") {
+            XrayMobileLog.info("PacketPump", message)
+        }
     }
 
     private func snapshotLocked() -> PacketPumpSnapshot {
@@ -333,17 +362,23 @@ public final class XrayPacketTunnelPump: @unchecked Sendable {
         }
     }
 
-    static func shouldDropPacket(
-        _ packet: Data,
+    static func quicRejectPacket(
+        for packet: Data,
         options: XrayPacketTunnelPumpOptions
-    ) -> Bool {
+    ) -> Data? {
         guard options.blockQUIC,
               let payload = udpPayload(in: packet)
         else {
-            return false
+            return nil
         }
 
-        return payload.destinationPort == 443 && isLikelyQUICLongHeader(payload.payload)
+        guard payload.destinationPort == 443,
+              isLikelyQUICLongHeader(payload.payload)
+        else {
+            return nil
+        }
+
+        return icmpPortUnreachableReply(for: packet)
     }
 
     private static func udpPayload(in packet: Data) -> UDPPacketPayload? {
@@ -362,35 +397,216 @@ public final class XrayPacketTunnelPump: @unchecked Sendable {
     }
 
     private static func ipv4UDPPayload(in packet: Data) -> UDPPacketPayload? {
-        guard packet.count >= 28 else {
+        let bytes = [UInt8](packet)
+        guard bytes.count >= 28 else {
             return nil
         }
-        let headerLength = Int(packet[0] & 0x0f) * 4
+        let headerLength = Int(bytes[0] & 0x0f) * 4
         guard headerLength >= 20,
-              packet.count >= headerLength + 8,
-              packet[9] == 17
+              bytes.count >= headerLength + 8,
+              bytes[9] == 17
         else {
             return nil
         }
-        let destinationPort = UInt16(packet[headerLength + 2]) << 8
-            | UInt16(packet[headerLength + 3])
+
+        let fragment = UInt16(bytes[6]) << 8 | UInt16(bytes[7])
+        guard fragment & 0x3fff == 0 else {
+            return nil
+        }
+
+        let packetLength = Int(UInt16(bytes[2]) << 8 | UInt16(bytes[3]))
+        guard packetLength >= headerLength + 8,
+              bytes.count >= packetLength
+        else {
+            return nil
+        }
+
+        let udpLength = Int(UInt16(bytes[headerLength + 4]) << 8 | UInt16(bytes[headerLength + 5]))
+        guard udpLength >= 8,
+              headerLength + udpLength <= packetLength
+        else {
+            return nil
+        }
+
+        let destinationPort = UInt16(bytes[headerLength + 2]) << 8
+            | UInt16(bytes[headerLength + 3])
         return UDPPacketPayload(
             destinationPort: destinationPort,
-            payload: packet[(headerLength + 8)...]
+            payload: packet[(headerLength + 8)..<(headerLength + udpLength)]
         )
     }
 
     private static func ipv6UDPPayload(in packet: Data) -> UDPPacketPayload? {
-        guard packet.count >= 48,
-              packet[6] == 17
+        let bytes = [UInt8](packet)
+        guard bytes.count >= 48,
+              bytes[6] == 17
         else {
             return nil
         }
-        let destinationPort = UInt16(packet[42]) << 8 | UInt16(packet[43])
+
+        let payloadLength = Int(UInt16(bytes[4]) << 8 | UInt16(bytes[5]))
+        guard payloadLength >= 8,
+              bytes.count >= 40 + payloadLength
+        else {
+            return nil
+        }
+
+        let udpLength = Int(UInt16(bytes[44]) << 8 | UInt16(bytes[45]))
+        guard udpLength >= 8,
+              udpLength <= payloadLength
+        else {
+            return nil
+        }
+
+        let destinationPort = UInt16(bytes[42]) << 8 | UInt16(bytes[43])
         return UDPPacketPayload(
             destinationPort: destinationPort,
-            payload: packet[48...]
+            payload: packet[48..<(40 + udpLength)]
         )
+    }
+
+    private static func icmpPortUnreachableReply(for packet: Data) -> Data? {
+        guard let first = packet.first else {
+            return nil
+        }
+
+        switch first >> 4 {
+        case 4:
+            return ipv4ICMPPortUnreachableReply(for: packet)
+        case 6:
+            return ipv6ICMPPortUnreachableReply(for: packet)
+        default:
+            return nil
+        }
+    }
+
+    private static func ipv4ICMPPortUnreachableReply(for packet: Data) -> Data? {
+        let bytes = [UInt8](packet)
+        guard bytes.count >= 28 else {
+            return nil
+        }
+
+        let headerLength = Int(bytes[0] & 0x0f) * 4
+        guard headerLength >= 20,
+              bytes.count >= headerLength + 8,
+              bytes[9] == 17
+        else {
+            return nil
+        }
+
+        let fragment = UInt16(bytes[6]) << 8 | UInt16(bytes[7])
+        guard fragment & 0x3fff == 0 else {
+            return nil
+        }
+
+        let packetLength = Int(UInt16(bytes[2]) << 8 | UInt16(bytes[3]))
+        guard packetLength >= headerLength + 8,
+              bytes.count >= packetLength
+        else {
+            return nil
+        }
+
+        let quoteLength = min(headerLength + 8, packetLength)
+        let icmpLength = 8 + quoteLength
+        let totalLength = 20 + icmpLength
+        var reply = [UInt8](repeating: 0, count: totalLength)
+        reply[0] = 0x45
+        reply[2] = UInt8(totalLength >> 8)
+        reply[3] = UInt8(totalLength & 0xff)
+        reply[8] = 64
+        reply[9] = 1
+        reply.replaceSubrange(12..<16, with: bytes[16..<20])
+        reply.replaceSubrange(16..<20, with: bytes[12..<16])
+
+        reply[20] = 3
+        reply[21] = 3
+        reply.replaceSubrange(28..<(28 + quoteLength), with: bytes[0..<quoteLength])
+        let icmpChecksum = internetChecksum(reply[20...])
+        reply[22] = UInt8(icmpChecksum >> 8)
+        reply[23] = UInt8(icmpChecksum & 0xff)
+        let ipChecksum = internetChecksum(reply[0..<20])
+        reply[10] = UInt8(ipChecksum >> 8)
+        reply[11] = UInt8(ipChecksum & 0xff)
+
+        return Data(reply)
+    }
+
+    private static func ipv6ICMPPortUnreachableReply(for packet: Data) -> Data? {
+        let bytes = [UInt8](packet)
+        guard bytes.count >= 48,
+              bytes[6] == 17
+        else {
+            return nil
+        }
+
+        let payloadLength = Int(UInt16(bytes[4]) << 8 | UInt16(bytes[5]))
+        guard payloadLength >= 8,
+              bytes.count >= 40 + payloadLength
+        else {
+            return nil
+        }
+
+        let source = Array(bytes[8..<24])
+        let destination = Array(bytes[24..<40])
+        let packetLength = 40 + payloadLength
+        let quoteLength = min(packetLength, 1232)
+        let icmpLength = 8 + quoteLength
+        let totalLength = 40 + icmpLength
+        var reply = [UInt8](repeating: 0, count: totalLength)
+        reply[0] = 0x60
+        reply[4] = UInt8(icmpLength >> 8)
+        reply[5] = UInt8(icmpLength & 0xff)
+        reply[6] = 58
+        reply[7] = 64
+        reply.replaceSubrange(8..<24, with: destination)
+        reply.replaceSubrange(24..<40, with: source)
+
+        reply[40] = 1
+        reply[41] = 4
+        reply.replaceSubrange(48..<(48 + quoteLength), with: bytes[0..<quoteLength])
+        let checksum = ipv6TransportChecksum(
+            source: destination,
+            destination: source,
+            nextHeader: 58,
+            payload: reply[40...]
+        )
+        reply[42] = UInt8(checksum >> 8)
+        reply[43] = UInt8(checksum & 0xff)
+
+        return Data(reply)
+    }
+
+    private static func ipv6TransportChecksum<C: Collection>(
+        source: [UInt8],
+        destination: [UInt8],
+        nextHeader: UInt8,
+        payload: C
+    ) -> UInt16 where C.Element == UInt8 {
+        var pseudo = [UInt8]()
+        pseudo.reserveCapacity(40 + payload.count)
+        pseudo.append(contentsOf: source)
+        pseudo.append(contentsOf: destination)
+        let payloadLength = UInt32(payload.count)
+        pseudo.append(UInt8((payloadLength >> 24) & 0xff))
+        pseudo.append(UInt8((payloadLength >> 16) & 0xff))
+        pseudo.append(UInt8((payloadLength >> 8) & 0xff))
+        pseudo.append(UInt8(payloadLength & 0xff))
+        pseudo.append(contentsOf: [0, 0, 0, nextHeader])
+        pseudo.append(contentsOf: payload)
+        return internetChecksum(pseudo)
+    }
+
+    private static func internetChecksum<C: Collection>(_ bytes: C) -> UInt16 where C.Element == UInt8 {
+        var sum: UInt32 = 0
+        var iterator = bytes.makeIterator()
+        while let high = iterator.next() {
+            let low = iterator.next() ?? 0
+            sum += UInt32(high) << 8 | UInt32(low)
+        }
+        while sum >> 16 != 0 {
+            sum = (sum & 0xffff) + (sum >> 16)
+        }
+        return UInt16(truncatingIfNeeded: ~sum)
     }
 
     private static func isLikelyQUICLongHeader(_ payload: Data.SubSequence) -> Bool {

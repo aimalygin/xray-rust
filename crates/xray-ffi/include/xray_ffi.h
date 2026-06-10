@@ -46,18 +46,41 @@ typedef struct XrayTunStats {
   uint64_t tcp_remote_closed_events;
   uint64_t tcp_remote_read_errors;
   uint64_t tcp_open_errors;
+  uint64_t tcp_open_events;
+  uint64_t tcp_open_duration_ms_total;
+  uint64_t tcp_open_duration_ms_max;
+  uint64_t tcp_first_byte_events;
+  uint64_t tcp_first_byte_duration_ms_total;
+  uint64_t tcp_first_byte_duration_ms_max;
+  uint64_t tcp443_open_events;
+  uint64_t tcp443_open_duration_ms_total;
+  uint64_t tcp443_open_duration_ms_max;
+  uint64_t tcp443_first_byte_events;
+  uint64_t tcp443_first_byte_duration_ms_total;
+  uint64_t tcp443_first_byte_duration_ms_max;
   uint64_t active_tcp_flows;
   uint64_t active_udp_flows;
   uint64_t udp_flow_limit;
   uint64_t udp_budget_drops;
   uint64_t udp_evicted_flows;
   uint64_t udp_channel_dropped_packets;
+  uint64_t udp_remote_open_events;
+  uint64_t udp_remote_udp443_open_events;
+  uint64_t udp_remote_written_bytes;
+  uint64_t udp_remote_read_bytes;
   uint64_t udp_open_errors;
   uint64_t udp_vision_udp443_rejections;
   uint64_t udp_remote_write_errors;
   uint64_t udp_remote_read_errors;
   uint64_t udp_remote_closed_events;
   uint64_t udp_quic_blocked_packets;
+  uint64_t inbound_queue_depth;
+  uint64_t outbound_queue_depth;
+  uint64_t inbound_queue_max_packets;
+  uint64_t outbound_queue_max_packets;
+  uint64_t tun_fd_write_batches;
+  uint64_t tun_fd_write_batch_packets;
+  uint64_t tun_fd_write_batch_max_packets;
 } XrayTunStats;
 
 typedef enum XrayTunFdPacketFormat {
@@ -69,6 +92,55 @@ typedef enum XrayTunFdClosePolicy {
   XRAY_TUN_FD_CLOSE_POLICY_BORROWED = 0,
   XRAY_TUN_FD_CLOSE_POLICY_OWNED = 1
 } XrayTunFdClosePolicy;
+
+typedef enum XrayTunRuntimeProfile {
+  XRAY_TUN_RUNTIME_PROFILE_DEFAULT = 0,
+  XRAY_TUN_RUNTIME_PROFILE_MOBILE = 1,
+  XRAY_TUN_RUNTIME_PROFILE_DESKTOP = 2,
+  XRAY_TUN_RUNTIME_PROFILE_LOW_MEMORY = 3,
+  XRAY_TUN_RUNTIME_PROFILE_THROUGHPUT = 4
+} XrayTunRuntimeProfile;
+
+typedef enum XrayTcpSlowFlowKind {
+  XRAY_TCP_SLOW_FLOW_KIND_UNKNOWN = 0,
+  XRAY_TCP_SLOW_FLOW_KIND_OPEN = 1,
+  XRAY_TCP_SLOW_FLOW_KIND_FIRST_BYTE = 2
+} XrayTcpSlowFlowKind;
+
+typedef struct XrayTcpSlowFlowEvent {
+  XrayTcpSlowFlowKind kind;
+  uint64_t open_duration_ms;
+  uint64_t first_byte_duration_ms;
+} XrayTcpSlowFlowEvent;
+
+typedef struct XrayTcpFlowSummaryEvent {
+  uint64_t closed;
+  uint64_t duration_ms;
+  uint64_t open_duration_ms;
+  uint64_t first_byte_duration_ms;
+  uint64_t remote_read_bytes;
+  uint64_t ms_to_64kib;
+  uint64_t ms_to_128kib;
+  uint64_t ms_to_256kib;
+  uint64_t ms_to_512kib;
+  uint64_t ms_to_1mib;
+} XrayTcpFlowSummaryEvent;
+
+typedef struct XrayUdpSlowFlowEvent {
+  uint64_t first_response_duration_ms;
+  uint64_t written_bytes;
+  uint64_t read_bytes;
+} XrayUdpSlowFlowEvent;
+
+typedef struct XrayUdpResponseGapEvent {
+  uint64_t response_gap_duration_ms;
+  uint64_t written_bytes;
+  uint64_t read_bytes;
+} XrayUdpResponseGapEvent;
+
+typedef struct XrayUdpQuicBlockedEvent {
+  uint64_t bytes;
+} XrayUdpQuicBlockedEvent;
 
 typedef struct XrayCoreHandle XrayCoreHandle;
 typedef struct XrayError XrayError;
@@ -98,6 +170,14 @@ XrayStatus xray_core_set_tun_block_quic(
     XrayCoreHandle *handle,
     int32_t block_quic,
     XrayError **error);
+XrayStatus xray_core_set_tun_collect_tcp_timings(
+    XrayCoreHandle *handle,
+    int32_t collect_tcp_timings,
+    XrayError **error);
+XrayStatus xray_core_set_tun_runtime_profile(
+    XrayCoreHandle *handle,
+    XrayTunRuntimeProfile profile,
+    XrayError **error);
 void xray_core_free(XrayCoreHandle *handle);
 
 XrayStatus xray_error_code(const XrayError *error);
@@ -114,6 +194,44 @@ XrayStatus xray_tun_poll_packet(
     uint8_t *buffer,
     size_t buffer_len,
     size_t *written,
+    XrayError **error);
+XrayStatus xray_tun_poll_tcp_slow_flow_event(
+    XrayCoreHandle *handle,
+    XrayTcpSlowFlowEvent *event,
+    char *target_buffer,
+    size_t target_buffer_len,
+    size_t *target_written,
+    XrayError **error);
+XrayStatus xray_tun_poll_tcp_flow_summary_event(
+    XrayCoreHandle *handle,
+    XrayTcpFlowSummaryEvent *event,
+    char *target_buffer,
+    size_t target_buffer_len,
+    size_t *target_written,
+    char *outbound_tag_buffer,
+    size_t outbound_tag_buffer_len,
+    size_t *outbound_tag_written,
+    XrayError **error);
+XrayStatus xray_tun_poll_udp_slow_flow_event(
+    XrayCoreHandle *handle,
+    XrayUdpSlowFlowEvent *event,
+    char *target_buffer,
+    size_t target_buffer_len,
+    size_t *target_written,
+    XrayError **error);
+XrayStatus xray_tun_poll_udp_response_gap_event(
+    XrayCoreHandle *handle,
+    XrayUdpResponseGapEvent *event,
+    char *target_buffer,
+    size_t target_buffer_len,
+    size_t *target_written,
+    XrayError **error);
+XrayStatus xray_tun_poll_udp_quic_blocked_event(
+    XrayCoreHandle *handle,
+    XrayUdpQuicBlockedEvent *event,
+    char *target_buffer,
+    size_t target_buffer_len,
+    size_t *target_written,
     XrayError **error);
 XrayStatus xray_tun_stats(
     XrayCoreHandle *handle,

@@ -39,7 +39,7 @@ public final class XrayClientViewModel: ObservableObject {
         self.tunnelController = tunnelController ?? NetworkExtensionTunnelController()
         XrayAppleLog.info(
             "ClientViewModel",
-            "Loaded profile name=\(profile.name) provider=\(profile.providerBundleIdentifier) server=\(profile.serverAddress) configBytes=\(profile.configJSON.utf8.count) debugLogging=\(profile.debugLoggingEnabled) useTunFileDescriptor=\(profile.useTunFileDescriptor) blockQUIC=\(profile.blockQUIC)"
+            "Loaded profile name=\(profile.name) provider=\(profile.providerBundleIdentifier) server=\(profile.serverAddress) configBytes=\(profile.configJSON.utf8.count) debugLogging=\(profile.debugLoggingEnabled) useTunFileDescriptor=\(profile.useTunFileDescriptor) blockQUIC=\(profile.blockQUIC) tunRuntimeProfile=\(profile.tunRuntimeProfile.rawValue)"
         )
     }
 
@@ -78,7 +78,7 @@ public final class XrayClientViewModel: ObservableObject {
         normalizeProfileIfNeeded()
         XrayAppleLog.info(
             "ClientViewModel",
-            "Saving profile name=\(profile.name) provider=\(profile.providerBundleIdentifier) server=\(profile.serverAddress) configBytes=\(profile.configJSON.utf8.count) debugLogging=\(profile.debugLoggingEnabled) useTunFileDescriptor=\(profile.useTunFileDescriptor) blockQUIC=\(profile.blockQUIC)"
+            "Saving profile name=\(profile.name) provider=\(profile.providerBundleIdentifier) server=\(profile.serverAddress) configBytes=\(profile.configJSON.utf8.count) debugLogging=\(profile.debugLoggingEnabled) useTunFileDescriptor=\(profile.useTunFileDescriptor) blockQUIC=\(profile.blockQUIC) tunRuntimeProfile=\(profile.tunRuntimeProfile.rawValue)"
         )
         do {
             try store.save(profile)
@@ -108,6 +108,7 @@ public final class XrayClientViewModel: ObservableObject {
             importedProfile.debugLoggingEnabled = profile.debugLoggingEnabled
             importedProfile.useTunFileDescriptor = profile.useTunFileDescriptor
             importedProfile.blockQUIC = profile.blockQUIC
+            importedProfile.tunRuntimeProfile = profile.tunRuntimeProfile
             XrayAppleLog.info(
                 "ClientViewModel",
                 "Imported VLESS profile name=\(importedProfile.name) provider=\(importedProfile.providerBundleIdentifier) server=\(importedProfile.serverAddress) configBytes=\(importedProfile.configJSON.utf8.count)"
@@ -158,7 +159,7 @@ public final class XrayClientViewModel: ObservableObject {
                 normalizeProfileIfNeeded()
                 XrayAppleLog.info(
                     "ClientViewModel",
-                    "Starting tunnel provider=\(profile.providerBundleIdentifier) server=\(profile.serverAddress) configBytes=\(profile.configJSON.utf8.count) debugLogging=\(profile.debugLoggingEnabled) useTunFileDescriptor=\(profile.useTunFileDescriptor) blockQUIC=\(profile.blockQUIC)"
+                    "Starting tunnel provider=\(profile.providerBundleIdentifier) server=\(profile.serverAddress) configBytes=\(profile.configJSON.utf8.count) debugLogging=\(profile.debugLoggingEnabled) useTunFileDescriptor=\(profile.useTunFileDescriptor) blockQUIC=\(profile.blockQUIC) tunRuntimeProfile=\(profile.tunRuntimeProfile.rawValue)"
                 )
                 try XrayConfigValidator.validate(profile.configJSON)
                 XrayAppleLog.info("ClientViewModel", "Config validation passed before start")
