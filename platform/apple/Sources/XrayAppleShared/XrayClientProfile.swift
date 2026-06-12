@@ -3,6 +3,7 @@ import Foundation
 public enum XrayTunRuntimeProfileSetting: String, Codable, CaseIterable, Hashable, Identifiable, Sendable {
     case `default` = "default"
     case mobile
+    case mobilePlus = "mobile-plus"
     case desktop
     case lowMemory = "low-memory"
     case throughput
@@ -17,6 +18,8 @@ public enum XrayTunRuntimeProfileSetting: String, Codable, CaseIterable, Hashabl
             return "Default"
         case .mobile:
             return "Mobile"
+        case .mobilePlus:
+            return "Mobile+"
         case .desktop:
             return "Desktop"
         case .lowMemory:
@@ -35,6 +38,8 @@ public enum XrayTunRuntimeProfileSetting: String, Codable, CaseIterable, Hashabl
             self = .default
         case "mobile":
             self = .mobile
+        case "mobile-plus", "mobile_plus", "mobileplus":
+            self = .mobilePlus
         case "desktop":
             self = .desktop
         case "low-memory", "low_memory", "lowmemory":

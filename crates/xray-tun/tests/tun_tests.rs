@@ -1,7 +1,8 @@
 use bytes::Bytes;
 use xray_tun::{
-    TunConfig, TunEndpoint, TunError, TunStats, TunTcpFlowSummaryEvent, TunTcpSlowFlowEvent,
-    TunTcpSlowFlowKind, TunUdpQuicBlockedEvent, TunUdpResponseGapEvent, TunUdpSlowFlowEvent,
+    TunConfig, TunEndpoint, TunError, TunStats, TunTcpFlowSummaryEvent, TunTcpRemoteWriteSlowEvent,
+    TunTcpSlowFlowEvent, TunTcpSlowFlowKind, TunUdpQuicBlockedEvent, TunUdpResponseGapEvent,
+    TunUdpSlowFlowEvent,
 };
 
 #[tokio::test]
@@ -26,6 +27,64 @@ async fn tun_endpoint_moves_packets_in_both_directions() {
         tun.poll_outbound().await.unwrap(),
         Bytes::from_static(&[0x60, 0, 0, 0])
     );
+}
+
+#[tokio::test]
+async fn poll_outbound_batch_drains_up_to_limit() {
+    let tun = TunEndpoint::new(TunConfig {
+        mtu: 1500,
+        queue_depth: 8,
+    });
+    for byte in 0..5u8 {
+        tun.push_outbound(Bytes::from(vec![byte; 4])).await.unwrap();
+    }
+
+    let batch = tun.poll_outbound_batch(3).await.unwrap();
+    assert_eq!(batch.len(), 3);
+    assert_eq!(batch[0][0], 0);
+    assert_eq!(batch[2][0], 2);
+
+    let rest = tun.poll_outbound_batch(8).await.unwrap();
+    assert_eq!(rest.len(), 2);
+}
+
+#[tokio::test]
+async fn poll_outbound_batch_waits_for_first_packet() {
+    let tun = std::sync::Arc::new(TunEndpoint::new(TunConfig {
+        mtu: 1500,
+        queue_depth: 8,
+    }));
+    let pusher = std::sync::Arc::clone(&tun);
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        pusher
+            .push_outbound(Bytes::from_static(b"late"))
+            .await
+            .unwrap();
+    });
+
+    let batch = tun.poll_outbound_batch(4).await.unwrap();
+    assert_eq!(batch.len(), 1);
+    assert_eq!(&batch[0][..], b"late");
+}
+
+#[tokio::test]
+async fn poll_outbound_batch_reports_queue_closed() {
+    let tun = TunEndpoint::new(TunConfig {
+        mtu: 1500,
+        queue_depth: 8,
+    });
+    tun.close();
+    assert_eq!(tun.poll_outbound_batch(4).await, Err(TunError::QueueClosed));
+}
+
+#[test]
+fn tun_endpoint_reports_configured_mtu() {
+    let tun = TunEndpoint::new(TunConfig {
+        mtu: 1400,
+        queue_depth: 8,
+    });
+    assert_eq!(tun.mtu(), 1400);
 }
 
 #[tokio::test]
@@ -204,6 +263,10 @@ async fn tun_endpoint_stats_track_tcp_bridge_counters() {
     tun.record_tcp_remote_to_stack_backpressure();
     tun.record_tcp_remote_write_batch(3, 96);
     tun.record_tcp_remote_write_batch(5, 160);
+    tun.record_tcp_remote_write_wait(12);
+    tun.record_tcp_remote_write_wait(30);
+    tun.record_tcp_remote_flush_wait(7);
+    tun.record_tcp_remote_flush_wait(11);
     tun.record_tcp_pending_remote(4096, 3, 2048, 2 * 1024 * 1024, false);
     tun.record_tcp_pending_remote(1024, 1, 512, 1024 * 1024, true);
     tun.record_tcp_remote_write_error();
@@ -235,6 +298,12 @@ async fn tun_endpoint_stats_track_tcp_bridge_counters() {
             tcp_remote_write_batch_messages: 8,
             tcp_remote_write_batch_max_messages: 5,
             tcp_remote_write_batch_max_bytes: 160,
+            tcp_remote_write_wait_events: 2,
+            tcp_remote_write_wait_ms_total: 42,
+            tcp_remote_write_wait_ms_max: 30,
+            tcp_remote_flush_wait_events: 2,
+            tcp_remote_flush_wait_ms_total: 18,
+            tcp_remote_flush_wait_ms_max: 11,
             tcp_pending_remote_bytes: 1024,
             tcp_pending_remote_flows: 1,
             tcp_pending_remote_max_bytes: 512,
@@ -305,6 +374,51 @@ async fn tun_endpoint_buffers_tcp_slow_flow_events_in_fifo_order() {
         })
     );
     assert_eq!(tun.poll_tcp_slow_flow_event(), None);
+}
+
+#[tokio::test]
+async fn tun_endpoint_buffers_tcp_remote_write_slow_events_in_fifo_order() {
+    let tun = TunEndpoint::new(TunConfig {
+        mtu: 1500,
+        queue_depth: 1,
+    });
+
+    tun.record_tcp_remote_write_slow_event(TunTcpRemoteWriteSlowEvent {
+        target: "speedtest.example:443".to_owned(),
+        outbound_tag: Some("proxy".to_owned()),
+        duration_ms: 2_400,
+        bytes: 2 * 1024 * 1024,
+        messages: 257,
+    });
+    tun.record_tcp_remote_write_slow_event(TunTcpRemoteWriteSlowEvent {
+        target: "cdn.example:443".to_owned(),
+        outbound_tag: None,
+        duration_ms: 750,
+        bytes: 65_536,
+        messages: 4,
+    });
+
+    assert_eq!(
+        tun.poll_tcp_remote_write_slow_event(),
+        Some(TunTcpRemoteWriteSlowEvent {
+            target: "speedtest.example:443".to_owned(),
+            outbound_tag: Some("proxy".to_owned()),
+            duration_ms: 2_400,
+            bytes: 2 * 1024 * 1024,
+            messages: 257,
+        })
+    );
+    assert_eq!(
+        tun.poll_tcp_remote_write_slow_event(),
+        Some(TunTcpRemoteWriteSlowEvent {
+            target: "cdn.example:443".to_owned(),
+            outbound_tag: None,
+            duration_ms: 750,
+            bytes: 65_536,
+            messages: 4,
+        })
+    );
+    assert_eq!(tun.poll_tcp_remote_write_slow_event(), None);
 }
 
 #[tokio::test]

@@ -262,6 +262,15 @@ impl VlessTcpOutbound {
     pub fn user(&self) -> &VlessUser {
         &self.user
     }
+
+    /// True for the regular `xtls-rprx-vision` flow, which (matching upstream
+    /// xray-core) cannot carry UDP/443 and must refuse it so QUIC apps fall back
+    /// to TCP. The `xtls-rprx-vision-udp443` variant returns false.
+    pub(crate) fn blocks_udp443(&self) -> bool {
+        validate_connector_flow(self.user.flow.as_deref(), &self.transport)
+            .map(|flow| flow.uses_vision() && !flow.allows_udp443())
+            .unwrap_or(false)
+    }
 }
 
 pub fn select_tcp_outbound(config: &CoreConfig) -> Result<TcpOutbound, CoreError> {

@@ -97,6 +97,22 @@ async fn core_applies_throughput_tun_queue_profile() {
 }
 
 #[tokio::test]
+async fn core_applies_mobile_plus_tun_queue_profile() {
+    let core = Core::with_runtime_dependencies_and_tun_options(
+        tun_runtime_config(),
+        Arc::new(SystemDnsResolver),
+        Arc::new(TransportDialer::system().unwrap()),
+        TunRuntimeOptions::with_profile(TunRuntimeProfile::MobilePlus),
+    )
+    .unwrap();
+
+    let stats = core.tun().stats().await;
+
+    assert_eq!(stats.inbound_queue_depth, 2048);
+    assert_eq!(stats.outbound_queue_depth, 8192);
+}
+
+#[tokio::test]
 async fn core_starts_and_stops_with_only_tun_inbound() {
     let mut core = Core::new(tun_runtime_config()).unwrap();
 

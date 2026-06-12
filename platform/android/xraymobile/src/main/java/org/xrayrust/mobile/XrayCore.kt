@@ -3,7 +3,10 @@ package org.xrayrust.mobile
 import android.net.VpnService
 import java.io.Closeable
 
-class XrayCore private constructor(private var nativeHandle: Long) : Closeable {
+class XrayCore private constructor(handle: Long) : Closeable {
+    private val lock = Any()
+    private var nativeHandle: Long = handle
+
     companion object {
         init {
             System.loadLibrary("xray_ffi")
@@ -39,16 +42,16 @@ class XrayCore private constructor(private var nativeHandle: Long) : Closeable {
         private external fun nativeNew(): Long
     }
 
-    fun start() = nativeStart(requireHandle())
+    fun start() = withHandle { nativeStart(it) }
 
-    fun stop() = nativeStop(requireHandle())
+    fun stop() = withHandle { nativeStop(it) }
 
-    fun pushPacket(packet: ByteArray) = nativePushPacket(requireHandle(), packet)
+    fun pushPacket(packet: ByteArray) = withHandle { nativePushPacket(it, packet) }
 
-    fun pollPacket(maxBytes: Int = 65_535): ByteArray? = nativePollPacket(requireHandle(), maxBytes)
+    fun pollPacket(maxBytes: Int = 65_535): ByteArray? = withHandle { nativePollPacket(it, maxBytes) }
 
     fun stats(): XrayTunStats {
-        val raw = nativeStats(requireHandle())
+        val raw = withHandle { nativeStats(it) }
         return XrayTunStats(
             inboundPackets = raw[0],
             outboundPackets = raw[1],
@@ -73,41 +76,46 @@ class XrayCore private constructor(private var nativeHandle: Long) : Closeable {
     }
 
     override fun close() {
-        val handle = nativeHandle
-        if (handle == 0L) {
-            return
+        // Zero the handle under the lock so no concurrent caller can observe
+        // (and pass to native code) a handle that is about to be freed.
+        val handle = synchronized(lock) {
+            val current = nativeHandle
+            nativeHandle = 0L
+            current
         }
-
-        nativeHandle = 0L
-        nativeFree(handle)
+        if (handle != 0L) {
+            nativeFree(handle)
+        }
     }
 
-    private fun loadConfig(configJson: String) = nativeLoadConfig(requireHandle(), configJson)
+    private fun loadConfig(configJson: String) = withHandle { nativeLoadConfig(it, configJson) }
 
     private fun setSocketProtector(protector: SocketProtector) {
-        nativeSetSocketProtector(requireHandle(), protector)
+        withHandle { nativeSetSocketProtector(it, protector) }
     }
 
     private fun setTunFd(tunFileDescriptor: XrayTunFileDescriptor) {
-        nativeSetTunFd(
-            requireHandle(),
-            tunFileDescriptor.fd,
-            tunFileDescriptor.packetFormat.ffiValue,
-            tunFileDescriptor.closePolicy.ffiValue,
-        )
+        withHandle {
+            nativeSetTunFd(
+                it,
+                tunFileDescriptor.fd,
+                tunFileDescriptor.packetFormat.ffiValue,
+                tunFileDescriptor.closePolicy.ffiValue,
+            )
+        }
     }
 
     private fun setTunRuntimeProfile(profile: XrayTunRuntimeProfile) {
-        nativeSetTunRuntimeProfile(requireHandle(), profile.ffiValue)
+        withHandle { nativeSetTunRuntimeProfile(it, profile.ffiValue) }
     }
 
     private fun setTunCollectTcpTimings(collect: Boolean) {
-        nativeSetTunCollectTcpTimings(requireHandle(), collect)
+        withHandle { nativeSetTunCollectTcpTimings(it, collect) }
     }
 
-    private fun requireHandle(): Long {
+    private inline fun <T> withHandle(block: (Long) -> T): T = synchronized(lock) {
         check(nativeHandle != 0L) { "xray core is closed" }
-        return nativeHandle
+        block(nativeHandle)
     }
 
     private external fun nativeLoadConfig(handle: Long, configJson: String)
@@ -150,6 +158,7 @@ enum class XrayTunRuntimeProfile(val ffiValue: Int) {
     Desktop(2),
     LowMemory(3),
     Throughput(4),
+    MobilePlus(5),
 }
 
 data class XrayTunStats(

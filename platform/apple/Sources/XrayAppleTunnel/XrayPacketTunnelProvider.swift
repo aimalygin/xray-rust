@@ -84,7 +84,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                 case let .darwinUtunFileDescriptor(fd):
                     XrayAppleLog.info(
                         "PacketTunnelProvider",
-                        "Using Darwin utun fd=\(fd) for packet I/O"
+                        "Using Darwin utun file descriptor for packet I/O"
                     )
                     core = try XrayCore(
                         configJSON: resolvedConfig.json,
@@ -531,6 +531,9 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                     XrayAppleLog.info("PacketTunnelProvider", event.debugLogMessage())
                 }
                 for event in try self.core?.pollTcpFlowSummaryEvents() ?? [] {
+                    XrayAppleLog.info("PacketTunnelProvider", event.debugLogMessage())
+                }
+                for event in try self.core?.pollTcpRemoteWriteSlowEvents() ?? [] {
                     XrayAppleLog.info("PacketTunnelProvider", event.debugLogMessage())
                 }
                 for event in try self.core?.pollUdpSlowFlowEvents() ?? [] {

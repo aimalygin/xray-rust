@@ -165,3 +165,24 @@ fn vision_unpadding_rejects_short_block() {
 
     assert_eq!(err, VisionError::ShortBlock);
 }
+
+#[test]
+fn pad_into_appends_identical_frames_to_pad() {
+    let user_id = [7u8; 16];
+    let mut reference = VisionPadding::new(user_id, [900, 500, 900, 256]);
+    let mut streaming = VisionPadding::new(user_id, [900, 500, 900, 256]);
+
+    let mut expected = BytesMut::new();
+    let mut actual = BytesMut::new();
+    for payload in [&b"hello"[..], &b"world!"[..]] {
+        let frame = reference
+            .pad(BytesMut::from(payload), VisionCommand::Continue, 3)
+            .unwrap();
+        expected.extend_from_slice(&frame);
+        streaming
+            .pad_into(payload, VisionCommand::Continue, 3, &mut actual)
+            .unwrap();
+    }
+
+    assert_eq!(actual, expected);
+}

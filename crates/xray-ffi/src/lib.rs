@@ -6,13 +6,16 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr;
 use std::slice;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::runtime::{Builder, Runtime};
 use xray_config::parse_xray_json;
 use xray_core_rs::{
     Core, TunFdClosePolicy, TunFdConfig, TunFdPacketFormat, TunFdRuntime, TunRuntimeOptions,
     TunRuntimeProfile,
 };
-use xray_transport::{SocketHandle, SocketProtector, SystemDnsResolver, TransportDialer};
+use xray_transport::{
+    CachingDnsResolver, SocketHandle, SocketProtector, SystemDnsResolver, TransportDialer,
+};
 use xray_tun::TunTcpSlowFlowKind;
 
 #[repr(C)]
@@ -52,6 +55,7 @@ pub enum XrayTunRuntimeProfile {
     Desktop = 2,
     LowMemory = 3,
     Throughput = 4,
+    MobilePlus = 5,
 }
 
 #[repr(C)]
@@ -89,6 +93,7 @@ impl From<XrayTunRuntimeProfile> for TunRuntimeProfile {
             XrayTunRuntimeProfile::Desktop => Self::Desktop,
             XrayTunRuntimeProfile::LowMemory => Self::LowMemory,
             XrayTunRuntimeProfile::Throughput => Self::Throughput,
+            XrayTunRuntimeProfile::MobilePlus => Self::MobilePlus,
         }
     }
 }
@@ -126,6 +131,12 @@ pub struct XrayTunStats {
     pub tcp_remote_write_batch_messages: u64,
     pub tcp_remote_write_batch_max_messages: u64,
     pub tcp_remote_write_batch_max_bytes: u64,
+    pub tcp_remote_write_wait_events: u64,
+    pub tcp_remote_write_wait_ms_total: u64,
+    pub tcp_remote_write_wait_ms_max: u64,
+    pub tcp_remote_flush_wait_events: u64,
+    pub tcp_remote_flush_wait_ms_total: u64,
+    pub tcp_remote_flush_wait_ms_max: u64,
     pub tcp_pending_remote_bytes: u64,
     pub tcp_pending_remote_flows: u64,
     pub tcp_pending_remote_max_bytes: u64,
@@ -193,6 +204,14 @@ pub struct XrayTcpFlowSummaryEvent {
     pub ms_to_256kib: u64,
     pub ms_to_512kib: u64,
     pub ms_to_1mib: u64,
+}
+
+#[repr(C)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct XrayTcpRemoteWriteSlowEvent {
+    pub duration_ms: u64,
+    pub bytes: u64,
+    pub messages: u64,
 }
 
 #[repr(C)]
@@ -402,7 +421,7 @@ unsafe fn xray_core_load_config_json_inner(
 
     let core = match Core::with_runtime_dependencies_and_tun_options(
         parsed.config,
-        Arc::new(SystemDnsResolver),
+        Arc::new(CachingDnsResolver::new(Arc::new(SystemDnsResolver))),
         transport_dialer,
         (*handle).tun_runtime_options,
     ) {
@@ -917,7 +936,9 @@ unsafe fn xray_tun_push_packet_inner(
         return XrayStatus::NullArgument;
     }
 
-    let handle = unsafe { &mut *handle };
+    // Shared access: data-path entry points may run concurrently with each
+    // other (Swift pump push/poll threads); only lifecycle calls take `&mut`.
+    let handle = unsafe { &*handle };
     let Some(core) = handle.core.as_ref() else {
         unsafe {
             set_error(
@@ -1011,7 +1032,9 @@ unsafe fn xray_tun_poll_packet_inner(
         return XrayStatus::NullArgument;
     }
 
-    let handle = unsafe { &mut *handle };
+    // Shared access: data-path entry points may run concurrently with each
+    // other (Swift pump push/poll threads); only lifecycle calls take `&mut`.
+    let handle = unsafe { &*handle };
     let Some(core) = handle.core.as_ref() else {
         unsafe {
             set_error(
@@ -1050,6 +1073,188 @@ unsafe fn xray_tun_poll_packet_inner(
                 set_error(error, XrayStatus::TunError, err.to_string());
             }
             XrayStatus::TunError
+        }
+    }
+}
+
+/// Polls a batch of raw IP packets emitted by the core for the host TUN
+/// adapter.
+///
+/// Waits up to `wait_ms` milliseconds for the first packet (`0` polls without
+/// waiting), then drains additional ready packets without waiting. Packets are
+/// written back-to-back into `buffer`; `packet_lengths[i]` receives the length
+/// of packet `i` and `*packet_count` the number of packets written. At most
+/// `min(max_packets, buffer_len / mtu)` packets are returned per call.
+///
+/// Returns `XRAY_STATUS_NO_PACKET` if no packet arrived within `wait_ms`.
+///
+/// # Safety
+///
+/// `handle` must either be null or a pointer returned by `xray_core_new` that
+/// has not been freed. `buffer` must point to `buffer_len` writable bytes.
+/// `packet_lengths` must point to `max_packets` writable `usize` values.
+/// `packet_count` must point to one writable `usize`. If `error` is non-null,
+/// it must point to an initialized `*mut XrayError` value that is either null
+/// or a live error pointer returned by this library. This function may free
+/// and replace that error pointer.
+///
+/// This function may be called concurrently with `xray_tun_push_packet`,
+/// `xray_tun_poll_packet`, and `xray_tun_stats` on the same handle, but not
+/// concurrently with lifecycle functions (`xray_core_load_config_json`,
+/// `xray_core_start`, `xray_core_stop`, `xray_core_set_*`, `xray_core_free`).
+#[no_mangle]
+pub unsafe extern "C" fn xray_tun_poll_packets(
+    handle: *mut XrayCoreHandle,
+    buffer: *mut u8,
+    buffer_len: usize,
+    packet_lengths: *mut usize,
+    max_packets: usize,
+    packet_count: *mut usize,
+    wait_ms: u32,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            xray_tun_poll_packets_inner(
+                handle,
+                buffer,
+                buffer_len,
+                packet_lengths,
+                max_packets,
+                packet_count,
+                wait_ms,
+                error,
+            )
+        })
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+unsafe fn xray_tun_poll_packets_inner(
+    handle: *mut XrayCoreHandle,
+    buffer: *mut u8,
+    buffer_len: usize,
+    packet_lengths: *mut usize,
+    max_packets: usize,
+    packet_count: *mut usize,
+    wait_ms: u32,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        clear_error(error);
+    }
+
+    if !packet_count.is_null() {
+        unsafe {
+            *packet_count = 0;
+        }
+    }
+
+    if handle.is_null() {
+        unsafe {
+            set_error(error, XrayStatus::NullArgument, "core handle is null");
+        }
+        return XrayStatus::NullArgument;
+    }
+    if buffer.is_null() {
+        unsafe {
+            set_error(error, XrayStatus::NullArgument, "packet buffer is null");
+        }
+        return XrayStatus::NullArgument;
+    }
+    if packet_lengths.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "packet lengths pointer is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+    if packet_count.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "packet count pointer is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+    if max_packets == 0 {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "max_packets must be nonzero",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+
+    let handle = unsafe { &*handle };
+    let Some(core) = handle.core.as_ref() else {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::CoreNotLoaded,
+                "core config is not loaded",
+            );
+        }
+        return XrayStatus::CoreNotLoaded;
+    };
+
+    let tun = core.tun();
+    // Every outbound packet is bounded by the tun mtu, so reserving one mtu of
+    // buffer per packet guarantees the drained batch always fits.
+    let effective_max = max_packets.min(buffer_len / tun.mtu().max(1));
+    if effective_max == 0 {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::BufferTooSmall,
+                format!(
+                    "buffer length {buffer_len} is below the tun mtu {}",
+                    tun.mtu()
+                ),
+            );
+        }
+        return XrayStatus::BufferTooSmall;
+    }
+
+    let wait = Duration::from_millis(u64::from(wait_ms));
+    let batch = handle.runtime.block_on(async {
+        tokio::time::timeout(wait, tun.poll_outbound_batch(effective_max)).await
+    });
+
+    match batch {
+        Err(_) => XrayStatus::NoPacket,
+        Ok(Err(err)) => {
+            unsafe {
+                set_error(error, XrayStatus::TunError, err.to_string());
+            }
+            XrayStatus::TunError
+        }
+        Ok(Ok(packets)) if packets.is_empty() => XrayStatus::NoPacket,
+        Ok(Ok(packets)) => {
+            let mut offset = 0usize;
+            let mut written = 0usize;
+            for packet in &packets {
+                if offset + packet.len() > buffer_len || written >= max_packets {
+                    break;
+                }
+                unsafe {
+                    ptr::copy_nonoverlapping(packet.as_ptr(), buffer.add(offset), packet.len());
+                    *packet_lengths.add(written) = packet.len();
+                }
+                offset += packet.len();
+                written += 1;
+            }
+            unsafe {
+                *packet_count = written;
+            }
+            XrayStatus::Ok
         }
     }
 }
@@ -1161,7 +1366,9 @@ unsafe fn xray_tun_poll_tcp_slow_flow_event_inner(
         return XrayStatus::BufferTooSmall;
     }
 
-    let handle = unsafe { &mut *handle };
+    // Shared access: data-path entry points may run concurrently with each
+    // other (Swift pump push/poll threads); only lifecycle calls take `&mut`.
+    let handle = unsafe { &*handle };
     let Some(core) = handle.core.as_ref() else {
         unsafe {
             set_error(
@@ -1235,6 +1442,7 @@ pub unsafe extern "C" fn xray_tun_poll_tcp_flow_summary_event(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 unsafe fn xray_tun_poll_tcp_flow_summary_event_inner(
     handle: *mut XrayCoreHandle,
     event: *mut XrayTcpFlowSummaryEvent,
@@ -1348,7 +1556,9 @@ unsafe fn xray_tun_poll_tcp_flow_summary_event_inner(
         return XrayStatus::BufferTooSmall;
     }
 
-    let handle = unsafe { &mut *handle };
+    // Shared access: data-path entry points may run concurrently with each
+    // other (Swift pump push/poll threads); only lifecycle calls take `&mut`.
+    let handle = unsafe { &*handle };
     let Some(core) = handle.core.as_ref() else {
         unsafe {
             set_error(
@@ -1385,6 +1595,202 @@ unsafe fn xray_tun_poll_tcp_flow_summary_event_inner(
         );
         write_c_string_truncated(
             summary.outbound_tag.as_deref().unwrap_or(""),
+            outbound_tag_buffer,
+            outbound_tag_buffer_len,
+            outbound_tag_written,
+        );
+    }
+    XrayStatus::Ok
+}
+
+/// Polls one debug-only TCP remote-write slow event from the TUN endpoint.
+///
+/// Returns `XRAY_STATUS_NO_PACKET` when no event is buffered. `target_buffer`
+/// and `outbound_tag_buffer` receive NUL-terminated labels, truncated if needed.
+///
+/// # Safety
+///
+/// `handle` must either be null or a pointer returned by `xray_core_new` that
+/// has not been freed. `event`, `target_buffer`, `target_written`,
+/// `outbound_tag_buffer`, and `outbound_tag_written` must point to writable
+/// memory. If `error` is non-null, it must point to an initialized
+/// `*mut XrayError` value that is either null or a live error pointer returned
+/// by this library. This function may free and replace that error pointer.
+#[no_mangle]
+pub unsafe extern "C" fn xray_tun_poll_tcp_remote_write_slow_event(
+    handle: *mut XrayCoreHandle,
+    event: *mut XrayTcpRemoteWriteSlowEvent,
+    target_buffer: *mut c_char,
+    target_buffer_len: usize,
+    target_written: *mut usize,
+    outbound_tag_buffer: *mut c_char,
+    outbound_tag_buffer_len: usize,
+    outbound_tag_written: *mut usize,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            xray_tun_poll_tcp_remote_write_slow_event_inner(
+                handle,
+                event,
+                target_buffer,
+                target_buffer_len,
+                target_written,
+                outbound_tag_buffer,
+                outbound_tag_buffer_len,
+                outbound_tag_written,
+                error,
+            )
+        })
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+unsafe fn xray_tun_poll_tcp_remote_write_slow_event_inner(
+    handle: *mut XrayCoreHandle,
+    event: *mut XrayTcpRemoteWriteSlowEvent,
+    target_buffer: *mut c_char,
+    target_buffer_len: usize,
+    target_written: *mut usize,
+    outbound_tag_buffer: *mut c_char,
+    outbound_tag_buffer_len: usize,
+    outbound_tag_written: *mut usize,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        clear_error(error);
+    }
+
+    if !target_written.is_null() {
+        unsafe {
+            *target_written = 0;
+        }
+    }
+    if !target_buffer.is_null() && target_buffer_len > 0 {
+        unsafe {
+            *target_buffer = 0;
+        }
+    }
+    if !outbound_tag_written.is_null() {
+        unsafe {
+            *outbound_tag_written = 0;
+        }
+    }
+    if !outbound_tag_buffer.is_null() && outbound_tag_buffer_len > 0 {
+        unsafe {
+            *outbound_tag_buffer = 0;
+        }
+    }
+
+    if handle.is_null() {
+        unsafe {
+            set_error(error, XrayStatus::NullArgument, "core handle is null");
+        }
+        return XrayStatus::NullArgument;
+    }
+    if event.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "TCP remote-write slow event pointer is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+    if target_buffer.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "TCP remote-write slow target buffer is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+    if target_written.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "TCP remote-write slow target written pointer is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+    if outbound_tag_buffer.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "TCP remote-write slow outbound tag buffer is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+    if outbound_tag_written.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "TCP remote-write slow outbound tag written pointer is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+    if target_buffer_len == 0 {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::BufferTooSmall,
+                "TCP remote-write slow target buffer length is zero",
+            );
+        }
+        return XrayStatus::BufferTooSmall;
+    }
+    if outbound_tag_buffer_len == 0 {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::BufferTooSmall,
+                "TCP remote-write slow outbound tag buffer length is zero",
+            );
+        }
+        return XrayStatus::BufferTooSmall;
+    }
+
+    // Shared access: data-path entry points may run concurrently with each
+    // other (Swift pump push/poll threads); only lifecycle calls take `&mut`.
+    let handle = unsafe { &*handle };
+    let Some(core) = handle.core.as_ref() else {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::CoreNotLoaded,
+                "core config is not loaded",
+            );
+        }
+        return XrayStatus::CoreNotLoaded;
+    };
+
+    let Some(slow_write) = core.tun().poll_tcp_remote_write_slow_event() else {
+        return XrayStatus::NoPacket;
+    };
+
+    unsafe {
+        *event = XrayTcpRemoteWriteSlowEvent {
+            duration_ms: slow_write.duration_ms,
+            bytes: slow_write.bytes,
+            messages: slow_write.messages,
+        };
+        write_c_string_truncated(
+            &slow_write.target,
+            target_buffer,
+            target_buffer_len,
+            target_written,
+        );
+        write_c_string_truncated(
+            slow_write.outbound_tag.as_deref().unwrap_or(""),
             outbound_tag_buffer,
             outbound_tag_buffer_len,
             outbound_tag_written,
@@ -1499,7 +1905,9 @@ unsafe fn xray_tun_poll_udp_slow_flow_event_inner(
         return XrayStatus::BufferTooSmall;
     }
 
-    let handle = unsafe { &mut *handle };
+    // Shared access: data-path entry points may run concurrently with each
+    // other (Swift pump push/poll threads); only lifecycle calls take `&mut`.
+    let handle = unsafe { &*handle };
     let Some(core) = handle.core.as_ref() else {
         unsafe {
             set_error(
@@ -1637,7 +2045,9 @@ unsafe fn xray_tun_poll_udp_response_gap_event_inner(
         return XrayStatus::BufferTooSmall;
     }
 
-    let handle = unsafe { &mut *handle };
+    // Shared access: data-path entry points may run concurrently with each
+    // other (Swift pump push/poll threads); only lifecycle calls take `&mut`.
+    let handle = unsafe { &*handle };
     let Some(core) = handle.core.as_ref() else {
         unsafe {
             set_error(
@@ -1775,7 +2185,9 @@ unsafe fn xray_tun_poll_udp_quic_blocked_event_inner(
         return XrayStatus::BufferTooSmall;
     }
 
-    let handle = unsafe { &mut *handle };
+    // Shared access: data-path entry points may run concurrently with each
+    // other (Swift pump push/poll threads); only lifecycle calls take `&mut`.
+    let handle = unsafe { &*handle };
     let Some(core) = handle.core.as_ref() else {
         unsafe {
             set_error(
@@ -1845,7 +2257,9 @@ unsafe fn xray_tun_stats_inner(
         return XrayStatus::NullArgument;
     }
 
-    let handle = unsafe { &mut *handle };
+    // Shared access: data-path entry points may run concurrently with each
+    // other (Swift pump push/poll threads); only lifecycle calls take `&mut`.
+    let handle = unsafe { &*handle };
     let Some(core) = handle.core.as_ref() else {
         unsafe {
             set_error(
@@ -1877,6 +2291,12 @@ unsafe fn xray_tun_stats_inner(
             tcp_remote_write_batch_messages: snapshot.tcp_remote_write_batch_messages,
             tcp_remote_write_batch_max_messages: snapshot.tcp_remote_write_batch_max_messages,
             tcp_remote_write_batch_max_bytes: snapshot.tcp_remote_write_batch_max_bytes,
+            tcp_remote_write_wait_events: snapshot.tcp_remote_write_wait_events,
+            tcp_remote_write_wait_ms_total: snapshot.tcp_remote_write_wait_ms_total,
+            tcp_remote_write_wait_ms_max: snapshot.tcp_remote_write_wait_ms_max,
+            tcp_remote_flush_wait_events: snapshot.tcp_remote_flush_wait_events,
+            tcp_remote_flush_wait_ms_total: snapshot.tcp_remote_flush_wait_ms_total,
+            tcp_remote_flush_wait_ms_max: snapshot.tcp_remote_flush_wait_ms_max,
             tcp_pending_remote_bytes: snapshot.tcp_pending_remote_bytes,
             tcp_pending_remote_flows: snapshot.tcp_pending_remote_flows,
             tcp_pending_remote_max_bytes: snapshot.tcp_pending_remote_max_bytes,
@@ -2110,7 +2530,9 @@ fn runtime_worker_threads() -> usize {
 }
 
 fn runtime_worker_threads_for_available_parallelism(available: usize) -> usize {
-    available.clamp(2, 4)
+    // Modern phones expose 6 cores; capping below that leaves cores idle when
+    // many parallel flows (e.g. a speedtest) need TLS and relay work at once.
+    available.clamp(2, 6)
 }
 
 #[cfg(test)]
@@ -2123,6 +2545,7 @@ mod tests {
         assert_eq!(runtime_worker_threads_for_available_parallelism(2), 2);
         assert_eq!(runtime_worker_threads_for_available_parallelism(3), 3);
         assert_eq!(runtime_worker_threads_for_available_parallelism(4), 4);
-        assert_eq!(runtime_worker_threads_for_available_parallelism(8), 4);
+        assert_eq!(runtime_worker_threads_for_available_parallelism(6), 6);
+        assert_eq!(runtime_worker_threads_for_available_parallelism(8), 6);
     }
 }

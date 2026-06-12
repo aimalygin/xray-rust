@@ -28,7 +28,7 @@ use crate::{
 };
 
 const SOCKS_UDP_BUFFER_SIZE: usize = 65_536;
-const SOCKS_UDP_FLOW_QUEUE: usize = 64;
+const SOCKS_UDP_FLOW_QUEUE: usize = 256;
 const SOCKS_UDP_FLOW_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Clone)]

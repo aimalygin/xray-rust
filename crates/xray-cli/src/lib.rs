@@ -174,6 +174,7 @@ fn parse_tun_runtime_profile(raw: &str) -> Result<TunRuntimeProfile, CliError> {
     match raw {
         "default" => Ok(TunRuntimeProfile::Default),
         "mobile" => Ok(TunRuntimeProfile::Mobile),
+        "mobile-plus" | "mobile_plus" | "mobileplus" => Ok(TunRuntimeProfile::MobilePlus),
         "desktop" => Ok(TunRuntimeProfile::Desktop),
         "low-memory" | "low_memory" | "lowmemory" => Ok(TunRuntimeProfile::LowMemory),
         "throughput" => Ok(TunRuntimeProfile::Throughput),

@@ -169,13 +169,13 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         XCTAssertEqual(
             XrayPacketTunnelProvider.tunRuntimeProfile(
                 options: [
-                    XrayTunnelProviderMessage.tunRuntimeProfileOptionKey: "throughput" as NSString,
+                    XrayTunnelProviderMessage.tunRuntimeProfileOptionKey: "mobile-plus" as NSString,
                 ],
                 providerConfiguration: [
                     XrayTunnelProviderMessage.providerTunRuntimeProfileKey: "low-memory",
                 ]
             ),
-            .throughput
+            .mobilePlus
         )
     }
 

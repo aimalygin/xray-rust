@@ -171,13 +171,9 @@ impl<S> VisionStream<S> {
     }
 
     fn queue_padded_write(&mut self, input: &[u8], command: VisionCommand) -> io::Result<()> {
-        let payload = BytesMut::from(input);
-        let padded = self
-            .padding
-            .pad(payload, command, 0)
-            .map_err(vision_to_io)?;
-        self.pending_write.extend_from_slice(&padded);
-        Ok(())
+        self.padding
+            .pad_into(input, command, 0, &mut self.pending_write)
+            .map_err(vision_to_io)
     }
 
     fn next_frame_len(&self) -> io::Result<Option<usize>> {

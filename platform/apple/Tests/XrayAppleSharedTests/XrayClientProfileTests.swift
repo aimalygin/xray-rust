@@ -99,6 +99,13 @@ final class XrayClientProfileTests: XCTestCase {
         XCTAssertEqual(profile.tunRuntimeProfile, .default)
     }
 
+    func testTunRuntimeProfileParsesMobilePlusAliases() throws {
+        XCTAssertEqual(XrayTunRuntimeProfileSetting(configurationValue: "mobile-plus"), .mobilePlus)
+        XCTAssertEqual(XrayTunRuntimeProfileSetting(configurationValue: "mobile_plus"), .mobilePlus)
+        XCTAssertEqual(XrayTunRuntimeProfileSetting(configurationValue: "mobileplus"), .mobilePlus)
+        XCTAssertEqual(XrayTunRuntimeProfileSetting.mobilePlus.displayName, "Mobile+")
+    }
+
     func testProfileDecodesLegacyPayloadWithoutDebugLoggingFlag() throws {
         let legacyPayload = """
         {
@@ -130,7 +137,7 @@ final class XrayClientProfileTests: XCTestCase {
             debugLoggingEnabled: true,
             useTunFileDescriptor: false,
             blockQUIC: true,
-            tunRuntimeProfile: .throughput
+            tunRuntimeProfile: .mobilePlus
         )
 
         let root = try XCTUnwrap(
@@ -140,7 +147,7 @@ final class XrayClientProfileTests: XCTestCase {
         XCTAssertEqual(root["debugLoggingEnabled"] as? Bool, true)
         XCTAssertEqual(root["useTunFileDescriptor"] as? Bool, false)
         XCTAssertEqual(root["blockQUIC"] as? Bool, true)
-        XCTAssertEqual(root["tunRuntimeProfile"] as? String, "throughput")
+        XCTAssertEqual(root["tunRuntimeProfile"] as? String, "mobile-plus")
     }
 
     func testVlessURLImporterBuildsMobileRealityProfile() throws {

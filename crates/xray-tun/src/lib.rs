@@ -8,6 +8,7 @@ use tokio::sync::{mpsc, Mutex, Notify};
 
 const TCP_SLOW_FLOW_EVENT_CAPACITY: usize = 64;
 const TCP_FLOW_SUMMARY_EVENT_CAPACITY: usize = 64;
+const TCP_REMOTE_WRITE_SLOW_EVENT_CAPACITY: usize = 64;
 const UDP_SLOW_FLOW_EVENT_CAPACITY: usize = 64;
 const UDP_RESPONSE_GAP_EVENT_CAPACITY: usize = 64;
 const UDP_QUIC_BLOCKED_EVENT_CAPACITY: usize = 256;
@@ -46,6 +47,12 @@ pub struct TunStats {
     pub tcp_remote_write_batch_messages: u64,
     pub tcp_remote_write_batch_max_messages: u64,
     pub tcp_remote_write_batch_max_bytes: u64,
+    pub tcp_remote_write_wait_events: u64,
+    pub tcp_remote_write_wait_ms_total: u64,
+    pub tcp_remote_write_wait_ms_max: u64,
+    pub tcp_remote_flush_wait_events: u64,
+    pub tcp_remote_flush_wait_ms_total: u64,
+    pub tcp_remote_flush_wait_ms_max: u64,
     pub tcp_pending_remote_bytes: u64,
     pub tcp_pending_remote_flows: u64,
     pub tcp_pending_remote_max_bytes: u64,
@@ -123,6 +130,15 @@ pub struct TunTcpFlowSummaryEvent {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TunTcpRemoteWriteSlowEvent {
+    pub target: String,
+    pub outbound_tag: Option<String>,
+    pub duration_ms: u64,
+    pub bytes: u64,
+    pub messages: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TunUdpSlowFlowEvent {
     pub target: String,
     pub first_response_duration_ms: u64,
@@ -172,6 +188,12 @@ pub struct TunEndpoint {
     tcp_remote_write_batch_messages: AtomicU64,
     tcp_remote_write_batch_max_messages: AtomicU64,
     tcp_remote_write_batch_max_bytes: AtomicU64,
+    tcp_remote_write_wait_events: AtomicU64,
+    tcp_remote_write_wait_ms_total: AtomicU64,
+    tcp_remote_write_wait_ms_max: AtomicU64,
+    tcp_remote_flush_wait_events: AtomicU64,
+    tcp_remote_flush_wait_ms_total: AtomicU64,
+    tcp_remote_flush_wait_ms_max: AtomicU64,
     tcp_pending_remote_bytes: AtomicU64,
     tcp_pending_remote_flows: AtomicU64,
     tcp_pending_remote_max_bytes: AtomicU64,
@@ -211,6 +233,7 @@ pub struct TunEndpoint {
     udp_quic_blocked_packets: AtomicU64,
     tcp_slow_flow_events: StdMutex<VecDeque<TunTcpSlowFlowEvent>>,
     tcp_flow_summary_events: StdMutex<VecDeque<TunTcpFlowSummaryEvent>>,
+    tcp_remote_write_slow_events: StdMutex<VecDeque<TunTcpRemoteWriteSlowEvent>>,
     udp_slow_flow_events: StdMutex<VecDeque<TunUdpSlowFlowEvent>>,
     udp_response_gap_events: StdMutex<VecDeque<TunUdpResponseGapEvent>>,
     udp_quic_blocked_events: StdMutex<VecDeque<TunUdpQuicBlockedEvent>>,
@@ -262,6 +285,12 @@ impl TunEndpoint {
             tcp_remote_write_batch_messages: AtomicU64::new(0),
             tcp_remote_write_batch_max_messages: AtomicU64::new(0),
             tcp_remote_write_batch_max_bytes: AtomicU64::new(0),
+            tcp_remote_write_wait_events: AtomicU64::new(0),
+            tcp_remote_write_wait_ms_total: AtomicU64::new(0),
+            tcp_remote_write_wait_ms_max: AtomicU64::new(0),
+            tcp_remote_flush_wait_events: AtomicU64::new(0),
+            tcp_remote_flush_wait_ms_total: AtomicU64::new(0),
+            tcp_remote_flush_wait_ms_max: AtomicU64::new(0),
             tcp_pending_remote_bytes: AtomicU64::new(0),
             tcp_pending_remote_flows: AtomicU64::new(0),
             tcp_pending_remote_max_bytes: AtomicU64::new(0),
@@ -301,6 +330,7 @@ impl TunEndpoint {
             udp_quic_blocked_packets: AtomicU64::new(0),
             tcp_slow_flow_events: StdMutex::new(VecDeque::new()),
             tcp_flow_summary_events: StdMutex::new(VecDeque::new()),
+            tcp_remote_write_slow_events: StdMutex::new(VecDeque::new()),
             udp_slow_flow_events: StdMutex::new(VecDeque::new()),
             udp_response_gap_events: StdMutex::new(VecDeque::new()),
             udp_quic_blocked_events: StdMutex::new(VecDeque::new()),
@@ -333,6 +363,53 @@ impl TunEndpoint {
         self.try_poll_packet(&self.outbound_rx).await
     }
 
+    pub fn mtu(&self) -> usize {
+        self.config.mtu
+    }
+
+    /// Waits for at least one outbound packet (or queue close), then drains up
+    /// to `max_packets` without further waiting. Holding the receiver lock for
+    /// the whole batch keeps per-packet locking off the host packet pump path.
+    pub async fn poll_outbound_batch(&self, max_packets: usize) -> Result<Vec<Bytes>, TunError> {
+        let max_packets = max_packets.max(1);
+        let mut rx = self.outbound_rx.lock().await;
+        let mut packets = Vec::with_capacity(max_packets.min(64));
+
+        loop {
+            let closed = self.closed_notify.notified();
+
+            if self.closed.load(Ordering::Acquire) {
+                match rx.try_recv() {
+                    Ok(packet) => {
+                        packets.push(packet);
+                        break;
+                    }
+                    Err(_) => return Err(TunError::QueueClosed),
+                }
+            }
+
+            tokio::select! {
+                packet = rx.recv() => match packet {
+                    Some(packet) => {
+                        packets.push(packet);
+                        break;
+                    }
+                    None => return Err(TunError::QueueClosed),
+                },
+                () = closed => {}
+            }
+        }
+
+        while packets.len() < max_packets {
+            match rx.try_recv() {
+                Ok(packet) => packets.push(packet),
+                Err(_) => break,
+            }
+        }
+
+        Ok(packets)
+    }
+
     pub async fn stats(&self) -> TunStats {
         TunStats {
             inbound_packets: self.inbound_packets.load(Ordering::Relaxed),
@@ -360,6 +437,16 @@ impl TunEndpoint {
             tcp_remote_write_batch_max_bytes: self
                 .tcp_remote_write_batch_max_bytes
                 .load(Ordering::Relaxed),
+            tcp_remote_write_wait_events: self.tcp_remote_write_wait_events.load(Ordering::Relaxed),
+            tcp_remote_write_wait_ms_total: self
+                .tcp_remote_write_wait_ms_total
+                .load(Ordering::Relaxed),
+            tcp_remote_write_wait_ms_max: self.tcp_remote_write_wait_ms_max.load(Ordering::Relaxed),
+            tcp_remote_flush_wait_events: self.tcp_remote_flush_wait_events.load(Ordering::Relaxed),
+            tcp_remote_flush_wait_ms_total: self
+                .tcp_remote_flush_wait_ms_total
+                .load(Ordering::Relaxed),
+            tcp_remote_flush_wait_ms_max: self.tcp_remote_flush_wait_ms_max.load(Ordering::Relaxed),
             tcp_pending_remote_bytes: self.tcp_pending_remote_bytes.load(Ordering::Relaxed),
             tcp_pending_remote_flows: self.tcp_pending_remote_flows.load(Ordering::Relaxed),
             tcp_pending_remote_max_bytes: self.tcp_pending_remote_max_bytes.load(Ordering::Relaxed),
@@ -465,6 +552,24 @@ impl TunEndpoint {
             .fetch_max(messages as u64, Ordering::Relaxed);
         self.tcp_remote_write_batch_max_bytes
             .fetch_max(bytes as u64, Ordering::Relaxed);
+    }
+
+    pub fn record_tcp_remote_write_wait(&self, duration_ms: u64) {
+        record_duration_ms(
+            &self.tcp_remote_write_wait_events,
+            &self.tcp_remote_write_wait_ms_total,
+            &self.tcp_remote_write_wait_ms_max,
+            duration_ms,
+        );
+    }
+
+    pub fn record_tcp_remote_flush_wait(&self, duration_ms: u64) {
+        record_duration_ms(
+            &self.tcp_remote_flush_wait_events,
+            &self.tcp_remote_flush_wait_ms_total,
+            &self.tcp_remote_flush_wait_ms_max,
+            duration_ms,
+        );
     }
 
     pub fn record_tcp_pending_remote(
@@ -577,6 +682,24 @@ impl TunEndpoint {
 
     pub fn poll_tcp_flow_summary_event(&self) -> Option<TunTcpFlowSummaryEvent> {
         self.tcp_flow_summary_events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .pop_front()
+    }
+
+    pub fn record_tcp_remote_write_slow_event(&self, event: TunTcpRemoteWriteSlowEvent) {
+        let mut events = self
+            .tcp_remote_write_slow_events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if events.len() >= TCP_REMOTE_WRITE_SLOW_EVENT_CAPACITY {
+            events.pop_front();
+        }
+        events.push_back(event);
+    }
+
+    pub fn poll_tcp_remote_write_slow_event(&self) -> Option<TunTcpRemoteWriteSlowEvent> {
+        self.tcp_remote_write_slow_events
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .pop_front()

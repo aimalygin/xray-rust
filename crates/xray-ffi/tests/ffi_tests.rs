@@ -5,12 +5,13 @@ use xray_ffi::{
     xray_core_set_socket_protect_callback, xray_core_set_tun_block_quic,
     xray_core_set_tun_collect_tcp_timings, xray_core_set_tun_fd, xray_core_set_tun_runtime_profile,
     xray_core_start, xray_core_stop, xray_error_code, xray_error_free, xray_error_message,
-    xray_tun_poll_packet, xray_tun_poll_tcp_flow_summary_event, xray_tun_poll_tcp_slow_flow_event,
+    xray_tun_poll_packet, xray_tun_poll_packets, xray_tun_poll_tcp_flow_summary_event,
+    xray_tun_poll_tcp_remote_write_slow_event, xray_tun_poll_tcp_slow_flow_event,
     xray_tun_poll_udp_quic_blocked_event, xray_tun_poll_udp_response_gap_event,
     xray_tun_poll_udp_slow_flow_event, xray_tun_push_packet, xray_tun_stats, XrayStatus,
-    XrayTcpFlowSummaryEvent, XrayTcpSlowFlowEvent, XrayTunFdClosePolicy, XrayTunFdPacketFormat,
-    XrayTunRuntimeProfile, XrayTunStats, XrayUdpQuicBlockedEvent, XrayUdpResponseGapEvent,
-    XrayUdpSlowFlowEvent,
+    XrayTcpFlowSummaryEvent, XrayTcpRemoteWriteSlowEvent, XrayTcpSlowFlowEvent,
+    XrayTunFdClosePolicy, XrayTunFdPacketFormat, XrayTunRuntimeProfile, XrayTunStats,
+    XrayUdpQuicBlockedEvent, XrayUdpResponseGapEvent, XrayUdpSlowFlowEvent,
 };
 
 #[test]
@@ -454,6 +455,12 @@ fn ffi_tun_push_packet_updates_stats() {
     assert_eq!(stats.tcp_remote_write_batch_messages, 0);
     assert_eq!(stats.tcp_remote_write_batch_max_messages, 0);
     assert_eq!(stats.tcp_remote_write_batch_max_bytes, 0);
+    assert_eq!(stats.tcp_remote_write_wait_events, 0);
+    assert_eq!(stats.tcp_remote_write_wait_ms_total, 0);
+    assert_eq!(stats.tcp_remote_write_wait_ms_max, 0);
+    assert_eq!(stats.tcp_remote_flush_wait_events, 0);
+    assert_eq!(stats.tcp_remote_flush_wait_ms_total, 0);
+    assert_eq!(stats.tcp_remote_flush_wait_ms_max, 0);
     assert_eq!(stats.tcp_pending_remote_bytes, 0);
     assert_eq!(stats.tcp_pending_remote_flows, 0);
     assert_eq!(stats.tcp_pending_remote_max_bytes, 0);
@@ -517,6 +524,122 @@ fn ffi_tun_poll_packet_reports_no_packet() {
     assert!(err.is_null());
 
     unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_tun_poll_packets_returns_batched_echo_replies() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    assert!(!core.is_null());
+    let raw = CString::new(tun_config_with_freedom_outbound()).unwrap();
+    let status = unsafe { xray_core_load_config_json(core, raw.as_ptr(), &mut err) };
+    assert_eq!(status, XrayStatus::Ok);
+    let status = unsafe { xray_core_start(core, &mut err) };
+    assert_eq!(status, XrayStatus::Ok);
+
+    for sequence in 0..3u16 {
+        let request = ipv4_icmp_echo_request(
+            [10, 10, 0, 2],
+            [10, 10, 0, 1],
+            0x1203,
+            sequence,
+            b"batch ping",
+        );
+        let status =
+            unsafe { xray_tun_push_packet(core, request.as_ptr(), request.len(), &mut err) };
+        assert_eq!(status, XrayStatus::Ok);
+    }
+
+    let mut buffer = vec![0u8; 3 * 1500];
+    let mut lengths = vec![0usize; 3];
+    let mut count = 0usize;
+    let status = unsafe {
+        xray_tun_poll_packets(
+            core,
+            buffer.as_mut_ptr(),
+            buffer.len(),
+            lengths.as_mut_ptr(),
+            3,
+            &mut count,
+            1_000,
+            &mut err,
+        )
+    };
+
+    assert_eq!(status, XrayStatus::Ok);
+    assert!(err.is_null());
+    assert!((1..=3).contains(&count), "unexpected packet count {count}");
+    let mut offset = 0;
+    for length in &lengths[..count] {
+        assert!(*length > 0);
+        assert!(is_ipv4_icmp_echo_reply(&buffer[offset..offset + length]));
+        offset += length;
+    }
+
+    let status = unsafe { xray_core_stop(core, &mut err) };
+    assert_eq!(status, XrayStatus::Ok);
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_tun_poll_packets_reports_no_packet_without_waiting() {
+    let mut err = std::ptr::null_mut();
+    let core = loaded_core(&mut err);
+    let mut buffer = vec![0u8; 1500];
+    let mut lengths = vec![0usize; 4];
+    let mut count = 7usize;
+
+    let status = unsafe {
+        xray_tun_poll_packets(
+            core,
+            buffer.as_mut_ptr(),
+            buffer.len(),
+            lengths.as_mut_ptr(),
+            4,
+            &mut count,
+            0,
+            &mut err,
+        )
+    };
+
+    assert_eq!(status, XrayStatus::NoPacket);
+    assert_eq!(count, 0);
+    assert!(err.is_null());
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_tun_poll_packets_rejects_buffer_below_mtu() {
+    let mut err = std::ptr::null_mut();
+    let core = loaded_core(&mut err);
+    let mut buffer = vec![0u8; 128];
+    let mut lengths = vec![0usize; 4];
+    let mut count = 0usize;
+
+    let status = unsafe {
+        xray_tun_poll_packets(
+            core,
+            buffer.as_mut_ptr(),
+            buffer.len(),
+            lengths.as_mut_ptr(),
+            4,
+            &mut count,
+            0,
+            &mut err,
+        )
+    };
+
+    assert_eq!(status, XrayStatus::BufferTooSmall);
+    assert_eq!(count, 0);
+    unsafe {
+        xray_error_free(err);
         xray_core_free(core);
     }
 }
@@ -645,6 +768,40 @@ fn ffi_tun_poll_tcp_flow_summary_event_reports_no_packet() {
 
     let status = unsafe {
         xray_tun_poll_tcp_flow_summary_event(
+            core,
+            &mut event,
+            target.as_mut_ptr(),
+            target.len(),
+            &mut written,
+            outbound.as_mut_ptr(),
+            outbound.len(),
+            &mut outbound_written,
+            &mut err,
+        )
+    };
+
+    assert_eq!(status, XrayStatus::NoPacket);
+    assert_eq!(written, 0);
+    assert_eq!(outbound_written, 0);
+    assert!(err.is_null());
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_tun_poll_tcp_remote_write_slow_event_reports_no_packet() {
+    let mut err = std::ptr::null_mut();
+    let core = loaded_core(&mut err);
+    let mut event = XrayTcpRemoteWriteSlowEvent::default();
+    let mut target = [0_i8; 256];
+    let mut outbound = [0_i8; 64];
+    let mut written = 7usize;
+    let mut outbound_written = 9usize;
+
+    let status = unsafe {
+        xray_tun_poll_tcp_remote_write_slow_event(
             core,
             &mut event,
             target.as_mut_ptr(),

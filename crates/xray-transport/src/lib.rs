@@ -134,6 +134,68 @@ impl DnsResolver for SystemDnsResolver {
     }
 }
 
+const DNS_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(60);
+const DNS_CACHE_MAX_ENTRIES: usize = 256;
+
+/// TTL cache over another resolver. Proxy clients open a new outbound
+/// connection per session; resolving the (usually single) server domain on
+/// every connect adds tens of milliseconds on mobile networks.
+pub struct CachingDnsResolver {
+    inner: Arc<dyn DnsResolver>,
+    ttl: std::time::Duration,
+    cache: std::sync::Mutex<
+        std::collections::HashMap<(String, u16), (SocketAddr, std::time::Instant)>,
+    >,
+}
+
+impl CachingDnsResolver {
+    pub fn new(inner: Arc<dyn DnsResolver>) -> Self {
+        Self::with_ttl(inner, DNS_CACHE_TTL)
+    }
+
+    pub fn with_ttl(inner: Arc<dyn DnsResolver>, ttl: std::time::Duration) -> Self {
+        Self {
+            inner,
+            ttl,
+            cache: std::sync::Mutex::new(std::collections::HashMap::new()),
+        }
+    }
+}
+
+#[async_trait]
+impl DnsResolver for CachingDnsResolver {
+    async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+        let key = (domain.to_owned(), port);
+        let now = std::time::Instant::now();
+        {
+            let cache = self
+                .cache
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if let Some((addr, stored_at)) = cache.get(&key) {
+                if now.duration_since(*stored_at) < self.ttl {
+                    return Ok(*addr);
+                }
+            }
+        }
+
+        let addr = self.inner.resolve(domain, port).await?;
+
+        let mut cache = self
+            .cache
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if cache.len() >= DNS_CACHE_MAX_ENTRIES {
+            cache.retain(|_, (_, stored_at)| now.duration_since(*stored_at) < self.ttl);
+        }
+        if cache.len() >= DNS_CACHE_MAX_ENTRIES {
+            cache.clear();
+        }
+        cache.insert(key, (addr, now));
+        Ok(addr)
+    }
+}
+
 pub trait TransportStream: AsyncRead + AsyncWrite + Send + Unpin {
     fn poll_read_direct(
         self: Pin<&mut Self>,
@@ -348,22 +410,30 @@ pub async fn connect_tcp_stream(
     addr: SocketAddr,
     socket_protector: Option<&dyn SocketProtector>,
 ) -> Result<TcpStream, TransportError> {
-    let Some(socket_protector) = socket_protector else {
-        return TcpStream::connect(addr).await.map_err(TransportError::Tcp);
+    let stream = match socket_protector {
+        None => TcpStream::connect(addr)
+            .await
+            .map_err(TransportError::Tcp)?,
+        Some(socket_protector) => {
+            let socket = if addr.is_ipv4() {
+                TcpSocket::new_v4()
+            } else {
+                TcpSocket::new_v6()
+            }
+            .map_err(TransportError::Tcp)?;
+
+            socket_protector
+                .protect(SocketHandle::from_tcp_socket(&socket))
+                .map_err(TransportError::SocketProtection)?;
+
+            socket.connect(addr).await.map_err(TransportError::Tcp)?
+        }
     };
 
-    let socket = if addr.is_ipv4() {
-        TcpSocket::new_v4()
-    } else {
-        TcpSocket::new_v6()
-    }
-    .map_err(TransportError::Tcp)?;
-
-    socket_protector
-        .protect(SocketHandle::from_tcp_socket(&socket))
-        .map_err(TransportError::SocketProtection)?;
-
-    socket.connect(addr).await.map_err(TransportError::Tcp)
+    // The relay carries many latency-sensitive small frames (VLESS headers,
+    // Vision blocks, TLS records); Nagle would delay them behind ACKs.
+    stream.set_nodelay(true).map_err(TransportError::Tcp)?;
+    Ok(stream)
 }
 
 pub fn protect_udp_socket(

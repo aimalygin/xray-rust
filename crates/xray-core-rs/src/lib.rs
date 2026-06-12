@@ -5,7 +5,7 @@ use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 use xray_config::{CoreConfig, InboundProtocol};
 use xray_runtime::Shutdown;
-use xray_transport::{DnsResolver, SystemDnsResolver, TransportDialer};
+use xray_transport::{CachingDnsResolver, DnsResolver, SystemDnsResolver, TransportDialer};
 use xray_tun::{TunConfig, TunEndpoint};
 
 mod http;
@@ -46,6 +46,7 @@ pub enum TunRuntimeProfile {
     #[default]
     Default,
     Mobile,
+    MobilePlus,
     Desktop,
     LowMemory,
     Throughput,
@@ -74,6 +75,11 @@ impl TunRuntimeOptions {
                 outbound_queue_depth: 512,
             },
             TunRuntimeProfile::Throughput => TunQueueOptions {
+                mtu: TUN_MTU,
+                inbound_queue_depth: 2048,
+                outbound_queue_depth: 8192,
+            },
+            TunRuntimeProfile::MobilePlus => TunQueueOptions {
                 mtu: TUN_MTU,
                 inbound_queue_depth: 2048,
                 outbound_queue_depth: 8192,
@@ -143,7 +149,10 @@ pub struct Core {
 
 impl Core {
     pub fn new(config: CoreConfig) -> Result<Self, CoreError> {
-        Self::with_dns_resolver(config, Arc::new(SystemDnsResolver))
+        Self::with_dns_resolver(
+            config,
+            Arc::new(CachingDnsResolver::new(Arc::new(SystemDnsResolver))),
+        )
     }
 
     /// Creates a core with an injected DNS resolver.
@@ -163,7 +172,7 @@ impl Core {
     ) -> Result<Self, CoreError> {
         Self::with_runtime_dependencies_and_tun_options(
             config,
-            Arc::new(SystemDnsResolver),
+            Arc::new(CachingDnsResolver::new(Arc::new(SystemDnsResolver))),
             Arc::new(TransportDialer::system()?),
             tun_runtime_options,
         )

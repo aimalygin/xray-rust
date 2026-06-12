@@ -124,9 +124,7 @@ impl Parser<'_> {
             }
             return None;
         };
-        let Some(pool) = self.parse_ip_cidr(raw_pool, &ipv4_pool_path) else {
-            return None;
-        };
+        let pool = self.parse_ip_cidr(raw_pool, &ipv4_pool_path)?;
         if !matches!(pool.network(), IpAddr::V4(_)) {
             self.error(ipv4_pool_path, "fakeIp ipv4Pool must be an IPv4 CIDR");
             return None;
@@ -304,13 +302,21 @@ impl Parser<'_> {
             .u16_at(inbound, "port", format!("$.inbounds[{index}].port"))
             .unwrap_or(0);
 
+        let listen = self
+            .string_at(inbound, "listen")
+            .unwrap_or("127.0.0.1")
+            .to_owned();
+        if matches!(listen.as_str(), "0.0.0.0" | "::") {
+            self.warning(
+                format!("$.inbounds[{index}].listen"),
+                "wildcard listen address exposes this inbound to other devices on the network; use 127.0.0.1 unless LAN sharing is intended",
+            );
+        }
+
         Some(InboundConfig {
             tag: self.string_at(inbound, "tag").map(ToOwned::to_owned),
             protocol,
-            listen: self
-                .string_at(inbound, "listen")
-                .unwrap_or("127.0.0.1")
-                .to_owned(),
+            listen,
             port,
         })
     }
@@ -719,6 +725,23 @@ impl Parser<'_> {
             "tls" => {
                 let tls_settings = stream.and_then(|stream| stream.get("tlsSettings"));
                 self.validate_tls_settings(tls_settings, index);
+                let allow_insecure = tls_settings
+                    .and_then(|settings| {
+                        self.optional_bool_at(
+                            settings,
+                            "allowInsecure",
+                            format!(
+                                "$.outbounds[{index}].streamSettings.tlsSettings.allowInsecure"
+                            ),
+                        )
+                    })
+                    .unwrap_or(false);
+                if allow_insecure {
+                    self.warning(
+                        format!("$.outbounds[{index}].streamSettings.tlsSettings.allowInsecure"),
+                        "allowInsecure=true disables TLS certificate verification; the proxy connection can be intercepted",
+                    );
+                }
                 Some(StreamSecurity::Tls(TlsSettings {
                     server_name: tls_settings
                         .and_then(|settings| self.string_at(settings, "serverName"))
@@ -726,17 +749,7 @@ impl Parser<'_> {
                     fingerprint: tls_settings
                         .and_then(|settings| self.string_at(settings, "fingerprint"))
                         .map(ToOwned::to_owned),
-                    allow_insecure: tls_settings
-                        .and_then(|settings| {
-                            self.optional_bool_at(
-                                settings,
-                                "allowInsecure",
-                                format!(
-                                    "$.outbounds[{index}].streamSettings.tlsSettings.allowInsecure"
-                                ),
-                            )
-                        })
-                        .unwrap_or(false),
+                    allow_insecure,
                 }))
             }
             "reality" => self
@@ -1149,6 +1162,10 @@ impl Parser<'_> {
 
     fn error(&mut self, path: impl Into<String>, message: impl Into<String>) {
         self.diagnostics.push(Diagnostic::error(path, message));
+    }
+
+    fn warning(&mut self, path: impl Into<String>, message: impl Into<String>) {
+        self.diagnostics.push(Diagnostic::warning(path, message));
     }
 
     fn reject_unknown_fields(&mut self, value: &Value, base_path: &str, allowed: &[&str]) {

@@ -3,7 +3,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use std::time::Instant as StdInstant;
 
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use smoltcp::iface::{Config as InterfaceConfig, Interface, SocketHandle, SocketSet};
 use smoltcp::phy::{ChecksumCapabilities, Device, DeviceCapabilities, Medium, RxToken, TxToken};
 use smoltcp::socket::tcp;
@@ -17,8 +17,8 @@ use xray_config::{CoreConfig, DnsFakeIpConfig};
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::{protect_udp_socket, DnsResolver, TransportDialer};
 use xray_tun::{
-    TunEndpoint, TunError, TunTcpFlowSummaryEvent, TunTcpSlowFlowEvent, TunTcpSlowFlowKind,
-    TunUdpQuicBlockedEvent, TunUdpResponseGapEvent, TunUdpSlowFlowEvent,
+    TunEndpoint, TunError, TunTcpFlowSummaryEvent, TunTcpRemoteWriteSlowEvent, TunTcpSlowFlowEvent,
+    TunTcpSlowFlowKind, TunUdpQuicBlockedEvent, TunUdpResponseGapEvent, TunUdpSlowFlowEvent,
 };
 
 use crate::outbound::{
@@ -44,8 +44,10 @@ const DNS_TYPE_AAAA: u16 = 28;
 const DNS_CLASS_IN: u16 = 1;
 const TCP_BUFFER_SIZE: usize = 32 * 1024;
 const STACK_EVENT_CHANNEL_DEPTH: usize = 64;
-const TCP_BRIDGE_CHANNEL_DEPTH: usize = 128;
-const UDP_BRIDGE_CHANNEL_DEPTH: usize = 64;
+const TCP_BRIDGE_CHANNEL_DEPTH: usize = 256;
+// Burst-heavy UDP (DNS fan-out, QUIC fallback retries) overflows a 64-deep
+// channel and surfaces as udp_channel_dropped_packets.
+const UDP_BRIDGE_CHANNEL_DEPTH: usize = 256;
 const BRIDGE_READ_BUFFER_SIZE: usize = 16 * 1024;
 const TCP_BRIDGE_WRITE_BATCH_MAX_MESSAGES: usize = TCP_BRIDGE_CHANNEL_DEPTH + 1;
 const TCP_BRIDGE_WRITE_BATCH_MAX_BYTES: usize = 2 * 1024 * 1024;
@@ -53,6 +55,7 @@ const MAX_TUN_INBOUND_DRAIN_PER_TICK: usize = 256;
 const TCP_REMOTE_DRAIN_MAX_PASSES_PER_TICK: usize = 4;
 const TCP_REMOTE_DRAIN_MAX_BYTES_PER_TICK: usize = 4 * 1024 * 1024;
 const TCP_SLOW_FLOW_THRESHOLD_MS: u64 = 500;
+const TCP_REMOTE_WRITE_SLOW_THRESHOLD_MS: u64 = 500;
 const TCP_FLOW_SUMMARY_64KIB_BYTES: u64 = 64 * 1024;
 const TCP_FLOW_SUMMARY_128KIB_BYTES: u64 = 128 * 1024;
 const TCP_FLOW_SUMMARY_256KIB_BYTES: u64 = 256 * 1024;
@@ -72,8 +75,10 @@ struct TcpRemoteBufferPolicy {
 }
 
 const MOBILE_TCP_REMOTE_BUFFER_POLICY: TcpRemoteBufferPolicy = TcpRemoteBufferPolicy {
-    normal_per_flow_bytes: 2 * 1024 * 1024,
-    pressure_per_flow_bytes: 1024 * 1024,
+    // Per-flow ceiling matches desktop so a single bulk stream (speedtest) is
+    // not capped early; totals stay inside NetworkExtension memory limits.
+    normal_per_flow_bytes: 4 * 1024 * 1024,
+    pressure_per_flow_bytes: 2 * 1024 * 1024,
     pressure_start_total_bytes: 24 * 1024 * 1024,
     pressure_release_total_bytes: 16 * 1024 * 1024,
     hard_total_bytes: 40 * 1024 * 1024,
@@ -101,7 +106,16 @@ struct FlowBudgetPolicy {
 const MOBILE_FLOW_BUDGET_POLICY: FlowBudgetPolicy = FlowBudgetPolicy {
     tcp_remote: MOBILE_TCP_REMOTE_BUFFER_POLICY,
     udp: UdpFlowBudgetPolicy {
-        max_active_flows: 256,
+        // Speedtests and DNS-heavy bursts easily exceed 256 concurrent UDP
+        // flows; dropping fresh flows shows up as failed probes.
+        max_active_flows: 512,
+    },
+};
+
+const MOBILE_PLUS_FLOW_BUDGET_POLICY: FlowBudgetPolicy = FlowBudgetPolicy {
+    tcp_remote: DESKTOP_TCP_REMOTE_BUFFER_POLICY,
+    udp: UdpFlowBudgetPolicy {
+        max_active_flows: 512,
     },
 };
 
@@ -152,6 +166,7 @@ fn flow_budget_policy_for_runtime_options(options: TunRuntimeOptions) -> FlowBud
     match options.profile {
         TunRuntimeProfile::Default => FLOW_BUDGET_POLICY,
         TunRuntimeProfile::Mobile => MOBILE_FLOW_BUDGET_POLICY,
+        TunRuntimeProfile::MobilePlus => MOBILE_PLUS_FLOW_BUDGET_POLICY,
         TunRuntimeProfile::Desktop => DESKTOP_FLOW_BUDGET_POLICY,
         TunRuntimeProfile::LowMemory => LOW_MEMORY_FLOW_BUDGET_POLICY,
         TunRuntimeProfile::Throughput => THROUGHPUT_FLOW_BUDGET_POLICY,
@@ -686,6 +701,7 @@ pub(crate) async fn serve_tun_endpoint(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn process_tun_packet(
     packet: Bytes,
     tun: &TunEndpoint,
@@ -708,6 +724,9 @@ async fn process_tun_packet(
         ) {
             return !matches!(tun.push_outbound(reply).await, Err(TunError::QueueClosed));
         }
+    }
+    if let Some(reply) = reject_vision_udp443_packet(tun, &packet, context) {
+        return !matches!(tun.push_outbound(reply).await, Err(TunError::QueueClosed));
     }
     if let Some(packet) = parse_udp_packet(&packet) {
         if let Some(reply) = context.fake_dns_reply_packet(&packet) {
@@ -1307,8 +1326,12 @@ async fn bridge_tcp_flow(
 
     let (mut remote_reader, mut remote_writer) = tokio::io::split(stream);
     if let (Some(start), Some(open_duration_ms)) = (tcp_timing_start, tcp_open_duration_ms) {
-        let mut timing =
-            TcpFirstByteTimingEnabled::new(start, is_tcp443, open_duration_ms, outbound_tag);
+        let mut timing = TcpFirstByteTimingEnabled::new(
+            start,
+            is_tcp443,
+            open_duration_ms,
+            outbound_tag.clone(),
+        );
         bridge_tcp_flow_loop(
             handle,
             &target,
@@ -1317,6 +1340,7 @@ async fn bridge_tcp_flow(
             shutdown,
             &mut remote_reader,
             &mut remote_writer,
+            outbound_tag.as_deref(),
             &mut timing,
         )
         .await;
@@ -1330,12 +1354,14 @@ async fn bridge_tcp_flow(
             shutdown,
             &mut remote_reader,
             &mut remote_writer,
+            outbound_tag.as_deref(),
             &mut timing,
         )
         .await;
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn bridge_tcp_flow_loop<R, W, T>(
     handle: SocketHandle,
     target: &Target,
@@ -1344,6 +1370,7 @@ async fn bridge_tcp_flow_loop<R, W, T>(
     mut shutdown: watch::Receiver<bool>,
     remote_reader: &mut R,
     remote_writer: &mut W,
+    outbound_tag: Option<&str>,
     timing: &mut T,
 ) where
     R: AsyncRead + Unpin,
@@ -1365,6 +1392,8 @@ async fn bridge_tcp_flow_loop<R, W, T>(
                 };
                 if write_stack_batch_to_remote(
                     remote_writer,
+                    target,
+                    outbound_tag,
                     data,
                     &mut from_stack,
                     context.tun.as_ref(),
@@ -1439,6 +1468,31 @@ fn record_tcp_slow_flow_event(
     });
 }
 
+fn record_tcp_remote_write_slow_event(
+    tun: &TunEndpoint,
+    target: &Target,
+    outbound_tag: Option<&str>,
+    duration_ms: u64,
+    bytes: usize,
+    messages: usize,
+) {
+    if target.port != 443 {
+        return;
+    }
+    if duration_ms <= TCP_REMOTE_WRITE_SLOW_THRESHOLD_MS {
+        return;
+    }
+
+    tun.record_tcp_remote_write_slow_event(TunTcpRemoteWriteSlowEvent {
+        target: slow_flow_target_label(target),
+        outbound_tag: outbound_tag.map(ToOwned::to_owned),
+        duration_ms,
+        bytes: bytes as u64,
+        messages: messages as u64,
+    });
+}
+
+#[allow(clippy::too_many_arguments)]
 fn record_tcp_flow_summary_event(
     tun: &TunEndpoint,
     target: &Target,
@@ -1770,6 +1824,8 @@ impl UdpFirstResponseTiming for UdpFirstResponseTimingEnabled {
 
 async fn write_stack_batch_to_remote<W>(
     remote_writer: &mut W,
+    target: &Target,
+    outbound_tag: Option<&str>,
     first: Bytes,
     from_stack: &mut mpsc::Receiver<Bytes>,
     tun: &TunEndpoint,
@@ -1779,12 +1835,12 @@ where
 {
     let mut batch_messages = 0usize;
     let mut batch_bytes = 0usize;
+    let mut batch = BytesMut::with_capacity(first.len().min(TCP_BRIDGE_WRITE_BATCH_MAX_BYTES));
     let mut next = Some(first);
 
     while let Some(data) = next {
         let data_len = data.len();
-        remote_writer.write_all(&data).await?;
-        tun.record_tcp_remote_written(data_len);
+        batch.extend_from_slice(&data);
 
         batch_messages += 1;
         batch_bytes = batch_bytes.saturating_add(data_len);
@@ -1794,13 +1850,27 @@ where
             break;
         }
 
-        next = match from_stack.try_recv() {
-            Ok(data) => Some(data),
-            Err(mpsc::error::TryRecvError::Empty | mpsc::error::TryRecvError::Disconnected) => None,
-        };
+        next = from_stack.try_recv().ok();
     }
 
-    remote_writer.flush().await?;
+    let write_start = StdInstant::now();
+    let write_result = remote_writer.write_all(&batch).await;
+    let write_duration_ms = elapsed_ms_since(&write_start);
+    tun.record_tcp_remote_write_wait(write_duration_ms);
+    record_tcp_remote_write_slow_event(
+        tun,
+        target,
+        outbound_tag,
+        write_duration_ms,
+        batch_bytes,
+        batch_messages,
+    );
+    write_result?;
+    tun.record_tcp_remote_written(batch_bytes);
+    let flush_start = StdInstant::now();
+    let flush_result = remote_writer.flush().await;
+    tun.record_tcp_remote_flush_wait(elapsed_ms_since(&flush_start));
+    flush_result?;
     tun.record_tcp_remote_write_batch(batch_messages, batch_bytes);
     Ok(())
 }
@@ -1958,6 +2028,7 @@ async fn bridge_udp_freedom_flow(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn bridge_udp_freedom_flow_loop<T>(
     key: UdpFlowKey,
     target: Target,
@@ -2041,9 +2112,12 @@ async fn bridge_udp_vless_flow(
     shutdown: watch::Receiver<bool>,
     udp_timing_start: Option<StdInstant>,
 ) {
-    let options = VlessUdpOpenOptions {
-        reject_udp443_for_regular_vision: context.tun_runtime_options.block_quic,
-    };
+    // Regular xtls-rprx-vision cannot carry UDP/443 (QUIC); reject it
+    // unconditionally as upstream xray-core does, independent of the blockQUIC
+    // toggle. xtls-rprx-vision-udp443 still allows it. (The packet layer also
+    // ICMP-rejects QUIC/443 to vision for fast fallback; this is the backstop
+    // for any non-QUIC UDP/443 that reaches the bridge.)
+    let options = VlessUdpOpenOptions::default();
     let (stream, framing) = match open_vless_udp_stream_with_resolver_dialer_and_options(
         &outbound,
         &target,
@@ -2097,6 +2171,7 @@ async fn bridge_udp_vless_flow(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn bridge_udp_vless_flow_loop<R, W, T>(
     key: UdpFlowKey,
     target: Target,
@@ -2207,6 +2282,34 @@ fn ensure_tcp_listener(
     if socket.listen(endpoint).is_ok() {
         listeners.insert(endpoint, sockets.add(socket));
     }
+}
+
+/// Replies with ICMP port-unreachable for a UDP/443 datagram that routes to a
+/// regular `xtls-rprx-vision` outbound, which cannot carry QUIC. This makes
+/// QUIC-preferring apps (YouTube, Chrome) fall back to TCP immediately instead
+/// of stalling on a half-open QUIC handshake. Direct/freedom and
+/// `xtls-rprx-vision-udp443` outbounds are left untouched, so their UDP/443
+/// (including QUIC) keeps flowing.
+fn reject_vision_udp443_packet(
+    tun: &TunEndpoint,
+    packet: &[u8],
+    context: &TunRuntimeContext,
+) -> Option<Bytes> {
+    let view = udp_packet_view_for_destination(packet, 443)?;
+    let target = context.target_from_endpoint(view.target, RoutingNetwork::Udp)?;
+    let UdpOutbound::Vless(outbound) =
+        select_udp_outbound_for_session(&context.config, context.inbound_tag.as_deref(), &target)
+            .ok()?
+    else {
+        return None;
+    };
+    if !outbound.blocks_udp443() {
+        return None;
+    }
+
+    let reply = icmp_port_unreachable_reply(packet)?;
+    tun.record_udp_vision_udp443_rejection();
+    Some(reply)
 }
 
 fn record_quic_blocked_packet(
@@ -2990,12 +3093,13 @@ mod tests {
     use tokio::io::AsyncWrite;
     use xray_tun::TunConfig;
 
-    const NORMAL_TCP_REMOTE_PENDING_LIMIT: usize = 2 * 1024 * 1024;
-    const PRESSURE_TCP_REMOTE_PENDING_LIMIT: usize = 1024 * 1024;
+    const NORMAL_TCP_REMOTE_PENDING_LIMIT: usize = 4 * 1024 * 1024;
+    const PRESSURE_TCP_REMOTE_PENDING_LIMIT: usize = 2 * 1024 * 1024;
 
     #[derive(Debug, Default)]
     struct CountingWrite {
         written: Vec<u8>,
+        writes: usize,
         flushes: usize,
     }
 
@@ -3005,6 +3109,7 @@ mod tests {
             _cx: &mut Context<'_>,
             input: &[u8],
         ) -> Poll<io::Result<usize>> {
+            self.writes += 1;
             self.written.extend_from_slice(input);
             Poll::Ready(Ok(input.len()))
         }
@@ -3021,6 +3126,14 @@ mod tests {
 
     fn mobile_tcp_flow_budget_state() -> TcpRemoteBufferState {
         TcpRemoteBufferState::new(MOBILE_TCP_REMOTE_BUFFER_POLICY)
+    }
+
+    fn test_tcp443_target() -> Target {
+        Target::new(
+            RoutingTargetAddr::Domain("speedtest.example".to_owned()),
+            443,
+            RoutingNetwork::Tcp,
+        )
     }
 
     #[test]
@@ -3100,6 +3213,41 @@ mod tests {
             })
         );
         assert_eq!(tun.poll_tcp_slow_flow_event(), None);
+    }
+
+    #[test]
+    fn tcp_remote_write_slow_event_uses_500ms_threshold_for_tcp443_targets() {
+        let tun = TunEndpoint::new(xray_tun::TunConfig {
+            mtu: 1500,
+            queue_depth: 1,
+        });
+        let tcp443 = Target::new(
+            RoutingTargetAddr::Domain("speedtest.example".to_owned()),
+            443,
+            RoutingNetwork::Tcp,
+        );
+        let tcp8443 = Target::new(
+            RoutingTargetAddr::Domain("speedtest.example".to_owned()),
+            8443,
+            RoutingNetwork::Tcp,
+        );
+
+        record_tcp_remote_write_slow_event(&tun, &tcp443, Some("proxy"), 500, 2_048, 2);
+        record_tcp_remote_write_slow_event(&tun, &tcp8443, Some("proxy"), 501, 2_048, 2);
+        assert_eq!(tun.poll_tcp_remote_write_slow_event(), None);
+
+        record_tcp_remote_write_slow_event(&tun, &tcp443, Some("proxy"), 501, 2 * 1024 * 1024, 257);
+        assert_eq!(
+            tun.poll_tcp_remote_write_slow_event(),
+            Some(TunTcpRemoteWriteSlowEvent {
+                target: "speedtest.example:443".to_owned(),
+                outbound_tag: Some("proxy".to_owned()),
+                duration_ms: 501,
+                bytes: 2 * 1024 * 1024,
+                messages: 257,
+            })
+        );
+        assert_eq!(tun.poll_tcp_remote_write_slow_event(), None);
     }
 
     #[test]
@@ -3311,12 +3459,21 @@ mod tests {
             mtu: 1500,
             queue_depth: 1,
         });
+        let target = test_tcp443_target();
 
-        write_stack_batch_to_remote(&mut writer, Bytes::from_static(b"one"), &mut rx, &tun)
-            .await
-            .unwrap();
+        write_stack_batch_to_remote(
+            &mut writer,
+            &target,
+            Some("proxy"),
+            Bytes::from_static(b"one"),
+            &mut rx,
+            &tun,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(writer.written, b"onetwothree");
+        assert_eq!(writer.writes, 1);
         assert_eq!(writer.flushes, 1);
         let stats = tun.stats().await;
         assert_eq!(stats.tcp_remote_written_bytes, b"onetwothree".len() as u64);
@@ -3327,6 +3484,8 @@ mod tests {
             stats.tcp_remote_write_batch_max_bytes,
             b"onetwothree".len() as u64
         );
+        assert_eq!(stats.tcp_remote_write_wait_events, 1);
+        assert_eq!(stats.tcp_remote_flush_wait_events, 1);
     }
 
     #[tokio::test]
@@ -3340,9 +3499,12 @@ mod tests {
             mtu: 1500,
             queue_depth: 1,
         });
+        let target = test_tcp443_target();
 
         write_stack_batch_to_remote(
             &mut writer,
+            &target,
+            Some("proxy"),
             Bytes::from_static(&[0x7b; 1024]),
             &mut rx,
             &tun,
@@ -3365,7 +3527,7 @@ mod tests {
 
     #[tokio::test]
     async fn stack_to_remote_write_batch_drains_larger_tcp_upload_burst_before_flushing() {
-        let expected_queued_messages = 128usize;
+        let expected_queued_messages = 256usize;
         let (tx, mut rx) = mpsc::channel(expected_queued_messages);
         for _ in 0..expected_queued_messages {
             tx.try_send(Bytes::from_static(&[0x5a; 1024])).unwrap();
@@ -3375,9 +3537,12 @@ mod tests {
             mtu: 1500,
             queue_depth: 1,
         });
+        let target = test_tcp443_target();
 
         write_stack_batch_to_remote(
             &mut writer,
+            &target,
+            Some("proxy"),
             Bytes::from_static(&[0x7b; 1024]),
             &mut rx,
             &tun,
@@ -3387,8 +3552,8 @@ mod tests {
 
         let stats = tun.stats().await;
         assert_eq!(stats.tcp_remote_write_batches, 1);
-        assert_eq!(stats.tcp_remote_write_batch_messages, 129);
-        assert_eq!(stats.tcp_remote_write_batch_max_bytes, 129 * 1024);
+        assert_eq!(stats.tcp_remote_write_batch_messages, 257);
+        assert_eq!(stats.tcp_remote_write_batch_max_bytes, 257 * 1024);
         assert_eq!(writer.flushes, 1);
     }
 
@@ -3404,8 +3569,9 @@ mod tests {
             mtu: 1500,
             queue_depth: 1,
         });
+        let target = test_tcp443_target();
 
-        write_stack_batch_to_remote(&mut writer, chunk, &mut rx, &tun)
+        write_stack_batch_to_remote(&mut writer, &target, Some("proxy"), chunk, &mut rx, &tun)
             .await
             .unwrap();
 
@@ -3442,7 +3608,7 @@ mod tests {
     }
 
     #[test]
-    fn mobile_remote_buffer_policy_uses_2mib_normal_with_memory_pressure_budgets() {
+    fn mobile_remote_buffer_policy_uses_4mib_normal_with_memory_pressure_budgets() {
         assert_eq!(
             MOBILE_TCP_REMOTE_BUFFER_POLICY.normal_per_flow_bytes,
             NORMAL_TCP_REMOTE_PENDING_LIMIT
@@ -3502,7 +3668,7 @@ mod tests {
     }
 
     #[test]
-    fn flow_budget_state_allows_2mib_per_flow_below_soft_budget() {
+    fn flow_budget_state_allows_full_per_flow_budget_below_soft_budget() {
         let state = mobile_tcp_flow_budget_state();
 
         assert!(state.can_enqueue_remote_data(1024 * 1024, 1024 * 1024));
@@ -3572,7 +3738,7 @@ mod tests {
 
     #[test]
     fn mobile_flow_budget_keeps_udp_capacity_high_but_bounded() {
-        assert_eq!(MOBILE_FLOW_BUDGET_POLICY.udp.max_active_flows, 256);
+        assert_eq!(MOBILE_FLOW_BUDGET_POLICY.udp.max_active_flows, 512);
         assert_eq!(DESKTOP_FLOW_BUDGET_POLICY.udp.max_active_flows, 1024);
     }
 
@@ -3585,6 +3751,23 @@ mod tests {
         assert_eq!(policy.udp.max_active_flows, 128);
         assert_eq!(policy.tcp_remote.normal_per_flow_bytes, 1024 * 1024);
         assert_eq!(policy.tcp_remote.hard_total_bytes, 20 * 1024 * 1024);
+    }
+
+    #[test]
+    fn mobile_plus_profile_uses_larger_tcp_and_udp_flow_budgets() {
+        let policy = flow_budget_policy_for_runtime_options(TunRuntimeOptions::with_profile(
+            TunRuntimeProfile::MobilePlus,
+        ));
+
+        assert_eq!(
+            policy.tcp_remote.normal_per_flow_bytes,
+            DESKTOP_TCP_REMOTE_BUFFER_POLICY.normal_per_flow_bytes
+        );
+        assert_eq!(
+            policy.tcp_remote.hard_total_bytes,
+            DESKTOP_TCP_REMOTE_BUFFER_POLICY.hard_total_bytes
+        );
+        assert_eq!(policy.udp.max_active_flows, 512);
     }
 
     #[test]
@@ -4310,6 +4493,7 @@ mod tests {
         assert_eq!(&icmp[8..], &original[..original.len().min(1232)]);
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn build_ipv4_tcp_packet(
         source: Ipv4Addr,
         source_port: u16,

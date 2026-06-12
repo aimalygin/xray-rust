@@ -67,6 +67,20 @@ impl VisionPadding {
         command: VisionCommand,
         deterministic_extra_padding: u16,
     ) -> Result<BytesMut, VisionError> {
+        let mut padded = BytesMut::new();
+        self.pad_into(&payload, command, deterministic_extra_padding, &mut padded)?;
+        Ok(padded)
+    }
+
+    /// Appends one padded frame directly to `output`, avoiding the per-write
+    /// temporary buffers `pad` needs on the hot relay path.
+    pub fn pad_into(
+        &mut self,
+        payload: &[u8],
+        command: VisionCommand,
+        deterministic_extra_padding: u16,
+        output: &mut BytesMut,
+    ) -> Result<(), VisionError> {
         let content_len = payload.len();
         if content_len > MAX_CONTENT_LEN {
             return Err(VisionError::PayloadTooLarge { len: content_len });
@@ -74,21 +88,20 @@ impl VisionPadding {
 
         let padding_len = self.padding_len(content_len, deterministic_extra_padding);
         let user_prefix_len = if self.user_id_emitted { 0 } else { USER_ID_LEN };
-        let mut padded =
-            BytesMut::with_capacity(user_prefix_len + HEADER_LEN + content_len + padding_len);
+        output.reserve(user_prefix_len + HEADER_LEN + content_len + padding_len);
 
         if !self.user_id_emitted {
-            padded.extend_from_slice(&self.user_id);
+            output.extend_from_slice(&self.user_id);
             self.user_id_emitted = true;
         }
 
-        padded.put_u8(command as u8);
-        padded.put_u16(content_len as u16);
-        padded.put_u16(padding_len as u16);
-        padded.extend_from_slice(&payload[..content_len]);
-        padded.resize(padded.len() + padding_len, 0);
+        output.put_u8(command as u8);
+        output.put_u16(content_len as u16);
+        output.put_u16(padding_len as u16);
+        output.extend_from_slice(payload);
+        output.resize(output.len() + padding_len, 0);
 
-        Ok(padded)
+        Ok(())
     }
 
     fn padding_len(&self, content_len: usize, deterministic_extra_padding: u16) -> usize {

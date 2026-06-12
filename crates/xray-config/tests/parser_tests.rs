@@ -930,3 +930,71 @@ fn vless_raw_with_reality_settings(reality_settings: &str) -> String {
         }}"#
     )
 }
+
+#[test]
+fn allow_insecure_tls_produces_warning_diagnostic() {
+    let raw = r#"{
+        "inbounds": [
+            {
+              "tag": "socks-in",
+              "protocol": "socks",
+              "listen": "127.0.0.1",
+              "port": 1080,
+              "settings": { "auth": "noauth", "udp": false }
+            }
+        ],
+        "outbounds": [
+            {
+              "tag": "proxy",
+              "protocol": "vless",
+              "settings": {
+                "vnext": [
+                  {
+                    "address": "example.com",
+                    "port": 443,
+                    "users": [ { "id": "00010203-0405-0607-0809-0a0b0c0d0e0f" } ]
+                  }
+                ]
+              },
+              "streamSettings": {
+                "network": "tcp",
+                "security": "tls",
+                "tlsSettings": { "serverName": "example.com", "allowInsecure": true }
+              }
+            }
+        ]
+    }"#;
+
+    let parsed = parse_xray_json(raw).expect("config should parse");
+
+    assert!(parsed.diagnostics.iter().any(|diagnostic| {
+        diagnostic.severity == DiagnosticSeverity::Warning
+            && diagnostic.path.as_deref()
+                == Some("$.outbounds[0].streamSettings.tlsSettings.allowInsecure")
+    }));
+}
+
+#[test]
+fn wildcard_listen_produces_warning_diagnostic() {
+    let raw = r#"{
+        "inbounds": [
+            {
+              "tag": "socks-in",
+              "protocol": "socks",
+              "listen": "0.0.0.0",
+              "port": 1080,
+              "settings": { "auth": "noauth", "udp": false }
+            }
+        ],
+        "outbounds": [
+            { "tag": "direct", "protocol": "freedom" }
+        ]
+    }"#;
+
+    let parsed = parse_xray_json(raw).expect("config should parse");
+
+    assert!(parsed.diagnostics.iter().any(|diagnostic| {
+        diagnostic.severity == DiagnosticSeverity::Warning
+            && diagnostic.path.as_deref() == Some("$.inbounds[0].listen")
+    }));
+}

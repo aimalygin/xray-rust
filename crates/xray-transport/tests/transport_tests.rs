@@ -446,6 +446,20 @@ mod transport_tests {
     }
 
     #[tokio::test]
+    async fn connect_tcp_stream_enables_nodelay() {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr");
+
+        let stream = xray_transport::connect_tcp_stream(addr, None)
+            .await
+            .expect("connect");
+
+        assert!(stream.nodelay().expect("query nodelay"));
+    }
+
+    #[tokio::test]
     async fn tcp_connector_rejects_reality_config_without_plaintext_downgrade() {
         let connector = TcpConnector::new(ConnectorConfig::Reality(RealityClientConfig {
             server_name: "www.example.com".to_owned(),

@@ -37,6 +37,12 @@ typedef struct XrayTunStats {
   uint64_t tcp_remote_write_batch_messages;
   uint64_t tcp_remote_write_batch_max_messages;
   uint64_t tcp_remote_write_batch_max_bytes;
+  uint64_t tcp_remote_write_wait_events;
+  uint64_t tcp_remote_write_wait_ms_total;
+  uint64_t tcp_remote_write_wait_ms_max;
+  uint64_t tcp_remote_flush_wait_events;
+  uint64_t tcp_remote_flush_wait_ms_total;
+  uint64_t tcp_remote_flush_wait_ms_max;
   uint64_t tcp_pending_remote_bytes;
   uint64_t tcp_pending_remote_flows;
   uint64_t tcp_pending_remote_max_bytes;
@@ -98,7 +104,8 @@ typedef enum XrayTunRuntimeProfile {
   XRAY_TUN_RUNTIME_PROFILE_MOBILE = 1,
   XRAY_TUN_RUNTIME_PROFILE_DESKTOP = 2,
   XRAY_TUN_RUNTIME_PROFILE_LOW_MEMORY = 3,
-  XRAY_TUN_RUNTIME_PROFILE_THROUGHPUT = 4
+  XRAY_TUN_RUNTIME_PROFILE_THROUGHPUT = 4,
+  XRAY_TUN_RUNTIME_PROFILE_MOBILE_PLUS = 5
 } XrayTunRuntimeProfile;
 
 typedef enum XrayTcpSlowFlowKind {
@@ -125,6 +132,12 @@ typedef struct XrayTcpFlowSummaryEvent {
   uint64_t ms_to_512kib;
   uint64_t ms_to_1mib;
 } XrayTcpFlowSummaryEvent;
+
+typedef struct XrayTcpRemoteWriteSlowEvent {
+  uint64_t duration_ms;
+  uint64_t bytes;
+  uint64_t messages;
+} XrayTcpRemoteWriteSlowEvent;
 
 typedef struct XrayUdpSlowFlowEvent {
   uint64_t first_response_duration_ms;
@@ -195,6 +208,22 @@ XrayStatus xray_tun_poll_packet(
     size_t buffer_len,
     size_t *written,
     XrayError **error);
+/* Blocks up to wait_ms for the first packet (0 polls without waiting), then
+ * drains ready packets back-to-back into buffer; packet_lengths[i] receives
+ * each length and *packet_count the number written. At most
+ * min(max_packets, buffer_len / mtu) packets are returned per call.
+ * May be called concurrently with xray_tun_push_packet / xray_tun_poll_packet
+ * / xray_tun_stats on the same handle, but never concurrently with lifecycle
+ * calls (load_config / start / stop / set_* / free). */
+XrayStatus xray_tun_poll_packets(
+    XrayCoreHandle *handle,
+    uint8_t *buffer,
+    size_t buffer_len,
+    size_t *packet_lengths,
+    size_t max_packets,
+    size_t *packet_count,
+    uint32_t wait_ms,
+    XrayError **error);
 XrayStatus xray_tun_poll_tcp_slow_flow_event(
     XrayCoreHandle *handle,
     XrayTcpSlowFlowEvent *event,
@@ -205,6 +234,16 @@ XrayStatus xray_tun_poll_tcp_slow_flow_event(
 XrayStatus xray_tun_poll_tcp_flow_summary_event(
     XrayCoreHandle *handle,
     XrayTcpFlowSummaryEvent *event,
+    char *target_buffer,
+    size_t target_buffer_len,
+    size_t *target_written,
+    char *outbound_tag_buffer,
+    size_t outbound_tag_buffer_len,
+    size_t *outbound_tag_written,
+    XrayError **error);
+XrayStatus xray_tun_poll_tcp_remote_write_slow_event(
+    XrayCoreHandle *handle,
+    XrayTcpRemoteWriteSlowEvent *event,
     char *target_buffer,
     size_t target_buffer_len,
     size_t *target_written,

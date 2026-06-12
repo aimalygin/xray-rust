@@ -19,6 +19,7 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
         "XrayStatus",
         "XrayTunStats",
         "XrayTcpFlowSummaryEvent",
+        "XrayTcpRemoteWriteSlowEvent",
         "XrayTcpSlowFlowEvent",
         "XrayTcpSlowFlowKind",
         "XrayUdpSlowFlowEvent",
@@ -45,7 +46,9 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
         "xray_error_free",
         "xray_tun_push_packet",
         "xray_tun_poll_packet",
+        "xray_tun_poll_packets",
         "xray_tun_poll_tcp_flow_summary_event",
+        "xray_tun_poll_tcp_remote_write_slow_event",
         "xray_tun_poll_tcp_slow_flow_event",
         "xray_tun_poll_udp_slow_flow_event",
         "xray_tun_poll_udp_response_gap_event",
@@ -56,6 +59,14 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
     }
 
     for field in [
+        "tcp_remote_write_wait_events",
+        "tcp_remote_write_wait_ms_total",
+        "tcp_remote_write_wait_ms_max",
+        "tcp_remote_flush_wait_events",
+        "tcp_remote_flush_wait_ms_total",
+        "tcp_remote_flush_wait_ms_max",
+        "duration_ms",
+        "messages",
         "ms_to_64kib",
         "ms_to_128kib",
         "ms_to_256kib",
@@ -278,15 +289,27 @@ fn compile_c_harness() {
 
 fn assert_native_staticlib_exports_symbols() {
     let root = workspace_root();
+    // `lto = "thin"` archives contain LLVM bitcode objects that the host
+    // toolchain's `nm` may not be able to read when its LLVM is older than
+    // rustc's; scan a non-LTO build so members are plain machine objects.
     let build = Command::new("cargo")
         .current_dir(&root)
-        .args(["build", "-p", "xray-ffi", "--release"])
+        .args([
+            "build",
+            "-p",
+            "xray-ffi",
+            "--release",
+            "--target-dir",
+            "target/ffi-symbol-scan",
+            "--config",
+            "profile.release.lto=\"off\"",
+        ])
         .output()
         .expect("run cargo build for native xray-ffi staticlib");
 
     assert_command_success("native xray-ffi release build", &build);
 
-    let library = root.join("target/release/libxray_ffi.a");
+    let library = root.join("target/ffi-symbol-scan/release/libxray_ffi.a");
     assert!(
         library.exists(),
         "native staticlib missing at {}",
@@ -299,9 +322,15 @@ fn assert_native_staticlib_exports_symbols() {
         .output()
         .expect("run nm for native xray-ffi staticlib");
 
-    assert_command_success("native xray-ffi nm symbol scan", &symbols);
-
+    // `nm` exits nonzero when prebuilt std members carry bitcode newer than
+    // its LLVM reader; the crate's own machine-code members still get listed,
+    // so judge the scan by its output rather than the exit status.
     let stdout = String::from_utf8_lossy(&symbols.stdout);
+    assert!(
+        !stdout.trim().is_empty(),
+        "native xray-ffi nm symbol scan produced no output\nstderr:\n{}",
+        String::from_utf8_lossy(&symbols.stderr)
+    );
     for symbol in EXPORTED_SYMBOLS {
         assert!(
             contains_exported_symbol(&stdout, symbol),
@@ -346,6 +375,7 @@ const EXPORTED_SYMBOLS: &[&str] = &[
     "xray_error_free",
     "xray_tun_push_packet",
     "xray_tun_poll_packet",
+    "xray_tun_poll_packets",
     "xray_tun_poll_tcp_flow_summary_event",
     "xray_tun_poll_tcp_slow_flow_event",
     "xray_tun_poll_udp_slow_flow_event",
@@ -382,6 +412,7 @@ static void use_xray_ffi_api(void) {
   XrayCoreHandle *handle = xray_core_new(&error);
   XrayTunStats stats = {0};
   XrayTcpFlowSummaryEvent tcp_flow_summary = {0};
+  XrayTcpRemoteWriteSlowEvent tcp_remote_write_slow = {0};
   XrayTcpSlowFlowEvent slow_flow = {0};
   XrayUdpSlowFlowEvent udp_slow_flow = {0};
   XrayUdpResponseGapEvent udp_response_gap = {0};
@@ -392,6 +423,9 @@ static void use_xray_ffi_api(void) {
   char outbound[64] = {0};
   size_t written = 0;
   size_t outbound_written = 0;
+  size_t packet_lengths[4] = {0};
+  size_t packet_count = 0;
+  uint64_t stats_probe = 0;
 
   (void)xray_ffi_version_major();
   (void)xray_core_set_socket_protect_callback(handle, NULL, NULL, &error);
@@ -412,9 +446,28 @@ static void use_xray_ffi_api(void) {
   (void)xray_core_stop(handle, &error);
   (void)xray_tun_push_packet(handle, packet, sizeof(packet), &error);
   (void)xray_tun_poll_packet(handle, buffer, sizeof(buffer), &written, &error);
+  (void)xray_tun_poll_packets(
+      handle,
+      buffer,
+      sizeof(buffer),
+      packet_lengths,
+      4,
+      &packet_count,
+      0,
+      &error);
   (void)xray_tun_poll_tcp_flow_summary_event(
       handle,
       &tcp_flow_summary,
+      target,
+      sizeof(target),
+      &written,
+      outbound,
+      sizeof(outbound),
+      &outbound_written,
+      &error);
+  (void)xray_tun_poll_tcp_remote_write_slow_event(
+      handle,
+      &tcp_remote_write_slow,
       target,
       sizeof(target),
       &written,
@@ -451,6 +504,13 @@ static void use_xray_ffi_api(void) {
       &written,
       &error);
   (void)xray_tun_stats(handle, &stats, &error);
+  stats_probe += stats.tcp_remote_write_wait_events;
+  stats_probe += stats.tcp_remote_write_wait_ms_total;
+  stats_probe += stats.tcp_remote_write_wait_ms_max;
+  stats_probe += stats.tcp_remote_flush_wait_events;
+  stats_probe += stats.tcp_remote_flush_wait_ms_total;
+  stats_probe += stats.tcp_remote_flush_wait_ms_max;
+  (void)stats_probe;
   (void)xray_error_code(error);
   (void)xray_error_message(error);
   xray_error_free(error);

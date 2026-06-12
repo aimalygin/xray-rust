@@ -125,6 +125,16 @@ fn tun_runtime_options_env_parses_profile_and_quic_blocking() {
 }
 
 #[test]
+fn tun_runtime_options_env_parses_mobile_plus_profile_aliases() {
+    for raw in ["mobile-plus", "mobile_plus", "mobileplus"] {
+        let options =
+            parse_tun_runtime_options_env_from_pairs([("XRAY_TUN_PROFILE", raw)]).unwrap();
+
+        assert_eq!(options.profile, TunRuntimeProfile::MobilePlus);
+    }
+}
+
+#[test]
 fn tun_runtime_options_env_rejects_unknown_profile() {
     let error =
         parse_tun_runtime_options_env_from_pairs([("XRAY_TUN_PROFILE", "tiny")]).unwrap_err();

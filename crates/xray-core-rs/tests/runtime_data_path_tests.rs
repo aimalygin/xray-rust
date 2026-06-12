@@ -1060,10 +1060,20 @@ async fn tun_udp_client_reaches_echo_target_through_vision_xudp_outbound() {
 }
 
 #[tokio::test]
-async fn tun_regular_vision_udp443_passes_when_quic_blocking_is_disabled() {
+async fn tun_regular_vision_udp443_is_rejected_with_icmp_when_quic_blocking_is_disabled() {
     timeout(
         Duration::from_secs(2),
-        run_tun_regular_vision_udp443_without_quic_block_scenario(),
+        run_tun_regular_vision_udp443_rejection_scenario(false),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn tun_regular_vision_udp443_is_rejected_with_icmp_when_quic_blocking_is_enabled() {
+    timeout(
+        Duration::from_secs(2),
+        run_tun_regular_vision_udp443_rejection_scenario(true),
     )
     .await
     .unwrap();
@@ -1759,11 +1769,16 @@ async fn run_tun_udp_vision_xudp_echo_scenario() {
         .unwrap();
 }
 
-async fn run_tun_regular_vision_udp443_without_quic_block_scenario() {
-    let (client_config, server_config) = tls_test_configs();
-    let echo_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 443);
-    let (vless_addr, vless_handle) =
-        spawn_fake_tls_vision_xudp_server(server_config, echo_addr).await;
+async fn run_tun_regular_vision_udp443_rejection_scenario(block_quic: bool) {
+    // Regular `xtls-rprx-vision` cannot carry UDP/443 (QUIC). Matching upstream
+    // xray-core, the core must reject it and reply with ICMP port-unreachable so
+    // the client falls back to TCP — regardless of the blockQUIC toggle. No VLESS
+    // stream is ever opened, so no fake server is contacted.
+    let (client_config, _server_config) = tls_test_configs();
+    let vless_addr = SocketAddr::new(
+        IpAddr::V4(Ipv4Addr::LOCALHOST),
+        allocate_unused_loopback_port(),
+    );
     let resolver = StaticDnsResolver {
         domain: "vless.test",
         addr: vless_addr,
@@ -1776,7 +1791,7 @@ async fn run_tun_regular_vision_udp443_without_quic_block_scenario() {
     let dialer =
         TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config));
     let options = TunRuntimeOptions {
-        block_quic: false,
+        block_quic,
         ..TunRuntimeOptions::default()
     };
 
@@ -1794,33 +1809,19 @@ async fn run_tun_regular_vision_udp443_without_quic_block_scenario() {
         client_addr,
         49155,
         Ipv4Addr::LOCALHOST,
-        echo_addr.port(),
+        443,
         b"hello vision xudp",
     );
     core.tun().push_inbound(Bytes::from(request)).await.unwrap();
 
-    let reply = poll_tun_outbound_until(core.tun(), |packet| {
-        ipv4_udp_payload(packet)
-            .map(|payload| payload == b"hello vision xudp")
-            .unwrap_or(false)
-    })
-    .await;
-    assert_ipv4_udp_packet(
-        &reply,
-        Ipv4Addr::LOCALHOST,
-        echo_addr.port(),
-        client_addr,
-        49155,
-        b"hello vision xudp",
-    );
-    let stats = core.tun().stats().await;
-    assert_eq!(stats.udp_vision_udp443_rejections, 0);
-    core.stop().await.unwrap();
+    let reply = poll_tun_outbound_until(core.tun(), is_ipv4_icmp_port_unreachable).await;
+    // The ICMP port-unreachable is addressed back to the originating client.
+    assert_eq!(&reply[16..20], &client_addr.octets());
 
-    timeout(Duration::from_secs(1), vless_handle)
-        .await
-        .unwrap()
-        .unwrap();
+    let stats = core.tun().stats().await;
+    assert!(stats.udp_vision_udp443_rejections >= 1);
+    assert_eq!(stats.udp_remote_open_events, 0);
+    core.stop().await.unwrap();
 }
 
 async fn run_socks_to_routed_freedom_echo_scenario() {
@@ -2270,6 +2271,14 @@ fn ipv4_udp_packet(
 
 fn is_ipv4_icmp_echo_reply(packet: &[u8]) -> bool {
     packet.len() >= 28 && packet[0] >> 4 == 4 && packet[9] == ICMPV4_PROTOCOL && packet[20] == 0
+}
+
+fn is_ipv4_icmp_port_unreachable(packet: &[u8]) -> bool {
+    packet.len() >= 28
+        && packet[0] >> 4 == 4
+        && packet[9] == ICMPV4_PROTOCOL
+        && packet[20] == 3
+        && packet[21] == 3
 }
 
 fn is_ipv6_icmp_echo_reply(packet: &[u8]) -> bool {
