@@ -14,15 +14,6 @@ private enum XrayMobileLog {
 }
 
 @available(iOS 9.0, tvOS 17.0, macOS 10.11, *)
-public struct XrayPacketTunnelPumpOptions: Equatable, Sendable {
-    public var blockQUIC: Bool
-
-    public init(blockQUIC: Bool = false) {
-        self.blockQUIC = blockQUIC
-    }
-}
-
-@available(iOS 9.0, tvOS 17.0, macOS 10.11, *)
 public final class XrayPacketTunnelPump: @unchecked Sendable {
     private static let maxPacketsPerPoll = 64
     private static let pollWaitMilliseconds: UInt32 = 250
@@ -31,7 +22,6 @@ public final class XrayPacketTunnelPump: @unchecked Sendable {
     private let provider: NEPacketTunnelProvider
     private let core: XrayCore
     private let queue: DispatchQueue
-    private let options: XrayPacketTunnelPumpOptions
     private let lock = NSLock()
     private let pollLoopExited = DispatchSemaphore(value: 0)
     private var running = false
@@ -48,12 +38,10 @@ public final class XrayPacketTunnelPump: @unchecked Sendable {
     public init(
         provider: NEPacketTunnelProvider,
         core: XrayCore,
-        options: XrayPacketTunnelPumpOptions = XrayPacketTunnelPumpOptions(),
         queue: DispatchQueue = DispatchQueue(label: "org.xrayrust.packet-tunnel-pump")
     ) {
         self.provider = provider
         self.core = core
-        self.options = options
         self.queue = queue
     }
 
@@ -75,7 +63,7 @@ public final class XrayPacketTunnelPump: @unchecked Sendable {
         lastStatsLog = Date()
         lock.unlock()
 
-        XrayMobileLog.info("PacketPump", "Starting packet pump blockQUIC=\(options.blockQUIC)")
+        XrayMobileLog.info("PacketPump", "Starting packet pump")
         readPackets()
         pollPackets()
     }

@@ -153,9 +153,6 @@ where
             "XRAY_TUN_PROFILE" | "xray.tun.profile" => {
                 options.profile = parse_tun_runtime_profile(value.as_ref())?;
             }
-            "XRAY_TUN_BLOCK_QUIC" | "xray.tun.block_quic" => {
-                options.block_quic = parse_bool_env(value.as_ref(), key.as_ref())?;
-            }
             "XRAY_TUN_COLLECT_TCP_TIMINGS" | "xray.tun.collect_tcp_timings" => {
                 options.collect_tcp_timings = parse_bool_env(value.as_ref(), key.as_ref())?;
             }

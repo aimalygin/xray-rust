@@ -179,10 +179,6 @@ XrayStatus xray_core_set_tun_fd(
     XrayTunFdPacketFormat packet_format,
     XrayTunFdClosePolicy close_policy,
     XrayError **error);
-XrayStatus xray_core_set_tun_block_quic(
-    XrayCoreHandle *handle,
-    int32_t block_quic,
-    XrayError **error);
 XrayStatus xray_core_set_tun_collect_tcp_timings(
     XrayCoreHandle *handle,
     int32_t collect_tcp_timings,

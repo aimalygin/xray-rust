@@ -1060,20 +1060,10 @@ async fn tun_udp_client_reaches_echo_target_through_vision_xudp_outbound() {
 }
 
 #[tokio::test]
-async fn tun_regular_vision_udp443_is_rejected_with_icmp_when_quic_blocking_is_disabled() {
+async fn tun_regular_vision_udp443_is_rejected_with_icmp() {
     timeout(
         Duration::from_secs(2),
-        run_tun_regular_vision_udp443_rejection_scenario(false),
-    )
-    .await
-    .unwrap();
-}
-
-#[tokio::test]
-async fn tun_regular_vision_udp443_is_rejected_with_icmp_when_quic_blocking_is_enabled() {
-    timeout(
-        Duration::from_secs(2),
-        run_tun_regular_vision_udp443_rejection_scenario(true),
+        run_tun_regular_vision_udp443_rejection_scenario(),
     )
     .await
     .unwrap();
@@ -1769,11 +1759,11 @@ async fn run_tun_udp_vision_xudp_echo_scenario() {
         .unwrap();
 }
 
-async fn run_tun_regular_vision_udp443_rejection_scenario(block_quic: bool) {
+async fn run_tun_regular_vision_udp443_rejection_scenario() {
     // Regular `xtls-rprx-vision` cannot carry UDP/443 (QUIC). Matching upstream
     // xray-core, the core must reject it and reply with ICMP port-unreachable so
-    // the client falls back to TCP — regardless of the blockQUIC toggle. No VLESS
-    // stream is ever opened, so no fake server is contacted.
+    // the client falls back to TCP. No VLESS stream is ever opened, so no fake
+    // server is contacted.
     let (client_config, _server_config) = tls_test_configs();
     let vless_addr = SocketAddr::new(
         IpAddr::V4(Ipv4Addr::LOCALHOST),
@@ -1790,16 +1780,11 @@ async fn run_tun_regular_vision_udp443_rejection_scenario(block_quic: bool) {
     );
     let dialer =
         TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config));
-    let options = TunRuntimeOptions {
-        block_quic,
-        ..TunRuntimeOptions::default()
-    };
-
     let mut core = Core::with_runtime_dependencies_and_tun_options(
         config,
         Arc::new(resolver),
         Arc::new(dialer),
-        options,
+        TunRuntimeOptions::default(),
     )
     .unwrap();
     core.start().await.unwrap();

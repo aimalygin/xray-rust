@@ -46,7 +46,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         }
         XrayAppleLog.info(
             "PacketTunnelProvider",
-            "Resolved config source=\(resolvedConfig.source) bytes=\(resolvedConfig.json.utf8.count) debugLogging=\(resolvedConfig.debugLoggingEnabled) useTunFileDescriptor=\(resolvedConfig.useTunFileDescriptor) blockQUIC=\(resolvedConfig.blockQUIC) tunRuntimeProfile=\(resolvedConfig.tunRuntimeProfile.rawValue)"
+            "Resolved config source=\(resolvedConfig.source) bytes=\(resolvedConfig.json.utf8.count) debugLogging=\(resolvedConfig.debugLoggingEnabled) useTunFileDescriptor=\(resolvedConfig.useTunFileDescriptor) tunRuntimeProfile=\(resolvedConfig.tunRuntimeProfile.rawValue)"
         )
         XrayAppleLog.info(
             "PacketTunnelProvider",
@@ -74,8 +74,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             do {
                 let backend = Self.packetIOBackend(
                     discoveredTunFileDescriptor: XrayDarwinTunFileDescriptor.discoverUtunFileDescriptor(),
-                    useTunFileDescriptor: resolvedConfig.useTunFileDescriptor,
-                    blockQUIC: resolvedConfig.blockQUIC
+                    useTunFileDescriptor: resolvedConfig.useTunFileDescriptor
                 )
                 XrayAppleLog.info("PacketTunnelProvider", "Creating XrayCore")
                 let core: XrayCore
@@ -89,7 +88,6 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                     core = try XrayCore(
                         configJSON: resolvedConfig.json,
                         borrowedDarwinTunFileDescriptor: fd,
-                        blockQUIC: resolvedConfig.blockQUIC,
                         collectTcpTimings: resolvedConfig.debugLoggingEnabled,
                         tunRuntimeProfile: XrayCore.tunRuntimeProfile(
                             named: resolvedConfig.tunRuntimeProfile.rawValue
@@ -97,12 +95,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                     )
                     pump = nil
                 case .packetFlowPump:
-                    if resolvedConfig.blockQUIC {
-                        XrayAppleLog.info(
-                            "PacketTunnelProvider",
-                            "QUIC blocking enabled; using packetFlow pump for packet I/O"
-                        )
-                    } else if resolvedConfig.useTunFileDescriptor {
+                    if resolvedConfig.useTunFileDescriptor {
                         XrayAppleLog.info(
                             "PacketTunnelProvider",
                             "No Darwin utun fd found; using packetFlow pump for packet I/O"
@@ -115,7 +108,6 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                     }
                     core = try XrayCore(
                         configJSON: resolvedConfig.json,
-                        blockQUIC: resolvedConfig.blockQUIC,
                         collectTcpTimings: resolvedConfig.debugLoggingEnabled,
                         tunRuntimeProfile: XrayCore.tunRuntimeProfile(
                             named: resolvedConfig.tunRuntimeProfile.rawValue
@@ -123,8 +115,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                     )
                     pump = XrayPacketTunnelPump(
                         provider: self,
-                        core: core,
-                        options: XrayPacketTunnelPumpOptions(blockQUIC: resolvedConfig.blockQUIC)
+                        core: core
                     )
                 }
                 XrayAppleLog.info("PacketTunnelProvider", "Starting XrayCore")
@@ -242,8 +233,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
 
     static func packetIOBackend(
         discoveredTunFileDescriptor: Int32?,
-        useTunFileDescriptor: Bool = true,
-        blockQUIC: Bool = false
+        useTunFileDescriptor: Bool = true
     ) -> XrayPacketTunnelIOBackend {
         guard useTunFileDescriptor, let discoveredTunFileDescriptor else {
             return .packetFlowPump
@@ -257,7 +247,6 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         var serverAddress: String?
         var debugLoggingEnabled: Bool
         var useTunFileDescriptor: Bool
-        var blockQUIC: Bool
         var tunRuntimeProfile: XrayTunRuntimeProfileSetting
     }
 
@@ -275,10 +264,6 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             options: options,
             providerConfiguration: tunnelProtocol?.providerConfiguration
         )
-        let shouldBlockQUIC = quicBlockingEnabled(
-            options: options,
-            providerConfiguration: tunnelProtocol?.providerConfiguration
-        )
         let selectedTunRuntimeProfile = tunRuntimeProfile(
             options: options,
             providerConfiguration: tunnelProtocol?.providerConfiguration
@@ -291,7 +276,6 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                 serverAddress: serverAddress,
                 debugLoggingEnabled: isDebugLoggingEnabled,
                 useTunFileDescriptor: shouldUseTunFileDescriptor,
-                blockQUIC: shouldBlockQUIC,
                 tunRuntimeProfile: selectedTunRuntimeProfile
             )
         }
@@ -307,7 +291,6 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             serverAddress: serverAddress,
             debugLoggingEnabled: isDebugLoggingEnabled,
             useTunFileDescriptor: shouldUseTunFileDescriptor,
-            blockQUIC: shouldBlockQUIC,
             tunRuntimeProfile: selectedTunRuntimeProfile
         )
     }
@@ -392,25 +375,6 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         }
 
         return true
-    }
-
-    static func quicBlockingEnabled(
-        options: [String: NSObject]?,
-        providerConfiguration: [String: Any]?
-    ) -> Bool {
-        if let optionValue = options?[XrayTunnelProviderMessage.blockQUICOptionKey],
-           let isEnabled = boolValue(optionValue) {
-            return isEnabled
-        }
-
-        if let configurationValue = providerConfiguration?[
-            XrayTunnelProviderMessage.providerBlockQUICKey
-        ],
-            let isEnabled = boolValue(configurationValue) {
-            return isEnabled
-        }
-
-        return false
     }
 
     static func tunRuntimeProfile(

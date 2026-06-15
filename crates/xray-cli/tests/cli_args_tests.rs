@@ -6,7 +6,7 @@ use xray_cli::{
     parse_tun_runtime_options_env_from_pairs, run_cli_with_shutdown, run_with_shutdown, CliArgs,
     CliError,
 };
-use xray_core_rs::{TunFdClosePolicy, TunFdPacketFormat, TunRuntimeProfile};
+use xray_core_rs::{TunFdClosePolicy, TunFdPacketFormat, TunRuntimeOptions, TunRuntimeProfile};
 
 #[test]
 fn parses_run_dash_config() {
@@ -111,17 +111,23 @@ fn tun_fd_env_rejects_unknown_packet_format() {
 }
 
 #[test]
-fn tun_runtime_options_env_parses_profile_and_quic_blocking() {
+fn tun_runtime_options_env_parses_profile_and_tcp_timing_collection() {
     let options = parse_tun_runtime_options_env_from_pairs([
         ("XRAY_TUN_PROFILE", "low-memory"),
-        ("XRAY_TUN_BLOCK_QUIC", "true"),
         ("XRAY_TUN_COLLECT_TCP_TIMINGS", "true"),
     ])
     .unwrap();
 
     assert_eq!(options.profile, TunRuntimeProfile::LowMemory);
-    assert!(options.block_quic);
     assert!(options.collect_tcp_timings);
+}
+
+#[test]
+fn tun_runtime_options_env_ignores_legacy_quic_blocking() {
+    let options =
+        parse_tun_runtime_options_env_from_pairs([("XRAY_TUN_BLOCK_QUIC", "true")]).unwrap();
+
+    assert_eq!(options, TunRuntimeOptions::default());
 }
 
 #[test]

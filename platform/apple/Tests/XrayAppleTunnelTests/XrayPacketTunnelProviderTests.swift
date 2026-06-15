@@ -48,17 +48,6 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         )
     }
 
-    func testPacketIOBackendKeepsFileDescriptorWhenQuicBlockingIsEnabled() {
-        XCTAssertEqual(
-            XrayPacketTunnelProvider.packetIOBackend(
-                discoveredTunFileDescriptor: 42,
-                useTunFileDescriptor: true,
-                blockQUIC: true
-            ),
-            .darwinUtunFileDescriptor(42)
-        )
-    }
-
     func testPacketIOBackendFallsBackToPacketFlowPumpWithoutFileDescriptor() {
         XCTAssertEqual(
             XrayPacketTunnelProvider.packetIOBackend(discoveredTunFileDescriptor: nil),
@@ -116,28 +105,6 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
                 ],
                 providerConfiguration: [
                     XrayTunnelProviderMessage.providerUseTunFileDescriptorKey: true,
-                ]
-            )
-        )
-    }
-
-    func testQuicBlockingDisabledWhenUnset() {
-        XCTAssertFalse(
-            XrayPacketTunnelProvider.quicBlockingEnabled(
-                options: nil,
-                providerConfiguration: nil
-            )
-        )
-    }
-
-    func testQuicBlockingReadsStartOptions() {
-        XCTAssertTrue(
-            XrayPacketTunnelProvider.quicBlockingEnabled(
-                options: [
-                    XrayTunnelProviderMessage.blockQUICOptionKey: NSNumber(value: true),
-                ],
-                providerConfiguration: [
-                    XrayTunnelProviderMessage.providerBlockQUICKey: false,
                 ]
             )
         )

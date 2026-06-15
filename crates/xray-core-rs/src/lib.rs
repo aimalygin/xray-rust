@@ -36,7 +36,6 @@ pub enum CoreState {
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct TunRuntimeOptions {
-    pub block_quic: bool,
     pub collect_tcp_timings: bool,
     pub profile: TunRuntimeProfile,
 }

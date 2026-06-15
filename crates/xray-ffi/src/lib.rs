@@ -592,63 +592,6 @@ unsafe fn xray_core_set_tun_fd_inner(
     XrayStatus::Ok
 }
 
-/// Enables or disables Rust-side QUIC blocking in the TUN packet path.
-///
-/// When enabled, UDP/443 packets that look like QUIC long-header packets are
-/// rejected with ICMP unreachable before a UDP flow or outbound stream is
-/// opened. Set this before loading config.
-///
-/// # Safety
-///
-/// `handle` must either be null or a pointer returned by `xray_core_new` that
-/// has not been freed. If `error` is non-null, it must point to an initialized
-/// `*mut XrayError` value that is either null or a live error pointer returned
-/// by this library. This function may free and replace that error pointer.
-#[no_mangle]
-pub unsafe extern "C" fn xray_core_set_tun_block_quic(
-    handle: *mut XrayCoreHandle,
-    block_quic: c_int,
-    error: *mut *mut XrayError,
-) -> XrayStatus {
-    unsafe {
-        ffi_status(error, || {
-            xray_core_set_tun_block_quic_inner(handle, block_quic, error)
-        })
-    }
-}
-
-unsafe fn xray_core_set_tun_block_quic_inner(
-    handle: *mut XrayCoreHandle,
-    block_quic: c_int,
-    error: *mut *mut XrayError,
-) -> XrayStatus {
-    unsafe {
-        clear_error(error);
-    }
-
-    if handle.is_null() {
-        unsafe {
-            set_error(error, XrayStatus::NullArgument, "core handle is null");
-        }
-        return XrayStatus::NullArgument;
-    }
-
-    let handle = unsafe { &mut *handle };
-    if handle.core.is_some() {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::RuntimeError,
-                "tun QUIC blocking must be set before config load",
-            );
-        }
-        return XrayStatus::RuntimeError;
-    }
-
-    handle.tun_runtime_options.block_quic = block_quic != 0;
-    XrayStatus::Ok
-}
-
 /// Enables or disables TCP timing diagnostics in the TUN TCP bridge.
 ///
 /// When disabled, the TCP bridge does not read clocks or update timing

@@ -38,7 +38,6 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
         "XrayTunFdClosePolicy",
         "XrayTunRuntimeProfile",
         "xray_core_set_tun_fd",
-        "xray_core_set_tun_block_quic",
         "xray_core_set_tun_collect_tcp_timings",
         "xray_core_set_tun_runtime_profile",
         "xray_error_code",
@@ -57,6 +56,7 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
     ] {
         assert!(header.contains(symbol), "header missing `{symbol}`");
     }
+    assert!(!header.contains("xray_core_set_tun_block_quic"));
 
     for field in [
         "tcp_remote_write_wait_events",
@@ -110,7 +110,7 @@ fn apple_adapter_declares_packet_tunnel_pump() {
     assert!(core.contains("import XrayRust"));
     assert!(core.contains("xray_core_set_socket_protect_callback"));
     assert!(core.contains("xray_core_set_tun_fd"));
-    assert!(core.contains("xray_core_set_tun_block_quic"));
+    assert!(!core.contains("xray_core_set_tun_block_quic"));
     assert!(core.contains("xray_core_set_tun_collect_tcp_timings"));
     assert!(core.contains("xray_core_set_tun_runtime_profile"));
     assert!(core.contains("tunFileDescriptor"));
@@ -367,7 +367,6 @@ const EXPORTED_SYMBOLS: &[&str] = &[
     "xray_core_free",
     "xray_core_set_socket_protect_callback",
     "xray_core_set_tun_fd",
-    "xray_core_set_tun_block_quic",
     "xray_core_set_tun_collect_tcp_timings",
     "xray_core_set_tun_runtime_profile",
     "xray_error_code",
@@ -435,7 +434,6 @@ static void use_xray_ffi_api(void) {
       XRAY_TUN_FD_PACKET_FORMAT_RAW_IP,
       XRAY_TUN_FD_CLOSE_POLICY_BORROWED,
       &error);
-  (void)xray_core_set_tun_block_quic(handle, 1, &error);
   (void)xray_core_set_tun_collect_tcp_timings(handle, 1, &error);
   (void)xray_core_set_tun_runtime_profile(
       handle,

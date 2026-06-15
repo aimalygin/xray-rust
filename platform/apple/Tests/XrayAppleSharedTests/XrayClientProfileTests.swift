@@ -83,14 +83,6 @@ final class XrayClientProfileTests: XCTestCase {
         XCTAssertTrue(profile.useTunFileDescriptor)
     }
 
-    func testQuicBlockingDefaultsToDisabled() {
-        let profile = XrayClientProfile.defaultProfile(
-            hostBundleIdentifier: "org.example.XrayClient"
-        )
-
-        XCTAssertFalse(profile.blockQUIC)
-    }
-
     func testTunRuntimeProfileDefaultsToDefault() {
         let profile = XrayClientProfile.defaultProfile(
             hostBundleIdentifier: "org.example.XrayClient"
@@ -124,11 +116,10 @@ final class XrayClientProfileTests: XCTestCase {
 
         XCTAssertFalse(profile.debugLoggingEnabled)
         XCTAssertTrue(profile.useTunFileDescriptor)
-        XCTAssertFalse(profile.blockQUIC)
         XCTAssertEqual(profile.tunRuntimeProfile, .default)
     }
 
-    func testProfileEncodesDebugFlags() throws {
+    func testProfileEncodesRuntimeFlagsWithoutLegacyQuicOption() throws {
         let profile = XrayClientProfile(
             name: "Debug",
             providerBundleIdentifier: "org.example.XrayClient.Tunnel",
@@ -136,7 +127,6 @@ final class XrayClientProfileTests: XCTestCase {
             configJSON: "{}",
             debugLoggingEnabled: true,
             useTunFileDescriptor: false,
-            blockQUIC: true,
             tunRuntimeProfile: .mobilePlus
         )
 
@@ -146,7 +136,7 @@ final class XrayClientProfileTests: XCTestCase {
 
         XCTAssertEqual(root["debugLoggingEnabled"] as? Bool, true)
         XCTAssertEqual(root["useTunFileDescriptor"] as? Bool, false)
-        XCTAssertEqual(root["blockQUIC"] as? Bool, true)
+        XCTAssertNil(root["blockQUIC"])
         XCTAssertEqual(root["tunRuntimeProfile"] as? String, "mobile-plus")
     }
 

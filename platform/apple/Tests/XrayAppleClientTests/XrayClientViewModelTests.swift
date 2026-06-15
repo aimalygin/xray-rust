@@ -14,7 +14,6 @@ final class XrayClientViewModelTests: XCTestCase {
                 serverAddress: "old-server",
                 configJSON: XrayClientProfile.directTunConfigJSON,
                 debugLoggingEnabled: true,
-                blockQUIC: true,
                 tunRuntimeProfile: .throughput
             )
         )
@@ -32,7 +31,6 @@ final class XrayClientViewModelTests: XCTestCase {
         )
         XCTAssertEqual(viewModel.profile.serverAddress, "217.154.252.68")
         XCTAssertTrue(viewModel.profile.debugLoggingEnabled)
-        XCTAssertTrue(viewModel.profile.blockQUIC)
         XCTAssertEqual(viewModel.profile.tunRuntimeProfile, .throughput)
 
         let root = try XCTUnwrap(
@@ -103,8 +101,7 @@ final class XrayClientViewModelTests: XCTestCase {
                 serverAddress: "old-server",
                 configJSON: XrayClientProfile.directTunConfigJSON,
                 debugLoggingEnabled: true,
-                useTunFileDescriptor: true,
-                blockQUIC: false
+                useTunFileDescriptor: true
             )
         )
         let tunnelController = MockTunnelController()

@@ -62,7 +62,6 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
     public var configJSON: String
     public var debugLoggingEnabled: Bool
     public var useTunFileDescriptor: Bool
-    public var blockQUIC: Bool
     public var tunRuntimeProfile: XrayTunRuntimeProfileSetting
 
     public init(
@@ -73,7 +72,6 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
         configJSON: String,
         debugLoggingEnabled: Bool = false,
         useTunFileDescriptor: Bool = true,
-        blockQUIC: Bool = false,
         tunRuntimeProfile: XrayTunRuntimeProfileSetting = .default
     ) {
         self.id = id
@@ -83,7 +81,6 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
         self.configJSON = configJSON
         self.debugLoggingEnabled = debugLoggingEnabled
         self.useTunFileDescriptor = useTunFileDescriptor
-        self.blockQUIC = blockQUIC
         self.tunRuntimeProfile = tunRuntimeProfile
     }
 
@@ -95,7 +92,6 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
         case configJSON
         case debugLoggingEnabled
         case useTunFileDescriptor
-        case blockQUIC
         case tunRuntimeProfile
     }
 
@@ -117,7 +113,6 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
             Bool.self,
             forKey: .useTunFileDescriptor
         ) ?? true
-        blockQUIC = try container.decodeIfPresent(Bool.self, forKey: .blockQUIC) ?? false
         tunRuntimeProfile = try container.decodeIfPresent(
             XrayTunRuntimeProfileSetting.self,
             forKey: .tunRuntimeProfile

@@ -18,7 +18,7 @@ use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTarge
 use xray_transport::{protect_udp_socket, DnsResolver, TransportDialer};
 use xray_tun::{
     TunEndpoint, TunError, TunTcpFlowSummaryEvent, TunTcpRemoteWriteSlowEvent, TunTcpSlowFlowEvent,
-    TunTcpSlowFlowKind, TunUdpQuicBlockedEvent, TunUdpResponseGapEvent, TunUdpSlowFlowEvent,
+    TunTcpSlowFlowKind, TunUdpResponseGapEvent, TunUdpSlowFlowEvent,
 };
 
 use crate::outbound::{
@@ -715,15 +715,6 @@ async fn process_tun_packet(
 ) -> bool {
     if let Some(reply) = icmp_echo_reply(&packet) {
         return !matches!(tun.push_outbound(reply).await, Err(TunError::QueueClosed));
-    }
-    if context.tun_runtime_options.block_quic {
-        if let Some(reply) = record_quic_blocked_packet(
-            tun,
-            &packet,
-            context.tun_runtime_options.collect_tcp_timings,
-        ) {
-            return !matches!(tun.push_outbound(reply).await, Err(TunError::QueueClosed));
-        }
     }
     if let Some(reply) = reject_vision_udp443_packet(tun, &packet, context) {
         return !matches!(tun.push_outbound(reply).await, Err(TunError::QueueClosed));
@@ -1583,17 +1574,6 @@ fn slow_flow_target_label(target: &Target) -> String {
     }
 }
 
-fn ip_endpoint_target_label(endpoint: IpEndpoint) -> String {
-    let ip = match endpoint.addr {
-        IpAddress::Ipv4(ip) => IpAddr::V4(ip),
-        IpAddress::Ipv6(ip) => IpAddr::V6(ip),
-    };
-    match ip {
-        IpAddr::V6(ip) => format!("[{ip}]:{}", endpoint.port),
-        ip => format!("{ip}:{}", endpoint.port),
-    }
-}
-
 trait TcpFirstByteTiming {
     fn record_first_byte(&mut self, tun: &TunEndpoint, target: &Target);
     fn record_remote_read(&mut self, tun: &TunEndpoint, target: &Target, bytes: usize);
@@ -2113,10 +2093,9 @@ async fn bridge_udp_vless_flow(
     udp_timing_start: Option<StdInstant>,
 ) {
     // Regular xtls-rprx-vision cannot carry UDP/443 (QUIC); reject it
-    // unconditionally as upstream xray-core does, independent of the blockQUIC
-    // toggle. xtls-rprx-vision-udp443 still allows it. (The packet layer also
-    // ICMP-rejects QUIC/443 to vision for fast fallback; this is the backstop
-    // for any non-QUIC UDP/443 that reaches the bridge.)
+    // unconditionally as upstream xray-core does. xtls-rprx-vision-udp443 still
+    // allows it. (The packet layer also ICMP-rejects UDP/443 to vision for fast
+    // fallback; this is the backstop for any packet that reaches the bridge.)
     let options = VlessUdpOpenOptions::default();
     let (stream, framing) = match open_vless_udp_stream_with_resolver_dialer_and_options(
         &outbound,
@@ -2312,44 +2291,12 @@ fn reject_vision_udp443_packet(
     Some(reply)
 }
 
-fn record_quic_blocked_packet(
-    tun: &TunEndpoint,
-    packet: &[u8],
-    collect_details: bool,
-) -> Option<Bytes> {
-    let blocked = quic_udp443_packet_view(packet)?;
-    let reply = icmp_port_unreachable_reply(packet)?;
-
-    tun.record_udp_quic_blocked();
-    if collect_details {
-        tun.record_udp_quic_blocked_event(TunUdpQuicBlockedEvent {
-            target: ip_endpoint_target_label(blocked.target),
-            bytes: blocked.payload.len() as u64,
-        });
-    }
-    Some(reply)
-}
-
-fn quic_udp443_packet_view(packet: &[u8]) -> Option<UdpPacketView<'_>> {
-    udp_packet_view_for_destination(packet, 443)
-        .filter(|blocked| is_likely_quic_long_header(blocked.payload))
-}
-
-#[cfg(test)]
-fn is_likely_quic_udp443_packet(packet: &[u8]) -> bool {
-    quic_udp443_packet_view(packet).is_some()
-}
-
 #[derive(Debug, Clone, Copy)]
-struct UdpPacketView<'a> {
+struct UdpPacketView {
     target: IpEndpoint,
-    payload: &'a [u8],
 }
 
-fn udp_packet_view_for_destination(
-    packet: &[u8],
-    destination_port: u16,
-) -> Option<UdpPacketView<'_>> {
+fn udp_packet_view_for_destination(packet: &[u8], destination_port: u16) -> Option<UdpPacketView> {
     match packet.first()? >> 4 {
         4 => ipv4_udp_packet_view_for_destination(packet, destination_port),
         6 => ipv6_udp_packet_view_for_destination(packet, destination_port),
@@ -2360,7 +2307,7 @@ fn udp_packet_view_for_destination(
 fn ipv4_udp_packet_view_for_destination(
     packet: &[u8],
     destination_port: u16,
-) -> Option<UdpPacketView<'_>> {
+) -> Option<UdpPacketView> {
     if packet.len() < 28 {
         return None;
     }
@@ -2392,19 +2339,19 @@ fn ipv4_udp_packet_view_for_destination(
     let destination = Ipv4Addr::new(packet[16], packet[17], packet[18], packet[19]);
     Some(UdpPacketView {
         target: IpEndpoint::new(IpAddress::Ipv4(destination), destination_port),
-        payload: &udp[8..udp_len],
     })
 }
 
 #[cfg(test)]
-fn ipv4_udp_payload_for_destination(packet: &[u8], destination_port: u16) -> Option<&[u8]> {
-    ipv4_udp_packet_view_for_destination(packet, destination_port).map(|view| view.payload)
+fn ipv4_udp_payload_for_destination(packet: &[u8], destination_port: u16) -> Option<Bytes> {
+    let parsed = parse_ipv4_udp_packet(packet)?;
+    (parsed.target.port == destination_port).then_some(parsed.payload)
 }
 
 fn ipv6_udp_packet_view_for_destination(
     packet: &[u8],
     destination_port: u16,
-) -> Option<UdpPacketView<'_>> {
+) -> Option<UdpPacketView> {
     if packet.len() < 48 || packet[6] != UDP_PROTOCOL {
         return None;
     }
@@ -2429,25 +2376,7 @@ fn ipv6_udp_packet_view_for_destination(
             IpAddress::Ipv6(Ipv6Addr::from(destination)),
             destination_port,
         ),
-        payload: &udp[8..udp_len],
     })
-}
-
-fn is_likely_quic_long_header(payload: &[u8]) -> bool {
-    if payload.len() < 7 || payload[0] & 0xc0 != 0xc0 {
-        return false;
-    }
-
-    if payload[1..5].iter().all(|byte| *byte == 0) {
-        return false;
-    }
-
-    let dcid_len = usize::from(payload[5]);
-    if dcid_len > 20 || payload.len() <= 6 + dcid_len {
-        return false;
-    }
-
-    usize::from(payload[6 + dcid_len]) <= 20
 }
 
 fn parse_udp_packet(packet: &[u8]) -> Option<UdpTunPacket> {
@@ -3091,7 +3020,6 @@ mod tests {
     use std::pin::Pin;
     use std::task::{Context, Poll};
     use tokio::io::AsyncWrite;
-    use xray_tun::TunConfig;
 
     const NORMAL_TCP_REMOTE_PENDING_LIMIT: usize = 4 * 1024 * 1024;
     const PRESSURE_TCP_REMOTE_PENDING_LIMIT: usize = 2 * 1024 * 1024;
@@ -4164,141 +4092,6 @@ mod tests {
     }
 
     #[test]
-    fn quic_blocker_detects_udp443_long_header() {
-        let packet = build_ipv4_udp_packet(
-            Ipv4Addr::new(10, 10, 0, 2),
-            49_152,
-            Ipv4Addr::new(203, 0, 113, 7),
-            443,
-            likely_quic_long_header_payload(),
-        )
-        .unwrap();
-
-        assert!(is_likely_quic_udp443_packet(&packet));
-    }
-
-    #[tokio::test]
-    async fn quic_blocker_records_target_when_detail_collection_enabled() {
-        let tun = TunEndpoint::new(TunConfig {
-            mtu: 1500,
-            queue_depth: 1,
-        });
-        let packet = build_ipv4_udp_packet(
-            Ipv4Addr::new(10, 10, 0, 2),
-            49_152,
-            Ipv4Addr::new(203, 0, 113, 7),
-            443,
-            likely_quic_long_header_payload(),
-        )
-        .unwrap();
-
-        let reply = record_quic_blocked_packet(&tun, &packet, true)
-            .expect("blocked QUIC packet should produce an ICMP reject");
-
-        assert_eq!(tun.stats().await.udp_quic_blocked_packets, 1);
-        assert_ipv4_icmp_port_unreachable(
-            &reply,
-            Ipv4Addr::new(203, 0, 113, 7),
-            Ipv4Addr::new(10, 10, 0, 2),
-            &packet,
-        );
-        assert_eq!(
-            tun.poll_udp_quic_blocked_event(),
-            Some(TunUdpQuicBlockedEvent {
-                target: "203.0.113.7:443".to_owned(),
-                bytes: likely_quic_long_header_payload().len() as u64,
-            })
-        );
-    }
-
-    #[tokio::test]
-    async fn quic_blocker_skips_target_collection_when_disabled() {
-        let tun = TunEndpoint::new(TunConfig {
-            mtu: 1500,
-            queue_depth: 1,
-        });
-        let packet = build_ipv4_udp_packet(
-            Ipv4Addr::new(10, 10, 0, 2),
-            49_152,
-            Ipv4Addr::new(203, 0, 113, 7),
-            443,
-            likely_quic_long_header_payload(),
-        )
-        .unwrap();
-
-        let reply = record_quic_blocked_packet(&tun, &packet, false)
-            .expect("blocked QUIC packet should produce an ICMP reject");
-
-        assert_eq!(tun.stats().await.udp_quic_blocked_packets, 1);
-        assert_ipv4_icmp_port_unreachable(
-            &reply,
-            Ipv4Addr::new(203, 0, 113, 7),
-            Ipv4Addr::new(10, 10, 0, 2),
-            &packet,
-        );
-        assert_eq!(tun.poll_udp_quic_blocked_event(), None);
-    }
-
-    #[tokio::test]
-    async fn quic_blocker_rejects_ipv6_quic_with_icmpv6_port_unreachable() {
-        let tun = TunEndpoint::new(TunConfig {
-            mtu: 1500,
-            queue_depth: 1,
-        });
-        let source = Ipv6Addr::LOCALHOST;
-        let destination = Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 7);
-        let packet = build_ipv6_udp_packet(
-            source,
-            49_152,
-            destination,
-            443,
-            likely_quic_long_header_payload(),
-        )
-        .unwrap();
-
-        let reply = record_quic_blocked_packet(&tun, &packet, true)
-            .expect("blocked IPv6 QUIC packet should produce an ICMPv6 reject");
-
-        assert_eq!(tun.stats().await.udp_quic_blocked_packets, 1);
-        assert_ipv6_icmp_port_unreachable(&reply, destination, source, &packet);
-        assert_eq!(
-            tun.poll_udp_quic_blocked_event(),
-            Some(TunUdpQuicBlockedEvent {
-                target: "[2001:db8::7]:443".to_owned(),
-                bytes: likely_quic_long_header_payload().len() as u64,
-            })
-        );
-    }
-
-    #[test]
-    fn quic_blocker_ignores_udp443_non_quic_payload() {
-        let packet = build_ipv4_udp_packet(
-            Ipv4Addr::new(10, 10, 0, 2),
-            49_152,
-            Ipv4Addr::new(203, 0, 113, 7),
-            443,
-            b"not-quic",
-        )
-        .unwrap();
-
-        assert!(!is_likely_quic_udp443_packet(&packet));
-    }
-
-    #[test]
-    fn quic_blocker_ignores_quic_payload_on_other_udp_ports() {
-        let packet = build_ipv4_udp_packet(
-            Ipv4Addr::new(10, 10, 0, 2),
-            49_152,
-            Ipv4Addr::new(203, 0, 113, 7),
-            8443,
-            likely_quic_long_header_payload(),
-        )
-        .unwrap();
-
-        assert!(!is_likely_quic_udp443_packet(&packet));
-    }
-
-    #[test]
     fn fake_ip_mapper_allocates_stable_ipv4_and_restores_domain_target() {
         let mut mapper = FakeIpMapper::new(FakeIpRuntimeConfig {
             ipv4_network: Ipv4Addr::new(198, 18, 0, 0),
@@ -4370,16 +4163,11 @@ mod tests {
         let reply = build_udp_packet(parsed.target, parsed.client, &response).unwrap();
 
         assert_eq!(
-            ipv4_udp_payload_for_destination(&reply, 53_000).and_then(dns_response_answer_ipv4),
+            ipv4_udp_payload_for_destination(&reply, 53_000)
+                .as_deref()
+                .and_then(dns_response_answer_ipv4),
             Some(Ipv4Addr::new(198, 18, 0, 1))
         );
-    }
-
-    fn likely_quic_long_header_payload() -> &'static [u8] {
-        &[
-            0xc3, 0x00, 0x00, 0x00, 0x01, 8, 1, 2, 3, 4, 5, 6, 7, 8, 8, 9, 10, 11, 12, 13, 14, 15,
-            16,
-        ]
     }
 
     fn build_dns_a_query(id: u16, domain: &str) -> Vec<u8> {
@@ -4444,54 +4232,6 @@ mod tests {
 
     const TCP_SYN: u8 = 0x02;
     const TCP_ACK: u8 = 0x10;
-
-    fn assert_ipv4_icmp_port_unreachable(
-        packet: &[u8],
-        source: Ipv4Addr,
-        destination: Ipv4Addr,
-        original: &[u8],
-    ) {
-        assert!(packet.len() >= 56);
-        assert_eq!(packet[0] >> 4, 4);
-        assert_eq!(packet[9], ICMPV4_PROTOCOL);
-        assert_eq!(packet[12..16], source.octets());
-        assert_eq!(packet[16..20], destination.octets());
-        assert_eq!(internet_checksum(&packet[..20]), 0);
-
-        let total_len = usize::from(u16::from_be_bytes([packet[2], packet[3]]));
-        assert_eq!(total_len, packet.len());
-        let icmp = &packet[20..];
-        assert_eq!(icmp[0], 3);
-        assert_eq!(icmp[1], 3);
-        assert_eq!(&icmp[4..8], &[0, 0, 0, 0]);
-        assert_eq!(internet_checksum(icmp), 0);
-        assert_eq!(&icmp[8..], &original[..28]);
-    }
-
-    fn assert_ipv6_icmp_port_unreachable(
-        packet: &[u8],
-        source: Ipv6Addr,
-        destination: Ipv6Addr,
-        original: &[u8],
-    ) {
-        assert!(packet.len() >= 88);
-        assert_eq!(packet[0] >> 4, 6);
-        assert_eq!(packet[6], ICMPV6_PROTOCOL);
-        assert_eq!(packet[8..24], source.octets());
-        assert_eq!(packet[24..40], destination.octets());
-
-        let payload_len = usize::from(u16::from_be_bytes([packet[4], packet[5]]));
-        assert_eq!(packet.len(), 40 + payload_len);
-        let icmp = &packet[40..];
-        assert_eq!(icmp[0], 1);
-        assert_eq!(icmp[1], 4);
-        assert_eq!(&icmp[4..8], &[0, 0, 0, 0]);
-        assert_eq!(
-            ipv6_transport_checksum(source.octets(), destination.octets(), ICMPV6_PROTOCOL, icmp),
-            0
-        );
-        assert_eq!(&icmp[8..], &original[..original.len().min(1232)]);
-    }
 
     #[allow(clippy::too_many_arguments)]
     fn build_ipv4_tcp_packet(

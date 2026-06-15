@@ -243,13 +243,11 @@ public final class XrayCore: @unchecked Sendable {
     public convenience init(
         configJSON: String,
         borrowedDarwinTunFileDescriptor fd: Int32,
-        blockQUIC: Bool = false,
         collectTcpTimings: Bool = false,
         tunRuntimeProfile: XrayTunRuntimeProfile = XRAY_TUN_RUNTIME_PROFILE_DEFAULT
     ) throws {
         try self.init(
             configJSON: configJSON,
-            blockQUIC: blockQUIC,
             collectTcpTimings: collectTcpTimings,
             tunRuntimeProfile: tunRuntimeProfile,
             tunFileDescriptor: fd,
@@ -260,7 +258,6 @@ public final class XrayCore: @unchecked Sendable {
 
     public init(
         configJSON: String,
-        blockQUIC: Bool = false,
         collectTcpTimings: Bool = false,
         tunRuntimeProfile: XrayTunRuntimeProfile = XRAY_TUN_RUNTIME_PROFILE_DEFAULT,
         socketProtectCallback: XraySocketProtectCallback? = nil,
@@ -272,7 +269,7 @@ public final class XrayCore: @unchecked Sendable {
         var error: OpaquePointer?
         XrayMobileLog.info(
             "Core",
-            "Creating core configBytes=\(configJSON.utf8.count) socketProtect=\(socketProtectCallback != nil) tunFd=\(tunFileDescriptor != nil ? "present" : "none") blockQUIC=\(blockQUIC) collectTcpTimings=\(collectTcpTimings) tunRuntimeProfile=\(tunRuntimeProfile.rawValue)"
+            "Creating core configBytes=\(configJSON.utf8.count) socketProtect=\(socketProtectCallback != nil) tunFd=\(tunFileDescriptor != nil ? "present" : "none") collectTcpTimings=\(collectTcpTimings) tunRuntimeProfile=\(tunRuntimeProfile.rawValue)"
         )
         guard let handle = xray_core_new(&error) else {
             let coreError = XrayCore.takeError(error)
@@ -305,10 +302,6 @@ public final class XrayCore: @unchecked Sendable {
                     error: error
                 )
             }
-            try check(
-                xray_core_set_tun_block_quic(handle, blockQUIC ? 1 : 0, &error),
-                error: error
-            )
             try check(
                 xray_core_set_tun_collect_tcp_timings(
                     handle,

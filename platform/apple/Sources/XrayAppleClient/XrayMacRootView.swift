@@ -103,7 +103,6 @@ public struct XrayMacRootView: View {
             TextField("Server Address", text: $viewModel.profile.serverAddress)
             Toggle("Debug Logging", isOn: $viewModel.profile.debugLoggingEnabled)
             Toggle("TUN File Descriptor", isOn: $viewModel.profile.useTunFileDescriptor)
-            Toggle("Block QUIC", isOn: $viewModel.profile.blockQUIC)
             Picker("TUN Profile", selection: $viewModel.profile.tunRuntimeProfile) {
                 ForEach(XrayTunRuntimeProfileSetting.allCases) { profile in
                     Text(profile.displayName).tag(profile)
