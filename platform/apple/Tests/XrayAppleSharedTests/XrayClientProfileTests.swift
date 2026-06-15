@@ -91,6 +91,15 @@ final class XrayClientProfileTests: XCTestCase {
         XCTAssertEqual(profile.tunRuntimeProfile, .default)
     }
 
+    func testRegionalRoutingDefaultsToOff() {
+        let profile = XrayClientProfile.defaultProfile(
+            hostBundleIdentifier: "org.example.XrayClient"
+        )
+
+        XCTAssertEqual(profile.regionalRoutingMode, .off)
+        XCTAssertTrue(profile.regionalRoutingRegions.isEmpty)
+    }
+
     func testTunRuntimeProfileParsesMobilePlusAliases() throws {
         XCTAssertEqual(XrayTunRuntimeProfileSetting(configurationValue: "mobile-plus"), .mobilePlus)
         XCTAssertEqual(XrayTunRuntimeProfileSetting(configurationValue: "mobile_plus"), .mobilePlus)
@@ -117,9 +126,11 @@ final class XrayClientProfileTests: XCTestCase {
         XCTAssertFalse(profile.debugLoggingEnabled)
         XCTAssertTrue(profile.useTunFileDescriptor)
         XCTAssertEqual(profile.tunRuntimeProfile, .default)
+        XCTAssertEqual(profile.regionalRoutingMode, .off)
+        XCTAssertTrue(profile.regionalRoutingRegions.isEmpty)
     }
 
-    func testProfileEncodesRuntimeFlagsWithoutLegacyQuicOption() throws {
+    func testProfileEncodesRuntimeFlagsAndRegionalRoutingWithoutLegacyQuicOption() throws {
         let profile = XrayClientProfile(
             name: "Debug",
             providerBundleIdentifier: "org.example.XrayClient.Tunnel",
@@ -127,7 +138,9 @@ final class XrayClientProfileTests: XCTestCase {
             configJSON: "{}",
             debugLoggingEnabled: true,
             useTunFileDescriptor: false,
-            tunRuntimeProfile: .mobilePlus
+            tunRuntimeProfile: .mobilePlus,
+            regionalRoutingMode: .bypassSelected,
+            regionalRoutingRegions: [.russia, .iran]
         )
 
         let root = try XCTUnwrap(
@@ -138,6 +151,74 @@ final class XrayClientProfileTests: XCTestCase {
         XCTAssertEqual(root["useTunFileDescriptor"] as? Bool, false)
         XCTAssertNil(root["blockQUIC"])
         XCTAssertEqual(root["tunRuntimeProfile"] as? String, "mobile-plus")
+        XCTAssertEqual(root["regionalRoutingMode"] as? String, "bypass-selected")
+        XCTAssertEqual(root["regionalRoutingRegions"] as? [String], ["russia", "iran"])
+    }
+
+    func testEffectiveConfigReturnsBaseConfigWhenRegionalRoutingIsOff() throws {
+        let profile = XrayClientProfile(
+            name: "Plain",
+            providerBundleIdentifier: "org.example.XrayClient.Tunnel",
+            serverAddress: "xray-rust",
+            configJSON: XrayClientProfile.directTunConfigJSON,
+            regionalRoutingMode: .off,
+            regionalRoutingRegions: [.russia]
+        )
+
+        XCTAssertEqual(try profile.effectiveConfigJSON(), XrayClientProfile.directTunConfigJSON)
+    }
+
+    func testEffectiveConfigBypassesSelectedRegionsBeforeExistingRules() throws {
+        let profile = try XrayVlessURLImporter.profile(
+            from: Self.sampleVlessURL,
+            hostBundleIdentifier: "org.example.XrayClient"
+        ).updatingRegionalRouting(mode: .bypassSelected, regions: [.russia, .iran])
+
+        let rules = try Self.routingRules(in: profile.effectiveConfigJSON())
+
+        XCTAssertEqual(rules[0]["outboundTag"] as? String, "direct")
+        XCTAssertEqual(rules[0]["domain"] as? [String], ["geosite:category-ru", "geosite:category-ir"])
+        XCTAssertNil(rules[0]["ip"])
+        XCTAssertEqual(rules[1]["outboundTag"] as? String, "direct")
+        XCTAssertEqual(rules[1]["ip"] as? [String], ["geoip:ru", "geoip:ir"])
+        XCTAssertNil(rules[1]["domain"])
+        XCTAssertEqual(rules[2]["ip"] as? [String], ["geoip:private", "127.0.0.0/8", "fd00::/8"])
+    }
+
+    func testEffectiveConfigProxiesOnlySelectedRegionsThenFallsBackToDirect() throws {
+        let profile = try XrayVlessURLImporter.profile(
+            from: Self.sampleVlessURL,
+            hostBundleIdentifier: "org.example.XrayClient"
+        ).updatingRegionalRouting(mode: .proxyOnlySelected, regions: [.china])
+
+        let rules = try Self.routingRules(in: profile.effectiveConfigJSON())
+
+        XCTAssertEqual(rules[0]["outboundTag"] as? String, "proxy")
+        XCTAssertEqual(rules[0]["domain"] as? [String], ["geosite:cn"])
+        XCTAssertEqual(rules[1]["outboundTag"] as? String, "proxy")
+        XCTAssertEqual(rules[1]["ip"] as? [String], ["geoip:cn"])
+        let lastRule = try XCTUnwrap(rules.last)
+        XCTAssertEqual(lastRule["outboundTag"] as? String, "direct")
+        XCTAssertNil(lastRule["domain"])
+        XCTAssertNil(lastRule["ip"])
+    }
+
+    func testEffectiveConfigRejectsRegionalRoutingWhenRequiredOutboundIsMissing() {
+        let profile = XrayClientProfile(
+            name: "Direct",
+            providerBundleIdentifier: "org.example.XrayClient.Tunnel",
+            serverAddress: "xray-rust",
+            configJSON: XrayClientProfile.directTunConfigJSON,
+            regionalRoutingMode: .proxyOnlySelected,
+            regionalRoutingRegions: [.china]
+        )
+
+        XCTAssertThrowsError(try profile.effectiveConfigJSON()) { error in
+            XCTAssertEqual(
+                error.localizedDescription,
+                "Regional routing requires an outbound tagged `proxy`."
+            )
+        }
     }
 
     func testVlessURLImporterBuildsMobileRealityProfile() throws {
@@ -267,6 +348,14 @@ final class XrayClientProfileTests: XCTestCase {
         let vnext = try XCTUnwrap(settings["vnext"] as? [[String: Any]])
         let users = try XCTUnwrap(vnext.first?["users"] as? [[String: Any]])
         XCTAssertEqual(users.first?["flow"] as? String, "xtls-rprx-vision")
+    }
+
+    private static func routingRules(in configJSON: String) throws -> [[String: Any]] {
+        let root = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(configJSON.utf8)) as? [String: Any]
+        )
+        let routing = try XCTUnwrap(root["routing"] as? [String: Any])
+        return try XCTUnwrap(routing["rules"] as? [[String: Any]])
     }
 
     func testVlessURLImporterRejectsUnsupportedSecurity() {

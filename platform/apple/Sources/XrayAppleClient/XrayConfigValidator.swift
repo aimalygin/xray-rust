@@ -13,13 +13,19 @@ public enum XrayConfigValidationError: Error, LocalizedError {
 }
 
 public enum XrayConfigValidator {
-    public static func validate(_ configJSON: String) throws {
+    public static func validate(
+        _ configJSON: String,
+        geodataSearchDirectory: URL? = Bundle.main.resourceURL
+    ) throws {
         let data = Data(configJSON.utf8)
         let json = try JSONSerialization.jsonObject(with: data)
         guard json is [String: Any] else {
             throw XrayConfigValidationError.rootIsNotObject
         }
 
-        _ = try XrayCore(configJSON: configJSON)
+        _ = try XrayCore(
+            configJSON: configJSON,
+            geodataSearchDirectory: geodataSearchDirectory
+        )
     }
 }

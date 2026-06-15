@@ -12,10 +12,12 @@ public final class XrayClientViewModel: ObservableObject {
 
     private let store: XrayClientProfileStore
     private let tunnelController: any XrayClientTunnelControlling
+    private let geodataSearchDirectory: URL?
 
     public init(
         store: XrayClientProfileStore = XrayClientProfileStore(),
-        tunnelController: (any XrayClientTunnelControlling)? = nil
+        tunnelController: (any XrayClientTunnelControlling)? = nil,
+        geodataSearchDirectory: URL? = Bundle.main.resourceURL
     ) {
         self.store = store
         let loadedProfile = store.load()
@@ -37,6 +39,7 @@ public final class XrayClientViewModel: ObservableObject {
         }
         self.profile = preparedProfile
         self.tunnelController = tunnelController ?? NetworkExtensionTunnelController()
+        self.geodataSearchDirectory = geodataSearchDirectory
         XrayAppleLog.info(
             "ClientViewModel",
             "Loaded profile name=\(profile.name) provider=\(profile.providerBundleIdentifier) server=\(profile.serverAddress) configBytes=\(profile.configJSON.utf8.count) debugLogging=\(profile.debugLoggingEnabled) useTunFileDescriptor=\(profile.useTunFileDescriptor) tunRuntimeProfile=\(profile.tunRuntimeProfile.rawValue)"
@@ -108,11 +111,16 @@ public final class XrayClientViewModel: ObservableObject {
             importedProfile.debugLoggingEnabled = profile.debugLoggingEnabled
             importedProfile.useTunFileDescriptor = profile.useTunFileDescriptor
             importedProfile.tunRuntimeProfile = profile.tunRuntimeProfile
+            importedProfile.regionalRoutingMode = profile.regionalRoutingMode
+            importedProfile.regionalRoutingRegions = profile.regionalRoutingRegions
             XrayAppleLog.info(
                 "ClientViewModel",
                 "Imported VLESS profile name=\(importedProfile.name) provider=\(importedProfile.providerBundleIdentifier) server=\(importedProfile.serverAddress) configBytes=\(importedProfile.configJSON.utf8.count)"
             )
-            try XrayConfigValidator.validate(importedProfile.configJSON)
+            try XrayConfigValidator.validate(
+                importedProfile.configJSON,
+                geodataSearchDirectory: geodataSearchDirectory
+            )
             XrayAppleLog.info("ClientViewModel", "Imported VLESS config validated")
             profile = importedProfile
             try store.save(importedProfile)
@@ -156,15 +164,24 @@ public final class XrayClientViewModel: ObservableObject {
                 try await tunnelController.stop()
             } else {
                 normalizeProfileIfNeeded()
+                let effectiveConfigJSON = try profile.effectiveConfigJSON()
+                var startProfile = profile
+                startProfile.configJSON = effectiveConfigJSON
+                let regionalRoutingRegions = profile.regionalRoutingRegions
+                    .map(\.rawValue)
+                    .joined(separator: ",")
                 XrayAppleLog.info(
                     "ClientViewModel",
-                    "Starting tunnel provider=\(profile.providerBundleIdentifier) server=\(profile.serverAddress) configBytes=\(profile.configJSON.utf8.count) debugLogging=\(profile.debugLoggingEnabled) useTunFileDescriptor=\(profile.useTunFileDescriptor) tunRuntimeProfile=\(profile.tunRuntimeProfile.rawValue)"
+                    "Starting tunnel provider=\(profile.providerBundleIdentifier) server=\(profile.serverAddress) configBytes=\(effectiveConfigJSON.utf8.count) debugLogging=\(profile.debugLoggingEnabled) useTunFileDescriptor=\(profile.useTunFileDescriptor) tunRuntimeProfile=\(profile.tunRuntimeProfile.rawValue) regionalRoutingMode=\(profile.regionalRoutingMode.rawValue) regionalRoutingRegions=\(regionalRoutingRegions)"
                 )
-                try XrayConfigValidator.validate(profile.configJSON)
+                try XrayConfigValidator.validate(
+                    effectiveConfigJSON,
+                    geodataSearchDirectory: geodataSearchDirectory
+                )
                 XrayAppleLog.info("ClientViewModel", "Config validation passed before start")
                 try store.save(profile)
                 XrayAppleLog.info("ClientViewModel", "Profile saved before start")
-                try await tunnelController.start(profile: profile)
+                try await tunnelController.start(profile: startProfile)
                 XrayAppleLog.info("ClientViewModel", "Start tunnel request returned")
             }
             lastErrorMessage = nil

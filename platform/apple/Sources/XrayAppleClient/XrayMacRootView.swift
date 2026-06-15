@@ -16,6 +16,7 @@ public struct XrayMacRootView: View {
             List {
                 connectionSection
                 profileSection
+                regionalRoutingSection
             }
             .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 360)
         } detail: {
@@ -111,6 +112,22 @@ public struct XrayMacRootView: View {
         }
     }
 
+    private var regionalRoutingSection: some View {
+        Section("Regional Routing") {
+            Picker("Mode", selection: $viewModel.profile.regionalRoutingMode) {
+                ForEach(XrayRegionalRoutingMode.allCases) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+
+            if viewModel.profile.regionalRoutingMode != .off {
+                ForEach(XrayRegionalRoutingRegion.allCases) { region in
+                    Toggle(region.displayName, isOn: regionalRoutingRegionBinding(region))
+                }
+            }
+        }
+    }
+
     private var configurationDetail: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -155,6 +172,23 @@ public struct XrayMacRootView: View {
             return
         }
         vlessURLInput = ""
+    }
+
+    private func regionalRoutingRegionBinding(
+        _ region: XrayRegionalRoutingRegion
+    ) -> Binding<Bool> {
+        Binding {
+            viewModel.profile.regionalRoutingRegions.contains(region)
+        } set: { isSelected in
+            var selected = Set(viewModel.profile.regionalRoutingRegions)
+            if isSelected {
+                selected.insert(region)
+            } else {
+                selected.remove(region)
+            }
+            viewModel.profile.regionalRoutingRegions = XrayRegionalRoutingRegion.allCases
+                .filter { selected.contains($0) }
+        }
     }
 
     private func statsRow(_ title: String, value: UInt64) -> some View {

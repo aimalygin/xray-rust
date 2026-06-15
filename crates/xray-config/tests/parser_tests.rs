@@ -1,8 +1,14 @@
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::{
+    fs,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    path::{Path, PathBuf},
+    time::{SystemTime, UNIX_EPOCH},
+};
 
+use prost::Message;
 use xray_config::{
-    parse_xray_json, DiagnosticSeverity, DnsFakeIpConfig, InboundProtocol, IpCidr,
-    OutboundSettings, RealityShortId, StreamSecurity, TargetAddr,
+    parse_xray_json, parse_xray_json_with_geodata_dirs, DiagnosticSeverity, DnsFakeIpConfig,
+    InboundProtocol, IpCidr, OutboundSettings, RealityShortId, StreamSecurity, TargetAddr,
 };
 
 #[test]
@@ -228,6 +234,26 @@ fn parses_field_routing_rule_with_domain_suffix() {
 }
 
 #[test]
+fn parses_field_routing_rule_with_plain_keyword_domain_and_domains_alias() {
+    let raw = raw_with_routing(
+        r#""rules": [{
+          "type": "field",
+          "domain": ["example"],
+          "domains": ["keyword:api", "full:exact.test"],
+          "outboundTag": "proxy"
+        }]"#,
+    );
+
+    let parsed = parse_xray_json(&raw).expect("config should parse");
+
+    assert_eq!(parsed.config.routing.rules.len(), 1);
+    assert!(parsed.config.routing.rules[0].matches_domain(Some("cdn-example.test")));
+    assert!(parsed.config.routing.rules[0].matches_domain(Some("service-api.test")));
+    assert!(parsed.config.routing.rules[0].matches_domain(Some("EXACT.test")));
+    assert!(!parsed.config.routing.rules[0].matches_domain(Some("service.test")));
+}
+
+#[test]
 fn parses_field_routing_ip_matchers() {
     let raw = raw_with_routing(
         r#""rules": [{
@@ -255,7 +281,187 @@ fn parses_field_routing_ip_matchers() {
 }
 
 #[test]
-fn rejects_unsupported_routing_ip_geoip_with_path() {
+fn parses_field_routing_inverse_ip_matchers() {
+    let raw = raw_with_routing(
+        r#""rules": [{
+          "type": "field",
+          "ip": ["!10.0.0.0/8", "!192.168.0.0/16", "203.0.113.0/24"],
+          "outboundTag": "proxy"
+        }]"#,
+    );
+
+    let parsed = parse_xray_json(&raw).expect("config should parse");
+
+    assert_eq!(parsed.config.routing.rules.len(), 1);
+    assert!(parsed.config.routing.rules[0].matches_ip(Some(&IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)))));
+    assert!(parsed.config.routing.rules[0]
+        .matches_ip(Some(&IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10)))));
+    assert!(
+        !parsed.config.routing.rules[0].matches_ip(Some(&IpAddr::V4(Ipv4Addr::new(10, 42, 0, 1))))
+    );
+    assert!(!parsed.config.routing.rules[0]
+        .matches_ip(Some(&IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)))));
+}
+
+#[test]
+fn parses_geosite_and_geoip_dat_routing_matchers() {
+    let asset_dir = unique_temp_dir("geosite-geoip");
+    write_geosite_dat(
+        &asset_dir,
+        "geosite.dat",
+        &[TestGeoSite {
+            code: "TEST".to_owned(),
+            domain: vec![
+                site_domain(0, "sample", &[]),
+                site_domain(1, "^re-[a-z]+\\.test$", &[]),
+                site_domain(2, "example.com", &[]),
+                site_domain(3, "exact.test", &[]),
+                site_domain(2, "ads.example.com", &["ads"]),
+            ],
+        }],
+    );
+    write_geoip_dat(
+        &asset_dir,
+        "geoip.dat",
+        &[TestGeoIp {
+            code: "TEST".to_owned(),
+            cidr: vec![
+                geo_cidr(&[203, 0, 113, 0], 24),
+                geo_cidr(
+                    &[0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                    32,
+                ),
+            ],
+            reverse_match: false,
+        }],
+    );
+    let raw = raw_with_routing(
+        r#""rules": [{
+          "type": "field",
+          "domain": ["geosite:test"],
+          "ip": ["geoip:test"],
+          "outboundTag": "proxy"
+        }, {
+          "type": "field",
+          "domain": ["geosite:test@ads"],
+          "outboundTag": "proxy"
+        }]"#,
+    );
+
+    let parsed =
+        parse_xray_json_with_geodata_dirs(&raw, &[asset_dir]).expect("config should parse");
+
+    let all_site_rule = &parsed.config.routing.rules[0];
+    assert!(all_site_rule.matches_domain(Some("cdn-sample.test")));
+    assert!(all_site_rule.matches_domain(Some("re-api.test")));
+    assert!(all_site_rule.matches_domain(Some("api.example.com")));
+    assert!(all_site_rule.matches_domain(Some("EXACT.test")));
+    assert!(all_site_rule.matches_ip(Some(&IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10)))));
+    assert!(all_site_rule.matches_ip(Some(&IpAddr::V6("2001:db8::1".parse().unwrap()))));
+    assert!(!all_site_rule.matches_ip(Some(&IpAddr::V4(Ipv4Addr::new(198, 51, 100, 10)))));
+
+    let ads_rule = &parsed.config.routing.rules[1];
+    assert!(ads_rule.matches_domain(Some("ads.example.com")));
+    assert!(!ads_rule.matches_domain(Some("api.example.com")));
+    assert!(!ads_rule.matches_domain(Some("cdn-sample.test")));
+}
+
+#[test]
+fn parses_ext_geodata_rules_from_named_files_and_inverse_geoip() {
+    let asset_dir = unique_temp_dir("ext-geodata");
+    write_geosite_dat(
+        &asset_dir,
+        "custom-site.dat",
+        &[TestGeoSite {
+            code: "CUSTOM".to_owned(),
+            domain: vec![site_domain(2, "direct.test", &[])],
+        }],
+    );
+    write_geoip_dat(
+        &asset_dir,
+        "custom-ip.dat",
+        &[TestGeoIp {
+            code: "CUSTOM".to_owned(),
+            cidr: vec![geo_cidr(&[198, 51, 100, 0], 24)],
+            reverse_match: false,
+        }],
+    );
+    let raw = raw_with_routing(
+        r#""rules": [{
+          "type": "field",
+          "domain": ["ext-domain:custom-site.dat:custom"],
+          "ip": ["!ext-ip:custom-ip.dat:custom"],
+          "outboundTag": "proxy"
+        }]"#,
+    );
+
+    let parsed =
+        parse_xray_json_with_geodata_dirs(&raw, &[asset_dir]).expect("config should parse");
+
+    assert!(parsed.config.routing.rules[0].matches_domain(Some("api.direct.test")));
+    assert!(parsed.config.routing.rules[0].matches_ip(Some(&IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)))));
+    assert!(!parsed.config.routing.rules[0]
+        .matches_ip(Some(&IpAddr::V4(Ipv4Addr::new(198, 51, 100, 42)))));
+}
+
+#[test]
+fn rejects_missing_geodata_code_with_path() {
+    let asset_dir = unique_temp_dir("missing-geodata-code");
+    write_geosite_dat(
+        &asset_dir,
+        "geosite.dat",
+        &[TestGeoSite {
+            code: "OTHER".to_owned(),
+            domain: vec![site_domain(2, "example.com", &[])],
+        }],
+    );
+    let raw = raw_with_routing(
+        r#""rules": [{
+          "type": "field",
+          "domain": ["geosite:missing"],
+          "outboundTag": "proxy"
+        }]"#,
+    );
+
+    let err = parse_xray_json_with_geodata_dirs(&raw, &[asset_dir]).unwrap_err();
+
+    assert_eq!(err.diagnostics[0].severity, DiagnosticSeverity::Error);
+    assert_eq!(
+        err.diagnostics[0].path.as_deref(),
+        Some("$.routing.rules[0].domain[0]")
+    );
+}
+
+#[test]
+fn rejects_geosite_attribute_selection_with_no_matchers() {
+    let asset_dir = unique_temp_dir("empty-geosite-attrs");
+    write_geosite_dat(
+        &asset_dir,
+        "geosite.dat",
+        &[TestGeoSite {
+            code: "TEST".to_owned(),
+            domain: vec![site_domain(2, "ads.example.com", &["ads"])],
+        }],
+    );
+    let raw = raw_with_routing(
+        r#""rules": [{
+          "type": "field",
+          "domain": ["geosite:test@missing"],
+          "outboundTag": "proxy"
+        }]"#,
+    );
+
+    let err = parse_xray_json_with_geodata_dirs(&raw, &[asset_dir]).unwrap_err();
+
+    assert_eq!(err.diagnostics[0].severity, DiagnosticSeverity::Error);
+    assert_eq!(
+        err.diagnostics[0].path.as_deref(),
+        Some("$.routing.rules[0].domain[0]")
+    );
+}
+
+#[test]
+fn rejects_missing_routing_ip_geoip_with_path() {
     let raw = raw_with_routing(
         r#""rules": [{
           "type": "field",
@@ -281,7 +487,7 @@ fn rejects_invalid_routing_ip_cidr_with_path() {
 }
 
 #[test]
-fn rejects_unsupported_routing_domain_matcher_with_path() {
+fn rejects_missing_routing_domain_geosite_with_path() {
     let raw = raw_with_routing(
         r#""rules": [{
           "type": "field",
@@ -291,6 +497,22 @@ fn rejects_unsupported_routing_domain_matcher_with_path() {
     );
 
     assert_parse_error_path(&raw, "$.routing.rules[0].domain[0]");
+}
+
+#[test]
+fn parses_field_routing_rule_with_regex_domain_matcher() {
+    let raw = raw_with_routing(
+        r#""rules": [{
+          "type": "field",
+          "domains": ["regexp:.*\\.example\\.com$"],
+          "outboundTag": "proxy"
+        }]"#,
+    );
+
+    let parsed = parse_xray_json(&raw).expect("config should parse");
+
+    assert!(parsed.config.routing.rules[0].matches_domain(Some("api.example.com")));
+    assert!(!parsed.config.routing.rules[0].matches_domain(Some("example.com")));
 }
 
 #[test]
@@ -686,6 +908,124 @@ fn assert_parse_error_path(raw: &str, path: &str) {
     let err = parse_xray_json(raw).unwrap_err();
     assert_eq!(err.diagnostics[0].severity, DiagnosticSeverity::Error);
     assert_eq!(err.diagnostics[0].path.as_deref(), Some(path));
+}
+
+fn unique_temp_dir(name: &str) -> PathBuf {
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock should be after Unix epoch")
+        .as_nanos();
+    let dir = std::env::temp_dir().join(format!(
+        "xray-config-{name}-{}-{timestamp}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&dir).expect("temp geodata dir should be created");
+    dir
+}
+
+fn write_geosite_dat(asset_dir: &Path, file_name: &str, entries: &[TestGeoSite]) {
+    let bodies = entries
+        .iter()
+        .map(Message::encode_to_vec)
+        .collect::<Vec<_>>();
+    write_xray_dat(asset_dir.join(file_name), &bodies);
+}
+
+fn write_geoip_dat(asset_dir: &Path, file_name: &str, entries: &[TestGeoIp]) {
+    let bodies = entries
+        .iter()
+        .map(Message::encode_to_vec)
+        .collect::<Vec<_>>();
+    write_xray_dat(asset_dir.join(file_name), &bodies);
+}
+
+fn write_xray_dat(path: PathBuf, bodies: &[Vec<u8>]) {
+    let mut bytes = Vec::new();
+    for body in bodies {
+        bytes.push(0);
+        encode_varint(body.len() as u64, &mut bytes);
+        bytes.extend_from_slice(body);
+    }
+    fs::write(path, bytes).expect("xray dat fixture should be written");
+}
+
+fn encode_varint(mut value: u64, output: &mut Vec<u8>) {
+    while value >= 0x80 {
+        output.push(value as u8 | 0x80);
+        value >>= 7;
+    }
+    output.push(value as u8);
+}
+
+fn site_domain(r#type: i32, value: &str, attrs: &[&str]) -> TestDomain {
+    TestDomain {
+        r#type,
+        value: value.to_owned(),
+        attribute: attrs
+            .iter()
+            .map(|attr| TestDomainAttribute {
+                key: (*attr).to_owned(),
+            })
+            .collect(),
+    }
+}
+
+fn geo_cidr(ip: &[u8], prefix: u32) -> TestCidr {
+    TestCidr {
+        ip: ip.to_owned(),
+        prefix,
+    }
+}
+
+#[derive(Clone, PartialEq, Message)]
+struct TestGeoSite {
+    #[prost(string, tag = "1")]
+    code: String,
+    #[prost(message, repeated, tag = "2")]
+    domain: Vec<TestDomain>,
+}
+
+#[derive(Clone, PartialEq, Message)]
+struct TestDomain {
+    #[prost(enumeration = "TestDomainType", tag = "1")]
+    r#type: i32,
+    #[prost(string, tag = "2")]
+    value: String,
+    #[prost(message, repeated, tag = "3")]
+    attribute: Vec<TestDomainAttribute>,
+}
+
+#[derive(Clone, PartialEq, Message)]
+struct TestDomainAttribute {
+    #[prost(string, tag = "1")]
+    key: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, prost::Enumeration)]
+#[repr(i32)]
+enum TestDomainType {
+    Substr = 0,
+    Regex = 1,
+    Domain = 2,
+    Full = 3,
+}
+
+#[derive(Clone, PartialEq, Message)]
+struct TestGeoIp {
+    #[prost(string, tag = "1")]
+    code: String,
+    #[prost(message, repeated, tag = "2")]
+    cidr: Vec<TestCidr>,
+    #[prost(bool, tag = "3")]
+    reverse_match: bool,
+}
+
+#[derive(Clone, PartialEq, Message)]
+struct TestCidr {
+    #[prost(bytes = "vec", tag = "1")]
+    ip: Vec<u8>,
+    #[prost(uint32, tag = "2")]
+    prefix: u32,
 }
 
 fn valid_public_key() -> &'static str {

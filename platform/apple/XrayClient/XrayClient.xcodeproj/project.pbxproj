@@ -35,6 +35,18 @@
 		04A1B2C3D4E5F6000000001D /* NetworkExtension.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 044523D22FCA253F00EB1099 /* NetworkExtension.framework */; };
 		04A1B2C3D4E5F6000000001F /* XrayAppleTunnel in Frameworks */ = {isa = PBXBuildFile; productRef = 04A1B2C3D4E5F6000000001E /* XrayAppleTunnel */; };
 		04A1B2C3D4E5F60000000022 /* XrayClientMacTunnel.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 04A1B2C3D4E5F60000000011 /* XrayClientMacTunnel.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		04CF2AFA2FE0B04F0004AF90 /* geoip.dat in Resources */ = {isa = PBXBuildFile; fileRef = 04CF2AF72FE0B04F0004AF90 /* geoip.dat */; };
+		04CF2AFB2FE0B04F0004AF90 /* geosite.dat in Resources */ = {isa = PBXBuildFile; fileRef = 04CF2AF82FE0B04F0004AF90 /* geosite.dat */; };
+		04CF2AFC2FE0B04F0004AF90 /* geoip.dat in Resources */ = {isa = PBXBuildFile; fileRef = 04CF2AF72FE0B04F0004AF90 /* geoip.dat */; };
+		04CF2AFD2FE0B04F0004AF90 /* geosite.dat in Resources */ = {isa = PBXBuildFile; fileRef = 04CF2AF82FE0B04F0004AF90 /* geosite.dat */; };
+		04CF2AFE2FE0B04F0004AF90 /* geoip.dat in Resources */ = {isa = PBXBuildFile; fileRef = 04CF2AF72FE0B04F0004AF90 /* geoip.dat */; };
+		04CF2AFF2FE0B04F0004AF90 /* geosite.dat in Resources */ = {isa = PBXBuildFile; fileRef = 04CF2AF82FE0B04F0004AF90 /* geosite.dat */; };
+		04CF2B002FE0B04F0004AF90 /* geoip.dat in Resources */ = {isa = PBXBuildFile; fileRef = 04CF2AF72FE0B04F0004AF90 /* geoip.dat */; };
+		04CF2B012FE0B04F0004AF90 /* geosite.dat in Resources */ = {isa = PBXBuildFile; fileRef = 04CF2AF82FE0B04F0004AF90 /* geosite.dat */; };
+		04CF2B022FE0B04F0004AF90 /* geoip.dat in Resources */ = {isa = PBXBuildFile; fileRef = 04CF2AF72FE0B04F0004AF90 /* geoip.dat */; };
+		04CF2B032FE0B04F0004AF90 /* geosite.dat in Resources */ = {isa = PBXBuildFile; fileRef = 04CF2AF82FE0B04F0004AF90 /* geosite.dat */; };
+		04CF2B042FE0B04F0004AF90 /* geoip.dat in Resources */ = {isa = PBXBuildFile; fileRef = 04CF2AF72FE0B04F0004AF90 /* geoip.dat */; };
+		04CF2B052FE0B04F0004AF90 /* geosite.dat in Resources */ = {isa = PBXBuildFile; fileRef = 04CF2AF82FE0B04F0004AF90 /* geosite.dat */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -162,6 +174,8 @@
 		04A1B2C3D4E5F60000000019 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		04A1B2C3D4E5F6000000001A /* PacketTunnelProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PacketTunnelProvider.swift; sourceTree = "<group>"; };
 		04A1B2C3D4E5F6000000001B /* XrayClientMacTunnel.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = XrayClientMacTunnel.entitlements; sourceTree = "<group>"; };
+		04CF2AF72FE0B04F0004AF90 /* geoip.dat */ = {isa = PBXFileReference; lastKnownFileType = file; path = geoip.dat; sourceTree = "<group>"; };
+		04CF2AF82FE0B04F0004AF90 /* geosite.dat */ = {isa = PBXFileReference; lastKnownFileType = file; path = geosite.dat; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -288,6 +302,7 @@
 		044523902FCA23E800EB1099 = {
 			isa = PBXGroup;
 			children = (
+				04CF2AF92FE0B04F0004AF90 /* dat */,
 				044523F42FCA258700EB1099 /* XrayClient */,
 				044523EA2FCA258300EB1099 /* XrayClientTests */,
 				044523EE2FCA258500EB1099 /* XrayClientUITests */,
@@ -383,6 +398,15 @@
 				04A1B2C3D4E5F6000000001B /* XrayClientMacTunnel.entitlements */,
 			);
 			path = XrayClientMacTunnel;
+			sourceTree = "<group>";
+		};
+		04CF2AF92FE0B04F0004AF90 /* dat */ = {
+			isa = PBXGroup;
+			children = (
+				04CF2AF72FE0B04F0004AF90 /* geoip.dat */,
+				04CF2AF82FE0B04F0004AF90 /* geosite.dat */,
+			);
+			path = dat;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -677,6 +701,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				043796E92FCC88B500B85452 /* Assets.xcassets in Resources */,
+				04CF2B022FE0B04F0004AF90 /* geoip.dat in Resources */,
+				04CF2B032FE0B04F0004AF90 /* geosite.dat in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -698,6 +724,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				04CF2AFE2FE0B04F0004AF90 /* geoip.dat in Resources */,
+				04CF2AFF2FE0B04F0004AF90 /* geosite.dat in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -706,6 +734,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				044523F52FCA258700EB1099 /* Assets.xcassets in Resources */,
+				04CF2B002FE0B04F0004AF90 /* geoip.dat in Resources */,
+				04CF2B012FE0B04F0004AF90 /* geosite.dat in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -727,6 +757,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				04CF2AFC2FE0B04F0004AF90 /* geoip.dat in Resources */,
+				04CF2AFD2FE0B04F0004AF90 /* geosite.dat in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -734,6 +766,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				04CF2B042FE0B04F0004AF90 /* geoip.dat in Resources */,
+				04CF2B052FE0B04F0004AF90 /* geosite.dat in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -741,6 +775,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				04CF2AFA2FE0B04F0004AF90 /* geoip.dat in Resources */,
+				04CF2AFB2FE0B04F0004AF90 /* geosite.dat in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

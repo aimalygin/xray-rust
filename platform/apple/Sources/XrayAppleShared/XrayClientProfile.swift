@@ -52,6 +52,96 @@ public enum XrayTunRuntimeProfileSetting: String, Codable, CaseIterable, Hashabl
     }
 }
 
+public enum XrayRegionalRoutingMode: String, Codable, CaseIterable, Hashable, Identifiable, Sendable {
+    case off
+    case bypassSelected = "bypass-selected"
+    case proxyOnlySelected = "proxy-only-selected"
+
+    public var id: String {
+        rawValue
+    }
+
+    public var displayName: String {
+        switch self {
+        case .off:
+            return "Off"
+        case .bypassSelected:
+            return "Bypass Selected"
+        case .proxyOnlySelected:
+            return "Proxy Only Selected"
+        }
+    }
+}
+
+public enum XrayRegionalRoutingRegion: String, Codable, CaseIterable, Hashable, Identifiable, Sendable {
+    case china
+    case russia
+    case iran
+
+    public var id: String {
+        rawValue
+    }
+
+    public var displayName: String {
+        switch self {
+        case .china:
+            return "China"
+        case .russia:
+            return "Russia"
+        case .iran:
+            return "Iran"
+        }
+    }
+
+    var geoipMatcher: String {
+        switch self {
+        case .china:
+            return "geoip:cn"
+        case .russia:
+            return "geoip:ru"
+        case .iran:
+            return "geoip:ir"
+        }
+    }
+
+    var geositeMatcher: String {
+        switch self {
+        case .china:
+            return "geosite:cn"
+        case .russia:
+            return "geosite:category-ru"
+        case .iran:
+            return "geosite:category-ir"
+        }
+    }
+}
+
+public enum XrayRegionalRoutingError: Error, Equatable, LocalizedError {
+    case rootIsNotObject
+    case outboundsIsNotArray
+    case routingIsNotObject
+    case rulesIsNotArray
+    case encodingFailed
+    case missingOutboundTag(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .rootIsNotObject:
+            return "Config must be a JSON object."
+        case .outboundsIsNotArray:
+            return "Config outbounds must be an array."
+        case .routingIsNotObject:
+            return "Config routing must be an object."
+        case .rulesIsNotArray:
+            return "Config routing rules must be an array."
+        case .encodingFailed:
+            return "Failed to encode regional routing config."
+        case let .missingOutboundTag(tag):
+            return "Regional routing requires an outbound tagged `\(tag)`."
+        }
+    }
+}
+
 public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
     public static let defaultRealityVisionFlow = "xtls-rprx-vision"
 
@@ -63,6 +153,8 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
     public var debugLoggingEnabled: Bool
     public var useTunFileDescriptor: Bool
     public var tunRuntimeProfile: XrayTunRuntimeProfileSetting
+    public var regionalRoutingMode: XrayRegionalRoutingMode
+    public var regionalRoutingRegions: [XrayRegionalRoutingRegion]
 
     public init(
         id: UUID = UUID(),
@@ -72,7 +164,9 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
         configJSON: String,
         debugLoggingEnabled: Bool = false,
         useTunFileDescriptor: Bool = true,
-        tunRuntimeProfile: XrayTunRuntimeProfileSetting = .default
+        tunRuntimeProfile: XrayTunRuntimeProfileSetting = .default,
+        regionalRoutingMode: XrayRegionalRoutingMode = .off,
+        regionalRoutingRegions: [XrayRegionalRoutingRegion] = []
     ) {
         self.id = id
         self.name = name
@@ -82,6 +176,8 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
         self.debugLoggingEnabled = debugLoggingEnabled
         self.useTunFileDescriptor = useTunFileDescriptor
         self.tunRuntimeProfile = tunRuntimeProfile
+        self.regionalRoutingMode = regionalRoutingMode
+        self.regionalRoutingRegions = Self.normalizedRegions(regionalRoutingRegions)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -93,6 +189,8 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
         case debugLoggingEnabled
         case useTunFileDescriptor
         case tunRuntimeProfile
+        case regionalRoutingMode
+        case regionalRoutingRegions
     }
 
     public init(from decoder: Decoder) throws {
@@ -117,6 +215,16 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
             XrayTunRuntimeProfileSetting.self,
             forKey: .tunRuntimeProfile
         ) ?? .default
+        regionalRoutingMode = try container.decodeIfPresent(
+            XrayRegionalRoutingMode.self,
+            forKey: .regionalRoutingMode
+        ) ?? .off
+        regionalRoutingRegions = Self.normalizedRegions(
+            try container.decodeIfPresent(
+                [XrayRegionalRoutingRegion].self,
+                forKey: .regionalRoutingRegions
+            ) ?? []
+        )
     }
 
     public static func defaultProfile(
@@ -175,6 +283,29 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
         return profile
     }
 
+    public func updatingRegionalRouting(
+        mode: XrayRegionalRoutingMode,
+        regions: [XrayRegionalRoutingRegion]
+    ) -> XrayClientProfile {
+        var profile = self
+        profile.regionalRoutingMode = mode
+        profile.regionalRoutingRegions = Self.normalizedRegions(regions)
+        return profile
+    }
+
+    public func effectiveConfigJSON() throws -> String {
+        let regions = Self.normalizedRegions(regionalRoutingRegions)
+        guard regionalRoutingMode != .off, !regions.isEmpty else {
+            return configJSON
+        }
+
+        return try Self.configJSON(
+            configJSON,
+            applyingRegionalRoutingMode: regionalRoutingMode,
+            regions: regions
+        )
+    }
+
     private static func configJSONAddingDefaultRealityVisionFlowIfMissing(
         _ configJSON: String
     ) -> String? {
@@ -225,6 +356,119 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
             return nil
         }
         return String(data: normalizedData, encoding: .utf8)
+    }
+
+    private static func configJSON(
+        _ configJSON: String,
+        applyingRegionalRoutingMode mode: XrayRegionalRoutingMode,
+        regions: [XrayRegionalRoutingRegion]
+    ) throws -> String {
+        let data = Data(configJSON.utf8)
+        guard var root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw XrayRegionalRoutingError.rootIsNotObject
+        }
+
+        let outboundTags = try outboundTags(in: root)
+        let selectedOutboundTag: String
+        switch mode {
+        case .off:
+            return configJSON
+        case .bypassSelected:
+            selectedOutboundTag = "direct"
+        case .proxyOnlySelected:
+            selectedOutboundTag = "proxy"
+        }
+
+        guard outboundTags.contains(selectedOutboundTag) else {
+            throw XrayRegionalRoutingError.missingOutboundTag(selectedOutboundTag)
+        }
+        if mode == .proxyOnlySelected, !outboundTags.contains("direct") {
+            throw XrayRegionalRoutingError.missingOutboundTag("direct")
+        }
+
+        var routing = try routingObject(in: root)
+        var rules = try routingRules(in: routing)
+        rules.insert(
+            contentsOf: regionalRules(
+                regions: regions,
+                outboundTag: selectedOutboundTag
+            ),
+            at: 0
+        )
+        if mode == .proxyOnlySelected {
+            rules.append([
+                "type": "field",
+                "outboundTag": "direct",
+            ])
+        }
+
+        if routing["domainStrategy"] == nil {
+            routing["domainStrategy"] = "AsIs"
+        }
+        routing["rules"] = rules
+        root["routing"] = routing
+
+        let encoded = try JSONSerialization.data(
+            withJSONObject: root,
+            options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        )
+        guard let json = String(data: encoded, encoding: .utf8) else {
+            throw XrayRegionalRoutingError.encodingFailed
+        }
+        return json
+    }
+
+    private static func outboundTags(in root: [String: Any]) throws -> Set<String> {
+        guard let outbounds = root["outbounds"] as? [[String: Any]] else {
+            throw XrayRegionalRoutingError.outboundsIsNotArray
+        }
+
+        return Set(outbounds.compactMap { $0["tag"] as? String })
+    }
+
+    private static func routingObject(in root: [String: Any]) throws -> [String: Any] {
+        guard let routing = root["routing"] else {
+            return [:]
+        }
+        guard let routing = routing as? [String: Any] else {
+            throw XrayRegionalRoutingError.routingIsNotObject
+        }
+        return routing
+    }
+
+    private static func routingRules(in routing: [String: Any]) throws -> [[String: Any]] {
+        guard let rawRules = routing["rules"] else {
+            return []
+        }
+        guard let rules = rawRules as? [[String: Any]] else {
+            throw XrayRegionalRoutingError.rulesIsNotArray
+        }
+        return rules
+    }
+
+    private static func regionalRules(
+        regions: [XrayRegionalRoutingRegion],
+        outboundTag: String
+    ) -> [[String: Any]] {
+        [
+            [
+                "type": "field",
+                "domain": regions.map(\.geositeMatcher),
+                "outboundTag": outboundTag,
+            ],
+            [
+                "type": "field",
+                "ip": regions.map(\.geoipMatcher),
+                "outboundTag": outboundTag,
+            ],
+        ]
+    }
+
+    private static func normalizedRegions(
+        _ regions: [XrayRegionalRoutingRegion]
+    ) -> [XrayRegionalRoutingRegion] {
+        let selected = Set(regions)
+        return XrayRegionalRoutingRegion.allCases.filter { selected.contains($0) }
     }
 
     public static let directTunConfigJSON = """

@@ -28,6 +28,7 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
         "XrayCoreHandle",
         "XrayError",
         "xray_core_new",
+        "xray_core_set_geodata_search_dir",
         "xray_core_load_config_json",
         "xray_core_start",
         "xray_core_stop",
@@ -109,6 +110,7 @@ fn apple_adapter_declares_packet_tunnel_pump() {
     assert!(package.contains("XrayRust.xcframework"));
     assert!(core.contains("import XrayRust"));
     assert!(core.contains("xray_core_set_socket_protect_callback"));
+    assert!(core.contains("xray_core_set_geodata_search_dir"));
     assert!(core.contains("xray_core_set_tun_fd"));
     assert!(!core.contains("xray_core_set_tun_block_quic"));
     assert!(core.contains("xray_core_set_tun_collect_tcp_timings"));
@@ -361,6 +363,7 @@ fn contains_exported_symbol(nm_stdout: &str, symbol: &str) -> bool {
 const EXPORTED_SYMBOLS: &[&str] = &[
     "xray_ffi_version_major",
     "xray_core_new",
+    "xray_core_set_geodata_search_dir",
     "xray_core_load_config_json",
     "xray_core_start",
     "xray_core_stop",
@@ -427,6 +430,7 @@ static void use_xray_ffi_api(void) {
   uint64_t stats_probe = 0;
 
   (void)xray_ffi_version_major();
+  (void)xray_core_set_geodata_search_dir(handle, ".", &error);
   (void)xray_core_set_socket_protect_callback(handle, NULL, NULL, &error);
   (void)xray_core_set_tun_fd(
       handle,

@@ -3,12 +3,13 @@ use libc::{c_char, c_int, c_void};
 use std::ffi::{CStr, CString};
 use std::io;
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::path::PathBuf;
 use std::ptr;
 use std::slice;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::runtime::{Builder, Runtime};
-use xray_config::parse_xray_json;
+use xray_config::{parse_xray_json, parse_xray_json_with_geodata_dirs};
 use xray_core_rs::{
     Core, TunFdClosePolicy, TunFdConfig, TunFdPacketFormat, TunFdRuntime, TunRuntimeOptions,
     TunRuntimeProfile,
@@ -240,6 +241,7 @@ pub struct XrayCoreHandle {
     core: Option<Core>,
     runtime: Runtime,
     socket_protector: Option<Arc<dyn SocketProtector>>,
+    geodata_search_dirs: Vec<PathBuf>,
     tun_fd_config: Option<TunFdConfig>,
     tun_fd_runtime: Option<TunFdRuntime>,
     tun_runtime_options: TunRuntimeOptions,
@@ -328,10 +330,93 @@ unsafe fn xray_core_new_inner(error: *mut *mut XrayError) -> *mut XrayCoreHandle
         core: None,
         runtime,
         socket_protector: None,
+        geodata_search_dirs: Vec::new(),
         tun_fd_config: None,
         tun_fd_runtime: None,
         tun_runtime_options: TunRuntimeOptions::default(),
     }))
+}
+
+/// Sets the geodata search directory used by subsequent config loads.
+///
+/// # Safety
+///
+/// `handle` must either be null or a pointer returned by `xray_core_new` that
+/// has not been freed. `dir` must either be null or point to a valid
+/// NUL-terminated C string. The directory is prepended before the default
+/// geodata search directories, matching Xray-style bundle resource lookup
+/// without relying on the process current working directory.
+#[no_mangle]
+pub unsafe extern "C" fn xray_core_set_geodata_search_dir(
+    handle: *mut XrayCoreHandle,
+    dir: *const c_char,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            xray_core_set_geodata_search_dir_inner(handle, dir, error)
+        })
+    }
+}
+
+unsafe fn xray_core_set_geodata_search_dir_inner(
+    handle: *mut XrayCoreHandle,
+    dir: *const c_char,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        clear_error(error);
+    }
+
+    if handle.is_null() {
+        unsafe {
+            set_error(error, XrayStatus::NullArgument, "core handle is null");
+        }
+        return XrayStatus::NullArgument;
+    }
+
+    if dir.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "geodata search dir is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+
+    let dir = match unsafe { CStr::from_ptr(dir) }.to_str() {
+        Ok(dir) => dir,
+        Err(err) => {
+            unsafe {
+                set_error(
+                    error,
+                    XrayStatus::InvalidUtf8,
+                    format!("geodata search dir is not valid UTF-8: {err}"),
+                );
+            }
+            return XrayStatus::InvalidUtf8;
+        }
+    };
+
+    if dir.is_empty() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::ConfigError,
+                "geodata search dir is empty",
+            );
+        }
+        return XrayStatus::ConfigError;
+    }
+
+    unsafe {
+        (*handle).geodata_search_dirs.clear();
+        (*handle).geodata_search_dirs.push(PathBuf::from(dir));
+    }
+
+    XrayStatus::Ok
 }
 
 /// Loads an Xray JSON config into a core handle.
@@ -394,7 +479,15 @@ unsafe fn xray_core_load_config_json_inner(
         }
     };
 
-    let parsed = match parse_xray_json(raw) {
+    let parsed = unsafe {
+        let geodata_search_dirs = &(*handle).geodata_search_dirs;
+        if geodata_search_dirs.is_empty() {
+            parse_xray_json(raw)
+        } else {
+            parse_xray_json_with_geodata_dirs(raw, geodata_search_dirs)
+        }
+    };
+    let parsed = match parsed {
         Ok(parsed) => parsed,
         Err(err) => {
             unsafe {

@@ -244,12 +244,14 @@ public final class XrayCore: @unchecked Sendable {
         configJSON: String,
         borrowedDarwinTunFileDescriptor fd: Int32,
         collectTcpTimings: Bool = false,
-        tunRuntimeProfile: XrayTunRuntimeProfile = XRAY_TUN_RUNTIME_PROFILE_DEFAULT
+        tunRuntimeProfile: XrayTunRuntimeProfile = XRAY_TUN_RUNTIME_PROFILE_DEFAULT,
+        geodataSearchDirectory: URL? = nil
     ) throws {
         try self.init(
             configJSON: configJSON,
             collectTcpTimings: collectTcpTimings,
             tunRuntimeProfile: tunRuntimeProfile,
+            geodataSearchDirectory: geodataSearchDirectory,
             tunFileDescriptor: fd,
             tunPacketFormat: XRAY_TUN_FD_PACKET_FORMAT_DARWIN_UTUN,
             tunClosePolicy: XRAY_TUN_FD_CLOSE_POLICY_BORROWED
@@ -260,6 +262,7 @@ public final class XrayCore: @unchecked Sendable {
         configJSON: String,
         collectTcpTimings: Bool = false,
         tunRuntimeProfile: XrayTunRuntimeProfile = XRAY_TUN_RUNTIME_PROFILE_DEFAULT,
+        geodataSearchDirectory: URL? = nil,
         socketProtectCallback: XraySocketProtectCallback? = nil,
         socketProtectUserData: UnsafeMutableRawPointer? = nil,
         tunFileDescriptor: Int32? = nil,
@@ -314,6 +317,14 @@ public final class XrayCore: @unchecked Sendable {
                 xray_core_set_tun_runtime_profile(handle, tunRuntimeProfile, &error),
                 error: error
             )
+            if let geodataSearchDirectory {
+                try geodataSearchDirectory.path.withCString { pointer in
+                    try check(
+                        xray_core_set_geodata_search_dir(handle, pointer, &error),
+                        error: error
+                    )
+                }
+            }
             try configJSON.withCString { pointer in
                 try check(xray_core_load_config_json(handle, pointer, &error), error: error)
             }

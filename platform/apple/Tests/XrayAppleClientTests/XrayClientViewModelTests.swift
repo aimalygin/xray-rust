@@ -14,7 +14,9 @@ final class XrayClientViewModelTests: XCTestCase {
                 serverAddress: "old-server",
                 configJSON: XrayClientProfile.directTunConfigJSON,
                 debugLoggingEnabled: true,
-                tunRuntimeProfile: .throughput
+                tunRuntimeProfile: .throughput,
+                regionalRoutingMode: .bypassSelected,
+                regionalRoutingRegions: [.russia]
             )
         )
         let viewModel = XrayClientViewModel(
@@ -32,6 +34,8 @@ final class XrayClientViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.profile.serverAddress, "217.154.252.68")
         XCTAssertTrue(viewModel.profile.debugLoggingEnabled)
         XCTAssertEqual(viewModel.profile.tunRuntimeProfile, .throughput)
+        XCTAssertEqual(viewModel.profile.regionalRoutingMode, .bypassSelected)
+        XCTAssertEqual(viewModel.profile.regionalRoutingRegions, [.russia])
 
         let root = try XCTUnwrap(
             try JSONSerialization.jsonObject(
@@ -183,6 +187,28 @@ final class XrayClientViewModelTests: XCTestCase {
         )
     }
 
+    func testConnectStartsTunnelWithEffectiveRegionalRoutingConfigWithoutSavingGeneratedRules() async throws {
+        let store = try makeStore()
+        let importedProfile = try XrayVlessURLImporter.profile(
+            from: Self.sampleVlessURL,
+            hostBundleIdentifier: "org.example.XrayClientTv"
+        ).updatingRegionalRouting(mode: .bypassSelected, regions: [.china])
+        try store.save(importedProfile)
+        let tunnelController = MockTunnelController()
+        let viewModel = XrayClientViewModel(
+            store: store,
+            tunnelController: tunnelController,
+            geodataSearchDirectory: Self.geodataDirectoryURL
+        )
+
+        await viewModel.connectOrDisconnect()
+
+        let startedProfile = try XCTUnwrap(tunnelController.startedProfile)
+        XCTAssertNotEqual(startedProfile.configJSON, importedProfile.configJSON)
+        XCTAssertEqual(try Self.firstRoutingRuleDomains(in: startedProfile.configJSON), ["geosite:cn"])
+        XCTAssertEqual(store.load().configJSON, importedProfile.configJSON)
+    }
+
     private func makeStore() throws -> XrayClientProfileStore {
         let suiteName = "org.xrayrust.tests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
@@ -191,6 +217,14 @@ final class XrayClientViewModelTests: XCTestCase {
             defaults: defaults,
             key: "profile"
         )
+    }
+
+    private static var geodataDirectoryURL: URL {
+        URL(
+            fileURLWithPath: ProcessInfo.processInfo.environment["PWD"]
+                ?? FileManager.default.currentDirectoryPath
+        )
+            .appendingPathComponent("XrayClient/dat")
     }
 
     private static func configJSONWithoutFlow() throws -> String {
@@ -226,6 +260,15 @@ final class XrayClientViewModelTests: XCTestCase {
         let vnext = try XCTUnwrap(settings["vnext"] as? [[String: Any]])
         let users = try XCTUnwrap(vnext.first?["users"] as? [[String: Any]])
         return users.first?["flow"] as? String
+    }
+
+    private static func firstRoutingRuleDomains(in configJSON: String) throws -> [String]? {
+        let root = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(configJSON.utf8)) as? [String: Any]
+        )
+        let routing = try XCTUnwrap(root["routing"] as? [String: Any])
+        let rules = try XCTUnwrap(routing["rules"] as? [[String: Any]])
+        return rules.first?["domain"] as? [String]
     }
 
     private static let sampleVlessURL = "vless://41dac315-fc32-4957-aded-6010b8f62fef@217.154.252.68:32134?type=tcp&encryption=none&security=reality&pbk=3jNx5A3WTFKhvCj3IPljaxbcBjCxhH2dVCNobKv_X1c&fp=chrome&sni=google.com&sid=1c5694e878&spx=%2F&flow=xtls-rprx-vision#other-port-test-xray-rust"

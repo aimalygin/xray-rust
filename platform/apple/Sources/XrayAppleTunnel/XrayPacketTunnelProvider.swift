@@ -91,7 +91,8 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                         collectTcpTimings: resolvedConfig.debugLoggingEnabled,
                         tunRuntimeProfile: XrayCore.tunRuntimeProfile(
                             named: resolvedConfig.tunRuntimeProfile.rawValue
-                        )
+                        ),
+                        geodataSearchDirectory: Bundle.main.resourceURL
                     )
                     pump = nil
                 case .packetFlowPump:
@@ -111,7 +112,8 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                         collectTcpTimings: resolvedConfig.debugLoggingEnabled,
                         tunRuntimeProfile: XrayCore.tunRuntimeProfile(
                             named: resolvedConfig.tunRuntimeProfile.rawValue
-                        )
+                        ),
+                        geodataSearchDirectory: Bundle.main.resourceURL
                     )
                     pump = XrayPacketTunnelPump(
                         provider: self,

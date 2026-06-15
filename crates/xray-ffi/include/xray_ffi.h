@@ -162,6 +162,10 @@ typedef int32_t (*XraySocketProtectCallback)(int32_t fd, void *user_data);
 uint32_t xray_ffi_version_major(void);
 
 XrayCoreHandle *xray_core_new(XrayError **error);
+XrayStatus xray_core_set_geodata_search_dir(
+    XrayCoreHandle *handle,
+    const char *dir,
+    XrayError **error);
 XrayStatus xray_core_load_config_json(
     XrayCoreHandle *handle,
     const char *json,

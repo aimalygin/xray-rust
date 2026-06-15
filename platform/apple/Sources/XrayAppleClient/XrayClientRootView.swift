@@ -23,6 +23,7 @@ public struct XrayClientRootView: View {
             Form {
                 connectionSection
                 profileSection
+                regionalRoutingSection
                 configurationSection
                 issueSection
             }
@@ -105,6 +106,22 @@ public struct XrayClientRootView: View {
         }
     }
 
+    private var regionalRoutingSection: some View {
+        Section("Regional Routing") {
+            Picker("Mode", selection: $viewModel.profile.regionalRoutingMode) {
+                ForEach(XrayRegionalRoutingMode.allCases) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+
+            if viewModel.profile.regionalRoutingMode != .off {
+                ForEach(XrayRegionalRoutingRegion.allCases) { region in
+                    Toggle(region.displayName, isOn: regionalRoutingRegionBinding(region))
+                }
+            }
+        }
+    }
+
     private var configurationSection: some View {
         Section("Configuration") {
             #if os(tvOS)
@@ -155,6 +172,23 @@ public struct XrayClientRootView: View {
         #else
         return true
         #endif
+    }
+
+    private func regionalRoutingRegionBinding(
+        _ region: XrayRegionalRoutingRegion
+    ) -> Binding<Bool> {
+        Binding {
+            viewModel.profile.regionalRoutingRegions.contains(region)
+        } set: { isSelected in
+            var selected = Set(viewModel.profile.regionalRoutingRegions)
+            if isSelected {
+                selected.insert(region)
+            } else {
+                selected.remove(region)
+            }
+            viewModel.profile.regionalRoutingRegions = XrayRegionalRoutingRegion.allCases
+                .filter { selected.contains($0) }
+        }
     }
 
     @ViewBuilder

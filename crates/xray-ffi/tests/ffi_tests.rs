@@ -97,7 +97,12 @@ fn ffi_starts_and_stops_loaded_core() {
     assert!(err.is_null());
 
     let status = unsafe { xray_core_start(core, &mut err) };
-    assert_eq!(status, XrayStatus::Ok);
+    assert_eq!(
+        status,
+        XrayStatus::Ok,
+        "start error: {}",
+        error_message(err)
+    );
     assert!(err.is_null());
 
     let status = unsafe { xray_core_stop(core, &mut err) };
@@ -881,6 +886,17 @@ fn assert_error_message(error: *const xray_ffi::XrayError, message: &str) {
         actual.contains(message),
         "expected `{actual}` to contain `{message}`"
     );
+}
+
+fn error_message(error: *const xray_ffi::XrayError) -> String {
+    let raw_message = unsafe { xray_error_message(error) };
+    if raw_message.is_null() {
+        return "none".to_owned();
+    }
+
+    unsafe { CStr::from_ptr(raw_message) }
+        .to_string_lossy()
+        .into_owned()
 }
 
 unsafe extern "C" fn record_socket_protect_call(

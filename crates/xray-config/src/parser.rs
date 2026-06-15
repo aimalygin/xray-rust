@@ -1,13 +1,17 @@
-use std::net::IpAddr;
+use std::{
+    net::IpAddr,
+    path::{Path, PathBuf},
+};
 
 use serde_json::Value;
 use uuid::Uuid;
 
 use crate::{
+    geodata::{default_geodata_dirs, GeodataLoader},
     CoreConfig, Diagnostic, DnsConfig, DnsFakeIpConfig, DomainMatcher, InboundConfig,
     InboundProtocol, IpCidr, IpMatcher, Network, OutboundConfig, OutboundProtocol,
-    OutboundSettings, RealitySettings, RealityShortId, RoutingConfig, RoutingRule, StreamSecurity,
-    StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
+    OutboundSettings, RealitySettings, RealityShortId, RegexMatcher, RoutingConfig, RoutingRule,
+    StreamSecurity, StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,6 +27,45 @@ pub struct ConfigParseError {
 }
 
 pub fn parse_xray_json(raw: &str) -> Result<ParsedConfig, ConfigParseError> {
+    parse_xray_json_with_loader(raw, GeodataLoader::default())
+}
+
+pub fn parse_xray_json_with_geodata_dir<P: AsRef<Path>>(
+    raw: &str,
+    dir: P,
+) -> Result<ParsedConfig, ConfigParseError> {
+    parse_xray_json_with_geodata_dirs(raw, &[dir])
+}
+
+pub fn parse_xray_json_with_geodata_dirs<P: AsRef<Path>>(
+    raw: &str,
+    dirs: &[P],
+) -> Result<ParsedConfig, ConfigParseError> {
+    parse_xray_json_with_loader(
+        raw,
+        GeodataLoader::from_dirs(geodata_dirs_with_defaults(dirs)),
+    )
+}
+
+fn geodata_dirs_with_defaults<P: AsRef<Path>>(dirs: &[P]) -> Vec<PathBuf> {
+    let mut search_dirs = dirs
+        .iter()
+        .map(|dir| dir.as_ref().to_path_buf())
+        .collect::<Vec<PathBuf>>();
+
+    for dir in default_geodata_dirs() {
+        if !search_dirs.iter().any(|existing| existing == &dir) {
+            search_dirs.push(dir);
+        }
+    }
+
+    search_dirs
+}
+
+fn parse_xray_json_with_loader(
+    raw: &str,
+    geodata_loader: GeodataLoader,
+) -> Result<ParsedConfig, ConfigParseError> {
     let value = serde_json::from_str::<Value>(raw).map_err(|err| ConfigParseError {
         diagnostics: vec![Diagnostic::error("$", err.to_string())],
     })?;
@@ -30,6 +73,7 @@ pub fn parse_xray_json(raw: &str) -> Result<ParsedConfig, ConfigParseError> {
     let mut parser = Parser {
         root: &value,
         diagnostics: Vec::new(),
+        geodata_loader,
     };
     let config = parser.parse_config();
 
@@ -52,6 +96,7 @@ pub fn parse_xray_json(raw: &str) -> Result<ParsedConfig, ConfigParseError> {
 struct Parser<'a> {
     root: &'a Value,
     diagnostics: Vec<Diagnostic>,
+    geodata_loader: GeodataLoader,
 }
 
 impl Parser<'_> {
@@ -207,7 +252,14 @@ impl Parser<'_> {
         self.reject_unknown_fields(
             rule,
             &rule_path,
-            &["type", "inboundTag", "domain", "ip", "outboundTag"],
+            &[
+                "type",
+                "inboundTag",
+                "domain",
+                "domains",
+                "ip",
+                "outboundTag",
+            ],
         );
 
         let type_path = format!("{rule_path}.type");
@@ -254,8 +306,7 @@ impl Parser<'_> {
 
         let inbound_tags =
             self.optional_string_array_at(rule, "inboundTag", format!("{rule_path}.inboundTag"))?;
-        let domain_matchers =
-            self.parse_domain_matchers(rule, "domain", format!("{rule_path}.domain"))?;
+        let domain_matchers = self.parse_routing_rule_domain_matchers(rule, &rule_path)?;
         let ip_matchers = self.parse_ip_matchers(rule, "ip", format!("{rule_path}.ip"))?;
 
         Some(RoutingRule {
@@ -1034,32 +1085,98 @@ impl Parser<'_> {
         let mut matchers = Vec::with_capacity(values.len());
 
         for (index, value) in values.iter().enumerate() {
-            let Some((kind, domain)) = value.split_once(':') else {
-                self.error(
-                    format!("{path}[{index}]"),
-                    "routing domain matcher must use domain: or full:",
-                );
-                return None;
-            };
-            if domain.is_empty() {
-                self.error(format!("{path}[{index}]"), "routing domain cannot be empty");
-                return None;
-            }
-
-            match kind {
-                "domain" => matchers.push(DomainMatcher::Suffix(domain.to_owned())),
-                "full" => matchers.push(DomainMatcher::Full(domain.to_owned())),
-                _ => {
-                    self.error(
-                        format!("{path}[{index}]"),
-                        format!("unsupported routing domain matcher `{kind}`"),
-                    );
-                    return None;
-                }
-            }
+            let item_path = format!("{path}[{index}]");
+            matchers.extend(self.parse_domain_matcher(value, &item_path)?);
         }
 
         Some(matchers)
+    }
+
+    fn parse_routing_rule_domain_matchers(
+        &mut self,
+        rule: &Value,
+        rule_path: &str,
+    ) -> Option<Vec<DomainMatcher>> {
+        let mut matchers =
+            self.parse_domain_matchers(rule, "domain", format!("{rule_path}.domain"))?;
+        matchers.extend(self.parse_domain_matchers(
+            rule,
+            "domains",
+            format!("{rule_path}.domains"),
+        )?);
+        Some(matchers)
+    }
+
+    fn parse_domain_matcher(&mut self, value: &str, path: &str) -> Option<Vec<DomainMatcher>> {
+        if let Some(spec) = value.strip_prefix("geosite:") {
+            return self.parse_geosite_matchers("geosite.dat", spec, path);
+        }
+        if let Some(spec) = value.strip_prefix("ext-domain:") {
+            return self.parse_external_geosite_matchers(spec, path);
+        }
+        if let Some(spec) = value.strip_prefix("ext:") {
+            return self.parse_external_geosite_matchers(spec, path);
+        }
+
+        let Some((kind, domain)) = value.split_once(':') else {
+            return Some(vec![DomainMatcher::Keyword(value.to_owned())]);
+        };
+        if domain.is_empty() {
+            self.error(path, "routing domain cannot be empty");
+            return None;
+        }
+
+        match kind {
+            "domain" => Some(vec![DomainMatcher::Suffix(domain.to_owned())]),
+            "full" => Some(vec![DomainMatcher::Full(domain.to_owned())]),
+            "keyword" => Some(vec![DomainMatcher::Keyword(domain.to_owned())]),
+            "regexp" => match RegexMatcher::new(domain.to_owned()) {
+                Ok(matcher) => Some(vec![DomainMatcher::Regex(matcher)]),
+                Err(error) => {
+                    self.error(path, error.to_string());
+                    None
+                }
+            },
+            _ => {
+                self.error(path, format!("unsupported routing domain matcher `{kind}`"));
+                None
+            }
+        }
+    }
+
+    fn parse_external_geosite_matchers(
+        &mut self,
+        spec: &str,
+        path: &str,
+    ) -> Option<Vec<DomainMatcher>> {
+        let (file_name, code_spec) = self.parse_external_geodata_ref(spec, path)?;
+        self.parse_geosite_matchers(file_name, code_spec, path)
+    }
+
+    fn parse_geosite_matchers(
+        &mut self,
+        file_name: &str,
+        code_spec: &str,
+        path: &str,
+    ) -> Option<Vec<DomainMatcher>> {
+        let (code, attrs) = self.parse_geosite_code_and_attrs(code_spec, path)?;
+        match self
+            .geodata_loader
+            .load_site_matchers(file_name, code, &attrs)
+        {
+            Ok(matchers) if matchers.is_empty() => {
+                self.error(
+                    path,
+                    format!("geosite `{file_name}:{code}` produced no domain matchers"),
+                );
+                None
+            }
+            Ok(matchers) => Some(matchers),
+            Err(error) => {
+                self.error(path, error.to_string());
+                None
+            }
+        }
     }
 
     fn parse_ip_matchers(
@@ -1074,7 +1191,7 @@ impl Parser<'_> {
         for (index, value) in values.iter().enumerate() {
             let item_path = format!("{path}[{index}]");
             match self.parse_ip_matcher(value, &item_path) {
-                Some(matcher) => matchers.push(matcher),
+                Some(parsed_matchers) => matchers.extend(parsed_matchers),
                 None => return None,
             }
         }
@@ -1082,24 +1199,118 @@ impl Parser<'_> {
         Some(matchers)
     }
 
-    fn parse_ip_matcher(&mut self, value: &str, path: &str) -> Option<IpMatcher> {
+    fn parse_ip_matcher(&mut self, value: &str, path: &str) -> Option<Vec<IpMatcher>> {
+        let (value, inverse) = strip_inverse_prefix(value);
         if let Some(code) = value.strip_prefix("geoip:") {
-            if code == "private" {
-                return Some(IpMatcher::Private);
+            let (code, code_inverse) = strip_inverse_prefix(code);
+            let inverse = inverse ^ code_inverse;
+            if code.is_empty() {
+                self.error(path, "geoip code cannot be empty");
+                return None;
             }
-            self.error(
-                path,
-                format!("unsupported routing ip matcher `geoip:{code}`"),
-            );
+            if code.eq_ignore_ascii_case("private") {
+                return Some(vec![wrap_ip_matcher_inverse(IpMatcher::Private, inverse)]);
+            }
+            return self.parse_geoip_matchers("geoip.dat", code, inverse, path);
+        }
+
+        if let Some(spec) = value.strip_prefix("ext-ip:") {
+            return self.parse_external_geoip_matchers(spec, inverse, path);
+        }
+        if let Some(spec) = value.strip_prefix("ext:") {
+            return self.parse_external_geoip_matchers(spec, inverse, path);
+        }
+
+        self.parse_ip_cidr(value, path)
+            .map(|cidr| vec![wrap_ip_matcher_inverse(IpMatcher::Cidr(cidr), inverse)])
+    }
+
+    fn parse_external_geoip_matchers(
+        &mut self,
+        spec: &str,
+        inverse: bool,
+        path: &str,
+    ) -> Option<Vec<IpMatcher>> {
+        let (file_name, code) = self.parse_external_geodata_ref(spec, path)?;
+        let (code, code_inverse) = strip_inverse_prefix(code);
+        let inverse = inverse ^ code_inverse;
+        if code.is_empty() {
+            self.error(path, "geoip code cannot be empty");
             return None;
         }
 
-        if value.starts_with("ext:") || value.starts_with("ext-ip:") {
-            self.error(path, "external routing ip data is unsupported");
+        self.parse_geoip_matchers(file_name, code, inverse, path)
+    }
+
+    fn parse_geoip_matchers(
+        &mut self,
+        file_name: &str,
+        code: &str,
+        inverse: bool,
+        path: &str,
+    ) -> Option<Vec<IpMatcher>> {
+        match self
+            .geodata_loader
+            .load_ip_matchers(file_name, code, inverse)
+        {
+            Ok(matchers) if matchers.is_empty() => {
+                self.error(
+                    path,
+                    format!("geoip `{file_name}:{code}` produced no IP matchers"),
+                );
+                None
+            }
+            Ok(matchers) => Some(matchers),
+            Err(error) => {
+                self.error(path, error.to_string());
+                None
+            }
+        }
+    }
+
+    fn parse_external_geodata_ref<'value>(
+        &mut self,
+        spec: &'value str,
+        path: &str,
+    ) -> Option<(&'value str, &'value str)> {
+        let Some((file_name, code)) = spec.split_once(':') else {
+            self.error(path, "external geodata matcher must be file:code");
+            return None;
+        };
+        if file_name.is_empty() {
+            self.error(path, "external geodata file cannot be empty");
+            return None;
+        }
+        if code.is_empty() {
+            self.error(path, "external geodata code cannot be empty");
             return None;
         }
 
-        self.parse_ip_cidr(value, path).map(IpMatcher::Cidr)
+        Some((file_name, code))
+    }
+
+    fn parse_geosite_code_and_attrs<'value>(
+        &mut self,
+        spec: &'value str,
+        path: &str,
+    ) -> Option<(&'value str, Vec<String>)> {
+        let mut parts = spec.split('@');
+        let code = parts.next().unwrap_or_default();
+        if code.is_empty() {
+            self.error(path, "geosite code cannot be empty");
+            return None;
+        }
+
+        let mut attrs = Vec::new();
+        for attr in parts {
+            if attr.is_empty() {
+                self.error(path, "geosite attribute cannot be empty");
+                return None;
+            }
+            attrs.push(attr.to_ascii_lowercase());
+        }
+
+        Some((code, attrs))
     }
 
     fn parse_ip_cidr(&mut self, value: &str, path: &str) -> Option<IpCidr> {
@@ -1203,6 +1414,23 @@ fn child_path(base_path: &str, key: &str) -> String {
     }
 }
 
+fn strip_inverse_prefix(mut value: &str) -> (&str, bool) {
+    let mut inverse = false;
+    while let Some(stripped) = value.strip_prefix('!') {
+        value = stripped;
+        inverse = !inverse;
+    }
+    (value, inverse)
+}
+
+fn wrap_ip_matcher_inverse(matcher: IpMatcher, inverse: bool) -> IpMatcher {
+    if inverse {
+        IpMatcher::Not(Box::new(matcher))
+    } else {
+        matcher
+    }
+}
+
 fn decode_base64url_no_padding(encoded: &str) -> Result<Vec<u8>, String> {
     if encoded.contains('=') {
         return Err("base64url value must not be padded".to_owned());
@@ -1275,5 +1503,30 @@ fn hex_value(byte: u8) -> Result<u8, String> {
         b'a'..=b'f' => Ok(byte - b'a' + 10),
         b'A'..=b'F' => Ok(byte - b'A' + 10),
         _ => Err("invalid hex character".to_owned()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::{default_geodata_dirs, geodata_dirs_with_defaults};
+
+    #[test]
+    fn explicit_geodata_dirs_are_searched_before_defaults() {
+        let custom_dir = PathBuf::from("custom-geodata");
+        let dirs = geodata_dirs_with_defaults(std::slice::from_ref(&custom_dir));
+
+        assert_eq!(dirs.first(), Some(&custom_dir));
+        for default_dir in default_geodata_dirs() {
+            assert!(dirs.contains(&default_dir));
+        }
+    }
+
+    #[test]
+    fn empty_geodata_dirs_use_defaults() {
+        let dirs = geodata_dirs_with_defaults::<PathBuf>(&[]);
+
+        assert_eq!(dirs, default_geodata_dirs());
     }
 }

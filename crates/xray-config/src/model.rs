@@ -1,5 +1,6 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
+use regex::Regex;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -8,6 +9,8 @@ pub enum ConfigModelError {
     RealityShortIdTooLong,
     #[error("CIDR prefix length {prefix} exceeds max {max}")]
     InvalidCidrPrefix { prefix: u8, max: u8 },
+    #[error("invalid domain regex `{pattern}`: {message}")]
+    InvalidDomainRegex { pattern: String, message: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -93,25 +96,91 @@ impl RoutingRule {
             return false;
         };
 
-        self.ip_matchers
-            .iter()
-            .any(|matcher| matcher.matches(target_ip))
+        let mut has_positive = false;
+        let mut positive_matched = false;
+        let mut has_inverse = false;
+        let mut all_inverse_matched = true;
+
+        for matcher in &self.ip_matchers {
+            if matcher.is_inverse() {
+                has_inverse = true;
+                if !matcher.matches(target_ip) {
+                    all_inverse_matched = false;
+                }
+            } else {
+                has_positive = true;
+                if matcher.matches(target_ip) {
+                    positive_matched = true;
+                }
+            }
+        }
+
+        (has_positive && positive_matched) || (has_inverse && all_inverse_matched)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DomainMatcher {
+    Keyword(String),
     Full(String),
     Suffix(String),
+    Regex(RegexMatcher),
 }
 
 impl DomainMatcher {
     pub fn matches(&self, domain: &str) -> bool {
         match self {
+            Self::Keyword(keyword) => contains_ignore_ascii_case(domain, keyword),
             Self::Full(expected) => domain.eq_ignore_ascii_case(expected),
             Self::Suffix(suffix) => domain_matches_suffix(domain, suffix),
+            Self::Regex(matcher) => matcher.matches(domain),
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct RegexMatcher {
+    pattern: String,
+    regex: Regex,
+}
+
+impl RegexMatcher {
+    pub fn new(pattern: impl Into<String>) -> Result<Self, ConfigModelError> {
+        let pattern = pattern.into();
+        let regex = Regex::new(&pattern).map_err(|error| ConfigModelError::InvalidDomainRegex {
+            pattern: pattern.clone(),
+            message: error.to_string(),
+        })?;
+
+        Ok(Self { pattern, regex })
+    }
+
+    pub fn pattern(&self) -> &str {
+        &self.pattern
+    }
+
+    pub fn matches(&self, domain: &str) -> bool {
+        self.regex.is_match(&domain.to_ascii_lowercase())
+    }
+}
+
+impl PartialEq for RegexMatcher {
+    fn eq(&self, other: &Self) -> bool {
+        self.pattern == other.pattern
+    }
+}
+
+impl Eq for RegexMatcher {}
+
+fn contains_ignore_ascii_case(haystack: &str, needle: &str) -> bool {
+    if needle.is_empty() {
+        return true;
+    }
+
+    haystack
+        .as_bytes()
+        .windows(needle.len())
+        .any(|window| window.eq_ignore_ascii_case(needle.as_bytes()))
 }
 
 fn domain_matches_suffix(domain: &str, suffix: &str) -> bool {
@@ -124,14 +193,16 @@ fn domain_matches_suffix(domain: &str, suffix: &str) -> bool {
     }
 
     let boundary_index = domain.len() - suffix.len() - 1;
-    domain.as_bytes()[boundary_index] == b'.'
-        && domain[boundary_index + 1..].eq_ignore_ascii_case(suffix)
+    let domain_bytes = domain.as_bytes();
+    domain_bytes[boundary_index] == b'.'
+        && domain_bytes[boundary_index + 1..].eq_ignore_ascii_case(suffix.as_bytes())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IpMatcher {
     Cidr(IpCidr),
     Private,
+    Not(Box<IpMatcher>),
 }
 
 impl IpMatcher {
@@ -141,7 +212,12 @@ impl IpMatcher {
             Self::Private => private_cidrs()
                 .iter()
                 .any(|private_cidr| private_cidr.matches(ip)),
+            Self::Not(matcher) => !matcher.matches(ip),
         }
+    }
+
+    fn is_inverse(&self) -> bool {
+        matches!(self, Self::Not(_))
     }
 }
 

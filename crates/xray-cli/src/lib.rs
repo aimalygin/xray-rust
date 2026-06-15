@@ -6,7 +6,7 @@ use std::{
 };
 
 use thiserror::Error;
-use xray_config::{parse_xray_json, CoreConfig, Diagnostic};
+use xray_config::{parse_xray_json_with_geodata_dirs, CoreConfig, Diagnostic};
 use xray_core_rs::{
     Core, CoreError, TunFdClosePolicy, TunFdConfig, TunFdPacketFormat, TunFdRuntime,
     TunRuntimeOptions, TunRuntimeProfile,
@@ -67,10 +67,28 @@ pub fn load_config(path: &Path) -> Result<CoreConfig, CliError> {
         path: path.to_path_buf(),
         source,
     })?;
-    let parsed = parse_xray_json(&raw)
+    let geodata_dirs = geodata_dirs_for_config(path);
+    let parsed = parse_xray_json_with_geodata_dirs(&raw, &geodata_dirs)
         .map_err(|error| CliError::ConfigParse(format_diagnostics(&error.diagnostics)))?;
 
     Ok(parsed.config)
+}
+
+fn geodata_dirs_for_config(path: &Path) -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        dirs.push(parent.to_path_buf());
+    }
+    if let Ok(cwd) = env::current_dir() {
+        if !dirs.iter().any(|dir| dir == &cwd) {
+            dirs.push(cwd);
+        }
+    }
+
+    dirs
 }
 
 fn format_diagnostics(diagnostics: &[Diagnostic]) -> String {
