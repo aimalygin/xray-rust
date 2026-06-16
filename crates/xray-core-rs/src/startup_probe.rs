@@ -33,6 +33,10 @@ pub enum StartupProbeError {
 
 #[allow(dead_code)]
 pub(crate) fn parse_probe_url(raw: &str) -> Result<ParsedProbeUrl, StartupProbeError> {
+    if raw.contains('#') {
+        return Err(StartupProbeError::UnsupportedUrl(raw.to_owned()));
+    }
+
     let (scheme, rest, default_port) = if let Some(rest) = raw.strip_prefix("https://") {
         (ProbeScheme::Https, rest, 443)
     } else if let Some(rest) = raw.strip_prefix("http://") {
@@ -158,6 +162,24 @@ mod tests {
 
         assert!(
             matches!(error, StartupProbeError::UnsupportedUrl(url) if url == "https://example.com:70000/")
+        );
+    }
+
+    #[test]
+    fn parse_probe_url_rejects_authority_fragment() {
+        let error = parse_probe_url("https://example.com#frag").unwrap_err();
+
+        assert!(
+            matches!(error, StartupProbeError::UnsupportedUrl(url) if url == "https://example.com#frag")
+        );
+    }
+
+    #[test]
+    fn parse_probe_url_rejects_path_fragment() {
+        let error = parse_probe_url("https://example.com/path#frag").unwrap_err();
+
+        assert!(
+            matches!(error, StartupProbeError::UnsupportedUrl(url) if url == "https://example.com/path#frag")
         );
     }
 }
