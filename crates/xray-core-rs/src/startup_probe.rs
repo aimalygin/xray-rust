@@ -139,6 +139,13 @@ mod tests {
     }
 
     #[test]
+    fn parse_probe_url_prefixes_query_only_target_with_slash() {
+        let parsed = parse_probe_url("https://example.com?check=1").unwrap();
+
+        assert_eq!(parsed.path_and_query, "/?check=1");
+    }
+
+    #[test]
     fn parse_probe_url_rejects_unsupported_scheme() {
         let error = parse_probe_url("ftp://example.com/file").unwrap_err();
 
@@ -153,6 +160,24 @@ mod tests {
 
         assert!(
             matches!(error, StartupProbeError::UnsupportedUrl(url) if url == "https:///generate_204")
+        );
+    }
+
+    #[test]
+    fn parse_probe_url_rejects_userinfo_authority() {
+        let error = parse_probe_url("https://user@example.com/").unwrap_err();
+
+        assert!(
+            matches!(error, StartupProbeError::UnsupportedUrl(url) if url == "https://user@example.com/")
+        );
+    }
+
+    #[test]
+    fn parse_probe_url_rejects_userinfo_with_password_authority() {
+        let error = parse_probe_url("https://user:pass@example.com/").unwrap_err();
+
+        assert!(
+            matches!(error, StartupProbeError::UnsupportedUrl(url) if url == "https://user:pass@example.com/")
         );
     }
 
