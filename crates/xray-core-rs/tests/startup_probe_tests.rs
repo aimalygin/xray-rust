@@ -69,6 +69,41 @@ async fn spawn_http_status_once(status: u16) -> SocketAddr {
     addr
 }
 
+async fn spawn_http_split_status_once(status: u16) -> SocketAddr {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut request = vec![0; 512];
+        let read = stream.read(&mut request).await.unwrap();
+        assert!(String::from_utf8_lossy(&request[..read]).starts_with("GET /health HTTP/1.1\r\n"));
+        stream.write_all(b"HTTP/1.1 ").await.unwrap();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let response = format!("{status} Test\r\nContent-Length: 0\r\n\r\n");
+        stream.write_all(response.as_bytes()).await.unwrap();
+    });
+    addr
+}
+
+async fn spawn_http_expect_custom_host_once() -> SocketAddr {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let expected_host = format!("probe.test:{}", addr.port());
+    tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut request = vec![0; 1024];
+        let read = stream.read(&mut request).await.unwrap();
+        let request = String::from_utf8_lossy(&request[..read]);
+        assert!(request.starts_with("GET /health HTTP/1.1\r\n"));
+        assert!(request.contains(&format!("\r\nHost: {expected_host}\r\n")));
+        stream
+            .write_all(b"HTTP/1.1 204 Test\r\nContent-Length: 0\r\n\r\n")
+            .await
+            .unwrap();
+    });
+    addr
+}
+
 #[tokio::test]
 async fn startup_probe_succeeds_for_http_2xx_response() {
     let addr = spawn_http_status_once(204).await;
@@ -117,4 +152,55 @@ async fn startup_probe_fails_for_http_4xx_response_and_rolls_back_start() {
 
     assert!(matches!(error, CoreError::StartupProbe(_)));
     assert_eq!(core.state(), CoreState::Stopped);
+}
+
+#[tokio::test]
+async fn startup_probe_succeeds_when_http_status_line_is_split_across_reads() {
+    let addr = spawn_http_split_status_once(204).await;
+    let resolver = Arc::new(StaticDnsResolver {
+        domain: "probe.test",
+        addr,
+    });
+    let mut core = Core::with_runtime_dependencies(
+        config_with_outbounds(vec![freedom("direct")], Some("direct")),
+        resolver,
+        Arc::new(TransportDialer::system().unwrap()),
+    )
+    .unwrap()
+    .with_startup_probe(StartupProbeOptions {
+        url: "http://probe.test/health".to_owned(),
+        timeout: Duration::from_secs(2),
+        outbound_tag: Some("direct".to_owned()),
+    });
+
+    core.start().await.unwrap();
+
+    assert_eq!(core.state(), CoreState::Running);
+    core.stop().await.unwrap();
+}
+
+#[tokio::test]
+async fn startup_probe_sends_custom_port_in_host_header() {
+    let addr = spawn_http_expect_custom_host_once().await;
+    let resolver = Arc::new(StaticDnsResolver {
+        domain: "probe.test",
+        addr,
+    });
+    let url = format!("http://probe.test:{}/health", addr.port());
+    let mut core = Core::with_runtime_dependencies(
+        config_with_outbounds(vec![freedom("direct")], Some("direct")),
+        resolver,
+        Arc::new(TransportDialer::system().unwrap()),
+    )
+    .unwrap()
+    .with_startup_probe(StartupProbeOptions {
+        url,
+        timeout: Duration::from_secs(2),
+        outbound_tag: Some("direct".to_owned()),
+    });
+
+    core.start().await.unwrap();
+
+    assert_eq!(core.state(), CoreState::Running);
+    core.stop().await.unwrap();
 }

@@ -1,12 +1,14 @@
 use std::time::Duration;
 
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::time::timeout;
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::{DnsResolver, TlsClientConfig, TlsConnector, TransportDialer};
 
 use crate::outbound::{open_tcp_stream_with_resolver_and_dialer, select_tcp_outbound_direct};
 use crate::CoreError;
+
+const MAX_HTTP_STATUS_LINE_LEN: usize = 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StartupProbeOptions {
@@ -134,9 +136,10 @@ async fn run_startup_probe_inner(
             })?;
     }
 
+    let host = host_header_value(&parsed);
     let request = format!(
         "GET {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: xray-rust-startup-probe\r\nConnection: close\r\n\r\n",
-        parsed.path_and_query, parsed.host
+        parsed.path_and_query, host
     );
     stream
         .write_all(request.as_bytes())
@@ -153,15 +156,8 @@ async fn run_startup_probe_inner(
             source,
         })?;
 
-    let mut response = [0u8; 1024];
-    let read = stream
-        .read(&mut response)
-        .await
-        .map_err(|source| StartupProbeError::Io {
-            url: options.url.clone(),
-            source,
-        })?;
-    let status = parse_http_status(&response[..read])
+    let status_line = read_http_status_line(&mut stream, &options.url).await?;
+    let status = parse_http_status_line(&status_line)
         .ok_or_else(|| StartupProbeError::MalformedHttpResponse(options.url.clone()))?;
     if (200..400).contains(&status) {
         Ok(())
@@ -170,6 +166,55 @@ async fn run_startup_probe_inner(
             url: options.url.clone(),
             status,
         })
+    }
+}
+
+fn host_header_value(parsed: &ParsedProbeUrl) -> String {
+    if parsed.port == default_port(parsed.scheme) {
+        parsed.host.clone()
+    } else {
+        format!("{}:{}", parsed.host, parsed.port)
+    }
+}
+
+fn default_port(scheme: ProbeScheme) -> u16 {
+    match scheme {
+        ProbeScheme::Http => 80,
+        ProbeScheme::Https => 443,
+    }
+}
+
+async fn read_http_status_line(
+    stream: &mut (impl AsyncRead + Unpin),
+    url: &str,
+) -> Result<Vec<u8>, StartupProbeError> {
+    let mut status_line = Vec::with_capacity(128);
+    let mut chunk = [0u8; 128];
+
+    loop {
+        let read = stream
+            .read(&mut chunk)
+            .await
+            .map_err(|source| StartupProbeError::Io {
+                url: url.to_owned(),
+                source,
+            })?;
+        if read == 0 {
+            return Ok(status_line);
+        }
+
+        status_line.extend_from_slice(&chunk[..read]);
+        if let Some(line_end) = status_line.windows(2).position(|window| window == b"\r\n") {
+            if line_end > MAX_HTTP_STATUS_LINE_LEN {
+                return Err(StartupProbeError::MalformedHttpResponse(url.to_owned()));
+            }
+            status_line.truncate(line_end);
+            return Ok(status_line);
+        }
+
+        if status_line.len() >= MAX_HTTP_STATUS_LINE_LEN {
+            return Err(StartupProbeError::MalformedHttpResponse(url.to_owned()));
+        }
     }
 }
 
@@ -254,9 +299,8 @@ fn contains_ascii_whitespace_or_control(value: &str) -> bool {
         .any(|ch| ch.is_ascii_whitespace() || ch.is_ascii_control())
 }
 
-fn parse_http_status(response: &[u8]) -> Option<u16> {
-    let line_end = response.windows(2).position(|window| window == b"\r\n")?;
-    let line = std::str::from_utf8(&response[..line_end]).ok()?;
+fn parse_http_status_line(line: &[u8]) -> Option<u16> {
+    let line = std::str::from_utf8(line).ok()?;
     let mut parts = line.split_whitespace();
     let version = parts.next()?;
     let status = parts.next()?.parse::<u16>().ok()?;
