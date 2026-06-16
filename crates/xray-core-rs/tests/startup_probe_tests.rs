@@ -7,9 +7,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use xray_config::{
     CoreConfig, InboundConfig, InboundProtocol, Network, OutboundConfig, OutboundSettings,
-    RoutingConfig, StreamSecurity, StreamSettings,
+    RoutingConfig, RoutingRule, StreamSecurity, StreamSettings,
 };
-use xray_core_rs::{Core, CoreError, CoreState, StartupProbeOptions};
+use xray_core_rs::{Core, CoreError, CoreState, StartupProbeError, StartupProbeOptions};
 use xray_transport::{DnsResolver, TransportDialer, TransportError};
 
 fn freedom(tag: &str) -> OutboundConfig {
@@ -47,7 +47,7 @@ struct StaticDnsResolver {
 #[async_trait]
 impl DnsResolver for StaticDnsResolver {
     async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
-        if domain == self.domain {
+        if domain == self.domain && port == self.addr.port() {
             Ok(self.addr)
         } else {
             Err(TransportError::NoResolvedAddress(domain.to_owned(), port))
@@ -104,6 +104,20 @@ async fn spawn_http_expect_custom_host_once() -> SocketAddr {
     addr
 }
 
+async fn spawn_stalled_http_once() -> SocketAddr {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        let (_stream, _) = listener.accept().await.unwrap();
+        tokio::time::sleep(Duration::from_secs(30)).await;
+    });
+    addr
+}
+
+fn probe_url(addr: SocketAddr) -> String {
+    format!("http://probe.test:{}/health", addr.port())
+}
+
 #[tokio::test]
 async fn startup_probe_succeeds_for_http_2xx_response() {
     let addr = spawn_http_status_once(204).await;
@@ -118,7 +132,7 @@ async fn startup_probe_succeeds_for_http_2xx_response() {
     )
     .unwrap()
     .with_startup_probe(StartupProbeOptions {
-        url: "http://probe.test/health".to_owned(),
+        url: probe_url(addr),
         timeout: Duration::from_secs(2),
         outbound_tag: Some("direct".to_owned()),
     });
@@ -143,7 +157,7 @@ async fn startup_probe_fails_for_http_4xx_response_and_rolls_back_start() {
     )
     .unwrap()
     .with_startup_probe(StartupProbeOptions {
-        url: "http://probe.test/health".to_owned(),
+        url: probe_url(addr),
         timeout: Duration::from_secs(2),
         outbound_tag: Some("direct".to_owned()),
     });
@@ -152,6 +166,96 @@ async fn startup_probe_fails_for_http_4xx_response_and_rolls_back_start() {
 
     assert!(matches!(error, CoreError::StartupProbe(_)));
     assert_eq!(core.state(), CoreState::Stopped);
+}
+
+#[tokio::test]
+async fn startup_probe_accepts_http_3xx_response() {
+    let addr = spawn_http_status_once(302).await;
+    let resolver = Arc::new(StaticDnsResolver {
+        domain: "probe.test",
+        addr,
+    });
+    let mut core = Core::with_runtime_dependencies(
+        config_with_outbounds(vec![freedom("direct")], Some("direct")),
+        resolver,
+        Arc::new(TransportDialer::system().unwrap()),
+    )
+    .unwrap()
+    .with_startup_probe(StartupProbeOptions {
+        url: probe_url(addr),
+        timeout: Duration::from_secs(2),
+        outbound_tag: Some("direct".to_owned()),
+    });
+
+    core.start().await.unwrap();
+
+    assert_eq!(core.state(), CoreState::Running);
+    core.stop().await.unwrap();
+}
+
+#[tokio::test]
+async fn startup_probe_timeout_rolls_back_start() {
+    let addr = spawn_stalled_http_once().await;
+    let resolver = Arc::new(StaticDnsResolver {
+        domain: "probe.test",
+        addr,
+    });
+    let mut core = Core::with_runtime_dependencies(
+        config_with_outbounds(vec![freedom("direct")], Some("direct")),
+        resolver,
+        Arc::new(TransportDialer::system().unwrap()),
+    )
+    .unwrap()
+    .with_startup_probe(StartupProbeOptions {
+        url: probe_url(addr),
+        timeout: Duration::from_millis(100),
+        outbound_tag: Some("direct".to_owned()),
+    });
+
+    let error = core.start().await.unwrap_err();
+
+    assert!(
+        matches!(
+            error,
+            CoreError::StartupProbe(StartupProbeError::Timeout { .. })
+        ),
+        "expected startup probe timeout, got {error:?}"
+    );
+    assert_eq!(core.state(), CoreState::Stopped);
+}
+
+#[tokio::test]
+async fn startup_probe_uses_default_outbound_directly_without_routing_rules() {
+    let addr = spawn_http_status_once(204).await;
+    let resolver = Arc::new(StaticDnsResolver {
+        domain: "probe.test",
+        addr,
+    });
+    let mut config = config_with_outbounds(vec![freedom("direct")], Some("direct"));
+    config.routing = RoutingConfig {
+        rules: vec![RoutingRule {
+            inbound_tags: Vec::new(),
+            domain_matchers: Vec::new(),
+            ip_matchers: Vec::new(),
+            outbound_tag: "missing".to_owned(),
+        }],
+    };
+    let mut core = Core::with_runtime_dependencies(
+        config,
+        resolver,
+        Arc::new(TransportDialer::system().unwrap()),
+    )
+    .unwrap()
+    .with_startup_probe(StartupProbeOptions {
+        url: probe_url(addr),
+        timeout: Duration::from_secs(2),
+        outbound_tag: None,
+    });
+
+    core.start().await.unwrap();
+
+    assert_eq!(core.state(), CoreState::Running);
+    core.stop().await.unwrap();
 }
 
 #[tokio::test]
@@ -168,7 +272,7 @@ async fn startup_probe_succeeds_when_http_status_line_is_split_across_reads() {
     )
     .unwrap()
     .with_startup_probe(StartupProbeOptions {
-        url: "http://probe.test/health".to_owned(),
+        url: probe_url(addr),
         timeout: Duration::from_secs(2),
         outbound_tag: Some("direct".to_owned()),
     });
@@ -186,7 +290,6 @@ async fn startup_probe_sends_custom_port_in_host_header() {
         domain: "probe.test",
         addr,
     });
-    let url = format!("http://probe.test:{}/health", addr.port());
     let mut core = Core::with_runtime_dependencies(
         config_with_outbounds(vec![freedom("direct")], Some("direct")),
         resolver,
@@ -194,7 +297,7 @@ async fn startup_probe_sends_custom_port_in_host_header() {
     )
     .unwrap()
     .with_startup_probe(StartupProbeOptions {
-        url,
+        url: probe_url(addr),
         timeout: Duration::from_secs(2),
         outbound_tag: Some("direct".to_owned()),
     });
