@@ -949,7 +949,37 @@ impl Parser<'_> {
                 .and_then(|settings| self.string_at(settings, "spiderX"))
                 .unwrap_or_default()
                 .to_owned(),
+            mldsa65_verify: self
+                .parse_reality_mldsa65_verify(settings, &format!("{base_path}.mldsa65Verify"))?,
         })
+    }
+
+    fn parse_reality_mldsa65_verify(
+        &mut self,
+        settings: Option<&Value>,
+        path: &str,
+    ) -> Option<Option<Vec<u8>>> {
+        let Some(encoded) = settings
+            .and_then(|settings| settings.get("mldsa65Verify"))
+            .and_then(Value::as_str)
+        else {
+            return Some(None);
+        };
+        if encoded.is_empty() {
+            return Some(None);
+        }
+        let bytes = match decode_base64url_no_padding(encoded) {
+            Ok(bytes) => bytes,
+            Err(message) => {
+                self.error(path, message);
+                return None;
+            }
+        };
+        if bytes.len() != 1952 {
+            self.error(path, "reality mldsa65Verify must decode to 1952 bytes");
+            return None;
+        }
+        Some(Some(bytes))
     }
 
     fn parse_reality_public_key(

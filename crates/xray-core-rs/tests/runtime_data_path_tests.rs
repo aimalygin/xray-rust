@@ -562,6 +562,7 @@ fn reality_security() -> StreamSecurity {
         public_key: [7; 32],
         short_id: RealityShortId::try_from_slice(&[1, 2, 3, 4]).unwrap(),
         spider_x: "/".to_owned(),
+        mldsa65_verify: None,
     })
 }
 

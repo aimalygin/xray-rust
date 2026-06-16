@@ -96,6 +96,7 @@ public struct XrayClientRootView: View {
             TextField("Name", text: $viewModel.profile.name)
             TextField("Provider Bundle ID", text: $viewModel.profile.providerBundleIdentifier)
             TextField("Server Address", text: $viewModel.profile.serverAddress)
+            XrayRealityVisionFlowPicker(viewModel: viewModel)
             Toggle("Debug Logging", isOn: $viewModel.profile.debugLoggingEnabled)
             Toggle("TUN File Descriptor", isOn: $viewModel.profile.useTunFileDescriptor)
             Picker("TUN Profile", selection: $viewModel.profile.tunRuntimeProfile) {

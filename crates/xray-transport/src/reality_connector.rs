@@ -70,6 +70,7 @@ pub trait RealityTlsSession: Send {
         self: Box<Self>,
         tcp_stream: TcpStream,
         prepared: RealityPreparedHandshake,
+        mldsa65_verify: Option<Vec<u8>>,
     ) -> Result<BoxedTransportStream, TransportError>;
 }
 
@@ -86,6 +87,7 @@ pub struct RealityHandshakePlan {
     pub public_key: [u8; 32],
     pub short_id: Vec<u8>,
     pub spider_x: String,
+    pub mldsa65_verify: Option<Vec<u8>>,
 }
 
 impl fmt::Debug for RealityHandshakePlan {
@@ -97,6 +99,10 @@ impl fmt::Debug for RealityHandshakePlan {
             .field("public_key", &self.public_key)
             .field("short_id", &"<redacted>")
             .field("spider_x", &self.spider_x)
+            .field(
+                "mldsa65_verify_len",
+                &self.mldsa65_verify.as_ref().map(Vec::len),
+            )
             .finish()
     }
 }
@@ -137,6 +143,7 @@ impl RealityConnector {
             public_key: self.config.public_key,
             short_id: self.config.short_id.clone(),
             spider_x: self.config.spider_x.clone(),
+            mldsa65_verify: self.config.mldsa65_verify.clone(),
         }
     }
 

@@ -6,6 +6,7 @@ use aes_gcm::{
 };
 use hkdf::Hkdf;
 use hmac::{Hmac, Mac};
+use ml_dsa::{EncodedVerifyingKey, MlDsa65, Signature, Verifier, VerifyingKey};
 use sha2::{Sha256, Sha512};
 use thiserror::Error;
 use x25519_dalek::{PublicKey, StaticSecret};
@@ -155,6 +156,24 @@ impl fmt::Debug for RealityCertificateInput<'_> {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct RealityMldsa65CertificateInput<'a> {
+    pub verifying_key: &'a [u8],
+    pub client_hello: &'a [u8],
+    pub server_hello: &'a [u8],
+}
+
+impl fmt::Debug for RealityMldsa65CertificateInput<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RealityMldsa65CertificateInput")
+            .field("verifying_key_len", &self.verifying_key.len())
+            .field("client_hello_len", &self.client_hello.len())
+            .field("server_hello_len", &self.server_hello.len())
+            .finish()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RealityCertificateVerification {
     Verified,
@@ -221,6 +240,8 @@ pub enum RealityError {
     InvalidRealityCertificateBitString,
     #[error("invalid reality Ed25519 public key length {len}")]
     InvalidRealityCertificatePublicKey { len: usize },
+    #[error("invalid reality ML-DSA-65 verify key length {len}")]
+    InvalidRealityMldsa65VerifyKey { len: usize },
 }
 
 struct ParsedClientHello {
@@ -617,6 +638,14 @@ pub fn verify_reality_certificate_der(
     auth_key: &[u8; 32],
     leaf_der: &[u8],
 ) -> Result<RealityCertificateVerification, RealityError> {
+    verify_reality_certificate_der_with_mldsa65(auth_key, leaf_der, None)
+}
+
+pub fn verify_reality_certificate_der_with_mldsa65(
+    auth_key: &[u8; 32],
+    leaf_der: &[u8],
+    mldsa65: Option<RealityMldsa65CertificateInput<'_>>,
+) -> Result<RealityCertificateVerification, RealityError> {
     let (remaining, certificate) = X509Certificate::from_der(leaf_der)
         .map_err(|_| RealityError::InvalidRealityCertificateDer)?;
     if !remaining.is_empty() {
@@ -647,13 +676,44 @@ pub fn verify_reality_certificate_der(
                 len: public_key.len(),
             })?;
 
-    Ok(verify_reality_certificate_binding(
-        RealityCertificateInput {
-            auth_key,
-            ed25519_public_key: public_key,
-            certificate_signature: certificate.signature_value.data.as_ref(),
-        },
-    ))
+    let mut mac =
+        <HmacSha512 as Mac>::new_from_slice(auth_key).expect("HMAC-SHA512 accepts any key length");
+    mac.update(public_key);
+
+    if mac
+        .clone()
+        .verify_slice(certificate.signature_value.data.as_ref())
+        .is_err()
+    {
+        return Ok(RealityCertificateVerification::NotReality);
+    }
+
+    let Some(mldsa65) = mldsa65 else {
+        return Ok(RealityCertificateVerification::Verified);
+    };
+
+    let Some(extension) = certificate.extensions().first() else {
+        return Ok(RealityCertificateVerification::NotReality);
+    };
+    let verifying_key_bytes: EncodedVerifyingKey<MlDsa65> = mldsa65
+        .verifying_key
+        .try_into()
+        .map_err(|_| RealityError::InvalidRealityMldsa65VerifyKey {
+            len: mldsa65.verifying_key.len(),
+        })?;
+    let verifying_key = VerifyingKey::<MlDsa65>::decode(&verifying_key_bytes);
+    let Ok(signature) = Signature::<MlDsa65>::try_from(extension.value) else {
+        return Ok(RealityCertificateVerification::NotReality);
+    };
+    mac.update(mldsa65.client_hello);
+    mac.update(mldsa65.server_hello);
+    let message = mac.finalize().into_bytes();
+
+    if verifying_key.verify(message.as_slice(), &signature).is_ok() {
+        Ok(RealityCertificateVerification::Verified)
+    } else {
+        Ok(RealityCertificateVerification::NotReality)
+    }
 }
 
 /// Seals and patches the REALITY session id bytes into a raw ClientHello.

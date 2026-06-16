@@ -81,6 +81,7 @@ mod transport_tests {
             public_key: [1; 32],
             short_id: vec![2, 3, 4, 5],
             spider_x: "/".to_owned(),
+            mldsa65_verify: None,
         }
     }
 
@@ -467,6 +468,7 @@ mod transport_tests {
             public_key: [1; 32],
             short_id: vec![2, 3, 4, 5],
             spider_x: "/".to_owned(),
+            mldsa65_verify: None,
         }));
         let target = Target::new(
             TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),

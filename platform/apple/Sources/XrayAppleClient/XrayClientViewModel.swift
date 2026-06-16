@@ -46,6 +46,10 @@ public final class XrayClientViewModel: ObservableObject {
         )
     }
 
+    public var realityVisionFlowMode: XrayRealityVisionFlowMode? {
+        profile.realityVisionFlowMode
+    }
+
     public func refresh() async {
         XrayAppleLog.info("ClientViewModel", "Refreshing tunnel status")
         connectionStatus = await tunnelController.currentStatus()
@@ -134,6 +138,25 @@ public final class XrayClientViewModel: ObservableObject {
                 "Failed to import VLESS URL: \(error.localizedDescription)"
             )
             return false
+        }
+    }
+
+    public func setRealityVisionFlowMode(_ mode: XrayRealityVisionFlowMode) {
+        do {
+            let updatedProfile = try profile.updatingRealityVisionFlowMode(mode)
+            profile = updatedProfile
+            try store.save(updatedProfile)
+            lastErrorMessage = nil
+            XrayAppleLog.info(
+                "ClientViewModel",
+                "Saved Reality Vision flow mode=\(mode.rawValue) configBytes=\(updatedProfile.configJSON.utf8.count)"
+            )
+        } catch {
+            lastErrorMessage = error.localizedDescription
+            XrayAppleLog.error(
+                "ClientViewModel",
+                "Failed to update Reality Vision flow mode: \(error.localizedDescription)"
+            )
         }
     }
 

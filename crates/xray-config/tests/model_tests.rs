@@ -30,6 +30,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
                 public_key,
                 short_id,
                 spider_x: "/".to_owned(),
+                mldsa65_verify: None,
             }),
         },
         settings: OutboundSettings::Vless(VlessOutboundSettings {
@@ -75,6 +76,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
                     public_key: [1; 32],
                     short_id: RealityShortId::try_from_slice(&[2, 3, 4, 5]).unwrap(),
                     spider_x: "/".to_owned(),
+                    mldsa65_verify: None,
                 }),
             },
             settings: OutboundSettings::Vless(VlessOutboundSettings {

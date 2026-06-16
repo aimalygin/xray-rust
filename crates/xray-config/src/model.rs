@@ -415,6 +415,7 @@ pub struct RealitySettings {
     pub public_key: [u8; 32],
     pub short_id: RealityShortId,
     pub spider_x: String,
+    pub mldsa65_verify: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

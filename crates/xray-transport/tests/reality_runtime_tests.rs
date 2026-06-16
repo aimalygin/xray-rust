@@ -122,6 +122,7 @@ impl RealityTlsSession for RecordingRealityTlsSession {
         self: Box<Self>,
         _tcp_stream: TcpStream,
         prepared: RealityPreparedHandshake,
+        _mldsa65_verify: Option<Vec<u8>>,
     ) -> Result<xray_transport::BoxedTransportStream, TransportError> {
         let patched_session_id = prepared.patched_client_hello
             [self.session_id_offset..self.session_id_offset + 32]
@@ -241,6 +242,7 @@ fn reality_config() -> RealityClientConfig {
         public_key: [9u8; 32],
         short_id: vec![2, 3, 4, 5],
         spider_x: "/".to_owned(),
+        mldsa65_verify: None,
     }
 }
 

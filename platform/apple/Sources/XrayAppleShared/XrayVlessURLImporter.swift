@@ -56,7 +56,7 @@ public enum XrayVlessURLImporter {
 
 private struct VlessEndpoint {
     private static let visionFlow = XrayClientProfile.defaultRealityVisionFlow
-    private static let visionUdp443Flow = "xtls-rprx-vision-udp443"
+    private static let visionUdp443Flow = XrayClientProfile.realityVisionUDP443Flow
 
     var userID: String
     var host: String
@@ -69,6 +69,7 @@ private struct VlessEndpoint {
     var serverName: String
     var shortID: String
     var spiderX: String
+    var mldsa65Verify: String?
     var flow: String?
     var profileName: String
 
@@ -127,6 +128,8 @@ private struct VlessEndpoint {
         self.serverName = try query.required("sni")
         self.shortID = try query.required("sid")
         self.spiderX = query.optional("spx", default: "")
+        let mldsa65Verify = query.optional("pqv", default: "")
+        self.mldsa65Verify = mldsa65Verify.isEmpty ? nil : mldsa65Verify
         self.flow = flow.isEmpty ? nil : flow
         self.profileName = components.fragment?.isEmpty == false
             ? components.fragment!
@@ -140,6 +143,16 @@ private struct VlessEndpoint {
         ]
         if let flow {
             user["flow"] = flow
+        }
+        var realitySettings: [String: Any] = [
+            "serverName": serverName,
+            "fingerprint": fingerprint,
+            "publicKey": publicKey,
+            "shortId": shortID,
+            "spiderX": spiderX,
+        ]
+        if let mldsa65Verify {
+            realitySettings["mldsa65Verify"] = mldsa65Verify
         }
 
         let root: [String: Any] = [
@@ -168,13 +181,7 @@ private struct VlessEndpoint {
                     "streamSettings": [
                         "network": network,
                         "security": security,
-                        "realitySettings": [
-                            "serverName": serverName,
-                            "fingerprint": fingerprint,
-                            "publicKey": publicKey,
-                            "shortId": shortID,
-                            "spiderX": spiderX,
-                        ],
+                        "realitySettings": realitySettings,
                     ],
                 ],
                 [

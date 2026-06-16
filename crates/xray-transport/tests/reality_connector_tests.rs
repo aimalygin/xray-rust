@@ -53,6 +53,7 @@ fn reality_config_with_short_id(short_id: Vec<u8>) -> RealityClientConfig {
         public_key: [9u8; 32],
         short_id,
         spider_x: "/".to_owned(),
+        mldsa65_verify: None,
     }
 }
 
@@ -131,6 +132,7 @@ fn reality_connector_handshake_plan_clones_short_id_bytes_exactly() {
             public_key: [9u8; 32],
             short_id: vec![0, 15, 255],
             spider_x: "/".to_owned(),
+            mldsa65_verify: None,
         }
     );
 }

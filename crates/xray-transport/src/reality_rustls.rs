@@ -1,4 +1,9 @@
-use std::{cell::RefCell, collections::VecDeque, fmt, sync::Arc};
+use std::{
+    cell::RefCell,
+    collections::VecDeque,
+    fmt,
+    sync::{Arc, Mutex},
+};
 
 use async_trait::async_trait;
 use rustls::{
@@ -18,15 +23,16 @@ use zeroize::Zeroize;
 
 use crate::{
     reality::{
-        validate_reality_client_hello_metadata, verify_reality_certificate_der, RealityError,
-        RealityPreparedClientHello,
+        validate_reality_client_hello_metadata, verify_reality_certificate_der_with_mldsa65,
+        RealityError, RealityMldsa65CertificateInput, RealityPreparedClientHello,
     },
     reality_connector::{RealityClientHelloRequest, RealityTlsSession, RealityTlsSessionProvider},
-    BoxedTransportStream, PenetratingTlsStream, TransportError,
+    BoxedTransportStream, CapturedTcpStream, PenetratingTlsStream, ServerReadLog, TransportError,
 };
 
 const TLS_RECORD_HANDSHAKE: u8 = 0x16;
 const TLS_HANDSHAKE_CLIENT_HELLO: u8 = 0x01;
+const TLS_HANDSHAKE_SERVER_HELLO: u8 = 0x02;
 const TLS_RECORD_HEADER_LEN: usize = 5;
 const TLS_HANDSHAKE_HEADER_LEN: usize = 4;
 const REALITY_SESSION_ID_LEN: usize = 32;
@@ -153,7 +159,7 @@ impl RustlsRealityPlan {
         session_id: [u8; REALITY_SESSION_ID_LEN],
         auth_key: [u8; 32],
     ) -> Result<Vec<u8>, TransportError> {
-        let config = reality_client_config(auth_key)?;
+        let config = reality_client_config(auth_key, None)?;
         let server_name = ServerName::try_from(server_name.to_owned())
             .map_err(|_| TransportError::InvalidTlsServerName(server_name.to_owned()))?;
         let _guard = PlannedRealityValues::install(self, session_id);
@@ -202,6 +208,7 @@ impl RealityTlsSession for RustlsRealityTlsSession {
         self: Box<Self>,
         tcp_stream: TcpStream,
         prepared: crate::reality::RealityPreparedHandshake,
+        mldsa65_verify: Option<Vec<u8>>,
     ) -> Result<BoxedTransportStream, TransportError> {
         let expected_record = self.plan.client_hello_record(
             &self.server_name,
@@ -216,10 +223,22 @@ impl RealityTlsSession for RustlsRealityTlsSession {
             ));
         }
 
-        let config = Arc::new(reality_client_config(prepared.auth_key)?);
+        let server_read_log = mldsa65_verify
+            .as_ref()
+            .map(|_| Arc::new(Mutex::new(Some(Vec::new()))));
+        let mldsa65 = mldsa65_verify.map(|verifying_key| RealityMldsa65VerifierContext {
+            verifying_key,
+            client_hello: expected_client_hello,
+            server_read_log: server_read_log
+                .as_ref()
+                .expect("ML-DSA verifier has a server read log")
+                .clone(),
+        });
+        let config = Arc::new(reality_client_config(prepared.auth_key, mldsa65)?);
         let server_name = ServerName::try_from(self.server_name.clone())
             .map_err(|_| TransportError::InvalidTlsServerName(self.server_name.clone()))?;
         let connector = TokioTlsConnector::from(config);
+        let tcp_stream = CapturedTcpStream::new(tcp_stream, server_read_log);
         let connect = {
             let _guard = PlannedRealityValues::install(&self.plan, prepared.session_id);
             connector.connect(server_name, tcp_stream)
@@ -230,12 +249,15 @@ impl RealityTlsSession for RustlsRealityTlsSession {
     }
 }
 
-fn reality_client_config(mut auth_key: [u8; 32]) -> Result<ClientConfig, TransportError> {
+fn reality_client_config(
+    mut auth_key: [u8; 32],
+    mldsa65: Option<RealityMldsa65VerifierContext>,
+) -> Result<ClientConfig, TransportError> {
     let provider = Arc::new(reality_crypto_provider());
     let builder = ClientConfig::builder_with_provider(provider)
         .with_protocol_versions(&[&rustls::version::TLS13])
         .map_err(|error| TransportError::TlsConfig(error.to_string()))?;
-    let verifier = RealityServerVerifier { auth_key };
+    let verifier = RealityServerVerifier { auth_key, mldsa65 };
     auth_key.zeroize();
     let mut config = builder
         .dangerous()
@@ -280,6 +302,54 @@ fn extract_client_hello(record: &[u8]) -> Result<Vec<u8>, TransportError> {
     }
 
     Ok(handshake.to_vec())
+}
+
+fn extract_server_hello(records: &[u8]) -> Result<Vec<u8>, TransportError> {
+    let mut record_offset = 0;
+    while record_offset + TLS_RECORD_HEADER_LEN <= records.len() {
+        let record_type = records[record_offset];
+        let record_len =
+            u16::from_be_bytes([records[record_offset + 3], records[record_offset + 4]]) as usize;
+        let record_body_start = record_offset + TLS_RECORD_HEADER_LEN;
+        let record_end = record_body_start
+            .checked_add(record_len)
+            .ok_or_else(|| TransportError::TlsConfig("TLS record length overflow".to_owned()))?;
+        if record_end > records.len() {
+            return Err(TransportError::TlsConfig(
+                "truncated TLS server record".to_owned(),
+            ));
+        }
+
+        if record_type == TLS_RECORD_HANDSHAKE {
+            let mut handshake_offset = record_body_start;
+            while handshake_offset + TLS_HANDSHAKE_HEADER_LEN <= record_end {
+                let handshake_len = ((records[handshake_offset + 1] as usize) << 16)
+                    | ((records[handshake_offset + 2] as usize) << 8)
+                    | (records[handshake_offset + 3] as usize);
+                let handshake_end = handshake_offset
+                    .checked_add(TLS_HANDSHAKE_HEADER_LEN)
+                    .and_then(|start| start.checked_add(handshake_len))
+                    .ok_or_else(|| {
+                        TransportError::TlsConfig("TLS handshake length overflow".to_owned())
+                    })?;
+                if handshake_end > record_end {
+                    return Err(TransportError::TlsConfig(
+                        "truncated TLS ServerHello handshake".to_owned(),
+                    ));
+                }
+                if records[handshake_offset] == TLS_HANDSHAKE_SERVER_HELLO {
+                    return Ok(records[handshake_offset..handshake_end].to_vec());
+                }
+                handshake_offset = handshake_end;
+            }
+        }
+
+        record_offset = record_end;
+    }
+
+    Err(TransportError::TlsConfig(
+        "TLS ServerHello record was not captured".to_owned(),
+    ))
 }
 
 fn rustls_config_error(error: RustlsError) -> TransportError {
@@ -419,9 +489,35 @@ impl ActiveKeyExchange for PlannedX25519Exchange {
     }
 }
 
-#[derive(Debug)]
+struct RealityMldsa65VerifierContext {
+    verifying_key: Vec<u8>,
+    client_hello: Vec<u8>,
+    server_read_log: ServerReadLog,
+}
+
+impl fmt::Debug for RealityMldsa65VerifierContext {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RealityMldsa65VerifierContext")
+            .field("verifying_key_len", &self.verifying_key.len())
+            .field("client_hello_len", &self.client_hello.len())
+            .finish()
+    }
+}
+
 struct RealityServerVerifier {
     auth_key: [u8; 32],
+    mldsa65: Option<RealityMldsa65VerifierContext>,
+}
+
+impl fmt::Debug for RealityServerVerifier {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RealityServerVerifier")
+            .field("auth_key", &"<redacted>")
+            .field("mldsa65", &self.mldsa65)
+            .finish()
+    }
 }
 
 impl Drop for RealityServerVerifier {
@@ -439,7 +535,33 @@ impl ServerCertVerifier for RealityServerVerifier {
         _ocsp_response: &[u8],
         _now: UnixTime,
     ) -> Result<ServerCertVerified, RustlsError> {
-        match verify_reality_certificate_der(&self.auth_key, end_entity.as_ref()) {
+        let server_hello;
+        let mldsa65 = if let Some(mldsa65) = &self.mldsa65 {
+            let captured = {
+                let mut captured = mldsa65
+                    .server_read_log
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                captured.take().ok_or(RustlsError::InvalidCertificate(
+                    CertificateError::BadEncoding,
+                ))?
+            };
+            server_hello = extract_server_hello(&captured)
+                .map_err(|_| RustlsError::InvalidCertificate(CertificateError::BadEncoding))?;
+            Some(RealityMldsa65CertificateInput {
+                verifying_key: &mldsa65.verifying_key,
+                client_hello: &mldsa65.client_hello,
+                server_hello: &server_hello,
+            })
+        } else {
+            None
+        };
+
+        match verify_reality_certificate_der_with_mldsa65(
+            &self.auth_key,
+            end_entity.as_ref(),
+            mldsa65,
+        ) {
             Ok(crate::reality::RealityCertificateVerification::Verified) => {
                 Ok(ServerCertVerified::assertion())
             }

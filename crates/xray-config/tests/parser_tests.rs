@@ -43,6 +43,48 @@ fn parses_vless_reality_vision_subset() {
 }
 
 #[test]
+fn parses_reality_mldsa65_verify_key() {
+    let mldsa65_verify = base64url_no_padding(&[0x5a; 1952]);
+    let raw = vless_raw_with_reality_settings(&format!(
+        r#"
+                "serverName": "server.example",
+                "fingerprint": "chrome",
+                "publicKey": "{}",
+                "shortId": "02030405",
+                "mldsa65Verify": "{mldsa65_verify}"
+        "#,
+        valid_public_key()
+    ));
+
+    let parsed = parse_xray_json(&raw).expect("config should parse");
+    let StreamSecurity::Reality(reality) = &parsed.config.outbounds[0].stream.security else {
+        panic!("expected reality security");
+    };
+
+    assert_eq!(reality.mldsa65_verify.as_deref(), Some(&[0x5a; 1952][..]));
+}
+
+#[test]
+fn rejects_invalid_reality_mldsa65_verify_length_with_path() {
+    let mldsa65_verify = base64url_no_padding(&[0x5a; 1951]);
+    let raw = vless_raw_with_reality_settings(&format!(
+        r#"
+                "serverName": "server.example",
+                "fingerprint": "chrome",
+                "publicKey": "{}",
+                "shortId": "02030405",
+                "mldsa65Verify": "{mldsa65_verify}"
+        "#,
+        valid_public_key()
+    ));
+
+    assert_parse_error_path(
+        &raw,
+        "$.outbounds[0].streamSettings.realitySettings.mldsa65Verify",
+    );
+}
+
+#[test]
 fn parses_mobile_vless_reality_vision_split_routing_fixture() {
     let raw = include_str!(
         "../../../tests/fixtures/configs/mobile_vless_reality_vision_split_routing.json"
@@ -1030,6 +1072,35 @@ struct TestCidr {
 
 fn valid_public_key() -> &'static str {
     "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE"
+}
+
+fn base64url_no_padding(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    let mut encoded = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    let mut chunks = bytes.chunks_exact(3);
+    for chunk in &mut chunks {
+        let value = ((chunk[0] as u32) << 16) | ((chunk[1] as u32) << 8) | (chunk[2] as u32);
+        encoded.push(ALPHABET[((value >> 18) & 0x3f) as usize] as char);
+        encoded.push(ALPHABET[((value >> 12) & 0x3f) as usize] as char);
+        encoded.push(ALPHABET[((value >> 6) & 0x3f) as usize] as char);
+        encoded.push(ALPHABET[(value & 0x3f) as usize] as char);
+    }
+    match chunks.remainder() {
+        [first] => {
+            let value = (*first as u32) << 16;
+            encoded.push(ALPHABET[((value >> 18) & 0x3f) as usize] as char);
+            encoded.push(ALPHABET[((value >> 12) & 0x3f) as usize] as char);
+        }
+        [first, second] => {
+            let value = ((*first as u32) << 16) | ((*second as u32) << 8);
+            encoded.push(ALPHABET[((value >> 18) & 0x3f) as usize] as char);
+            encoded.push(ALPHABET[((value >> 12) & 0x3f) as usize] as char);
+            encoded.push(ALPHABET[((value >> 6) & 0x3f) as usize] as char);
+        }
+        [] => {}
+        _ => unreachable!("chunks_exact remainder is at most two bytes"),
+    }
+    encoded
 }
 
 fn raw_with_routing(routing: &str) -> String {

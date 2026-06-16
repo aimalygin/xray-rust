@@ -1,14 +1,16 @@
 mod reality_tests {
     use hmac::{Hmac, Mac};
+    use ml_dsa::{EncodedVerifyingKey, Keypair, MlDsa65, Seed, Signer, SigningKey};
     use rcgen::generate_simple_self_signed;
     use serde::Deserialize;
     use sha2::Sha512;
     use xray_transport::reality::{
         build_reality_session_id, derive_reality_auth_key, prepare_reality_handshake,
         seal_reality_client_hello, verify_reality_certificate_binding,
-        verify_reality_certificate_der, RealityCertificateInput, RealityCertificateVerification,
-        RealityClientHelloPatch, RealityError, RealityHandshakeInput, RealityPreparedClientHello,
-        RealityPreparedHandshake, RealitySessionIdInput,
+        verify_reality_certificate_der, verify_reality_certificate_der_with_mldsa65,
+        RealityCertificateInput, RealityCertificateVerification, RealityClientHelloPatch,
+        RealityError, RealityHandshakeInput, RealityMldsa65CertificateInput,
+        RealityPreparedClientHello, RealityPreparedHandshake, RealitySessionIdInput,
     };
 
     const SESSION_ID_VECTORS_JSON: &str =
@@ -86,7 +88,11 @@ mod reality_tests {
                 out.push(0x81);
                 out.push(len as u8);
             }
-            _ => panic!("test DER helper only supports lengths up to 255 bytes"),
+            256..=65535 => {
+                out.push(0x82);
+                out.extend_from_slice(&(len as u16).to_be_bytes());
+            }
+            _ => panic!("test DER helper only supports lengths up to 65535 bytes"),
         }
     }
 
@@ -117,6 +123,14 @@ mod reality_tests {
         der_tlv(0x17, value)
     }
 
+    fn der_object_identifier(bytes: &[u8]) -> Vec<u8> {
+        der_tlv(0x06, bytes)
+    }
+
+    fn der_octet_string(bytes: &[u8]) -> Vec<u8> {
+        der_tlv(0x04, bytes)
+    }
+
     fn ed25519_algorithm_identifier() -> Vec<u8> {
         vec![0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70]
     }
@@ -133,6 +147,7 @@ mod reality_tests {
             0,
             &ed25519_algorithm_identifier(),
             &ed25519_algorithm_identifier(),
+            &[],
         )
     }
 
@@ -143,6 +158,7 @@ mod reality_tests {
         signature_unused_bits: u8,
         spki_algorithm: &[u8],
         signature_algorithm: &[u8],
+        extension_value: &[u8],
     ) -> Vec<u8> {
         let algorithm = ed25519_algorithm_identifier();
 
@@ -164,6 +180,14 @@ mod reality_tests {
         tbs_content.extend_from_slice(&validity);
         tbs_content.extend_from_slice(&[0x30, 0x00]);
         tbs_content.extend_from_slice(&spki);
+        if !extension_value.is_empty() {
+            let mut extension_content = Vec::new();
+            extension_content.extend_from_slice(&der_object_identifier(&[0]));
+            extension_content.extend_from_slice(&der_octet_string(extension_value));
+            let extension = der_sequence(&extension_content);
+            let extensions = der_sequence(&extension);
+            push_der_tlv(&mut tbs_content, 0xa3, &extensions);
+        }
         let tbs = der_sequence(&tbs_content);
 
         let mut cert_content = Vec::new();
@@ -679,6 +703,79 @@ mod reality_tests {
     }
 
     #[test]
+    fn reality_certificate_der_adapter_verifies_mldsa65_extension() {
+        let auth_key = [0x31; 32];
+        let public_key = [0x42; 32];
+        let client_hello = b"\x01\x00\x00\x20client hello";
+        let server_hello = b"\x02\x00\x00\x20server hello";
+        let hmac_signature = reality_certificate_signature(&auth_key, &public_key);
+        let signing_key = SigningKey::<MlDsa65>::from_seed(&Seed::default());
+        let verifying_key = signing_key.verifying_key();
+        let mut mac = <HmacSha512 as Mac>::new_from_slice(&auth_key).unwrap();
+        mac.update(&public_key);
+        mac.update(client_hello);
+        mac.update(server_hello);
+        let mldsa65_signature = signing_key.sign(mac.finalize().into_bytes().as_slice());
+        let leaf_der = ed25519_leaf_der_with_options(
+            &public_key,
+            0,
+            &hmac_signature,
+            0,
+            &ed25519_algorithm_identifier(),
+            &ed25519_algorithm_identifier(),
+            &mldsa65_signature.encode(),
+        );
+        let encoded_key: EncodedVerifyingKey<MlDsa65> = verifying_key.encode();
+        let mldsa = RealityMldsa65CertificateInput {
+            verifying_key: encoded_key.as_slice(),
+            client_hello,
+            server_hello,
+        };
+
+        let result =
+            verify_reality_certificate_der_with_mldsa65(&auth_key, &leaf_der, Some(mldsa)).unwrap();
+
+        assert_eq!(result, RealityCertificateVerification::Verified);
+    }
+
+    #[test]
+    fn reality_certificate_der_adapter_rejects_changed_mldsa65_signature_message() {
+        let auth_key = [0x31; 32];
+        let public_key = [0x42; 32];
+        let client_hello = b"\x01\x00\x00\x20client hello";
+        let server_hello = b"\x02\x00\x00\x20server hello";
+        let changed_server_hello = b"\x02\x00\x00\x20changed server hello";
+        let hmac_signature = reality_certificate_signature(&auth_key, &public_key);
+        let signing_key = SigningKey::<MlDsa65>::from_seed(&Seed::default());
+        let verifying_key = signing_key.verifying_key();
+        let mut mac = <HmacSha512 as Mac>::new_from_slice(&auth_key).unwrap();
+        mac.update(&public_key);
+        mac.update(client_hello);
+        mac.update(server_hello);
+        let mldsa65_signature = signing_key.sign(mac.finalize().into_bytes().as_slice());
+        let leaf_der = ed25519_leaf_der_with_options(
+            &public_key,
+            0,
+            &hmac_signature,
+            0,
+            &ed25519_algorithm_identifier(),
+            &ed25519_algorithm_identifier(),
+            &mldsa65_signature.encode(),
+        );
+        let encoded_key: EncodedVerifyingKey<MlDsa65> = verifying_key.encode();
+        let mldsa = RealityMldsa65CertificateInput {
+            verifying_key: encoded_key.as_slice(),
+            client_hello,
+            server_hello: changed_server_hello,
+        };
+
+        let result =
+            verify_reality_certificate_der_with_mldsa65(&auth_key, &leaf_der, Some(mldsa)).unwrap();
+
+        assert_eq!(result, RealityCertificateVerification::NotReality);
+    }
+
+    #[test]
     fn reality_certificate_der_adapter_returns_not_reality_for_non_ed25519_leaf() {
         let auth_key = [0x31; 32];
         let cert = generate_simple_self_signed(vec!["example.test".to_owned()])
@@ -735,8 +832,15 @@ mod reality_tests {
         let public_key = [0x42; 32];
         let signature = reality_certificate_signature(&auth_key, &public_key);
         let algorithm = ed25519_algorithm_identifier();
-        let leaf_der =
-            ed25519_leaf_der_with_options(&public_key, 1, &signature, 0, &algorithm, &algorithm);
+        let leaf_der = ed25519_leaf_der_with_options(
+            &public_key,
+            1,
+            &signature,
+            0,
+            &algorithm,
+            &algorithm,
+            &[],
+        );
 
         let err = verify_reality_certificate_der(&auth_key, &leaf_der)
             .expect_err("public key unused bits should fail");
@@ -758,6 +862,7 @@ mod reality_tests {
             0,
             &algorithm_with_null_params,
             &algorithm,
+            &[],
         );
 
         let err = verify_reality_certificate_der(&auth_key, &leaf_der)
@@ -780,6 +885,7 @@ mod reality_tests {
             0,
             &algorithm,
             &algorithm_with_null_params,
+            &[],
         );
 
         let err = verify_reality_certificate_der(&auth_key, &leaf_der)
@@ -795,8 +901,15 @@ mod reality_tests {
         let mut signature = reality_certificate_signature(&auth_key, &public_key);
         signature[63] &= 0xfe;
         let algorithm = ed25519_algorithm_identifier();
-        let leaf_der =
-            ed25519_leaf_der_with_options(&public_key, 0, &signature, 1, &algorithm, &algorithm);
+        let leaf_der = ed25519_leaf_der_with_options(
+            &public_key,
+            0,
+            &signature,
+            1,
+            &algorithm,
+            &algorithm,
+            &[],
+        );
 
         let err = verify_reality_certificate_der(&auth_key, &leaf_der)
             .expect_err("signature unused bits should fail");

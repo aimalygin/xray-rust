@@ -13,6 +13,7 @@ bytes.workspace = true
 ghash.workspace = true
 hkdf.workspace = true
 hmac.workspace = true
+ml-dsa.workspace = true
 polyval.workspace = true
 rustls.workspace = true
 sha2.workspace = true

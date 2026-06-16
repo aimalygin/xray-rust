@@ -96,6 +96,32 @@ final class XrayClientViewModelTests: XCTestCase {
         )
     }
 
+    func testSetRealityVisionFlowModeSavesUpdatedProfile() throws {
+        let store = try makeStore()
+        let importedProfile = try XrayVlessURLImporter.profile(
+            from: Self.sampleVlessURL,
+            hostBundleIdentifier: "org.example.XrayClientTv"
+        )
+        try store.save(importedProfile)
+        let viewModel = XrayClientViewModel(
+            store: store,
+            tunnelController: MockTunnelController()
+        )
+
+        viewModel.setRealityVisionFlowMode(.allowUDP443)
+
+        XCTAssertEqual(viewModel.realityVisionFlowMode, .allowUDP443)
+        XCTAssertEqual(
+            try Self.firstVlessUserFlow(in: viewModel.profile.configJSON),
+            XrayClientProfile.realityVisionUDP443Flow
+        )
+        XCTAssertEqual(
+            try Self.firstVlessUserFlow(in: store.load().configJSON),
+            XrayClientProfile.realityVisionUDP443Flow
+        )
+        XCTAssertNil(viewModel.lastErrorMessage)
+    }
+
     func testConnectImportsPendingVlessURLBeforeStartingTunnel() async throws {
         let store = try makeStore()
         try store.save(

@@ -147,6 +147,7 @@ async fn run_local_xray_vless_reality_vision_interop() {
             short_id: RealityShortId::try_from_slice(&REALITY_SHORT_ID)
                 .expect("static REALITY short id"),
             spider_x: "/".to_owned(),
+            mldsa65_verify: None,
         }),
         Some("xtls-rprx-vision"),
     );

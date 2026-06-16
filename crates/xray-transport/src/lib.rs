@@ -24,7 +24,7 @@ mod reality_rustls;
 mod tls;
 
 pub use dialer::TransportDialer;
-pub(crate) use penetrating_tls::PenetratingTlsStream;
+pub(crate) use penetrating_tls::{CapturedTcpStream, PenetratingTlsStream, ServerReadLog};
 pub use reality_connector::{RealityTlsSession, RealityTlsSessionProvider};
 pub use reality_runtime::{
     RealityHandshakeContextProvider, RealityRuntimeEngine, SystemRealityHandshakeContextProvider,
@@ -52,6 +52,7 @@ pub struct RealityClientConfig {
     pub public_key: [u8; 32],
     pub short_id: Vec<u8>,
     pub spider_x: String,
+    pub mldsa65_verify: Option<Vec<u8>>,
 }
 
 impl fmt::Debug for RealityClientConfig {
@@ -63,6 +64,10 @@ impl fmt::Debug for RealityClientConfig {
             .field("public_key", &self.public_key)
             .field("short_id", &"<redacted>")
             .field("spider_x", &self.spider_x)
+            .field(
+                "mldsa65_verify_len",
+                &self.mldsa65_verify.as_ref().map(Vec::len),
+            )
             .finish()
     }
 }

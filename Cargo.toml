@@ -28,6 +28,7 @@ ghash = { version = "0.5", features = ["zeroize"] }
 hkdf = "0.12"
 hmac = "0.12"
 libc = "0.2"
+ml-dsa = { version = "0.1.1", default-features = false, features = ["alloc"] }
 polyval = { version = "0.6", features = ["zeroize"] }
 prost = "0.13"
 rand = "0.8"

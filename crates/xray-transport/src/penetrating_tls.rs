@@ -1,5 +1,6 @@
 use std::io::{self, Read};
 use std::pin::Pin;
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 
 use bytes::BytesMut;
@@ -9,8 +10,74 @@ use tokio_rustls::client::TlsStream;
 
 use crate::TransportStream;
 
+pub(crate) type ServerReadLog = Arc<Mutex<Option<Vec<u8>>>>;
+
+pub(crate) struct CapturedTcpStream {
+    stream: TcpStream,
+    server_read_log: Option<ServerReadLog>,
+}
+
+impl CapturedTcpStream {
+    pub(crate) fn new(stream: TcpStream, server_read_log: Option<ServerReadLog>) -> Self {
+        Self {
+            stream,
+            server_read_log,
+        }
+    }
+
+    fn into_inner(self) -> TcpStream {
+        self.stream
+    }
+}
+
+impl AsyncRead for CapturedTcpStream {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        output: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let this = self.get_mut();
+        let filled_before = output.filled().len();
+        match Pin::new(&mut this.stream).poll_read(cx, output) {
+            Poll::Ready(Ok(())) => {
+                if let Some(server_read_log) = &this.server_read_log {
+                    let filled_after = output.filled().len();
+                    if filled_after > filled_before {
+                        let mut log = server_read_log
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner());
+                        if let Some(log) = log.as_mut() {
+                            log.extend_from_slice(&output.filled()[filled_before..filled_after]);
+                        }
+                    }
+                }
+                Poll::Ready(Ok(()))
+            }
+            other => other,
+        }
+    }
+}
+
+impl AsyncWrite for CapturedTcpStream {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        input: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.get_mut().stream).poll_write(cx, input)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.get_mut().stream).poll_flush(cx)
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.get_mut().stream).poll_shutdown(cx)
+    }
+}
+
 enum PenetratingTlsState {
-    Tls(Option<Box<TlsStream<TcpStream>>>),
+    Tls(Option<Box<TlsStream<CapturedTcpStream>>>),
     Direct {
         stream: TcpStream,
         pending_plaintext: BytesMut,
@@ -22,7 +89,7 @@ pub(crate) struct PenetratingTlsStream {
 }
 
 impl PenetratingTlsStream {
-    pub(crate) fn new(stream: TlsStream<TcpStream>) -> Self {
+    pub(crate) fn new(stream: TlsStream<CapturedTcpStream>) -> Self {
         Self {
             state: PenetratingTlsState::Tls(Some(Box::new(stream))),
         }
@@ -36,6 +103,7 @@ impl PenetratingTlsStream {
             .take()
             .ok_or_else(|| io::Error::other("TLS stream was already taken"))?;
         let (stream, mut session) = (*tls).into_inner();
+        let stream = stream.into_inner();
         let mut pending_plaintext = BytesMut::new();
         let mut scratch = [0; 8192];
 
@@ -250,7 +318,10 @@ mod tests {
             acceptor.accept(stream).await.expect("accept TLS")
         });
 
-        let client = TcpStream::connect(addr).await.expect("connect TLS client");
+        let client = CapturedTcpStream::new(
+            TcpStream::connect(addr).await.expect("connect TLS client"),
+            None,
+        );
         let server_name = ServerName::try_from("server.test").expect("server name");
         let client = TlsConnector::from(Arc::new(client_config))
             .connect(server_name, client)

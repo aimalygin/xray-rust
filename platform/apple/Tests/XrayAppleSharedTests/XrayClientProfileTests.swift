@@ -100,6 +100,58 @@ final class XrayClientProfileTests: XCTestCase {
         XCTAssertTrue(profile.regionalRoutingRegions.isEmpty)
     }
 
+    func testRealityVisionFlowModeDefaultsMissingFlowToBlocked() throws {
+        var profile = try XrayVlessURLImporter.profile(
+            from: Self.sampleVlessURL,
+            hostBundleIdentifier: "org.example.XrayClient"
+        )
+        profile.configJSON = try Self.configJSONRemovingFirstVlessUserFlow(profile.configJSON)
+
+        XCTAssertEqual(profile.realityVisionFlowMode, .blockUDP443)
+    }
+
+    func testUpdatingRealityVisionFlowModeAllowsUDP443() throws {
+        let profile = try XrayVlessURLImporter.profile(
+            from: Self.sampleVlessURL,
+            hostBundleIdentifier: "org.example.XrayClient"
+        )
+
+        let updated = try profile.updatingRealityVisionFlowMode(.allowUDP443)
+
+        XCTAssertEqual(
+            try Self.firstVlessUserFlow(in: updated.configJSON),
+            XrayClientProfile.realityVisionUDP443Flow
+        )
+        XCTAssertEqual(updated.realityVisionFlowMode, .allowUDP443)
+    }
+
+    func testUpdatingRealityVisionFlowModeRestoresBlockedUDP443() throws {
+        let url = Self.sampleVlessURL.replacingOccurrences(
+            of: "flow=xtls-rprx-vision",
+            with: "flow=xtls-rprx-vision-udp443"
+        )
+        let profile = try XrayVlessURLImporter.profile(
+            from: url,
+            hostBundleIdentifier: "org.example.XrayClient"
+        )
+
+        let updated = try profile.updatingRealityVisionFlowMode(.blockUDP443)
+
+        XCTAssertEqual(
+            try Self.firstVlessUserFlow(in: updated.configJSON),
+            XrayClientProfile.defaultRealityVisionFlow
+        )
+        XCTAssertEqual(updated.realityVisionFlowMode, .blockUDP443)
+    }
+
+    func testRealityVisionFlowModeIsNilForNonRealityVlessConfig() {
+        let profile = XrayClientProfile.defaultProfile(
+            hostBundleIdentifier: "org.example.XrayClient"
+        )
+
+        XCTAssertNil(profile.realityVisionFlowMode)
+    }
+
     func testTunRuntimeProfileParsesMobilePlusAliases() throws {
         XCTAssertEqual(XrayTunRuntimeProfileSetting(configurationValue: "mobile-plus"), .mobilePlus)
         XCTAssertEqual(XrayTunRuntimeProfileSetting(configurationValue: "mobile_plus"), .mobilePlus)
@@ -268,7 +320,7 @@ final class XrayClientProfileTests: XCTestCase {
         )
         XCTAssertEqual(reality["shortId"] as? String, "1c5694e878")
         XCTAssertEqual(reality["spiderX"] as? String, "/")
-        XCTAssertNil(reality["pqv"])
+        XCTAssertEqual(reality["mldsa65Verify"] as? String, "ignored-for-now")
     }
 
     func testVlessURLImporterExtractsURLFromPastedText() throws {
@@ -356,6 +408,39 @@ final class XrayClientProfileTests: XCTestCase {
         )
         let routing = try XCTUnwrap(root["routing"] as? [String: Any])
         return try XCTUnwrap(routing["rules"] as? [[String: Any]])
+    }
+
+    private static func firstVlessUserFlow(in configJSON: String) throws -> String? {
+        let root = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(configJSON.utf8)) as? [String: Any]
+        )
+        let outbounds = try XCTUnwrap(root["outbounds"] as? [[String: Any]])
+        let settings = try XCTUnwrap(outbounds[0]["settings"] as? [String: Any])
+        let vnext = try XCTUnwrap(settings["vnext"] as? [[String: Any]])
+        let users = try XCTUnwrap(vnext.first?["users"] as? [[String: Any]])
+        return users.first?["flow"] as? String
+    }
+
+    private static func configJSONRemovingFirstVlessUserFlow(_ configJSON: String) throws -> String {
+        let root = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(configJSON.utf8)) as? [String: Any]
+        )
+        var mutableRoot = root
+        var outbounds = try XCTUnwrap(mutableRoot["outbounds"] as? [[String: Any]])
+        var settings = try XCTUnwrap(outbounds[0]["settings"] as? [String: Any])
+        var vnext = try XCTUnwrap(settings["vnext"] as? [[String: Any]])
+        var users = try XCTUnwrap(vnext[0]["users"] as? [[String: Any]])
+        users[0].removeValue(forKey: "flow")
+        vnext[0]["users"] = users
+        settings["vnext"] = vnext
+        outbounds[0]["settings"] = settings
+        mutableRoot["outbounds"] = outbounds
+
+        let encoded = try JSONSerialization.data(
+            withJSONObject: mutableRoot,
+            options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        )
+        return try XCTUnwrap(String(data: encoded, encoding: .utf8))
     }
 
     func testVlessURLImporterRejectsUnsupportedSecurity() {

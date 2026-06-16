@@ -116,6 +116,60 @@ public enum XrayRegionalRoutingRegion: String, Codable, CaseIterable, Hashable, 
     }
 }
 
+public enum XrayRealityVisionFlowMode: String, Codable, CaseIterable, Hashable, Identifiable, Sendable {
+    case blockUDP443 = "xtls-rprx-vision"
+    case allowUDP443 = "xtls-rprx-vision-udp443"
+
+    public var id: String {
+        rawValue
+    }
+
+    public var displayName: String {
+        switch self {
+        case .blockUDP443:
+            return "Blocked"
+        case .allowUDP443:
+            return "Allowed"
+        }
+    }
+
+    public init?(flowValue: String?) {
+        let normalizedValue = flowValue?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        switch normalizedValue {
+        case "", Self.blockUDP443.rawValue:
+            self = .blockUDP443
+        case Self.allowUDP443.rawValue:
+            self = .allowUDP443
+        default:
+            return nil
+        }
+    }
+}
+
+public enum XrayRealityVisionFlowError: Error, Equatable, LocalizedError {
+    case rootIsNotObject
+    case outboundsIsNotArray
+    case missingRealityVlessUser
+    case unsupportedFlow(String)
+    case encodingFailed
+
+    public var errorDescription: String? {
+        switch self {
+        case .rootIsNotObject:
+            return "Config must be a JSON object."
+        case .outboundsIsNotArray:
+            return "Config outbounds must be an array."
+        case .missingRealityVlessUser:
+            return "Profile does not contain a Reality VLESS outbound."
+        case let .unsupportedFlow(flow):
+            return "Unsupported Reality Vision flow `\(flow)`."
+        case .encodingFailed:
+            return "Failed to encode Reality Vision flow config."
+        }
+    }
+}
+
 public enum XrayRegionalRoutingError: Error, Equatable, LocalizedError {
     case rootIsNotObject
     case outboundsIsNotArray
@@ -143,7 +197,8 @@ public enum XrayRegionalRoutingError: Error, Equatable, LocalizedError {
 }
 
 public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
-    public static let defaultRealityVisionFlow = "xtls-rprx-vision"
+    public static let defaultRealityVisionFlow = XrayRealityVisionFlowMode.blockUDP443.rawValue
+    public static let realityVisionUDP443Flow = XrayRealityVisionFlowMode.allowUDP443.rawValue
 
     public var id: UUID
     public var name: String
@@ -271,6 +326,10 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
         return migrated
     }
 
+    public var realityVisionFlowMode: XrayRealityVisionFlowMode? {
+        Self.realityVisionFlowMode(in: configJSON)
+    }
+
     public func addingDefaultRealityVisionFlowIfMissing() -> XrayClientProfile {
         guard let normalizedConfigJSON = Self.configJSONAddingDefaultRealityVisionFlowIfMissing(
             configJSON
@@ -280,6 +339,17 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
 
         var profile = self
         profile.configJSON = normalizedConfigJSON
+        return profile
+    }
+
+    public func updatingRealityVisionFlowMode(
+        _ mode: XrayRealityVisionFlowMode
+    ) throws -> XrayClientProfile {
+        var profile = self
+        profile.configJSON = try Self.configJSON(
+            configJSON,
+            applyingRealityVisionFlowMode: mode
+        )
         return profile
     }
 
@@ -306,6 +376,44 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
         )
     }
 
+    private static func realityVisionFlowMode(in configJSON: String) -> XrayRealityVisionFlowMode? {
+        guard let data = configJSON.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let outbounds = root["outbounds"] as? [[String: Any]]
+        else {
+            return nil
+        }
+
+        var selectedMode: XrayRealityVisionFlowMode?
+        for outbound in outbounds where isRealityVlessOutbound(outbound) {
+            guard let settings = outbound["settings"] as? [String: Any],
+                  let vnext = settings["vnext"] as? [[String: Any]]
+            else {
+                continue
+            }
+
+            for server in vnext {
+                guard let users = server["users"] as? [[String: Any]] else {
+                    continue
+                }
+
+                for user in users {
+                    guard let mode = XrayRealityVisionFlowMode(
+                        flowValue: user["flow"] as? String
+                    ) else {
+                        return nil
+                    }
+                    if let selectedMode, selectedMode != mode {
+                        return nil
+                    }
+                    selectedMode = mode
+                }
+            }
+        }
+
+        return selectedMode
+    }
+
     private static func configJSONAddingDefaultRealityVisionFlowIfMissing(
         _ configJSON: String
     ) -> String? {
@@ -318,9 +426,7 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
 
         var didChange = false
         for outboundIndex in outbounds.indices {
-            guard outbounds[outboundIndex]["protocol"] as? String == "vless",
-                  let streamSettings = outbounds[outboundIndex]["streamSettings"] as? [String: Any],
-                  streamSettings["security"] as? String == "reality",
+            guard isRealityVlessOutbound(outbounds[outboundIndex]),
                   var settings = outbounds[outboundIndex]["settings"] as? [String: Any],
                   var vnext = settings["vnext"] as? [[String: Any]]
             else {
@@ -356,6 +462,81 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
             return nil
         }
         return String(data: normalizedData, encoding: .utf8)
+    }
+
+    private static func configJSON(
+        _ configJSON: String,
+        applyingRealityVisionFlowMode mode: XrayRealityVisionFlowMode
+    ) throws -> String {
+        let data = Data(configJSON.utf8)
+        guard var root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw XrayRealityVisionFlowError.rootIsNotObject
+        }
+        guard var outbounds = root["outbounds"] as? [[String: Any]] else {
+            throw XrayRealityVisionFlowError.outboundsIsNotArray
+        }
+
+        var didFindRealityVlessUser = false
+        var didChange = false
+        for outboundIndex in outbounds.indices {
+            guard isRealityVlessOutbound(outbounds[outboundIndex]),
+                  var settings = outbounds[outboundIndex]["settings"] as? [String: Any],
+                  var vnext = settings["vnext"] as? [[String: Any]]
+            else {
+                continue
+            }
+
+            var didChangeOutbound = false
+            for serverIndex in vnext.indices {
+                guard var users = vnext[serverIndex]["users"] as? [[String: Any]] else {
+                    continue
+                }
+
+                for userIndex in users.indices {
+                    didFindRealityVlessUser = true
+                    let rawFlow = users[userIndex]["flow"]
+                    let flowValue = rawFlow as? String
+                    if let rawFlow, flowValue == nil {
+                        throw XrayRealityVisionFlowError.unsupportedFlow(String(describing: rawFlow))
+                    }
+                    guard XrayRealityVisionFlowMode(flowValue: flowValue) != nil else {
+                        throw XrayRealityVisionFlowError.unsupportedFlow(flowValue ?? "")
+                    }
+                    guard flowValue != mode.rawValue else {
+                        continue
+                    }
+
+                    users[userIndex]["flow"] = mode.rawValue
+                    didChange = true
+                    didChangeOutbound = true
+                }
+
+                vnext[serverIndex]["users"] = users
+            }
+
+            guard didChangeOutbound else {
+                continue
+            }
+            settings["vnext"] = vnext
+            outbounds[outboundIndex]["settings"] = settings
+        }
+
+        guard didFindRealityVlessUser else {
+            throw XrayRealityVisionFlowError.missingRealityVlessUser
+        }
+        guard didChange else {
+            return configJSON
+        }
+
+        root["outbounds"] = outbounds
+        let encoded = try JSONSerialization.data(
+            withJSONObject: root,
+            options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        )
+        guard let json = String(data: encoded, encoding: .utf8) else {
+            throw XrayRealityVisionFlowError.encodingFailed
+        }
+        return json
     }
 
     private static func configJSON(
@@ -444,6 +625,16 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
             throw XrayRegionalRoutingError.rulesIsNotArray
         }
         return rules
+    }
+
+    private static func isRealityVlessOutbound(_ outbound: [String: Any]) -> Bool {
+        guard outbound["protocol"] as? String == "vless",
+              let streamSettings = outbound["streamSettings"] as? [String: Any],
+              streamSettings["security"] as? String == "reality"
+        else {
+            return false
+        }
+        return true
     }
 
     private static func regionalRules(

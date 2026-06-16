@@ -124,6 +124,8 @@ impl RealityTlsEngine for RealityRuntimeEngine {
         let addr = self.resolve_socket_addr(target).await?;
         let stream = connect_tcp_stream(addr, self.socket_protector.as_deref()).await?;
 
-        session.complete(stream, prepared).await
+        session
+            .complete(stream, prepared, config.mldsa65_verify.clone())
+            .await
     }
 }

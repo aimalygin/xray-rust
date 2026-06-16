@@ -447,6 +447,7 @@ fn build_vless_tcp_outbound(outbound: &OutboundConfig) -> Result<VlessTcpOutboun
             public_key: reality.public_key,
             short_id: reality.short_id.as_slice().to_vec(),
             spider_x: reality.spider_x.clone(),
+            mldsa65_verify: reality.mldsa65_verify.clone(),
         }),
     };
 
@@ -793,6 +794,7 @@ mod tests {
                 public_key: [7; 32],
                 short_id: vec![1, 2, 3, 4],
                 spider_x: "/".to_owned(),
+                mldsa65_verify: None,
             }),
         };
         let target = Target::new(
@@ -817,6 +819,7 @@ mod tests {
             public_key: [7; 32],
             short_id: vec![1, 2, 3, 4],
             spider_x: "/".to_owned(),
+            mldsa65_verify: None,
         };
         let outbound = VlessTcpOutbound {
             server: Target::new(
@@ -903,6 +906,7 @@ mod tests {
                 public_key: [7; 32],
                 short_id: vec![1, 2, 3, 4],
                 spider_x: "/".to_owned(),
+                mldsa65_verify: None,
             }),
         };
         let target = Target::new(
@@ -953,6 +957,7 @@ mod tests {
                 public_key: [7; 32],
                 short_id: vec![1, 2, 3, 4],
                 spider_x: "/".to_owned(),
+                mldsa65_verify: None,
             }),
         };
         let target = Target::new(
