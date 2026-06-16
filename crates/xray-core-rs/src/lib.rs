@@ -11,6 +11,7 @@ use xray_tun::{TunConfig, TunEndpoint};
 mod http;
 mod outbound;
 mod socks;
+mod startup_probe;
 mod tun;
 mod tun_fd;
 
