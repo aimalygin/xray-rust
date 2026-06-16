@@ -472,3 +472,160 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod https_tests {
+    use std::net::{Ipv4Addr, SocketAddr};
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use async_trait::async_trait;
+    use rcgen::{generate_simple_self_signed, CertifiedKey};
+    use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+    use tokio_rustls::TlsAcceptor;
+    use xray_config::{
+        CoreConfig, InboundConfig, InboundProtocol, Network, OutboundConfig, OutboundSettings,
+        RoutingConfig, StreamSecurity, StreamSettings,
+    };
+    use xray_transport::{DnsResolver, TlsConnector, TransportDialer, TransportError};
+
+    use super::*;
+
+    #[derive(Debug)]
+    struct StaticDnsResolver {
+        domain: &'static str,
+        addr: SocketAddr,
+    }
+
+    #[async_trait]
+    impl DnsResolver for StaticDnsResolver {
+        async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+            if domain == self.domain && port == self.addr.port() {
+                Ok(self.addr)
+            } else {
+                Err(TransportError::NoResolvedAddress(domain.to_owned(), port))
+            }
+        }
+    }
+
+    fn freedom_config() -> CoreConfig {
+        CoreConfig {
+            inbounds: vec![InboundConfig {
+                tag: Some("socks-in".to_owned()),
+                protocol: InboundProtocol::Socks,
+                listen: "127.0.0.1".to_owned(),
+                port: 0,
+            }],
+            outbounds: vec![OutboundConfig {
+                tag: Some("direct".to_owned()),
+                stream: StreamSettings {
+                    network: Network::Tcp,
+                    security: StreamSecurity::None,
+                },
+                settings: OutboundSettings::Freedom,
+            }],
+            default_outbound_tag: Some("direct".to_owned()),
+            routing: RoutingConfig::default(),
+            dns: Default::default(),
+        }
+    }
+
+    fn tls_configs() -> (Arc<rustls::ClientConfig>, Arc<rustls::ServerConfig>) {
+        let CertifiedKey { cert, signing_key } =
+            generate_simple_self_signed(vec!["probe.test".to_owned()])
+                .expect("generate self-signed certificate");
+        let cert_der = cert.der().clone();
+        let key_der = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(signing_key.serialize_der()));
+
+        let mut roots = rustls::RootCertStore::empty();
+        roots.add(cert_der.clone()).expect("add test root");
+        let client_config = rustls::ClientConfig::builder_with_provider(Arc::new(
+            rustls::crypto::ring::default_provider(),
+        ))
+        .with_safe_default_protocol_versions()
+        .expect("ring provider should support default TLS versions")
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+
+        let server_config = rustls::ServerConfig::builder_with_provider(Arc::new(
+            rustls::crypto::ring::default_provider(),
+        ))
+        .with_safe_default_protocol_versions()
+        .expect("ring provider should support default TLS versions")
+        .with_no_client_auth()
+        .with_single_cert(vec![cert_der], key_der)
+        .expect("build TLS server config");
+
+        (Arc::new(client_config), Arc::new(server_config))
+    }
+
+    async fn spawn_https_status_once(
+        server_config: Arc<rustls::ServerConfig>,
+    ) -> (SocketAddr, tokio::task::JoinHandle<()>) {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind HTTPS probe listener");
+        let addr = listener.local_addr().expect("read HTTPS listener address");
+        let acceptor = TlsAcceptor::from(server_config);
+
+        let handle = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("accept HTTPS probe client");
+            let mut stream = acceptor.accept(stream).await.expect("accept TLS stream");
+            let mut request = Vec::new();
+            let mut chunk = [0u8; 128];
+            let expected_prefix = b"GET /health HTTP/1.1\r\n";
+            while request.len() < expected_prefix.len() {
+                let read = stream.read(&mut chunk).await.expect("read HTTPS request");
+                assert!(read > 0, "HTTPS client closed before sending request");
+                request.extend_from_slice(&chunk[..read]);
+            }
+            assert!(
+                request.starts_with(expected_prefix),
+                "unexpected HTTPS request: {}",
+                String::from_utf8_lossy(&request)
+            );
+            stream
+                .write_all(b"HTTP/1.1 204 Test\r\nContent-Length: 0\r\n\r\n")
+                .await
+                .expect("write HTTPS response");
+        });
+
+        (addr, handle)
+    }
+
+    #[tokio::test]
+    async fn run_startup_probe_inner_succeeds_for_https_2xx_response() {
+        let (client_config, server_config) = tls_configs();
+        let (addr, server) = spawn_https_status_once(server_config).await;
+        let options = StartupProbeOptions {
+            url: format!("https://probe.test:{}/health", addr.port()),
+            timeout: Duration::from_secs(2),
+            outbound_tag: Some("direct".to_owned()),
+        };
+        let resolver = StaticDnsResolver {
+            domain: "probe.test",
+            addr,
+        };
+        let tls = TlsConnector::with_client_config(client_config);
+
+        let result = run_startup_probe_inner(
+            &freedom_config(),
+            &options,
+            &resolver,
+            &TransportDialer::system().unwrap(),
+            Some(&tls),
+        )
+        .await;
+        let server_result = tokio::time::timeout(Duration::from_secs(2), server)
+            .await
+            .expect("HTTPS server should complete");
+
+        assert!(
+            result.is_ok(),
+            "expected HTTPS probe success, got {result:?}"
+        );
+        server_result.expect("HTTPS server task should complete");
+    }
+}
