@@ -146,6 +146,47 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         )
     }
 
+    func testStartupProbeDefaultsToGenerate204() {
+        let probe = XrayPacketTunnelProvider.startupProbe(
+            options: nil,
+            providerConfiguration: nil
+        )
+
+        XCTAssertEqual(probe?.url, "https://www.google.com/generate_204")
+        XCTAssertEqual(probe?.timeoutMs, 5_000)
+        XCTAssertNil(probe?.outboundTag)
+    }
+
+    func testStartupProbeStartOptionsOverrideProviderConfiguration() {
+        let probe = XrayPacketTunnelProvider.startupProbe(
+            options: [
+                XrayTunnelProviderMessage.startupProbeURLOptionKey: "https://probe.example/204" as NSString,
+                XrayTunnelProviderMessage.startupProbeTimeoutMsOptionKey: NSNumber(value: 7_500),
+                XrayTunnelProviderMessage.startupProbeOutboundTagOptionKey: "proxy" as NSString,
+            ],
+            providerConfiguration: [
+                XrayTunnelProviderMessage.providerStartupProbeURLKey: "https://provider.example/204",
+                XrayTunnelProviderMessage.providerStartupProbeTimeoutMsKey: 2_500,
+                XrayTunnelProviderMessage.providerStartupProbeOutboundTagKey: "direct",
+            ]
+        )
+
+        XCTAssertEqual(probe?.url, "https://probe.example/204")
+        XCTAssertEqual(probe?.timeoutMs, 7_500)
+        XCTAssertEqual(probe?.outboundTag, "proxy")
+    }
+
+    func testStartupProbeCanBeDisabledFromProviderConfiguration() {
+        let probe = XrayPacketTunnelProvider.startupProbe(
+            options: nil,
+            providerConfiguration: [
+                XrayTunnelProviderMessage.providerStartupProbeEnabledKey: false,
+            ]
+        )
+
+        XCTAssertNil(probe)
+    }
+
     func testConfigSummaryIncludesRoutingSurfaceWithoutSecrets() {
         let summary = XrayPacketTunnelProvider.configSummary(
             """

@@ -19,6 +19,9 @@ public enum XrayPacketTunnelProviderError: Error, LocalizedError {
 
 @available(iOSApplicationExtension 16.0, tvOSApplicationExtension 17.0, macOSApplicationExtension 13.0, *)
 open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
+    private static let defaultStartupProbeURL = "https://www.google.com/generate_204"
+    private static let defaultStartupProbeTimeoutMs: UInt64 = 5_000
+
     private var core: XrayCore?
     private var pump: XrayPacketTunnelPump?
     private var debugStatsTimer: DispatchSourceTimer?
@@ -46,7 +49,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         }
         XrayAppleLog.info(
             "PacketTunnelProvider",
-            "Resolved config source=\(resolvedConfig.source) bytes=\(resolvedConfig.json.utf8.count) debugLogging=\(resolvedConfig.debugLoggingEnabled) useTunFileDescriptor=\(resolvedConfig.useTunFileDescriptor) tunRuntimeProfile=\(resolvedConfig.tunRuntimeProfile.rawValue)"
+            "Resolved config source=\(resolvedConfig.source) bytes=\(resolvedConfig.json.utf8.count) debugLogging=\(resolvedConfig.debugLoggingEnabled) useTunFileDescriptor=\(resolvedConfig.useTunFileDescriptor) tunRuntimeProfile=\(resolvedConfig.tunRuntimeProfile.rawValue) startupProbe=\(resolvedConfig.startupProbe == nil ? "disabled" : "enabled")"
         )
         XrayAppleLog.info(
             "PacketTunnelProvider",
@@ -92,7 +95,8 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                         tunRuntimeProfile: XrayCore.tunRuntimeProfile(
                             named: resolvedConfig.tunRuntimeProfile.rawValue
                         ),
-                        geodataSearchDirectory: Bundle.main.resourceURL
+                        geodataSearchDirectory: Bundle.main.resourceURL,
+                        startupProbe: resolvedConfig.startupProbe
                     )
                     pump = nil
                 case .packetFlowPump:
@@ -113,7 +117,8 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                         tunRuntimeProfile: XrayCore.tunRuntimeProfile(
                             named: resolvedConfig.tunRuntimeProfile.rawValue
                         ),
-                        geodataSearchDirectory: Bundle.main.resourceURL
+                        geodataSearchDirectory: Bundle.main.resourceURL,
+                        startupProbe: resolvedConfig.startupProbe
                     )
                     pump = XrayPacketTunnelPump(
                         provider: self,
@@ -250,6 +255,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         var debugLoggingEnabled: Bool
         var useTunFileDescriptor: Bool
         var tunRuntimeProfile: XrayTunRuntimeProfileSetting
+        var startupProbe: XrayStartupProbeOptions?
     }
 
     private static func configJSON(
@@ -270,6 +276,10 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             options: options,
             providerConfiguration: tunnelProtocol?.providerConfiguration
         )
+        let selectedStartupProbe = startupProbe(
+            options: options,
+            providerConfiguration: tunnelProtocol?.providerConfiguration
+        )
 
         if let configJSON = options?[XrayTunnelProviderMessage.configJSONOptionKey] as? String {
             return ResolvedConfig(
@@ -278,7 +288,8 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                 serverAddress: serverAddress,
                 debugLoggingEnabled: isDebugLoggingEnabled,
                 useTunFileDescriptor: shouldUseTunFileDescriptor,
-                tunRuntimeProfile: selectedTunRuntimeProfile
+                tunRuntimeProfile: selectedTunRuntimeProfile,
+                startupProbe: selectedStartupProbe
             )
         }
 
@@ -293,7 +304,8 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             serverAddress: serverAddress,
             debugLoggingEnabled: isDebugLoggingEnabled,
             useTunFileDescriptor: shouldUseTunFileDescriptor,
-            tunRuntimeProfile: selectedTunRuntimeProfile
+            tunRuntimeProfile: selectedTunRuntimeProfile,
+            startupProbe: selectedStartupProbe
         )
     }
 
@@ -398,6 +410,43 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         return .default
     }
 
+    static func startupProbe(
+        options: [String: NSObject]?,
+        providerConfiguration: [String: Any]?
+    ) -> XrayStartupProbeOptions? {
+        if let optionValue = options?[XrayTunnelProviderMessage.startupProbeEnabledOptionKey],
+           let isEnabled = boolValue(optionValue) {
+            guard isEnabled else {
+                return nil
+            }
+        } else if let configurationValue = providerConfiguration?[
+            XrayTunnelProviderMessage.providerStartupProbeEnabledKey
+        ],
+            let isEnabled = boolValue(configurationValue),
+            !isEnabled {
+            return nil
+        }
+
+        let url = stringValue(options?[XrayTunnelProviderMessage.startupProbeURLOptionKey])
+            ?? stringValue(providerConfiguration?[XrayTunnelProviderMessage.providerStartupProbeURLKey])
+            ?? defaultStartupProbeURL
+        let timeoutMs = uint64Value(options?[XrayTunnelProviderMessage.startupProbeTimeoutMsOptionKey])
+            ?? uint64Value(providerConfiguration?[XrayTunnelProviderMessage.providerStartupProbeTimeoutMsKey])
+            ?? defaultStartupProbeTimeoutMs
+        let outboundTag = stringValue(
+            options?[XrayTunnelProviderMessage.startupProbeOutboundTagOptionKey]
+        )
+            ?? stringValue(providerConfiguration?[
+                XrayTunnelProviderMessage.providerStartupProbeOutboundTagKey
+            ])
+
+        return XrayStartupProbeOptions(
+            url: url,
+            timeoutMs: timeoutMs,
+            outboundTag: outboundTag
+        )
+    }
+
     static func networkSettings(excludingServerAddress serverAddress: String? = nil) -> NEPacketTunnelNetworkSettings {
         let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: "198.18.0.1")
         settings.mtu = 1500
@@ -470,6 +519,35 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             return XrayTunRuntimeProfileSetting(configurationValue: String(value))
         case let value as String:
             return XrayTunRuntimeProfileSetting(configurationValue: value)
+        default:
+            return nil
+        }
+    }
+
+    private static func stringValue(_ value: Any?) -> String? {
+        let raw: String?
+        switch value {
+        case let value as NSString:
+            raw = String(value)
+        case let value as String:
+            raw = value
+        default:
+            raw = nil
+        }
+
+        let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed?.isEmpty == false ? trimmed : nil
+    }
+
+    private static func uint64Value(_ value: Any?) -> UInt64? {
+        switch value {
+        case let value as NSNumber where value.int64Value > 0:
+            return UInt64(value.int64Value)
+        case let value as NSString:
+            return uint64Value(String(value))
+        case let value as String:
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            return UInt64(trimmed).flatMap { $0 > 0 ? $0 : nil }
         default:
             return nil
         }
