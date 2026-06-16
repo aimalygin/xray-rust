@@ -246,11 +246,37 @@ final class XrayClientViewModelTests: XCTestCase {
     }
 
     private static var geodataDirectoryURL: URL {
-        URL(
-            fileURLWithPath: ProcessInfo.processInfo.environment["PWD"]
-                ?? FileManager.default.currentDirectoryPath
-        )
-            .appendingPathComponent("XrayClient/dat")
+        let workingDirectoryURLs = [
+            ProcessInfo.processInfo.environment["PWD"],
+            FileManager.default.currentDirectoryPath
+        ]
+            .compactMap { $0 }
+            .map { URL(fileURLWithPath: $0) }
+
+        let packageDirectoryURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+
+        let candidateURLs = workingDirectoryURLs.flatMap {
+            [
+                $0.appendingPathComponent("XrayClient/dat"),
+                $0.appendingPathComponent("platform/apple/XrayClient/dat")
+            ]
+        } + [
+            packageDirectoryURL.appendingPathComponent("XrayClient/dat")
+        ]
+
+        return candidateURLs.first(where: containsGeodataFiles)
+            ?? packageDirectoryURL.appendingPathComponent("XrayClient/dat")
+    }
+
+    private static func containsGeodataFiles(_ directoryURL: URL) -> Bool {
+        let fileManager = FileManager.default
+        let geositeURL = directoryURL.appendingPathComponent("geosite.dat")
+        let geoipURL = directoryURL.appendingPathComponent("geoip.dat")
+        return fileManager.fileExists(atPath: geositeURL.path)
+            && fileManager.fileExists(atPath: geoipURL.path)
     }
 
     private static func configJSONWithoutFlow() throws -> String {
