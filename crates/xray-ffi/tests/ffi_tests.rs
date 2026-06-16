@@ -1257,15 +1257,38 @@ fn spawn_startup_probe_server_once() -> StartupProbeServer {
         loop {
             match listener.accept() {
                 Ok((mut stream, _)) => {
-                    let mut request = [0_u8; 1024];
-                    let read = match stream.read(&mut request) {
-                        Ok(read) => read,
-                        Err(err) => {
-                            let _ = tx.send(Err(format!("failed to read probe request: {err}")));
+                    if let Err(err) = stream.set_read_timeout(Some(Duration::from_secs(2))) {
+                        let _ = tx.send(Err(format!("failed to set probe read timeout: {err}")));
+                        return;
+                    }
+                    let mut request = Vec::new();
+                    let mut chunk = [0_u8; 256];
+                    loop {
+                        let read = match stream.read(&mut chunk) {
+                            Ok(read) => read,
+                            Err(err) => {
+                                let _ =
+                                    tx.send(Err(format!("failed to read probe request: {err}")));
+                                return;
+                            }
+                        };
+                        if read == 0 {
+                            let _ = tx.send(Err(
+                                "probe connection closed before full HTTP headers".to_owned(),
+                            ));
                             return;
                         }
-                    };
-                    let request = String::from_utf8_lossy(&request[..read]);
+                        request.extend_from_slice(&chunk[..read]);
+                        if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                            break;
+                        }
+                        if request.len() > 4096 {
+                            let _ = tx
+                                .send(Err("probe request headers exceeded 4096 bytes".to_owned()));
+                            return;
+                        }
+                    }
+                    let request = String::from_utf8_lossy(&request);
                     if !request.starts_with("GET /health HTTP/1.1\r\n") {
                         let _ = tx.send(Err(format!("unexpected probe request: {request:?}")));
                         return;
