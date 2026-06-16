@@ -28,6 +28,14 @@ final class XrayPacketTunnelPumpTests: XCTestCase {
         XCTAssertEqual(XrayCore.tunRuntimeProfile(named: "unknown").rawValue, 0)
     }
 
+    func testStartupProbeOptionsDefaultTimeoutAndOutboundTag() {
+        let options = XrayStartupProbeOptions(url: "https://www.google.com/generate_204")
+
+        XCTAssertEqual(options.url, "https://www.google.com/generate_204")
+        XCTAssertEqual(options.timeoutMs, 5_000)
+        XCTAssertNil(options.outboundTag)
+    }
+
     func testTcpSlowFlowDebugLogMessageIncludesTargetAndDurations() {
         let event = XrayTcpSlowFlowEventSnapshot(
             kind: .firstByte,

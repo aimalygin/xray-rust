@@ -112,6 +112,9 @@ fn apple_adapter_declares_packet_tunnel_pump() {
     assert!(core.contains("import XrayRust"));
     assert!(core.contains("xray_core_set_socket_protect_callback"));
     assert!(core.contains("xray_core_set_geodata_search_dir"));
+    assert!(core.contains("XrayStartupProbeOptions"));
+    assert!(core.contains("startupProbe"));
+    assert!(core.contains("xray_core_set_startup_probe"));
     assert!(core.contains("xray_core_set_tun_fd"));
     assert!(!core.contains("xray_core_set_tun_block_quic"));
     assert!(core.contains("xray_core_set_tun_collect_tcp_timings"));
@@ -160,11 +163,15 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
     assert!(build.contains("JvmTarget.JVM_1_8"));
     assert!(core.contains("System.loadLibrary(\"xray_ffi\")"));
     assert!(core.contains("nativeSetSocketProtector"));
+    assert!(core.contains("XrayStartupProbeOptions"));
+    assert!(core.contains("startupProbe"));
+    assert!(core.contains("nativeSetStartupProbe"));
     assert!(core.contains("nativeSetTunFd"));
     assert!(core.contains("nativeSetTunCollectTcpTimings"));
     assert!(core.contains("nativeSetTunRuntimeProfile"));
     assert!(core.contains("XrayTunRuntimeProfile"));
     assert!(service.contains("VpnService"));
+    assert!(service.contains("startupProbe"));
     assert!(service.contains("XrayTunBackend"));
     assert!(service.contains("FileDescriptor"));
     assert!(service.contains("protect(fd)"));
@@ -172,10 +179,12 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
     assert!(service.contains("read(packetBuffer)"));
     assert!(service.contains("pollPacket"));
     assert!(jni.contains("xray_core_set_socket_protect_callback"));
+    assert!(jni.contains("xray_core_set_startup_probe"));
     assert!(jni.contains("xray_core_set_tun_fd"));
     assert!(jni.contains("xray_core_set_tun_collect_tcp_timings"));
     assert!(jni.contains("xray_core_set_tun_runtime_profile"));
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetSocketProtector"));
+    assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetStartupProbe"));
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetTunFd"));
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetTunCollectTcpTimings"));
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetTunRuntimeProfile"));

@@ -23,6 +23,7 @@ open class XrayVpnService : VpnService() {
         configJson: String,
         tunBackend: XrayTunBackend = XrayTunBackend.PacketPump,
         tunRuntimeProfile: XrayTunRuntimeProfile = XrayTunRuntimeProfile.Default,
+        startupProbe: XrayStartupProbeOptions? = null,
     ) {
         if (!running.compareAndSet(false, true)) {
             return
@@ -34,6 +35,7 @@ open class XrayVpnService : VpnService() {
             configJson = configJson,
             vpnService = this,
             tunRuntimeProfile = tunRuntimeProfile,
+            startupProbe = startupProbe,
             tunFileDescriptor = when (tunBackend) {
                 XrayTunBackend.PacketPump -> null
                 XrayTunBackend.FileDescriptor -> XrayTunFileDescriptor(

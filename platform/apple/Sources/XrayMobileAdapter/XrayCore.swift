@@ -28,6 +28,22 @@ public enum XrayCoreError: Error, CustomStringConvertible {
     }
 }
 
+public struct XrayStartupProbeOptions: Equatable, Sendable {
+    public let url: String
+    public let timeoutMs: UInt64
+    public let outboundTag: String?
+
+    public init(
+        url: String,
+        timeoutMs: UInt64 = 5_000,
+        outboundTag: String? = nil
+    ) {
+        self.url = url
+        self.timeoutMs = timeoutMs
+        self.outboundTag = outboundTag
+    }
+}
+
 public struct XrayTunStatsSnapshot: Equatable, Sendable {
     public let inboundPackets: UInt64
     public let outboundPackets: UInt64
@@ -245,13 +261,15 @@ public final class XrayCore: @unchecked Sendable {
         borrowedDarwinTunFileDescriptor fd: Int32,
         collectTcpTimings: Bool = false,
         tunRuntimeProfile: XrayTunRuntimeProfile = XRAY_TUN_RUNTIME_PROFILE_DEFAULT,
-        geodataSearchDirectory: URL? = nil
+        geodataSearchDirectory: URL? = nil,
+        startupProbe: XrayStartupProbeOptions? = nil
     ) throws {
         try self.init(
             configJSON: configJSON,
             collectTcpTimings: collectTcpTimings,
             tunRuntimeProfile: tunRuntimeProfile,
             geodataSearchDirectory: geodataSearchDirectory,
+            startupProbe: startupProbe,
             tunFileDescriptor: fd,
             tunPacketFormat: XRAY_TUN_FD_PACKET_FORMAT_DARWIN_UTUN,
             tunClosePolicy: XRAY_TUN_FD_CLOSE_POLICY_BORROWED
@@ -263,6 +281,7 @@ public final class XrayCore: @unchecked Sendable {
         collectTcpTimings: Bool = false,
         tunRuntimeProfile: XrayTunRuntimeProfile = XRAY_TUN_RUNTIME_PROFILE_DEFAULT,
         geodataSearchDirectory: URL? = nil,
+        startupProbe: XrayStartupProbeOptions? = nil,
         socketProtectCallback: XraySocketProtectCallback? = nil,
         socketProtectUserData: UnsafeMutableRawPointer? = nil,
         tunFileDescriptor: Int32? = nil,
@@ -282,6 +301,35 @@ public final class XrayCore: @unchecked Sendable {
 
         self.handle = handle
         do {
+            if let startupProbe {
+                try startupProbe.url.withCString { urlPointer in
+                    if let outboundTag = startupProbe.outboundTag, !outboundTag.isEmpty {
+                        try outboundTag.withCString { outboundTagPointer in
+                            try check(
+                                xray_core_set_startup_probe(
+                                    handle,
+                                    urlPointer,
+                                    startupProbe.timeoutMs,
+                                    outboundTagPointer,
+                                    &error
+                                ),
+                                error: error
+                            )
+                        }
+                    } else {
+                        try check(
+                            xray_core_set_startup_probe(
+                                handle,
+                                urlPointer,
+                                startupProbe.timeoutMs,
+                                nil,
+                                &error
+                            ),
+                            error: error
+                        )
+                    }
+                }
+            }
             if socketProtectCallback != nil {
                 try check(
                     xray_core_set_socket_protect_callback(

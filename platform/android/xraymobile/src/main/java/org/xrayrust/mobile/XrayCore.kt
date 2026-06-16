@@ -19,6 +19,7 @@ class XrayCore private constructor(handle: Long) : Closeable {
             tunFileDescriptor: XrayTunFileDescriptor? = null,
             collectTcpTimings: Boolean = false,
             tunRuntimeProfile: XrayTunRuntimeProfile = XrayTunRuntimeProfile.Default,
+            startupProbe: XrayStartupProbeOptions? = null,
         ): XrayCore {
             val core = XrayCore(nativeNew())
             try {
@@ -30,6 +31,9 @@ class XrayCore private constructor(handle: Long) : Closeable {
                 }
                 core.setTunCollectTcpTimings(collectTcpTimings)
                 core.setTunRuntimeProfile(tunRuntimeProfile)
+                if (startupProbe != null) {
+                    core.setStartupProbe(startupProbe)
+                }
                 core.loadConfig(configJson)
                 return core
             } catch (error: Throwable) {
@@ -113,6 +117,17 @@ class XrayCore private constructor(handle: Long) : Closeable {
         withHandle { nativeSetTunCollectTcpTimings(it, collect) }
     }
 
+    private fun setStartupProbe(startupProbe: XrayStartupProbeOptions) {
+        withHandle {
+            nativeSetStartupProbe(
+                it,
+                startupProbe.url,
+                startupProbe.timeoutMs,
+                startupProbe.outboundTag,
+            )
+        }
+    }
+
     private inline fun <T> withHandle(block: (Long) -> T): T = synchronized(lock) {
         check(nativeHandle != 0L) { "xray core is closed" }
         block(nativeHandle)
@@ -131,9 +146,26 @@ class XrayCore private constructor(handle: Long) : Closeable {
     )
     private external fun nativeSetTunRuntimeProfile(handle: Long, profile: Int)
     private external fun nativeSetTunCollectTcpTimings(handle: Long, collect: Boolean)
+    private external fun nativeSetStartupProbe(
+        handle: Long,
+        url: String,
+        timeoutMs: Long,
+        outboundTag: String?,
+    )
     private external fun nativePushPacket(handle: Long, packet: ByteArray)
     private external fun nativePollPacket(handle: Long, maxBytes: Int): ByteArray?
     private external fun nativeStats(handle: Long): LongArray
+}
+
+data class XrayStartupProbeOptions(
+    val url: String,
+    val timeoutMs: Long = 5_000,
+    val outboundTag: String? = null,
+) {
+    init {
+        require(url.isNotEmpty()) { "startup probe URL must not be empty" }
+        require(timeoutMs > 0) { "startup probe timeout must be positive" }
+    }
 }
 
 data class XrayTunFileDescriptor(

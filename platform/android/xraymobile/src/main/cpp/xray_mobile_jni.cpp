@@ -204,6 +204,58 @@ Java_org_xrayrust_mobile_XrayCore_nativeSetSocketProtector(
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_org_xrayrust_mobile_XrayCore_nativeSetStartupProbe(
+    JNIEnv *env,
+    jobject,
+    jlong handle,
+    jstring url,
+    jlong timeout_ms,
+    jstring outbound_tag) {
+  NativeCore *native = core_from_handle(handle);
+  if (native == nullptr || native->core == nullptr) {
+    return;
+  }
+
+  const char *raw_url = nullptr;
+  if (url != nullptr) {
+    raw_url = env->GetStringUTFChars(url, nullptr);
+    if (raw_url == nullptr) {
+      return;
+    }
+  }
+
+  const char *raw_outbound_tag = nullptr;
+  if (outbound_tag != nullptr) {
+    raw_outbound_tag = env->GetStringUTFChars(outbound_tag, nullptr);
+    if (raw_outbound_tag == nullptr) {
+      if (raw_url != nullptr) {
+        env->ReleaseStringUTFChars(url, raw_url);
+      }
+      return;
+    }
+  }
+
+  const uint64_t ffi_timeout_ms =
+      timeout_ms > 0 ? static_cast<uint64_t>(timeout_ms) : 0;
+  XrayError *error = nullptr;
+  XrayStatus status = xray_core_set_startup_probe(
+      native->core,
+      raw_url,
+      ffi_timeout_ms,
+      raw_outbound_tag,
+      &error);
+
+  if (raw_outbound_tag != nullptr) {
+    env->ReleaseStringUTFChars(outbound_tag, raw_outbound_tag);
+  }
+  if (raw_url != nullptr) {
+    env->ReleaseStringUTFChars(url, raw_url);
+  }
+
+  check_status(env, status, error);
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativeSetTunFd(
     JNIEnv *env,
     jobject,
