@@ -278,6 +278,15 @@ pub fn select_tcp_outbound(config: &CoreConfig) -> Result<TcpOutbound, CoreError
     build_tcp_outbound(outbound)
 }
 
+#[allow(dead_code)]
+pub(crate) fn select_tcp_outbound_direct(
+    config: &CoreConfig,
+    outbound_tag: Option<&str>,
+) -> Result<TcpOutbound, CoreError> {
+    let outbound = select_configured_outbound_direct(config, outbound_tag)?;
+    build_tcp_outbound(outbound)
+}
+
 pub fn select_tcp_outbound_for_session(
     config: &CoreConfig,
     inbound_tag: Option<&str>,
@@ -389,6 +398,24 @@ fn select_configured_outbound<'a>(
     };
 
     Ok(outbound)
+}
+
+#[allow(dead_code)]
+fn select_configured_outbound_direct<'a>(
+    config: &'a CoreConfig,
+    outbound_tag: Option<&str>,
+) -> Result<&'a OutboundConfig, CoreError> {
+    match outbound_tag.or(config.default_outbound_tag.as_deref()) {
+        Some(tag) => config
+            .outbounds
+            .iter()
+            .find(|outbound| outbound.tag.as_deref() == Some(tag))
+            .ok_or(CoreError::NoSupportedOutbound),
+        None => config
+            .outbounds
+            .first()
+            .ok_or(CoreError::NoSupportedOutbound),
+    }
 }
 
 fn target_domain(target: &Target) -> Option<&str> {
@@ -706,10 +733,94 @@ mod tests {
     use async_trait::async_trait;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use uuid::Uuid;
+    use xray_config::{RoutingConfig, RoutingRule, StreamSettings, VlessOutboundSettings};
     use xray_proxy::vless::{unpad_vision_block, VisionCommand};
     use xray_transport::{RealityTlsEngine, TransportError};
 
     use super::*;
+
+    fn direct_selection_freedom(tag: &str) -> OutboundConfig {
+        OutboundConfig {
+            tag: Some(tag.to_owned()),
+            stream: StreamSettings {
+                network: Network::Tcp,
+                security: StreamSecurity::None,
+            },
+            settings: OutboundSettings::Freedom,
+        }
+    }
+
+    fn direct_selection_vless(tag: &str) -> OutboundConfig {
+        OutboundConfig {
+            tag: Some(tag.to_owned()),
+            stream: StreamSettings {
+                network: Network::Tcp,
+                security: StreamSecurity::None,
+            },
+            settings: OutboundSettings::Vless(VlessOutboundSettings {
+                server: TargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+                port: 443,
+                users: vec![VlessUser {
+                    id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
+                    encryption: "none".to_owned(),
+                    flow: None,
+                }],
+            }),
+        }
+    }
+
+    fn direct_selection_config() -> CoreConfig {
+        CoreConfig {
+            inbounds: Vec::new(),
+            outbounds: vec![
+                direct_selection_freedom("direct"),
+                direct_selection_vless("proxy"),
+            ],
+            default_outbound_tag: Some("proxy".to_owned()),
+            routing: RoutingConfig {
+                rules: vec![RoutingRule {
+                    inbound_tags: Vec::new(),
+                    domain_matchers: Vec::new(),
+                    ip_matchers: Vec::new(),
+                    outbound_tag: "direct".to_owned(),
+                }],
+            },
+            dns: Default::default(),
+        }
+    }
+
+    #[test]
+    fn select_tcp_outbound_direct_uses_explicit_tag() {
+        let selected =
+            select_tcp_outbound_direct(&direct_selection_config(), Some("direct")).unwrap();
+
+        assert!(matches!(selected, TcpOutbound::Freedom));
+    }
+
+    #[test]
+    fn select_tcp_outbound_direct_uses_default_tag_without_routing() {
+        let selected = select_tcp_outbound_direct(&direct_selection_config(), None).unwrap();
+
+        assert!(matches!(selected, TcpOutbound::Vless(_)));
+    }
+
+    #[test]
+    fn select_tcp_outbound_direct_errors_when_explicit_tag_is_missing() {
+        let error =
+            select_tcp_outbound_direct(&direct_selection_config(), Some("missing")).unwrap_err();
+
+        assert!(matches!(error, CoreError::NoSupportedOutbound));
+    }
+
+    #[test]
+    fn select_tcp_outbound_direct_uses_first_outbound_without_default() {
+        let mut config = direct_selection_config();
+        config.default_outbound_tag = None;
+
+        let selected = select_tcp_outbound_direct(&config, None).unwrap();
+
+        assert!(matches!(selected, TcpOutbound::Freedom));
+    }
 
     #[derive(Debug)]
     struct DuplexRealityEngine {
