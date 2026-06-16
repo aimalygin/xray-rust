@@ -177,6 +177,12 @@ XrayStatus xray_core_set_socket_protect_callback(
     XraySocketProtectCallback callback,
     void *user_data,
     XrayError **error);
+XrayStatus xray_core_set_startup_probe(
+    XrayCoreHandle *handle,
+    const char *url,
+    uint64_t timeout_ms,
+    const char *outbound_tag,
+    XrayError **error);
 XrayStatus xray_core_set_tun_fd(
     XrayCoreHandle *handle,
     int32_t fd,

@@ -35,6 +35,7 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
         "xray_core_free",
         "XraySocketProtectCallback",
         "xray_core_set_socket_protect_callback",
+        "xray_core_set_startup_probe",
         "XrayTunFdPacketFormat",
         "XrayTunFdClosePolicy",
         "XrayTunRuntimeProfile",
@@ -369,6 +370,7 @@ const EXPORTED_SYMBOLS: &[&str] = &[
     "xray_core_stop",
     "xray_core_free",
     "xray_core_set_socket_protect_callback",
+    "xray_core_set_startup_probe",
     "xray_core_set_tun_fd",
     "xray_core_set_tun_collect_tcp_timings",
     "xray_core_set_tun_runtime_profile",
@@ -432,6 +434,12 @@ static void use_xray_ffi_api(void) {
   (void)xray_ffi_version_major();
   (void)xray_core_set_geodata_search_dir(handle, ".", &error);
   (void)xray_core_set_socket_protect_callback(handle, NULL, NULL, &error);
+  (void)xray_core_set_startup_probe(
+      handle,
+      "http://probe.test/health",
+      5000,
+      NULL,
+      &error);
   (void)xray_core_set_tun_fd(
       handle,
       -1,

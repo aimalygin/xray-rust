@@ -1,11 +1,16 @@
 use std::ffi::{CStr, CString};
+use std::io::{Read, Write};
+use std::net::{Ipv4Addr, SocketAddr, TcpListener};
+use std::sync::mpsc;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use xray_ffi::{
     xray_core_free, xray_core_load_config_json, xray_core_new,
-    xray_core_set_socket_protect_callback, xray_core_set_tun_collect_tcp_timings,
-    xray_core_set_tun_fd, xray_core_set_tun_runtime_profile, xray_core_start, xray_core_stop,
-    xray_error_code, xray_error_free, xray_error_message, xray_tun_poll_packet,
-    xray_tun_poll_packets, xray_tun_poll_tcp_flow_summary_event,
+    xray_core_set_socket_protect_callback, xray_core_set_startup_probe,
+    xray_core_set_tun_collect_tcp_timings, xray_core_set_tun_fd, xray_core_set_tun_runtime_profile,
+    xray_core_start, xray_core_stop, xray_error_code, xray_error_free, xray_error_message,
+    xray_tun_poll_packet, xray_tun_poll_packets, xray_tun_poll_tcp_flow_summary_event,
     xray_tun_poll_tcp_remote_write_slow_event, xray_tun_poll_tcp_slow_flow_event,
     xray_tun_poll_udp_quic_blocked_event, xray_tun_poll_udp_response_gap_event,
     xray_tun_poll_udp_slow_flow_event, xray_tun_push_packet, xray_tun_stats, XrayStatus,
@@ -157,6 +162,236 @@ fn ffi_rejects_socket_protect_callback_after_config_load() {
         XrayStatus::RuntimeError,
         "socket protect callback must be set before config load",
     );
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_startup_probe_setter_accepts_url_timeout_and_tag_before_config_load() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    assert!(!core.is_null());
+
+    let url = CString::new("https://www.google.com/generate_204").unwrap();
+    let outbound_tag = CString::new("proxy").unwrap();
+    let status = unsafe {
+        xray_core_set_startup_probe(core, url.as_ptr(), 5_000, outbound_tag.as_ptr(), &mut err)
+    };
+
+    assert_eq!(status, XrayStatus::Ok);
+    assert!(err.is_null());
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_startup_probe_setter_accepts_null_and_empty_outbound_tag() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    assert!(!core.is_null());
+
+    let url = CString::new("http://probe.test/health").unwrap();
+    let status = unsafe {
+        xray_core_set_startup_probe(core, url.as_ptr(), 5_000, std::ptr::null(), &mut err)
+    };
+    assert_eq!(status, XrayStatus::Ok);
+    assert!(err.is_null());
+
+    let empty_tag = CString::new("").unwrap();
+    let status = unsafe {
+        xray_core_set_startup_probe(core, url.as_ptr(), 5_000, empty_tag.as_ptr(), &mut err)
+    };
+    assert_eq!(status, XrayStatus::Ok);
+    assert!(err.is_null());
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_startup_probe_setter_rejects_null_handle() {
+    let mut err = std::ptr::null_mut();
+    let url = CString::new("https://www.google.com/generate_204").unwrap();
+
+    let status = unsafe {
+        xray_core_set_startup_probe(
+            std::ptr::null_mut(),
+            url.as_ptr(),
+            5_000,
+            std::ptr::null(),
+            &mut err,
+        )
+    };
+
+    assert_eq!(status, XrayStatus::NullArgument);
+    assert_error(&mut err, XrayStatus::NullArgument, "core handle is null");
+}
+
+#[test]
+fn ffi_startup_probe_setter_rejects_null_url() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    assert!(!core.is_null());
+
+    let status = unsafe {
+        xray_core_set_startup_probe(core, std::ptr::null(), 5_000, std::ptr::null(), &mut err)
+    };
+
+    assert_eq!(status, XrayStatus::NullArgument);
+    assert_error(
+        &mut err,
+        XrayStatus::NullArgument,
+        "startup probe URL is null",
+    );
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_startup_probe_setter_rejects_empty_url() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    assert!(!core.is_null());
+    let url = CString::new("").unwrap();
+
+    let status = unsafe {
+        xray_core_set_startup_probe(core, url.as_ptr(), 5_000, std::ptr::null(), &mut err)
+    };
+
+    assert_eq!(status, XrayStatus::ConfigError);
+    assert_error(
+        &mut err,
+        XrayStatus::ConfigError,
+        "startup probe URL is empty",
+    );
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_startup_probe_setter_rejects_zero_timeout() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    assert!(!core.is_null());
+    let url = CString::new("https://www.google.com/generate_204").unwrap();
+
+    let status =
+        unsafe { xray_core_set_startup_probe(core, url.as_ptr(), 0, std::ptr::null(), &mut err) };
+
+    assert_eq!(status, XrayStatus::ConfigError);
+    assert_error(
+        &mut err,
+        XrayStatus::ConfigError,
+        "startup probe timeout must be positive",
+    );
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_startup_probe_setter_rejects_invalid_utf8_url() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    assert!(!core.is_null());
+    let url = CString::new(vec![0xff]).unwrap();
+
+    let status = unsafe {
+        xray_core_set_startup_probe(core, url.as_ptr(), 5_000, std::ptr::null(), &mut err)
+    };
+
+    assert_eq!(status, XrayStatus::InvalidUtf8);
+    assert_error(&mut err, XrayStatus::InvalidUtf8, "not valid UTF-8");
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_startup_probe_setter_rejects_invalid_utf8_outbound_tag() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    assert!(!core.is_null());
+    let url = CString::new("https://www.google.com/generate_204").unwrap();
+    let outbound_tag = CString::new(vec![0xff]).unwrap();
+
+    let status = unsafe {
+        xray_core_set_startup_probe(core, url.as_ptr(), 5_000, outbound_tag.as_ptr(), &mut err)
+    };
+
+    assert_eq!(status, XrayStatus::InvalidUtf8);
+    assert_error(&mut err, XrayStatus::InvalidUtf8, "not valid UTF-8");
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_startup_probe_setter_rejects_after_config_load() {
+    let mut err = std::ptr::null_mut();
+    let core = loaded_core(&mut err);
+    let url = CString::new("https://www.google.com/generate_204").unwrap();
+
+    let status = unsafe {
+        xray_core_set_startup_probe(core, url.as_ptr(), 5_000, std::ptr::null(), &mut err)
+    };
+
+    assert_eq!(status, XrayStatus::RuntimeError);
+    assert_error(
+        &mut err,
+        XrayStatus::RuntimeError,
+        "startup probe must be set before config load",
+    );
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_startup_probe_setter_runs_probe_when_core_starts() {
+    let server = spawn_startup_probe_server_once();
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    assert!(!core.is_null());
+
+    let url = CString::new(format!("http://127.0.0.1:{}/health", server.addr.port())).unwrap();
+    let status = unsafe {
+        xray_core_set_startup_probe(core, url.as_ptr(), 5_000, std::ptr::null(), &mut err)
+    };
+    assert_eq!(status, XrayStatus::Ok);
+    assert!(err.is_null());
+
+    let raw = CString::new(client_config_with_freedom_outbound()).unwrap();
+    let status = unsafe { xray_core_load_config_json(core, raw.as_ptr(), &mut err) };
+    assert_eq!(status, XrayStatus::Ok);
+    assert!(err.is_null());
+
+    let status = unsafe { xray_core_start(core, &mut err) };
+    assert_eq!(
+        status,
+        XrayStatus::Ok,
+        "start error: {}",
+        error_message(err)
+    );
+    assert!(err.is_null());
+    server.wait();
+
+    let status = unsafe { xray_core_stop(core, &mut err) };
+    assert_eq!(status, XrayStatus::Ok);
+    assert!(err.is_null());
 
     unsafe {
         xray_core_free(core);
@@ -952,6 +1187,24 @@ fn client_config_with_ephemeral_socks_port() -> String {
     .to_owned()
 }
 
+fn client_config_with_freedom_outbound() -> String {
+    r#"{
+      "inbounds": [
+        {
+          "tag": "socks-in",
+          "protocol": "socks",
+          "listen": "127.0.0.1",
+          "port": 0,
+          "settings": { "udp": false }
+        }
+      ],
+      "outbounds": [
+        { "tag": "direct", "protocol": "freedom" }
+      ]
+    }"#
+    .to_owned()
+}
+
 fn tun_config_with_freedom_outbound() -> String {
     r#"{
       "inbounds": [
@@ -968,6 +1221,84 @@ fn tun_config_with_freedom_outbound() -> String {
       ]
     }"#
     .to_owned()
+}
+
+struct StartupProbeServer {
+    addr: SocketAddr,
+    result: mpsc::Receiver<Result<(), String>>,
+    join: thread::JoinHandle<()>,
+}
+
+impl StartupProbeServer {
+    fn wait(self) {
+        let result = self
+            .result
+            .recv_timeout(Duration::from_secs(3))
+            .expect("startup probe server did not report a result");
+        self.join
+            .join()
+            .expect("startup probe server thread panicked");
+        result.expect("startup probe server reported an error");
+    }
+}
+
+fn spawn_startup_probe_server_once() -> StartupProbeServer {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind startup probe server");
+    listener
+        .set_nonblocking(true)
+        .expect("set startup probe server nonblocking");
+    let addr = listener
+        .local_addr()
+        .expect("read startup probe server local addr");
+    let (tx, rx) = mpsc::channel();
+
+    let join = thread::spawn(move || {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    let mut request = [0_u8; 1024];
+                    let read = match stream.read(&mut request) {
+                        Ok(read) => read,
+                        Err(err) => {
+                            let _ = tx.send(Err(format!("failed to read probe request: {err}")));
+                            return;
+                        }
+                    };
+                    let request = String::from_utf8_lossy(&request[..read]);
+                    if !request.starts_with("GET /health HTTP/1.1\r\n") {
+                        let _ = tx.send(Err(format!("unexpected probe request: {request:?}")));
+                        return;
+                    }
+                    if let Err(err) =
+                        stream.write_all(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")
+                    {
+                        let _ = tx.send(Err(format!("failed to write probe response: {err}")));
+                        return;
+                    }
+                    let _ = tx.send(Ok(()));
+                    return;
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                    if Instant::now() >= deadline {
+                        let _ = tx.send(Err("timed out waiting for startup probe".to_owned()));
+                        return;
+                    }
+                    thread::sleep(Duration::from_millis(10));
+                }
+                Err(err) => {
+                    let _ = tx.send(Err(format!("failed to accept probe connection: {err}")));
+                    return;
+                }
+            }
+        }
+    });
+
+    StartupProbeServer {
+        addr,
+        result: rx,
+        join,
+    }
 }
 
 #[cfg(unix)]

@@ -11,8 +11,8 @@ use std::time::Duration;
 use tokio::runtime::{Builder, Runtime};
 use xray_config::{parse_xray_json, parse_xray_json_with_geodata_dirs};
 use xray_core_rs::{
-    Core, TunFdClosePolicy, TunFdConfig, TunFdPacketFormat, TunFdRuntime, TunRuntimeOptions,
-    TunRuntimeProfile,
+    Core, StartupProbeOptions, TunFdClosePolicy, TunFdConfig, TunFdPacketFormat, TunFdRuntime,
+    TunRuntimeOptions, TunRuntimeProfile,
 };
 use xray_transport::{
     CachingDnsResolver, SocketHandle, SocketProtector, SystemDnsResolver, TransportDialer,
@@ -242,6 +242,7 @@ pub struct XrayCoreHandle {
     runtime: Runtime,
     socket_protector: Option<Arc<dyn SocketProtector>>,
     geodata_search_dirs: Vec<PathBuf>,
+    startup_probe_options: Option<StartupProbeOptions>,
     tun_fd_config: Option<TunFdConfig>,
     tun_fd_runtime: Option<TunFdRuntime>,
     tun_runtime_options: TunRuntimeOptions,
@@ -331,6 +332,7 @@ unsafe fn xray_core_new_inner(error: *mut *mut XrayError) -> *mut XrayCoreHandle
         runtime,
         socket_protector: None,
         geodata_search_dirs: Vec::new(),
+        startup_probe_options: None,
         tun_fd_config: None,
         tun_fd_runtime: None,
         tun_runtime_options: TunRuntimeOptions::default(),
@@ -512,7 +514,7 @@ unsafe fn xray_core_load_config_json_inner(
             }
         };
 
-    let core = match Core::with_runtime_dependencies_and_tun_options(
+    let mut core = match Core::with_runtime_dependencies_and_tun_options(
         parsed.config,
         Arc::new(CachingDnsResolver::new(Arc::new(SystemDnsResolver))),
         transport_dialer,
@@ -526,10 +528,143 @@ unsafe fn xray_core_load_config_json_inner(
             return XrayStatus::ConfigError;
         }
     };
+    if let Some(options) = unsafe { (*handle).startup_probe_options.clone() } {
+        core.set_startup_probe(Some(options));
+    }
 
     unsafe {
         (*handle).core = Some(core);
     }
+
+    XrayStatus::Ok
+}
+
+/// Configures an optional HTTP(S) startup probe.
+///
+/// The probe is executed by `xray_core_start` after listeners are bound and
+/// before start returns success. The request is sent through the configured
+/// outbound, and any 2xx/3xx response is considered successful. Set this
+/// before loading config.
+///
+/// # Safety
+///
+/// `handle` must either be null or a pointer returned by `xray_core_new` that
+/// has not been freed. `url` must point to a valid NUL-terminated UTF-8 string.
+/// `outbound_tag` may be null; if non-null, it must point to a valid
+/// NUL-terminated UTF-8 string. If `error` is non-null, it must point to an
+/// initialized `*mut XrayError` value that is either null or a live error
+/// pointer returned by this library. This function may free and replace that
+/// error pointer.
+#[no_mangle]
+pub unsafe extern "C" fn xray_core_set_startup_probe(
+    handle: *mut XrayCoreHandle,
+    url: *const c_char,
+    timeout_ms: u64,
+    outbound_tag: *const c_char,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            xray_core_set_startup_probe_inner(handle, url, timeout_ms, outbound_tag, error)
+        })
+    }
+}
+
+unsafe fn xray_core_set_startup_probe_inner(
+    handle: *mut XrayCoreHandle,
+    url: *const c_char,
+    timeout_ms: u64,
+    outbound_tag: *const c_char,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        clear_error(error);
+    }
+
+    if handle.is_null() {
+        unsafe {
+            set_error(error, XrayStatus::NullArgument, "core handle is null");
+        }
+        return XrayStatus::NullArgument;
+    }
+
+    if url.is_null() {
+        unsafe {
+            set_error(error, XrayStatus::NullArgument, "startup probe URL is null");
+        }
+        return XrayStatus::NullArgument;
+    }
+
+    let handle = unsafe { &mut *handle };
+    if handle.core.is_some() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::RuntimeError,
+                "startup probe must be set before config load",
+            );
+        }
+        return XrayStatus::RuntimeError;
+    }
+
+    let url = match unsafe { CStr::from_ptr(url) }.to_str() {
+        Ok(url) => url,
+        Err(err) => {
+            unsafe {
+                set_error(
+                    error,
+                    XrayStatus::InvalidUtf8,
+                    format!("startup probe URL is not valid UTF-8: {err}"),
+                );
+            }
+            return XrayStatus::InvalidUtf8;
+        }
+    };
+    if url.is_empty() {
+        unsafe {
+            set_error(error, XrayStatus::ConfigError, "startup probe URL is empty");
+        }
+        return XrayStatus::ConfigError;
+    }
+    if timeout_ms == 0 {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::ConfigError,
+                "startup probe timeout must be positive",
+            );
+        }
+        return XrayStatus::ConfigError;
+    }
+
+    let outbound_tag = if outbound_tag.is_null() {
+        None
+    } else {
+        let outbound_tag = match unsafe { CStr::from_ptr(outbound_tag) }.to_str() {
+            Ok(outbound_tag) => outbound_tag,
+            Err(err) => {
+                unsafe {
+                    set_error(
+                        error,
+                        XrayStatus::InvalidUtf8,
+                        format!("startup probe outbound tag is not valid UTF-8: {err}"),
+                    );
+                }
+                return XrayStatus::InvalidUtf8;
+            }
+        };
+        if outbound_tag.is_empty() {
+            None
+        } else {
+            Some(outbound_tag.to_owned())
+        }
+    };
+
+    handle.startup_probe_options = Some(StartupProbeOptions {
+        url: url.to_owned(),
+        timeout: Duration::from_millis(timeout_ms),
+        outbound_tag,
+    });
 
     XrayStatus::Ok
 }
