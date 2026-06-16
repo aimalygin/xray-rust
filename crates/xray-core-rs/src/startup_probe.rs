@@ -1,7 +1,14 @@
 use std::time::Duration;
 
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::time::timeout;
+use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
+use xray_transport::{DnsResolver, TlsClientConfig, TlsConnector, TransportDialer};
+
+use crate::outbound::{open_tcp_stream_with_resolver_and_dialer, select_tcp_outbound_direct};
+use crate::CoreError;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)]
 pub struct StartupProbeOptions {
     pub url: String,
     pub timeout: Duration,
@@ -9,7 +16,6 @@ pub struct StartupProbeOptions {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)]
 pub(crate) struct ParsedProbeUrl {
     pub(crate) scheme: ProbeScheme,
     pub(crate) host: String,
@@ -18,20 +24,155 @@ pub(crate) struct ParsedProbeUrl {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
 pub(crate) enum ProbeScheme {
     Http,
     Https,
 }
 
 #[derive(Debug, thiserror::Error)]
-#[allow(dead_code)]
 pub enum StartupProbeError {
     #[error("unsupported startup probe URL `{0}`")]
     UnsupportedUrl(String),
+    #[error("startup probe timed out after {timeout_ms}ms for `{url}`")]
+    Timeout { url: String, timeout_ms: u128 },
+    #[error("startup probe transport failed for `{url}`: {source}")]
+    Core {
+        url: String,
+        #[source]
+        source: Box<CoreError>,
+    },
+    #[error("startup probe TLS failed for `{url}`: {source}")]
+    Tls {
+        url: String,
+        #[source]
+        source: xray_transport::TransportError,
+    },
+    #[error("startup probe I/O failed for `{url}`: {source}")]
+    Io {
+        url: String,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("startup probe received malformed HTTP response from `{0}`")]
+    MalformedHttpResponse(String),
+    #[error("startup probe received HTTP status {status} from `{url}`")]
+    HttpStatus { url: String, status: u16 },
 }
 
-#[allow(dead_code)]
+pub(crate) async fn run_startup_probe(
+    config: &xray_config::CoreConfig,
+    options: StartupProbeOptions,
+    dns_resolver: &dyn DnsResolver,
+    transport_dialer: &TransportDialer,
+) -> Result<(), StartupProbeError> {
+    let timeout_ms = options.timeout.as_millis();
+    let url = options.url.clone();
+    timeout(
+        options.timeout,
+        run_startup_probe_inner(config, &options, dns_resolver, transport_dialer, None),
+    )
+    .await
+    .map_err(|_| StartupProbeError::Timeout { url, timeout_ms })?
+}
+
+async fn run_startup_probe_inner(
+    config: &xray_config::CoreConfig,
+    options: &StartupProbeOptions,
+    dns_resolver: &dyn DnsResolver,
+    transport_dialer: &TransportDialer,
+    tls_connector: Option<&TlsConnector>,
+) -> Result<(), StartupProbeError> {
+    let parsed = parse_probe_url(&options.url)?;
+    let outbound =
+        select_tcp_outbound_direct(config, options.outbound_tag.as_deref()).map_err(|source| {
+            StartupProbeError::Core {
+                url: options.url.clone(),
+                source: Box::new(source),
+            }
+        })?;
+    let target = Target::new(
+        RoutingTargetAddr::Domain(parsed.host.clone()),
+        parsed.port,
+        RoutingNetwork::Tcp,
+    );
+    let mut stream = open_tcp_stream_with_resolver_and_dialer(
+        &outbound,
+        &target,
+        dns_resolver,
+        transport_dialer,
+    )
+    .await
+    .map_err(|source| StartupProbeError::Core {
+        url: options.url.clone(),
+        source: Box::new(source),
+    })?;
+
+    if parsed.scheme == ProbeScheme::Https {
+        let system_tls;
+        let tls_connector = match tls_connector {
+            Some(tls_connector) => tls_connector,
+            None => {
+                system_tls = TlsConnector::system().map_err(|source| StartupProbeError::Tls {
+                    url: options.url.clone(),
+                    source,
+                })?;
+                &system_tls
+            }
+        };
+        stream = tls_connector
+            .connect_stream(
+                stream,
+                &TlsClientConfig {
+                    server_name: parsed.host.clone(),
+                    allow_insecure: false,
+                },
+            )
+            .await
+            .map_err(|source| StartupProbeError::Tls {
+                url: options.url.clone(),
+                source,
+            })?;
+    }
+
+    let request = format!(
+        "GET {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: xray-rust-startup-probe\r\nConnection: close\r\n\r\n",
+        parsed.path_and_query, parsed.host
+    );
+    stream
+        .write_all(request.as_bytes())
+        .await
+        .map_err(|source| StartupProbeError::Io {
+            url: options.url.clone(),
+            source,
+        })?;
+    stream
+        .flush()
+        .await
+        .map_err(|source| StartupProbeError::Io {
+            url: options.url.clone(),
+            source,
+        })?;
+
+    let mut response = [0u8; 1024];
+    let read = stream
+        .read(&mut response)
+        .await
+        .map_err(|source| StartupProbeError::Io {
+            url: options.url.clone(),
+            source,
+        })?;
+    let status = parse_http_status(&response[..read])
+        .ok_or_else(|| StartupProbeError::MalformedHttpResponse(options.url.clone()))?;
+    if (200..400).contains(&status) {
+        Ok(())
+    } else {
+        Err(StartupProbeError::HttpStatus {
+            url: options.url.clone(),
+            status,
+        })
+    }
+}
+
 pub(crate) fn parse_probe_url(raw: &str) -> Result<ParsedProbeUrl, StartupProbeError> {
     if raw.contains('#') {
         return Err(StartupProbeError::UnsupportedUrl(raw.to_owned()));
@@ -111,6 +252,15 @@ fn contains_ascii_whitespace_or_control(value: &str) -> bool {
     value
         .chars()
         .any(|ch| ch.is_ascii_whitespace() || ch.is_ascii_control())
+}
+
+fn parse_http_status(response: &[u8]) -> Option<u16> {
+    let line_end = response.windows(2).position(|window| window == b"\r\n")?;
+    let line = std::str::from_utf8(&response[..line_end]).ok()?;
+    let mut parts = line.split_whitespace();
+    let version = parts.next()?;
+    let status = parts.next()?.parse::<u16>().ok()?;
+    version.starts_with("HTTP/").then_some(status)
 }
 
 #[cfg(test)]

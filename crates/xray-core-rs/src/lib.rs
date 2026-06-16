@@ -26,6 +26,7 @@ pub use outbound::{
     select_tcp_outbound_for_session, select_udp_outbound_for_session, select_vless_tcp_outbound,
     TcpOutbound, UdpOutbound, VlessTcpOutbound, VlessUdpFraming,
 };
+pub use startup_probe::{StartupProbeError, StartupProbeOptions};
 pub use tun_fd::{TunFdClosePolicy, TunFdConfig, TunFdPacketFormat, TunFdRuntime};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -134,6 +135,8 @@ pub enum CoreError {
     VlessHeader(#[from] xray_proxy::vless::WireError),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
+    #[error("startup probe failed: {0}")]
+    StartupProbe(#[from] StartupProbeError),
 }
 
 pub struct Core {
@@ -145,6 +148,7 @@ pub struct Core {
     dns_resolver: Arc<dyn DnsResolver>,
     transport_dialer: Arc<TransportDialer>,
     tun_runtime_options: TunRuntimeOptions,
+    startup_probe: Option<StartupProbeOptions>,
 }
 
 impl Core {
@@ -217,11 +221,21 @@ impl Core {
             dns_resolver,
             transport_dialer,
             tun_runtime_options,
+            startup_probe: None,
         })
     }
 
     pub fn state(&self) -> CoreState {
         self.state
+    }
+
+    pub fn with_startup_probe(mut self, options: StartupProbeOptions) -> Self {
+        self.startup_probe = Some(options);
+        self
+    }
+
+    pub fn set_startup_probe(&mut self, options: Option<StartupProbeOptions>) {
+        self.startup_probe = options;
     }
 
     pub fn inbound_addr(&self, tag: Option<&str>) -> Option<SocketAddr> {
@@ -311,6 +325,21 @@ impl Core {
 
         self.runtime = Some(RuntimeState { inbounds, tasks });
         self.state = CoreState::Running;
+
+        if let Some(options) = self.startup_probe.clone() {
+            if let Err(error) = startup_probe::run_startup_probe(
+                &self.config,
+                options,
+                self.dns_resolver.as_ref(),
+                self.transport_dialer.as_ref(),
+            )
+            .await
+            {
+                let _ = self.stop().await;
+                return Err(CoreError::StartupProbe(error));
+            }
+        }
+
         Ok(())
     }
 
