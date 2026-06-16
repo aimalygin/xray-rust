@@ -476,7 +476,7 @@ mod tests {
 #[cfg(test)]
 mod https_tests {
     use std::net::{Ipv4Addr, SocketAddr};
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
     use async_trait::async_trait;
@@ -489,7 +489,9 @@ mod https_tests {
         CoreConfig, InboundConfig, InboundProtocol, Network, OutboundConfig, OutboundSettings,
         RoutingConfig, StreamSecurity, StreamSettings,
     };
-    use xray_transport::{DnsResolver, TlsConnector, TransportDialer, TransportError};
+    use xray_transport::{
+        DnsResolver, SocketHandle, SocketProtector, TlsConnector, TransportDialer, TransportError,
+    };
 
     use super::*;
 
@@ -507,6 +509,27 @@ mod https_tests {
             } else {
                 Err(TransportError::NoResolvedAddress(domain.to_owned(), port))
             }
+        }
+    }
+
+    #[derive(Debug, Default)]
+    struct RecordingSocketProtector {
+        seen: Mutex<Vec<i64>>,
+    }
+
+    impl RecordingSocketProtector {
+        fn seen(&self) -> Vec<i64> {
+            self.seen.lock().expect("seen socket lock").clone()
+        }
+    }
+
+    impl SocketProtector for RecordingSocketProtector {
+        fn protect(&self, socket: SocketHandle) -> std::io::Result<()> {
+            self.seen
+                .lock()
+                .expect("seen socket lock")
+                .push(socket.raw());
+            Ok(())
         }
     }
 
@@ -569,6 +592,7 @@ mod https_tests {
             .expect("bind HTTPS probe listener");
         let addr = listener.local_addr().expect("read HTTPS listener address");
         let acceptor = TlsAcceptor::from(server_config);
+        let expected_host = format!("probe.test:{}", addr.port());
 
         let handle = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.expect("accept HTTPS probe client");
@@ -576,15 +600,20 @@ mod https_tests {
             let mut request = Vec::new();
             let mut chunk = [0u8; 128];
             let expected_prefix = b"GET /health HTTP/1.1\r\n";
-            while request.len() < expected_prefix.len() {
+            while !request.windows(4).any(|window| window == b"\r\n\r\n") {
                 let read = stream.read(&mut chunk).await.expect("read HTTPS request");
                 assert!(read > 0, "HTTPS client closed before sending request");
                 request.extend_from_slice(&chunk[..read]);
+                assert!(request.len() <= 1024, "HTTPS request headers are too large");
             }
+            let request = String::from_utf8_lossy(&request);
             assert!(
-                request.starts_with(expected_prefix),
-                "unexpected HTTPS request: {}",
-                String::from_utf8_lossy(&request)
+                request.as_bytes().starts_with(expected_prefix),
+                "unexpected HTTPS request: {request}"
+            );
+            assert!(
+                request.contains(&format!("\r\nHost: {expected_host}\r\n")),
+                "HTTPS request missing expected Host header: {request}"
             );
             stream
                 .write_all(b"HTTP/1.1 204 Test\r\nContent-Length: 0\r\n\r\n")
@@ -609,15 +638,24 @@ mod https_tests {
             addr,
         };
         let tls = TlsConnector::with_client_config(client_config);
+        let protector = Arc::new(RecordingSocketProtector::default());
+        let dialer_protector: Arc<dyn SocketProtector> = protector.clone();
+        let transport_dialer =
+            TransportDialer::system_with_socket_protector(Some(dialer_protector))
+                .expect("build protected transport dialer");
 
-        let result = run_startup_probe_inner(
-            &freedom_config(),
-            &options,
-            &resolver,
-            &TransportDialer::system().unwrap(),
-            Some(&tls),
+        let result = tokio::time::timeout(
+            Duration::from_secs(2),
+            run_startup_probe_inner(
+                &freedom_config(),
+                &options,
+                &resolver,
+                &transport_dialer,
+                Some(&tls),
+            ),
         )
-        .await;
+        .await
+        .expect("HTTPS probe should complete");
         let server_result = tokio::time::timeout(Duration::from_secs(2), server)
             .await
             .expect("HTTPS server should complete");
@@ -627,5 +665,8 @@ mod https_tests {
             "expected HTTPS probe success, got {result:?}"
         );
         server_result.expect("HTTPS server task should complete");
+        let seen = protector.seen();
+        assert_eq!(seen.len(), 1, "expected dialer socket protector invocation");
+        assert!(seen[0] >= 0, "expected valid protected socket handle");
     }
 }
