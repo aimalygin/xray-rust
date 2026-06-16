@@ -230,6 +230,36 @@ mod transport_tests {
     }
 
     #[tokio::test]
+    async fn tls_connector_wraps_existing_transport_stream() {
+        let (client_config, server_config) = tls_test_configs();
+        let (client_raw, server_raw) = tokio::io::duplex(4096);
+        let acceptor = TlsAcceptor::from(server_config);
+        let server = tokio::spawn(async move {
+            let mut stream = acceptor
+                .accept(server_raw)
+                .await
+                .expect("accept TLS stream");
+            let mut buf = [0u8; 4];
+            stream.read_exact(&mut buf).await.expect("read ping");
+            stream.write_all(&buf).await.expect("write pong");
+        });
+
+        let connector = TlsConnector::with_client_config(client_config);
+        let config = TlsClientConfig {
+            server_name: "server.test".to_owned(),
+            allow_insecure: false,
+        };
+
+        let stream = connector
+            .connect_stream(Box::new(client_raw), &config)
+            .await
+            .expect("wrap existing stream with TLS");
+
+        assert_boxed_transport_stream(stream).await;
+        server.await.expect("TLS server task should complete");
+    }
+
+    #[tokio::test]
     async fn tls_connector_invokes_socket_protector_before_connect() {
         let (client_config, server_config) = tls_test_configs();
         let (addr, handle) = spawn_tls_echo_once(server_config).await;

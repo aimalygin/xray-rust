@@ -1,13 +1,21 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::{
+    io,
+    net::SocketAddr,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
 
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{crypto, DigitallySignedStruct, Error as RustlsError, SignatureScheme};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio_rustls::TlsConnector as TokioTlsConnector;
 use xray_routing::{Target, TargetAddr};
 
 use crate::{
     connect_tcp_stream, BoxedTransportStream, SocketProtector, TlsClientConfig, TransportError,
+    TransportStream,
 };
 
 #[derive(Clone)]
@@ -53,13 +61,22 @@ impl TlsConnector {
         self
     }
 
+    pub async fn connect_stream(
+        &self,
+        stream: BoxedTransportStream,
+        config: &TlsClientConfig,
+    ) -> Result<BoxedTransportStream, TransportError> {
+        let server_name = tls_server_name(config)?;
+        self.connect_stream_with_server_name(stream, config, server_name)
+            .await
+    }
+
     pub async fn connect(
         &self,
         target: &Target,
         config: &TlsClientConfig,
     ) -> Result<BoxedTransportStream, TransportError> {
-        let server_name = rustls::pki_types::ServerName::try_from(config.server_name.clone())
-            .map_err(|_| TransportError::InvalidTlsServerName(config.server_name.clone()))?;
+        let server_name = tls_server_name(config)?;
 
         let addr = match &target.addr {
             TargetAddr::Ip(ip) => SocketAddr::new(*ip, target.port),
@@ -67,6 +84,16 @@ impl TlsConnector {
         };
 
         let stream = connect_tcp_stream(addr, self.socket_protector.as_deref()).await?;
+        self.connect_stream_with_server_name(Box::new(stream), config, server_name)
+            .await
+    }
+
+    async fn connect_stream_with_server_name(
+        &self,
+        stream: BoxedTransportStream,
+        config: &TlsClientConfig,
+        server_name: ServerName<'static>,
+    ) -> Result<BoxedTransportStream, TransportError> {
         let client_config = if config.allow_insecure {
             &self.insecure_client_config
         } else {
@@ -78,6 +105,29 @@ impl TlsConnector {
             .map_err(TransportError::Tls)?;
 
         Ok(Box::new(stream))
+    }
+}
+
+fn tls_server_name(config: &TlsClientConfig) -> Result<ServerName<'static>, TransportError> {
+    ServerName::try_from(config.server_name.clone())
+        .map_err(|_| TransportError::InvalidTlsServerName(config.server_name.clone()))
+}
+
+impl TransportStream for tokio_rustls::client::TlsStream<BoxedTransportStream> {
+    fn poll_read_direct(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        output: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        AsyncRead::poll_read(self, cx, output)
+    }
+
+    fn poll_write_direct(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        input: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        AsyncWrite::poll_write(self, cx, input)
     }
 }
 
