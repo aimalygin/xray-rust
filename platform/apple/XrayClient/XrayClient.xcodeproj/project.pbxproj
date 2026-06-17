@@ -1709,6 +1709,7 @@
 		};
 		044523C42FCA246000EB1099 /* XrayAppleClient */ = {
 			isa = XCSwiftPackageProductDependency;
+			package = 044523C32FCA246000EB1099 /* XCLocalSwiftPackageReference "../../apple" */;
 			productName = XrayAppleClient;
 		};
 		044523E12FCA256700EB1099 /* XrayAppleTunnel */ = {
