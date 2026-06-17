@@ -59,4 +59,4 @@ strip = "symbols"
 panic = "unwind"
 
 [patch.crates-io]
-rustls = { git = "https://github.com/aimalygin/shaped-rustls", branch = "xray/rustls-0.23.40" }
+rustls = { git = "https://github.com/aimalygin/shaped-rustls", tag = "xray-rustls-0.23.40-1" }
