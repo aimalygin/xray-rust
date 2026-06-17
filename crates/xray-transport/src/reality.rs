@@ -20,11 +20,11 @@ type HmacSha512 = Hmac<Sha512>;
 
 const REALITY_SESSION_ID_LEN: usize = 32;
 const REALITY_MAX_SHORT_ID_LEN: usize = 8;
-const REALITY_CHROME_FINGERPRINT: &str = "chrome";
 const TLS_HANDSHAKE_CLIENT_HELLO: u8 = 0x01;
 const TLS_EXTENSION_KEY_SHARE: u16 = 0x0033;
 const TLS_GROUP_X25519: u16 = 0x001d;
 const TLS_GROUP_X25519_MLKEM768: u16 = 0x11ec;
+const TLS_GROUP_X25519_MLKEM768_DRAFT: u16 = 0x6399;
 const TLS_GROUP_X25519_MLKEM768_KEY_EXCHANGE_LEN: usize = 1216;
 
 pub struct RealitySessionIdInput {
@@ -212,6 +212,10 @@ pub enum RealityError {
     },
     #[error("unsupported REALITY fingerprint {0}")]
     UnsupportedRealityFingerprint(String),
+    #[error(
+        "REALITY fingerprint {0} does not support REALITY because it has no X25519-compatible key share"
+    )]
+    RealityFingerprintNotRealityCapable(String),
     #[error("failed to generate REALITY ClientHello: {0}")]
     ClientHelloGenerationFailed(String),
     #[error("invalid ClientHello: {reason}")]
@@ -242,6 +246,22 @@ pub enum RealityError {
     InvalidRealityCertificatePublicKey { len: usize },
     #[error("invalid reality ML-DSA-65 verify key length {len}")]
     InvalidRealityMldsa65VerifyKey { len: usize },
+}
+
+pub fn validate_reality_fingerprint(fingerprint: &str) -> Result<&'static str, RealityError> {
+    let Some(fingerprint) = xray_utls::normalize_reality_fingerprint(fingerprint) else {
+        return Err(RealityError::UnsupportedRealityFingerprint(
+            fingerprint.to_owned(),
+        ));
+    };
+
+    if xray_utls::normalize_reality_supported_fingerprint(fingerprint).is_none() {
+        return Err(RealityError::RealityFingerprintNotRealityCapable(
+            fingerprint.to_owned(),
+        ));
+    }
+
+    Ok(fingerprint)
 }
 
 struct ParsedClientHello {
@@ -431,7 +451,7 @@ fn parse_key_share_extension(
                     public_key,
                 }));
             }
-            TLS_GROUP_X25519_MLKEM768 => {
+            TLS_GROUP_X25519_MLKEM768 | TLS_GROUP_X25519_MLKEM768_DRAFT => {
                 if key_exchange.len() != TLS_GROUP_X25519_MLKEM768_KEY_EXCHANGE_LEN {
                     return Err(RealityError::InvalidClientHello {
                         reason: "invalid X25519MLKEM768 key-share length",
@@ -468,11 +488,7 @@ fn is_tls_grease_value(value: u16) -> bool {
 pub fn validate_reality_client_hello_metadata(
     prepared: &RealityPreparedClientHello,
 ) -> Result<RealityClientHelloValidation, RealityError> {
-    if prepared.fingerprint != REALITY_CHROME_FINGERPRINT {
-        return Err(RealityError::UnsupportedRealityFingerprint(
-            prepared.fingerprint.clone(),
-        ));
-    }
+    validate_reality_fingerprint(&prepared.fingerprint)?;
 
     let parsed = ParsedClientHello::parse(&prepared.raw_client_hello)?;
     if parsed.random != prepared.hello_random {
@@ -524,11 +540,7 @@ pub fn derive_reality_auth_key(
 pub fn prepare_reality_handshake(
     mut input: RealityHandshakeInput,
 ) -> Result<RealityPreparedHandshake, RealityError> {
-    if input.prepared_client_hello.fingerprint != REALITY_CHROME_FINGERPRINT {
-        return Err(RealityError::UnsupportedRealityFingerprint(
-            input.prepared_client_hello.fingerprint.clone(),
-        ));
-    }
+    validate_reality_fingerprint(&input.prepared_client_hello.fingerprint)?;
 
     let local_x25519_private_key =
         Zeroizing::new(input.prepared_client_hello.local_x25519_private_key);

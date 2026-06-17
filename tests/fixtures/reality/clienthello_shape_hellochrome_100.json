@@ -1,0 +1,175 @@
+{
+  "fingerprint": "hellochrome_100",
+  "utls_id": "Chrome-100",
+  "server_name": "example.com",
+  "handshake_length": 512,
+  "legacy_version": "0x0303",
+  "cipher_suites": [
+    "GREASE",
+    "0x1301",
+    "0x1302",
+    "0x1303",
+    "0xc02b",
+    "0xc02f",
+    "0xc02c",
+    "0xc030",
+    "0xcca9",
+    "0xcca8",
+    "0xc013",
+    "0xc014",
+    "0x009c",
+    "0x009d",
+    "0x002f",
+    "0x0035"
+  ],
+  "compression_methods": [
+    "0x00"
+  ],
+  "extension_order": [
+    "GREASE",
+    "0x0000",
+    "0x0017",
+    "0xff01",
+    "0x000a",
+    "0x000b",
+    "0x0023",
+    "0x0010",
+    "0x0005",
+    "0x000d",
+    "0x0012",
+    "0x0033",
+    "0x002d",
+    "0x002b",
+    "0x001b",
+    "0x4469",
+    "GREASE",
+    "0x0015"
+  ],
+  "extensions": [
+    {
+      "type": "GREASE",
+      "length": 0
+    },
+    {
+      "type": "0x0000",
+      "length": 16
+    },
+    {
+      "type": "0x0017",
+      "length": 0
+    },
+    {
+      "type": "0xff01",
+      "length": 1
+    },
+    {
+      "type": "0x000a",
+      "length": 10
+    },
+    {
+      "type": "0x000b",
+      "length": 2
+    },
+    {
+      "type": "0x0023",
+      "length": 0
+    },
+    {
+      "type": "0x0010",
+      "length": 14
+    },
+    {
+      "type": "0x0005",
+      "length": 5
+    },
+    {
+      "type": "0x000d",
+      "length": 18
+    },
+    {
+      "type": "0x0012",
+      "length": 0
+    },
+    {
+      "type": "0x0033",
+      "length": 43
+    },
+    {
+      "type": "0x002d",
+      "length": 2
+    },
+    {
+      "type": "0x002b",
+      "length": 7
+    },
+    {
+      "type": "0x001b",
+      "length": 3
+    },
+    {
+      "type": "0x4469",
+      "length": 5
+    },
+    {
+      "type": "GREASE",
+      "length": 1
+    },
+    {
+      "type": "0x0015",
+      "length": 204
+    }
+  ],
+  "supported_versions": [
+    "GREASE",
+    "0x0304",
+    "0x0303"
+  ],
+  "supported_groups": [
+    "GREASE",
+    "0x001d",
+    "0x0017",
+    "0x0018"
+  ],
+  "ec_point_formats": [
+    "0x00"
+  ],
+  "signature_algorithms": [
+    "0x0403",
+    "0x0804",
+    "0x0401",
+    "0x0503",
+    "0x0805",
+    "0x0501",
+    "0x0806",
+    "0x0601"
+  ],
+  "alpn_protocols": [
+    "h2",
+    "http/1.1"
+  ],
+  "key_shares": [
+    {
+      "group": "GREASE",
+      "key_exchange_length": 1
+    },
+    {
+      "group": "0x001d",
+      "key_exchange_length": 32
+    }
+  ],
+  "psk_key_exchange_modes": [
+    "0x01"
+  ],
+  "certificate_compression_algorithms": [
+    "0x0002"
+  ],
+  "application_settings": [
+    {
+      "type": "0x4469",
+      "protocols": [
+        "h2"
+      ]
+    }
+  ],
+  "padding_length": 204
+}

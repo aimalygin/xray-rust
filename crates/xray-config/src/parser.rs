@@ -926,16 +926,22 @@ impl Parser<'_> {
         }
 
         let fingerprint_path = format!("{base_path}.fingerprint");
-        let Some(fingerprint) =
-            settings.and_then(|settings| self.string_at(settings, "fingerprint"))
-        else {
-            self.error(fingerprint_path, "missing reality fingerprint");
-            return None;
-        };
-        if fingerprint != "chrome" {
+        let raw_fingerprint = settings
+            .and_then(|settings| self.string_at(settings, "fingerprint"))
+            .unwrap_or_default();
+        let Some(fingerprint) = xray_utls::normalize_reality_fingerprint(raw_fingerprint) else {
             self.error(
                 fingerprint_path,
-                format!("unsupported reality fingerprint `{fingerprint}`"),
+                format!("unsupported reality fingerprint `{raw_fingerprint}`"),
+            );
+            return None;
+        };
+        if xray_utls::normalize_reality_supported_fingerprint(fingerprint).is_none() {
+            self.error(
+                fingerprint_path,
+                format!(
+                    "reality fingerprint `{fingerprint}` does not support REALITY because it has no X25519-compatible key share"
+                ),
             );
             return None;
         }

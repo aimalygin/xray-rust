@@ -923,21 +923,79 @@ fn rejects_empty_reality_server_name_with_path() {
 }
 
 #[test]
-fn rejects_missing_reality_fingerprint_with_path() {
+fn defaults_missing_reality_fingerprint_to_chrome() {
     let raw = vless_raw_with_reality_settings(
         r#""serverName": "server.example", "publicKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE", "shortId": "02030405""#,
     );
 
-    assert_parse_error_path(
-        &raw,
-        "$.outbounds[0].streamSettings.realitySettings.fingerprint",
+    let parsed = parse_xray_json(&raw).expect("missing REALITY fingerprint should default");
+    let StreamSecurity::Reality(reality) = &parsed.config.outbounds[0].stream.security else {
+        panic!("expected reality security");
+    };
+
+    assert_eq!(reality.fingerprint, "chrome");
+}
+
+#[test]
+fn parses_xray_core_reality_fingerprints() {
+    for fingerprint in xray_utls::XRAY_REALITY_CAPABLE_FINGERPRINTS {
+        let raw = vless_raw_with_reality_settings(&format!(
+            r#""serverName": "server.example", "publicKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE", "shortId": "02030405", "fingerprint": "{fingerprint}""#,
+        ));
+        let parsed = parse_xray_json(&raw)
+            .unwrap_or_else(|_| panic!("fingerprint `{fingerprint}` should parse"));
+        let StreamSecurity::Reality(reality) = &parsed.config.outbounds[0].stream.security else {
+            panic!("expected reality security");
+        };
+
+        assert_eq!(reality.fingerprint, *fingerprint);
+    }
+}
+
+#[test]
+fn rejects_known_reality_fingerprints_without_x25519_key_share() {
+    for fingerprint in xray_utls::XRAY_REALITY_INCAPABLE_FINGERPRINTS {
+        let raw = vless_raw_with_reality_settings(&format!(
+            r#""serverName": "server.example", "publicKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE", "shortId": "02030405", "fingerprint": "{fingerprint}""#,
+        ));
+        let err = match parse_xray_json(&raw) {
+            Ok(_) => panic!("fingerprint `{fingerprint}` should be rejected"),
+            Err(err) => err,
+        };
+
+        assert_eq!(err.diagnostics[0].severity, DiagnosticSeverity::Error);
+        assert_eq!(
+            err.diagnostics[0].path.as_deref(),
+            Some("$.outbounds[0].streamSettings.realitySettings.fingerprint")
+        );
+        assert!(
+            err.diagnostics[0]
+                .message
+                .contains("does not support REALITY"),
+            "{fingerprint}: {}",
+            err.diagnostics[0].message
+        );
+    }
+}
+
+#[test]
+fn normalizes_reality_fingerprint_case_like_xray_core() {
+    let raw = vless_raw_with_reality_settings(
+        r#""serverName": "server.example", "publicKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE", "shortId": "02030405", "fingerprint": "FireFox""#,
     );
+
+    let parsed = parse_xray_json(&raw).expect("REALITY fingerprint should be case-insensitive");
+    let StreamSecurity::Reality(reality) = &parsed.config.outbounds[0].stream.security else {
+        panic!("expected reality security");
+    };
+
+    assert_eq!(reality.fingerprint, "firefox");
 }
 
 #[test]
 fn rejects_unsupported_reality_fingerprint_with_path() {
     let raw = vless_raw_with_reality_settings(
-        r#""serverName": "server.example", "publicKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE", "shortId": "02030405", "fingerprint": "firefox""#,
+        r#""serverName": "server.example", "publicKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE", "shortId": "02030405", "fingerprint": "madeup-browser""#,
     );
 
     assert_parse_error_path(

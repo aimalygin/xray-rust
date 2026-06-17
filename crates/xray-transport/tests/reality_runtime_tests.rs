@@ -87,7 +87,10 @@ impl RealityTlsSessionProvider for RecordingSessionProvider {
             .to_vec();
 
         Ok(Box::new(RecordingRealityTlsSession {
-            prepared_client_hello: Mutex::new(Some(prepared_from_fixture(&self.fixture))),
+            prepared_client_hello: Mutex::new(Some(prepared_from_fixture_with_fingerprint(
+                &self.fixture,
+                request.fingerprint,
+            ))),
             session_id_offset: self.fixture.session_id_offset,
             original_session_id,
             completions: self.completions.clone(),
@@ -265,9 +268,12 @@ fn decode_hex_array<const N: usize>(hex: &str) -> [u8; N] {
         .unwrap_or_else(|_| panic!("hex string should decode to {N} bytes"))
 }
 
-fn prepared_from_fixture(fixture: &ClientHelloFixture) -> RealityPreparedClientHello {
+fn prepared_from_fixture_with_fingerprint(
+    fixture: &ClientHelloFixture,
+    fingerprint: &str,
+) -> RealityPreparedClientHello {
     RealityPreparedClientHello {
-        fingerprint: "chrome".to_owned(),
+        fingerprint: fingerprint.to_owned(),
         raw_client_hello: decode_hex(&fixture.raw_client_hello_hex),
         hello_random: decode_hex_array(&fixture.hello_random_hex),
         session_id_offset: fixture.session_id_offset,
@@ -311,7 +317,7 @@ async fn reality_runtime_rejects_unsupported_fingerprint_before_dependencies() {
         .with_dns_resolver(Arc::new(PanickingDnsResolver))
         .with_context_provider(Arc::new(PanickingContextProvider));
     let mut config = reality_config();
-    config.fingerprint = "firefox".to_owned();
+    config.fingerprint = "madeup-browser".to_owned();
     let target = Target::new(
         TargetAddr::Domain("origin.example".to_owned()),
         443,
@@ -324,8 +330,59 @@ async fn reality_runtime_rejects_unsupported_fingerprint_before_dependencies() {
         result,
         Err(TransportError::Reality(
             xray_transport::reality::RealityError::UnsupportedRealityFingerprint(fingerprint)
-        )) if fingerprint == "firefox"
+        )) if fingerprint == "madeup-browser"
     ));
+}
+
+#[tokio::test]
+async fn reality_runtime_rejects_known_fingerprint_without_x25519_key_share_before_dependencies() {
+    let engine = RealityRuntimeEngine::new(Arc::new(PanickingSessionProvider))
+        .with_dns_resolver(Arc::new(PanickingDnsResolver))
+        .with_context_provider(Arc::new(PanickingContextProvider));
+    let mut config = reality_config();
+    config.fingerprint = "hellochrome_58".to_owned();
+    let target = Target::new(
+        TargetAddr::Domain("origin.example".to_owned()),
+        443,
+        Network::Tcp,
+    );
+
+    let result = engine.connect(&config, &target).await;
+
+    assert!(matches!(
+        result,
+        Err(TransportError::Reality(
+            xray_transport::reality::RealityError::RealityFingerprintNotRealityCapable(
+                fingerprint
+            )
+        )) if fingerprint == "hellochrome_58"
+    ));
+}
+
+#[tokio::test]
+async fn reality_runtime_accepts_xray_core_fingerprint_before_live_tls_gate() {
+    let (addr, handle) = spawn_accept_once().await;
+    let provider = Arc::new(RecordingSessionProvider::new(clienthello_fixture()));
+    let context = Arc::new(FixedContextProvider::new(fixed_context()));
+    let engine = RealityRuntimeEngine::new(provider.clone())
+        .with_dns_resolver(Arc::new(PanickingDnsResolver))
+        .with_context_provider(context.clone());
+    let mut config = reality_config();
+    config.fingerprint = "firefox".to_owned();
+    let target = Target::new(TargetAddr::Ip(addr.ip()), addr.port(), Network::Tcp);
+
+    let result = engine.connect(&config, &target).await;
+
+    assert!(matches!(
+        result,
+        Err(TransportError::RealityTlsCompletionUnsupported)
+    ));
+    assert_accept_completed(handle).await;
+    assert_eq!(
+        provider.seen(),
+        vec![("www.example.com".to_owned(), "firefox".to_owned())]
+    );
+    assert_eq!(context.calls(), 1);
 }
 
 #[tokio::test]

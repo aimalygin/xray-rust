@@ -242,16 +242,26 @@ mod reality_clienthello_tests {
     }
 
     #[test]
-    fn validator_rejects_unsupported_fingerprint() {
+    fn validator_accepts_xray_core_fingerprint() {
         let fixture = fixture();
         let mut prepared = prepared_from_fixture(&fixture);
         prepared.fingerprint = "firefox".to_owned();
+
+        validate_reality_client_hello_metadata(&prepared)
+            .expect("known xray-core fingerprint should validate");
+    }
+
+    #[test]
+    fn validator_rejects_unsupported_fingerprint() {
+        let fixture = fixture();
+        let mut prepared = prepared_from_fixture(&fixture);
+        prepared.fingerprint = "madeup-browser".to_owned();
 
         let err = validate_reality_client_hello_metadata(&prepared).unwrap_err();
 
         assert_eq!(
             err,
-            RealityError::UnsupportedRealityFingerprint("firefox".to_owned())
+            RealityError::UnsupportedRealityFingerprint("madeup-browser".to_owned())
         );
     }
 

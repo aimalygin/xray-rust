@@ -23,8 +23,9 @@ use std::fmt;
 
 use crate::{
     reality::{
-        prepare_reality_handshake, validate_reality_client_hello_metadata, RealityError,
-        RealityHandshakeInput, RealityPreparedClientHello, RealityPreparedHandshake,
+        prepare_reality_handshake, validate_reality_client_hello_metadata,
+        validate_reality_fingerprint, RealityError, RealityHandshakeInput,
+        RealityPreparedClientHello, RealityPreparedHandshake,
     },
     BoxedTransportStream, RealityClientConfig, TransportError,
 };
@@ -133,7 +134,11 @@ impl RealityConnector {
     }
 
     pub fn is_fingerprint_supported(&self) -> bool {
-        matches!(self.config.fingerprint.as_str(), "chrome")
+        self.validate_fingerprint().is_ok()
+    }
+
+    pub fn validate_fingerprint(&self) -> Result<(), RealityError> {
+        validate_reality_fingerprint(&self.config.fingerprint).map(|_| ())
     }
 
     pub fn handshake_plan(&self) -> RealityHandshakePlan {
@@ -152,11 +157,7 @@ impl RealityConnector {
         provider: &dyn RealityClientHelloProvider,
         context: RealityHandshakeContext,
     ) -> Result<RealityPreparedHandshake, RealityError> {
-        if !self.is_fingerprint_supported() {
-            return Err(RealityError::UnsupportedRealityFingerprint(
-                self.config.fingerprint.clone(),
-            ));
-        }
+        self.validate_fingerprint()?;
 
         let prepared_client_hello = provider.prepare_client_hello(RealityClientHelloRequest {
             server_name: &self.config.server_name,
@@ -171,11 +172,7 @@ impl RealityConnector {
         prepared_client_hello: RealityPreparedClientHello,
         context: RealityHandshakeContext,
     ) -> Result<RealityPreparedHandshake, RealityError> {
-        if !self.is_fingerprint_supported() {
-            return Err(RealityError::UnsupportedRealityFingerprint(
-                self.config.fingerprint.clone(),
-            ));
-        }
+        self.validate_fingerprint()?;
 
         validate_reality_client_hello_metadata(&prepared_client_hello)?;
 

@@ -24,6 +24,7 @@ webpki-roots.workspace = true
 x25519-dalek.workspace = true
 x509-parser.workspace = true
 xray-routing = { path = "../xray-routing" }
+xray-utls = { path = "../xray-utls" }
 zeroize.workspace = true
 
 [dev-dependencies]

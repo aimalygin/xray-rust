@@ -21,6 +21,7 @@ pub mod reality;
 pub mod reality_connector;
 pub mod reality_runtime;
 mod reality_rustls;
+mod reality_utls_profiles;
 mod tls;
 
 pub use dialer::TransportDialer;

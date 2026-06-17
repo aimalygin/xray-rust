@@ -77,8 +77,15 @@ fn decode_hex_array<const N: usize>(hex: &str) -> [u8; N] {
 }
 
 fn prepared_from_fixture(fixture: &ClientHelloFixture) -> RealityPreparedClientHello {
+    prepared_from_fixture_with_fingerprint(fixture, "chrome")
+}
+
+fn prepared_from_fixture_with_fingerprint(
+    fixture: &ClientHelloFixture,
+    fingerprint: &str,
+) -> RealityPreparedClientHello {
     RealityPreparedClientHello {
-        fingerprint: "chrome".to_owned(),
+        fingerprint: fingerprint.to_owned(),
         raw_client_hello: decode_hex(&fixture.raw_client_hello_hex),
         hello_random: decode_hex_array(&fixture.hello_random_hex),
         session_id_offset: fixture.session_id_offset,
@@ -94,10 +101,14 @@ fn handshake_context() -> RealityHandshakeContext {
 }
 
 #[test]
-fn reality_connector_accepts_chrome_fingerprint_for_first_slice() {
-    let connector = RealityConnector::new(reality_config_with_short_id(vec![2, 3, 4, 5]));
+fn reality_connector_accepts_xray_core_fingerprints_for_first_slice() {
+    for fingerprint in ["chrome", "firefox", "hellochrome_131", "hellochrome_100"] {
+        let mut config = reality_config_with_short_id(vec![2, 3, 4, 5]);
+        config.fingerprint = fingerprint.to_owned();
+        let connector = RealityConnector::new(config);
 
-    assert!(connector.is_fingerprint_supported());
+        assert!(connector.is_fingerprint_supported(), "{fingerprint}");
+    }
 }
 
 #[test]
@@ -113,10 +124,29 @@ fn reality_connector_builds_handshake_plan_without_network_io() {
 #[test]
 fn reality_connector_rejects_unsupported_fingerprint_for_first_slice() {
     let mut config = reality_config_with_short_id(vec![2, 3, 4, 5]);
-    config.fingerprint = "firefox".to_owned();
+    config.fingerprint = "madeup-browser".to_owned();
     let connector = RealityConnector::new(config);
 
     assert!(!connector.is_fingerprint_supported());
+}
+
+#[test]
+fn reality_connector_rejects_known_fingerprint_without_x25519_key_share() {
+    let mut config = reality_config_with_short_id(vec![2, 3, 4, 5]);
+    config.fingerprint = "hellochrome_58".to_owned();
+    let connector = RealityConnector::new(config);
+
+    assert!(!connector.is_fingerprint_supported());
+
+    let err = connector
+        .prepare_handshake(&PanickingClientHelloProvider, handshake_context())
+        .unwrap_err();
+    assert_eq!(
+        err,
+        xray_transport::reality::RealityError::RealityFingerprintNotRealityCapable(
+            "hellochrome_58".to_owned()
+        )
+    );
 }
 
 #[test]
@@ -206,6 +236,25 @@ fn reality_connector_prepares_handshake_from_prepared_clienthello() {
 }
 
 #[test]
+fn reality_connector_prepares_handshake_with_xray_core_fingerprint() {
+    let fixture = clienthello_fixture();
+    let session_id_offset = fixture.session_id_offset;
+    let prepared_client_hello = prepared_from_fixture_with_fingerprint(&fixture, "firefox");
+    let mut config = reality_config_with_short_id(vec![2, 3, 4, 5]);
+    config.fingerprint = "firefox".to_owned();
+    let connector = RealityConnector::new(config);
+
+    let prepared = connector
+        .prepare_handshake_with_client_hello(prepared_client_hello, handshake_context())
+        .expect("known xray-core fingerprint should prepare REALITY handshake");
+
+    assert_eq!(
+        &prepared.patched_client_hello[session_id_offset..session_id_offset + 32],
+        &prepared.session_id[..]
+    );
+}
+
+#[test]
 fn reality_connector_rejects_invalid_prepared_clienthello_metadata() {
     let fixture = clienthello_fixture();
     let mut prepared_client_hello = prepared_from_fixture(&fixture);
@@ -242,7 +291,7 @@ fn reality_connector_rejects_invalid_provider_clienthello_metadata() {
 #[test]
 fn reality_connector_rejects_unsupported_config_fingerprint_before_provider() {
     let mut config = reality_config_with_short_id(vec![2, 3, 4, 5]);
-    config.fingerprint = "firefox".to_owned();
+    config.fingerprint = "madeup-browser".to_owned();
     let connector = RealityConnector::new(config);
 
     let err = connector
@@ -251,6 +300,8 @@ fn reality_connector_rejects_unsupported_config_fingerprint_before_provider() {
 
     assert_eq!(
         err,
-        xray_transport::reality::RealityError::UnsupportedRealityFingerprint("firefox".to_owned())
+        xray_transport::reality::RealityError::UnsupportedRealityFingerprint(
+            "madeup-browser".to_owned()
+        )
     );
 }

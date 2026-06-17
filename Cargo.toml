@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/xray-config",
+    "crates/xray-utls",
     "crates/xray-routing",
     "crates/xray-tun",
     "crates/xray-proxy",
@@ -34,14 +35,14 @@ prost = "0.13"
 rand = "0.8"
 rcgen = { version = "0.14", default-features = false, features = ["ring"] }
 regex = "1"
-rustls = { version = "0.23", default-features = false, features = ["logging", "ring", "std", "tls12"] }
+rustls = { version = "0.23.40", default-features = false, features = ["aws_lc_rs", "brotli", "logging", "ring", "std", "tls12"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 smoltcp = { version = "0.13.1", default-features = false, features = ["std", "medium-ip", "proto-ipv4", "proto-ipv6", "socket-tcp"] }
 thiserror = "2"
-tokio = { version = "1", features = ["io-util", "macros", "net", "rt", "rt-multi-thread", "signal", "sync", "time"] }
-tokio-rustls = { version = "0.26", default-features = false, features = ["logging", "ring", "tls12"] }
+tokio = { version = "1.52.3", features = ["io-util", "macros", "net", "rt", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-rustls = { version = "0.26.4", default-features = false, features = ["aws_lc_rs", "logging", "ring", "tls12"] }
 uuid = { version = "1", features = ["serde", "v4"] }
 webpki-roots = "1"
 x25519-dalek = { version = "2", features = ["static_secrets", "zeroize"] }
@@ -56,3 +57,6 @@ strip = "symbols"
 
 [profile.dev]
 panic = "unwind"
+
+[patch.crates-io]
+rustls = { git = "https://github.com/aimalygin/shaped-rustls", branch = "xray/rustls-0.23.40" }

@@ -10,7 +10,6 @@ use xray_routing::{Target, TargetAddr};
 
 use crate::{
     connect_tcp_stream,
-    reality::RealityError,
     reality_connector::{
         RealityClientHelloRequest, RealityConnector, RealityHandshakeContext,
         RealityTlsSessionProvider,
@@ -105,11 +104,7 @@ impl RealityTlsEngine for RealityRuntimeEngine {
         target: &Target,
     ) -> Result<BoxedTransportStream, TransportError> {
         let connector = RealityConnector::new(config.clone());
-        if !connector.is_fingerprint_supported() {
-            return Err(
-                RealityError::UnsupportedRealityFingerprint(config.fingerprint.clone()).into(),
-            );
-        }
+        connector.validate_fingerprint()?;
 
         let session = self
             .session_provider

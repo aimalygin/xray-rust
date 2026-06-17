@@ -589,15 +589,39 @@ mod reality_tests {
     #[test]
     fn prepare_reality_handshake_rejects_unsupported_fingerprint() {
         let mut input = handshake_input_fixture();
-        input.prepared_client_hello.fingerprint = "firefox".to_owned();
+        input.prepared_client_hello.fingerprint = "madeup-browser".to_owned();
         input.prepared_client_hello.session_id_offset = raw_client_hello_fixture().len() - 31;
 
         let err = prepare_reality_handshake(input).unwrap_err();
 
         assert_eq!(
             err,
-            RealityError::UnsupportedRealityFingerprint("firefox".to_owned())
+            RealityError::UnsupportedRealityFingerprint("madeup-browser".to_owned())
         );
+    }
+
+    #[test]
+    fn prepare_reality_handshake_rejects_known_fingerprint_without_x25519_key_share() {
+        let mut input = handshake_input_fixture();
+        input.prepared_client_hello.fingerprint = "hellochrome_58".to_owned();
+
+        let err = prepare_reality_handshake(input).unwrap_err();
+
+        assert_eq!(
+            err,
+            RealityError::RealityFingerprintNotRealityCapable("hellochrome_58".to_owned())
+        );
+    }
+
+    #[test]
+    fn prepare_reality_handshake_accepts_xray_core_fingerprint() {
+        let mut input = handshake_input_fixture();
+        input.prepared_client_hello.fingerprint = "hellochrome_131".to_owned();
+
+        let prepared = prepare_reality_handshake(input).unwrap();
+
+        assert_ne!(prepared.auth_key, [0u8; 32]);
+        assert_ne!(prepared.session_id, [0u8; 32]);
     }
 
     #[test]
