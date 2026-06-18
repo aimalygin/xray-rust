@@ -29,10 +29,10 @@ use tokio::time::{sleep, timeout, Duration, Instant as TokioInstant};
 use tokio_rustls::TlsAcceptor;
 use uuid::Uuid;
 use xray_config::{
-    CoreConfig, DnsConfig, DnsFakeIpConfig, DomainMatcher, InboundConfig, InboundProtocol, IpCidr,
-    IpMatcher, Network, OutboundConfig, OutboundSettings, RealitySettings, RealityShortId,
-    RoutingConfig, RoutingRule, StreamSecurity, StreamSettings, TargetAddr, TlsSettings,
-    VlessOutboundSettings, VlessUser,
+    parse_xray_json, CoreConfig, DnsConfig, DnsFakeIpConfig, DomainMatcher, InboundConfig,
+    InboundProtocol, IpCidr, IpMatcher, Network, OutboundConfig, OutboundSettings, RealitySettings,
+    RealityShortId, RoutingConfig, RoutingRule, StreamSecurity, StreamSettings, TargetAddr,
+    TlsSettings, VlessOutboundSettings, VlessUser,
 };
 use xray_core_rs::{select_vless_tcp_outbound, Core, CoreError, TunRuntimeOptions};
 use xray_proxy::inbound::{encode_socks5_udp_datagram, parse_socks5_udp_datagram};
@@ -556,9 +556,13 @@ fn runtime_config_with_tls_vless_domain_server(
 }
 
 fn reality_security() -> StreamSecurity {
+    reality_security_with_fingerprint("chrome")
+}
+
+fn reality_security_with_fingerprint(fingerprint: &str) -> StreamSecurity {
     StreamSecurity::Reality(RealitySettings {
         server_name: "example.com".to_owned(),
-        fingerprint: "chrome".to_owned(),
+        fingerprint: fingerprint.to_owned(),
         public_key: [7; 32],
         short_id: RealityShortId::try_from_slice(&[1, 2, 3, 4]).unwrap(),
         spider_x: "/".to_owned(),
@@ -633,6 +637,71 @@ fn selects_reality_vless_outbound_for_handshake_provider_path() {
                 && config.public_key == [7; 32]
                 && config.short_id == vec![1, 2, 3, 4]
                 && config.spider_x == "/"
+    ));
+}
+
+#[test]
+fn selects_reality_vless_outbound_preserves_non_default_fingerprint() {
+    let config = config_with_outbound(vless_outbound(
+        reality_security_with_fingerprint("hellochrome_131"),
+        TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
+        443,
+    ));
+
+    let selected = select_vless_tcp_outbound(&config).unwrap();
+
+    assert!(matches!(
+        selected.transport(),
+        xray_transport::ConnectorConfig::Reality(config)
+            if config.fingerprint == "hellochrome_131"
+    ));
+}
+
+#[test]
+fn parsed_config_reality_fingerprint_reaches_transport_config() {
+    let raw = r#"{
+        "inbounds": [],
+        "outbounds": [
+            {
+                "tag": "proxy",
+                "protocol": "vless",
+                "settings": {
+                    "vnext": [
+                        {
+                            "address": "203.0.113.10",
+                            "port": 443,
+                            "users": [
+                                {
+                                    "id": "00010203-0405-0607-0809-0a0b0c0d0e0f",
+                                    "encryption": "none",
+                                    "flow": "xtls-rprx-vision"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "streamSettings": {
+                    "network": "tcp",
+                    "security": "reality",
+                    "realitySettings": {
+                        "serverName": "example.com",
+                        "fingerprint": "hellochrome_131",
+                        "publicKey": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc",
+                        "shortId": "01020304",
+                        "spiderX": "/"
+                    }
+                }
+            }
+        ]
+    }"#;
+    let parsed = parse_xray_json(raw).unwrap();
+
+    let selected = select_vless_tcp_outbound(&parsed.config).unwrap();
+
+    assert!(matches!(
+        selected.transport(),
+        xray_transport::ConnectorConfig::Reality(config)
+            if config.fingerprint == "hellochrome_131"
     ));
 }
 

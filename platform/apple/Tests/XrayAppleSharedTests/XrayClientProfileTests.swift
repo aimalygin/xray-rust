@@ -152,6 +152,42 @@ final class XrayClientProfileTests: XCTestCase {
         XCTAssertNil(profile.realityVisionFlowMode)
     }
 
+    func testRealityFingerprintModeReadsImportedFingerprint() throws {
+        let url = Self.sampleVlessURL.replacingOccurrences(
+            of: "fp=chrome",
+            with: "fp=hellochrome_131"
+        )
+        let profile = try XrayVlessURLImporter.profile(
+            from: url,
+            hostBundleIdentifier: "org.example.XrayClient"
+        )
+
+        XCTAssertEqual(profile.realityFingerprintMode, .hellochrome131)
+    }
+
+    func testUpdatingRealityFingerprintModeChangesRealitySettings() throws {
+        let profile = try XrayVlessURLImporter.profile(
+            from: Self.sampleVlessURL,
+            hostBundleIdentifier: "org.example.XrayClient"
+        )
+
+        let updated = try profile.updatingRealityFingerprintMode(.hellochrome131)
+
+        XCTAssertEqual(
+            try Self.firstRealityFingerprint(in: updated.configJSON),
+            "hellochrome_131"
+        )
+        XCTAssertEqual(updated.realityFingerprintMode, .hellochrome131)
+    }
+
+    func testRealityFingerprintModeIsNilForNonRealityVlessConfig() {
+        let profile = XrayClientProfile.defaultProfile(
+            hostBundleIdentifier: "org.example.XrayClient"
+        )
+
+        XCTAssertNil(profile.realityFingerprintMode)
+    }
+
     func testTunRuntimeProfileParsesMobilePlusAliases() throws {
         XCTAssertEqual(XrayTunRuntimeProfileSetting(configurationValue: "mobile-plus"), .mobilePlus)
         XCTAssertEqual(XrayTunRuntimeProfileSetting(configurationValue: "mobile_plus"), .mobilePlus)
@@ -419,6 +455,16 @@ final class XrayClientProfileTests: XCTestCase {
         let vnext = try XCTUnwrap(settings["vnext"] as? [[String: Any]])
         let users = try XCTUnwrap(vnext.first?["users"] as? [[String: Any]])
         return users.first?["flow"] as? String
+    }
+
+    private static func firstRealityFingerprint(in configJSON: String) throws -> String? {
+        let root = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(configJSON.utf8)) as? [String: Any]
+        )
+        let outbounds = try XCTUnwrap(root["outbounds"] as? [[String: Any]])
+        let stream = try XCTUnwrap(outbounds[0]["streamSettings"] as? [String: Any])
+        let reality = try XCTUnwrap(stream["realitySettings"] as? [String: Any])
+        return reality["fingerprint"] as? String
     }
 
     private static func configJSONRemovingFirstVlessUserFlow(_ configJSON: String) throws -> String {

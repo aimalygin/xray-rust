@@ -122,6 +122,32 @@ final class XrayClientViewModelTests: XCTestCase {
         XCTAssertNil(viewModel.lastErrorMessage)
     }
 
+    func testSetRealityFingerprintModeSavesUpdatedProfile() throws {
+        let store = try makeStore()
+        let importedProfile = try XrayVlessURLImporter.profile(
+            from: Self.sampleVlessURL,
+            hostBundleIdentifier: "org.example.XrayClientTv"
+        )
+        try store.save(importedProfile)
+        let viewModel = XrayClientViewModel(
+            store: store,
+            tunnelController: MockTunnelController()
+        )
+
+        viewModel.setRealityFingerprintMode(.hellochrome131)
+
+        XCTAssertEqual(viewModel.realityFingerprintMode, .hellochrome131)
+        XCTAssertEqual(
+            try Self.firstRealityFingerprint(in: viewModel.profile.configJSON),
+            "hellochrome_131"
+        )
+        XCTAssertEqual(
+            try Self.firstRealityFingerprint(in: store.load().configJSON),
+            "hellochrome_131"
+        )
+        XCTAssertNil(viewModel.lastErrorMessage)
+    }
+
     func testConnectImportsPendingVlessURLBeforeStartingTunnel() async throws {
         let store = try makeStore()
         try store.save(
@@ -312,6 +338,16 @@ final class XrayClientViewModelTests: XCTestCase {
         let vnext = try XCTUnwrap(settings["vnext"] as? [[String: Any]])
         let users = try XCTUnwrap(vnext.first?["users"] as? [[String: Any]])
         return users.first?["flow"] as? String
+    }
+
+    private static func firstRealityFingerprint(in configJSON: String) throws -> String? {
+        let root = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(configJSON.utf8)) as? [String: Any]
+        )
+        let outbounds = try XCTUnwrap(root["outbounds"] as? [[String: Any]])
+        let stream = try XCTUnwrap(outbounds[0]["streamSettings"] as? [String: Any])
+        let reality = try XCTUnwrap(stream["realitySettings"] as? [String: Any])
+        return reality["fingerprint"] as? String
     }
 
     private static func firstRoutingRuleDomains(in configJSON: String) throws -> [String]? {

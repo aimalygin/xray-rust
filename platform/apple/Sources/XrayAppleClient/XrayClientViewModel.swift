@@ -50,6 +50,10 @@ public final class XrayClientViewModel: ObservableObject {
         profile.realityVisionFlowMode
     }
 
+    public var realityFingerprintMode: XrayRealityFingerprintMode? {
+        profile.realityFingerprintMode
+    }
+
     public func refresh() async {
         XrayAppleLog.info("ClientViewModel", "Refreshing tunnel status")
         connectionStatus = await tunnelController.currentStatus()
@@ -156,6 +160,25 @@ public final class XrayClientViewModel: ObservableObject {
             XrayAppleLog.error(
                 "ClientViewModel",
                 "Failed to update Reality Vision flow mode: \(error.localizedDescription)"
+            )
+        }
+    }
+
+    public func setRealityFingerprintMode(_ mode: XrayRealityFingerprintMode) {
+        do {
+            let updatedProfile = try profile.updatingRealityFingerprintMode(mode)
+            profile = updatedProfile
+            try store.save(updatedProfile)
+            lastErrorMessage = nil
+            XrayAppleLog.info(
+                "ClientViewModel",
+                "Saved Reality fingerprint=\(mode.rawValue) configBytes=\(updatedProfile.configJSON.utf8.count)"
+            )
+        } catch {
+            lastErrorMessage = error.localizedDescription
+            XrayAppleLog.error(
+                "ClientViewModel",
+                "Failed to update Reality fingerprint: \(error.localizedDescription)"
             )
         }
     }

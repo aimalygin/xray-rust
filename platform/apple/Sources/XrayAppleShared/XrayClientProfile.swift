@@ -147,6 +147,158 @@ public enum XrayRealityVisionFlowMode: String, Codable, CaseIterable, Hashable, 
     }
 }
 
+public struct XrayRealityFingerprintMode: RawRepresentable,
+                                          Codable,
+                                          CaseIterable,
+                                          Hashable,
+                                          Identifiable,
+                                          Sendable {
+    public static let chrome = Self("chrome")
+    public static let firefox = Self("firefox")
+    public static let safari = Self("safari")
+    public static let ios = Self("ios")
+    public static let edge = Self("edge")
+    public static let qq = Self("qq")
+    public static let random = Self("random")
+    public static let randomized = Self("randomized")
+    public static let hellofirefox120 = Self("hellofirefox_120")
+    public static let hellofirefox148 = Self("hellofirefox_148")
+    public static let hellochrome120 = Self("hellochrome_120")
+    public static let hellochrome131 = Self("hellochrome_131")
+    public static let hellochrome133 = Self("hellochrome_133")
+    public static let helloios13 = Self("helloios_13")
+    public static let helloios14 = Self("helloios_14")
+    public static let helloedge106 = Self("helloedge_106")
+    public static let hellosafari263 = Self("hellosafari_26_3")
+    public static let hello360110 = Self("hello360_11_0")
+    public static let helloqq111 = Self("helloqq_11_1")
+    public static let hellorandomized = Self("hellorandomized")
+    public static let hellofirefoxAuto = Self("hellofirefox_auto")
+    public static let hellofirefox63 = Self("hellofirefox_63")
+    public static let hellofirefox65 = Self("hellofirefox_65")
+    public static let hellofirefox99 = Self("hellofirefox_99")
+    public static let hellofirefox102 = Self("hellofirefox_102")
+    public static let hellofirefox105 = Self("hellofirefox_105")
+    public static let hellochromeAuto = Self("hellochrome_auto")
+    public static let hellochrome70 = Self("hellochrome_70")
+    public static let hellochrome72 = Self("hellochrome_72")
+    public static let hellochrome83 = Self("hellochrome_83")
+    public static let hellochrome87 = Self("hellochrome_87")
+    public static let hellochrome96 = Self("hellochrome_96")
+    public static let hellochrome100 = Self("hellochrome_100")
+    public static let hellochrome102 = Self("hellochrome_102")
+    public static let hellochrome106Shuffle = Self("hellochrome_106_shuffle")
+    public static let helloiosAuto = Self("helloios_auto")
+    public static let helloedge85 = Self("helloedge_85")
+    public static let helloedgeAuto = Self("helloedge_auto")
+    public static let hellosafari160 = Self("hellosafari_16_0")
+    public static let hellosafariAuto = Self("hellosafari_auto")
+    public static let helloqqAuto = Self("helloqq_auto")
+    public static let hellochrome100Psk = Self("hellochrome_100_psk")
+    public static let hellochrome112PskShuf = Self("hellochrome_112_psk_shuf")
+    public static let hellochrome114PaddingPskShuf = Self("hellochrome_114_padding_psk_shuf")
+    public static let hellochrome115Pq = Self("hellochrome_115_pq")
+    public static let hellochrome115PqPsk = Self("hellochrome_115_pq_psk")
+    public static let hellochrome120Pq = Self("hellochrome_120_pq")
+
+    public static let allCases: [Self] = [
+        .chrome,
+        .firefox,
+        .safari,
+        .ios,
+        .edge,
+        .qq,
+        .random,
+        .randomized,
+        .hellofirefox120,
+        .hellofirefox148,
+        .hellochrome120,
+        .hellochrome131,
+        .hellochrome133,
+        .helloios13,
+        .helloios14,
+        .helloedge106,
+        .hellosafari263,
+        .hello360110,
+        .helloqq111,
+        .hellorandomized,
+        .hellofirefoxAuto,
+        .hellofirefox63,
+        .hellofirefox65,
+        .hellofirefox99,
+        .hellofirefox102,
+        .hellofirefox105,
+        .hellochromeAuto,
+        .hellochrome70,
+        .hellochrome72,
+        .hellochrome83,
+        .hellochrome87,
+        .hellochrome96,
+        .hellochrome100,
+        .hellochrome102,
+        .hellochrome106Shuffle,
+        .helloiosAuto,
+        .helloedge85,
+        .helloedgeAuto,
+        .hellosafari160,
+        .hellosafariAuto,
+        .helloqqAuto,
+        .hellochrome100Psk,
+        .hellochrome112PskShuf,
+        .hellochrome114PaddingPskShuf,
+        .hellochrome115Pq,
+        .hellochrome115PqPsk,
+        .hellochrome120Pq,
+    ]
+
+    public let rawValue: String
+
+    public var id: String {
+        rawValue
+    }
+
+    public var displayName: String {
+        rawValue
+    }
+
+    public init?(rawValue: String) {
+        let normalizedValue = rawValue
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        guard let mode = Self.allCases.first(where: { $0.rawValue == normalizedValue }) else {
+            return nil
+        }
+        self = mode
+    }
+
+    public init?(fingerprintValue: String?) {
+        let normalizedValue = fingerprintValue?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        self.init(rawValue: normalizedValue.isEmpty ? Self.chrome.rawValue : normalizedValue)
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = try container.decode(String.self)
+        guard let mode = Self(rawValue: rawValue) else {
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Unsupported REALITY fingerprint `\(rawValue)`."
+            )
+        }
+        self = mode
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+
+    private init(_ rawValue: String) {
+        self.rawValue = rawValue
+    }
+}
+
 public enum XrayRealityVisionFlowError: Error, Equatable, LocalizedError {
     case rootIsNotObject
     case outboundsIsNotArray
@@ -166,6 +318,29 @@ public enum XrayRealityVisionFlowError: Error, Equatable, LocalizedError {
             return "Unsupported Reality Vision flow `\(flow)`."
         case .encodingFailed:
             return "Failed to encode Reality Vision flow config."
+        }
+    }
+}
+
+public enum XrayRealityFingerprintError: Error, Equatable, LocalizedError {
+    case rootIsNotObject
+    case outboundsIsNotArray
+    case missingRealityVlessOutbound
+    case unsupportedFingerprint(String)
+    case encodingFailed
+
+    public var errorDescription: String? {
+        switch self {
+        case .rootIsNotObject:
+            return "Config must be a JSON object."
+        case .outboundsIsNotArray:
+            return "Config outbounds must be an array."
+        case .missingRealityVlessOutbound:
+            return "Profile does not contain a Reality VLESS outbound."
+        case let .unsupportedFingerprint(fingerprint):
+            return "Unsupported Reality fingerprint `\(fingerprint)`."
+        case .encodingFailed:
+            return "Failed to encode Reality fingerprint config."
         }
     }
 }
@@ -330,6 +505,10 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
         Self.realityVisionFlowMode(in: configJSON)
     }
 
+    public var realityFingerprintMode: XrayRealityFingerprintMode? {
+        Self.realityFingerprintMode(in: configJSON)
+    }
+
     public func addingDefaultRealityVisionFlowIfMissing() -> XrayClientProfile {
         guard let normalizedConfigJSON = Self.configJSONAddingDefaultRealityVisionFlowIfMissing(
             configJSON
@@ -349,6 +528,17 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
         profile.configJSON = try Self.configJSON(
             configJSON,
             applyingRealityVisionFlowMode: mode
+        )
+        return profile
+    }
+
+    public func updatingRealityFingerprintMode(
+        _ mode: XrayRealityFingerprintMode
+    ) throws -> XrayClientProfile {
+        var profile = self
+        profile.configJSON = try Self.configJSON(
+            configJSON,
+            applyingRealityFingerprintMode: mode
         )
         return profile
     }
@@ -409,6 +599,47 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
                     selectedMode = mode
                 }
             }
+        }
+
+        return selectedMode
+    }
+
+    private static func realityFingerprintMode(
+        in configJSON: String
+    ) -> XrayRealityFingerprintMode? {
+        guard let data = configJSON.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let outbounds = root["outbounds"] as? [[String: Any]]
+        else {
+            return nil
+        }
+
+        var selectedMode: XrayRealityFingerprintMode?
+        for outbound in outbounds where isRealityVlessOutbound(outbound) {
+            guard let streamSettings = outbound["streamSettings"] as? [String: Any],
+                  let realitySettings = streamSettings["realitySettings"] as? [String: Any]
+            else {
+                return nil
+            }
+
+            let rawFingerprint = realitySettings["fingerprint"]
+            let fingerprintValue: String?
+            if let rawFingerprint {
+                guard let stringValue = rawFingerprint as? String else {
+                    return nil
+                }
+                fingerprintValue = stringValue
+            } else {
+                fingerprintValue = nil
+            }
+
+            guard let mode = XrayRealityFingerprintMode(fingerprintValue: fingerprintValue) else {
+                return nil
+            }
+            if let selectedMode, selectedMode != mode {
+                return nil
+            }
+            selectedMode = mode
         }
 
         return selectedMode
@@ -535,6 +766,67 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
         )
         guard let json = String(data: encoded, encoding: .utf8) else {
             throw XrayRealityVisionFlowError.encodingFailed
+        }
+        return json
+    }
+
+    private static func configJSON(
+        _ configJSON: String,
+        applyingRealityFingerprintMode mode: XrayRealityFingerprintMode
+    ) throws -> String {
+        let data = Data(configJSON.utf8)
+        guard var root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw XrayRealityFingerprintError.rootIsNotObject
+        }
+        guard var outbounds = root["outbounds"] as? [[String: Any]] else {
+            throw XrayRealityFingerprintError.outboundsIsNotArray
+        }
+
+        var didFindRealityVlessOutbound = false
+        var didChange = false
+        for outboundIndex in outbounds.indices {
+            guard isRealityVlessOutbound(outbounds[outboundIndex]),
+                  var streamSettings = outbounds[outboundIndex]["streamSettings"] as? [String: Any],
+                  var realitySettings = streamSettings["realitySettings"] as? [String: Any]
+            else {
+                continue
+            }
+
+            didFindRealityVlessOutbound = true
+            let rawFingerprint = realitySettings["fingerprint"]
+            let fingerprintValue = rawFingerprint as? String
+            if let rawFingerprint, fingerprintValue == nil {
+                throw XrayRealityFingerprintError.unsupportedFingerprint(
+                    String(describing: rawFingerprint)
+                )
+            }
+            guard XrayRealityFingerprintMode(fingerprintValue: fingerprintValue) != nil else {
+                throw XrayRealityFingerprintError.unsupportedFingerprint(fingerprintValue ?? "")
+            }
+            guard fingerprintValue != mode.rawValue else {
+                continue
+            }
+
+            realitySettings["fingerprint"] = mode.rawValue
+            streamSettings["realitySettings"] = realitySettings
+            outbounds[outboundIndex]["streamSettings"] = streamSettings
+            didChange = true
+        }
+
+        guard didFindRealityVlessOutbound else {
+            throw XrayRealityFingerprintError.missingRealityVlessOutbound
+        }
+        guard didChange else {
+            return configJSON
+        }
+
+        root["outbounds"] = outbounds
+        let encoded = try JSONSerialization.data(
+            withJSONObject: root,
+            options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        )
+        guard let json = String(data: encoded, encoding: .utf8) else {
+            throw XrayRealityFingerprintError.encodingFailed
         }
         return json
     }
