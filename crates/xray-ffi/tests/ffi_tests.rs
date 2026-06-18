@@ -11,12 +11,13 @@ use xray_ffi::{
     xray_core_set_tun_collect_tcp_timings, xray_core_set_tun_fd, xray_core_set_tun_runtime_profile,
     xray_core_start, xray_core_stop, xray_error_code, xray_error_free, xray_error_message,
     xray_tun_poll_packet, xray_tun_poll_packets, xray_tun_poll_tcp_flow_summary_event,
-    xray_tun_poll_tcp_remote_write_slow_event, xray_tun_poll_tcp_slow_flow_event,
-    xray_tun_poll_udp_quic_blocked_event, xray_tun_poll_udp_response_gap_event,
-    xray_tun_poll_udp_slow_flow_event, xray_tun_push_packet, xray_tun_stats, XrayStatus,
-    XrayTcpFlowSummaryEvent, XrayTcpRemoteWriteSlowEvent, XrayTcpSlowFlowEvent,
-    XrayTunFdClosePolicy, XrayTunFdPacketFormat, XrayTunRuntimeProfile, XrayTunStats,
-    XrayUdpQuicBlockedEvent, XrayUdpResponseGapEvent, XrayUdpSlowFlowEvent,
+    xray_tun_poll_tcp_open_error_event, xray_tun_poll_tcp_remote_write_slow_event,
+    xray_tun_poll_tcp_slow_flow_event, xray_tun_poll_udp_quic_blocked_event,
+    xray_tun_poll_udp_response_gap_event, xray_tun_poll_udp_slow_flow_event, xray_tun_push_packet,
+    xray_tun_stats, XrayStatus, XrayTcpFlowSummaryEvent, XrayTcpOpenErrorEvent,
+    XrayTcpRemoteWriteSlowEvent, XrayTcpSlowFlowEvent, XrayTunFdClosePolicy, XrayTunFdPacketFormat,
+    XrayTunRuntimeProfile, XrayTunStats, XrayUdpQuicBlockedEvent, XrayUdpResponseGapEvent,
+    XrayUdpSlowFlowEvent,
 };
 
 #[test]
@@ -988,6 +989,46 @@ fn ffi_tun_poll_tcp_flow_summary_event_reports_no_packet() {
     assert_eq!(status, XrayStatus::NoPacket);
     assert_eq!(written, 0);
     assert_eq!(outbound_written, 0);
+    assert!(err.is_null());
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_tun_poll_tcp_open_error_event_reports_no_packet() {
+    let mut err = std::ptr::null_mut();
+    let core = loaded_core(&mut err);
+    let mut event = XrayTcpOpenErrorEvent::default();
+    let mut target = [0_i8; 256];
+    let mut outbound = [0_i8; 64];
+    let mut message = [0_i8; 512];
+    let mut written = 7usize;
+    let mut outbound_written = 9usize;
+    let mut message_written = 11usize;
+
+    let status = unsafe {
+        xray_tun_poll_tcp_open_error_event(
+            core,
+            &mut event,
+            target.as_mut_ptr(),
+            target.len(),
+            &mut written,
+            outbound.as_mut_ptr(),
+            outbound.len(),
+            &mut outbound_written,
+            message.as_mut_ptr(),
+            message.len(),
+            &mut message_written,
+            &mut err,
+        )
+    };
+
+    assert_eq!(status, XrayStatus::NoPacket);
+    assert_eq!(written, 0);
+    assert_eq!(outbound_written, 0);
+    assert_eq!(message_written, 0);
     assert!(err.is_null());
 
     unsafe {

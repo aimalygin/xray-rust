@@ -87,6 +87,19 @@ final class XrayPacketTunnelPumpTests: XCTestCase {
         )
     }
 
+    func testTcpOpenErrorDebugLogMessageIncludesTargetOutboundAndError() {
+        let event = XrayTcpOpenErrorEventSnapshot(
+            target: "youtube.example:443",
+            outboundTag: "proxy",
+            error: "tcp connect failed: Network is unreachable"
+        )
+
+        XCTAssertEqual(
+            event.debugLogMessage(),
+            "Debug tcpOpenError target=youtube.example:443 outbound=proxy error=tcp connect failed: Network is unreachable"
+        )
+    }
+
     func testUdpSlowFlowDebugLogMessageIncludesTargetAndDurations() {
         let event = XrayUdpSlowFlowEventSnapshot(
             target: "speedtest.example:443",

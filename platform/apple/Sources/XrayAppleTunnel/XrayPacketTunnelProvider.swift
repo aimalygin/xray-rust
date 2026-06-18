@@ -347,8 +347,15 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
 
         let routing = root["routing"] as? [String: Any]
         let routingRules = (routing?["rules"] as? [Any])?.count ?? 0
+        let dnsFakeIP = dnsFakeIPSummary(root)
 
-        return "inbounds=\(inbounds.isEmpty ? "none" : inbounds.joined(separator: ",")) outbounds=\(outbounds.isEmpty ? "none" : outbounds.joined(separator: ", ")) routingRules=\(routingRules)"
+        return "inbounds=\(inbounds.isEmpty ? "none" : inbounds.joined(separator: ",")) outbounds=\(outbounds.isEmpty ? "none" : outbounds.joined(separator: ", ")) routingRules=\(routingRules) dnsFakeIp=\(dnsFakeIP)"
+    }
+
+    private static func dnsFakeIPSummary(_ root: [String: Any]) -> String {
+        let dns = root["dns"] as? [String: Any]
+        let fakeIP = dns?["fakeIp"] as? [String: Any]
+        return fakeIP?["enabled"] as? Bool == true ? "enabled" : "disabled"
     }
 
     private static func outboundSummary(_ outbound: [String: Any]) -> String {
@@ -578,6 +585,9 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                     XrayAppleLog.info("PacketTunnelProvider", event.debugLogMessage())
                 }
                 for event in try self.core?.pollTcpRemoteWriteSlowEvents() ?? [] {
+                    XrayAppleLog.info("PacketTunnelProvider", event.debugLogMessage())
+                }
+                for event in try self.core?.pollTcpOpenErrorEvents() ?? [] {
                     XrayAppleLog.info("PacketTunnelProvider", event.debugLogMessage())
                 }
                 for event in try self.core?.pollUdpSlowFlowEvents() ?? [] {

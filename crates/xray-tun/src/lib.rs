@@ -9,6 +9,7 @@ use tokio::sync::{mpsc, Mutex, Notify};
 const TCP_SLOW_FLOW_EVENT_CAPACITY: usize = 64;
 const TCP_FLOW_SUMMARY_EVENT_CAPACITY: usize = 64;
 const TCP_REMOTE_WRITE_SLOW_EVENT_CAPACITY: usize = 64;
+const TCP_OPEN_ERROR_EVENT_CAPACITY: usize = 64;
 const UDP_SLOW_FLOW_EVENT_CAPACITY: usize = 64;
 const UDP_RESPONSE_GAP_EVENT_CAPACITY: usize = 64;
 const UDP_QUIC_BLOCKED_EVENT_CAPACITY: usize = 256;
@@ -139,6 +140,13 @@ pub struct TunTcpRemoteWriteSlowEvent {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TunTcpOpenErrorEvent {
+    pub target: String,
+    pub outbound_tag: Option<String>,
+    pub error: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TunUdpSlowFlowEvent {
     pub target: String,
     pub first_response_duration_ms: u64,
@@ -234,6 +242,7 @@ pub struct TunEndpoint {
     tcp_slow_flow_events: StdMutex<VecDeque<TunTcpSlowFlowEvent>>,
     tcp_flow_summary_events: StdMutex<VecDeque<TunTcpFlowSummaryEvent>>,
     tcp_remote_write_slow_events: StdMutex<VecDeque<TunTcpRemoteWriteSlowEvent>>,
+    tcp_open_error_events: StdMutex<VecDeque<TunTcpOpenErrorEvent>>,
     udp_slow_flow_events: StdMutex<VecDeque<TunUdpSlowFlowEvent>>,
     udp_response_gap_events: StdMutex<VecDeque<TunUdpResponseGapEvent>>,
     udp_quic_blocked_events: StdMutex<VecDeque<TunUdpQuicBlockedEvent>>,
@@ -331,6 +340,7 @@ impl TunEndpoint {
             tcp_slow_flow_events: StdMutex::new(VecDeque::new()),
             tcp_flow_summary_events: StdMutex::new(VecDeque::new()),
             tcp_remote_write_slow_events: StdMutex::new(VecDeque::new()),
+            tcp_open_error_events: StdMutex::new(VecDeque::new()),
             udp_slow_flow_events: StdMutex::new(VecDeque::new()),
             udp_response_gap_events: StdMutex::new(VecDeque::new()),
             udp_quic_blocked_events: StdMutex::new(VecDeque::new()),
@@ -700,6 +710,24 @@ impl TunEndpoint {
 
     pub fn poll_tcp_remote_write_slow_event(&self) -> Option<TunTcpRemoteWriteSlowEvent> {
         self.tcp_remote_write_slow_events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .pop_front()
+    }
+
+    pub fn record_tcp_open_error_event(&self, event: TunTcpOpenErrorEvent) {
+        let mut events = self
+            .tcp_open_error_events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if events.len() >= TCP_OPEN_ERROR_EVENT_CAPACITY {
+            events.pop_front();
+        }
+        events.push_back(event);
+    }
+
+    pub fn poll_tcp_open_error_event(&self) -> Option<TunTcpOpenErrorEvent> {
+        self.tcp_open_error_events
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .pop_front()

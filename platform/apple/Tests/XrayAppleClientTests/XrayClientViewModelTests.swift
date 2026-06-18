@@ -26,12 +26,12 @@ final class XrayClientViewModelTests: XCTestCase {
 
         XCTAssertTrue(viewModel.importVlessURLIfPresent("  \n\(Self.sampleVlessURL)\n  "))
 
-        XCTAssertEqual(viewModel.profile.name, "other-port-test-xray-rust")
+        XCTAssertEqual(viewModel.profile.name, "example-reality")
         XCTAssertEqual(
             viewModel.profile.providerBundleIdentifier,
             "org.example.XrayClientTv.Tunnel"
         )
-        XCTAssertEqual(viewModel.profile.serverAddress, "217.154.252.68")
+        XCTAssertEqual(viewModel.profile.serverAddress, "203.0.113.10")
         XCTAssertTrue(viewModel.profile.debugLoggingEnabled)
         XCTAssertEqual(viewModel.profile.tunRuntimeProfile, .throughput)
         XCTAssertEqual(viewModel.profile.regionalRoutingMode, .bypassSelected)
@@ -65,6 +65,34 @@ final class XrayClientViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.profile, initialProfile)
     }
 
+    func testImportVlessURLIfPresentRejectsTruncatedInput() throws {
+        let store = try makeStore()
+        let initialProfile = XrayClientProfile(
+            name: "Existing",
+            providerBundleIdentifier: "org.example.XrayClientTv.Tunnel",
+            serverAddress: "old-server",
+            configJSON: XrayClientProfile.directTunConfigJSON
+        )
+        try store.save(initialProfile)
+        let viewModel = XrayClientViewModel(
+            store: store,
+            tunnelController: MockTunnelController()
+        )
+
+        XCTAssertFalse(
+            viewModel.importVlessURLIfPresent(
+                "tail-only-fragment&flow=xtls-rprx-vision#example-reality"
+            )
+        )
+
+        XCTAssertEqual(viewModel.profile, initialProfile)
+        XCTAssertEqual(store.load(), initialProfile)
+        XCTAssertEqual(
+            viewModel.lastErrorMessage,
+            "Pasted text is not a complete VLESS URL."
+        )
+    }
+
     func testConnectNormalizesSavedRealityConfigWithoutFlow() async throws {
         let store = try makeStore()
         let configWithoutFlow = try Self.configJSONWithoutFlow()
@@ -72,7 +100,7 @@ final class XrayClientViewModelTests: XCTestCase {
             XrayClientProfile(
                 name: "Existing",
                 providerBundleIdentifier: "org.example.XrayClientTv.Tunnel",
-                serverAddress: "217.154.252.68",
+                serverAddress: "203.0.113.10",
                 configJSON: configWithoutFlow,
                 debugLoggingEnabled: true
             )
@@ -173,15 +201,15 @@ final class XrayClientViewModelTests: XCTestCase {
         XCTAssertTrue(didAcceptPendingURL)
 
         let startedProfile = try XCTUnwrap(tunnelController.startedProfile)
-        XCTAssertEqual(startedProfile.serverAddress, "217.154.252.68")
+        XCTAssertEqual(startedProfile.serverAddress, "203.0.113.10")
         XCTAssertEqual(
             try Self.firstVlessUserFlow(in: startedProfile.configJSON),
             "xtls-rprx-vision"
         )
-        XCTAssertEqual(store.load().serverAddress, "217.154.252.68")
+        XCTAssertEqual(store.load().serverAddress, "203.0.113.10")
     }
 
-    func testConnectIgnoresNonVlessPendingTextAndStartsSavedProfile() async throws {
+    func testConnectStartsSavedProfileWhenPendingInputIsBlank() async throws {
         let store = try makeStore()
         try store.save(
             XrayClientProfile(
@@ -198,7 +226,7 @@ final class XrayClientViewModelTests: XCTestCase {
         )
 
         let didAcceptPendingURL = await viewModel.connectOrDisconnect(
-            importingVlessURLIfPresent: "none&security=reality"
+            importingVlessURLIfPresent: " \n "
         )
 
         XCTAssertTrue(didAcceptPendingURL)
@@ -207,6 +235,36 @@ final class XrayClientViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.profile.serverAddress, "old-server")
         XCTAssertEqual(store.load().serverAddress, "old-server")
         XCTAssertNil(viewModel.lastErrorMessage)
+    }
+
+    func testConnectRejectsTruncatedPendingInputWithoutStartingSavedProfile() async throws {
+        let store = try makeStore()
+        try store.save(
+            XrayClientProfile(
+                name: "Existing",
+                providerBundleIdentifier: "org.example.XrayClientTv.Tunnel",
+                serverAddress: "old-server",
+                configJSON: XrayClientProfile.directTunConfigJSON
+            )
+        )
+        let tunnelController = MockTunnelController()
+        let viewModel = XrayClientViewModel(
+            store: store,
+            tunnelController: tunnelController
+        )
+
+        let didAcceptPendingURL = await viewModel.connectOrDisconnect(
+            importingVlessURLIfPresent: "none&security=reality&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&fp=chrome"
+        )
+
+        XCTAssertFalse(didAcceptPendingURL)
+        XCTAssertNil(tunnelController.startedProfile)
+        XCTAssertEqual(viewModel.profile.serverAddress, "old-server")
+        XCTAssertEqual(store.load().serverAddress, "old-server")
+        XCTAssertEqual(
+            viewModel.lastErrorMessage,
+            "Pasted text is not a complete VLESS URL."
+        )
     }
 
     func testConnectDoesNotStartOldProfileWhenFullPendingVlessURLImportFails() async throws {
@@ -226,7 +284,7 @@ final class XrayClientViewModelTests: XCTestCase {
         )
 
         let didAcceptPendingURL = await viewModel.connectOrDisconnect(
-            importingVlessURLIfPresent: "vless://not-a-uuid@217.154.252.68:32134?type=tcp"
+            importingVlessURLIfPresent: "vless://not-a-uuid@203.0.113.10:32134?type=tcp"
         )
 
         XCTAssertFalse(didAcceptPendingURL)
@@ -359,7 +417,7 @@ final class XrayClientViewModelTests: XCTestCase {
         return rules.first?["domain"] as? [String]
     }
 
-    private static let sampleVlessURL = "vless://41dac315-fc32-4957-aded-6010b8f62fef@217.154.252.68:32134?type=tcp&encryption=none&security=reality&pbk=3jNx5A3WTFKhvCj3IPljaxbcBjCxhH2dVCNobKv_X1c&fp=chrome&sni=google.com&sid=1c5694e878&spx=%2F&flow=xtls-rprx-vision#other-port-test-xray-rust"
+    private static let sampleVlessURL = "vless://11111111-1111-4111-8111-111111111111@203.0.113.10:32134?type=tcp&encryption=none&security=reality&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&fp=chrome&sni=google.com&sid=0123456789ab&spx=%2F&flow=xtls-rprx-vision#example-reality"
 }
 
 @available(macOS 13.0, *)

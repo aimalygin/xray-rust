@@ -19,6 +19,7 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
         "XrayStatus",
         "XrayTunStats",
         "XrayTcpFlowSummaryEvent",
+        "XrayTcpOpenErrorEvent",
         "XrayTcpRemoteWriteSlowEvent",
         "XrayTcpSlowFlowEvent",
         "XrayTcpSlowFlowKind",
@@ -49,6 +50,7 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
         "xray_tun_poll_packet",
         "xray_tun_poll_packets",
         "xray_tun_poll_tcp_flow_summary_event",
+        "xray_tun_poll_tcp_open_error_event",
         "xray_tun_poll_tcp_remote_write_slow_event",
         "xray_tun_poll_tcp_slow_flow_event",
         "xray_tun_poll_udp_slow_flow_event",
@@ -123,6 +125,7 @@ fn apple_adapter_declares_packet_tunnel_pump() {
     assert!(core.contains("xray_tun_push_packet"));
     assert!(core.contains("xray_tun_poll_packet"));
     assert!(core.contains("xray_tun_poll_tcp_flow_summary_event"));
+    assert!(core.contains("xray_tun_poll_tcp_open_error_event"));
     assert!(core.contains("xray_tun_poll_tcp_slow_flow_event"));
     assert!(core.contains("xray_tun_poll_udp_slow_flow_event"));
     assert!(core.contains("xray_tun_poll_udp_response_gap_event"));
@@ -390,6 +393,7 @@ const EXPORTED_SYMBOLS: &[&str] = &[
     "xray_tun_poll_packet",
     "xray_tun_poll_packets",
     "xray_tun_poll_tcp_flow_summary_event",
+    "xray_tun_poll_tcp_open_error_event",
     "xray_tun_poll_tcp_slow_flow_event",
     "xray_tun_poll_udp_slow_flow_event",
     "xray_tun_poll_udp_response_gap_event",
@@ -425,6 +429,7 @@ static void use_xray_ffi_api(void) {
   XrayCoreHandle *handle = xray_core_new(&error);
   XrayTunStats stats = {0};
   XrayTcpFlowSummaryEvent tcp_flow_summary = {0};
+  XrayTcpOpenErrorEvent tcp_open_error = {0};
   XrayTcpRemoteWriteSlowEvent tcp_remote_write_slow = {0};
   XrayTcpSlowFlowEvent slow_flow = {0};
   XrayUdpSlowFlowEvent udp_slow_flow = {0};
@@ -434,8 +439,10 @@ static void use_xray_ffi_api(void) {
   uint8_t buffer[64] = {0};
   char target[256] = {0};
   char outbound[64] = {0};
+  char message[512] = {0};
   size_t written = 0;
   size_t outbound_written = 0;
+  size_t message_written = 0;
   size_t packet_lengths[4] = {0};
   size_t packet_count = 0;
   uint64_t stats_probe = 0;
@@ -493,6 +500,19 @@ static void use_xray_ffi_api(void) {
       outbound,
       sizeof(outbound),
       &outbound_written,
+      &error);
+  (void)xray_tun_poll_tcp_open_error_event(
+      handle,
+      &tcp_open_error,
+      target,
+      sizeof(target),
+      &written,
+      outbound,
+      sizeof(outbound),
+      &outbound_written,
+      message,
+      sizeof(message),
+      &message_written,
       &error);
   (void)xray_tun_poll_tcp_slow_flow_event(
       handle,

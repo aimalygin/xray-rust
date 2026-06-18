@@ -217,6 +217,12 @@ pub struct XrayTcpRemoteWriteSlowEvent {
 
 #[repr(C)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct XrayTcpOpenErrorEvent {
+    pub reserved: u64,
+}
+
+#[repr(C)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct XrayUdpSlowFlowEvent {
     pub first_response_duration_ms: u64,
     pub written_bytes: u64,
@@ -1769,6 +1775,253 @@ unsafe fn xray_tun_poll_tcp_flow_summary_event_inner(
             outbound_tag_buffer,
             outbound_tag_buffer_len,
             outbound_tag_written,
+        );
+    }
+    XrayStatus::Ok
+}
+
+/// Polls one debug-only TCP open-error event from the TUN endpoint.
+///
+/// Returns `XRAY_STATUS_NO_PACKET` when no event is buffered. `target_buffer`,
+/// `outbound_tag_buffer`, and `error_message_buffer` receive NUL-terminated
+/// strings, truncated if needed.
+///
+/// # Safety
+///
+/// `handle` must either be null or a pointer returned by `xray_core_new` that
+/// has not been freed. `event`, string buffers, and written pointers must point
+/// to writable memory. If `error` is non-null, it must point to an initialized
+/// `*mut XrayError` value that is either null or a live error pointer returned
+/// by this library. This function may free and replace that error pointer.
+#[no_mangle]
+pub unsafe extern "C" fn xray_tun_poll_tcp_open_error_event(
+    handle: *mut XrayCoreHandle,
+    event: *mut XrayTcpOpenErrorEvent,
+    target_buffer: *mut c_char,
+    target_buffer_len: usize,
+    target_written: *mut usize,
+    outbound_tag_buffer: *mut c_char,
+    outbound_tag_buffer_len: usize,
+    outbound_tag_written: *mut usize,
+    error_message_buffer: *mut c_char,
+    error_message_buffer_len: usize,
+    error_message_written: *mut usize,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            xray_tun_poll_tcp_open_error_event_inner(
+                handle,
+                event,
+                target_buffer,
+                target_buffer_len,
+                target_written,
+                outbound_tag_buffer,
+                outbound_tag_buffer_len,
+                outbound_tag_written,
+                error_message_buffer,
+                error_message_buffer_len,
+                error_message_written,
+                error,
+            )
+        })
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+unsafe fn xray_tun_poll_tcp_open_error_event_inner(
+    handle: *mut XrayCoreHandle,
+    event: *mut XrayTcpOpenErrorEvent,
+    target_buffer: *mut c_char,
+    target_buffer_len: usize,
+    target_written: *mut usize,
+    outbound_tag_buffer: *mut c_char,
+    outbound_tag_buffer_len: usize,
+    outbound_tag_written: *mut usize,
+    error_message_buffer: *mut c_char,
+    error_message_buffer_len: usize,
+    error_message_written: *mut usize,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        clear_error(error);
+    }
+
+    if !target_written.is_null() {
+        unsafe {
+            *target_written = 0;
+        }
+    }
+    if !target_buffer.is_null() && target_buffer_len > 0 {
+        unsafe {
+            *target_buffer = 0;
+        }
+    }
+    if !outbound_tag_written.is_null() {
+        unsafe {
+            *outbound_tag_written = 0;
+        }
+    }
+    if !outbound_tag_buffer.is_null() && outbound_tag_buffer_len > 0 {
+        unsafe {
+            *outbound_tag_buffer = 0;
+        }
+    }
+    if !error_message_written.is_null() {
+        unsafe {
+            *error_message_written = 0;
+        }
+    }
+    if !error_message_buffer.is_null() && error_message_buffer_len > 0 {
+        unsafe {
+            *error_message_buffer = 0;
+        }
+    }
+
+    if handle.is_null() {
+        unsafe {
+            set_error(error, XrayStatus::NullArgument, "core handle is null");
+        }
+        return XrayStatus::NullArgument;
+    }
+    if event.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "TCP open-error event pointer is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+    if target_buffer.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "TCP open-error target buffer is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+    if target_written.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "TCP open-error target written pointer is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+    if outbound_tag_buffer.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "TCP open-error outbound tag buffer is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+    if outbound_tag_written.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "TCP open-error outbound tag written pointer is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+    if error_message_buffer.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "TCP open-error message buffer is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+    if error_message_written.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "TCP open-error message written pointer is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+    if target_buffer_len == 0 {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::BufferTooSmall,
+                "TCP open-error target buffer length is zero",
+            );
+        }
+        return XrayStatus::BufferTooSmall;
+    }
+    if outbound_tag_buffer_len == 0 {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::BufferTooSmall,
+                "TCP open-error outbound tag buffer length is zero",
+            );
+        }
+        return XrayStatus::BufferTooSmall;
+    }
+    if error_message_buffer_len == 0 {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::BufferTooSmall,
+                "TCP open-error message buffer length is zero",
+            );
+        }
+        return XrayStatus::BufferTooSmall;
+    }
+
+    // Shared access: data-path entry points may run concurrently with each
+    // other (Swift pump push/poll threads); only lifecycle calls take `&mut`.
+    let handle = unsafe { &*handle };
+    let Some(core) = handle.core.as_ref() else {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::CoreNotLoaded,
+                "core config is not loaded",
+            );
+        }
+        return XrayStatus::CoreNotLoaded;
+    };
+
+    let Some(open_error) = core.tun().poll_tcp_open_error_event() else {
+        return XrayStatus::NoPacket;
+    };
+
+    unsafe {
+        *event = XrayTcpOpenErrorEvent { reserved: 0 };
+        write_c_string_truncated(
+            &open_error.target,
+            target_buffer,
+            target_buffer_len,
+            target_written,
+        );
+        write_c_string_truncated(
+            open_error.outbound_tag.as_deref().unwrap_or(""),
+            outbound_tag_buffer,
+            outbound_tag_buffer_len,
+            outbound_tag_written,
+        );
+        write_c_string_truncated(
+            &open_error.error,
+            error_message_buffer,
+            error_message_buffer_len,
+            error_message_written,
         );
     }
     XrayStatus::Ok

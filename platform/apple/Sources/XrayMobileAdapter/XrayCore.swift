@@ -185,6 +185,18 @@ public extension XrayTcpRemoteWriteSlowEventSnapshot {
     }
 }
 
+public struct XrayTcpOpenErrorEventSnapshot: Equatable, Sendable {
+    public let target: String
+    public let outboundTag: String?
+    public let error: String
+}
+
+public extension XrayTcpOpenErrorEventSnapshot {
+    func debugLogMessage(prefix: String = "Debug tcpOpenError") -> String {
+        "\(prefix) target=\(target) outbound=\(outboundTag ?? "untagged") error=\(error)"
+    }
+}
+
 public struct XrayUdpSlowFlowEventSnapshot: Equatable, Sendable {
     public let target: String
     public let firstResponseDurationMs: UInt64
@@ -711,6 +723,57 @@ public final class XrayCore: @unchecked Sendable {
                         durationMs: event.duration_ms,
                         bytes: event.bytes,
                         messages: event.messages
+                    )
+                )
+            }
+            return events
+        }
+    }
+
+    public func pollTcpOpenErrorEvents(maxEvents: Int = 16) throws -> [XrayTcpOpenErrorEventSnapshot] {
+        try withHandle { handle in
+            var events: [XrayTcpOpenErrorEventSnapshot] = []
+            while events.count < maxEvents {
+                var error: OpaquePointer?
+                var event = XrayTcpOpenErrorEvent()
+                var targetWritten = 0
+                var targetBuffer = [CChar](repeating: 0, count: 256)
+                var outboundTagWritten = 0
+                var outboundTagBuffer = [CChar](repeating: 0, count: 64)
+                var errorMessageWritten = 0
+                var errorMessageBuffer = [CChar](repeating: 0, count: 512)
+                let status = targetBuffer.withUnsafeMutableBufferPointer { targetMutableBuffer in
+                    outboundTagBuffer.withUnsafeMutableBufferPointer { outboundTagMutableBuffer in
+                        errorMessageBuffer.withUnsafeMutableBufferPointer { errorMessageMutableBuffer in
+                            xray_tun_poll_tcp_open_error_event(
+                                handle,
+                                &event,
+                                targetMutableBuffer.baseAddress,
+                                targetMutableBuffer.count,
+                                &targetWritten,
+                                outboundTagMutableBuffer.baseAddress,
+                                outboundTagMutableBuffer.count,
+                                &outboundTagWritten,
+                                errorMessageMutableBuffer.baseAddress,
+                                errorMessageMutableBuffer.count,
+                                &errorMessageWritten,
+                                &error
+                            )
+                        }
+                    }
+                }
+
+                if status == XRAY_STATUS_NO_PACKET {
+                    return events
+                }
+
+                try check(status, error: error)
+                let outboundTag = String(cString: outboundTagBuffer)
+                events.append(
+                    XrayTcpOpenErrorEventSnapshot(
+                        target: String(cString: targetBuffer),
+                        outboundTag: outboundTag.isEmpty ? nil : outboundTag,
+                        error: String(cString: errorMessageBuffer)
                     )
                 )
             }

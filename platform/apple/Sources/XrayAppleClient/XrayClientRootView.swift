@@ -127,7 +127,14 @@ public struct XrayClientRootView: View {
     private var configurationSection: some View {
         Section("Configuration") {
             #if os(tvOS)
-            TextField("VLESS URL", text: $vlessURLInput)
+            VStack(alignment: .leading) {
+                Text("VLESS URL")
+                TextField("VLESS URL", text: $vlessURLInput, axis: .vertical)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .frame(minHeight: 140)
+                    .accessibilityLabel("VLESS URL")
+            }
 
             Button {
                 _ = importPendingVlessURL()

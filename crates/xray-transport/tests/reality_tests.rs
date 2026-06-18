@@ -493,6 +493,10 @@ mod reality_tests {
             patched_client_hello: vec![0xab; 96],
             auth_key: [0xcd; 32],
             session_id: [0xef; 32],
+            version: HANDSHAKE_VERSION,
+            unix_time: HANDSHAKE_UNIX_TIME,
+            short_id: vec![0xaa, 0xbb, 0xcc],
+            server_public_key: decode_hex_array(HANDSHAKE_SERVER_PUBLIC_KEY_HEX),
         };
         let output_debug = format!("{prepared_handshake:?}");
         assert!(output_debug.contains("patched_client_hello_len: 96"));

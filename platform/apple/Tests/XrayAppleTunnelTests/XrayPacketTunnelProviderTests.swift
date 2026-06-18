@@ -6,17 +6,17 @@ import XrayAppleShared
 final class XrayPacketTunnelProviderTests: XCTestCase {
     func testNetworkSettingsExcludeIPv4ProxyServerFromDefaultRoute() {
         let settings = XrayPacketTunnelProvider.networkSettings(
-            excludingServerAddress: "217.154.252.68"
+            excludingServerAddress: "203.0.113.10"
         )
 
         let excludedRoute = settings.ipv4Settings?.excludedRoutes?.first
-        XCTAssertEqual(excludedRoute?.destinationAddress, "217.154.252.68")
+        XCTAssertEqual(excludedRoute?.destinationAddress, "203.0.113.10")
         XCTAssertEqual(excludedRoute?.destinationSubnetMask, "255.255.255.255")
     }
 
     func testNetworkSettingsUseVpnDnsForAllDomains() {
         let settings = XrayPacketTunnelProvider.networkSettings(
-            excludingServerAddress: "217.154.252.68"
+            excludingServerAddress: "203.0.113.10"
         )
 
         XCTAssertEqual(settings.dnsSettings?.servers, ["1.1.1.1", "8.8.8.8"])
@@ -25,7 +25,7 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
 
     func testNetworkSettingsDoNotInstallIPv6DefaultRouteYet() {
         let settings = XrayPacketTunnelProvider.networkSettings(
-            excludingServerAddress: "217.154.252.68"
+            excludingServerAddress: "203.0.113.10"
         )
 
         XCTAssertNil(settings.ipv6Settings)
@@ -204,7 +204,7 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
                   "settings": {
                     "vnext": [
                       {
-                        "address": "217.154.252.68",
+                        "address": "203.0.113.10",
                         "port": 32134,
                         "users": [
                           {
@@ -233,6 +233,12 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
                   {},
                   {}
                 ]
+              },
+              "dns": {
+                "fakeIp": {
+                  "enabled": true,
+                  "ipv4Pool": "198.19.0.0/16"
+                }
               }
             }
             """
@@ -240,8 +246,9 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
 
         XCTAssertEqual(
             summary,
-            "inbounds=tun-in:tun outbounds=proxy:vless@217.154.252.68:32134 network=tcp security=reality flow=xtls-rprx-vision, direct:freedom routingRules=2"
+            "inbounds=tun-in:tun outbounds=proxy:vless@203.0.113.10:32134 network=tcp security=reality flow=xtls-rprx-vision, direct:freedom routingRules=2 dnsFakeIp=enabled"
         )
         XCTAssertFalse(summary.contains("secret"))
     }
+
 }

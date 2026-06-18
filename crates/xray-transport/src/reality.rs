@@ -117,6 +117,10 @@ pub struct RealityPreparedHandshake {
     pub patched_client_hello: Vec<u8>,
     pub auth_key: [u8; 32],
     pub session_id: [u8; 32],
+    pub version: [u8; 3],
+    pub unix_time: u32,
+    pub short_id: Vec<u8>,
+    pub server_public_key: [u8; 32],
 }
 
 impl fmt::Debug for RealityPreparedHandshake {
@@ -126,6 +130,10 @@ impl fmt::Debug for RealityPreparedHandshake {
             .field("patched_client_hello_len", &self.patched_client_hello.len())
             .field("auth_key", &"<redacted>")
             .field("session_id", &"<redacted>")
+            .field("version", &self.version)
+            .field("unix_time", &self.unix_time)
+            .field("short_id", &"<redacted>")
+            .field("server_public_key", &self.server_public_key)
             .finish()
     }
 }
@@ -135,6 +143,7 @@ impl Drop for RealityPreparedHandshake {
         self.patched_client_hello.zeroize();
         self.auth_key.zeroize();
         self.session_id.zeroize();
+        self.short_id.zeroize();
     }
 }
 
@@ -541,6 +550,8 @@ pub fn prepare_reality_handshake(
     mut input: RealityHandshakeInput,
 ) -> Result<RealityPreparedHandshake, RealityError> {
     validate_reality_fingerprint(&input.prepared_client_hello.fingerprint)?;
+    let mut output_short_id = Zeroizing::new(input.short_id.clone());
+    let output_server_public_key = input.server_public_key;
 
     let local_x25519_private_key =
         Zeroizing::new(input.prepared_client_hello.local_x25519_private_key);
@@ -582,6 +593,10 @@ pub fn prepare_reality_handshake(
         patched_client_hello: raw_client_hello,
         auth_key: *auth_key,
         session_id,
+        version: input.version,
+        unix_time: input.unix_time,
+        short_id: std::mem::take(&mut *output_short_id),
+        server_public_key: output_server_public_key,
     })
 }
 

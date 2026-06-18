@@ -139,6 +139,10 @@ typedef struct XrayTcpRemoteWriteSlowEvent {
   uint64_t messages;
 } XrayTcpRemoteWriteSlowEvent;
 
+typedef struct XrayTcpOpenErrorEvent {
+  uint64_t reserved;
+} XrayTcpOpenErrorEvent;
+
 typedef struct XrayUdpSlowFlowEvent {
   uint64_t first_response_duration_ms;
   uint64_t written_bytes;
@@ -256,6 +260,19 @@ XrayStatus xray_tun_poll_tcp_remote_write_slow_event(
     char *outbound_tag_buffer,
     size_t outbound_tag_buffer_len,
     size_t *outbound_tag_written,
+    XrayError **error);
+XrayStatus xray_tun_poll_tcp_open_error_event(
+    XrayCoreHandle *handle,
+    XrayTcpOpenErrorEvent *event,
+    char *target_buffer,
+    size_t target_buffer_len,
+    size_t *target_written,
+    char *outbound_tag_buffer,
+    size_t outbound_tag_buffer_len,
+    size_t *outbound_tag_written,
+    char *error_message_buffer,
+    size_t error_message_buffer_len,
+    size_t *error_message_written,
     XrayError **error);
 XrayStatus xray_tun_poll_udp_slow_flow_event(
     XrayCoreHandle *handle,

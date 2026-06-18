@@ -1119,7 +1119,7 @@ dependencies = [
 [[package]]
 name = "rustls"
 version = "0.23.40"
-source = "git+https://github.com/aimalygin/shaped-rustls?tag=xray-rustls-0.23.40-1#85b633d83898c26f7d43949390f2764e49b79096"
+source = "git+https://github.com/aimalygin/shaped-rustls?rev=e8f5b88d#e8f5b88d9b2cde47db5b67f7a7486768d682ab02"
 dependencies = [
  "aws-lc-rs",
  "brotli",

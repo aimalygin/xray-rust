@@ -205,6 +205,13 @@ private struct VlessEndpoint {
                     ],
                 ],
             ],
+            "dns": [
+                "fakeIp": [
+                    "enabled": true,
+                    "ipv4Pool": "198.19.0.0/16",
+                    "ttl": 60,
+                ],
+            ],
         ]
 
         let data = try JSONSerialization.data(

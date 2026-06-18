@@ -1,8 +1,8 @@
 use bytes::Bytes;
 use xray_tun::{
-    TunConfig, TunEndpoint, TunError, TunStats, TunTcpFlowSummaryEvent, TunTcpRemoteWriteSlowEvent,
-    TunTcpSlowFlowEvent, TunTcpSlowFlowKind, TunUdpQuicBlockedEvent, TunUdpResponseGapEvent,
-    TunUdpSlowFlowEvent,
+    TunConfig, TunEndpoint, TunError, TunStats, TunTcpFlowSummaryEvent, TunTcpOpenErrorEvent,
+    TunTcpRemoteWriteSlowEvent, TunTcpSlowFlowEvent, TunTcpSlowFlowKind, TunUdpQuicBlockedEvent,
+    TunUdpResponseGapEvent, TunUdpSlowFlowEvent,
 };
 
 #[tokio::test]
@@ -419,6 +419,43 @@ async fn tun_endpoint_buffers_tcp_remote_write_slow_events_in_fifo_order() {
         })
     );
     assert_eq!(tun.poll_tcp_remote_write_slow_event(), None);
+}
+
+#[tokio::test]
+async fn tun_endpoint_buffers_tcp_open_error_events_in_fifo_order() {
+    let tun = TunEndpoint::new(TunConfig {
+        mtu: 1500,
+        queue_depth: 1,
+    });
+
+    tun.record_tcp_open_error_event(TunTcpOpenErrorEvent {
+        target: "youtube.example:443".to_owned(),
+        outbound_tag: Some("proxy".to_owned()),
+        error: "tcp connect failed: Network is unreachable".to_owned(),
+    });
+    tun.record_tcp_open_error_event(TunTcpOpenErrorEvent {
+        target: "203.0.113.10:32134".to_owned(),
+        outbound_tag: None,
+        error: "socket protect callback returned false".to_owned(),
+    });
+
+    assert_eq!(
+        tun.poll_tcp_open_error_event(),
+        Some(TunTcpOpenErrorEvent {
+            target: "youtube.example:443".to_owned(),
+            outbound_tag: Some("proxy".to_owned()),
+            error: "tcp connect failed: Network is unreachable".to_owned(),
+        })
+    );
+    assert_eq!(
+        tun.poll_tcp_open_error_event(),
+        Some(TunTcpOpenErrorEvent {
+            target: "203.0.113.10:32134".to_owned(),
+            outbound_tag: None,
+            error: "socket protect callback returned false".to_owned(),
+        })
+    );
+    assert_eq!(tun.poll_tcp_open_error_event(), None);
 }
 
 #[tokio::test]

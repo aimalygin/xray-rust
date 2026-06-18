@@ -1,11 +1,16 @@
 use std::{env, fmt::Write as _, fs, path::Path, process::Command};
 
+use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret as X25519StaticSecret};
 use xray_transport::{
     reality::validate_reality_client_hello_metadata,
     reality_connector::{RealityClientHelloRequest, RealityTlsSessionProvider},
     RustlsRealityTlsSessionProvider,
 };
 
+const TLS_GROUP_X25519: u16 = 0x001d;
+const TLS_GROUP_X25519_MLKEM768: u16 = 0x11ec;
+const TLS_GROUP_X25519_MLKEM768_DRAFT: u16 = 0x6399;
+const X25519_PUBLIC_KEY_LEN: usize = 32;
 const CLIENTHELLO_SHAPE_HELLOCHROME_100_JSON: &str =
     include_str!("../../../tests/fixtures/reality/clienthello_shape_hellochrome_100.json");
 
@@ -52,6 +57,12 @@ struct ExtensionShape {
 struct KeyShareShape {
     group: String,
     key_exchange_length: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct KeySharePayload {
+    group: u16,
+    key_exchange: Vec<u8>,
 }
 
 #[derive(Clone, Debug, serde::Deserialize, PartialEq, Eq)]
@@ -102,6 +113,98 @@ fn rustls_reality_provider_prepares_xray_core_fingerprint_clienthello() {
 
     assert_eq!(prepared.fingerprint, "hellochrome_131");
     assert_eq!(prepared.session_id_offset, validation.session_id_offset);
+}
+
+#[test]
+fn rustls_reality_provider_uses_real_hybrid_key_share_for_chrome() {
+    let provider = RustlsRealityTlsSessionProvider::new();
+
+    let session = provider
+        .create_session(RealityClientHelloRequest {
+            server_name: "www.example.com",
+            fingerprint: "chrome",
+        })
+        .expect("chrome REALITY session should be created");
+    let prepared = session
+        .prepared_client_hello()
+        .expect("prepared ClientHello should be available");
+    let key_exchange = key_share_payload(&prepared.raw_client_hello, TLS_GROUP_X25519_MLKEM768)
+        .expect("chrome ClientHello should advertise X25519MLKEM768");
+
+    assert!(key_exchange.len() > X25519_PUBLIC_KEY_LEN);
+    let mlkem_public_key = &key_exchange[..key_exchange.len() - X25519_PUBLIC_KEY_LEN];
+    assert!(
+        mlkem_public_key.iter().any(|byte| *byte != 0),
+        "X25519MLKEM768 key share must contain a real ML-KEM public key, not a zero placeholder"
+    );
+}
+
+#[test]
+fn rustls_reality_provider_uses_prepared_x25519_material_for_all_reality_capable_fingerprints() {
+    let provider = RustlsRealityTlsSessionProvider::new();
+
+    for fingerprint in xray_utls::XRAY_REALITY_CAPABLE_FINGERPRINTS {
+        let session = provider
+            .create_session(RealityClientHelloRequest {
+                server_name: "www.example.com",
+                fingerprint,
+            })
+            .unwrap_or_else(|error| {
+                panic!("{fingerprint}: REALITY session should be created: {error}")
+            });
+        let prepared = session
+            .prepared_client_hello()
+            .unwrap_or_else(|error| panic!("{fingerprint}: prepared ClientHello: {error}"));
+        let expected_x25519_public_key = x25519_public_key(prepared.local_x25519_private_key);
+        let key_shares = key_share_payloads(&prepared.raw_client_hello)
+            .unwrap_or_else(|error| panic!("{fingerprint}: key_share payloads: {error}"));
+        let mut x25519_compatible_shares = 0;
+
+        for key_share in key_shares {
+            match key_share.group {
+                TLS_GROUP_X25519 => {
+                    x25519_compatible_shares += 1;
+                    assert_eq!(
+                        key_share.key_exchange, expected_x25519_public_key,
+                        "{fingerprint}: X25519 key share must use the prepared REALITY public key"
+                    );
+                }
+                TLS_GROUP_X25519_MLKEM768 => {
+                    x25519_compatible_shares += 1;
+                    assert!(
+                        key_share.key_exchange.len() > X25519_PUBLIC_KEY_LEN,
+                        "{fingerprint}: X25519MLKEM768 key share must include ML-KEM and X25519 material"
+                    );
+                    let x25519_offset = key_share.key_exchange.len() - X25519_PUBLIC_KEY_LEN;
+                    let (_mlkem_public_key, x25519_public_key) =
+                        key_share.key_exchange.split_at(x25519_offset);
+                    assert_eq!(
+                        x25519_public_key, expected_x25519_public_key,
+                        "{fingerprint}: X25519MLKEM768 key share must embed the prepared REALITY X25519 public key"
+                    );
+                }
+                TLS_GROUP_X25519_MLKEM768_DRAFT => {
+                    x25519_compatible_shares += 1;
+                    assert!(
+                        key_share.key_exchange.len() >= X25519_PUBLIC_KEY_LEN,
+                        "{fingerprint}: draft hybrid key share must include an X25519 tail"
+                    );
+                    assert_eq!(
+                        &key_share.key_exchange[key_share.key_exchange.len()
+                            - X25519_PUBLIC_KEY_LEN..],
+                        expected_x25519_public_key,
+                        "{fingerprint}: draft hybrid key share must embed the prepared REALITY X25519 public key"
+                    );
+                }
+                _ => {}
+            }
+        }
+
+        assert!(
+            x25519_compatible_shares > 0,
+            "{fingerprint}: REALITY-capable fingerprint must have an X25519-compatible key share"
+        );
+    }
 }
 
 #[test]
@@ -416,6 +519,11 @@ fn build_fingerprint_parity_report(results: &[FingerprintParityResult]) -> Strin
     .unwrap();
     writeln!(
         report,
+        "- This is a byte-shape oracle only. It does not prove key-share cryptographic validity or REALITY prepare/complete ClientHello reproducibility; those must stay covered by dedicated runtime invariants."
+    )
+    .unwrap();
+    writeln!(
+        report,
         "- Acceptance criterion: rerun the reproduce command from this report and get all REALITY-capable fingerprints as `match`, `0` mismatches, `0` Go uTLS oracle errors, `0` Rust generation errors, and keep the known TLS1.2-only rows as `not-reality-capable`.\n"
     )
     .unwrap();
@@ -432,7 +540,12 @@ fn build_fingerprint_parity_report(results: &[FingerprintParityResult]) -> Strin
     .unwrap();
     writeln!(
         report,
-        "- xray-rust now works around multi-share fixed-X25519 limitations by keeping only X25519 as a real rustls key share and advertising P-256/P-384/hybrid shares as raw wire-shape entries. That keeps REALITY's X25519 public key stable while preserving ClientHello shape."
+        "- xray-rust uses real rustls key shares for X25519 and final `X25519MLKEM768`; P-256/P-384 and draft hybrid shares remain raw wire-shape entries. `FixedX25519KeyShare` keeps REALITY's X25519 public key stable inside both X25519 and final hybrid shares."
+    )
+    .unwrap();
+    writeln!(
+        report,
+        "- Runtime REALITY completion uses shaped-rustls' ClientHello finalizer to seal the actual generated ClientHello before transcript/write. Dedicated tests assert nonzero final `X25519MLKEM768` ML-KEM material and finalizer-derived auth/session state; this report remains the byte-shape oracle."
     )
     .unwrap();
     writeln!(
@@ -944,6 +1057,126 @@ fn parse_key_shares(data: &[u8]) -> Result<Vec<KeyShareShape>, String> {
     }
 
     Ok(shares)
+}
+
+fn key_share_payload(raw: &[u8], group: u16) -> Result<Vec<u8>, String> {
+    let mut cursor = ByteCursor::new(raw);
+    let handshake_type = cursor.read_u8("missing handshake type")?;
+    if handshake_type != 0x01 {
+        return Err(format!(
+            "not a ClientHello handshake: 0x{handshake_type:02x}"
+        ));
+    }
+
+    let handshake_len = cursor.read_u24("missing handshake length")?;
+    if handshake_len != raw.len() - 4 {
+        return Err(format!(
+            "handshake length mismatch: header={handshake_len} raw={}",
+            raw.len() - 4
+        ));
+    }
+
+    cursor.read_u16("missing legacy version")?;
+    cursor.take(32, "missing ClientHello random")?;
+    let session_id_len = cursor.read_u8("missing legacy session id length")?;
+    cursor.take(session_id_len, "truncated legacy session id")?;
+    cursor.read_u16_list("missing cipher suites")?;
+    let compression_methods_len = cursor.read_u8("missing compression methods length")?;
+    cursor.take(compression_methods_len, "truncated compression methods")?;
+    let extensions_len = cursor.read_u16("missing extensions length")?;
+    let extensions_end = cursor.checked_end(extensions_len, "truncated extensions")?;
+
+    while cursor.offset < extensions_end {
+        let extension_type = cursor.read_u16("missing extension type")? as u16;
+        let extension_len = cursor.read_u16("missing extension length")?;
+        let extension_data = cursor.take(extension_len, "truncated extension data")?;
+        if extension_type == 0x0033 {
+            return key_share_payload_from_extension(extension_data, group);
+        }
+    }
+
+    Err("missing key_share extension".to_owned())
+}
+
+fn key_share_payload_from_extension(data: &[u8], group: u16) -> Result<Vec<u8>, String> {
+    let mut cursor = ByteCursor::new(data);
+    let shares_len = cursor.read_u16("missing key_share client_shares length")?;
+    let shares_end = cursor.checked_end(shares_len, "truncated key_share client_shares")?;
+    while cursor.offset < shares_end {
+        let share_group = cursor.read_u16("missing key_share group")? as u16;
+        let key_exchange_length = cursor.read_u16("missing key_exchange length")?;
+        let key_exchange = cursor.take(key_exchange_length, "truncated key_exchange")?;
+        if share_group == group {
+            return Ok(key_exchange.to_vec());
+        }
+    }
+
+    Err(format!("missing key_share group 0x{group:04x}"))
+}
+
+fn key_share_payloads(raw: &[u8]) -> Result<Vec<KeySharePayload>, String> {
+    let mut cursor = ByteCursor::new(raw);
+    let handshake_type = cursor.read_u8("missing handshake type")?;
+    if handshake_type != 0x01 {
+        return Err(format!(
+            "not a ClientHello handshake: 0x{handshake_type:02x}"
+        ));
+    }
+
+    let handshake_len = cursor.read_u24("missing handshake length")?;
+    if handshake_len != raw.len() - 4 {
+        return Err(format!(
+            "handshake length mismatch: header={handshake_len} raw={}",
+            raw.len() - 4
+        ));
+    }
+
+    cursor.read_u16("missing legacy version")?;
+    cursor.take(32, "missing ClientHello random")?;
+    let session_id_len = cursor.read_u8("missing legacy session id length")?;
+    cursor.take(session_id_len, "truncated legacy session id")?;
+    cursor.read_u16_list("missing cipher suites")?;
+    let compression_methods_len = cursor.read_u8("missing compression methods length")?;
+    cursor.take(compression_methods_len, "truncated compression methods")?;
+    let extensions_len = cursor.read_u16("missing extensions length")?;
+    let extensions_end = cursor.checked_end(extensions_len, "truncated extensions")?;
+
+    while cursor.offset < extensions_end {
+        let extension_type = cursor.read_u16("missing extension type")? as u16;
+        let extension_len = cursor.read_u16("missing extension length")?;
+        let extension_data = cursor.take(extension_len, "truncated extension data")?;
+        if extension_type == 0x0033 {
+            return key_share_payloads_from_extension(extension_data);
+        }
+    }
+
+    Err("missing key_share extension".to_owned())
+}
+
+fn key_share_payloads_from_extension(data: &[u8]) -> Result<Vec<KeySharePayload>, String> {
+    let mut cursor = ByteCursor::new(data);
+    let shares_len = cursor.read_u16("missing key_share client_shares length")?;
+    let shares_end = cursor.checked_end(shares_len, "truncated key_share client_shares")?;
+    let mut key_shares = Vec::new();
+
+    while cursor.offset < shares_end {
+        let group = cursor.read_u16("missing key_share group")? as u16;
+        let key_exchange_length = cursor.read_u16("missing key_exchange length")?;
+        let key_exchange = cursor
+            .take(key_exchange_length, "truncated key_exchange")?
+            .to_vec();
+        key_shares.push(KeySharePayload {
+            group,
+            key_exchange,
+        });
+    }
+
+    Ok(key_shares)
+}
+
+fn x25519_public_key(private_key: [u8; 32]) -> [u8; X25519_PUBLIC_KEY_LEN] {
+    let secret = X25519StaticSecret::from(private_key);
+    X25519PublicKey::from(&secret).to_bytes()
 }
 
 fn format_u16s(values: &[u16]) -> Vec<String> {

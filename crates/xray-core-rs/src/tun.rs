@@ -17,8 +17,9 @@ use xray_config::{CoreConfig, DnsFakeIpConfig};
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::{protect_udp_socket, DnsResolver, TransportDialer};
 use xray_tun::{
-    TunEndpoint, TunError, TunTcpFlowSummaryEvent, TunTcpRemoteWriteSlowEvent, TunTcpSlowFlowEvent,
-    TunTcpSlowFlowKind, TunUdpResponseGapEvent, TunUdpSlowFlowEvent,
+    TunEndpoint, TunError, TunTcpFlowSummaryEvent, TunTcpOpenErrorEvent,
+    TunTcpRemoteWriteSlowEvent, TunTcpSlowFlowEvent, TunTcpSlowFlowKind, TunUdpResponseGapEvent,
+    TunUdpSlowFlowEvent,
 };
 
 use crate::outbound::{
@@ -1273,8 +1274,9 @@ async fn bridge_tcp_flow(
     };
     let (outbound, outbound_tag) = match outbound_result {
         Ok(selection) => selection,
-        Err(_) => {
+        Err(error) => {
             context.tun.record_tcp_open_error();
+            record_tcp_open_error_event(context.tun.as_ref(), &target, None, error);
             let _ = context
                 .stack_tx
                 .send(StackEvent::RemoteClosed { handle })
@@ -1291,8 +1293,14 @@ async fn bridge_tcp_flow(
     .await
     {
         Ok(stream) => stream,
-        Err(_) => {
+        Err(error) => {
             context.tun.record_tcp_open_error();
+            record_tcp_open_error_event(
+                context.tun.as_ref(),
+                &target,
+                outbound_tag.as_deref(),
+                error,
+            );
             let _ = context
                 .stack_tx
                 .send(StackEvent::RemoteClosed { handle })
@@ -1431,6 +1439,19 @@ async fn bridge_tcp_flow_loop<R, W, T>(
         .send(StackEvent::RemoteClosed { handle })
         .await;
     timing.record_flow_summary(context.tun.as_ref(), target, true);
+}
+
+fn record_tcp_open_error_event(
+    tun: &TunEndpoint,
+    target: &Target,
+    outbound_tag: Option<&str>,
+    error: impl std::fmt::Display,
+) {
+    tun.record_tcp_open_error_event(TunTcpOpenErrorEvent {
+        target: slow_flow_target_label(target),
+        outbound_tag: outbound_tag.map(ToOwned::to_owned),
+        error: error.to_string(),
+    });
 }
 
 fn record_tcp_slow_flow_event(
@@ -3113,6 +3134,36 @@ mod tests {
             })
         );
         assert_eq!(tun.poll_tcp_slow_flow_event(), None);
+    }
+
+    #[test]
+    fn tcp_open_error_event_records_target_outbound_and_error() {
+        let tun = TunEndpoint::new(xray_tun::TunConfig {
+            mtu: 1500,
+            queue_depth: 1,
+        });
+        let target = Target::new(
+            RoutingTargetAddr::Domain("youtube.example".to_owned()),
+            443,
+            RoutingNetwork::Tcp,
+        );
+
+        record_tcp_open_error_event(
+            &tun,
+            &target,
+            Some("proxy"),
+            "tcp connect failed: Network is unreachable",
+        );
+
+        assert_eq!(
+            tun.poll_tcp_open_error_event(),
+            Some(xray_tun::TunTcpOpenErrorEvent {
+                target: "youtube.example:443".to_owned(),
+                outbound_tag: Some("proxy".to_owned()),
+                error: "tcp connect failed: Network is unreachable".to_owned(),
+            })
+        );
+        assert_eq!(tun.poll_tcp_open_error_event(), None);
     }
 
     #[test]

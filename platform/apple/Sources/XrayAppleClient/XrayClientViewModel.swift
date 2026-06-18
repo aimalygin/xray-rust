@@ -4,6 +4,8 @@ import XrayAppleShared
 @available(iOS 16.0, tvOS 17.0, macOS 13.0, *)
 @MainActor
 public final class XrayClientViewModel: ObservableObject {
+    private static let incompleteVlessURLErrorMessage = "Pasted text is not a complete VLESS URL."
+
     @Published public var profile: XrayClientProfile
     @Published public private(set) var connectionStatus: XrayClientConnectionStatus = .unknown
     @Published public private(set) var runtimeStats: XrayClientRuntimeStats?
@@ -189,6 +191,10 @@ public final class XrayClientViewModel: ObservableObject {
         guard !trimmedURL.isEmpty else {
             return false
         }
+        guard Self.looksLikeVlessURL(trimmedURL) else {
+            rejectIncompleteVlessURL(trimmedURL)
+            return false
+        }
         return importVlessURL(trimmedURL)
     }
 
@@ -259,10 +265,8 @@ public final class XrayClientViewModel: ObservableObject {
         if trimmedURL.isEmpty {
             XrayAppleLog.info("ClientViewModel", "Connect action has no pending VLESS URL")
         } else if !Self.looksLikeVlessURL(trimmedURL) {
-            XrayAppleLog.info(
-                "ClientViewModel",
-                "Ignoring pending text that is not a full VLESS URL bytes=\(trimmedURL.utf8.count)"
-            )
+            rejectIncompleteVlessURL(trimmedURL)
+            return false
         } else {
             XrayAppleLog.info(
                 "ClientViewModel",
@@ -279,6 +283,14 @@ public final class XrayClientViewModel: ObservableObject {
 
         await connectOrDisconnect()
         return true
+    }
+
+    private func rejectIncompleteVlessURL(_ text: String) {
+        lastErrorMessage = Self.incompleteVlessURLErrorMessage
+        XrayAppleLog.error(
+            "ClientViewModel",
+            "Rejecting pending text that is not a full VLESS URL bytes=\(text.utf8.count)"
+        )
     }
 
     private static func looksLikeVlessURL(_ text: String) -> Bool {

@@ -2,7 +2,7 @@ import XCTest
 @testable import XrayAppleShared
 
 final class XrayClientProfileTests: XCTestCase {
-    private static let sampleVlessURL = "vless://41dac315-fc32-4957-aded-6010b8f62fef@217.154.252.68:32134?type=tcp&encryption=none&security=reality&pbk=3jNx5A3WTFKhvCj3IPljaxbcBjCxhH2dVCNobKv_X1c&fp=chrome&sni=google.com&sid=1c5694e878&spx=%2F&pqv=ignored-for-now&flow=xtls-rprx-vision#other-port-test-xray-rust"
+    private static let sampleVlessURL = "vless://11111111-1111-4111-8111-111111111111@203.0.113.10:32134?type=tcp&encryption=none&security=reality&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&fp=chrome&sni=google.com&sid=0123456789ab&spx=%2F&pqv=ignored-for-now&flow=xtls-rprx-vision#example-reality"
 
     func testDefaultProviderBundleIdentifierUsesHostBundleIdentifier() {
         XCTAssertEqual(
@@ -315,9 +315,9 @@ final class XrayClientProfileTests: XCTestCase {
             hostBundleIdentifier: "org.example.XrayClient"
         )
 
-        XCTAssertEqual(profile.name, "other-port-test-xray-rust")
+        XCTAssertEqual(profile.name, "example-reality")
         XCTAssertEqual(profile.providerBundleIdentifier, "org.example.XrayClient.Tunnel")
-        XCTAssertEqual(profile.serverAddress, "217.154.252.68")
+        XCTAssertEqual(profile.serverAddress, "203.0.113.10")
 
         let root = try XCTUnwrap(
             try JSONSerialization.jsonObject(with: Data(profile.configJSON.utf8)) as? [String: Any]
@@ -325,6 +325,12 @@ final class XrayClientProfileTests: XCTestCase {
         let inbounds = try XCTUnwrap(root["inbounds"] as? [[String: Any]])
         XCTAssertEqual(inbounds.first?["tag"] as? String, "tun-in")
         XCTAssertEqual(inbounds.first?["protocol"] as? String, "tun")
+
+        let dns = try XCTUnwrap(root["dns"] as? [String: Any])
+        let fakeIP = try XCTUnwrap(dns["fakeIp"] as? [String: Any])
+        XCTAssertEqual(fakeIP["enabled"] as? Bool, true)
+        XCTAssertEqual(fakeIP["ipv4Pool"] as? String, "198.19.0.0/16")
+        XCTAssertEqual(fakeIP["ttl"] as? Int, 60)
 
         let outbounds = try XCTUnwrap(root["outbounds"] as? [[String: Any]])
         XCTAssertEqual(outbounds.count, 2)
@@ -335,11 +341,11 @@ final class XrayClientProfileTests: XCTestCase {
 
         let settings = try XCTUnwrap(outbounds[0]["settings"] as? [String: Any])
         let vnext = try XCTUnwrap(settings["vnext"] as? [[String: Any]])
-        XCTAssertEqual(vnext.first?["address"] as? String, "217.154.252.68")
+        XCTAssertEqual(vnext.first?["address"] as? String, "203.0.113.10")
         XCTAssertEqual(vnext.first?["port"] as? Int, 32134)
 
         let users = try XCTUnwrap(vnext.first?["users"] as? [[String: Any]])
-        XCTAssertEqual(users.first?["id"] as? String, "41dac315-fc32-4957-aded-6010b8f62fef")
+        XCTAssertEqual(users.first?["id"] as? String, "11111111-1111-4111-8111-111111111111")
         XCTAssertEqual(users.first?["encryption"] as? String, "none")
         XCTAssertEqual(users.first?["flow"] as? String, "xtls-rprx-vision")
 
@@ -352,9 +358,9 @@ final class XrayClientProfileTests: XCTestCase {
         XCTAssertEqual(reality["fingerprint"] as? String, "chrome")
         XCTAssertEqual(
             reality["publicKey"] as? String,
-            "3jNx5A3WTFKhvCj3IPljaxbcBjCxhH2dVCNobKv_X1c"
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
         )
-        XCTAssertEqual(reality["shortId"] as? String, "1c5694e878")
+        XCTAssertEqual(reality["shortId"] as? String, "0123456789ab")
         XCTAssertEqual(reality["spiderX"] as? String, "/")
         XCTAssertEqual(reality["mldsa65Verify"] as? String, "ignored-for-now")
     }
@@ -367,8 +373,8 @@ final class XrayClientProfileTests: XCTestCase {
             hostBundleIdentifier: "org.example.XrayClient"
         )
 
-        XCTAssertEqual(profile.name, "other-port-test-xray-rust")
-        XCTAssertEqual(profile.serverAddress, "217.154.252.68")
+        XCTAssertEqual(profile.name, "example-reality")
+        XCTAssertEqual(profile.serverAddress, "203.0.113.10")
     }
 
     func testVlessURLImporterAcceptsSchemeLessAuthority() throws {
@@ -379,8 +385,8 @@ final class XrayClientProfileTests: XCTestCase {
             hostBundleIdentifier: "org.example.XrayClient"
         )
 
-        XCTAssertEqual(profile.name, "other-port-test-xray-rust")
-        XCTAssertEqual(profile.serverAddress, "217.154.252.68")
+        XCTAssertEqual(profile.name, "example-reality")
+        XCTAssertEqual(profile.serverAddress, "203.0.113.10")
     }
 
     func testVlessURLImporterExtractsSchemeLessAuthorityFromPastedText() throws {
@@ -392,8 +398,8 @@ final class XrayClientProfileTests: XCTestCase {
             hostBundleIdentifier: "org.example.XrayClient"
         )
 
-        XCTAssertEqual(profile.name, "other-port-test-xray-rust")
-        XCTAssertEqual(profile.serverAddress, "217.154.252.68")
+        XCTAssertEqual(profile.name, "example-reality")
+        XCTAssertEqual(profile.serverAddress, "203.0.113.10")
     }
 
     func testVlessURLImporterAcceptsVisionUdp443Flow() throws {
@@ -492,7 +498,7 @@ final class XrayClientProfileTests: XCTestCase {
     func testVlessURLImporterRejectsUnsupportedSecurity() {
         XCTAssertThrowsError(
             try XrayVlessURLImporter.profile(
-                from: "vless://41dac315-fc32-4957-aded-6010b8f62fef@example.com:443?type=tcp&security=tls&encryption=none"
+                from: "vless://11111111-1111-4111-8111-111111111111@example.com:443?type=tcp&security=tls&encryption=none"
             )
         ) { error in
             XCTAssertEqual(
