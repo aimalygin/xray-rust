@@ -1,5 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant as StdInstant;
 
@@ -46,12 +47,19 @@ const DNS_CLASS_IN: u16 = 1;
 const TCP_BUFFER_SIZE: usize = 32 * 1024;
 const STACK_EVENT_CHANNEL_DEPTH: usize = 64;
 const TCP_BRIDGE_CHANNEL_DEPTH: usize = 256;
+const MOBILE_TCP_BRIDGE_CHANNEL_DEPTH: usize = 128;
+const LOW_MEMORY_TCP_BRIDGE_CHANNEL_DEPTH: usize = 64;
 // Burst-heavy UDP (DNS fan-out, QUIC fallback retries) overflows a 64-deep
 // channel and surfaces as udp_channel_dropped_packets.
 const UDP_BRIDGE_CHANNEL_DEPTH: usize = 256;
 const BRIDGE_READ_BUFFER_SIZE: usize = 16 * 1024;
 const TCP_BRIDGE_WRITE_BATCH_MAX_MESSAGES: usize = TCP_BRIDGE_CHANNEL_DEPTH + 1;
+const MOBILE_TCP_BRIDGE_WRITE_BATCH_MAX_MESSAGES: usize = MOBILE_TCP_BRIDGE_CHANNEL_DEPTH + 1;
+const LOW_MEMORY_TCP_BRIDGE_WRITE_BATCH_MAX_MESSAGES: usize =
+    LOW_MEMORY_TCP_BRIDGE_CHANNEL_DEPTH + 1;
 const TCP_BRIDGE_WRITE_BATCH_MAX_BYTES: usize = 2 * 1024 * 1024;
+const MOBILE_TCP_BRIDGE_WRITE_BATCH_MAX_BYTES: usize = 1024 * 1024;
+const LOW_MEMORY_TCP_BRIDGE_WRITE_BATCH_MAX_BYTES: usize = 256 * 1024;
 const MAX_TUN_INBOUND_DRAIN_PER_TICK: usize = 256;
 const TCP_REMOTE_DRAIN_MAX_PASSES_PER_TICK: usize = 4;
 const TCP_REMOTE_DRAIN_MAX_BYTES_PER_TICK: usize = 4 * 1024 * 1024;
@@ -93,6 +101,14 @@ const DESKTOP_TCP_REMOTE_BUFFER_POLICY: TcpRemoteBufferPolicy = TcpRemoteBufferP
     hard_total_bytes: 160 * 1024 * 1024,
 };
 
+const MOBILE_PLUS_TCP_REMOTE_BUFFER_POLICY: TcpRemoteBufferPolicy = TcpRemoteBufferPolicy {
+    normal_per_flow_bytes: MOBILE_TCP_REMOTE_BUFFER_POLICY.normal_per_flow_bytes,
+    pressure_per_flow_bytes: MOBILE_TCP_REMOTE_BUFFER_POLICY.pressure_per_flow_bytes,
+    pressure_start_total_bytes: 30 * 1024 * 1024,
+    pressure_release_total_bytes: 20 * 1024 * 1024,
+    hard_total_bytes: MOBILE_TCP_REMOTE_BUFFER_POLICY.hard_total_bytes,
+};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct UdpFlowBudgetPolicy {
     max_active_flows: usize,
@@ -102,6 +118,19 @@ struct UdpFlowBudgetPolicy {
 struct FlowBudgetPolicy {
     tcp_remote: TcpRemoteBufferPolicy,
     udp: UdpFlowBudgetPolicy,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TcpUploadBridgePolicy {
+    channel_depth: usize,
+    max_batch_messages: usize,
+    max_batch_bytes: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TunRuntimePolicy {
+    flows: FlowBudgetPolicy,
+    tcp_upload: TcpUploadBridgePolicy,
 }
 
 const MOBILE_FLOW_BUDGET_POLICY: FlowBudgetPolicy = FlowBudgetPolicy {
@@ -114,7 +143,7 @@ const MOBILE_FLOW_BUDGET_POLICY: FlowBudgetPolicy = FlowBudgetPolicy {
 };
 
 const MOBILE_PLUS_FLOW_BUDGET_POLICY: FlowBudgetPolicy = FlowBudgetPolicy {
-    tcp_remote: DESKTOP_TCP_REMOTE_BUFFER_POLICY,
+    tcp_remote: MOBILE_PLUS_TCP_REMOTE_BUFFER_POLICY,
     udp: UdpFlowBudgetPolicy {
         max_active_flows: 512,
     },
@@ -147,13 +176,56 @@ const THROUGHPUT_FLOW_BUDGET_POLICY: FlowBudgetPolicy = FlowBudgetPolicy {
     },
 };
 
+const DEFAULT_TCP_UPLOAD_BRIDGE_POLICY: TcpUploadBridgePolicy = TcpUploadBridgePolicy {
+    channel_depth: TCP_BRIDGE_CHANNEL_DEPTH,
+    max_batch_messages: TCP_BRIDGE_WRITE_BATCH_MAX_MESSAGES,
+    max_batch_bytes: TCP_BRIDGE_WRITE_BATCH_MAX_BYTES,
+};
+
+const MOBILE_TCP_UPLOAD_BRIDGE_POLICY: TcpUploadBridgePolicy = TcpUploadBridgePolicy {
+    channel_depth: MOBILE_TCP_BRIDGE_CHANNEL_DEPTH,
+    max_batch_messages: MOBILE_TCP_BRIDGE_WRITE_BATCH_MAX_MESSAGES,
+    max_batch_bytes: MOBILE_TCP_BRIDGE_WRITE_BATCH_MAX_BYTES,
+};
+
+const LOW_MEMORY_TCP_UPLOAD_BRIDGE_POLICY: TcpUploadBridgePolicy = TcpUploadBridgePolicy {
+    channel_depth: LOW_MEMORY_TCP_BRIDGE_CHANNEL_DEPTH,
+    max_batch_messages: LOW_MEMORY_TCP_BRIDGE_WRITE_BATCH_MAX_MESSAGES,
+    max_batch_bytes: LOW_MEMORY_TCP_BRIDGE_WRITE_BATCH_MAX_BYTES,
+};
+
+const MOBILE_TUN_RUNTIME_POLICY: TunRuntimePolicy = TunRuntimePolicy {
+    flows: MOBILE_FLOW_BUDGET_POLICY,
+    tcp_upload: MOBILE_TCP_UPLOAD_BRIDGE_POLICY,
+};
+
+const MOBILE_PLUS_TUN_RUNTIME_POLICY: TunRuntimePolicy = TunRuntimePolicy {
+    flows: MOBILE_PLUS_FLOW_BUDGET_POLICY,
+    tcp_upload: MOBILE_TCP_UPLOAD_BRIDGE_POLICY,
+};
+
+const DESKTOP_TUN_RUNTIME_POLICY: TunRuntimePolicy = TunRuntimePolicy {
+    flows: DESKTOP_FLOW_BUDGET_POLICY,
+    tcp_upload: DEFAULT_TCP_UPLOAD_BRIDGE_POLICY,
+};
+
+const LOW_MEMORY_TUN_RUNTIME_POLICY: TunRuntimePolicy = TunRuntimePolicy {
+    flows: LOW_MEMORY_FLOW_BUDGET_POLICY,
+    tcp_upload: LOW_MEMORY_TCP_UPLOAD_BRIDGE_POLICY,
+};
+
+const THROUGHPUT_TUN_RUNTIME_POLICY: TunRuntimePolicy = TunRuntimePolicy {
+    flows: THROUGHPUT_FLOW_BUDGET_POLICY,
+    tcp_upload: DEFAULT_TCP_UPLOAD_BRIDGE_POLICY,
+};
+
 #[cfg(any(
     target_os = "android",
     target_os = "ios",
     target_os = "tvos",
     target_os = "watchos"
 ))]
-const FLOW_BUDGET_POLICY: FlowBudgetPolicy = MOBILE_FLOW_BUDGET_POLICY;
+const TUN_RUNTIME_POLICY: TunRuntimePolicy = MOBILE_TUN_RUNTIME_POLICY;
 
 #[cfg(not(any(
     target_os = "android",
@@ -161,16 +233,16 @@ const FLOW_BUDGET_POLICY: FlowBudgetPolicy = MOBILE_FLOW_BUDGET_POLICY;
     target_os = "tvos",
     target_os = "watchos"
 )))]
-const FLOW_BUDGET_POLICY: FlowBudgetPolicy = DESKTOP_FLOW_BUDGET_POLICY;
+const TUN_RUNTIME_POLICY: TunRuntimePolicy = DESKTOP_TUN_RUNTIME_POLICY;
 
-fn flow_budget_policy_for_runtime_options(options: TunRuntimeOptions) -> FlowBudgetPolicy {
+fn tun_runtime_policy_for_options(options: TunRuntimeOptions) -> TunRuntimePolicy {
     match options.profile {
-        TunRuntimeProfile::Default => FLOW_BUDGET_POLICY,
-        TunRuntimeProfile::Mobile => MOBILE_FLOW_BUDGET_POLICY,
-        TunRuntimeProfile::MobilePlus => MOBILE_PLUS_FLOW_BUDGET_POLICY,
-        TunRuntimeProfile::Desktop => DESKTOP_FLOW_BUDGET_POLICY,
-        TunRuntimeProfile::LowMemory => LOW_MEMORY_FLOW_BUDGET_POLICY,
-        TunRuntimeProfile::Throughput => THROUGHPUT_FLOW_BUDGET_POLICY,
+        TunRuntimeProfile::Default => TUN_RUNTIME_POLICY,
+        TunRuntimeProfile::Mobile => MOBILE_TUN_RUNTIME_POLICY,
+        TunRuntimeProfile::MobilePlus => MOBILE_PLUS_TUN_RUNTIME_POLICY,
+        TunRuntimeProfile::Desktop => DESKTOP_TUN_RUNTIME_POLICY,
+        TunRuntimeProfile::LowMemory => LOW_MEMORY_TUN_RUNTIME_POLICY,
+        TunRuntimeProfile::Throughput => THROUGHPUT_TUN_RUNTIME_POLICY,
     }
 }
 
@@ -192,6 +264,7 @@ impl TcpRemoteBufferState {
         }
     }
 
+    #[cfg(test)]
     fn can_enqueue_remote_data(&self, flow_pending_bytes: usize, data_len: usize) -> bool {
         let next_total_bytes = self.pending_total_bytes.saturating_add(data_len);
         if next_total_bytes > self.policy.hard_total_bytes {
@@ -257,13 +330,103 @@ impl TcpRemoteBufferState {
     }
 
     fn refresh_pressure_state(&mut self) {
+        self.refresh_pressure_state_for_total(self.pending_total_bytes);
+    }
+
+    fn refresh_pressure_state_for_total(&mut self, pending_total_bytes: usize) {
         if self.pressure_active {
-            if self.pending_total_bytes <= self.policy.pressure_release_total_bytes {
+            if pending_total_bytes <= self.policy.pressure_release_total_bytes {
                 self.pressure_active = false;
             }
-        } else if self.pending_total_bytes >= self.policy.pressure_start_total_bytes {
+        } else if pending_total_bytes >= self.policy.pressure_start_total_bytes {
             self.pressure_active = true;
         }
+    }
+}
+
+#[derive(Debug, Default)]
+struct TcpUploadBufferState {
+    pending_bytes: AtomicUsize,
+    pending_max_bytes: AtomicUsize,
+}
+
+impl TcpUploadBufferState {
+    fn reserve(&self, bytes: usize) {
+        if bytes == 0 {
+            return;
+        }
+
+        let pending = self
+            .pending_bytes
+            .fetch_add(bytes, Ordering::Relaxed)
+            .saturating_add(bytes);
+        self.pending_max_bytes.fetch_max(pending, Ordering::Relaxed);
+    }
+
+    fn release(&self, bytes: usize) {
+        if bytes == 0 {
+            return;
+        }
+
+        let _ = self
+            .pending_bytes
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |pending| {
+                Some(pending.saturating_sub(bytes))
+            });
+    }
+
+    fn pending_bytes(&self) -> usize {
+        self.pending_bytes.load(Ordering::Relaxed)
+    }
+
+    fn pending_max_bytes(&self) -> usize {
+        self.pending_max_bytes.load(Ordering::Relaxed)
+    }
+}
+
+#[derive(Debug)]
+struct TcpUploadReservation {
+    state: Arc<TcpUploadBufferState>,
+    bytes: usize,
+}
+
+impl TcpUploadReservation {
+    fn new(state: Arc<TcpUploadBufferState>, bytes: usize) -> Self {
+        state.reserve(bytes);
+        Self { state, bytes }
+    }
+}
+
+impl Drop for TcpUploadReservation {
+    fn drop(&mut self) {
+        self.state.release(self.bytes);
+    }
+}
+
+#[derive(Debug)]
+struct StackToRemoteData {
+    data: Bytes,
+    reservation: Option<TcpUploadReservation>,
+}
+
+impl StackToRemoteData {
+    fn tracked(data: Bytes, reservation: TcpUploadReservation) -> Self {
+        Self {
+            data,
+            reservation: Some(reservation),
+        }
+    }
+
+    #[cfg(test)]
+    fn untracked(data: Bytes) -> Self {
+        Self {
+            data,
+            reservation: None,
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.data.len()
     }
 }
 
@@ -271,6 +434,7 @@ impl TcpRemoteBufferState {
 struct FlowBudgetState {
     policy: FlowBudgetPolicy,
     tcp_remote: TcpRemoteBufferState,
+    tcp_upload: Arc<TcpUploadBufferState>,
     udp_sequence: u64,
     udp_budget_drops: u64,
     udp_evicted_flows: u64,
@@ -427,6 +591,7 @@ impl FlowBudgetState {
         Self {
             policy,
             tcp_remote: TcpRemoteBufferState::new(policy.tcp_remote),
+            tcp_upload: Arc::new(TcpUploadBufferState::default()),
             udp_sequence: 0,
             udp_budget_drops: 0,
             udp_evicted_flows: 0,
@@ -434,28 +599,84 @@ impl FlowBudgetState {
         }
     }
 
-    fn can_enqueue_remote_data(&self, flow_pending_bytes: usize, data_len: usize) -> bool {
-        self.tcp_remote
-            .can_enqueue_remote_data(flow_pending_bytes, data_len)
+    fn can_enqueue_remote_data(&mut self, flow_pending_bytes: usize, data_len: usize) -> bool {
+        self.refresh_tcp_pressure_state();
+        if self.pending_tcp_buffer_bytes().saturating_add(data_len)
+            > self.policy.tcp_remote.hard_total_bytes
+        {
+            return false;
+        }
+
+        flow_pending_bytes.saturating_add(data_len) <= self.per_flow_limit()
     }
 
     fn record_pending_remote_enqueue(&mut self, flow_pending_bytes: usize, data_len: usize) {
         self.tcp_remote
             .record_pending_remote_enqueue(flow_pending_bytes, data_len);
+        self.refresh_tcp_pressure_state();
     }
 
     fn record_pending_remote_dequeue(&mut self, flow_pending_bytes: usize, data_len: usize) {
         self.tcp_remote
             .record_pending_remote_dequeue(flow_pending_bytes, data_len);
+        self.refresh_tcp_pressure_state();
     }
 
     fn record_pending_remote_remove_flow(&mut self, flow_pending_bytes: usize) {
         self.tcp_remote
             .record_pending_remote_remove_flow(flow_pending_bytes);
+        self.refresh_tcp_pressure_state();
+    }
+
+    #[cfg(test)]
+    fn try_reserve_pending_upload(&mut self, data_len: usize) -> bool {
+        if !self.can_reserve_pending_upload(data_len) {
+            return false;
+        }
+
+        self.tcp_upload.reserve(data_len);
+        self.refresh_tcp_pressure_state();
+        true
+    }
+
+    fn reserve_pending_upload(&mut self, data_len: usize) -> Option<TcpUploadReservation> {
+        if !self.can_reserve_pending_upload(data_len) {
+            return None;
+        }
+
+        let reservation = TcpUploadReservation::new(self.tcp_upload.clone(), data_len);
+        self.refresh_tcp_pressure_state();
+        Some(reservation)
+    }
+
+    fn can_reserve_pending_upload(&mut self, data_len: usize) -> bool {
+        self.refresh_tcp_pressure_state();
+        self.pending_tcp_buffer_bytes().saturating_add(data_len)
+            <= self.policy.tcp_remote.hard_total_bytes
+    }
+
+    #[cfg(test)]
+    fn record_pending_upload_dequeue(&mut self, data_len: usize) {
+        self.tcp_upload.release(data_len);
+        self.refresh_tcp_pressure_state();
     }
 
     fn pending_total_bytes(&self) -> usize {
         self.tcp_remote.pending_total_bytes()
+    }
+
+    fn pending_upload_bytes(&self) -> usize {
+        self.tcp_upload.pending_bytes()
+    }
+
+    fn pending_upload_max_bytes(&self) -> usize {
+        self.tcp_upload.pending_max_bytes()
+    }
+
+    fn pending_tcp_buffer_bytes(&self) -> usize {
+        self.tcp_remote
+            .pending_total_bytes()
+            .saturating_add(self.tcp_upload.pending_bytes())
     }
 
     fn pending_flow_count(&self) -> usize {
@@ -468,6 +689,22 @@ impl FlowBudgetState {
 
     fn pressure_active(&self) -> bool {
         self.tcp_remote.pressure_active()
+    }
+
+    fn hard_total_bytes(&self) -> usize {
+        self.policy.tcp_remote.hard_total_bytes
+    }
+
+    fn available_upload_bytes(&self) -> usize {
+        self.policy
+            .tcp_remote
+            .hard_total_bytes
+            .saturating_sub(self.pending_tcp_buffer_bytes())
+    }
+
+    fn refresh_tcp_pressure_state(&mut self) {
+        self.tcp_remote
+            .refresh_pressure_state_for_total(self.pending_tcp_buffer_bytes());
     }
 
     fn udp_flow_limit(&self) -> usize {
@@ -549,8 +786,8 @@ pub(crate) async fn serve_tun_endpoint(
     let mut sockets = SocketSet::new(Vec::new());
     let mut tcp_listeners = HashMap::new();
     let mut tcp_flows = HashMap::new();
-    let mut flow_budget_state =
-        FlowBudgetState::new(flow_budget_policy_for_runtime_options(tun_runtime_options));
+    let runtime_policy = tun_runtime_policy_for_options(tun_runtime_options);
+    let mut flow_budget_state = FlowBudgetState::new(runtime_policy.flows);
     let mut udp_flows = HashMap::new();
     let mut delayed_stack_events = VecDeque::new();
     let (stack_tx, mut stack_rx) = mpsc::channel(STACK_EVENT_CHANNEL_DEPTH);
@@ -569,6 +806,7 @@ pub(crate) async fn serve_tun_endpoint(
         stack_tx,
         tun: Arc::clone(&tun),
         tun_runtime_options,
+        runtime_policy,
         fake_ip_mapper,
     };
 
@@ -675,7 +913,7 @@ pub(crate) async fn serve_tun_endpoint(
             &mut tcp_flows,
             &mut flow_budget_state,
         );
-        record_flow_budget_stats(tun.as_ref(), &flow_budget_state, &tcp_flows, &udp_flows);
+        record_flow_budget_stats(tun.as_ref(), &mut flow_budget_state, &tcp_flows, &udp_flows);
         iface.poll(Instant::now(), &mut device, &mut sockets);
         open_ready_tcp_flows(
             &mut sockets,
@@ -684,7 +922,7 @@ pub(crate) async fn serve_tun_endpoint(
             &runtime_context,
             shutdown.clone(),
         );
-        read_socket_data_to_remote(&tun, &mut sockets, &mut tcp_flows);
+        read_socket_data_to_remote(&tun, &mut sockets, &mut tcp_flows, &mut flow_budget_state);
         cleanup_closed_tcp_flows(&mut sockets, &mut tcp_flows, &mut flow_budget_state);
         drain_tcp_remote_data_to_sockets(
             &mut iface,
@@ -743,6 +981,7 @@ struct TunRuntimeContext {
     stack_tx: mpsc::Sender<StackEvent>,
     tun: Arc<TunEndpoint>,
     tun_runtime_options: TunRuntimeOptions,
+    runtime_policy: TunRuntimePolicy,
     fake_ip_mapper: Option<Arc<Mutex<FakeIpMapper>>>,
 }
 
@@ -770,7 +1009,7 @@ impl TunRuntimeContext {
 
 #[derive(Debug)]
 struct TcpFlow {
-    to_remote: mpsc::Sender<Bytes>,
+    to_remote: mpsc::Sender<StackToRemoteData>,
     pending_remote: VecDeque<Bytes>,
     pending_remote_bytes: usize,
     remote_closed: bool,
@@ -870,7 +1109,8 @@ fn open_ready_tcp_flows(
 
     for (endpoint, handle, target) in ready {
         listeners.remove(&endpoint);
-        let (to_remote, from_stack) = mpsc::channel(TCP_BRIDGE_CHANNEL_DEPTH);
+        let (to_remote, from_stack) =
+            mpsc::channel(context.runtime_policy.tcp_upload.channel_depth);
         flows.insert(
             handle,
             TcpFlow {
@@ -1085,10 +1325,11 @@ fn try_apply_stack_event(
 
 fn record_flow_budget_stats(
     tun: &TunEndpoint,
-    flow_budget_state: &FlowBudgetState,
+    flow_budget_state: &mut FlowBudgetState,
     flows: &HashMap<SocketHandle, TcpFlow>,
     udp_flows: &HashMap<UdpFlowKey, UdpFlow>,
 ) {
+    flow_budget_state.refresh_tcp_pressure_state();
     let mut max_pending_bytes = 0usize;
 
     for flow in flows.values() {
@@ -1097,11 +1338,15 @@ fn record_flow_budget_stats(
         }
     }
 
-    tun.record_tcp_pending_remote(
+    tun.record_tcp_buffer_state(
         flow_budget_state.pending_total_bytes(),
         flow_budget_state.pending_flow_count(),
         max_pending_bytes,
+        flow_budget_state.pending_upload_bytes(),
+        flow_budget_state.pending_upload_max_bytes(),
+        flow_budget_state.pending_tcp_buffer_bytes(),
         flow_budget_state.per_flow_limit(),
+        flow_budget_state.hard_total_bytes(),
         flow_budget_state.pressure_active(),
     );
     tun.record_flow_budget(
@@ -1193,10 +1438,18 @@ fn read_socket_data_to_remote(
     tun: &TunEndpoint,
     sockets: &mut SocketSet<'static>,
     flows: &mut HashMap<SocketHandle, TcpFlow>,
+    flow_budget_state: &mut FlowBudgetState,
 ) {
     for (handle, flow) in flows {
         let socket = sockets.get_mut::<tcp::Socket>(*handle);
         while socket.can_recv() {
+            let max_read = flow_budget_state
+                .available_upload_bytes()
+                .min(TCP_BUFFER_SIZE);
+            if max_read == 0 {
+                tun.record_tcp_stack_to_remote_backpressure();
+                break;
+            }
             let permit = match flow.to_remote.try_reserve() {
                 Ok(permit) => permit,
                 Err(mpsc::error::TrySendError::Full(_)) => {
@@ -1209,8 +1462,8 @@ fn read_socket_data_to_remote(
                 }
             };
             let data = match socket.recv(|data| {
-                let len = data.len();
-                (len, Bytes::copy_from_slice(data))
+                let len = data.len().min(max_read);
+                (len, Bytes::copy_from_slice(&data[..len]))
             }) {
                 Ok(data) => data,
                 Err(_) => {
@@ -1221,8 +1474,13 @@ fn read_socket_data_to_remote(
             if data.is_empty() {
                 break;
             }
+            let Some(reservation) = flow_budget_state.reserve_pending_upload(data.len()) else {
+                tun.record_tcp_stack_to_remote_backpressure();
+                socket.abort();
+                break;
+            };
             tun.record_tcp_stack_to_remote(data.len());
-            permit.send(data);
+            permit.send(StackToRemoteData::tracked(data, reservation));
         }
     }
 }
@@ -1254,7 +1512,7 @@ async fn bridge_tcp_flow(
     handle: SocketHandle,
     target: Target,
     context: TunRuntimeContext,
-    from_stack: mpsc::Receiver<Bytes>,
+    from_stack: mpsc::Receiver<StackToRemoteData>,
     shutdown: watch::Receiver<bool>,
 ) {
     let collect_tcp_timings = context.tun_runtime_options.collect_tcp_timings;
@@ -1365,7 +1623,7 @@ async fn bridge_tcp_flow_loop<R, W, T>(
     handle: SocketHandle,
     target: &Target,
     context: TunRuntimeContext,
-    mut from_stack: mpsc::Receiver<Bytes>,
+    mut from_stack: mpsc::Receiver<StackToRemoteData>,
     mut shutdown: watch::Receiver<bool>,
     remote_reader: &mut R,
     remote_writer: &mut W,
@@ -1377,6 +1635,7 @@ async fn bridge_tcp_flow_loop<R, W, T>(
     T: TcpFirstByteTiming,
 {
     let mut read_buffer = vec![0; BRIDGE_READ_BUFFER_SIZE];
+    let upload_policy = context.runtime_policy.tcp_upload;
 
     loop {
         tokio::select! {
@@ -1396,6 +1655,7 @@ async fn bridge_tcp_flow_loop<R, W, T>(
                     data,
                     &mut from_stack,
                     context.tun.as_ref(),
+                    upload_policy,
                 )
                 .await
                 .is_err()
@@ -1827,27 +2087,30 @@ async fn write_stack_batch_to_remote<W>(
     remote_writer: &mut W,
     target: &Target,
     outbound_tag: Option<&str>,
-    first: Bytes,
-    from_stack: &mut mpsc::Receiver<Bytes>,
+    first: StackToRemoteData,
+    from_stack: &mut mpsc::Receiver<StackToRemoteData>,
     tun: &TunEndpoint,
+    policy: TcpUploadBridgePolicy,
 ) -> std::io::Result<()>
 where
     W: AsyncWrite + Unpin,
 {
     let mut batch_messages = 0usize;
     let mut batch_bytes = 0usize;
-    let mut batch = BytesMut::with_capacity(first.len().min(TCP_BRIDGE_WRITE_BATCH_MAX_BYTES));
+    let mut batch = BytesMut::with_capacity(first.len().min(policy.max_batch_bytes));
+    let mut reservations = Vec::new();
     let mut next = Some(first);
 
-    while let Some(data) = next {
-        let data_len = data.len();
-        batch.extend_from_slice(&data);
+    while let Some(mut item) = next {
+        let data_len = item.data.len();
+        batch.extend_from_slice(&item.data);
+        if let Some(reservation) = item.reservation.take() {
+            reservations.push(reservation);
+        }
 
         batch_messages += 1;
         batch_bytes = batch_bytes.saturating_add(data_len);
-        if batch_messages >= TCP_BRIDGE_WRITE_BATCH_MAX_MESSAGES
-            || batch_bytes >= TCP_BRIDGE_WRITE_BATCH_MAX_BYTES
-        {
+        if batch_messages >= policy.max_batch_messages || batch_bytes >= policy.max_batch_bytes {
             break;
         }
 
@@ -3085,6 +3348,10 @@ mod tests {
         )
     }
 
+    fn stack_to_remote_data(data: Bytes) -> StackToRemoteData {
+        StackToRemoteData::untracked(data)
+    }
+
     #[test]
     fn tcp_slow_flow_event_records_only_slow_tcp443_targets() {
         let tun = TunEndpoint::new(xray_tun::TunConfig {
@@ -3431,8 +3698,10 @@ mod tests {
     #[tokio::test]
     async fn stack_to_remote_write_batches_queued_chunks_before_flushing() {
         let (tx, mut rx) = mpsc::channel(TCP_BRIDGE_CHANNEL_DEPTH);
-        tx.try_send(Bytes::from_static(b"two")).unwrap();
-        tx.try_send(Bytes::from_static(b"three")).unwrap();
+        tx.try_send(stack_to_remote_data(Bytes::from_static(b"two")))
+            .unwrap();
+        tx.try_send(stack_to_remote_data(Bytes::from_static(b"three")))
+            .unwrap();
         let mut writer = CountingWrite::default();
         let tun = TunEndpoint::new(xray_tun::TunConfig {
             mtu: 1500,
@@ -3444,9 +3713,10 @@ mod tests {
             &mut writer,
             &target,
             Some("proxy"),
-            Bytes::from_static(b"one"),
+            stack_to_remote_data(Bytes::from_static(b"one")),
             &mut rx,
             &tun,
+            DEFAULT_TCP_UPLOAD_BRIDGE_POLICY,
         )
         .await
         .unwrap();
@@ -3468,10 +3738,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stack_to_remote_write_batch_drains_a_full_channel_before_flushing() {
+    async fn stack_to_remote_write_batch_uses_low_memory_upload_byte_limit() {
+        let chunk = Bytes::from_static(&[0x5a; 16 * 1024]);
+        let policy = tun_runtime_policy_for_options(TunRuntimeOptions::with_profile(
+            TunRuntimeProfile::LowMemory,
+        ))
+        .tcp_upload;
         let (tx, mut rx) = mpsc::channel(TCP_BRIDGE_CHANNEL_DEPTH);
         for _ in 0..TCP_BRIDGE_CHANNEL_DEPTH {
-            tx.try_send(Bytes::from_static(&[0x5a; 1024])).unwrap();
+            tx.try_send(stack_to_remote_data(chunk.clone())).unwrap();
         }
         let mut writer = CountingWrite::default();
         let tun = TunEndpoint::new(xray_tun::TunConfig {
@@ -3484,9 +3759,43 @@ mod tests {
             &mut writer,
             &target,
             Some("proxy"),
-            Bytes::from_static(&[0x7b; 1024]),
+            stack_to_remote_data(chunk),
             &mut rx,
             &tun,
+            policy,
+        )
+        .await
+        .unwrap();
+
+        let stats = tun.stats().await;
+        assert_eq!(stats.tcp_remote_write_batches, 1);
+        assert_eq!(stats.tcp_remote_write_batch_max_messages, 16);
+        assert_eq!(stats.tcp_remote_write_batch_max_bytes, 256 * 1024);
+        assert_eq!(writer.written.len(), 256 * 1024);
+    }
+
+    #[tokio::test]
+    async fn stack_to_remote_write_batch_drains_a_full_channel_before_flushing() {
+        let (tx, mut rx) = mpsc::channel(TCP_BRIDGE_CHANNEL_DEPTH);
+        for _ in 0..TCP_BRIDGE_CHANNEL_DEPTH {
+            tx.try_send(stack_to_remote_data(Bytes::from_static(&[0x5a; 1024])))
+                .unwrap();
+        }
+        let mut writer = CountingWrite::default();
+        let tun = TunEndpoint::new(xray_tun::TunConfig {
+            mtu: 1500,
+            queue_depth: 1,
+        });
+        let target = test_tcp443_target();
+
+        write_stack_batch_to_remote(
+            &mut writer,
+            &target,
+            Some("proxy"),
+            stack_to_remote_data(Bytes::from_static(&[0x7b; 1024])),
+            &mut rx,
+            &tun,
+            DEFAULT_TCP_UPLOAD_BRIDGE_POLICY,
         )
         .await
         .unwrap();
@@ -3509,7 +3818,8 @@ mod tests {
         let expected_queued_messages = 256usize;
         let (tx, mut rx) = mpsc::channel(expected_queued_messages);
         for _ in 0..expected_queued_messages {
-            tx.try_send(Bytes::from_static(&[0x5a; 1024])).unwrap();
+            tx.try_send(stack_to_remote_data(Bytes::from_static(&[0x5a; 1024])))
+                .unwrap();
         }
         let mut writer = CountingWrite::default();
         let tun = TunEndpoint::new(xray_tun::TunConfig {
@@ -3522,9 +3832,10 @@ mod tests {
             &mut writer,
             &target,
             Some("proxy"),
-            Bytes::from_static(&[0x7b; 1024]),
+            stack_to_remote_data(Bytes::from_static(&[0x7b; 1024])),
             &mut rx,
             &tun,
+            DEFAULT_TCP_UPLOAD_BRIDGE_POLICY,
         )
         .await
         .unwrap();
@@ -3541,7 +3852,7 @@ mod tests {
         let chunk = Bytes::from_static(&[0x5a; 16 * 1024]);
         let (tx, mut rx) = mpsc::channel(TCP_BRIDGE_CHANNEL_DEPTH);
         for _ in 0..TCP_BRIDGE_CHANNEL_DEPTH {
-            tx.try_send(chunk.clone()).unwrap();
+            tx.try_send(stack_to_remote_data(chunk.clone())).unwrap();
         }
         let mut writer = CountingWrite::default();
         let tun = TunEndpoint::new(xray_tun::TunConfig {
@@ -3550,9 +3861,17 @@ mod tests {
         });
         let target = test_tcp443_target();
 
-        write_stack_batch_to_remote(&mut writer, &target, Some("proxy"), chunk, &mut rx, &tun)
-            .await
-            .unwrap();
+        write_stack_batch_to_remote(
+            &mut writer,
+            &target,
+            Some("proxy"),
+            stack_to_remote_data(chunk),
+            &mut rx,
+            &tun,
+            DEFAULT_TCP_UPLOAD_BRIDGE_POLICY,
+        )
+        .await
+        .unwrap();
 
         let stats = tun.stats().await;
         assert_eq!(stats.tcp_remote_write_batches, 1);
@@ -3723,30 +4042,74 @@ mod tests {
 
     #[test]
     fn low_memory_profile_reduces_tun_flow_budgets() {
-        let policy = flow_budget_policy_for_runtime_options(TunRuntimeOptions::with_profile(
+        let policy = tun_runtime_policy_for_options(TunRuntimeOptions::with_profile(
             TunRuntimeProfile::LowMemory,
         ));
 
-        assert_eq!(policy.udp.max_active_flows, 128);
-        assert_eq!(policy.tcp_remote.normal_per_flow_bytes, 1024 * 1024);
-        assert_eq!(policy.tcp_remote.hard_total_bytes, 20 * 1024 * 1024);
+        assert_eq!(policy.flows.udp.max_active_flows, 128);
+        assert_eq!(policy.flows.tcp_remote.normal_per_flow_bytes, 1024 * 1024);
+        assert_eq!(policy.flows.tcp_remote.hard_total_bytes, 20 * 1024 * 1024);
     }
 
     #[test]
-    fn mobile_plus_profile_uses_larger_tcp_and_udp_flow_budgets() {
-        let policy = flow_budget_policy_for_runtime_options(TunRuntimeOptions::with_profile(
+    fn low_memory_profile_reduces_tcp_upload_bridge_limits() {
+        let policy = tun_runtime_policy_for_options(TunRuntimeOptions::with_profile(
+            TunRuntimeProfile::LowMemory,
+        ));
+
+        assert_eq!(policy.tcp_upload.channel_depth, 64);
+        assert_eq!(policy.tcp_upload.max_batch_messages, 65);
+        assert_eq!(policy.tcp_upload.max_batch_bytes, 256 * 1024);
+    }
+
+    #[test]
+    fn mobile_profiles_use_reduced_tcp_upload_bridge_limits() {
+        for profile in [TunRuntimeProfile::Mobile, TunRuntimeProfile::MobilePlus] {
+            let policy = tun_runtime_policy_for_options(TunRuntimeOptions::with_profile(profile));
+
+            assert_eq!(policy.tcp_upload.channel_depth, 128);
+            assert_eq!(policy.tcp_upload.max_batch_messages, 129);
+            assert_eq!(policy.tcp_upload.max_batch_bytes, 1024 * 1024);
+        }
+    }
+
+    #[test]
+    fn low_memory_runtime_policy_groups_tun_budgets() {
+        let policy = tun_runtime_policy_for_options(TunRuntimeOptions::with_profile(
+            TunRuntimeProfile::LowMemory,
+        ));
+
+        assert_eq!(policy.flows.udp.max_active_flows, 128);
+        assert_eq!(policy.flows.tcp_remote.normal_per_flow_bytes, 1024 * 1024);
+        assert_eq!(policy.tcp_upload.channel_depth, 64);
+        assert_eq!(policy.tcp_upload.max_batch_bytes, 256 * 1024);
+    }
+
+    #[test]
+    fn mobile_plus_profile_uses_mobile_total_budget_with_larger_pressure_window() {
+        let policy = tun_runtime_policy_for_options(TunRuntimeOptions::with_profile(
             TunRuntimeProfile::MobilePlus,
         ));
 
         assert_eq!(
-            policy.tcp_remote.normal_per_flow_bytes,
-            DESKTOP_TCP_REMOTE_BUFFER_POLICY.normal_per_flow_bytes
+            policy.flows.tcp_remote.normal_per_flow_bytes,
+            MOBILE_TCP_REMOTE_BUFFER_POLICY.normal_per_flow_bytes
         );
         assert_eq!(
-            policy.tcp_remote.hard_total_bytes,
-            DESKTOP_TCP_REMOTE_BUFFER_POLICY.hard_total_bytes
+            policy.flows.tcp_remote.pressure_per_flow_bytes,
+            MOBILE_TCP_REMOTE_BUFFER_POLICY.pressure_per_flow_bytes
         );
-        assert_eq!(policy.udp.max_active_flows, 512);
+        assert_eq!(
+            policy.flows.tcp_remote.pressure_start_total_bytes,
+            30 * 1024 * 1024
+        );
+        assert_eq!(
+            policy.flows.tcp_remote.pressure_release_total_bytes,
+            20 * 1024 * 1024
+        );
+        assert_eq!(policy.flows.tcp_remote.hard_total_bytes, 40 * 1024 * 1024);
+        assert_eq!(policy.flows.udp.max_active_flows, 512);
+        assert_eq!(policy.tcp_upload, MOBILE_TCP_UPLOAD_BRIDGE_POLICY);
     }
 
     #[test]
@@ -3796,6 +4159,123 @@ mod tests {
         assert!(flows.is_empty());
         assert_eq!(budget.udp_budget_drops(), 1);
         assert_eq!(budget.udp_evicted_flows(), 0);
+    }
+
+    #[test]
+    fn flow_budget_counts_upload_bytes_against_tcp_hard_budget() {
+        let mut budget = test_flow_budget(256);
+
+        assert!(budget.try_reserve_pending_upload(MOBILE_TCP_REMOTE_BUFFER_POLICY.hard_total_bytes));
+        assert!(!budget.can_enqueue_remote_data(0, 1));
+
+        budget.record_pending_upload_dequeue(MOBILE_TCP_REMOTE_BUFFER_POLICY.hard_total_bytes);
+
+        assert!(budget.can_enqueue_remote_data(0, 1));
+    }
+
+    #[test]
+    fn flow_budget_counts_upload_bytes_for_pressure_hysteresis() {
+        let mut budget = test_flow_budget(256);
+
+        assert_eq!(budget.per_flow_limit(), NORMAL_TCP_REMOTE_PENDING_LIMIT);
+
+        assert!(budget.try_reserve_pending_upload(
+            MOBILE_TCP_REMOTE_BUFFER_POLICY.pressure_start_total_bytes
+        ));
+        assert_eq!(budget.per_flow_limit(), PRESSURE_TCP_REMOTE_PENDING_LIMIT);
+
+        budget.record_pending_upload_dequeue(8 * 1024 * 1024 - 1);
+        assert_eq!(budget.per_flow_limit(), PRESSURE_TCP_REMOTE_PENDING_LIMIT);
+
+        budget.record_pending_upload_dequeue(1);
+        assert_eq!(budget.per_flow_limit(), NORMAL_TCP_REMOTE_PENDING_LIMIT);
+    }
+
+    #[tokio::test]
+    async fn upload_tcp_data_backpressures_when_combined_budget_is_full() {
+        let client_ip = Ipv4Addr::new(10, 10, 0, 2);
+        let server_ip = Ipv4Addr::new(203, 0, 113, 7);
+        let client_port = 49_152;
+        let server_port = 443;
+        let client_seq = 1_000u32;
+        let payload = [0x5a; 1024];
+        let endpoint = IpEndpoint::new(IpAddress::Ipv4(server_ip), server_port);
+
+        let mut device = PacketDevice::new(1500);
+        let mut iface_config = InterfaceConfig::new(HardwareAddress::Ip);
+        iface_config.random_seed = DEFAULT_RANDOM_SEED;
+        let mut iface = Interface::new(iface_config, &mut device, Instant::now());
+        iface.set_any_ip(true);
+        let mut sockets = SocketSet::new(Vec::new());
+        let mut listeners = HashMap::new();
+        ensure_tcp_listener(&mut sockets, &mut listeners, endpoint);
+        let handle = *listeners.get(&endpoint).unwrap();
+
+        device.push_inbound(Bytes::from(build_ipv4_tcp_packet(
+            client_ip,
+            client_port,
+            server_ip,
+            server_port,
+            client_seq,
+            0,
+            TCP_SYN,
+            &[],
+        )));
+        iface.poll(Instant::now(), &mut device, &mut sockets);
+        let syn_ack = device.pop_outbound().unwrap();
+        let server_seq = ipv4_tcp_sequence(&syn_ack).unwrap();
+
+        device.push_inbound(Bytes::from(build_ipv4_tcp_packet(
+            client_ip,
+            client_port,
+            server_ip,
+            server_port,
+            client_seq + 1,
+            server_seq + 1,
+            TCP_ACK,
+            &[],
+        )));
+        iface.poll(Instant::now(), &mut device, &mut sockets);
+        while device.pop_outbound().is_some() {}
+
+        device.push_inbound(Bytes::from(build_ipv4_tcp_packet(
+            client_ip,
+            client_port,
+            server_ip,
+            server_port,
+            client_seq + 1,
+            server_seq + 1,
+            TCP_ACK,
+            &payload,
+        )));
+        iface.poll(Instant::now(), &mut device, &mut sockets);
+
+        let tun = TunEndpoint::new(xray_tun::TunConfig {
+            mtu: 1500,
+            queue_depth: 1,
+        });
+        let (to_remote, mut from_stack) = mpsc::channel(1);
+        let mut flow_budget_state = test_flow_budget(256);
+        flow_budget_state
+            .record_pending_remote_enqueue(0, MOBILE_TCP_REMOTE_BUFFER_POLICY.hard_total_bytes);
+        let mut tcp_flows = HashMap::new();
+        tcp_flows.insert(
+            handle,
+            TcpFlow {
+                to_remote,
+                pending_remote: VecDeque::new(),
+                pending_remote_bytes: 0,
+                remote_closed: false,
+            },
+        );
+
+        read_socket_data_to_remote(&tun, &mut sockets, &mut tcp_flows, &mut flow_budget_state);
+
+        assert!(from_stack.try_recv().is_err());
+        assert_eq!(flow_budget_state.pending_upload_bytes(), 0);
+        let stats = tun.stats().await;
+        assert_eq!(stats.tcp_stack_to_remote_bytes, 0);
+        assert_eq!(stats.tcp_stack_to_remote_backpressure_events, 1);
     }
 
     #[test]

@@ -18,33 +18,8 @@ public protocol XrayClientTunnelControlling: AnyObject {
 public final class NetworkExtensionTunnelController: XrayClientTunnelControlling {
     private let managerDescription: String
 
-    enum StartupProbePlatform {
-        case iOS
-        case tvOS
-        case macOS
-        case other
-
-        static var current: StartupProbePlatform {
-            #if os(iOS)
-            return .iOS
-            #elseif os(tvOS)
-            return .tvOS
-            #elseif os(macOS)
-            return .macOS
-            #else
-            return .other
-            #endif
-        }
-    }
-
     public init(managerDescription: String = "Xray Rust") {
         self.managerDescription = managerDescription
-    }
-
-    static func defaultStartupProbeEnabled(
-        platform: StartupProbePlatform = .current
-    ) -> Bool {
-        true
     }
 
     public func currentStatus() async -> XrayClientConnectionStatus {
@@ -71,7 +46,7 @@ public final class NetworkExtensionTunnelController: XrayClientTunnelControlling
     public func start(profile: XrayClientProfile) async throws {
         XrayAppleLog.info(
             "TunnelController",
-            "Preparing start provider=\(profile.providerBundleIdentifier) server=\(profile.serverAddress) configBytes=\(profile.configJSON.utf8.count) debugLogging=\(profile.debugLoggingEnabled) useTunFileDescriptor=\(profile.useTunFileDescriptor) tunRuntimeProfile=\(profile.tunRuntimeProfile.rawValue) startupProbeEnabled=\(Self.defaultStartupProbeEnabled())"
+            "Preparing start provider=\(profile.providerBundleIdentifier) server=\(profile.serverAddress) configBytes=\(profile.configJSON.utf8.count) debugLogging=\(profile.debugLoggingEnabled) useTunFileDescriptor=\(profile.useTunFileDescriptor) tunRuntimeProfile=\(profile.tunRuntimeProfile.rawValue)"
         )
         do {
             let manager = try await configuredManager(for: profile)
@@ -146,8 +121,6 @@ public final class NetworkExtensionTunnelController: XrayClientTunnelControlling
             XrayTunnelProviderMessage.providerDebugLoggingKey: profile.debugLoggingEnabled,
             XrayTunnelProviderMessage.providerUseTunFileDescriptorKey: profile.useTunFileDescriptor,
             XrayTunnelProviderMessage.providerTunRuntimeProfileKey: profile.tunRuntimeProfile.rawValue,
-            XrayTunnelProviderMessage.providerStartupProbeEnabledKey: Self
-                .defaultStartupProbeEnabled(),
         ]
 
         manager.localizedDescription = managerDescription
@@ -156,7 +129,7 @@ public final class NetworkExtensionTunnelController: XrayClientTunnelControlling
 
         XrayAppleLog.info(
             "TunnelController",
-            "Saving preferences description=\(managerDescription) provider=\(profile.providerBundleIdentifier) server=\(profile.serverAddress) debugLogging=\(profile.debugLoggingEnabled) useTunFileDescriptor=\(profile.useTunFileDescriptor) tunRuntimeProfile=\(profile.tunRuntimeProfile.rawValue) startupProbeEnabled=\(Self.defaultStartupProbeEnabled())"
+            "Saving preferences description=\(managerDescription) provider=\(profile.providerBundleIdentifier) server=\(profile.serverAddress) debugLogging=\(profile.debugLoggingEnabled) useTunFileDescriptor=\(profile.useTunFileDescriptor) tunRuntimeProfile=\(profile.tunRuntimeProfile.rawValue)"
         )
         try await manager.saveToPreferencesAsync()
         XrayAppleLog.info("TunnelController", "Saved preferences; reloading")
@@ -177,9 +150,6 @@ public final class NetworkExtensionTunnelController: XrayClientTunnelControlling
             XrayTunnelProviderMessage.tunRuntimeProfileOptionKey: profile
                 .tunRuntimeProfile
                 .rawValue as NSString,
-            XrayTunnelProviderMessage.startupProbeEnabledOptionKey: NSNumber(
-                value: Self.defaultStartupProbeEnabled()
-            ),
         ]
     }
 

@@ -267,8 +267,28 @@ async fn tun_endpoint_stats_track_tcp_bridge_counters() {
     tun.record_tcp_remote_write_wait(30);
     tun.record_tcp_remote_flush_wait(7);
     tun.record_tcp_remote_flush_wait(11);
-    tun.record_tcp_pending_remote(4096, 3, 2048, 2 * 1024 * 1024, false);
-    tun.record_tcp_pending_remote(1024, 1, 512, 1024 * 1024, true);
+    tun.record_tcp_buffer_state(
+        4096,
+        3,
+        2048,
+        8192,
+        8192,
+        12_288,
+        2 * 1024 * 1024,
+        40 * 1024 * 1024,
+        false,
+    );
+    tun.record_tcp_buffer_state(
+        1024,
+        1,
+        512,
+        2048,
+        8192,
+        3072,
+        1024 * 1024,
+        40 * 1024 * 1024,
+        true,
+    );
     tun.record_tcp_remote_write_error();
     tun.record_tcp_remote_closed();
     tun.record_tcp_remote_read_error();
@@ -307,7 +327,11 @@ async fn tun_endpoint_stats_track_tcp_bridge_counters() {
             tcp_pending_remote_bytes: 1024,
             tcp_pending_remote_flows: 1,
             tcp_pending_remote_max_bytes: 512,
+            tcp_pending_upload_bytes: 2048,
+            tcp_pending_upload_max_bytes: 8192,
+            tcp_pending_total_bytes: 3072,
             tcp_remote_buffer_limit_bytes: 1024 * 1024,
+            tcp_buffer_hard_limit_bytes: 40 * 1024 * 1024,
             tcp_remote_buffer_pressure_active: true,
             tcp_remote_write_errors: 1,
             tcp_remote_closed_events: 1,

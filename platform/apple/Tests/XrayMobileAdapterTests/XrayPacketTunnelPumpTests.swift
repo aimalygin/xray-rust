@@ -5,7 +5,7 @@ final class XrayPacketTunnelPumpTests: XCTestCase {
     func testStatsDebugLogMessagesStayBelowTruncationLimit() {
         let messages = Self.sampleStats.debugLogMessages()
 
-        XCTAssertEqual(messages.count, 8)
+        XCTAssertEqual(messages.count, 9)
         XCTAssertTrue(
             messages.allSatisfy { $0.count < 512 },
             messages.map { "\($0.count): \($0)" }.joined(separator: "\n")
@@ -13,6 +13,8 @@ final class XrayPacketTunnelPumpTests: XCTestCase {
         let joined = messages.joined(separator: "\n")
         XCTAssertTrue(joined.contains("tcpRemoteWriteWaitAvgMs=6"))
         XCTAssertTrue(joined.contains("tcpRemoteFlushWaitMaxMs=9"))
+        XCTAssertTrue(joined.contains("tcpPendingUploadMaxBytes=32768"))
+        XCTAssertTrue(joined.contains("tcpBufferHardLimitBytes=41943040"))
         XCTAssertTrue(joined.contains("tcpOpenAvgMs=100"))
         XCTAssertTrue(joined.contains("tcp443FirstByteMaxMs=250"))
         XCTAssertTrue(joined.contains("udpVisionUDP443Rejections=7"))
@@ -165,7 +167,11 @@ final class XrayPacketTunnelPumpTests: XCTestCase {
         tcpPendingRemoteBytes: 0,
         tcpPendingRemoteFlows: 0,
         tcpPendingRemoteMaxBytes: 0,
+        tcpPendingUploadBytes: 8192,
+        tcpPendingUploadMaxBytes: 32768,
+        tcpPendingTotalBytes: 8192,
         tcpRemoteBufferLimitBytes: 2097152,
+        tcpBufferHardLimitBytes: 41943040,
         tcpRemoteBufferPressureActive: false,
         tcpRemoteWriteErrors: 0,
         tcpRemoteClosedEvents: 6,

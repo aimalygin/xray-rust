@@ -57,7 +57,11 @@ pub struct TunStats {
     pub tcp_pending_remote_bytes: u64,
     pub tcp_pending_remote_flows: u64,
     pub tcp_pending_remote_max_bytes: u64,
+    pub tcp_pending_upload_bytes: u64,
+    pub tcp_pending_upload_max_bytes: u64,
+    pub tcp_pending_total_bytes: u64,
     pub tcp_remote_buffer_limit_bytes: u64,
+    pub tcp_buffer_hard_limit_bytes: u64,
     pub tcp_remote_buffer_pressure_active: bool,
     pub tcp_remote_write_errors: u64,
     pub tcp_remote_closed_events: u64,
@@ -205,7 +209,11 @@ pub struct TunEndpoint {
     tcp_pending_remote_bytes: AtomicU64,
     tcp_pending_remote_flows: AtomicU64,
     tcp_pending_remote_max_bytes: AtomicU64,
+    tcp_pending_upload_bytes: AtomicU64,
+    tcp_pending_upload_max_bytes: AtomicU64,
+    tcp_pending_total_bytes: AtomicU64,
     tcp_remote_buffer_limit_bytes: AtomicU64,
+    tcp_buffer_hard_limit_bytes: AtomicU64,
     tcp_remote_buffer_pressure_active: AtomicBool,
     tcp_remote_write_errors: AtomicU64,
     tcp_remote_closed_events: AtomicU64,
@@ -303,7 +311,11 @@ impl TunEndpoint {
             tcp_pending_remote_bytes: AtomicU64::new(0),
             tcp_pending_remote_flows: AtomicU64::new(0),
             tcp_pending_remote_max_bytes: AtomicU64::new(0),
+            tcp_pending_upload_bytes: AtomicU64::new(0),
+            tcp_pending_upload_max_bytes: AtomicU64::new(0),
+            tcp_pending_total_bytes: AtomicU64::new(0),
             tcp_remote_buffer_limit_bytes: AtomicU64::new(0),
+            tcp_buffer_hard_limit_bytes: AtomicU64::new(0),
             tcp_remote_buffer_pressure_active: AtomicBool::new(false),
             tcp_remote_write_errors: AtomicU64::new(0),
             tcp_remote_closed_events: AtomicU64::new(0),
@@ -460,9 +472,13 @@ impl TunEndpoint {
             tcp_pending_remote_bytes: self.tcp_pending_remote_bytes.load(Ordering::Relaxed),
             tcp_pending_remote_flows: self.tcp_pending_remote_flows.load(Ordering::Relaxed),
             tcp_pending_remote_max_bytes: self.tcp_pending_remote_max_bytes.load(Ordering::Relaxed),
+            tcp_pending_upload_bytes: self.tcp_pending_upload_bytes.load(Ordering::Relaxed),
+            tcp_pending_upload_max_bytes: self.tcp_pending_upload_max_bytes.load(Ordering::Relaxed),
+            tcp_pending_total_bytes: self.tcp_pending_total_bytes.load(Ordering::Relaxed),
             tcp_remote_buffer_limit_bytes: self
                 .tcp_remote_buffer_limit_bytes
                 .load(Ordering::Relaxed),
+            tcp_buffer_hard_limit_bytes: self.tcp_buffer_hard_limit_bytes.load(Ordering::Relaxed),
             tcp_remote_buffer_pressure_active: self
                 .tcp_remote_buffer_pressure_active
                 .load(Ordering::Relaxed),
@@ -582,22 +598,34 @@ impl TunEndpoint {
         );
     }
 
-    pub fn record_tcp_pending_remote(
+    pub fn record_tcp_buffer_state(
         &self,
-        bytes: usize,
-        flows: usize,
-        max_bytes: usize,
-        limit_bytes: usize,
+        remote_bytes: usize,
+        remote_flows: usize,
+        remote_max_bytes: usize,
+        upload_bytes: usize,
+        upload_max_bytes: usize,
+        total_bytes: usize,
+        per_flow_limit_bytes: usize,
+        hard_limit_bytes: usize,
         pressure_active: bool,
     ) {
         self.tcp_pending_remote_bytes
-            .store(bytes as u64, Ordering::Relaxed);
+            .store(remote_bytes as u64, Ordering::Relaxed);
         self.tcp_pending_remote_flows
-            .store(flows as u64, Ordering::Relaxed);
+            .store(remote_flows as u64, Ordering::Relaxed);
         self.tcp_pending_remote_max_bytes
-            .store(max_bytes as u64, Ordering::Relaxed);
+            .store(remote_max_bytes as u64, Ordering::Relaxed);
+        self.tcp_pending_upload_bytes
+            .store(upload_bytes as u64, Ordering::Relaxed);
+        self.tcp_pending_upload_max_bytes
+            .store(upload_max_bytes as u64, Ordering::Relaxed);
+        self.tcp_pending_total_bytes
+            .store(total_bytes as u64, Ordering::Relaxed);
         self.tcp_remote_buffer_limit_bytes
-            .store(limit_bytes as u64, Ordering::Relaxed);
+            .store(per_flow_limit_bytes as u64, Ordering::Relaxed);
+        self.tcp_buffer_hard_limit_bytes
+            .store(hard_limit_bytes as u64, Ordering::Relaxed);
         self.tcp_remote_buffer_pressure_active
             .store(pressure_active, Ordering::Relaxed);
     }

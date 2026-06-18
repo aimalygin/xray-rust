@@ -69,7 +69,11 @@ public struct XrayTunStatsSnapshot: Equatable, Sendable {
     public let tcpPendingRemoteBytes: UInt64
     public let tcpPendingRemoteFlows: UInt64
     public let tcpPendingRemoteMaxBytes: UInt64
+    public let tcpPendingUploadBytes: UInt64
+    public let tcpPendingUploadMaxBytes: UInt64
+    public let tcpPendingTotalBytes: UInt64
     public let tcpRemoteBufferLimitBytes: UInt64
+    public let tcpBufferHardLimitBytes: UInt64
     public let tcpRemoteBufferPressureActive: Bool
     public let tcpRemoteWriteErrors: UInt64
     public let tcpRemoteClosedEvents: UInt64
@@ -118,7 +122,8 @@ public extension XrayTunStatsSnapshot {
             "\(prefix) core inbound=\(inboundPackets) outbound=\(outboundPackets) dropped=\(droppedPackets) inboundDropped=\(inboundDroppedPackets) outboundDropped=\(outboundDroppedPackets) activeTCPFlows=\(activeTCPFlows) activeUDPFlows=\(activeUDPFlows)",
             "\(prefix) queues inboundQueueDepth=\(inboundQueueDepth) outboundQueueDepth=\(outboundQueueDepth) inboundQueueMaxPackets=\(inboundQueueMaxPackets) outboundQueueMaxPackets=\(outboundQueueMaxPackets) tunFdWriteBatches=\(tunFdWriteBatches) tunFdWriteBatchPackets=\(tunFdWriteBatchPackets) tunFdWriteBatchMaxPackets=\(tunFdWriteBatchMaxPackets)",
             "\(prefix) tcpBytes tcpStackToRemoteBytes=\(tcpStackToRemoteBytes) tcpRemoteWrittenBytes=\(tcpRemoteWrittenBytes) tcpRemoteReadBytes=\(tcpRemoteReadBytes) tcpBackpressure=\(tcpBackpressureEvents) tcpStackToRemoteBackpressure=\(tcpStackToRemoteBackpressureEvents) tcpRemoteToStackBackpressure=\(tcpRemoteToStackBackpressureEvents)",
-            "\(prefix) tcpBuffers tcpRemoteWriteBatches=\(tcpRemoteWriteBatches) tcpRemoteWriteBatchMessages=\(tcpRemoteWriteBatchMessages) tcpRemoteWriteBatchMaxMessages=\(tcpRemoteWriteBatchMaxMessages) tcpRemoteWriteBatchMaxBytes=\(tcpRemoteWriteBatchMaxBytes) tcpPendingRemoteBytes=\(tcpPendingRemoteBytes) tcpPendingRemoteFlows=\(tcpPendingRemoteFlows) tcpPendingRemoteMaxBytes=\(tcpPendingRemoteMaxBytes) tcpRemoteBufferLimitBytes=\(tcpRemoteBufferLimitBytes) tcpRemoteBufferPressureActive=\(tcpRemoteBufferPressureActive) tcpWriteErrors=\(tcpRemoteWriteErrors) tcpRemoteClosed=\(tcpRemoteClosedEvents) tcpReadErrors=\(tcpRemoteReadErrors) tcpOpenErrors=\(tcpOpenErrors)",
+            "\(prefix) tcpBuffers tcpRemoteWriteBatches=\(tcpRemoteWriteBatches) tcpRemoteWriteBatchMessages=\(tcpRemoteWriteBatchMessages) tcpRemoteWriteBatchMaxMessages=\(tcpRemoteWriteBatchMaxMessages) tcpRemoteWriteBatchMaxBytes=\(tcpRemoteWriteBatchMaxBytes) tcpPendingRemoteBytes=\(tcpPendingRemoteBytes) tcpPendingRemoteFlows=\(tcpPendingRemoteFlows) tcpPendingRemoteMaxBytes=\(tcpPendingRemoteMaxBytes) tcpWriteErrors=\(tcpRemoteWriteErrors) tcpRemoteClosed=\(tcpRemoteClosedEvents) tcpReadErrors=\(tcpRemoteReadErrors) tcpOpenErrors=\(tcpOpenErrors)",
+            "\(prefix) tcpBudget tcpPendingUploadBytes=\(tcpPendingUploadBytes) tcpPendingUploadMaxBytes=\(tcpPendingUploadMaxBytes) tcpPendingTotalBytes=\(tcpPendingTotalBytes) tcpRemoteBufferLimitBytes=\(tcpRemoteBufferLimitBytes) tcpBufferHardLimitBytes=\(tcpBufferHardLimitBytes) tcpRemoteBufferPressureActive=\(tcpRemoteBufferPressureActive)",
             "\(prefix) tcpWriteWait tcpRemoteWriteWaitEvents=\(tcpRemoteWriteWaitEvents) tcpRemoteWriteWaitAvgMs=\(averageDurationMs(total: tcpRemoteWriteWaitDurationMsTotal, events: tcpRemoteWriteWaitEvents)) tcpRemoteWriteWaitMaxMs=\(tcpRemoteWriteWaitDurationMsMax) tcpRemoteFlushWaitEvents=\(tcpRemoteFlushWaitEvents) tcpRemoteFlushWaitAvgMs=\(averageDurationMs(total: tcpRemoteFlushWaitDurationMsTotal, events: tcpRemoteFlushWaitEvents)) tcpRemoteFlushWaitMaxMs=\(tcpRemoteFlushWaitDurationMsMax)",
             "\(prefix) tcpTiming tcpOpenEvents=\(tcpOpenEvents) tcpOpenAvgMs=\(averageDurationMs(total: tcpOpenDurationMsTotal, events: tcpOpenEvents)) tcpOpenMaxMs=\(tcpOpenDurationMsMax) tcpFirstByteEvents=\(tcpFirstByteEvents) tcpFirstByteAvgMs=\(averageDurationMs(total: tcpFirstByteDurationMsTotal, events: tcpFirstByteEvents)) tcpFirstByteMaxMs=\(tcpFirstByteDurationMsMax) tcp443OpenEvents=\(tcp443OpenEvents) tcp443OpenAvgMs=\(averageDurationMs(total: tcp443OpenDurationMsTotal, events: tcp443OpenEvents)) tcp443OpenMaxMs=\(tcp443OpenDurationMsMax) tcp443FirstByteEvents=\(tcp443FirstByteEvents) tcp443FirstByteAvgMs=\(averageDurationMs(total: tcp443FirstByteDurationMsTotal, events: tcp443FirstByteEvents)) tcp443FirstByteMaxMs=\(tcp443FirstByteDurationMsMax)",
             "\(prefix) udpFlows udpFlowLimit=\(udpFlowLimit) udpBudgetDrops=\(udpBudgetDrops) udpEvictedFlows=\(udpEvictedFlows) udpChannelDroppedPackets=\(udpChannelDroppedPackets)",
@@ -549,7 +554,11 @@ public final class XrayCore: @unchecked Sendable {
                 tcpPendingRemoteBytes: stats.tcp_pending_remote_bytes,
                 tcpPendingRemoteFlows: stats.tcp_pending_remote_flows,
                 tcpPendingRemoteMaxBytes: stats.tcp_pending_remote_max_bytes,
+                tcpPendingUploadBytes: stats.tcp_pending_upload_bytes,
+                tcpPendingUploadMaxBytes: stats.tcp_pending_upload_max_bytes,
+                tcpPendingTotalBytes: stats.tcp_pending_total_bytes,
                 tcpRemoteBufferLimitBytes: stats.tcp_remote_buffer_limit_bytes,
+                tcpBufferHardLimitBytes: stats.tcp_buffer_hard_limit_bytes,
                 tcpRemoteBufferPressureActive: stats.tcp_remote_buffer_pressure_active != 0,
                 tcpRemoteWriteErrors: stats.tcp_remote_write_errors,
                 tcpRemoteClosedEvents: stats.tcp_remote_closed_events,
