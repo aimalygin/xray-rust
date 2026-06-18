@@ -7,8 +7,8 @@ import NetworkExtension
 @available(macOS 13.0, *)
 @MainActor
 final class NetworkExtensionTunnelControllerTests: XCTestCase {
-    func testDefaultStartupProbeIsDisabledForTvOSBringup() {
-        XCTAssertFalse(
+    func testDefaultStartupProbeIsEnabledForTvOSBringup() {
+        XCTAssertTrue(
             NetworkExtensionTunnelController.defaultStartupProbeEnabled(platform: .tvOS)
         )
     }

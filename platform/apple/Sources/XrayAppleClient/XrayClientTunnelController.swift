@@ -44,7 +44,7 @@ public final class NetworkExtensionTunnelController: XrayClientTunnelControlling
     static func defaultStartupProbeEnabled(
         platform: StartupProbePlatform = .current
     ) -> Bool {
-        platform != .tvOS
+        true
     }
 
     public func currentStatus() async -> XrayClientConnectionStatus {
