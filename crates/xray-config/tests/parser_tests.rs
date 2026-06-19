@@ -114,6 +114,27 @@ fn parses_mobile_vless_reality_vision_split_routing_fixture() {
 }
 
 #[test]
+fn parses_tun_inbound_without_port_as_packet_boundary_inbound() {
+    let raw = r#"{
+        "inbounds": [
+            {
+              "tag": "tun-in",
+              "protocol": "tun",
+              "settings": { "userLevel": 0 }
+            }
+        ],
+        "outbounds": [
+            { "tag": "direct", "protocol": "freedom" }
+        ]
+    }"#;
+
+    let parsed = parse_xray_json(raw).expect("config should parse");
+
+    assert_eq!(parsed.config.inbounds[0].port, 0);
+    assert!(parsed.diagnostics.is_empty());
+}
+
+#[test]
 fn parses_xray_core_reality_split_routing_fixture() {
     // Xray-core oracle:
     // XRAY_LOCATION_ASSET=/Users/antonmalygin/xray-rust/platform/apple/XrayClient/dat \

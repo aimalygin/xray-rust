@@ -42,6 +42,24 @@ fn ffi_loads_config_and_returns_handle() {
 }
 
 #[test]
+fn ffi_loads_tun_config_without_port() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    assert!(!core.is_null());
+    assert!(err.is_null());
+
+    let raw = CString::new(tun_config_without_port_with_freedom_outbound()).unwrap();
+    let status = unsafe { xray_core_load_config_json(core, raw.as_ptr(), &mut err) };
+
+    assert_eq!(status, XrayStatus::Ok, "load error: {}", error_message(err));
+    assert!(err.is_null());
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
 fn ffi_reports_null_handle_error() {
     let mut err = std::ptr::null_mut();
     let raw = CString::new("{}").unwrap();
@@ -1259,6 +1277,22 @@ fn tun_config_with_freedom_outbound() -> String {
           "listen": "127.0.0.1",
           "port": 0,
           "settings": {}
+        }
+      ],
+      "outbounds": [
+        { "tag": "direct", "protocol": "freedom" }
+      ]
+    }"#
+    .to_owned()
+}
+
+fn tun_config_without_port_with_freedom_outbound() -> String {
+    r#"{
+      "inbounds": [
+        {
+          "tag": "tun-in",
+          "protocol": "tun",
+          "settings": { "userLevel": 0 }
         }
       ],
       "outbounds": [

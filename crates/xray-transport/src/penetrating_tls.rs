@@ -10,11 +10,14 @@ use tokio_rustls::client::TlsStream;
 
 use crate::TransportStream;
 
+const TLS_READ_CHUNK_LIMIT: usize = 8 * 1024;
+
 pub(crate) type ServerReadLog = Arc<Mutex<Option<Vec<u8>>>>;
 
 pub(crate) struct CapturedTcpStream {
     stream: TcpStream,
     server_read_log: Option<ServerReadLog>,
+    tls_read_limiter: TlsRecordReadLimiter,
 }
 
 impl CapturedTcpStream {
@@ -22,11 +25,61 @@ impl CapturedTcpStream {
         Self {
             stream,
             server_read_log,
+            tls_read_limiter: TlsRecordReadLimiter::new(),
         }
     }
 
     fn into_inner(self) -> TcpStream {
         self.stream
+    }
+}
+
+struct TlsRecordReadLimiter {
+    header: [u8; 5],
+    header_len: usize,
+    payload_remaining: usize,
+}
+
+impl TlsRecordReadLimiter {
+    fn new() -> Self {
+        Self {
+            header: [0; 5],
+            header_len: 0,
+            payload_remaining: 0,
+        }
+    }
+
+    fn next_limit(&self, requested: usize) -> usize {
+        if self.header_len < self.header.len() {
+            requested.min(self.header.len() - self.header_len)
+        } else {
+            requested.min(self.payload_remaining)
+        }
+    }
+
+    fn observe(&mut self, bytes: &[u8]) {
+        if bytes.is_empty() {
+            return;
+        }
+
+        if self.header_len < self.header.len() {
+            let len = (self.header.len() - self.header_len).min(bytes.len());
+            self.header[self.header_len..self.header_len + len].copy_from_slice(&bytes[..len]);
+            self.header_len += len;
+            if self.header_len == self.header.len() {
+                self.payload_remaining =
+                    u16::from_be_bytes([self.header[3], self.header[4]]) as usize;
+                if self.payload_remaining == 0 {
+                    self.header_len = 0;
+                }
+            }
+            return;
+        }
+
+        self.payload_remaining = self.payload_remaining.saturating_sub(bytes.len());
+        if self.payload_remaining == 0 {
+            self.header_len = 0;
+        }
     }
 }
 
@@ -37,17 +90,28 @@ impl AsyncRead for CapturedTcpStream {
         output: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
         let this = self.get_mut();
-        let filled_before = output.filled().len();
-        match Pin::new(&mut this.stream).poll_read(cx, output) {
+        if output.remaining() == 0 {
+            return Poll::Ready(Ok(()));
+        }
+
+        let limit = this
+            .tls_read_limiter
+            .next_limit(output.remaining())
+            .min(TLS_READ_CHUNK_LIMIT);
+        let mut scratch = [0; TLS_READ_CHUNK_LIMIT];
+        let mut limited = ReadBuf::new(&mut scratch[..limit]);
+        match Pin::new(&mut this.stream).poll_read(cx, &mut limited) {
             Poll::Ready(Ok(())) => {
+                let filled = limited.filled();
+                this.tls_read_limiter.observe(filled);
+                output.put_slice(filled);
                 if let Some(server_read_log) = &this.server_read_log {
-                    let filled_after = output.filled().len();
-                    if filled_after > filled_before {
+                    if !filled.is_empty() {
                         let mut log = server_read_log
                             .lock()
                             .unwrap_or_else(|poisoned| poisoned.into_inner());
                         if let Some(log) = log.as_mut() {
-                            log.extend_from_slice(&output.filled()[filled_before..filled_after]);
+                            log.extend_from_slice(filled);
                         }
                     }
                 }
@@ -454,5 +518,37 @@ mod tests {
             .expect("read buffered plaintext and raw bytes");
 
         assert_eq!(&direct, b"bufferedraw");
+    }
+
+    #[tokio::test]
+    async fn direct_read_preserves_raw_bytes_after_tls_record() {
+        let (mut client, mut server) = connect_test_stream().await;
+
+        server
+            .write_all(b"tls frame")
+            .await
+            .expect("write TLS plaintext");
+        server.flush().await.expect("flush TLS plaintext");
+
+        let (mut raw_server, _) = server.into_inner();
+        raw_server
+            .write_all(b"raw")
+            .await
+            .expect("write raw response");
+        raw_server.flush().await.expect("flush raw response");
+
+        let mut tls_frame = [0; 8192];
+        let read = client
+            .read(&mut tls_frame)
+            .await
+            .expect("read TLS plaintext before switching direct");
+        assert_eq!(&tls_frame[..read], b"tls frame");
+
+        let mut raw = [0; 3];
+        read_direct_exact(&mut client, &mut raw)
+            .await
+            .expect("read raw bytes after TLS record");
+
+        assert_eq!(&raw, b"raw");
     }
 }

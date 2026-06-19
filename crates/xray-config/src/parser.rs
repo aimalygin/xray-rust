@@ -589,9 +589,12 @@ impl Parser<'_> {
         };
         self.validate_inbound_compatibility(inbound, index, &protocol);
 
-        let port = self
-            .u16_at(inbound, "port", format!("$.inbounds[{index}].port"))
-            .unwrap_or(0);
+        let port_path = format!("$.inbounds[{index}].port");
+        let port = if matches!(&protocol, InboundProtocol::Tun) && inbound.get("port").is_none() {
+            0
+        } else {
+            self.u16_at(inbound, "port", port_path).unwrap_or(0)
+        };
 
         let listen = self
             .string_at(inbound, "listen")
