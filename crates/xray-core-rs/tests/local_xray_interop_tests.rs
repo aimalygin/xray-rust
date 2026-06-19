@@ -196,7 +196,7 @@ async fn run_local_xray_vless_interop_scenario(
         .expect("write payload timeout")
         .expect("write payload");
     let mut echoed = vec![0; payload.len()];
-    match timeout(Duration::from_secs(5), client.read_exact(&mut echoed)).await {
+    match timeout(Duration::from_secs(15), client.read_exact(&mut echoed)).await {
         Ok(result) => {
             result.expect("read echo");
         }

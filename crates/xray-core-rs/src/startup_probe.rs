@@ -6,7 +6,6 @@ use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTarge
 use xray_transport::{DnsResolver, TlsClientConfig, TlsConnector, TransportDialer};
 
 use crate::outbound::{open_tcp_stream_with_resolver_and_dialer, select_tcp_outbound_direct};
-use crate::policy::effective_policy_for_level;
 use crate::CoreError;
 
 const MAX_HTTP_STATUS_LINE_LEN: usize = 1024;
@@ -86,7 +85,7 @@ async fn run_startup_probe_inner(
     tls_connector: Option<&TlsConnector>,
 ) -> Result<(), StartupProbeError> {
     let parsed = parse_probe_url(&options.url)?;
-    let policy = effective_policy_for_level(config, None);
+    let step_timeout = options.timeout;
     let outbound =
         select_tcp_outbound_direct(config, options.outbound_tag.as_deref()).map_err(|source| {
             StartupProbeError::Core {
@@ -100,7 +99,7 @@ async fn run_startup_probe_inner(
         RoutingNetwork::Tcp,
     );
     let mut stream = timeout(
-        policy.handshake,
+        step_timeout,
         open_tcp_stream_with_resolver_and_dialer(
             &outbound,
             &target,
@@ -111,7 +110,7 @@ async fn run_startup_probe_inner(
     .await
     .map_err(|_| StartupProbeError::Timeout {
         url: options.url.clone(),
-        timeout_ms: policy.handshake.as_millis(),
+        timeout_ms: step_timeout.as_millis(),
     })?
     .map_err(|source| StartupProbeError::Core {
         url: options.url.clone(),
@@ -131,7 +130,7 @@ async fn run_startup_probe_inner(
             }
         };
         stream = timeout(
-            policy.handshake,
+            step_timeout,
             tls_connector.connect_stream(
                 stream,
                 &TlsClientConfig {
@@ -143,7 +142,7 @@ async fn run_startup_probe_inner(
         .await
         .map_err(|_| StartupProbeError::Timeout {
             url: options.url.clone(),
-            timeout_ms: policy.handshake.as_millis(),
+            timeout_ms: step_timeout.as_millis(),
         })?
         .map_err(|source| StartupProbeError::Tls {
             url: options.url.clone(),
@@ -156,21 +155,21 @@ async fn run_startup_probe_inner(
         "GET {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: xray-rust-startup-probe\r\nConnection: close\r\n\r\n",
         parsed.path_and_query, host
     );
-    timeout(policy.handshake, stream.write_all(request.as_bytes()))
+    timeout(step_timeout, stream.write_all(request.as_bytes()))
         .await
         .map_err(|_| StartupProbeError::Timeout {
             url: options.url.clone(),
-            timeout_ms: policy.handshake.as_millis(),
+            timeout_ms: step_timeout.as_millis(),
         })?
         .map_err(|source| StartupProbeError::Io {
             url: options.url.clone(),
             source,
         })?;
-    timeout(policy.handshake, stream.flush())
+    timeout(step_timeout, stream.flush())
         .await
         .map_err(|_| StartupProbeError::Timeout {
             url: options.url.clone(),
-            timeout_ms: policy.handshake.as_millis(),
+            timeout_ms: step_timeout.as_millis(),
         })?
         .map_err(|source| StartupProbeError::Io {
             url: options.url.clone(),

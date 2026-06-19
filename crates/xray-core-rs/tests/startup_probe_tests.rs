@@ -60,13 +60,21 @@ impl DnsResolver for StaticDnsResolver {
 }
 
 #[derive(Debug)]
-struct SlowDnsResolver;
+struct DelayedDnsResolver {
+    domain: &'static str,
+    addr: SocketAddr,
+    delay: Duration,
+}
 
 #[async_trait]
-impl DnsResolver for SlowDnsResolver {
+impl DnsResolver for DelayedDnsResolver {
     async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
-        tokio::time::sleep(Duration::from_secs(30)).await;
-        Err(TransportError::NoResolvedAddress(domain.to_owned(), port))
+        tokio::time::sleep(self.delay).await;
+        if domain == self.domain && port == self.addr.port() {
+            Ok(self.addr)
+        } else {
+            Err(TransportError::NoResolvedAddress(domain.to_owned(), port))
+        }
     }
 }
 
@@ -240,8 +248,8 @@ async fn startup_probe_timeout_rolls_back_start() {
 }
 
 #[tokio::test]
-async fn startup_probe_policy_handshake_timeout_rolls_back_start() {
-    let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 9));
+async fn startup_probe_uses_probe_timeout_when_policy_handshake_is_short() {
+    let addr = spawn_http_status_once(204).await;
     let mut config = config_with_outbounds(vec![freedom("direct")], Some("direct"));
     config.policy = PolicyConfig {
         levels: BTreeMap::from([(
@@ -255,7 +263,11 @@ async fn startup_probe_policy_handshake_timeout_rolls_back_start() {
     };
     let mut core = Core::with_runtime_dependencies(
         config,
-        Arc::new(SlowDnsResolver),
+        Arc::new(DelayedDnsResolver {
+            domain: "probe.test",
+            addr,
+            delay: Duration::from_millis(1500),
+        }),
         Arc::new(TransportDialer::system().unwrap()),
     )
     .unwrap()
@@ -265,16 +277,10 @@ async fn startup_probe_policy_handshake_timeout_rolls_back_start() {
         outbound_tag: Some("direct".to_owned()),
     });
 
-    let error = core.start().await.unwrap_err();
+    core.start().await.unwrap();
 
-    assert!(
-        matches!(
-            error,
-            CoreError::StartupProbe(StartupProbeError::Timeout { .. })
-        ),
-        "expected startup probe policy timeout, got {error:?}"
-    );
-    assert_eq!(core.state(), CoreState::Stopped);
+    assert_eq!(core.state(), CoreState::Running);
+    core.stop().await.unwrap();
 }
 
 #[tokio::test]
