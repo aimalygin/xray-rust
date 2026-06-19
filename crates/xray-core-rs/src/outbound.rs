@@ -5,7 +5,8 @@ use std::task::{Context, Poll};
 
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
 use xray_config::{
-    CoreConfig, Network, OutboundConfig, OutboundSettings, StreamSecurity, TargetAddr, VlessUser,
+    CoreConfig, Network, OutboundConfig, OutboundSettings, RoutingDomainStrategy, StreamSecurity,
+    TargetAddr, VlessUser,
 };
 use xray_proxy::vless::{
     encode_request_header, VisionStream, VisionStreamIo, VlessCommand, VlessRequest,
@@ -287,6 +288,11 @@ pub(crate) fn select_tcp_outbound_direct(
     build_tcp_outbound(outbound)
 }
 
+/// Selects a session outbound using only the original target metadata.
+///
+/// Runtime paths that need `routing.domainStrategy = IPIfNonMatch` should use
+/// `select_tcp_outbound_for_session_with_resolver` so DNS-based second-pass
+/// routing can run.
 pub fn select_tcp_outbound_for_session(
     config: &CoreConfig,
     inbound_tag: Option<&str>,
@@ -301,23 +307,36 @@ pub fn select_tcp_outbound_for_session(
     build_tcp_outbound(outbound)
 }
 
-pub(crate) fn select_tcp_outbound_for_session_with_tag(
+pub async fn select_tcp_outbound_for_session_with_resolver(
+    config: &CoreConfig,
+    inbound_tag: Option<&str>,
+    target: &Target,
+    dns_resolver: &dyn DnsResolver,
+) -> Result<TcpOutbound, CoreError> {
+    let outbound =
+        select_configured_outbound_with_resolver(config, inbound_tag, target, dns_resolver).await?;
+    build_tcp_outbound(outbound)
+}
+
+pub(crate) async fn select_tcp_outbound_for_session_with_tag_and_resolver(
     config: &CoreConfig,
     inbound_tag: Option<&str>,
     target: &Target,
     include_tag: bool,
+    dns_resolver: &dyn DnsResolver,
 ) -> Result<SelectedTcpOutbound, CoreError> {
-    let outbound = select_configured_outbound(
-        config,
-        inbound_tag,
-        target_domain(target),
-        target_ip(target),
-    )?;
+    let outbound =
+        select_configured_outbound_with_resolver(config, inbound_tag, target, dns_resolver).await?;
     let tag = include_tag.then(|| outbound.tag.clone()).flatten();
     let outbound = build_tcp_outbound(outbound)?;
     Ok(SelectedTcpOutbound { outbound, tag })
 }
 
+/// Selects a UDP session outbound using only the original target metadata.
+///
+/// Runtime paths that need `routing.domainStrategy = IPIfNonMatch` should use
+/// `select_udp_outbound_for_session_with_resolver` so DNS-based second-pass
+/// routing can run.
 pub fn select_udp_outbound_for_session(
     config: &CoreConfig,
     inbound_tag: Option<&str>,
@@ -329,6 +348,17 @@ pub fn select_udp_outbound_for_session(
         target_domain(target),
         target_ip(target),
     )?;
+    build_udp_outbound(outbound)
+}
+
+pub async fn select_udp_outbound_for_session_with_resolver(
+    config: &CoreConfig,
+    inbound_tag: Option<&str>,
+    target: &Target,
+    dns_resolver: &dyn DnsResolver,
+) -> Result<UdpOutbound, CoreError> {
+    let outbound =
+        select_configured_outbound_with_resolver(config, inbound_tag, target, dns_resolver).await?;
     build_udp_outbound(outbound)
 }
 
@@ -378,12 +408,7 @@ fn select_configured_outbound<'a>(
     target_domain: Option<&str>,
     target_ip: Option<&IpAddr>,
 ) -> Result<&'a OutboundConfig, CoreError> {
-    let routed_tag = config
-        .routing
-        .rules
-        .iter()
-        .find(|rule| rule.matches(inbound_tag, target_domain, target_ip))
-        .map(|rule| rule.outbound_tag.as_str());
+    let routed_tag = select_routed_outbound_tag(config, inbound_tag, target_domain, target_ip);
 
     let outbound = match routed_tag.or(config.default_outbound_tag.as_deref()) {
         Some(tag) => config
@@ -398,6 +423,71 @@ fn select_configured_outbound<'a>(
     };
 
     Ok(outbound)
+}
+
+async fn select_configured_outbound_with_resolver<'a>(
+    config: &'a CoreConfig,
+    inbound_tag: Option<&str>,
+    target: &Target,
+    dns_resolver: &dyn DnsResolver,
+) -> Result<&'a OutboundConfig, CoreError> {
+    if let Some(routed_tag) = select_routed_outbound_tag(
+        config,
+        inbound_tag,
+        target_domain(target),
+        target_ip(target),
+    ) {
+        return select_configured_outbound_by_tag(config, routed_tag);
+    }
+
+    if config.routing.domain_strategy == RoutingDomainStrategy::IpIfNonMatch {
+        if let Some(domain) = target_domain(target) {
+            let resolved = dns_resolver.resolve(domain, target.port).await?;
+            let resolved_ip = resolved.ip();
+            if let Some(routed_tag) =
+                select_routed_outbound_tag(config, inbound_tag, None, Some(&resolved_ip))
+            {
+                return select_configured_outbound_by_tag(config, routed_tag);
+            }
+        }
+    }
+
+    select_default_configured_outbound(config)
+}
+
+fn select_routed_outbound_tag<'a>(
+    config: &'a CoreConfig,
+    inbound_tag: Option<&str>,
+    target_domain: Option<&str>,
+    target_ip: Option<&IpAddr>,
+) -> Option<&'a str> {
+    config
+        .routing
+        .rules
+        .iter()
+        .find(|rule| rule.matches(inbound_tag, target_domain, target_ip))
+        .map(|rule| rule.outbound_tag.as_str())
+}
+
+fn select_configured_outbound_by_tag<'a>(
+    config: &'a CoreConfig,
+    tag: &str,
+) -> Result<&'a OutboundConfig, CoreError> {
+    config
+        .outbounds
+        .iter()
+        .find(|outbound| outbound.tag.as_deref() == Some(tag))
+        .ok_or(CoreError::NoSupportedOutbound)
+}
+
+fn select_default_configured_outbound(config: &CoreConfig) -> Result<&OutboundConfig, CoreError> {
+    match config.default_outbound_tag.as_deref() {
+        Some(tag) => select_configured_outbound_by_tag(config, tag),
+        None => config
+            .outbounds
+            .first()
+            .ok_or(CoreError::NoSupportedOutbound),
+    }
 }
 
 #[allow(dead_code)]
@@ -727,13 +817,19 @@ pub async fn open_vless_tcp_stream(
 
 #[cfg(test)]
 mod tests {
-    use std::net::{IpAddr, Ipv4Addr};
-    use std::sync::{Arc, Mutex};
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex,
+    };
 
     use async_trait::async_trait;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use uuid::Uuid;
-    use xray_config::{RoutingConfig, RoutingRule, StreamSettings, VlessOutboundSettings};
+    use xray_config::{
+        IpCidr, IpMatcher, RoutingConfig, RoutingDomainStrategy, RoutingRule, StreamSettings,
+        VlessOutboundSettings,
+    };
     use xray_proxy::vless::{unpad_vision_block, VisionCommand};
     use xray_transport::{RealityTlsEngine, TransportError};
 
@@ -764,6 +860,7 @@ mod tests {
                     id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
                     encryption: "none".to_owned(),
                     flow: None,
+                    level: 0,
                 }],
             }),
         }
@@ -784,8 +881,88 @@ mod tests {
                     ip_matchers: Vec::new(),
                     outbound_tag: "direct".to_owned(),
                 }],
+                ..Default::default()
             },
             dns: Default::default(),
+            policy: Default::default(),
+        }
+    }
+
+    #[derive(Debug)]
+    struct FakeDnsResolver {
+        result: Result<SocketAddr, TransportError>,
+        expected: Option<(&'static str, u16)>,
+        calls: AtomicUsize,
+    }
+
+    impl FakeDnsResolver {
+        fn resolving_to(addr: SocketAddr) -> Self {
+            Self {
+                result: Ok(addr),
+                expected: None,
+                calls: AtomicUsize::new(0),
+            }
+        }
+
+        fn failing_with(error: TransportError) -> Self {
+            Self {
+                result: Err(error),
+                expected: None,
+                calls: AtomicUsize::new(0),
+            }
+        }
+
+        fn expect_lookup(mut self, domain: &'static str, port: u16) -> Self {
+            self.expected = Some((domain, port));
+            self
+        }
+
+        fn calls(&self) -> usize {
+            self.calls.load(Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait]
+    impl DnsResolver for FakeDnsResolver {
+        async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+            if let Some((expected_domain, expected_port)) = self.expected {
+                assert_eq!(domain, expected_domain);
+                assert_eq!(port, expected_port);
+            }
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            match &self.result {
+                Ok(addr) => Ok(*addr),
+                Err(TransportError::NoResolvedAddress(domain, port)) => {
+                    Err(TransportError::NoResolvedAddress(domain.clone(), *port))
+                }
+                Err(error) => panic!("fake resolver cannot clone transport error: {error}"),
+            }
+        }
+    }
+
+    fn domain_tcp_target(domain: &str) -> Target {
+        Target::new(
+            RoutingTargetAddr::Domain(domain.to_owned()),
+            443,
+            RoutingNetwork::Tcp,
+        )
+    }
+
+    fn ip_rule(tag: &str, ip: Ipv4Addr) -> RoutingRule {
+        RoutingRule {
+            inbound_tags: Vec::new(),
+            domain_matchers: Vec::new(),
+            ip_matchers: vec![IpMatcher::Cidr(IpCidr::full(IpAddr::V4(ip)))],
+            outbound_tag: tag.to_owned(),
+        }
+    }
+
+    fn inbound_rule(inbound_tag: &str, outbound_tag: &str) -> RoutingRule {
+        RoutingRule {
+            inbound_tags: vec![inbound_tag.to_owned()],
+            domain_matchers: Vec::new(),
+            ip_matchers: Vec::new(),
+            outbound_tag: outbound_tag.to_owned(),
         }
     }
 
@@ -820,6 +997,99 @@ mod tests {
         let selected = select_tcp_outbound_direct(&config, None).unwrap();
 
         assert!(matches!(selected, TcpOutbound::Freedom));
+    }
+
+    #[tokio::test]
+    async fn ip_if_non_match_uses_dns_second_pass_for_ip_rules() {
+        let mut config = direct_selection_config();
+        config.routing.domain_strategy = RoutingDomainStrategy::IpIfNonMatch;
+        config.routing.rules = vec![ip_rule("direct", Ipv4Addr::new(203, 0, 113, 7))];
+        let resolver =
+            FakeDnsResolver::resolving_to(SocketAddr::from((Ipv4Addr::new(203, 0, 113, 7), 443)))
+                .expect_lookup("example.test", 443);
+
+        let selected = select_tcp_outbound_for_session_with_resolver(
+            &config,
+            None,
+            &domain_tcp_target("example.test"),
+            &resolver,
+        )
+        .await
+        .expect("select route using resolved IP");
+
+        assert!(matches!(selected, TcpOutbound::Freedom));
+    }
+
+    #[tokio::test]
+    async fn ip_if_non_match_does_not_resolve_when_rule_matches_first_pass() {
+        let mut config = direct_selection_config();
+        config.routing.domain_strategy = RoutingDomainStrategy::IpIfNonMatch;
+        config.routing.rules = vec![
+            inbound_rule("socks-in", "proxy"),
+            ip_rule("direct", Ipv4Addr::new(203, 0, 113, 7)),
+        ];
+        let resolver =
+            FakeDnsResolver::resolving_to(SocketAddr::from((Ipv4Addr::new(203, 0, 113, 7), 443)));
+
+        let selected = select_tcp_outbound_for_session_with_resolver(
+            &config,
+            Some("socks-in"),
+            &domain_tcp_target("example.test"),
+            &resolver,
+        )
+        .await
+        .expect("select first-pass route");
+
+        assert!(matches!(selected, TcpOutbound::Vless(_)));
+        assert_eq!(resolver.calls(), 0);
+    }
+
+    #[test]
+    fn missing_outbound_tag_errors_only_when_selected() {
+        let mut config = direct_selection_config();
+        config.routing.rules = vec![inbound_rule("api", "api")];
+
+        let selected = select_tcp_outbound_for_session(
+            &config,
+            Some("socks-in"),
+            &domain_tcp_target("example.test"),
+        )
+        .expect("unmatched missing tag rule should fall back to default");
+        assert!(matches!(selected, TcpOutbound::Vless(_)));
+
+        let error = select_tcp_outbound_for_session(
+            &config,
+            Some("api"),
+            &domain_tcp_target("example.test"),
+        )
+        .unwrap_err();
+        assert!(matches!(error, CoreError::NoSupportedOutbound));
+    }
+
+    #[tokio::test]
+    async fn ip_if_non_match_dns_failure_is_reported() {
+        let mut config = direct_selection_config();
+        config.routing.domain_strategy = RoutingDomainStrategy::IpIfNonMatch;
+        config.routing.rules = vec![ip_rule("direct", Ipv4Addr::new(203, 0, 113, 7))];
+        let resolver = FakeDnsResolver::failing_with(TransportError::NoResolvedAddress(
+            "example.test".to_owned(),
+            443,
+        ))
+        .expect_lookup("example.test", 443);
+
+        let error = select_tcp_outbound_for_session_with_resolver(
+            &config,
+            None,
+            &domain_tcp_target("example.test"),
+            &resolver,
+        )
+        .await
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            CoreError::Transport(TransportError::NoResolvedAddress(_, 443))
+        ));
     }
 
     #[derive(Debug)]
@@ -872,6 +1142,7 @@ mod tests {
                 id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
                 encryption: "none".to_owned(),
                 flow: Some("xtls-rprx-vision".to_owned()),
+                level: 0,
             },
             transport: ConnectorConfig::Tcp,
         };
@@ -898,6 +1169,7 @@ mod tests {
                 id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
                 encryption: "none".to_owned(),
                 flow: Some(VISION_FLOW.to_owned()),
+                level: 0,
             },
             transport: ConnectorConfig::Reality(RealityClientConfig {
                 server_name: "example.com".to_owned(),
@@ -942,6 +1214,7 @@ mod tests {
                 id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
                 encryption: "none".to_owned(),
                 flow: Some(VISION_FLOW.to_owned()),
+                level: 0,
             },
             transport: ConnectorConfig::Reality(reality_config.clone()),
         };
@@ -1010,6 +1283,7 @@ mod tests {
                 id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
                 encryption: "none".to_owned(),
                 flow: Some(VISION_FLOW.to_owned()),
+                level: 0,
             },
             transport: ConnectorConfig::Reality(RealityClientConfig {
                 server_name: "example.com".to_owned(),
@@ -1061,6 +1335,7 @@ mod tests {
                 id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
                 encryption: "none".to_owned(),
                 flow: Some("xtls-rprx-vision-udp443".to_owned()),
+                level: 0,
             },
             transport: ConnectorConfig::Reality(RealityClientConfig {
                 server_name: "example.com".to_owned(),

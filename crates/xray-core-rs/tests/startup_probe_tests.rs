@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
@@ -7,7 +8,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use xray_config::{
     CoreConfig, InboundConfig, InboundProtocol, Network, OutboundConfig, OutboundSettings,
-    RoutingConfig, RoutingRule, StreamSecurity, StreamSettings,
+    PolicyConfig, PolicyLevelConfig, RoutingConfig, RoutingRule, StreamSecurity, StreamSettings,
 };
 use xray_core_rs::{Core, CoreError, CoreState, StartupProbeError, StartupProbeOptions};
 use xray_transport::{DnsResolver, TransportDialer, TransportError};
@@ -30,11 +31,14 @@ fn config_with_outbounds(outbounds: Vec<OutboundConfig>, default: Option<&str>) 
             protocol: InboundProtocol::Socks,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            sniffing: None,
+            user_level: None,
         }],
         outbounds,
         default_outbound_tag: default.map(ToOwned::to_owned),
         routing: RoutingConfig::default(),
         dns: Default::default(),
+        policy: Default::default(),
     }
 }
 
@@ -52,6 +56,17 @@ impl DnsResolver for StaticDnsResolver {
         } else {
             Err(TransportError::NoResolvedAddress(domain.to_owned(), port))
         }
+    }
+}
+
+#[derive(Debug)]
+struct SlowDnsResolver;
+
+#[async_trait]
+impl DnsResolver for SlowDnsResolver {
+    async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+        tokio::time::sleep(Duration::from_secs(30)).await;
+        Err(TransportError::NoResolvedAddress(domain.to_owned(), port))
     }
 }
 
@@ -225,6 +240,44 @@ async fn startup_probe_timeout_rolls_back_start() {
 }
 
 #[tokio::test]
+async fn startup_probe_policy_handshake_timeout_rolls_back_start() {
+    let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 9));
+    let mut config = config_with_outbounds(vec![freedom("direct")], Some("direct"));
+    config.policy = PolicyConfig {
+        levels: BTreeMap::from([(
+            0,
+            PolicyLevelConfig {
+                handshake: Some(1),
+                ..Default::default()
+            },
+        )]),
+        system: Default::default(),
+    };
+    let mut core = Core::with_runtime_dependencies(
+        config,
+        Arc::new(SlowDnsResolver),
+        Arc::new(TransportDialer::system().unwrap()),
+    )
+    .unwrap()
+    .with_startup_probe(StartupProbeOptions {
+        url: probe_url(addr),
+        timeout: Duration::from_secs(2),
+        outbound_tag: Some("direct".to_owned()),
+    });
+
+    let error = core.start().await.unwrap_err();
+
+    assert!(
+        matches!(
+            error,
+            CoreError::StartupProbe(StartupProbeError::Timeout { .. })
+        ),
+        "expected startup probe policy timeout, got {error:?}"
+    );
+    assert_eq!(core.state(), CoreState::Stopped);
+}
+
+#[tokio::test]
 async fn startup_probe_uses_default_outbound_directly_without_routing_rules() {
     let addr = spawn_http_status_once(204).await;
     let resolver = Arc::new(StaticDnsResolver {
@@ -239,6 +292,7 @@ async fn startup_probe_uses_default_outbound_directly_without_routing_rules() {
             ip_matchers: Vec::new(),
             outbound_tag: "missing".to_owned(),
         }],
+        ..Default::default()
     };
     let mut core = Core::with_runtime_dependencies(
         config,

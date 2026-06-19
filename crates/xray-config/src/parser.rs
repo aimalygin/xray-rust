@@ -1,5 +1,5 @@
 use std::{
-    net::IpAddr,
+    net::{IpAddr, SocketAddr},
     path::{Path, PathBuf},
 };
 
@@ -8,10 +8,12 @@ use uuid::Uuid;
 
 use crate::{
     geodata::{default_geodata_dirs, GeodataLoader},
-    CoreConfig, Diagnostic, DnsConfig, DnsFakeIpConfig, DomainMatcher, InboundConfig,
-    InboundProtocol, IpCidr, IpMatcher, Network, OutboundConfig, OutboundProtocol,
-    OutboundSettings, RealitySettings, RealityShortId, RegexMatcher, RoutingConfig, RoutingRule,
-    StreamSecurity, StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
+    CoreConfig, Diagnostic, DnsConfig, DnsFakeIpConfig, DnsHostMapping, DnsHostTarget,
+    DnsServerConfig, DomainMatcher, InboundConfig, InboundProtocol, InboundSniffingConfig, IpCidr,
+    IpMatcher, Network, OutboundConfig, OutboundProtocol, OutboundSettings, PolicyConfig,
+    PolicyLevelConfig, PolicySystemConfig, RealitySettings, RealityShortId, RegexMatcher,
+    RoutingConfig, RoutingDomainStrategy, RoutingRule, SniffingDestination, StreamSecurity,
+    StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -104,8 +106,9 @@ impl Parser<'_> {
         self.validate_top_level_fields();
         let inbounds = self.parse_inbounds();
         let outbounds = self.parse_outbounds();
-        let routing = self.parse_routing(&outbounds);
+        let routing = self.parse_routing();
         let dns = self.parse_dns();
+        let policy = self.parse_policy();
         let default_outbound_tag = outbounds.first().and_then(|outbound| outbound.tag.clone());
 
         CoreConfig {
@@ -114,6 +117,7 @@ impl Parser<'_> {
             default_outbound_tag,
             routing,
             dns,
+            policy,
         }
     }
 
@@ -121,7 +125,7 @@ impl Parser<'_> {
         self.reject_unknown_fields(
             self.root,
             "$",
-            &["log", "inbounds", "outbounds", "routing", "dns"],
+            &["log", "inbounds", "outbounds", "routing", "dns", "policy"],
         );
     }
 
@@ -135,10 +139,101 @@ impl Parser<'_> {
             return DnsConfig::default();
         }
 
-        self.reject_unknown_fields(dns, dns_path, &["fakeIp"]);
+        self.reject_unknown_fields(dns, dns_path, &["fakeIp", "servers", "hosts"]);
         DnsConfig {
             fake_ip: self.parse_dns_fake_ip(dns),
+            servers: self.parse_dns_servers(dns),
+            hosts: self.parse_dns_hosts(dns),
         }
+    }
+
+    fn parse_dns_servers(&mut self, dns: &Value) -> Vec<DnsServerConfig> {
+        let Some(raw_servers) = dns.get("servers") else {
+            return Vec::new();
+        };
+        let Some(servers) = raw_servers.as_array() else {
+            self.error("$.dns.servers", "field `servers` must be an array");
+            return Vec::new();
+        };
+
+        servers
+            .iter()
+            .enumerate()
+            .filter_map(|(index, server)| {
+                let path = format!("$.dns.servers[{index}]");
+                let Some(server) = server.as_str() else {
+                    self.error(path, "dns server must be a string");
+                    return None;
+                };
+                self.parse_dns_server(server, &path)
+            })
+            .collect()
+    }
+
+    fn parse_dns_server(&mut self, server: &str, path: &str) -> Option<DnsServerConfig> {
+        if server.is_empty() {
+            self.error(path, "dns server cannot be empty");
+            return None;
+        }
+
+        if let Ok(socket_addr) = server.parse::<SocketAddr>() {
+            return Some(DnsServerConfig::Ip(socket_addr));
+        }
+        if let Ok(ip) = server.parse::<IpAddr>() {
+            return Some(DnsServerConfig::Ip(SocketAddr::new(ip, 53)));
+        }
+
+        let (domain, port) = match server.rsplit_once(':') {
+            Some((domain, port)) if !domain.contains(':') => {
+                let Some(port) = port.parse::<u16>().ok() else {
+                    self.error(path, format!("invalid dns server port `{port}`"));
+                    return None;
+                };
+                (domain, port)
+            }
+            _ => (server, 53),
+        };
+        if domain.is_empty() {
+            self.error(path, "dns server domain cannot be empty");
+            return None;
+        }
+
+        Some(DnsServerConfig::Domain {
+            domain: domain.to_owned(),
+            port,
+        })
+    }
+
+    fn parse_dns_hosts(&mut self, dns: &Value) -> Vec<DnsHostMapping> {
+        let Some(raw_hosts) = dns.get("hosts") else {
+            return Vec::new();
+        };
+        let Some(hosts) = raw_hosts.as_object() else {
+            self.error("$.dns.hosts", "field `hosts` must be an object");
+            return Vec::new();
+        };
+
+        let mut mappings = Vec::new();
+        for (host, target) in hosts {
+            let path = format!("$.dns.hosts.{host}");
+            let Some(target) = target.as_str() else {
+                self.error(path, "dns host target must be a string");
+                continue;
+            };
+            let Some(matchers) = self.parse_domain_matcher(host, &path) else {
+                continue;
+            };
+            let target = match target.parse::<IpAddr>() {
+                Ok(ip) => DnsHostTarget::Ip(ip),
+                Err(_) => DnsHostTarget::Domain(target.to_owned()),
+            };
+            mappings.extend(matchers.into_iter().map(|matcher| DnsHostMapping {
+                matcher,
+                target: target.clone(),
+            }));
+        }
+
+        mappings
     }
 
     fn parse_dns_fake_ip(&mut self, dns: &Value) -> Option<DnsFakeIpConfig> {
@@ -182,7 +277,162 @@ impl Parser<'_> {
         })
     }
 
-    fn parse_routing(&mut self, outbounds: &[OutboundConfig]) -> RoutingConfig {
+    fn parse_policy(&mut self) -> PolicyConfig {
+        let Some(policy) = self.root.get("policy") else {
+            return PolicyConfig::default();
+        };
+        let policy_path = "$.policy";
+        if !policy.is_object() {
+            self.error(policy_path, "policy must be an object");
+            return PolicyConfig::default();
+        }
+
+        self.reject_unknown_fields(policy, policy_path, &["levels", "system"]);
+        PolicyConfig {
+            levels: self.parse_policy_levels(policy),
+            system: self.parse_policy_system(policy),
+        }
+    }
+
+    fn parse_policy_levels(
+        &mut self,
+        policy: &Value,
+    ) -> std::collections::BTreeMap<u32, PolicyLevelConfig> {
+        let Some(raw_levels) = policy.get("levels") else {
+            return std::collections::BTreeMap::new();
+        };
+        let Some(levels) = raw_levels.as_object() else {
+            self.error("$.policy.levels", "policy levels must be an object");
+            return std::collections::BTreeMap::new();
+        };
+
+        let mut parsed = std::collections::BTreeMap::new();
+        for (level, config) in levels {
+            let level_path = format!("$.policy.levels.{level}");
+            let Some(level) = level.parse::<u32>().ok() else {
+                self.error(&level_path, "policy level key must be a u32");
+                continue;
+            };
+            if !config.is_object() {
+                self.error(level_path, "policy level config must be an object");
+                continue;
+            }
+            self.reject_unknown_fields(
+                config,
+                &level_path,
+                &[
+                    "handshake",
+                    "connIdle",
+                    "uplinkOnly",
+                    "downlinkOnly",
+                    "statsUserUplink",
+                    "statsUserDownlink",
+                    "bufferSize",
+                ],
+            );
+            parsed.insert(
+                level,
+                PolicyLevelConfig {
+                    handshake: self.optional_u32_at(
+                        config,
+                        "handshake",
+                        format!("{level_path}.handshake"),
+                    ),
+                    conn_idle: self.optional_u32_at(
+                        config,
+                        "connIdle",
+                        format!("{level_path}.connIdle"),
+                    ),
+                    uplink_only: self.optional_u32_at(
+                        config,
+                        "uplinkOnly",
+                        format!("{level_path}.uplinkOnly"),
+                    ),
+                    downlink_only: self.optional_u32_at(
+                        config,
+                        "downlinkOnly",
+                        format!("{level_path}.downlinkOnly"),
+                    ),
+                    stats_user_uplink: self
+                        .optional_bool_at(
+                            config,
+                            "statsUserUplink",
+                            format!("{level_path}.statsUserUplink"),
+                        )
+                        .unwrap_or(false),
+                    stats_user_downlink: self
+                        .optional_bool_at(
+                            config,
+                            "statsUserDownlink",
+                            format!("{level_path}.statsUserDownlink"),
+                        )
+                        .unwrap_or(false),
+                    buffer_size: self.optional_i32_at(
+                        config,
+                        "bufferSize",
+                        format!("{level_path}.bufferSize"),
+                    ),
+                },
+            );
+        }
+
+        parsed
+    }
+
+    fn parse_policy_system(&mut self, policy: &Value) -> PolicySystemConfig {
+        let Some(system) = policy.get("system") else {
+            return PolicySystemConfig::default();
+        };
+        let system_path = "$.policy.system";
+        if !system.is_object() {
+            self.error(system_path, "policy system must be an object");
+            return PolicySystemConfig::default();
+        }
+
+        self.reject_unknown_fields(
+            system,
+            system_path,
+            &[
+                "statsInboundUplink",
+                "statsInboundDownlink",
+                "statsOutboundUplink",
+                "statsOutboundDownlink",
+            ],
+        );
+
+        PolicySystemConfig {
+            stats_inbound_uplink: self
+                .optional_bool_at(
+                    system,
+                    "statsInboundUplink",
+                    format!("{system_path}.statsInboundUplink"),
+                )
+                .unwrap_or(false),
+            stats_inbound_downlink: self
+                .optional_bool_at(
+                    system,
+                    "statsInboundDownlink",
+                    format!("{system_path}.statsInboundDownlink"),
+                )
+                .unwrap_or(false),
+            stats_outbound_uplink: self
+                .optional_bool_at(
+                    system,
+                    "statsOutboundUplink",
+                    format!("{system_path}.statsOutboundUplink"),
+                )
+                .unwrap_or(false),
+            stats_outbound_downlink: self
+                .optional_bool_at(
+                    system,
+                    "statsOutboundDownlink",
+                    format!("{system_path}.statsOutboundDownlink"),
+                )
+                .unwrap_or(false),
+        }
+    }
+
+    fn parse_routing(&mut self) -> RoutingConfig {
         let Some(routing) = self.root.get("routing") else {
             return RoutingConfig::default();
         };
@@ -198,30 +448,34 @@ impl Parser<'_> {
             &["domainStrategy", "rules", "balancers"],
         );
 
-        if let Some(strategy) = self.optional_string_at(
+        let domain_strategy = self.parse_routing_domain_strategy(routing);
+
+        self.reject_non_empty_array(routing, "balancers", "$.routing.balancers".to_owned());
+        RoutingConfig {
+            rules: self.parse_routing_rules(routing),
+            domain_strategy,
+        }
+    }
+
+    fn parse_routing_domain_strategy(&mut self, routing: &Value) -> RoutingDomainStrategy {
+        match self.optional_string_at(
             routing,
             "domainStrategy",
             "$.routing.domainStrategy".to_owned(),
         ) {
-            if strategy != "AsIs" {
+            None | Some("AsIs") => RoutingDomainStrategy::AsIs,
+            Some("IPIfNonMatch") => RoutingDomainStrategy::IpIfNonMatch,
+            Some(strategy) => {
                 self.error(
                     "$.routing.domainStrategy",
                     format!("unsupported routing domainStrategy `{strategy}`"),
                 );
+                RoutingDomainStrategy::AsIs
             }
-        }
-
-        self.reject_non_empty_array(routing, "balancers", "$.routing.balancers".to_owned());
-        RoutingConfig {
-            rules: self.parse_routing_rules(routing, outbounds),
         }
     }
 
-    fn parse_routing_rules(
-        &mut self,
-        routing: &Value,
-        outbounds: &[OutboundConfig],
-    ) -> Vec<RoutingRule> {
+    fn parse_routing_rules(&mut self, routing: &Value) -> Vec<RoutingRule> {
         let Some(raw_rules) = routing.get("rules") else {
             return Vec::new();
         };
@@ -233,16 +487,11 @@ impl Parser<'_> {
         rules
             .iter()
             .enumerate()
-            .filter_map(|(index, rule)| self.parse_routing_rule(rule, index, outbounds))
+            .filter_map(|(index, rule)| self.parse_routing_rule(rule, index))
             .collect()
     }
 
-    fn parse_routing_rule(
-        &mut self,
-        rule: &Value,
-        index: usize,
-        outbounds: &[OutboundConfig],
-    ) -> Option<RoutingRule> {
+    fn parse_routing_rule(&mut self, rule: &Value, index: usize) -> Option<RoutingRule> {
         let rule_path = format!("$.routing.rules[{index}]");
         if !rule.is_object() {
             self.error(&rule_path, "routing rule must be an object");
@@ -259,6 +508,7 @@ impl Parser<'_> {
                 "domains",
                 "ip",
                 "outboundTag",
+                "ruleTag",
             ],
         );
 
@@ -290,16 +540,6 @@ impl Parser<'_> {
             self.error(
                 outbound_tag_path,
                 "routing rule outboundTag cannot be empty",
-            );
-            return None;
-        }
-        if !outbounds
-            .iter()
-            .any(|outbound| outbound.tag.as_deref() == Some(outbound_tag))
-        {
-            self.error(
-                outbound_tag_path,
-                format!("routing rule references unknown outboundTag `{outbound_tag}`"),
             );
             return None;
         }
@@ -369,6 +609,8 @@ impl Parser<'_> {
             protocol,
             listen,
             port,
+            sniffing: self.parse_inbound_sniffing(inbound, index),
+            user_level: self.parse_inbound_user_level(inbound, index),
         })
     }
 
@@ -384,7 +626,6 @@ impl Parser<'_> {
             &inbound_path,
             &["tag", "protocol", "listen", "port", "settings", "sniffing"],
         );
-        self.validate_inbound_sniffing(inbound, index);
 
         let Some(settings) = inbound.get("settings") else {
             return;
@@ -397,24 +638,141 @@ impl Parser<'_> {
         }
     }
 
-    fn validate_inbound_sniffing(&mut self, inbound: &Value, index: usize) {
+    fn parse_inbound_user_level(&mut self, inbound: &Value, index: usize) -> Option<u32> {
+        inbound.get("settings").and_then(|settings| {
+            self.optional_u32_at(
+                settings,
+                "userLevel",
+                format!("$.inbounds[{index}].settings.userLevel"),
+            )
+        })
+    }
+
+    fn parse_inbound_sniffing(
+        &mut self,
+        inbound: &Value,
+        index: usize,
+    ) -> Option<InboundSniffingConfig> {
         let Some(sniffing) = inbound.get("sniffing") else {
-            return;
+            return None;
         };
         let sniffing_path = format!("$.inbounds[{index}].sniffing");
         if !sniffing.is_object() {
             self.error(sniffing_path, "inbound sniffing must be an object");
-            return;
+            return None;
         }
 
-        if matches!(
-            self.optional_bool_at(sniffing, "enabled", format!("{sniffing_path}.enabled")),
-            Some(true)
-        ) {
+        self.reject_unknown_fields(
+            sniffing,
+            &sniffing_path,
+            &[
+                "enabled",
+                "destOverride",
+                "metadataOnly",
+                "routeOnly",
+                "domainsExcluded",
+                "excludedDomains",
+            ],
+        );
+        self.validate_ignored_string_array(
+            sniffing,
+            "excludedDomains",
+            format!("{sniffing_path}.excludedDomains"),
+            false,
+        );
+        self.validate_ignored_string_array(
+            sniffing,
+            "domainsExcluded",
+            format!("{sniffing_path}.domainsExcluded"),
+            true,
+        );
+
+        let enabled = self
+            .optional_bool_at(sniffing, "enabled", format!("{sniffing_path}.enabled"))
+            .unwrap_or(false);
+        if !enabled {
+            return None;
+        }
+
+        Some(InboundSniffingConfig {
+            enabled,
+            dest_override: self.parse_sniffing_dest_override(sniffing, &sniffing_path)?,
+            metadata_only: self
+                .optional_bool_at(
+                    sniffing,
+                    "metadataOnly",
+                    format!("{sniffing_path}.metadataOnly"),
+                )
+                .unwrap_or(false),
+            route_only: self
+                .optional_bool_at(sniffing, "routeOnly", format!("{sniffing_path}.routeOnly"))
+                .unwrap_or(false),
+        })
+    }
+
+    fn parse_sniffing_dest_override(
+        &mut self,
+        sniffing: &Value,
+        sniffing_path: &str,
+    ) -> Option<Vec<SniffingDestination>> {
+        let Some(raw_values) = sniffing.get("destOverride") else {
+            return Some(Vec::new());
+        };
+        let Some(values) = raw_values.as_array() else {
             self.error(
-                format!("{sniffing_path}.enabled"),
-                "inbound sniffing is unsupported",
+                format!("{sniffing_path}.destOverride"),
+                "field `destOverride` must be an array",
             );
+            return None;
+        };
+
+        let mut parsed = Vec::with_capacity(values.len());
+        for (index, value) in values.iter().enumerate() {
+            let path = format!("{sniffing_path}.destOverride[{index}]");
+            match value.as_str() {
+                Some("http") => parsed.push(SniffingDestination::Http),
+                Some("tls") => parsed.push(SniffingDestination::Tls),
+                Some("quic") => parsed.push(SniffingDestination::Quic),
+                Some(value) => {
+                    self.error(path, format!("unsupported sniffing destOverride `{value}`"));
+                    return None;
+                }
+                None => {
+                    self.error(path, "sniffing destOverride must be a string");
+                    return None;
+                }
+            }
+        }
+
+        Some(parsed)
+    }
+
+    fn validate_ignored_string_array(
+        &mut self,
+        value: &Value,
+        key: &str,
+        path: String,
+        require_empty: bool,
+    ) {
+        let Some(raw) = value.get(key) else {
+            return;
+        };
+        let Some(values) = raw.as_array() else {
+            self.error(path, format!("field `{key}` must be an array"));
+            return;
+        };
+        if require_empty && !values.is_empty() {
+            self.error(path, format!("field `{key}` is unsupported"));
+            return;
+        }
+        for (index, value) in values.iter().enumerate() {
+            if !value.is_string() {
+                self.error(
+                    format!("{path}[{index}]"),
+                    "domain matcher must be a string",
+                );
+                return;
+            }
         }
     }
 
@@ -563,12 +921,14 @@ impl Parser<'_> {
             self.error(mux_path, "outbound mux must be an object");
             return;
         }
+        self.reject_unknown_fields(mux, &mux_path, &["enabled", "concurrency"]);
         if matches!(
             self.optional_bool_at(mux, "enabled", format!("{mux_path}.enabled")),
             Some(true)
         ) {
             self.error(format!("{mux_path}.enabled"), "outbound mux is unsupported");
         }
+        self.optional_u32_at(mux, "concurrency", format!("{mux_path}.concurrency"));
     }
 
     fn validate_freedom_settings(&mut self, settings: Option<&Value>, index: usize) {
@@ -690,7 +1050,7 @@ impl Parser<'_> {
         self.reject_unknown_fields(
             user,
             &user_path,
-            &["id", "encryption", "flow", "level", "email"],
+            &["id", "encryption", "flow", "level", "email", "security"],
         );
 
         let Some(id) = self.string_at(user, "id") else {
@@ -729,10 +1089,16 @@ impl Parser<'_> {
             }
         };
 
+        self.optional_string_at(user, "security", format!("{user_path}.security"));
+        let level = self
+            .optional_u32_at(user, "level", format!("{user_path}.level"))
+            .unwrap_or_default();
+
         Some(VlessUser {
             id,
             encryption: encryption.to_owned(),
             flow,
+            level,
         })
     }
 
@@ -1401,6 +1767,19 @@ impl Parser<'_> {
                 Some(value) => Some(value),
                 None => {
                     self.error(path, format!("field `{key}` must fit in u32"));
+                    None
+                }
+            },
+        }
+    }
+
+    fn optional_i32_at(&mut self, value: &Value, key: &str, path: String) -> Option<i32> {
+        match value.get(key) {
+            None => None,
+            Some(raw) => match raw.as_i64().and_then(|value| i32::try_from(value).ok()) {
+                Some(value) => Some(value),
+                None => {
+                    self.error(path, format!("field `{key}` must fit in i32"));
                     None
                 }
             },

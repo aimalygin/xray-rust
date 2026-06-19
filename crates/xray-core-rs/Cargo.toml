@@ -5,8 +5,12 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+aes.workspace = true
+aes-gcm.workspace = true
 bytes.workspace = true
+hkdf.workspace = true
 libc.workspace = true
+sha2.workspace = true
 smoltcp.workspace = true
 thiserror.workspace = true
 tokio.workspace = true

@@ -4,11 +4,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
-use tokio::io::{copy_bidirectional, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinSet;
-use xray_config::CoreConfig;
+use xray_config::{CoreConfig, InboundSniffingConfig};
 use xray_proxy::inbound::{
     encode_socks5_udp_datagram, negotiate_socks5_no_auth, parse_socks5_request_message,
     parse_socks5_udp_datagram, write_socks5_failure, write_socks5_success,
@@ -23,13 +23,16 @@ use xray_transport::{connect_tcp_stream, protect_udp_socket, DnsResolver, Transp
 
 use crate::{
     open_vless_tcp_stream_with_resolver_and_dialer, open_vless_udp_stream_with_resolver_and_dialer,
-    select_tcp_outbound_for_session, select_udp_outbound_for_session, TcpOutbound, UdpOutbound,
-    VlessTcpOutbound, VlessUdpFraming,
+    policy::{copy_bidirectional_with_idle_timeout, effective_policy_for_level, EffectivePolicy},
+    select_tcp_outbound_for_session_with_resolver, select_udp_outbound_for_session_with_resolver,
+    TcpOutbound, UdpOutbound, VlessTcpOutbound, VlessUdpFraming,
 };
 
 const SOCKS_UDP_BUFFER_SIZE: usize = 65_536;
 const SOCKS_UDP_FLOW_QUEUE: usize = 256;
 const SOCKS_UDP_FLOW_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+const SOCKS_TCP_SNIFF_BUFFER_SIZE: usize = 8 * 1024;
+const SOCKS_TCP_SNIFF_TIMEOUT: Duration = Duration::from_millis(250);
 
 #[derive(Clone)]
 struct SocksUdpFlowContext {
@@ -39,6 +42,7 @@ struct SocksUdpFlowContext {
     config: Arc<CoreConfig>,
     dns_resolver: Arc<dyn DnsResolver>,
     transport_dialer: Arc<TransportDialer>,
+    sniffing: Option<InboundSniffingConfig>,
     flow_finished: mpsc::UnboundedSender<(SocketAddr, Target)>,
 }
 
@@ -48,6 +52,8 @@ pub async fn serve_socks_listener(
     config: Arc<CoreConfig>,
     dns_resolver: Arc<dyn DnsResolver>,
     transport_dialer: Arc<TransportDialer>,
+    sniffing: Option<InboundSniffingConfig>,
+    policy: EffectivePolicy,
     mut shutdown: watch::Receiver<bool>,
 ) {
     let mut connections = JoinSet::new();
@@ -72,6 +78,7 @@ pub async fn serve_socks_listener(
                 let config = Arc::clone(&config);
                 let dns_resolver = Arc::clone(&dns_resolver);
                 let transport_dialer = Arc::clone(&transport_dialer);
+                let sniffing = sniffing.clone();
                 let connection_shutdown = shutdown.clone();
                 connections.spawn(async move {
                     handle_socks_connection(
@@ -80,6 +87,8 @@ pub async fn serve_socks_listener(
                         config,
                         dns_resolver,
                         transport_dialer,
+                        sniffing,
+                        policy,
                         connection_shutdown,
                     ).await;
                 });
@@ -100,19 +109,29 @@ async fn handle_socks_connection(
     config: Arc<CoreConfig>,
     dns_resolver: Arc<dyn DnsResolver>,
     transport_dialer: Arc<TransportDialer>,
+    sniffing: Option<InboundSniffingConfig>,
+    policy: EffectivePolicy,
     shutdown: watch::Receiver<bool>,
 ) {
-    if negotiate_socks5_no_auth(&mut inbound).await.is_err() {
+    if tokio::time::timeout(policy.handshake, negotiate_socks5_no_auth(&mut inbound))
+        .await
+        .ok()
+        .and_then(Result::ok)
+        .is_none()
+    {
         return;
     }
 
-    let request = match parse_socks5_request_message(&mut inbound).await {
-        Ok(request) => request,
-        Err(_) => {
-            let _ = write_socks5_failure(&mut inbound).await;
-            return;
-        }
-    };
+    let request =
+        match tokio::time::timeout(policy.handshake, parse_socks5_request_message(&mut inbound))
+            .await
+        {
+            Ok(Ok(request)) => request,
+            _ => {
+                let _ = write_socks5_failure(&mut inbound).await;
+                return;
+            }
+        };
 
     match request.command {
         SocksCommand::Connect => {
@@ -123,6 +142,8 @@ async fn handle_socks_connection(
                 config,
                 dns_resolver,
                 transport_dialer,
+                sniffing,
+                policy,
             )
             .await;
         }
@@ -133,6 +154,7 @@ async fn handle_socks_connection(
                 config,
                 dns_resolver,
                 transport_dialer,
+                sniffing,
                 shutdown,
             )
             .await;
@@ -147,60 +169,172 @@ async fn handle_socks_connect(
     config: Arc<CoreConfig>,
     dns_resolver: Arc<dyn DnsResolver>,
     transport_dialer: Arc<TransportDialer>,
+    sniffing: Option<InboundSniffingConfig>,
+    policy: EffectivePolicy,
 ) {
-    let outbound = match select_tcp_outbound_for_session(&config, inbound_tag.as_deref(), &target) {
+    let sniffing_config = sniffing.as_ref();
+    let sniff_tcp = crate::sniffing::should_sniff_tcp(sniffing_config);
+    let mut route_target = target.clone();
+    let mut dial_target = target.clone();
+    let mut initial_payload = Bytes::new();
+    #[cfg(debug_assertions)]
+    let mut sniffed_protocol = None;
+
+    if sniff_tcp {
+        if write_socks5_success(&mut inbound).await.is_err() {
+            return;
+        }
+        if let Some(config) = sniffing_config {
+            let (payload, sniffed) =
+                read_socks_tcp_sniff_payload(&mut inbound, config, &target).await;
+            initial_payload = payload;
+            if let Some(sniffed) = sniffed {
+                #[cfg(debug_assertions)]
+                {
+                    sniffed_protocol = Some(sniffed.protocol);
+                }
+                route_target = sniffed.route_target;
+                dial_target = sniffed.dial_target;
+            }
+        }
+    }
+
+    let outbound = match select_tcp_outbound_for_session_with_resolver(
+        &config,
+        inbound_tag.as_deref(),
+        &route_target,
+        dns_resolver.as_ref(),
+    )
+    .await
+    {
         Ok(outbound) => outbound,
         Err(_) => {
-            let _ = write_socks5_failure(&mut inbound).await;
+            if !sniff_tcp {
+                let _ = write_socks5_failure(&mut inbound).await;
+            }
             return;
         }
     };
 
+    #[cfg(debug_assertions)]
+    crate::debug_log::log_route_decision(crate::debug_log::RouteDecisionLog {
+        inbound_tag: inbound_tag.as_deref(),
+        network: target.network,
+        original_target: &target,
+        sniffed_protocol,
+        route_target: &route_target,
+        dial_target: &dial_target,
+        selected_outbound: crate::debug_log::tcp_outbound_label(&outbound),
+    });
+
     match outbound {
         TcpOutbound::Freedom => {
-            let mut outbound_stream = match open_freedom_tcp_stream(
-                &target,
-                dns_resolver.as_ref(),
-                transport_dialer.as_ref(),
+            let mut outbound_stream = match tokio::time::timeout(
+                policy.handshake,
+                open_freedom_tcp_stream(
+                    &dial_target,
+                    dns_resolver.as_ref(),
+                    transport_dialer.as_ref(),
+                ),
             )
             .await
             {
-                Ok(stream) => stream,
-                Err(_) => {
-                    let _ = write_socks5_failure(&mut inbound).await;
+                Ok(Ok(stream)) => stream,
+                _ => {
+                    if !sniff_tcp {
+                        let _ = write_socks5_failure(&mut inbound).await;
+                    }
                     return;
                 }
             };
 
-            if write_socks5_success(&mut inbound).await.is_err() {
+            if !sniff_tcp && write_socks5_success(&mut inbound).await.is_err() {
+                return;
+            }
+            if !initial_payload.is_empty()
+                && outbound_stream.write_all(&initial_payload).await.is_err()
+            {
                 return;
             }
 
-            let _ = copy_bidirectional(&mut inbound, &mut outbound_stream).await;
+            let _ = copy_bidirectional_with_idle_timeout(
+                &mut inbound,
+                &mut outbound_stream,
+                policy.conn_idle,
+            )
+            .await;
         }
         TcpOutbound::Vless(outbound) => {
-            let mut outbound_stream = match open_vless_tcp_stream_with_resolver_and_dialer(
-                &outbound,
-                &target,
-                dns_resolver.as_ref(),
-                transport_dialer.as_ref(),
+            let outbound_policy = effective_policy_for_level(&config, Some(outbound.user().level));
+            let tunnel_idle = policy.conn_idle.min(outbound_policy.conn_idle);
+            let mut outbound_stream = match tokio::time::timeout(
+                outbound_policy.handshake,
+                open_vless_tcp_stream_with_resolver_and_dialer(
+                    &outbound,
+                    &dial_target,
+                    dns_resolver.as_ref(),
+                    transport_dialer.as_ref(),
+                ),
             )
             .await
             {
-                Ok(stream) => stream,
-                Err(_) => {
-                    let _ = write_socks5_failure(&mut inbound).await;
+                Ok(Ok(stream)) => stream,
+                _ => {
+                    if !sniff_tcp {
+                        let _ = write_socks5_failure(&mut inbound).await;
+                    }
                     return;
                 }
             };
 
-            if write_socks5_success(&mut inbound).await.is_err() {
+            if !sniff_tcp && write_socks5_success(&mut inbound).await.is_err() {
+                return;
+            }
+            if !initial_payload.is_empty()
+                && outbound_stream.write_all(&initial_payload).await.is_err()
+            {
                 return;
             }
 
-            let _ = copy_bidirectional(&mut inbound, &mut outbound_stream).await;
+            let _ = copy_bidirectional_with_idle_timeout(
+                &mut inbound,
+                &mut outbound_stream,
+                tunnel_idle,
+            )
+            .await;
         }
     }
+}
+
+async fn read_socks_tcp_sniff_payload(
+    inbound: &mut TcpStream,
+    config: &InboundSniffingConfig,
+    target: &Target,
+) -> (Bytes, Option<crate::sniffing::SniffedTarget>) {
+    let deadline = tokio::time::Instant::now() + SOCKS_TCP_SNIFF_TIMEOUT;
+    let mut buffer = Vec::with_capacity(SOCKS_TCP_SNIFF_BUFFER_SIZE);
+
+    while buffer.len() < SOCKS_TCP_SNIFF_BUFFER_SIZE {
+        let now = tokio::time::Instant::now();
+        if now >= deadline {
+            break;
+        }
+
+        let mut chunk = vec![0; SOCKS_TCP_SNIFF_BUFFER_SIZE - buffer.len()];
+        let read = tokio::time::timeout(deadline - now, inbound.read(&mut chunk)).await;
+        let len = match read {
+            Ok(Ok(len)) if len > 0 => len,
+            _ => break,
+        };
+        buffer.extend_from_slice(&chunk[..len]);
+
+        if let Some(sniffed) = crate::sniffing::sniff_tcp_initial_payload(config, target, &buffer) {
+            return (Bytes::copy_from_slice(&buffer), Some(sniffed));
+        }
+    }
+
+    let sniffed = crate::sniffing::sniff_tcp_initial_payload(config, target, &buffer);
+    (Bytes::copy_from_slice(&buffer), sniffed)
 }
 
 async fn open_freedom_tcp_stream(
@@ -227,6 +361,7 @@ async fn handle_socks_udp_associate(
     config: Arc<CoreConfig>,
     dns_resolver: Arc<dyn DnsResolver>,
     transport_dialer: Arc<TransportDialer>,
+    sniffing: Option<InboundSniffingConfig>,
     mut shutdown: watch::Receiver<bool>,
 ) {
     let bind_addr = match control.local_addr() {
@@ -303,6 +438,7 @@ async fn handle_socks_udp_associate(
                             config: Arc::clone(&config),
                             dns_resolver: Arc::clone(&dns_resolver),
                             transport_dialer: Arc::clone(&transport_dialer),
+                            sniffing: sniffing.clone(),
                             flow_finished: flow_finished_sender.clone(),
                         };
                         tokio::spawn(bridge_socks_udp_flow(
@@ -325,16 +461,29 @@ async fn handle_socks_udp_associate(
 async fn bridge_socks_udp_flow(
     target: Target,
     context: SocksUdpFlowContext,
-    from_client: mpsc::Receiver<Bytes>,
-    shutdown: watch::Receiver<bool>,
+    mut from_client: mpsc::Receiver<Bytes>,
+    mut shutdown: watch::Receiver<bool>,
 ) {
     let flow_key = (context.client_addr, target.clone());
     let flow_finished = context.flow_finished.clone();
-    let outbound = match select_udp_outbound_for_session(
+    let Some(first_payload) = read_first_socks_udp_payload(&mut from_client, &mut shutdown).await
+    else {
+        let _ = flow_finished.send(flow_key);
+        return;
+    };
+    let sniffed_target = sniff_socks_udp_target(&context, &target, &first_payload);
+    #[cfg(debug_assertions)]
+    let sniffed_protocol = sniffed_target.sniffed_protocol;
+    let route_target = sniffed_target.route_target;
+    let dial_target = sniffed_target.dial_target;
+    let outbound = match select_udp_outbound_for_session_with_resolver(
         &context.config,
         context.inbound_tag.as_deref(),
-        &target,
-    ) {
+        &route_target,
+        context.dns_resolver.as_ref(),
+    )
+    .await
+    {
         Ok(outbound) => outbound,
         Err(_) => {
             let _ = flow_finished.send(flow_key);
@@ -342,15 +491,104 @@ async fn bridge_socks_udp_flow(
         }
     };
 
+    #[cfg(debug_assertions)]
+    crate::debug_log::log_route_decision(crate::debug_log::RouteDecisionLog {
+        inbound_tag: context.inbound_tag.as_deref(),
+        network: target.network,
+        original_target: &target,
+        sniffed_protocol,
+        route_target: &route_target,
+        dial_target: &dial_target,
+        selected_outbound: crate::debug_log::udp_outbound_label(&outbound),
+    });
+
     match outbound {
         UdpOutbound::Freedom => {
-            bridge_socks_udp_freedom_flow(target, context, from_client, shutdown).await;
+            bridge_socks_udp_freedom_flow(
+                dial_target,
+                context,
+                from_client,
+                shutdown,
+                first_payload,
+            )
+            .await;
         }
         UdpOutbound::Vless(outbound) => {
-            bridge_socks_udp_vless_flow(target, outbound, context, from_client, shutdown).await;
+            bridge_socks_udp_vless_flow(
+                dial_target,
+                outbound,
+                context,
+                from_client,
+                shutdown,
+                first_payload,
+            )
+            .await;
         }
     }
     let _ = flow_finished.send(flow_key);
+}
+
+async fn read_first_socks_udp_payload(
+    from_client: &mut mpsc::Receiver<Bytes>,
+    shutdown: &mut watch::Receiver<bool>,
+) -> Option<Bytes> {
+    tokio::select! {
+        changed = shutdown.changed() => {
+            if changed.is_err() || *shutdown.borrow() {
+                None
+            } else {
+                from_client.recv().await
+            }
+        }
+        payload = from_client.recv() => payload,
+    }
+}
+
+struct SocksUdpSniffedTarget {
+    route_target: Target,
+    dial_target: Target,
+    #[cfg(debug_assertions)]
+    sniffed_protocol: Option<xray_config::SniffingDestination>,
+}
+
+impl SocksUdpSniffedTarget {
+    fn original(target: &Target) -> Self {
+        Self {
+            route_target: target.clone(),
+            dial_target: target.clone(),
+            #[cfg(debug_assertions)]
+            sniffed_protocol: None,
+        }
+    }
+
+    fn sniffed(sniffed: crate::sniffing::SniffedTarget) -> Self {
+        #[cfg(debug_assertions)]
+        let sniffed_protocol = Some(sniffed.protocol);
+        Self {
+            route_target: sniffed.route_target,
+            dial_target: sniffed.dial_target,
+            #[cfg(debug_assertions)]
+            sniffed_protocol,
+        }
+    }
+}
+
+fn sniff_socks_udp_target(
+    context: &SocksUdpFlowContext,
+    target: &Target,
+    first_payload: &[u8],
+) -> SocksUdpSniffedTarget {
+    let Some(config) = context.sniffing.as_ref() else {
+        return SocksUdpSniffedTarget::original(target);
+    };
+    if !crate::sniffing::should_sniff_udp(Some(config)) {
+        return SocksUdpSniffedTarget::original(target);
+    }
+    let Some(sniffed) = crate::sniffing::sniff_udp_initial_payload(config, target, first_payload)
+    else {
+        return SocksUdpSniffedTarget::original(target);
+    };
+    SocksUdpSniffedTarget::sniffed(sniffed)
 }
 
 async fn bridge_socks_udp_freedom_flow(
@@ -358,6 +596,7 @@ async fn bridge_socks_udp_freedom_flow(
     context: SocksUdpFlowContext,
     mut from_client: mpsc::Receiver<Bytes>,
     mut shutdown: watch::Receiver<bool>,
+    first_payload: Bytes,
 ) {
     let Ok(target_addr) = resolve_udp_socket_addr(&target, context.dns_resolver.as_ref()).await
     else {
@@ -371,6 +610,13 @@ async fn bridge_socks_udp_freedom_flow(
         return;
     };
     if protect_udp_socket(&remote_socket, context.transport_dialer.socket_protector()).is_err() {
+        return;
+    }
+    if remote_socket
+        .send_to(&first_payload, target_addr)
+        .await
+        .is_err()
+    {
         return;
     }
     let mut buffer = vec![0; SOCKS_UDP_BUFFER_SIZE];
@@ -420,6 +666,7 @@ async fn bridge_socks_udp_vless_flow(
     context: SocksUdpFlowContext,
     mut from_client: mpsc::Receiver<Bytes>,
     mut shutdown: watch::Receiver<bool>,
+    first_payload: Bytes,
 ) {
     let Ok((stream, framing)) = open_vless_udp_stream_with_resolver_and_dialer(
         &outbound,
@@ -436,6 +683,19 @@ async fn bridge_socks_udp_vless_flow(
     let fallback_source = target.clone();
     let mut sent_xudp_new = false;
     let global_id = socks_udp_flow_global_id(context.client_addr, &target);
+    if write_socks_vless_udp_payload(
+        &mut remote_writer,
+        framing,
+        &target,
+        global_id,
+        &mut sent_xudp_new,
+        first_payload,
+    )
+    .await
+    .is_err()
+    {
+        return;
+    }
 
     loop {
         tokio::select! {
@@ -451,24 +711,17 @@ async fn bridge_socks_udp_vless_flow(
                 let Some(payload) = payload else {
                     break;
                 };
-                let frame = match framing {
-                    VlessUdpFraming::LengthPrefixed => encode_udp_packet(&payload),
-                    VlessUdpFraming::Xudp => {
-                        if sent_xudp_new {
-                            encode_xudp_keep_packet(Some(&target), &payload)
-                        } else {
-                            sent_xudp_new = true;
-                            encode_xudp_new_packet(&target, &payload, global_id)
-                        }
-                    }
-                };
-                let Ok(frame) = frame else {
-                    break;
-                };
-                if remote_writer.write_all(&frame).await.is_err() {
-                    break;
-                }
-                if remote_writer.flush().await.is_err() {
+                if write_socks_vless_udp_payload(
+                    &mut remote_writer,
+                    framing,
+                    &target,
+                    global_id,
+                    &mut sent_xudp_new,
+                    payload,
+                )
+                .await
+                .is_err()
+                {
                     break;
                 }
             }
@@ -490,6 +743,33 @@ async fn bridge_socks_udp_vless_flow(
             }
         }
     }
+}
+
+async fn write_socks_vless_udp_payload<W>(
+    writer: &mut W,
+    framing: VlessUdpFraming,
+    target: &Target,
+    global_id: [u8; 8],
+    sent_xudp_new: &mut bool,
+    payload: Bytes,
+) -> std::io::Result<()>
+where
+    W: AsyncWrite + Unpin,
+{
+    let frame = match framing {
+        VlessUdpFraming::LengthPrefixed => encode_udp_packet(&payload),
+        VlessUdpFraming::Xudp => {
+            if *sent_xudp_new {
+                encode_xudp_keep_packet(Some(target), &payload)
+            } else {
+                *sent_xudp_new = true;
+                encode_xudp_new_packet(target, &payload, global_id)
+            }
+        }
+    }
+    .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
+    writer.write_all(&frame).await?;
+    writer.flush().await
 }
 
 async fn read_socks_vless_udp_response<R>(

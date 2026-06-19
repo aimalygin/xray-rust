@@ -1847,11 +1847,15 @@ dependencies = [
 name = "xray-core-rs"
 version = "0.1.0"
 dependencies = [
+ "aes",
+ "aes-gcm",
  "async-trait",
  "bytes",
+ "hkdf",
  "libc",
  "rcgen",
  "rustls",
+ "sha2",
  "smoltcp",
  "thiserror",
  "tokio",
@@ -1921,6 +1925,7 @@ dependencies = [
  "ml-dsa",
  "polyval",
  "rcgen",
+ "regex",
  "rustls",
  "serde",
  "serde_json",

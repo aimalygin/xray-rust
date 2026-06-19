@@ -3,13 +3,20 @@ use std::{net::SocketAddr, sync::Arc};
 use thiserror::Error;
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
-use xray_config::{CoreConfig, InboundProtocol};
+use xray_config::{CoreConfig, DnsHostTarget, DnsServerConfig, DomainMatcher, InboundProtocol};
 use xray_runtime::Shutdown;
-use xray_transport::{CachingDnsResolver, DnsResolver, SystemDnsResolver, TransportDialer};
+use xray_transport::{
+    CachingDnsResolver, ConfiguredDnsResolver, DnsResolver, NameServer, StaticHostRule,
+    StaticHostTarget, SystemDnsResolver, TransportDialer, TransportDomainMatcher,
+};
 use xray_tun::{TunConfig, TunEndpoint};
 
+#[cfg(debug_assertions)]
+mod debug_log;
 mod http;
 mod outbound;
+mod policy;
+mod sniffing;
 mod socks;
 mod startup_probe;
 mod tun;
@@ -23,8 +30,9 @@ pub use outbound::{
     open_tcp_stream_with_resolver_and_dialer, open_vless_tcp_stream,
     open_vless_tcp_stream_with_resolver, open_vless_tcp_stream_with_resolver_and_dialer,
     open_vless_udp_stream_with_resolver_and_dialer, select_tcp_outbound,
-    select_tcp_outbound_for_session, select_udp_outbound_for_session, select_vless_tcp_outbound,
-    TcpOutbound, UdpOutbound, VlessTcpOutbound, VlessUdpFraming,
+    select_tcp_outbound_for_session, select_tcp_outbound_for_session_with_resolver,
+    select_udp_outbound_for_session, select_udp_outbound_for_session_with_resolver,
+    select_vless_tcp_outbound, TcpOutbound, UdpOutbound, VlessTcpOutbound, VlessUdpFraming,
 };
 pub use startup_probe::{StartupProbeError, StartupProbeOptions};
 pub use tun_fd::{TunFdClosePolicy, TunFdConfig, TunFdPacketFormat, TunFdRuntime};
@@ -153,16 +161,15 @@ pub struct Core {
 
 impl Core {
     pub fn new(config: CoreConfig) -> Result<Self, CoreError> {
-        Self::with_dns_resolver(
-            config,
-            Arc::new(CachingDnsResolver::new(Arc::new(SystemDnsResolver))),
-        )
+        let dns_resolver = default_dns_resolver_for_config(&config);
+        Self::with_dns_resolver(config, dns_resolver)
     }
 
     /// Creates a core with an injected DNS resolver.
     ///
-    /// The resolver is currently used by runtime outbound dialers to resolve
-    /// configured outbound server domains. It is not a full Xray DNS policy hook.
+    /// The injected resolver is used as-is for deterministic tests and custom
+    /// integrations. `config.dns` hosts and servers are applied by the default
+    /// constructors (`new` and `with_tun_runtime_options`) instead.
     pub fn with_dns_resolver(
         config: CoreConfig,
         dns_resolver: Arc<dyn DnsResolver>,
@@ -174,9 +181,10 @@ impl Core {
         config: CoreConfig,
         tun_runtime_options: TunRuntimeOptions,
     ) -> Result<Self, CoreError> {
+        let dns_resolver = default_dns_resolver_for_config(&config);
         Self::with_runtime_dependencies_and_tun_options(
             config,
-            Arc::new(CachingDnsResolver::new(Arc::new(SystemDnsResolver))),
+            dns_resolver,
             Arc::new(TransportDialer::system()?),
             tun_runtime_options,
         )
@@ -261,7 +269,7 @@ impl Core {
             match inbound.protocol {
                 InboundProtocol::Socks | InboundProtocol::Http => {}
                 InboundProtocol::Tun => {
-                    tun_inbounds.push(inbound.tag.clone());
+                    tun_inbounds.push((inbound.tag.clone(), inbound.sniffing.clone()));
                     continue;
                 }
             }
@@ -274,6 +282,8 @@ impl Core {
                     addr,
                 },
                 inbound.protocol.clone(),
+                inbound.sniffing.clone(),
+                policy::effective_policy_for_level(&self.config, inbound.user_level),
                 listener,
             ));
         }
@@ -285,7 +295,7 @@ impl Core {
         let config = Arc::new(self.config.clone());
         let mut inbounds = Vec::with_capacity(bound_listeners.len());
         let mut tasks = Vec::with_capacity(bound_listeners.len() + tun_inbounds.len().min(1));
-        for (bound, protocol, listener) in bound_listeners {
+        for (bound, protocol, sniffing, policy, listener) in bound_listeners {
             let inbound_tag = bound.tag.clone();
             let dns_resolver = Arc::clone(&self.dns_resolver);
             let transport_dialer = Arc::clone(&self.transport_dialer);
@@ -296,6 +306,8 @@ impl Core {
                     Arc::clone(&config),
                     dns_resolver,
                     transport_dialer,
+                    sniffing,
+                    policy,
                     self.shutdown.subscribe(),
                 )),
                 InboundProtocol::Http => tokio::spawn(http::serve_http_listener(
@@ -304,6 +316,7 @@ impl Core {
                     Arc::clone(&config),
                     dns_resolver,
                     transport_dialer,
+                    policy,
                     self.shutdown.subscribe(),
                 )),
                 InboundProtocol::Tun => continue,
@@ -314,7 +327,10 @@ impl Core {
         if !tun_inbounds.is_empty() {
             tasks.push(tokio::spawn(tun::serve_tun_endpoint(
                 Arc::clone(&self.tun),
-                tun_inbounds.first().cloned().flatten(),
+                tun_inbounds.first().and_then(|(tag, _)| tag.clone()),
+                tun_inbounds
+                    .first()
+                    .and_then(|(_, sniffing)| sniffing.clone()),
                 Arc::clone(&config),
                 Arc::clone(&self.dns_resolver),
                 Arc::clone(&self.transport_dialer),
@@ -367,4 +383,113 @@ impl Core {
 
 pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
+}
+
+fn system_dns_resolver() -> Arc<dyn DnsResolver> {
+    Arc::new(CachingDnsResolver::new(Arc::new(SystemDnsResolver)))
+}
+
+fn default_dns_resolver_for_config(config: &CoreConfig) -> Arc<dyn DnsResolver> {
+    configured_dns_resolver_for_config(config, system_dns_resolver())
+}
+
+fn configured_dns_resolver_for_config(
+    config: &CoreConfig,
+    fallback: Arc<dyn DnsResolver>,
+) -> Arc<dyn DnsResolver> {
+    if config.dns.hosts.is_empty() && config.dns.servers.is_empty() {
+        return fallback;
+    }
+
+    let host_rules = config
+        .dns
+        .hosts
+        .iter()
+        .map(|host| StaticHostRule {
+            matcher: transport_domain_matcher(&host.matcher),
+            target: match &host.target {
+                DnsHostTarget::Ip(ip) => StaticHostTarget::Ip(*ip),
+                DnsHostTarget::Domain(domain) => StaticHostTarget::Domain(domain.clone()),
+            },
+        })
+        .collect();
+    let name_servers = config
+        .dns
+        .servers
+        .iter()
+        .map(|server| match server {
+            DnsServerConfig::Ip(addr) => NameServer::Socket(*addr),
+            DnsServerConfig::Domain { domain, port } => NameServer::Domain {
+                domain: domain.clone(),
+                port: *port,
+            },
+        })
+        .collect();
+
+    Arc::new(ConfiguredDnsResolver::new(
+        host_rules,
+        name_servers,
+        fallback,
+    ))
+}
+
+fn transport_domain_matcher(matcher: &DomainMatcher) -> TransportDomainMatcher {
+    match matcher {
+        DomainMatcher::Keyword(keyword) => TransportDomainMatcher::Keyword(keyword.clone()),
+        DomainMatcher::Full(domain) => TransportDomainMatcher::Full(domain.clone()),
+        DomainMatcher::Suffix(suffix) => TransportDomainMatcher::Suffix(suffix.clone()),
+        DomainMatcher::Regex(regex) => TransportDomainMatcher::regex(regex.pattern())
+            .expect("xray-config regex matcher should be prevalidated"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::sync::Arc;
+
+    use async_trait::async_trait;
+    use xray_config::parse_xray_json;
+    use xray_transport::{DnsResolver, TransportError};
+
+    use super::configured_dns_resolver_for_config;
+
+    struct StaticResolver;
+
+    #[async_trait]
+    impl DnsResolver for StaticResolver {
+        async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+            match domain {
+                "googleapis.com" => Ok(SocketAddr::new(
+                    IpAddr::V4(Ipv4Addr::new(198, 51, 100, 9)),
+                    port,
+                )),
+                _ => Err(TransportError::NoResolvedAddress(domain.to_owned(), port)),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn configured_dns_resolver_uses_config_hosts_before_fallback() {
+        let raw = r#"{
+            "dns": {
+              "hosts": {
+                "domain:googleapis.cn": "googleapis.com"
+              }
+            },
+            "inbounds": [],
+            "outbounds": [
+                { "tag": "direct", "protocol": "freedom" }
+            ]
+        }"#;
+        let parsed = parse_xray_json(raw).expect("config should parse");
+        let resolver = configured_dns_resolver_for_config(&parsed.config, Arc::new(StaticResolver));
+
+        let addr = resolver
+            .resolve("storage.googleapis.cn", 8443)
+            .await
+            .unwrap();
+
+        assert_eq!(addr, SocketAddr::from(([198, 51, 100, 9], 8443)));
+    }
 }

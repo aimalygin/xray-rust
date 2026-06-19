@@ -1,14 +1,21 @@
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::io::{Cursor, ErrorKind};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
+use aes::cipher::{BlockEncrypt, KeyInit};
+use aes::Aes128;
+use aes_gcm::aead::{Aead, Payload as AeadPayload};
+use aes_gcm::{Aes128Gcm, Nonce};
 use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
+use hkdf::Hkdf;
 use rcgen::{generate_simple_self_signed, CertifiedKey};
 use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
+use sha2::Sha256;
 use smoltcp::iface::{
     Config as SmolInterfaceConfig, Interface as SmolInterface, SocketHandle, SocketSet,
 };
@@ -29,12 +36,16 @@ use tokio::time::{sleep, timeout, Duration, Instant as TokioInstant};
 use tokio_rustls::TlsAcceptor;
 use uuid::Uuid;
 use xray_config::{
-    parse_xray_json, CoreConfig, DnsConfig, DnsFakeIpConfig, DomainMatcher, InboundConfig,
-    InboundProtocol, IpCidr, IpMatcher, Network, OutboundConfig, OutboundSettings, RealitySettings,
-    RealityShortId, RoutingConfig, RoutingRule, StreamSecurity, StreamSettings, TargetAddr,
-    TlsSettings, VlessOutboundSettings, VlessUser,
+    parse_xray_json, parse_xray_json_with_geodata_dir, CoreConfig, DnsConfig, DnsFakeIpConfig,
+    DomainMatcher, InboundConfig, InboundProtocol, InboundSniffingConfig, IpCidr, IpMatcher,
+    Network, OutboundConfig, OutboundSettings, PolicyConfig, PolicyLevelConfig, RealitySettings,
+    RealityShortId, RoutingConfig, RoutingDomainStrategy, RoutingRule, SniffingDestination,
+    StreamSecurity, StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
 };
-use xray_core_rs::{select_vless_tcp_outbound, Core, CoreError, TunRuntimeOptions};
+use xray_core_rs::{
+    select_tcp_outbound_for_session, select_tcp_outbound_for_session_with_resolver,
+    select_vless_tcp_outbound, Core, CoreError, TcpOutbound, TunRuntimeOptions,
+};
 use xray_proxy::inbound::{encode_socks5_udp_datagram, parse_socks5_udp_datagram};
 use xray_proxy::vless::{
     encode_udp_packet, encode_xudp_keep_packet, read_udp_packet, read_xudp_packet,
@@ -68,6 +79,7 @@ fn vless_outbound(security: StreamSecurity, server: TargetAddr, port: u16) -> Ou
                 id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
                 encryption: "none".to_owned(),
                 flow: None,
+                level: 0,
             }],
         }),
     }
@@ -91,6 +103,7 @@ fn config_with_outbound(outbound: OutboundConfig) -> CoreConfig {
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
         dns: Default::default(),
+        policy: Default::default(),
     }
 }
 
@@ -100,6 +113,21 @@ fn allocate_unused_loopback_port() -> u16 {
         .local_addr()
         .expect("read local addr")
         .port()
+}
+
+fn full_xray_core_fixture_config() -> CoreConfig {
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("crate should be under workspace crates directory");
+    let fixture =
+        include_str!("../../../tests/fixtures/configs/xray_core_reality_split_routing_full.json");
+    parse_xray_json_with_geodata_dir(
+        fixture,
+        workspace_root.join("platform/apple/XrayClient/dat"),
+    )
+    .expect("xray-core-compatible fixture should parse")
+    .config
 }
 
 #[derive(Debug, Clone, Default)]
@@ -207,12 +235,24 @@ fn runtime_config_with_freedom_outbound() -> CoreConfig {
             protocol: InboundProtocol::Socks,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            sniffing: None,
+            user_level: None,
         }],
         outbounds: vec![freedom_outbound()],
         default_outbound_tag: Some("direct".to_owned()),
         routing: RoutingConfig::default(),
         dns: Default::default(),
+        policy: Default::default(),
     }
+}
+
+fn runtime_socks_config_with_level_0_policy(policy: PolicyLevelConfig) -> CoreConfig {
+    let mut config = runtime_config_with_freedom_outbound();
+    config.policy = PolicyConfig {
+        levels: BTreeMap::from([(0, policy)]),
+        system: Default::default(),
+    };
+    config
 }
 
 fn runtime_tun_config_with_freedom_outbound() -> CoreConfig {
@@ -222,11 +262,14 @@ fn runtime_tun_config_with_freedom_outbound() -> CoreConfig {
             protocol: InboundProtocol::Tun,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            sniffing: None,
+            user_level: None,
         }],
         outbounds: vec![freedom_outbound()],
         default_outbound_tag: Some("direct".to_owned()),
         routing: RoutingConfig::default(),
         dns: Default::default(),
+        policy: Default::default(),
     }
 }
 
@@ -237,6 +280,8 @@ fn runtime_tun_config_with_routed_freedom_outbound(unused_proxy_port: u16) -> Co
             protocol: InboundProtocol::Tun,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            sniffing: None,
+            user_level: None,
         }],
         outbounds: vec![
             vless_outbound(
@@ -254,9 +299,25 @@ fn runtime_tun_config_with_routed_freedom_outbound(unused_proxy_port: u16) -> Co
                 ip_matchers: Vec::new(),
                 outbound_tag: "direct".to_owned(),
             }],
+            ..Default::default()
         },
         dns: Default::default(),
+        policy: Default::default(),
     }
+}
+
+fn runtime_tun_config_with_route_only_quic_sniffing(unused_proxy_port: u16) -> CoreConfig {
+    let mut config = runtime_tun_config_with_routed_freedom_outbound(unused_proxy_port);
+    config.inbounds[0].sniffing = Some(InboundSniffingConfig {
+        enabled: true,
+        dest_override: vec![SniffingDestination::Quic],
+        metadata_only: false,
+        route_only: true,
+    });
+    config.routing.rules[0].inbound_tags = Vec::new();
+    config.routing.rules[0].domain_matchers =
+        vec![DomainMatcher::Suffix("quic.example".to_owned())];
+    config
 }
 
 fn runtime_tun_config_with_fake_ip_domain_routed_freedom_outbound(
@@ -270,6 +331,26 @@ fn runtime_tun_config_with_fake_ip_domain_routed_freedom_outbound(
             ipv4_pool: IpCidr::new(IpAddr::V4(Ipv4Addr::new(198, 18, 0, 0)), 15).unwrap(),
             ttl: 60,
         }),
+        ..Default::default()
+    };
+    config
+}
+
+fn runtime_tun_config_with_fake_ip_ip_if_non_match_routed_freedom_outbound(
+    unused_proxy_port: u16,
+) -> CoreConfig {
+    let mut config = runtime_tun_config_with_routed_freedom_outbound(unused_proxy_port);
+    config.routing.rules[0].ip_matchers = vec![IpMatcher::Cidr(
+        IpCidr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 0)), 8).unwrap(),
+    )];
+    config.routing.domain_strategy = RoutingDomainStrategy::IpIfNonMatch;
+    config.dns = DnsConfig {
+        fake_ip: Some(DnsFakeIpConfig {
+            enabled: true,
+            ipv4_pool: IpCidr::new(IpAddr::V4(Ipv4Addr::new(198, 18, 0, 0)), 15).unwrap(),
+            ttl: 60,
+        }),
+        ..Default::default()
     };
     config
 }
@@ -281,6 +362,8 @@ fn runtime_tun_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig {
             protocol: InboundProtocol::Tun,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            sniffing: None,
+            user_level: None,
         }],
         outbounds: vec![vless_outbound(
             StreamSecurity::None,
@@ -290,6 +373,7 @@ fn runtime_tun_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig {
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
         dns: Default::default(),
+        policy: Default::default(),
     }
 }
 
@@ -300,6 +384,8 @@ fn runtime_socks_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig 
             protocol: InboundProtocol::Socks,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            sniffing: None,
+            user_level: None,
         }],
         outbounds: vec![vless_outbound(
             StreamSecurity::None,
@@ -309,7 +395,20 @@ fn runtime_socks_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig 
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
         dns: Default::default(),
+        policy: Default::default(),
     }
+}
+
+fn runtime_socks_config_with_vless_server_user_level(
+    vless_addr: SocketAddr,
+    user_level: u32,
+) -> CoreConfig {
+    let mut config = runtime_socks_config_with_vless_server(vless_addr);
+    let OutboundSettings::Vless(settings) = &mut config.outbounds[0].settings else {
+        panic!("expected vless outbound");
+    };
+    settings.users[0].level = user_level;
+    config
 }
 
 fn runtime_tun_config_with_tls_vision_vless_domain_server(
@@ -337,11 +436,14 @@ fn runtime_tun_config_with_tls_vision_vless_domain_server(
             protocol: InboundProtocol::Tun,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            sniffing: None,
+            user_level: None,
         }],
         outbounds: vec![outbound],
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
         dns: Default::default(),
+        policy: Default::default(),
     }
 }
 
@@ -362,11 +464,14 @@ fn runtime_tun_config_with_reality_vision_vless_server(port: u16) -> CoreConfig 
             protocol: InboundProtocol::Tun,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            sniffing: None,
+            user_level: None,
         }],
         outbounds: vec![outbound],
         default_outbound_tag: Some("proxy".to_owned()),
         routing: RoutingConfig::default(),
         dns: Default::default(),
+        policy: Default::default(),
     }
 }
 
@@ -389,6 +494,8 @@ fn runtime_config_with_routed_freedom_outbound(unused_proxy_port: u16) -> CoreCo
             protocol: InboundProtocol::Socks,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            sniffing: None,
+            user_level: None,
         }],
         outbounds: vec![
             vless_outbound(
@@ -406,8 +513,10 @@ fn runtime_config_with_routed_freedom_outbound(unused_proxy_port: u16) -> CoreCo
                 ip_matchers: Vec::new(),
                 outbound_tag: "direct".to_owned(),
             }],
+            ..Default::default()
         },
         dns: Default::default(),
+        policy: Default::default(),
     }
 }
 
@@ -418,6 +527,8 @@ fn runtime_config_with_domain_routed_freedom_outbound(unused_proxy_port: u16) ->
             protocol: InboundProtocol::Socks,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            sniffing: None,
+            user_level: None,
         }],
         outbounds: vec![
             vless_outbound(
@@ -435,9 +546,37 @@ fn runtime_config_with_domain_routed_freedom_outbound(unused_proxy_port: u16) ->
                 ip_matchers: Vec::new(),
                 outbound_tag: "direct".to_owned(),
             }],
+            ..Default::default()
         },
         dns: Default::default(),
+        policy: Default::default(),
     }
+}
+
+fn runtime_socks_config_with_route_only_http_sniffing(unused_proxy_port: u16) -> CoreConfig {
+    let mut config = runtime_config_with_domain_routed_freedom_outbound(unused_proxy_port);
+    config.inbounds[0].sniffing = Some(InboundSniffingConfig {
+        enabled: true,
+        dest_override: vec![SniffingDestination::Http],
+        metadata_only: false,
+        route_only: true,
+    });
+    config.routing.rules[0].domain_matchers =
+        vec![DomainMatcher::Suffix("routed.example".to_owned())];
+    config
+}
+
+fn runtime_socks_config_with_route_only_quic_sniffing(unused_proxy_port: u16) -> CoreConfig {
+    let mut config = runtime_config_with_domain_routed_freedom_outbound(unused_proxy_port);
+    config.inbounds[0].sniffing = Some(InboundSniffingConfig {
+        enabled: true,
+        dest_override: vec![SniffingDestination::Quic],
+        metadata_only: false,
+        route_only: true,
+    });
+    config.routing.rules[0].domain_matchers =
+        vec![DomainMatcher::Suffix("quic.example".to_owned())];
+    config
 }
 
 fn runtime_config_with_ip_routed_freedom_outbound(unused_proxy_port: u16) -> CoreConfig {
@@ -447,6 +586,8 @@ fn runtime_config_with_ip_routed_freedom_outbound(unused_proxy_port: u16) -> Cor
             protocol: InboundProtocol::Socks,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            sniffing: None,
+            user_level: None,
         }],
         outbounds: vec![
             vless_outbound(
@@ -466,8 +607,50 @@ fn runtime_config_with_ip_routed_freedom_outbound(unused_proxy_port: u16) -> Cor
                 )],
                 outbound_tag: "direct".to_owned(),
             }],
+            ..Default::default()
         },
         dns: Default::default(),
+        policy: Default::default(),
+    }
+}
+
+fn runtime_config_with_ip_if_non_match_routed_freedom_outbound(
+    inbound_protocol: InboundProtocol,
+    inbound_tag: &str,
+    unused_proxy_port: u16,
+) -> CoreConfig {
+    CoreConfig {
+        inbounds: vec![InboundConfig {
+            tag: Some(inbound_tag.to_owned()),
+            protocol: inbound_protocol,
+            listen: "127.0.0.1".to_owned(),
+            port: 0,
+            sniffing: None,
+            user_level: None,
+        }],
+        outbounds: vec![
+            vless_outbound(
+                StreamSecurity::None,
+                TargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+                unused_proxy_port,
+            ),
+            freedom_outbound(),
+        ],
+        default_outbound_tag: Some("proxy".to_owned()),
+        routing: RoutingConfig {
+            rules: vec![RoutingRule {
+                inbound_tags: Vec::new(),
+                domain_matchers: Vec::new(),
+                ip_matchers: vec![IpMatcher::Cidr(
+                    IpCidr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 0)), 8).unwrap(),
+                )],
+                outbound_tag: "direct".to_owned(),
+            }],
+            domain_strategy: RoutingDomainStrategy::IpIfNonMatch,
+            ..Default::default()
+        },
+        dns: Default::default(),
+        policy: Default::default(),
     }
 }
 
@@ -478,6 +661,8 @@ fn runtime_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig {
             protocol: InboundProtocol::Socks,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            sniffing: None,
+            user_level: None,
         }],
         outbounds: vec![vless_outbound(
             StreamSecurity::None,
@@ -487,6 +672,7 @@ fn runtime_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig {
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
         dns: Default::default(),
+        policy: Default::default(),
     }
 }
 
@@ -497,6 +683,8 @@ fn runtime_http_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig {
             protocol: InboundProtocol::Http,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            sniffing: None,
+            user_level: None,
         }],
         outbounds: vec![vless_outbound(
             StreamSecurity::None,
@@ -506,6 +694,7 @@ fn runtime_http_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig {
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
         dns: Default::default(),
+        policy: Default::default(),
     }
 }
 
@@ -516,6 +705,8 @@ fn runtime_config_with_vless_domain_server(domain: &str, port: u16) -> CoreConfi
             protocol: InboundProtocol::Socks,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            sniffing: None,
+            user_level: None,
         }],
         outbounds: vec![vless_outbound(
             StreamSecurity::None,
@@ -525,6 +716,7 @@ fn runtime_config_with_vless_domain_server(domain: &str, port: u16) -> CoreConfi
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
         dns: Default::default(),
+        policy: Default::default(),
     }
 }
 
@@ -539,6 +731,8 @@ fn runtime_config_with_tls_vless_domain_server(
             protocol: InboundProtocol::Socks,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            sniffing: None,
+            user_level: None,
         }],
         outbounds: vec![vless_outbound(
             StreamSecurity::Tls(TlsSettings {
@@ -552,6 +746,7 @@ fn runtime_config_with_tls_vless_domain_server(
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
         dns: Default::default(),
+        policy: Default::default(),
     }
 }
 
@@ -592,6 +787,48 @@ fn selects_raw_tcp_vless_outbound_with_ip_server() {
 }
 
 #[test]
+fn full_xray_core_fixture_builds_core() {
+    let config = full_xray_core_fixture_config();
+
+    Core::new(config).expect("full xray-core fixture should build a core");
+}
+
+#[tokio::test]
+async fn full_xray_core_fixture_routes_inbound_rule_before_ip_if_non_match_dns() {
+    let config = full_xray_core_fixture_config();
+    let target = Target::new(
+        RoutingTargetAddr::Domain("not-ru.example".to_owned()),
+        443,
+        RoutingNetwork::Tcp,
+    );
+
+    let outbound = select_tcp_outbound_for_session_with_resolver(
+        &config,
+        Some("inbound_49783"),
+        &target,
+        &EmptyDnsResolver,
+    )
+    .await
+    .expect("inbound-tag rule should select proxy before DNS second pass");
+
+    assert!(matches!(outbound, TcpOutbound::Vless(_)));
+}
+
+#[test]
+fn full_xray_core_fixture_missing_api_outbound_fails_only_when_selected() {
+    let config = full_xray_core_fixture_config();
+    let target = Target::new(
+        RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
+        443,
+        RoutingNetwork::Tcp,
+    );
+
+    let error = select_tcp_outbound_for_session(&config, Some("api"), &target).unwrap_err();
+
+    assert!(matches!(error, CoreError::NoSupportedOutbound));
+}
+
+#[test]
 fn selects_default_outbound_tag_when_present() {
     let mut first = vless_outbound(
         StreamSecurity::None,
@@ -611,6 +848,7 @@ fn selects_default_outbound_tag_when_present() {
         default_outbound_tag: Some("proxy".to_owned()),
         routing: RoutingConfig::default(),
         dns: Default::default(),
+        policy: Default::default(),
     };
 
     let selected = select_vless_tcp_outbound(&config).unwrap();
@@ -965,6 +1203,36 @@ async fn socks_client_reaches_echo_target_through_freedom_outbound() {
 }
 
 #[tokio::test]
+async fn socks_policy_handshake_timeout_closes_idle_client() {
+    timeout(
+        Duration::from_secs(2),
+        run_socks_policy_handshake_timeout_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn socks_policy_conn_idle_timeout_closes_idle_tunnel() {
+    timeout(
+        Duration::from_secs(2),
+        run_socks_policy_conn_idle_timeout_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn socks_policy_vless_user_level_conn_idle_closes_idle_tunnel() {
+    timeout(
+        Duration::from_secs(2),
+        run_socks_policy_vless_user_level_conn_idle_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
 async fn socks_udp_client_reaches_echo_target_through_freedom_outbound() {
     timeout(
         Duration::from_secs(2),
@@ -1093,10 +1361,30 @@ async fn tun_udp_client_reaches_echo_target_through_freedom_outbound() {
 }
 
 #[tokio::test]
+async fn tun_udp_route_only_quic_sniffing_uses_sni_for_routing() {
+    timeout(
+        Duration::from_secs(2),
+        run_tun_udp_route_only_quic_sniffing_echo_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
 async fn tun_fake_dns_udp_flow_uses_domain_routing_rule() {
     timeout(
         Duration::from_secs(2),
         run_tun_fake_dns_udp_domain_routing_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn tun_fake_dns_udp_ip_if_non_match_uses_dns_second_pass_to_reach_freedom_outbound() {
+    timeout(
+        Duration::from_secs(2),
+        run_tun_fake_dns_udp_ip_if_non_match_routed_freedom_scenario(),
     )
     .await
     .unwrap();
@@ -1160,10 +1448,60 @@ async fn socks_client_uses_domain_routing_rule_to_reach_freedom_outbound() {
 }
 
 #[tokio::test]
+async fn socks_client_route_only_http_sniffing_uses_host_for_routing() {
+    timeout(
+        Duration::from_secs(2),
+        run_socks_route_only_http_sniffing_echo_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn socks_client_route_only_http_sniffing_handles_split_host_header() {
+    timeout(
+        Duration::from_secs(2),
+        run_socks_route_only_http_sniffing_split_echo_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
 async fn socks_client_uses_ip_routing_rule_to_reach_freedom_outbound() {
     timeout(
         Duration::from_secs(2),
         run_socks_to_ip_routed_freedom_echo_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn socks_client_ip_if_non_match_uses_dns_second_pass_to_reach_freedom_outbound() {
+    timeout(
+        Duration::from_secs(2),
+        run_socks_to_ip_if_non_match_routed_freedom_echo_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn socks_udp_client_ip_if_non_match_uses_dns_second_pass_to_reach_freedom_outbound() {
+    timeout(
+        Duration::from_secs(2),
+        run_socks_udp_ip_if_non_match_routed_freedom_echo_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn socks_udp_client_route_only_quic_sniffing_uses_sni_for_routing() {
+    timeout(
+        Duration::from_secs(2),
+        run_socks_udp_route_only_quic_sniffing_echo_scenario(),
     )
     .await
     .unwrap();
@@ -1204,6 +1542,16 @@ async fn http_client_reaches_echo_target_through_vless_tcp_outbound() {
     timeout(Duration::from_secs(2), run_http_to_vless_echo_scenario())
         .await
         .unwrap();
+}
+
+#[tokio::test]
+async fn http_client_ip_if_non_match_uses_dns_second_pass_to_reach_freedom_outbound() {
+    timeout(
+        Duration::from_secs(2),
+        run_http_to_ip_if_non_match_routed_freedom_echo_scenario(),
+    )
+    .await
+    .unwrap();
 }
 
 async fn run_socks_to_vless_echo_scenario() {
@@ -1261,6 +1609,96 @@ async fn run_socks_to_freedom_echo_scenario() {
         .unwrap();
 }
 
+async fn run_socks_policy_handshake_timeout_scenario() {
+    let config = runtime_socks_config_with_level_0_policy(PolicyLevelConfig {
+        handshake: Some(0),
+        ..Default::default()
+    });
+
+    let mut core = Core::new(config).unwrap();
+    core.start().await.unwrap();
+    let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
+
+    let mut client = TcpStream::connect(socks_addr).await.unwrap();
+    let mut byte = [0; 1];
+    let read = timeout(Duration::from_millis(200), client.read(&mut byte))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(read, 0);
+    core.stop().await.unwrap();
+}
+
+async fn run_socks_policy_conn_idle_timeout_scenario() {
+    let (echo_addr, echo_handle) = spawn_echo_server().await;
+    let config = runtime_socks_config_with_level_0_policy(PolicyLevelConfig {
+        conn_idle: Some(0),
+        ..Default::default()
+    });
+
+    let mut core = Core::new(config).unwrap();
+    core.start().await.unwrap();
+    let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
+
+    let mut client = TcpStream::connect(socks_addr).await.unwrap();
+    socks5_connect(&mut client, echo_addr).await;
+
+    let mut byte = [0; 1];
+    let read = timeout(Duration::from_millis(200), client.read(&mut byte))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(read, 0);
+    drop(client);
+    core.stop().await.unwrap();
+
+    timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+async fn run_socks_policy_vless_user_level_conn_idle_scenario() {
+    let (echo_addr, echo_handle) = spawn_echo_server().await;
+    let (vless_addr, vless_handle) = spawn_fake_vless_server().await;
+    let mut config = runtime_socks_config_with_vless_server_user_level(vless_addr, 8);
+    config.policy = PolicyConfig {
+        levels: BTreeMap::from([(
+            8,
+            PolicyLevelConfig {
+                conn_idle: Some(0),
+                ..Default::default()
+            },
+        )]),
+        system: Default::default(),
+    };
+
+    let mut core = Core::new(config).unwrap();
+    core.start().await.unwrap();
+    let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
+
+    let mut client = TcpStream::connect(socks_addr).await.unwrap();
+    socks5_connect(&mut client, echo_addr).await;
+
+    let mut byte = [0; 1];
+    let read = timeout(Duration::from_millis(200), client.read(&mut byte))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(read, 0);
+    drop(client);
+    core.stop().await.unwrap();
+
+    timeout(Duration::from_secs(1), vless_handle)
+        .await
+        .unwrap()
+        .unwrap();
+    timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
 async fn run_socks_udp_freedom_echo_scenario() {
     let (echo_addr, echo_handle) = spawn_udp_echo_server().await;
     let config = runtime_config_with_freedom_outbound();
@@ -1296,14 +1734,22 @@ async fn socks_udp_roundtrip(
     target_addr: SocketAddr,
     payload: &[u8],
 ) -> Bytes {
-    let mut control = TcpStream::connect(socks_addr).await.unwrap();
-    let relay_addr = socks5_udp_associate(&mut control).await;
-    let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let target = Target::new(
         RoutingTargetAddr::Ip(target_addr.ip()),
         target_addr.port(),
         RoutingNetwork::Udp,
     );
+    socks_udp_roundtrip_target(socks_addr, target, payload).await
+}
+
+async fn socks_udp_roundtrip_target(
+    socks_addr: SocketAddr,
+    target: Target,
+    payload: &[u8],
+) -> Bytes {
+    let mut control = TcpStream::connect(socks_addr).await.unwrap();
+    let relay_addr = socks5_udp_associate(&mut control).await;
+    let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let request = encode_socks5_udp_datagram(&target, payload).unwrap();
 
     socket.send_to(&request, relay_addr).await.unwrap();
@@ -1313,6 +1759,57 @@ async fn socks_udp_roundtrip(
     drop(socket);
     drop(control);
     response.payload
+}
+
+async fn run_socks_udp_ip_if_non_match_routed_freedom_echo_scenario() {
+    let (echo_addr, echo_handle) = spawn_udp_echo_server().await;
+    let resolver = StaticDnsResolver {
+        domain: "udp-ip-route.example.test",
+        addr: echo_addr,
+    };
+    let config = runtime_config_with_ip_if_non_match_routed_freedom_outbound(
+        InboundProtocol::Socks,
+        "socks-in",
+        allocate_unused_loopback_port(),
+    );
+    let mut core = Core::with_dns_resolver(config, Arc::new(resolver)).unwrap();
+    core.start().await.unwrap();
+    let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
+    let target = Target::new(
+        RoutingTargetAddr::Domain("udp-ip-route.example.test".to_owned()),
+        echo_addr.port(),
+        RoutingNetwork::Udp,
+    );
+
+    let payload =
+        socks_udp_roundtrip_target(socks_addr, target, b"hello udp ip if non match").await;
+
+    assert_eq!(&payload[..], b"hello udp ip if non match");
+    core.stop().await.unwrap();
+    timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+async fn run_socks_udp_route_only_quic_sniffing_echo_scenario() {
+    let (echo_addr, echo_handle) = spawn_udp_echo_server().await;
+    let config =
+        runtime_socks_config_with_route_only_quic_sniffing(allocate_unused_loopback_port());
+
+    let mut core = Core::new(config).unwrap();
+    core.start().await.unwrap();
+    let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
+
+    let payload = quic_initial_packet_with_sni("quic.example");
+    let echoed = socks_udp_roundtrip(socks_addr, echo_addr, &payload).await;
+
+    assert_eq!(echoed, Bytes::from(payload));
+    core.stop().await.unwrap();
+    timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .unwrap()
+        .unwrap();
 }
 
 async fn run_socks_udp_vless_echo_scenario() {
@@ -1622,6 +2119,47 @@ async fn run_tun_udp_freedom_echo_scenario() {
         .unwrap();
 }
 
+async fn run_tun_udp_route_only_quic_sniffing_echo_scenario() {
+    let (echo_addr, echo_handle) = spawn_udp_echo_server().await;
+    let SocketAddr::V4(echo_addr_v4) = echo_addr else {
+        panic!("UDP TUN QUIC sniffing test expects IPv4 echo server");
+    };
+    let config = runtime_tun_config_with_route_only_quic_sniffing(allocate_unused_loopback_port());
+    let mut core = Core::new(config).unwrap();
+    core.start().await.unwrap();
+
+    let client_addr = Ipv4Addr::new(10, 10, 0, 2);
+    let payload = quic_initial_packet_with_sni("quic.example");
+    let request = ipv4_udp_packet(
+        client_addr,
+        49153,
+        *echo_addr_v4.ip(),
+        echo_addr_v4.port(),
+        &payload,
+    );
+    core.tun().push_inbound(Bytes::from(request)).await.unwrap();
+
+    let reply = poll_tun_outbound_until(core.tun(), |packet| {
+        ipv4_udp_payload(packet)
+            .map(|reply_payload| reply_payload == payload.as_slice())
+            .unwrap_or(false)
+    })
+    .await;
+    assert_ipv4_udp_packet(
+        &reply,
+        *echo_addr_v4.ip(),
+        echo_addr_v4.port(),
+        client_addr,
+        49153,
+        &payload,
+    );
+    core.stop().await.unwrap();
+    timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
 async fn run_tun_fake_dns_udp_domain_routing_scenario() {
     let unused_proxy_port = allocate_unused_loopback_port();
     let (echo_addr, echo_handle) = spawn_udp_echo_server().await;
@@ -1688,6 +2226,80 @@ async fn run_tun_fake_dns_udp_domain_routing_scenario() {
         b"hello fake dns",
     );
     core.stop().await.unwrap();
+    timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+async fn run_tun_fake_dns_udp_ip_if_non_match_routed_freedom_scenario() {
+    let unused_proxy_port = allocate_unused_loopback_port();
+    let (echo_addr, echo_handle) = spawn_udp_echo_server().await;
+    let SocketAddr::V4(echo_addr_v4) = echo_addr else {
+        panic!("UDP TUN fake DNS IPIfNonMatch test expects IPv4 echo server");
+    };
+    let config =
+        runtime_tun_config_with_fake_ip_ip_if_non_match_routed_freedom_outbound(unused_proxy_port);
+    let mut core = Core::with_dns_resolver(
+        config,
+        Arc::new(StaticDnsResolver {
+            domain: "www.example.com",
+            addr: echo_addr,
+        }),
+    )
+    .unwrap();
+    core.start().await.unwrap();
+
+    let client_addr = Ipv4Addr::new(10, 10, 0, 2);
+    let dns_query = build_dns_a_query(0x1204, "www.example.com");
+    let dns_request = ipv4_udp_packet(
+        client_addr,
+        53_001,
+        Ipv4Addr::new(1, 1, 1, 1),
+        53,
+        &dns_query,
+    );
+    core.tun()
+        .push_inbound(Bytes::from(dns_request))
+        .await
+        .unwrap();
+
+    let dns_reply = poll_tun_outbound_until(core.tun(), |packet| {
+        ipv4_udp_payload(packet)
+            .and_then(dns_response_answer_ipv4)
+            .is_some()
+    })
+    .await;
+    let fake_ip = ipv4_udp_payload(&dns_reply)
+        .and_then(dns_response_answer_ipv4)
+        .unwrap();
+    assert_eq!(fake_ip, Ipv4Addr::new(198, 18, 0, 1));
+
+    let request = ipv4_udp_packet(
+        client_addr,
+        49_153,
+        fake_ip,
+        echo_addr_v4.port(),
+        b"hello tun ip if non match",
+    );
+    core.tun().push_inbound(Bytes::from(request)).await.unwrap();
+
+    let reply = poll_tun_outbound_until(core.tun(), |packet| {
+        ipv4_udp_payload(packet)
+            .map(|payload| payload == b"hello tun ip if non match")
+            .unwrap_or(false)
+    })
+    .await;
+    assert_ipv4_udp_packet(
+        &reply,
+        fake_ip,
+        echo_addr_v4.port(),
+        client_addr,
+        49_153,
+        b"hello tun ip if non match",
+    );
+    core.stop().await.unwrap();
+
     timeout(Duration::from_secs(1), echo_handle)
         .await
         .unwrap()
@@ -1937,6 +2549,65 @@ async fn run_socks_to_domain_routed_freedom_echo_scenario() {
         .unwrap();
 }
 
+async fn run_socks_route_only_http_sniffing_echo_scenario() {
+    let (echo_addr, echo_handle) = spawn_echo_server().await;
+    let config =
+        runtime_socks_config_with_route_only_http_sniffing(allocate_unused_loopback_port());
+
+    let mut core = Core::new(config).unwrap();
+    core.start().await.unwrap();
+    let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
+
+    let mut client = TcpStream::connect(socks_addr).await.unwrap();
+    socks5_connect(&mut client, echo_addr).await;
+
+    let request = b"GET / HTTP/1.1\r\nHost: routed.example\r\n\r\n";
+    client.write_all(request).await.unwrap();
+    let mut echoed = vec![0; request.len()];
+    client.read_exact(&mut echoed).await.unwrap();
+
+    assert_eq!(echoed, request);
+    drop(client);
+    core.stop().await.unwrap();
+
+    timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+async fn run_socks_route_only_http_sniffing_split_echo_scenario() {
+    let (echo_addr, echo_handle) = spawn_echo_server().await;
+    let config =
+        runtime_socks_config_with_route_only_http_sniffing(allocate_unused_loopback_port());
+
+    let mut core = Core::new(config).unwrap();
+    core.start().await.unwrap();
+    let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
+
+    let mut client = TcpStream::connect(socks_addr).await.unwrap();
+    socks5_connect(&mut client, echo_addr).await;
+
+    let first = b"GET / HTTP/1.1\r\nHost: rout";
+    let second = b"ed.example\r\n\r\n";
+    client.write_all(first).await.unwrap();
+    sleep(Duration::from_millis(10)).await;
+    client.write_all(second).await.unwrap();
+
+    let mut echoed = vec![0; first.len() + second.len()];
+    client.read_exact(&mut echoed).await.unwrap();
+    assert_eq!(&echoed[..first.len()], first);
+    assert_eq!(&echoed[first.len()..], second);
+
+    drop(client);
+    core.stop().await.unwrap();
+
+    timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
 async fn run_socks_to_ip_routed_freedom_echo_scenario() {
     let (echo_addr, echo_handle) = spawn_echo_server().await;
     let config = runtime_config_with_ip_routed_freedom_outbound(allocate_unused_loopback_port());
@@ -1953,6 +2624,39 @@ async fn run_socks_to_ip_routed_freedom_echo_scenario() {
     client.read_exact(&mut echoed).await.unwrap();
 
     assert_eq!(echoed, b"hello ip routed freedom");
+    drop(client);
+    core.stop().await.unwrap();
+
+    timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+async fn run_socks_to_ip_if_non_match_routed_freedom_echo_scenario() {
+    let (echo_addr, echo_handle) = spawn_echo_server().await;
+    let resolver = StaticDnsResolver {
+        domain: "ip-route.example.test",
+        addr: echo_addr,
+    };
+    let config = runtime_config_with_ip_if_non_match_routed_freedom_outbound(
+        InboundProtocol::Socks,
+        "socks-in",
+        allocate_unused_loopback_port(),
+    );
+
+    let mut core = Core::with_dns_resolver(config, Arc::new(resolver)).unwrap();
+    core.start().await.unwrap();
+    let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
+
+    let mut client = TcpStream::connect(socks_addr).await.unwrap();
+    socks5_connect_domain(&mut client, "ip-route.example.test", echo_addr.port()).await;
+
+    client.write_all(b"hello ip if non match").await.unwrap();
+    let mut echoed = vec![0; "hello ip if non match".len()];
+    client.read_exact(&mut echoed).await.unwrap();
+
+    assert_eq!(echoed, b"hello ip if non match");
     drop(client);
     core.stop().await.unwrap();
 
@@ -1986,6 +2690,42 @@ async fn run_http_to_vless_echo_scenario() {
         .await
         .unwrap()
         .unwrap();
+    timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+async fn run_http_to_ip_if_non_match_routed_freedom_echo_scenario() {
+    let (echo_addr, echo_handle) = spawn_echo_server().await;
+    let resolver = StaticDnsResolver {
+        domain: "http-ip-route.example.test",
+        addr: echo_addr,
+    };
+    let config = runtime_config_with_ip_if_non_match_routed_freedom_outbound(
+        InboundProtocol::Http,
+        "http-in",
+        allocate_unused_loopback_port(),
+    );
+
+    let mut core = Core::with_dns_resolver(config, Arc::new(resolver)).unwrap();
+    core.start().await.unwrap();
+    let http_addr = core.inbound_addr(Some("http-in")).unwrap();
+
+    let mut client = TcpStream::connect(http_addr).await.unwrap();
+    http_connect_domain(&mut client, "http-ip-route.example.test", echo_addr.port()).await;
+
+    client
+        .write_all(b"hello http ip if non match")
+        .await
+        .unwrap();
+    let mut echoed = vec![0; "hello http ip if non match".len()];
+    client.read_exact(&mut echoed).await.unwrap();
+
+    assert_eq!(echoed, b"hello http ip if non match");
+    drop(client);
+    core.stop().await.unwrap();
+
     timeout(Duration::from_secs(1), echo_handle)
         .await
         .unwrap()
@@ -2877,8 +3617,161 @@ async fn socks5_udp_associate(client: &mut TcpStream) -> SocketAddr {
     ))
 }
 
+fn quic_initial_packet_with_sni(host: &str) -> Vec<u8> {
+    const INITIAL_SALT: [u8; 20] = [
+        0x38, 0x76, 0x2c, 0xf7, 0xf5, 0x59, 0x34, 0xb3, 0x4d, 0x17, 0x9a, 0xe6, 0xa4, 0xc8, 0x0c,
+        0xad, 0xcc, 0xbb, 0x7f, 0x0a,
+    ];
+
+    let dcid = [0x83, 0x94, 0xc8, 0xf0, 0x3e, 0x51, 0x57, 0x08];
+    let scid = [0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb];
+    let packet_number = 0u64;
+    let packet_number_len = 1usize;
+
+    let handshake = tls_client_hello_handshake_with_sni(host);
+    let mut plaintext = Vec::new();
+    plaintext.push(0x06);
+    encode_quic_varint(0, &mut plaintext);
+    encode_quic_varint(handshake.len() as u64, &mut plaintext);
+    plaintext.extend_from_slice(&handshake);
+
+    let initial_secret = {
+        let hk = Hkdf::<Sha256>::new(Some(&INITIAL_SALT), &dcid);
+        let mut secret = [0u8; 32];
+        hk.expand(&hkdf_label(32, b"client in"), &mut secret)
+            .expect("initial secret label is valid");
+        secret
+    };
+    let hk = Hkdf::<Sha256>::from_prk(&initial_secret).expect("initial secret is valid");
+    let mut key = [0u8; 16];
+    hk.expand(&hkdf_label(16, b"quic key"), &mut key)
+        .expect("key label is valid");
+    let mut iv = [0u8; 12];
+    hk.expand(&hkdf_label(12, b"quic iv"), &mut iv)
+        .expect("iv label is valid");
+    let mut hp = [0u8; 16];
+    hk.expand(&hkdf_label(16, b"quic hp"), &mut hp)
+        .expect("hp label is valid");
+
+    let mut header = Vec::new();
+    header.push(0xc0);
+    header.extend_from_slice(&1u32.to_be_bytes());
+    header.push(dcid.len() as u8);
+    header.extend_from_slice(&dcid);
+    header.push(scid.len() as u8);
+    header.extend_from_slice(&scid);
+    encode_quic_varint(0, &mut header);
+    encode_quic_varint(
+        packet_number_len as u64 + plaintext.len() as u64 + 16,
+        &mut header,
+    );
+    let packet_number_offset = header.len();
+    header.push(packet_number as u8);
+
+    let mut nonce = iv;
+    for (index, byte) in packet_number.to_be_bytes().iter().enumerate() {
+        nonce[4 + index] ^= byte;
+    }
+    let cipher = Aes128Gcm::new_from_slice(&key).expect("key length is valid");
+    let ciphertext = cipher
+        .encrypt(
+            Nonce::from_slice(&nonce),
+            AeadPayload {
+                msg: &plaintext,
+                aad: &header,
+            },
+        )
+        .expect("fixture encryption should succeed");
+
+    let mut packet = header;
+    packet.extend_from_slice(&ciphertext);
+
+    let sample_offset = packet_number_offset + 4;
+    let mask = {
+        let cipher = Aes128::new_from_slice(&hp).expect("hp key length is valid");
+        let mut block = aes::cipher::Block::<Aes128>::clone_from_slice(
+            &packet[sample_offset..sample_offset + 16],
+        );
+        cipher.encrypt_block(&mut block);
+        block
+    };
+    packet[0] ^= mask[0] & 0x0f;
+    for index in 0..packet_number_len {
+        packet[packet_number_offset + index] ^= mask[index + 1];
+    }
+    packet
+}
+
+fn tls_client_hello_handshake_with_sni(host: &str) -> Vec<u8> {
+    let mut sni_entry = Vec::new();
+    sni_entry.push(0);
+    sni_entry.extend_from_slice(&(host.len() as u16).to_be_bytes());
+    sni_entry.extend_from_slice(host.as_bytes());
+
+    let mut sni_extension = Vec::new();
+    sni_extension.extend_from_slice(&((sni_entry.len()) as u16).to_be_bytes());
+    sni_extension.extend_from_slice(&sni_entry);
+
+    let mut extensions = Vec::new();
+    extensions.extend_from_slice(&0u16.to_be_bytes());
+    extensions.extend_from_slice(&(sni_extension.len() as u16).to_be_bytes());
+    extensions.extend_from_slice(&sni_extension);
+
+    let mut body = Vec::new();
+    body.extend_from_slice(&[0x03, 0x03]);
+    body.extend_from_slice(&[0; 32]);
+    body.push(0);
+    body.extend_from_slice(&2u16.to_be_bytes());
+    body.extend_from_slice(&[0x13, 0x01]);
+    body.push(1);
+    body.push(0);
+    body.extend_from_slice(&(extensions.len() as u16).to_be_bytes());
+    body.extend_from_slice(&extensions);
+
+    let mut handshake = Vec::new();
+    handshake.push(1);
+    handshake.extend_from_slice(&[
+        ((body.len() >> 16) & 0xff) as u8,
+        ((body.len() >> 8) & 0xff) as u8,
+        (body.len() & 0xff) as u8,
+    ]);
+    handshake.extend_from_slice(&body);
+    handshake
+}
+
+fn encode_quic_varint(value: u64, output: &mut Vec<u8>) {
+    if value < 64 {
+        output.push(value as u8);
+    } else if value < 16_384 {
+        let encoded = (value as u16) | 0x4000;
+        output.extend_from_slice(&encoded.to_be_bytes());
+    } else {
+        panic!("test varint value is too large: {value}");
+    }
+}
+
+fn hkdf_label(length: u16, label: &[u8]) -> Vec<u8> {
+    let full_label_len = b"tls13 ".len() + label.len();
+    let mut output = Vec::with_capacity(2 + 1 + full_label_len + 1);
+    output.extend_from_slice(&length.to_be_bytes());
+    output.push(full_label_len as u8);
+    output.extend_from_slice(b"tls13 ");
+    output.extend_from_slice(label);
+    output.push(0);
+    output
+}
+
 async fn http_connect(client: &mut TcpStream, target: SocketAddr) {
     let authority = target.to_string();
+    http_connect_authority(client, &authority).await;
+}
+
+async fn http_connect_domain(client: &mut TcpStream, domain: &str, port: u16) {
+    let authority = format!("{domain}:{port}");
+    http_connect_authority(client, &authority).await;
+}
+
+async fn http_connect_authority(client: &mut TcpStream, authority: &str) {
     let request = format!("CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\n\r\n");
     client.write_all(request.as_bytes()).await.unwrap();
 

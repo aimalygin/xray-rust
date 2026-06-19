@@ -14,7 +14,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::UdpSocket;
 use tokio::sync::{mpsc, watch};
 use tokio::time::{sleep, Duration};
-use xray_config::{CoreConfig, DnsFakeIpConfig};
+use xray_config::{CoreConfig, DnsFakeIpConfig, InboundSniffingConfig};
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::{protect_udp_socket, DnsResolver, TransportDialer};
 use xray_tun::{
@@ -25,9 +25,10 @@ use xray_tun::{
 
 use crate::outbound::{
     open_tcp_stream_with_resolver_and_dialer,
-    open_vless_udp_stream_with_resolver_dialer_and_options, select_tcp_outbound_for_session,
-    select_tcp_outbound_for_session_with_tag, select_udp_outbound_for_session, UdpOutbound,
-    VlessTcpOutbound, VlessUdpFraming, VlessUdpOpenOptions,
+    open_vless_udp_stream_with_resolver_dialer_and_options,
+    select_tcp_outbound_for_session_with_tag_and_resolver,
+    select_udp_outbound_for_session_with_resolver, UdpOutbound, VlessTcpOutbound, VlessUdpFraming,
+    VlessUdpOpenOptions,
 };
 use crate::{TunRuntimeOptions, TunRuntimeProfile};
 use xray_proxy::vless::{
@@ -772,6 +773,7 @@ impl FlowBudgetState {
 pub(crate) async fn serve_tun_endpoint(
     tun: Arc<TunEndpoint>,
     inbound_tag: Option<String>,
+    sniffing: Option<InboundSniffingConfig>,
     config: Arc<CoreConfig>,
     dns_resolver: Arc<dyn DnsResolver>,
     transport_dialer: Arc<TransportDialer>,
@@ -800,6 +802,7 @@ pub(crate) async fn serve_tun_endpoint(
         .map(|mapper| Arc::new(Mutex::new(mapper)));
     let runtime_context = TunRuntimeContext {
         inbound_tag,
+        sniffing,
         config,
         dns_resolver,
         transport_dialer,
@@ -955,14 +958,18 @@ async fn process_tun_packet(
     if let Some(reply) = icmp_echo_reply(&packet) {
         return !matches!(tun.push_outbound(reply).await, Err(TunError::QueueClosed));
     }
-    if let Some(reply) = reject_vision_udp443_packet(tun, &packet, context) {
-        return !matches!(tun.push_outbound(reply).await, Err(TunError::QueueClosed));
-    }
-    if let Some(packet) = parse_udp_packet(&packet) {
-        if let Some(reply) = context.fake_dns_reply_packet(&packet) {
+    if let Some(udp_packet) = parse_udp_packet(&packet) {
+        if let Some(reply) = context.fake_dns_reply_packet(&udp_packet) {
             return !matches!(tun.push_outbound(reply).await, Err(TunError::QueueClosed));
         }
-        handle_udp_packet(packet, udp_flows, flow_budget_state, context, shutdown);
+        handle_udp_packet(
+            udp_packet,
+            packet,
+            udp_flows,
+            flow_budget_state,
+            context,
+            shutdown,
+        );
         return true;
     }
     if let Some(endpoint) = tcp_syn_destination(&packet) {
@@ -975,6 +982,7 @@ async fn process_tun_packet(
 #[derive(Clone)]
 struct TunRuntimeContext {
     inbound_tag: Option<String>,
+    sniffing: Option<InboundSniffingConfig>,
     config: Arc<CoreConfig>,
     dns_resolver: Arc<dyn DnsResolver>,
     transport_dialer: Arc<TransportDialer>,
@@ -1518,18 +1526,15 @@ async fn bridge_tcp_flow(
     let collect_tcp_timings = context.tun_runtime_options.collect_tcp_timings;
     let tcp_timing_start = collect_tcp_timings.then(StdInstant::now);
     let is_tcp443 = target.port == 443;
-    let outbound_result = if collect_tcp_timings {
-        select_tcp_outbound_for_session_with_tag(
-            &context.config,
-            context.inbound_tag.as_deref(),
-            &target,
-            true,
-        )
-        .map(|selection| (selection.outbound, selection.tag))
-    } else {
-        select_tcp_outbound_for_session(&context.config, context.inbound_tag.as_deref(), &target)
-            .map(|outbound| (outbound, None))
-    };
+    let outbound_result = select_tcp_outbound_for_session_with_tag_and_resolver(
+        &context.config,
+        context.inbound_tag.as_deref(),
+        &target,
+        collect_tcp_timings,
+        context.dns_resolver.as_ref(),
+    )
+    .await
+    .map(|selection| (selection.outbound, selection.tag));
     let (outbound, outbound_tag) = match outbound_result {
         Ok(selection) => selection,
         Err(error) => {
@@ -2141,6 +2146,7 @@ where
 
 fn handle_udp_packet(
     packet: UdpTunPacket,
+    original_packet: Bytes,
     flows: &mut HashMap<UdpFlowKey, UdpFlow>,
     flow_budget_state: &mut FlowBudgetState,
     context: &TunRuntimeContext,
@@ -2170,6 +2176,7 @@ fn handle_udp_packet(
             tokio::spawn(bridge_udp_flow(
                 key,
                 target,
+                original_packet,
                 context.clone(),
                 from_stack,
                 shutdown,
@@ -2190,16 +2197,30 @@ fn handle_udp_packet(
 async fn bridge_udp_flow(
     key: UdpFlowKey,
     target: Target,
+    first_packet: Bytes,
     context: TunRuntimeContext,
-    from_stack: mpsc::Receiver<Bytes>,
-    shutdown: watch::Receiver<bool>,
+    mut from_stack: mpsc::Receiver<Bytes>,
+    mut shutdown: watch::Receiver<bool>,
     udp_timing_start: Option<StdInstant>,
 ) {
-    let outbound = match select_udp_outbound_for_session(
+    let Some(first_payload) = read_first_tun_udp_payload(&mut from_stack, &mut shutdown).await
+    else {
+        let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
+        return;
+    };
+    let sniffed_target = sniff_tun_udp_target(&context, &target, &first_payload);
+    #[cfg(debug_assertions)]
+    let sniffed_protocol = sniffed_target.sniffed_protocol;
+    let route_target = sniffed_target.route_target;
+    let dial_target = sniffed_target.dial_target;
+    let outbound = match select_udp_outbound_for_session_with_resolver(
         &context.config,
         context.inbound_tag.as_deref(),
-        &target,
-    ) {
+        &route_target,
+        context.dns_resolver.as_ref(),
+    )
+    .await
+    {
         Ok(outbound) => outbound,
         Err(_) => {
             context.tun.record_udp_open_error();
@@ -2208,24 +2229,120 @@ async fn bridge_udp_flow(
         }
     };
 
+    #[cfg(debug_assertions)]
+    crate::debug_log::log_route_decision(crate::debug_log::RouteDecisionLog {
+        inbound_tag: context.inbound_tag.as_deref(),
+        network: target.network,
+        original_target: &target,
+        sniffed_protocol,
+        route_target: &route_target,
+        dial_target: &dial_target,
+        selected_outbound: crate::debug_log::udp_outbound_label(&outbound),
+    });
+
+    if dial_target.port == 443 {
+        if let UdpOutbound::Vless(outbound) = &outbound {
+            if outbound.blocks_udp443() {
+                if let Some(reply) = icmp_port_unreachable_reply(&first_packet) {
+                    let _ = context.tun.push_outbound(reply).await;
+                }
+                context.tun.record_udp_vision_udp443_rejection();
+                let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
+                return;
+            }
+        }
+    }
+
     match outbound {
         UdpOutbound::Freedom => {
-            bridge_udp_freedom_flow(key, target, context, from_stack, shutdown, udp_timing_start)
-                .await;
+            bridge_udp_freedom_flow(
+                key,
+                dial_target,
+                context,
+                from_stack,
+                shutdown,
+                udp_timing_start,
+                first_payload,
+            )
+            .await;
         }
         UdpOutbound::Vless(outbound) => {
             bridge_udp_vless_flow(
                 key,
-                target,
+                dial_target,
                 outbound,
                 context,
                 from_stack,
                 shutdown,
                 udp_timing_start,
+                first_payload,
             )
             .await;
         }
     }
+}
+
+async fn read_first_tun_udp_payload(
+    from_stack: &mut mpsc::Receiver<Bytes>,
+    shutdown: &mut watch::Receiver<bool>,
+) -> Option<Bytes> {
+    tokio::select! {
+        changed = shutdown.changed() => {
+            if changed.is_err() || *shutdown.borrow() {
+                None
+            } else {
+                from_stack.recv().await
+            }
+        }
+        payload = from_stack.recv() => payload,
+    }
+}
+
+struct TunUdpSniffedTarget {
+    route_target: Target,
+    dial_target: Target,
+    #[cfg(debug_assertions)]
+    sniffed_protocol: Option<xray_config::SniffingDestination>,
+}
+
+impl TunUdpSniffedTarget {
+    fn original(target: &Target) -> Self {
+        Self {
+            route_target: target.clone(),
+            dial_target: target.clone(),
+            #[cfg(debug_assertions)]
+            sniffed_protocol: None,
+        }
+    }
+
+    fn sniffed(sniffed: crate::sniffing::SniffedTarget) -> Self {
+        #[cfg(debug_assertions)]
+        let sniffed_protocol = Some(sniffed.protocol);
+        Self {
+            route_target: sniffed.route_target,
+            dial_target: sniffed.dial_target,
+            #[cfg(debug_assertions)]
+            sniffed_protocol,
+        }
+    }
+}
+
+fn sniff_tun_udp_target(
+    context: &TunRuntimeContext,
+    target: &Target,
+    first_payload: &[u8],
+) -> TunUdpSniffedTarget {
+    let Some(config) = context.sniffing.as_ref() else {
+        return TunUdpSniffedTarget::original(target);
+    };
+    if !crate::sniffing::should_sniff_udp(Some(config)) {
+        return TunUdpSniffedTarget::original(target);
+    }
+    let Some(sniffed) = crate::sniffing::sniff_udp_initial_payload(config, target, first_payload)
+    else {
+        return TunUdpSniffedTarget::original(target);
+    };
+    TunUdpSniffedTarget::sniffed(sniffed)
 }
 
 async fn bridge_udp_freedom_flow(
@@ -2235,6 +2352,7 @@ async fn bridge_udp_freedom_flow(
     from_stack: mpsc::Receiver<Bytes>,
     shutdown: watch::Receiver<bool>,
     udp_timing_start: Option<StdInstant>,
+    first_payload: Bytes,
 ) {
     let bind_addr = match key.target.addr {
         IpAddr::V4(_) => SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
@@ -2274,6 +2392,7 @@ async fn bridge_udp_freedom_flow(
             from_stack,
             shutdown,
             &mut timing,
+            first_payload,
         )
         .await;
     } else {
@@ -2287,6 +2406,7 @@ async fn bridge_udp_freedom_flow(
             from_stack,
             shutdown,
             &mut timing,
+            first_payload,
         )
         .await;
     }
@@ -2302,12 +2422,21 @@ async fn bridge_udp_freedom_flow_loop<T>(
     mut from_stack: mpsc::Receiver<Bytes>,
     mut shutdown: watch::Receiver<bool>,
     timing: &mut T,
+    first_payload: Bytes,
 ) where
     T: UdpFirstResponseTiming,
 {
     let client = key.client.into_endpoint();
     let response_source = key.target.into_endpoint();
     let mut read_buffer = vec![0; BRIDGE_READ_BUFFER_SIZE];
+    let first_payload_len = first_payload.len();
+    if socket.send_to(&first_payload, target_addr).await.is_err() {
+        context.tun.record_udp_remote_write_error();
+        let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
+        return;
+    }
+    context.tun.record_udp_remote_written(first_payload_len);
+    timing.record_written(first_payload_len);
 
     loop {
         tokio::select! {
@@ -2375,11 +2504,12 @@ async fn bridge_udp_vless_flow(
     from_stack: mpsc::Receiver<Bytes>,
     shutdown: watch::Receiver<bool>,
     udp_timing_start: Option<StdInstant>,
+    first_payload: Bytes,
 ) {
     // Regular xtls-rprx-vision cannot carry UDP/443 (QUIC); reject it
     // unconditionally as upstream xray-core does. xtls-rprx-vision-udp443 still
-    // allows it. (The packet layer also ICMP-rejects UDP/443 to vision for fast
-    // fallback; this is the backstop for any packet that reaches the bridge.)
+    // allows it. This is the backstop for any packet that reaches VLESS opening
+    // without the flow-level ICMP rejection running first.
     let options = VlessUdpOpenOptions::default();
     let (stream, framing) = match open_vless_udp_stream_with_resolver_dialer_and_options(
         &outbound,
@@ -2415,6 +2545,7 @@ async fn bridge_udp_vless_flow(
             &mut remote_reader,
             &mut remote_writer,
             &mut timing,
+            first_payload,
         )
         .await;
     } else {
@@ -2429,6 +2560,7 @@ async fn bridge_udp_vless_flow(
             &mut remote_reader,
             &mut remote_writer,
             &mut timing,
+            first_payload,
         )
         .await;
     }
@@ -2445,6 +2577,7 @@ async fn bridge_udp_vless_flow_loop<R, W, T>(
     remote_reader: &mut R,
     remote_writer: &mut W,
     timing: &mut T,
+    first_payload: Bytes,
 ) where
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
@@ -2454,6 +2587,30 @@ async fn bridge_udp_vless_flow_loop<R, W, T>(
     let client = key.client.into_endpoint();
     let global_id = udp_flow_global_id(key);
     let mut sent_xudp_new = false;
+    let first_payload_len = first_payload.len();
+    let frame = match framing {
+        VlessUdpFraming::LengthPrefixed => encode_udp_packet(&first_payload),
+        VlessUdpFraming::Xudp => {
+            sent_xudp_new = true;
+            encode_xudp_new_packet(&target, &first_payload, global_id)
+        }
+    };
+    let Ok(frame) = frame else {
+        let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
+        return;
+    };
+    if remote_writer.write_all(&frame).await.is_err() {
+        context.tun.record_udp_remote_write_error();
+        let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
+        return;
+    }
+    if remote_writer.flush().await.is_err() {
+        context.tun.record_udp_remote_write_error();
+        let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
+        return;
+    }
+    context.tun.record_udp_remote_written(first_payload_len);
+    timing.record_written(first_payload_len);
 
     loop {
         tokio::select! {
@@ -2547,120 +2704,10 @@ fn ensure_tcp_listener(
     }
 }
 
-/// Replies with ICMP port-unreachable for a UDP/443 datagram that routes to a
-/// regular `xtls-rprx-vision` outbound, which cannot carry QUIC. This makes
-/// QUIC-preferring apps (YouTube, Chrome) fall back to TCP immediately instead
-/// of stalling on a half-open QUIC handshake. Direct/freedom and
-/// `xtls-rprx-vision-udp443` outbounds are left untouched, so their UDP/443
-/// (including QUIC) keeps flowing.
-fn reject_vision_udp443_packet(
-    tun: &TunEndpoint,
-    packet: &[u8],
-    context: &TunRuntimeContext,
-) -> Option<Bytes> {
-    let view = udp_packet_view_for_destination(packet, 443)?;
-    let target = context.target_from_endpoint(view.target, RoutingNetwork::Udp)?;
-    let UdpOutbound::Vless(outbound) =
-        select_udp_outbound_for_session(&context.config, context.inbound_tag.as_deref(), &target)
-            .ok()?
-    else {
-        return None;
-    };
-    if !outbound.blocks_udp443() {
-        return None;
-    }
-
-    let reply = icmp_port_unreachable_reply(packet)?;
-    tun.record_udp_vision_udp443_rejection();
-    Some(reply)
-}
-
-#[derive(Debug, Clone, Copy)]
-struct UdpPacketView {
-    target: IpEndpoint,
-}
-
-fn udp_packet_view_for_destination(packet: &[u8], destination_port: u16) -> Option<UdpPacketView> {
-    match packet.first()? >> 4 {
-        4 => ipv4_udp_packet_view_for_destination(packet, destination_port),
-        6 => ipv6_udp_packet_view_for_destination(packet, destination_port),
-        _ => None,
-    }
-}
-
-fn ipv4_udp_packet_view_for_destination(
-    packet: &[u8],
-    destination_port: u16,
-) -> Option<UdpPacketView> {
-    if packet.len() < 28 {
-        return None;
-    }
-
-    let header_len = usize::from(packet[0] & 0x0f) * 4;
-    if header_len < 20 || packet.len() < header_len + 8 || packet[9] != UDP_PROTOCOL {
-        return None;
-    }
-
-    let fragment = u16::from_be_bytes([packet[6], packet[7]]);
-    if fragment & 0x3fff != 0 {
-        return None;
-    }
-
-    let total_len = usize::from(u16::from_be_bytes([packet[2], packet[3]]));
-    if total_len < header_len + 8 || packet.len() < total_len {
-        return None;
-    }
-
-    let udp = &packet[header_len..total_len];
-    let udp_len = usize::from(u16::from_be_bytes([udp[4], udp[5]]));
-    if udp_len < 8 || udp.len() < udp_len {
-        return None;
-    }
-    if u16::from_be_bytes([udp[2], udp[3]]) != destination_port {
-        return None;
-    }
-
-    let destination = Ipv4Addr::new(packet[16], packet[17], packet[18], packet[19]);
-    Some(UdpPacketView {
-        target: IpEndpoint::new(IpAddress::Ipv4(destination), destination_port),
-    })
-}
-
 #[cfg(test)]
 fn ipv4_udp_payload_for_destination(packet: &[u8], destination_port: u16) -> Option<Bytes> {
     let parsed = parse_ipv4_udp_packet(packet)?;
     (parsed.target.port == destination_port).then_some(parsed.payload)
-}
-
-fn ipv6_udp_packet_view_for_destination(
-    packet: &[u8],
-    destination_port: u16,
-) -> Option<UdpPacketView> {
-    if packet.len() < 48 || packet[6] != UDP_PROTOCOL {
-        return None;
-    }
-
-    let payload_len = usize::from(u16::from_be_bytes([packet[4], packet[5]]));
-    if payload_len < 8 || packet.len() < 40 + payload_len {
-        return None;
-    }
-
-    let udp = &packet[40..40 + payload_len];
-    let udp_len = usize::from(u16::from_be_bytes([udp[4], udp[5]]));
-    if udp_len < 8 || udp.len() < udp_len {
-        return None;
-    }
-    if u16::from_be_bytes([udp[2], udp[3]]) != destination_port {
-        return None;
-    }
-
-    let destination = <[u8; 16]>::try_from(&packet[24..40]).ok()?;
-    Some(UdpPacketView {
-        target: IpEndpoint::new(
-            IpAddress::Ipv6(Ipv6Addr::from(destination)),
-            destination_port,
-        ),
-    })
 }
 
 fn parse_udp_packet(packet: &[u8]) -> Option<UdpTunPacket> {

@@ -570,6 +570,8 @@ fn rust_core_config_with_security(
             protocol: InboundProtocol::Socks,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            sniffing: None,
+            user_level: None,
         }],
         outbounds: vec![OutboundConfig {
             tag: Some("proxy".to_owned()),
@@ -584,12 +586,14 @@ fn rust_core_config_with_security(
                     id: TEST_UUID.parse().expect("static uuid"),
                     encryption: "none".to_owned(),
                     flow: flow.map(ToOwned::to_owned),
+                    level: 0,
                 }],
             }),
         }],
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
         dns: Default::default(),
+        policy: Default::default(),
     }
 }
 

@@ -1,0 +1,143 @@
+{
+  "routing": {
+    "rules": [
+      {
+        "type": "field",
+        "outboundTag": "direct",
+        "ruleTag": "rule_exclusions_domain",
+        "domain": [
+          "geosite:category-ru"
+        ]
+      },
+      {
+        "type": "field",
+        "outboundTag": "direct",
+        "ruleTag": "rule_exclusions_ip",
+        "ip": [
+          "geoip:ru"
+        ]
+      },
+      {
+        "type": "field",
+        "outboundTag": "outbound_49783",
+        "ruleTag": "rule_49783",
+        "inboundTag": [
+          "inbound_49783"
+        ]
+      },
+      {
+        "type": "field",
+        "outboundTag": "api",
+        "ruleTag": "rule_api",
+        "inboundTag": [
+          "api"
+        ]
+      }
+    ],
+    "domainStrategy": "IPIfNonMatch"
+  },
+  "inbounds": [
+    {
+      "settings": {
+        "udp": true
+      },
+      "protocol": "socks",
+      "tag": "inbound_49783",
+      "sniffing": {
+        "excludedDomains": [],
+        "enabled": true,
+        "routeOnly": true,
+        "metadataOnly": false,
+        "destOverride": [
+          "http",
+          "tls",
+          "quic"
+        ]
+      },
+      "listen": "[::1]",
+      "port": 49783
+    }
+  ],
+  "policy": {
+    "levels": {
+      "0": {
+        "statsUserUplink": false,
+        "uplinkOnly": 1,
+        "downlinkOnly": 2,
+        "bufferSize": 8,
+        "handshake": 10,
+        "connIdle": 300,
+        "statsUserDownlink": false
+      }
+    },
+    "system": {
+      "statsOutboundDownlink": false,
+      "statsInboundUplink": false,
+      "statsOutboundUplink": false,
+      "statsInboundDownlink": false
+    }
+  },
+  "log": {
+    "dnsLog": false,
+    "loglevel": "none"
+  },
+  "outbounds": [
+    {
+      "settings": {
+        "vnext": [
+          {
+            "users": [
+              {
+                "level": 8,
+                "id": "bcaa23ff-f48e-41c1-939c-ab2a03b2fbc6",
+                "security": "auto",
+                "flow": "xtls-rprx-vision",
+                "encryption": "none"
+              }
+            ],
+            "port": 63821,
+            "address": "37.203.35.22"
+          }
+        ]
+      },
+      "protocol": "vless",
+      "mux": {
+        "enabled": false,
+        "concurrency": 8
+      },
+      "streamSettings": {
+        "realitySettings": {
+          "spiderX": "",
+          "serverName": "www.tiktok.com",
+          "show": false,
+          "shortId": "b5e4681f3e45bb0b",
+          "fingerprint": "firefox",
+          "publicKey": "Ox_jQR_q0zt5x2DlXWkJFbyp8c8eJDbusJbLZzERVEI",
+          "allowInsecure": false
+        },
+        "tcpSettings": {
+          "header": {
+            "type": "none"
+          }
+        },
+        "network": "tcp",
+        "security": "reality"
+      },
+      "tag": "outbound_49783"
+    },
+    {
+      "protocol": "freedom",
+      "tag": "direct"
+    }
+  ],
+  "dns": {
+    "servers": [
+      "1.1.1.1",
+      "8.8.8.8",
+      "8.8.4.4"
+    ],
+    "hosts": {
+      "domain:googleapis.cn": "googleapis.com"
+    }
+  }
+}

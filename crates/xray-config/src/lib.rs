@@ -5,10 +5,12 @@ mod parser;
 
 pub use diagnostic::{Diagnostic, DiagnosticSeverity};
 pub use model::{
-    ConfigModelError, CoreConfig, DnsConfig, DnsFakeIpConfig, DomainMatcher, InboundConfig,
-    InboundProtocol, IpCidr, IpMatcher, Network, OutboundConfig, OutboundProtocol,
-    OutboundSettings, RealitySettings, RealityShortId, RegexMatcher, RoutingConfig, RoutingRule,
-    StreamSecurity, StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
+    ConfigModelError, CoreConfig, DnsConfig, DnsFakeIpConfig, DnsHostMapping, DnsHostTarget,
+    DnsServerConfig, DomainMatcher, InboundConfig, InboundProtocol, InboundSniffingConfig, IpCidr,
+    IpMatcher, Network, OutboundConfig, OutboundProtocol, OutboundSettings, PolicyConfig,
+    PolicyLevelConfig, PolicySystemConfig, RealitySettings, RealityShortId, RegexMatcher,
+    RoutingConfig, RoutingDomainStrategy, RoutingRule, SniffingDestination, StreamSecurity,
+    StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
 };
 pub use parser::{
     parse_xray_json, parse_xray_json_with_geodata_dir, parse_xray_json_with_geodata_dirs,

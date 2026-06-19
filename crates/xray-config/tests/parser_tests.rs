@@ -1,14 +1,16 @@
 use std::{
     fs,
-    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use prost::Message;
 use xray_config::{
-    parse_xray_json, parse_xray_json_with_geodata_dirs, DiagnosticSeverity, DnsFakeIpConfig,
-    InboundProtocol, IpCidr, OutboundSettings, RealityShortId, StreamSecurity, TargetAddr,
+    parse_xray_json, parse_xray_json_with_geodata_dir, parse_xray_json_with_geodata_dirs,
+    DiagnosticSeverity, DnsFakeIpConfig, DnsHostTarget, DnsServerConfig, InboundProtocol, IpCidr,
+    OutboundSettings, RealityShortId, RoutingDomainStrategy, SniffingDestination, StreamSecurity,
+    TargetAddr,
 };
 
 #[test]
@@ -109,6 +111,40 @@ fn parses_mobile_vless_reality_vision_split_routing_fixture() {
         .matches_ip(Some(&IpAddr::V6("fd12:3456:789a::1".parse().unwrap()))));
     assert!(parsed.config.routing.rules[1].matches_domain(Some("captive.apple.com")));
     assert!(parsed.config.routing.rules[1].matches_domain(Some("printer.lan.example")));
+}
+
+#[test]
+fn parses_xray_core_reality_split_routing_fixture() {
+    // Xray-core oracle:
+    // XRAY_LOCATION_ASSET=/Users/antonmalygin/xray-rust/platform/apple/XrayClient/dat \
+    //   go run ./main run -test -format json < /Users/antonmalygin/xray-rust/tests/fixtures/configs/xray_core_reality_split_routing_full.json
+    // Expected: Configuration OK.
+    let raw =
+        include_str!("../../../tests/fixtures/configs/xray_core_reality_split_routing_full.json");
+    let geodata_dir =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../platform/apple/XrayClient/dat");
+
+    let parsed = parse_xray_json_with_geodata_dir(raw, geodata_dir)
+        .expect("fixture accepted by xray-core should parse");
+
+    assert_eq!(
+        parsed.config.routing.domain_strategy,
+        RoutingDomainStrategy::IpIfNonMatch
+    );
+    assert!(
+        parsed.config.inbounds[0]
+            .sniffing
+            .as_ref()
+            .expect("enabled sniffing should be modeled")
+            .route_only
+    );
+    assert_eq!(parsed.config.dns.servers.len(), 3);
+    assert!(parsed.config.policy.levels.contains_key(&0));
+
+    let OutboundSettings::Vless(vless) = &parsed.config.outbounds[0].settings else {
+        panic!("expected vless outbound");
+    };
+    assert_eq!(vless.users[0].level, 8);
 }
 
 #[test]
@@ -229,8 +265,20 @@ fn rejects_freedom_redirect_with_path() {
 }
 
 #[test]
-fn rejects_non_as_is_routing_domain_strategy_with_path() {
+fn parses_ip_if_non_match_routing_domain_strategy() {
     let raw = raw_with_routing(r#""domainStrategy": "IPIfNonMatch""#);
+
+    let parsed = parse_xray_json(&raw).expect("config should parse");
+
+    assert_eq!(
+        parsed.config.routing.domain_strategy,
+        RoutingDomainStrategy::IpIfNonMatch
+    );
+}
+
+#[test]
+fn rejects_unknown_routing_domain_strategy_with_path() {
+    let raw = raw_with_routing(r#""domainStrategy": "IPOnDemand""#);
 
     assert_parse_error_path(&raw, "$.routing.domainStrategy");
 }
@@ -255,6 +303,37 @@ fn parses_field_routing_rule_with_inbound_tag() {
     assert!(parsed.config.routing.rules[0].domain_matchers.is_empty());
     assert!(parsed.config.routing.rules[0].ip_matchers.is_empty());
     assert_eq!(parsed.config.routing.rules[0].outbound_tag, "proxy");
+}
+
+#[test]
+fn parses_field_routing_rule_with_rule_tag() {
+    let raw = raw_with_routing(
+        r#""rules": [{
+          "type": "field",
+          "inboundTag": ["socks-in"],
+          "outboundTag": "proxy",
+          "ruleTag": "api-rule"
+        }]"#,
+    );
+
+    let parsed = parse_xray_json(&raw).expect("config should parse");
+
+    assert_eq!(parsed.config.routing.rules.len(), 1);
+}
+
+#[test]
+fn accepts_routing_rule_with_missing_outbound_tag_reference() {
+    let raw = raw_with_routing(
+        r#""rules": [{
+          "type": "field",
+          "inboundTag": ["api"],
+          "outboundTag": "api"
+        }]"#,
+    );
+
+    let parsed = parse_xray_json(&raw).expect("config should parse");
+
+    assert_eq!(parsed.config.routing.rules[0].outbound_tag, "api");
 }
 
 #[test]
@@ -585,10 +664,32 @@ fn rejects_non_empty_routing_balancers_with_path() {
 }
 
 #[test]
-fn rejects_enabled_inbound_sniffing_with_path() {
-    let raw = raw_with_inbound_extra(r#""sniffing": { "enabled": true }"#);
+fn parses_enabled_inbound_sniffing() {
+    let raw = raw_with_inbound_extra(
+        r#""sniffing": {
+          "enabled": true,
+          "destOverride": ["http", "tls", "quic"],
+          "metadataOnly": false,
+          "routeOnly": true,
+          "excludedDomains": []
+        }"#,
+    );
 
-    assert_parse_error_path(&raw, "$.inbounds[0].sniffing.enabled");
+    let parsed = parse_xray_json(&raw).expect("config should parse");
+    let sniffing = parsed.config.inbounds[0]
+        .sniffing
+        .as_ref()
+        .expect("enabled sniffing should be modeled");
+
+    assert_eq!(
+        sniffing.dest_override,
+        vec![
+            SniffingDestination::Http,
+            SniffingDestination::Tls,
+            SniffingDestination::Quic
+        ]
+    );
+    assert!(sniffing.route_only);
 }
 
 #[test]
@@ -610,6 +711,13 @@ fn rejects_enabled_mux_with_path() {
     let raw = raw_with_outbound_extra(r#""mux": { "enabled": true }"#);
 
     assert_parse_error_path(&raw, "$.outbounds[0].mux.enabled");
+}
+
+#[test]
+fn accepts_disabled_mux_with_concurrency() {
+    let raw = raw_with_outbound_extra(r#""mux": { "enabled": false, "concurrency": 8 }"#);
+
+    parse_xray_json(&raw).expect("config should parse");
 }
 
 #[test]
@@ -658,6 +766,87 @@ fn rejects_tcp_header_type_with_path() {
         &raw,
         "$.outbounds[0].streamSettings.tcpSettings.header.type",
     );
+}
+
+#[test]
+fn parses_dns_servers_and_hosts() {
+    let raw = r#"{
+        "dns": {
+          "servers": ["1.1.1.1", "dns.example"],
+          "hosts": {
+            "domain:googleapis.cn": "googleapis.com",
+            "full:one.one.one.one": "1.1.1.1"
+          }
+        },
+        "inbounds": [],
+        "outbounds": [
+            { "tag": "direct", "protocol": "freedom" }
+        ]
+    }"#;
+
+    let parsed = parse_xray_json(raw).expect("config should parse");
+
+    assert_eq!(
+        parsed.config.dns.servers[0],
+        DnsServerConfig::Ip(SocketAddr::from(([1, 1, 1, 1], 53)))
+    );
+    assert_eq!(
+        parsed.config.dns.servers[1],
+        DnsServerConfig::Domain {
+            domain: "dns.example".to_owned(),
+            port: 53,
+        }
+    );
+    assert!(parsed.config.dns.hosts[0]
+        .matcher
+        .matches("www.googleapis.cn"));
+    assert_eq!(
+        parsed.config.dns.hosts[0].target,
+        DnsHostTarget::Domain("googleapis.com".to_owned())
+    );
+    assert_eq!(
+        parsed.config.dns.hosts[1].target,
+        DnsHostTarget::Ip(IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)))
+    );
+}
+
+#[test]
+fn parses_policy_level_fields_as_optional_values() {
+    let raw = r#"{
+        "policy": {
+          "levels": {
+            "0": {
+              "handshake": 10,
+              "connIdle": 300,
+              "bufferSize": 8,
+              "statsUserUplink": true
+            },
+            "8": {
+              "statsUserDownlink": true
+            }
+          }
+        },
+        "inbounds": [],
+        "outbounds": [
+            { "tag": "direct", "protocol": "freedom" }
+        ]
+    }"#;
+
+    let parsed = parse_xray_json(raw).expect("config should parse");
+
+    let level0 = parsed.config.policy.levels.get(&0).expect("level 0");
+    assert_eq!(level0.handshake, Some(10));
+    assert_eq!(level0.conn_idle, Some(300));
+    assert_eq!(level0.uplink_only, None);
+    assert_eq!(level0.downlink_only, None);
+    assert_eq!(level0.buffer_size, Some(8));
+    assert!(level0.stats_user_uplink);
+
+    let level8 = parsed.config.policy.levels.get(&8).expect("level 8");
+    assert_eq!(level8.handshake, None);
+    assert_eq!(level8.conn_idle, None);
+    assert_eq!(level8.buffer_size, None);
+    assert!(level8.stats_user_downlink);
 }
 
 #[test]
@@ -781,6 +970,28 @@ fn accepts_missing_none_and_explicit_none_vless_user_encryption() {
         };
         assert_eq!(vless.users[0].encryption, "none");
     }
+}
+
+#[test]
+fn accepts_vless_user_security_auto_and_parses_level() {
+    let raw = vless_raw(
+        r#""users": [{
+          "id": "00010203-0405-0607-0809-0a0b0c0d0e0f",
+          "security": "auto",
+          "level": 8
+        }]"#,
+        "",
+        443,
+        valid_public_key(),
+        "02030405",
+    );
+
+    let parsed = parse_xray_json(&raw).expect("config should parse");
+    let OutboundSettings::Vless(vless) = &parsed.config.outbounds[0].settings else {
+        panic!("expected vless outbound");
+    };
+
+    assert_eq!(vless.users[0].level, 8);
 }
 
 #[test]
@@ -990,6 +1201,16 @@ fn normalizes_reality_fingerprint_case_like_xray_core() {
     };
 
     assert_eq!(reality.fingerprint, "firefox");
+}
+
+#[test]
+fn accepts_reality_allow_insecure_false() {
+    let raw = vless_raw_with_reality_settings(&format!(
+        r#""serverName": "server.example", "publicKey": "{}", "shortId": "02030405", "fingerprint": "chrome", "allowInsecure": false"#,
+        valid_public_key()
+    ));
+
+    parse_xray_json(&raw).expect("config should parse");
 }
 
 #[test]

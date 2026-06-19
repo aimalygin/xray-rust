@@ -4110,13 +4110,17 @@ fn route_probe_config(rules: usize, outbounds: usize) -> Result<CoreConfig, Benc
             protocol: InboundProtocol::Socks,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            sniffing: None,
+            user_level: None,
         }],
         outbounds,
         default_outbound_tag: Some(selected_tag),
         routing: RoutingConfig {
             rules: routing_rules,
+            ..Default::default()
         },
         dns: Default::default(),
+        policy: Default::default(),
     })
 }
 

@@ -40,6 +40,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
                 id: "00010203-0405-0607-0809-0a0b0c0d0e0f".parse().unwrap(),
                 encryption: "none".to_owned(),
                 flow: Some("xtls-rprx-vision".to_owned()),
+                level: 0,
             }],
         }),
     };
@@ -49,6 +50,8 @@ fn normalized_model_can_represent_vless_reality_vision() {
         protocol: InboundProtocol::Socks,
         listen: "127.0.0.1".to_owned(),
         port: 1080,
+        sniffing: None,
+        user_level: None,
     };
 
     let config = CoreConfig {
@@ -57,6 +60,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
         default_outbound_tag: Some("proxy".to_owned()),
         routing: RoutingConfig::default(),
         dns: Default::default(),
+        policy: Default::default(),
     };
 
     let expected = CoreConfig {
@@ -65,6 +69,8 @@ fn normalized_model_can_represent_vless_reality_vision() {
             protocol: InboundProtocol::Socks,
             listen: "127.0.0.1".to_owned(),
             port: 1080,
+            sniffing: None,
+            user_level: None,
         }],
         outbounds: vec![OutboundConfig {
             tag: Some("proxy".to_owned()),
@@ -86,12 +92,14 @@ fn normalized_model_can_represent_vless_reality_vision() {
                     id: "00010203-0405-0607-0809-0a0b0c0d0e0f".parse().unwrap(),
                     encryption: "none".to_owned(),
                     flow: Some("xtls-rprx-vision".to_owned()),
+                    level: 0,
                 }],
             }),
         }],
         default_outbound_tag: Some("proxy".to_owned()),
         routing: RoutingConfig::default(),
         dns: Default::default(),
+        policy: Default::default(),
     };
 
     assert_eq!(config, expected);
@@ -138,6 +146,7 @@ fn normalized_model_can_represent_inbound_tag_routing_rule() {
             ip_matchers: Vec::new(),
             outbound_tag: "direct".to_owned(),
         }],
+        ..Default::default()
     };
 
     assert!(routing.rules[0].matches_inbound(Some("socks-in")));
@@ -159,6 +168,7 @@ fn normalized_model_can_represent_domain_routing_rule() {
             ip_matchers: Vec::new(),
             outbound_tag: "proxy".to_owned(),
         }],
+        ..Default::default()
     };
 
     assert!(routing.rules[0].matches_domain(Some("api.example.com")));
@@ -182,6 +192,7 @@ fn normalized_model_can_represent_ip_routing_rule() {
             ],
             outbound_tag: "direct".to_owned(),
         }],
+        ..Default::default()
     };
 
     assert!(routing.rules[0].matches_ip(Some(&IpAddr::V4(Ipv4Addr::new(10, 42, 0, 1)))));
@@ -210,6 +221,7 @@ fn normalized_model_applies_inverse_ip_matchers_as_a_conjunction() {
             ],
             outbound_tag: "direct".to_owned(),
         }],
+        ..Default::default()
     };
 
     assert!(routing.rules[0].matches_ip(Some(&IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)))));

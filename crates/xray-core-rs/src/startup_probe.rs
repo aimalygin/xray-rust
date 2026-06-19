@@ -6,6 +6,7 @@ use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTarge
 use xray_transport::{DnsResolver, TlsClientConfig, TlsConnector, TransportDialer};
 
 use crate::outbound::{open_tcp_stream_with_resolver_and_dialer, select_tcp_outbound_direct};
+use crate::policy::effective_policy_for_level;
 use crate::CoreError;
 
 const MAX_HTTP_STATUS_LINE_LEN: usize = 1024;
@@ -85,6 +86,7 @@ async fn run_startup_probe_inner(
     tls_connector: Option<&TlsConnector>,
 ) -> Result<(), StartupProbeError> {
     let parsed = parse_probe_url(&options.url)?;
+    let policy = effective_policy_for_level(config, None);
     let outbound =
         select_tcp_outbound_direct(config, options.outbound_tag.as_deref()).map_err(|source| {
             StartupProbeError::Core {
@@ -97,13 +99,20 @@ async fn run_startup_probe_inner(
         parsed.port,
         RoutingNetwork::Tcp,
     );
-    let mut stream = open_tcp_stream_with_resolver_and_dialer(
-        &outbound,
-        &target,
-        dns_resolver,
-        transport_dialer,
+    let mut stream = timeout(
+        policy.handshake,
+        open_tcp_stream_with_resolver_and_dialer(
+            &outbound,
+            &target,
+            dns_resolver,
+            transport_dialer,
+        ),
     )
     .await
+    .map_err(|_| StartupProbeError::Timeout {
+        url: options.url.clone(),
+        timeout_ms: policy.handshake.as_millis(),
+    })?
     .map_err(|source| StartupProbeError::Core {
         url: options.url.clone(),
         source: Box::new(source),
@@ -121,19 +130,25 @@ async fn run_startup_probe_inner(
                 &system_tls
             }
         };
-        stream = tls_connector
-            .connect_stream(
+        stream = timeout(
+            policy.handshake,
+            tls_connector.connect_stream(
                 stream,
                 &TlsClientConfig {
                     server_name: parsed.host.clone(),
                     allow_insecure: false,
                 },
-            )
-            .await
-            .map_err(|source| StartupProbeError::Tls {
-                url: options.url.clone(),
-                source,
-            })?;
+            ),
+        )
+        .await
+        .map_err(|_| StartupProbeError::Timeout {
+            url: options.url.clone(),
+            timeout_ms: policy.handshake.as_millis(),
+        })?
+        .map_err(|source| StartupProbeError::Tls {
+            url: options.url.clone(),
+            source,
+        })?;
     }
 
     let host = host_header_value(&parsed);
@@ -141,16 +156,22 @@ async fn run_startup_probe_inner(
         "GET {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: xray-rust-startup-probe\r\nConnection: close\r\n\r\n",
         parsed.path_and_query, host
     );
-    stream
-        .write_all(request.as_bytes())
+    timeout(policy.handshake, stream.write_all(request.as_bytes()))
         .await
+        .map_err(|_| StartupProbeError::Timeout {
+            url: options.url.clone(),
+            timeout_ms: policy.handshake.as_millis(),
+        })?
         .map_err(|source| StartupProbeError::Io {
             url: options.url.clone(),
             source,
         })?;
-    stream
-        .flush()
+    timeout(policy.handshake, stream.flush())
         .await
+        .map_err(|_| StartupProbeError::Timeout {
+            url: options.url.clone(),
+            timeout_ms: policy.handshake.as_millis(),
+        })?
         .map_err(|source| StartupProbeError::Io {
             url: options.url.clone(),
             source,
@@ -540,6 +561,8 @@ mod https_tests {
                 protocol: InboundProtocol::Socks,
                 listen: "127.0.0.1".to_owned(),
                 port: 0,
+                sniffing: None,
+                user_level: None,
             }],
             outbounds: vec![OutboundConfig {
                 tag: Some("direct".to_owned()),
@@ -552,6 +575,7 @@ mod https_tests {
             default_outbound_tag: Some("direct".to_owned()),
             routing: RoutingConfig::default(),
             dns: Default::default(),
+            policy: Default::default(),
         }
     }
 

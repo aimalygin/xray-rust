@@ -1,4 +1,7 @@
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::{
+    collections::BTreeMap,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+};
 
 use regex::Regex;
 use uuid::Uuid;
@@ -20,16 +23,45 @@ pub struct CoreConfig {
     pub default_outbound_tag: Option<String>,
     pub routing: RoutingConfig,
     pub dns: DnsConfig,
+    pub policy: PolicyConfig,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RoutingConfig {
     pub rules: Vec<RoutingRule>,
+    pub domain_strategy: RoutingDomainStrategy,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum RoutingDomainStrategy {
+    #[default]
+    AsIs,
+    IpIfNonMatch,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DnsConfig {
     pub fake_ip: Option<DnsFakeIpConfig>,
+    pub servers: Vec<DnsServerConfig>,
+    pub hosts: Vec<DnsHostMapping>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DnsServerConfig {
+    Ip(SocketAddr),
+    Domain { domain: String, port: u16 },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DnsHostMapping {
+    pub matcher: DomainMatcher,
+    pub target: DnsHostTarget,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DnsHostTarget {
+    Ip(IpAddr),
+    Domain(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -331,6 +363,23 @@ pub struct InboundConfig {
     pub protocol: InboundProtocol,
     pub listen: String,
     pub port: u16,
+    pub sniffing: Option<InboundSniffingConfig>,
+    pub user_level: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InboundSniffingConfig {
+    pub enabled: bool,
+    pub dest_override: Vec<SniffingDestination>,
+    pub metadata_only: bool,
+    pub route_only: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SniffingDestination {
+    Http,
+    Tls,
+    Quic,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -380,6 +429,32 @@ pub struct VlessUser {
     pub id: Uuid,
     pub encryption: String,
     pub flow: Option<String>,
+    pub level: u32,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PolicyConfig {
+    pub levels: BTreeMap<u32, PolicyLevelConfig>,
+    pub system: PolicySystemConfig,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PolicyLevelConfig {
+    pub handshake: Option<u32>,
+    pub conn_idle: Option<u32>,
+    pub uplink_only: Option<u32>,
+    pub downlink_only: Option<u32>,
+    pub stats_user_uplink: bool,
+    pub stats_user_downlink: bool,
+    pub buffer_size: Option<i32>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PolicySystemConfig {
+    pub stats_inbound_uplink: bool,
+    pub stats_inbound_downlink: bool,
+    pub stats_outbound_uplink: bool,
+    pub stats_outbound_downlink: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
