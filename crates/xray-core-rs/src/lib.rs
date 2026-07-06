@@ -11,11 +11,12 @@ use xray_transport::{
 };
 use xray_tun::{TunConfig, TunEndpoint};
 
-#[cfg(debug_assertions)]
 mod debug_log;
 mod http;
 mod outbound;
 mod policy;
+mod runtime_log;
+mod runtime_stats_log;
 mod sniffing;
 mod socks;
 mod startup_probe;
@@ -34,6 +35,7 @@ pub use outbound::{
     select_udp_outbound_for_session, select_udp_outbound_for_session_with_resolver,
     select_vless_tcp_outbound, TcpOutbound, UdpOutbound, VlessTcpOutbound, VlessUdpFraming,
 };
+pub use runtime_log::{RuntimeLogConfig, RuntimeLogger};
 pub use startup_probe::{StartupProbeError, StartupProbeOptions};
 pub use tun_fd::{TunFdClosePolicy, TunFdConfig, TunFdPacketFormat, TunFdRuntime};
 
@@ -157,6 +159,7 @@ pub struct Core {
     transport_dialer: Arc<TransportDialer>,
     tun_runtime_options: TunRuntimeOptions,
     startup_probe: Option<StartupProbeOptions>,
+    runtime_logger: RuntimeLogger,
 }
 
 impl Core {
@@ -230,6 +233,7 @@ impl Core {
             transport_dialer,
             tun_runtime_options,
             startup_probe: None,
+            runtime_logger: RuntimeLogger::disabled(),
         })
     }
 
@@ -244,6 +248,14 @@ impl Core {
 
     pub fn set_startup_probe(&mut self, options: Option<StartupProbeOptions>) {
         self.startup_probe = options;
+    }
+
+    pub fn set_runtime_logger(&mut self, runtime_logger: RuntimeLogger) {
+        self.runtime_logger = runtime_logger;
+    }
+
+    pub fn runtime_logger(&self) -> &RuntimeLogger {
+        &self.runtime_logger
     }
 
     pub fn inbound_addr(&self, tag: Option<&str>) -> Option<SocketAddr> {
@@ -293,8 +305,11 @@ impl Core {
         }
 
         let config = Arc::new(self.config.clone());
+        let has_tun_inbound = !tun_inbounds.is_empty();
         let mut inbounds = Vec::with_capacity(bound_listeners.len());
-        let mut tasks = Vec::with_capacity(bound_listeners.len() + tun_inbounds.len().min(1));
+        let mut tasks = Vec::with_capacity(
+            bound_listeners.len() + usize::from(has_tun_inbound) + usize::from(has_tun_inbound),
+        );
         for (bound, protocol, sniffing, policy, listener) in bound_listeners {
             let inbound_tag = bound.tag.clone();
             let dns_resolver = Arc::clone(&self.dns_resolver);
@@ -308,6 +323,7 @@ impl Core {
                     transport_dialer,
                     sniffing,
                     policy,
+                    self.runtime_logger.clone(),
                     self.shutdown.subscribe(),
                 )),
                 InboundProtocol::Http => tokio::spawn(http::serve_http_listener(
@@ -317,6 +333,7 @@ impl Core {
                     dns_resolver,
                     transport_dialer,
                     policy,
+                    self.runtime_logger.clone(),
                     self.shutdown.subscribe(),
                 )),
                 InboundProtocol::Tun => continue,
@@ -324,7 +341,12 @@ impl Core {
             inbounds.push(bound);
             tasks.push(task);
         }
-        if !tun_inbounds.is_empty() {
+        if has_tun_inbound {
+            let tun_runtime_options = TunRuntimeOptions {
+                collect_tcp_timings: self.tun_runtime_options.collect_tcp_timings
+                    || self.runtime_logger.is_enabled(),
+                ..self.tun_runtime_options
+            };
             tasks.push(tokio::spawn(tun::serve_tun_endpoint(
                 Arc::clone(&self.tun),
                 tun_inbounds.first().and_then(|(tag, _)| tag.clone()),
@@ -334,15 +356,34 @@ impl Core {
                 Arc::clone(&config),
                 Arc::clone(&self.dns_resolver),
                 Arc::clone(&self.transport_dialer),
-                self.tun_runtime_options,
+                tun_runtime_options,
+                self.runtime_logger.clone(),
                 self.shutdown.subscribe(),
             )));
+            if let Some(task) = runtime_stats_log::spawn_runtime_stats_logger(
+                Arc::clone(&self.tun),
+                self.runtime_logger.clone(),
+                self.shutdown.subscribe(),
+            ) {
+                tasks.push(task);
+            }
         }
 
         self.runtime = Some(RuntimeState { inbounds, tasks });
         self.state = CoreState::Running;
 
         if let Some(options) = self.startup_probe.clone() {
+            let probe_url = options.url.clone();
+            let probe_timeout_ms = options.timeout.as_millis();
+            let probe_outbound = options
+                .outbound_tag
+                .clone()
+                .unwrap_or_else(|| "default".to_owned());
+            self.runtime_logger.debug(|| {
+                format!(
+                    "Debug startupProbe start url={probe_url} timeoutMs={probe_timeout_ms} outbound={probe_outbound}"
+                )
+            });
             if let Err(error) = startup_probe::run_startup_probe(
                 &self.config,
                 options,
@@ -351,9 +392,13 @@ impl Core {
             )
             .await
             {
+                self.runtime_logger
+                    .error(|| format!("Debug startupProbe fail url={probe_url} error={error}"));
                 let _ = self.stop().await;
                 return Err(CoreError::StartupProbe(error));
             }
+            self.runtime_logger
+                .debug(|| format!("Debug startupProbe success url={probe_url}"));
         }
 
         Ok(())

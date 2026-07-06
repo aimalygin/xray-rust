@@ -11,6 +11,7 @@ package main
 import (
 	"bytes"
 	cryptoRand "crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -36,6 +37,8 @@ const (
 	extensionPadding                = uint16(0x0015)
 	extensionExtendedMasterSecret   = uint16(0x0017)
 	extensionCompressCertificate    = uint16(0x001b)
+	extensionRecordSizeLimit        = uint16(0x001c)
+	extensionDelegatedCredentials   = uint16(0x0022)
 	extensionSessionTicket          = uint16(0x0023)
 	extensionSupportedVersions      = uint16(0x002b)
 	extensionPSKKeyExchangeModes    = uint16(0x002d)
@@ -76,13 +79,22 @@ type clientHelloShape struct {
 	SupportedGroups                  []string          `json:"supported_groups,omitempty"`
 	ECPointFormats                   []string          `json:"ec_point_formats,omitempty"`
 	SignatureAlgorithms              []string          `json:"signature_algorithms,omitempty"`
+	DelegatedCredentialsAlgorithms   []string          `json:"delegated_credentials_algorithms,omitempty"`
 	ALPNProtocols                    []string          `json:"alpn_protocols,omitempty"`
 	KeyShares                        []keyShareShape   `json:"key_shares,omitempty"`
 	PSKKeyExchangeModes              []string          `json:"psk_key_exchange_modes,omitempty"`
 	CertificateCompressionAlgorithms []string          `json:"certificate_compression_algorithms,omitempty"`
+	RecordSizeLimit                  *string           `json:"record_size_limit,omitempty"`
 	ApplicationSettings              []applicationALPS `json:"application_settings,omitempty"`
 	PaddingLength                    *int              `json:"padding_length,omitempty"`
 	EncryptedClientHelloLength       *int              `json:"encrypted_client_hello_length,omitempty"`
+}
+
+type rawClientHelloOutput struct {
+	Fingerprint    string `json:"fingerprint"`
+	UTLSID         string `json:"utls_id"`
+	ServerName     string `json:"server_name"`
+	ClientHelloHex string `json:"client_hello_hex"`
 }
 
 type extensionShape struct {
@@ -103,7 +115,29 @@ type applicationALPS struct {
 func main() {
 	fingerprint := flag.String("fingerprint", "hellochrome_100", "uTLS fingerprint to shape")
 	checkPath := flag.String("check", "", "compare generated shape with a committed JSON file")
+	rawOutput := flag.Bool("raw", false, "emit deterministic raw ClientHello bytes as hex JSON")
 	flag.Parse()
+
+	if *rawOutput {
+		raw, utlsID, err := buildRawClientHello(*fingerprint)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "build raw ClientHello: %v\n", err)
+			os.Exit(1)
+		}
+		generated, err := json.MarshalIndent(rawClientHelloOutput{
+			Fingerprint:    *fingerprint,
+			UTLSID:         utlsID,
+			ServerName:     serverName,
+			ClientHelloHex: hex.EncodeToString(raw),
+		}, "", "  ")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "marshal raw ClientHello: %v\n", err)
+			os.Exit(1)
+		}
+		generated = append(generated, '\n')
+		_, _ = os.Stdout.Write(generated)
+		return
+	}
 
 	shape, err := buildShape(*fingerprint)
 	if err != nil {
@@ -135,9 +169,17 @@ func main() {
 }
 
 func buildShape(fingerprint string) (clientHelloShape, error) {
-	id, err := clientHelloID(fingerprint)
+	raw, utlsID, err := buildRawClientHello(fingerprint)
 	if err != nil {
 		return clientHelloShape{}, err
+	}
+	return parseClientHelloShape(fingerprint, utlsID, raw)
+}
+
+func buildRawClientHello(fingerprint string) ([]byte, string, error) {
+	id, err := clientHelloID(fingerprint)
+	if err != nil {
+		return nil, "", err
 	}
 
 	previousRand := cryptoRand.Reader
@@ -155,14 +197,14 @@ func buildShape(fingerprint string) (clientHelloShape, error) {
 	}
 	uConn := utls.UClient(clientConn, config, id)
 	if err := uConn.BuildHandshakeState(); err != nil {
-		return clientHelloShape{}, err
+		return nil, "", err
 	}
 
 	hello := uConn.HandshakeState.Hello
 	if hello == nil {
-		return clientHelloShape{}, errors.New("uTLS did not build a ClientHello")
+		return nil, "", errors.New("uTLS did not build a ClientHello")
 	}
-	return parseClientHelloShape(fingerprint, id.Str(), hello.Raw)
+	return append([]byte(nil), hello.Raw...), id.Str(), nil
 }
 
 func clientHelloID(fingerprint string) (utls.ClientHelloID, error) {
@@ -404,6 +446,12 @@ func parseExtensionShape(extensionType uint16, data []byte, shape *clientHelloSh
 			return err
 		}
 		shape.SignatureAlgorithms = formatU16s(values)
+	case extensionDelegatedCredentials:
+		values, err := cursor.readU16List("missing delegated_credentials algorithms")
+		if err != nil {
+			return err
+		}
+		shape.DelegatedCredentialsAlgorithms = formatU16s(values)
 	case extensionALPN:
 		values, err := cursor.readProtocolNameList("missing ALPN protocols")
 		if err != nil {
@@ -429,6 +477,13 @@ func parseExtensionShape(extensionType uint16, data []byte, shape *clientHelloSh
 			return err
 		}
 		shape.CertificateCompressionAlgorithms = formatU16s(values)
+	case extensionRecordSizeLimit:
+		value, err := cursor.readU16("missing record_size_limit")
+		if err != nil {
+			return err
+		}
+		formatted := formatU16(uint16(value))
+		shape.RecordSizeLimit = &formatted
 	case extensionApplicationSettings, extensionApplicationSettingsNew:
 		protocols, err := cursor.readProtocolNameList("missing application_settings protocols")
 		if err != nil {

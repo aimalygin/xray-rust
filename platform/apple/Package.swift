@@ -5,7 +5,7 @@ import PackageDescription
 let package = Package(
     name: "XrayMobileAdapter",
     platforms: [
-        .iOS(.v13),
+        .iOS(.v16),
         .tvOS(.v17),
         .macOS(.v11),
     ],

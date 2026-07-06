@@ -51,6 +51,10 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             "PacketTunnelProvider",
             "Resolved config source=\(resolvedConfig.source) bytes=\(resolvedConfig.json.utf8.count) debugLogging=\(resolvedConfig.debugLoggingEnabled) useTunFileDescriptor=\(resolvedConfig.useTunFileDescriptor) tunRuntimeProfile=\(resolvedConfig.tunRuntimeProfile.rawValue) startupProbe=\(resolvedConfig.startupProbe == nil ? "disabled" : "enabled")"
         )
+        let diagnosticLogDirectory = Self.diagnosticLogDirectory(
+            debugLoggingEnabled: resolvedConfig.debugLoggingEnabled
+        )
+        XrayAppleLog.configureFileLogging(directory: diagnosticLogDirectory)
         XrayAppleLog.info(
             "PacketTunnelProvider",
             "Config summary \(Self.configSummary(resolvedConfig.json))"
@@ -96,7 +100,8 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                             named: resolvedConfig.tunRuntimeProfile.rawValue
                         ),
                         geodataSearchDirectory: Bundle.main.resourceURL,
-                        startupProbe: resolvedConfig.startupProbe
+                        startupProbe: resolvedConfig.startupProbe,
+                        fileLogDirectory: diagnosticLogDirectory
                     )
                     pump = nil
                 case .packetFlowPump:
@@ -118,7 +123,8 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                             named: resolvedConfig.tunRuntimeProfile.rawValue
                         ),
                         geodataSearchDirectory: Bundle.main.resourceURL,
-                        startupProbe: resolvedConfig.startupProbe
+                        startupProbe: resolvedConfig.startupProbe,
+                        fileLogDirectory: diagnosticLogDirectory
                     )
                     pump = XrayPacketTunnelPump(
                         provider: self,
@@ -172,6 +178,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             )
         }
         core = nil
+        XrayAppleLog.configureFileLogging(directory: nil)
         completionHandler()
     }
 
@@ -326,6 +333,19 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         }
 
         return false
+    }
+
+    static func diagnosticLogDirectory(
+        debugLoggingEnabled: Bool,
+        baseDirectory: URL = FileManager.default.urls(
+            for: .cachesDirectory,
+            in: .userDomainMask
+        ).first ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+    ) -> URL? {
+        guard debugLoggingEnabled else {
+            return nil
+        }
+        return baseDirectory.appendingPathComponent("XrayRustLogs", isDirectory: true)
     }
 
     static func configSummary(_ json: String) -> String {

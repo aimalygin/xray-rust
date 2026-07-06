@@ -11,8 +11,8 @@ use std::time::Duration;
 use tokio::runtime::{Builder, Runtime};
 use xray_config::{parse_xray_json, parse_xray_json_with_geodata_dirs};
 use xray_core_rs::{
-    Core, StartupProbeOptions, TunFdClosePolicy, TunFdConfig, TunFdPacketFormat, TunFdRuntime,
-    TunRuntimeOptions, TunRuntimeProfile,
+    Core, RuntimeLogConfig, RuntimeLogger, StartupProbeOptions, TunFdClosePolicy, TunFdConfig,
+    TunFdPacketFormat, TunFdRuntime, TunRuntimeOptions, TunRuntimeProfile,
 };
 use xray_transport::{
     CachingDnsResolver, SocketHandle, SocketProtector, SystemDnsResolver, TransportDialer,
@@ -253,6 +253,7 @@ pub struct XrayCoreHandle {
     socket_protector: Option<Arc<dyn SocketProtector>>,
     geodata_search_dirs: Vec<PathBuf>,
     startup_probe_options: Option<StartupProbeOptions>,
+    file_log_config: Option<RuntimeLogConfig>,
     tun_fd_config: Option<TunFdConfig>,
     tun_fd_runtime: Option<TunFdRuntime>,
     tun_runtime_options: TunRuntimeOptions,
@@ -343,6 +344,7 @@ unsafe fn xray_core_new_inner(error: *mut *mut XrayError) -> *mut XrayCoreHandle
         socket_protector: None,
         geodata_search_dirs: Vec::new(),
         startup_probe_options: None,
+        file_log_config: None,
         tun_fd_config: None,
         tun_fd_runtime: None,
         tun_runtime_options: TunRuntimeOptions::default(),
@@ -428,6 +430,106 @@ unsafe fn xray_core_set_geodata_search_dir_inner(
         (*handle).geodata_search_dirs.push(PathBuf::from(dir));
     }
 
+    XrayStatus::Ok
+}
+
+/// Enables or disables Xray runtime access/error file logging.
+///
+/// When enabled, `log_dir` is used to create `xray-access.log` and
+/// `xray-error.log` during config load. Set this before loading config.
+///
+/// # Safety
+///
+/// `handle` must either be null or a pointer returned by `xray_core_new` that
+/// has not been freed. When `enabled` is nonzero, `log_dir` must point to a
+/// valid NUL-terminated UTF-8 string. If `error` is non-null, it must point to
+/// an initialized `*mut XrayError` value that is either null or a live error
+/// pointer returned by this library. This function may free and replace that
+/// error pointer.
+#[no_mangle]
+pub unsafe extern "C" fn xray_core_set_file_logging(
+    handle: *mut XrayCoreHandle,
+    log_dir: *const c_char,
+    enabled: c_int,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            xray_core_set_file_logging_inner(handle, log_dir, enabled, error)
+        })
+    }
+}
+
+unsafe fn xray_core_set_file_logging_inner(
+    handle: *mut XrayCoreHandle,
+    log_dir: *const c_char,
+    enabled: c_int,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        clear_error(error);
+    }
+
+    if handle.is_null() {
+        unsafe {
+            set_error(error, XrayStatus::NullArgument, "core handle is null");
+        }
+        return XrayStatus::NullArgument;
+    }
+
+    let handle = unsafe { &mut *handle };
+    if handle.core.is_some() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::RuntimeError,
+                "file logging must be set before config load",
+            );
+        }
+        return XrayStatus::RuntimeError;
+    }
+
+    if enabled == 0 {
+        handle.file_log_config = None;
+        return XrayStatus::Ok;
+    }
+
+    if log_dir.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "file log directory is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+
+    let log_dir = match unsafe { CStr::from_ptr(log_dir) }.to_str() {
+        Ok(log_dir) => log_dir,
+        Err(err) => {
+            unsafe {
+                set_error(
+                    error,
+                    XrayStatus::InvalidUtf8,
+                    format!("file log directory is not valid UTF-8: {err}"),
+                );
+            }
+            return XrayStatus::InvalidUtf8;
+        }
+    };
+    if log_dir.is_empty() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::ConfigError,
+                "file log directory is empty",
+            );
+        }
+        return XrayStatus::ConfigError;
+    }
+
+    handle.file_log_config = Some(RuntimeLogConfig::directory(log_dir));
     XrayStatus::Ok
 }
 
@@ -540,6 +642,22 @@ unsafe fn xray_core_load_config_json_inner(
     };
     if let Some(options) = unsafe { (*handle).startup_probe_options.clone() } {
         core.set_startup_probe(Some(options));
+    }
+    if let Some(config) = unsafe { (*handle).file_log_config.clone() } {
+        let logger = match RuntimeLogger::new(config) {
+            Ok(logger) => logger,
+            Err(err) => {
+                unsafe {
+                    set_error(
+                        error,
+                        XrayStatus::RuntimeError,
+                        format!("failed to initialize file logging: {err}"),
+                    );
+                }
+                return XrayStatus::RuntimeError;
+            }
+        };
+        core.set_runtime_logger(logger);
     }
 
     unsafe {

@@ -88,6 +88,29 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         )
     }
 
+    func testDiagnosticLogDirectoryIsNilWhenDebugLoggingIsDisabled() {
+        let baseDirectory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+
+        XCTAssertNil(
+            XrayPacketTunnelProvider.diagnosticLogDirectory(
+                debugLoggingEnabled: false,
+                baseDirectory: baseDirectory
+            )
+        )
+    }
+
+    func testDiagnosticLogDirectoryUsesXrayRustLogsWhenDebugLoggingIsEnabled() {
+        let baseDirectory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+
+        let directory = XrayPacketTunnelProvider.diagnosticLogDirectory(
+            debugLoggingEnabled: true,
+            baseDirectory: baseDirectory
+        )
+
+        XCTAssertEqual(directory?.lastPathComponent, "XrayRustLogs")
+        XCTAssertEqual(directory?.deletingLastPathComponent(), baseDirectory)
+    }
+
     func testTunFileDescriptorEnabledDefaultsToTrue() {
         XCTAssertTrue(
             XrayPacketTunnelProvider.tunFileDescriptorEnabled(

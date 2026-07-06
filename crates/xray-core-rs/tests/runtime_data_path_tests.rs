@@ -44,7 +44,8 @@ use xray_config::{
 };
 use xray_core_rs::{
     select_tcp_outbound_for_session, select_tcp_outbound_for_session_with_resolver,
-    select_vless_tcp_outbound, Core, CoreError, TcpOutbound, TunRuntimeOptions,
+    select_vless_tcp_outbound, Core, CoreError, RuntimeLogConfig, RuntimeLogger, TcpOutbound,
+    TunRuntimeOptions,
 };
 use xray_proxy::inbound::{encode_socks5_udp_datagram, parse_socks5_udp_datagram};
 use xray_proxy::vless::{
@@ -1284,6 +1285,16 @@ async fn tun_tcp_client_reaches_echo_target_through_freedom_outbound() {
 }
 
 #[tokio::test]
+async fn tun_tcp_clients_reach_same_target_concurrently_through_freedom_outbound() {
+    timeout(
+        Duration::from_secs(3),
+        run_tun_tcp_concurrent_same_target_echo_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
 async fn tun_tcp_timings_stay_zero_when_collection_disabled() {
     let stats = timeout(
         Duration::from_secs(2),
@@ -1304,6 +1315,19 @@ async fn tun_tcp_timings_record_when_collection_enabled() {
             collect_tcp_timings: true,
             ..TunRuntimeOptions::default()
         }),
+    )
+    .await
+    .unwrap();
+
+    assert!(stats.tcp_open_events >= 1);
+    assert!(stats.tcp_first_byte_events >= 1);
+}
+
+#[tokio::test]
+async fn tun_tcp_timings_record_when_runtime_logger_enabled() {
+    let stats = timeout(
+        Duration::from_secs(2),
+        run_tun_tcp_freedom_echo_scenario_with_runtime_logger(),
     )
     .await
     .unwrap();
@@ -1904,6 +1928,43 @@ async fn run_tun_tcp_freedom_echo_scenario() {
     let _ = run_tun_tcp_freedom_echo_scenario_with_options(TunRuntimeOptions::default()).await;
 }
 
+async fn run_tun_tcp_concurrent_same_target_echo_scenario() {
+    let flow_count = 8usize;
+    let (echo_addr, echo_handle) = spawn_multi_echo_server(flow_count).await;
+    let mut core = Core::new(runtime_tun_config_with_freedom_outbound()).unwrap();
+    core.start().await.unwrap();
+
+    let mut client = TunTcpMultiClient::new(flow_count);
+    client.connect_all(echo_addr);
+    pump_multi_tun_until(&mut client, core.tun(), TunTcpMultiClient::all_may_send).await;
+
+    let expected = (0..flow_count)
+        .map(|index| format!("hello concurrent tun {index}").into_bytes())
+        .collect::<Vec<_>>();
+    for (index, payload) in expected.iter().enumerate() {
+        client.send_payload(index, payload);
+    }
+
+    let mut received = vec![Vec::new(); flow_count];
+    pump_multi_tun_until(&mut client, core.tun(), |client| {
+        for (index, received) in received.iter_mut().enumerate() {
+            received.extend_from_slice(&client.recv_available(index));
+        }
+        received
+            .iter()
+            .zip(expected.iter())
+            .all(|(actual, expected)| actual.len() >= expected.len())
+    })
+    .await;
+
+    assert_eq!(received, expected);
+    core.stop().await.unwrap();
+    timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
 async fn run_tun_tcp_freedom_echo_scenario_with_options(
     tun_runtime_options: TunRuntimeOptions,
 ) -> TunStats {
@@ -1928,6 +1989,37 @@ async fn run_tun_tcp_freedom_echo_scenario_with_options(
     .await;
 
     assert_eq!(received, b"hello tun");
+    let stats = core.tun().stats().await;
+    core.stop().await.unwrap();
+    timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .unwrap()
+        .unwrap();
+    stats
+}
+
+async fn run_tun_tcp_freedom_echo_scenario_with_runtime_logger() -> TunStats {
+    let _log_dir = create_runtime_log_temp_dir("xray-rust-runtime-data-path");
+    let (echo_addr, echo_handle) = spawn_echo_server().await;
+    let mut core = Core::new(runtime_tun_config_with_freedom_outbound()).unwrap();
+    core.set_runtime_logger(
+        RuntimeLogger::new(RuntimeLogConfig::directory(&_log_dir.path)).unwrap(),
+    );
+    core.start().await.unwrap();
+
+    let mut client = TunTcpClient::new();
+    client.connect(echo_addr);
+    pump_tun_until(&mut client, core.tun(), TunTcpClient::may_send).await;
+
+    client.send_payload(b"hello tun logger");
+    let mut received = Vec::new();
+    pump_tun_until(&mut client, core.tun(), |client| {
+        received.extend_from_slice(&client.recv_available());
+        received.len() >= "hello tun logger".len()
+    })
+    .await;
+
+    assert_eq!(received, b"hello tun logger");
     let stats = core.tun().stats().await;
     core.stop().await.unwrap();
     timeout(Duration::from_secs(1), echo_handle)
@@ -2917,6 +3009,114 @@ impl TunTcpClient {
     }
 }
 
+struct TunTcpMultiClient {
+    iface: SmolInterface,
+    device: TestPacketDevice,
+    sockets: SocketSet<'static>,
+    tcp: Vec<SocketHandle>,
+}
+
+impl TunTcpMultiClient {
+    fn new(flow_count: usize) -> Self {
+        let mut device = TestPacketDevice::new(1500);
+        let mut iface_config = SmolInterfaceConfig::new(SmolHardwareAddress::Ip);
+        iface_config.random_seed = 0x7475_6e74_6573_7402;
+        let mut iface = SmolInterface::new(iface_config, &mut device, SmolInstant::now());
+        iface.update_ip_addrs(|addrs| {
+            addrs
+                .push(SmolIpCidr::new(SmolIpAddress::v4(10, 10, 0, 2), 24))
+                .unwrap();
+        });
+        iface
+            .routes_mut()
+            .add_default_ipv4_route(SmolIpv4Address::new(10, 10, 0, 1))
+            .unwrap();
+
+        let mut sockets = SocketSet::new(Vec::new());
+        let tcp = (0..flow_count)
+            .map(|_| {
+                sockets.add(smol_tcp::Socket::new(
+                    smol_tcp::SocketBuffer::new(vec![0; 8192]),
+                    smol_tcp::SocketBuffer::new(vec![0; 8192]),
+                ))
+            })
+            .collect();
+
+        Self {
+            iface,
+            device,
+            sockets,
+            tcp,
+        }
+    }
+
+    fn connect_all(&mut self, target: SocketAddr) {
+        let SocketAddr::V4(target) = target else {
+            panic!("TUN TCP test client currently covers IPv4 targets only");
+        };
+        let target_endpoint = (*target.ip(), target.port());
+        for (index, handle) in self.tcp.iter().copied().enumerate() {
+            let source_port = 49152 + u16::try_from(index).unwrap();
+            self.sockets
+                .get_mut::<smol_tcp::Socket>(handle)
+                .connect(self.iface.context(), target_endpoint, source_port)
+                .unwrap();
+        }
+    }
+
+    fn all_may_send(&mut self) -> bool {
+        self.tcp
+            .iter()
+            .copied()
+            .all(|handle| self.sockets.get::<smol_tcp::Socket>(handle).may_send())
+    }
+
+    fn send_payload(&mut self, index: usize, payload: &[u8]) {
+        self.sockets
+            .get_mut::<smol_tcp::Socket>(self.tcp[index])
+            .send_slice(payload)
+            .unwrap();
+    }
+
+    fn recv_available(&mut self, index: usize) -> Vec<u8> {
+        let mut received = Vec::new();
+        let socket = self.sockets.get_mut::<smol_tcp::Socket>(self.tcp[index]);
+        while socket.can_recv() {
+            socket
+                .recv(|data| {
+                    received.extend_from_slice(data);
+                    (data.len(), ())
+                })
+                .unwrap();
+        }
+        received
+    }
+
+    fn poll(&mut self) {
+        self.iface
+            .poll(SmolInstant::now(), &mut self.device, &mut self.sockets);
+    }
+
+    fn state_summary(&self) -> String {
+        self.tcp
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(index, handle)| {
+                let socket = self.sockets.get::<smol_tcp::Socket>(handle);
+                format!(
+                    "#{index}:open={} active={} may_send={} can_recv={}",
+                    socket.is_open(),
+                    socket.is_active(),
+                    socket.may_send(),
+                    socket.can_recv()
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+}
+
 async fn pump_tun_until(
     client: &mut TunTcpClient,
     tun: &TunEndpoint,
@@ -2939,6 +3139,34 @@ async fn pump_tun_until(
         assert!(
             TokioInstant::now() < deadline,
             "timed out waiting for TUN TCP client state"
+        );
+        sleep(Duration::from_millis(5)).await;
+    }
+}
+
+async fn pump_multi_tun_until(
+    client: &mut TunTcpMultiClient,
+    tun: &TunEndpoint,
+    mut is_done: impl FnMut(&mut TunTcpMultiClient) -> bool,
+) {
+    let deadline = TokioInstant::now() + Duration::from_millis(1500);
+    loop {
+        client.poll();
+        while let Some(packet) = client.device.pop_outbound() {
+            tun.push_inbound(packet).await.unwrap();
+        }
+        while let Some(packet) = tun.try_poll_outbound().await.unwrap() {
+            client.device.push_inbound(packet);
+        }
+        client.poll();
+
+        if is_done(client) {
+            return;
+        }
+        assert!(
+            TokioInstant::now() < deadline,
+            "timed out waiting for concurrent TUN TCP client state: {}",
+            client.state_summary()
         );
         sleep(Duration::from_millis(5)).await;
     }
@@ -3381,6 +3609,48 @@ async fn spawn_echo_server() -> (SocketAddr, JoinHandle<()>) {
             .unwrap();
     });
     (addr, handle)
+}
+
+async fn spawn_multi_echo_server(connection_count: usize) -> (SocketAddr, JoinHandle<()>) {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let handle = tokio::spawn(async move {
+        let mut handles = Vec::with_capacity(connection_count);
+        for _ in 0..connection_count {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            handles.push(tokio::spawn(async move {
+                let (mut read_half, mut write_half) = stream.split();
+                let _ = tokio::io::copy(&mut read_half, &mut write_half).await;
+            }));
+        }
+        for handle in handles {
+            handle.await.unwrap();
+        }
+    });
+    (addr, handle)
+}
+
+struct RuntimeLogTempDir {
+    path: std::path::PathBuf,
+}
+
+impl Drop for RuntimeLogTempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
+fn create_runtime_log_temp_dir(prefix: &str) -> RuntimeLogTempDir {
+    let base = std::env::temp_dir();
+    for attempt in 0..100 {
+        let path = base.join(format!("{prefix}-{}-{attempt}", std::process::id()));
+        match std::fs::create_dir(&path) {
+            Ok(()) => return RuntimeLogTempDir { path },
+            Err(error) if error.kind() == ErrorKind::AlreadyExists => {}
+            Err(error) => panic!("create temp log dir {path:?}: {error}"),
+        }
+    }
+    panic!("failed to allocate temp log dir for {prefix}");
 }
 
 async fn spawn_udp_echo_server() -> (SocketAddr, JoinHandle<()>) {

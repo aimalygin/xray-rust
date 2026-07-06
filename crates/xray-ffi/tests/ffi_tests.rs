@@ -6,7 +6,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use xray_ffi::{
-    xray_core_free, xray_core_load_config_json, xray_core_new,
+    xray_core_free, xray_core_load_config_json, xray_core_new, xray_core_set_file_logging,
     xray_core_set_socket_protect_callback, xray_core_set_startup_probe,
     xray_core_set_tun_collect_tcp_timings, xray_core_set_tun_fd, xray_core_set_tun_runtime_profile,
     xray_core_start, xray_core_stop, xray_error_code, xray_error_free, xray_error_message,
@@ -180,6 +180,87 @@ fn ffi_rejects_socket_protect_callback_after_config_load() {
         &mut err,
         XrayStatus::RuntimeError,
         "socket protect callback must be set before config load",
+    );
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_file_logging_setter_accepts_directory_before_config_load() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    assert!(!core.is_null());
+    let dir = unique_temp_dir("xray-ffi-file-logging");
+    let dir_c = CString::new(dir.to_string_lossy().as_bytes()).unwrap();
+
+    let status = unsafe { xray_core_set_file_logging(core, dir_c.as_ptr(), 1, &mut err) };
+    assert_eq!(status, XrayStatus::Ok);
+    assert!(err.is_null());
+
+    let raw = CString::new(tun_config_without_port_with_freedom_outbound()).unwrap();
+    let status = unsafe { xray_core_load_config_json(core, raw.as_ptr(), &mut err) };
+    assert_eq!(status, XrayStatus::Ok, "load error: {}", error_message(err));
+    assert!(dir.join("xray-access.log").exists());
+    assert!(dir.join("xray-error.log").exists());
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_file_logging_setter_rejects_null_directory() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    assert!(!core.is_null());
+
+    let status = unsafe { xray_core_set_file_logging(core, std::ptr::null(), 1, &mut err) };
+
+    assert_eq!(status, XrayStatus::NullArgument);
+    assert_error(
+        &mut err,
+        XrayStatus::NullArgument,
+        "file log directory is null",
+    );
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_file_logging_setter_rejects_invalid_utf8_directory() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    assert!(!core.is_null());
+    let dir = CString::new(vec![0xff]).unwrap();
+
+    let status = unsafe { xray_core_set_file_logging(core, dir.as_ptr(), 1, &mut err) };
+
+    assert_eq!(status, XrayStatus::InvalidUtf8);
+    assert_error(&mut err, XrayStatus::InvalidUtf8, "not valid UTF-8");
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_file_logging_setter_rejects_after_config_load() {
+    let mut err = std::ptr::null_mut();
+    let core = loaded_core(&mut err);
+    let dir = unique_temp_dir("xray-ffi-file-logging-loaded");
+    let dir_c = CString::new(dir.to_string_lossy().as_bytes()).unwrap();
+
+    let status = unsafe { xray_core_set_file_logging(core, dir_c.as_ptr(), 1, &mut err) };
+
+    assert_eq!(status, XrayStatus::RuntimeError);
+    assert_error(
+        &mut err,
+        XrayStatus::RuntimeError,
+        "file logging must be set before config load",
     );
 
     unsafe {
@@ -1195,6 +1276,19 @@ fn error_message(error: *const xray_ffi::XrayError) -> String {
     unsafe { CStr::from_ptr(raw_message) }
         .to_string_lossy()
         .into_owned()
+}
+
+fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+        "{prefix}-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time should be after epoch")
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).expect("temp dir should be created");
+    dir
 }
 
 unsafe extern "C" fn record_socket_protect_call(

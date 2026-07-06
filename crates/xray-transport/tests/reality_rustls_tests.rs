@@ -2,7 +2,9 @@ use std::{env, fmt::Write as _, fs, path::Path, process::Command};
 
 use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret as X25519StaticSecret};
 use xray_transport::{
-    reality::validate_reality_client_hello_metadata,
+    reality::{
+        prepare_reality_handshake, validate_reality_client_hello_metadata, RealityHandshakeInput,
+    },
     reality_connector::{RealityClientHelloRequest, RealityTlsSessionProvider},
     RustlsRealityTlsSessionProvider,
 };
@@ -34,6 +36,8 @@ struct ClientHelloShape {
     #[serde(default)]
     signature_algorithms: Vec<String>,
     #[serde(default)]
+    delegated_credentials_algorithms: Vec<String>,
+    #[serde(default)]
     alpn_protocols: Vec<String>,
     #[serde(default)]
     key_shares: Vec<KeyShareShape>,
@@ -41,6 +45,7 @@ struct ClientHelloShape {
     psk_key_exchange_modes: Vec<String>,
     #[serde(default)]
     certificate_compression_algorithms: Vec<String>,
+    record_size_limit: Option<String>,
     #[serde(default)]
     application_settings: Vec<ApplicationAlpsShape>,
     padding_length: Option<usize>,
@@ -69,6 +74,14 @@ struct KeySharePayload {
 struct ApplicationAlpsShape {
     r#type: String,
     protocols: Vec<String>,
+}
+
+#[derive(Clone, Debug, serde::Deserialize, PartialEq, Eq)]
+struct RawClientHelloOracle {
+    fingerprint: String,
+    utls_id: String,
+    server_name: String,
+    client_hello_hex: String,
 }
 
 #[test]
@@ -186,14 +199,19 @@ fn rustls_reality_provider_uses_prepared_x25519_material_for_all_reality_capable
                 TLS_GROUP_X25519_MLKEM768_DRAFT => {
                     x25519_compatible_shares += 1;
                     assert!(
-                        key_share.key_exchange.len() >= X25519_PUBLIC_KEY_LEN,
-                        "{fingerprint}: draft hybrid key share must include an X25519 tail"
+                        key_share.key_exchange.len() > X25519_PUBLIC_KEY_LEN,
+                        "{fingerprint}: draft hybrid key share must include X25519 and Kyber material"
                     );
+                    let (x25519_public_key, kyber_public_key) =
+                        key_share.key_exchange.split_at(X25519_PUBLIC_KEY_LEN);
                     assert_eq!(
-                        &key_share.key_exchange[key_share.key_exchange.len()
-                            - X25519_PUBLIC_KEY_LEN..],
+                        x25519_public_key,
                         expected_x25519_public_key,
-                        "{fingerprint}: draft hybrid key share must embed the prepared REALITY X25519 public key"
+                        "{fingerprint}: draft hybrid key share must embed the prepared REALITY X25519 public key before Kyber material"
+                    );
+                    assert!(
+                        kyber_public_key.iter().any(|byte| *byte != 0),
+                        "{fingerprint}: draft hybrid key share must contain real Kyber public key material, not a zero placeholder"
                     );
                 }
                 _ => {}
@@ -260,6 +278,93 @@ fn rustls_reality_provider_matches_utls_xray_fingerprints_in_order() {
         .unwrap_or_else(|error| panic!("{fingerprint}: rustls ClientHello shape: {error}"));
 
         assert_eq!(actual, expected, "{fingerprint}");
+    }
+}
+
+#[test]
+#[ignore = "requires Go uTLS oracle; deep raw-byte comparison for risky fingerprints"]
+fn rustls_reality_provider_raw_clienthello_matches_utls_oracle_for_risky_fingerprints() {
+    let provider = RustlsRealityTlsSessionProvider::new();
+
+    for fingerprint in [
+        "chrome",
+        "helloios_13",
+        "hellochrome_120_pq",
+        "hello360_11_0",
+        "hellofirefox_63",
+        "hellofirefox_65",
+        "hellofirefox_99",
+        "hellofirefox_102",
+        "hellofirefox_105",
+        "hellofirefox_120",
+        "hellofirefox_148",
+    ] {
+        let expected = utls_client_hello_raw_from_oracle(fingerprint);
+        let session = provider
+            .create_session(RealityClientHelloRequest {
+                server_name: "example.com",
+                fingerprint,
+            })
+            .unwrap_or_else(|error| {
+                panic!("{fingerprint}: REALITY session should be created: {error}")
+            });
+        let prepared = session
+            .prepared_client_hello()
+            .unwrap_or_else(|error| panic!("{fingerprint}: prepared ClientHello: {error}"));
+
+        let expected_raw = decode_hex(&expected.client_hello_hex)
+            .unwrap_or_else(|error| panic!("{fingerprint}: Go raw hex decode: {error}"));
+        assert_masked_client_hello_eq(fingerprint, &prepared.raw_client_hello, &expected_raw);
+    }
+}
+
+#[test]
+#[ignore = "requires Go uTLS oracle; deep raw-byte comparison for finalized REALITY ClientHello"]
+fn rustls_reality_provider_final_reality_clienthello_matches_utls_oracle_for_risky_fingerprints() {
+    let provider = RustlsRealityTlsSessionProvider::new();
+    let server_public_key = X25519PublicKey::from(&X25519StaticSecret::from([7u8; 32])).to_bytes();
+
+    for fingerprint in [
+        "chrome",
+        "helloios_13",
+        "hellochrome_120_pq",
+        "hello360_11_0",
+        "hellofirefox_63",
+        "hellofirefox_65",
+        "hellofirefox_99",
+        "hellofirefox_102",
+        "hellofirefox_105",
+        "hellofirefox_120",
+        "hellofirefox_148",
+    ] {
+        let expected = utls_client_hello_raw_from_oracle(fingerprint);
+        let expected_raw = decode_hex(&expected.client_hello_hex)
+            .unwrap_or_else(|error| panic!("{fingerprint}: Go raw hex decode: {error}"));
+        let session = provider
+            .create_session(RealityClientHelloRequest {
+                server_name: "example.com",
+                fingerprint,
+            })
+            .unwrap_or_else(|error| {
+                panic!("{fingerprint}: REALITY session should be created: {error}")
+            });
+        let prepared_client_hello = session
+            .prepared_client_hello()
+            .unwrap_or_else(|error| panic!("{fingerprint}: prepared ClientHello: {error}"));
+        let prepared_handshake = prepare_reality_handshake(RealityHandshakeInput {
+            version: [0, 0, 1],
+            unix_time: 1_700_000_000,
+            short_id: vec![0x12, 0x34],
+            server_public_key,
+            prepared_client_hello,
+        })
+        .unwrap_or_else(|error| panic!("{fingerprint}: prepare REALITY handshake: {error}"));
+
+        assert_masked_client_hello_eq(
+            fingerprint,
+            &prepared_handshake.patched_client_hello,
+            &expected_raw,
+        );
     }
 }
 
@@ -352,6 +457,220 @@ fn try_utls_client_hello_shape_from_oracle(fingerprint: &str) -> Result<ClientHe
 
     serde_json::from_slice(&output.stdout)
         .map_err(|error| format!("uTLS ClientHello shape JSON: {error}"))
+}
+
+fn utls_client_hello_raw_from_oracle(fingerprint: &str) -> RawClientHelloOracle {
+    try_utls_client_hello_raw_from_oracle(fingerprint)
+        .unwrap_or_else(|error| panic!("{fingerprint}: {error}"))
+}
+
+fn try_utls_client_hello_raw_from_oracle(
+    fingerprint: &str,
+) -> Result<RawClientHelloOracle, String> {
+    let output = Command::new("go")
+        .current_dir(workspace_root())
+        .args([
+            "run",
+            "-tags",
+            "reality_oracle_clienthello_shape",
+            "./tools/reality-oracle/clienthello_shape.go",
+            "-fingerprint",
+            fingerprint,
+            "-raw",
+        ])
+        .output()
+        .map_err(|error| format!("failed to run Go uTLS raw oracle: {error}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "Go uTLS raw oracle failed with status {}\nstdout:\n{}\nstderr:\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    serde_json::from_slice(&output.stdout)
+        .map_err(|error| format!("uTLS raw ClientHello JSON: {error}"))
+}
+
+fn decode_hex(input: &str) -> Result<Vec<u8>, String> {
+    if input.len() % 2 != 0 {
+        return Err(format!("hex length is odd: {}", input.len()));
+    }
+
+    let mut out = Vec::with_capacity(input.len() / 2);
+    for index in (0..input.len()).step_by(2) {
+        let byte = u8::from_str_radix(&input[index..index + 2], 16)
+            .map_err(|error| format!("invalid hex byte at {index}: {error}"))?;
+        out.push(byte);
+    }
+    Ok(out)
+}
+
+fn assert_masked_client_hello_eq(fingerprint: &str, actual: &[u8], expected: &[u8]) {
+    let actual_masked = masked_client_hello_for_raw_oracle(actual)
+        .unwrap_or_else(|error| panic!("{fingerprint}: mask actual ClientHello: {error}"));
+    let expected_masked = masked_client_hello_for_raw_oracle(expected)
+        .unwrap_or_else(|error| panic!("{fingerprint}: mask expected ClientHello: {error}"));
+
+    if actual_masked == expected_masked {
+        return;
+    }
+
+    let difference = first_byte_difference(&actual_masked, &expected_masked)
+        .map(|index| {
+            format!(
+                "byte {index}: actual 0x{:02x}, expected 0x{:02x}\nactual:   {}\nexpected: {}",
+                actual_masked.get(index).copied().unwrap_or_default(),
+                expected_masked.get(index).copied().unwrap_or_default(),
+                hex_window(&actual_masked, index),
+                hex_window(&expected_masked, index)
+            )
+        })
+        .unwrap_or_else(|| {
+            format!(
+                "length differs: actual {}, expected {}",
+                actual_masked.len(),
+                expected_masked.len()
+            )
+        });
+
+    panic!("{fingerprint}: masked raw ClientHello differs: {difference}");
+}
+
+fn masked_client_hello_for_raw_oracle(raw: &[u8]) -> Result<Vec<u8>, String> {
+    let mut masked = raw.to_vec();
+    let mut cursor = ByteCursor::new(raw);
+    let handshake_type = cursor.read_u8("missing handshake type")?;
+    if handshake_type != 0x01 {
+        return Err(format!(
+            "not a ClientHello handshake: 0x{handshake_type:02x}"
+        ));
+    }
+
+    let handshake_len = cursor.read_u24("missing handshake length")?;
+    if handshake_len != raw.len() - 4 {
+        return Err(format!(
+            "handshake length mismatch: header={handshake_len} raw={}",
+            raw.len() - 4
+        ));
+    }
+
+    cursor.read_u16("missing legacy version")?;
+    let random_offset = cursor.offset;
+    cursor.take(32, "missing ClientHello random")?;
+    mask_range(&mut masked, random_offset, 32);
+
+    let session_id_len = cursor.read_u8("missing legacy session id length")?;
+    let session_id_offset = cursor.offset;
+    cursor.take(session_id_len, "truncated legacy session id")?;
+    mask_range(&mut masked, session_id_offset, session_id_len);
+
+    cursor.read_u16_list("missing cipher suites")?;
+    let compression_methods_len = cursor.read_u8("missing compression methods length")?;
+    cursor.take(compression_methods_len, "truncated compression methods")?;
+    let extensions_len = cursor.read_u16("missing extensions length")?;
+    let extensions_end = cursor.checked_end(extensions_len, "truncated extensions")?;
+    if extensions_end != raw.len() {
+        return Err(format!(
+            "extensions length mismatch: ended at {extensions_end} expected raw length {}",
+            raw.len()
+        ));
+    }
+
+    while cursor.offset < extensions_end {
+        let extension_type = cursor.read_u16("missing extension type")? as u16;
+        let extension_len = cursor.read_u16("missing extension length")?;
+        let extension_data_offset = cursor.offset;
+        cursor.take(extension_len, "truncated extension data")?;
+
+        match extension_type {
+            0x0033 => {
+                mask_key_share_exchange_ranges(
+                    raw,
+                    extension_data_offset,
+                    extension_len,
+                    &mut masked,
+                )?;
+            }
+            0x0015 | 0xfe0d => {
+                mask_range(&mut masked, extension_data_offset, extension_len);
+            }
+            value if is_grease(value) => {
+                mask_range(&mut masked, extension_data_offset, extension_len);
+            }
+            _ => {}
+        }
+    }
+
+    if cursor.offset != extensions_end {
+        return Err(format!(
+            "extensions length mismatch: ended at {} expected {extensions_end}",
+            cursor.offset
+        ));
+    }
+
+    Ok(masked)
+}
+
+fn mask_key_share_exchange_ranges(
+    raw: &[u8],
+    extension_data_offset: usize,
+    extension_len: usize,
+    masked: &mut [u8],
+) -> Result<(), String> {
+    let extension_end = extension_data_offset
+        .checked_add(extension_len)
+        .filter(|end| *end <= raw.len())
+        .ok_or_else(|| {
+            format!(
+                "key_share extension range out of bounds: offset={extension_data_offset} len={extension_len} raw={}",
+                raw.len()
+            )
+        })?;
+    let mut cursor = ByteCursor::new(&raw[extension_data_offset..extension_end]);
+    let shares_len = cursor.read_u16("missing key_share client_shares length")?;
+    let shares_end = cursor.checked_end(shares_len, "truncated key_share client_shares")?;
+    if shares_end != extension_len {
+        return Err(format!(
+            "key_share client_shares length mismatch: end={shares_end} len={extension_len}"
+        ));
+    }
+
+    while cursor.offset < shares_end {
+        cursor.read_u16("missing key_share group")?;
+        let key_exchange_length = cursor.read_u16("missing key_exchange length")?;
+        let key_exchange_offset = extension_data_offset + cursor.offset;
+        cursor.take(key_exchange_length, "truncated key_exchange")?;
+        mask_range(masked, key_exchange_offset, key_exchange_length);
+    }
+
+    Ok(())
+}
+
+fn mask_range(raw: &mut [u8], offset: usize, len: usize) {
+    for byte in &mut raw[offset..offset + len] {
+        *byte = 0xa5;
+    }
+}
+
+fn first_byte_difference(actual: &[u8], expected: &[u8]) -> Option<usize> {
+    actual
+        .iter()
+        .zip(expected)
+        .position(|(actual, expected)| actual != expected)
+        .or_else(|| (actual.len() != expected.len()).then_some(actual.len().min(expected.len())))
+}
+
+fn hex_window(raw: &[u8], index: usize) -> String {
+    let start = index.saturating_sub(16);
+    let end = (index + 17).min(raw.len());
+    raw[start..end]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn workspace_root() -> &'static Path {
@@ -540,7 +859,7 @@ fn build_fingerprint_parity_report(results: &[FingerprintParityResult]) -> Strin
     .unwrap();
     writeln!(
         report,
-        "- xray-rust uses real rustls key shares for X25519 and final `X25519MLKEM768`; P-256/P-384 and draft hybrid shares remain raw wire-shape entries. `FixedX25519KeyShare` keeps REALITY's X25519 public key stable inside both X25519 and final hybrid shares."
+        "- xray-rust uses real rustls key shares for X25519, final `X25519MLKEM768`, and draft `X25519Kyber768Draft00`; P-256/P-384 shares remain raw wire-shape entries where needed. `FixedX25519KeyShare` keeps REALITY's X25519 public key stable inside X25519 and both hybrid shares."
     )
     .unwrap();
     writeln!(
@@ -658,6 +977,11 @@ fn first_shape_difference(actual: &ClientHelloShape, expected: &ClientHelloShape
             format_values(&expected.signature_algorithms),
         ),
         (
+            "delegated_credentials_algorithms",
+            format_values(&actual.delegated_credentials_algorithms),
+            format_values(&expected.delegated_credentials_algorithms),
+        ),
+        (
             "alpn_protocols",
             format_values(&actual.alpn_protocols),
             format_values(&expected.alpn_protocols),
@@ -676,6 +1000,11 @@ fn first_shape_difference(actual: &ClientHelloShape, expected: &ClientHelloShape
             "certificate_compression_algorithms",
             format_values(&actual.certificate_compression_algorithms),
             format_values(&expected.certificate_compression_algorithms),
+        ),
+        (
+            "record_size_limit",
+            format_optional(&actual.record_size_limit),
+            format_optional(&expected.record_size_limit),
         ),
         (
             "application_settings",
@@ -774,6 +1103,12 @@ fn shape_markdown(shape: &ClientHelloShape) -> String {
     .unwrap();
     writeln!(
         out,
+        "- delegated_credentials_algorithms: `{}`",
+        format_values(&shape.delegated_credentials_algorithms)
+    )
+    .unwrap();
+    writeln!(
+        out,
         "- alpn_protocols: `{}`",
         format_values(&shape.alpn_protocols)
     )
@@ -794,6 +1129,12 @@ fn shape_markdown(shape: &ClientHelloShape) -> String {
         out,
         "- certificate_compression_algorithms: `{}`",
         format_values(&shape.certificate_compression_algorithms)
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "- record_size_limit: `{}`",
+        format_optional(&shape.record_size_limit)
     )
     .unwrap();
     writeln!(
@@ -823,6 +1164,10 @@ fn format_values(values: &[String]) -> String {
     } else {
         format!("[{}]", values.join(", "))
     }
+}
+
+fn format_optional(value: &Option<String>) -> String {
+    value.as_deref().unwrap_or("none").to_owned()
 }
 
 fn format_extensions(extensions: &[ExtensionShape]) -> String {
@@ -932,10 +1277,12 @@ fn parse_client_hello_shape(
         supported_groups: Vec::new(),
         ec_point_formats: Vec::new(),
         signature_algorithms: Vec::new(),
+        delegated_credentials_algorithms: Vec::new(),
         alpn_protocols: Vec::new(),
         key_shares: Vec::new(),
         psk_key_exchange_modes: Vec::new(),
         certificate_compression_algorithms: Vec::new(),
+        record_size_limit: None,
         application_settings: Vec::new(),
         padding_length: None,
         encrypted_client_hello_length: None,
@@ -985,6 +1332,11 @@ fn parse_extension_shape(
             shape.signature_algorithms = format_u16s(&values);
             true
         }
+        0x0022 => {
+            let values = cursor.read_u16_list("missing delegated_credentials algorithms")?;
+            shape.delegated_credentials_algorithms = format_u16s(&values);
+            true
+        }
         0x0010 => {
             shape.alpn_protocols = cursor.read_protocol_name_list("missing ALPN protocols")?;
             true
@@ -1002,6 +1354,11 @@ fn parse_extension_shape(
             let values = cursor
                 .read_u8_length_prefixed_u16_list("missing compress_certificate algorithms")?;
             shape.certificate_compression_algorithms = format_u16s(&values);
+            true
+        }
+        0x001c => {
+            let value = cursor.read_u16("missing record_size_limit")? as u16;
+            shape.record_size_limit = Some(format_u16(value));
             true
         }
         0x4469 | 0x44cd => {

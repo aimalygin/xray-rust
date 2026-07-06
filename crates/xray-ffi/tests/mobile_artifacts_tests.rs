@@ -110,6 +110,8 @@ fn apple_adapter_declares_packet_tunnel_pump() {
     .expect("read Swift Darwin TUN fd helper");
 
     assert!(package.contains("XrayMobileAdapter"));
+    assert!(package.contains(".iOS(.v16)"));
+    assert!(!package.contains(".iOS(.v13)"));
     assert!(package.contains("XrayRust.xcframework"));
     assert!(core.contains("import XrayRust"));
     assert!(core.contains("xray_core_set_socket_protect_callback"));
@@ -212,6 +214,8 @@ fn apple_adapter_link_script_covers_mobile_triples() {
     let script = fs::read_to_string(workspace_root().join("scripts/check-apple-adapter-link.sh"))
         .expect("read Apple adapter link script");
 
+    assert!(script.contains(r#"IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-16.0}""#));
+
     for triple in [
         "arm64-apple-ios${IPHONEOS_DEPLOYMENT_TARGET}",
         "arm64-apple-ios${IPHONEOS_DEPLOYMENT_TARGET}-simulator",
@@ -244,6 +248,22 @@ fn apple_adapter_link_script_covers_mobile_triples() {
     assert!(script.contains("--triple"));
     assert!(script.contains("XrayRust.xcframework"));
     assert!(script.contains("build-apple-xcframework.sh"));
+}
+
+#[test]
+fn apple_xcode_sample_uses_ios_16_deployment_target() {
+    let project = fs::read_to_string(
+        workspace_root().join("platform/apple/XrayClient/XrayClient.xcodeproj/project.pbxproj"),
+    )
+    .expect("read Apple sample project");
+
+    assert!(project.contains("XCLocalSwiftPackageReference \"../../apple\""));
+    assert!(project.contains("productName = XrayAppleClient;"));
+    assert!(project.contains("productName = XrayAppleTunnel;"));
+    assert!(project.contains("IPHONEOS_DEPLOYMENT_TARGET = 16.0;"));
+    assert!(!project.contains("IPHONEOS_DEPLOYMENT_TARGET = 13.0;"));
+    assert!(!project.contains("IPHONEOS_DEPLOYMENT_TARGET = 16.6;"));
+    assert!(!project.contains("IPHONEOS_DEPLOYMENT_TARGET = 26.5;"));
 }
 
 #[test]
@@ -382,6 +402,7 @@ const EXPORTED_SYMBOLS: &[&str] = &[
     "xray_core_stop",
     "xray_core_free",
     "xray_core_set_socket_protect_callback",
+    "xray_core_set_file_logging",
     "xray_core_set_startup_probe",
     "xray_core_set_tun_fd",
     "xray_core_set_tun_collect_tcp_timings",
@@ -450,6 +471,7 @@ static void use_xray_ffi_api(void) {
   (void)xray_ffi_version_major();
   (void)xray_core_set_geodata_search_dir(handle, ".", &error);
   (void)xray_core_set_socket_protect_callback(handle, NULL, NULL, &error);
+  (void)xray_core_set_file_logging(handle, ".", 0, &error);
   (void)xray_core_set_startup_probe(
       handle,
       "http://probe.test/health",
@@ -589,6 +611,7 @@ fn apple_xcframework_script_covers_ios_and_tvos_targets() {
     assert!(script.contains("-Z"));
     assert!(script.contains("build-std"));
     assert!(script.contains("IPHONEOS_DEPLOYMENT_TARGET"));
+    assert!(script.contains(r#"IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-16.0}""#));
     assert!(script.contains("TVOS_DEPLOYMENT_TARGET"));
 }
 

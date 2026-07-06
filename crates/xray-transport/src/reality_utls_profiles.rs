@@ -5,8 +5,10 @@ pub(super) struct UtlsClientHelloProfile {
     pub supported_groups: &'static [u16],
     pub key_shares: &'static [UtlsKeyShare],
     pub signature_algorithms: &'static [u16],
+    pub delegated_credentials_algorithms: &'static [u16],
     pub alpn_protocols: &'static [&'static [u8]],
     pub certificate_compression_algorithms: &'static [u16],
+    pub record_size_limit: Option<u16>,
     pub application_settings: &'static [UtlsApplicationSettings],
     pub extensions: &'static [UtlsExtension],
     pub padding_length: Option<usize>,
@@ -57,6 +59,7 @@ const PROFILE_0_KEY_SHARES: &[UtlsKeyShare] = &[
 const PROFILE_0_SIGALGS: &[u16] = &[
     0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601,
 ];
+const PROFILE_0_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_0_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_0_CERT_COMP: &[u16] = &[0x0002];
 const PROFILE_0_APP_0_PROTOCOLS: &[&[u8]] = &[b"h2"];
@@ -144,8 +147,10 @@ const PROFILE_0: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_0_GROUPS,
     key_shares: PROFILE_0_KEY_SHARES,
     signature_algorithms: PROFILE_0_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_0_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_0_ALPN,
     certificate_compression_algorithms: PROFILE_0_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_0_APPS,
     extensions: PROFILE_0_EXTENSIONS,
     padding_length: None,
@@ -175,6 +180,7 @@ const PROFILE_1_KEY_SHARES: &[UtlsKeyShare] = &[
 const PROFILE_1_SIGALGS: &[u16] = &[
     0x0403, 0x0503, 0x0603, 0x0804, 0x0805, 0x0806, 0x0401, 0x0501, 0x0601, 0x0203, 0x0201,
 ];
+const PROFILE_1_DELEGATED_CREDENTIALS: &[u16] = &[0x0403, 0x0503, 0x0603, 0x0203];
 const PROFILE_1_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_1_CERT_COMP: &[u16] = &[0x0001, 0x0002, 0x0003];
 const PROFILE_1_APPS: &[UtlsApplicationSettings] = &[];
@@ -246,8 +252,10 @@ const PROFILE_1: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_1_GROUPS,
     key_shares: PROFILE_1_KEY_SHARES,
     signature_algorithms: PROFILE_1_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_1_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_1_ALPN,
     certificate_compression_algorithms: PROFILE_1_CERT_COMP,
+    record_size_limit: Some(0x4001),
     application_settings: PROFILE_1_APPS,
     extensions: PROFILE_1_EXTENSIONS,
     padding_length: None,
@@ -277,6 +285,7 @@ const PROFILE_2_KEY_SHARES: &[UtlsKeyShare] = &[
 const PROFILE_2_SIGALGS: &[u16] = &[
     0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0805, 0x0501, 0x0806, 0x0601, 0x0201,
 ];
+const PROFILE_2_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_2_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_2_CERT_COMP: &[u16] = &[0x0001];
 const PROFILE_2_APPS: &[UtlsApplicationSettings] = &[];
@@ -348,8 +357,10 @@ const PROFILE_2: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_2_GROUPS,
     key_shares: PROFILE_2_KEY_SHARES,
     signature_algorithms: PROFILE_2_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_2_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_2_ALPN,
     certificate_compression_algorithms: PROFILE_2_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_2_APPS,
     extensions: PROFILE_2_EXTENSIONS,
     padding_length: None,
@@ -376,6 +387,7 @@ const PROFILE_3_KEY_SHARES: &[UtlsKeyShare] = &[
 const PROFILE_3_SIGALGS: &[u16] = &[
     0x0403, 0x0804, 0x0401, 0x0503, 0x0203, 0x0805, 0x0805, 0x0501, 0x0806, 0x0601, 0x0201,
 ];
+const PROFILE_3_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_3_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_3_CERT_COMP: &[u16] = &[];
 const PROFILE_3_APPS: &[UtlsApplicationSettings] = &[];
@@ -447,8 +459,10 @@ const PROFILE_3: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_3_GROUPS,
     key_shares: PROFILE_3_KEY_SHARES,
     signature_algorithms: PROFILE_3_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_3_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_3_ALPN,
     certificate_compression_algorithms: PROFILE_3_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_3_APPS,
     extensions: PROFILE_3_EXTENSIONS,
     padding_length: Some(190),
@@ -464,6 +478,7 @@ const PROFILE_4_KEY_SHARES: &[UtlsKeyShare] = &[];
 const PROFILE_4_SIGALGS: &[u16] = &[
     0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601, 0x0201,
 ];
+const PROFILE_4_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_4_ALPN: &[&[u8]] = &[];
 const PROFILE_4_CERT_COMP: &[u16] = &[];
 const PROFILE_4_APPS: &[UtlsApplicationSettings] = &[];
@@ -503,8 +518,10 @@ const PROFILE_4: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_4_GROUPS,
     key_shares: PROFILE_4_KEY_SHARES,
     signature_algorithms: PROFILE_4_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_4_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_4_ALPN,
     certificate_compression_algorithms: PROFILE_4_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_4_APPS,
     extensions: PROFILE_4_EXTENSIONS,
     padding_length: None,
@@ -530,6 +547,7 @@ const PROFILE_5_KEY_SHARES: &[UtlsKeyShare] = &[
 const PROFILE_5_SIGALGS: &[u16] = &[
     0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601,
 ];
+const PROFILE_5_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_5_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_5_CERT_COMP: &[u16] = &[0x0002];
 const PROFILE_5_APPS: &[UtlsApplicationSettings] = &[];
@@ -609,8 +627,10 @@ const PROFILE_5: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_5_GROUPS,
     key_shares: PROFILE_5_KEY_SHARES,
     signature_algorithms: PROFILE_5_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_5_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_5_ALPN,
     certificate_compression_algorithms: PROFILE_5_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_5_APPS,
     extensions: PROFILE_5_EXTENSIONS,
     padding_length: Some(209),
@@ -627,6 +647,7 @@ const PROFILE_6_KEY_SHARES: &[UtlsKeyShare] = &[];
 const PROFILE_6_SIGALGS: &[u16] = &[
     0x0401, 0x0501, 0x0201, 0x0403, 0x0503, 0x0203, 0x0402, 0x0202,
 ];
+const PROFILE_6_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_6_ALPN: &[&[u8]] = &[b"spdy/2", b"spdy/3", b"spdy/3.1", b"http/1.1"];
 const PROFILE_6_CERT_COMP: &[u16] = &[];
 const PROFILE_6_APPS: &[UtlsApplicationSettings] = &[];
@@ -678,8 +699,10 @@ const PROFILE_6: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_6_GROUPS,
     key_shares: PROFILE_6_KEY_SHARES,
     signature_algorithms: PROFILE_6_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_6_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_6_ALPN,
     certificate_compression_algorithms: PROFILE_6_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_6_APPS,
     extensions: PROFILE_6_EXTENSIONS,
     padding_length: None,
@@ -705,6 +728,7 @@ const PROFILE_7_KEY_SHARES: &[UtlsKeyShare] = &[
 const PROFILE_7_SIGALGS: &[u16] = &[
     0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601,
 ];
+const PROFILE_7_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_7_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_7_CERT_COMP: &[u16] = &[0x0002];
 const PROFILE_7_APP_0_PROTOCOLS: &[&[u8]] = &[b"h2"];
@@ -792,8 +816,10 @@ const PROFILE_7: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_7_GROUPS,
     key_shares: PROFILE_7_KEY_SHARES,
     signature_algorithms: PROFILE_7_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_7_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_7_ALPN,
     certificate_compression_algorithms: PROFILE_7_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_7_APPS,
     extensions: PROFILE_7_EXTENSIONS,
     padding_length: Some(200),
@@ -823,6 +849,7 @@ const PROFILE_8_KEY_SHARES: &[UtlsKeyShare] = &[
 const PROFILE_8_SIGALGS: &[u16] = &[
     0x0503, 0x0804, 0x0201, 0x0501, 0x0401, 0x0601, 0x0806, 0x0403, 0x0805,
 ];
+const PROFILE_8_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_8_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_8_CERT_COMP: &[u16] = &[];
 const PROFILE_8_APPS: &[UtlsApplicationSettings] = &[];
@@ -878,8 +905,10 @@ const PROFILE_8: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_8_GROUPS,
     key_shares: PROFILE_8_KEY_SHARES,
     signature_algorithms: PROFILE_8_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_8_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_8_ALPN,
     certificate_compression_algorithms: PROFILE_8_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_8_APPS,
     extensions: PROFILE_8_EXTENSIONS,
     padding_length: None,
@@ -894,6 +923,7 @@ const PROFILE_9_VERSIONS: &[u16] = &[];
 const PROFILE_9_GROUPS: &[u16] = &[0x0017, 0x0018, 0x0019];
 const PROFILE_9_KEY_SHARES: &[UtlsKeyShare] = &[];
 const PROFILE_9_SIGALGS: &[u16] = &[0x0501, 0x0503, 0x0201, 0x0601, 0x0401, 0x0603, 0x0403];
+const PROFILE_9_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_9_ALPN: &[&[u8]] = &[];
 const PROFILE_9_CERT_COMP: &[u16] = &[];
 const PROFILE_9_APPS: &[UtlsApplicationSettings] = &[];
@@ -937,8 +967,10 @@ const PROFILE_9: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_9_GROUPS,
     key_shares: PROFILE_9_KEY_SHARES,
     signature_algorithms: PROFILE_9_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_9_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_9_ALPN,
     certificate_compression_algorithms: PROFILE_9_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_9_APPS,
     extensions: PROFILE_9_EXTENSIONS,
     padding_length: None,
@@ -964,6 +996,7 @@ const PROFILE_10_KEY_SHARES: &[UtlsKeyShare] = &[
 const PROFILE_10_SIGALGS: &[u16] = &[
     0x0403, 0x0503, 0x0603, 0x0804, 0x0805, 0x0806, 0x0401, 0x0501, 0x0601, 0x0203, 0x0201,
 ];
+const PROFILE_10_DELEGATED_CREDENTIALS: &[u16] = &[0x0403, 0x0503, 0x0603, 0x0203];
 const PROFILE_10_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_10_CERT_COMP: &[u16] = &[];
 const PROFILE_10_APPS: &[UtlsApplicationSettings] = &[];
@@ -1035,8 +1068,10 @@ const PROFILE_10: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_10_GROUPS,
     key_shares: PROFILE_10_KEY_SHARES,
     signature_algorithms: PROFILE_10_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_10_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_10_ALPN,
     certificate_compression_algorithms: PROFILE_10_CERT_COMP,
+    record_size_limit: Some(0x4001),
     application_settings: PROFILE_10_APPS,
     extensions: PROFILE_10_EXTENSIONS,
     padding_length: None,
@@ -1062,6 +1097,7 @@ const PROFILE_11_KEY_SHARES: &[UtlsKeyShare] = &[
 const PROFILE_11_SIGALGS: &[u16] = &[
     0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601,
 ];
+const PROFILE_11_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_11_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_11_CERT_COMP: &[u16] = &[0x0002];
 const PROFILE_11_APP_0_PROTOCOLS: &[&[u8]] = &[b"h2"];
@@ -1153,8 +1189,10 @@ const PROFILE_11: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_11_GROUPS,
     key_shares: PROFILE_11_KEY_SHARES,
     signature_algorithms: PROFILE_11_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_11_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_11_ALPN,
     certificate_compression_algorithms: PROFILE_11_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_11_APPS,
     extensions: PROFILE_11_EXTENSIONS,
     padding_length: Some(14),
@@ -1184,6 +1222,7 @@ const PROFILE_12_KEY_SHARES: &[UtlsKeyShare] = &[
 const PROFILE_12_SIGALGS: &[u16] = &[
     0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601,
 ];
+const PROFILE_12_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_12_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_12_CERT_COMP: &[u16] = &[0x0002];
 const PROFILE_12_APP_0_PROTOCOLS: &[&[u8]] = &[b"h2"];
@@ -1271,8 +1310,10 @@ const PROFILE_12: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_12_GROUPS,
     key_shares: PROFILE_12_KEY_SHARES,
     signature_algorithms: PROFILE_12_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_12_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_12_ALPN,
     certificate_compression_algorithms: PROFILE_12_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_12_APPS,
     extensions: PROFILE_12_EXTENSIONS,
     padding_length: None,
@@ -1293,6 +1334,7 @@ const PROFILE_13_KEY_SHARES: &[UtlsKeyShare] = &[UtlsKeyShare {
 const PROFILE_13_SIGALGS: &[u16] = &[
     0x0403, 0x0804, 0x0401, 0x0503, 0x0203, 0x0805, 0x0805, 0x0501, 0x0806, 0x0601, 0x0201,
 ];
+const PROFILE_13_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_13_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_13_CERT_COMP: &[u16] = &[];
 const PROFILE_13_APPS: &[UtlsApplicationSettings] = &[];
@@ -1356,8 +1398,10 @@ const PROFILE_13: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_13_GROUPS,
     key_shares: PROFILE_13_KEY_SHARES,
     signature_algorithms: PROFILE_13_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_13_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_13_ALPN,
     certificate_compression_algorithms: PROFILE_13_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_13_APPS,
     extensions: PROFILE_13_EXTENSIONS,
     padding_length: Some(210),
@@ -1383,6 +1427,7 @@ const PROFILE_14_KEY_SHARES: &[UtlsKeyShare] = &[
 const PROFILE_14_SIGALGS: &[u16] = &[
     0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601,
 ];
+const PROFILE_14_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_14_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_14_CERT_COMP: &[u16] = &[0x0002];
 const PROFILE_14_APP_0_PROTOCOLS: &[&[u8]] = &[b"h2"];
@@ -1470,8 +1515,10 @@ const PROFILE_14: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_14_GROUPS,
     key_shares: PROFILE_14_KEY_SHARES,
     signature_algorithms: PROFILE_14_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_14_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_14_ALPN,
     certificate_compression_algorithms: PROFILE_14_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_14_APPS,
     extensions: PROFILE_14_EXTENSIONS,
     padding_length: Some(204),
@@ -1497,6 +1544,7 @@ const PROFILE_15_KEY_SHARES: &[UtlsKeyShare] = &[
 const PROFILE_15_SIGALGS: &[u16] = &[
     0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601, 0x0201,
 ];
+const PROFILE_15_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_15_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_15_CERT_COMP: &[u16] = &[0x0002];
 const PROFILE_15_APPS: &[UtlsApplicationSettings] = &[];
@@ -1580,8 +1628,10 @@ const PROFILE_15: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_15_GROUPS,
     key_shares: PROFILE_15_KEY_SHARES,
     signature_algorithms: PROFILE_15_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_15_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_15_ALPN,
     certificate_compression_algorithms: PROFILE_15_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_15_APPS,
     extensions: PROFILE_15_EXTENSIONS,
     padding_length: Some(201),
@@ -1596,6 +1646,7 @@ const PROFILE_16_VERSIONS: &[u16] = &[];
 const PROFILE_16_GROUPS: &[u16] = &[0x0017, 0x0018, 0x0019];
 const PROFILE_16_KEY_SHARES: &[UtlsKeyShare] = &[];
 const PROFILE_16_SIGALGS: &[u16] = &[0x0501, 0x0503, 0x0201, 0x0601, 0x0401, 0x0603, 0x0403];
+const PROFILE_16_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_16_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_16_CERT_COMP: &[u16] = &[];
 const PROFILE_16_APPS: &[UtlsApplicationSettings] = &[];
@@ -1643,8 +1694,10 @@ const PROFILE_16: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_16_GROUPS,
     key_shares: PROFILE_16_KEY_SHARES,
     signature_algorithms: PROFILE_16_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_16_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_16_ALPN,
     certificate_compression_algorithms: PROFILE_16_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_16_APPS,
     extensions: PROFILE_16_EXTENSIONS,
     padding_length: None,
@@ -1661,6 +1714,7 @@ const PROFILE_17_KEY_SHARES: &[UtlsKeyShare] = &[];
 const PROFILE_17_SIGALGS: &[u16] = &[
     0x0403, 0x0503, 0x0603, 0x0804, 0x0805, 0x0806, 0x0401, 0x0501, 0x0601, 0x0203, 0x0201,
 ];
+const PROFILE_17_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_17_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_17_CERT_COMP: &[u16] = &[];
 const PROFILE_17_APPS: &[UtlsApplicationSettings] = &[];
@@ -1708,8 +1762,10 @@ const PROFILE_17: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_17_GROUPS,
     key_shares: PROFILE_17_KEY_SHARES,
     signature_algorithms: PROFILE_17_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_17_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_17_ALPN,
     certificate_compression_algorithms: PROFILE_17_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_17_APPS,
     extensions: PROFILE_17_EXTENSIONS,
     padding_length: None,
@@ -1726,6 +1782,7 @@ const PROFILE_18_KEY_SHARES: &[UtlsKeyShare] = &[];
 const PROFILE_18_SIGALGS: &[u16] = &[
     0x0403, 0x0503, 0x0603, 0x0804, 0x0805, 0x0806, 0x0401, 0x0501, 0x0601, 0x0203, 0x0201,
 ];
+const PROFILE_18_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_18_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_18_CERT_COMP: &[u16] = &[];
 const PROFILE_18_APPS: &[UtlsApplicationSettings] = &[];
@@ -1773,8 +1830,10 @@ const PROFILE_18: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_18_GROUPS,
     key_shares: PROFILE_18_KEY_SHARES,
     signature_algorithms: PROFILE_18_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_18_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_18_ALPN,
     certificate_compression_algorithms: PROFILE_18_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_18_APPS,
     extensions: PROFILE_18_EXTENSIONS,
     padding_length: None,
@@ -1800,6 +1859,7 @@ const PROFILE_19_KEY_SHARES: &[UtlsKeyShare] = &[
 const PROFILE_19_SIGALGS: &[u16] = &[
     0x0403, 0x0503, 0x0603, 0x0804, 0x0805, 0x0806, 0x0401, 0x0501, 0x0601, 0x0203, 0x0201,
 ];
+const PROFILE_19_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_19_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_19_CERT_COMP: &[u16] = &[];
 const PROFILE_19_APPS: &[UtlsApplicationSettings] = &[];
@@ -1867,8 +1927,10 @@ const PROFILE_19: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_19_GROUPS,
     key_shares: PROFILE_19_KEY_SHARES,
     signature_algorithms: PROFILE_19_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_19_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_19_ALPN,
     certificate_compression_algorithms: PROFILE_19_CERT_COMP,
+    record_size_limit: Some(0x4001),
     application_settings: PROFILE_19_APPS,
     extensions: PROFILE_19_EXTENSIONS,
     padding_length: Some(147),
@@ -1894,6 +1956,7 @@ const PROFILE_20_KEY_SHARES: &[UtlsKeyShare] = &[
 const PROFILE_20_SIGALGS: &[u16] = &[
     0x0403, 0x0503, 0x0603, 0x0804, 0x0805, 0x0806, 0x0401, 0x0501, 0x0601, 0x0203, 0x0201,
 ];
+const PROFILE_20_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_20_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_20_CERT_COMP: &[u16] = &[];
 const PROFILE_20_APPS: &[UtlsApplicationSettings] = &[];
@@ -1961,8 +2024,10 @@ const PROFILE_20: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_20_GROUPS,
     key_shares: PROFILE_20_KEY_SHARES,
     signature_algorithms: PROFILE_20_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_20_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_20_ALPN,
     certificate_compression_algorithms: PROFILE_20_CERT_COMP,
+    record_size_limit: Some(0x4001),
     application_settings: PROFILE_20_APPS,
     extensions: PROFILE_20_EXTENSIONS,
     padding_length: Some(147),
@@ -1988,6 +2053,7 @@ const PROFILE_21_KEY_SHARES: &[UtlsKeyShare] = &[
 const PROFILE_21_SIGALGS: &[u16] = &[
     0x0403, 0x0503, 0x0603, 0x0804, 0x0805, 0x0806, 0x0401, 0x0501, 0x0601, 0x0203, 0x0201,
 ];
+const PROFILE_21_DELEGATED_CREDENTIALS: &[u16] = &[0x0403, 0x0503, 0x0603, 0x0203];
 const PROFILE_21_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_21_CERT_COMP: &[u16] = &[];
 const PROFILE_21_APPS: &[UtlsApplicationSettings] = &[];
@@ -2059,8 +2125,10 @@ const PROFILE_21: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_21_GROUPS,
     key_shares: PROFILE_21_KEY_SHARES,
     signature_algorithms: PROFILE_21_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_21_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_21_ALPN,
     certificate_compression_algorithms: PROFILE_21_CERT_COMP,
+    record_size_limit: Some(0x4001),
     application_settings: PROFILE_21_APPS,
     extensions: PROFILE_21_EXTENSIONS,
     padding_length: Some(133),
@@ -2086,6 +2154,7 @@ const PROFILE_22_KEY_SHARES: &[UtlsKeyShare] = &[
 const PROFILE_22_SIGALGS: &[u16] = &[
     0x0403, 0x0503, 0x0603, 0x0804, 0x0805, 0x0806, 0x0401, 0x0501, 0x0601, 0x0203, 0x0201,
 ];
+const PROFILE_22_DELEGATED_CREDENTIALS: &[u16] = &[0x0403, 0x0503, 0x0603, 0x0203];
 const PROFILE_22_ALPN: &[&[u8]] = &[b"h2"];
 const PROFILE_22_CERT_COMP: &[u16] = &[];
 const PROFILE_22_APPS: &[UtlsApplicationSettings] = &[];
@@ -2157,8 +2226,10 @@ const PROFILE_22: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_22_GROUPS,
     key_shares: PROFILE_22_KEY_SHARES,
     signature_algorithms: PROFILE_22_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_22_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_22_ALPN,
     certificate_compression_algorithms: PROFILE_22_CERT_COMP,
+    record_size_limit: Some(0x4001),
     application_settings: PROFILE_22_APPS,
     extensions: PROFILE_22_EXTENSIONS,
     padding_length: Some(148),
@@ -2184,6 +2255,7 @@ const PROFILE_23_KEY_SHARES: &[UtlsKeyShare] = &[
 const PROFILE_23_SIGALGS: &[u16] = &[
     0x0403, 0x0503, 0x0603, 0x0804, 0x0805, 0x0806, 0x0401, 0x0501, 0x0601, 0x0203, 0x0201,
 ];
+const PROFILE_23_DELEGATED_CREDENTIALS: &[u16] = &[0x0403, 0x0503, 0x0603, 0x0203];
 const PROFILE_23_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_23_CERT_COMP: &[u16] = &[];
 const PROFILE_23_APPS: &[UtlsApplicationSettings] = &[];
@@ -2255,8 +2327,10 @@ const PROFILE_23: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_23_GROUPS,
     key_shares: PROFILE_23_KEY_SHARES,
     signature_algorithms: PROFILE_23_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_23_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_23_ALPN,
     certificate_compression_algorithms: PROFILE_23_CERT_COMP,
+    record_size_limit: Some(0x4001),
     application_settings: PROFILE_23_APPS,
     extensions: PROFILE_23_EXTENSIONS,
     padding_length: Some(139),
@@ -2273,6 +2347,7 @@ const PROFILE_24_KEY_SHARES: &[UtlsKeyShare] = &[];
 const PROFILE_24_SIGALGS: &[u16] = &[
     0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601, 0x0201,
 ];
+const PROFILE_24_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_24_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_24_CERT_COMP: &[u16] = &[];
 const PROFILE_24_APPS: &[UtlsApplicationSettings] = &[];
@@ -2336,8 +2411,10 @@ const PROFILE_24: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_24_GROUPS,
     key_shares: PROFILE_24_KEY_SHARES,
     signature_algorithms: PROFILE_24_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_24_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_24_ALPN,
     certificate_compression_algorithms: PROFILE_24_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_24_APPS,
     extensions: PROFILE_24_EXTENSIONS,
     padding_length: None,
@@ -2354,6 +2431,7 @@ const PROFILE_25_KEY_SHARES: &[UtlsKeyShare] = &[];
 const PROFILE_25_SIGALGS: &[u16] = &[
     0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601, 0x0201,
 ];
+const PROFILE_25_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_25_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_25_CERT_COMP: &[u16] = &[];
 const PROFILE_25_APPS: &[UtlsApplicationSettings] = &[];
@@ -2417,8 +2495,10 @@ const PROFILE_25: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_25_GROUPS,
     key_shares: PROFILE_25_KEY_SHARES,
     signature_algorithms: PROFILE_25_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_25_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_25_ALPN,
     certificate_compression_algorithms: PROFILE_25_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_25_APPS,
     extensions: PROFILE_25_EXTENSIONS,
     padding_length: None,
@@ -2444,6 +2524,7 @@ const PROFILE_26_KEY_SHARES: &[UtlsKeyShare] = &[
 const PROFILE_26_SIGALGS: &[u16] = &[
     0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601, 0x0201,
 ];
+const PROFILE_26_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_26_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_26_CERT_COMP: &[u16] = &[0x0002];
 const PROFILE_26_APPS: &[UtlsApplicationSettings] = &[];
@@ -2527,8 +2608,10 @@ const PROFILE_26: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_26_GROUPS,
     key_shares: PROFILE_26_KEY_SHARES,
     signature_algorithms: PROFILE_26_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_26_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_26_ALPN,
     certificate_compression_algorithms: PROFILE_26_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_26_APPS,
     extensions: PROFILE_26_EXTENSIONS,
     padding_length: Some(201),
@@ -2554,6 +2637,7 @@ const PROFILE_27_KEY_SHARES: &[UtlsKeyShare] = &[
 const PROFILE_27_SIGALGS: &[u16] = &[
     0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601, 0x0201,
 ];
+const PROFILE_27_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_27_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_27_CERT_COMP: &[u16] = &[0x0002];
 const PROFILE_27_APPS: &[UtlsApplicationSettings] = &[];
@@ -2633,8 +2717,10 @@ const PROFILE_27: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_27_GROUPS,
     key_shares: PROFILE_27_KEY_SHARES,
     signature_algorithms: PROFILE_27_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_27_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_27_ALPN,
     certificate_compression_algorithms: PROFILE_27_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_27_APPS,
     extensions: PROFILE_27_EXTENSIONS,
     padding_length: Some(205),
@@ -2660,6 +2746,7 @@ const PROFILE_28_KEY_SHARES: &[UtlsKeyShare] = &[
 const PROFILE_28_SIGALGS: &[u16] = &[
     0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601,
 ];
+const PROFILE_28_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_28_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_28_CERT_COMP: &[u16] = &[0x0002];
 const PROFILE_28_APPS: &[UtlsApplicationSettings] = &[];
@@ -2739,8 +2826,10 @@ const PROFILE_28: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_28_GROUPS,
     key_shares: PROFILE_28_KEY_SHARES,
     signature_algorithms: PROFILE_28_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_28_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_28_ALPN,
     certificate_compression_algorithms: PROFILE_28_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_28_APPS,
     extensions: PROFILE_28_EXTENSIONS,
     padding_length: Some(209),
@@ -2766,6 +2855,7 @@ const PROFILE_29_KEY_SHARES: &[UtlsKeyShare] = &[
 const PROFILE_29_SIGALGS: &[u16] = &[
     0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601,
 ];
+const PROFILE_29_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_29_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_29_CERT_COMP: &[u16] = &[0x0002];
 const PROFILE_29_APPS: &[UtlsApplicationSettings] = &[];
@@ -2845,8 +2935,10 @@ const PROFILE_29: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_29_GROUPS,
     key_shares: PROFILE_29_KEY_SHARES,
     signature_algorithms: PROFILE_29_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_29_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_29_ALPN,
     certificate_compression_algorithms: PROFILE_29_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_29_APPS,
     extensions: PROFILE_29_EXTENSIONS,
     padding_length: Some(209),
@@ -2872,6 +2964,7 @@ const PROFILE_30_KEY_SHARES: &[UtlsKeyShare] = &[
 const PROFILE_30_SIGALGS: &[u16] = &[
     0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601,
 ];
+const PROFILE_30_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_30_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_30_CERT_COMP: &[u16] = &[0x0002];
 const PROFILE_30_APP_0_PROTOCOLS: &[&[u8]] = &[b"h2"];
@@ -2959,8 +3052,10 @@ const PROFILE_30: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_30_GROUPS,
     key_shares: PROFILE_30_KEY_SHARES,
     signature_algorithms: PROFILE_30_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_30_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_30_ALPN,
     certificate_compression_algorithms: PROFILE_30_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_30_APPS,
     extensions: PROFILE_30_EXTENSIONS,
     padding_length: Some(200),
@@ -2986,6 +3081,7 @@ const PROFILE_31_KEY_SHARES: &[UtlsKeyShare] = &[
 const PROFILE_31_SIGALGS: &[u16] = &[
     0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601,
 ];
+const PROFILE_31_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_31_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_31_CERT_COMP: &[u16] = &[0x0002];
 const PROFILE_31_APP_0_PROTOCOLS: &[&[u8]] = &[b"h2"];
@@ -3073,8 +3169,10 @@ const PROFILE_31: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_31_GROUPS,
     key_shares: PROFILE_31_KEY_SHARES,
     signature_algorithms: PROFILE_31_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_31_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_31_ALPN,
     certificate_compression_algorithms: PROFILE_31_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_31_APPS,
     extensions: PROFILE_31_EXTENSIONS,
     padding_length: Some(204),
@@ -3100,6 +3198,7 @@ const PROFILE_32_KEY_SHARES: &[UtlsKeyShare] = &[
 const PROFILE_32_SIGALGS: &[u16] = &[
     0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601,
 ];
+const PROFILE_32_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_32_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_32_CERT_COMP: &[u16] = &[0x0002];
 const PROFILE_32_APP_0_PROTOCOLS: &[&[u8]] = &[b"h2"];
@@ -3187,8 +3286,10 @@ const PROFILE_32: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_32_GROUPS,
     key_shares: PROFILE_32_KEY_SHARES,
     signature_algorithms: PROFILE_32_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_32_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_32_ALPN,
     certificate_compression_algorithms: PROFILE_32_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_32_APPS,
     extensions: PROFILE_32_EXTENSIONS,
     padding_length: Some(204),
@@ -3214,6 +3315,7 @@ const PROFILE_33_KEY_SHARES: &[UtlsKeyShare] = &[
 const PROFILE_33_SIGALGS: &[u16] = &[
     0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601,
 ];
+const PROFILE_33_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_33_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_33_CERT_COMP: &[u16] = &[0x0002];
 const PROFILE_33_APP_0_PROTOCOLS: &[&[u8]] = &[b"h2"];
@@ -3301,8 +3403,10 @@ const PROFILE_33: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_33_GROUPS,
     key_shares: PROFILE_33_KEY_SHARES,
     signature_algorithms: PROFILE_33_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_33_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_33_ALPN,
     certificate_compression_algorithms: PROFILE_33_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_33_APPS,
     extensions: PROFILE_33_EXTENSIONS,
     padding_length: Some(204),
@@ -3319,6 +3423,7 @@ const PROFILE_34_KEY_SHARES: &[UtlsKeyShare] = &[];
 const PROFILE_34_SIGALGS: &[u16] = &[
     0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601, 0x0201,
 ];
+const PROFILE_34_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_34_ALPN: &[&[u8]] = &[
     b"h2",
     b"h2-16",
@@ -3378,8 +3483,10 @@ const PROFILE_34: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_34_GROUPS,
     key_shares: PROFILE_34_KEY_SHARES,
     signature_algorithms: PROFILE_34_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_34_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_34_ALPN,
     certificate_compression_algorithms: PROFILE_34_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_34_APPS,
     extensions: PROFILE_34_EXTENSIONS,
     padding_length: None,
@@ -3396,6 +3503,7 @@ const PROFILE_35_KEY_SHARES: &[UtlsKeyShare] = &[];
 const PROFILE_35_SIGALGS: &[u16] = &[
     0x0403, 0x0804, 0x0401, 0x0503, 0x0203, 0x0805, 0x0805, 0x0501, 0x0806, 0x0601, 0x0201,
 ];
+const PROFILE_35_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_35_ALPN: &[&[u8]] = &[
     b"h2",
     b"h2-16",
@@ -3455,8 +3563,10 @@ const PROFILE_35: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_35_GROUPS,
     key_shares: PROFILE_35_KEY_SHARES,
     signature_algorithms: PROFILE_35_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_35_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_35_ALPN,
     certificate_compression_algorithms: PROFILE_35_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_35_APPS,
     extensions: PROFILE_35_EXTENSIONS,
     padding_length: None,
@@ -3482,6 +3592,7 @@ const PROFILE_36_KEY_SHARES: &[UtlsKeyShare] = &[
 const PROFILE_36_SIGALGS: &[u16] = &[
     0x0403, 0x0804, 0x0401, 0x0503, 0x0203, 0x0805, 0x0805, 0x0501, 0x0806, 0x0601, 0x0201,
 ];
+const PROFILE_36_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_36_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_36_CERT_COMP: &[u16] = &[0x0001];
 const PROFILE_36_APPS: &[UtlsApplicationSettings] = &[];
@@ -3557,8 +3668,10 @@ const PROFILE_36: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_36_GROUPS,
     key_shares: PROFILE_36_KEY_SHARES,
     signature_algorithms: PROFILE_36_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_36_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_36_ALPN,
     certificate_compression_algorithms: PROFILE_36_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_36_APPS,
     extensions: PROFILE_36_EXTENSIONS,
     padding_length: Some(195),
@@ -3584,6 +3697,7 @@ const PROFILE_37_KEY_SHARES: &[UtlsKeyShare] = &[
 const PROFILE_37_SIGALGS: &[u16] = &[
     0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601,
 ];
+const PROFILE_37_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_37_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_37_CERT_COMP: &[u16] = &[0x0002];
 const PROFILE_37_APP_0_PROTOCOLS: &[&[u8]] = &[b"h2"];
@@ -3667,8 +3781,10 @@ const PROFILE_37: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_37_GROUPS,
     key_shares: PROFILE_37_KEY_SHARES,
     signature_algorithms: PROFILE_37_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_37_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_37_ALPN,
     certificate_compression_algorithms: PROFILE_37_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_37_APPS,
     extensions: PROFILE_37_EXTENSIONS,
     padding_length: None,
@@ -3694,6 +3810,7 @@ const PROFILE_38_KEY_SHARES: &[UtlsKeyShare] = &[
 const PROFILE_38_SIGALGS: &[u16] = &[
     0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601,
 ];
+const PROFILE_38_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_38_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_38_CERT_COMP: &[u16] = &[0x0002];
 const PROFILE_38_APP_0_PROTOCOLS: &[&[u8]] = &[b"h2"];
@@ -3777,8 +3894,10 @@ const PROFILE_38: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_38_GROUPS,
     key_shares: PROFILE_38_KEY_SHARES,
     signature_algorithms: PROFILE_38_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_38_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_38_ALPN,
     certificate_compression_algorithms: PROFILE_38_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_38_APPS,
     extensions: PROFILE_38_EXTENSIONS,
     padding_length: None,
@@ -3804,6 +3923,7 @@ const PROFILE_39_KEY_SHARES: &[UtlsKeyShare] = &[
 const PROFILE_39_SIGALGS: &[u16] = &[
     0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601,
 ];
+const PROFILE_39_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_39_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_39_CERT_COMP: &[u16] = &[0x0002];
 const PROFILE_39_APP_0_PROTOCOLS: &[&[u8]] = &[b"h2"];
@@ -3891,8 +4011,10 @@ const PROFILE_39: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_39_GROUPS,
     key_shares: PROFILE_39_KEY_SHARES,
     signature_algorithms: PROFILE_39_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_39_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_39_ALPN,
     certificate_compression_algorithms: PROFILE_39_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_39_APPS,
     extensions: PROFILE_39_EXTENSIONS,
     padding_length: Some(204),
@@ -3922,6 +4044,7 @@ const PROFILE_40_KEY_SHARES: &[UtlsKeyShare] = &[
 const PROFILE_40_SIGALGS: &[u16] = &[
     0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601,
 ];
+const PROFILE_40_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_40_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_40_CERT_COMP: &[u16] = &[0x0002];
 const PROFILE_40_APP_0_PROTOCOLS: &[&[u8]] = &[b"h2"];
@@ -4005,8 +4128,10 @@ const PROFILE_40: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_40_GROUPS,
     key_shares: PROFILE_40_KEY_SHARES,
     signature_algorithms: PROFILE_40_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_40_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_40_ALPN,
     certificate_compression_algorithms: PROFILE_40_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_40_APPS,
     extensions: PROFILE_40_EXTENSIONS,
     padding_length: None,
@@ -4036,6 +4161,7 @@ const PROFILE_41_KEY_SHARES: &[UtlsKeyShare] = &[
 const PROFILE_41_SIGALGS: &[u16] = &[
     0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601,
 ];
+const PROFILE_41_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_41_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_41_CERT_COMP: &[u16] = &[0x0002];
 const PROFILE_41_APP_0_PROTOCOLS: &[&[u8]] = &[b"h2"];
@@ -4119,8 +4245,10 @@ const PROFILE_41: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_41_GROUPS,
     key_shares: PROFILE_41_KEY_SHARES,
     signature_algorithms: PROFILE_41_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_41_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_41_ALPN,
     certificate_compression_algorithms: PROFILE_41_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_41_APPS,
     extensions: PROFILE_41_EXTENSIONS,
     padding_length: None,
@@ -4150,6 +4278,7 @@ const PROFILE_42_KEY_SHARES: &[UtlsKeyShare] = &[
 const PROFILE_42_SIGALGS: &[u16] = &[
     0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601,
 ];
+const PROFILE_42_DELEGATED_CREDENTIALS: &[u16] = &[];
 const PROFILE_42_ALPN: &[&[u8]] = &[b"h2", b"http/1.1"];
 const PROFILE_42_CERT_COMP: &[u16] = &[0x0002];
 const PROFILE_42_APP_0_PROTOCOLS: &[&[u8]] = &[b"h2"];
@@ -4237,8 +4366,10 @@ const PROFILE_42: UtlsClientHelloProfile = UtlsClientHelloProfile {
     supported_groups: PROFILE_42_GROUPS,
     key_shares: PROFILE_42_KEY_SHARES,
     signature_algorithms: PROFILE_42_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_42_DELEGATED_CREDENTIALS,
     alpn_protocols: PROFILE_42_ALPN,
     certificate_compression_algorithms: PROFILE_42_CERT_COMP,
+    record_size_limit: None,
     application_settings: PROFILE_42_APPS,
     extensions: PROFILE_42_EXTENSIONS,
     padding_length: None,

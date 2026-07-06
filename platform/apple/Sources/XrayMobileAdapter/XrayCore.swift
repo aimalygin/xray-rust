@@ -279,7 +279,8 @@ public final class XrayCore: @unchecked Sendable {
         collectTcpTimings: Bool = false,
         tunRuntimeProfile: XrayTunRuntimeProfile = XRAY_TUN_RUNTIME_PROFILE_DEFAULT,
         geodataSearchDirectory: URL? = nil,
-        startupProbe: XrayStartupProbeOptions? = nil
+        startupProbe: XrayStartupProbeOptions? = nil,
+        fileLogDirectory: URL? = nil
     ) throws {
         try self.init(
             configJSON: configJSON,
@@ -287,6 +288,7 @@ public final class XrayCore: @unchecked Sendable {
             tunRuntimeProfile: tunRuntimeProfile,
             geodataSearchDirectory: geodataSearchDirectory,
             startupProbe: startupProbe,
+            fileLogDirectory: fileLogDirectory,
             tunFileDescriptor: fd,
             tunPacketFormat: XRAY_TUN_FD_PACKET_FORMAT_DARWIN_UTUN,
             tunClosePolicy: XRAY_TUN_FD_CLOSE_POLICY_BORROWED
@@ -299,6 +301,7 @@ public final class XrayCore: @unchecked Sendable {
         tunRuntimeProfile: XrayTunRuntimeProfile = XRAY_TUN_RUNTIME_PROFILE_DEFAULT,
         geodataSearchDirectory: URL? = nil,
         startupProbe: XrayStartupProbeOptions? = nil,
+        fileLogDirectory: URL? = nil,
         socketProtectCallback: XraySocketProtectCallback? = nil,
         socketProtectUserData: UnsafeMutableRawPointer? = nil,
         tunFileDescriptor: Int32? = nil,
@@ -345,6 +348,18 @@ public final class XrayCore: @unchecked Sendable {
                             error: error
                         )
                     }
+                }
+            }
+            if let fileLogDirectory {
+                try FileManager.default.createDirectory(
+                    at: fileLogDirectory,
+                    withIntermediateDirectories: true
+                )
+                try fileLogDirectory.path.withCString { pointer in
+                    try check(
+                        xray_core_set_file_logging(handle, pointer, 1, &error),
+                        error: error
+                    )
                 }
             }
             if socketProtectCallback != nil {

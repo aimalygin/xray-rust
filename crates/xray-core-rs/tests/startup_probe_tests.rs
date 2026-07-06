@@ -10,7 +10,10 @@ use xray_config::{
     CoreConfig, InboundConfig, InboundProtocol, Network, OutboundConfig, OutboundSettings,
     PolicyConfig, PolicyLevelConfig, RoutingConfig, RoutingRule, StreamSecurity, StreamSettings,
 };
-use xray_core_rs::{Core, CoreError, CoreState, StartupProbeError, StartupProbeOptions};
+use xray_core_rs::{
+    Core, CoreError, CoreState, RuntimeLogConfig, RuntimeLogger, StartupProbeError,
+    StartupProbeOptions,
+};
 use xray_transport::{DnsResolver, TransportDialer, TransportError};
 
 fn freedom(tag: &str) -> OutboundConfig {
@@ -141,6 +144,19 @@ fn probe_url(addr: SocketAddr) -> String {
     format!("http://probe.test:{}/health", addr.port())
 }
 
+fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+        "{prefix}-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time should be after epoch")
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).expect("temp dir should be created");
+    dir
+}
+
 #[tokio::test]
 async fn startup_probe_succeeds_for_http_2xx_response() {
     let addr = spawn_http_status_once(204).await;
@@ -189,6 +205,41 @@ async fn startup_probe_fails_for_http_4xx_response_and_rolls_back_start() {
 
     assert!(matches!(error, CoreError::StartupProbe(_)));
     assert_eq!(core.state(), CoreState::Stopped);
+}
+
+#[tokio::test]
+async fn startup_probe_failure_is_written_to_runtime_error_log() {
+    let addr = spawn_http_status_once(404).await;
+    let resolver = Arc::new(StaticDnsResolver {
+        domain: "probe.test",
+        addr,
+    });
+    let log_dir = unique_temp_dir("xray-startup-probe-log");
+    let mut core = Core::with_runtime_dependencies(
+        config_with_outbounds(vec![freedom("direct")], Some("direct")),
+        resolver,
+        Arc::new(TransportDialer::system().unwrap()),
+    )
+    .unwrap()
+    .with_startup_probe(StartupProbeOptions {
+        url: probe_url(addr),
+        timeout: Duration::from_secs(2),
+        outbound_tag: Some("direct".to_owned()),
+    });
+    core.set_runtime_logger(
+        RuntimeLogger::new(RuntimeLogConfig::directory(&log_dir))
+            .expect("runtime logger should open files"),
+    );
+
+    let error = core.start().await.unwrap_err();
+
+    assert!(matches!(error, CoreError::StartupProbe(_)));
+    drop(core);
+    let error_log =
+        std::fs::read_to_string(log_dir.join("xray-error.log")).expect("error log should exist");
+    assert!(error_log.contains("Debug startupProbe start"));
+    assert!(error_log.contains("Debug startupProbe fail"));
+    assert!(error_log.contains("HTTP status 404"));
 }
 
 #[tokio::test]

@@ -14,6 +14,8 @@ mod reality_clienthello_tests {
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
     const PLAIN_X25519_PUBLIC_KEY_HEX: &str =
         "8f40c5adb68f25624ae5b214ea767a6ec94d829d3d7b5e1ad1ba6f3e2138285f";
+    const TLS_KEY_SHARE_ENTRY_HEADER_LEN: usize = 4;
+    const X25519_PUBLIC_KEY_LEN: usize = 32;
     const TLS_GROUP_X25519: u16 = 0x001d;
     const TLS_GROUP_X25519_MLKEM768: u16 = 0x11ec;
 
@@ -25,7 +27,6 @@ mod reality_clienthello_tests {
         hello_random_hex: String,
         session_id_offset: usize,
         local_x25519_private_key_hex: String,
-        key_share_group: String,
         key_share_x25519_public_key_offset: usize,
         key_share_x25519_public_key_hex: String,
     }
@@ -142,14 +143,6 @@ mod reality_clienthello_tests {
         (prepared, key_exchange_offsets[0])
     }
 
-    fn expected_group(fixture: &ClientHelloFixture) -> RealityClientHelloKeyShareGroup {
-        match fixture.key_share_group.as_str() {
-            "x25519" => RealityClientHelloKeyShareGroup::X25519,
-            "x25519mlkem768" => RealityClientHelloKeyShareGroup::X25519MlKem768,
-            value => panic!("unexpected key-share group {value}"),
-        }
-    }
-
     #[test]
     fn clienthello_fixture_has_xray_reality_shape() {
         let fixture = fixture();
@@ -182,10 +175,15 @@ mod reality_clienthello_tests {
         let validation = validate_reality_client_hello_metadata(&prepared).unwrap();
 
         assert_eq!(validation.session_id_offset, fixture.session_id_offset);
-        assert_eq!(validation.key_share.group, expected_group(&fixture));
+        assert_eq!(
+            validation.key_share.group,
+            RealityClientHelloKeyShareGroup::X25519
+        );
         assert_eq!(
             validation.key_share.offset,
             fixture.key_share_x25519_public_key_offset
+                + TLS_KEY_SHARE_ENTRY_HEADER_LEN
+                + X25519_PUBLIC_KEY_LEN
         );
         assert_eq!(
             validation.key_share.public_key,

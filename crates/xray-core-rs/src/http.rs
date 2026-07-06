@@ -13,7 +13,7 @@ use crate::policy::{
 };
 use crate::{
     open_tcp_stream_with_resolver_and_dialer, select_tcp_outbound_for_session_with_resolver,
-    TcpOutbound,
+    RuntimeLogger, TcpOutbound,
 };
 
 const HTTP_CONNECT_ESTABLISHED: &[u8] = b"HTTP/1.1 200 Connection Established\r\n\r\n";
@@ -27,6 +27,7 @@ pub async fn serve_http_listener(
     dns_resolver: Arc<dyn DnsResolver>,
     transport_dialer: Arc<TransportDialer>,
     policy: EffectivePolicy,
+    runtime_logger: RuntimeLogger,
     mut shutdown: watch::Receiver<bool>,
 ) {
     let mut connections = JoinSet::new();
@@ -51,6 +52,7 @@ pub async fn serve_http_listener(
                 let config = Arc::clone(&config);
                 let dns_resolver = Arc::clone(&dns_resolver);
                 let transport_dialer = Arc::clone(&transport_dialer);
+                let runtime_logger = runtime_logger.clone();
                 connections.spawn(async move {
                     handle_http_connection(
                         stream,
@@ -59,6 +61,7 @@ pub async fn serve_http_listener(
                         dns_resolver,
                         transport_dialer,
                         policy,
+                        runtime_logger,
                     ).await;
                 });
             }
@@ -79,7 +82,13 @@ async fn handle_http_connection(
     dns_resolver: Arc<dyn DnsResolver>,
     transport_dialer: Arc<TransportDialer>,
     policy: EffectivePolicy,
+    runtime_logger: RuntimeLogger,
 ) {
+    let source = runtime_logger.is_enabled().then(|| {
+        inbound
+            .peer_addr()
+            .map_or_else(|_| "unknown".to_owned(), |addr| addr.to_string())
+    });
     let target =
         match tokio::time::timeout(policy.handshake, parse_http_connect(&mut inbound)).await {
             Ok(Ok(target)) => target,
@@ -98,24 +107,43 @@ async fn handle_http_connection(
     .await
     {
         Ok(outbound) => outbound,
-        Err(_) => {
+        Err(error) => {
+            if let Some(source) = source.as_deref() {
+                crate::debug_log::log_access_rejected(&runtime_logger, source, &target, error);
+            }
             let _ = inbound.write_all(HTTP_BAD_GATEWAY).await;
             return;
         }
     };
 
-    let (open_policy, tunnel_idle) = match &outbound {
-        TcpOutbound::Freedom => (policy, policy.conn_idle),
+    if runtime_logger.is_enabled() {
+        crate::debug_log::log_route_decision(
+            &runtime_logger,
+            crate::debug_log::RouteDecisionLog {
+                inbound_tag: inbound_tag.as_deref(),
+                network: target.network,
+                original_target: &target,
+                sniffed_protocol: None,
+                route_target: &target,
+                dial_target: &target,
+                selected_outbound: crate::debug_log::tcp_outbound_label(&outbound),
+            },
+        );
+    }
+
+    let (open_timeout, tunnel_idle) = match &outbound {
+        TcpOutbound::Freedom => (policy.handshake, policy.conn_idle),
         TcpOutbound::Vless(outbound) => {
             let outbound_policy = effective_policy_for_level(&config, Some(outbound.user().level));
             (
-                outbound_policy,
+                outbound_policy.handshake,
                 policy.conn_idle.min(outbound_policy.conn_idle),
             )
         }
     };
+    let outbound_label = crate::debug_log::tcp_outbound_label(&outbound);
     let mut outbound_stream = match tokio::time::timeout(
-        open_policy.handshake,
+        open_timeout,
         open_tcp_stream_with_resolver_and_dialer(
             &outbound,
             &target,
@@ -126,11 +154,29 @@ async fn handle_http_connection(
     .await
     {
         Ok(Ok(stream)) => stream,
-        _ => {
+        Ok(Err(error)) => {
+            if let Some(source) = source.as_deref() {
+                crate::debug_log::log_access_rejected(&runtime_logger, source, &target, error);
+            }
+            let _ = inbound.write_all(HTTP_BAD_GATEWAY).await;
+            return;
+        }
+        Err(_) => {
+            if let Some(source) = source.as_deref() {
+                crate::debug_log::log_access_rejected(
+                    &runtime_logger,
+                    source,
+                    &target,
+                    "outbound open timed out",
+                );
+            }
             let _ = inbound.write_all(HTTP_BAD_GATEWAY).await;
             return;
         }
     };
+    if let Some(source) = source.as_deref() {
+        crate::debug_log::log_access_accepted(&runtime_logger, source, &target, outbound_label);
+    }
 
     if inbound.write_all(HTTP_CONNECT_ESTABLISHED).await.is_err() {
         return;

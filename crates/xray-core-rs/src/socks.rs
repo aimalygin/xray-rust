@@ -25,7 +25,7 @@ use crate::{
     open_vless_tcp_stream_with_resolver_and_dialer, open_vless_udp_stream_with_resolver_and_dialer,
     policy::{copy_bidirectional_with_idle_timeout, effective_policy_for_level, EffectivePolicy},
     select_tcp_outbound_for_session_with_resolver, select_udp_outbound_for_session_with_resolver,
-    TcpOutbound, UdpOutbound, VlessTcpOutbound, VlessUdpFraming,
+    RuntimeLogger, TcpOutbound, UdpOutbound, VlessTcpOutbound, VlessUdpFraming,
 };
 
 const SOCKS_UDP_BUFFER_SIZE: usize = 65_536;
@@ -43,6 +43,7 @@ struct SocksUdpFlowContext {
     dns_resolver: Arc<dyn DnsResolver>,
     transport_dialer: Arc<TransportDialer>,
     sniffing: Option<InboundSniffingConfig>,
+    runtime_logger: RuntimeLogger,
     flow_finished: mpsc::UnboundedSender<(SocketAddr, Target)>,
 }
 
@@ -54,6 +55,7 @@ pub async fn serve_socks_listener(
     transport_dialer: Arc<TransportDialer>,
     sniffing: Option<InboundSniffingConfig>,
     policy: EffectivePolicy,
+    runtime_logger: RuntimeLogger,
     mut shutdown: watch::Receiver<bool>,
 ) {
     let mut connections = JoinSet::new();
@@ -79,6 +81,7 @@ pub async fn serve_socks_listener(
                 let dns_resolver = Arc::clone(&dns_resolver);
                 let transport_dialer = Arc::clone(&transport_dialer);
                 let sniffing = sniffing.clone();
+                let runtime_logger = runtime_logger.clone();
                 let connection_shutdown = shutdown.clone();
                 connections.spawn(async move {
                     handle_socks_connection(
@@ -89,6 +92,7 @@ pub async fn serve_socks_listener(
                         transport_dialer,
                         sniffing,
                         policy,
+                        runtime_logger,
                         connection_shutdown,
                     ).await;
                 });
@@ -111,6 +115,7 @@ async fn handle_socks_connection(
     transport_dialer: Arc<TransportDialer>,
     sniffing: Option<InboundSniffingConfig>,
     policy: EffectivePolicy,
+    runtime_logger: RuntimeLogger,
     shutdown: watch::Receiver<bool>,
 ) {
     if tokio::time::timeout(policy.handshake, negotiate_socks5_no_auth(&mut inbound))
@@ -144,6 +149,7 @@ async fn handle_socks_connection(
                 transport_dialer,
                 sniffing,
                 policy,
+                runtime_logger,
             )
             .await;
         }
@@ -155,6 +161,7 @@ async fn handle_socks_connection(
                 dns_resolver,
                 transport_dialer,
                 sniffing,
+                runtime_logger,
                 shutdown,
             )
             .await;
@@ -171,13 +178,18 @@ async fn handle_socks_connect(
     transport_dialer: Arc<TransportDialer>,
     sniffing: Option<InboundSniffingConfig>,
     policy: EffectivePolicy,
+    runtime_logger: RuntimeLogger,
 ) {
+    let source = runtime_logger.is_enabled().then(|| {
+        inbound
+            .peer_addr()
+            .map_or_else(|_| "unknown".to_owned(), |addr| addr.to_string())
+    });
     let sniffing_config = sniffing.as_ref();
     let sniff_tcp = crate::sniffing::should_sniff_tcp(sniffing_config);
     let mut route_target = target.clone();
     let mut dial_target = target.clone();
     let mut initial_payload = Bytes::new();
-    #[cfg(debug_assertions)]
     let mut sniffed_protocol = None;
 
     if sniff_tcp {
@@ -189,10 +201,7 @@ async fn handle_socks_connect(
                 read_socks_tcp_sniff_payload(&mut inbound, config, &target).await;
             initial_payload = payload;
             if let Some(sniffed) = sniffed {
-                #[cfg(debug_assertions)]
-                {
-                    sniffed_protocol = Some(sniffed.protocol);
-                }
+                sniffed_protocol = Some(sniffed.protocol);
                 route_target = sniffed.route_target;
                 dial_target = sniffed.dial_target;
             }
@@ -208,7 +217,15 @@ async fn handle_socks_connect(
     .await
     {
         Ok(outbound) => outbound,
-        Err(_) => {
+        Err(error) => {
+            if let Some(source) = source.as_deref() {
+                crate::debug_log::log_access_rejected(
+                    &runtime_logger,
+                    source,
+                    &route_target,
+                    error,
+                );
+            }
             if !sniff_tcp {
                 let _ = write_socks5_failure(&mut inbound).await;
             }
@@ -216,16 +233,20 @@ async fn handle_socks_connect(
         }
     };
 
-    #[cfg(debug_assertions)]
-    crate::debug_log::log_route_decision(crate::debug_log::RouteDecisionLog {
-        inbound_tag: inbound_tag.as_deref(),
-        network: target.network,
-        original_target: &target,
-        sniffed_protocol,
-        route_target: &route_target,
-        dial_target: &dial_target,
-        selected_outbound: crate::debug_log::tcp_outbound_label(&outbound),
-    });
+    if runtime_logger.is_enabled() {
+        crate::debug_log::log_route_decision(
+            &runtime_logger,
+            crate::debug_log::RouteDecisionLog {
+                inbound_tag: inbound_tag.as_deref(),
+                network: target.network,
+                original_target: &target,
+                sniffed_protocol,
+                route_target: &route_target,
+                dial_target: &dial_target,
+                selected_outbound: crate::debug_log::tcp_outbound_label(&outbound),
+            },
+        );
+    }
 
     match outbound {
         TcpOutbound::Freedom => {
@@ -240,13 +261,43 @@ async fn handle_socks_connect(
             .await
             {
                 Ok(Ok(stream)) => stream,
-                _ => {
+                Ok(Err(_)) => {
+                    if let Some(source) = source.as_deref() {
+                        crate::debug_log::log_access_rejected(
+                            &runtime_logger,
+                            source,
+                            &dial_target,
+                            "freedom tcp open failed",
+                        );
+                    }
+                    if !sniff_tcp {
+                        let _ = write_socks5_failure(&mut inbound).await;
+                    }
+                    return;
+                }
+                Err(_) => {
+                    if let Some(source) = source.as_deref() {
+                        crate::debug_log::log_access_rejected(
+                            &runtime_logger,
+                            source,
+                            &dial_target,
+                            "freedom tcp open timed out",
+                        );
+                    }
                     if !sniff_tcp {
                         let _ = write_socks5_failure(&mut inbound).await;
                     }
                     return;
                 }
             };
+            if let Some(source) = source.as_deref() {
+                crate::debug_log::log_access_accepted(
+                    &runtime_logger,
+                    source,
+                    &dial_target,
+                    "freedom",
+                );
+            }
 
             if !sniff_tcp && write_socks5_success(&mut inbound).await.is_err() {
                 return;
@@ -279,13 +330,43 @@ async fn handle_socks_connect(
             .await
             {
                 Ok(Ok(stream)) => stream,
-                _ => {
+                Ok(Err(error)) => {
+                    if let Some(source) = source.as_deref() {
+                        crate::debug_log::log_access_rejected(
+                            &runtime_logger,
+                            source,
+                            &dial_target,
+                            error,
+                        );
+                    }
+                    if !sniff_tcp {
+                        let _ = write_socks5_failure(&mut inbound).await;
+                    }
+                    return;
+                }
+                Err(_) => {
+                    if let Some(source) = source.as_deref() {
+                        crate::debug_log::log_access_rejected(
+                            &runtime_logger,
+                            source,
+                            &dial_target,
+                            "vless tcp open timed out",
+                        );
+                    }
                     if !sniff_tcp {
                         let _ = write_socks5_failure(&mut inbound).await;
                     }
                     return;
                 }
             };
+            if let Some(source) = source.as_deref() {
+                crate::debug_log::log_access_accepted(
+                    &runtime_logger,
+                    source,
+                    &dial_target,
+                    "vless",
+                );
+            }
 
             if !sniff_tcp && write_socks5_success(&mut inbound).await.is_err() {
                 return;
@@ -362,6 +443,7 @@ async fn handle_socks_udp_associate(
     dns_resolver: Arc<dyn DnsResolver>,
     transport_dialer: Arc<TransportDialer>,
     sniffing: Option<InboundSniffingConfig>,
+    runtime_logger: RuntimeLogger,
     mut shutdown: watch::Receiver<bool>,
 ) {
     let bind_addr = match control.local_addr() {
@@ -439,6 +521,7 @@ async fn handle_socks_udp_associate(
                             dns_resolver: Arc::clone(&dns_resolver),
                             transport_dialer: Arc::clone(&transport_dialer),
                             sniffing: sniffing.clone(),
+                            runtime_logger: runtime_logger.clone(),
                             flow_finished: flow_finished_sender.clone(),
                         };
                         tokio::spawn(bridge_socks_udp_flow(
@@ -472,7 +555,6 @@ async fn bridge_socks_udp_flow(
         return;
     };
     let sniffed_target = sniff_socks_udp_target(&context, &target, &first_payload);
-    #[cfg(debug_assertions)]
     let sniffed_protocol = sniffed_target.sniffed_protocol;
     let route_target = sniffed_target.route_target;
     let dial_target = sniffed_target.dial_target;
@@ -485,25 +567,47 @@ async fn bridge_socks_udp_flow(
     .await
     {
         Ok(outbound) => outbound,
-        Err(_) => {
+        Err(error) => {
+            if context.runtime_logger.is_enabled() {
+                let source = context.client_addr.to_string();
+                crate::debug_log::log_access_rejected(
+                    &context.runtime_logger,
+                    &source,
+                    &route_target,
+                    error,
+                );
+            }
             let _ = flow_finished.send(flow_key);
             return;
         }
     };
 
-    #[cfg(debug_assertions)]
-    crate::debug_log::log_route_decision(crate::debug_log::RouteDecisionLog {
-        inbound_tag: context.inbound_tag.as_deref(),
-        network: target.network,
-        original_target: &target,
-        sniffed_protocol,
-        route_target: &route_target,
-        dial_target: &dial_target,
-        selected_outbound: crate::debug_log::udp_outbound_label(&outbound),
-    });
+    if context.runtime_logger.is_enabled() {
+        crate::debug_log::log_route_decision(
+            &context.runtime_logger,
+            crate::debug_log::RouteDecisionLog {
+                inbound_tag: context.inbound_tag.as_deref(),
+                network: target.network,
+                original_target: &target,
+                sniffed_protocol,
+                route_target: &route_target,
+                dial_target: &dial_target,
+                selected_outbound: crate::debug_log::udp_outbound_label(&outbound),
+            },
+        );
+    }
 
     match outbound {
         UdpOutbound::Freedom => {
+            if context.runtime_logger.is_enabled() {
+                let source = context.client_addr.to_string();
+                crate::debug_log::log_access_accepted(
+                    &context.runtime_logger,
+                    &source,
+                    &dial_target,
+                    "freedom",
+                );
+            }
             bridge_socks_udp_freedom_flow(
                 dial_target,
                 context,
@@ -514,6 +618,15 @@ async fn bridge_socks_udp_flow(
             .await;
         }
         UdpOutbound::Vless(outbound) => {
+            if context.runtime_logger.is_enabled() {
+                let source = context.client_addr.to_string();
+                crate::debug_log::log_access_accepted(
+                    &context.runtime_logger,
+                    &source,
+                    &dial_target,
+                    "vless",
+                );
+            }
             bridge_socks_udp_vless_flow(
                 dial_target,
                 outbound,
@@ -547,7 +660,6 @@ async fn read_first_socks_udp_payload(
 struct SocksUdpSniffedTarget {
     route_target: Target,
     dial_target: Target,
-    #[cfg(debug_assertions)]
     sniffed_protocol: Option<xray_config::SniffingDestination>,
 }
 
@@ -556,18 +668,15 @@ impl SocksUdpSniffedTarget {
         Self {
             route_target: target.clone(),
             dial_target: target.clone(),
-            #[cfg(debug_assertions)]
             sniffed_protocol: None,
         }
     }
 
     fn sniffed(sniffed: crate::sniffing::SniffedTarget) -> Self {
-        #[cfg(debug_assertions)]
         let sniffed_protocol = Some(sniffed.protocol);
         Self {
             route_target: sniffed.route_target,
             dial_target: sniffed.dial_target,
-            #[cfg(debug_assertions)]
             sniffed_protocol,
         }
     }

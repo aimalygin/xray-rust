@@ -62,7 +62,7 @@ Useful environment overrides:
 - `PROFILE=release`
 - `OUT_DIR=/path/to/output`
 - `XCFRAMEWORK_NAME=XrayRust.xcframework`
-- `IPHONEOS_DEPLOYMENT_TARGET=13.0`
+- `IPHONEOS_DEPLOYMENT_TARGET=16.0`
 - `TVOS_DEPLOYMENT_TARGET=14.0`
 - `TVOS_BUILD_STD=auto`
 - `TVOS_RUST_TOOLCHAIN=nightly`

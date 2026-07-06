@@ -434,6 +434,8 @@ fn parse_key_share_extension(
         });
     }
 
+    let mut hybrid_key_share = None;
+
     while cursor.offset < extension_data.len() {
         let group = cursor.read_u16("missing key-share group")?;
         let key_exchange_len = usize::from(cursor.read_u16("missing key-share length")?);
@@ -467,20 +469,28 @@ fn parse_key_share_extension(
                     });
                 }
 
-                let public_key_offset = key_exchange_offset + key_exchange.len() - 32;
+                let public_key_offset = if group == TLS_GROUP_X25519_MLKEM768_DRAFT {
+                    key_exchange_offset
+                } else {
+                    key_exchange_offset + key_exchange.len() - 32
+                };
                 let mut public_key = [0u8; 32];
-                public_key.copy_from_slice(&key_exchange[key_exchange.len() - 32..]);
-                return Ok(Some(RealityClientHelloKeyShare {
+                if group == TLS_GROUP_X25519_MLKEM768_DRAFT {
+                    public_key.copy_from_slice(&key_exchange[..32]);
+                } else {
+                    public_key.copy_from_slice(&key_exchange[key_exchange.len() - 32..]);
+                }
+                hybrid_key_share.get_or_insert(RealityClientHelloKeyShare {
                     group: RealityClientHelloKeyShareGroup::X25519MlKem768,
                     offset: public_key_offset,
                     public_key,
-                }));
+                });
             }
             _ => {}
         }
     }
 
-    Ok(None)
+    Ok(hybrid_key_share)
 }
 
 fn is_tls_grease_value(value: u16) -> bool {

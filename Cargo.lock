@@ -1119,7 +1119,7 @@ dependencies = [
 [[package]]
 name = "rustls"
 version = "0.23.40"
-source = "git+https://github.com/aimalygin/shaped-rustls?rev=e8f5b88d#e8f5b88d9b2cde47db5b67f7a7486768d682ab02"
+source = "git+https://github.com/aimalygin/shaped-rustls?rev=94f088e2#94f088e210fd2a56e413cce1c6d79c10852d500a"
 dependencies = [
  "aws-lc-rs",
  "brotli",
@@ -1129,6 +1129,7 @@ dependencies = [
  "ring",
  "rustls-pki-types",
  "rustls-webpki",
+ "shake",
  "subtle",
  "zeroize",
 ]
@@ -1855,6 +1856,7 @@ dependencies = [
  "libc",
  "rcgen",
  "rustls",
+ "serde_json",
  "sha2",
  "smoltcp",
  "thiserror",

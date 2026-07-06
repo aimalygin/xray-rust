@@ -25,5 +25,6 @@ xray-tun = { path = "../xray-tun" }
 async-trait.workspace = true
 rcgen.workspace = true
 rustls.workspace = true
+serde_json.workspace = true
 tokio-rustls.workspace = true
 uuid.workspace = true

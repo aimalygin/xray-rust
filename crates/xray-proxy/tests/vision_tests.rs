@@ -1,5 +1,8 @@
 use bytes::BytesMut;
-use xray_proxy::vless::{unpad_vision_block, VisionCommand, VisionError, VisionPadding};
+use std::collections::HashSet;
+use xray_proxy::vless::{
+    unpad_vision_block, VisionCommand, VisionError, VisionPadding, DEFAULT_VISION_SEED,
+};
 
 #[test]
 fn vision_padding_round_trips_user_uuid_once() {
@@ -25,14 +28,64 @@ fn vision_padding_round_trips_user_uuid_once() {
 #[test]
 fn vision_padding_uses_seed_padding_when_no_override() {
     let user = [7; 16];
-    let mut padding = VisionPadding::new(user, [900, 500, 900, 256]);
+    let mut padding = VisionPadding::new(user, DEFAULT_VISION_SEED);
 
     let padded = padding
         .pad(BytesMut::from(&b"hello"[..]), VisionCommand::Continue, 0)
         .unwrap();
 
-    assert_eq!(u16::from_be_bytes([padded[19], padded[20]]), 895);
-    assert_eq!(padded.len(), 16 + 5 + 5 + 895);
+    let padding_len = u16::from_be_bytes([padded[19], padded[20]]) as usize;
+    assert!((895..=1394).contains(&padding_len));
+    assert_eq!(padded.len(), 16 + 5 + 5 + padding_len);
+}
+
+#[test]
+fn vision_padding_matches_xray_core_empty_header_camouflage_range() {
+    let user = [7; 16];
+    let mut observed = HashSet::new();
+
+    for _ in 0..32 {
+        let mut padding = VisionPadding::new(user, DEFAULT_VISION_SEED);
+        let padded = padding
+            .pad(BytesMut::new(), VisionCommand::Continue, 0)
+            .unwrap();
+
+        let padding_len = u16::from_be_bytes([padded[19], padded[20]]) as usize;
+        assert!((900..=1399).contains(&padding_len));
+        assert_eq!(padded.len(), 16 + 5 + padding_len);
+        observed.insert(padding_len);
+    }
+
+    assert!(
+        observed.len() > 1,
+        "Xray-core long padding is random in the 900..=1399 range"
+    );
+}
+
+#[test]
+fn vision_padding_matches_xray_core_short_padding_range_when_long_padding_disabled() {
+    let user = [7; 16];
+    let payload = b"hello";
+    let mut observed = HashSet::new();
+
+    for _ in 0..32 {
+        let mut padding = VisionPadding::new(user, DEFAULT_VISION_SEED);
+        let mut padded = BytesMut::new();
+
+        padding
+            .pad_into_with_long_padding(payload, VisionCommand::Continue, false, 0, &mut padded)
+            .unwrap();
+
+        let padding_len = u16::from_be_bytes([padded[19], padded[20]]) as usize;
+        assert!(padding_len <= 255);
+        assert_eq!(padded.len(), 16 + 5 + payload.len() + padding_len);
+        observed.insert(padding_len);
+    }
+
+    assert!(
+        observed.len() > 1,
+        "Xray-core short padding is random in the 0..=255 range"
+    );
 }
 
 #[test]

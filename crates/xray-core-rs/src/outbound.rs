@@ -10,7 +10,7 @@ use xray_config::{
 };
 use xray_proxy::vless::{
     encode_request_header, VisionStream, VisionStreamIo, VlessCommand, VlessRequest,
-    VlessResponseStream,
+    VlessResponseStream, DEFAULT_VISION_SEED,
 };
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::{
@@ -698,11 +698,11 @@ pub async fn open_vless_tcp_stream_with_resolver_and_dialer(
 
     if flow.uses_vision() {
         let stream = VlessResponseStream::new(VisionTransportStream::new(stream));
-        return Ok(Box::new(VisionOutboundStream::new(VisionStream::new(
-            stream,
-            *outbound.user.id.as_bytes(),
-            [0, 0, 0, 0],
-        ))));
+        let mut stream =
+            VisionStream::new(stream, *outbound.user.id.as_bytes(), DEFAULT_VISION_SEED);
+        stream.queue_empty_padding_frame()?;
+        stream.flush().await?;
+        return Ok(Box::new(VisionOutboundStream::new(stream)));
     }
 
     let stream = VlessResponseStream::new(stream);
@@ -780,7 +780,7 @@ pub(crate) async fn open_vless_udp_stream_with_resolver_dialer_and_options(
             Box::new(VisionOutboundStream::new(VisionStream::new(
                 stream,
                 *outbound.user.id.as_bytes(),
-                [0, 0, 0, 0],
+                DEFAULT_VISION_SEED,
             ))),
             VlessUdpFraming::Xudp,
         ));
@@ -824,7 +824,7 @@ mod tests {
     };
 
     use async_trait::async_trait;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
     use uuid::Uuid;
     use xray_config::{
         IpCidr, IpMatcher, RoutingConfig, RoutingDomainStrategy, RoutingRule, StreamSettings,
@@ -834,6 +834,32 @@ mod tests {
     use xray_transport::{RealityTlsEngine, TransportError};
 
     use super::*;
+
+    async fn read_vision_frame<R>(reader: &mut R, includes_user_id: bool) -> (Vec<u8>, usize, usize)
+    where
+        R: AsyncRead + Unpin,
+    {
+        let prefix_len = if includes_user_id { 16 + 5 } else { 5 };
+        let header_offset = if includes_user_id { 16 } else { 0 };
+        let mut frame = vec![0; prefix_len];
+        reader
+            .read_exact(&mut frame)
+            .await
+            .expect("read Vision frame header");
+
+        let content_len =
+            u16::from_be_bytes([frame[header_offset + 1], frame[header_offset + 2]]) as usize;
+        let padding_len =
+            u16::from_be_bytes([frame[header_offset + 3], frame[header_offset + 4]]) as usize;
+        let mut body = vec![0; content_len + padding_len];
+        reader
+            .read_exact(&mut body)
+            .await
+            .expect("read Vision frame body");
+        frame.extend_from_slice(&body);
+
+        (frame, content_len, padding_len)
+    }
 
     fn direct_selection_freedom(tag: &str) -> OutboundConfig {
         OutboundConfig {
@@ -1252,14 +1278,21 @@ mod tests {
             .expect("read VLESS header from protected stream");
         assert_eq!(received_header, expected_header);
 
+        let (header_padding, content_len, padding_len) =
+            read_vision_frame(&mut protected_side, true).await;
+        assert_eq!(content_len, 0);
+        assert!((900..=1399).contains(&padding_len));
+        let unpadded = unpad_vision_block(&header_padding, outbound.user.id.as_bytes()).unwrap();
+        assert_eq!(unpadded.command, VisionCommand::Continue);
+        assert!(unpadded.payload.is_empty());
+
         stream.write_all(b"vision payload").await.unwrap();
         stream.flush().await.unwrap();
 
-        let mut padded = vec![0; 16 + 5 + "vision payload".len()];
-        protected_side
-            .read_exact(&mut padded)
-            .await
-            .expect("read first Vision block");
+        let (padded, content_len, padding_len) =
+            read_vision_frame(&mut protected_side, false).await;
+        assert_eq!(content_len, "vision payload".len());
+        assert!(padding_len <= 255);
         let unpadded = unpad_vision_block(&padded, outbound.user.id.as_bytes()).unwrap();
         assert_eq!(unpadded.command, VisionCommand::Continue);
         assert_eq!(&unpadded.payload[..], b"vision payload");

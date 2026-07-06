@@ -21,8 +21,9 @@ use xray_transport::{SystemDnsResolver, TlsConnector, TransportDialer};
 
 const TEST_UUID: &str = "00010203-0405-0607-0809-0a0b0c0d0e0f";
 const TLS_SERVER_NAME: &str = "vless.test";
-const REALITY_SERVER_NAME: &str = "www.example.com";
+const REALITY_SERVER_NAME: &str = "www.google.com";
 const REALITY_PRIVATE_KEY: &str = "aGSYystUbf59_9_6LKRxD27rmSW_-2_nyd9YG_Gwbks";
+const REALITY_PUBLIC_KEY_BASE64: &str = "E59WjnvZcQMu7tR7_BgyhycuEdBS-CtKxfImRCdAvFM";
 const REALITY_PUBLIC_KEY: [u8; 32] = [
     19, 159, 86, 142, 123, 217, 113, 3, 46, 238, 212, 123, 252, 24, 50, 135, 39, 46, 17, 208, 82,
     248, 43, 74, 197, 242, 38, 68, 39, 64, 188, 83,
@@ -65,8 +66,56 @@ async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_tls_visi
 async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_reality_vision() {
     timeout(
         Duration::from_secs(120),
-        run_local_xray_vless_reality_vision_interop(),
+        run_local_xray_vless_reality_vision_interop("chrome"),
     )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
+async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_reality_vision_selected_fingerprints(
+) {
+    timeout(Duration::from_secs(240), async {
+        for fingerprint in selected_reality_interop_fingerprints() {
+            eprintln!("running REALITY Vision interop fingerprint={fingerprint}");
+            run_local_xray_vless_reality_vision_interop(&fingerprint).await;
+        }
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
+async fn rust_socks_clients_open_parallel_echo_flows_through_local_xray_vless_reality_vision_selected_fingerprints(
+) {
+    timeout(Duration::from_secs(240), async {
+        let flow_count = selected_reality_interop_burst_flow_count();
+        for fingerprint in selected_reality_interop_burst_fingerprints() {
+            eprintln!(
+                "running REALITY Vision burst interop fingerprint={fingerprint} flows={flow_count}"
+            );
+            run_local_xray_vless_reality_vision_burst_interop(&fingerprint, flow_count).await;
+        }
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
+async fn xray_core_socks_clients_open_parallel_echo_flows_through_local_xray_vless_reality_vision_selected_fingerprints(
+) {
+    timeout(Duration::from_secs(240), async {
+        let flow_count = selected_reality_interop_burst_flow_count();
+        for fingerprint in selected_reality_interop_burst_fingerprints() {
+            eprintln!(
+                "running Xray-core client REALITY Vision burst interop fingerprint={fingerprint} flows={flow_count}"
+            );
+            run_xray_core_client_vless_reality_vision_burst_interop(&fingerprint, flow_count).await;
+        }
+    })
     .await
     .unwrap();
 }
@@ -124,7 +173,69 @@ async fn run_local_xray_vless_tls_interop(flow: Option<&'static str>) {
     run_local_xray_vless_interop_scenario(xray, rust_config, Some(dialer)).await;
 }
 
-async fn run_local_xray_vless_reality_vision_interop() {
+fn selected_reality_interop_fingerprints() -> Vec<String> {
+    if let Ok(raw) = env::var("XRAY_REALITY_INTEROP_FINGERPRINTS") {
+        return raw
+            .split(',')
+            .map(str::trim)
+            .filter(|fingerprint| !fingerprint.is_empty())
+            .map(ToOwned::to_owned)
+            .collect();
+    }
+
+    [
+        "chrome",
+        "helloios_13",
+        "hello360_11_0",
+        "hellochrome_120_pq",
+        "hellofirefox_99",
+    ]
+    .into_iter()
+    .map(ToOwned::to_owned)
+    .collect()
+}
+
+fn selected_reality_interop_burst_fingerprints() -> Vec<String> {
+    if let Ok(raw) = env::var("XRAY_REALITY_INTEROP_BURST_FINGERPRINTS") {
+        return raw
+            .split(',')
+            .map(str::trim)
+            .filter(|fingerprint| !fingerprint.is_empty())
+            .map(ToOwned::to_owned)
+            .collect();
+    }
+
+    vec!["hellofirefox_99".to_owned()]
+}
+
+fn selected_reality_interop_burst_flow_count() -> usize {
+    let flow_count = env::var("XRAY_REALITY_INTEROP_BURST_FLOWS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(32);
+    assert!(
+        (1..=256).contains(&flow_count),
+        "XRAY_REALITY_INTEROP_BURST_FLOWS must be between 1 and 256"
+    );
+    flow_count
+}
+
+fn selected_reality_server_warmup() -> Duration {
+    env::var("XRAY_REALITY_INTEROP_SERVER_WARMUP_MS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .map(Duration::from_millis)
+        .unwrap_or(Duration::ZERO)
+}
+
+async fn warm_up_reality_server_detector() {
+    let warmup = selected_reality_server_warmup();
+    if !warmup.is_zero() {
+        sleep(warmup).await;
+    }
+}
+
+async fn run_local_xray_vless_reality_vision_interop(fingerprint: &str) {
     let xray_checkout = resolve_xray_checkout();
     let xray = timeout(
         Duration::from_secs(60),
@@ -138,11 +249,12 @@ async fn run_local_xray_vless_reality_vision_interop() {
     )
     .await
     .expect("start xray timeout");
+    warm_up_reality_server_detector().await;
     let rust_config = rust_core_config_with_security(
         xray.addr,
         StreamSecurity::Reality(RealitySettings {
             server_name: REALITY_SERVER_NAME.to_owned(),
-            fingerprint: "chrome".to_owned(),
+            fingerprint: fingerprint.to_owned(),
             public_key: REALITY_PUBLIC_KEY,
             short_id: RealityShortId::try_from_slice(&REALITY_SHORT_ID)
                 .expect("static REALITY short id"),
@@ -153,6 +265,73 @@ async fn run_local_xray_vless_reality_vision_interop() {
     );
 
     run_local_xray_vless_interop_scenario(xray, rust_config, None).await;
+}
+
+async fn run_local_xray_vless_reality_vision_burst_interop(fingerprint: &str, flow_count: usize) {
+    let xray_checkout = resolve_xray_checkout();
+    let xray = timeout(
+        Duration::from_secs(60),
+        start_xray_vless_server(
+            &xray_checkout,
+            XrayVlessServerConfig {
+                security: XrayInboundSecurity::Reality,
+                flow: Some("xtls-rprx-vision"),
+            },
+        ),
+    )
+    .await
+    .expect("start xray timeout");
+    warm_up_reality_server_detector().await;
+    let rust_config = rust_core_config_with_security(
+        xray.addr,
+        StreamSecurity::Reality(RealitySettings {
+            server_name: REALITY_SERVER_NAME.to_owned(),
+            fingerprint: fingerprint.to_owned(),
+            public_key: REALITY_PUBLIC_KEY,
+            short_id: RealityShortId::try_from_slice(&REALITY_SHORT_ID)
+                .expect("static REALITY short id"),
+            spider_x: "/".to_owned(),
+            mldsa65_verify: None,
+        }),
+        Some("xtls-rprx-vision"),
+    );
+
+    run_local_xray_vless_parallel_interop_scenario(xray, rust_config, flow_count).await;
+}
+
+async fn run_xray_core_client_vless_reality_vision_burst_interop(
+    fingerprint: &str,
+    flow_count: usize,
+) {
+    let xray_checkout = resolve_xray_checkout();
+    let server = timeout(
+        Duration::from_secs(60),
+        start_xray_vless_server(
+            &xray_checkout,
+            XrayVlessServerConfig {
+                security: XrayInboundSecurity::Reality,
+                flow: Some("xtls-rprx-vision"),
+            },
+        ),
+    )
+    .await
+    .expect("start xray server timeout");
+    warm_up_reality_server_detector().await;
+    let client = timeout(
+        Duration::from_secs(60),
+        start_xray_vless_client(&xray_checkout, server.addr, fingerprint),
+    )
+    .await
+    .expect("start xray client timeout");
+
+    if let Err(failures) = run_parallel_socks_echo_workload(client.addr, flow_count).await {
+        eprintln!("xray server logs:\n{}", server.logs());
+        eprintln!("xray client logs:\n{}", client.logs());
+        panic!("{} parallel flow(s) failed: {failures:?}", failures.len());
+    }
+
+    drop(client);
+    drop(server);
 }
 
 async fn run_local_xray_vless_interop_scenario(
@@ -183,12 +362,22 @@ async fn run_local_xray_vless_interop_scenario(
         .await
         .expect("connect rust socks timeout")
         .expect("connect rust socks");
-    timeout(
+    match timeout(
         Duration::from_secs(5),
         socks5_connect(&mut client, echo_addr),
     )
     .await
-    .expect("socks connect timeout");
+    {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => {
+            eprintln!("{}", xray.logs());
+            panic!("socks connect failed: {error}");
+        }
+        Err(error) => {
+            eprintln!("{}", xray.logs());
+            panic!("socks connect timeout: {error}");
+        }
+    }
 
     let payload = b"hello local xray interop";
     timeout(Duration::from_secs(5), client.write_all(payload))
@@ -214,6 +403,100 @@ async fn run_local_xray_vless_interop_scenario(
         .await
         .expect("echo task should finish")
         .expect("echo task should not panic");
+}
+
+async fn run_local_xray_vless_parallel_interop_scenario(
+    xray: XrayServer,
+    rust_config: CoreConfig,
+    flow_count: usize,
+) {
+    let mut core = Core::new(rust_config).expect("create rust core");
+
+    timeout(Duration::from_secs(5), core.start())
+        .await
+        .expect("start rust core timeout")
+        .expect("start rust core");
+    let socks_addr = core
+        .inbound_addr(Some("socks-in"))
+        .expect("bound socks addr");
+
+    if let Err(failures) = run_parallel_socks_echo_workload(socks_addr, flow_count).await {
+        core.stop().await.expect("stop rust core");
+        eprintln!("{}", xray.logs());
+        panic!("{} parallel flow(s) failed: {failures:?}", failures.len());
+    }
+
+    core.stop().await.expect("stop rust core");
+    drop(xray);
+}
+
+async fn run_parallel_socks_echo_workload(
+    socks_addr: SocketAddr,
+    flow_count: usize,
+) -> Result<(), Vec<String>> {
+    let (echo_addr, echo_handle) = spawn_multi_echo_server(flow_count).await;
+    let mut handles = Vec::with_capacity(flow_count);
+    for index in 0..flow_count {
+        handles.push(tokio::spawn(async move {
+            run_socks_echo_flow(socks_addr, echo_addr, index).await
+        }));
+    }
+
+    let mut failures = Vec::new();
+    for handle in handles {
+        match timeout(Duration::from_secs(20), handle).await {
+            Ok(Ok(Ok(()))) => {}
+            Ok(Ok(Err(error))) => failures.push(error),
+            Ok(Err(error)) => failures.push(format!("join flow task: {error}")),
+            Err(error) => failures.push(format!("flow task timeout: {error}")),
+        }
+    }
+
+    if !failures.is_empty() {
+        echo_handle.abort();
+        let _ = echo_handle.await;
+        return Err(failures);
+    }
+
+    timeout(Duration::from_secs(5), echo_handle)
+        .await
+        .expect("multi echo task should finish")
+        .expect("multi echo task should not panic");
+    Ok(())
+}
+
+async fn run_socks_echo_flow(
+    socks_addr: SocketAddr,
+    echo_addr: SocketAddr,
+    index: usize,
+) -> Result<(), String> {
+    let mut client = timeout(Duration::from_secs(5), TcpStream::connect(socks_addr))
+        .await
+        .map_err(|error| format!("flow {index}: connect rust socks timeout: {error}"))?
+        .map_err(|error| format!("flow {index}: connect rust socks: {error}"))?;
+    timeout(
+        Duration::from_secs(10),
+        socks5_connect(&mut client, echo_addr),
+    )
+    .await
+    .map_err(|error| format!("flow {index}: socks connect timeout: {error}"))?
+    .map_err(|error| format!("flow {index}: socks connect: {error}"))?;
+
+    let payload = format!("hello local xray burst flow {index}");
+    timeout(Duration::from_secs(5), client.write_all(payload.as_bytes()))
+        .await
+        .map_err(|error| format!("flow {index}: write payload timeout: {error}"))?
+        .map_err(|error| format!("flow {index}: write payload: {error}"))?;
+    let mut echoed = vec![0; payload.len()];
+    timeout(Duration::from_secs(15), client.read_exact(&mut echoed))
+        .await
+        .map_err(|error| format!("flow {index}: read echo timeout: {error}"))?
+        .map_err(|error| format!("flow {index}: read echo: {error}"))?;
+    if echoed != payload.as_bytes() {
+        return Err(format!("flow {index}: echoed payload mismatch"));
+    }
+
+    Ok(())
 }
 
 struct TempDir {
@@ -320,9 +603,9 @@ fn allocate_loopback_port() -> u16 {
         .port()
 }
 
-fn generate_tls_identity(temp_dir: &TempDir) -> GeneratedTlsIdentity {
+fn generate_tls_identity(temp_dir: &TempDir, server_name: &str) -> GeneratedTlsIdentity {
     let CertifiedKey { cert, signing_key } =
-        generate_simple_self_signed(vec![TLS_SERVER_NAME.to_owned()])
+        generate_simple_self_signed(vec![server_name.to_owned()])
             .expect("generate self-signed certificate");
     let cert_der = cert.der().clone();
     let key_der = signing_key.serialize_der();
@@ -466,6 +749,62 @@ fn write_xray_vless_config(
     fs::write(path, config).expect("write xray config");
 }
 
+fn write_xray_vless_client_config(
+    path: &Path,
+    socks_port: u16,
+    server_addr: SocketAddr,
+    fingerprint: &str,
+) {
+    let config = format!(
+        r#"{{
+  "log": {{ "loglevel": "warning" }},
+  "inbounds": [
+    {{
+      "tag": "socks-in",
+      "listen": "127.0.0.1",
+      "port": {socks_port},
+      "protocol": "socks"
+    }}
+  ],
+  "outbounds": [
+    {{
+      "tag": "proxy",
+      "protocol": "vless",
+      "settings": {{
+        "vnext": [
+          {{
+            "address": "{}",
+            "port": {},
+            "users": [
+              {{
+                "id": "{TEST_UUID}",
+                "encryption": "none",
+                "flow": "xtls-rprx-vision"
+              }}
+            ]
+          }}
+        ]
+      }},
+      "streamSettings": {{
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {{
+          "serverName": "{REALITY_SERVER_NAME}",
+          "fingerprint": "{fingerprint}",
+          "publicKey": "{REALITY_PUBLIC_KEY_BASE64}",
+          "shortId": "{REALITY_SHORT_ID_HEX}",
+          "spiderX": "/"
+        }}
+      }}
+    }}
+  ]
+}}"#,
+        server_addr.ip(),
+        server_addr.port()
+    );
+    fs::write(path, config).expect("write xray client config");
+}
+
 async fn start_xray_vless_server(
     xray_checkout: &Path,
     server_config: XrayVlessServerConfig,
@@ -480,7 +819,7 @@ async fn start_xray_vless_server(
     let port = allocate_loopback_port();
     let tls_identity = match server_config.security {
         XrayInboundSecurity::None => None,
-        XrayInboundSecurity::Tls => Some(generate_tls_identity(&temp_dir)),
+        XrayInboundSecurity::Tls => Some(generate_tls_identity(&temp_dir, TLS_SERVER_NAME)),
         XrayInboundSecurity::Reality => None,
     };
     let tls_client_config = tls_identity
@@ -526,6 +865,62 @@ async fn start_xray_vless_server(
         stdout_path,
         stderr_path,
         tls_client_config,
+    }
+}
+
+async fn start_xray_vless_client(
+    xray_checkout: &Path,
+    server_addr: SocketAddr,
+    fingerprint: &str,
+) -> XrayServer {
+    let temp_dir = create_temp_dir("xray-core-client-local-interop");
+    let binary = temp_dir
+        .path
+        .join(format!("xray{}", env::consts::EXE_SUFFIX));
+    let config_path = temp_dir.path.join("client.json");
+    let stdout_path = temp_dir.path.join("xray-client.stdout.log");
+    let stderr_path = temp_dir.path.join("xray-client.stderr.log");
+    let port = allocate_loopback_port();
+    write_xray_vless_client_config(&config_path, port, server_addr, fingerprint);
+
+    let build_output = Command::new("go")
+        .arg("build")
+        .arg("-o")
+        .arg(&binary)
+        .arg("./main")
+        .current_dir(xray_checkout)
+        .output()
+        .expect("start go build for Xray-core client");
+    assert!(
+        build_output.status.success(),
+        "go build ./main failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&build_output.stdout),
+        String::from_utf8_lossy(&build_output.stderr)
+    );
+
+    let mut child = Command::new(&binary)
+        .arg("run")
+        .arg("-config")
+        .arg(&config_path)
+        .stdout(Stdio::from(
+            fs::File::create(&stdout_path).expect("create xray client stdout log"),
+        ))
+        .stderr(Stdio::from(
+            fs::File::create(&stderr_path).expect("create xray client stderr log"),
+        ))
+        .spawn()
+        .expect("start xray client process");
+
+    let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
+    wait_for_tcp_listener(&mut child, addr, &stdout_path, &stderr_path).await;
+
+    XrayServer {
+        child,
+        _temp_dir: temp_dir,
+        addr,
+        stdout_path,
+        stderr_path,
+        tls_client_config: None,
     }
 }
 
@@ -612,21 +1007,48 @@ async fn spawn_echo_server() -> (SocketAddr, tokio::task::JoinHandle<()>) {
     (addr, handle)
 }
 
-async fn socks5_connect(client: &mut TcpStream, target: SocketAddr) {
+async fn spawn_multi_echo_server(
+    expected_connections: usize,
+) -> (SocketAddr, tokio::task::JoinHandle<()>) {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .expect("bind echo");
+    let addr = listener.local_addr().expect("echo local addr");
+    let handle = tokio::spawn(async move {
+        let mut handles = Vec::with_capacity(expected_connections);
+        for _ in 0..expected_connections {
+            let (mut stream, _) = listener.accept().await.expect("accept echo");
+            handles.push(tokio::spawn(async move {
+                let (mut read_half, mut write_half) = stream.split();
+                tokio::io::copy(&mut read_half, &mut write_half)
+                    .await
+                    .expect("echo copy");
+            }));
+        }
+        for handle in handles {
+            handle.await.expect("echo connection task should not panic");
+        }
+    });
+    (addr, handle)
+}
+
+async fn socks5_connect(client: &mut TcpStream, target: SocketAddr) -> Result<(), String> {
     let SocketAddr::V4(target) = target else {
-        panic!("local interop test uses IPv4 targets only");
+        return Err("local interop test uses IPv4 targets only".to_owned());
     };
 
     client
         .write_all(&[5, 1, 0])
         .await
-        .expect("write socks greeting");
+        .map_err(|error| format!("write socks greeting: {error}"))?;
     let mut method = [0; 2];
     client
         .read_exact(&mut method)
         .await
-        .expect("read socks method");
-    assert_eq!(method, [5, 0]);
+        .map_err(|error| format!("read socks method: {error}"))?;
+    if method != [5, 0] {
+        return Err(format!("unexpected socks method reply: {method:?}"));
+    }
 
     let mut request = vec![5, 1, 0, 1];
     request.extend_from_slice(&target.ip().octets());
@@ -634,12 +1056,53 @@ async fn socks5_connect(client: &mut TcpStream, target: SocketAddr) {
     client
         .write_all(&request)
         .await
-        .expect("write socks connect");
+        .map_err(|error| format!("write socks connect: {error}"))?;
 
-    let mut reply = [0; 10];
+    let mut reply_header = [0; 4];
     client
-        .read_exact(&mut reply)
+        .read_exact(&mut reply_header)
         .await
-        .expect("read socks reply");
-    assert_eq!(reply, [5, 0, 0, 1, 0, 0, 0, 0, 0, 0]);
+        .map_err(|error| format!("read socks reply: {error}"))?;
+    if reply_header[0] != 5 || reply_header[2] != 0 {
+        return Err(format!("unexpected socks connect reply: {reply_header:?}"));
+    }
+    if reply_header[1] != 0 {
+        return Err(format!("socks connect rejected: {reply_header:?}"));
+    }
+
+    match reply_header[3] {
+        1 => {
+            let mut bind = [0; 6];
+            client
+                .read_exact(&mut bind)
+                .await
+                .map_err(|error| format!("read socks IPv4 bind: {error}"))?;
+        }
+        3 => {
+            let mut len = [0; 1];
+            client
+                .read_exact(&mut len)
+                .await
+                .map_err(|error| format!("read socks domain bind length: {error}"))?;
+            let mut bind = vec![0; usize::from(len[0]) + 2];
+            client
+                .read_exact(&mut bind)
+                .await
+                .map_err(|error| format!("read socks domain bind: {error}"))?;
+        }
+        4 => {
+            let mut bind = [0; 18];
+            client
+                .read_exact(&mut bind)
+                .await
+                .map_err(|error| format!("read socks IPv6 bind: {error}"))?;
+        }
+        address_type => {
+            return Err(format!(
+                "unsupported socks bind address type {address_type}"
+            ));
+        }
+    }
+
+    Ok(())
 }

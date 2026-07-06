@@ -25,7 +25,6 @@ use rustls::{
 };
 use tokio::net::TcpStream;
 use tokio_rustls::TlsConnector as TokioTlsConnector;
-use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret as X25519StaticSecret};
 use zeroize::Zeroize;
 
 use crate::{
@@ -55,6 +54,8 @@ const EXT_SIGNED_CERTIFICATE_TIMESTAMP: u16 = 0x0012;
 const EXT_PADDING: u16 = 0x0015;
 const EXT_EXTENDED_MASTER_SECRET: u16 = 0x0017;
 const EXT_CERTIFICATE_COMPRESSION: u16 = 0x001b;
+const EXT_RECORD_SIZE_LIMIT: u16 = 0x001c;
+const EXT_DELEGATED_CREDENTIALS: u16 = 0x0022;
 const EXT_SESSION_TICKET: u16 = 0x0023;
 const EXT_SUPPORTED_VERSIONS: u16 = 0x002b;
 const EXT_PSK_KEY_EXCHANGE_MODES: u16 = 0x002d;
@@ -66,7 +67,6 @@ const GROUP_SECP256R1: u16 = 0x0017;
 const GROUP_SECP384R1: u16 = 0x0018;
 const GROUP_X25519_MLKEM768: u16 = 0x11ec;
 const GROUP_X25519_MLKEM768_DRAFT: u16 = 0x6399;
-const X25519_PUBLIC_KEY_LEN: usize = 32;
 const TLS_VERSION_1_3: u16 = 0x0304;
 const BROTLI_CERTIFICATE_COMPRESSION: u16 = 0x0002;
 const BORINGSSL_PADDING_TARGET_HANDSHAKE_SIZE: usize = 512;
@@ -340,7 +340,7 @@ impl ClientHelloCustomizer for RustlsRealityClientHelloCustomizer {
             .with_session_id(session_id)
             .with_fixed_x25519(FixedX25519KeyShare::new(self.local_x25519_private_key));
 
-        plan = apply_utls_profile(plan, self.profile, self.local_x25519_private_key)?;
+        plan = apply_utls_profile(plan, self.profile)?;
 
         if let Some(capture) = &self.capture {
             plan = plan.with_capture(capture.clone());
@@ -507,7 +507,6 @@ impl FinalizesClientHello for RustlsRealityClientHelloFinalizer {
 fn apply_utls_profile(
     mut plan: ClientHelloPlan,
     profile: &'static UtlsClientHelloProfile,
-    local_x25519_private_key: [u8; 32],
 ) -> Result<ClientHelloPlan, RustlsError> {
     plan = plan
         .with_advertised_cipher_suites(advertised_cipher_suites(profile)?)
@@ -523,7 +522,7 @@ fn apply_utls_profile(
     if !profile.key_shares.is_empty() {
         plan = plan.with_key_share_plan(key_share_plan(profile)?);
     }
-    if let Some(raw_key_shares) = raw_key_shares(profile, local_x25519_private_key)? {
+    if let Some(raw_key_shares) = raw_key_shares(profile)? {
         plan = plan.with_raw_key_shares(raw_key_shares);
     }
     if !profile.alpn_protocols.is_empty() {
@@ -651,11 +650,9 @@ fn key_share_plan(
 
 fn raw_key_shares(
     profile: &UtlsClientHelloProfile,
-    local_x25519_private_key: [u8; 32],
 ) -> Result<Option<ClientHelloRawKeyShares>, RustlsError> {
     let mut raw_key_shares = Vec::new();
     let mut non_grease_position = 0;
-    let local_x25519_public_key = x25519_public_key(local_x25519_private_key);
 
     for key_share in profile.key_shares {
         if is_grease_value(key_share.group) {
@@ -670,11 +667,7 @@ fn raw_key_shares(
         raw_key_shares.push(ClientHelloRawKeyShare::new_at(
             non_grease_position,
             NamedGroup::from(key_share.group),
-            raw_key_share_payload(
-                key_share.group,
-                key_share.key_exchange_len,
-                &local_x25519_public_key,
-            ),
+            vec![0; key_share.key_exchange_len],
         )?);
         non_grease_position += 1;
     }
@@ -684,24 +677,6 @@ fn raw_key_shares(
     } else {
         ClientHelloRawKeyShares::try_from(raw_key_shares).map(Some)
     }
-}
-
-fn raw_key_share_payload(
-    group: u16,
-    key_exchange_len: usize,
-    local_x25519_public_key: &[u8; X25519_PUBLIC_KEY_LEN],
-) -> Vec<u8> {
-    let mut payload = vec![0; key_exchange_len];
-    if is_hybrid_x25519_group(group) && key_exchange_len >= X25519_PUBLIC_KEY_LEN {
-        let public_key_offset = key_exchange_len - X25519_PUBLIC_KEY_LEN;
-        payload[public_key_offset..].copy_from_slice(local_x25519_public_key);
-    }
-    payload
-}
-
-fn x25519_public_key(private_key: [u8; 32]) -> [u8; X25519_PUBLIC_KEY_LEN] {
-    let secret = X25519StaticSecret::from(private_key);
-    X25519PublicKey::from(&secret).to_bytes()
 }
 
 fn alpn_protocols(
@@ -785,6 +760,14 @@ fn extension_payloads(
             signature_algorithms_payload(profile.signature_algorithms)?,
         )?);
     }
+    if profile_has_extension(profile, EXT_DELEGATED_CREDENTIALS) {
+        push_exact_or_raw_extension(
+            &mut exact_extensions,
+            &mut raw_extensions,
+            EXT_DELEGATED_CREDENTIALS,
+            signature_algorithms_payload(profile.delegated_credentials_algorithms)?,
+        )?;
+    }
     if !profile_uses_structured_certificate_compression(profile)
         && profile_has_extension(profile, EXT_CERTIFICATE_COMPRESSION)
     {
@@ -792,6 +775,14 @@ fn extension_payloads(
             EXT_CERTIFICATE_COMPRESSION,
             certificate_compression_payload(profile.certificate_compression_algorithms)?,
         )?);
+    }
+    if let Some(record_size_limit) = profile.record_size_limit {
+        push_exact_or_raw_extension(
+            &mut exact_extensions,
+            &mut raw_extensions,
+            EXT_RECORD_SIZE_LIMIT,
+            record_size_limit.to_be_bytes().to_vec(),
+        )?;
     }
     if let Some(length) = profile.encrypted_client_hello_length {
         exact_extensions.push(ClientHelloExactExtension::new(
@@ -811,7 +802,9 @@ fn extension_payloads(
         if is_grease_value(extension.extension_type)
             || is_structured_extension(profile, extension.extension_type)
             || extension.extension_type == EXT_SIGNATURE_ALGORITHMS
+            || extension.extension_type == EXT_DELEGATED_CREDENTIALS
             || extension.extension_type == EXT_CERTIFICATE_COMPRESSION
+            || extension.extension_type == EXT_RECORD_SIZE_LIMIT
             || extension.extension_type == EXT_ENCRYPTED_CLIENT_HELLO
             || profile
                 .application_settings
@@ -1031,6 +1024,7 @@ fn real_supported_group(group: u16) -> Option<NamedGroup> {
     match group {
         GROUP_X25519 => Some(NamedGroup::X25519),
         GROUP_X25519_MLKEM768 => Some(NamedGroup::X25519MLKEM768),
+        GROUP_X25519_MLKEM768_DRAFT => Some(NamedGroup::Unknown(GROUP_X25519_MLKEM768_DRAFT)),
         GROUP_SECP256R1 => Some(NamedGroup::secp256r1),
         GROUP_SECP384R1 => Some(NamedGroup::secp384r1),
         _ => None,
@@ -1041,12 +1035,9 @@ fn real_key_share_group(group: u16) -> Option<NamedGroup> {
     match group {
         GROUP_X25519 => Some(NamedGroup::X25519),
         GROUP_X25519_MLKEM768 => Some(NamedGroup::X25519MLKEM768),
+        GROUP_X25519_MLKEM768_DRAFT => Some(NamedGroup::Unknown(GROUP_X25519_MLKEM768_DRAFT)),
         _ => None,
     }
-}
-
-fn is_hybrid_x25519_group(group: u16) -> bool {
-    matches!(group, GROUP_X25519_MLKEM768 | GROUP_X25519_MLKEM768_DRAFT)
 }
 
 fn is_grease_value(value: u16) -> bool {
@@ -1165,6 +1156,7 @@ fn reality_client_config(
 fn reality_crypto_provider() -> CryptoProvider {
     let mut provider = crypto::aws_lc_rs::default_provider();
     provider.kx_groups = vec![
+        crypto::aws_lc_rs::kx_group::X25519KYBER768DRAFT00,
         crypto::aws_lc_rs::kx_group::X25519MLKEM768,
         crypto::aws_lc_rs::kx_group::X25519,
         crypto::aws_lc_rs::kx_group::SECP256R1,
@@ -1410,6 +1402,7 @@ impl ServerCertVerifier for RealityServerVerifier {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret as X25519StaticSecret};
 
     #[test]
     fn reality_client_hello_finalizer_seals_actual_chrome_client_hello() {

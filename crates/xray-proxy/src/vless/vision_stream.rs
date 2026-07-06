@@ -140,6 +140,10 @@ impl<S> VisionStream<S> {
         &self.inner
     }
 
+    pub fn queue_empty_padding_frame(&mut self) -> io::Result<()> {
+        self.queue_padded_write(&[], VisionCommand::Continue, true)
+    }
+
     fn fill_output(&mut self, output: &mut ReadBuf<'_>) -> bool {
         let len = cmp::min(output.remaining(), self.decoded_read.len());
         if len == 0 {
@@ -170,9 +174,14 @@ impl<S> VisionStream<S> {
         Ok(true)
     }
 
-    fn queue_padded_write(&mut self, input: &[u8], command: VisionCommand) -> io::Result<()> {
+    fn queue_padded_write(
+        &mut self,
+        input: &[u8],
+        command: VisionCommand,
+        long_padding: bool,
+    ) -> io::Result<()> {
         self.padding
-            .pad_into(input, command, 0, &mut self.pending_write)
+            .pad_into_with_long_padding(input, command, long_padding, 0, &mut self.pending_write)
             .map_err(vision_to_io)
     }
 
@@ -406,17 +415,17 @@ where
         this.filter_tls_packet(input);
         if this.is_tls && is_complete_tls_application_data_records(input) {
             if this.enable_xtls {
-                this.queue_padded_write(input, VisionCommand::Direct)?;
+                this.queue_padded_write(input, VisionCommand::Direct, true)?;
                 this.pending_direct_write_mode = true;
             } else {
-                this.queue_padded_write(input, VisionCommand::End)?;
+                this.queue_padded_write(input, VisionCommand::End, true)?;
                 this.pending_end_write_mode = true;
             }
         } else if !this.is_tls12_or_above && this.packets_to_filter <= 1 {
-            this.queue_padded_write(input, VisionCommand::End)?;
+            this.queue_padded_write(input, VisionCommand::End, this.is_tls)?;
             this.pending_end_write_mode = true;
         } else {
-            this.queue_padded_write(input, VisionCommand::Continue)?;
+            this.queue_padded_write(input, VisionCommand::Continue, this.is_tls)?;
         }
         this.pending_write_len = accepted_len;
 

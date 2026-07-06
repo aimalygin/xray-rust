@@ -69,8 +69,10 @@ pub(super) struct UtlsClientHelloProfile {
     pub supported_groups: &'static [u16],
     pub key_shares: &'static [UtlsKeyShare],
     pub signature_algorithms: &'static [u16],
+    pub delegated_credentials_algorithms: &'static [u16],
     pub alpn_protocols: &'static [&'static [u8]],
     pub certificate_compression_algorithms: &'static [u16],
+    pub record_size_limit: Option<u16>,
     pub application_settings: &'static [UtlsApplicationSettings],
     pub extensions: &'static [UtlsExtension],
     pub padding_length: Option<usize>,
@@ -108,9 +110,12 @@ for (const profileGroup of profileGroups.values()) {
   const supportedGroups = shape.supported_groups ?? [];
   const keyShares = shape.key_shares ?? [];
   const signatureAlgorithms = shape.signature_algorithms ?? [];
+  const delegatedCredentialsAlgorithms =
+    shape.delegated_credentials_algorithms ?? [];
   const alpnProtocols = shape.alpn_protocols ?? [];
   const certificateCompressionAlgorithms =
     shape.certificate_compression_algorithms ?? [];
+  const recordSizeLimit = shape.record_size_limit;
   const applicationSettings = shape.application_settings ?? [];
   const extensions = shape.extensions ?? [];
 
@@ -127,6 +132,9 @@ for (const profileGroup of profileGroups.values()) {
     .join(", ")}];\n`;
   output += `const ${prefix}_SIGALGS: &[u16] = ${numericArray(
     signatureAlgorithms,
+  )};\n`;
+  output += `const ${prefix}_DELEGATED_CREDENTIALS: &[u16] = ${numericArray(
+    delegatedCredentialsAlgorithms,
   )};\n`;
   output += `const ${prefix}_ALPN: &[&[u8]] = ${byteStringArray(
     alpnProtocols,
@@ -164,7 +172,9 @@ for (const profileGroup of profileGroups.values()) {
       return `UtlsExtension { extension_type: ${extensionType}, payload_len: ${extension.length} }`;
     })
     .join(", ")}];\n`;
-  output += `const ${prefix}: UtlsClientHelloProfile = UtlsClientHelloProfile { cipher_suites: ${prefix}_CIPHERS, supported_versions: ${prefix}_VERSIONS, supported_groups: ${prefix}_GROUPS, key_shares: ${prefix}_KEY_SHARES, signature_algorithms: ${prefix}_SIGALGS, alpn_protocols: ${prefix}_ALPN, certificate_compression_algorithms: ${prefix}_CERT_COMP, application_settings: ${prefix}_APPS, extensions: ${prefix}_EXTENSIONS, padding_length: ${
+  output += `const ${prefix}: UtlsClientHelloProfile = UtlsClientHelloProfile { cipher_suites: ${prefix}_CIPHERS, supported_versions: ${prefix}_VERSIONS, supported_groups: ${prefix}_GROUPS, key_shares: ${prefix}_KEY_SHARES, signature_algorithms: ${prefix}_SIGALGS, delegated_credentials_algorithms: ${prefix}_DELEGATED_CREDENTIALS, alpn_protocols: ${prefix}_ALPN, certificate_compression_algorithms: ${prefix}_CERT_COMP, record_size_limit: ${
+    recordSizeLimit == null ? "None" : `Some(${hexLiteral(numericValue(recordSizeLimit))})`
+  }, application_settings: ${prefix}_APPS, extensions: ${prefix}_EXTENSIONS, padding_length: ${
     shape.padding_length == null ? "None" : `Some(${shape.padding_length})`
   }, encrypted_client_hello_length: ${
     shape.encrypted_client_hello_length == null

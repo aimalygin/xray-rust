@@ -1,9 +1,11 @@
 use bytes::{BufMut, BytesMut};
+use rand::Rng;
 use thiserror::Error;
 
 const HEADER_LEN: usize = 5;
 const USER_ID_LEN: usize = 16;
 const MAX_CONTENT_LEN: usize = u16::MAX as usize;
+pub const DEFAULT_VISION_SEED: [u32; 4] = [900, 500, 900, 256];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VisionCommand {
@@ -81,12 +83,23 @@ impl VisionPadding {
         deterministic_extra_padding: u16,
         output: &mut BytesMut,
     ) -> Result<(), VisionError> {
+        self.pad_into_with_long_padding(payload, command, true, deterministic_extra_padding, output)
+    }
+
+    pub fn pad_into_with_long_padding(
+        &mut self,
+        payload: &[u8],
+        command: VisionCommand,
+        long_padding: bool,
+        deterministic_extra_padding: u16,
+        output: &mut BytesMut,
+    ) -> Result<(), VisionError> {
         let content_len = payload.len();
         if content_len > MAX_CONTENT_LEN {
             return Err(VisionError::PayloadTooLarge { len: content_len });
         }
 
-        let padding_len = self.padding_len(content_len, deterministic_extra_padding);
+        let padding_len = self.padding_len(content_len, long_padding, deterministic_extra_padding);
         let user_prefix_len = if self.user_id_emitted { 0 } else { USER_ID_LEN };
         output.reserve(user_prefix_len + HEADER_LEN + content_len + padding_len);
 
@@ -104,18 +117,33 @@ impl VisionPadding {
         Ok(())
     }
 
-    fn padding_len(&self, content_len: usize, deterministic_extra_padding: u16) -> usize {
+    fn padding_len(
+        &self,
+        content_len: usize,
+        long_padding: bool,
+        deterministic_extra_padding: u16,
+    ) -> usize {
         if deterministic_extra_padding != 0 {
             return deterministic_extra_padding as usize;
         }
 
-        if content_len < self.seed[0] as usize {
-            let padding_len = (self.seed[2] as usize).saturating_sub(content_len);
+        if long_padding && content_len < self.seed[0] as usize {
+            let padding_len = (self.seed[2] as usize)
+                .saturating_sub(content_len)
+                .saturating_add(random_padding_len(self.seed[1]));
             padding_len.min(MAX_CONTENT_LEN)
         } else {
-            0
+            random_padding_len(self.seed[3]).min(MAX_CONTENT_LEN)
         }
     }
+}
+
+fn random_padding_len(upper_bound: u32) -> usize {
+    if upper_bound == 0 {
+        return 0;
+    }
+
+    rand::thread_rng().gen_range(0..upper_bound) as usize
 }
 
 pub fn unpad_vision_block(

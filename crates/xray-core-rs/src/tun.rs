@@ -30,7 +30,7 @@ use crate::outbound::{
     select_udp_outbound_for_session_with_resolver, UdpOutbound, VlessTcpOutbound, VlessUdpFraming,
     VlessUdpOpenOptions,
 };
-use crate::{TunRuntimeOptions, TunRuntimeProfile};
+use crate::{RuntimeLogger, TunRuntimeOptions, TunRuntimeProfile};
 use xray_proxy::vless::{
     encode_udp_packet, encode_xudp_keep_packet, encode_xudp_new_packet, read_udp_packet,
     read_xudp_packet,
@@ -778,6 +778,7 @@ pub(crate) async fn serve_tun_endpoint(
     dns_resolver: Arc<dyn DnsResolver>,
     transport_dialer: Arc<TransportDialer>,
     tun_runtime_options: TunRuntimeOptions,
+    runtime_logger: RuntimeLogger,
     mut shutdown: watch::Receiver<bool>,
 ) {
     let mut device = PacketDevice::new(1500);
@@ -811,6 +812,7 @@ pub(crate) async fn serve_tun_endpoint(
         tun_runtime_options,
         runtime_policy,
         fake_ip_mapper,
+        runtime_logger,
     };
 
     'runtime: loop {
@@ -826,8 +828,10 @@ pub(crate) async fn serve_tun_endpoint(
                         if !process_tun_packet(
                             packet,
                             &tun,
+                            &mut iface,
                             &mut sockets,
                             &mut tcp_listeners,
+                            &mut tcp_flows,
                             &mut udp_flows,
                             &mut flow_budget_state,
                             &runtime_context,
@@ -865,8 +869,10 @@ pub(crate) async fn serve_tun_endpoint(
                     if !process_tun_packet(
                         packet,
                         &tun,
+                        &mut iface,
                         &mut sockets,
                         &mut tcp_listeners,
+                        &mut tcp_flows,
                         &mut udp_flows,
                         &mut flow_budget_state,
                         &runtime_context,
@@ -947,8 +953,10 @@ pub(crate) async fn serve_tun_endpoint(
 async fn process_tun_packet(
     packet: Bytes,
     tun: &TunEndpoint,
+    iface: &mut Interface,
     sockets: &mut SocketSet<'static>,
     tcp_listeners: &mut HashMap<IpEndpoint, SocketHandle>,
+    tcp_flows: &mut HashMap<SocketHandle, TcpFlow>,
     udp_flows: &mut HashMap<UdpFlowKey, UdpFlow>,
     flow_budget_state: &mut FlowBudgetState,
     context: &TunRuntimeContext,
@@ -974,6 +982,15 @@ async fn process_tun_packet(
     }
     if let Some(endpoint) = tcp_syn_destination(&packet) {
         ensure_tcp_listener(sockets, tcp_listeners, endpoint);
+        device.push_inbound(packet);
+        iface.poll(Instant::now(), device, sockets);
+        open_ready_tcp_flows(sockets, tcp_listeners, tcp_flows, context, shutdown.clone());
+        while let Some(packet) = device.pop_outbound() {
+            if tun.push_outbound(packet).await.is_err() {
+                return false;
+            }
+        }
+        return true;
     }
     device.push_inbound(packet);
     true
@@ -991,6 +1008,7 @@ struct TunRuntimeContext {
     tun_runtime_options: TunRuntimeOptions,
     runtime_policy: TunRuntimePolicy,
     fake_ip_mapper: Option<Arc<Mutex<FakeIpMapper>>>,
+    runtime_logger: RuntimeLogger,
 }
 
 impl TunRuntimeContext {
@@ -1538,6 +1556,20 @@ async fn bridge_tcp_flow(
     let (outbound, outbound_tag) = match outbound_result {
         Ok(selection) => selection,
         Err(error) => {
+            if context.runtime_logger.is_enabled() {
+                crate::debug_log::log_access_rejected(
+                    &context.runtime_logger,
+                    "tun",
+                    &target,
+                    &error,
+                );
+                context.runtime_logger.error(|| {
+                    format!(
+                        "Debug tcpOpenError target={} outbound=untagged error={error}",
+                        crate::debug_log::target_label(&target)
+                    )
+                });
+            }
             context.tun.record_tcp_open_error();
             record_tcp_open_error_event(context.tun.as_ref(), &target, None, error);
             let _ = context
@@ -1557,6 +1589,23 @@ async fn bridge_tcp_flow(
     {
         Ok(stream) => stream,
         Err(error) => {
+            if context.runtime_logger.is_enabled() {
+                let outbound_label = outbound_tag
+                    .as_deref()
+                    .unwrap_or_else(|| crate::debug_log::tcp_outbound_label(&outbound));
+                crate::debug_log::log_access_rejected(
+                    &context.runtime_logger,
+                    "tun",
+                    &target,
+                    &error,
+                );
+                context.runtime_logger.error(|| {
+                    format!(
+                        "Debug tcpOpenError target={} outbound={outbound_label} error={error}",
+                        crate::debug_log::target_label(&target)
+                    )
+                });
+            }
             context.tun.record_tcp_open_error();
             record_tcp_open_error_event(
                 context.tun.as_ref(),
@@ -1571,6 +1620,29 @@ async fn bridge_tcp_flow(
             return;
         }
     };
+    if context.runtime_logger.is_enabled() {
+        let outbound_label = outbound_tag
+            .as_deref()
+            .unwrap_or_else(|| crate::debug_log::tcp_outbound_label(&outbound));
+        crate::debug_log::log_route_decision(
+            &context.runtime_logger,
+            crate::debug_log::RouteDecisionLog {
+                inbound_tag: context.inbound_tag.as_deref(),
+                network: target.network,
+                original_target: &target,
+                sniffed_protocol: None,
+                route_target: &target,
+                dial_target: &target,
+                selected_outbound: outbound_label,
+            },
+        );
+        crate::debug_log::log_access_accepted(
+            &context.runtime_logger,
+            "tun",
+            &target,
+            outbound_label,
+        );
+    }
     let tcp_open_duration_ms = if let Some(start) = tcp_timing_start.as_ref() {
         let duration_ms = elapsed_ms_since(start);
         context.tun.record_tcp_open_timing(duration_ms, is_tcp443);
@@ -1585,7 +1657,6 @@ async fn bridge_tcp_flow(
     } else {
         None
     };
-
     let (mut remote_reader, mut remote_writer) = tokio::io::split(stream);
     if let (Some(start), Some(open_duration_ms)) = (tcp_timing_start, tcp_open_duration_ms) {
         let mut timing = TcpFirstByteTimingEnabled::new(
@@ -1726,9 +1797,6 @@ fn record_tcp_slow_flow_event(
     open_duration_ms: u64,
     first_byte_duration_ms: u64,
 ) {
-    if target.port != 443 {
-        return;
-    }
     let measured_duration_ms = match kind {
         TunTcpSlowFlowKind::Open => open_duration_ms,
         TunTcpSlowFlowKind::FirstByte => first_byte_duration_ms,
@@ -1753,9 +1821,6 @@ fn record_tcp_remote_write_slow_event(
     bytes: usize,
     messages: usize,
 ) {
-    if target.port != 443 {
-        return;
-    }
     if duration_ms <= TCP_REMOTE_WRITE_SLOW_THRESHOLD_MS {
         return;
     }
@@ -1785,9 +1850,6 @@ fn record_tcp_flow_summary_event(
     ms_to_512kib: u64,
     ms_to_1mib: u64,
 ) {
-    if target.port != 443 {
-        return;
-    }
     if remote_read_bytes < TCP_FLOW_SUMMARY_MIN_BYTES {
         return;
     }
@@ -2209,7 +2271,6 @@ async fn bridge_udp_flow(
         return;
     };
     let sniffed_target = sniff_tun_udp_target(&context, &target, &first_payload);
-    #[cfg(debug_assertions)]
     let sniffed_protocol = sniffed_target.sniffed_protocol;
     let route_target = sniffed_target.route_target;
     let dial_target = sniffed_target.dial_target;
@@ -2223,28 +2284,54 @@ async fn bridge_udp_flow(
     {
         Ok(outbound) => outbound,
         Err(_) => {
+            if context.runtime_logger.is_enabled() {
+                crate::debug_log::log_access_rejected(
+                    &context.runtime_logger,
+                    "tun",
+                    &route_target,
+                    "udp outbound selection failed",
+                );
+            }
             context.tun.record_udp_open_error();
             let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
             return;
         }
     };
 
-    #[cfg(debug_assertions)]
-    crate::debug_log::log_route_decision(crate::debug_log::RouteDecisionLog {
-        inbound_tag: context.inbound_tag.as_deref(),
-        network: target.network,
-        original_target: &target,
-        sniffed_protocol,
-        route_target: &route_target,
-        dial_target: &dial_target,
-        selected_outbound: crate::debug_log::udp_outbound_label(&outbound),
-    });
+    if context.runtime_logger.is_enabled() {
+        crate::debug_log::log_route_decision(
+            &context.runtime_logger,
+            crate::debug_log::RouteDecisionLog {
+                inbound_tag: context.inbound_tag.as_deref(),
+                network: target.network,
+                original_target: &target,
+                sniffed_protocol,
+                route_target: &route_target,
+                dial_target: &dial_target,
+                selected_outbound: crate::debug_log::udp_outbound_label(&outbound),
+            },
+        );
+    }
 
     if dial_target.port == 443 {
         if let UdpOutbound::Vless(outbound) = &outbound {
             if outbound.blocks_udp443() {
                 if let Some(reply) = icmp_port_unreachable_reply(&first_packet) {
                     let _ = context.tun.push_outbound(reply).await;
+                }
+                if context.runtime_logger.is_enabled() {
+                    crate::debug_log::log_access_rejected(
+                        &context.runtime_logger,
+                        "tun",
+                        &dial_target,
+                        crate::CoreError::VisionUdp443Rejected,
+                    );
+                    context.runtime_logger.error(|| {
+                        format!(
+                            "Debug udpVisionUDP443Rejected target={} outbound=vless",
+                            crate::debug_log::target_label(&dial_target)
+                        )
+                    });
                 }
                 context.tun.record_udp_vision_udp443_rejection();
                 let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
@@ -2301,7 +2388,6 @@ async fn read_first_tun_udp_payload(
 struct TunUdpSniffedTarget {
     route_target: Target,
     dial_target: Target,
-    #[cfg(debug_assertions)]
     sniffed_protocol: Option<xray_config::SniffingDestination>,
 }
 
@@ -2310,18 +2396,15 @@ impl TunUdpSniffedTarget {
         Self {
             route_target: target.clone(),
             dial_target: target.clone(),
-            #[cfg(debug_assertions)]
             sniffed_protocol: None,
         }
     }
 
     fn sniffed(sniffed: crate::sniffing::SniffedTarget) -> Self {
-        #[cfg(debug_assertions)]
         let sniffed_protocol = Some(sniffed.protocol);
         Self {
             route_target: sniffed.route_target,
             dial_target: sniffed.dial_target,
-            #[cfg(debug_assertions)]
             sniffed_protocol,
         }
     }
@@ -2361,12 +2444,28 @@ async fn bridge_udp_freedom_flow(
     let socket = match UdpSocket::bind(bind_addr).await {
         Ok(socket) => socket,
         Err(_) => {
+            if context.runtime_logger.is_enabled() {
+                crate::debug_log::log_access_rejected(
+                    &context.runtime_logger,
+                    "tun",
+                    &target,
+                    "udp socket bind failed",
+                );
+            }
             context.tun.record_udp_open_error();
             let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
             return;
         }
     };
     if protect_udp_socket(&socket, context.transport_dialer.socket_protector()).is_err() {
+        if context.runtime_logger.is_enabled() {
+            crate::debug_log::log_access_rejected(
+                &context.runtime_logger,
+                "tun",
+                &target,
+                "udp socket protect failed",
+            );
+        }
         context.tun.record_udp_open_error();
         let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
         return;
@@ -2375,12 +2474,23 @@ async fn bridge_udp_freedom_flow(
     {
         Ok(target) => target,
         Err(_) => {
+            if context.runtime_logger.is_enabled() {
+                crate::debug_log::log_access_rejected(
+                    &context.runtime_logger,
+                    "tun",
+                    &target,
+                    "udp target resolution failed",
+                );
+            }
             context.tun.record_udp_open_error();
             let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
             return;
         }
     };
     context.tun.record_udp_remote_open(target.port == 443);
+    if context.runtime_logger.is_enabled() {
+        crate::debug_log::log_access_accepted(&context.runtime_logger, "tun", &target, "freedom");
+    }
     if let Some(start) = udp_timing_start {
         let mut timing = UdpFirstResponseTimingEnabled::new(start);
         bridge_udp_freedom_flow_loop(
@@ -2522,6 +2632,20 @@ async fn bridge_udp_vless_flow(
     {
         Ok(opened) => opened,
         Err(error) => {
+            if context.runtime_logger.is_enabled() {
+                crate::debug_log::log_access_rejected(
+                    &context.runtime_logger,
+                    "tun",
+                    &target,
+                    &error,
+                );
+                context.runtime_logger.error(|| {
+                    format!(
+                        "Debug udpOpenError target={} outbound=vless error={error}",
+                        crate::debug_log::target_label(&target)
+                    )
+                });
+            }
             context.tun.record_udp_open_error();
             if matches!(error, crate::CoreError::VisionUdp443Rejected) {
                 context.tun.record_udp_vision_udp443_rejection();
@@ -2531,6 +2655,9 @@ async fn bridge_udp_vless_flow(
         }
     };
     context.tun.record_udp_remote_open(target.port == 443);
+    if context.runtime_logger.is_enabled() {
+        crate::debug_log::log_access_accepted(&context.runtime_logger, "tun", &target, "vless");
+    }
 
     let (mut remote_reader, mut remote_writer) = tokio::io::split(stream);
     if let Some(start) = udp_timing_start {
@@ -3400,7 +3527,7 @@ mod tests {
     }
 
     #[test]
-    fn tcp_slow_flow_event_records_only_slow_tcp443_targets() {
+    fn tcp_slow_flow_event_records_slow_tcp_targets() {
         let tun = TunEndpoint::new(xray_tun::TunConfig {
             mtu: 1500,
             queue_depth: 1,
@@ -3438,6 +3565,15 @@ mod tests {
             TCP_SLOW_FLOW_THRESHOLD_MS + 1,
         );
 
+        assert_eq!(
+            tun.poll_tcp_slow_flow_event(),
+            Some(TunTcpSlowFlowEvent {
+                kind: TunTcpSlowFlowKind::Open,
+                target: "speedtest.example:8443".to_owned(),
+                open_duration_ms: TCP_SLOW_FLOW_THRESHOLD_MS + 1,
+                first_byte_duration_ms: 0,
+            })
+        );
         assert_eq!(
             tun.poll_tcp_slow_flow_event(),
             Some(TunTcpSlowFlowEvent {
@@ -3481,7 +3617,7 @@ mod tests {
     }
 
     #[test]
-    fn tcp_slow_flow_event_uses_500ms_threshold_for_tcp443_targets() {
+    fn tcp_slow_flow_event_uses_500ms_threshold_for_tcp_targets() {
         let tun = TunEndpoint::new(xray_tun::TunConfig {
             mtu: 1500,
             queue_depth: 1,
@@ -3509,7 +3645,7 @@ mod tests {
     }
 
     #[test]
-    fn tcp_remote_write_slow_event_uses_500ms_threshold_for_tcp443_targets() {
+    fn tcp_remote_write_slow_event_uses_500ms_threshold_for_tcp_targets() {
         let tun = TunEndpoint::new(xray_tun::TunConfig {
             mtu: 1500,
             queue_depth: 1,
@@ -3527,7 +3663,16 @@ mod tests {
 
         record_tcp_remote_write_slow_event(&tun, &tcp443, Some("proxy"), 500, 2_048, 2);
         record_tcp_remote_write_slow_event(&tun, &tcp8443, Some("proxy"), 501, 2_048, 2);
-        assert_eq!(tun.poll_tcp_remote_write_slow_event(), None);
+        assert_eq!(
+            tun.poll_tcp_remote_write_slow_event(),
+            Some(TunTcpRemoteWriteSlowEvent {
+                target: "speedtest.example:8443".to_owned(),
+                outbound_tag: Some("proxy".to_owned()),
+                duration_ms: 501,
+                bytes: 2_048,
+                messages: 2,
+            })
+        );
 
         record_tcp_remote_write_slow_event(&tun, &tcp443, Some("proxy"), 501, 2 * 1024 * 1024, 257);
         assert_eq!(
@@ -3544,7 +3689,7 @@ mod tests {
     }
 
     #[test]
-    fn tcp_flow_summary_event_records_only_large_tcp443_flows() {
+    fn tcp_flow_summary_event_records_large_tcp_flows() {
         let tun = TunEndpoint::new(xray_tun::TunConfig {
             mtu: 1500,
             queue_depth: 1,
@@ -3606,6 +3751,23 @@ mod tests {
             0,
         );
 
+        assert_eq!(
+            tun.poll_tcp_flow_summary_event(),
+            Some(TunTcpFlowSummaryEvent {
+                target: "speedtest.example:8443".to_owned(),
+                outbound_tag: Some("proxy".to_owned()),
+                closed: true,
+                duration_ms: 3_000,
+                open_duration_ms: 300,
+                first_byte_duration_ms: 500,
+                remote_read_bytes: TCP_FLOW_SUMMARY_MIN_BYTES,
+                ms_to_64kib: 700,
+                ms_to_128kib: 750,
+                ms_to_256kib: 800,
+                ms_to_512kib: 900,
+                ms_to_1mib: 0,
+            })
+        );
         assert_eq!(
             tun.poll_tcp_flow_summary_event(),
             Some(TunTcpFlowSummaryEvent {
