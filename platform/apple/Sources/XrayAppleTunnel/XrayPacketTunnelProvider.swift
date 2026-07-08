@@ -17,7 +17,7 @@ public enum XrayPacketTunnelProviderError: Error, LocalizedError {
     }
 }
 
-@available(iOSApplicationExtension 16.0, tvOSApplicationExtension 17.0, macOSApplicationExtension 13.0, *)
+@available(iOSApplicationExtension 15.0, tvOSApplicationExtension 17.0, macOSApplicationExtension 13.0, *)
 open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
     private static let defaultStartupProbeURL = "https://www.google.com/generate_204"
     private static let defaultStartupProbeTimeoutMs: UInt64 = 5_000
@@ -642,7 +642,7 @@ enum XrayPacketTunnelIOBackend: Equatable {
     case packetFlowPump
 }
 
-@available(iOSApplicationExtension 16.0, tvOSApplicationExtension 17.0, macOSApplicationExtension 13.0, *)
+@available(iOSApplicationExtension 15.0, tvOSApplicationExtension 17.0, macOSApplicationExtension 13.0, *)
 private extension NEProviderStopReason {
     var xrayDescription: String {
         switch self {

@@ -1,7 +1,7 @@
 import Foundation
 import XrayAppleShared
 
-@available(iOS 16.0, tvOS 17.0, macOS 13.0, *)
+@available(iOS 15.0, tvOS 17.0, macOS 13.0, *)
 @MainActor
 public final class XrayClientViewModel: ObservableObject {
     private static let incompleteVlessURLErrorMessage = "Pasted text is not a complete VLESS URL."

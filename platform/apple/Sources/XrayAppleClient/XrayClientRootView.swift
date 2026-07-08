@@ -1,7 +1,11 @@
 import SwiftUI
 import XrayAppleShared
 
-@available(iOS 16.0, tvOS 17.0, macOS 13.0, *)
+#if os(iOS)
+import UIKit
+#endif
+
+@available(iOS 15.0, tvOS 17.0, macOS 13.0, *)
 public struct XrayClientRootView: View {
     @StateObject private var viewModel: XrayClientViewModel
     @State private var vlessURLInput = ""
@@ -19,7 +23,7 @@ public struct XrayClientRootView: View {
     }
 
     public var body: some View {
-        NavigationStack {
+        NavigationView {
             Form {
                 connectionSection
                 profileSection
@@ -44,6 +48,9 @@ public struct XrayClientRootView: View {
                 }
             }
         }
+        #if os(iOS)
+        .navigationViewStyle(.stack)
+        #endif
         .task {
             await viewModel.refresh()
         }
@@ -150,6 +157,20 @@ public struct XrayClientRootView: View {
             }
             .frame(minHeight: 260)
             .accessibilityLabel("Xray JSON configuration")
+            #elseif os(iOS)
+            Button {
+                if let vlessURL = UIPasteboard.general.string {
+                    viewModel.importVlessURL(vlessURL)
+                }
+            } label: {
+                Label("Paste VLESS URL", systemImage: "doc.on.clipboard")
+            }
+            .accessibilityLabel("Paste VLESS URL")
+
+            TextEditor(text: $viewModel.profile.configJSON)
+                .font(.system(.body, design: .monospaced))
+                .frame(minHeight: 260)
+                .accessibilityLabel("Xray JSON configuration")
             #else
             PasteButton(payloadType: String.self) { strings in
                 guard let vlessURL = strings.first else {

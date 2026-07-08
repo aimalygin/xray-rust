@@ -28,7 +28,7 @@ scripts/build-apple-xcframework.sh
 scripts/build-android-libs.sh
 ```
 
-These produce `target/mobile/apple/XrayRust.xcframework` for iOS/tvOS and `target/mobile/android/jniLibs` for Android. The tvOS path uses nightly `rust-src` with `-Z build-std` when the stable toolchain does not ship prebuilt tvOS std components.
+These produce `target/mobile/apple/XrayRust.xcframework` for iOS/tvOS and `target/mobile/android/jniLibs` for Android. The Apple artifact is a framework-style XCFramework whose slices contain static `XrayRust.framework` bundles. The tvOS path uses nightly `rust-src` with `-Z build-std` when the stable toolchain does not ship prebuilt tvOS std components.
 
 Run the first live Rust runtime data-path test:
 

@@ -5,7 +5,7 @@ import XrayAppleClient
 struct XrayClientApp: App {
     var body: some Scene {
         WindowGroup {
-            if #available(iOS 16.0, tvOS 17.0, *) {
+            if #available(iOS 15.0, tvOS 17.0, *) {
                 XrayClientRootView()
             } else {
                 Text("Unsupported OS")

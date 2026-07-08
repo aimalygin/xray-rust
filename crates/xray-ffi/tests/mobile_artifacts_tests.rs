@@ -110,7 +110,8 @@ fn apple_adapter_declares_packet_tunnel_pump() {
     .expect("read Swift Darwin TUN fd helper");
 
     assert!(package.contains("XrayMobileAdapter"));
-    assert!(package.contains(".iOS(.v16)"));
+    assert!(package.contains(".iOS(.v15)"));
+    assert!(!package.contains(".iOS(.v16)"));
     assert!(!package.contains(".iOS(.v13)"));
     assert!(package.contains("XrayRust.xcframework"));
     assert!(core.contains("import XrayRust"));
@@ -214,7 +215,7 @@ fn apple_adapter_link_script_covers_mobile_triples() {
     let script = fs::read_to_string(workspace_root().join("scripts/check-apple-adapter-link.sh"))
         .expect("read Apple adapter link script");
 
-    assert!(script.contains(r#"IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-16.0}""#));
+    assert!(script.contains(r#"IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-15.0}""#));
 
     for triple in [
         "arm64-apple-ios${IPHONEOS_DEPLOYMENT_TARGET}",
@@ -251,7 +252,7 @@ fn apple_adapter_link_script_covers_mobile_triples() {
 }
 
 #[test]
-fn apple_xcode_sample_uses_ios_16_deployment_target() {
+fn apple_xcode_sample_uses_ios_15_deployment_target() {
     let project = fs::read_to_string(
         workspace_root().join("platform/apple/XrayClient/XrayClient.xcodeproj/project.pbxproj"),
     )
@@ -260,10 +261,52 @@ fn apple_xcode_sample_uses_ios_16_deployment_target() {
     assert!(project.contains("XCLocalSwiftPackageReference \"../../apple\""));
     assert!(project.contains("productName = XrayAppleClient;"));
     assert!(project.contains("productName = XrayAppleTunnel;"));
-    assert!(project.contains("IPHONEOS_DEPLOYMENT_TARGET = 16.0;"));
+    assert!(project.contains("IPHONEOS_DEPLOYMENT_TARGET = 15.0;"));
     assert!(!project.contains("IPHONEOS_DEPLOYMENT_TARGET = 13.0;"));
+    assert!(!project.contains("IPHONEOS_DEPLOYMENT_TARGET = 16.0;"));
     assert!(!project.contains("IPHONEOS_DEPLOYMENT_TARGET = 16.6;"));
     assert!(!project.contains("IPHONEOS_DEPLOYMENT_TARGET = 26.5;"));
+}
+
+#[test]
+fn apple_swift_sources_advertise_ios_15_availability() {
+    let root = workspace_root();
+
+    for path in [
+        "platform/apple/HostApp/XrayClientApp.swift",
+        "platform/apple/Sources/XrayAppleClient/XrayClientRootView.swift",
+        "platform/apple/Sources/XrayAppleClient/XrayRealityVisionFlowPicker.swift",
+        "platform/apple/Sources/XrayAppleClient/XrayClientViewModel.swift",
+        "platform/apple/Sources/XrayAppleClient/XrayClientTunnelController.swift",
+        "platform/apple/Sources/XrayAppleClient/XrayRealityFingerprintPicker.swift",
+        "platform/apple/XrayClient/XrayClient/XrayClientApp.swift",
+    ] {
+        let source = fs::read_to_string(root.join(path)).expect("read Apple Swift source");
+        assert!(
+            source.contains("iOS 15.0"),
+            "Swift source `{path}` should advertise iOS 15 availability"
+        );
+        assert!(
+            !source.contains("iOS 16.0"),
+            "Swift source `{path}` should not require iOS 16"
+        );
+    }
+
+    for path in [
+        "platform/apple/HostApp/PacketTunnelProvider.swift",
+        "platform/apple/Sources/XrayAppleTunnel/XrayPacketTunnelProvider.swift",
+        "platform/apple/XrayClient/Tunnel/PacketTunnelProvider.swift",
+    ] {
+        let source = fs::read_to_string(root.join(path)).expect("read Apple extension source");
+        assert!(
+            source.contains("iOSApplicationExtension 15.0"),
+            "Swift extension source `{path}` should advertise iOS extension 15 availability"
+        );
+        assert!(
+            !source.contains("iOSApplicationExtension 16.0"),
+            "Swift extension source `{path}` should not require iOS extension 16"
+        );
+    }
 }
 
 #[test]
@@ -610,9 +653,27 @@ fn apple_xcframework_script_covers_ios_and_tvos_targets() {
     assert!(script.contains("TVOS_RUST_TOOLCHAIN"));
     assert!(script.contains("-Z"));
     assert!(script.contains("build-std"));
+    assert!(script.contains("APPLE_CARGO_TARGET_DIR"));
+    assert!(script.contains("export CARGO_TARGET_DIR"));
+    assert!(script.contains("ios-$IPHONEOS_DEPLOYMENT_TARGET"));
     assert!(script.contains("IPHONEOS_DEPLOYMENT_TARGET"));
-    assert!(script.contains(r#"IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-16.0}""#));
+    assert!(script.contains(r#"IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-15.0}""#));
     assert!(script.contains("TVOS_DEPLOYMENT_TARGET"));
+}
+
+#[test]
+fn apple_xcframework_script_packages_static_framework_bundles() {
+    let script = fs::read_to_string(workspace_root().join("scripts/build-apple-xcframework.sh"))
+        .expect("read Apple build script");
+
+    assert!(script.contains("FRAMEWORK_NAME"));
+    assert!(script.contains("make_static_framework"));
+    assert!(script.contains("Modules/module.modulemap"));
+    assert!(script.contains("framework module"));
+    assert!(script.contains("CFBundlePackageType"));
+    assert!(script.contains("FMWK"));
+    assert!(script.contains("-framework"));
+    assert!(!script.contains("-library \"$ios_device_lib\" -headers \"$HEADER_DIR\""));
 }
 
 #[test]

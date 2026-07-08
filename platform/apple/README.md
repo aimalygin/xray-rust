@@ -15,6 +15,10 @@ The package expects:
 target/mobile/apple/XrayRust.xcframework
 ```
 
+The XCFramework is framework-style: each platform slice contains
+`XrayRust.framework`, and that framework carries a static Rust archive rather
+than a dynamic library.
+
 Provided pieces:
 
 - `XrayMobileAdapter`: `XrayCore`, `XrayPacketTunnelPump`, and

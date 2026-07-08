@@ -57,15 +57,29 @@ The generated XCFramework contains:
 - `tvos-arm64_x86_64-simulator`
 - `macos-arm64`, used as a local SwiftPM host-build slice for adapter checks.
 
+Each slice is packaged as `XrayRust.framework`. This is a static framework:
+the `XrayRust.framework/XrayRust` binary is the Rust `staticlib` archive, not a
+dynamic library. The framework bundle carries `Headers/xray_ffi.h`,
+`Modules/module.modulemap`, and `Info.plist`, so Swift imports continue to use
+`import XrayRust`.
+
 Useful environment overrides:
 
 - `PROFILE=release`
 - `OUT_DIR=/path/to/output`
 - `XCFRAMEWORK_NAME=XrayRust.xcframework`
-- `IPHONEOS_DEPLOYMENT_TARGET=16.0`
+- `FRAMEWORK_NAME=XrayRust`
+- `APPLE_CARGO_TARGET_DIR=/path/to/apple/cargo-cache`
+- `IPHONEOS_DEPLOYMENT_TARGET=15.0`
 - `TVOS_DEPLOYMENT_TARGET=14.0`
+- `MACOSX_DEPLOYMENT_TARGET=11.0`
 - `TVOS_BUILD_STD=auto`
 - `TVOS_RUST_TOOLCHAIN=nightly`
+
+By default, Apple artifact builds use a Cargo target directory under `OUT_DIR`
+that includes the iOS, tvOS, and macOS deployment target values. This prevents
+stale Rust object files built for a higher minimum OS from being reused after
+lowering deployment targets.
 
 The current stable Rust toolchain exposes tvOS target specs but does not ship prebuilt tvOS std components through `rustup target add`, so the script uses nightly `-Z build-std=std,panic_abort` for tvOS when needed.
 
@@ -86,7 +100,7 @@ It provides:
 - `XrayAppleClient`, a simple SwiftUI iOS/tvOS control-plane UI with profile persistence, config validation, and `NETunnelProviderManager` connect/disconnect wiring.
 - `XrayAppleTunnel`, a reusable Packet Tunnel provider that starts `XrayCore`, pumps packets through `packetFlow`, and answers stats messages from the host app.
 - `platform/apple/HostApp`, thin Xcode target templates for app entry, extension provider, entitlements, and extension plist.
-- `crates/xray-ffi/include/module.modulemap`, so the generated XCFramework can be imported as `XrayRust` from Swift.
+- `XrayRust.framework/Modules/module.modulemap`, so the generated XCFramework can be imported as `XrayRust` from Swift.
 
 The package expects `target/mobile/apple/XrayRust.xcframework` to exist. Build it first with `scripts/build-apple-xcframework.sh`.
 

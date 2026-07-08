@@ -14,7 +14,7 @@ public protocol XrayClientTunnelControlling: AnyObject {
 }
 
 #if canImport(NetworkExtension)
-@available(iOS 16.0, tvOS 17.0, macOS 13.0, *)
+@available(iOS 15.0, tvOS 17.0, macOS 13.0, *)
 public final class NetworkExtensionTunnelController: XrayClientTunnelControlling {
     private let managerDescription: String
 
@@ -176,7 +176,7 @@ public final class NetworkExtensionTunnelController: XrayClientTunnelControlling
     }
 }
 
-@available(iOS 16.0, tvOS 17.0, macOS 13.0, *)
+@available(iOS 15.0, tvOS 17.0, macOS 13.0, *)
 private extension NETunnelProviderSession {
     func sendProviderMessageAsync(_ messageData: Data) async throws -> Data? {
         try await withCheckedThrowingContinuation { continuation in
@@ -191,7 +191,7 @@ private extension NETunnelProviderSession {
     }
 }
 
-@available(iOS 16.0, tvOS 17.0, macOS 13.0, *)
+@available(iOS 15.0, tvOS 17.0, macOS 13.0, *)
 private extension NETunnelProviderManager {
     func saveToPreferencesAsync() async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -218,7 +218,7 @@ private extension NETunnelProviderManager {
     }
 }
 
-@available(iOS 16.0, tvOS 17.0, macOS 13.0, *)
+@available(iOS 15.0, tvOS 17.0, macOS 13.0, *)
 private extension XrayClientConnectionStatus {
     init(_ status: NEVPNStatus) {
         switch status {
@@ -240,7 +240,7 @@ private extension XrayClientConnectionStatus {
     }
 }
 #else
-@available(iOS 16.0, tvOS 17.0, macOS 13.0, *)
+@available(iOS 15.0, tvOS 17.0, macOS 13.0, *)
 public final class NetworkExtensionTunnelController: XrayClientTunnelControlling {
     public init(managerDescription: String = "Xray Rust") {}
 

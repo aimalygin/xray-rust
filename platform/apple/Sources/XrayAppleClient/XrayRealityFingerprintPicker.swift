@@ -1,7 +1,7 @@
 import SwiftUI
 import XrayAppleShared
 
-@available(iOS 16.0, tvOS 17.0, macOS 13.0, *)
+@available(iOS 15.0, tvOS 17.0, macOS 13.0, *)
 struct XrayRealityFingerprintPicker: View {
     @ObservedObject var viewModel: XrayClientViewModel
 
