@@ -495,7 +495,7 @@ fn try_utls_client_hello_raw_from_oracle(
 }
 
 fn decode_hex(input: &str) -> Result<Vec<u8>, String> {
-    if input.len() % 2 != 0 {
+    if !input.len().is_multiple_of(2) {
         return Err(format!("hex length is odd: {}", input.len()));
     }
 

@@ -11,10 +11,11 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::time::{sleep, timeout, Duration, Instant};
 
 const TEST_UUID: &str = "00010203-0405-0607-0809-0a0b0c0d0e0f";
-const REALITY_SERVER_NAME: &str = "www.example.com";
+const REALITY_SERVER_NAME: &str = "www.google.com";
 const REALITY_PRIVATE_KEY: &str = "aGSYystUbf59_9_6LKRxD27rmSW_-2_nyd9YG_Gwbks";
 const REALITY_PUBLIC_KEY: &str = "E59WjnvZcQMu7tR7_BgyhycuEdBS-CtKxfImRCdAvFM";
 const REALITY_SHORT_ID_HEX: &str = "0123456789abcdef";
+const REALITY_SERVER_WARMUP_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[tokio::test]
 #[ignore = "requires local Go toolchain, Xray-core checkout, xray-rust binary, and loopback process execution"]
@@ -72,6 +73,9 @@ async fn run_xray_rust_process_interop(security: XrayInboundSecurity) {
     )
     .await
     .expect("start xray timeout");
+    if security == XrayInboundSecurity::Reality {
+        warm_up_reality_server_with_xray_rust_process(&xray).await;
+    }
     let (echo_addr, echo_handle) = spawn_echo_server().await;
     let client_temp_dir = create_temp_dir("xray-rust-cli-process-interop");
     let client_config_path = client_temp_dir.path.join("client.json");
@@ -97,7 +101,7 @@ async fn run_xray_rust_process_interop(security: XrayInboundSecurity) {
         .expect("write payload timeout")
         .expect("write payload");
     let mut echoed = vec![0; payload.len()];
-    match timeout(Duration::from_secs(5), client.read_exact(&mut echoed)).await {
+    match timeout(Duration::from_secs(15), client.read_exact(&mut echoed)).await {
         Ok(result) => {
             result.expect("read echo");
         }
@@ -204,6 +208,35 @@ async fn run_xray_rust_process_http_freedom_interop() {
         .await
         .expect("echo task should finish")
         .expect("echo task should not panic");
+}
+
+async fn warm_up_reality_server_with_xray_rust_process(xray: &XrayServer) {
+    let warmup_temp_dir = create_temp_dir("xray-rust-cli-reality-warmup");
+    let warmup_config_path = warmup_temp_dir.path.join("client.json");
+    write_xray_rust_client_config(&warmup_config_path, xray.addr, XrayInboundSecurity::Reality);
+    let (warmup_process, socks_addr) =
+        start_xray_rust_process(warmup_temp_dir, &warmup_config_path)
+            .await
+            .expect("start xray-rust warmup process");
+
+    match timeout(
+        REALITY_SERVER_WARMUP_TIMEOUT,
+        run_socks_echo_probe(socks_addr),
+    )
+    .await
+    {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => {
+            eprintln!("{}", xray.logs());
+            eprintln!("{}", warmup_process.logs());
+            panic!("REALITY server warmup probe failed: {error}");
+        }
+        Err(error) => {
+            eprintln!("{}", xray.logs());
+            eprintln!("{}", warmup_process.logs());
+            panic!("REALITY server warmup probe timed out: {error}");
+        }
+    }
 }
 
 struct TempDir {
@@ -669,6 +702,55 @@ async fn spawn_echo_server() -> (SocketAddr, tokio::task::JoinHandle<()>) {
             .expect("echo copy");
     });
     (addr, handle)
+}
+
+async fn run_socks_echo_probe(socks_addr: SocketAddr) -> Result<(), String> {
+    let (echo_addr, echo_handle) = spawn_echo_server().await;
+    let result = run_socks_echo_flow(socks_addr, echo_addr).await;
+
+    match result {
+        Ok(()) => {
+            timeout(Duration::from_secs(5), echo_handle)
+                .await
+                .map_err(|error| format!("echo task timeout: {error}"))?
+                .map_err(|error| format!("echo task panic: {error}"))?;
+            Ok(())
+        }
+        Err(error) => {
+            echo_handle.abort();
+            let _ = echo_handle.await;
+            Err(error)
+        }
+    }
+}
+
+async fn run_socks_echo_flow(socks_addr: SocketAddr, echo_addr: SocketAddr) -> Result<(), String> {
+    let mut client = timeout(Duration::from_secs(5), TcpStream::connect(socks_addr))
+        .await
+        .map_err(|error| format!("connect xray-rust socks timeout: {error}"))?
+        .map_err(|error| format!("connect xray-rust socks: {error}"))?;
+    timeout(
+        Duration::from_secs(10),
+        socks5_connect(&mut client, echo_addr),
+    )
+    .await
+    .map_err(|error| format!("socks connect timeout: {error}"))?;
+
+    let payload = b"hello xray-rust process warmup";
+    timeout(Duration::from_secs(5), client.write_all(payload))
+        .await
+        .map_err(|error| format!("write payload timeout: {error}"))?
+        .map_err(|error| format!("write payload: {error}"))?;
+    let mut echoed = vec![0; payload.len()];
+    timeout(Duration::from_secs(15), client.read_exact(&mut echoed))
+        .await
+        .map_err(|error| format!("read echo timeout: {error}"))?
+        .map_err(|error| format!("read echo: {error}"))?;
+    if echoed != payload {
+        return Err("echoed payload mismatch".to_owned());
+    }
+
+    Ok(())
 }
 
 async fn socks5_connect(client: &mut TcpStream, target: SocketAddr) {

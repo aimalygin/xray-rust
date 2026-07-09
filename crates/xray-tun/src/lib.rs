@@ -104,6 +104,19 @@ pub struct TunStats {
     pub tun_fd_write_batch_max_packets: u64,
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct TunTcpBufferState {
+    pub remote_bytes: usize,
+    pub remote_flows: usize,
+    pub remote_max_bytes: usize,
+    pub upload_bytes: usize,
+    pub upload_max_bytes: usize,
+    pub total_bytes: usize,
+    pub per_flow_limit_bytes: usize,
+    pub hard_limit_bytes: usize,
+    pub pressure_active: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TunTcpSlowFlowKind {
     Open,
@@ -598,36 +611,25 @@ impl TunEndpoint {
         );
     }
 
-    pub fn record_tcp_buffer_state(
-        &self,
-        remote_bytes: usize,
-        remote_flows: usize,
-        remote_max_bytes: usize,
-        upload_bytes: usize,
-        upload_max_bytes: usize,
-        total_bytes: usize,
-        per_flow_limit_bytes: usize,
-        hard_limit_bytes: usize,
-        pressure_active: bool,
-    ) {
+    pub fn record_tcp_buffer_state(&self, state: TunTcpBufferState) {
         self.tcp_pending_remote_bytes
-            .store(remote_bytes as u64, Ordering::Relaxed);
+            .store(state.remote_bytes as u64, Ordering::Relaxed);
         self.tcp_pending_remote_flows
-            .store(remote_flows as u64, Ordering::Relaxed);
+            .store(state.remote_flows as u64, Ordering::Relaxed);
         self.tcp_pending_remote_max_bytes
-            .store(remote_max_bytes as u64, Ordering::Relaxed);
+            .store(state.remote_max_bytes as u64, Ordering::Relaxed);
         self.tcp_pending_upload_bytes
-            .store(upload_bytes as u64, Ordering::Relaxed);
+            .store(state.upload_bytes as u64, Ordering::Relaxed);
         self.tcp_pending_upload_max_bytes
-            .store(upload_max_bytes as u64, Ordering::Relaxed);
+            .store(state.upload_max_bytes as u64, Ordering::Relaxed);
         self.tcp_pending_total_bytes
-            .store(total_bytes as u64, Ordering::Relaxed);
+            .store(state.total_bytes as u64, Ordering::Relaxed);
         self.tcp_remote_buffer_limit_bytes
-            .store(per_flow_limit_bytes as u64, Ordering::Relaxed);
+            .store(state.per_flow_limit_bytes as u64, Ordering::Relaxed);
         self.tcp_buffer_hard_limit_bytes
-            .store(hard_limit_bytes as u64, Ordering::Relaxed);
+            .store(state.hard_limit_bytes as u64, Ordering::Relaxed);
         self.tcp_remote_buffer_pressure_active
-            .store(pressure_active, Ordering::Relaxed);
+            .store(state.pressure_active, Ordering::Relaxed);
     }
 
     pub fn record_tun_fd_write_batch(&self, packets: usize) {

@@ -656,9 +656,7 @@ impl Parser<'_> {
         inbound: &Value,
         index: usize,
     ) -> Option<InboundSniffingConfig> {
-        let Some(sniffing) = inbound.get("sniffing") else {
-            return None;
-        };
+        let sniffing = inbound.get("sniffing")?;
         let sniffing_path = format!("$.inbounds[{index}].sniffing");
         if !sniffing.is_object() {
             self.error(sniffing_path, "inbound sniffing must be an object");

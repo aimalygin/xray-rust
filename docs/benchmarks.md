@@ -68,6 +68,64 @@ cargo build -p xray-cli --bin xray-rust
 
 Use `--xray-rust-bin <path>` to point at an already built binary.
 
+## REALITY Fingerprint Matrix
+
+`reality-matrix` is an in-process `xray-rust` functional/benchmark matrix for
+VLESS `xtls-rprx-vision` over REALITY against a real local Xray-core server
+fixture. It starts `Core` directly with `StartupProbeOptions`, so the connection
+startup path includes the same startup probe hook used by the Apple packet tunnel
+extension. The startup probe is always run first for each fingerprint as an
+active REALITY/Vision readiness probe for the Xray-core fixture; if
+`startup-probe` is not selected in `--traffic`, the warmup result is omitted
+unless it fails. The local topology is:
+
+```text
+traffic client -> SOCKS 127.0.0.1:<ephemeral> -> xray-rust Core
+  -> VLESS REALITY Vision -> local xray-core server fixture -> local target
+```
+
+By default, the command runs every `XRAY_REALITY_CAPABLE_FINGERPRINTS`
+fingerprint and every traffic kind:
+
+- `startup-probe`: HTTP `204` probe through the REALITY outbound.
+- `tcp-connect`: SOCKS CONNECT to a local TCP target, then close.
+- `tcp-echo-small`: validated small TCP echo payload.
+- `tcp-echo-body`: validated larger TCP echo payload.
+- `http-first-byte`: HTTP GET through the tunnel, wait for first response body byte.
+- `http-body`: HTTP GET through the tunnel, read and validate the full response body.
+- `udp-xudp-echo`: SOCKS UDP ASSOCIATE through Vision/XUDP to a local UDP echo target.
+
+Examples:
+
+```sh
+cargo run -p xray-bench -- reality-matrix --xray-core-dir Xray-core
+cargo run -p xray-bench -- reality-matrix --xray-core-dir Xray-core --fingerprints chrome,hellochrome_120_pq --traffic startup-probe,tcp-connect,http-body,udp-xudp-echo --iterations 3 --body-bytes 1048576
+```
+
+Useful options:
+
+- `--fingerprints <csv>`: comma-separated supported fingerprints, or `all`.
+- `--traffic <csv>`: comma-separated traffic kinds, or `all`.
+- `--iterations <n>`: repeat each traffic case.
+- `--small-payload-size <bytes>`: payload for `tcp-echo-small` and `udp-xudp-echo`.
+- `--body-bytes <bytes>`: payload/body size for `tcp-echo-body` and `http-body`.
+- `--probe-timeout-ms <ms>`: startup probe timeout. The matrix default is
+  15000ms because the local Xray-core REALITY fixture can spend up to about 5s
+  preparing its first post-handshake record detector path; pass `5000` for
+  strict Apple extension default-timeout coverage.
+- `--run-timeout-ms <ms>`: watchdog per startup or traffic case.
+- `--xray-core-bin <path>` / `--xray-core-dir <path>` / `--no-auto-build`: Xray-core fixture selection.
+
+Results are written to:
+
+```text
+target/benchmarks/<run-id>/reality-matrix/
+```
+
+The directory contains `result.json` with every fingerprint/traffic case status,
+per-case latency/setup summaries, byte counts, and error messages. Generated
+per-fingerprint client configs are stored under `configs/`.
+
 ## Run sing-box Only
 
 ```sh
@@ -155,7 +213,11 @@ The first scoreboard is intentionally portable and comparable across Go and Rust
 `tun-tcp-freedom` uses the same inherited fd-backed TUN path with a smoltcp TCP client on the benchmark side. It completes a TCP handshake through the TUN inbound, sends echo payloads, and validates the returned TCP stream data without installing host routes.
 `udp-vless` uses the same SOCKS5 UDP client path, but routes through a local fake VLESS UDP server over TCP before validating echoed UDP payloads. It targets UDP/53 to keep the VLESS UDP framing length-prefixed.
 `udp-xudp` targets a non-DNS UDP port and validates XUDP/Mux frames through the local fake VLESS server.
-`vision-xudp` uses VLESS over local TLS with `xtls-rprx-vision`, `allowInsecure`, and XUDP/Mux frames against a local fake Vision server.
+`vision-xudp` uses VLESS over local TLS with `xtls-rprx-vision` and XUDP/Mux
+frames against a local fake Vision server. The xray-rust benchmark config uses
+`allowInsecure` for that local self-signed certificate; the Xray-core config uses
+`pinnedPeerCertSha256`, matching newer Xray-core releases where `allowInsecure`
+has been removed.
 `reality-vision-xudp` uses VLESS Reality with `xtls-rprx-vision` and XUDP/Mux frames against an Xray-core server fixture, then validates echoed UDP payloads through the same SOCKS5 UDP client path. The fixture process is not sampled in RSS/CPU; only the selected client engine is sampled.
 
 `route-probe` is an in-process xray-rust microprobe for setup-path routing cost. It builds a synthetic config with IP/CIDR routing rules and tagged freedom outbounds, then repeatedly calls the same TCP outbound selection path used by SOCKS CONNECT. This isolates routing/outbound selection from TCP accept, SOCKS parsing, and outbound socket connect noise.

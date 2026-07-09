@@ -47,6 +47,10 @@ struct SocksUdpFlowContext {
     flow_finished: mpsc::UnboundedSender<(SocketAddr, Target)>,
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "listener tasks receive shared runtime dependencies explicitly"
+)]
 pub async fn serve_socks_listener(
     listener: TcpListener,
     inbound_tag: Option<String>,
@@ -107,6 +111,10 @@ pub async fn serve_socks_listener(
     while connections.join_next().await.is_some() {}
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "connection tasks receive shared runtime dependencies explicitly"
+)]
 async fn handle_socks_connection(
     mut inbound: TcpStream,
     inbound_tag: Option<String>,
@@ -169,6 +177,10 @@ async fn handle_socks_connection(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "connection tasks receive shared runtime dependencies explicitly"
+)]
 async fn handle_socks_connect(
     mut inbound: TcpStream,
     target: Target,
@@ -436,6 +448,10 @@ async fn open_freedom_tcp_stream(
         .map_err(|_| ())
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "connection tasks receive shared runtime dependencies explicitly"
+)]
 async fn handle_socks_udp_associate(
     mut control: TcpStream,
     inbound_tag: Option<String>,

@@ -1,8 +1,8 @@
 use bytes::Bytes;
 use xray_tun::{
-    TunConfig, TunEndpoint, TunError, TunStats, TunTcpFlowSummaryEvent, TunTcpOpenErrorEvent,
-    TunTcpRemoteWriteSlowEvent, TunTcpSlowFlowEvent, TunTcpSlowFlowKind, TunUdpQuicBlockedEvent,
-    TunUdpResponseGapEvent, TunUdpSlowFlowEvent,
+    TunConfig, TunEndpoint, TunError, TunStats, TunTcpBufferState, TunTcpFlowSummaryEvent,
+    TunTcpOpenErrorEvent, TunTcpRemoteWriteSlowEvent, TunTcpSlowFlowEvent, TunTcpSlowFlowKind,
+    TunUdpQuicBlockedEvent, TunUdpResponseGapEvent, TunUdpSlowFlowEvent,
 };
 
 #[tokio::test]
@@ -267,28 +267,28 @@ async fn tun_endpoint_stats_track_tcp_bridge_counters() {
     tun.record_tcp_remote_write_wait(30);
     tun.record_tcp_remote_flush_wait(7);
     tun.record_tcp_remote_flush_wait(11);
-    tun.record_tcp_buffer_state(
-        4096,
-        3,
-        2048,
-        8192,
-        8192,
-        12_288,
-        2 * 1024 * 1024,
-        40 * 1024 * 1024,
-        false,
-    );
-    tun.record_tcp_buffer_state(
-        1024,
-        1,
-        512,
-        2048,
-        8192,
-        3072,
-        1024 * 1024,
-        40 * 1024 * 1024,
-        true,
-    );
+    tun.record_tcp_buffer_state(TunTcpBufferState {
+        remote_bytes: 4096,
+        remote_flows: 3,
+        remote_max_bytes: 2048,
+        upload_bytes: 8192,
+        upload_max_bytes: 8192,
+        total_bytes: 12_288,
+        per_flow_limit_bytes: 2 * 1024 * 1024,
+        hard_limit_bytes: 40 * 1024 * 1024,
+        pressure_active: false,
+    });
+    tun.record_tcp_buffer_state(TunTcpBufferState {
+        remote_bytes: 1024,
+        remote_flows: 1,
+        remote_max_bytes: 512,
+        upload_bytes: 2048,
+        upload_max_bytes: 8192,
+        total_bytes: 3072,
+        per_flow_limit_bytes: 1024 * 1024,
+        hard_limit_bytes: 40 * 1024 * 1024,
+        pressure_active: true,
+    });
     tun.record_tcp_remote_write_error();
     tun.record_tcp_remote_closed();
     tun.record_tcp_remote_read_error();

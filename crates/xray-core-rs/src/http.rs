@@ -20,6 +20,10 @@ const HTTP_CONNECT_ESTABLISHED: &[u8] = b"HTTP/1.1 200 Connection Established\r\
 const HTTP_BAD_REQUEST: &[u8] = b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n";
 const HTTP_BAD_GATEWAY: &[u8] = b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n";
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "listener tasks receive shared runtime dependencies explicitly"
+)]
 pub async fn serve_http_listener(
     listener: TcpListener,
     inbound_tag: Option<String>,

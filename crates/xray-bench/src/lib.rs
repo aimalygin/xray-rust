@@ -2,18 +2,22 @@ use std::collections::VecDeque;
 use std::fs;
 use std::future::Future;
 use std::hint::black_box;
-use std::io;
+use std::io::{self, Write as IoWrite};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener as StdTcpListener};
 #[cfg(unix)]
 use std::os::fd::RawFd;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
+};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use bytes::{Bytes, BytesMut};
 use rcgen::{generate_simple_self_signed, CertifiedKey};
 use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
+use sha2::{Digest, Sha256};
 #[cfg(unix)]
 use smoltcp::iface::{
     Config as SmolInterfaceConfig, Interface as SmolInterface, SocketHandle, SocketSet,
@@ -40,28 +44,34 @@ use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
 use tokio_rustls::TlsAcceptor;
 use xray_config::{
-    CoreConfig, InboundConfig, InboundProtocol, IpCidr, IpMatcher, Network as ConfigNetwork,
-    OutboundConfig, OutboundSettings, RoutingConfig, RoutingRule, StreamSecurity, StreamSettings,
+    parse_xray_json, CoreConfig, InboundConfig, InboundProtocol, IpCidr, IpMatcher,
+    Network as ConfigNetwork, OutboundConfig, OutboundSettings, RoutingConfig, RoutingRule,
+    StreamSecurity, StreamSettings,
 };
-use xray_core_rs::select_tcp_outbound_for_session;
+use xray_core_rs::{select_tcp_outbound_for_session, Core, StartupProbeOptions};
 use xray_proxy::vless::{
     encode_udp_packet, encode_xudp_keep_packet, read_udp_packet, read_xudp_packet,
     unpad_vision_block, VisionCommand, VisionPadding,
 };
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
+use xray_utls::{normalize_reality_supported_fingerprint, XRAY_REALITY_CAPABLE_FINGERPRINTS};
 
-const USAGE: &str = "usage: xray-bench run|compare|route-probe [options]";
+const USAGE: &str = "usage: xray-bench run|compare|route-probe|reality-matrix [options]";
 const TEST_VLESS_UUID: [u8; 16] = [
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
 ];
 const TEST_VLESS_UUID_STRING: &str = "00010203-0405-0607-0809-0a0b0c0d0e0f";
-const REALITY_SERVER_NAME: &str = "www.example.com";
+const REALITY_SERVER_NAME: &str = "www.google.com";
 const REALITY_PRIVATE_KEY: &str = "aGSYystUbf59_9_6LKRxD27rmSW_-2_nyd9YG_Gwbks";
 const REALITY_PUBLIC_KEY: &str = "E59WjnvZcQMu7tR7_BgyhycuEdBS-CtKxfImRCdAvFM";
 const REALITY_SHORT_ID_HEX: &str = "0123456789abcdef";
 const SING_BOX_BUILD_TAGS: &str = "with_gvisor,with_utls,badlinkname,tfogo_checklinkname0";
 const UDP_PROTOCOL: u8 = 17;
 const DARWIN_UTUN_HEADER_LEN: usize = 4;
+const REALITY_MATRIX_SOCKS_TAG: &str = "socks-in";
+const REALITY_MATRIX_OUTBOUND_TAG: &str = "proxy";
+const DEFAULT_REALITY_MATRIX_SMALL_PAYLOAD_SIZE: usize = 1024;
+const DEFAULT_REALITY_MATRIX_BODY_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug, Error)]
 pub enum BenchError {
@@ -90,6 +100,7 @@ pub enum CliArgs {
     Run(BenchOptions),
     Compare(BenchOptions),
     RouteProbe(RouteProbeOptions),
+    RealityMatrix(RealityMatrixOptions),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -219,6 +230,138 @@ pub struct RouteProbeOptions {
     pub rules: usize,
     pub outbounds: usize,
     pub out_dir: PathBuf,
+}
+
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub enum RealityMatrixTrafficKind {
+    StartupProbe,
+    TcpConnect,
+    TcpEchoSmall,
+    TcpEchoBody,
+    HttpFirstByte,
+    HttpBody,
+    UdpXudpEcho,
+}
+
+impl RealityMatrixTrafficKind {
+    const ALL: [Self; 7] = [
+        Self::StartupProbe,
+        Self::TcpConnect,
+        Self::TcpEchoSmall,
+        Self::TcpEchoBody,
+        Self::HttpFirstByte,
+        Self::HttpBody,
+        Self::UdpXudpEcho,
+    ];
+
+    fn all() -> &'static [Self] {
+        &Self::ALL
+    }
+
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::StartupProbe => "startup-probe",
+            Self::TcpConnect => "tcp-connect",
+            Self::TcpEchoSmall => "tcp-echo-small",
+            Self::TcpEchoBody => "tcp-echo-body",
+            Self::HttpFirstByte => "http-first-byte",
+            Self::HttpBody => "http-body",
+            Self::UdpXudpEcho => "udp-xudp-echo",
+        }
+    }
+
+    fn parse(raw: &str) -> Result<Self, BenchError> {
+        match raw {
+            "startup-probe" | "probe" => Ok(Self::StartupProbe),
+            "tcp-connect" => Ok(Self::TcpConnect),
+            "tcp-echo-small" => Ok(Self::TcpEchoSmall),
+            "tcp-echo-body" => Ok(Self::TcpEchoBody),
+            "http-first-byte" => Ok(Self::HttpFirstByte),
+            "http-body" => Ok(Self::HttpBody),
+            "udp-xudp-echo" | "udp-echo" => Ok(Self::UdpXudpEcho),
+            other => Err(BenchError::InvalidArguments(format!(
+                "unsupported reality-matrix traffic `{other}`"
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RealityMatrixOptions {
+    pub fingerprints: Vec<String>,
+    pub traffic: Vec<RealityMatrixTrafficKind>,
+    pub iterations: usize,
+    pub small_payload_size: usize,
+    pub body_bytes: usize,
+    pub probe_timeout: Duration,
+    pub run_timeout: Duration,
+    pub out_dir: PathBuf,
+    pub xray_core_bin: Option<PathBuf>,
+    pub xray_core_dir: Option<PathBuf>,
+    pub trace_traffic: bool,
+    pub no_auto_build: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct RealityMatrixResult {
+    pub run_id: String,
+    pub xray_core_server_addr: String,
+    pub probe_url: String,
+    pub fingerprints: Vec<String>,
+    pub traffic: Vec<String>,
+    pub cases: Vec<RealityMatrixCaseResult>,
+    pub summary: RealityMatrixSummary,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct RealityMatrixCaseResult {
+    pub fingerprint: String,
+    pub traffic: String,
+    pub status: String,
+    pub duration_ms: u128,
+    pub bytes_sent: u64,
+    pub bytes_received: u64,
+    pub latency_us: Option<LatencySummary>,
+    pub setup_us: Option<FlowSetupSummary>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct RealityMatrixSummary {
+    pub fingerprints: usize,
+    pub traffic: usize,
+    pub cases: usize,
+    pub ok: usize,
+    pub failed: usize,
+    pub skipped: usize,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct RealityMatrixTraceEvent<'a> {
+    fingerprint: &'a str,
+    traffic: &'a str,
+    event: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    target: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    connection_id: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    peer_addr: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    iteration: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    payload_bytes: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bytes: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bytes_sent_total: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bytes_received_total: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    active_connections: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+    elapsed_us: u128,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -438,6 +581,7 @@ struct TunSocketPair;
 #[derive(Debug, Default)]
 struct WorkloadFixture {
     vless_addr: Option<SocketAddr>,
+    vless_tls_cert_sha256: Option<String>,
     tasks: Vec<JoinHandle<()>>,
     processes: Vec<FixtureProcess>,
 }
@@ -463,28 +607,31 @@ impl WorkloadFixture {
     ) -> Result<Self, BenchError> {
         match workload {
             WorkloadKind::UdpVless => {
-                let (vless_addr, task) =
+                let (vless_addr, task, _tls_cert_sha256) =
                     spawn_fake_vless_udp_server(VlessUdpServerMode::Udp).await?;
                 Ok(Self {
                     vless_addr: Some(vless_addr),
+                    vless_tls_cert_sha256: None,
                     tasks: vec![task],
                     processes: Vec::new(),
                 })
             }
             WorkloadKind::UdpXudp => {
-                let (vless_addr, task) =
+                let (vless_addr, task, _tls_cert_sha256) =
                     spawn_fake_vless_udp_server(VlessUdpServerMode::Xudp).await?;
                 Ok(Self {
                     vless_addr: Some(vless_addr),
+                    vless_tls_cert_sha256: None,
                     tasks: vec![task],
                     processes: Vec::new(),
                 })
             }
             WorkloadKind::VisionXudp => {
-                let (vless_addr, task) =
+                let (vless_addr, task, tls_cert_sha256) =
                     spawn_fake_vless_udp_server(VlessUdpServerMode::VisionXudp).await?;
                 Ok(Self {
                     vless_addr: Some(vless_addr),
+                    vless_tls_cert_sha256: tls_cert_sha256,
                     tasks: vec![task],
                     processes: Vec::new(),
                 })
@@ -494,6 +641,7 @@ impl WorkloadFixture {
                     start_xray_core_reality_vision_server(options, run_dir, binary_dir).await?;
                 Ok(Self {
                     vless_addr: Some(vless_addr),
+                    vless_tls_cert_sha256: None,
                     tasks: Vec::new(),
                     processes: vec![process],
                 })
@@ -563,6 +711,28 @@ impl Default for RouteProbeOptions {
     }
 }
 
+impl Default for RealityMatrixOptions {
+    fn default() -> Self {
+        Self {
+            fingerprints: XRAY_REALITY_CAPABLE_FINGERPRINTS
+                .iter()
+                .map(|fingerprint| (*fingerprint).to_owned())
+                .collect(),
+            traffic: RealityMatrixTrafficKind::all().to_vec(),
+            iterations: 1,
+            small_payload_size: DEFAULT_REALITY_MATRIX_SMALL_PAYLOAD_SIZE,
+            body_bytes: DEFAULT_REALITY_MATRIX_BODY_BYTES,
+            probe_timeout: Duration::from_secs(15),
+            run_timeout: Duration::from_secs(30),
+            out_dir: PathBuf::from("target/benchmarks"),
+            xray_core_bin: None,
+            xray_core_dir: None,
+            trace_traffic: false,
+            no_auto_build: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct RouteProbeResult {
     pub iterations: usize,
@@ -588,6 +758,9 @@ where
     let rest = args.collect::<Vec<_>>();
     if command == "route-probe" {
         return parse_route_probe_args(&rest).map(CliArgs::RouteProbe);
+    }
+    if command == "reality-matrix" {
+        return parse_reality_matrix_args(&rest).map(CliArgs::RealityMatrix);
     }
 
     let mut index = 0;
@@ -682,6 +855,9 @@ where
             Ok(CliArgs::Compare(options))
         }
         "route-probe" => unreachable!("route-probe is parsed before engine benchmark options"),
+        "reality-matrix" => {
+            unreachable!("reality-matrix is parsed before engine benchmark options")
+        }
         other => Err(BenchError::InvalidArguments(format!(
             "unknown command `{other}`\n{USAGE}"
         ))),
@@ -717,6 +893,126 @@ fn parse_route_probe_args(args: &[String]) -> Result<RouteProbeOptions, BenchErr
         }
     }
     Ok(options)
+}
+
+fn parse_reality_matrix_args(args: &[String]) -> Result<RealityMatrixOptions, BenchError> {
+    let mut options = RealityMatrixOptions::default();
+    let mut index = 0;
+    while index < args.len() {
+        let flag = args[index].as_str();
+        index += 1;
+        match flag {
+            "--fingerprints" => {
+                options.fingerprints =
+                    parse_reality_fingerprints_csv(required_value(args, &mut index, flag)?)?;
+            }
+            "--traffic" => {
+                options.traffic =
+                    parse_reality_matrix_traffic_csv(required_value(args, &mut index, flag)?)?;
+            }
+            "--iterations" => {
+                options.iterations =
+                    parse_nonzero_usize(required_value(args, &mut index, flag)?, flag)?;
+            }
+            "--small-payload-size" | "--payload-size" => {
+                options.small_payload_size =
+                    parse_nonzero_usize(required_value(args, &mut index, flag)?, flag)?;
+            }
+            "--body-bytes" => {
+                options.body_bytes =
+                    parse_nonzero_usize(required_value(args, &mut index, flag)?, flag)?;
+            }
+            "--probe-timeout-ms" => {
+                options.probe_timeout = Duration::from_millis(parse_nonzero_u64(
+                    required_value(args, &mut index, flag)?,
+                    flag,
+                )?);
+            }
+            "--run-timeout-ms" => {
+                options.run_timeout = Duration::from_millis(parse_nonzero_u64(
+                    required_value(args, &mut index, flag)?,
+                    flag,
+                )?);
+            }
+            "--out-dir" => {
+                options.out_dir = PathBuf::from(required_value(args, &mut index, flag)?);
+            }
+            "--xray-core-bin" => {
+                options.xray_core_bin =
+                    Some(PathBuf::from(required_value(args, &mut index, flag)?));
+            }
+            "--xray-core-dir" => {
+                options.xray_core_dir =
+                    Some(PathBuf::from(required_value(args, &mut index, flag)?));
+            }
+            "--trace-traffic" => {
+                options.trace_traffic = true;
+            }
+            "--no-auto-build" => {
+                options.no_auto_build = true;
+            }
+            other => {
+                return Err(BenchError::InvalidArguments(format!(
+                    "unknown argument `{other}`\n{USAGE}"
+                )));
+            }
+        }
+    }
+    Ok(options)
+}
+
+fn parse_reality_fingerprints_csv(raw: &str) -> Result<Vec<String>, BenchError> {
+    if raw == "all" {
+        return Ok(RealityMatrixOptions::default().fingerprints);
+    }
+
+    let mut fingerprints = Vec::new();
+    for item in raw.split(',') {
+        let item = item.trim();
+        if item.is_empty() {
+            continue;
+        }
+        let Some(fingerprint) = normalize_reality_supported_fingerprint(item) else {
+            return Err(BenchError::InvalidArguments(format!(
+                "unsupported REALITY fingerprint `{item}`"
+            )));
+        };
+        if !fingerprints.iter().any(|existing| existing == fingerprint) {
+            fingerprints.push(fingerprint.to_owned());
+        }
+    }
+    if fingerprints.is_empty() {
+        return Err(BenchError::InvalidArguments(
+            "--fingerprints must include at least one fingerprint".to_owned(),
+        ));
+    }
+    Ok(fingerprints)
+}
+
+fn parse_reality_matrix_traffic_csv(
+    raw: &str,
+) -> Result<Vec<RealityMatrixTrafficKind>, BenchError> {
+    if raw == "all" {
+        return Ok(RealityMatrixTrafficKind::all().to_vec());
+    }
+
+    let mut traffic = Vec::new();
+    for item in raw.split(',') {
+        let item = item.trim();
+        if item.is_empty() {
+            continue;
+        }
+        let kind = RealityMatrixTrafficKind::parse(item)?;
+        if !traffic.contains(&kind) {
+            traffic.push(kind);
+        }
+    }
+    if traffic.is_empty() {
+        return Err(BenchError::InvalidArguments(
+            "--traffic must include at least one traffic kind".to_owned(),
+        ));
+    }
+    Ok(traffic)
 }
 
 fn required_value<'a>(
@@ -2552,7 +2848,7 @@ impl SmolTxToken for TunTcpTxToken<'_> {
 
 async fn spawn_fake_vless_udp_server(
     mode: VlessUdpServerMode,
-) -> Result<(SocketAddr, JoinHandle<()>), BenchError> {
+) -> Result<(SocketAddr, JoinHandle<()>, Option<String>), BenchError> {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
         .await
         .map_err(|source| BenchError::Io {
@@ -2563,9 +2859,15 @@ async fn spawn_fake_vless_udp_server(
         action: "reading fake VLESS UDP server address".to_owned(),
         source,
     })?;
-    let tls_acceptor = match mode {
-        VlessUdpServerMode::VisionXudp => Some(TlsAcceptor::from(fake_tls_server_config()?)),
-        VlessUdpServerMode::Udp | VlessUdpServerMode::Xudp => None,
+    let (tls_acceptor, tls_cert_sha256) = match mode {
+        VlessUdpServerMode::VisionXudp => {
+            let config = fake_tls_server_config()?;
+            (
+                Some(TlsAcceptor::from(config.config)),
+                Some(config.cert_sha256),
+            )
+        }
+        VlessUdpServerMode::Udp | VlessUdpServerMode::Xudp => (None, None),
     };
 
     let task = tokio::spawn(async move {
@@ -2586,7 +2888,7 @@ async fn spawn_fake_vless_udp_server(
         }
     });
 
-    Ok((addr, task))
+    Ok((addr, task, tls_cert_sha256))
 }
 
 async fn handle_fake_vless_udp_connection<S>(
@@ -2841,12 +3143,18 @@ where
     })
 }
 
-fn fake_tls_server_config() -> Result<Arc<rustls::ServerConfig>, BenchError> {
+struct FakeTlsServerConfig {
+    config: Arc<rustls::ServerConfig>,
+    cert_sha256: String,
+}
+
+fn fake_tls_server_config() -> Result<FakeTlsServerConfig, BenchError> {
     let CertifiedKey { cert, signing_key } =
         generate_simple_self_signed(vec!["vless.test".to_owned()]).map_err(|error| {
             BenchError::InvalidArguments(format!("generating fake TLS certificate: {error}"))
         })?;
     let cert_der = cert.der().clone();
+    let cert_sha256 = hex_lower(&Sha256::digest(cert_der.as_ref()));
     let key_der = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(signing_key.serialize_der()));
 
     let config = rustls::ServerConfig::builder_with_provider(Arc::new(
@@ -2857,7 +3165,20 @@ fn fake_tls_server_config() -> Result<Arc<rustls::ServerConfig>, BenchError> {
     .with_no_client_auth()
     .with_single_cert(vec![cert_der], key_der)
     .map_err(|error| BenchError::InvalidArguments(format!("building TLS server: {error}")))?;
-    Ok(Arc::new(config))
+    Ok(FakeTlsServerConfig {
+        config: Arc::new(config),
+        cert_sha256,
+    })
+}
+
+fn hex_lower(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for &byte in bytes {
+        out.push(HEX[(byte >> 4) as usize] as char);
+        out.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    out
 }
 
 async fn read_vless_mux_header<S>(stream: &mut S) -> Result<(), BenchError>
@@ -3143,6 +3464,7 @@ fn sing_box_config(
 }
 
 fn engine_config(
+    engine: EngineKind,
     port: u16,
     workload: WorkloadKind,
     fixture: &WorkloadFixture,
@@ -3162,7 +3484,22 @@ fn engine_config(
                     "vision-xudp workload requires a fake VLESS server fixture".to_owned(),
                 )
             })?;
-            Ok(vision_xudp_config(port, vless_addr))
+            match engine {
+                EngineKind::XrayRust => Ok(vision_xudp_config(port, vless_addr)),
+                EngineKind::XrayCore => {
+                    let cert_sha256 =
+                        fixture.vless_tls_cert_sha256.as_deref().ok_or_else(|| {
+                            BenchError::InvalidArguments(
+                            "xray-core vision-xudp workload requires fake VLESS TLS certificate pin"
+                                .to_owned(),
+                        )
+                        })?;
+                    Ok(xray_core_vision_xudp_config(port, vless_addr, cert_sha256))
+                }
+                EngineKind::SingBox => Err(BenchError::InvalidArguments(
+                    "vision-xudp workload is not supported by sing-box process engine".to_owned(),
+                )),
+            }
         }
         WorkloadKind::RealityVisionXudp => {
             let vless_addr = fixture.vless_addr.ok_or_else(|| {
@@ -3348,6 +3685,32 @@ fn vless_udp_config(port: u16, vless_addr: SocketAddr) -> String {
 }
 
 fn vision_xudp_config(port: u16, vless_addr: SocketAddr) -> String {
+    vision_xudp_config_with_tls_settings(
+        port,
+        vless_addr,
+        r#""tlsSettings": { "serverName": "vless.test", "allowInsecure": true }"#,
+    )
+}
+
+fn xray_core_vision_xudp_config(
+    port: u16,
+    vless_addr: SocketAddr,
+    pinned_peer_cert_sha256: &str,
+) -> String {
+    vision_xudp_config_with_tls_settings(
+        port,
+        vless_addr,
+        &format!(
+            r#""tlsSettings": {{ "serverName": "vless.test", "pinnedPeerCertSha256": "{pinned_peer_cert_sha256}" }}"#
+        ),
+    )
+}
+
+fn vision_xudp_config_with_tls_settings(
+    port: u16,
+    vless_addr: SocketAddr,
+    tls_settings: &str,
+) -> String {
     format!(
         r#"{{
   "log": {{ "loglevel": "warning" }},
@@ -3382,7 +3745,7 @@ fn vision_xudp_config(port: u16, vless_addr: SocketAddr) -> String {
       "streamSettings": {{
         "network": "tcp",
         "security": "tls",
-        "tlsSettings": {{ "serverName": "vless.test", "allowInsecure": true }}
+        {tls_settings}
       }}
     }}
   ]
@@ -3393,6 +3756,14 @@ fn vision_xudp_config(port: u16, vless_addr: SocketAddr) -> String {
 }
 
 fn reality_vision_xudp_config(port: u16, vless_addr: SocketAddr) -> String {
+    reality_vision_xudp_config_with_fingerprint(port, vless_addr, "chrome")
+}
+
+fn reality_vision_xudp_config_with_fingerprint(
+    port: u16,
+    vless_addr: SocketAddr,
+    fingerprint: &str,
+) -> String {
     format!(
         r#"{{
   "log": {{ "loglevel": "warning" }},
@@ -3429,7 +3800,7 @@ fn reality_vision_xudp_config(port: u16, vless_addr: SocketAddr) -> String {
         "security": "reality",
         "realitySettings": {{
           "serverName": "{REALITY_SERVER_NAME}",
-          "fingerprint": "chrome",
+          "fingerprint": "{fingerprint}",
           "publicKey": "{REALITY_PUBLIC_KEY}",
           "shortId": "{REALITY_SHORT_ID_HEX}",
           "spiderX": "/"
@@ -3674,6 +4045,41 @@ pub async fn wait_for_process_started(
     Ok(())
 }
 
+pub async fn wait_for_process_log_contains(
+    child: &mut Child,
+    stdout_path: &Path,
+    stderr_path: &Path,
+    pattern: &str,
+    wait_timeout: Duration,
+) -> Result<(), BenchError> {
+    let deadline = Instant::now() + wait_timeout;
+    loop {
+        if let Some(status) = child.try_wait().map_err(|source| BenchError::Io {
+            action: "checking child process status".to_owned(),
+            source,
+        })? {
+            return Err(BenchError::Process {
+                program: "engine".to_owned(),
+                status: status.to_string(),
+                stdout: fs::read_to_string(stdout_path).unwrap_or_default(),
+                stderr: fs::read_to_string(stderr_path).unwrap_or_default(),
+            });
+        }
+
+        let stdout = fs::read_to_string(stdout_path).unwrap_or_default();
+        let stderr = fs::read_to_string(stderr_path).unwrap_or_default();
+        if stdout.contains(pattern) || stderr.contains(pattern) {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            return Err(BenchError::Timeout {
+                timeout_ms: wait_timeout.as_millis(),
+            });
+        }
+        sleep(Duration::from_millis(25)).await;
+    }
+}
+
 async fn start_xray_core_reality_vision_server(
     options: &BenchOptions,
     run_dir: &Path,
@@ -3717,7 +4123,14 @@ async fn start_xray_core_reality_vision_server(
             source,
         })?;
 
-    wait_for_tcp_listener(&mut child, addr, &stdout_path, &stderr_path).await?;
+    wait_for_process_log_contains(
+        &mut child,
+        &stdout_path,
+        &stderr_path,
+        "started",
+        Duration::from_secs(10),
+    )
+    .await?;
 
     Ok((addr, FixtureProcess { child }))
 }
@@ -3884,7 +4297,7 @@ async fn start_engine(
     };
     let config = match kind {
         EngineKind::XrayRust | EngineKind::XrayCore => {
-            engine_config(port, options.workload, fixture)?
+            engine_config(kind, port, options.workload, fixture)?
         }
         EngineKind::SingBox => sing_box_config(port, options.workload, fixture)?,
     };
@@ -4032,6 +4445,11 @@ where
             print_route_probe_result(&result);
             Ok(())
         }
+        CliArgs::RealityMatrix(options) => {
+            let result = run_reality_matrix(options).await?;
+            print_reality_matrix_result(&result);
+            Ok(())
+        }
     }
 }
 
@@ -4072,6 +4490,975 @@ pub fn run_route_probe(options: &RouteProbeOptions) -> Result<RouteProbeResult, 
     })?;
     write_json(&run_dir.join("result.json"), &result)?;
     Ok(result)
+}
+
+pub async fn run_reality_matrix(
+    options: RealityMatrixOptions,
+) -> Result<RealityMatrixResult, BenchError> {
+    let run_id = new_run_id();
+    let run_dir = options.out_dir.join(&run_id).join("reality-matrix");
+    fs::create_dir_all(&run_dir).map_err(|source| BenchError::Io {
+        action: format!("creating reality-matrix directory `{}`", run_dir.display()),
+        source,
+    })?;
+    let configs_dir = run_dir.join("configs");
+    fs::create_dir_all(&configs_dir).map_err(|source| BenchError::Io {
+        action: format!(
+            "creating reality-matrix config directory `{}`",
+            configs_dir.display()
+        ),
+        source,
+    })?;
+    let trace_path = options
+        .trace_traffic
+        .then(|| run_dir.join("traffic-trace.jsonl"));
+
+    let fixture_options = reality_matrix_fixture_bench_options(&options);
+    let binary_dir = run_dir.join("bin");
+    let (vless_addr, _server) =
+        start_xray_core_reality_vision_server(&fixture_options, &run_dir, &binary_dir).await?;
+    let targets = RealityMatrixTargets::start(options.body_bytes, trace_path.clone()).await?;
+    let mut cases = Vec::with_capacity(options.fingerprints.len() * options.traffic.len());
+    let include_startup_case = options
+        .traffic
+        .contains(&RealityMatrixTrafficKind::StartupProbe);
+
+    for fingerprint in &options.fingerprints {
+        let config_json =
+            reality_vision_xudp_config_with_fingerprint(0, vless_addr, fingerprint.as_str());
+        let config_path = configs_dir.join(format!("{fingerprint}.json"));
+        fs::write(&config_path, &config_json).map_err(|source| BenchError::Io {
+            action: format!(
+                "writing reality-matrix client config `{}`",
+                config_path.display()
+            ),
+            source,
+        })?;
+
+        let config = match parse_reality_matrix_config(&config_json) {
+            Ok(config) => config,
+            Err(error) => {
+                let reason = error.to_string();
+                cases.push(failed_reality_matrix_case(
+                    fingerprint,
+                    RealityMatrixTrafficKind::StartupProbe,
+                    Duration::ZERO,
+                    reason.clone(),
+                ));
+                push_skipped_reality_matrix_traffic(&mut cases, fingerprint, &options, &reason);
+                continue;
+            }
+        };
+
+        let mut core = match Core::new(config) {
+            Ok(core) => core,
+            Err(error) => {
+                let reason = format!("failed to create Core: {error}");
+                cases.push(failed_reality_matrix_case(
+                    fingerprint,
+                    RealityMatrixTrafficKind::StartupProbe,
+                    Duration::ZERO,
+                    reason.clone(),
+                ));
+                push_skipped_reality_matrix_traffic(&mut cases, fingerprint, &options, &reason);
+                continue;
+            }
+        };
+
+        let startup_case =
+            run_reality_matrix_startup_case(&mut core, fingerprint, &targets, &options).await;
+        let startup_ok = startup_case.status == "ok";
+        if include_startup_case || !startup_ok {
+            cases.push(startup_case);
+        }
+        if !startup_ok {
+            let reason = "startup probe failed".to_owned();
+            push_skipped_reality_matrix_traffic(&mut cases, fingerprint, &options, &reason);
+            continue;
+        }
+
+        let Some(socks_addr) = core.inbound_addr(Some(REALITY_MATRIX_SOCKS_TAG)) else {
+            let reason = format!("missing `{REALITY_MATRIX_SOCKS_TAG}` inbound after Core start");
+            push_skipped_reality_matrix_traffic(&mut cases, fingerprint, &options, &reason);
+            let _ = core.stop().await;
+            continue;
+        };
+
+        for traffic in &options.traffic {
+            if *traffic == RealityMatrixTrafficKind::StartupProbe {
+                continue;
+            }
+            let case = run_reality_matrix_traffic_case(
+                fingerprint,
+                *traffic,
+                socks_addr,
+                &targets,
+                &options,
+                trace_path.as_deref(),
+            )
+            .await;
+            cases.push(case);
+        }
+
+        core.stop().await.map_err(|error| {
+            BenchError::InvalidArguments(format!("failed to stop reality-matrix Core: {error}"))
+        })?;
+    }
+
+    let summary =
+        summarize_reality_matrix_cases(&cases, options.fingerprints.len(), options.traffic.len());
+    let result = RealityMatrixResult {
+        run_id,
+        xray_core_server_addr: vless_addr.to_string(),
+        probe_url: targets.probe_url.clone(),
+        fingerprints: options.fingerprints.clone(),
+        traffic: options
+            .traffic
+            .iter()
+            .map(|traffic| traffic.as_str().to_owned())
+            .collect(),
+        cases,
+        summary,
+    };
+    write_json(&run_dir.join("result.json"), &result)?;
+    Ok(result)
+}
+
+fn reality_matrix_fixture_bench_options(options: &RealityMatrixOptions) -> BenchOptions {
+    BenchOptions {
+        workload: WorkloadKind::RealityVisionXudp,
+        run_timeout: options.run_timeout,
+        payload_size: options.small_payload_size,
+        iterations: options.iterations,
+        xray_core_bin: options.xray_core_bin.clone(),
+        xray_core_dir: options.xray_core_dir.clone(),
+        no_auto_build: options.no_auto_build,
+        ..Default::default()
+    }
+}
+
+fn parse_reality_matrix_config(raw: &str) -> Result<CoreConfig, BenchError> {
+    parse_xray_json(raw)
+        .map(|parsed| parsed.config)
+        .map_err(|error| {
+            let diagnostics = error
+                .diagnostics
+                .iter()
+                .map(|diagnostic| match &diagnostic.path {
+                    Some(path) => format!("{path}: {}", diagnostic.message),
+                    None => diagnostic.message.clone(),
+                })
+                .collect::<Vec<_>>()
+                .join("; ");
+            BenchError::InvalidArguments(format!(
+                "failed to parse reality-matrix client config: {diagnostics}"
+            ))
+        })
+}
+
+struct RealityMatrixTargets {
+    tcp_echo_addr: SocketAddr,
+    udp_echo_addr: SocketAddr,
+    http_addr: SocketAddr,
+    probe_url: String,
+    tasks: Vec<JoinHandle<()>>,
+}
+
+impl RealityMatrixTargets {
+    async fn start(body_bytes: usize, trace_path: Option<PathBuf>) -> Result<Self, BenchError> {
+        let (tcp_echo_addr, tcp_task) = spawn_tcp_echo_server(trace_path).await?;
+        let (udp_echo_addr, udp_task) = spawn_udp_echo_server().await?;
+        let (http_addr, http_task) = spawn_reality_matrix_http_server(body_bytes).await?;
+        Ok(Self {
+            tcp_echo_addr,
+            udp_echo_addr,
+            http_addr,
+            probe_url: format!("http://127.0.0.1:{}/generate_204", http_addr.port()),
+            tasks: vec![tcp_task, udp_task, http_task],
+        })
+    }
+}
+
+impl Drop for RealityMatrixTargets {
+    fn drop(&mut self) {
+        for task in &self.tasks {
+            task.abort();
+        }
+    }
+}
+
+async fn run_reality_matrix_startup_case(
+    core: &mut Core,
+    fingerprint: &str,
+    targets: &RealityMatrixTargets,
+    options: &RealityMatrixOptions,
+) -> RealityMatrixCaseResult {
+    core.set_startup_probe(Some(StartupProbeOptions {
+        url: targets.probe_url.clone(),
+        timeout: options.probe_timeout,
+        outbound_tag: Some(REALITY_MATRIX_OUTBOUND_TAG.to_owned()),
+    }));
+
+    let started = Instant::now();
+    match timeout(options.run_timeout, core.start()).await {
+        Ok(Ok(())) => {
+            let elapsed = started.elapsed();
+            ok_reality_matrix_case(
+                fingerprint,
+                RealityMatrixTrafficKind::StartupProbe,
+                elapsed,
+                WorkloadOutcome {
+                    bytes_sent: 0,
+                    bytes_received: 0,
+                    latencies_us: vec![elapsed.as_micros()],
+                    setup_samples: Vec::new(),
+                },
+            )
+        }
+        Ok(Err(error)) => {
+            let _ = core.stop().await;
+            failed_reality_matrix_case(
+                fingerprint,
+                RealityMatrixTrafficKind::StartupProbe,
+                started.elapsed(),
+                format!("Core startup probe failed: {error}"),
+            )
+        }
+        Err(_) => {
+            let _ = core.stop().await;
+            failed_reality_matrix_case(
+                fingerprint,
+                RealityMatrixTrafficKind::StartupProbe,
+                started.elapsed(),
+                format!(
+                    "Core startup timed out after {} ms",
+                    options.run_timeout.as_millis()
+                ),
+            )
+        }
+    }
+}
+
+async fn run_reality_matrix_traffic_case(
+    fingerprint: &str,
+    traffic: RealityMatrixTrafficKind,
+    socks_addr: SocketAddr,
+    targets: &RealityMatrixTargets,
+    options: &RealityMatrixOptions,
+    trace_path: Option<&Path>,
+) -> RealityMatrixCaseResult {
+    let started = Instant::now();
+    match timeout(
+        options.run_timeout,
+        run_reality_matrix_traffic_outcome(
+            fingerprint,
+            traffic,
+            socks_addr,
+            targets,
+            options,
+            trace_path,
+        ),
+    )
+    .await
+    {
+        Ok(Ok(outcome)) => ok_reality_matrix_case(fingerprint, traffic, started.elapsed(), outcome),
+        Ok(Err(error)) => {
+            failed_reality_matrix_case(fingerprint, traffic, started.elapsed(), error.to_string())
+        }
+        Err(_) => failed_reality_matrix_case(
+            fingerprint,
+            traffic,
+            started.elapsed(),
+            format!(
+                "traffic case timed out after {} ms",
+                options.run_timeout.as_millis()
+            ),
+        ),
+    }
+}
+
+async fn run_reality_matrix_traffic_outcome(
+    fingerprint: &str,
+    traffic: RealityMatrixTrafficKind,
+    socks_addr: SocketAddr,
+    targets: &RealityMatrixTargets,
+    options: &RealityMatrixOptions,
+    trace_path: Option<&Path>,
+) -> Result<WorkloadOutcome, BenchError> {
+    match traffic {
+        RealityMatrixTrafficKind::StartupProbe => Ok(WorkloadOutcome::empty()),
+        RealityMatrixTrafficKind::TcpConnect => {
+            run_reality_matrix_tcp_connect(socks_addr, targets.tcp_echo_addr, options).await
+        }
+        RealityMatrixTrafficKind::TcpEchoSmall => {
+            run_reality_matrix_tcp_echo(
+                fingerprint,
+                traffic,
+                socks_addr,
+                targets.tcp_echo_addr,
+                options.small_payload_size,
+                options.iterations,
+                trace_path,
+            )
+            .await
+        }
+        RealityMatrixTrafficKind::TcpEchoBody => {
+            run_reality_matrix_tcp_echo(
+                fingerprint,
+                traffic,
+                socks_addr,
+                targets.tcp_echo_addr,
+                options.body_bytes,
+                options.iterations,
+                trace_path,
+            )
+            .await
+        }
+        RealityMatrixTrafficKind::HttpFirstByte => {
+            run_reality_matrix_http_first_byte(socks_addr, targets.http_addr, options).await
+        }
+        RealityMatrixTrafficKind::HttpBody => {
+            run_reality_matrix_http_body(socks_addr, targets.http_addr, options).await
+        }
+        RealityMatrixTrafficKind::UdpXudpEcho => {
+            let bench_options = reality_matrix_fixture_bench_options(options);
+            run_udp_freedom_connection(socks_addr, targets.udp_echo_addr, &bench_options).await
+        }
+    }
+}
+
+async fn run_reality_matrix_tcp_connect(
+    socks_addr: SocketAddr,
+    target_addr: SocketAddr,
+    options: &RealityMatrixOptions,
+) -> Result<WorkloadOutcome, BenchError> {
+    let mut outcome = WorkloadOutcome::empty();
+    for _ in 0..options.iterations {
+        let (_client, setup_sample) = open_idle_socks_flow(socks_addr, target_addr).await?;
+        outcome.latencies_us.push(setup_sample.total_us);
+        outcome.setup_samples.push(setup_sample);
+    }
+    Ok(outcome)
+}
+
+async fn run_reality_matrix_tcp_echo(
+    fingerprint: &str,
+    traffic: RealityMatrixTrafficKind,
+    socks_addr: SocketAddr,
+    target_addr: SocketAddr,
+    payload_size: usize,
+    iterations: usize,
+    trace_path: Option<&Path>,
+) -> Result<WorkloadOutcome, BenchError> {
+    let (mut client, setup_sample) = open_idle_socks_flow(socks_addr, target_addr).await?;
+    let payload = vec![0x5a; payload_size];
+    let mut echoed = vec![0; payload_size];
+    let mut outcome = WorkloadOutcome::empty();
+    outcome.setup_samples.push(setup_sample);
+    let case_started = Instant::now();
+
+    for iteration in 1..=iterations {
+        let started = Instant::now();
+        append_reality_matrix_trace_event(
+            trace_path,
+            &RealityMatrixTraceEvent {
+                fingerprint,
+                traffic: traffic.as_str(),
+                event: "iteration_start",
+                target: None,
+                connection_id: None,
+                peer_addr: None,
+                iteration: Some(iteration),
+                payload_bytes: Some(payload_size),
+                bytes: None,
+                bytes_sent_total: Some(outcome.bytes_sent),
+                bytes_received_total: Some(outcome.bytes_received),
+                active_connections: None,
+                error: None,
+                elapsed_us: case_started.elapsed().as_micros(),
+            },
+        )?;
+        client
+            .write_all(&payload)
+            .await
+            .map_err(|source| BenchError::Io {
+                action: "writing reality-matrix TCP payload".to_owned(),
+                source,
+            })?;
+        outcome.bytes_sent += payload.len() as u64;
+        append_reality_matrix_trace_event(
+            trace_path,
+            &RealityMatrixTraceEvent {
+                fingerprint,
+                traffic: traffic.as_str(),
+                event: "iteration_write_done",
+                target: None,
+                connection_id: None,
+                peer_addr: None,
+                iteration: Some(iteration),
+                payload_bytes: Some(payload_size),
+                bytes: None,
+                bytes_sent_total: Some(outcome.bytes_sent),
+                bytes_received_total: Some(outcome.bytes_received),
+                active_connections: None,
+                error: None,
+                elapsed_us: case_started.elapsed().as_micros(),
+            },
+        )?;
+        client
+            .read_exact(&mut echoed)
+            .await
+            .map_err(|source| BenchError::Io {
+                action: "reading reality-matrix TCP echo".to_owned(),
+                source,
+            })?;
+        if echoed != payload {
+            return Err(BenchError::InvalidArguments(
+                "reality-matrix TCP echo payload mismatch".to_owned(),
+            ));
+        }
+        outcome.bytes_received += echoed.len() as u64;
+        outcome.latencies_us.push(started.elapsed().as_micros());
+        append_reality_matrix_trace_event(
+            trace_path,
+            &RealityMatrixTraceEvent {
+                fingerprint,
+                traffic: traffic.as_str(),
+                event: "iteration_read_done",
+                target: None,
+                connection_id: None,
+                peer_addr: None,
+                iteration: Some(iteration),
+                payload_bytes: Some(payload_size),
+                bytes: None,
+                bytes_sent_total: Some(outcome.bytes_sent),
+                bytes_received_total: Some(outcome.bytes_received),
+                active_connections: None,
+                error: None,
+                elapsed_us: case_started.elapsed().as_micros(),
+            },
+        )?;
+    }
+
+    Ok(outcome)
+}
+
+fn reality_matrix_trace_event_json_line(
+    event: &RealityMatrixTraceEvent<'_>,
+) -> Result<String, BenchError> {
+    let mut line = serde_json::to_string(event).map_err(|error| {
+        BenchError::InvalidArguments(format!(
+            "failed to encode reality-matrix trace event: {error}"
+        ))
+    })?;
+    line.push('\n');
+    Ok(line)
+}
+
+fn append_reality_matrix_trace_event(
+    trace_path: Option<&Path>,
+    event: &RealityMatrixTraceEvent<'_>,
+) -> Result<(), BenchError> {
+    let Some(trace_path) = trace_path else {
+        return Ok(());
+    };
+    let line = reality_matrix_trace_event_json_line(event)?;
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(trace_path)
+        .map_err(|source| BenchError::Io {
+            action: format!(
+                "opening reality-matrix trace file `{}`",
+                trace_path.display()
+            ),
+            source,
+        })?;
+    file.write_all(line.as_bytes())
+        .map_err(|source| BenchError::Io {
+            action: format!(
+                "writing reality-matrix trace file `{}`",
+                trace_path.display()
+            ),
+            source,
+        })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn append_reality_matrix_tcp_target_trace_event(
+    trace_path: Option<&Path>,
+    event: &'static str,
+    connection_id: u64,
+    peer_addr: SocketAddr,
+    bytes: Option<usize>,
+    bytes_sent_total: u64,
+    bytes_received_total: u64,
+    active_connections: u64,
+    error: Option<String>,
+    trace_started: Instant,
+) {
+    let _ = append_reality_matrix_trace_event(
+        trace_path,
+        &RealityMatrixTraceEvent {
+            fingerprint: "<target>",
+            traffic: "tcp-echo-target",
+            event,
+            target: Some("tcp_echo"),
+            connection_id: Some(connection_id),
+            peer_addr: Some(peer_addr.to_string()),
+            iteration: None,
+            payload_bytes: None,
+            bytes,
+            bytes_sent_total: Some(bytes_sent_total),
+            bytes_received_total: Some(bytes_received_total),
+            active_connections: Some(active_connections),
+            error,
+            elapsed_us: trace_started.elapsed().as_micros(),
+        },
+    );
+}
+
+async fn run_reality_matrix_http_first_byte(
+    socks_addr: SocketAddr,
+    http_addr: SocketAddr,
+    options: &RealityMatrixOptions,
+) -> Result<WorkloadOutcome, BenchError> {
+    let mut outcome = WorkloadOutcome::empty();
+    for _ in 0..options.iterations {
+        let started = Instant::now();
+        let (mut client, setup_sample) = open_idle_socks_flow(socks_addr, http_addr).await?;
+        let request =
+            b"GET /first-byte HTTP/1.1\r\nHost: reality-matrix.local\r\nConnection: close\r\n\r\n";
+        client
+            .write_all(request)
+            .await
+            .map_err(|source| BenchError::Io {
+                action: "writing reality-matrix HTTP first-byte request".to_owned(),
+                source,
+            })?;
+        let body = read_http_response_body_bytes(&mut client, 1).await?;
+        if body != [0x42] {
+            return Err(BenchError::InvalidArguments(
+                "reality-matrix HTTP first byte mismatch".to_owned(),
+            ));
+        }
+        outcome.bytes_sent += request.len() as u64;
+        outcome.bytes_received += body.len() as u64;
+        outcome.latencies_us.push(started.elapsed().as_micros());
+        outcome.setup_samples.push(setup_sample);
+    }
+    Ok(outcome)
+}
+
+async fn run_reality_matrix_http_body(
+    socks_addr: SocketAddr,
+    http_addr: SocketAddr,
+    options: &RealityMatrixOptions,
+) -> Result<WorkloadOutcome, BenchError> {
+    let mut outcome = WorkloadOutcome::empty();
+    for _ in 0..options.iterations {
+        let started = Instant::now();
+        let (mut client, setup_sample) = open_idle_socks_flow(socks_addr, http_addr).await?;
+        let request =
+            b"GET /body HTTP/1.1\r\nHost: reality-matrix.local\r\nConnection: close\r\n\r\n";
+        client
+            .write_all(request)
+            .await
+            .map_err(|source| BenchError::Io {
+                action: "writing reality-matrix HTTP body request".to_owned(),
+                source,
+            })?;
+        let body = read_http_response_body_bytes(&mut client, options.body_bytes).await?;
+        if body.iter().any(|byte| *byte != 0x7b) {
+            return Err(BenchError::InvalidArguments(
+                "reality-matrix HTTP body mismatch".to_owned(),
+            ));
+        }
+        outcome.bytes_sent += request.len() as u64;
+        outcome.bytes_received += body.len() as u64;
+        outcome.latencies_us.push(started.elapsed().as_micros());
+        outcome.setup_samples.push(setup_sample);
+    }
+    Ok(outcome)
+}
+
+async fn spawn_tcp_echo_server(
+    trace_path: Option<PathBuf>,
+) -> Result<(SocketAddr, JoinHandle<()>), BenchError> {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "binding reality-matrix TCP echo server".to_owned(),
+            source,
+        })?;
+    let addr = listener.local_addr().map_err(|source| BenchError::Io {
+        action: "reading reality-matrix TCP echo server address".to_owned(),
+        source,
+    })?;
+    let next_connection_id = Arc::new(AtomicU64::new(1));
+    let active_connections = Arc::new(AtomicU64::new(0));
+    let trace_started = Instant::now();
+    let task = tokio::spawn(async move {
+        while let Ok((mut stream, peer_addr)) = listener.accept().await {
+            let connection_id = next_connection_id.fetch_add(1, Ordering::Relaxed);
+            let active = active_connections.fetch_add(1, Ordering::SeqCst) + 1;
+            append_reality_matrix_tcp_target_trace_event(
+                trace_path.as_deref(),
+                "target_accept",
+                connection_id,
+                peer_addr,
+                None,
+                0,
+                0,
+                active,
+                None,
+                trace_started,
+            );
+            let trace_path = trace_path.clone();
+            let active_connections = active_connections.clone();
+            tokio::spawn(async move {
+                let mut buffer = vec![0; 64 * 1024];
+                let mut bytes_received_total = 0u64;
+                let mut bytes_sent_total = 0u64;
+                loop {
+                    match stream.read(&mut buffer).await {
+                        Ok(0) => {
+                            append_reality_matrix_tcp_target_trace_event(
+                                trace_path.as_deref(),
+                                "target_eof",
+                                connection_id,
+                                peer_addr,
+                                None,
+                                bytes_sent_total,
+                                bytes_received_total,
+                                active_connections.load(Ordering::SeqCst),
+                                None,
+                                trace_started,
+                            );
+                            break;
+                        }
+                        Err(error) => {
+                            append_reality_matrix_tcp_target_trace_event(
+                                trace_path.as_deref(),
+                                "target_read_error",
+                                connection_id,
+                                peer_addr,
+                                None,
+                                bytes_sent_total,
+                                bytes_received_total,
+                                active_connections.load(Ordering::SeqCst),
+                                Some(error.to_string()),
+                                trace_started,
+                            );
+                            break;
+                        }
+                        Ok(len) => {
+                            bytes_received_total += len as u64;
+                            append_reality_matrix_tcp_target_trace_event(
+                                trace_path.as_deref(),
+                                "target_read",
+                                connection_id,
+                                peer_addr,
+                                Some(len),
+                                bytes_sent_total,
+                                bytes_received_total,
+                                active_connections.load(Ordering::SeqCst),
+                                None,
+                                trace_started,
+                            );
+                            if stream.write_all(&buffer[..len]).await.is_err() {
+                                append_reality_matrix_tcp_target_trace_event(
+                                    trace_path.as_deref(),
+                                    "target_write_error",
+                                    connection_id,
+                                    peer_addr,
+                                    Some(len),
+                                    bytes_sent_total,
+                                    bytes_received_total,
+                                    active_connections.load(Ordering::SeqCst),
+                                    None,
+                                    trace_started,
+                                );
+                                break;
+                            }
+                            bytes_sent_total += len as u64;
+                            append_reality_matrix_tcp_target_trace_event(
+                                trace_path.as_deref(),
+                                "target_write_done",
+                                connection_id,
+                                peer_addr,
+                                Some(len),
+                                bytes_sent_total,
+                                bytes_received_total,
+                                active_connections.load(Ordering::SeqCst),
+                                None,
+                                trace_started,
+                            );
+                        }
+                    }
+                }
+                let active = active_connections
+                    .fetch_sub(1, Ordering::SeqCst)
+                    .saturating_sub(1);
+                append_reality_matrix_tcp_target_trace_event(
+                    trace_path.as_deref(),
+                    "target_closed",
+                    connection_id,
+                    peer_addr,
+                    None,
+                    bytes_sent_total,
+                    bytes_received_total,
+                    active,
+                    None,
+                    trace_started,
+                );
+            });
+        }
+    });
+    Ok((addr, task))
+}
+
+async fn spawn_udp_echo_server() -> Result<(SocketAddr, JoinHandle<()>), BenchError> {
+    let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "binding reality-matrix UDP echo server".to_owned(),
+            source,
+        })?;
+    let addr = socket.local_addr().map_err(|source| BenchError::Io {
+        action: "reading reality-matrix UDP echo server address".to_owned(),
+        source,
+    })?;
+    let task = tokio::spawn(async move {
+        let mut buffer = vec![0; 65_536];
+        while let Ok((len, peer)) = socket.recv_from(&mut buffer).await {
+            let _ = socket.send_to(&buffer[..len], peer).await;
+        }
+    });
+    Ok((addr, task))
+}
+
+async fn spawn_reality_matrix_http_server(
+    body_bytes: usize,
+) -> Result<(SocketAddr, JoinHandle<()>), BenchError> {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "binding reality-matrix HTTP server".to_owned(),
+            source,
+        })?;
+    let addr = listener.local_addr().map_err(|source| BenchError::Io {
+        action: "reading reality-matrix HTTP server address".to_owned(),
+        source,
+    })?;
+    let task = tokio::spawn(async move {
+        while let Ok((mut stream, _)) = listener.accept().await {
+            tokio::spawn(async move {
+                let path = match read_http_request_path(&mut stream).await {
+                    Some(path) => path,
+                    None => return,
+                };
+                if path == "/generate_204" {
+                    let response =
+                        b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                    let _ = stream.write_all(response).await;
+                } else if path == "/first-byte" {
+                    let response =
+                        b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\nConnection: close\r\n\r\nB";
+                    let _ = stream.write_all(response).await;
+                } else if path == "/body" {
+                    let header = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {body_bytes}\r\nConnection: close\r\n\r\n"
+                    );
+                    let body = vec![0x7b; body_bytes];
+                    let _ = stream.write_all(header.as_bytes()).await;
+                    let _ = stream.write_all(&body).await;
+                } else {
+                    let response =
+                        b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                    let _ = stream.write_all(response).await;
+                }
+            });
+        }
+    });
+    Ok((addr, task))
+}
+
+async fn read_http_request_path(stream: &mut TcpStream) -> Option<String> {
+    let mut buffer = Vec::with_capacity(1024);
+    let mut chunk = [0; 1024];
+    loop {
+        let read = stream.read(&mut chunk).await.ok()?;
+        if read == 0 {
+            return None;
+        }
+        buffer.extend_from_slice(&chunk[..read]);
+        if buffer.windows(4).any(|window| window == b"\r\n\r\n") {
+            break;
+        }
+        if buffer.len() > 16 * 1024 {
+            return None;
+        }
+    }
+    let request = std::str::from_utf8(&buffer).ok()?;
+    let first_line = request.lines().next()?;
+    let mut parts = first_line.split_whitespace();
+    let method = parts.next()?;
+    let path = parts.next()?;
+    (method == "GET").then_some(path.to_owned())
+}
+
+async fn read_http_response_body_bytes(
+    stream: &mut TcpStream,
+    body_bytes: usize,
+) -> Result<Vec<u8>, BenchError> {
+    let mut buffer = Vec::with_capacity(4096);
+    let mut chunk = [0; 4096];
+    let header_end = loop {
+        let read = stream
+            .read(&mut chunk)
+            .await
+            .map_err(|source| BenchError::Io {
+                action: "reading reality-matrix HTTP response".to_owned(),
+                source,
+            })?;
+        if read == 0 {
+            return Err(BenchError::InvalidArguments(
+                "HTTP response ended before headers".to_owned(),
+            ));
+        }
+        buffer.extend_from_slice(&chunk[..read]);
+        if let Some(index) = find_bytes(&buffer, b"\r\n\r\n") {
+            break index;
+        }
+        if buffer.len() > 64 * 1024 {
+            return Err(BenchError::InvalidArguments(
+                "HTTP response headers exceeded 64KiB".to_owned(),
+            ));
+        }
+    };
+
+    let status_line = buffer[..header_end]
+        .split(|byte| *byte == b'\n')
+        .next()
+        .unwrap_or_default();
+    if !status_line.starts_with(b"HTTP/1.1 2") {
+        return Err(BenchError::InvalidArguments(format!(
+            "unexpected HTTP response status `{}`",
+            String::from_utf8_lossy(status_line).trim()
+        )));
+    }
+
+    let mut body = buffer[header_end + 4..].to_vec();
+    while body.len() < body_bytes {
+        let read = stream
+            .read(&mut chunk)
+            .await
+            .map_err(|source| BenchError::Io {
+                action: "reading reality-matrix HTTP body".to_owned(),
+                source,
+            })?;
+        if read == 0 {
+            return Err(BenchError::InvalidArguments(format!(
+                "HTTP body ended after {} of {body_bytes} bytes",
+                body.len()
+            )));
+        }
+        body.extend_from_slice(&chunk[..read]);
+    }
+    body.truncate(body_bytes);
+    Ok(body)
+}
+
+fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
+}
+
+fn ok_reality_matrix_case(
+    fingerprint: &str,
+    traffic: RealityMatrixTrafficKind,
+    duration: Duration,
+    outcome: WorkloadOutcome,
+) -> RealityMatrixCaseResult {
+    RealityMatrixCaseResult {
+        fingerprint: fingerprint.to_owned(),
+        traffic: traffic.as_str().to_owned(),
+        status: "ok".to_owned(),
+        duration_ms: duration.as_millis(),
+        bytes_sent: outcome.bytes_sent,
+        bytes_received: outcome.bytes_received,
+        latency_us: summarize_latency_us(outcome.latencies_us),
+        setup_us: summarize_flow_setup_us(outcome.setup_samples),
+        error: None,
+    }
+}
+
+fn failed_reality_matrix_case(
+    fingerprint: &str,
+    traffic: RealityMatrixTrafficKind,
+    duration: Duration,
+    error: String,
+) -> RealityMatrixCaseResult {
+    RealityMatrixCaseResult {
+        fingerprint: fingerprint.to_owned(),
+        traffic: traffic.as_str().to_owned(),
+        status: "failed".to_owned(),
+        duration_ms: duration.as_millis(),
+        bytes_sent: 0,
+        bytes_received: 0,
+        latency_us: None,
+        setup_us: None,
+        error: Some(error),
+    }
+}
+
+fn skipped_reality_matrix_case(
+    fingerprint: &str,
+    traffic: RealityMatrixTrafficKind,
+    reason: &str,
+) -> RealityMatrixCaseResult {
+    RealityMatrixCaseResult {
+        fingerprint: fingerprint.to_owned(),
+        traffic: traffic.as_str().to_owned(),
+        status: "skipped".to_owned(),
+        duration_ms: 0,
+        bytes_sent: 0,
+        bytes_received: 0,
+        latency_us: None,
+        setup_us: None,
+        error: Some(reason.to_owned()),
+    }
+}
+
+fn push_skipped_reality_matrix_traffic(
+    cases: &mut Vec<RealityMatrixCaseResult>,
+    fingerprint: &str,
+    options: &RealityMatrixOptions,
+    reason: &str,
+) {
+    for traffic in &options.traffic {
+        if *traffic == RealityMatrixTrafficKind::StartupProbe {
+            continue;
+        }
+        cases.push(skipped_reality_matrix_case(fingerprint, *traffic, reason));
+    }
+}
+
+fn summarize_reality_matrix_cases(
+    cases: &[RealityMatrixCaseResult],
+    fingerprint_count: usize,
+    traffic_count: usize,
+) -> RealityMatrixSummary {
+    RealityMatrixSummary {
+        fingerprints: fingerprint_count,
+        traffic: traffic_count,
+        cases: cases.len(),
+        ok: cases.iter().filter(|case| case.status == "ok").count(),
+        failed: cases.iter().filter(|case| case.status == "failed").count(),
+        skipped: cases.iter().filter(|case| case.status == "skipped").count(),
+    }
 }
 
 fn route_probe_config(rules: usize, outbounds: usize) -> Result<CoreConfig, BenchError> {
@@ -4344,6 +5731,30 @@ fn print_route_probe_result(result: &RouteProbeResult) {
         result.total_us,
         result.avg_ns
     );
+}
+
+fn print_reality_matrix_result(result: &RealityMatrixResult) {
+    println!(
+        "reality-matrix run_id={} fingerprints={} traffic={} cases={} ok={} failed={} skipped={} xray_core_server={} probe_url={}",
+        result.run_id,
+        result.summary.fingerprints,
+        result.summary.traffic,
+        result.summary.cases,
+        result.summary.ok,
+        result.summary.failed,
+        result.summary.skipped,
+        result.xray_core_server_addr,
+        result.probe_url
+    );
+    for case in result.cases.iter().filter(|case| case.status != "ok") {
+        println!(
+            "  {} {} status={} error={}",
+            case.fingerprint,
+            case.traffic,
+            case.status,
+            case.error.as_deref().unwrap_or("")
+        );
+    }
 }
 
 fn print_summary(summary: &BenchSummary) {
@@ -4991,6 +6402,35 @@ mod tests {
     }
 
     #[test]
+    fn xray_core_vision_xudp_config_uses_tls_cert_pin() {
+        let fixture = WorkloadFixture {
+            vless_addr: Some(SocketAddr::from((Ipv4Addr::new(127, 0, 0, 1), 19091))),
+            vless_tls_cert_sha256: Some(
+                "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff".to_owned(),
+            ),
+            tasks: Vec::new(),
+            processes: Vec::new(),
+        };
+        let config = engine_config(
+            EngineKind::XrayCore,
+            18084,
+            WorkloadKind::VisionXudp,
+            &fixture,
+        )
+        .unwrap();
+        let value = serde_json::from_str::<serde_json::Value>(&config).unwrap();
+
+        assert_eq!(value["outbounds"][0]["streamSettings"]["security"], "tls");
+        assert_eq!(
+            value["outbounds"][0]["streamSettings"]["tlsSettings"]["pinnedPeerCertSha256"],
+            "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+        );
+        assert!(value["outbounds"][0]["streamSettings"]["tlsSettings"]
+            .get("allowInsecure")
+            .is_none());
+    }
+
+    #[test]
     fn reality_vision_xudp_config_enables_reality_vision_flow() {
         let config = reality_vision_xudp_config(
             18085,
@@ -5047,7 +6487,13 @@ mod tests {
     #[test]
     fn tun_udp_freedom_config_uses_tun_inbound_without_socks() {
         let fixture = WorkloadFixture::default();
-        let config = engine_config(0, WorkloadKind::TunUdpFreedom, &fixture).unwrap();
+        let config = engine_config(
+            EngineKind::XrayRust,
+            0,
+            WorkloadKind::TunUdpFreedom,
+            &fixture,
+        )
+        .unwrap();
         let value = serde_json::from_str::<serde_json::Value>(&config).unwrap();
 
         assert_eq!(value["inbounds"][0]["protocol"], "tun");
@@ -5073,6 +6519,7 @@ mod tests {
     fn sing_box_reality_vision_xudp_config_uses_vless_reality_schema() {
         let fixture = WorkloadFixture {
             vless_addr: Some(SocketAddr::from((Ipv4Addr::new(127, 0, 0, 1), 19094))),
+            vless_tls_cert_sha256: None,
             tasks: Vec::new(),
             processes: Vec::new(),
         };
@@ -5215,6 +6662,210 @@ mod tests {
                 outbounds: 8,
                 out_dir: PathBuf::from("target/benchmarks/route-probe"),
             })
+        );
+    }
+
+    #[test]
+    fn parses_reality_matrix_command() {
+        let args = parse_cli_args([
+            "xray-bench",
+            "reality-matrix",
+            "--fingerprints",
+            "chrome,hellochrome_120_pq",
+            "--traffic",
+            "startup-probe,tcp-connect,udp-xudp-echo",
+            "--iterations",
+            "2",
+            "--small-payload-size",
+            "128",
+            "--body-bytes",
+            "4096",
+            "--probe-timeout-ms",
+            "1500",
+            "--run-timeout-ms",
+            "3000",
+            "--out-dir",
+            "target/benchmarks/matrix",
+            "--xray-core-dir",
+            "../Xray-core",
+            "--trace-traffic",
+            "--no-auto-build",
+        ])
+        .unwrap();
+
+        assert_eq!(
+            args,
+            CliArgs::RealityMatrix(RealityMatrixOptions {
+                fingerprints: vec!["chrome".to_owned(), "hellochrome_120_pq".to_owned()],
+                traffic: vec![
+                    RealityMatrixTrafficKind::StartupProbe,
+                    RealityMatrixTrafficKind::TcpConnect,
+                    RealityMatrixTrafficKind::UdpXudpEcho,
+                ],
+                iterations: 2,
+                small_payload_size: 128,
+                body_bytes: 4096,
+                probe_timeout: Duration::from_millis(1500),
+                run_timeout: Duration::from_millis(3000),
+                out_dir: PathBuf::from("target/benchmarks/matrix"),
+                xray_core_bin: None,
+                xray_core_dir: Some(PathBuf::from("../Xray-core")),
+                trace_traffic: true,
+                no_auto_build: true,
+            })
+        );
+    }
+
+    #[test]
+    fn reality_matrix_defaults_to_capable_fingerprints_and_all_traffic() {
+        let args = parse_cli_args(["xray-bench", "reality-matrix"]).unwrap();
+        let CliArgs::RealityMatrix(options) = args else {
+            panic!("expected reality matrix args");
+        };
+
+        assert!(options.fingerprints.contains(&"chrome".to_owned()));
+        assert!(options
+            .fingerprints
+            .contains(&"hellochrome_120_pq".to_owned()));
+        assert!(options
+            .traffic
+            .contains(&RealityMatrixTrafficKind::StartupProbe));
+        assert!(options
+            .traffic
+            .contains(&RealityMatrixTrafficKind::HttpBody));
+        assert!(options
+            .traffic
+            .contains(&RealityMatrixTrafficKind::UdpXudpEcho));
+        assert_eq!(options.probe_timeout, Duration::from_secs(15));
+        assert!(!options.trace_traffic);
+    }
+
+    #[test]
+    fn reality_matrix_trace_event_serializes_as_json_line() {
+        let event = RealityMatrixTraceEvent {
+            fingerprint: "safari",
+            traffic: "tcp-echo-body",
+            event: "iteration_read_done",
+            target: None,
+            connection_id: None,
+            peer_addr: None,
+            iteration: Some(2),
+            payload_bytes: Some(1048576),
+            bytes: None,
+            bytes_sent_total: Some(2_097_152),
+            bytes_received_total: Some(2_097_152),
+            active_connections: None,
+            error: None,
+            elapsed_us: 12_345,
+        };
+
+        let line = reality_matrix_trace_event_json_line(&event).unwrap();
+
+        assert!(line.ends_with('\n'));
+        assert!(line.contains(r#""fingerprint":"safari""#));
+        assert!(line.contains(r#""event":"iteration_read_done""#));
+    }
+
+    #[test]
+    fn reality_matrix_trace_event_serializes_target_diagnostics() {
+        let event = RealityMatrixTraceEvent {
+            fingerprint: "<target>",
+            traffic: "tcp-echo-target",
+            event: "target_read",
+            target: Some("tcp_echo"),
+            connection_id: Some(7),
+            peer_addr: Some("127.0.0.1:44321".to_owned()),
+            iteration: None,
+            payload_bytes: None,
+            bytes: Some(65536),
+            bytes_sent_total: Some(131072),
+            bytes_received_total: Some(65536),
+            active_connections: Some(3),
+            error: None,
+            elapsed_us: 98_765,
+        };
+
+        let line = reality_matrix_trace_event_json_line(&event).unwrap();
+
+        assert!(line.contains(r#""target":"tcp_echo""#));
+        assert!(line.contains(r#""connection_id":7"#));
+        assert!(line.contains(r#""bytes":65536"#));
+        assert!(line.contains(r#""active_connections":3"#));
+    }
+
+    #[test]
+    fn rejects_reality_matrix_incapable_fingerprint() {
+        let error = parse_cli_args(["xray-bench", "reality-matrix", "--fingerprints", "android"])
+            .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("unsupported REALITY fingerprint"));
+    }
+
+    #[test]
+    fn reality_vision_xudp_config_uses_requested_fingerprint() {
+        let config = reality_vision_xudp_config_with_fingerprint(
+            18088,
+            SocketAddr::from((Ipv4Addr::new(127, 0, 0, 1), 19095)),
+            "hellochrome_120_pq",
+        );
+        let value = serde_json::from_str::<serde_json::Value>(&config).unwrap();
+
+        assert_eq!(
+            value["outbounds"][0]["streamSettings"]["realitySettings"]["fingerprint"],
+            "hellochrome_120_pq"
+        );
+    }
+
+    #[test]
+    fn summarizes_reality_matrix_statuses() {
+        let cases = vec![
+            RealityMatrixCaseResult {
+                fingerprint: "chrome".to_owned(),
+                traffic: "startup-probe".to_owned(),
+                status: "ok".to_owned(),
+                duration_ms: 1,
+                bytes_sent: 0,
+                bytes_received: 0,
+                latency_us: None,
+                setup_us: None,
+                error: None,
+            },
+            RealityMatrixCaseResult {
+                fingerprint: "chrome".to_owned(),
+                traffic: "tcp-connect".to_owned(),
+                status: "failed".to_owned(),
+                duration_ms: 1,
+                bytes_sent: 0,
+                bytes_received: 0,
+                latency_us: None,
+                setup_us: None,
+                error: Some("boom".to_owned()),
+            },
+            RealityMatrixCaseResult {
+                fingerprint: "chrome".to_owned(),
+                traffic: "http-body".to_owned(),
+                status: "skipped".to_owned(),
+                duration_ms: 0,
+                bytes_sent: 0,
+                bytes_received: 0,
+                latency_us: None,
+                setup_us: None,
+                error: Some("startup failed".to_owned()),
+            },
+        ];
+
+        assert_eq!(
+            summarize_reality_matrix_cases(&cases, 1, 3),
+            RealityMatrixSummary {
+                fingerprints: 1,
+                traffic: 3,
+                cases: 3,
+                ok: 1,
+                failed: 1,
+                skipped: 1,
+            }
         );
     }
 

@@ -242,11 +242,7 @@ fn format_udp_quic_blocked_event(event: &TunUdpQuicBlockedEvent) -> String {
 }
 
 fn average_duration_ms(total: u64, events: u64) -> u64 {
-    if events == 0 {
-        0
-    } else {
-        total / events
-    }
+    total.checked_div(events).unwrap_or(0)
 }
 
 #[cfg(test)]

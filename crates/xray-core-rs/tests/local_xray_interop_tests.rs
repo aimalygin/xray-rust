@@ -24,6 +24,7 @@ const TLS_SERVER_NAME: &str = "vless.test";
 const REALITY_SERVER_NAME: &str = "www.google.com";
 const REALITY_PRIVATE_KEY: &str = "aGSYystUbf59_9_6LKRxD27rmSW_-2_nyd9YG_Gwbks";
 const REALITY_PUBLIC_KEY_BASE64: &str = "E59WjnvZcQMu7tR7_BgyhycuEdBS-CtKxfImRCdAvFM";
+const DEFAULT_REALITY_SERVER_WARMUP_TIMEOUT: Duration = Duration::from_secs(30);
 const REALITY_PUBLIC_KEY: [u8; 32] = [
     19, 159, 86, 142, 123, 217, 113, 3, 46, 238, 212, 123, 252, 24, 50, 135, 39, 46, 17, 208, 82,
     248, 43, 74, 197, 242, 38, 68, 39, 64, 188, 83,
@@ -220,18 +221,31 @@ fn selected_reality_interop_burst_flow_count() -> usize {
     flow_count
 }
 
-fn selected_reality_server_warmup() -> Duration {
-    env::var("XRAY_REALITY_INTEROP_SERVER_WARMUP_MS")
+fn selected_reality_server_warmup_timeout() -> Duration {
+    env::var("XRAY_REALITY_INTEROP_SERVER_WARMUP_TIMEOUT_MS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
         .map(Duration::from_millis)
-        .unwrap_or(Duration::ZERO)
+        .unwrap_or(DEFAULT_REALITY_SERVER_WARMUP_TIMEOUT)
 }
 
-async fn warm_up_reality_server_detector() {
-    let warmup = selected_reality_server_warmup();
-    if !warmup.is_zero() {
-        sleep(warmup).await;
+async fn warm_up_reality_server_detector(xray: &XrayServer, fingerprint: &str) {
+    let rust_config = rust_reality_vision_core_config(xray.addr, fingerprint);
+    match timeout(
+        selected_reality_server_warmup_timeout(),
+        run_rust_core_socks_echo_probe(rust_config),
+    )
+    .await
+    {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => {
+            eprintln!("{}", xray.logs());
+            panic!("REALITY server warmup probe failed: {error}");
+        }
+        Err(error) => {
+            eprintln!("{}", xray.logs());
+            panic!("REALITY server warmup probe timed out: {error}");
+        }
     }
 }
 
@@ -249,20 +263,8 @@ async fn run_local_xray_vless_reality_vision_interop(fingerprint: &str) {
     )
     .await
     .expect("start xray timeout");
-    warm_up_reality_server_detector().await;
-    let rust_config = rust_core_config_with_security(
-        xray.addr,
-        StreamSecurity::Reality(RealitySettings {
-            server_name: REALITY_SERVER_NAME.to_owned(),
-            fingerprint: fingerprint.to_owned(),
-            public_key: REALITY_PUBLIC_KEY,
-            short_id: RealityShortId::try_from_slice(&REALITY_SHORT_ID)
-                .expect("static REALITY short id"),
-            spider_x: "/".to_owned(),
-            mldsa65_verify: None,
-        }),
-        Some("xtls-rprx-vision"),
-    );
+    warm_up_reality_server_detector(&xray, fingerprint).await;
+    let rust_config = rust_reality_vision_core_config(xray.addr, fingerprint);
 
     run_local_xray_vless_interop_scenario(xray, rust_config, None).await;
 }
@@ -281,20 +283,8 @@ async fn run_local_xray_vless_reality_vision_burst_interop(fingerprint: &str, fl
     )
     .await
     .expect("start xray timeout");
-    warm_up_reality_server_detector().await;
-    let rust_config = rust_core_config_with_security(
-        xray.addr,
-        StreamSecurity::Reality(RealitySettings {
-            server_name: REALITY_SERVER_NAME.to_owned(),
-            fingerprint: fingerprint.to_owned(),
-            public_key: REALITY_PUBLIC_KEY,
-            short_id: RealityShortId::try_from_slice(&REALITY_SHORT_ID)
-                .expect("static REALITY short id"),
-            spider_x: "/".to_owned(),
-            mldsa65_verify: None,
-        }),
-        Some("xtls-rprx-vision"),
-    );
+    warm_up_reality_server_detector(&xray, fingerprint).await;
+    let rust_config = rust_reality_vision_core_config(xray.addr, fingerprint);
 
     run_local_xray_vless_parallel_interop_scenario(xray, rust_config, flow_count).await;
 }
@@ -316,13 +306,31 @@ async fn run_xray_core_client_vless_reality_vision_burst_interop(
     )
     .await
     .expect("start xray server timeout");
-    warm_up_reality_server_detector().await;
     let client = timeout(
         Duration::from_secs(60),
         start_xray_vless_client(&xray_checkout, server.addr, fingerprint),
     )
     .await
     .expect("start xray client timeout");
+
+    match timeout(
+        selected_reality_server_warmup_timeout(),
+        run_socks_echo_probe(client.addr),
+    )
+    .await
+    {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => {
+            eprintln!("xray server logs:\n{}", server.logs());
+            eprintln!("xray client logs:\n{}", client.logs());
+            panic!("Xray-core client REALITY warmup probe failed: {error}");
+        }
+        Err(error) => {
+            eprintln!("xray server logs:\n{}", server.logs());
+            eprintln!("xray client logs:\n{}", client.logs());
+            panic!("Xray-core client REALITY warmup probe timed out: {error}");
+        }
+    }
 
     if let Err(failures) = run_parallel_socks_echo_workload(client.addr, flow_count).await {
         eprintln!("xray server logs:\n{}", server.logs());
@@ -463,6 +471,78 @@ async fn run_parallel_socks_echo_workload(
         .expect("multi echo task should finish")
         .expect("multi echo task should not panic");
     Ok(())
+}
+
+async fn run_rust_core_socks_echo_probe(rust_config: CoreConfig) -> Result<(), String> {
+    let (echo_addr, echo_handle) = spawn_echo_server().await;
+    let mut core = match Core::new(rust_config) {
+        Ok(core) => core,
+        Err(error) => {
+            echo_handle.abort();
+            let _ = echo_handle.await;
+            return Err(format!("create rust core: {error}"));
+        }
+    };
+
+    match timeout(Duration::from_secs(10), core.start()).await {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => {
+            echo_handle.abort();
+            let _ = echo_handle.await;
+            return Err(format!("start rust core: {error}"));
+        }
+        Err(error) => {
+            echo_handle.abort();
+            let _ = echo_handle.await;
+            return Err(format!("start rust core timeout: {error}"));
+        }
+    }
+
+    let result = match core.inbound_addr(Some("socks-in")) {
+        Some(socks_addr) => run_socks_echo_flow(socks_addr, echo_addr, 0).await,
+        None => Err("missing `socks-in` inbound after Core start".to_owned()),
+    };
+    let stop_result = core
+        .stop()
+        .await
+        .map_err(|error| format!("stop rust core: {error}"));
+
+    match result {
+        Ok(()) => {
+            timeout(Duration::from_secs(5), echo_handle)
+                .await
+                .map_err(|error| format!("echo task timeout: {error}"))?
+                .map_err(|error| format!("echo task panic: {error}"))?;
+        }
+        Err(error) => {
+            echo_handle.abort();
+            let _ = echo_handle.await;
+            stop_result?;
+            return Err(error);
+        }
+    }
+
+    stop_result
+}
+
+async fn run_socks_echo_probe(socks_addr: SocketAddr) -> Result<(), String> {
+    let (echo_addr, echo_handle) = spawn_echo_server().await;
+    let result = run_socks_echo_flow(socks_addr, echo_addr, 0).await;
+
+    match result {
+        Ok(()) => {
+            timeout(Duration::from_secs(5), echo_handle)
+                .await
+                .map_err(|error| format!("echo task timeout: {error}"))?
+                .map_err(|error| format!("echo task panic: {error}"))?;
+            Ok(())
+        }
+        Err(error) => {
+            echo_handle.abort();
+            let _ = echo_handle.await;
+            Err(error)
+        }
+    }
 }
 
 async fn run_socks_echo_flow(
@@ -990,6 +1070,22 @@ fn rust_core_config_with_security(
         dns: Default::default(),
         policy: Default::default(),
     }
+}
+
+fn rust_reality_vision_core_config(xray_addr: SocketAddr, fingerprint: &str) -> CoreConfig {
+    rust_core_config_with_security(
+        xray_addr,
+        StreamSecurity::Reality(RealitySettings {
+            server_name: REALITY_SERVER_NAME.to_owned(),
+            fingerprint: fingerprint.to_owned(),
+            public_key: REALITY_PUBLIC_KEY,
+            short_id: RealityShortId::try_from_slice(&REALITY_SHORT_ID)
+                .expect("static REALITY short id"),
+            spider_x: "/".to_owned(),
+            mldsa65_verify: None,
+        }),
+        Some("xtls-rprx-vision"),
+    )
 }
 
 async fn spawn_echo_server() -> (SocketAddr, tokio::task::JoinHandle<()>) {

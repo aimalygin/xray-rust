@@ -129,6 +129,7 @@ where
             return Ok(total);
         }
         writer.write_all(&buffer[..len]).await?;
+        writer.flush().await?;
         total = total.saturating_add(len as u64);
         let _ = activity.send(());
     }
@@ -137,14 +138,61 @@ where
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
+    use std::pin::Pin;
+    use std::sync::{Arc, Mutex};
+    use std::task::{Context, Poll};
     use std::time::Duration;
 
+    use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
+    use tokio::sync::mpsc;
     use xray_config::{
         CoreConfig, OutboundConfig, OutboundSettings, PolicyConfig, PolicyLevelConfig,
         StreamSecurity, StreamSettings,
     };
 
-    use super::{copy_bidirectional_with_idle_timeout, effective_policy_for_level};
+    use super::{copy_bidirectional_with_idle_timeout, copy_direction, effective_policy_for_level};
+
+    #[derive(Default)]
+    struct RecordingWriteState {
+        bytes_written: usize,
+        flushes: usize,
+        shutdowns: usize,
+    }
+
+    struct RecordingIo {
+        state: Arc<Mutex<RecordingWriteState>>,
+    }
+
+    impl AsyncRead for RecordingIo {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            _buf: &mut ReadBuf<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            Poll::Pending
+        }
+    }
+
+    impl AsyncWrite for RecordingIo {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<std::io::Result<usize>> {
+            self.state.lock().unwrap().bytes_written += buf.len();
+            Poll::Ready(Ok(buf.len()))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            self.state.lock().unwrap().flushes += 1;
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            self.state.lock().unwrap().shutdowns += 1;
+            Poll::Ready(Ok(()))
+        }
+    }
 
     fn config_with_policy(level: u32, policy: PolicyLevelConfig) -> CoreConfig {
         CoreConfig {
@@ -212,5 +260,29 @@ mod tests {
                 .unwrap_err();
 
         assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
+    }
+
+    #[tokio::test]
+    async fn copy_direction_flushes_after_forwarding_chunk() {
+        let (reader_io, mut reader_peer) = tokio::io::duplex(64);
+        let (mut reader, _unused_writer) = tokio::io::split(reader_io);
+        let state = Arc::new(Mutex::new(RecordingWriteState::default()));
+        let writer_io = RecordingIo {
+            state: state.clone(),
+        };
+        let (_unused_reader, mut writer) = tokio::io::split(writer_io);
+        let (activity_tx, _activity_rx) = mpsc::unbounded_channel();
+
+        reader_peer.write_all(b"hello").await.unwrap();
+        reader_peer.shutdown().await.unwrap();
+        let copied = copy_direction(&mut reader, &mut writer, activity_tx)
+            .await
+            .unwrap();
+
+        let state = state.lock().unwrap();
+        assert_eq!(copied, 5);
+        assert_eq!(state.bytes_written, 5);
+        assert_eq!(state.flushes, 1);
+        assert_eq!(state.shutdowns, 1);
     }
 }

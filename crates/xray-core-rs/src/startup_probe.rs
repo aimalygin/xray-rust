@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{net::IpAddr, time::Duration};
 
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::time::timeout;
@@ -94,7 +94,7 @@ async fn run_startup_probe_inner(
             }
         })?;
     let target = Target::new(
-        RoutingTargetAddr::Domain(parsed.host.clone()),
+        probe_target_addr(&parsed.host),
         parsed.port,
         RoutingNetwork::Tcp,
     );
@@ -195,6 +195,12 @@ fn host_header_value(parsed: &ParsedProbeUrl) -> String {
     } else {
         format!("{}:{}", parsed.host, parsed.port)
     }
+}
+
+fn probe_target_addr(host: &str) -> RoutingTargetAddr {
+    host.parse::<IpAddr>()
+        .map(RoutingTargetAddr::Ip)
+        .unwrap_or_else(|_| RoutingTargetAddr::Domain(host.to_owned()))
 }
 
 fn default_port(scheme: ProbeScheme) -> u16 {
@@ -373,6 +379,22 @@ mod tests {
         let parsed = parse_probe_url("https://example.com?check=1").unwrap();
 
         assert_eq!(parsed.path_and_query, "/?check=1");
+    }
+
+    #[test]
+    fn probe_target_addr_maps_ipv4_literal_to_ip_target() {
+        assert_eq!(
+            probe_target_addr("127.0.0.1"),
+            RoutingTargetAddr::Ip("127.0.0.1".parse().unwrap())
+        );
+    }
+
+    #[test]
+    fn probe_target_addr_keeps_domain_host_as_domain_target() {
+        assert_eq!(
+            probe_target_addr("example.com"),
+            RoutingTargetAddr::Domain("example.com".to_owned())
+        );
     }
 
     #[test]

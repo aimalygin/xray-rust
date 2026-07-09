@@ -578,11 +578,7 @@ fn advertised_cipher_suites(
 fn supported_versions(
     profile: &UtlsClientHelloProfile,
 ) -> Result<ClientHelloSupportedVersions, RustlsError> {
-    let versions = if profile
-        .supported_versions
-        .iter()
-        .any(|version| *version == TLS_VERSION_1_3)
-    {
+    let versions = if profile.supported_versions.contains(&TLS_VERSION_1_3) {
         vec![ProtocolVersion::TLSv1_3, ProtocolVersion::TLSv1_2]
     } else {
         vec![ProtocolVersion::TLSv1_2]

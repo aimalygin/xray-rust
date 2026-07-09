@@ -1811,6 +1811,7 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
+ "sha2",
  "smoltcp",
  "thiserror",
  "tokio",
@@ -1819,6 +1820,7 @@ dependencies = [
  "xray-core-rs",
  "xray-proxy",
  "xray-routing",
+ "xray-utls",
 ]
 
 [[package]]

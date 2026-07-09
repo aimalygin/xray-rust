@@ -648,7 +648,6 @@ fn runtime_config_with_ip_if_non_match_routed_freedom_outbound(
                 outbound_tag: "direct".to_owned(),
             }],
             domain_strategy: RoutingDomainStrategy::IpIfNonMatch,
-            ..Default::default()
         },
         dns: Default::default(),
         policy: Default::default(),
@@ -3672,9 +3671,9 @@ async fn spawn_fake_vless_server() -> (SocketAddr, JoinHandle<()>) {
         let target = read_vless_header(&mut inbound).await;
         let mut target_stream = TcpStream::connect(target).await.unwrap();
         inbound.write_all(&[0, 0]).await.unwrap();
-        copy_bidirectional(&mut inbound, &mut target_stream)
-            .await
-            .unwrap();
+        if let Err(error) = copy_bidirectional(&mut inbound, &mut target_stream).await {
+            assert_eq!(error.kind(), ErrorKind::ConnectionReset);
+        }
     });
     (addr, handle)
 }

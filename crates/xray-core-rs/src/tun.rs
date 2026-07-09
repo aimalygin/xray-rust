@@ -18,7 +18,7 @@ use xray_config::{CoreConfig, DnsFakeIpConfig, InboundSniffingConfig};
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::{protect_udp_socket, DnsResolver, TransportDialer};
 use xray_tun::{
-    TunEndpoint, TunError, TunTcpFlowSummaryEvent, TunTcpOpenErrorEvent,
+    TunEndpoint, TunError, TunTcpBufferState, TunTcpFlowSummaryEvent, TunTcpOpenErrorEvent,
     TunTcpRemoteWriteSlowEvent, TunTcpSlowFlowEvent, TunTcpSlowFlowKind, TunUdpResponseGapEvent,
     TunUdpSlowFlowEvent,
 };
@@ -770,6 +770,10 @@ impl FlowBudgetState {
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "TUN runtime task receives shared dependencies explicitly"
+)]
 pub(crate) async fn serve_tun_endpoint(
     tun: Arc<TunEndpoint>,
     inbound_tag: Option<String>,
@@ -1364,17 +1368,17 @@ fn record_flow_budget_stats(
         }
     }
 
-    tun.record_tcp_buffer_state(
-        flow_budget_state.pending_total_bytes(),
-        flow_budget_state.pending_flow_count(),
-        max_pending_bytes,
-        flow_budget_state.pending_upload_bytes(),
-        flow_budget_state.pending_upload_max_bytes(),
-        flow_budget_state.pending_tcp_buffer_bytes(),
-        flow_budget_state.per_flow_limit(),
-        flow_budget_state.hard_total_bytes(),
-        flow_budget_state.pressure_active(),
-    );
+    tun.record_tcp_buffer_state(TunTcpBufferState {
+        remote_bytes: flow_budget_state.pending_total_bytes(),
+        remote_flows: flow_budget_state.pending_flow_count(),
+        remote_max_bytes: max_pending_bytes,
+        upload_bytes: flow_budget_state.pending_upload_bytes(),
+        upload_max_bytes: flow_budget_state.pending_upload_max_bytes(),
+        total_bytes: flow_budget_state.pending_tcp_buffer_bytes(),
+        per_flow_limit_bytes: flow_budget_state.per_flow_limit(),
+        hard_limit_bytes: flow_budget_state.hard_total_bytes(),
+        pressure_active: flow_budget_state.pressure_active(),
+    });
     tun.record_flow_budget(
         flows.len(),
         udp_flows.len(),
@@ -2606,6 +2610,10 @@ async fn resolve_udp_freedom_target(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "flow bridge task receives shared runtime state explicitly"
+)]
 async fn bridge_udp_vless_flow(
     key: UdpFlowKey,
     target: Target,
