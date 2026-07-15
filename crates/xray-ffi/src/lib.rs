@@ -1,5 +1,6 @@
 use bytes::Bytes;
 use libc::{c_char, c_int, c_void};
+use std::any::Any;
 use std::ffi::{CStr, CString};
 use std::io;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -307,8 +308,12 @@ pub extern "C" fn xray_ffi_version_major() -> u32 {
 pub unsafe extern "C" fn xray_core_new(error: *mut *mut XrayError) -> *mut XrayCoreHandle {
     match catch_unwind(AssertUnwindSafe(|| unsafe { xray_core_new_inner(error) })) {
         Ok(handle) => handle,
-        Err(_) => unsafe {
-            set_error(error, XrayStatus::Panic, "panic crossed FFI boundary");
+        Err(payload) => unsafe {
+            set_error(
+                error,
+                XrayStatus::Panic,
+                ffi_panic_message(payload.as_ref()),
+            );
             ptr::null_mut()
         },
     }
@@ -3038,13 +3043,26 @@ unsafe fn ffi_status(
 ) -> XrayStatus {
     match catch_unwind(AssertUnwindSafe(action)) {
         Ok(status) => status,
-        Err(_) => {
+        Err(payload) => {
             unsafe {
-                set_error(error, XrayStatus::Panic, "panic crossed FFI boundary");
+                set_error(
+                    error,
+                    XrayStatus::Panic,
+                    ffi_panic_message(payload.as_ref()),
+                );
             }
             XrayStatus::Panic
         }
     }
+}
+
+fn ffi_panic_message(payload: &(dyn Any + Send)) -> String {
+    let detail = payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("non-string panic payload");
+    format!("panic caught at FFI boundary: {detail}")
 }
 
 fn diagnostics_message(diagnostics: Vec<xray_config::Diagnostic>) -> String {
@@ -3087,7 +3105,13 @@ fn runtime_worker_threads_for_available_parallelism(available: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::runtime_worker_threads_for_available_parallelism;
+    use std::ffi::CStr;
+    use std::ptr;
+
+    use super::{
+        ffi_panic_message, ffi_status, free_error,
+        runtime_worker_threads_for_available_parallelism, XrayError, XrayStatus,
+    };
 
     #[test]
     fn runtime_worker_threads_use_available_parallelism_with_mobile_bounds() {
@@ -3097,5 +3121,32 @@ mod tests {
         assert_eq!(runtime_worker_threads_for_available_parallelism(4), 4);
         assert_eq!(runtime_worker_threads_for_available_parallelism(6), 6);
         assert_eq!(runtime_worker_threads_for_available_parallelism(8), 6);
+    }
+
+    #[test]
+    fn ffi_panic_message_preserves_string_payload() {
+        let payload = "reality state invariant";
+
+        assert_eq!(
+            ffi_panic_message(&payload),
+            "panic caught at FFI boundary: reality state invariant"
+        );
+    }
+
+    #[test]
+    fn ffi_status_catches_panic_and_returns_payload() {
+        let mut error: *mut XrayError = ptr::null_mut();
+
+        let status = unsafe { ffi_status(&mut error, || panic!("injected FFI panic")) };
+
+        assert_eq!(status, XrayStatus::Panic);
+        assert!(!error.is_null());
+        let message = unsafe { CStr::from_ptr((*error).message) }
+            .to_str()
+            .unwrap();
+        assert_eq!(message, "panic caught at FFI boundary: injected FFI panic");
+        unsafe {
+            free_error(error);
+        }
     }
 }

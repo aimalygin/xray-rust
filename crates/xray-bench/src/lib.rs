@@ -40,7 +40,7 @@ use smoltcp::wire::{
 use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
-use tokio::task::JoinHandle;
+use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::{sleep, timeout};
 use tokio_rustls::TlsAcceptor;
 use xray_config::{
@@ -66,6 +66,7 @@ const REALITY_PRIVATE_KEY: &str = "aGSYystUbf59_9_6LKRxD27rmSW_-2_nyd9YG_Gwbks";
 const REALITY_PUBLIC_KEY: &str = "E59WjnvZcQMu7tR7_BgyhycuEdBS-CtKxfImRCdAvFM";
 const REALITY_SHORT_ID_HEX: &str = "0123456789abcdef";
 const SING_BOX_BUILD_TAGS: &str = "with_gvisor,with_utls,badlinkname,tfogo_checklinkname0";
+const TCP_PROTOCOL: u8 = 6;
 const UDP_PROTOCOL: u8 = 17;
 const DARWIN_UTUN_HEADER_LEN: usize = 4;
 const REALITY_MATRIX_SOCKS_TAG: &str = "socks-in";
@@ -141,6 +142,8 @@ pub enum WorkloadKind {
     UdpFreedom,
     TunUdpFreedom,
     TunTcpFreedom,
+    TunTcpStaleFlows,
+    TunRealityBlackhole,
     UdpVless,
     UdpXudp,
     VisionXudp,
@@ -158,6 +161,8 @@ impl WorkloadKind {
             Self::UdpFreedom => "udp-freedom",
             Self::TunUdpFreedom => "tun-udp-freedom",
             Self::TunTcpFreedom => "tun-tcp-freedom",
+            Self::TunTcpStaleFlows => "tun-tcp-stale-flows",
+            Self::TunRealityBlackhole => "tun-reality-blackhole",
             Self::UdpVless => "udp-vless",
             Self::UdpXudp => "udp-xudp",
             Self::VisionXudp => "vision-xudp",
@@ -175,6 +180,8 @@ impl WorkloadKind {
             "udp-freedom" => Ok(Self::UdpFreedom),
             "tun-udp-freedom" => Ok(Self::TunUdpFreedom),
             "tun-tcp-freedom" => Ok(Self::TunTcpFreedom),
+            "tun-tcp-stale-flows" => Ok(Self::TunTcpStaleFlows),
+            "tun-reality-blackhole" => Ok(Self::TunRealityBlackhole),
             "udp-vless" => Ok(Self::UdpVless),
             "udp-xudp" => Ok(Self::UdpXudp),
             "vision-xudp" => Ok(Self::VisionXudp),
@@ -186,7 +193,13 @@ impl WorkloadKind {
     }
 
     fn uses_tun_fd(&self) -> bool {
-        matches!(self, Self::TunUdpFreedom | Self::TunTcpFreedom)
+        matches!(
+            self,
+            Self::TunUdpFreedom
+                | Self::TunTcpFreedom
+                | Self::TunTcpStaleFlows
+                | Self::TunRealityBlackhole
+        )
     }
 
     fn supports_sing_box_process_engine(&self) -> bool {
@@ -386,6 +399,10 @@ pub struct BenchResult {
     pub latency_us: Option<LatencySummary>,
     pub setup_us: Option<FlowSetupSummary>,
     pub samples: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blackhole_connections_accepted: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blackhole_connections_active: Option<u64>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -469,6 +486,8 @@ pub struct WorkloadOutcome {
     pub bytes_received: u64,
     pub latencies_us: Vec<u128>,
     pub setup_samples: Vec<FlowSetupSample>,
+    pub blackhole_connections_accepted: Option<u64>,
+    pub blackhole_connections_active: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -488,6 +507,12 @@ impl WorkloadOutcome {
         self.bytes_received += other.bytes_received;
         self.latencies_us.extend(other.latencies_us);
         self.setup_samples.extend(other.setup_samples);
+        self.blackhole_connections_accepted = other
+            .blackhole_connections_accepted
+            .or(self.blackhole_connections_accepted);
+        self.blackhole_connections_active = other
+            .blackhole_connections_active
+            .or(self.blackhole_connections_active);
     }
 }
 
@@ -582,8 +607,41 @@ struct TunSocketPair;
 struct WorkloadFixture {
     vless_addr: Option<SocketAddr>,
     vless_tls_cert_sha256: Option<String>,
+    tcp_blackhole_state: Option<Arc<TcpBlackholeState>>,
     tasks: Vec<JoinHandle<()>>,
     processes: Vec<FixtureProcess>,
+}
+
+#[derive(Debug, Default)]
+pub struct TcpBlackholeState {
+    accepted: AtomicU64,
+    active: AtomicU64,
+}
+
+impl TcpBlackholeState {
+    fn snapshot(&self) -> (u64, u64) {
+        (
+            self.accepted.load(Ordering::Relaxed),
+            self.active.load(Ordering::Relaxed),
+        )
+    }
+}
+
+struct TcpBlackholeConnectionGuard {
+    state: Arc<TcpBlackholeState>,
+}
+
+impl TcpBlackholeConnectionGuard {
+    fn new(state: Arc<TcpBlackholeState>) -> Self {
+        state.active.fetch_add(1, Ordering::Relaxed);
+        Self { state }
+    }
+}
+
+impl Drop for TcpBlackholeConnectionGuard {
+    fn drop(&mut self) {
+        self.state.active.fetch_sub(1, Ordering::Relaxed);
+    }
 }
 
 #[derive(Debug)]
@@ -612,6 +670,7 @@ impl WorkloadFixture {
                 Ok(Self {
                     vless_addr: Some(vless_addr),
                     vless_tls_cert_sha256: None,
+                    tcp_blackhole_state: None,
                     tasks: vec![task],
                     processes: Vec::new(),
                 })
@@ -622,6 +681,7 @@ impl WorkloadFixture {
                 Ok(Self {
                     vless_addr: Some(vless_addr),
                     vless_tls_cert_sha256: None,
+                    tcp_blackhole_state: None,
                     tasks: vec![task],
                     processes: Vec::new(),
                 })
@@ -632,6 +692,7 @@ impl WorkloadFixture {
                 Ok(Self {
                     vless_addr: Some(vless_addr),
                     vless_tls_cert_sha256: tls_cert_sha256,
+                    tcp_blackhole_state: None,
                     tasks: vec![task],
                     processes: Vec::new(),
                 })
@@ -642,8 +703,19 @@ impl WorkloadFixture {
                 Ok(Self {
                     vless_addr: Some(vless_addr),
                     vless_tls_cert_sha256: None,
+                    tcp_blackhole_state: None,
                     tasks: Vec::new(),
                     processes: vec![process],
+                })
+            }
+            WorkloadKind::TunRealityBlackhole => {
+                let (vless_addr, task, state) = spawn_tcp_blackhole_server().await?;
+                Ok(Self {
+                    vless_addr: Some(vless_addr),
+                    vless_tls_cert_sha256: None,
+                    tcp_blackhole_state: Some(state),
+                    tasks: vec![task],
+                    processes: Vec::new(),
                 })
             }
             WorkloadKind::Idle
@@ -653,7 +725,8 @@ impl WorkloadFixture {
             | WorkloadKind::MixedLongLived
             | WorkloadKind::UdpFreedom
             | WorkloadKind::TunUdpFreedom
-            | WorkloadKind::TunTcpFreedom => Ok(Self::default()),
+            | WorkloadKind::TunTcpFreedom
+            | WorkloadKind::TunTcpStaleFlows => Ok(Self::default()),
         }
     }
 }
@@ -1494,6 +1567,7 @@ pub async fn run_many_idle_flows_workload(
         bytes_received: 0,
         latencies_us,
         setup_samples,
+        ..WorkloadOutcome::default()
     })
 }
 
@@ -1700,6 +1774,63 @@ pub async fn run_tun_tcp_freedom_workload(
     tun_fd: RawFd,
     options: &BenchOptions,
 ) -> Result<WorkloadOutcome, BenchError> {
+    run_tun_tcp_workload(tun_fd, options, TunTcpFlowDisposition::Abort, false).await
+}
+
+#[cfg(unix)]
+pub async fn run_tun_tcp_stale_flows_workload(
+    tun_fd: RawFd,
+    options: &BenchOptions,
+) -> Result<WorkloadOutcome, BenchError> {
+    run_tun_tcp_workload(tun_fd, options, TunTcpFlowDisposition::SilentDrop, true).await
+}
+
+#[cfg(unix)]
+pub async fn run_tun_reality_blackhole_workload(
+    tun_fd: RawFd,
+    options: &BenchOptions,
+    blackhole_state: &TcpBlackholeState,
+) -> Result<WorkloadOutcome, BenchError> {
+    let target = SocketAddr::from((local_non_loopback_ipv4()?, 443));
+    let payload = vec![0x5a; options.payload_size];
+    let mut outcome = WorkloadOutcome::empty();
+
+    for connection_index in 0..options.connections {
+        let source_port = 49_152 + (connection_index % 10_000) as u16;
+        let mut client = TunTcpBenchmarkClient::new(source_port);
+        let setup_started = Instant::now();
+        client.connect(target)?;
+        pump_tun_tcp_until(tun_fd, &mut client, TunTcpBenchmarkClient::may_send).await?;
+        outcome
+            .latencies_us
+            .push(setup_started.elapsed().as_micros());
+
+        client.send_payload(&payload)?;
+        outcome.bytes_sent += payload.len() as u64;
+        pump_tun_tcp_for(tun_fd, &mut client, Duration::from_millis(5)).await?;
+    }
+
+    sleep(options.duration).await;
+    let (accepted, active) = blackhole_state.snapshot();
+    outcome.blackhole_connections_accepted = Some(accepted);
+    outcome.blackhole_connections_active = Some(active);
+    Ok(outcome)
+}
+
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TunTcpFlowDisposition {
+    Abort,
+    SilentDrop,
+}
+
+#[cfg(unix)]
+async fn run_tun_tcp_workload(
+    tun_fd: RawFd,
+    options: &BenchOptions,
+    disposition: TunTcpFlowDisposition,
+    hold_after_open: bool,
+) -> Result<WorkloadOutcome, BenchError> {
     let listener = TcpListener::bind((Ipv4Addr::UNSPECIFIED, 0))
         .await
         .map_err(|source| BenchError::Io {
@@ -1727,8 +1858,12 @@ pub async fn run_tun_tcp_freedom_workload(
     for connection_index in 0..options.connections {
         let source_port = 49_152 + (connection_index % 10_000) as u16;
         let connection_outcome =
-            run_tun_tcp_freedom_connection(tun_fd, echo_target, source_port, options).await?;
+            run_tun_tcp_freedom_connection(tun_fd, echo_target, source_port, options, disposition)
+                .await?;
         outcome.extend(connection_outcome);
+    }
+    if hold_after_open {
+        sleep(options.duration).await;
     }
     echo_task.abort();
 
@@ -1752,6 +1887,27 @@ pub async fn run_tun_tcp_freedom_workload(
 ) -> Result<WorkloadOutcome, BenchError> {
     Err(BenchError::InvalidArguments(
         "tun-tcp-freedom workload requires Unix fd support".to_owned(),
+    ))
+}
+
+#[cfg(not(unix))]
+pub async fn run_tun_tcp_stale_flows_workload(
+    _tun_fd: i32,
+    _options: &BenchOptions,
+) -> Result<WorkloadOutcome, BenchError> {
+    Err(BenchError::InvalidArguments(
+        "tun-tcp-stale-flows workload requires Unix fd support".to_owned(),
+    ))
+}
+
+#[cfg(not(unix))]
+pub async fn run_tun_reality_blackhole_workload(
+    _tun_fd: i32,
+    _options: &BenchOptions,
+    _blackhole_state: &TcpBlackholeState,
+) -> Result<WorkloadOutcome, BenchError> {
+    Err(BenchError::InvalidArguments(
+        "tun-reality-blackhole workload requires Unix fd support".to_owned(),
     ))
 }
 
@@ -1902,6 +2058,7 @@ async fn run_tcp_freedom_connection(
         bytes_received: received,
         latencies_us,
         setup_samples: Vec::new(),
+        ..WorkloadOutcome::default()
     })
 }
 
@@ -2108,6 +2265,7 @@ async fn run_udp_freedom_connection(
         bytes_received: received,
         latencies_us,
         setup_samples: Vec::new(),
+        ..WorkloadOutcome::default()
     })
 }
 
@@ -2159,6 +2317,7 @@ async fn run_tun_udp_freedom_connection(
         bytes_received: received,
         latencies_us,
         setup_samples: Vec::new(),
+        ..WorkloadOutcome::default()
     })
 }
 
@@ -2168,6 +2327,7 @@ async fn run_tun_tcp_freedom_connection(
     echo_addr: SocketAddr,
     source_port: u16,
     options: &BenchOptions,
+    disposition: TunTcpFlowDisposition,
 ) -> Result<WorkloadOutcome, BenchError> {
     let mut client = TunTcpBenchmarkClient::new(source_port);
     let setup_started = Instant::now();
@@ -2196,6 +2356,11 @@ async fn run_tun_tcp_freedom_connection(
         outcome.bytes_sent += payload.len() as u64;
         outcome.bytes_received += received.len() as u64;
         outcome.latencies_us.push(started.elapsed().as_micros());
+    }
+
+    if disposition == TunTcpFlowDisposition::Abort {
+        client.abort();
+        pump_tun_tcp_for(tun_fd, &mut client, Duration::from_millis(5)).await?;
     }
 
     Ok(outcome)
@@ -2706,11 +2871,34 @@ impl TunTcpBenchmarkClient {
         received
     }
 
+    fn abort(&mut self) {
+        self.sockets.get_mut::<smol_tcp::Socket>(self.tcp).abort();
+    }
+
+    fn accepts_packet(&self, packet: &[u8]) -> bool {
+        ipv4_tcp_destination_port(packet) == Some(self.source_port)
+    }
+
     fn poll(&mut self) {
         let _ = self
             .iface
             .poll(SmolInstant::now(), &mut self.device, &mut self.sockets);
     }
+}
+
+#[cfg(unix)]
+fn ipv4_tcp_destination_port(packet: &[u8]) -> Option<u16> {
+    if packet.len() < 20 || packet[0] >> 4 != 4 || packet[9] != TCP_PROTOCOL {
+        return None;
+    }
+    let header_len = usize::from(packet[0] & 0x0f) * 4;
+    if header_len < 20 || packet.len() < header_len + 4 {
+        return None;
+    }
+    Some(u16::from_be_bytes([
+        packet[header_len + 2],
+        packet[header_len + 3],
+    ]))
 }
 
 #[cfg(unix)]
@@ -2722,15 +2910,7 @@ async fn pump_tun_tcp_until(
     let deadline = Instant::now() + Duration::from_secs(5);
     let mut buffer = vec![0; 65_535 + DARWIN_UTUN_HEADER_LEN];
     loop {
-        client.poll();
-        while let Some(packet) = client.device.pop_outbound() {
-            write_tun_frame(tun_fd, &encode_darwin_utun_frame(&packet))?;
-        }
-        while let Some(len) = read_tun_frame(tun_fd, &mut buffer)? {
-            let packet = decode_darwin_utun_frame(&buffer[..len])?;
-            client.device.push_inbound(Bytes::copy_from_slice(packet));
-        }
-        client.poll();
+        pump_tun_tcp_once(tun_fd, client, &mut buffer)?;
 
         if is_done(client) {
             return Ok(());
@@ -2742,6 +2922,43 @@ async fn pump_tun_tcp_until(
         }
         sleep(Duration::from_millis(1)).await;
     }
+}
+
+#[cfg(unix)]
+async fn pump_tun_tcp_for(
+    tun_fd: RawFd,
+    client: &mut TunTcpBenchmarkClient,
+    duration: Duration,
+) -> Result<(), BenchError> {
+    let deadline = Instant::now() + duration;
+    let mut buffer = vec![0; 65_535 + DARWIN_UTUN_HEADER_LEN];
+    loop {
+        pump_tun_tcp_once(tun_fd, client, &mut buffer)?;
+        if Instant::now() >= deadline {
+            return Ok(());
+        }
+        sleep(Duration::from_millis(1)).await;
+    }
+}
+
+#[cfg(unix)]
+fn pump_tun_tcp_once(
+    tun_fd: RawFd,
+    client: &mut TunTcpBenchmarkClient,
+    buffer: &mut [u8],
+) -> Result<(), BenchError> {
+    client.poll();
+    while let Some(packet) = client.device.pop_outbound() {
+        write_tun_frame(tun_fd, &encode_darwin_utun_frame(&packet))?;
+    }
+    while let Some(len) = read_tun_frame(tun_fd, buffer)? {
+        let packet = decode_darwin_utun_frame(&buffer[..len])?;
+        if client.accepts_packet(packet) {
+            client.device.push_inbound(Bytes::copy_from_slice(packet));
+        }
+    }
+    client.poll();
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -2844,6 +3061,49 @@ impl SmolTxToken for TunTcpTxToken<'_> {
         self.outbound.push_back(Bytes::from(packet));
         result
     }
+}
+
+async fn spawn_tcp_blackhole_server(
+) -> Result<(SocketAddr, JoinHandle<()>, Arc<TcpBlackholeState>), BenchError> {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "binding TCP blackhole server".to_owned(),
+            source,
+        })?;
+    let addr = listener.local_addr().map_err(|source| BenchError::Io {
+        action: "reading TCP blackhole server address".to_owned(),
+        source,
+    })?;
+    let state = Arc::new(TcpBlackholeState::default());
+    let task_state = state.clone();
+    let task = tokio::spawn(async move {
+        let mut connections = JoinSet::new();
+        loop {
+            tokio::select! {
+                accepted = listener.accept() => {
+                    let Ok((mut stream, _peer)) = accepted else {
+                        break;
+                    };
+                    task_state.accepted.fetch_add(1, Ordering::Relaxed);
+                    let connection_state = task_state.clone();
+                    connections.spawn(async move {
+                        let _guard = TcpBlackholeConnectionGuard::new(connection_state);
+                        let mut buffer = [0; 4096];
+                        loop {
+                            match stream.read(&mut buffer).await {
+                                Ok(0) | Err(_) => break,
+                                Ok(_) => {}
+                            }
+                        }
+                    });
+                }
+                Some(_) = connections.join_next(), if !connections.is_empty() => {}
+            }
+        }
+    });
+
+    Ok((addr, task, state))
 }
 
 async fn spawn_fake_vless_udp_server(
@@ -3420,7 +3680,12 @@ pub fn xray_rust_config(port: u16, workload: WorkloadKind) -> String {
         WorkloadKind::RealityVisionXudp => {
             reality_vision_xudp_config(port, SocketAddr::from((Ipv4Addr::LOCALHOST, 443)))
         }
-        WorkloadKind::TunUdpFreedom | WorkloadKind::TunTcpFreedom => tun_freedom_config(),
+        WorkloadKind::TunUdpFreedom
+        | WorkloadKind::TunTcpFreedom
+        | WorkloadKind::TunTcpStaleFlows => tun_freedom_config(),
+        WorkloadKind::TunRealityBlackhole => {
+            tun_reality_blackhole_config(SocketAddr::from((Ipv4Addr::LOCALHOST, 443)))
+        }
         WorkloadKind::Idle
         | WorkloadKind::TcpFreedom
         | WorkloadKind::ManyIdleFlows
@@ -3510,7 +3775,17 @@ fn engine_config(
             })?;
             Ok(reality_vision_xudp_config(port, vless_addr))
         }
-        WorkloadKind::TunUdpFreedom | WorkloadKind::TunTcpFreedom => Ok(tun_freedom_config()),
+        WorkloadKind::TunRealityBlackhole => {
+            let vless_addr = fixture.vless_addr.ok_or_else(|| {
+                BenchError::InvalidArguments(
+                    "tun-reality-blackhole workload requires a TCP blackhole fixture".to_owned(),
+                )
+            })?;
+            Ok(tun_reality_blackhole_config(vless_addr))
+        }
+        WorkloadKind::TunUdpFreedom
+        | WorkloadKind::TunTcpFreedom
+        | WorkloadKind::TunTcpStaleFlows => Ok(tun_freedom_config()),
         WorkloadKind::Idle
         | WorkloadKind::TcpFreedom
         | WorkloadKind::ManyIdleFlows
@@ -3613,6 +3888,63 @@ fn tun_freedom_config() -> String {
   ]
 }"#
     .to_owned()
+}
+
+fn tun_reality_blackhole_config(vless_addr: SocketAddr) -> String {
+    format!(
+        r#"{{
+  "log": {{ "loglevel": "warning" }},
+  "policy": {{
+    "levels": {{
+      "0": {{ "handshake": 1, "connIdle": 300 }}
+    }}
+  }},
+  "inbounds": [
+    {{
+      "tag": "tun-in",
+      "protocol": "tun",
+      "listen": "127.0.0.1",
+      "port": 0,
+      "settings": {{ "name": "utun9", "MTU": 1500, "userLevel": 0 }}
+    }}
+  ],
+  "outbounds": [
+    {{
+      "tag": "proxy",
+      "protocol": "vless",
+      "settings": {{
+        "vnext": [
+          {{
+            "address": "{}",
+            "port": {},
+            "users": [
+              {{
+                "id": "{TEST_VLESS_UUID_STRING}",
+                "encryption": "none",
+                "flow": "xtls-rprx-vision",
+                "level": 0
+              }}
+            ]
+          }}
+        ]
+      }},
+      "streamSettings": {{
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {{
+          "serverName": "{REALITY_SERVER_NAME}",
+          "fingerprint": "chrome",
+          "publicKey": "{REALITY_PUBLIC_KEY}",
+          "shortId": "{REALITY_SHORT_ID_HEX}",
+          "spiderX": "/"
+        }}
+      }}
+    }}
+  ]
+}}"#,
+        vless_addr.ip(),
+        vless_addr.port()
+    )
 }
 
 fn freedom_config(port: u16, socks_udp: bool) -> String {
@@ -4712,6 +5044,7 @@ async fn run_reality_matrix_startup_case(
                     bytes_received: 0,
                     latencies_us: vec![elapsed.as_micros()],
                     setup_samples: Vec::new(),
+                    ..WorkloadOutcome::default()
                 },
             )
         }
@@ -5597,6 +5930,17 @@ async fn run_engine_once(
             WorkloadKind::TunTcpFreedom => {
                 run_tun_tcp_freedom_workload(engine.tun_fd()?, options).await
             }
+            WorkloadKind::TunTcpStaleFlows => {
+                run_tun_tcp_stale_flows_workload(engine.tun_fd()?, options).await
+            }
+            WorkloadKind::TunRealityBlackhole => {
+                let blackhole_state = fixture.tcp_blackhole_state.as_deref().ok_or_else(|| {
+                    BenchError::InvalidArguments(
+                        "tun-reality-blackhole workload is missing fixture state".to_owned(),
+                    )
+                })?;
+                run_tun_reality_blackhole_workload(engine.tun_fd()?, options, blackhole_state).await
+            }
             WorkloadKind::UdpVless => run_udp_vless_workload(engine.socks_addr, options).await,
             WorkloadKind::UdpXudp => run_udp_xudp_workload(engine.socks_addr, options).await,
             WorkloadKind::VisionXudp => run_vision_xudp_workload(engine.socks_addr, options).await,
@@ -5642,6 +5986,8 @@ async fn run_engine_once(
         latency_us,
         setup_us,
         samples: samples.len(),
+        blackhole_connections_accepted: workload_outcome.blackhole_connections_accepted,
+        blackhole_connections_active: workload_outcome.blackhole_connections_active,
     };
     write_samples_csv(&run_dir.join("samples.csv"), &samples)?;
     write_result_json(&run_dir.join("result.json"), &result)?;
@@ -5705,8 +6051,15 @@ fn print_result(result: &BenchResult) {
             )
         })
         .unwrap_or_default();
+    let blackhole = result
+        .blackhole_connections_accepted
+        .zip(result.blackhole_connections_active)
+        .map(|(accepted, active)| {
+            format!(" blackhole_connections[accepted/active]={accepted}/{active}")
+        })
+        .unwrap_or_default();
     println!(
-        "{} {} status={} peak_rss_kib={} cpu_millis={} bytes_sent={} bytes_received={} samples={}{}{}{}",
+        "{} {} status={} peak_rss_kib={} cpu_millis={} bytes_sent={} bytes_received={} samples={}{}{}{}{}",
         result.engine,
         result.workload,
         result.status,
@@ -5717,7 +6070,8 @@ fn print_result(result: &BenchResult) {
         result.samples,
         cpu_per_gib,
         latency,
-        setup
+        setup,
+        blackhole
     );
 }
 
@@ -6187,6 +6541,8 @@ mod tests {
             ("reconnect-burst", WorkloadKind::ReconnectBurst),
             ("mixed-long-lived", WorkloadKind::MixedLongLived),
             ("tun-tcp-freedom", WorkloadKind::TunTcpFreedom),
+            ("tun-tcp-stale-flows", WorkloadKind::TunTcpStaleFlows),
+            ("tun-reality-blackhole", WorkloadKind::TunRealityBlackhole),
         ] {
             let args = parse_cli_args(["xray-bench", "compare", "--workload", raw]).unwrap();
             let CliArgs::Compare(options) = args else {
@@ -6199,6 +6555,21 @@ mod tests {
     #[test]
     fn tun_tcp_freedom_uses_fd_backed_tun() {
         assert!(WorkloadKind::TunTcpFreedom.uses_tun_fd());
+        assert!(WorkloadKind::TunTcpStaleFlows.uses_tun_fd());
+        assert!(WorkloadKind::TunRealityBlackhole.uses_tun_fd());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn tun_tcp_packet_demux_uses_ipv4_tcp_destination_port() {
+        let mut packet = vec![0; 40];
+        packet[0] = 0x45;
+        packet[9] = TCP_PROTOCOL;
+        packet[22..24].copy_from_slice(&49_152_u16.to_be_bytes());
+
+        assert_eq!(ipv4_tcp_destination_port(&packet), Some(49_152));
+        packet[9] = UDP_PROTOCOL;
+        assert_eq!(ipv4_tcp_destination_port(&packet), None);
     }
 
     #[test]
@@ -6408,6 +6779,7 @@ mod tests {
             vless_tls_cert_sha256: Some(
                 "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff".to_owned(),
             ),
+            tcp_blackhole_state: None,
             tasks: Vec::new(),
             processes: Vec::new(),
         };
@@ -6502,6 +6874,42 @@ mod tests {
     }
 
     #[test]
+    fn tun_reality_blackhole_config_uses_tun_reality_and_short_handshake_policy() {
+        let fixture = WorkloadFixture {
+            vless_addr: Some(SocketAddr::from((Ipv4Addr::LOCALHOST, 19095))),
+            vless_tls_cert_sha256: None,
+            tcp_blackhole_state: None,
+            tasks: Vec::new(),
+            processes: Vec::new(),
+        };
+        let config = engine_config(
+            EngineKind::XrayRust,
+            0,
+            WorkloadKind::TunRealityBlackhole,
+            &fixture,
+        )
+        .unwrap();
+        let parsed = parse_xray_json(&config).unwrap();
+        let value = serde_json::from_str::<serde_json::Value>(&config).unwrap();
+
+        assert!(matches!(
+            parsed.config.inbounds[0].protocol,
+            InboundProtocol::Tun
+        ));
+        assert_eq!(value["policy"]["levels"]["0"]["handshake"], 1);
+        assert_eq!(value["outbounds"][0]["protocol"], "vless");
+        assert_eq!(
+            value["outbounds"][0]["settings"]["vnext"][0]["users"][0]["flow"],
+            "xtls-rprx-vision"
+        );
+        assert_eq!(
+            value["outbounds"][0]["streamSettings"]["security"],
+            "reality"
+        );
+        assert_eq!(value["outbounds"][0]["settings"]["vnext"][0]["port"], 19095);
+    }
+
+    #[test]
     fn sing_box_freedom_config_uses_sing_box_schema() {
         let fixture = WorkloadFixture::default();
         let config = sing_box_config(18086, WorkloadKind::ManyIdleFlows, &fixture).unwrap();
@@ -6520,6 +6928,7 @@ mod tests {
         let fixture = WorkloadFixture {
             vless_addr: Some(SocketAddr::from((Ipv4Addr::new(127, 0, 0, 1), 19094))),
             vless_tls_cert_sha256: None,
+            tcp_blackhole_state: None,
             tasks: Vec::new(),
             processes: Vec::new(),
         };
@@ -6918,6 +7327,8 @@ mod tests {
                 }),
                 setup_us: None,
                 samples: 2,
+                blackhole_connections_accepted: None,
+                blackhole_connections_active: None,
             },
             BenchResult {
                 engine: "xray-rust".to_owned(),
@@ -6937,6 +7348,8 @@ mod tests {
                 }),
                 setup_us: None,
                 samples: 2,
+                blackhole_connections_accepted: None,
+                blackhole_connections_active: None,
             },
             BenchResult {
                 engine: "xray-rust".to_owned(),
@@ -6956,6 +7369,8 @@ mod tests {
                 }),
                 setup_us: None,
                 samples: 2,
+                blackhole_connections_accepted: None,
+                blackhole_connections_active: None,
             },
         ];
 

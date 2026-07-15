@@ -281,7 +281,11 @@ impl Core {
             match inbound.protocol {
                 InboundProtocol::Socks | InboundProtocol::Http => {}
                 InboundProtocol::Tun => {
-                    tun_inbounds.push((inbound.tag.clone(), inbound.sniffing.clone()));
+                    tun_inbounds.push((
+                        inbound.tag.clone(),
+                        inbound.sniffing.clone(),
+                        policy::effective_policy_for_level(&self.config, inbound.user_level),
+                    ));
                     continue;
                 }
             }
@@ -349,10 +353,14 @@ impl Core {
             };
             tasks.push(tokio::spawn(tun::serve_tun_endpoint(
                 Arc::clone(&self.tun),
-                tun_inbounds.first().and_then(|(tag, _)| tag.clone()),
+                tun_inbounds.first().and_then(|(tag, _, _)| tag.clone()),
                 tun_inbounds
                     .first()
-                    .and_then(|(_, sniffing)| sniffing.clone()),
+                    .and_then(|(_, sniffing, _)| sniffing.clone()),
+                tun_inbounds
+                    .first()
+                    .map(|(_, _, policy)| *policy)
+                    .unwrap_or_default(),
                 Arc::clone(&config),
                 Arc::clone(&self.dns_resolver),
                 Arc::clone(&self.transport_dialer),

@@ -14,6 +14,8 @@ Supported workloads:
 - `udp-freedom`
 - `tun-udp-freedom`
 - `tun-tcp-freedom`
+- `tun-tcp-stale-flows`
+- `tun-reality-blackhole`
 - `udp-vless`
 - `udp-xudp`
 - `vision-xudp`
@@ -52,6 +54,8 @@ cargo run -p xray-bench -- run --engine xray-rust --workload mixed-long-lived --
 cargo run -p xray-bench -- run --engine xray-rust --workload udp-freedom --connections 1 --iterations 10 --payload-size 512
 cargo run -p xray-bench -- run --engine xray-rust --workload tun-udp-freedom --connections 1 --iterations 10 --payload-size 512
 cargo run -p xray-bench -- run --engine xray-rust --workload tun-tcp-freedom --connections 1 --iterations 10 --payload-size 512
+cargo run -p xray-bench -- run --engine xray-rust --workload tun-tcp-stale-flows --connections 500 --iterations 1 --duration-ms 5000 --payload-size 512
+cargo run -p xray-bench -- run --engine xray-rust --workload tun-reality-blackhole --connections 500 --duration-ms 5000 --payload-size 512
 cargo run -p xray-bench -- run --engine xray-rust --workload udp-vless --connections 1 --iterations 10 --payload-size 512
 cargo run -p xray-bench -- run --engine xray-rust --workload udp-xudp --connections 1 --iterations 10 --payload-size 512
 cargo run -p xray-bench -- run --engine xray-rust --workload vision-xudp --connections 1 --iterations 10 --payload-size 512
@@ -158,6 +162,8 @@ The TUN and fake VLESS/XUDP workloads remain comparable between `xray-rust` and 
 ```sh
 cargo run -p xray-bench -- compare --workload tun-udp-freedom --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload tun-tcp-freedom --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 100 --payload-size 512
+cargo run -p xray-bench -- compare --workload tun-tcp-stale-flows --xray-core-dir Xray-core --runs 5 --connections 500 --iterations 1 --duration-ms 5000 --payload-size 512
+cargo run -p xray-bench -- compare --workload tun-reality-blackhole --xray-core-dir Xray-core --runs 5 --connections 500 --duration-ms 5000 --payload-size 512
 cargo run -p xray-bench -- compare --workload udp-vless --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload udp-xudp --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload vision-xudp --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
@@ -184,6 +190,8 @@ cargo run -p xray-bench -- compare --workload udp-freedom --xray-core-dir ../../
 cargo run -p xray-bench -- compare --workload reality-vision-xudp --xray-core-dir ../../Xray-core --sing-box-bin /private/tmp/sing-box-bench/sing-box --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload tun-udp-freedom --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload tun-tcp-freedom --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 100 --payload-size 512
+cargo run -p xray-bench -- compare --workload tun-tcp-stale-flows --xray-core-dir ../../Xray-core --runs 5 --connections 500 --iterations 1 --duration-ms 5000 --payload-size 512
+cargo run -p xray-bench -- compare --workload tun-reality-blackhole --xray-core-dir ../../Xray-core --runs 5 --connections 500 --duration-ms 5000 --payload-size 512
 cargo run -p xray-bench -- compare --workload udp-vless --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload udp-xudp --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload vision-xudp --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
@@ -210,7 +218,9 @@ The first scoreboard is intentionally portable and comparable across Go and Rust
 `mixed-long-lived` keeps TCP and UDP SOCKS flows open together, paces `--iterations` across `--duration-ms`, and validates both echo paths. It is a local mobile-like foreground/background traffic mix.
 `udp-freedom` uses SOCKS5 UDP ASSOCIATE with the inbound configured as `{ "udp": true, "ip": "127.0.0.1" }`, then validates echoed UDP payloads through a local UDP target.
 `tun-udp-freedom` uses a Unix `socketpair` as an inherited fd-backed TUN device, sends Darwin utun-framed IPv4/UDP packets into a `tun` inbound, and validates echoed payloads from a local UDP server. It does not create a real system utun interface, install routes, or require root. To stay compatible with Xray-core's gVisor martian-packet filter, the UDP target is the host's local non-loopback IPv4 address rather than `127.0.0.1`.
-`tun-tcp-freedom` uses the same inherited fd-backed TUN path with a smoltcp TCP client on the benchmark side. It completes a TCP handshake through the TUN inbound, sends echo payloads, and validates the returned TCP stream data without installing host routes.
+`tun-tcp-freedom` uses the same inherited fd-backed TUN path with a smoltcp TCP client on the benchmark side. It completes a TCP handshake through the TUN inbound, sends echo payloads, validates the returned TCP stream data, and sends a final RST so each measured flow is released before the next one starts.
+`tun-tcp-stale-flows` uses the same path but deliberately drops each synthetic client without FIN or RST, then holds the engine for `--duration-ms`. It measures the RSS/CPU cost of TUN flows whose client disappeared before TCP teardown reached the tunnel.
+`tun-reality-blackhole` routes those synthetic TUN TCP flows through VLESS Reality Vision to a local TCP server that accepts connections but never sends a TLS ServerHello. Its generated policy sets `handshake` to one second, while the workload holds the process for `--duration-ms`. Compare it with `tun-tcp-stale-flows` to separate userspace TCP flow memory from pending Reality/TLS-open memory and to check whether each engine enforces the configured handshake deadline. For xray-rust, a hold interval longer than the configured handshake must report zero active blackhole connections. The CLI and `result.json` report blackhole connections as accepted/active after the hold interval, so socket cleanup is observable even when an allocator keeps process RSS high. macOS runs use the desktop TUN profile; Apple mobile builds additionally cap active TCP flows and concurrent pending opens according to their mobile runtime profile.
 `udp-vless` uses the same SOCKS5 UDP client path, but routes through a local fake VLESS UDP server over TCP before validating echoed UDP payloads. It targets UDP/53 to keep the VLESS UDP framing length-prefixed.
 `udp-xudp` targets a non-DNS UDP port and validates XUDP/Mux frames through the local fake VLESS server.
 `vision-xudp` uses VLESS over local TLS with `xtls-rprx-vision` and XUDP/Mux

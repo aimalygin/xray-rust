@@ -92,7 +92,7 @@ build_target() {
   local target="$1"
   if use_build_std_for_target "$target"; then
     "$CARGO_BIN" "+$TVOS_RUST_TOOLCHAIN" build \
-      -Z build-std=std,panic_abort \
+      -Z build-std=std,panic_unwind \
       --package xray-ffi \
       --target "$target" \
       $(cargo_profile_args)

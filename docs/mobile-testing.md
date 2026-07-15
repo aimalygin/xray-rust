@@ -81,7 +81,7 @@ that includes the iOS, tvOS, and macOS deployment target values. This prevents
 stale Rust object files built for a higher minimum OS from being reused after
 lowering deployment targets.
 
-The current stable Rust toolchain exposes tvOS target specs but does not ship prebuilt tvOS std components through `rustup target add`, so the script uses nightly `-Z build-std=std,panic_abort` for tvOS when needed.
+The current stable Rust toolchain exposes tvOS target specs but does not ship prebuilt tvOS std components through `rustup target add`, so the script uses nightly `-Z build-std=std,panic_unwind` for tvOS when needed. Release artifacts intentionally keep unwinding enabled so the C ABI panic boundary can convert synchronous Rust panics into `XrayStatus::Panic` instead of terminating the Network Extension process.
 
 ## Apple Client Skeleton
 

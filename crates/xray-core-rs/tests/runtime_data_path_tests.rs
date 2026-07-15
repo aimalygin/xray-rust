@@ -1,9 +1,13 @@
 use std::collections::{BTreeMap, VecDeque};
+use std::future::pending;
 use std::io::{Cursor, ErrorKind};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::Path;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 use std::task::{Context, Poll};
 
 use aes::cipher::{BlockEncrypt, KeyInit};
@@ -45,7 +49,7 @@ use xray_config::{
 use xray_core_rs::{
     select_tcp_outbound_for_session, select_tcp_outbound_for_session_with_resolver,
     select_vless_tcp_outbound, Core, CoreError, RuntimeLogConfig, RuntimeLogger, TcpOutbound,
-    TunRuntimeOptions,
+    TunRuntimeOptions, TunRuntimeProfile,
 };
 use xray_proxy::inbound::{encode_socks5_udp_datagram, parse_socks5_udp_datagram};
 use xray_proxy::vless::{
@@ -57,7 +61,7 @@ use xray_transport::{
     BoxedTransportStream, DnsResolver, RealityClientConfig, RealityTlsEngine, TlsConnector,
     TransportDialer, TransportError, TransportStream,
 };
-use xray_tun::{TunEndpoint, TunStats};
+use xray_tun::{TunEndpoint, TunError, TunStats};
 
 const ICMPV4_PROTOCOL: u8 = 1;
 const ICMPV6_PROTOCOL: u8 = 58;
@@ -155,6 +159,87 @@ impl DnsResolver for StaticDnsResolver {
         } else {
             Err(TransportError::NoResolvedAddress(domain.to_owned(), port))
         }
+    }
+}
+
+#[derive(Debug, Default)]
+struct PendingRealityOpenState {
+    started: AtomicUsize,
+    active: AtomicUsize,
+}
+
+impl PendingRealityOpenState {
+    fn started(&self) -> usize {
+        self.started.load(Ordering::SeqCst)
+    }
+
+    fn active(&self) -> usize {
+        self.active.load(Ordering::SeqCst)
+    }
+}
+
+#[derive(Debug, Clone)]
+struct PendingRealityEngine {
+    state: Arc<PendingRealityOpenState>,
+}
+
+struct PendingRealityOpenGuard {
+    state: Arc<PendingRealityOpenState>,
+}
+
+impl Drop for PendingRealityOpenGuard {
+    fn drop(&mut self) {
+        self.state.active.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+#[async_trait]
+impl RealityTlsEngine for PendingRealityEngine {
+    async fn connect(
+        &self,
+        _config: &RealityClientConfig,
+        _target: &Target,
+    ) -> Result<BoxedTransportStream, TransportError> {
+        self.state.active.fetch_add(1, Ordering::SeqCst);
+        self.state.started.fetch_add(1, Ordering::SeqCst);
+        let _guard = PendingRealityOpenGuard {
+            state: Arc::clone(&self.state),
+        };
+        pending::<Result<BoxedTransportStream, TransportError>>().await
+    }
+}
+
+#[derive(Debug, Clone)]
+struct FailingRealityEngine {
+    attempts: Arc<AtomicUsize>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PanickingRealityEngine;
+
+#[async_trait]
+impl RealityTlsEngine for PanickingRealityEngine {
+    async fn connect(
+        &self,
+        _config: &RealityClientConfig,
+        _target: &Target,
+    ) -> Result<BoxedTransportStream, TransportError> {
+        panic!("injected Reality engine panic");
+    }
+}
+
+#[async_trait]
+impl RealityTlsEngine for FailingRealityEngine {
+    async fn connect(
+        &self,
+        _config: &RealityClientConfig,
+        _target: &Target,
+    ) -> Result<BoxedTransportStream, TransportError> {
+        self.attempts.fetch_add(1, Ordering::SeqCst);
+        Err(TransportError::Tls(std::io::Error::new(
+            ErrorKind::ConnectionReset,
+            "injected Reality handshake failure",
+        )))
     }
 }
 
@@ -1353,6 +1438,66 @@ async fn tun_tcp_upload_backpressures_instead_of_aborting_when_remote_write_stal
 }
 
 #[tokio::test]
+async fn tun_reality_blackhole_respects_policy_handshake_timeout() {
+    timeout(
+        Duration::from_secs(4),
+        run_tun_reality_blackhole_handshake_timeout_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn tun_reality_blackhole_pending_opens_are_cancelled_on_core_stop() {
+    timeout(
+        Duration::from_secs(3),
+        run_tun_reality_blackhole_stop_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn tun_reality_blackhole_bounds_pending_opens_for_low_memory_profile() {
+    timeout(
+        Duration::from_secs(3),
+        run_tun_reality_pending_open_budget_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn tun_reality_blackhole_keeps_upload_in_tcp_window_until_remote_open() {
+    timeout(
+        Duration::from_secs(3),
+        run_tun_reality_pre_open_upload_backpressure_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn tun_reality_open_error_burst_keeps_tun_runtime_available() {
+    timeout(
+        Duration::from_secs(3),
+        run_tun_reality_open_error_burst_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn tun_reality_bridge_panic_isolated_and_logged_without_stopping_runtime() {
+    timeout(
+        Duration::from_secs(3),
+        run_tun_reality_bridge_panic_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
 async fn tun_tcp_client_uses_inbound_tag_routing_rule_to_reach_freedom_outbound() {
     timeout(
         Duration::from_secs(2),
@@ -1374,6 +1519,16 @@ async fn tun_replies_to_ipv6_icmp_echo_request() {
     timeout(Duration::from_secs(2), run_tun_icmpv6_echo_scenario())
         .await
         .unwrap();
+}
+
+#[tokio::test]
+async fn tun_malformed_packet_storm_keeps_runtime_available() {
+    timeout(
+        Duration::from_secs(3),
+        run_tun_malformed_packet_storm_scenario(),
+    )
+    .await
+    .unwrap();
 }
 
 #[tokio::test]
@@ -1445,6 +1600,16 @@ async fn tun_regular_vision_udp443_is_rejected_with_icmp() {
     timeout(
         Duration::from_secs(2),
         run_tun_regular_vision_udp443_rejection_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn tun_regular_vision_udp443_storm_releases_flows_with_logging_on_and_off() {
+    timeout(
+        Duration::from_secs(8),
+        run_tun_regular_vision_udp443_rejection_storm_scenario(),
     )
     .await
     .unwrap();
@@ -2103,6 +2268,274 @@ async fn run_tun_tcp_upload_backpressure_scenario() {
     core.stop().await.unwrap();
 }
 
+const TUN_REALITY_BLACKHOLE_FLOW_COUNT: usize = 32;
+
+async fn start_tun_reality_blackhole(
+    handshake_seconds: Option<u32>,
+) -> (Core, TunTcpMultiClient, Arc<PendingRealityOpenState>) {
+    let state = Arc::new(PendingRealityOpenState::default());
+    let (client_config, _) = tls_test_configs();
+    let dialer =
+        TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config))
+            .with_reality_engine(Arc::new(PendingRealityEngine {
+                state: Arc::clone(&state),
+            }));
+    let mut config = runtime_tun_config_with_reality_vision_vless_server(443);
+    if let Some(handshake) = handshake_seconds {
+        config.policy = PolicyConfig {
+            levels: BTreeMap::from([(
+                0,
+                PolicyLevelConfig {
+                    handshake: Some(handshake),
+                    ..Default::default()
+                },
+            )]),
+            system: Default::default(),
+        };
+    }
+    let mut core =
+        Core::with_runtime_dependencies(config, Arc::new(EmptyDnsResolver), Arc::new(dialer))
+            .unwrap();
+    core.start().await.unwrap();
+
+    let mut client = TunTcpMultiClient::new(TUN_REALITY_BLACKHOLE_FLOW_COUNT);
+    client.connect_all(SocketAddr::new(
+        IpAddr::V4(Ipv4Addr::new(203, 0, 113, 8)),
+        443,
+    ));
+    pump_multi_tun_until(&mut client, core.tun(), |client| {
+        client.all_may_send() && state.started() == TUN_REALITY_BLACKHOLE_FLOW_COUNT
+    })
+    .await;
+
+    assert_eq!(state.active(), TUN_REALITY_BLACKHOLE_FLOW_COUNT);
+    let stats = core.tun().stats().await;
+    assert_eq!(
+        stats.active_tcp_flows as usize,
+        TUN_REALITY_BLACKHOLE_FLOW_COUNT
+    );
+
+    (core, client, state)
+}
+
+async fn run_tun_reality_blackhole_handshake_timeout_scenario() {
+    let (mut core, _client, state) = start_tun_reality_blackhole(Some(1)).await;
+
+    sleep(Duration::from_millis(1_100)).await;
+    let active_after_timeout = state.active();
+    let stats = core.tun().stats().await;
+    core.stop().await.unwrap();
+
+    assert_eq!(
+        active_after_timeout, 0,
+        "TUN Reality opens ignored policy.levels[0].handshake"
+    );
+    assert!(
+        stats.tcp_open_errors >= TUN_REALITY_BLACKHOLE_FLOW_COUNT as u64,
+        "timed-out TUN opens were not recorded as errors: {stats:?}"
+    );
+}
+
+async fn run_tun_reality_blackhole_stop_scenario() {
+    let (mut core, _client, state) = start_tun_reality_blackhole(None).await;
+
+    core.stop().await.unwrap();
+    sleep(Duration::from_millis(100)).await;
+
+    assert_eq!(
+        state.active(),
+        0,
+        "Core::stop left detached TUN Reality open tasks alive"
+    );
+}
+
+async fn run_tun_reality_pending_open_budget_scenario() {
+    const FLOW_COUNT: usize = 64;
+    const LOW_MEMORY_PENDING_OPEN_LIMIT: usize = 32;
+
+    let state = Arc::new(PendingRealityOpenState::default());
+    let (client_config, _) = tls_test_configs();
+    let dialer =
+        TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config))
+            .with_reality_engine(Arc::new(PendingRealityEngine {
+                state: Arc::clone(&state),
+            }));
+    let mut core = Core::with_runtime_dependencies_and_tun_options(
+        runtime_tun_config_with_reality_vision_vless_server(443),
+        Arc::new(EmptyDnsResolver),
+        Arc::new(dialer),
+        TunRuntimeOptions::with_profile(TunRuntimeProfile::LowMemory),
+    )
+    .unwrap();
+    core.start().await.unwrap();
+
+    let mut client = TunTcpMultiClient::new(FLOW_COUNT);
+    client.connect_targets(|index| {
+        SocketAddr::new(
+            IpAddr::V4(Ipv4Addr::new(203, 0, 113, 8)),
+            10_000 + u16::try_from(index).unwrap(),
+        )
+    });
+    pump_multi_tun_until(&mut client, core.tun(), |_| {
+        state.started() == LOW_MEMORY_PENDING_OPEN_LIMIT
+    })
+    .await;
+    sleep(Duration::from_millis(100)).await;
+
+    let stats = core.tun().stats().await;
+    assert_eq!(state.started(), LOW_MEMORY_PENDING_OPEN_LIMIT);
+    assert_eq!(state.active(), LOW_MEMORY_PENDING_OPEN_LIMIT);
+    assert_eq!(
+        stats.active_tcp_flows as usize,
+        LOW_MEMORY_PENDING_OPEN_LIMIT
+    );
+    assert!(stats.tcp_open_errors >= (FLOW_COUNT - LOW_MEMORY_PENDING_OPEN_LIMIT) as u64);
+
+    core.stop().await.unwrap();
+    sleep(Duration::from_millis(50)).await;
+    assert_eq!(state.active(), 0);
+}
+
+async fn run_tun_reality_pre_open_upload_backpressure_scenario() {
+    let (mut core, mut client, state) = start_tun_reality_blackhole(None).await;
+    let payload = vec![0x5a; 8 * 1024];
+    for index in 0..TUN_REALITY_BLACKHOLE_FLOW_COUNT {
+        client.send_payload(index, &payload);
+    }
+    for _ in 0..25 {
+        pump_multi_tun_once(&mut client, core.tun()).await;
+    }
+
+    let stats = core.tun().stats().await;
+    assert_eq!(state.active(), TUN_REALITY_BLACKHOLE_FLOW_COUNT);
+    assert_eq!(stats.tcp_stack_to_remote_bytes, 0);
+    assert_eq!(stats.tcp_pending_upload_bytes, 0);
+
+    core.stop().await.unwrap();
+}
+
+async fn run_tun_reality_open_error_burst_scenario() {
+    const FLOW_COUNT: usize = 128;
+
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let (client_config, _) = tls_test_configs();
+    let dialer =
+        TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config))
+            .with_reality_engine(Arc::new(FailingRealityEngine {
+                attempts: Arc::clone(&attempts),
+            }));
+    let config = runtime_tun_config_with_reality_vision_vless_server(443);
+    let mut core =
+        Core::with_runtime_dependencies(config, Arc::new(EmptyDnsResolver), Arc::new(dialer))
+            .unwrap();
+    core.start().await.unwrap();
+
+    let mut client = TunTcpMultiClient::new(FLOW_COUNT);
+    client.connect_all(SocketAddr::new(
+        IpAddr::V4(Ipv4Addr::new(203, 0, 113, 8)),
+        443,
+    ));
+    pump_multi_tun_until(&mut client, core.tun(), |_| {
+        attempts.load(Ordering::SeqCst) == FLOW_COUNT
+    })
+    .await;
+
+    let deadline = TokioInstant::now() + Duration::from_secs(1);
+    let stats = loop {
+        let stats = core.tun().stats().await;
+        if stats.tcp_open_errors >= FLOW_COUNT as u64 {
+            break stats;
+        }
+        assert!(
+            TokioInstant::now() < deadline,
+            "timed out waiting for injected Reality failures: {stats:?}"
+        );
+        sleep(Duration::from_millis(5)).await;
+    };
+    assert_eq!(stats.tcp_open_events, 0);
+
+    let request = ipv4_icmp_echo_request(
+        Ipv4Addr::new(10, 10, 0, 2),
+        Ipv4Addr::new(10, 10, 0, 1),
+        0x1301,
+        8,
+        b"alive after Reality failures",
+    );
+    core.tun().push_inbound(Bytes::from(request)).await.unwrap();
+    let reply = poll_tun_outbound_until(core.tun(), is_ipv4_icmp_echo_reply).await;
+    assert_ipv4_icmp_echo_reply(
+        &reply,
+        Ipv4Addr::new(10, 10, 0, 1),
+        Ipv4Addr::new(10, 10, 0, 2),
+        0x1301,
+        8,
+        b"alive after Reality failures",
+    );
+
+    core.stop().await.unwrap();
+}
+
+async fn run_tun_reality_bridge_panic_scenario() {
+    let log_dir = create_runtime_log_temp_dir("xray-rust-tun-bridge-panic");
+    let (client_config, _) = tls_test_configs();
+    let dialer =
+        TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config))
+            .with_reality_engine(Arc::new(PanickingRealityEngine));
+    let mut core = Core::with_runtime_dependencies(
+        runtime_tun_config_with_reality_vision_vless_server(443),
+        Arc::new(EmptyDnsResolver),
+        Arc::new(dialer),
+    )
+    .unwrap();
+    core.set_runtime_logger(
+        RuntimeLogger::new(RuntimeLogConfig::directory(&log_dir.path)).unwrap(),
+    );
+    core.start().await.unwrap();
+
+    let mut client = TunTcpClient::new();
+    client.connect(SocketAddr::new(
+        IpAddr::V4(Ipv4Addr::new(203, 0, 113, 8)),
+        443,
+    ));
+
+    let deadline = TokioInstant::now() + Duration::from_secs(1);
+    loop {
+        pump_tun_once(&mut client, core.tun()).await;
+        let log = std::fs::read_to_string(log_dir.path.join("xray-error.log")).unwrap();
+        let stats = core.tun().stats().await;
+        if log.contains("Debug tunBridgeTask failed")
+            && log.contains("injected Reality engine panic")
+            && stats.active_tcp_flows == 0
+        {
+            break;
+        }
+        assert!(
+            TokioInstant::now() < deadline,
+            "timed out waiting for TUN bridge panic diagnostic"
+        );
+    }
+
+    let request = ipv4_icmp_echo_request(
+        Ipv4Addr::new(10, 10, 0, 2),
+        Ipv4Addr::new(10, 10, 0, 1),
+        0x1302,
+        9,
+        b"alive after bridge panic",
+    );
+    core.tun().push_inbound(Bytes::from(request)).await.unwrap();
+    let reply = poll_tun_outbound_until(core.tun(), is_ipv4_icmp_echo_reply).await;
+    assert_ipv4_icmp_echo_reply(
+        &reply,
+        Ipv4Addr::new(10, 10, 0, 1),
+        Ipv4Addr::new(10, 10, 0, 2),
+        0x1302,
+        9,
+        b"alive after bridge panic",
+    );
+
+    core.stop().await.unwrap();
+}
+
 async fn run_tun_tcp_routed_freedom_echo_scenario() {
     let unused_proxy_port = allocate_unused_loopback_port();
     let (echo_addr, echo_handle) = spawn_echo_server().await;
@@ -2168,6 +2601,46 @@ async fn run_tun_icmpv6_echo_scenario() {
 
     let reply = poll_tun_outbound_until(core.tun(), is_ipv6_icmp_echo_reply).await;
     assert_ipv6_icmp_echo_reply(&reply, destination, source, 0x2201, 9, b"mobile ping v6");
+    core.stop().await.unwrap();
+}
+
+async fn run_tun_malformed_packet_storm_scenario() {
+    const PACKET_COUNT: usize = 4096;
+
+    let mut core = Core::new(runtime_tun_config_with_freedom_outbound()).unwrap();
+    core.start().await.unwrap();
+
+    for index in 0..PACKET_COUNT {
+        let packet = malformed_tun_packet(index);
+        loop {
+            match core.tun().push_inbound(packet.clone()).await {
+                Ok(()) => break,
+                Err(TunError::QueueFull) => sleep(Duration::from_millis(1)).await,
+                Err(error) => panic!("failed to enqueue malformed TUN packet: {error}"),
+            }
+        }
+    }
+
+    let request = ipv4_icmp_echo_request(
+        Ipv4Addr::new(10, 10, 0, 2),
+        Ipv4Addr::new(10, 10, 0, 1),
+        0x1401,
+        9,
+        b"alive after malformed packets",
+    );
+    core.tun().push_inbound(Bytes::from(request)).await.unwrap();
+    let reply = poll_tun_outbound_until(core.tun(), is_ipv4_icmp_echo_reply).await;
+    assert_ipv4_icmp_echo_reply(
+        &reply,
+        Ipv4Addr::new(10, 10, 0, 1),
+        Ipv4Addr::new(10, 10, 0, 2),
+        0x1401,
+        9,
+        b"alive after malformed packets",
+    );
+
+    let stats = core.tun().stats().await;
+    assert!(stats.inbound_packets >= (PACKET_COUNT + 1) as u64);
     core.stop().await.unwrap();
 }
 
@@ -2580,6 +3053,88 @@ async fn run_tun_regular_vision_udp443_rejection_scenario() {
     assert!(stats.udp_vision_udp443_rejections >= 1);
     assert_eq!(stats.udp_remote_open_events, 0);
     core.stop().await.unwrap();
+}
+
+async fn run_tun_regular_vision_udp443_rejection_storm_scenario() {
+    const FLOW_COUNT: usize = 256;
+
+    for logging_enabled in [false, true] {
+        let (client_config, _server_config) = tls_test_configs();
+        let vless_addr = SocketAddr::new(
+            IpAddr::V4(Ipv4Addr::LOCALHOST),
+            allocate_unused_loopback_port(),
+        );
+        let resolver = StaticDnsResolver {
+            domain: "vless.test",
+            addr: vless_addr,
+        };
+        let config = runtime_tun_config_with_tls_vision_vless_domain_server(
+            "vless.test",
+            vless_addr.port(),
+            "vless.test",
+        );
+        let dialer =
+            TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config));
+        let mut core = Core::with_runtime_dependencies_and_tun_options(
+            config,
+            Arc::new(resolver),
+            Arc::new(dialer),
+            TunRuntimeOptions::default(),
+        )
+        .unwrap();
+        let log_dir =
+            logging_enabled.then(|| create_runtime_log_temp_dir("xray-rust-udp443-storm"));
+        if let Some(log_dir) = &log_dir {
+            core.set_runtime_logger(
+                RuntimeLogger::new(RuntimeLogConfig::directory(&log_dir.path)).unwrap(),
+            );
+        }
+        core.start().await.unwrap();
+
+        let started = TokioInstant::now();
+        let client_addr = Ipv4Addr::new(10, 10, 0, 2);
+        for index in 0..FLOW_COUNT {
+            let source_port = 40_000 + u16::try_from(index).unwrap();
+            let request = ipv4_udp_packet(
+                client_addr,
+                source_port,
+                Ipv4Addr::new(203, 0, 113, 9),
+                443,
+                b"instagram quic probe",
+            );
+            core.tun().push_inbound(Bytes::from(request)).await.unwrap();
+        }
+
+        let deadline = TokioInstant::now() + Duration::from_secs(3);
+        let stats = loop {
+            while core.tun().try_poll_outbound().await.unwrap().is_some() {}
+            let stats = core.tun().stats().await;
+            if stats.udp_vision_udp443_rejections >= FLOW_COUNT as u64
+                && stats.active_udp_flows == 0
+            {
+                break stats;
+            }
+            assert!(
+                TokioInstant::now() < deadline,
+                "timed out draining UDP/443 storm with logging={logging_enabled}: {stats:?}"
+            );
+            sleep(Duration::from_millis(5)).await;
+        };
+
+        assert_eq!(stats.udp_vision_udp443_rejections, FLOW_COUNT as u64);
+        assert_eq!(stats.active_udp_flows, 0);
+        assert_eq!(stats.udp_remote_open_events, 0);
+        core.stop().await.unwrap();
+
+        if let Some(log_dir) = &log_dir {
+            let error_log = std::fs::read_to_string(log_dir.path.join("xray-error.log")).unwrap();
+            assert!(error_log.contains("Debug udpVisionUDP443Rejected"));
+        }
+        eprintln!(
+            "UDP/443 storm logging={logging_enabled} flows={FLOW_COUNT} elapsed_ms={}",
+            started.elapsed().as_millis()
+        );
+    }
 }
 
 async fn run_socks_to_routed_freedom_echo_scenario() {
@@ -3050,11 +3605,15 @@ impl TunTcpMultiClient {
     }
 
     fn connect_all(&mut self, target: SocketAddr) {
-        let SocketAddr::V4(target) = target else {
-            panic!("TUN TCP test client currently covers IPv4 targets only");
-        };
-        let target_endpoint = (*target.ip(), target.port());
+        self.connect_targets(|_| target);
+    }
+
+    fn connect_targets(&mut self, mut target_for_index: impl FnMut(usize) -> SocketAddr) {
         for (index, handle) in self.tcp.iter().copied().enumerate() {
+            let SocketAddr::V4(target) = target_for_index(index) else {
+                panic!("TUN TCP test client currently covers IPv4 targets only");
+            };
+            let target_endpoint = (*target.ip(), target.port());
             let source_port = 49152 + u16::try_from(index).unwrap();
             self.sockets
                 .get_mut::<smol_tcp::Socket>(handle)
@@ -3171,6 +3730,18 @@ async fn pump_multi_tun_until(
     }
 }
 
+async fn pump_multi_tun_once(client: &mut TunTcpMultiClient, tun: &TunEndpoint) {
+    client.poll();
+    while let Some(packet) = client.device.pop_outbound() {
+        tun.push_inbound(packet).await.unwrap();
+    }
+    while let Some(packet) = tun.try_poll_outbound().await.unwrap() {
+        client.device.push_inbound(packet);
+    }
+    client.poll();
+    sleep(Duration::from_millis(1)).await;
+}
+
 async fn pump_tun_once(client: &mut TunTcpClient, tun: &TunEndpoint) {
     client.poll();
     while let Some(packet) = client.device.pop_outbound() {
@@ -3201,6 +3772,57 @@ async fn poll_tun_outbound_until(
         );
         sleep(Duration::from_millis(5)).await;
     }
+}
+
+fn malformed_tun_packet(index: usize) -> Bytes {
+    let len = index % 97;
+    let mut packet = vec![0; len];
+    let mut state = (index as u64)
+        .wrapping_mul(6_364_136_223_846_793_005)
+        .wrapping_add(1_442_695_040_888_963_407);
+    for byte in &mut packet {
+        state ^= state >> 12;
+        state ^= state << 25;
+        state ^= state >> 27;
+        *byte = state.wrapping_mul(2_685_821_657_736_338_717) as u8;
+    }
+
+    match index % 4 {
+        0 => {
+            if !packet.is_empty() {
+                packet[0] = 0x45;
+            }
+            if packet.len() > 9 {
+                packet[9] = UDP_PROTOCOL;
+            }
+        }
+        1 => {
+            if !packet.is_empty() {
+                packet[0] = 0x60;
+            }
+            if packet.len() > 6 {
+                packet[6] = UDP_PROTOCOL;
+            }
+        }
+        2 => {
+            if !packet.is_empty() {
+                packet[0] = 0x45;
+            }
+            if packet.len() > 9 {
+                packet[9] = 6;
+            }
+            if packet.len() > 33 {
+                packet[33] = 0;
+            }
+        }
+        _ => {
+            if !packet.is_empty() {
+                packet[0] &= 0x0f;
+            }
+        }
+    }
+
+    Bytes::from(packet)
 }
 
 fn ipv4_icmp_echo_request(

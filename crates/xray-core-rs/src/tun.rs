@@ -12,7 +12,8 @@ use smoltcp::time::Instant;
 use smoltcp::wire::{HardwareAddress, IpAddress, IpEndpoint};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::UdpSocket;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{mpsc, watch, OwnedSemaphorePermit, Semaphore};
+use tokio::task::JoinSet;
 use tokio::time::{sleep, Duration};
 use xray_config::{CoreConfig, DnsFakeIpConfig, InboundSniffingConfig};
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
@@ -27,9 +28,10 @@ use crate::outbound::{
     open_tcp_stream_with_resolver_and_dialer,
     open_vless_udp_stream_with_resolver_dialer_and_options,
     select_tcp_outbound_for_session_with_tag_and_resolver,
-    select_udp_outbound_for_session_with_resolver, UdpOutbound, VlessTcpOutbound, VlessUdpFraming,
-    VlessUdpOpenOptions,
+    select_udp_outbound_for_session_with_resolver, TcpOutbound, UdpOutbound, VlessTcpOutbound,
+    VlessUdpFraming, VlessUdpOpenOptions,
 };
+use crate::policy::{effective_policy_for_level, EffectivePolicy};
 use crate::{RuntimeLogger, TunRuntimeOptions, TunRuntimeProfile};
 use xray_proxy::vless::{
     encode_udp_packet, encode_xudp_keep_packet, encode_xudp_new_packet, read_udp_packet,
@@ -116,8 +118,15 @@ struct UdpFlowBudgetPolicy {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TcpFlowBudgetPolicy {
+    max_active_flows: usize,
+    max_pending_opens: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct FlowBudgetPolicy {
     tcp_remote: TcpRemoteBufferPolicy,
+    tcp: TcpFlowBudgetPolicy,
     udp: UdpFlowBudgetPolicy,
 }
 
@@ -136,6 +145,12 @@ struct TunRuntimePolicy {
 
 const MOBILE_FLOW_BUDGET_POLICY: FlowBudgetPolicy = FlowBudgetPolicy {
     tcp_remote: MOBILE_TCP_REMOTE_BUFFER_POLICY,
+    tcp: TcpFlowBudgetPolicy {
+        // Every smoltcp TCP flow owns two fixed 32 KiB buffers. Pending opens
+        // also retain TLS state, so bound both dimensions independently.
+        max_active_flows: 256,
+        max_pending_opens: 64,
+    },
     udp: UdpFlowBudgetPolicy {
         // Speedtests and DNS-heavy bursts easily exceed 256 concurrent UDP
         // flows; dropping fresh flows shows up as failed probes.
@@ -145,6 +160,10 @@ const MOBILE_FLOW_BUDGET_POLICY: FlowBudgetPolicy = FlowBudgetPolicy {
 
 const MOBILE_PLUS_FLOW_BUDGET_POLICY: FlowBudgetPolicy = FlowBudgetPolicy {
     tcp_remote: MOBILE_PLUS_TCP_REMOTE_BUFFER_POLICY,
+    tcp: TcpFlowBudgetPolicy {
+        max_active_flows: 384,
+        max_pending_opens: 96,
+    },
     udp: UdpFlowBudgetPolicy {
         max_active_flows: 512,
     },
@@ -152,6 +171,10 @@ const MOBILE_PLUS_FLOW_BUDGET_POLICY: FlowBudgetPolicy = FlowBudgetPolicy {
 
 const DESKTOP_FLOW_BUDGET_POLICY: FlowBudgetPolicy = FlowBudgetPolicy {
     tcp_remote: DESKTOP_TCP_REMOTE_BUFFER_POLICY,
+    tcp: TcpFlowBudgetPolicy {
+        max_active_flows: 2048,
+        max_pending_opens: 512,
+    },
     udp: UdpFlowBudgetPolicy {
         max_active_flows: 1024,
     },
@@ -165,6 +188,10 @@ const LOW_MEMORY_FLOW_BUDGET_POLICY: FlowBudgetPolicy = FlowBudgetPolicy {
         pressure_release_total_bytes: 8 * 1024 * 1024,
         hard_total_bytes: 20 * 1024 * 1024,
     },
+    tcp: TcpFlowBudgetPolicy {
+        max_active_flows: 128,
+        max_pending_opens: 32,
+    },
     udp: UdpFlowBudgetPolicy {
         max_active_flows: 128,
     },
@@ -172,6 +199,10 @@ const LOW_MEMORY_FLOW_BUDGET_POLICY: FlowBudgetPolicy = FlowBudgetPolicy {
 
 const THROUGHPUT_FLOW_BUDGET_POLICY: FlowBudgetPolicy = FlowBudgetPolicy {
     tcp_remote: DESKTOP_TCP_REMOTE_BUFFER_POLICY,
+    tcp: TcpFlowBudgetPolicy {
+        max_active_flows: 4096,
+        max_pending_opens: 1024,
+    },
     udp: UdpFlowBudgetPolicy {
         max_active_flows: 2048,
     },
@@ -778,6 +809,7 @@ pub(crate) async fn serve_tun_endpoint(
     tun: Arc<TunEndpoint>,
     inbound_tag: Option<String>,
     sniffing: Option<InboundSniffingConfig>,
+    inbound_policy: EffectivePolicy,
     config: Arc<CoreConfig>,
     dns_resolver: Arc<dyn DnsResolver>,
     transport_dialer: Arc<TransportDialer>,
@@ -793,7 +825,10 @@ pub(crate) async fn serve_tun_endpoint(
     let mut sockets = SocketSet::new(Vec::new());
     let mut tcp_listeners = HashMap::new();
     let mut tcp_flows = HashMap::new();
+    let mut bridge_tasks = JoinSet::new();
     let runtime_policy = tun_runtime_policy_for_options(tun_runtime_options);
+    let tcp_pending_open_permits =
+        Arc::new(Semaphore::new(runtime_policy.flows.tcp.max_pending_opens));
     let mut flow_budget_state = FlowBudgetState::new(runtime_policy.flows);
     let mut udp_flows = HashMap::new();
     let mut delayed_stack_events = VecDeque::new();
@@ -808,6 +843,7 @@ pub(crate) async fn serve_tun_endpoint(
     let runtime_context = TunRuntimeContext {
         inbound_tag,
         sniffing,
+        inbound_policy,
         config,
         dns_resolver,
         transport_dialer,
@@ -815,6 +851,7 @@ pub(crate) async fn serve_tun_endpoint(
         tun: Arc::clone(&tun),
         tun_runtime_options,
         runtime_policy,
+        tcp_pending_open_permits,
         fake_ip_mapper,
         runtime_logger,
     };
@@ -840,6 +877,7 @@ pub(crate) async fn serve_tun_endpoint(
                             &mut flow_budget_state,
                             &runtime_context,
                             shutdown.clone(),
+                            &mut bridge_tasks,
                             &mut device,
                         )
                         .await
@@ -864,6 +902,13 @@ pub(crate) async fn serve_tun_endpoint(
                     );
                 }
             }
+            joined = bridge_tasks.join_next(), if !bridge_tasks.is_empty() => {
+                if let Some(Err(error)) = joined {
+                    runtime_context.runtime_logger.error(|| {
+                        format!("Debug tunBridgeTask failed error={error}")
+                    });
+                }
+            }
             () = sleep(Duration::from_millis(25)) => {}
         }
 
@@ -881,6 +926,7 @@ pub(crate) async fn serve_tun_endpoint(
                         &mut flow_budget_state,
                         &runtime_context,
                         shutdown.clone(),
+                        &mut bridge_tasks,
                         &mut device,
                     )
                     .await
@@ -934,6 +980,7 @@ pub(crate) async fn serve_tun_endpoint(
             &mut tcp_flows,
             &runtime_context,
             shutdown.clone(),
+            &mut bridge_tasks,
         );
         read_socket_data_to_remote(&tun, &mut sockets, &mut tcp_flows, &mut flow_budget_state);
         cleanup_closed_tcp_flows(&mut sockets, &mut tcp_flows, &mut flow_budget_state);
@@ -951,6 +998,9 @@ pub(crate) async fn serve_tun_endpoint(
             }
         }
     }
+
+    bridge_tasks.abort_all();
+    while bridge_tasks.join_next().await.is_some() {}
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -959,12 +1009,13 @@ async fn process_tun_packet(
     tun: &TunEndpoint,
     iface: &mut Interface,
     sockets: &mut SocketSet<'static>,
-    tcp_listeners: &mut HashMap<IpEndpoint, SocketHandle>,
+    tcp_listeners: &mut HashMap<IpEndpoint, TcpListenerState>,
     tcp_flows: &mut HashMap<SocketHandle, TcpFlow>,
     udp_flows: &mut HashMap<UdpFlowKey, UdpFlow>,
     flow_budget_state: &mut FlowBudgetState,
     context: &TunRuntimeContext,
     shutdown: watch::Receiver<bool>,
+    bridge_tasks: &mut JoinSet<()>,
     device: &mut PacketDevice,
 ) -> bool {
     if let Some(reply) = icmp_echo_reply(&packet) {
@@ -981,14 +1032,22 @@ async fn process_tun_packet(
             flow_budget_state,
             context,
             shutdown,
+            bridge_tasks,
         );
         return true;
     }
     if let Some(endpoint) = tcp_syn_destination(&packet) {
-        ensure_tcp_listener(sockets, tcp_listeners, endpoint);
+        admit_tcp_listener(sockets, tcp_listeners, tcp_flows.len(), endpoint, context);
         device.push_inbound(packet);
         iface.poll(Instant::now(), device, sockets);
-        open_ready_tcp_flows(sockets, tcp_listeners, tcp_flows, context, shutdown.clone());
+        open_ready_tcp_flows(
+            sockets,
+            tcp_listeners,
+            tcp_flows,
+            context,
+            shutdown.clone(),
+            bridge_tasks,
+        );
         while let Some(packet) = device.pop_outbound() {
             if tun.push_outbound(packet).await.is_err() {
                 return false;
@@ -1004,6 +1063,7 @@ async fn process_tun_packet(
 struct TunRuntimeContext {
     inbound_tag: Option<String>,
     sniffing: Option<InboundSniffingConfig>,
+    inbound_policy: EffectivePolicy,
     config: Arc<CoreConfig>,
     dns_resolver: Arc<dyn DnsResolver>,
     transport_dialer: Arc<TransportDialer>,
@@ -1011,6 +1071,7 @@ struct TunRuntimeContext {
     tun: Arc<TunEndpoint>,
     tun_runtime_options: TunRuntimeOptions,
     runtime_policy: TunRuntimePolicy,
+    tcp_pending_open_permits: Arc<Semaphore>,
     fake_ip_mapper: Option<Arc<Mutex<FakeIpMapper>>>,
     runtime_logger: RuntimeLogger,
 }
@@ -1040,9 +1101,54 @@ impl TunRuntimeContext {
 #[derive(Debug)]
 struct TcpFlow {
     to_remote: mpsc::Sender<StackToRemoteData>,
+    remote_open: bool,
     pending_remote: VecDeque<Bytes>,
     pending_remote_bytes: usize,
     remote_closed: bool,
+    remote_aborted: bool,
+}
+
+struct TcpListenerState {
+    handle: SocketHandle,
+}
+
+struct TcpBridgeCloseGuard {
+    handle: SocketHandle,
+    stack_tx: mpsc::Sender<StackEvent>,
+    armed: bool,
+}
+
+impl TcpBridgeCloseGuard {
+    fn new(handle: SocketHandle, stack_tx: mpsc::Sender<StackEvent>) -> Self {
+        Self {
+            handle,
+            stack_tx,
+            armed: true,
+        }
+    }
+
+    async fn close(&mut self) {
+        if !self.armed {
+            return;
+        }
+        let _ = self
+            .stack_tx
+            .send(StackEvent::RemoteClosed {
+                handle: self.handle,
+            })
+            .await;
+        self.armed = false;
+    }
+}
+
+impl Drop for TcpBridgeCloseGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = self.stack_tx.try_send(StackEvent::RemoteAborted {
+                handle: self.handle,
+            });
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -1097,11 +1203,17 @@ struct UdpTunPacket {
 
 #[derive(Debug)]
 enum StackEvent {
+    RemoteOpened {
+        handle: SocketHandle,
+    },
     RemoteData {
         handle: SocketHandle,
         data: Bytes,
     },
     RemoteClosed {
+        handle: SocketHandle,
+    },
+    RemoteAborted {
         handle: SocketHandle,
     },
     UdpDatagram {
@@ -1116,48 +1228,83 @@ enum StackEvent {
 
 fn open_ready_tcp_flows(
     sockets: &mut SocketSet<'static>,
-    listeners: &mut HashMap<IpEndpoint, SocketHandle>,
+    listeners: &mut HashMap<IpEndpoint, TcpListenerState>,
     flows: &mut HashMap<SocketHandle, TcpFlow>,
     context: &TunRuntimeContext,
     shutdown: watch::Receiver<bool>,
+    bridge_tasks: &mut JoinSet<()>,
 ) {
     let ready = listeners
         .iter()
-        .filter_map(|(endpoint, handle)| {
-            let socket = sockets.get::<tcp::Socket>(*handle);
-            if socket.is_listening() || flows.contains_key(handle) {
+        .filter_map(|(endpoint, listener)| {
+            let socket = sockets.get::<tcp::Socket>(listener.handle);
+            if socket.is_listening() || flows.contains_key(&listener.handle) {
                 return None;
             }
             let local_endpoint = socket.local_endpoint()?;
             Some((
                 *endpoint,
-                *handle,
                 context.target_from_endpoint(local_endpoint, RoutingNetwork::Tcp)?,
             ))
         })
         .collect::<Vec<_>>();
 
-    for (endpoint, handle, target) in ready {
-        listeners.remove(&endpoint);
+    for (endpoint, target) in ready {
+        let Some(listener) = listeners.remove(&endpoint) else {
+            continue;
+        };
+        let handle = listener.handle;
+        let pending_open_permit =
+            match Arc::clone(&context.tcp_pending_open_permits).try_acquire_owned() {
+                Ok(permit) => permit,
+                Err(_) => {
+                    record_tcp_admission_rejection(
+                        context,
+                        endpoint,
+                        "TUN TCP pending-open limit reached",
+                    );
+                    insert_aborted_tcp_flow(handle, flows);
+                    continue;
+                }
+            };
         let (to_remote, from_stack) =
             mpsc::channel(context.runtime_policy.tcp_upload.channel_depth);
         flows.insert(
             handle,
             TcpFlow {
                 to_remote,
+                remote_open: false,
                 pending_remote: VecDeque::new(),
                 pending_remote_bytes: 0,
                 remote_closed: false,
+                remote_aborted: false,
             },
         );
-        tokio::spawn(bridge_tcp_flow(
+        bridge_tasks.spawn(bridge_tcp_flow(
             handle,
             target,
             context.clone(),
             from_stack,
             shutdown.clone(),
+            pending_open_permit,
         ));
     }
+}
+
+fn insert_aborted_tcp_flow(handle: SocketHandle, flows: &mut HashMap<SocketHandle, TcpFlow>) {
+    let (to_remote, from_stack) = mpsc::channel(1);
+    drop(from_stack);
+    flows.insert(
+        handle,
+        TcpFlow {
+            to_remote,
+            remote_open: false,
+            pending_remote: VecDeque::new(),
+            pending_remote_bytes: 0,
+            remote_closed: false,
+            remote_aborted: true,
+        },
+    );
 }
 
 fn target_from_endpoint_with_network(
@@ -1319,6 +1466,11 @@ fn try_apply_stack_event(
     device: &mut PacketDevice,
 ) -> Result<(), StackEvent> {
     match event {
+        StackEvent::RemoteOpened { handle } => {
+            if let Some(flow) = tcp_flows.get_mut(&handle) {
+                flow.remote_open = true;
+            }
+        }
         StackEvent::RemoteData { handle, data } => {
             let Some(flow) = tcp_flows.get_mut(&handle) else {
                 return Ok(());
@@ -1335,6 +1487,11 @@ fn try_apply_stack_event(
         StackEvent::RemoteClosed { handle } => {
             if let Some(flow) = tcp_flows.get_mut(&handle) {
                 flow.remote_closed = true;
+            }
+        }
+        StackEvent::RemoteAborted { handle } => {
+            if let Some(flow) = tcp_flows.get_mut(&handle) {
+                flow.remote_aborted = true;
             }
         }
         StackEvent::UdpDatagram {
@@ -1429,6 +1586,10 @@ fn write_remote_data_to_sockets(
 
     for (handle, flow) in flows {
         let socket = sockets.get_mut::<tcp::Socket>(*handle);
+        if flow.remote_aborted {
+            socket.abort();
+            continue;
+        }
         while socket.can_send() {
             let Some(front) = flow.pending_remote.front_mut() else {
                 break;
@@ -1471,6 +1632,11 @@ fn read_socket_data_to_remote(
     flow_budget_state: &mut FlowBudgetState,
 ) {
     for (handle, flow) in flows {
+        // Until the remote stream exists, leave client data in smoltcp's fixed
+        // receive window instead of growing the bridge upload queues.
+        if !flow.remote_open {
+            continue;
+        }
         let socket = sockets.get_mut::<tcp::Socket>(*handle);
         while socket.can_recv() {
             let max_read = flow_budget_state
@@ -1543,20 +1709,24 @@ async fn bridge_tcp_flow(
     target: Target,
     context: TunRuntimeContext,
     from_stack: mpsc::Receiver<StackToRemoteData>,
-    shutdown: watch::Receiver<bool>,
+    mut shutdown: watch::Receiver<bool>,
+    pending_open_permit: OwnedSemaphorePermit,
 ) {
+    let mut close_guard = TcpBridgeCloseGuard::new(handle, context.stack_tx.clone());
     let collect_tcp_timings = context.tun_runtime_options.collect_tcp_timings;
     let tcp_timing_start = collect_tcp_timings.then(StdInstant::now);
     let is_tcp443 = target.port == 443;
-    let outbound_result = select_tcp_outbound_for_session_with_tag_and_resolver(
-        &context.config,
-        context.inbound_tag.as_deref(),
-        &target,
-        collect_tcp_timings,
-        context.dns_resolver.as_ref(),
-    )
-    .await
-    .map(|selection| (selection.outbound, selection.tag));
+    let outbound_result = tokio::select! {
+        biased;
+        () = wait_for_tun_shutdown(&mut shutdown) => return,
+        result = select_tcp_outbound_for_session_with_tag_and_resolver(
+            &context.config,
+            context.inbound_tag.as_deref(),
+            &target,
+            collect_tcp_timings,
+            context.dns_resolver.as_ref(),
+        ) => result.map(|selection| (selection.outbound, selection.tag)),
+    };
     let (outbound, outbound_tag) = match outbound_result {
         Ok(selection) => selection,
         Err(error) => {
@@ -1576,23 +1746,33 @@ async fn bridge_tcp_flow(
             }
             context.tun.record_tcp_open_error();
             record_tcp_open_error_event(context.tun.as_ref(), &target, None, error);
-            let _ = context
-                .stack_tx
-                .send(StackEvent::RemoteClosed { handle })
-                .await;
+            close_guard.close().await;
             return;
         }
     };
-    let stream = match open_tcp_stream_with_resolver_and_dialer(
-        &outbound,
-        &target,
-        context.dns_resolver.as_ref(),
-        &context.transport_dialer,
-    )
-    .await
-    {
-        Ok(stream) => stream,
-        Err(error) => {
+    let open_timeout = match &outbound {
+        TcpOutbound::Freedom => context.inbound_policy.handshake,
+        TcpOutbound::Vless(outbound) => {
+            effective_policy_for_level(&context.config, Some(outbound.user().level)).handshake
+        }
+    };
+    let open_result = tokio::select! {
+        biased;
+        () = wait_for_tun_shutdown(&mut shutdown) => return,
+        result = tokio::time::timeout(
+            open_timeout,
+            open_tcp_stream_with_resolver_and_dialer(
+                &outbound,
+                &target,
+                context.dns_resolver.as_ref(),
+                &context.transport_dialer,
+            ),
+        ) => result,
+    };
+    drop(pending_open_permit);
+    let stream = match open_result {
+        Ok(Ok(stream)) => stream,
+        Ok(Err(error)) => {
             if context.runtime_logger.is_enabled() {
                 let outbound_label = outbound_tag
                     .as_deref()
@@ -1617,13 +1797,50 @@ async fn bridge_tcp_flow(
                 outbound_tag.as_deref(),
                 error,
             );
-            let _ = context
-                .stack_tx
-                .send(StackEvent::RemoteClosed { handle })
-                .await;
+            close_guard.close().await;
+            return;
+        }
+        Err(_) => {
+            let error = format!(
+                "outbound open timed out after {} ms",
+                open_timeout.as_millis()
+            );
+            if context.runtime_logger.is_enabled() {
+                let outbound_label = outbound_tag
+                    .as_deref()
+                    .unwrap_or_else(|| crate::debug_log::tcp_outbound_label(&outbound));
+                crate::debug_log::log_access_rejected(
+                    &context.runtime_logger,
+                    "tun",
+                    &target,
+                    &error,
+                );
+                context.runtime_logger.error(|| {
+                    format!(
+                        "Debug tcpOpenError target={} outbound={outbound_label} error={error}",
+                        crate::debug_log::target_label(&target)
+                    )
+                });
+            }
+            context.tun.record_tcp_open_error();
+            record_tcp_open_error_event(
+                context.tun.as_ref(),
+                &target,
+                outbound_tag.as_deref(),
+                &error,
+            );
+            close_guard.close().await;
             return;
         }
     };
+    if context
+        .stack_tx
+        .send(StackEvent::RemoteOpened { handle })
+        .await
+        .is_err()
+    {
+        return;
+    }
     if context.runtime_logger.is_enabled() {
         let outbound_label = outbound_tag
             .as_deref()
@@ -1695,6 +1912,18 @@ async fn bridge_tcp_flow(
             &mut timing,
         )
         .await;
+    }
+    close_guard.close().await;
+}
+
+async fn wait_for_tun_shutdown(shutdown: &mut watch::Receiver<bool>) {
+    if *shutdown.borrow() {
+        return;
+    }
+    while shutdown.changed().await.is_ok() {
+        if *shutdown.borrow() {
+            return;
+        }
     }
 }
 
@@ -1774,10 +2003,6 @@ async fn bridge_tcp_flow_loop<R, W, T>(
         }
     }
 
-    let _ = context
-        .stack_tx
-        .send(StackEvent::RemoteClosed { handle })
-        .await;
     timing.record_flow_summary(context.tun.as_ref(), target, true);
 }
 
@@ -2217,6 +2442,7 @@ fn handle_udp_packet(
     flow_budget_state: &mut FlowBudgetState,
     context: &TunRuntimeContext,
     shutdown: watch::Receiver<bool>,
+    bridge_tasks: &mut JoinSet<()>,
 ) {
     let key = UdpFlowKey::new(packet.client, packet.target);
 
@@ -2239,7 +2465,7 @@ fn handle_udp_packet(
                     last_used_sequence: sequence,
                 },
             );
-            tokio::spawn(bridge_udp_flow(
+            bridge_tasks.spawn(bridge_udp_flow(
                 key,
                 target,
                 original_packet,
@@ -2820,22 +3046,76 @@ async fn bridge_udp_vless_flow_loop<R, W, T>(
     let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
 }
 
-fn ensure_tcp_listener(
+fn admit_tcp_listener(
     sockets: &mut SocketSet<'static>,
-    listeners: &mut HashMap<IpEndpoint, SocketHandle>,
+    listeners: &mut HashMap<IpEndpoint, TcpListenerState>,
+    active_flow_count: usize,
     endpoint: IpEndpoint,
+    context: &TunRuntimeContext,
 ) {
     if listeners.contains_key(&endpoint) {
         return;
     }
 
+    if !tcp_listener_capacity_available(
+        context.runtime_policy.flows.tcp,
+        active_flow_count,
+        listeners.len(),
+    ) {
+        record_tcp_admission_rejection(context, endpoint, "TUN TCP flow limit reached");
+        return;
+    }
+
+    add_tcp_listener(sockets, listeners, endpoint);
+}
+
+fn tcp_listener_capacity_available(
+    policy: TcpFlowBudgetPolicy,
+    active_flow_count: usize,
+    listener_count: usize,
+) -> bool {
+    active_flow_count.saturating_add(listener_count) < policy.max_active_flows
+}
+
+fn add_tcp_listener(
+    sockets: &mut SocketSet<'static>,
+    listeners: &mut HashMap<IpEndpoint, TcpListenerState>,
+    endpoint: IpEndpoint,
+) {
     let mut socket = tcp::Socket::new(
         tcp::SocketBuffer::new(vec![0; TCP_BUFFER_SIZE]),
         tcp::SocketBuffer::new(vec![0; TCP_BUFFER_SIZE]),
     );
     socket.set_nagle_enabled(false);
     if socket.listen(endpoint).is_ok() {
-        listeners.insert(endpoint, sockets.add(socket));
+        listeners.insert(
+            endpoint,
+            TcpListenerState {
+                handle: sockets.add(socket),
+            },
+        );
+    }
+}
+
+fn record_tcp_admission_rejection(
+    context: &TunRuntimeContext,
+    endpoint: IpEndpoint,
+    reason: &'static str,
+) {
+    let Some(target) = context.target_from_endpoint(endpoint, RoutingNetwork::Tcp) else {
+        return;
+    };
+
+    context.tun.record_tcp_open_error();
+    record_tcp_open_error_event(context.tun.as_ref(), &target, None, reason);
+    if context.runtime_logger.is_enabled() {
+        crate::debug_log::log_access_rejected(&context.runtime_logger, "tun", &target, reason);
+        context.runtime_logger.error(|| {
+            format!(
+                "Debug tcpOpenError target={} outbound=unselected error={reason}",
+                crate::debug_log::target_label(&target)
+            )
+        });
     }
 }
 
@@ -4214,9 +4494,21 @@ mod tests {
         assert_eq!(state.per_flow_limit(), NORMAL_TCP_REMOTE_PENDING_LIMIT);
     }
 
+    #[test]
+    fn low_memory_tcp_flow_budget_caps_active_flows_and_pending_opens() {
+        let policy = LOW_MEMORY_FLOW_BUDGET_POLICY.tcp;
+
+        assert_eq!(policy.max_active_flows, 128);
+        assert_eq!(policy.max_pending_opens, 32);
+        assert!(tcp_listener_capacity_available(policy, 127, 0));
+        assert!(!tcp_listener_capacity_available(policy, 127, 1));
+        assert!(!tcp_listener_capacity_available(policy, 128, 0));
+    }
+
     fn test_flow_budget(max_active_udp_flows: usize) -> FlowBudgetState {
         FlowBudgetState::new(FlowBudgetPolicy {
             tcp_remote: MOBILE_TCP_REMOTE_BUFFER_POLICY,
+            tcp: MOBILE_FLOW_BUDGET_POLICY.tcp,
             udp: UdpFlowBudgetPolicy {
                 max_active_flows: max_active_udp_flows,
             },
@@ -4425,8 +4717,8 @@ mod tests {
         iface.set_any_ip(true);
         let mut sockets = SocketSet::new(Vec::new());
         let mut listeners = HashMap::new();
-        ensure_tcp_listener(&mut sockets, &mut listeners, endpoint);
-        let handle = *listeners.get(&endpoint).unwrap();
+        add_tcp_listener(&mut sockets, &mut listeners, endpoint);
+        let handle = listeners.get(&endpoint).unwrap().handle;
 
         device.push_inbound(Bytes::from(build_ipv4_tcp_packet(
             client_ip,
@@ -4480,9 +4772,11 @@ mod tests {
             handle,
             TcpFlow {
                 to_remote,
+                remote_open: true,
                 pending_remote: VecDeque::new(),
                 pending_remote_bytes: 0,
                 remote_closed: false,
+                remote_aborted: false,
             },
         );
 
@@ -4510,9 +4804,11 @@ mod tests {
             handle,
             TcpFlow {
                 to_remote,
+                remote_open: true,
                 pending_remote: VecDeque::new(),
                 pending_remote_bytes: NORMAL_TCP_REMOTE_PENDING_LIMIT,
                 remote_closed: false,
+                remote_aborted: false,
             },
         );
         let mut udp_flows = HashMap::new();
@@ -4556,9 +4852,11 @@ mod tests {
             handle,
             TcpFlow {
                 to_remote,
+                remote_open: true,
                 pending_remote: VecDeque::new(),
                 pending_remote_bytes: 0,
                 remote_closed: false,
+                remote_aborted: false,
             },
         );
         let mut udp_flows = HashMap::new();
@@ -4602,9 +4900,11 @@ mod tests {
             handle,
             TcpFlow {
                 to_remote,
+                remote_open: true,
                 pending_remote,
                 pending_remote_bytes: 1024 * 1024,
                 remote_closed: false,
+                remote_aborted: false,
             },
         );
         let mut udp_flows = HashMap::new();
@@ -4650,9 +4950,11 @@ mod tests {
             handle,
             TcpFlow {
                 to_remote,
+                remote_open: true,
                 pending_remote: VecDeque::new(),
                 pending_remote_bytes: 0,
                 remote_closed: false,
+                remote_aborted: false,
             },
         );
         let mut udp_flows = HashMap::new();
@@ -4702,9 +5004,11 @@ mod tests {
             handle,
             TcpFlow {
                 to_remote,
+                remote_open: true,
                 pending_remote,
                 pending_remote_bytes: PRESSURE_TCP_REMOTE_PENDING_LIMIT,
                 remote_closed: false,
+                remote_aborted: false,
             },
         );
         let mut udp_flows = HashMap::new();
@@ -4750,8 +5054,8 @@ mod tests {
         iface.set_any_ip(true);
         let mut sockets = SocketSet::new(Vec::new());
         let mut listeners = HashMap::new();
-        ensure_tcp_listener(&mut sockets, &mut listeners, endpoint);
-        let handle = *listeners.get(&endpoint).unwrap();
+        add_tcp_listener(&mut sockets, &mut listeners, endpoint);
+        let handle = listeners.get(&endpoint).unwrap().handle;
 
         device.push_inbound(Bytes::from(build_ipv4_tcp_packet(
             client_ip,
@@ -4790,9 +5094,11 @@ mod tests {
             handle,
             TcpFlow {
                 to_remote,
+                remote_open: true,
                 pending_remote,
                 pending_remote_bytes: TCP_BUFFER_SIZE,
                 remote_closed: false,
+                remote_aborted: false,
             },
         );
 
