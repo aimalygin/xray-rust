@@ -2,8 +2,11 @@
 name = "xray-routing"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
 publish.workspace = true
+description = "Routing matchers and policy evaluation for xray-rust"
 
 [dependencies]
 bytes.workspace = true

@@ -61,6 +61,8 @@ const TEST_VLESS_UUID: [u8; 16] = [
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
 ];
 const TEST_VLESS_UUID_STRING: &str = "00010203-0405-0607-0809-0a0b0c0d0e0f";
+// The PQ benchmark cases need a cover origin that accepts X25519MLKEM;
+// RFC 2606 example origins reject the `hellochrome_120_pq` handshake.
 const REALITY_SERVER_NAME: &str = "www.google.com";
 const REALITY_PRIVATE_KEY: &str = "aGSYystUbf59_9_6LKRxD27rmSW_-2_nyd9YG_Gwbks";
 const REALITY_PUBLIC_KEY: &str = "E59WjnvZcQMu7tR7_BgyhycuEdBS-CtKxfImRCdAvFM";

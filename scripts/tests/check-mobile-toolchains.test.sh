@@ -124,8 +124,103 @@ test_android_adapter_verifies_packaged_native_alignment() {
   fi
 }
 
+run_stubbed_preflight() {
+  (
+    # The Android build-script test above sources a second script that also has
+    # a main function, so restore the preflight functions in this subshell.
+    # shellcheck source=../check-mobile-toolchains.sh
+    source "$REPOSITORY_ROOT/scripts/check-mobile-toolchains.sh"
+    missing_count=0
+    check_command() {
+      echo "command:$1"
+    }
+    check_rust_targets() {
+      echo "rust-targets:apple=$check_apple:android=$check_android"
+    }
+    check_apple_sdks() {
+      echo "check:apple-sdks"
+    }
+    check_gradle_wrapper() {
+      echo "check:gradle-wrapper"
+    }
+    check_android_jdk() {
+      echo "check:android-jdk"
+    }
+    check_android_sdk() {
+      echo "check:android-sdk"
+    }
+    check_android_ndk() {
+      echo "check:android-ndk"
+    }
+    main "$@"
+  )
+}
+
+assert_output_contains() {
+  local output="$1"
+  local expected="$2"
+  if ! grep -Fq "$expected" <<<"$output"; then
+    echo "expected preflight output to contain: $expected" >&2
+    return 1
+  fi
+}
+
+assert_output_omits() {
+  local output="$1"
+  local unexpected="$2"
+  if grep -Fq "$unexpected" <<<"$output"; then
+    echo "expected preflight output to omit: $unexpected" >&2
+    return 1
+  fi
+}
+
+test_apple_mode_checks_only_apple_prerequisites() {
+  local output
+  output="$(run_stubbed_preflight --apple)"
+
+  assert_output_contains "$output" "command:cargo"
+  assert_output_contains "$output" "command:xcodebuild"
+  assert_output_contains "$output" "rust-targets:apple=1:android=0"
+  assert_output_contains "$output" "check:apple-sdks"
+  assert_output_contains "$output" "ready for Apple artifact builds"
+  assert_output_omits "$output" "check:android-jdk"
+  assert_output_omits "$output" "check:android-sdk"
+  assert_output_omits "$output" "check:android-ndk"
+  assert_output_omits "$output" "check:gradle-wrapper"
+}
+
+test_android_mode_checks_only_android_prerequisites() {
+  local output
+  output="$(run_stubbed_preflight --android)"
+
+  assert_output_contains "$output" "command:cargo"
+  assert_output_contains "$output" "rust-targets:apple=0:android=1"
+  assert_output_contains "$output" "check:android-jdk"
+  assert_output_contains "$output" "check:android-sdk"
+  assert_output_contains "$output" "check:android-ndk"
+  assert_output_contains "$output" "check:gradle-wrapper"
+  assert_output_contains "$output" "ready for Android artifact builds"
+  assert_output_omits "$output" "command:xcodebuild"
+  assert_output_omits "$output" "command:xcrun"
+  assert_output_omits "$output" "command:lipo"
+  assert_output_omits "$output" "check:apple-sdks"
+}
+
+test_default_mode_checks_both_platforms() {
+  local output
+  output="$(run_stubbed_preflight)"
+
+  assert_output_contains "$output" "rust-targets:apple=1:android=1"
+  assert_output_contains "$output" "check:apple-sdks"
+  assert_output_contains "$output" "check:android-sdk"
+  assert_output_contains "$output" "ready for Apple and Android artifact builds"
+}
+
 test_missing_android_sdk_platform_is_reported
 test_android_build_rejects_mismatched_api_level
 test_android_build_uses_custom_cargo_target_and_debug_profile_dir
 test_android_adapter_verifies_packaged_native_alignment
+test_apple_mode_checks_only_apple_prerequisites
+test_android_mode_checks_only_android_prerequisites
+test_default_mode_checks_both_platforms
 echo "check-mobile-toolchains tests passed"

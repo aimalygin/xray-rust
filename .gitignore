@@ -11,17 +11,22 @@ Xray-core/
 
 # Native/mobile build outputs.
 platform/apple/.build/
+platform/apple/.swiftpm/
 platform/apple/target/
+platform/apple/XrayClient/dat/*.dat
 platform/android/.gradle/
 platform/android/build/
 platform/android/xraymobile/.cxx/
 platform/android/xraymobile/build/
+platform/android/local.properties
+DerivedData/
 *.a
 *.so
 *.dylib
 *.framework/
 *.xcframework/
 *.xcarchive/
+*.xcresult
 *.apk
 *.aar
 
@@ -29,8 +34,20 @@ platform/android/xraymobile/build/
 .DS_Store
 .idea/
 .vscode/
+__pycache__/
+*.py[cod]
+**/xcuserdata/
+*.xcuserstate
 *.swp
 *.swo
+
+# Local credentials and signing material.
+.env
+.env.*
+!.env.example
+*.mobileprovision
+*.p12
+*.pfx
 
 # Local agent tooling and working context.
 .agents/

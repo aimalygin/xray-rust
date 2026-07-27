@@ -132,9 +132,13 @@ per-fingerprint client configs are stored under `configs/`.
 
 ## Run sing-box Only
 
+Point `SING_BOX_BIN` at a local sing-box executable. Use any location on the
+host; `/path/to/sing-box` below is only a placeholder:
+
 ```sh
-cargo run -p xray-bench -- run --engine sing-box --sing-box-bin /private/tmp/sing-box-bench/sing-box --workload idle --duration-ms 1000 --no-auto-build
-cargo run -p xray-bench -- run --engine sing-box --sing-box-bin /private/tmp/sing-box-bench/sing-box --workload many-idle-flows --connections 100 --duration-ms 1000 --no-auto-build
+export SING_BOX_BIN=/path/to/sing-box
+cargo run -p xray-bench -- run --engine sing-box --sing-box-bin "$SING_BOX_BIN" --workload idle --duration-ms 1000 --no-auto-build
+cargo run -p xray-bench -- run --engine sing-box --sing-box-bin "$SING_BOX_BIN" --workload many-idle-flows --connections 100 --duration-ms 1000 --no-auto-build
 ```
 
 The first sing-box slice supports the SOCKS/process-level workloads: `idle`, `tcp-freedom`, `many-idle-flows`, `reconnect-burst`, `mixed-long-lived`, `udp-freedom`, and `reality-vision-xudp`. The Reality/Vision workload starts an Xray-core VLESS Reality server fixture and samples only the client engine process. The sing-box binary must include `with_utls`; the harness uses `with_gvisor,with_utls,badlinkname,tfogo_checklinkname0` when auto-building sing-box. TUN and fake VLESS/XUDP sing-box workloads are intentionally not part of this slice because they need a different topology than the rootless fd-backed harness.
@@ -149,12 +153,13 @@ terminated instead of leaving a stuck benchmark behind.
 From the main repository checkout, these process-level workloads compare all three engines:
 
 ```sh
-cargo run -p xray-bench -- compare --workload tcp-freedom --xray-core-dir Xray-core --sing-box-bin /private/tmp/sing-box-bench/sing-box --runs 5 --connections 1 --iterations 10 --payload-size 1024
-cargo run -p xray-bench -- compare --workload many-idle-flows --xray-core-dir Xray-core --sing-box-bin /private/tmp/sing-box-bench/sing-box --runs 5 --connections 100 --duration-ms 1000
-cargo run -p xray-bench -- compare --workload reconnect-burst --xray-core-dir Xray-core --sing-box-bin /private/tmp/sing-box-bench/sing-box --runs 5 --connections 16 --iterations 25
-cargo run -p xray-bench -- compare --workload mixed-long-lived --xray-core-dir Xray-core --sing-box-bin /private/tmp/sing-box-bench/sing-box --runs 5 --connections 8 --iterations 20 --duration-ms 1000 --payload-size 512
-cargo run -p xray-bench -- compare --workload udp-freedom --xray-core-dir Xray-core --sing-box-bin /private/tmp/sing-box-bench/sing-box --runs 5 --connections 1 --iterations 1000 --payload-size 512
-cargo run -p xray-bench -- compare --workload reality-vision-xudp --xray-core-dir Xray-core --sing-box-bin /private/tmp/sing-box-bench/sing-box --runs 5 --connections 1 --iterations 1000 --payload-size 512
+export SING_BOX_BIN=/path/to/sing-box
+cargo run -p xray-bench -- compare --workload tcp-freedom --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 1 --iterations 10 --payload-size 1024
+cargo run -p xray-bench -- compare --workload many-idle-flows --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 100 --duration-ms 1000
+cargo run -p xray-bench -- compare --workload reconnect-burst --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 16 --iterations 25
+cargo run -p xray-bench -- compare --workload mixed-long-lived --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 8 --iterations 20 --duration-ms 1000 --payload-size 512
+cargo run -p xray-bench -- compare --workload udp-freedom --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 1 --iterations 1000 --payload-size 512
+cargo run -p xray-bench -- compare --workload reality-vision-xudp --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 1 --iterations 1000 --payload-size 512
 ```
 
 The TUN and fake VLESS/XUDP workloads remain comparable between `xray-rust` and Xray-core in this slice. The compare command skips sing-box for these workloads because sing-box's CLI TUN path uses a real platform TUN topology, while the older VLESS/XUDP fake-server workloads use Xray JSON configs instead of sing-box outbound schema.
@@ -182,12 +187,13 @@ cargo run -p xray-bench -- run --engine xray-rust --workload tun-tcp-freedom --t
 From an isolated worktree under `.worktrees/`, pass the main checkout's Xray-core path:
 
 ```sh
-cargo run -p xray-bench -- compare --workload tcp-freedom --xray-core-dir ../../Xray-core --sing-box-bin /private/tmp/sing-box-bench/sing-box --runs 5 --connections 1 --iterations 10 --payload-size 1024
-cargo run -p xray-bench -- compare --workload many-idle-flows --xray-core-dir ../../Xray-core --sing-box-bin /private/tmp/sing-box-bench/sing-box --runs 5 --connections 100 --duration-ms 1000
+export SING_BOX_BIN=/path/to/sing-box
+cargo run -p xray-bench -- compare --workload tcp-freedom --xray-core-dir ../../Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 1 --iterations 10 --payload-size 1024
+cargo run -p xray-bench -- compare --workload many-idle-flows --xray-core-dir ../../Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 100 --duration-ms 1000
 cargo run -p xray-bench -- compare --workload reconnect-burst --xray-core-dir ../../Xray-core --runs 5 --connections 16 --iterations 25
 cargo run -p xray-bench -- compare --workload mixed-long-lived --xray-core-dir ../../Xray-core --runs 5 --connections 8 --iterations 20 --duration-ms 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload udp-freedom --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
-cargo run -p xray-bench -- compare --workload reality-vision-xudp --xray-core-dir ../../Xray-core --sing-box-bin /private/tmp/sing-box-bench/sing-box --runs 5 --connections 1 --iterations 1000 --payload-size 512
+cargo run -p xray-bench -- compare --workload reality-vision-xudp --xray-core-dir ../../Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload tun-udp-freedom --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload tun-tcp-freedom --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 100 --payload-size 512
 cargo run -p xray-bench -- compare --workload tun-tcp-stale-flows --xray-core-dir ../../Xray-core --runs 5 --connections 500 --iterations 1 --duration-ms 5000 --payload-size 512

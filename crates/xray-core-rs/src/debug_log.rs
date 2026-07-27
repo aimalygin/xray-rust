@@ -142,12 +142,12 @@ mod tests {
     #[test]
     fn route_decision_message_includes_sniffed_route_and_outbound() {
         let original = Target::new(
-            TargetAddr::Ip("37.203.35.22".parse().unwrap()),
+            TargetAddr::Ip("192.0.2.10".parse().unwrap()),
             443,
             Network::Udp,
         );
         let route_target = Target::new(
-            TargetAddr::Domain("www.tiktok.com".to_owned()),
+            TargetAddr::Domain("video.example".to_owned()),
             443,
             Network::Udp,
         );
@@ -173,12 +173,12 @@ mod tests {
         let logger = crate::RuntimeLogger::new(crate::RuntimeLogConfig::directory(&dir))
             .expect("runtime logger should open files");
         let original = Target::new(
-            TargetAddr::Ip("37.203.35.22".parse().unwrap()),
+            TargetAddr::Ip("192.0.2.10".parse().unwrap()),
             443,
             Network::Udp,
         );
         let route_target = Target::new(
-            TargetAddr::Domain("www.tiktok.com".to_owned()),
+            TargetAddr::Domain("video.example".to_owned()),
             443,
             Network::Udp,
         );
@@ -199,8 +199,8 @@ mod tests {
             std::fs::read_to_string(dir.join("xray-error.log")).expect("error log should exist");
         assert!(error_log.contains("Debug routeDecision"));
         assert!(error_log.contains("sniffed_domain=<redacted-domain>"));
-        assert!(!error_log.contains("www.tiktok.com"));
-        assert!(!error_log.contains("37.203.35.22"));
+        assert!(!error_log.contains("video.example"));
+        assert!(!error_log.contains("192.0.2.10"));
         assert!(!error_log.contains("inbound_49783"));
     }
 

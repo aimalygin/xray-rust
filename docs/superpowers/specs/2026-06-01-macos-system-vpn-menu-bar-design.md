@@ -40,8 +40,8 @@ This is preferable to making the app menu-bar-only because the project is still 
 
 Use dedicated macOS bundle identifiers:
 
-- App: `org.texforge.XrayClientMac`
-- Packet Tunnel extension: `org.texforge.XrayClientMac.Tunnel`
+- App: `org.example.XrayClientMac`
+- Packet Tunnel extension: `org.example.XrayClientMac.Tunnel`
 
 The existing profile default-provider logic derives the tunnel provider identifier as `<host bundle id>.Tunnel`, so the macOS app can reuse that convention without special casing.
 

@@ -46,7 +46,7 @@ This intentionally references `resolve_xray_checkout` and `start_xray_vless_serv
 Run:
 
 ```bash
-XRAY_CORE_CHECKOUT=/Users/antonmalygin/xray-rust/Xray-core cargo test -p xray-core-rs --test local_xray_interop_tests -- --ignored --exact rust_socks_client_reaches_echo_server_through_local_xray_vless_tcp
+XRAY_CORE_CHECKOUT=/path/to/xray-rust/Xray-core cargo test -p xray-core-rs --test local_xray_interop_tests -- --ignored --exact rust_socks_client_reaches_echo_server_through_local_xray_vless_tcp
 ```
 
 Expected: FAIL at compile time with missing function errors for `resolve_xray_checkout` and `start_xray_vless_server`.
@@ -237,7 +237,7 @@ async fn wait_for_tcp_listener(addr: SocketAddr) {
 Run:
 
 ```bash
-XRAY_CORE_CHECKOUT=/Users/antonmalygin/xray-rust/Xray-core cargo test -p xray-core-rs --test local_xray_interop_tests -- --ignored --exact rust_socks_client_reaches_echo_server_through_local_xray_vless_tcp
+XRAY_CORE_CHECKOUT=/path/to/xray-rust/Xray-core cargo test -p xray-core-rs --test local_xray_interop_tests -- --ignored --exact rust_socks_client_reaches_echo_server_through_local_xray_vless_tcp
 ```
 
 Expected: PASS if Xray-core builds and starts. This only proves the process harness compiles and can launch Xray; the real connection assertion comes in Task 3.
@@ -371,7 +371,7 @@ async fn run_local_xray_vless_interop() {
 Run with loopback/process permissions:
 
 ```bash
-XRAY_CORE_CHECKOUT=/Users/antonmalygin/xray-rust/Xray-core cargo test -p xray-core-rs --test local_xray_interop_tests -- --ignored --exact rust_socks_client_reaches_echo_server_through_local_xray_vless_tcp
+XRAY_CORE_CHECKOUT=/path/to/xray-rust/Xray-core cargo test -p xray-core-rs --test local_xray_interop_tests -- --ignored --exact rust_socks_client_reaches_echo_server_through_local_xray_vless_tcp
 ```
 
 Expected: PASS. This is the milestone where we stop and report after verification.

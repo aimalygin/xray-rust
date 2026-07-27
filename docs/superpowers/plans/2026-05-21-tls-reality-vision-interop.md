@@ -98,7 +98,7 @@ async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_tls() {
 Run:
 
 ```bash
-XRAY_CORE_CHECKOUT=/Users/antonmalygin/xray-rust/Xray-core cargo test -p xray-core-rs --test local_xray_interop_tests -- --ignored --exact rust_socks_client_reaches_echo_server_through_local_xray_vless_tls
+XRAY_CORE_CHECKOUT=/path/to/xray-rust/Xray-core cargo test -p xray-core-rs --test local_xray_interop_tests -- --ignored --exact rust_socks_client_reaches_echo_server_through_local_xray_vless_tls
 ```
 
 Expected: compile failure or runtime failure because the harness cannot yet write TLS Xray config and inject the Rust TLS dialer.
@@ -278,7 +278,7 @@ Expected: FAIL with `UnsupportedOutboundFlow`.
 Run:
 
 ```bash
-XRAY_CORE_CHECKOUT=/Users/antonmalygin/xray-rust/Xray-core cargo test -p xray-core-rs --test local_xray_interop_tests -- --ignored --exact rust_socks_client_reaches_echo_server_through_local_xray_vless_tls_vision
+XRAY_CORE_CHECKOUT=/path/to/xray-rust/Xray-core cargo test -p xray-core-rs --test local_xray_interop_tests -- --ignored --exact rust_socks_client_reaches_echo_server_through_local_xray_vless_tls_vision
 ```
 
 Expected: FAIL before the outbound allows TLS+Vision, or fail later in Vision framing if selection is already changed.
@@ -336,7 +336,7 @@ Expected: PASS.
 Run:
 
 ```bash
-XRAY_CORE_CHECKOUT=/Users/antonmalygin/xray-rust/Xray-core cargo test -p xray-core-rs --test local_xray_interop_tests -- --ignored --exact rust_socks_client_reaches_echo_server_through_local_xray_vless_tls_vision
+XRAY_CORE_CHECKOUT=/path/to/xray-rust/Xray-core cargo test -p xray-core-rs --test local_xray_interop_tests -- --ignored --exact rust_socks_client_reaches_echo_server_through_local_xray_vless_tls_vision
 ```
 
 Expected: PASS if current Vision stream is compatible with Xray-core. If it fails, inspect Xray logs and captured failure, then add a focused Vision stream test before changing Vision framing.
@@ -410,9 +410,9 @@ Expected: PASS.
 Run:
 
 ```bash
-XRAY_CORE_CHECKOUT=/Users/antonmalygin/xray-rust/Xray-core cargo test -p xray-core-rs --test local_xray_interop_tests -- --ignored --exact rust_socks_client_reaches_echo_server_through_local_xray_vless_tcp
-XRAY_CORE_CHECKOUT=/Users/antonmalygin/xray-rust/Xray-core cargo test -p xray-core-rs --test local_xray_interop_tests -- --ignored --exact rust_socks_client_reaches_echo_server_through_local_xray_vless_tls
-XRAY_CORE_CHECKOUT=/Users/antonmalygin/xray-rust/Xray-core cargo test -p xray-core-rs --test local_xray_interop_tests -- --ignored --exact rust_socks_client_reaches_echo_server_through_local_xray_vless_tls_vision
+XRAY_CORE_CHECKOUT=/path/to/xray-rust/Xray-core cargo test -p xray-core-rs --test local_xray_interop_tests -- --ignored --exact rust_socks_client_reaches_echo_server_through_local_xray_vless_tcp
+XRAY_CORE_CHECKOUT=/path/to/xray-rust/Xray-core cargo test -p xray-core-rs --test local_xray_interop_tests -- --ignored --exact rust_socks_client_reaches_echo_server_through_local_xray_vless_tls
+XRAY_CORE_CHECKOUT=/path/to/xray-rust/Xray-core cargo test -p xray-core-rs --test local_xray_interop_tests -- --ignored --exact rust_socks_client_reaches_echo_server_through_local_xray_vless_tls_vision
 ```
 
 Expected: PASS for all implemented scenarios.

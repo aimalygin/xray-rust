@@ -13,11 +13,10 @@ use xray_config::{parse_xray_json, CoreConfig, InboundProtocol, OutboundSettings
 use xray_core_rs::{Core, RuntimeLogConfig, RuntimeLogger};
 
 const LIVE_SOCKS_TAG: &str = "live_socks";
-const DEFAULT_SPEEDTEST_TARGETS: &str =
-    "103.6.148.98:8080,103.1.138.214:8080,121.100.2.35:8080,45.117.189.2:8080";
+const LIVE_TARGETS_ENV: &str = "XRAY_REALITY_LIVE_TARGETS";
 
 #[tokio::test]
-#[ignore = "requires XRAY_REALITY_LIVE_CONFIG_JSON or XRAY_REALITY_LIVE_CONFIG_PATH and external network access"]
+#[ignore = "requires live config, XRAY_REALITY_LIVE_TARGETS, and external network access"]
 async fn rust_core_live_reality_node_opens_parallel_speedtest_tcp_flows() {
     timeout(
         Duration::from_secs(selected_live_test_timeout_secs()),
@@ -28,7 +27,7 @@ async fn rust_core_live_reality_node_opens_parallel_speedtest_tcp_flows() {
 }
 
 #[tokio::test]
-#[ignore = "requires XRAY_REALITY_LIVE_CONFIG_JSON or XRAY_REALITY_LIVE_CONFIG_PATH and external network access"]
+#[ignore = "requires live config, XRAY_REALITY_LIVE_TARGETS, and external network access"]
 async fn rust_core_live_reality_node_reads_parallel_speedtest_http_responses() {
     timeout(
         Duration::from_secs(selected_live_test_timeout_secs()),
@@ -39,7 +38,7 @@ async fn rust_core_live_reality_node_reads_parallel_speedtest_http_responses() {
 }
 
 #[tokio::test]
-#[ignore = "requires XRAY_REALITY_LIVE_CONFIG_JSON or XRAY_REALITY_LIVE_CONFIG_PATH, Xray-core checkout, Go toolchain, and external network access"]
+#[ignore = "requires live config, XRAY_REALITY_LIVE_TARGETS, Xray-core, Go, and external network access"]
 async fn rust_core_live_reality_node_downloads_parallel_speedtest_http_bodies() {
     timeout(
         Duration::from_secs(selected_live_test_timeout_secs()),
@@ -50,7 +49,7 @@ async fn rust_core_live_reality_node_downloads_parallel_speedtest_http_bodies() 
 }
 
 #[tokio::test]
-#[ignore = "requires XRAY_REALITY_LIVE_CONFIG_JSON or XRAY_REALITY_LIVE_CONFIG_PATH, Xray-core checkout, Go toolchain, and external network access"]
+#[ignore = "requires live config, XRAY_REALITY_LIVE_TARGETS, Xray-core, Go, and external network access"]
 async fn xray_core_live_reality_node_reads_parallel_speedtest_http_responses() {
     timeout(
         Duration::from_secs(selected_live_test_timeout_secs()),
@@ -61,7 +60,7 @@ async fn xray_core_live_reality_node_reads_parallel_speedtest_http_responses() {
 }
 
 #[tokio::test]
-#[ignore = "requires XRAY_REALITY_LIVE_CONFIG_JSON or XRAY_REALITY_LIVE_CONFIG_PATH, Xray-core checkout, Go toolchain, and external network access"]
+#[ignore = "requires live config, XRAY_REALITY_LIVE_TARGETS, Xray-core, Go, and external network access"]
 async fn xray_core_live_reality_node_downloads_parallel_speedtest_http_bodies() {
     timeout(
         Duration::from_secs(selected_live_test_timeout_secs()),
@@ -220,23 +219,15 @@ fn first_outbound_tag(value: &Value) -> String {
 }
 
 fn describe_live_config(config: &CoreConfig) {
-    for outbound in &config.outbounds {
-        let OutboundSettings::Vless(vless) = &outbound.settings else {
-            continue;
-        };
-        let StreamSecurity::Reality(reality) = &outbound.stream.security else {
-            continue;
-        };
-        eprintln!(
-            "live REALITY outbound tag={} server={:?}:{} sni={} fingerprint={} flow={:?}",
-            outbound.tag.as_deref().unwrap_or("<none>"),
-            vless.server,
-            vless.port,
-            reality.server_name,
-            reality.fingerprint,
-            vless.users.first().and_then(|user| user.flow.as_deref())
-        );
-    }
+    let reality_outbound_count = config
+        .outbounds
+        .iter()
+        .filter(|outbound| {
+            matches!(outbound.settings, OutboundSettings::Vless(_))
+                && matches!(outbound.stream.security, StreamSecurity::Reality(_))
+        })
+        .count();
+    eprintln!("live REALITY config loaded: realityOutbounds={reality_outbound_count}");
 }
 
 async fn run_parallel_live_workload(
@@ -248,14 +239,10 @@ async fn run_parallel_live_workload(
     let mut handles = Vec::with_capacity(flow_count);
 
     eprintln!(
-        "running live {:?} burst flows={} targets={}",
+        "running live {:?} burst flows={} targetCount={}",
         mode,
         flow_count,
-        targets
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(",")
+        targets.len()
     );
 
     for index in 0..flow_count {
@@ -299,16 +286,16 @@ async fn run_live_flow(
         TcpStream::connect(socks_addr),
     )
     .await
-    .map_err(|error| format!("flow {index} {target}: connect SOCKS timeout: {error}"))?
-    .map_err(|error| format!("flow {index} {target}: connect SOCKS: {error}"))?;
+    .map_err(|error| format!("flow {index}: connect SOCKS timeout: {error}"))?
+    .map_err(|error| format!("flow {index}: connect SOCKS: {error}"))?;
 
     timeout(
         Duration::from_secs(selected_live_connect_timeout_secs()),
         socks5_connect(&mut client, &target),
     )
     .await
-    .map_err(|error| format!("flow {index} {target}: SOCKS CONNECT timeout: {error}"))?
-    .map_err(|error| format!("flow {index} {target}: SOCKS CONNECT: {error}"))?;
+    .map_err(|error| format!("flow {index}: SOCKS CONNECT timeout: {error}"))?
+    .map_err(|error| format!("flow {index}: SOCKS CONNECT: {error}"))?;
 
     if mode == WorkloadMode::ConnectOnly {
         return Ok(());
@@ -317,8 +304,8 @@ async fn run_live_flow(
     let request = live_http_request(&target);
     timeout(Duration::from_secs(5), client.write_all(request.as_bytes()))
         .await
-        .map_err(|error| format!("flow {index} {target}: write HTTP request timeout: {error}"))?
-        .map_err(|error| format!("flow {index} {target}: write HTTP request: {error}"))?;
+        .map_err(|error| format!("flow {index}: write HTTP request timeout: {error}"))?
+        .map_err(|error| format!("flow {index}: write HTTP request: {error}"))?;
 
     match mode {
         WorkloadMode::ConnectOnly => {}
@@ -329,8 +316,8 @@ async fn run_live_flow(
                 client.read_exact(&mut first_byte),
             )
             .await
-            .map_err(|error| format!("flow {index} {target}: read first byte timeout: {error}"))?
-            .map_err(|error| format!("flow {index} {target}: read first byte: {error}"))?;
+            .map_err(|error| format!("flow {index}: read first byte timeout: {error}"))?
+            .map_err(|error| format!("flow {index}: read first byte: {error}"))?;
         }
         WorkloadMode::HttpBody => {
             let min_body_bytes = selected_live_http_read_bytes();
@@ -340,12 +327,10 @@ async fn run_live_flow(
             )
             .await
             .map_err(|error| {
-                format!(
-                    "flow {index} {target}: read HTTP body timeout minBytes={min_body_bytes}: {error}"
-                )
+                format!("flow {index}: read HTTP body timeout minBytes={min_body_bytes}: {error}")
             })?
-            .map_err(|error| format!("flow {index} {target}: read HTTP body: {error}"))?;
-            eprintln!("flow {index} {target}: read at least {read_bytes} HTTP body bytes");
+            .map_err(|error| format!("flow {index}: read HTTP body: {error}"))?;
+            eprintln!("flow {index}: read at least {read_bytes} HTTP body bytes");
         }
     }
 
@@ -518,17 +503,27 @@ async fn read_socks5_reply(client: &mut TcpStream) -> Result<(), String> {
 }
 
 fn selected_live_targets() -> Vec<LiveTarget> {
-    let raw = env::var("XRAY_REALITY_LIVE_TARGETS")
-        .unwrap_or_else(|_| DEFAULT_SPEEDTEST_TARGETS.to_owned());
+    live_targets_from_env(env::var(LIVE_TARGETS_ENV)).unwrap_or_else(|error| panic!("{error}"))
+}
+
+fn live_targets_from_env(raw: Result<String, env::VarError>) -> Result<Vec<LiveTarget>, String> {
+    let raw = raw.map_err(|_| {
+        format!("set {LIVE_TARGETS_ENV} to an explicit comma-separated list of host:port targets")
+    })?;
     let targets = raw
         .split(',')
         .map(str::trim)
         .filter(|target| !target.is_empty())
-        .map(parse_live_target)
-        .collect::<Result<Vec<_>, _>>()
-        .expect("parse XRAY_REALITY_LIVE_TARGETS");
-    assert!(!targets.is_empty(), "XRAY_REALITY_LIVE_TARGETS is empty");
-    targets
+        .enumerate()
+        .map(|(index, target)| {
+            parse_live_target(target)
+                .map_err(|error| format!("{LIVE_TARGETS_ENV} target #{}: {error}", index + 1))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if targets.is_empty() {
+        return Err(format!("{LIVE_TARGETS_ENV} must not be empty"));
+    }
+    Ok(targets)
 }
 
 fn parse_live_target(raw: &str) -> Result<LiveTarget, String> {
@@ -537,13 +532,13 @@ fn parse_live_target(raw: &str) -> Result<LiveTarget, String> {
     }
 
     let Some((domain, port)) = raw.rsplit_once(':') else {
-        return Err(format!("target `{raw}` must be host:port"));
+        return Err("must be host:port".to_owned());
     };
     let port = port
         .parse::<u16>()
-        .map_err(|error| format!("target `{raw}` has invalid port: {error}"))?;
+        .map_err(|error| format!("has an invalid port: {error}"))?;
     if domain.is_empty() {
-        return Err(format!("target `{raw}` has empty host"));
+        return Err("has an empty host".to_owned());
     }
     Ok(LiveTarget::Domain {
         domain: domain.to_owned(),
@@ -568,15 +563,6 @@ impl LiveTarget {
                     format!("{domain}:{port}")
                 }
             }
-        }
-    }
-}
-
-impl std::fmt::Display for LiveTarget {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Ip(addr) => write!(formatter, "{addr}"),
-            Self::Domain { domain, port } => write!(formatter, "{domain}:{port}"),
         }
     }
 }
@@ -813,6 +799,16 @@ impl Drop for LiveXrayProcess {
 mod tests {
     use super::*;
     use tokio::io::AsyncWriteExt;
+
+    #[test]
+    fn live_targets_require_an_explicit_environment_value() {
+        let error = live_targets_from_env(Err(env::VarError::NotPresent)).unwrap_err();
+
+        assert_eq!(
+            error,
+            "set XRAY_REALITY_LIVE_TARGETS to an explicit comma-separated list of host:port targets"
+        );
+    }
 
     #[test]
     fn apply_live_fingerprint_override_updates_reality_outbounds() {

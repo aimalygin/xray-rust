@@ -569,7 +569,7 @@ mod tests {
     impl DnsResolver for StaticResolver {
         async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
             match domain {
-                "googleapis.com" => Ok(SocketAddr::new(
+                "alias.example" => Ok(SocketAddr::new(
                     IpAddr::V4(Ipv4Addr::new(198, 51, 100, 9)),
                     port,
                 )),
@@ -583,7 +583,7 @@ mod tests {
         let raw = r#"{
             "dns": {
               "hosts": {
-                "domain:googleapis.cn": "googleapis.com"
+                "domain:service.example": "alias.example"
               }
             },
             "inbounds": [],
@@ -595,7 +595,7 @@ mod tests {
         let resolver = configured_dns_resolver_for_config(&parsed.config, Arc::new(StaticResolver));
 
         let addr = resolver
-            .resolve("storage.googleapis.cn", 8443)
+            .resolve("storage.service.example", 8443)
             .await
             .unwrap();
 

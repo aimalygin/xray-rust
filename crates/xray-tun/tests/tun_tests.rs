@@ -401,7 +401,7 @@ async fn tun_endpoint_buffers_tcp_slow_flow_events_in_fifo_order() {
 
     tun.record_tcp_slow_flow_event(TunTcpSlowFlowEvent {
         kind: TunTcpSlowFlowKind::Open,
-        target: "93.184.216.34:443".to_owned(),
+        target: "192.0.2.34:443".to_owned(),
         open_duration_ms: 1_200,
         first_byte_duration_ms: 0,
     });
@@ -416,7 +416,7 @@ async fn tun_endpoint_buffers_tcp_slow_flow_events_in_fifo_order() {
         tun.poll_tcp_slow_flow_event(),
         Some(TunTcpSlowFlowEvent {
             kind: TunTcpSlowFlowKind::Open,
-            target: "93.184.216.34:443".to_owned(),
+            target: "192.0.2.34:443".to_owned(),
             open_duration_ms: 1_200,
             first_byte_duration_ms: 0,
         })
@@ -605,7 +605,7 @@ async fn tun_endpoint_buffers_udp_quic_blocked_events_in_fifo_order() {
     });
 
     tun.record_udp_quic_blocked_event(TunUdpQuicBlockedEvent {
-        target: "1.1.1.1:443".to_owned(),
+        target: "192.0.2.1:443".to_owned(),
         bytes: 1_200,
     });
     tun.record_udp_quic_blocked_event(TunUdpQuicBlockedEvent {
@@ -616,7 +616,7 @@ async fn tun_endpoint_buffers_udp_quic_blocked_events_in_fifo_order() {
     assert_eq!(
         tun.poll_udp_quic_blocked_event(),
         Some(TunUdpQuicBlockedEvent {
-            target: "1.1.1.1:443".to_owned(),
+            target: "192.0.2.1:443".to_owned(),
             bytes: 1_200,
         })
     );

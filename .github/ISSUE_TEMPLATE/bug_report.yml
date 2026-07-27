@@ -1,0 +1,50 @@
+name: Bug report
+description: Report a reproducible defect without including credentials or private configuration.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include production endpoints, credentials, private keys, or unredacted logs.
+        Security vulnerabilities belong in the private process described in SECURITY.md.
+  - type: input
+    id: commit
+    attributes:
+      label: Version or commit
+      placeholder: Commit SHA or release tag
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Linux
+        - macOS
+        - iOS
+        - tvOS
+        - Android
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Use only synthetic endpoints and credentials.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation performed
+      description: Include relevant tests, logs, or commands with sensitive values redacted.

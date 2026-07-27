@@ -9,6 +9,7 @@ public enum XrayTunnelProviderMessage {
     public static let startupProbeURLOptionKey = "xrayStartupProbeURL"
     public static let startupProbeTimeoutMsOptionKey = "xrayStartupProbeTimeoutMs"
     public static let startupProbeOutboundTagOptionKey = "xrayStartupProbeOutboundTag"
+    public static let dnsServersOptionKey = "xrayDNSServers"
     public static let providerConfigReferenceKey = "configReference"
     public static let providerDebugLoggingKey = "debugLogging"
     public static let providerUseTunFileDescriptorKey = "useTunFileDescriptor"
@@ -17,6 +18,7 @@ public enum XrayTunnelProviderMessage {
     public static let providerStartupProbeURLKey = "startupProbeURL"
     public static let providerStartupProbeTimeoutMsKey = "startupProbeTimeoutMs"
     public static let providerStartupProbeOutboundTagKey = "startupProbeOutboundTag"
+    public static let providerDNSServersKey = "dnsServers"
     public static let statsRequest = "stats"
 
     public static func encodeStatsResponse(_ stats: XrayClientRuntimeStats) throws -> Data {

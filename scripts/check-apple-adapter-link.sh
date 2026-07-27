@@ -55,11 +55,11 @@ build_link_target() {
       --triple "$triple"
 }
 
-verify_macos_universal_binary() {
+verify_macos_universal_library() {
   local binary
-  binary="$(find "$XCFRAMEWORK_PATH" -path '*/macos-*/*.framework/XrayRust' -type f -print -quit)"
+  binary="$(find "$XCFRAMEWORK_PATH" -path '*/macos-*/libxray_ffi.a' -type f -print -quit)"
   if [[ -z "$binary" ]]; then
-    echo "macOS framework binary not found in $XCFRAMEWORK_PATH" >&2
+    echo "macOS static library not found in $XCFRAMEWORK_PATH" >&2
     exit 1
   fi
   lipo "$binary" -verify_arch arm64 x86_64
@@ -84,7 +84,7 @@ main() {
     "$WORKSPACE_ROOT/scripts/build-apple-xcframework.sh"
   fi
 
-  verify_macos_universal_binary
+  verify_macos_universal_library
 
   local entry name sdk triple
   for entry in "${LINK_TARGETS[@]}"; do

@@ -30,10 +30,13 @@ APPLE_SDKS=(
   "appletvsimulator"
 )
 
-REQUIRED_COMMANDS=(
+COMMON_REQUIRED_COMMANDS=(
   "cargo"
   "rustc"
   "rustup"
+)
+
+APPLE_REQUIRED_COMMANDS=(
   "xcodebuild"
   "xcrun"
   "lipo"
@@ -49,6 +52,89 @@ GRADLE_WRAPPER="$ANDROID_PROJECT_DIR/gradlew"
 
 missing_count=0
 tvos_build_std_required=0
+toolchain_mode="all"
+check_apple=1
+check_android=1
+show_help=0
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/check-mobile-toolchains.sh [--apple|--android|--all]
+
+Check build prerequisites for:
+  --apple    Apple XCFramework and Swift adapter builds only
+  --android  Android native library and AAR builds only
+  --all      both Apple and Android builds (default)
+EOF
+}
+
+configure_mode() {
+  toolchain_mode="$1"
+  case "$toolchain_mode" in
+    all)
+      check_apple=1
+      check_android=1
+      ;;
+    apple)
+      check_apple=1
+      check_android=0
+      ;;
+    android)
+      check_apple=0
+      check_android=1
+      ;;
+    *)
+      echo "internal error: unsupported toolchain mode $toolchain_mode" >&2
+      return 2
+      ;;
+  esac
+}
+
+parse_arguments() {
+  local selected_mode=""
+  show_help=0
+
+  while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+      --apple)
+        if [[ -n "$selected_mode" ]]; then
+          echo "only one of --apple, --android, or --all may be specified" >&2
+          return 2
+        fi
+        selected_mode="apple"
+        ;;
+      --android)
+        if [[ -n "$selected_mode" ]]; then
+          echo "only one of --apple, --android, or --all may be specified" >&2
+          return 2
+        fi
+        selected_mode="android"
+        ;;
+      --all)
+        if [[ -n "$selected_mode" ]]; then
+          echo "only one of --apple, --android, or --all may be specified" >&2
+          return 2
+        fi
+        selected_mode="all"
+        ;;
+      -h|--help)
+        if [[ "$#" -ne 1 || -n "$selected_mode" ]]; then
+          echo "--help cannot be combined with other arguments" >&2
+          return 2
+        fi
+        show_help=1
+        return 0
+        ;;
+      *)
+        echo "unknown argument: $1" >&2
+        return 2
+        ;;
+    esac
+    shift
+  done
+
+  configure_mode "${selected_mode:-all}"
+}
 
 ok() {
   echo "OK      $1"
@@ -193,8 +279,16 @@ check_rust_targets() {
   rustc_targets="$(rustc --print=target-list 2>/dev/null || true)"
   local missing_rustup_targets=()
 
+  local selected_targets=()
+  if [[ "$check_apple" -eq 1 ]]; then
+    selected_targets+=("${APPLE_TARGETS[@]}")
+  fi
+  if [[ "$check_android" -eq 1 ]]; then
+    selected_targets+=("${ANDROID_TARGETS[@]}")
+  fi
+
   local target
-  for target in "${APPLE_TARGETS[@]}" "${ANDROID_TARGETS[@]}"; do
+  for target in "${selected_targets[@]}"; do
     if grep -Fxq "$target" <<<"$installed_targets"; then
       ok "Rust target $target"
     elif [[ "$target" == *"apple-tvos"* ]] && grep -Fxq "$target" <<<"$rustc_targets"; then
@@ -211,7 +305,9 @@ check_rust_targets() {
   if [[ "${#missing_rustup_targets[@]}" -gt 0 ]]; then
     info "install missing rustup-backed targets with: rustup target add ${missing_rustup_targets[*]}"
   fi
-  check_tvos_build_std_fallback
+  if [[ "$check_apple" -eq 1 ]]; then
+    check_tvos_build_std_fallback
+  fi
 }
 
 check_tvos_build_std_fallback() {
@@ -301,24 +397,52 @@ check_android_ndk() {
 }
 
 main() {
-  local command_name
-  for command_name in "${REQUIRED_COMMANDS[@]}"; do
-    check_command "$command_name"
-  done
-
-  check_rust_targets
-  check_apple_sdks
-  check_gradle_wrapper
-  check_android_jdk
-  check_android_sdk
-  check_android_ndk
-
-  if [[ "$missing_count" -eq 0 ]]; then
-    ok "mobile toolchains are ready for Apple and Android artifact builds"
+  if ! parse_arguments "$@"; then
+    usage >&2
+    exit 2
+  fi
+  if [[ "$show_help" -eq 1 ]]; then
+    usage
     exit 0
   fi
 
-  info "mobile toolchains are not fully ready; missing checks: $missing_count"
+  local command_name
+  for command_name in "${COMMON_REQUIRED_COMMANDS[@]}"; do
+    check_command "$command_name"
+  done
+  if [[ "$check_apple" -eq 1 ]]; then
+    for command_name in "${APPLE_REQUIRED_COMMANDS[@]}"; do
+      check_command "$command_name"
+    done
+  fi
+
+  check_rust_targets
+  if [[ "$check_apple" -eq 1 ]]; then
+    check_apple_sdks
+  fi
+  if [[ "$check_android" -eq 1 ]]; then
+    check_gradle_wrapper
+    check_android_jdk
+    check_android_sdk
+    check_android_ndk
+  fi
+
+  if [[ "$missing_count" -eq 0 ]]; then
+    case "$toolchain_mode" in
+      apple)
+        ok "mobile toolchains are ready for Apple artifact builds"
+        ;;
+      android)
+        ok "mobile toolchains are ready for Android artifact builds"
+        ;;
+      all)
+        ok "mobile toolchains are ready for Apple and Android artifact builds"
+        ;;
+    esac
+    exit 0
+  fi
+
+  info "$toolchain_mode mobile toolchains are not fully ready; missing checks: $missing_count"
   exit 1
 }
 

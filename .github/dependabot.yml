@@ -1,0 +1,28 @@
+version: 2
+
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Chicago
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:30"
+      timezone: America/Chicago
+    open-pull-requests-limit: 3
+
+  - package-ecosystem: gradle
+    directory: /platform/android
+    schedule:
+      interval: monthly
+      time: "07:00"
+      timezone: America/Chicago
+    open-pull-requests-limit: 5

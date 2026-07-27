@@ -104,9 +104,9 @@ Use the full JSON supplied in the thread, formatted as stable pretty JSON. Keep 
     }
   },
   "dns": {
-    "servers": ["1.1.1.1", "8.8.8.8", "8.8.4.4"],
+    "servers": ["192.0.2.53", "198.51.100.53", "203.0.113.53"],
     "hosts": {
-      "domain:googleapis.cn": "googleapis.com"
+      "domain:service.example": "alias.example"
     }
   }
 }
@@ -156,8 +156,8 @@ Expected: FAIL with the current unsupported-field errors.
 Add a short comment near the test or a helper doc snippet with this command:
 
 ```bash
-XRAY_LOCATION_ASSET=/Users/antonmalygin/xray-rust/platform/apple/XrayClient/dat \
-  go run ./main run -test -format json < /Users/antonmalygin/xray-rust/tests/fixtures/configs/xray_core_reality_split_routing_full.json
+XRAY_LOCATION_ASSET=/path/to/xray-rust/platform/apple/XrayClient/dat \
+  go run ./main run -test -format json < /path/to/xray-rust/tests/fixtures/configs/xray_core_reality_split_routing_full.json
 ```
 
 Expected oracle output from the local Xray-core checkout:
@@ -372,8 +372,8 @@ Implement:
 
 Add tests for:
 
-- `domain:googleapis.cn` mapping to `googleapis.com`.
-- DNS server `1.1.1.1` defaulting to port 53.
+- `domain:service.example` mapping to `alias.example`.
+- DNS server `192.0.2.53` defaulting to port 53.
 - Existing `fakeIp` behavior still works.
 
 - [ ] **Step 5: Inbound sniffing parser**
@@ -491,7 +491,7 @@ Resolution order:
 Add tests:
 
 - `configured_dns_hosts_ip_mapping_wins`: host rule `domain:example.com -> 203.0.113.7`, resolve `www.example.com:443`, assert returned socket is `203.0.113.7:443`, and assert the fallback resolver was not called.
-- `configured_dns_hosts_domain_alias_uses_inner_resolution`: host rule `domain:googleapis.cn -> googleapis.com`, fake fallback resolves `googleapis.com` to `198.51.100.9`, assert `googleapis.cn` returns `198.51.100.9` with the requested port.
+- `configured_dns_hosts_domain_alias_uses_inner_resolution`: host rule `domain:service.example -> alias.example`, fake fallback resolves `alias.example` to `198.51.100.9`, assert `service.example` returns `198.51.100.9` with the requested port.
 
 - [ ] **Step 4: Implement IP nameserver querying**
 
@@ -882,11 +882,11 @@ Expected: PASS. If workspace tests are too slow, record which focused tests pass
 
 - [ ] **Step 3: Re-run Xray-core oracle**
 
-From `/Users/antonmalygin/xray-rust/Xray-core`, run:
+From `/path/to/xray-rust/Xray-core`, run:
 
 ```bash
-XRAY_LOCATION_ASSET=/Users/antonmalygin/xray-rust/platform/apple/XrayClient/dat \
-  go run ./main run -test -format json < /Users/antonmalygin/xray-rust/tests/fixtures/configs/xray_core_reality_split_routing_full.json
+XRAY_LOCATION_ASSET=/path/to/xray-rust/platform/apple/XrayClient/dat \
+  go run ./main run -test -format json < /path/to/xray-rust/tests/fixtures/configs/xray_core_reality_split_routing_full.json
 ```
 
 Expected:

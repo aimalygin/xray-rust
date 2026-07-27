@@ -68,6 +68,18 @@ fn load_config_reports_json_parse_diagnostics() {
 }
 
 #[test]
+fn quick_start_freedom_example_loads() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/freedom.json");
+
+    let result = load_config(&path);
+
+    assert!(
+        result.is_ok(),
+        "Quick Start example should remain loadable: {result:?}"
+    );
+}
+
+#[test]
 fn load_config_preserves_and_formats_security_warnings() {
     let temp_dir =
         std::env::temp_dir().join(format!("xray-cli-warning-config-{}", std::process::id()));

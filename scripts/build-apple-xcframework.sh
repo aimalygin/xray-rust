@@ -6,8 +6,6 @@ PROFILE="${PROFILE:-release}"
 OUT_DIR="${OUT_DIR:-"$WORKSPACE_ROOT/target/mobile/apple"}"
 HEADER_DIR="$WORKSPACE_ROOT/crates/xray-ffi/include"
 XCFRAMEWORK_NAME="${XCFRAMEWORK_NAME:-XrayRust.xcframework}"
-FRAMEWORK_NAME="${FRAMEWORK_NAME:-XrayRust}"
-FRAMEWORK_BUNDLE_NAME="$FRAMEWORK_NAME.framework"
 CRATE_PACKAGE="xray-ffi"
 LIB_NAME="libxray_ffi.a"
 CARGO_BIN="${CARGO_BIN:-cargo}"
@@ -33,12 +31,6 @@ require_command() {
 }
 
 validate_output_paths() {
-  case "$FRAMEWORK_NAME" in
-    ""|"."|".."|*[!A-Za-z0-9._-]*)
-      echo "unsafe FRAMEWORK_NAME: $FRAMEWORK_NAME" >&2
-      exit 1
-      ;;
-  esac
   case "$XCFRAMEWORK_NAME" in
     ""|"."|".."|*[!A-Za-z0-9._-]*|*.xcframework/)
       echo "unsafe XCFRAMEWORK_NAME: $XCFRAMEWORK_NAME" >&2
@@ -55,6 +47,38 @@ validate_output_paths() {
   resolved_out_dir="$(cd "$OUT_DIR" && pwd -P)"
   if [[ -z "$resolved_out_dir" || "$resolved_out_dir" == "/" ]]; then
     echo "unsafe OUT_DIR: $OUT_DIR" >&2
+    exit 1
+  fi
+}
+
+validate_headers() {
+  local required
+  for required in xray_ffi.h module.modulemap; do
+    if [[ ! -f "$HEADER_DIR/$required" ]]; then
+      echo "missing Apple XCFramework header input: $HEADER_DIR/$required" >&2
+      exit 1
+    fi
+  done
+}
+
+verify_xcframework_layout() {
+  local plist="$OUT_DIR/$XCFRAMEWORK_NAME/Info.plist"
+  local index
+  local headers_path
+  local library_path
+
+  for index in 0 1 2 3 4; do
+    library_path="$(/usr/libexec/PlistBuddy -c "Print :AvailableLibraries:$index:LibraryPath" "$plist")"
+    headers_path="$(/usr/libexec/PlistBuddy -c "Print :AvailableLibraries:$index:HeadersPath" "$plist")"
+
+    if [[ "$library_path" != "$LIB_NAME" || "$headers_path" != "Headers" ]]; then
+      echo "invalid Apple XCFramework slice $index: LibraryPath=$library_path HeadersPath=$headers_path" >&2
+      exit 1
+    fi
+  done
+
+  if /usr/libexec/PlistBuddy -c "Print :AvailableLibraries:5" "$plist" >/dev/null 2>&1; then
+    echo "invalid Apple XCFramework slice count: expected 5" >&2
     exit 1
   fi
 }
@@ -158,71 +182,15 @@ group_libs() {
   combine_staticlibs "$output" "${libs[@]}"
 }
 
-make_module_map() {
-  local framework_path="$1"
-  cat >"$framework_path/Modules/module.modulemap" <<EOF
-framework module $FRAMEWORK_NAME {
-  umbrella header "xray_ffi.h"
-  export *
-  module * { export * }
-}
-EOF
-}
-
-make_info_plist() {
-  local framework_path="$1"
-  local minimum_key="$2"
-  local minimum_version="$3"
-
-  cat >"$framework_path/Info.plist" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>CFBundleDevelopmentRegion</key>
-  <string>en</string>
-  <key>CFBundleExecutable</key>
-  <string>$FRAMEWORK_NAME</string>
-  <key>CFBundleIdentifier</key>
-  <string>org.xrayrust.$FRAMEWORK_NAME</string>
-  <key>CFBundleInfoDictionaryVersion</key>
-  <string>6.0</string>
-  <key>CFBundleName</key>
-  <string>$FRAMEWORK_NAME</string>
-  <key>CFBundlePackageType</key>
-  <string>FMWK</string>
-  <key>CFBundleShortVersionString</key>
-  <string>1.0</string>
-  <key>CFBundleVersion</key>
-  <string>1</string>
-  <key>$minimum_key</key>
-  <string>$minimum_version</string>
-</dict>
-</plist>
-EOF
-}
-
-make_static_framework() {
-  local framework_path="$1"
-  local static_lib="$2"
-  local minimum_key="$3"
-  local minimum_version="$4"
-
-  rm -rf "$framework_path"
-  mkdir -p "$framework_path/Headers" "$framework_path/Modules"
-  cp "$static_lib" "$framework_path/$FRAMEWORK_NAME"
-  cp "$HEADER_DIR"/*.h "$framework_path/Headers/"
-  make_module_map "$framework_path"
-  make_info_plist "$framework_path" "$minimum_key" "$minimum_version"
-}
-
 main() {
   require_command cargo
   require_command rustup
   require_command lipo
   require_command xcodebuild
+  require_command /usr/libexec/PlistBuddy
 
   validate_output_paths
+  validate_headers
 
   build_targets "${IOS_DEVICE_TARGETS[@]}"
   build_targets "${IOS_SIMULATOR_TARGETS[@]}"
@@ -242,27 +210,16 @@ main() {
   group_libs "$tvos_simulator_lib" "${TVOS_SIMULATOR_TARGETS[@]}"
   group_libs "$macos_lib" "${MACOS_TARGETS[@]}"
 
-  local ios_device_framework="$OUT_DIR/ios-device/$FRAMEWORK_BUNDLE_NAME"
-  local ios_simulator_framework="$OUT_DIR/ios-simulator/$FRAMEWORK_BUNDLE_NAME"
-  local tvos_device_framework="$OUT_DIR/tvos-device/$FRAMEWORK_BUNDLE_NAME"
-  local tvos_simulator_framework="$OUT_DIR/tvos-simulator/$FRAMEWORK_BUNDLE_NAME"
-  local macos_framework="$OUT_DIR/macos/$FRAMEWORK_BUNDLE_NAME"
-
-  make_static_framework "$ios_device_framework" "$ios_device_lib" "MinimumOSVersion" "$IPHONEOS_DEPLOYMENT_TARGET"
-  make_static_framework "$ios_simulator_framework" "$ios_simulator_lib" "MinimumOSVersion" "$IPHONEOS_DEPLOYMENT_TARGET"
-  make_static_framework "$tvos_device_framework" "$tvos_device_lib" "MinimumOSVersion" "$TVOS_DEPLOYMENT_TARGET"
-  make_static_framework "$tvos_simulator_framework" "$tvos_simulator_lib" "MinimumOSVersion" "$TVOS_DEPLOYMENT_TARGET"
-  make_static_framework "$macos_framework" "$macos_lib" "LSMinimumSystemVersion" "$MACOSX_DEPLOYMENT_TARGET"
-
   rm -rf "$OUT_DIR/$XCFRAMEWORK_NAME"
   xcodebuild -create-xcframework \
-    -framework "$ios_device_framework" \
-    -framework "$ios_simulator_framework" \
-    -framework "$tvos_device_framework" \
-    -framework "$tvos_simulator_framework" \
-    -framework "$macos_framework" \
+    -library "$ios_device_lib" -headers "$HEADER_DIR" \
+    -library "$ios_simulator_lib" -headers "$HEADER_DIR" \
+    -library "$tvos_device_lib" -headers "$HEADER_DIR" \
+    -library "$tvos_simulator_lib" -headers "$HEADER_DIR" \
+    -library "$macos_lib" -headers "$HEADER_DIR" \
     -output "$OUT_DIR/$XCFRAMEWORK_NAME"
 
+  verify_xcframework_layout
   echo "$OUT_DIR/$XCFRAMEWORK_NAME"
 }
 

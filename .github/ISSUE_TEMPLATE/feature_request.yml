@@ -1,0 +1,25 @@
+name: Feature request
+description: Propose a scoped capability or compatibility improvement.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user problem or compatibility gap should be addressed?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe expected behavior and relevant Xray configuration fields.
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification approach
+      description: Explain how this could be tested or benchmarked.

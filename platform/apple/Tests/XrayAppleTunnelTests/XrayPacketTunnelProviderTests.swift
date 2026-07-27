@@ -70,6 +70,21 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         XCTAssertNil(lifecycle.active())
     }
 
+    func testInvalidNewStartStillSupersedesDelayedEarlierStart() {
+        var stoppedResources: [Int] = []
+        let lifecycle = XrayPacketTunnelLifecycle<Int> {
+            stoppedResources.append($0)
+        }
+        let delayedStartToken = lifecycle.beginStart()
+        let invalidNewStartToken = lifecycle.beginStart()
+
+        XCTAssertTrue(lifecycle.cancelStart(invalidNewStartToken))
+        XCTAssertFalse(lifecycle.isCurrent(delayedStartToken))
+        XCTAssertFalse(lifecycle.install(1, for: delayedStartToken))
+        XCTAssertEqual(stoppedResources, [1])
+        XCTAssertNil(lifecycle.active())
+    }
+
     func testSupersededTerminalFailureCannotStopNewRuntime() {
         var stoppedResources: [Int] = []
         let lifecycle = XrayPacketTunnelLifecycle<Int> {
@@ -99,13 +114,112 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         XCTAssertEqual(excludedRoute?.destinationSubnetMask, "255.255.255.255")
     }
 
-    func testNetworkSettingsUseVpnDnsForAllDomains() {
+    func testNetworkSettingsLeaveDnsToTheSystemByDefault() {
         let settings = XrayPacketTunnelProvider.networkSettings(
             excludingServerAddress: "203.0.113.10"
         )
 
-        XCTAssertEqual(settings.dnsSettings?.servers, ["1.1.1.1", "8.8.8.8"])
+        XCTAssertNil(settings.dnsSettings)
+    }
+
+    func testNetworkSettingsUseExplicitCustomDnsForAllDomains() {
+        let settings = XrayPacketTunnelProvider.networkSettings(
+            excludingServerAddress: "203.0.113.10",
+            dnsConfiguration: .custom(["192.0.2.53", "198.51.100.53"])
+        )
+
+        XCTAssertEqual(settings.dnsSettings?.servers, ["192.0.2.53", "198.51.100.53"])
         XCTAssertEqual(settings.dnsSettings?.matchDomains, [""])
+    }
+
+    func testDnsConfigurationDefaultsToSystemDns() {
+        XCTAssertEqual(
+            XrayPacketTunnelProvider.dnsConfiguration(
+                options: nil,
+                providerConfiguration: nil
+            ),
+            .system
+        )
+    }
+
+    func testDnsConfigurationStartOptionsOverrideProviderConfiguration() {
+        let configuration = XrayPacketTunnelProvider.dnsConfiguration(
+            options: [
+                XrayTunnelProviderMessage.dnsServersOptionKey:
+                    NSArray(array: ["198.51.100.53"]),
+            ],
+            providerConfiguration: [
+                XrayTunnelProviderMessage.providerDNSServersKey: ["192.0.2.53"],
+            ]
+        )
+
+        XCTAssertEqual(configuration, .custom(["198.51.100.53"]))
+    }
+
+    func testDnsConfigurationAcceptsSingleAddressString() {
+        XCTAssertEqual(
+            XrayPacketTunnelProvider.dnsConfiguration(
+                options: nil,
+                providerConfiguration: [
+                    XrayTunnelProviderMessage.providerDNSServersKey: "192.0.2.53",
+                ]
+            ),
+            .custom(["192.0.2.53"])
+        )
+    }
+
+    func testDnsConfigurationRejectsInvalidStartOptionsWithoutFallingBack() {
+        let configuration = XrayPacketTunnelProvider.dnsConfiguration(
+            options: [
+                XrayTunnelProviderMessage.dnsServersOptionKey:
+                    NSArray(array: ["resolver.example"]),
+            ],
+            providerConfiguration: [
+                XrayTunnelProviderMessage.providerDNSServersKey: ["192.0.2.53"],
+            ]
+        )
+
+        XCTAssertEqual(configuration, .invalid)
+    }
+
+    func testDnsConfigurationTrimsAndDeduplicatesAddresses() {
+        let configuration = XrayPacketTunnelProvider.dnsConfiguration(
+            options: nil,
+            providerConfiguration: [
+                XrayTunnelProviderMessage.providerDNSServersKey: [
+                    " 192.0.2.53 ",
+                    "192.0.2.53",
+                    "198.51.100.53",
+                ],
+            ]
+        )
+
+        XCTAssertEqual(configuration, .custom(["192.0.2.53", "198.51.100.53"]))
+    }
+
+    func testDnsConfigurationRejectsIPv6UntilIPv6TunnelRoutingIsInstalled() {
+        XCTAssertEqual(
+            XrayPacketTunnelProvider.dnsConfiguration(
+                options: nil,
+                providerConfiguration: [
+                    XrayTunnelProviderMessage.providerDNSServersKey: "2001:db8::53",
+                ]
+            ),
+            .invalid
+        )
+    }
+
+    func testDnsConfigurationRejectsMoreThanEightServers() {
+        XCTAssertEqual(
+            XrayPacketTunnelProvider.dnsConfiguration(
+                options: nil,
+                providerConfiguration: [
+                    XrayTunnelProviderMessage.providerDNSServersKey:
+                        (1 ... 9).map { "192.0.2.\($0)" },
+                ]
+            ),
+            .invalid
+        )
     }
 
     func testNetworkSettingsDoNotInstallIPv6DefaultRouteYet() {
@@ -257,45 +371,177 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         )
     }
 
-    func testStartupProbeDefaultsToGenerate204() {
-        let probe = XrayPacketTunnelProvider.startupProbe(
-            options: nil,
-            providerConfiguration: nil
+    func testStartupProbeIsDisabledByDefault() {
+        XCTAssertEqual(
+            XrayPacketTunnelProvider.startupProbeConfiguration(
+                options: nil,
+                providerConfiguration: nil
+            ),
+            .disabled
         )
+    }
 
-        XCTAssertEqual(probe?.url, "https://www.google.com/generate_204")
-        XCTAssertEqual(probe?.timeoutMs, 5_000)
-        XCTAssertNil(probe?.outboundTag)
+    func testStartupProbeURLAloneDoesNotEnableNetworkAccess() {
+        XCTAssertEqual(
+            XrayPacketTunnelProvider.startupProbeConfiguration(
+                options: nil,
+                providerConfiguration: [
+                    XrayTunnelProviderMessage.providerStartupProbeURLKey:
+                        "https://probe.example/204",
+                ]
+            ),
+            .disabled
+        )
     }
 
     func testStartupProbeStartOptionsOverrideProviderConfiguration() {
-        let probe = XrayPacketTunnelProvider.startupProbe(
+        let configuration = XrayPacketTunnelProvider.startupProbeConfiguration(
             options: [
+                XrayTunnelProviderMessage.startupProbeEnabledOptionKey: NSNumber(value: true),
                 XrayTunnelProviderMessage.startupProbeURLOptionKey: "https://probe.example/204" as NSString,
                 XrayTunnelProviderMessage.startupProbeTimeoutMsOptionKey: NSNumber(value: 7_500),
                 XrayTunnelProviderMessage.startupProbeOutboundTagOptionKey: "proxy" as NSString,
             ],
             providerConfiguration: [
+                XrayTunnelProviderMessage.providerStartupProbeEnabledKey: true,
                 XrayTunnelProviderMessage.providerStartupProbeURLKey: "https://provider.example/204",
                 XrayTunnelProviderMessage.providerStartupProbeTimeoutMsKey: 2_500,
                 XrayTunnelProviderMessage.providerStartupProbeOutboundTagKey: "direct",
             ]
         )
 
-        XCTAssertEqual(probe?.url, "https://probe.example/204")
-        XCTAssertEqual(probe?.timeoutMs, 7_500)
-        XCTAssertEqual(probe?.outboundTag, "proxy")
+        guard case let .enabled(probe) = configuration else {
+            return XCTFail("Expected the explicit startup probe to be enabled")
+        }
+        XCTAssertEqual(probe.url, "https://probe.example/204")
+        XCTAssertEqual(probe.timeoutMs, 7_500)
+        XCTAssertEqual(probe.outboundTag, "proxy")
     }
 
-    func testStartupProbeCanBeDisabledFromProviderConfiguration() {
-        let probe = XrayPacketTunnelProvider.startupProbe(
+    func testStartupProbeAcceptsCoreCompatibleCustomPortAndQuery() {
+        let configuration = XrayPacketTunnelProvider.startupProbeConfiguration(
             options: nil,
             providerConfiguration: [
-                XrayTunnelProviderMessage.providerStartupProbeEnabledKey: false,
+                XrayTunnelProviderMessage.providerStartupProbeEnabledKey: true,
+                XrayTunnelProviderMessage.providerStartupProbeURLKey:
+                    "http://probe.example:8080?check=1",
             ]
         )
 
-        XCTAssertNil(probe)
+        guard case let .enabled(probe) = configuration else {
+            return XCTFail("Expected the explicit startup probe to be enabled")
+        }
+        XCTAssertEqual(probe.url, "http://probe.example:8080?check=1")
+        XCTAssertEqual(probe.timeoutMs, 5_000)
+        XCTAssertNil(probe.outboundTag)
+    }
+
+    func testStartupProbeStartOptionsCanDisableProviderConfiguration() {
+        let configuration = XrayPacketTunnelProvider.startupProbeConfiguration(
+            options: [
+                XrayTunnelProviderMessage.startupProbeEnabledOptionKey:
+                    NSNumber(value: false),
+            ],
+            providerConfiguration: [
+                XrayTunnelProviderMessage.providerStartupProbeEnabledKey: true,
+                XrayTunnelProviderMessage.providerStartupProbeURLKey:
+                    "https://provider.example/204",
+            ]
+        )
+
+        XCTAssertEqual(configuration, .disabled)
+    }
+
+    func testStartupProbeRejectsEnabledConfigurationWithoutURL() {
+        XCTAssertEqual(
+            XrayPacketTunnelProvider.startupProbeConfiguration(
+                options: nil,
+                providerConfiguration: [
+                    XrayTunnelProviderMessage.providerStartupProbeEnabledKey: true,
+                ]
+            ),
+            .invalid
+        )
+    }
+
+    func testStartupProbeRejectsNonHttpURL() {
+        XCTAssertEqual(
+            XrayPacketTunnelProvider.startupProbeConfiguration(
+                options: nil,
+                providerConfiguration: [
+                    XrayTunnelProviderMessage.providerStartupProbeEnabledKey: true,
+                    XrayTunnelProviderMessage.providerStartupProbeURLKey:
+                        "file:///private/config",
+                ]
+            ),
+            .invalid
+        )
+    }
+
+    func testStartupProbeRejectsURLsUnsupportedByCoreParser() {
+        let invalidURLs = [
+            "HTTPS://probe.example/204",
+            "https://probe.example/204#fragment",
+            "https://[2001:db8::1]/204",
+            "https://probe.example:70000/204",
+            "https://probe.example/a b",
+        ]
+
+        for invalidURL in invalidURLs {
+            XCTAssertEqual(
+                XrayPacketTunnelProvider.startupProbeConfiguration(
+                    options: nil,
+                    providerConfiguration: [
+                        XrayTunnelProviderMessage.providerStartupProbeEnabledKey: true,
+                        XrayTunnelProviderMessage.providerStartupProbeURLKey: invalidURL,
+                    ]
+                ),
+                .invalid,
+                invalidURL
+            )
+        }
+    }
+
+    func testStartupProbeRejectsInvalidExplicitTimeoutsWithoutFallingBack() {
+        for invalidTimeoutMs in [0, 60_001] {
+            XCTAssertEqual(
+                XrayPacketTunnelProvider.startupProbeConfiguration(
+                    options: [
+                        XrayTunnelProviderMessage.startupProbeEnabledOptionKey:
+                            NSNumber(value: true),
+                        XrayTunnelProviderMessage.startupProbeTimeoutMsOptionKey:
+                            NSNumber(value: invalidTimeoutMs),
+                    ],
+                    providerConfiguration: [
+                        XrayTunnelProviderMessage.providerStartupProbeEnabledKey: true,
+                        XrayTunnelProviderMessage.providerStartupProbeURLKey:
+                            "https://provider.example/204",
+                        XrayTunnelProviderMessage.providerStartupProbeTimeoutMsKey: 2_500,
+                    ]
+                ),
+                .invalid
+            )
+        }
+    }
+
+    func testStartupProbeRejectsInvalidStartOptionOutboundTagWithoutFallingBack() {
+        XCTAssertEqual(
+            XrayPacketTunnelProvider.startupProbeConfiguration(
+                options: [
+                    XrayTunnelProviderMessage.startupProbeEnabledOptionKey:
+                        NSNumber(value: true),
+                    XrayTunnelProviderMessage.startupProbeOutboundTagOptionKey:
+                        "   " as NSString,
+                ],
+                providerConfiguration: [
+                    XrayTunnelProviderMessage.providerStartupProbeEnabledKey: true,
+                    XrayTunnelProviderMessage.providerStartupProbeURLKey:
+                        "https://provider.example/204",
+                    XrayTunnelProviderMessage.providerStartupProbeOutboundTagKey: "proxy",
+                ]
+            ),
+            .invalid
+        )
     }
 
     func testConfigIsResolvedFromOpaqueSecureReference() throws {
@@ -314,6 +560,8 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
 
         XCTAssertEqual(resolved?.json, #"{"inbounds":[]}"#)
         XCTAssertEqual(resolved?.source, "providerConfigurationReference")
+        XCTAssertEqual(resolved?.startupProbeConfiguration, .disabled)
+        XCTAssertEqual(resolved?.dnsConfiguration, .system)
     }
 
     func testConfigSummaryIncludesRoutingSurfaceWithoutSecrets() {

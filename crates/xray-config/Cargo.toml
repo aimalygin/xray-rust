@@ -2,8 +2,11 @@
 name = "xray-config"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
 publish.workspace = true
+description = "Bounded Xray JSON and geodata parser for xray-rust"
 
 [dependencies]
 libc.workspace = true

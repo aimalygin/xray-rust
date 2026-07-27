@@ -1,0 +1,12 @@
+title = "xray-rust secret scanning"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Deterministic uTLS fixture enum, not a credential"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+regexes = ['''"key_share_group"\s*:\s*"x25519mlkem768"''']
+paths = ['''^tests/fixtures/reality/clienthello_chrome_auto\.json$''']

@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, VecDeque};
 use std::future::pending;
 use std::io::{Cursor, ErrorKind};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-use std::path::Path;
 use std::pin::Pin;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -40,11 +39,11 @@ use tokio::time::{sleep, timeout, Duration, Instant as TokioInstant};
 use tokio_rustls::TlsAcceptor;
 use uuid::Uuid;
 use xray_config::{
-    parse_xray_json, parse_xray_json_with_geodata_dir, CoreConfig, DnsConfig, DnsFakeIpConfig,
-    DomainMatcher, InboundConfig, InboundProtocol, InboundSniffingConfig, IpCidr, IpMatcher,
-    Network, OutboundConfig, OutboundSettings, PolicyConfig, PolicyLevelConfig, RealitySettings,
-    RealityShortId, RoutingConfig, RoutingDomainStrategy, RoutingRule, SniffingDestination,
-    StreamSecurity, StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
+    parse_xray_json, CoreConfig, DnsConfig, DnsFakeIpConfig, DomainMatcher, InboundConfig,
+    InboundProtocol, InboundSniffingConfig, IpCidr, IpMatcher, Network, OutboundConfig,
+    OutboundSettings, PolicyConfig, PolicyLevelConfig, RealitySettings, RealityShortId,
+    RoutingConfig, RoutingDomainStrategy, RoutingRule, SniffingDestination, StreamSecurity,
+    StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
 };
 use xray_core_rs::{
     select_tcp_outbound_for_session, select_tcp_outbound_for_session_with_resolver,
@@ -121,18 +120,11 @@ fn allocate_unused_loopback_port() -> u16 {
 }
 
 fn full_xray_core_fixture_config() -> CoreConfig {
-    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("crate should be under workspace crates directory");
     let fixture =
         include_str!("../../../tests/fixtures/configs/xray_core_reality_split_routing_full.json");
-    parse_xray_json_with_geodata_dir(
-        fixture,
-        workspace_root.join("platform/apple/XrayClient/dat"),
-    )
-    .expect("xray-core-compatible fixture should parse")
-    .config
+    parse_xray_json(fixture)
+        .expect("xray-core-compatible fixture should parse")
+        .config
 }
 
 #[derive(Debug, Clone, Default)]
@@ -891,6 +883,36 @@ fn full_xray_core_fixture_builds_core() {
     let config = full_xray_core_fixture_config();
 
     Core::new(config).expect("full xray-core fixture should build a core");
+}
+
+#[test]
+fn full_xray_core_fixture_routes_reserved_domain_direct() {
+    let config = full_xray_core_fixture_config();
+    let target = Target::new(
+        RoutingTargetAddr::Domain("api.direct.example".to_owned()),
+        443,
+        RoutingNetwork::Tcp,
+    );
+
+    let outbound = select_tcp_outbound_for_session(&config, None, &target)
+        .expect("reserved domain rule should select direct");
+
+    assert!(matches!(outbound, TcpOutbound::Freedom));
+}
+
+#[test]
+fn full_xray_core_fixture_routes_reserved_cidr_direct() {
+    let config = full_xray_core_fixture_config();
+    let target = Target::new(
+        RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 42))),
+        443,
+        RoutingNetwork::Tcp,
+    );
+
+    let outbound = select_tcp_outbound_for_session(&config, None, &target)
+        .expect("reserved CIDR rule should select direct");
+
+    assert!(matches!(outbound, TcpOutbound::Freedom));
 }
 
 #[tokio::test]

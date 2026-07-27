@@ -6,7 +6,7 @@
         "outboundTag": "direct",
         "ruleTag": "rule_exclusions_domain",
         "domain": [
-          "geosite:category-ru"
+          "domain:direct.example"
         ]
       },
       {
@@ -14,7 +14,7 @@
         "outboundTag": "direct",
         "ruleTag": "rule_exclusions_ip",
         "ip": [
-          "geoip:ru"
+          "192.0.2.0/24"
         ]
       },
       {
@@ -89,14 +89,14 @@
             "users": [
               {
                 "level": 8,
-                "id": "bcaa23ff-f48e-41c1-939c-ab2a03b2fbc6",
+                "id": "00000000-0000-4000-8000-000000000001",
                 "security": "auto",
                 "flow": "xtls-rprx-vision",
                 "encryption": "none"
               }
             ],
-            "port": 63821,
-            "address": "37.203.35.22"
+            "port": 443,
+            "address": "192.0.2.10"
           }
         ]
       },
@@ -108,11 +108,11 @@
       "streamSettings": {
         "realitySettings": {
           "spiderX": "",
-          "serverName": "www.tiktok.com",
+          "serverName": "www.example.com",
           "show": false,
-          "shortId": "b5e4681f3e45bb0b",
+          "shortId": "0123456789abcdef",
           "fingerprint": "firefox",
-          "publicKey": "Ox_jQR_q0zt5x2DlXWkJFbyp8c8eJDbusJbLZzERVEI",
+          "publicKey": "hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo",
           "allowInsecure": false
         },
         "tcpSettings": {
@@ -132,12 +132,12 @@
   ],
   "dns": {
     "servers": [
-      "1.1.1.1",
-      "8.8.8.8",
-      "8.8.4.4"
+      "192.0.2.53",
+      "198.51.100.53",
+      "203.0.113.53"
     ],
     "hosts": {
-      "domain:googleapis.cn": "googleapis.com"
+      "domain:service.example": "alias.example"
     }
   }
 }

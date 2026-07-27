@@ -1,109 +1,181 @@
-# Verification Matrix
+# Verification
 
-This project is the first Rust mobile/client core slice aimed at protocol compatibility with Xray-core. Verification is split between local Rust checks, lightweight compatibility smoke coverage, and the read-only Go Xray-core oracle checkout.
+The default verification path is hermetic: it does not need a live proxy,
+external network access, or a Go Xray-core checkout.
 
-## Local Rust Checks
+## CI-equivalent Rust checks
 
-Run these from the repository root:
+Run from the repository root:
 
 ```sh
 cargo fmt --all -- --check
-cargo clippy --workspace --all-targets --locked -- -D warnings
-cargo test --workspace --all-targets
+cargo clippy --workspace --all-targets --all-features --locked -- \
+  -D warnings -W clippy::perf -W clippy::suspicious
+cargo test --workspace --all-targets --locked
+bash scripts/tests/check-public-fixtures.test.sh
+bash scripts/tests/check-mobile-toolchains.test.sh
 ```
 
-The clippy command uses `--locked` and denies warnings so local verification matches the strict form expected before committing documentation or code changes.
+These commands match the Rust job in `.github/workflows/ci.yml`. Tests marked
+`#[ignore]` are intentionally excluded because they require a local reference
+binary, live credentials, or external network access. The fixture safety check
+rejects routable endpoints and unreviewed credential-shaped values without
+printing their contents.
 
-Run the mobile ABI and artifact contract tests:
+The supply-chain CI job additionally runs:
 
 ```sh
-cargo test -p xray-ffi --test mobile_artifacts_tests -- --nocapture
+cargo audit
+cargo deny --locked check advisories bans licenses sources
 ```
 
-Run the mobile toolchain preflight and artifact builders on a provisioned macOS host:
+CI installs `cargo-audit` 0.22.2 and `cargo-deny` 0.19.4. Install those tools
+before reproducing this part locally.
+
+The dedicated secret-scan job checks the complete reachable history:
 
 ```sh
-scripts/check-mobile-toolchains.sh
+XRAY_FIXTURE_SCAN_HISTORY=1 \
+  bash scripts/tests/check-public-fixtures.test.sh
+gitleaks git --config .gitleaks.toml --redact=100 --no-banner \
+  --log-opts="--all" .
+```
+
+CI downloads Gitleaks 8.30.1 and verifies its release SHA-256 before use. The
+custom check covers retired VLESS/REALITY values that generic token scanners do
+not recognize; Gitleaks covers common credential formats.
+
+## Focused runtime checks
+
+The main local integration target exercises SOCKS, HTTP CONNECT, TUN,
+Freedom/VLESS, TLS, routing, DNS, UDP/XUDP, Vision, backpressure, and ICMP:
+
+```sh
+cargo test --locked -p xray-core-rs --test runtime_data_path_tests
+```
+
+Protocol/transport tests can be run separately:
+
+```sh
+cargo test --locked -p xray-proxy
+cargo test --locked -p xray-transport
+cargo test --locked -p xray-config
+```
+
+The C header, exported artifacts, adapter contracts, and build-script target
+matrices are covered by:
+
+```sh
+cargo test --locked -p xray-ffi --test ffi_tests
+cargo test --locked -p xray-ffi --test mobile_artifacts_tests -- --nocapture
+```
+
+## Deterministic REALITY checks
+
+These tools and tests do not open a connection to a live node:
+
+```sh
+go run ./tools/reality-oracle/session_id_vectors.go \
+  --check tests/fixtures/reality/session_id_vectors.json
+go run ./tools/reality-oracle/clienthello_fixture.go \
+  --check tests/fixtures/reality/clienthello_chrome_auto.json
+cargo test --locked -p xray-transport reality
+```
+
+They cover session-ID sealing, ClientHello shaping/patching, certificate
+binding, connector validation, and the Rust REALITY transport path.
+
+## Local Xray-core interoperability
+
+The repository does not vendor or declare a pinned Xray-core oracle revision.
+For reproducible results, choose a revision yourself, record its full commit
+SHA in the test report, and provide an absolute checkout path. The tests expect
+an `xray` executable at the checkout root:
+
+```sh
+export XRAY_CORE_CHECKOUT=/absolute/path/to/Xray-core
+git -C "$XRAY_CORE_CHECKOUT" rev-parse HEAD
+(
+  cd "$XRAY_CORE_CHECKOUT"
+  go build -o xray ./main
+)
+```
+
+Run a focused REALITY+Vision interoperability test:
+
+```sh
+XRAY_CORE_CHECKOUT="$XRAY_CORE_CHECKOUT" \
+cargo test --locked -p xray-core-rs \
+  --test local_xray_interop_tests \
+  rust_socks_client_reaches_echo_server_through_local_xray_vless_reality_vision \
+  -- --ignored --nocapture
+```
+
+Or run all ignored local Xray-core scenarios:
+
+```sh
+XRAY_CORE_CHECKOUT="$XRAY_CORE_CHECKOUT" \
+cargo test --locked -p xray-core-rs \
+  --test local_xray_interop_tests -- --ignored --nocapture
+```
+
+These tests generate loopback server/client configurations and ephemeral TLS or
+REALITY test material. They cover VLESS TCP, TLS, TLS+Vision, REALITY+Vision,
+selected fingerprints, and parallel flows. They do not establish compatibility
+with every Xray-core revision or configuration.
+
+If the checkout is placed at `./Xray-core`, the lightweight default-suite smoke
+test also detects it. Set `XRAY_RUST_REQUIRE_XRAY_CORE=1` to make absence of
+that fixed-path checkout a failure.
+
+## Live-node tests
+
+`live_reality_node_tests` are ignored and require a config supplied locally via
+`XRAY_REALITY_LIVE_CONFIG_JSON` or `XRAY_REALITY_LIVE_CONFIG_PATH`. They also
+require an explicit comma-separated `XRAY_REALITY_LIVE_TARGETS` value; the test
+suite has no built-in external targets. Do not put live credentials or targets
+in `tests/fixtures` or commit them to Git.
+
+Example for the Rust client only:
+
+```sh
+XRAY_REALITY_LIVE_CONFIG_PATH=/absolute/path/to/private-config.json \
+XRAY_REALITY_LIVE_TARGETS=host-you-control.example:8080 \
+cargo test --locked -p xray-core-rs \
+  --test live_reality_node_tests \
+  rust_core_live_reality_node_reads_parallel_speedtest_http_responses \
+  -- --ignored --nocapture
+```
+
+Replace the reserved example target with an endpoint you are authorized to
+exercise. The live tests require external network access and are not CI
+evidence.
+
+## Mobile verification
+
+On a provisioned macOS host:
+
+```sh
+scripts/check-mobile-toolchains.sh --all
 scripts/build-apple-xcframework.sh
-scripts/build-android-libs.sh
+scripts/check-apple-adapter-link.sh
+scripts/build-android-adapter.sh
 ```
 
-These produce `target/mobile/apple/XrayRust.xcframework` for iOS/tvOS and `target/mobile/android/jniLibs` for Android. The Apple artifact is a framework-style XCFramework whose slices contain static `XrayRust.framework` bundles. The tvOS path uses nightly `rust-src` with `-Z build-std` when the stable toolchain does not ship prebuilt tvOS std components.
-
-Run the first live Rust runtime data-path test:
+Run Swift and Android unit tests:
 
 ```sh
-cargo test -p xray-core-rs --test runtime_data_path_tests socks_client_reaches_echo_target_through_vless_tcp_outbound
+HOME=target/mobile/apple-swiftpm-home \
+CLANG_MODULE_CACHE_PATH=target/mobile/apple-clang-module-cache \
+swift test --disable-sandbox --package-path platform/apple
+
+platform/android/gradlew -p platform/android \
+  :xraymobile:testDebugUnitTest --no-daemon
 ```
 
-Run the resolver-injected domain outbound server data-path test:
+The Apple link check covers iOS/tvOS device and both simulator architectures,
+plus macOS `arm64` and `x86_64`. Android artifact scripts verify all four ABIs,
+native-library provenance, and 16 KiB ELF LOAD alignment.
 
-```sh
-cargo test -p xray-core-rs --test runtime_data_path_tests socks_client_reaches_echo_target_through_domain_vless_server
-```
-
-These prove the current local/test paths: SOCKS5 client traffic enters `xray-core-rs`, is encoded as VLESS over raw TCP, reaches a fake VLESS server configured either as an IP outbound server or through a resolver-injected domain outbound server, and returns bytes from an echo target. They do not prove full Xray DNS behavior, TLS, REALITY, or Vision live interoperability yet.
-
-Run the Vision runtime boundary checks:
-
-```sh
-cargo test -p xray-proxy --test vision_stream_tests
-cargo test -p xray-transport --test transport_tests reality
-cargo test -p xray-transport --test reality_runtime_tests
-cargo test -p xray-core-rs --test runtime_data_path_tests vision
-cargo test -p xray-core-rs outbound::tests
-```
-
-These verify that `VisionStream` pads outbound bytes, unpads inbound bytes, the default system dialer still rejects live REALITY networking, an explicitly injected REALITY protected-stream engine can carry runtime bytes, the gated `RealityRuntimeEngine` can prepare a REALITY handshake, drive DNS/TCP setup, and hand completion to a one-shot REALITY TLS session before stopping at the live TLS gate, `VLESS + REALITY + xtls-rprx-vision` reaches the protected transport boundary, and raw TCP/TLS Vision flows are still rejected. They do not validate a real Chrome/uTLS-compatible REALITY TLS completion path or local Xray-core interoperability yet.
-
-## REALITY Primitive Oracle
-
-Run the deterministic REALITY primitive checks from the repository root:
-
-```sh
-go run ./tools/reality-oracle/session_id_vectors.go --check tests/fixtures/reality/session_id_vectors.json
-go run ./tools/reality-oracle/clienthello_fixture.go --check tests/fixtures/reality/clienthello_chrome_auto.json
-cargo test -p xray-transport reality_tests
-cargo test -p xray-transport --test reality_clienthello_tests
-cargo test -p xray-transport --test reality_connector_tests
-cargo test -p xray-transport --test reality_runtime_tests
-```
-
-These checks validate deterministic Xray-core-compatible session-id sealing, ClientHello patching, certificate binding primitives, a uTLS Chrome ClientHello fixture that can be validated as `RealityPreparedClientHello` metadata, the non-networked provider-to-handshake boundary in `RealityConnector`, the prepared-ClientHello connector path, and the gated stateful runtime setup path in `RealityRuntimeEngine`. They do not validate the live REALITY TLS completion path, a production Chrome/uTLS provider, or local Xray-core server interoperability.
-
-## Go Xray-core Oracle
-
-`Xray-core/` is a read-only checkout of the Go reference implementation. It is ignored by the root Git repository and used as a compatibility oracle, not edited as part of this Rust workspace.
-
-Run the current VLESS XTLS Vision REALITY oracle scenario from the repository root:
-
-```sh
-cd Xray-core
-go test ./testing/scenarios -run TestVlessXtlsVisionReality -count=1
-```
-
-This validates the reference scenario itself. Rust client interoperability against that scenario is a future phase once the REALITY connector is complete and wired into an executable harness.
-
-## Compatibility Harness Status
-
-Current Rust compatibility coverage:
-
-```sh
-cargo test -p xray-core-rs compat_smoke
-```
-
-When the ignored `Xray-core/` checkout is present, this smoke test verifies that the oracle checkout contains expected reference files. In a clean checkout without `Xray-core/`, the smoke test prints a skip message and passes so the default workspace test suite does not depend on ignored local files.
-
-To require the oracle checkout during local compatibility work:
-
-```sh
-XRAY_RUST_REQUIRE_XRAY_CORE=1 cargo test -p xray-core-rs compat_smoke
-```
-
-An ignored Rust shell exists at `tests/compat/vless_reality_vision.rs` for the future REALITY connector phase. It currently lives at workspace-root `tests/compat` and is not wired as a Cargo test target, so it is not CI coverage yet. In particular, this command is not currently valid:
-
-```sh
-cargo test --test vless_reality_vision -- --ignored
-```
-
-Cargo reports no test target with that name until a future task wires the compatibility harness into the workspace.
+See [mobile testing](mobile-testing.md) for prerequisites, outputs, and
+on-device responsibilities.

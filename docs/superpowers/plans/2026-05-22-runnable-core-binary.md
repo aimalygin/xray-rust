@@ -531,7 +531,7 @@ Use a plain stderr log file and parse the bound SOCKS address from the startup l
 Run:
 
 ```bash
-XRAY_CORE_CHECKOUT=/Users/antonmalygin/xray-rust/Xray-core cargo test -p xray-cli --test process_interop_tests -- --ignored --nocapture
+XRAY_CORE_CHECKOUT=/path/to/xray-rust/Xray-core cargo test -p xray-cli --test process_interop_tests -- --ignored --nocapture
 ```
 
 Expected: fail before helper implementation or before the binary prints bound inbound lines.
@@ -578,7 +578,7 @@ Keep supported process-level cases to VLESS TCP and VLESS REALITY+Vision.
 Run:
 
 ```bash
-XRAY_CORE_CHECKOUT=/Users/antonmalygin/xray-rust/Xray-core cargo test -p xray-cli --test process_interop_tests -- --ignored --nocapture
+XRAY_CORE_CHECKOUT=/path/to/xray-rust/Xray-core cargo test -p xray-cli --test process_interop_tests -- --ignored --nocapture
 ```
 
 Expected: 2 ignored process interop tests pass.
@@ -632,7 +632,7 @@ Expected: all pass.
 Run:
 
 ```bash
-XRAY_CORE_CHECKOUT=/Users/antonmalygin/xray-rust/Xray-core cargo test -p xray-cli --test process_interop_tests -- --ignored --nocapture
+XRAY_CORE_CHECKOUT=/path/to/xray-rust/Xray-core cargo test -p xray-cli --test process_interop_tests -- --ignored --nocapture
 ```
 
 Expected: VLESS TCP and REALITY+Vision pass through spawned `xray-rust`.

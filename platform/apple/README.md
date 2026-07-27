@@ -1,45 +1,157 @@
-# Apple Client
+# Apple integration
 
-This Swift Package contains the Apple-side client pieces for embedding
-`xray-ffi` in iOS and tvOS apps.
+This directory contains a local Swift Package and an Xcode reference app for
+iOS, tvOS, and macOS. It embeds the Rust core through the C ABI and a locally
+built static XCFramework.
 
-Build the Rust XCFramework first:
-
-```sh
-scripts/build-apple-xcframework.sh
-```
-
-The package expects:
+The integration is source-only. `Package.swift` points to:
 
 ```text
 target/mobile/apple/XrayRust.xcframework
 ```
 
-The XCFramework is framework-style: each platform slice contains
-`XrayRust.framework`, and that framework carries a static Rust archive rather
-than a dynamic library.
+Swift Package Manager does not download or build that binary target. Build it
+before opening or building the package:
 
-Provided pieces:
+```sh
+scripts/check-mobile-toolchains.sh --apple
+scripts/build-apple-xcframework.sh
+```
 
-- `XrayMobileAdapter`: `XrayCore`, `XrayPacketTunnelPump`, and
-  `XrayDarwinTunFileDescriptor` wrappers over the stable C ABI.
-- `XrayAppleShared`: profile, connection status, runtime stats, and app-to-extension
-  message keys shared by the host app and Packet Tunnel extension.
-- `XrayAppleClient`: SwiftUI root view, profile persistence, config validation, and
-  `NETunnelProviderManager` control-plane wiring.
-- `XrayAppleTunnel`: reusable `NEPacketTunnelProvider` implementation that starts
-  `XrayCore`, connects it to `packetFlow`, and answers runtime stats requests from
-  the host app.
-- `HostApp/`: thin app and extension source/entitlement/plist templates for Xcode
-  host targets.
+The XCFramework contains iOS/tvOS device and universal simulator slices plus a
+universal macOS `arm64 + x86_64` slice. Rerun the build after changing Rust code
+or `xray_ffi.h`; Xcode does not rebuild it automatically. Its slices use
+Xcode's static-library-plus-headers layout, so the Rust archive is linked into
+the host executable rather than embedded as a runtime framework.
 
-Check the package locally with:
+## Deployment targets
+
+The runnable reference app and Packet Tunnel provider support iOS 15+, tvOS
+17+, and macOS 13+. These are the deployment targets checked into the Xcode
+project and match the availability annotations on the client/provider APIs.
+
+The lower-level Rust XCFramework is built with iOS 15, tvOS 14, and macOS 11
+deployment targets. `Package.swift` declares iOS 15, tvOS 17, and macOS 11 so
+the lower-level `XrayMobileAdapter` and `XrayAppleShared` products remain usable
+on macOS 11 and 12. The macOS `XrayAppleClient` UI and
+`XrayAppleTunnel` provider entry points are available from macOS 13.
+
+## Run the reference app
+
+```sh
+open platform/apple/XrayClient/XrayClient.xcodeproj
+```
+
+In Xcode:
+
+1. choose `XrayClient`, `XrayClientTv`, or `XrayClientMac`;
+2. select a matching simulator/device or “My Mac”;
+3. assign your own Apple Developer team to the app and Packet Tunnel extension;
+4. make the app and extension bundle identifiers unique and keep the profile's
+   provider bundle identifier aligned with the extension;
+5. run the containing app.
+
+The local package dependency resolves the already-built XCFramework
+automatically. A UI-only simulator run can exercise profile editing and config
+validation. Starting a real system tunnel requires valid signing, the Packet
+Tunnel Network Extension entitlement, provisioning, and platform user approval.
+
+Do not use the synthetic test credentials as a live profile. Import or enter a
+profile you control without committing it to the repository.
+
+## Swift Package products
+
+- `XrayMobileAdapter`: `XrayCore`, packet batching/pump, stats/events, startup
+  probe, and optional Darwin-utun fd discovery.
+- `XrayAppleShared`: profile/config models, secure config storage, sanitized
+  logging, and app-to-extension message keys.
+- `XrayAppleClient`: SwiftUI profile editor and `NETunnelProviderManager`
+  control plane.
+- `XrayAppleTunnel`: reusable `NEPacketTunnelProvider`.
+
+The provider prefers direct borrowed Darwin-utun fd I/O when enabled and a
+usable fd can be discovered. It falls back to `NEPacketTunnelFlow` packet
+pumping otherwise.
+
+## Network privacy defaults
+
+The reference provider does not contact a connectivity-check service during
+startup. A startup probe is strictly opt-in: set `startupProbeEnabled` to
+`true` and provide an explicit `http` or `https` `startupProbeURL` in the
+provider configuration. Per-start overrides use
+`xrayStartupProbeEnabled` and `xrayStartupProbeURL`. Enabling a probe without a
+valid URL, or with a timeout outside `1...60000` milliseconds, fails tunnel
+startup instead of selecting a third-party endpoint.
+
+The provider also does not select a public DNS operator. With no DNS setting,
+it leaves Network Extension's `dnsSettings` unset and name resolution follows
+the platform's system policy. A host that needs tunnel-wide custom DNS can set
+`dnsServers` in provider configuration, or `xrayDNSServers` in start options,
+to one IPv4 address string or a non-empty property-list array of at most eight
+IPv4 address strings. IPv6 resolver overrides are rejected until the provider
+also installs an IPv6 tunnel route. Invalid explicit values fail startup; start
+options take precedence over persistent provider configuration.
+
+## Host target requirements
+
+Both the containing app and Packet Tunnel extension need the appropriate
+Network Extension capability. The extension entitlement value is:
+
+```text
+com.apple.developer.networking.networkextension = packet-tunnel-provider
+```
+
+The default provider identifier convention is:
+
+```text
+<containing-app-bundle-id>.Tunnel
+```
+
+The checked-in `HostApp/` directory contains thin entry-point, entitlement, and
+extension plist templates for custom host projects. The checked-in
+`XrayClient/XrayClient.xcodeproj` is the runnable reference project.
+
+Profiles are metadata in preferences while credential-bearing config JSON is
+stored in the Data Protection Keychain. Host applications remain responsible
+for their own threat model, access controls, backup policy, and migration
+testing.
+
+## Geodata resources
+
+`geosite.dat` and `geoip.dat` are not distributed with the repository. If a
+profile uses geodata routing, install the pinned, checksum-verified sample
+assets:
+
+```sh
+scripts/fetch-geodata.sh
+```
+
+The Xcode project already references the resulting files under
+`platform/apple/XrayClient/dat` from its app and Packet Tunnel targets. Custom
+host projects must add verified files to both the containing app resources (for
+validation) and extension resources (for runtime loading). The adapter passes
+each bundle's resource directory to the core. Review
+[third-party notices](../../THIRD_PARTY_NOTICES.md) before redistribution.
+
+Profiles without `geosite:` or non-private `geoip:` references do not need
+these files. `geoip:private` is built in.
+
+## Build and test
+
+Build the package against the generated XCFramework:
 
 ```sh
 scripts/build-apple-adapter.sh
 ```
 
-Run Swift package tests with:
+Verify linking for iOS/tvOS device and simulator architectures and both macOS
+architectures:
+
+```sh
+scripts/check-apple-adapter-link.sh
+```
+
+Run Swift tests:
 
 ```sh
 HOME=target/mobile/apple-swiftpm-home \
@@ -47,142 +159,35 @@ CLANG_MODULE_CACHE_PATH=target/mobile/apple-clang-module-cache \
 swift test --disable-sandbox --package-path platform/apple
 ```
 
-## Xcode Host Targets
+CI also downloads the pinned geodata into the ignored `dat` directory and
+builds the shared `XrayClient`, `XrayClientTv`, and `XrayClientMac` schemes for
+generic simulators or macOS with code signing disabled. This verifies that a
+clean checkout can compile the complete reference hosts and their embedded
+Packet Tunnel extensions without requiring an Apple Developer account.
 
-Create an iOS app target and a tvOS app target that both depend on the local
-Swift package product:
+See [mobile testing](../../docs/mobile-testing.md) for the full artifact matrix.
 
-```text
-XrayAppleClient
-```
+## macOS Packet Tunnel debugging
 
-Use `HostApp/XrayClientApp.swift` as the app entry point for each target.
-
-Create a Packet Tunnel extension target for each platform that depends on:
-
-```text
-XrayAppleTunnel
-```
-
-Use `HostApp/PacketTunnelProvider.swift` as the extension provider file and
-`HostApp/PacketTunnelInfo.plist` as the extension plist shape.
-
-Both the app and extension targets need the Network Extension packet-tunnel
-entitlement:
-
-```text
-com.apple.developer.networking.networkextension = packet-tunnel-provider
-```
-
-The default provider bundle identifier is derived as:
-
-```text
-<host app bundle id>.Tunnel
-```
-
-The in-app profile editor exposes this value so local development builds can
-match whatever bundle identifier Xcode and provisioning use.
-
-## macOS System VPN Target
-
-The Xcode project also contains native macOS targets:
-
-```text
-XrayClientMac
-XrayClientMacTunnel
-```
-
-`XrayClientMac` is a normal macOS app with a main window and a SwiftUI
-`MenuBarExtra`. `XrayClientMacTunnel` is the macOS Packet Tunnel extension and
-depends on the shared `XrayAppleTunnel` package product.
-
-The default macOS provider bundle identifier follows the same convention as the
-iOS and tvOS hosts:
-
-```text
-org.texforge.XrayClientMac.Tunnel
-```
-
-Build locally without signing checks:
+macOS discovers Packet Tunnel extensions inside installed, signed containing
+apps. A copy that exists only under DerivedData may not be selected reliably.
+For a local signed debug build:
 
 ```sh
-xcodebuild -project platform/apple/XrayClient/XrayClient.xcodeproj \
-  -scheme XrayClientMac \
-  -sdk macosx \
-  -configuration Debug \
-  CODE_SIGNING_ALLOWED=NO \
-  build
-```
-
-Starting the system VPN requires a signed build with the Packet Tunnel
-NetworkExtension entitlement and local user approval in macOS System Settings.
-
-For local debugging, install the signed debug app into a stable app location
-before starting the VPN. macOS discovers Packet Tunnel providers from installed
-containing apps; running the app only from Xcode's DerivedData can leave Xcode
-waiting for a provider process that macOS never launches. The macOS app and
-tunnel extension must also be sandboxed for PlugInKit to return the provider.
-
-```sh
-platform/apple/scripts/install-macos-debug-app.sh
+platform/apple/scripts/install-macos-debug-app.sh \
+  DEVELOPMENT_TEAM=<YOUR_TEAM_ID>
 open "/Applications/XrayClientMac.app"
 ```
 
-The helper builds the `XrayClientMac` scheme with signing enabled, copies the
-app to `/Applications/XrayClientMac.app`, registers it with LaunchServices, and
-checks that PlugInKit can match `org.texforge.XrayClientMac.Tunnel` as a packet
-tunnel provider. It also disables Xcode's debug-dylib mode for this install,
-because NetworkExtension provider discovery should use a normal embedded
-`.appex` executable. Pass extra `xcodebuild` settings at the end if your local
-signing setup needs them, for example:
+Attach Xcode manually to `XrayClientMacTunnel`, then press Connect in the app.
+If the provider is not discovered, verify that only the intended app copy is
+registered and that both targets use matching signing and bundle identifiers.
 
-```sh
-platform/apple/scripts/install-macos-debug-app.sh DEVELOPMENT_TEAM=9QF29ADW72
-```
+## Current limits
 
-Use the `XrayClientMac` scheme when you want to launch or debug the containing
-app itself.
-
-For the most reliable Packet Tunnel provider debugging flow, use the installed
-app and attach manually: choose **Debug > Attach to Process by PID or Name...**
-in Xcode, enter `XrayClientMacTunnel`, then press Connect in the app. The Packet
-Tunnel provider process is launched by macOS only after the app starts the VPN
-configuration.
-
-If you use the `XrayClientMacTunnel` scheme for automatic extension debugging,
-Xcode may ask for the containing app because macOS launches Packet Tunnel
-providers through an app bundle. Choose the `XrayClientMac.app` build product
-that Xcode just built under `DerivedData/.../Build/Products/Debug`, not an older
-copy from `/Applications` or `~/Applications`. If multiple copies with the same
-bundle id are registered, Xcode can wait for one extension instance while macOS
-starts another one.
-
-If Xcode stays at "Waiting to attach to XrayClientMacTunnel", check the
-NetworkExtension logs:
-
-```sh
-/usr/bin/log show --last 5m --style compact --predicate \
-  'eventMessage CONTAINS[c] "org.texforge.XrayClientMac.Tunnel" OR eventMessage CONTAINS[c] "[XrayRust]"'
-```
-
-Messages such as `Found 0 extension(s)` or `The VPN app used by the VPN
-configuration is not installed` mean macOS has not discovered the embedded
-`.appex`. Quit stale `XrayClientMac` copies, prefer a single app location for
-the current debug session, and delete the old "Xray Rust" entry in System
-Settings > VPN once if the stale configuration keeps being reused. You can
-verify discovery directly with:
-
-```sh
-/usr/bin/pluginkit -m -A -p com.apple.networkextension.packet-tunnel \
-  -i org.texforge.XrayClientMac.Tunnel -v
-```
-
-## Current Limits
-
-- Provisioning profiles and signing are still local Apple Developer account
-  setup, not something this repository can complete automatically.
-- The default checked-in profile is a direct `tun` + `freedom` config for smoke
-  testing. Real proxy profiles should replace the JSON in the app.
-- The Packet Tunnel provider currently uses the packet-boundary pump. The
-  fd-backed Darwin utun path remains available through `XrayDarwinTunFileDescriptor`
-  for a later native integration.
+- The package is not published as a remote binary Swift Package.
+- Signing/provisioning and App Store policy are not automated.
+- The reference UI and provider are integration samples, not a production VPN
+  product.
+- Real-device lifecycle, network transition, energy, memory, and packet-loss
+  behavior must be tested by each host application.

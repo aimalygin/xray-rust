@@ -1,45 +1,35 @@
-# Mobile Testing
+# Mobile testing
 
-This page describes the current first-pass mobile harness entrypoints for iOS, tvOS, and Android.
-
-## Readiness Preflight
-
-Run from the repository root:
+Mobile artifact builds require a provisioned macOS host. Start with:
 
 ```sh
-scripts/check-mobile-toolchains.sh
+scripts/check-mobile-toolchains.sh --all
 ```
 
-The script checks:
+The preflight checks the pinned Rust toolchain and targets, Apple SDKs,
+universal macOS support, the tvOS build-std fallback, JDK 17+, Android SDK 35,
+CMake 3.22.1, NDK 26.3.11579264, and the checked-in Gradle wrapper.
+Use `--apple` or `--android` when preparing for only one platform; without a
+mode flag the script keeps the same `--all` behavior.
 
-- Rust Apple host/mobile targets: `aarch64-apple-darwin`, `aarch64-apple-ios`, `aarch64-apple-ios-sim`, `x86_64-apple-ios`.
-- Rust Android targets: `aarch64-linux-android`, `armv7-linux-androideabi`, `i686-linux-android`, `x86_64-linux-android`.
-- tvOS build-std fallback through `TVOS_BUILD_STD=auto`, `TVOS_RUST_TOOLCHAIN=nightly`, and `rust-src`.
-- Apple SDKs for iOS, iOS simulator, tvOS, and tvOS simulator.
-- Android NDK discovery from `ANDROID_NDK_HOME`, `ANDROID_NDK_ROOT`, `ANDROID_HOME/ndk`, or the usual user SDK directories.
+## ABI and script contracts
 
-On the current macOS host this preflight has passed after installing the iOS/Android Rust targets and nightly `rust-src` for tvOS build-std.
-
-## ABI Smoke Tests
-
-Run:
+Run the platform-independent contract tests first:
 
 ```sh
-cargo test -p xray-ffi --test mobile_artifacts_tests -- --nocapture
+cargo test --locked -p xray-ffi --test mobile_artifacts_tests -- --nocapture
+bash scripts/tests/check-mobile-toolchains.test.sh
 ```
 
-This validates that:
+They validate the public header, required exported symbols, adapter ABI-major
+checks, target matrices, and build-script guards.
 
-- `xray_ffi.h` declares the lifecycle, error, TUN packet ABI, and optional fd-backed TUN ABI.
-- The public C header compiles as a C11 harness.
-- The native `libxray_ffi.a` exports the expected C symbols.
-- The Apple, tvOS, and Android artifact scripts keep the expected target matrix.
+## Apple XCFramework
 
-## Apple Artifacts
-
-Run:
+Build:
 
 ```sh
+scripts/check-mobile-toolchains.sh --apple
 scripts/build-apple-xcframework.sh
 ```
 
@@ -49,74 +39,74 @@ Output:
 target/mobile/apple/XrayRust.xcframework
 ```
 
-The generated XCFramework contains:
+The static XCFramework contains:
 
-- `ios-arm64`
-- `ios-arm64_x86_64-simulator`
-- `tvos-arm64`
-- `tvos-arm64_x86_64-simulator`
-- `macos-arm64`, used as a local SwiftPM host-build slice for adapter checks.
+| Slice | Architectures |
+| --- | --- |
+| `ios-arm64` | `arm64` device |
+| `ios-arm64_x86_64-simulator` | `arm64`, `x86_64` simulator |
+| `tvos-arm64` | `arm64` device |
+| `tvos-arm64_x86_64-simulator` | `arm64`, `x86_64` simulator |
+| `macos-arm64_x86_64` | universal `arm64`, `x86_64` |
 
-Each slice is packaged as `XrayRust.framework`. This is a static framework:
-the `XrayRust.framework/XrayRust` binary is the Rust `staticlib` archive, not a
-dynamic library. The framework bundle carries `Headers/xray_ffi.h`,
-`Modules/module.modulemap`, and `Info.plist`, so Swift imports continue to use
-`import XrayRust`.
+Each XCFramework slice contains `libxray_ffi.a`, `xray_ffi.h`, and the Clang
+module map that exposes the Swift import name `XrayRust`. The artifact uses
+Xcode's static-library XCFramework layout; it is not a dynamic framework and is
+not embedded in application bundles.
 
-Useful environment overrides:
+The checked-in deployment floors are:
 
-- `PROFILE=release`
-- `OUT_DIR=/path/to/output`
-- `XCFRAMEWORK_NAME=XrayRust.xcframework`
-- `FRAMEWORK_NAME=XrayRust`
-- `APPLE_CARGO_TARGET_DIR=/path/to/apple/cargo-cache`
-- `IPHONEOS_DEPLOYMENT_TARGET=15.0`
-- `TVOS_DEPLOYMENT_TARGET=14.0`
-- `MACOSX_DEPLOYMENT_TARGET=11.0`
-- `TVOS_BUILD_STD=auto`
-- `TVOS_RUST_TOOLCHAIN=nightly`
+| Layer | iOS | tvOS | macOS |
+| --- | --- | --- | --- |
+| Rust XCFramework | 15 | 14 | 11 |
+| Swift Package declaration | 15 | 17 | 11 |
+| Reference app and Packet Tunnel provider | 15 | 17 | 13 |
 
-By default, Apple artifact builds use a Cargo target directory under `OUT_DIR`
-that includes the iOS, tvOS, and macOS deployment target values. This prevents
-stale Rust object files built for a higher minimum OS from being reused after
-lowering deployment targets.
+The macOS 11 package floor applies to the lower-level `XrayMobileAdapter` and
+`XrayAppleShared` products. The macOS reference UI and provider entry points
+are annotated for macOS 13 and the Xcode targets use the same minimum. Useful
+build-script overrides include `PROFILE`, `OUT_DIR`,
+`APPLE_CARGO_TARGET_DIR`, and the three platform deployment target variables.
 
-The current stable Rust toolchain exposes tvOS target specs but does not ship prebuilt tvOS std components through `rustup target add`, so the script uses nightly `-Z build-std=std,panic_unwind` for tvOS when needed. Release artifacts intentionally keep unwinding enabled so the C ABI panic boundary can convert synchronous Rust panics into `XrayStatus::Panic` instead of terminating the Network Extension process.
+When stable Rust does not provide prebuilt tvOS standard libraries, the script
+uses the pinned `nightly-2026-05-22` toolchain with `rust-src` and
+`-Z build-std`. The preflight reports the exact missing component.
 
-## Apple Client Skeleton
-
-The repository now includes a Swift Package adapter under:
-
-```text
-platform/apple
-```
-
-It provides:
-
-- `XrayCore`, a Swift wrapper over the C ABI lifecycle, TUN packet push/poll, optional fd-backed TUN registration, stats, errors, and socket-protection registration hook.
-- `XrayPacketTunnelPump`, a `NEPacketTunnelProvider` packet pump that reads OS tunnel packets into the Rust TUN boundary and writes emitted packets back through `packetFlow`.
-- `XrayDarwinTunFileDescriptor`, an advanced helper for discovering an existing utun fd for `XRAY_TUN_FD_PACKET_FORMAT_DARWIN_UTUN` integrations.
-- `XrayAppleShared`, shared host-app/extension profile, status, stats, and message contracts.
-- `XrayAppleClient`, a simple SwiftUI iOS/tvOS control-plane UI with profile persistence, config validation, and `NETunnelProviderManager` connect/disconnect wiring.
-- `XrayAppleTunnel`, a reusable Packet Tunnel provider that starts `XrayCore`, pumps packets through `packetFlow`, and answers stats messages from the host app.
-- `platform/apple/HostApp`, thin Xcode target templates for app entry, extension provider, entitlements, and extension plist.
-- `XrayRust.framework/Modules/module.modulemap`, so the generated XCFramework can be imported as `XrayRust` from Swift.
-
-The package expects `target/mobile/apple/XrayRust.xcframework` to exist. Build it first with `scripts/build-apple-xcframework.sh`.
-
-Run the adapter host-build check with:
+Build and link the Swift adapter for every supported SDK/architecture:
 
 ```sh
-scripts/build-apple-adapter.sh
+scripts/check-apple-adapter-link.sh
 ```
 
-This builds the Swift package against the generated XCFramework. The macOS slice in the XCFramework is included for this local SwiftPM check; the mobile runtime targets remain iOS and tvOS.
-
-## Android Artifacts
-
-Run:
+Run Swift package tests:
 
 ```sh
+HOME=target/mobile/apple-swiftpm-home \
+CLANG_MODULE_CACHE_PATH=target/mobile/apple-clang-module-cache \
+swift test --disable-sandbox --package-path platform/apple
+```
+
+The package references the fixed local path
+`target/mobile/apple/XrayRust.xcframework`; rebuild it after Rust or C-header
+changes. See [Apple integration](../platform/apple/README.md).
+
+The CI Apple job additionally runs `scripts/fetch-geodata.sh` and builds the
+shared `XrayClient`, `XrayClientTv`, and `XrayClientMac` schemes unsigned. The
+downloaded `.dat` files are checksum-verified inputs in the ignored
+`platform/apple/XrayClient/dat` directory, not repository contents.
+
+The Apple provider performs no startup connectivity probe and assigns no
+third-party DNS resolver by default. Device tests that enable a probe or custom
+DNS must use endpoints controlled or approved by the host application and
+verify both valid configuration and fail-closed handling of malformed explicit
+settings.
+
+## Android native libraries
+
+Build:
+
+```sh
+scripts/check-mobile-toolchains.sh --android
 scripts/build-android-libs.sh
 ```
 
@@ -130,68 +120,61 @@ target/mobile/android/jniLibs/x86/libxray_ffi.so
 target/mobile/android/jniLibs/x86_64/libxray_ffi.so
 ```
 
-Useful environment overrides:
+The build requires API level 24 and the pinned NDK. Each generated shared
+library is inspected to ensure every ELF LOAD segment is aligned to at least
+16 KiB.
 
-- `ANDROID_NDK_HOME=/path/to/ndk`
-- `ANDROID_NDK_ROOT=/path/to/ndk`
-- `ANDROID_HOME=/path/to/android/sdk`
-- `ANDROID_API_LEVEL=24`
-- `PROFILE=release`
-- `OUT_DIR=/path/to/output`
-
-The script discovers the NDK LLVM toolchain and sets Cargo/cc linker variables for each Android target before building.
-
-## Android Adapter Skeleton
-
-The repository now includes an Android library skeleton under:
-
-```text
-platform/android
-```
-
-It provides:
-
-- `XrayCore`, a Kotlin wrapper over JNI lifecycle, TUN packet push/poll, stats, and errors.
-- `XrayVpnService`, a minimal `VpnService` integration that defaults to separate TUN read/write loops and can use `XrayTunBackend.FileDescriptor` for direct fd-backed Rust TUN I/O.
-- `xray_mobile_jni.cpp`, a JNI bridge from Kotlin to the stable C ABI.
-- Android socket protection wiring: Kotlin passes `VpnService.protect(fd)` through JNI to `xray_core_set_socket_protect_callback`, and Rust invokes it before outbound TCP connects and before outbound UDP socket use.
-- Android fd-backed TUN wiring: Kotlin passes `ParcelFileDescriptor.fd` through JNI to `xray_core_set_tun_fd` before config load when `XrayTunBackend.FileDescriptor` is selected.
-
-The Android skeleton expects generated `libxray_ffi.so` files under `target/mobile/android/jniLibs`. Build them first with `scripts/build-android-libs.sh`. The JNI bridge can also use `XRAY_FFI_ANDROID_DIR=/path/to/mobile/android` when the artifact directory lives elsewhere.
-
-Run the adapter build check with:
+Build the complete debug AAR:
 
 ```sh
 scripts/build-android-adapter.sh
 ```
 
-This builds the Android library AAR, compiles the JNI bridge through CMake for all configured ABIs, and compiles the Kotlin wrapper. The script discovers `ANDROID_HOME` and `ANDROID_NDK_HOME` when they are not already set.
+Output:
 
-## What Can Be Tested Now
+```text
+platform/android/xraymobile/build/outputs/aar/xraymobile-debug.aar
+```
 
-Mobile harnesses can now test:
+The adapter build compiles the C++ JNI bridge for all four ABIs, packages both
+`libxray_ffi.so` and `libxray_mobile_jni.so`, verifies 16 KiB alignment, and
+checks that the packaged FFI libraries exactly match the selected Rust
+artifacts. Set `XRAY_USE_PREBUILT_ARTIFACTS=1` only when the native artifact
+directory has already been built and verified.
 
-- Loading an Xray JSON config through the C ABI.
-- Starting and stopping the embedded core through the C ABI.
-- Accessing structured FFI errors.
-- Passing raw TUN packets through the C ABI and reading packet counters.
-- Passing a platform TUN fd through `xray_core_set_tun_fd` so Rust reads and writes the fd directly instead of crossing the Swift/Kotlin/JNI packet boundary for every packet.
-- Running TCP sessions through the TUN packet boundary: mobile code pushes raw IP packets with `xray_tun_push_packet`, polls response packets with `xray_tun_poll_packet`, and the Rust core bridges accepted TCP sessions through routing plus Freedom/VLESS TCP outbounds.
-- Running UDP sessions through the same TUN packet boundary for:
-  - Freedom/direct UDP targets.
-  - VLESS UDP length-prefixed datagrams over TCP transport.
-  - Vision UDP through VLESS Mux/XUDP framing over a protected TLS/REALITY-capable stream boundary.
-- Receiving ICMP echo replies for IPv4 and IPv6 ping-style probes through the TUN packet boundary.
-- Linking iOS/tvOS apps against `XrayRust.xcframework`.
-- Packaging Android apps with the generated `jniLibs` tree.
-- Driving first iOS/tvOS `NEPacketTunnelProvider` and Android `VpnService` harnesses through the checked-in adapter skeletons.
-- Compiling the checked-in Swift and Android adapter projects locally with `scripts/build-apple-adapter.sh` and `scripts/build-android-adapter.sh`.
-- Proxy-mode local behavior with SOCKS/HTTP inbounds, Freedom direct egress, and VLESS TCP/TLS/REALITY+Vision profiles that match the current supported config subset.
+Run Kotlin tests:
 
-Current limits:
+```sh
+platform/android/gradlew -p platform/android \
+  :xraymobile:testDebugUnitTest --no-daemon
+```
 
-- The platform-neutral TUN runtime is runnable for TCP, UDP, VLESS UDP, Vision XUDP, and ICMP echo. The checked-in Apple and Android adapters are first harness skeletons for device testing, not complete app templates with entitlements, foreground-service notification policy, user profile storage, or production UI.
-- The fd-backed TUN backend is optional. The packet pump remains the default Apple path, while Android can opt into direct fd-backed mode through `XrayTunBackend.FileDescriptor`.
-- iOS/tvOS `NEPacketTunnelProvider` packaging still needs a host app/extension target with the correct Apple entitlements and provisioning profile.
-- Android packaging still needs a host app that requests VPN user consent and provides foreground-service behavior appropriate for the target Android version.
-- Broader Xray-core protocols, DNS app behavior, geosite/geoip data loading, and full routing parity remain future work.
+See [Android integration](../platform/android/README.md).
+
+## On-device test checklist
+
+Artifact and unit tests do not replace platform testing. Before a release,
+verify at minimum:
+
+- start, stop, rapid stop-during-start, and repeated connect cycles;
+- IPv4 and IPv6 traffic where the target network supports them;
+- TCP and UDP through the intended Freedom/VLESS/TLS/REALITY profile;
+- DNS behavior and captive-network transitions;
+- airplane mode, interface changes, sleep/wake, and process termination;
+- queue pressure and packet loss under sustained traffic;
+- secure profile persistence and log redaction;
+- Android foreground-service behavior and Apple Network Extension lifecycle;
+- release signing, entitlements/manifest declarations, and store policy.
+
+## Current host responsibilities
+
+- Apple requires an appropriate Developer team, app/extension identifiers,
+  Packet Tunnel entitlements, provisioning, and user approval.
+- Android requires `VpnService.prepare`, foreground notification/service policy
+  appropriate for the target OS, VPN consent, and host-app lifecycle/UI.
+- The repository does not distribute geodata databases. A host using
+  `geosite`/`geoip` must package verified files and expose the correct resource
+  directory to the core. The Apple sample can install the repository's pinned,
+  checksum-verified assets with `scripts/fetch-geodata.sh`.
+- Neither adapter is a complete production application or a substitute for
+  device profiling with Instruments or Perfetto.

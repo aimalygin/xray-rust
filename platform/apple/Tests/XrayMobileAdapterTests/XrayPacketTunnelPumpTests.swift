@@ -306,9 +306,9 @@ final class XrayPacketTunnelPumpTests: XCTestCase {
     }
 
     func testStartupProbeOptionsDefaultTimeoutAndOutboundTag() {
-        let options = XrayStartupProbeOptions(url: "https://www.google.com/generate_204")
+        let options = XrayStartupProbeOptions(url: "https://probe.example/generate_204")
 
-        XCTAssertEqual(options.url, "https://www.google.com/generate_204")
+        XCTAssertEqual(options.url, "https://probe.example/generate_204")
         XCTAssertEqual(options.timeoutMs, 5_000)
         XCTAssertNil(options.outboundTag)
     }
@@ -407,13 +407,13 @@ final class XrayPacketTunnelPumpTests: XCTestCase {
 
     func testUdpQuicBlockedDebugLogMessageIncludesTargetAndBytes() {
         let event = XrayUdpQuicBlockedEventSnapshot(
-            target: "1.1.1.1:443",
+            target: "192.0.2.1:443",
             bytes: 1200
         )
 
         XCTAssertEqual(
             event.debugLogMessage(),
-            "Debug quicBlocked target=1.1.1.1:443 bytes=1200"
+            "Debug quicBlocked target=192.0.2.1:443 bytes=1200"
         )
     }
 

@@ -418,7 +418,7 @@ final class XrayClientViewModelTests: XCTestCase {
         return rules.first?["domain"] as? [String]
     }
 
-    private static let sampleVlessURL = "vless://11111111-1111-4111-8111-111111111111@203.0.113.10:32134?type=tcp&encryption=none&security=reality&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&fp=chrome&sni=google.com&sid=0123456789ab&spx=%2F&flow=xtls-rprx-vision#example-reality"
+    private static let sampleVlessURL = "vless://11111111-1111-4111-8111-111111111111@203.0.113.10:32134?type=tcp&encryption=none&security=reality&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&fp=chrome&sni=example.com&sid=0123456789ab&spx=%2F&flow=xtls-rprx-vision#example-reality"
 }
 
 private final class TestSecureConfigStore: XraySecureConfigStoring, @unchecked Sendable {

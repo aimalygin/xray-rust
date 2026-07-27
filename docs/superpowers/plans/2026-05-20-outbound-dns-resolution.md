@@ -707,7 +707,7 @@ cargo test --workspace --all-targets
 
 Expected: PASS. The full test suite needs loopback bind/connect permission for SOCKS runtime tests in this sandbox.
 
-Run the Go oracle from `/Users/antonmalygin/xray-rust/Xray-core`:
+Run the Go oracle from `/path/to/xray-rust/Xray-core`:
 
 ```bash
 go test ./testing/scenarios -run TestVlessXtlsVisionReality -count=1

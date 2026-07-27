@@ -366,7 +366,7 @@ fn ffi_startup_probe_setter_accepts_url_timeout_and_tag_before_config_load() {
     let core = unsafe { xray_core_new(&mut err) };
     assert!(!core.is_null());
 
-    let url = CString::new("https://www.google.com/generate_204").unwrap();
+    let url = CString::new("https://probe.example/generate_204").unwrap();
     let outbound_tag = CString::new("proxy").unwrap();
     let status = unsafe {
         xray_core_set_startup_probe(core, url.as_ptr(), 5_000, outbound_tag.as_ptr(), &mut err)
@@ -408,7 +408,7 @@ fn ffi_startup_probe_setter_accepts_null_and_empty_outbound_tag() {
 #[test]
 fn ffi_startup_probe_setter_rejects_null_handle() {
     let mut err = std::ptr::null_mut();
-    let url = CString::new("https://www.google.com/generate_204").unwrap();
+    let url = CString::new("https://probe.example/generate_204").unwrap();
 
     let status = unsafe {
         xray_core_set_startup_probe(
@@ -474,7 +474,7 @@ fn ffi_startup_probe_setter_rejects_zero_timeout() {
     let mut err = std::ptr::null_mut();
     let core = unsafe { xray_core_new(&mut err) };
     assert!(!core.is_null());
-    let url = CString::new("https://www.google.com/generate_204").unwrap();
+    let url = CString::new("https://probe.example/generate_204").unwrap();
 
     let status =
         unsafe { xray_core_set_startup_probe(core, url.as_ptr(), 0, std::ptr::null(), &mut err) };
@@ -515,7 +515,7 @@ fn ffi_startup_probe_setter_rejects_invalid_utf8_outbound_tag() {
     let mut err = std::ptr::null_mut();
     let core = unsafe { xray_core_new(&mut err) };
     assert!(!core.is_null());
-    let url = CString::new("https://www.google.com/generate_204").unwrap();
+    let url = CString::new("https://probe.example/generate_204").unwrap();
     let outbound_tag = CString::new(vec![0xff]).unwrap();
 
     let status = unsafe {
@@ -534,7 +534,7 @@ fn ffi_startup_probe_setter_rejects_invalid_utf8_outbound_tag() {
 fn ffi_startup_probe_setter_rejects_after_config_load() {
     let mut err = std::ptr::null_mut();
     let core = loaded_core(&mut err);
-    let url = CString::new("https://www.google.com/generate_204").unwrap();
+    let url = CString::new("https://probe.example/generate_204").unwrap();
 
     let status = unsafe {
         xray_core_set_startup_probe(core, url.as_ptr(), 5_000, std::ptr::null(), &mut err)

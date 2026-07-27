@@ -33,7 +33,7 @@ The probe must not use the platform network stack directly. It opens a stream th
 
 When `outbound_tag` is set, the probe selects that outbound directly. When it is absent, the probe uses the config's default outbound tag, falling back to the first outbound, matching existing default selection behavior.
 
-The probe intentionally does not evaluate routing rules against the probe URL host. A regional routing rule for `google.com` should not be able to route the startup probe to `freedom` by accident when the user wants to validate the configured proxy outbound.
+The probe intentionally does not evaluate routing rules against the probe URL host. A regional routing rule for `media.example` should not be able to route the startup probe to `freedom` by accident when the user wants to validate the configured proxy outbound.
 
 ## Probe Flow
 

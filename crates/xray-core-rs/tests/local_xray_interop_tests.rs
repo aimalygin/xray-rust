@@ -21,6 +21,8 @@ use xray_transport::{SystemDnsResolver, TlsConnector, TransportDialer};
 
 const TEST_UUID: &str = "00010203-0405-0607-0809-0a0b0c0d0e0f";
 const TLS_SERVER_NAME: &str = "vless.test";
+// The PQ interop oracle needs a cover origin that accepts X25519MLKEM;
+// RFC 2606 example origins reject the `hellochrome_120_pq` handshake.
 const REALITY_SERVER_NAME: &str = "www.google.com";
 const REALITY_PRIVATE_KEY: &str = "aGSYystUbf59_9_6LKRxD27rmSW_-2_nyd9YG_Gwbks";
 const REALITY_PUBLIC_KEY_BASE64: &str = "E59WjnvZcQMu7tR7_BgyhycuEdBS-CtKxfImRCdAvFM";

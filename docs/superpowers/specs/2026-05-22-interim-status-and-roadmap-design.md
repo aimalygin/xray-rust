@@ -230,7 +230,7 @@ cargo test -p xray-config --all-targets
 cargo test -p xray-core-rs --all-targets
 cargo test -p xray-cli --all-targets
 cargo test -p xray-ffi --test mobile_artifacts_tests -- --nocapture
-XRAY_CORE_CHECKOUT=/Users/antonmalygin/xray-rust/Xray-core cargo test -p xray-cli --test process_interop_tests -- --ignored --nocapture
+XRAY_CORE_CHECKOUT=/path/to/xray-rust/Xray-core cargo test -p xray-cli --test process_interop_tests -- --ignored --nocapture
 cargo clippy -p xray-config -p xray-core-rs -p xray-cli --all-targets --locked -- -D warnings
 ```
 

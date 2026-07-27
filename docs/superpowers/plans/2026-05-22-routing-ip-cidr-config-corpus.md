@@ -25,7 +25,7 @@ Add tests proving:
 IpMatcher::Cidr(IpCidr::new("10.0.0.0".parse().unwrap(), 8).unwrap())
     .matches(&"10.42.0.1".parse().unwrap());
 IpMatcher::Private.matches(&"192.168.1.1".parse().unwrap());
-!IpMatcher::Private.matches(&"8.8.8.8".parse().unwrap());
+!IpMatcher::Private.matches(&"192.0.2.8".parse().unwrap());
 ```
 
 Also add `ip_matchers: Vec<IpMatcher>` to existing `RoutingRule` test fixtures.
@@ -196,7 +196,7 @@ cargo clippy -p xray-config -p xray-core-rs -p xray-cli --all-targets --locked -
 Run:
 
 ```bash
-XRAY_CORE_CHECKOUT=/Users/antonmalygin/xray-rust/Xray-core cargo test -p xray-cli --test process_interop_tests -- --ignored --nocapture
+XRAY_CORE_CHECKOUT=/path/to/xray-rust/Xray-core cargo test -p xray-cli --test process_interop_tests -- --ignored --nocapture
 ```
 
 - [ ] **Step 5: Commit**

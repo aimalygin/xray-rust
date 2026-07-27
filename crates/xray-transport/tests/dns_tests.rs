@@ -133,19 +133,19 @@ async fn configured_dns_hosts_ip_mapping_wins() {
 async fn configured_dns_hosts_domain_alias_uses_inner_resolution() {
     let fallback = Arc::new(
         MapResolver::default()
-            .with_answer("googleapis.com", IpAddr::V4(Ipv4Addr::new(198, 51, 100, 9))),
+            .with_answer("alias.example", IpAddr::V4(Ipv4Addr::new(198, 51, 100, 9))),
     );
     let resolver = ConfiguredDnsResolver::new(
         vec![StaticHostRule {
-            matcher: TransportDomainMatcher::Suffix("googleapis.cn".to_owned()),
-            target: StaticHostTarget::Domain("googleapis.com".to_owned()),
+            matcher: TransportDomainMatcher::Suffix("service.example".to_owned()),
+            target: StaticHostTarget::Domain("alias.example".to_owned()),
         }],
         Vec::new(),
         fallback,
     );
 
     let addr = resolver
-        .resolve("storage.googleapis.cn", 8443)
+        .resolve("storage.service.example", 8443)
         .await
         .unwrap();
 
@@ -157,7 +157,7 @@ async fn configured_dns_hosts_regex_matcher_uses_compiled_pattern() {
     let fallback = Arc::new(CountingResolver::default());
     let resolver = ConfiguredDnsResolver::new(
         vec![StaticHostRule {
-            matcher: TransportDomainMatcher::regex(r"(^|\.)googleapis\.cn$").unwrap(),
+            matcher: TransportDomainMatcher::regex(r"(^|\.)service\.example$").unwrap(),
             target: StaticHostTarget::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 8))),
         }],
         Vec::new(),
@@ -165,7 +165,7 @@ async fn configured_dns_hosts_regex_matcher_uses_compiled_pattern() {
     );
 
     let addr = resolver
-        .resolve("storage.googleapis.cn", 443)
+        .resolve("storage.service.example", 443)
         .await
         .unwrap();
 

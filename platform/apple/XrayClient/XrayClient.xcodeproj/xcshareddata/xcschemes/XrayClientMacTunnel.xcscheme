@@ -69,7 +69,7 @@
       queueDebuggingEnableBacktraceRecording = "Yes">
       <RemoteRunnable
          runnableDebuggingMode = "2"
-         BundleIdentifier = "org.texforge.XrayClientMac">
+         BundleIdentifier = "org.example.XrayClient">
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "04A1B2C3D4E5F60000000010"

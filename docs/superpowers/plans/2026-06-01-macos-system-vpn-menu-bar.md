@@ -973,7 +973,7 @@ In the `XCBuildConfiguration section`, add:
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 9QF29ADW72;
+				DEVELOPMENT_TEAM = YOUR_TEAM_ID;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -984,7 +984,7 @@ In the `XCBuildConfiguration section`, add:
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = org.texforge.XrayClientMac;
+				PRODUCT_BUNDLE_IDENTIFIER = org.example.XrayClientMac;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -1003,7 +1003,7 @@ In the `XCBuildConfiguration section`, add:
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 9QF29ADW72;
+				DEVELOPMENT_TEAM = YOUR_TEAM_ID;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -1014,7 +1014,7 @@ In the `XCBuildConfiguration section`, add:
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = org.texforge.XrayClientMac;
+				PRODUCT_BUNDLE_IDENTIFIER = org.example.XrayClientMac;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -1032,7 +1032,7 @@ In the `XCBuildConfiguration section`, add:
 				CODE_SIGN_ENTITLEMENTS = XrayClientMacTunnel/XrayClientMacTunnel.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 9QF29ADW72;
+				DEVELOPMENT_TEAM = YOUR_TEAM_ID;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = XrayClientMacTunnel/Info.plist;
@@ -1045,7 +1045,7 @@ In the `XCBuildConfiguration section`, add:
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = org.texforge.XrayClientMac.Tunnel;
+				PRODUCT_BUNDLE_IDENTIFIER = org.example.XrayClientMac.Tunnel;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
 				SKIP_INSTALL = YES;
@@ -1063,7 +1063,7 @@ In the `XCBuildConfiguration section`, add:
 				CODE_SIGN_ENTITLEMENTS = XrayClientMacTunnel/XrayClientMacTunnel.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 9QF29ADW72;
+				DEVELOPMENT_TEAM = YOUR_TEAM_ID;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = XrayClientMacTunnel/Info.plist;
@@ -1076,7 +1076,7 @@ In the `XCBuildConfiguration section`, add:
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = org.texforge.XrayClientMac.Tunnel;
+				PRODUCT_BUNDLE_IDENTIFIER = org.example.XrayClientMac.Tunnel;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
 				SKIP_INSTALL = YES;
@@ -1181,7 +1181,7 @@ The default macOS provider bundle identifier follows the same convention as the
 iOS and tvOS hosts:
 
 ```text
-org.texforge.XrayClientMac.Tunnel
+org.example.XrayClientMac.Tunnel
 ```
 
 Build locally without signing checks:

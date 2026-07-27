@@ -7,10 +7,9 @@ use std::{
 
 use prost::Message;
 use xray_config::{
-    parse_xray_json, parse_xray_json_with_geodata_dir, parse_xray_json_with_geodata_dirs,
-    DiagnosticSeverity, DnsFakeIpConfig, DnsHostTarget, DnsServerConfig, InboundProtocol, IpCidr,
-    OutboundSettings, RealityShortId, RoutingDomainStrategy, SniffingDestination, StreamSecurity,
-    TargetAddr,
+    parse_xray_json, parse_xray_json_with_geodata_dirs, DiagnosticSeverity, DnsFakeIpConfig,
+    DnsHostTarget, DnsServerConfig, InboundProtocol, IpCidr, OutboundSettings, RealityShortId,
+    RoutingDomainStrategy, SniffingDestination, StreamSecurity, TargetAddr,
 };
 
 #[test]
@@ -137,20 +136,22 @@ fn parses_tun_inbound_without_port_as_packet_boundary_inbound() {
 #[test]
 fn parses_xray_core_reality_split_routing_fixture() {
     // Xray-core oracle:
-    // XRAY_LOCATION_ASSET=/Users/antonmalygin/xray-rust/platform/apple/XrayClient/dat \
-    //   go run ./main run -test -format json < /Users/antonmalygin/xray-rust/tests/fixtures/configs/xray_core_reality_split_routing_full.json
+    // REPO_ROOT=/path/to/xray-rust
+    // go run ./main run -test -format json \
+    //   < "$REPO_ROOT/tests/fixtures/configs/xray_core_reality_split_routing_full.json"
     // Expected: Configuration OK.
     let raw =
         include_str!("../../../tests/fixtures/configs/xray_core_reality_split_routing_full.json");
-    let geodata_dir =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../platform/apple/XrayClient/dat");
 
-    let parsed = parse_xray_json_with_geodata_dir(raw, geodata_dir)
-        .expect("fixture accepted by xray-core should parse");
+    let parsed = parse_xray_json(raw).expect("fixture accepted by xray-core should parse");
 
     assert_eq!(
         parsed.config.routing.domain_strategy,
         RoutingDomainStrategy::IpIfNonMatch
+    );
+    assert!(parsed.config.routing.rules[0].matches_domain(Some("api.direct.example")));
+    assert!(
+        parsed.config.routing.rules[1].matches_ip(Some(&IpAddr::V4(Ipv4Addr::new(192, 0, 2, 42))))
     );
     assert!(
         parsed.config.inbounds[0]
@@ -811,10 +812,10 @@ fn rejects_tcp_header_type_with_path() {
 fn parses_dns_servers_and_hosts() {
     let raw = r#"{
         "dns": {
-          "servers": ["1.1.1.1", "dns.example"],
+          "servers": ["192.0.2.53", "dns.example"],
           "hosts": {
-            "domain:googleapis.cn": "googleapis.com",
-            "full:one.one.one.one": "1.1.1.1"
+            "domain:service.example": "alias.example",
+            "full:resolver.example": "192.0.2.53"
           }
         },
         "inbounds": [],
@@ -827,7 +828,7 @@ fn parses_dns_servers_and_hosts() {
 
     assert_eq!(
         parsed.config.dns.servers[0],
-        DnsServerConfig::Ip(SocketAddr::from(([1, 1, 1, 1], 53)))
+        DnsServerConfig::Ip(SocketAddr::from(([192, 0, 2, 53], 53)))
     );
     assert_eq!(
         parsed.config.dns.servers[1],
@@ -838,14 +839,14 @@ fn parses_dns_servers_and_hosts() {
     );
     assert!(parsed.config.dns.hosts[0]
         .matcher
-        .matches("www.googleapis.cn"));
+        .matches("www.service.example"));
     assert_eq!(
         parsed.config.dns.hosts[0].target,
-        DnsHostTarget::Domain("googleapis.com".to_owned())
+        DnsHostTarget::Domain("alias.example".to_owned())
     );
     assert_eq!(
         parsed.config.dns.hosts[1].target,
-        DnsHostTarget::Ip(IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)))
+        DnsHostTarget::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 53)))
     );
 }
 

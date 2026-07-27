@@ -8,14 +8,61 @@ import XrayMobileAdapter
 
 public enum XrayPacketTunnelProviderError: Error, LocalizedError {
     case missingConfigJSON
+    case invalidStartupProbeConfiguration
+    case invalidDNSConfiguration
     case startSuperseded
 
     public var errorDescription: String? {
         switch self {
         case .missingConfigJSON:
             return "Missing Xray JSON configuration."
+        case .invalidStartupProbeConfiguration:
+            return "Startup probe requires an explicit HTTP or HTTPS URL and a valid timeout."
+        case .invalidDNSConfiguration:
+            return "DNS servers must be a non-empty list of valid IPv4 addresses."
         case .startSuperseded:
             return "Tunnel start was superseded by a newer lifecycle request."
+        }
+    }
+}
+
+enum XrayPacketTunnelStartupProbeConfiguration: Equatable {
+    case disabled
+    case enabled(XrayStartupProbeOptions)
+    case invalid
+
+    var logDescription: String {
+        switch self {
+        case .disabled:
+            return "disabled"
+        case .enabled:
+            return "enabled"
+        case .invalid:
+            return "invalid"
+        }
+    }
+
+    var options: XrayStartupProbeOptions? {
+        guard case let .enabled(options) = self else {
+            return nil
+        }
+        return options
+    }
+}
+
+enum XrayPacketTunnelDNSConfiguration: Equatable {
+    case system
+    case custom([String])
+    case invalid
+
+    var logDescription: String {
+        switch self {
+        case .system:
+            return "system"
+        case let .custom(servers):
+            return "custom(\(servers.count))"
+        case .invalid:
+            return "invalid"
         }
     }
 }
@@ -127,8 +174,9 @@ private final class XrayWeakReference<Value: AnyObject>: @unchecked Sendable {
 
 @available(iOSApplicationExtension 15.0, tvOSApplicationExtension 17.0, macOSApplicationExtension 13.0, *)
 open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
-    private static let defaultStartupProbeURL = "https://www.google.com/generate_204"
     private static let defaultStartupProbeTimeoutMs: UInt64 = 5_000
+    private static let maximumStartupProbeTimeoutMs: UInt64 = 60_000
+    private static let maximumCustomDNSServers = 8
     private static let debugStatsHandler: @Sendable (XrayCore) -> Void = {
         logDebugStats($0)
     }
@@ -149,20 +197,47 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             "PacketTunnelProvider",
             "startTunnel invoked optionKeys=\(optionKeys)"
         )
+        let lifecycleToken = lifecycle.beginStart()
 
         guard let resolvedConfig = Self.configJSON(
             options: options,
             protocolConfiguration: protocolConfiguration
         ) else {
+            if lifecycle.cancelStart(lifecycleToken) {
+                XrayAppleLog.configureFileLogging(directory: nil)
+            }
             XrayAppleLog.error("PacketTunnelProvider", "Missing config JSON")
             completionHandler(XrayPacketTunnelProviderError.missingConfigJSON)
             return
         }
         XrayAppleLog.info(
             "PacketTunnelProvider",
-            "Resolved config source=\(resolvedConfig.source) bytes=\(resolvedConfig.json.utf8.count) debugLogging=\(resolvedConfig.debugLoggingEnabled) useTunFileDescriptor=\(resolvedConfig.useTunFileDescriptor) tunRuntimeProfile=\(resolvedConfig.tunRuntimeProfile.rawValue) startupProbe=\(resolvedConfig.startupProbe == nil ? "disabled" : "enabled")"
+            "Resolved config source=\(resolvedConfig.source) bytes=\(resolvedConfig.json.utf8.count) debugLogging=\(resolvedConfig.debugLoggingEnabled) useTunFileDescriptor=\(resolvedConfig.useTunFileDescriptor) tunRuntimeProfile=\(resolvedConfig.tunRuntimeProfile.rawValue) startupProbe=\(resolvedConfig.startupProbeConfiguration.logDescription) dns=\(resolvedConfig.dnsConfiguration.logDescription)"
         )
-        let lifecycleToken = lifecycle.beginStart()
+        if case .invalid = resolvedConfig.startupProbeConfiguration {
+            if lifecycle.cancelStart(lifecycleToken) {
+                XrayAppleLog.configureFileLogging(directory: nil)
+            }
+            XrayAppleLog.error(
+                "PacketTunnelProvider",
+                "Invalid explicit startup probe configuration"
+            )
+            completionHandler(
+                XrayPacketTunnelProviderError.invalidStartupProbeConfiguration
+            )
+            return
+        }
+        if case .invalid = resolvedConfig.dnsConfiguration {
+            if lifecycle.cancelStart(lifecycleToken) {
+                XrayAppleLog.configureFileLogging(directory: nil)
+            }
+            XrayAppleLog.error(
+                "PacketTunnelProvider",
+                "Invalid explicit DNS server configuration"
+            )
+            completionHandler(XrayPacketTunnelProviderError.invalidDNSConfiguration)
+            return
+        }
         let diagnosticLogDirectory = Self.diagnosticLogDirectory(
             debugLoggingEnabled: resolvedConfig.debugLoggingEnabled
         )
@@ -175,7 +250,10 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         }
 
         setTunnelNetworkSettings(
-            Self.networkSettings(excludingServerAddress: resolvedConfig.serverAddress)
+            Self.networkSettings(
+                excludingServerAddress: resolvedConfig.serverAddress,
+                dnsConfiguration: resolvedConfig.dnsConfiguration
+            )
         ) { [weak self] error in
             guard let self else {
                 XrayAppleLog.error("PacketTunnelProvider", "Provider released before network settings completed")
@@ -334,7 +412,8 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         var debugLoggingEnabled: Bool
         var useTunFileDescriptor: Bool
         var tunRuntimeProfile: XrayTunRuntimeProfileSetting
-        var startupProbe: XrayStartupProbeOptions?
+        var startupProbeConfiguration: XrayPacketTunnelStartupProbeConfiguration
+        var dnsConfiguration: XrayPacketTunnelDNSConfiguration
     }
 
     static func configJSON(
@@ -356,7 +435,11 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             options: options,
             providerConfiguration: tunnelProtocol?.providerConfiguration
         )
-        let selectedStartupProbe = startupProbe(
+        let selectedStartupProbeConfiguration = startupProbeConfiguration(
+            options: options,
+            providerConfiguration: tunnelProtocol?.providerConfiguration
+        )
+        let selectedDNSConfiguration = dnsConfiguration(
             options: options,
             providerConfiguration: tunnelProtocol?.providerConfiguration
         )
@@ -398,7 +481,8 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             debugLoggingEnabled: isDebugLoggingEnabled,
             useTunFileDescriptor: shouldUseTunFileDescriptor,
             tunRuntimeProfile: selectedTunRuntimeProfile,
-            startupProbe: selectedStartupProbe
+            startupProbeConfiguration: selectedStartupProbeConfiguration,
+            dnsConfiguration: selectedDNSConfiguration
         )
     }
 
@@ -523,44 +607,96 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         return .default
     }
 
-    static func startupProbe(
+    static func startupProbeConfiguration(
         options: [String: NSObject]?,
         providerConfiguration: [String: Any]?
-    ) -> XrayStartupProbeOptions? {
-        if let optionValue = options?[XrayTunnelProviderMessage.startupProbeEnabledOptionKey],
-           let isEnabled = boolValue(optionValue) {
-            guard isEnabled else {
-                return nil
-            }
-        } else if let configurationValue = providerConfiguration?[
+    ) -> XrayPacketTunnelStartupProbeConfiguration {
+        let enabledValue = options?[
+            XrayTunnelProviderMessage.startupProbeEnabledOptionKey
+        ] ?? providerConfiguration?[
             XrayTunnelProviderMessage.providerStartupProbeEnabledKey
-        ],
-            let isEnabled = boolValue(configurationValue),
-            !isEnabled {
-            return nil
+        ]
+        guard let enabledValue else {
+            return .disabled
+        }
+        guard let isEnabled = boolValue(enabledValue) else {
+            return .invalid
+        }
+        guard isEnabled else {
+            return .disabled
         }
 
-        let url = stringValue(options?[XrayTunnelProviderMessage.startupProbeURLOptionKey])
-            ?? stringValue(providerConfiguration?[XrayTunnelProviderMessage.providerStartupProbeURLKey])
-            ?? defaultStartupProbeURL
-        let timeoutMs = uint64Value(options?[XrayTunnelProviderMessage.startupProbeTimeoutMsOptionKey])
-            ?? uint64Value(providerConfiguration?[XrayTunnelProviderMessage.providerStartupProbeTimeoutMsKey])
-            ?? defaultStartupProbeTimeoutMs
-        let outboundTag = stringValue(
-            options?[XrayTunnelProviderMessage.startupProbeOutboundTagOptionKey]
-        )
-            ?? stringValue(providerConfiguration?[
-                XrayTunnelProviderMessage.providerStartupProbeOutboundTagKey
-            ])
+        let urlValue = options?[
+            XrayTunnelProviderMessage.startupProbeURLOptionKey
+        ] ?? providerConfiguration?[
+            XrayTunnelProviderMessage.providerStartupProbeURLKey
+        ]
+        guard let url = stringValue(urlValue), isValidStartupProbeURL(url) else {
+            return .invalid
+        }
+        let timeoutValue = options?[
+            XrayTunnelProviderMessage.startupProbeTimeoutMsOptionKey
+        ] ?? providerConfiguration?[
+            XrayTunnelProviderMessage.providerStartupProbeTimeoutMsKey
+        ]
+        let timeoutMs: UInt64
+        if let timeoutValue {
+            guard let explicitTimeoutMs = uint64Value(timeoutValue),
+                  explicitTimeoutMs <= maximumStartupProbeTimeoutMs
+            else {
+                return .invalid
+            }
+            timeoutMs = explicitTimeoutMs
+        } else {
+            timeoutMs = defaultStartupProbeTimeoutMs
+        }
+        let outboundTag: String?
+        if let optionValue = options?[
+            XrayTunnelProviderMessage.startupProbeOutboundTagOptionKey
+        ] {
+            guard let explicitOutboundTag = stringValue(optionValue) else {
+                return .invalid
+            }
+            outboundTag = explicitOutboundTag
+        } else if let providerValue = providerConfiguration?[
+            XrayTunnelProviderMessage.providerStartupProbeOutboundTagKey
+        ] {
+            guard let explicitOutboundTag = stringValue(providerValue) else {
+                return .invalid
+            }
+            outboundTag = explicitOutboundTag
+        } else {
+            outboundTag = nil
+        }
 
-        return XrayStartupProbeOptions(
-            url: url,
-            timeoutMs: timeoutMs,
-            outboundTag: outboundTag
+        return .enabled(
+            XrayStartupProbeOptions(
+                url: url,
+                timeoutMs: timeoutMs,
+                outboundTag: outboundTag
+            )
         )
     }
 
-    static func networkSettings(excludingServerAddress serverAddress: String? = nil) -> NEPacketTunnelNetworkSettings {
+    static func dnsConfiguration(
+        options: [String: NSObject]?,
+        providerConfiguration: [String: Any]?
+    ) -> XrayPacketTunnelDNSConfiguration {
+        if let optionValue = options?[XrayTunnelProviderMessage.dnsServersOptionKey] {
+            return dnsConfiguration(value: optionValue)
+        }
+        if let providerValue = providerConfiguration?[
+            XrayTunnelProviderMessage.providerDNSServersKey
+        ] {
+            return dnsConfiguration(value: providerValue)
+        }
+        return .system
+    }
+
+    static func networkSettings(
+        excludingServerAddress serverAddress: String? = nil,
+        dnsConfiguration: XrayPacketTunnelDNSConfiguration = .system
+    ) -> NEPacketTunnelNetworkSettings {
         let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: "198.18.0.1")
         settings.mtu = 1500
 
@@ -578,10 +714,115 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         }
         settings.ipv4Settings = ipv4Settings
 
-        let dnsSettings = NEDNSSettings(servers: ["1.1.1.1", "8.8.8.8"])
-        dnsSettings.matchDomains = [""]
-        settings.dnsSettings = dnsSettings
+        if case let .custom(servers) = dnsConfiguration {
+            let dnsSettings = NEDNSSettings(servers: servers)
+            dnsSettings.matchDomains = [""]
+            settings.dnsSettings = dnsSettings
+        }
         return settings
+    }
+
+    private static func dnsConfiguration(value: Any) -> XrayPacketTunnelDNSConfiguration {
+        let rawServers: [Any]
+        switch value {
+        case let values as NSArray:
+            rawServers = values.map { $0 }
+        case let value as NSString:
+            rawServers = [String(value)]
+        case let value as String:
+            rawServers = [value]
+        default:
+            return .invalid
+        }
+
+        guard !rawServers.isEmpty, rawServers.count <= maximumCustomDNSServers else {
+            return .invalid
+        }
+
+        var servers: [String] = []
+        var seenServers = Set<String>()
+        for rawServer in rawServers {
+            guard let server = stringValue(rawServer),
+                  isIPAddress(server, family: AF_INET)
+            else {
+                return .invalid
+            }
+            let identity = server.lowercased()
+            if seenServers.insert(identity).inserted {
+                servers.append(server)
+            }
+        }
+        return servers.isEmpty ? .invalid : .custom(servers)
+    }
+
+    private static func isValidStartupProbeURL(_ rawURL: String) -> Bool {
+        guard !rawURL.contains("#") else {
+            return false
+        }
+
+        let remainder: Substring
+        if rawURL.hasPrefix("https://") {
+            remainder = rawURL.dropFirst("https://".count)
+        } else if rawURL.hasPrefix("http://") {
+            remainder = rawURL.dropFirst("http://".count)
+        } else {
+            return false
+        }
+
+        let authorityEnd = remainder.firstIndex { character in
+            character == "/" || character == "?"
+        } ?? remainder.endIndex
+        let authority = remainder[..<authorityEnd]
+        guard !authority.isEmpty,
+              !authority.contains("@"),
+              !authority.hasPrefix(":"),
+              !authority.hasPrefix("["),
+              !containsASCIIWhitespaceOrControl(authority)
+        else {
+            return false
+        }
+
+        let authorityParts = authority.split(
+            separator: ":",
+            maxSplits: 2,
+            omittingEmptySubsequences: false
+        )
+        switch authorityParts.count {
+        case 1:
+            break
+        case 2:
+            let host = authorityParts[0]
+            let port = authorityParts[1]
+            guard !host.isEmpty,
+                  !port.isEmpty,
+                  port.unicodeScalars.allSatisfy({
+                      $0.value >= 0x30 && $0.value <= 0x39
+                  }),
+                  UInt16(port) != nil
+            else {
+                return false
+            }
+        default:
+            return false
+        }
+
+        let requestTarget = remainder[authorityEnd...]
+        guard requestTarget.isEmpty
+                || requestTarget.hasPrefix("/")
+                || requestTarget.hasPrefix("?"),
+              !containsASCIIWhitespaceOrControl(requestTarget)
+        else {
+            return false
+        }
+        return true
+    }
+
+    private static func containsASCIIWhitespaceOrControl(
+        _ value: some StringProtocol
+    ) -> Bool {
+        value.unicodeScalars.contains { scalar in
+            scalar.isASCII && (scalar.value <= 0x20 || scalar.value == 0x7F)
+        }
     }
 
     private static func ipv4ExcludedRoute(for serverAddress: String?) -> NEIPv4Route? {
@@ -692,7 +933,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                     named: resolvedConfig.tunRuntimeProfile.rawValue
                 ),
                 geodataSearchDirectory: Bundle.main.resourceURL,
-                startupProbe: resolvedConfig.startupProbe,
+                startupProbe: resolvedConfig.startupProbeConfiguration.options,
                 fileLogDirectory: diagnosticLogDirectory
             )
             pump = nil
@@ -715,7 +956,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                     named: resolvedConfig.tunRuntimeProfile.rawValue
                 ),
                 geodataSearchDirectory: Bundle.main.resourceURL,
-                startupProbe: resolvedConfig.startupProbe,
+                startupProbe: resolvedConfig.startupProbeConfiguration.options,
                 fileLogDirectory: diagnosticLogDirectory
             )
             let providerReference = XrayWeakReference(self)

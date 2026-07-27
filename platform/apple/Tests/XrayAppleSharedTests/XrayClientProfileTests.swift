@@ -2,7 +2,7 @@ import XCTest
 @testable import XrayAppleShared
 
 final class XrayClientProfileTests: XCTestCase {
-    private static let sampleVlessURL = "vless://11111111-1111-4111-8111-111111111111@203.0.113.10:32134?type=tcp&encryption=none&security=reality&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&fp=chrome&sni=google.com&sid=0123456789ab&spx=%2F&pqv=ignored-for-now&flow=xtls-rprx-vision#example-reality"
+    private static let sampleVlessURL = "vless://11111111-1111-4111-8111-111111111111@203.0.113.10:32134?type=tcp&encryption=none&security=reality&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&fp=chrome&sni=example.com&sid=0123456789ab&spx=%2F&pqv=ignored-for-now&flow=xtls-rprx-vision#example-reality"
 
     func testDefaultProviderBundleIdentifierUsesHostBundleIdentifier() {
         XCTAssertEqual(
@@ -354,7 +354,7 @@ final class XrayClientProfileTests: XCTestCase {
         XCTAssertEqual(stream["security"] as? String, "reality")
 
         let reality = try XCTUnwrap(stream["realitySettings"] as? [String: Any])
-        XCTAssertEqual(reality["serverName"] as? String, "google.com")
+        XCTAssertEqual(reality["serverName"] as? String, "example.com")
         XCTAssertEqual(reality["fingerprint"] as? String, "chrome")
         XCTAssertEqual(
             reality["publicKey"] as? String,

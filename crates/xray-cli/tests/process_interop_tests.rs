@@ -11,7 +11,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::time::{sleep, timeout, Duration, Instant};
 
 const TEST_UUID: &str = "00010203-0405-0607-0809-0a0b0c0d0e0f";
-const REALITY_SERVER_NAME: &str = "www.google.com";
+const REALITY_SERVER_NAME: &str = "example.com";
 const REALITY_PRIVATE_KEY: &str = "aGSYystUbf59_9_6LKRxD27rmSW_-2_nyd9YG_Gwbks";
 const REALITY_PUBLIC_KEY: &str = "E59WjnvZcQMu7tR7_BgyhycuEdBS-CtKxfImRCdAvFM";
 const REALITY_SHORT_ID_HEX: &str = "0123456789abcdef";

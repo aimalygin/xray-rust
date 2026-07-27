@@ -1,25 +1,122 @@
 # xray-rust
 
-`xray-rust` is a Rust mobile/client core aiming for protocol compatibility with Xray-core. This repository is currently an early mobile/client slice, not a full replacement for Xray-core.
+`xray-rust` is an experimental, client-side Rust implementation of a focused
+subset of the Xray configuration and proxy protocols. It provides a native
+runtime, a C ABI, and reference adapters for Apple platforms and Android.
 
-The Go checkout in `Xray-core/` is a read-only compatibility oracle. It is ignored by the root Git repository and should be used for reference behavior and oracle tests rather than edited from this workspace.
+This project is unofficial and is not affiliated with XTLS or Xray-core. It is
+not a drop-in replacement for Xray-core, has not been independently security
+audited, and should not yet be treated as a production-ready VPN SDK.
 
-First implementation targets:
+## Current scope
 
-- Xray JSON subset.
-- SOCKS5 and HTTP local inbound parsing.
-- Platform-neutral TUN packet API.
-- Executable SOCKS5 -> VLESS over raw TCP data path for local/test traffic.
-- TLS/REALITY client mode.
-- `xtls-rprx-vision`.
-- C ABI for mobile embedding.
+| Area | Implemented | Important limits |
+| --- | --- | --- |
+| Local inbounds | SOCKS5 no-auth `CONNECT` and `UDP ASSOCIATE`, HTTP `CONNECT`, TUN | No authenticated proxy inbound or server-side Xray protocols |
+| Outbounds | Freedom/direct and VLESS client over TCP | No VMess, Trojan, Shadowsocks, WireGuard, balancers, or outbound chaining |
+| Security and flow | TLS, REALITY, `xtls-rprx-vision`, VLESS UDP and XUDP paths | Only the documented config subset and supported REALITY fingerprints |
+| Routing and DNS | Field rules, domain/IP matchers, `geosite`/`geoip`, hosts, UDP DNS, fake-IP subset | Not full Xray DNS or routing parity |
+| Mobile | Swift Package/Xcode sample for iOS, tvOS, and macOS; Android library and `VpnService` adapter | Signing, entitlements, VPN consent, foreground policy, and release packaging remain host-app responsibilities |
 
-Current runtime status: local SOCKS and HTTP CONNECT inbounds can route traffic to Freedom direct egress or VLESS outbounds over TCP, TLS, TLS+Vision, and REALITY+Vision for the supported client-side profile. Process-level tests exercise the `xray-rust` binary against local echo targets and the cloned Go Xray-core oracle, including REALITY+Vision. The mobile FFI exposes lifecycle, structured errors, socket-protection callback wiring, a platform-neutral TUN packet boundary, and optional fd-backed TUN I/O for Android and advanced Darwin integrations. The TUN runtime is runnable for TCP, UDP, VLESS UDP, Vision XUDP, and ICMP echo through checked-in Apple `NEPacketTunnelProvider` and Android `VpnService` adapter skeletons. Apple iOS/tvOS and Android artifact scripts can build `XrayRust.xcframework` and Android `jniLibs` on a provisioned macOS host. Full Xray DNS behavior, geosite/geoip data loading, and broad protocol parity remain future work.
+See [project status](docs/status.md) and
+[configuration compatibility](docs/config-compatibility.md) for the detailed
+matrix.
 
-See:
+## Prerequisites
 
-- [Mobile client core design](docs/superpowers/specs/2026-05-19-mobile-client-core-design.md)
-- [Mobile client core implementation plan](docs/superpowers/plans/2026-05-19-mobile-client-core.md)
+- Rust via `rustup`; [`rust-toolchain.toml`](rust-toolchain.toml) selects the
+  exact toolchain used by the workspace.
+- A C toolchain for native dependencies.
+- Go only for deterministic oracle tools and optional Xray-core interoperability
+  tests.
+- Xcode for Apple artifacts, or JDK 17+, Android SDK 35, CMake 3.22.1, and NDK
+  26.3.11579264 for Android artifacts.
+
+## Quick start
+
+Run the same Rust checks used by CI:
+
+```sh
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --all-features --locked -- \
+  -D warnings -W clippy::perf -W clippy::suspicious
+cargo test --workspace --all-targets --locked
+```
+
+For a local CLI smoke run, use the credential-free loopback example:
+
+```sh
+cargo run --locked -p xray-cli -- run \
+  -config examples/freedom.json
+```
+
+The command starts a SOCKS5 listener at `127.0.0.1:1080`, routes directly
+through the host network, and waits for `Ctrl-C`. It contains no proxy
+credential. For VLESS, copy a synthetic fixture from
+`tests/fixtures/configs/` outside the repository and replace every placeholder.
+Never commit a live UUID, key, short ID, endpoint, or subscription URL.
+
+For a self-contained data-path test that needs no external server:
+
+```sh
+cargo test --locked -p xray-core-rs \
+  --test runtime_data_path_tests \
+  socks_client_reaches_echo_target_through_freedom_outbound
+```
+
+## Mobile samples
+
+Apple:
+
+```sh
+scripts/check-mobile-toolchains.sh --apple
+scripts/build-apple-xcframework.sh
+scripts/fetch-geodata.sh
+open platform/apple/XrayClient/XrayClient.xcodeproj
+```
+
+The Xcode project consumes
+`target/mobile/apple/XrayRust.xcframework` through the local Swift Package.
+Choose the `XrayClient`, `XrayClientTv`, or `XrayClientMac` scheme and configure
+your own signing team. The geodata download is needed by the checked-in Xcode
+resource build phases; profiles that do not use geodata can omit those files in
+a custom host project. See [Apple integration](platform/apple/README.md).
+
+Android:
+
+```sh
+scripts/check-mobile-toolchains.sh --android
+scripts/build-android-adapter.sh
+```
+
+This produces
+`platform/android/xraymobile/build/outputs/aar/xraymobile-debug.aar`. See
+[Android integration](platform/android/README.md).
+
+## Distribution model
+
+The repository is currently source-only. It does not publish crates, a Maven
+artifact, or a downloadable Swift binary target. In particular,
+`platform/apple/Package.swift` references a locally built XCFramework, so adding
+this repository as a remote Swift Package is not sufficient by itself. Build
+the native artifact first.
+
+## Documentation
+
+- [Status and supported features](docs/status.md)
+- [Architecture](docs/architecture.md)
+- [Configuration compatibility](docs/config-compatibility.md)
+- [C ABI lifecycle and ownership](docs/ffi.md)
+- [Verification](docs/verification.md)
 - [Mobile testing](docs/mobile-testing.md)
 - [Benchmarks](docs/benchmarks.md)
-- [Verification matrix](docs/verification.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
+- [Third-party notices](THIRD_PARTY_NOTICES.md)
+
+## License
+
+The project source is licensed under the
+[Mozilla Public License 2.0](LICENSE). Downloaded geodata and other third-party
+components remain under their respective licenses; see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

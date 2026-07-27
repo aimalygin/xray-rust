@@ -93,6 +93,7 @@ fn apple_c_module_map_exports_xrayrust_module() {
             .expect("read Apple C module map");
 
     assert!(module_map.contains("module XrayRust"));
+    assert!(!module_map.contains("framework module"));
     assert!(module_map.contains("umbrella header \"xray_ffi.h\""));
     assert!(module_map.contains("export *"));
 }
@@ -405,6 +406,48 @@ fn apple_xcode_sample_uses_ios_15_deployment_target() {
     assert!(!project.contains("IPHONEOS_DEPLOYMENT_TARGET = 16.0;"));
     assert!(!project.contains("IPHONEOS_DEPLOYMENT_TARGET = 16.6;"));
     assert!(!project.contains("IPHONEOS_DEPLOYMENT_TARGET = 26.5;"));
+}
+
+#[test]
+fn apple_xcode_sample_uses_tvos_17_deployment_target() {
+    let project = fs::read_to_string(
+        workspace_root().join("platform/apple/XrayClient/XrayClient.xcodeproj/project.pbxproj"),
+    )
+    .expect("read Apple sample project");
+
+    assert_eq!(project.matches("TVOS_DEPLOYMENT_TARGET = 17.0;").count(), 8);
+}
+
+#[test]
+fn apple_xcode_sample_uses_macos_13_deployment_target() {
+    let project = fs::read_to_string(
+        workspace_root().join("platform/apple/XrayClient/XrayClient.xcodeproj/project.pbxproj"),
+    )
+    .expect("read Apple sample project");
+
+    assert_eq!(
+        project.matches("MACOSX_DEPLOYMENT_TARGET = 13.0;").count(),
+        4
+    );
+}
+
+#[test]
+fn apple_xcode_sample_has_shared_host_schemes() {
+    let root = workspace_root()
+        .join("platform/apple/XrayClient/XrayClient.xcodeproj/xcshareddata/xcschemes");
+
+    for (scheme, product) in [
+        ("XrayClient.xcscheme", "XrayClient.app"),
+        ("XrayClientTv.xcscheme", "XrayClientTv.app"),
+        ("XrayClientMac.xcscheme", "XrayClientMac.app"),
+    ] {
+        let contents = fs::read_to_string(root.join(scheme))
+            .unwrap_or_else(|error| panic!("read shared scheme `{scheme}`: {error}"));
+        assert!(
+            contents.contains(product),
+            "shared scheme `{scheme}` does not build `{product}`"
+        );
+    }
 }
 
 #[test]
@@ -834,18 +877,21 @@ fn apple_xcframework_script_covers_ios_and_tvos_targets() {
 }
 
 #[test]
-fn apple_xcframework_script_packages_static_framework_bundles() {
+fn apple_xcframework_script_packages_static_libraries_with_headers() {
     let script = fs::read_to_string(workspace_root().join("scripts/build-apple-xcframework.sh"))
         .expect("read Apple build script");
 
-    assert!(script.contains("FRAMEWORK_NAME"));
-    assert!(script.contains("make_static_framework"));
-    assert!(script.contains("Modules/module.modulemap"));
-    assert!(script.contains("framework module"));
-    assert!(script.contains("CFBundlePackageType"));
-    assert!(script.contains("FMWK"));
-    assert!(script.contains("-framework"));
-    assert!(!script.contains("-library \"$ios_device_lib\" -headers \"$HEADER_DIR\""));
+    assert_eq!(script.matches("-library").count(), 5);
+    assert_eq!(script.matches("-headers \"$HEADER_DIR\"").count(), 5);
+    assert!(script.contains("-library \"$ios_device_lib\" -headers \"$HEADER_DIR\""));
+    assert!(script.contains("-library \"$macos_lib\" -headers \"$HEADER_DIR\""));
+    assert!(script.contains("validate_headers"));
+    assert!(script.contains("verify_xcframework_layout"));
+    assert!(script.contains("AvailableLibraries:$index:LibraryPath"));
+    assert!(script.contains("AvailableLibraries:$index:HeadersPath"));
+    assert!(script.contains("invalid Apple XCFramework slice count: expected 5"));
+    assert!(!script.contains("make_static_framework"));
+    assert!(!script.contains("-framework"));
 }
 
 #[test]

@@ -2,9 +2,11 @@
 name = "xray-bench"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish.workspace = true
+description = "Process, routing, TUN, and protocol benchmark harness for xray-rust"
 
 [[bin]]
 name = "xray-bench"
