@@ -1,9 +1,94 @@
 import XCTest
 import XrayAppleShared
+import NetworkExtension
 @testable import XrayAppleTunnel
 
 @available(macOS 13.0, *)
 final class XrayPacketTunnelProviderTests: XCTestCase {
+    func testLifecycleStopInvalidatesDelayedNetworkSettingsCallback() {
+        var stoppedResources: [Int] = []
+        let lifecycle = XrayPacketTunnelLifecycle<Int> {
+            stoppedResources.append($0)
+        }
+        let token = lifecycle.beginStart()
+
+        lifecycle.stop()
+
+        var didCreateRuntime = false
+        if lifecycle.isCurrent(token) {
+            didCreateRuntime = true
+        }
+        XCTAssertFalse(didCreateRuntime)
+        XCTAssertFalse(lifecycle.install(1, for: token))
+        XCTAssertEqual(stoppedResources, [1])
+        XCTAssertNil(lifecycle.active())
+    }
+
+    func testLifecycleOverlappingStartsPublishOnlyNewestRuntime() {
+        var stoppedResources: [Int] = []
+        let lifecycle = XrayPacketTunnelLifecycle<Int> {
+            stoppedResources.append($0)
+        }
+        let firstToken = lifecycle.beginStart()
+        let secondToken = lifecycle.beginStart()
+
+        XCTAssertFalse(lifecycle.install(1, for: firstToken))
+        XCTAssertTrue(lifecycle.install(2, for: secondToken))
+
+        var completedTokens: [Int] = []
+        XCTAssertFalse(
+            lifecycle.finishStart(for: firstToken) {
+                completedTokens.append(1)
+            }
+        )
+        XCTAssertTrue(
+            lifecycle.finishStart(for: secondToken) {
+                completedTokens.append(2)
+            }
+        )
+        XCTAssertEqual(lifecycle.active(), 2)
+        XCTAssertEqual(completedTokens, [2])
+        XCTAssertEqual(stoppedResources, [1])
+
+        _ = lifecycle.beginStart()
+        XCTAssertEqual(stoppedResources, [1, 2])
+        XCTAssertNil(lifecycle.active())
+    }
+
+    func testLifecycleTerminalFailureAndStopTearDownRuntimeOnlyOnce() {
+        var stoppedResources: [Int] = []
+        let lifecycle = XrayPacketTunnelLifecycle<Int> {
+            stoppedResources.append($0)
+        }
+        let token = lifecycle.beginStart()
+        XCTAssertTrue(lifecycle.install(1, for: token))
+
+        lifecycle.stop()
+        lifecycle.stop()
+
+        XCTAssertEqual(stoppedResources, [1])
+        XCTAssertNil(lifecycle.active())
+    }
+
+    func testSupersededTerminalFailureCannotStopNewRuntime() {
+        var stoppedResources: [Int] = []
+        let lifecycle = XrayPacketTunnelLifecycle<Int> {
+            stoppedResources.append($0)
+        }
+        let firstToken = lifecycle.beginStart()
+        XCTAssertTrue(lifecycle.install(1, for: firstToken))
+        let secondToken = lifecycle.beginStart()
+        XCTAssertTrue(lifecycle.install(2, for: secondToken))
+
+        XCTAssertFalse(lifecycle.stop(ifCurrent: firstToken))
+        XCTAssertEqual(lifecycle.active(), 2)
+        XCTAssertEqual(stoppedResources, [1])
+
+        XCTAssertTrue(lifecycle.stop(ifCurrent: secondToken))
+        XCTAssertNil(lifecycle.active())
+        XCTAssertEqual(stoppedResources, [1, 2])
+    }
+
     func testNetworkSettingsExcludeIPv4ProxyServerFromDefaultRoute() {
         let settings = XrayPacketTunnelProvider.networkSettings(
             excludingServerAddress: "203.0.113.10"
@@ -108,7 +193,10 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         )
 
         XCTAssertEqual(directory?.lastPathComponent, "XrayRustLogs")
-        XCTAssertEqual(directory?.deletingLastPathComponent(), baseDirectory)
+        XCTAssertEqual(
+            directory?.deletingLastPathComponent(),
+            baseDirectory.resolvingSymlinksInPath()
+        )
     }
 
     func testTunFileDescriptorEnabledDefaultsToTrue() {
@@ -210,6 +298,24 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         XCTAssertNil(probe)
     }
 
+    func testConfigIsResolvedFromOpaqueSecureReference() throws {
+        let secureStore = TunnelTestSecureConfigStore()
+        try secureStore.store(configJSON: #"{"inbounds":[]}"#, reference: "opaque-reference")
+        let tunnelProtocol = NETunnelProviderProtocol()
+        tunnelProtocol.providerConfiguration = [
+            XrayTunnelProviderMessage.providerConfigReferenceKey: "opaque-reference",
+        ]
+
+        let resolved = XrayPacketTunnelProvider.configJSON(
+            options: nil,
+            protocolConfiguration: tunnelProtocol,
+            secureConfigStore: secureStore
+        )
+
+        XCTAssertEqual(resolved?.json, #"{"inbounds":[]}"#)
+        XCTAssertEqual(resolved?.source, "providerConfigurationReference")
+    }
+
     func testConfigSummaryIncludesRoutingSurfaceWithoutSecrets() {
         let summary = XrayPacketTunnelProvider.configSummary(
             """
@@ -269,9 +375,26 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
 
         XCTAssertEqual(
             summary,
-            "inbounds=tun-in:tun outbounds=proxy:vless@203.0.113.10:32134 network=tcp security=reality flow=xtls-rprx-vision, direct:freedom routingRules=2 dnsFakeIp=enabled"
+            "inbounds=tun-in:tun outbounds=proxy:vless network=tcp security=reality flow=xtls-rprx-vision, direct:freedom routingRules=2 dnsFakeIp=enabled"
         )
         XCTAssertFalse(summary.contains("secret"))
+        XCTAssertFalse(summary.contains("203.0.113.10"))
     }
 
+}
+
+private final class TunnelTestSecureConfigStore: XraySecureConfigStoring, @unchecked Sendable {
+    private var values: [String: String] = [:]
+
+    func store(configJSON: String, reference: String) throws {
+        values[reference] = configJSON
+    }
+
+    func configJSON(reference: String) throws -> String? {
+        values[reference]
+    }
+
+    func remove(reference: String) throws {
+        values.removeValue(forKey: reference)
+    }
 }

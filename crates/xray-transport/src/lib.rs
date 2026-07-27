@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use std::net::SocketAddr;
+use std::net::{SocketAddr, UdpSocket as StdUdpSocket};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::{fmt, io, sync::Arc};
@@ -218,6 +218,13 @@ impl SocketHandle {
         }
     }
 
+    #[cfg(unix)]
+    fn from_std_udp_socket(socket: &StdUdpSocket) -> Self {
+        Self {
+            raw: socket.as_raw_fd() as i64,
+        }
+    }
+
     #[cfg(windows)]
     fn from_tcp_socket(socket: &TcpSocket) -> Self {
         Self {
@@ -227,6 +234,13 @@ impl SocketHandle {
 
     #[cfg(windows)]
     fn from_udp_socket(socket: &UdpSocket) -> Self {
+        Self {
+            raw: socket.as_raw_socket() as i64,
+        }
+    }
+
+    #[cfg(windows)]
+    fn from_std_udp_socket(socket: &StdUdpSocket) -> Self {
         Self {
             raw: socket.as_raw_socket() as i64,
         }

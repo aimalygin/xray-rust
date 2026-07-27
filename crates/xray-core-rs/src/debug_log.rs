@@ -1,5 +1,3 @@
-use std::net::IpAddr;
-
 use xray_config::SniffingDestination;
 use xray_routing::{Network, Target, TargetAddr as RoutingTargetAddr};
 
@@ -41,8 +39,10 @@ pub(crate) fn log_access_accepted(
 ) {
     logger.access(|| {
         format!(
-            "from {source} accepted {} outbound={outbound}",
-            target_label(target)
+            "from {} accepted {} outbound={}",
+            source_label(source),
+            target_label(target),
+            safe_outbound_label(outbound)
         )
     });
 }
@@ -51,28 +51,52 @@ pub(crate) fn log_access_rejected(
     logger: &RuntimeLogger,
     source: &str,
     target: &Target,
-    reason: impl std::fmt::Display,
+    _reason: impl std::fmt::Display,
 ) {
     logger.access(|| {
         format!(
-            "from {source} rejected {} reason={reason}",
+            "from {} rejected {} reason=<redacted>",
+            source_label(source),
             target_label(target)
         )
     });
 }
 
+fn source_label(source: &str) -> &'static str {
+    if source == "tun" {
+        "tun"
+    } else {
+        "<redacted-source>"
+    }
+}
+
 fn route_decision_message(event: &RouteDecisionLog<'_>) -> String {
     format!(
         "Debug routeDecision inbound={} network={} original_target={} sniffed_protocol={} sniffed_domain={} route_target={} dial_target={} selected_outbound={}",
-        event.inbound_tag.unwrap_or("untagged"),
+        configured_tag_label(event.inbound_tag),
         network_label(event.network),
         target_label(event.original_target),
         sniffed_protocol_label(event.sniffed_protocol),
         sniffed_domain_label(event),
         target_label(event.route_target),
         target_label(event.dial_target),
-        event.selected_outbound,
+        safe_outbound_label(event.selected_outbound),
     )
+}
+
+pub(crate) fn configured_tag_label(tag: Option<&str>) -> &'static str {
+    if tag.is_some() {
+        "<configured>"
+    } else {
+        "untagged"
+    }
+}
+
+fn safe_outbound_label(label: &str) -> &str {
+    match label {
+        "freedom" | "vless" | "untagged" | "unselected" | "<configured>" => label,
+        _ => "<configured>",
+    }
 }
 
 fn network_label(network: Network) -> &'static str {
@@ -96,16 +120,15 @@ fn sniffed_domain_label(event: &RouteDecisionLog<'_>) -> String {
         return "none".to_owned();
     }
     match &event.route_target.addr {
-        RoutingTargetAddr::Domain(domain) => domain.clone(),
+        RoutingTargetAddr::Domain(_) => "<redacted-domain>".to_owned(),
         RoutingTargetAddr::Ip(_) => "none".to_owned(),
     }
 }
 
 pub(crate) fn target_label(target: &Target) -> String {
     match &target.addr {
-        RoutingTargetAddr::Ip(IpAddr::V6(ip)) => format!("[{ip}]:{}", target.port),
-        RoutingTargetAddr::Ip(ip) => format!("{ip}:{}", target.port),
-        RoutingTargetAddr::Domain(domain) => format!("{domain}:{}", target.port),
+        RoutingTargetAddr::Ip(_) => format!("<redacted-ip>:{}", target.port),
+        RoutingTargetAddr::Domain(_) => format!("<redacted-domain>:{}", target.port),
     }
 }
 
@@ -129,7 +152,7 @@ mod tests {
             Network::Udp,
         );
         let event = RouteDecisionLog {
-            inbound_tag: Some("inbound_49783"),
+            inbound_tag: Some("inbound_49783\nforged=true"),
             network: Network::Udp,
             original_target: &original,
             sniffed_protocol: Some(SniffingDestination::Quic),
@@ -140,7 +163,7 @@ mod tests {
 
         assert_eq!(
             route_decision_message(&event),
-            "Debug routeDecision inbound=inbound_49783 network=udp original_target=37.203.35.22:443 sniffed_protocol=quic sniffed_domain=www.tiktok.com route_target=www.tiktok.com:443 dial_target=37.203.35.22:443 selected_outbound=vless"
+            "Debug routeDecision inbound=<configured> network=udp original_target=<redacted-ip>:443 sniffed_protocol=quic sniffed_domain=<redacted-domain> route_target=<redacted-domain>:443 dial_target=<redacted-ip>:443 selected_outbound=vless"
         );
     }
 
@@ -175,7 +198,10 @@ mod tests {
         let error_log =
             std::fs::read_to_string(dir.join("xray-error.log")).expect("error log should exist");
         assert!(error_log.contains("Debug routeDecision"));
-        assert!(error_log.contains("sniffed_domain=www.tiktok.com"));
+        assert!(error_log.contains("sniffed_domain=<redacted-domain>"));
+        assert!(!error_log.contains("www.tiktok.com"));
+        assert!(!error_log.contains("37.203.35.22"));
+        assert!(!error_log.contains("inbound_49783"));
     }
 
     #[test]
@@ -194,7 +220,10 @@ mod tests {
 
         let access_log =
             std::fs::read_to_string(dir.join("xray-access.log")).expect("access log should exist");
-        assert!(access_log.contains("from tun accepted speedtest.example:443 outbound=proxy"));
+        assert!(
+            access_log.contains("from tun accepted <redacted-domain>:443 outbound=<configured>")
+        );
+        assert!(!access_log.contains("speedtest.example"));
     }
 
     #[test]
@@ -208,14 +237,59 @@ mod tests {
             Network::Udp,
         );
 
-        log_access_rejected(&logger, "tun", &target, "XTLS rejected UDP/443 traffic");
+        log_access_rejected(&logger, "tun", &target, "failed for secret.example:443");
         drop(logger);
 
         let access_log =
             std::fs::read_to_string(dir.join("xray-access.log")).expect("access log should exist");
-        assert!(access_log.contains(
-            "from tun rejected speedtest.example:443 reason=XTLS rejected UDP/443 traffic"
-        ));
+        assert!(access_log.contains("from tun rejected <redacted-domain>:443 reason=<redacted>"));
+        assert!(!access_log.contains("speedtest.example"));
+        assert!(!access_log.contains("secret.example"));
+    }
+
+    #[test]
+    fn log_access_redacts_network_source_endpoint() {
+        let dir = unique_temp_dir("xray-access-source-redaction");
+        let logger = crate::RuntimeLogger::new(crate::RuntimeLogConfig::directory(&dir))
+            .expect("runtime logger should open files");
+        let target = Target::new(
+            TargetAddr::Domain("private.example".to_owned()),
+            443,
+            Network::Tcp,
+        );
+
+        log_access_accepted(&logger, "198.51.100.42:49152", &target, "freedom");
+        drop(logger);
+
+        let access_log =
+            std::fs::read_to_string(dir.join("xray-access.log")).expect("access log should exist");
+        assert!(access_log.contains("from <redacted-source> accepted"));
+        assert!(!access_log.contains("198.51.100.42"));
+        assert!(!access_log.contains("private.example"));
+    }
+
+    #[test]
+    fn configured_outbound_tag_cannot_inject_or_leak_into_log() {
+        let target = Target::new(
+            TargetAddr::Domain("secret.example".to_owned()),
+            443,
+            Network::Tcp,
+        );
+        let event = RouteDecisionLog {
+            inbound_tag: None,
+            network: Network::Tcp,
+            original_target: &target,
+            sniffed_protocol: None,
+            route_target: &target,
+            dial_target: &target,
+            selected_outbound: "proxy\n123 error forged",
+        };
+
+        let message = route_decision_message(&event);
+
+        assert!(message.contains("selected_outbound=<configured>"));
+        assert!(!message.contains("proxy"));
+        assert_eq!(message.lines().count(), 1);
     }
 
     fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {

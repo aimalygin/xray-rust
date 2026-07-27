@@ -3,7 +3,9 @@ set -euo pipefail
 
 WORKSPACE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APPLE_PACKAGE_DIR="$WORKSPACE_ROOT/platform/apple"
-XCFRAMEWORK_PATH="${XCFRAMEWORK_PATH:-"$WORKSPACE_ROOT/target/mobile/apple/XrayRust.xcframework"}"
+EXPECTED_XCFRAMEWORK_PATH="$WORKSPACE_ROOT/target/mobile/apple/XrayRust.xcframework"
+XCFRAMEWORK_PATH="${XCFRAMEWORK_PATH:-"$EXPECTED_XCFRAMEWORK_PATH"}"
+XRAY_USE_PREBUILT_ARTIFACTS="${XRAY_USE_PREBUILT_ARTIFACTS:-0}"
 SWIFT_BIN="${SWIFT_BIN:-swift}"
 SWIFTPM_HOME="${SWIFTPM_HOME:-"$WORKSPACE_ROOT/target/mobile/apple-swiftpm-home"}"
 CLANG_MODULE_CACHE_PATH="${CLANG_MODULE_CACHE_PATH:-"$WORKSPACE_ROOT/target/mobile/apple-clang-module-cache"}"
@@ -18,7 +20,17 @@ require_command() {
 main() {
   require_command "$SWIFT_BIN"
 
-  if [[ ! -d "$XCFRAMEWORK_PATH" ]]; then
+  if [[ "$XCFRAMEWORK_PATH" != "$EXPECTED_XCFRAMEWORK_PATH" ]]; then
+    echo "custom XCFRAMEWORK_PATH is unsupported because Package.swift links $EXPECTED_XCFRAMEWORK_PATH" >&2
+    exit 1
+  fi
+
+  if [[ "$XRAY_USE_PREBUILT_ARTIFACTS" == "1" ]]; then
+    if [[ ! -d "$XCFRAMEWORK_PATH" ]]; then
+      echo "prebuilt XCFramework not found: $XCFRAMEWORK_PATH" >&2
+      exit 1
+    fi
+  else
     "$WORKSPACE_ROOT/scripts/build-apple-xcframework.sh"
   fi
 

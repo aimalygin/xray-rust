@@ -65,9 +65,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.102"
+version = "1.0.103"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
+checksum = "2a4385e2e34eb35d6b3efe798b9eb88096925d87726c0798709bf56d9ed84af3"
 
 [[package]]
 name = "asn1-rs"
@@ -1119,7 +1119,7 @@ dependencies = [
 [[package]]
 name = "rustls"
 version = "0.23.40"
-source = "git+https://github.com/aimalygin/shaped-rustls?rev=94f088e2#94f088e210fd2a56e413cce1c6d79c10852d500a"
+source = "git+https://github.com/aimalygin/shaped-rustls?rev=94f088e210fd2a56e413cce1c6d79c10852d500a#94f088e210fd2a56e413cce1c6d79c10852d500a"
 dependencies = [
  "aws-lc-rs",
  "brotli",
@@ -1837,6 +1837,7 @@ dependencies = [
 name = "xray-config"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "prost",
  "regex",
  "serde",
@@ -1928,6 +1929,7 @@ dependencies = [
  "hmac",
  "ml-dsa",
  "polyval",
+ "rand",
  "rcgen",
  "regex",
  "rustls",

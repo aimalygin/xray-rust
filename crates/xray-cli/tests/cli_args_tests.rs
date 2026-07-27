@@ -2,10 +2,11 @@ use std::{fs, net::SocketAddr, path::PathBuf};
 
 use tokio::sync::oneshot;
 use xray_cli::{
-    format_bound_inbounds, load_config, parse_cli_args, parse_tun_fd_env_from_pairs,
-    parse_tun_runtime_options_env_from_pairs, run_cli_with_shutdown, run_with_shutdown, CliArgs,
-    CliError,
+    format_bound_inbounds, format_config_warnings, load_config, load_config_with_diagnostics,
+    parse_cli_args, parse_tun_fd_env_from_pairs, parse_tun_runtime_options_env_from_pairs,
+    run_cli_with_shutdown, run_with_shutdown, CliArgs, CliError,
 };
+use xray_config::Diagnostic;
 use xray_core_rs::{TunFdClosePolicy, TunFdPacketFormat, TunRuntimeOptions, TunRuntimeProfile};
 
 #[test]
@@ -67,6 +68,36 @@ fn load_config_reports_json_parse_diagnostics() {
 }
 
 #[test]
+fn load_config_preserves_and_formats_security_warnings() {
+    let temp_dir =
+        std::env::temp_dir().join(format!("xray-cli-warning-config-{}", std::process::id()));
+    fs::create_dir_all(&temp_dir).unwrap();
+    let config_path = temp_dir.join("warning.json");
+    fs::write(&config_path, config_with_allow_insecure_warning()).unwrap();
+
+    let (_config, diagnostics) = load_config_with_diagnostics(&config_path).unwrap();
+    let rendered = format_config_warnings(&diagnostics);
+
+    assert!(rendered.contains("warning:"));
+    assert!(rendered.contains("$.outbounds[0].streamSettings.tlsSettings.allowInsecure"));
+    assert!(rendered.contains("disables TLS certificate verification"));
+    let _ = fs::remove_dir_all(temp_dir);
+}
+
+#[test]
+fn warning_formatter_preserves_semicolons_inside_one_diagnostic() {
+    let rendered = format_config_warnings(&[Diagnostic::warning(
+        "$.outbounds[0]",
+        "first clause; second clause",
+    )]);
+
+    assert_eq!(
+        rendered,
+        "warning: $.outbounds[0]: first clause; second clause"
+    );
+}
+
+#[test]
 fn format_bound_inbounds_includes_tag_and_address() {
     let rendered = format_bound_inbounds(&[(
         Some("socks-in".to_owned()),
@@ -74,6 +105,37 @@ fn format_bound_inbounds_includes_tag_and_address() {
     )]);
 
     assert_eq!(rendered, "bound inbound socks-in at 127.0.0.1:1080");
+}
+
+fn config_with_allow_insecure_warning() -> &'static str {
+    r#"{
+      "inbounds": [{
+        "tag": "socks-in",
+        "protocol": "socks",
+        "listen": "127.0.0.1",
+        "port": 0,
+        "settings": { "udp": false }
+      }],
+      "outbounds": [{
+        "tag": "proxy",
+        "protocol": "vless",
+        "settings": {
+          "vnext": [{
+            "address": "example.com",
+            "port": 443,
+            "users": [{ "id": "00010203-0405-0607-0809-0a0b0c0d0e0f" }]
+          }]
+        },
+        "streamSettings": {
+          "network": "tcp",
+          "security": "tls",
+          "tlsSettings": {
+            "serverName": "example.com",
+            "allowInsecure": true
+          }
+        }
+      }]
+    }"#
 }
 
 #[test]

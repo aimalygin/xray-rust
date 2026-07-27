@@ -179,6 +179,12 @@ fn decode_addr_port(input: &[u8]) -> io::Result<Target> {
             TargetAddr::Ip(IpAddr::from(octets))
         }
         ADDR_DOMAIN => {
+            if input.len() < 4 {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "xudp domain metadata is too short",
+                ));
+            }
             let len = usize::from(input[3]);
             if input.len() < 4 + len {
                 return Err(io::Error::new(
@@ -199,4 +205,19 @@ fn decode_addr_port(input: &[u8]) -> io::Result<Target> {
     };
 
     Ok(Target::new(addr, port, Network::Udp))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io;
+
+    use super::{decode_addr_port, ADDR_DOMAIN};
+
+    #[test]
+    fn decode_addr_port_rejects_domain_without_length_byte() {
+        let error = decode_addr_port(&[0, 53, ADDR_DOMAIN])
+            .expect_err("truncated domain metadata should be rejected");
+
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+    }
 }

@@ -1,0 +1,36 @@
+[advisories]
+yanked = "deny"
+unmaintained = "workspace"
+maximum-db-staleness = "P14D"
+
+[licenses]
+confidence-threshold = 0.93
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unlicense",
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+highlight = "simplest-path"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+required-git-spec = "rev"
+allow-registry = [
+    "https://github.com/rust-lang/crates.io-index",
+]
+allow-git = ["https://github.com/aimalygin/shaped-rustls"]

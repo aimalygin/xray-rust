@@ -19,6 +19,7 @@ version = "0.1.0"
 edition = "2021"
 license = "MPL-2.0"
 repository = "local"
+publish = false
 
 [workspace.dependencies]
 aes = { version = "0.8", features = ["zeroize"] }
@@ -59,4 +60,4 @@ strip = "symbols"
 panic = "unwind"
 
 [patch.crates-io]
-rustls = { git = "https://github.com/aimalygin/shaped-rustls", rev = "94f088e2" }
+rustls = { git = "https://github.com/aimalygin/shaped-rustls", rev = "94f088e210fd2a56e413cce1c6d79c10852d500a" }

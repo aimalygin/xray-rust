@@ -406,9 +406,25 @@ impl TunEndpoint {
     /// to `max_packets` without further waiting. Holding the receiver lock for
     /// the whole batch keeps per-packet locking off the host packet pump path.
     pub async fn poll_outbound_batch(&self, max_packets: usize) -> Result<Vec<Bytes>, TunError> {
-        let max_packets = max_packets.max(1);
-        let mut rx = self.outbound_rx.lock().await;
         let mut packets = Vec::with_capacity(max_packets.min(64));
+        self.poll_outbound_batch_into(max_packets, &mut packets)
+            .await?;
+        Ok(packets)
+    }
+
+    /// Reuses `packets` while waiting for and draining an outbound batch under
+    /// one receiver lock. The vector is cleared before it is filled.
+    pub async fn poll_outbound_batch_into(
+        &self,
+        max_packets: usize,
+        packets: &mut Vec<Bytes>,
+    ) -> Result<(), TunError> {
+        let max_packets = max_packets.max(1);
+        packets.clear();
+        if packets.capacity() < max_packets.min(64) {
+            packets.reserve(max_packets.min(64));
+        }
+        let mut rx = self.outbound_rx.lock().await;
 
         loop {
             let closed = self.closed_notify.notified();
@@ -442,7 +458,7 @@ impl TunEndpoint {
             }
         }
 
-        Ok(packets)
+        Ok(())
     }
 
     pub async fn stats(&self) -> TunStats {
@@ -918,6 +934,13 @@ impl TunEndpoint {
                     Direction::Outbound => self.outbound_packets.fetch_add(1, Ordering::Relaxed),
                 };
                 self.record_queue_occupancy(direction);
+                if matches!(direction, Direction::Inbound) && self.inbound_tx.capacity() == 0 {
+                    // Cooperate once at saturation so a single hot producer
+                    // cannot repeatedly refill the last slot before the TUN
+                    // runtime gets scheduled. Full queues still reject via
+                    // `try_send`; this only improves fairness after acceptance.
+                    tokio::task::yield_now().await;
+                }
                 Ok(())
             }
             Err(mpsc::error::TrySendError::Full(_)) => {
@@ -954,7 +977,9 @@ impl TunEndpoint {
         &self,
         rx: &Mutex<mpsc::Receiver<Bytes>>,
     ) -> Result<Option<Bytes>, TunError> {
-        let mut rx = rx.lock().await;
+        let Ok(mut rx) = rx.try_lock() else {
+            return Ok(None);
+        };
 
         match rx.try_recv() {
             Ok(packet) => Ok(Some(packet)),

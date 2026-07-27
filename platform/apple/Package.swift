@@ -22,7 +22,10 @@ let package = Package(
         ),
         .target(
             name: "XrayMobileAdapter",
-            dependencies: ["XrayRust"]
+            dependencies: [
+                "XrayRust",
+                "XrayAppleShared",
+            ]
         ),
         .target(
             name: "XrayAppleShared"

@@ -188,20 +188,16 @@ mod platform {
                         break;
                     }
                 }
-                packet = tun.poll_outbound() => {
-                    match packet {
-                        Ok(packet) => {
-                            batch.clear();
-                            batch.push(packet);
-                            let queue_closed = drain_outbound_batch(&tun, &mut batch).await;
-
+                result = tun.poll_outbound_batch_into(
+                    TUN_FD_WRITE_BATCH_MAX_PACKETS,
+                    &mut batch,
+                ) => {
+                    match result {
+                        Ok(()) => {
                             if write_packet_batch(&fd, packet_format, &batch).await.is_err() {
                                 break;
                             }
                             tun.record_tun_fd_write_batch(batch.len());
-                            if queue_closed {
-                                break;
-                            }
                         }
                         Err(TunError::QueueClosed) => break,
                         Err(TunError::QueueFull | TunError::PacketTooLarge { .. }) => {}
@@ -209,18 +205,6 @@ mod platform {
                 }
             }
         }
-    }
-
-    async fn drain_outbound_batch(tun: &TunEndpoint, batch: &mut Vec<Bytes>) -> bool {
-        while batch.len() < TUN_FD_WRITE_BATCH_MAX_PACKETS {
-            match tun.try_poll_outbound().await {
-                Ok(Some(packet)) => batch.push(packet),
-                Ok(None) => return false,
-                Err(TunError::QueueClosed) => return true,
-                Err(TunError::QueueFull | TunError::PacketTooLarge { .. }) => return false,
-            }
-        }
-        false
     }
 
     async fn read_packet(
@@ -445,11 +429,11 @@ mod platform {
                     .unwrap();
             }
 
-            let first = tun.poll_outbound().await.unwrap();
-            let mut batch = vec![first];
-            let queue_closed = drain_outbound_batch(&tun, &mut batch).await;
+            let mut batch = Vec::with_capacity(TUN_FD_WRITE_BATCH_MAX_PACKETS);
+            tun.poll_outbound_batch_into(TUN_FD_WRITE_BATCH_MAX_PACKETS, &mut batch)
+                .await
+                .unwrap();
 
-            assert!(!queue_closed);
             assert_eq!(batch.len(), TUN_FD_WRITE_BATCH_MAX_PACKETS);
             assert_eq!(
                 tun.try_poll_outbound().await.unwrap(),
@@ -458,6 +442,32 @@ mod platform {
                     TUN_FD_WRITE_BATCH_MAX_PACKETS as u8
                 ]))
             );
+        }
+
+        #[tokio::test]
+        async fn outbound_batch_reuses_caller_vector_allocation() {
+            let tun = TunEndpoint::new(TunConfig {
+                mtu: 1500,
+                queue_depth: 4,
+            });
+            let mut batch = Vec::with_capacity(TUN_FD_WRITE_BATCH_MAX_PACKETS);
+            let allocation = batch.as_ptr();
+
+            tun.push_outbound(Bytes::from_static(&[0x45, 0x00]))
+                .await
+                .unwrap();
+            tun.poll_outbound_batch_into(TUN_FD_WRITE_BATCH_MAX_PACKETS, &mut batch)
+                .await
+                .unwrap();
+            batch.clear();
+            tun.push_outbound(Bytes::from_static(&[0x60, 0x00]))
+                .await
+                .unwrap();
+            tun.poll_outbound_batch_into(TUN_FD_WRITE_BATCH_MAX_PACKETS, &mut batch)
+                .await
+                .unwrap();
+
+            assert_eq!(batch.as_ptr(), allocation);
         }
     }
 }

@@ -48,7 +48,7 @@ use xray_config::{
     Network as ConfigNetwork, OutboundConfig, OutboundSettings, RoutingConfig, RoutingRule,
     StreamSecurity, StreamSettings,
 };
-use xray_core_rs::{select_tcp_outbound_for_session, Core, StartupProbeOptions};
+use xray_core_rs::{Core, OutboundRouter, StartupProbeOptions};
 use xray_proxy::vless::{
     encode_udp_packet, encode_xudp_keep_packet, read_udp_packet, read_xudp_packet,
     unpad_vision_block, VisionCommand, VisionPadding,
@@ -1859,7 +1859,12 @@ async fn run_tun_tcp_workload(
         let source_port = 49_152 + (connection_index % 10_000) as u16;
         let connection_outcome =
             run_tun_tcp_freedom_connection(tun_fd, echo_target, source_port, options, disposition)
-                .await?;
+                .await
+                .map_err(|error| {
+                    BenchError::InvalidArguments(format!(
+                        "TUN TCP connection {connection_index} (source port {source_port}, target {echo_target}) failed: {error}"
+                    ))
+                })?;
         outcome.extend(connection_outcome);
     }
     if hold_after_open {
@@ -2360,6 +2365,11 @@ async fn run_tun_tcp_freedom_connection(
 
     if disposition == TunTcpFlowDisposition::Abort {
         client.abort();
+        pump_tun_tcp_for(tun_fd, &mut client, Duration::from_millis(5)).await?;
+    } else {
+        // Flush the client's final ACK before dropping its local state. The
+        // server-side TUN flow then stays genuinely idle during the hold phase
+        // instead of spending the measurement window retransmitting echo data.
         pump_tun_tcp_for(tun_fd, &mut client, Duration::from_millis(5)).await?;
     }
 
@@ -4786,7 +4796,8 @@ where
 }
 
 pub fn run_route_probe(options: &RouteProbeOptions) -> Result<RouteProbeResult, BenchError> {
-    let config = route_probe_config(options.rules, options.outbounds)?;
+    let config = Arc::new(route_probe_config(options.rules, options.outbounds)?);
+    let outbound_router = OutboundRouter::new(config);
     let target = Target::new(
         RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7))),
         443,
@@ -4796,11 +4807,11 @@ pub fn run_route_probe(options: &RouteProbeOptions) -> Result<RouteProbeResult, 
     let started = Instant::now();
     let mut selected = 0;
     for _ in 0..options.iterations {
-        let outbound =
-            select_tcp_outbound_for_session(black_box(&config), inbound_tag, black_box(&target))
-                .map_err(|error| {
-                    BenchError::InvalidArguments(format!("route probe failed: {error}"))
-                })?;
+        let outbound = black_box(&outbound_router)
+            .select_tcp_outbound_for_session(inbound_tag, black_box(&target))
+            .map_err(|error| {
+                BenchError::InvalidArguments(format!("route probe failed: {error}"))
+            })?;
         if matches!(black_box(outbound), xray_core_rs::TcpOutbound::Freedom) {
             selected += 1;
         }
@@ -5830,6 +5841,7 @@ fn route_probe_config(rules: usize, outbounds: usize) -> Result<CoreConfig, Benc
             protocol: InboundProtocol::Socks,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            allow_unauthenticated_lan: false,
             sniffing: None,
             user_level: None,
         }],

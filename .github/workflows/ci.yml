@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 6 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.96.0 --profile minimal --component clippy,rustfmt
+
+      - name: Select pinned Rust toolchain
+        run: rustup default 1.96.0
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Lint
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings -W clippy::perf -W clippy::suspicious
+
+      - name: Test
+        run: cargo test --workspace --all-targets --locked
+
+      - name: Test mobile build-script guards
+        run: bash scripts/tests/check-mobile-toolchains.test.sh
+
+  supply-chain:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.96.0 --profile minimal
+
+      - name: Select pinned Rust toolchain
+        run: rustup default 1.96.0
+
+      - name: Install pinned dependency scanners
+        run: |
+          cargo install cargo-audit --version 0.22.2 --locked
+          cargo install cargo-deny --version 0.19.4 --locked
+
+      - name: Verify Gradle wrapper JAR
+        run: |
+          echo "7d3a4ac4de1c32b59bc6a4eb8ecb8e612ccd0cf1ae1e99f66902da64df296172  platform/android/gradle/wrapper/gradle-wrapper.jar" | sha256sum --check -
+
+      - name: Audit RustSec advisories
+        run: cargo audit
+
+      - name: Enforce dependency policy
+        run: cargo deny --locked check advisories bans licenses sources

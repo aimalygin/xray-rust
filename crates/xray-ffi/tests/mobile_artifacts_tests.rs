@@ -31,6 +31,7 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
         "xray_core_new",
         "xray_core_set_geodata_search_dir",
         "xray_core_load_config_json",
+        "xray_core_config_warnings",
         "xray_core_start",
         "xray_core_stop",
         "xray_core_free",
@@ -61,8 +62,12 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
         assert!(header.contains(symbol), "header missing `{symbol}`");
     }
     assert!(!header.contains("xray_core_set_tun_block_quic"));
+    assert!(header.contains("XRAY_STATUS_INVALID_ARGUMENT = 9"));
+    assert!(header.contains("int32_t packet_format,\n    int32_t close_policy,"));
+    assert!(header.contains("int32_t profile,\n    XrayError **error);"));
 
     for field in [
+        "struct_size",
         "tcp_remote_write_wait_events",
         "tcp_remote_write_wait_ms_total",
         "tcp_remote_write_wait_ms_max",
@@ -93,6 +98,17 @@ fn apple_c_module_map_exports_xrayrust_module() {
 }
 
 #[test]
+fn apple_secure_config_store_uses_data_protection_keychain() {
+    let source = fs::read_to_string(
+        workspace_root().join("platform/apple/Sources/XrayAppleShared/XraySecureConfigStore.swift"),
+    )
+    .expect("read Apple secure config store");
+
+    assert!(source.contains("kSecUseDataProtectionKeychain: true"));
+    assert!(source.contains("kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly"));
+}
+
+#[test]
 fn apple_adapter_declares_packet_tunnel_pump() {
     let root = workspace_root();
     let package =
@@ -115,6 +131,8 @@ fn apple_adapter_declares_packet_tunnel_pump() {
     assert!(!package.contains(".iOS(.v13)"));
     assert!(package.contains("XrayRust.xcframework"));
     assert!(core.contains("import XrayRust"));
+    assert!(core.contains("xray_ffi_version_major()"));
+    assert!(core.contains("expectedFFIMajorVersion: UInt32 = 1"));
     assert!(core.contains("xray_core_set_socket_protect_callback"));
     assert!(core.contains("xray_core_set_geodata_search_dir"));
     assert!(core.contains("XrayStartupProbeOptions"));
@@ -139,6 +157,99 @@ fn apple_adapter_declares_packet_tunnel_pump() {
     assert!(pump.contains("NEPacketTunnelProvider"));
     assert!(pump.contains("packetFlow.readPackets"));
     assert!(pump.contains("packetFlow.writePackets"));
+
+    let swift_version_check = core
+        .find("try Self.validateFFIMajorVersion(xray_ffi_version_major())")
+        .expect("Swift adapter should validate the FFI ABI");
+    let swift_core_new = core
+        .find("guard let handle = xray_core_new(&error)")
+        .expect("Swift adapter should create the native core");
+    assert!(
+        swift_version_check < swift_core_new,
+        "Swift adapter must validate the FFI ABI before creating a core"
+    );
+}
+
+#[test]
+fn apple_secure_config_lifecycle_uses_data_protection_and_cleanup() {
+    let root = workspace_root();
+    let secure_store = fs::read_to_string(
+        root.join("platform/apple/Sources/XrayAppleShared/XraySecureConfigStore.swift"),
+    )
+    .expect("read Apple secure config store");
+    let profile_store = fs::read_to_string(
+        root.join("platform/apple/Sources/XrayAppleClient/XrayClientProfileStore.swift"),
+    )
+    .expect("read Apple profile store");
+    let tunnel_controller = fs::read_to_string(
+        root.join("platform/apple/Sources/XrayAppleClient/XrayClientTunnelController.swift"),
+    )
+    .expect("read Apple tunnel controller");
+
+    assert!(secure_store.contains("kSecUseDataProtectionKeychain: true"));
+    assert!(profile_store.contains("previousReference != reference"));
+    assert!(profile_store.contains("secureConfigStore.remove(reference: previousReference)"));
+    assert!(profile_store.contains("Failed to remove obsolete secure profile configuration"));
+    assert!(tunnel_controller.contains("XrayTunnelSecureConfigTransaction"));
+    assert!(tunnel_controller.contains("XrayTunnelManagerPreferencesTransaction"));
+    assert!(tunnel_controller.contains("preferencesTransaction.rollback()"));
+    assert!(tunnel_controller.contains("manager.removeFromPreferencesAsync()"));
+    assert!(tunnel_controller.contains("secureRollback: secureTransaction.rollback"));
+    assert!(tunnel_controller
+        .contains("secureTransaction.commit(removingObsoleteReference: obsoleteReference)"));
+}
+
+#[test]
+fn apple_packet_pump_reuses_poll_storage_and_fails_outside_worker_queue() {
+    let root = workspace_root();
+    let core =
+        fs::read_to_string(root.join("platform/apple/Sources/XrayMobileAdapter/XrayCore.swift"))
+            .expect("read Apple core adapter");
+    let pump = fs::read_to_string(
+        root.join("platform/apple/Sources/XrayMobileAdapter/XrayPacketTunnelPump.swift"),
+    )
+    .expect("read Apple packet pump");
+    let provider = fs::read_to_string(
+        root.join("platform/apple/Sources/XrayAppleTunnel/XrayPacketTunnelProvider.swift"),
+    )
+    .expect("read Apple packet tunnel provider");
+    let mobile_log = fs::read_to_string(
+        root.join("platform/apple/Sources/XrayMobileAdapter/XrayMobileLog.swift"),
+    )
+    .expect("read Apple mobile log helper");
+
+    assert!(core.contains("XrayPacketBatchPollStorage"));
+    assert!(core.contains("multipliedReportingOverflow"));
+    assert!(core.contains("maximumPacketBatchBytes"));
+    assert!(pump.contains("storage: pollStorage"));
+    assert!(pump.contains("recordRecoverablePushFailure"));
+    assert!(pump.contains("XrayPacketTunnelTerminalFailureDelivery"));
+    assert!(pump.contains("queue.async"));
+    assert!(provider.contains("cancelTunnelWithError(error)"));
+    assert!(provider.contains("lifecycle.stop(ifCurrent: lifecycleToken)"));
+    assert!(mobile_log.contains("XrayLogSanitizer.sanitize"));
+}
+
+#[test]
+fn apple_file_logger_uses_secure_persistent_descriptor() {
+    let source = fs::read_to_string(
+        workspace_root().join("platform/apple/Sources/XrayAppleShared/XrayAppleLog.swift"),
+    )
+    .expect("read Apple logger");
+
+    for token in [
+        "openat(",
+        "O_NOFOLLOW",
+        "O_NONBLOCK",
+        "O_APPEND",
+        "fstat(",
+        "S_IFREG",
+        "fchmod(",
+        "fileDescriptor",
+    ] {
+        assert!(source.contains(token), "Apple logger missing `{token}`");
+    }
+    assert!(!source.contains("FileHandle(forWritingTo:"));
 }
 
 #[test]
@@ -166,6 +277,8 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
     assert!(build.contains("com.android.library"));
     assert!(build.contains("externalNativeBuild"));
     assert!(build.contains("ndkVersion"));
+    assert!(build.contains("ndkVersion = \"26.3.11579264\""));
+    assert!(!build.contains("\"src/main/jniLibs\""));
     assert!(build.contains("JvmTarget.JVM_1_8"));
     assert!(core.contains("System.loadLibrary(\"xray_ffi\")"));
     assert!(core.contains("nativeSetSocketProtector"));
@@ -185,6 +298,8 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
     assert!(service.contains("read(packetBuffer)"));
     assert!(service.contains("pollPacket"));
     assert!(jni.contains("xray_core_set_socket_protect_callback"));
+    assert!(jni.contains("xray_ffi_version_major()"));
+    assert!(jni.contains("kExpectedFfiMajorVersion = 1"));
     assert!(jni.contains("xray_core_set_startup_probe"));
     assert!(jni.contains("xray_core_set_tun_fd"));
     assert!(jni.contains("xray_core_set_tun_collect_tcp_timings"));
@@ -194,6 +309,20 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetTunFd"));
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetTunCollectTcpTimings"));
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetTunRuntimeProfile"));
+
+    let jni_new = jni
+        .find("Java_org_xrayrust_mobile_XrayCore_nativeNew")
+        .expect("JNI adapter should define nativeNew");
+    let jni_version_check = jni[jni_new..]
+        .find("ensure_supported_ffi_abi(env)")
+        .expect("JNI adapter should validate the FFI ABI");
+    let jni_core_new = jni[jni_new..]
+        .find("xray_core_new(&error)")
+        .expect("JNI adapter should create the native core");
+    assert!(
+        jni_version_check < jni_core_new,
+        "JNI adapter must validate the FFI ABI before creating a core"
+    );
 }
 
 #[test]
@@ -208,6 +337,9 @@ fn apple_adapter_build_script_covers_swiftpm_host_build() {
     assert!(script.contains("CLANG_MODULE_CACHE_PATH"));
     assert!(script.contains("XrayRust.xcframework"));
     assert!(script.contains("platform/apple"));
+    assert!(script.contains("XRAY_USE_PREBUILT_ARTIFACTS"));
+    assert!(script.contains("EXPECTED_XCFRAMEWORK_PATH"));
+    assert!(script.contains("custom XCFRAMEWORK_PATH is unsupported"));
 }
 
 #[test]
@@ -224,6 +356,8 @@ fn apple_adapter_link_script_covers_mobile_triples() {
         "arm64-apple-tvos${TVOS_DEPLOYMENT_TARGET}",
         "arm64-apple-tvos${TVOS_DEPLOYMENT_TARGET}-simulator",
         "x86_64-apple-tvos${TVOS_DEPLOYMENT_TARGET}-simulator",
+        "arm64-apple-macos${MACOSX_DEPLOYMENT_TARGET}",
+        "x86_64-apple-macos${MACOSX_DEPLOYMENT_TARGET}",
     ] {
         assert!(
             script.contains(triple),
@@ -236,6 +370,7 @@ fn apple_adapter_link_script_covers_mobile_triples() {
         "iphonesimulator",
         "appletvos",
         "appletvsimulator",
+        "macosx",
     ] {
         assert!(
             script.contains(sdk),
@@ -249,6 +384,10 @@ fn apple_adapter_link_script_covers_mobile_triples() {
     assert!(script.contains("--triple"));
     assert!(script.contains("XrayRust.xcframework"));
     assert!(script.contains("build-apple-xcframework.sh"));
+    assert!(script.contains("XRAY_USE_PREBUILT_ARTIFACTS"));
+    assert!(script.contains("EXPECTED_XCFRAMEWORK_PATH"));
+    assert!(script.contains("custom XCFRAMEWORK_PATH is unsupported"));
+    assert!(script.contains("lipo \"$binary\" -verify_arch arm64 x86_64"));
 }
 
 #[test]
@@ -311,8 +450,12 @@ fn apple_swift_sources_advertise_ios_15_availability() {
 
 #[test]
 fn android_adapter_build_script_covers_gradle_sdk_and_artifacts() {
-    let script = fs::read_to_string(workspace_root().join("scripts/build-android-adapter.sh"))
+    let root = workspace_root();
+    let script = fs::read_to_string(root.join("scripts/build-android-adapter.sh"))
         .expect("read Android adapter build script");
+    let wrapper =
+        fs::read_to_string(root.join("platform/android/gradle/wrapper/gradle-wrapper.properties"))
+            .expect("read Gradle wrapper properties");
 
     assert!(script.contains("scripts/build-android-libs.sh"));
     assert!(script.contains("ANDROID_HOME"));
@@ -321,6 +464,20 @@ fn android_adapter_build_script_covers_gradle_sdk_and_artifacts() {
     assert!(script.contains("XRAY_FFI_ANDROID_DIR"));
     assert!(script.contains(":xraymobile:assembleDebug"));
     assert!(script.contains("platform/android"));
+    assert!(script.contains("XRAY_USE_PREBUILT_ARTIFACTS"));
+    assert!(script.contains("26.3.11579264"));
+    assert!(script.contains("gradlew"));
+    assert!(root.join("platform/android/gradlew").is_file());
+    assert!(root
+        .join("platform/android/gradle/wrapper/gradle-wrapper.jar")
+        .is_file());
+    assert!(root
+        .join("platform/android/gradle/verification-metadata.xml")
+        .is_file());
+    assert!(wrapper.contains("gradle-8.14.2-bin.zip"));
+    assert!(wrapper.contains(
+        "distributionSha256Sum=7197a12f450794931532469d4ff21a59ea2c1cd59a3ec3f89c035c3c420a6999"
+    ));
 }
 
 #[test]
@@ -374,6 +531,7 @@ fn assert_native_staticlib_exports_symbols() {
         .current_dir(&root)
         .args([
             "build",
+            "--locked",
             "-p",
             "xray-ffi",
             "--release",
@@ -441,6 +599,7 @@ const EXPORTED_SYMBOLS: &[&str] = &[
     "xray_core_new",
     "xray_core_set_geodata_search_dir",
     "xray_core_load_config_json",
+    "xray_core_config_warnings",
     "xray_core_start",
     "xray_core_stop",
     "xray_core_free",
@@ -491,7 +650,7 @@ const C_HARNESS_SOURCE: &str = r#"
 static void use_xray_ffi_api(void) {
   XrayError *error = NULL;
   XrayCoreHandle *handle = xray_core_new(&error);
-  XrayTunStats stats = {0};
+  XrayTunStats stats = {.struct_size = sizeof(XrayTunStats)};
   XrayTcpFlowSummaryEvent tcp_flow_summary = {0};
   XrayTcpOpenErrorEvent tcp_open_error = {0};
   XrayTcpRemoteWriteSlowEvent tcp_remote_write_slow = {0};
@@ -533,6 +692,12 @@ static void use_xray_ffi_api(void) {
       XRAY_TUN_RUNTIME_PROFILE_LOW_MEMORY,
       &error);
   (void)xray_core_load_config_json(handle, "{}", &error);
+  (void)xray_core_config_warnings(
+      handle,
+      message,
+      sizeof(message),
+      &message_written,
+      &error);
   (void)xray_core_start(handle, &error);
   (void)xray_core_stop(handle, &error);
   (void)xray_tun_push_packet(handle, packet, sizeof(packet), &error);
@@ -640,6 +805,7 @@ fn apple_xcframework_script_covers_ios_and_tvos_targets() {
         "aarch64-apple-tvos-sim",
         "x86_64-apple-tvos",
         "aarch64-apple-darwin",
+        "x86_64-apple-darwin",
     ] {
         assert!(script.contains(target), "Apple script missing `{target}`");
     }
@@ -648,9 +814,11 @@ fn apple_xcframework_script_covers_ios_and_tvos_targets() {
     assert!(script.contains("xcodebuild"));
     assert!(script.contains("-create-xcframework"));
     assert!(script.contains("lipo"));
-    assert!(script.contains("cargo build --package xray-ffi"));
+    assert!(script.contains("build --locked"));
+    assert!(script.contains("--package xray-ffi"));
     assert!(script.contains("TVOS_BUILD_STD"));
     assert!(script.contains("TVOS_RUST_TOOLCHAIN"));
+    assert!(script.contains("nightly-2026-05-22"));
     assert!(script.contains("-Z"));
     assert!(script.contains("build-std"));
     assert!(script.contains("APPLE_CARGO_TARGET_DIR"));
@@ -659,6 +827,10 @@ fn apple_xcframework_script_covers_ios_and_tvos_targets() {
     assert!(script.contains("IPHONEOS_DEPLOYMENT_TARGET"));
     assert!(script.contains(r#"IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-15.0}""#));
     assert!(script.contains("TVOS_DEPLOYMENT_TARGET"));
+    assert!(script.contains("validate_output_paths"));
+    assert!(script.contains("unsafe XCFRAMEWORK_NAME"));
+    assert!(script.contains("unsafe OUT_DIR"));
+    assert!(script.contains(r#"MACOS_TARGETS=("aarch64-apple-darwin" "x86_64-apple-darwin")"#));
 }
 
 #[test]
@@ -694,7 +866,10 @@ fn android_script_covers_rust_targets_and_jni_abis() {
         assert!(script.contains(abi), "Android script missing `{abi}`");
     }
 
-    assert!(script.contains("cargo build --package xray-ffi"));
+    assert!(script.contains("cargo build"));
+    assert!(script.contains("--locked"));
+    assert!(script.contains("--manifest-path \"$WORKSPACE_ROOT/Cargo.toml\""));
+    assert!(script.contains("--package xray-ffi"));
     assert!(script.contains("jniLibs"));
     assert!(script.contains("ANDROID_NDK_HOME"));
     assert!(script.contains("ANDROID_NDK_ROOT"));
@@ -703,6 +878,26 @@ fn android_script_covers_rust_targets_and_jni_abis() {
     assert!(script.contains("CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER"));
     assert!(script.contains("CARGO_TARGET_I686_LINUX_ANDROID_LINKER"));
     assert!(script.contains("CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER"));
+    assert!(script.contains("PINNED_ANDROID_NDK_VERSION=\"26.3.11579264\""));
+    assert!(script.contains("-Wl,-z,max-page-size=$ANDROID_PAGE_SIZE"));
+    assert!(script.contains("-Wl,-z,common-page-size=$ANDROID_PAGE_SIZE"));
+    assert!(script.contains("verify_elf_alignment"));
+    assert!(script.contains("llvm-readelf"));
+    assert!(script.contains("0x4000"));
+    assert!(script.contains("rm -rf \"$OUT_DIR/jniLibs\""));
+    assert!(script.contains("refusing unsafe Android output directory"));
+}
+
+#[test]
+fn android_jni_library_is_linked_for_sixteen_kibibyte_pages() {
+    let cmake = fs::read_to_string(
+        workspace_root().join("platform/android/xraymobile/src/main/cpp/CMakeLists.txt"),
+    )
+    .expect("read Android JNI CMake file");
+
+    assert!(cmake.contains("-Wl,-z,max-page-size=16384"));
+    assert!(cmake.contains("-Wl,-z,common-page-size=16384"));
+    assert!(cmake.contains("target_link_options"));
 }
 
 #[test]
@@ -744,6 +939,7 @@ fn mobile_toolchain_preflight_script_covers_required_targets() {
     assert!(script.contains("TVOS_BUILD_STD"));
     assert!(script.contains("TVOS_RUST_TOOLCHAIN"));
     assert!(script.contains("rust-src"));
+    assert!(script.contains("PINNED_ANDROID_NDK_VERSION=\"26.3.11579264\""));
 
     for env_var in ["ANDROID_NDK_HOME", "ANDROID_NDK_ROOT", "ANDROID_HOME"] {
         assert!(

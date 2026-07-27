@@ -1,30 +1,179 @@
 import Foundation
 import XrayRust
 
-private enum XrayMobileLog {
-    static func info(_ category: String, _ message: String) {
-        NSLog("[XrayRust][\(category)] \(message)")
-    }
-
-    static func error(_ category: String, _ message: String) {
-        NSLog("[XrayRust][\(category)][error] \(message)")
-    }
-}
-
 public enum XrayCoreError: Error, CustomStringConvertible {
     case status(code: XrayStatus, message: String)
+    case incompatibleFFIMajorVersion(expected: UInt32, actual: UInt32)
+    case invalidPacketPollSize(Int)
+    case invalidPacketBatchLimits(maxPackets: Int, maxPacketBytes: Int)
+    case packetBatchSizeOverflow(maxPackets: Int, maxPacketBytes: Int)
+    case packetBatchTooLarge(requestedBytes: Int, maximumBytes: Int)
     case missingHandle
+    case notRunning
     case invalidUtf8
 
     public var description: String {
         switch self {
         case let .status(code, message):
             return "xray status \(code): \(message)"
+        case let .incompatibleFFIMajorVersion(expected, actual):
+            return "incompatible xray FFI ABI major: expected \(expected), got \(actual)"
+        case let .invalidPacketPollSize(maxBytes):
+            return "packet poll buffer size must be between 1 and 65535 bytes, got \(maxBytes)"
+        case let .invalidPacketBatchLimits(maxPackets, maxPacketBytes):
+            return "packet batch limits must be positive, got maxPackets=\(maxPackets) maxPacketBytes=\(maxPacketBytes)"
+        case let .packetBatchSizeOverflow(maxPackets, maxPacketBytes):
+            return "packet batch size overflows Int for maxPackets=\(maxPackets) maxPacketBytes=\(maxPacketBytes)"
+        case let .packetBatchTooLarge(requestedBytes, maximumBytes):
+            return "packet batch buffer of \(requestedBytes) bytes exceeds the \(maximumBytes)-byte limit"
         case .missingHandle:
             return "xray core handle is missing"
+        case .notRunning:
+            return "xray core is not running"
         case .invalidUtf8:
             return "xray returned an invalid UTF-8 error message"
         }
+    }
+}
+
+final class XrayPacketBatchPollStorage: @unchecked Sendable {
+    let maxPackets: Int
+    let maxPacketBytes: Int
+
+    private var bytes: [UInt8]
+    private var lengths: [Int]
+    private(set) var materializedPacketCount = 0
+
+    init(
+        validatedMaxPackets maxPackets: Int,
+        validatedMaxPacketBytes maxPacketBytes: Int,
+        validatedByteCount byteCount: Int
+    ) {
+        precondition(maxPackets > 0)
+        precondition(maxPacketBytes > 0)
+        precondition(byteCount == maxPackets * maxPacketBytes)
+        self.maxPackets = maxPackets
+        self.maxPacketBytes = maxPacketBytes
+        bytes = [UInt8](repeating: 0, count: byteCount)
+        lengths = [Int](repeating: 0, count: maxPackets)
+    }
+
+    func withUnsafeMutableBuffers<T>(
+        _ body: (
+            UnsafeMutableBufferPointer<UInt8>,
+            UnsafeMutableBufferPointer<Int>
+        ) throws -> T
+    ) rethrows -> T {
+        try bytes.withUnsafeMutableBufferPointer { byteBuffer in
+            try lengths.withUnsafeMutableBufferPointer { lengthBuffer in
+                try body(byteBuffer, lengthBuffer)
+            }
+        }
+    }
+
+    func materializePackets(packetCount: Int) -> [Data] {
+        guard packetCount > 0 else {
+            return []
+        }
+        precondition(packetCount <= maxPackets)
+
+        var packets = [Data]()
+        packets.reserveCapacity(packetCount)
+        var offset = 0
+        for index in 0..<packetCount {
+            let length = lengths[index]
+            precondition(length >= 0)
+            precondition(offset <= bytes.count - length)
+            packets.append(Data(bytes[offset..<(offset + length)]))
+            materializedPacketCount += 1
+            offset += length
+        }
+        return packets
+    }
+
+    var bufferIdentities: (bytes: UInt, lengths: UInt) {
+        withUnsafeMutableBuffers { byteBuffer, lengthBuffer in
+            (
+                bytes: byteBuffer.baseAddress.map(UInt.init(bitPattern:)) ?? 0,
+                lengths: lengthBuffer.baseAddress.map(UInt.init(bitPattern:)) ?? 0
+            )
+        }
+    }
+}
+
+public protocol XraySocketProtecting: AnyObject, Sendable {
+    func protect(socket: Int32) -> Bool
+}
+
+private final class XraySocketProtectContext: @unchecked Sendable {
+    let protector: XraySocketProtecting
+
+    init(protector: XraySocketProtecting) {
+        self.protector = protector
+    }
+}
+
+private func xraySwiftSocketProtect(
+    socket: Int32,
+    userData: UnsafeMutableRawPointer?
+) -> Int32 {
+    guard let userData else {
+        return 0
+    }
+    let context = Unmanaged<XraySocketProtectContext>
+        .fromOpaque(userData)
+        .takeUnretainedValue()
+    return context.protector.protect(socket: socket) ? 1 : 0
+}
+
+final class XrayCoreCallGate: @unchecked Sendable {
+    private let condition = NSCondition()
+    private var activeDataPathCalls = 0
+    private var waitingLifecycleCalls = 0
+    private var lifecycleCallActive = false
+
+    var hasWaitingLifecycleCall: Bool {
+        condition.lock()
+        defer { condition.unlock() }
+        return waitingLifecycleCalls > 0
+    }
+
+    func withDataPath<T>(_ body: () throws -> T) rethrows -> T {
+        condition.lock()
+        while lifecycleCallActive || waitingLifecycleCalls > 0 {
+            condition.wait()
+        }
+        activeDataPathCalls += 1
+        condition.unlock()
+
+        defer {
+            condition.lock()
+            activeDataPathCalls -= 1
+            if activeDataPathCalls == 0 {
+                condition.broadcast()
+            }
+            condition.unlock()
+        }
+        return try body()
+    }
+
+    func withLifecycle<T>(_ body: () throws -> T) rethrows -> T {
+        condition.lock()
+        waitingLifecycleCalls += 1
+        while lifecycleCallActive || activeDataPathCalls > 0 {
+            condition.wait()
+        }
+        waitingLifecycleCalls -= 1
+        lifecycleCallActive = true
+        condition.unlock()
+
+        defer {
+            condition.lock()
+            lifecycleCallActive = false
+            condition.broadcast()
+            condition.unlock()
+        }
+        return try body()
     }
 }
 
@@ -253,8 +402,14 @@ private extension XrayTcpSlowFlowKind {
 }
 
 public final class XrayCore: @unchecked Sendable {
-    private let lock = NSLock()
+    static let expectedFFIMajorVersion: UInt32 = 1
+    static let maximumPolledPacketBytes = 65_535
+    static let maximumPacketBatchBytes = 4 * 1_024 * 1_024
+
+    private let callGate = XrayCoreCallGate()
     private var handle: OpaquePointer?
+    private var dataPathEnabled = false
+    private var retainedSocketProtectContext: Unmanaged<XraySocketProtectContext>?
 
     public static func tunRuntimeProfile(named rawValue: String) -> XrayTunRuntimeProfile {
         switch rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
@@ -302,16 +457,17 @@ public final class XrayCore: @unchecked Sendable {
         geodataSearchDirectory: URL? = nil,
         startupProbe: XrayStartupProbeOptions? = nil,
         fileLogDirectory: URL? = nil,
-        socketProtectCallback: XraySocketProtectCallback? = nil,
-        socketProtectUserData: UnsafeMutableRawPointer? = nil,
+        socketProtector: XraySocketProtecting? = nil,
         tunFileDescriptor: Int32? = nil,
         tunPacketFormat: XrayTunFdPacketFormat = XRAY_TUN_FD_PACKET_FORMAT_RAW_IP,
         tunClosePolicy: XrayTunFdClosePolicy = XRAY_TUN_FD_CLOSE_POLICY_BORROWED
     ) throws {
+        try Self.validateFFIMajorVersion(xray_ffi_version_major())
+
         var error: OpaquePointer?
         XrayMobileLog.info(
             "Core",
-            "Creating core configBytes=\(configJSON.utf8.count) socketProtect=\(socketProtectCallback != nil) tunFd=\(tunFileDescriptor != nil ? "present" : "none") collectTcpTimings=\(collectTcpTimings) tunRuntimeProfile=\(tunRuntimeProfile.rawValue)"
+            "Creating core configBytes=\(configJSON.utf8.count) socketProtect=\(socketProtector != nil) tunFd=\(tunFileDescriptor != nil ? "present" : "none") collectTcpTimings=\(collectTcpTimings) tunRuntimeProfile=\(tunRuntimeProfile.rawValue)"
         )
         guard let handle = xray_core_new(&error) else {
             let coreError = XrayCore.takeError(error)
@@ -362,24 +518,33 @@ public final class XrayCore: @unchecked Sendable {
                     )
                 }
             }
-            if socketProtectCallback != nil {
-                try check(
-                    xray_core_set_socket_protect_callback(
-                        handle,
-                        socketProtectCallback,
-                        socketProtectUserData,
-                        &error
-                    ),
-                    error: error
+            if let socketProtector {
+                let context = Unmanaged.passRetained(
+                    XraySocketProtectContext(protector: socketProtector)
                 )
+                do {
+                    try check(
+                        xray_core_set_socket_protect_callback(
+                            handle,
+                            xraySwiftSocketProtect,
+                            context.toOpaque(),
+                            &error
+                        ),
+                        error: error
+                    )
+                    retainedSocketProtectContext = context
+                } catch {
+                    context.release()
+                    throw error
+                }
             }
             if let tunFileDescriptor {
                 try check(
                     xray_core_set_tun_fd(
                         handle,
                         tunFileDescriptor,
-                        tunPacketFormat,
-                        tunClosePolicy,
+                        Int32(tunPacketFormat.rawValue),
+                        Int32(tunClosePolicy.rawValue),
                         &error
                     ),
                     error: error
@@ -394,7 +559,11 @@ public final class XrayCore: @unchecked Sendable {
                 error: error
             )
             try check(
-                xray_core_set_tun_runtime_profile(handle, tunRuntimeProfile, &error),
+                xray_core_set_tun_runtime_profile(
+                    handle,
+                    Int32(tunRuntimeProfile.rawValue),
+                    &error
+                ),
                 error: error
             )
             if let geodataSearchDirectory {
@@ -408,34 +577,50 @@ public final class XrayCore: @unchecked Sendable {
             try configJSON.withCString { pointer in
                 try check(xray_core_load_config_json(handle, pointer, &error), error: error)
             }
+            for warning in try configWarnings(handle: handle) {
+                XrayMobileLog.info("Core", "Config warning: \(warning)")
+            }
             XrayMobileLog.info("Core", "Core config loaded")
         } catch {
             XrayMobileLog.error("Core", "Core init failed: \(error)")
             xray_core_free(handle)
+            retainedSocketProtectContext?.release()
+            retainedSocketProtectContext = nil
             self.handle = nil
             throw error
         }
     }
 
-    deinit {
-        lock.lock()
-        let handle = self.handle
-        self.handle = nil
-        lock.unlock()
+    static func validateFFIMajorVersion(_ actual: UInt32) throws {
+        guard actual == expectedFFIMajorVersion else {
+            throw XrayCoreError.incompatibleFFIMajorVersion(
+                expected: expectedFFIMajorVersion,
+                actual: actual
+            )
+        }
+    }
 
-        if let handle {
-            XrayMobileLog.info("Core", "Deinit stopping and freeing core")
-            _ = xray_core_stop(handle, nil)
-            xray_core_free(handle)
+    deinit {
+        callGate.withLifecycle {
+            dataPathEnabled = false
+            if let handle {
+                self.handle = nil
+                XrayMobileLog.info("Core", "Deinit stopping and freeing core")
+                _ = xray_core_stop(handle, nil)
+                xray_core_free(handle)
+            }
+            retainedSocketProtectContext?.release()
+            retainedSocketProtectContext = nil
         }
     }
 
     public func start() throws {
         do {
-            try withHandle { handle in
+            try withLifecycleHandle { handle in
                 var error: OpaquePointer?
                 XrayMobileLog.info("Core", "Starting core")
                 try check(xray_core_start(handle, &error), error: error)
+                dataPathEnabled = true
                 XrayMobileLog.info("Core", "Core started")
             }
         } catch {
@@ -446,9 +631,10 @@ public final class XrayCore: @unchecked Sendable {
 
     public func stop() throws {
         do {
-            try withHandle { handle in
+            try withLifecycleHandle { handle in
                 var error: OpaquePointer?
                 XrayMobileLog.info("Core", "Stopping core")
+                dataPathEnabled = false
                 try check(xray_core_stop(handle, &error), error: error)
                 XrayMobileLog.info("Core", "Core stopped")
             }
@@ -472,7 +658,8 @@ public final class XrayCore: @unchecked Sendable {
     }
 
     public func pollPacket(maxBytes: Int = 1_500) throws -> Data? {
-        try withDataPathHandle { handle in
+        try Self.validatePacketPollSize(maxBytes)
+        return try withDataPathHandle { handle in
             var error: OpaquePointer?
             var written = 0
             var buffer = [UInt8](repeating: 0, count: maxBytes)
@@ -502,24 +689,41 @@ public final class XrayCore: @unchecked Sendable {
         maxPacketBytes: Int = 1_500,
         waitMilliseconds: UInt32 = 0
     ) throws -> [Data] {
+        let byteCount = try Self.validatedPacketBatchByteCount(
+            maxPackets: maxPackets,
+            maxPacketBytes: maxPacketBytes
+        )
+        let storage = XrayPacketBatchPollStorage(
+            validatedMaxPackets: maxPackets,
+            validatedMaxPacketBytes: maxPacketBytes,
+            validatedByteCount: byteCount
+        )
+        return try pollPackets(
+            storage: storage,
+            waitMilliseconds: waitMilliseconds
+        )
+    }
+
+    func pollPackets(
+        storage: XrayPacketBatchPollStorage,
+        waitMilliseconds: UInt32 = 0
+    ) throws -> [Data] {
         try withDataPathHandle { handle in
             var error: OpaquePointer?
-            var buffer = [UInt8](repeating: 0, count: maxPackets * maxPacketBytes)
-            var lengths = [Int](repeating: 0, count: maxPackets)
             var packetCount = 0
-            let status = buffer.withUnsafeMutableBufferPointer { bufferPointer in
-                lengths.withUnsafeMutableBufferPointer { lengthsPointer in
-                    xray_tun_poll_packets(
-                        handle,
-                        bufferPointer.baseAddress,
-                        bufferPointer.count,
-                        lengthsPointer.baseAddress,
-                        maxPackets,
-                        &packetCount,
-                        waitMilliseconds,
-                        &error
-                    )
-                }
+            let status = storage.withUnsafeMutableBuffers {
+                bufferPointer,
+                lengthsPointer in
+                xray_tun_poll_packets(
+                    handle,
+                    bufferPointer.baseAddress,
+                    bufferPointer.count,
+                    lengthsPointer.baseAddress,
+                    storage.maxPackets,
+                    &packetCount,
+                    waitMilliseconds,
+                    &error
+                )
             }
 
             if status == XRAY_STATUS_NO_PACKET {
@@ -527,22 +731,50 @@ public final class XrayCore: @unchecked Sendable {
             }
 
             try check(status, error: error)
-            var packets = [Data]()
-            packets.reserveCapacity(packetCount)
-            var offset = 0
-            for index in 0..<packetCount {
-                let length = lengths[index]
-                packets.append(Data(buffer[offset..<(offset + length)]))
-                offset += length
-            }
-            return packets
+            return storage.materializePackets(packetCount: packetCount)
         }
     }
 
+    static func validatePacketPollSize(_ maxBytes: Int) throws {
+        guard (1...maximumPolledPacketBytes).contains(maxBytes) else {
+            throw XrayCoreError.invalidPacketPollSize(maxBytes)
+        }
+    }
+
+    static func validatedPacketBatchByteCount(
+        maxPackets: Int,
+        maxPacketBytes: Int
+    ) throws -> Int {
+        guard maxPackets > 0, maxPacketBytes > 0 else {
+            throw XrayCoreError.invalidPacketBatchLimits(
+                maxPackets: maxPackets,
+                maxPacketBytes: maxPacketBytes
+            )
+        }
+        try validatePacketPollSize(maxPacketBytes)
+        let (byteCount, overflowed) = maxPackets.multipliedReportingOverflow(
+            by: maxPacketBytes
+        )
+        guard !overflowed else {
+            throw XrayCoreError.packetBatchSizeOverflow(
+                maxPackets: maxPackets,
+                maxPacketBytes: maxPacketBytes
+            )
+        }
+        guard byteCount <= maximumPacketBatchBytes else {
+            throw XrayCoreError.packetBatchTooLarge(
+                requestedBytes: byteCount,
+                maximumBytes: maximumPacketBatchBytes
+            )
+        }
+        return byteCount
+    }
+
     public func stats() throws -> XrayTunStatsSnapshot {
-        try withHandle { handle in
+        try withDataPathHandle { handle in
             var error: OpaquePointer?
             var stats = XrayTunStats()
+            stats.struct_size = MemoryLayout<XrayTunStats>.size
             try check(xray_tun_stats(handle, &stats, &error), error: error)
             return XrayTunStatsSnapshot(
                 inboundPackets: stats.inbound_packets,
@@ -619,7 +851,7 @@ public final class XrayCore: @unchecked Sendable {
     }
 
     public func pollTcpSlowFlowEvents(maxEvents: Int = 16) throws -> [XrayTcpSlowFlowEventSnapshot] {
-        try withHandle { handle in
+        try withDataPathHandle { handle in
             var events: [XrayTcpSlowFlowEventSnapshot] = []
             while events.count < maxEvents {
                 var error: OpaquePointer?
@@ -656,7 +888,7 @@ public final class XrayCore: @unchecked Sendable {
     }
 
     public func pollTcpFlowSummaryEvents(maxEvents: Int = 16) throws -> [XrayTcpFlowSummaryEventSnapshot] {
-        try withHandle { handle in
+        try withDataPathHandle { handle in
             var events: [XrayTcpFlowSummaryEventSnapshot] = []
             while events.count < maxEvents {
                 var error: OpaquePointer?
@@ -709,7 +941,7 @@ public final class XrayCore: @unchecked Sendable {
     }
 
     public func pollTcpRemoteWriteSlowEvents(maxEvents: Int = 16) throws -> [XrayTcpRemoteWriteSlowEventSnapshot] {
-        try withHandle { handle in
+        try withDataPathHandle { handle in
             var events: [XrayTcpRemoteWriteSlowEventSnapshot] = []
             while events.count < maxEvents {
                 var error: OpaquePointer?
@@ -755,7 +987,7 @@ public final class XrayCore: @unchecked Sendable {
     }
 
     public func pollTcpOpenErrorEvents(maxEvents: Int = 16) throws -> [XrayTcpOpenErrorEventSnapshot] {
-        try withHandle { handle in
+        try withDataPathHandle { handle in
             var events: [XrayTcpOpenErrorEventSnapshot] = []
             while events.count < maxEvents {
                 var error: OpaquePointer?
@@ -806,7 +1038,7 @@ public final class XrayCore: @unchecked Sendable {
     }
 
     public func pollUdpSlowFlowEvents(maxEvents: Int = 16) throws -> [XrayUdpSlowFlowEventSnapshot] {
-        try withHandle { handle in
+        try withDataPathHandle { handle in
             var events: [XrayUdpSlowFlowEventSnapshot] = []
             while events.count < maxEvents {
                 var error: OpaquePointer?
@@ -843,7 +1075,7 @@ public final class XrayCore: @unchecked Sendable {
     }
 
     public func pollUdpResponseGapEvents(maxEvents: Int = 16) throws -> [XrayUdpResponseGapEventSnapshot] {
-        try withHandle { handle in
+        try withDataPathHandle { handle in
             var events: [XrayUdpResponseGapEventSnapshot] = []
             while events.count < maxEvents {
                 var error: OpaquePointer?
@@ -880,7 +1112,7 @@ public final class XrayCore: @unchecked Sendable {
     }
 
     public func pollUdpQuicBlockedEvents(maxEvents: Int = 16) throws -> [XrayUdpQuicBlockedEventSnapshot] {
-        try withHandle { handle in
+        try withDataPathHandle { handle in
             var events: [XrayUdpQuicBlockedEventSnapshot] = []
             while events.count < maxEvents {
                 var error: OpaquePointer?
@@ -914,30 +1146,25 @@ public final class XrayCore: @unchecked Sendable {
         }
     }
 
-    private func withHandle<T>(_ body: (OpaquePointer) throws -> T) throws -> T {
-        lock.lock()
-        defer { lock.unlock() }
-
-        guard let handle else {
-            throw XrayCoreError.missingHandle
+    private func withLifecycleHandle<T>(_ body: (OpaquePointer) throws -> T) throws -> T {
+        try callGate.withLifecycle {
+            guard let handle else {
+                throw XrayCoreError.missingHandle
+            }
+            return try body(handle)
         }
-        return try body(handle)
     }
 
-    /// Reads the handle under the lock but runs `body` outside it, so blocking
-    /// data-path calls (pollPackets) do not stall pushPacket or stats. Safe
-    /// because the handle is only freed in deinit, which cannot run while the
-    /// caller holds a strong reference, and the FFI data-path entry points
-    /// accept concurrent calls on the same handle.
     private func withDataPathHandle<T>(_ body: (OpaquePointer) throws -> T) throws -> T {
-        lock.lock()
-        let handle = self.handle
-        lock.unlock()
-
-        guard let handle else {
-            throw XrayCoreError.missingHandle
+        try callGate.withDataPath {
+            guard let handle else {
+                throw XrayCoreError.missingHandle
+            }
+            guard dataPathEnabled else {
+                throw XrayCoreError.notRunning
+            }
+            return try body(handle)
         }
-        return try body(handle)
     }
 
     private func check(_ status: XrayStatus, error: OpaquePointer?) throws {
@@ -949,6 +1176,54 @@ public final class XrayCore: @unchecked Sendable {
         }
 
         throw XrayCore.takeError(error, fallbackStatus: status)
+    }
+
+    private func configWarnings(handle: OpaquePointer) throws -> [String] {
+        var requiredLength = 0
+        var error: OpaquePointer?
+        let queryStatus = xray_core_config_warnings(
+            handle,
+            nil,
+            0,
+            &requiredLength,
+            &error
+        )
+        if queryStatus == XRAY_STATUS_BUFFER_TOO_SMALL {
+            if let error {
+                xray_error_free(error)
+            }
+            error = nil
+        } else {
+            try check(queryStatus, error: error)
+        }
+        guard requiredLength > 0 else {
+            return []
+        }
+
+        var buffer = [CChar](repeating: 0, count: requiredLength + 1)
+        var written = 0
+        let status = buffer.withUnsafeMutableBufferPointer { pointer in
+            xray_core_config_warnings(
+                handle,
+                pointer.baseAddress,
+                pointer.count,
+                &written,
+                &error
+            )
+        }
+        try check(status, error: error)
+        guard written <= requiredLength,
+              let warnings = String(
+                  bytes: buffer.prefix(written).map { UInt8(bitPattern: $0) },
+                  encoding: .utf8
+              )
+        else {
+            throw XrayCoreError.invalidUtf8
+        }
+        return warnings
+            .split(whereSeparator: \.isNewline)
+            .map(String.init)
+            .filter { !$0.isEmpty }
     }
 
     private static func takeError(

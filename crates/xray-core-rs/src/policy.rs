@@ -1,15 +1,22 @@
 use std::io;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::io::{split, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadHalf, WriteHalf};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, OwnedSemaphorePermit, Semaphore};
 use xray_config::CoreConfig;
 
 const DEFAULT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_CONN_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 const DEFAULT_UPLINK_ONLY_TIMEOUT: Duration = Duration::from_secs(1);
 const DEFAULT_DOWNLINK_ONLY_TIMEOUT: Duration = Duration::from_secs(2);
-const COPY_BUFFER_SIZE: usize = 8 * 1024;
+const DEFAULT_COPY_BUFFER_SIZE: usize = 8 * 1024;
+const MIN_COPY_BUFFER_SIZE: usize = 1024;
+const MAX_COPY_BUFFER_SIZE: usize = 1024 * 1024;
+const COPY_FLUSH_THRESHOLD: usize = 64 * 1024;
+const COPY_FLUSH_INTERVAL: Duration = Duration::from_millis(2);
+pub(crate) const DEFAULT_MAX_INBOUND_CONNECTIONS: usize = 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct EffectivePolicy {
@@ -29,6 +36,85 @@ impl Default for EffectivePolicy {
             downlink_only: DEFAULT_DOWNLINK_ONLY_TIMEOUT,
             buffer_size: None,
         }
+    }
+}
+
+impl EffectivePolicy {
+    pub(crate) fn relay_buffer_size(self) -> usize {
+        self.buffer_size
+            .map(|size_kib| size_kib.saturating_mul(1024))
+            .unwrap_or(DEFAULT_COPY_BUFFER_SIZE)
+            .clamp(MIN_COPY_BUFFER_SIZE, MAX_COPY_BUFFER_SIZE)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ConnectionAdmissionSnapshot {
+    pub active: usize,
+    pub admitted: u64,
+    pub rejected: u64,
+}
+
+#[derive(Debug)]
+struct ConnectionAdmissionCounters {
+    active: AtomicUsize,
+    admitted: AtomicU64,
+    rejected: AtomicU64,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ConnectionAdmission {
+    permits: Arc<Semaphore>,
+    counters: Arc<ConnectionAdmissionCounters>,
+}
+
+impl ConnectionAdmission {
+    pub(crate) fn new(limit: usize) -> Self {
+        Self {
+            permits: Arc::new(Semaphore::new(limit)),
+            counters: Arc::new(ConnectionAdmissionCounters {
+                active: AtomicUsize::new(0),
+                admitted: AtomicU64::new(0),
+                rejected: AtomicU64::new(0),
+            }),
+        }
+    }
+
+    pub(crate) fn try_acquire(&self) -> Option<ConnectionAdmissionPermit> {
+        match Arc::clone(&self.permits).try_acquire_owned() {
+            Ok(permit) => {
+                self.counters.active.fetch_add(1, Ordering::Relaxed);
+                self.counters.admitted.fetch_add(1, Ordering::Relaxed);
+                Some(ConnectionAdmissionPermit {
+                    _permit: permit,
+                    counters: Arc::clone(&self.counters),
+                })
+            }
+            Err(_) => {
+                self.counters.rejected.fetch_add(1, Ordering::Relaxed);
+                None
+            }
+        }
+    }
+
+    pub(crate) fn snapshot(&self) -> ConnectionAdmissionSnapshot {
+        ConnectionAdmissionSnapshot {
+            active: self.counters.active.load(Ordering::Relaxed),
+            admitted: self.counters.admitted.load(Ordering::Relaxed),
+            rejected: self.counters.rejected.load(Ordering::Relaxed),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct ConnectionAdmissionPermit {
+    _permit: OwnedSemaphorePermit,
+    counters: Arc<ConnectionAdmissionCounters>,
+}
+
+impl Drop for ConnectionAdmissionPermit {
+    fn drop(&mut self) {
+        self.counters.active.fetch_sub(1, Ordering::Relaxed);
     }
 }
 
@@ -67,6 +153,7 @@ pub(crate) async fn copy_bidirectional_with_idle_timeout<A, B>(
     a: &mut A,
     b: &mut B,
     idle: Duration,
+    buffer_size: usize,
 ) -> io::Result<(u64, u64)>
 where
     A: AsyncRead + AsyncWrite + Unpin,
@@ -74,13 +161,19 @@ where
 {
     let (mut a_read, mut a_write) = split(a);
     let (mut b_read, mut b_write) = split(b);
-    let (activity_tx, mut activity_rx) = mpsc::unbounded_channel();
+    let (activity_tx, mut activity_rx) = mpsc::channel(1);
     let mut a_to_b = Box::pin(copy_direction(
         &mut a_read,
         &mut b_write,
         activity_tx.clone(),
+        buffer_size,
     ));
-    let mut b_to_a = Box::pin(copy_direction(&mut b_read, &mut a_write, activity_tx));
+    let mut b_to_a = Box::pin(copy_direction(
+        &mut b_read,
+        &mut a_write,
+        activity_tx,
+        buffer_size,
+    ));
     let mut a_to_b_result = None;
     let mut b_to_a_result = None;
     let mut idle_sleep = Box::pin(tokio::time::sleep(idle));
@@ -114,24 +207,51 @@ where
 async fn copy_direction<R, W>(
     reader: &mut ReadHalf<R>,
     writer: &mut WriteHalf<W>,
-    activity: mpsc::UnboundedSender<()>,
+    activity: mpsc::Sender<()>,
+    buffer_size: usize,
 ) -> io::Result<u64>
 where
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
 {
     let mut total = 0u64;
-    let mut buffer = vec![0; COPY_BUFFER_SIZE];
+    let mut unflushed = 0usize;
+    let mut buffer = vec![0; buffer_size.clamp(MIN_COPY_BUFFER_SIZE, MAX_COPY_BUFFER_SIZE)];
+    let flush_deadline = tokio::time::sleep(COPY_FLUSH_INTERVAL);
+    tokio::pin!(flush_deadline);
+
     loop {
-        let len = reader.read(&mut buffer).await?;
-        if len == 0 {
-            writer.shutdown().await?;
-            return Ok(total);
+        tokio::select! {
+            read = reader.read(&mut buffer) => {
+                let len = read?;
+                if len == 0 {
+                    if unflushed > 0 {
+                        writer.flush().await?;
+                    }
+                    writer.shutdown().await?;
+                    return Ok(total);
+                }
+
+                writer.write_all(&buffer[..len]).await?;
+                total = total.saturating_add(len as u64);
+                let was_clean = unflushed == 0;
+                unflushed = unflushed.saturating_add(len);
+                let _ = activity.try_send(());
+
+                if unflushed >= COPY_FLUSH_THRESHOLD {
+                    writer.flush().await?;
+                    unflushed = 0;
+                } else if was_clean {
+                    flush_deadline
+                        .as_mut()
+                        .reset(tokio::time::Instant::now() + COPY_FLUSH_INTERVAL);
+                }
+            }
+            () = &mut flush_deadline, if unflushed > 0 => {
+                writer.flush().await?;
+                unflushed = 0;
+            }
         }
-        writer.write_all(&buffer[..len]).await?;
-        writer.flush().await?;
-        total = total.saturating_add(len as u64);
-        let _ = activity.send(());
     }
 }
 
@@ -150,7 +270,10 @@ mod tests {
         StreamSecurity, StreamSettings,
     };
 
-    use super::{copy_bidirectional_with_idle_timeout, copy_direction, effective_policy_for_level};
+    use super::{
+        copy_bidirectional_with_idle_timeout, copy_direction, effective_policy_for_level,
+        ConnectionAdmission,
+    };
 
     #[derive(Default)]
     struct RecordingWriteState {
@@ -161,6 +284,43 @@ mod tests {
 
     struct RecordingIo {
         state: Arc<Mutex<RecordingWriteState>>,
+    }
+
+    struct ChunkedReadIo {
+        remaining: usize,
+        chunk_size: usize,
+    }
+
+    impl AsyncRead for ChunkedReadIo {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &mut ReadBuf<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            let len = self.remaining.min(self.chunk_size).min(buf.remaining());
+            buf.initialize_unfilled_to(len).fill(0);
+            buf.advance(len);
+            self.remaining -= len;
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    impl AsyncWrite for ChunkedReadIo {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<std::io::Result<usize>> {
+            Poll::Ready(Ok(buf.len()))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
     }
 
     impl AsyncRead for RecordingIo {
@@ -254,10 +414,14 @@ mod tests {
         let (mut left, _right_peer) = tokio::io::duplex(64);
         let (mut right, _left_peer) = tokio::io::duplex(64);
 
-        let error =
-            copy_bidirectional_with_idle_timeout(&mut left, &mut right, Duration::from_millis(1))
-                .await
-                .unwrap_err();
+        let error = copy_bidirectional_with_idle_timeout(
+            &mut left,
+            &mut right,
+            Duration::from_millis(1),
+            8 * 1024,
+        )
+        .await
+        .unwrap_err();
 
         assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
     }
@@ -271,11 +435,11 @@ mod tests {
             state: state.clone(),
         };
         let (_unused_reader, mut writer) = tokio::io::split(writer_io);
-        let (activity_tx, _activity_rx) = mpsc::unbounded_channel();
+        let (activity_tx, _activity_rx) = mpsc::channel(1);
 
         reader_peer.write_all(b"hello").await.unwrap();
         reader_peer.shutdown().await.unwrap();
-        let copied = copy_direction(&mut reader, &mut writer, activity_tx)
+        let copied = copy_direction(&mut reader, &mut writer, activity_tx, 8 * 1024)
             .await
             .unwrap();
 
@@ -284,5 +448,93 @@ mod tests {
         assert_eq!(state.bytes_written, 5);
         assert_eq!(state.flushes, 1);
         assert_eq!(state.shutdowns, 1);
+    }
+
+    #[tokio::test]
+    async fn copy_direction_coalesces_flushes_and_activity_notifications() {
+        let reader_io = ChunkedReadIo {
+            remaining: 128 * 1024,
+            chunk_size: 8 * 1024,
+        };
+        let (mut reader, _unused_writer) = tokio::io::split(reader_io);
+        let state = Arc::new(Mutex::new(RecordingWriteState::default()));
+        let writer_io = RecordingIo {
+            state: state.clone(),
+        };
+        let (_unused_reader, mut writer) = tokio::io::split(writer_io);
+        let (activity_tx, mut activity_rx) = mpsc::channel(1);
+
+        let copied = copy_direction(&mut reader, &mut writer, activity_tx, 8 * 1024)
+            .await
+            .unwrap();
+
+        assert_eq!(copied, 128 * 1024);
+        assert_eq!(state.lock().unwrap().flushes, 2);
+        assert!(activity_rx.try_recv().is_ok());
+        assert!(activity_rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    #[ignore = "manual relay throughput microbenchmark"]
+    async fn relay_copy_microbenchmark() {
+        const BYTES: usize = 64 * 1024 * 1024;
+        let reader_io = ChunkedReadIo {
+            remaining: BYTES,
+            chunk_size: 32 * 1024,
+        };
+        let (mut reader, _unused_writer) = tokio::io::split(reader_io);
+        let state = Arc::new(Mutex::new(RecordingWriteState::default()));
+        let writer_io = RecordingIo {
+            state: state.clone(),
+        };
+        let (_unused_reader, mut writer) = tokio::io::split(writer_io);
+        let (activity_tx, _activity_rx) = mpsc::channel(1);
+        let started = std::time::Instant::now();
+
+        let copied = copy_direction(&mut reader, &mut writer, activity_tx, 32 * 1024)
+            .await
+            .expect("relay benchmark should complete");
+        let elapsed = started.elapsed();
+        let mib_per_second = copied as f64 / (1024.0 * 1024.0) / elapsed.as_secs_f64();
+
+        eprintln!(
+            "relay_copy_microbenchmark bytes={copied} elapsed_ms={} mib_per_second={mib_per_second:.1}",
+            elapsed.as_millis()
+        );
+        assert_eq!(copied as usize, BYTES);
+    }
+
+    #[test]
+    fn connection_admission_holds_capacity_for_permit_lifetime() {
+        let admission = ConnectionAdmission::new(1);
+        let permit = admission.try_acquire().expect("first permit should fit");
+
+        assert!(admission.try_acquire().is_none());
+        assert_eq!(admission.snapshot().active, 1);
+
+        drop(permit);
+
+        assert!(admission.try_acquire().is_some());
+        assert_eq!(admission.snapshot().rejected, 1);
+    }
+
+    #[test]
+    fn relay_buffer_size_interprets_policy_value_as_kibibytes() {
+        let policy = super::EffectivePolicy {
+            buffer_size: Some(32),
+            ..Default::default()
+        };
+
+        assert_eq!(policy.relay_buffer_size(), 32 * 1024);
+    }
+
+    #[test]
+    fn relay_buffer_size_caps_untrusted_configuration() {
+        let policy = super::EffectivePolicy {
+            buffer_size: Some(usize::MAX),
+            ..Default::default()
+        };
+
+        assert_eq!(policy.relay_buffer_size(), 1024 * 1024);
     }
 }

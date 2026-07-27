@@ -1,10 +1,15 @@
 package org.xrayrust.mobile
 
 import android.net.VpnService
+import android.util.Log
 import java.io.Closeable
+import java.nio.ByteBuffer
+import java.util.concurrent.locks.ReentrantReadWriteLock
+import kotlin.concurrent.read
+import kotlin.concurrent.write
 
 class XrayCore private constructor(handle: Long) : Closeable {
-    private val lock = Any()
+    private val lifecycleLock = ReentrantReadWriteLock(true)
     private var nativeHandle: Long = handle
 
     companion object {
@@ -46,16 +51,63 @@ class XrayCore private constructor(handle: Long) : Closeable {
         private external fun nativeNew(): Long
     }
 
-    fun start() = withHandle { nativeStart(it) }
+    fun start() = withLifecycleHandle { nativeStart(it) }
 
-    fun stop() = withHandle { nativeStop(it) }
+    fun stop() = withLifecycleHandle { nativeStop(it) }
 
-    fun pushPacket(packet: ByteArray) = withHandle { nativePushPacket(it, packet) }
+    fun pushPacket(packet: ByteArray, length: Int = packet.size) {
+        require(length in 0..packet.size) { "packet length is outside the source buffer" }
+        withDataPathHandle { nativePushPacket(it, packet, length) }
+    }
 
-    fun pollPacket(maxBytes: Int = 65_535): ByteArray? = withHandle { nativePollPacket(it, maxBytes) }
+    fun pollPacket(maxBytes: Int = 1_500): ByteArray? {
+        require(maxBytes > 0) { "maxBytes must be positive" }
+        val storage = ByteBuffer.allocateDirect(maxBytes)
+        val lengths = IntArray(1)
+        val count = pollPacketsInto(
+            storage = storage,
+            lengths = lengths,
+            maxPacketBytes = maxBytes,
+            waitMilliseconds = 0,
+        )
+        if (count == 0) {
+            return null
+        }
+        return ByteArray(lengths[0]).also {
+            storage.position(0)
+            storage.get(it)
+        }
+    }
+
+    fun pollPacketsInto(
+        storage: ByteBuffer,
+        lengths: IntArray,
+        maxPacketBytes: Int = 1_500,
+        waitMilliseconds: Int = 250,
+    ): Int {
+        require(storage.isDirect) { "packet storage must be a direct ByteBuffer" }
+        require(lengths.isNotEmpty()) { "lengths must not be empty" }
+        require(maxPacketBytes > 0) { "maxPacketBytes must be positive" }
+        require(waitMilliseconds >= 0) { "waitMilliseconds must not be negative" }
+        require(
+            storage.capacity().toLong() >= lengths.size.toLong() * maxPacketBytes.toLong(),
+        ) {
+            "packet storage is smaller than lengths.size * maxPacketBytes"
+        }
+        storage.clear()
+        return withDataPathHandle {
+            nativePollPackets(
+                handle = it,
+                storage = storage,
+                lengths = lengths,
+                maxPacketBytes = maxPacketBytes,
+                waitMilliseconds = waitMilliseconds,
+            )
+        }
+    }
 
     fun stats(): XrayTunStats {
-        val raw = withHandle { nativeStats(it) }
+        val raw = withDataPathHandle { nativeStats(it) }
         return XrayTunStats(
             inboundPackets = raw[0],
             outboundPackets = raw[1],
@@ -80,9 +132,9 @@ class XrayCore private constructor(handle: Long) : Closeable {
     }
 
     override fun close() {
-        // Zero the handle under the lock so no concurrent caller can observe
+        // Zero the handle under the write lock so no concurrent data-path caller can observe
         // (and pass to native code) a handle that is about to be freed.
-        val handle = synchronized(lock) {
+        val handle = lifecycleLock.write {
             val current = nativeHandle
             nativeHandle = 0L
             current
@@ -92,14 +144,19 @@ class XrayCore private constructor(handle: Long) : Closeable {
         }
     }
 
-    private fun loadConfig(configJson: String) = withHandle { nativeLoadConfig(it, configJson) }
+    private fun loadConfig(configJson: String) = withLifecycleHandle {
+        nativeLoadConfig(it, configJson)
+        nativeConfigWarnings(it)?.lineSequence()
+            ?.filter { warning -> warning.isNotBlank() }
+            ?.forEach { warning -> Log.w("XrayCore", "Config warning: $warning") }
+    }
 
     private fun setSocketProtector(protector: SocketProtector) {
-        withHandle { nativeSetSocketProtector(it, protector) }
+        withLifecycleHandle { nativeSetSocketProtector(it, protector) }
     }
 
     private fun setTunFd(tunFileDescriptor: XrayTunFileDescriptor) {
-        withHandle {
+        withLifecycleHandle {
             nativeSetTunFd(
                 it,
                 tunFileDescriptor.fd,
@@ -110,15 +167,15 @@ class XrayCore private constructor(handle: Long) : Closeable {
     }
 
     private fun setTunRuntimeProfile(profile: XrayTunRuntimeProfile) {
-        withHandle { nativeSetTunRuntimeProfile(it, profile.ffiValue) }
+        withLifecycleHandle { nativeSetTunRuntimeProfile(it, profile.ffiValue) }
     }
 
     private fun setTunCollectTcpTimings(collect: Boolean) {
-        withHandle { nativeSetTunCollectTcpTimings(it, collect) }
+        withLifecycleHandle { nativeSetTunCollectTcpTimings(it, collect) }
     }
 
     private fun setStartupProbe(startupProbe: XrayStartupProbeOptions) {
-        withHandle {
+        withLifecycleHandle {
             nativeSetStartupProbe(
                 it,
                 startupProbe.url,
@@ -128,12 +185,20 @@ class XrayCore private constructor(handle: Long) : Closeable {
         }
     }
 
-    private inline fun <T> withHandle(block: (Long) -> T): T = synchronized(lock) {
-        check(nativeHandle != 0L) { "xray core is closed" }
-        block(nativeHandle)
-    }
+    private inline fun <T> withLifecycleHandle(block: (Long) -> T): T =
+        lifecycleLock.write {
+            check(nativeHandle != 0L) { "xray core is closed" }
+            block(nativeHandle)
+        }
+
+    private inline fun <T> withDataPathHandle(block: (Long) -> T): T =
+        lifecycleLock.read {
+            check(nativeHandle != 0L) { "xray core is closed" }
+            block(nativeHandle)
+        }
 
     private external fun nativeLoadConfig(handle: Long, configJson: String)
+    private external fun nativeConfigWarnings(handle: Long): String?
     private external fun nativeStart(handle: Long)
     private external fun nativeStop(handle: Long)
     private external fun nativeFree(handle: Long)
@@ -152,8 +217,14 @@ class XrayCore private constructor(handle: Long) : Closeable {
         timeoutMs: Long,
         outboundTag: String?,
     )
-    private external fun nativePushPacket(handle: Long, packet: ByteArray)
-    private external fun nativePollPacket(handle: Long, maxBytes: Int): ByteArray?
+    private external fun nativePushPacket(handle: Long, packet: ByteArray, length: Int)
+    private external fun nativePollPackets(
+        handle: Long,
+        storage: ByteBuffer,
+        lengths: IntArray,
+        maxPacketBytes: Int,
+        waitMilliseconds: Int,
+    ): Int
     private external fun nativeStats(handle: Long): LongArray
 }
 

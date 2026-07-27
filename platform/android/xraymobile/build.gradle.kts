@@ -3,15 +3,13 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-val discoveredNdkVersion = providers.environmentVariable("ANDROID_NDK_HOME")
-    .orElse(providers.environmentVariable("ANDROID_NDK_ROOT"))
-    .map { it.substringAfterLast("/") }
-    .orElse("26.3.11579264")
+val xrayFfiAndroidDir = providers.environmentVariable("XRAY_FFI_ANDROID_DIR")
+    .getOrElse("../../../target/mobile/android")
 
 android {
     namespace = "org.xrayrust.mobile"
     compileSdk = 35
-    ndkVersion = discoveredNdkVersion.get()
+    ndkVersion = "26.3.11579264"
 
     defaultConfig {
         minSdk = 24
@@ -25,10 +23,13 @@ android {
 
     sourceSets {
         getByName("main") {
-            jniLibs.srcDirs(
-                "src/main/jniLibs",
-                "../../../target/mobile/android/jniLibs"
-            )
+            jniLibs.srcDir(file("$xrayFfiAndroidDir/jniLibs"))
+        }
+    }
+
+    packaging {
+        jniLibs {
+            keepDebugSymbols += "**/libxray_ffi.so"
         }
     }
 
@@ -48,4 +49,8 @@ kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_1_8)
     }
+}
+
+dependencies {
+    testImplementation("junit:junit:4.13.2")
 }

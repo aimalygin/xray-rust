@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::io;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket as StdUdpSocket};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use tokio::net::UdpSocket;
 use tokio::time;
 
-use crate::TransportError;
+use crate::{SocketHandle, SocketProtector, TransportError};
 
 /// Resolves a domain and configured port into the concrete socket address to dial.
 ///
@@ -175,6 +175,7 @@ pub struct ConfiguredDnsResolver {
     name_servers: Vec<NameServer>,
     fallback: Arc<dyn DnsResolver>,
     server_timeout: Duration,
+    socket_protector: Option<Arc<dyn SocketProtector>>,
 }
 
 impl ConfiguredDnsResolver {
@@ -188,11 +189,17 @@ impl ConfiguredDnsResolver {
             name_servers,
             fallback,
             server_timeout: Duration::from_secs(2),
+            socket_protector: None,
         }
     }
 
     pub fn with_server_timeout(mut self, timeout: Duration) -> Self {
         self.server_timeout = timeout;
+        self
+    }
+
+    pub fn with_socket_protector(mut self, protector: Arc<dyn SocketProtector>) -> Self {
+        self.socket_protector = Some(protector);
         self
     }
 
@@ -217,9 +224,14 @@ impl ConfiguredDnsResolver {
                 }
             };
 
-            if let Ok(Some(answer)) =
-                query_udp_dns_server(server_addr, domain, DnsRecordType::A, self.server_timeout)
-                    .await
+            if let Ok(Some(answer)) = query_udp_dns_server(
+                server_addr,
+                domain,
+                DnsRecordType::A,
+                self.server_timeout,
+                self.socket_protector.as_deref(),
+            )
+            .await
             {
                 return Some(answer);
             }
@@ -229,6 +241,7 @@ impl ConfiguredDnsResolver {
                 domain,
                 DnsRecordType::Aaaa,
                 self.server_timeout,
+                self.socket_protector.as_deref(),
             )
             .await
             {
@@ -308,35 +321,43 @@ async fn query_udp_dns_server(
     domain: &str,
     record_type: DnsRecordType,
     timeout: Duration,
+    socket_protector: Option<&dyn SocketProtector>,
 ) -> io::Result<Option<ConfiguredDnsAnswer>> {
     let bind_addr = if server_addr.is_ipv4() {
         SocketAddr::from(([0, 0, 0, 0], 0))
     } else {
         SocketAddr::from(([0_u16; 8], 0))
     };
-    let socket = UdpSocket::bind(bind_addr).await?;
+    let socket = StdUdpSocket::bind(bind_addr)?;
+    if let Some(protector) = socket_protector {
+        protector.protect(SocketHandle::from_std_udp_socket(&socket))?;
+    }
+    socket.set_nonblocking(true)?;
+    let socket = UdpSocket::from_std(socket)?;
+    socket.connect(server_addr).await?;
     let query = build_dns_query(domain, record_type)?;
 
-    time::timeout(timeout, socket.send_to(&query, server_addr))
+    time::timeout(timeout, socket.send(&query))
         .await
         .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "dns query send timed out"))??;
 
     let mut buffer = [0_u8; 1232];
-    let len = time::timeout(timeout, async {
-        loop {
-            let (len, peer) = socket.recv_from(&mut buffer).await?;
-            if peer == server_addr {
-                return Ok::<usize, io::Error>(len);
-            }
-        }
-    })
-    .await
-    .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "dns query timed out"))??;
+    let len = time::timeout(timeout, socket.recv(&mut buffer))
+        .await
+        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "dns query timed out"))??;
 
     parse_dns_response(&query, &buffer[..len], record_type)
 }
 
 fn build_dns_query(domain: &str, record_type: DnsRecordType) -> io::Result<Vec<u8>> {
+    build_dns_query_with_id(domain, record_type, rand::random())
+}
+
+fn build_dns_query_with_id(
+    domain: &str,
+    record_type: DnsRecordType,
+    id: u16,
+) -> io::Result<Vec<u8>> {
     let normalized_domain = domain.trim_end_matches('.');
     if normalized_domain.is_empty() {
         return Err(io::Error::new(
@@ -346,7 +367,6 @@ fn build_dns_query(domain: &str, record_type: DnsRecordType) -> io::Result<Vec<u
     }
 
     let mut query = Vec::with_capacity(12 + normalized_domain.len() + 6);
-    let id = dns_query_id(normalized_domain, record_type);
     query.extend_from_slice(&id.to_be_bytes());
     query.extend_from_slice(&0x0100_u16.to_be_bytes());
     query.extend_from_slice(&1_u16.to_be_bytes());
@@ -369,12 +389,6 @@ fn build_dns_query(domain: &str, record_type: DnsRecordType) -> io::Result<Vec<u
     query.extend_from_slice(&record_type.code().to_be_bytes());
     query.extend_from_slice(&1_u16.to_be_bytes());
     Ok(query)
-}
-
-fn dns_query_id(domain: &str, record_type: DnsRecordType) -> u16 {
-    domain.bytes().fold(record_type.code(), |hash, byte| {
-        hash.wrapping_mul(31).wrapping_add(u16::from(byte))
-    })
 }
 
 fn parse_dns_response(
@@ -612,4 +626,136 @@ fn domain_matches_suffix(domain: &str, suffix: &str) -> bool {
 
     domain.as_bytes().get(prefix_len.wrapping_sub(1)) == Some(&b'.')
         && domain[prefix_len..].eq_ignore_ascii_case(suffix)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io;
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    use tokio::net::UdpSocket;
+    use tokio::sync::oneshot;
+
+    use super::{
+        build_dns_query_with_id, query_udp_dns_server, ConfiguredDnsAnswer, DnsRecordType,
+    };
+    use crate::{SocketHandle, SocketProtector};
+
+    #[test]
+    fn build_dns_query_uses_injected_transaction_id() {
+        let query = build_dns_query_with_id("example.com", DnsRecordType::A, 0xA17E)
+            .expect("valid query should encode");
+
+        assert_eq!(&query[..2], &0xA17E_u16.to_be_bytes());
+    }
+
+    #[derive(Default)]
+    struct CountingProtector {
+        calls: AtomicUsize,
+    }
+
+    impl SocketProtector for CountingProtector {
+        fn protect(&self, _socket: SocketHandle) -> io::Result<()> {
+            self.calls.fetch_add(1, Ordering::Relaxed);
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn configured_dns_protects_udp_socket_before_query() {
+        let server = UdpSocket::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
+            .await
+            .expect("test DNS socket should bind");
+        let protector = CountingProtector::default();
+
+        let result = query_udp_dns_server(
+            server.local_addr().expect("test DNS address should exist"),
+            "example.com",
+            DnsRecordType::A,
+            Duration::from_millis(1),
+            Some(&protector),
+        )
+        .await;
+
+        assert!(result.is_err());
+        assert_eq!(protector.calls.load(Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
+    async fn connected_dns_socket_ignores_response_from_different_peer() {
+        let server = UdpSocket::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
+            .await
+            .expect("test DNS socket should bind");
+        let server_addr = server.local_addr().expect("server address should exist");
+        let attacker = UdpSocket::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
+            .await
+            .expect("attacker socket should bind");
+        let (observed_tx, observed_rx) = oneshot::channel();
+        let server_task = tokio::spawn(async move {
+            let mut packet = [0_u8; 512];
+            let (len, client_addr) = server
+                .recv_from(&mut packet)
+                .await
+                .expect("server should receive query");
+            let query = packet[..len].to_vec();
+            observed_tx
+                .send((client_addr, query.clone()))
+                .expect("test should observe query");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            server
+                .send_to(
+                    &build_test_a_response(&query, Ipv4Addr::new(192, 0, 2, 20)),
+                    client_addr,
+                )
+                .await
+                .expect("server should send legitimate response");
+        });
+        let query_task = tokio::spawn(query_udp_dns_server(
+            server_addr,
+            "example.com",
+            DnsRecordType::A,
+            Duration::from_secs(1),
+            None,
+        ));
+        let (client_addr, query) = observed_rx.await.expect("query should be observable");
+        attacker
+            .send_to(
+                &build_test_a_response(&query, Ipv4Addr::new(198, 51, 100, 99)),
+                client_addr,
+            )
+            .await
+            .expect("attacker should send forged response");
+
+        let answer = query_task
+            .await
+            .expect("query task should not panic")
+            .expect("query should complete")
+            .expect("query should return an answer");
+        server_task.await.expect("server task should not panic");
+
+        assert_eq!(
+            answer,
+            ConfiguredDnsAnswer::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 20)))
+        );
+    }
+
+    fn build_test_a_response(query: &[u8], answer: Ipv4Addr) -> Vec<u8> {
+        let mut response = Vec::with_capacity(query.len() + 16);
+        response.extend_from_slice(&query[..2]);
+        response.extend_from_slice(&0x8180_u16.to_be_bytes());
+        response.extend_from_slice(&1_u16.to_be_bytes());
+        response.extend_from_slice(&1_u16.to_be_bytes());
+        response.extend_from_slice(&0_u16.to_be_bytes());
+        response.extend_from_slice(&0_u16.to_be_bytes());
+        response.extend_from_slice(&query[12..]);
+        response.extend_from_slice(&0xC00C_u16.to_be_bytes());
+        response.extend_from_slice(&1_u16.to_be_bytes());
+        response.extend_from_slice(&1_u16.to_be_bytes());
+        response.extend_from_slice(&60_u32.to_be_bytes());
+        response.extend_from_slice(&4_u16.to_be_bytes());
+        response.extend_from_slice(&answer.octets());
+        response
+    }
 }

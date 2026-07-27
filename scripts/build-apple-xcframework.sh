@@ -12,7 +12,7 @@ CRATE_PACKAGE="xray-ffi"
 LIB_NAME="libxray_ffi.a"
 CARGO_BIN="${CARGO_BIN:-cargo}"
 TVOS_BUILD_STD="${TVOS_BUILD_STD:-auto}"
-TVOS_RUST_TOOLCHAIN="${TVOS_RUST_TOOLCHAIN:-nightly}"
+TVOS_RUST_TOOLCHAIN="${TVOS_RUST_TOOLCHAIN:-nightly-2026-05-22}"
 export IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-15.0}"
 export TVOS_DEPLOYMENT_TARGET="${TVOS_DEPLOYMENT_TARGET:-14.0}"
 export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-11.0}"
@@ -23,11 +23,38 @@ IOS_DEVICE_TARGETS=("aarch64-apple-ios")
 IOS_SIMULATOR_TARGETS=("aarch64-apple-ios-sim" "x86_64-apple-ios")
 TVOS_DEVICE_TARGETS=("aarch64-apple-tvos")
 TVOS_SIMULATOR_TARGETS=("aarch64-apple-tvos-sim" "x86_64-apple-tvos")
-MACOS_TARGETS=("aarch64-apple-darwin")
+MACOS_TARGETS=("aarch64-apple-darwin" "x86_64-apple-darwin")
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
     echo "missing required command: $1" >&2
+    exit 1
+  fi
+}
+
+validate_output_paths() {
+  case "$FRAMEWORK_NAME" in
+    ""|"."|".."|*[!A-Za-z0-9._-]*)
+      echo "unsafe FRAMEWORK_NAME: $FRAMEWORK_NAME" >&2
+      exit 1
+      ;;
+  esac
+  case "$XCFRAMEWORK_NAME" in
+    ""|"."|".."|*[!A-Za-z0-9._-]*|*.xcframework/)
+      echo "unsafe XCFRAMEWORK_NAME: $XCFRAMEWORK_NAME" >&2
+      exit 1
+      ;;
+  esac
+  if [[ "$XCFRAMEWORK_NAME" != *.xcframework ]]; then
+    echo "XCFRAMEWORK_NAME must end in .xcframework" >&2
+    exit 1
+  fi
+
+  mkdir -p "$OUT_DIR"
+  local resolved_out_dir
+  resolved_out_dir="$(cd "$OUT_DIR" && pwd -P)"
+  if [[ -z "$resolved_out_dir" || "$resolved_out_dir" == "/" ]]; then
+    echo "unsafe OUT_DIR: $OUT_DIR" >&2
     exit 1
   fi
 }
@@ -92,12 +119,13 @@ build_target() {
   local target="$1"
   if use_build_std_for_target "$target"; then
     "$CARGO_BIN" "+$TVOS_RUST_TOOLCHAIN" build \
+      --locked \
       -Z build-std=std,panic_unwind \
       --package xray-ffi \
       --target "$target" \
       $(cargo_profile_args)
   else
-    cargo build --package xray-ffi --target "$target" $(cargo_profile_args)
+    "$CARGO_BIN" build --locked --package xray-ffi --target "$target" $(cargo_profile_args)
   fi
 }
 
@@ -194,7 +222,7 @@ main() {
   require_command lipo
   require_command xcodebuild
 
-  mkdir -p "$OUT_DIR"
+  validate_output_paths
 
   build_targets "${IOS_DEVICE_TARGETS[@]}"
   build_targets "${IOS_SIMULATOR_TARGETS[@]}"

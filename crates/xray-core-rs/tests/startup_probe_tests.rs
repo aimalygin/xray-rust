@@ -34,6 +34,7 @@ fn config_with_outbounds(outbounds: Vec<OutboundConfig>, default: Option<&str>) 
             protocol: InboundProtocol::Socks,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            allow_unauthenticated_lan: false,
             sniffing: None,
             user_level: None,
         }],
@@ -81,14 +82,15 @@ impl DnsResolver for DelayedDnsResolver {
     }
 }
 
-async fn spawn_http_status_once(status: u16) -> SocketAddr {
+async fn spawn_http_status_once(status: u16, expected_target: &'static str) -> SocketAddr {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
         let mut request = vec![0; 512];
         let read = stream.read(&mut request).await.unwrap();
-        assert!(String::from_utf8_lossy(&request[..read]).starts_with("GET /health HTTP/1.1\r\n"));
+        assert!(String::from_utf8_lossy(&request[..read])
+            .starts_with(&format!("GET {expected_target} HTTP/1.1\r\n")));
         let response = format!("HTTP/1.1 {status} Test\r\nContent-Length: 0\r\n\r\n");
         stream.write_all(response.as_bytes()).await.unwrap();
     });
@@ -159,7 +161,7 @@ fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {
 
 #[tokio::test]
 async fn startup_probe_succeeds_for_http_2xx_response() {
-    let addr = spawn_http_status_once(204).await;
+    let addr = spawn_http_status_once(204, "/health").await;
     let resolver = Arc::new(StaticDnsResolver {
         domain: "probe.test",
         addr,
@@ -184,7 +186,7 @@ async fn startup_probe_succeeds_for_http_2xx_response() {
 
 #[tokio::test]
 async fn startup_probe_fails_for_http_4xx_response_and_rolls_back_start() {
-    let addr = spawn_http_status_once(404).await;
+    let addr = spawn_http_status_once(404, "/health").await;
     let resolver = Arc::new(StaticDnsResolver {
         domain: "probe.test",
         addr,
@@ -209,7 +211,7 @@ async fn startup_probe_fails_for_http_4xx_response_and_rolls_back_start() {
 
 #[tokio::test]
 async fn startup_probe_failure_is_written_to_runtime_error_log() {
-    let addr = spawn_http_status_once(404).await;
+    let addr = spawn_http_status_once(404, "/health?token=private").await;
     let resolver = Arc::new(StaticDnsResolver {
         domain: "probe.test",
         addr,
@@ -222,7 +224,7 @@ async fn startup_probe_failure_is_written_to_runtime_error_log() {
     )
     .unwrap()
     .with_startup_probe(StartupProbeOptions {
-        url: probe_url(addr),
+        url: format!("http://probe.test:{}/health?token=private", addr.port()),
         timeout: Duration::from_secs(2),
         outbound_tag: Some("direct".to_owned()),
     });
@@ -239,12 +241,17 @@ async fn startup_probe_failure_is_written_to_runtime_error_log() {
         std::fs::read_to_string(log_dir.join("xray-error.log")).expect("error log should exist");
     assert!(error_log.contains("Debug startupProbe start"));
     assert!(error_log.contains("Debug startupProbe fail"));
-    assert!(error_log.contains("HTTP status 404"));
+    assert!(error_log.contains("error=<redacted>"));
+    assert!(!error_log.contains("HTTP status 404"));
+    assert!(error_log.contains(&format!("url=http://<redacted-host>:{}", addr.port())));
+    assert!(!error_log.contains("probe.test"));
+    assert!(!error_log.contains("/health"));
+    assert!(!error_log.contains("token=private"));
 }
 
 #[tokio::test]
 async fn startup_probe_accepts_http_3xx_response() {
-    let addr = spawn_http_status_once(302).await;
+    let addr = spawn_http_status_once(302, "/health").await;
     let resolver = Arc::new(StaticDnsResolver {
         domain: "probe.test",
         addr,
@@ -300,7 +307,7 @@ async fn startup_probe_timeout_rolls_back_start() {
 
 #[tokio::test]
 async fn startup_probe_uses_probe_timeout_when_policy_handshake_is_short() {
-    let addr = spawn_http_status_once(204).await;
+    let addr = spawn_http_status_once(204, "/health").await;
     let mut config = config_with_outbounds(vec![freedom("direct")], Some("direct"));
     config.policy = PolicyConfig {
         levels: BTreeMap::from([(
@@ -336,7 +343,7 @@ async fn startup_probe_uses_probe_timeout_when_policy_handshake_is_short() {
 
 #[tokio::test]
 async fn startup_probe_uses_default_outbound_directly_without_routing_rules() {
-    let addr = spawn_http_status_once(204).await;
+    let addr = spawn_http_status_once(204, "/health").await;
     let resolver = Arc::new(StaticDnsResolver {
         domain: "probe.test",
         addr,

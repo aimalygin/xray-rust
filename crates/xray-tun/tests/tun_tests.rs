@@ -69,6 +69,39 @@ async fn poll_outbound_batch_waits_for_first_packet() {
 }
 
 #[tokio::test]
+async fn try_poll_outbound_does_not_wait_for_a_concurrent_blocking_poll() {
+    let tun = std::sync::Arc::new(TunEndpoint::new(TunConfig {
+        mtu: 1500,
+        queue_depth: 8,
+    }));
+    let waiting_tun = std::sync::Arc::clone(&tun);
+    let waiter = tokio::spawn(async move { waiting_tun.poll_outbound_batch(1).await });
+
+    // Let the spawned poll acquire the receiver and wait for its first packet.
+    tokio::task::yield_now().await;
+
+    let immediate = tokio::time::timeout(
+        std::time::Duration::from_millis(50),
+        tun.try_poll_outbound(),
+    )
+    .await
+    .expect("try_poll_outbound must never wait for the receiver lock")
+    .expect("queue remains open");
+    assert_eq!(immediate, None);
+
+    let retained = Bytes::from_static(b"retained");
+    tun.push_outbound(retained.clone())
+        .await
+        .expect("queue remains open");
+    let batch = tokio::time::timeout(std::time::Duration::from_secs(1), waiter)
+        .await
+        .expect("blocking poll should receive the retained packet")
+        .expect("blocking poll task should not panic")
+        .expect("queue remains open");
+    assert_eq!(batch, vec![retained]);
+}
+
+#[tokio::test]
 async fn poll_outbound_batch_reports_queue_closed() {
     let tun = TunEndpoint::new(TunConfig {
         mtu: 1500,

@@ -21,3 +21,9 @@ set_target_properties(
 add_library(xray_mobile_jni SHARED xray_mobile_jni.cpp)
 target_include_directories(xray_mobile_jni PRIVATE "${XRAY_FFI_ANDROID_DIR}/include")
 target_link_libraries(xray_mobile_jni PRIVATE xray_ffi log)
+target_link_options(
+    xray_mobile_jni
+    PRIVATE
+    "-Wl,-z,max-page-size=16384"
+    "-Wl,-z,common-page-size=16384"
+)

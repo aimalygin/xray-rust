@@ -2,6 +2,281 @@ import XCTest
 @testable import XrayMobileAdapter
 
 final class XrayPacketTunnelPumpTests: XCTestCase {
+    func testMobileLogSanitizesAttackerControlledParseErrorAsOneLine() {
+        let sanitized = XrayMobileLog.sanitized(
+            "unsupported protocol 'evil'\n[forged]\rnext\u{001B}\u{2028}"
+        )
+
+        XCTAssertEqual(
+            sanitized,
+            #"unsupported protocol 'evil'\n[forged]\rnext\u{001B}\u{2028}"#
+        )
+        XCTAssertFalse(sanitized.contains("\n"))
+        XCTAssertFalse(sanitized.contains("\r"))
+        XCTAssertFalse(sanitized.contains("\u{001B}"))
+    }
+
+    func testPersistentOutputFailuresTripEachOperationExactlyOnce() {
+        let cases: [
+            (
+                XrayPacketTunnelPumpOperation,
+                XrayPacketTunnelPumpError
+            )
+        ] = [
+            (
+                .pollPackets,
+                .persistentPollPacketFailures(consecutiveFailures: 3)
+            ),
+            (
+                .writePackets,
+                .persistentWritePacketFailures(consecutiveFailures: 3)
+            ),
+        ]
+
+        for (operation, expectedError) in cases {
+            let breaker = XrayPacketTunnelFailureCircuitBreaker(
+                maxConsecutiveFailures: 3
+            )
+            breaker.start()
+
+            XCTAssertNil(breaker.recordFailure(operation))
+            XCTAssertNil(breaker.recordFailure(operation))
+            XCTAssertEqual(breaker.recordFailure(operation), expectedError)
+            XCTAssertNil(breaker.recordFailure(operation))
+        }
+    }
+
+    func testTenThousandPushFailuresRemainRecoverableDrops() {
+        let breaker = XrayPacketTunnelFailureCircuitBreaker(
+            maxConsecutiveFailures: 3
+        )
+        breaker.start()
+
+        for _ in 0..<10_000 {
+            XCTAssertNil(breaker.recordRecoverablePushFailure())
+        }
+
+        XCTAssertNil(breaker.recordFailure(.pollPackets))
+    }
+
+    func testTransientPollFailureResetsAfterSuccessfulPoll() {
+        let breaker = XrayPacketTunnelFailureCircuitBreaker(
+            maxConsecutiveFailures: 3
+        )
+        breaker.start()
+
+        XCTAssertNil(breaker.recordFailure(.pollPackets))
+        XCTAssertNil(breaker.recordFailure(.pollPackets))
+        breaker.recordSuccess(.pollPackets)
+        XCTAssertNil(breaker.recordFailure(.pollPackets))
+        XCTAssertNil(breaker.recordFailure(.pollPackets))
+    }
+
+    func testNormalStopSuppressesLateTerminalFailure() {
+        let breaker = XrayPacketTunnelFailureCircuitBreaker(
+            maxConsecutiveFailures: 2
+        )
+        breaker.start()
+        breaker.stop()
+
+        XCTAssertNil(breaker.recordFailure(.pollPackets))
+        XCTAssertNil(breaker.recordFailure(.pollPackets))
+        XCTAssertNil(breaker.recordFailure(.writePackets))
+        XCTAssertNil(breaker.recordFailure(.writePackets))
+    }
+
+    func testTerminalFailureDeliveryIsAsyncOnceAndAllowsSelfStop() {
+        let delivered = expectation(description: "terminal failure delivered")
+        let owner = TerminalFailureDeliveryOwner(expectation: delivered)
+        let delivery = XrayPacketTunnelTerminalFailureDelivery { error in
+            owner.handle(error)
+        }
+        owner.delivery = delivery
+        delivery.start()
+
+        delivery.submit(
+            .persistentPollPacketFailures(consecutiveFailures: 8)
+        )
+        delivery.submit(
+            .persistentWritePacketFailures(consecutiveFailures: 8)
+        )
+
+        wait(for: [delivered], timeout: 1)
+        delivery.submit(
+            .persistentWritePacketFailures(consecutiveFailures: 9)
+        )
+        XCTAssertEqual(owner.deliveryCount, 1)
+        owner.delivery = nil
+    }
+
+    func testBatchPollStorageIsReusedAcrossEmptyPolls() throws {
+        let maxPackets = 64
+        let maxPacketBytes = 1_500
+        let byteCount = try XrayCore.validatedPacketBatchByteCount(
+            maxPackets: maxPackets,
+            maxPacketBytes: maxPacketBytes
+        )
+        let storage = XrayPacketBatchPollStorage(
+            validatedMaxPackets: maxPackets,
+            validatedMaxPacketBytes: maxPacketBytes,
+            validatedByteCount: byteCount
+        )
+        let initialIdentities = storage.bufferIdentities
+
+        for _ in 0..<10_000 {
+            XCTAssertTrue(storage.materializePackets(packetCount: 0).isEmpty)
+            XCTAssertEqual(storage.bufferIdentities.bytes, initialIdentities.bytes)
+            XCTAssertEqual(storage.bufferIdentities.lengths, initialIdentities.lengths)
+        }
+
+        XCTAssertEqual(storage.materializedPacketCount, 0)
+    }
+
+    func testPacketPollValidationRejectsZeroNegativeOverflowAndHugeBuffers() {
+        for invalidSize in [0, -1, XrayCore.maximumPolledPacketBytes + 1] {
+            XCTAssertThrowsError(
+                try XrayCore.validatePacketPollSize(invalidSize)
+            ) { error in
+                guard case let XrayCoreError.invalidPacketPollSize(actualSize) = error else {
+                    return XCTFail("unexpected error: \(error)")
+                }
+                XCTAssertEqual(actualSize, invalidSize)
+            }
+        }
+
+        for (maxPackets, maxPacketBytes) in [(0, 1_500), (64, -1)] {
+            XCTAssertThrowsError(
+                try XrayCore.validatedPacketBatchByteCount(
+                    maxPackets: maxPackets,
+                    maxPacketBytes: maxPacketBytes
+                )
+            ) { error in
+                guard case XrayCoreError.invalidPacketBatchLimits = error else {
+                    return XCTFail("unexpected error: \(error)")
+                }
+            }
+        }
+
+        XCTAssertThrowsError(
+            try XrayCore.validatedPacketBatchByteCount(
+                maxPackets: Int.max,
+                maxPacketBytes: 2
+            )
+        ) { error in
+            guard case XrayCoreError.packetBatchSizeOverflow = error else {
+                return XCTFail("unexpected error: \(error)")
+            }
+        }
+
+        XCTAssertThrowsError(
+            try XrayCore.validatedPacketBatchByteCount(
+                maxPackets: XrayCore.maximumPacketBatchBytes / 1_500 + 1,
+                maxPacketBytes: 1_500
+            )
+        ) { error in
+            guard case XrayCoreError.packetBatchTooLarge = error else {
+                return XCTFail("unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testFFIMajorVersionValidationAcceptsCurrentABI() {
+        XCTAssertNoThrow(try XrayCore.validateFFIMajorVersion(1))
+    }
+
+    func testFFIMajorVersionValidationRejectsIncompatibleABI() {
+        XCTAssertThrowsError(try XrayCore.validateFFIMajorVersion(2)) { error in
+            guard case let XrayCoreError.incompatibleFFIMajorVersion(expected, actual) = error else {
+                return XCTFail("unexpected error: \(error)")
+            }
+            XCTAssertEqual(expected, 1)
+            XCTAssertEqual(actual, 2)
+        }
+    }
+
+    func testLifecycleGateWaitsForAllDataPathCallsAndBlocksLateReaders() {
+        let gate = XrayCoreCallGate()
+        let readerEntered = expectation(description: "initial readers entered")
+        readerEntered.expectedFulfillmentCount = 2
+        let releaseReaders = DispatchSemaphore(value: 0)
+        let lifecycleEntered = DispatchSemaphore(value: 0)
+        let releaseLifecycle = DispatchSemaphore(value: 0)
+        let lateReaderEntered = DispatchSemaphore(value: 0)
+
+        for _ in 0..<2 {
+            DispatchQueue.global().async {
+                gate.withDataPath {
+                    readerEntered.fulfill()
+                    releaseReaders.wait()
+                }
+            }
+        }
+        wait(for: [readerEntered], timeout: 1)
+
+        DispatchQueue.global().async {
+            gate.withLifecycle {
+                lifecycleEntered.signal()
+                releaseLifecycle.wait()
+            }
+        }
+        let writerDeadline = Date().addingTimeInterval(1)
+        while !gate.hasWaitingLifecycleCall, Date() < writerDeadline {
+            Thread.sleep(forTimeInterval: 0.001)
+        }
+        XCTAssertTrue(gate.hasWaitingLifecycleCall)
+        let lateReaderWorkItem = DispatchWorkItem(
+            qos: .unspecified,
+            flags: [],
+            block: {
+                gate.withDataPath {
+                    _ = lateReaderEntered.signal()
+                }
+            }
+        )
+        DispatchQueue.global().async(execute: lateReaderWorkItem)
+
+        XCTAssertEqual(
+            lifecycleEntered.wait(timeout: .now() + 0.05),
+            .timedOut
+        )
+        XCTAssertEqual(
+            lateReaderEntered.wait(timeout: .now() + 0.05),
+            .timedOut
+        )
+
+        releaseReaders.signal()
+        releaseReaders.signal()
+        XCTAssertEqual(lifecycleEntered.wait(timeout: .now() + 1), .success)
+        XCTAssertEqual(
+            lateReaderEntered.wait(timeout: .now() + 0.05),
+            .timedOut
+        )
+
+        releaseLifecycle.signal()
+        XCTAssertEqual(lateReaderEntered.wait(timeout: .now() + 1), .success)
+    }
+
+    func testLifecycleGateReleasesAfterThrowingBody() {
+        enum ExpectedError: Error {
+            case failure
+        }
+
+        let gate = XrayCoreCallGate()
+        XCTAssertThrowsError(
+            try gate.withLifecycle {
+                throw ExpectedError.failure
+            }
+        )
+
+        let dataPathReturned = expectation(description: "data path returned")
+        DispatchQueue.global().async {
+            gate.withDataPath {
+                dataPathReturned.fulfill()
+            }
+        }
+        wait(for: [dataPathReturned], timeout: 1)
+    }
+
     func testStatsDebugLogMessagesStayBelowTruncationLimit() {
         let messages = Self.sampleStats.debugLogMessages()
 
@@ -213,4 +488,29 @@ final class XrayPacketTunnelPumpTests: XCTestCase {
         tunFdWriteBatchPackets: 32654,
         tunFdWriteBatchMaxPackets: 30
     )
+}
+
+private final class TerminalFailureDeliveryOwner: @unchecked Sendable {
+    private let lock = NSLock()
+    private let expectation: XCTestExpectation
+    var delivery: XrayPacketTunnelTerminalFailureDelivery?
+    private var count = 0
+
+    init(expectation: XCTestExpectation) {
+        self.expectation = expectation
+    }
+
+    var deliveryCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return count
+    }
+
+    func handle(_ error: XrayPacketTunnelPumpError) {
+        lock.lock()
+        count += 1
+        lock.unlock()
+        delivery?.stop()
+        expectation.fulfill()
+    }
 }

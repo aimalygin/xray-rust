@@ -363,6 +363,10 @@ pub struct InboundConfig {
     pub protocol: InboundProtocol,
     pub listen: String,
     pub port: u16,
+    /// Explicit consent to expose an unauthenticated SOCKS/HTTP listener
+    /// beyond loopback. Runtime code enforces this even for programmatically
+    /// constructed configurations.
+    pub allow_unauthenticated_lan: bool,
     pub sniffing: Option<InboundSniffingConfig>,
     pub user_level: Option<u32>,
 }

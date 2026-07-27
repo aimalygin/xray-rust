@@ -6,8 +6,8 @@ use tokio::task::JoinHandle;
 use xray_config::{CoreConfig, DnsHostTarget, DnsServerConfig, DomainMatcher, InboundProtocol};
 use xray_runtime::Shutdown;
 use xray_transport::{
-    CachingDnsResolver, ConfiguredDnsResolver, DnsResolver, NameServer, StaticHostRule,
-    StaticHostTarget, SystemDnsResolver, TransportDialer, TransportDomainMatcher,
+    CachingDnsResolver, ConfiguredDnsResolver, DnsResolver, NameServer, SocketProtector,
+    StaticHostRule, StaticHostTarget, SystemDnsResolver, TransportDialer, TransportDomainMatcher,
 };
 use xray_tun::{TunConfig, TunEndpoint};
 
@@ -33,7 +33,8 @@ pub use outbound::{
     open_vless_udp_stream_with_resolver_and_dialer, select_tcp_outbound,
     select_tcp_outbound_for_session, select_tcp_outbound_for_session_with_resolver,
     select_udp_outbound_for_session, select_udp_outbound_for_session_with_resolver,
-    select_vless_tcp_outbound, TcpOutbound, UdpOutbound, VlessTcpOutbound, VlessUdpFraming,
+    select_vless_tcp_outbound, OutboundRouter, TcpOutbound, UdpOutbound, VlessTcpOutbound,
+    VlessUdpFraming,
 };
 pub use runtime_log::{RuntimeLogConfig, RuntimeLogger};
 pub use startup_probe::{StartupProbeError, StartupProbeOptions};
@@ -128,6 +129,8 @@ pub enum CoreError {
     NoSupportedInbound,
     #[error("no supported outbound found")]
     NoSupportedOutbound,
+    #[error("unauthenticated SOCKS/HTTP listener requires explicit LAN exposure permission")]
+    UnauthenticatedLanExposure,
     #[error("outbound network is not supported")]
     UnsupportedOutboundNetwork,
     #[error("outbound security is not supported")]
@@ -189,6 +192,26 @@ impl Core {
             config,
             dns_resolver,
             Arc::new(TransportDialer::system()?),
+            tun_runtime_options,
+        )
+    }
+
+    /// Creates a core whose configured DNS servers and outbound connections
+    /// share the dialer's platform socket-protection policy.
+    pub fn with_transport_dialer_and_tun_options(
+        config: CoreConfig,
+        transport_dialer: Arc<TransportDialer>,
+        tun_runtime_options: TunRuntimeOptions,
+    ) -> Result<Self, CoreError> {
+        let dns_resolver = configured_dns_resolver_for_config_with_socket_protector(
+            &config,
+            system_dns_resolver(),
+            transport_dialer.socket_protector_arc(),
+        );
+        Self::with_runtime_dependencies_and_tun_options(
+            config,
+            dns_resolver,
+            transport_dialer,
             tun_runtime_options,
         )
     }
@@ -290,8 +313,24 @@ impl Core {
                 }
             }
 
+            if !inbound.allow_unauthenticated_lan {
+                let listen = inbound
+                    .listen
+                    .strip_prefix('[')
+                    .and_then(|address| address.strip_suffix(']'))
+                    .unwrap_or(&inbound.listen);
+                if listen
+                    .parse::<std::net::IpAddr>()
+                    .is_ok_and(|address| !address.is_loopback())
+                {
+                    return Err(CoreError::UnauthenticatedLanExposure);
+                }
+            }
             let listener = TcpListener::bind((inbound.listen.as_str(), inbound.port)).await?;
             let addr = listener.local_addr()?;
+            if !inbound.allow_unauthenticated_lan && !addr.ip().is_loopback() {
+                return Err(CoreError::UnauthenticatedLanExposure);
+            }
             bound_listeners.push((
                 BoundInbound {
                     tag: inbound.tag.clone(),
@@ -309,6 +348,7 @@ impl Core {
         }
 
         let config = Arc::new(self.config.clone());
+        let outbound_router = Arc::new(OutboundRouter::new(Arc::clone(&config)));
         let has_tun_inbound = !tun_inbounds.is_empty();
         let mut inbounds = Vec::with_capacity(bound_listeners.len());
         let mut tasks = Vec::with_capacity(
@@ -323,6 +363,7 @@ impl Core {
                     listener,
                     inbound_tag,
                     Arc::clone(&config),
+                    Arc::clone(&outbound_router),
                     dns_resolver,
                     transport_dialer,
                     sniffing,
@@ -334,6 +375,7 @@ impl Core {
                     listener,
                     inbound_tag,
                     Arc::clone(&config),
+                    Arc::clone(&outbound_router),
                     dns_resolver,
                     transport_dialer,
                     policy,
@@ -362,6 +404,7 @@ impl Core {
                     .map(|(_, _, policy)| *policy)
                     .unwrap_or_default(),
                 Arc::clone(&config),
+                Arc::clone(&outbound_router),
                 Arc::clone(&self.dns_resolver),
                 Arc::clone(&self.transport_dialer),
                 tun_runtime_options,
@@ -381,19 +424,20 @@ impl Core {
         self.state = CoreState::Running;
 
         if let Some(options) = self.startup_probe.clone() {
-            let probe_url = options.url.clone();
+            let probe_url = startup_probe::diagnostic_probe_url(&options.url);
             let probe_timeout_ms = options.timeout.as_millis();
-            let probe_outbound = options
-                .outbound_tag
-                .clone()
-                .unwrap_or_else(|| "default".to_owned());
+            let probe_outbound = if options.outbound_tag.is_some() {
+                "<configured>"
+            } else {
+                "default"
+            };
             self.runtime_logger.debug(|| {
                 format!(
                     "Debug startupProbe start url={probe_url} timeoutMs={probe_timeout_ms} outbound={probe_outbound}"
                 )
             });
             if let Err(error) = startup_probe::run_startup_probe(
-                &self.config,
+                outbound_router.as_ref(),
                 options,
                 self.dns_resolver.as_ref(),
                 self.transport_dialer.as_ref(),
@@ -401,7 +445,7 @@ impl Core {
             .await
             {
                 self.runtime_logger
-                    .error(|| format!("Debug startupProbe fail url={probe_url} error={error}"));
+                    .error(|| format!("Debug startupProbe fail url={probe_url} error=<redacted>"));
                 let _ = self.stop().await;
                 return Err(CoreError::StartupProbe(error));
             }
@@ -450,6 +494,14 @@ fn configured_dns_resolver_for_config(
     config: &CoreConfig,
     fallback: Arc<dyn DnsResolver>,
 ) -> Arc<dyn DnsResolver> {
+    configured_dns_resolver_for_config_with_socket_protector(config, fallback, None)
+}
+
+fn configured_dns_resolver_for_config_with_socket_protector(
+    config: &CoreConfig,
+    fallback: Arc<dyn DnsResolver>,
+    socket_protector: Option<Arc<dyn SocketProtector>>,
+) -> Arc<dyn DnsResolver> {
     if config.dns.hosts.is_empty() && config.dns.servers.is_empty() {
         return fallback;
     }
@@ -479,11 +531,11 @@ fn configured_dns_resolver_for_config(
         })
         .collect();
 
-    Arc::new(ConfiguredDnsResolver::new(
-        host_rules,
-        name_servers,
-        fallback,
-    ))
+    let mut resolver = ConfiguredDnsResolver::new(host_rules, name_servers, fallback);
+    if let Some(protector) = socket_protector {
+        resolver = resolver.with_socket_protector(protector);
+    }
+    Arc::new(resolver)
 }
 
 fn transport_domain_matcher(matcher: &DomainMatcher) -> TransportDomainMatcher {
@@ -498,14 +550,18 @@ fn transport_domain_matcher(matcher: &DomainMatcher) -> TransportDomainMatcher {
 
 #[cfg(test)]
 mod tests {
+    use std::io;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
     use async_trait::async_trait;
     use xray_config::parse_xray_json;
-    use xray_transport::{DnsResolver, TransportError};
+    use xray_transport::{
+        DnsResolver, SocketHandle, SocketProtector, TransportDialer, TransportError,
+    };
 
-    use super::configured_dns_resolver_for_config;
+    use super::{configured_dns_resolver_for_config, Core, TunRuntimeOptions};
 
     struct StaticResolver;
 
@@ -544,5 +600,53 @@ mod tests {
             .unwrap();
 
         assert_eq!(addr, SocketAddr::from(([198, 51, 100, 9], 8443)));
+    }
+
+    #[derive(Default)]
+    struct RejectingProtector {
+        calls: AtomicUsize,
+    }
+
+    impl SocketProtector for RejectingProtector {
+        fn protect(&self, _socket: SocketHandle) -> io::Result<()> {
+            self.calls.fetch_add(1, Ordering::Relaxed);
+            Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "test socket rejected",
+            ))
+        }
+    }
+
+    #[tokio::test]
+    async fn transport_dialer_constructor_protects_configured_dns_sockets() {
+        let raw = r#"{
+            "dns": { "servers": ["127.0.0.1:9"] },
+            "inbounds": [],
+            "outbounds": [
+                { "tag": "direct", "protocol": "freedom" }
+            ]
+        }"#;
+        let parsed = parse_xray_json(raw).expect("config should parse");
+        let protector = Arc::new(RejectingProtector::default());
+        let dialer = Arc::new(
+            TransportDialer::system_with_socket_protector(Some(protector.clone()))
+                .expect("system dialer should initialize"),
+        );
+        let core = Core::with_transport_dialer_and_tun_options(
+            parsed.config,
+            dialer,
+            TunRuntimeOptions::default(),
+        )
+        .expect("core should initialize");
+
+        let addr = core
+            .dns_resolver
+            .resolve("localhost", 8443)
+            .await
+            .expect("system fallback should resolve localhost");
+
+        assert!(addr.ip().is_loopback());
+        assert_eq!(addr.port(), 8443);
+        assert_eq!(protector.calls.load(Ordering::Relaxed), 2);
     }
 }

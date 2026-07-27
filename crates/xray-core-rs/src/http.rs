@@ -9,12 +9,10 @@ use xray_proxy::inbound::parse_http_connect;
 use xray_transport::{DnsResolver, TransportDialer};
 
 use crate::policy::{
-    copy_bidirectional_with_idle_timeout, effective_policy_for_level, EffectivePolicy,
+    copy_bidirectional_with_idle_timeout, effective_policy_for_level, ConnectionAdmission,
+    EffectivePolicy, DEFAULT_MAX_INBOUND_CONNECTIONS,
 };
-use crate::{
-    open_tcp_stream_with_resolver_and_dialer, select_tcp_outbound_for_session_with_resolver,
-    RuntimeLogger, TcpOutbound,
-};
+use crate::{open_tcp_stream_with_resolver_and_dialer, OutboundRouter, RuntimeLogger, TcpOutbound};
 
 const HTTP_CONNECT_ESTABLISHED: &[u8] = b"HTTP/1.1 200 Connection Established\r\n\r\n";
 const HTTP_BAD_REQUEST: &[u8] = b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n";
@@ -28,6 +26,7 @@ pub async fn serve_http_listener(
     listener: TcpListener,
     inbound_tag: Option<String>,
     config: Arc<CoreConfig>,
+    outbound_router: Arc<OutboundRouter>,
     dns_resolver: Arc<dyn DnsResolver>,
     transport_dialer: Arc<TransportDialer>,
     policy: EffectivePolicy,
@@ -35,6 +34,7 @@ pub async fn serve_http_listener(
     mut shutdown: watch::Receiver<bool>,
 ) {
     let mut connections = JoinSet::new();
+    let admission = ConnectionAdmission::new(DEFAULT_MAX_INBOUND_CONNECTIONS);
 
     loop {
         if *shutdown.borrow() {
@@ -52,16 +52,22 @@ pub async fn serve_http_listener(
                     Ok(accepted) => accepted,
                     Err(_) => continue,
                 };
+                let Some(admission_permit) = admission.try_acquire() else {
+                    continue;
+                };
                 let inbound_tag = inbound_tag.clone();
                 let config = Arc::clone(&config);
+                let outbound_router = Arc::clone(&outbound_router);
                 let dns_resolver = Arc::clone(&dns_resolver);
                 let transport_dialer = Arc::clone(&transport_dialer);
                 let runtime_logger = runtime_logger.clone();
                 connections.spawn(async move {
+                    let _admission_permit = admission_permit;
                     handle_http_connection(
                         stream,
                         inbound_tag,
                         config,
+                        outbound_router,
                         dns_resolver,
                         transport_dialer,
                         policy,
@@ -77,12 +83,26 @@ pub async fn serve_http_listener(
 
     connections.abort_all();
     while connections.join_next().await.is_some() {}
+    if runtime_logger.is_enabled() {
+        let snapshot = admission.snapshot();
+        runtime_logger.debug(|| {
+            format!(
+                "Debug httpAdmission active={} admitted={} rejected={}",
+                snapshot.active, snapshot.admitted, snapshot.rejected
+            )
+        });
+    }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "connection tasks receive shared runtime dependencies explicitly"
+)]
 async fn handle_http_connection(
     mut inbound: TcpStream,
     inbound_tag: Option<String>,
     config: Arc<CoreConfig>,
+    outbound_router: Arc<OutboundRouter>,
     dns_resolver: Arc<dyn DnsResolver>,
     transport_dialer: Arc<TransportDialer>,
     policy: EffectivePolicy,
@@ -102,13 +122,13 @@ async fn handle_http_connection(
             }
         };
 
-    let outbound = match select_tcp_outbound_for_session_with_resolver(
-        &config,
-        inbound_tag.as_deref(),
-        &target,
-        dns_resolver.as_ref(),
-    )
-    .await
+    let outbound = match outbound_router
+        .select_tcp_outbound_for_session_with_resolver(
+            inbound_tag.as_deref(),
+            &target,
+            dns_resolver.as_ref(),
+        )
+        .await
     {
         Ok(outbound) => outbound,
         Err(error) => {
@@ -135,13 +155,18 @@ async fn handle_http_connection(
         );
     }
 
-    let (open_timeout, tunnel_idle) = match &outbound {
-        TcpOutbound::Freedom => (policy.handshake, policy.conn_idle),
+    let (open_timeout, tunnel_idle, relay_buffer_size) = match &outbound {
+        TcpOutbound::Freedom => (
+            policy.handshake,
+            policy.conn_idle,
+            policy.relay_buffer_size(),
+        ),
         TcpOutbound::Vless(outbound) => {
             let outbound_policy = effective_policy_for_level(&config, Some(outbound.user().level));
             (
                 outbound_policy.handshake,
                 policy.conn_idle.min(outbound_policy.conn_idle),
+                outbound_policy.relay_buffer_size(),
             )
         }
     };
@@ -186,6 +211,11 @@ async fn handle_http_connection(
         return;
     }
 
-    let _ =
-        copy_bidirectional_with_idle_timeout(&mut inbound, &mut outbound_stream, tunnel_idle).await;
+    let _ = copy_bidirectional_with_idle_timeout(
+        &mut inbound,
+        &mut outbound_stream,
+        tunnel_idle,
+        relay_buffer_size,
+    )
+    .await;
 }

@@ -13,7 +13,7 @@ use smoltcp::wire::{HardwareAddress, IpAddress, IpEndpoint};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::UdpSocket;
 use tokio::sync::{mpsc, watch, OwnedSemaphorePermit, Semaphore};
-use tokio::task::JoinSet;
+use tokio::task::{AbortHandle, JoinError, JoinSet};
 use tokio::time::{sleep, Duration};
 use xray_config::{CoreConfig, DnsFakeIpConfig, InboundSniffingConfig};
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
@@ -26,13 +26,11 @@ use xray_tun::{
 
 use crate::outbound::{
     open_tcp_stream_with_resolver_and_dialer,
-    open_vless_udp_stream_with_resolver_dialer_and_options,
-    select_tcp_outbound_for_session_with_tag_and_resolver,
-    select_udp_outbound_for_session_with_resolver, TcpOutbound, UdpOutbound, VlessTcpOutbound,
-    VlessUdpFraming, VlessUdpOpenOptions,
+    open_vless_udp_stream_with_resolver_dialer_and_options, TcpOutbound, UdpOutbound,
+    VlessTcpOutbound, VlessUdpFraming, VlessUdpOpenOptions,
 };
 use crate::policy::{effective_policy_for_level, EffectivePolicy};
-use crate::{RuntimeLogger, TunRuntimeOptions, TunRuntimeProfile};
+use crate::{OutboundRouter, RuntimeLogger, TunRuntimeOptions, TunRuntimeProfile};
 use xray_proxy::vless::{
     encode_udp_packet, encode_xudp_keep_packet, encode_xudp_new_packet, read_udp_packet,
     read_xudp_packet,
@@ -64,8 +62,11 @@ const TCP_BRIDGE_WRITE_BATCH_MAX_BYTES: usize = 2 * 1024 * 1024;
 const MOBILE_TCP_BRIDGE_WRITE_BATCH_MAX_BYTES: usize = 1024 * 1024;
 const LOW_MEMORY_TCP_BRIDGE_WRITE_BATCH_MAX_BYTES: usize = 256 * 1024;
 const MAX_TUN_INBOUND_DRAIN_PER_TICK: usize = 256;
+const MAX_BRIDGE_TASK_COMPLETIONS_PER_TICK: usize = 64;
 const TCP_REMOTE_DRAIN_MAX_PASSES_PER_TICK: usize = 4;
 const TCP_REMOTE_DRAIN_MAX_BYTES_PER_TICK: usize = 4 * 1024 * 1024;
+const TUN_FLOW_STATS_INTERVAL: Duration = Duration::from_secs(1);
+const TUN_BACKPRESSURE_RETRY_INTERVAL: Duration = Duration::from_millis(25);
 const TCP_SLOW_FLOW_THRESHOLD_MS: u64 = 500;
 const TCP_REMOTE_WRITE_SLOW_THRESHOLD_MS: u64 = 500;
 const TCP_FLOW_SUMMARY_64KIB_BYTES: u64 = 64 * 1024;
@@ -618,6 +619,49 @@ enum UdpFlowAdmission {
     Drop,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TunWaitPlan {
+    duration: Duration,
+    drive_tcp_stack_on_expiry: bool,
+}
+
+fn tun_wait_plan(
+    smoltcp_deadline: Option<Instant>,
+    now: Instant,
+    stats_wait: Duration,
+    has_delayed_stack_events: bool,
+    has_pending_outbound: bool,
+) -> TunWaitPlan {
+    let mut plan = TunWaitPlan {
+        duration: stats_wait,
+        drive_tcp_stack_on_expiry: false,
+    };
+
+    if has_pending_outbound {
+        plan.duration = plan.duration.min(TUN_BACKPRESSURE_RETRY_INTERVAL);
+        return plan;
+    }
+
+    if let Some(deadline) = smoltcp_deadline {
+        let micros = deadline
+            .total_micros()
+            .saturating_sub(now.total_micros())
+            .max(0) as u64;
+        let wait = Duration::from_micros(micros);
+        if wait <= plan.duration {
+            plan.duration = wait;
+            plan.drive_tcp_stack_on_expiry = true;
+        }
+    }
+
+    if has_delayed_stack_events && TUN_BACKPRESSURE_RETRY_INTERVAL <= plan.duration {
+        plan.duration = TUN_BACKPRESSURE_RETRY_INTERVAL;
+        plan.drive_tcp_stack_on_expiry = true;
+    }
+
+    plan
+}
+
 impl FlowBudgetState {
     fn new(policy: FlowBudgetPolicy) -> Self {
         Self {
@@ -795,10 +839,35 @@ impl FlowBudgetState {
         self.udp_channel_dropped_packets = self.udp_channel_dropped_packets.saturating_add(1);
     }
 
+    fn record_udp_budget_drop(&mut self) {
+        self.udp_budget_drops = self.udp_budget_drops.saturating_add(1);
+    }
+
     fn next_udp_sequence(&mut self) -> u64 {
         self.udp_sequence = self.udp_sequence.saturating_add(1);
         self.udp_sequence
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TunPacketOutcome {
+    Continue { tcp_stack_dirty: bool },
+    QueueClosed,
+}
+
+impl TunPacketOutcome {
+    fn tcp_stack_dirty(self) -> Option<bool> {
+        match self {
+            Self::Continue { tcp_stack_dirty } => Some(tcp_stack_dirty),
+            Self::QueueClosed => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct StackEventApplication {
+    continue_draining: bool,
+    tcp_stack_dirty: bool,
 }
 
 #[expect(
@@ -811,6 +880,7 @@ pub(crate) async fn serve_tun_endpoint(
     sniffing: Option<InboundSniffingConfig>,
     inbound_policy: EffectivePolicy,
     config: Arc<CoreConfig>,
+    outbound_router: Arc<OutboundRouter>,
     dns_resolver: Arc<dyn DnsResolver>,
     transport_dialer: Arc<TransportDialer>,
     tun_runtime_options: TunRuntimeOptions,
@@ -826,9 +896,11 @@ pub(crate) async fn serve_tun_endpoint(
     let mut tcp_listeners = HashMap::new();
     let mut tcp_flows = HashMap::new();
     let mut bridge_tasks = JoinSet::new();
+    let mut udp_tasks = JoinSet::new();
     let runtime_policy = tun_runtime_policy_for_options(tun_runtime_options);
     let tcp_pending_open_permits =
         Arc::new(Semaphore::new(runtime_policy.flows.tcp.max_pending_opens));
+    let udp_task_permits = Arc::new(Semaphore::new(runtime_policy.flows.udp.max_active_flows));
     let mut flow_budget_state = FlowBudgetState::new(runtime_policy.flows);
     let mut udp_flows = HashMap::new();
     let mut delayed_stack_events = VecDeque::new();
@@ -845,6 +917,7 @@ pub(crate) async fn serve_tun_endpoint(
         sniffing,
         inbound_policy,
         config,
+        outbound_router,
         dns_resolver,
         transport_dialer,
         stack_tx,
@@ -852,11 +925,27 @@ pub(crate) async fn serve_tun_endpoint(
         tun_runtime_options,
         runtime_policy,
         tcp_pending_open_permits,
+        udp_task_permits,
         fake_ip_mapper,
         runtime_logger,
     };
+    let mut last_flow_stats = StdInstant::now();
+    let mut next_smoltcp_deadline = None;
+    let mut tcp_stack_dirty = false;
 
     'runtime: loop {
+        let smoltcp_now = Instant::now();
+        let stats_wait = TUN_FLOW_STATS_INTERVAL.saturating_sub(last_flow_stats.elapsed());
+        let wait_plan = tun_wait_plan(
+            next_smoltcp_deadline,
+            smoltcp_now,
+            stats_wait,
+            !delayed_stack_events.is_empty(),
+            device.has_pending_outbound(),
+        );
+        let mut timer_expired = false;
+        let mut tcp_stack_driven = false;
+
         tokio::select! {
             changed = shutdown.changed() => {
                 if changed.is_err() || *shutdown.borrow() {
@@ -866,7 +955,7 @@ pub(crate) async fn serve_tun_endpoint(
             packet = tun.poll_inbound() => {
                 match packet {
                     Ok(packet) => {
-                        if !process_tun_packet(
+                        match process_tun_packet(
                             packet,
                             &tun,
                             &mut iface,
@@ -878,11 +967,14 @@ pub(crate) async fn serve_tun_endpoint(
                             &runtime_context,
                             shutdown.clone(),
                             &mut bridge_tasks,
+                            &mut udp_tasks,
                             &mut device,
                         )
                         .await
+                        .tcp_stack_dirty()
                         {
-                            break;
+                            Some(dirty) => tcp_stack_dirty |= dirty,
+                            None => break,
                         }
                     }
                     Err(TunError::QueueClosed) => break,
@@ -891,7 +983,7 @@ pub(crate) async fn serve_tun_endpoint(
             }
             event = stack_rx.recv(), if delayed_stack_events.is_empty() => {
                 if let Some(event) = event {
-                    apply_or_delay_stack_event(
+                    let application = apply_or_delay_stack_event(
                         event,
                         &mut delayed_stack_events,
                         &mut tcp_flows,
@@ -900,22 +992,30 @@ pub(crate) async fn serve_tun_endpoint(
                         &mut device,
                         Some(tun.as_ref()),
                     );
+                    tcp_stack_dirty |= application.tcp_stack_dirty;
                 }
             }
             joined = bridge_tasks.join_next(), if !bridge_tasks.is_empty() => {
-                if let Some(Err(error)) = joined {
-                    runtime_context.runtime_logger.error(|| {
-                        format!("Debug tunBridgeTask failed error={error}")
-                    });
+                if let Some(result) = joined {
+                    log_bridge_task_result(result, &runtime_context.runtime_logger);
                 }
             }
-            () = sleep(Duration::from_millis(25)) => {}
+            joined = udp_tasks.join_next(), if !udp_tasks.is_empty() => {
+                if let Some(result) = joined {
+                    log_bridge_task_result(result, &runtime_context.runtime_logger);
+                }
+            }
+            () = sleep(wait_plan.duration) => {
+                timer_expired = true;
+            }
         }
+        drain_completed_bridge_tasks(&mut bridge_tasks, &runtime_context.runtime_logger);
+        drain_completed_bridge_tasks(&mut udp_tasks, &runtime_context.runtime_logger);
 
         for _ in 0..MAX_TUN_INBOUND_DRAIN_PER_TICK {
             match tun.try_poll_inbound().await {
                 Ok(Some(packet)) => {
-                    if !process_tun_packet(
+                    match process_tun_packet(
                         packet,
                         &tun,
                         &mut iface,
@@ -927,11 +1027,14 @@ pub(crate) async fn serve_tun_endpoint(
                         &runtime_context,
                         shutdown.clone(),
                         &mut bridge_tasks,
+                        &mut udp_tasks,
                         &mut device,
                     )
                     .await
+                    .tcp_stack_dirty()
                     {
-                        break 'runtime;
+                        Some(dirty) => tcp_stack_dirty |= dirty,
+                        None => break 'runtime,
                     }
                 }
                 Ok(None) => break,
@@ -940,7 +1043,7 @@ pub(crate) async fn serve_tun_endpoint(
             }
         }
 
-        drain_stack_events(
+        tcp_stack_dirty |= drain_stack_events(
             &mut stack_rx,
             &mut delayed_stack_events,
             &mut tcp_flows,
@@ -949,58 +1052,164 @@ pub(crate) async fn serve_tun_endpoint(
             &mut device,
             Some(tun.as_ref()),
         );
-        drain_tcp_remote_data_to_sockets(
-            &mut iface,
-            &mut device,
-            &mut sockets,
-            &mut tcp_flows,
-            &mut flow_budget_state,
-        );
-        drain_stack_events(
-            &mut stack_rx,
-            &mut delayed_stack_events,
-            &mut tcp_flows,
-            &mut flow_budget_state,
-            &mut udp_flows,
-            &mut device,
-            Some(tun.as_ref()),
-        );
-        drain_tcp_remote_data_to_sockets(
-            &mut iface,
-            &mut device,
-            &mut sockets,
-            &mut tcp_flows,
-            &mut flow_budget_state,
-        );
-        record_flow_budget_stats(tun.as_ref(), &mut flow_budget_state, &tcp_flows, &udp_flows);
-        iface.poll(Instant::now(), &mut device, &mut sockets);
-        open_ready_tcp_flows(
-            &mut sockets,
-            &mut tcp_listeners,
-            &mut tcp_flows,
-            &runtime_context,
-            shutdown.clone(),
-            &mut bridge_tasks,
-        );
-        read_socket_data_to_remote(&tun, &mut sockets, &mut tcp_flows, &mut flow_budget_state);
-        cleanup_closed_tcp_flows(&mut sockets, &mut tcp_flows, &mut flow_budget_state);
-        drain_tcp_remote_data_to_sockets(
-            &mut iface,
-            &mut device,
-            &mut sockets,
-            &mut tcp_flows,
-            &mut flow_budget_state,
-        );
-        iface.poll(Instant::now(), &mut device, &mut sockets);
-        while let Some(packet) = device.pop_outbound() {
-            if tun.push_outbound(packet).await.is_err() {
-                break;
+        let outbound_backpressured = match flush_tun_outbound(&tun, &mut device).await {
+            TunOutboundFlush::Complete => false,
+            TunOutboundFlush::Backpressured => true,
+            TunOutboundFlush::QueueClosed => break,
+        };
+        if !outbound_backpressured
+            && (tcp_stack_dirty || (timer_expired && wait_plan.drive_tcp_stack_on_expiry))
+        {
+            drive_tun_tcp_stack(
+                &tun,
+                &mut iface,
+                &mut device,
+                &mut sockets,
+                &mut tcp_listeners,
+                &mut tcp_flows,
+                &mut flow_budget_state,
+                &runtime_context,
+                shutdown.clone(),
+                &mut bridge_tasks,
+                tcp_stack_dirty,
+            );
+            tcp_stack_driven = true;
+            tcp_stack_dirty = false;
+
+            if drain_stack_events(
+                &mut stack_rx,
+                &mut delayed_stack_events,
+                &mut tcp_flows,
+                &mut flow_budget_state,
+                &mut udp_flows,
+                &mut device,
+                Some(tun.as_ref()),
+            ) {
+                drive_tun_tcp_stack(
+                    &tun,
+                    &mut iface,
+                    &mut device,
+                    &mut sockets,
+                    &mut tcp_listeners,
+                    &mut tcp_flows,
+                    &mut flow_budget_state,
+                    &runtime_context,
+                    shutdown.clone(),
+                    &mut bridge_tasks,
+                    true,
+                );
+                tcp_stack_driven = true;
             }
+        }
+        if tcp_stack_driven {
+            let now = Instant::now();
+            next_smoltcp_deadline = iface.poll_at(now, &sockets);
+        }
+
+        record_flow_counts(
+            tun.as_ref(),
+            &flow_budget_state,
+            tcp_flows.len(),
+            udp_flows.len(),
+        );
+        if last_flow_stats.elapsed() >= TUN_FLOW_STATS_INTERVAL {
+            record_flow_budget_stats(tun.as_ref(), &mut flow_budget_state, &tcp_flows, &udp_flows);
+            last_flow_stats = StdInstant::now();
+        }
+
+        if matches!(
+            flush_tun_outbound(&tun, &mut device).await,
+            TunOutboundFlush::QueueClosed
+        ) {
+            break;
         }
     }
 
     bridge_tasks.abort_all();
+    udp_tasks.abort_all();
     while bridge_tasks.join_next().await.is_some() {}
+    while udp_tasks.join_next().await.is_some() {}
+}
+
+fn log_bridge_task_result(result: Result<(), JoinError>, runtime_logger: &RuntimeLogger) {
+    if let Err(error) = result {
+        if error.is_cancelled() {
+            return;
+        }
+        runtime_logger.error(|| "Debug tunBridgeTask failed error=<redacted>".to_owned());
+    }
+}
+
+fn drain_completed_bridge_tasks(
+    bridge_tasks: &mut JoinSet<()>,
+    runtime_logger: &RuntimeLogger,
+) -> usize {
+    let mut drained = 0usize;
+    for _ in 0..MAX_BRIDGE_TASK_COMPLETIONS_PER_TICK {
+        let Some(result) = bridge_tasks.try_join_next() else {
+            break;
+        };
+        log_bridge_task_result(result, runtime_logger);
+        drained += 1;
+    }
+    drained
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TunOutboundFlush {
+    Complete,
+    Backpressured,
+    QueueClosed,
+}
+
+async fn flush_tun_outbound(tun: &TunEndpoint, device: &mut PacketDevice) -> TunOutboundFlush {
+    while let Some(packet) = device.front_outbound().cloned() {
+        match tun.push_outbound(packet).await {
+            Ok(()) => {
+                device.pop_outbound();
+            }
+            Err(TunError::QueueFull) => return TunOutboundFlush::Backpressured,
+            Err(TunError::QueueClosed) => return TunOutboundFlush::QueueClosed,
+            Err(TunError::PacketTooLarge { .. }) => {
+                device.pop_outbound();
+            }
+        }
+    }
+    TunOutboundFlush::Complete
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "TUN stack drive owns the mutable packet-stack state"
+)]
+fn drive_tun_tcp_stack(
+    tun: &TunEndpoint,
+    iface: &mut Interface,
+    device: &mut PacketDevice,
+    sockets: &mut SocketSet<'static>,
+    tcp_listeners: &mut HashMap<IpEndpoint, TcpListenerState>,
+    tcp_flows: &mut HashMap<SocketHandle, TcpFlow>,
+    flow_budget_state: &mut FlowBudgetState,
+    context: &TunRuntimeContext,
+    shutdown: watch::Receiver<bool>,
+    bridge_tasks: &mut JoinSet<()>,
+    tcp_state_dirty: bool,
+) {
+    if tcp_state_dirty || flow_budget_state.pending_total_bytes() > 0 {
+        drain_tcp_remote_data_to_sockets(iface, device, sockets, tcp_flows, flow_budget_state);
+    }
+
+    iface.poll(Instant::now(), device, sockets);
+    open_ready_tcp_flows(
+        sockets,
+        tcp_listeners,
+        tcp_flows,
+        context,
+        shutdown,
+        bridge_tasks,
+    );
+    read_socket_data_to_remote(tun, sockets, tcp_flows, flow_budget_state);
+    cleanup_closed_tcp_flows(sockets, tcp_flows, flow_budget_state);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1016,14 +1225,34 @@ async fn process_tun_packet(
     context: &TunRuntimeContext,
     shutdown: watch::Receiver<bool>,
     bridge_tasks: &mut JoinSet<()>,
+    udp_tasks: &mut JoinSet<()>,
     device: &mut PacketDevice,
-) -> bool {
+) -> TunPacketOutcome {
+    if !valid_tun_ip_packet(&packet) {
+        return TunPacketOutcome::Continue {
+            tcp_stack_dirty: false,
+        };
+    }
     if let Some(reply) = icmp_echo_reply(&packet) {
-        return !matches!(tun.push_outbound(reply).await, Err(TunError::QueueClosed));
+        return match tun.push_outbound(reply).await {
+            Err(TunError::QueueClosed) => TunPacketOutcome::QueueClosed,
+            Ok(()) | Err(TunError::QueueFull | TunError::PacketTooLarge { .. }) => {
+                TunPacketOutcome::Continue {
+                    tcp_stack_dirty: false,
+                }
+            }
+        };
     }
     if let Some(udp_packet) = parse_udp_packet(&packet) {
         if let Some(reply) = context.fake_dns_reply_packet(&udp_packet) {
-            return !matches!(tun.push_outbound(reply).await, Err(TunError::QueueClosed));
+            return match tun.push_outbound(reply).await {
+                Err(TunError::QueueClosed) => TunPacketOutcome::QueueClosed,
+                Ok(()) | Err(TunError::QueueFull | TunError::PacketTooLarge { .. }) => {
+                    TunPacketOutcome::Continue {
+                        tcp_stack_dirty: false,
+                    }
+                }
+            };
         }
         handle_udp_packet(
             udp_packet,
@@ -1032,9 +1261,11 @@ async fn process_tun_packet(
             flow_budget_state,
             context,
             shutdown,
-            bridge_tasks,
+            udp_tasks,
         );
-        return true;
+        return TunPacketOutcome::Continue {
+            tcp_stack_dirty: false,
+        };
     }
     if let Some(endpoint) = tcp_syn_destination(&packet) {
         admit_tcp_listener(sockets, tcp_listeners, tcp_flows.len(), endpoint, context);
@@ -1045,18 +1276,43 @@ async fn process_tun_packet(
             tcp_listeners,
             tcp_flows,
             context,
-            shutdown.clone(),
+            shutdown,
             bridge_tasks,
         );
-        while let Some(packet) = device.pop_outbound() {
-            if tun.push_outbound(packet).await.is_err() {
-                return false;
-            }
-        }
-        return true;
+        return TunPacketOutcome::Continue {
+            tcp_stack_dirty: true,
+        };
     }
     device.push_inbound(packet);
-    true
+    TunPacketOutcome::Continue {
+        tcp_stack_dirty: true,
+    }
+}
+
+fn valid_tun_ip_packet(packet: &[u8]) -> bool {
+    match packet.first().map(|byte| byte >> 4) {
+        Some(4) => {
+            if packet.len() < 20 {
+                return false;
+            }
+            let header_len = usize::from(packet[0] & 0x0f) * 4;
+            if header_len < 20 || packet.len() < header_len {
+                return false;
+            }
+            let total_len = usize::from(u16::from_be_bytes([packet[2], packet[3]]));
+            total_len >= header_len
+                && packet.len() >= total_len
+                && internet_checksum(&packet[..header_len]) == 0
+        }
+        Some(6) => {
+            if packet.len() < 40 {
+                return false;
+            }
+            let payload_len = usize::from(u16::from_be_bytes([packet[4], packet[5]]));
+            packet.len() >= 40 + payload_len
+        }
+        _ => false,
+    }
 }
 
 #[derive(Clone)]
@@ -1065,6 +1321,7 @@ struct TunRuntimeContext {
     sniffing: Option<InboundSniffingConfig>,
     inbound_policy: EffectivePolicy,
     config: Arc<CoreConfig>,
+    outbound_router: Arc<OutboundRouter>,
     dns_resolver: Arc<dyn DnsResolver>,
     transport_dialer: Arc<TransportDialer>,
     stack_tx: mpsc::Sender<StackEvent>,
@@ -1072,6 +1329,7 @@ struct TunRuntimeContext {
     tun_runtime_options: TunRuntimeOptions,
     runtime_policy: TunRuntimePolicy,
     tcp_pending_open_permits: Arc<Semaphore>,
+    udp_task_permits: Arc<Semaphore>,
     fake_ip_mapper: Option<Arc<Mutex<FakeIpMapper>>>,
     runtime_logger: RuntimeLogger,
 }
@@ -1154,7 +1412,17 @@ impl Drop for TcpBridgeCloseGuard {
 #[derive(Debug)]
 struct UdpFlow {
     to_remote: mpsc::Sender<Bytes>,
+    generation: u64,
     last_used_sequence: u64,
+    task: Option<AbortHandle>,
+}
+
+impl Drop for UdpFlow {
+    fn drop(&mut self) {
+        if let Some(task) = &self.task {
+            task.abort();
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -1223,6 +1491,7 @@ enum StackEvent {
     },
     UdpClosed {
         key: UdpFlowKey,
+        generation: u64,
     },
 }
 
@@ -1407,9 +1676,11 @@ fn drain_stack_events(
     udp_flows: &mut HashMap<UdpFlowKey, UdpFlow>,
     device: &mut PacketDevice,
     tun: Option<&TunEndpoint>,
-) {
+) -> bool {
+    let mut tcp_stack_dirty = false;
+
     while let Some(event) = delayed_stack_events.pop_front() {
-        if !apply_or_delay_stack_event(
+        let application = apply_or_delay_stack_event(
             event,
             delayed_stack_events,
             tcp_flows,
@@ -1417,13 +1688,15 @@ fn drain_stack_events(
             udp_flows,
             device,
             tun,
-        ) {
-            return;
+        );
+        tcp_stack_dirty |= application.tcp_stack_dirty;
+        if !application.continue_draining {
+            return tcp_stack_dirty;
         }
     }
 
     while let Ok(event) = stack_rx.try_recv() {
-        if !apply_or_delay_stack_event(
+        let application = apply_or_delay_stack_event(
             event,
             delayed_stack_events,
             tcp_flows,
@@ -1431,10 +1704,14 @@ fn drain_stack_events(
             udp_flows,
             device,
             tun,
-        ) {
-            return;
+        );
+        tcp_stack_dirty |= application.tcp_stack_dirty;
+        if !application.continue_draining {
+            return tcp_stack_dirty;
         }
     }
+
+    tcp_stack_dirty
 }
 
 fn apply_or_delay_stack_event(
@@ -1445,15 +1722,25 @@ fn apply_or_delay_stack_event(
     udp_flows: &mut HashMap<UdpFlowKey, UdpFlow>,
     device: &mut PacketDevice,
     tun: Option<&TunEndpoint>,
-) -> bool {
+) -> StackEventApplication {
+    let tcp_stack_dirty = !matches!(
+        &event,
+        StackEvent::UdpDatagram { .. } | StackEvent::UdpClosed { .. }
+    );
     match try_apply_stack_event(event, tcp_flows, flow_budget_state, udp_flows, device) {
-        Ok(()) => true,
+        Ok(()) => StackEventApplication {
+            continue_draining: true,
+            tcp_stack_dirty,
+        },
         Err(event) => {
             if let Some(tun) = tun {
                 tun.record_tcp_remote_to_stack_backpressure();
             }
             delayed_stack_events.push_front(event);
-            false
+            StackEventApplication {
+                continue_draining: false,
+                tcp_stack_dirty,
+            }
         }
     }
 }
@@ -1503,11 +1790,26 @@ fn try_apply_stack_event(
                 device.push_outbound(packet);
             }
         }
-        StackEvent::UdpClosed { key } => {
-            udp_flows.remove(&key);
+        StackEvent::UdpClosed { key, generation } => {
+            remove_udp_flow_generation(udp_flows, key, generation);
         }
     }
     Ok(())
+}
+
+fn remove_udp_flow_generation(
+    udp_flows: &mut HashMap<UdpFlowKey, UdpFlow>,
+    key: UdpFlowKey,
+    generation: u64,
+) -> bool {
+    if udp_flows
+        .get(&key)
+        .is_none_or(|flow| flow.generation != generation)
+    {
+        return false;
+    }
+    udp_flows.remove(&key);
+    true
 }
 
 fn record_flow_budget_stats(
@@ -1536,9 +1838,18 @@ fn record_flow_budget_stats(
         hard_limit_bytes: flow_budget_state.hard_total_bytes(),
         pressure_active: flow_budget_state.pressure_active(),
     });
+    record_flow_counts(tun, flow_budget_state, flows.len(), udp_flows.len());
+}
+
+fn record_flow_counts(
+    tun: &TunEndpoint,
+    flow_budget_state: &FlowBudgetState,
+    tcp_flows: usize,
+    udp_flows: usize,
+) {
     tun.record_flow_budget(
-        flows.len(),
-        udp_flows.len(),
+        tcp_flows,
+        udp_flows,
         flow_budget_state.udp_flow_limit(),
         flow_budget_state.udp_budget_drops(),
         flow_budget_state.udp_evicted_flows(),
@@ -1719,8 +2030,7 @@ async fn bridge_tcp_flow(
     let outbound_result = tokio::select! {
         biased;
         () = wait_for_tun_shutdown(&mut shutdown) => return,
-        result = select_tcp_outbound_for_session_with_tag_and_resolver(
-            &context.config,
+        result = context.outbound_router.select_tcp_outbound_for_session_with_tag_and_resolver(
             context.inbound_tag.as_deref(),
             &target,
             collect_tcp_timings,
@@ -1739,7 +2049,7 @@ async fn bridge_tcp_flow(
                 );
                 context.runtime_logger.error(|| {
                     format!(
-                        "Debug tcpOpenError target={} outbound=untagged error={error}",
+                        "Debug tcpOpenError target={} outbound=untagged error=<redacted>",
                         crate::debug_log::target_label(&target)
                     )
                 });
@@ -1774,9 +2084,11 @@ async fn bridge_tcp_flow(
         Ok(Ok(stream)) => stream,
         Ok(Err(error)) => {
             if context.runtime_logger.is_enabled() {
-                let outbound_label = outbound_tag
-                    .as_deref()
-                    .unwrap_or_else(|| crate::debug_log::tcp_outbound_label(&outbound));
+                let outbound_log_label = if outbound_tag.is_some() {
+                    "<configured>"
+                } else {
+                    "untagged"
+                };
                 crate::debug_log::log_access_rejected(
                     &context.runtime_logger,
                     "tun",
@@ -1785,7 +2097,7 @@ async fn bridge_tcp_flow(
                 );
                 context.runtime_logger.error(|| {
                     format!(
-                        "Debug tcpOpenError target={} outbound={outbound_label} error={error}",
+                        "Debug tcpOpenError target={} outbound={outbound_log_label} error=<redacted>",
                         crate::debug_log::target_label(&target)
                     )
                 });
@@ -1806,9 +2118,11 @@ async fn bridge_tcp_flow(
                 open_timeout.as_millis()
             );
             if context.runtime_logger.is_enabled() {
-                let outbound_label = outbound_tag
-                    .as_deref()
-                    .unwrap_or_else(|| crate::debug_log::tcp_outbound_label(&outbound));
+                let outbound_log_label = if outbound_tag.is_some() {
+                    "<configured>"
+                } else {
+                    "untagged"
+                };
                 crate::debug_log::log_access_rejected(
                     &context.runtime_logger,
                     "tun",
@@ -1817,7 +2131,7 @@ async fn bridge_tcp_flow(
                 );
                 context.runtime_logger.error(|| {
                     format!(
-                        "Debug tcpOpenError target={} outbound={outbound_label} error={error}",
+                        "Debug tcpOpenError target={} outbound={outbound_log_label} error=<redacted>",
                         crate::debug_log::target_label(&target)
                     )
                 });
@@ -1945,6 +2259,8 @@ async fn bridge_tcp_flow_loop<R, W, T>(
 {
     let mut read_buffer = vec![0; BRIDGE_READ_BUFFER_SIZE];
     let upload_policy = context.runtime_policy.tcp_upload;
+    let mut upload_batch = BytesMut::new();
+    let mut upload_reservations = Vec::with_capacity(upload_policy.max_batch_messages.min(64));
 
     loop {
         tokio::select! {
@@ -1965,6 +2281,8 @@ async fn bridge_tcp_flow_loop<R, W, T>(
                     &mut from_stack,
                     context.tun.as_ref(),
                     upload_policy,
+                    &mut upload_batch,
+                    &mut upload_reservations,
                 )
                 .await
                 .is_err()
@@ -2379,6 +2697,10 @@ impl UdpFirstResponseTiming for UdpFirstResponseTimingEnabled {
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "upload batching keeps reusable scratch state and diagnostics explicit"
+)]
 async fn write_stack_batch_to_remote<W>(
     remote_writer: &mut W,
     target: &Target,
@@ -2387,16 +2709,52 @@ async fn write_stack_batch_to_remote<W>(
     from_stack: &mut mpsc::Receiver<StackToRemoteData>,
     tun: &TunEndpoint,
     policy: TcpUploadBridgePolicy,
+    batch: &mut BytesMut,
+    reservations: &mut Vec<TcpUploadReservation>,
 ) -> std::io::Result<()>
 where
     W: AsyncWrite + Unpin,
 {
-    let mut batch_messages = 0usize;
-    let mut batch_bytes = 0usize;
-    let mut batch = BytesMut::with_capacity(first.len().min(policy.max_batch_bytes));
-    let mut reservations = Vec::new();
-    let mut next = Some(first);
+    batch.clear();
+    reservations.clear();
 
+    let can_batch_more = policy.max_batch_messages > 1 && first.len() < policy.max_batch_bytes;
+    let second = can_batch_more.then(|| from_stack.try_recv().ok()).flatten();
+
+    if second.is_none() {
+        let batch_bytes = first.len();
+        let write_start = StdInstant::now();
+        let write_result = remote_writer.write_all(&first.data).await;
+        let write_duration_ms = elapsed_ms_since(&write_start);
+        tun.record_tcp_remote_write_wait(write_duration_ms);
+        record_tcp_remote_write_slow_event(
+            tun,
+            target,
+            outbound_tag,
+            write_duration_ms,
+            batch_bytes,
+            1,
+        );
+        write_result?;
+        tun.record_tcp_remote_written(batch_bytes);
+        let flush_start = StdInstant::now();
+        let flush_result = remote_writer.flush().await;
+        tun.record_tcp_remote_flush_wait(elapsed_ms_since(&flush_start));
+        flush_result?;
+        tun.record_tcp_remote_write_batch(1, batch_bytes);
+        return Ok(());
+    }
+
+    let mut first = first;
+    let mut batch_messages = 1usize;
+    let mut batch_bytes = first.len();
+    batch.reserve(first.len().min(policy.max_batch_bytes));
+    batch.extend_from_slice(&first.data);
+    if let Some(reservation) = first.reservation.take() {
+        reservations.push(reservation);
+    }
+
+    let mut next = second;
     while let Some(mut item) = next {
         let data_len = item.data.len();
         batch.extend_from_slice(&item.data);
@@ -2404,7 +2762,7 @@ where
             reservations.push(reservation);
         }
 
-        batch_messages += 1;
+        batch_messages = batch_messages.saturating_add(1);
         batch_bytes = batch_bytes.saturating_add(data_len);
         if batch_messages >= policy.max_batch_messages || batch_bytes >= policy.max_batch_bytes {
             break;
@@ -2414,7 +2772,7 @@ where
     }
 
     let write_start = StdInstant::now();
-    let write_result = remote_writer.write_all(&batch).await;
+    let write_result = remote_writer.write_all(batch).await;
     let write_duration_ms = elapsed_ms_since(&write_start);
     tun.record_tcp_remote_write_wait(write_duration_ms);
     record_tcp_remote_write_slow_event(
@@ -2432,6 +2790,7 @@ where
     tun.record_tcp_remote_flush_wait(elapsed_ms_since(&flush_start));
     flush_result?;
     tun.record_tcp_remote_write_batch(batch_messages, batch_bytes);
+    reservations.clear();
     Ok(())
 }
 
@@ -2442,14 +2801,23 @@ fn handle_udp_packet(
     flow_budget_state: &mut FlowBudgetState,
     context: &TunRuntimeContext,
     shutdown: watch::Receiver<bool>,
-    bridge_tasks: &mut JoinSet<()>,
+    udp_tasks: &mut JoinSet<()>,
 ) {
     let key = UdpFlowKey::new(packet.client, packet.target);
 
     match flow_budget_state.admit_udp_flow(flows, key) {
         UdpFlowAdmission::Existing => {}
         UdpFlowAdmission::Admit { sequence } => {
+            if udp_tasks.len() >= context.runtime_policy.flows.udp.max_active_flows {
+                flow_budget_state.record_udp_budget_drop();
+                return;
+            }
             let Some(target) = context.target_from_endpoint(packet.target, RoutingNetwork::Udp)
+            else {
+                return;
+            };
+            let Some(task_permit) =
+                try_acquire_udp_task_permit(&context.udp_task_permits, flow_budget_state)
             else {
                 return;
             };
@@ -2458,22 +2826,26 @@ fn handle_udp_packet(
                 .collect_tcp_timings
                 .then(StdInstant::now);
             let (to_remote, from_stack) = mpsc::channel(UDP_BRIDGE_CHANNEL_DEPTH);
-            flows.insert(
+            let task = udp_tasks.spawn(bridge_udp_flow(
                 key,
-                UdpFlow {
-                    to_remote,
-                    last_used_sequence: sequence,
-                },
-            );
-            bridge_tasks.spawn(bridge_udp_flow(
-                key,
+                sequence,
                 target,
                 original_packet,
                 context.clone(),
                 from_stack,
                 shutdown,
                 udp_timing_start,
+                task_permit,
             ));
+            flows.insert(
+                key,
+                UdpFlow {
+                    to_remote,
+                    generation: sequence,
+                    last_used_sequence: sequence,
+                    task: Some(task),
+                },
+            );
         }
         UdpFlowAdmission::Drop => return,
     }
@@ -2486,31 +2858,54 @@ fn handle_udp_packet(
     }
 }
 
+fn try_acquire_udp_task_permit(
+    permits: &Arc<Semaphore>,
+    flow_budget_state: &mut FlowBudgetState,
+) -> Option<OwnedSemaphorePermit> {
+    match Arc::clone(permits).try_acquire_owned() {
+        Ok(permit) => Some(permit),
+        Err(_) => {
+            flow_budget_state.record_udp_budget_drop();
+            None
+        }
+    }
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "UDP bridge owns flow identity, cancellation, admission, and timing state"
+)]
 async fn bridge_udp_flow(
     key: UdpFlowKey,
+    generation: u64,
     target: Target,
     first_packet: Bytes,
     context: TunRuntimeContext,
     mut from_stack: mpsc::Receiver<Bytes>,
     mut shutdown: watch::Receiver<bool>,
     udp_timing_start: Option<StdInstant>,
+    _task_permit: OwnedSemaphorePermit,
 ) {
     let Some(first_payload) = read_first_tun_udp_payload(&mut from_stack, &mut shutdown).await
     else {
-        let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
+        let _ = context
+            .stack_tx
+            .send(StackEvent::UdpClosed { key, generation })
+            .await;
         return;
     };
     let sniffed_target = sniff_tun_udp_target(&context, &target, &first_payload);
     let sniffed_protocol = sniffed_target.sniffed_protocol;
     let route_target = sniffed_target.route_target;
     let dial_target = sniffed_target.dial_target;
-    let outbound = match select_udp_outbound_for_session_with_resolver(
-        &context.config,
-        context.inbound_tag.as_deref(),
-        &route_target,
-        context.dns_resolver.as_ref(),
-    )
-    .await
+    let outbound = match context
+        .outbound_router
+        .select_udp_outbound_for_session_with_resolver(
+            context.inbound_tag.as_deref(),
+            &route_target,
+            context.dns_resolver.as_ref(),
+        )
+        .await
     {
         Ok(outbound) => outbound,
         Err(_) => {
@@ -2523,7 +2918,10 @@ async fn bridge_udp_flow(
                 );
             }
             context.tun.record_udp_open_error();
-            let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
+            let _ = context
+                .stack_tx
+                .send(StackEvent::UdpClosed { key, generation })
+                .await;
             return;
         }
     };
@@ -2564,7 +2962,10 @@ async fn bridge_udp_flow(
                     });
                 }
                 context.tun.record_udp_vision_udp443_rejection();
-                let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
+                let _ = context
+                    .stack_tx
+                    .send(StackEvent::UdpClosed { key, generation })
+                    .await;
                 return;
             }
         }
@@ -2574,6 +2975,7 @@ async fn bridge_udp_flow(
         UdpOutbound::Freedom => {
             bridge_udp_freedom_flow(
                 key,
+                generation,
                 dial_target,
                 context,
                 from_stack,
@@ -2586,6 +2988,7 @@ async fn bridge_udp_flow(
         UdpOutbound::Vless(outbound) => {
             bridge_udp_vless_flow(
                 key,
+                generation,
                 dial_target,
                 outbound,
                 context,
@@ -2658,8 +3061,13 @@ fn sniff_tun_udp_target(
     TunUdpSniffedTarget::sniffed(sniffed)
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "UDP freedom bridge receives bounded per-flow runtime state explicitly"
+)]
 async fn bridge_udp_freedom_flow(
     key: UdpFlowKey,
+    generation: u64,
     target: Target,
     context: TunRuntimeContext,
     from_stack: mpsc::Receiver<Bytes>,
@@ -2683,7 +3091,10 @@ async fn bridge_udp_freedom_flow(
                 );
             }
             context.tun.record_udp_open_error();
-            let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
+            let _ = context
+                .stack_tx
+                .send(StackEvent::UdpClosed { key, generation })
+                .await;
             return;
         }
     };
@@ -2697,7 +3108,10 @@ async fn bridge_udp_freedom_flow(
             );
         }
         context.tun.record_udp_open_error();
-        let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
+        let _ = context
+            .stack_tx
+            .send(StackEvent::UdpClosed { key, generation })
+            .await;
         return;
     }
     let target_addr = match resolve_udp_freedom_target(&target, context.dns_resolver.as_ref()).await
@@ -2713,7 +3127,10 @@ async fn bridge_udp_freedom_flow(
                 );
             }
             context.tun.record_udp_open_error();
-            let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
+            let _ = context
+                .stack_tx
+                .send(StackEvent::UdpClosed { key, generation })
+                .await;
             return;
         }
     };
@@ -2725,6 +3142,7 @@ async fn bridge_udp_freedom_flow(
         let mut timing = UdpFirstResponseTimingEnabled::new(start);
         bridge_udp_freedom_flow_loop(
             key,
+            generation,
             target,
             target_addr,
             socket,
@@ -2739,6 +3157,7 @@ async fn bridge_udp_freedom_flow(
         let mut timing = UdpFirstResponseTimingDisabled;
         bridge_udp_freedom_flow_loop(
             key,
+            generation,
             target,
             target_addr,
             socket,
@@ -2755,6 +3174,7 @@ async fn bridge_udp_freedom_flow(
 #[allow(clippy::too_many_arguments)]
 async fn bridge_udp_freedom_flow_loop<T>(
     key: UdpFlowKey,
+    generation: u64,
     target: Target,
     target_addr: SocketAddr,
     socket: UdpSocket,
@@ -2772,7 +3192,10 @@ async fn bridge_udp_freedom_flow_loop<T>(
     let first_payload_len = first_payload.len();
     if socket.send_to(&first_payload, target_addr).await.is_err() {
         context.tun.record_udp_remote_write_error();
-        let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
+        let _ = context
+            .stack_tx
+            .send(StackEvent::UdpClosed { key, generation })
+            .await;
         return;
     }
     context.tun.record_udp_remote_written(first_payload_len);
@@ -2823,7 +3246,10 @@ async fn bridge_udp_freedom_flow_loop<T>(
         }
     }
 
-    let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
+    let _ = context
+        .stack_tx
+        .send(StackEvent::UdpClosed { key, generation })
+        .await;
 }
 
 async fn resolve_udp_freedom_target(
@@ -2842,6 +3268,7 @@ async fn resolve_udp_freedom_target(
 )]
 async fn bridge_udp_vless_flow(
     key: UdpFlowKey,
+    generation: u64,
     target: Target,
     outbound: Box<VlessTcpOutbound>,
     context: TunRuntimeContext,
@@ -2875,7 +3302,7 @@ async fn bridge_udp_vless_flow(
                 );
                 context.runtime_logger.error(|| {
                     format!(
-                        "Debug udpOpenError target={} outbound=vless error={error}",
+                        "Debug udpOpenError target={} outbound=vless error=<redacted>",
                         crate::debug_log::target_label(&target)
                     )
                 });
@@ -2884,7 +3311,10 @@ async fn bridge_udp_vless_flow(
             if matches!(error, crate::CoreError::VisionUdp443Rejected) {
                 context.tun.record_udp_vision_udp443_rejection();
             }
-            let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
+            let _ = context
+                .stack_tx
+                .send(StackEvent::UdpClosed { key, generation })
+                .await;
             return;
         }
     };
@@ -2898,6 +3328,7 @@ async fn bridge_udp_vless_flow(
         let mut timing = UdpFirstResponseTimingEnabled::new(start);
         bridge_udp_vless_flow_loop(
             key,
+            generation,
             target,
             context,
             from_stack,
@@ -2913,6 +3344,7 @@ async fn bridge_udp_vless_flow(
         let mut timing = UdpFirstResponseTimingDisabled;
         bridge_udp_vless_flow_loop(
             key,
+            generation,
             target,
             context,
             from_stack,
@@ -2930,6 +3362,7 @@ async fn bridge_udp_vless_flow(
 #[allow(clippy::too_many_arguments)]
 async fn bridge_udp_vless_flow_loop<R, W, T>(
     key: UdpFlowKey,
+    generation: u64,
     target: Target,
     context: TunRuntimeContext,
     mut from_stack: mpsc::Receiver<Bytes>,
@@ -2957,17 +3390,26 @@ async fn bridge_udp_vless_flow_loop<R, W, T>(
         }
     };
     let Ok(frame) = frame else {
-        let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
+        let _ = context
+            .stack_tx
+            .send(StackEvent::UdpClosed { key, generation })
+            .await;
         return;
     };
     if remote_writer.write_all(&frame).await.is_err() {
         context.tun.record_udp_remote_write_error();
-        let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
+        let _ = context
+            .stack_tx
+            .send(StackEvent::UdpClosed { key, generation })
+            .await;
         return;
     }
     if remote_writer.flush().await.is_err() {
         context.tun.record_udp_remote_write_error();
-        let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
+        let _ = context
+            .stack_tx
+            .send(StackEvent::UdpClosed { key, generation })
+            .await;
         return;
     }
     context.tun.record_udp_remote_written(first_payload_len);
@@ -3043,7 +3485,10 @@ async fn bridge_udp_vless_flow_loop<R, W, T>(
         }
     }
 
-    let _ = context.stack_tx.send(StackEvent::UdpClosed { key }).await;
+    let _ = context
+        .stack_tx
+        .send(StackEvent::UdpClosed { key, generation })
+        .await;
 }
 
 fn admit_tcp_listener(
@@ -3112,7 +3557,7 @@ fn record_tcp_admission_rejection(
         crate::debug_log::log_access_rejected(&context.runtime_logger, "tun", &target, reason);
         context.runtime_logger.error(|| {
             format!(
-                "Debug tcpOpenError target={} outbound=unselected error={reason}",
+                "Debug tcpOpenError target={} outbound=unselected error=<redacted>",
                 crate::debug_log::target_label(&target)
             )
         });
@@ -3120,12 +3565,12 @@ fn record_tcp_admission_rejection(
 }
 
 #[cfg(test)]
-fn ipv4_udp_payload_for_destination(packet: &[u8], destination_port: u16) -> Option<Bytes> {
+fn ipv4_udp_payload_for_destination(packet: &Bytes, destination_port: u16) -> Option<Bytes> {
     let parsed = parse_ipv4_udp_packet(packet)?;
     (parsed.target.port == destination_port).then_some(parsed.payload)
 }
 
-fn parse_udp_packet(packet: &[u8]) -> Option<UdpTunPacket> {
+fn parse_udp_packet(packet: &Bytes) -> Option<UdpTunPacket> {
     match packet.first()? >> 4 {
         4 => parse_ipv4_udp_packet(packet),
         6 => parse_ipv6_udp_packet(packet),
@@ -3133,34 +3578,35 @@ fn parse_udp_packet(packet: &[u8]) -> Option<UdpTunPacket> {
     }
 }
 
-fn parse_ipv4_udp_packet(packet: &[u8]) -> Option<UdpTunPacket> {
-    if packet.len() < 28 {
+fn parse_ipv4_udp_packet(packet: &Bytes) -> Option<UdpTunPacket> {
+    let bytes = packet.as_ref();
+    if bytes.len() < 28 {
         return None;
     }
 
-    let header_len = usize::from(packet[0] & 0x0f) * 4;
-    if header_len < 20 || packet.len() < header_len + 8 || packet[9] != UDP_PROTOCOL {
+    let header_len = usize::from(bytes[0] & 0x0f) * 4;
+    if header_len < 20 || bytes.len() < header_len + 8 || bytes[9] != UDP_PROTOCOL {
         return None;
     }
 
-    let fragment = u16::from_be_bytes([packet[6], packet[7]]);
+    let fragment = u16::from_be_bytes([bytes[6], bytes[7]]);
     if fragment & 0x3fff != 0 {
         return None;
     }
 
-    let total_len = usize::from(u16::from_be_bytes([packet[2], packet[3]]));
-    if total_len < header_len + 8 || packet.len() < total_len {
+    let total_len = usize::from(u16::from_be_bytes([bytes[2], bytes[3]]));
+    if total_len < header_len + 8 || bytes.len() < total_len {
         return None;
     }
 
-    let udp = &packet[header_len..total_len];
+    let udp = &bytes[header_len..total_len];
     let udp_len = usize::from(u16::from_be_bytes([udp[4], udp[5]]));
     if udp_len < 8 || udp.len() < udp_len {
         return None;
     }
 
-    let source = Ipv4Addr::new(packet[12], packet[13], packet[14], packet[15]);
-    let destination = Ipv4Addr::new(packet[16], packet[17], packet[18], packet[19]);
+    let source = Ipv4Addr::new(bytes[12], bytes[13], bytes[14], bytes[15]);
+    let destination = Ipv4Addr::new(bytes[16], bytes[17], bytes[18], bytes[19]);
     let checksum = u16::from_be_bytes([udp[6], udp[7]]);
     if checksum != 0 && ipv4_udp_checksum(source, destination, &udp[..udp_len]) != 0 {
         return None;
@@ -3175,23 +3621,24 @@ fn parse_ipv4_udp_packet(packet: &[u8]) -> Option<UdpTunPacket> {
             IpAddress::Ipv4(destination),
             u16::from_be_bytes([udp[2], udp[3]]),
         ),
-        payload: Bytes::copy_from_slice(&udp[8..udp_len]),
+        payload: packet.slice(header_len + 8..header_len + udp_len),
     })
 }
 
-fn parse_ipv6_udp_packet(packet: &[u8]) -> Option<UdpTunPacket> {
-    if packet.len() < 48 || packet[6] != UDP_PROTOCOL {
+fn parse_ipv6_udp_packet(packet: &Bytes) -> Option<UdpTunPacket> {
+    let bytes = packet.as_ref();
+    if bytes.len() < 48 || bytes[6] != UDP_PROTOCOL {
         return None;
     }
 
-    let payload_len = usize::from(u16::from_be_bytes([packet[4], packet[5]]));
-    if payload_len < 8 || packet.len() < 40 + payload_len {
+    let payload_len = usize::from(u16::from_be_bytes([bytes[4], bytes[5]]));
+    if payload_len < 8 || bytes.len() < 40 + payload_len {
         return None;
     }
 
-    let source = <[u8; 16]>::try_from(&packet[8..24]).ok()?;
-    let destination = <[u8; 16]>::try_from(&packet[24..40]).ok()?;
-    let udp = &packet[40..40 + payload_len];
+    let source = <[u8; 16]>::try_from(&bytes[8..24]).ok()?;
+    let destination = <[u8; 16]>::try_from(&bytes[24..40]).ok()?;
+    let udp = &bytes[40..40 + payload_len];
     let udp_len = usize::from(u16::from_be_bytes([udp[4], udp[5]]));
     if udp_len < 8 || udp.len() < udp_len {
         return None;
@@ -3209,30 +3656,26 @@ fn parse_ipv6_udp_packet(packet: &[u8]) -> Option<UdpTunPacket> {
             IpAddress::Ipv6(Ipv6Addr::from(destination)),
             u16::from_be_bytes([udp[2], udp[3]]),
         ),
-        payload: Bytes::copy_from_slice(&udp[8..udp_len]),
+        payload: packet.slice(48..40 + udp_len),
     })
 }
 
 fn build_udp_packet(source: IpEndpoint, destination: IpEndpoint, payload: &[u8]) -> Option<Bytes> {
     match (source.addr, destination.addr) {
-        (IpAddress::Ipv4(source_addr), IpAddress::Ipv4(destination_addr)) => {
-            Some(Bytes::from(build_ipv4_udp_packet(
-                source_addr,
-                source.port,
-                destination_addr,
-                destination.port,
-                payload,
-            )?))
-        }
-        (IpAddress::Ipv6(source_addr), IpAddress::Ipv6(destination_addr)) => {
-            Some(Bytes::from(build_ipv6_udp_packet(
-                source_addr,
-                source.port,
-                destination_addr,
-                destination.port,
-                payload,
-            )?))
-        }
+        (IpAddress::Ipv4(source_addr), IpAddress::Ipv4(destination_addr)) => build_ipv4_udp_packet(
+            source_addr,
+            source.port,
+            destination_addr,
+            destination.port,
+            payload,
+        ),
+        (IpAddress::Ipv6(source_addr), IpAddress::Ipv6(destination_addr)) => build_ipv6_udp_packet(
+            source_addr,
+            source.port,
+            destination_addr,
+            destination.port,
+            payload,
+        ),
         _ => None,
     }
 }
@@ -3276,7 +3719,7 @@ fn build_ipv4_udp_packet(
     destination: Ipv4Addr,
     destination_port: u16,
     payload: &[u8],
-) -> Option<Vec<u8>> {
+) -> Option<Bytes> {
     let udp_len = 8usize.checked_add(payload.len())?;
     let total_len = 20usize.checked_add(udp_len)?;
     let total_len = u16::try_from(total_len).ok()?;
@@ -3300,7 +3743,7 @@ fn build_ipv4_udp_packet(
     let checksum = nonzero_udp_checksum(ipv4_udp_checksum(source, destination, udp));
     udp[6..8].copy_from_slice(&checksum.to_be_bytes());
 
-    Some(packet)
+    Some(Bytes::from(packet))
 }
 
 fn build_ipv6_udp_packet(
@@ -3309,7 +3752,7 @@ fn build_ipv6_udp_packet(
     destination: Ipv6Addr,
     destination_port: u16,
     payload: &[u8],
-) -> Option<Vec<u8>> {
+) -> Option<Bytes> {
     let udp_len = 8usize.checked_add(payload.len())?;
     let udp_len_u16 = u16::try_from(udp_len).ok()?;
     let mut packet = vec![0; 40 + udp_len];
@@ -3325,11 +3768,15 @@ fn build_ipv6_udp_packet(
     udp[2..4].copy_from_slice(&destination_port.to_be_bytes());
     udp[4..6].copy_from_slice(&udp_len_u16.to_be_bytes());
     udp[8..].copy_from_slice(payload);
-    let checksum =
-        ipv6_transport_checksum(source.octets(), destination.octets(), UDP_PROTOCOL, udp);
+    let checksum = nonzero_udp_checksum(ipv6_transport_checksum(
+        source.octets(),
+        destination.octets(),
+        UDP_PROTOCOL,
+        udp,
+    ));
     udp[6..8].copy_from_slice(&checksum.to_be_bytes());
 
-    Some(packet)
+    Some(Bytes::from(packet))
 }
 
 fn tcp_syn_destination(packet: &[u8]) -> Option<IpEndpoint> {
@@ -3583,13 +4030,34 @@ fn ipv6_icmp_port_unreachable_reply(packet: &[u8]) -> Option<Bytes> {
 }
 
 fn internet_checksum(data: &[u8]) -> u16 {
-    let mut sum = 0u32;
-    let mut chunks = data.chunks_exact(2);
-    for chunk in &mut chunks {
-        sum += u32::from(u16::from_be_bytes([chunk[0], chunk[1]]));
+    internet_checksum_slices([data])
+}
+
+fn internet_checksum_slices<'a>(parts: impl IntoIterator<Item = &'a [u8]>) -> u16 {
+    let mut sum = 0u64;
+    let mut odd_byte = None;
+
+    for mut part in parts {
+        if let Some(high) = odd_byte.take() {
+            let Some((&low, rest)) = part.split_first() else {
+                odd_byte = Some(high);
+                continue;
+            };
+            sum += u64::from(u16::from_be_bytes([high, low]));
+            part = rest;
+        }
+
+        let mut chunks = part.chunks_exact(2);
+        for chunk in &mut chunks {
+            sum += u64::from(u16::from_be_bytes([chunk[0], chunk[1]]));
+        }
+        if let Some(&byte) = chunks.remainder().first() {
+            odd_byte = Some(byte);
+        }
     }
-    if let Some(&byte) = chunks.remainder().first() {
-        sum += u32::from(byte) << 8;
+
+    if let Some(byte) = odd_byte {
+        sum += u64::from(byte) << 8;
     }
     while sum >> 16 != 0 {
         sum = (sum & 0xffff) + (sum >> 16);
@@ -3598,13 +4066,17 @@ fn internet_checksum(data: &[u8]) -> u16 {
 }
 
 fn ipv4_udp_checksum(source: Ipv4Addr, destination: Ipv4Addr, udp: &[u8]) -> u16 {
-    let mut pseudo = Vec::with_capacity(12 + udp.len());
-    pseudo.extend_from_slice(&source.octets());
-    pseudo.extend_from_slice(&destination.octets());
-    pseudo.extend_from_slice(&[0, UDP_PROTOCOL]);
-    pseudo.extend_from_slice(&(udp.len() as u16).to_be_bytes());
-    pseudo.extend_from_slice(udp);
-    internet_checksum(&pseudo)
+    let source = source.octets();
+    let destination = destination.octets();
+    let protocol = [0, UDP_PROTOCOL];
+    let udp_len = (udp.len() as u16).to_be_bytes();
+    internet_checksum_slices([
+        source.as_slice(),
+        destination.as_slice(),
+        protocol.as_slice(),
+        udp_len.as_slice(),
+        udp,
+    ])
 }
 
 fn nonzero_udp_checksum(checksum: u16) -> u16 {
@@ -3651,13 +4123,15 @@ fn ipv6_transport_checksum(
     next_header: u8,
     payload: &[u8],
 ) -> u16 {
-    let mut pseudo = Vec::with_capacity(40 + payload.len());
-    pseudo.extend_from_slice(&source);
-    pseudo.extend_from_slice(&destination);
-    pseudo.extend_from_slice(&(payload.len() as u32).to_be_bytes());
-    pseudo.extend_from_slice(&[0, 0, 0, next_header]);
-    pseudo.extend_from_slice(payload);
-    internet_checksum(&pseudo)
+    let payload_len = (payload.len() as u32).to_be_bytes();
+    let protocol = [0, 0, 0, next_header];
+    internet_checksum_slices([
+        source.as_slice(),
+        destination.as_slice(),
+        payload_len.as_slice(),
+        protocol.as_slice(),
+        payload,
+    ])
 }
 
 #[derive(Debug)]
@@ -3682,6 +4156,14 @@ impl PacketDevice {
 
     pub(crate) fn push_outbound(&mut self, packet: Bytes) {
         self.outbound.push_back(packet);
+    }
+
+    fn front_outbound(&self) -> Option<&Bytes> {
+        self.outbound.front()
+    }
+
+    fn has_pending_outbound(&self) -> bool {
+        !self.outbound.is_empty()
     }
 
     pub(crate) fn pop_outbound(&mut self) -> Option<Bytes> {
@@ -4205,6 +4687,8 @@ mod tests {
             queue_depth: 1,
         });
         let target = test_tcp443_target();
+        let mut batch = BytesMut::new();
+        let mut reservations = Vec::new();
 
         write_stack_batch_to_remote(
             &mut writer,
@@ -4214,6 +4698,8 @@ mod tests {
             &mut rx,
             &tun,
             DEFAULT_TCP_UPLOAD_BRIDGE_POLICY,
+            &mut batch,
+            &mut reservations,
         )
         .await
         .unwrap();
@@ -4235,6 +4721,70 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn stack_to_remote_single_chunk_avoids_batch_copy_buffer() {
+        let (_tx, mut rx) = mpsc::channel(1);
+        let mut writer = CountingWrite::default();
+        let tun = TunEndpoint::new(xray_tun::TunConfig {
+            mtu: 1500,
+            queue_depth: 1,
+        });
+        let target = test_tcp443_target();
+        let mut batch = BytesMut::new();
+        let mut reservations = Vec::new();
+
+        write_stack_batch_to_remote(
+            &mut writer,
+            &target,
+            Some("proxy"),
+            stack_to_remote_data(Bytes::from_static(b"one")),
+            &mut rx,
+            &tun,
+            DEFAULT_TCP_UPLOAD_BRIDGE_POLICY,
+            &mut batch,
+            &mut reservations,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(batch.capacity(), 0);
+    }
+
+    #[tokio::test]
+    async fn stack_to_remote_batch_reuses_copy_buffer() {
+        let mut writer = CountingWrite::default();
+        let tun = TunEndpoint::new(xray_tun::TunConfig {
+            mtu: 1500,
+            queue_depth: 1,
+        });
+        let target = test_tcp443_target();
+        let mut batch = BytesMut::new();
+        let mut reservations = Vec::new();
+        let mut allocated_capacity = None;
+
+        for _ in 0..2 {
+            let (tx, mut rx) = mpsc::channel(1);
+            tx.try_send(stack_to_remote_data(Bytes::from_static(b"two")))
+                .unwrap();
+            write_stack_batch_to_remote(
+                &mut writer,
+                &target,
+                Some("proxy"),
+                stack_to_remote_data(Bytes::from_static(b"one")),
+                &mut rx,
+                &tun,
+                DEFAULT_TCP_UPLOAD_BRIDGE_POLICY,
+                &mut batch,
+                &mut reservations,
+            )
+            .await
+            .unwrap();
+            allocated_capacity.get_or_insert(batch.capacity());
+        }
+
+        assert_eq!(Some(batch.capacity()), allocated_capacity);
+    }
+
+    #[tokio::test]
     async fn stack_to_remote_write_batch_uses_low_memory_upload_byte_limit() {
         let chunk = Bytes::from_static(&[0x5a; 16 * 1024]);
         let policy = tun_runtime_policy_for_options(TunRuntimeOptions::with_profile(
@@ -4251,6 +4801,8 @@ mod tests {
             queue_depth: 1,
         });
         let target = test_tcp443_target();
+        let mut batch = BytesMut::new();
+        let mut reservations = Vec::new();
 
         write_stack_batch_to_remote(
             &mut writer,
@@ -4260,6 +4812,8 @@ mod tests {
             &mut rx,
             &tun,
             policy,
+            &mut batch,
+            &mut reservations,
         )
         .await
         .unwrap();
@@ -4284,6 +4838,8 @@ mod tests {
             queue_depth: 1,
         });
         let target = test_tcp443_target();
+        let mut batch = BytesMut::new();
+        let mut reservations = Vec::new();
 
         write_stack_batch_to_remote(
             &mut writer,
@@ -4293,6 +4849,8 @@ mod tests {
             &mut rx,
             &tun,
             DEFAULT_TCP_UPLOAD_BRIDGE_POLICY,
+            &mut batch,
+            &mut reservations,
         )
         .await
         .unwrap();
@@ -4324,6 +4882,8 @@ mod tests {
             queue_depth: 1,
         });
         let target = test_tcp443_target();
+        let mut batch = BytesMut::new();
+        let mut reservations = Vec::new();
 
         write_stack_batch_to_remote(
             &mut writer,
@@ -4333,6 +4893,8 @@ mod tests {
             &mut rx,
             &tun,
             DEFAULT_TCP_UPLOAD_BRIDGE_POLICY,
+            &mut batch,
+            &mut reservations,
         )
         .await
         .unwrap();
@@ -4357,6 +4919,8 @@ mod tests {
             queue_depth: 1,
         });
         let target = test_tcp443_target();
+        let mut batch = BytesMut::new();
+        let mut reservations = Vec::new();
 
         write_stack_batch_to_remote(
             &mut writer,
@@ -4366,6 +4930,8 @@ mod tests {
             &mut rx,
             &tun,
             DEFAULT_TCP_UPLOAD_BRIDGE_POLICY,
+            &mut batch,
+            &mut reservations,
         )
         .await
         .unwrap();
@@ -4538,9 +5104,173 @@ mod tests {
             key,
             UdpFlow {
                 to_remote,
+                generation: last_used_sequence,
                 last_used_sequence,
+                task: None,
             },
         );
+    }
+
+    #[test]
+    fn idle_wait_plan_defers_stack_drive_until_smoltcp_deadline() {
+        let now = Instant::from_millis(1_000);
+
+        let plan = tun_wait_plan(None, now, TUN_FLOW_STATS_INTERVAL, false, false);
+
+        assert_eq!(
+            plan,
+            TunWaitPlan {
+                duration: TUN_FLOW_STATS_INTERVAL,
+                drive_tcp_stack_on_expiry: false,
+            }
+        );
+    }
+
+    #[test]
+    fn smoltcp_deadline_schedules_stack_drive_without_fixed_polling() {
+        let now = Instant::from_millis(1_000);
+
+        let plan = tun_wait_plan(
+            Some(Instant::from_millis(1_010)),
+            now,
+            TUN_FLOW_STATS_INTERVAL,
+            false,
+            false,
+        );
+
+        assert_eq!(
+            plan,
+            TunWaitPlan {
+                duration: Duration::from_millis(10),
+                drive_tcp_stack_on_expiry: true,
+            }
+        );
+    }
+
+    #[test]
+    fn outbound_backpressure_defers_tcp_drive_until_queued_packets_are_flushed() {
+        let now = Instant::from_millis(1_000);
+
+        let plan = tun_wait_plan(
+            Some(Instant::from_millis(0)),
+            now,
+            TUN_FLOW_STATS_INTERVAL,
+            false,
+            true,
+        );
+
+        assert_eq!(
+            plan,
+            TunWaitPlan {
+                duration: TUN_BACKPRESSURE_RETRY_INTERVAL,
+                drive_tcp_stack_on_expiry: false,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn outbound_backpressure_preserves_packet_order_for_retry() {
+        let tun = TunEndpoint::new(xray_tun::TunConfig {
+            mtu: 1500,
+            queue_depth: 1,
+        });
+        let filler = Bytes::from_static(b"filler");
+        let first = Bytes::from_static(b"first");
+        let second = Bytes::from_static(b"second");
+        tun.push_outbound(filler.clone()).await.unwrap();
+        let mut device = PacketDevice::new(1500);
+        device.push_outbound(first.clone());
+        device.push_outbound(second.clone());
+
+        assert_eq!(
+            flush_tun_outbound(&tun, &mut device).await,
+            TunOutboundFlush::Backpressured
+        );
+        assert_eq!(device.front_outbound(), Some(&first));
+        assert_eq!(tun.poll_outbound().await.unwrap(), filler);
+
+        assert_eq!(
+            flush_tun_outbound(&tun, &mut device).await,
+            TunOutboundFlush::Backpressured
+        );
+        assert_eq!(device.front_outbound(), Some(&second));
+        assert_eq!(tun.poll_outbound().await.unwrap(), first);
+
+        assert_eq!(
+            flush_tun_outbound(&tun, &mut device).await,
+            TunOutboundFlush::Complete
+        );
+        assert!(!device.has_pending_outbound());
+        assert_eq!(tun.poll_outbound().await.unwrap(), second);
+    }
+
+    #[tokio::test]
+    async fn completed_bridge_task_drain_is_bounded_per_tick() {
+        let mut tasks = JoinSet::new();
+        let completed = Arc::new(AtomicUsize::new(0));
+        let task_count = MAX_BRIDGE_TASK_COMPLETIONS_PER_TICK + 3;
+        for _ in 0..task_count {
+            let completed = Arc::clone(&completed);
+            tasks.spawn(async move {
+                completed.fetch_add(1, Ordering::Release);
+            });
+        }
+        while completed.load(Ordering::Acquire) < task_count {
+            tokio::task::yield_now().await;
+        }
+
+        let drained = drain_completed_bridge_tasks(&mut tasks, &RuntimeLogger::disabled());
+
+        assert_eq!(drained, MAX_BRIDGE_TASK_COMPLETIONS_PER_TICK);
+    }
+
+    #[tokio::test]
+    async fn udp_flow_eviction_aborts_owned_bridge_task() {
+        let mut tasks = JoinSet::<()>::new();
+        let task = tasks.spawn(std::future::pending::<()>());
+        let oldest_key = test_udp_key(1);
+        let mut flows = HashMap::new();
+        let (to_remote, _from_stack) = mpsc::channel(1);
+        flows.insert(
+            oldest_key,
+            UdpFlow {
+                to_remote,
+                generation: 1,
+                last_used_sequence: 1,
+                task: Some(task),
+            },
+        );
+        let mut budget = test_flow_budget(1);
+
+        let _ = budget.admit_udp_flow(&mut flows, test_udp_key(2));
+        let joined = tokio::time::timeout(Duration::from_secs(1), tasks.join_next())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert!(joined.unwrap_err().is_cancelled());
+    }
+
+    #[test]
+    fn udp_task_permit_caps_pending_and_active_bridges() {
+        let permits = Arc::new(Semaphore::new(1));
+        let mut budget = test_flow_budget(1);
+        let _first = try_acquire_udp_task_permit(&permits, &mut budget).unwrap();
+
+        let second = try_acquire_udp_task_permit(&permits, &mut budget);
+
+        assert!(second.is_none() && budget.udp_budget_drops() == 1);
+    }
+
+    #[test]
+    fn stale_udp_close_does_not_remove_replacement_generation() {
+        let key = test_udp_key(1);
+        let mut flows = HashMap::new();
+        insert_udp_flow(&mut flows, key, 2);
+
+        let removed = remove_udp_flow_generation(&mut flows, key, 1);
+
+        assert!(!removed && flows.contains_key(&key));
     }
 
     #[test]
@@ -5222,6 +5952,50 @@ mod tests {
                 .and_then(dns_response_answer_ipv4),
             Some(Ipv4Addr::new(198, 18, 0, 1))
         );
+    }
+
+    #[test]
+    fn ipv4_udp_parser_borrows_payload_from_packet_storage() {
+        let packet = build_ipv4_udp_packet(
+            Ipv4Addr::new(10, 0, 0, 2),
+            40_000,
+            Ipv4Addr::new(203, 0, 113, 2),
+            443,
+            b"payload",
+        )
+        .unwrap();
+        let payload_ptr = packet[28..].as_ptr();
+
+        let parsed = parse_udp_packet(&packet).unwrap();
+
+        assert_eq!(parsed.payload.as_ptr(), payload_ptr);
+    }
+
+    #[test]
+    fn ipv6_udp_parser_borrows_payload_from_packet_storage() {
+        let packet = build_ipv6_udp_packet(
+            Ipv6Addr::LOCALHOST,
+            40_000,
+            "2001:db8::1".parse().unwrap(),
+            443,
+            b"payload",
+        )
+        .unwrap();
+        let payload_ptr = packet[48..].as_ptr();
+
+        let parsed = parse_udp_packet(&packet).unwrap();
+
+        assert_eq!(parsed.payload.as_ptr(), payload_ptr);
+    }
+
+    #[test]
+    fn incremental_checksum_matches_known_value_across_odd_slices() {
+        let packet = [0x00, 0x01, 0xf2, 0x03, 0xf4, 0xf5, 0xf6, 0xf7];
+
+        let checksum =
+            internet_checksum_slices([&packet[..1], &packet[1..4], &packet[4..7], &packet[7..]]);
+
+        assert_eq!(checksum, 0x220d);
     }
 
     fn build_dns_a_query(id: u16, domain: &str) -> Vec<u8> {

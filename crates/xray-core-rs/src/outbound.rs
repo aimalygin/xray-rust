@@ -1,6 +1,8 @@
+use std::collections::HashMap;
 use std::io;
 use std::net::IpAddr;
 use std::pin::Pin;
+use std::sync::{Arc, OnceLock};
 use std::task::{Context, Poll};
 
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
@@ -222,6 +224,11 @@ impl TransportStream for VisionOutboundStream {
 
 #[derive(Debug, Clone)]
 pub struct VlessTcpOutbound {
+    payload: Arc<VlessTcpOutboundPayload>,
+}
+
+#[derive(Debug)]
+struct VlessTcpOutboundPayload {
     server: Target,
     user: VlessUser,
     transport: ConnectorConfig,
@@ -253,24 +260,312 @@ pub enum VlessUdpFraming {
 
 impl VlessTcpOutbound {
     pub fn server(&self) -> &Target {
-        &self.server
+        &self.payload.server
     }
 
     pub fn transport(&self) -> &ConnectorConfig {
-        &self.transport
+        &self.payload.transport
     }
 
     pub fn user(&self) -> &VlessUser {
-        &self.user
+        &self.payload.user
     }
 
     /// True for the regular `xtls-rprx-vision` flow, which (matching upstream
     /// xray-core) cannot carry UDP/443 and must refuse it so QUIC apps fall back
     /// to TCP. The `xtls-rprx-vision-udp443` variant returns false.
     pub(crate) fn blocks_udp443(&self) -> bool {
-        validate_connector_flow(self.user.flow.as_deref(), &self.transport)
+        validate_connector_flow(self.user().flow.as_deref(), self.transport())
             .map(|flow| flow.uses_vision() && !flow.allows_udp443())
             .unwrap_or(false)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CachedOutboundError {
+    NoSupportedOutbound,
+    UnsupportedOutboundNetwork,
+    UnsupportedOutboundSecurity,
+    UnsupportedOutboundServerAddress,
+    UnsupportedOutboundFlow,
+}
+
+impl CachedOutboundError {
+    fn from_core_error(error: CoreError) -> Self {
+        match error {
+            CoreError::NoSupportedOutbound => Self::NoSupportedOutbound,
+            CoreError::UnsupportedOutboundNetwork => Self::UnsupportedOutboundNetwork,
+            CoreError::UnsupportedOutboundSecurity => Self::UnsupportedOutboundSecurity,
+            CoreError::UnsupportedOutboundServerAddress => Self::UnsupportedOutboundServerAddress,
+            CoreError::UnsupportedOutboundFlow => Self::UnsupportedOutboundFlow,
+            other => unreachable!("outbound compilation returned non-cacheable error: {other}"),
+        }
+    }
+
+    fn into_core_error(self) -> CoreError {
+        match self {
+            Self::NoSupportedOutbound => CoreError::NoSupportedOutbound,
+            Self::UnsupportedOutboundNetwork => CoreError::UnsupportedOutboundNetwork,
+            Self::UnsupportedOutboundSecurity => CoreError::UnsupportedOutboundSecurity,
+            Self::UnsupportedOutboundServerAddress => CoreError::UnsupportedOutboundServerAddress,
+            Self::UnsupportedOutboundFlow => CoreError::UnsupportedOutboundFlow,
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct CachedOutboundEntry {
+    tcp: OnceLock<Result<TcpOutbound, CachedOutboundError>>,
+    udp: OnceLock<Result<UdpOutbound, CachedOutboundError>>,
+    vless: OnceLock<Result<VlessTcpOutbound, CachedOutboundError>>,
+}
+
+/// Persistent outbound selector and lazy compiler for one immutable core config.
+///
+/// Routing-rule order remains authoritative, duplicate outbound tags resolve to
+/// their first configured entry, and invalid outbounds are compiled only when
+/// selected.
+#[derive(Debug)]
+pub struct OutboundRouter {
+    config: Arc<CoreConfig>,
+    first_tag_index: HashMap<String, usize>,
+    entries: Box<[CachedOutboundEntry]>,
+}
+
+impl OutboundRouter {
+    pub fn new(config: Arc<CoreConfig>) -> Self {
+        let mut first_tag_index = HashMap::with_capacity(config.outbounds.len());
+        for (index, outbound) in config.outbounds.iter().enumerate() {
+            if let Some(tag) = outbound.tag.as_ref() {
+                first_tag_index.entry(tag.clone()).or_insert(index);
+            }
+        }
+        let entries = (0..config.outbounds.len())
+            .map(|_| CachedOutboundEntry::default())
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        Self {
+            config,
+            first_tag_index,
+            entries,
+        }
+    }
+
+    pub fn select_tcp_outbound(&self) -> Result<TcpOutbound, CoreError> {
+        let index = self.select_configured_index(None, None, None)?;
+        self.cached_tcp_outbound(index)
+    }
+
+    pub(crate) fn select_tcp_outbound_direct(
+        &self,
+        outbound_tag: Option<&str>,
+    ) -> Result<TcpOutbound, CoreError> {
+        let index = self.select_configured_index_direct(outbound_tag)?;
+        self.cached_tcp_outbound(index)
+    }
+
+    pub fn select_tcp_outbound_for_session(
+        &self,
+        inbound_tag: Option<&str>,
+        target: &Target,
+    ) -> Result<TcpOutbound, CoreError> {
+        let index =
+            self.select_configured_index(inbound_tag, target_domain(target), target_ip(target))?;
+        self.cached_tcp_outbound(index)
+    }
+
+    pub async fn select_tcp_outbound_for_session_with_resolver(
+        &self,
+        inbound_tag: Option<&str>,
+        target: &Target,
+        dns_resolver: &dyn DnsResolver,
+    ) -> Result<TcpOutbound, CoreError> {
+        let index = self
+            .select_configured_index_with_resolver(inbound_tag, target, dns_resolver)
+            .await?;
+        self.cached_tcp_outbound(index)
+    }
+
+    pub(crate) async fn select_tcp_outbound_for_session_with_tag_and_resolver(
+        &self,
+        inbound_tag: Option<&str>,
+        target: &Target,
+        include_tag: bool,
+        dns_resolver: &dyn DnsResolver,
+    ) -> Result<SelectedTcpOutbound, CoreError> {
+        let index = self
+            .select_configured_index_with_resolver(inbound_tag, target, dns_resolver)
+            .await?;
+        let tag = include_tag
+            .then(|| self.config.outbounds[index].tag.clone())
+            .flatten();
+        let outbound = self.cached_tcp_outbound(index)?;
+        Ok(SelectedTcpOutbound { outbound, tag })
+    }
+
+    pub fn select_udp_outbound_for_session(
+        &self,
+        inbound_tag: Option<&str>,
+        target: &Target,
+    ) -> Result<UdpOutbound, CoreError> {
+        let index =
+            self.select_configured_index(inbound_tag, target_domain(target), target_ip(target))?;
+        self.cached_udp_outbound(index)
+    }
+
+    pub async fn select_udp_outbound_for_session_with_resolver(
+        &self,
+        inbound_tag: Option<&str>,
+        target: &Target,
+        dns_resolver: &dyn DnsResolver,
+    ) -> Result<UdpOutbound, CoreError> {
+        let index = self
+            .select_configured_index_with_resolver(inbound_tag, target, dns_resolver)
+            .await?;
+        self.cached_udp_outbound(index)
+    }
+
+    fn select_configured_index(
+        &self,
+        inbound_tag: Option<&str>,
+        target_domain: Option<&str>,
+        target_ip: Option<&IpAddr>,
+    ) -> Result<usize, CoreError> {
+        let routed_tag =
+            select_routed_outbound_tag(&self.config, inbound_tag, target_domain, target_ip);
+        match routed_tag.or(self.config.default_outbound_tag.as_deref()) {
+            Some(tag) => self.index_for_tag(tag),
+            None if self.config.outbounds.is_empty() => Err(CoreError::NoSupportedOutbound),
+            None => Ok(0),
+        }
+    }
+
+    async fn select_configured_index_with_resolver(
+        &self,
+        inbound_tag: Option<&str>,
+        target: &Target,
+        dns_resolver: &dyn DnsResolver,
+    ) -> Result<usize, CoreError> {
+        if let Some(routed_tag) = select_routed_outbound_tag(
+            &self.config,
+            inbound_tag,
+            target_domain(target),
+            target_ip(target),
+        ) {
+            return self.index_for_tag(routed_tag);
+        }
+
+        if self.config.routing.domain_strategy == RoutingDomainStrategy::IpIfNonMatch {
+            if let Some(domain) = target_domain(target) {
+                let resolved = dns_resolver.resolve(domain, target.port).await?;
+                let resolved_ip = resolved.ip();
+                if let Some(routed_tag) =
+                    select_routed_outbound_tag(&self.config, inbound_tag, None, Some(&resolved_ip))
+                {
+                    return self.index_for_tag(routed_tag);
+                }
+            }
+        }
+
+        self.select_default_configured_index()
+    }
+
+    fn select_configured_index_direct(
+        &self,
+        outbound_tag: Option<&str>,
+    ) -> Result<usize, CoreError> {
+        match outbound_tag.or(self.config.default_outbound_tag.as_deref()) {
+            Some(tag) => self.index_for_tag(tag),
+            None if self.config.outbounds.is_empty() => Err(CoreError::NoSupportedOutbound),
+            None => Ok(0),
+        }
+    }
+
+    fn select_default_configured_index(&self) -> Result<usize, CoreError> {
+        match self.config.default_outbound_tag.as_deref() {
+            Some(tag) => self.index_for_tag(tag),
+            None if self.config.outbounds.is_empty() => Err(CoreError::NoSupportedOutbound),
+            None => Ok(0),
+        }
+    }
+
+    fn index_for_tag(&self, tag: &str) -> Result<usize, CoreError> {
+        self.first_tag_index
+            .get(tag)
+            .copied()
+            .ok_or(CoreError::NoSupportedOutbound)
+    }
+
+    fn cached_tcp_outbound(&self, index: usize) -> Result<TcpOutbound, CoreError> {
+        let cached = self.entries[index]
+            .tcp
+            .get_or_init(|| self.compile_tcp_outbound(index));
+        clone_cached_outbound(cached)
+    }
+
+    fn cached_udp_outbound(&self, index: usize) -> Result<UdpOutbound, CoreError> {
+        let cached = self.entries[index]
+            .udp
+            .get_or_init(|| self.compile_udp_outbound(index));
+        clone_cached_outbound(cached)
+    }
+
+    fn cached_vless_outbound(&self, index: usize) -> Result<VlessTcpOutbound, CachedOutboundError> {
+        let cached = self.entries[index].vless.get_or_init(|| {
+            build_vless_tcp_outbound(&self.config.outbounds[index])
+                .map_err(CachedOutboundError::from_core_error)
+        });
+        match cached {
+            Ok(outbound) => Ok(outbound.clone()),
+            Err(error) => Err(*error),
+        }
+    }
+
+    fn compile_tcp_outbound(&self, index: usize) -> Result<TcpOutbound, CachedOutboundError> {
+        let outbound = &self.config.outbounds[index];
+        if outbound.stream.network != Network::Tcp {
+            return Err(CachedOutboundError::UnsupportedOutboundNetwork);
+        }
+
+        match &outbound.settings {
+            OutboundSettings::Freedom => {
+                if outbound.stream.security != StreamSecurity::None {
+                    return Err(CachedOutboundError::UnsupportedOutboundSecurity);
+                }
+                Ok(TcpOutbound::Freedom)
+            }
+            OutboundSettings::Vless(_) => self
+                .cached_vless_outbound(index)
+                .map(|outbound| TcpOutbound::Vless(Box::new(outbound))),
+        }
+    }
+
+    fn compile_udp_outbound(&self, index: usize) -> Result<UdpOutbound, CachedOutboundError> {
+        let outbound = &self.config.outbounds[index];
+        match &outbound.settings {
+            OutboundSettings::Freedom => {
+                if outbound.stream.security != StreamSecurity::None {
+                    return Err(CachedOutboundError::UnsupportedOutboundSecurity);
+                }
+                Ok(UdpOutbound::Freedom)
+            }
+            OutboundSettings::Vless(_) => {
+                if outbound.stream.network != Network::Tcp {
+                    return Err(CachedOutboundError::UnsupportedOutboundNetwork);
+                }
+                self.cached_vless_outbound(index)
+                    .map(|outbound| UdpOutbound::Vless(Box::new(outbound)))
+            }
+        }
+    }
+}
+
+fn clone_cached_outbound<T: Clone>(
+    cached: &Result<T, CachedOutboundError>,
+) -> Result<T, CoreError> {
+    match cached {
+        Ok(outbound) => Ok(outbound.clone()),
+        Err(error) => Err(error.into_core_error()),
     }
 }
 
@@ -316,20 +611,6 @@ pub async fn select_tcp_outbound_for_session_with_resolver(
     let outbound =
         select_configured_outbound_with_resolver(config, inbound_tag, target, dns_resolver).await?;
     build_tcp_outbound(outbound)
-}
-
-pub(crate) async fn select_tcp_outbound_for_session_with_tag_and_resolver(
-    config: &CoreConfig,
-    inbound_tag: Option<&str>,
-    target: &Target,
-    include_tag: bool,
-    dns_resolver: &dyn DnsResolver,
-) -> Result<SelectedTcpOutbound, CoreError> {
-    let outbound =
-        select_configured_outbound_with_resolver(config, inbound_tag, target, dns_resolver).await?;
-    let tag = include_tag.then(|| outbound.tag.clone()).flatten();
-    let outbound = build_tcp_outbound(outbound)?;
-    Ok(SelectedTcpOutbound { outbound, tag })
 }
 
 /// Selects a UDP session outbound using only the original target metadata.
@@ -574,9 +855,11 @@ fn build_vless_tcp_outbound(outbound: &OutboundConfig) -> Result<VlessTcpOutboun
     };
 
     Ok(VlessTcpOutbound {
-        server: Target::new(addr, settings.port, RoutingNetwork::Tcp),
-        user,
-        transport,
+        payload: Arc::new(VlessTcpOutboundPayload {
+            server: Target::new(addr, settings.port, RoutingNetwork::Tcp),
+            user,
+            transport,
+        }),
     })
 }
 
@@ -680,14 +963,14 @@ pub async fn open_vless_tcp_stream_with_resolver_and_dialer(
     dns_resolver: &dyn DnsResolver,
     transport_dialer: &TransportDialer,
 ) -> Result<BoxedTransportStream, CoreError> {
-    let flow = validate_connector_flow(outbound.user.flow.as_deref(), &outbound.transport)?;
+    let flow = validate_connector_flow(outbound.user().flow.as_deref(), outbound.transport())?;
 
-    let resolved_server = resolve_server_target(&outbound.server, dns_resolver).await?;
+    let resolved_server = resolve_server_target(outbound.server(), dns_resolver).await?;
     let mut stream = transport_dialer
-        .connect(&outbound.transport, &resolved_server)
+        .connect(outbound.transport(), &resolved_server)
         .await?;
     let request = VlessRequest {
-        user_id: outbound.user.id,
+        user_id: outbound.user().id,
         command: VlessCommand::Tcp,
         target: target.clone(),
         flow: flow.request_flow(),
@@ -699,7 +982,7 @@ pub async fn open_vless_tcp_stream_with_resolver_and_dialer(
     if flow.uses_vision() {
         let stream = VlessResponseStream::new(VisionTransportStream::new(stream));
         let mut stream =
-            VisionStream::new(stream, *outbound.user.id.as_bytes(), DEFAULT_VISION_SEED);
+            VisionStream::new(stream, *outbound.user().id.as_bytes(), DEFAULT_VISION_SEED);
         stream.queue_empty_padding_frame()?;
         stream.flush().await?;
         return Ok(Box::new(VisionOutboundStream::new(stream)));
@@ -745,7 +1028,7 @@ pub(crate) async fn open_vless_udp_stream_with_resolver_dialer_and_options(
     transport_dialer: &TransportDialer,
     options: VlessUdpOpenOptions,
 ) -> Result<(BoxedTransportStream, VlessUdpFraming), CoreError> {
-    let flow = validate_connector_flow(outbound.user.flow.as_deref(), &outbound.transport)?;
+    let flow = validate_connector_flow(outbound.user().flow.as_deref(), outbound.transport())?;
     let uses_vision = flow.uses_vision();
     if options.reject_udp443_for_regular_vision
         && uses_vision
@@ -756,12 +1039,12 @@ pub(crate) async fn open_vless_udp_stream_with_resolver_dialer_and_options(
     }
     let uses_xudp = uses_vision || should_use_xudp_for_udp_target(target);
 
-    let resolved_server = resolve_server_target(&outbound.server, dns_resolver).await?;
+    let resolved_server = resolve_server_target(outbound.server(), dns_resolver).await?;
     let mut stream = transport_dialer
-        .connect(&outbound.transport, &resolved_server)
+        .connect(outbound.transport(), &resolved_server)
         .await?;
     let request = VlessRequest {
-        user_id: outbound.user.id,
+        user_id: outbound.user().id,
         command: if uses_xudp {
             VlessCommand::Mux
         } else {
@@ -779,7 +1062,7 @@ pub(crate) async fn open_vless_udp_stream_with_resolver_dialer_and_options(
         return Ok((
             Box::new(VisionOutboundStream::new(VisionStream::new(
                 stream,
-                *outbound.user.id.as_bytes(),
+                *outbound.user().id.as_bytes(),
                 DEFAULT_VISION_SEED,
             ))),
             VlessUdpFraming::Xudp,
@@ -1025,6 +1308,90 @@ mod tests {
         assert!(matches!(selected, TcpOutbound::Freedom));
     }
 
+    #[test]
+    fn outbound_router_duplicate_tag_keeps_first_configured_outbound() {
+        let mut config = direct_selection_config();
+        config.outbounds = vec![
+            direct_selection_freedom("duplicate"),
+            direct_selection_vless("duplicate"),
+        ];
+        config.default_outbound_tag = Some("duplicate".to_owned());
+        config.routing.rules.clear();
+        let router = OutboundRouter::new(Arc::new(config));
+
+        let selected = router.select_tcp_outbound().unwrap();
+
+        assert!(matches!(selected, TcpOutbound::Freedom));
+        assert_eq!(router.first_tag_index.get("duplicate"), Some(&0));
+    }
+
+    #[test]
+    fn outbound_router_defers_invalid_outbound_error_until_it_is_selected() {
+        let mut config = direct_selection_config();
+        let mut invalid = direct_selection_freedom("invalid");
+        invalid.stream.network = Network::Udp;
+        config.outbounds.push(invalid);
+        config.default_outbound_tag = Some("direct".to_owned());
+        config.routing.rules = vec![inbound_rule("api", "invalid")];
+        let router = OutboundRouter::new(Arc::new(config));
+        let target = domain_tcp_target("example.test");
+
+        assert!(router.entries[2].tcp.get().is_none());
+        assert!(matches!(
+            router
+                .select_tcp_outbound_for_session(Some("socks-in"), &target)
+                .unwrap(),
+            TcpOutbound::Freedom
+        ));
+        assert!(router.entries[2].tcp.get().is_none());
+
+        let error = router
+            .select_tcp_outbound_for_session(Some("api"), &target)
+            .unwrap_err();
+        assert!(matches!(error, CoreError::UnsupportedOutboundNetwork));
+        assert!(router.entries[2].tcp.get().is_some());
+        let cached_error = router
+            .select_tcp_outbound_for_session(Some("api"), &target)
+            .unwrap_err();
+        assert!(matches!(
+            cached_error,
+            CoreError::UnsupportedOutboundNetwork
+        ));
+    }
+
+    #[test]
+    fn outbound_router_reuses_vless_arc_across_tcp_and_udp_selections() {
+        let mut config = direct_selection_config();
+        config.routing.rules.clear();
+        let router = OutboundRouter::new(Arc::new(config));
+        let target = domain_tcp_target("example.test");
+
+        let TcpOutbound::Vless(first_tcp) = router
+            .select_tcp_outbound_for_session(None, &target)
+            .unwrap()
+        else {
+            panic!("expected cached VLESS TCP outbound");
+        };
+        let TcpOutbound::Vless(second_tcp) = router
+            .select_tcp_outbound_for_session(None, &target)
+            .unwrap()
+        else {
+            panic!("expected cached VLESS TCP outbound");
+        };
+        let UdpOutbound::Vless(udp) = router
+            .select_udp_outbound_for_session(
+                None,
+                &Target::new(target.addr.clone(), target.port, RoutingNetwork::Udp),
+            )
+            .unwrap()
+        else {
+            panic!("expected cached VLESS UDP outbound");
+        };
+
+        assert!(Arc::ptr_eq(&first_tcp.payload, &second_tcp.payload));
+        assert!(Arc::ptr_eq(&first_tcp.payload, &udp.payload));
+    }
+
     #[tokio::test]
     async fn ip_if_non_match_uses_dns_second_pass_for_ip_rules() {
         let mut config = direct_selection_config();
@@ -1159,18 +1526,20 @@ mod tests {
     #[tokio::test]
     async fn open_vless_tcp_stream_rejects_outbound_with_flow_before_connecting() {
         let outbound = VlessTcpOutbound {
-            server: Target::new(
-                RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
-                0,
-                RoutingNetwork::Tcp,
-            ),
-            user: VlessUser {
-                id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
-                encryption: "none".to_owned(),
-                flow: Some("xtls-rprx-vision".to_owned()),
-                level: 0,
-            },
-            transport: ConnectorConfig::Tcp,
+            payload: Arc::new(VlessTcpOutboundPayload {
+                server: Target::new(
+                    RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+                    0,
+                    RoutingNetwork::Tcp,
+                ),
+                user: VlessUser {
+                    id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
+                    encryption: "none".to_owned(),
+                    flow: Some("xtls-rprx-vision".to_owned()),
+                    level: 0,
+                },
+                transport: ConnectorConfig::Tcp,
+            }),
         };
         let target = Target::new(
             RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
@@ -1186,24 +1555,26 @@ mod tests {
     #[tokio::test]
     async fn open_vless_tcp_stream_uses_default_live_reality_transport_for_vision_flow() {
         let outbound = VlessTcpOutbound {
-            server: Target::new(
-                RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
-                0,
-                RoutingNetwork::Tcp,
-            ),
-            user: VlessUser {
-                id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
-                encryption: "none".to_owned(),
-                flow: Some(VISION_FLOW.to_owned()),
-                level: 0,
-            },
-            transport: ConnectorConfig::Reality(RealityClientConfig {
-                server_name: "example.com".to_owned(),
-                fingerprint: "chrome".to_owned(),
-                public_key: [7; 32],
-                short_id: vec![1, 2, 3, 4],
-                spider_x: "/".to_owned(),
-                mldsa65_verify: None,
+            payload: Arc::new(VlessTcpOutboundPayload {
+                server: Target::new(
+                    RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+                    0,
+                    RoutingNetwork::Tcp,
+                ),
+                user: VlessUser {
+                    id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
+                    encryption: "none".to_owned(),
+                    flow: Some(VISION_FLOW.to_owned()),
+                    level: 0,
+                },
+                transport: ConnectorConfig::Reality(RealityClientConfig {
+                    server_name: "example.com".to_owned(),
+                    fingerprint: "chrome".to_owned(),
+                    public_key: [7; 32],
+                    short_id: vec![1, 2, 3, 4],
+                    spider_x: "/".to_owned(),
+                    mldsa65_verify: None,
+                }),
             }),
         };
         let target = Target::new(
@@ -1231,18 +1602,20 @@ mod tests {
             mldsa65_verify: None,
         };
         let outbound = VlessTcpOutbound {
-            server: Target::new(
-                RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
-                443,
-                RoutingNetwork::Tcp,
-            ),
-            user: VlessUser {
-                id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
-                encryption: "none".to_owned(),
-                flow: Some(VISION_FLOW.to_owned()),
-                level: 0,
-            },
-            transport: ConnectorConfig::Reality(reality_config.clone()),
+            payload: Arc::new(VlessTcpOutboundPayload {
+                server: Target::new(
+                    RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+                    443,
+                    RoutingNetwork::Tcp,
+                ),
+                user: VlessUser {
+                    id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
+                    encryption: "none".to_owned(),
+                    flow: Some(VISION_FLOW.to_owned()),
+                    level: 0,
+                },
+                transport: ConnectorConfig::Reality(reality_config.clone()),
+            }),
         };
         let target = Target::new(
             RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
@@ -1265,10 +1638,10 @@ mod tests {
         .expect("open VLESS over injected REALITY stream");
 
         let expected_header = encode_request_header(&VlessRequest {
-            user_id: outbound.user.id,
+            user_id: outbound.user().id,
             command: VlessCommand::Tcp,
             target: target.clone(),
-            flow: outbound.user.flow.clone(),
+            flow: outbound.user().flow.clone(),
         })
         .unwrap();
         let mut received_header = vec![0; expected_header.len()];
@@ -1282,7 +1655,7 @@ mod tests {
             read_vision_frame(&mut protected_side, true).await;
         assert_eq!(content_len, 0);
         assert!((900..=1399).contains(&padding_len));
-        let unpadded = unpad_vision_block(&header_padding, outbound.user.id.as_bytes()).unwrap();
+        let unpadded = unpad_vision_block(&header_padding, outbound.user().id.as_bytes()).unwrap();
         assert_eq!(unpadded.command, VisionCommand::Continue);
         assert!(unpadded.payload.is_empty());
 
@@ -1293,38 +1666,40 @@ mod tests {
             read_vision_frame(&mut protected_side, false).await;
         assert_eq!(content_len, "vision payload".len());
         assert!(padding_len <= 255);
-        let unpadded = unpad_vision_block(&padded, outbound.user.id.as_bytes()).unwrap();
+        let unpadded = unpad_vision_block(&padded, outbound.user().id.as_bytes()).unwrap();
         assert_eq!(unpadded.command, VisionCommand::Continue);
         assert_eq!(&unpadded.payload[..], b"vision payload");
 
         let (seen_config, seen_target) = engine.seen().expect("engine saw config and target");
         assert_eq!(seen_config, reality_config);
-        assert_eq!(seen_target.addr, outbound.server.addr);
-        assert_eq!(seen_target.port, outbound.server.port);
-        assert_eq!(seen_target.network, outbound.server.network);
+        assert_eq!(seen_target.addr, outbound.server().addr);
+        assert_eq!(seen_target.port, outbound.server().port);
+        assert_eq!(seen_target.network, outbound.server().network);
     }
 
     #[tokio::test]
     async fn open_vless_udp_stream_rejects_udp443_for_regular_vision_flow_before_connecting() {
         let outbound = VlessTcpOutbound {
-            server: Target::new(
-                RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
-                443,
-                RoutingNetwork::Tcp,
-            ),
-            user: VlessUser {
-                id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
-                encryption: "none".to_owned(),
-                flow: Some(VISION_FLOW.to_owned()),
-                level: 0,
-            },
-            transport: ConnectorConfig::Reality(RealityClientConfig {
-                server_name: "example.com".to_owned(),
-                fingerprint: "chrome".to_owned(),
-                public_key: [7; 32],
-                short_id: vec![1, 2, 3, 4],
-                spider_x: "/".to_owned(),
-                mldsa65_verify: None,
+            payload: Arc::new(VlessTcpOutboundPayload {
+                server: Target::new(
+                    RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+                    443,
+                    RoutingNetwork::Tcp,
+                ),
+                user: VlessUser {
+                    id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
+                    encryption: "none".to_owned(),
+                    flow: Some(VISION_FLOW.to_owned()),
+                    level: 0,
+                },
+                transport: ConnectorConfig::Reality(RealityClientConfig {
+                    server_name: "example.com".to_owned(),
+                    fingerprint: "chrome".to_owned(),
+                    public_key: [7; 32],
+                    short_id: vec![1, 2, 3, 4],
+                    spider_x: "/".to_owned(),
+                    mldsa65_verify: None,
+                }),
             }),
         };
         let target = Target::new(
@@ -1359,24 +1734,26 @@ mod tests {
     #[tokio::test]
     async fn open_vless_udp_stream_allows_udp443_flow_and_sends_vision_addons() {
         let outbound = VlessTcpOutbound {
-            server: Target::new(
-                RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
-                443,
-                RoutingNetwork::Tcp,
-            ),
-            user: VlessUser {
-                id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
-                encryption: "none".to_owned(),
-                flow: Some("xtls-rprx-vision-udp443".to_owned()),
-                level: 0,
-            },
-            transport: ConnectorConfig::Reality(RealityClientConfig {
-                server_name: "example.com".to_owned(),
-                fingerprint: "chrome".to_owned(),
-                public_key: [7; 32],
-                short_id: vec![1, 2, 3, 4],
-                spider_x: "/".to_owned(),
-                mldsa65_verify: None,
+            payload: Arc::new(VlessTcpOutboundPayload {
+                server: Target::new(
+                    RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+                    443,
+                    RoutingNetwork::Tcp,
+                ),
+                user: VlessUser {
+                    id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
+                    encryption: "none".to_owned(),
+                    flow: Some("xtls-rprx-vision-udp443".to_owned()),
+                    level: 0,
+                },
+                transport: ConnectorConfig::Reality(RealityClientConfig {
+                    server_name: "example.com".to_owned(),
+                    fingerprint: "chrome".to_owned(),
+                    public_key: [7; 32],
+                    short_id: vec![1, 2, 3, 4],
+                    spider_x: "/".to_owned(),
+                    mldsa65_verify: None,
+                }),
             }),
         };
         let target = Target::new(
@@ -1401,7 +1778,7 @@ mod tests {
 
         assert_eq!(framing, VlessUdpFraming::Xudp);
         let expected_header = encode_request_header(&VlessRequest {
-            user_id: outbound.user.id,
+            user_id: outbound.user().id,
             command: VlessCommand::Mux,
             target: target.clone(),
             flow: Some(VISION_FLOW.to_owned()),

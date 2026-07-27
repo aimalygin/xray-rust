@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     net::{IpAddr, SocketAddr},
     path::{Path, PathBuf},
 };
@@ -15,6 +16,81 @@ use crate::{
     RoutingConfig, RoutingDomainStrategy, RoutingRule, SniffingDestination, StreamSecurity,
     StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
 };
+
+const MAX_ROUTING_RULES: usize = 4_096;
+const MAX_CONFIG_DOMAIN_MATCHERS: usize = 250_000;
+const MAX_CONFIG_IP_MATCHERS: usize = 300_000;
+const MAX_CONFIG_MATCHERS: usize = 500_000;
+const MAX_CONFIG_GEODATA_ATTR_FILTERS: usize = 32;
+const MAX_CONFIG_GEODATA_ATTRIBUTE_SIZE: usize = 256;
+
+#[derive(Debug, Clone, Copy)]
+struct MatcherBudgetLimits {
+    routing_rules: usize,
+    domain_matchers: usize,
+    ip_matchers: usize,
+    total_matchers: usize,
+}
+
+const DEFAULT_MATCHER_BUDGET_LIMITS: MatcherBudgetLimits = MatcherBudgetLimits {
+    routing_rules: MAX_ROUTING_RULES,
+    domain_matchers: MAX_CONFIG_DOMAIN_MATCHERS,
+    ip_matchers: MAX_CONFIG_IP_MATCHERS,
+    total_matchers: MAX_CONFIG_MATCHERS,
+};
+
+#[derive(Debug)]
+struct MatcherBudget {
+    limits: MatcherBudgetLimits,
+    domain_matchers: usize,
+    ip_matchers: usize,
+}
+
+impl MatcherBudget {
+    fn new(limits: MatcherBudgetLimits) -> Self {
+        Self {
+            limits,
+            domain_matchers: 0,
+            ip_matchers: 0,
+        }
+    }
+
+    fn remaining_domain_matchers(&self) -> usize {
+        self.limits
+            .domain_matchers
+            .saturating_sub(self.domain_matchers)
+            .min(self.remaining_total_matchers())
+    }
+
+    fn remaining_ip_matchers(&self) -> usize {
+        self.limits
+            .ip_matchers
+            .saturating_sub(self.ip_matchers)
+            .min(self.remaining_total_matchers())
+    }
+
+    fn remaining_total_matchers(&self) -> usize {
+        self.limits
+            .total_matchers
+            .saturating_sub(self.domain_matchers.saturating_add(self.ip_matchers))
+    }
+
+    fn consume_domain_matchers(&mut self, count: usize) -> bool {
+        if count > self.remaining_domain_matchers() {
+            return false;
+        }
+        self.domain_matchers += count;
+        true
+    }
+
+    fn consume_ip_matchers(&mut self, count: usize) -> bool {
+        if count > self.remaining_ip_matchers() {
+            return false;
+        }
+        self.ip_matchers += count;
+        true
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedConfig {
@@ -68,6 +144,14 @@ fn parse_xray_json_with_loader(
     raw: &str,
     geodata_loader: GeodataLoader,
 ) -> Result<ParsedConfig, ConfigParseError> {
+    parse_xray_json_with_loader_and_limits(raw, geodata_loader, DEFAULT_MATCHER_BUDGET_LIMITS)
+}
+
+fn parse_xray_json_with_loader_and_limits(
+    raw: &str,
+    geodata_loader: GeodataLoader,
+    matcher_budget_limits: MatcherBudgetLimits,
+) -> Result<ParsedConfig, ConfigParseError> {
     let value = serde_json::from_str::<Value>(raw).map_err(|err| ConfigParseError {
         diagnostics: vec![Diagnostic::error("$", err.to_string())],
     })?;
@@ -76,6 +160,7 @@ fn parse_xray_json_with_loader(
         root: &value,
         diagnostics: Vec::new(),
         geodata_loader,
+        matcher_budget: MatcherBudget::new(matcher_budget_limits),
     };
     let config = parser.parse_config();
 
@@ -99,6 +184,7 @@ struct Parser<'a> {
     root: &'a Value,
     diagnostics: Vec<Diagnostic>,
     geodata_loader: GeodataLoader,
+    matcher_budget: MatcherBudget,
 }
 
 impl Parser<'_> {
@@ -220,9 +306,18 @@ impl Parser<'_> {
                 self.error(path, "dns host target must be a string");
                 continue;
             };
-            let Some(matchers) = self.parse_domain_matcher(host, &path) else {
+            let remaining = self.matcher_budget.remaining_domain_matchers();
+            if remaining == 0 {
+                self.domain_matcher_budget_error(&path);
+                continue;
+            }
+            let Some(matchers) = self.parse_domain_matcher(host, &path, remaining) else {
                 continue;
             };
+            if !self.matcher_budget.consume_domain_matchers(matchers.len()) {
+                self.domain_matcher_budget_error(&path);
+                continue;
+            }
             let target = match target.parse::<IpAddr>() {
                 Ok(ip) => DnsHostTarget::Ip(ip),
                 Err(_) => DnsHostTarget::Domain(target.to_owned()),
@@ -483,6 +578,17 @@ impl Parser<'_> {
             self.error("$.routing.rules", "field `rules` must be an array");
             return Vec::new();
         };
+        if rules.len() > self.matcher_budget.limits.routing_rules {
+            self.error(
+                "$.routing.rules",
+                format!(
+                    "routing config contains {} rules; maximum supported per configuration is {}",
+                    rules.len(),
+                    self.matcher_budget.limits.routing_rules
+                ),
+            );
+            return Vec::new();
+        }
 
         rules
             .iter()
@@ -600,6 +706,25 @@ impl Parser<'_> {
             .string_at(inbound, "listen")
             .unwrap_or("127.0.0.1")
             .to_owned();
+        let allow_unauthenticated_lan =
+            self.parse_allow_unauthenticated_lan(inbound, index, &protocol);
+        if matches!(protocol, InboundProtocol::Socks | InboundProtocol::Http)
+            && !is_loopback_listener(&listen)
+        {
+            if allow_unauthenticated_lan {
+                if !matches!(listen.as_str(), "0.0.0.0" | "::") {
+                    self.warning(
+                        format!("$.inbounds[{index}].listen"),
+                        "unauthenticated SOCKS/HTTP inbound is explicitly exposed beyond loopback",
+                    );
+                }
+            } else {
+                self.error(
+                    format!("$.inbounds[{index}].listen"),
+                    "unauthenticated SOCKS/HTTP inbounds may only listen on loopback; set settings.allowUnauthenticatedLan=true to explicitly permit LAN exposure",
+                );
+            }
+        }
         if matches!(listen.as_str(), "0.0.0.0" | "::") {
             self.warning(
                 format!("$.inbounds[{index}].listen"),
@@ -612,9 +737,31 @@ impl Parser<'_> {
             protocol,
             listen,
             port,
+            allow_unauthenticated_lan,
             sniffing: self.parse_inbound_sniffing(inbound, index),
             user_level: self.parse_inbound_user_level(inbound, index),
         })
+    }
+
+    fn parse_allow_unauthenticated_lan(
+        &mut self,
+        inbound: &Value,
+        index: usize,
+        protocol: &InboundProtocol,
+    ) -> bool {
+        if !matches!(protocol, InboundProtocol::Socks | InboundProtocol::Http) {
+            return false;
+        }
+        let Some(settings) = inbound.get("settings").filter(|value| value.is_object()) else {
+            return false;
+        };
+
+        self.optional_bool_at(
+            settings,
+            "allowUnauthenticatedLan",
+            format!("$.inbounds[{index}].settings.allowUnauthenticatedLan"),
+        )
+        .unwrap_or(false)
     }
 
     fn validate_inbound_compatibility(
@@ -787,7 +934,14 @@ impl Parser<'_> {
         self.reject_unknown_fields(
             settings,
             &settings_path,
-            &["auth", "accounts", "udp", "ip", "userLevel"],
+            &[
+                "auth",
+                "accounts",
+                "udp",
+                "ip",
+                "userLevel",
+                "allowUnauthenticatedLan",
+            ],
         );
 
         if let Some(auth) =
@@ -816,7 +970,13 @@ impl Parser<'_> {
         self.reject_unknown_fields(
             settings,
             &settings_path,
-            &["timeout", "accounts", "allowTransparent", "userLevel"],
+            &[
+                "timeout",
+                "accounts",
+                "allowTransparent",
+                "userLevel",
+                "allowUnauthenticatedLan",
+            ],
         );
         self.reject_non_empty_array(settings, "accounts", format!("{settings_path}.accounts"));
 
@@ -1484,12 +1644,44 @@ impl Parser<'_> {
         key: &str,
         path: String,
     ) -> Option<Vec<DomainMatcher>> {
-        let values = self.optional_string_array_at(value, key, path.clone())?;
-        let mut matchers = Vec::with_capacity(values.len());
+        let Some(raw) = value.get(key) else {
+            return Some(Vec::new());
+        };
+        let Some(values) = raw.as_array() else {
+            self.error(path, format!("field `{key}` must be an array"));
+            return None;
+        };
+        let mut matchers = Vec::with_capacity(
+            values
+                .len()
+                .min(self.matcher_budget.remaining_domain_matchers()),
+        );
 
         for (index, value) in values.iter().enumerate() {
             let item_path = format!("{path}[{index}]");
-            matchers.extend(self.parse_domain_matcher(value, &item_path)?);
+            let Some(value) = value.as_str() else {
+                self.error(&item_path, "routing matcher must be a string");
+                return None;
+            };
+            if value.is_empty() {
+                self.error(&item_path, "routing matcher cannot be empty");
+                return None;
+            }
+
+            let remaining = self.matcher_budget.remaining_domain_matchers();
+            if remaining == 0 {
+                self.domain_matcher_budget_error(&item_path);
+                return None;
+            }
+            let parsed_matchers = self.parse_domain_matcher(value, &item_path, remaining)?;
+            if !self
+                .matcher_budget
+                .consume_domain_matchers(parsed_matchers.len())
+            {
+                self.domain_matcher_budget_error(&item_path);
+                return None;
+            }
+            matchers.extend(parsed_matchers);
         }
 
         Some(matchers)
@@ -1510,15 +1702,20 @@ impl Parser<'_> {
         Some(matchers)
     }
 
-    fn parse_domain_matcher(&mut self, value: &str, path: &str) -> Option<Vec<DomainMatcher>> {
+    fn parse_domain_matcher(
+        &mut self,
+        value: &str,
+        path: &str,
+        max_matchers: usize,
+    ) -> Option<Vec<DomainMatcher>> {
         if let Some(spec) = value.strip_prefix("geosite:") {
-            return self.parse_geosite_matchers("geosite.dat", spec, path);
+            return self.parse_geosite_matchers("geosite.dat", spec, path, max_matchers);
         }
         if let Some(spec) = value.strip_prefix("ext-domain:") {
-            return self.parse_external_geosite_matchers(spec, path);
+            return self.parse_external_geosite_matchers(spec, path, max_matchers);
         }
         if let Some(spec) = value.strip_prefix("ext:") {
-            return self.parse_external_geosite_matchers(spec, path);
+            return self.parse_external_geosite_matchers(spec, path, max_matchers);
         }
 
         let Some((kind, domain)) = value.split_once(':') else {
@@ -1551,9 +1748,10 @@ impl Parser<'_> {
         &mut self,
         spec: &str,
         path: &str,
+        max_matchers: usize,
     ) -> Option<Vec<DomainMatcher>> {
         let (file_name, code_spec) = self.parse_external_geodata_ref(spec, path)?;
-        self.parse_geosite_matchers(file_name, code_spec, path)
+        self.parse_geosite_matchers(file_name, code_spec, path, max_matchers)
     }
 
     fn parse_geosite_matchers(
@@ -1561,11 +1759,12 @@ impl Parser<'_> {
         file_name: &str,
         code_spec: &str,
         path: &str,
+        max_matchers: usize,
     ) -> Option<Vec<DomainMatcher>> {
         let (code, attrs) = self.parse_geosite_code_and_attrs(code_spec, path)?;
         match self
             .geodata_loader
-            .load_site_matchers(file_name, code, &attrs)
+            .load_site_matchers(file_name, code, &attrs, max_matchers)
         {
             Ok(matchers) if matchers.is_empty() => {
                 self.error(
@@ -1588,21 +1787,55 @@ impl Parser<'_> {
         key: &str,
         path: String,
     ) -> Option<Vec<IpMatcher>> {
-        let values = self.optional_string_array_at(value, key, path.clone())?;
-        let mut matchers = Vec::with_capacity(values.len());
+        let Some(raw) = value.get(key) else {
+            return Some(Vec::new());
+        };
+        let Some(values) = raw.as_array() else {
+            self.error(path, format!("field `{key}` must be an array"));
+            return None;
+        };
+        let mut matchers = Vec::with_capacity(
+            values
+                .len()
+                .min(self.matcher_budget.remaining_ip_matchers()),
+        );
 
         for (index, value) in values.iter().enumerate() {
             let item_path = format!("{path}[{index}]");
-            match self.parse_ip_matcher(value, &item_path) {
-                Some(parsed_matchers) => matchers.extend(parsed_matchers),
-                None => return None,
+            let Some(value) = value.as_str() else {
+                self.error(&item_path, "routing matcher must be a string");
+                return None;
+            };
+            if value.is_empty() {
+                self.error(&item_path, "routing matcher cannot be empty");
+                return None;
             }
+
+            let remaining = self.matcher_budget.remaining_ip_matchers();
+            if remaining == 0 {
+                self.ip_matcher_budget_error(&item_path);
+                return None;
+            }
+            let parsed_matchers = self.parse_ip_matcher(value, &item_path, remaining)?;
+            if !self
+                .matcher_budget
+                .consume_ip_matchers(parsed_matchers.len())
+            {
+                self.ip_matcher_budget_error(&item_path);
+                return None;
+            }
+            matchers.extend(parsed_matchers);
         }
 
         Some(matchers)
     }
 
-    fn parse_ip_matcher(&mut self, value: &str, path: &str) -> Option<Vec<IpMatcher>> {
+    fn parse_ip_matcher(
+        &mut self,
+        value: &str,
+        path: &str,
+        max_matchers: usize,
+    ) -> Option<Vec<IpMatcher>> {
         let (value, inverse) = strip_inverse_prefix(value);
         if let Some(code) = value.strip_prefix("geoip:") {
             let (code, code_inverse) = strip_inverse_prefix(code);
@@ -1614,14 +1847,14 @@ impl Parser<'_> {
             if code.eq_ignore_ascii_case("private") {
                 return Some(vec![wrap_ip_matcher_inverse(IpMatcher::Private, inverse)]);
             }
-            return self.parse_geoip_matchers("geoip.dat", code, inverse, path);
+            return self.parse_geoip_matchers("geoip.dat", code, inverse, path, max_matchers);
         }
 
         if let Some(spec) = value.strip_prefix("ext-ip:") {
-            return self.parse_external_geoip_matchers(spec, inverse, path);
+            return self.parse_external_geoip_matchers(spec, inverse, path, max_matchers);
         }
         if let Some(spec) = value.strip_prefix("ext:") {
-            return self.parse_external_geoip_matchers(spec, inverse, path);
+            return self.parse_external_geoip_matchers(spec, inverse, path, max_matchers);
         }
 
         self.parse_ip_cidr(value, path)
@@ -1633,6 +1866,7 @@ impl Parser<'_> {
         spec: &str,
         inverse: bool,
         path: &str,
+        max_matchers: usize,
     ) -> Option<Vec<IpMatcher>> {
         let (file_name, code) = self.parse_external_geodata_ref(spec, path)?;
         let (code, code_inverse) = strip_inverse_prefix(code);
@@ -1642,7 +1876,7 @@ impl Parser<'_> {
             return None;
         }
 
-        self.parse_geoip_matchers(file_name, code, inverse, path)
+        self.parse_geoip_matchers(file_name, code, inverse, path, max_matchers)
     }
 
     fn parse_geoip_matchers(
@@ -1651,10 +1885,11 @@ impl Parser<'_> {
         code: &str,
         inverse: bool,
         path: &str,
+        max_matchers: usize,
     ) -> Option<Vec<IpMatcher>> {
         match self
             .geodata_loader
-            .load_ip_matchers(file_name, code, inverse)
+            .load_ip_matchers(file_name, code, inverse, max_matchers)
         {
             Ok(matchers) if matchers.is_empty() => {
                 self.error(
@@ -1704,15 +1939,38 @@ impl Parser<'_> {
             return None;
         }
 
-        let mut attrs = Vec::new();
+        let mut attrs = HashSet::new();
         for attr in parts {
             if attr.is_empty() {
                 self.error(path, "geosite attribute cannot be empty");
                 return None;
             }
-            attrs.push(attr.to_ascii_lowercase());
+            if attr.len() > MAX_CONFIG_GEODATA_ATTRIBUTE_SIZE {
+                self.error(
+                    path,
+                    format!(
+                        "geosite attribute is {} bytes; maximum supported size is {} bytes",
+                        attr.len(),
+                        MAX_CONFIG_GEODATA_ATTRIBUTE_SIZE
+                    ),
+                );
+                return None;
+            }
+            attrs.insert(attr.to_ascii_lowercase());
+            if attrs.len() > MAX_CONFIG_GEODATA_ATTR_FILTERS {
+                self.error(
+                    path,
+                    format!(
+                        "geosite reference contains more than {} unique attribute filters",
+                        MAX_CONFIG_GEODATA_ATTR_FILTERS
+                    ),
+                );
+                return None;
+            }
         }
 
+        let mut attrs = attrs.into_iter().collect::<Vec<_>>();
+        attrs.sort_unstable();
         Some((code, attrs))
     }
 
@@ -1787,6 +2045,28 @@ impl Parser<'_> {
         }
     }
 
+    fn domain_matcher_budget_error(&mut self, path: &str) {
+        self.error(
+            path,
+            format!(
+                "configuration exceeds the domain matcher budget (maximum {} domain matchers and {} total domain/IP matchers)",
+                self.matcher_budget.limits.domain_matchers,
+                self.matcher_budget.limits.total_matchers
+            ),
+        );
+    }
+
+    fn ip_matcher_budget_error(&mut self, path: &str) {
+        self.error(
+            path,
+            format!(
+                "configuration exceeds the IP matcher budget (maximum {} IP matchers and {} total domain/IP matchers)",
+                self.matcher_budget.limits.ip_matchers,
+                self.matcher_budget.limits.total_matchers
+            ),
+        );
+    }
+
     fn error(&mut self, path: impl Into<String>, message: impl Into<String>) {
         self.diagnostics.push(Diagnostic::error(path, message));
     }
@@ -1845,6 +2125,17 @@ fn wrap_ip_matcher_inverse(matcher: IpMatcher, inverse: bool) -> IpMatcher {
     } else {
         matcher
     }
+}
+
+fn is_loopback_listener(listen: &str) -> bool {
+    let listen = listen
+        .strip_prefix('[')
+        .and_then(|address| address.strip_suffix(']'))
+        .unwrap_or(listen);
+    listen.eq_ignore_ascii_case("localhost")
+        || listen
+            .parse::<IpAddr>()
+            .is_ok_and(|address| address.is_loopback())
 }
 
 fn decode_base64url_no_padding(encoded: &str) -> Result<Vec<u8>, String> {
@@ -1924,9 +2215,19 @@ fn hex_value(byte: u8) -> Result<u8, String> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
-    use super::{default_geodata_dirs, geodata_dirs_with_defaults};
+    use prost::Message;
+
+    use super::{
+        default_geodata_dirs, geodata_dirs_with_defaults, parse_xray_json_with_loader_and_limits,
+        GeodataLoader, MatcherBudget, MatcherBudgetLimits, Parser, DEFAULT_MATCHER_BUDGET_LIMITS,
+        MAX_CONFIG_GEODATA_ATTRIBUTE_SIZE, MAX_CONFIG_GEODATA_ATTR_FILTERS,
+    };
 
     #[test]
     fn explicit_geodata_dirs_are_searched_before_defaults() {
@@ -1944,5 +2245,200 @@ mod tests {
         let dirs = geodata_dirs_with_defaults::<PathBuf>(&[]);
 
         assert_eq!(dirs, default_geodata_dirs());
+    }
+
+    #[test]
+    fn default_matcher_budget_enforces_domain_ip_and_combined_limits() {
+        let mut domain_budget = MatcherBudget::new(DEFAULT_MATCHER_BUDGET_LIMITS);
+        let mut ip_budget = MatcherBudget::new(DEFAULT_MATCHER_BUDGET_LIMITS);
+        let mut combined_budget = MatcherBudget::new(DEFAULT_MATCHER_BUDGET_LIMITS);
+
+        assert!(domain_budget.consume_domain_matchers(250_000));
+        assert!(!domain_budget.consume_domain_matchers(1));
+        assert!(ip_budget.consume_ip_matchers(300_000));
+        assert!(!ip_budget.consume_ip_matchers(1));
+        assert!(combined_budget.consume_domain_matchers(200_000));
+        assert!(combined_budget.consume_ip_matchers(300_000));
+        assert!(!combined_budget.consume_domain_matchers(1));
+    }
+
+    #[test]
+    fn repeated_cached_geosite_is_rejected_by_global_matcher_budget() {
+        let asset_dir = unique_temp_dir("repeated-budget");
+        write_geosite(
+            &asset_dir,
+            TestGeoSite {
+                code: "TEST".to_owned(),
+                domain: (0..3)
+                    .map(|index| TestGeoDomain {
+                        r#type: 2,
+                        value: format!("{index}.example"),
+                    })
+                    .collect(),
+            },
+        );
+        let raw = r#"{
+          "outbounds": [{ "protocol": "freedom", "tag": "direct" }],
+          "routing": {
+            "rules": [{
+              "type": "field",
+              "domain": ["geosite:test"],
+              "outboundTag": "direct"
+            }, {
+              "type": "field",
+              "domain": ["geosite:test"],
+              "outboundTag": "direct"
+            }]
+          }
+        }"#;
+        let limits = MatcherBudgetLimits {
+            routing_rules: 16,
+            domain_matchers: 5,
+            ip_matchers: 5,
+            total_matchers: 8,
+        };
+
+        let error = parse_xray_json_with_loader_and_limits(
+            raw,
+            GeodataLoader::from_dirs(vec![asset_dir.clone()]),
+            limits,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error.diagnostics[0].path.as_deref(),
+            Some("$.routing.rules[1].domain[0]")
+        );
+        assert!(error.diagnostics[0]
+            .message
+            .contains("requires at least 3 domain matchers"));
+        assert!(error.diagnostics[0].message.contains("only 2 slots remain"));
+
+        fs::remove_dir_all(asset_dir).unwrap();
+    }
+
+    #[test]
+    fn repeated_geosite_attributes_are_case_insensitively_deduplicated() {
+        let root = serde_json::Value::Null;
+        let mut parser = Parser {
+            root: &root,
+            diagnostics: Vec::new(),
+            geodata_loader: GeodataLoader::from_dirs(Vec::new()),
+            matcher_budget: MatcherBudget::new(DEFAULT_MATCHER_BUDGET_LIMITS),
+        };
+        let spec = format!("test{}", "@AdS".repeat(MAX_CONFIG_GEODATA_ATTR_FILTERS + 1));
+
+        let (_, attrs) = parser
+            .parse_geosite_code_and_attrs(&spec, "$.routing.rules[0].domain[0]")
+            .unwrap();
+
+        assert_eq!(attrs, vec!["ads"]);
+        assert!(parser.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn unique_geosite_attribute_count_is_bounded() {
+        let root = serde_json::Value::Null;
+        let mut parser = Parser {
+            root: &root,
+            diagnostics: Vec::new(),
+            geodata_loader: GeodataLoader::from_dirs(Vec::new()),
+            matcher_budget: MatcherBudget::new(DEFAULT_MATCHER_BUDGET_LIMITS),
+        };
+        let attrs = (0..=MAX_CONFIG_GEODATA_ATTR_FILTERS)
+            .map(|index| format!("attr{index}"))
+            .collect::<Vec<_>>()
+            .join("@");
+        let spec = format!("test@{attrs}");
+
+        let parsed = parser.parse_geosite_code_and_attrs(&spec, "$.routing.rules[0].domain[0]");
+
+        assert!(parsed.is_none());
+        assert!(parser.diagnostics[0]
+            .message
+            .contains("more than 32 unique attribute filters"));
+    }
+
+    #[test]
+    fn oversized_geosite_attribute_is_rejected_before_geodata_load() {
+        let attribute = "a".repeat(MAX_CONFIG_GEODATA_ATTRIBUTE_SIZE + 1);
+        let raw = format!(
+            r#"{{
+              "outbounds": [{{ "protocol": "freedom", "tag": "direct" }}],
+              "routing": {{
+                "rules": [{{
+                  "type": "field",
+                  "domain": ["geosite:test@{attribute}"],
+                  "outboundTag": "direct"
+                }}]
+              }}
+            }}"#
+        );
+
+        let error = parse_xray_json_with_loader_and_limits(
+            &raw,
+            GeodataLoader::from_dirs(Vec::new()),
+            DEFAULT_MATCHER_BUDGET_LIMITS,
+        )
+        .unwrap_err();
+
+        assert!(error.diagnostics[0]
+            .message
+            .contains("maximum supported size is 256 bytes"));
+        assert!(!error.diagnostics[0].message.contains("not found"));
+    }
+
+    fn unique_temp_dir(label: &str) -> PathBuf {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "xray-config-parser-{label}-{}-{timestamp}",
+            std::process::id()
+        ));
+        fs::create_dir(&path).unwrap();
+        path
+    }
+
+    fn write_geosite(root: &Path, site: TestGeoSite) {
+        let body = site.encode_to_vec();
+        let mut bytes = vec![0];
+        encode_varint(body.len() as u64, &mut bytes);
+        bytes.extend_from_slice(&body);
+        fs::write(root.join("geosite.dat"), bytes).unwrap();
+    }
+
+    fn encode_varint(mut value: u64, output: &mut Vec<u8>) {
+        while value >= 0x80 {
+            output.push(value as u8 | 0x80);
+            value >>= 7;
+        }
+        output.push(value as u8);
+    }
+
+    #[derive(Clone, PartialEq, Message)]
+    struct TestGeoSite {
+        #[prost(string, tag = "1")]
+        code: String,
+        #[prost(message, repeated, tag = "2")]
+        domain: Vec<TestGeoDomain>,
+    }
+
+    #[derive(Clone, PartialEq, Message)]
+    struct TestGeoDomain {
+        #[prost(enumeration = "TestGeoDomainType", tag = "1")]
+        r#type: i32,
+        #[prost(string, tag = "2")]
+        value: String,
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, prost::Enumeration)]
+    #[repr(i32)]
+    enum TestGeoDomainType {
+        Substr = 0,
+        Regex = 1,
+        Domain = 2,
+        Full = 3,
     }
 }

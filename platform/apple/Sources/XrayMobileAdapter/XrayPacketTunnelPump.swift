@@ -3,28 +3,167 @@ import Darwin
 import Foundation
 import NetworkExtension
 
-private enum XrayMobileLog {
-    static func info(_ category: String, _ message: String) {
-        NSLog("[XrayRust][\(category)] \(message)")
+public enum XrayPacketTunnelPumpError: Error, Equatable, LocalizedError, Sendable {
+    case persistentPollPacketFailures(consecutiveFailures: Int)
+    case persistentWritePacketFailures(consecutiveFailures: Int)
+
+    public var errorDescription: String? {
+        switch self {
+        case let .persistentPollPacketFailures(consecutiveFailures):
+            return "Packet tunnel output polling failed \(consecutiveFailures) consecutive times."
+        case let .persistentWritePacketFailures(consecutiveFailures):
+            return "Packet tunnel output delivery failed \(consecutiveFailures) consecutive times."
+        }
+    }
+}
+
+enum XrayPacketTunnelPumpOperation: CaseIterable, Hashable, Sendable {
+    case pollPackets
+    case writePackets
+}
+
+final class XrayPacketTunnelFailureCircuitBreaker: @unchecked Sendable {
+    private let lock = NSLock()
+    private let maxConsecutiveFailures: Int
+    private var isRunning = false
+    private var didTrip = false
+    private var consecutiveFailures: [XrayPacketTunnelPumpOperation: Int] = [:]
+
+    init(maxConsecutiveFailures: Int) {
+        precondition(maxConsecutiveFailures > 0)
+        self.maxConsecutiveFailures = maxConsecutiveFailures
     }
 
-    static func error(_ category: String, _ message: String) {
-        NSLog("[XrayRust][\(category)][error] \(message)")
+    func start() {
+        lock.lock()
+        isRunning = true
+        didTrip = false
+        consecutiveFailures.removeAll(keepingCapacity: true)
+        lock.unlock()
+    }
+
+    func stop() {
+        lock.lock()
+        isRunning = false
+        lock.unlock()
+    }
+
+    func recordSuccess(_ operation: XrayPacketTunnelPumpOperation) {
+        lock.lock()
+        if isRunning, !didTrip {
+            consecutiveFailures[operation] = 0
+        }
+        lock.unlock()
+    }
+
+    // The Rust FFI currently maps inbound QueueFull/backpressure to a generic
+    // TUN error. Treat every push failure as a dropped packet; a tight burst
+    // must never disconnect an otherwise healthy tunnel.
+    func recordRecoverablePushFailure() -> XrayPacketTunnelPumpError? {
+        nil
+    }
+
+    func recordFailure(
+        _ operation: XrayPacketTunnelPumpOperation
+    ) -> XrayPacketTunnelPumpError? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard isRunning, !didTrip else {
+            return nil
+        }
+
+        let count = consecutiveFailures[operation, default: 0] + 1
+        consecutiveFailures[operation] = count
+        guard count >= maxConsecutiveFailures else {
+            return nil
+        }
+        didTrip = true
+
+        switch operation {
+        case .pollPackets:
+            return .persistentPollPacketFailures(consecutiveFailures: count)
+        case .writePackets:
+            return .persistentWritePacketFailures(consecutiveFailures: count)
+        }
+    }
+}
+
+final class XrayPacketTunnelTerminalFailureDelivery: @unchecked Sendable {
+    private let lock = NSLock()
+    private let queue: DispatchQueue
+    private let handler: @Sendable (XrayPacketTunnelPumpError) -> Void
+    private var isStopped = true
+    private var isScheduled = false
+
+    init(
+        queue: DispatchQueue = DispatchQueue(
+            label: "org.xrayrust.packet-tunnel-pump.terminal-failure"
+        ),
+        handler: @escaping @Sendable (XrayPacketTunnelPumpError) -> Void
+    ) {
+        self.queue = queue
+        self.handler = handler
+    }
+
+    func start() {
+        lock.lock()
+        isStopped = false
+        isScheduled = false
+        lock.unlock()
+    }
+
+    func stop() {
+        lock.lock()
+        isStopped = true
+        lock.unlock()
+    }
+
+    func submit(_ error: XrayPacketTunnelPumpError) {
+        lock.lock()
+        guard !isStopped, !isScheduled else {
+            lock.unlock()
+            return
+        }
+        isScheduled = true
+        lock.unlock()
+
+        queue.async { [self] in
+            lock.lock()
+            let shouldDeliver = !isStopped
+            lock.unlock()
+            if shouldDeliver {
+                // Never call the handler while holding the delivery lock. The
+                // handler may synchronously tear down the pump.
+                handler(error)
+            }
+        }
     }
 }
 
 @available(iOS 9.0, tvOS 17.0, macOS 10.11, *)
 public final class XrayPacketTunnelPump: @unchecked Sendable {
     private static let maxPacketsPerPoll = 64
+    private static let maxPacketBytes = 1_500
     private static let pollWaitMilliseconds: UInt32 = 250
     private static let pollErrorBackoffSeconds: TimeInterval = 0.05
+    private static let maxConsecutivePacketFailures = 8
 
     private let provider: NEPacketTunnelProvider
     private let core: XrayCore
     private let queue: DispatchQueue
-    private let lock = NSLock()
-    private let pollLoopExited = DispatchSemaphore(value: 0)
+    private let pollStorage: XrayPacketBatchPollStorage
+    private let terminalFailureDelivery: XrayPacketTunnelTerminalFailureDelivery
+    private let failureCircuitBreaker = XrayPacketTunnelFailureCircuitBreaker(
+        maxConsecutiveFailures: XrayPacketTunnelPump.maxConsecutivePacketFailures
+    )
+    private let condition = NSCondition()
+    private let pollLoopGroup = DispatchGroup()
     private var running = false
+    private var stopped = false
+    private var hasStarted = false
+    private var pollLoopActive = false
+    private var generation: UInt64 = 0
+    private var activeReadCallbacks = 0
     private var pushPacketErrorCount = 0
     private var pollPacketErrorCount = 0
     private var writePacketErrorCount = 0
@@ -38,20 +177,39 @@ public final class XrayPacketTunnelPump: @unchecked Sendable {
     public init(
         provider: NEPacketTunnelProvider,
         core: XrayCore,
-        queue: DispatchQueue = DispatchQueue(label: "org.xrayrust.packet-tunnel-pump")
+        queue: DispatchQueue = DispatchQueue(label: "org.xrayrust.packet-tunnel-pump"),
+        terminalFailureHandler: @escaping @Sendable (
+            XrayPacketTunnelPumpError
+        ) -> Void = { _ in }
     ) {
         self.provider = provider
         self.core = core
         self.queue = queue
+        terminalFailureDelivery = XrayPacketTunnelTerminalFailureDelivery(
+            handler: terminalFailureHandler
+        )
+        let pollByteCount = Self.maxPacketsPerPoll * Self.maxPacketBytes
+        pollStorage = XrayPacketBatchPollStorage(
+            validatedMaxPackets: Self.maxPacketsPerPoll,
+            validatedMaxPacketBytes: Self.maxPacketBytes,
+            validatedByteCount: pollByteCount
+        )
     }
 
     public func start() {
-        lock.lock()
-        guard !running else {
-            lock.unlock()
+        condition.lock()
+        guard !running, !stopped else {
+            condition.unlock()
             return
         }
+        generation &+= 1
+        let startedGeneration = generation
         running = true
+        hasStarted = true
+        pollLoopActive = true
+        pollLoopGroup.enter()
+        failureCircuitBreaker.start()
+        terminalFailureDelivery.start()
         pushPacketErrorCount = 0
         pollPacketErrorCount = 0
         writePacketErrorCount = 0
@@ -61,38 +219,48 @@ public final class XrayPacketTunnelPump: @unchecked Sendable {
         writtenPacketCount = 0
         writtenByteCount = 0
         lastStatsLog = Date()
-        lock.unlock()
+        condition.unlock()
 
         XrayMobileLog.info("PacketPump", "Starting packet pump")
-        readPackets()
-        pollPackets()
+        readPackets(generation: startedGeneration)
+        pollPackets(generation: startedGeneration)
     }
 
     public func stop() {
-        lock.lock()
-        let wasRunning = running
-        running = false
-        lock.unlock()
-        XrayMobileLog.info("PacketPump", "Stopping packet pump")
-        guard wasRunning else {
+        condition.lock()
+        guard hasStarted else {
+            condition.unlock()
             return
         }
-        // Join the poll loop so the provider can stop the core without a
-        // blocking poll still holding the FFI data path.
-        let deadline = DispatchTime.now() + .milliseconds(Int(Self.pollWaitMilliseconds) * 4)
-        if pollLoopExited.wait(timeout: deadline) == .timedOut {
-            XrayMobileLog.error("PacketPump", "Poll loop did not exit before stop deadline")
+        let shouldLog = !stopped || pollLoopActive || activeReadCallbacks > 0
+        running = false
+        stopped = true
+        generation &+= 1
+        failureCircuitBreaker.stop()
+        terminalFailureDelivery.stop()
+        while activeReadCallbacks > 0 {
+            condition.wait()
         }
+        condition.unlock()
+        if shouldLog {
+            XrayMobileLog.info("PacketPump", "Stopping packet pump")
+        }
+        // The Rust poll has a bounded wait. Joining without a timeout guarantees
+        // that the provider cannot call core.stop while poll/stats still use it.
+        pollLoopGroup.wait()
     }
 
-    private func readPackets() {
-        guard isRunning else {
+    private func readPackets(generation: UInt64) {
+        guard isRunning(generation: generation) else {
             return
         }
 
         provider.packetFlow.readPackets { [weak self] packets, protocols in
-            guard let self else {
+            guard let self, self.beginReadCallback(generation: generation) else {
                 return
+            }
+            defer {
+                self.endReadCallback()
             }
             let byteCount = packets.reduce(0) { total, packet in
                 total + packet.count
@@ -107,6 +275,7 @@ public final class XrayPacketTunnelPump: @unchecked Sendable {
                 )
             }
 
+            var droppedPacket = false
             for packet in packets {
                 // QUIC blocking happens once, inside the Rust core, which
                 // also emits the ICMP port-unreachable reply on the outbound
@@ -114,6 +283,7 @@ public final class XrayPacketTunnelPump: @unchecked Sendable {
                 do {
                     try self.core.pushPacket(packet)
                 } catch {
+                    droppedPacket = true
                     let count = self.incrementPushPacketErrorCount()
                     if Self.shouldLogPacketError(count) {
                         XrayMobileLog.error(
@@ -121,14 +291,28 @@ public final class XrayPacketTunnelPump: @unchecked Sendable {
                             "pushPacket failed count=\(count) bytes=\(packet.count) error=\(error)"
                         )
                     }
+                    _ = self.failureCircuitBreaker.recordRecoverablePushFailure()
                 }
             }
-            self.readPackets()
+            if droppedPacket {
+                Thread.sleep(forTimeInterval: 0.001)
+            }
+            self.readPackets(generation: generation)
         }
     }
 
-    private func pollPackets() {
-        queue.async { [weak self] in
+    private func pollPackets(generation: UInt64) {
+        let group = pollLoopGroup
+        queue.async { [weak self, group] in
+            defer {
+                if let self {
+                    self.condition.lock()
+                    self.pollLoopActive = false
+                    self.condition.broadcast()
+                    self.condition.unlock()
+                }
+                group.leave()
+            }
             guard let self else {
                 return
             }
@@ -136,13 +320,12 @@ public final class XrayPacketTunnelPump: @unchecked Sendable {
             // The poll blocks inside the core until a packet is queued (or the
             // wait expires), so the loop wakes immediately on traffic instead
             // of sleeping between polling passes.
-            while self.isRunning {
+            while self.isRunning(generation: generation) {
                 autoreleasepool {
                     self.pollAndWriteBatch()
                 }
                 self.logStatsIfNeeded()
             }
-            self.pollLoopExited.signal()
             XrayMobileLog.info("PacketPump", "Packet pump poll loop exited")
         }
     }
@@ -151,9 +334,10 @@ public final class XrayPacketTunnelPump: @unchecked Sendable {
         let packets: [Data]
         do {
             packets = try core.pollPackets(
-                maxPackets: Self.maxPacketsPerPoll,
+                storage: pollStorage,
                 waitMilliseconds: Self.pollWaitMilliseconds
             )
+            failureCircuitBreaker.recordSuccess(.pollPackets)
         } catch {
             let count = incrementPollPacketErrorCount()
             if Self.shouldLogPacketError(count) {
@@ -161,6 +345,10 @@ public final class XrayPacketTunnelPump: @unchecked Sendable {
                     "PacketPump",
                     "pollPackets failed count=\(count) error=\(error)"
                 )
+            }
+            if let terminalError = failureCircuitBreaker.recordFailure(.pollPackets) {
+                tripTerminalFailure(terminalError)
+                return
             }
             Thread.sleep(forTimeInterval: Self.pollErrorBackoffSeconds)
             return
@@ -191,38 +379,82 @@ public final class XrayPacketTunnelPump: @unchecked Sendable {
                     "writePackets returned false count=\(count) packets=\(packets.count)"
                 )
             }
+            if let terminalError = failureCircuitBreaker.recordFailure(.writePackets) {
+                tripTerminalFailure(terminalError)
+            }
+        } else {
+            failureCircuitBreaker.recordSuccess(.writePackets)
         }
     }
 
-    private var isRunning: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return running
+    private func tripTerminalFailure(_ error: XrayPacketTunnelPumpError) {
+        condition.lock()
+        guard running else {
+            condition.unlock()
+            return
+        }
+        running = false
+        stopped = true
+        generation &+= 1
+        failureCircuitBreaker.stop()
+        condition.broadcast()
+        condition.unlock()
+
+        XrayMobileLog.error(
+            "PacketPump",
+            "Packet pump reached a terminal failure: \(error.localizedDescription)"
+        )
+        terminalFailureDelivery.submit(error)
+    }
+
+    private func isRunning(generation: UInt64) -> Bool {
+        condition.lock()
+        defer { condition.unlock() }
+        return running && self.generation == generation
+    }
+
+    private func beginReadCallback(generation: UInt64) -> Bool {
+        condition.lock()
+        defer { condition.unlock() }
+        guard running, self.generation == generation else {
+            return false
+        }
+        activeReadCallbacks += 1
+        return true
+    }
+
+    private func endReadCallback() {
+        condition.lock()
+        activeReadCallbacks -= 1
+        if activeReadCallbacks == 0 {
+            condition.broadcast()
+        }
+        condition.unlock()
     }
 
     private func incrementPushPacketErrorCount() -> Int {
-        lock.lock()
-        defer { lock.unlock() }
+        condition.lock()
+        defer { condition.unlock() }
         pushPacketErrorCount += 1
         return pushPacketErrorCount
     }
 
     private func incrementPollPacketErrorCount() -> Int {
-        lock.lock()
-        defer { lock.unlock() }
+        condition.lock()
+        defer { condition.unlock() }
         pollPacketErrorCount += 1
         return pollPacketErrorCount
     }
 
     private func currentWritePacketErrorCount() -> Int {
-        lock.lock()
-        defer { lock.unlock() }
+        condition.lock()
+        defer { condition.unlock() }
         return writePacketErrorCount
     }
 
     private func recordReadPacketBatch(packetCount: Int, byteCount: Int) -> PacketPumpSnapshot? {
-        lock.lock()
-        defer { lock.unlock() }
+        condition.lock()
+        defer { condition.unlock() }
 
         readBatchCount += 1
         readPacketCount += UInt64(packetCount)
@@ -239,8 +471,8 @@ public final class XrayPacketTunnelPump: @unchecked Sendable {
         byteCount: Int,
         didWrite: Bool
     ) -> PacketPumpSnapshot? {
-        lock.lock()
-        defer { lock.unlock() }
+        condition.lock()
+        defer { condition.unlock() }
 
         if didWrite {
             writtenPacketCount += UInt64(packetCount)
@@ -258,14 +490,14 @@ public final class XrayPacketTunnelPump: @unchecked Sendable {
     private func logStatsIfNeeded() {
         let now = Date()
         let snapshot: PacketPumpSnapshot?
-        lock.lock()
+        condition.lock()
         if now.timeIntervalSince(lastStatsLog) >= 5 {
             lastStatsLog = now
             snapshot = snapshotLocked()
         } else {
             snapshot = nil
         }
-        lock.unlock()
+        condition.unlock()
 
         guard let snapshot else {
             return

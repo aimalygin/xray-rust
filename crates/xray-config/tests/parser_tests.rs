@@ -658,6 +658,24 @@ fn parses_field_routing_rule_with_regex_domain_matcher() {
 }
 
 #[test]
+fn rejects_routing_rule_count_above_global_budget_before_building_rules() {
+    let rule = r#"{"type":"field","domain":["full:example.test"],"outboundTag":"proxy"}"#;
+    let rules = std::iter::repeat_n(rule, 4_097)
+        .collect::<Vec<_>>()
+        .join(",");
+    let raw = raw_with_routing(&format!(r#""rules":[{rules}]"#));
+
+    let error = parse_xray_json(&raw).unwrap_err();
+
+    assert_eq!(
+        error.diagnostics[0].path.as_deref(),
+        Some("$.routing.rules")
+    );
+    assert!(error.diagnostics[0].message.contains("4097 rules"));
+    assert!(error.diagnostics[0].message.contains("maximum supported"));
+}
+
+#[test]
 fn rejects_unsupported_routing_rule_field_with_path() {
     let raw = raw_with_routing(
         r#""rules": [{
@@ -1678,6 +1696,7 @@ fn allow_insecure_tls_produces_warning_diagnostic() {
 
     let parsed = parse_xray_json(raw).expect("config should parse");
 
+    assert!(!parsed.config.inbounds[0].allow_unauthenticated_lan);
     assert!(parsed.diagnostics.iter().any(|diagnostic| {
         diagnostic.severity == DiagnosticSeverity::Warning
             && diagnostic.path.as_deref()
@@ -1694,7 +1713,11 @@ fn wildcard_listen_produces_warning_diagnostic() {
               "protocol": "socks",
               "listen": "0.0.0.0",
               "port": 1080,
-              "settings": { "auth": "noauth", "udp": false }
+              "settings": {
+                "auth": "noauth",
+                "udp": false,
+                "allowUnauthenticatedLan": true
+              }
             }
         ],
         "outbounds": [
@@ -1704,8 +1727,62 @@ fn wildcard_listen_produces_warning_diagnostic() {
 
     let parsed = parse_xray_json(raw).expect("config should parse");
 
+    assert!(parsed.config.inbounds[0].allow_unauthenticated_lan);
     assert!(parsed.diagnostics.iter().any(|diagnostic| {
         diagnostic.severity == DiagnosticSeverity::Warning
             && diagnostic.path.as_deref() == Some("$.inbounds[0].listen")
+    }));
+}
+
+#[test]
+fn unauthenticated_proxy_listener_requires_explicit_lan_opt_in() {
+    for protocol in ["socks", "http"] {
+        let raw = format!(
+            r#"{{
+                "inbounds": [{{
+                  "tag": "proxy-in",
+                  "protocol": "{protocol}",
+                  "listen": "192.0.2.10",
+                  "port": 1080,
+                  "settings": {{}}
+                }}],
+                "outbounds": [
+                    {{ "tag": "direct", "protocol": "freedom" }}
+                ]
+            }}"#
+        );
+
+        let error = parse_xray_json(&raw).unwrap_err();
+
+        assert!(error.diagnostics.iter().any(|diagnostic| {
+            diagnostic.severity == DiagnosticSeverity::Error
+                && diagnostic.path.as_deref() == Some("$.inbounds[0].listen")
+                && diagnostic.message.contains("allowUnauthenticatedLan=true")
+        }));
+    }
+}
+
+#[test]
+fn explicit_lan_opt_in_accepts_non_loopback_listener_with_warning() {
+    let raw = r#"{
+        "inbounds": [{
+          "tag": "http-in",
+          "protocol": "http",
+          "listen": "192.0.2.10",
+          "port": 8080,
+          "settings": { "allowUnauthenticatedLan": true }
+        }],
+        "outbounds": [
+            { "tag": "direct", "protocol": "freedom" }
+        ]
+    }"#;
+
+    let parsed = parse_xray_json(raw).expect("explicit LAN opt-in should parse");
+
+    assert!(parsed.config.inbounds[0].allow_unauthenticated_lan);
+    assert!(parsed.diagnostics.iter().any(|diagnostic| {
+        diagnostic.severity == DiagnosticSeverity::Warning
+            && diagnostic.path.as_deref() == Some("$.inbounds[0].listen")
+            && diagnostic.message.contains("explicitly exposed")
     }));
 }

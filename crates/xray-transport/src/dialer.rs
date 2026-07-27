@@ -73,6 +73,10 @@ impl TransportDialer {
         self.socket_protector.as_deref()
     }
 
+    pub fn socket_protector_arc(&self) -> Option<Arc<dyn SocketProtector>> {
+        self.socket_protector.clone()
+    }
+
     pub async fn connect(
         &self,
         config: &ConnectorConfig,

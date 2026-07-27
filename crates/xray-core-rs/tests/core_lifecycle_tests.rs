@@ -19,6 +19,7 @@ fn runtime_config() -> CoreConfig {
             protocol: InboundProtocol::Socks,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            allow_unauthenticated_lan: false,
             sniffing: None,
             user_level: None,
         }],
@@ -53,6 +54,7 @@ fn tun_runtime_config() -> CoreConfig {
         protocol: InboundProtocol::Tun,
         listen: "127.0.0.1".to_owned(),
         port: 0,
+        allow_unauthenticated_lan: false,
         sniffing: None,
         user_level: None,
     }];
@@ -161,6 +163,46 @@ async fn core_start_binds_socks_listener_and_exposes_addr() {
     assert_eq!(addr.ip(), IpAddr::V4(Ipv4Addr::LOCALHOST));
     assert_ne!(addr.port(), 0);
 
+    core.stop().await.unwrap();
+}
+
+#[tokio::test]
+async fn programmatic_wildcard_listener_requires_explicit_lan_opt_in() {
+    let mut config = runtime_config();
+    config.inbounds[0].listen = "0.0.0.0".to_owned();
+    let mut core = Core::new(config).unwrap();
+
+    assert!(matches!(
+        core.start().await,
+        Err(CoreError::UnauthenticatedLanExposure)
+    ));
+    assert_eq!(core.state(), CoreState::Created);
+}
+
+#[tokio::test]
+async fn explicit_lan_opt_in_allows_programmatic_wildcard_listener() {
+    let mut config = runtime_config();
+    config.inbounds[0].listen = "0.0.0.0".to_owned();
+    config.inbounds[0].allow_unauthenticated_lan = true;
+    let mut core = Core::new(config).unwrap();
+
+    core.start().await.unwrap();
+    assert!(core
+        .inbound_addr(Some("socks-in"))
+        .is_some_and(|addr| addr.ip().is_unspecified()));
+    core.stop().await.unwrap();
+}
+
+#[tokio::test]
+async fn hostname_listener_is_checked_after_resolution() {
+    let mut config = runtime_config();
+    config.inbounds[0].listen = "localhost".to_owned();
+    let mut core = Core::new(config).unwrap();
+
+    core.start().await.unwrap();
+    assert!(core
+        .inbound_addr(Some("socks-in"))
+        .is_some_and(|addr| addr.ip().is_loopback()));
     core.stop().await.unwrap();
 }
 

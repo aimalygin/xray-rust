@@ -2,18 +2,126 @@
 import Darwin
 import Dispatch
 import Foundation
-import NetworkExtension
+@preconcurrency import NetworkExtension
 import XrayAppleShared
 import XrayMobileAdapter
 
 public enum XrayPacketTunnelProviderError: Error, LocalizedError {
     case missingConfigJSON
+    case startSuperseded
 
     public var errorDescription: String? {
         switch self {
         case .missingConfigJSON:
             return "Missing Xray JSON configuration."
+        case .startSuperseded:
+            return "Tunnel start was superseded by a newer lifecycle request."
         }
+    }
+}
+
+final class XrayPacketTunnelLifecycle<Resource> {
+    struct Token: Equatable {
+        fileprivate let generation: UInt64
+    }
+
+    private let lock = NSRecursiveLock()
+    private let stopResource: (Resource) -> Void
+    private var generation: UInt64 = 0
+    private var activeResource: Resource?
+
+    init(stopResource: @escaping (Resource) -> Void) {
+        self.stopResource = stopResource
+    }
+
+    func beginStart() -> Token {
+        lock.lock()
+        defer { lock.unlock() }
+        generation &+= 1
+        if let activeResource {
+            self.activeResource = nil
+            stopResource(activeResource)
+        }
+        return Token(generation: generation)
+    }
+
+    func isCurrent(_ token: Token) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return token.generation == generation
+    }
+
+    @discardableResult
+    func install(_ resource: Resource, for token: Token) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard token.generation == generation, activeResource == nil else {
+            stopResource(resource)
+            return false
+        }
+        activeResource = resource
+        return true
+    }
+
+    @discardableResult
+    func finishStart(for token: Token, _ body: () -> Void) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard token.generation == generation, activeResource != nil else {
+            return false
+        }
+        body()
+        return true
+    }
+
+    @discardableResult
+    func cancelStart(_ token: Token) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard token.generation == generation else {
+            return false
+        }
+        generation &+= 1
+        return true
+    }
+
+    func stop() {
+        lock.lock()
+        defer { lock.unlock() }
+        generation &+= 1
+        if let activeResource {
+            self.activeResource = nil
+            stopResource(activeResource)
+        }
+    }
+
+    @discardableResult
+    func stop(ifCurrent token: Token) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard token.generation == generation else {
+            return false
+        }
+        generation &+= 1
+        if let activeResource {
+            self.activeResource = nil
+            stopResource(activeResource)
+        }
+        return true
+    }
+
+    func active() -> Resource? {
+        lock.lock()
+        defer { lock.unlock() }
+        return activeResource
+    }
+}
+
+private final class XrayWeakReference<Value: AnyObject>: @unchecked Sendable {
+    weak var value: Value?
+
+    init(_ value: Value) {
+        self.value = value
     }
 }
 
@@ -21,13 +129,16 @@ public enum XrayPacketTunnelProviderError: Error, LocalizedError {
 open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
     private static let defaultStartupProbeURL = "https://www.google.com/generate_204"
     private static let defaultStartupProbeTimeoutMs: UInt64 = 5_000
+    private static let debugStatsHandler: @Sendable (XrayCore) -> Void = {
+        logDebugStats($0)
+    }
 
-    private var core: XrayCore?
-    private var pump: XrayPacketTunnelPump?
-    private var debugStatsTimer: DispatchSourceTimer?
     private let debugStatsQueue = DispatchQueue(
         label: "org.xrayrust.apple.packet-tunnel.debug-stats"
     )
+    private lazy var lifecycle = XrayPacketTunnelLifecycle<XrayPacketTunnelRuntime> {
+        $0.stop()
+    }
 
     open override func startTunnel(
         options: [String: NSObject]?,
@@ -51,14 +162,17 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             "PacketTunnelProvider",
             "Resolved config source=\(resolvedConfig.source) bytes=\(resolvedConfig.json.utf8.count) debugLogging=\(resolvedConfig.debugLoggingEnabled) useTunFileDescriptor=\(resolvedConfig.useTunFileDescriptor) tunRuntimeProfile=\(resolvedConfig.tunRuntimeProfile.rawValue) startupProbe=\(resolvedConfig.startupProbe == nil ? "disabled" : "enabled")"
         )
+        let lifecycleToken = lifecycle.beginStart()
         let diagnosticLogDirectory = Self.diagnosticLogDirectory(
             debugLoggingEnabled: resolvedConfig.debugLoggingEnabled
         )
         XrayAppleLog.configureFileLogging(directory: diagnosticLogDirectory)
-        XrayAppleLog.info(
-            "PacketTunnelProvider",
-            "Config summary \(Self.configSummary(resolvedConfig.json))"
-        )
+        if resolvedConfig.debugLoggingEnabled {
+            XrayAppleLog.info(
+                "PacketTunnelProvider",
+                "Config summary \(Self.configSummary(resolvedConfig.json))"
+            )
+        }
 
         setTunnelNetworkSettings(
             Self.networkSettings(excludingServerAddress: resolvedConfig.serverAddress)
@@ -68,90 +182,60 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                 completionHandler(CocoaError(.userCancelled))
                 return
             }
+            guard self.lifecycle.isCurrent(lifecycleToken) else {
+                XrayAppleLog.info(
+                    "PacketTunnelProvider",
+                    "Ignoring superseded network settings callback"
+                )
+                completionHandler(XrayPacketTunnelProviderError.startSuperseded)
+                return
+            }
             if let error {
                 XrayAppleLog.error(
                     "PacketTunnelProvider",
                     "setTunnelNetworkSettings failed: \(error.localizedDescription)"
                 )
+                _ = self.lifecycle.cancelStart(lifecycleToken)
+                XrayAppleLog.configureFileLogging(directory: nil)
                 completionHandler(error)
                 return
             }
             XrayAppleLog.info("PacketTunnelProvider", "Tunnel network settings applied")
 
             do {
-                let backend = Self.packetIOBackend(
-                    discoveredTunFileDescriptor: XrayDarwinTunFileDescriptor.discoverUtunFileDescriptor(),
-                    useTunFileDescriptor: resolvedConfig.useTunFileDescriptor
+                let runtime = try self.makeRuntime(
+                    resolvedConfig: resolvedConfig,
+                    diagnosticLogDirectory: diagnosticLogDirectory,
+                    lifecycleToken: lifecycleToken
                 )
-                XrayAppleLog.info("PacketTunnelProvider", "Creating XrayCore")
-                let core: XrayCore
-                let pump: XrayPacketTunnelPump?
-                switch backend {
-                case let .darwinUtunFileDescriptor(fd):
-                    XrayAppleLog.info(
-                        "PacketTunnelProvider",
-                        "Using Darwin utun file descriptor for packet I/O"
-                    )
-                    core = try XrayCore(
-                        configJSON: resolvedConfig.json,
-                        borrowedDarwinTunFileDescriptor: fd,
-                        collectTcpTimings: resolvedConfig.debugLoggingEnabled,
-                        tunRuntimeProfile: XrayCore.tunRuntimeProfile(
-                            named: resolvedConfig.tunRuntimeProfile.rawValue
-                        ),
-                        geodataSearchDirectory: Bundle.main.resourceURL,
-                        startupProbe: resolvedConfig.startupProbe,
-                        fileLogDirectory: diagnosticLogDirectory
-                    )
-                    pump = nil
-                case .packetFlowPump:
-                    if resolvedConfig.useTunFileDescriptor {
-                        XrayAppleLog.info(
-                            "PacketTunnelProvider",
-                            "No Darwin utun fd found; using packetFlow pump for packet I/O"
-                        )
-                    } else {
-                        XrayAppleLog.info(
-                            "PacketTunnelProvider",
-                            "Darwin utun fd disabled; using packetFlow pump for packet I/O"
+                guard self.lifecycle.install(runtime, for: lifecycleToken) else {
+                    completionHandler(XrayPacketTunnelProviderError.startSuperseded)
+                    return
+                }
+                let didFinish = self.lifecycle.finishStart(for: lifecycleToken) {
+                    if resolvedConfig.debugLoggingEnabled {
+                        runtime.startDebugStatsLogging(
+                            queue: self.debugStatsQueue,
+                            handler: Self.debugStatsHandler
                         )
                     }
-                    core = try XrayCore(
-                        configJSON: resolvedConfig.json,
-                        collectTcpTimings: resolvedConfig.debugLoggingEnabled,
-                        tunRuntimeProfile: XrayCore.tunRuntimeProfile(
-                            named: resolvedConfig.tunRuntimeProfile.rawValue
-                        ),
-                        geodataSearchDirectory: Bundle.main.resourceURL,
-                        startupProbe: resolvedConfig.startupProbe,
-                        fileLogDirectory: diagnosticLogDirectory
+                    XrayAppleLog.info(
+                        "PacketTunnelProvider",
+                        "startTunnel completed successfully"
                     )
-                    pump = XrayPacketTunnelPump(
-                        provider: self,
-                        core: core
-                    )
+                    completionHandler(nil)
                 }
-                XrayAppleLog.info("PacketTunnelProvider", "Starting XrayCore")
-                try core.start()
-                if let pump {
-                    XrayAppleLog.info("PacketTunnelProvider", "Starting packet pump")
-                    pump.start()
+                if !didFinish {
+                    completionHandler(XrayPacketTunnelProviderError.startSuperseded)
                 }
-
-                self.core = core
-                self.pump = pump
-                if resolvedConfig.debugLoggingEnabled {
-                    self.startDebugStatsLogging()
-                } else {
-                    self.stopDebugStatsLogging()
-                }
-                XrayAppleLog.info("PacketTunnelProvider", "startTunnel completed successfully")
-                completionHandler(nil)
             } catch {
                 XrayAppleLog.error(
                     "PacketTunnelProvider",
                     "startTunnel failed: \(error.localizedDescription)"
                 )
+                if self.lifecycle.cancelStart(lifecycleToken) {
+                    XrayAppleLog.configureFileLogging(directory: nil)
+                }
                 completionHandler(error)
             }
         }
@@ -165,19 +249,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             "PacketTunnelProvider",
             "stopTunnel invoked reason=\(reason.xrayDescription)"
         )
-        stopDebugStatsLogging()
-        pump?.stop()
-        pump = nil
-        do {
-            try core?.stop()
-            XrayAppleLog.info("PacketTunnelProvider", "XrayCore stopped")
-        } catch {
-            XrayAppleLog.error(
-                "PacketTunnelProvider",
-                "Failed to stop XrayCore: \(error.localizedDescription)"
-            )
-        }
-        core = nil
+        lifecycle.stop()
         XrayAppleLog.configureFileLogging(directory: nil)
         completionHandler()
     }
@@ -191,7 +263,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             "handleAppMessage bytes=\(messageData.count)"
         )
         guard String(data: messageData, encoding: .utf8) == XrayTunnelProviderMessage.statsRequest,
-              let stats = try? core?.stats()
+              let stats = try? lifecycle.active()?.core.stats()
         else {
             XrayAppleLog.info("PacketTunnelProvider", "App message ignored or stats unavailable")
             completionHandler?(nil)
@@ -255,7 +327,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         return .darwinUtunFileDescriptor(discoveredTunFileDescriptor)
     }
 
-    private struct ResolvedConfig {
+    struct ResolvedConfig {
         var json: String
         var source: String
         var serverAddress: String?
@@ -265,9 +337,10 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         var startupProbe: XrayStartupProbeOptions?
     }
 
-    private static func configJSON(
+    static func configJSON(
         options: [String: NSObject]?,
-        protocolConfiguration: NEVPNProtocol
+        protocolConfiguration: NEVPNProtocol,
+        secureConfigStore: XraySecureConfigStoring = XrayKeychainConfigStore()
     ) -> ResolvedConfig? {
         let tunnelProtocol = protocolConfiguration as? NETunnelProviderProtocol
         let serverAddress = tunnelProtocol?.serverAddress
@@ -288,26 +361,39 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             providerConfiguration: tunnelProtocol?.providerConfiguration
         )
 
-        if let configJSON = options?[XrayTunnelProviderMessage.configJSONOptionKey] as? String {
-            return ResolvedConfig(
-                json: configJSON,
-                source: "startTunnelOptions",
-                serverAddress: serverAddress,
-                debugLoggingEnabled: isDebugLoggingEnabled,
-                useTunFileDescriptor: shouldUseTunFileDescriptor,
-                tunRuntimeProfile: selectedTunRuntimeProfile,
-                startupProbe: selectedStartupProbe
-            )
+        let optionReference = stringValue(
+            options?[XrayTunnelProviderMessage.configReferenceOptionKey]
+        )
+        let providerReference = stringValue(
+            tunnelProtocol?.providerConfiguration?[
+                XrayTunnelProviderMessage.providerConfigReferenceKey
+            ]
+        )
+        guard let configReference = optionReference ?? providerReference else {
+            return nil
         }
-
-        guard let configJSON = tunnelProtocol?.providerConfiguration?[
-            XrayTunnelProviderMessage.providerConfigJSONKey
-        ] as? String else {
+        let configJSON: String
+        do {
+            guard let storedConfig = try secureConfigStore.configJSON(
+                reference: configReference
+            ) else {
+                XrayAppleLog.error(
+                    "PacketTunnelProvider",
+                    "Secure configuration reference could not be resolved"
+                )
+                return nil
+            }
+            configJSON = storedConfig
+        } catch {
+            XrayAppleLog.error(
+                "PacketTunnelProvider",
+                "Failed to load secure configuration: \(error.localizedDescription)"
+            )
             return nil
         }
         return ResolvedConfig(
             json: configJSON,
-            source: "providerConfiguration",
+            source: optionReference == nil ? "providerConfigurationReference" : "startOptionReference",
             serverAddress: serverAddress,
             debugLoggingEnabled: isDebugLoggingEnabled,
             useTunFileDescriptor: shouldUseTunFileDescriptor,
@@ -345,7 +431,9 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         guard debugLoggingEnabled else {
             return nil
         }
-        return baseDirectory.appendingPathComponent("XrayRustLogs", isDirectory: true)
+        return baseDirectory
+            .resolvingSymlinksInPath()
+            .appendingPathComponent("XrayRustLogs", isDirectory: true)
     }
 
     static func configSummary(_ json: String) -> String {
@@ -388,15 +476,13 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         let settings = outbound["settings"] as? [String: Any]
         let vnext = settings?["vnext"] as? [[String: Any]]
         let firstServer = vnext?.first
-        let address = firstServer?["address"] as? String ?? "unknown"
-        let port = firstServer?["port"].map { "\($0)" } ?? "unknown"
         let users = firstServer?["users"] as? [[String: Any]]
         let flow = users?.first?["flow"] as? String ?? "none"
         let streamSettings = outbound["streamSettings"] as? [String: Any]
         let network = streamSettings?["network"] as? String ?? "unknown"
         let security = streamSettings?["security"] as? String ?? "unknown"
 
-        return "\(tag):\(protocolName)@\(address):\(port) network=\(network) security=\(security) flow=\(flow)"
+        return "\(tag):\(protocolName) network=\(network) security=\(security) flow=\(flow)"
     }
 
     static func tunFileDescriptorEnabled(
@@ -580,60 +666,211 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         }
     }
 
-    private func startDebugStatsLogging() {
-        stopDebugStatsLogging()
-
-        XrayAppleLog.info("PacketTunnelProvider", "Debug stats logging enabled")
-        let timer = DispatchSource.makeTimerSource(queue: debugStatsQueue)
-        timer.schedule(deadline: .now() + 5, repeating: 5)
-        timer.setEventHandler { [weak self] in
-            guard let self else {
-                return
-            }
-            do {
-                guard let stats = try self.core?.stats() else {
-                    XrayAppleLog.info("PacketTunnelProvider", "Debug stats unavailable: no core")
-                    return
-                }
-                for message in stats.debugLogMessages() {
-                    XrayAppleLog.info("PacketTunnelProvider", message)
-                }
-                for event in try self.core?.pollTcpSlowFlowEvents() ?? [] {
-                    XrayAppleLog.info("PacketTunnelProvider", event.debugLogMessage())
-                }
-                for event in try self.core?.pollTcpFlowSummaryEvents() ?? [] {
-                    XrayAppleLog.info("PacketTunnelProvider", event.debugLogMessage())
-                }
-                for event in try self.core?.pollTcpRemoteWriteSlowEvents() ?? [] {
-                    XrayAppleLog.info("PacketTunnelProvider", event.debugLogMessage())
-                }
-                for event in try self.core?.pollTcpOpenErrorEvents() ?? [] {
-                    XrayAppleLog.info("PacketTunnelProvider", event.debugLogMessage())
-                }
-                for event in try self.core?.pollUdpSlowFlowEvents() ?? [] {
-                    XrayAppleLog.info("PacketTunnelProvider", event.debugLogMessage())
-                }
-                for event in try self.core?.pollUdpResponseGapEvents() ?? [] {
-                    XrayAppleLog.info("PacketTunnelProvider", event.debugLogMessage())
-                }
-                for event in try self.core?.pollUdpQuicBlockedEvents() ?? [] {
-                    XrayAppleLog.info("PacketTunnelProvider", event.debugLogMessage())
-                }
-            } catch {
-                XrayAppleLog.error(
+    private func makeRuntime(
+        resolvedConfig: ResolvedConfig,
+        diagnosticLogDirectory: URL?,
+        lifecycleToken: XrayPacketTunnelLifecycle<XrayPacketTunnelRuntime>.Token
+    ) throws -> XrayPacketTunnelRuntime {
+        let backend = Self.packetIOBackend(
+            discoveredTunFileDescriptor: XrayDarwinTunFileDescriptor.discoverUtunFileDescriptor(),
+            useTunFileDescriptor: resolvedConfig.useTunFileDescriptor
+        )
+        XrayAppleLog.info("PacketTunnelProvider", "Creating XrayCore")
+        let core: XrayCore
+        let pump: XrayPacketTunnelPump?
+        switch backend {
+        case let .darwinUtunFileDescriptor(fd):
+            XrayAppleLog.info(
+                "PacketTunnelProvider",
+                "Using Darwin utun file descriptor for packet I/O"
+            )
+            core = try XrayCore(
+                configJSON: resolvedConfig.json,
+                borrowedDarwinTunFileDescriptor: fd,
+                collectTcpTimings: resolvedConfig.debugLoggingEnabled,
+                tunRuntimeProfile: XrayCore.tunRuntimeProfile(
+                    named: resolvedConfig.tunRuntimeProfile.rawValue
+                ),
+                geodataSearchDirectory: Bundle.main.resourceURL,
+                startupProbe: resolvedConfig.startupProbe,
+                fileLogDirectory: diagnosticLogDirectory
+            )
+            pump = nil
+        case .packetFlowPump:
+            if resolvedConfig.useTunFileDescriptor {
+                XrayAppleLog.info(
                     "PacketTunnelProvider",
-                    "Failed to read debug stats: \(error.localizedDescription)"
+                    "No Darwin utun fd found; using packetFlow pump for packet I/O"
+                )
+            } else {
+                XrayAppleLog.info(
+                    "PacketTunnelProvider",
+                    "Darwin utun fd disabled; using packetFlow pump for packet I/O"
                 )
             }
+            core = try XrayCore(
+                configJSON: resolvedConfig.json,
+                collectTcpTimings: resolvedConfig.debugLoggingEnabled,
+                tunRuntimeProfile: XrayCore.tunRuntimeProfile(
+                    named: resolvedConfig.tunRuntimeProfile.rawValue
+                ),
+                geodataSearchDirectory: Bundle.main.resourceURL,
+                startupProbe: resolvedConfig.startupProbe,
+                fileLogDirectory: diagnosticLogDirectory
+            )
+            let providerReference = XrayWeakReference(self)
+            pump = XrayPacketTunnelPump(
+                provider: self,
+                core: core,
+                terminalFailureHandler: { error in
+                    providerReference.value?.handlePacketPumpTerminalFailure(
+                        error,
+                        lifecycleToken: lifecycleToken
+                    )
+                }
+            )
+        }
+
+        do {
+            XrayAppleLog.info("PacketTunnelProvider", "Starting XrayCore")
+            try core.start()
+            if let pump {
+                XrayAppleLog.info("PacketTunnelProvider", "Starting packet pump")
+                pump.start()
+            }
+            return XrayPacketTunnelRuntime(core: core, pump: pump)
+        } catch {
+            pump?.stop()
+            try? core.stop()
+            throw error
+        }
+    }
+
+    private func handlePacketPumpTerminalFailure(
+        _ error: XrayPacketTunnelPumpError,
+        lifecycleToken: XrayPacketTunnelLifecycle<XrayPacketTunnelRuntime>.Token
+    ) {
+        guard lifecycle.stop(ifCurrent: lifecycleToken) else {
+            XrayAppleLog.info(
+                "PacketTunnelProvider",
+                "Ignoring terminal failure from a superseded packet pump"
+            )
+            return
+        }
+        XrayAppleLog.error(
+            "PacketTunnelProvider",
+            "Packet pump failed permanently; cancelling the tunnel: \(error.localizedDescription)"
+        )
+        cancelTunnelWithError(error)
+        XrayAppleLog.configureFileLogging(directory: nil)
+    }
+
+    private static func logDebugStats(_ core: XrayCore) {
+        do {
+            let stats = try core.stats()
+            for message in stats.debugLogMessages() {
+                XrayAppleLog.info("PacketTunnelProvider", message)
+            }
+            for event in try core.pollTcpSlowFlowEvents() {
+                XrayAppleLog.info("PacketTunnelProvider", event.debugLogMessage())
+            }
+            for event in try core.pollTcpFlowSummaryEvents() {
+                XrayAppleLog.info("PacketTunnelProvider", event.debugLogMessage())
+            }
+            for event in try core.pollTcpRemoteWriteSlowEvents() {
+                XrayAppleLog.info("PacketTunnelProvider", event.debugLogMessage())
+            }
+            for event in try core.pollTcpOpenErrorEvents() {
+                XrayAppleLog.info("PacketTunnelProvider", event.debugLogMessage())
+            }
+            for event in try core.pollUdpSlowFlowEvents() {
+                XrayAppleLog.info("PacketTunnelProvider", event.debugLogMessage())
+            }
+            for event in try core.pollUdpResponseGapEvents() {
+                XrayAppleLog.info("PacketTunnelProvider", event.debugLogMessage())
+            }
+            for event in try core.pollUdpQuicBlockedEvents() {
+                XrayAppleLog.info("PacketTunnelProvider", event.debugLogMessage())
+            }
+        } catch {
+            XrayAppleLog.error(
+                "PacketTunnelProvider",
+                "Failed to read debug stats: \(error.localizedDescription)"
+            )
+        }
+    }
+}
+
+@available(iOSApplicationExtension 15.0, tvOSApplicationExtension 17.0, macOSApplicationExtension 13.0, *)
+private final class XrayPacketTunnelRuntime {
+    let core: XrayCore
+
+    private let lock = NSLock()
+    private var pump: XrayPacketTunnelPump?
+    private var debugStatsTimer: DispatchSourceTimer?
+    private var isStopped = false
+
+    init(core: XrayCore, pump: XrayPacketTunnelPump?) {
+        self.core = core
+        self.pump = pump
+    }
+
+    func startDebugStatsLogging(
+        queue: DispatchQueue,
+        handler: @escaping @Sendable (XrayCore) -> Void
+    ) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !isStopped, debugStatsTimer == nil else {
+            return
+        }
+
+        XrayAppleLog.info("PacketTunnelProvider", "Debug stats logging enabled")
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + 5, repeating: 5)
+        timer.setEventHandler { [weak self] in
+            guard let self, let core = self.runningCore() else {
+                return
+            }
+            handler(core)
         }
         debugStatsTimer = timer
         timer.resume()
     }
 
-    private func stopDebugStatsLogging() {
-        debugStatsTimer?.setEventHandler {}
-        debugStatsTimer?.cancel()
+    func stop() {
+        let timer: DispatchSourceTimer?
+        let pump: XrayPacketTunnelPump?
+        lock.lock()
+        if isStopped {
+            lock.unlock()
+            return
+        }
+        isStopped = true
+        timer = debugStatsTimer
         debugStatsTimer = nil
+        pump = self.pump
+        self.pump = nil
+        lock.unlock()
+
+        timer?.setEventHandler {}
+        timer?.cancel()
+        pump?.stop()
+        do {
+            try core.stop()
+            XrayAppleLog.info("PacketTunnelProvider", "XrayCore stopped")
+        } catch {
+            XrayAppleLog.error(
+                "PacketTunnelProvider",
+                "Failed to stop XrayCore: \(error.localizedDescription)"
+            )
+        }
+    }
+
+    private func runningCore() -> XrayCore? {
+        lock.lock()
+        defer { lock.unlock() }
+        return isStopped ? nil : core
     }
 }
 

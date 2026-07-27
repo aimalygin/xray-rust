@@ -12,6 +12,7 @@ use xray_tun::{
 use crate::RuntimeLogger;
 
 const RUNTIME_STATS_LOG_INTERVAL: Duration = Duration::from_secs(5);
+const RUNTIME_EVENT_DRAIN_LIMIT_PER_KIND: usize = 64;
 
 pub(crate) fn spawn_runtime_stats_logger(
     tun: Arc<TunEndpoint>,
@@ -43,29 +44,54 @@ async fn log_runtime_stats_snapshot(tun: &TunEndpoint, logger: &RuntimeLogger) {
     for message in format_tun_stats_debug_lines(&stats) {
         logger.debug(|| message);
     }
+    let dropped_lines = logger.dropped_lines();
+    if dropped_lines > 0 {
+        logger.debug(|| format!("Debug runtimeLog droppedLines={dropped_lines}"));
+    }
     drain_runtime_events(tun, logger);
 }
 
 fn drain_runtime_events(tun: &TunEndpoint, logger: &RuntimeLogger) {
-    while let Some(event) = tun.poll_tcp_slow_flow_event() {
+    for _ in 0..RUNTIME_EVENT_DRAIN_LIMIT_PER_KIND {
+        let Some(event) = tun.poll_tcp_slow_flow_event() else {
+            break;
+        };
         logger.debug(|| format_tcp_slow_flow_event(&event));
     }
-    while let Some(event) = tun.poll_tcp_flow_summary_event() {
+    for _ in 0..RUNTIME_EVENT_DRAIN_LIMIT_PER_KIND {
+        let Some(event) = tun.poll_tcp_flow_summary_event() else {
+            break;
+        };
         logger.debug(|| format_tcp_flow_summary_event(&event));
     }
-    while let Some(event) = tun.poll_tcp_remote_write_slow_event() {
+    for _ in 0..RUNTIME_EVENT_DRAIN_LIMIT_PER_KIND {
+        let Some(event) = tun.poll_tcp_remote_write_slow_event() else {
+            break;
+        };
         logger.debug(|| format_tcp_remote_write_slow_event(&event));
     }
-    while let Some(event) = tun.poll_tcp_open_error_event() {
+    for _ in 0..RUNTIME_EVENT_DRAIN_LIMIT_PER_KIND {
+        let Some(event) = tun.poll_tcp_open_error_event() else {
+            break;
+        };
         logger.debug(|| format_tcp_open_error_event(&event));
     }
-    while let Some(event) = tun.poll_udp_slow_flow_event() {
+    for _ in 0..RUNTIME_EVENT_DRAIN_LIMIT_PER_KIND {
+        let Some(event) = tun.poll_udp_slow_flow_event() else {
+            break;
+        };
         logger.debug(|| format_udp_slow_flow_event(&event));
     }
-    while let Some(event) = tun.poll_udp_response_gap_event() {
+    for _ in 0..RUNTIME_EVENT_DRAIN_LIMIT_PER_KIND {
+        let Some(event) = tun.poll_udp_response_gap_event() else {
+            break;
+        };
         logger.debug(|| format_udp_response_gap_event(&event));
     }
-    while let Some(event) = tun.poll_udp_quic_blocked_event() {
+    for _ in 0..RUNTIME_EVENT_DRAIN_LIMIT_PER_KIND {
+        let Some(event) = tun.poll_udp_quic_blocked_event() else {
+            break;
+        };
         logger.debug(|| format_udp_quic_blocked_event(&event));
     }
 }
@@ -178,15 +204,18 @@ fn format_tcp_slow_flow_event(event: &TunTcpSlowFlowEvent) -> String {
     };
     format!(
         "Debug tcpSlowFlow kind={} target={} openMs={} firstByteMs={}",
-        kind, event.target, event.open_duration_ms, event.first_byte_duration_ms
+        kind,
+        redact_target(&event.target),
+        event.open_duration_ms,
+        event.first_byte_duration_ms
     )
 }
 
 fn format_tcp_flow_summary_event(event: &TunTcpFlowSummaryEvent) -> String {
     format!(
         "Debug tcpFlowSummary target={} outbound={} closed={} durationMs={} openMs={} firstByteMs={} remoteReadBytes={} msTo64KiB={} msTo128KiB={} msTo256KiB={} msTo512KiB={} msTo1MiB={}",
-        event.target,
-        event.outbound_tag.as_deref().unwrap_or("untagged"),
+        redact_target(&event.target),
+        crate::debug_log::configured_tag_label(event.outbound_tag.as_deref()),
         event.closed,
         event.duration_ms,
         event.open_duration_ms,
@@ -203,8 +232,8 @@ fn format_tcp_flow_summary_event(event: &TunTcpFlowSummaryEvent) -> String {
 fn format_tcp_remote_write_slow_event(event: &TunTcpRemoteWriteSlowEvent) -> String {
     format!(
         "Debug tcpRemoteWriteSlow target={} outbound={} writeWaitMs={} bytes={} messages={}",
-        event.target,
-        event.outbound_tag.as_deref().unwrap_or("untagged"),
+        redact_target(&event.target),
+        crate::debug_log::configured_tag_label(event.outbound_tag.as_deref()),
         event.duration_ms,
         event.bytes,
         event.messages
@@ -213,32 +242,48 @@ fn format_tcp_remote_write_slow_event(event: &TunTcpRemoteWriteSlowEvent) -> Str
 
 fn format_tcp_open_error_event(event: &TunTcpOpenErrorEvent) -> String {
     format!(
-        "Debug tcpOpenError target={} outbound={} error={}",
-        event.target,
-        event.outbound_tag.as_deref().unwrap_or("untagged"),
-        event.error
+        "Debug tcpOpenError target={} outbound={} error=<redacted>",
+        redact_target(&event.target),
+        crate::debug_log::configured_tag_label(event.outbound_tag.as_deref())
     )
 }
 
 fn format_udp_slow_flow_event(event: &TunUdpSlowFlowEvent) -> String {
     format!(
         "Debug udpSlowFlow target={} firstResponseMs={} writtenBytes={} readBytes={}",
-        event.target, event.first_response_duration_ms, event.written_bytes, event.read_bytes
+        redact_target(&event.target),
+        event.first_response_duration_ms,
+        event.written_bytes,
+        event.read_bytes
     )
 }
 
 fn format_udp_response_gap_event(event: &TunUdpResponseGapEvent) -> String {
     format!(
         "Debug udpResponseGap target={} responseGapMs={} writtenBytes={} readBytes={}",
-        event.target, event.response_gap_duration_ms, event.written_bytes, event.read_bytes
+        redact_target(&event.target),
+        event.response_gap_duration_ms,
+        event.written_bytes,
+        event.read_bytes
     )
 }
 
 fn format_udp_quic_blocked_event(event: &TunUdpQuicBlockedEvent) -> String {
     format!(
         "Debug quicBlocked target={} bytes={}",
-        event.target, event.bytes
+        redact_target(&event.target),
+        event.bytes
     )
+}
+
+fn redact_target(target: &str) -> String {
+    target
+        .rsplit_once(':')
+        .and_then(|(_, port)| port.parse::<u16>().ok())
+        .map_or_else(
+            || "<redacted>".to_owned(),
+            |port| format!("<redacted>:{port}"),
+        )
 }
 
 fn average_duration_ms(total: u64, events: u64) -> u64 {
@@ -251,10 +296,11 @@ mod tests {
 
     use tokio::sync::watch;
     use xray_tun::TunConfig;
-    use xray_tun::{TunStats, TunTcpFlowSummaryEvent};
+    use xray_tun::{TunStats, TunTcpFlowSummaryEvent, TunTcpOpenErrorEvent};
 
     use super::{
-        format_tcp_flow_summary_event, format_tun_stats_debug_lines, spawn_runtime_stats_logger,
+        format_tcp_flow_summary_event, format_tcp_open_error_event, format_tun_stats_debug_lines,
+        spawn_runtime_stats_logger,
     };
     use crate::RuntimeLogger;
 
@@ -304,6 +350,26 @@ mod tests {
         assert!(line.contains("Debug tcpFlowSummary"));
         assert!(line.contains("remoteReadBytes=1048576"));
         assert!(line.contains("msTo1MiB=900"));
+        assert!(line.contains("target=<redacted>:443"));
+        assert!(line.contains("outbound=<configured>"));
+        assert!(!line.contains("outbound=proxy"));
+        assert!(!line.contains("203.0.113.10"));
+    }
+
+    #[test]
+    fn runtime_event_formatting_redacts_domain_target() {
+        let event = TunTcpOpenErrorEvent {
+            target: "secret.example:8443".to_owned(),
+            outbound_tag: Some("proxy".to_owned()),
+            error: "lookup failed for another-secret.example".to_owned(),
+        };
+
+        let line = format_tcp_open_error_event(&event);
+
+        assert!(line.contains("target=<redacted>:8443"));
+        assert!(line.contains("error=<redacted>"));
+        assert!(!line.contains("secret.example"));
+        assert!(!line.contains("another-secret.example"));
     }
 
     #[test]

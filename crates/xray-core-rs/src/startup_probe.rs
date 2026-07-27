@@ -5,8 +5,8 @@ use tokio::time::timeout;
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::{DnsResolver, TlsClientConfig, TlsConnector, TransportDialer};
 
-use crate::outbound::{open_tcp_stream_with_resolver_and_dialer, select_tcp_outbound_direct};
-use crate::CoreError;
+use crate::outbound::open_tcp_stream_with_resolver_and_dialer;
+use crate::{CoreError, OutboundRouter};
 
 const MAX_HTTP_STATUS_LINE_LEN: usize = 1024;
 
@@ -31,10 +31,25 @@ pub(crate) enum ProbeScheme {
     Https,
 }
 
+impl ParsedProbeUrl {
+    fn diagnostic_label(&self) -> String {
+        format!("{}://<redacted-host>:{}", self.scheme.as_str(), self.port)
+    }
+}
+
+impl ProbeScheme {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Http => "http",
+            Self::Https => "https",
+        }
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum StartupProbeError {
-    #[error("unsupported startup probe URL `{0}`")]
-    UnsupportedUrl(String),
+    #[error("unsupported startup probe URL")]
+    UnsupportedUrl,
     #[error("startup probe timed out after {timeout_ms}ms for `{url}`")]
     Timeout { url: String, timeout_ms: u128 },
     #[error("startup probe transport failed for `{url}`: {source}")]
@@ -62,36 +77,48 @@ pub enum StartupProbeError {
 }
 
 pub(crate) async fn run_startup_probe(
-    config: &xray_config::CoreConfig,
+    outbound_router: &OutboundRouter,
     options: StartupProbeOptions,
     dns_resolver: &dyn DnsResolver,
     transport_dialer: &TransportDialer,
 ) -> Result<(), StartupProbeError> {
     let timeout_ms = options.timeout.as_millis();
-    let url = options.url.clone();
+    let url = diagnostic_probe_url(&options.url);
     timeout(
         options.timeout,
-        run_startup_probe_inner(config, &options, dns_resolver, transport_dialer, None),
+        run_startup_probe_inner(
+            outbound_router,
+            &options,
+            dns_resolver,
+            transport_dialer,
+            None,
+        ),
     )
     .await
     .map_err(|_| StartupProbeError::Timeout { url, timeout_ms })?
 }
 
+pub(crate) fn diagnostic_probe_url(raw: &str) -> String {
+    parse_probe_url(raw)
+        .map(|parsed| parsed.diagnostic_label())
+        .unwrap_or_else(|_| "<redacted>".to_owned())
+}
+
 async fn run_startup_probe_inner(
-    config: &xray_config::CoreConfig,
+    outbound_router: &OutboundRouter,
     options: &StartupProbeOptions,
     dns_resolver: &dyn DnsResolver,
     transport_dialer: &TransportDialer,
     tls_connector: Option<&TlsConnector>,
 ) -> Result<(), StartupProbeError> {
     let parsed = parse_probe_url(&options.url)?;
+    let url = parsed.diagnostic_label();
     let step_timeout = options.timeout;
-    let outbound =
-        select_tcp_outbound_direct(config, options.outbound_tag.as_deref()).map_err(|source| {
-            StartupProbeError::Core {
-                url: options.url.clone(),
-                source: Box::new(source),
-            }
+    let outbound = outbound_router
+        .select_tcp_outbound_direct(options.outbound_tag.as_deref())
+        .map_err(|source| StartupProbeError::Core {
+            url: url.clone(),
+            source: Box::new(source),
         })?;
     let target = Target::new(
         probe_target_addr(&parsed.host),
@@ -109,11 +136,11 @@ async fn run_startup_probe_inner(
     )
     .await
     .map_err(|_| StartupProbeError::Timeout {
-        url: options.url.clone(),
+        url: url.clone(),
         timeout_ms: step_timeout.as_millis(),
     })?
     .map_err(|source| StartupProbeError::Core {
-        url: options.url.clone(),
+        url: url.clone(),
         source: Box::new(source),
     })?;
 
@@ -123,7 +150,7 @@ async fn run_startup_probe_inner(
             Some(tls_connector) => tls_connector,
             None => {
                 system_tls = TlsConnector::system().map_err(|source| StartupProbeError::Tls {
-                    url: options.url.clone(),
+                    url: url.clone(),
                     source,
                 })?;
                 &system_tls
@@ -141,11 +168,11 @@ async fn run_startup_probe_inner(
         )
         .await
         .map_err(|_| StartupProbeError::Timeout {
-            url: options.url.clone(),
+            url: url.clone(),
             timeout_ms: step_timeout.as_millis(),
         })?
         .map_err(|source| StartupProbeError::Tls {
-            url: options.url.clone(),
+            url: url.clone(),
             source,
         })?;
     }
@@ -158,34 +185,31 @@ async fn run_startup_probe_inner(
     timeout(step_timeout, stream.write_all(request.as_bytes()))
         .await
         .map_err(|_| StartupProbeError::Timeout {
-            url: options.url.clone(),
+            url: url.clone(),
             timeout_ms: step_timeout.as_millis(),
         })?
         .map_err(|source| StartupProbeError::Io {
-            url: options.url.clone(),
+            url: url.clone(),
             source,
         })?;
     timeout(step_timeout, stream.flush())
         .await
         .map_err(|_| StartupProbeError::Timeout {
-            url: options.url.clone(),
+            url: url.clone(),
             timeout_ms: step_timeout.as_millis(),
         })?
         .map_err(|source| StartupProbeError::Io {
-            url: options.url.clone(),
+            url: url.clone(),
             source,
         })?;
 
-    let status_line = read_http_status_line(&mut stream, &options.url).await?;
+    let status_line = read_http_status_line(&mut stream, &url).await?;
     let status = parse_http_status_line(&status_line)
-        .ok_or_else(|| StartupProbeError::MalformedHttpResponse(options.url.clone()))?;
+        .ok_or_else(|| StartupProbeError::MalformedHttpResponse(url.clone()))?;
     if (200..400).contains(&status) {
         Ok(())
     } else {
-        Err(StartupProbeError::HttpStatus {
-            url: options.url.clone(),
-            status,
-        })
+        Err(StartupProbeError::HttpStatus { url, status })
     }
 }
 
@@ -246,7 +270,7 @@ async fn read_http_status_line(
 
 pub(crate) fn parse_probe_url(raw: &str) -> Result<ParsedProbeUrl, StartupProbeError> {
     if raw.contains('#') {
-        return Err(StartupProbeError::UnsupportedUrl(raw.to_owned()));
+        return Err(StartupProbeError::UnsupportedUrl);
     }
 
     let (scheme, rest, default_port) = if let Some(rest) = raw.strip_prefix("https://") {
@@ -254,7 +278,7 @@ pub(crate) fn parse_probe_url(raw: &str) -> Result<ParsedProbeUrl, StartupProbeE
     } else if let Some(rest) = raw.strip_prefix("http://") {
         (ProbeScheme::Http, rest, 80)
     } else {
-        return Err(StartupProbeError::UnsupportedUrl(raw.to_owned()));
+        return Err(StartupProbeError::UnsupportedUrl);
     };
 
     let authority_end = rest.find(['/', '?']).unwrap_or(rest.len());
@@ -264,19 +288,19 @@ pub(crate) fn parse_probe_url(raw: &str) -> Result<ParsedProbeUrl, StartupProbeE
         || authority.starts_with(':')
         || contains_ascii_whitespace_or_control(authority)
     {
-        return Err(StartupProbeError::UnsupportedUrl(raw.to_owned()));
+        return Err(StartupProbeError::UnsupportedUrl);
     }
 
-    let (host, port) = parse_authority(authority, default_port)
-        .ok_or_else(|| StartupProbeError::UnsupportedUrl(raw.to_owned()))?;
+    let (host, port) =
+        parse_authority(authority, default_port).ok_or(StartupProbeError::UnsupportedUrl)?;
     let path_and_query = match &rest[authority_end..] {
         "" => "/".to_owned(),
         suffix if suffix.starts_with('/') => suffix.to_owned(),
         suffix if suffix.starts_with('?') => format!("/{suffix}"),
-        _ => return Err(StartupProbeError::UnsupportedUrl(raw.to_owned())),
+        _ => return Err(StartupProbeError::UnsupportedUrl),
     };
     if !is_valid_request_target(&path_and_query) {
-        return Err(StartupProbeError::UnsupportedUrl(raw.to_owned()));
+        return Err(StartupProbeError::UnsupportedUrl);
     }
 
     Ok(ParsedProbeUrl {
@@ -365,6 +389,7 @@ mod tests {
                 path_and_query: "/health?check=1".to_owned(),
             }
         );
+        assert_eq!(parsed.diagnostic_label(), "http://<redacted-host>:8080");
     }
 
     #[test]
@@ -401,117 +426,105 @@ mod tests {
     fn parse_probe_url_rejects_unsupported_scheme() {
         let error = parse_probe_url("ftp://example.com/file").unwrap_err();
 
-        assert!(
-            matches!(error, StartupProbeError::UnsupportedUrl(url) if url == "ftp://example.com/file")
-        );
+        assert!(matches!(error, StartupProbeError::UnsupportedUrl));
     }
 
     #[test]
     fn parse_probe_url_rejects_missing_host() {
         let error = parse_probe_url("https:///generate_204").unwrap_err();
 
-        assert!(
-            matches!(error, StartupProbeError::UnsupportedUrl(url) if url == "https:///generate_204")
-        );
+        assert!(matches!(error, StartupProbeError::UnsupportedUrl));
     }
 
     #[test]
     fn parse_probe_url_rejects_authority_whitespace() {
         let error = parse_probe_url("https://exa mple.com/").unwrap_err();
 
-        assert!(
-            matches!(error, StartupProbeError::UnsupportedUrl(url) if url == "https://exa mple.com/")
-        );
+        assert!(matches!(error, StartupProbeError::UnsupportedUrl));
     }
 
     #[test]
     fn parse_probe_url_rejects_request_target_whitespace() {
         let error = parse_probe_url("https://example.com/a b").unwrap_err();
 
-        assert!(
-            matches!(error, StartupProbeError::UnsupportedUrl(url) if url == "https://example.com/a b")
-        );
+        assert!(matches!(error, StartupProbeError::UnsupportedUrl));
     }
 
     #[test]
     fn parse_probe_url_rejects_request_target_raw_crlf() {
         let error = parse_probe_url("https://example.com/a\r\nHost:evil").unwrap_err();
 
-        assert!(
-            matches!(error, StartupProbeError::UnsupportedUrl(url) if url == "https://example.com/a\r\nHost:evil")
-        );
+        assert!(matches!(error, StartupProbeError::UnsupportedUrl));
     }
 
     #[test]
     fn parse_probe_url_rejects_userinfo_authority() {
         let error = parse_probe_url("https://user@example.com/").unwrap_err();
 
-        assert!(
-            matches!(error, StartupProbeError::UnsupportedUrl(url) if url == "https://user@example.com/")
-        );
+        assert!(matches!(error, StartupProbeError::UnsupportedUrl));
     }
 
     #[test]
     fn parse_probe_url_rejects_userinfo_with_password_authority() {
         let error = parse_probe_url("https://user:pass@example.com/").unwrap_err();
 
-        assert!(
-            matches!(error, StartupProbeError::UnsupportedUrl(url) if url == "https://user:pass@example.com/")
-        );
+        assert!(matches!(error, StartupProbeError::UnsupportedUrl));
+    }
+
+    #[test]
+    fn unsupported_probe_error_does_not_display_url_secrets() {
+        let error =
+            parse_probe_url("https://user:secret@example.com/path?token=private").unwrap_err();
+        let rendered = error.to_string();
+        let debug = format!("{error:?}");
+
+        assert_eq!(rendered, "unsupported startup probe URL");
+        assert!(!rendered.contains("secret"));
+        assert!(!rendered.contains("token"));
+        assert!(!rendered.contains("example.com"));
+        assert_eq!(debug, "UnsupportedUrl");
     }
 
     #[test]
     fn parse_probe_url_rejects_invalid_port() {
         let error = parse_probe_url("https://example.com:70000/").unwrap_err();
 
-        assert!(
-            matches!(error, StartupProbeError::UnsupportedUrl(url) if url == "https://example.com:70000/")
-        );
+        assert!(matches!(error, StartupProbeError::UnsupportedUrl));
     }
 
     #[test]
     fn parse_probe_url_rejects_signed_port() {
         let error = parse_probe_url("https://example.com:+443/").unwrap_err();
 
-        assert!(
-            matches!(error, StartupProbeError::UnsupportedUrl(url) if url == "https://example.com:+443/")
-        );
+        assert!(matches!(error, StartupProbeError::UnsupportedUrl));
     }
 
     #[test]
     fn parse_probe_url_rejects_non_digit_port() {
         let error = parse_probe_url("https://example.com:443x/").unwrap_err();
 
-        assert!(
-            matches!(error, StartupProbeError::UnsupportedUrl(url) if url == "https://example.com:443x/")
-        );
+        assert!(matches!(error, StartupProbeError::UnsupportedUrl));
     }
 
     #[test]
     fn parse_probe_url_rejects_ipv6_literal() {
         let error = parse_probe_url("https://[2001:db8::1]/").unwrap_err();
 
-        assert!(
-            matches!(error, StartupProbeError::UnsupportedUrl(url) if url == "https://[2001:db8::1]/")
-        );
+        assert!(matches!(error, StartupProbeError::UnsupportedUrl));
     }
 
     #[test]
     fn parse_probe_url_rejects_authority_fragment() {
         let error = parse_probe_url("https://example.com#frag").unwrap_err();
 
-        assert!(
-            matches!(error, StartupProbeError::UnsupportedUrl(url) if url == "https://example.com#frag")
-        );
+        assert!(matches!(error, StartupProbeError::UnsupportedUrl));
     }
 
     #[test]
     fn parse_probe_url_rejects_path_fragment() {
         let error = parse_probe_url("https://example.com/path#frag").unwrap_err();
 
-        assert!(
-            matches!(error, StartupProbeError::UnsupportedUrl(url) if url == "https://example.com/path#frag")
-        );
+        assert!(matches!(error, StartupProbeError::UnsupportedUrl));
     }
 }
 
@@ -582,6 +595,7 @@ mod https_tests {
                 protocol: InboundProtocol::Socks,
                 listen: "127.0.0.1".to_owned(),
                 port: 0,
+                allow_unauthenticated_lan: false,
                 sniffing: None,
                 user_level: None,
             }],
@@ -688,11 +702,12 @@ mod https_tests {
         let transport_dialer =
             TransportDialer::system_with_socket_protector(Some(dialer_protector))
                 .expect("build protected transport dialer");
+        let outbound_router = OutboundRouter::new(Arc::new(freedom_config()));
 
         let result = tokio::time::timeout(
             Duration::from_secs(2),
             run_startup_probe_inner(
-                &freedom_config(),
+                &outbound_router,
                 &options,
                 &resolver,
                 &transport_dialer,

@@ -18,10 +18,13 @@ typedef enum XrayStatus {
   XRAY_STATUS_NO_PACKET = 6,
   XRAY_STATUS_BUFFER_TOO_SMALL = 7,
   XRAY_STATUS_TUN_ERROR = 8,
+  XRAY_STATUS_INVALID_ARGUMENT = 9,
   XRAY_STATUS_PANIC = 255
 } XrayStatus;
 
 typedef struct XrayTunStats {
+  /* Set to sizeof(XrayTunStats) before calling xray_tun_stats. */
+  size_t struct_size;
   uint64_t inbound_packets;
   uint64_t outbound_packets;
   uint64_t dropped_packets;
@@ -174,9 +177,20 @@ XrayStatus xray_core_set_geodata_search_dir(
     XrayCoreHandle *handle,
     const char *dir,
     XrayError **error);
+/* A handle accepts exactly one successful config load. Create a new handle
+ * to replace a configuration. */
 XrayStatus xray_core_load_config_json(
     XrayCoreHandle *handle,
     const char *json,
+    XrayError **error);
+/* Copies diagnostics from the most recent successful config load. `written`
+ * receives the UTF-8 byte length excluding the trailing NUL. Pass NULL/0 as
+ * buffer/buffer_len to query the required length. */
+XrayStatus xray_core_config_warnings(
+    const XrayCoreHandle *handle,
+    char *buffer,
+    size_t buffer_len,
+    size_t *written,
     XrayError **error);
 XrayStatus xray_core_start(XrayCoreHandle *handle, XrayError **error);
 XrayStatus xray_core_stop(XrayCoreHandle *handle, XrayError **error);
@@ -196,11 +210,14 @@ XrayStatus xray_core_set_startup_probe(
     uint64_t timeout_ms,
     const char *outbound_tag,
     XrayError **error);
+/* Reconfiguring the same numeric fd transfers packet format and close policy
+ * without closing it. Replacing it with a different fd closes the old fd when
+ * its previous policy was XRAY_TUN_FD_CLOSE_POLICY_OWNED. */
 XrayStatus xray_core_set_tun_fd(
     XrayCoreHandle *handle,
     int32_t fd,
-    XrayTunFdPacketFormat packet_format,
-    XrayTunFdClosePolicy close_policy,
+    int32_t packet_format,
+    int32_t close_policy,
     XrayError **error);
 XrayStatus xray_core_set_tun_collect_tcp_timings(
     XrayCoreHandle *handle,
@@ -208,7 +225,7 @@ XrayStatus xray_core_set_tun_collect_tcp_timings(
     XrayError **error);
 XrayStatus xray_core_set_tun_runtime_profile(
     XrayCoreHandle *handle,
-    XrayTunRuntimeProfile profile,
+    int32_t profile,
     XrayError **error);
 void xray_core_free(XrayCoreHandle *handle);
 
@@ -221,6 +238,8 @@ XrayStatus xray_tun_push_packet(
     const uint8_t *data,
     size_t len,
     XrayError **error);
+/* On XRAY_STATUS_BUFFER_TOO_SMALL, *written receives the required packet
+ * length and the packet is retained for the next xray_tun_poll_packet call. */
 XrayStatus xray_tun_poll_packet(
     XrayCoreHandle *handle,
     uint8_t *buffer,

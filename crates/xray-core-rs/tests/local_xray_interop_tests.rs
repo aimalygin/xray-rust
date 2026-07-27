@@ -1045,6 +1045,7 @@ fn rust_core_config_with_security(
             protocol: InboundProtocol::Socks,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            allow_unauthenticated_lan: false,
             sniffing: None,
             user_level: None,
         }],

@@ -1,13 +1,14 @@
 use bytes::Bytes;
 use libc::{c_char, c_int, c_void};
 use std::any::Any;
+use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 use std::io;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::ptr;
 use std::slice;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::runtime::{Builder, Runtime};
 use xray_config::{parse_xray_json, parse_xray_json_with_geodata_dirs};
@@ -15,9 +16,7 @@ use xray_core_rs::{
     Core, RuntimeLogConfig, RuntimeLogger, StartupProbeOptions, TunFdClosePolicy, TunFdConfig,
     TunFdPacketFormat, TunFdRuntime, TunRuntimeOptions, TunRuntimeProfile,
 };
-use xray_transport::{
-    CachingDnsResolver, SocketHandle, SocketProtector, SystemDnsResolver, TransportDialer,
-};
+use xray_transport::{SocketHandle, SocketProtector, TransportDialer};
 use xray_tun::TunTcpSlowFlowKind;
 
 #[repr(C)]
@@ -32,6 +31,7 @@ pub enum XrayStatus {
     NoPacket = 6,
     BufferTooSmall = 7,
     TunError = 8,
+    InvalidArgument = 9,
     Panic = 255,
 }
 
@@ -78,6 +78,46 @@ impl From<TunTcpSlowFlowKind> for XrayTcpSlowFlowKind {
     }
 }
 
+impl TryFrom<c_int> for XrayTunFdPacketFormat {
+    type Error = &'static str;
+
+    fn try_from(value: c_int) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::RawIp),
+            1 => Ok(Self::DarwinUtun),
+            _ => Err("tun fd packet format must be 0 (raw IP) or 1 (Darwin utun)"),
+        }
+    }
+}
+
+impl TryFrom<c_int> for XrayTunFdClosePolicy {
+    type Error = &'static str;
+
+    fn try_from(value: c_int) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Borrowed),
+            1 => Ok(Self::Owned),
+            _ => Err("tun fd close policy must be 0 (borrowed) or 1 (owned)"),
+        }
+    }
+}
+
+impl TryFrom<c_int> for XrayTunRuntimeProfile {
+    type Error = &'static str;
+
+    fn try_from(value: c_int) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Default),
+            1 => Ok(Self::Mobile),
+            2 => Ok(Self::Desktop),
+            3 => Ok(Self::LowMemory),
+            4 => Ok(Self::Throughput),
+            5 => Ok(Self::MobilePlus),
+            _ => Err("tun runtime profile must be in the range 0..=5"),
+        }
+    }
+}
+
 impl From<XrayTunFdPacketFormat> for TunFdPacketFormat {
     fn from(value: XrayTunFdPacketFormat) -> Self {
         match value {
@@ -116,8 +156,13 @@ pub struct XrayError {
 }
 
 #[repr(C)]
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct XrayTunStats {
+    /// Size of the caller's `XrayTunStats` allocation in bytes.
+    ///
+    /// Callers must initialize this to `sizeof(XrayTunStats)` before invoking
+    /// `xray_tun_stats`. The callee validates it before writing any fields.
+    pub struct_size: usize,
     pub inbound_packets: u64,
     pub outbound_packets: u64,
     pub dropped_packets: u64,
@@ -189,6 +234,83 @@ pub struct XrayTunStats {
     pub tun_fd_write_batch_max_packets: u64,
 }
 
+impl Default for XrayTunStats {
+    fn default() -> Self {
+        Self {
+            struct_size: std::mem::size_of::<Self>(),
+            inbound_packets: 0,
+            outbound_packets: 0,
+            dropped_packets: 0,
+            inbound_dropped_packets: 0,
+            outbound_dropped_packets: 0,
+            tcp_stack_to_remote_bytes: 0,
+            tcp_remote_written_bytes: 0,
+            tcp_remote_read_bytes: 0,
+            tcp_backpressure_events: 0,
+            tcp_stack_to_remote_backpressure_events: 0,
+            tcp_remote_to_stack_backpressure_events: 0,
+            tcp_remote_write_batches: 0,
+            tcp_remote_write_batch_messages: 0,
+            tcp_remote_write_batch_max_messages: 0,
+            tcp_remote_write_batch_max_bytes: 0,
+            tcp_remote_write_wait_events: 0,
+            tcp_remote_write_wait_ms_total: 0,
+            tcp_remote_write_wait_ms_max: 0,
+            tcp_remote_flush_wait_events: 0,
+            tcp_remote_flush_wait_ms_total: 0,
+            tcp_remote_flush_wait_ms_max: 0,
+            tcp_pending_remote_bytes: 0,
+            tcp_pending_remote_flows: 0,
+            tcp_pending_remote_max_bytes: 0,
+            tcp_pending_upload_bytes: 0,
+            tcp_pending_upload_max_bytes: 0,
+            tcp_pending_total_bytes: 0,
+            tcp_remote_buffer_limit_bytes: 0,
+            tcp_buffer_hard_limit_bytes: 0,
+            tcp_remote_buffer_pressure_active: 0,
+            tcp_remote_write_errors: 0,
+            tcp_remote_closed_events: 0,
+            tcp_remote_read_errors: 0,
+            tcp_open_errors: 0,
+            tcp_open_events: 0,
+            tcp_open_duration_ms_total: 0,
+            tcp_open_duration_ms_max: 0,
+            tcp_first_byte_events: 0,
+            tcp_first_byte_duration_ms_total: 0,
+            tcp_first_byte_duration_ms_max: 0,
+            tcp443_open_events: 0,
+            tcp443_open_duration_ms_total: 0,
+            tcp443_open_duration_ms_max: 0,
+            tcp443_first_byte_events: 0,
+            tcp443_first_byte_duration_ms_total: 0,
+            tcp443_first_byte_duration_ms_max: 0,
+            active_tcp_flows: 0,
+            active_udp_flows: 0,
+            udp_flow_limit: 0,
+            udp_budget_drops: 0,
+            udp_evicted_flows: 0,
+            udp_channel_dropped_packets: 0,
+            udp_remote_open_events: 0,
+            udp_remote_udp443_open_events: 0,
+            udp_remote_written_bytes: 0,
+            udp_remote_read_bytes: 0,
+            udp_open_errors: 0,
+            udp_vision_udp443_rejections: 0,
+            udp_remote_write_errors: 0,
+            udp_remote_read_errors: 0,
+            udp_remote_closed_events: 0,
+            udp_quic_blocked_packets: 0,
+            inbound_queue_depth: 0,
+            outbound_queue_depth: 0,
+            inbound_queue_max_packets: 0,
+            outbound_queue_max_packets: 0,
+            tun_fd_write_batches: 0,
+            tun_fd_write_batch_packets: 0,
+            tun_fd_write_batch_max_packets: 0,
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct XrayTcpSlowFlowEvent {
@@ -251,6 +373,7 @@ pub struct XrayUdpQuicBlockedEvent {
 pub struct XrayCoreHandle {
     core: Option<Core>,
     runtime: Runtime,
+    pending_outbound_packets: Mutex<VecDeque<Bytes>>,
     socket_protector: Option<Arc<dyn SocketProtector>>,
     geodata_search_dirs: Vec<PathBuf>,
     startup_probe_options: Option<StartupProbeOptions>,
@@ -258,6 +381,7 @@ pub struct XrayCoreHandle {
     tun_fd_config: Option<TunFdConfig>,
     tun_fd_runtime: Option<TunFdRuntime>,
     tun_runtime_options: TunRuntimeOptions,
+    config_warnings: String,
 }
 
 pub type XraySocketProtectCallback =
@@ -294,7 +418,7 @@ impl SocketProtector for FfiSocketProtector {
 
 #[no_mangle]
 pub extern "C" fn xray_ffi_version_major() -> u32 {
-    0
+    1
 }
 
 /// Allocates a new core handle.
@@ -346,6 +470,7 @@ unsafe fn xray_core_new_inner(error: *mut *mut XrayError) -> *mut XrayCoreHandle
     Box::into_raw(Box::new(XrayCoreHandle {
         core: None,
         runtime,
+        pending_outbound_packets: Mutex::new(VecDeque::new()),
         socket_protector: None,
         geodata_search_dirs: Vec::new(),
         startup_probe_options: None,
@@ -353,6 +478,7 @@ unsafe fn xray_core_new_inner(error: *mut *mut XrayError) -> *mut XrayCoreHandle
         tun_fd_config: None,
         tun_fd_runtime: None,
         tun_runtime_options: TunRuntimeOptions::default(),
+        config_warnings: String::new(),
     }))
 }
 
@@ -538,7 +664,10 @@ unsafe fn xray_core_set_file_logging_inner(
     XrayStatus::Ok
 }
 
-/// Loads an Xray JSON config into a core handle.
+/// Loads an Xray JSON config into a new core handle.
+///
+/// A handle accepts exactly one successful config load. Create a new handle
+/// to replace a configuration.
 ///
 /// # Safety
 ///
@@ -575,6 +704,16 @@ unsafe fn xray_core_load_config_json_inner(
             set_error(error, XrayStatus::NullArgument, "core handle is null");
         }
         return XrayStatus::NullArgument;
+    }
+    if unsafe { (*handle).core.is_some() } {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::RuntimeError,
+                "core config is already loaded; create a new handle to replace it",
+            );
+        }
+        return XrayStatus::RuntimeError;
     }
 
     if json.is_null() {
@@ -619,6 +758,7 @@ unsafe fn xray_core_load_config_json_inner(
             return XrayStatus::ConfigError;
         }
     };
+    let config_warnings = format_config_diagnostics(&parsed.diagnostics);
 
     let transport_dialer =
         match TransportDialer::system_with_socket_protector((*handle).socket_protector.clone()) {
@@ -631,9 +771,8 @@ unsafe fn xray_core_load_config_json_inner(
             }
         };
 
-    let mut core = match Core::with_runtime_dependencies_and_tun_options(
+    let mut core = match Core::with_transport_dialer_and_tun_options(
         parsed.config,
-        Arc::new(CachingDnsResolver::new(Arc::new(SystemDnsResolver))),
         transport_dialer,
         (*handle).tun_runtime_options,
     ) {
@@ -667,8 +806,101 @@ unsafe fn xray_core_load_config_json_inner(
 
     unsafe {
         (*handle).core = Some(core);
+        (*handle).config_warnings = config_warnings;
     }
 
+    XrayStatus::Ok
+}
+
+/// Copies warnings produced by the most recent successful config load.
+///
+/// `written` receives the UTF-8 byte length excluding the trailing NUL. A null
+/// `buffer` with `buffer_len == 0` is a size query. Otherwise the buffer must
+/// have room for all bytes plus the trailing NUL.
+///
+/// # Safety
+///
+/// `handle` must either be null or a pointer returned by `xray_core_new` that
+/// has not been freed. `written` must point to one writable `usize`. When
+/// non-null, `buffer` must point to `buffer_len` writable bytes. This function
+/// must not run concurrently with lifecycle/configuration calls on `handle`.
+#[no_mangle]
+pub unsafe extern "C" fn xray_core_config_warnings(
+    handle: *const XrayCoreHandle,
+    buffer: *mut c_char,
+    buffer_len: usize,
+    written: *mut usize,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            xray_core_config_warnings_inner(handle, buffer, buffer_len, written, error)
+        })
+    }
+}
+
+unsafe fn xray_core_config_warnings_inner(
+    handle: *const XrayCoreHandle,
+    buffer: *mut c_char,
+    buffer_len: usize,
+    written: *mut usize,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        clear_error(error);
+    }
+    if handle.is_null() {
+        unsafe {
+            set_error(error, XrayStatus::NullArgument, "core handle is null");
+        }
+        return XrayStatus::NullArgument;
+    }
+    if written.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "config warnings length pointer is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+    if buffer.is_null() && buffer_len != 0 {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                "config warnings buffer is null",
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+
+    let warnings = unsafe { &(*handle).config_warnings };
+    unsafe {
+        *written = warnings.len();
+    }
+    if buffer.is_null() {
+        return XrayStatus::Ok;
+    }
+    let required = warnings.len().saturating_add(1);
+    if buffer_len < required {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::BufferTooSmall,
+                format!(
+                    "config warnings buffer is {buffer_len} bytes; {required} bytes are required"
+                ),
+            );
+        }
+        return XrayStatus::BufferTooSmall;
+    }
+
+    unsafe {
+        ptr::copy_nonoverlapping(warnings.as_ptr(), buffer.cast::<u8>(), warnings.len());
+        *buffer.add(warnings.len()) = 0;
+    }
     XrayStatus::Ok
 }
 
@@ -891,8 +1123,8 @@ unsafe fn xray_core_set_socket_protect_callback_inner(
 pub unsafe extern "C" fn xray_core_set_tun_fd(
     handle: *mut XrayCoreHandle,
     fd: c_int,
-    packet_format: XrayTunFdPacketFormat,
-    close_policy: XrayTunFdClosePolicy,
+    packet_format: c_int,
+    close_policy: c_int,
     error: *mut *mut XrayError,
 ) -> XrayStatus {
     unsafe {
@@ -905,8 +1137,8 @@ pub unsafe extern "C" fn xray_core_set_tun_fd(
 unsafe fn xray_core_set_tun_fd_inner(
     handle: *mut XrayCoreHandle,
     fd: c_int,
-    packet_format: XrayTunFdPacketFormat,
-    close_policy: XrayTunFdClosePolicy,
+    packet_format: c_int,
+    close_policy: c_int,
     error: *mut *mut XrayError,
 ) -> XrayStatus {
     unsafe {
@@ -923,12 +1155,30 @@ unsafe fn xray_core_set_tun_fd_inner(
         unsafe {
             set_error(
                 error,
-                XrayStatus::RuntimeError,
+                XrayStatus::InvalidArgument,
                 "tun fd must be non-negative",
             );
         }
-        return XrayStatus::RuntimeError;
+        return XrayStatus::InvalidArgument;
     }
+    let packet_format = match XrayTunFdPacketFormat::try_from(packet_format) {
+        Ok(packet_format) => packet_format,
+        Err(message) => {
+            unsafe {
+                set_error(error, XrayStatus::InvalidArgument, message);
+            }
+            return XrayStatus::InvalidArgument;
+        }
+    };
+    let close_policy = match XrayTunFdClosePolicy::try_from(close_policy) {
+        Ok(close_policy) => close_policy,
+        Err(message) => {
+            unsafe {
+                set_error(error, XrayStatus::InvalidArgument, message);
+            }
+            return XrayStatus::InvalidArgument;
+        }
+    };
 
     let handle = unsafe { &mut *handle };
     if handle.core.is_some() {
@@ -942,12 +1192,15 @@ unsafe fn xray_core_set_tun_fd_inner(
         return XrayStatus::RuntimeError;
     }
 
-    if let Some(old) = handle.tun_fd_config.replace(TunFdConfig::new(
-        fd,
-        packet_format.into(),
-        close_policy.into(),
-    )) {
-        old.close_if_owned();
+    let replacement = TunFdConfig::new(fd, packet_format.into(), close_policy.into());
+    if let Some(old) = handle.tun_fd_config.replace(replacement) {
+        // Reconfiguring the same descriptor transfers its current ownership
+        // policy. Closing the old `Owned` config here would invalidate the
+        // replacement and could later close an unrelated descriptor that
+        // reused the same numeric fd.
+        if old.fd() != fd {
+            old.close_if_owned();
+        }
     }
 
     XrayStatus::Ok
@@ -1018,7 +1271,7 @@ unsafe fn xray_core_set_tun_collect_tcp_timings_inner(
 #[no_mangle]
 pub unsafe extern "C" fn xray_core_set_tun_runtime_profile(
     handle: *mut XrayCoreHandle,
-    profile: XrayTunRuntimeProfile,
+    profile: c_int,
     error: *mut *mut XrayError,
 ) -> XrayStatus {
     unsafe {
@@ -1030,7 +1283,7 @@ pub unsafe extern "C" fn xray_core_set_tun_runtime_profile(
 
 unsafe fn xray_core_set_tun_runtime_profile_inner(
     handle: *mut XrayCoreHandle,
-    profile: XrayTunRuntimeProfile,
+    profile: c_int,
     error: *mut *mut XrayError,
 ) -> XrayStatus {
     unsafe {
@@ -1043,6 +1296,15 @@ unsafe fn xray_core_set_tun_runtime_profile_inner(
         }
         return XrayStatus::NullArgument;
     }
+    let profile = match XrayTunRuntimeProfile::try_from(profile) {
+        Ok(profile) => profile,
+        Err(message) => {
+            unsafe {
+                set_error(error, XrayStatus::InvalidArgument, message);
+            }
+            return XrayStatus::InvalidArgument;
+        }
+    };
 
     let handle = unsafe { &mut *handle };
     if handle.core.is_some() {
@@ -1253,6 +1515,17 @@ unsafe fn xray_tun_push_packet_inner(
         }
         return XrayStatus::CoreNotLoaded;
     };
+    let mtu = core.tun().mtu();
+    if len > mtu || len > isize::MAX as usize {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::InvalidArgument,
+                format!("packet length {len} exceeds mtu {mtu}"),
+            );
+        }
+        return XrayStatus::InvalidArgument;
+    }
 
     let packet = if len == 0 {
         Bytes::new()
@@ -1276,6 +1549,9 @@ unsafe fn xray_tun_push_packet_inner(
 ///
 /// This function is nonblocking. If no packet is currently available, it
 /// returns `XrayStatus::NoPacket` and writes `0` to `written`.
+/// If `buffer_len` is too small, it returns `XrayStatus::BufferTooSmall`,
+/// writes the required packet length to `written`, and retains the packet for
+/// the next `xray_tun_poll_packet` call.
 ///
 /// # Safety
 ///
@@ -1350,7 +1626,17 @@ unsafe fn xray_tun_poll_packet_inner(
         return XrayStatus::CoreNotLoaded;
     };
 
-    match handle.runtime.block_on(core.tun().try_poll_outbound()) {
+    let pending_packet = match handle.pending_outbound_packets.lock() {
+        Ok(mut pending_packets) => pending_packets.pop_front(),
+        Err(poisoned) => poisoned.into_inner().pop_front(),
+    };
+    let polled_packet = if let Some(packet) = pending_packet {
+        Ok(Some(packet))
+    } else {
+        handle.runtime.block_on(core.tun().try_poll_outbound())
+    };
+
+    match polled_packet {
         Ok(Some(packet)) if packet.len() <= buffer_len => {
             unsafe {
                 ptr::copy_nonoverlapping(packet.as_ptr(), buffer, packet.len());
@@ -1360,6 +1646,7 @@ unsafe fn xray_tun_poll_packet_inner(
         }
         Ok(Some(packet)) => {
             unsafe {
+                *written = packet.len();
                 set_error(
                     error,
                     XrayStatus::BufferTooSmall,
@@ -1368,6 +1655,10 @@ unsafe fn xray_tun_poll_packet_inner(
                         packet.len()
                     ),
                 );
+            }
+            match handle.pending_outbound_packets.lock() {
+                Ok(mut pending_packets) => pending_packets.push_front(packet),
+                Err(poisoned) => poisoned.into_inner().push_front(packet),
             }
             XrayStatus::BufferTooSmall
         }
@@ -1525,6 +1816,19 @@ unsafe fn xray_tun_poll_packets_inner(
             );
         }
         return XrayStatus::BufferTooSmall;
+    }
+
+    let pending_packet = match handle.pending_outbound_packets.lock() {
+        Ok(mut pending_packets) => pending_packets.pop_front(),
+        Err(poisoned) => poisoned.into_inner().pop_front(),
+    };
+    if let Some(packet) = pending_packet {
+        unsafe {
+            ptr::copy_nonoverlapping(packet.as_ptr(), buffer, packet.len());
+            *packet_lengths = packet.len();
+            *packet_count = 1;
+        }
+        return XrayStatus::Ok;
     }
 
     let wait = Duration::from_millis(u64::from(wait_ms));
@@ -2807,6 +3111,20 @@ unsafe fn xray_tun_stats_inner(
         }
         return XrayStatus::NullArgument;
     }
+    let expected_size = std::mem::size_of::<XrayTunStats>();
+    let caller_size = unsafe { (*stats).struct_size };
+    if caller_size < expected_size {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::BufferTooSmall,
+                format!(
+                    "tun stats struct is {caller_size} bytes; at least {expected_size} bytes are required"
+                ),
+            );
+        }
+        return XrayStatus::BufferTooSmall;
+    }
 
     // Shared access: data-path entry points may run concurrently with each
     // other (Swift pump push/poll threads); only lifecycle calls take `&mut`.
@@ -2825,6 +3143,7 @@ unsafe fn xray_tun_stats_inner(
     let snapshot = handle.runtime.block_on(core.tun().stats());
     unsafe {
         *stats = XrayTunStats {
+            struct_size: expected_size,
             inbound_packets: snapshot.inbound_packets,
             outbound_packets: snapshot.outbound_packets,
             dropped_packets: snapshot.dropped_packets,
@@ -3077,6 +3396,18 @@ fn diagnostics_message(diagnostics: Vec<xray_config::Diagnostic>) -> String {
     } else {
         message
     }
+}
+
+fn format_config_diagnostics(diagnostics: &[xray_config::Diagnostic]) -> String {
+    diagnostics
+        .iter()
+        .map(|diagnostic| match diagnostic.path.as_deref() {
+            Some(path) => format!("{path}: {}", diagnostic.message),
+            None => diagnostic.message.clone(),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        .replace('\0', "")
 }
 
 fn c_string_lossy_without_nuls(message: &str) -> CString {

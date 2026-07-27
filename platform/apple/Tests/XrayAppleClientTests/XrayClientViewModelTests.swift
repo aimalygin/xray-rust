@@ -325,7 +325,8 @@ final class XrayClientViewModelTests: XCTestCase {
         defaults.removePersistentDomain(forName: suiteName)
         return XrayClientProfileStore(
             defaults: defaults,
-            key: "profile"
+            key: "profile",
+            secureConfigStore: TestSecureConfigStore()
         )
     }
 
@@ -418,6 +419,29 @@ final class XrayClientViewModelTests: XCTestCase {
     }
 
     private static let sampleVlessURL = "vless://11111111-1111-4111-8111-111111111111@203.0.113.10:32134?type=tcp&encryption=none&security=reality&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&fp=chrome&sni=google.com&sid=0123456789ab&spx=%2F&flow=xtls-rprx-vision#example-reality"
+}
+
+private final class TestSecureConfigStore: XraySecureConfigStoring, @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String: String] = [:]
+
+    func store(configJSON: String, reference: String) throws {
+        lock.lock()
+        values[reference] = configJSON
+        lock.unlock()
+    }
+
+    func configJSON(reference: String) throws -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return values[reference]
+    }
+
+    func remove(reference: String) throws {
+        lock.lock()
+        values.removeValue(forKey: reference)
+        lock.unlock()
+    }
 }
 
 @available(macOS 13.0, *)

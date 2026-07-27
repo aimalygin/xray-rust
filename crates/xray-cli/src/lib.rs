@@ -63,6 +63,12 @@ fn is_config_flag(flag: &str) -> bool {
 }
 
 pub fn load_config(path: &Path) -> Result<CoreConfig, CliError> {
+    load_config_with_diagnostics(path).map(|(config, _diagnostics)| config)
+}
+
+pub fn load_config_with_diagnostics(
+    path: &Path,
+) -> Result<(CoreConfig, Vec<Diagnostic>), CliError> {
     let raw = fs::read_to_string(path).map_err(|source| CliError::ReadConfig {
         path: path.to_path_buf(),
         source,
@@ -71,7 +77,7 @@ pub fn load_config(path: &Path) -> Result<CoreConfig, CliError> {
     let parsed = parse_xray_json_with_geodata_dirs(&raw, &geodata_dirs)
         .map_err(|error| CliError::ConfigParse(format_diagnostics(&error.diagnostics)))?;
 
-    Ok(parsed.config)
+    Ok((parsed.config, parsed.diagnostics))
 }
 
 fn geodata_dirs_for_config(path: &Path) -> Vec<PathBuf> {
@@ -94,12 +100,24 @@ fn geodata_dirs_for_config(path: &Path) -> Vec<PathBuf> {
 fn format_diagnostics(diagnostics: &[Diagnostic]) -> String {
     diagnostics
         .iter()
-        .map(|diagnostic| match &diagnostic.path {
-            Some(path) => format!("{path}: {}", diagnostic.message),
-            None => diagnostic.message.clone(),
-        })
+        .map(format_diagnostic)
         .collect::<Vec<_>>()
         .join("; ")
+}
+
+pub fn format_config_warnings(diagnostics: &[Diagnostic]) -> String {
+    diagnostics
+        .iter()
+        .map(|diagnostic| format!("warning: {}", format_diagnostic(diagnostic)))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn format_diagnostic(diagnostic: &Diagnostic) -> String {
+    match &diagnostic.path {
+        Some(path) => format!("{path}: {}", diagnostic.message),
+        None => diagnostic.message.clone(),
+    }
 }
 
 pub fn format_bound_inbounds(inbounds: &[(Option<String>, SocketAddr)]) -> String {
@@ -275,7 +293,10 @@ where
 {
     match parse_cli_args(args)? {
         CliArgs::Run { config_path } => {
-            let config = load_config(&config_path)?;
+            let (config, diagnostics) = load_config_with_diagnostics(&config_path)?;
+            if !diagnostics.is_empty() {
+                eprintln!("{}", format_config_warnings(&diagnostics));
+            }
             run_with_shutdown(config, shutdown).await
         }
     }

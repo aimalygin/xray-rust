@@ -3,12 +3,15 @@ set -euo pipefail
 
 WORKSPACE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APPLE_PACKAGE_DIR="$WORKSPACE_ROOT/platform/apple"
-XCFRAMEWORK_PATH="${XCFRAMEWORK_PATH:-"$WORKSPACE_ROOT/target/mobile/apple/XrayRust.xcframework"}"
+EXPECTED_XCFRAMEWORK_PATH="$WORKSPACE_ROOT/target/mobile/apple/XrayRust.xcframework"
+XCFRAMEWORK_PATH="${XCFRAMEWORK_PATH:-"$EXPECTED_XCFRAMEWORK_PATH"}"
+XRAY_USE_PREBUILT_ARTIFACTS="${XRAY_USE_PREBUILT_ARTIFACTS:-0}"
 OUT_DIR="${OUT_DIR:-"$WORKSPACE_ROOT/target/mobile"}"
 SWIFT_BIN="${SWIFT_BIN:-swift}"
 SWIFT_CONFIGURATION="${SWIFT_CONFIGURATION:-release}"
 IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-15.0}"
 TVOS_DEPLOYMENT_TARGET="${TVOS_DEPLOYMENT_TARGET:-17.0}"
+MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-11.0}"
 
 LINK_TARGETS=(
   "ios-device:iphoneos:arm64-apple-ios${IPHONEOS_DEPLOYMENT_TARGET}"
@@ -17,6 +20,8 @@ LINK_TARGETS=(
   "tvos-device:appletvos:arm64-apple-tvos${TVOS_DEPLOYMENT_TARGET}"
   "tvos-simulator-arm64:appletvsimulator:arm64-apple-tvos${TVOS_DEPLOYMENT_TARGET}-simulator"
   "tvos-simulator-x86_64:appletvsimulator:x86_64-apple-tvos${TVOS_DEPLOYMENT_TARGET}-simulator"
+  "macos-arm64:macosx:arm64-apple-macos${MACOSX_DEPLOYMENT_TARGET}"
+  "macos-x86_64:macosx:x86_64-apple-macos${MACOSX_DEPLOYMENT_TARGET}"
 )
 
 require_command() {
@@ -50,13 +55,36 @@ build_link_target() {
       --triple "$triple"
 }
 
+verify_macos_universal_binary() {
+  local binary
+  binary="$(find "$XCFRAMEWORK_PATH" -path '*/macos-*/*.framework/XrayRust' -type f -print -quit)"
+  if [[ -z "$binary" ]]; then
+    echo "macOS framework binary not found in $XCFRAMEWORK_PATH" >&2
+    exit 1
+  fi
+  lipo "$binary" -verify_arch arm64 x86_64
+}
+
 main() {
   require_command xcrun
   require_command "$SWIFT_BIN"
+  require_command lipo
 
-  if [[ ! -d "$XCFRAMEWORK_PATH" ]]; then
+  if [[ "$XCFRAMEWORK_PATH" != "$EXPECTED_XCFRAMEWORK_PATH" ]]; then
+    echo "custom XCFRAMEWORK_PATH is unsupported because Package.swift links $EXPECTED_XCFRAMEWORK_PATH" >&2
+    exit 1
+  fi
+
+  if [[ "$XRAY_USE_PREBUILT_ARTIFACTS" == "1" ]]; then
+    if [[ ! -d "$XCFRAMEWORK_PATH" ]]; then
+      echo "prebuilt XCFramework not found: $XCFRAMEWORK_PATH" >&2
+      exit 1
+    fi
+  else
     "$WORKSPACE_ROOT/scripts/build-apple-xcframework.sh"
   fi
+
+  verify_macos_universal_binary
 
   local entry name sdk triple
   for entry in "${LINK_TARGETS[@]}"; do

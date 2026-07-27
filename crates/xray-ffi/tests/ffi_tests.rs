@@ -6,19 +6,24 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use xray_ffi::{
-    xray_core_free, xray_core_load_config_json, xray_core_new, xray_core_set_file_logging,
-    xray_core_set_socket_protect_callback, xray_core_set_startup_probe,
+    xray_core_config_warnings, xray_core_free, xray_core_load_config_json, xray_core_new,
+    xray_core_set_file_logging, xray_core_set_socket_protect_callback, xray_core_set_startup_probe,
     xray_core_set_tun_collect_tcp_timings, xray_core_set_tun_fd, xray_core_set_tun_runtime_profile,
     xray_core_start, xray_core_stop, xray_error_code, xray_error_free, xray_error_message,
-    xray_tun_poll_packet, xray_tun_poll_packets, xray_tun_poll_tcp_flow_summary_event,
-    xray_tun_poll_tcp_open_error_event, xray_tun_poll_tcp_remote_write_slow_event,
-    xray_tun_poll_tcp_slow_flow_event, xray_tun_poll_udp_quic_blocked_event,
-    xray_tun_poll_udp_response_gap_event, xray_tun_poll_udp_slow_flow_event, xray_tun_push_packet,
-    xray_tun_stats, XrayStatus, XrayTcpFlowSummaryEvent, XrayTcpOpenErrorEvent,
-    XrayTcpRemoteWriteSlowEvent, XrayTcpSlowFlowEvent, XrayTunFdClosePolicy, XrayTunFdPacketFormat,
-    XrayTunRuntimeProfile, XrayTunStats, XrayUdpQuicBlockedEvent, XrayUdpResponseGapEvent,
-    XrayUdpSlowFlowEvent,
+    xray_ffi_version_major, xray_tun_poll_packet, xray_tun_poll_packets,
+    xray_tun_poll_tcp_flow_summary_event, xray_tun_poll_tcp_open_error_event,
+    xray_tun_poll_tcp_remote_write_slow_event, xray_tun_poll_tcp_slow_flow_event,
+    xray_tun_poll_udp_quic_blocked_event, xray_tun_poll_udp_response_gap_event,
+    xray_tun_poll_udp_slow_flow_event, xray_tun_push_packet, xray_tun_stats, XrayStatus,
+    XrayTcpFlowSummaryEvent, XrayTcpOpenErrorEvent, XrayTcpRemoteWriteSlowEvent,
+    XrayTcpSlowFlowEvent, XrayTunFdClosePolicy, XrayTunFdPacketFormat, XrayTunRuntimeProfile,
+    XrayTunStats, XrayUdpQuicBlockedEvent, XrayUdpResponseGapEvent, XrayUdpSlowFlowEvent,
 };
+
+#[test]
+fn ffi_reports_current_abi_major() {
+    assert_eq!(xray_ffi_version_major(), 1);
+}
 
 #[test]
 fn ffi_loads_config_and_returns_handle() {
@@ -53,6 +58,93 @@ fn ffi_loads_tun_config_without_port() {
 
     assert_eq!(status, XrayStatus::Ok, "load error: {}", error_message(err));
     assert!(err.is_null());
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_rejects_reloading_config_while_core_is_running() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    let raw = CString::new(tun_config_without_port_with_freedom_outbound()).unwrap();
+
+    assert_eq!(
+        unsafe { xray_core_load_config_json(core, raw.as_ptr(), &mut err) },
+        XrayStatus::Ok
+    );
+    assert_eq!(
+        unsafe { xray_core_start(core, &mut err) },
+        XrayStatus::Ok,
+        "start error: {}",
+        error_message(err)
+    );
+
+    let status = unsafe { xray_core_load_config_json(core, raw.as_ptr(), &mut err) };
+
+    assert_eq!(status, XrayStatus::RuntimeError);
+    assert_error(
+        &mut err,
+        XrayStatus::RuntimeError,
+        "core config is already loaded",
+    );
+    assert_eq!(
+        unsafe { xray_core_stop(core, &mut err) },
+        XrayStatus::Ok,
+        "stop error: {}",
+        error_message(err)
+    );
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_exposes_config_warnings_without_truncation() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    let raw = CString::new(config_with_allow_insecure_warning()).unwrap();
+    let status = unsafe { xray_core_load_config_json(core, raw.as_ptr(), &mut err) };
+    assert_eq!(status, XrayStatus::Ok, "load error: {}", error_message(err));
+
+    let mut warning_len = 0;
+    let status = unsafe {
+        xray_core_config_warnings(core, std::ptr::null_mut(), 0, &mut warning_len, &mut err)
+    };
+    assert_eq!(status, XrayStatus::Ok);
+    assert!(warning_len > 0);
+
+    let mut short = [0 as libc::c_char; 1];
+    let status = unsafe {
+        xray_core_config_warnings(
+            core,
+            short.as_mut_ptr(),
+            short.len(),
+            &mut warning_len,
+            &mut err,
+        )
+    };
+    assert_eq!(status, XrayStatus::BufferTooSmall);
+    assert_error(&mut err, XrayStatus::BufferTooSmall, "bytes are required");
+
+    let mut warning = vec![0 as libc::c_char; warning_len + 1];
+    let status = unsafe {
+        xray_core_config_warnings(
+            core,
+            warning.as_mut_ptr(),
+            warning.len(),
+            &mut warning_len,
+            &mut err,
+        )
+    };
+    assert_eq!(status, XrayStatus::Ok);
+    let warning = unsafe { CStr::from_ptr(warning.as_ptr()) }
+        .to_str()
+        .unwrap();
+    assert!(warning.contains("$.outbounds[0].streamSettings.tlsSettings.allowInsecure"));
+    assert!(warning.contains("disables TLS certificate verification"));
 
     unsafe {
         xray_core_free(core);
@@ -510,14 +602,118 @@ fn ffi_registers_tun_fd_before_config_load() {
         xray_core_set_tun_fd(
             core,
             fds[0].raw(),
-            XrayTunFdPacketFormat::RawIp,
-            XrayTunFdClosePolicy::Borrowed,
+            XrayTunFdPacketFormat::RawIp as libc::c_int,
+            XrayTunFdClosePolicy::Borrowed as libc::c_int,
             &mut err,
         )
     };
 
     assert_eq!(status, XrayStatus::Ok);
     assert!(err.is_null());
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+#[cfg(unix)]
+fn ffi_reconfigures_same_owned_tun_fd_without_closing_it() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    assert!(!core.is_null());
+    let pipe = pipe_pair();
+    let owned_fd = dup_fd(pipe[0].raw());
+
+    for _ in 0..2 {
+        let status = unsafe {
+            xray_core_set_tun_fd(
+                core,
+                owned_fd,
+                XrayTunFdPacketFormat::RawIp as libc::c_int,
+                XrayTunFdClosePolicy::Owned as libc::c_int,
+                &mut err,
+            )
+        };
+        assert_eq!(status, XrayStatus::Ok);
+        assert!(err.is_null());
+    }
+    assert!(fd_is_open(owned_fd));
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+#[cfg(unix)]
+fn ffi_same_tun_fd_owned_to_borrowed_transfer_does_not_close_reused_fd() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    assert!(!core.is_null());
+    let pipe = pipe_pair();
+    let transferred_fd = dup_fd(pipe[0].raw());
+
+    assert_eq!(
+        unsafe {
+            xray_core_set_tun_fd(
+                core,
+                transferred_fd,
+                XrayTunFdPacketFormat::RawIp as libc::c_int,
+                XrayTunFdClosePolicy::Owned as libc::c_int,
+                &mut err,
+            )
+        },
+        XrayStatus::Ok
+    );
+    assert_eq!(
+        unsafe {
+            xray_core_set_tun_fd(
+                core,
+                transferred_fd,
+                XrayTunFdPacketFormat::DarwinUtun as libc::c_int,
+                XrayTunFdClosePolicy::Borrowed as libc::c_int,
+                &mut err,
+            )
+        },
+        XrayStatus::Ok
+    );
+    assert!(fd_is_open(transferred_fd));
+
+    assert_eq!(unsafe { libc::close(transferred_fd) }, 0);
+    assert_eq!(
+        unsafe { libc::dup2(pipe[1].raw(), transferred_fd) },
+        transferred_fd
+    );
+    assert!(fd_is_open(transferred_fd));
+
+    unsafe {
+        xray_core_free(core);
+    }
+    assert!(fd_is_open(transferred_fd));
+    assert_eq!(unsafe { libc::close(transferred_fd) }, 0);
+}
+
+#[test]
+fn ffi_rejects_invalid_tun_fd_discriminants_without_constructing_rust_enums() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+
+    let status = unsafe { xray_core_set_tun_fd(core, 0, i32::MAX, 0, &mut err) };
+    assert_eq!(status, XrayStatus::InvalidArgument);
+    assert_error(
+        &mut err,
+        XrayStatus::InvalidArgument,
+        "packet format must be",
+    );
+
+    let status = unsafe { xray_core_set_tun_fd(core, 0, 0, i32::MIN, &mut err) };
+    assert_eq!(status, XrayStatus::InvalidArgument);
+    assert_error(
+        &mut err,
+        XrayStatus::InvalidArgument,
+        "close policy must be",
+    );
 
     unsafe {
         xray_core_free(core);
@@ -535,8 +731,8 @@ fn ffi_rejects_tun_fd_after_config_load() {
         xray_core_set_tun_fd(
             core,
             fds[0].raw(),
-            XrayTunFdPacketFormat::RawIp,
-            XrayTunFdClosePolicy::Borrowed,
+            XrayTunFdPacketFormat::RawIp as libc::c_int,
+            XrayTunFdClosePolicy::Borrowed as libc::c_int,
             &mut err,
         )
     };
@@ -595,11 +791,30 @@ fn ffi_registers_tun_runtime_profile_before_config_load() {
     assert!(!core.is_null());
 
     let status = unsafe {
-        xray_core_set_tun_runtime_profile(core, XrayTunRuntimeProfile::LowMemory, &mut err)
+        xray_core_set_tun_runtime_profile(
+            core,
+            XrayTunRuntimeProfile::LowMemory as libc::c_int,
+            &mut err,
+        )
     };
 
     assert_eq!(status, XrayStatus::Ok);
     assert!(err.is_null());
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_rejects_invalid_tun_runtime_profile_discriminant() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+
+    let status = unsafe { xray_core_set_tun_runtime_profile(core, -1, &mut err) };
+
+    assert_eq!(status, XrayStatus::InvalidArgument);
+    assert_error(&mut err, XrayStatus::InvalidArgument, "range 0..=5");
 
     unsafe {
         xray_core_free(core);
@@ -612,7 +827,11 @@ fn ffi_rejects_tun_runtime_profile_after_config_load() {
     let core = loaded_core(&mut err);
 
     let status = unsafe {
-        xray_core_set_tun_runtime_profile(core, XrayTunRuntimeProfile::Throughput, &mut err)
+        xray_core_set_tun_runtime_profile(
+            core,
+            XrayTunRuntimeProfile::Throughput as libc::c_int,
+            &mut err,
+        )
     };
 
     assert_eq!(status, XrayStatus::RuntimeError);
@@ -640,8 +859,8 @@ fn ffi_fd_tun_raw_ip_bridges_icmp_echo_reply() {
         xray_core_set_tun_fd(
             core,
             fds[0].raw(),
-            XrayTunFdPacketFormat::RawIp,
-            XrayTunFdClosePolicy::Borrowed,
+            XrayTunFdPacketFormat::RawIp as libc::c_int,
+            XrayTunFdClosePolicy::Borrowed as libc::c_int,
             &mut err,
         )
     };
@@ -692,8 +911,8 @@ fn ffi_fd_tun_darwin_utun_bridges_icmp_echo_reply() {
         xray_core_set_tun_fd(
             core,
             fds[0].raw(),
-            XrayTunFdPacketFormat::DarwinUtun,
-            XrayTunFdClosePolicy::Borrowed,
+            XrayTunFdPacketFormat::DarwinUtun as libc::c_int,
+            XrayTunFdClosePolicy::Borrowed as libc::c_int,
             &mut err,
         )
     };
@@ -812,6 +1031,43 @@ fn ffi_tun_push_packet_rejects_null_data() {
 }
 
 #[test]
+fn ffi_tun_push_packet_checks_mtu_before_reading_caller_memory() {
+    let mut err = std::ptr::null_mut();
+    let core = loaded_core(&mut err);
+    let one_byte = 0_u8;
+
+    let status = unsafe { xray_tun_push_packet(core, &one_byte, 65_536, &mut err) };
+
+    assert_eq!(status, XrayStatus::InvalidArgument);
+    assert_error(&mut err, XrayStatus::InvalidArgument, "exceeds mtu");
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_tun_stats_rejects_unversioned_output_buffer_before_writing() {
+    let mut err = std::ptr::null_mut();
+    let core = loaded_core(&mut err);
+    let mut stats = XrayTunStats {
+        struct_size: 0,
+        inbound_packets: 42,
+        ..XrayTunStats::default()
+    };
+
+    let status = unsafe { xray_tun_stats(core, &mut stats, &mut err) };
+
+    assert_eq!(status, XrayStatus::BufferTooSmall);
+    assert_eq!(stats.inbound_packets, 42);
+    assert_error(&mut err, XrayStatus::BufferTooSmall, "at least");
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
 fn ffi_tun_poll_packet_reports_no_packet() {
     let mut err = std::ptr::null_mut();
     let core = loaded_core(&mut err);
@@ -832,6 +1088,165 @@ fn ffi_tun_poll_packet_reports_no_packet() {
     assert_eq!(written, 0);
     assert!(err.is_null());
 
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_tun_poll_packet_retains_packet_when_buffer_is_too_small() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    assert!(!core.is_null());
+    let raw = CString::new(tun_config_with_freedom_outbound()).unwrap();
+    assert_eq!(
+        unsafe { xray_core_load_config_json(core, raw.as_ptr(), &mut err) },
+        XrayStatus::Ok,
+        "load error: {}",
+        error_message(err)
+    );
+    assert_eq!(
+        unsafe { xray_core_start(core, &mut err) },
+        XrayStatus::Ok,
+        "start error: {}",
+        error_message(err)
+    );
+
+    let request =
+        ipv4_icmp_echo_request([10, 10, 0, 2], [10, 10, 0, 1], 0x1204, 9, b"retained reply");
+    assert_eq!(
+        unsafe { xray_tun_push_packet(core, request.as_ptr(), request.len(), &mut err) },
+        XrayStatus::Ok
+    );
+
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let mut required = 0usize;
+    let mut too_small = [0_u8; 1];
+    loop {
+        let status = unsafe {
+            xray_tun_poll_packet(
+                core,
+                too_small.as_mut_ptr(),
+                too_small.len(),
+                &mut required,
+                &mut err,
+            )
+        };
+        if status == XrayStatus::BufferTooSmall {
+            break;
+        }
+        assert_eq!(status, XrayStatus::NoPacket);
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for ICMP echo reply"
+        );
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert!(required > too_small.len());
+    assert_error(
+        &mut err,
+        XrayStatus::BufferTooSmall,
+        "exceeds output buffer length",
+    );
+
+    let mut reply = vec![0_u8; required];
+    let mut written = 0usize;
+    let status = unsafe {
+        xray_tun_poll_packet(
+            core,
+            reply.as_mut_ptr(),
+            reply.len(),
+            &mut written,
+            &mut err,
+        )
+    };
+
+    assert_eq!(status, XrayStatus::Ok);
+    assert_eq!(written, required);
+    assert!(err.is_null());
+    assert_ipv4_icmp_echo_reply(
+        &reply[..written],
+        [10, 10, 0, 1],
+        [10, 10, 0, 2],
+        0x1204,
+        9,
+        b"retained reply",
+    );
+
+    let batched_request = ipv4_icmp_echo_request(
+        [10, 10, 0, 2],
+        [10, 10, 0, 1],
+        0x1205,
+        10,
+        b"retained for batch",
+    );
+    assert_eq!(
+        unsafe {
+            xray_tun_push_packet(
+                core,
+                batched_request.as_ptr(),
+                batched_request.len(),
+                &mut err,
+            )
+        },
+        XrayStatus::Ok
+    );
+    let mut batched_required = 0usize;
+    let batched_deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        let status = unsafe {
+            xray_tun_poll_packet(
+                core,
+                too_small.as_mut_ptr(),
+                too_small.len(),
+                &mut batched_required,
+                &mut err,
+            )
+        };
+        if status == XrayStatus::BufferTooSmall {
+            break;
+        }
+        assert_eq!(status, XrayStatus::NoPacket);
+        assert!(
+            Instant::now() < batched_deadline,
+            "timed out waiting for second ICMP echo reply"
+        );
+        thread::sleep(Duration::from_millis(5));
+    }
+
+    let mut batch_buffer = vec![0_u8; 1_500];
+    let mut batch_length = 0usize;
+    let mut packet_count = 0usize;
+    let status = unsafe {
+        xray_tun_poll_packets(
+            core,
+            batch_buffer.as_mut_ptr(),
+            batch_buffer.len(),
+            &mut batch_length,
+            1,
+            &mut packet_count,
+            0,
+            &mut err,
+        )
+    };
+    assert_eq!(status, XrayStatus::Ok);
+    assert_eq!(packet_count, 1);
+    assert_eq!(batch_length, batched_required);
+    assert_ipv4_icmp_echo_reply(
+        &batch_buffer[..batch_length],
+        [10, 10, 0, 1],
+        [10, 10, 0, 2],
+        0x1205,
+        10,
+        b"retained for batch",
+    );
+
+    assert_eq!(
+        unsafe { xray_core_stop(core, &mut err) },
+        XrayStatus::Ok,
+        "stop error: {}",
+        error_message(err)
+    );
     unsafe {
         xray_core_free(core);
     }
@@ -1362,6 +1777,46 @@ fn client_config_with_freedom_outbound() -> String {
     .to_owned()
 }
 
+fn config_with_allow_insecure_warning() -> String {
+    r#"{
+      "inbounds": [
+        {
+          "tag": "socks-in",
+          "protocol": "socks",
+          "listen": "127.0.0.1",
+          "port": 0,
+          "settings": { "udp": false }
+        }
+      ],
+      "outbounds": [
+        {
+          "tag": "proxy",
+          "protocol": "vless",
+          "settings": {
+            "vnext": [
+              {
+                "address": "example.com",
+                "port": 443,
+                "users": [
+                  { "id": "00010203-0405-0607-0809-0a0b0c0d0e0f" }
+                ]
+              }
+            ]
+          },
+          "streamSettings": {
+            "network": "tcp",
+            "security": "tls",
+            "tlsSettings": {
+              "serverName": "example.com",
+              "allowInsecure": true
+            }
+          }
+        }
+      ]
+    }"#
+    .to_owned()
+}
+
 fn tun_config_with_freedom_outbound() -> String {
     r#"{
       "inbounds": [
@@ -1527,6 +1982,30 @@ fn socket_pair() -> [FdGuard; 2] {
         std::io::Error::last_os_error()
     );
     [FdGuard(fds[0]), FdGuard(fds[1])]
+}
+
+#[cfg(unix)]
+fn pipe_pair() -> [FdGuard; 2] {
+    let mut fds = [-1; 2];
+    let rc = unsafe { libc::pipe(fds.as_mut_ptr()) };
+    assert_eq!(rc, 0, "pipe failed: {}", std::io::Error::last_os_error());
+    [FdGuard(fds[0]), FdGuard(fds[1])]
+}
+
+#[cfg(unix)]
+fn dup_fd(fd: libc::c_int) -> libc::c_int {
+    let duplicated = unsafe { libc::dup(fd) };
+    assert!(
+        duplicated >= 0,
+        "dup failed: {}",
+        std::io::Error::last_os_error()
+    );
+    duplicated
+}
+
+#[cfg(unix)]
+fn fd_is_open(fd: libc::c_int) -> bool {
+    unsafe { libc::fcntl(fd, libc::F_GETFD) >= 0 }
 }
 
 #[cfg(unix)]

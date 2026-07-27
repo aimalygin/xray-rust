@@ -50,6 +50,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
         protocol: InboundProtocol::Socks,
         listen: "127.0.0.1".to_owned(),
         port: 1080,
+        allow_unauthenticated_lan: false,
         sniffing: None,
         user_level: None,
     };
@@ -69,6 +70,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
             protocol: InboundProtocol::Socks,
             listen: "127.0.0.1".to_owned(),
             port: 1080,
+            allow_unauthenticated_lan: false,
             sniffing: None,
             user_level: None,
         }],

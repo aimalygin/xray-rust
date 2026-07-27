@@ -1,7 +1,7 @@
 import Foundation
 
 public enum XrayTunnelProviderMessage {
-    public static let configJSONOptionKey = "xrayConfigJSON"
+    public static let configReferenceOptionKey = "xrayConfigReference"
     public static let debugLoggingOptionKey = "xrayDebugLogging"
     public static let useTunFileDescriptorOptionKey = "xrayUseTunFileDescriptor"
     public static let tunRuntimeProfileOptionKey = "xrayTunRuntimeProfile"
@@ -9,7 +9,7 @@ public enum XrayTunnelProviderMessage {
     public static let startupProbeURLOptionKey = "xrayStartupProbeURL"
     public static let startupProbeTimeoutMsOptionKey = "xrayStartupProbeTimeoutMs"
     public static let startupProbeOutboundTagOptionKey = "xrayStartupProbeOutboundTag"
-    public static let providerConfigJSONKey = "configJSON"
+    public static let providerConfigReferenceKey = "configReference"
     public static let providerDebugLoggingKey = "debugLogging"
     public static let providerUseTunFileDescriptorKey = "useTunFileDescriptor"
     public static let providerTunRuntimeProfileKey = "tunRuntimeProfile"

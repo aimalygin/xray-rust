@@ -321,6 +321,7 @@ fn runtime_config_with_freedom_outbound() -> CoreConfig {
             protocol: InboundProtocol::Socks,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            allow_unauthenticated_lan: false,
             sniffing: None,
             user_level: None,
         }],
@@ -348,6 +349,7 @@ fn runtime_tun_config_with_freedom_outbound() -> CoreConfig {
             protocol: InboundProtocol::Tun,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            allow_unauthenticated_lan: false,
             sniffing: None,
             user_level: None,
         }],
@@ -366,6 +368,7 @@ fn runtime_tun_config_with_routed_freedom_outbound(unused_proxy_port: u16) -> Co
             protocol: InboundProtocol::Tun,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            allow_unauthenticated_lan: false,
             sniffing: None,
             user_level: None,
         }],
@@ -448,6 +451,7 @@ fn runtime_tun_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig {
             protocol: InboundProtocol::Tun,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            allow_unauthenticated_lan: false,
             sniffing: None,
             user_level: None,
         }],
@@ -470,6 +474,7 @@ fn runtime_socks_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig 
             protocol: InboundProtocol::Socks,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            allow_unauthenticated_lan: false,
             sniffing: None,
             user_level: None,
         }],
@@ -522,6 +527,7 @@ fn runtime_tun_config_with_tls_vision_vless_domain_server(
             protocol: InboundProtocol::Tun,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            allow_unauthenticated_lan: false,
             sniffing: None,
             user_level: None,
         }],
@@ -550,6 +556,7 @@ fn runtime_tun_config_with_reality_vision_vless_server(port: u16) -> CoreConfig 
             protocol: InboundProtocol::Tun,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            allow_unauthenticated_lan: false,
             sniffing: None,
             user_level: None,
         }],
@@ -580,6 +587,7 @@ fn runtime_config_with_routed_freedom_outbound(unused_proxy_port: u16) -> CoreCo
             protocol: InboundProtocol::Socks,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            allow_unauthenticated_lan: false,
             sniffing: None,
             user_level: None,
         }],
@@ -613,6 +621,7 @@ fn runtime_config_with_domain_routed_freedom_outbound(unused_proxy_port: u16) ->
             protocol: InboundProtocol::Socks,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            allow_unauthenticated_lan: false,
             sniffing: None,
             user_level: None,
         }],
@@ -672,6 +681,7 @@ fn runtime_config_with_ip_routed_freedom_outbound(unused_proxy_port: u16) -> Cor
             protocol: InboundProtocol::Socks,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            allow_unauthenticated_lan: false,
             sniffing: None,
             user_level: None,
         }],
@@ -711,6 +721,7 @@ fn runtime_config_with_ip_if_non_match_routed_freedom_outbound(
             protocol: inbound_protocol,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            allow_unauthenticated_lan: false,
             sniffing: None,
             user_level: None,
         }],
@@ -746,6 +757,7 @@ fn runtime_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig {
             protocol: InboundProtocol::Socks,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            allow_unauthenticated_lan: false,
             sniffing: None,
             user_level: None,
         }],
@@ -768,6 +780,7 @@ fn runtime_http_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig {
             protocol: InboundProtocol::Http,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            allow_unauthenticated_lan: false,
             sniffing: None,
             user_level: None,
         }],
@@ -790,6 +803,7 @@ fn runtime_config_with_vless_domain_server(domain: &str, port: u16) -> CoreConfi
             protocol: InboundProtocol::Socks,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            allow_unauthenticated_lan: false,
             sniffing: None,
             user_level: None,
         }],
@@ -816,6 +830,7 @@ fn runtime_config_with_tls_vless_domain_server(
             protocol: InboundProtocol::Socks,
             listen: "127.0.0.1".to_owned(),
             port: 0,
+            allow_unauthenticated_lan: false,
             sniffing: None,
             user_level: None,
         }],
@@ -2503,10 +2518,10 @@ async fn run_tun_reality_bridge_panic_scenario() {
         pump_tun_once(&mut client, core.tun()).await;
         let log = std::fs::read_to_string(log_dir.path.join("xray-error.log")).unwrap();
         let stats = core.tun().stats().await;
-        if log.contains("Debug tunBridgeTask failed")
-            && log.contains("injected Reality engine panic")
+        if log.contains("Debug tunBridgeTask failed error=<redacted>")
             && stats.active_tcp_flows == 0
         {
+            assert!(!log.contains("injected Reality engine panic"));
             break;
         }
         assert!(
