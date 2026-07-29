@@ -402,6 +402,8 @@ pub struct BenchResult {
     pub peak_rss_kib: u64,
     pub cpu_millis: u64,
     pub cpu_millis_per_gib: Option<u128>,
+    #[serde(default)]
+    pub throughput_mbps: Option<u128>,
     pub latency_us: Option<LatencySummary>,
     pub setup_us: Option<FlowSetupSummary>,
     pub samples: usize,
@@ -471,6 +473,8 @@ pub struct BenchSummary {
     pub peak_rss_kib: MetricSummary,
     pub cpu_millis: MetricSummary,
     pub cpu_millis_per_gib: Option<MetricSummary>,
+    #[serde(default)]
+    pub throughput_mbps: Option<MetricSummary>,
     pub latency_us: Option<LatencySummaryAggregate>,
     pub setup_us: Option<FlowSetupSummaryAggregate>,
     pub bytes_sent: MetricSummary,
@@ -1332,6 +1336,9 @@ pub fn summarize_results(results: &[BenchResult]) -> Result<BenchSummary, BenchE
         cpu_millis_per_gib: summarize_optional_metric(
             results.iter().map(|result| result.cpu_millis_per_gib),
         ),
+        throughput_mbps: summarize_optional_metric(
+            results.iter().map(|result| result.throughput_mbps),
+        ),
         latency_us: summarize_latency_results(results),
         setup_us: summarize_setup_results(results),
         bytes_sent: summarize_metric(results.iter().map(|result| u128::from(result.bytes_sent))),
@@ -1469,6 +1476,14 @@ fn cpu_millis_per_gib(cpu_millis: u64, bytes_sent: u64, bytes_received: u64) -> 
         return None;
     }
     Some((u128::from(cpu_millis) * 1024 * 1024 * 1024).div_ceil(bytes))
+}
+
+fn throughput_mbps(bytes_sent: u64, bytes_received: u64, duration_ms: u128) -> Option<u128> {
+    let bytes = u128::from(bytes_sent) + u128::from(bytes_received);
+    if bytes == 0 || duration_ms == 0 {
+        return None;
+    }
+    Some((bytes * 8).div_ceil(duration_ms * 1000))
 }
 
 pub async fn run_idle_workload(duration: Duration) -> Result<WorkloadOutcome, BenchError> {
@@ -6104,6 +6119,7 @@ async fn run_engine_once(
             })
         }
     };
+    let duration_ms = started.elapsed().as_millis();
     let mut summary = summarize_samples(&samples);
     summary.bytes_sent = workload_outcome.bytes_sent;
     summary.bytes_received = workload_outcome.bytes_received;
@@ -6114,17 +6130,19 @@ async fn run_engine_once(
         summary.bytes_sent,
         summary.bytes_received,
     );
+    let throughput_mbps = throughput_mbps(summary.bytes_sent, summary.bytes_received, duration_ms);
 
     let result = BenchResult {
         engine: kind.as_str().to_owned(),
         workload: options.workload.as_str().to_owned(),
         status: "ok".to_owned(),
-        duration_ms: started.elapsed().as_millis(),
+        duration_ms,
         bytes_sent: summary.bytes_sent,
         bytes_received: summary.bytes_received,
         peak_rss_kib: summary.peak_rss_kib,
         cpu_millis: summary.cpu_millis,
         cpu_millis_per_gib,
+        throughput_mbps,
         latency_us,
         setup_us,
         samples: samples.len(),
@@ -6176,6 +6194,10 @@ fn print_result(result: &BenchResult) {
         .cpu_millis_per_gib
         .map(|value| format!(" cpu_millis_per_gib={value}"))
         .unwrap_or_default();
+    let throughput = result
+        .throughput_mbps
+        .map(|value| format!(" throughput_mbps={value}"))
+        .unwrap_or_default();
     let setup = result
         .setup_us
         .as_ref()
@@ -6201,7 +6223,7 @@ fn print_result(result: &BenchResult) {
         })
         .unwrap_or_default();
     println!(
-        "{} {} status={} peak_rss_kib={} cpu_millis={} bytes_sent={} bytes_received={} samples={}{}{}{}{}",
+        "{} {} status={} peak_rss_kib={} cpu_millis={} bytes_sent={} bytes_received={} samples={}{}{}{}{}{}",
         result.engine,
         result.workload,
         result.status,
@@ -6211,6 +6233,7 @@ fn print_result(result: &BenchResult) {
         result.bytes_received,
         result.samples,
         cpu_per_gib,
+        throughput,
         latency,
         setup,
         blackhole
@@ -6270,6 +6293,16 @@ fn print_summary(summary: &BenchSummary) {
             )
         })
         .unwrap_or_default();
+    let throughput = summary
+        .throughput_mbps
+        .as_ref()
+        .map(|metric| {
+            format!(
+                " throughput_mbps[min/median/p95]={}/{}/{}",
+                metric.min, metric.median, metric.p95
+            )
+        })
+        .unwrap_or_default();
     let latency = summary
         .latency_us
         .as_ref()
@@ -6313,7 +6346,7 @@ fn print_summary(summary: &BenchSummary) {
         })
         .unwrap_or_default();
     println!(
-        "{} {} runs={} status={} duration_ms[min/median/p95]={}/{}/{} peak_rss_kib[min/median/p95]={}/{}/{} cpu_millis[min/median/p95]={}/{}/{} bytes_sent[min/median/p95]={}/{}/{} bytes_received[min/median/p95]={}/{}/{}{}{}{}",
+        "{} {} runs={} status={} duration_ms[min/median/p95]={}/{}/{} peak_rss_kib[min/median/p95]={}/{}/{} cpu_millis[min/median/p95]={}/{}/{} bytes_sent[min/median/p95]={}/{}/{} bytes_received[min/median/p95]={}/{}/{}{}{}{}{}",
         summary.engine,
         summary.workload,
         summary.runs,
@@ -6334,6 +6367,7 @@ fn print_summary(summary: &BenchSummary) {
         summary.bytes_received.median,
         summary.bytes_received.p95,
         cpu_per_gib,
+        throughput,
         latency,
         setup,
     );
@@ -7498,6 +7532,35 @@ mod tests {
     }
 
     #[test]
+    fn computes_throughput_mbps_from_bytes_and_duration() {
+        assert_eq!(throughput_mbps(0, 0, 1000), None);
+        assert_eq!(throughput_mbps(0, 1_073_741_824, 0), None);
+        assert_eq!(throughput_mbps(0, 1_073_741_824, 2000), Some(4295));
+        // 500 + 500 bytes over 1000ms = 8000 bits/s = 0.008 Mbps, ceil to 1 Mbps.
+        assert_eq!(throughput_mbps(500, 500, 1000), Some(1));
+    }
+
+    #[test]
+    fn deserializes_result_json_without_throughput_field() {
+        let raw = r#"{
+            "engine": "xray-rust",
+            "workload": "tcp-freedom",
+            "status": "ok",
+            "duration_ms": 10,
+            "bytes_sent": 1024,
+            "bytes_received": 1024,
+            "peak_rss_kib": 3000,
+            "cpu_millis": 20,
+            "cpu_millis_per_gib": null,
+            "latency_us": null,
+            "setup_us": null,
+            "samples": 2
+        }"#;
+        let result: BenchResult = serde_json::from_str(raw).unwrap();
+        assert_eq!(result.throughput_mbps, None);
+    }
+
+    #[test]
     fn summarizes_repeated_results_with_min_median_and_p95() {
         let results = vec![
             BenchResult {
@@ -7510,6 +7573,7 @@ mod tests {
                 peak_rss_kib: 3000,
                 cpu_millis: 20,
                 cpu_millis_per_gib: Some(10_485_760),
+                throughput_mbps: Some(100),
                 latency_us: Some(LatencySummary {
                     min: 10,
                     median: 20,
@@ -7531,6 +7595,7 @@ mod tests {
                 peak_rss_kib: 2700,
                 cpu_millis: 10,
                 cpu_millis_per_gib: Some(5_242_880),
+                throughput_mbps: Some(50),
                 latency_us: Some(LatencySummary {
                     min: 5,
                     median: 10,
@@ -7552,6 +7617,7 @@ mod tests {
                 peak_rss_kib: 2900,
                 cpu_millis: 30,
                 cpu_millis_per_gib: Some(15_728_640),
+                throughput_mbps: Some(150),
                 latency_us: Some(LatencySummary {
                     min: 15,
                     median: 30,
@@ -7600,6 +7666,14 @@ mod tests {
                 min: 5_242_880,
                 median: 10_485_760,
                 p95: 15_728_640,
+            })
+        );
+        assert_eq!(
+            summary.throughput_mbps,
+            Some(MetricSummary {
+                min: 50,
+                median: 100,
+                p95: 150,
             })
         );
         assert_eq!(
