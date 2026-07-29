@@ -58,7 +58,7 @@ use xray_utls::{normalize_reality_supported_fingerprint, XRAY_REALITY_CAPABLE_FI
 
 pub mod chart;
 
-const USAGE: &str = "usage: xray-bench run|compare|route-probe|reality-matrix [options]";
+const USAGE: &str = "usage: xray-bench run|compare|route-probe|reality-matrix|chart [options]";
 const TEST_VLESS_UUID: [u8; 16] = [
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
 ];
@@ -106,6 +106,7 @@ pub enum CliArgs {
     Compare(BenchOptions),
     RouteProbe(RouteProbeOptions),
     RealityMatrix(RealityMatrixOptions),
+    Chart(chart::ChartOptions),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -847,6 +848,9 @@ where
     }
     if command == "reality-matrix" {
         return parse_reality_matrix_args(&rest).map(CliArgs::RealityMatrix);
+    }
+    if command == "chart" {
+        return chart::parse_chart_args(&rest).map(CliArgs::Chart);
     }
 
     let mut index = 0;
@@ -4936,6 +4940,7 @@ where
             print_reality_matrix_result(&result);
             Ok(())
         }
+        CliArgs::Chart(options) => chart::run_chart(&options),
     }
 }
 
@@ -7350,6 +7355,37 @@ mod tests {
                 no_auto_build: true,
             })
         );
+    }
+
+    #[test]
+    fn parses_chart_command() {
+        let args = parse_cli_args([
+            "xray-bench",
+            "chart",
+            "--group",
+            "target/benchmarks/123",
+            "--group",
+            "target/benchmarks/456",
+            "--out-dir",
+            "docs/benchmarks/media",
+            "--date",
+            "2026-07-29",
+            "--hardware",
+            "Apple M4 Pro, 24 GB RAM, macOS 15.5",
+            "--xray-rust-version",
+            "1659143",
+            "--xray-core-version",
+            "v26.5.9",
+            "--sing-box-version",
+            "v1.12.0",
+        ])
+        .unwrap();
+
+        let CliArgs::Chart(options) = args else {
+            panic!("expected chart args");
+        };
+        assert_eq!(options.groups.len(), 2);
+        assert_eq!(options.out_dir, PathBuf::from("docs/benchmarks/media"));
     }
 
     #[test]

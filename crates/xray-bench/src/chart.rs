@@ -76,8 +76,6 @@ pub fn parse_chart_args(args: &[String]) -> Result<ChartOptions, BenchError> {
     })
 }
 
-// wired into run_chart in a follow-up task
-#[allow(dead_code)]
 fn load_summary(
     groups: &[PathBuf],
     engine: EngineKind,
@@ -137,8 +135,6 @@ fn load_summary(
     Ok(summary)
 }
 
-// wired into run_chart in a follow-up task
-#[allow(dead_code)]
 pub(crate) struct Theme {
     name: &'static str,
     surface: &'static str,
@@ -150,8 +146,6 @@ pub(crate) struct Theme {
     series: [&'static str; 3],
 }
 
-// wired into run_chart in a follow-up task
-#[allow(dead_code)]
 pub(crate) const LIGHT: Theme = Theme {
     name: "light",
     surface: "#fcfcfb",
@@ -163,8 +157,6 @@ pub(crate) const LIGHT: Theme = Theme {
     series: ["#2a78d6", "#eb6834", "#1baf7a"],
 };
 
-// wired into run_chart in a follow-up task
-#[allow(dead_code)]
 pub(crate) const DARK: Theme = Theme {
     name: "dark",
     surface: "#1a1a19",
@@ -188,8 +180,6 @@ const PLOT_BOTTOM: f64 = 330.0;
 const BAR_WIDTH: f64 = 44.0;
 const BAR_GAP: f64 = 2.0;
 
-// wired into run_chart in a follow-up task
-#[allow(dead_code)]
 pub(crate) struct Bar {
     pub series: usize,
     pub value: f64,
@@ -197,22 +187,16 @@ pub(crate) struct Bar {
     pub hi: f64,
 }
 
-// wired into run_chart in a follow-up task
-#[allow(dead_code)]
 pub(crate) struct BarGroup {
     pub label: String,
     pub bars: Vec<Bar>,
 }
 
-// wired into run_chart in a follow-up task
-#[allow(dead_code)]
 pub(crate) struct ChartSpec {
     pub title: String,
     pub groups: Vec<BarGroup>,
 }
 
-// wired into run_chart in a follow-up task
-#[allow(dead_code)]
 pub(crate) struct Footer {
     pub date: String,
     pub hardware: String,
@@ -226,6 +210,7 @@ fn escape_xml(raw: &str) -> String {
     raw.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 fn format_value(value: f64) -> String {
@@ -273,8 +258,6 @@ fn bar_path(x: f64, y_top: f64, width: f64, height: f64) -> String {
     )
 }
 
-// wired into run_chart in a follow-up task
-#[allow(dead_code)]
 pub(crate) fn render_bar_chart(spec: &ChartSpec, theme: &Theme, footer: &Footer) -> String {
     let axis_max = nice_axis_max(
         spec.groups
@@ -400,6 +383,208 @@ pub(crate) fn render_bar_chart(spec: &ChartSpec, theme: &Theme, footer: &Footer)
         )),
     ));
     svg
+}
+
+struct LoadedSummaries {
+    entries: Vec<((EngineKind, WorkloadKind), BenchSummary)>,
+}
+
+impl LoadedSummaries {
+    fn get(&self, engine: EngineKind, workload: WorkloadKind) -> &BenchSummary {
+        &self
+            .entries
+            .iter()
+            .find(|((e, w), _)| *e == engine && *w == workload)
+            .expect("summary loaded for every charted engine/workload pair")
+            .1
+    }
+}
+
+const ENGINES: [EngineKind; 3] = [
+    EngineKind::XrayRust,
+    EngineKind::XrayCore,
+    EngineKind::SingBox,
+];
+
+const CHART_WORKLOADS: [WorkloadKind; 5] = [
+    WorkloadKind::Idle,
+    WorkloadKind::ManyIdleFlows,
+    WorkloadKind::TcpFreedom,
+    WorkloadKind::RealityVisionXudp,
+    WorkloadKind::TcpBulkThroughput,
+];
+
+fn metric_bar(metric: &crate::MetricSummary, series: usize, divisor: f64) -> Bar {
+    Bar {
+        series,
+        value: metric.median as f64 / divisor,
+        lo: metric.min as f64 / divisor,
+        hi: metric.p95 as f64 / divisor,
+    }
+}
+
+fn rss_group(loaded: &LoadedSummaries, workload: WorkloadKind) -> BarGroup {
+    BarGroup {
+        label: workload.as_str().to_owned(),
+        bars: ENGINES
+            .iter()
+            .enumerate()
+            .map(|(series, engine)| {
+                metric_bar(&loaded.get(*engine, workload).peak_rss_kib, series, 1024.0)
+            })
+            .collect(),
+    }
+}
+
+fn latency_group(loaded: &LoadedSummaries, workload: WorkloadKind) -> Result<BarGroup, BenchError> {
+    let bars = ENGINES
+        .iter()
+        .enumerate()
+        .map(|(series, engine)| {
+            let summary = loaded.get(*engine, workload);
+            let latency = summary.latency_us.as_ref().ok_or_else(|| {
+                BenchError::InvalidArguments(format!(
+                    "summary for {} {} has no latency data",
+                    engine.as_str(),
+                    workload.as_str()
+                ))
+            })?;
+            // Bar: median of per-run medians. Whisker: min run median up to
+            // the median of per-run p95s.
+            Ok(Bar {
+                series,
+                value: latency.median.median as f64,
+                lo: latency.median.min as f64,
+                hi: latency.p95.median as f64,
+            })
+        })
+        .collect::<Result<Vec<_>, BenchError>>()?;
+    Ok(BarGroup {
+        label: workload.as_str().to_owned(),
+        bars,
+    })
+}
+
+fn optional_metric_group(
+    loaded: &LoadedSummaries,
+    workload: WorkloadKind,
+    metric_name: &str,
+    select: impl Fn(&BenchSummary) -> Option<&crate::MetricSummary>,
+    divisor: f64,
+) -> Result<BarGroup, BenchError> {
+    let bars = ENGINES
+        .iter()
+        .enumerate()
+        .map(|(series, engine)| {
+            let summary = loaded.get(*engine, workload);
+            let metric = select(summary).ok_or_else(|| {
+                BenchError::InvalidArguments(format!(
+                    "summary for {} {} has no {metric_name} data",
+                    engine.as_str(),
+                    workload.as_str()
+                ))
+            })?;
+            Ok(metric_bar(metric, series, divisor))
+        })
+        .collect::<Result<Vec<_>, BenchError>>()?;
+    Ok(BarGroup {
+        label: workload.as_str().to_owned(),
+        bars,
+    })
+}
+
+pub fn run_chart(options: &ChartOptions) -> Result<(), BenchError> {
+    let mut entries = Vec::new();
+    for engine in ENGINES {
+        for workload in CHART_WORKLOADS {
+            let summary = load_summary(&options.groups, engine, workload)?;
+            entries.push(((engine, workload), summary));
+        }
+    }
+    let loaded = LoadedSummaries { entries };
+
+    let runs: Vec<usize> = loaded.entries.iter().map(|(_, s)| s.runs).collect();
+    let runs_label = if runs.windows(2).all(|pair| pair[0] == pair[1]) {
+        runs[0].to_string()
+    } else {
+        eprintln!("warning: run counts differ across summaries; footer will say runs=varies");
+        "varies".to_owned()
+    };
+    let footer = Footer {
+        date: options.date.clone(),
+        hardware: options.hardware.clone(),
+        runs_label,
+        xray_rust_version: options.xray_rust_version.clone(),
+        xray_core_version: options.xray_core_version.clone(),
+        sing_box_version: options.sing_box_version.clone(),
+    };
+
+    let charts: Vec<(&str, ChartSpec)> = vec![
+        (
+            "memory-rss",
+            ChartSpec {
+                title: "Peak resident set size — MiB (lower is better)".to_owned(),
+                groups: vec![
+                    rss_group(&loaded, WorkloadKind::Idle),
+                    rss_group(&loaded, WorkloadKind::ManyIdleFlows),
+                ],
+            },
+        ),
+        (
+            "latency",
+            ChartSpec {
+                title: "Round-trip latency — µs, median with p95 whisker (lower is better)"
+                    .to_owned(),
+                groups: vec![
+                    latency_group(&loaded, WorkloadKind::TcpFreedom)?,
+                    latency_group(&loaded, WorkloadKind::RealityVisionXudp)?,
+                ],
+            },
+        ),
+        (
+            "throughput",
+            ChartSpec {
+                title: "Bulk TCP throughput — Gbps (higher is better)".to_owned(),
+                groups: vec![optional_metric_group(
+                    &loaded,
+                    WorkloadKind::TcpBulkThroughput,
+                    "throughput",
+                    |summary| summary.throughput_mbps.as_ref(),
+                    1000.0,
+                )?],
+            },
+        ),
+        (
+            "cpu-per-gib",
+            ChartSpec {
+                title: "CPU cost — milliseconds per GiB transferred (lower is better)".to_owned(),
+                groups: vec![optional_metric_group(
+                    &loaded,
+                    WorkloadKind::TcpBulkThroughput,
+                    "cpu-per-GiB",
+                    |summary| summary.cpu_millis_per_gib.as_ref(),
+                    1.0,
+                )?],
+            },
+        ),
+    ];
+
+    fs::create_dir_all(&options.out_dir).map_err(|source| BenchError::Io {
+        action: format!("creating chart directory `{}`", options.out_dir.display()),
+        source,
+    })?;
+    for (stem, spec) in &charts {
+        for theme in [&LIGHT, &DARK] {
+            let svg = render_bar_chart(spec, theme, &footer);
+            let path = options.out_dir.join(format!("{stem}-{}.svg", theme.name));
+            fs::write(&path, svg).map_err(|source| BenchError::Io {
+                action: format!("writing chart `{}`", path.display()),
+                source,
+            })?;
+            println!("wrote {}", path.display());
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -573,6 +758,92 @@ mod tests {
         fs::remove_dir_all(&root).unwrap();
     }
 
+    fn write_full_group(root: &Path) {
+        for engine in ["xray-rust", "xray-core", "sing-box"] {
+            for workload in [
+                "idle",
+                "many-idle-flows",
+                "tcp-freedom",
+                "reality-vision-xudp",
+                "tcp-bulk-throughput",
+            ] {
+                let mut summary = test_summary(engine, workload, "ok");
+                if matches!(workload, "tcp-freedom" | "reality-vision-xudp") {
+                    let metric = MetricSummary {
+                        min: 90,
+                        median: 130,
+                        p95: 200,
+                    };
+                    summary.latency_us = Some(crate::LatencySummaryAggregate {
+                        min: metric.clone(),
+                        median: metric.clone(),
+                        p95: MetricSummary {
+                            min: 800,
+                            median: 1400,
+                            p95: 2100,
+                        },
+                        p99: metric,
+                    });
+                }
+                let dir = root.join(engine).join(workload);
+                fs::create_dir_all(&dir).unwrap();
+                write_summary_json(&dir.join("summary.json"), &summary).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn run_chart_writes_eight_theme_files() {
+        let root = temp_root("e2e");
+        write_full_group(&root);
+        let out_dir = root.join("media");
+        let mut options = parse_chart_args(&full_args(root.to_str().unwrap())).unwrap();
+        options.out_dir = out_dir.clone();
+
+        run_chart(&options).unwrap();
+
+        for (stem, title_fragment) in [
+            ("memory-rss", "Peak resident set size"),
+            ("latency", "Round-trip latency"),
+            ("throughput", "Bulk TCP throughput"),
+            ("cpu-per-gib", "CPU cost"),
+        ] {
+            for theme in ["light", "dark"] {
+                let path = out_dir.join(format!("{stem}-{theme}.svg"));
+                let svg = fs::read_to_string(&path).unwrap();
+                assert!(svg.contains(title_fragment), "{stem}-{theme}");
+                assert!(
+                    svg.contains("synthetic localhost benchmark"),
+                    "{stem}-{theme}"
+                );
+                assert!(svg.contains("runs=5"), "{stem}-{theme}");
+            }
+        }
+
+        let memory = fs::read_to_string(out_dir.join("memory-rss-light.svg")).unwrap();
+        assert!(memory.contains(">12.0<"));
+        let throughput = fs::read_to_string(out_dir.join("throughput-light.svg")).unwrap();
+        assert!(throughput.contains(">4.30<"));
+
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn run_chart_fails_on_missing_latency() {
+        let root = temp_root("no-latency");
+        write_full_group(&root);
+        let broken = test_summary("xray-rust", "tcp-freedom", "ok");
+        write_summary_json(&root.join("xray-rust/tcp-freedom/summary.json"), &broken).unwrap();
+        let mut options = parse_chart_args(&full_args(root.to_str().unwrap())).unwrap();
+        options.out_dir = root.join("media");
+
+        let error = run_chart(&options).unwrap_err();
+
+        assert!(error.to_string().contains("no latency data"));
+        assert!(!options.out_dir.exists());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
     fn fixture_spec() -> ChartSpec {
         ChartSpec {
             title: "Peak resident set size — MiB (lower is better)".to_owned(),
@@ -683,7 +954,7 @@ mod tests {
     }
 
     #[test]
-    fn svg_contains_labels_footer_and_no_render_clock() {
+    fn svg_contains_labels_and_footer_metadata() {
         let svg = render_bar_chart(&fixture_spec(), &LIGHT, &fixture_footer());
         assert!(svg.contains("Peak resident set size"));
         assert!(svg.contains("xray-rust"));

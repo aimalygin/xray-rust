@@ -1,1 +1,2 @@
 platform/apple/XrayClient/dat/*.dat binary
+crates/xray-bench/testdata/** text eol=lf
