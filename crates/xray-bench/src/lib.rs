@@ -138,6 +138,7 @@ impl EngineKind {
 pub enum WorkloadKind {
     Idle,
     TcpFreedom,
+    TcpBulkThroughput,
     ManyIdleFlows,
     ReconnectBurst,
     MixedLongLived,
@@ -157,6 +158,7 @@ impl WorkloadKind {
         match self {
             Self::Idle => "idle",
             Self::TcpFreedom => "tcp-freedom",
+            Self::TcpBulkThroughput => "tcp-bulk-throughput",
             Self::ManyIdleFlows => "many-idle-flows",
             Self::ReconnectBurst => "reconnect-burst",
             Self::MixedLongLived => "mixed-long-lived",
@@ -176,6 +178,7 @@ impl WorkloadKind {
         match raw {
             "idle" => Ok(Self::Idle),
             "tcp-freedom" => Ok(Self::TcpFreedom),
+            "tcp-bulk-throughput" => Ok(Self::TcpBulkThroughput),
             "many-idle-flows" => Ok(Self::ManyIdleFlows),
             "reconnect-burst" => Ok(Self::ReconnectBurst),
             "mixed-long-lived" => Ok(Self::MixedLongLived),
@@ -209,6 +212,7 @@ impl WorkloadKind {
             self,
             Self::Idle
                 | Self::TcpFreedom
+                | Self::TcpBulkThroughput
                 | Self::ManyIdleFlows
                 | Self::ReconnectBurst
                 | Self::MixedLongLived
@@ -722,6 +726,7 @@ impl WorkloadFixture {
             }
             WorkloadKind::Idle
             | WorkloadKind::TcpFreedom
+            | WorkloadKind::TcpBulkThroughput
             | WorkloadKind::ManyIdleFlows
             | WorkloadKind::ReconnectBurst
             | WorkloadKind::MixedLongLived
@@ -3700,6 +3705,7 @@ pub fn xray_rust_config(port: u16, workload: WorkloadKind) -> String {
         }
         WorkloadKind::Idle
         | WorkloadKind::TcpFreedom
+        | WorkloadKind::TcpBulkThroughput
         | WorkloadKind::ManyIdleFlows
         | WorkloadKind::ReconnectBurst
         | WorkloadKind::MixedLongLived
@@ -3800,6 +3806,7 @@ fn engine_config(
         | WorkloadKind::TunTcpStaleFlows => Ok(tun_freedom_config()),
         WorkloadKind::Idle
         | WorkloadKind::TcpFreedom
+        | WorkloadKind::TcpBulkThroughput
         | WorkloadKind::ManyIdleFlows
         | WorkloadKind::ReconnectBurst
         | WorkloadKind::MixedLongLived
@@ -5928,6 +5935,7 @@ async fn run_engine_once(
         match options.workload {
             WorkloadKind::Idle => run_idle_workload(options.duration).await,
             WorkloadKind::TcpFreedom => run_tcp_freedom_workload(engine.socks_addr, options).await,
+            WorkloadKind::TcpBulkThroughput => run_idle_workload(options.duration).await,
             WorkloadKind::ManyIdleFlows => {
                 run_many_idle_flows_workload(engine.socks_addr, options).await
             }
@@ -6375,6 +6383,55 @@ mod tests {
         assert_eq!(options.payload_size, 64);
         assert_eq!(options.runs, 1);
         assert_eq!(options.xray_core_dir, Some(PathBuf::from("../Xray-core")));
+    }
+
+    #[test]
+    fn parses_compare_tcp_bulk_throughput() {
+        let args = parse_cli_args([
+            "xray-bench",
+            "compare",
+            "--workload",
+            "tcp-bulk-throughput",
+            "--connections",
+            "1",
+            "--iterations",
+            "256",
+            "--payload-size",
+            "4194304",
+        ])
+        .unwrap();
+
+        let CliArgs::Compare(options) = args else {
+            panic!("expected compare args");
+        };
+        assert_eq!(options.workload, WorkloadKind::TcpBulkThroughput);
+        assert_eq!(options.connections, 1);
+        assert_eq!(options.iterations, 256);
+        assert_eq!(options.payload_size, 4_194_304);
+    }
+
+    #[test]
+    fn tcp_bulk_throughput_uses_plain_socks_freedom_config() {
+        let fixture = WorkloadFixture::default();
+        let config = engine_config(
+            EngineKind::XrayRust,
+            18087,
+            WorkloadKind::TcpBulkThroughput,
+            &fixture,
+        )
+        .unwrap();
+        assert!(config.contains(r#""protocol": "socks""#));
+        assert!(config.contains(r#""udp": false"#));
+        assert!(config.contains(r#""protocol": "freedom""#));
+    }
+
+    #[test]
+    fn tcp_bulk_throughput_supports_sing_box_compare() {
+        assert!(WorkloadKind::TcpBulkThroughput.supports_sing_box_process_engine());
+        let fixture = WorkloadFixture::default();
+        let config = sing_box_config(18088, WorkloadKind::TcpBulkThroughput, &fixture).unwrap();
+        assert!(config.contains(r#""type": "socks""#));
+        assert!(config.contains(r#""type": "direct""#));
     }
 
     #[test]
