@@ -2021,6 +2021,55 @@ pub async fn run_reality_vision_xudp_workload(
     Ok(outcome)
 }
 
+// used by Task 3 (bulk workload runner); unused by production code until then
+const BULK_PATTERN_SEED: u64 = 0x9e37_79b9_7f4a_7c15;
+
+// used by Task 3 (bulk workload runner); unused by production code until then
+#[allow(dead_code)]
+fn bulk_pattern_template(payload_size: usize) -> Vec<u8> {
+    let mut state = BULK_PATTERN_SEED;
+    let mut template = Vec::with_capacity(payload_size);
+    for _ in 0..payload_size {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        template.push((state >> 32) as u8);
+    }
+    template
+}
+
+// used by Task 3 (bulk workload runner); unused by production code until then
+#[allow(dead_code)]
+async fn read_and_validate_bulk_stream<R>(
+    reader: &mut R,
+    template: &[u8],
+    iterations: usize,
+) -> Result<u64, BenchError>
+where
+    R: AsyncRead + Unpin,
+{
+    let mut received = 0u64;
+    // Chunk == template so validation is one slice comparison per chunk,
+    // keeping harness-side CPU out of the measured transfer.
+    let mut chunk = vec![0; template.len()];
+    for _ in 0..iterations {
+        reader
+            .read_exact(&mut chunk)
+            .await
+            .map_err(|source| BenchError::Io {
+                action: "reading bulk stream chunk".to_owned(),
+                source,
+            })?;
+        if chunk != template {
+            return Err(BenchError::InvalidArguments(
+                "bulk stream payload mismatch".to_owned(),
+            ));
+        }
+        received += chunk.len() as u64;
+    }
+    Ok(received)
+}
+
 async fn run_tcp_freedom_connection(
     socks_addr: SocketAddr,
     echo_addr: SocketAddr,
@@ -7507,5 +7556,45 @@ mod tests {
                 },
             })
         );
+    }
+
+    #[test]
+    fn bulk_pattern_template_is_deterministic_and_non_constant() {
+        let first = bulk_pattern_template(4096);
+        let second = bulk_pattern_template(4096);
+        assert_eq!(first, second);
+        assert_eq!(first.len(), 4096);
+        assert!(first.iter().any(|&byte| byte != first[0]));
+    }
+
+    #[tokio::test]
+    async fn bulk_stream_reader_validates_pattern() {
+        let template = bulk_pattern_template(1024);
+        let (mut writer, mut reader) = tokio::io::duplex(64 * 1024);
+        let stream = template.repeat(3);
+        let write_task = tokio::spawn(async move { writer.write_all(&stream).await });
+
+        let received = read_and_validate_bulk_stream(&mut reader, &template, 3)
+            .await
+            .unwrap();
+
+        assert_eq!(received, 3 * 1024);
+        write_task.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn bulk_stream_reader_rejects_corrupted_pattern() {
+        let template = bulk_pattern_template(1024);
+        let (mut writer, mut reader) = tokio::io::duplex(64 * 1024);
+        let mut stream = template.repeat(2);
+        stream[1500] = stream[1500].wrapping_add(1);
+        let write_task = tokio::spawn(async move { writer.write_all(&stream).await });
+
+        let error = read_and_validate_bulk_stream(&mut reader, &template, 2)
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("bulk stream payload mismatch"));
+        write_task.await.unwrap().unwrap();
     }
 }
