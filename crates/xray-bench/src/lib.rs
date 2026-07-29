@@ -1522,6 +1522,80 @@ pub async fn run_tcp_freedom_workload(
     Ok(outcome)
 }
 
+pub async fn run_tcp_bulk_throughput_workload(
+    socks_addr: SocketAddr,
+    options: &BenchOptions,
+) -> Result<WorkloadOutcome, BenchError> {
+    let template = Arc::new(bulk_pattern_template(options.payload_size));
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "binding TCP bulk source server".to_owned(),
+            source,
+        })?;
+    let source_addr = listener.local_addr().map_err(|source| BenchError::Io {
+        action: "reading TCP bulk source server address".to_owned(),
+        source,
+    })?;
+    let iterations = options.iterations;
+    let source_template = Arc::clone(&template);
+    let source_task = tokio::spawn(async move {
+        loop {
+            let Ok((mut stream, _peer)) = listener.accept().await else {
+                break;
+            };
+            let template = Arc::clone(&source_template);
+            tokio::spawn(async move {
+                for _ in 0..iterations {
+                    if stream.write_all(&template).await.is_err() {
+                        return;
+                    }
+                }
+                let _ = stream.shutdown().await;
+            });
+        }
+    });
+
+    let mut tasks = Vec::with_capacity(options.connections);
+    for _ in 0..options.connections {
+        let template = Arc::clone(&template);
+        tasks.push(tokio::spawn(async move {
+            run_tcp_bulk_connection(socks_addr, source_addr, &template, iterations).await
+        }));
+    }
+
+    let mut outcome = WorkloadOutcome::empty();
+    for task in tasks {
+        let task_outcome = task.await.map_err(|error| {
+            BenchError::InvalidArguments(format!("bulk workload task failed: {error}"))
+        })??;
+        outcome.extend(task_outcome);
+    }
+    source_task.abort();
+
+    Ok(outcome)
+}
+
+async fn run_tcp_bulk_connection(
+    socks_addr: SocketAddr,
+    source_addr: SocketAddr,
+    template: &[u8],
+    iterations: usize,
+) -> Result<WorkloadOutcome, BenchError> {
+    let mut client = TcpStream::connect(socks_addr)
+        .await
+        .map_err(|source| BenchError::Io {
+            action: format!("connecting to SOCKS inbound at {socks_addr}"),
+            source,
+        })?;
+    socks5_connect(&mut client, source_addr).await?;
+    let received = read_and_validate_bulk_stream(&mut client, template, iterations).await?;
+    Ok(WorkloadOutcome {
+        bytes_received: received,
+        ..WorkloadOutcome::default()
+    })
+}
+
 pub async fn run_many_idle_flows_workload(
     socks_addr: SocketAddr,
     options: &BenchOptions,
@@ -2021,11 +2095,8 @@ pub async fn run_reality_vision_xudp_workload(
     Ok(outcome)
 }
 
-// used by Task 3 (bulk workload runner); unused by production code until then
 const BULK_PATTERN_SEED: u64 = 0x9e37_79b9_7f4a_7c15;
 
-// used by Task 3 (bulk workload runner); unused by production code until then
-#[allow(dead_code)]
 fn bulk_pattern_template(payload_size: usize) -> Vec<u8> {
     let mut state = BULK_PATTERN_SEED;
     let mut template = Vec::with_capacity(payload_size);
@@ -2038,8 +2109,6 @@ fn bulk_pattern_template(payload_size: usize) -> Vec<u8> {
     template
 }
 
-// used by Task 3 (bulk workload runner); unused by production code until then
-#[allow(dead_code)]
 async fn read_and_validate_bulk_stream<R>(
     reader: &mut R,
     template: &[u8],
@@ -5984,7 +6053,9 @@ async fn run_engine_once(
         match options.workload {
             WorkloadKind::Idle => run_idle_workload(options.duration).await,
             WorkloadKind::TcpFreedom => run_tcp_freedom_workload(engine.socks_addr, options).await,
-            WorkloadKind::TcpBulkThroughput => run_idle_workload(options.duration).await,
+            WorkloadKind::TcpBulkThroughput => {
+                run_tcp_bulk_throughput_workload(engine.socks_addr, options).await
+            }
             WorkloadKind::ManyIdleFlows => {
                 run_many_idle_flows_workload(engine.socks_addr, options).await
             }
@@ -7596,5 +7667,58 @@ mod tests {
 
         assert!(error.to_string().contains("bulk stream payload mismatch"));
         write_task.await.unwrap().unwrap();
+    }
+
+    async fn spawn_test_socks5_forwarder() -> (SocketAddr, JoinHandle<()>) {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let task = tokio::spawn(async move {
+            loop {
+                let Ok((mut client, _peer)) = listener.accept().await else {
+                    break;
+                };
+                tokio::spawn(async move {
+                    let mut greeting = [0; 2];
+                    client.read_exact(&mut greeting).await.unwrap();
+                    let mut methods = vec![0; greeting[1] as usize];
+                    client.read_exact(&mut methods).await.unwrap();
+                    client.write_all(&[5, 0]).await.unwrap();
+                    let mut request = [0; 10];
+                    client.read_exact(&mut request).await.unwrap();
+                    assert_eq!(request[..4], [5, 1, 0, 1]);
+                    let ip = Ipv4Addr::new(request[4], request[5], request[6], request[7]);
+                    let port = u16::from_be_bytes([request[8], request[9]]);
+                    let mut upstream = TcpStream::connect((ip, port)).await.unwrap();
+                    client
+                        .write_all(&[5, 0, 0, 1, 127, 0, 0, 1, 0, 0])
+                        .await
+                        .unwrap();
+                    let _ = tokio::io::copy_bidirectional(&mut client, &mut upstream).await;
+                });
+            }
+        });
+        (addr, task)
+    }
+
+    #[tokio::test]
+    async fn bulk_workload_moves_validated_bytes_through_socks() {
+        let (socks_addr, socks_task) = spawn_test_socks5_forwarder().await;
+        let options = BenchOptions {
+            workload: WorkloadKind::TcpBulkThroughput,
+            connections: 2,
+            iterations: 8,
+            payload_size: 64 * 1024,
+            ..BenchOptions::default()
+        };
+
+        let outcome = run_tcp_bulk_throughput_workload(socks_addr, &options)
+            .await
+            .unwrap();
+
+        assert_eq!(outcome.bytes_received, 2 * 8 * 64 * 1024);
+        assert_eq!(outcome.bytes_sent, 0);
+        assert!(outcome.latencies_us.is_empty());
+        assert!(outcome.setup_samples.is_empty());
+        socks_task.abort();
     }
 }
