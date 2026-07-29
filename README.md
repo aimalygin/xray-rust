@@ -22,6 +22,45 @@ See [project status](docs/status.md) and
 [configuration compatibility](docs/config-compatibility.md) for the detailed
 matrix.
 
+## Benchmarks
+
+Synthetic localhost comparison of `xray-rust`, Xray-core, and sing-box using
+the process-level [benchmark harness](docs/benchmarks.md). Each engine runs as
+a child process with an equivalent generated config while the harness samples
+OS RSS/CPU counters and validates every payload byte. Bars are medians across
+5 runs; whiskers span min to p95 (for latency, the whisker top is the median
+run p95). Measured 2026-07-29 on Apple M3 Pro, 18 GB RAM, macOS 26.5.2 with
+release builds: xray-rust `aa305d3`, Xray-core `v26.5.9`, sing-box
+`v1.13.15`. In this run xray-rust holds a large edge in resident memory, is
+comparable on round-trip latency, and currently trails both Go engines on
+bulk throughput and CPU per GiB. These are microbenchmarks of local proxy
+paths, not wide-area VPN performance; TUN workloads (xray-rust vs Xray-core
+only) are not charted here.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/media/memory-rss-dark.svg">
+  <img alt="Peak resident set size, lower is better. Idle: xray-rust 3.55 MiB, Xray-core 28.0, sing-box 20.9. With 100 idle flows: xray-rust 5.97 MiB, Xray-core 35.2, sing-box 26.5." src="docs/benchmarks/media/memory-rss-light.svg">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/media/latency-dark.svg">
+  <img alt="Round-trip latency medians, lower is better. tcp-freedom: xray-rust 37 µs, Xray-core 35, sing-box 36. reality-vision-xudp: xray-rust 87 µs, Xray-core 73, sing-box 86." src="docs/benchmarks/media/latency-light.svg">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/media/throughput-dark.svg">
+  <img alt="Bulk TCP throughput through SOCKS, higher is better: xray-rust 22.8 Gbps, Xray-core 54.4, sing-box 60.9." src="docs/benchmarks/media/throughput-light.svg">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/media/cpu-per-gib-dark.svg">
+  <img alt="CPU cost per GiB transferred on the bulk workload, lower is better: xray-rust 520 ms, Xray-core 200, sing-box 130." src="docs/benchmarks/media/cpu-per-gib-light.svg">
+</picture>
+
+Reproduce with the release-build compare series and render charts with
+`xray-bench chart`; the exact command chain and methodology are in
+[Publishing Numbers and Charts](docs/benchmarks.md#publishing-numbers-and-charts).
+
 ## Prerequisites
 
 - Rust via `rustup`; [`rust-toolchain.toml`](rust-toolchain.toml) selects the
