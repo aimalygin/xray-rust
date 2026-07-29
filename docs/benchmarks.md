@@ -8,6 +8,7 @@ Supported workloads:
 
 - `idle`
 - `tcp-freedom`
+- `tcp-bulk-throughput`
 - `many-idle-flows`
 - `reconnect-burst`
 - `mixed-long-lived`
@@ -48,6 +49,7 @@ target/benchmarks/<run-id>/<engine>/<workload>/run-003/
 ```sh
 cargo run -p xray-bench -- run --engine xray-rust --workload idle --duration-ms 1000
 cargo run -p xray-bench -- run --engine xray-rust --workload tcp-freedom --connections 1 --iterations 10 --payload-size 1024
+cargo run --release -p xray-bench -- run --engine xray-rust --workload tcp-bulk-throughput --connections 1 --iterations 256 --payload-size 4194304 --run-timeout-ms 120000
 cargo run -p xray-bench -- run --engine xray-rust --workload many-idle-flows --connections 100 --duration-ms 1000
 cargo run -p xray-bench -- run --engine xray-rust --workload reconnect-burst --connections 16 --iterations 25
 cargo run -p xray-bench -- run --engine xray-rust --workload mixed-long-lived --connections 8 --iterations 20 --duration-ms 1000 --payload-size 512
@@ -141,7 +143,7 @@ cargo run -p xray-bench -- run --engine sing-box --sing-box-bin "$SING_BOX_BIN" 
 cargo run -p xray-bench -- run --engine sing-box --sing-box-bin "$SING_BOX_BIN" --workload many-idle-flows --connections 100 --duration-ms 1000 --no-auto-build
 ```
 
-The first sing-box slice supports the SOCKS/process-level workloads: `idle`, `tcp-freedom`, `many-idle-flows`, `reconnect-burst`, `mixed-long-lived`, `udp-freedom`, and `reality-vision-xudp`. The Reality/Vision workload starts an Xray-core VLESS Reality server fixture and samples only the client engine process. The sing-box binary must include `with_utls`; the harness uses `with_gvisor,with_utls,badlinkname,tfogo_checklinkname0` when auto-building sing-box. TUN and fake VLESS/XUDP sing-box workloads are intentionally not part of this slice because they need a different topology than the rootless fd-backed harness.
+The first sing-box slice supports the SOCKS/process-level workloads: `idle`, `tcp-freedom`, `tcp-bulk-throughput`, `many-idle-flows`, `reconnect-burst`, `mixed-long-lived`, `udp-freedom`, and `reality-vision-xudp`. The Reality/Vision workload starts an Xray-core VLESS Reality server fixture and samples only the client engine process. The sing-box binary must include `with_utls`; the harness uses `with_gvisor,with_utls,badlinkname,tfogo_checklinkname0` when auto-building sing-box. TUN and fake VLESS/XUDP sing-box workloads are intentionally not part of this slice because they need a different topology than the rootless fd-backed harness.
 
 Each run has a watchdog timeout. The default is 30 seconds; override it with
 `--run-timeout-ms <milliseconds>` when exercising intentionally slow workloads.
@@ -155,6 +157,7 @@ From the main repository checkout, these process-level workloads compare all thr
 ```sh
 export SING_BOX_BIN=/path/to/sing-box
 cargo run -p xray-bench -- compare --workload tcp-freedom --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 1 --iterations 10 --payload-size 1024
+cargo run --release -p xray-bench -- compare --workload tcp-bulk-throughput --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 1 --iterations 256 --payload-size 4194304 --run-timeout-ms 120000
 cargo run -p xray-bench -- compare --workload many-idle-flows --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 100 --duration-ms 1000
 cargo run -p xray-bench -- compare --workload reconnect-burst --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 16 --iterations 25
 cargo run -p xray-bench -- compare --workload mixed-long-lived --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 8 --iterations 20 --duration-ms 1000 --payload-size 512
@@ -205,6 +208,52 @@ cargo run -p xray-bench -- compare --workload vision-xudp --xray-core-dir ../../
 
 The compare command auto-builds `target/debug/xray-rust`, an Xray-core binary, and a sing-box binary under the run directory unless `--no-auto-build` is provided. Repeated runs reuse binaries built for that benchmark group. Use `--xray-core-bin <path>` and `--sing-box-bin <path>` to benchmark existing binaries without rebuilding.
 
+## Publishing Numbers and Charts
+
+Numbers quoted in the README must come from release builds on both sides. The
+harness's default debug auto-build of `xray-rust` is for development only; Go
+engines are always optimized builds, so a debug Rust binary makes whichever
+number you quote untrustworthy. Build and pass the release binary explicitly,
+and run the harness itself in release so client-side stream validation is not
+the bottleneck:
+
+```sh
+export SING_BOX_BIN=/path/to/sing-box
+cargo build --release -p xray-cli --bin xray-rust
+cargo run --release -p xray-bench -- compare --workload tcp-bulk-throughput \
+  --xray-rust-bin target/release/xray-rust --xray-core-dir Xray-core \
+  --sing-box-bin "$SING_BOX_BIN" \
+  --runs 5 --connections 1 --iterations 256 --payload-size 4194304 --run-timeout-ms 120000
+```
+
+Run the same release-binary compare for each charted workload — `idle`,
+`many-idle-flows`, `tcp-freedom`, `reality-vision-xudp`, and
+`tcp-bulk-throughput`. Each compare invocation writes one
+`target/benchmarks/<run-id>` group; the `--group` flags passed to `chart`
+must jointly cover all five workloads.
+
+`chart` renders the README SVG charts from one or more compare run groups:
+
+```sh
+cargo run --release -p xray-bench -- chart \
+  --group target/benchmarks/<run-id-1> --group target/benchmarks/<run-id-2> \
+  --date 2026-07-29 \
+  --hardware "Apple M4 Pro, 24 GB RAM, macOS 15.5" \
+  --xray-rust-version <git-short-rev> \
+  --xray-core-version v26.5.9 \
+  --sing-box-version <sing-box-tag>
+```
+
+It reads `<group>/<engine>/<workload>/summary.json` for `idle`,
+`many-idle-flows`, `tcp-freedom`, `reality-vision-xudp`, and
+`tcp-bulk-throughput` across all three engines, and writes light/dark SVG
+pairs (`memory-rss`, `latency`, `throughput`, `cpu-per-gib`) to
+`docs/benchmarks/media/` (override with `--out-dir`). Metadata is passed by
+flags rather than sniffed so regeneration is deterministic; the command fails
+if any required summary is missing or its status is not `ok`. Bars show the
+median across runs; whiskers span min to p95 (for latency: min run median up
+to the median run p95).
+
 ## Metrics
 
 The first scoreboard is intentionally portable and comparable across Go and Rust:
@@ -212,6 +261,7 @@ The first scoreboard is intentionally portable and comparable across Go and Rust
 - peak resident set size from `ps` RSS.
 - CPU time delta from `ps` cumulative process time.
 - CPU milliseconds per GiB transferred when a workload moves payload bytes.
+- throughput megabits per second when a workload moves payload bytes, computed from validated bytes over measured wall time. The byte count aggregates both directions, matching the CPU-per-GiB convention, so echo-style workloads read roughly twice their one-way goodput; quote streaming throughput from `tcp-bulk-throughput`, where traffic is one-directional.
 - thread count when the local `ps` implementation exposes it.
 - validated bytes sent and received by the workload.
 - latency microsecond percentiles for traffic workloads. For `many-idle-flows`, latency is SOCKS TCP flow setup time.
@@ -219,6 +269,7 @@ The first scoreboard is intentionally portable and comparable across Go and Rust
 - min, median, and p95 aggregates across repeated runs.
 
 `tcp-freedom`, `udp-freedom`, `tun-udp-freedom`, `udp-vless`, `udp-xudp`, `vision-xudp`, and `reality-vision-xudp` record one round-trip latency sample per validated payload iteration. `summary.json` aggregates each run's latency min/median/p95/p99 across repeated runs.
+`tcp-bulk-throughput` streams a deterministic byte pattern from a local TCP source through SOCKS5 CONNECT as one continuous transfer per connection (`--iterations` chunks of `--payload-size` bytes). The client validates the pattern chunk-by-chunk while reading, so throughput covers only verified bytes. Unlike `tcp-freedom` it has no per-iteration round trip, making it the workload to quote for streaming throughput.
 `many-idle-flows` opens `--connections` SOCKS TCP flows to a local target, keeps them idle for `--duration-ms`, and reports RSS/CPU while those flows are held. This is the first local memory-slope workload; compare its peak RSS against `idle` and divide the delta by the connection count for an approximate per-flow resident-memory cost.
 `reconnect-burst` repeatedly opens and closes SOCKS TCP flows with `--connections` parallel workers and `--iterations` reconnects per worker. It is intended to separate base setup cost from the memory slope of held idle flows.
 `mixed-long-lived` keeps TCP and UDP SOCKS flows open together, paces `--iterations` across `--duration-ms`, and validates both echo paths. It is a local mobile-like foreground/background traffic mix.
