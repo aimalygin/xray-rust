@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="440" viewBox="0 0 760 440" role="img" aria-label="Round-trip latency — µs, median with p95 whisker (lower is better)">
+<rect width="760" height="440" fill="#fcfcfb" rx="8"/>
+<text x="24" y="34" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="17" font-weight="600" fill="#0b0b0b">Round-trip latency — µs, median with p95 whisker (lower is better)</text>
+<rect x="24.00" y="52" width="12" height="12" rx="3" fill="#2a78d6"/>
+<text x="42.00" y="62" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12.5" fill="#52514e">xray-rust</text>
+<rect x="138.00" y="52" width="12" height="12" rx="3" fill="#eb6834"/>
+<text x="156.00" y="62" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12.5" fill="#52514e">Xray-core</text>
+<rect x="252.00" y="52" width="12" height="12" rx="3" fill="#1baf7a"/>
+<text x="270.00" y="62" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12.5" fill="#52514e">sing-box</text>
+<text x="54" y="334.00" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11" fill="#898781" text-anchor="end">0.00</text>
+<line x1="64" y1="270.50" x2="736" y2="270.50" stroke="#e1e0d9" stroke-width="1"/>
+<text x="54" y="274.50" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11" fill="#898781" text-anchor="end">100</text>
+<line x1="64" y1="211.00" x2="736" y2="211.00" stroke="#e1e0d9" stroke-width="1"/>
+<text x="54" y="215.00" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11" fill="#898781" text-anchor="end">200</text>
+<line x1="64" y1="151.50" x2="736" y2="151.50" stroke="#e1e0d9" stroke-width="1"/>
+<text x="54" y="155.50" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11" fill="#898781" text-anchor="end">300</text>
+<line x1="64" y1="92.00" x2="736" y2="92.00" stroke="#e1e0d9" stroke-width="1"/>
+<text x="54" y="96.00" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11" fill="#898781" text-anchor="end">400</text>
+<line x1="64" y1="330" x2="736" y2="330" stroke="#c3c2b7" stroke-width="1"/>
+<path d="M 164.00 330.00 L 164.00 311.99 Q 164.00 307.99 168.00 307.99 L 204.00 307.99 Q 208.00 307.99 208.00 311.99 L 208.00 330.00 Z" fill="#2a78d6"/>
+<line x1="186.00" y1="307.99" x2="186.00" y2="302.04" stroke="#52514e" stroke-width="1.5"/>
+<line x1="181.00" y1="307.99" x2="191.00" y2="307.99" stroke="#52514e" stroke-width="1.5"/>
+<line x1="181.00" y1="302.04" x2="191.00" y2="302.04" stroke="#52514e" stroke-width="1.5"/>
+<text x="186.00" y="294.04" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12" font-weight="600" fill="#0b0b0b" text-anchor="middle">37.0</text>
+<path d="M 210.00 330.00 L 210.00 313.18 Q 210.00 309.18 214.00 309.18 L 250.00 309.18 Q 254.00 309.18 254.00 313.18 L 254.00 330.00 Z" fill="#eb6834"/>
+<line x1="232.00" y1="309.77" x2="232.00" y2="303.23" stroke="#52514e" stroke-width="1.5"/>
+<line x1="227.00" y1="309.77" x2="237.00" y2="309.77" stroke="#52514e" stroke-width="1.5"/>
+<line x1="227.00" y1="303.23" x2="237.00" y2="303.23" stroke="#52514e" stroke-width="1.5"/>
+<text x="232.00" y="295.23" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12" font-weight="600" fill="#0b0b0b" text-anchor="middle">35.0</text>
+<path d="M 256.00 330.00 L 256.00 312.58 Q 256.00 308.58 260.00 308.58 L 296.00 308.58 Q 300.00 308.58 300.00 312.58 L 300.00 330.00 Z" fill="#1baf7a"/>
+<line x1="278.00" y1="309.18" x2="278.00" y2="303.82" stroke="#52514e" stroke-width="1.5"/>
+<line x1="273.00" y1="309.18" x2="283.00" y2="309.18" stroke="#52514e" stroke-width="1.5"/>
+<line x1="273.00" y1="303.82" x2="283.00" y2="303.82" stroke="#52514e" stroke-width="1.5"/>
+<text x="278.00" y="295.82" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12" font-weight="600" fill="#0b0b0b" text-anchor="middle">36.0</text>
+<text x="232.00" y="354" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12.5" fill="#52514e" text-anchor="middle">tcp-freedom</text>
+<path d="M 500.00 330.00 L 500.00 282.24 Q 500.00 278.24 504.00 278.24 L 540.00 278.24 Q 544.00 278.24 544.00 282.24 L 544.00 330.00 Z" fill="#2a78d6"/>
+<line x1="522.00" y1="278.83" x2="522.00" y2="159.83" stroke="#52514e" stroke-width="1.5"/>
+<line x1="517.00" y1="278.83" x2="527.00" y2="278.83" stroke="#52514e" stroke-width="1.5"/>
+<line x1="517.00" y1="159.83" x2="527.00" y2="159.83" stroke="#52514e" stroke-width="1.5"/>
+<text x="522.00" y="151.83" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12" font-weight="600" fill="#0b0b0b" text-anchor="middle">87.0</text>
+<path d="M 546.00 330.00 L 546.00 290.56 Q 546.00 286.56 550.00 286.56 L 586.00 286.56 Q 590.00 286.56 590.00 290.56 L 590.00 330.00 Z" fill="#eb6834"/>
+<line x1="568.00" y1="287.16" x2="568.00" y2="265.74" stroke="#52514e" stroke-width="1.5"/>
+<line x1="563.00" y1="287.16" x2="573.00" y2="287.16" stroke="#52514e" stroke-width="1.5"/>
+<line x1="563.00" y1="265.74" x2="573.00" y2="265.74" stroke="#52514e" stroke-width="1.5"/>
+<text x="568.00" y="257.74" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12" font-weight="600" fill="#0b0b0b" text-anchor="middle">73.0</text>
+<path d="M 592.00 330.00 L 592.00 282.83 Q 592.00 278.83 596.00 278.83 L 632.00 278.83 Q 636.00 278.83 636.00 282.83 L 636.00 330.00 Z" fill="#1baf7a"/>
+<line x1="614.00" y1="293.70" x2="614.00" y2="172.33" stroke="#52514e" stroke-width="1.5"/>
+<line x1="609.00" y1="293.70" x2="619.00" y2="293.70" stroke="#52514e" stroke-width="1.5"/>
+<line x1="609.00" y1="172.33" x2="619.00" y2="172.33" stroke="#52514e" stroke-width="1.5"/>
+<text x="614.00" y="164.33" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12" font-weight="600" fill="#0b0b0b" text-anchor="middle">86.0</text>
+<text x="568.00" y="354" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12.5" fill="#52514e" text-anchor="middle">reality-vision-xudp</text>
+<text x="24" y="404" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11" fill="#898781">2026-07-29 · Apple M3 Pro, 18 GB RAM, macOS 26.5.2 · runs=5 · synthetic localhost benchmark</text>
+<text x="24" y="422" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11" fill="#898781">xray-rust aa305d3 · Xray-core v26.5.9 · sing-box v1.13.15</text>
+</svg>
