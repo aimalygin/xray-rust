@@ -1376,7 +1376,7 @@ In `lib.rs` `mod tests`:
             "target/benchmarks/123",
             "--group",
             "target/benchmarks/456",
-            "--out",
+            "--out-dir",
             "docs/benchmarks/media",
             "--date",
             "2026-07-29",
@@ -1805,7 +1805,7 @@ cargo run --release -p xray-bench -- chart \
 It reads `<group>/<engine>/<workload>/summary.json` for `idle`,
 `many-idle-flows`, `tcp-freedom`, `reality-vision-xudp`, and
 `tcp-bulk-throughput` across all three engines, and writes light/dark SVG
-pairs to `docs/benchmarks/media/` (override with `--out`). Metadata is passed
+pairs to `docs/benchmarks/media/` (override with `--out-dir`). Metadata is passed
 by flags rather than sniffed so regeneration is deterministic; the command
 fails if any required summary is missing or its status is not `ok`. Bars show
 the median across runs; whiskers span min to p95 (for latency: min run median
