@@ -12,6 +12,7 @@ pub struct ChartOptions {
     pub xray_rust_version: String,
     pub xray_core_version: String,
     pub sing_box_version: String,
+    pub geodata_version: Option<String>,
 }
 
 pub fn parse_chart_args(args: &[String]) -> Result<ChartOptions, BenchError> {
@@ -22,6 +23,7 @@ pub fn parse_chart_args(args: &[String]) -> Result<ChartOptions, BenchError> {
     let mut xray_rust_version = None;
     let mut xray_core_version = None;
     let mut sing_box_version = None;
+    let mut geodata_version = None;
 
     let mut index = 0;
     while index < args.len() {
@@ -49,6 +51,9 @@ pub fn parse_chart_args(args: &[String]) -> Result<ChartOptions, BenchError> {
             "--sing-box-version" => {
                 sing_box_version = Some(required_value(args, &mut index, flag)?.to_owned());
             }
+            "--geodata-version" => {
+                geodata_version = Some(required_value(args, &mut index, flag)?.to_owned());
+            }
             other => {
                 return Err(BenchError::InvalidArguments(format!(
                     "unknown argument `{other}`\n{USAGE}"
@@ -73,6 +78,7 @@ pub fn parse_chart_args(args: &[String]) -> Result<ChartOptions, BenchError> {
         xray_rust_version: required(xray_rust_version, "--xray-rust-version")?,
         xray_core_version: required(xray_core_version, "--xray-core-version")?,
         sing_box_version: required(sing_box_version, "--sing-box-version")?,
+        geodata_version,
     })
 }
 
@@ -86,6 +92,7 @@ fn load_summary(
     connections: Option<u64>,
 ) -> Result<BenchSummary, BenchError> {
     let mut candidates = Vec::new();
+    let mut rejected_connections = Vec::new();
     for group in groups {
         let candidate = group
             .join(engine.as_str())
@@ -106,6 +113,7 @@ fn load_summary(
         })?;
         if let Some(required) = connections {
             if summary.connections != required {
+                rejected_connections.push(summary.connections);
                 continue;
             }
         }
@@ -117,8 +125,23 @@ fn load_summary(
     };
     let (path, summary) = match candidates.len() {
         0 => {
+            let found_note = if rejected_connections.is_empty() {
+                String::new()
+            } else {
+                let mut found = rejected_connections.clone();
+                found.sort_unstable();
+                found.dedup();
+                format!(
+                    " (found summaries with connections={})",
+                    found
+                        .iter()
+                        .map(u64::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            };
             return Err(BenchError::InvalidArguments(format!(
-                "missing summary for {} {}{filter_note}: no --group directory contains a matching {}/{}/summary.json",
+                "missing summary for {} {}{filter_note}: no --group directory contains a matching {}/{}/summary.json{found_note}",
                 engine.as_str(),
                 workload.as_str(),
                 engine.as_str(),
@@ -183,7 +206,9 @@ pub(crate) const DARK: Theme = Theme {
     series: ["#3987e5", "#d95926", "#199e70"],
 };
 
-const SERIES_LABELS: [&str; 3] = ["xray-rust", "Xray-core", "sing-box"];
+const SERIES_LABELS_ALL: [&str; 3] = ["xray-rust", "Xray-core", "sing-box"];
+const SERIES_LABELS_GEO: [&str; 2] = ["xray-rust", "Xray-core"];
+const GEO_ENGINES: [EngineKind; 2] = [EngineKind::XrayRust, EngineKind::XrayCore];
 const FONT_FAMILY: &str = "system-ui, -apple-system, 'Segoe UI', sans-serif";
 
 const CANVAS_WIDTH: f64 = 760.0;
@@ -209,6 +234,7 @@ pub(crate) struct BarGroup {
 
 pub(crate) struct ChartSpec {
     pub title: String,
+    pub series_labels: &'static [&'static str],
     pub groups: Vec<BarGroup>,
 }
 
@@ -219,6 +245,7 @@ pub(crate) struct Footer {
     pub xray_rust_version: String,
     pub xray_core_version: String,
     pub sing_box_version: String,
+    pub geodata: Option<String>,
 }
 
 fn escape_xml(raw: &str) -> String {
@@ -295,7 +322,7 @@ pub(crate) fn render_bar_chart(spec: &ChartSpec, theme: &Theme, footer: &Footer)
     ));
 
     let mut legend_x = 24.0;
-    for (index, label) in SERIES_LABELS.iter().enumerate() {
+    for (index, label) in spec.series_labels.iter().enumerate() {
         svg.push_str(&format!(
             r#"<rect x="{legend_x:.2}" y="52" width="12" height="12" rx="3" fill="{color}"/>
 <text x="{text_x:.2}" y="62" font-family="{FONT_FAMILY}" font-size="12.5" fill="{ink}">{label}</text>
@@ -392,10 +419,16 @@ pub(crate) fn render_bar_chart(spec: &ChartSpec, theme: &Theme, footer: &Footer)
 </svg>
 "#,
         muted = theme.ink_muted,
-        line = escape_xml(&format!(
-            "xray-rust {} · Xray-core {} · sing-box {}",
-            footer.xray_rust_version, footer.xray_core_version, footer.sing_box_version
-        )),
+        line = escape_xml(&match &footer.geodata {
+            Some(geodata) => format!(
+                "xray-rust {} · Xray-core {} · sing-box {} · geodata {}",
+                footer.xray_rust_version, footer.xray_core_version, footer.sing_box_version, geodata
+            ),
+            None => format!(
+                "xray-rust {} · Xray-core {} · sing-box {}",
+                footer.xray_rust_version, footer.xray_core_version, footer.sing_box_version
+            ),
+        }),
     ));
     svg
 }
@@ -428,13 +461,14 @@ const ENGINES: [EngineKind; 3] = [
     EngineKind::SingBox,
 ];
 
-const CHART_SLOTS: [(WorkloadKind, Option<u64>); 6] = [
+const CHART_SLOTS: [(WorkloadKind, Option<u64>); 7] = [
     (WorkloadKind::Idle, None),
     (WorkloadKind::ManyIdleFlows, Some(100)),
     (WorkloadKind::ManyIdleFlows, Some(1000)),
     (WorkloadKind::TcpFreedom, None),
     (WorkloadKind::RealityVisionXudp, None),
     (WorkloadKind::TcpBulkThroughput, None),
+    (WorkloadKind::RoutedTcpFreedom, None),
 ];
 
 fn metric_bar(metric: &crate::MetricSummary, series: usize, divisor: f64) -> Bar {
@@ -530,12 +564,65 @@ fn optional_metric_group(
     })
 }
 
+fn geo_setup_group(loaded: &LoadedSummaries) -> Result<BarGroup, BenchError> {
+    let bars = GEO_ENGINES
+        .iter()
+        .enumerate()
+        .map(|(series, engine)| {
+            let summary = loaded.get(*engine, WorkloadKind::RoutedTcpFreedom, None);
+            let setup = summary.setup_us.as_ref().ok_or_else(|| {
+                BenchError::InvalidArguments(format!(
+                    "summary for {} routed-tcp-freedom has no setup data",
+                    engine.as_str()
+                ))
+            })?;
+            // Bar: median of per-run median SOCKS CONNECT round-trips (rule
+            // evaluation + hosts resolution + local dial). Whisker: min run
+            // median up to the median run p95.
+            Ok(Bar {
+                series,
+                value: setup.socks_connect_us.median.median as f64,
+                lo: setup.socks_connect_us.median.min as f64,
+                hi: setup.socks_connect_us.p95.median as f64,
+            })
+        })
+        .collect::<Result<Vec<_>, BenchError>>()?;
+    Ok(BarGroup {
+        label: "routed-tcp-freedom".to_owned(),
+        bars,
+    })
+}
+
+fn geo_memory_group(loaded: &LoadedSummaries) -> BarGroup {
+    BarGroup {
+        label: "routed-tcp-freedom".to_owned(),
+        bars: GEO_ENGINES
+            .iter()
+            .enumerate()
+            .map(|(series, engine)| {
+                metric_bar(
+                    &loaded
+                        .get(*engine, WorkloadKind::RoutedTcpFreedom, None)
+                        .peak_rss_kib,
+                    series,
+                    1024.0,
+                )
+            })
+            .collect(),
+    }
+}
+
 pub fn run_chart(options: &ChartOptions) -> Result<(), BenchError> {
     let mut entries = Vec::new();
-    for engine in ENGINES {
-        for (workload, connections) in CHART_SLOTS {
-            let summary = load_summary(&options.groups, engine, workload, connections)?;
-            entries.push(((engine, workload, connections), summary));
+    for (workload, connections) in CHART_SLOTS {
+        let engines: &[EngineKind] = if workload == WorkloadKind::RoutedTcpFreedom {
+            &GEO_ENGINES
+        } else {
+            &ENGINES
+        };
+        for engine in engines {
+            let summary = load_summary(&options.groups, *engine, workload, connections)?;
+            entries.push(((*engine, workload, connections), summary));
         }
     }
     let loaded = LoadedSummaries { entries };
@@ -550,10 +637,25 @@ pub fn run_chart(options: &ChartOptions) -> Result<(), BenchError> {
     let footer = Footer {
         date: options.date.clone(),
         hardware: options.hardware.clone(),
+        runs_label: runs_label.clone(),
+        xray_rust_version: options.xray_rust_version.clone(),
+        xray_core_version: options.xray_core_version.clone(),
+        sing_box_version: options.sing_box_version.clone(),
+        geodata: None,
+    };
+    if options.geodata_version.is_none() {
+        eprintln!(
+            "warning: --geodata-version not set; geo charts will omit the geodata provenance segment"
+        );
+    }
+    let geo_footer = Footer {
+        date: options.date.clone(),
+        hardware: options.hardware.clone(),
         runs_label,
         xray_rust_version: options.xray_rust_version.clone(),
         xray_core_version: options.xray_core_version.clone(),
         sing_box_version: options.sing_box_version.clone(),
+        geodata: options.geodata_version.clone(),
     };
 
     let charts: Vec<(&str, ChartSpec)> = vec![
@@ -561,6 +663,7 @@ pub fn run_chart(options: &ChartOptions) -> Result<(), BenchError> {
             "memory-rss",
             ChartSpec {
                 title: "Peak resident set size — MiB (lower is better)".to_owned(),
+                series_labels: &SERIES_LABELS_ALL,
                 groups: vec![
                     rss_group(&loaded, WorkloadKind::Idle, None, "idle"),
                     rss_group(
@@ -583,6 +686,7 @@ pub fn run_chart(options: &ChartOptions) -> Result<(), BenchError> {
             ChartSpec {
                 title: "Round-trip latency — µs, median with p95 whisker (lower is better)"
                     .to_owned(),
+                series_labels: &SERIES_LABELS_ALL,
                 groups: vec![
                     latency_group(&loaded, WorkloadKind::TcpFreedom, None)?,
                     latency_group(&loaded, WorkloadKind::RealityVisionXudp, None)?,
@@ -593,6 +697,7 @@ pub fn run_chart(options: &ChartOptions) -> Result<(), BenchError> {
             "throughput",
             ChartSpec {
                 title: "Bulk TCP throughput — Gbps (higher is better)".to_owned(),
+                series_labels: &SERIES_LABELS_ALL,
                 groups: vec![optional_metric_group(
                     &loaded,
                     WorkloadKind::TcpBulkThroughput,
@@ -607,6 +712,7 @@ pub fn run_chart(options: &ChartOptions) -> Result<(), BenchError> {
             "cpu-per-gib",
             ChartSpec {
                 title: "CPU cost — milliseconds per GiB transferred (lower is better)".to_owned(),
+                series_labels: &SERIES_LABELS_ALL,
                 groups: vec![optional_metric_group(
                     &loaded,
                     WorkloadKind::TcpBulkThroughput,
@@ -617,6 +723,23 @@ pub fn run_chart(options: &ChartOptions) -> Result<(), BenchError> {
                 )?],
             },
         ),
+        (
+            "geo-setup-latency",
+            ChartSpec {
+                title: "Time to SOCKS CONNECT reply with real geodata — µs (see docs note)"
+                    .to_owned(),
+                series_labels: &SERIES_LABELS_GEO,
+                groups: vec![geo_setup_group(&loaded)?],
+            },
+        ),
+        (
+            "geo-memory",
+            ChartSpec {
+                title: "Routing memory with real geodata — MiB (lower is better)".to_owned(),
+                series_labels: &SERIES_LABELS_GEO,
+                groups: vec![geo_memory_group(&loaded)],
+            },
+        ),
     ];
 
     fs::create_dir_all(&options.out_dir).map_err(|source| BenchError::Io {
@@ -624,8 +747,13 @@ pub fn run_chart(options: &ChartOptions) -> Result<(), BenchError> {
         source,
     })?;
     for (stem, spec) in &charts {
+        let chart_footer = if stem.starts_with("geo-") {
+            &geo_footer
+        } else {
+            &footer
+        };
         for theme in [&LIGHT, &DARK] {
-            let svg = render_bar_chart(spec, theme, &footer);
+            let svg = render_bar_chart(spec, theme, chart_footer);
             let path = options.out_dir.join(format!("{stem}-{}.svg", theme.name));
             fs::write(&path, svg).map_err(|source| BenchError::Io {
                 action: format!("writing chart `{}`", path.display()),
@@ -758,6 +886,18 @@ mod tests {
     }
 
     #[test]
+    fn parses_optional_geodata_version() {
+        let mut args_vec = full_args("target/benchmarks/123");
+        args_vec.push("--geodata-version".to_owned());
+        args_vec.push("geosite-20260727 geoip-202607171233".to_owned());
+        let options = parse_chart_args(&args_vec).unwrap();
+        assert_eq!(
+            options.geodata_version.as_deref(),
+            Some("geosite-20260727 geoip-202607171233")
+        );
+    }
+
+    #[test]
     fn chart_args_require_group_and_metadata() {
         let error = parse_chart_args(&args(&["--date", "2026-07-29"])).unwrap_err();
         assert!(error.to_string().contains("at least one --group"));
@@ -860,17 +1000,34 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.to_string().contains("connections=500"));
+        assert!(error
+            .to_string()
+            .contains("found summaries with connections="));
         fs::remove_dir_all(&root).unwrap();
     }
 
+    fn aggregate(min: u128, median: u128, p95: u128) -> crate::LatencySummaryAggregate {
+        crate::LatencySummaryAggregate {
+            min: MetricSummary { min, median, p95 },
+            median: MetricSummary { min, median, p95 },
+            p95: MetricSummary {
+                min: p95,
+                median: p95 * 2,
+                p95: p95 * 3,
+            },
+            p99: MetricSummary { min, median, p95 },
+        }
+    }
+
     fn write_full_group(root: &Path) -> Vec<PathBuf> {
-        let slots: [(&str, Option<u64>); 6] = [
+        let slots: [(&str, Option<u64>); 7] = [
             ("idle", None),
             ("many-idle-flows", Some(100)),
             ("many-idle-flows", Some(1000)),
             ("tcp-freedom", None),
             ("reality-vision-xudp", None),
             ("tcp-bulk-throughput", None),
+            ("routed-tcp-freedom", None),
         ];
         let mut groups = Vec::new();
         for (workload, connections) in slots {
@@ -878,7 +1035,12 @@ mod tests {
                 Some(conn) => root.join(format!("g-{workload}-{conn}")),
                 None => root.join(format!("g-{workload}")),
             };
-            for engine in ["xray-rust", "xray-core", "sing-box"] {
+            let engines: Vec<&str> = if workload == "routed-tcp-freedom" {
+                vec!["xray-rust", "xray-core"]
+            } else {
+                vec!["xray-rust", "xray-core", "sing-box"]
+            };
+            for engine in engines {
                 let mut summary =
                     test_summary_with(engine, workload, "ok", connections.unwrap_or(0));
                 if matches!(workload, "tcp-freedom" | "reality-vision-xudp") {
@@ -898,6 +1060,15 @@ mod tests {
                         p99: metric,
                     });
                 }
+                if workload == "routed-tcp-freedom" {
+                    summary.setup_us = Some(crate::FlowSetupSummaryAggregate {
+                        tcp_connect_us: aggregate(40, 60, 90),
+                        socks_method_us: aggregate(10, 15, 25),
+                        socks_connect_us: aggregate(120, 180, 400),
+                        socks_setup_us: aggregate(140, 200, 420),
+                        total_us: aggregate(180, 260, 500),
+                    });
+                }
                 let dir = group_dir.join(engine).join(workload);
                 fs::create_dir_all(&dir).unwrap();
                 write_summary_json(&dir.join("summary.json"), &summary).unwrap();
@@ -908,12 +1079,13 @@ mod tests {
     }
 
     #[test]
-    fn run_chart_writes_eight_theme_files() {
+    fn run_chart_writes_twelve_theme_files() {
         let root = temp_root("e2e");
         let out_dir = root.join("media");
         let mut options = parse_chart_args(&full_args(root.to_str().unwrap())).unwrap();
         options.groups = write_full_group(&root);
         options.out_dir = out_dir.clone();
+        options.geodata_version = Some("geodata-test".to_owned());
 
         run_chart(&options).unwrap();
 
@@ -922,6 +1094,8 @@ mod tests {
             ("latency", "Round-trip latency"),
             ("throughput", "Bulk TCP throughput"),
             ("cpu-per-gib", "CPU cost"),
+            ("geo-setup-latency", "Time to SOCKS CONNECT reply"),
+            ("geo-memory", "Routing memory"),
         ] {
             for theme in ["light", "dark"] {
                 let path = out_dir.join(format!("{stem}-{theme}.svg"));
@@ -938,8 +1112,17 @@ mod tests {
         let memory = fs::read_to_string(out_dir.join("memory-rss-light.svg")).unwrap();
         assert!(memory.contains(">12.0<"));
         assert!(memory.contains("many-idle-flows ×1000"));
+        assert!(!memory.contains("geodata-test"));
         let throughput = fs::read_to_string(out_dir.join("throughput-light.svg")).unwrap();
         assert!(throughput.contains(">4.30<"));
+
+        let geo_setup = fs::read_to_string(out_dir.join("geo-setup-latency-light.svg")).unwrap();
+        assert!(geo_setup.contains("Xray-core"));
+        assert!(geo_setup.contains(">180<"));
+        assert!(geo_setup.contains("(see docs note)"));
+        let geo = fs::read_to_string(out_dir.join("geo-memory-light.svg")).unwrap();
+        assert!(!geo.contains(">sing-box<"));
+        assert!(geo.contains("geodata-test"));
 
         fs::remove_dir_all(&root).unwrap();
     }
@@ -967,6 +1150,7 @@ mod tests {
     fn fixture_spec() -> ChartSpec {
         ChartSpec {
             title: "Peak resident set size — MiB (lower is better)".to_owned(),
+            series_labels: &SERIES_LABELS_ALL,
             groups: vec![
                 BarGroup {
                     label: "idle".to_owned(),
@@ -1026,6 +1210,7 @@ mod tests {
             xray_rust_version: "1659143".to_owned(),
             xray_core_version: "v26.5.9".to_owned(),
             sing_box_version: "v1.12.0".to_owned(),
+            geodata: None,
         }
     }
 
