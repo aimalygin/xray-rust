@@ -31,9 +31,9 @@ OS RSS/CPU counters and validates every payload byte. Bars are medians across
 5 runs; whiskers span min to p95 (for latency, the whisker top is the median
 run p95). Measured 2026-07-30 on Apple M3 Pro, 18 GB RAM, macOS 26.5.2 with
 release builds: xray-rust `4510952`, Xray-core `v26.5.9`, sing-box
-`v1.13.15`. The routing charts load real, pinned V2Fly geodata
+`v1.13.15`. The routing memory chart loads real, pinned V2Fly geodata
 (`geosite 20260727084448`, `geoip 202607171233`); sing-box is absent
-from those two charts because it does not read Xray-format `.dat` rule data.
+from that chart because it does not read Xray-format `.dat` rule data.
 In this run xray-rust holds a large edge in resident memory at idle and at
 100 held flows, stays about 2× below Xray-core at 1000 flows while sing-box
 pulls level, and uses about 4× less memory than Xray-core with real geodata
@@ -62,17 +62,6 @@ vs Xray-core only) are not charted here.
   <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/media/cpu-per-gib-dark.svg">
   <img alt="CPU cost per GiB transferred on the bulk workload, lower is better: xray-rust 170 ms, Xray-core 200, sing-box 160." src="docs/benchmarks/media/cpu-per-gib-light.svg">
 </picture>
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/media/geo-setup-latency-dark.svg">
-  <img alt="Time from SOCKS CONNECT request to the engine's reply with real geodata loaded: xray-rust 426 µs, Xray-core 126 µs. Not a pure routing-cost comparison: the engines reply at different pipeline stages." src="docs/benchmarks/media/geo-setup-latency-light.svg">
-</picture>
-
-The reply-time chart carries a caveat: xray-rust answers the SOCKS CONNECT
-only after rule evaluation, hosts resolution, and the local dial complete,
-while Xray-core answers during the handshake and routes afterwards — the bars
-span different amounts of work, so read them as connection-establishment
-behavior, not as routing-engine speed.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/media/geo-memory-dark.svg">
