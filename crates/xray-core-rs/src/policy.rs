@@ -11,7 +11,8 @@ const DEFAULT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_CONN_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 const DEFAULT_UPLINK_ONLY_TIMEOUT: Duration = Duration::from_secs(1);
 const DEFAULT_DOWNLINK_ONLY_TIMEOUT: Duration = Duration::from_secs(2);
-const DEFAULT_COPY_BUFFER_SIZE: usize = 8 * 1024;
+const DEFAULT_COPY_BUFFER_SIZE: usize = 128 * 1024;
+const INITIAL_COPY_BUFFER_SIZE: usize = 16 * 1024;
 const MIN_COPY_BUFFER_SIZE: usize = 1024;
 const MAX_COPY_BUFFER_SIZE: usize = 1024 * 1024;
 const COPY_FLUSH_THRESHOLD: usize = 64 * 1024;
@@ -216,7 +217,10 @@ where
 {
     let mut total = 0u64;
     let mut unflushed = 0usize;
-    let mut buffer = vec![0; buffer_size.clamp(MIN_COPY_BUFFER_SIZE, MAX_COPY_BUFFER_SIZE)];
+    // Start small so idle/chatty connections stay cheap; double toward the cap
+    // only while reads keep filling the buffer (bulk transfers).
+    let buffer_cap = buffer_size.clamp(MIN_COPY_BUFFER_SIZE, MAX_COPY_BUFFER_SIZE);
+    let mut buffer = vec![0; buffer_cap.min(INITIAL_COPY_BUFFER_SIZE)];
     let flush_deadline = tokio::time::sleep(COPY_FLUSH_INTERVAL);
     tokio::pin!(flush_deadline);
 
@@ -233,6 +237,9 @@ where
                 }
 
                 writer.write_all(&buffer[..len]).await?;
+                if len == buffer.len() && buffer.len() < buffer_cap {
+                    buffer.resize((buffer.len() * 2).min(buffer_cap), 0);
+                }
                 total = total.saturating_add(len as u64);
                 let was_clean = unflushed == 0;
                 unflushed = unflushed.saturating_add(len);
@@ -278,6 +285,7 @@ mod tests {
     #[derive(Default)]
     struct RecordingWriteState {
         bytes_written: usize,
+        write_lengths: Vec<usize>,
         flushes: usize,
         shutdowns: usize,
     }
@@ -339,7 +347,9 @@ mod tests {
             _cx: &mut Context<'_>,
             buf: &[u8],
         ) -> Poll<std::io::Result<usize>> {
-            self.state.lock().unwrap().bytes_written += buf.len();
+            let mut state = self.state.lock().unwrap();
+            state.bytes_written += buf.len();
+            state.write_lengths.push(buf.len());
             Poll::Ready(Ok(buf.len()))
         }
 
@@ -472,6 +482,58 @@ mod tests {
         assert_eq!(state.lock().unwrap().flushes, 2);
         assert!(activity_rx.try_recv().is_ok());
         assert!(activity_rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn copy_direction_grows_buffer_toward_cap_on_full_reads() {
+        let reader_io = ChunkedReadIo {
+            remaining: 1024 * 1024,
+            chunk_size: 1024 * 1024,
+        };
+        let (mut reader, _unused_writer) = tokio::io::split(reader_io);
+        let state = Arc::new(Mutex::new(RecordingWriteState::default()));
+        let writer_io = RecordingIo {
+            state: state.clone(),
+        };
+        let (_unused_reader, mut writer) = tokio::io::split(writer_io);
+        let (activity_tx, _activity_rx) = mpsc::channel(1);
+
+        let copied = copy_direction(&mut reader, &mut writer, activity_tx, 128 * 1024)
+            .await
+            .unwrap();
+
+        assert_eq!(copied, 1024 * 1024);
+        let state = state.lock().unwrap();
+        assert_eq!(
+            state.write_lengths[..4],
+            [16 * 1024, 32 * 1024, 64 * 1024, 128 * 1024]
+        );
+        let (last, steady) = state.write_lengths[4..].split_last().unwrap();
+        assert!(steady.iter().all(|len| *len == 128 * 1024));
+        assert!(*last <= 128 * 1024);
+    }
+
+    #[tokio::test]
+    async fn copy_direction_keeps_buffer_at_configured_cap_when_small() {
+        let reader_io = ChunkedReadIo {
+            remaining: 8 * 1024,
+            chunk_size: 8 * 1024,
+        };
+        let (mut reader, _unused_writer) = tokio::io::split(reader_io);
+        let state = Arc::new(Mutex::new(RecordingWriteState::default()));
+        let writer_io = RecordingIo {
+            state: state.clone(),
+        };
+        let (_unused_reader, mut writer) = tokio::io::split(writer_io);
+        let (activity_tx, _activity_rx) = mpsc::channel(1);
+
+        let copied = copy_direction(&mut reader, &mut writer, activity_tx, 4 * 1024)
+            .await
+            .unwrap();
+
+        assert_eq!(copied, 8 * 1024);
+        let state = state.lock().unwrap();
+        assert!(state.write_lengths.iter().all(|len| *len <= 4 * 1024));
     }
 
     #[tokio::test]
