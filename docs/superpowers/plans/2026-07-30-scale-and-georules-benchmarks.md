@@ -1333,7 +1333,7 @@ fn geo_memory_group(loaded: &LoadedSummaries) -> BarGroup {
         (
             "geo-setup-latency",
             ChartSpec {
-                title: "Routing setup with real geodata — µs per connection (lower is better)"
+                title: "Time to SOCKS CONNECT reply with real geodata — µs (see docs note)"
                     .to_owned(),
                 series_labels: &SERIES_LABELS_GEO,
                 groups: vec![geo_setup_group(&loaded)?],
@@ -1400,8 +1400,18 @@ the default outbound; both resolve to `127.0.0.1` via `dns.hosts`, so no
 packet leaves the machine. `--geodata-dir` must contain `geosite.dat` and
 `geoip.dat` (fetch pinned, checksum-verified files with
 `scripts/fetch-geodata.sh --output-dir <dir>`). Headline numbers:
-`setup_socks_connect_us` (rule evaluation + hosts resolution + local dial per
-connection) and `peak_rss_kib` (matcher memory for the loaded geodata).
+`setup_socks_connect_us` (time from SOCKS CONNECT request to the engine's
+reply) and `peak_rss_kib` (matcher memory for the loaded geodata).
+
+MEASUREMENT ASYMMETRY DISCLAIMER (must appear verbatim-in-spirit): the two
+engines send the SOCKS reply at different pipeline stages — xray-rust replies
+after rule evaluation, hosts resolution, and the local dial complete
+(`crates/xray-core-rs/src/socks.rs`, non-sniffing path), while Xray-core
+replies during the SOCKS handshake before routing and dialing
+(`proxy/socks/protocol.go` → `writeSocks5Response`, dispatch afterwards). The
+chart therefore compares different spans of work and MUST NOT be read as a
+pure routing-cost comparison; it is published as "time to SOCKS reply" with
+this note.
 ```
 
 (e) 1000-flow scale note, appended to the existing `many-idle-flows` paragraph:
@@ -1506,8 +1516,14 @@ alt="Peak resident set size, lower is better. Idle: xray-rust <N> MiB, Xray-core
 ```markdown
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/media/geo-setup-latency-dark.svg">
-  <img alt="Connection setup through real geosite and geoip routing rules, lower is better: xray-rust <N> µs, Xray-core <N> µs." src="docs/benchmarks/media/geo-setup-latency-light.svg">
+  <img alt="Time from SOCKS CONNECT request to the engine's reply with real geodata loaded: xray-rust <N> µs, Xray-core <N> µs. Not a pure routing-cost comparison: the engines reply at different pipeline stages." src="docs/benchmarks/media/geo-setup-latency-light.svg">
 </picture>
+
+The reply-time chart carries a caveat: xray-rust answers the SOCKS CONNECT
+only after rule evaluation, hosts resolution, and the local dial complete,
+while Xray-core answers during the handshake and routes afterwards — the bars
+span different amounts of work, so read them as connection-establishment
+behavior, not as routing-engine speed.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/media/geo-memory-dark.svg">
