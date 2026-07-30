@@ -29,32 +29,54 @@ the process-level [benchmark harness](docs/benchmarks.md). Each engine runs as
 a child process with an equivalent generated config while the harness samples
 OS RSS/CPU counters and validates every payload byte. Bars are medians across
 5 runs; whiskers span min to p95 (for latency, the whisker top is the median
-run p95). Measured 2026-07-29 on Apple M3 Pro, 18 GB RAM, macOS 26.5.2 with
+run p95). Measured 2026-07-30 on Apple M3 Pro, 18 GB RAM, macOS 26.5.2 with
 release builds: xray-rust `4510952`, Xray-core `v26.5.9`, sing-box
-`v1.13.15`. In this run xray-rust holds a large edge in resident memory, is
-comparable on round-trip latency, and on bulk throughput and CPU per GiB
-sits between sing-box and Xray-core. These are microbenchmarks of local proxy
-paths, not wide-area VPN performance; TUN workloads (xray-rust vs Xray-core
-only) are not charted here.
+`v1.13.15`. The routing charts load real, pinned V2Fly geodata
+(`geosite 20260727084448`, `geoip 202607171233`); sing-box is absent
+from those two charts because it does not read Xray-format `.dat` rule data.
+In this run xray-rust holds a large edge in resident memory at idle and at
+100 held flows, stays about 2× below Xray-core at 1000 flows while sing-box
+pulls level, and uses about 4× less memory than Xray-core with real geodata
+loaded. It is comparable on round-trip latency, effectively ties both Go
+engines on bulk throughput (medians within ~9%, run ranges overlapping), and
+sits between sing-box and Xray-core on CPU per GiB. These are microbenchmarks
+of local proxy paths, not wide-area VPN performance; TUN workloads (xray-rust
+vs Xray-core only) are not charted here.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/media/memory-rss-dark.svg">
-  <img alt="Peak resident set size, lower is better. Idle: xray-rust 3.62 MiB, Xray-core 28.0, sing-box 21.0. With 100 idle flows: xray-rust 7.56 MiB, Xray-core 35.3, sing-box 26.4." src="docs/benchmarks/media/memory-rss-light.svg">
+  <img alt="Peak resident set size, lower is better. Idle: xray-rust 3.58 MiB, Xray-core 28.0, sing-box 21.3. 100 idle flows: xray-rust 7.59, Xray-core 35.1, sing-box 26.6. 1000 idle flows: xray-rust 41.5, Xray-core 79.2, sing-box 43.1." src="docs/benchmarks/media/memory-rss-light.svg">
 </picture>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/media/latency-dark.svg">
-  <img alt="Round-trip latency medians, lower is better. tcp-freedom: xray-rust 38 µs, Xray-core 36, sing-box 36. reality-vision-xudp: xray-rust 89 µs, Xray-core 101, sing-box 88." src="docs/benchmarks/media/latency-light.svg">
+  <img alt="Round-trip latency medians, lower is better. tcp-freedom: xray-rust 38.0 µs, Xray-core 36.0, sing-box 37.0. reality-vision-xudp: xray-rust 78.0 µs, Xray-core 142, sing-box 89.0." src="docs/benchmarks/media/latency-light.svg">
 </picture>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/media/throughput-dark.svg">
-  <img alt="Bulk TCP throughput through SOCKS, higher is better: xray-rust 60.1 Gbps, Xray-core 52.4, sing-box 64.6." src="docs/benchmarks/media/throughput-light.svg">
+  <img alt="Bulk TCP throughput through SOCKS, higher is better: xray-rust 53.0 Gbps, Xray-core 51.1, sing-box 48.8." src="docs/benchmarks/media/throughput-light.svg">
 </picture>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/media/cpu-per-gib-dark.svg">
-  <img alt="CPU cost per GiB transferred on the bulk workload, lower is better: xray-rust 180 ms, Xray-core 210, sing-box 160." src="docs/benchmarks/media/cpu-per-gib-light.svg">
+  <img alt="CPU cost per GiB transferred on the bulk workload, lower is better: xray-rust 170 ms, Xray-core 200, sing-box 160." src="docs/benchmarks/media/cpu-per-gib-light.svg">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/media/geo-setup-latency-dark.svg">
+  <img alt="Time from SOCKS CONNECT request to the engine's reply with real geodata loaded: xray-rust 426 µs, Xray-core 126 µs. Not a pure routing-cost comparison: the engines reply at different pipeline stages." src="docs/benchmarks/media/geo-setup-latency-light.svg">
+</picture>
+
+The reply-time chart carries a caveat: xray-rust answers the SOCKS CONNECT
+only after rule evaluation, hosts resolution, and the local dial complete,
+while Xray-core answers during the handshake and routes afterwards — the bars
+span different amounts of work, so read them as connection-establishment
+behavior, not as routing-engine speed.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/media/geo-memory-dark.svg">
+  <img alt="Peak memory with real geodata loaded, lower is better: xray-rust 8.62 MiB, Xray-core 34.8 MiB." src="docs/benchmarks/media/geo-memory-light.svg">
 </picture>
 
 Reproduce with the release-build compare series and render charts with
