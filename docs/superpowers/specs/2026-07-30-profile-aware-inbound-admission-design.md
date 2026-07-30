@@ -36,30 +36,72 @@ dead one.
 - A SOCKS5 refusal reply (and HTTP equivalent) when the cap is reached,
   instead of dropping the connection.
 - Profile plumbing so inbound listeners can see the profile at all.
+- A new `Server` profile whose cap AND relay-buffer floor are sized for many
+  mostly-idle connections.
+- A profile-dependent initial relay copy buffer, because the cap is only
+  honest if the memory it implies is affordable.
 - Rename the profile type to drop its TUN-only name.
 
 Out of scope: config-file/JSON control of the cap (the runtime profile stays
 the single knob), per-inbound overrides, dynamic resizing at runtime, changes
-to any TUN flow budget, changes to the fd-limit story.
+to any TUN flow budget, changes to the fd-limit story, and SOCKS5
+authentication — see "Server Deployment Prerequisites" below.
+
+## Memory Model (why the caps are what they are)
+
+Measured 2026-07-30 (Apple M3 Pro, release build, `many-idle-flows`): idle RSS
+3.58 MiB, 1000 held SOCKS flows 41.5 MiB — about **38 KiB of resident memory
+per idle flow**. The dominant term is the relay copy buffer:
+`INITIAL_COPY_BUFFER_SIZE` is 16 KiB and each flow owns one per direction, so
+32 KiB is committed before a single payload byte moves (`crates/xray-core-rs/src/policy.rs`).
+
+That slope is right for a mobile client (fast bulk ramp-up, few flows) and
+wrong for a server (thousands of mostly-idle flows). A cap therefore cannot be
+chosen independently of the buffer floor: at 38 KiB/flow a 65536 cap implies
+~2.5 GB, which is not a bound anyone can honor. Hence a `Server` profile that
+lowers the initial buffer to 4 KiB per direction (~8 KiB/flow plus task
+overhead ≈ 12 KiB/flow measured-slope estimate), keeping the adaptive doubling
+already implemented so bulk transfers still reach the 128 KiB cap.
 
 ## Per-Profile Limits
 
-| Profile | Inbound cap | Rationale |
-| --- | --- | --- |
-| `LowMemory` | 256 | Matches its 256 TUN flow budget; smallest hosts. |
-| `Mobile` | 1024 | Current behavior preserved — this is today's default value. |
-| `Default` | 1024 | Same as Mobile (Default aliases mobile-ish behavior today). |
-| `MobilePlus` | 1536 | Sits between Mobile and Desktop, mirroring its 384-flow TUN budget being between Mobile's 256 and Desktop's 2048. |
-| `Desktop` | 8192 | Desktop hosts routinely raise fd limits; 8192 covers browser-scale fan-out. |
-| `Throughput` | 65536 | Effectively unlimited for any real workload while keeping a bound. |
+| Profile | Inbound cap | Initial copy buffer (per direction) | Implied RSS at cap | Rationale |
+| --- | --- | --- | --- | --- |
+| `LowMemory` | 256 | 4 KiB | ~7 MiB | Matches its 256 TUN flow budget; smallest hosts. |
+| `Mobile` | 1024 | 16 KiB | ~42 MiB | Current behavior preserved exactly — this is today's constant. |
+| `Default` | 1024 | 16 KiB | ~42 MiB | Same as Mobile. |
+| `MobilePlus` | 1536 | 16 KiB | ~62 MiB | Mirrors its TUN budget sitting between Mobile and Desktop. |
+| `Desktop` | 8192 | 16 KiB | ~315 MiB | Desktop hosts raise fd limits; covers browser-scale fan-out. |
+| `Throughput` | 8192 | 16 KiB | ~315 MiB | Optimized for few flows at maximum Gbps, not for flow count; large buffers are the point here. |
+| `Server` | 16384 | 4 KiB | ~200 MiB | Many mostly-idle flows; small floor keeps the cap affordable, adaptive growth still serves active transfers. |
 
-`Throughput` is deliberately a very large number rather than "no check". The
-admission permit is what produces a clean, explainable refusal; with the check
-removed entirely the failure mode at fd exhaustion becomes `accept()` errors
-in a hot loop (the current listener does `Err(_) => continue`), which is worse
-than a bounded refusal. 65536 exceeds the default macOS/Linux soft fd limits
-this project targets, so the kernel is the real ceiling and the cap only
-guards pathological cases.
+Every cap is now backed by an RSS figure derived from the measured slope. No
+profile uses "no check": the admission permit is what produces a clean,
+explainable refusal, and removing it makes the failure mode at fd exhaustion a
+hot `accept()` error loop (the listener currently does `Err(_) => continue`),
+which is strictly worse than a bounded refusal.
+
+`Throughput` deliberately does NOT get the largest cap. It exists to maximize
+per-connection speed with large buffers; stretching it to server-scale flow
+counts would contradict its own buffer policy. Server-scale flow counts are
+what `Server` is for.
+
+## Server Deployment Prerequisites (documented, not implemented here)
+
+Raising the cap does not by itself make a public server deployment safe. Two
+gaps must be closed first, and this spec explicitly does not close them:
+
+1. **No inbound authentication.** The SOCKS inbound accepts only
+   `"auth": "noauth"` (`crates/xray-config/src/parser.rs` rejects any other
+   value), so an inbound bound to a public interface is an open relay. Until
+   SOCKS5 user/password authentication exists, the `Server` profile must be
+   documented as "for inbounds reachable only from a trusted network", and
+   `docs/status.md` keeps listing authenticated inbound as unimplemented.
+2. **Listener backlog and fd limits are untuned.** Nothing sets a listen
+   backlog, so bursts are bounded by the OS default (`kern.ipc.somaxconn` is
+   128 on macOS) well before the admission cap is reached, and nothing checks
+   `RLIMIT_NOFILE` at startup. A follow-up should set an explicit backlog and
+   warn when the soft fd limit is below the profile's cap.
 
 ## Refusal Instead of Silent Drop
 
@@ -96,9 +138,16 @@ from `profile.max_inbound_connections()`.
 
 ## Testing
 
-- Unit: `RuntimeProfile::max_inbound_connections()` returns the table above
-  for every variant (exhaustive match, no wildcard, so a new profile fails to
-  compile until it declares a limit).
+- Unit: `RuntimeProfile::max_inbound_connections()` and
+  `RuntimeProfile::initial_copy_buffer_size()` return the table above for
+  every variant (exhaustive matches, no wildcard, so a new profile fails to
+  compile until it declares both).
+- Unit: for every profile, `cap × 2 × initial_copy_buffer_size` stays under a
+  declared per-profile RSS budget constant — this is the test that keeps a
+  future cap change from silently outrunning its memory model.
+- Integration: a relay under the `Server` profile starts at 4 KiB per
+  direction and still grows to the 128 KiB cap under bulk transfer (the
+  existing adaptive doubling is unchanged).
 - Unit: profile string parsing unchanged (existing tests keep passing under
   the aliases).
 - Integration: a SOCKS inbound built with a tiny cap (1) accepts the first
