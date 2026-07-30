@@ -142,6 +142,7 @@ pub enum WorkloadKind {
     Idle,
     TcpFreedom,
     TcpBulkThroughput,
+    RoutedTcpFreedom,
     ManyIdleFlows,
     ReconnectBurst,
     MixedLongLived,
@@ -162,6 +163,7 @@ impl WorkloadKind {
             Self::Idle => "idle",
             Self::TcpFreedom => "tcp-freedom",
             Self::TcpBulkThroughput => "tcp-bulk-throughput",
+            Self::RoutedTcpFreedom => "routed-tcp-freedom",
             Self::ManyIdleFlows => "many-idle-flows",
             Self::ReconnectBurst => "reconnect-burst",
             Self::MixedLongLived => "mixed-long-lived",
@@ -182,6 +184,7 @@ impl WorkloadKind {
             "idle" => Ok(Self::Idle),
             "tcp-freedom" => Ok(Self::TcpFreedom),
             "tcp-bulk-throughput" => Ok(Self::TcpBulkThroughput),
+            "routed-tcp-freedom" => Ok(Self::RoutedTcpFreedom),
             "many-idle-flows" => Ok(Self::ManyIdleFlows),
             "reconnect-burst" => Ok(Self::ReconnectBurst),
             "mixed-long-lived" => Ok(Self::MixedLongLived),
@@ -244,6 +247,7 @@ pub struct BenchOptions {
     pub sing_box_dir: Option<PathBuf>,
     pub tun_profile: Option<String>,
     pub no_auto_build: bool,
+    pub geodata_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -746,6 +750,7 @@ impl WorkloadFixture {
             WorkloadKind::Idle
             | WorkloadKind::TcpFreedom
             | WorkloadKind::TcpBulkThroughput
+            | WorkloadKind::RoutedTcpFreedom
             | WorkloadKind::ManyIdleFlows
             | WorkloadKind::ReconnectBurst
             | WorkloadKind::MixedLongLived
@@ -795,6 +800,7 @@ impl Default for BenchOptions {
             sing_box_dir: None,
             tun_profile: None,
             no_auto_build: false,
+            geodata_dir: None,
         }
     }
 }
@@ -937,6 +943,9 @@ where
             }
             "--no-auto-build" => {
                 options.no_auto_build = true;
+            }
+            "--geodata-dir" => {
+                options.geodata_dir = Some(PathBuf::from(required_value(&rest, &mut index, flag)?));
             }
             other => {
                 return Err(BenchError::InvalidArguments(format!(
@@ -3979,6 +3988,7 @@ pub fn xray_rust_config(port: u16, workload: WorkloadKind) -> String {
         WorkloadKind::TunRealityBlackhole => {
             tun_reality_blackhole_config(SocketAddr::from((Ipv4Addr::LOCALHOST, 443)))
         }
+        WorkloadKind::RoutedTcpFreedom => routed_freedom_config(port, EngineKind::XrayRust),
         WorkloadKind::Idle
         | WorkloadKind::TcpFreedom
         | WorkloadKind::TcpBulkThroughput
@@ -4080,6 +4090,7 @@ fn engine_config(
         WorkloadKind::TunUdpFreedom
         | WorkloadKind::TunTcpFreedom
         | WorkloadKind::TunTcpStaleFlows => Ok(tun_freedom_config()),
+        WorkloadKind::RoutedTcpFreedom => Ok(routed_freedom_config(port, engine)),
         WorkloadKind::Idle
         | WorkloadKind::TcpFreedom
         | WorkloadKind::TcpBulkThroughput
@@ -4239,6 +4250,51 @@ fn tun_reality_blackhole_config(vless_addr: SocketAddr) -> String {
 }}"#,
         vless_addr.ip(),
         vless_addr.port()
+    )
+}
+
+const GEO_HIT_DOMAIN: &str = "baidu.com";
+const GEO_MISS_DOMAIN: &str = "bench-miss.invalid";
+
+fn routed_freedom_config(port: u16, engine: EngineKind) -> String {
+    // xray-rust freedom settings accept no fields; Xray-core needs UseIP so
+    // its dns app (hosts-first) resolves instead of the OS resolver.
+    let freedom_settings = match engine {
+        EngineKind::XrayCore => r#"{ "domainStrategy": "UseIP" }"#,
+        _ => "{}",
+    };
+    format!(
+        r#"{{
+  "log": {{ "loglevel": "warning" }},
+  "dns": {{
+    "hosts": {{
+      "full:{GEO_HIT_DOMAIN}": "127.0.0.1",
+      "full:{GEO_MISS_DOMAIN}": "127.0.0.1"
+    }}
+  }},
+  "inbounds": [
+    {{
+      "tag": "socks-in",
+      "protocol": "socks",
+      "listen": "127.0.0.1",
+      "port": {port},
+      "settings": {{ "auth": "noauth", "udp": false }}
+    }}
+  ],
+  "outbounds": [
+    {{ "tag": "direct", "protocol": "freedom", "settings": {freedom_settings} }},
+    {{ "tag": "direct-cn", "protocol": "freedom", "settings": {freedom_settings} }},
+    {{ "tag": "direct-ads", "protocol": "freedom", "settings": {freedom_settings} }}
+  ],
+  "routing": {{
+    "rules": [
+      {{ "type": "field", "domain": ["geosite:category-ads-all"], "outboundTag": "direct-ads" }},
+      {{ "type": "field", "ip": ["geoip:private"], "outboundTag": "direct" }},
+      {{ "type": "field", "ip": ["geoip:cn"], "outboundTag": "direct-cn" }},
+      {{ "type": "field", "domain": ["geosite:cn"], "outboundTag": "direct-cn" }}
+    ]
+  }}
+}}"#
     )
 }
 
@@ -4904,6 +4960,45 @@ fn absolute_path(path: &Path) -> Result<PathBuf, BenchError> {
     Ok(cwd.join(path))
 }
 
+fn geodata_dir_for(options: &BenchOptions) -> Result<PathBuf, BenchError> {
+    options.geodata_dir.clone().ok_or_else(|| {
+        BenchError::InvalidArguments(
+            "routed-tcp-freedom requires --geodata-dir <dir> containing geosite.dat and geoip.dat"
+                .to_owned(),
+        )
+    })
+}
+
+// xray-rust resolves geodata relative to the config file's directory, so the
+// files are staged (hardlinked, falling back to copy) into the run dir.
+fn stage_geodata(options: &BenchOptions, run_dir: &Path) -> Result<(), BenchError> {
+    let geodata_dir = geodata_dir_for(options)?;
+    for name in ["geosite.dat", "geoip.dat"] {
+        let source_path = geodata_dir.join(name);
+        if !source_path.is_file() {
+            return Err(BenchError::InvalidArguments(format!(
+                "missing geodata file `{}`; pass --geodata-dir pointing at geosite.dat and geoip.dat",
+                source_path.display()
+            )));
+        }
+        let destination = run_dir.join(name);
+        if destination.exists() {
+            continue;
+        }
+        if fs::hard_link(&source_path, &destination).is_err() {
+            fs::copy(&source_path, &destination).map_err(|source| BenchError::Io {
+                action: format!(
+                    "copying geodata `{}` into `{}`",
+                    source_path.display(),
+                    destination.display()
+                ),
+                source,
+            })?;
+        }
+    }
+    Ok(())
+}
+
 async fn start_engine(
     kind: EngineKind,
     options: &BenchOptions,
@@ -4933,6 +5028,9 @@ async fn start_engine(
         action: format!("writing config `{}`", config_path.display()),
         source,
     })?;
+    if options.workload == WorkloadKind::RoutedTcpFreedom && kind == EngineKind::XrayRust {
+        stage_geodata(options, run_dir)?;
+    }
     let stdout_path = run_dir.join("stdout.log");
     let stderr_path = run_dir.join("stderr.log");
     let binary = match kind {
@@ -4967,6 +5065,10 @@ async fn start_engine(
     }
     if let Some(profile) = options.tun_profile.as_deref() {
         command.env("XRAY_TUN_PROFILE", profile);
+    }
+    if options.workload == WorkloadKind::RoutedTcpFreedom && kind == EngineKind::XrayCore {
+        let geodata_dir = geodata_dir_for(options)?;
+        command.env("XRAY_LOCATION_ASSET", absolute_path(&geodata_dir)?);
     }
     let mut child = command.spawn().map_err(|source| BenchError::Io {
         action: format!("spawning `{}`", binary.display()),
@@ -6215,6 +6317,8 @@ async fn run_engine_once(
             WorkloadKind::TcpBulkThroughput => {
                 run_tcp_bulk_throughput_workload(engine.socks_addr, options).await
             }
+            // TEMPORARY: Task 6 replaces this with a routed-tcp-freedom workload runner.
+            WorkloadKind::RoutedTcpFreedom => run_idle_workload(options.duration).await,
             WorkloadKind::ManyIdleFlows => {
                 run_many_idle_flows_workload(engine.socks_addr, options).await
             }
@@ -6526,6 +6630,102 @@ mod tests {
     use std::path::PathBuf;
     use std::time::Duration;
 
+    fn geo_encode_varint(mut value: u64, out: &mut Vec<u8>) {
+        while value >= 0x80 {
+            out.push(value as u8 | 0x80);
+            value >>= 7;
+        }
+        out.push(value as u8);
+    }
+
+    fn geo_field_bytes(field: u8, payload: &[u8], out: &mut Vec<u8>) {
+        out.push((field << 3) | 2);
+        geo_encode_varint(payload.len() as u64, out);
+        out.extend_from_slice(payload);
+    }
+
+    fn geo_domain_body(domain_type: u8, value: &str) -> Vec<u8> {
+        let mut body = vec![0x08, domain_type];
+        geo_field_bytes(2, value.as_bytes(), &mut body);
+        body
+    }
+
+    // Code MUST be the first field: Xray-core's streaming reader requires it.
+    fn geo_site_body(code: &str, domains: &[Vec<u8>]) -> Vec<u8> {
+        let mut body = Vec::new();
+        geo_field_bytes(1, code.as_bytes(), &mut body);
+        for domain in domains {
+            geo_field_bytes(2, domain, &mut body);
+        }
+        body
+    }
+
+    fn geo_cidr_body(ip: &[u8], prefix: u8) -> Vec<u8> {
+        let mut body = Vec::new();
+        geo_field_bytes(1, ip, &mut body);
+        body.push(0x10);
+        geo_encode_varint(u64::from(prefix), &mut body);
+        body
+    }
+
+    fn geo_ip_body(code: &str, cidrs: &[Vec<u8>]) -> Vec<u8> {
+        let mut body = Vec::new();
+        geo_field_bytes(1, code.as_bytes(), &mut body);
+        for cidr in cidrs {
+            geo_field_bytes(2, cidr, &mut body);
+        }
+        body
+    }
+
+    fn geo_entry_file(bodies: &[Vec<u8>]) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        for body in bodies {
+            bytes.push(0x0A);
+            geo_encode_varint(body.len() as u64, &mut bytes);
+            bytes.extend_from_slice(body);
+        }
+        bytes
+    }
+
+    fn write_geo_fixture(dir: &Path) {
+        std::fs::create_dir_all(dir).unwrap();
+        let geosite = geo_entry_file(&[
+            geo_site_body(
+                "CATEGORY-ADS-ALL",
+                &[geo_domain_body(2, "ads-bench.example")],
+            ),
+            geo_site_body("CN", &[geo_domain_body(2, "baidu.com")]),
+        ]);
+        std::fs::write(dir.join("geosite.dat"), geosite).unwrap();
+        let geoip = geo_entry_file(&[
+            geo_ip_body("CN", &[geo_cidr_body(&[114, 114, 114, 0], 24)]),
+            geo_ip_body(
+                "PRIVATE",
+                &[
+                    geo_cidr_body(&[10, 0, 0, 0], 8),
+                    geo_cidr_body(&[127, 0, 0, 0], 8),
+                ],
+            ),
+        ]);
+        std::fs::write(dir.join("geoip.dat"), geoip).unwrap();
+    }
+
+    #[test]
+    fn geo_fixture_parses_through_real_config_parser() {
+        let dir =
+            std::env::temp_dir().join(format!("xray-bench-geo-fixture-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        write_geo_fixture(&dir);
+        let config = routed_freedom_config(18099, EngineKind::XrayRust);
+        let parsed = xray_config::parse_xray_json_with_geodata_dir(&config, &dir);
+        assert!(
+            parsed.is_ok(),
+            "generated geo config must parse with the synthetic fixture: {:?}",
+            parsed.err()
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     #[test]
     fn parses_run_idle_for_xray_rust() {
         let args = parse_cli_args([
@@ -6564,6 +6764,7 @@ mod tests {
                 sing_box_dir: None,
                 tun_profile: None,
                 no_auto_build: false,
+                geodata_dir: None,
             })
         );
     }
@@ -6733,6 +6934,59 @@ mod tests {
         let config = sing_box_config(18088, WorkloadKind::TcpBulkThroughput, &fixture).unwrap();
         assert!(config.contains(r#""type": "socks""#));
         assert!(config.contains(r#""type": "direct""#));
+    }
+
+    #[test]
+    fn parses_compare_routed_tcp_freedom_with_geodata_dir() {
+        let args = parse_cli_args([
+            "xray-bench",
+            "compare",
+            "--workload",
+            "routed-tcp-freedom",
+            "--connections",
+            "4",
+            "--iterations",
+            "50",
+            "--payload-size",
+            "1024",
+            "--geodata-dir",
+            "/tmp/geodata",
+        ])
+        .unwrap();
+        let CliArgs::Compare(options) = args else {
+            panic!("expected compare args");
+        };
+        assert_eq!(options.workload, WorkloadKind::RoutedTcpFreedom);
+        assert_eq!(options.geodata_dir, Some(PathBuf::from("/tmp/geodata")));
+    }
+
+    #[test]
+    fn routed_config_carries_rules_hosts_and_engine_specific_freedom() {
+        let rust_config = routed_freedom_config(18100, EngineKind::XrayRust);
+        let value = serde_json::from_str::<serde_json::Value>(&rust_config).unwrap();
+        assert_eq!(value["routing"]["rules"].as_array().unwrap().len(), 4);
+        assert_eq!(
+            value["routing"]["rules"][0]["domain"][0],
+            "geosite:category-ads-all"
+        );
+        assert_eq!(value["routing"]["rules"][3]["domain"][0], "geosite:cn");
+        assert!(value["dns"]["hosts"]["full:baidu.com"].is_string());
+        assert!(value["dns"]["hosts"]["full:bench-miss.invalid"].is_string());
+        assert_eq!(value["outbounds"][0]["tag"], "direct");
+        assert_eq!(value["outbounds"][0]["settings"], serde_json::json!({}));
+
+        let core_config = routed_freedom_config(18100, EngineKind::XrayCore);
+        let value = serde_json::from_str::<serde_json::Value>(&core_config).unwrap();
+        assert_eq!(value["outbounds"][0]["settings"]["domainStrategy"], "UseIP");
+    }
+
+    #[test]
+    fn routed_workload_rejects_sing_box_and_requires_geodata() {
+        assert!(!WorkloadKind::RoutedTcpFreedom.supports_sing_box_process_engine());
+        let fixture = WorkloadFixture::default();
+        let error = sing_box_config(18101, WorkloadKind::RoutedTcpFreedom, &fixture).unwrap_err();
+        assert!(error.to_string().contains("unsupported sing-box workload"));
+        assert!(geodata_dir_for(&BenchOptions::default()).is_err());
     }
 
     #[test]
