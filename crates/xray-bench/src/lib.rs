@@ -407,6 +407,12 @@ pub struct BenchResult {
     pub cpu_millis_per_gib: Option<u128>,
     #[serde(default)]
     pub throughput_mbps: Option<u128>,
+    #[serde(default)]
+    pub connections: u64,
+    #[serde(default)]
+    pub iterations: u64,
+    #[serde(default)]
+    pub payload_size: u64,
     pub latency_us: Option<LatencySummary>,
     pub setup_us: Option<FlowSetupSummary>,
     pub samples: usize,
@@ -478,6 +484,12 @@ pub struct BenchSummary {
     pub cpu_millis_per_gib: Option<MetricSummary>,
     #[serde(default)]
     pub throughput_mbps: Option<MetricSummary>,
+    #[serde(default)]
+    pub connections: u64,
+    #[serde(default)]
+    pub iterations: u64,
+    #[serde(default)]
+    pub payload_size: u64,
     pub latency_us: Option<LatencySummaryAggregate>,
     pub setup_us: Option<FlowSetupSummaryAggregate>,
     pub bytes_sent: MetricSummary,
@@ -883,13 +895,16 @@ where
                 )?);
             }
             "--connections" => {
-                options.connections = parse_usize(required_value(&rest, &mut index, flag)?, flag)?;
+                options.connections =
+                    parse_nonzero_usize(required_value(&rest, &mut index, flag)?, flag)?;
             }
             "--iterations" => {
-                options.iterations = parse_usize(required_value(&rest, &mut index, flag)?, flag)?;
+                options.iterations =
+                    parse_nonzero_usize(required_value(&rest, &mut index, flag)?, flag)?;
             }
             "--payload-size" => {
-                options.payload_size = parse_usize(required_value(&rest, &mut index, flag)?, flag)?;
+                options.payload_size =
+                    parse_nonzero_usize(required_value(&rest, &mut index, flag)?, flag)?;
             }
             "--runs" => {
                 options.runs = parse_nonzero_usize(required_value(&rest, &mut index, flag)?, flag)?;
@@ -1322,6 +1337,15 @@ pub fn summarize_results(results: &[BenchResult]) -> Result<BenchSummary, BenchE
             "cannot summarize mixed benchmark engines or workloads".to_owned(),
         ));
     }
+    if results.iter().any(|result| {
+        result.connections != first.connections
+            || result.iterations != first.iterations
+            || result.payload_size != first.payload_size
+    }) {
+        return Err(BenchError::InvalidArguments(
+            "cannot summarize mixed workload parameters".to_owned(),
+        ));
+    }
 
     let status = if results.iter().all(|result| result.status == "ok") {
         "ok"
@@ -1345,6 +1369,9 @@ pub fn summarize_results(results: &[BenchResult]) -> Result<BenchSummary, BenchE
         throughput_mbps: summarize_optional_metric(
             results.iter().map(|result| result.throughput_mbps),
         ),
+        connections: first.connections,
+        iterations: first.iterations,
+        payload_size: first.payload_size,
         latency_us: summarize_latency_results(results),
         setup_us: summarize_setup_results(results),
         bytes_sent: summarize_metric(results.iter().map(|result| u128::from(result.bytes_sent))),
@@ -6150,6 +6177,9 @@ async fn run_engine_once(
         cpu_millis: summary.cpu_millis,
         cpu_millis_per_gib,
         throughput_mbps,
+        connections: options.connections as u64,
+        iterations: options.iterations as u64,
+        payload_size: options.payload_size as u64,
         latency_us,
         setup_us,
         samples: samples.len(),
@@ -6828,6 +6858,17 @@ mod tests {
         assert!(error
             .to_string()
             .contains("--runs must be greater than zero"));
+    }
+
+    #[test]
+    fn rejects_zero_connections_iterations_and_payload() {
+        for flag in ["--connections", "--iterations", "--payload-size"] {
+            let error = parse_cli_args(["xray-bench", "compare", flag, "0"]).unwrap_err();
+            assert!(
+                error.to_string().contains("must be greater than zero"),
+                "{flag}"
+            );
+        }
     }
 
     #[tokio::test]
@@ -7596,6 +7637,7 @@ mod tests {
         }"#;
         let result: BenchResult = serde_json::from_str(raw).unwrap();
         assert_eq!(result.throughput_mbps, None);
+        assert_eq!(result.connections, 0);
     }
 
     #[test]
@@ -7612,6 +7654,9 @@ mod tests {
                 cpu_millis: 20,
                 cpu_millis_per_gib: Some(10_485_760),
                 throughput_mbps: Some(100),
+                connections: 1,
+                iterations: 10,
+                payload_size: 4096,
                 latency_us: Some(LatencySummary {
                     min: 10,
                     median: 20,
@@ -7634,6 +7679,9 @@ mod tests {
                 cpu_millis: 10,
                 cpu_millis_per_gib: Some(5_242_880),
                 throughput_mbps: Some(50),
+                connections: 1,
+                iterations: 10,
+                payload_size: 4096,
                 latency_us: Some(LatencySummary {
                     min: 5,
                     median: 10,
@@ -7656,6 +7704,9 @@ mod tests {
                 cpu_millis: 30,
                 cpu_millis_per_gib: Some(15_728_640),
                 throughput_mbps: Some(150),
+                connections: 1,
+                iterations: 10,
+                payload_size: 4096,
                 latency_us: Some(LatencySummary {
                     min: 15,
                     median: 30,
@@ -7673,6 +7724,7 @@ mod tests {
 
         assert_eq!(summary.engine, "xray-rust");
         assert_eq!(summary.workload, "tcp-freedom");
+        assert_eq!(summary.connections, 1);
         assert_eq!(summary.runs, 3);
         assert_eq!(
             summary.duration_ms,
@@ -7739,6 +7791,63 @@ mod tests {
                 },
             })
         );
+    }
+
+    #[test]
+    fn deserializes_summary_json_without_params_fields() {
+        let raw = r#"{
+            "engine": "xray-rust",
+            "workload": "tcp-freedom",
+            "status": "ok",
+            "runs": 1,
+            "duration_ms": { "min": 1, "median": 1, "p95": 1 },
+            "peak_rss_kib": { "min": 1, "median": 1, "p95": 1 },
+            "cpu_millis": { "min": 1, "median": 1, "p95": 1 },
+            "cpu_millis_per_gib": null,
+            "latency_us": null,
+            "setup_us": null,
+            "bytes_sent": { "min": 1, "median": 1, "p95": 1 },
+            "bytes_received": { "min": 1, "median": 1, "p95": 1 },
+            "results": []
+        }"#;
+        let summary: BenchSummary = serde_json::from_str(raw).unwrap();
+        assert_eq!(summary.connections, 0);
+        assert_eq!(summary.iterations, 0);
+        assert_eq!(summary.payload_size, 0);
+    }
+
+    #[test]
+    fn summarize_rejects_mixed_workload_parameters() {
+        let first = BenchResult {
+            engine: "xray-rust".to_owned(),
+            workload: "tcp-freedom".to_owned(),
+            status: "ok".to_owned(),
+            duration_ms: 10,
+            bytes_sent: 0,
+            bytes_received: 0,
+            peak_rss_kib: 1000,
+            cpu_millis: 5,
+            cpu_millis_per_gib: None,
+            throughput_mbps: None,
+            connections: 100,
+            iterations: 1,
+            payload_size: 512,
+            latency_us: None,
+            setup_us: None,
+            samples: 2,
+            blackhole_connections_accepted: None,
+            blackhole_connections_active: None,
+        };
+        let mut second = first.clone();
+        second.connections = 1000;
+        let error = summarize_results(&[first.clone(), second]).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("cannot summarize mixed workload parameters"));
+
+        let same = summarize_results(&[first.clone(), first.clone()]).unwrap();
+        assert_eq!(same.connections, 100);
+        assert_eq!(same.payload_size, 512);
     }
 
     #[test]
