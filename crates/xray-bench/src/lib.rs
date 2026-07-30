@@ -2620,6 +2620,116 @@ async fn socks5_connect_measured(
     })
 }
 
+// wired into routed-tcp-freedom in a follow-up task
+#[allow(dead_code)]
+async fn socks5_connect_domain_measured<S>(
+    client: &mut S,
+    domain: &str,
+    port: u16,
+) -> Result<SocksSetupStageSample, BenchError>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    if domain.len() > 255 {
+        return Err(BenchError::InvalidArguments(
+            "SOCKS domain target exceeds 255 bytes".to_owned(),
+        ));
+    }
+    let started = Instant::now();
+    let method_started = Instant::now();
+    client
+        .write_all(&[5, 1, 0])
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "writing SOCKS greeting".to_owned(),
+            source,
+        })?;
+    let mut method = [0; 2];
+    client
+        .read_exact(&mut method)
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "reading SOCKS method".to_owned(),
+            source,
+        })?;
+    if method != [5, 0] {
+        return Err(BenchError::InvalidArguments(format!(
+            "unexpected SOCKS method response {method:?}"
+        )));
+    }
+    let method_us = method_started.elapsed().as_micros();
+
+    let mut request = vec![5, 1, 0, 3, domain.len() as u8];
+    request.extend_from_slice(domain.as_bytes());
+    request.extend_from_slice(&port.to_be_bytes());
+    let connect_started = Instant::now();
+    client
+        .write_all(&request)
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "writing SOCKS connect".to_owned(),
+            source,
+        })?;
+    read_socks5_reply(client).await?;
+    let connect_us = connect_started.elapsed().as_micros();
+
+    Ok(SocksSetupStageSample {
+        method_us,
+        connect_us,
+        total_us: started.elapsed().as_micros(),
+    })
+}
+
+// wired into routed-tcp-freedom in a follow-up task
+#[allow(dead_code)]
+async fn read_socks5_reply<S>(client: &mut S) -> Result<(), BenchError>
+where
+    S: AsyncRead + Unpin,
+{
+    let mut head = [0; 4];
+    client
+        .read_exact(&mut head)
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "reading SOCKS connect response".to_owned(),
+            source,
+        })?;
+    if head[..2] != [5, 0] {
+        return Err(BenchError::InvalidArguments(format!(
+            "unexpected SOCKS connect response {head:?}"
+        )));
+    }
+    let addr_len = match head[3] {
+        1 => 4,
+        4 => 16,
+        3 => {
+            let mut len = [0; 1];
+            client
+                .read_exact(&mut len)
+                .await
+                .map_err(|source| BenchError::Io {
+                    action: "reading SOCKS reply domain length".to_owned(),
+                    source,
+                })?;
+            len[0] as usize
+        }
+        other => {
+            return Err(BenchError::InvalidArguments(format!(
+                "unsupported SOCKS reply address type {other}"
+            )));
+        }
+    };
+    let mut rest = vec![0; addr_len + 2];
+    client
+        .read_exact(&mut rest)
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "reading SOCKS reply address".to_owned(),
+            source,
+        })?;
+    Ok(())
+}
+
 async fn socks5_udp_associate(client: &mut TcpStream) -> Result<SocketAddr, BenchError> {
     client
         .write_all(&[5, 1, 0])
@@ -7941,5 +8051,58 @@ mod tests {
         assert!(outcome.latencies_us.is_empty());
         assert!(outcome.setup_samples.is_empty());
         socks_task.abort();
+    }
+
+    #[tokio::test]
+    async fn socks5_domain_connect_encodes_atyp3_request() {
+        let (mut server, mut client_io) = tokio::io::duplex(4096);
+        let server_task = tokio::spawn(async move {
+            let mut greeting = [0; 3];
+            server.read_exact(&mut greeting).await.unwrap();
+            assert_eq!(greeting, [5, 1, 0]);
+            server.write_all(&[5, 0]).await.unwrap();
+            let mut head = [0; 5];
+            server.read_exact(&mut head).await.unwrap();
+            assert_eq!(head[..4], [5, 1, 0, 3]);
+            let len = head[4] as usize;
+            let mut domain = vec![0; len + 2];
+            server.read_exact(&mut domain).await.unwrap();
+            assert_eq!(&domain[..len], b"bench-miss.invalid");
+            assert_eq!(&domain[len..], &9999u16.to_be_bytes());
+            server
+                .write_all(&[5, 0, 0, 1, 127, 0, 0, 1, 0, 0])
+                .await
+                .unwrap();
+        });
+
+        let sample = socks5_connect_domain_measured(&mut client_io, "bench-miss.invalid", 9999)
+            .await
+            .unwrap();
+        assert!(sample.total_us >= sample.connect_us);
+        server_task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn socks5_reply_parser_accepts_domain_bound_address() {
+        let (mut server, mut client_io) = tokio::io::duplex(4096);
+        let server_task = tokio::spawn(async move {
+            let mut greeting = [0; 3];
+            server.read_exact(&mut greeting).await.unwrap();
+            server.write_all(&[5, 0]).await.unwrap();
+            let mut head = [0; 5];
+            server.read_exact(&mut head).await.unwrap();
+            let len = head[4] as usize;
+            let mut rest = vec![0; len + 2];
+            server.read_exact(&mut rest).await.unwrap();
+            let mut reply = vec![5, 0, 0, 3, 4];
+            reply.extend_from_slice(b"echo");
+            reply.extend_from_slice(&80u16.to_be_bytes());
+            server.write_all(&reply).await.unwrap();
+        });
+
+        socks5_connect_domain_measured(&mut client_io, "x.example", 80)
+            .await
+            .unwrap();
+        server_task.await.unwrap();
     }
 }
