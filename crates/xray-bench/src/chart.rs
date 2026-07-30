@@ -76,55 +76,70 @@ pub fn parse_chart_args(args: &[String]) -> Result<ChartOptions, BenchError> {
     })
 }
 
+// connections filter: Some(n) selects summaries whose recorded connection
+// count matches; summaries with connections == 0 are pre-params legacy data
+// (the CLI rejects 0 for real runs) and only match when no filter is given.
 fn load_summary(
     groups: &[PathBuf],
     engine: EngineKind,
     workload: WorkloadKind,
+    connections: Option<u64>,
 ) -> Result<BenchSummary, BenchError> {
-    let mut found = Vec::new();
+    let mut candidates = Vec::new();
     for group in groups {
         let candidate = group
             .join(engine.as_str())
             .join(workload.as_str())
             .join("summary.json");
-        if candidate.exists() {
-            found.push(candidate);
+        if !candidate.exists() {
+            continue;
         }
+        let data = fs::read_to_string(&candidate).map_err(|source| BenchError::Io {
+            action: format!("reading benchmark summary `{}`", candidate.display()),
+            source,
+        })?;
+        let summary: BenchSummary = serde_json::from_str(&data).map_err(|error| {
+            BenchError::InvalidArguments(format!(
+                "failed to parse summary `{}`: {error}",
+                candidate.display()
+            ))
+        })?;
+        if let Some(required) = connections {
+            if summary.connections != required {
+                continue;
+            }
+        }
+        candidates.push((candidate, summary));
     }
-    let path = match found.as_slice() {
-        [] => {
+    let filter_note = match connections {
+        Some(required) => format!(" with connections={required}"),
+        None => String::new(),
+    };
+    let (path, summary) = match candidates.len() {
+        0 => {
             return Err(BenchError::InvalidArguments(format!(
-                "missing summary for {} {}: no --group directory contains {}/{}/summary.json",
+                "missing summary for {} {}{filter_note}: no --group directory contains a matching {}/{}/summary.json",
                 engine.as_str(),
                 workload.as_str(),
                 engine.as_str(),
                 workload.as_str()
             )))
         }
-        [path] => path,
+        1 => candidates.remove(0),
         many => {
             return Err(BenchError::InvalidArguments(format!(
-                "summary for {} {} found in {} group directories ({}); pass each run group once",
+                "summary for {} {}{filter_note} found in {} group directories ({}); pass each run group once",
                 engine.as_str(),
                 workload.as_str(),
-                many.len(),
-                many.iter()
-                    .map(|path| path.display().to_string())
+                many,
+                candidates
+                    .iter()
+                    .map(|(path, _)| path.display().to_string())
                     .collect::<Vec<_>>()
                     .join(", ")
             )))
         }
     };
-    let data = fs::read_to_string(path).map_err(|source| BenchError::Io {
-        action: format!("reading benchmark summary `{}`", path.display()),
-        source,
-    })?;
-    let summary: BenchSummary = serde_json::from_str(&data).map_err(|error| {
-        BenchError::InvalidArguments(format!(
-            "failed to parse summary `{}`: {error}",
-            path.display()
-        ))
-    })?;
     if summary.status != "ok" {
         return Err(BenchError::InvalidArguments(format!(
             "summary `{}` has status `{}`; charts require status `ok`",
@@ -385,17 +400,24 @@ pub(crate) fn render_bar_chart(spec: &ChartSpec, theme: &Theme, footer: &Footer)
     svg
 }
 
+type SummaryKey = (EngineKind, WorkloadKind, Option<u64>);
+
 struct LoadedSummaries {
-    entries: Vec<((EngineKind, WorkloadKind), BenchSummary)>,
+    entries: Vec<(SummaryKey, BenchSummary)>,
 }
 
 impl LoadedSummaries {
-    fn get(&self, engine: EngineKind, workload: WorkloadKind) -> &BenchSummary {
+    fn get(
+        &self,
+        engine: EngineKind,
+        workload: WorkloadKind,
+        connections: Option<u64>,
+    ) -> &BenchSummary {
         &self
             .entries
             .iter()
-            .find(|((e, w), _)| *e == engine && *w == workload)
-            .expect("summary loaded for every charted engine/workload pair")
+            .find(|((e, w, c), _)| *e == engine && *w == workload && *c == connections)
+            .expect("summary loaded for every charted engine/workload/connections triple")
             .1
     }
 }
@@ -406,12 +428,13 @@ const ENGINES: [EngineKind; 3] = [
     EngineKind::SingBox,
 ];
 
-const CHART_WORKLOADS: [WorkloadKind; 5] = [
-    WorkloadKind::Idle,
-    WorkloadKind::ManyIdleFlows,
-    WorkloadKind::TcpFreedom,
-    WorkloadKind::RealityVisionXudp,
-    WorkloadKind::TcpBulkThroughput,
+const CHART_SLOTS: [(WorkloadKind, Option<u64>); 6] = [
+    (WorkloadKind::Idle, None),
+    (WorkloadKind::ManyIdleFlows, Some(100)),
+    (WorkloadKind::ManyIdleFlows, Some(1000)),
+    (WorkloadKind::TcpFreedom, None),
+    (WorkloadKind::RealityVisionXudp, None),
+    (WorkloadKind::TcpBulkThroughput, None),
 ];
 
 fn metric_bar(metric: &crate::MetricSummary, series: usize, divisor: f64) -> Bar {
@@ -423,25 +446,38 @@ fn metric_bar(metric: &crate::MetricSummary, series: usize, divisor: f64) -> Bar
     }
 }
 
-fn rss_group(loaded: &LoadedSummaries, workload: WorkloadKind) -> BarGroup {
+fn rss_group(
+    loaded: &LoadedSummaries,
+    workload: WorkloadKind,
+    connections: Option<u64>,
+    label: &str,
+) -> BarGroup {
     BarGroup {
-        label: workload.as_str().to_owned(),
+        label: label.to_owned(),
         bars: ENGINES
             .iter()
             .enumerate()
             .map(|(series, engine)| {
-                metric_bar(&loaded.get(*engine, workload).peak_rss_kib, series, 1024.0)
+                metric_bar(
+                    &loaded.get(*engine, workload, connections).peak_rss_kib,
+                    series,
+                    1024.0,
+                )
             })
             .collect(),
     }
 }
 
-fn latency_group(loaded: &LoadedSummaries, workload: WorkloadKind) -> Result<BarGroup, BenchError> {
+fn latency_group(
+    loaded: &LoadedSummaries,
+    workload: WorkloadKind,
+    connections: Option<u64>,
+) -> Result<BarGroup, BenchError> {
     let bars = ENGINES
         .iter()
         .enumerate()
         .map(|(series, engine)| {
-            let summary = loaded.get(*engine, workload);
+            let summary = loaded.get(*engine, workload, connections);
             let latency = summary.latency_us.as_ref().ok_or_else(|| {
                 BenchError::InvalidArguments(format!(
                     "summary for {} {} has no latency data",
@@ -468,6 +504,7 @@ fn latency_group(loaded: &LoadedSummaries, workload: WorkloadKind) -> Result<Bar
 fn optional_metric_group(
     loaded: &LoadedSummaries,
     workload: WorkloadKind,
+    connections: Option<u64>,
     metric_name: &str,
     select: impl Fn(&BenchSummary) -> Option<&crate::MetricSummary>,
     divisor: f64,
@@ -476,7 +513,7 @@ fn optional_metric_group(
         .iter()
         .enumerate()
         .map(|(series, engine)| {
-            let summary = loaded.get(*engine, workload);
+            let summary = loaded.get(*engine, workload, connections);
             let metric = select(summary).ok_or_else(|| {
                 BenchError::InvalidArguments(format!(
                     "summary for {} {} has no {metric_name} data",
@@ -496,9 +533,9 @@ fn optional_metric_group(
 pub fn run_chart(options: &ChartOptions) -> Result<(), BenchError> {
     let mut entries = Vec::new();
     for engine in ENGINES {
-        for workload in CHART_WORKLOADS {
-            let summary = load_summary(&options.groups, engine, workload)?;
-            entries.push(((engine, workload), summary));
+        for (workload, connections) in CHART_SLOTS {
+            let summary = load_summary(&options.groups, engine, workload, connections)?;
+            entries.push(((engine, workload, connections), summary));
         }
     }
     let loaded = LoadedSummaries { entries };
@@ -525,8 +562,19 @@ pub fn run_chart(options: &ChartOptions) -> Result<(), BenchError> {
             ChartSpec {
                 title: "Peak resident set size — MiB (lower is better)".to_owned(),
                 groups: vec![
-                    rss_group(&loaded, WorkloadKind::Idle),
-                    rss_group(&loaded, WorkloadKind::ManyIdleFlows),
+                    rss_group(&loaded, WorkloadKind::Idle, None, "idle"),
+                    rss_group(
+                        &loaded,
+                        WorkloadKind::ManyIdleFlows,
+                        Some(100),
+                        "many-idle-flows ×100",
+                    ),
+                    rss_group(
+                        &loaded,
+                        WorkloadKind::ManyIdleFlows,
+                        Some(1000),
+                        "many-idle-flows ×1000",
+                    ),
                 ],
             },
         ),
@@ -536,8 +584,8 @@ pub fn run_chart(options: &ChartOptions) -> Result<(), BenchError> {
                 title: "Round-trip latency — µs, median with p95 whisker (lower is better)"
                     .to_owned(),
                 groups: vec![
-                    latency_group(&loaded, WorkloadKind::TcpFreedom)?,
-                    latency_group(&loaded, WorkloadKind::RealityVisionXudp)?,
+                    latency_group(&loaded, WorkloadKind::TcpFreedom, None)?,
+                    latency_group(&loaded, WorkloadKind::RealityVisionXudp, None)?,
                 ],
             },
         ),
@@ -548,6 +596,7 @@ pub fn run_chart(options: &ChartOptions) -> Result<(), BenchError> {
                 groups: vec![optional_metric_group(
                     &loaded,
                     WorkloadKind::TcpBulkThroughput,
+                    None,
                     "throughput",
                     |summary| summary.throughput_mbps.as_ref(),
                     1000.0,
@@ -561,6 +610,7 @@ pub fn run_chart(options: &ChartOptions) -> Result<(), BenchError> {
                 groups: vec![optional_metric_group(
                     &loaded,
                     WorkloadKind::TcpBulkThroughput,
+                    None,
                     "cpu-per-GiB",
                     |summary| summary.cpu_millis_per_gib.as_ref(),
                     1.0,
@@ -614,7 +664,12 @@ mod tests {
         ])
     }
 
-    fn test_summary(engine: &str, workload: &str, status: &str) -> BenchSummary {
+    fn test_summary_with(
+        engine: &str,
+        workload: &str,
+        status: &str,
+        connections: u64,
+    ) -> BenchSummary {
         let metric = MetricSummary {
             min: 1,
             median: 2,
@@ -638,7 +693,7 @@ mod tests {
                 median: 4300,
                 p95: 4500,
             }),
-            connections: 0,
+            connections,
             iterations: 0,
             payload_size: 0,
             latency_us: None,
@@ -647,6 +702,10 @@ mod tests {
             bytes_received: metric,
             results: Vec::new(),
         }
+    }
+
+    fn test_summary(engine: &str, workload: &str, status: &str) -> BenchSummary {
+        test_summary_with(engine, workload, status, 0)
     }
 
     fn write_group(root: &Path, engine: &str, workload: &str, status: &str) {
@@ -716,6 +775,7 @@ mod tests {
             std::slice::from_ref(&root),
             EngineKind::XrayRust,
             WorkloadKind::Idle,
+            None,
         )
         .unwrap();
 
@@ -733,6 +793,7 @@ mod tests {
             std::slice::from_ref(&root),
             EngineKind::XrayCore,
             WorkloadKind::Idle,
+            None,
         )
         .unwrap_err();
         assert!(error
@@ -743,6 +804,7 @@ mod tests {
             std::slice::from_ref(&root),
             EngineKind::XrayRust,
             WorkloadKind::Idle,
+            None,
         )
         .unwrap_err();
         assert!(error.to_string().contains("charts require status `ok`"));
@@ -755,22 +817,70 @@ mod tests {
         write_group(&root, "xray-rust", "idle", "ok");
 
         let groups = vec![root.clone(), root.clone()];
-        let error = load_summary(&groups, EngineKind::XrayRust, WorkloadKind::Idle).unwrap_err();
+        let error =
+            load_summary(&groups, EngineKind::XrayRust, WorkloadKind::Idle, None).unwrap_err();
 
         assert!(error.to_string().contains("found in 2 group directories"));
         fs::remove_dir_all(&root).unwrap();
     }
 
-    fn write_full_group(root: &Path) {
-        for engine in ["xray-rust", "xray-core", "sing-box"] {
-            for workload in [
-                "idle",
-                "many-idle-flows",
-                "tcp-freedom",
-                "reality-vision-xudp",
-                "tcp-bulk-throughput",
-            ] {
-                let mut summary = test_summary(engine, workload, "ok");
+    #[test]
+    fn load_summary_selects_by_connection_count() {
+        let root = temp_root("by-conn");
+        let dir_100 = root.join("g100/xray-rust/many-idle-flows");
+        let dir_1000 = root.join("g1000/xray-rust/many-idle-flows");
+        fs::create_dir_all(&dir_100).unwrap();
+        fs::create_dir_all(&dir_1000).unwrap();
+        write_summary_json(
+            &dir_100.join("summary.json"),
+            &test_summary_with("xray-rust", "many-idle-flows", "ok", 100),
+        )
+        .unwrap();
+        write_summary_json(
+            &dir_1000.join("summary.json"),
+            &test_summary_with("xray-rust", "many-idle-flows", "ok", 1000),
+        )
+        .unwrap();
+        let groups = vec![root.join("g100"), root.join("g1000")];
+
+        let summary = load_summary(
+            &groups,
+            EngineKind::XrayRust,
+            WorkloadKind::ManyIdleFlows,
+            Some(1000),
+        )
+        .unwrap();
+        assert_eq!(summary.connections, 1000);
+
+        let error = load_summary(
+            &groups,
+            EngineKind::XrayRust,
+            WorkloadKind::ManyIdleFlows,
+            Some(500),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("connections=500"));
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    fn write_full_group(root: &Path) -> Vec<PathBuf> {
+        let slots: [(&str, Option<u64>); 6] = [
+            ("idle", None),
+            ("many-idle-flows", Some(100)),
+            ("many-idle-flows", Some(1000)),
+            ("tcp-freedom", None),
+            ("reality-vision-xudp", None),
+            ("tcp-bulk-throughput", None),
+        ];
+        let mut groups = Vec::new();
+        for (workload, connections) in slots {
+            let group_dir = match connections {
+                Some(conn) => root.join(format!("g-{workload}-{conn}")),
+                None => root.join(format!("g-{workload}")),
+            };
+            for engine in ["xray-rust", "xray-core", "sing-box"] {
+                let mut summary =
+                    test_summary_with(engine, workload, "ok", connections.unwrap_or(0));
                 if matches!(workload, "tcp-freedom" | "reality-vision-xudp") {
                     let metric = MetricSummary {
                         min: 90,
@@ -788,19 +898,21 @@ mod tests {
                         p99: metric,
                     });
                 }
-                let dir = root.join(engine).join(workload);
+                let dir = group_dir.join(engine).join(workload);
                 fs::create_dir_all(&dir).unwrap();
                 write_summary_json(&dir.join("summary.json"), &summary).unwrap();
             }
+            groups.push(group_dir);
         }
+        groups
     }
 
     #[test]
     fn run_chart_writes_eight_theme_files() {
         let root = temp_root("e2e");
-        write_full_group(&root);
         let out_dir = root.join("media");
         let mut options = parse_chart_args(&full_args(root.to_str().unwrap())).unwrap();
+        options.groups = write_full_group(&root);
         options.out_dir = out_dir.clone();
 
         run_chart(&options).unwrap();
@@ -825,6 +937,7 @@ mod tests {
 
         let memory = fs::read_to_string(out_dir.join("memory-rss-light.svg")).unwrap();
         assert!(memory.contains(">12.0<"));
+        assert!(memory.contains("many-idle-flows ×1000"));
         let throughput = fs::read_to_string(out_dir.join("throughput-light.svg")).unwrap();
         assert!(throughput.contains(">4.30<"));
 
@@ -834,10 +947,14 @@ mod tests {
     #[test]
     fn run_chart_fails_on_missing_latency() {
         let root = temp_root("no-latency");
-        write_full_group(&root);
-        let broken = test_summary("xray-rust", "tcp-freedom", "ok");
-        write_summary_json(&root.join("xray-rust/tcp-freedom/summary.json"), &broken).unwrap();
         let mut options = parse_chart_args(&full_args(root.to_str().unwrap())).unwrap();
+        options.groups = write_full_group(&root);
+        let broken = test_summary("xray-rust", "tcp-freedom", "ok");
+        write_summary_json(
+            &root.join("g-tcp-freedom/xray-rust/tcp-freedom/summary.json"),
+            &broken,
+        )
+        .unwrap();
         options.out_dir = root.join("media");
 
         let error = run_chart(&options).unwrap_err();
