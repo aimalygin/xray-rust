@@ -26,6 +26,7 @@ use crate::{
         accept_error_wants_backoff, copy_bidirectional_with_idle_timeout,
         effective_policy_for_level, AcceptBackoff, EffectivePolicy,
     },
+    runtime_log::{monotonic_millis, LogThrottle},
     OutboundRouter, RuntimeLogger, TcpOutbound, UdpOutbound, VlessTcpOutbound, VlessUdpFraming,
 };
 
@@ -35,12 +36,33 @@ const SOCKS_UDP_MAX_FLOWS_PER_ASSOCIATION: usize = 128;
 const SOCKS_UDP_MAX_FLOWS_GLOBAL: usize = 1024;
 const SOCKS_UDP_MAX_PENDING_OPENS_GLOBAL: usize = 64;
 const SOCKS_UDP_FLOW_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+const SOCKS_UDP_BUDGET_LOG_INTERVAL: Duration = Duration::from_secs(5);
 const SOCKS_VLESS_UDP_FLUSH_BATCH: usize = 16;
 const SOCKS_VLESS_UDP_FLUSH_INTERVAL: Duration = Duration::from_millis(2);
 const SOCKS_TCP_SNIFF_BUFFER_SIZE: usize = 8 * 1024;
 const SOCKS_TCP_SNIFF_TIMEOUT: Duration = Duration::from_millis(250);
 static SOCKS_UDP_GLOBAL_FLOWS: OnceLock<Arc<Semaphore>> = OnceLock::new();
 static SOCKS_UDP_GLOBAL_PENDING_OPENS: OnceLock<Arc<Semaphore>> = OnceLock::new();
+static SOCKS_UDP_BUDGET_EXHAUSTION_LOG: OnceLock<Arc<SocksUdpBudgetExhaustionLog>> =
+    OnceLock::new();
+
+/// One throttle per distinct budget-exhaustion outcome, so a burst of one
+/// kind cannot silence reports of the others.
+struct SocksUdpBudgetExhaustionLog {
+    global_flow_evictions: LogThrottle,
+    global_flow_drops: LogThrottle,
+    pending_open_drops: LogThrottle,
+}
+
+impl SocksUdpBudgetExhaustionLog {
+    const fn new() -> Self {
+        Self {
+            global_flow_evictions: LogThrottle::new(SOCKS_UDP_BUDGET_LOG_INTERVAL),
+            global_flow_drops: LogThrottle::new(SOCKS_UDP_BUDGET_LOG_INTERVAL),
+            pending_open_drops: LogThrottle::new(SOCKS_UDP_BUDGET_LOG_INTERVAL),
+        }
+    }
+}
 
 #[derive(Clone)]
 struct SocksUdpFlowContext {
@@ -58,6 +80,7 @@ struct SocksUdpFlowContext {
 struct SocksUdpBudgets {
     global_flows: Arc<Semaphore>,
     pending_opens: Arc<Semaphore>,
+    exhaustion_log: Arc<SocksUdpBudgetExhaustionLog>,
 }
 
 impl Default for SocksUdpBudgets {
@@ -71,6 +94,10 @@ impl Default for SocksUdpBudgets {
                 SOCKS_UDP_GLOBAL_PENDING_OPENS
                     .get_or_init(|| Arc::new(Semaphore::new(SOCKS_UDP_MAX_PENDING_OPENS_GLOBAL))),
             ),
+            exhaustion_log: Arc::clone(
+                SOCKS_UDP_BUDGET_EXHAUSTION_LOG
+                    .get_or_init(|| Arc::new(SocksUdpBudgetExhaustionLog::new())),
+            ),
         }
     }
 }
@@ -80,7 +107,10 @@ struct SocksUdpFlowEntry {
     abort_handle: AbortHandle,
     task_id: TaskId,
     last_activity: u64,
-    _global_permit: OwnedSemaphorePermit,
+    /// Held for the flow's lifetime; reclaimed intact on eviction so the
+    /// budget transfers to the replacement flow without a trip through the
+    /// semaphore's free pool.
+    global_permit: OwnedSemaphorePermit,
 }
 
 #[expect(
@@ -622,17 +652,10 @@ async fn handle_socks_udp_associate(
                     None => datagram.payload,
                 };
 
-                if flows.len() >= SOCKS_UDP_MAX_FLOWS_PER_ASSOCIATION {
-                    evict_oldest_socks_udp_flow(&mut flows);
-                }
-
-                let Ok(global_permit) =
-                    Arc::clone(&budgets.global_flows).try_acquire_owned()
-                else {
-                    continue;
-                };
-                let Ok(pending_open_permit) =
-                    Arc::clone(&budgets.pending_opens).try_acquire_owned()
+                let Some(SocksUdpFlowPermits {
+                    global: global_permit,
+                    pending_open: pending_open_permit,
+                }) = admit_socks_udp_flow(&mut flows, &budgets, &runtime_logger)
                 else {
                     continue;
                 };
@@ -673,7 +696,7 @@ async fn handle_socks_udp_associate(
                         abort_handle,
                         task_id,
                         last_activity: activity_sequence,
-                        _global_permit: global_permit,
+                        global_permit,
                     },
                 );
             }
@@ -687,21 +710,116 @@ async fn handle_socks_udp_associate(
     while flow_tasks.join_next().await.is_some() {}
 }
 
+struct SocksUdpFlowPermits {
+    global: OwnedSemaphorePermit,
+    pending_open: OwnedSemaphorePermit,
+}
+
+/// Admission control for one new SOCKS UDP flow: returns the budget permits
+/// the flow must hold, or `None` when the datagram has to be dropped.
+///
+/// On global-budget exhaustion the association reclaims its own
+/// least-recently-active flow's permit. That is the sing-box-style
+/// evict-oldest limited to what our permit ownership allows synchronously:
+/// evicting another association's flow releases its permit only after the
+/// owning task observes the abort, too late to admit this datagram. An
+/// association with nothing to evict drops the datagram (throttled log)
+/// until some flow elsewhere idles out.
+fn admit_socks_udp_flow(
+    flows: &mut HashMap<(SocketAddr, Target), SocksUdpFlowEntry>,
+    budgets: &SocksUdpBudgets,
+    runtime_logger: &RuntimeLogger,
+) -> Option<SocksUdpFlowPermits> {
+    let pending_open = match Arc::clone(&budgets.pending_opens).try_acquire_owned() {
+        Ok(permit) => permit,
+        Err(_) => {
+            if runtime_logger.is_enabled() {
+                if let Some(drops) = budgets
+                    .exhaustion_log
+                    .pending_open_drops
+                    .register(monotonic_millis())
+                {
+                    runtime_logger.error(|| {
+                        format!(
+                            "socks udp pending-open budget exhausted \
+                             ({SOCKS_UDP_MAX_PENDING_OPENS_GLOBAL}): dropped a new flow's \
+                             datagram ({drops} drops since last report)"
+                        )
+                    });
+                }
+            }
+            return None;
+        }
+    };
+
+    let reclaimed = if flows.len() >= SOCKS_UDP_MAX_FLOWS_PER_ASSOCIATION {
+        evict_oldest_socks_udp_flow(flows)
+    } else {
+        None
+    };
+    let global = match reclaimed {
+        Some(permit) => permit,
+        None => match Arc::clone(&budgets.global_flows).try_acquire_owned() {
+            Ok(permit) => permit,
+            Err(_) => match evict_oldest_socks_udp_flow(flows) {
+                Some(permit) => {
+                    if runtime_logger.is_enabled() {
+                        if let Some(evictions) = budgets
+                            .exhaustion_log
+                            .global_flow_evictions
+                            .register(monotonic_millis())
+                        {
+                            runtime_logger.debug(|| {
+                                format!(
+                                    "socks udp global flow budget exhausted \
+                                     ({SOCKS_UDP_MAX_FLOWS_GLOBAL}): evicted the association's \
+                                     oldest flow to admit a new one ({evictions} evictions \
+                                     since last report)"
+                                )
+                            });
+                        }
+                    }
+                    permit
+                }
+                None => {
+                    if runtime_logger.is_enabled() {
+                        if let Some(drops) = budgets
+                            .exhaustion_log
+                            .global_flow_drops
+                            .register(monotonic_millis())
+                        {
+                            runtime_logger.error(|| {
+                                format!(
+                                    "socks udp global flow budget exhausted \
+                                     ({SOCKS_UDP_MAX_FLOWS_GLOBAL}): dropped a new flow's \
+                                     datagram, association has nothing to evict ({drops} \
+                                     drops since last report)"
+                                )
+                            });
+                        }
+                    }
+                    return None;
+                }
+            },
+        },
+    };
+
+    Some(SocksUdpFlowPermits {
+        global,
+        pending_open,
+    })
+}
+
 fn evict_oldest_socks_udp_flow(
     flows: &mut HashMap<(SocketAddr, Target), SocksUdpFlowEntry>,
-) -> bool {
+) -> Option<OwnedSemaphorePermit> {
     let oldest_key = flows
         .iter()
         .min_by_key(|(_, entry)| entry.last_activity)
-        .map(|(key, _)| key.clone());
-    let Some(oldest_key) = oldest_key else {
-        return false;
-    };
-    let Some(entry) = flows.remove(&oldest_key) else {
-        return false;
-    };
+        .map(|(key, _)| key.clone())?;
+    let entry = flows.remove(&oldest_key)?;
     entry.abort_handle.abort();
-    true
+    Some(entry.global_permit)
 }
 
 fn remove_socks_udp_flow_by_task_id(
@@ -1167,9 +1285,11 @@ mod tests {
     use xray_routing::{Network, Target, TargetAddr};
 
     use super::{
-        evict_oldest_socks_udp_flow, write_socks_vless_udp_payload, SocksUdpBudgets,
-        SocksUdpFlowEntry, VlessUdpFraming, SOCKS_UDP_FLOW_QUEUE,
+        admit_socks_udp_flow, evict_oldest_socks_udp_flow, write_socks_vless_udp_payload,
+        SocksUdpBudgetExhaustionLog, SocksUdpBudgets, SocksUdpFlowEntry, VlessUdpFraming,
+        SOCKS_UDP_FLOW_QUEUE, SOCKS_UDP_MAX_FLOWS_PER_ASSOCIATION,
     };
+    use crate::{RuntimeLogConfig, RuntimeLogger};
 
     #[derive(Default)]
     struct RecordingWriter {
@@ -1205,6 +1325,7 @@ mod tests {
         let budgets = SocksUdpBudgets {
             global_flows: Arc::new(Semaphore::new(1)),
             pending_opens: Arc::new(Semaphore::new(1)),
+            exhaustion_log: Arc::new(SocksUdpBudgetExhaustionLog::new()),
         };
         let _permit = Arc::clone(&budgets.global_flows)
             .try_acquire_owned()
@@ -1220,6 +1341,7 @@ mod tests {
         let budgets = SocksUdpBudgets {
             global_flows: Arc::new(Semaphore::new(1)),
             pending_opens: Arc::new(Semaphore::new(1)),
+            exhaustion_log: Arc::new(SocksUdpBudgetExhaustionLog::new()),
         };
         let _permit = Arc::clone(&budgets.pending_opens)
             .try_acquire_owned()
@@ -1280,6 +1402,201 @@ mod tests {
         assert_eq!(writer.flushes, 1);
     }
 
+    fn admission_test_target() -> Target {
+        Target::new(
+            TargetAddr::Ip("192.0.2.1".parse().expect("test IP should parse")),
+            53,
+            Network::Udp,
+        )
+    }
+
+    fn admission_test_key(port: u16) -> (SocketAddr, Target) {
+        (
+            SocketAddr::from(([127, 0, 0, 1], port)),
+            admission_test_target(),
+        )
+    }
+
+    fn insert_admission_test_flow(
+        flows: &mut HashMap<(SocketAddr, Target), SocksUdpFlowEntry>,
+        tasks: &mut JoinSet<(SocketAddr, Target)>,
+        global_flows: &Arc<Semaphore>,
+        port: u16,
+        last_activity: u64,
+    ) {
+        let global_permit = Arc::clone(global_flows)
+            .try_acquire_owned()
+            .expect("test flow should fit the global budget");
+        let (sender, _receiver) = mpsc::channel::<Bytes>(SOCKS_UDP_FLOW_QUEUE);
+        let abort_handle = tasks.spawn(std::future::pending::<(SocketAddr, Target)>());
+        let task_id = abort_handle.id();
+        flows.insert(
+            admission_test_key(port),
+            SocksUdpFlowEntry {
+                sender,
+                abort_handle,
+                task_id,
+                last_activity,
+                global_permit,
+            },
+        );
+    }
+
+    fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "{prefix}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time should be after epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).expect("temp dir should be created");
+        dir
+    }
+
+    #[tokio::test]
+    async fn socks_udp_admission_at_association_cap_evicts_to_admit() {
+        let budgets = SocksUdpBudgets {
+            global_flows: Arc::new(Semaphore::new(SOCKS_UDP_MAX_FLOWS_PER_ASSOCIATION)),
+            pending_opens: Arc::new(Semaphore::new(1)),
+            exhaustion_log: Arc::new(SocksUdpBudgetExhaustionLog::new()),
+        };
+        let mut tasks = JoinSet::new();
+        let mut flows = HashMap::new();
+        for index in 0..SOCKS_UDP_MAX_FLOWS_PER_ASSOCIATION {
+            insert_admission_test_flow(
+                &mut flows,
+                &mut tasks,
+                &budgets.global_flows,
+                2_000 + u16::try_from(index).expect("cap fits in u16"),
+                index as u64,
+            );
+        }
+        assert_eq!(budgets.global_flows.available_permits(), 0);
+
+        let permits = admit_socks_udp_flow(&mut flows, &budgets, &RuntimeLogger::disabled())
+            .expect("association at its cap should admit by evicting its oldest flow");
+
+        assert_eq!(flows.len(), SOCKS_UDP_MAX_FLOWS_PER_ASSOCIATION - 1);
+        assert!(!flows.contains_key(&admission_test_key(2_000)));
+        assert_eq!(budgets.global_flows.available_permits(), 0);
+        drop(permits);
+        assert_eq!(budgets.global_flows.available_permits(), 1);
+    }
+
+    #[tokio::test]
+    async fn socks_udp_admission_evicts_association_oldest_when_global_budget_exhausted() {
+        let budgets = SocksUdpBudgets {
+            global_flows: Arc::new(Semaphore::new(2)),
+            pending_opens: Arc::new(Semaphore::new(1)),
+            exhaustion_log: Arc::new(SocksUdpBudgetExhaustionLog::new()),
+        };
+        let mut tasks = JoinSet::new();
+        let mut flows = HashMap::new();
+        insert_admission_test_flow(&mut flows, &mut tasks, &budgets.global_flows, 2_001, 1);
+        insert_admission_test_flow(&mut flows, &mut tasks, &budgets.global_flows, 2_002, 2);
+        assert_eq!(budgets.global_flows.available_permits(), 0);
+
+        let permits = admit_socks_udp_flow(&mut flows, &budgets, &RuntimeLogger::disabled())
+            .expect(
+                "global exhaustion should be absorbed by evicting the association's oldest flow",
+            );
+
+        assert!(!flows.contains_key(&admission_test_key(2_001)));
+        assert!(flows.contains_key(&admission_test_key(2_002)));
+        assert_eq!(budgets.global_flows.available_permits(), 0);
+        drop(permits);
+    }
+
+    #[test]
+    fn socks_udp_admission_logs_drop_when_global_budget_exhausted_with_nothing_to_evict() {
+        let dir = unique_temp_dir("socks-udp-global-drop");
+        let logger = RuntimeLogger::new(RuntimeLogConfig::directory(&dir))
+            .expect("logger should open files");
+        let budgets = SocksUdpBudgets {
+            global_flows: Arc::new(Semaphore::new(1)),
+            pending_opens: Arc::new(Semaphore::new(1)),
+            exhaustion_log: Arc::new(SocksUdpBudgetExhaustionLog::new()),
+        };
+        let _held_by_other_association = Arc::clone(&budgets.global_flows)
+            .try_acquire_owned()
+            .expect("first permit should fit");
+        let mut flows = HashMap::new();
+
+        let admission = admit_socks_udp_flow(&mut flows, &budgets, &logger);
+
+        assert!(admission.is_none());
+        drop(logger);
+        let error_log =
+            std::fs::read_to_string(dir.join("xray-error.log")).expect("error log should exist");
+        assert!(error_log.contains("socks udp global flow budget exhausted"));
+        assert!(error_log.contains("nothing to evict"));
+    }
+
+    #[tokio::test]
+    async fn socks_udp_admission_logs_drop_when_pending_open_budget_exhausted() {
+        let dir = unique_temp_dir("socks-udp-pending-drop");
+        let logger = RuntimeLogger::new(RuntimeLogConfig::directory(&dir))
+            .expect("logger should open files");
+        let budgets = SocksUdpBudgets {
+            global_flows: Arc::new(Semaphore::new(2)),
+            pending_opens: Arc::new(Semaphore::new(1)),
+            exhaustion_log: Arc::new(SocksUdpBudgetExhaustionLog::new()),
+        };
+        let _pending_held_elsewhere = Arc::clone(&budgets.pending_opens)
+            .try_acquire_owned()
+            .expect("first pending open should fit");
+        let mut tasks = JoinSet::new();
+        let mut flows = HashMap::new();
+        insert_admission_test_flow(&mut flows, &mut tasks, &budgets.global_flows, 2_001, 1);
+
+        let admission = admit_socks_udp_flow(&mut flows, &budgets, &logger);
+
+        assert!(admission.is_none());
+        assert_eq!(flows.len(), 1, "pending exhaustion must not evict flows");
+        assert_eq!(budgets.global_flows.available_permits(), 1);
+        drop(logger);
+        let error_log =
+            std::fs::read_to_string(dir.join("xray-error.log")).expect("error log should exist");
+        assert!(error_log.contains("socks udp pending-open budget exhausted"));
+    }
+
+    #[tokio::test]
+    async fn socks_udp_eviction_returns_reclaimed_global_permit() {
+        let client_addr = SocketAddr::from(([127, 0, 0, 1], 1234));
+        let target = Target::new(
+            TargetAddr::Ip("192.0.2.1".parse().expect("test IP should parse")),
+            53,
+            Network::Udp,
+        );
+        let global_flows = Arc::new(Semaphore::new(1));
+        let global_permit = Arc::clone(&global_flows)
+            .try_acquire_owned()
+            .expect("flow permit should fit");
+        let (sender, _receiver) = mpsc::channel::<Bytes>(SOCKS_UDP_FLOW_QUEUE);
+        let mut tasks = JoinSet::new();
+        let abort_handle = tasks.spawn(std::future::pending::<(SocketAddr, Target)>());
+        let task_id = abort_handle.id();
+        let mut flows = HashMap::from([(
+            (client_addr, target),
+            SocksUdpFlowEntry {
+                sender,
+                abort_handle,
+                task_id,
+                last_activity: 1,
+                global_permit,
+            },
+        )]);
+
+        let reclaimed = evict_oldest_socks_udp_flow(&mut flows)
+            .expect("eviction should hand back the evicted flow's permit");
+
+        assert_eq!(global_flows.available_permits(), 0);
+        drop(reclaimed);
+        assert_eq!(global_flows.available_permits(), 1);
+    }
+
     #[tokio::test]
     async fn socks_udp_eviction_aborts_managed_flow_task() {
         let client_addr = SocketAddr::from(([127, 0, 0, 1], 1234));
@@ -1292,6 +1609,7 @@ mod tests {
         let budgets = SocksUdpBudgets {
             global_flows: Arc::new(Semaphore::new(1)),
             pending_opens: Arc::new(Semaphore::new(1)),
+            exhaustion_log: Arc::new(SocksUdpBudgetExhaustionLog::new()),
         };
         let global_permit = Arc::clone(&budgets.global_flows)
             .try_acquire_owned()
@@ -1307,11 +1625,11 @@ mod tests {
                 abort_handle,
                 task_id,
                 last_activity: 1,
-                _global_permit: global_permit,
+                global_permit,
             },
         )]);
 
-        assert!(evict_oldest_socks_udp_flow(&mut flows));
+        assert!(evict_oldest_socks_udp_flow(&mut flows).is_some());
         let result = tasks
             .join_next()
             .await

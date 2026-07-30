@@ -107,6 +107,57 @@ impl RuntimeLogger {
     }
 }
 
+/// Rate-limits recurring log events. `register` records one event and
+/// returns `Some(events_since_last_log)` when enough time has passed since
+/// the previous emission (the first event always logs).
+///
+/// Time is passed in as milliseconds so callers control the clock; pair with
+/// [`monotonic_millis`] in production code.
+pub(crate) struct LogThrottle {
+    interval_millis: u64,
+    /// `u64::MAX` means no event has been logged yet.
+    last_logged_millis: AtomicU64,
+    pending_events: AtomicU64,
+}
+
+impl LogThrottle {
+    pub(crate) const fn new(interval: Duration) -> Self {
+        Self {
+            interval_millis: interval.as_millis() as u64,
+            last_logged_millis: AtomicU64::new(u64::MAX),
+            pending_events: AtomicU64::new(0),
+        }
+    }
+
+    pub(crate) fn register(&self, now_millis: u64) -> Option<u64> {
+        self.pending_events.fetch_add(1, Ordering::Relaxed);
+        let last = self.last_logged_millis.load(Ordering::Relaxed);
+        let due = last == u64::MAX || now_millis.saturating_sub(last) >= self.interval_millis;
+        if !due {
+            return None;
+        }
+        if self
+            .last_logged_millis
+            .compare_exchange(last, now_millis, Ordering::Relaxed, Ordering::Relaxed)
+            .is_err()
+        {
+            // Another thread won the race and logs this window.
+            return None;
+        }
+        Some(self.pending_events.swap(0, Ordering::Relaxed))
+    }
+}
+
+/// Milliseconds elapsed since the first call in this process. Monotonic, so
+/// safe for throttling decisions regardless of wall-clock adjustments.
+pub(crate) fn monotonic_millis() -> u64 {
+    use std::sync::OnceLock;
+    use std::time::Instant;
+
+    static START: OnceLock<Instant> = OnceLock::new();
+    u64::try_from(START.get_or_init(Instant::now).elapsed().as_millis()).unwrap_or(u64::MAX)
+}
+
 struct RuntimeLoggerInner {
     sender: Option<SyncSender<LogRecord>>,
     dropped_lines: AtomicU64,
@@ -417,9 +468,37 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::mpsc;
     use std::sync::Arc;
-    use std::time::Instant;
+    use std::time::{Duration, Instant};
 
-    use super::{RuntimeLogConfig, RuntimeLogger, RuntimeLoggerInner};
+    use super::{
+        monotonic_millis, LogThrottle, RuntimeLogConfig, RuntimeLogger, RuntimeLoggerInner,
+    };
+
+    #[test]
+    fn log_throttle_reports_first_event_immediately() {
+        let throttle = LogThrottle::new(Duration::from_secs(5));
+
+        assert_eq!(throttle.register(0), Some(1));
+    }
+
+    #[test]
+    fn log_throttle_suppresses_events_until_interval_elapses() {
+        let throttle = LogThrottle::new(Duration::from_secs(5));
+
+        assert_eq!(throttle.register(1_000), Some(1));
+        assert_eq!(throttle.register(2_000), None);
+        assert_eq!(throttle.register(5_999), None);
+        assert_eq!(throttle.register(6_000), Some(3));
+        assert_eq!(throttle.register(6_001), None);
+    }
+
+    #[test]
+    fn monotonic_millis_is_nondecreasing() {
+        let first = monotonic_millis();
+        let second = monotonic_millis();
+
+        assert!(second >= first);
+    }
 
     #[test]
     fn disabled_logger_does_not_evaluate_message_closure() {
