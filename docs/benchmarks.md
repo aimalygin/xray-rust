@@ -9,6 +9,7 @@ Supported workloads:
 - `idle`
 - `tcp-freedom`
 - `tcp-bulk-throughput`
+- `routed-tcp-freedom`
 - `many-idle-flows`
 - `reconnect-burst`
 - `mixed-long-lived`
@@ -50,6 +51,8 @@ target/benchmarks/<run-id>/<engine>/<workload>/run-003/
 cargo run -p xray-bench -- run --engine xray-rust --workload idle --duration-ms 1000
 cargo run -p xray-bench -- run --engine xray-rust --workload tcp-freedom --connections 1 --iterations 10 --payload-size 1024
 cargo run --release -p xray-bench -- run --engine xray-rust --workload tcp-bulk-throughput --connections 1 --iterations 256 --payload-size 4194304 --run-timeout-ms 120000
+scripts/fetch-geodata.sh --output-dir /private/tmp/bench-geodata
+cargo run --release -p xray-bench -- run --engine xray-rust --workload routed-tcp-freedom --geodata-dir /private/tmp/bench-geodata --connections 8 --iterations 100 --payload-size 1024 --run-timeout-ms 120000
 cargo run -p xray-bench -- run --engine xray-rust --workload many-idle-flows --connections 100 --duration-ms 1000
 cargo run -p xray-bench -- run --engine xray-rust --workload reconnect-burst --connections 16 --iterations 25
 cargo run -p xray-bench -- run --engine xray-rust --workload mixed-long-lived --connections 8 --iterations 20 --duration-ms 1000 --payload-size 512
@@ -165,7 +168,7 @@ cargo run -p xray-bench -- compare --workload udp-freedom --xray-core-dir Xray-c
 cargo run -p xray-bench -- compare --workload reality-vision-xudp --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 1 --iterations 1000 --payload-size 512
 ```
 
-The TUN and fake VLESS/XUDP workloads remain comparable between `xray-rust` and Xray-core in this slice. The compare command skips sing-box for these workloads because sing-box's CLI TUN path uses a real platform TUN topology, while the older VLESS/XUDP fake-server workloads use Xray JSON configs instead of sing-box outbound schema.
+The TUN and fake VLESS/XUDP workloads remain comparable between `xray-rust` and Xray-core in this slice. The compare command skips sing-box for these workloads because sing-box's CLI TUN path uses a real platform TUN topology, while the older VLESS/XUDP fake-server workloads use Xray JSON configs instead of sing-box outbound schema. `routed-tcp-freedom` is also xray-rust vs Xray-core only: sing-box ≥1.8 does not read Xray-format `.dat` geodata, and semantically equivalent `.srs` rule-sets cannot be guaranteed.
 
 ```sh
 cargo run -p xray-bench -- compare --workload tun-udp-freedom --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
@@ -175,6 +178,7 @@ cargo run -p xray-bench -- compare --workload tun-reality-blackhole --xray-core-
 cargo run -p xray-bench -- compare --workload udp-vless --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload udp-xudp --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload vision-xudp --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
+cargo run --release -p xray-bench -- compare --workload routed-tcp-freedom --xray-core-dir Xray-core --geodata-dir /private/tmp/bench-geodata --runs 5 --connections 8 --iterations 100 --payload-size 1024 --run-timeout-ms 120000
 ```
 
 The TUN workloads can also be run with xray-rust runtime profiles. The harness
@@ -227,10 +231,14 @@ cargo run --release -p xray-bench -- compare --workload tcp-bulk-throughput \
 ```
 
 Run the same release-binary compare for each charted workload — `idle`,
-`many-idle-flows`, `tcp-freedom`, `reality-vision-xudp`, and
-`tcp-bulk-throughput`. Each compare invocation writes one
-`target/benchmarks/<run-id>` group; the `--group` flags passed to `chart`
-must jointly cover all five workloads.
+`many-idle-flows` ×100 and ×1000 (the ×1000 run needs a raised `ulimit -n`;
+see the workload note), `tcp-freedom`, `reality-vision-xudp`,
+`tcp-bulk-throughput`, and `routed-tcp-freedom` (seven series in total; the
+last needs `--geodata-dir` after fetching geodata with
+`scripts/fetch-geodata.sh --output-dir /private/tmp/bench-geodata`, see
+above). Each compare invocation writes one `target/benchmarks/<run-id>`
+group; the `--group` flags passed to `chart` must jointly cover all seven
+series.
 
 `chart` renders the README SVG charts from one or more compare run groups:
 
@@ -241,18 +249,28 @@ cargo run --release -p xray-bench -- chart \
   --hardware "Apple M4 Pro, 24 GB RAM, macOS 15.5" \
   --xray-rust-version <git-short-rev> \
   --xray-core-version v26.5.9 \
-  --sing-box-version <sing-box-tag>
+  --sing-box-version <sing-box-tag> \
+  --geodata-version "geosite-<tag> geoip-<tag>"
 ```
 
 It reads `<group>/<engine>/<workload>/summary.json` for `idle`,
-`many-idle-flows`, `tcp-freedom`, `reality-vision-xudp`, and
-`tcp-bulk-throughput` across all three engines, and writes light/dark SVG
-pairs (`memory-rss`, `latency`, `throughput`, `cpu-per-gib`) to
-`docs/benchmarks/media/` (override with `--out-dir`). Metadata is passed by
-flags rather than sniffed so regeneration is deterministic; the command fails
-if any required summary is missing or its status is not `ok`. Bars show the
-median across runs; whiskers span min to p95 (for latency: min run median up
-to the median run p95).
+`many-idle-flows` (once per charted connection count), `tcp-freedom`,
+`reality-vision-xudp`, `tcp-bulk-throughput` across all three engines, and
+`routed-tcp-freedom` across xray-rust and Xray-core only, and writes
+light/dark SVG pairs (`memory-rss`, `latency`, `throughput`, `cpu-per-gib`,
+`geo-setup-latency`, `geo-memory`) to `docs/benchmarks/media/` (override with
+`--out-dir`). Charts select `many-idle-flows` summaries by their recorded
+connection count, so both scales come from separate compare runs; geo charts
+read the `routed-tcp-freedom` summaries (xray-rust and Xray-core only — no
+sing-box series, and the setup-latency chart carries the reply-time caveat,
+see the routed-tcp-freedom workload note in the Metrics section below).
+Metadata is passed by flags rather than sniffed so regeneration is
+deterministic; `--geodata-version` is
+optional and only prints a warning if omitted, since it labels the geo charts
+rather than gating them. The command fails if any required summary is
+missing or its status is not `ok`. Bars show the median across runs;
+whiskers span min to p95 (for latency: min run median up to the median run
+p95).
 
 ## Metrics
 
@@ -270,7 +288,32 @@ The first scoreboard is intentionally portable and comparable across Go and Rust
 
 `tcp-freedom`, `udp-freedom`, `tun-udp-freedom`, `udp-vless`, `udp-xudp`, `vision-xudp`, and `reality-vision-xudp` record one round-trip latency sample per validated payload iteration. `summary.json` aggregates each run's latency min/median/p95/p99 across repeated runs.
 `tcp-bulk-throughput` streams a deterministic byte pattern from a local TCP source through SOCKS5 CONNECT as one continuous transfer per connection (`--iterations` chunks of `--payload-size` bytes). The client validates the pattern chunk-by-chunk while reading, so throughput covers only verified bytes. Unlike `tcp-freedom` it has no per-iteration round trip, making it the workload to quote for streaming throughput.
-`many-idle-flows` opens `--connections` SOCKS TCP flows to a local target, keeps them idle for `--duration-ms`, and reports RSS/CPU while those flows are held. This is the first local memory-slope workload; compare its peak RSS against `idle` and divide the delta by the connection count for an approximate per-flow resident-memory cost.
+`routed-tcp-freedom` is `tcp-freedom` with SOCKS5 domain CONNECT through a
+config carrying real geosite/geoip routing rules
+(`geosite:category-ads-all`, `geoip:private`, `geoip:cn`, `geosite:cn`) and
+several tagged `freedom` outbounds. Connections alternate between a domain
+that matches the last geosite rule and one that falls through every rule to
+the default outbound; both resolve to `127.0.0.1` via `dns.hosts`, so no
+packet leaves the machine. `--geodata-dir` must contain `geosite.dat` and
+`geoip.dat` (fetch pinned, checksum-verified files with
+`scripts/fetch-geodata.sh --output-dir <dir>`). Headline numbers:
+`setup_socks_connect_us` (time from SOCKS CONNECT request to the engine's
+reply) and `peak_rss_kib` (matcher memory for the loaded geodata).
+
+**Measurement asymmetry:** the two engines send the SOCKS reply at different
+pipeline stages — xray-rust replies after rule evaluation, hosts resolution,
+and the local dial complete (`crates/xray-core-rs/src/socks.rs`, non-sniffing
+path), while Xray-core replies during the SOCKS handshake before routing and
+dialing (`proxy/socks/protocol.go` → `writeSocks5Response`, dispatch
+afterwards). The chart therefore compares different spans of work and must
+not be read as a pure routing-cost comparison; it is published as "time to
+SOCKS reply" with this note.
+
+`many-idle-flows` opens `--connections` SOCKS TCP flows to a local target, keeps them idle for `--duration-ms`, and reports RSS/CPU while those flows are held. This is the first local memory-slope workload; compare its peak RSS against `idle` and divide the delta by the connection count for an approximate per-flow resident-memory cost. For a scale point, the publication charts also run `many-idle-flows` with
+`--connections 1000`. xray-rust's SOCKS inbound admits at most 1024
+concurrent connections (`DEFAULT_MAX_INBOUND_CONNECTIONS`), so 1000 fits with
+little headroom and higher counts would be refused; the harness side needs a
+file-descriptor limit of several thousand (`ulimit -n`).
 `reconnect-burst` repeatedly opens and closes SOCKS TCP flows with `--connections` parallel workers and `--iterations` reconnects per worker. It is intended to separate base setup cost from the memory slope of held idle flows.
 `mixed-long-lived` keeps TCP and UDP SOCKS flows open together, paces `--iterations` across `--duration-ms`, and validates both echo paths. It is a local mobile-like foreground/background traffic mix.
 `udp-freedom` uses SOCKS5 UDP ASSOCIATE with the inbound configured as `{ "udp": true, "ip": "127.0.0.1" }`, then validates echoed UDP payloads through a local UDP target.
