@@ -73,9 +73,9 @@ already implemented so bulk transfers still reach the 128 KiB cap.
 | `MobilePlus` | 1536 | 16 KiB | ~62 MiB | Mirrors its TUN budget sitting between Mobile and Desktop. |
 | `Desktop` | 8192 | 16 KiB | ~315 MiB | Desktop hosts raise fd limits; covers browser-scale fan-out. |
 | `Throughput` | 8192 | 16 KiB | ~315 MiB | Optimized for few flows at maximum Gbps, not for flow count; large buffers are the point here. |
-| `Server` | 16384 | 4 KiB | ~200 MiB | Many mostly-idle flows; small floor keeps the cap affordable, adaptive growth still serves active transfers. |
+| `Server` | derived at startup (see below) | 4 KiB | bounded by budget | The host, not this library, knows how many connections the machine can serve. |
 
-Every cap is now backed by an RSS figure derived from the measured slope. No
+Every fixed cap is backed by an RSS figure derived from the measured slope. No
 profile uses "no check": the admission permit is what produces a clean,
 explainable refusal, and removing it makes the failure mode at fd exhaustion a
 hot `accept()` error loop (the listener currently does `Err(_) => continue`),
@@ -85,6 +85,52 @@ which is strictly worse than a bounded refusal.
 per-connection speed with large buffers; stretching it to server-scale flow
 counts would contradict its own buffer policy. Server-scale flow counts are
 what `Server` is for.
+
+## The `Server` Cap Is Derived, Not Invented
+
+Fixed caps are right for embedded and mobile hosts: the app knows the platform
+budget better than the OS default does, and predictability matters more than
+peak capacity. On a server the reverse is true — the operator knows their
+machine, and any constant this library picks is either uselessly small or
+dishonestly large. Observed spread on one macOS host alone: the login shell
+reports a soft `RLIMIT_NOFILE` of 1048576 while launchd services default to
+256.
+
+So `Server` resolves its cap at startup from the environment:
+
+```
+fd_budget     = (RLIMIT_NOFILE_soft - FD_RESERVE) / FDS_PER_FLOW
+memory_budget = SERVER_MEMORY_BUDGET / PER_FLOW_ESTIMATE
+cap           = clamp(min(fd_budget, memory_budget), CAP_FLOOR, CAP_CEILING)
+```
+
+- `FDS_PER_FLOW = 2` — each relayed flow holds an accepted inbound socket and
+  a dialed outbound socket.
+- `FD_RESERVE = 128` — listeners, DNS sockets, log and geodata files, plus
+  headroom so exhausting the cap never starves the rest of the process.
+- `SERVER_MEMORY_BUDGET = 1 GiB`, `PER_FLOW_ESTIMATE = 12 KiB` (4 KiB × 2
+  buffers plus task overhead, from the measured slope) → ~87k flows before
+  memory binds.
+- `CAP_FLOOR = 64`, `CAP_CEILING = 262144` — sanity rails only.
+
+Worked examples: a Linux server at the common `65535` soft limit resolves to
+~32700 connections (fd-bound, ~384 MiB implied); a host left at `1024`
+resolves to ~448 (fd-bound, honest — raising `ulimit -n` is the operator's
+lever); a host with a 1M limit resolves to ~87k (memory-bound).
+
+This is the same ceiling Xray-core and sing-box actually obey — they have no
+application cap, so the kernel's fd limit is their de-facto bound — with two
+differences: we discover it up front instead of by hitting `EMFILE` mid-flight,
+and we refuse the overflow connection with a SOCKS reply instead of looping on
+`accept()` errors. The operator's knob is identical (`ulimit -n` / systemd
+`LimitNOFILE`), so raising capacity works exactly the way a server admin
+expects.
+
+The resolved value and which constraint bound it are logged once at startup,
+so an operator can see immediately whether to raise `ulimit -n` or the memory
+budget. An explicit override (config or FFI setter) is a natural follow-up and
+is deliberately not in this slice — the derivation must be right first, since
+it is what every unconfigured deployment gets.
 
 ## Server Deployment Prerequisites (documented, not implemented here)
 
@@ -142,9 +188,17 @@ from `profile.max_inbound_connections()`.
   `RuntimeProfile::initial_copy_buffer_size()` return the table above for
   every variant (exhaustive matches, no wildcard, so a new profile fails to
   compile until it declares both).
-- Unit: for every profile, `cap × 2 × initial_copy_buffer_size` stays under a
-  declared per-profile RSS budget constant — this is the test that keeps a
-  future cap change from silently outrunning its memory model.
+- Unit: for every FIXED-cap profile, `cap × 2 × initial_copy_buffer_size`
+  stays under a declared per-profile RSS budget constant — this is the test
+  that keeps a future cap change from silently outrunning its memory model.
+- Unit: the `Server` derivation is a pure function of
+  `(soft_rlimit, memory_budget)` so it is tested without touching process
+  limits — table cases covering fd-bound (1024 → 448), fd-bound at a typical
+  server limit (65535 → ~32700), memory-bound (1048576 → ~87k), and both rails
+  (rlimit 0 → `CAP_FLOOR`, absurd rlimit → `CAP_CEILING`).
+- Unit: reading the real `RLIMIT_NOFILE` succeeds and returns a plausible
+  value on the test host; a failed `getrlimit` falls back to the `Mobile` cap
+  rather than panicking or assuming unlimited.
 - Integration: a relay under the `Server` profile starts at 4 KiB per
   direction and still grows to the 128 KiB cap under bulk transfer (the
   existing adaptive doubling is unchanged).
