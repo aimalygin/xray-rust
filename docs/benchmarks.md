@@ -310,9 +310,10 @@ not be read as a pure routing-cost comparison; it is published as "time to
 SOCKS reply" with this note.
 
 `many-idle-flows` opens `--connections` SOCKS TCP flows to a local target, keeps them idle for `--duration-ms`, and reports RSS/CPU while those flows are held. This is the first local memory-slope workload; compare its peak RSS against `idle` and divide the delta by the connection count for an approximate per-flow resident-memory cost. For a scale point, the publication charts also run `many-idle-flows` with
-`--connections 1000`. xray-rust's SOCKS inbound admits at most 1024
-concurrent connections (`DEFAULT_MAX_INBOUND_CONNECTIONS`), so 1000 fits with
-little headroom and higher counts would be refused; the harness side needs a
+`--connections 1000`. xray-rust's inbounds have no application-level
+connection cap (matching Xray-core and sing-box); the ceiling is the
+process's file-descriptor limit, which the CLI raises to the hard limit at
+startup the way the Go runtime does. The harness side needs a
 file-descriptor limit of several thousand (`ulimit -n`).
 `reconnect-burst` repeatedly opens and closes SOCKS TCP flows with `--connections` parallel workers and `--iterations` reconnects per worker. It is intended to separate base setup cost from the memory slope of held idle flows.
 `mixed-long-lived` keeps TCP and UDP SOCKS flows open together, paces `--iterations` across `--duration-ms`, and validates both echo paths. It is a local mobile-like foreground/background traffic mix.

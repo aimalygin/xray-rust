@@ -1420,7 +1420,9 @@ For a scale point, the publication charts also run `many-idle-flows` with
 `--connections 1000`. xray-rust's SOCKS inbound admits at most 1024
 concurrent connections (`DEFAULT_MAX_INBOUND_CONNECTIONS`), so 1000 fits with
 little headroom and higher counts would be refused; the harness side needs a
-file-descriptor limit of several thousand (`ulimit -n`).
+file-descriptor limit of several thousand (`ulimit -n`). (Historical: the cap
+was removed later the same day — see
+`specs/2026-07-30-remove-inbound-connection-cap.md`.)
 ```
 
 (f) Publishing Numbers and Charts: extend the charted-workload sentence to name the seven series (`idle`, `many-idle-flows` ×100 and ×1000, `tcp-freedom`, `reality-vision-xudp`, `tcp-bulk-throughput`, `routed-tcp-freedom`) and add the geodata flags to the chart example: `--geodata-version "geosite-<tag> geoip-<tag>"` plus a sentence: "Charts select `many-idle-flows` summaries by their recorded connection count, so both scales come from separate compare runs; geo charts read the `routed-tcp-freedom` summaries (xray-rust and Xray-core only)."

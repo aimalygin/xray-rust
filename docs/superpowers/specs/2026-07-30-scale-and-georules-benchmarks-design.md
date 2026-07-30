@@ -53,7 +53,9 @@ charts.
 No new workload: the publication recipe adds
 `compare --workload many-idle-flows --connections 1000 --duration-ms 5000`.
 Documented facts: xray-rust's inbound admission cap is 1024 connections
-(`DEFAULT_MAX_INBOUND_CONNECTIONS`), so 1000 fits with little headroom and
+(`DEFAULT_MAX_INBOUND_CONNECTIONS`) — historical: the cap was removed later
+the same day, see `specs/2026-07-30-remove-inbound-connection-cap.md` — so
+1000 fits with little headroom and
 higher counts would be refused — noted in docs/benchmarks.md; harness fd
 usage (~3000) requires a raised `ulimit -n`, also noted. Probe measurement on
 Apple M3 Pro: xray-rust holds 1000 flows at 12.1 MiB peak RSS, status ok.

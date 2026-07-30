@@ -13,6 +13,7 @@ name = "xray-rust"
 path = "src/main.rs"
 
 [dependencies]
+libc.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 xray-config = { path = "../xray-config" }

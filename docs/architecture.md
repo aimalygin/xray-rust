@@ -72,9 +72,10 @@ Darwin utun fd when enabled and available, otherwise it falls back to the
 ## Concurrency and lifecycle
 
 Each FFI handle owns a Tokio runtime. Listener, DNS, outbound, and TUN work runs
-as asynchronous tasks with cooperative shutdown. Admission controls, bounded
-packet/flow queues, timeouts, and backpressure prevent unbounded work from being
-created by a single listener or TUN source.
+as asynchronous tasks with cooperative shutdown. Flow budgets, bounded packet
+queues, timeouts, and backpressure bound the TUN path and the SOCKS UDP relay;
+inbound TCP concurrency has no application-level cap and is bounded by the
+process file-descriptor limit, with accept errors retried under backoff.
 
 Lifecycle/configuration operations are serialized by the host adapters.
 Documented data-path calls may run concurrently, but never concurrently with

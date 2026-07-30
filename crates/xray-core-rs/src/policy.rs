@@ -1,10 +1,8 @@
 use std::io;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::io::{split, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadHalf, WriteHalf};
-use tokio::sync::{mpsc, OwnedSemaphorePermit, Semaphore};
+use tokio::sync::mpsc;
 use xray_config::CoreConfig;
 
 const DEFAULT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -17,7 +15,6 @@ const MIN_COPY_BUFFER_SIZE: usize = 1024;
 const MAX_COPY_BUFFER_SIZE: usize = 1024 * 1024;
 const COPY_FLUSH_THRESHOLD: usize = 64 * 1024;
 const COPY_FLUSH_INTERVAL: Duration = Duration::from_millis(2);
-pub(crate) const DEFAULT_MAX_INBOUND_CONNECTIONS: usize = 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct EffectivePolicy {
@@ -49,73 +46,40 @@ impl EffectivePolicy {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ConnectionAdmissionSnapshot {
-    pub active: usize,
-    pub admitted: u64,
-    pub rejected: u64,
+const ACCEPT_BACKOFF_INITIAL_DELAY: Duration = Duration::from_millis(10);
+const ACCEPT_BACKOFF_MAX_DELAY: Duration = Duration::from_secs(1);
+
+// A client that resets while queued in the backlog surfaces ECONNABORTED from
+// accept(); that is not resource exhaustion, so pausing the listener for it
+// would stall unrelated clients (Go's poller retries it silently).
+pub(crate) fn accept_error_wants_backoff(kind: io::ErrorKind) -> bool {
+    kind != io::ErrorKind::ConnectionAborted
 }
 
-#[derive(Debug)]
-struct ConnectionAdmissionCounters {
-    active: AtomicUsize,
-    admitted: AtomicU64,
-    rejected: AtomicU64,
+// Accept errors such as EMFILE stay hot until fds free up; retrying without a
+// pause turns the listener loop into a busy spin that starves the process.
+#[derive(Debug, Default)]
+pub(crate) struct AcceptBackoff {
+    delay: Option<Duration>,
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct ConnectionAdmission {
-    permits: Arc<Semaphore>,
-    counters: Arc<ConnectionAdmissionCounters>,
-}
-
-impl ConnectionAdmission {
-    pub(crate) fn new(limit: usize) -> Self {
-        Self {
-            permits: Arc::new(Semaphore::new(limit)),
-            counters: Arc::new(ConnectionAdmissionCounters {
-                active: AtomicUsize::new(0),
-                admitted: AtomicU64::new(0),
-                rejected: AtomicU64::new(0),
-            }),
-        }
+impl AcceptBackoff {
+    pub(crate) fn new() -> Self {
+        Self::default()
     }
 
-    pub(crate) fn try_acquire(&self) -> Option<ConnectionAdmissionPermit> {
-        match Arc::clone(&self.permits).try_acquire_owned() {
-            Ok(permit) => {
-                self.counters.active.fetch_add(1, Ordering::Relaxed);
-                self.counters.admitted.fetch_add(1, Ordering::Relaxed);
-                Some(ConnectionAdmissionPermit {
-                    _permit: permit,
-                    counters: Arc::clone(&self.counters),
-                })
-            }
-            Err(_) => {
-                self.counters.rejected.fetch_add(1, Ordering::Relaxed);
-                None
-            }
-        }
+    pub(crate) fn next_delay(&mut self) -> Duration {
+        let delay = self.delay.unwrap_or(ACCEPT_BACKOFF_INITIAL_DELAY);
+        self.delay = Some((delay * 2).min(ACCEPT_BACKOFF_MAX_DELAY));
+        delay
     }
 
-    pub(crate) fn snapshot(&self) -> ConnectionAdmissionSnapshot {
-        ConnectionAdmissionSnapshot {
-            active: self.counters.active.load(Ordering::Relaxed),
-            admitted: self.counters.admitted.load(Ordering::Relaxed),
-            rejected: self.counters.rejected.load(Ordering::Relaxed),
-        }
+    pub(crate) fn reset(&mut self) {
+        self.delay = None;
     }
-}
 
-#[derive(Debug)]
-pub(crate) struct ConnectionAdmissionPermit {
-    _permit: OwnedSemaphorePermit,
-    counters: Arc<ConnectionAdmissionCounters>,
-}
-
-impl Drop for ConnectionAdmissionPermit {
-    fn drop(&mut self) {
-        self.counters.active.fetch_sub(1, Ordering::Relaxed);
+    pub(crate) fn is_backing_off(&self) -> bool {
+        self.delay.is_some()
     }
 }
 
@@ -279,7 +243,7 @@ mod tests {
 
     use super::{
         copy_bidirectional_with_idle_timeout, copy_direction, effective_policy_for_level,
-        ConnectionAdmission,
+        AcceptBackoff,
     };
 
     #[derive(Default)]
@@ -567,17 +531,44 @@ mod tests {
     }
 
     #[test]
-    fn connection_admission_holds_capacity_for_permit_lifetime() {
-        let admission = ConnectionAdmission::new(1);
-        let permit = admission.try_acquire().expect("first permit should fit");
+    fn accept_error_backoff_skips_connection_aborted() {
+        use std::io;
 
-        assert!(admission.try_acquire().is_none());
-        assert_eq!(admission.snapshot().active, 1);
+        assert!(!super::accept_error_wants_backoff(
+            io::ErrorKind::ConnectionAborted
+        ));
+        assert!(super::accept_error_wants_backoff(io::ErrorKind::Other));
+        assert!(super::accept_error_wants_backoff(io::ErrorKind::WouldBlock));
+    }
 
-        drop(permit);
+    #[test]
+    fn accept_backoff_escalates_delays_up_to_the_cap() {
+        let mut backoff = AcceptBackoff::new();
 
-        assert!(admission.try_acquire().is_some());
-        assert_eq!(admission.snapshot().rejected, 1);
+        assert_eq!(backoff.next_delay(), Duration::from_millis(10));
+        assert_eq!(backoff.next_delay(), Duration::from_millis(20));
+        assert_eq!(backoff.next_delay(), Duration::from_millis(40));
+
+        let mut last = Duration::ZERO;
+        for _ in 0..16 {
+            last = backoff.next_delay();
+        }
+        assert_eq!(last, Duration::from_secs(1));
+        assert_eq!(backoff.next_delay(), Duration::from_secs(1));
+    }
+
+    #[test]
+    fn accept_backoff_reset_returns_to_the_initial_delay() {
+        let mut backoff = AcceptBackoff::new();
+        assert!(!backoff.is_backing_off());
+
+        backoff.next_delay();
+        backoff.next_delay();
+        assert!(backoff.is_backing_off());
+
+        backoff.reset();
+        assert!(!backoff.is_backing_off());
+        assert_eq!(backoff.next_delay(), Duration::from_millis(10));
     }
 
     #[test]

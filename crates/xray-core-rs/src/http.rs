@@ -9,8 +9,8 @@ use xray_proxy::inbound::parse_http_connect;
 use xray_transport::{DnsResolver, TransportDialer};
 
 use crate::policy::{
-    copy_bidirectional_with_idle_timeout, effective_policy_for_level, ConnectionAdmission,
-    EffectivePolicy, DEFAULT_MAX_INBOUND_CONNECTIONS,
+    accept_error_wants_backoff, copy_bidirectional_with_idle_timeout, effective_policy_for_level,
+    AcceptBackoff, EffectivePolicy,
 };
 use crate::{open_tcp_stream_with_resolver_and_dialer, OutboundRouter, RuntimeLogger, TcpOutbound};
 
@@ -34,7 +34,7 @@ pub async fn serve_http_listener(
     mut shutdown: watch::Receiver<bool>,
 ) {
     let mut connections = JoinSet::new();
-    let admission = ConnectionAdmission::new(DEFAULT_MAX_INBOUND_CONNECTIONS);
+    let mut accept_backoff = AcceptBackoff::new();
 
     loop {
         if *shutdown.borrow() {
@@ -50,11 +50,31 @@ pub async fn serve_http_listener(
             accepted = listener.accept() => {
                 let (stream, _) = match accepted {
                     Ok(accepted) => accepted,
-                    Err(_) => continue,
+                    Err(error) => {
+                        if !accept_error_wants_backoff(error.kind()) {
+                            continue;
+                        }
+                        if !accept_backoff.is_backing_off() {
+                            // accept() errors carry only OS errno text (no peer
+                            // data), and the errno is the operator's signal to
+                            // raise `ulimit -n` — so this log skips <redacted>.
+                            runtime_logger.error(|| {
+                                format!("Debug httpAccept failed, backing off error={error}")
+                            });
+                        }
+                        let delay = accept_backoff.next_delay();
+                        tokio::select! {
+                            changed = shutdown.changed() => {
+                                if changed.is_err() || *shutdown.borrow() {
+                                    break;
+                                }
+                            }
+                            _ = tokio::time::sleep(delay) => {}
+                        }
+                        continue;
+                    }
                 };
-                let Some(admission_permit) = admission.try_acquire() else {
-                    continue;
-                };
+                accept_backoff.reset();
                 let inbound_tag = inbound_tag.clone();
                 let config = Arc::clone(&config);
                 let outbound_router = Arc::clone(&outbound_router);
@@ -62,7 +82,6 @@ pub async fn serve_http_listener(
                 let transport_dialer = Arc::clone(&transport_dialer);
                 let runtime_logger = runtime_logger.clone();
                 connections.spawn(async move {
-                    let _admission_permit = admission_permit;
                     handle_http_connection(
                         stream,
                         inbound_tag,
@@ -83,15 +102,6 @@ pub async fn serve_http_listener(
 
     connections.abort_all();
     while connections.join_next().await.is_some() {}
-    if runtime_logger.is_enabled() {
-        let snapshot = admission.snapshot();
-        runtime_logger.debug(|| {
-            format!(
-                "Debug httpAdmission active={} admitted={} rejected={}",
-                snapshot.active, snapshot.admitted, snapshot.rejected
-            )
-        });
-    }
 }
 
 #[expect(

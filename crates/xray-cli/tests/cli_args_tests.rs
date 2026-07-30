@@ -280,3 +280,17 @@ async fn run_cli_with_shutdown_rejects_missing_config() {
         .to_string()
         .contains("missing config path"));
 }
+
+#[cfg(unix)]
+#[test]
+fn raise_nofile_limit_lifts_soft_limit_toward_the_hard_limit() {
+    let before = xray_cli::nofile_limits().expect("getrlimit should succeed");
+
+    let after = xray_cli::raise_nofile_limit().expect("raising should succeed");
+    eprintln!("nofile soft: before={} after={}", before.soft, after.soft);
+    assert!(after.soft >= before.soft);
+    assert!(after.soft > 0);
+
+    let again = xray_cli::raise_nofile_limit().expect("raising twice should succeed");
+    assert_eq!(again.soft, after.soft);
+}

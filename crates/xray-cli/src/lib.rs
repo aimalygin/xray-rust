@@ -247,10 +247,88 @@ fn parse_tun_fd_close_policy(raw: &str) -> Result<TunFdClosePolicy, CliError> {
     }
 }
 
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NofileLimits {
+    pub soft: u64,
+    pub hard: u64,
+}
+
+#[cfg(unix)]
+#[allow(
+    clippy::unnecessary_cast,
+    reason = "rlim_t is only u64 on some unix targets"
+)]
+pub fn nofile_limits() -> Option<NofileLimits> {
+    let mut limits = libc::rlimit {
+        rlim_cur: 0,
+        rlim_max: 0,
+    };
+    // SAFETY: getrlimit writes into the provided struct only on success.
+    if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut limits) } != 0 {
+        return None;
+    }
+    Some(NofileLimits {
+        soft: limits.rlim_cur as u64,
+        hard: limits.rlim_max as u64,
+    })
+}
+
+// The Go runtime raises the soft fd limit to the hard limit at startup, so
+// Xray-core and sing-box run at the hard limit; without the same lift this
+// binary would hit EMFILE orders of magnitude earlier on identical hosts.
+#[cfg(unix)]
+#[allow(
+    clippy::unnecessary_cast,
+    reason = "rlim_t is only u64 on some unix targets"
+)]
+pub fn raise_nofile_limit() -> Option<NofileLimits> {
+    let current = nofile_limits()?;
+    let mut target = current.hard;
+    #[cfg(target_os = "macos")]
+    {
+        // macOS rejects setrlimit above kern.maxfilesperproc even though the
+        // hard limit reports unlimited.
+        if let Some(max_files) = darwin_max_files_per_proc() {
+            target = target.min(max_files);
+        }
+    }
+    if current.soft >= target {
+        return Some(current);
+    }
+    let desired = libc::rlimit {
+        rlim_cur: target as libc::rlim_t,
+        rlim_max: current.hard as libc::rlim_t,
+    };
+    // SAFETY: setrlimit reads the provided struct; failure leaves limits
+    // unchanged, so the follow-up getrlimit reports whatever is in effect.
+    unsafe { libc::setrlimit(libc::RLIMIT_NOFILE, &desired) };
+    nofile_limits()
+}
+
+#[cfg(target_os = "macos")]
+fn darwin_max_files_per_proc() -> Option<u64> {
+    let mut value: libc::c_int = 0;
+    let mut len = std::mem::size_of::<libc::c_int>();
+    // SAFETY: sysctlbyname writes at most `len` bytes into `value`.
+    let rc = unsafe {
+        libc::sysctlbyname(
+            c"kern.maxfilesperproc".as_ptr(),
+            std::ptr::from_mut(&mut value).cast(),
+            &mut len,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    (rc == 0 && value > 0).then_some(value as u64)
+}
+
 pub async fn run_with_shutdown<F>(config: CoreConfig, shutdown: F) -> Result<(), CliError>
 where
     F: Future<Output = ()>,
 {
+    #[cfg(unix)]
+    let _ = raise_nofile_limit();
     let configured_inbounds = config.inbounds.clone();
     let tun_fd_config = parse_tun_fd_env()?;
     let tun_runtime_options = parse_tun_runtime_options_env()?;
