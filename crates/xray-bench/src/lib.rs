@@ -1579,6 +1579,121 @@ pub async fn run_tcp_freedom_workload(
     Ok(outcome)
 }
 
+pub async fn run_routed_tcp_freedom_workload(
+    socks_addr: SocketAddr,
+    options: &BenchOptions,
+) -> Result<WorkloadOutcome, BenchError> {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "binding TCP echo server".to_owned(),
+            source,
+        })?;
+    let echo_addr = listener.local_addr().map_err(|source| BenchError::Io {
+        action: "reading TCP echo server address".to_owned(),
+        source,
+    })?;
+    let echo_task = tokio::spawn(async move {
+        loop {
+            let Ok((mut stream, _peer)) = listener.accept().await else {
+                break;
+            };
+            tokio::spawn(async move {
+                let (mut reader, mut writer) = stream.split();
+                let _ = tokio::io::copy(&mut reader, &mut writer).await;
+            });
+        }
+    });
+
+    let mut tasks = Vec::with_capacity(options.connections);
+    for index in 0..options.connections {
+        let options = options.clone();
+        let domain = if index % 2 == 0 {
+            GEO_HIT_DOMAIN
+        } else {
+            GEO_MISS_DOMAIN
+        };
+        tasks.push(tokio::spawn(async move {
+            run_routed_connection(socks_addr, domain, echo_addr.port(), &options).await
+        }));
+    }
+
+    let mut outcome = WorkloadOutcome::empty();
+    for task in tasks {
+        let task_outcome = task.await.map_err(|error| {
+            BenchError::InvalidArguments(format!("routed workload task failed: {error}"))
+        })??;
+        outcome.extend(task_outcome);
+    }
+    echo_task.abort();
+
+    Ok(outcome)
+}
+
+async fn run_routed_connection(
+    socks_addr: SocketAddr,
+    domain: &str,
+    echo_port: u16,
+    options: &BenchOptions,
+) -> Result<WorkloadOutcome, BenchError> {
+    let setup_started = Instant::now();
+    let tcp_started = Instant::now();
+    let mut client = TcpStream::connect(socks_addr)
+        .await
+        .map_err(|source| BenchError::Io {
+            action: format!("connecting to SOCKS inbound at {socks_addr}"),
+            source,
+        })?;
+    let tcp_connect_us = tcp_started.elapsed().as_micros();
+    let socks = socks5_connect_domain_measured(&mut client, domain, echo_port).await?;
+    let setup_sample = FlowSetupSample {
+        tcp_connect_us,
+        socks_method_us: socks.method_us,
+        socks_connect_us: socks.connect_us,
+        socks_setup_us: socks.total_us,
+        total_us: setup_started.elapsed().as_micros(),
+    };
+
+    let payload = vec![0x5a; options.payload_size];
+    let mut echoed = vec![0; options.payload_size];
+    let mut sent = 0;
+    let mut received = 0;
+    let mut latencies_us = Vec::with_capacity(options.iterations);
+    for _ in 0..options.iterations {
+        let started = Instant::now();
+        client
+            .write_all(&payload)
+            .await
+            .map_err(|source| BenchError::Io {
+                action: "writing benchmark payload".to_owned(),
+                source,
+            })?;
+        sent += payload.len() as u64;
+        client
+            .read_exact(&mut echoed)
+            .await
+            .map_err(|source| BenchError::Io {
+                action: "reading benchmark echo".to_owned(),
+                source,
+            })?;
+        if echoed != payload {
+            return Err(BenchError::InvalidArguments(
+                "echo payload mismatch".to_owned(),
+            ));
+        }
+        received += echoed.len() as u64;
+        latencies_us.push(started.elapsed().as_micros());
+    }
+
+    Ok(WorkloadOutcome {
+        bytes_sent: sent,
+        bytes_received: received,
+        latencies_us,
+        setup_samples: vec![setup_sample],
+        ..WorkloadOutcome::default()
+    })
+}
+
 pub async fn run_tcp_bulk_throughput_workload(
     socks_addr: SocketAddr,
     options: &BenchOptions,
@@ -2629,8 +2744,6 @@ async fn socks5_connect_measured(
     })
 }
 
-// wired into routed-tcp-freedom in a follow-up task
-#[allow(dead_code)]
 async fn socks5_connect_domain_measured<S>(
     client: &mut S,
     domain: &str,
@@ -2689,8 +2802,6 @@ where
     })
 }
 
-// wired into routed-tcp-freedom in a follow-up task
-#[allow(dead_code)]
 async fn read_socks5_reply<S>(client: &mut S) -> Result<(), BenchError>
 where
     S: AsyncRead + Unpin,
@@ -6317,8 +6428,9 @@ async fn run_engine_once(
             WorkloadKind::TcpBulkThroughput => {
                 run_tcp_bulk_throughput_workload(engine.socks_addr, options).await
             }
-            // TEMPORARY: Task 6 replaces this with a routed-tcp-freedom workload runner.
-            WorkloadKind::RoutedTcpFreedom => run_idle_workload(options.duration).await,
+            WorkloadKind::RoutedTcpFreedom => {
+                run_routed_tcp_freedom_workload(engine.socks_addr, options).await
+            }
             WorkloadKind::ManyIdleFlows => {
                 run_many_idle_flows_workload(engine.socks_addr, options).await
             }
@@ -8358,5 +8470,71 @@ mod tests {
             .await
             .unwrap();
         server_task.await.unwrap();
+    }
+
+    async fn spawn_test_socks5_domain_forwarder() -> (SocketAddr, JoinHandle<()>) {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let task = tokio::spawn(async move {
+            loop {
+                let Ok((mut client, _peer)) = listener.accept().await else {
+                    break;
+                };
+                tokio::spawn(async move {
+                    let mut greeting = [0; 2];
+                    client.read_exact(&mut greeting).await.unwrap();
+                    let mut methods = vec![0; greeting[1] as usize];
+                    client.read_exact(&mut methods).await.unwrap();
+                    client.write_all(&[5, 0]).await.unwrap();
+                    let mut head = [0; 4];
+                    client.read_exact(&mut head).await.unwrap();
+                    assert_eq!(head[..3], [5, 1, 0]);
+                    assert_eq!(head[3], 3, "domain forwarder expects ATYP=3");
+                    let mut len = [0; 1];
+                    client.read_exact(&mut len).await.unwrap();
+                    let mut domain = vec![0; len[0] as usize];
+                    client.read_exact(&mut domain).await.unwrap();
+                    let domain = String::from_utf8(domain).unwrap();
+                    assert!(
+                        domain == GEO_HIT_DOMAIN || domain == GEO_MISS_DOMAIN,
+                        "unexpected domain {domain}"
+                    );
+                    let mut port = [0; 2];
+                    client.read_exact(&mut port).await.unwrap();
+                    let port = u16::from_be_bytes(port);
+                    let mut upstream = TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+                        .await
+                        .unwrap();
+                    client
+                        .write_all(&[5, 0, 0, 1, 127, 0, 0, 1, 0, 0])
+                        .await
+                        .unwrap();
+                    let _ = tokio::io::copy_bidirectional(&mut client, &mut upstream).await;
+                });
+            }
+        });
+        (addr, task)
+    }
+
+    #[tokio::test]
+    async fn routed_workload_collects_setup_and_latency_samples() {
+        let (socks_addr, socks_task) = spawn_test_socks5_domain_forwarder().await;
+        let options = BenchOptions {
+            workload: WorkloadKind::RoutedTcpFreedom,
+            connections: 4,
+            iterations: 8,
+            payload_size: 2048,
+            ..BenchOptions::default()
+        };
+
+        let outcome = run_routed_tcp_freedom_workload(socks_addr, &options)
+            .await
+            .unwrap();
+
+        assert_eq!(outcome.bytes_sent, 4 * 8 * 2048);
+        assert_eq!(outcome.bytes_received, 4 * 8 * 2048);
+        assert_eq!(outcome.setup_samples.len(), 4);
+        assert_eq!(outcome.latencies_us.len(), 4 * 8);
+        socks_task.abort();
     }
 }
