@@ -699,7 +699,7 @@ pub fn run_chart(options: &ChartOptions) -> Result<(), BenchError> {
         (
             "throughput",
             ChartSpec {
-                title: "Bulk TCP throughput — Gbps (higher is better)".to_owned(),
+                title: "Bulk TCP throughput through SOCKS — Gbps (higher is better)".to_owned(),
                 series_labels: &SERIES_LABELS_ALL,
                 groups: vec![optional_metric_group(
                     &loaded,
@@ -1141,9 +1141,15 @@ mod tests {
         assert!(!memory.contains("geodata-test"));
         let throughput = fs::read_to_string(out_dir.join("throughput-light.svg")).unwrap();
         assert!(throughput.contains(">4.30<"));
+        assert!(throughput.contains("tcp-bulk-throughput"));
 
         let latency = fs::read_to_string(out_dir.join("latency-light.svg")).unwrap();
-        assert!(latency.contains("udp-freedom"));
+        let (tcp, udp, xudp) = (
+            latency.find("tcp-freedom").unwrap(),
+            latency.find("udp-freedom").unwrap(),
+            latency.find("reality-vision-xudp").unwrap(),
+        );
+        assert!(tcp < udp && udp < xudp, "latency groups out of order");
         let reality = fs::read_to_string(out_dir.join("reality-throughput-light.svg")).unwrap();
         assert!(reality.contains(">4.30<"));
         assert!(reality.contains("reality-vision-bulk-throughput"));
