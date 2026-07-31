@@ -155,6 +155,7 @@ pub enum WorkloadKind {
     UdpXudp,
     VisionXudp,
     RealityVisionXudp,
+    RealityVisionBulk,
 }
 
 impl WorkloadKind {
@@ -176,6 +177,7 @@ impl WorkloadKind {
             Self::UdpXudp => "udp-xudp",
             Self::VisionXudp => "vision-xudp",
             Self::RealityVisionXudp => "reality-vision-xudp",
+            Self::RealityVisionBulk => "reality-vision-bulk-throughput",
         }
     }
 
@@ -197,6 +199,7 @@ impl WorkloadKind {
             "udp-xudp" => Ok(Self::UdpXudp),
             "vision-xudp" => Ok(Self::VisionXudp),
             "reality-vision-xudp" => Ok(Self::RealityVisionXudp),
+            "reality-vision-bulk-throughput" => Ok(Self::RealityVisionBulk),
             other => Err(BenchError::InvalidArguments(format!(
                 "unsupported workload `{other}`"
             ))),
@@ -224,6 +227,7 @@ impl WorkloadKind {
                 | Self::MixedLongLived
                 | Self::UdpFreedom
                 | Self::RealityVisionXudp
+                | Self::RealityVisionBulk
         )
     }
 }
@@ -726,7 +730,7 @@ impl WorkloadFixture {
                     processes: Vec::new(),
                 })
             }
-            WorkloadKind::RealityVisionXudp => {
+            WorkloadKind::RealityVisionXudp | WorkloadKind::RealityVisionBulk => {
                 let (vless_addr, process) =
                     start_xray_core_reality_vision_server(options, run_dir, binary_dir).await?;
                 Ok(Self {
@@ -4090,7 +4094,7 @@ pub fn xray_rust_config(port: u16, workload: WorkloadKind) -> String {
         WorkloadKind::VisionXudp => {
             vision_xudp_config(port, SocketAddr::from((Ipv4Addr::LOCALHOST, 443)))
         }
-        WorkloadKind::RealityVisionXudp => {
+        WorkloadKind::RealityVisionXudp | WorkloadKind::RealityVisionBulk => {
             reality_vision_xudp_config(port, SocketAddr::from((Ipv4Addr::LOCALHOST, 443)))
         }
         WorkloadKind::TunUdpFreedom
@@ -4126,12 +4130,12 @@ fn sing_box_config(
     fixture: &WorkloadFixture,
 ) -> Result<String, BenchError> {
     match workload {
-        WorkloadKind::RealityVisionXudp => {
+        WorkloadKind::RealityVisionXudp | WorkloadKind::RealityVisionBulk => {
             let vless_addr = fixture.vless_addr.ok_or_else(|| {
-                BenchError::InvalidArguments(
-                    "reality-vision-xudp workload requires a VLESS Reality server fixture"
-                        .to_owned(),
-                )
+                BenchError::InvalidArguments(format!(
+                    "{} workload requires a VLESS Reality server fixture",
+                    workload.as_str()
+                ))
             })?;
             Ok(sing_box_reality_vision_xudp_config(port, vless_addr))
         }
@@ -4181,12 +4185,12 @@ fn engine_config(
                 )),
             }
         }
-        WorkloadKind::RealityVisionXudp => {
+        WorkloadKind::RealityVisionXudp | WorkloadKind::RealityVisionBulk => {
             let vless_addr = fixture.vless_addr.ok_or_else(|| {
-                BenchError::InvalidArguments(
-                    "reality-vision-xudp workload requires a VLESS Reality server fixture"
-                        .to_owned(),
-                )
+                BenchError::InvalidArguments(format!(
+                    "{} workload requires a VLESS Reality server fixture",
+                    workload.as_str()
+                ))
             })?;
             Ok(reality_vision_xudp_config(port, vless_addr))
         }
@@ -6464,6 +6468,9 @@ async fn run_engine_once(
             WorkloadKind::RealityVisionXudp => {
                 run_reality_vision_xudp_workload(engine.socks_addr, options).await
             }
+            WorkloadKind::RealityVisionBulk => {
+                run_tcp_bulk_throughput_workload(engine.socks_addr, options).await
+            }
         }
     };
     let (workload_outcome, samples) = match timeout(
@@ -7224,6 +7231,31 @@ mod tests {
         assert_eq!(options.connections, 2);
         assert_eq!(options.iterations, 3);
         assert_eq!(options.payload_size, 64);
+    }
+
+    #[test]
+    fn parses_compare_reality_vision_bulk_throughput() {
+        let args = parse_cli_args([
+            "xray-bench",
+            "compare",
+            "--workload",
+            "reality-vision-bulk-throughput",
+            "--connections",
+            "1",
+            "--iterations",
+            "4",
+            "--payload-size",
+            "65536",
+        ])
+        .unwrap();
+
+        let CliArgs::Compare(options) = args else {
+            panic!("expected compare args");
+        };
+        assert_eq!(options.workload, WorkloadKind::RealityVisionBulk);
+        assert_eq!(options.connections, 1);
+        assert_eq!(options.iterations, 4);
+        assert_eq!(options.payload_size, 65536);
     }
 
     #[test]
