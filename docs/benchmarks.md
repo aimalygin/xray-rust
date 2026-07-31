@@ -161,7 +161,7 @@ From the main repository checkout, these process-level workloads compare all thr
 
 ```sh
 export SING_BOX_BIN=/path/to/sing-box
-cargo run -p xray-bench -- compare --workload tcp-freedom --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 1 --iterations 10 --payload-size 1024
+cargo run -p xray-bench -- compare --workload tcp-freedom --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 1 --iterations 1000 --payload-size 1024
 cargo run --release -p xray-bench -- compare --workload tcp-bulk-throughput --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 1 --iterations 256 --payload-size 4194304 --run-timeout-ms 120000
 cargo run -p xray-bench -- compare --workload many-idle-flows --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 100 --duration-ms 1000
 cargo run -p xray-bench -- compare --workload reconnect-burst --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 16 --iterations 25
@@ -198,7 +198,7 @@ From an isolated worktree under `.worktrees/`, pass the main checkout's Xray-cor
 
 ```sh
 export SING_BOX_BIN=/path/to/sing-box
-cargo run -p xray-bench -- compare --workload tcp-freedom --xray-core-dir ../../Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 1 --iterations 10 --payload-size 1024
+cargo run -p xray-bench -- compare --workload tcp-freedom --xray-core-dir ../../Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 1 --iterations 1000 --payload-size 1024
 cargo run -p xray-bench -- compare --workload many-idle-flows --xray-core-dir ../../Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 100 --duration-ms 1000
 cargo run -p xray-bench -- compare --workload reconnect-burst --xray-core-dir ../../Xray-core --runs 5 --connections 16 --iterations 25
 cargo run -p xray-bench -- compare --workload mixed-long-lived --xray-core-dir ../../Xray-core --runs 5 --connections 8 --iterations 20 --duration-ms 1000 --payload-size 512
@@ -293,6 +293,15 @@ The first scoreboard is intentionally portable and comparable across Go and Rust
 - min, median, and p95 aggregates across repeated runs.
 
 `tcp-freedom`, `udp-freedom`, `tun-udp-freedom`, `udp-vless`, `udp-xudp`, `vision-xudp`, and `reality-vision-xudp` record one round-trip latency sample per validated payload iteration. `summary.json` aggregates each run's latency min/median/p95/p99 across repeated runs.
+
+**Use at least a few hundred iterations for any latency number you publish.**
+A freshly spawned engine serves its first flow about twenty milliseconds into
+process life, and ten round trips complete in one to two milliseconds — so a
+ten-iteration run measures the warm-up transient and nothing else. Such runs
+swing by more than 2× between sessions while thousand-iteration runs on the
+same machine repeat to within a microsecond. The charted latency series
+(`tcp-freedom`, `udp-freedom`, `reality-vision-xudp`) all use 1000
+iterations for this reason; the ten-iteration commands above are smoke tests.
 `tcp-bulk-throughput` streams a deterministic byte pattern from a local TCP source through SOCKS5 CONNECT as one continuous transfer per connection (`--iterations` chunks of `--payload-size` bytes). The client validates the pattern chunk-by-chunk while reading, so throughput covers only verified bytes. Unlike `tcp-freedom` it has no per-iteration round trip, making it the workload to quote for streaming throughput.
 `reality-vision-bulk-throughput` is `tcp-bulk-throughput` carried through
 VLESS REALITY with `xtls-rprx-vision` (uTLS fingerprint `chrome`) to the same
