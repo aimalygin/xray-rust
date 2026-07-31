@@ -10,7 +10,7 @@ const DEFAULT_CONN_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 const DEFAULT_UPLINK_ONLY_TIMEOUT: Duration = Duration::from_secs(1);
 const DEFAULT_DOWNLINK_ONLY_TIMEOUT: Duration = Duration::from_secs(2);
 const DEFAULT_COPY_BUFFER_SIZE: usize = 128 * 1024;
-const INITIAL_COPY_BUFFER_SIZE: usize = 16 * 1024;
+const INITIAL_COPY_BUFFER_SIZE: usize = 4 * 1024;
 const MIN_COPY_BUFFER_SIZE: usize = 1024;
 const MAX_COPY_BUFFER_SIZE: usize = 1024 * 1024;
 const COPY_FLUSH_THRESHOLD: usize = 64 * 1024;
@@ -469,10 +469,17 @@ mod tests {
         assert_eq!(copied, 1024 * 1024);
         let state = state.lock().unwrap();
         assert_eq!(
-            state.write_lengths[..4],
-            [16 * 1024, 32 * 1024, 64 * 1024, 128 * 1024]
+            state.write_lengths[..6],
+            [
+                4 * 1024,
+                8 * 1024,
+                16 * 1024,
+                32 * 1024,
+                64 * 1024,
+                128 * 1024
+            ]
         );
-        let (last, steady) = state.write_lengths[4..].split_last().unwrap();
+        let (last, steady) = state.write_lengths[6..].split_last().unwrap();
         assert!(steady.iter().all(|len| *len == 128 * 1024));
         assert!(*last <= 128 * 1024);
     }
