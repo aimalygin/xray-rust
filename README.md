@@ -30,7 +30,7 @@ a child process with an equivalent generated config while the harness samples
 OS RSS/CPU counters and validates every payload byte. Bars are medians across
 5 runs; whiskers span min to p95 (for latency, the whisker top is the median
 run p95). Measured 2026-07-30 on Apple M3 Pro, 18 GB RAM, macOS 26.5.2 with
-release builds: xray-rust `65e2346`, Xray-core `v26.5.9`, sing-box
+release builds: xray-rust `9e8743b`, Xray-core `v26.5.9`, sing-box
 `v1.13.15`. The routing memory chart loads real, pinned V2Fly geodata
 (`geosite 20260727084448`, `geoip 202607171233`); sing-box is absent
 from that chart because it does not read Xray-format `.dat` rule data.
@@ -38,19 +38,31 @@ In this run xray-rust holds a large edge in resident memory at idle and at
 100 held flows, falls to roughly half of Xray-core at 1000 flows while
 sing-box pulls level, and uses about 4× less memory than Xray-core with real
 geodata loaded. Round-trip latency is comparable to both Go engines on the TCP
-echo path (38 vs 35/35 µs) and clearly the fastest on the plain SOCKS UDP
-relay (36 vs 60/45 µs), while the REALITY + Vision XUDP path lands mid-pack
-(89 vs 100/87 µs). On plain bulk throughput through SOCKS xray-rust is the
-fastest of the three (57.7 vs 51.7/56.5 Gbps) and its CPU per GiB sits between
-sing-box and Xray-core (190 vs 150/220 ms). Through a full VLESS + REALITY +
-Vision tunnel it is instead clearly the slowest: 8.36 Gbps against Xray-core's
-13.2 and sing-box's 12.4, while burning about 50% more CPU per GiB than either
-on that path. All three engines are CPU-bound at roughly 1.3–1.4 cores there,
-so the gap is work per byte in the REALITY/Vision data path rather than a
-scheduling artifact. On that chart the Xray-core REALITY server fixture
-terminating the tunnel is not sampled, but it shares loopback CPU with the
-measured client, and the rate is taken over the transfer window only because
-the fixture's per-engine setup stall would otherwise be amortized into it.
+echo path (38.0 vs 35.0/35.0 µs) and clearly the fastest on the plain SOCKS
+UDP relay (36.0 vs 60.0/45.0 µs), while the REALITY + Vision XUDP path lands
+mid-pack (89.0 vs 100/87.0 µs). On plain bulk throughput through SOCKS
+sing-box leads clearly and xray-rust comes second, ahead of Xray-core: 74.5 vs
+58.7 (Xray-core) and 84.1 (sing-box) Gbps. That is a real separation rather
+than a tie — across five runs each the ranges do not overlap at all (xray-rust
+72.6–75.1, Xray-core 56.4–59.2, sing-box 83.9–84.6 Gbps) — while CPU per GiB
+on that workload puts xray-rust between the two (157 vs Xray-core's 212 and
+sing-box's 140 ms). Through a full VLESS + REALITY + Vision tunnel xray-rust is
+clearly the slowest: 8.36 Gbps against Xray-core's 13.2 and sing-box's 12.4.
+The cost shows up in raw CPU, about 1270 ms per GiB against roughly 840
+(Xray-core) and 890 (sing-box), and all three sit at roughly 1.2–1.3 cores of
+CPU time over the transfer window, so the gap is work per byte in the
+REALITY/Vision data path rather than a scheduling artifact. Throughput is now
+measured over the transfer window only (first byte to last validated byte) on
+an 8 GiB stream: a gigabyte crosses loopback in roughly 150 milliseconds,
+short enough that TCP window growth and CPU frequency scaling weighed on the
+result, and per-engine setup cost was otherwise amortized into the rate. These
+throughput numbers are therefore not comparable with the ones this README
+carried before. Excluding setup helps Xray-core rather than us: the harness
+fixture is identical for all three engines, but Xray-core answers SOCKS
+eagerly and finishes its REALITY handshake lazily, spending about 640 ms
+before its first byte against roughly 90–120 ms for the other two. On the
+REALITY chart the Xray-core server fixture terminating the tunnel is not
+sampled, but it shares loopback CPU with the measured client.
 These are microbenchmarks of local proxy paths, not wide-area VPN performance;
 TUN workloads (xray-rust vs Xray-core only) are not charted here.
 
@@ -66,7 +78,7 @@ TUN workloads (xray-rust vs Xray-core only) are not charted here.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/media/throughput-dark.svg">
-  <img alt="Bulk TCP throughput through SOCKS, higher is better: xray-rust 57.7 Gbps, Xray-core 51.7, sing-box 56.5." src="docs/benchmarks/media/throughput-light.svg">
+  <img alt="Bulk TCP throughput through SOCKS, higher is better: xray-rust 74.5 Gbps, Xray-core 58.7, sing-box 84.1." src="docs/benchmarks/media/throughput-light.svg">
 </picture>
 
 <picture>
@@ -76,7 +88,7 @@ TUN workloads (xray-rust vs Xray-core only) are not charted here.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/media/cpu-per-gib-dark.svg">
-  <img alt="CPU cost per GiB transferred on the plain bulk workload, lower is better: xray-rust 190 ms, Xray-core 220, sing-box 150." src="docs/benchmarks/media/cpu-per-gib-light.svg">
+  <img alt="CPU cost per GiB transferred on the plain bulk workload, lower is better: xray-rust 157 ms, Xray-core 212, sing-box 140." src="docs/benchmarks/media/cpu-per-gib-light.svg">
 </picture>
 
 <picture>
