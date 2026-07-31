@@ -22,6 +22,7 @@ Supported workloads:
 - `udp-xudp`
 - `vision-xudp`
 - `reality-vision-xudp`
+- `reality-vision-bulk-throughput`
 
 The harness writes results under:
 
@@ -65,6 +66,7 @@ cargo run -p xray-bench -- run --engine xray-rust --workload udp-vless --connect
 cargo run -p xray-bench -- run --engine xray-rust --workload udp-xudp --connections 1 --iterations 10 --payload-size 512
 cargo run -p xray-bench -- run --engine xray-rust --workload vision-xudp --connections 1 --iterations 10 --payload-size 512
 cargo run -p xray-bench -- run --engine xray-rust --workload reality-vision-xudp --xray-core-bin /path/to/xray-core --connections 1 --iterations 10 --payload-size 512
+cargo run --release -p xray-bench -- run --engine xray-rust --workload reality-vision-bulk-throughput --xray-core-dir Xray-core --connections 1 --iterations 256 --payload-size 4194304 --run-timeout-ms 120000
 cargo run -p xray-bench -- run --engine xray-rust --workload tcp-freedom --runs 5 --connections 8 --iterations 1000 --payload-size 4096
 cargo run -p xray-bench -- route-probe --iterations 100000 --rules 64 --outbounds 8
 ```
@@ -146,7 +148,7 @@ cargo run -p xray-bench -- run --engine sing-box --sing-box-bin "$SING_BOX_BIN" 
 cargo run -p xray-bench -- run --engine sing-box --sing-box-bin "$SING_BOX_BIN" --workload many-idle-flows --connections 100 --duration-ms 1000 --no-auto-build
 ```
 
-The first sing-box slice supports the SOCKS/process-level workloads: `idle`, `tcp-freedom`, `tcp-bulk-throughput`, `many-idle-flows`, `reconnect-burst`, `mixed-long-lived`, `udp-freedom`, and `reality-vision-xudp`. The Reality/Vision workload starts an Xray-core VLESS Reality server fixture and samples only the client engine process. The sing-box binary must include `with_utls`; the harness uses `with_gvisor,with_utls,badlinkname,tfogo_checklinkname0` when auto-building sing-box. TUN and fake VLESS/XUDP sing-box workloads are intentionally not part of this slice because they need a different topology than the rootless fd-backed harness.
+The first sing-box slice supports the SOCKS/process-level workloads: `idle`, `tcp-freedom`, `tcp-bulk-throughput`, `many-idle-flows`, `reconnect-burst`, `mixed-long-lived`, `udp-freedom`, `reality-vision-xudp`, and `reality-vision-bulk-throughput`. The Reality/Vision workload starts an Xray-core VLESS Reality server fixture and samples only the client engine process. The sing-box binary must include `with_utls`; the harness uses `with_gvisor,with_utls,badlinkname,tfogo_checklinkname0` when auto-building sing-box. TUN and fake VLESS/XUDP sing-box workloads are intentionally not part of this slice because they need a different topology than the rootless fd-backed harness.
 
 Each run has a watchdog timeout. The default is 30 seconds; override it with
 `--run-timeout-ms <milliseconds>` when exercising intentionally slow workloads.
@@ -166,6 +168,7 @@ cargo run -p xray-bench -- compare --workload reconnect-burst --xray-core-dir Xr
 cargo run -p xray-bench -- compare --workload mixed-long-lived --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 8 --iterations 20 --duration-ms 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload udp-freedom --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload reality-vision-xudp --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 1 --iterations 1000 --payload-size 512
+cargo run --release -p xray-bench -- compare --workload reality-vision-bulk-throughput --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 1 --iterations 256 --payload-size 4194304 --run-timeout-ms 120000
 ```
 
 The TUN and fake VLESS/XUDP workloads remain comparable between `xray-rust` and Xray-core in this slice. The compare command skips sing-box for these workloads because sing-box's CLI TUN path uses a real platform TUN topology, while the older VLESS/XUDP fake-server workloads use Xray JSON configs instead of sing-box outbound schema. `routed-tcp-freedom` is also xray-rust vs Xray-core only: sing-box ≥1.8 does not read Xray-format `.dat` geodata, and semantically equivalent `.srs` rule-sets cannot be guaranteed.
@@ -232,12 +235,13 @@ cargo run --release -p xray-bench -- compare --workload tcp-bulk-throughput \
 
 Run the same release-binary compare for each charted workload — `idle`,
 `many-idle-flows` ×100 and ×1000 (the ×1000 run needs a raised `ulimit -n`;
-see the workload note), `tcp-freedom`, `reality-vision-xudp`,
-`tcp-bulk-throughput`, and `routed-tcp-freedom` (seven series in total; the
-last needs `--geodata-dir` after fetching geodata with
+see the workload note), `tcp-freedom`, `udp-freedom`, `reality-vision-xudp`,
+`tcp-bulk-throughput`, `reality-vision-bulk-throughput`, and
+`routed-tcp-freedom` (nine series in total; the last needs `--geodata-dir`
+after fetching geodata with
 `scripts/fetch-geodata.sh --output-dir /private/tmp/bench-geodata`, see
 above). Each compare invocation writes one `target/benchmarks/<run-id>`
-group; the `--group` flags passed to `chart` must jointly cover all seven
+group; the `--group` flags passed to `chart` must jointly cover all nine
 series.
 
 `chart` renders the README SVG charts from one or more compare run groups:
@@ -255,10 +259,12 @@ cargo run --release -p xray-bench -- chart \
 
 It reads `<group>/<engine>/<workload>/summary.json` for `idle`,
 `many-idle-flows` (once per charted connection count), `tcp-freedom`,
-`reality-vision-xudp`, `tcp-bulk-throughput` across all three engines, and
+`udp-freedom`, `reality-vision-xudp`, `tcp-bulk-throughput`,
+`reality-vision-bulk-throughput` across all three engines, and
 `routed-tcp-freedom` across xray-rust and Xray-core only, and writes
-light/dark SVG pairs (`memory-rss`, `latency`, `throughput`, `cpu-per-gib`,
-`geo-setup-latency`, `geo-memory`) to `docs/benchmarks/media/` (override with
+light/dark SVG pairs (`memory-rss`, `latency`, `throughput`,
+`reality-throughput`, `cpu-per-gib`, `geo-setup-latency`, `geo-memory`) to
+`docs/benchmarks/media/` (override with
 `--out-dir`). Charts select `many-idle-flows` summaries by their recorded
 connection count, so both scales come from separate compare runs; geo charts
 read the `routed-tcp-freedom` summaries (xray-rust and Xray-core only — no
@@ -288,6 +294,15 @@ The first scoreboard is intentionally portable and comparable across Go and Rust
 
 `tcp-freedom`, `udp-freedom`, `tun-udp-freedom`, `udp-vless`, `udp-xudp`, `vision-xudp`, and `reality-vision-xudp` record one round-trip latency sample per validated payload iteration. `summary.json` aggregates each run's latency min/median/p95/p99 across repeated runs.
 `tcp-bulk-throughput` streams a deterministic byte pattern from a local TCP source through SOCKS5 CONNECT as one continuous transfer per connection (`--iterations` chunks of `--payload-size` bytes). The client validates the pattern chunk-by-chunk while reading, so throughput covers only verified bytes. Unlike `tcp-freedom` it has no per-iteration round trip, making it the workload to quote for streaming throughput.
+`reality-vision-bulk-throughput` is `tcp-bulk-throughput` carried through
+VLESS REALITY with `xtls-rprx-vision` (uTLS fingerprint `chrome`) to the same
+Xray-core server fixture that `reality-vision-xudp` uses; the fixture's
+`freedom` outbound dials back to the local source server. The fixture process
+is not sampled, but it shares loopback CPU with the client engine, so
+absolute numbers understate a dedicated-server setup. The bulk pattern is not
+inner TLS, so Vision does not switch to direct copy: the stream stays
+REALITY-encrypted end to end, and the chart measures the encrypted relay
+path.
 `routed-tcp-freedom` is `tcp-freedom` with SOCKS5 domain CONNECT through a
 config carrying real geosite/geoip routing rules
 (`geosite:category-ads-all`, `geoip:private`, `geoip:cn`, `geosite:cn`) and
