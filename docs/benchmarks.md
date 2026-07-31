@@ -51,7 +51,7 @@ target/benchmarks/<run-id>/<engine>/<workload>/run-003/
 ```sh
 cargo run -p xray-bench -- run --engine xray-rust --workload idle --duration-ms 1000
 cargo run -p xray-bench -- run --engine xray-rust --workload tcp-freedom --connections 1 --iterations 10 --payload-size 1024
-cargo run --release -p xray-bench -- run --engine xray-rust --workload tcp-bulk-throughput --connections 1 --iterations 256 --payload-size 4194304 --run-timeout-ms 120000
+cargo run --release -p xray-bench -- run --engine xray-rust --workload tcp-bulk-throughput --connections 1 --iterations 2048 --payload-size 4194304 --run-timeout-ms 300000
 scripts/fetch-geodata.sh --output-dir /private/tmp/bench-geodata
 cargo run --release -p xray-bench -- run --engine xray-rust --workload routed-tcp-freedom --geodata-dir /private/tmp/bench-geodata --connections 8 --iterations 100 --payload-size 1024 --run-timeout-ms 120000
 cargo run -p xray-bench -- run --engine xray-rust --workload many-idle-flows --connections 100 --duration-ms 1000
@@ -162,7 +162,7 @@ From the main repository checkout, these process-level workloads compare all thr
 ```sh
 export SING_BOX_BIN=/path/to/sing-box
 cargo run -p xray-bench -- compare --workload tcp-freedom --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 1 --iterations 1000 --payload-size 1024
-cargo run --release -p xray-bench -- compare --workload tcp-bulk-throughput --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 1 --iterations 256 --payload-size 4194304 --run-timeout-ms 120000
+cargo run --release -p xray-bench -- compare --workload tcp-bulk-throughput --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 1 --iterations 2048 --payload-size 4194304 --run-timeout-ms 300000
 cargo run -p xray-bench -- compare --workload many-idle-flows --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 100 --duration-ms 1000
 cargo run -p xray-bench -- compare --workload reconnect-burst --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 16 --iterations 25
 cargo run -p xray-bench -- compare --workload mixed-long-lived --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 8 --iterations 20 --duration-ms 1000 --payload-size 512
@@ -230,7 +230,7 @@ cargo build --release -p xray-cli --bin xray-rust
 cargo run --release -p xray-bench -- compare --workload tcp-bulk-throughput \
   --xray-rust-bin target/release/xray-rust --xray-core-dir Xray-core \
   --sing-box-bin "$SING_BOX_BIN" \
-  --runs 5 --connections 1 --iterations 256 --payload-size 4194304 --run-timeout-ms 120000
+  --runs 5 --connections 1 --iterations 2048 --payload-size 4194304 --run-timeout-ms 300000
 ```
 
 Run the same release-binary compare for each charted workload — `idle`,
@@ -302,7 +302,7 @@ swing by more than 2× between sessions while thousand-iteration runs on the
 same machine repeat to within a microsecond. The charted latency series
 (`tcp-freedom`, `udp-freedom`, `reality-vision-xudp`) all use 1000
 iterations for this reason; the ten-iteration commands above are smoke tests.
-`tcp-bulk-throughput` streams a deterministic byte pattern from a local TCP source through SOCKS5 CONNECT as one continuous transfer per connection (`--iterations` chunks of `--payload-size` bytes). The client validates the pattern chunk-by-chunk while reading, so throughput covers only verified bytes. Unlike `tcp-freedom` it has no per-iteration round trip, making it the workload to quote for streaming throughput.
+`tcp-bulk-throughput` streams a deterministic byte pattern from a local TCP source through SOCKS5 CONNECT as one continuous transfer per connection (`--iterations` chunks of `--payload-size` bytes). The client validates the pattern chunk-by-chunk while reading, so throughput covers only verified bytes. Unlike `tcp-freedom` it has no per-iteration round trip, making it the workload to quote for streaming throughput. Size the transfer so the window outlasts the ramp: a gigabyte crosses loopback in about 150 ms, short enough that TCP window growth and CPU frequency scaling weigh on the rate, so the charted series moves 8 GiB per run for a window near a second.
 `reality-vision-bulk-throughput` is `tcp-bulk-throughput` carried through
 VLESS REALITY with `xtls-rprx-vision` (uTLS fingerprint `chrome`) to the same
 Xray-core server fixture that `reality-vision-xudp` uses; the fixture's
