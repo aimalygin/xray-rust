@@ -43,7 +43,7 @@ Add to the `mod tests` block in `crates/xray-bench/src/lib.rs`, right after `par
         let CliArgs::Compare(options) = args else {
             panic!("expected compare args");
         };
-        assert_eq!(options.workload, WorkloadKind::RealityVisionBulk);
+        assert_eq!(options.workload, WorkloadKind::RealityVisionBulkThroughput);
         assert_eq!(options.connections, 1);
         assert_eq!(options.iterations, 4);
         assert_eq!(options.payload_size, 65536);
@@ -53,7 +53,7 @@ Add to the `mod tests` block in `crates/xray-bench/src/lib.rs`, right after `par
 - [ ] **Step 2: Run the test to verify it fails**
 
 Run: `cargo test -p xray-bench parses_compare_reality_vision_bulk_throughput`
-Expected: compile error — `WorkloadKind::RealityVisionBulk` does not exist. (A compile failure is this step's "red".)
+Expected: compile error — `WorkloadKind::RealityVisionBulkThroughput` does not exist. (A compile failure is this step's "red".)
 
 - [ ] **Step 3: Add the variant and name mappings**
 
@@ -61,21 +61,21 @@ In the `WorkloadKind` enum (after `RealityVisionXudp,` ~:157):
 
 ```rust
     RealityVisionXudp,
-    RealityVisionBulk,
+    RealityVisionBulkThroughput,
 ```
 
 In `as_str` (after the `RealityVisionXudp` arm ~:178):
 
 ```rust
             Self::RealityVisionXudp => "reality-vision-xudp",
-            Self::RealityVisionBulk => "reality-vision-bulk-throughput",
+            Self::RealityVisionBulkThroughput => "reality-vision-bulk-throughput",
 ```
 
 In `parse` (after the `reality-vision-xudp` arm ~:199):
 
 ```rust
             "reality-vision-xudp" => Ok(Self::RealityVisionXudp),
-            "reality-vision-bulk-throughput" => Ok(Self::RealityVisionBulk),
+            "reality-vision-bulk-throughput" => Ok(Self::RealityVisionBulkThroughput),
 ```
 
 In `supports_sing_box_process_engine` (~:216-228), extend the `matches!`:
@@ -89,7 +89,7 @@ In `supports_sing_box_process_engine` (~:216-228), extend the `matches!`:
                 | Self::MixedLongLived
                 | Self::UdpFreedom
                 | Self::RealityVisionXudp
-                | Self::RealityVisionBulk
+                | Self::RealityVisionBulkThroughput
 ```
 
 - [ ] **Step 4: Wire the remaining exhaustive matches**
@@ -99,7 +99,7 @@ In `supports_sing_box_process_engine` (~:216-228), extend the `matches!`:
 `WorkloadFixture::start` (~:729): change the arm head
 
 ```rust
-            WorkloadKind::RealityVisionXudp | WorkloadKind::RealityVisionBulk => {
+            WorkloadKind::RealityVisionXudp | WorkloadKind::RealityVisionBulkThroughput => {
                 let (vless_addr, process) =
                     start_xray_core_reality_vision_server(options, run_dir, binary_dir).await?;
 ```
@@ -107,7 +107,7 @@ In `supports_sing_box_process_engine` (~:216-228), extend the `matches!`:
 `xray_rust_config` (~:4093): change the arm head
 
 ```rust
-        WorkloadKind::RealityVisionXudp | WorkloadKind::RealityVisionBulk => {
+        WorkloadKind::RealityVisionXudp | WorkloadKind::RealityVisionBulkThroughput => {
             reality_vision_xudp_config(port, SocketAddr::from((Ipv4Addr::LOCALHOST, 443)))
         }
 ```
@@ -115,7 +115,7 @@ In `supports_sing_box_process_engine` (~:216-228), extend the `matches!`:
 `sing_box_config` (~:4129): change the arm head and generalize the error message
 
 ```rust
-        WorkloadKind::RealityVisionXudp | WorkloadKind::RealityVisionBulk => {
+        WorkloadKind::RealityVisionXudp | WorkloadKind::RealityVisionBulkThroughput => {
             let vless_addr = fixture.vless_addr.ok_or_else(|| {
                 BenchError::InvalidArguments(format!(
                     "{} workload requires a VLESS Reality server fixture",
@@ -129,7 +129,7 @@ In `supports_sing_box_process_engine` (~:216-228), extend the `matches!`:
 `engine_config` (~:4184): change the arm head and generalize the error message
 
 ```rust
-        WorkloadKind::RealityVisionXudp | WorkloadKind::RealityVisionBulk => {
+        WorkloadKind::RealityVisionXudp | WorkloadKind::RealityVisionBulkThroughput => {
             let vless_addr = fixture.vless_addr.ok_or_else(|| {
                 BenchError::InvalidArguments(format!(
                     "{} workload requires a VLESS Reality server fixture",
@@ -143,7 +143,7 @@ In `supports_sing_box_process_engine` (~:216-228), extend the `matches!`:
 `run_engine_once` dispatch (~:6464): add after the `RealityVisionXudp` arm
 
 ```rust
-            WorkloadKind::RealityVisionBulk => {
+            WorkloadKind::RealityVisionBulkThroughput => {
                 run_tcp_bulk_throughput_workload(engine.socks_addr, options).await
             }
 ```
@@ -276,7 +276,7 @@ const CHART_SLOTS: [(WorkloadKind, Option<u64>); 9] = [
     (WorkloadKind::UdpFreedom, None),
     (WorkloadKind::RealityVisionXudp, None),
     (WorkloadKind::TcpBulkThroughput, None),
-    (WorkloadKind::RealityVisionBulk, None),
+    (WorkloadKind::RealityVisionBulkThroughput, None),
     (WorkloadKind::RoutedTcpFreedom, None),
 ];
 ```
@@ -302,7 +302,7 @@ New chart entry, inserted in the `charts` vec directly after the `"throughput"` 
                 series_labels: &SERIES_LABELS_ALL,
                 groups: vec![optional_metric_group(
                     &loaded,
-                    WorkloadKind::RealityVisionBulk,
+                    WorkloadKind::RealityVisionBulkThroughput,
                     None,
                     "throughput",
                     |summary| summary.throughput_mbps.as_ref(),
