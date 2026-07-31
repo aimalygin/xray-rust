@@ -217,7 +217,9 @@ The compare command auto-builds `target/debug/xray-rust`, an Xray-core binary, a
 
 ## Publishing Numbers and Charts
 
-Numbers quoted in the README must come from release builds on both sides. The
+Numbers quoted in the README and in
+[docs/benchmarks/results.md](benchmarks/results.md) must come from release
+builds on both sides. The
 harness's default debug auto-build of `xray-rust` is for development only; Go
 engines are always optimized builds, so a debug Rust binary makes whichever
 number you quote untrustworthy. Build and pass the release binary explicitly,
@@ -244,7 +246,9 @@ above). Each compare invocation writes one `target/benchmarks/<run-id>`
 group; the `--group` flags passed to `chart` must jointly cover all nine
 series.
 
-`chart` renders the README SVG charts from one or more compare run groups:
+`chart` renders the published SVG charts (README highlights plus the rest in
+[docs/benchmarks/results.md](benchmarks/results.md)) from one or more compare
+run groups:
 
 ```sh
 cargo run --release -p xray-bench -- chart \
