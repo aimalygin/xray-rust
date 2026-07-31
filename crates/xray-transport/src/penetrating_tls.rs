@@ -18,6 +18,7 @@ pub(crate) struct CapturedTcpStream {
     stream: TcpStream,
     server_read_log: Option<ServerReadLog>,
     tls_read_limiter: TlsRecordReadLimiter,
+    limiter_released: bool,
 }
 
 impl CapturedTcpStream {
@@ -26,11 +27,24 @@ impl CapturedTcpStream {
             stream,
             server_read_log,
             tls_read_limiter: TlsRecordReadLimiter::new(),
+            limiter_released: false,
         }
     }
 
     fn into_inner(self) -> TcpStream {
         self.stream
+    }
+
+    /// Stop aligning socket reads to TLS record boundaries.
+    ///
+    /// The limiter exists so that rustls's deframer never buffers bytes past
+    /// the record it is decrypting, which keeps a Vision direct-mode unwrap
+    /// lossless. Once the peer commits to `VisionCommand::End` (or Vision is
+    /// not in play at all), direct mode can never engage and reads may pull
+    /// as much as the socket offers.
+    fn release_record_alignment(&mut self) {
+        self.limiter_released = true;
+        self.server_read_log = None;
     }
 }
 
@@ -94,24 +108,41 @@ impl AsyncRead for CapturedTcpStream {
             return Poll::Ready(Ok(()));
         }
 
+        if this.limiter_released {
+            return Pin::new(&mut this.stream).poll_read(cx, output);
+        }
+
         let limit = this
             .tls_read_limiter
             .next_limit(output.remaining())
             .min(TLS_READ_CHUNK_LIMIT);
-        let mut scratch = [0; TLS_READ_CHUNK_LIMIT];
-        let mut limited = ReadBuf::new(&mut scratch[..limit]);
+        // Read straight into the caller's buffer through a limited view so a
+        // record-bounded read costs neither a scratch-buffer zeroing nor an
+        // extra copy.
+        let mut limited = output.take(limit);
         match Pin::new(&mut this.stream).poll_read(cx, &mut limited) {
             Poll::Ready(Ok(())) => {
-                let filled = limited.filled();
+                let filled_len = limited.filled().len();
+                // SAFETY: `limited` borrows the unfilled region of `output`,
+                // and the inner poll_read initialized `filled_len` bytes of it.
+                unsafe { output.assume_init(filled_len) };
+                output.advance(filled_len);
+                let filled_start = output.filled().len() - filled_len;
+                let filled = &output.filled()[filled_start..];
                 this.tls_read_limiter.observe(filled);
-                output.put_slice(filled);
                 if let Some(server_read_log) = &this.server_read_log {
                     if !filled.is_empty() {
                         let mut log = server_read_log
                             .lock()
                             .unwrap_or_else(|poisoned| poisoned.into_inner());
-                        if let Some(log) = log.as_mut() {
-                            log.extend_from_slice(filled);
+                        match log.as_mut() {
+                            Some(log) => log.extend_from_slice(filled),
+                            // The verifier drained the log; stop paying for
+                            // the lock on every subsequent read.
+                            None => {
+                                drop(log);
+                                this.server_read_log = None;
+                            }
                         }
                     }
                 }
@@ -285,6 +316,13 @@ impl AsyncWrite for PenetratingTlsStream {
 }
 
 impl TransportStream for PenetratingTlsStream {
+    fn release_record_alignment(&mut self) {
+        if let PenetratingTlsState::Tls(Some(stream)) = &mut self.state {
+            let (captured, _) = stream.as_mut().get_mut();
+            captured.release_record_alignment();
+        }
+    }
+
     fn poll_read_direct(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,

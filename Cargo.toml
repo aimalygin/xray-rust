@@ -61,4 +61,4 @@ strip = "symbols"
 panic = "unwind"
 
 [patch.crates-io]
-rustls = { git = "https://github.com/aimalygin/shaped-rustls", rev = "94f088e210fd2a56e413cce1c6d79c10852d500a" }
+rustls = { git = "https://github.com/aimalygin/shaped-rustls", rev = "f5ddf3a76073c4a09a49659d85b5e85e77a74ec4" }

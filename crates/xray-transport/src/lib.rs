@@ -117,6 +117,11 @@ pub enum TransportError {
 }
 
 pub trait TransportStream: AsyncRead + AsyncWrite + Send + Unpin {
+    /// Notify the transport that no consumer will ever switch this stream
+    /// into Vision direct mode, so any record-boundary read alignment kept
+    /// for a lossless direct-mode unwrap can be dropped. Default: no-op.
+    fn release_record_alignment(&mut self) {}
+
     fn poll_read_direct(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,

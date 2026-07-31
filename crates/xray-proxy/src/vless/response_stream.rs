@@ -145,6 +145,10 @@ impl<S> VisionStreamIo for VlessResponseStream<S>
 where
     S: VisionStreamIo,
 {
+    fn release_record_alignment(&mut self) {
+        self.inner.release_record_alignment();
+    }
+
     fn poll_read_direct(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,

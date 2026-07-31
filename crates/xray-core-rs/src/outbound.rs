@@ -141,6 +141,10 @@ impl AsyncWrite for VisionTransportStream {
 }
 
 impl VisionStreamIo for VisionTransportStream {
+    fn release_record_alignment(&mut self) {
+        self.inner.release_record_alignment();
+    }
+
     fn poll_read_direct(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -988,6 +992,9 @@ pub async fn open_vless_tcp_stream_with_resolver_and_dialer(
         return Ok(Box::new(VisionOutboundStream::new(stream)));
     }
 
+    // Without Vision there is no direct mode, so the transport never needs
+    // record-aligned reads.
+    stream.release_record_alignment();
     let stream = VlessResponseStream::new(stream);
     Ok(Box::new(VlessOutboundStream::new(stream)))
 }
@@ -1069,6 +1076,9 @@ pub(crate) async fn open_vless_udp_stream_with_resolver_dialer_and_options(
         ));
     }
 
+    // Without Vision there is no direct mode, so the transport never needs
+    // record-aligned reads.
+    stream.release_record_alignment();
     let stream = VlessResponseStream::new(stream);
     if uses_xudp {
         return Ok((

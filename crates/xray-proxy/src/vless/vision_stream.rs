@@ -21,6 +21,11 @@ const TLS_HANDSHAKE_TYPE_SERVER_HELLO: u8 = 0x02;
 const TLS_AES_128_CCM_8_SHA256: u16 = 0x1305;
 
 pub trait VisionStreamIo: AsyncRead + AsyncWrite + Unpin {
+    /// Notify the transport that direct mode can never engage on this stream,
+    /// so any record-boundary read alignment kept for a lossless direct-mode
+    /// unwrap can be dropped. Default: no-op.
+    fn release_record_alignment(&mut self) {}
+
     fn poll_read_direct(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -154,26 +159,6 @@ impl<S> VisionStream<S> {
         true
     }
 
-    fn decode_next_frame(&mut self) -> io::Result<bool> {
-        let Some(frame_len) = self.next_frame_len()? else {
-            return Ok(false);
-        };
-
-        let frame = self.raw_read.split_to(frame_len);
-        let unpadded = unpad_vision_block(&frame, &self.user_id).map_err(vision_to_io)?;
-        self.inbound_user_id_seen = true;
-        let command = unpadded.command;
-        self.filter_tls_packet(&unpadded.payload);
-        self.decoded_read.extend_from_slice(&unpadded.payload);
-        if matches!(command, VisionCommand::End | VisionCommand::Direct) {
-            self.padding_read_mode = false;
-            self.direct_read_mode = command == VisionCommand::Direct;
-            self.decoded_read.extend_from_slice(&self.raw_read.split());
-        }
-
-        Ok(true)
-    }
-
     fn queue_padded_write(
         &mut self,
         input: &[u8],
@@ -283,6 +268,31 @@ impl<S> VisionStream<S>
 where
     S: VisionStreamIo,
 {
+    fn decode_next_frame(&mut self) -> io::Result<bool> {
+        let Some(frame_len) = self.next_frame_len()? else {
+            return Ok(false);
+        };
+
+        let frame = self.raw_read.split_to(frame_len);
+        let unpadded = unpad_vision_block(&frame, &self.user_id).map_err(vision_to_io)?;
+        self.inbound_user_id_seen = true;
+        let command = unpadded.command;
+        self.filter_tls_packet(&unpadded.payload);
+        self.decoded_read.extend_from_slice(&unpadded.payload);
+        if matches!(command, VisionCommand::End | VisionCommand::Direct) {
+            self.padding_read_mode = false;
+            self.direct_read_mode = command == VisionCommand::Direct;
+            self.decoded_read.extend_from_slice(&self.raw_read.split());
+            if command == VisionCommand::End {
+                // The peer will never switch this stream to direct mode; the
+                // transport can stop aligning reads to TLS record boundaries.
+                self.inner.release_record_alignment();
+            }
+        }
+
+        Ok(true)
+    }
+
     fn poll_drain_pending(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         while !self.pending_write.is_empty() {
             let written =
