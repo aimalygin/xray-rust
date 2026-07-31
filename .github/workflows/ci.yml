@@ -124,6 +124,12 @@ jobs:
       - name: Build Apple XCFramework
         run: bash scripts/build-apple-xcframework.sh
 
+      # Ahead of the Swift tests: the regional-routing test builds a real core
+      # over rules carrying geosite/geoip matchers, so it needs the .dat files
+      # that are gitignored and fetched here.
+      - name: Install pinned Apple sample geodata
+        run: bash scripts/fetch-geodata.sh
+
       - name: Test Swift package
         env:
           CLANG_MODULE_CACHE_PATH: ${{ github.workspace }}/target/mobile/apple-clang-module-cache
@@ -136,9 +142,6 @@ jobs:
         env:
           XRAY_USE_PREBUILT_ARTIFACTS: "1"
         run: bash scripts/check-apple-adapter-link.sh
-
-      - name: Install pinned Apple sample geodata
-        run: bash scripts/fetch-geodata.sh
 
       - name: Build unsigned Apple sample apps
         run: |
@@ -197,7 +200,9 @@ jobs:
 
       - name: Install pinned Android SDK components
         run: |
-          sdkmanager --install \
+          # The runner image installs the command-line tools but puts no
+          # Android bin directory on PATH.
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install \
             "platforms;android-35" \
             "ndk;26.3.11579264" \
             "cmake;3.22.1"
