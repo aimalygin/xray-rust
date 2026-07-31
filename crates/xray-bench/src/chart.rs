@@ -220,6 +220,7 @@ const PLOT_BOTTOM: f64 = 330.0;
 const BAR_WIDTH: f64 = 44.0;
 const BAR_GAP: f64 = 2.0;
 
+#[derive(Debug)]
 pub(crate) struct Bar {
     pub series: usize,
     pub value: f64,
@@ -227,6 +228,7 @@ pub(crate) struct Bar {
     pub hi: f64,
 }
 
+#[derive(Debug)]
 pub(crate) struct BarGroup {
     pub label: String,
     pub bars: Vec<Bar>,
@@ -504,6 +506,12 @@ fn rss_group(
     }
 }
 
+/// A latency series needs enough iterations to outlast the engine's warm-up
+/// transient; ten-iteration runs measure only that transient and swing by more
+/// than 2x between sessions. Summaries written before the harness recorded
+/// workload parameters report zero and are rejected the same way.
+const MIN_CHARTED_LATENCY_ITERATIONS: u64 = 100;
+
 fn latency_group(
     loaded: &LoadedSummaries,
     workload: WorkloadKind,
@@ -521,6 +529,15 @@ fn latency_group(
                     workload.as_str()
                 ))
             })?;
+            if summary.iterations < MIN_CHARTED_LATENCY_ITERATIONS {
+                return Err(BenchError::InvalidArguments(format!(
+                    "summary for {} {} has {} iterations; charted latency series need at least {} (see docs/benchmarks.md)",
+                    engine.as_str(),
+                    workload.as_str(),
+                    summary.iterations,
+                    MIN_CHARTED_LATENCY_ITERATIONS,
+                )));
+            }
             // Bar: median of per-run medians. Whisker: min run median up to
             // the median of per-run p95s.
             Ok(Bar {
@@ -836,7 +853,13 @@ mod tests {
                 p95: 14_336,
             },
             cpu_millis: metric.clone(),
-            cpu_millis_per_gib: Some(metric.clone()),
+            // Distinct from `metric` so a test asserting on this value pins metric
+            // selection, not just workload selection.
+            cpu_millis_per_gib: Some(MetricSummary {
+                min: 700,
+                median: 820,
+                p95: 900,
+            }),
             throughput_mbps: Some(MetricSummary {
                 min: 4000,
                 median: 4300,
@@ -1070,6 +1093,8 @@ mod tests {
                     workload,
                     "tcp-freedom" | "udp-freedom" | "reality-vision-xudp"
                 ) {
+                    // Charted latency series must clear MIN_CHARTED_LATENCY_ITERATIONS.
+                    summary.iterations = 1000;
                     let metric = MetricSummary {
                         min: 90,
                         median: 130,
@@ -1155,6 +1180,10 @@ mod tests {
         assert!(reality.contains(">4.30<"));
         assert!(reality.contains("reality-vision-bulk-throughput"));
 
+        let cpu = fs::read_to_string(out_dir.join("cpu-per-gib-light.svg")).unwrap();
+        assert!(cpu.contains("tcp-bulk-throughput"));
+        assert!(cpu.contains(">820<"));
+
         let geo_setup = fs::read_to_string(out_dir.join("geo-setup-latency-light.svg")).unwrap();
         assert!(geo_setup.contains("Xray-core"));
         assert!(geo_setup.contains(">180<"));
@@ -1184,6 +1213,30 @@ mod tests {
         assert!(error.to_string().contains("no latency data"));
         assert!(!options.out_dir.exists());
         fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn latency_group_rejects_degenerate_iteration_counts() {
+        let workload = WorkloadKind::TcpFreedom;
+        let entries = ENGINES
+            .iter()
+            .map(|engine| {
+                let mut summary = test_summary_with(engine.as_str(), workload.as_str(), "ok", 0);
+                summary.iterations = 10;
+                summary.latency_us = Some(aggregate(90, 130, 200));
+                ((*engine, workload, None), summary)
+            })
+            .collect();
+        let loaded = LoadedSummaries { entries };
+
+        let error = latency_group(&loaded, workload, None).unwrap_err();
+
+        let message = error.to_string();
+        assert!(message.contains("10 iterations"), "{message}");
+        assert!(
+            message.contains(&MIN_CHARTED_LATENCY_ITERATIONS.to_string()),
+            "{message}"
+        );
     }
 
     fn fixture_spec() -> ChartSpec {

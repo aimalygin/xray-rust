@@ -535,9 +535,13 @@ pub struct WorkloadOutcome {
     pub bytes_received: u64,
     pub latencies_us: Vec<u128>,
     pub setup_samples: Vec<FlowSetupSample>,
-    /// Wall time spent moving payload bytes, excluding connection setup. Workloads that
-    /// report it get their throughput measured over this window instead of the whole run.
-    pub transfer_duration: Option<Duration>,
+    /// (start, end) of the wall-clock span spent moving payload bytes, excluding connection
+    /// setup. Workloads that report it get their throughput measured over this window
+    /// instead of the whole run. Each connection starts its own clock at its own first
+    /// byte, so merging must union the intervals rather than take the longest duration:
+    /// two connections with staggered handshakes can have disjoint windows whose union
+    /// exceeds either one's span.
+    pub transfer_window: Option<(Instant, Instant)>,
     pub blackhole_connections_accepted: Option<u64>,
     pub blackhole_connections_active: Option<u64>,
 }
@@ -559,10 +563,14 @@ impl WorkloadOutcome {
         self.bytes_received += other.bytes_received;
         self.latencies_us.extend(other.latencies_us);
         self.setup_samples.extend(other.setup_samples);
-        // Concurrent connections transfer in parallel, so the wall-clock transfer span of the
-        // merged outcome is the slowest connection's span (exact for a single connection).
-        self.transfer_duration = match (self.transfer_duration, other.transfer_duration) {
-            (Some(current), Some(incoming)) => Some(current.max(incoming)),
+        // Each connection starts its own clock at its own first byte, so the merged window
+        // is the union of the per-connection windows, not the longer of the two durations:
+        // with staggered handshakes the windows can be disjoint, and the union then spans
+        // more wall-clock time than either connection's own window.
+        self.transfer_window = match (self.transfer_window, other.transfer_window) {
+            (Some((start_a, end_a)), Some((start_b, end_b))) => {
+                Some((start_a.min(start_b), end_a.max(end_b)))
+            }
             (current, incoming) => current.or(incoming),
         };
         self.blackhole_connections_accepted = other
@@ -1808,7 +1816,7 @@ async fn run_tcp_bulk_connection(
     let transfer = read_and_validate_bulk_stream(&mut client, template, iterations).await?;
     Ok(WorkloadOutcome {
         bytes_received: transfer.bytes,
-        transfer_duration: transfer.duration,
+        transfer_window: transfer.window,
         ..WorkloadOutcome::default()
     })
 }
@@ -2329,8 +2337,8 @@ fn bulk_pattern_template(payload_size: usize) -> Vec<u8> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct BulkTransfer {
     bytes: u64,
-    /// First byte in to last validated byte out, or `None` when no bytes moved.
-    duration: Option<Duration>,
+    /// (first byte in, last validated byte out), or `None` when no bytes moved.
+    window: Option<(Instant, Instant)>,
 }
 
 async fn read_and_validate_bulk_stream<R>(
@@ -2378,7 +2386,7 @@ where
     }
     Ok(BulkTransfer {
         bytes: received,
-        duration: started.map(|started| started.elapsed()),
+        window: started.map(|started| (started, Instant::now())),
     })
 }
 
@@ -6580,7 +6588,9 @@ async fn run_engine_once(
         summary.bytes_sent,
         summary.bytes_received,
     );
-    let transfer_duration = workload_outcome.transfer_duration;
+    let transfer_duration = workload_outcome
+        .transfer_window
+        .map(|(start, end)| end.saturating_duration_since(start));
     let throughput_mbps = throughput_mbps(
         summary.bytes_sent,
         summary.bytes_received,
@@ -8283,50 +8293,68 @@ mod tests {
     }
 
     #[test]
-    fn extending_outcomes_keeps_the_longest_transfer_duration() {
+    fn extending_outcomes_merges_transfer_windows_as_an_interval_union() {
+        let base = Instant::now();
+
         let mut none_then_some = WorkloadOutcome::empty();
         none_then_some.extend(WorkloadOutcome {
-            transfer_duration: Some(Duration::from_secs(3)),
+            transfer_window: Some((base, base + Duration::from_secs(3))),
             ..WorkloadOutcome::default()
         });
         assert_eq!(
-            none_then_some.transfer_duration,
-            Some(Duration::from_secs(3))
+            none_then_some.transfer_window,
+            Some((base, base + Duration::from_secs(3)))
         );
 
         let mut some_then_none = WorkloadOutcome {
-            transfer_duration: Some(Duration::from_secs(3)),
+            transfer_window: Some((base, base + Duration::from_secs(3))),
             ..WorkloadOutcome::default()
         };
         some_then_none.extend(WorkloadOutcome::empty());
         assert_eq!(
-            some_then_none.transfer_duration,
-            Some(Duration::from_secs(3))
+            some_then_none.transfer_window,
+            Some((base, base + Duration::from_secs(3)))
         );
 
-        let mut rising = WorkloadOutcome {
-            transfer_duration: Some(Duration::from_secs(2)),
+        // Overlapping windows: connection A runs [0s, 5s]; connection B starts mid-flight
+        // at 2s and runs to 6s. The union [0s, 6s] is wider than either individual span
+        // (5s and 4s).
+        let mut overlapping = WorkloadOutcome {
+            transfer_window: Some((base, base + Duration::from_secs(5))),
             ..WorkloadOutcome::default()
         };
-        rising.extend(WorkloadOutcome {
-            transfer_duration: Some(Duration::from_secs(5)),
+        overlapping.extend(WorkloadOutcome {
+            transfer_window: Some((base + Duration::from_secs(2), base + Duration::from_secs(6))),
             ..WorkloadOutcome::default()
         });
-        assert_eq!(rising.transfer_duration, Some(Duration::from_secs(5)));
+        assert_eq!(
+            overlapping.transfer_window,
+            Some((base, base + Duration::from_secs(6)))
+        );
 
-        let mut falling = WorkloadOutcome {
-            transfer_duration: Some(Duration::from_secs(5)),
+        // Disjoint windows: connection A's clock runs [0s, 2s]; connection B starts its own
+        // clock later, at 5s, and runs to 8s. A max-span rule would report
+        // max(2s, 3s) = 3s; the correct union span is the full 0..8s range, which exceeds
+        // either individual span and which a max-span rule could never produce.
+        let mut disjoint = WorkloadOutcome {
+            transfer_window: Some((base, base + Duration::from_secs(2))),
             ..WorkloadOutcome::default()
         };
-        falling.extend(WorkloadOutcome {
-            transfer_duration: Some(Duration::from_secs(2)),
+        disjoint.extend(WorkloadOutcome {
+            transfer_window: Some((base + Duration::from_secs(5), base + Duration::from_secs(8))),
             ..WorkloadOutcome::default()
         });
-        assert_eq!(falling.transfer_duration, Some(Duration::from_secs(5)));
+        let (start, end) = disjoint.transfer_window.unwrap();
+        assert_eq!(start, base);
+        assert_eq!(end, base + Duration::from_secs(8));
+        let merged_span = end.duration_since(start);
+        assert_eq!(merged_span, Duration::from_secs(8));
+        assert!(merged_span > Duration::from_secs(2), "exceeds A's own span");
+        assert!(merged_span > Duration::from_secs(3), "exceeds B's own span");
 
         let mut neither = WorkloadOutcome::empty();
         neither.extend(WorkloadOutcome::empty());
-        assert_eq!(neither.transfer_duration, None);
+        assert_eq!(neither.transfer_window, None);
     }
 
     #[test]
@@ -8541,6 +8569,35 @@ mod tests {
     }
 
     #[test]
+    fn deserializes_summary_json_without_throughput_field() {
+        // Mirrors deserializes_result_json_without_throughput_field: BenchSummary is what
+        // the chart command consumes, and the publishing recipe explicitly mixes run
+        // groups written by different harness vintages, so a summary.json predating
+        // transfer_duration_ms and throughput_mbps must still parse.
+        let raw = r#"{
+            "engine": "xray-rust",
+            "workload": "tcp-freedom",
+            "status": "ok",
+            "runs": 5,
+            "duration_ms": { "min": 1, "median": 2, "p95": 3 },
+            "peak_rss_kib": { "min": 1, "median": 2, "p95": 3 },
+            "cpu_millis": { "min": 1, "median": 2, "p95": 3 },
+            "cpu_millis_per_gib": null,
+            "latency_us": null,
+            "setup_us": null,
+            "bytes_sent": { "min": 1, "median": 2, "p95": 3 },
+            "bytes_received": { "min": 1, "median": 2, "p95": 3 },
+            "results": []
+        }"#;
+        let summary: BenchSummary = serde_json::from_str(raw).unwrap();
+        assert_eq!(summary.throughput_mbps, None);
+        assert_eq!(summary.transfer_duration_ms, None);
+        assert_eq!(summary.connections, 0);
+        assert_eq!(summary.iterations, 0);
+        assert_eq!(summary.payload_size, 0);
+    }
+
+    #[test]
     fn summarize_rejects_mixed_workload_parameters() {
         let first = BenchResult {
             engine: "xray-rust".to_owned(),
@@ -8618,9 +8675,9 @@ mod tests {
         let whole_call = call_started.elapsed();
 
         assert_eq!(transfer.bytes, 2 * 1024);
-        let window = transfer
-            .duration
-            .expect("bytes moved, so there is a window");
+        let (window_start, window_end) =
+            transfer.window.expect("bytes moved, so there is a window");
+        let window = window_end.duration_since(window_start);
         assert!(whole_call >= Duration::from_millis(300));
         assert!(
             window < Duration::from_millis(150),
@@ -8640,7 +8697,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(transfer.bytes, 0);
-        assert_eq!(transfer.duration, None);
+        assert_eq!(transfer.window, None);
     }
 
     #[tokio::test]
