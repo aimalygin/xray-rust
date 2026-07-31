@@ -100,9 +100,11 @@ Documented caveats (docs/benchmarks.md):
 throughput chart: one group (`reality-vision-bulk-throughput`), three engine
 bars, Gbps, same `optional_metric_group` machinery and styling; stems
 `reality-throughput-{light,dark}`.
-The existing six charts are unchanged except the latency chart's third
-group. No `load_summary` changes — neither new slot needs a connections
-filter.
+The `throughput` chart's title gained the suffix "through SOCKS"; the
+throughput metric itself changed globally, under both bulk charts, not just
+the new one — see Amendments. Aside from those two changes and the latency
+chart's third group, the existing six charts are unchanged. No
+`load_summary` changes — neither new slot needs a connections filter.
 
 ## README and Docs
 
@@ -131,3 +133,32 @@ filter.
 All changes live in `crates/xray-bench` (plus README/docs/media). The
 production runtime is untouched — SOCKS UDP, VLESS, REALITY, and Vision are
 existing runtime features; the bench only exercises them.
+
+## Amendments
+
+This repo freezes specs at design time; changes discovered during
+implementation are recorded here rather than edited into the body above.
+
+1. **REALITY fixture readiness** (commit 100419b): the fixture logs
+   `started` when its listener binds, ~5.1 s before the REALITY library
+   finishes learning the real dest's post-handshake record shape. Clients
+   connecting inside that window stalled inside the measurement window —
+   understating tunnel throughput about 4.5× — and intermittently died on
+   the dest's ten-second incomplete-handshake FIN. The harness now waits out
+   a warm-up (`XRAY_BENCH_REALITY_WARMUP_MS`) before returning the fixture.
+
+2. **Throughput window** (commit 8310a96): throughput divided bytes by the
+   whole workload window, so each engine's connection setup was amortized
+   into its rate; because Xray-core answers SOCKS eagerly and finishes its
+   REALITY handshake lazily, it carried ~640 ms of setup against ~120 ms for
+   the others, which inverted the tunnel ranking. Throughput is now measured
+   from the first byte to the last validated byte, with
+   `transfer_duration_ms` recorded alongside `duration_ms`. This changes the
+   metric under both bulk charts, not only the new one.
+
+3. **Latency sample size** (commit 65e2346): the charted `tcp-freedom`
+   series used ten iterations, which measures only the engine warm-up
+   transient; it read 159/163/136 µs against four prior publications that
+   agreed on ~38/36/37. The charted latency series now use 1000 iterations,
+   and the chart command rejects latency summaries below a minimum
+   iteration count.

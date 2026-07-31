@@ -285,7 +285,7 @@ The first scoreboard is intentionally portable and comparable across Go and Rust
 - peak resident set size from `ps` RSS.
 - CPU time delta from `ps` cumulative process time.
 - CPU milliseconds per GiB transferred when a workload moves payload bytes.
-- throughput megabits per second when a workload moves payload bytes, computed from validated bytes over the transfer window only — first byte to last validated byte, excluding connection setup. The whole-run window stays available as `duration_ms` and the transfer window as `transfer_duration_ms`, so their difference exposes the setup cost instead of hiding it. This matters for tunneled workloads such as `reality-vision-bulk-throughput`: a REALITY handshake takes hundreds of milliseconds and, folded into the denominator, would be amortized into the rate and understate an engine that dials slowly but streams quickly. Workloads that do not measure a transfer window fall back to the whole-run window. The byte count aggregates both directions, matching the CPU-per-GiB convention, so echo-style workloads read roughly twice their one-way goodput; quote streaming throughput from `tcp-bulk-throughput`, where traffic is one-directional.
+- throughput megabits per second when a workload moves payload bytes, computed from validated bytes over the transfer window only — first byte to last validated byte, excluding connection setup. This rate is exact only at `--connections 1`; with concurrent connections it is the aggregate over the union of the per-connection transfer windows, not a per-connection average. The whole-run window stays available as `duration_ms` and the transfer window as `transfer_duration_ms`, so their difference exposes the setup cost instead of hiding it. This matters for tunneled workloads such as `reality-vision-bulk-throughput`: against the shared local REALITY fixture, Xray-core answers SOCKS eagerly and completes its REALITY handshake lazily, spending roughly 640 ms before the first byte, against roughly 90-120 ms for sing-box and xray-rust — folded into the denominator, that gap would be amortized into the rate and understate the engine that dials slowly but streams quickly. Workloads that do not measure a transfer window fall back to the whole-run window. `cpu_millis_per_gib` is still measured over the whole-run window rather than the transfer window; at gigabyte scale this is immaterial (setup burns a few milliseconds of CPU) but is worth noting since the two metrics sit adjacent and now cover different windows. The byte count aggregates both directions, matching the CPU-per-GiB convention, so echo-style workloads read roughly twice their one-way goodput; quote streaming throughput from `tcp-bulk-throughput`, where traffic is one-directional.
 - thread count when the local `ps` implementation exposes it.
 - validated bytes sent and received by the workload.
 - latency microsecond percentiles for traffic workloads. For `many-idle-flows`, latency is SOCKS TCP flow setup time.
@@ -332,6 +332,16 @@ dialing (`proxy/socks/protocol.go` → `writeSocks5Response`, dispatch
 afterwards). The chart therefore compares different spans of work and must
 not be read as a pure routing-cost comparison; it is published as "time to
 SOCKS reply" with this note.
+
+**Run-to-run instability:** the rendered `geo-setup-latency` chart
+(`docs/benchmarks/media/geo-setup-latency-{light,dark}.svg`, committed but
+not currently embedded in the README) swung from 426 µs / 126 µs to 181 µs /
+201 µs (xray-rust / Xray-core) across two publication runs with no runtime
+change in between — a rank flip, not just noise in the margin. At
+`--connections 8`, each run contributes only 8 `setup_socks_connect_us`
+samples, which is too small a sample for this metric to be published as a
+cross-engine comparison at the current recipe; treat it as directional only
+until the sample size is raised.
 
 `many-idle-flows` opens `--connections` SOCKS TCP flows to a local target, keeps them idle for `--duration-ms`, and reports RSS/CPU while those flows are held. This is the first local memory-slope workload; compare its peak RSS against `idle` and divide the delta by the connection count for an approximate per-flow resident-memory cost. For a scale point, the publication charts also run `many-idle-flows` with
 `--connections 1000`. xray-rust's inbounds have no application-level
