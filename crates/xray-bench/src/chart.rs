@@ -461,13 +461,15 @@ const ENGINES: [EngineKind; 3] = [
     EngineKind::SingBox,
 ];
 
-const CHART_SLOTS: [(WorkloadKind, Option<u64>); 7] = [
+const CHART_SLOTS: [(WorkloadKind, Option<u64>); 9] = [
     (WorkloadKind::Idle, None),
     (WorkloadKind::ManyIdleFlows, Some(100)),
     (WorkloadKind::ManyIdleFlows, Some(1000)),
     (WorkloadKind::TcpFreedom, None),
+    (WorkloadKind::UdpFreedom, None),
     (WorkloadKind::RealityVisionXudp, None),
     (WorkloadKind::TcpBulkThroughput, None),
+    (WorkloadKind::RealityVisionBulkThroughput, None),
     (WorkloadKind::RoutedTcpFreedom, None),
 ];
 
@@ -689,6 +691,7 @@ pub fn run_chart(options: &ChartOptions) -> Result<(), BenchError> {
                 series_labels: &SERIES_LABELS_ALL,
                 groups: vec![
                     latency_group(&loaded, WorkloadKind::TcpFreedom, None)?,
+                    latency_group(&loaded, WorkloadKind::UdpFreedom, None)?,
                     latency_group(&loaded, WorkloadKind::RealityVisionXudp, None)?,
                 ],
             },
@@ -701,6 +704,23 @@ pub fn run_chart(options: &ChartOptions) -> Result<(), BenchError> {
                 groups: vec![optional_metric_group(
                     &loaded,
                     WorkloadKind::TcpBulkThroughput,
+                    None,
+                    "throughput",
+                    |summary| summary.throughput_mbps.as_ref(),
+                    1000.0,
+                )?],
+            },
+        ),
+        (
+            "reality-throughput",
+            ChartSpec {
+                title:
+                    "Bulk TCP throughput through VLESS + REALITY + Vision — Gbps (higher is better)"
+                        .to_owned(),
+                series_labels: &SERIES_LABELS_ALL,
+                groups: vec![optional_metric_group(
+                    &loaded,
+                    WorkloadKind::RealityVisionBulkThroughput,
                     None,
                     "throughput",
                     |summary| summary.throughput_mbps.as_ref(),
@@ -1020,13 +1040,15 @@ mod tests {
     }
 
     fn write_full_group(root: &Path) -> Vec<PathBuf> {
-        let slots: [(&str, Option<u64>); 7] = [
+        let slots: [(&str, Option<u64>); 9] = [
             ("idle", None),
             ("many-idle-flows", Some(100)),
             ("many-idle-flows", Some(1000)),
             ("tcp-freedom", None),
+            ("udp-freedom", None),
             ("reality-vision-xudp", None),
             ("tcp-bulk-throughput", None),
+            ("reality-vision-bulk-throughput", None),
             ("routed-tcp-freedom", None),
         ];
         let mut groups = Vec::new();
@@ -1043,7 +1065,10 @@ mod tests {
             for engine in engines {
                 let mut summary =
                     test_summary_with(engine, workload, "ok", connections.unwrap_or(0));
-                if matches!(workload, "tcp-freedom" | "reality-vision-xudp") {
+                if matches!(
+                    workload,
+                    "tcp-freedom" | "udp-freedom" | "reality-vision-xudp"
+                ) {
                     let metric = MetricSummary {
                         min: 90,
                         median: 130,
@@ -1079,7 +1104,7 @@ mod tests {
     }
 
     #[test]
-    fn run_chart_writes_twelve_theme_files() {
+    fn run_chart_writes_fourteen_theme_files() {
         let root = temp_root("e2e");
         let out_dir = root.join("media");
         let mut options = parse_chart_args(&full_args(root.to_str().unwrap())).unwrap();
@@ -1093,6 +1118,7 @@ mod tests {
             ("memory-rss", "Peak resident set size"),
             ("latency", "Round-trip latency"),
             ("throughput", "Bulk TCP throughput"),
+            ("reality-throughput", "VLESS + REALITY + Vision"),
             ("cpu-per-gib", "CPU cost"),
             ("geo-setup-latency", "Time to SOCKS CONNECT reply"),
             ("geo-memory", "Routing memory"),
@@ -1115,6 +1141,12 @@ mod tests {
         assert!(!memory.contains("geodata-test"));
         let throughput = fs::read_to_string(out_dir.join("throughput-light.svg")).unwrap();
         assert!(throughput.contains(">4.30<"));
+
+        let latency = fs::read_to_string(out_dir.join("latency-light.svg")).unwrap();
+        assert!(latency.contains("udp-freedom"));
+        let reality = fs::read_to_string(out_dir.join("reality-throughput-light.svg")).unwrap();
+        assert!(reality.contains(">4.30<"));
+        assert!(reality.contains("reality-vision-bulk-throughput"));
 
         let geo_setup = fs::read_to_string(out_dir.join("geo-setup-latency-light.svg")).unwrap();
         assert!(geo_setup.contains("Xray-core"));

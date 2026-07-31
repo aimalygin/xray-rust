@@ -36,7 +36,8 @@ echo server, measures per-iteration round-trip latency, and is in
 
 - `CHART_SLOTS` gains `(WorkloadKind::UdpFreedom, None)`;
 - the latency chart calls the existing generic `latency_group` for it, group
-  label `udp-freedom`, after `reality-vision-xudp`;
+  label `udp-freedom`, between `tcp-freedom` and `reality-vision-xudp`
+  (direct paths grouped before the tunneled one);
 - publication recipe row (already the documented reference command):
   `compare --workload udp-freedom --runs 5 --connections 1 --iterations 1000
   --payload-size 512`.
@@ -115,8 +116,9 @@ filter.
 ## Testing
 
 - Workload name parse/`as_str` round-trip for the new variant.
-- Golden charts regenerated (`UPDATE_CHART_GOLDENS=1`); chart e2e/determinism
-  tests extended for the new stem and the 3-group latency chart.
+- Goldens are untouched — they cover `render_bar_chart` via a fixed
+  memory-rss fixture this change does not affect; the chart e2e test is
+  extended for the new stem and the 3-group latency chart instead.
 - Chart error paths (missing summary for a slot) already cover the new slots
   generically; no new error machinery.
 - The new workload's data path is exercised end to end by running it —
