@@ -70,8 +70,8 @@ Reused pieces, all existing:
 - workload driver: the `tcp-bulk-throughput` connection loop, dispatched for
   the new `WorkloadKind` variant.
 
-New surface is limited to: the `WorkloadKind::RealityVisionBulk` variant
-(CLI name `reality-vision-bulk-throughput`, parse + `as_str`), its dispatch
+New surface is limited to: the `WorkloadKind::RealityVisionBulkThroughput`
+variant (CLI name `reality-vision-bulk-throughput`, parse + `as_str`), its dispatch
 in `run_engine_once` and `engine_config`/`sing_box_config` selection, and
 membership in `supports_sing_box_process_engine`.
 
@@ -95,10 +95,11 @@ Documented caveats (docs/benchmarks.md):
 ## Chart Module Changes
 
 `CHART_SLOTS` grows to 9 entries (adds `UdpFreedom` and
-`RealityVisionBulk`, both `connections: None`). New chart builder
-`reality_throughput_chart`: one group (`reality-vision-bulk-throughput`),
-three engine bars, Gbps, same `optional_metric_group` machinery and styling
-as the existing throughput chart; stems `reality-throughput-{light,dark}`.
+`RealityVisionBulkThroughput`, both `connections: None`). New chart entry
+`reality-throughput`, inlined in the `charts` vec like the existing
+throughput chart: one group (`reality-vision-bulk-throughput`), three engine
+bars, Gbps, same `optional_metric_group` machinery and styling; stems
+`reality-throughput-{light,dark}`.
 The existing six charts are unchanged except the latency chart's third
 group. No `load_summary` changes — neither new slot needs a connections
 filter.
