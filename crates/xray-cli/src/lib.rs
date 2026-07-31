@@ -284,15 +284,15 @@ pub fn nofile_limits() -> Option<NofileLimits> {
 )]
 pub fn raise_nofile_limit() -> Option<NofileLimits> {
     let current = nofile_limits()?;
-    let mut target = current.hard;
+    let target = current.hard;
+    // macOS rejects setrlimit above kern.maxfilesperproc even though the
+    // hard limit reports unlimited. Shadow rather than mutate so the binding
+    // needs no `mut` on the unix targets that skip this clamp.
     #[cfg(target_os = "macos")]
-    {
-        // macOS rejects setrlimit above kern.maxfilesperproc even though the
-        // hard limit reports unlimited.
-        if let Some(max_files) = darwin_max_files_per_proc() {
-            target = target.min(max_files);
-        }
-    }
+    let target = match darwin_max_files_per_proc() {
+        Some(max_files) => target.min(max_files),
+        None => target,
+    };
     if current.soft >= target {
         return Some(current);
     }
