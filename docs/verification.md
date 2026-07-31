@@ -45,6 +45,12 @@ CI downloads Gitleaks 8.30.1 and verifies its release SHA-256 before use. The
 custom check covers retired VLESS/REALITY values that generic token scanners do
 not recognize; Gitleaks covers common credential formats.
 
+The custom check attributes each hit to the commit carrying it and reports
+every commit except the two pre-release ones grandfathered by commit id in
+`scripts/tests/check-json-fixture-safety.py` (see the disclosure section of
+`SECURITY.md`). It also fails if a grandfathered commit stops matching, since
+that means the allowlist no longer describes the history it was derived from.
+
 ## Focused runtime checks
 
 The main local integration target exercises SOCKS, HTTP CONNECT, TUN,

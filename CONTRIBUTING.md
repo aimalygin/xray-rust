@@ -27,8 +27,11 @@ Platform changes should also run the relevant checks documented in
 `docs/mobile-testing.md`.
 
 Before publishing or rewriting a branch, scan all reachable history as
-documented in `docs/verification.md`. The history scan intentionally fails if a
-retired live-profile value can still be reached from any ref.
+documented in `docs/verification.md`. The history scan fails if a retired
+live-profile value is carried by any commit other than the two pre-release
+commits grandfathered in `scripts/tests/check-json-fixture-safety.py`; that
+disclosure is recorded in `SECURITY.md`. Do not extend the allowlist to cover
+new commits — remove the value instead.
 
 ## Pull requests
 

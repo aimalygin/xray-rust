@@ -10,6 +10,7 @@ import os
 import re
 import subprocess
 import unittest
+import unittest.mock
 from pathlib import Path
 from typing import Any
 
@@ -79,19 +80,46 @@ APPROVED_TEST_CREDENTIAL_DIGESTS = frozenset(
 
 # SHA-256 digests of values retired from a previously committed live profile.
 # The scanner compares candidate tokens by digest so neither CI output nor this
-# source file republishes the original endpoint or credential-shaped values.
+# source file republishes the credential-shaped values.
+#
+# Only high-entropy values belong here. An unsalted digest protects a value
+# only as far as its keyspace: the retired profile's server address (2^32) and
+# camouflage SNI (a dictionary word) would be recoverable from these digests
+# alone, so listing them would publish what it claims to withhold. Those two
+# are documented in SECURITY.md instead, which is honest about the fact that
+# they are disclosed and cannot be rotated in place. The three below carry
+# 122, 256 and 64 bits, so their digests disclose nothing.
 FORBIDDEN_RETIRED_VALUE_DIGESTS = frozenset(
     {
+        # VLESS user id
         "06327ebbc9e96a163b6257670e31f2c515b925971e64adf00ecff91994b1e6bb",
-        "4d7af2eb06c575b1f110d840b1548012115c01b2eb454a81c5c4c9ab579af343",
-        "61a29bafed08193ba6f52d7db891b7b4f30ad5f8c6057eaab520b8e215f34782",
+        # REALITY public key
         "8b4d2a0196fb8f3666ac618cf7e20cc9c058f54608259a07a1b4903acf2c869e",
+        # REALITY short id
         "9b49e93352a26c7e2831a2b04061d59f30d54b2ebd11f2adb9a1b781d54c571d",
+    }
+)
+
+# Commits that carried the retired values before they were scrubbed in
+# 755a3a4 ("Prepare repository for open source release", 2026-07-27). The
+# disclosure is recorded in SECURITY.md and the profile has been revoked
+# server-side; rewriting these commits would invalidate every published
+# commit SHA without withdrawing anything that is already public, so the
+# history scan grandfathers them by identity rather than by date. Any other
+# commit carrying a retired value — including a new one — still fails.
+GRANDFATHERED_RETIRED_VALUE_COMMITS = frozenset(
+    {
+        "2d8d92e141acc4d65638df6cb41ff1ca0200b10c",
+        "755a3a40e6f1abb58a768a80b5babea62d14f00f",
     }
 )
 RETIRED_VALUE_CANDIDATE_PATTERN = re.compile(
     r"(?<![A-Za-z0-9._:-])[A-Za-z0-9][A-Za-z0-9._:-]{5,127}"
 )
+# Marks the start of each commit in the history scan's log output. Every patch
+# body line is prefixed by git with a space, `+`, `-`, `\` or `@`, so only a
+# format header can begin a line with this marker.
+COMMIT_HEADER_PREFIX = "__retired_value_scan_commit__ "
 
 
 def normalized_field_name(field_name: str) -> str:
@@ -296,7 +324,15 @@ def scan_repository_for_retired_values() -> list[str]:
     return violations
 
 
-def scan_git_history_for_retired_values() -> list[str]:
+def commits_carrying_retired_values(
+    forbidden_digests: frozenset[str] = FORBIDDEN_RETIRED_VALUE_DIGESTS,
+) -> set[str]:
+    """Return the commits whose patch text carries a retired value.
+
+    The log is emitted with a `%H` header per commit so a hit can be attributed
+    to the commit that carries it, rather than only reported for the history as
+    a whole.
+    """
     history = subprocess.run(
         [
             "git",
@@ -305,15 +341,52 @@ def scan_git_history_for_retired_values() -> list[str]:
             "--patch",
             "--no-ext-diff",
             "--no-textconv",
-            "--format=",
+            f"--format={COMMIT_HEADER_PREFIX}%H",
         ],
         cwd=REPOSITORY_ROOT,
         check=True,
         capture_output=True,
     ).stdout.decode("utf-8", errors="ignore")
-    if retired_value_lines(history):
-        return ["git history: retired live-profile values are still reachable"]
-    return []
+
+    offenders: set[str] = set()
+    current_commit: str | None = None
+    pending: list[str] = []
+
+    def flush() -> None:
+        if current_commit is not None and retired_value_lines(
+            "\n".join(pending), forbidden_digests
+        ):
+            offenders.add(current_commit)
+
+    for line in history.splitlines():
+        if line.startswith(COMMIT_HEADER_PREFIX):
+            flush()
+            current_commit = line[len(COMMIT_HEADER_PREFIX) :].strip()
+            pending = []
+            continue
+        pending.append(line)
+    flush()
+    return offenders
+
+
+def scan_git_history_for_retired_values() -> list[str]:
+    offenders = commits_carrying_retired_values()
+    unexpected = sorted(offenders - GRANDFATHERED_RETIRED_VALUE_COMMITS)
+    missing = sorted(GRANDFATHERED_RETIRED_VALUE_COMMITS - offenders)
+
+    violations = [
+        f"git history: {commit} carries a retired live-profile value"
+        for commit in unexpected
+    ]
+    # A grandfathered commit that no longer matches means history was rewritten
+    # or the digest set changed; either way the allowlist has stopped
+    # describing reality and must be re-derived rather than silently trusted.
+    violations.extend(
+        f"git history: grandfathered commit {commit} no longer carries a "
+        "retired value; re-derive GRANDFATHERED_RETIRED_VALUE_COMMITS"
+        for commit in missing
+    )
+    return violations
 
 
 class JsonFixtureSafetyTests(unittest.TestCase):
@@ -383,6 +456,56 @@ class JsonFixtureSafetyTests(unittest.TestCase):
         )
 
         self.assertEqual({2}, matching_lines)
+
+    def test_history_scan_grandfathers_only_the_listed_commits(self) -> None:
+        newcomer = "0" * 40
+
+        with unittest.mock.patch(
+            f"{__name__}.commits_carrying_retired_values",
+            return_value={*GRANDFATHERED_RETIRED_VALUE_COMMITS, newcomer},
+        ):
+            violations = scan_git_history_for_retired_values()
+
+        self.assertEqual(
+            [f"git history: {newcomer} carries a retired live-profile value"],
+            violations,
+        )
+
+    def test_history_scan_reports_a_stale_allowlist(self) -> None:
+        expected = sorted(GRANDFATHERED_RETIRED_VALUE_COMMITS)
+
+        with unittest.mock.patch(
+            f"{__name__}.commits_carrying_retired_values", return_value=set()
+        ):
+            violations = scan_git_history_for_retired_values()
+
+        self.assertEqual(
+            [
+                f"git history: grandfathered commit {commit} no longer carries "
+                "a retired value; re-derive GRANDFATHERED_RETIRED_VALUE_COMMITS"
+                for commit in expected
+            ],
+            violations,
+        )
+
+    def test_history_scan_attributes_hits_to_their_commit(self) -> None:
+        retired_value = "synthetic-retired-value"
+        retired_digest = hashlib.sha256(retired_value.encode("utf-8")).hexdigest()
+        clean_sha, dirty_sha = "a" * 40, "b" * 40
+        log = (
+            f"{COMMIT_HEADER_PREFIX}{clean_sha}\n"
+            "+let untouched = 1;\n"
+            f"{COMMIT_HEADER_PREFIX}{dirty_sha}\n"
+            f"+let leaked = \"{retired_value}\";\n"
+        )
+
+        with unittest.mock.patch(f"{__name__}.subprocess.run") as run:
+            run.return_value = subprocess.CompletedProcess(
+                args=(), returncode=0, stdout=log.encode("utf-8")
+            )
+            offenders = commits_carrying_retired_values(frozenset({retired_digest}))
+
+        self.assertEqual({dirty_sha}, offenders)
 
 
 if __name__ == "__main__":

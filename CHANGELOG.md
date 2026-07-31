@@ -12,3 +12,5 @@ development changes are recorded under `Unreleased`.
 - Added reproducible mobile artifact and supply-chain checks.
 - Added open-source licensing, security, contribution, and release
   documentation.
+- Recorded the pre-release live-profile disclosure in `SECURITY.md` and made
+  the history secret scan attribute hits to individual commits.
