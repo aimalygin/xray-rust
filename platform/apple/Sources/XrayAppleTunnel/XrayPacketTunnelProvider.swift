@@ -177,6 +177,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
     private static let defaultStartupProbeTimeoutMs: UInt64 = 5_000
     private static let maximumStartupProbeTimeoutMs: UInt64 = 60_000
     private static let maximumCustomDNSServers = 8
+    static let defaultTunnelDNSServers = ["1.1.1.1", "8.8.8.8"]
     private static let debugStatsHandler: @Sendable (XrayCore) -> Void = {
         logDebugStats($0)
     }
@@ -714,11 +715,21 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         }
         settings.ipv4Settings = ipv4Settings
 
-        if case let .custom(servers) = dnsConfiguration {
-            let dnsSettings = NEDNSSettings(servers: servers)
-            dnsSettings.matchDomains = [""]
-            settings.dnsSettings = dnsSettings
+        // Always install tunnel DNS servers: with the IPv4 default route
+        // claimed, leaving dnsSettings unset makes iOS route queries for the
+        // underlying network's resolver (often a private router address)
+        // into the tunnel, where the remote proxy cannot reach them. With
+        // fake-IP DNS enabled the core answers these queries locally, so the
+        // default servers below are interception anchors, not upstreams.
+        let servers: [String]
+        if case let .custom(custom) = dnsConfiguration {
+            servers = custom
+        } else {
+            servers = Self.defaultTunnelDNSServers
         }
+        let dnsSettings = NEDNSSettings(servers: servers)
+        dnsSettings.matchDomains = [""]
+        settings.dnsSettings = dnsSettings
         return settings
     }
 

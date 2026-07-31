@@ -114,12 +114,17 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         XCTAssertEqual(excludedRoute?.destinationSubnetMask, "255.255.255.255")
     }
 
-    func testNetworkSettingsLeaveDnsToTheSystemByDefault() {
+    func testNetworkSettingsApplyDefaultTunnelDnsWhenNoCustomServersConfigured() {
+        // A full-tunnel provider must always install DNS servers: with the
+        // IPv4 default route claimed and no dnsSettings, iOS keeps routing
+        // queries to the underlying network's resolver (often a private
+        // router address) through the tunnel, where they blackhole.
         let settings = XrayPacketTunnelProvider.networkSettings(
             excludingServerAddress: "203.0.113.10"
         )
 
-        XCTAssertNil(settings.dnsSettings)
+        XCTAssertEqual(settings.dnsSettings?.servers, ["1.1.1.1", "8.8.8.8"])
+        XCTAssertEqual(settings.dnsSettings?.matchDomains, [""])
     }
 
     func testNetworkSettingsUseExplicitCustomDnsForAllDomains() {

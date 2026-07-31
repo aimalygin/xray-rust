@@ -24,6 +24,7 @@ const TLS_SERVER_NAME: &str = "vless.test";
 // The PQ interop oracle needs a cover origin that accepts X25519MLKEM;
 // RFC 2606 example origins reject the `hellochrome_120_pq` handshake.
 const REALITY_SERVER_NAME: &str = "www.google.com";
+const INNER_TLS_SERVER_NAME: &str = "inner.test";
 const REALITY_PRIVATE_KEY: &str = "aGSYystUbf59_9_6LKRxD27rmSW_-2_nyd9YG_Gwbks";
 const REALITY_PUBLIC_KEY_BASE64: &str = "E59WjnvZcQMu7tR7_BgyhycuEdBS-CtKxfImRCdAvFM";
 const DEFAULT_REALITY_SERVER_WARMUP_TIMEOUT: Duration = Duration::from_secs(30);
@@ -59,6 +60,17 @@ async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_tls_visi
     timeout(
         Duration::from_secs(120),
         run_local_xray_vless_tls_interop(Some("xtls-rprx-vision")),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
+async fn inner_tls_session_survives_vision_direct_switch_through_local_xray_reality_vision() {
+    timeout(
+        Duration::from_secs(180),
+        run_local_xray_reality_vision_inner_tls_interop("chrome"),
     )
     .await
     .unwrap();
@@ -269,6 +281,123 @@ async fn run_local_xray_vless_reality_vision_interop(fingerprint: &str) {
     let rust_config = rust_reality_vision_core_config(xray.addr, fingerprint);
 
     run_local_xray_vless_interop_scenario(xray, rust_config, None).await;
+}
+
+async fn run_local_xray_reality_vision_inner_tls_interop(fingerprint: &str) {
+    let xray_checkout = resolve_xray_checkout();
+    let xray = timeout(
+        Duration::from_secs(60),
+        start_xray_vless_server(
+            &xray_checkout,
+            XrayVlessServerConfig {
+                security: XrayInboundSecurity::Reality,
+                flow: Some("xtls-rprx-vision"),
+            },
+        ),
+    )
+    .await
+    .expect("start xray timeout");
+    warm_up_reality_server_detector(&xray, fingerprint).await;
+    let rust_config = rust_reality_vision_core_config(xray.addr, fingerprint);
+
+    run_inner_tls_interop_scenario(xray, rust_config).await;
+}
+
+/// Carry a real TLS session inside the tunnel, which is what makes Vision
+/// engage direct mode: the peer stops wrapping the downlink in REALITY TLS
+/// part way through while it keeps decrypting the uplink. Echo workloads never
+/// reach this state because a non-TLS payload resolves to `VisionCommand::End`.
+async fn run_inner_tls_interop_scenario(xray: XrayServer, rust_config: CoreConfig) {
+    let (tls_echo_addr, inner_client_config, echo_handle) = spawn_inner_tls_echo_server().await;
+    let mut core = Core::new(rust_config).expect("create rust core");
+
+    timeout(Duration::from_secs(5), core.start())
+        .await
+        .expect("start rust core timeout")
+        .expect("start rust core");
+    let socks_addr = core
+        .inbound_addr(Some("socks-in"))
+        .expect("bound socks addr");
+
+    let mut client = timeout(Duration::from_secs(5), TcpStream::connect(socks_addr))
+        .await
+        .expect("connect rust socks timeout")
+        .expect("connect rust socks");
+    match timeout(
+        Duration::from_secs(5),
+        socks5_connect(&mut client, tls_echo_addr),
+    )
+    .await
+    {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => {
+            eprintln!("{}", xray.logs());
+            panic!("socks connect failed: {error}");
+        }
+        Err(error) => {
+            eprintln!("{}", xray.logs());
+            panic!("socks connect timeout: {error}");
+        }
+    }
+
+    let server_name = rustls::pki_types::ServerName::try_from(INNER_TLS_SERVER_NAME)
+        .expect("inner tls server name");
+    let connector = tokio_rustls::TlsConnector::from(inner_client_config);
+    let mut tls = match timeout(
+        Duration::from_secs(20),
+        connector.connect(server_name, client),
+    )
+    .await
+    {
+        Ok(Ok(stream)) => stream,
+        Ok(Err(error)) => {
+            eprintln!("{}", xray.logs());
+            panic!("inner tls handshake failed: {error}");
+        }
+        Err(error) => {
+            eprintln!("{}", xray.logs());
+            panic!("inner tls handshake timeout: {error}");
+        }
+    };
+
+    // Several round trips: the peer switches its downlink to direct mode part
+    // way through, and every later uplink write still has to be encrypted.
+    for round in 0..4 {
+        let payload = format!("inner tls round {round}");
+        if let Err(error) = timeout(Duration::from_secs(10), tls.write_all(payload.as_bytes()))
+            .await
+            .expect("write inner tls payload timeout")
+        {
+            eprintln!("{}", xray.logs());
+            panic!("write inner tls payload failed in round {round}: {error}");
+        }
+        timeout(Duration::from_secs(10), tls.flush())
+            .await
+            .expect("flush inner tls payload timeout")
+            .expect("flush inner tls payload");
+
+        let mut echoed = vec![0; payload.len()];
+        match timeout(Duration::from_secs(15), tls.read_exact(&mut echoed)).await {
+            Ok(Ok(_)) => {}
+            Ok(Err(error)) => {
+                eprintln!("{}", xray.logs());
+                panic!("read inner tls echo failed in round {round}: {error}");
+            }
+            Err(error) => {
+                eprintln!("{}", xray.logs());
+                panic!("read inner tls echo timeout in round {round}: {error}");
+            }
+        }
+        assert_eq!(echoed, payload.as_bytes());
+    }
+
+    drop(tls);
+    core.stop().await.expect("stop rust core");
+    drop(xray);
+    timeout(Duration::from_secs(5), echo_handle)
+        .await
+        .expect("inner tls echo task should finish")
+        .expect("inner tls echo task should not panic");
 }
 
 async fn run_local_xray_vless_reality_vision_burst_interop(fingerprint: &str, flow_count: usize) {
@@ -1089,6 +1218,64 @@ fn rust_reality_vision_core_config(xray_addr: SocketAddr, fingerprint: &str) -> 
         }),
         Some("xtls-rprx-vision"),
     )
+}
+
+async fn spawn_inner_tls_echo_server() -> (
+    SocketAddr,
+    Arc<rustls::ClientConfig>,
+    tokio::task::JoinHandle<()>,
+) {
+    let CertifiedKey { cert, signing_key } =
+        generate_simple_self_signed(vec![INNER_TLS_SERVER_NAME.to_owned()])
+            .expect("generate inner tls certificate");
+    let cert_der = cert.der().clone();
+    let key_der = rustls::pki_types::PrivateKeyDer::Pkcs8(
+        rustls::pki_types::PrivatePkcs8KeyDer::from(signing_key.serialize_der()),
+    );
+
+    let mut roots = rustls::RootCertStore::empty();
+    roots.add(cert_der.clone()).expect("add inner tls root");
+    let client_config = Arc::new(
+        rustls::ClientConfig::builder_with_provider(Arc::new(
+            rustls::crypto::ring::default_provider(),
+        ))
+        .with_safe_default_protocol_versions()
+        .expect("ring provider should support default TLS versions")
+        .with_root_certificates(roots)
+        .with_no_client_auth(),
+    );
+    let server_config = rustls::ServerConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .expect("ring provider should support default TLS versions")
+    .with_no_client_auth()
+    .with_single_cert(vec![cert_der], key_der)
+    .expect("inner tls server certificate");
+
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .expect("bind inner tls echo");
+    let addr = listener.local_addr().expect("inner tls echo local addr");
+    let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(server_config));
+    let handle = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept inner tls client");
+        let mut stream = acceptor.accept(stream).await.expect("inner tls handshake");
+        let mut buffer = [0; 4096];
+        loop {
+            let read = match stream.read(&mut buffer).await {
+                Ok(0) | Err(_) => break,
+                Ok(read) => read,
+            };
+            if stream.write_all(&buffer[..read]).await.is_err() {
+                break;
+            }
+            if stream.flush().await.is_err() {
+                break;
+            }
+        }
+    });
+    (addr, client_config, handle)
 }
 
 async fn spawn_echo_server() -> (SocketAddr, tokio::task::JoinHandle<()>) {

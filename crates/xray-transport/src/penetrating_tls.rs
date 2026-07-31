@@ -31,10 +31,6 @@ impl CapturedTcpStream {
         }
     }
 
-    fn into_inner(self) -> TcpStream {
-        self.stream
-    }
-
     /// Stop aligning socket reads to TLS record boundaries.
     ///
     /// The limiter exists so that rustls's deframer never buffers bytes past
@@ -173,8 +169,15 @@ impl AsyncWrite for CapturedTcpStream {
 
 enum PenetratingTlsState {
     Tls(Option<Box<TlsStream<CapturedTcpStream>>>),
-    Direct {
-        stream: TcpStream,
+    /// The read side switched to Vision direct mode while the write side may
+    /// still owe the peer TLS records.
+    ///
+    /// Vision switches each direction independently — Xray-core swaps only its
+    /// reader on `VisionCommand::Direct` downlink and keeps decrypting our
+    /// uplink until we send `Direct` ourselves — so the session has to stay
+    /// alive here. Raw bytes come straight off the captured socket instead.
+    ReadDirect {
+        stream: Box<TlsStream<CapturedTcpStream>>,
         pending_plaintext: BytesMut,
     },
 }
@@ -194,25 +197,29 @@ impl PenetratingTlsStream {
         let PenetratingTlsState::Tls(tls) = &mut self.state else {
             return Ok(());
         };
-        let tls = tls
+        let mut tls = tls
             .take()
             .ok_or_else(|| io::Error::other("TLS stream was already taken"))?;
-        let (stream, mut session) = (*tls).into_inner();
-        let stream = stream.into_inner();
         let mut pending_plaintext = BytesMut::new();
         let mut scratch = [0; 8192];
 
-        loop {
-            match session.reader().read(&mut scratch) {
-                Ok(0) => break,
-                Ok(len) => pending_plaintext.extend_from_slice(&scratch[..len]),
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
-                Err(error) => return Err(error),
+        {
+            let (captured, session) = tls.as_mut().get_mut();
+            loop {
+                match session.reader().read(&mut scratch) {
+                    Ok(0) => break,
+                    Ok(len) => pending_plaintext.extend_from_slice(&scratch[..len]),
+                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
+                    Err(error) => return Err(error),
+                }
             }
+            // Nothing feeds the deframer once reads bypass it, so socket reads
+            // no longer have to stop at TLS record boundaries.
+            captured.release_record_alignment();
         }
 
-        self.state = PenetratingTlsState::Direct {
-            stream,
+        self.state = PenetratingTlsState::ReadDirect {
+            stream: tls,
             pending_plaintext,
         };
         Ok(())
@@ -224,12 +231,12 @@ impl PenetratingTlsStream {
         output: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
         self.ensure_read_direct()?;
-        let PenetratingTlsState::Direct {
+        let PenetratingTlsState::ReadDirect {
             stream,
             pending_plaintext,
         } = &mut self.state
         else {
-            unreachable!("ensure_direct transitions TLS state to direct");
+            unreachable!("ensure_read_direct transitions TLS state to read-direct");
         };
 
         if !pending_plaintext.is_empty() {
@@ -238,7 +245,8 @@ impl PenetratingTlsStream {
             return Poll::Ready(Ok(()));
         }
 
-        Pin::new(stream).poll_read(cx, output)
+        let (captured, _) = stream.as_mut().get_mut();
+        Pin::new(captured).poll_read(cx, output)
     }
 
     fn poll_write_direct_mode(
@@ -247,14 +255,14 @@ impl PenetratingTlsStream {
         input: &[u8],
     ) -> Poll<io::Result<usize>> {
         match &mut self.state {
-            PenetratingTlsState::Tls(Some(stream)) => {
+            PenetratingTlsState::Tls(Some(stream))
+            | PenetratingTlsState::ReadDirect { stream, .. } => {
                 let (raw_stream, _) = stream.as_mut().get_mut();
                 Pin::new(raw_stream).poll_write(cx, input)
             }
             PenetratingTlsState::Tls(None) => {
                 Poll::Ready(Err(io::Error::other("TLS stream was already taken")))
             }
-            PenetratingTlsState::Direct { stream, .. } => Pin::new(stream).poll_write(cx, input),
         }
     }
 }
@@ -271,7 +279,7 @@ impl AsyncRead for PenetratingTlsStream {
             PenetratingTlsState::Tls(None) => {
                 Poll::Ready(Err(io::Error::other("TLS stream was already taken")))
             }
-            PenetratingTlsState::Direct { .. } => this.poll_read_direct_mode(cx, output),
+            PenetratingTlsState::ReadDirect { .. } => this.poll_read_direct_mode(cx, output),
         }
     }
 }
@@ -284,33 +292,37 @@ impl AsyncWrite for PenetratingTlsStream {
     ) -> Poll<io::Result<usize>> {
         let this = self.get_mut();
         match &mut this.state {
-            PenetratingTlsState::Tls(Some(stream)) => Pin::new(stream).poll_write(cx, input),
+            // A direct read must not turn the uplink into cleartext: the peer
+            // still decrypts our writes until Vision switches this direction.
+            PenetratingTlsState::Tls(Some(stream))
+            | PenetratingTlsState::ReadDirect { stream, .. } => {
+                Pin::new(stream).poll_write(cx, input)
+            }
             PenetratingTlsState::Tls(None) => {
                 Poll::Ready(Err(io::Error::other("TLS stream was already taken")))
             }
-            PenetratingTlsState::Direct { .. } => this.poll_write_direct_mode(cx, input),
         }
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         let this = self.get_mut();
         match &mut this.state {
-            PenetratingTlsState::Tls(Some(stream)) => Pin::new(stream).poll_flush(cx),
+            PenetratingTlsState::Tls(Some(stream))
+            | PenetratingTlsState::ReadDirect { stream, .. } => Pin::new(stream).poll_flush(cx),
             PenetratingTlsState::Tls(None) => {
                 Poll::Ready(Err(io::Error::other("TLS stream was already taken")))
             }
-            PenetratingTlsState::Direct { stream, .. } => Pin::new(stream).poll_flush(cx),
         }
     }
 
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         let this = self.get_mut();
         match &mut this.state {
-            PenetratingTlsState::Tls(Some(stream)) => Pin::new(stream).poll_shutdown(cx),
+            PenetratingTlsState::Tls(Some(stream))
+            | PenetratingTlsState::ReadDirect { stream, .. } => Pin::new(stream).poll_shutdown(cx),
             PenetratingTlsState::Tls(None) => {
                 Poll::Ready(Err(io::Error::other("TLS stream was already taken")))
             }
-            PenetratingTlsState::Direct { stream, .. } => Pin::new(stream).poll_shutdown(cx),
         }
     }
 }
@@ -342,28 +354,28 @@ impl TransportStream for PenetratingTlsStream {
     fn poll_flush_direct(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         let this = self.get_mut();
         match &mut this.state {
-            PenetratingTlsState::Tls(Some(stream)) => {
+            PenetratingTlsState::Tls(Some(stream))
+            | PenetratingTlsState::ReadDirect { stream, .. } => {
                 let (raw_stream, _) = stream.as_mut().get_mut();
                 Pin::new(raw_stream).poll_flush(cx)
             }
             PenetratingTlsState::Tls(None) => {
                 Poll::Ready(Err(io::Error::other("TLS stream was already taken")))
             }
-            PenetratingTlsState::Direct { stream, .. } => Pin::new(stream).poll_flush(cx),
         }
     }
 
     fn poll_shutdown_direct(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         let this = self.get_mut();
         match &mut this.state {
-            PenetratingTlsState::Tls(Some(stream)) => {
+            PenetratingTlsState::Tls(Some(stream))
+            | PenetratingTlsState::ReadDirect { stream, .. } => {
                 let (raw_stream, _) = stream.as_mut().get_mut();
                 Pin::new(raw_stream).poll_shutdown(cx)
             }
             PenetratingTlsState::Tls(None) => {
                 Poll::Ready(Err(io::Error::other("TLS stream was already taken")))
             }
-            PenetratingTlsState::Direct { stream, .. } => Pin::new(stream).poll_shutdown(cx),
         }
     }
 }
@@ -525,6 +537,52 @@ mod tests {
             .await
             .expect("read raw bytes");
         assert_eq!(&raw, b"raw");
+    }
+
+    #[tokio::test]
+    async fn direct_read_keeps_tls_write_available_until_direct_write() {
+        let (mut client, mut server) = connect_test_stream().await;
+
+        server
+            .write_all(b"tls frame")
+            .await
+            .expect("write TLS plaintext");
+        server.flush().await.expect("flush TLS plaintext");
+        let mut tls_frame = [0; 9];
+        client
+            .read_exact(&mut tls_frame)
+            .await
+            .expect("read TLS plaintext before switching direct");
+        assert_eq!(&tls_frame, b"tls frame");
+
+        // Vision switches each direction independently: the peer swaps only
+        // its writer when it sends Direct downlink and keeps reading the
+        // uplink through TLS until we send Direct ourselves.
+        let (raw_server, _) = server.get_mut();
+        raw_server
+            .write_all(b"raw")
+            .await
+            .expect("write raw downlink");
+        raw_server.flush().await.expect("flush raw downlink");
+
+        let mut raw = [0; 3];
+        read_direct_exact(&mut client, &mut raw)
+            .await
+            .expect("read direct bytes");
+        assert_eq!(&raw, b"raw");
+
+        client
+            .write_all(b"tls")
+            .await
+            .expect("write TLS plaintext after direct read");
+        client.flush().await.expect("flush TLS plaintext");
+
+        let mut plaintext = [0; 3];
+        server
+            .read_exact(&mut plaintext)
+            .await
+            .expect("read TLS plaintext after direct read");
+        assert_eq!(&plaintext, b"tls");
     }
 
     #[tokio::test]
