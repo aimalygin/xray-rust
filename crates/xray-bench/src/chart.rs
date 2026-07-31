@@ -829,6 +829,7 @@ mod tests {
             status: status.to_owned(),
             runs: 5,
             duration_ms: metric.clone(),
+            transfer_duration_ms: Some(metric.clone()),
             peak_rss_kib: MetricSummary {
                 min: 10_240,
                 median: 12_288,

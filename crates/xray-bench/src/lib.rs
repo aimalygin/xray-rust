@@ -418,6 +418,10 @@ pub struct BenchResult {
     pub workload: String,
     pub status: String,
     pub duration_ms: u128,
+    /// Payload-only window, when the workload measured one; `duration_ms` minus this is the
+    /// connection-setup cost the run paid before any bytes moved.
+    #[serde(default)]
+    pub transfer_duration_ms: Option<u128>,
     pub bytes_sent: u64,
     pub bytes_received: u64,
     pub peak_rss_kib: u64,
@@ -497,6 +501,8 @@ pub struct BenchSummary {
     pub status: String,
     pub runs: usize,
     pub duration_ms: MetricSummary,
+    #[serde(default)]
+    pub transfer_duration_ms: Option<MetricSummary>,
     pub peak_rss_kib: MetricSummary,
     pub cpu_millis: MetricSummary,
     pub cpu_millis_per_gib: Option<MetricSummary>,
@@ -529,6 +535,9 @@ pub struct WorkloadOutcome {
     pub bytes_received: u64,
     pub latencies_us: Vec<u128>,
     pub setup_samples: Vec<FlowSetupSample>,
+    /// Wall time spent moving payload bytes, excluding connection setup. Workloads that
+    /// report it get their throughput measured over this window instead of the whole run.
+    pub transfer_duration: Option<Duration>,
     pub blackhole_connections_accepted: Option<u64>,
     pub blackhole_connections_active: Option<u64>,
 }
@@ -550,6 +559,12 @@ impl WorkloadOutcome {
         self.bytes_received += other.bytes_received;
         self.latencies_us.extend(other.latencies_us);
         self.setup_samples.extend(other.setup_samples);
+        // Concurrent connections transfer in parallel, so the wall-clock transfer span of the
+        // merged outcome is the slowest connection's span (exact for a single connection).
+        self.transfer_duration = match (self.transfer_duration, other.transfer_duration) {
+            (Some(current), Some(incoming)) => Some(current.max(incoming)),
+            (current, incoming) => current.or(incoming),
+        };
         self.blackhole_connections_accepted = other
             .blackhole_connections_accepted
             .or(self.blackhole_connections_accepted);
@@ -1382,6 +1397,9 @@ pub fn summarize_results(results: &[BenchResult]) -> Result<BenchSummary, BenchE
         status: status.to_owned(),
         runs: results.len(),
         duration_ms: summarize_metric(results.iter().map(|result| result.duration_ms)),
+        transfer_duration_ms: summarize_optional_metric(
+            results.iter().map(|result| result.transfer_duration_ms),
+        ),
         peak_rss_kib: summarize_metric(
             results.iter().map(|result| u128::from(result.peak_rss_kib)),
         ),
@@ -1534,8 +1552,18 @@ fn cpu_millis_per_gib(cpu_millis: u64, bytes_sent: u64, bytes_received: u64) -> 
     Some((u128::from(cpu_millis) * 1024 * 1024 * 1024).div_ceil(bytes))
 }
 
-fn throughput_mbps(bytes_sent: u64, bytes_received: u64, duration_ms: u128) -> Option<u128> {
+/// Bits per second over the window the bytes actually moved in.
+///
+/// `window_ms` is the whole run window; `transfer` is the payload-only window when the workload
+/// measured one. The transfer window wins, so connection setup is never amortized into the rate.
+fn throughput_mbps(
+    bytes_sent: u64,
+    bytes_received: u64,
+    window_ms: u128,
+    transfer: Option<Duration>,
+) -> Option<u128> {
     let bytes = u128::from(bytes_sent) + u128::from(bytes_received);
+    let duration_ms = transfer.map_or(window_ms, |transfer| transfer.as_millis());
     if bytes == 0 || duration_ms == 0 {
         return None;
     }
@@ -1775,9 +1803,12 @@ async fn run_tcp_bulk_connection(
             source,
         })?;
     socks5_connect(&mut client, source_addr).await?;
-    let received = read_and_validate_bulk_stream(&mut client, template, iterations).await?;
+    // The reader times the transfer itself, so dialing through the engine stays out of the
+    // throughput denominator: a slow tunnel handshake must not read as a slow tunnel.
+    let transfer = read_and_validate_bulk_stream(&mut client, template, iterations).await?;
     Ok(WorkloadOutcome {
-        bytes_received: received,
+        bytes_received: transfer.bytes,
+        transfer_duration: transfer.duration,
         ..WorkloadOutcome::default()
     })
 }
@@ -2295,11 +2326,18 @@ fn bulk_pattern_template(payload_size: usize) -> Vec<u8> {
     template
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct BulkTransfer {
+    bytes: u64,
+    /// First byte in to last validated byte out, or `None` when no bytes moved.
+    duration: Option<Duration>,
+}
+
 async fn read_and_validate_bulk_stream<R>(
     reader: &mut R,
     template: &[u8],
     iterations: usize,
-) -> Result<u64, BenchError>
+) -> Result<BulkTransfer, BenchError>
 where
     R: AsyncRead + Unpin,
 {
@@ -2307,14 +2345,30 @@ where
     // Chunk == template so validation is one slice comparison per chunk,
     // keeping harness-side CPU out of the measured transfer.
     let mut chunk = vec![0; template.len()];
+    let mut started: Option<Instant> = None;
     for _ in 0..iterations {
-        reader
-            .read_exact(&mut chunk)
-            .await
-            .map_err(|source| BenchError::Io {
-                action: "reading bulk stream chunk".to_owned(),
-                source,
-            })?;
+        let mut filled = 0;
+        while filled < chunk.len() {
+            let read =
+                reader
+                    .read(&mut chunk[filled..])
+                    .await
+                    .map_err(|source| BenchError::Io {
+                        action: "reading bulk stream chunk".to_owned(),
+                        source,
+                    })?;
+            if read == 0 {
+                return Err(BenchError::Io {
+                    action: "reading bulk stream chunk".to_owned(),
+                    source: io::Error::from(io::ErrorKind::UnexpectedEof),
+                });
+            }
+            // The clock starts when the first byte lands, not when the read is issued:
+            // whatever a tunnel spends before it delivers anything is setup latency, and
+            // charging it to the transfer would report a slow handshake as a slow stream.
+            started.get_or_insert_with(Instant::now);
+            filled += read;
+        }
         if chunk != template {
             return Err(BenchError::InvalidArguments(
                 "bulk stream payload mismatch".to_owned(),
@@ -2322,7 +2376,10 @@ where
         }
         received += chunk.len() as u64;
     }
-    Ok(received)
+    Ok(BulkTransfer {
+        bytes: received,
+        duration: started.map(|started| started.elapsed()),
+    })
 }
 
 async fn run_tcp_freedom_connection(
@@ -6523,13 +6580,20 @@ async fn run_engine_once(
         summary.bytes_sent,
         summary.bytes_received,
     );
-    let throughput_mbps = throughput_mbps(summary.bytes_sent, summary.bytes_received, duration_ms);
+    let transfer_duration = workload_outcome.transfer_duration;
+    let throughput_mbps = throughput_mbps(
+        summary.bytes_sent,
+        summary.bytes_received,
+        duration_ms,
+        transfer_duration,
+    );
 
     let result = BenchResult {
         engine: kind.as_str().to_owned(),
         workload: options.workload.as_str().to_owned(),
         status: "ok".to_owned(),
         duration_ms,
+        transfer_duration_ms: transfer_duration.map(|transfer| transfer.as_millis()),
         bytes_sent: summary.bytes_sent,
         bytes_received: summary.bytes_received,
         peak_rss_kib: summary.peak_rss_kib,
@@ -8190,11 +8254,79 @@ mod tests {
 
     #[test]
     fn computes_throughput_mbps_from_bytes_and_duration() {
-        assert_eq!(throughput_mbps(0, 0, 1000), None);
-        assert_eq!(throughput_mbps(0, 1_073_741_824, 0), None);
-        assert_eq!(throughput_mbps(0, 1_073_741_824, 2000), Some(4295));
+        assert_eq!(throughput_mbps(0, 0, 1000, None), None);
+        assert_eq!(throughput_mbps(0, 1_073_741_824, 0, None), None);
+        assert_eq!(throughput_mbps(0, 1_073_741_824, 2000, None), Some(4295));
         // 500 + 500 bytes over 1000ms = 8000 bits/s = 0.008 Mbps, ceil to 1 Mbps.
-        assert_eq!(throughput_mbps(500, 500, 1000), Some(1));
+        assert_eq!(throughput_mbps(500, 500, 1000, None), Some(1));
+    }
+
+    #[test]
+    fn throughput_prefers_the_transfer_window_over_the_whole_run_window() {
+        let one_gib = 1_073_741_824;
+        // 1 GiB moved in 1s, inside a 6s run window: the rate is the transfer rate.
+        assert_eq!(
+            throughput_mbps(0, one_gib, 6000, Some(Duration::from_secs(1))),
+            Some(8590)
+        );
+        // Without a transfer window the whole run window is the only thing we have.
+        assert_eq!(throughput_mbps(0, one_gib, 6000, None), Some(1432));
+        // A transfer window shorter than a millisecond is not a measurable rate.
+        assert_eq!(
+            throughput_mbps(0, one_gib, 6000, Some(Duration::from_micros(500))),
+            None
+        );
+        assert_eq!(
+            throughput_mbps(0, 0, 6000, Some(Duration::from_secs(1))),
+            None
+        );
+    }
+
+    #[test]
+    fn extending_outcomes_keeps_the_longest_transfer_duration() {
+        let mut none_then_some = WorkloadOutcome::empty();
+        none_then_some.extend(WorkloadOutcome {
+            transfer_duration: Some(Duration::from_secs(3)),
+            ..WorkloadOutcome::default()
+        });
+        assert_eq!(
+            none_then_some.transfer_duration,
+            Some(Duration::from_secs(3))
+        );
+
+        let mut some_then_none = WorkloadOutcome {
+            transfer_duration: Some(Duration::from_secs(3)),
+            ..WorkloadOutcome::default()
+        };
+        some_then_none.extend(WorkloadOutcome::empty());
+        assert_eq!(
+            some_then_none.transfer_duration,
+            Some(Duration::from_secs(3))
+        );
+
+        let mut rising = WorkloadOutcome {
+            transfer_duration: Some(Duration::from_secs(2)),
+            ..WorkloadOutcome::default()
+        };
+        rising.extend(WorkloadOutcome {
+            transfer_duration: Some(Duration::from_secs(5)),
+            ..WorkloadOutcome::default()
+        });
+        assert_eq!(rising.transfer_duration, Some(Duration::from_secs(5)));
+
+        let mut falling = WorkloadOutcome {
+            transfer_duration: Some(Duration::from_secs(5)),
+            ..WorkloadOutcome::default()
+        };
+        falling.extend(WorkloadOutcome {
+            transfer_duration: Some(Duration::from_secs(2)),
+            ..WorkloadOutcome::default()
+        });
+        assert_eq!(falling.transfer_duration, Some(Duration::from_secs(5)));
+
+        let mut neither = WorkloadOutcome::empty();
+        neither.extend(WorkloadOutcome::empty());
+        assert_eq!(neither.transfer_duration, None);
     }
 
     #[test]
@@ -8215,6 +8347,7 @@ mod tests {
         }"#;
         let result: BenchResult = serde_json::from_str(raw).unwrap();
         assert_eq!(result.throughput_mbps, None);
+        assert_eq!(result.transfer_duration_ms, None);
         assert_eq!(result.connections, 0);
     }
 
@@ -8232,6 +8365,7 @@ mod tests {
                 cpu_millis: 20,
                 cpu_millis_per_gib: Some(10_485_760),
                 throughput_mbps: Some(100),
+                transfer_duration_ms: Some(30),
                 connections: 1,
                 iterations: 10,
                 payload_size: 4096,
@@ -8257,6 +8391,7 @@ mod tests {
                 cpu_millis: 10,
                 cpu_millis_per_gib: Some(5_242_880),
                 throughput_mbps: Some(50),
+                transfer_duration_ms: Some(8),
                 connections: 1,
                 iterations: 10,
                 payload_size: 4096,
@@ -8282,6 +8417,7 @@ mod tests {
                 cpu_millis: 30,
                 cpu_millis_per_gib: Some(15_728_640),
                 throughput_mbps: Some(150),
+                transfer_duration_ms: None,
                 connections: 1,
                 iterations: 10,
                 payload_size: 4096,
@@ -8344,6 +8480,15 @@ mod tests {
                 p95: 150,
             })
         );
+        // Runs without a transfer window are skipped, like every other optional metric.
+        assert_eq!(
+            summary.transfer_duration_ms,
+            Some(MetricSummary {
+                min: 8,
+                median: 19,
+                p95: 30,
+            })
+        );
         assert_eq!(
             summary.latency_us,
             Some(LatencySummaryAggregate {
@@ -8392,6 +8537,7 @@ mod tests {
         assert_eq!(summary.connections, 0);
         assert_eq!(summary.iterations, 0);
         assert_eq!(summary.payload_size, 0);
+        assert_eq!(summary.transfer_duration_ms, None);
     }
 
     #[test]
@@ -8407,6 +8553,7 @@ mod tests {
             cpu_millis: 5,
             cpu_millis_per_gib: None,
             throughput_mbps: None,
+            transfer_duration_ms: None,
             connections: 100,
             iterations: 1,
             payload_size: 512,
@@ -8444,12 +8591,56 @@ mod tests {
         let stream = template.repeat(3);
         let write_task = tokio::spawn(async move { writer.write_all(&stream).await });
 
-        let received = read_and_validate_bulk_stream(&mut reader, &template, 3)
+        let transfer = read_and_validate_bulk_stream(&mut reader, &template, 3)
             .await
             .unwrap();
 
-        assert_eq!(received, 3 * 1024);
+        assert_eq!(transfer.bytes, 3 * 1024);
         write_task.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn bulk_transfer_window_starts_at_the_first_byte() {
+        let template = bulk_pattern_template(1024);
+        let (mut writer, mut reader) = tokio::io::duplex(64 * 1024);
+        let stream = template.repeat(2);
+        // A tunnel that answers the SOCKS request first and only then completes its handshake
+        // delivers nothing for a while: that wait is setup latency, not a slow transfer.
+        let write_task = tokio::spawn(async move {
+            sleep(Duration::from_millis(300)).await;
+            writer.write_all(&stream).await
+        });
+
+        let call_started = Instant::now();
+        let transfer = read_and_validate_bulk_stream(&mut reader, &template, 2)
+            .await
+            .unwrap();
+        let whole_call = call_started.elapsed();
+
+        assert_eq!(transfer.bytes, 2 * 1024);
+        let window = transfer
+            .duration
+            .expect("bytes moved, so there is a window");
+        assert!(whole_call >= Duration::from_millis(300));
+        assert!(
+            window < Duration::from_millis(150),
+            "transfer window {window:?} must exclude the 300ms wait before the first byte \
+             (whole call {whole_call:?})"
+        );
+        write_task.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn bulk_transfer_reports_no_window_when_no_bytes_move() {
+        let template = bulk_pattern_template(1024);
+        let (_writer, mut reader) = tokio::io::duplex(64 * 1024);
+
+        let transfer = read_and_validate_bulk_stream(&mut reader, &template, 0)
+            .await
+            .unwrap();
+
+        assert_eq!(transfer.bytes, 0);
+        assert_eq!(transfer.duration, None);
     }
 
     #[tokio::test]
