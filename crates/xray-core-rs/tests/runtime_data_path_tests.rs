@@ -1596,6 +1596,26 @@ async fn tun_fake_dns_udp_flow_uses_domain_routing_rule() {
 }
 
 #[tokio::test]
+async fn tun_fake_dns_https_query_returns_nodata_from_original_resolver_address() {
+    timeout(
+        Duration::from_secs(2),
+        run_tun_fake_dns_https_nodata_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn tun_fake_dns_pool_exhaustion_returns_servfail_from_original_resolver_address() {
+    timeout(
+        Duration::from_secs(2),
+        run_tun_fake_dns_pool_exhaustion_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
 async fn tun_fake_dns_udp_ip_if_non_match_uses_dns_second_pass_to_reach_freedom_outbound() {
     timeout(
         Duration::from_secs(2),
@@ -2833,6 +2853,99 @@ async fn run_tun_fake_dns_udp_domain_routing_scenario() {
         .unwrap();
 }
 
+async fn run_tun_fake_dns_https_nodata_scenario() {
+    let unused_proxy_port = allocate_unused_loopback_port();
+    let config = runtime_tun_config_with_fake_ip_domain_routed_freedom_outbound(unused_proxy_port);
+    let mut core = Core::new(config).unwrap();
+    core.start().await.unwrap();
+
+    let client_addr = Ipv4Addr::new(10, 10, 0, 2);
+    let dns_anchor = Ipv4Addr::new(198, 18, 0, 1);
+    let client_port = 53_002;
+    let dns_query = build_dns_query(0x1205, "www.example.com", 65, 1);
+    let dns_request = ipv4_udp_packet(client_addr, client_port, dns_anchor, 53, &dns_query);
+    core.tun()
+        .push_inbound(Bytes::from(dns_request))
+        .await
+        .unwrap();
+
+    let mut expected_response = dns_query;
+    expected_response[2..4].copy_from_slice(&0x8180_u16.to_be_bytes());
+    let dns_reply = poll_tun_outbound_until(core.tun(), |packet| {
+        ipv4_udp_payload(packet) == Some(expected_response.as_slice())
+    })
+    .await;
+    assert_ipv4_udp_packet(
+        &dns_reply,
+        dns_anchor,
+        53,
+        client_addr,
+        client_port,
+        &expected_response,
+    );
+
+    core.stop().await.unwrap();
+}
+
+async fn run_tun_fake_dns_pool_exhaustion_scenario() {
+    let unused_proxy_port = allocate_unused_loopback_port();
+    let mut config =
+        runtime_tun_config_with_fake_ip_domain_routed_freedom_outbound(unused_proxy_port);
+    config.dns.fake_ip.as_mut().unwrap().ipv4_pool =
+        IpCidr::new(IpAddr::V4(Ipv4Addr::new(198, 19, 0, 1)), 32).unwrap();
+    let mut core = Core::new(config).unwrap();
+    core.start().await.unwrap();
+
+    let client_addr = Ipv4Addr::new(10, 10, 0, 2);
+    let dns_anchor = Ipv4Addr::new(198, 18, 0, 1);
+    let first_query = build_dns_a_query(0x1206, "first.example.com");
+    core.tun()
+        .push_inbound(Bytes::from(ipv4_udp_packet(
+            client_addr,
+            53_003,
+            dns_anchor,
+            53,
+            &first_query,
+        )))
+        .await
+        .unwrap();
+    poll_tun_outbound_until(core.tun(), |packet| {
+        ipv4_udp_payload(packet)
+            .and_then(dns_response_answer_ipv4)
+            .is_some()
+    })
+    .await;
+
+    let second_client_port = 53_004;
+    let second_query = build_dns_a_query(0x1207, "second.example.com");
+    core.tun()
+        .push_inbound(Bytes::from(ipv4_udp_packet(
+            client_addr,
+            second_client_port,
+            dns_anchor,
+            53,
+            &second_query,
+        )))
+        .await
+        .unwrap();
+    let mut expected_response = second_query;
+    expected_response[2..4].copy_from_slice(&0x8182_u16.to_be_bytes());
+    let dns_reply = poll_tun_outbound_until(core.tun(), |packet| {
+        ipv4_udp_payload(packet) == Some(expected_response.as_slice())
+    })
+    .await;
+    assert_ipv4_udp_packet(
+        &dns_reply,
+        dns_anchor,
+        53,
+        client_addr,
+        second_client_port,
+        &expected_response,
+    );
+
+    core.stop().await.unwrap();
+}
+
 async fn run_tun_fake_dns_udp_ip_if_non_match_routed_freedom_scenario() {
     let unused_proxy_port = allocate_unused_loopback_port();
     let (echo_addr, echo_handle) = spawn_udp_echo_server().await;
@@ -3982,6 +4095,10 @@ fn ipv4_udp_payload(packet: &[u8]) -> Option<&[u8]> {
 }
 
 fn build_dns_a_query(id: u16, domain: &str) -> Vec<u8> {
+    build_dns_query(id, domain, 1, 1)
+}
+
+fn build_dns_query(id: u16, domain: &str, qtype: u16, qclass: u16) -> Vec<u8> {
     let mut packet = Vec::new();
     packet.extend_from_slice(&id.to_be_bytes());
     packet.extend_from_slice(&0x0100_u16.to_be_bytes());
@@ -3994,8 +4111,8 @@ fn build_dns_a_query(id: u16, domain: &str) -> Vec<u8> {
         packet.extend_from_slice(label.as_bytes());
     }
     packet.push(0);
-    packet.extend_from_slice(&1_u16.to_be_bytes());
-    packet.extend_from_slice(&1_u16.to_be_bytes());
+    packet.extend_from_slice(&qtype.to_be_bytes());
+    packet.extend_from_slice(&qclass.to_be_bytes());
     packet
 }
 

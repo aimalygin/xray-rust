@@ -67,6 +67,66 @@ final class XrayClientProfileTests: XCTestCase {
         XCTAssertTrue(json is [String: Any])
     }
 
+    func testDefaultConfigEnablesFakeIPDNS() throws {
+        let data = Data(XrayClientProfile.directTunConfigJSON.utf8)
+        let root = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        let dns = try XCTUnwrap(root["dns"] as? [String: Any])
+        let fakeIP = try XCTUnwrap(dns["fakeIp"] as? [String: Any])
+
+        XCTAssertEqual(fakeIP["enabled"] as? Bool, true)
+        XCTAssertEqual(fakeIP["ipv4Pool"] as? String, "198.19.0.0/16")
+        XCTAssertEqual(fakeIP["ttl"] as? Int, 60)
+    }
+
+    func testLegacyDirectConfigMigrationAddsFakeIPDNS() {
+        let legacyConfigJSON = """
+        {
+          "inbounds": [
+            {
+              "tag": "tun-in",
+              "protocol": "tun",
+              "listen": "127.0.0.1",
+              "port": 0,
+              "settings": {}
+            }
+          ],
+          "outbounds": [
+            {
+              "tag": "direct",
+              "protocol": "freedom",
+              "settings": {}
+            }
+          ]
+        }
+        """
+        let profile = XrayClientProfile(
+            name: "Xray",
+            providerBundleIdentifier: "org.example.XrayClient.Tunnel",
+            serverAddress: "xray-rust",
+            configJSON: legacyConfigJSON
+        )
+
+        let migrated = profile.addingFakeIPToLegacyDirectConfigIfNeeded()
+
+        XCTAssertEqual(migrated.configJSON, XrayClientProfile.directTunConfigJSON)
+    }
+
+    func testLegacyDirectConfigMigrationLeavesCustomConfigUntouched() {
+        let customConfigJSON = #"{"inbounds":[]}"#
+        let profile = XrayClientProfile(
+            name: "Custom",
+            providerBundleIdentifier: "org.example.XrayClient.Tunnel",
+            serverAddress: "xray-rust",
+            configJSON: customConfigJSON
+        )
+
+        let migrated = profile.addingFakeIPToLegacyDirectConfigIfNeeded()
+
+        XCTAssertEqual(migrated.configJSON, customConfigJSON)
+    }
+
     func testDebugLoggingDefaultsToDisabled() {
         let profile = XrayClientProfile.defaultProfile(
             hostBundleIdentifier: "org.example.XrayClient"

@@ -501,6 +501,25 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
         return migrated
     }
 
+    public func addingFakeIPToLegacyDirectConfigIfNeeded() -> XrayClientProfile {
+        let migratedConfigJSON = Self.configJSONAddingFakeIPToLegacyDirectConfigIfNeeded(
+            configJSON
+        )
+        guard migratedConfigJSON != configJSON else {
+            return self
+        }
+
+        var migrated = self
+        migrated.configJSON = migratedConfigJSON
+        return migrated
+    }
+
+    public static func configJSONAddingFakeIPToLegacyDirectConfigIfNeeded(
+        _ configJSON: String
+    ) -> String {
+        configJSON == legacyDirectTunConfigJSON ? directTunConfigJSON : configJSON
+    }
+
     public var realityVisionFlowMode: XrayRealityVisionFlowMode? {
         Self.realityVisionFlowMode(in: configJSON)
     }
@@ -954,6 +973,27 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
         return XrayRegionalRoutingRegion.allCases.filter { selected.contains($0) }
     }
 
+    private static let legacyDirectTunConfigJSON = """
+    {
+      "inbounds": [
+        {
+          "tag": "tun-in",
+          "protocol": "tun",
+          "listen": "127.0.0.1",
+          "port": 0,
+          "settings": {}
+        }
+      ],
+      "outbounds": [
+        {
+          "tag": "direct",
+          "protocol": "freedom",
+          "settings": {}
+        }
+      ]
+    }
+    """
+
     public static let directTunConfigJSON = """
     {
       "inbounds": [
@@ -965,6 +1005,13 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
           "settings": {}
         }
       ],
+      "dns": {
+        "fakeIp": {
+          "enabled": true,
+          "ipv4Pool": "198.19.0.0/16",
+          "ttl": 60
+        }
+      },
       "outbounds": [
         {
           "tag": "direct",

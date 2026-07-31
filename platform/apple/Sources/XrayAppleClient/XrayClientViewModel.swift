@@ -24,7 +24,8 @@ public final class XrayClientViewModel: ObservableObject {
         self.store = store
         let loadedProfile = store.load()
         let migratedProfile = loadedProfile.migratingLegacyDefaultProviderBundleIdentifier()
-        let preparedProfile = migratedProfile.addingDefaultRealityVisionFlowIfMissing()
+        let dnsReadyProfile = migratedProfile.addingFakeIPToLegacyDirectConfigIfNeeded()
+        let preparedProfile = dnsReadyProfile.addingDefaultRealityVisionFlowIfMissing()
         if preparedProfile != loadedProfile {
             XrayAppleLog.info(
                 "ClientViewModel",

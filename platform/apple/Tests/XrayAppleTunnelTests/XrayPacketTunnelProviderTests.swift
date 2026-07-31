@@ -106,7 +106,8 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
 
     func testNetworkSettingsExcludeIPv4ProxyServerFromDefaultRoute() {
         let settings = XrayPacketTunnelProvider.networkSettings(
-            excludingServerAddress: "203.0.113.10"
+            excludingServerAddress: "203.0.113.10",
+            resolvedDNSConfiguration: .localFakeIPAnchor
         )
 
         let excludedRoute = settings.ipv4Settings?.excludedRoutes?.first
@@ -114,23 +115,20 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         XCTAssertEqual(excludedRoute?.destinationSubnetMask, "255.255.255.255")
     }
 
-    func testNetworkSettingsApplyDefaultTunnelDnsWhenNoCustomServersConfigured() {
-        // A full-tunnel provider must always install DNS servers: with the
-        // IPv4 default route claimed and no dnsSettings, iOS keeps routing
-        // queries to the underlying network's resolver (often a private
-        // router address) through the tunnel, where they blackhole.
+    func testNetworkSettingsApplyLocalFakeIPAnchorForAllDomains() {
         let settings = XrayPacketTunnelProvider.networkSettings(
-            excludingServerAddress: "203.0.113.10"
+            excludingServerAddress: "203.0.113.10",
+            resolvedDNSConfiguration: .localFakeIPAnchor
         )
 
-        XCTAssertEqual(settings.dnsSettings?.servers, ["1.1.1.1", "8.8.8.8"])
+        XCTAssertEqual(settings.dnsSettings?.servers, ["198.18.0.1"])
         XCTAssertEqual(settings.dnsSettings?.matchDomains, [""])
     }
 
     func testNetworkSettingsUseExplicitCustomDnsForAllDomains() {
         let settings = XrayPacketTunnelProvider.networkSettings(
             excludingServerAddress: "203.0.113.10",
-            dnsConfiguration: .custom(["192.0.2.53", "198.51.100.53"])
+            resolvedDNSConfiguration: .custom(["192.0.2.53", "198.51.100.53"])
         )
 
         XCTAssertEqual(settings.dnsSettings?.servers, ["192.0.2.53", "198.51.100.53"])
@@ -144,6 +142,101 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
                 providerConfiguration: nil
             ),
             .system
+        )
+    }
+
+    func testResolvedDnsConfigurationUsesLocalAnchorWhenFakeIPIsEnabled() {
+        let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
+            configJSON: #"{"dns":{"fakeIp":{"enabled":true,"ipv4Pool":"198.19.0.0/16"}}}"#,
+            explicit: .system
+        )
+
+        XCTAssertEqual(configuration, .localFakeIPAnchor)
+    }
+
+    func testResolvedDnsConfigurationFailsClosedWithoutFakeIPOrExplicitServers() {
+        let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
+            configJSON: #"{"inbounds":[]}"#,
+            explicit: .system
+        )
+
+        XCTAssertNil(configuration)
+    }
+
+    func testResolvedDnsConfigurationRejectsUnusableFakeIPPool() {
+        let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
+            configJSON: #"{"dns":{"fakeIp":{"enabled":true,"ipv4Pool":"2001:db8::/32"}}}"#,
+            explicit: .system
+        )
+
+        XCTAssertNil(configuration)
+    }
+
+    func testResolvedDnsConfigurationRejectsExplicitServersWithFakeIP() {
+        let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
+            configJSON: #"{"dns":{"fakeIp":{"enabled":true,"ipv4Pool":"198.19.0.0/16"}}}"#,
+            explicit: .custom(["192.0.2.53"])
+        )
+
+        XCTAssertNil(configuration)
+    }
+
+    func testResolvedDnsConfigurationUsesExplicitServersWithoutFakeIP() {
+        let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
+            configJSON: #"{"inbounds":[]}"#,
+            explicit: .custom(["192.0.2.53"])
+        )
+
+        XCTAssertEqual(configuration, .custom(["192.0.2.53"]))
+    }
+
+    func testResolvedDnsConfigurationDoesNotFallBackFromInvalidExplicitServers() {
+        let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
+            configJSON: #"{"dns":{"fakeIp":{"enabled":true,"ipv4Pool":"198.19.0.0/16"}}}"#,
+            explicit: .invalid
+        )
+
+        XCTAssertNil(configuration)
+    }
+
+    func testResolvedDnsConfigurationRejectsNumericFakeIPEnabledValue() {
+        let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
+            configJSON: #"{"dns":{"fakeIp":{"enabled":1,"ipv4Pool":"198.19.0.0/16"}}}"#,
+            explicit: .system
+        )
+
+        XCTAssertNil(configuration)
+    }
+
+    func testResolvedDnsConfigurationRejectsInvalidFakeIPTTL() {
+        let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
+            configJSON: #"{"dns":{"fakeIp":{"enabled":true,"ipv4Pool":"198.19.0.0/16","ttl":4294967296}}}"#,
+            explicit: .system
+        )
+
+        XCTAssertNil(configuration)
+    }
+
+    func testResolvedDnsConfigurationRejectsUnknownFakeIPField() {
+        let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
+            configJSON: #"{"dns":{"fakeIp":{"enabled":true,"ipv4Pool":"198.19.0.0/16","unexpected":true}}}"#,
+            explicit: .system
+        )
+
+        XCTAssertNil(configuration)
+    }
+
+    func testConfigPreflightRejectsInvalidFakeIPBeforeNetworkSettings() {
+        let invalidConfigJSON = XrayClientProfile.directTunConfigJSON.replacingOccurrences(
+            of: #""enabled": true"#,
+            with: #""enabled": 1"#
+        )
+
+        XCTAssertThrowsError(
+            try XrayPacketTunnelProvider.validateConfigBeforeApplyingNetworkSettings(
+                invalidConfigJSON,
+                geodataSearchDirectory: nil
+            )
         )
     }
 
@@ -229,7 +322,8 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
 
     func testNetworkSettingsDoNotInstallIPv6DefaultRouteYet() {
         let settings = XrayPacketTunnelProvider.networkSettings(
-            excludingServerAddress: "203.0.113.10"
+            excludingServerAddress: "203.0.113.10",
+            resolvedDNSConfiguration: .localFakeIPAnchor
         )
 
         XCTAssertNil(settings.ipv6Settings)
@@ -569,6 +663,73 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         XCTAssertEqual(resolved?.dnsConfiguration, .system)
     }
 
+    func testConfigResolutionMigratesLegacyDirectProfileForOnDemandStart() throws {
+        let secureStore = TunnelTestSecureConfigStore()
+        try secureStore.store(
+            configJSON: legacyDirectTunConfigJSON,
+            reference: "legacy-reference"
+        )
+        let tunnelProtocol = NETunnelProviderProtocol()
+        tunnelProtocol.providerConfiguration = [
+            XrayTunnelProviderMessage.providerConfigReferenceKey: "legacy-reference",
+        ]
+
+        let resolved = XrayPacketTunnelProvider.configJSON(
+            options: nil,
+            protocolConfiguration: tunnelProtocol,
+            secureConfigStore: secureStore
+        )
+
+        XCTAssertEqual(resolved?.json, XrayClientProfile.directTunConfigJSON)
+    }
+
+    func testConfigResolutionPreservesLegacyDirectProfileWithProviderDNS() throws {
+        let secureStore = TunnelTestSecureConfigStore()
+        try secureStore.store(
+            configJSON: legacyDirectTunConfigJSON,
+            reference: "legacy-reference"
+        )
+        let tunnelProtocol = NETunnelProviderProtocol()
+        tunnelProtocol.providerConfiguration = [
+            XrayTunnelProviderMessage.providerConfigReferenceKey: "legacy-reference",
+            XrayTunnelProviderMessage.providerDNSServersKey: ["192.0.2.53"],
+        ]
+
+        let resolved = XrayPacketTunnelProvider.configJSON(
+            options: nil,
+            protocolConfiguration: tunnelProtocol,
+            secureConfigStore: secureStore
+        )
+
+        XCTAssertEqual(resolved?.json, legacyDirectTunConfigJSON)
+        XCTAssertEqual(resolved?.dnsConfiguration, .custom(["192.0.2.53"]))
+    }
+
+    func testConfigResolutionPreservesLegacyDirectProfileWithStartOptionDNSOverride() throws {
+        let secureStore = TunnelTestSecureConfigStore()
+        try secureStore.store(
+            configJSON: legacyDirectTunConfigJSON,
+            reference: "legacy-reference"
+        )
+        let tunnelProtocol = NETunnelProviderProtocol()
+        tunnelProtocol.providerConfiguration = [
+            XrayTunnelProviderMessage.providerConfigReferenceKey: "legacy-reference",
+            XrayTunnelProviderMessage.providerDNSServersKey: ["192.0.2.53"],
+        ]
+
+        let resolved = XrayPacketTunnelProvider.configJSON(
+            options: [
+                XrayTunnelProviderMessage.dnsServersOptionKey:
+                    NSArray(array: ["198.51.100.53"]),
+            ],
+            protocolConfiguration: tunnelProtocol,
+            secureConfigStore: secureStore
+        )
+
+        XCTAssertEqual(resolved?.json, legacyDirectTunConfigJSON)
+        XCTAssertEqual(resolved?.dnsConfiguration, .custom(["198.51.100.53"]))
+    }
+
     func testConfigSummaryIncludesRoutingSurfaceWithoutSecrets() {
         let summary = XrayPacketTunnelProvider.configSummary(
             """
@@ -635,6 +796,27 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
     }
 
 }
+
+private let legacyDirectTunConfigJSON = """
+{
+  "inbounds": [
+    {
+      "tag": "tun-in",
+      "protocol": "tun",
+      "listen": "127.0.0.1",
+      "port": 0,
+      "settings": {}
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {}
+    }
+  ]
+}
+"""
 
 private final class TunnelTestSecureConfigStore: XraySecureConfigStoring, @unchecked Sendable {
     private var values: [String: String] = [:]

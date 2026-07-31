@@ -1,4 +1,5 @@
 #if canImport(NetworkExtension)
+import CoreFoundation
 import Darwin
 import Dispatch
 import Foundation
@@ -19,7 +20,7 @@ public enum XrayPacketTunnelProviderError: Error, LocalizedError {
         case .invalidStartupProbeConfiguration:
             return "Startup probe requires an explicit HTTP or HTTPS URL and a valid timeout."
         case .invalidDNSConfiguration:
-            return "DNS servers must be a non-empty list of valid IPv4 addresses."
+            return "DNS requires either enabled dns.fakeIp or a non-empty list of valid IPv4 servers, but not both."
         case .startSuperseded:
             return "Tunnel start was superseded by a newer lifecycle request."
         }
@@ -63,6 +64,20 @@ enum XrayPacketTunnelDNSConfiguration: Equatable {
             return "custom(\(servers.count))"
         case .invalid:
             return "invalid"
+        }
+    }
+}
+
+enum XrayPacketTunnelResolvedDNSConfiguration: Equatable {
+    case localFakeIPAnchor
+    case custom([String])
+
+    var logDescription: String {
+        switch self {
+        case .localFakeIPAnchor:
+            return "localFakeIpAnchor"
+        case let .custom(servers):
+            return "custom(\(servers.count))"
         }
     }
 }
@@ -177,7 +192,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
     private static let defaultStartupProbeTimeoutMs: UInt64 = 5_000
     private static let maximumStartupProbeTimeoutMs: UInt64 = 60_000
     private static let maximumCustomDNSServers = 8
-    static let defaultTunnelDNSServers = ["1.1.1.1", "8.8.8.8"]
+    static let tunnelRemoteAddress = "198.18.0.1"
     private static let debugStatsHandler: @Sendable (XrayCore) -> Void = {
         logDebugStats($0)
     }
@@ -211,10 +226,6 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             completionHandler(XrayPacketTunnelProviderError.missingConfigJSON)
             return
         }
-        XrayAppleLog.info(
-            "PacketTunnelProvider",
-            "Resolved config source=\(resolvedConfig.source) bytes=\(resolvedConfig.json.utf8.count) debugLogging=\(resolvedConfig.debugLoggingEnabled) useTunFileDescriptor=\(resolvedConfig.useTunFileDescriptor) tunRuntimeProfile=\(resolvedConfig.tunRuntimeProfile.rawValue) startupProbe=\(resolvedConfig.startupProbeConfiguration.logDescription) dns=\(resolvedConfig.dnsConfiguration.logDescription)"
-        )
         if case .invalid = resolvedConfig.startupProbeConfiguration {
             if lifecycle.cancelStart(lifecycleToken) {
                 XrayAppleLog.configureFileLogging(directory: nil)
@@ -239,6 +250,37 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             completionHandler(XrayPacketTunnelProviderError.invalidDNSConfiguration)
             return
         }
+        do {
+            try Self.validateConfigBeforeApplyingNetworkSettings(resolvedConfig.json)
+        } catch {
+            if lifecycle.cancelStart(lifecycleToken) {
+                XrayAppleLog.configureFileLogging(directory: nil)
+            }
+            XrayAppleLog.error(
+                "PacketTunnelProvider",
+                "Config validation failed before network settings: \(error.localizedDescription)"
+            )
+            completionHandler(error)
+            return
+        }
+        guard let resolvedDNSConfiguration = Self.resolvedDNSConfiguration(
+            configJSON: resolvedConfig.json,
+            explicit: resolvedConfig.dnsConfiguration
+        ) else {
+            if lifecycle.cancelStart(lifecycleToken) {
+                XrayAppleLog.configureFileLogging(directory: nil)
+            }
+            XrayAppleLog.error(
+                "PacketTunnelProvider",
+                "DNS unavailable: enable dns.fakeIp or configure explicit IPv4 servers"
+            )
+            completionHandler(XrayPacketTunnelProviderError.invalidDNSConfiguration)
+            return
+        }
+        XrayAppleLog.info(
+            "PacketTunnelProvider",
+            "Resolved config source=\(resolvedConfig.source) bytes=\(resolvedConfig.json.utf8.count) debugLogging=\(resolvedConfig.debugLoggingEnabled) useTunFileDescriptor=\(resolvedConfig.useTunFileDescriptor) tunRuntimeProfile=\(resolvedConfig.tunRuntimeProfile.rawValue) startupProbe=\(resolvedConfig.startupProbeConfiguration.logDescription) dns=\(resolvedDNSConfiguration.logDescription)"
+        )
         let diagnosticLogDirectory = Self.diagnosticLogDirectory(
             debugLoggingEnabled: resolvedConfig.debugLoggingEnabled
         )
@@ -253,7 +295,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         setTunnelNetworkSettings(
             Self.networkSettings(
                 excludingServerAddress: resolvedConfig.serverAddress,
-                dnsConfiguration: resolvedConfig.dnsConfiguration
+                resolvedDNSConfiguration: resolvedDNSConfiguration
             )
         ) { [weak self] error in
             guard let self else {
@@ -456,7 +498,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         guard let configReference = optionReference ?? providerReference else {
             return nil
         }
-        let configJSON: String
+        let storedConfigJSON: String
         do {
             guard let storedConfig = try secureConfigStore.configJSON(
                 reference: configReference
@@ -467,13 +509,22 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                 )
                 return nil
             }
-            configJSON = storedConfig
+            storedConfigJSON = storedConfig
         } catch {
             XrayAppleLog.error(
                 "PacketTunnelProvider",
                 "Failed to load secure configuration: \(error.localizedDescription)"
             )
             return nil
+        }
+        let configJSON: String
+        switch selectedDNSConfiguration {
+        case .system:
+            configJSON = XrayClientProfile.configJSONAddingFakeIPToLegacyDirectConfigIfNeeded(
+                storedConfigJSON
+            )
+        case .custom, .invalid:
+            configJSON = storedConfigJSON
         }
         return ResolvedConfig(
             json: configJSON,
@@ -696,9 +747,9 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
 
     static func networkSettings(
         excludingServerAddress serverAddress: String? = nil,
-        dnsConfiguration: XrayPacketTunnelDNSConfiguration = .system
+        resolvedDNSConfiguration: XrayPacketTunnelResolvedDNSConfiguration
     ) -> NEPacketTunnelNetworkSettings {
-        let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: "198.18.0.1")
+        let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: tunnelRemoteAddress)
         settings.mtu = 1500
 
         let ipv4Settings = NEIPv4Settings(
@@ -715,22 +766,111 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         }
         settings.ipv4Settings = ipv4Settings
 
-        // Always install tunnel DNS servers: with the IPv4 default route
-        // claimed, leaving dnsSettings unset makes iOS route queries for the
-        // underlying network's resolver (often a private router address)
-        // into the tunnel, where the remote proxy cannot reach them. With
-        // fake-IP DNS enabled the core answers these queries locally, so the
-        // default servers below are interception anchors, not upstreams.
+        // A full tunnel must install an explicit DNS destination. Otherwise
+        // the system resolver can be routed into the tunnel and blackhole.
+        // In fake-IP mode the tunnel-local address is an interception anchor,
+        // not an upstream resolver.
         let servers: [String]
-        if case let .custom(custom) = dnsConfiguration {
+        switch resolvedDNSConfiguration {
+        case .localFakeIPAnchor:
+            servers = [tunnelRemoteAddress]
+        case let .custom(custom):
             servers = custom
-        } else {
-            servers = Self.defaultTunnelDNSServers
         }
         let dnsSettings = NEDNSSettings(servers: servers)
         dnsSettings.matchDomains = [""]
         settings.dnsSettings = dnsSettings
         return settings
+    }
+
+    static func resolvedDNSConfiguration(
+        configJSON: String,
+        explicit: XrayPacketTunnelDNSConfiguration
+    ) -> XrayPacketTunnelResolvedDNSConfiguration? {
+        let hasFakeIP = fakeIPDNSIsAvailable(configJSON)
+        switch explicit {
+        case let .custom(servers) where !hasFakeIP:
+            return .custom(servers)
+        case .custom:
+            return nil
+        case .invalid:
+            return nil
+        case .system:
+            return hasFakeIP ? .localFakeIPAnchor : nil
+        }
+    }
+
+    static func validateConfigBeforeApplyingNetworkSettings(
+        _ configJSON: String,
+        geodataSearchDirectory: URL? = Bundle.main.resourceURL
+    ) throws {
+        _ = try XrayCore(
+            configJSON: configJSON,
+            geodataSearchDirectory: geodataSearchDirectory
+        )
+    }
+
+    private static func fakeIPDNSIsAvailable(_ configJSON: String) -> Bool {
+        guard let data = configJSON.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let dns = root["dns"] as? [String: Any],
+              let fakeIP = dns["fakeIp"] as? [String: Any],
+              Set(dns.keys).isSubset(of: ["fakeIp", "servers", "hosts"]),
+              Set(fakeIP.keys).isSubset(of: ["enabled", "ipv4Pool", "ttl"]),
+              isJSONBooleanTrue(fakeIP["enabled"]),
+              let ipv4Pool = fakeIP["ipv4Pool"] as? String
+        else {
+            return false
+        }
+        if let ttl = fakeIP["ttl"], !isJSONUInt32(ttl) {
+            return false
+        }
+        return isValidIPv4Pool(ipv4Pool)
+    }
+
+    private static func isJSONBooleanTrue(_ value: Any?) -> Bool {
+        guard let number = value as? NSNumber,
+              CFGetTypeID(number) == CFBooleanGetTypeID()
+        else {
+            return false
+        }
+        return number.boolValue
+    }
+
+    private static func isJSONUInt32(_ value: Any) -> Bool {
+        guard let number = value as? NSNumber,
+              CFGetTypeID(number) != CFBooleanGetTypeID()
+        else {
+            return false
+        }
+        let integerEncodings = "cislqCISLQ"
+        guard let encoding = String(cString: number.objCType).first,
+              integerEncodings.contains(encoding)
+        else {
+            return false
+        }
+        let numericValue = number.doubleValue
+        return numericValue >= 0 && numericValue <= Double(UInt32.max)
+    }
+
+    private static func isValidIPv4Pool(_ value: String) -> Bool {
+        let components = value.split(
+            separator: "/",
+            maxSplits: 1,
+            omittingEmptySubsequences: false
+        )
+        guard let address = components.first,
+              isIPAddress(String(address), family: AF_INET)
+        else {
+            return false
+        }
+        if components.count == 1 {
+            return true
+        }
+        guard let prefix = UInt8(components[1]) else {
+            return false
+        }
+        return prefix <= 32
     }
 
     private static func dnsConfiguration(value: Any) -> XrayPacketTunnelDNSConfiguration {

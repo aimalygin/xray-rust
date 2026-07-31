@@ -96,10 +96,13 @@ downloaded `.dat` files are checksum-verified inputs in the ignored
 `platform/apple/XrayClient/dat` directory, not repository contents.
 
 The Apple provider performs no startup connectivity probe and assigns no
-third-party DNS resolver by default. Device tests that enable a probe or custom
+third-party DNS resolver by default. Fake-IP profiles use the tunnel-local
+`198.18.0.1` DNS interception anchor; profiles without fake-IP must provide an
+explicit IPv4 DNS override. Combining both modes, or configuring neither, fails
+before applying network settings. Device tests that enable a probe or custom
 DNS must use endpoints controlled or approved by the host application and
-verify both valid configuration and fail-closed handling of malformed explicit
-settings.
+verify valid configuration, local-anchor responses, and fail-closed handling
+of missing, conflicting, or malformed DNS settings.
 
 ## Android native libraries
 

@@ -125,8 +125,11 @@ responses, falls back to the system resolver, and caches results.
 
 `dns.hosts` maps supported domain matchers to an IP or alias domain.
 `dns.fakeIp` supports `enabled`, an IPv4 `ipv4Pool`, and `ttl` for the current
-TUN routing path. DNS-over-HTTPS/TLS, client-IP, per-server rule objects, and
-the broader Xray DNS feature set are not implemented.
+TUN routing path. It synthesizes A records and returns NODATA for other
+single-question UDP query types sent to the tunnel-local `198.18.0.1` anchor;
+unsupported query types sent to another resolver continue through the normal
+UDP path. DNS-over-TCP, DNS-over-HTTPS/TLS, client-IP, per-server rule objects,
+and the broader Xray DNS feature set are not implemented.
 
 ## Policy
 

@@ -45,6 +45,9 @@ const DNS_PORT: u16 = 53;
 const DNS_TYPE_A: u16 = 1;
 const DNS_TYPE_AAAA: u16 = 28;
 const DNS_CLASS_IN: u16 = 1;
+const DNS_RCODE_NOERROR: u16 = 0;
+const DNS_RCODE_SERVFAIL: u16 = 2;
+const TUN_FAKE_DNS_ANCHOR: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 1);
 const TCP_BUFFER_SIZE: usize = 32 * 1024;
 const STACK_EVENT_CHANNEL_DEPTH: usize = 64;
 const TCP_BRIDGE_CHANNEL_DEPTH: usize = 256;
@@ -586,21 +589,42 @@ impl FakeIpMapper {
         ))
     }
 
-    fn fake_dns_response(&mut self, query: &[u8]) -> Option<Bytes> {
+    fn fake_dns_response(
+        &mut self,
+        query: &[u8],
+        respond_nodata_for_unsupported: bool,
+    ) -> Option<Bytes> {
         let question = parse_dns_question(query)?;
-        match question.qtype {
-            DNS_TYPE_A => {
-                let ip = self.fake_ipv4_for_domain(&question.domain)?;
-                Some(build_dns_response(
+        if question.qtype == DNS_TYPE_A && question.qclass == DNS_CLASS_IN {
+            let Some(ip) = self.fake_ipv4_for_domain(&question.domain) else {
+                return Some(build_dns_response(
                     query,
                     &question,
-                    Some(ip),
+                    None,
                     self.config.ttl,
-                ))
-            }
-            DNS_TYPE_AAAA => Some(build_dns_response(query, &question, None, self.config.ttl)),
-            _ => None,
+                    DNS_RCODE_SERVFAIL,
+                ));
+            };
+            return Some(build_dns_response(
+                query,
+                &question,
+                Some(ip),
+                self.config.ttl,
+                DNS_RCODE_NOERROR,
+            ));
         }
+
+        if matches!(question.qtype, DNS_TYPE_A | DNS_TYPE_AAAA) || respond_nodata_for_unsupported {
+            return Some(build_dns_response(
+                query,
+                &question,
+                None,
+                self.config.ttl,
+                DNS_RCODE_NOERROR,
+            ));
+        }
+
+        None
     }
 }
 
@@ -1350,8 +1374,12 @@ impl TunRuntimeContext {
         if packet.target.port != DNS_PORT {
             return None;
         }
+        let is_local_anchor = packet.target.addr == IpAddress::Ipv4(TUN_FAKE_DNS_ANCHOR);
         let mapper = self.fake_ip_mapper.as_ref()?;
-        let response = mapper.lock().ok()?.fake_dns_response(&packet.payload)?;
+        let response = mapper
+            .lock()
+            .ok()?
+            .fake_dns_response(&packet.payload, is_local_anchor)?;
         build_udp_packet(packet.target, packet.client, &response)
     }
 }
@@ -1643,10 +1671,12 @@ fn build_dns_response(
     question: &DnsQuestion,
     answer: Option<Ipv4Addr>,
     ttl: u32,
+    rcode: u16,
 ) -> Bytes {
-    let has_answer = answer.is_some() && question.qclass == DNS_CLASS_IN;
+    let has_answer =
+        rcode == DNS_RCODE_NOERROR && answer.is_some() && question.qclass == DNS_CLASS_IN;
     let request_flags = u16::from_be_bytes([query[2], query[3]]);
-    let response_flags = 0x8000 | (request_flags & 0x0100) | 0x0080;
+    let response_flags = 0x8000 | (request_flags & 0x0100) | 0x0080 | (rcode & 0x000f);
     let mut response = Vec::with_capacity(question.question_end + 16);
     response.extend_from_slice(&query[0..2]);
     response.extend_from_slice(&response_flags.to_be_bytes());
@@ -5915,7 +5945,7 @@ mod tests {
         .unwrap();
         let query = build_dns_a_query(0x1203, "www.example.com");
 
-        let response = mapper.fake_dns_response(&query).unwrap();
+        let response = mapper.fake_dns_response(&query, false).unwrap();
         let fake_ip = mapper.domain_for_ipv4(Ipv4Addr::new(198, 18, 0, 1));
 
         assert_eq!(dns_response_id(&response), Some(0x1203));
@@ -5924,6 +5954,86 @@ mod tests {
             Some(Ipv4Addr::new(198, 18, 0, 1))
         );
         assert_eq!(fake_ip, Some("www.example.com"));
+    }
+
+    #[test]
+    fn fake_dns_response_returns_nodata_for_https_query_without_recording_mapping() {
+        let mut mapper = FakeIpMapper::new(FakeIpRuntimeConfig {
+            ipv4_network: Ipv4Addr::new(198, 18, 0, 0),
+            ipv4_prefix: 15,
+            ttl: 120,
+        })
+        .unwrap();
+        let query = build_dns_query(0x1204, "www.example.com", 65, DNS_CLASS_IN);
+
+        let response = mapper.fake_dns_response(&query, true).unwrap();
+
+        assert_eq!(u16::from_be_bytes([response[2], response[3]]), 0x8180);
+        assert_eq!(u16::from_be_bytes([response[6], response[7]]), 0);
+        assert!(mapper.by_domain.is_empty());
+    }
+
+    #[test]
+    fn fake_dns_response_returns_nodata_for_aaaa_query() {
+        let mut mapper = FakeIpMapper::new(FakeIpRuntimeConfig {
+            ipv4_network: Ipv4Addr::new(198, 18, 0, 0),
+            ipv4_prefix: 15,
+            ttl: 120,
+        })
+        .unwrap();
+        let query = build_dns_query(0x1205, "www.example.com", DNS_TYPE_AAAA, DNS_CLASS_IN);
+
+        let response = mapper.fake_dns_response(&query, false).unwrap();
+
+        assert_eq!(u16::from_be_bytes([response[6], response[7]]), 0);
+    }
+
+    #[test]
+    fn fake_dns_response_does_not_allocate_mapping_for_non_in_a_query() {
+        let mut mapper = FakeIpMapper::new(FakeIpRuntimeConfig {
+            ipv4_network: Ipv4Addr::new(198, 18, 0, 0),
+            ipv4_prefix: 15,
+            ttl: 120,
+        })
+        .unwrap();
+        let query = build_dns_query(0x1206, "www.example.com", DNS_TYPE_A, 3);
+
+        let response = mapper.fake_dns_response(&query, false).unwrap();
+
+        assert_eq!(u16::from_be_bytes([response[6], response[7]]), 0);
+        assert!(mapper.by_domain.is_empty());
+    }
+
+    #[test]
+    fn fake_dns_response_leaves_unsupported_query_unhandled_without_local_anchor() {
+        let mut mapper = FakeIpMapper::new(FakeIpRuntimeConfig {
+            ipv4_network: Ipv4Addr::new(198, 18, 0, 0),
+            ipv4_prefix: 15,
+            ttl: 120,
+        })
+        .unwrap();
+        let query = build_dns_query(0x1207, "www.example.com", 65, DNS_CLASS_IN);
+
+        let response = mapper.fake_dns_response(&query, false);
+
+        assert!(response.is_none());
+    }
+
+    #[test]
+    fn fake_dns_response_returns_servfail_when_pool_is_exhausted() {
+        let mut mapper = FakeIpMapper::new(FakeIpRuntimeConfig {
+            ipv4_network: Ipv4Addr::new(198, 19, 0, 1),
+            ipv4_prefix: 32,
+            ttl: 120,
+        })
+        .unwrap();
+        let first_query = build_dns_a_query(0x1208, "first.example.com");
+        let second_query = build_dns_a_query(0x1209, "second.example.com");
+        mapper.fake_dns_response(&first_query, false).unwrap();
+
+        let response = mapper.fake_dns_response(&second_query, false).unwrap();
+
+        assert_eq!(u16::from_be_bytes([response[2], response[3]]) & 0x000f, 2);
     }
 
     #[test]
@@ -5943,7 +6053,7 @@ mod tests {
         )
         .unwrap();
         let parsed = parse_udp_packet(&request).unwrap();
-        let response = mapper.fake_dns_response(&parsed.payload).unwrap();
+        let response = mapper.fake_dns_response(&parsed.payload, false).unwrap();
         let reply = build_udp_packet(parsed.target, parsed.client, &response).unwrap();
 
         assert_eq!(
@@ -5999,6 +6109,10 @@ mod tests {
     }
 
     fn build_dns_a_query(id: u16, domain: &str) -> Vec<u8> {
+        build_dns_query(id, domain, DNS_TYPE_A, DNS_CLASS_IN)
+    }
+
+    fn build_dns_query(id: u16, domain: &str, qtype: u16, qclass: u16) -> Vec<u8> {
         let mut packet = Vec::new();
         packet.extend_from_slice(&id.to_be_bytes());
         packet.extend_from_slice(&0x0100_u16.to_be_bytes());
@@ -6011,8 +6125,8 @@ mod tests {
             packet.extend_from_slice(label.as_bytes());
         }
         packet.push(0);
-        packet.extend_from_slice(&1_u16.to_be_bytes());
-        packet.extend_from_slice(&1_u16.to_be_bytes());
+        packet.extend_from_slice(&qtype.to_be_bytes());
+        packet.extend_from_slice(&qclass.to_be_bytes());
         packet
     }
 
