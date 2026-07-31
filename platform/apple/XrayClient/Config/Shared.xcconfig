@@ -1,0 +1,20 @@
+// Build settings shared by every target in the sample project.
+//
+// The committed defaults are deliberately generic so the repository carries no
+// developer identity: the sample builds unsigned with placeholder bundle
+// identifiers. Signing a build for a real device needs your own Team ID and
+// bundle identifiers that match App IDs you registered — the tunnel targets
+// request the `packet-tunnel-provider` entitlement, which Apple only issues to
+// a registered App ID.
+//
+// Put your values in Config/Local.xcconfig, which is git-ignored:
+//
+//     XRAY_BUNDLE_ID_PREFIX = com.yourcompany
+//     DEVELOPMENT_TEAM = ABCDE12345
+//
+// Copy Config/Local.xcconfig.example to get started. Keeping them there means
+// opening the project in Xcode leaves no diff to commit by accident.
+
+XRAY_BUNDLE_ID_PREFIX = org.example
+
+#include? "Local.xcconfig"

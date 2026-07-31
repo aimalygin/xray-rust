@@ -112,8 +112,14 @@ open platform/apple/XrayClient/XrayClient.xcodeproj
 
 The Xcode project consumes
 `target/mobile/apple/XrayRust.xcframework` through the local Swift Package.
-Choose the `XrayClient`, `XrayClientTv`, or `XrayClientMac` scheme and configure
-your own signing team. The geodata download is needed by the checked-in Xcode
+Choose the `XrayClient`, `XrayClientTv`, or `XrayClientMac` scheme. The
+committed project builds unsigned under placeholder `org.example` identifiers;
+to sign it, copy
+`platform/apple/XrayClient/Config/Local.xcconfig.example` to `Local.xcconfig`
+in the same directory and set your bundle prefix and Team ID there. That file
+is git-ignored, so your identity stays out of the repository and Xcode leaves
+nothing to commit. Register App IDs matching your prefix first — the tunnel
+targets request the `packet-tunnel-provider` entitlement. The geodata download is needed by the checked-in Xcode
 resource build phases; profiles that do not use geodata can omit those files in
 a custom host project. See [Apple integration](platform/apple/README.md).
 

@@ -1,0 +1,9 @@
+// Copy to Local.xcconfig (git-ignored) and fill in your own values.
+//
+// XRAY_BUNDLE_ID_PREFIX replaces `org.example` across every target, so the
+// identifiers become <prefix>.XrayClient, <prefix>.XrayClient.Tunnel and so on.
+// Register matching App IDs before signing: the tunnel targets need the
+// `packet-tunnel-provider` entitlement.
+
+XRAY_BUNDLE_ID_PREFIX = com.yourcompany
+DEVELOPMENT_TEAM = ABCDE12345

@@ -14,6 +14,8 @@ platform/apple/.build/
 platform/apple/.swiftpm/
 platform/apple/target/
 platform/apple/XrayClient/dat/*.dat
+# Local signing identity and bundle prefix; see Config/Local.xcconfig.example.
+platform/apple/XrayClient/Config/Local.xcconfig
 platform/android/.gradle/
 platform/android/build/
 platform/android/xraymobile/.cxx/

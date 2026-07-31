@@ -44,12 +44,18 @@ open platform/apple/XrayClient/XrayClient.xcodeproj
 
 In Xcode:
 
-1. choose `XrayClient`, `XrayClientTv`, or `XrayClientMac`;
-2. select a matching simulator/device or “My Mac”;
-3. assign your own Apple Developer team to the app and Packet Tunnel extension;
-4. make the app and extension bundle identifiers unique and keep the profile's
-   provider bundle identifier aligned with the extension;
+1. copy `XrayClient/Config/Local.xcconfig.example` to
+   `XrayClient/Config/Local.xcconfig` and set `XRAY_BUNDLE_ID_PREFIX` to a
+   prefix you own plus `DEVELOPMENT_TEAM` to your Apple Developer team — every
+   target derives its identifier from that prefix, and the file is git-ignored
+   so it never lands in a commit;
+2. choose `XrayClient`, `XrayClientTv`, or `XrayClientMac`;
+3. select a matching simulator/device or “My Mac”;
+4. keep the profile's provider bundle identifier aligned with the extension;
 5. run the containing app.
+
+Without `Local.xcconfig` the project still builds unsigned under the
+placeholder `org.example` identifiers, which is how CI builds it.
 
 The local package dependency resolves the already-built XCFramework
 automatically. A UI-only simulator run can exercise profile editing and config
