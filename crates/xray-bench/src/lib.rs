@@ -69,6 +69,16 @@ const REALITY_SERVER_NAME: &str = "www.google.com";
 const REALITY_PRIVATE_KEY: &str = "aGSYystUbf59_9_6LKRxD27rmSW_-2_nyd9YG_Gwbks";
 const REALITY_PUBLIC_KEY: &str = "E59WjnvZcQMu7tR7_BgyhycuEdBS-CtKxfImRCdAvFM";
 const REALITY_SHORT_ID_HEX: &str = "0123456789abcdef";
+/// The REALITY server logs `started` when its listener binds, but it cannot
+/// serve clients until the library has learned the post-handshake record shape
+/// of the real `dest`: a TLS handshake to that host plus a fixed five-second
+/// read deadline. Connecting inside that window stalls the first flow — which
+/// lands inside the measurement window — and can trip the dest's ten-second
+/// incomplete-handshake FIN, killing the flow outright.
+const REALITY_FIXTURE_WARMUP: Duration = Duration::from_secs(8);
+/// Overrides [`REALITY_FIXTURE_WARMUP`]; the dest handshake latency is
+/// network-dependent, so the fixed default may need adjusting per environment.
+const REALITY_FIXTURE_WARMUP_MS_ENV: &str = "XRAY_BENCH_REALITY_WARMUP_MS";
 const SING_BOX_BUILD_TAGS: &str = "with_gvisor,with_utls,badlinkname,tfogo_checklinkname0";
 const TCP_PROTOCOL: u8 = 6;
 const UDP_PROTOCOL: u8 = 17;
@@ -4878,6 +4888,15 @@ pub async fn wait_for_process_log_contains(
     }
 }
 
+/// Resolves the REALITY fixture warm-up duration from an optional raw
+/// environment-variable value (milliseconds), falling back to
+/// [`REALITY_FIXTURE_WARMUP`] when absent or unparseable.
+fn reality_fixture_warmup_from_env(raw: Option<&str>) -> Duration {
+    raw.and_then(|value| value.parse::<u64>().ok())
+        .map(Duration::from_millis)
+        .unwrap_or(REALITY_FIXTURE_WARMUP)
+}
+
 async fn start_xray_core_reality_vision_server(
     options: &BenchOptions,
     run_dir: &Path,
@@ -4929,6 +4948,12 @@ async fn start_xray_core_reality_vision_server(
         Duration::from_secs(10),
     )
     .await?;
+
+    // `started` only means the listener is bound; see REALITY_FIXTURE_WARMUP.
+    let warmup = reality_fixture_warmup_from_env(
+        std::env::var(REALITY_FIXTURE_WARMUP_MS_ENV).ok().as_deref(),
+    );
+    sleep(warmup).await;
 
     Ok((addr, FixtureProcess { child }))
 }
@@ -7635,6 +7660,26 @@ mod tests {
         assert_eq!(
             value["outbounds"][0]["settings"]["finalRules"][0]["action"],
             "allow"
+        );
+    }
+
+    #[test]
+    fn reality_fixture_warmup_from_env_parses_override_or_falls_back_to_default() {
+        assert_eq!(
+            reality_fixture_warmup_from_env(None),
+            REALITY_FIXTURE_WARMUP
+        );
+        assert_eq!(
+            reality_fixture_warmup_from_env(Some("2500")),
+            Duration::from_millis(2500)
+        );
+        assert_eq!(
+            reality_fixture_warmup_from_env(Some("garbage")),
+            REALITY_FIXTURE_WARMUP
+        );
+        assert_eq!(
+            reality_fixture_warmup_from_env(Some("")),
+            REALITY_FIXTURE_WARMUP
         );
     }
 

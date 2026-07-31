@@ -344,7 +344,7 @@ frames against a local fake Vision server. The xray-rust benchmark config uses
 `allowInsecure` for that local self-signed certificate; the Xray-core config uses
 `pinnedPeerCertSha256`, matching newer Xray-core releases where `allowInsecure`
 has been removed.
-`reality-vision-xudp` uses VLESS Reality with `xtls-rprx-vision` and XUDP/Mux frames against an Xray-core server fixture, then validates echoed UDP payloads through the same SOCKS5 UDP client path. The fixture process is not sampled in RSS/CPU; only the selected client engine is sampled.
+`reality-vision-xudp` uses VLESS Reality with `xtls-rprx-vision` and XUDP/Mux frames against an Xray-core server fixture, then validates echoed UDP payloads through the same SOCKS5 UDP client path. The fixture process is not sampled in RSS/CPU; only the selected client engine is sampled. The harness waits out a fixed REALITY warm-up after the fixture logs `started` (override with `XRAY_BENCH_REALITY_WARMUP_MS`): the REALITY library must first learn the post-handshake record shape of the real `dest`, which takes a TLS handshake to that host plus a five-second read deadline, and a client that connects inside that window stalls — or is dropped when the dest closes the borrowed connection.
 
 `route-probe` is an in-process xray-rust microprobe for setup-path routing cost. It builds a synthetic config with IP/CIDR routing rules and tagged freedom outbounds, then repeatedly calls the same TCP outbound selection path used by SOCKS CONNECT. This isolates routing/outbound selection from TCP accept, SOCKS parsing, and outbound socket connect noise.
 
