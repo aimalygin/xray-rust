@@ -17,22 +17,22 @@
 <line x1="64" y1="92.00" x2="736" y2="92.00" stroke="#e1e0d9" stroke-width="1"/>
 <text x="54" y="96.00" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11" fill="#898781" text-anchor="end">400</text>
 <line x1="64" y1="330" x2="736" y2="330" stroke="#c3c2b7" stroke-width="1"/>
-<path d="M 332.00 330.00 L 332.00 217.98 Q 332.00 213.98 336.00 213.98 L 372.00 213.98 Q 376.00 213.98 376.00 217.98 L 376.00 330.00 Z" fill="#2a78d6"/>
-<line x1="354.00" y1="221.71" x2="354.00" y2="212.19" stroke="#52514e" stroke-width="1.5"/>
-<line x1="349.00" y1="221.71" x2="359.00" y2="221.71" stroke="#52514e" stroke-width="1.5"/>
-<line x1="349.00" y1="212.19" x2="359.00" y2="212.19" stroke="#52514e" stroke-width="1.5"/>
-<text x="354.00" y="204.19" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12" font-weight="600" fill="#0b0b0b" text-anchor="middle">195</text>
-<path d="M 378.00 330.00 L 378.00 192.98 Q 378.00 188.98 382.00 188.98 L 418.00 188.98 Q 422.00 188.98 422.00 192.98 L 422.00 330.00 Z" fill="#eb6834"/>
-<line x1="400.00" y1="190.77" x2="400.00" y2="174.11" stroke="#52514e" stroke-width="1.5"/>
-<line x1="395.00" y1="190.77" x2="405.00" y2="190.77" stroke="#52514e" stroke-width="1.5"/>
-<line x1="395.00" y1="174.11" x2="405.00" y2="174.11" stroke="#52514e" stroke-width="1.5"/>
-<text x="400.00" y="166.11" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12" font-weight="600" fill="#0b0b0b" text-anchor="middle">237</text>
-<path d="M 424.00 330.00 L 424.00 233.44 Q 424.00 229.44 428.00 229.44 L 464.00 229.44 Q 468.00 229.44 468.00 233.44 L 468.00 330.00 Z" fill="#1baf7a"/>
-<line x1="446.00" y1="241.94" x2="446.00" y2="221.12" stroke="#52514e" stroke-width="1.5"/>
-<line x1="441.00" y1="241.94" x2="451.00" y2="241.94" stroke="#52514e" stroke-width="1.5"/>
-<line x1="441.00" y1="221.12" x2="451.00" y2="221.12" stroke="#52514e" stroke-width="1.5"/>
-<text x="446.00" y="213.12" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12" font-weight="600" fill="#0b0b0b" text-anchor="middle">169</text>
+<path d="M 332.00 330.00 L 332.00 223.93 Q 332.00 219.93 336.00 219.93 L 372.00 219.93 Q 376.00 219.93 376.00 223.93 L 376.00 330.00 Z" fill="#2a78d6"/>
+<line x1="354.00" y1="225.88" x2="354.00" y2="218.74" stroke="#52514e" stroke-width="1.5"/>
+<line x1="349.00" y1="225.88" x2="359.00" y2="225.88" stroke="#52514e" stroke-width="1.5"/>
+<line x1="349.00" y1="218.74" x2="359.00" y2="218.74" stroke="#52514e" stroke-width="1.5"/>
+<text x="354.00" y="210.74" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12" font-weight="600" fill="#0b0b0b" text-anchor="middle">185</text>
+<path d="M 378.00 330.00 L 378.00 191.79 Q 378.00 187.79 382.00 187.79 L 418.00 187.79 Q 422.00 187.79 422.00 191.79 L 422.00 330.00 Z" fill="#eb6834"/>
+<line x1="400.00" y1="193.15" x2="400.00" y2="181.84" stroke="#52514e" stroke-width="1.5"/>
+<line x1="395.00" y1="193.15" x2="405.00" y2="193.15" stroke="#52514e" stroke-width="1.5"/>
+<line x1="395.00" y1="181.84" x2="405.00" y2="181.84" stroke="#52514e" stroke-width="1.5"/>
+<text x="400.00" y="173.84" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12" font-weight="600" fill="#0b0b0b" text-anchor="middle">239</text>
+<path d="M 424.00 330.00 L 424.00 242.97 Q 424.00 238.97 428.00 238.97 L 464.00 238.97 Q 468.00 238.97 468.00 242.97 L 468.00 330.00 Z" fill="#1baf7a"/>
+<line x1="446.00" y1="241.34" x2="446.00" y2="237.77" stroke="#52514e" stroke-width="1.5"/>
+<line x1="441.00" y1="241.34" x2="451.00" y2="241.34" stroke="#52514e" stroke-width="1.5"/>
+<line x1="441.00" y1="237.77" x2="451.00" y2="237.77" stroke="#52514e" stroke-width="1.5"/>
+<text x="446.00" y="229.77" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12" font-weight="600" fill="#0b0b0b" text-anchor="middle">153</text>
 <text x="400.00" y="354" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12.5" fill="#52514e" text-anchor="middle">tcp-bulk-throughput</text>
 <text x="24" y="404" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11" fill="#898781">2026-07-31 · Apple M3 Pro, 18 GB RAM, macOS 26.5.2 · runs=5 · synthetic localhost benchmark</text>
-<text x="24" y="422" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11" fill="#898781">xray-rust 05c33ac · Xray-core v26.5.9 · sing-box v1.13.15</text>
+<text x="24" y="422" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11" fill="#898781">xray-rust 3f70759 · Xray-core v26.5.9 · sing-box v1.13.15</text>
 </svg>
