@@ -14,6 +14,10 @@ pub enum ConfigModelError {
     InvalidCidrPrefix { prefix: u8, max: u8 },
     #[error("invalid domain regex `{pattern}`: {message}")]
     InvalidDomainRegex { pattern: String, message: String },
+    #[error("DNS qtype range start {start} exceeds end {end}")]
+    InvalidDnsQTypeRange { start: u16, end: u16 },
+    #[error("routing port range start {start} exceeds end {end}")]
+    InvalidRoutingPortRange { start: u16, end: u16 },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -294,6 +298,8 @@ pub struct DnsFakeIpConfig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RoutingRule {
     pub inbound_tags: Vec<String>,
+    pub networks: Vec<Network>,
+    pub port_ranges: Vec<RoutingPortRange>,
     pub domain_matchers: Vec<DomainMatcher>,
     pub ip_matchers: Vec<IpMatcher>,
     pub outbound_tag: String,
@@ -306,7 +312,20 @@ impl RoutingRule {
         target_domain: Option<&str>,
         target_ip: Option<&IpAddr>,
     ) -> bool {
+        self.matches_target(inbound_tag, target_domain, target_ip, None, None)
+    }
+
+    pub fn matches_target(
+        &self,
+        inbound_tag: Option<&str>,
+        target_domain: Option<&str>,
+        target_ip: Option<&IpAddr>,
+        target_network: Option<Network>,
+        target_port: Option<u16>,
+    ) -> bool {
         self.matches_inbound(inbound_tag)
+            && self.matches_network(target_network)
+            && self.matches_port(target_port)
             && self.matches_domain(target_domain)
             && self.matches_ip(target_ip)
     }
@@ -323,6 +342,23 @@ impl RoutingRule {
         self.inbound_tags
             .iter()
             .any(|candidate| candidate == inbound_tag)
+    }
+
+    pub fn matches_network(&self, target_network: Option<Network>) -> bool {
+        if self.networks.is_empty() {
+            return true;
+        }
+
+        target_network.is_some_and(|target| self.networks.contains(&target))
+    }
+
+    pub fn matches_port(&self, target_port: Option<u16>) -> bool {
+        if self.port_ranges.is_empty() {
+            return true;
+        }
+
+        target_port
+            .is_some_and(|target| self.port_ranges.iter().any(|range| range.contains(target)))
     }
 
     pub fn matches_domain(&self, target_domain: Option<&str>) -> bool {
@@ -349,6 +385,40 @@ impl RoutingRule {
         };
 
         ip_matcher_group_matches(&self.ip_matchers, target_ip)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct RoutingPortRange {
+    start: u16,
+    end: u16,
+}
+
+impl RoutingPortRange {
+    pub fn new(start: u16, end: u16) -> Result<Self, ConfigModelError> {
+        if start > end {
+            return Err(ConfigModelError::InvalidRoutingPortRange { start, end });
+        }
+        Ok(Self { start, end })
+    }
+
+    pub const fn single(port: u16) -> Self {
+        Self {
+            start: port,
+            end: port,
+        }
+    }
+
+    pub const fn start(self) -> u16 {
+        self.start
+    }
+
+    pub const fn end(self) -> u16 {
+        self.end
+    }
+
+    pub fn contains(self, port: u16) -> bool {
+        (self.start..=self.end).contains(&port)
     }
 }
 
@@ -629,12 +699,14 @@ pub struct OutboundConfig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OutboundProtocol {
     Freedom,
+    Dns,
     Vless,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OutboundSettings {
     Freedom,
+    Dns(DnsOutboundSettings),
     Vless(VlessOutboundSettings),
 }
 
@@ -642,8 +714,111 @@ impl OutboundSettings {
     pub fn protocol(&self) -> OutboundProtocol {
         match self {
             Self::Freedom => OutboundProtocol::Freedom,
+            Self::Dns(_) => OutboundProtocol::Dns,
             Self::Vless(_) => OutboundProtocol::Vless,
         }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DnsOutboundSettings {
+    /// Optional transport override; `None` preserves the original DNS flow.
+    pub rewrite_network: Option<Network>,
+    /// Optional address override; `None` preserves the original DNS target.
+    pub rewrite_address: Option<TargetAddr>,
+    /// Optional port override; zero preserves the original DNS target port.
+    pub rewrite_port: u16,
+    pub user_level: u32,
+    pub rules: Vec<DnsOutboundRule>,
+}
+
+impl DnsOutboundSettings {
+    /// Applies ordered Xray DNS outbound rules and then Xray's implicit policy.
+    pub fn action_for(&self, qtype: u16, domain: &str) -> DnsOutboundRuleAction {
+        let normalized_domain = normalize_dns_qname(domain);
+        self.rules
+            .iter()
+            .find(|rule| rule.matches_normalized(qtype, &normalized_domain))
+            .map_or_else(
+                || {
+                    if matches!(qtype, 1 | 28) {
+                        DnsOutboundRuleAction::Hijack
+                    } else {
+                        DnsOutboundRuleAction::Reject
+                    }
+                },
+                |rule| rule.action,
+            )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DnsOutboundRule {
+    pub action: DnsOutboundRuleAction,
+    pub qtype_ranges: Vec<DnsQTypeRange>,
+    pub domain_matchers: Vec<DomainMatcher>,
+}
+
+impl DnsOutboundRule {
+    pub fn matches(&self, qtype: u16, domain: &str) -> bool {
+        let normalized_domain = normalize_dns_qname(domain);
+        self.matches_normalized(qtype, &normalized_domain)
+    }
+
+    fn matches_normalized(&self, qtype: u16, normalized_domain: &str) -> bool {
+        (self.qtype_ranges.is_empty()
+            || self.qtype_ranges.iter().any(|range| range.contains(qtype)))
+            && (self.domain_matchers.is_empty()
+                || self
+                    .domain_matchers
+                    .iter()
+                    .any(|matcher| matcher.matches(normalized_domain)))
+    }
+}
+
+fn normalize_dns_qname(domain: &str) -> String {
+    domain.trim_end_matches('.').to_ascii_lowercase()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum DnsOutboundRuleAction {
+    Direct,
+    Drop,
+    Reject,
+    Hijack,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct DnsQTypeRange {
+    start: u16,
+    end: u16,
+}
+
+impl DnsQTypeRange {
+    pub fn new(start: u16, end: u16) -> Result<Self, ConfigModelError> {
+        if start > end {
+            return Err(ConfigModelError::InvalidDnsQTypeRange { start, end });
+        }
+        Ok(Self { start, end })
+    }
+
+    pub const fn single(qtype: u16) -> Self {
+        Self {
+            start: qtype,
+            end: qtype,
+        }
+    }
+
+    pub const fn start(self) -> u16 {
+        self.start
+    }
+
+    pub const fn end(self) -> u16 {
+        self.end
+    }
+
+    pub fn contains(self, qtype: u16) -> bool {
+        (self.start..=self.end).contains(&qtype)
     }
 }
 
@@ -718,7 +893,7 @@ impl Default for HappyEyeballsSettings {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Network {
     Tcp,
     Udp,

@@ -47,11 +47,14 @@ use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::{sleep, timeout};
 use tokio_rustls::TlsAcceptor;
 use xray_config::{
-    parse_xray_json, CoreConfig, InboundConfig, InboundProtocol, IpCidr, IpMatcher,
-    Network as ConfigNetwork, OutboundConfig, OutboundSettings, RoutingConfig,
-    RoutingDomainStrategy, RoutingRule, StreamSecurity, StreamSettings,
+    parse_xray_json, CoreConfig, DnsOutboundRule, DnsOutboundRuleAction, DnsOutboundSettings,
+    DomainMatcher, InboundConfig, InboundProtocol, IpCidr, IpMatcher, Network as ConfigNetwork,
+    OutboundConfig, OutboundSettings, RoutingConfig, RoutingDomainStrategy, RoutingPortRange,
+    RoutingRule, StreamSecurity, StreamSettings,
 };
-use xray_core_rs::{Core, OutboundRouter, StartupProbeOptions};
+use xray_core_rs::{
+    CompiledDnsOutboundPolicy, Core, DnsOutboundDecision, OutboundRouter, StartupProbeOptions,
+};
 use xray_proxy::vless::{
     encode_udp_packet, encode_xudp_keep_packet, read_udp_packet, read_xudp_packet,
     unpad_vision_block, VisionCommand, VisionPadding,
@@ -1084,6 +1087,38 @@ pub struct DnsIpFilterProbeMetric {
     pub miss_avg_ns: u128,
 }
 
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct DnsOutboundPolicyProbeMetric {
+    pub decision: String,
+    pub compile_us: u128,
+    pub total_us: u128,
+    pub avg_ns: u128,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct DnsOutboundSelectorProbeMetric {
+    pub rules: usize,
+    pub hit_selected_dns: bool,
+    #[serde(default)]
+    pub last_hit_selected_dns: bool,
+    pub miss_preserved_regular_path: bool,
+    #[serde(default)]
+    pub semantic_miss_preserved_regular_path: bool,
+    pub compile_us: u128,
+    pub hit_total_us: u128,
+    pub hit_avg_ns: u128,
+    #[serde(default)]
+    pub last_hit_total_us: u128,
+    #[serde(default)]
+    pub last_hit_avg_ns: u128,
+    pub miss_total_us: u128,
+    pub miss_avg_ns: u128,
+    #[serde(default)]
+    pub semantic_miss_total_us: u128,
+    #[serde(default)]
+    pub semantic_miss_avg_ns: u128,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct DnsPolicyProbeResult {
     pub iterations: usize,
@@ -1092,6 +1127,12 @@ pub struct DnsPolicyProbeResult {
     pub common_no_domains: DnsPolicyProbeMetric,
     pub worst_case_matchers: DnsPolicyProbeMetric,
     pub worst_case_ip_filter: DnsIpFilterProbeMetric,
+    #[serde(default)]
+    pub outbound_common_first_rule: DnsOutboundPolicyProbeMetric,
+    #[serde(default)]
+    pub outbound_worst_ordered_rule_matchers: DnsOutboundPolicyProbeMetric,
+    #[serde(default)]
+    pub outbound_selector_prefilter: Vec<DnsOutboundSelectorProbeMetric>,
 }
 
 pub fn parse_cli_args<I, S>(args: I) -> Result<CliArgs, BenchError>
@@ -7117,6 +7158,10 @@ const ROUTE_PROBE_UNMATCHED_TAG: &str = "route-probe-unmatched";
 const DNS_POLICY_PROBE_DOMAIN: &str = "selected.policy-probe.invalid";
 const MAX_DNS_POLICY_PROBE_SERVERS: usize = 4_096;
 const MAX_DNS_POLICY_PROBE_MATCHERS: usize = 250_000;
+const DNS_OUTBOUND_SELECTOR_PROBE_RULE_COUNTS: [usize; 3] = [0, 64, 4_096];
+const DNS_OUTBOUND_SELECTOR_FIRST_HIT_DOMAIN: &str = "first.selector-probe.invalid";
+const DNS_OUTBOUND_SELECTOR_LAST_HIT_DOMAIN: &str = "last.selector-probe.invalid";
+const DNS_OUTBOUND_SELECTOR_SEMANTIC_MISS_DOMAIN: &str = "miss.selector-probe.invalid";
 
 struct RouteProbeDnsResolver {
     result: DnsLookup,
@@ -7321,6 +7366,310 @@ fn dns_policy_probe_worst_case_servers(
     servers
 }
 
+fn dns_outbound_probe_common_settings(rule_count: usize) -> DnsOutboundSettings {
+    let rules = (0..rule_count)
+        .map(|index| DnsOutboundRule {
+            action: if index == 0 {
+                DnsOutboundRuleAction::Direct
+            } else {
+                DnsOutboundRuleAction::Reject
+            },
+            qtype_ranges: Vec::new(),
+            domain_matchers: vec![DomainMatcher::Full(DNS_POLICY_PROBE_DOMAIN.to_owned())],
+        })
+        .collect();
+    DnsOutboundSettings {
+        rules,
+        ..DnsOutboundSettings::default()
+    }
+}
+
+fn dns_outbound_probe_worst_case_settings(
+    rule_count: usize,
+    matcher_count: usize,
+) -> DnsOutboundSettings {
+    // Keyword matchers remain ordered in the compiled policy. Full matchers use
+    // a hash set and would not exercise a scan through the final rule's list.
+    let mut rules = (0..rule_count.saturating_sub(1))
+        .map(|index| DnsOutboundRule {
+            action: DnsOutboundRuleAction::Direct,
+            qtype_ranges: Vec::new(),
+            domain_matchers: vec![DomainMatcher::Keyword(format!(
+                "rule-{index}-ordered-miss.invalid"
+            ))],
+        })
+        .collect::<Vec<_>>();
+    let mut domain_matchers = (0..matcher_count.saturating_sub(1))
+        .map(|index| DomainMatcher::Keyword(format!("matcher-{index}-ordered-miss.invalid")))
+        .collect::<Vec<_>>();
+    domain_matchers.push(DomainMatcher::Keyword(DNS_POLICY_PROBE_DOMAIN.to_owned()));
+    rules.push(DnsOutboundRule {
+        action: DnsOutboundRuleAction::Reject,
+        qtype_ranges: Vec::new(),
+        domain_matchers,
+    });
+    DnsOutboundSettings {
+        rules,
+        ..DnsOutboundSettings::default()
+    }
+}
+
+fn dns_policy_probe_a_query(domain: &str) -> Result<Vec<u8>, BenchError> {
+    if domain.len().saturating_add(2) > u8::MAX as usize {
+        return Err(BenchError::InvalidArguments(format!(
+            "DNS policy probe domain `{domain}` exceeds the wire-format limit"
+        )));
+    }
+
+    let mut query = Vec::with_capacity(12 + domain.len() + 6);
+    query.extend_from_slice(&0x5052_u16.to_be_bytes());
+    query.extend_from_slice(&0x0100_u16.to_be_bytes());
+    query.extend_from_slice(&1_u16.to_be_bytes());
+    query.extend_from_slice(&0_u16.to_be_bytes());
+    query.extend_from_slice(&0_u16.to_be_bytes());
+    query.extend_from_slice(&0_u16.to_be_bytes());
+    for label in domain.split('.') {
+        let label_len = u8::try_from(label.len()).map_err(|_| {
+            BenchError::InvalidArguments(format!(
+                "DNS policy probe domain `{domain}` contains an oversized label"
+            ))
+        })?;
+        if label_len == 0 || label_len > 63 {
+            return Err(BenchError::InvalidArguments(format!(
+                "DNS policy probe domain `{domain}` contains an invalid label"
+            )));
+        }
+        query.push(label_len);
+        query.extend_from_slice(label.as_bytes());
+    }
+    query.push(0);
+    query.extend_from_slice(&1_u16.to_be_bytes());
+    query.extend_from_slice(&1_u16.to_be_bytes());
+    Ok(query)
+}
+
+fn dns_outbound_decision_name(decision: DnsOutboundDecision) -> &'static str {
+    match decision {
+        DnsOutboundDecision::Direct => "direct",
+        DnsOutboundDecision::Drop => "drop",
+        DnsOutboundDecision::Reject => "reject",
+        DnsOutboundDecision::Hijack => "hijack",
+        DnsOutboundDecision::HijackUnsafe(_) => "hijack-unsafe",
+    }
+}
+
+fn measure_dns_outbound_policy(
+    settings: &DnsOutboundSettings,
+    query: &[u8],
+    expected: DnsOutboundDecision,
+    iterations: usize,
+) -> Result<DnsOutboundPolicyProbeMetric, BenchError> {
+    let started = Instant::now();
+    let policy = CompiledDnsOutboundPolicy::new(settings);
+    let compile_us = started.elapsed().as_micros();
+
+    let actual = policy.decide_message(query, false).map_err(|error| {
+        BenchError::InvalidArguments(format!(
+            "DNS outbound policy probe query was rejected as malformed: {error}"
+        ))
+    })?;
+    if actual != expected {
+        return Err(BenchError::InvalidArguments(format!(
+            "DNS outbound policy probe returned `{}`, expected `{}`",
+            dns_outbound_decision_name(actual),
+            dns_outbound_decision_name(expected),
+        )));
+    }
+
+    let started = Instant::now();
+    for _ in 0..iterations {
+        let decision = black_box(&policy).decide_message(black_box(query), false);
+        let _ = black_box(decision);
+    }
+    let elapsed = started.elapsed();
+    Ok(DnsOutboundPolicyProbeMetric {
+        decision: dns_outbound_decision_name(actual).to_owned(),
+        compile_us,
+        total_us: elapsed.as_micros(),
+        avg_ns: elapsed.as_nanos() / iterations as u128,
+    })
+}
+
+fn dns_outbound_selector_probe_config(rule_count: usize) -> CoreConfig {
+    let direct = OutboundConfig {
+        tag: Some("direct".to_owned()),
+        stream: StreamSettings {
+            network: ConfigNetwork::Tcp,
+            security: StreamSecurity::None,
+            socket_options: None,
+        },
+        settings: OutboundSettings::Freedom,
+    };
+    let dns = OutboundConfig {
+        tag: Some("dns-out".to_owned()),
+        stream: StreamSettings {
+            network: ConfigNetwork::Tcp,
+            security: StreamSecurity::None,
+            socket_options: None,
+        },
+        settings: OutboundSettings::Dns(DnsOutboundSettings::default()),
+    };
+    let rules = (0..rule_count)
+        .map(|index| {
+            let mut domain_matchers = vec![DomainMatcher::Full(format!(
+                "rule-{index}.selector-probe.invalid"
+            ))];
+            if index == 0 {
+                domain_matchers.push(DomainMatcher::Full(
+                    DNS_OUTBOUND_SELECTOR_FIRST_HIT_DOMAIN.to_owned(),
+                ));
+            }
+            if index + 1 == rule_count {
+                domain_matchers.push(DomainMatcher::Full(
+                    DNS_OUTBOUND_SELECTOR_LAST_HIT_DOMAIN.to_owned(),
+                ));
+            }
+            RoutingRule {
+                inbound_tags: vec!["bench-in".to_owned()],
+                networks: vec![ConfigNetwork::Udp],
+                port_ranges: vec![RoutingPortRange::single(53)],
+                domain_matchers,
+                ip_matchers: Vec::new(),
+                outbound_tag: "dns-out".to_owned(),
+            }
+        })
+        .collect();
+
+    CoreConfig {
+        inbounds: Vec::new(),
+        outbounds: vec![direct, dns],
+        default_outbound_tag: Some("direct".to_owned()),
+        routing: RoutingConfig {
+            rules,
+            ..Default::default()
+        },
+        dns: Default::default(),
+        policy: Default::default(),
+    }
+}
+
+fn measure_dns_outbound_selector_prefilter(
+    rule_count: usize,
+    iterations: usize,
+) -> Result<DnsOutboundSelectorProbeMetric, BenchError> {
+    let config = dns_outbound_selector_probe_config(rule_count);
+    let started = Instant::now();
+    let router = OutboundRouter::new(Arc::new(config));
+    let compile_us = started.elapsed().as_micros();
+    let hit_target = Target::new(
+        RoutingTargetAddr::Domain(DNS_OUTBOUND_SELECTOR_FIRST_HIT_DOMAIN.to_owned()),
+        53,
+        RoutingNetwork::Udp,
+    );
+    let last_hit_target = Target::new(
+        RoutingTargetAddr::Domain(DNS_OUTBOUND_SELECTOR_LAST_HIT_DOMAIN.to_owned()),
+        53,
+        RoutingNetwork::Udp,
+    );
+    let miss_target = Target::new(
+        RoutingTargetAddr::Domain(DNS_OUTBOUND_SELECTOR_FIRST_HIT_DOMAIN.to_owned()),
+        443,
+        RoutingNetwork::Udp,
+    );
+    let semantic_miss_target = Target::new(
+        RoutingTargetAddr::Domain(DNS_OUTBOUND_SELECTOR_SEMANTIC_MISS_DOMAIN.to_owned()),
+        53,
+        RoutingNetwork::Udp,
+    );
+    let hit_selected_dns = router
+        .select_dns_outbound_for_session(Some("bench-in"), &hit_target)
+        .map_err(|error| {
+            BenchError::InvalidArguments(format!(
+                "DNS outbound selector hit probe failed with {rule_count} rules: {error}"
+            ))
+        })?
+        .is_some();
+    let last_hit_selected_dns = router
+        .select_dns_outbound_for_session(Some("bench-in"), &last_hit_target)
+        .map_err(|error| {
+            BenchError::InvalidArguments(format!(
+                "DNS outbound selector last-hit probe failed with {rule_count} rules: {error}"
+            ))
+        })?
+        .is_some();
+    let miss_preserved_regular_path = router
+        .select_dns_outbound_for_session(Some("bench-in"), &miss_target)
+        .map_err(|error| {
+            BenchError::InvalidArguments(format!(
+                "DNS outbound selector miss probe failed with {rule_count} rules: {error}"
+            ))
+        })?
+        .is_none();
+    let semantic_miss_preserved_regular_path = router
+        .select_dns_outbound_for_session(Some("bench-in"), &semantic_miss_target)
+        .map_err(|error| {
+            BenchError::InvalidArguments(format!(
+                "DNS outbound selector semantic-miss probe failed with {rule_count} rules: {error}"
+            ))
+        })?
+        .is_none();
+    if hit_selected_dns != (rule_count > 0)
+        || last_hit_selected_dns != (rule_count > 0)
+        || !miss_preserved_regular_path
+        || !semantic_miss_preserved_regular_path
+    {
+        return Err(BenchError::InvalidArguments(format!(
+            "DNS outbound selector validation failed with {rule_count} rules: hit_selected_dns={hit_selected_dns}, last_hit_selected_dns={last_hit_selected_dns}, miss_preserved_regular_path={miss_preserved_regular_path}, semantic_miss_preserved_regular_path={semantic_miss_preserved_regular_path}"
+        )));
+    }
+
+    let started = Instant::now();
+    for _ in 0..iterations {
+        let selected = black_box(&router)
+            .select_dns_outbound_for_session(Some("bench-in"), black_box(&hit_target));
+        let _ = black_box(selected);
+    }
+    let hit_elapsed = started.elapsed();
+    let started = Instant::now();
+    for _ in 0..iterations {
+        let selected = black_box(&router)
+            .select_dns_outbound_for_session(Some("bench-in"), black_box(&last_hit_target));
+        let _ = black_box(selected);
+    }
+    let last_hit_elapsed = started.elapsed();
+    let started = Instant::now();
+    for _ in 0..iterations {
+        let selected = black_box(&router)
+            .select_dns_outbound_for_session(Some("bench-in"), black_box(&miss_target));
+        let _ = black_box(selected);
+    }
+    let miss_elapsed = started.elapsed();
+    let started = Instant::now();
+    for _ in 0..iterations {
+        let selected = black_box(&router)
+            .select_dns_outbound_for_session(Some("bench-in"), black_box(&semantic_miss_target));
+        let _ = black_box(selected);
+    }
+    let semantic_miss_elapsed = started.elapsed();
+
+    Ok(DnsOutboundSelectorProbeMetric {
+        rules: rule_count,
+        hit_selected_dns,
+        last_hit_selected_dns,
+        miss_preserved_regular_path,
+        semantic_miss_preserved_regular_path,
+        compile_us,
+        hit_total_us: hit_elapsed.as_micros(),
+        hit_avg_ns: hit_elapsed.as_nanos() / iterations as u128,
+        last_hit_total_us: last_hit_elapsed.as_micros(),
+        last_hit_avg_ns: last_hit_elapsed.as_nanos() / iterations as u128,
+        miss_total_us: miss_elapsed.as_micros(),
+        miss_avg_ns: miss_elapsed.as_nanos() / iterations as u128,
+        semantic_miss_total_us: semantic_miss_elapsed.as_micros(),
+        semantic_miss_avg_ns: semantic_miss_elapsed.as_nanos() / iterations as u128,
+    })
+}
+
 fn measure_dns_policy_selection(
     policies: &CompiledNameServerPolicies,
     compile_us: u128,
@@ -7473,6 +7822,26 @@ fn measure_dns_policy_probe(
     let started = Instant::now();
     let worst_case = CompiledNameServerPolicies::new(worst_case);
     let worst_case_compile_us = started.elapsed().as_micros();
+    let outbound_query = dns_policy_probe_a_query(DNS_POLICY_PROBE_DOMAIN)?;
+    let outbound_common_settings = dns_outbound_probe_common_settings(options.servers);
+    let outbound_common_first_rule = measure_dns_outbound_policy(
+        &outbound_common_settings,
+        &outbound_query,
+        DnsOutboundDecision::Direct,
+        options.iterations,
+    )?;
+    let outbound_worst_settings =
+        dns_outbound_probe_worst_case_settings(options.servers, options.matchers);
+    let outbound_worst_ordered_rule_matchers = measure_dns_outbound_policy(
+        &outbound_worst_settings,
+        &outbound_query,
+        DnsOutboundDecision::Reject,
+        options.iterations,
+    )?;
+    let outbound_selector_prefilter = DNS_OUTBOUND_SELECTOR_PROBE_RULE_COUNTS
+        .into_iter()
+        .map(|rule_count| measure_dns_outbound_selector_prefilter(rule_count, options.iterations))
+        .collect::<Result<Vec<_>, _>>()?;
 
     Ok(DnsPolicyProbeResult {
         iterations: options.iterations,
@@ -7489,6 +7858,9 @@ fn measure_dns_policy_probe(
             options.iterations,
         ),
         worst_case_ip_filter: measure_dns_ip_filter(options.matchers, options.iterations)?,
+        outbound_common_first_rule,
+        outbound_worst_ordered_rule_matchers,
+        outbound_selector_prefilter,
     })
 }
 
@@ -8503,6 +8875,8 @@ fn route_probe_config(rules: usize, outbounds: usize) -> Result<CoreConfig, Benc
         };
         routing_rules.push(RoutingRule {
             inbound_tags: vec!["bench-in".to_owned()],
+            networks: Vec::new(),
+            port_ranges: Vec::new(),
             domain_matchers: Vec::new(),
             ip_matchers: vec![IpMatcher::Cidr(cidr)],
             outbound_tag: selected_tag.clone(),
@@ -8841,7 +9215,7 @@ fn print_route_probe_result(result: &RouteProbeResult) {
 
 fn print_dns_policy_probe_result(result: &DnsPolicyProbeResult) {
     println!(
-        "dns-policy-probe iterations={} servers={} matchers={} common_selected={} common_compile_us={} common_pattern_bytes={} common_total_us={} common_avg_ns={} worst_selected={} worst_compile_us={} worst_pattern_bytes={} worst_total_us={} worst_avg_ns={} ip_filter_hit_matched={} ip_filter_miss_rejected={} ip_filter_compile_us={} ip_filter_matchers={} ip_filter_ranges={} ip_filter_hit_total_us={} ip_filter_hit_avg_ns={} ip_filter_miss_total_us={} ip_filter_miss_avg_ns={}",
+        "dns-policy-probe iterations={} servers={} matchers={} common_selected={} common_compile_us={} common_pattern_bytes={} common_total_us={} common_avg_ns={} worst_selected={} worst_compile_us={} worst_pattern_bytes={} worst_total_us={} worst_avg_ns={} outbound_common_decision={} outbound_common_compile_us={} outbound_common_total_us={} outbound_common_avg_ns={} outbound_worst_decision={} outbound_worst_compile_us={} outbound_worst_total_us={} outbound_worst_avg_ns={} ip_filter_hit_matched={} ip_filter_miss_rejected={} ip_filter_compile_us={} ip_filter_matchers={} ip_filter_ranges={} ip_filter_hit_total_us={} ip_filter_hit_avg_ns={} ip_filter_miss_total_us={} ip_filter_miss_avg_ns={}",
         result.iterations,
         result.servers,
         result.matchers,
@@ -8855,6 +9229,14 @@ fn print_dns_policy_probe_result(result: &DnsPolicyProbeResult) {
         result.worst_case_matchers.pattern_bytes,
         result.worst_case_matchers.total_us,
         result.worst_case_matchers.avg_ns,
+        result.outbound_common_first_rule.decision,
+        result.outbound_common_first_rule.compile_us,
+        result.outbound_common_first_rule.total_us,
+        result.outbound_common_first_rule.avg_ns,
+        result.outbound_worst_ordered_rule_matchers.decision,
+        result.outbound_worst_ordered_rule_matchers.compile_us,
+        result.outbound_worst_ordered_rule_matchers.total_us,
+        result.outbound_worst_ordered_rule_matchers.avg_ns,
         result.worst_case_ip_filter.hit_matched,
         result.worst_case_ip_filter.miss_rejected,
         result.worst_case_ip_filter.compile_us,
@@ -8865,6 +9247,25 @@ fn print_dns_policy_probe_result(result: &DnsPolicyProbeResult) {
         result.worst_case_ip_filter.miss_total_us,
         result.worst_case_ip_filter.miss_avg_ns,
     );
+    for selector in &result.outbound_selector_prefilter {
+        println!(
+            "dns-policy-probe-selector rules={} hit_selected_dns={} last_hit_selected_dns={} miss_preserved_regular_path={} semantic_miss_preserved_regular_path={} compile_us={} hit_total_us={} hit_avg_ns={} last_hit_total_us={} last_hit_avg_ns={} miss_total_us={} miss_avg_ns={} semantic_miss_total_us={} semantic_miss_avg_ns={}",
+            selector.rules,
+            selector.hit_selected_dns,
+            selector.last_hit_selected_dns,
+            selector.miss_preserved_regular_path,
+            selector.semantic_miss_preserved_regular_path,
+            selector.compile_us,
+            selector.hit_total_us,
+            selector.hit_avg_ns,
+            selector.last_hit_total_us,
+            selector.last_hit_avg_ns,
+            selector.miss_total_us,
+            selector.miss_avg_ns,
+            selector.semantic_miss_total_us,
+            selector.semantic_miss_avg_ns,
+        );
+    }
 }
 
 fn print_reality_matrix_result(result: &RealityMatrixResult) {
@@ -11084,6 +11485,90 @@ mod tests {
             ),
             (3, 4, 4_096, 4, 0, 4, 4_096, true, true, 4_096, 4_096,)
         );
+        assert_eq!(result.outbound_common_first_rule.decision, "direct");
+        assert_eq!(
+            result.outbound_worst_ordered_rule_matchers.decision,
+            "reject"
+        );
+        assert_eq!(
+            result
+                .outbound_selector_prefilter
+                .iter()
+                .map(|metric| (
+                    metric.rules,
+                    metric.hit_selected_dns,
+                    metric.last_hit_selected_dns,
+                    metric.miss_preserved_regular_path,
+                    metric.semantic_miss_preserved_regular_path,
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                (0, false, false, true, true),
+                (64, true, true, true, true),
+                (4_096, true, true, true, true),
+            ]
+        );
+    }
+
+    #[test]
+    fn dns_outbound_policy_probe_reuses_server_and_matcher_options() {
+        let common = dns_outbound_probe_common_settings(8);
+        let worst = dns_outbound_probe_worst_case_settings(8, 16_384);
+
+        assert_eq!(common.rules.len(), 8);
+        assert_eq!(worst.rules.len(), 8);
+        assert_eq!(worst.rules.last().unwrap().domain_matchers.len(), 16_384);
+    }
+
+    #[test]
+    fn dns_policy_probe_result_deserializes_without_outbound_metrics() {
+        let result = measure_dns_policy_probe(&DnsPolicyProbeOptions {
+            iterations: 1,
+            servers: 2,
+            matchers: 4,
+            out_dir: PathBuf::from("target/benchmarks/test"),
+        })
+        .unwrap();
+        let mut value = serde_json::to_value(result).unwrap();
+        let object = value.as_object_mut().unwrap();
+        object.remove("outbound_common_first_rule");
+        object.remove("outbound_worst_ordered_rule_matchers");
+        object.remove("outbound_selector_prefilter");
+
+        let deserialized: DnsPolicyProbeResult = serde_json::from_value(value).unwrap();
+
+        assert_eq!(
+            deserialized.outbound_common_first_rule,
+            DnsOutboundPolicyProbeMetric::default()
+        );
+        assert_eq!(
+            deserialized.outbound_worst_ordered_rule_matchers,
+            DnsOutboundPolicyProbeMetric::default()
+        );
+        assert!(deserialized.outbound_selector_prefilter.is_empty());
+    }
+
+    #[test]
+    fn dns_outbound_selector_metric_deserializes_without_linear_path_metrics() {
+        let value = serde_json::json!({
+            "rules": 64,
+            "hit_selected_dns": true,
+            "miss_preserved_regular_path": true,
+            "compile_us": 10,
+            "hit_total_us": 20,
+            "hit_avg_ns": 30,
+            "miss_total_us": 40,
+            "miss_avg_ns": 50
+        });
+
+        let metric: DnsOutboundSelectorProbeMetric = serde_json::from_value(value).unwrap();
+
+        assert!(!metric.last_hit_selected_dns);
+        assert!(!metric.semantic_miss_preserved_regular_path);
+        assert_eq!(metric.last_hit_total_us, 0);
+        assert_eq!(metric.last_hit_avg_ns, 0);
+        assert_eq!(metric.semantic_miss_total_us, 0);
+        assert_eq!(metric.semantic_miss_avg_ns, 0);
     }
 
     #[test]

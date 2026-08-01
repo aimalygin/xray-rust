@@ -179,8 +179,8 @@ preserve RRSIG, ECS, COOKIE, or client-side validation semantics.
 Raw selection is declaration-ordered and deliberately does not apply managed
 `domains`, family strategy, IP filters, or per-policy fallback. Deployments
 that rely on split-DNS privacy must therefore ensure every raw candidate the
-plan may reach is appropriate until the general rule-driven DNS outbound
-exists.
+plan may reach is appropriate whenever routing leaves the TUN anchor on this
+fixed hybrid instead of selecting an explicit DNS outbound.
 Classic candidates preserve raw messages, while a UDP client aimed at a TCP URI
 is adapted to RFC 7766 framing through a bounded persistent-connection pool. A
 TCP client uses one bounded multiplexed raw upstream session alongside its owned
@@ -211,15 +211,90 @@ keeps one request in flight per pooled upstream stream, retries a stale reused
 stream once on a fresh protected/routed connection, and discards a leased
 stream whenever the request is cancelled so partial framing is never reused.
 Per-upstream and runtime-wide socket caps are selected by the TUN runtime
-profile. UDP replies honor the client's valid EDNS(0) size and the IPv4 tunnel
-path MTU; missing or malformed EDNS falls back to the legacy 512-byte DNS
-payload limit and oversized replies return `TC=1`. Routed candidates carry the
-effective synthetic inbound tag into outbound selection; local TCP candidates
-bypass it. Endpoint deduplication
-includes transport and tag.
-A future general DNS outbound remains explicit: it must add Xray's ordered
-Direct/Drop/Reject/Hijack rules, non-IP policy, rewrite target, and own-link
-recursion guard rather than silently changing this hybrid anchor contract.
+profile. UDP replies honor the client's valid EDNS(0) size and the
+address-family tunnel path MTU; missing or malformed EDNS falls back to the
+legacy 512-byte DNS payload limit, and oversized replies return `TC=1`.
+Routed candidates carry the effective synthetic inbound tag into outbound
+selection; local TCP candidates bypass it. Endpoint deduplication includes
+transport and tag.
+
+The general DNS outbound is a separate, compiled core handler rather than a
+mutation of that fixed hybrid contract. Configuration accepts Xray's ordered
+`Direct`/`Drop`/`Reject`/`Hijack` rules, compact QTYPE ranges, domain/geosite
+matchers, component-wise rewrite target, deprecated legacy policy, and
+`userLevel`. Routing now includes `network` and `port`, so TCP and UDP port 53
+can select the handler without hard-coding the TUN anchor. First match wins;
+the miss policy is Hijack for A/AAAA and Reject for every other QTYPE.
+
+The policy parser reads only the first question before Direct, Drop, or Reject.
+Direct therefore forwards the original message byte-for-byte, including
+unknown DNSSEC, EDNS, and future extension data. Full envelope validation is
+deferred until Hijack. A synthesis-unsafe A/AAAA query (AD/CD, EDNS DO,
+non-empty options, unsupported EDNS, multiple questions, or non-IN class) is a
+typed `HijackUnsafe` decision and the core DNS-outbound executor returns
+REFUSED; it never silently converts that query to Direct and leaks it across
+split-DNS policy. This is intentionally stricter than Xray-core's lossy Hijack
+synthesis.
+
+Direct applies network, address, and port rewrites independently. Omitted
+components retain the captured target, and client/upstream framing remain
+independent, so the core DNS-outbound executor supports UDP-to-TCP and
+TCP-to-UDP queries. The protected direct path bypasses outbound routing,
+resolves domain rewrites only through the bootstrap role, caps candidates at
+eight, correlates replies,
+and has a five-second total budget. Tunnel-local DNS endpoints are forbidden;
+therefore Direct from the fixed `198.18.0.1:53` anchor needs a real rewrite
+target and otherwise fails closed instead of looping.
+
+Managed DNS clients carry their effective generated/global/per-server tag. If
+such a trusted internal query routes back to the same DNS outbound, the handler
+forces Direct before parsing or rule matching and applies the rewrite. This is
+the Xray own-link recursion escape, with the additional requirement that the
+runtime call site is a managed DNS transport; an application merely spoofing
+the tag cannot obtain the bypass. Every routed or local `dns.servers` exchange
+also acquires a Core-wide, non-waiting operation permit before resolution or
+dialing. The permit covers Freedom, VLESS, selected DNS outbounds, UDP, TCP,
+and TLS uniformly, so unique cache-miss names cannot escape the runtime profile
+by choosing a different managed transport.
+
+`Core::start` constructs one ingress-neutral DNS-outbound executor and one
+optional FakeIP mapper, then shares them with TUN, SOCKS TCP/UDP, and HTTP
+CONNECT. UDP queries remain owned by their ingress flow/task. Explicit DNS/TCP
+policy uses one cancellation-owned, bounded decoder per client flow and
+processes pipelined frames sequentially: Drop consumes a frame without
+replying, Reject returns REFUSED without closing the flow, and no policy
+operation creates a detached task. UDP clients rewritten to TCP/TLS reuse a
+bounded per-Core idle pool. Ordinary TCP clients check out that same pool for
+each message and recycle immediately after the matching response, preserving
+in-order/coalesced framing without letting client think-time pin control-plane
+sockets. Pool concurrency, key-table size, and idle TTL cap derive from the
+selected runtime resource profile, scaling from mobile/low-memory bounds to the
+server-oriented Throughput profile. Direct DNS UDP and managed Freedom DNS UDP
+additionally share one Core-wide socket semaphore at the same profile limit;
+the permit is acquired only after bootstrap resolution and is held for the UDP
+socket lifetime. Saturation fails closed without queueing. The managed
+transport permit, UDP socket permit, ingress DNS policy permit, and TCP pool
+permits are deliberately distinct: a Hijack may hold its ingress permit while
+performing a bounded managed lookup, without recursively acquiring the same
+semaphore or deadlocking. UDP-source AXFR/IXFR is refused before a dial because
+a single datagram cannot carry a multi-message transfer; TCP transfers alone
+receive a dedicated non-pooled response-only handoff. The handoff carries its
+ingress operation permit together with the managed transfer session, including
+on the TUN path, so cancellation releases both TCP-pool and ingress budgets.
+The same handler boundary can be passed to future server-protocol inbounds
+without importing TUN packet semantics or process-global state.
+
+When `dns.fakeIp` is enabled, Hijack applies `dns.hosts` before consulting the
+shared mapper, matching Xray's static-host precedence; a wrong-family static
+answer is NODATA and never falls through to FakeIP. Otherwise the mapper runs
+before the managed resolver. Mappings created through SOCKS or HTTP are
+therefore visible to TUN reverse lookup and vice versa. The fixed TUN FakeIP
+mode is now another consumer of the same core-owned mapper rather than a
+separate allocation domain. Pool size, TTL, query strategy, reserved tunnel
+addresses, and the ordered lease-deadline index remain bounded per `Core`
+instance. Fake-IP addresses are never reassigned before their most recently
+advertised TTL; capacity exhaustion fails closed until the earliest lease
+expires.
 
 The generic core and C ABI retain system bootstrap as their default for
 desktop, command-line, and future server embeddings. Mobile full-tunnel

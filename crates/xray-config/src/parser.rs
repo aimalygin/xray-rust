@@ -10,16 +10,20 @@ use uuid::Uuid;
 use crate::{
     geodata::{default_geodata_dirs, GeodataLoader},
     CoreConfig, Diagnostic, DnsConfig, DnsFakeIpConfig, DnsHostMapping, DnsHostTarget, DnsIpFilter,
-    DnsNameServerConfig, DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint, DnsServerTransport,
+    DnsNameServerConfig, DnsOutboundRule, DnsOutboundRuleAction, DnsOutboundSettings,
+    DnsQTypeRange, DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint, DnsServerTransport,
     DomainMatcher, HappyEyeballsSettings, InboundConfig, InboundProtocol, InboundSniffingConfig,
     IpCidr, IpMatcher, Network, OutboundConfig, OutboundProtocol, OutboundSettings, PolicyConfig,
     PolicyLevelConfig, PolicySystemConfig, RealitySettings, RealityShortId, RegexMatcher,
-    RoutingConfig, RoutingDomainStrategy, RoutingRule, SniffingDestination, SocketOptions,
-    StreamSecurity, StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
-    MAX_DNS_SERVER_TIMEOUT_MS,
+    RoutingConfig, RoutingDomainStrategy, RoutingPortRange, RoutingRule, SniffingDestination,
+    SocketOptions, StreamSecurity, StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings,
+    VlessUser, MAX_DNS_SERVER_TIMEOUT_MS,
 };
 
 const MAX_ROUTING_RULES: usize = 4_096;
+const MAX_DNS_OUTBOUND_RULES: usize = 4_096;
+const MAX_DNS_QTYPE_SELECTORS: usize = 65_536;
+const MAX_ROUTING_PORT_SELECTORS: usize = 65_536;
 const MAX_CONFIG_DOMAIN_MATCHERS: usize = 250_000;
 const MAX_CONFIG_IP_MATCHERS: usize = 300_000;
 const MAX_CONFIG_MATCHERS: usize = 500_000;
@@ -34,6 +38,19 @@ const TUN_CLIENT_IPV4: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 2);
 enum IpMatcherParseMode {
     Routing,
     XrayDns,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum U16SelectorKind {
+    DnsQType,
+    RoutingPort,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LegacyDnsNonIpMode {
+    Reject,
+    Drop,
+    Skip,
 }
 
 fn is_tun_reserved_ip(ip: IpAddr) -> bool {
@@ -236,6 +253,42 @@ struct MatcherBudget {
     ip_matchers: usize,
 }
 
+#[derive(Debug, Default)]
+struct SelectorBudget {
+    dns_outbound_rules: usize,
+    dns_qtype_selectors: usize,
+    routing_port_selectors: usize,
+}
+
+impl SelectorBudget {
+    fn consume_dns_outbound_rules(&mut self, count: usize) -> bool {
+        let Some(next) = self.dns_outbound_rules.checked_add(count) else {
+            return false;
+        };
+        if next > MAX_DNS_OUTBOUND_RULES {
+            return false;
+        }
+        self.dns_outbound_rules = next;
+        true
+    }
+
+    fn consume_dns_qtype_selector(&mut self) -> bool {
+        if self.dns_qtype_selectors >= MAX_DNS_QTYPE_SELECTORS {
+            return false;
+        }
+        self.dns_qtype_selectors += 1;
+        true
+    }
+
+    fn consume_routing_port_selector(&mut self) -> bool {
+        if self.routing_port_selectors >= MAX_ROUTING_PORT_SELECTORS {
+            return false;
+        }
+        self.routing_port_selectors += 1;
+        true
+    }
+}
+
 impl MatcherBudget {
     fn new(limits: MatcherBudgetLimits) -> Self {
         Self {
@@ -351,6 +404,7 @@ fn parse_xray_json_with_loader_and_limits(
         diagnostics: Vec::new(),
         geodata_loader,
         matcher_budget: MatcherBudget::new(matcher_budget_limits),
+        selector_budget: SelectorBudget::default(),
     };
     let config = parser.parse_config();
 
@@ -375,6 +429,7 @@ struct Parser<'a> {
     diagnostics: Vec<Diagnostic>,
     geodata_loader: GeodataLoader,
     matcher_budget: MatcherBudget,
+    selector_budget: SelectorBudget,
 }
 
 impl Parser<'_> {
@@ -736,7 +791,7 @@ impl Parser<'_> {
             return None;
         }
         if let Ok(ip) = address.parse::<IpAddr>() {
-            if is_tun_reserved_ip(ip) && port == 53 {
+            if is_tun_reserved_ip(ip) {
                 self.error(
                     path,
                     "dns server cannot point at a tunnel-local DNS address",
@@ -859,7 +914,7 @@ impl Parser<'_> {
                 self.error(path, "dns server port must be greater than zero");
                 return None;
             }
-            if is_tun_reserved_ip(socket_addr.ip()) && socket_addr.port() == 53 {
+            if is_tun_reserved_ip(socket_addr.ip()) {
                 self.error(
                     path,
                     "dns server cannot point at a tunnel-local DNS address",
@@ -1017,6 +1072,13 @@ impl Parser<'_> {
             .unwrap_or(60);
 
         if !enabled {
+            return None;
+        }
+        if ttl == 0 {
+            self.error(
+                format!("{fake_ip_path}.ttl"),
+                "fakeIp ttl must be greater than zero",
+            );
             return None;
         }
 
@@ -1307,6 +1369,8 @@ impl Parser<'_> {
             &[
                 "type",
                 "inboundTag",
+                "network",
+                "port",
                 "domain",
                 "domains",
                 "ip",
@@ -1349,15 +1413,89 @@ impl Parser<'_> {
 
         let inbound_tags =
             self.optional_string_array_at(rule, "inboundTag", format!("{rule_path}.inboundTag"))?;
+        let networks = self.parse_routing_networks(rule, &rule_path)?;
+        let port_ranges = self.parse_routing_port_ranges(rule, &rule_path)?;
         let domain_matchers = self.parse_routing_rule_domain_matchers(rule, &rule_path)?;
         let ip_matchers = self.parse_ip_matchers(rule, "ip", format!("{rule_path}.ip"))?;
 
         Some(RoutingRule {
             inbound_tags,
+            networks,
+            port_ranges,
             domain_matchers,
             ip_matchers,
             outbound_tag: outbound_tag.to_owned(),
         })
+    }
+
+    fn parse_routing_networks(&mut self, rule: &Value, rule_path: &str) -> Option<Vec<Network>> {
+        let path = format!("{rule_path}.network");
+        let mut networks = Vec::new();
+        match rule.get("network") {
+            None | Some(Value::Null) => return Some(networks),
+            Some(Value::String(values)) => {
+                for (index, value) in values.split(',').enumerate() {
+                    self.push_routing_network(value, &format!("{path}[{index}]"), &mut networks)?;
+                }
+            }
+            Some(Value::Array(values)) => {
+                networks.reserve(values.len().min(2));
+                for (index, value) in values.iter().enumerate() {
+                    let item_path = format!("{path}[{index}]");
+                    let Some(value) = value.as_str() else {
+                        self.error(item_path, "routing network must be a string");
+                        return None;
+                    };
+                    self.push_routing_network(value, &item_path, &mut networks)?;
+                }
+            }
+            Some(_) => {
+                self.error(path, "routing network must be a string, array, or null");
+                return None;
+            }
+        }
+        Some(networks)
+    }
+
+    fn push_routing_network(
+        &mut self,
+        raw: &str,
+        path: &str,
+        networks: &mut Vec<Network>,
+    ) -> Option<()> {
+        let network = if raw.eq_ignore_ascii_case("tcp") {
+            Network::Tcp
+        } else if raw.eq_ignore_ascii_case("udp") {
+            Network::Udp
+        } else {
+            self.error(path, format!("unsupported routing network `{raw}`"));
+            return None;
+        };
+        if !networks.contains(&network) {
+            networks.push(network);
+        }
+        Some(())
+    }
+
+    fn parse_routing_port_ranges(
+        &mut self,
+        rule: &Value,
+        rule_path: &str,
+    ) -> Option<Vec<RoutingPortRange>> {
+        let path = format!("{rule_path}.port");
+        let pairs =
+            self.parse_u16_selector_ranges(rule.get("port"), &path, U16SelectorKind::RoutingPort)?;
+        let mut ranges = Vec::with_capacity(pairs.len());
+        for (start, end) in pairs {
+            match RoutingPortRange::new(start, end) {
+                Ok(range) => ranges.push(range),
+                Err(error) => {
+                    self.error(&path, error.to_string());
+                    return None;
+                }
+            }
+        }
+        Some(ranges)
     }
 
     fn parse_inbounds(&mut self) -> Vec<InboundConfig> {
@@ -1706,8 +1844,13 @@ impl Parser<'_> {
 
     fn parse_outbound(&mut self, outbound: &Value, index: usize) -> Option<OutboundConfig> {
         let protocol_path = format!("$.outbounds[{index}].protocol");
-        let protocol = match self.string_at(outbound, "protocol") {
+        let protocol = match self
+            .string_at(outbound, "protocol")
+            .map(str::to_ascii_lowercase)
+            .as_deref()
+        {
             Some("freedom") => OutboundProtocol::Freedom,
+            Some("dns") => OutboundProtocol::Dns,
             Some("vless") => OutboundProtocol::Vless,
             Some(protocol) => {
                 self.error(
@@ -1727,6 +1870,9 @@ impl Parser<'_> {
             OutboundProtocol::Freedom => {
                 self.validate_freedom_settings(outbound.get("settings"), index);
                 OutboundSettings::Freedom
+            }
+            OutboundProtocol::Dns => {
+                OutboundSettings::Dns(self.parse_dns_outbound_settings(outbound, index)?)
             }
             OutboundProtocol::Vless => {
                 OutboundSettings::Vless(self.parse_vless_settings(outbound, index)?)
@@ -1800,6 +1946,441 @@ impl Parser<'_> {
         }
 
         self.reject_unknown_fields(settings, &settings_path, &[]);
+    }
+
+    fn parse_dns_outbound_settings(
+        &mut self,
+        outbound: &Value,
+        index: usize,
+    ) -> Option<DnsOutboundSettings> {
+        let settings_path = format!("$.outbounds[{index}].settings");
+        let settings = match outbound.get("settings") {
+            None | Some(Value::Null) => return Some(DnsOutboundSettings::default()),
+            Some(settings) if settings.is_object() => settings,
+            Some(_) => {
+                self.error(
+                    &settings_path,
+                    "dns outbound settings must be an object or null",
+                );
+                return None;
+            }
+        };
+
+        self.reject_unknown_fields(
+            settings,
+            &settings_path,
+            &[
+                "rewriteNetwork",
+                "rewriteAddress",
+                "rewritePort",
+                "network",
+                "address",
+                "port",
+                "userLevel",
+                "rules",
+                "nonIPQuery",
+                "blockTypes",
+            ],
+        );
+
+        // Xray unmarshals both spellings before Build applies the legacy
+        // aliases. Keep type errors from either field visible, but defer
+        // semantic validation until the effective value is known.
+        let canonical_network = self.dns_rewrite_text_at(
+            settings,
+            "rewriteNetwork",
+            format!("{settings_path}.rewriteNetwork"),
+        )?;
+        let legacy_network =
+            self.dns_rewrite_text_at(settings, "network", format!("{settings_path}.network"))?;
+        let rewrite_network = match legacy_network.filter(|network| !network.is_empty()) {
+            Some(network) => {
+                self.parse_dns_rewrite_network(network, format!("{settings_path}.network"))
+            }
+            None => canonical_network.and_then(|network| {
+                self.parse_dns_rewrite_network(network, format!("{settings_path}.rewriteNetwork"))
+            }),
+        };
+
+        let canonical_address = self.dns_rewrite_text_at(
+            settings,
+            "rewriteAddress",
+            format!("{settings_path}.rewriteAddress"),
+        )?;
+        let legacy_address =
+            self.dns_rewrite_text_at(settings, "address", format!("{settings_path}.address"))?;
+        let rewrite_address = match legacy_address {
+            Some(address) => {
+                self.parse_dns_rewrite_address(address, format!("{settings_path}.address"))
+            }
+            None => canonical_address.and_then(|address| {
+                self.parse_dns_rewrite_address(address, format!("{settings_path}.rewriteAddress"))
+            }),
+        };
+
+        let mut rewrite_port = self.nullable_u16_at(
+            settings,
+            "rewritePort",
+            format!("{settings_path}.rewritePort"),
+        )?;
+        let alias_port = self.nullable_u16_at(settings, "port", format!("{settings_path}.port"))?;
+        if alias_port != 0 {
+            rewrite_port = alias_port;
+        }
+
+        let user_level =
+            self.nullable_u32_at(settings, "userLevel", format!("{settings_path}.userLevel"))?;
+
+        let rules_present = settings.get("rules").is_some_and(|value| !value.is_null());
+        let legacy_present = ["nonIPQuery", "blockTypes"]
+            .iter()
+            .any(|field| settings.get(*field).is_some_and(|value| !value.is_null()));
+        if rules_present && legacy_present {
+            self.error(
+                format!("{settings_path}.rules"),
+                "legacy nonIPQuery and blockTypes cannot be mixed with rules",
+            );
+            return None;
+        }
+
+        let rules = if legacy_present {
+            let rules = self.parse_legacy_dns_outbound_rules(settings, &settings_path)?;
+            self.warning(
+                &settings_path,
+                "dns outbound nonIPQuery and blockTypes are deprecated; use rules",
+            );
+            rules
+        } else {
+            self.parse_dns_outbound_rules(settings.get("rules"), &settings_path)?
+        };
+
+        Some(DnsOutboundSettings {
+            rewrite_network,
+            rewrite_address,
+            rewrite_port,
+            user_level,
+            rules,
+        })
+    }
+
+    fn dns_rewrite_text_at<'a>(
+        &mut self,
+        settings: &'a Value,
+        key: &str,
+        path: String,
+    ) -> Option<Option<&'a str>> {
+        match settings.get(key) {
+            None | Some(Value::Null) => Some(None),
+            Some(Value::String(value)) => Some(Some(value)),
+            Some(_) => {
+                self.error(path, format!("field `{key}` must be a string or null"));
+                None
+            }
+        }
+    }
+
+    fn parse_dns_rewrite_network(&mut self, network: &str, path: String) -> Option<Network> {
+        if network.is_empty() {
+            None
+        } else if network.eq_ignore_ascii_case("tcp") {
+            Some(Network::Tcp)
+        } else if network.eq_ignore_ascii_case("udp") {
+            Some(Network::Udp)
+        } else {
+            self.error(path, format!("unsupported dns rewrite network `{network}`"));
+            None
+        }
+    }
+
+    fn parse_dns_rewrite_address(&mut self, address: &str, path: String) -> Option<TargetAddr> {
+        let address = normalize_xray_address_text(address);
+        if address.starts_with("env:") {
+            self.error(
+                path,
+                "dns rewrite address environment references are not supported",
+            );
+            return None;
+        }
+        if address.is_empty() {
+            self.error(path, "dns rewrite address cannot be empty");
+            return None;
+        }
+
+        Some(
+            address
+                .parse::<IpAddr>()
+                .map_or_else(|_| TargetAddr::Domain(address.to_owned()), TargetAddr::Ip),
+        )
+    }
+
+    fn parse_dns_outbound_rules(
+        &mut self,
+        raw_rules: Option<&Value>,
+        settings_path: &str,
+    ) -> Option<Vec<DnsOutboundRule>> {
+        let rules_path = format!("{settings_path}.rules");
+        let rules = match raw_rules {
+            None | Some(Value::Null) => return Some(Vec::new()),
+            Some(Value::Array(rules)) => rules,
+            Some(_) => {
+                self.error(&rules_path, "dns outbound rules must be an array or null");
+                return None;
+            }
+        };
+        if !self.selector_budget.consume_dns_outbound_rules(rules.len()) {
+            self.error(
+                &rules_path,
+                format!(
+                    "configuration exceeds the DNS outbound rule budget (maximum {MAX_DNS_OUTBOUND_RULES})"
+                ),
+            );
+            return None;
+        }
+
+        let mut parsed = Vec::with_capacity(rules.len());
+        for (index, rule) in rules.iter().enumerate() {
+            parsed.push(self.parse_dns_outbound_rule(rule, &format!("{rules_path}[{index}]"))?);
+        }
+        Some(parsed)
+    }
+
+    fn parse_dns_outbound_rule(
+        &mut self,
+        rule: &Value,
+        rule_path: &str,
+    ) -> Option<DnsOutboundRule> {
+        if !rule.is_object() {
+            self.error(rule_path, "dns outbound rule must be an object");
+            return None;
+        }
+        self.reject_unknown_fields(rule, rule_path, &["action", "qtype", "domain"]);
+
+        let action_path = format!("{rule_path}.action");
+        let action = match rule.get("action") {
+            Some(Value::String(action)) if action.eq_ignore_ascii_case("direct") => {
+                DnsOutboundRuleAction::Direct
+            }
+            Some(Value::String(action)) if action.eq_ignore_ascii_case("drop") => {
+                DnsOutboundRuleAction::Drop
+            }
+            Some(Value::String(action)) if action.eq_ignore_ascii_case("reject") => {
+                DnsOutboundRuleAction::Reject
+            }
+            Some(Value::String(action)) if action.eq_ignore_ascii_case("hijack") => {
+                DnsOutboundRuleAction::Hijack
+            }
+            Some(Value::String(action)) => {
+                self.error(
+                    action_path,
+                    format!("unknown dns outbound action `{action}`"),
+                );
+                return None;
+            }
+            Some(_) => {
+                self.error(action_path, "dns outbound rule action must be a string");
+                return None;
+            }
+            None => {
+                self.error(action_path, "missing dns outbound rule action");
+                return None;
+            }
+        };
+
+        let qtype_ranges = self.parse_dns_qtype_ranges(rule.get("qtype"), rule_path)?;
+        let domain_matchers =
+            self.parse_dns_outbound_domain_matchers(rule.get("domain"), rule_path)?;
+        Some(DnsOutboundRule {
+            action,
+            qtype_ranges,
+            domain_matchers,
+        })
+    }
+
+    fn parse_dns_qtype_ranges(
+        &mut self,
+        raw: Option<&Value>,
+        rule_path: &str,
+    ) -> Option<Vec<DnsQTypeRange>> {
+        let path = format!("{rule_path}.qtype");
+        let pairs = self.parse_u16_selector_ranges(raw, &path, U16SelectorKind::DnsQType)?;
+        let mut ranges = Vec::with_capacity(pairs.len());
+        for (start, end) in pairs {
+            match DnsQTypeRange::new(start, end) {
+                Ok(range) => ranges.push(range),
+                Err(error) => {
+                    self.error(&path, error.to_string());
+                    return None;
+                }
+            }
+        }
+        Some(ranges)
+    }
+
+    fn parse_dns_outbound_domain_matchers(
+        &mut self,
+        raw: Option<&Value>,
+        rule_path: &str,
+    ) -> Option<Vec<DomainMatcher>> {
+        let path = format!("{rule_path}.domain");
+        let mut matchers = Vec::new();
+        match raw {
+            None | Some(Value::Null) => return Some(matchers),
+            Some(Value::String(domains)) => {
+                for (index, domain) in domains.split(',').enumerate() {
+                    self.push_dns_outbound_domain_matcher(
+                        domain,
+                        &format!("{path}[{index}]"),
+                        &mut matchers,
+                    )?;
+                }
+            }
+            Some(Value::Array(domains)) => {
+                matchers.reserve(
+                    domains
+                        .len()
+                        .min(self.matcher_budget.remaining_domain_matchers()),
+                );
+                for (index, domain) in domains.iter().enumerate() {
+                    let item_path = format!("{path}[{index}]");
+                    let Some(domain) = domain.as_str() else {
+                        self.error(item_path, "dns outbound domain matcher must be a string");
+                        return None;
+                    };
+                    self.push_dns_outbound_domain_matcher(domain, &item_path, &mut matchers)?;
+                }
+            }
+            Some(_) => {
+                self.error(path, "dns outbound domain must be a string, array, or null");
+                return None;
+            }
+        }
+        Some(matchers)
+    }
+
+    fn push_dns_outbound_domain_matcher(
+        &mut self,
+        domain: &str,
+        path: &str,
+        matchers: &mut Vec<DomainMatcher>,
+    ) -> Option<()> {
+        let remaining = self.matcher_budget.remaining_domain_matchers();
+        if remaining == 0 {
+            self.domain_matcher_budget_error(path);
+            return None;
+        }
+        let parsed = self.parse_domain_matcher(domain, path, remaining)?;
+        if !self.matcher_budget.consume_domain_matchers(parsed.len()) {
+            self.domain_matcher_budget_error(path);
+            return None;
+        }
+        matchers.extend(parsed);
+        Some(())
+    }
+
+    fn parse_legacy_dns_outbound_rules(
+        &mut self,
+        settings: &Value,
+        settings_path: &str,
+    ) -> Option<Vec<DnsOutboundRule>> {
+        let mode_path = format!("{settings_path}.nonIPQuery");
+        let mode = match settings.get("nonIPQuery") {
+            None | Some(Value::Null) => LegacyDnsNonIpMode::Reject,
+            Some(Value::String(mode)) if mode.is_empty() => LegacyDnsNonIpMode::Reject,
+            Some(Value::String(mode)) if mode == "reject" => LegacyDnsNonIpMode::Reject,
+            Some(Value::String(mode)) if mode == "drop" => LegacyDnsNonIpMode::Drop,
+            Some(Value::String(mode)) if mode == "skip" => LegacyDnsNonIpMode::Skip,
+            Some(Value::String(mode)) => {
+                self.error(
+                    mode_path,
+                    format!("unknown dns outbound nonIPQuery `{mode}`"),
+                );
+                return None;
+            }
+            Some(_) => {
+                self.error(
+                    mode_path,
+                    "dns outbound nonIPQuery must be a string or null",
+                );
+                return None;
+            }
+        };
+
+        let block_path = format!("{settings_path}.blockTypes");
+        let mut blocked = Vec::new();
+        match settings.get("blockTypes") {
+            None | Some(Value::Null) => {}
+            Some(Value::Array(values)) => {
+                for (index, value) in values.iter().enumerate() {
+                    let item_path = format!("{block_path}[{index}]");
+                    if !self.selector_budget.consume_dns_qtype_selector() {
+                        self.dns_qtype_selector_budget_error(&item_path);
+                        return None;
+                    }
+                    let Some(value) = value.as_i64().and_then(|value| u16::try_from(value).ok())
+                    else {
+                        self.error(item_path, "dns outbound blockTypes value must fit in u16");
+                        return None;
+                    };
+                    blocked.push((value, value));
+                }
+            }
+            Some(_) => {
+                self.error(
+                    block_path,
+                    "dns outbound blockTypes must be an array or null",
+                );
+                return None;
+            }
+        }
+        let blocked = normalize_u16_ranges(blocked);
+        let rule_count = usize::from(!blocked.is_empty()) + 2;
+        if !self.selector_budget.consume_dns_outbound_rules(rule_count) {
+            self.error(
+                settings_path,
+                format!(
+                    "configuration exceeds the DNS outbound rule budget (maximum {MAX_DNS_OUTBOUND_RULES})"
+                ),
+            );
+            return None;
+        }
+
+        let mut rules = Vec::with_capacity(rule_count);
+        if !blocked.is_empty() {
+            let mut qtype_ranges = Vec::with_capacity(blocked.len());
+            for (start, end) in blocked {
+                match DnsQTypeRange::new(start, end) {
+                    Ok(range) => qtype_ranges.push(range),
+                    Err(error) => {
+                        self.error(&block_path, error.to_string());
+                        return None;
+                    }
+                }
+            }
+            rules.push(DnsOutboundRule {
+                action: if mode == LegacyDnsNonIpMode::Reject {
+                    DnsOutboundRuleAction::Reject
+                } else {
+                    DnsOutboundRuleAction::Drop
+                },
+                qtype_ranges,
+                domain_matchers: Vec::new(),
+            });
+        }
+        rules.push(DnsOutboundRule {
+            action: DnsOutboundRuleAction::Hijack,
+            qtype_ranges: vec![DnsQTypeRange::single(1), DnsQTypeRange::single(28)],
+            domain_matchers: Vec::new(),
+        });
+        rules.push(DnsOutboundRule {
+            action: match mode {
+                LegacyDnsNonIpMode::Reject => DnsOutboundRuleAction::Reject,
+                LegacyDnsNonIpMode::Drop => DnsOutboundRuleAction::Drop,
+                LegacyDnsNonIpMode::Skip => DnsOutboundRuleAction::Direct,
+            },
+            qtype_ranges: Vec::new(),
+            domain_matchers: Vec::new(),
+        });
+        Some(rules)
     }
 
     fn parse_vless_settings(
@@ -2839,6 +3420,146 @@ impl Parser<'_> {
         Some(cidr)
     }
 
+    fn parse_u16_selector_ranges(
+        &mut self,
+        raw: Option<&Value>,
+        path: &str,
+        kind: U16SelectorKind,
+    ) -> Option<Vec<(u16, u16)>> {
+        let mut ranges = Vec::new();
+        match raw {
+            None | Some(Value::Null) => return Some(ranges),
+            Some(Value::Number(value)) => {
+                if !self.consume_u16_selector(kind, path) {
+                    return None;
+                }
+                let Some(value) = value.as_u64().and_then(|value| u16::try_from(value).ok()) else {
+                    self.error(
+                        path,
+                        format!("{} must fit in u16", u16_selector_label(kind)),
+                    );
+                    return None;
+                };
+                // Xray's shared PortList treats a numeric zero as an empty list.
+                if value != 0 {
+                    ranges.push((value, value));
+                }
+            }
+            Some(Value::String(values)) => {
+                for (index, raw_range) in values.split(',').enumerate() {
+                    let item_path = format!("{path}[{index}]");
+                    if !self.consume_u16_selector(kind, &item_path) {
+                        return None;
+                    }
+                    let raw_range = raw_range.trim();
+                    if raw_range.is_empty() {
+                        continue;
+                    }
+                    let range = self.parse_u16_selector_range(raw_range, &item_path, kind)?;
+                    ranges.push(range);
+                }
+            }
+            Some(_) => {
+                self.error(
+                    path,
+                    format!(
+                        "{} must be an integer, comma-separated range string, or null",
+                        u16_selector_label(kind)
+                    ),
+                );
+                return None;
+            }
+        }
+        Some(normalize_u16_ranges(ranges))
+    }
+
+    fn parse_u16_selector_range(
+        &mut self,
+        raw: &str,
+        path: &str,
+        kind: U16SelectorKind,
+    ) -> Option<(u16, u16)> {
+        if raw.starts_with("env:") {
+            self.error(
+                path,
+                format!(
+                    "{} environment references are not supported",
+                    u16_selector_label(kind)
+                ),
+            );
+            return None;
+        }
+        let (start, end) = match raw.split_once('-') {
+            Some((start, end)) => (start, end),
+            None => (raw, raw),
+        };
+        let Some(start) = start.parse::<u16>().ok() else {
+            self.error(
+                path,
+                format!("invalid {} range `{raw}`", u16_selector_label(kind)),
+            );
+            return None;
+        };
+        let Some(end) = end.parse::<u16>().ok() else {
+            self.error(
+                path,
+                format!("invalid {} range `{raw}`", u16_selector_label(kind)),
+            );
+            return None;
+        };
+        if start > end {
+            self.error(
+                path,
+                format!(
+                    "invalid {} range `{raw}`: start exceeds end",
+                    u16_selector_label(kind)
+                ),
+            );
+            return None;
+        }
+        Some((start, end))
+    }
+
+    fn consume_u16_selector(&mut self, kind: U16SelectorKind, path: &str) -> bool {
+        let consumed = match kind {
+            U16SelectorKind::DnsQType => self.selector_budget.consume_dns_qtype_selector(),
+            U16SelectorKind::RoutingPort => self.selector_budget.consume_routing_port_selector(),
+        };
+        if !consumed {
+            match kind {
+                U16SelectorKind::DnsQType => self.dns_qtype_selector_budget_error(path),
+                U16SelectorKind::RoutingPort => self.routing_port_selector_budget_error(path),
+            }
+        }
+        consumed
+    }
+
+    fn nullable_u16_at(&mut self, value: &Value, key: &str, path: String) -> Option<u16> {
+        match value.get(key) {
+            None | Some(Value::Null) => Some(0),
+            Some(raw) => match raw.as_u64().and_then(|value| u16::try_from(value).ok()) {
+                Some(value) => Some(value),
+                None => {
+                    self.error(path, format!("field `{key}` must fit in u16 or be null"));
+                    None
+                }
+            },
+        }
+    }
+
+    fn nullable_u32_at(&mut self, value: &Value, key: &str, path: String) -> Option<u32> {
+        match value.get(key) {
+            None | Some(Value::Null) => Some(0),
+            Some(raw) => match raw.as_u64().and_then(|value| u32::try_from(value).ok()) {
+                Some(value) => Some(value),
+                None => {
+                    self.error(path, format!("field `{key}` must fit in u32 or be null"));
+                    None
+                }
+            },
+        }
+    }
+
     fn u16_at(&mut self, value: &Value, key: &str, path: String) -> Option<u16> {
         let Some(raw) = value.get(key).and_then(Value::as_u64) else {
             self.error(path, format!("missing numeric field `{key}`"));
@@ -2914,6 +3635,24 @@ impl Parser<'_> {
         );
     }
 
+    fn dns_qtype_selector_budget_error(&mut self, path: &str) {
+        self.error(
+            path,
+            format!(
+                "configuration exceeds the DNS qtype selector budget (maximum {MAX_DNS_QTYPE_SELECTORS})"
+            ),
+        );
+    }
+
+    fn routing_port_selector_budget_error(&mut self, path: &str) {
+        self.error(
+            path,
+            format!(
+                "configuration exceeds the routing port selector budget (maximum {MAX_ROUTING_PORT_SELECTORS})"
+            ),
+        );
+    }
+
     fn error(&mut self, path: impl Into<String>, message: impl Into<String>) {
         self.diagnostics.push(Diagnostic::error(path, message));
     }
@@ -2949,6 +3688,28 @@ impl Parser<'_> {
     }
 }
 
+fn u16_selector_label(kind: U16SelectorKind) -> &'static str {
+    match kind {
+        U16SelectorKind::DnsQType => "dns outbound qtype",
+        U16SelectorKind::RoutingPort => "routing port",
+    }
+}
+
+fn normalize_u16_ranges(mut ranges: Vec<(u16, u16)>) -> Vec<(u16, u16)> {
+    ranges.sort_unstable();
+    let mut normalized: Vec<(u16, u16)> = Vec::with_capacity(ranges.len());
+    for (start, end) in ranges {
+        if let Some((_, previous_end)) = normalized.last_mut() {
+            if start <= previous_end.saturating_add(1) {
+                *previous_end = (*previous_end).max(end);
+                continue;
+            }
+        }
+        normalized.push((start, end));
+    }
+    normalized
+}
+
 fn child_path(base_path: &str, key: &str) -> String {
     if base_path == "$" {
         format!("$.{key}")
@@ -2971,14 +3732,11 @@ fn dns_ip_rule_uses_geodata(value: &str) -> bool {
     value.starts_with("geoip:") || value.starts_with("ext:") || value.starts_with("ext-ip:")
 }
 
-fn parse_xray_ip_address(mut value: &str) -> Option<IpAddr> {
+fn normalize_xray_address_text(mut value: &str) -> &str {
     let bytes = value.as_bytes();
     if bytes.first() == Some(&b'[') && bytes.last() == Some(&b']') {
         value = &value[1..value.len() - 1];
-    }
-
-    let bytes = value.as_bytes();
-    if bytes
+    } else if bytes
         .first()
         .is_some_and(|byte| !byte.is_ascii_alphanumeric())
         || bytes
@@ -2988,7 +3746,11 @@ fn parse_xray_ip_address(mut value: &str) -> Option<IpAddr> {
         value = value.trim();
     }
 
-    value.parse().ok()
+    value
+}
+
+fn parse_xray_ip_address(value: &str) -> Option<IpAddr> {
+    normalize_xray_address_text(value).parse().ok()
 }
 
 fn wrap_ip_matcher_inverse(matcher: IpMatcher, inverse: bool) -> IpMatcher {
@@ -3097,8 +3859,10 @@ mod tests {
 
     use super::{
         default_geodata_dirs, geodata_dirs_with_defaults, parse_xray_json_with_loader_and_limits,
-        GeodataLoader, MatcherBudget, MatcherBudgetLimits, Parser, DEFAULT_MATCHER_BUDGET_LIMITS,
-        MAX_CONFIG_GEODATA_ATTRIBUTE_SIZE, MAX_CONFIG_GEODATA_ATTR_FILTERS,
+        GeodataLoader, MatcherBudget, MatcherBudgetLimits, Parser, SelectorBudget,
+        DEFAULT_MATCHER_BUDGET_LIMITS, MAX_CONFIG_GEODATA_ATTRIBUTE_SIZE,
+        MAX_CONFIG_GEODATA_ATTR_FILTERS, MAX_DNS_OUTBOUND_RULES, MAX_DNS_QTYPE_SELECTORS,
+        MAX_ROUTING_PORT_SELECTORS,
     };
 
     #[test]
@@ -3132,6 +3896,56 @@ mod tests {
         assert!(combined_budget.consume_domain_matchers(200_000));
         assert!(combined_budget.consume_ip_matchers(300_000));
         assert!(!combined_budget.consume_domain_matchers(1));
+    }
+
+    #[test]
+    fn selector_budget_enforces_dns_rule_qtype_and_routing_port_limits() {
+        let mut budget = SelectorBudget::default();
+
+        assert!(budget.consume_dns_outbound_rules(MAX_DNS_OUTBOUND_RULES));
+        assert!(!budget.consume_dns_outbound_rules(1));
+        for _ in 0..MAX_DNS_QTYPE_SELECTORS {
+            assert!(budget.consume_dns_qtype_selector());
+        }
+        assert!(!budget.consume_dns_qtype_selector());
+        for _ in 0..MAX_ROUTING_PORT_SELECTORS {
+            assert!(budget.consume_routing_port_selector());
+        }
+        assert!(!budget.consume_routing_port_selector());
+    }
+
+    #[test]
+    fn dns_outbound_domains_consume_the_global_domain_matcher_budget() {
+        let raw = r#"{
+          "outbounds": [{
+            "protocol": "dns",
+            "tag": "dns-out",
+            "settings": {
+              "rules": [{
+                "action": "direct",
+                "domain": ["full:first.example", "full:second.example"]
+              }]
+            }
+          }]
+        }"#;
+        let limits = MatcherBudgetLimits {
+            routing_rules: 16,
+            domain_matchers: 1,
+            ip_matchers: 8,
+            total_matchers: 8,
+        };
+
+        let error = parse_xray_json_with_loader_and_limits(
+            raw,
+            GeodataLoader::from_dirs(Vec::new()),
+            limits,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error.diagnostics[0].path.as_deref(),
+            Some("$.outbounds[0].settings.rules[0].domain[1]")
+        );
     }
 
     #[test]
@@ -3259,6 +4073,7 @@ mod tests {
             diagnostics: Vec::new(),
             geodata_loader: GeodataLoader::from_dirs(Vec::new()),
             matcher_budget: MatcherBudget::new(DEFAULT_MATCHER_BUDGET_LIMITS),
+            selector_budget: SelectorBudget::default(),
         };
         let spec = format!("test{}", "@AdS".repeat(MAX_CONFIG_GEODATA_ATTR_FILTERS + 1));
 
@@ -3278,6 +4093,7 @@ mod tests {
             diagnostics: Vec::new(),
             geodata_loader: GeodataLoader::from_dirs(Vec::new()),
             matcher_budget: MatcherBudget::new(DEFAULT_MATCHER_BUDGET_LIMITS),
+            selector_budget: SelectorBudget::default(),
         };
         let attrs = (0..=MAX_CONFIG_GEODATA_ATTR_FILTERS)
             .map(|index| format!("attr{index}"))

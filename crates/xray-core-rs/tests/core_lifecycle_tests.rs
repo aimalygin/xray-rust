@@ -6,8 +6,9 @@ use tokio::net::TcpStream;
 use tokio::time::{timeout, Duration};
 use uuid::Uuid;
 use xray_config::{
-    CoreConfig, InboundConfig, InboundProtocol, Network, OutboundConfig, OutboundSettings,
-    RoutingConfig, StreamSecurity, StreamSettings, TargetAddr, VlessOutboundSettings, VlessUser,
+    CoreConfig, DnsFakeIpConfig, InboundConfig, InboundProtocol, IpCidr, Network, OutboundConfig,
+    OutboundSettings, RoutingConfig, StreamSecurity, StreamSettings, TargetAddr,
+    VlessOutboundSettings, VlessUser,
 };
 use xray_core_rs::{Core, CoreError, CoreState, TunRuntimeOptions, TunRuntimeProfile};
 use xray_transport::{SystemDnsResolver, TransportDialer};
@@ -71,6 +72,38 @@ async fn core_starts_and_stops_from_config() {
     assert_eq!(core.state(), CoreState::Running);
     core.stop().await.unwrap();
     assert_eq!(core.state(), CoreState::Stopped);
+}
+
+#[test]
+fn core_rejects_programmatic_fake_ip_pool_with_only_reserved_addresses() {
+    let mut config = runtime_config();
+    config.dns.fake_ip = Some(DnsFakeIpConfig {
+        enabled: true,
+        ipv4_pool: IpCidr::new(IpAddr::V4(Ipv4Addr::new(198, 18, 0, 0)), 30).unwrap(),
+        pool_size: 1,
+        ttl: 60,
+    });
+
+    assert!(matches!(
+        Core::new(config),
+        Err(CoreError::InvalidFakeIpConfiguration)
+    ));
+}
+
+#[test]
+fn core_rejects_programmatic_fake_ip_with_zero_ttl() {
+    let mut config = runtime_config();
+    config.dns.fake_ip = Some(DnsFakeIpConfig {
+        enabled: true,
+        ipv4_pool: IpCidr::new(IpAddr::V4(Ipv4Addr::new(198, 19, 0, 0)), 16).unwrap(),
+        pool_size: 1024,
+        ttl: 0,
+    });
+
+    assert!(matches!(
+        Core::new(config),
+        Err(CoreError::InvalidFakeIpConfiguration)
+    ));
 }
 
 #[tokio::test]

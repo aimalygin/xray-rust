@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use bytes::Bytes;
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
@@ -9,7 +10,7 @@ use xray_proxy::inbound::parse_http_connect;
 use xray_transport::TransportDialer;
 
 use crate::dns::RuntimeDnsResolvers;
-use crate::outbound::open_tcp_stream_with_resolvers_and_dialer;
+use crate::outbound::{open_tcp_stream_with_resolvers_and_dialer, TcpSessionOutbound};
 use crate::policy::{
     accept_error_wants_backoff, copy_bidirectional_with_idle_timeout, effective_policy_for_level,
     AcceptBackoff, EffectivePolicy,
@@ -125,7 +126,7 @@ async fn handle_http_connection(
             .peer_addr()
             .map_or_else(|_| "unknown".to_owned(), |addr| addr.to_string())
     });
-    let target =
+    let raw_target =
         match tokio::time::timeout(policy.handshake, parse_http_connect(&mut inbound)).await {
             Ok(Ok(target)) => target,
             _ => {
@@ -133,9 +134,13 @@ async fn handle_http_connection(
                 return;
             }
         };
+    let target = dns_resolvers
+        .outbound
+        .restore_client_target(&raw_target)
+        .target;
 
-    let outbound = match outbound_router
-        .select_tcp_outbound_for_session_with_resolver(
+    let selected = match outbound_router
+        .select_tcp_session_outbound_with_resolver(
             inbound_tag.as_deref(),
             &target,
             dns_resolvers.destination.as_ref(),
@@ -153,19 +158,48 @@ async fn handle_http_connection(
     };
 
     if runtime_logger.is_enabled() {
+        let selected_outbound = match &selected {
+            TcpSessionOutbound::Transport(outbound) => {
+                crate::debug_log::tcp_outbound_label(outbound)
+            }
+            TcpSessionOutbound::Dns(_) => "dns",
+        };
         crate::debug_log::log_route_decision(
             &runtime_logger,
             crate::debug_log::RouteDecisionLog {
                 inbound_tag: inbound_tag.as_deref(),
                 network: target.network,
-                original_target: &target,
+                original_target: &raw_target,
                 sniffed_protocol: None,
                 route_target: &target,
                 dial_target: &target,
-                selected_outbound: crate::debug_log::tcp_outbound_label(&outbound),
+                selected_outbound,
             },
         );
     }
+
+    let outbound = match selected {
+        TcpSessionOutbound::Transport(outbound) => outbound,
+        TcpSessionOutbound::Dns(outbound) => {
+            if let Some(source) = source.as_deref() {
+                crate::debug_log::log_access_accepted(&runtime_logger, source, &target, "dns");
+            }
+            if inbound.write_all(HTTP_CONNECT_ESTABLISHED).await.is_err() {
+                return;
+            }
+            let _ = dns_resolvers
+                .outbound
+                .serve_tcp_stream(
+                    &mut inbound,
+                    Bytes::new(),
+                    &outbound,
+                    &target,
+                    policy.conn_idle,
+                )
+                .await;
+            return;
+        }
+    };
 
     let (open_timeout, tunnel_idle, relay_buffer_size) = match &outbound {
         TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => (

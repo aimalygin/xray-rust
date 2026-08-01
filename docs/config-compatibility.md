@@ -64,8 +64,9 @@ subset rather than full Xray sniffing behavior.
 
 ## Outbounds and streams
 
-`freedom` and `vless` are supported. VLESS accepts one `vnext` server with one
-or more UUID users, but the runtime currently selects the first user.
+`freedom`, `vless`, and `dns` are supported. DNS outbound settings are described
+below. VLESS accepts one `vnext` server with one or more UUID users, but the
+runtime currently selects the first user.
 `encryption: "none"`, optional `level`, and these flow values are accepted:
 
 - empty/no flow;
@@ -371,9 +372,10 @@ framed SERVFAIL for each unresolved raw query while keeping the client
 connection open. Managed answers are delivered independently of a concurrent
 raw dial/write, may complete out of order, and share the same 16-question and
 128-KiB admission boundary. Their owned lookup tasks are aborted with the
-client flow. Raw and fake DNS/TCP share a dedicated limit of up to 32 flows.
-The client session uses inbound `connIdle`; individual raw-DNS operations
-remain bounded by the smaller of `connIdle` and five seconds.
+client flow. Raw, fake, and explicit DNS-outbound TCP flows through TUN share a
+dedicated limit of up to 32 flows. The client session uses inbound `connIdle`;
+individual raw-DNS operations remain bounded by the smaller of `connIdle` and
+five seconds.
 
 For raw questions, object entries contribute their endpoint, transport, and
 effective DNS tag to the wire exchange. The tag drives outbound routing for
@@ -384,16 +386,129 @@ Raw selection does not apply managed `queryStrategy`, `domains`, IP response
 filters, `timeoutMs`, `skipFallback`, or `disableFallback*`; its own bounded
 transport failover walks that declaration-order plan. DNSSEC/EDNS clients that
 depend on split-DNS privacy must therefore ensure every raw candidate the plan
-may reach is appropriate until the general rule-driven DNS outbound is
-implemented.
+may reach is appropriate whenever no explicit DNS outbound route is selected.
 This is the raw-message equivalent of Xray DNS outbound `Direct`; the TCP
 adapter interprets only enough of ordinary QUERY envelopes to provide safe
 correlation and failover. The fixed A/AAAA managed path models the core of Xray
-DNS outbound `Hijack`, but its configurable Direct/Drop/Reject/Hijack rules,
-rewrite server, own-link recursion guard, and non-IP policy remain unsupported.
+DNS outbound `Hijack`. It remains the compatibility fallback and is not
+silently changed by the configurable outbound described below.
 The raw path retains its own transport-aware per-attempt and five-second
 per-query budget; those protect the TUN adapter rather than model a managed
 Xray DNS client.
+
+### DNS outbound
+
+`outbounds[].protocol: "dns"` accepts Xray's canonical settings:
+
+```json
+{
+  "tag": "dns-out",
+  "protocol": "dns",
+  "settings": {
+    "rewriteNetwork": "tcp",
+    "rewriteAddress": "1.1.1.1",
+    "rewritePort": 53,
+    "userLevel": 0,
+    "rules": [
+      {
+        "action": "direct",
+        "qtype": "1,28,64-65",
+        "domain": ["domain:example.com", "geosite:private"]
+      }
+    ]
+  }
+}
+```
+
+The compatibility aliases `network`/`address`/`port` override their
+`rewrite*` counterparts exactly as in Xray; a zero port preserves the original
+port. `action` is case-insensitive and must be Direct, Drop, Reject, or Hijack.
+QTYPE accepts a number or comma/range string over `0..=65535`; ranges stay
+compact and are normalized instead of being eagerly expanded. Domain accepts a
+string or array and supports the same `keyword`, `domain`, `full`, `regexp`,
+`dotless`, `geosite`, and `ext` grammar as other DNS matchers. Bare values are
+keywords. Rules are ordered, selectors inside a rule are ANDed, and empty
+QTYPE/domain selectors are wildcards. A miss Hijacks A/AAAA and Rejects other
+types. Explicit Hijack of a non-address type also Rejects.
+
+Deprecated `nonIPQuery`/`blockTypes` are normalized to ordered modern rules and
+emit a warning. They cannot be mixed with non-null `rules`. Config parsing caps
+the whole configuration at 4,096 DNS rules, 65,536 compact QTYPE selectors,
+and the existing shared domain/geodata matcher budget. Routing field rules now
+accept Xray `network` strings/arrays and numeric or range-string `port`, so a
+typical TUN route is:
+
+```json
+{
+  "type": "field",
+  "network": "udp,tcp",
+  "port": 53,
+  "outboundTag": "dns-out"
+}
+```
+
+At runtime one per-Core handler is shared by TUN UDP/TCP, SOCKS5 `CONNECT` and
+`UDP ASSOCIATE`, and HTTP `CONNECT`. Direct preserves complete query and
+response wire messages while applying network/address/port rewrite
+independently; UDP/TCP framing conversion is supported. The outbound's TCP
+`streamSettings` are honored, including TLS (with target-derived SNI when
+omitted), REALITY, and Happy Eyeballs socket policy. Security configured for a
+UDP rewrite fails closed instead of silently sending plaintext. A domain
+rewrite uses the non-recursive bootstrap resolver and all direct sockets retain
+platform protection. The direct exchange is capped at eight candidates and
+five seconds and rejects tunnel-local endpoints. UDP clients rewritten to
+TCP/TLS, managed `dns.servers` selected through the DNS outbound, and ordinary
+TCP clients share one Core-wide keyed session pool. Ordinary TCP clients check
+out and recycle an upstream session for each message, so idle client flows do
+not reserve DNS sockets or query permits. The named pool policy derives from
+the runtime concurrency profile: per-key/global connections and maximum keys
+are `1/8/128` for `LowMemory`, `2/16/256` for `Mobile`, `4/32/512` for
+`MobilePlus` and `Desktop`, and `8/64/1024` for `Throughput`; `Default` selects
+Mobile on Apple/Android mobile targets and Desktop elsewhere. An idle stream
+lives for the smaller of the profile cap (15/30/45/60 seconds) and the outbound
+policy's `connIdle`. A stale stream is retried
+once only for a fully parsed standard QUERY; UPDATE and opaque messages are
+never replayed. Cancellation, timeout, and protocol failure retire the
+connection. UDP-source AXFR/IXFR returns REFUSED before dialing because one UDP
+reply cannot represent a multi-message transfer. TCP AXFR/IXFR instead use a
+dedicated non-pooled response-only handoff so every upstream transfer frame is
+preserved. Its managed session carries an ingress operation permit on TUN,
+SOCKS, and HTTP alike; cancellation releases that permit together with the TCP
+pool lease. The older raw TUN DNS TCP-URI pool remains adapter-local. Together,
+it and the keyed Direct pool can own at most 16 pooled TCP sockets for
+`LowMemory`, 32 for `Mobile`, 64 for `MobilePlus`/`Desktop`, and 128 for
+`Throughput`. This is a ceiling for those two pooled subsets, not a maximum for
+every DNS/TCP socket in the Core: standalone routed/local managed
+`dns.servers` exchanges are instead bounded by the operation cap below. A TUN
+anchor Direct rule therefore needs a real rewrite target; otherwise it returns
+SERVFAIL rather than recursing into `198.18.0.1:53`.
+
+All managed `dns.servers` exchanges have a separate Core-wide operation cap of
+8/16/32/32/64 for `LowMemory`/`Mobile`/`MobilePlus`/`Desktop`/`Throughput`.
+It applies uniformly to routed and local TCP, VLESS UDP/TCP, Freedom UDP, and a
+selected DNS outbound; saturation fails closed without an unbounded waiter
+queue. Direct DNS-outbound UDP and managed Freedom UDP also share a protected
+UDP-socket cap with the same profile values. These budgets are separate from
+the ingress DNS policy semaphore and from TCP pool permits, so a Hijack that
+performs a managed lookup cannot self-deadlock by reacquiring its own permit.
+
+Drop sends no response. Reject synthesizes REFUSED while preserving the query
+ID and question. Hijack uses the shared destination resolver or the per-Core
+FakeIP mapper when configured and remains family-specific. A mapping allocated
+through any supported ingress is available to every other ingress in that
+`Core`. Unlike Xray's
+lossy synthesis, a Hijack that would discard AD/CD, DNSSEC DO, EDNS options or
+unsupported structural semantics is typed as unsafe and returns REFUSED; it is
+never converted to Direct. An effective managed DNS-client tag routed back to
+the handler takes the own-link Direct escape before parsing, but only from the
+trusted managed transport call site, preventing an application tag collision
+from bypassing policy.
+
+The compiled policy, protected Direct exchange, FakeIP state, and bounded
+runtime budgets are core-owned and do not depend on TUN packet parsing. This is
+also the integration boundary for future server-protocol inbounds; selecting a
+DNS outbound never degrades to Freedom merely because the ingress is not TUN.
+
 A domain upstream selected through VLESS stays a domain and is resolved
 by the remote endpoint. A domain selected through Freedom uses the separate
 bootstrap policy. Non-intercepting `System` embeddings may use the operating
@@ -425,25 +540,31 @@ resolution is bounded to eight hops; static IP candidates use the shared
 the configured DNS-server plan; only a configuration without DNS servers may
 send it to the operating-system fallback.
 `dns.fakeIp` supports `enabled`, an IPv4 `ipv4Pool`, optional positive
-`poolSize`, and `ttl` for the current TUN routing path. `poolSize` defaults to
-the smaller of 32768 and the usable pool capacity. The bounded mapping table
-uses Xray-style LRU rollover: active mappings stay stable, and the least
-recently used mapping is evicted when a new domain crosses `poolSize`.
+`poolSize`, and a positive `ttl` for the core-wide DNS runtime. `poolSize`
+defaults to the smaller of 32768 and the usable pool capacity. The bounded
+mapping table retains each address lease until the TTL most recently advertised
+for that domain has elapsed. At capacity, a new domain fails closed until the
+earliest lease expires; the address is then safe to reuse. An ordered deadline
+index keeps allocation O(log `poolSize`) and total state O(`poolSize`).
 `198.18.0.1` and `198.18.0.2` are always reserved for the DNS anchor and TUN
-client address. Fake DNS synthesizes A records over UDP and length-prefixed TCP
-for both the anchor and hard-coded port-53 destinations. With `UseIPv6`, its
-IPv4-only pool returns NODATA for A without allocating a mapping. AAAA returns
-NODATA on both paths; other valid single-question types return NODATA at the
-anchor and over TCP, while non-anchor UDP continues through the normal UDP
-path. Fake-IP takes precedence over raw proxying. When a later TCP/UDP flow targets a fake
-address, the original domain is restored before routing. VLESS carries that
-domain for remote resolution; Freedom resolves it through the managed routed
-resolver, including in mobile `StaticOnly` mode. DNS-over-HTTPS/TLS, client-IP,
-per-server rule objects, negative/stale caching, and the broader Xray DNS
-feature set are not implemented. The public resolver result carries every
-candidate and TTL metadata. An explicitly enabled `sockopt.happyEyeballs`
-policy consumes those candidates through the bounded raw-TCP race described
-above; its Xray-compatible zero-delay default leaves the race disabled.
+client address. The fixed TUN FakeDNS mode synthesizes A records over UDP and
+length-prefixed TCP for both the anchor and hard-coded port-53 destinations;
+DNS-outbound Hijack uses the same mapper from TUN, SOCKS, or HTTP. With
+`UseIPv6`, its IPv4-only pool returns NODATA for A without allocating a mapping.
+AAAA returns NODATA on both paths; other valid single-question types return
+NODATA at the anchor and over TCP, while non-anchor UDP continues through the
+normal UDP path. Fake-IP takes precedence over raw proxying. When a later TUN,
+SOCKS, or HTTP TCP/UDP flow targets a mapped fake address, the original domain
+is restored before routing. VLESS carries that domain for remote resolution;
+Freedom resolves it through the managed routed resolver, including in mobile
+`StaticOnly` mode. Managed `dns.servers`
+DoH/DoT/DoQ transports, `clientIp`, negative/stale caching, and the broader
+Xray DNS feature set are not implemented. This does not limit the DNS
+outbound's documented TLS/REALITY `streamSettings`. The public resolver result
+carries every candidate and TTL metadata. An explicitly enabled
+`sockopt.happyEyeballs` policy consumes those candidates through the bounded
+raw-TCP race described above; its Xray-compatible zero-delay default leaves the
+race disabled.
 
 A fake-IP profile does not inherently need `dns.servers` when its restored
 domains always use VLESS, because VLESS preserves them for remote resolution.

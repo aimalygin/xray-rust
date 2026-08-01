@@ -8,10 +8,10 @@ use std::{
 use prost::Message;
 use xray_config::{
     parse_xray_json, parse_xray_json_with_geodata_dirs, DiagnosticSeverity, DnsFakeIpConfig,
-    DnsHostTarget, DnsIpFilter, DnsNameServerConfig, DnsQueryStrategy, DnsServerConfig,
-    DnsServerEndpoint, DnsServerTransport, HappyEyeballsSettings, InboundProtocol, IpCidr,
-    OutboundSettings, RealityShortId, RoutingDomainStrategy, SniffingDestination, StreamSecurity,
-    TargetAddr,
+    DnsHostTarget, DnsIpFilter, DnsNameServerConfig, DnsOutboundRuleAction, DnsOutboundSettings,
+    DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint, DnsServerTransport,
+    HappyEyeballsSettings, InboundProtocol, IpCidr, Network, OutboundSettings, RealityShortId,
+    RoutingDomainStrategy, SniffingDestination, StreamSecurity, TargetAddr,
 };
 
 #[test]
@@ -210,6 +210,329 @@ fn parses_freedom_outbound_as_direct_tcp_default() {
 }
 
 #[test]
+fn parses_xray_dns_outbound_rules_rewrite_and_user_level() {
+    let raw = raw_with_dns_outbound_settings(
+        r#"{
+          "rewriteNetwork": "tcp",
+          "rewriteAddress": "192.0.2.53",
+          "rewritePort": 53,
+          "network": "UDP",
+          "address": "dns.example",
+          "port": 5353,
+          "userLevel": 7,
+          "rules": [{
+            "action": "DiReCt",
+            "qtype": "1,3,23-24,24",
+            "domain": ["domain:example.com", "full:exact.test"]
+          }, {
+            "action": "drop",
+            "qtype": 28,
+            "domain": "keyword:ads"
+          }]
+        }"#,
+    );
+
+    let parsed = parse_xray_json(&raw).expect("dns outbound should parse");
+    let OutboundSettings::Dns(settings) = &parsed.config.outbounds[0].settings else {
+        panic!("expected dns outbound");
+    };
+
+    assert_eq!(settings.rewrite_network, Some(Network::Udp));
+    assert_eq!(
+        settings.rewrite_address,
+        Some(TargetAddr::Domain("dns.example".to_owned()))
+    );
+    assert_eq!(settings.rewrite_port, 5353);
+    assert_eq!(settings.user_level, 7);
+    assert_eq!(settings.rules.len(), 2);
+    assert_eq!(settings.rules[0].qtype_ranges.len(), 3);
+    assert_eq!(settings.rules[0].qtype_ranges[2].start(), 23);
+    assert_eq!(settings.rules[0].qtype_ranges[2].end(), 24);
+    assert_eq!(
+        settings.action_for(1, "api.example.com."),
+        DnsOutboundRuleAction::Direct
+    );
+    assert_eq!(
+        settings.action_for(28, "ads-cdn.test"),
+        DnsOutboundRuleAction::Drop
+    );
+}
+
+#[test]
+fn dns_outbound_non_empty_legacy_network_shadows_canonical_semantic_errors() {
+    for canonical in ["unix", "unsupported"] {
+        let raw = raw_with_dns_outbound_settings(&format!(
+            r#"{{ "rewriteNetwork": "{canonical}", "network": "tcp" }}"#,
+        ));
+
+        let parsed = parse_xray_json(&raw).expect("legacy network must shadow canonical value");
+        let OutboundSettings::Dns(settings) = &parsed.config.outbounds[0].settings else {
+            panic!("expected dns outbound");
+        };
+
+        assert_eq!(settings.rewrite_network, Some(Network::Tcp));
+        assert!(parsed.diagnostics.is_empty());
+    }
+}
+
+#[test]
+fn dns_outbound_empty_or_null_legacy_network_does_not_shadow_canonical_value() {
+    for legacy in [r#""""#, "null"] {
+        let raw = raw_with_dns_outbound_settings(&format!(
+            r#"{{ "rewriteNetwork": "udp", "network": {legacy} }}"#,
+        ));
+
+        let parsed = parse_xray_json(&raw).expect("empty legacy network must not shadow canonical");
+        let OutboundSettings::Dns(settings) = &parsed.config.outbounds[0].settings else {
+            panic!("expected dns outbound");
+        };
+
+        assert_eq!(settings.rewrite_network, Some(Network::Udp));
+        assert!(parsed.diagnostics.is_empty());
+
+        let invalid = raw_with_dns_outbound_settings(&format!(
+            r#"{{ "rewriteNetwork": "unix", "network": {legacy} }}"#,
+        ));
+        assert_parse_error_path(&invalid, "$.outbounds[0].settings.rewriteNetwork");
+    }
+}
+
+#[test]
+fn dns_outbound_legacy_address_shadows_canonical_env_and_empty_values() {
+    for canonical in [r#""env:DNS_SERVER""#, r#""""#] {
+        let raw = raw_with_dns_outbound_settings(&format!(
+            r#"{{ "rewriteAddress": {canonical}, "address": "192.0.2.53" }}"#,
+        ));
+
+        let parsed = parse_xray_json(&raw).expect("legacy address must shadow canonical value");
+        let OutboundSettings::Dns(settings) = &parsed.config.outbounds[0].settings else {
+            panic!("expected dns outbound");
+        };
+
+        assert_eq!(
+            settings.rewrite_address,
+            Some(TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 53))))
+        );
+        assert!(parsed.diagnostics.is_empty());
+    }
+}
+
+#[test]
+fn dns_outbound_null_legacy_address_does_not_shadow_canonical_value() {
+    let raw =
+        raw_with_dns_outbound_settings(r#"{ "rewriteAddress": "192.0.2.53", "address": null }"#);
+
+    let parsed = parse_xray_json(&raw).expect("null legacy address must not shadow canonical");
+    let OutboundSettings::Dns(settings) = &parsed.config.outbounds[0].settings else {
+        panic!("expected dns outbound");
+    };
+
+    assert_eq!(
+        settings.rewrite_address,
+        Some(TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 53))))
+    );
+    assert!(parsed.diagnostics.is_empty());
+}
+
+#[test]
+fn dns_outbound_legacy_aliases_do_not_hide_json_type_errors() {
+    for (settings, path) in [
+        (
+            r#"{ "rewriteNetwork": false, "network": "tcp" }"#,
+            "$.outbounds[0].settings.rewriteNetwork",
+        ),
+        (
+            r#"{ "rewriteNetwork": "tcp", "network": false }"#,
+            "$.outbounds[0].settings.network",
+        ),
+        (
+            r#"{ "rewriteAddress": false, "address": "192.0.2.53" }"#,
+            "$.outbounds[0].settings.rewriteAddress",
+        ),
+        (
+            r#"{ "rewriteAddress": "192.0.2.53", "address": false }"#,
+            "$.outbounds[0].settings.address",
+        ),
+    ] {
+        let raw = raw_with_dns_outbound_settings(settings);
+        assert_parse_error_path(&raw, path);
+    }
+}
+
+#[test]
+fn omitted_or_null_dns_outbound_settings_use_xray_defaults() {
+    for settings in [None, Some("null")] {
+        let settings =
+            settings.map_or_else(String::new, |settings| format!(",\"settings\":{settings}"));
+        let raw = format!(
+            r#"{{
+              "inbounds": [],
+              "outbounds": [{{ "tag": "dns-out", "protocol": "DNS"{settings} }}]
+            }}"#
+        );
+
+        let parsed = parse_xray_json(&raw).expect("default dns outbound should parse");
+        let OutboundSettings::Dns(settings) = &parsed.config.outbounds[0].settings else {
+            panic!("expected dns outbound");
+        };
+        assert_eq!(settings, &DnsOutboundSettings::default());
+    }
+}
+
+#[test]
+fn dns_outbound_numeric_zero_qtype_is_wildcard_but_string_zero_is_type_zero() {
+    let numeric = parse_xray_json(&raw_with_dns_outbound_settings(
+        r#"{ "rules": [{ "action": "direct", "qtype": 0 }] }"#,
+    ))
+    .expect("numeric zero should parse");
+    let string = parse_xray_json(&raw_with_dns_outbound_settings(
+        r#"{ "rules": [{ "action": "direct", "qtype": "0" }] }"#,
+    ))
+    .expect("string zero should parse");
+    let OutboundSettings::Dns(numeric) = &numeric.config.outbounds[0].settings else {
+        panic!("expected dns outbound");
+    };
+    let OutboundSettings::Dns(string) = &string.config.outbounds[0].settings else {
+        panic!("expected dns outbound");
+    };
+
+    assert_eq!(
+        numeric.action_for(65, "example.com"),
+        DnsOutboundRuleAction::Direct
+    );
+    assert_eq!(
+        string.action_for(0, "example.com"),
+        DnsOutboundRuleAction::Direct
+    );
+    assert_eq!(
+        string.action_for(65, "example.com"),
+        DnsOutboundRuleAction::Reject
+    );
+}
+
+#[test]
+fn normalizes_legacy_dns_outbound_policy_with_deprecation_warning() {
+    let raw = raw_with_dns_outbound_settings(r#"{ "nonIPQuery": "skip", "blockTypes": [65, 28] }"#);
+
+    let parsed = parse_xray_json(&raw).expect("legacy dns outbound should parse");
+    let OutboundSettings::Dns(settings) = &parsed.config.outbounds[0].settings else {
+        panic!("expected dns outbound");
+    };
+
+    assert_eq!(settings.rules.len(), 3);
+    assert_eq!(
+        settings.action_for(65, "example.com"),
+        DnsOutboundRuleAction::Drop
+    );
+    assert_eq!(
+        settings.action_for(1, "example.com"),
+        DnsOutboundRuleAction::Hijack
+    );
+    assert_eq!(
+        settings.action_for(16, "example.com"),
+        DnsOutboundRuleAction::Direct
+    );
+    assert_eq!(parsed.diagnostics.len(), 1);
+    assert_eq!(parsed.diagnostics[0].severity, DiagnosticSeverity::Warning);
+}
+
+#[test]
+fn rejects_mixed_legacy_and_modern_dns_outbound_rules() {
+    let raw = raw_with_dns_outbound_settings(r#"{ "rules": [], "blockTypes": [65] }"#);
+
+    assert_parse_error_path(&raw, "$.outbounds[0].settings.rules");
+}
+
+#[test]
+fn rejects_invalid_dns_outbound_fields_with_precise_paths() {
+    for (settings, path) in [
+        ("false", "$.outbounds[0].settings"),
+        (r#"{ "unknown": true }"#, "$.outbounds[0].settings.unknown"),
+        (
+            r#"{ "rewriteNetwork": "unix" }"#,
+            "$.outbounds[0].settings.rewriteNetwork",
+        ),
+        (
+            r#"{ "rewriteAddress": "" }"#,
+            "$.outbounds[0].settings.rewriteAddress",
+        ),
+        (
+            r#"{ "rewritePort": 65536 }"#,
+            "$.outbounds[0].settings.rewritePort",
+        ),
+        (
+            r#"{ "userLevel": -1 }"#,
+            "$.outbounds[0].settings.userLevel",
+        ),
+        (r#"{ "rules": {} }"#, "$.outbounds[0].settings.rules"),
+        (r#"{ "rules": [null] }"#, "$.outbounds[0].settings.rules[0]"),
+        (
+            r#"{ "rules": [{}] }"#,
+            "$.outbounds[0].settings.rules[0].action",
+        ),
+        (
+            r#"{ "rules": [{ "action": "allow" }] }"#,
+            "$.outbounds[0].settings.rules[0].action",
+        ),
+        (
+            r#"{ "rules": [{ "action": "drop", "qtype": "24-23" }] }"#,
+            "$.outbounds[0].settings.rules[0].qtype[0]",
+        ),
+        (
+            r#"{ "rules": [{ "action": "drop", "qtype": "65536" }] }"#,
+            "$.outbounds[0].settings.rules[0].qtype[0]",
+        ),
+        (
+            r#"{ "rules": [{ "action": "drop", "qtype": [] }] }"#,
+            "$.outbounds[0].settings.rules[0].qtype",
+        ),
+        (
+            r#"{ "rules": [{ "action": "drop", "domain": [42] }] }"#,
+            "$.outbounds[0].settings.rules[0].domain[0]",
+        ),
+        (
+            r#"{ "nonIPQuery": "DROP" }"#,
+            "$.outbounds[0].settings.nonIPQuery",
+        ),
+        (
+            r#"{ "blockTypes": [-1] }"#,
+            "$.outbounds[0].settings.blockTypes[0]",
+        ),
+    ] {
+        let raw = raw_with_dns_outbound_settings(settings);
+        assert_parse_error_path(&raw, path);
+    }
+}
+
+#[test]
+fn rejects_dns_outbound_rewrite_address_environment_reference_explicitly() {
+    let raw = raw_with_dns_outbound_settings(r#"{ "rewriteAddress": "env:DNS_SERVER" }"#);
+
+    let error = parse_xray_json(&raw).expect_err("DNS rewrite env references are unsupported");
+
+    assert_eq!(error.diagnostics.len(), 1);
+    assert_eq!(
+        error.diagnostics[0].path.as_deref(),
+        Some("$.outbounds[0].settings.rewriteAddress")
+    );
+    assert_eq!(
+        error.diagnostics[0].message,
+        "dns rewrite address environment references are not supported"
+    );
+}
+
+#[test]
+fn rejects_dns_outbound_rule_count_above_global_budget() {
+    let rule = r#"{ "action": "direct" }"#;
+    let rules = std::iter::repeat_n(rule, 4_097)
+        .collect::<Vec<_>>()
+        .join(",");
+    let raw = raw_with_dns_outbound_settings(&format!(r#"{{ "rules": [{rules}] }}"#));
+
+    assert_parse_error_path(&raw, "$.outbounds[0].settings.rules");
+}
+
+#[test]
 fn parses_socks_inbound_with_udp_enabled() {
     let raw = r#"{
         "inbounds": [
@@ -318,6 +641,24 @@ fn rejects_zero_dns_fake_ip_pool_size() {
 }
 
 #[test]
+fn rejects_zero_dns_fake_ip_ttl() {
+    let raw = r#"{
+        "dns": {
+          "fakeIp": {
+            "enabled": true,
+            "ipv4Pool": "198.18.0.0/15",
+            "poolSize": 1024,
+            "ttl": 0
+          }
+        },
+        "inbounds": [],
+        "outbounds": [{ "tag": "direct", "protocol": "freedom" }]
+    }"#;
+
+    assert_parse_error_path(raw, "$.dns.fakeIp.ttl");
+}
+
+#[test]
 fn rejects_dns_fake_ip_pool_size_exceeding_reserved_address_adjusted_capacity() {
     let raw = r#"{
         "dns": {
@@ -416,6 +757,75 @@ fn parses_field_routing_rule_with_inbound_tag() {
     assert!(parsed.config.routing.rules[0].domain_matchers.is_empty());
     assert!(parsed.config.routing.rules[0].ip_matchers.is_empty());
     assert_eq!(parsed.config.routing.rules[0].outbound_tag, "proxy");
+}
+
+#[test]
+fn parses_xray_routing_network_and_port_selectors() {
+    let raw = raw_with_routing(
+        r#""rules": [{
+          "type": "field",
+          "network": "udp,TCP,udp",
+          "port": "53,5353,8000-8002,8002",
+          "outboundTag": "dns-out"
+        }]"#,
+    );
+
+    let parsed = parse_xray_json(&raw).expect("network and port routing should parse");
+    let rule = &parsed.config.routing.rules[0];
+
+    assert_eq!(rule.networks, vec![Network::Udp, Network::Tcp]);
+    assert_eq!(rule.port_ranges.len(), 3);
+    assert!(rule.matches_target(None, None, None, Some(Network::Udp), Some(53)));
+    assert!(rule.matches_target(None, None, None, Some(Network::Tcp), Some(8_001)));
+    assert!(!rule.matches_target(None, None, None, Some(Network::Udp), Some(443)));
+    assert!(!rule.matches(None, None, None));
+}
+
+#[test]
+fn parses_routing_network_array_and_numeric_port() {
+    let raw = raw_with_routing(
+        r#""rules": [{
+          "type": "field",
+          "network": ["udp"],
+          "port": 53,
+          "outboundTag": "dns-out"
+        }]"#,
+    );
+
+    let parsed = parse_xray_json(&raw).expect("routing selectors should parse");
+    let rule = &parsed.config.routing.rules[0];
+
+    assert_eq!(rule.networks, vec![Network::Udp]);
+    assert!(rule.port_ranges[0].contains(53));
+}
+
+#[test]
+fn rejects_invalid_routing_network_and_port_selectors_with_paths() {
+    for (fields, path) in [
+        (
+            r#""network": "unix", "outboundTag": "proxy""#,
+            "$.routing.rules[0].network[0]",
+        ),
+        (
+            r#""network": [42], "outboundTag": "proxy""#,
+            "$.routing.rules[0].network[0]",
+        ),
+        (
+            r#""port": "54-53", "outboundTag": "proxy""#,
+            "$.routing.rules[0].port[0]",
+        ),
+        (
+            r#""port": 65536, "outboundTag": "proxy""#,
+            "$.routing.rules[0].port",
+        ),
+        (
+            r#""port": [], "outboundTag": "proxy""#,
+            "$.routing.rules[0].port",
+        ),
+    ] {
+        let raw = raw_with_routing(&format!(r#""rules": [{{ "type": "field", {fields} }}]"#));
+        assert_parse_error_path(&raw, path);
+    }
 }
 
 #[test]
@@ -2084,10 +2494,14 @@ fn rejects_tunnel_local_dns_addresses_as_upstreams() {
         "198.18.0.1:53",
         "::ffff:198.18.0.1",
         "[::ffff:198.18.0.1]:53",
+        "198.18.0.1:5353",
+        "[::ffff:198.18.0.1]:5353",
         "198.18.0.2",
         "198.18.0.2:53",
         "::ffff:198.18.0.2",
         "[::ffff:198.18.0.2]:53",
+        "198.18.0.2:5353",
+        "[::ffff:198.18.0.2]:5353",
     ] {
         let raw = raw_with_dns_servers(&format!(r#""{server}""#));
         let error = parse_xray_json(&raw).unwrap_err();
@@ -2101,20 +2515,6 @@ fn rejects_tunnel_local_dns_addresses_as_upstreams() {
             "dns server cannot point at a tunnel-local DNS address"
         );
     }
-}
-
-#[test]
-fn accepts_anchor_address_with_non_dns_port_as_upstream() {
-    let raw = raw_with_dns_servers(r#""198.18.0.1:5353""#);
-    let parsed = parse_xray_json(&raw).unwrap();
-
-    assert_eq!(
-        parsed.config.dns.servers,
-        vec![DnsServerConfig::Ip(SocketAddr::from((
-            [198, 18, 0, 1],
-            5353
-        )))]
-    );
 }
 
 #[test]
@@ -2591,6 +2991,19 @@ fn raw_with_dns_query_strategy(strategy: &str) -> String {
           "dns": {{ "queryStrategy": {strategy} }},
           "inbounds": [],
           "outbounds": [{{ "tag": "direct", "protocol": "freedom" }}]
+        }}"#
+    )
+}
+
+fn raw_with_dns_outbound_settings(settings: &str) -> String {
+    format!(
+        r#"{{
+          "inbounds": [],
+          "outbounds": [{{
+            "tag": "dns-out",
+            "protocol": "dns",
+            "settings": {settings}
+          }}]
         }}"#
     )
 }

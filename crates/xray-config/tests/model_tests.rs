@@ -1,11 +1,12 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use xray_config::{
-    CoreConfig, Diagnostic, DiagnosticSeverity, DnsConfig, DnsIpFilter, DnsQueryStrategy,
-    DomainMatcher, HappyEyeballsSettings, InboundConfig, InboundProtocol, IpCidr, IpMatcher,
-    Network, OutboundConfig, OutboundProtocol, OutboundSettings, RealitySettings, RealityShortId,
-    RegexMatcher, RoutingConfig, RoutingRule, SocketOptions, StreamSecurity, StreamSettings,
-    TargetAddr, VlessOutboundSettings, VlessUser,
+    CoreConfig, Diagnostic, DiagnosticSeverity, DnsConfig, DnsIpFilter, DnsOutboundRule,
+    DnsOutboundRuleAction, DnsOutboundSettings, DnsQTypeRange, DnsQueryStrategy, DomainMatcher,
+    HappyEyeballsSettings, InboundConfig, InboundProtocol, IpCidr, IpMatcher, Network,
+    OutboundConfig, OutboundProtocol, OutboundSettings, RealitySettings, RealityShortId,
+    RegexMatcher, RoutingConfig, RoutingPortRange, RoutingRule, SocketOptions, StreamSecurity,
+    StreamSettings, TargetAddr, VlessOutboundSettings, VlessUser,
 };
 
 #[test]
@@ -144,6 +145,86 @@ fn normalized_model_can_represent_freedom_outbound() {
 }
 
 #[test]
+fn dns_outbound_rules_use_first_match_and_xray_defaults() {
+    let settings = DnsOutboundSettings {
+        rules: vec![
+            DnsOutboundRule {
+                action: DnsOutboundRuleAction::Direct,
+                qtype_ranges: vec![DnsQTypeRange::single(1)],
+                domain_matchers: vec![DomainMatcher::Suffix("internal.example".to_owned())],
+            },
+            DnsOutboundRule {
+                action: DnsOutboundRuleAction::Drop,
+                qtype_ranges: vec![DnsQTypeRange::single(1)],
+                domain_matchers: Vec::new(),
+            },
+        ],
+        ..Default::default()
+    };
+
+    assert_eq!(
+        settings.action_for(1, "api.internal.example."),
+        DnsOutboundRuleAction::Direct
+    );
+    assert_eq!(
+        settings.action_for(1, "public.example"),
+        DnsOutboundRuleAction::Drop
+    );
+    assert_eq!(
+        settings.action_for(28, "public.example"),
+        DnsOutboundRuleAction::Hijack
+    );
+    assert_eq!(
+        settings.action_for(65, "public.example"),
+        DnsOutboundRuleAction::Reject
+    );
+
+    let regexp_settings = DnsOutboundSettings {
+        rules: vec![DnsOutboundRule {
+            action: DnsOutboundRuleAction::Direct,
+            qtype_ranges: vec![DnsQTypeRange::single(1)],
+            domain_matchers: vec![DomainMatcher::Regex(
+                RegexMatcher::new(r"^api\.internal\.example$").expect("valid domain regexp"),
+            )],
+        }],
+        ..Default::default()
+    };
+    assert_eq!(
+        regexp_settings.action_for(1, "API.INTERNAL.EXAMPLE."),
+        DnsOutboundRuleAction::Direct
+    );
+}
+
+#[test]
+fn dns_qtype_and_routing_port_ranges_enforce_ordered_bounds() {
+    assert!(DnsQTypeRange::new(28, 1).is_err());
+    assert!(RoutingPortRange::new(54, 53).is_err());
+    assert!(DnsQTypeRange::new(23, 24)
+        .expect("ordered qtype range")
+        .contains(24));
+    assert!(RoutingPortRange::new(53, 53)
+        .expect("ordered port range")
+        .contains(53));
+}
+
+#[test]
+fn routing_network_and_port_selectors_fail_closed_without_target_metadata() {
+    let rule = RoutingRule {
+        inbound_tags: Vec::new(),
+        networks: vec![Network::Udp],
+        port_ranges: vec![RoutingPortRange::single(53)],
+        domain_matchers: Vec::new(),
+        ip_matchers: Vec::new(),
+        outbound_tag: "dns-out".to_owned(),
+    };
+
+    assert!(!rule.matches(None, None, None));
+    assert!(rule.matches_target(None, None, None, Some(Network::Udp), Some(53)));
+    assert!(!rule.matches_target(None, None, None, Some(Network::Tcp), Some(53)));
+    assert!(!rule.matches_target(None, None, None, Some(Network::Udp), Some(853)));
+}
+
+#[test]
 fn normalized_model_uses_xray_happy_eyeballs_defaults() {
     let stream = StreamSettings {
         network: Network::Tcp,
@@ -176,6 +257,8 @@ fn normalized_model_can_represent_inbound_tag_routing_rule() {
     let routing = RoutingConfig {
         rules: vec![RoutingRule {
             inbound_tags: vec!["socks-in".to_owned()],
+            networks: Vec::new(),
+            port_ranges: Vec::new(),
             domain_matchers: Vec::new(),
             ip_matchers: Vec::new(),
             outbound_tag: "direct".to_owned(),
@@ -193,6 +276,8 @@ fn normalized_model_can_represent_domain_routing_rule() {
     let routing = RoutingConfig {
         rules: vec![RoutingRule {
             inbound_tags: Vec::new(),
+            networks: Vec::new(),
+            port_ranges: Vec::new(),
             domain_matchers: vec![
                 DomainMatcher::Keyword("ample".to_owned()),
                 DomainMatcher::Suffix("example.com".to_owned()),
@@ -219,6 +304,8 @@ fn normalized_model_can_represent_ip_routing_rule() {
     let routing = RoutingConfig {
         rules: vec![RoutingRule {
             inbound_tags: Vec::new(),
+            networks: Vec::new(),
+            port_ranges: Vec::new(),
             domain_matchers: Vec::new(),
             ip_matchers: vec![
                 IpMatcher::Cidr(IpCidr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 0)), 8).unwrap()),
@@ -241,6 +328,8 @@ fn normalized_model_applies_inverse_ip_matchers_as_a_conjunction() {
     let routing = RoutingConfig {
         rules: vec![RoutingRule {
             inbound_tags: Vec::new(),
+            networks: Vec::new(),
+            port_ranges: Vec::new(),
             domain_matchers: Vec::new(),
             ip_matchers: vec![
                 IpMatcher::Not(Box::new(IpMatcher::Cidr(

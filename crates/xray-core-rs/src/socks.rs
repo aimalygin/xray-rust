@@ -20,9 +20,12 @@ use xray_proxy::vless::{
 use xray_routing::{Target, TargetAddr};
 use xray_transport::{protect_udp_socket, DnsResolver, TransportDialer};
 
-use crate::outbound::open_tcp_stream_with_resolvers_and_dialer;
+use crate::outbound::{
+    open_tcp_stream_with_resolvers_and_dialer, TcpSessionOutbound, UdpSessionOutbound,
+};
 use crate::{
     dns::RuntimeDnsResolvers,
+    dns_outbound_runtime::FakeIpTargetProvenance,
     open_vless_tcp_stream_with_resolver_and_dialer, open_vless_udp_stream_with_resolver_and_dialer,
     policy::{
         accept_error_wants_backoff, copy_bidirectional_with_idle_timeout,
@@ -33,6 +36,7 @@ use crate::{
 };
 
 const SOCKS_UDP_BUFFER_SIZE: usize = 65_536;
+const SOCKS_DNS_UDP_PATH_PAYLOAD_CAP: usize = 65_245;
 const SOCKS_UDP_FLOW_QUEUE: usize = 32;
 const SOCKS_UDP_MAX_FLOWS_PER_ASSOCIATION: usize = 128;
 const SOCKS_UDP_MAX_FLOWS_GLOBAL: usize = 1024;
@@ -301,9 +305,12 @@ async fn handle_socks_connect(
             .map_or_else(|_| "unknown".to_owned(), |addr| addr.to_string())
     });
     let sniffing_config = sniffing.as_ref();
-    let sniff_tcp = crate::sniffing::should_sniff_tcp(sniffing_config);
-    let mut route_target = target.clone();
-    let mut dial_target = target.clone();
+    let restored_target = dns_resolvers.outbound.restore_client_target(&target);
+    let provenance = restored_target.provenance;
+    let sniff_tcp = should_sniff_socks_tcp(sniffing_config, provenance);
+    let effective_target = restored_target.target;
+    let mut route_target = effective_target.clone();
+    let mut dial_target = effective_target;
     let mut initial_payload = Bytes::new();
     let mut sniffed_protocol = None;
 
@@ -313,9 +320,10 @@ async fn handle_socks_connect(
         }
         if let Some(config) = sniffing_config {
             let (payload, sniffed) =
-                read_socks_tcp_sniff_payload(&mut inbound, config, &target).await;
+                read_socks_tcp_sniff_payload(&mut inbound, config, &dial_target).await;
             initial_payload = payload;
             if let Some(sniffed) = sniffed {
+                let sniffed = apply_fake_ip_sniffed_dial_precedence(provenance, sniffed);
                 sniffed_protocol = Some(sniffed.protocol);
                 route_target = sniffed.route_target;
                 dial_target = sniffed.dial_target;
@@ -323,8 +331,8 @@ async fn handle_socks_connect(
         }
     }
 
-    let outbound = match outbound_router
-        .select_tcp_outbound_for_session_with_resolver(
+    let selected = match outbound_router
+        .select_tcp_session_outbound_with_resolver(
             inbound_tag.as_deref(),
             &route_target,
             dns_resolvers.destination.as_ref(),
@@ -349,6 +357,12 @@ async fn handle_socks_connect(
     };
 
     if runtime_logger.is_enabled() {
+        let selected_outbound = match &selected {
+            TcpSessionOutbound::Transport(outbound) => {
+                crate::debug_log::tcp_outbound_label(outbound)
+            }
+            TcpSessionOutbound::Dns(_) => "dns",
+        };
         crate::debug_log::log_route_decision(
             &runtime_logger,
             crate::debug_log::RouteDecisionLog {
@@ -358,10 +372,33 @@ async fn handle_socks_connect(
                 sniffed_protocol,
                 route_target: &route_target,
                 dial_target: &dial_target,
-                selected_outbound: crate::debug_log::tcp_outbound_label(&outbound),
+                selected_outbound,
             },
         );
     }
+
+    let outbound = match selected {
+        TcpSessionOutbound::Transport(outbound) => outbound,
+        TcpSessionOutbound::Dns(outbound) => {
+            if let Some(source) = source.as_deref() {
+                crate::debug_log::log_access_accepted(&runtime_logger, source, &dial_target, "dns");
+            }
+            if !sniff_tcp && write_socks5_success(&mut inbound).await.is_err() {
+                return;
+            }
+            let _ = dns_resolvers
+                .outbound
+                .serve_tcp_stream(
+                    &mut inbound,
+                    initial_payload,
+                    &outbound,
+                    &dial_target,
+                    policy.conn_idle,
+                )
+                .await;
+            return;
+        }
+    };
 
     match outbound {
         outbound @ (TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_)) => {
@@ -840,13 +877,22 @@ async fn bridge_socks_udp_flow(
     else {
         return;
     };
-    let sniffed_target = sniff_socks_udp_target(&context, &target, &first_payload);
+    let restored_target = context
+        .dns_resolvers
+        .outbound
+        .restore_client_target(&target);
+    let provenance = restored_target.provenance;
+    let effective_target = restored_target.target;
+    let client_visible_target =
+        (provenance == FakeIpTargetProvenance::Mapped).then(|| target.clone());
+    let sniffed_target =
+        sniff_socks_udp_target(&context, &effective_target, provenance, &first_payload);
     let sniffed_protocol = sniffed_target.sniffed_protocol;
     let route_target = sniffed_target.route_target;
     let dial_target = sniffed_target.dial_target;
-    let outbound = match context
+    let selected = match context
         .outbound_router
-        .select_udp_outbound_for_session_with_resolver(
+        .select_udp_session_outbound_with_resolver(
             context.inbound_tag.as_deref(),
             &route_target,
             context.dns_resolvers.destination.as_ref(),
@@ -869,6 +915,12 @@ async fn bridge_socks_udp_flow(
     };
 
     if context.runtime_logger.is_enabled() {
+        let selected_outbound = match &selected {
+            UdpSessionOutbound::Transport(outbound) => {
+                crate::debug_log::udp_outbound_label(outbound)
+            }
+            UdpSessionOutbound::Dns(_) => "dns",
+        };
         crate::debug_log::log_route_decision(
             &context.runtime_logger,
             crate::debug_log::RouteDecisionLog {
@@ -878,10 +930,37 @@ async fn bridge_socks_udp_flow(
                 sniffed_protocol,
                 route_target: &route_target,
                 dial_target: &dial_target,
-                selected_outbound: crate::debug_log::udp_outbound_label(&outbound),
+                selected_outbound,
             },
         );
     }
+
+    let outbound = match selected {
+        UdpSessionOutbound::Transport(outbound) => outbound,
+        UdpSessionOutbound::Dns(outbound) => {
+            if context.runtime_logger.is_enabled() {
+                let source = context.client_addr.to_string();
+                crate::debug_log::log_access_accepted(
+                    &context.runtime_logger,
+                    &source,
+                    &dial_target,
+                    "dns",
+                );
+            }
+            drop(pending_open_permit);
+            bridge_socks_udp_dns_flow(
+                target,
+                dial_target,
+                outbound,
+                context,
+                from_client,
+                shutdown,
+                first_payload,
+            )
+            .await;
+            return;
+        }
+    };
 
     match outbound {
         UdpOutbound::Freedom => {
@@ -896,6 +975,7 @@ async fn bridge_socks_udp_flow(
             }
             bridge_socks_udp_freedom_flow(
                 dial_target,
+                client_visible_target,
                 context,
                 from_client,
                 shutdown,
@@ -916,6 +996,7 @@ async fn bridge_socks_udp_flow(
             }
             bridge_socks_udp_vless_flow(
                 dial_target,
+                client_visible_target,
                 outbound,
                 context,
                 from_client,
@@ -924,6 +1005,68 @@ async fn bridge_socks_udp_flow(
                 pending_open_permit,
             )
             .await;
+        }
+    }
+}
+
+async fn bridge_socks_udp_dns_flow(
+    client_target: Target,
+    routed_target: Target,
+    outbound: crate::DnsOutbound,
+    context: SocksUdpFlowContext,
+    mut from_client: mpsc::Receiver<Bytes>,
+    mut shutdown: watch::Receiver<bool>,
+    first_payload: Bytes,
+) {
+    let mut pending_payload = Some(first_payload);
+    loop {
+        let payload = match pending_payload.take() {
+            Some(payload) => payload,
+            None => {
+                tokio::select! {
+                    changed = shutdown.changed() => {
+                        if changed.is_err() || *shutdown.borrow() {
+                            return;
+                        }
+                        continue;
+                    }
+                    _ = tokio::time::sleep(SOCKS_UDP_FLOW_IDLE_TIMEOUT) => return,
+                    payload = from_client.recv() => {
+                        let Some(payload) = payload else {
+                            return;
+                        };
+                        payload
+                    }
+                }
+            }
+        };
+
+        let outcome = context
+            .dns_resolvers
+            .outbound
+            .execute_message(
+                &outbound,
+                &routed_target,
+                payload,
+                crate::dns_outbound_runtime::DnsClientTransport::Udp {
+                    path_payload_cap: SOCKS_DNS_UDP_PATH_PAYLOAD_CAP,
+                },
+            )
+            .await;
+        let crate::dns_outbound_runtime::DnsMessageOutcome::Reply(response) = outcome else {
+            continue;
+        };
+        let Ok(response) = encode_socks5_udp_datagram(&client_target, &response) else {
+            continue;
+        };
+        let sent = tokio::select! {
+            changed = shutdown.changed() => {
+                changed.is_ok() && !*shutdown.borrow()
+            }
+            sent = context.client_socket.send_to(&response, context.client_addr) => sent.is_ok(),
+        };
+        if !sent {
+            return;
         }
     }
 }
@@ -959,7 +1102,18 @@ impl SocksUdpSniffedTarget {
         }
     }
 
-    fn sniffed(sniffed: crate::sniffing::SniffedTarget) -> Self {
+    fn from_sniffed(
+        target: &Target,
+        provenance: FakeIpTargetProvenance,
+        sniffed: Option<crate::sniffing::SniffedTarget>,
+    ) -> Self {
+        if !fake_ip_allows_content_sniffing(provenance) {
+            return Self::original(target);
+        }
+        let Some(sniffed) = sniffed else {
+            return Self::original(target);
+        };
+        let sniffed = apply_fake_ip_sniffed_dial_precedence(provenance, sniffed);
         let sniffed_protocol = Some(sniffed.protocol);
         Self {
             route_target: sniffed.route_target,
@@ -969,11 +1123,36 @@ impl SocksUdpSniffedTarget {
     }
 }
 
+fn fake_ip_allows_content_sniffing(provenance: FakeIpTargetProvenance) -> bool {
+    provenance != FakeIpTargetProvenance::Mapped
+}
+
+fn should_sniff_socks_tcp(
+    config: Option<&InboundSniffingConfig>,
+    provenance: FakeIpTargetProvenance,
+) -> bool {
+    fake_ip_allows_content_sniffing(provenance) && crate::sniffing::should_sniff_tcp(config)
+}
+
+fn apply_fake_ip_sniffed_dial_precedence(
+    provenance: FakeIpTargetProvenance,
+    mut sniffed: crate::sniffing::SniffedTarget,
+) -> crate::sniffing::SniffedTarget {
+    if provenance == FakeIpTargetProvenance::InPoolUnmapped {
+        sniffed.dial_target = sniffed.route_target.clone();
+    }
+    sniffed
+}
+
 fn sniff_socks_udp_target(
     context: &SocksUdpFlowContext,
     target: &Target,
+    provenance: FakeIpTargetProvenance,
     first_payload: &[u8],
 ) -> SocksUdpSniffedTarget {
+    if !fake_ip_allows_content_sniffing(provenance) {
+        return SocksUdpSniffedTarget::from_sniffed(target, provenance, None);
+    }
     let Some(config) = context.sniffing.as_ref() else {
         return SocksUdpSniffedTarget::original(target);
     };
@@ -984,11 +1163,12 @@ fn sniff_socks_udp_target(
     else {
         return SocksUdpSniffedTarget::original(target);
     };
-    SocksUdpSniffedTarget::sniffed(sniffed)
+    SocksUdpSniffedTarget::from_sniffed(target, provenance, Some(sniffed))
 }
 
 async fn bridge_socks_udp_freedom_flow(
     target: Target,
+    client_visible_target: Option<Target>,
     context: SocksUdpFlowContext,
     mut from_client: mpsc::Receiver<Bytes>,
     mut shutdown: watch::Receiver<bool>,
@@ -1042,7 +1222,13 @@ async fn bridge_socks_udp_freedom_flow(
                 let Ok((len, source)) = received else {
                     break;
                 };
-                let source = Target::new(TargetAddr::Ip(source.ip()), source.port(), xray_routing::Network::Udp);
+                let source = client_visible_target.clone().unwrap_or_else(|| {
+                    Target::new(
+                        TargetAddr::Ip(source.ip()),
+                        source.port(),
+                        xray_routing::Network::Udp,
+                    )
+                });
                 let Ok(response) = encode_socks5_udp_datagram(&source, &buffer[..len]) else {
                     break;
                 };
@@ -1059,8 +1245,13 @@ async fn bridge_socks_udp_freedom_flow(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "SOCKS UDP flow owns client/dial targets, outbound state, shutdown, and admission"
+)]
 async fn bridge_socks_udp_vless_flow(
     target: Target,
+    client_visible_target: Option<Target>,
     outbound: Box<VlessTcpOutbound>,
     context: SocksUdpFlowContext,
     mut from_client: mpsc::Receiver<Bytes>,
@@ -1149,9 +1340,12 @@ async fn bridge_socks_udp_vless_flow(
                 }
             }
             packet = read_socks_vless_udp_response(&mut remote_reader, framing, fallback_source.clone()) => {
-                let Ok((source, payload)) = packet else {
+                let Ok((mut source, payload)) = packet else {
                     break;
                 };
+                if let Some(client_visible_target) = client_visible_target.as_ref() {
+                    source = client_visible_target.clone();
+                }
                 let Ok(response) = encode_socks5_udp_datagram(&source, &payload) else {
                     break;
                 };
@@ -1260,7 +1454,7 @@ async fn resolve_udp_socket_addr(
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
-    use std::net::SocketAddr;
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::pin::Pin;
     use std::sync::Arc;
     use std::task::{Context, Poll};
@@ -1269,12 +1463,14 @@ mod tests {
     use tokio::io::AsyncWrite;
     use tokio::sync::{mpsc, Semaphore};
     use tokio::task::JoinSet;
+    use xray_config::{InboundSniffingConfig, SniffingDestination};
     use xray_routing::{Network, Target, TargetAddr};
 
     use super::{
-        admit_socks_udp_flow, evict_oldest_socks_udp_flow, write_socks_vless_udp_payload,
-        SocksUdpBudgetExhaustionLog, SocksUdpBudgets, SocksUdpFlowEntry, VlessUdpFraming,
-        SOCKS_UDP_FLOW_QUEUE, SOCKS_UDP_MAX_FLOWS_PER_ASSOCIATION,
+        admit_socks_udp_flow, apply_fake_ip_sniffed_dial_precedence, evict_oldest_socks_udp_flow,
+        should_sniff_socks_tcp, write_socks_vless_udp_payload, FakeIpTargetProvenance,
+        SocksUdpBudgetExhaustionLog, SocksUdpBudgets, SocksUdpFlowEntry, SocksUdpSniffedTarget,
+        VlessUdpFraming, SOCKS_UDP_FLOW_QUEUE, SOCKS_UDP_MAX_FLOWS_PER_ASSOCIATION,
     };
     use crate::{RuntimeLogConfig, RuntimeLogger};
 
@@ -1305,6 +1501,80 @@ mod tests {
         fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
             Poll::Ready(Ok(()))
         }
+    }
+
+    fn http_sniffing_config(route_only: bool) -> InboundSniffingConfig {
+        InboundSniffingConfig {
+            enabled: true,
+            dest_override: vec![SniffingDestination::Http],
+            metadata_only: false,
+            route_only,
+        }
+    }
+
+    fn sniffed_target(original: &Target, domain: &str) -> crate::sniffing::SniffedTarget {
+        let route_target = Target::new(
+            TargetAddr::Domain(domain.to_owned()),
+            original.port,
+            original.network,
+        );
+        crate::sniffing::SniffedTarget {
+            route_target: route_target.clone(),
+            dial_target: original.clone(),
+            protocol: SniffingDestination::Http,
+        }
+    }
+
+    #[test]
+    fn mapped_fake_ip_suppresses_socks_tcp_content_sniffing() {
+        assert!(!should_sniff_socks_tcp(
+            Some(&http_sniffing_config(false)),
+            FakeIpTargetProvenance::Mapped,
+        ));
+        assert!(should_sniff_socks_tcp(
+            Some(&http_sniffing_config(false)),
+            FakeIpTargetProvenance::Outside,
+        ));
+    }
+
+    #[test]
+    fn mapped_fake_ip_keeps_socks_udp_target_a_over_sniffed_target_b() {
+        let mapped = Target::new(
+            TargetAddr::Domain("mapped-a.example".to_owned()),
+            443,
+            Network::Udp,
+        );
+        let result = SocksUdpSniffedTarget::from_sniffed(
+            &mapped,
+            FakeIpTargetProvenance::Mapped,
+            Some(sniffed_target(&mapped, "sniffed-b.example")),
+        );
+
+        assert_eq!(result.route_target, mapped);
+        assert_eq!(result.dial_target, mapped);
+        assert_eq!(result.sniffed_protocol, None);
+    }
+
+    #[test]
+    fn in_pool_unmapped_route_only_uses_sniffed_domain_for_socks_dialing() {
+        let raw = Target::new(
+            TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(198, 18, 1, 7))),
+            443,
+            Network::Tcp,
+        );
+        let tcp = apply_fake_ip_sniffed_dial_precedence(
+            FakeIpTargetProvenance::InPoolUnmapped,
+            sniffed_target(&raw, "sniffed.example"),
+        );
+        assert_eq!(tcp.dial_target, tcp.route_target);
+
+        let raw_udp = Target::new(raw.addr.clone(), raw.port, Network::Udp);
+        let udp = SocksUdpSniffedTarget::from_sniffed(
+            &raw_udp,
+            FakeIpTargetProvenance::InPoolUnmapped,
+            Some(sniffed_target(&raw_udp, "sniffed.example")),
+        );
+        assert_eq!(udp.dial_target, udp.route_target);
     }
 
     #[test]

@@ -28,8 +28,8 @@ parity with every Xray-core release.
 | TCP Happy Eyeballs | Supported subset | Opt-in Xray-compatible Freedom/VLESS raw-TCP candidate race; bounded and cancellation-safe, with one TLS/REALITY handshake after connect |
 | `xtls-rprx-vision` | Supported subset | TCP and XUDP paths; UDP/443 behavior follows the selected Vision flow |
 | Domain/IP routing | Supported subset | `field` rules, inbound tags, domain/CIDR/private/geodata matchers |
-| Configured DNS | Supported subset | Static single/ordered-array hosts, global `UseIP`/`UseIPv4`/`UseIPv6`, routed multi-address A/AAAA/CNAME resolution with one per-Core family-aware TTL cache/single-flight shared by TUN/SOCKS/HTTP/probes, ordered upstream failover, valid UDP-truncation/TCP retry, all-IP `IPIfNonMatch`, and a hybrid TUN anchor with managed ordinary A/AAAA Hijack, raw DNSSEC/non-IP forwarding, bounded persistent RFC 7766 connections, query-aware TCP failover, and transparent zone-transfer fallback for IP/domain servers |
-| Fake IP | Supported subset | Bounded IPv4 pool with UDP/TCP synthesis used by the TUN routing path |
+| Configured DNS | Supported subset | Static single/ordered-array hosts, global `UseIP`/`UseIPv4`/`UseIPv6`, routed multi-address A/AAAA/CNAME resolution with one per-Core family-aware TTL cache/single-flight shared by TUN/SOCKS/HTTP/probes, ordered upstream failover, valid UDP-truncation/TCP retry, all-IP `IPIfNonMatch`, and a hybrid TUN anchor with managed ordinary A/AAAA Hijack, raw DNSSEC/non-IP forwarding, bounded persistent RFC 7766 connections, query-aware TCP failover, and transparent zone-transfer fallback for IP/domain servers. Xray DNS-outbound Direct/Drop/Reject/Hijack, component rewrite, own-link recursion escape, TLS/REALITY stream security, and bounded UDP-to-TCP session reuse execute through one core-wide TUN/SOCKS/HTTP runtime. |
+| Fake IP | Supported subset | Bounded per-Core IPv4 pool with TTL-leased mappings and UDP/TCP synthesis shared by DNS outbound plus TUN/SOCKS/HTTP reverse routing |
 | `geosite.dat` / `geoip.dat` | Supported | Xray-style protobuf data is loaded on demand with size and matcher budgets |
 | Startup probe and runtime stats | Supported | Core and FFI integration tests |
 
@@ -42,7 +42,7 @@ routing rule selects another tagged outbound.
 See [configuration compatibility](config-compatibility.md) for accepted values.
 Notable unsupported areas include:
 
-- VMess, Trojan, Shadowsocks, WireGuard, DNS outbound, and server-side VLESS;
+- VMess, Trojan, Shadowsocks, WireGuard, and server-side VLESS;
 - WebSocket, HTTP/2, gRPC, QUIC, KCP, and other non-TCP stream transports;
 - mux, balancers, reverse proxy, observatory/API services, and outbound chaining;
 - SOCKS/HTTP authentication and HTTP transparent proxy mode;

@@ -11,6 +11,8 @@ const DNS_TYPE_OPT: u16 = 41;
 const DNS_TYPE_IXFR: u16 = 251;
 const DNS_TYPE_AXFR: u16 = 252;
 const DNS_LEGACY_UDP_PAYLOAD_SIZE: usize = 512;
+const IPV4_UDP_HEADER_OVERHEAD: usize = 20 + 8;
+const IPV6_UDP_HEADER_OVERHEAD: usize = 40 + 8;
 const MAX_DNS_PROXY_UPSTREAMS: usize = 8;
 const MAX_DNS_XUDP_METADATA_SIZE: usize = 512;
 const MAX_DNS_RESPONSE_VALIDATION_PREFIX_SIZE: usize = 512;
@@ -50,13 +52,6 @@ impl TunDnsMode {
         DnsProxyPlan::from_config(config)
             .map(|plan| Self::RawProxy(Arc::new(plan)))
             .unwrap_or(Self::Disabled)
-    }
-
-    pub(super) fn fake_ip_mapper(&self) -> Option<&Arc<Mutex<FakeIpMapper>>> {
-        match self {
-            Self::FakeIp(mapper) => Some(mapper),
-            Self::Disabled | Self::RawProxy(_) => None,
-        }
     }
 }
 
@@ -440,14 +435,20 @@ impl DnsTcpConnectionLease {
 
 pub(super) enum DnsUdpAction {
     Pass,
+    Drop,
     Reply(Bytes),
     Proxy(Arc<DnsProxyPlan>),
+    Outbound {
+        outbound: DnsOutbound,
+        decision: crate::DnsOutboundDecision,
+    },
 }
 
 pub(super) enum DnsTcpAction {
     Pass,
     FakeIp(Arc<Mutex<FakeIpMapper>>),
     Proxy(Arc<DnsProxyPlan>),
+    Outbound(DnsOutbound),
     Reject,
 }
 
@@ -635,14 +636,18 @@ async fn resolve_dns_hijack_response(
             return dns_error_response(&query, DNS_RCODE_SERVFAIL, false).unwrap_or_default();
         }
     };
-    let resolution = match timeout(
-        DNS_PROXY_TOTAL_TIMEOUT,
-        resolver.resolve_all_with_strategy(&question.domain, DNS_PORT, strategy),
-    )
-    .await
-    {
-        Ok(result) => dns_hijack_resolution(&question, result),
-        Err(_) => DnsHijackResolution::ServerFailure,
+    let resolution = if question.domain == "." {
+        DnsHijackResolution::NoData
+    } else {
+        match timeout(
+            DNS_PROXY_TOTAL_TIMEOUT,
+            resolver.resolve_all_with_strategy(&question.domain, DNS_PORT, strategy),
+        )
+        .await
+        {
+            Ok(result) => dns_hijack_resolution(&question, result),
+            Err(_) => DnsHijackResolution::ServerFailure,
+        }
     };
     build_dns_hijack_response(&query, &question, resolution, max_payload, include_edns)
         .or_else(|| dns_error_response(&query, DNS_RCODE_SERVFAIL, false))
@@ -702,7 +707,14 @@ fn record_dns_udp_failure(context: &TunRuntimeContext, phase: DnsUdpFailurePhase
     }
 }
 
-pub(super) fn tcp_action(mode: &TunDnsMode, endpoint: IpEndpoint) -> DnsTcpAction {
+pub(super) fn tcp_action(
+    mode: &TunDnsMode,
+    endpoint: IpEndpoint,
+    outbound: Option<DnsOutbound>,
+) -> DnsTcpAction {
+    if let Some(outbound) = outbound {
+        return DnsTcpAction::Outbound(outbound);
+    }
     if endpoint.port != DNS_PORT {
         return DnsTcpAction::Pass;
     }
@@ -716,7 +728,30 @@ pub(super) fn tcp_action(mode: &TunDnsMode, endpoint: IpEndpoint) -> DnsTcpActio
     }
 }
 
-pub(super) fn udp_action(mode: &TunDnsMode, packet: &UdpTunPacket) -> DnsUdpAction {
+pub(super) fn udp_action(
+    mode: &TunDnsMode,
+    packet: &UdpTunPacket,
+    outbound: Option<DnsOutbound>,
+) -> DnsUdpAction {
+    if let Some(outbound) = outbound {
+        return match outbound.policy().decide_message(&packet.payload, false) {
+            Ok(crate::DnsOutboundDecision::Drop) => DnsUdpAction::Drop,
+            Ok(
+                decision
+                @ (crate::DnsOutboundDecision::Direct | crate::DnsOutboundDecision::Hijack),
+            ) => DnsUdpAction::Outbound { outbound, decision },
+            Ok(
+                crate::DnsOutboundDecision::Reject | crate::DnsOutboundDecision::HijackUnsafe(_),
+            ) => crate::build_refused_response(&packet.payload)
+                .ok()
+                .and_then(|response| build_udp_packet(packet.target, packet.client, &response))
+                .map(DnsUdpAction::Reply)
+                .unwrap_or(DnsUdpAction::Drop),
+            Err(_) => dns_error_reply_packet(packet, DNS_RCODE_FORMERR)
+                .map(DnsUdpAction::Reply)
+                .unwrap_or(DnsUdpAction::Drop),
+        };
+    }
     if packet.target.port != DNS_PORT {
         return DnsUdpAction::Pass;
     }
@@ -725,8 +760,8 @@ pub(super) fn udp_action(mode: &TunDnsMode, packet: &UdpTunPacket) -> DnsUdpActi
         TunDnsMode::FakeIp(mapper) => {
             let response = mapper
                 .lock()
-                .ok()
-                .and_then(|mut mapper| mapper.fake_dns_response(&packet.payload, is_anchor));
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .fake_dns_response(&packet.payload, is_anchor);
             if let Some(response) = response {
                 return build_udp_packet(packet.target, packet.client, &response)
                     .map(DnsUdpAction::Reply)
@@ -747,6 +782,40 @@ pub(super) fn udp_action(mode: &TunDnsMode, packet: &UdpTunPacket) -> DnsUdpActi
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "TUN DNS query owns mapped target, policy decision, shutdown, and admission permits"
+)]
+pub(super) async fn bridge_dns_outbound_udp_query(
+    outbound: DnsOutbound,
+    _decision: crate::DnsOutboundDecision,
+    client_target: Target,
+    packet: UdpTunPacket,
+    context: TunRuntimeContext,
+    mut shutdown: watch::Receiver<bool>,
+    _global_permit: OwnedSemaphorePermit,
+    _dns_permit: OwnedSemaphorePermit,
+) {
+    let path_payload_cap = dns_udp_path_payload_cap(context.tun.mtu(), packet.target);
+    let outcome = tokio::select! {
+        biased;
+        () = wait_for_tun_shutdown(&mut shutdown) => return,
+        outcome = context.dns_outbound_runtime.execute_message(
+            &outbound,
+            &client_target,
+            packet.payload.clone(),
+            crate::dns_outbound_runtime::DnsClientTransport::Udp { path_payload_cap },
+        ) => outcome,
+    };
+    let crate::dns_outbound_runtime::DnsMessageOutcome::Reply(response) = outcome else {
+        return;
+    };
+    let Some(reply) = build_udp_packet(packet.target, packet.client, &response) else {
+        return;
+    };
+    let _ = context.tun.push_outbound(reply).await;
+}
+
 pub(super) async fn bridge_udp_query(
     plan: Arc<DnsProxyPlan>,
     packet: UdpTunPacket,
@@ -761,7 +830,7 @@ pub(super) async fn bridge_udp_query(
     }
 
     let response = if let Some(question) = dns_hijack_question(&packet.payload) {
-        let path_payload_cap = context.tun.mtu().saturating_sub(20 + 8);
+        let path_payload_cap = dns_udp_path_payload_cap(context.tun.mtu(), packet.target);
         let max_payload = dns_udp_client_payload_limit(&packet.payload, path_payload_cap);
         tokio::select! {
             biased;
@@ -892,6 +961,385 @@ pub(super) async fn bridge_fake_ip_tcp_flow(
             close_guard.close().await;
             return;
         }
+    }
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "DNS outbound TCP flow owns the admitted TUN flow, policy, shutdown, and permits"
+)]
+pub(super) async fn bridge_dns_outbound_tcp_flow(
+    handle: SocketHandle,
+    generation: u64,
+    client_target: Target,
+    outbound: DnsOutbound,
+    context: TunRuntimeContext,
+    mut from_stack: mpsc::Receiver<StackToRemoteData>,
+    mut shutdown: watch::Receiver<bool>,
+    pending_open: Option<OwnedSemaphorePermit>,
+    dns_flow_permit: Option<OwnedSemaphorePermit>,
+    client_already_opened: bool,
+    mut initial_upload: VecDeque<StackToRemoteData>,
+) {
+    drop(pending_open);
+    let mut close_guard = TcpBridgeCloseGuard::new(handle, generation, context.stack_tx.clone());
+    let opened = if client_already_opened {
+        true
+    } else {
+        tokio::select! {
+            biased;
+            () = wait_for_tun_shutdown(&mut shutdown) => false,
+            result = timeout(
+                DNS_TCP_PROXY_ATTEMPT_TIMEOUT,
+                context.stack_tx.send(StackEvent::RemoteOpened { handle, generation }),
+            ) => matches!(result, Ok(Ok(()))),
+        }
+    };
+    if !opened {
+        return;
+    }
+
+    let idle_timeout = context
+        .inbound_policy
+        .conn_idle
+        .min(outbound.conn_idle_timeout());
+    let idle_sleep = tokio::time::sleep(idle_timeout);
+    tokio::pin!(idle_sleep);
+    let mut decoder = DnsTcpFrameDecoder::default();
+    while let Some(data) = initial_upload.pop_front() {
+        if decoder.buffered_len().saturating_add(data.data.len()) > MAX_RAW_DNS_TCP_PENDING_BYTES {
+            close_guard.abort().await;
+            return;
+        }
+        decoder.push(&data.data);
+    }
+    let first_frame = loop {
+        match decoder.next_frame() {
+            Ok(Some(frame)) => break frame,
+            Ok(None) => {}
+            Err(_) => {
+                close_guard.abort().await;
+                return;
+            }
+        }
+        let data = tokio::select! {
+            biased;
+            () = wait_for_tun_shutdown(&mut shutdown) => {
+                close_guard.close().await;
+                return;
+            }
+            () = &mut idle_sleep => {
+                close_guard.abort().await;
+                return;
+            }
+            data = from_stack.recv() => data,
+        };
+        let Some(data) = data else {
+            close_guard.close().await;
+            return;
+        };
+        if decoder.buffered_len().saturating_add(data.data.len()) > MAX_RAW_DNS_TCP_PENDING_BYTES {
+            close_guard.abort().await;
+            return;
+        }
+        decoder.push(&data.data);
+        idle_sleep
+            .as_mut()
+            .reset(TokioInstant::now() + idle_timeout);
+    };
+    let mut pending_frame = Some(first_frame);
+    let mut processed = 0usize;
+
+    loop {
+        let frame = if let Some(frame) = pending_frame.take() {
+            Some(frame)
+        } else {
+            match decoder.next_frame() {
+                Ok(frame) => frame,
+                Err(_) => {
+                    close_guard.abort().await;
+                    return;
+                }
+            }
+        };
+        if let Some(frame) = frame {
+            idle_sleep
+                .as_mut()
+                .reset(TokioInstant::now() + idle_timeout);
+            if direct_dns_tcp_transfer_target(&outbound, &client_target, &frame[2..]).is_some() {
+                let transfer_setup = if decoder.buffered_len() != 0 {
+                    DirectDnsTcpTransferSetup::Failed
+                } else {
+                    tokio::select! {
+                        biased;
+                        () = wait_for_tun_shutdown(&mut shutdown) => {
+                            close_guard.close().await;
+                            return;
+                        }
+                        () = &mut idle_sleep => {
+                            close_guard.abort().await;
+                            return;
+                        }
+                        session = timeout(
+                            outbound.operation_timeout(),
+                            open_direct_dns_tcp_transfer_session(
+                                &client_target,
+                                &outbound,
+                                &context,
+                            ),
+                        ) => match session {
+                            Ok(Ok(session)) => DirectDnsTcpTransferSetup::Ready(session),
+                            Ok(Err(())) | Err(_) => DirectDnsTcpTransferSetup::Failed,
+                        },
+                    }
+                };
+                match transfer_setup {
+                    DirectDnsTcpTransferSetup::Ready(session) => {
+                        bridge_preconnected_dns_outbound_transfer(
+                            handle,
+                            generation,
+                            session,
+                            frame,
+                            context,
+                            from_stack,
+                            shutdown,
+                            dns_flow_permit,
+                            close_guard,
+                            idle_timeout,
+                            outbound.operation_timeout(),
+                        )
+                        .await;
+                        return;
+                    }
+                    DirectDnsTcpTransferSetup::Failed => {
+                        close_guard.abort().await;
+                        return;
+                    }
+                }
+            }
+            let query = frame.slice(2..);
+            let response = tokio::select! {
+                biased;
+                () = wait_for_tun_shutdown(&mut shutdown) => {
+                    close_guard.close().await;
+                    return;
+                }
+                () = &mut idle_sleep => {
+                    close_guard.abort().await;
+                    return;
+                }
+                response = dns_outbound_tcp_response(
+                    &outbound,
+                    &client_target,
+                    query,
+                    &context,
+                ) => response,
+            };
+            if let Some(response) = response {
+                let Some(response) = framed_dns_payload(&response) else {
+                    close_guard.abort().await;
+                    return;
+                };
+                let sent = tokio::select! {
+                    biased;
+                    () = wait_for_tun_shutdown(&mut shutdown) => false,
+                    () = &mut idle_sleep => false,
+                    result = timeout(
+                        DNS_TCP_PROXY_ATTEMPT_TIMEOUT,
+                        context.stack_tx.send(StackEvent::RemoteData {
+                            handle,
+                            generation,
+                            data: response,
+                        }),
+                    ) => matches!(result, Ok(Ok(()))),
+                };
+                if !sent {
+                    close_guard.abort().await;
+                    return;
+                }
+            }
+            processed = processed.saturating_add(1);
+            if processed >= RAW_DNS_TCP_DRAIN_QUANTUM {
+                let shutdown_requested = tokio::select! {
+                    biased;
+                    () = wait_for_tun_shutdown(&mut shutdown) => true,
+                    () = tokio::task::yield_now() => false,
+                };
+                if shutdown_requested {
+                    close_guard.close().await;
+                    return;
+                }
+                processed = 0;
+            }
+            continue;
+        }
+
+        let data = tokio::select! {
+            biased;
+            () = wait_for_tun_shutdown(&mut shutdown) => {
+                close_guard.close().await;
+                return;
+            }
+            () = &mut idle_sleep => {
+                close_guard.abort().await;
+                return;
+            }
+            data = from_stack.recv() => data,
+        };
+        let Some(data) = data else {
+            close_guard.close().await;
+            return;
+        };
+        if decoder.buffered_len().saturating_add(data.data.len()) > MAX_RAW_DNS_TCP_PENDING_BYTES {
+            close_guard.abort().await;
+            return;
+        }
+        decoder.push(&data.data);
+        drop(data);
+    }
+}
+
+enum DirectDnsTcpTransferSetup {
+    Ready(crate::dns_outbound_runtime::ManagedDirectDnsTcpSession),
+    Failed,
+}
+
+fn direct_dns_tcp_transfer_target(
+    outbound: &DnsOutbound,
+    client_target: &Target,
+    query: &[u8],
+) -> Option<Target> {
+    let question = crate::dns_outbound::parse_dns_query_prefix(query).ok()?;
+    if !matches!(question.qtype(), DNS_TYPE_AXFR | DNS_TYPE_IXFR)
+        || !matches!(
+            outbound.policy().decide_message(query, false),
+            Ok(crate::DnsOutboundDecision::Direct)
+        )
+    {
+        return None;
+    }
+    let target = outbound.rewrite_target(client_target);
+    if target.network != RoutingNetwork::Tcp {
+        return None;
+    }
+    Some(target)
+}
+
+async fn open_direct_dns_tcp_transfer_session(
+    client_target: &Target,
+    outbound: &DnsOutbound,
+    context: &TunRuntimeContext,
+) -> Result<crate::dns_outbound_runtime::ManagedDirectDnsTcpSession, ()> {
+    context
+        .dns_outbound_runtime
+        .open_direct_tcp_transfer_session(outbound, client_target)
+        .await
+        .map_err(|_| ())
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "preconnected transfer owns TUN flow identity, limits, shutdown, and permits"
+)]
+async fn bridge_preconnected_dns_outbound_transfer(
+    handle: SocketHandle,
+    generation: u64,
+    mut session: crate::dns_outbound_runtime::ManagedDirectDnsTcpSession,
+    query_frame: Bytes,
+    context: TunRuntimeContext,
+    mut from_stack: mpsc::Receiver<StackToRemoteData>,
+    mut shutdown: watch::Receiver<bool>,
+    _dns_flow_permit: Option<OwnedSemaphorePermit>,
+    mut close_guard: TcpBridgeCloseGuard,
+    idle_timeout: Duration,
+    operation_timeout: Duration,
+) {
+    let Some(query) = query_frame.get(2..) else {
+        close_guard.abort().await;
+        return;
+    };
+    let sent = tokio::select! {
+        biased;
+        () = wait_for_tun_shutdown(&mut shutdown) => false,
+        result = timeout(operation_timeout, session.send(query)) => matches!(result, Ok(Ok(()))),
+    };
+    if !sent {
+        close_guard.abort().await;
+        return;
+    }
+
+    let mut upstream = session.into_stream();
+    let idle_sleep = tokio::time::sleep(idle_timeout);
+    tokio::pin!(idle_sleep);
+    let mut buffer = vec![0_u8; RAW_DNS_TCP_WRITE_QUANTUM_BYTES];
+    loop {
+        let read = tokio::select! {
+            biased;
+            () = wait_for_tun_shutdown(&mut shutdown) => {
+                close_guard.close().await;
+                return;
+            }
+            () = &mut idle_sleep => {
+                close_guard.abort().await;
+                return;
+            }
+            client = from_stack.recv() => {
+                match client {
+                    None => close_guard.close().await,
+                    Some(_) => close_guard.abort().await,
+                }
+                return;
+            }
+            read = upstream.read(&mut buffer) => read,
+        };
+        let Ok(read) = read else {
+            close_guard.abort().await;
+            return;
+        };
+        if read == 0 {
+            close_guard.close().await;
+            return;
+        }
+        idle_sleep
+            .as_mut()
+            .reset(TokioInstant::now() + idle_timeout);
+        let delivered = tokio::select! {
+            biased;
+            () = wait_for_tun_shutdown(&mut shutdown) => false,
+            result = timeout(
+                operation_timeout,
+                context.stack_tx.send(StackEvent::RemoteData {
+                    handle,
+                    generation,
+                    data: Bytes::copy_from_slice(&buffer[..read]),
+                }),
+            ) => matches!(result, Ok(Ok(()))),
+        };
+        if !delivered {
+            close_guard.abort().await;
+            return;
+        }
+    }
+}
+
+async fn dns_outbound_tcp_response(
+    outbound: &DnsOutbound,
+    client_target: &Target,
+    query: Bytes,
+    context: &TunRuntimeContext,
+) -> Option<Bytes> {
+    match context
+        .dns_outbound_runtime
+        .execute_message(
+            outbound,
+            client_target,
+            query,
+            crate::dns_outbound_runtime::DnsClientTransport::Tcp,
+        )
+        .await
+    {
+        crate::dns_outbound_runtime::DnsMessageOutcome::Reply(response) => Some(response),
+        crate::dns_outbound_runtime::DnsMessageOutcome::Drop => None,
     }
 }
 
@@ -1645,6 +2093,9 @@ pub(super) async fn bridge_raw_dns_tcp_flow(
             dns_flow_permit,
             close_guard.into_inner(),
             initial_upload,
+            true,
+            None,
+            None,
         )
         .await;
         return;
@@ -2872,8 +3323,8 @@ fn fake_ip_tcp_responses(
         let query = &frame[2..];
         let Some(response) = mapper
             .lock()
-            .ok()
-            .and_then(|mut mapper| mapper.fake_dns_response(query, true))
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .fake_dns_response(query, true)
             .or_else(|| dns_error_response(query, DNS_RCODE_SERVFAIL, false))
         else {
             return fake_dns_tcp_decode_result(output, processed_message, true);
@@ -2907,7 +3358,7 @@ async fn proxy_udp_payload(
     context: &TunRuntimeContext,
 ) -> Result<Bytes, ()> {
     let total_deadline = TokioInstant::now() + DNS_PROXY_TOTAL_TIMEOUT;
-    let path_payload_cap = context.tun.mtu().saturating_sub(20 + 8);
+    let path_payload_cap = dns_udp_path_payload_cap(context.tun.mtu(), packet.target);
     let max_payload = dns_udp_client_payload_limit(&packet.payload, path_payload_cap);
     let upstreams = plan.upstreams();
     for (index, upstream) in upstreams.iter().enumerate() {
@@ -3623,6 +4074,14 @@ fn dns_udp_client_payload_limit(query: &[u8], path_payload_cap: usize) -> usize 
         .min(path_payload_cap)
 }
 
+pub(super) fn dns_udp_path_payload_cap(mtu: usize, endpoint: IpEndpoint) -> usize {
+    let overhead = match endpoint.addr {
+        IpAddress::Ipv4(_) => IPV4_UDP_HEADER_OVERHEAD,
+        IpAddress::Ipv6(_) => IPV6_UDP_HEADER_OVERHEAD,
+    };
+    mtu.saturating_sub(overhead)
+}
+
 fn validated_edns_request(message: &[u8]) -> Option<EdnsRequest> {
     let question_count = usize::from(read_dns_wire_u16(message, 4)?);
     let answer_count = usize::from(read_dns_wire_u16(message, 6)?);
@@ -3759,13 +4218,12 @@ pub(super) fn is_dns_anchor_endpoint(endpoint: IpEndpoint) -> bool {
 }
 
 fn is_tun_dns_socket(addr: SocketAddr) -> bool {
-    let is_tun_ip = match addr.ip() {
+    match addr.ip() {
         IpAddr::V4(ip) => matches!(ip, TUN_DNS_ANCHOR | TUN_CLIENT_IPV4),
         IpAddr::V6(ip) => ip
             .to_ipv4_mapped()
             .is_some_and(|ip| matches!(ip, TUN_DNS_ANCHOR | TUN_CLIENT_IPV4)),
-    };
-    is_tun_ip && addr.port() == DNS_PORT
+    }
 }
 
 #[cfg(test)]
@@ -4081,7 +4539,16 @@ mod tests {
         assert_eq!(dns_hijack_question(&aaaa).unwrap().qtype, DNS_TYPE_AAAA);
         assert_eq!(dns_hijack_question(&edns).unwrap().qtype, DNS_TYPE_A);
 
-        let mut mx = dns_a_query(0x4003, "mx.example");
+        let mut root = vec![0_u8; 12];
+        root[0..2].copy_from_slice(&0x4003_u16.to_be_bytes());
+        root[2..4].copy_from_slice(&0x0100_u16.to_be_bytes());
+        root[4..6].copy_from_slice(&1_u16.to_be_bytes());
+        root.push(0);
+        root.extend_from_slice(&DNS_TYPE_A.to_be_bytes());
+        root.extend_from_slice(&DNS_CLASS_IN.to_be_bytes());
+        assert_eq!(dns_hijack_question(&root).unwrap().domain, ".");
+
+        let mut mx = dns_a_query(0x4004, "mx.example");
         let question_type_offset = mx.len() - 4;
         mx[question_type_offset..question_type_offset + 2].copy_from_slice(&15_u16.to_be_bytes());
         assert!(dns_hijack_question(&mx).is_none());
@@ -5073,6 +5540,15 @@ mod tests {
     }
 
     #[test]
+    fn udp_path_payload_cap_accounts_for_ip_address_family() {
+        let ipv4 = IpEndpoint::new(IpAddress::Ipv4(Ipv4Addr::LOCALHOST), DNS_PORT);
+        let ipv6 = IpEndpoint::new(IpAddress::Ipv6(Ipv6Addr::LOCALHOST), DNS_PORT);
+
+        assert_eq!(dns_udp_path_payload_cap(1_280, ipv4), 1_252);
+        assert_eq!(dns_udp_path_payload_cap(1_280, ipv6), 1_232);
+    }
+
+    #[test]
     fn udp_payload_limit_floors_small_edns_size_to_legacy_size() {
         let query = dns_a_query_with_edns(0x1203, "small-edns.example", 128);
 
@@ -5273,16 +5749,24 @@ mod tests {
         assert!(!dns_response_matches_query(&query, &unrelated));
     }
 
+    fn new_fake_ip_mapper() -> FakeIpMapper {
+        let config = xray_config::DnsFakeIpConfig {
+            enabled: true,
+            ipv4_pool: xray_config::IpCidr::new(IpAddr::V4(Ipv4Addr::new(198, 18, 0, 0)), 15)
+                .unwrap(),
+            pool_size: 32_768,
+            ttl: 60,
+        };
+        FakeIpMapper::from_config(
+            &config,
+            ConfigDnsQueryStrategy::UseIp,
+            &[TUN_DNS_ANCHOR, TUN_CLIENT_IPV4],
+        )
+        .unwrap()
+    }
+
     fn fake_ip_mapper() -> Arc<Mutex<FakeIpMapper>> {
-        Arc::new(Mutex::new(
-            FakeIpMapper::new(FakeIpRuntimeConfig {
-                ipv4_network: Ipv4Addr::new(198, 18, 0, 0),
-                ipv4_prefix: 15,
-                pool_size: 32_768,
-                ttl: 60,
-            })
-            .unwrap(),
-        ))
+        Arc::new(Mutex::new(new_fake_ip_mapper()))
     }
 
     fn dns_tcp_frame(payload: &[u8]) -> Vec<u8> {
@@ -5385,6 +5869,28 @@ mod tests {
         );
         assert_eq!(&response[2..4], &0x2401_u16.to_be_bytes());
         assert!(decoder.buffered.is_empty());
+    }
+
+    #[test]
+    fn fake_dns_tcp_decoder_recovers_a_poisoned_mapper_lock() {
+        let mapper = fake_ip_mapper();
+        let poisoned_mapper = Arc::clone(&mapper);
+        assert!(std::thread::spawn(move || {
+            let _guard = poisoned_mapper.lock().unwrap();
+            panic!("poison FakeDNS mapper for recovery test");
+        })
+        .join()
+        .is_err());
+        let query = dns_a_query(0x2405, "poisoned.example");
+        let mut decoder = DnsTcpFrameDecoder::default();
+        decoder.push(&dns_tcp_frame(&query));
+
+        let decoded = fake_ip_tcp_responses(&mapper, &mut decoder);
+        let response = decoded.response.unwrap();
+
+        assert!(!decoded.terminal_error);
+        assert_eq!(u16::from_be_bytes([response[4], response[5]]) & 0x000f, 0);
+        assert_eq!(u16::from_be_bytes([response[8], response[9]]), 1);
     }
 
     #[test]
@@ -5633,36 +6139,87 @@ mod tests {
         let ordinary = IpEndpoint::new(IpAddress::Ipv4(Ipv4Addr::new(203, 0, 113, 1)), DNS_PORT);
 
         assert!(matches!(
-            tcp_action(&TunDnsMode::RawProxy(Arc::clone(&plan)), anchor),
+            tcp_action(&TunDnsMode::RawProxy(Arc::clone(&plan)), anchor, None),
             DnsTcpAction::Proxy(_)
         ));
         assert!(matches!(
-            tcp_action(&TunDnsMode::RawProxy(plan), ordinary),
+            tcp_action(&TunDnsMode::RawProxy(plan), ordinary, None),
             DnsTcpAction::Pass
         ));
         assert!(matches!(
-            tcp_action(&TunDnsMode::Disabled, anchor),
+            tcp_action(&TunDnsMode::Disabled, anchor, None),
             DnsTcpAction::Reject
         ));
-        let fake_mapper = FakeIpMapper::new(FakeIpRuntimeConfig {
-            ipv4_network: Ipv4Addr::new(198, 18, 0, 0),
-            ipv4_prefix: 15,
-            pool_size: 32_768,
-            ttl: 60,
-        })
-        .unwrap();
+        let fake_mapper = new_fake_ip_mapper();
         let fake_mode = TunDnsMode::FakeIp(Arc::new(Mutex::new(fake_mapper)));
         assert!(matches!(
-            tcp_action(&fake_mode, anchor),
+            tcp_action(&fake_mode, anchor, None),
             DnsTcpAction::FakeIp(_)
         ));
         assert!(matches!(
-            tcp_action(&fake_mode, ordinary),
+            tcp_action(&fake_mode, ordinary, None),
             DnsTcpAction::FakeIp(_)
         ));
         assert!(matches!(
-            tcp_action(&TunDnsMode::Disabled, ordinary),
+            tcp_action(&TunDnsMode::Disabled, ordinary, None),
             DnsTcpAction::Pass
+        ));
+    }
+
+    #[test]
+    fn selected_dns_outbound_precedes_fixed_tun_dns_modes() {
+        let outbound = DnsOutbound::new(xray_config::DnsOutboundSettings::default());
+        let anchor = IpEndpoint::new(IpAddress::Ipv4(TUN_DNS_ANCHOR), DNS_PORT);
+        let packet = UdpTunPacket {
+            client: IpEndpoint::new(IpAddress::Ipv4(TUN_CLIENT_IPV4), 40_000),
+            target: anchor,
+            payload: Bytes::from(dns_a_query(0x7777, "precedence.example")),
+        };
+
+        assert!(matches!(
+            tcp_action(&TunDnsMode::Disabled, anchor, Some(outbound.clone()),),
+            DnsTcpAction::Outbound(_)
+        ));
+        assert!(matches!(
+            udp_action(&TunDnsMode::Disabled, &packet, Some(outbound)),
+            DnsUdpAction::Outbound { .. }
+        ));
+    }
+
+    #[test]
+    fn udp_outbound_classifies_drop_and_reject_before_task_admission() {
+        let anchor = IpEndpoint::new(IpAddress::Ipv4(TUN_DNS_ANCHOR), DNS_PORT);
+        let packet = UdpTunPacket {
+            client: IpEndpoint::new(IpAddress::Ipv4(TUN_CLIENT_IPV4), 40_001),
+            target: anchor,
+            payload: Bytes::from(dns_a_query(0x7778, "admission.example")),
+        };
+        let outbound_for = |action| {
+            DnsOutbound::new(xray_config::DnsOutboundSettings {
+                rules: vec![xray_config::DnsOutboundRule {
+                    action,
+                    qtype_ranges: Vec::new(),
+                    domain_matchers: Vec::new(),
+                }],
+                ..xray_config::DnsOutboundSettings::default()
+            })
+        };
+
+        assert!(matches!(
+            udp_action(
+                &TunDnsMode::Disabled,
+                &packet,
+                Some(outbound_for(xray_config::DnsOutboundRuleAction::Drop)),
+            ),
+            DnsUdpAction::Drop
+        ));
+        assert!(matches!(
+            udp_action(
+                &TunDnsMode::Disabled,
+                &packet,
+                Some(outbound_for(xray_config::DnsOutboundRuleAction::Reject)),
+            ),
+            DnsUdpAction::Reply(_)
         ));
     }
 }

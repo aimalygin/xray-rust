@@ -16,8 +16,7 @@ use tokio::sync::{mpsc, watch, OwnedSemaphorePermit, Semaphore};
 use tokio::task::{AbortHandle, JoinError, JoinSet};
 use tokio::time::{sleep, Duration, Instant as TokioInstant};
 use xray_config::{
-    CoreConfig, DnsFakeIpConfig, DnsQueryStrategy as ConfigDnsQueryStrategy, DnsServerConfig,
-    InboundSniffingConfig,
+    CoreConfig, DnsQueryStrategy as ConfigDnsQueryStrategy, DnsServerConfig, InboundSniffingConfig,
 };
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::{
@@ -30,10 +29,12 @@ use xray_tun::{
     TunUdpSlowFlowEvent,
 };
 
+use crate::dns_outbound_runtime::{FakeIpTargetProvenance, RestoredClientTarget};
+use crate::fake_dns::FakeIpMapper;
 use crate::outbound::{
     open_tcp_stream_with_resolver_and_dialer,
-    open_vless_udp_stream_with_resolver_dialer_and_options, TcpOutbound, UdpOutbound,
-    VlessTcpOutbound, VlessUdpFraming, VlessUdpOpenOptions,
+    open_vless_udp_stream_with_resolver_dialer_and_options, DnsOutbound, TcpOutbound, UdpOutbound,
+    UdpSessionOutbound, VlessTcpOutbound, VlessUdpFraming, VlessUdpOpenOptions,
 };
 use crate::policy::{effective_policy_for_level, EffectivePolicy};
 use crate::{OutboundRouter, RuntimeLogger, TunRuntimeOptions, TunRuntimeProfile};
@@ -56,6 +57,8 @@ const DNS_RCODE_SERVFAIL: u16 = 2;
 pub(crate) const TUN_DNS_ANCHOR: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 1);
 pub(crate) const TUN_CLIENT_IPV4: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 2);
 const TCP_BUFFER_SIZE: usize = 32 * 1024;
+const TUN_TCP_SNIFF_BUFFER_SIZE: usize = 8 * 1024;
+const TUN_TCP_SNIFF_TIMEOUT: Duration = Duration::from_millis(250);
 const STACK_EVENT_CHANNEL_DEPTH: usize = 64;
 const TCP_BRIDGE_CHANNEL_DEPTH: usize = 256;
 const MOBILE_TCP_BRIDGE_CHANNEL_DEPTH: usize = 128;
@@ -491,267 +494,38 @@ struct FlowBudgetState {
     udp_channel_dropped_packets: u64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct FakeIpRuntimeConfig {
-    ipv4_network: Ipv4Addr,
-    ipv4_prefix: u8,
-    pool_size: u32,
-    ttl: u32,
-}
-
-impl FakeIpRuntimeConfig {
-    fn from_config(config: &DnsFakeIpConfig) -> Option<Self> {
-        let IpAddr::V4(ipv4_network) = config.ipv4_pool.network() else {
-            return None;
-        };
-        Some(Self {
-            ipv4_network,
-            ipv4_prefix: config.ipv4_pool.prefix(),
-            pool_size: config.pool_size,
-            ttl: config.ttl,
-        })
-    }
-}
-
-#[derive(Debug)]
-struct FakeIpMapper {
-    config: FakeIpRuntimeConfig,
-    allow_ipv4_answers: bool,
-    network_base: u32,
-    first_offset: u64,
-    allocation_span: u64,
-    max_mappings: usize,
-    pool_covers_address_space: bool,
-    next_offset: u64,
-    entries: Vec<Option<FakeIpEntry>>,
-    lru_head: Option<usize>,
-    lru_tail: Option<usize>,
-    by_domain: HashMap<Arc<str>, usize>,
-    by_ipv4: HashMap<Ipv4Addr, usize>,
-}
-
-#[derive(Debug)]
-struct FakeIpEntry {
-    domain: Arc<str>,
-    ip: Ipv4Addr,
-    newer: Option<usize>,
-    older: Option<usize>,
-}
-
 impl FakeIpMapper {
-    fn new(config: FakeIpRuntimeConfig) -> Option<Self> {
-        if config.ipv4_prefix > 32 {
-            return None;
-        }
-
-        let address_count = 1_u64 << u32::from(32 - config.ipv4_prefix);
-        let first_offset: u64 = if address_count > 2 { 1 } else { 0 };
-        let allocation_span = if address_count > 2 {
-            address_count - 2
-        } else {
-            address_count
-        };
-        if allocation_span == 0 {
-            return None;
-        }
-
-        let mask = if config.ipv4_prefix == 0 {
-            0
-        } else {
-            u32::MAX << u32::from(32 - config.ipv4_prefix)
-        };
-        let network_base = u32::from(config.ipv4_network) & mask;
-        let allocation_range = first_offset..first_offset.saturating_add(allocation_span);
-        let reserved_addresses = [TUN_DNS_ANCHOR, TUN_CLIENT_IPV4]
-            .into_iter()
-            .filter(|ip| {
-                u32::from(*ip)
-                    .checked_sub(network_base)
-                    .map(u64::from)
-                    .is_some_and(|offset| allocation_range.contains(&offset))
-            })
-            .count();
-        let available_addresses = allocation_span - reserved_addresses as u64;
-        if config.pool_size == 0 || u64::from(config.pool_size) > available_addresses {
-            return None;
-        }
-
-        Some(Self {
-            config,
-            allow_ipv4_answers: true,
-            network_base,
-            first_offset,
-            allocation_span,
-            max_mappings: usize::try_from(config.pool_size).ok()?,
-            pool_covers_address_space: u64::from(config.pool_size) == available_addresses,
-            next_offset: 0,
-            entries: Vec::new(),
-            lru_head: None,
-            lru_tail: None,
-            by_domain: HashMap::new(),
-            by_ipv4: HashMap::new(),
-        })
-    }
-
-    fn with_query_strategy(mut self, query_strategy: ConfigDnsQueryStrategy) -> Self {
-        self.allow_ipv4_answers = query_strategy != ConfigDnsQueryStrategy::UseIpv6;
-        self
-    }
-
-    fn fake_ipv4_for_domain(&mut self, domain: &str) -> Option<Ipv4Addr> {
-        let domain = normalize_dns_domain(domain)?;
-        if let Some(&slot) = self.by_domain.get(domain.as_str()) {
-            let ip = self.entries.get(slot)?.as_ref()?.ip;
-            self.touch_lru(slot)?;
-            return Some(ip);
-        }
-
-        if self.by_domain.len() >= self.max_mappings {
-            let free_ip = (!self.pool_covers_address_space)
-                .then(|| self.next_available_ipv4())
-                .flatten();
-            let (slot, evicted_ip) = self.remove_lru()?;
-            let ip = free_ip.unwrap_or(evicted_ip);
-            self.insert_mapping(slot, domain, ip)?;
-            return Some(ip);
-        }
-
-        let slot = self.entries.len();
-        let ip = self.next_available_ipv4()?;
-        self.insert_mapping(slot, domain, ip)?;
-        Some(ip)
-    }
-
-    fn next_available_ipv4(&mut self) -> Option<Ipv4Addr> {
-        for _ in 0..self.allocation_span {
-            let offset = self.first_offset + (self.next_offset % self.allocation_span);
-            self.next_offset = (self.next_offset + 1) % self.allocation_span;
-            let raw_ip = self.network_base.checked_add(u32::try_from(offset).ok()?)?;
-            let ip = Ipv4Addr::from(raw_ip);
-            if matches!(ip, TUN_DNS_ANCHOR | TUN_CLIENT_IPV4) {
-                continue;
-            }
-            if !self.by_ipv4.contains_key(&ip) {
-                return Some(ip);
-            }
-        }
-        None
-    }
-
-    fn insert_mapping(&mut self, slot: usize, domain: String, ip: Ipv4Addr) -> Option<()> {
-        let domain = Arc::<str>::from(domain);
-        let entry = FakeIpEntry {
-            domain: Arc::clone(&domain),
-            ip,
-            newer: None,
-            older: None,
-        };
-        if slot == self.entries.len() {
-            self.entries.push(Some(entry));
-        } else {
-            *self.entries.get_mut(slot)? = Some(entry);
-        }
-        self.by_domain.insert(domain, slot);
-        self.by_ipv4.insert(ip, slot);
-        self.attach_lru_head(slot)
-    }
-
-    fn touch_lru(&mut self, slot: usize) -> Option<()> {
-        if self.lru_head == Some(slot) {
-            return Some(());
-        }
-        self.detach_lru(slot)?;
-        self.attach_lru_head(slot)
-    }
-
-    fn attach_lru_head(&mut self, slot: usize) -> Option<()> {
-        let previous_head = self.lru_head;
-        let entry = self.entries.get_mut(slot)?.as_mut()?;
-        entry.newer = None;
-        entry.older = previous_head;
-        if let Some(previous_head) = previous_head {
-            self.entries.get_mut(previous_head)?.as_mut()?.newer = Some(slot);
-        } else {
-            self.lru_tail = Some(slot);
-        }
-        self.lru_head = Some(slot);
-        Some(())
-    }
-
-    fn detach_lru(&mut self, slot: usize) -> Option<()> {
-        let entry = self.entries.get(slot)?.as_ref()?;
-        let newer = entry.newer;
-        let older = entry.older;
-
-        if let Some(newer) = newer {
-            self.entries.get_mut(newer)?.as_mut()?.older = older;
-        } else {
-            self.lru_head = older;
-        }
-        if let Some(older) = older {
-            self.entries.get_mut(older)?.as_mut()?.newer = newer;
-        } else {
-            self.lru_tail = newer;
-        }
-        Some(())
-    }
-
-    fn remove_lru(&mut self) -> Option<(usize, Ipv4Addr)> {
-        let slot = self.lru_tail?;
-        self.detach_lru(slot)?;
-        let entry = self.entries.get_mut(slot)?.take()?;
-        self.by_domain.remove(entry.domain.as_ref());
-        self.by_ipv4.remove(&entry.ip);
-        Some((slot, entry.ip))
-    }
-
-    fn domain_for_ipv4(&mut self, ip: Ipv4Addr) -> Option<Arc<str>> {
-        let slot = *self.by_ipv4.get(&ip)?;
-        let domain = Arc::clone(&self.entries.get(slot)?.as_ref()?.domain);
-        self.touch_lru(slot)?;
-        Some(domain)
-    }
-
-    fn target_for_endpoint(
-        &mut self,
-        endpoint: IpEndpoint,
-        network: RoutingNetwork,
-    ) -> Option<Target> {
-        let IpAddress::Ipv4(ip) = endpoint.addr else {
-            return target_from_endpoint_with_network(endpoint, network);
-        };
-        let Some(domain) = self.domain_for_ipv4(ip) else {
-            return target_from_endpoint_with_network(endpoint, network);
-        };
-        Some(Target::new(
-            RoutingTargetAddr::Domain(domain.to_string()),
-            endpoint.port,
-            network,
-        ))
-    }
-
     fn fake_dns_response(
         &mut self,
         query: &[u8],
         respond_nodata_for_unsupported: bool,
     ) -> Option<Bytes> {
         let question = parse_dns_question(query)?;
+        if question.domain == "." {
+            return Some(build_dns_response(
+                query,
+                &question,
+                None,
+                self.ttl(),
+                DNS_RCODE_NOERROR,
+            ));
+        }
         if question.qtype == DNS_TYPE_A && question.qclass == DNS_CLASS_IN {
-            if !self.allow_ipv4_answers {
+            if self.query_strategy() == ConfigDnsQueryStrategy::UseIpv6 {
                 return Some(build_dns_response(
                     query,
                     &question,
                     None,
-                    self.config.ttl,
+                    self.ttl(),
                     DNS_RCODE_NOERROR,
                 ));
             }
-            let Some(ip) = self.fake_ipv4_for_domain(&question.domain) else {
+            let Some(ip) = self.allocate_ipv4(&question.domain) else {
                 return Some(build_dns_response(
                     query,
                     &question,
                     None,
-                    self.config.ttl,
+                    self.ttl(),
                     DNS_RCODE_SERVFAIL,
                 ));
             };
@@ -759,7 +533,7 @@ impl FakeIpMapper {
                 query,
                 &question,
                 Some(ip),
-                self.config.ttl,
+                self.ttl(),
                 DNS_RCODE_NOERROR,
             ));
         }
@@ -769,7 +543,7 @@ impl FakeIpMapper {
                 query,
                 &question,
                 None,
-                self.config.ttl,
+                self.ttl(),
                 DNS_RCODE_NOERROR,
             ));
         }
@@ -1057,6 +831,7 @@ pub(crate) async fn serve_tun_endpoint(
     outbound_router: Arc<OutboundRouter>,
     dns_resolver: Arc<dyn DnsResolver>,
     dns_bootstrap_resolver: Option<Arc<dyn DnsResolver>>,
+    dns_outbound_runtime: Arc<crate::dns_outbound_runtime::DnsOutboundRuntime>,
     transport_dialer: Arc<TransportDialer>,
     tun_runtime_options: TunRuntimeOptions,
     runtime_logger: RuntimeLogger,
@@ -1089,14 +864,7 @@ pub(crate) async fn serve_tun_endpoint(
     let mut udp_flows = HashMap::new();
     let mut delayed_stack_events = VecDeque::new();
     let (stack_tx, mut stack_rx) = mpsc::channel(STACK_EVENT_CHANNEL_DEPTH);
-    let fake_ip_mapper = config
-        .dns
-        .fake_ip
-        .as_ref()
-        .and_then(FakeIpRuntimeConfig::from_config)
-        .and_then(FakeIpMapper::new)
-        .map(|mapper| mapper.with_query_strategy(config.dns.query_strategy))
-        .map(|mapper| Arc::new(Mutex::new(mapper)));
+    let fake_ip_mapper = dns_outbound_runtime.fake_ip_mapper();
     let dns_mode = TunDnsMode::from_config(config.as_ref(), fake_ip_mapper);
     let runtime_context = TunRuntimeContext {
         inbound_tag,
@@ -1106,6 +874,7 @@ pub(crate) async fn serve_tun_endpoint(
         outbound_router,
         dns_resolver,
         dns_bootstrap_resolver,
+        dns_outbound_runtime,
         transport_dialer,
         stack_tx,
         tun: Arc::clone(&tun),
@@ -1458,7 +1227,29 @@ async fn process_tun_packet(
         };
     }
     if let Some(udp_packet) = parse_udp_packet(&packet) {
-        match dns_proxy::udp_action(&context.dns_mode, &udp_packet) {
+        let dns_selection = match context
+            .selected_dns_outbound_with_resolver(udp_packet.target, RoutingNetwork::Udp)
+            .await
+        {
+            Ok(outbound) => outbound,
+            Err(_) => {
+                if let Some(reply) =
+                    dns_proxy::dns_error_reply_packet(&udp_packet, DNS_RCODE_SERVFAIL)
+                {
+                    let _ = tun.push_outbound(reply).await;
+                }
+                return TunPacketOutcome::Continue {
+                    tcp_stack_dirty: false,
+                };
+            }
+        };
+        let dns_outbound = dns_selection.as_ref().map(|(outbound, _)| outbound.clone());
+        match dns_proxy::udp_action(&context.dns_mode, &udp_packet, dns_outbound) {
+            DnsUdpAction::Drop => {
+                return TunPacketOutcome::Continue {
+                    tcp_stack_dirty: false,
+                };
+            }
             DnsUdpAction::Reply(reply) => {
                 return match tun.push_outbound(reply).await {
                     Err(TunError::QueueClosed) => TunPacketOutcome::QueueClosed,
@@ -1496,6 +1287,50 @@ async fn process_tun_packet(
                 };
                 udp_tasks.spawn(dns_proxy::bridge_udp_query(
                     plan,
+                    udp_packet,
+                    context.clone(),
+                    shutdown,
+                    global_permit,
+                    dns_permit,
+                ));
+                return TunPacketOutcome::Continue {
+                    tcp_stack_dirty: false,
+                };
+            }
+            DnsUdpAction::Outbound { outbound, decision } => {
+                let Some((_, client_target)) = dns_selection else {
+                    return TunPacketOutcome::Continue {
+                        tcp_stack_dirty: false,
+                    };
+                };
+                let dns_permit = Arc::clone(&context.dns_udp_task_permits).try_acquire_owned();
+                let Ok(dns_permit) = dns_permit else {
+                    flow_budget_state.record_udp_budget_drop();
+                    if let Some(reply) =
+                        dns_proxy::dns_error_reply_packet(&udp_packet, DNS_RCODE_SERVFAIL)
+                    {
+                        let _ = tun.push_outbound(reply).await;
+                    }
+                    return TunPacketOutcome::Continue {
+                        tcp_stack_dirty: false,
+                    };
+                };
+                let global_permit = Arc::clone(&context.udp_task_permits).try_acquire_owned();
+                let Ok(global_permit) = global_permit else {
+                    flow_budget_state.record_udp_budget_drop();
+                    if let Some(reply) =
+                        dns_proxy::dns_error_reply_packet(&udp_packet, DNS_RCODE_SERVFAIL)
+                    {
+                        let _ = tun.push_outbound(reply).await;
+                    }
+                    return TunPacketOutcome::Continue {
+                        tcp_stack_dirty: false,
+                    };
+                };
+                udp_tasks.spawn(dns_proxy::bridge_dns_outbound_udp_query(
+                    outbound,
+                    decision,
+                    client_target,
                     udp_packet,
                     context.clone(),
                     shutdown,
@@ -1578,6 +1413,7 @@ struct TunRuntimeContext {
     outbound_router: Arc<OutboundRouter>,
     dns_resolver: Arc<dyn DnsResolver>,
     dns_bootstrap_resolver: Option<Arc<dyn DnsResolver>>,
+    dns_outbound_runtime: Arc<crate::dns_outbound_runtime::DnsOutboundRuntime>,
     transport_dialer: Arc<TransportDialer>,
     stack_tx: mpsc::Sender<StackEvent>,
     tun: Arc<TunEndpoint>,
@@ -1619,11 +1455,48 @@ impl TunRuntimeContext {
         endpoint: IpEndpoint,
         network: RoutingNetwork,
     ) -> Option<Target> {
-        let Some(mapper) = self.dns_mode.fake_ip_mapper() else {
-            return target_from_endpoint_with_network(endpoint, network);
+        self.restored_target_from_endpoint(endpoint, network)
+            .map(|restored| restored.target)
+    }
+
+    fn restored_target_from_endpoint(
+        &self,
+        endpoint: IpEndpoint,
+        network: RoutingNetwork,
+    ) -> Option<RestoredClientTarget> {
+        let target = target_from_endpoint_with_network(endpoint, network)?;
+        Some(self.dns_outbound_runtime.restore_client_target(&target))
+    }
+
+    fn selected_dns_outbound(
+        &self,
+        endpoint: IpEndpoint,
+        network: RoutingNetwork,
+    ) -> Result<Option<(DnsOutbound, Target)>, crate::CoreError> {
+        let Some(target) = self.target_from_endpoint(endpoint, network) else {
+            return Ok(None);
         };
-        let mut mapper = mapper.lock().ok()?;
-        mapper.target_for_endpoint(endpoint, network)
+        self.outbound_router
+            .select_dns_outbound_for_session(self.inbound_tag.as_deref(), &target)
+            .map(|outbound| outbound.map(|outbound| (outbound, target)))
+    }
+
+    async fn selected_dns_outbound_with_resolver(
+        &self,
+        endpoint: IpEndpoint,
+        network: RoutingNetwork,
+    ) -> Result<Option<(DnsOutbound, Target)>, crate::CoreError> {
+        let Some(target) = self.target_from_endpoint(endpoint, network) else {
+            return Ok(None);
+        };
+        self.outbound_router
+            .select_dns_outbound_for_session_with_resolver(
+                self.inbound_tag.as_deref(),
+                &target,
+                self.dns_resolver.as_ref(),
+            )
+            .await
+            .map(|outbound| outbound.map(|outbound| (outbound, target)))
     }
 }
 
@@ -1653,10 +1526,14 @@ struct TcpListenerState {
 
 #[derive(Clone)]
 enum TcpBridgeDestination {
-    Standard(Target),
+    Standard(RestoredClientTarget),
     DnsProxy {
         client_target: Target,
         plan: Arc<dns_proxy::DnsProxyPlan>,
+    },
+    DnsOutbound {
+        client_target: Target,
+        outbound: DnsOutbound,
     },
 }
 
@@ -1691,8 +1568,12 @@ struct TcpDialCandidate {
 impl TcpBridgeDestination {
     fn client_target(&self) -> &Target {
         match self {
-            Self::Standard(target)
-            | Self::DnsProxy {
+            Self::Standard(restored) => &restored.target,
+            Self::DnsProxy {
+                client_target: target,
+                ..
+            }
+            | Self::DnsOutbound {
                 client_target: target,
                 ..
             } => target,
@@ -1701,8 +1582,8 @@ impl TcpBridgeDestination {
 
     fn dial_candidates(&self) -> Vec<TcpDialCandidate> {
         match self {
-            Self::Standard(target) => vec![TcpDialCandidate {
-                target: target.clone(),
+            Self::Standard(restored) => vec![TcpDialCandidate {
+                target: restored.target.clone(),
                 dns_upstream: None,
             }],
             Self::DnsProxy { plan, .. } => plan
@@ -1713,11 +1594,12 @@ impl TcpBridgeDestination {
                     dns_upstream: Some(upstream.clone()),
                 })
                 .collect(),
+            Self::DnsOutbound { .. } => Vec::new(),
         }
     }
 
     fn is_dns_proxy(&self) -> bool {
-        matches!(self, Self::DnsProxy { .. })
+        matches!(self, Self::DnsProxy { .. } | Self::DnsOutbound { .. })
     }
 }
 
@@ -1886,27 +1768,50 @@ fn open_ready_tcp_flows(
             let Some(local_endpoint) = socket.local_endpoint() else {
                 return Some((*endpoint, ReadyTcpFlow::Closed));
             };
-            let ready = match dns_proxy::tcp_action(&context.dns_mode, local_endpoint) {
-                DnsTcpAction::Pass => context
-                    .target_from_endpoint(local_endpoint, RoutingNetwork::Tcp)
-                    .map(TcpBridgeDestination::Standard)
-                    .map(ReadyTcpFlow::Bridge)
-                    .unwrap_or(ReadyTcpFlow::Reject(
-                        "TUN TCP target mapping is unavailable",
-                    )),
-                DnsTcpAction::Proxy(plan) => {
-                    match target_from_endpoint_with_network(local_endpoint, RoutingNetwork::Tcp) {
-                        Some(client_target) => {
-                            ReadyTcpFlow::Bridge(TcpBridgeDestination::DnsProxy {
-                                client_target,
-                                plan,
-                            })
+            let dns_selection = context.selected_dns_outbound(local_endpoint, RoutingNetwork::Tcp);
+            let ready = match dns_selection {
+                Err(_) => ReadyTcpFlow::Reject("TUN DNS outbound selection failed"),
+                Ok(dns_selection) => {
+                    let dns_outbound = dns_selection.as_ref().map(|(outbound, _)| outbound.clone());
+                    match dns_proxy::tcp_action(&context.dns_mode, local_endpoint, dns_outbound) {
+                        DnsTcpAction::Pass => context
+                            .restored_target_from_endpoint(local_endpoint, RoutingNetwork::Tcp)
+                            .map(TcpBridgeDestination::Standard)
+                            .map(ReadyTcpFlow::Bridge)
+                            .unwrap_or(ReadyTcpFlow::Reject(
+                                "TUN TCP target mapping is unavailable",
+                            )),
+                        DnsTcpAction::Proxy(plan) => {
+                            match target_from_endpoint_with_network(
+                                local_endpoint,
+                                RoutingNetwork::Tcp,
+                            ) {
+                                Some(client_target) => {
+                                    ReadyTcpFlow::Bridge(TcpBridgeDestination::DnsProxy {
+                                        client_target,
+                                        plan,
+                                    })
+                                }
+                                None => ReadyTcpFlow::Reject("TUN DNS TCP target is invalid"),
+                            }
                         }
-                        None => ReadyTcpFlow::Reject("TUN DNS TCP target is invalid"),
+                        DnsTcpAction::Outbound(outbound) => {
+                            match dns_selection.map(|(_, target)| target) {
+                                Some(client_target) => {
+                                    ReadyTcpFlow::Bridge(TcpBridgeDestination::DnsOutbound {
+                                        client_target,
+                                        outbound,
+                                    })
+                                }
+                                None => ReadyTcpFlow::Reject("TUN DNS TCP target is invalid"),
+                            }
+                        }
+                        DnsTcpAction::FakeIp(mapper) => ReadyTcpFlow::FakeDns(mapper),
+                        DnsTcpAction::Reject => {
+                            ReadyTcpFlow::Reject("TUN DNS TCP proxy is unavailable")
+                        }
                     }
                 }
-                DnsTcpAction::FakeIp(mapper) => ReadyTcpFlow::FakeDns(mapper),
-                DnsTcpAction::Reject => ReadyTcpFlow::Reject("TUN DNS TCP proxy is unavailable"),
             };
             Some((*endpoint, ready))
         })
@@ -2022,6 +1927,28 @@ fn open_ready_tcp_flows(
                         dns_flow,
                     ))
                 }
+                TcpBridgeDestination::DnsOutbound {
+                    client_target,
+                    outbound,
+                } => {
+                    let TcpBridgePermits {
+                        pending_open,
+                        dns_flow,
+                    } = permits;
+                    bridge_tasks.spawn(dns_proxy::bridge_dns_outbound_tcp_flow(
+                        handle,
+                        generation,
+                        client_target,
+                        outbound,
+                        context.clone(),
+                        from_stack,
+                        shutdown.clone(),
+                        Some(pending_open),
+                        dns_flow,
+                        false,
+                        VecDeque::new(),
+                    ))
+                }
                 destination => bridge_tasks.spawn(bridge_tcp_flow(
                     handle,
                     generation,
@@ -2126,7 +2053,12 @@ fn parse_dns_question(packet: &[u8]) -> Option<DnsQuestion> {
 
     let qtype = u16::from_be_bytes([*packet.get(offset)?, *packet.get(offset + 1)?]);
     let qclass = u16::from_be_bytes([*packet.get(offset + 2)?, *packet.get(offset + 3)?]);
-    let domain = normalize_dns_domain(&labels.join("."))?;
+    let joined = labels.join(".");
+    let domain = if joined.is_empty() {
+        ".".to_owned()
+    } else {
+        normalize_dns_domain(&joined)?
+    };
 
     Some(DnsQuestion {
         domain,
@@ -2594,12 +2526,119 @@ fn socket_addr_has_nonzero_scope(addr: SocketAddr) -> bool {
 async fn bridge_tcp_flow(
     handle: SocketHandle,
     generation: u64,
-    destination: TcpBridgeDestination,
+    mut destination: TcpBridgeDestination,
     context: TunRuntimeContext,
-    from_stack: mpsc::Receiver<StackToRemoteData>,
-    shutdown: watch::Receiver<bool>,
+    mut from_stack: mpsc::Receiver<StackToRemoteData>,
+    mut shutdown: watch::Receiver<bool>,
     permits: TcpBridgePermits,
 ) {
+    let mut client_already_opened = false;
+    let mut initial_upload = VecDeque::new();
+    if let TcpBridgeDestination::Standard(restored) = &destination {
+        let sniffing_config = context
+            .sniffing
+            .as_ref()
+            .filter(|config| should_sniff_tun_tcp(Some(config), restored.provenance));
+        if let Some(sniffing_config) = sniffing_config {
+            let opened = tokio::select! {
+                biased;
+                () = wait_for_tun_shutdown(&mut shutdown) => false,
+                result = tokio::time::timeout(
+                    context.inbound_policy.handshake,
+                    context.stack_tx.send(StackEvent::RemoteOpened { handle, generation }),
+                ) => matches!(result, Ok(Ok(()))),
+            };
+            if !opened {
+                return;
+            }
+            client_already_opened = true;
+            let Some((upload, sniffed)) = read_tun_tcp_sniff_payload(
+                &mut from_stack,
+                &mut shutdown,
+                sniffing_config,
+                &restored.target,
+            )
+            .await
+            else {
+                let mut close_guard =
+                    TcpBridgeCloseGuard::new(handle, generation, context.stack_tx.clone());
+                close_guard.close().await;
+                return;
+            };
+            initial_upload = upload;
+            if let Some(sniffed) = sniffed {
+                destination = TcpBridgeDestination::Standard(RestoredClientTarget {
+                    target: sniffed.route_target,
+                    provenance: FakeIpTargetProvenance::InPoolUnmapped,
+                });
+            }
+        }
+    }
+
+    if let TcpBridgeDestination::Standard(restored) = &destination {
+        let client_target = &restored.target;
+        let selected_dns_outbound = tokio::select! {
+            biased;
+            () = wait_for_tun_shutdown(&mut shutdown) => return,
+            result = context
+                .outbound_router
+                .select_dns_outbound_for_session_with_resolver(
+                    context.inbound_tag.as_deref(),
+                    client_target,
+                    context.dns_resolver.as_ref(),
+                ) => result,
+        };
+        match selected_dns_outbound {
+            Ok(Some(outbound)) => {
+                let TcpBridgePermits {
+                    pending_open,
+                    dns_flow,
+                } = permits;
+                debug_assert!(dns_flow.is_none());
+                let dns_flow = match Arc::clone(&context.dns_tcp_flow_permits).try_acquire_owned() {
+                    Ok(permit) => permit,
+                    Err(_) => {
+                        record_tcp_target_rejection(
+                            &context,
+                            client_target,
+                            "TUN DNS TCP flow limit reached",
+                        );
+                        let mut close_guard =
+                            TcpBridgeCloseGuard::new(handle, generation, context.stack_tx.clone());
+                        close_guard.abort().await;
+                        return;
+                    }
+                };
+                dns_proxy::bridge_dns_outbound_tcp_flow(
+                    handle,
+                    generation,
+                    client_target.clone(),
+                    outbound,
+                    context,
+                    from_stack,
+                    shutdown,
+                    Some(pending_open),
+                    Some(dns_flow),
+                    client_already_opened,
+                    initial_upload,
+                )
+                .await;
+                return;
+            }
+            Ok(None) => {}
+            Err(_) => {
+                record_tcp_target_rejection(
+                    &context,
+                    client_target,
+                    "TUN DNS outbound selection failed",
+                );
+                let mut close_guard =
+                    TcpBridgeCloseGuard::new(handle, generation, context.stack_tx.clone());
+                close_guard.abort().await;
+                return;
+            }
+        }
+    }
     let TcpBridgePermits {
         pending_open,
         dns_flow: dns_flow_permit,
@@ -2615,10 +2654,62 @@ async fn bridge_tcp_flow(
         Some(pending_open),
         dns_flow_permit,
         close_guard,
-        false,
-        VecDeque::new(),
+        client_already_opened,
+        true,
+        None,
+        None,
+        initial_upload,
     )
     .await;
+}
+
+fn should_sniff_tun_tcp(
+    config: Option<&InboundSniffingConfig>,
+    provenance: FakeIpTargetProvenance,
+) -> bool {
+    provenance == FakeIpTargetProvenance::InPoolUnmapped
+        && crate::sniffing::should_sniff_tcp(config)
+}
+
+async fn read_tun_tcp_sniff_payload(
+    from_stack: &mut mpsc::Receiver<StackToRemoteData>,
+    shutdown: &mut watch::Receiver<bool>,
+    config: &InboundSniffingConfig,
+    target: &Target,
+) -> Option<(
+    VecDeque<StackToRemoteData>,
+    Option<crate::sniffing::SniffedTarget>,
+)> {
+    let mut initial_upload = VecDeque::new();
+    let mut sniff_buffer = BytesMut::with_capacity(TUN_TCP_SNIFF_BUFFER_SIZE);
+    let timeout = sleep(TUN_TCP_SNIFF_TIMEOUT);
+    tokio::pin!(timeout);
+
+    loop {
+        let data = tokio::select! {
+            changed = shutdown.changed() => {
+                if changed.is_err() || *shutdown.borrow() {
+                    return None;
+                }
+                continue;
+            }
+            () = &mut timeout => return Some((initial_upload, None)),
+            data = from_stack.recv() => data?,
+        };
+        let remaining = TUN_TCP_SNIFF_BUFFER_SIZE.saturating_sub(sniff_buffer.len());
+        let inspected = data.data.len().min(remaining);
+        sniff_buffer.extend_from_slice(&data.data[..inspected]);
+        initial_upload.push_back(data);
+
+        if let Some(sniffed) =
+            crate::sniffing::sniff_tcp_initial_payload(config, target, &sniff_buffer)
+        {
+            return Some((initial_upload, Some(sniffed)));
+        }
+        if sniff_buffer.len() >= TUN_TCP_SNIFF_BUFFER_SIZE {
+            return Some((initial_upload, None));
+        }
+    }
 }
 
 #[expect(
@@ -2636,6 +2727,9 @@ async fn bridge_preopened_dns_tcp_flow(
     dns_flow_permit: Option<OwnedSemaphorePermit>,
     close_guard: TcpBridgeCloseGuard,
     initial_upload: VecDeque<StackToRemoteData>,
+    client_upload_allowed: bool,
+    idle_timeout_override: Option<Duration>,
+    operation_timeout_override: Option<Duration>,
 ) {
     bridge_tcp_flow_inner(
         handle,
@@ -2651,6 +2745,9 @@ async fn bridge_preopened_dns_tcp_flow(
         dns_flow_permit,
         close_guard,
         true,
+        client_upload_allowed,
+        idle_timeout_override,
+        operation_timeout_override,
         initial_upload,
     )
     .await;
@@ -2671,6 +2768,9 @@ async fn bridge_tcp_flow_inner(
     _dns_flow_permit: Option<OwnedSemaphorePermit>,
     mut close_guard: TcpBridgeCloseGuard,
     client_already_opened: bool,
+    client_upload_allowed: bool,
+    idle_timeout_override: Option<Duration>,
+    operation_timeout_override: Option<Duration>,
     mut initial_upload: VecDeque<StackToRemoteData>,
 ) {
     let collect_tcp_timings = context.tun_runtime_options.collect_tcp_timings;
@@ -2678,8 +2778,9 @@ async fn bridge_tcp_flow_inner(
     let client_target = destination.client_target().clone();
     let is_dns_proxy = destination.is_dns_proxy();
     let is_tcp443 = client_target.port == 443;
-    let dns_deadline =
-        is_dns_proxy.then(|| TokioInstant::now() + dns_proxy::DNS_TCP_PROXY_TOTAL_TIMEOUT);
+    let dns_operation_timeout =
+        operation_timeout_override.unwrap_or(dns_proxy::DNS_TCP_PROXY_TOTAL_TIMEOUT);
+    let dns_deadline = is_dns_proxy.then(|| TokioInstant::now() + dns_operation_timeout);
     let mut opened = None;
     let mut last_failure = None;
 
@@ -2861,9 +2962,9 @@ async fn bridge_tcp_flow_inner(
         }
         return;
     };
-    let bridge_idle_timeout = context.inbound_policy.conn_idle;
+    let bridge_idle_timeout = idle_timeout_override.unwrap_or(context.inbound_policy.conn_idle);
     let bridge_operation_timeout =
-        is_dns_proxy.then_some(bridge_idle_timeout.min(dns_proxy::DNS_TCP_PROXY_TOTAL_TIMEOUT));
+        is_dns_proxy.then_some(bridge_idle_timeout.min(dns_operation_timeout));
     if !client_already_opened
         && !matches!(
             await_with_optional_timeout(
@@ -2956,6 +3057,7 @@ async fn bridge_tcp_flow_inner(
             &mut timing,
             bridge_idle_timeout,
             bridge_operation_timeout,
+            client_upload_allowed,
         )
         .await;
     } else {
@@ -2973,6 +3075,7 @@ async fn bridge_tcp_flow_inner(
             &mut timing,
             bridge_idle_timeout,
             bridge_operation_timeout,
+            client_upload_allowed,
         )
         .await;
     }
@@ -3055,6 +3158,7 @@ async fn bridge_tcp_flow_loop<R, W, T>(
     timing: &mut T,
     idle_timeout: Duration,
     operation_timeout: Option<Duration>,
+    client_upload_allowed: bool,
 ) where
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
@@ -3079,6 +3183,9 @@ async fn bridge_tcp_flow_loop<R, W, T>(
                 let Some(data) = data else {
                     break;
                 };
+                if !client_upload_allowed {
+                    break;
+                }
                 let write = await_with_optional_timeout(
                     operation_timeout,
                     write_stack_batch_to_remote(
@@ -3623,10 +3730,13 @@ fn handle_udp_packet(
     match flow_budget_state.admit_udp_flow(flows, key) {
         UdpFlowAdmission::Existing => {}
         UdpFlowAdmission::Admit { sequence } => {
-            let Some(target) = context.target_from_endpoint(packet.target, RoutingNetwork::Udp)
+            let Some(restored_target) =
+                context.restored_target_from_endpoint(packet.target, RoutingNetwork::Udp)
             else {
                 return;
             };
+            let provenance = restored_target.provenance;
+            let target = restored_target.target;
             let Some(task_permit) =
                 try_acquire_udp_task_permit(&context.udp_task_permits, flow_budget_state)
             else {
@@ -3641,6 +3751,7 @@ fn handle_udp_packet(
                 key,
                 sequence,
                 target,
+                provenance,
                 original_packet,
                 context.clone(),
                 from_stack,
@@ -3690,6 +3801,7 @@ async fn bridge_udp_flow(
     key: UdpFlowKey,
     generation: u64,
     target: Target,
+    provenance: FakeIpTargetProvenance,
     first_packet: Bytes,
     context: TunRuntimeContext,
     mut from_stack: mpsc::Receiver<Bytes>,
@@ -3705,13 +3817,13 @@ async fn bridge_udp_flow(
             .await;
         return;
     };
-    let sniffed_target = sniff_tun_udp_target(&context, &target, &first_payload);
+    let sniffed_target = sniff_tun_udp_target(&context, &target, provenance, &first_payload);
     let sniffed_protocol = sniffed_target.sniffed_protocol;
     let route_target = sniffed_target.route_target;
     let dial_target = sniffed_target.dial_target;
-    let outbound = match context
+    let selected = match context
         .outbound_router
-        .select_udp_outbound_for_session_with_resolver(
+        .select_udp_session_outbound_with_resolver(
             context.inbound_tag.as_deref(),
             &route_target,
             context.dns_resolver.as_ref(),
@@ -3738,6 +3850,12 @@ async fn bridge_udp_flow(
     };
 
     if context.runtime_logger.is_enabled() {
+        let selected_outbound = match &selected {
+            UdpSessionOutbound::Transport(outbound) => {
+                crate::debug_log::udp_outbound_label(outbound)
+            }
+            UdpSessionOutbound::Dns(_) => "dns",
+        };
         crate::debug_log::log_route_decision(
             &context.runtime_logger,
             crate::debug_log::RouteDecisionLog {
@@ -3747,10 +3865,37 @@ async fn bridge_udp_flow(
                 sniffed_protocol,
                 route_target: &route_target,
                 dial_target: &dial_target,
-                selected_outbound: crate::debug_log::udp_outbound_label(&outbound),
+                selected_outbound,
             },
         );
     }
+
+    let outbound = match selected {
+        UdpSessionOutbound::Transport(outbound) => outbound,
+        UdpSessionOutbound::Dns(outbound) => {
+            let Ok(dns_permit) = Arc::clone(&context.dns_udp_task_permits).try_acquire_owned()
+            else {
+                let _ = context
+                    .stack_tx
+                    .send(StackEvent::UdpClosed { key, generation })
+                    .await;
+                return;
+            };
+            bridge_udp_dns_outbound_flow(
+                key,
+                generation,
+                dial_target,
+                outbound,
+                context,
+                from_stack,
+                shutdown,
+                first_payload,
+                dns_permit,
+            )
+            .await;
+            return;
+        }
+    };
 
     if dial_target.port == 443 {
         if let UdpOutbound::Vless(outbound) = &outbound {
@@ -3813,6 +3958,85 @@ async fn bridge_udp_flow(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "TUN DNS UDP flow owns flow identity, routing, shutdown, and admission"
+)]
+async fn bridge_udp_dns_outbound_flow(
+    key: UdpFlowKey,
+    generation: u64,
+    routed_target: Target,
+    outbound: DnsOutbound,
+    context: TunRuntimeContext,
+    mut from_stack: mpsc::Receiver<Bytes>,
+    mut shutdown: watch::Receiver<bool>,
+    first_payload: Bytes,
+    _dns_permit: OwnedSemaphorePermit,
+) {
+    let client = key.client.into_endpoint();
+    let response_source = key.target.into_endpoint();
+    let path_payload_cap = dns_proxy::dns_udp_path_payload_cap(context.tun.mtu(), response_source);
+    let idle_timeout = UDP_IDLE_TIMEOUT.min(outbound.conn_idle_timeout());
+    let mut pending_payload = Some(first_payload);
+
+    loop {
+        let payload = match pending_payload.take() {
+            Some(payload) => payload,
+            None => {
+                tokio::select! {
+                    changed = shutdown.changed() => {
+                        if changed.is_err() || *shutdown.borrow() {
+                            break;
+                        }
+                        continue;
+                    }
+                    () = sleep(idle_timeout) => break,
+                    payload = from_stack.recv() => {
+                        let Some(payload) = payload else {
+                            break;
+                        };
+                        payload
+                    }
+                }
+            }
+        };
+
+        let outcome = tokio::select! {
+            changed = shutdown.changed() => {
+                if changed.is_err() || *shutdown.borrow() {
+                    break;
+                }
+                continue;
+            }
+            outcome = context.dns_outbound_runtime.execute_message(
+                &outbound,
+                &routed_target,
+                payload,
+                crate::dns_outbound_runtime::DnsClientTransport::Udp { path_payload_cap },
+            ) => outcome,
+        };
+        let crate::dns_outbound_runtime::DnsMessageOutcome::Reply(response) = outcome else {
+            continue;
+        };
+        let sent = tokio::select! {
+            changed = shutdown.changed() => changed.is_ok() && !*shutdown.borrow(),
+            sent = context.stack_tx.send(StackEvent::UdpDatagram {
+                client,
+                source: response_source,
+                payload: response,
+            }) => sent.is_ok(),
+        };
+        if !sent {
+            break;
+        }
+    }
+
+    let _ = context
+        .stack_tx
+        .send(StackEvent::UdpClosed { key, generation })
+        .await;
+}
+
 async fn read_first_tun_udp_payload(
     from_stack: &mut mpsc::Receiver<Bytes>,
     shutdown: &mut watch::Receiver<bool>,
@@ -3844,7 +4068,20 @@ impl TunUdpSniffedTarget {
         }
     }
 
-    fn sniffed(sniffed: crate::sniffing::SniffedTarget) -> Self {
+    fn from_sniffed(
+        target: &Target,
+        provenance: FakeIpTargetProvenance,
+        sniffed: Option<crate::sniffing::SniffedTarget>,
+    ) -> Self {
+        if provenance == FakeIpTargetProvenance::Mapped {
+            return Self::original(target);
+        }
+        let Some(mut sniffed) = sniffed else {
+            return Self::original(target);
+        };
+        if provenance == FakeIpTargetProvenance::InPoolUnmapped {
+            sniffed.dial_target = sniffed.route_target.clone();
+        }
         let sniffed_protocol = Some(sniffed.protocol);
         Self {
             route_target: sniffed.route_target,
@@ -3857,8 +4094,12 @@ impl TunUdpSniffedTarget {
 fn sniff_tun_udp_target(
     context: &TunRuntimeContext,
     target: &Target,
+    provenance: FakeIpTargetProvenance,
     first_payload: &[u8],
 ) -> TunUdpSniffedTarget {
+    if provenance == FakeIpTargetProvenance::Mapped {
+        return TunUdpSniffedTarget::from_sniffed(target, provenance, None);
+    }
     let Some(config) = context.sniffing.as_ref() else {
         return TunUdpSniffedTarget::original(target);
     };
@@ -3869,7 +4110,7 @@ fn sniff_tun_udp_target(
     else {
         return TunUdpSniffedTarget::original(target);
     };
-    TunUdpSniffedTarget::sniffed(sniffed)
+    TunUdpSniffedTarget::from_sniffed(target, provenance, Some(sniffed))
 }
 
 #[expect(
@@ -5078,6 +5319,23 @@ mod tests {
 
     const NORMAL_TCP_REMOTE_PENDING_LIMIT: usize = 4 * 1024 * 1024;
     const PRESSURE_TCP_REMOTE_PENDING_LIMIT: usize = 2 * 1024 * 1024;
+
+    fn test_fake_ip_mapper(
+        network: Ipv4Addr,
+        prefix: u8,
+        pool_size: u32,
+        ttl: u32,
+        query_strategy: ConfigDnsQueryStrategy,
+    ) -> FakeIpMapper {
+        let config = xray_config::DnsFakeIpConfig {
+            enabled: true,
+            ipv4_pool: xray_config::IpCidr::new(IpAddr::V4(network), prefix).unwrap(),
+            pool_size,
+            ttl,
+        };
+        FakeIpMapper::from_config(&config, query_strategy, &[TUN_DNS_ANCHOR, TUN_CLIENT_IPV4])
+            .unwrap()
+    }
 
     #[derive(Debug, Default)]
     struct CountingWrite {
@@ -6891,45 +7149,103 @@ mod tests {
     }
 
     #[test]
-    fn fake_ip_mapper_allocates_stable_ipv4_and_restores_domain_target() {
-        let mut mapper = FakeIpMapper::new(FakeIpRuntimeConfig {
-            ipv4_network: Ipv4Addr::new(198, 18, 0, 0),
-            ipv4_prefix: 15,
-            pool_size: 32_768,
-            ttl: 60,
-        })
-        .unwrap();
+    fn fake_ip_mapper_allocates_stable_ipv4_and_restores_domain_mapping() {
+        let mut mapper = test_fake_ip_mapper(
+            Ipv4Addr::new(198, 18, 0, 0),
+            15,
+            32_768,
+            60,
+            ConfigDnsQueryStrategy::UseIp,
+        );
 
-        let first = mapper.fake_ipv4_for_domain("Example.COM").unwrap();
-        let second = mapper.fake_ipv4_for_domain("example.com").unwrap();
-        let target = mapper
-            .target_for_endpoint(
-                IpEndpoint::new(IpAddress::Ipv4(first), 443),
-                RoutingNetwork::Tcp,
-            )
-            .unwrap();
+        let first = mapper.allocate_ipv4("Example.COM").unwrap();
+        let second = mapper.allocate_ipv4("example.com").unwrap();
+        let domain = mapper.domain_for_ipv4(first).unwrap();
 
         assert_eq!(first, Ipv4Addr::new(198, 18, 0, 3));
         assert_eq!(second, first);
+        assert_eq!(domain.as_ref(), "example.com");
+    }
+
+    fn tun_udp_sniffed_target(original: &Target, domain: &str) -> crate::sniffing::SniffedTarget {
+        let route_target = Target::new(
+            RoutingTargetAddr::Domain(domain.to_owned()),
+            original.port,
+            RoutingNetwork::Udp,
+        );
+        crate::sniffing::SniffedTarget {
+            route_target,
+            dial_target: original.clone(),
+            protocol: xray_config::SniffingDestination::Quic,
+        }
+    }
+
+    #[test]
+    fn mapped_fake_ip_keeps_tun_udp_target_a_over_sniffed_target_b() {
+        let mapped = Target::new(
+            RoutingTargetAddr::Domain("mapped-a.example".to_owned()),
+            443,
+            RoutingNetwork::Udp,
+        );
+        let result = TunUdpSniffedTarget::from_sniffed(
+            &mapped,
+            FakeIpTargetProvenance::Mapped,
+            Some(tun_udp_sniffed_target(&mapped, "sniffed-b.example")),
+        );
+
+        assert_eq!(result.route_target, mapped);
+        assert_eq!(result.dial_target, mapped);
+        assert_eq!(result.sniffed_protocol, None);
+    }
+
+    #[test]
+    fn mapped_fake_ip_suppresses_tun_tcp_content_sniffing() {
+        let config = InboundSniffingConfig {
+            enabled: true,
+            dest_override: vec![xray_config::SniffingDestination::Http],
+            metadata_only: false,
+            route_only: false,
+        };
+
+        assert!(!should_sniff_tun_tcp(
+            Some(&config),
+            FakeIpTargetProvenance::Mapped,
+        ));
+        assert!(should_sniff_tun_tcp(
+            Some(&config),
+            FakeIpTargetProvenance::InPoolUnmapped,
+        ));
+    }
+
+    #[test]
+    fn in_pool_unmapped_route_only_uses_sniffed_domain_for_tun_udp_dialing() {
+        let raw = Target::new(
+            RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(198, 18, 1, 7))),
+            443,
+            RoutingNetwork::Udp,
+        );
+        let result = TunUdpSniffedTarget::from_sniffed(
+            &raw,
+            FakeIpTargetProvenance::InPoolUnmapped,
+            Some(tun_udp_sniffed_target(&raw, "sniffed.example")),
+        );
+
+        assert_eq!(result.dial_target, result.route_target);
         assert_eq!(
-            target,
-            Target::new(
-                RoutingTargetAddr::Domain("example.com".to_owned()),
-                443,
-                RoutingNetwork::Tcp,
-            )
+            result.route_target.addr,
+            RoutingTargetAddr::Domain("sniffed.example".to_owned())
         );
     }
 
     #[test]
     fn fake_dns_response_answers_a_query_and_records_mapping() {
-        let mut mapper = FakeIpMapper::new(FakeIpRuntimeConfig {
-            ipv4_network: Ipv4Addr::new(198, 18, 0, 0),
-            ipv4_prefix: 15,
-            pool_size: 32_768,
-            ttl: 120,
-        })
-        .unwrap();
+        let mut mapper = test_fake_ip_mapper(
+            Ipv4Addr::new(198, 18, 0, 0),
+            15,
+            32_768,
+            120,
+            ConfigDnsQueryStrategy::UseIp,
+        );
         let query = build_dns_a_query(0x1203, "www.example.com");
 
         let response = mapper.fake_dns_response(&query, false).unwrap();
@@ -6945,51 +7261,49 @@ mod tests {
 
     #[test]
     fn fake_dns_response_use_ipv6_returns_nodata_without_mapping() {
-        let mut mapper = FakeIpMapper::new(FakeIpRuntimeConfig {
-            ipv4_network: Ipv4Addr::new(198, 18, 0, 0),
-            ipv4_prefix: 15,
-            pool_size: 32_768,
-            ttl: 120,
-        })
-        .unwrap()
-        .with_query_strategy(ConfigDnsQueryStrategy::UseIpv6);
+        let mut mapper = test_fake_ip_mapper(
+            Ipv4Addr::new(198, 18, 0, 0),
+            15,
+            32_768,
+            120,
+            ConfigDnsQueryStrategy::UseIpv6,
+        );
         let query = build_dns_a_query(0x1207, "www.example.com");
 
         let response = mapper.fake_dns_response(&query, false).unwrap();
 
         assert_eq!(dns_response_id(&response), Some(0x1207));
         assert_eq!(u16::from_be_bytes([response[6], response[7]]), 0);
-        assert!(mapper.by_domain.is_empty());
-        assert!(mapper.by_ipv4.is_empty());
+        assert_eq!(mapper.mapping_count(), 0);
     }
 
     #[test]
     fn fake_dns_response_returns_nodata_for_https_query_without_recording_mapping() {
-        let mut mapper = FakeIpMapper::new(FakeIpRuntimeConfig {
-            ipv4_network: Ipv4Addr::new(198, 18, 0, 0),
-            ipv4_prefix: 15,
-            pool_size: 32_768,
-            ttl: 120,
-        })
-        .unwrap();
+        let mut mapper = test_fake_ip_mapper(
+            Ipv4Addr::new(198, 18, 0, 0),
+            15,
+            32_768,
+            120,
+            ConfigDnsQueryStrategy::UseIp,
+        );
         let query = build_dns_query(0x1204, "www.example.com", 65, DNS_CLASS_IN);
 
         let response = mapper.fake_dns_response(&query, true).unwrap();
 
         assert_eq!(u16::from_be_bytes([response[2], response[3]]), 0x8180);
         assert_eq!(u16::from_be_bytes([response[6], response[7]]), 0);
-        assert!(mapper.by_domain.is_empty());
+        assert_eq!(mapper.mapping_count(), 0);
     }
 
     #[test]
     fn fake_dns_response_returns_nodata_for_aaaa_query() {
-        let mut mapper = FakeIpMapper::new(FakeIpRuntimeConfig {
-            ipv4_network: Ipv4Addr::new(198, 18, 0, 0),
-            ipv4_prefix: 15,
-            pool_size: 32_768,
-            ttl: 120,
-        })
-        .unwrap();
+        let mut mapper = test_fake_ip_mapper(
+            Ipv4Addr::new(198, 18, 0, 0),
+            15,
+            32_768,
+            120,
+            ConfigDnsQueryStrategy::UseIp,
+        );
         let query = build_dns_query(0x1205, "www.example.com", DNS_TYPE_AAAA, DNS_CLASS_IN);
 
         let response = mapper.fake_dns_response(&query, false).unwrap();
@@ -6999,30 +7313,30 @@ mod tests {
 
     #[test]
     fn fake_dns_response_does_not_allocate_mapping_for_non_in_a_query() {
-        let mut mapper = FakeIpMapper::new(FakeIpRuntimeConfig {
-            ipv4_network: Ipv4Addr::new(198, 18, 0, 0),
-            ipv4_prefix: 15,
-            pool_size: 32_768,
-            ttl: 120,
-        })
-        .unwrap();
+        let mut mapper = test_fake_ip_mapper(
+            Ipv4Addr::new(198, 18, 0, 0),
+            15,
+            32_768,
+            120,
+            ConfigDnsQueryStrategy::UseIp,
+        );
         let query = build_dns_query(0x1206, "www.example.com", DNS_TYPE_A, 3);
 
         let response = mapper.fake_dns_response(&query, false).unwrap();
 
         assert_eq!(u16::from_be_bytes([response[6], response[7]]), 0);
-        assert!(mapper.by_domain.is_empty());
+        assert_eq!(mapper.mapping_count(), 0);
     }
 
     #[test]
     fn fake_dns_response_leaves_unsupported_query_unhandled_without_local_anchor() {
-        let mut mapper = FakeIpMapper::new(FakeIpRuntimeConfig {
-            ipv4_network: Ipv4Addr::new(198, 18, 0, 0),
-            ipv4_prefix: 15,
-            pool_size: 32_768,
-            ttl: 120,
-        })
-        .unwrap();
+        let mut mapper = test_fake_ip_mapper(
+            Ipv4Addr::new(198, 18, 0, 0),
+            15,
+            32_768,
+            120,
+            ConfigDnsQueryStrategy::UseIp,
+        );
         let query = build_dns_query(0x1207, "www.example.com", 65, DNS_CLASS_IN);
 
         let response = mapper.fake_dns_response(&query, false);
@@ -7031,72 +7345,39 @@ mod tests {
     }
 
     #[test]
-    fn fake_dns_response_rolls_over_single_entry_pool() {
-        let mut mapper = FakeIpMapper::new(FakeIpRuntimeConfig {
-            ipv4_network: Ipv4Addr::new(198, 19, 0, 1),
-            ipv4_prefix: 32,
-            pool_size: 1,
-            ttl: 120,
-        })
-        .unwrap();
+    fn fake_dns_response_refuses_to_reassign_single_entry_pool_before_ttl() {
+        let mut mapper = test_fake_ip_mapper(
+            Ipv4Addr::new(198, 19, 0, 1),
+            32,
+            1,
+            120,
+            ConfigDnsQueryStrategy::UseIp,
+        );
         let first_query = build_dns_a_query(0x1208, "first.example.com");
         let second_query = build_dns_a_query(0x1209, "second.example.com");
-        let first_response = mapper.fake_dns_response(&first_query, false).unwrap();
+        mapper.fake_dns_response(&first_query, false).unwrap();
 
         let response = mapper.fake_dns_response(&second_query, false).unwrap();
 
-        assert_eq!(u16::from_be_bytes([response[2], response[3]]) & 0x000f, 0);
-        assert_eq!(
-            dns_response_answer_ipv4(&response),
-            dns_response_answer_ipv4(&first_response)
-        );
+        assert_eq!(u16::from_be_bytes([response[2], response[3]]) & 0x000f, 2);
+        assert_eq!(dns_response_answer_ipv4(&response), None);
         assert_eq!(
             mapper
                 .domain_for_ipv4(Ipv4Addr::new(198, 19, 0, 1))
                 .as_deref(),
-            Some("second.example.com")
+            Some("first.example.com")
         );
-    }
-
-    #[test]
-    fn fake_ip_mapper_evicts_least_recently_used_mapping_at_limit() {
-        let mut mapper = FakeIpMapper::new(FakeIpRuntimeConfig {
-            ipv4_network: Ipv4Addr::new(198, 18, 0, 0),
-            ipv4_prefix: 15,
-            pool_size: 2,
-            ttl: 120,
-        })
-        .unwrap();
-
-        let first = mapper.fake_ipv4_for_domain("first.example").unwrap();
-        let second = mapper.fake_ipv4_for_domain("second.example").unwrap();
-        assert_eq!(mapper.fake_ipv4_for_domain("first.example"), Some(first));
-        let third = mapper.fake_ipv4_for_domain("third.example").unwrap();
-
-        assert_eq!(first, Ipv4Addr::new(198, 18, 0, 3));
-        assert_eq!(second, Ipv4Addr::new(198, 18, 0, 4));
-        assert_eq!(third, Ipv4Addr::new(198, 18, 0, 5));
-        assert_eq!(
-            mapper.domain_for_ipv4(first).as_deref(),
-            Some("first.example")
-        );
-        assert!(mapper.domain_for_ipv4(second).is_none());
-        assert_eq!(
-            mapper.domain_for_ipv4(third).as_deref(),
-            Some("third.example")
-        );
-        assert_eq!(mapper.by_domain.len(), 2);
     }
 
     #[test]
     fn fake_dns_udp_packet_builds_tun_reply_packet() {
-        let mut mapper = FakeIpMapper::new(FakeIpRuntimeConfig {
-            ipv4_network: Ipv4Addr::new(198, 18, 0, 0),
-            ipv4_prefix: 15,
-            pool_size: 32_768,
-            ttl: 60,
-        })
-        .unwrap();
+        let mut mapper = test_fake_ip_mapper(
+            Ipv4Addr::new(198, 18, 0, 0),
+            15,
+            32_768,
+            60,
+            ConfigDnsQueryStrategy::UseIp,
+        );
         let request = build_ipv4_udp_packet(
             Ipv4Addr::new(10, 10, 0, 2),
             53_000,

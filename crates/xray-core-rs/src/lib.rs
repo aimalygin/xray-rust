@@ -1,4 +1,8 @@
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    net::SocketAddr,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use async_trait::async_trait;
 use thiserror::Error;
@@ -22,6 +26,9 @@ use xray_tun::{TunConfig, TunEndpoint};
 
 mod debug_log;
 mod dns;
+mod dns_outbound;
+mod dns_outbound_runtime;
+mod fake_dns;
 mod http;
 mod outbound;
 mod policy;
@@ -38,14 +45,18 @@ const TUN_INBOUND_QUEUE_DEPTH: usize = 1024;
 const TUN_OUTBOUND_QUEUE_DEPTH: usize = 4096;
 const GENERATED_DNS_TAG_PREFIX: &str = "xray.system.";
 
+pub use dns_outbound::{
+    build_refused_response, parse_dns_query, CompiledDnsOutboundPolicy, DnsHijackUnsafe,
+    DnsOutboundDecision, DnsOutboundQuery, DnsQueryParseError,
+};
 pub use outbound::{
     open_tcp_stream_with_resolver_and_dialer, open_vless_tcp_stream,
     open_vless_tcp_stream_with_resolver, open_vless_tcp_stream_with_resolver_and_dialer,
     open_vless_udp_stream_with_resolver_and_dialer, select_tcp_outbound,
     select_tcp_outbound_for_session, select_tcp_outbound_for_session_with_resolver,
     select_udp_outbound_for_session, select_udp_outbound_for_session_with_resolver,
-    select_vless_tcp_outbound, OutboundRouter, TcpOutbound, UdpOutbound, VlessTcpOutbound,
-    VlessUdpFraming,
+    select_vless_tcp_outbound, DnsOutbound, OutboundRouter, TcpOutbound, UdpOutbound,
+    VlessTcpOutbound, VlessUdpFraming,
 };
 pub use runtime_log::{RuntimeLogConfig, RuntimeLogger};
 pub use startup_probe::{StartupProbeError, StartupProbeOptions};
@@ -93,6 +104,56 @@ pub enum TunRuntimeProfile {
     Desktop,
     LowMemory,
     Throughput,
+}
+
+#[cfg(any(
+    target_os = "android",
+    target_os = "ios",
+    target_os = "tvos",
+    target_os = "watchos"
+))]
+const DEFAULT_DNS_RUNTIME_PROFILE: TunRuntimeProfile = TunRuntimeProfile::Mobile;
+
+#[cfg(not(any(
+    target_os = "android",
+    target_os = "ios",
+    target_os = "tvos",
+    target_os = "watchos"
+)))]
+const DEFAULT_DNS_RUNTIME_PROFILE: TunRuntimeProfile = TunRuntimeProfile::Desktop;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DnsRuntimeLimits {
+    max_concurrent_operations: usize,
+    idle_ttl_cap: Duration,
+}
+
+impl DnsRuntimeLimits {
+    fn for_profile(profile: TunRuntimeProfile) -> Self {
+        match profile {
+            TunRuntimeProfile::Default => Self::for_profile(DEFAULT_DNS_RUNTIME_PROFILE),
+            TunRuntimeProfile::LowMemory => Self {
+                max_concurrent_operations: 8,
+                idle_ttl_cap: Duration::from_secs(15),
+            },
+            TunRuntimeProfile::Mobile => Self {
+                max_concurrent_operations: 16,
+                idle_ttl_cap: Duration::from_secs(30),
+            },
+            TunRuntimeProfile::MobilePlus => Self {
+                max_concurrent_operations: 32,
+                idle_ttl_cap: Duration::from_secs(45),
+            },
+            TunRuntimeProfile::Desktop => Self {
+                max_concurrent_operations: 32,
+                idle_ttl_cap: Duration::from_secs(60),
+            },
+            TunRuntimeProfile::Throughput => Self {
+                max_concurrent_operations: 64,
+                idle_ttl_cap: Duration::from_secs(60),
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -162,6 +223,8 @@ pub enum CoreError {
     NoSupportedOutbound,
     #[error("unauthenticated SOCKS/HTTP listener requires explicit LAN exposure permission")]
     UnauthenticatedLanExposure,
+    #[error("invalid fake-IP configuration")]
+    InvalidFakeIpConfiguration,
     #[error("outbound network is not supported")]
     UnsupportedOutboundNetwork,
     #[error("outbound security is not supported")]
@@ -349,6 +412,17 @@ impl Core {
         tun_runtime_options: TunRuntimeOptions,
         managed_dns_resolver: bool,
     ) -> Result<Self, CoreError> {
+        if config.dns.fake_ip.as_ref().is_some_and(|fake_ip| {
+            fake_ip.enabled
+                && fake_dns::FakeIpMapper::from_config(
+                    fake_ip,
+                    config.dns.query_strategy,
+                    &[tun::TUN_DNS_ANCHOR, tun::TUN_CLIENT_IPV4],
+                )
+                .is_none()
+        }) {
+            return Err(CoreError::InvalidFakeIpConfiguration);
+        }
         ensure_effective_dns_tag(&mut config);
         let shutdown = Shutdown::new();
         let tun_queue_options = tun_runtime_options.tun_queue_options();
@@ -409,43 +483,75 @@ impl Core {
             .dns_bootstrap_resolver
             .clone()
             .unwrap_or_else(|| Arc::clone(&self.dns_resolver));
-        if !self.managed_dns_resolver {
-            return dns::RuntimeDnsResolvers {
-                destination: Arc::clone(&self.dns_resolver),
-                bootstrap,
-            };
-        }
-
-        let fallback: Arc<dyn DnsResolver> = match self.tun_runtime_options.dns_bootstrap {
-            DnsBootstrapMode::System => system_dns_resolver(),
-            DnsBootstrapMode::StaticOnly => Arc::new(FailClosedDnsResolver),
-        };
         let forbidden_servers: Vec<SocketAddr> = if forbid_tun_runtime_servers {
             vec![
-                SocketAddr::new(std::net::IpAddr::V4(tun::TUN_DNS_ANCHOR), tun::DNS_PORT),
-                SocketAddr::new(std::net::IpAddr::V4(tun::TUN_CLIENT_IPV4), tun::DNS_PORT),
+                SocketAddr::new(std::net::IpAddr::V4(tun::TUN_DNS_ANCHOR), 0),
+                SocketAddr::new(std::net::IpAddr::V4(tun::TUN_CLIENT_IPV4), 0),
             ]
         } else {
             Vec::new()
         };
-        let query_transport: Arc<dyn DnsQueryTransport> =
-            Arc::new(dns::RoutedDnsQueryTransport::new(
-                Arc::clone(outbound_router),
-                Arc::clone(&bootstrap),
-                Arc::clone(&self.transport_dialer),
-                forbidden_servers,
-            ));
-        let resolver = configured_dns_resolver_from_config_with_transport(
-            config.as_ref(),
-            fallback,
-            None,
-            Some(Arc::clone(&self.dns_name_server_policies)),
-            Some(query_transport),
-            transport_dns_query_strategy(config.dns.query_strategy),
+        let dns_limits = DnsRuntimeLimits::for_profile(self.tun_runtime_options.profile);
+        let direct_executor = Arc::new(dns_outbound_runtime::DnsDirectExecutor::with_pool_config(
+            Arc::clone(&bootstrap),
+            Arc::clone(&self.transport_dialer),
+            forbidden_servers.clone(),
+            dns_outbound_runtime::DnsDirectPoolConfig::from_runtime_limit(
+                dns_limits.max_concurrent_operations,
+                dns_limits.idle_ttl_cap,
+            ),
+        ));
+        let fake_ip_mapper = config
+            .dns
+            .fake_ip
+            .as_ref()
+            .and_then(|fake_ip| {
+                fake_dns::FakeIpMapper::from_config(
+                    fake_ip,
+                    config.dns.query_strategy,
+                    &[tun::TUN_DNS_ANCHOR, tun::TUN_CLIENT_IPV4],
+                )
+            })
+            .map(|mapper| Arc::new(Mutex::new(mapper)));
+        let destination = if self.managed_dns_resolver {
+            let fallback: Arc<dyn DnsResolver> = match self.tun_runtime_options.dns_bootstrap {
+                DnsBootstrapMode::System => system_dns_resolver(),
+                DnsBootstrapMode::StaticOnly => Arc::new(FailClosedDnsResolver),
+            };
+            let query_transport: Arc<dyn DnsQueryTransport> =
+                Arc::new(dns::RoutedDnsQueryTransport::with_direct_executor(
+                    Arc::clone(outbound_router),
+                    Arc::clone(&bootstrap),
+                    Arc::clone(&self.transport_dialer),
+                    forbidden_servers.clone(),
+                    Arc::clone(&direct_executor),
+                    dns_limits.max_concurrent_operations,
+                ));
+            let resolver = configured_dns_resolver_from_config_with_transport(
+                config.as_ref(),
+                fallback,
+                None,
+                Some(Arc::clone(&self.dns_name_server_policies)),
+                Some(query_transport),
+                transport_dns_query_strategy(config.dns.query_strategy),
+            );
+            Arc::new(CachingDnsResolver::new(resolver)) as Arc<dyn DnsResolver>
+        } else {
+            Arc::clone(&self.dns_resolver)
+        };
+        let outbound = Arc::new(
+            dns_outbound_runtime::DnsOutboundRuntime::with_direct_executor_and_fake_ip(
+                Arc::clone(&destination),
+                direct_executor,
+                fake_ip_mapper,
+                config.dns.hosts.clone(),
+                dns_limits.max_concurrent_operations,
+            ),
         );
         dns::RuntimeDnsResolvers {
-            destination: Arc::new(CachingDnsResolver::new(resolver)),
+            destination,
             bootstrap,
+            outbound,
         }
     }
 
@@ -578,6 +684,7 @@ impl Core {
                 Arc::clone(&outbound_router),
                 Arc::clone(&runtime_dns_resolvers.destination),
                 Some(Arc::clone(&runtime_dns_resolvers.bootstrap)),
+                Arc::clone(&runtime_dns_resolvers.outbound),
                 Arc::clone(&self.transport_dialer),
                 tun_runtime_options,
                 self.runtime_logger.clone(),
@@ -945,8 +1052,8 @@ mod tests {
     use super::{
         configured_dns_resolver_for_config, configured_dns_resolver_from_config_with_transport,
         host_only_dns_resolver_for_config, into_transport_dns_ip_filter,
-        static_only_dns_resolver_for_config, take_name_server_policy_set, Core,
-        TransportDnsQueryStrategy, TunRuntimeOptions,
+        static_only_dns_resolver_for_config, take_name_server_policy_set, Core, DnsRuntimeLimits,
+        TransportDnsQueryStrategy, TunRuntimeOptions, TunRuntimeProfile,
     };
 
     struct StaticResolver;
@@ -965,6 +1072,29 @@ mod tests {
     }
 
     struct PendingResolver;
+
+    #[test]
+    fn dns_runtime_resources_follow_runtime_profiles() {
+        for (profile, operations, idle_ttl) in [
+            (TunRuntimeProfile::LowMemory, 8, Duration::from_secs(15)),
+            (TunRuntimeProfile::Mobile, 16, Duration::from_secs(30)),
+            (TunRuntimeProfile::MobilePlus, 32, Duration::from_secs(45)),
+            (TunRuntimeProfile::Desktop, 32, Duration::from_secs(60)),
+            (TunRuntimeProfile::Throughput, 64, Duration::from_secs(60)),
+        ] {
+            assert_eq!(
+                DnsRuntimeLimits::for_profile(profile),
+                DnsRuntimeLimits {
+                    max_concurrent_operations: operations,
+                    idle_ttl_cap: idle_ttl,
+                }
+            );
+        }
+        assert_eq!(
+            DnsRuntimeLimits::for_profile(TunRuntimeProfile::Default),
+            DnsRuntimeLimits::for_profile(super::DEFAULT_DNS_RUNTIME_PROFILE)
+        );
+    }
 
     #[async_trait]
     impl DnsResolver for PendingResolver {

@@ -1491,7 +1491,7 @@ fn compile_dns_ip_filter(filter: DnsIpFilter) -> Option<CompiledDnsIpFilter> {
 }
 
 #[derive(Debug, Default)]
-struct CompiledDomainMatcherSet {
+pub struct CompiledDomainMatcherSet {
     full: HashSet<Box<str>>,
     suffix: DomainSuffixTrie,
     matches_empty_suffix: bool,
@@ -1500,7 +1500,7 @@ struct CompiledDomainMatcherSet {
 }
 
 impl CompiledDomainMatcherSet {
-    fn new(matchers: Vec<TransportDomainMatcher>) -> Self {
+    pub fn new(matchers: Vec<TransportDomainMatcher>) -> Self {
         let mut compiled = Self::default();
         for matcher in matchers {
             match matcher {
@@ -1528,7 +1528,7 @@ impl CompiledDomainMatcherSet {
         compiled
     }
 
-    fn matches(&self, lowercase_domain: &str) -> bool {
+    pub fn matches(&self, lowercase_domain: &str) -> bool {
         let normalized = lowercase_domain.trim_end_matches('.');
         self.full.contains(normalized)
             || self.matches_empty_suffix && normalized.is_empty()
@@ -1543,7 +1543,7 @@ impl CompiledDomainMatcherSet {
                 .any(|regex| regex.matches_lowercase(lowercase_domain))
     }
 
-    fn pattern_bytes(&self) -> usize {
+    pub fn pattern_bytes(&self) -> usize {
         self.full.iter().map(|pattern| pattern.len()).sum::<usize>()
             + self.suffix.pattern_bytes
             + self

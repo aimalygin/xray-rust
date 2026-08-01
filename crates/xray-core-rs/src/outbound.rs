@@ -1,16 +1,17 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io;
 use std::net::{IpAddr, SocketAddr};
 use std::num::NonZeroUsize;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
 use xray_config::{
-    CoreConfig, Network, OutboundConfig, OutboundSettings, RoutingDomainStrategy, StreamSecurity,
-    StreamSettings, TargetAddr, VlessUser,
+    CoreConfig, DnsOutboundSettings, Network, OutboundConfig, OutboundSettings,
+    RoutingDomainStrategy, RoutingRule, StreamSecurity, StreamSettings, TargetAddr, VlessUser,
 };
 use xray_proxy::vless::{
     encode_request_header, VisionStream, VisionStreamIo, VlessCommand, VlessRequest,
@@ -22,10 +23,13 @@ use xray_transport::{
     SystemDnsResolver, TlsClientConfig, TransportDialer, TransportStream,
 };
 
-use crate::CoreError;
+use crate::policy::effective_policy_for_level;
+use crate::{CompiledDnsOutboundPolicy, CoreError};
 
 const VISION_FLOW: &str = "xtls-rprx-vision";
 const VISION_UDP443_FLOW: &str = "xtls-rprx-vision-udp443";
+const DNS_OUTBOUND_HARD_OPERATION_TIMEOUT: Duration = Duration::from_secs(5);
+static NEXT_DNS_OUTBOUND_RUNTIME_IDENTITY: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum VisionFlow {
@@ -242,6 +246,43 @@ struct VlessTcpOutboundPayload {
 }
 
 #[derive(Debug, Clone)]
+pub struct DnsOutbound {
+    payload: Arc<DnsOutboundPayload>,
+}
+
+#[derive(Debug)]
+struct DnsOutboundPayload {
+    runtime_identity: u64,
+    settings: DnsOutboundSettings,
+    policy: CompiledDnsOutboundPolicy,
+    stream_network: Network,
+    tcp_connector: DnsTcpConnector,
+    happy_eyeballs: DnsHappyEyeballsMode,
+    conn_idle_timeout: Duration,
+    operation_timeout: Duration,
+}
+
+/// TCP connector selected from the DNS outbound's own `streamSettings`.
+///
+/// Xray derives an omitted TLS server name from the rewritten destination at
+/// dial time, so that case cannot be represented by a static connector.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum DnsTcpConnector {
+    Static(ConnectorConfig),
+    TlsFromTarget { allow_insecure: bool },
+}
+
+/// Distinguishes an omitted Happy Eyeballs policy from Xray's explicit
+/// feature-off sentinel. DNS supplies its mobile-friendly fallback only when
+/// the setting is absent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DnsHappyEyeballsMode {
+    DnsDefault,
+    Disabled,
+    Configured(HappyEyeballsConfig),
+}
+
+#[derive(Debug, Clone)]
 pub enum TcpOutbound {
     Freedom,
     FreedomHappyEyeballs(HappyEyeballsConfig),
@@ -258,6 +299,163 @@ pub(crate) struct SelectedTcpOutbound {
 pub enum UdpOutbound {
     Freedom,
     Vless(Box<VlessTcpOutbound>),
+}
+
+/// One configured handler selected for a TCP session. DNS remains a message
+/// handler rather than pretending to be a byte-stream transport.
+#[derive(Debug, Clone)]
+pub(crate) enum TcpSessionOutbound {
+    Transport(TcpOutbound),
+    Dns(DnsOutbound),
+}
+
+/// One configured handler selected for a UDP session. Keeping this combined
+/// result avoids performing routing (and an IPIfNonMatch lookup) twice.
+#[derive(Debug, Clone)]
+pub(crate) enum UdpSessionOutbound {
+    Transport(UdpOutbound),
+    Dns(DnsOutbound),
+}
+
+impl DnsOutbound {
+    #[cfg(test)]
+    pub(crate) fn new(settings: DnsOutboundSettings) -> Self {
+        Self::new_with_conn_idle(
+            settings,
+            crate::policy::EffectivePolicy::default().conn_idle,
+        )
+    }
+
+    #[cfg(test)]
+    fn new_with_conn_idle(settings: DnsOutboundSettings, conn_idle_timeout: Duration) -> Self {
+        Self::new_with_transport(
+            settings,
+            Network::Tcp,
+            DnsTcpConnector::Static(ConnectorConfig::Tcp),
+            DnsHappyEyeballsMode::DnsDefault,
+            conn_idle_timeout,
+        )
+    }
+
+    fn new_with_stream(
+        settings: DnsOutboundSettings,
+        stream: &StreamSettings,
+        conn_idle_timeout: Duration,
+    ) -> Result<Self, CoreError> {
+        let tcp_connector = dns_tcp_connector(stream)?;
+        let happy_eyeballs = dns_happy_eyeballs_mode(stream);
+        Ok(Self::new_with_transport(
+            settings,
+            stream.network,
+            tcp_connector,
+            happy_eyeballs,
+            conn_idle_timeout,
+        ))
+    }
+
+    fn new_with_transport(
+        settings: DnsOutboundSettings,
+        stream_network: Network,
+        tcp_connector: DnsTcpConnector,
+        happy_eyeballs: DnsHappyEyeballsMode,
+        conn_idle_timeout: Duration,
+    ) -> Self {
+        let policy = CompiledDnsOutboundPolicy::new(&settings);
+        let operation_timeout = conn_idle_timeout.min(DNS_OUTBOUND_HARD_OPERATION_TIMEOUT);
+        Self {
+            payload: Arc::new(DnsOutboundPayload {
+                runtime_identity: NEXT_DNS_OUTBOUND_RUNTIME_IDENTITY
+                    .fetch_add(1, Ordering::Relaxed),
+                settings,
+                policy,
+                stream_network,
+                tcp_connector,
+                happy_eyeballs,
+                conn_idle_timeout,
+                operation_timeout,
+            }),
+        }
+    }
+
+    pub fn settings(&self) -> &DnsOutboundSettings {
+        &self.payload.settings
+    }
+
+    pub fn policy(&self) -> &CompiledDnsOutboundPolicy {
+        &self.payload.policy
+    }
+
+    pub(crate) fn conn_idle_timeout(&self) -> Duration {
+        self.payload.conn_idle_timeout
+    }
+
+    pub(crate) fn operation_timeout(&self) -> Duration {
+        self.payload.operation_timeout
+    }
+
+    pub(crate) fn tcp_connector_for(&self, target: &Target) -> Result<ConnectorConfig, CoreError> {
+        if self.payload.stream_network != Network::Tcp {
+            return Err(CoreError::UnsupportedOutboundNetwork);
+        }
+        match &self.payload.tcp_connector {
+            DnsTcpConnector::Static(connector) => Ok(connector.clone()),
+            DnsTcpConnector::TlsFromTarget { allow_insecure } => {
+                let server_name = match &target.addr {
+                    RoutingTargetAddr::Domain(domain) if !domain.is_empty() => domain.clone(),
+                    RoutingTargetAddr::Domain(_) => {
+                        return Err(CoreError::UnsupportedOutboundSecurity);
+                    }
+                    RoutingTargetAddr::Ip(ip) => ip.to_string(),
+                };
+                Ok(ConnectorConfig::Tls(TlsClientConfig {
+                    server_name,
+                    allow_insecure: *allow_insecure,
+                }))
+            }
+        }
+    }
+
+    pub(crate) fn happy_eyeballs_mode(&self) -> DnsHappyEyeballsMode {
+        self.payload.happy_eyeballs
+    }
+
+    pub(crate) fn supports_direct_udp(&self) -> bool {
+        matches!(
+            self.payload.tcp_connector,
+            DnsTcpConnector::Static(ConnectorConfig::Tcp)
+        )
+    }
+
+    /// Stable identity of one compiled DNS outbound for runtime resource
+    /// partitioning. Clones share it; separately compiled handlers never do,
+    /// even when their public settings happen to compare equal.
+    pub(crate) fn runtime_identity(&self) -> u64 {
+        self.payload.runtime_identity
+    }
+
+    /// Applies Xray's component-wise DNS rewrite while retaining the original
+    /// destination for every omitted field.
+    pub fn rewrite_target(&self, original: &Target) -> Target {
+        let settings = self.settings();
+        let addr = settings.rewrite_address.as_ref().map_or_else(
+            || original.addr.clone(),
+            |address| match address {
+                TargetAddr::Ip(ip) => RoutingTargetAddr::Ip(*ip),
+                TargetAddr::Domain(domain) => RoutingTargetAddr::Domain(domain.clone()),
+            },
+        );
+        let port = if settings.rewrite_port == 0 {
+            original.port
+        } else {
+            settings.rewrite_port
+        };
+        let network = match settings.rewrite_network {
+            None => original.network,
+            Some(Network::Tcp) => RoutingNetwork::Tcp,
+            Some(Network::Udp) => RoutingNetwork::Udp,
+        };
+        Target::new(addr, port, network)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -339,7 +537,134 @@ impl CachedOutboundError {
 struct CachedOutboundEntry {
     tcp: OnceLock<Result<TcpOutbound, CachedOutboundError>>,
     udp: OnceLock<Result<UdpOutbound, CachedOutboundError>>,
+    dns: OnceLock<Result<DnsOutbound, CachedOutboundError>>,
     vless: OnceLock<Result<VlessTcpOutbound, CachedOutboundError>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DnsRoutePortRange {
+    start: u16,
+    end: u16,
+}
+
+impl DnsRoutePortRange {
+    const ALL: Self = Self {
+        start: 0,
+        end: u16::MAX,
+    };
+
+    fn contains(self, port: u16) -> bool {
+        self.start <= port && port <= self.end
+    }
+}
+
+#[derive(Debug, Default)]
+struct DnsRouteNetworkIndex {
+    tcp: Box<[DnsRoutePortRange]>,
+    udp: Box<[DnsRoutePortRange]>,
+}
+
+impl DnsRouteNetworkIndex {
+    fn contains(&self, network: Network, port: u16) -> bool {
+        let ranges = match network {
+            Network::Tcp => &self.tcp,
+            Network::Udp => &self.udp,
+        };
+        let insertion = ranges.partition_point(|range| range.start <= port);
+        insertion > 0 && ranges[insertion - 1].contains(port)
+    }
+}
+
+#[derive(Debug, Default)]
+struct DnsRouteNetworkIndexBuilder {
+    tcp: Vec<DnsRoutePortRange>,
+    udp: Vec<DnsRoutePortRange>,
+}
+
+impl DnsRouteNetworkIndexBuilder {
+    fn add_rule(&mut self, rule: &RoutingRule) {
+        if rule.networks.is_empty() {
+            self.add_ports(Network::Tcp, rule);
+            self.add_ports(Network::Udp, rule);
+            return;
+        }
+
+        for network in rule.networks.iter().copied() {
+            self.add_ports(network, rule);
+        }
+    }
+
+    fn add_ports(&mut self, network: Network, rule: &RoutingRule) {
+        let ranges = match network {
+            Network::Tcp => &mut self.tcp,
+            Network::Udp => &mut self.udp,
+        };
+        if rule.port_ranges.is_empty() {
+            ranges.push(DnsRoutePortRange::ALL);
+        } else {
+            ranges.extend(rule.port_ranges.iter().map(|range| DnsRoutePortRange {
+                start: range.start(),
+                end: range.end(),
+            }));
+        }
+    }
+
+    fn finish(self) -> DnsRouteNetworkIndex {
+        DnsRouteNetworkIndex {
+            tcp: merge_dns_route_port_ranges(self.tcp),
+            udp: merge_dns_route_port_ranges(self.udp),
+        }
+    }
+}
+
+fn merge_dns_route_port_ranges(mut ranges: Vec<DnsRoutePortRange>) -> Box<[DnsRoutePortRange]> {
+    ranges.sort_unstable_by_key(|range| (range.start, range.end));
+    let mut merged: Vec<DnsRoutePortRange> = Vec::with_capacity(ranges.len());
+    for range in ranges {
+        if let Some(previous) = merged.last_mut() {
+            if range.start <= previous.end.saturating_add(1) {
+                previous.end = previous.end.max(range.end);
+                continue;
+            }
+        }
+        merged.push(range);
+    }
+    merged.into_boxed_slice()
+}
+
+#[derive(Debug, Default)]
+struct DnsRoutePrefilter {
+    network_ports: DnsRouteNetworkIndex,
+    wildcard_inbound: bool,
+    tagged_inbounds: HashSet<String>,
+}
+
+impl DnsRoutePrefilter {
+    fn new<'a>(rules: impl Iterator<Item = &'a RoutingRule>) -> Self {
+        let mut network_ports = DnsRouteNetworkIndexBuilder::default();
+        let mut wildcard_inbound = false;
+        let mut tagged_inbounds = HashSet::new();
+        for rule in rules {
+            network_ports.add_rule(rule);
+            if rule.inbound_tags.is_empty() {
+                wildcard_inbound = true;
+                continue;
+            }
+            tagged_inbounds.extend(rule.inbound_tags.iter().cloned());
+        }
+
+        Self {
+            network_ports: network_ports.finish(),
+            wildcard_inbound,
+            tagged_inbounds,
+        }
+    }
+
+    fn may_match(&self, inbound_tag: Option<&str>, network: Network, port: u16) -> bool {
+        self.network_ports.contains(network, port)
+            && (self.wildcard_inbound
+                || inbound_tag.is_some_and(|tag| self.tagged_inbounds.contains(tag)))
+    }
 }
 
 /// Persistent outbound selector and lazy compiler for one immutable core config.
@@ -351,6 +676,9 @@ struct CachedOutboundEntry {
 pub struct OutboundRouter {
     config: Arc<CoreConfig>,
     first_tag_index: HashMap<String, usize>,
+    dns_route_prefilter: DnsRoutePrefilter,
+    default_is_dns: bool,
+    default_requires_selection: bool,
     entries: Box<[CachedOutboundEntry]>,
 }
 
@@ -362,6 +690,23 @@ impl OutboundRouter {
                 first_tag_index.entry(tag.clone()).or_insert(index);
             }
         }
+        let is_dns_index =
+            |index: usize| matches!(config.outbounds[index].settings, OutboundSettings::Dns(_));
+        let dns_route_prefilter =
+            DnsRoutePrefilter::new(config.routing.rules.iter().filter(|rule| {
+                first_tag_index
+                    .get(&rule.outbound_tag)
+                    .is_some_and(|index| is_dns_index(*index))
+            }));
+        let default_index = config
+            .default_outbound_tag
+            .as_deref()
+            .and_then(|tag| first_tag_index.get(tag).copied())
+            .or_else(|| config.default_outbound_tag.is_none().then_some(0))
+            .filter(|index| *index < config.outbounds.len());
+        let default_is_dns = default_index.is_some_and(is_dns_index);
+        let default_requires_selection =
+            config.default_outbound_tag.is_some() && default_index.is_none();
         let entries = (0..config.outbounds.len())
             .map(|_| CachedOutboundEntry::default())
             .collect::<Vec<_>>()
@@ -369,12 +714,15 @@ impl OutboundRouter {
         Self {
             config,
             first_tag_index,
+            dns_route_prefilter,
+            default_is_dns,
+            default_requires_selection,
             entries,
         }
     }
 
     pub fn select_tcp_outbound(&self) -> Result<TcpOutbound, CoreError> {
-        let index = self.select_configured_index(None, None, None)?;
+        let index = self.select_configured_index(None, None, None, None, None)?;
         self.cached_tcp_outbound(index)
     }
 
@@ -391,8 +739,13 @@ impl OutboundRouter {
         inbound_tag: Option<&str>,
         target: &Target,
     ) -> Result<TcpOutbound, CoreError> {
-        let index =
-            self.select_configured_index(inbound_tag, target_domain(target), target_ip(target))?;
+        let index = self.select_configured_index(
+            inbound_tag,
+            target_domain(target),
+            target_ip(target),
+            Some(target_network(target)),
+            Some(target.port),
+        )?;
         self.cached_tcp_outbound(index)
     }
 
@@ -409,8 +762,13 @@ impl OutboundRouter {
         target: &Target,
         include_tag: bool,
     ) -> Result<SelectedTcpOutbound, CoreError> {
-        let index =
-            self.select_configured_index(inbound_tag, target_domain(target), target_ip(target))?;
+        let index = self.select_configured_index(
+            inbound_tag,
+            target_domain(target),
+            target_ip(target),
+            Some(target_network(target)),
+            Some(target.port),
+        )?;
         let tag = include_tag
             .then(|| self.config.outbounds[index].tag.clone())
             .flatten();
@@ -447,6 +805,26 @@ impl OutboundRouter {
         self.cached_tcp_outbound(index)
     }
 
+    pub(crate) async fn select_tcp_session_outbound_with_resolver(
+        &self,
+        inbound_tag: Option<&str>,
+        target: &Target,
+        dns_resolver: &dyn DnsResolver,
+    ) -> Result<TcpSessionOutbound, CoreError> {
+        let index = self
+            .select_configured_index_with_resolver(inbound_tag, target, dns_resolver)
+            .await?;
+        if matches!(
+            self.config.outbounds[index].settings,
+            OutboundSettings::Dns(_)
+        ) {
+            self.cached_dns_outbound(index).map(TcpSessionOutbound::Dns)
+        } else {
+            self.cached_tcp_outbound(index)
+                .map(TcpSessionOutbound::Transport)
+        }
+    }
+
     pub(crate) async fn select_tcp_outbound_for_session_with_tag_and_resolver(
         &self,
         inbound_tag: Option<&str>,
@@ -469,9 +847,84 @@ impl OutboundRouter {
         inbound_tag: Option<&str>,
         target: &Target,
     ) -> Result<UdpOutbound, CoreError> {
-        let index =
-            self.select_configured_index(inbound_tag, target_domain(target), target_ip(target))?;
+        let index = self.select_configured_index(
+            inbound_tag,
+            target_domain(target),
+            target_ip(target),
+            Some(target_network(target)),
+            Some(target.port),
+        )?;
         self.cached_udp_outbound(index)
+    }
+
+    /// Returns the selected DNS message handler without treating regular
+    /// transport outbounds as errors. Callers can therefore preserve their
+    /// existing TCP/UDP path when no DNS outbound was selected.
+    pub fn select_dns_outbound_for_session(
+        &self,
+        inbound_tag: Option<&str>,
+        target: &Target,
+    ) -> Result<Option<DnsOutbound>, CoreError> {
+        if !self.may_select_dns_outbound(inbound_tag, target) {
+            return Ok(None);
+        }
+        let index = self.select_configured_index(
+            inbound_tag,
+            target_domain(target),
+            target_ip(target),
+            Some(target_network(target)),
+            Some(target.port),
+        )?;
+        if !matches!(
+            self.config.outbounds[index].settings,
+            OutboundSettings::Dns(_)
+        ) {
+            return Ok(None);
+        }
+        self.cached_dns_outbound(index).map(Some)
+    }
+
+    pub async fn select_dns_outbound_for_session_with_resolver(
+        &self,
+        inbound_tag: Option<&str>,
+        target: &Target,
+        dns_resolver: &dyn DnsResolver,
+    ) -> Result<Option<DnsOutbound>, CoreError> {
+        if !self.may_select_dns_outbound(inbound_tag, target) {
+            return Ok(None);
+        }
+        let index = self
+            .select_configured_index_with_resolver(inbound_tag, target, dns_resolver)
+            .await?;
+        if !matches!(
+            self.config.outbounds[index].settings,
+            OutboundSettings::Dns(_)
+        ) {
+            return Ok(None);
+        }
+        self.cached_dns_outbound(index).map(Some)
+    }
+
+    fn may_select_dns_outbound(&self, inbound_tag: Option<&str>, target: &Target) -> bool {
+        self.default_is_dns
+            || self.default_requires_selection
+            || self
+                .dns_route_prefilter
+                .may_match(inbound_tag, target_network(target), target.port)
+    }
+
+    /// Checks the effective tags assigned to managed DNS clients. Runtime DNS
+    /// transports combine this compatibility check with their trusted origin
+    /// context before bypassing DNS rules.
+    pub(crate) fn is_dns_client_tag(&self, inbound_tag: Option<&str>) -> bool {
+        let Some(inbound_tag) = inbound_tag else {
+            return false;
+        };
+        self.config
+            .dns
+            .servers
+            .iter()
+            .any(|server| server.effective_tag(&self.config.dns.tag) == inbound_tag)
     }
 
     pub async fn select_udp_outbound_for_session_with_resolver(
@@ -486,14 +939,42 @@ impl OutboundRouter {
         self.cached_udp_outbound(index)
     }
 
+    pub(crate) async fn select_udp_session_outbound_with_resolver(
+        &self,
+        inbound_tag: Option<&str>,
+        target: &Target,
+        dns_resolver: &dyn DnsResolver,
+    ) -> Result<UdpSessionOutbound, CoreError> {
+        let index = self
+            .select_configured_index_with_resolver(inbound_tag, target, dns_resolver)
+            .await?;
+        if matches!(
+            self.config.outbounds[index].settings,
+            OutboundSettings::Dns(_)
+        ) {
+            self.cached_dns_outbound(index).map(UdpSessionOutbound::Dns)
+        } else {
+            self.cached_udp_outbound(index)
+                .map(UdpSessionOutbound::Transport)
+        }
+    }
+
     fn select_configured_index(
         &self,
         inbound_tag: Option<&str>,
         target_domain: Option<&str>,
         target_ip: Option<&IpAddr>,
+        target_network: Option<Network>,
+        target_port: Option<u16>,
     ) -> Result<usize, CoreError> {
-        let routed_tag =
-            select_routed_outbound_tag(&self.config, inbound_tag, target_domain, target_ip);
+        let routed_tag = select_routed_outbound_tag(
+            &self.config,
+            inbound_tag,
+            target_domain,
+            target_ip,
+            target_network,
+            target_port,
+        );
         match routed_tag.or(self.config.default_outbound_tag.as_deref()) {
             Some(tag) => self.index_for_tag(tag),
             None if self.config.outbounds.is_empty() => Err(CoreError::NoSupportedOutbound),
@@ -513,6 +994,8 @@ impl OutboundRouter {
             inbound_tag,
             target_domain(target),
             target_ip(target),
+            Some(target_network(target)),
+            Some(target.port),
         ) {
             return self.index_for_tag(routed_tag);
         }
@@ -524,6 +1007,8 @@ impl OutboundRouter {
                     inbound_tag,
                     target_domain(target),
                     Some(resolved_ip),
+                    Some(target_network(target)),
+                    Some(target.port),
                 ) {
                     return self.index_for_tag(routed_tag);
                 }
@@ -544,6 +1029,8 @@ impl OutboundRouter {
             inbound_tag,
             target_domain(target),
             target_ip(target),
+            Some(target_network(target)),
+            Some(target.port),
         ) {
             return self.index_for_tag(routed_tag);
         }
@@ -556,6 +1043,8 @@ impl OutboundRouter {
                         inbound_tag,
                         Some(domain),
                         resolved.socket_addrs(),
+                        Some(target_network(target)),
+                        Some(target.port),
                     ) {
                         return self.index_for_tag(routed_tag);
                     }
@@ -606,6 +1095,13 @@ impl OutboundRouter {
         clone_cached_outbound(cached)
     }
 
+    fn cached_dns_outbound(&self, index: usize) -> Result<DnsOutbound, CoreError> {
+        let cached = self.entries[index]
+            .dns
+            .get_or_init(|| self.compile_dns_outbound(index));
+        clone_cached_outbound(cached)
+    }
+
     fn cached_vless_outbound(&self, index: usize) -> Result<VlessTcpOutbound, CachedOutboundError> {
         let cached = self.entries[index].vless.get_or_init(|| {
             build_vless_tcp_outbound(&self.config.outbounds[index])
@@ -624,6 +1120,7 @@ impl OutboundRouter {
         }
 
         match &outbound.settings {
+            OutboundSettings::Dns(_) => Err(CachedOutboundError::NoSupportedOutbound),
             OutboundSettings::Freedom => {
                 if outbound.stream.security != StreamSecurity::None {
                     return Err(CachedOutboundError::UnsupportedOutboundSecurity);
@@ -639,6 +1136,7 @@ impl OutboundRouter {
     fn compile_udp_outbound(&self, index: usize) -> Result<UdpOutbound, CachedOutboundError> {
         let outbound = &self.config.outbounds[index];
         match &outbound.settings {
+            OutboundSettings::Dns(_) => Err(CachedOutboundError::NoSupportedOutbound),
             OutboundSettings::Freedom => {
                 if outbound.stream.security != StreamSecurity::None {
                     return Err(CachedOutboundError::UnsupportedOutboundSecurity);
@@ -654,6 +1152,21 @@ impl OutboundRouter {
             }
         }
     }
+
+    fn compile_dns_outbound(&self, index: usize) -> Result<DnsOutbound, CachedOutboundError> {
+        let configured = &self.config.outbounds[index];
+        match &configured.settings {
+            OutboundSettings::Dns(settings) => {
+                let conn_idle =
+                    effective_policy_for_level(&self.config, Some(settings.user_level)).conn_idle;
+                DnsOutbound::new_with_stream(settings.clone(), &configured.stream, conn_idle)
+                    .map_err(CachedOutboundError::from_core_error)
+            }
+            OutboundSettings::Freedom | OutboundSettings::Vless(_) => {
+                Err(CachedOutboundError::NoSupportedOutbound)
+            }
+        }
+    }
 }
 
 fn clone_cached_outbound<T: Clone>(
@@ -666,7 +1179,7 @@ fn clone_cached_outbound<T: Clone>(
 }
 
 pub fn select_tcp_outbound(config: &CoreConfig) -> Result<TcpOutbound, CoreError> {
-    let outbound = select_configured_outbound(config, None, None, None)?;
+    let outbound = select_configured_outbound(config, None, None, None, None, None)?;
     build_tcp_outbound(outbound)
 }
 
@@ -694,6 +1207,8 @@ pub fn select_tcp_outbound_for_session(
         inbound_tag,
         target_domain(target),
         target_ip(target),
+        Some(target_network(target)),
+        Some(target.port),
     )?;
     build_tcp_outbound(outbound)
 }
@@ -724,6 +1239,8 @@ pub fn select_udp_outbound_for_session(
         inbound_tag,
         target_domain(target),
         target_ip(target),
+        Some(target_network(target)),
+        Some(target.port),
     )?;
     build_udp_outbound(outbound)
 }
@@ -745,6 +1262,7 @@ fn build_tcp_outbound(outbound: &OutboundConfig) -> Result<TcpOutbound, CoreErro
     }
 
     match &outbound.settings {
+        OutboundSettings::Dns(_) => Err(CoreError::NoSupportedOutbound),
         OutboundSettings::Freedom => {
             if outbound.stream.security != StreamSecurity::None {
                 return Err(CoreError::UnsupportedOutboundSecurity);
@@ -758,6 +1276,7 @@ fn build_tcp_outbound(outbound: &OutboundConfig) -> Result<TcpOutbound, CoreErro
 
 fn build_udp_outbound(outbound: &OutboundConfig) -> Result<UdpOutbound, CoreError> {
     match &outbound.settings {
+        OutboundSettings::Dns(_) => Err(CoreError::NoSupportedOutbound),
         OutboundSettings::Freedom => {
             if outbound.stream.security != StreamSecurity::None {
                 return Err(CoreError::UnsupportedOutboundSecurity);
@@ -775,7 +1294,7 @@ fn build_udp_outbound(outbound: &OutboundConfig) -> Result<UdpOutbound, CoreErro
 }
 
 pub fn select_vless_tcp_outbound(config: &CoreConfig) -> Result<VlessTcpOutbound, CoreError> {
-    let outbound = select_configured_outbound(config, None, None, None)?;
+    let outbound = select_configured_outbound(config, None, None, None, None, None)?;
     build_vless_tcp_outbound(outbound)
 }
 
@@ -784,8 +1303,17 @@ fn select_configured_outbound<'a>(
     inbound_tag: Option<&str>,
     target_domain: Option<&str>,
     target_ip: Option<&IpAddr>,
+    target_network: Option<Network>,
+    target_port: Option<u16>,
 ) -> Result<&'a OutboundConfig, CoreError> {
-    let routed_tag = select_routed_outbound_tag(config, inbound_tag, target_domain, target_ip);
+    let routed_tag = select_routed_outbound_tag(
+        config,
+        inbound_tag,
+        target_domain,
+        target_ip,
+        target_network,
+        target_port,
+    );
 
     let outbound = match routed_tag.or(config.default_outbound_tag.as_deref()) {
         Some(tag) => config
@@ -813,6 +1341,8 @@ async fn select_configured_outbound_with_resolver<'a>(
         inbound_tag,
         target_domain(target),
         target_ip(target),
+        Some(target_network(target)),
+        Some(target.port),
     ) {
         return select_configured_outbound_by_tag(config, routed_tag);
     }
@@ -825,6 +1355,8 @@ async fn select_configured_outbound_with_resolver<'a>(
                     inbound_tag,
                     Some(domain),
                     resolved.socket_addrs(),
+                    Some(target_network(target)),
+                    Some(target.port),
                 ) {
                     return select_configured_outbound_by_tag(config, routed_tag);
                 }
@@ -840,12 +1372,22 @@ fn select_routed_outbound_tag<'a>(
     inbound_tag: Option<&str>,
     target_domain: Option<&str>,
     target_ip: Option<&IpAddr>,
+    target_network: Option<Network>,
+    target_port: Option<u16>,
 ) -> Option<&'a str> {
     config
         .routing
         .rules
         .iter()
-        .find(|rule| rule.matches(inbound_tag, target_domain, target_ip))
+        .find(|rule| {
+            rule.matches_target(
+                inbound_tag,
+                target_domain,
+                target_ip,
+                target_network,
+                target_port,
+            )
+        })
         .map(|rule| rule.outbound_tag.as_str())
 }
 
@@ -854,17 +1396,23 @@ fn select_routed_outbound_tag_with_resolved_ips<'a>(
     inbound_tag: Option<&str>,
     target_domain: Option<&str>,
     target_addrs: &[SocketAddr],
+    target_network: Option<Network>,
+    target_port: Option<u16>,
 ) -> Option<&'a str> {
     config
         .routing
         .rules
         .iter()
         .find(|rule| {
-            rule.matches_inbound(inbound_tag)
-                && rule.matches_domain(target_domain)
-                && target_addrs
-                    .iter()
-                    .any(|target_addr| rule.matches_ip(Some(&target_addr.ip())))
+            target_addrs.iter().any(|target_addr| {
+                rule.matches_target(
+                    inbound_tag,
+                    target_domain,
+                    Some(&target_addr.ip()),
+                    target_network,
+                    target_port,
+                )
+            })
         })
         .map(|rule| rule.outbound_tag.as_str())
 }
@@ -919,6 +1467,13 @@ fn target_ip(target: &Target) -> Option<&IpAddr> {
     match &target.addr {
         RoutingTargetAddr::Ip(ip) => Some(ip),
         RoutingTargetAddr::Domain(_) => None,
+    }
+}
+
+fn target_network(target: &Target) -> Network {
+    match target.network {
+        RoutingNetwork::Tcp => Network::Tcp,
+        RoutingNetwork::Udp => Network::Udp,
     }
 }
 
@@ -988,6 +1543,54 @@ fn build_freedom_tcp_outbound(stream: &StreamSettings) -> TcpOutbound {
         Some(config) => TcpOutbound::FreedomHappyEyeballs(config),
         None => TcpOutbound::Freedom,
     }
+}
+
+fn dns_tcp_connector(stream: &StreamSettings) -> Result<DnsTcpConnector, CoreError> {
+    match &stream.security {
+        StreamSecurity::None => Ok(DnsTcpConnector::Static(ConnectorConfig::Tcp)),
+        StreamSecurity::Tls(tls) => {
+            if tls.fingerprint.is_some() {
+                return Err(CoreError::UnsupportedOutboundSecurity);
+            }
+            match tls.server_name.as_deref() {
+                Some(server_name) if !server_name.is_empty() => Ok(DnsTcpConnector::Static(
+                    ConnectorConfig::Tls(TlsClientConfig {
+                        server_name: server_name.to_owned(),
+                        allow_insecure: tls.allow_insecure,
+                    }),
+                )),
+                Some(_) | None => Ok(DnsTcpConnector::TlsFromTarget {
+                    allow_insecure: tls.allow_insecure,
+                }),
+            }
+        }
+        StreamSecurity::Reality(reality) => Ok(DnsTcpConnector::Static(ConnectorConfig::Reality(
+            RealityClientConfig {
+                server_name: reality.server_name.clone(),
+                fingerprint: reality.fingerprint.clone(),
+                public_key: reality.public_key,
+                short_id: reality.short_id.as_slice().to_vec(),
+                spider_x: reality.spider_x.clone(),
+                mldsa65_verify: reality.mldsa65_verify.clone(),
+            },
+        ))),
+    }
+}
+
+fn dns_happy_eyeballs_mode(stream: &StreamSettings) -> DnsHappyEyeballsMode {
+    let Some(settings) = stream
+        .socket_options
+        .as_ref()
+        .and_then(|socket_options| socket_options.happy_eyeballs.as_ref())
+    else {
+        return DnsHappyEyeballsMode::DnsDefault;
+    };
+    if settings.try_delay_ms == 0 || settings.max_concurrent_try == 0 {
+        return DnsHappyEyeballsMode::Disabled;
+    }
+    happy_eyeballs_config(stream).map_or(DnsHappyEyeballsMode::Disabled, |config| {
+        DnsHappyEyeballsMode::Configured(config)
+    })
 }
 
 fn happy_eyeballs_config(stream: &StreamSettings) -> Option<HappyEyeballsConfig> {
@@ -1288,8 +1891,9 @@ mod tests {
     use tokio::net::TcpListener;
     use uuid::Uuid;
     use xray_config::{
-        DomainMatcher, HappyEyeballsSettings, IpCidr, IpMatcher, RoutingConfig,
-        RoutingDomainStrategy, RoutingRule, SocketOptions, StreamSettings, VlessOutboundSettings,
+        DnsConfig, DnsServerConfig, DomainMatcher, HappyEyeballsSettings, IpCidr, IpMatcher,
+        RealitySettings, RealityShortId, RoutingConfig, RoutingDomainStrategy, RoutingPortRange,
+        RoutingRule, SocketOptions, StreamSettings, TlsSettings, VlessOutboundSettings,
     };
     use xray_proxy::vless::{unpad_vision_block, VisionCommand};
     use xray_transport::{CachingDnsResolver, DnsLookup, RealityTlsEngine, TransportError};
@@ -1355,6 +1959,18 @@ mod tests {
         }
     }
 
+    fn dns_selection_outbound(tag: &str, settings: DnsOutboundSettings) -> OutboundConfig {
+        OutboundConfig {
+            tag: Some(tag.to_owned()),
+            stream: StreamSettings {
+                network: Network::Tcp,
+                security: StreamSecurity::None,
+                socket_options: None,
+            },
+            settings: OutboundSettings::Dns(settings),
+        }
+    }
+
     fn direct_selection_config() -> CoreConfig {
         CoreConfig {
             inbounds: Vec::new(),
@@ -1366,6 +1982,8 @@ mod tests {
             routing: RoutingConfig {
                 rules: vec![RoutingRule {
                     inbound_tags: Vec::new(),
+                    networks: Vec::new(),
+                    port_ranges: Vec::new(),
                     domain_matchers: Vec::new(),
                     ip_matchers: Vec::new(),
                     outbound_tag: "direct".to_owned(),
@@ -1467,6 +2085,8 @@ mod tests {
     fn ip_rule(tag: &str, ip: Ipv4Addr) -> RoutingRule {
         RoutingRule {
             inbound_tags: Vec::new(),
+            networks: Vec::new(),
+            port_ranges: Vec::new(),
             domain_matchers: Vec::new(),
             ip_matchers: vec![IpMatcher::Cidr(IpCidr::full(IpAddr::V4(ip)))],
             outbound_tag: tag.to_owned(),
@@ -1476,6 +2096,8 @@ mod tests {
     fn domain_and_ip_rule(tag: &str, domain: &str, ip: Ipv4Addr) -> RoutingRule {
         RoutingRule {
             inbound_tags: Vec::new(),
+            networks: Vec::new(),
+            port_ranges: Vec::new(),
             domain_matchers: vec![DomainMatcher::Full(domain.to_owned())],
             ip_matchers: vec![IpMatcher::Cidr(IpCidr::full(IpAddr::V4(ip)))],
             outbound_tag: tag.to_owned(),
@@ -1485,10 +2107,653 @@ mod tests {
     fn inbound_rule(inbound_tag: &str, outbound_tag: &str) -> RoutingRule {
         RoutingRule {
             inbound_tags: vec![inbound_tag.to_owned()],
+            networks: Vec::new(),
+            port_ranges: Vec::new(),
             domain_matchers: Vec::new(),
             ip_matchers: Vec::new(),
             outbound_tag: outbound_tag.to_owned(),
         }
+    }
+
+    fn network_port_rule(
+        outbound_tag: &str,
+        network: Network,
+        port_range: RoutingPortRange,
+    ) -> RoutingRule {
+        RoutingRule {
+            inbound_tags: Vec::new(),
+            networks: vec![network],
+            port_ranges: vec![port_range],
+            domain_matchers: Vec::new(),
+            ip_matchers: Vec::new(),
+            outbound_tag: outbound_tag.to_owned(),
+        }
+    }
+
+    #[test]
+    fn standalone_tcp_session_selector_matches_target_network_and_port() {
+        let mut config = direct_selection_config();
+        config.routing.rules = vec![network_port_rule(
+            "direct",
+            Network::Tcp,
+            RoutingPortRange::single(443),
+        )];
+
+        let selected =
+            select_tcp_outbound_for_session(&config, None, &domain_tcp_target("example.test"))
+                .expect("select target-aware TCP route");
+
+        assert!(matches!(selected, TcpOutbound::Freedom));
+    }
+
+    #[test]
+    fn outbound_router_udp_session_selector_matches_target_network_and_port() {
+        let mut config = direct_selection_config();
+        config.routing.rules = vec![network_port_rule(
+            "direct",
+            Network::Udp,
+            RoutingPortRange::new(53, 5353).expect("valid test port range"),
+        )];
+        let router = OutboundRouter::new(Arc::new(config));
+        let target = Target::new(
+            RoutingTargetAddr::Domain("example.test".to_owned()),
+            53,
+            RoutingNetwork::Udp,
+        );
+
+        let selected = router
+            .select_udp_outbound_for_session(None, &target)
+            .expect("select target-aware UDP route");
+
+        assert!(matches!(selected, UdpOutbound::Freedom));
+    }
+
+    #[test]
+    fn outbound_router_selects_and_caches_dns_message_handler() {
+        let mut config = direct_selection_config();
+        config.outbounds.push(dns_selection_outbound(
+            "dns-out",
+            DnsOutboundSettings {
+                rewrite_network: Some(Network::Tcp),
+                rewrite_address: Some(TargetAddr::Domain("resolver.example".to_owned())),
+                rewrite_port: 5353,
+                ..DnsOutboundSettings::default()
+            },
+        ));
+        config.routing.rules = vec![network_port_rule(
+            "dns-out",
+            Network::Udp,
+            RoutingPortRange::single(53),
+        )];
+        let router = OutboundRouter::new(Arc::new(config));
+        let original = Target::new(
+            RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(198, 18, 0, 1))),
+            53,
+            RoutingNetwork::Udp,
+        );
+
+        let first = router
+            .select_dns_outbound_for_session(Some("tun-in"), &original)
+            .expect("select DNS outbound")
+            .expect("DNS handler should be selected");
+        let second = router
+            .select_dns_outbound_for_session(Some("tun-in"), &original)
+            .expect("select cached DNS outbound")
+            .expect("DNS handler should remain selected");
+
+        assert!(Arc::ptr_eq(&first.payload, &second.payload));
+        assert_eq!(
+            first.rewrite_target(&original),
+            Target::new(
+                RoutingTargetAddr::Domain("resolver.example".to_owned()),
+                5353,
+                RoutingNetwork::Tcp,
+            )
+        );
+    }
+
+    #[test]
+    fn dns_outbound_compiles_tls_and_derives_an_omitted_sni_from_target() {
+        let explicit = DnsOutbound::new_with_stream(
+            DnsOutboundSettings::default(),
+            &StreamSettings {
+                network: Network::Tcp,
+                security: StreamSecurity::Tls(TlsSettings {
+                    server_name: Some("resolver.example".to_owned()),
+                    fingerprint: None,
+                    allow_insecure: true,
+                }),
+                socket_options: None,
+            },
+            Duration::from_secs(60),
+        )
+        .expect("compile explicit DNS TLS transport");
+        let target = Target::new(
+            RoutingTargetAddr::Domain("rewritten.example".to_owned()),
+            853,
+            RoutingNetwork::Tcp,
+        );
+        assert_eq!(
+            explicit
+                .tcp_connector_for(&target)
+                .expect("build explicit DNS connector"),
+            ConnectorConfig::Tls(TlsClientConfig {
+                server_name: "resolver.example".to_owned(),
+                allow_insecure: true,
+            })
+        );
+        assert!(!explicit.supports_direct_udp());
+
+        for server_name in [None, Some(String::new())] {
+            let dynamic = DnsOutbound::new_with_stream(
+                DnsOutboundSettings::default(),
+                &StreamSettings {
+                    network: Network::Tcp,
+                    security: StreamSecurity::Tls(TlsSettings {
+                        server_name,
+                        fingerprint: None,
+                        allow_insecure: false,
+                    }),
+                    socket_options: None,
+                },
+                Duration::from_secs(60),
+            )
+            .expect("compile target-derived DNS TLS transport");
+            assert_eq!(
+                dynamic
+                    .tcp_connector_for(&target)
+                    .expect("derive DNS TLS connector"),
+                ConnectorConfig::Tls(TlsClientConfig {
+                    server_name: "rewritten.example".to_owned(),
+                    allow_insecure: false,
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn dns_outbound_rejects_unimplemented_stream_settings_instead_of_downgrading() {
+        let fingerprint = DnsOutbound::new_with_stream(
+            DnsOutboundSettings::default(),
+            &StreamSettings {
+                network: Network::Tcp,
+                security: StreamSecurity::Tls(TlsSettings {
+                    server_name: Some("resolver.example".to_owned()),
+                    fingerprint: Some("chrome".to_owned()),
+                    allow_insecure: false,
+                }),
+                socket_options: None,
+            },
+            Duration::from_secs(60),
+        )
+        .expect_err("unsupported DNS TLS fingerprint must fail closed");
+        assert!(matches!(
+            fingerprint,
+            CoreError::UnsupportedOutboundSecurity
+        ));
+
+        let non_tcp = DnsOutbound::new_with_stream(
+            DnsOutboundSettings::default(),
+            &StreamSettings {
+                network: Network::Udp,
+                security: StreamSecurity::None,
+                socket_options: None,
+            },
+            Duration::from_secs(60),
+        )
+        .expect("UDP stream settings remain usable for a UDP Direct target");
+        assert!(non_tcp.supports_direct_udp());
+        let error = non_tcp
+            .tcp_connector_for(&domain_tcp_target("resolver.example"))
+            .expect_err("unsupported DNS stream network must fail closed for TCP");
+        assert!(matches!(error, CoreError::UnsupportedOutboundNetwork));
+    }
+
+    #[test]
+    fn dns_outbound_preserves_reality_and_happy_eyeballs_modes() {
+        let reality = RealitySettings {
+            server_name: "reality.example".to_owned(),
+            fingerprint: "chrome".to_owned(),
+            public_key: [7; 32],
+            short_id: RealityShortId::try_from_slice(&[1, 2, 3, 4])
+                .expect("valid Reality short id"),
+            spider_x: "/dns".to_owned(),
+            mldsa65_verify: Some(vec![5, 6]),
+        };
+        let configured = HappyEyeballsConfig {
+            prioritize_ipv6: true,
+            interleave: 2,
+            try_delay: Duration::from_millis(125),
+            max_concurrent: NonZeroUsize::new(3).expect("nonzero test concurrency"),
+        };
+        let outbound = DnsOutbound::new_with_stream(
+            DnsOutboundSettings::default(),
+            &StreamSettings {
+                network: Network::Tcp,
+                security: StreamSecurity::Reality(reality.clone()),
+                socket_options: Some(SocketOptions {
+                    happy_eyeballs: Some(HappyEyeballsSettings {
+                        prioritize_ipv6: configured.prioritize_ipv6,
+                        interleave: u32::try_from(configured.interleave)
+                            .expect("bounded test interleave"),
+                        try_delay_ms: u64::try_from(configured.try_delay.as_millis())
+                            .expect("bounded test delay"),
+                        max_concurrent_try: u32::try_from(configured.max_concurrent.get())
+                            .expect("bounded test concurrency"),
+                    }),
+                }),
+            },
+            Duration::from_secs(60),
+        )
+        .expect("compile DNS Reality transport");
+        let target = domain_tcp_target("rewritten.example");
+        assert_eq!(
+            outbound
+                .tcp_connector_for(&target)
+                .expect("build DNS Reality connector"),
+            ConnectorConfig::Reality(RealityClientConfig {
+                server_name: reality.server_name,
+                fingerprint: reality.fingerprint,
+                public_key: reality.public_key,
+                short_id: reality.short_id.as_slice().to_vec(),
+                spider_x: reality.spider_x,
+                mldsa65_verify: reality.mldsa65_verify,
+            })
+        );
+        assert_eq!(
+            outbound.happy_eyeballs_mode(),
+            DnsHappyEyeballsMode::Configured(configured)
+        );
+
+        let absent = DnsOutbound::new_with_stream(
+            DnsOutboundSettings::default(),
+            &StreamSettings {
+                network: Network::Tcp,
+                security: StreamSecurity::None,
+                socket_options: None,
+            },
+            Duration::from_secs(60),
+        )
+        .expect("compile default DNS transport");
+        assert_eq!(
+            absent.happy_eyeballs_mode(),
+            DnsHappyEyeballsMode::DnsDefault
+        );
+
+        let disabled = DnsOutbound::new_with_stream(
+            DnsOutboundSettings::default(),
+            &StreamSettings {
+                network: Network::Tcp,
+                security: StreamSecurity::None,
+                socket_options: Some(SocketOptions {
+                    happy_eyeballs: Some(HappyEyeballsSettings::default()),
+                }),
+            },
+            Duration::from_secs(60),
+        )
+        .expect("compile explicitly disabled DNS Happy Eyeballs");
+        assert_eq!(
+            disabled.happy_eyeballs_mode(),
+            DnsHappyEyeballsMode::Disabled
+        );
+    }
+
+    #[test]
+    fn dns_outbound_runtime_identity_is_shared_only_by_clones() {
+        let plain = DnsOutbound::new_with_stream(
+            DnsOutboundSettings::default(),
+            &StreamSettings {
+                network: Network::Tcp,
+                security: StreamSecurity::None,
+                socket_options: None,
+            },
+            Duration::from_secs(60),
+        )
+        .expect("compile plain DNS outbound");
+        let plain_clone = plain.clone();
+        let tls = DnsOutbound::new_with_stream(
+            DnsOutboundSettings::default(),
+            &StreamSettings {
+                network: Network::Tcp,
+                security: StreamSecurity::Tls(TlsSettings {
+                    server_name: Some("resolver.example".to_owned()),
+                    fingerprint: None,
+                    allow_insecure: false,
+                }),
+                socket_options: None,
+            },
+            Duration::from_secs(60),
+        )
+        .expect("compile TLS DNS outbound");
+
+        assert_eq!(plain.runtime_identity(), plain_clone.runtime_identity());
+        assert_ne!(plain.runtime_identity(), tls.runtime_identity());
+    }
+
+    #[test]
+    fn dns_selector_prefilter_rejects_mismatched_network_and_port() {
+        let mut config = direct_selection_config();
+        config.outbounds.push(dns_selection_outbound(
+            "dns-out",
+            DnsOutboundSettings::default(),
+        ));
+        config.routing.rules = vec![network_port_rule(
+            "dns-out",
+            Network::Udp,
+            RoutingPortRange::single(53),
+        )];
+        let router = OutboundRouter::new(Arc::new(config));
+        let tcp_target = domain_tcp_target("example.test");
+        let udp_target = Target::new(
+            RoutingTargetAddr::Domain("example.test".to_owned()),
+            443,
+            RoutingNetwork::Udp,
+        );
+
+        assert!(!router.may_select_dns_outbound(None, &tcp_target));
+        assert!(!router.may_select_dns_outbound(None, &udp_target));
+        assert!(router
+            .select_dns_outbound_for_session(None, &udp_target)
+            .expect("mismatched DNS route should preserve the regular path")
+            .is_none());
+    }
+
+    #[test]
+    fn dns_selector_prefilter_matches_only_the_configured_inbound_tag() {
+        let mut config = direct_selection_config();
+        config.outbounds.push(dns_selection_outbound(
+            "dns-out",
+            DnsOutboundSettings::default(),
+        ));
+        let mut rule = network_port_rule("dns-out", Network::Udp, RoutingPortRange::single(53));
+        rule.inbound_tags = vec!["tun-in".to_owned()];
+        config.routing.rules = vec![rule];
+        let router = OutboundRouter::new(Arc::new(config));
+        let target = Target::new(
+            RoutingTargetAddr::Domain("example.test".to_owned()),
+            53,
+            RoutingNetwork::Udp,
+        );
+
+        assert!(router.may_select_dns_outbound(Some("tun-in"), &target));
+        assert!(!router.may_select_dns_outbound(Some("socks-in"), &target));
+        assert!(!router.may_select_dns_outbound(None, &target));
+    }
+
+    #[test]
+    fn dns_selector_prefilter_merges_large_adjacent_rule_sets() {
+        let mut config = direct_selection_config();
+        config.outbounds.push(dns_selection_outbound(
+            "dns-out",
+            DnsOutboundSettings::default(),
+        ));
+        config.routing.rules = (0..4_096)
+            .map(|offset| {
+                network_port_rule(
+                    "dns-out",
+                    Network::Udp,
+                    RoutingPortRange::single(10_000 + offset),
+                )
+            })
+            .collect();
+        let router = OutboundRouter::new(Arc::new(config));
+        let udp_ranges = &router.dns_route_prefilter.network_ports.udp;
+
+        assert_eq!(
+            udp_ranges.as_ref(),
+            &[DnsRoutePortRange {
+                start: 10_000,
+                end: 14_095,
+            }]
+        );
+    }
+
+    #[test]
+    fn dns_selector_prefilter_does_not_multiply_tags_by_port_ranges() {
+        const SELECTOR_COUNT: usize = 2_048;
+
+        let mut config = direct_selection_config();
+        config.outbounds.push(dns_selection_outbound(
+            "dns-out",
+            DnsOutboundSettings::default(),
+        ));
+        let mut inbound_tags = (0..SELECTOR_COUNT)
+            .map(|index| format!("dns-in-{index}"))
+            .collect::<Vec<_>>();
+        inbound_tags.extend(inbound_tags.clone());
+        config.routing.rules = vec![RoutingRule {
+            inbound_tags,
+            networks: vec![Network::Udp],
+            port_ranges: (0..SELECTOR_COUNT)
+                .map(|index| {
+                    RoutingPortRange::single(
+                        u16::try_from(index * 2).expect("test port must fit in u16"),
+                    )
+                })
+                .collect(),
+            domain_matchers: Vec::new(),
+            ip_matchers: Vec::new(),
+            outbound_tag: "dns-out".to_owned(),
+        }];
+
+        let router = OutboundRouter::new(Arc::new(config));
+
+        assert!(!router.dns_route_prefilter.wildcard_inbound);
+        assert_eq!(
+            router.dns_route_prefilter.tagged_inbounds.len(),
+            SELECTOR_COUNT
+        );
+        assert_eq!(
+            router.dns_route_prefilter.network_ports.udp.len(),
+            SELECTOR_COUNT
+        );
+        assert!(router.dns_route_prefilter.network_ports.tcp.is_empty());
+    }
+
+    #[test]
+    fn dns_selector_prefilter_keeps_domain_matching_conservative() {
+        let mut config = direct_selection_config();
+        config.outbounds.push(dns_selection_outbound(
+            "dns-out",
+            DnsOutboundSettings::default(),
+        ));
+        config.default_outbound_tag = Some("direct".to_owned());
+        let mut rule = network_port_rule("dns-out", Network::Udp, RoutingPortRange::single(53));
+        rule.domain_matchers = vec![DomainMatcher::Full("dns-only.test".to_owned())];
+        config.routing.rules = vec![rule];
+        let router = OutboundRouter::new(Arc::new(config));
+        let target = Target::new(
+            RoutingTargetAddr::Domain("other.test".to_owned()),
+            53,
+            RoutingNetwork::Udp,
+        );
+
+        assert!(router.may_select_dns_outbound(None, &target));
+        assert!(router
+            .select_dns_outbound_for_session(None, &target)
+            .expect("conservative prefilter should fall through to the regular outbound")
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn dns_selector_ip_if_non_match_can_route_away_from_dns_default() {
+        let resolved_ip = Ipv4Addr::new(203, 0, 113, 17);
+        let mut config = direct_selection_config();
+        config.outbounds.push(dns_selection_outbound(
+            "dns-out",
+            DnsOutboundSettings::default(),
+        ));
+        config.default_outbound_tag = Some("dns-out".to_owned());
+        config.routing.domain_strategy = RoutingDomainStrategy::IpIfNonMatch;
+        config.routing.rules = vec![ip_rule("direct", resolved_ip)];
+        let router = OutboundRouter::new(Arc::new(config));
+        let resolver = FakeDnsResolver::resolving_to(SocketAddr::from((resolved_ip, 443)))
+            .expect_lookup("example.test", 443);
+
+        let selected = router
+            .select_dns_outbound_for_session_with_resolver(
+                None,
+                &domain_tcp_target("example.test"),
+                &resolver,
+            )
+            .await
+            .expect("resolved-IP route should select a regular outbound");
+
+        assert!(selected.is_none());
+        assert_eq!(resolver.calls(), 1);
+    }
+
+    #[test]
+    fn dns_selector_returns_none_for_regular_selected_outbound() {
+        let router = OutboundRouter::new(Arc::new(direct_selection_config()));
+
+        let selected = router
+            .select_dns_outbound_for_session(None, &domain_tcp_target("example.test"))
+            .expect("regular outbound selection should succeed");
+
+        assert!(selected.is_none());
+    }
+
+    #[test]
+    fn dns_selector_treats_an_empty_outbound_set_as_no_optional_handler() {
+        let mut config = direct_selection_config();
+        config.outbounds.clear();
+        config.default_outbound_tag = None;
+        config.routing.rules.clear();
+        let router = OutboundRouter::new(Arc::new(config));
+
+        let selected = router
+            .select_dns_outbound_for_session(None, &domain_tcp_target("example.test"))
+            .expect("empty outbound set should preserve an existing local DNS mode");
+
+        assert!(selected.is_none());
+    }
+
+    #[test]
+    fn dns_selector_does_not_hide_a_missing_configured_outbound_tag() {
+        let mut config = direct_selection_config();
+        config.default_outbound_tag = Some("missing".to_owned());
+        config.routing.rules.clear();
+        let router = OutboundRouter::new(Arc::new(config));
+
+        let error = router
+            .select_dns_outbound_for_session(None, &domain_tcp_target("example.test"))
+            .expect_err("missing selected tag must fail closed");
+
+        assert!(matches!(error, CoreError::NoSupportedOutbound));
+    }
+
+    #[test]
+    fn managed_dns_client_tag_uses_effective_global_tag() {
+        let mut config = direct_selection_config();
+        config.dns = DnsConfig {
+            servers: vec![DnsServerConfig::Ip(SocketAddr::from((
+                Ipv4Addr::new(192, 0, 2, 53),
+                53,
+            )))],
+            tag: "managed-dns".to_owned(),
+            ..DnsConfig::default()
+        };
+        let router = OutboundRouter::new(Arc::new(config));
+
+        assert!(router.is_dns_client_tag(Some("managed-dns")));
+        assert!(!router.is_dns_client_tag(Some("tun-in")));
+        assert!(!router.is_dns_client_tag(None));
+    }
+
+    #[test]
+    fn standalone_session_selector_rejects_target_network_mismatch() {
+        let mut config = direct_selection_config();
+        config.routing.rules = vec![network_port_rule(
+            "direct",
+            Network::Tcp,
+            RoutingPortRange::single(53),
+        )];
+        let target = Target::new(
+            RoutingTargetAddr::Domain("example.test".to_owned()),
+            53,
+            RoutingNetwork::Udp,
+        );
+
+        let selected = select_udp_outbound_for_session(&config, None, &target)
+            .expect("network mismatch should use the default route");
+
+        assert!(matches!(selected, UdpOutbound::Vless(_)));
+    }
+
+    #[test]
+    fn outbound_router_session_selector_rejects_target_port_mismatch() {
+        let mut config = direct_selection_config();
+        config.routing.rules = vec![network_port_rule(
+            "direct",
+            Network::Tcp,
+            RoutingPortRange::new(80, 443).expect("valid test port range"),
+        )];
+        let router = OutboundRouter::new(Arc::new(config));
+        let target = Target::new(
+            RoutingTargetAddr::Domain("example.test".to_owned()),
+            444,
+            RoutingNetwork::Tcp,
+        );
+
+        let selected = router
+            .select_tcp_outbound_for_session(None, &target)
+            .expect("port mismatch should use the default route");
+
+        assert!(matches!(selected, TcpOutbound::Vless(_)));
+    }
+
+    #[test]
+    fn legacy_selector_without_target_ignores_network_and_port_rule() {
+        let mut config = direct_selection_config();
+        config.routing.rules = vec![network_port_rule(
+            "direct",
+            Network::Tcp,
+            RoutingPortRange::single(443),
+        )];
+
+        let selected = select_tcp_outbound(&config)
+            .expect("legacy selection should use the configured default route");
+
+        assert!(matches!(selected, TcpOutbound::Vless(_)));
+    }
+
+    #[test]
+    fn outbound_router_selector_without_target_ignores_network_and_port_rule() {
+        let mut config = direct_selection_config();
+        config.routing.rules = vec![network_port_rule(
+            "direct",
+            Network::Tcp,
+            RoutingPortRange::single(443),
+        )];
+        let router = OutboundRouter::new(Arc::new(config));
+
+        let selected = router
+            .select_tcp_outbound()
+            .expect("targetless router selection should use the configured default route");
+
+        assert!(matches!(selected, TcpOutbound::Vless(_)));
+    }
+
+    #[test]
+    fn outbound_router_tagged_selector_matches_target_network_and_port() {
+        let mut config = direct_selection_config();
+        config.routing.rules = vec![network_port_rule(
+            "direct",
+            Network::Tcp,
+            RoutingPortRange::single(443),
+        )];
+        let router = OutboundRouter::new(Arc::new(config));
+
+        let selected = router
+            .select_tcp_outbound_for_session_with_tag(
+                None,
+                &domain_tcp_target("example.test"),
+                true,
+            )
+            .expect("select tagged target-aware route");
+
+        assert_eq!(selected.tag.as_deref(), Some("direct"));
     }
 
     #[test]
@@ -1784,7 +3049,10 @@ mod tests {
     async fn ip_if_non_match_uses_dns_second_pass_for_ip_rules() {
         let mut config = direct_selection_config();
         config.routing.domain_strategy = RoutingDomainStrategy::IpIfNonMatch;
-        config.routing.rules = vec![ip_rule("direct", Ipv4Addr::new(203, 0, 113, 7))];
+        let mut rule = ip_rule("direct", Ipv4Addr::new(203, 0, 113, 7));
+        rule.networks = vec![Network::Tcp];
+        rule.port_ranges = vec![RoutingPortRange::single(443)];
+        config.routing.rules = vec![rule];
         let resolver =
             FakeDnsResolver::resolving_to(SocketAddr::from((Ipv4Addr::new(203, 0, 113, 7), 443)))
                 .expect_lookup("example.test", 443);
@@ -1915,7 +3183,10 @@ mod tests {
         let resolved_ip = Ipv4Addr::new(203, 0, 113, 7);
         let mut config = direct_selection_config();
         config.routing.domain_strategy = RoutingDomainStrategy::IpIfNonMatch;
-        config.routing.rules = vec![domain_and_ip_rule("direct", "example.test", resolved_ip)];
+        let mut rule = domain_and_ip_rule("direct", "example.test", resolved_ip);
+        rule.networks = vec![Network::Tcp];
+        rule.port_ranges = vec![RoutingPortRange::single(443)];
+        config.routing.rules = vec![rule];
         let router = OutboundRouter::new(Arc::new(config));
         let resolver = FakeDnsResolver::resolving_to(SocketAddr::from((resolved_ip, 443)))
             .expect_lookup("example.test", 443);
@@ -1958,7 +3229,10 @@ mod tests {
         let resolved_ip = IpAddr::V4(resolved_ipv4);
         let mut config = direct_selection_config();
         config.routing.domain_strategy = RoutingDomainStrategy::IpIfNonMatch;
-        config.routing.rules = vec![domain_and_ip_rule("direct", "example.test", resolved_ipv4)];
+        let mut rule = domain_and_ip_rule("direct", "example.test", resolved_ipv4);
+        rule.networks = vec![Network::Tcp];
+        rule.port_ranges = vec![RoutingPortRange::single(443)];
+        config.routing.rules = vec![rule];
         let router = OutboundRouter::new(Arc::new(config));
 
         let selected = router
