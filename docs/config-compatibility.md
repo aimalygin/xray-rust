@@ -326,7 +326,17 @@ matching minimal response with `TC=1` so the client can retry over TCP; valid
 EDNS requests retain the required response OPT record.
 When a UDP client selects a TCP URI upstream, the
 proxy adds/removes RFC 7766 length framing, validates the returned DNS envelope,
-and preserves the same bounded failover behavior. TCP is a byte-transparent
+and preserves the same bounded failover behavior. Successful streams are reused
+with one in-flight request per connection. A stale reused stream is retired and
+retried once through the same protected/routed dial path; cancellation or timeout
+also retires the lease so a partially consumed frame cannot re-enter the pool.
+The per-upstream/runtime-wide connection limits are `1/8` for `LowMemory`, `2/16`
+for `Mobile`, `4/32` for `MobilePlus` and `Desktop`, and `8/64` for `Throughput`;
+`Default` selects the mobile limits on Apple/Android mobile targets and desktop
+limits elsewhere. Idle connections count toward the global limit and expire
+after 15 seconds (`LowMemory`), 30 seconds (`Mobile`), 45 seconds (`MobilePlus`),
+or 60 seconds (`Desktop`/`Throughput`), as well as being released with the TUN
+runtime. TCP is a byte-transparent
 stream and supports
 multiple length-prefixed DNS messages on one connection; failed opens are
 reset. Raw and fake DNS/TCP share a dedicated limit of up to 32 flows. Raw

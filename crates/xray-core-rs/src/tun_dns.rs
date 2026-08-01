@@ -155,6 +155,279 @@ impl DnsProxyPlan {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DnsTcpConnectionPoolLimits {
+    per_upstream: usize,
+    global: usize,
+}
+
+#[cfg(any(
+    target_os = "android",
+    target_os = "ios",
+    target_os = "tvos",
+    target_os = "watchos"
+))]
+const DEFAULT_DNS_TCP_POOL_PROFILE: TunRuntimeProfile = TunRuntimeProfile::Mobile;
+
+#[cfg(not(any(
+    target_os = "android",
+    target_os = "ios",
+    target_os = "tvos",
+    target_os = "watchos"
+)))]
+const DEFAULT_DNS_TCP_POOL_PROFILE: TunRuntimeProfile = TunRuntimeProfile::Desktop;
+
+impl DnsTcpConnectionPoolLimits {
+    fn for_profile(profile: TunRuntimeProfile) -> Self {
+        match profile {
+            TunRuntimeProfile::Default => Self::for_profile(DEFAULT_DNS_TCP_POOL_PROFILE),
+            TunRuntimeProfile::LowMemory => Self {
+                per_upstream: 1,
+                global: 8,
+            },
+            TunRuntimeProfile::Mobile => Self {
+                per_upstream: 2,
+                global: 16,
+            },
+            TunRuntimeProfile::MobilePlus | TunRuntimeProfile::Desktop => Self {
+                per_upstream: 4,
+                global: 32,
+            },
+            TunRuntimeProfile::Throughput => Self {
+                per_upstream: 8,
+                global: 64,
+            },
+        }
+    }
+
+    fn idle_ttl_for_profile(profile: TunRuntimeProfile) -> Duration {
+        match profile {
+            TunRuntimeProfile::Default => Self::idle_ttl_for_profile(DEFAULT_DNS_TCP_POOL_PROFILE),
+            TunRuntimeProfile::LowMemory => Duration::from_secs(15),
+            TunRuntimeProfile::Mobile => Duration::from_secs(30),
+            TunRuntimeProfile::MobilePlus => Duration::from_secs(45),
+            TunRuntimeProfile::Desktop | TunRuntimeProfile::Throughput => Duration::from_secs(60),
+        }
+    }
+}
+
+pub(super) struct DnsTcpConnectionPool {
+    entries: Mutex<HashMap<DnsProxyUpstream, Arc<DnsTcpConnectionPoolEntry>>>,
+    per_upstream_limit: usize,
+    idle_ttl: Duration,
+    active_query_permits: Arc<Semaphore>,
+    connection_permits: Arc<Semaphore>,
+}
+
+struct DnsTcpConnectionPoolEntry {
+    idle: Mutex<Vec<DnsTcpPooledConnection>>,
+    idle_limit: usize,
+    active_query_permits: Arc<Semaphore>,
+}
+
+struct DnsTcpPooledConnection {
+    stream: BoxedTransportStream,
+    last_used: TokioInstant,
+    _global_connection_permit: OwnedSemaphorePermit,
+}
+
+struct DnsTcpConnectionLease {
+    entry: Arc<DnsTcpConnectionPoolEntry>,
+    connection: Option<DnsTcpPooledConnection>,
+    _per_upstream_query_permit: OwnedSemaphorePermit,
+    _global_query_permit: OwnedSemaphorePermit,
+}
+
+impl DnsTcpConnectionPool {
+    pub(super) fn new(profile: TunRuntimeProfile) -> Self {
+        Self::with_limits_and_idle_ttl(
+            DnsTcpConnectionPoolLimits::for_profile(profile),
+            DnsTcpConnectionPoolLimits::idle_ttl_for_profile(profile),
+        )
+    }
+
+    #[cfg(test)]
+    fn with_limits(limits: DnsTcpConnectionPoolLimits) -> Self {
+        Self::with_limits_and_idle_ttl(limits, Duration::from_secs(60))
+    }
+
+    fn with_limits_and_idle_ttl(limits: DnsTcpConnectionPoolLimits, idle_ttl: Duration) -> Self {
+        Self {
+            entries: Mutex::new(HashMap::new()),
+            per_upstream_limit: limits.per_upstream,
+            idle_ttl,
+            active_query_permits: Arc::new(Semaphore::new(limits.global)),
+            connection_permits: Arc::new(Semaphore::new(limits.global)),
+        }
+    }
+
+    async fn lease(&self, upstream: &DnsProxyUpstream) -> std::io::Result<DnsTcpConnectionLease> {
+        self.prune_expired(TokioInstant::now());
+        let entry = self.entry(upstream)?;
+        let per_upstream_query_permit = Arc::clone(&entry.active_query_permits)
+            .acquire_owned()
+            .await
+            .map_err(std::io::Error::other)?;
+        let global_query_permit = Arc::clone(&self.active_query_permits)
+            .acquire_owned()
+            .await
+            .map_err(std::io::Error::other)?;
+        let connection = entry.take_idle_connection(TokioInstant::now(), self.idle_ttl);
+        Ok(DnsTcpConnectionLease {
+            entry,
+            connection,
+            _per_upstream_query_permit: per_upstream_query_permit,
+            _global_query_permit: global_query_permit,
+        })
+    }
+
+    fn entry(
+        &self,
+        upstream: &DnsProxyUpstream,
+    ) -> std::io::Result<Arc<DnsTcpConnectionPoolEntry>> {
+        let mut entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(entry) = entries.get(upstream) {
+            return Ok(Arc::clone(entry));
+        }
+        if entries.len() >= MAX_DNS_PROXY_UPSTREAMS {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "DNS TCP connection pool upstream limit exceeded",
+            ));
+        }
+        let entry = Arc::new(DnsTcpConnectionPoolEntry {
+            idle: Mutex::new(Vec::with_capacity(self.per_upstream_limit)),
+            idle_limit: self.per_upstream_limit,
+            active_query_permits: Arc::new(Semaphore::new(self.per_upstream_limit)),
+        });
+        entries.insert(upstream.clone(), Arc::clone(&entry));
+        Ok(entry)
+    }
+
+    fn reserve_connection_slot(&self) -> std::io::Result<OwnedSemaphorePermit> {
+        self.prune_expired(TokioInstant::now());
+        loop {
+            match Arc::clone(&self.connection_permits).try_acquire_owned() {
+                Ok(permit) => return Ok(permit),
+                Err(tokio::sync::TryAcquireError::NoPermits)
+                    if self.evict_one_idle_connection() => {}
+                Err(error) => return Err(std::io::Error::other(error)),
+            }
+        }
+    }
+
+    fn evict_one_idle_connection(&self) -> bool {
+        let entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        entries.into_iter().any(|entry| {
+            let connection = entry
+                .idle
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .pop();
+            connection.is_some()
+        })
+    }
+
+    pub(super) fn prune_expired(&self, now: TokioInstant) -> usize {
+        let entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        entries
+            .into_iter()
+            .map(|entry| entry.prune_expired(now, self.idle_ttl))
+            .sum()
+    }
+}
+
+impl DnsTcpConnectionPoolEntry {
+    fn take_idle_connection(
+        &self,
+        now: TokioInstant,
+        idle_ttl: Duration,
+    ) -> Option<DnsTcpPooledConnection> {
+        let (connection, expired) = {
+            let mut idle = self
+                .idle
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let expired = remove_expired_idle_connections(&mut idle, now, idle_ttl);
+            (idle.pop(), expired)
+        };
+        drop(expired);
+        connection
+    }
+
+    fn prune_expired(&self, now: TokioInstant, idle_ttl: Duration) -> usize {
+        let expired = {
+            let mut idle = self
+                .idle
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            remove_expired_idle_connections(&mut idle, now, idle_ttl)
+        };
+        let count = expired.len();
+        drop(expired);
+        count
+    }
+}
+
+fn remove_expired_idle_connections(
+    idle: &mut Vec<DnsTcpPooledConnection>,
+    now: TokioInstant,
+    idle_ttl: Duration,
+) -> Vec<DnsTcpPooledConnection> {
+    let mut expired = Vec::new();
+    let mut index = 0;
+    while index < idle.len() {
+        if now.saturating_duration_since(idle[index].last_used) >= idle_ttl {
+            expired.push(idle.swap_remove(index));
+        } else {
+            index += 1;
+        }
+    }
+    expired
+}
+
+impl DnsTcpConnectionLease {
+    fn take_connection(&mut self) -> Option<DnsTcpPooledConnection> {
+        self.connection.take()
+    }
+
+    #[cfg(test)]
+    fn reused(&self) -> bool {
+        self.connection.is_some()
+    }
+
+    fn recycle(self, connection: DnsTcpPooledConnection) {
+        self.recycle_at(connection, TokioInstant::now());
+    }
+
+    fn recycle_at(self, mut connection: DnsTcpPooledConnection, last_used: TokioInstant) {
+        connection.last_used = last_used;
+        let mut idle = self
+            .entry
+            .idle
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if idle.len() < self.entry.idle_limit {
+            idle.push(connection);
+        }
+    }
+}
+
 pub(super) enum DnsUdpAction {
     Pass,
     Reply(Bytes),
@@ -512,14 +785,22 @@ async fn proxy_udp_payload(
     packet: &UdpTunPacket,
     context: &TunRuntimeContext,
 ) -> Result<Bytes, ()> {
-    let deadline = TokioInstant::now() + DNS_PROXY_TOTAL_TIMEOUT;
+    let total_deadline = TokioInstant::now() + DNS_PROXY_TOTAL_TIMEOUT;
     let path_payload_cap = context.tun.mtu().saturating_sub(20 + 8);
     let max_payload = dns_udp_client_payload_limit(&packet.payload, path_payload_cap);
-    for upstream in plan.upstreams() {
-        let remaining = deadline.saturating_duration_since(TokioInstant::now());
+    let upstreams = plan.upstreams();
+    for (index, upstream) in upstreams.iter().enumerate() {
+        let candidate_started = TokioInstant::now();
+        let remaining = total_deadline.saturating_duration_since(candidate_started);
         if remaining.is_zero() {
             break;
         }
+        let remaining_candidate_count = u32::try_from(upstreams.len() - index).unwrap_or(u32::MAX);
+        let candidate_budget = remaining / remaining_candidate_count;
+        if candidate_budget.is_zero() {
+            break;
+        }
+        let candidate_deadline = candidate_started + candidate_budget;
         let mut failure_phase = DnsUdpFailurePhase::Open;
         let (target, outbound_label, attempt) = match upstream.transport() {
             xray_config::DnsServerTransport::Classic => {
@@ -537,7 +818,9 @@ async fn proxy_udp_payload(
                 };
                 let outbound_label = crate::debug_log::udp_outbound_label(&outbound);
                 let attempt = timeout(
-                    remaining.min(outbound_timeout),
+                    candidate_deadline
+                        .saturating_duration_since(TokioInstant::now())
+                        .min(outbound_timeout),
                     exchange_udp_candidate(
                         outbound,
                         &target,
@@ -574,7 +857,7 @@ async fn proxy_udp_payload(
                     continue;
                 };
                 let attempt = timeout(
-                    remaining.min(DNS_TCP_PROXY_ATTEMPT_TIMEOUT),
+                    candidate_deadline.saturating_duration_since(TokioInstant::now()),
                     exchange_tcp_candidate_for_udp_client(
                         outbound,
                         &target,
@@ -583,6 +866,7 @@ async fn proxy_udp_payload(
                         max_payload,
                         context,
                         &mut failure_phase,
+                        candidate_deadline,
                     ),
                 )
                 .await;
@@ -618,6 +902,10 @@ async fn proxy_udp_payload(
     Err(())
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "DNS TCP candidate keeps route, query, metrics, and candidate deadline explicit"
+)]
 async fn exchange_tcp_candidate_for_udp_client(
     outbound: Option<TcpOutbound>,
     target: &Target,
@@ -626,11 +914,131 @@ async fn exchange_tcp_candidate_for_udp_client(
     max_payload: usize,
     context: &TunRuntimeContext,
     failure_phase: &mut DnsUdpFailurePhase,
+    deadline: TokioInstant,
 ) -> Result<DnsUpstreamResponse, crate::CoreError> {
-    let mut stream = match outbound {
-        Some(outbound) => {
-            open_tcp_bridge_stream(&outbound, target, Some(upstream), context).await?
+    let query_len = u16::try_from(query.len()).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "DNS TCP query is too large",
+        )
+    })?;
+    let mut lease = context.dns_tcp_connection_pool.lease(upstream).await?;
+    let (connection, response) = match lease.take_connection() {
+        Some(mut connection) => {
+            let reused_attempt = run_dns_tcp_network_attempt(
+                deadline,
+                exchange_and_validate_dns_tcp_query(
+                    &mut connection.stream,
+                    query,
+                    query_len,
+                    max_payload,
+                    context,
+                    failure_phase,
+                ),
+            )
+            .await;
+            if let Ok(response) = reused_attempt {
+                (connection, response)
+            } else {
+                record_dns_udp_failure(context, *failure_phase);
+                drop(connection);
+                *failure_phase = DnsUdpFailurePhase::Open;
+                open_and_exchange_dns_tcp_attempt(
+                    outbound.as_ref(),
+                    target,
+                    upstream,
+                    query,
+                    query_len,
+                    max_payload,
+                    context,
+                    failure_phase,
+                    deadline,
+                )
+                .await?
+            }
         }
+        None => {
+            open_and_exchange_dns_tcp_attempt(
+                outbound.as_ref(),
+                target,
+                upstream,
+                query,
+                query_len,
+                max_payload,
+                context,
+                failure_phase,
+                deadline,
+            )
+            .await?
+        }
+    };
+    lease.recycle(connection);
+    Ok(response)
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "DNS TCP attempt keeps transport, framing, metrics, and deadline explicit"
+)]
+async fn open_and_exchange_dns_tcp_attempt(
+    outbound: Option<&TcpOutbound>,
+    target: &Target,
+    upstream: &DnsProxyUpstream,
+    query: &[u8],
+    query_len: u16,
+    max_payload: usize,
+    context: &TunRuntimeContext,
+    failure_phase: &mut DnsUdpFailurePhase,
+    deadline: TokioInstant,
+) -> Result<(DnsTcpPooledConnection, DnsUpstreamResponse), crate::CoreError> {
+    run_dns_tcp_network_attempt(deadline, async {
+        *failure_phase = DnsUdpFailurePhase::Open;
+        let mut connection =
+            open_dns_tcp_pooled_connection(outbound, target, upstream, context).await?;
+        let response = exchange_and_validate_dns_tcp_query(
+            &mut connection.stream,
+            query,
+            query_len,
+            max_payload,
+            context,
+            failure_phase,
+        )
+        .await?;
+        Ok((connection, response))
+    })
+    .await
+}
+
+async fn run_dns_tcp_network_attempt<T>(
+    deadline: TokioInstant,
+    attempt: impl std::future::Future<Output = Result<T, crate::CoreError>>,
+) -> Result<T, crate::CoreError> {
+    let remaining = deadline.saturating_duration_since(TokioInstant::now());
+    if remaining.is_zero() {
+        return Err(dns_tcp_attempt_timeout_error());
+    }
+    timeout(remaining.min(DNS_TCP_PROXY_ATTEMPT_TIMEOUT), attempt)
+        .await
+        .map_err(|_| dns_tcp_attempt_timeout_error())?
+}
+
+fn dns_tcp_attempt_timeout_error() -> crate::CoreError {
+    std::io::Error::new(
+        std::io::ErrorKind::TimedOut,
+        "DNS TCP network attempt timed out",
+    )
+    .into()
+}
+
+async fn open_dns_tcp_pooled_connection(
+    outbound: Option<&TcpOutbound>,
+    target: &Target,
+    upstream: &DnsProxyUpstream,
+    context: &TunRuntimeContext,
+) -> Result<DnsTcpPooledConnection, crate::CoreError> {
+    let global_connection_permit = context.dns_tcp_connection_pool.reserve_connection_slot()?;
+    let stream = match outbound {
+        Some(outbound) => open_tcp_bridge_stream(outbound, target, Some(upstream), context).await?,
         None => {
             let candidates = resolve_freedom_dns_upstreams(upstream, context).await?;
             crate::dns::open_local_dns_tcp_stream(
@@ -642,20 +1050,56 @@ async fn exchange_tcp_candidate_for_udp_client(
         }
     };
     context.tun.record_udp_remote_open(false);
+    Ok(DnsTcpPooledConnection {
+        stream,
+        last_used: TokioInstant::now(),
+        _global_connection_permit: global_connection_permit,
+    })
+}
+
+async fn exchange_dns_tcp_query(
+    stream: &mut BoxedTransportStream,
+    query: &[u8],
+    query_len: u16,
+    max_payload: usize,
+    context: &TunRuntimeContext,
+    failure_phase: &mut DnsUdpFailurePhase,
+) -> Result<DnsUpstreamResponse, crate::CoreError> {
     *failure_phase = DnsUdpFailurePhase::Write;
-    let query_len = u16::try_from(query.len()).map_err(|_| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "DNS TCP query is too large",
-        )
-    })?;
     stream.write_u16(query_len).await?;
     stream.write_all(query).await?;
     stream.flush().await?;
     context.tun.record_udp_remote_written(query.len());
     *failure_phase = DnsUdpFailurePhase::Read;
-    let response = read_bounded_dns_payload(&mut stream, max_payload).await?;
+    let response = read_bounded_dns_payload(stream, max_payload).await?;
     context.tun.record_udp_remote_read(response.observed_len());
+    Ok(response)
+}
+
+async fn exchange_and_validate_dns_tcp_query(
+    stream: &mut BoxedTransportStream,
+    query: &[u8],
+    query_len: u16,
+    max_payload: usize,
+    context: &TunRuntimeContext,
+    failure_phase: &mut DnsUdpFailurePhase,
+) -> Result<DnsUpstreamResponse, crate::CoreError> {
+    let response = exchange_dns_tcp_query(
+        stream,
+        query,
+        query_len,
+        max_payload,
+        context,
+        failure_phase,
+    )
+    .await?;
+    if !response.matches_query(query) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "DNS TCP response does not match the query",
+        )
+        .into());
+    }
     Ok(response)
 }
 
@@ -1203,7 +1647,77 @@ fn is_tun_dns_socket(addr: SocketAddr) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::future::pending;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+
+    use tokio::io::ReadBuf;
+
     use super::*;
+
+    struct PendingTestTransportStream;
+
+    impl AsyncRead for PendingTestTransportStream {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            _buffer: &mut ReadBuf<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            Poll::Pending
+        }
+    }
+
+    impl AsyncWrite for PendingTestTransportStream {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            input: &[u8],
+        ) -> Poll<std::io::Result<usize>> {
+            Poll::Ready(Ok(input.len()))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    impl xray_transport::TransportStream for PendingTestTransportStream {
+        fn poll_read_direct(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            output: &mut ReadBuf<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            AsyncRead::poll_read(self, cx, output)
+        }
+
+        fn poll_write_direct(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            input: &[u8],
+        ) -> Poll<std::io::Result<usize>> {
+            AsyncWrite::poll_write(self, cx, input)
+        }
+    }
+
+    fn tcp_local_pool_upstream(index: u16) -> DnsProxyUpstream {
+        DnsProxyUpstream::Ip {
+            addr: SocketAddr::from((Ipv4Addr::LOCALHOST, 10_000 + index)),
+            inbound_tag: format!("dns-{index}"),
+            transport: xray_config::DnsServerTransport::TcpLocal,
+        }
+    }
+
+    fn pending_pool_connection(pool: &DnsTcpConnectionPool) -> DnsTcpPooledConnection {
+        DnsTcpPooledConnection {
+            stream: Box::new(PendingTestTransportStream),
+            last_used: TokioInstant::now(),
+            _global_connection_permit: pool.reserve_connection_slot().unwrap(),
+        }
+    }
 
     fn dns_a_query(id: u16, domain: &str) -> Vec<u8> {
         let mut query = Vec::new();
@@ -1242,6 +1756,208 @@ mod tests {
         framed.extend_from_slice(&u16::try_from(response.len()).unwrap().to_be_bytes());
         framed.extend_from_slice(&response);
         framed
+    }
+
+    #[test]
+    fn dns_tcp_pool_limits_are_profile_aware() {
+        assert_eq!(
+            [
+                TunRuntimeProfile::LowMemory,
+                TunRuntimeProfile::Mobile,
+                TunRuntimeProfile::MobilePlus,
+                TunRuntimeProfile::Desktop,
+                TunRuntimeProfile::Throughput,
+            ]
+            .map(DnsTcpConnectionPoolLimits::for_profile),
+            [
+                DnsTcpConnectionPoolLimits {
+                    per_upstream: 1,
+                    global: 8,
+                },
+                DnsTcpConnectionPoolLimits {
+                    per_upstream: 2,
+                    global: 16,
+                },
+                DnsTcpConnectionPoolLimits {
+                    per_upstream: 4,
+                    global: 32,
+                },
+                DnsTcpConnectionPoolLimits {
+                    per_upstream: 4,
+                    global: 32,
+                },
+                DnsTcpConnectionPoolLimits {
+                    per_upstream: 8,
+                    global: 64,
+                },
+            ]
+        );
+        assert_eq!(
+            DnsTcpConnectionPoolLimits::for_profile(TunRuntimeProfile::Default),
+            DnsTcpConnectionPoolLimits::for_profile(DEFAULT_DNS_TCP_POOL_PROFILE)
+        );
+    }
+
+    #[test]
+    fn dns_tcp_pool_idle_ttl_is_profile_aware() {
+        assert_eq!(
+            [
+                TunRuntimeProfile::LowMemory,
+                TunRuntimeProfile::Mobile,
+                TunRuntimeProfile::MobilePlus,
+                TunRuntimeProfile::Desktop,
+                TunRuntimeProfile::Throughput,
+            ]
+            .map(DnsTcpConnectionPoolLimits::idle_ttl_for_profile),
+            [
+                Duration::from_secs(15),
+                Duration::from_secs(30),
+                Duration::from_secs(45),
+                Duration::from_secs(60),
+                Duration::from_secs(60),
+            ]
+        );
+        assert_eq!(
+            DnsTcpConnectionPoolLimits::idle_ttl_for_profile(TunRuntimeProfile::Default),
+            DnsTcpConnectionPoolLimits::idle_ttl_for_profile(DEFAULT_DNS_TCP_POOL_PROFILE)
+        );
+    }
+
+    #[tokio::test]
+    async fn dns_tcp_pool_reuses_one_connection_across_many_sequential_leases() {
+        let pool = DnsTcpConnectionPool::new(TunRuntimeProfile::Default);
+        let upstream = tcp_local_pool_upstream(1);
+        let lease = pool.lease(&upstream).await.unwrap();
+        assert!(!lease.reused());
+        lease.recycle(pending_pool_connection(&pool));
+
+        for _ in 0..32 {
+            let mut lease = pool.lease(&upstream).await.unwrap();
+            assert!(lease.reused());
+            let connection = lease.take_connection().unwrap();
+            lease.recycle(connection);
+        }
+
+        let global_limit =
+            DnsTcpConnectionPoolLimits::for_profile(TunRuntimeProfile::Default).global;
+        assert_eq!(
+            pool.connection_permits.available_permits(),
+            global_limit - 1
+        );
+    }
+
+    #[tokio::test]
+    async fn dns_tcp_pool_bounds_concurrent_leases_per_key_and_globally() {
+        let pool = DnsTcpConnectionPool::with_limits(DnsTcpConnectionPoolLimits {
+            per_upstream: 2,
+            global: 2,
+        });
+        let first = pool.lease(&tcp_local_pool_upstream(1)).await.unwrap();
+        let second = pool.lease(&tcp_local_pool_upstream(2)).await.unwrap();
+        assert_eq!(pool.active_query_permits.available_permits(), 0);
+        assert!(timeout(
+            Duration::from_millis(10),
+            pool.lease(&tcp_local_pool_upstream(3))
+        )
+        .await
+        .is_err());
+        drop(first);
+        let third = timeout(
+            Duration::from_millis(100),
+            pool.lease(&tcp_local_pool_upstream(3)),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        drop(second);
+        drop(third);
+
+        let pool = DnsTcpConnectionPool::with_limits(DnsTcpConnectionPoolLimits {
+            per_upstream: 1,
+            global: 8,
+        });
+        let upstream = tcp_local_pool_upstream(4);
+        let first = pool.lease(&upstream).await.unwrap();
+        assert!(timeout(Duration::from_millis(10), pool.lease(&upstream))
+            .await
+            .is_err());
+        drop(first);
+        assert!(timeout(Duration::from_millis(100), pool.lease(&upstream))
+            .await
+            .unwrap()
+            .is_ok());
+    }
+
+    #[tokio::test]
+    async fn dns_tcp_pool_global_socket_cap_includes_idle_connections() {
+        let pool = DnsTcpConnectionPool::with_limits(DnsTcpConnectionPoolLimits {
+            per_upstream: 2,
+            global: 2,
+        });
+        for index in 1..=2 {
+            let lease = pool.lease(&tcp_local_pool_upstream(index)).await.unwrap();
+            lease.recycle(pending_pool_connection(&pool));
+        }
+        assert_eq!(pool.connection_permits.available_permits(), 0);
+
+        let third_upstream = tcp_local_pool_upstream(3);
+        let third_lease = pool.lease(&third_upstream).await.unwrap();
+        third_lease.recycle(pending_pool_connection(&pool));
+        let idle_connections = pool
+            .entries
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .values()
+            .map(|entry| {
+                entry
+                    .idle
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .len()
+            })
+            .sum::<usize>();
+
+        assert_eq!(idle_connections, 2);
+        assert_eq!(pool.connection_permits.available_permits(), 0);
+    }
+
+    #[tokio::test]
+    async fn dns_tcp_pool_timeout_drops_a_leased_connection_instead_of_recycling_it() {
+        let pool = DnsTcpConnectionPool::new(TunRuntimeProfile::LowMemory);
+        let upstream = tcp_local_pool_upstream(1);
+        let lease = pool.lease(&upstream).await.unwrap();
+        lease.recycle(pending_pool_connection(&pool));
+
+        let timed_out = timeout(Duration::from_millis(10), async {
+            let mut lease = pool.lease(&upstream).await.unwrap();
+            let connection = lease.take_connection().unwrap();
+            pending::<()>().await;
+            lease.recycle(connection);
+        })
+        .await;
+        assert!(timed_out.is_err());
+        assert_eq!(pool.connection_permits.available_permits(), 8);
+        assert!(!pool.lease(&upstream).await.unwrap().reused());
+    }
+
+    #[tokio::test]
+    async fn dns_tcp_pool_prunes_expired_idle_connection_and_recovers_permit() {
+        let idle_ttl = Duration::from_secs(5);
+        let pool = DnsTcpConnectionPool::with_limits_and_idle_ttl(
+            DnsTcpConnectionPoolLimits {
+                per_upstream: 1,
+                global: 1,
+            },
+            idle_ttl,
+        );
+        let upstream = tcp_local_pool_upstream(1);
+        let last_used = TokioInstant::now();
+        let lease = pool.lease(&upstream).await.unwrap();
+        lease.recycle_at(pending_pool_connection(&pool), last_used);
+        assert_eq!(pool.connection_permits.available_permits(), 0);
+        assert_eq!(pool.prune_expired(last_used + idle_ttl), 1);
+        assert_eq!(pool.connection_permits.available_permits(), 1);
+        assert!(!pool.lease(&upstream).await.unwrap().reused());
     }
 
     #[test]

@@ -1078,6 +1078,9 @@ pub(crate) async fn serve_tun_endpoint(
     let dns_tcp_flow_permits = Arc::new(Semaphore::new(dns_tcp_flow_limit(
         runtime_policy.flows.tcp.max_active_flows,
     )));
+    let dns_tcp_connection_pool = Arc::new(dns_proxy::DnsTcpConnectionPool::new(
+        tun_runtime_options.profile,
+    ));
     let tcp_flow_generation = Arc::new(AtomicU64::new(0));
     let udp_task_limit = runtime_policy.flows.udp.max_active_flows;
     let udp_task_permits = Arc::new(Semaphore::new(udp_task_limit));
@@ -1110,6 +1113,7 @@ pub(crate) async fn serve_tun_endpoint(
         runtime_policy,
         tcp_pending_open_permits,
         dns_tcp_flow_permits,
+        dns_tcp_connection_pool,
         tcp_flow_generation,
         udp_task_permits,
         dns_udp_task_permits,
@@ -1314,6 +1318,9 @@ pub(crate) async fn serve_tun_endpoint(
             active_udp_tasks,
         );
         if last_flow_stats.elapsed() >= TUN_FLOW_STATS_INTERVAL {
+            runtime_context
+                .dns_tcp_connection_pool
+                .prune_expired(TokioInstant::now());
             record_flow_budget_stats(
                 tun.as_ref(),
                 &mut flow_budget_state,
@@ -1578,6 +1585,7 @@ struct TunRuntimeContext {
     runtime_policy: TunRuntimePolicy,
     tcp_pending_open_permits: Arc<Semaphore>,
     dns_tcp_flow_permits: Arc<Semaphore>,
+    dns_tcp_connection_pool: Arc<dns_proxy::DnsTcpConnectionPool>,
     tcp_flow_generation: Arc<AtomicU64>,
     udp_task_permits: Arc<Semaphore>,
     dns_udp_task_permits: Arc<Semaphore>,
