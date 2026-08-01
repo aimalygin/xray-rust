@@ -339,29 +339,58 @@ or 60 seconds (`Desktop`/`Throughput`), as well as being released with the TUN
 runtime. TCP is byte-transparent only when its first DNS message requires
 transparent semantics (AXFR, IXFR, a non-QUERY opcode, multiple questions, or
 an unsupported/malformed envelope). Ordinary single-question QUERY messages
-use a bounded, multiplexed DNS/TCP session with up to 16 pending questions and
-128 KiB of decoded input. Responses are matched by transaction ID, opcode, and
-question; post-open EOF/I/O/timeout/protocol failures and `TC=1`/SERVFAIL retry
-only unanswered queries on the next configured server. NXDOMAIN,
-NOERROR/NODATA, and other matching RCODEs are returned without fallback.
-Exhaustion emits a framed SERVFAIL for each unresolved query while keeping the
-client connection open. Raw and fake DNS/TCP share a dedicated limit of up to
-32 flows. The client session uses inbound `connIdle`; individual raw-DNS
-operations remain bounded by the smaller of `connIdle` and five seconds.
-A raw-anchor query keeps the client's original question type and does not apply
-global/per-server `queryStrategy`, `domains`, IP response filters, `timeoutMs`,
-or fallback policy. Object entries contribute their endpoint, transport, and
-effective DNS tag to the raw wire exchange. The tag drives outbound routing
-for routed transports and is intentionally inert for `tcp+local://`.
-The declaration-order plan deduplicates by endpoint, transport, and effective
-tag, so two clients aimed at the same endpoint with different tags remain
-distinct. This is the raw-message equivalent of Xray DNS outbound `Direct`;
-the TCP adapter interprets only enough of ordinary QUERY envelopes to provide
-safe correlation and failover. Xray DNS outbound `Hijack` semantics (including its A/AAAA family
-gate, DNS hosts/cache, and per-server policy) remain a separate unsupported
-feature rather than a partial hybrid in the raw proxy. The raw proxy retains
-its own transport-aware per-attempt and five-second per-query budget; those
-protect the TUN adapter rather than model a managed Xray DNS client.
+use a bounded hybrid session with up to 16 combined pending questions and
+128 KiB of decoded input. Individual DNS/TCP messages may use the full
+65,535-byte wire length; the combined limit remains shared across pipelined
+frames. A strict IN A/AAAA query without AD/CD and either no OPT or an empty
+EDNS(0) OPT with DO clear is answered through the managed destination resolver.
+It therefore applies `dns.hosts`, global and per-server
+`queryStrategy`, `domains`, IP response filters, `timeoutMs`, fallback policy,
+effective DNS tags, and the TTL cache. Family selection occurs before wire I/O
+and before cache/single-flight: A and AAAA cannot trigger or reuse one another's
+upstream query. The synthesized response preserves the request ID and question,
+emits all selected-family addresses with the remaining minimum TTL, and maps
+authoritative negative results to NXDOMAIN or NODATA; transport exhaustion is a
+bounded SERVFAIL. Managed UDP and TCP answers retain a minimal empty EDNS(0)
+OPT; UDP also honors the same EDNS/path-MTU truncation limit as the raw adapter.
+DNSSEC- and option-sensitive requests remain raw because the managed resolver
+does not yet return complete RRsets/RRSIGs or EDNS option state. This is an
+intentional standards-safe extension over Xray-core's DNS outbound, which drops
+OPT on a Hijack response.
+
+Other ordinary question types, DNSSEC-sensitive A/AAAA requests, non-empty EDNS
+options, and unsupported EDNS versions keep their original wire message and use
+the raw plan. Raw responses are matched by transaction ID, opcode, and question;
+post-open EOF/I/O/timeout/protocol failures and `TC=1`/SERVFAIL retry only
+unanswered queries on the next configured server. NXDOMAIN, NOERROR/NODATA,
+and other matching RCODEs are returned without fallback. Exhaustion emits a
+framed SERVFAIL for each unresolved raw query while keeping the client
+connection open. Managed answers are delivered independently of a concurrent
+raw dial/write, may complete out of order, and share the same 16-question and
+128-KiB admission boundary. Their owned lookup tasks are aborted with the
+client flow. Raw and fake DNS/TCP share a dedicated limit of up to 32 flows.
+The client session uses inbound `connIdle`; individual raw-DNS operations
+remain bounded by the smaller of `connIdle` and five seconds.
+
+For raw questions, object entries contribute their endpoint, transport, and
+effective DNS tag to the wire exchange. The tag drives outbound routing for
+routed transports and is intentionally inert for `tcp+local://`. The
+declaration-order plan deduplicates by endpoint, transport, and effective tag,
+so two clients aimed at the same endpoint with different tags remain distinct.
+Raw selection does not apply managed `queryStrategy`, `domains`, IP response
+filters, `timeoutMs`, `skipFallback`, or `disableFallback*`; its own bounded
+transport failover walks that declaration-order plan. DNSSEC/EDNS clients that
+depend on split-DNS privacy must therefore ensure every raw candidate the plan
+may reach is appropriate until the general rule-driven DNS outbound is
+implemented.
+This is the raw-message equivalent of Xray DNS outbound `Direct`; the TCP
+adapter interprets only enough of ordinary QUERY envelopes to provide safe
+correlation and failover. The fixed A/AAAA managed path models the core of Xray
+DNS outbound `Hijack`, but its configurable Direct/Drop/Reject/Hijack rules,
+rewrite server, own-link recursion guard, and non-IP policy remain unsupported.
+The raw path retains its own transport-aware per-attempt and five-second
+per-query budget; those protect the TUN adapter rather than model a managed
+Xray DNS client.
 A domain upstream selected through VLESS stays a domain and is resolved
 by the remote endpoint. A domain selected through Freedom uses the separate
 bootstrap policy. Non-intercepting `System` embeddings may use the operating

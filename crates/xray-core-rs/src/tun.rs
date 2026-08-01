@@ -21,8 +21,8 @@ use xray_config::{
 };
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::{
-    dns_response_matches_query, protect_udp_socket, BoxedTransportStream, DnsResolver,
-    TransportDialer,
+    dns_response_matches_query, protect_udp_socket, BoxedTransportStream, DnsLookup,
+    DnsQueryStrategy as TransportDnsQueryStrategy, DnsResolver, TransportDialer, TransportError,
 };
 use xray_tun::{
     TunEndpoint, TunError, TunTcpBufferState, TunTcpFlowSummaryEvent, TunTcpOpenErrorEvent,

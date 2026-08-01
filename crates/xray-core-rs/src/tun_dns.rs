@@ -5,6 +5,7 @@ use tokio::time::{timeout, timeout_at, Instant as TokioInstant};
 use super::*;
 
 const DNS_RCODE_FORMERR: u16 = 1;
+const DNS_RCODE_NXDOMAIN: u16 = 3;
 const DNS_RCODE_REFUSED: u16 = 5;
 const DNS_TYPE_OPT: u16 = 41;
 const DNS_TYPE_IXFR: u16 = 251;
@@ -21,13 +22,15 @@ const XUDP_OPT_DATA: u8 = 1;
 const DNS_PROXY_FREEDOM_ATTEMPT_TIMEOUT: Duration = Duration::from_millis(750);
 const DNS_PROXY_VLESS_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(2);
 const DNS_PROXY_TOTAL_TIMEOUT: Duration = Duration::from_secs(5);
-const MAX_DNS_TCP_MESSAGE_SIZE: usize = 8 * 1024;
+const MAX_DNS_TCP_WIRE_MESSAGE_SIZE: usize = u16::MAX as usize;
+const MAX_RAW_DNS_TCP_HIJACK_LOOKUPS: usize = 16;
 const MAX_RAW_DNS_TCP_PENDING_QUERIES: usize = 16;
 const MAX_RAW_DNS_TCP_PENDING_BYTES: usize = 128 * 1024;
 const RAW_DNS_TCP_DRAIN_QUANTUM: usize = 16;
 const RAW_DNS_TCP_WRITE_QUANTUM_BYTES: usize = 16 * 1024;
 pub(super) const DNS_TCP_PROXY_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(2);
 pub(super) const DNS_TCP_PROXY_TOTAL_TIMEOUT: Duration = Duration::from_secs(5);
+const DNS_HIJACK_DEFAULT_TTL: u32 = 300;
 
 #[derive(Clone)]
 pub(super) enum TunDnsMode {
@@ -458,6 +461,192 @@ enum DnsUpstreamResponse {
 struct EdnsRequest {
     udp_payload_size: usize,
     dnssec_ok: bool,
+    extended_rcode: u8,
+    version: u8,
+    options_empty: bool,
+}
+
+#[derive(Debug)]
+enum DnsHijackResolution {
+    Answers { addresses: Vec<IpAddr>, ttl: u32 },
+    NameError,
+    NoData,
+    ServerFailure,
+}
+
+fn dns_hijack_question(message: &[u8]) -> Option<DnsQuestion> {
+    if raw_dns_tcp_client_frame_kind(message) != RawDnsTcpClientFrameKind::Query {
+        return None;
+    }
+    let question = parse_dns_question(message)?;
+    let flags = read_dns_wire_u16(message, 2)?;
+    if flags & 0x06ff != 0
+        || question.qclass != DNS_CLASS_IN
+        || !matches!(question.qtype, DNS_TYPE_A | DNS_TYPE_AAAA)
+        || read_dns_wire_u16(message, 6) != Some(0)
+        || read_dns_wire_u16(message, 8) != Some(0)
+    {
+        return None;
+    }
+    match read_dns_wire_u16(message, 10)? {
+        0 if question.question_end == message.len() => Some(question),
+        1 if validated_edns_request(message).is_some_and(|edns| {
+            !edns.dnssec_ok && edns.extended_rcode == 0 && edns.version == 0 && edns.options_empty
+        }) =>
+        {
+            Some(question)
+        }
+        _ => None,
+    }
+}
+
+fn dns_hijack_ttl(lookup: &DnsLookup) -> u32 {
+    lookup.ttl().map_or(DNS_HIJACK_DEFAULT_TTL, |ttl| {
+        let seconds = ttl
+            .as_secs()
+            .saturating_add(u64::from(ttl.subsec_nanos() != 0));
+        u32::try_from(seconds).unwrap_or(u32::MAX)
+    })
+}
+
+fn dns_hijack_resolution(
+    question: &DnsQuestion,
+    result: Result<DnsLookup, TransportError>,
+) -> DnsHijackResolution {
+    match result {
+        Ok(lookup) => {
+            let addresses = lookup
+                .ips()
+                .filter(|address| {
+                    matches!(
+                        (question.qtype, address),
+                        (DNS_TYPE_A, IpAddr::V4(_)) | (DNS_TYPE_AAAA, IpAddr::V6(_))
+                    )
+                })
+                .take(MAX_DNS_TCP_WIRE_MESSAGE_SIZE / 16 + 1)
+                .collect::<Vec<_>>();
+            if addresses.is_empty() {
+                DnsHijackResolution::NoData
+            } else {
+                DnsHijackResolution::Answers {
+                    addresses,
+                    ttl: dns_hijack_ttl(&lookup),
+                }
+            }
+        }
+        Err(TransportError::DnsNameError(_, _)) => DnsHijackResolution::NameError,
+        Err(TransportError::DnsNoData(_, _) | TransportError::NoResolvedAddress(_, _)) => {
+            DnsHijackResolution::NoData
+        }
+        Err(_) => DnsHijackResolution::ServerFailure,
+    }
+}
+
+fn build_dns_hijack_response(
+    query: &[u8],
+    question: &DnsQuestion,
+    resolution: DnsHijackResolution,
+    max_payload: usize,
+    include_edns: bool,
+) -> Option<Bytes> {
+    let edns = include_edns
+        .then(|| validated_edns_request(query))
+        .flatten();
+    let (addresses, ttl, rcode) = match resolution {
+        DnsHijackResolution::Answers { addresses, ttl } => (addresses, ttl, DNS_RCODE_NOERROR),
+        DnsHijackResolution::NameError => (Vec::new(), 0, DNS_RCODE_NXDOMAIN),
+        DnsHijackResolution::NoData => (Vec::new(), 0, DNS_RCODE_NOERROR),
+        DnsHijackResolution::ServerFailure => (Vec::new(), 0, DNS_RCODE_SERVFAIL),
+    };
+    let answer_size: usize = match question.qtype {
+        DNS_TYPE_A => 16,
+        DNS_TYPE_AAAA => 28,
+        _ => return None,
+    };
+    let full_len = question
+        .question_end
+        .checked_add(answer_size.checked_mul(addresses.len())?)?
+        .checked_add(edns.map_or(0, |_| 11))?;
+    let truncated = full_len > max_payload && !addresses.is_empty();
+    let answer_count = if truncated { 0 } else { addresses.len() };
+    let answer_count = u16::try_from(answer_count).ok()?;
+    let request_flags = read_dns_wire_u16(query, 2)?;
+    let mut response_flags = 0x8000 | (request_flags & 0x0100) | 0x0480 | (rcode & 0x000f);
+    if truncated {
+        response_flags |= 0x0200;
+    }
+
+    let mut response = Vec::with_capacity(full_len.min(max_payload.max(question.question_end)));
+    response.extend_from_slice(query.get(0..2)?);
+    response.extend_from_slice(&response_flags.to_be_bytes());
+    response.extend_from_slice(&1_u16.to_be_bytes());
+    response.extend_from_slice(&answer_count.to_be_bytes());
+    response.extend_from_slice(&0_u16.to_be_bytes());
+    response.extend_from_slice(&(edns.is_some() as u16).to_be_bytes());
+    response.extend_from_slice(query.get(12..question.question_end)?);
+
+    if !truncated {
+        for address in addresses {
+            response.extend_from_slice(&[0xc0, 0x0c]);
+            response.extend_from_slice(&question.qtype.to_be_bytes());
+            response.extend_from_slice(&DNS_CLASS_IN.to_be_bytes());
+            response.extend_from_slice(&ttl.to_be_bytes());
+            match address {
+                IpAddr::V4(address) if question.qtype == DNS_TYPE_A => {
+                    response.extend_from_slice(&4_u16.to_be_bytes());
+                    response.extend_from_slice(&address.octets());
+                }
+                IpAddr::V6(address) if question.qtype == DNS_TYPE_AAAA => {
+                    response.extend_from_slice(&16_u16.to_be_bytes());
+                    response.extend_from_slice(&address.octets());
+                }
+                IpAddr::V4(_) | IpAddr::V6(_) => return None,
+            }
+        }
+    }
+
+    if let Some(edns) = edns {
+        let response_payload_size = edns
+            .udp_payload_size
+            .max(DNS_LEGACY_UDP_PAYLOAD_SIZE)
+            .min(max_payload)
+            .min(usize::from(u16::MAX));
+        let response_payload_size = u16::try_from(response_payload_size).ok()?;
+        response.push(0);
+        response.extend_from_slice(&DNS_TYPE_OPT.to_be_bytes());
+        response.extend_from_slice(&response_payload_size.to_be_bytes());
+        response.extend_from_slice(&0_u32.to_be_bytes());
+        response.extend_from_slice(&0_u16.to_be_bytes());
+    }
+    Some(Bytes::from(response))
+}
+
+async fn resolve_dns_hijack_response(
+    resolver: Arc<dyn DnsResolver>,
+    query: Bytes,
+    question: DnsQuestion,
+    max_payload: usize,
+    include_edns: bool,
+) -> Bytes {
+    let strategy = match question.qtype {
+        DNS_TYPE_A => TransportDnsQueryStrategy::UseIpv4,
+        DNS_TYPE_AAAA => TransportDnsQueryStrategy::UseIpv6,
+        _ => {
+            return dns_error_response(&query, DNS_RCODE_SERVFAIL, false).unwrap_or_default();
+        }
+    };
+    let resolution = match timeout(
+        DNS_PROXY_TOTAL_TIMEOUT,
+        resolver.resolve_all_with_strategy(&question.domain, DNS_PORT, strategy),
+    )
+    .await
+    {
+        Ok(result) => dns_hijack_resolution(&question, result),
+        Err(_) => DnsHijackResolution::ServerFailure,
+    };
+    build_dns_hijack_response(&query, &question, resolution, max_payload, include_edns)
+        .or_else(|| dns_error_response(&query, DNS_RCODE_SERVFAIL, false))
+        .unwrap_or_default()
 }
 
 impl DnsUpstreamResponse {
@@ -571,37 +760,54 @@ pub(super) async fn bridge_udp_query(
         return;
     }
 
-    let response = tokio::select! {
-        biased;
-        () = wait_for_tun_shutdown(&mut shutdown) => return,
-        response = proxy_udp_payload(plan.as_ref(), &packet, &context) => response,
-    };
-    let response = match response {
-        Ok(response) => Some(response),
-        Err(()) => {
-            if context.runtime_logger.is_enabled() {
-                if let Some(target) =
-                    target_from_endpoint_with_network(packet.target, RoutingNetwork::Udp)
-                {
-                    crate::debug_log::log_access_rejected(
-                        &context.runtime_logger,
-                        "tun",
-                        &target,
-                        "all DNS UDP upstream attempts failed",
-                    );
-                    context.runtime_logger.error(|| {
-                        format!(
-                            "Debug udpDnsProxyError target={} error=<redacted>",
-                            crate::debug_log::target_label(&target)
-                        )
-                    });
-                }
-            }
-            dns_error_response(&packet.payload, DNS_RCODE_SERVFAIL, false)
+    let response = if let Some(question) = dns_hijack_question(&packet.payload) {
+        let path_payload_cap = context.tun.mtu().saturating_sub(20 + 8);
+        let max_payload = dns_udp_client_payload_limit(&packet.payload, path_payload_cap);
+        tokio::select! {
+            biased;
+            () = wait_for_tun_shutdown(&mut shutdown) => return,
+            response = resolve_dns_hijack_response(
+                Arc::clone(&context.dns_resolver),
+                packet.payload.clone(),
+                question,
+                max_payload,
+                true,
+            ) => response,
         }
-    };
-    let Some(response) = response else {
-        return;
+    } else {
+        let response = tokio::select! {
+            biased;
+            () = wait_for_tun_shutdown(&mut shutdown) => return,
+            response = proxy_udp_payload(plan.as_ref(), &packet, &context) => response,
+        };
+        match response {
+            Ok(response) => response,
+            Err(()) => {
+                if context.runtime_logger.is_enabled() {
+                    if let Some(target) =
+                        target_from_endpoint_with_network(packet.target, RoutingNetwork::Udp)
+                    {
+                        crate::debug_log::log_access_rejected(
+                            &context.runtime_logger,
+                            "tun",
+                            &target,
+                            "all DNS UDP upstream attempts failed",
+                        );
+                        context.runtime_logger.error(|| {
+                            format!(
+                                "Debug udpDnsProxyError target={} error=<redacted>",
+                                crate::debug_log::target_label(&target)
+                            )
+                        });
+                    }
+                }
+                let Some(response) = dns_error_response(&packet.payload, DNS_RCODE_SERVFAIL, false)
+                else {
+                    return;
+                };
+                response
+            }
+        }
     };
     let Some(reply) = build_udp_packet(packet.target, packet.client, &response) else {
         return;
@@ -712,6 +918,7 @@ struct RawDnsTcpPendingQuery {
     generation: u64,
     attempt_deadline: Option<TokioInstant>,
     sent: bool,
+    admission_frame_id: Option<u64>,
     upload_frame_id: Option<u64>,
 }
 
@@ -724,8 +931,225 @@ struct RawDnsTcpUploadChunk {
 #[derive(Debug)]
 struct RawDnsTcpUploadFrame {
     id: u64,
+    start: usize,
     end: usize,
     committed: bool,
+}
+
+struct RawDnsTcpHijackCompletion {
+    delivery_result: RawDnsTcpIoResult,
+    upload_frame_id: u64,
+    request_frame_len: usize,
+}
+
+#[derive(Clone)]
+struct RawDnsTcpHijackDeliveryTarget {
+    handle: SocketHandle,
+    generation: u64,
+    stack_tx: mpsc::Sender<StackEvent>,
+    shutdown: watch::Receiver<bool>,
+    flow_cancel: watch::Receiver<bool>,
+}
+
+impl RawDnsTcpHijackDeliveryTarget {
+    fn new(
+        handle: SocketHandle,
+        generation: u64,
+        context: &TunRuntimeContext,
+        shutdown: &watch::Receiver<bool>,
+        flow_cancel: &watch::Receiver<bool>,
+    ) -> Self {
+        Self {
+            handle,
+            generation,
+            stack_tx: context.stack_tx.clone(),
+            shutdown: shutdown.clone(),
+            flow_cancel: flow_cancel.clone(),
+        }
+    }
+}
+
+#[derive(Default)]
+struct RawDnsTcpHijackLookups {
+    tasks: JoinSet<RawDnsTcpHijackCompletion>,
+    active_frames: HashMap<u64, usize>,
+    buffered_bytes: usize,
+}
+
+impl RawDnsTcpHijackLookups {
+    fn len(&self) -> usize {
+        self.active_frames.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.active_frames.is_empty()
+    }
+
+    fn buffered_bytes(&self) -> usize {
+        self.buffered_bytes
+    }
+
+    fn spawn(
+        &mut self,
+        frame: Bytes,
+        question: DnsQuestion,
+        upload_frame_id: u64,
+        resolver: Arc<dyn DnsResolver>,
+        delivery_target: RawDnsTcpHijackDeliveryTarget,
+    ) -> bool {
+        let request_frame_len = frame.len();
+        let next_bytes = self.buffered_bytes.saturating_add(request_frame_len);
+        if self.active_frames.len() >= MAX_RAW_DNS_TCP_HIJACK_LOOKUPS
+            || self.active_frames.contains_key(&upload_frame_id)
+            || next_bytes > MAX_RAW_DNS_TCP_PENDING_BYTES
+        {
+            return false;
+        }
+        let query = frame.slice(2..);
+        self.tasks.spawn(async move {
+            let RawDnsTcpHijackDeliveryTarget {
+                handle,
+                generation,
+                stack_tx,
+                mut shutdown,
+                mut flow_cancel,
+            } = delivery_target;
+            let response = tokio::select! {
+                biased;
+                () = wait_for_tun_shutdown(&mut shutdown) => {
+                    return RawDnsTcpHijackCompletion {
+                        delivery_result: RawDnsTcpIoResult::Shutdown,
+                        upload_frame_id,
+                        request_frame_len,
+                    };
+                },
+                () = wait_for_tun_shutdown(&mut flow_cancel) => {
+                    return RawDnsTcpHijackCompletion {
+                        delivery_result: RawDnsTcpIoResult::Shutdown,
+                        upload_frame_id,
+                        request_frame_len,
+                    };
+                },
+                response = resolve_dns_hijack_response(
+                    resolver,
+                    query,
+                    question,
+                    MAX_DNS_TCP_WIRE_MESSAGE_SIZE,
+                    true,
+                ) => response,
+            };
+            let delivery_result = match framed_dns_payload(&response) {
+                Some(response) => tokio::select! {
+                    biased;
+                    () = wait_for_tun_shutdown(&mut shutdown) => RawDnsTcpIoResult::Shutdown,
+                    () = wait_for_tun_shutdown(&mut flow_cancel) => RawDnsTcpIoResult::Shutdown,
+                    result = timeout(
+                        DNS_TCP_PROXY_ATTEMPT_TIMEOUT,
+                        stack_tx.send(StackEvent::RemoteData {
+                            handle,
+                            generation,
+                            data: response,
+                        }),
+                    ) => match result {
+                        Ok(Ok(())) => RawDnsTcpIoResult::Complete,
+                        Ok(Err(_)) => RawDnsTcpIoResult::Failed,
+                        Err(_) => RawDnsTcpIoResult::TimedOut,
+                    },
+                },
+                None => RawDnsTcpIoResult::Failed,
+            };
+            RawDnsTcpHijackCompletion {
+                delivery_result,
+                upload_frame_id,
+                request_frame_len,
+            }
+        });
+        self.active_frames
+            .insert(upload_frame_id, request_frame_len);
+        self.buffered_bytes = next_bytes;
+        true
+    }
+
+    fn finish(&mut self, upload_frame_id: u64, request_frame_len: usize) -> bool {
+        if self.active_frames.remove(&upload_frame_id) != Some(request_frame_len) {
+            return false;
+        }
+        let Some(buffered_bytes) = self.buffered_bytes.checked_sub(request_frame_len) else {
+            return false;
+        };
+        self.buffered_bytes = buffered_bytes;
+        true
+    }
+}
+
+impl Drop for RawDnsTcpHijackLookups {
+    fn drop(&mut self) {
+        self.tasks.abort_all();
+    }
+}
+
+fn raw_dns_tcp_combined_query_count(
+    pending: &RawDnsTcpPendingQueries,
+    hijack_lookups: &RawDnsTcpHijackLookups,
+    upload_ledger: &RawDnsTcpUploadLedger,
+) -> usize {
+    let retained_frames = upload_ledger
+        .frames
+        .iter()
+        .filter(|frame| {
+            frame.committed
+                && !raw_dns_tcp_upload_frame_is_active(frame.id, pending, hijack_lookups)
+        })
+        .count();
+    pending
+        .len()
+        .saturating_add(hijack_lookups.len())
+        .saturating_add(retained_frames)
+}
+
+fn raw_dns_tcp_combined_buffered_bytes(
+    pending: &RawDnsTcpPendingQueries,
+    hijack_lookups: &RawDnsTcpHijackLookups,
+    upload_ledger: &RawDnsTcpUploadLedger,
+    decoder_buffered_bytes: usize,
+) -> usize {
+    let retained_bytes = upload_ledger
+        .frames
+        .iter()
+        .filter(|frame| {
+            frame.committed
+                && !raw_dns_tcp_upload_frame_is_active(frame.id, pending, hijack_lookups)
+        })
+        .fold(0usize, |bytes, frame| {
+            bytes.saturating_add(frame.end.saturating_sub(frame.start))
+        });
+    pending
+        .buffered_bytes()
+        .saturating_add(hijack_lookups.buffered_bytes())
+        .saturating_add(decoder_buffered_bytes)
+        .saturating_add(retained_bytes)
+}
+
+fn raw_dns_tcp_upload_frame_is_active(
+    upload_frame_id: u64,
+    pending: &RawDnsTcpPendingQueries,
+    hijack_lookups: &RawDnsTcpHijackLookups,
+) -> bool {
+    hijack_lookups.active_frames.contains_key(&upload_frame_id)
+        || pending.entries.iter().any(|query| {
+            query
+                .admission_frame_id
+                .is_some_and(|frame_id| frame_id == upload_frame_id)
+        })
+}
+
+fn raw_dns_tcp_can_admit_query(
+    pending: &RawDnsTcpPendingQueries,
+    hijack_lookups: &RawDnsTcpHijackLookups,
+    upload_ledger: &RawDnsTcpUploadLedger,
+) -> bool {
+    raw_dns_tcp_combined_query_count(pending, hijack_lookups, upload_ledger)
+        < MAX_RAW_DNS_TCP_PENDING_QUERIES
 }
 
 #[derive(Debug, Default)]
@@ -752,7 +1176,8 @@ impl RawDnsTcpUploadLedger {
     }
 
     fn register_frame(&mut self, frame_len: usize) -> Option<u64> {
-        let end = self.decoded_end.checked_add(frame_len)?;
+        let start = self.decoded_end;
+        let end = start.checked_add(frame_len)?;
         if end > self.received_end {
             return None;
         }
@@ -761,6 +1186,7 @@ impl RawDnsTcpUploadLedger {
         self.decoded_end = end;
         self.frames.push_back(RawDnsTcpUploadFrame {
             id,
+            start,
             end,
             committed: false,
         });
@@ -841,6 +1267,7 @@ impl RawDnsTcpPendingQueries {
             generation: 0,
             attempt_deadline: None,
             sent: false,
+            admission_frame_id: upload_frame_id,
             upload_frame_id,
         });
         self.bytes = next_bytes;
@@ -1065,10 +1492,48 @@ enum RawDnsTcpDrainResult {
 enum RawDnsTcpLoopEvent {
     Client(Option<StackToRemoteData>),
     Upstream(std::io::Result<usize>),
+    Hijack(Option<Result<RawDnsTcpHijackCompletion, JoinError>>),
     Drain,
     Deadline,
     Idle,
     Shutdown,
+}
+
+struct RawDnsTcpCloseGuard {
+    inner: Option<TcpBridgeCloseGuard>,
+    hijack_cancel: watch::Sender<bool>,
+}
+
+impl RawDnsTcpCloseGuard {
+    fn new(inner: TcpBridgeCloseGuard, hijack_cancel: watch::Sender<bool>) -> Self {
+        Self {
+            inner: Some(inner),
+            hijack_cancel,
+        }
+    }
+
+    fn cancel_hijack_tasks(&self) {
+        let _ = self.hijack_cancel.send(true);
+    }
+
+    fn inner_mut(&mut self) -> &mut TcpBridgeCloseGuard {
+        self.inner
+            .as_mut()
+            .expect("raw DNS TCP close guard must own its inner guard")
+    }
+
+    fn into_inner(mut self) -> TcpBridgeCloseGuard {
+        self.cancel_hijack_tasks();
+        self.inner
+            .take()
+            .expect("raw DNS TCP close guard must own its inner guard")
+    }
+}
+
+impl Drop for RawDnsTcpCloseGuard {
+    fn drop(&mut self) {
+        self.cancel_hijack_tasks();
+    }
 }
 
 fn retire_raw_dns_tcp_upstream(
@@ -1109,7 +1574,11 @@ pub(super) async fn bridge_raw_dns_tcp_flow(
     dns_flow_permit: Option<OwnedSemaphorePermit>,
 ) {
     drop(pending_open);
-    let mut close_guard = TcpBridgeCloseGuard::new(handle, generation, context.stack_tx.clone());
+    let (hijack_cancel_tx, hijack_cancel) = watch::channel(false);
+    let mut close_guard = RawDnsTcpCloseGuard::new(
+        TcpBridgeCloseGuard::new(handle, generation, context.stack_tx.clone()),
+        hijack_cancel_tx,
+    );
     let opened = tokio::select! {
         biased;
         () = wait_for_tun_shutdown(&mut shutdown) => false,
@@ -1174,7 +1643,7 @@ pub(super) async fn bridge_raw_dns_tcp_flow(
             from_stack,
             shutdown,
             dns_flow_permit,
-            close_guard,
+            close_guard.into_inner(),
             initial_upload,
         )
         .await;
@@ -1192,12 +1661,27 @@ pub(super) async fn bridge_raw_dns_tcp_flow(
         return;
     };
     let mut pending = RawDnsTcpPendingQueries::default();
-    if !pending.push_with_preferred_candidate(
-        first_frame,
-        TokioInstant::now(),
-        None,
-        Some(first_upload_frame_id),
-    ) {
+    let mut hijack_lookups = RawDnsTcpHijackLookups::default();
+    let hijack_delivery_target =
+        RawDnsTcpHijackDeliveryTarget::new(handle, generation, &context, &shutdown, &hijack_cancel);
+    let first_question = dns_hijack_question(&first_frame[2..]);
+    let admitted = if let Some(question) = first_question {
+        hijack_lookups.spawn(
+            first_frame,
+            question,
+            first_upload_frame_id,
+            Arc::clone(&context.dns_resolver),
+            hijack_delivery_target.clone(),
+        )
+    } else {
+        pending.push_with_preferred_candidate(
+            first_frame,
+            TokioInstant::now(),
+            None,
+            Some(first_upload_frame_id),
+        )
+    };
+    if !admitted {
         bounded_raw_dns_tcp_close(&mut close_guard, true).await;
         return;
     }
@@ -1210,6 +1694,8 @@ pub(super) async fn bridge_raw_dns_tcp_flow(
         let client_drain_more = match drain_raw_dns_client_frames(
             &mut client_decoder,
             &mut pending,
+            &mut hijack_lookups,
+            &hijack_delivery_target,
             &mut upload_ledger,
             preferred_candidate,
             handle,
@@ -1407,15 +1893,22 @@ pub(super) async fn bridge_raw_dns_tcp_flow(
             .unwrap_or_else(|| now + idle_timeout);
         let deadline_sleep = tokio::time::sleep_until(wake_deadline);
         tokio::pin!(deadline_sleep);
-        let can_read_client = pending.len() < MAX_RAW_DNS_TCP_PENDING_QUERIES
-            && pending
-                .buffered_bytes()
-                .saturating_add(client_decoder.buffered_len())
-                < MAX_RAW_DNS_TCP_PENDING_BYTES;
+        let can_read_client =
+            raw_dns_tcp_can_admit_query(&pending, &hijack_lookups, &upload_ledger)
+                && raw_dns_tcp_combined_buffered_bytes(
+                    &pending,
+                    &hijack_lookups,
+                    &upload_ledger,
+                    client_decoder.buffered_len(),
+                ) < MAX_RAW_DNS_TCP_PENDING_BYTES;
+        let has_hijack_lookup = !hijack_lookups.is_empty();
         let event = if let Some(session) = upstream.as_mut() {
             tokio::select! {
                 biased;
                 () = wait_for_tun_shutdown(&mut shutdown) => RawDnsTcpLoopEvent::Shutdown,
+                completion = hijack_lookups.tasks.join_next(), if has_hijack_lookup => {
+                    RawDnsTcpLoopEvent::Hijack(completion)
+                },
                 () = &mut idle_sleep => RawDnsTcpLoopEvent::Idle,
                 () = &mut deadline_sleep => RawDnsTcpLoopEvent::Deadline,
                 read = session.stream.read(&mut upstream_buffer) => RawDnsTcpLoopEvent::Upstream(read),
@@ -1426,6 +1919,9 @@ pub(super) async fn bridge_raw_dns_tcp_flow(
             tokio::select! {
                 biased;
                 () = wait_for_tun_shutdown(&mut shutdown) => RawDnsTcpLoopEvent::Shutdown,
+                completion = hijack_lookups.tasks.join_next(), if has_hijack_lookup => {
+                    RawDnsTcpLoopEvent::Hijack(completion)
+                },
                 () = &mut idle_sleep => RawDnsTcpLoopEvent::Idle,
                 () = &mut deadline_sleep => RawDnsTcpLoopEvent::Deadline,
                 () = tokio::task::yield_now(), if client_drain_more => RawDnsTcpLoopEvent::Drain,
@@ -1435,11 +1931,74 @@ pub(super) async fn bridge_raw_dns_tcp_flow(
 
         match event {
             RawDnsTcpLoopEvent::Drain => {}
+            RawDnsTcpLoopEvent::Hijack(Some(Ok(completion))) => {
+                if !hijack_lookups.finish(completion.upload_frame_id, completion.request_frame_len)
+                {
+                    retire_raw_dns_tcp_upstream(
+                        &mut upstream,
+                        &mut pending,
+                        &context,
+                        RawDnsTcpRetireReason::CandidateFailure,
+                    );
+                    bounded_raw_dns_tcp_close(&mut close_guard, true).await;
+                    return;
+                }
+                match completion.delivery_result {
+                    RawDnsTcpIoResult::Complete => {
+                        if !upload_ledger.commit_frame(completion.upload_frame_id) {
+                            retire_raw_dns_tcp_upstream(
+                                &mut upstream,
+                                &mut pending,
+                                &context,
+                                RawDnsTcpRetireReason::CandidateFailure,
+                            );
+                            bounded_raw_dns_tcp_close(&mut close_guard, true).await;
+                            return;
+                        }
+                        idle_sleep
+                            .as_mut()
+                            .reset(TokioInstant::now() + idle_timeout);
+                    }
+                    RawDnsTcpIoResult::Shutdown => {
+                        retire_raw_dns_tcp_upstream(
+                            &mut upstream,
+                            &mut pending,
+                            &context,
+                            RawDnsTcpRetireReason::CandidateFailure,
+                        );
+                        bounded_raw_dns_tcp_close(&mut close_guard, false).await;
+                        return;
+                    }
+                    RawDnsTcpIoResult::Failed | RawDnsTcpIoResult::TimedOut => {
+                        retire_raw_dns_tcp_upstream(
+                            &mut upstream,
+                            &mut pending,
+                            &context,
+                            RawDnsTcpRetireReason::CandidateFailure,
+                        );
+                        bounded_raw_dns_tcp_close(&mut close_guard, true).await;
+                        return;
+                    }
+                }
+            }
+            RawDnsTcpLoopEvent::Hijack(Some(Err(_)) | None) => {
+                retire_raw_dns_tcp_upstream(
+                    &mut upstream,
+                    &mut pending,
+                    &context,
+                    RawDnsTcpRetireReason::CandidateFailure,
+                );
+                bounded_raw_dns_tcp_close(&mut close_guard, true).await;
+                return;
+            }
             RawDnsTcpLoopEvent::Client(Some(data)) => {
-                let total_buffered = pending
-                    .buffered_bytes()
-                    .saturating_add(client_decoder.buffered_len())
-                    .saturating_add(data.data.len());
+                let total_buffered = raw_dns_tcp_combined_buffered_bytes(
+                    &pending,
+                    &hijack_lookups,
+                    &upload_ledger,
+                    client_decoder.buffered_len(),
+                )
+                .saturating_add(data.data.len());
                 if total_buffered > MAX_RAW_DNS_TCP_PENDING_BYTES {
                     retire_raw_dns_tcp_upstream(
                         &mut upstream,
@@ -1765,6 +2324,8 @@ fn validate_dns_wire_name(message: &[u8], offset: &mut usize) -> Option<()> {
 async fn drain_raw_dns_client_frames(
     decoder: &mut DnsTcpFrameDecoder,
     pending: &mut RawDnsTcpPendingQueries,
+    hijack_lookups: &mut RawDnsTcpHijackLookups,
+    hijack_delivery_target: &RawDnsTcpHijackDeliveryTarget,
     upload_ledger: &mut RawDnsTcpUploadLedger,
     preferred_candidate: Option<usize>,
     handle: SocketHandle,
@@ -1773,7 +2334,9 @@ async fn drain_raw_dns_client_frames(
     shutdown: &mut watch::Receiver<bool>,
 ) -> RawDnsTcpDrainResult {
     let mut processed = 0usize;
-    while pending.len() < MAX_RAW_DNS_TCP_PENDING_QUERIES && processed < RAW_DNS_TCP_DRAIN_QUANTUM {
+    while raw_dns_tcp_can_admit_query(pending, hijack_lookups, upload_ledger)
+        && processed < RAW_DNS_TCP_DRAIN_QUANTUM
+    {
         let frame = match decoder.next_frame() {
             Ok(Some(frame)) => frame,
             Ok(None) => return RawDnsTcpDrainResult::Complete,
@@ -1786,12 +2349,24 @@ async fn drain_raw_dns_client_frames(
         let payload = &frame[2..];
         match raw_dns_tcp_client_frame_kind(payload) {
             RawDnsTcpClientFrameKind::Query => {
-                if !pending.push_with_preferred_candidate(
-                    frame,
-                    TokioInstant::now(),
-                    preferred_candidate,
-                    Some(upload_frame_id),
-                ) {
+                let question = dns_hijack_question(payload);
+                let admitted = if let Some(question) = question {
+                    hijack_lookups.spawn(
+                        frame,
+                        question,
+                        upload_frame_id,
+                        Arc::clone(&context.dns_resolver),
+                        hijack_delivery_target.clone(),
+                    )
+                } else {
+                    pending.push_with_preferred_candidate(
+                        frame,
+                        TokioInstant::now(),
+                        preferred_candidate,
+                        Some(upload_frame_id),
+                    )
+                };
+                if !admitted {
                     return RawDnsTcpDrainResult::Close;
                 }
             }
@@ -1814,7 +2389,7 @@ async fn drain_raw_dns_client_frames(
             }
         }
     }
-    if pending.len() >= MAX_RAW_DNS_TCP_PENDING_QUERIES {
+    if !raw_dns_tcp_can_admit_query(pending, hijack_lookups, upload_ledger) {
         return RawDnsTcpDrainResult::Complete;
     }
     match decoder.peek_frame_len() {
@@ -1861,10 +2436,17 @@ fn framed_dns_error_response(query: &[u8], rcode: u16) -> Option<Bytes> {
     if !dns_response_matches_query(query, &response) {
         return None;
     }
+    framed_dns_payload(&response)
+}
+
+fn framed_dns_payload(response: &[u8]) -> Option<Bytes> {
+    if response.is_empty() || response.len() > MAX_DNS_TCP_WIRE_MESSAGE_SIZE {
+        return None;
+    }
     let response_len = u16::try_from(response.len()).ok()?;
     let mut framed = BytesMut::with_capacity(response.len() + 2);
     framed.extend_from_slice(&response_len.to_be_bytes());
-    framed.extend_from_slice(&response);
+    framed.extend_from_slice(response);
     Some(framed.freeze())
 }
 
@@ -1894,12 +2476,13 @@ async fn send_raw_dns_tcp_frame(
     }
 }
 
-async fn bounded_raw_dns_tcp_close(close_guard: &mut TcpBridgeCloseGuard, abort: bool) {
+async fn bounded_raw_dns_tcp_close(close_guard: &mut RawDnsTcpCloseGuard, abort: bool) {
+    close_guard.cancel_hijack_tasks();
     let close = async {
         if abort {
-            close_guard.abort().await;
+            close_guard.inner_mut().abort().await;
         } else {
-            close_guard.close().await;
+            close_guard.inner_mut().close().await;
         }
     };
     let _ = timeout(DNS_TCP_PROXY_ATTEMPT_TIMEOUT, close).await;
@@ -2247,7 +2830,7 @@ impl DnsTcpFrameDecoder {
         let message_len = usize::from(u16::from_be_bytes([self.buffered[0], self.buffered[1]]));
         let error = if message_len == 0 {
             Some(DnsTcpFrameDecodeError::ZeroLength)
-        } else if message_len > MAX_DNS_TCP_MESSAGE_SIZE {
+        } else if message_len > MAX_DNS_TCP_WIRE_MESSAGE_SIZE {
             Some(DnsTcpFrameDecodeError::MessageTooLarge)
         } else {
             None
@@ -3015,8 +3598,7 @@ fn dns_error_response_with_payload_size(
         response.push(0);
         response.extend_from_slice(&DNS_TYPE_OPT.to_be_bytes());
         response.extend_from_slice(&response_payload_size.to_be_bytes());
-        let response_ttl = if edns.dnssec_ok { 0x8000_u32 } else { 0 };
-        response.extend_from_slice(&response_ttl.to_be_bytes());
+        response.extend_from_slice(&(u32::from(edns.dnssec_ok) << 15).to_be_bytes());
         response.extend_from_slice(&0_u16.to_be_bytes());
     }
     Some(Bytes::from(response))
@@ -3086,6 +3668,9 @@ fn validated_edns_request(message: &[u8]) -> Option<EdnsRequest> {
                 advertised_size = Some(EdnsRequest {
                     udp_payload_size: usize::from(record_class),
                     dnssec_ok: record_ttl & 0x8000 != 0,
+                    extended_rcode: (record_ttl >> 24) as u8,
+                    version: (record_ttl >> 16) as u8,
+                    options_empty: data_len == 0,
                 });
             }
             offset = data_end;
@@ -3193,6 +3778,117 @@ mod tests {
 
     use super::*;
 
+    struct PendingDnsResolver;
+
+    #[async_trait::async_trait]
+    impl DnsResolver for PendingDnsResolver {
+        async fn resolve(&self, _domain: &str, _port: u16) -> Result<SocketAddr, TransportError> {
+            pending().await
+        }
+    }
+
+    struct TrackingPendingDnsResolver {
+        active: Arc<AtomicUsize>,
+    }
+
+    struct ActiveLookupGuard(Arc<AtomicUsize>);
+
+    impl Drop for ActiveLookupGuard {
+        fn drop(&mut self) {
+            self.0.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl DnsResolver for TrackingPendingDnsResolver {
+        async fn resolve(&self, _domain: &str, _port: u16) -> Result<SocketAddr, TransportError> {
+            self.active.fetch_add(1, Ordering::SeqCst);
+            let _guard = ActiveLookupGuard(Arc::clone(&self.active));
+            pending().await
+        }
+    }
+
+    #[derive(Clone)]
+    struct FixedDnsResolver(DnsLookup);
+
+    #[async_trait::async_trait]
+    impl DnsResolver for FixedDnsResolver {
+        async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+            self.0
+                .socket_addrs()
+                .first()
+                .copied()
+                .ok_or_else(|| TransportError::NoResolvedAddress(domain.to_owned(), port))
+        }
+
+        async fn resolve_all(
+            &self,
+            _domain: &str,
+            _port: u16,
+        ) -> Result<DnsLookup, TransportError> {
+            Ok(self.0.clone())
+        }
+    }
+
+    struct StrategyRecordingDnsResolver {
+        strategies: Arc<Mutex<Vec<TransportDnsQueryStrategy>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl DnsResolver for StrategyRecordingDnsResolver {
+        async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+            Err(TransportError::NoResolvedAddress(domain.to_owned(), port))
+        }
+
+        async fn resolve_all_with_strategy(
+            &self,
+            _domain: &str,
+            port: u16,
+            strategy: TransportDnsQueryStrategy,
+        ) -> Result<DnsLookup, TransportError> {
+            self.strategies
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push(strategy);
+            let address = match strategy {
+                TransportDnsQueryStrategy::UseIp | TransportDnsQueryStrategy::UseIpv4 => {
+                    IpAddr::V4(Ipv4Addr::new(192, 0, 2, 40))
+                }
+                TransportDnsQueryStrategy::UseIpv6 => {
+                    IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 40))
+                }
+            };
+            Ok(DnsLookup::from_ips(
+                [address],
+                port,
+                Some(Duration::from_secs(30)),
+            ))
+        }
+    }
+
+    fn test_hijack_delivery_target() -> (
+        RawDnsTcpHijackDeliveryTarget,
+        mpsc::Receiver<StackEvent>,
+        watch::Sender<bool>,
+        watch::Sender<bool>,
+    ) {
+        let (stack_tx, stack_rx) = mpsc::channel(32);
+        let (shutdown_tx, shutdown) = watch::channel(false);
+        let (flow_cancel_tx, flow_cancel) = watch::channel(false);
+        (
+            RawDnsTcpHijackDeliveryTarget {
+                handle: SocketHandle::default(),
+                generation: 7,
+                stack_tx,
+                shutdown,
+                flow_cancel,
+            },
+            stack_rx,
+            shutdown_tx,
+            flow_cancel_tx,
+        )
+    }
+
     struct PendingTestTransportStream;
 
     impl AsyncRead for PendingTestTransportStream {
@@ -3275,6 +3971,14 @@ mod tests {
         query
     }
 
+    fn dns_aaaa_query(id: u16, domain: &str) -> Vec<u8> {
+        let mut query = dns_a_query(id, domain);
+        let question_type_offset = query.len() - 4;
+        query[question_type_offset..question_type_offset + 2]
+            .copy_from_slice(&DNS_TYPE_AAAA.to_be_bytes());
+        query
+    }
+
     fn dns_a_query_with_edns(id: u16, domain: &str, udp_payload_size: u16) -> Vec<u8> {
         let mut query = dns_a_query(id, domain);
         query[10..12].copy_from_slice(&1_u16.to_be_bytes());
@@ -3329,6 +4033,568 @@ mod tests {
             raw_dns_tcp_client_frame_kind(&query),
             RawDnsTcpClientFrameKind::Query
         );
+    }
+
+    #[test]
+    fn raw_dns_tcp_accepts_txt_response_larger_than_legacy_eight_kib_cap() {
+        let mut query = dns_a_query(0x4101, "large-txt.example");
+        let question_type_offset = query.len() - 4;
+        query[question_type_offset..question_type_offset + 2]
+            .copy_from_slice(&16_u16.to_be_bytes());
+        let mut response = dns_response_with_flags(&query, 0x8180);
+        response[6..8].copy_from_slice(&1_u16.to_be_bytes());
+        response.extend_from_slice(&[0xc0, 0x0c]);
+        response.extend_from_slice(&16_u16.to_be_bytes());
+        response.extend_from_slice(&DNS_CLASS_IN.to_be_bytes());
+        response.extend_from_slice(&60_u32.to_be_bytes());
+        let mut txt_rdata = Vec::with_capacity(36 * 256);
+        for _ in 0..36 {
+            txt_rdata.push(u8::MAX);
+            txt_rdata.extend(std::iter::repeat_n(b'x', usize::from(u8::MAX)));
+        }
+        response.extend_from_slice(&u16::try_from(txt_rdata.len()).unwrap().to_be_bytes());
+        response.extend_from_slice(&txt_rdata);
+        assert!(response.len() > 8 * 1024);
+
+        let frame = dns_tcp_frame(&response);
+        let mut decoder = DnsTcpFrameDecoder::default();
+        for chunk in frame.chunks(1_337) {
+            decoder.push(chunk);
+        }
+        let decoded = decoder.next_frame().unwrap().unwrap();
+        let payload = &decoded[2..];
+
+        assert!(dns_response_matches_query(&query, payload));
+        assert_eq!(
+            raw_dns_tcp_response_kind(payload),
+            Some(RawDnsTcpResponseKind::Terminal)
+        );
+        assert_eq!(decoder.next_frame(), Ok(None));
+    }
+
+    #[test]
+    fn dns_hijack_classifier_accepts_only_ordinary_in_a_or_aaaa_queries() {
+        let a = dns_a_query(0x4000, "a.example");
+        let aaaa = dns_aaaa_query(0x4001, "aaaa.example");
+        let edns = dns_a_query_with_edns(0x4002, "edns.example", 1_232);
+        assert_eq!(dns_hijack_question(&a).unwrap().qtype, DNS_TYPE_A);
+        assert_eq!(dns_hijack_question(&aaaa).unwrap().qtype, DNS_TYPE_AAAA);
+        assert_eq!(dns_hijack_question(&edns).unwrap().qtype, DNS_TYPE_A);
+
+        let mut mx = dns_a_query(0x4003, "mx.example");
+        let question_type_offset = mx.len() - 4;
+        mx[question_type_offset..question_type_offset + 2].copy_from_slice(&15_u16.to_be_bytes());
+        assert!(dns_hijack_question(&mx).is_none());
+
+        let mut non_in = dns_a_query(0x4004, "class.example");
+        let question_class_offset = non_in.len() - 2;
+        non_in[question_class_offset..].copy_from_slice(&3_u16.to_be_bytes());
+        assert!(dns_hijack_question(&non_in).is_none());
+
+        let mut answer_bearing = dns_a_query(0x4005, "answer.example");
+        answer_bearing[6..8].copy_from_slice(&1_u16.to_be_bytes());
+        answer_bearing.extend_from_slice(&[0xc0, 0x0c]);
+        answer_bearing.extend_from_slice(&DNS_TYPE_A.to_be_bytes());
+        answer_bearing.extend_from_slice(&DNS_CLASS_IN.to_be_bytes());
+        answer_bearing.extend_from_slice(&60_u32.to_be_bytes());
+        answer_bearing.extend_from_slice(&4_u16.to_be_bytes());
+        answer_bearing.extend_from_slice(&[192, 0, 2, 1]);
+        assert!(dns_hijack_question(&answer_bearing).is_none());
+
+        for response_only_flags in [0x0400_u16, 0x0200, 0x0080, 0x0040, 0x0020, 0x0010, 0x0001] {
+            let mut query = dns_a_query(0x4006, "flags.example");
+            query[2..4].copy_from_slice(&(0x0100 | response_only_flags).to_be_bytes());
+            assert!(dns_hijack_question(&query).is_none());
+        }
+
+        for opt_ttl in [0x0000_8000_u32, 0x0001_0000, 0x0100_0000] {
+            let mut query = dns_a_query_with_edns(0x4007, "edns-flags.example", 1_232);
+            let opt_ttl_start = query.len() - 6;
+            query[opt_ttl_start..opt_ttl_start + 4].copy_from_slice(&opt_ttl.to_be_bytes());
+            assert!(validated_edns_request(&query).is_some());
+            assert!(dns_hijack_question(&query).is_none());
+        }
+
+        let mut query = dns_a_query_with_edns(0x4008, "edns-options.example", 1_232);
+        let rdlen_start = query.len() - 2;
+        query[rdlen_start..].copy_from_slice(&4_u16.to_be_bytes());
+        query.extend_from_slice(&65_001_u16.to_be_bytes());
+        query.extend_from_slice(&0_u16.to_be_bytes());
+        assert!(validated_edns_request(&query).is_some());
+        assert!(dns_hijack_question(&query).is_none());
+    }
+
+    #[test]
+    fn dns_hijack_response_filters_family_and_uses_lookup_ttl() {
+        let query = dns_a_query(0x400d, "mixed.example");
+        let question = dns_hijack_question(&query).unwrap();
+        let lookup = DnsLookup::from_ips(
+            [
+                IpAddr::V6(Ipv6Addr::LOCALHOST),
+                IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10)),
+                IpAddr::V4(Ipv4Addr::new(192, 0, 2, 11)),
+            ],
+            DNS_PORT,
+            Some(Duration::from_secs(61)),
+        );
+
+        let response = build_dns_hijack_response(
+            &query,
+            &question,
+            dns_hijack_resolution(&question, Ok(lookup)),
+            MAX_DNS_TCP_WIRE_MESSAGE_SIZE,
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(&response[..2], &0x400d_u16.to_be_bytes());
+        assert_eq!(read_dns_wire_u16(&response, 4), Some(1));
+        assert_eq!(read_dns_wire_u16(&response, 6), Some(2));
+        assert_eq!(read_dns_wire_u16(&response, 10), Some(0));
+        assert_eq!(
+            &response[12..question.question_end],
+            &query[12..question.question_end]
+        );
+        let first_answer = question.question_end;
+        assert_eq!(
+            read_dns_wire_u16(&response, first_answer + 2),
+            Some(DNS_TYPE_A)
+        );
+        assert_eq!(read_dns_wire_u32(&response, first_answer + 6), Some(61));
+        assert_eq!(
+            &response[first_answer + 12..first_answer + 16],
+            &[192, 0, 2, 10]
+        );
+        assert_eq!(
+            &response[first_answer + 28..first_answer + 32],
+            &[192, 0, 2, 11]
+        );
+    }
+
+    #[test]
+    fn dns_hijack_response_maps_nxdomain_nodata_and_servfail() {
+        let query = dns_aaaa_query(0x4007, "errors.example");
+        let question = dns_hijack_question(&query).unwrap();
+        let cases = [
+            (
+                Err(TransportError::DnsNameError(
+                    question.domain.clone(),
+                    DNS_PORT,
+                )),
+                DNS_RCODE_NXDOMAIN,
+            ),
+            (
+                Err(TransportError::DnsNoData(question.domain.clone(), DNS_PORT)),
+                DNS_RCODE_NOERROR,
+            ),
+            (
+                Err(TransportError::NeedsDns(question.domain.clone())),
+                DNS_RCODE_SERVFAIL,
+            ),
+        ];
+
+        for (result, expected_rcode) in cases {
+            let response = build_dns_hijack_response(
+                &query,
+                &question,
+                dns_hijack_resolution(&question, result),
+                MAX_DNS_TCP_WIRE_MESSAGE_SIZE,
+                false,
+            )
+            .unwrap();
+            assert_eq!(
+                read_dns_wire_u16(&response, 2).unwrap() & 0x000f,
+                expected_rcode
+            );
+            assert_eq!(read_dns_wire_u16(&response, 6), Some(0));
+        }
+
+        let ipv4_only = DnsLookup::from_ips(
+            [IpAddr::V4(Ipv4Addr::new(192, 0, 2, 20))],
+            DNS_PORT,
+            Some(Duration::from_secs(30)),
+        );
+        let response = build_dns_hijack_response(
+            &query,
+            &question,
+            dns_hijack_resolution(&question, Ok(ipv4_only)),
+            MAX_DNS_TCP_WIRE_MESSAGE_SIZE,
+            false,
+        )
+        .unwrap();
+        assert_eq!(read_dns_wire_u16(&response, 2).unwrap() & 0x000f, 0);
+        assert_eq!(read_dns_wire_u16(&response, 6), Some(0));
+    }
+
+    #[test]
+    fn dns_hijack_udp_response_preserves_edns_and_sets_tc_at_limit() {
+        let query = dns_a_query_with_edns(0x4008, "many.example", 1_232);
+        let question = dns_hijack_question(&query).unwrap();
+        let addresses = (1..=40)
+            .map(|last| IpAddr::V4(Ipv4Addr::new(192, 0, 2, last)))
+            .collect();
+
+        let response = build_dns_hijack_response(
+            &query,
+            &question,
+            DnsHijackResolution::Answers { addresses, ttl: 60 },
+            DNS_LEGACY_UDP_PAYLOAD_SIZE,
+            true,
+        )
+        .unwrap();
+
+        assert_ne!(read_dns_wire_u16(&response, 2).unwrap() & 0x0200, 0);
+        assert_eq!(read_dns_wire_u16(&response, 6), Some(0));
+        assert_eq!(read_dns_wire_u16(&response, 10), Some(1));
+        assert!(response.len() <= DNS_LEGACY_UDP_PAYLOAD_SIZE);
+        assert_eq!(
+            validated_edns_request(&response),
+            Some(EdnsRequest {
+                udp_payload_size: DNS_LEGACY_UDP_PAYLOAD_SIZE,
+                dnssec_ok: false,
+                extended_rcode: 0,
+                version: 0,
+                options_empty: true,
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn dns_hijack_async_resolver_builds_aaaa_answer() {
+        let query = Bytes::from(dns_aaaa_query(0x4009, "v6.example"));
+        let question = dns_hijack_question(&query).unwrap();
+        let address = Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 42);
+        let resolver: Arc<dyn DnsResolver> = Arc::new(FixedDnsResolver(DnsLookup::from_ips(
+            [IpAddr::V6(address)],
+            DNS_PORT,
+            Some(Duration::from_secs(90)),
+        )));
+
+        let response = resolve_dns_hijack_response(
+            resolver,
+            query,
+            question.clone(),
+            MAX_DNS_TCP_WIRE_MESSAGE_SIZE,
+            false,
+        )
+        .await;
+
+        assert_eq!(read_dns_wire_u16(&response, 6), Some(1));
+        assert_eq!(
+            &response[question.question_end + 12..question.question_end + 28],
+            &address.octets()
+        );
+    }
+
+    #[tokio::test]
+    async fn dns_hijack_tcp_response_echoes_supported_empty_edns0() {
+        let resolver: Arc<dyn DnsResolver> = Arc::new(FixedDnsResolver(DnsLookup::from_ips(
+            [IpAddr::V4(Ipv4Addr::new(192, 0, 2, 43))],
+            DNS_PORT,
+            Some(Duration::from_secs(30)),
+        )));
+
+        let plain_query = Bytes::from(dns_a_query(0x400e, "plain-tcp.example"));
+        let plain_question = dns_hijack_question(&plain_query).unwrap();
+        let plain_response = resolve_dns_hijack_response(
+            Arc::clone(&resolver),
+            plain_query,
+            plain_question,
+            MAX_DNS_TCP_WIRE_MESSAGE_SIZE,
+            true,
+        )
+        .await;
+        assert_eq!(read_dns_wire_u16(&plain_response, 10), Some(0));
+        assert_eq!(validated_edns_request(&plain_response), None);
+
+        let edns_query = Bytes::from(dns_a_query_with_edns(0x400f, "edns-tcp.example", 1_232));
+        let edns_question = dns_hijack_question(&edns_query).unwrap();
+        let edns_response = resolve_dns_hijack_response(
+            resolver,
+            edns_query,
+            edns_question,
+            MAX_DNS_TCP_WIRE_MESSAGE_SIZE,
+            true,
+        )
+        .await;
+        assert_eq!(read_dns_wire_u16(&edns_response, 10), Some(1));
+        assert_eq!(
+            validated_edns_request(&edns_response),
+            Some(EdnsRequest {
+                udp_payload_size: 1_232,
+                dnssec_ok: false,
+                extended_rcode: 0,
+                version: 0,
+                options_empty: true,
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn dns_hijack_requests_the_question_family_before_resolution() {
+        let strategies = Arc::new(Mutex::new(Vec::new()));
+        let resolver: Arc<dyn DnsResolver> = Arc::new(StrategyRecordingDnsResolver {
+            strategies: Arc::clone(&strategies),
+        });
+        for query in [
+            dns_a_query(0x400b, "family.example"),
+            dns_aaaa_query(0x400c, "family.example"),
+        ] {
+            let query = Bytes::from(query);
+            let question = dns_hijack_question(&query).unwrap();
+            let response = resolve_dns_hijack_response(
+                Arc::clone(&resolver),
+                query,
+                question,
+                MAX_DNS_TCP_WIRE_MESSAGE_SIZE,
+                false,
+            )
+            .await;
+            assert_eq!(read_dns_wire_u16(&response, 6), Some(1));
+        }
+
+        assert_eq!(
+            *strategies
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
+            [
+                TransportDnsQueryStrategy::UseIpv4,
+                TransportDnsQueryStrategy::UseIpv6,
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn raw_dns_tcp_hijack_task_delivers_before_main_joins_completion() {
+        let (delivery_target, mut stack_rx, _shutdown_tx, _flow_cancel_tx) =
+            test_hijack_delivery_target();
+        let query = dns_a_query(0x400a, "delivery.example");
+        let frame = framed_dns_query(&query);
+        let upload_state = Arc::new(TcpUploadBufferState::default());
+        let reservation = TcpUploadReservation::new(Arc::clone(&upload_state), frame.len());
+        let mut upload_ledger = RawDnsTcpUploadLedger::default();
+        assert!(upload_ledger.push(StackToRemoteData::tracked(frame.clone(), reservation,)));
+        let upload_frame_id = upload_ledger.register_frame(frame.len()).unwrap();
+        let resolver: Arc<dyn DnsResolver> = Arc::new(FixedDnsResolver(DnsLookup::from_ips(
+            [IpAddr::V4(Ipv4Addr::new(192, 0, 2, 30))],
+            DNS_PORT,
+            Some(Duration::from_secs(30)),
+        )));
+        let mut lookups = RawDnsTcpHijackLookups::default();
+        assert!(lookups.spawn(
+            frame.clone(),
+            dns_hijack_question(&query).unwrap(),
+            upload_frame_id,
+            resolver,
+            delivery_target,
+        ));
+
+        let event = timeout(Duration::from_secs(1), stack_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let StackEvent::RemoteData {
+            generation, data, ..
+        } = event
+        else {
+            panic!("hijack task must deliver DNS data directly");
+        };
+        assert_eq!(generation, 7);
+        assert_eq!(
+            usize::from(u16::from_be_bytes([data[0], data[1]])),
+            data.len() - 2
+        );
+        assert_eq!(&data[2..4], &0x400a_u16.to_be_bytes());
+        assert_eq!(upload_state.pending_bytes(), frame.len());
+
+        let completion = lookups.tasks.join_next().await.unwrap().unwrap();
+        assert_eq!(completion.delivery_result, RawDnsTcpIoResult::Complete);
+        assert_eq!(completion.upload_frame_id, upload_frame_id);
+        assert_eq!(upload_state.pending_bytes(), frame.len());
+        assert!(lookups.finish(completion.upload_frame_id, frame.len()));
+        assert!(upload_ledger.commit_frame(completion.upload_frame_id));
+        assert_eq!(upload_state.pending_bytes(), 0);
+    }
+
+    #[tokio::test]
+    async fn raw_dns_tcp_hijack_lookups_are_bounded_and_accounted() {
+        let resolver: Arc<dyn DnsResolver> = Arc::new(PendingDnsResolver);
+        let (delivery_target, _stack_rx, _shutdown_tx, _flow_cancel_tx) =
+            test_hijack_delivery_target();
+        let mut lookups = RawDnsTcpHijackLookups::default();
+        let query = dns_a_query(0x4010, "pending.example");
+        let frame = framed_dns_query(&query);
+        let question = dns_hijack_question(&query).unwrap();
+
+        for upload_frame_id in 0..MAX_RAW_DNS_TCP_HIJACK_LOOKUPS as u64 {
+            assert!(lookups.spawn(
+                frame.clone(),
+                question.clone(),
+                upload_frame_id,
+                Arc::clone(&resolver),
+                delivery_target.clone(),
+            ));
+        }
+        assert_eq!(lookups.len(), MAX_RAW_DNS_TCP_HIJACK_LOOKUPS);
+        assert_eq!(
+            lookups.buffered_bytes(),
+            frame.len() * MAX_RAW_DNS_TCP_HIJACK_LOOKUPS
+        );
+        assert!(!lookups.spawn(frame, question, u64::MAX, resolver, delivery_target,));
+    }
+
+    #[tokio::test]
+    async fn raw_dns_tcp_combined_pipeline_caps_raw_and_hijack_at_sixteen() {
+        let resolver: Arc<dyn DnsResolver> = Arc::new(PendingDnsResolver);
+        let (delivery_target, _stack_rx, _shutdown_tx, _flow_cancel_tx) =
+            test_hijack_delivery_target();
+        let mut pending_queries = RawDnsTcpPendingQueries::default();
+        let mut hijack_lookups = RawDnsTcpHijackLookups::default();
+        let upload_ledger = RawDnsTcpUploadLedger::default();
+        let now = TokioInstant::now();
+
+        for index in 0..8_u16 {
+            let mut non_ip_query = dns_a_query(0x4020 + index, "raw.example");
+            let question_type_offset = non_ip_query.len() - 4;
+            non_ip_query[question_type_offset..question_type_offset + 2]
+                .copy_from_slice(&15_u16.to_be_bytes());
+            assert!(pending_queries.push(framed_dns_query(&non_ip_query), now));
+
+            let query = dns_a_query(0x4030 + index, "hijack.example");
+            assert!(hijack_lookups.spawn(
+                framed_dns_query(&query),
+                dns_hijack_question(&query).unwrap(),
+                u64::from(index),
+                Arc::clone(&resolver),
+                delivery_target.clone(),
+            ));
+        }
+
+        assert_eq!(
+            raw_dns_tcp_combined_query_count(&pending_queries, &hijack_lookups, &upload_ledger,),
+            MAX_RAW_DNS_TCP_PENDING_QUERIES
+        );
+        assert!(!raw_dns_tcp_can_admit_query(
+            &pending_queries,
+            &hijack_lookups,
+            &upload_ledger,
+        ));
+    }
+
+    #[test]
+    fn raw_dns_tcp_retained_out_of_order_frames_share_query_and_byte_caps() {
+        let query = dns_a_query(0x403f, "retained.example");
+        let frame = framed_dns_query(&query);
+        let mut coalesced = BytesMut::with_capacity(frame.len() * MAX_RAW_DNS_TCP_PENDING_QUERIES);
+        for _ in 0..MAX_RAW_DNS_TCP_PENDING_QUERIES {
+            coalesced.extend_from_slice(&frame);
+        }
+        let mut upload_ledger = RawDnsTcpUploadLedger::default();
+        assert!(upload_ledger.push(StackToRemoteData::untracked(coalesced.freeze())));
+
+        let head_frame_id = upload_ledger.register_frame(frame.len()).unwrap();
+        let mut pending = RawDnsTcpPendingQueries::default();
+        assert!(pending.push_with_preferred_candidate(
+            frame.clone(),
+            TokioInstant::now(),
+            None,
+            Some(head_frame_id),
+        ));
+        let mut hijack_lookups = RawDnsTcpHijackLookups::default();
+        for _ in 1..MAX_RAW_DNS_TCP_PENDING_QUERIES {
+            let retained_frame_id = upload_ledger.register_frame(frame.len()).unwrap();
+            hijack_lookups
+                .active_frames
+                .insert(retained_frame_id, frame.len());
+            hijack_lookups.buffered_bytes =
+                hijack_lookups.buffered_bytes.saturating_add(frame.len());
+            assert!(hijack_lookups.finish(retained_frame_id, frame.len()));
+            assert!(upload_ledger.commit_frame(retained_frame_id));
+        }
+
+        assert_eq!(upload_ledger.frames.len(), MAX_RAW_DNS_TCP_PENDING_QUERIES);
+        assert_eq!(
+            raw_dns_tcp_combined_query_count(&pending, &hijack_lookups, &upload_ledger),
+            MAX_RAW_DNS_TCP_PENDING_QUERIES
+        );
+        assert_eq!(
+            raw_dns_tcp_combined_buffered_bytes(&pending, &hijack_lookups, &upload_ledger, 0,),
+            frame.len() * MAX_RAW_DNS_TCP_PENDING_QUERIES
+        );
+        assert!(!raw_dns_tcp_can_admit_query(
+            &pending,
+            &hijack_lookups,
+            &upload_ledger,
+        ));
+
+        assert!(upload_ledger.commit_frame(head_frame_id));
+        assert!(upload_ledger.frames.is_empty());
+        assert_eq!(
+            raw_dns_tcp_combined_query_count(&pending, &hijack_lookups, &upload_ledger),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn dropping_raw_dns_tcp_hijack_owner_cancels_every_lookup() {
+        let active = Arc::new(AtomicUsize::new(0));
+        let resolver: Arc<dyn DnsResolver> = Arc::new(TrackingPendingDnsResolver {
+            active: Arc::clone(&active),
+        });
+        let (delivery_target, _stack_rx, _shutdown_tx, _flow_cancel_tx) =
+            test_hijack_delivery_target();
+        let query = dns_a_query(0x4040, "cancel.example");
+        let frame = framed_dns_query(&query);
+        let question = dns_hijack_question(&query).unwrap();
+        let mut lookups = RawDnsTcpHijackLookups::default();
+        for upload_frame_id in 0..MAX_RAW_DNS_TCP_HIJACK_LOOKUPS as u64 {
+            assert!(lookups.spawn(
+                frame.clone(),
+                question.clone(),
+                upload_frame_id,
+                Arc::clone(&resolver),
+                delivery_target.clone(),
+            ));
+        }
+        tokio::task::yield_now().await;
+        assert_eq!(
+            active.load(Ordering::SeqCst),
+            MAX_RAW_DNS_TCP_HIJACK_LOOKUPS
+        );
+
+        drop(lookups);
+        tokio::task::yield_now().await;
+
+        assert_eq!(active.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn raw_dns_tcp_flow_cancel_stops_lookup_before_delivery() {
+        let active = Arc::new(AtomicUsize::new(0));
+        let resolver: Arc<dyn DnsResolver> = Arc::new(TrackingPendingDnsResolver {
+            active: Arc::clone(&active),
+        });
+        let (delivery_target, mut stack_rx, _shutdown_tx, flow_cancel_tx) =
+            test_hijack_delivery_target();
+        let query = dns_a_query(0x4041, "flow-cancel.example");
+        let frame = framed_dns_query(&query);
+        let mut lookups = RawDnsTcpHijackLookups::default();
+        assert!(lookups.spawn(
+            frame,
+            dns_hijack_question(&query).unwrap(),
+            20,
+            resolver,
+            delivery_target,
+        ));
+        tokio::task::yield_now().await;
+        assert_eq!(active.load(Ordering::SeqCst), 1);
+
+        flow_cancel_tx.send(true).unwrap();
+        let completion = lookups.tasks.join_next().await.unwrap().unwrap();
+
+        assert_eq!(completion.delivery_result, RawDnsTcpIoResult::Shutdown);
+        assert_eq!(active.load(Ordering::SeqCst), 0);
+        assert!(stack_rx.try_recv().is_err());
     }
 
     #[test]
@@ -3578,10 +4844,8 @@ mod tests {
         assert!(!count_bounded.push(framed_dns_query(&query), now));
 
         let mut byte_bounded = RawDnsTcpPendingQueries::default();
-        let maximum_frame = Bytes::from(vec![0_u8; MAX_DNS_TCP_MESSAGE_SIZE + 2]);
-        for _ in 0..(MAX_RAW_DNS_TCP_PENDING_QUERIES - 1) {
-            assert!(byte_bounded.push(maximum_frame.clone(), now));
-        }
+        let maximum_frame = Bytes::from(vec![0_u8; MAX_DNS_TCP_WIRE_MESSAGE_SIZE + 2]);
+        assert!(byte_bounded.push(maximum_frame.clone(), now));
         assert!(!byte_bounded.push(maximum_frame, now));
     }
 
@@ -3922,6 +5186,9 @@ mod tests {
             Some(EdnsRequest {
                 udp_payload_size: max_payload,
                 dnssec_ok: true,
+                extended_rcode: 0,
+                version: 0,
+                options_empty: true,
             })
         );
     }
@@ -4080,19 +5347,19 @@ mod tests {
     }
 
     #[test]
-    fn dns_tcp_frame_decoder_rejects_oversized_message_after_prefix() {
-        let oversized_len = u16::try_from(MAX_DNS_TCP_MESSAGE_SIZE + 1).unwrap();
+    fn dns_tcp_frame_decoder_accepts_maximum_wire_message() {
+        let payload = vec![0x5a; MAX_DNS_TCP_WIRE_MESSAGE_SIZE];
+        let mut frame = Vec::with_capacity(payload.len() + 2);
+        frame.extend_from_slice(&u16::MAX.to_be_bytes());
+        frame.extend_from_slice(&payload);
         let mut decoder = DnsTcpFrameDecoder::default();
-        decoder.push(&oversized_len.to_be_bytes());
+        decoder.push(&frame);
 
-        assert_eq!(
-            decoder.next_frame(),
-            Err(DnsTcpFrameDecodeError::MessageTooLarge)
-        );
-        assert_eq!(
-            decoder.next_frame(),
-            Err(DnsTcpFrameDecodeError::MessageTooLarge)
-        );
+        let decoded = decoder.next_frame().unwrap().unwrap();
+        assert_eq!(decoded.len(), MAX_DNS_TCP_WIRE_MESSAGE_SIZE + 2);
+        assert_eq!(&decoded[..2], &u16::MAX.to_be_bytes());
+        assert_eq!(&decoded[2..], payload);
+        assert_eq!(decoder.next_frame(), Ok(None));
     }
 
     #[test]
@@ -4144,31 +5411,29 @@ mod tests {
     }
 
     #[test]
-    fn fake_dns_tcp_decoder_rejects_oversized_frame_before_payload_arrives() {
-        let oversized_len = u16::try_from(MAX_DNS_TCP_MESSAGE_SIZE + 1).unwrap();
+    fn fake_dns_tcp_decoder_accepts_maximum_frame_prefix_without_early_failure() {
         let mut decoder = DnsTcpFrameDecoder::default();
-        decoder.push(&oversized_len.to_be_bytes());
+        decoder.push(&u16::MAX.to_be_bytes());
 
         let decoded = fake_ip_tcp_responses(&fake_ip_mapper(), &mut decoder);
 
         assert!(decoded.response.is_none());
         assert!(!decoded.processed_message);
-        assert!(decoded.terminal_error);
+        assert!(!decoded.terminal_error);
     }
 
     #[test]
-    fn fake_dns_tcp_decoder_keeps_valid_response_before_terminal_frame_error() {
+    fn fake_dns_tcp_decoder_keeps_valid_response_before_partial_maximum_frame() {
         let query = dns_a_query(0x2404, "valid.example");
-        let oversized_len = u16::try_from(MAX_DNS_TCP_MESSAGE_SIZE + 1).unwrap();
         let mut decoder = DnsTcpFrameDecoder::default();
         decoder.push(&dns_tcp_frame(&query));
-        decoder.push(&oversized_len.to_be_bytes());
+        decoder.push(&u16::MAX.to_be_bytes());
 
         let decoded = fake_ip_tcp_responses(&fake_ip_mapper(), &mut decoder);
         let response = decoded.response.unwrap();
 
         assert!(decoded.processed_message);
-        assert!(decoded.terminal_error);
+        assert!(!decoded.terminal_error);
         assert_eq!(&response[2..4], &0x2404_u16.to_be_bytes());
     }
 

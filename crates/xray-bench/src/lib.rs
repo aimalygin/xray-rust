@@ -4932,10 +4932,10 @@ fn build_dns_proxy_fixture_response(query: &[u8]) -> Result<Vec<u8>, BenchError>
 #[cfg(unix)]
 trait DnsProxyFixtureObserver: Clone + Send + Sync + 'static {
     #[inline]
-    fn record_udp_query(&self) {}
+    fn record_udp_query(&self, _query: &[u8]) {}
 
     #[inline]
-    fn record_tcp_query(&self) {}
+    fn record_tcp_query(&self, _query: &[u8]) {}
 }
 
 #[cfg(unix)]
@@ -4948,28 +4948,71 @@ impl DnsProxyFixtureObserver for IgnoreDnsProxyFixtureQueries {}
 #[cfg(all(unix, test))]
 #[derive(Debug, Default)]
 struct DnsProxyFixtureCounters {
-    udp_queries: AtomicU64,
-    tcp_queries: AtomicU64,
+    udp_a_queries: AtomicU64,
+    udp_https_queries: AtomicU64,
+    udp_other_queries: AtomicU64,
+    tcp_a_queries: AtomicU64,
+    tcp_https_queries: AtomicU64,
+    tcp_other_queries: AtomicU64,
+}
+
+#[cfg(all(unix, test))]
+#[derive(Debug, Default, PartialEq, Eq)]
+struct DnsProxyFixtureQueryCounts {
+    udp_a_queries: u64,
+    udp_https_queries: u64,
+    udp_other_queries: u64,
+    tcp_a_queries: u64,
+    tcp_https_queries: u64,
+    tcp_other_queries: u64,
 }
 
 #[cfg(all(unix, test))]
 impl DnsProxyFixtureCounters {
-    fn snapshot(&self) -> (u64, u64) {
-        (
-            self.udp_queries.load(Ordering::Relaxed),
-            self.tcp_queries.load(Ordering::Relaxed),
-        )
+    fn snapshot(&self) -> DnsProxyFixtureQueryCounts {
+        DnsProxyFixtureQueryCounts {
+            udp_a_queries: self.udp_a_queries.load(Ordering::Relaxed),
+            udp_https_queries: self.udp_https_queries.load(Ordering::Relaxed),
+            udp_other_queries: self.udp_other_queries.load(Ordering::Relaxed),
+            tcp_a_queries: self.tcp_a_queries.load(Ordering::Relaxed),
+            tcp_https_queries: self.tcp_https_queries.load(Ordering::Relaxed),
+            tcp_other_queries: self.tcp_other_queries.load(Ordering::Relaxed),
+        }
+    }
+
+    fn record_query(
+        query: &[u8],
+        a_queries: &AtomicU64,
+        https_queries: &AtomicU64,
+        other_queries: &AtomicU64,
+    ) {
+        let counter = match dns_question_type(query) {
+            Some(DNS_TYPE_A) => a_queries,
+            Some(DNS_TYPE_HTTPS) => https_queries,
+            Some(_) | None => other_queries,
+        };
+        counter.fetch_add(1, Ordering::Relaxed);
     }
 }
 
 #[cfg(all(unix, test))]
 impl DnsProxyFixtureObserver for Arc<DnsProxyFixtureCounters> {
-    fn record_udp_query(&self) {
-        self.udp_queries.fetch_add(1, Ordering::Relaxed);
+    fn record_udp_query(&self, query: &[u8]) {
+        DnsProxyFixtureCounters::record_query(
+            query,
+            &self.udp_a_queries,
+            &self.udp_https_queries,
+            &self.udp_other_queries,
+        );
     }
 
-    fn record_tcp_query(&self) {
-        self.tcp_queries.fetch_add(1, Ordering::Relaxed);
+    fn record_tcp_query(&self, query: &[u8]) {
+        DnsProxyFixtureCounters::record_query(
+            query,
+            &self.tcp_a_queries,
+            &self.tcp_https_queries,
+            &self.tcp_other_queries,
+        );
     }
 }
 
@@ -5001,7 +5044,7 @@ where
                 action: "reading DNS proxy fixture TCP query".to_owned(),
                 source,
             })?;
-        observer.record_tcp_query();
+        observer.record_tcp_query(&query);
         let response = build_dns_proxy_fixture_response(&query)?;
         let response_len = u16::try_from(response.len()).map_err(|_| {
             BenchError::InvalidArguments(
@@ -5061,7 +5104,7 @@ where
             let Ok((len, peer)) = udp.recv_from(&mut buffer).await else {
                 break;
             };
-            udp_observer.record_udp_query();
+            udp_observer.record_udp_query(&buffer[..len]);
             let Ok(response) = build_dns_proxy_fixture_response(&buffer[..len]) else {
                 continue;
             };
@@ -9698,6 +9741,7 @@ mod tests {
     async fn handle_fragmented_dns_tcp_test_connection(
         mut stream: TcpStream,
         queries_per_connection: usize,
+        fixture_counters: Arc<DnsProxyFixtureCounters>,
     ) -> Result<Vec<(u16, u16)>, BenchError> {
         stream.set_nodelay(true).map_err(|source| BenchError::Io {
             action: "enabling TCP_NODELAY on fragmented DNS fixture connection".to_owned(),
@@ -9737,6 +9781,7 @@ mod tests {
                     "fragmented DNS fixture query has no question type".to_owned(),
                 )
             })?;
+            fixture_counters.record_tcp_query(&query);
             observed.push((transaction_id, query_type));
 
             let response = build_dns_proxy_fixture_response(&query)?;
@@ -9786,27 +9831,51 @@ mod tests {
     }
 
     #[cfg(unix)]
-    async fn spawn_fragmented_dns_tcp_test_server(
+    async fn spawn_fragmented_dns_hybrid_test_server(
         expected_connections: usize,
         queries_per_connection: usize,
     ) -> Result<
         (
             SocketAddr,
             JoinHandle<Result<Vec<Vec<(u16, u16)>>, BenchError>>,
+            JoinHandle<()>,
+            Arc<DnsProxyFixtureCounters>,
         ),
         BenchError,
     > {
-        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        let udp = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
             .await
             .map_err(|source| BenchError::Io {
                 action: "binding fragmented DNS fixture".to_owned(),
                 source,
             })?;
-        let addr = listener.local_addr().map_err(|source| BenchError::Io {
+        let addr = udp.local_addr().map_err(|source| BenchError::Io {
             action: "reading fragmented DNS fixture address".to_owned(),
             source,
         })?;
-        let task = tokio::spawn(async move {
+        let listener = TcpListener::bind(addr)
+            .await
+            .map_err(|source| BenchError::Io {
+                action: "binding fragmented DNS TCP fixture".to_owned(),
+                source,
+            })?;
+        let fixture_counters = Arc::new(DnsProxyFixtureCounters::default());
+        let udp_counters = Arc::clone(&fixture_counters);
+        let udp_task = tokio::spawn(async move {
+            let mut buffer = vec![0_u8; u16::MAX as usize];
+            loop {
+                let Ok((len, peer)) = udp.recv_from(&mut buffer).await else {
+                    break;
+                };
+                udp_counters.record_udp_query(&buffer[..len]);
+                let Ok(response) = build_dns_proxy_fixture_response(&buffer[..len]) else {
+                    continue;
+                };
+                let _ = udp.send_to(&response, peer).await;
+            }
+        });
+        let tcp_counters = Arc::clone(&fixture_counters);
+        let tcp_task = tokio::spawn(async move {
             let mut connections = JoinSet::new();
             for _ in 0..expected_connections {
                 let (stream, _) = listener.accept().await.map_err(|source| BenchError::Io {
@@ -9816,6 +9885,7 @@ mod tests {
                 connections.spawn(handle_fragmented_dns_tcp_test_connection(
                     stream,
                     queries_per_connection,
+                    Arc::clone(&tcp_counters),
                 ));
             }
 
@@ -9829,7 +9899,7 @@ mod tests {
             }
             Ok(observed)
         });
-        Ok((addr, task))
+        Ok((addr, tcp_task, udp_task, fixture_counters))
     }
 
     #[cfg(unix)]
@@ -9936,8 +10006,8 @@ mod tests {
         let connections = 20usize;
         let iterations = 2usize;
         let queries_per_connection = iterations * 2;
-        let (upstream, mut fixture_task) =
-            spawn_fragmented_dns_tcp_test_server(connections, queries_per_connection)
+        let (upstream, mut fixture_task, udp_fixture_task, fixture_counters) =
+            spawn_fragmented_dns_hybrid_test_server(connections, iterations)
                 .await
                 .unwrap();
         let parsed = parse_xray_json(&tun_dns_proxy_config(
@@ -9970,6 +10040,7 @@ mod tests {
         if fixture_result.is_err() {
             fixture_task.abort();
         }
+        udp_fixture_task.abort();
         bridge_task.abort();
         let _ = bridge_task.await;
         core.stop().await.unwrap();
@@ -9984,37 +10055,42 @@ mod tests {
 
         assert_eq!(observed.len(), connections);
         for connection_queries in &observed {
-            assert_eq!(connection_queries.len(), queries_per_connection);
+            assert_eq!(connection_queries.len(), iterations);
             assert_eq!(
                 connection_queries
                     .iter()
                     .map(|(_, query_type)| *query_type)
                     .collect::<Vec<_>>(),
-                vec![DNS_TYPE_A, DNS_TYPE_HTTPS, DNS_TYPE_A, DNS_TYPE_HTTPS]
+                vec![DNS_TYPE_HTTPS; iterations]
             );
             assert!(connection_queries
                 .windows(2)
-                .all(|pair| pair[1].0 == pair[0].0.wrapping_add(1)));
+                .all(|pair| pair[1].0 == pair[0].0.wrapping_add(2)));
         }
 
         let mut observed_queries = observed.into_iter().flatten().collect::<Vec<_>>();
         observed_queries.sort_unstable();
-        let mut expected_queries = Vec::with_capacity(connections * queries_per_connection);
+        let mut expected_queries = Vec::with_capacity(connections * iterations);
         for logical_index in 0..connections {
             let source_port = 54_000_u16 + u16::try_from(logical_index).unwrap();
-            for query_index in 0..queries_per_connection {
+            for query_index in (1..queries_per_connection).step_by(2) {
                 expected_queries.push((
                     source_port.wrapping_add(u16::try_from(query_index).unwrap()),
-                    if query_index % 2 == 0 {
-                        DNS_TYPE_A
-                    } else {
-                        DNS_TYPE_HTTPS
-                    },
+                    DNS_TYPE_HTTPS,
                 ));
             }
         }
         expected_queries.sort_unstable();
         assert_eq!(observed_queries, expected_queries);
+        assert_eq!(
+            fixture_counters.snapshot(),
+            DnsProxyFixtureQueryCounts {
+                udp_a_queries: 1,
+                tcp_https_queries: u64::try_from(connections * iterations).unwrap(),
+                ..DnsProxyFixtureQueryCounts::default()
+            },
+            "Classic managed A queries must use one cached/single-flight UDP lookup while raw HTTPS remains on each client DNS/TCP session"
+        );
 
         let a_query = build_dns_query(1, TUN_DNS_PROXY_DOMAIN, DNS_TYPE_A).unwrap();
         let https_query = build_dns_query(2, TUN_DNS_PROXY_DOMAIN, DNS_TYPE_HTTPS).unwrap();
@@ -10070,7 +10146,7 @@ mod tests {
             .await
             .expect("UDP-to-TCP DNS benchmark path must not hang")
             .expect("UDP-to-TCP DNS benchmark path must succeed");
-            let (udp_queries, tcp_queries) = fixture_counters.snapshot();
+            let query_counts = fixture_counters.snapshot();
 
             bridge_task.abort();
             let _ = bridge_task.await;
@@ -10082,8 +10158,15 @@ mod tests {
             assert!(outcome.bytes_sent > 0);
             assert!(outcome.bytes_received > outcome.bytes_sent);
             assert_eq!(outcome.latencies_us.len(), 8);
-            assert_eq!(tcp_queries, 8, "upstream mode {upstream_transport:?}");
-            assert_eq!(udp_queries, 0, "upstream mode {upstream_transport:?}");
+            assert_eq!(
+                query_counts,
+                DnsProxyFixtureQueryCounts {
+                    tcp_a_queries: 1,
+                    tcp_https_queries: 4,
+                    ..DnsProxyFixtureQueryCounts::default()
+                },
+                "managed A must use one cached/single-flight lookup and every raw HTTPS query must use the selected TCP upstream mode {upstream_transport:?}"
+            );
         }
     }
 

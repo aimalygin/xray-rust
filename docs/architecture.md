@@ -150,41 +150,67 @@ and must not call back into destination DNS. This non-recursive split belongs to
 the universal core, not to the mobile adapter: TUN's raw DNS proxy and fake-IP
 engine are consumers of the roles, while future server inbounds can reuse
 destination resolution without inheriting mobile bootstrap policy.
-The raw anchor is deliberately DNS `Direct`: object policies select managed
-destination lookups but do not rewrite client question types. Classic
-candidates preserve client DNS messages. A UDP client aimed at a TCP URI is
-adapted to RFC 7766 framing through a bounded persistent-connection pool. A TCP
-client carrying ordinary, well-formed single-question QUERY messages uses one
-bounded multiplexed upstream session: responses are correlated by transaction
-ID, opcode, and question, may arrive out of order, and only unanswered queries
-are replayed after a post-open failure. EOF, I/O failure, timeout, malformed or
-unmatched responses, `TC=1`, and SERVFAIL advance through `dns.servers` via the
-same routed/protected dial path; other matching RCODEs, including NXDOMAIN and
-NOERROR/NODATA, are terminal. Exhaustion returns one framed SERVFAIL per
-unanswered query without closing the client TCP session, so its next query can
-start a fresh cycle. The first AXFR, IXFR, non-QUERY opcode, multi-question, or
-otherwise unsupported DNS message hands the entire connection to the
-byte-transparent bridge, including its exact prebuffer. This preserves zone
-transfer and extension semantics instead of partially interpreting them.
+The TUN anchor is a fixed hybrid of managed DNS `Hijack` and wire-preserving
+`Direct`. A strict, ordinary single-question IN A or AAAA request that does not
+set AD/CD or request DNSSEC data with EDNS DO uses the shared destination
+resolver, so `dns.hosts`, domain policy, family strategy, IP filters,
+per-server deadlines, ordered fallback, routed tags, and the TTL-aware cache
+all apply. The requested family is selected before DNS I/O and has its own
+cache/single-flight key; an A request therefore cannot cause an AAAA wire query
+or inherit the other family's TTL. The adapter synthesizes the matching
+A/AAAA, NODATA, NXDOMAIN, or bounded SERVFAIL response. Managed synthesis
+preserves a minimal empty EDNS(0) OPT when requested; UDP additionally returns
+`TC=1` when the answer exceeds the client or tunnel-path limit.
 
-The query-aware TCP adapter accepts at most 16 pending questions and 128 KiB of
-decoded input per client flow. Upload reservations remain charged to the TUN
-runtime until their frames are first flushed upstream or answered locally;
-candidate and total budgets are tracked per query. Client and upstream framing
-use cancellation-safe incremental decoders, and no detached task owns a DNS
-query. The UDP-to-TCP adapter keeps one request in flight per pooled upstream
-stream, retries a stale reused stream once on a fresh protected/routed
-connection, and discards a leased stream whenever the request is cancelled so
-partial framing is never reused. Per-upstream and runtime-wide socket caps are
-selected by the TUN runtime profile. UDP replies honor the client's valid
-EDNS(0) size and the IPv4 tunnel
+Other ordinary question types, DNSSEC-sensitive A/AAAA requests, non-empty EDNS
+options, and unsupported EDNS versions retain the raw `Direct` contract and
+their original wire message. The managed resolver currently returns addresses
+rather than complete RRsets or EDNS option state, so it must not pretend to
+preserve RRSIG, ECS, COOKIE, or client-side validation semantics.
+Raw selection is declaration-ordered and deliberately does not apply managed
+`domains`, family strategy, IP filters, or per-policy fallback. Deployments
+that rely on split-DNS privacy must therefore ensure every raw candidate the
+plan may reach is appropriate until the general rule-driven DNS outbound
+exists.
+Classic candidates preserve raw messages, while a UDP client aimed at a TCP URI
+is adapted to RFC 7766 framing through a bounded persistent-connection pool. A
+TCP client uses one bounded multiplexed raw upstream session alongside its owned
+managed A/AAAA lookups. Local answers may complete out of order and are
+delivered independently of a concurrent raw dial or write. Raw responses are
+correlated by transaction ID, opcode, and question, and only unanswered queries
+are replayed after a post-open failure. EOF, I/O failure, timeout, malformed or
+unmatched responses, `TC=1`, and SERVFAIL
+advance through `dns.servers` via the same routed/protected dial path; other
+matching RCODEs, including NXDOMAIN and NOERROR/NODATA, are terminal.
+Exhaustion returns one framed SERVFAIL per unresolved raw query without closing
+the client TCP session, so its next query can start a fresh cycle. The first
+AXFR, IXFR, non-QUERY opcode, multi-question, or otherwise unsupported DNS
+message hands the entire connection to the byte-transparent bridge, including
+its exact prebuffer. This preserves zone transfer and extension semantics
+instead of partially interpreting them.
+
+The query-aware TCP adapter accepts at most 16 combined managed and raw pending
+questions and 128 KiB of decoded input per client flow. Each DNS/TCP message may
+use the complete 65,535-byte length-prefix range, while the combined byte limit
+still bounds coalesced or pipelined frames. Upload reservations remain charged
+to the TUN runtime until their frames are first flushed upstream or answered
+locally; candidate and total budgets are tracked per raw query.
+Managed lookup tasks are owned by the client flow, bounded by the same limits,
+and aborted with it; no detached task owns a DNS query. Client and upstream
+framing use cancellation-safe incremental decoders. The UDP-to-TCP adapter
+keeps one request in flight per pooled upstream stream, retries a stale reused
+stream once on a fresh protected/routed connection, and discards a leased
+stream whenever the request is cancelled so partial framing is never reused.
+Per-upstream and runtime-wide socket caps are selected by the TUN runtime
+profile. UDP replies honor the client's valid EDNS(0) size and the IPv4 tunnel
 path MTU; missing or malformed EDNS falls back to the legacy 512-byte DNS
 payload limit and oversized replies return `TC=1`. Routed candidates carry the
 effective synthetic inbound tag into outbound selection; local TCP candidates
 bypass it. Endpoint deduplication
 includes transport and tag.
-A future DNS `Hijack` mode must be explicit rather than changing this
-wire contract.
+A future general DNS outbound remains explicit: it must add Xray's ordered
+Direct/Drop/Reject/Hijack rules, non-IP policy, rewrite target, and own-link
+recursion guard rather than silently changing this hybrid anchor contract.
 
 The generic core and C ABI retain system bootstrap as their default for
 desktop, command-line, and future server embeddings. Mobile full-tunnel
