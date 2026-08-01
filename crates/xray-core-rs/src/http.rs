@@ -6,13 +6,15 @@ use tokio::sync::watch;
 use tokio::task::JoinSet;
 use xray_config::CoreConfig;
 use xray_proxy::inbound::parse_http_connect;
-use xray_transport::{DnsResolver, TransportDialer};
+use xray_transport::TransportDialer;
 
+use crate::dns::RuntimeDnsResolvers;
+use crate::outbound::open_tcp_stream_with_resolvers_and_dialer;
 use crate::policy::{
     accept_error_wants_backoff, copy_bidirectional_with_idle_timeout, effective_policy_for_level,
     AcceptBackoff, EffectivePolicy,
 };
-use crate::{open_tcp_stream_with_resolver_and_dialer, OutboundRouter, RuntimeLogger, TcpOutbound};
+use crate::{OutboundRouter, RuntimeLogger, TcpOutbound};
 
 const HTTP_CONNECT_ESTABLISHED: &[u8] = b"HTTP/1.1 200 Connection Established\r\n\r\n";
 const HTTP_BAD_REQUEST: &[u8] = b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n";
@@ -27,7 +29,7 @@ pub async fn serve_http_listener(
     inbound_tag: Option<String>,
     config: Arc<CoreConfig>,
     outbound_router: Arc<OutboundRouter>,
-    dns_resolver: Arc<dyn DnsResolver>,
+    dns_resolvers: RuntimeDnsResolvers,
     transport_dialer: Arc<TransportDialer>,
     policy: EffectivePolicy,
     runtime_logger: RuntimeLogger,
@@ -78,7 +80,7 @@ pub async fn serve_http_listener(
                 let inbound_tag = inbound_tag.clone();
                 let config = Arc::clone(&config);
                 let outbound_router = Arc::clone(&outbound_router);
-                let dns_resolver = Arc::clone(&dns_resolver);
+                let dns_resolvers = dns_resolvers.clone();
                 let transport_dialer = Arc::clone(&transport_dialer);
                 let runtime_logger = runtime_logger.clone();
                 connections.spawn(async move {
@@ -87,7 +89,7 @@ pub async fn serve_http_listener(
                         inbound_tag,
                         config,
                         outbound_router,
-                        dns_resolver,
+                        dns_resolvers,
                         transport_dialer,
                         policy,
                         runtime_logger,
@@ -113,7 +115,7 @@ async fn handle_http_connection(
     inbound_tag: Option<String>,
     config: Arc<CoreConfig>,
     outbound_router: Arc<OutboundRouter>,
-    dns_resolver: Arc<dyn DnsResolver>,
+    dns_resolvers: RuntimeDnsResolvers,
     transport_dialer: Arc<TransportDialer>,
     policy: EffectivePolicy,
     runtime_logger: RuntimeLogger,
@@ -136,7 +138,7 @@ async fn handle_http_connection(
         .select_tcp_outbound_for_session_with_resolver(
             inbound_tag.as_deref(),
             &target,
-            dns_resolver.as_ref(),
+            dns_resolvers.destination.as_ref(),
         )
         .await
     {
@@ -183,10 +185,11 @@ async fn handle_http_connection(
     let outbound_label = crate::debug_log::tcp_outbound_label(&outbound);
     let mut outbound_stream = match tokio::time::timeout(
         open_timeout,
-        open_tcp_stream_with_resolver_and_dialer(
+        open_tcp_stream_with_resolvers_and_dialer(
             &outbound,
             &target,
-            dns_resolver.as_ref(),
+            dns_resolvers.destination.as_ref(),
+            dns_resolvers.bootstrap.as_ref(),
             transport_dialer.as_ref(),
         ),
     )

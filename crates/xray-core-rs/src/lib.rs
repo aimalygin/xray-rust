@@ -1,17 +1,20 @@
 use std::{net::SocketAddr, sync::Arc};
 
+use async_trait::async_trait;
 use thiserror::Error;
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 use xray_config::{CoreConfig, DnsHostTarget, DnsServerConfig, DomainMatcher, InboundProtocol};
 use xray_runtime::Shutdown;
 use xray_transport::{
-    CachingDnsResolver, ConfiguredDnsResolver, DnsResolver, NameServer, SocketProtector,
-    StaticHostRule, StaticHostTarget, SystemDnsResolver, TransportDialer, TransportDomainMatcher,
+    CachingDnsResolver, ConfiguredDnsResolver, DnsQueryTransport, DnsResolver, NameServer,
+    SocketProtector, StaticHostRule, StaticHostTarget, SystemDnsResolver, TransportDialer,
+    TransportDomainMatcher, TransportError,
 };
 use xray_tun::{TunConfig, TunEndpoint};
 
 mod debug_log;
+mod dns;
 mod http;
 mod outbound;
 mod policy;
@@ -51,6 +54,25 @@ pub enum CoreState {
 pub struct TunRuntimeOptions {
     pub collect_tcp_timings: bool,
     pub profile: TunRuntimeProfile,
+    pub dns_bootstrap: DnsBootstrapMode,
+}
+
+/// Controls bootstrap and final-fallback policy for managed runtime DNS.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum DnsBootstrapMode {
+    /// Resolve destinations through `dns.hosts`, routed `dns.servers`, then
+    /// the operating-system fallback. DNS-upstream and outbound-server
+    /// bootstrap uses `dns.hosts` plus the operating-system resolver. This is
+    /// the default for embeddings that do not install a local DNS anchor and
+    /// is the intended policy for future server runtimes.
+    #[default]
+    System,
+    /// Resolve destinations through `dns.hosts` and routed `dns.servers`, then
+    /// fail closed. Bootstrap itself uses only `dns.hosts`, so it cannot recurse
+    /// through a tunnel-local DNS anchor. Mobile VPN integrations should use
+    /// this after installing that anchor. Constructors with an explicitly
+    /// injected resolver keep using it as a trusted integration dependency.
+    StaticOnly,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -159,6 +181,8 @@ pub struct Core {
     tun: Arc<TunEndpoint>,
     runtime: Option<RuntimeState>,
     dns_resolver: Arc<dyn DnsResolver>,
+    dns_bootstrap_resolver: Option<Arc<dyn DnsResolver>>,
+    managed_dns_resolver: bool,
     transport_dialer: Arc<TransportDialer>,
     tun_runtime_options: TunRuntimeOptions,
     startup_probe: Option<StartupProbeOptions>,
@@ -167,8 +191,18 @@ pub struct Core {
 
 impl Core {
     pub fn new(config: CoreConfig) -> Result<Self, CoreError> {
-        let dns_resolver = default_dns_resolver_for_config(&config);
-        Self::with_dns_resolver(config, dns_resolver)
+        let system_resolver = system_dns_resolver();
+        let dns_resolver =
+            configured_dns_resolver_for_config(&config, Arc::clone(&system_resolver));
+        let dns_bootstrap_resolver = host_only_dns_resolver_for_config(&config, system_resolver);
+        Self::build(
+            config,
+            dns_resolver,
+            Some(dns_bootstrap_resolver),
+            Arc::new(TransportDialer::system()?),
+            TunRuntimeOptions::default(),
+            true,
+        )
     }
 
     /// Creates a core with an injected DNS resolver.
@@ -180,39 +214,70 @@ impl Core {
         config: CoreConfig,
         dns_resolver: Arc<dyn DnsResolver>,
     ) -> Result<Self, CoreError> {
-        Self::with_runtime_dependencies(config, dns_resolver, Arc::new(TransportDialer::system()?))
+        Self::build(
+            config,
+            Arc::clone(&dns_resolver),
+            Some(dns_resolver),
+            Arc::new(TransportDialer::system()?),
+            TunRuntimeOptions::default(),
+            false,
+        )
     }
 
     pub fn with_tun_runtime_options(
         config: CoreConfig,
         tun_runtime_options: TunRuntimeOptions,
     ) -> Result<Self, CoreError> {
-        let dns_resolver = default_dns_resolver_for_config(&config);
-        Self::with_runtime_dependencies_and_tun_options(
+        let system_resolver = system_dns_resolver();
+        let (dns_resolver, dns_bootstrap_resolver) = match tun_runtime_options.dns_bootstrap {
+            DnsBootstrapMode::System => (
+                configured_dns_resolver_for_config(&config, Arc::clone(&system_resolver)),
+                Some(host_only_dns_resolver_for_config(&config, system_resolver)),
+            ),
+            DnsBootstrapMode::StaticOnly => {
+                let resolver = static_only_dns_resolver_for_config(&config);
+                (Arc::clone(&resolver), Some(resolver))
+            }
+        };
+        Self::build(
             config,
             dns_resolver,
+            dns_bootstrap_resolver,
             Arc::new(TransportDialer::system()?),
             tun_runtime_options,
+            true,
         )
     }
 
-    /// Creates a core whose configured DNS servers and outbound connections
-    /// share the dialer's platform socket-protection policy.
+    /// Creates a core whose System-mode direct DNS sockets and managed TUN
+    /// routed Freedom DNS sockets share the dialer's socket-protection policy.
     pub fn with_transport_dialer_and_tun_options(
         config: CoreConfig,
         transport_dialer: Arc<TransportDialer>,
         tun_runtime_options: TunRuntimeOptions,
     ) -> Result<Self, CoreError> {
-        let dns_resolver = configured_dns_resolver_for_config_with_socket_protector(
-            &config,
-            system_dns_resolver(),
-            transport_dialer.socket_protector_arc(),
-        );
-        Self::with_runtime_dependencies_and_tun_options(
+        let system_resolver = system_dns_resolver();
+        let (dns_resolver, dns_bootstrap_resolver) = match tun_runtime_options.dns_bootstrap {
+            DnsBootstrapMode::System => (
+                configured_dns_resolver_for_config_with_socket_protector(
+                    &config,
+                    Arc::clone(&system_resolver),
+                    transport_dialer.socket_protector_arc(),
+                ),
+                Some(host_only_dns_resolver_for_config(&config, system_resolver)),
+            ),
+            DnsBootstrapMode::StaticOnly => {
+                let resolver = static_only_dns_resolver_for_config(&config);
+                (Arc::clone(&resolver), Some(resolver))
+            }
+        };
+        Self::build(
             config,
             dns_resolver,
+            dns_bootstrap_resolver,
             transport_dialer,
             tun_runtime_options,
+            true,
         )
     }
 
@@ -221,11 +286,13 @@ impl Core {
         dns_resolver: Arc<dyn DnsResolver>,
         transport_dialer: Arc<TransportDialer>,
     ) -> Result<Self, CoreError> {
-        Self::with_runtime_dependencies_and_tun_options(
+        Self::build(
             config,
-            dns_resolver,
+            Arc::clone(&dns_resolver),
+            Some(dns_resolver),
             transport_dialer,
             TunRuntimeOptions::default(),
+            false,
         )
     }
 
@@ -234,6 +301,25 @@ impl Core {
         dns_resolver: Arc<dyn DnsResolver>,
         transport_dialer: Arc<TransportDialer>,
         tun_runtime_options: TunRuntimeOptions,
+    ) -> Result<Self, CoreError> {
+        let dns_bootstrap_resolver = Some(Arc::clone(&dns_resolver));
+        Self::build(
+            config,
+            dns_resolver,
+            dns_bootstrap_resolver,
+            transport_dialer,
+            tun_runtime_options,
+            false,
+        )
+    }
+
+    fn build(
+        config: CoreConfig,
+        dns_resolver: Arc<dyn DnsResolver>,
+        dns_bootstrap_resolver: Option<Arc<dyn DnsResolver>>,
+        transport_dialer: Arc<TransportDialer>,
+        tun_runtime_options: TunRuntimeOptions,
+        managed_dns_resolver: bool,
     ) -> Result<Self, CoreError> {
         let shutdown = Shutdown::new();
         let tun_queue_options = tun_runtime_options.tun_queue_options();
@@ -253,6 +339,8 @@ impl Core {
             tun,
             runtime: None,
             dns_resolver,
+            dns_bootstrap_resolver,
+            managed_dns_resolver,
             transport_dialer,
             tun_runtime_options,
             startup_probe: None,
@@ -279,6 +367,57 @@ impl Core {
 
     pub fn runtime_logger(&self) -> &RuntimeLogger {
         &self.runtime_logger
+    }
+
+    fn runtime_dns_resolvers(
+        &self,
+        config: &Arc<CoreConfig>,
+        outbound_router: &Arc<OutboundRouter>,
+        inbound_tag: Option<String>,
+        forbid_tun_runtime_servers: bool,
+    ) -> dns::RuntimeDnsResolvers {
+        let bootstrap = self
+            .dns_bootstrap_resolver
+            .clone()
+            .unwrap_or_else(|| Arc::clone(&self.dns_resolver));
+        if !self.managed_dns_resolver {
+            return dns::RuntimeDnsResolvers {
+                destination: Arc::clone(&self.dns_resolver),
+                bootstrap,
+            };
+        }
+
+        let fallback: Arc<dyn DnsResolver> = match self.tun_runtime_options.dns_bootstrap {
+            DnsBootstrapMode::System => system_dns_resolver(),
+            DnsBootstrapMode::StaticOnly => Arc::new(FailClosedDnsResolver),
+        };
+        let forbidden_servers: Vec<SocketAddr> = if forbid_tun_runtime_servers {
+            vec![
+                SocketAddr::new(std::net::IpAddr::V4(tun::TUN_DNS_ANCHOR), tun::DNS_PORT),
+                SocketAddr::new(std::net::IpAddr::V4(tun::TUN_CLIENT_IPV4), tun::DNS_PORT),
+            ]
+        } else {
+            Vec::new()
+        };
+        let query_transport: Arc<dyn DnsQueryTransport> =
+            Arc::new(dns::RoutedDnsQueryTransport::new(
+                Arc::clone(outbound_router),
+                inbound_tag,
+                Arc::clone(&bootstrap),
+                Arc::clone(&self.transport_dialer),
+                forbidden_servers,
+            ));
+        let resolver = configured_dns_resolver_from_config_with_transport(
+            config.as_ref(),
+            fallback,
+            None,
+            true,
+            Some(query_transport),
+        );
+        dns::RuntimeDnsResolvers {
+            destination: Arc::new(CachingDnsResolver::new(resolver)),
+            bootstrap,
+        }
     }
 
     pub fn inbound_addr(&self, tag: Option<&str>) -> Option<SocketAddr> {
@@ -356,7 +495,12 @@ impl Core {
         );
         for (bound, protocol, sniffing, policy, listener) in bound_listeners {
             let inbound_tag = bound.tag.clone();
-            let dns_resolver = Arc::clone(&self.dns_resolver);
+            let dns_resolvers = self.runtime_dns_resolvers(
+                &config,
+                &outbound_router,
+                inbound_tag.clone(),
+                has_tun_inbound,
+            );
             let transport_dialer = Arc::clone(&self.transport_dialer);
             let task = match protocol {
                 InboundProtocol::Socks => tokio::spawn(socks::serve_socks_listener(
@@ -364,7 +508,7 @@ impl Core {
                     inbound_tag,
                     Arc::clone(&config),
                     Arc::clone(&outbound_router),
-                    dns_resolver,
+                    dns_resolvers,
                     transport_dialer,
                     sniffing,
                     policy,
@@ -376,7 +520,7 @@ impl Core {
                     inbound_tag,
                     Arc::clone(&config),
                     Arc::clone(&outbound_router),
-                    dns_resolver,
+                    dns_resolvers,
                     transport_dialer,
                     policy,
                     self.runtime_logger.clone(),
@@ -388,6 +532,13 @@ impl Core {
             tasks.push(task);
         }
         if has_tun_inbound {
+            let tun_inbound_tag = tun_inbounds.first().and_then(|(tag, _, _)| tag.clone());
+            let tun_dns_resolvers = self.runtime_dns_resolvers(
+                &config,
+                &outbound_router,
+                tun_inbound_tag.clone(),
+                true,
+            );
             let tun_runtime_options = TunRuntimeOptions {
                 collect_tcp_timings: self.tun_runtime_options.collect_tcp_timings
                     || self.runtime_logger.is_enabled(),
@@ -395,7 +546,7 @@ impl Core {
             };
             tasks.push(tokio::spawn(tun::serve_tun_endpoint(
                 Arc::clone(&self.tun),
-                tun_inbounds.first().and_then(|(tag, _, _)| tag.clone()),
+                tun_inbound_tag,
                 tun_inbounds
                     .first()
                     .and_then(|(_, sniffing, _)| sniffing.clone()),
@@ -405,7 +556,8 @@ impl Core {
                     .unwrap_or_default(),
                 Arc::clone(&config),
                 Arc::clone(&outbound_router),
-                Arc::clone(&self.dns_resolver),
+                tun_dns_resolvers.destination,
+                Some(tun_dns_resolvers.bootstrap),
                 Arc::clone(&self.transport_dialer),
                 tun_runtime_options,
                 self.runtime_logger.clone(),
@@ -424,6 +576,8 @@ impl Core {
         self.state = CoreState::Running;
 
         if let Some(options) = self.startup_probe.clone() {
+            let probe_dns_resolvers =
+                self.runtime_dns_resolvers(&config, &outbound_router, None, has_tun_inbound);
             let probe_url = startup_probe::diagnostic_probe_url(&options.url);
             let probe_timeout_ms = options.timeout.as_millis();
             let probe_outbound = if options.outbound_tag.is_some() {
@@ -439,7 +593,8 @@ impl Core {
             if let Err(error) = startup_probe::run_startup_probe(
                 outbound_router.as_ref(),
                 options,
-                self.dns_resolver.as_ref(),
+                probe_dns_resolvers.destination.as_ref(),
+                probe_dns_resolvers.bootstrap.as_ref(),
                 self.transport_dialer.as_ref(),
             )
             .await
@@ -486,8 +641,25 @@ fn system_dns_resolver() -> Arc<dyn DnsResolver> {
     Arc::new(CachingDnsResolver::new(Arc::new(SystemDnsResolver)))
 }
 
-fn default_dns_resolver_for_config(config: &CoreConfig) -> Arc<dyn DnsResolver> {
-    configured_dns_resolver_for_config(config, system_dns_resolver())
+#[derive(Debug)]
+struct FailClosedDnsResolver;
+
+#[async_trait]
+impl DnsResolver for FailClosedDnsResolver {
+    async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+        Err(TransportError::NoResolvedAddress(domain.to_owned(), port))
+    }
+}
+
+fn static_only_dns_resolver_for_config(config: &CoreConfig) -> Arc<dyn DnsResolver> {
+    host_only_dns_resolver_for_config(config, Arc::new(FailClosedDnsResolver))
+}
+
+fn host_only_dns_resolver_for_config(
+    config: &CoreConfig,
+    fallback: Arc<dyn DnsResolver>,
+) -> Arc<dyn DnsResolver> {
+    configured_dns_resolver_from_config(config, fallback, None, false)
 }
 
 fn configured_dns_resolver_for_config(
@@ -502,7 +674,32 @@ fn configured_dns_resolver_for_config_with_socket_protector(
     fallback: Arc<dyn DnsResolver>,
     socket_protector: Option<Arc<dyn SocketProtector>>,
 ) -> Arc<dyn DnsResolver> {
-    if config.dns.hosts.is_empty() && config.dns.servers.is_empty() {
+    configured_dns_resolver_from_config(config, fallback, socket_protector, true)
+}
+
+fn configured_dns_resolver_from_config(
+    config: &CoreConfig,
+    fallback: Arc<dyn DnsResolver>,
+    socket_protector: Option<Arc<dyn SocketProtector>>,
+    include_name_servers: bool,
+) -> Arc<dyn DnsResolver> {
+    configured_dns_resolver_from_config_with_transport(
+        config,
+        fallback,
+        socket_protector,
+        include_name_servers,
+        None,
+    )
+}
+
+fn configured_dns_resolver_from_config_with_transport(
+    config: &CoreConfig,
+    fallback: Arc<dyn DnsResolver>,
+    socket_protector: Option<Arc<dyn SocketProtector>>,
+    include_name_servers: bool,
+    query_transport: Option<Arc<dyn DnsQueryTransport>>,
+) -> Arc<dyn DnsResolver> {
+    if config.dns.hosts.is_empty() && (!include_name_servers || config.dns.servers.is_empty()) {
         return fallback;
     }
 
@@ -514,25 +711,35 @@ fn configured_dns_resolver_for_config_with_socket_protector(
             matcher: transport_domain_matcher(&host.matcher),
             target: match &host.target {
                 DnsHostTarget::Ip(ip) => StaticHostTarget::Ip(*ip),
-                DnsHostTarget::Domain(domain) => StaticHostTarget::Domain(domain.clone()),
+                DnsHostTarget::Domain(domain) => StaticHostTarget::Domain(
+                    dns::normalize_dns_name(domain).unwrap_or_else(|| domain.clone()),
+                ),
             },
         })
         .collect();
-    let name_servers = config
-        .dns
-        .servers
-        .iter()
-        .map(|server| match server {
-            DnsServerConfig::Ip(addr) => NameServer::Socket(*addr),
-            DnsServerConfig::Domain { domain, port } => NameServer::Domain {
-                domain: domain.clone(),
-                port: *port,
-            },
-        })
-        .collect();
+    let name_servers = if include_name_servers {
+        config
+            .dns
+            .servers
+            .iter()
+            .filter_map(|server| match server {
+                DnsServerConfig::Ip(addr) => Some(NameServer::Socket(*addr)),
+                DnsServerConfig::Domain { domain, port } => {
+                    dns::normalize_dns_name(domain).map(|domain| NameServer::Domain {
+                        domain,
+                        port: *port,
+                    })
+                }
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
 
     let mut resolver = ConfiguredDnsResolver::new(host_rules, name_servers, fallback);
-    if let Some(protector) = socket_protector {
+    if let Some(transport) = query_transport {
+        resolver = resolver.with_query_transport(transport);
+    } else if let Some(protector) = socket_protector {
         resolver = resolver.with_socket_protector(protector);
     }
     Arc::new(resolver)
@@ -541,8 +748,12 @@ fn configured_dns_resolver_for_config_with_socket_protector(
 fn transport_domain_matcher(matcher: &DomainMatcher) -> TransportDomainMatcher {
     match matcher {
         DomainMatcher::Keyword(keyword) => TransportDomainMatcher::Keyword(keyword.clone()),
-        DomainMatcher::Full(domain) => TransportDomainMatcher::Full(domain.clone()),
-        DomainMatcher::Suffix(suffix) => TransportDomainMatcher::Suffix(suffix.clone()),
+        DomainMatcher::Full(domain) => TransportDomainMatcher::Full(
+            dns::normalize_dns_name(domain).unwrap_or_else(|| domain.clone()),
+        ),
+        DomainMatcher::Suffix(suffix) => TransportDomainMatcher::Suffix(
+            dns::normalize_dns_name(suffix).unwrap_or_else(|| suffix.clone()),
+        ),
         DomainMatcher::Regex(regex) => TransportDomainMatcher::regex(regex.pattern())
             .expect("xray-config regex matcher should be prevalidated"),
     }
@@ -561,7 +772,10 @@ mod tests {
         DnsResolver, SocketHandle, SocketProtector, TransportDialer, TransportError,
     };
 
-    use super::{configured_dns_resolver_for_config, Core, TunRuntimeOptions};
+    use super::{
+        configured_dns_resolver_for_config, static_only_dns_resolver_for_config, Core,
+        TunRuntimeOptions,
+    };
 
     struct StaticResolver;
 
@@ -600,6 +814,56 @@ mod tests {
             .unwrap();
 
         assert_eq!(addr, SocketAddr::from(([198, 51, 100, 9], 8443)));
+    }
+
+    #[tokio::test]
+    async fn static_only_dns_resolver_uses_hosts_and_rejects_other_names() {
+        let raw = r#"{
+            "dns": {
+              "servers": ["127.0.0.1:9"],
+              "hosts": {
+                "full:pinned.example": "198.51.100.10"
+              }
+            },
+            "inbounds": [],
+            "outbounds": [
+                { "tag": "direct", "protocol": "freedom" }
+            ]
+        }"#;
+        let parsed = parse_xray_json(raw).expect("config should parse");
+        let resolver = static_only_dns_resolver_for_config(&parsed.config);
+
+        assert_eq!(
+            resolver.resolve("pinned.example", 443).await.unwrap(),
+            SocketAddr::from(([198, 51, 100, 10], 443))
+        );
+        assert!(matches!(
+            resolver.resolve("unpinned.example", 443).await,
+            Err(TransportError::NoResolvedAddress(domain, 443)) if domain == "unpinned.example"
+        ));
+    }
+
+    #[tokio::test]
+    async fn static_only_dns_resolver_normalizes_host_alias_targets() {
+        let raw = r#"{
+            "dns": {
+              "hosts": {
+                "full:resolver.example": "BOOTSTRAP.EXAMPLE.",
+                "full:bootstrap.example": "198.51.100.11"
+              }
+            },
+            "inbounds": [],
+            "outbounds": [
+                { "tag": "direct", "protocol": "freedom" }
+            ]
+        }"#;
+        let parsed = parse_xray_json(raw).expect("config should parse");
+        let resolver = static_only_dns_resolver_for_config(&parsed.config);
+
+        assert_eq!(
+            resolver.resolve("resolver.example", 443).await.unwrap(),
+            SocketAddr::from(([198, 51, 100, 11], 443))
+        );
     }
 
     #[derive(Default)]
@@ -647,6 +911,6 @@ mod tests {
 
         assert!(addr.ip().is_loopback());
         assert_eq!(addr.port(), 8443);
-        assert_eq!(protector.calls.load(Ordering::Relaxed), 2);
+        assert_eq!(protector.calls.load(Ordering::Relaxed), 1);
     }
 }

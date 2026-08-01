@@ -36,6 +36,24 @@ public enum XrayCoreError: Error, CustomStringConvertible {
     }
 }
 
+/// Controls whether the core may use the platform resolver for bootstrap lookups.
+public enum XrayDNSBootstrapMode: Equatable, Sendable {
+    /// Allows the platform resolver when config-backed resolution has no IP result.
+    case system
+
+    /// Disables platform fallback; bootstrap names must resolve from static config.
+    case staticOnly
+
+    fileprivate var ffiValue: XrayDnsBootstrapMode {
+        switch self {
+        case .system:
+            return XRAY_DNS_BOOTSTRAP_MODE_SYSTEM
+        case .staticOnly:
+            return XRAY_DNS_BOOTSTRAP_MODE_STATIC_ONLY
+        }
+    }
+}
+
 final class XrayPacketBatchPollStorage: @unchecked Sendable {
     let maxPackets: Int
     let maxPacketBytes: Int
@@ -433,6 +451,7 @@ public final class XrayCore: @unchecked Sendable {
         borrowedDarwinTunFileDescriptor fd: Int32,
         collectTcpTimings: Bool = false,
         tunRuntimeProfile: XrayTunRuntimeProfile = XRAY_TUN_RUNTIME_PROFILE_DEFAULT,
+        dnsBootstrapMode: XrayDNSBootstrapMode = .system,
         geodataSearchDirectory: URL? = nil,
         startupProbe: XrayStartupProbeOptions? = nil,
         fileLogDirectory: URL? = nil
@@ -441,6 +460,7 @@ public final class XrayCore: @unchecked Sendable {
             configJSON: configJSON,
             collectTcpTimings: collectTcpTimings,
             tunRuntimeProfile: tunRuntimeProfile,
+            dnsBootstrapMode: dnsBootstrapMode,
             geodataSearchDirectory: geodataSearchDirectory,
             startupProbe: startupProbe,
             fileLogDirectory: fileLogDirectory,
@@ -454,6 +474,7 @@ public final class XrayCore: @unchecked Sendable {
         configJSON: String,
         collectTcpTimings: Bool = false,
         tunRuntimeProfile: XrayTunRuntimeProfile = XRAY_TUN_RUNTIME_PROFILE_DEFAULT,
+        dnsBootstrapMode: XrayDNSBootstrapMode = .system,
         geodataSearchDirectory: URL? = nil,
         startupProbe: XrayStartupProbeOptions? = nil,
         fileLogDirectory: URL? = nil,
@@ -467,7 +488,7 @@ public final class XrayCore: @unchecked Sendable {
         var error: OpaquePointer?
         XrayMobileLog.info(
             "Core",
-            "Creating core configBytes=\(configJSON.utf8.count) socketProtect=\(socketProtector != nil) tunFd=\(tunFileDescriptor != nil ? "present" : "none") collectTcpTimings=\(collectTcpTimings) tunRuntimeProfile=\(tunRuntimeProfile.rawValue)"
+            "Creating core configBytes=\(configJSON.utf8.count) socketProtect=\(socketProtector != nil) tunFd=\(tunFileDescriptor != nil ? "present" : "none") collectTcpTimings=\(collectTcpTimings) tunRuntimeProfile=\(tunRuntimeProfile.rawValue) dnsBootstrapMode=\(dnsBootstrapMode)"
         )
         guard let handle = xray_core_new(&error) else {
             let coreError = XrayCore.takeError(error)
@@ -477,6 +498,14 @@ public final class XrayCore: @unchecked Sendable {
 
         self.handle = handle
         do {
+            try check(
+                xray_core_set_dns_bootstrap_mode(
+                    handle,
+                    Int32(dnsBootstrapMode.ffiValue.rawValue),
+                    &error
+                ),
+                error: error
+            )
             if let startupProbe {
                 try startupProbe.url.withCString { urlPointer in
                     if let outboundTag = startupProbe.outboundTag, !outboundTag.isEmpty {

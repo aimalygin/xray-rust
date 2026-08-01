@@ -13,8 +13,8 @@ use std::time::Duration;
 use tokio::runtime::{Builder, Runtime};
 use xray_config::{parse_xray_json, parse_xray_json_with_geodata_dirs};
 use xray_core_rs::{
-    Core, RuntimeLogConfig, RuntimeLogger, StartupProbeOptions, TunFdClosePolicy, TunFdConfig,
-    TunFdPacketFormat, TunFdRuntime, TunRuntimeOptions, TunRuntimeProfile,
+    Core, DnsBootstrapMode, RuntimeLogConfig, RuntimeLogger, StartupProbeOptions, TunFdClosePolicy,
+    TunFdConfig, TunFdPacketFormat, TunFdRuntime, TunRuntimeOptions, TunRuntimeProfile,
 };
 use xray_transport::{SocketHandle, SocketProtector, TransportDialer};
 use xray_tun::TunTcpSlowFlowKind;
@@ -58,6 +58,13 @@ pub enum XrayTunRuntimeProfile {
     LowMemory = 3,
     Throughput = 4,
     MobilePlus = 5,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum XrayDnsBootstrapMode {
+    System = 0,
+    StaticOnly = 1,
 }
 
 #[repr(C)]
@@ -118,6 +125,18 @@ impl TryFrom<c_int> for XrayTunRuntimeProfile {
     }
 }
 
+impl TryFrom<c_int> for XrayDnsBootstrapMode {
+    type Error = &'static str;
+
+    fn try_from(value: c_int) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::System),
+            1 => Ok(Self::StaticOnly),
+            _ => Err("dns bootstrap mode must be 0 (system) or 1 (static only)"),
+        }
+    }
+}
+
 impl From<XrayTunFdPacketFormat> for TunFdPacketFormat {
     fn from(value: XrayTunFdPacketFormat) -> Self {
         match value {
@@ -136,6 +155,15 @@ impl From<XrayTunRuntimeProfile> for TunRuntimeProfile {
             XrayTunRuntimeProfile::LowMemory => Self::LowMemory,
             XrayTunRuntimeProfile::Throughput => Self::Throughput,
             XrayTunRuntimeProfile::MobilePlus => Self::MobilePlus,
+        }
+    }
+}
+
+impl From<XrayDnsBootstrapMode> for DnsBootstrapMode {
+    fn from(value: XrayDnsBootstrapMode) -> Self {
+        match value {
+            XrayDnsBootstrapMode::System => Self::System,
+            XrayDnsBootstrapMode::StaticOnly => Self::StaticOnly,
         }
     }
 }
@@ -1319,6 +1347,70 @@ unsafe fn xray_core_set_tun_runtime_profile_inner(
     }
 
     handle.tun_runtime_options.profile = profile.into();
+    XrayStatus::Ok
+}
+
+/// Selects the DNS bootstrap policy used by managed runtime DNS.
+///
+/// Set this before loading config. `System` is the general-purpose default;
+/// tunnel integrations that install a local DNS interception anchor can choose
+/// `StaticOnly` after completing any required host-side bootstrap.
+///
+/// # Safety
+///
+/// `handle` must either be null or a pointer returned by `xray_core_new` that
+/// has not been freed. The mode must be one of `XrayDnsBootstrapMode`.
+#[no_mangle]
+pub unsafe extern "C" fn xray_core_set_dns_bootstrap_mode(
+    handle: *mut XrayCoreHandle,
+    mode: c_int,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            xray_core_set_dns_bootstrap_mode_inner(handle, mode, error)
+        })
+    }
+}
+
+unsafe fn xray_core_set_dns_bootstrap_mode_inner(
+    handle: *mut XrayCoreHandle,
+    mode: c_int,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        clear_error(error);
+    }
+
+    if handle.is_null() {
+        unsafe {
+            set_error(error, XrayStatus::NullArgument, "core handle is null");
+        }
+        return XrayStatus::NullArgument;
+    }
+    let mode = match XrayDnsBootstrapMode::try_from(mode) {
+        Ok(mode) => mode,
+        Err(message) => {
+            unsafe {
+                set_error(error, XrayStatus::InvalidArgument, message);
+            }
+            return XrayStatus::InvalidArgument;
+        }
+    };
+
+    let handle = unsafe { &mut *handle };
+    if handle.core.is_some() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::RuntimeError,
+                "DNS bootstrap mode must be set before config load",
+            );
+        }
+        return XrayStatus::RuntimeError;
+    }
+
+    handle.tun_runtime_options.dns_bootstrap = mode.into();
     XrayStatus::Ok
 }
 
@@ -3441,7 +3533,9 @@ mod tests {
 
     use super::{
         ffi_panic_message, ffi_status, free_error,
-        runtime_worker_threads_for_available_parallelism, XrayError, XrayStatus,
+        runtime_worker_threads_for_available_parallelism, xray_core_free, xray_core_new,
+        xray_core_set_dns_bootstrap_mode, DnsBootstrapMode, XrayDnsBootstrapMode, XrayError,
+        XrayStatus,
     };
 
     #[test]
@@ -3452,6 +3546,44 @@ mod tests {
         assert_eq!(runtime_worker_threads_for_available_parallelism(4), 4);
         assert_eq!(runtime_worker_threads_for_available_parallelism(6), 6);
         assert_eq!(runtime_worker_threads_for_available_parallelism(8), 6);
+    }
+
+    #[test]
+    fn ffi_core_defaults_to_system_dns_resolution() {
+        let mut error = ptr::null_mut();
+        let handle = unsafe { xray_core_new(&mut error) };
+
+        assert!(!handle.is_null());
+        assert!(error.is_null());
+        assert_eq!(
+            unsafe { (*handle).tun_runtime_options.dns_bootstrap },
+            DnsBootstrapMode::System
+        );
+
+        unsafe { xray_core_free(handle) };
+    }
+
+    #[test]
+    fn ffi_core_can_select_static_only_dns_resolution() {
+        let mut error = ptr::null_mut();
+        let handle = unsafe { xray_core_new(&mut error) };
+
+        let status = unsafe {
+            xray_core_set_dns_bootstrap_mode(
+                handle,
+                XrayDnsBootstrapMode::StaticOnly as libc::c_int,
+                &mut error,
+            )
+        };
+
+        assert_eq!(status, XrayStatus::Ok);
+        assert!(error.is_null());
+        assert_eq!(
+            unsafe { (*handle).tun_runtime_options.dns_bootstrap },
+            DnsBootstrapMode::StaticOnly
+        );
+
+        unsafe { xray_core_free(handle) };
     }
 
     #[test]

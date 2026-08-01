@@ -5,14 +5,15 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, UdpSocket};
 use xray_config::{
-    CoreConfig, InboundConfig, InboundProtocol, Network, OutboundConfig, OutboundSettings,
-    PolicyConfig, PolicyLevelConfig, RoutingConfig, RoutingRule, StreamSecurity, StreamSettings,
+    CoreConfig, DnsServerConfig, InboundConfig, InboundProtocol, Network, OutboundConfig,
+    OutboundSettings, PolicyConfig, PolicyLevelConfig, RoutingConfig, RoutingRule, StreamSecurity,
+    StreamSettings,
 };
 use xray_core_rs::{
-    Core, CoreError, CoreState, RuntimeLogConfig, RuntimeLogger, StartupProbeError,
-    StartupProbeOptions,
+    Core, CoreError, CoreState, DnsBootstrapMode, RuntimeLogConfig, RuntimeLogger,
+    StartupProbeError, StartupProbeOptions, TunRuntimeOptions,
 };
 use xray_transport::{DnsResolver, TransportDialer, TransportError};
 
@@ -95,6 +96,35 @@ async fn spawn_http_status_once(status: u16, expected_target: &'static str) -> S
         stream.write_all(response.as_bytes()).await.unwrap();
     });
     addr
+}
+
+async fn spawn_udp_dns_a_once(answer: Ipv4Addr) -> (SocketAddr, tokio::task::JoinHandle<()>) {
+    let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let addr = socket.local_addr().unwrap();
+    let handle = tokio::spawn(async move {
+        let mut buffer = [0_u8; 1232];
+        let (len, peer) = socket.recv_from(&mut buffer).await.unwrap();
+        let query = &buffer[..len];
+        assert!(query.len() >= 16, "DNS query must contain one question");
+        assert_eq!(u16::from_be_bytes([query[len - 4], query[len - 3]]), 1);
+
+        let mut response = Vec::with_capacity(query.len() + 16);
+        response.extend_from_slice(&query[..2]);
+        response.extend_from_slice(&0x8180_u16.to_be_bytes());
+        response.extend_from_slice(&1_u16.to_be_bytes());
+        response.extend_from_slice(&1_u16.to_be_bytes());
+        response.extend_from_slice(&0_u16.to_be_bytes());
+        response.extend_from_slice(&0_u16.to_be_bytes());
+        response.extend_from_slice(&query[12..]);
+        response.extend_from_slice(&0xC00C_u16.to_be_bytes());
+        response.extend_from_slice(&1_u16.to_be_bytes());
+        response.extend_from_slice(&1_u16.to_be_bytes());
+        response.extend_from_slice(&60_u32.to_be_bytes());
+        response.extend_from_slice(&4_u16.to_be_bytes());
+        response.extend_from_slice(&answer.octets());
+        socket.send_to(&response, peer).await.unwrap();
+    });
+    (addr, handle)
 }
 
 async fn spawn_http_split_status_once(status: u16) -> SocketAddr {
@@ -182,6 +212,36 @@ async fn startup_probe_succeeds_for_http_2xx_response() {
 
     assert_eq!(core.state(), CoreState::Running);
     core.stop().await.unwrap();
+}
+
+#[tokio::test]
+async fn startup_probe_uses_routed_configured_dns_in_static_only_mode() {
+    let addr = spawn_http_status_once(204, "/health").await;
+    let (dns_server, dns_handle) = spawn_udp_dns_a_once(Ipv4Addr::LOCALHOST).await;
+    let mut config = config_with_outbounds(vec![freedom("direct")], Some("direct"));
+    config.dns.servers = vec![DnsServerConfig::Ip(dns_server)];
+    let mut core = Core::with_tun_runtime_options(
+        config,
+        TunRuntimeOptions {
+            dns_bootstrap: DnsBootstrapMode::StaticOnly,
+            ..TunRuntimeOptions::default()
+        },
+    )
+    .unwrap()
+    .with_startup_probe(StartupProbeOptions {
+        url: probe_url(addr),
+        timeout: Duration::from_secs(2),
+        outbound_tag: Some("direct".to_owned()),
+    });
+
+    core.start().await.unwrap();
+
+    assert_eq!(core.state(), CoreState::Running);
+    core.stop().await.unwrap();
+    tokio::time::timeout(Duration::from_secs(1), dns_handle)
+        .await
+        .unwrap()
+        .unwrap();
 }
 
 #[tokio::test]

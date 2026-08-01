@@ -68,6 +68,7 @@ pub enum DnsHostTarget {
 pub struct DnsFakeIpConfig {
     pub enabled: bool,
     pub ipv4_pool: IpCidr,
+    pub pool_size: u32,
     pub ttl: u32,
 }
 

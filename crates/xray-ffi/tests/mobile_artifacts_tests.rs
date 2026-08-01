@@ -41,9 +41,11 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
         "XrayTunFdPacketFormat",
         "XrayTunFdClosePolicy",
         "XrayTunRuntimeProfile",
+        "XrayDnsBootstrapMode",
         "xray_core_set_tun_fd",
         "xray_core_set_tun_collect_tcp_timings",
         "xray_core_set_tun_runtime_profile",
+        "xray_core_set_dns_bootstrap_mode",
         "xray_error_code",
         "xray_error_message",
         "xray_error_free",
@@ -65,6 +67,8 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
     assert!(header.contains("XRAY_STATUS_INVALID_ARGUMENT = 9"));
     assert!(header.contains("int32_t packet_format,\n    int32_t close_policy,"));
     assert!(header.contains("int32_t profile,\n    XrayError **error);"));
+    assert!(header.contains("XRAY_DNS_BOOTSTRAP_MODE_SYSTEM = 0"));
+    assert!(header.contains("XRAY_DNS_BOOTSTRAP_MODE_STATIC_ONLY = 1"));
 
     for field in [
         "struct_size",
@@ -143,6 +147,7 @@ fn apple_adapter_declares_packet_tunnel_pump() {
     assert!(!core.contains("xray_core_set_tun_block_quic"));
     assert!(core.contains("xray_core_set_tun_collect_tcp_timings"));
     assert!(core.contains("xray_core_set_tun_runtime_profile"));
+    assert!(core.contains("xray_core_set_dns_bootstrap_mode"));
     assert!(core.contains("tunFileDescriptor"));
     assert!(core.contains("xray_tun_push_packet"));
     assert!(core.contains("xray_tun_poll_packet"));
@@ -168,6 +173,16 @@ fn apple_adapter_declares_packet_tunnel_pump() {
     assert!(
         swift_version_check < swift_core_new,
         "Swift adapter must validate the FFI ABI before creating a core"
+    );
+    let swift_bootstrap_mode = core
+        .find("xray_core_set_dns_bootstrap_mode")
+        .expect("Swift adapter should configure DNS bootstrap policy");
+    let swift_config_load = core
+        .find("xray_core_load_config_json")
+        .expect("Swift adapter should load native config");
+    assert!(
+        swift_bootstrap_mode < swift_config_load,
+        "Swift adapter must configure DNS bootstrap policy before config load"
     );
 }
 
@@ -228,6 +243,8 @@ fn apple_packet_pump_reuses_poll_storage_and_fails_outside_worker_queue() {
     assert!(pump.contains("queue.async"));
     assert!(provider.contains("cancelTunnelWithError(error)"));
     assert!(provider.contains("lifecycle.stop(ifCurrent: lifecycleToken)"));
+    assert!(core.contains("public enum XrayDNSBootstrapMode"));
+    assert!(provider.contains("dnsBootstrapMode: .staticOnly"));
     assert!(mobile_log.contains("XrayLogSanitizer.sanitize"));
 }
 
@@ -323,6 +340,117 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
     assert!(
         jni_version_check < jni_core_new,
         "JNI adapter must validate the FFI ABI before creating a core"
+    );
+}
+
+#[test]
+fn android_core_sets_dns_bootstrap_policy_before_loading_config() {
+    let core = fs::read_to_string(
+        workspace_root()
+            .join("platform/android/xraymobile/src/main/java/org/xrayrust/mobile/XrayCore.kt"),
+    )
+    .expect("read Kotlin core wrapper");
+
+    assert!(core.contains("enum class XrayDnsBootstrapMode"));
+    assert!(core.contains("dnsBootstrapMode: XrayDnsBootstrapMode = XrayDnsBootstrapMode.System"));
+    assert!(core.contains("System(0)"));
+    assert!(core.contains("StaticOnly(1)"));
+
+    let create = core
+        .find("fun create(")
+        .expect("Kotlin wrapper should define create");
+    let create_body = &core[create..];
+    let set_policy = create_body
+        .find("core.setDnsBootstrapMode(dnsBootstrapMode)")
+        .expect("Kotlin wrapper should set the DNS bootstrap policy");
+    let load_config = create_body
+        .find("core.loadConfig(configJson)")
+        .expect("Kotlin wrapper should load the config");
+    assert!(
+        set_policy < load_config,
+        "Kotlin wrapper must set DNS bootstrap policy before loading config"
+    );
+}
+
+#[test]
+fn android_jni_forwards_dns_bootstrap_policy_to_the_c_abi() {
+    let jni = fs::read_to_string(
+        workspace_root().join("platform/android/xraymobile/src/main/cpp/xray_mobile_jni.cpp"),
+    )
+    .expect("read JNI bridge");
+
+    assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetDnsBootstrapMode"));
+    assert!(jni.contains("xray_core_set_dns_bootstrap_mode("));
+    assert!(jni.contains("static_cast<int32_t>(mode)"));
+}
+
+#[test]
+fn android_reference_vpn_bootstraps_dns_before_establishing_the_tunnel() {
+    let service =
+        fs::read_to_string(workspace_root().join(
+            "platform/android/xraymobile/src/main/java/org/xrayrust/mobile/XrayVpnService.kt",
+        ))
+        .expect("read Kotlin VPN service");
+    let bootstrap = fs::read_to_string(workspace_root().join(
+        "platform/android/xraymobile/src/main/java/org/xrayrust/mobile/XrayAndroidDnsBootstrap.kt",
+    ))
+    .expect("read Android DNS bootstrap preparation");
+
+    for token in [
+        "InetAddress.getAllByName(domain)",
+        "equals(\"vless\", ignoreCase = true)",
+        "findExactDnsHostMappingKey",
+        "canonicalizeExactDnsHostMappingKeys(hosts)",
+        "normalizeBootstrapDomain(key.substring(EXACT_DNS_HOST_PREFIX.length)) == domain",
+        "hosts.put(\"full:$identity\", address)",
+        "resolveSystemBootstrapAddress(identity)",
+        "198.18.0.1",
+        "getJSONArray(\"servers\")",
+        "getJSONObject(\"fakeIp\")",
+    ] {
+        assert!(
+            bootstrap.contains(token),
+            "Android DNS bootstrap preparation missing `{token}`"
+        );
+    }
+    assert!(
+        !bootstrap.contains("put(\"address\""),
+        "Android bootstrap must preserve VLESS domain addresses"
+    );
+    assert!(service.contains("XrayDnsBootstrapMode.StaticOnly"));
+    assert!(service.contains("addDnsServer(XRAY_TUN_DNS_ANCHOR)"));
+
+    let start = service
+        .find("open fun startXrayTunnel(")
+        .expect("reference VPN should define startXrayTunnel");
+    let start_body = &service[start..];
+    let prepare = start_body
+        .find("prepareAndroidVpnConfig(configJson)")
+        .expect("reference VPN should prepare bootstrap mappings");
+    let add_dns = start_body
+        .find("tunnelBuilder.addDnsServer(XRAY_TUN_DNS_ANCHOR)")
+        .expect("reference VPN should install the local DNS anchor");
+    let establish = start_body
+        .find("tunnelBuilder.establish()")
+        .expect("reference VPN should establish the tunnel");
+    assert!(
+        prepare < add_dns && add_dns < establish,
+        "Android DNS bootstrap and Builder DNS setup must finish before establish()"
+    );
+
+    let ensure_mapping = bootstrap
+        .find("private fun ensureBootstrapHostMapping(")
+        .expect("reference VPN should define bootstrap mapping preparation");
+    let ensure_mapping_body = &bootstrap[ensure_mapping..];
+    let existing_mapping = ensure_mapping_body
+        .find("if (existingKey != null)")
+        .expect("reference VPN should preserve an existing exact mapping");
+    let insert_mapping = ensure_mapping_body
+        .find("hosts.put(\"full:$identity\", address)")
+        .expect("reference VPN should add an exact bootstrap mapping");
+    assert!(
+        existing_mapping < insert_mapping,
+        "existing exact dns.hosts mappings must win over generated mappings"
     );
 }
 
@@ -652,6 +780,7 @@ const EXPORTED_SYMBOLS: &[&str] = &[
     "xray_core_set_tun_fd",
     "xray_core_set_tun_collect_tcp_timings",
     "xray_core_set_tun_runtime_profile",
+    "xray_core_set_dns_bootstrap_mode",
     "xray_error_code",
     "xray_error_message",
     "xray_error_free",
@@ -733,6 +862,10 @@ static void use_xray_ffi_api(void) {
   (void)xray_core_set_tun_runtime_profile(
       handle,
       XRAY_TUN_RUNTIME_PROFILE_LOW_MEMORY,
+      &error);
+  (void)xray_core_set_dns_bootstrap_mode(
+      handle,
+      XRAY_DNS_BOOTSTRAP_MODE_STATIC_ONLY,
       &error);
   (void)xray_core_load_config_json(handle, "{}", &error);
   (void)xray_core_config_warnings(

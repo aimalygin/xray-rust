@@ -4,12 +4,15 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 class XrayTunBackendTest {
@@ -25,6 +28,223 @@ class XrayTunBackendTest {
     }
 
     @Test
+    fun dnsBootstrapModesMatchTheCAbiDiscriminants() {
+        assertEquals(0, XrayDnsBootstrapMode.System.ffiValue)
+        assertEquals(1, XrayDnsBootstrapMode.StaticOnly.ffiValue)
+    }
+
+    @Test
+    fun bootstrapDomainsUseCanonicalDnsIdentity() {
+        assertEquals("server.example", normalizeBootstrapDomain("Server.Example."))
+    }
+
+    @Test
+    fun domainDnsServerDropsPortBeforeBootstrap() {
+        assertEquals(
+            "dns.example",
+            dnsServerBootstrapDomain("DNS.Example.:5353"),
+        )
+    }
+
+    @Test
+    fun numericDnsServerDoesNotNeedBootstrap() {
+        assertNull(dnsServerBootstrapDomain("[2001:db8::53]:5353"))
+    }
+
+    @Test
+    fun scopedIpv6DnsServerDoesNotNeedBootstrap() {
+        assertNull(dnsServerBootstrapDomain("[fe80::53%2]:5353"))
+    }
+
+    @Test
+    fun exactDnsHostMappingsCanonicalizeKeysAndPreserveTargets() {
+        val canonical = canonicalizeExactDnsHostMappings(
+            listOf("full:Proxy.Example." to "Alias.Example."),
+        )
+
+        assertTrue(canonical.modified)
+        assertEquals(
+            mapOf("full:proxy.example" to "Alias.Example."),
+            canonical.mappings,
+        )
+    }
+
+    @Test
+    fun equivalentExactDnsHostMappingsAreCoalesced() {
+        val canonical = canonicalizeExactDnsHostMappings(
+            listOf(
+                "full:Proxy.Example." to "198.51.100.7",
+                "full:proxy.example" to "198.51.100.7",
+            ),
+        )
+
+        assertTrue(canonical.modified)
+        assertEquals(
+            mapOf("full:proxy.example" to "198.51.100.7"),
+            canonical.mappings,
+        )
+    }
+
+    @Test
+    fun conflictingExactDnsHostMappingsAreRejected() {
+        assertThrows(IllegalArgumentException::class.java) {
+            canonicalizeExactDnsHostMappings(
+                listOf(
+                    "full:Proxy.Example." to "198.51.100.7",
+                    "full:proxy.example" to "198.51.100.8",
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun fakeIpWithoutDnsServersRejectsDefaultFreedom() {
+        assertThrows(IllegalArgumentException::class.java) {
+            validateAndroidDnsPreflightTopology(
+                AndroidDnsPreflightTopology(
+                    fakeIpEnabled = true,
+                    hasDnsServers = false,
+                    defaultOutboundIsFreedom = true,
+                    routingRules = emptyList(),
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun fakeIpWithoutDnsServersRejectsTunDomainRuleToFreedom() {
+        assertThrows(IllegalArgumentException::class.java) {
+            validateAndroidDnsPreflightTopology(
+                AndroidDnsPreflightTopology(
+                    fakeIpEnabled = true,
+                    hasDnsServers = false,
+                    defaultOutboundIsFreedom = false,
+                    routingRules = listOf(
+                        AndroidDnsPreflightRoutingRule(
+                            selectsFreedom = true,
+                            appliesToTun = true,
+                            hasDomainMatchers = true,
+                            hasIpMatchers = false,
+                        ),
+                    ),
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun fakeIpWithoutDnsServersAcceptsDefaultVlessAndIpOnlyFreedomRule() {
+        validateAndroidDnsPreflightTopology(
+            AndroidDnsPreflightTopology(
+                fakeIpEnabled = true,
+                hasDnsServers = false,
+                defaultOutboundIsFreedom = false,
+                routingRules = listOf(
+                    AndroidDnsPreflightRoutingRule(
+                        selectsFreedom = true,
+                        appliesToTun = true,
+                        hasDomainMatchers = false,
+                        hasIpMatchers = true,
+                    ),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun fakeIpWithDnsServersAcceptsFreedomTopology() {
+        validateAndroidDnsPreflightTopology(
+            AndroidDnsPreflightTopology(
+                fakeIpEnabled = true,
+                hasDnsServers = true,
+                defaultOutboundIsFreedom = true,
+                routingRules = listOf(
+                    AndroidDnsPreflightRoutingRule(
+                        selectsFreedom = true,
+                        appliesToTun = true,
+                        hasDomainMatchers = true,
+                        hasIpMatchers = false,
+                    ),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun dnsBootstrapDeadlineIsSharedAcrossSequentialLookups() {
+        val now = AtomicLong(1_000)
+        val deadline = AndroidDnsBootstrapDeadline(
+            timeoutNanos = 100,
+            nanoTime = now::get,
+        )
+
+        assertEquals(100L, deadline.remainingNanos())
+        now.set(1_060)
+        assertEquals(40L, deadline.remainingNanos())
+        now.set(1_100)
+        assertThrows(AndroidDnsBootstrapTimeoutException::class.java) {
+            deadline.remainingNanos()
+        }
+    }
+
+    @Test
+    fun blockedSystemLookupTimesOutAndWorkerCapacityStaysBounded() {
+        val lookupStarted = CountDownLatch(1)
+        val releaseLookup = CountDownLatch(1)
+        val resolver = BoundedAndroidDnsBootstrapResolver(maxConcurrentLookups = 1) {
+            lookupStarted.countDown()
+            var released = false
+            while (!released) {
+                try {
+                    if (releaseLookup.await(10, TimeUnit.MILLISECONDS)) {
+                        released = true
+                    }
+                } catch (_: InterruptedException) {
+                    // Model InetAddress implementations that ignore interruption.
+                }
+            }
+            "192.0.2.1"
+        }
+        try {
+            assertThrows(AndroidDnsBootstrapTimeoutException::class.java) {
+                resolver.resolve("blocked.example", TimeUnit.MILLISECONDS.toNanos(50))
+            }
+            assertTrue(lookupStarted.await(1, TimeUnit.SECONDS))
+            assertThrows(IllegalStateException::class.java) {
+                resolver.resolve("queued.example", TimeUnit.MILLISECONDS.toNanos(50))
+            }
+        } finally {
+            releaseLookup.countDown()
+            resolver.close()
+        }
+    }
+
+    @Test
+    fun lookupResultThatArrivesAfterCommonDeadlineIsNotPublished() {
+        val now = AtomicLong(1_000)
+        val resolver = BoundedAndroidDnsBootstrapResolver(maxConcurrentLookups = 1) {
+            now.set(1_000 + TimeUnit.SECONDS.toNanos(1))
+            "192.0.2.1"
+        }
+        try {
+            val deadline = AndroidDnsBootstrapDeadline(
+                timeoutNanos = TimeUnit.SECONDS.toNanos(1),
+                nanoTime = now::get,
+            )
+
+            assertThrows(AndroidDnsBootstrapTimeoutException::class.java) {
+                resolveAndroidDnsBootstrapAddressWithinDeadline(
+                    domain = "proxy.example",
+                    resolver = resolver,
+                    deadline = deadline,
+                )
+            }
+        } finally {
+            resolver.close()
+        }
+    }
+
+    @Test
     fun lifecyclePublishesAndStopsOneSessionAtomically() {
         val lifecycle = XrayTunnelStateMachine<String>()
         val token = lifecycle.beginStart()
@@ -33,35 +253,189 @@ class XrayTunBackendTest {
         assertTrue(lifecycle.isStartActive(token!!))
         assertTrue(lifecycle.publish(token, "session"))
 
-        assertEquals("session", lifecycle.takeSessionForStop())
+        val action = lifecycle.requestStop()
+        assertTrue(action is XrayTunnelStopAction.StopSession)
+        assertEquals("session", (action as XrayTunnelStopAction.StopSession).session)
         lifecycle.completeStop()
         assertNotNull(lifecycle.beginStart())
     }
 
     @Test
-    fun stopDuringStartCancelsPublicationAndWaitsForRollback() {
+    fun stopDuringStartCancelsPublicationWithoutWaiting() {
         val lifecycle = XrayTunnelStateMachine<String>()
-        val token = lifecycle.beginStart()
-        assertNotNull(token)
-        val stoppedSession = AtomicReference<String?>("not-finished")
-        val stopReturned = CountDownLatch(1)
-        val stopThread = Thread {
-            stoppedSession.set(lifecycle.takeSessionForStop())
-            stopReturned.countDown()
-        }
-        stopThread.start()
-
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1)
-        while (lifecycle.isStartActive(token!!) && System.nanoTime() < deadline) {
-            Thread.yield()
-        }
+        val token = lifecycle.beginStart()!!
+        assertEquals(XrayTunnelStopAction.CancelStart, lifecycle.requestStop())
         assertFalse(lifecycle.isStartActive(token))
         assertFalse(lifecycle.publish(token, "must-not-publish"))
-        assertFalse(stopReturned.await(50, TimeUnit.MILLISECONDS))
 
         lifecycle.failStart(token)
-        assertTrue(stopReturned.await(1, TimeUnit.SECONDS))
-        assertNull(stoppedSession.get())
+        assertNotNull(lifecycle.beginStart())
+    }
+
+    @Test
+    fun cancellingQueuedStartBeforeFirstRunDoesNotStrandLifecycle() {
+        val lifecycle = XrayTunnelStateMachine<String>()
+        val token = lifecycle.beginStart()!!
+        val queuedTask = AtomicReference<Runnable?>()
+        val blockRan = AtomicBoolean(false)
+        val coordinator = XrayAsyncStartCoordinator(
+            lifecycle = lifecycle,
+            executor = Executor { queuedTask.set(it) },
+        )
+        coordinator.execute(token) { blockRan.set(true) }
+
+        assertEquals(XrayTunnelStopAction.CancelStart, lifecycle.requestStop())
+        coordinator.cancelActiveStart()
+
+        assertFalse(coordinator.hasActiveStart())
+        assertNotNull(lifecycle.beginStart())
+        queuedTask.get()?.run()
+        assertFalse(blockRan.get())
+    }
+
+    @Test
+    fun completionCallbackCanReentrantlyScheduleANewStart() {
+        val lifecycle = XrayTunnelStateMachine<String>()
+        val coordinator = XrayAsyncStartCoordinator(
+            lifecycle = lifecycle,
+            executor = Executor(Runnable::run),
+        )
+        val firstToken = lifecycle.beginStart()!!
+        val retryRan = AtomicBoolean(false)
+
+        coordinator.execute(
+            token = firstToken,
+            block = { "failed" },
+            afterRelease = {
+                assertFalse(coordinator.hasActiveStart())
+                val retryToken = lifecycle.beginStart()!!
+                coordinator.execute(retryToken) { retryRan.set(true) }
+            },
+        )
+
+        assertTrue(retryRan.get())
+    }
+
+    @Test
+    fun stopAfterPublicationCancelsStartTailAndReturnsRunningSession() {
+        val lifecycle = XrayTunnelStateMachine<String>()
+        val token = lifecycle.beginStart()!!
+        val published = CountDownLatch(1)
+        val releaseWorker = CountDownLatch(1)
+        val workerFinished = CountDownLatch(1)
+        val coordinator = XrayAsyncStartCoordinator(
+            lifecycle = lifecycle,
+            executor = Executor { runnable -> Thread(runnable).start() },
+        )
+        coordinator.execute(token) {
+            try {
+                assertTrue(lifecycle.publish(token, "session"))
+                published.countDown()
+                var released = false
+                while (!released) {
+                    try {
+                        releaseWorker.await()
+                        released = true
+                    } catch (_: InterruptedException) {
+                        // A host callback may not return immediately on cancellation.
+                    }
+                }
+            } finally {
+                workerFinished.countDown()
+            }
+        }
+        assertTrue(published.await(1, TimeUnit.SECONDS))
+
+        val action = lifecycle.requestStop()
+        assertTrue(action is XrayTunnelStopAction.StopSession)
+        assertEquals("session", (action as XrayTunnelStopAction.StopSession).session)
+        coordinator.cancelActiveStart()
+        lifecycle.completeStop()
+
+        assertFalse(coordinator.hasActiveStart())
+        val restarted = lifecycle.beginStart()!!
+        val restartedWorker = CountDownLatch(1)
+        coordinator.execute(restarted) { restartedWorker.countDown() }
+        assertTrue(restartedWorker.await(1, TimeUnit.SECONDS))
+
+        releaseWorker.countDown()
+        assertTrue(workerFinished.await(1, TimeUnit.SECONDS))
+    }
+
+    @Test
+    fun oldStartTailCannotCompleteAnInProgressSessionStop() {
+        val lifecycle = XrayTunnelStateMachine<String>()
+        val token = lifecycle.beginStart()!!
+        assertTrue(lifecycle.publish(token, "session"))
+        assertTrue(lifecycle.requestStop() is XrayTunnelStopAction.StopSession)
+
+        lifecycle.failStart(token)
+
+        assertNull(lifecycle.beginStart())
+        lifecycle.completeStop()
+        assertNotNull(lifecycle.beginStart())
+    }
+
+    @Test
+    fun publicationFailureCanOnlyBeCompletedByItsOwnStartToken() {
+        val lifecycle = XrayTunnelStateMachine<String>()
+        val token = lifecycle.beginStart()!!
+        val unrelatedToken = XrayTunnelStateMachine.StartToken()
+        assertThrows(IllegalStateException::class.java) {
+            lifecycle.publish(token, "session") { error("pump start failed") }
+        }
+        assertTrue(lifecycle.isStartFailureReportable(token))
+
+        lifecycle.failStart(unrelatedToken)
+        assertNull(lifecycle.beginStart())
+
+        lifecycle.failStart(token)
+        assertNotNull(lifecycle.beginStart())
+    }
+
+    @Test
+    fun rapidRestartIsRejectedUntilCancelledWorkerFinishesCleanup() {
+        val lifecycle = XrayTunnelStateMachine<String>()
+        val token = lifecycle.beginStart()!!
+        val workerStarted = CountDownLatch(1)
+        val releaseCleanup = CountDownLatch(1)
+        val workerFinished = CountDownLatch(1)
+        val coordinator = XrayAsyncStartCoordinator(
+            lifecycle = lifecycle,
+            executor = Executor { runnable -> Thread(runnable).start() },
+        )
+        coordinator.execute(token) {
+            try {
+                workerStarted.countDown()
+                while (true) {
+                    try {
+                        releaseCleanup.await()
+                        break
+                    } catch (_: InterruptedException) {
+                        // Model bounded cleanup that observes cancellation later.
+                    }
+                }
+            } finally {
+                workerFinished.countDown()
+            }
+        }
+        assertTrue(workerStarted.await(1, TimeUnit.SECONDS))
+
+        assertEquals(XrayTunnelStopAction.CancelStart, lifecycle.requestStop())
+        coordinator.cancelActiveStart()
+        assertNull(lifecycle.beginStart())
+
+        releaseCleanup.countDown()
+        assertTrue(workerFinished.await(1, TimeUnit.SECONDS))
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1)
+        var restarted: XrayTunnelStateMachine.StartToken? = null
+        while (restarted == null && System.nanoTime() < deadline) {
+            restarted = lifecycle.beginStart()
+            if (restarted == null) {
+                Thread.yield()
+            }
+        }
+        assertNotNull(restarted)
     }
 
     @Test

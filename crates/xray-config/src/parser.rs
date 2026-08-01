@@ -24,13 +24,50 @@ const MAX_CONFIG_MATCHERS: usize = 500_000;
 const MAX_CONFIG_GEODATA_ATTR_FILTERS: usize = 32;
 const MAX_CONFIG_GEODATA_ATTRIBUTE_SIZE: usize = 256;
 const MAX_DNS_SERVERS: usize = 8;
+const DEFAULT_FAKE_IP_POOL_SIZE: u32 = 32_768;
 const TUN_DNS_ANCHOR: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 1);
+const TUN_CLIENT_IPV4: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 2);
 
-fn is_tun_dns_anchor_ip(ip: IpAddr) -> bool {
+fn is_tun_reserved_ip(ip: IpAddr) -> bool {
     match ip {
-        IpAddr::V4(ip) => ip == TUN_DNS_ANCHOR,
-        IpAddr::V6(ip) => ip.to_ipv4_mapped() == Some(TUN_DNS_ANCHOR),
+        IpAddr::V4(ip) => matches!(ip, TUN_DNS_ANCHOR | TUN_CLIENT_IPV4),
+        IpAddr::V6(ip) => ip
+            .to_ipv4_mapped()
+            .is_some_and(|ip| matches!(ip, TUN_DNS_ANCHOR | TUN_CLIENT_IPV4)),
     }
+}
+
+fn fake_ip_usable_address_count(pool: IpCidr) -> u64 {
+    let IpAddr::V4(network) = pool.network() else {
+        return 0;
+    };
+
+    let address_count = 1_u64 << u32::from(32 - pool.prefix());
+    let first_offset = u64::from(address_count > 2);
+    let end_offset = if address_count > 2 {
+        address_count - 1
+    } else {
+        address_count
+    };
+    let mut usable = end_offset - first_offset;
+
+    let mask = if pool.prefix() == 0 {
+        0
+    } else {
+        u32::MAX << u32::from(32 - pool.prefix())
+    };
+    let network_base = u32::from(network) & mask;
+    for reserved in [TUN_DNS_ANCHOR, TUN_CLIENT_IPV4] {
+        let reserved_offset = u32::from(reserved)
+            .checked_sub(network_base)
+            .map(u64::from)
+            .filter(|offset| (first_offset..end_offset).contains(offset));
+        if reserved_offset.is_some() {
+            usable -= 1;
+        }
+    }
+
+    usable
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -287,15 +324,21 @@ impl Parser<'_> {
                 self.error(path, "dns server port must be greater than zero");
                 return None;
             }
-            if is_tun_dns_anchor_ip(socket_addr.ip()) && socket_addr.port() == 53 {
-                self.error(path, "dns server cannot point at the local TUN DNS anchor");
+            if is_tun_reserved_ip(socket_addr.ip()) && socket_addr.port() == 53 {
+                self.error(
+                    path,
+                    "dns server cannot point at a tunnel-local DNS address",
+                );
                 return None;
             }
             return Some(DnsServerConfig::Ip(socket_addr));
         }
         if let Ok(ip) = server.parse::<IpAddr>() {
-            if is_tun_dns_anchor_ip(ip) {
-                self.error(path, "dns server cannot point at the local TUN DNS anchor");
+            if is_tun_reserved_ip(ip) {
+                self.error(
+                    path,
+                    "dns server cannot point at a tunnel-local DNS address",
+                );
                 return None;
             }
             return Some(DnsServerConfig::Ip(SocketAddr::new(ip, 53)));
@@ -375,7 +418,11 @@ impl Parser<'_> {
             return None;
         }
 
-        self.reject_unknown_fields(fake_ip, fake_ip_path, &["enabled", "ipv4Pool", "ttl"]);
+        self.reject_unknown_fields(
+            fake_ip,
+            fake_ip_path,
+            &["enabled", "ipv4Pool", "poolSize", "ttl"],
+        );
         let enabled = self
             .optional_bool_at(fake_ip, "enabled", format!("{fake_ip_path}.enabled"))
             .unwrap_or(false);
@@ -401,9 +448,37 @@ impl Parser<'_> {
             return None;
         }
 
+        let usable_address_count = fake_ip_usable_address_count(pool);
+        if usable_address_count == 0 {
+            self.error(ipv4_pool_path, "fakeIp ipv4Pool has no usable addresses");
+            return None;
+        }
+
+        let pool_size_path = format!("{fake_ip_path}.poolSize");
+        let explicit_pool_size = self.optional_u32_at(fake_ip, "poolSize", pool_size_path.clone());
+        let pool_size = match explicit_pool_size {
+            Some(0) => {
+                self.error(pool_size_path, "fakeIp poolSize must be greater than zero");
+                return None;
+            }
+            Some(pool_size) if u64::from(pool_size) > usable_address_count => {
+                self.error(
+                    pool_size_path,
+                    format!(
+                        "fakeIp poolSize exceeds the {usable_address_count} usable addresses in ipv4Pool"
+                    ),
+                );
+                return None;
+            }
+            Some(pool_size) => pool_size,
+            None => u32::try_from(usable_address_count.min(u64::from(DEFAULT_FAKE_IP_POOL_SIZE)))
+                .unwrap_or(DEFAULT_FAKE_IP_POOL_SIZE),
+        };
+
         Some(DnsFakeIpConfig {
             enabled,
             ipv4_pool: pool,
+            pool_size,
             ttl,
         })
     }

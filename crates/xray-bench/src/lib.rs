@@ -189,6 +189,7 @@ pub enum WorkloadKind {
     UdpFreedom,
     TunUdpFreedom,
     TunFakeDns,
+    TunFakeDnsTcp,
     TunDnsProxy,
     TunTcpFreedom,
     TunTcpStaleFlows,
@@ -213,6 +214,7 @@ impl WorkloadKind {
             Self::UdpFreedom => "udp-freedom",
             Self::TunUdpFreedom => "tun-udp-freedom",
             Self::TunFakeDns => "tun-fake-dns",
+            Self::TunFakeDnsTcp => "tun-fake-dns-tcp",
             Self::TunDnsProxy => "tun-dns-proxy",
             Self::TunTcpFreedom => "tun-tcp-freedom",
             Self::TunTcpStaleFlows => "tun-tcp-stale-flows",
@@ -237,6 +239,7 @@ impl WorkloadKind {
             "udp-freedom" => Ok(Self::UdpFreedom),
             "tun-udp-freedom" => Ok(Self::TunUdpFreedom),
             "tun-fake-dns" => Ok(Self::TunFakeDns),
+            "tun-fake-dns-tcp" => Ok(Self::TunFakeDnsTcp),
             "tun-dns-proxy" => Ok(Self::TunDnsProxy),
             "tun-tcp-freedom" => Ok(Self::TunTcpFreedom),
             "tun-tcp-stale-flows" => Ok(Self::TunTcpStaleFlows),
@@ -257,6 +260,7 @@ impl WorkloadKind {
             self,
             Self::TunUdpFreedom
                 | Self::TunFakeDns
+                | Self::TunFakeDnsTcp
                 | Self::TunDnsProxy
                 | Self::TunTcpFreedom
                 | Self::TunTcpStaleFlows
@@ -889,6 +893,7 @@ impl WorkloadFixture {
             | WorkloadKind::UdpFreedom
             | WorkloadKind::TunUdpFreedom
             | WorkloadKind::TunFakeDns
+            | WorkloadKind::TunFakeDnsTcp
             | WorkloadKind::TunTcpFreedom
             | WorkloadKind::TunTcpStaleFlows => Ok(Self::default()),
         }
@@ -2232,6 +2237,8 @@ struct TunDnsTcpPendingQuery {
 struct TunDnsTcpConnection {
     logical_index: usize,
     source_port: u16,
+    domain: &'static str,
+    expected_ipv4: Ipv4Addr,
     client: TunTcpBenchmarkClient,
     next_query: usize,
     total_queries: usize,
@@ -2440,9 +2447,39 @@ async fn run_tun_dns_proxy_tcp_workload(
     tun_fd: RawFd,
     options: &BenchOptions,
 ) -> Result<WorkloadOutcome, BenchError> {
+    run_tun_dns_tcp_workload(
+        tun_fd,
+        options,
+        TUN_DNS_PROXY_DOMAIN,
+        TUN_DNS_PROXY_ANSWER_IPV4,
+    )
+    .await
+}
+
+#[cfg(unix)]
+async fn run_tun_fake_dns_tcp_workload(
+    tun_fd: RawFd,
+    options: &BenchOptions,
+) -> Result<WorkloadOutcome, BenchError> {
+    run_tun_dns_tcp_workload(
+        tun_fd,
+        options,
+        TUN_FAKE_DNS_DOMAIN,
+        TUN_FAKE_DNS_FIRST_IPV4,
+    )
+    .await
+}
+
+#[cfg(unix)]
+async fn run_tun_dns_tcp_workload(
+    tun_fd: RawFd,
+    options: &BenchOptions,
+    domain: &'static str,
+    expected_ipv4: Ipv4Addr,
+) -> Result<WorkloadOutcome, BenchError> {
     let queries_per_connection = options.iterations.checked_mul(2).ok_or_else(|| {
         BenchError::InvalidArguments(
-            "tun-dns-proxy TCP query count exceeds addressable memory".to_owned(),
+            "TUN DNS TCP query count exceeds addressable memory".to_owned(),
         )
     })?;
     let total_queries = options
@@ -2450,12 +2487,12 @@ async fn run_tun_dns_proxy_tcp_workload(
         .checked_mul(queries_per_connection)
         .ok_or_else(|| {
             BenchError::InvalidArguments(
-                "tun-dns-proxy TCP query count exceeds addressable memory".to_owned(),
+                "TUN DNS TCP query count exceeds addressable memory".to_owned(),
             )
         })?;
     if options.connections == 0 || queries_per_connection == 0 {
         return Err(BenchError::InvalidArguments(
-            "tun-dns-proxy TCP requires non-zero connections and iterations".to_owned(),
+            "TUN DNS TCP requires non-zero connections and iterations".to_owned(),
         ));
     }
 
@@ -2483,6 +2520,8 @@ async fn run_tun_dns_proxy_tcp_workload(
             active.push(TunDnsTcpConnection::new(
                 next_connection,
                 queries_per_connection,
+                domain,
+                expected_ipv4,
             )?);
             next_connection += 1;
         }
@@ -2511,7 +2550,7 @@ async fn run_tun_dns_proxy_tcp_workload(
         if completed_connections == options.connections && outbound_frames.is_empty() {
             if outcome.latencies_us.len() != total_queries {
                 return Err(BenchError::InvalidArguments(format!(
-                    "tun-dns-proxy TCP completed {} of {total_queries} queries",
+                    "TUN DNS TCP completed {} of {total_queries} queries",
                     outcome.latencies_us.len()
                 )));
             }
@@ -2525,7 +2564,7 @@ async fn run_tun_dns_proxy_tcp_workload(
                 .map(|connection| format!("; stalled connection={}", connection.logical_index))
                 .unwrap_or_default();
             return Err(BenchError::InvalidArguments(format!(
-                "timed out running tun-dns-proxy TCP: completed {completed_connections}/{} connections and {}/{} queries{stalled_connection}",
+                "timed out running TUN DNS TCP: completed {completed_connections}/{} connections and {}/{} queries{stalled_connection}",
                 options.connections,
                 outcome.latencies_us.len(),
                 total_queries
@@ -2569,7 +2608,7 @@ async fn run_tun_dns_proxy_tcp_workload(
                     || endpoints.destination != source_ip
                 {
                     return Err(BenchError::InvalidArguments(format!(
-                        "tun-dns-proxy TCP response source mismatch: expected {TUN_DNS_ANCHOR}:{DNS_PORT} -> {source_ip}:{}, got {}:{} -> {}:{}",
+                        "TUN DNS TCP response source mismatch: expected {TUN_DNS_ANCHOR}:{DNS_PORT} -> {source_ip}:{}, got {}:{} -> {}:{}",
                         connection.source_port,
                         endpoints.source,
                         endpoints.source_port,
@@ -2589,13 +2628,20 @@ async fn run_tun_dns_proxy_tcp_workload(
 
 #[cfg(unix)]
 impl TunDnsTcpConnection {
-    fn new(logical_index: usize, total_queries: usize) -> Result<Self, BenchError> {
+    fn new(
+        logical_index: usize,
+        total_queries: usize,
+        domain: &'static str,
+        expected_ipv4: Ipv4Addr,
+    ) -> Result<Self, BenchError> {
         let source_port = 54_000 + (logical_index % 10_000) as u16;
         let mut client = TunTcpBenchmarkClient::new(source_port);
         client.connect(SocketAddr::from((TUN_DNS_ANCHOR, DNS_PORT)))?;
         Ok(Self {
             logical_index,
             source_port,
+            domain,
+            expected_ipv4,
             client,
             next_query: 0,
             total_queries,
@@ -2614,7 +2660,7 @@ impl TunDnsTcpConnection {
         if let Some(response) = take_dns_tcp_message(&mut self.receive_buffer)? {
             let pending = self.pending.take().ok_or_else(|| {
                 BenchError::InvalidArguments(format!(
-                    "tun-dns-proxy TCP connection {} received an unsolicited DNS response",
+                    "TUN DNS TCP connection {} received an unsolicited DNS response",
                     self.logical_index
                 ))
             })?;
@@ -2639,7 +2685,7 @@ impl TunDnsTcpConnection {
                 DNS_TYPE_HTTPS
             };
             let expectation = if query_type == DNS_TYPE_A {
-                TunFakeDnsExpectation::A(TUN_DNS_PROXY_ANSWER_IPV4)
+                TunFakeDnsExpectation::A(self.expected_ipv4)
             } else {
                 TunFakeDnsExpectation::NoData
             };
@@ -2647,11 +2693,9 @@ impl TunDnsTcpConnection {
                 .source_port
                 .wrapping_add(self.next_query as u16)
                 .wrapping_add((self.logical_index / 10_000) as u16);
-            let query = build_dns_query(transaction_id, TUN_DNS_PROXY_DOMAIN, query_type)?;
+            let query = build_dns_query(transaction_id, self.domain, query_type)?;
             let query_len = u16::try_from(query.len()).map_err(|_| {
-                BenchError::InvalidArguments(
-                    "tun-dns-proxy TCP query exceeds 65535 bytes".to_owned(),
-                )
+                BenchError::InvalidArguments("TUN DNS TCP query exceeds 65535 bytes".to_owned())
             })?;
             let mut frame = Vec::with_capacity(query.len() + 2);
             frame.extend_from_slice(&query_len.to_be_bytes());
@@ -2700,7 +2744,7 @@ fn take_dns_tcp_message(buffer: &mut Vec<u8>) -> Result<Option<Vec<u8>>, BenchEr
     };
     if length == 0 {
         return Err(BenchError::InvalidArguments(
-            "tun-dns-proxy TCP received a zero-length DNS message".to_owned(),
+            "TUN DNS TCP received a zero-length DNS message".to_owned(),
         ));
     }
     let frame_len = length + 2;
@@ -2720,7 +2764,7 @@ fn drain_tun_dns_tcp_outbound(
     while let Some(packet) = client.device.pop_outbound() {
         if outbound.len() >= TUN_DNS_TCP_MAX_QUEUED_FRAMES {
             return Err(BenchError::InvalidArguments(format!(
-                "tun-dns-proxy TCP exceeded its {TUN_DNS_TCP_MAX_QUEUED_FRAMES}-frame backpressure queue"
+                "TUN DNS TCP exceeded its {TUN_DNS_TCP_MAX_QUEUED_FRAMES}-frame backpressure queue"
             )));
         }
         outbound.push_back(encode_darwin_utun_frame(&packet));
@@ -2913,6 +2957,16 @@ pub async fn run_tun_fake_dns_workload(
 ) -> Result<WorkloadOutcome, BenchError> {
     Err(BenchError::InvalidArguments(
         "tun-fake-dns workload requires Unix fd support".to_owned(),
+    ))
+}
+
+#[cfg(not(unix))]
+pub async fn run_tun_fake_dns_tcp_workload(
+    _tun_fd: i32,
+    _options: &BenchOptions,
+) -> Result<WorkloadOutcome, BenchError> {
+    Err(BenchError::InvalidArguments(
+        "tun-fake-dns-tcp workload requires Unix fd support".to_owned(),
     ))
 }
 
@@ -5442,7 +5496,7 @@ pub fn xray_rust_config(port: u16, workload: WorkloadKind) -> String {
         WorkloadKind::RealityVisionXudp | WorkloadKind::RealityVisionBulkThroughput => {
             reality_vision_xudp_config(port, SocketAddr::from((Ipv4Addr::LOCALHOST, 443)))
         }
-        WorkloadKind::TunFakeDns => tun_fake_dns_config(),
+        WorkloadKind::TunFakeDns | WorkloadKind::TunFakeDnsTcp => tun_fake_dns_config(),
         WorkloadKind::TunDnsProxy => {
             tun_dns_proxy_config(SocketAddr::from((Ipv4Addr::LOCALHOST, 53)))
         }
@@ -5551,10 +5605,10 @@ fn engine_config(
             })?;
             Ok(tun_reality_blackhole_config(vless_addr))
         }
-        WorkloadKind::TunFakeDns => match engine {
+        WorkloadKind::TunFakeDns | WorkloadKind::TunFakeDnsTcp => match engine {
             EngineKind::XrayRust => Ok(tun_fake_dns_config()),
             EngineKind::XrayCore | EngineKind::SingBox => Err(BenchError::InvalidArguments(
-                "tun-fake-dns currently supports only --engine xray-rust because dns.fakeIp is an xray-rust config extension"
+                "fake-DNS TUN workloads currently support only --engine xray-rust because dns.fakeIp is an xray-rust config extension"
                     .to_owned(),
             )),
         },
@@ -5703,6 +5757,7 @@ fn tun_fake_dns_config() -> String {
     "fakeIp": {
       "enabled": true,
       "ipv4Pool": "198.19.0.0/16",
+      "poolSize": 32768,
       "ttl": 60
     }
   }
@@ -7803,7 +7858,7 @@ fn route_probe_config(rules: usize, outbounds: usize) -> Result<CoreConfig, Benc
 pub async fn run_compare(options: BenchOptions) -> Result<(), BenchError> {
     if matches!(
         options.workload,
-        WorkloadKind::TunFakeDns | WorkloadKind::TunDnsProxy
+        WorkloadKind::TunFakeDns | WorkloadKind::TunFakeDnsTcp | WorkloadKind::TunDnsProxy
     ) {
         return Err(BenchError::InvalidArguments(format!(
             "{} is xray-rust-only; use `run --engine xray-rust` instead of `compare`",
@@ -7899,6 +7954,9 @@ async fn run_engine_once(
                 run_tun_udp_freedom_workload(engine.tun_fd()?, options).await
             }
             WorkloadKind::TunFakeDns => run_tun_fake_dns_workload(engine.tun_fd()?, options).await,
+            WorkloadKind::TunFakeDnsTcp => {
+                run_tun_fake_dns_tcp_workload(engine.tun_fd()?, options).await
+            }
             WorkloadKind::TunDnsProxy => {
                 run_tun_dns_proxy_workload(engine.tun_fd()?, options).await
             }
@@ -7977,8 +8035,11 @@ async fn run_engine_once(
         connections: options.connections as u64,
         iterations: options.iterations as u64,
         payload_size: options.payload_size as u64,
-        dns_transport: (options.workload == WorkloadKind::TunDnsProxy)
-            .then(|| options.dns_transport.as_str().to_owned()),
+        dns_transport: match options.workload {
+            WorkloadKind::TunDnsProxy => Some(options.dns_transport.as_str().to_owned()),
+            WorkloadKind::TunFakeDnsTcp => Some("tcp".to_owned()),
+            _ => None,
+        },
         latency_us,
         setup_us,
         samples: samples.len(),
@@ -8789,6 +8850,31 @@ mod tests {
     }
 
     #[test]
+    fn parses_run_tun_fake_dns_tcp() {
+        let args = parse_cli_args([
+            "xray-bench",
+            "run",
+            "--engine",
+            "xray-rust",
+            "--workload",
+            "tun-fake-dns-tcp",
+            "--connections",
+            "2",
+            "--iterations",
+            "3",
+        ])
+        .unwrap();
+
+        let CliArgs::Run(options) = args else {
+            panic!("expected run args");
+        };
+        assert_eq!(options.engine, Some(EngineKind::XrayRust));
+        assert_eq!(options.workload, WorkloadKind::TunFakeDnsTcp);
+        assert_eq!(options.connections, 2);
+        assert_eq!(options.iterations, 3);
+    }
+
+    #[test]
     fn parses_run_tun_dns_proxy_transport() {
         let args = parse_cli_args([
             "xray-bench",
@@ -8874,6 +8960,7 @@ mod tests {
     #[test]
     fn tun_tcp_freedom_uses_fd_backed_tun() {
         assert!(WorkloadKind::TunFakeDns.uses_tun_fd());
+        assert!(WorkloadKind::TunFakeDnsTcp.uses_tun_fd());
         assert!(WorkloadKind::TunDnsProxy.uses_tun_fd());
         assert!(WorkloadKind::TunTcpFreedom.uses_tun_fd());
         assert!(WorkloadKind::TunTcpStaleFlows.uses_tun_fd());
@@ -9655,17 +9742,28 @@ mod tests {
     #[test]
     fn tun_fake_dns_config_enables_fake_ip_for_xray_rust_only() {
         let fixture = WorkloadFixture::default();
-        let config =
-            engine_config(EngineKind::XrayRust, 0, WorkloadKind::TunFakeDns, &fixture).unwrap();
+        let config = engine_config(
+            EngineKind::XrayRust,
+            0,
+            WorkloadKind::TunFakeDnsTcp,
+            &fixture,
+        )
+        .unwrap();
         let value = serde_json::from_str::<serde_json::Value>(&config).unwrap();
 
         assert_eq!(value["inbounds"][0]["protocol"], "tun");
         assert_eq!(value["dns"]["fakeIp"]["enabled"], true);
         assert_eq!(value["dns"]["fakeIp"]["ipv4Pool"], "198.19.0.0/16");
+        assert_eq!(value["dns"]["fakeIp"]["poolSize"], 32_768);
         assert_eq!(value["dns"]["fakeIp"]["ttl"], 60);
 
-        let error =
-            engine_config(EngineKind::XrayCore, 0, WorkloadKind::TunFakeDns, &fixture).unwrap_err();
+        let error = engine_config(
+            EngineKind::XrayCore,
+            0,
+            WorkloadKind::TunFakeDnsTcp,
+            &fixture,
+        )
+        .unwrap_err();
         assert!(error.to_string().contains("only --engine xray-rust"));
     }
 

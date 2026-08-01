@@ -104,6 +104,345 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         XCTAssertEqual(stoppedResources, [1, 2])
     }
 
+    func testDNSBootstrapTimeoutCompletesOnceAndIgnoresLateWorkerResult() {
+        let workQueue = DispatchQueue(label: "test.dns-bootstrap.timeout.worker")
+        let timerQueue = DispatchQueue(label: "test.dns-bootstrap.timeout.timer")
+        let completionQueue = DispatchQueue(label: "test.dns-bootstrap.timeout.completion")
+        let resolverEntered = expectation(description: "resolver entered")
+        let completion = expectation(description: "deadline completion")
+        let duplicateCompletion = expectation(description: "no duplicate completion")
+        duplicateCompletion.isInverted = true
+        let resolverGate = DispatchSemaphore(value: 0)
+        var completionCount = 0
+        var didContinueToNetworkSettings = false
+
+        let task = XrayPacketTunnelBoundedTask<Int>(
+            deadline: .now() + .milliseconds(200),
+            workQueue: workQueue,
+            timerQueue: timerQueue,
+            completionQueue: completionQueue,
+            timeoutError: XrayPacketTunnelProviderError.dnsBootstrapTimedOut
+        ) { result in
+            completionCount += 1
+            if completionCount == 1 {
+                completion.fulfill()
+            } else {
+                duplicateCompletion.fulfill()
+            }
+            switch result {
+            case .success:
+                didContinueToNetworkSettings = true
+            case let .failure(error):
+                guard case XrayPacketTunnelProviderError.dnsBootstrapTimedOut = error else {
+                    return XCTFail("unexpected error: \(error)")
+                }
+            }
+        }
+
+        task.start { _ in
+            resolverEntered.fulfill()
+            resolverGate.wait()
+            return 1
+        }
+
+        wait(for: [resolverEntered, completion], timeout: 2)
+        XCTAssertEqual(completionCount, 1)
+        XCTAssertFalse(didContinueToNetworkSettings)
+
+        resolverGate.signal()
+        wait(for: [duplicateCompletion], timeout: 0.2)
+        XCTAssertEqual(completionCount, 1)
+        XCTAssertFalse(didContinueToNetworkSettings)
+    }
+
+    func testDNSBootstrapStopCompletesPendingStartExactlyOnce() {
+        let lifecycle = XrayPacketTunnelLifecycle<Int> { _ in }
+        let lifecycleToken = lifecycle.beginStart()
+        let workQueue = DispatchQueue(label: "test.dns-bootstrap.stop.worker")
+        let timerQueue = DispatchQueue(label: "test.dns-bootstrap.stop.timer")
+        let completionQueue = DispatchQueue(label: "test.dns-bootstrap.stop.completion")
+        let resolverEntered = expectation(description: "resolver entered")
+        let completion = expectation(description: "stop completion")
+        let duplicateCompletion = expectation(description: "no duplicate completion")
+        duplicateCompletion.isInverted = true
+        let resolverGate = DispatchSemaphore(value: 0)
+        var completionCount = 0
+
+        let task = XrayPacketTunnelBoundedTask<Int>(
+            deadline: .now() + .seconds(5),
+            workQueue: workQueue,
+            timerQueue: timerQueue,
+            completionQueue: completionQueue,
+            timeoutError: XrayPacketTunnelProviderError.dnsBootstrapTimedOut
+        ) { result in
+            completionCount += 1
+            if completionCount == 1 {
+                completion.fulfill()
+            } else {
+                duplicateCompletion.fulfill()
+            }
+            guard case let .failure(error) = result,
+                  case XrayPacketTunnelProviderError.startSuperseded = error
+            else {
+                return XCTFail("expected startSuperseded, got \(result)")
+            }
+        }
+        XCTAssertTrue(
+            lifecycle.registerPendingStartCancellation(for: lifecycleToken) {
+                task.cancel(with: XrayPacketTunnelProviderError.startSuperseded)
+            }
+        )
+        task.start { _ in
+            resolverEntered.fulfill()
+            resolverGate.wait()
+            return 1
+        }
+
+        wait(for: [resolverEntered], timeout: 1)
+        lifecycle.stop()
+        wait(for: [completion], timeout: 1)
+        XCTAssertEqual(completionCount, 1)
+
+        resolverGate.signal()
+        wait(for: [duplicateCompletion], timeout: 0.2)
+        XCTAssertEqual(completionCount, 1)
+    }
+
+    func testDNSBootstrapSupersedingStartCompletesPreviousStartExactlyOnce() {
+        let lifecycle = XrayPacketTunnelLifecycle<Int> { _ in }
+        let firstToken = lifecycle.beginStart()
+        let workQueue = DispatchQueue(label: "test.dns-bootstrap.supersede.worker")
+        let timerQueue = DispatchQueue(label: "test.dns-bootstrap.supersede.timer")
+        let completionQueue = DispatchQueue(label: "test.dns-bootstrap.supersede.completion")
+        let resolverEntered = expectation(description: "resolver entered")
+        let completion = expectation(description: "superseded completion")
+        let duplicateCompletion = expectation(description: "no duplicate completion")
+        duplicateCompletion.isInverted = true
+        let resolverGate = DispatchSemaphore(value: 0)
+        var completionCount = 0
+
+        let task = XrayPacketTunnelBoundedTask<Int>(
+            deadline: .now() + .seconds(5),
+            workQueue: workQueue,
+            timerQueue: timerQueue,
+            completionQueue: completionQueue,
+            timeoutError: XrayPacketTunnelProviderError.dnsBootstrapTimedOut
+        ) { result in
+            completionCount += 1
+            if completionCount == 1 {
+                completion.fulfill()
+            } else {
+                duplicateCompletion.fulfill()
+            }
+            guard case let .failure(error) = result,
+                  case XrayPacketTunnelProviderError.startSuperseded = error
+            else {
+                return XCTFail("expected startSuperseded, got \(result)")
+            }
+        }
+        XCTAssertTrue(
+            lifecycle.registerPendingStartCancellation(for: firstToken) {
+                task.cancel(with: XrayPacketTunnelProviderError.startSuperseded)
+            }
+        )
+        task.start { _ in
+            resolverEntered.fulfill()
+            resolverGate.wait()
+            return 1
+        }
+
+        wait(for: [resolverEntered], timeout: 1)
+        let secondToken = lifecycle.beginStart()
+        XCTAssertTrue(lifecycle.isCurrent(secondToken))
+        wait(for: [completion], timeout: 1)
+        XCTAssertEqual(completionCount, 1)
+
+        resolverGate.signal()
+        wait(for: [duplicateCompletion], timeout: 0.2)
+        XCTAssertEqual(completionCount, 1)
+    }
+
+    func testQueuedDNSBootstrapHasIndependentDeadlineWhileSerialWorkerIsBlocked() {
+        let workQueue = DispatchQueue(label: "test.dns-bootstrap.shared.worker")
+        let timerQueue = DispatchQueue(label: "test.dns-bootstrap.shared.timer")
+        let completionQueue = DispatchQueue(label: "test.dns-bootstrap.shared.completion")
+        let firstWorkerEntered = expectation(description: "first worker entered")
+        let firstCompletion = expectation(description: "first task cancelled")
+        let secondCompletion = expectation(description: "queued task timed out")
+        let secondWorkRan = expectation(description: "timed-out queued work does not run")
+        secondWorkRan.isInverted = true
+        let firstWorkerGate = DispatchSemaphore(value: 0)
+
+        let firstTask = XrayPacketTunnelBoundedTask<Int>(
+            deadline: .now() + .seconds(5),
+            workQueue: workQueue,
+            timerQueue: timerQueue,
+            completionQueue: completionQueue,
+            timeoutError: XrayPacketTunnelProviderError.dnsBootstrapTimedOut
+        ) { result in
+            guard case let .failure(error) = result,
+                  case XrayPacketTunnelProviderError.startSuperseded = error
+            else {
+                return XCTFail("expected cancellation, got \(result)")
+            }
+            firstCompletion.fulfill()
+        }
+        firstTask.start { _ in
+            firstWorkerEntered.fulfill()
+            firstWorkerGate.wait()
+            return 1
+        }
+        wait(for: [firstWorkerEntered], timeout: 1)
+
+        let secondTask = XrayPacketTunnelBoundedTask<Int>(
+            deadline: .now() + .milliseconds(200),
+            workQueue: workQueue,
+            timerQueue: timerQueue,
+            completionQueue: completionQueue,
+            timeoutError: XrayPacketTunnelProviderError.dnsBootstrapTimedOut
+        ) { result in
+            guard case let .failure(error) = result,
+                  case XrayPacketTunnelProviderError.dnsBootstrapTimedOut = error
+            else {
+                return XCTFail("expected independent timeout, got \(result)")
+            }
+            secondCompletion.fulfill()
+        }
+        secondTask.start { _ in
+            secondWorkRan.fulfill()
+            return 2
+        }
+
+        wait(for: [secondCompletion], timeout: 2)
+        firstTask.cancel(with: XrayPacketTunnelProviderError.startSuperseded)
+        wait(for: [firstCompletion], timeout: 1)
+        firstWorkerGate.signal()
+        wait(for: [secondWorkRan], timeout: 0.2)
+    }
+
+    func testDNSBootstrapWorkGateDoesNotEnqueueRepeatedStartsBehindBlockedLookup() {
+        let repeatedStartCount = 64
+        let workQueue = DispatchQueue(label: "test.dns-bootstrap.gated.worker")
+        let workGate = XrayPacketTunnelWorkGate()
+        let timerQueue = DispatchQueue(label: "test.dns-bootstrap.gated.timer")
+        let completionQueue = DispatchQueue(label: "test.dns-bootstrap.gated.completion")
+        let firstWorkerEntered = expectation(description: "first gated worker entered")
+        let firstCompletion = expectation(description: "first gated worker cancelled")
+        let repeatedCompletions = expectation(description: "busy starts timed out")
+        repeatedCompletions.expectedFulfillmentCount = repeatedStartCount
+        let firstWorkerGate = DispatchSemaphore(value: 0)
+        var workExecutionCount = 0
+
+        let firstTask = XrayPacketTunnelBoundedTask<Int>(
+            deadline: .now() + .seconds(5),
+            workQueue: workQueue,
+            workGate: workGate,
+            timerQueue: timerQueue,
+            completionQueue: completionQueue,
+            timeoutError: XrayPacketTunnelProviderError.dnsBootstrapTimedOut
+        ) { result in
+            guard case let .failure(error) = result,
+                  case XrayPacketTunnelProviderError.startSuperseded = error
+            else {
+                return XCTFail("expected cancellation, got \(result)")
+            }
+            firstCompletion.fulfill()
+        }
+        XCTAssertTrue(
+            firstTask.start { _ in
+                workExecutionCount += 1
+                firstWorkerEntered.fulfill()
+                firstWorkerGate.wait()
+                return 1
+            }
+        )
+        wait(for: [firstWorkerEntered], timeout: 1)
+
+        var repeatedTasks: [XrayPacketTunnelBoundedTask<Int>] = []
+        for _ in 0 ..< repeatedStartCount {
+            let task = XrayPacketTunnelBoundedTask<Int>(
+                deadline: .now() + .milliseconds(200),
+                workQueue: workQueue,
+                workGate: workGate,
+                timerQueue: timerQueue,
+                completionQueue: completionQueue,
+                timeoutError: XrayPacketTunnelProviderError.dnsBootstrapTimedOut
+            ) { result in
+                guard case let .failure(error) = result,
+                      case XrayPacketTunnelProviderError.dnsBootstrapTimedOut = error
+                else {
+                    return XCTFail("expected busy start timeout, got \(result)")
+                }
+                repeatedCompletions.fulfill()
+            }
+            XCTAssertFalse(
+                task.start { _ in
+                    workExecutionCount += 1
+                    return 2
+                }
+            )
+            repeatedTasks.append(task)
+        }
+
+        wait(for: [repeatedCompletions], timeout: 3)
+        XCTAssertEqual(workExecutionCount, 1)
+        firstTask.cancel(with: XrayPacketTunnelProviderError.startSuperseded)
+        wait(for: [firstCompletion], timeout: 1)
+        firstWorkerGate.signal()
+        workQueue.sync {}
+        XCTAssertEqual(workExecutionCount, 1)
+        withExtendedLifetime(repeatedTasks) {}
+    }
+
+    func testDNSBootstrapOverallDeadlineSkipsRemainingLookupsAfterLateReturn() {
+        let config = resolvedConfig(
+            json: #"{"outbounds":[{"protocol":"vless","settings":{"vnext":[{"address":"first.example","port":443,"users":[]},{"address":"second.example","port":443,"users":[]}]}}]}"#
+        )
+        let workQueue = DispatchQueue(label: "test.dns-bootstrap.overall.worker")
+        let timerQueue = DispatchQueue(label: "test.dns-bootstrap.overall.timer")
+        let completionQueue = DispatchQueue(label: "test.dns-bootstrap.overall.completion")
+        let firstLookupEntered = expectation(description: "first lookup entered")
+        let deadlineCompletion = expectation(description: "overall deadline")
+        let workerReturned = expectation(description: "late worker returned")
+        let firstLookupGate = DispatchSemaphore(value: 0)
+        var lookedUpDomains: [String] = []
+
+        let task = XrayPacketTunnelBoundedTask<XrayPacketTunnelProvider.ResolvedConfig>(
+            deadline: .now() + .milliseconds(200),
+            workQueue: workQueue,
+            timerQueue: timerQueue,
+            completionQueue: completionQueue,
+            timeoutError: XrayPacketTunnelProviderError.dnsBootstrapTimedOut
+        ) { result in
+            guard case let .failure(error) = result,
+                  case XrayPacketTunnelProviderError.dnsBootstrapTimedOut = error
+            else {
+                return XCTFail("expected overall timeout, got \(result)")
+            }
+            deadlineCompletion.fulfill()
+        }
+        task.start { shouldContinue in
+            defer { workerReturned.fulfill() }
+            return try XrayPacketTunnelProvider.configPinningOutboundServerAddresses(
+                config,
+                shouldContinue: shouldContinue,
+                resolveAddress: { domain in
+                    lookedUpDomains.append(domain)
+                    if lookedUpDomains.count == 1 {
+                        firstLookupEntered.fulfill()
+                        firstLookupGate.wait()
+                    }
+                    return "203.0.113.10"
+                }
+            )
+        }
+
+        wait(for: [firstLookupEntered, deadlineCompletion], timeout: 2)
+        firstLookupGate.signal()
+        wait(for: [workerReturned], timeout: 1)
+        XCTAssertEqual(lookedUpDomains, ["first.example"])
+    }
+
     func testNetworkSettingsExcludeIPv4ProxyServerFromDefaultRoute() {
         let settings = XrayPacketTunnelProvider.networkSettings(
             excludingServerAddress: "203.0.113.10",
@@ -113,6 +452,18 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         let excludedRoute = settings.ipv4Settings?.excludedRoutes?.first
         XCTAssertEqual(excludedRoute?.destinationAddress, "203.0.113.10")
         XCTAssertEqual(excludedRoute?.destinationSubnetMask, "255.255.255.255")
+    }
+
+    func testNetworkSettingsExcludeIPv6ProxyServerFromDefaultRoute() {
+        let settings = XrayPacketTunnelProvider.networkSettings(
+            excludingServerAddress: "64:ff9b::cb00:710a",
+            resolvedDNSConfiguration: .localDNSAnchor
+        )
+
+        let excludedRoute = settings.ipv6Settings?.excludedRoutes?.first
+        XCTAssertEqual(excludedRoute?.destinationAddress, "64:ff9b::cb00:710a")
+        XCTAssertEqual(excludedRoute?.destinationNetworkPrefixLength.intValue, 128)
+        XCTAssertNil(settings.ipv4Settings?.excludedRoutes)
     }
 
     func testNetworkSettingsApplyLocalDNSAnchorForAllDomains() {
@@ -161,6 +512,22 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         )
 
         XCTAssertNil(configuration)
+    }
+
+    func testDefaultDirectConfigRequiresExplicitHostDNSOverride() {
+        XCTAssertNil(
+            XrayPacketTunnelProvider.resolvedDNSConfiguration(
+                configJSON: XrayClientProfile.directTunConfigJSON,
+                explicit: .system
+            )
+        )
+        XCTAssertEqual(
+            XrayPacketTunnelProvider.resolvedDNSConfiguration(
+                configJSON: XrayClientProfile.directTunConfigJSON,
+                explicit: .custom(["192.0.2.53"])
+            ),
+            .custom(["192.0.2.53"])
+        )
     }
 
     func testResolvedDnsConfigurationRejectsUnusableFakeIPPool() {
@@ -213,18 +580,27 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         }
     }
 
-    func testResolvedDnsConfigurationRejectsDomainOnlyConfigServers() {
+    func testResolvedDnsConfigurationUsesLocalAnchorForDomainOnlyConfigServers() {
         let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
             configJSON: #"{"dns":{"servers":["resolver.example","resolver.example:5353"]}}"#,
+            explicit: .system
+        )
+
+        XCTAssertEqual(configuration, .localDNSAnchor)
+    }
+
+    func testResolvedDnsConfigurationRejectsZeroPortIPLiteralConfigServers() {
+        let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
+            configJSON: #"{"dns":{"servers":["192.0.2.53:0","[2001:db8::53]:0"]}}"#,
             explicit: .system
         )
 
         XCTAssertNil(configuration)
     }
 
-    func testResolvedDnsConfigurationRejectsZeroPortIPLiteralConfigServers() {
+    func testResolvedDnsConfigurationRejectsZeroPortDomainConfigServers() {
         let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
-            configJSON: #"{"dns":{"servers":["192.0.2.53:0","[2001:db8::53]:0"]}}"#,
+            configJSON: #"{"dns":{"servers":["resolver.example:0"]}}"#,
             explicit: .system
         )
 
@@ -285,6 +661,24 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         XCTAssertNil(configuration)
     }
 
+    func testResolvedDnsConfigurationAcceptsPositiveFakeIPPoolSize() {
+        let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
+            configJSON: #"{"dns":{"fakeIp":{"enabled":true,"ipv4Pool":"198.19.0.0/16","poolSize":32768}}}"#,
+            explicit: .system
+        )
+
+        XCTAssertEqual(configuration, .localDNSAnchor)
+    }
+
+    func testResolvedDnsConfigurationRejectsZeroFakeIPPoolSize() {
+        let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
+            configJSON: #"{"dns":{"fakeIp":{"enabled":true,"ipv4Pool":"198.19.0.0/16","poolSize":0}}}"#,
+            explicit: .system
+        )
+
+        XCTAssertNil(configuration)
+    }
+
     func testResolvedDnsConfigurationRejectsUnknownFakeIPField() {
         let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
             configJSON: #"{"dns":{"fakeIp":{"enabled":true,"ipv4Pool":"198.19.0.0/16","unexpected":true}}}"#,
@@ -294,15 +688,118 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         XCTAssertNil(configuration)
     }
 
-    func testConfigPreflightRejectsInvalidFakeIPBeforeNetworkSettings() {
-        let invalidConfigJSON = XrayClientProfile.directTunConfigJSON.replacingOccurrences(
-            of: #""enabled": true"#,
-            with: #""enabled": 1"#
+    func testConfigPreflightRejectsInvalidFakeIPBeforeNetworkSettings() throws {
+        let invalidConfigJSON = try fakeIPTopologyConfig().replacingOccurrences(
+            of: #""enabled":true"#,
+            with: #""enabled":1"#
         )
 
         XCTAssertThrowsError(
             try XrayPacketTunnelProvider.validateConfigBeforeApplyingNetworkSettings(
                 invalidConfigJSON,
+                geodataSearchDirectory: nil
+            )
+        )
+    }
+
+    func testConfigPreflightRejectsFakeIPWithoutServersAndDefaultFreedom() throws {
+        let configJSON = try fakeIPTopologyConfig(freedomFirst: true)
+
+        assertInvalidDNSRoutingTopology(configJSON)
+    }
+
+    func testConfigPreflightRejectsTunDomainRuleSelectingFreedomWithoutServers() throws {
+        let configJSON = try fakeIPTopologyConfig(
+            rules: [
+                [
+                    "type": "field",
+                    "domain": ["full:captive.apple.com"],
+                    "outboundTag": "direct",
+                ],
+            ]
+        )
+
+        assertInvalidDNSRoutingTopology(configJSON)
+    }
+
+    func testConfigPreflightRejectsTunCatchAllRuleSelectingFreedomWithoutServers() throws {
+        let configJSON = try fakeIPTopologyConfig(
+            rules: [
+                [
+                    "type": "field",
+                    "inboundTag": ["tun-in"],
+                    "outboundTag": "direct",
+                ],
+            ]
+        )
+
+        assertInvalidDNSRoutingTopology(configJSON)
+    }
+
+    func testConfigPreflightRejectsCombinedDomainAndIPFreedomRuleWithoutServers() throws {
+        let configJSON = try fakeIPTopologyConfig(
+            rules: [
+                [
+                    "type": "field",
+                    "domain": ["full:internal.example"],
+                    "ip": ["10.0.0.0/8"],
+                    "outboundTag": "direct",
+                ],
+            ]
+        )
+
+        assertInvalidDNSRoutingTopology(configJSON)
+    }
+
+    func testConfigPreflightAllowsDefaultVLESSAndIPOnlyFreedomRuleWithoutServers() throws {
+        let configJSON = try fakeIPTopologyConfig(
+            rules: [
+                [
+                    "type": "field",
+                    "inboundTag": ["tun-in"],
+                    "ip": ["10.0.0.0/8", "fd00::/8"],
+                    "outboundTag": "direct",
+                ],
+            ]
+        )
+
+        XCTAssertNoThrow(
+            try XrayPacketTunnelProvider.validateConfigBeforeApplyingNetworkSettings(
+                configJSON,
+                geodataSearchDirectory: nil
+            )
+        )
+    }
+
+    func testConfigPreflightAllowsNonTunDomainFreedomRuleWithoutServers() throws {
+        let configJSON = try fakeIPTopologyConfig(
+            rules: [
+                [
+                    "type": "field",
+                    "inboundTag": ["socks-in"],
+                    "domain": ["full:captive.apple.com"],
+                    "outboundTag": "direct",
+                ],
+            ]
+        )
+
+        XCTAssertNoThrow(
+            try XrayPacketTunnelProvider.validateConfigBeforeApplyingNetworkSettings(
+                configJSON,
+                geodataSearchDirectory: nil
+            )
+        )
+    }
+
+    func testConfigPreflightAllowsDefaultFreedomWhenRoutedServersAreConfigured() throws {
+        let configJSON = try fakeIPTopologyConfig(
+            freedomFirst: true,
+            dnsServers: ["192.0.2.53"]
+        )
+
+        XCTAssertNoThrow(
+            try XrayPacketTunnelProvider.validateConfigBeforeApplyingNetworkSettings(
+                configJSON,
                 geodataSearchDirectory: nil
             )
         )
@@ -363,7 +860,7 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         XCTAssertEqual(configuration, .custom(["192.0.2.53", "198.51.100.53"]))
     }
 
-    func testDnsConfigurationRejectsIPv6UntilIPv6TunnelRoutingIsInstalled() {
+    func testDnsConfigurationAcceptsIPv6WithDualStackTunnelRouting() {
         XCTAssertEqual(
             XrayPacketTunnelProvider.dnsConfiguration(
                 options: nil,
@@ -371,7 +868,7 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
                     XrayTunnelProviderMessage.providerDNSServersKey: "2001:db8::53",
                 ]
             ),
-            .invalid
+            .custom(["2001:db8::53"])
         )
     }
 
@@ -388,13 +885,19 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         )
     }
 
-    func testNetworkSettingsDoNotInstallIPv6DefaultRouteYet() {
+    func testNetworkSettingsInstallIPv6DefaultRoute() throws {
         let settings = XrayPacketTunnelProvider.networkSettings(
             excludingServerAddress: "203.0.113.10",
             resolvedDNSConfiguration: .localDNSAnchor
         )
 
-        XCTAssertNil(settings.ipv6Settings)
+        let ipv6Settings = try XCTUnwrap(settings.ipv6Settings)
+        XCTAssertEqual(ipv6Settings.addresses, [XrayPacketTunnelProvider.tunnelLocalIPv6Address])
+        XCTAssertEqual(ipv6Settings.networkPrefixLengths.map(\.intValue), [128])
+        let defaultRoute = try XCTUnwrap(ipv6Settings.includedRoutes?.first)
+        XCTAssertEqual(defaultRoute.destinationAddress, "::")
+        XCTAssertEqual(defaultRoute.destinationNetworkPrefixLength.intValue, 0)
+        XCTAssertNil(ipv6Settings.excludedRoutes)
     }
 
     func testPacketIOBackendUsesDiscoveredDarwinUtunFileDescriptor() {
@@ -731,7 +1234,7 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         XCTAssertEqual(resolved?.dnsConfiguration, .system)
     }
 
-    func testConfigResolutionMigratesLegacyDirectProfileForOnDemandStart() throws {
+    func testConfigResolutionDoesNotMigrateLegacyDirectProfileForOnDemandStart() throws {
         let secureStore = TunnelTestSecureConfigStore()
         try secureStore.store(
             configJSON: legacyDirectTunConfigJSON,
@@ -748,7 +1251,7 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
             secureConfigStore: secureStore
         )
 
-        XCTAssertEqual(resolved?.json, XrayClientProfile.directTunConfigJSON)
+        XCTAssertEqual(resolved?.json, legacyDirectTunConfigJSON)
     }
 
     func testConfigResolutionPreservesLegacyDirectProfileWithProviderDNS() throws {
@@ -861,6 +1364,357 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         )
         XCTAssertFalse(summary.contains("secret"))
         XCTAssertFalse(summary.contains("203.0.113.10"))
+    }
+
+    func testConfigPinningAddsExactBootstrapHostsAndKeepsVLESSDomain() throws {
+        let resolved = resolvedConfig(
+            json: #"{"dns":{"servers":["Resolver.Example.:5353","192.0.2.53"],"hosts":{"full:existing.example":"198.51.100.9"}},"outbounds":[{"protocol":"vless","settings":{"vnext":[{"address":"Proxy.Example.","port":443,"users":[]}]},"streamSettings":{"network":"tcp","security":"tls","tlsSettings":{}}}]}"#,
+            serverAddress: "proxy.example"
+        )
+        var resolvedDomains: [String] = []
+
+        let prepared = try XrayPacketTunnelProvider.configPinningOutboundServerAddresses(
+            resolved,
+            resolveAddress: { domain in
+                resolvedDomains.append(domain)
+                switch domain {
+                case "proxy.example":
+                    return "203.0.113.44"
+                case "resolver.example":
+                    return "198.51.100.53"
+                default:
+                    return nil
+                }
+            }
+        )
+        let root = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(prepared.json.utf8)) as? [String: Any]
+        )
+        let outbounds = try XCTUnwrap(root["outbounds"] as? [[String: Any]])
+        let settings = try XCTUnwrap(outbounds[0]["settings"] as? [String: Any])
+        let vnext = try XCTUnwrap(settings["vnext"] as? [[String: Any]])
+        let stream = try XCTUnwrap(outbounds[0]["streamSettings"] as? [String: Any])
+        let tls = try XCTUnwrap(stream["tlsSettings"] as? [String: Any])
+        let dns = try XCTUnwrap(root["dns"] as? [String: Any])
+        let hosts = try XCTUnwrap(dns["hosts"] as? [String: Any])
+
+        XCTAssertEqual(vnext[0]["address"] as? String, "Proxy.Example.")
+        XCTAssertNil(tls["serverName"])
+        XCTAssertEqual(hosts["full:proxy.example"] as? String, "203.0.113.44")
+        XCTAssertEqual(hosts["full:resolver.example"] as? String, "198.51.100.53")
+        XCTAssertEqual(hosts["full:existing.example"] as? String, "198.51.100.9")
+        XCTAssertEqual(prepared.serverAddress, "203.0.113.44")
+        XCTAssertEqual(resolvedDomains, ["proxy.example", "resolver.example"])
+    }
+
+    func testConfigPinningAcceptsIPv6OnlySystemBootstrapAndPreservesVLESSAddress() throws {
+        let resolved = resolvedConfig(
+            json: #"{"outbounds":[{"protocol":"vless","settings":{"vnext":[{"address":"Proxy.Example.","port":443,"users":[]}]}}]}"#,
+            serverAddress: "proxy.example"
+        )
+
+        let prepared = try XrayPacketTunnelProvider.configPinningOutboundServerAddresses(
+            resolved,
+            resolveAddress: { domain in
+                XCTAssertEqual(domain, "proxy.example")
+                return "64:ff9b::cb00:712c"
+            }
+        )
+        let root = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(prepared.json.utf8)) as? [String: Any]
+        )
+        let dns = try XCTUnwrap(root["dns"] as? [String: Any])
+        let hosts = try XCTUnwrap(dns["hosts"] as? [String: Any])
+        let outbounds = try XCTUnwrap(root["outbounds"] as? [[String: Any]])
+        let settings = try XCTUnwrap(outbounds[0]["settings"] as? [String: Any])
+        let vnext = try XCTUnwrap(settings["vnext"] as? [[String: Any]])
+
+        XCTAssertEqual(vnext[0]["address"] as? String, "Proxy.Example.")
+        XCTAssertEqual(hosts["full:proxy.example"] as? String, "64:ff9b::cb00:712c")
+        XCTAssertEqual(prepared.serverAddress, "64:ff9b::cb00:712c")
+        let networkSettings = XrayPacketTunnelProvider.networkSettings(
+            excludingServerAddress: prepared.serverAddress,
+            resolvedDNSConfiguration: .localDNSAnchor
+        )
+        XCTAssertEqual(
+            networkSettings.ipv6Settings?.excludedRoutes?.first?.destinationAddress,
+            "64:ff9b::cb00:712c"
+        )
+    }
+
+    func testConfigPinningAcceptsExistingIPv6AliasTerminal() throws {
+        let resolved = resolvedConfig(
+            json: #"{"dns":{"hosts":{"full:proxy.example":"Alias.Example.","full:alias.example":"2001:0DB8:0:0::45"}},"outbounds":[{"protocol":"vless","settings":{"vnext":[{"address":"Proxy.Example.","port":443,"users":[]}]}}]}"#,
+            serverAddress: "Proxy.Example."
+        )
+
+        let prepared = try XrayPacketTunnelProvider.configPinningOutboundServerAddresses(
+            resolved,
+            resolveAddress: { domain in
+                XCTFail("unexpected system lookup for \(domain)")
+                return nil
+            }
+        )
+        let root = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(prepared.json.utf8)) as? [String: Any]
+        )
+        let dns = try XCTUnwrap(root["dns"] as? [String: Any])
+        let hosts = try XCTUnwrap(dns["hosts"] as? [String: Any])
+
+        XCTAssertEqual(hosts["full:proxy.example"] as? String, "alias.example")
+        XCTAssertEqual(hosts["full:alias.example"] as? String, "2001:db8::45")
+        XCTAssertEqual(prepared.serverAddress, "2001:db8::45")
+    }
+
+    func testConfigPinningBootstrapsEveryDomainVLESSServer() throws {
+        let resolved = resolvedConfig(
+            json: #"{"outbounds":[{"protocol":"vless","settings":{"vnext":[{"address":"First.Example.","port":443,"users":[]},{"address":"192.0.2.10","port":443,"users":[]}]}},{"protocol":"vless","settings":{"vnext":[{"address":"Second.Example","port":8443,"users":[]}]}}]}"#
+        )
+        var resolvedDomains: [String] = []
+
+        let prepared = try XrayPacketTunnelProvider.configPinningOutboundServerAddresses(
+            resolved,
+            resolveAddress: { domain in
+                resolvedDomains.append(domain)
+                return [
+                    "first.example": "203.0.113.41",
+                    "second.example": "203.0.113.42",
+                ][domain]
+            }
+        )
+        let root = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(prepared.json.utf8)) as? [String: Any]
+        )
+        let dns = try XCTUnwrap(root["dns"] as? [String: Any])
+        let hosts = try XCTUnwrap(dns["hosts"] as? [String: Any])
+        let outbounds = try XCTUnwrap(root["outbounds"] as? [[String: Any]])
+        let firstSettings = try XCTUnwrap(outbounds[0]["settings"] as? [String: Any])
+        let firstVnext = try XCTUnwrap(firstSettings["vnext"] as? [[String: Any]])
+        let secondSettings = try XCTUnwrap(outbounds[1]["settings"] as? [String: Any])
+        let secondVnext = try XCTUnwrap(secondSettings["vnext"] as? [[String: Any]])
+
+        XCTAssertEqual(firstVnext[0]["address"] as? String, "First.Example.")
+        XCTAssertEqual(firstVnext[1]["address"] as? String, "192.0.2.10")
+        XCTAssertEqual(secondVnext[0]["address"] as? String, "Second.Example")
+        XCTAssertEqual(hosts["full:first.example"] as? String, "203.0.113.41")
+        XCTAssertEqual(hosts["full:second.example"] as? String, "203.0.113.42")
+        XCTAssertEqual(resolvedDomains, ["first.example", "second.example"])
+    }
+
+    func testConfigPinningUsesAndCanonicalizesExistingExactAliasChain() throws {
+        let resolved = resolvedConfig(
+            json: #"{"dns":{"hosts":{"full:Proxy.Example.":"Alias.Example.","full:Alias.Example.":"203.0.113.45"}},"outbounds":[{"protocol":"vless","settings":{"vnext":[{"address":"Proxy.Example.","port":443,"users":[]}]}}]}"#,
+            serverAddress: "Proxy.Example."
+        )
+
+        let prepared = try XrayPacketTunnelProvider.configPinningOutboundServerAddresses(
+            resolved,
+            resolveAddress: { domain in
+                XCTFail("unexpected system lookup for \(domain)")
+                return nil
+            }
+        )
+        let root = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(prepared.json.utf8)) as? [String: Any]
+        )
+        let dns = try XCTUnwrap(root["dns"] as? [String: Any])
+        let hosts = try XCTUnwrap(dns["hosts"] as? [String: Any])
+        let outbounds = try XCTUnwrap(root["outbounds"] as? [[String: Any]])
+        let settings = try XCTUnwrap(outbounds[0]["settings"] as? [String: Any])
+        let vnext = try XCTUnwrap(settings["vnext"] as? [[String: Any]])
+
+        XCTAssertEqual(hosts["full:proxy.example"] as? String, "alias.example")
+        XCTAssertEqual(hosts["full:alias.example"] as? String, "203.0.113.45")
+        XCTAssertNil(hosts["full:Proxy.Example."])
+        XCTAssertNil(hosts["full:Alias.Example."])
+        XCTAssertEqual(vnext[0]["address"] as? String, "Proxy.Example.")
+        XCTAssertEqual(prepared.serverAddress, "203.0.113.45")
+    }
+
+    func testConfigPinningResolvesMissingAliasTerminalForDomainDNSUpstream() throws {
+        let resolved = resolvedConfig(
+            json: #"{"dns":{"servers":["Resolver.Example.:5353"],"hosts":{"full:resolver.example":"Bootstrap.Example."}},"outbounds":[{"protocol":"freedom"}]}"#
+        )
+
+        let prepared = try XrayPacketTunnelProvider.configPinningOutboundServerAddresses(
+            resolved,
+            resolveAddress: { domain in
+                XCTAssertEqual(domain, "bootstrap.example")
+                return "198.51.100.54"
+            }
+        )
+        let root = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(prepared.json.utf8)) as? [String: Any]
+        )
+        let dns = try XCTUnwrap(root["dns"] as? [String: Any])
+        let hosts = try XCTUnwrap(dns["hosts"] as? [String: Any])
+
+        XCTAssertEqual(hosts["full:resolver.example"] as? String, "bootstrap.example")
+        XCTAssertEqual(hosts["full:bootstrap.example"] as? String, "198.51.100.54")
+    }
+
+    func testConfigPinningAcceptsEightExactMappingSteps() throws {
+        var hosts: [String: String] = [:]
+        for index in 0 ..< 7 {
+            hosts["full:alias\(index).example"] = "alias\(index + 1).example"
+        }
+        hosts["full:alias7.example"] = "203.0.113.47"
+        let resolved = try resolvedConfigWithDNSHosts(
+            hosts,
+            server: "alias0.example"
+        )
+
+        let prepared = try XrayPacketTunnelProvider.configPinningOutboundServerAddresses(
+            resolved,
+            resolveAddress: { domain in
+                XCTFail("unexpected system lookup for \(domain)")
+                return nil
+            }
+        )
+
+        XCTAssertFalse(prepared.json.isEmpty)
+    }
+
+    func testConfigPinningRejectsAliasCycle() {
+        let resolved = resolvedConfig(
+            json: #"{"dns":{"servers":["cycle-a.example"],"hosts":{"full:cycle-a.example":"cycle-b.example","full:cycle-b.example":"cycle-a.example"}},"outbounds":[{"protocol":"freedom"}]}"#
+        )
+
+        XCTAssertThrowsError(
+            try XrayPacketTunnelProvider.configPinningOutboundServerAddresses(
+                resolved,
+                resolveAddress: { domain in
+                    XCTFail("unexpected system lookup for \(domain)")
+                    return nil
+                }
+            )
+        ) { error in
+            guard case XrayPacketTunnelProviderError.outboundServerResolutionFailed = error else {
+                return XCTFail("unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testConfigPinningRejectsAliasChainBeyondEightSteps() throws {
+        var hosts: [String: String] = [:]
+        for index in 0 ..< 8 {
+            hosts["full:alias\(index).example"] = "alias\(index + 1).example"
+        }
+        hosts["full:alias8.example"] = "203.0.113.48"
+        let resolved = try resolvedConfigWithDNSHosts(
+            hosts,
+            server: "alias0.example"
+        )
+
+        XCTAssertThrowsError(
+            try XrayPacketTunnelProvider.configPinningOutboundServerAddresses(
+                resolved,
+                resolveAddress: { domain in
+                    XCTFail("unexpected system lookup for \(domain)")
+                    return nil
+                }
+            )
+        ) { error in
+            guard case XrayPacketTunnelProviderError.outboundServerResolutionFailed = error else {
+                return XCTFail("unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testConfigPinningFailsClosedForUnresolvedDomainDNSUpstream() {
+        let resolved = resolvedConfig(
+            json: #"{"dns":{"servers":["unresolved.example"]},"outbounds":[{"protocol":"freedom"}]}"#
+        )
+
+        XCTAssertThrowsError(
+            try XrayPacketTunnelProvider.configPinningOutboundServerAddresses(
+                resolved,
+                resolveAddress: { _ in nil }
+            )
+        )
+    }
+
+    private func fakeIPTopologyConfig(
+        freedomFirst: Bool = false,
+        rules: [[String: Any]]? = nil,
+        dnsServers: [String] = []
+    ) throws -> String {
+        let profile = try XrayVlessURLImporter.profile(
+            from: "vless://11111111-1111-4111-8111-111111111111@203.0.113.10:443?type=tcp&encryption=none&security=reality&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&fp=chrome&sni=example.com&sid=0123456789ab&spx=%2F&flow=xtls-rprx-vision#topology-test",
+            hostBundleIdentifier: "org.example.XrayClient"
+        )
+        var root = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(profile.configJSON.utf8)) as? [String: Any]
+        )
+        if freedomFirst {
+            var outbounds = try XCTUnwrap(root["outbounds"] as? [[String: Any]])
+            outbounds.swapAt(0, 1)
+            root["outbounds"] = outbounds
+        }
+        if let rules {
+            var routing = root["routing"] as? [String: Any] ?? [:]
+            routing["rules"] = rules
+            root["routing"] = routing
+        }
+        if !dnsServers.isEmpty {
+            var dns = try XCTUnwrap(root["dns"] as? [String: Any])
+            dns["servers"] = dnsServers
+            root["dns"] = dns
+        }
+        let data = try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    private func assertInvalidDNSRoutingTopology(
+        _ configJSON: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertThrowsError(
+            try XrayPacketTunnelProvider.validateConfigBeforeApplyingNetworkSettings(
+                configJSON,
+                geodataSearchDirectory: nil
+            ),
+            file: file,
+            line: line
+        ) { error in
+            guard case XrayPacketTunnelProviderError.invalidDNSRoutingTopology = error else {
+                return XCTFail("unexpected error: \(error)", file: file, line: line)
+            }
+        }
+    }
+
+    private func resolvedConfig(
+        json: String,
+        serverAddress: String? = nil
+    ) -> XrayPacketTunnelProvider.ResolvedConfig {
+        XrayPacketTunnelProvider.ResolvedConfig(
+            json: json,
+            source: "test",
+            serverAddress: serverAddress,
+            debugLoggingEnabled: false,
+            useTunFileDescriptor: true,
+            tunRuntimeProfile: .default,
+            startupProbeConfiguration: .disabled,
+            dnsConfiguration: .system
+        )
+    }
+
+    private func resolvedConfigWithDNSHosts(
+        _ hosts: [String: String],
+        server: String
+    ) throws -> XrayPacketTunnelProvider.ResolvedConfig {
+        let root: [String: Any] = [
+            "dns": [
+                "servers": [server],
+                "hosts": hosts,
+            ],
+            "outbounds": [
+                ["protocol": "freedom"],
+            ],
+        ]
+        let data = try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
+        return resolvedConfig(json: String(decoding: data, as: UTF8.self))
     }
 
 }

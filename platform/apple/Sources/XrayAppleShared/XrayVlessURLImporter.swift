@@ -198,17 +198,13 @@ private struct VlessEndpoint {
                         "ip": ["geoip:private", "127.0.0.0/8", "fd00::/8"],
                         "outboundTag": "direct",
                     ],
-                    [
-                        "type": "field",
-                        "domain": ["full:captive.apple.com"],
-                        "outboundTag": "direct",
-                    ],
                 ],
             ],
             "dns": [
                 "fakeIp": [
                     "enabled": true,
                     "ipv4Pool": "198.19.0.0/16",
+                    "poolSize": 32768,
                     "ttl": 60,
                 ],
             ],

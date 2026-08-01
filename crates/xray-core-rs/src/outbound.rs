@@ -378,6 +378,23 @@ impl OutboundRouter {
         self.cached_tcp_outbound(index)
     }
 
+    #[cfg(test)]
+    pub(crate) fn select_tcp_outbound_for_session_with_tag_and_resolved_ip(
+        &self,
+        inbound_tag: Option<&str>,
+        target: &Target,
+        resolved_ip: Option<&IpAddr>,
+        include_tag: bool,
+    ) -> Result<SelectedTcpOutbound, CoreError> {
+        let index =
+            self.select_configured_index_with_resolved_ip(inbound_tag, target, resolved_ip)?;
+        let tag = include_tag
+            .then(|| self.config.outbounds[index].tag.clone())
+            .flatten();
+        let outbound = self.cached_tcp_outbound(index)?;
+        Ok(SelectedTcpOutbound { outbound, tag })
+    }
+
     pub async fn select_tcp_outbound_for_session_with_resolver(
         &self,
         inbound_tag: Option<&str>,
@@ -444,6 +461,38 @@ impl OutboundRouter {
         }
     }
 
+    #[cfg(test)]
+    fn select_configured_index_with_resolved_ip(
+        &self,
+        inbound_tag: Option<&str>,
+        target: &Target,
+        resolved_ip: Option<&IpAddr>,
+    ) -> Result<usize, CoreError> {
+        if let Some(routed_tag) = select_routed_outbound_tag(
+            &self.config,
+            inbound_tag,
+            target_domain(target),
+            target_ip(target),
+        ) {
+            return self.index_for_tag(routed_tag);
+        }
+
+        if self.config.routing.domain_strategy == RoutingDomainStrategy::IpIfNonMatch {
+            if let Some(resolved_ip) = resolved_ip {
+                if let Some(routed_tag) = select_routed_outbound_tag(
+                    &self.config,
+                    inbound_tag,
+                    target_domain(target),
+                    Some(resolved_ip),
+                ) {
+                    return self.index_for_tag(routed_tag);
+                }
+            }
+        }
+
+        self.select_default_configured_index()
+    }
+
     async fn select_configured_index_with_resolver(
         &self,
         inbound_tag: Option<&str>,
@@ -461,12 +510,16 @@ impl OutboundRouter {
 
         if self.config.routing.domain_strategy == RoutingDomainStrategy::IpIfNonMatch {
             if let Some(domain) = target_domain(target) {
-                let resolved = dns_resolver.resolve(domain, target.port).await?;
-                let resolved_ip = resolved.ip();
-                if let Some(routed_tag) =
-                    select_routed_outbound_tag(&self.config, inbound_tag, None, Some(&resolved_ip))
-                {
-                    return self.index_for_tag(routed_tag);
+                if let Ok(resolved) = dns_resolver.resolve(domain, target.port).await {
+                    let resolved_ip = resolved.ip();
+                    if let Some(routed_tag) = select_routed_outbound_tag(
+                        &self.config,
+                        inbound_tag,
+                        Some(domain),
+                        Some(&resolved_ip),
+                    ) {
+                        return self.index_for_tag(routed_tag);
+                    }
                 }
             }
         }
@@ -727,12 +780,16 @@ async fn select_configured_outbound_with_resolver<'a>(
 
     if config.routing.domain_strategy == RoutingDomainStrategy::IpIfNonMatch {
         if let Some(domain) = target_domain(target) {
-            let resolved = dns_resolver.resolve(domain, target.port).await?;
-            let resolved_ip = resolved.ip();
-            if let Some(routed_tag) =
-                select_routed_outbound_tag(config, inbound_tag, None, Some(&resolved_ip))
-            {
-                return select_configured_outbound_by_tag(config, routed_tag);
+            if let Ok(resolved) = dns_resolver.resolve(domain, target.port).await {
+                let resolved_ip = resolved.ip();
+                if let Some(routed_tag) = select_routed_outbound_tag(
+                    config,
+                    inbound_tag,
+                    Some(domain),
+                    Some(&resolved_ip),
+                ) {
+                    return select_configured_outbound_by_tag(config, routed_tag);
+                }
             }
         }
     }
@@ -942,9 +999,26 @@ pub async fn open_tcp_stream_with_resolver_and_dialer(
     dns_resolver: &dyn DnsResolver,
     transport_dialer: &TransportDialer,
 ) -> Result<BoxedTransportStream, CoreError> {
+    open_tcp_stream_with_resolvers_and_dialer(
+        outbound,
+        target,
+        dns_resolver,
+        dns_resolver,
+        transport_dialer,
+    )
+    .await
+}
+
+pub(crate) async fn open_tcp_stream_with_resolvers_and_dialer(
+    outbound: &TcpOutbound,
+    target: &Target,
+    destination_resolver: &dyn DnsResolver,
+    bootstrap_resolver: &dyn DnsResolver,
+    transport_dialer: &TransportDialer,
+) -> Result<BoxedTransportStream, CoreError> {
     match outbound {
         TcpOutbound::Freedom => {
-            let resolved_target = resolve_server_target(target, dns_resolver).await?;
+            let resolved_target = resolve_server_target(target, destination_resolver).await?;
             Ok(transport_dialer
                 .connect(&ConnectorConfig::Tcp, &resolved_target)
                 .await?)
@@ -953,7 +1027,7 @@ pub async fn open_tcp_stream_with_resolver_and_dialer(
             open_vless_tcp_stream_with_resolver_and_dialer(
                 outbound,
                 target,
-                dns_resolver,
+                bootstrap_resolver,
                 transport_dialer,
             )
             .await
@@ -1120,8 +1194,8 @@ mod tests {
     use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
     use uuid::Uuid;
     use xray_config::{
-        IpCidr, IpMatcher, RoutingConfig, RoutingDomainStrategy, RoutingRule, StreamSettings,
-        VlessOutboundSettings,
+        DomainMatcher, IpCidr, IpMatcher, RoutingConfig, RoutingDomainStrategy, RoutingRule,
+        StreamSettings, VlessOutboundSettings,
     };
     use xray_proxy::vless::{unpad_vision_block, VisionCommand};
     use xray_transport::{RealityTlsEngine, TransportError};
@@ -1276,6 +1350,15 @@ mod tests {
         }
     }
 
+    fn domain_and_ip_rule(tag: &str, domain: &str, ip: Ipv4Addr) -> RoutingRule {
+        RoutingRule {
+            inbound_tags: Vec::new(),
+            domain_matchers: vec![DomainMatcher::Full(domain.to_owned())],
+            ip_matchers: vec![IpMatcher::Cidr(IpCidr::full(IpAddr::V4(ip)))],
+            outbound_tag: tag.to_owned(),
+        }
+    }
+
     fn inbound_rule(inbound_tag: &str, outbound_tag: &str) -> RoutingRule {
         RoutingRule {
             inbound_tags: vec![inbound_tag.to_owned()],
@@ -1424,6 +1507,70 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn ip_if_non_match_second_pass_preserves_domain_for_combined_rule() {
+        let resolved_ip = Ipv4Addr::new(203, 0, 113, 7);
+        let mut config = direct_selection_config();
+        config.routing.domain_strategy = RoutingDomainStrategy::IpIfNonMatch;
+        config.routing.rules = vec![domain_and_ip_rule("direct", "example.test", resolved_ip)];
+        let resolver = FakeDnsResolver::resolving_to(SocketAddr::from((resolved_ip, 443)))
+            .expect_lookup("example.test", 443);
+
+        let selected = select_tcp_outbound_for_session_with_resolver(
+            &config,
+            None,
+            &domain_tcp_target("example.test"),
+            &resolver,
+        )
+        .await
+        .expect("select combined domain and resolved-IP route");
+
+        assert!(matches!(selected, TcpOutbound::Freedom));
+    }
+
+    #[tokio::test]
+    async fn outbound_router_dns_second_pass_preserves_domain_for_combined_rule() {
+        let resolved_ip = Ipv4Addr::new(203, 0, 113, 7);
+        let mut config = direct_selection_config();
+        config.routing.domain_strategy = RoutingDomainStrategy::IpIfNonMatch;
+        config.routing.rules = vec![domain_and_ip_rule("direct", "example.test", resolved_ip)];
+        let router = OutboundRouter::new(Arc::new(config));
+        let resolver = FakeDnsResolver::resolving_to(SocketAddr::from((resolved_ip, 443)))
+            .expect_lookup("example.test", 443);
+
+        let selected = router
+            .select_tcp_outbound_for_session_with_resolver(
+                None,
+                &domain_tcp_target("example.test"),
+                &resolver,
+            )
+            .await
+            .expect("select cached combined domain and resolved-IP route");
+
+        assert!(matches!(selected, TcpOutbound::Freedom));
+    }
+
+    #[test]
+    fn outbound_router_supplied_ip_second_pass_preserves_domain_for_combined_rule() {
+        let resolved_ipv4 = Ipv4Addr::new(203, 0, 113, 7);
+        let resolved_ip = IpAddr::V4(resolved_ipv4);
+        let mut config = direct_selection_config();
+        config.routing.domain_strategy = RoutingDomainStrategy::IpIfNonMatch;
+        config.routing.rules = vec![domain_and_ip_rule("direct", "example.test", resolved_ipv4)];
+        let router = OutboundRouter::new(Arc::new(config));
+
+        let selected = router
+            .select_tcp_outbound_for_session_with_tag_and_resolved_ip(
+                None,
+                &domain_tcp_target("example.test"),
+                Some(&resolved_ip),
+                false,
+            )
+            .expect("select supplied combined domain and resolved-IP route");
+
+        assert!(matches!(selected.outbound, TcpOutbound::Freedom));
+    }
+
+    #[tokio::test]
     async fn ip_if_non_match_does_not_resolve_when_rule_matches_first_pass() {
         let mut config = direct_selection_config();
         config.routing.domain_strategy = RoutingDomainStrategy::IpIfNonMatch;
@@ -1470,7 +1617,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ip_if_non_match_dns_failure_is_reported() {
+    async fn ip_if_non_match_dns_failure_uses_default_outbound() {
         let mut config = direct_selection_config();
         config.routing.domain_strategy = RoutingDomainStrategy::IpIfNonMatch;
         config.routing.rules = vec![ip_rule("direct", Ipv4Addr::new(203, 0, 113, 7))];
@@ -1480,19 +1627,35 @@ mod tests {
         ))
         .expect_lookup("example.test", 443);
 
-        let error = select_tcp_outbound_for_session_with_resolver(
+        let selected = select_tcp_outbound_for_session_with_resolver(
             &config,
             None,
             &domain_tcp_target("example.test"),
             &resolver,
         )
         .await
-        .unwrap_err();
+        .expect("DNS failure should fall back to the configured default outbound");
 
-        assert!(matches!(
-            error,
-            CoreError::Transport(TransportError::NoResolvedAddress(_, 443))
-        ));
+        assert!(matches!(selected, TcpOutbound::Vless(_)));
+        assert_eq!(resolver.calls(), 1);
+
+        let router = OutboundRouter::new(Arc::new(config));
+        let cached_resolver = FakeDnsResolver::failing_with(TransportError::NoResolvedAddress(
+            "example.test".to_owned(),
+            443,
+        ))
+        .expect_lookup("example.test", 443);
+        let selected = router
+            .select_tcp_outbound_for_session_with_resolver(
+                None,
+                &domain_tcp_target("example.test"),
+                &cached_resolver,
+            )
+            .await
+            .expect("cached router should use the configured default outbound");
+
+        assert!(matches!(selected, TcpOutbound::Vless(_)));
+        assert_eq!(cached_resolver.calls(), 1);
     }
 
     #[derive(Debug)]

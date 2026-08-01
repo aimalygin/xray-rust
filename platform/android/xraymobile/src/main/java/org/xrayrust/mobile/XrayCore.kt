@@ -25,6 +25,7 @@ class XrayCore private constructor(handle: Long) : Closeable {
             collectTcpTimings: Boolean = false,
             tunRuntimeProfile: XrayTunRuntimeProfile = XrayTunRuntimeProfile.Default,
             startupProbe: XrayStartupProbeOptions? = null,
+            dnsBootstrapMode: XrayDnsBootstrapMode = XrayDnsBootstrapMode.System,
         ): XrayCore {
             val core = XrayCore(nativeNew())
             try {
@@ -36,6 +37,7 @@ class XrayCore private constructor(handle: Long) : Closeable {
                 }
                 core.setTunCollectTcpTimings(collectTcpTimings)
                 core.setTunRuntimeProfile(tunRuntimeProfile)
+                core.setDnsBootstrapMode(dnsBootstrapMode)
                 if (startupProbe != null) {
                     core.setStartupProbe(startupProbe)
                 }
@@ -174,6 +176,10 @@ class XrayCore private constructor(handle: Long) : Closeable {
         withLifecycleHandle { nativeSetTunCollectTcpTimings(it, collect) }
     }
 
+    private fun setDnsBootstrapMode(mode: XrayDnsBootstrapMode) {
+        withLifecycleHandle { nativeSetDnsBootstrapMode(it, mode.ffiValue) }
+    }
+
     private fun setStartupProbe(startupProbe: XrayStartupProbeOptions) {
         withLifecycleHandle {
             nativeSetStartupProbe(
@@ -211,6 +217,7 @@ class XrayCore private constructor(handle: Long) : Closeable {
     )
     private external fun nativeSetTunRuntimeProfile(handle: Long, profile: Int)
     private external fun nativeSetTunCollectTcpTimings(handle: Long, collect: Boolean)
+    private external fun nativeSetDnsBootstrapMode(handle: Long, mode: Int)
     private external fun nativeSetStartupProbe(
         handle: Long,
         url: String,
@@ -262,6 +269,11 @@ enum class XrayTunRuntimeProfile(val ffiValue: Int) {
     LowMemory(3),
     Throughput(4),
     MobilePlus(5),
+}
+
+enum class XrayDnsBootstrapMode(val ffiValue: Int) {
+    System(0),
+    StaticOnly(1),
 }
 
 data class XrayTunStats(

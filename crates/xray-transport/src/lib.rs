@@ -27,8 +27,9 @@ mod tls;
 
 pub use dialer::TransportDialer;
 pub use dns::{
-    CachingDnsResolver, ConfiguredDnsResolver, DnsResolver, NameServer, StaticHostRule,
-    StaticHostTarget, SystemDnsResolver, TransportDomainMatcher, TransportRegexMatcher,
+    dns_response_matches_query, CachingDnsResolver, ConfiguredDnsResolver, DnsQueryTransport,
+    DnsQueryTransportKind, DnsResolver, NameServer, StaticHostRule, StaticHostTarget,
+    SystemDnsResolver, TransportDomainMatcher, TransportRegexMatcher,
 };
 pub(crate) use penetrating_tls::{CapturedTcpStream, PenetratingTlsStream, ServerReadLog};
 pub use reality_connector::{RealityTlsSession, RealityTlsSessionProvider};
@@ -94,6 +95,10 @@ pub enum TransportError {
         port: u16,
         source: std::io::Error,
     },
+    #[error("dns server reports that {0}:{1} does not exist")]
+    DnsNameError(String, u16),
+    #[error("dns server returned no A or AAAA records for {0}:{1}")]
+    DnsNoData(String, u16),
     #[error("dns lookup returned no addresses for {0}:{1}")]
     NoResolvedAddress(String, u16),
     #[error("tcp connect failed: {0}")]

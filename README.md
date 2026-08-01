@@ -1,8 +1,10 @@
 # xray-rust
 
-`xray-rust` is an experimental, client-side Rust implementation of a focused
-subset of the Xray configuration and proxy protocols. It provides a native
-runtime, a C ABI, and reference adapters for Apple platforms and Android.
+`xray-rust` is an experimental, mobile/client-first Rust implementation of a
+focused subset of the Xray configuration and proxy protocols. It provides a
+native runtime, a C ABI, and reference adapters for Apple platforms and
+Android. The long-term direction is one embeddable client/server library;
+server-side Xray protocols are not implemented yet.
 
 This project is unofficial and is not affiliated with XTLS or Xray-core. It is
 not a drop-in replacement for Xray-core, has not been independently security
@@ -50,7 +52,7 @@ narrative and measurement caveats, are in
 | Local inbounds | SOCKS5 no-auth `CONNECT` and `UDP ASSOCIATE`, HTTP `CONNECT`, TUN | No authenticated proxy inbound or server-side Xray protocols |
 | Outbounds | Freedom/direct and VLESS client over TCP | No VMess, Trojan, Shadowsocks, WireGuard, balancers, or outbound chaining |
 | Security and flow | TLS, REALITY, `xtls-rprx-vision`, VLESS UDP and XUDP paths | Only the documented config subset and supported REALITY fingerprints |
-| Routing and DNS | Field rules, domain/IP matchers, `geosite`/`geoip`, hosts, routed UDP/TCP DNS proxy, fake-IP subset | TUN proxy upstreams are IP literals; not full Xray DNS or routing parity |
+| Routing and DNS | Field rules, domain/IP matchers, `geosite`/`geoip`, routed A/AAAA/CNAME resolution and UDP/TCP DNS proxy with IP/domain upstreams, bounded fake-IP subset | No DoH/DoT, rich multi-address/TTL lookup API, or full Xray DNS/routing parity |
 | Mobile | Swift Package/Xcode sample for iOS, tvOS, and macOS; Android library and `VpnService` adapter | Signing, entitlements, VPN consent, foreground policy, and release packaging remain host-app responsibilities |
 
 See [project status](docs/status.md) and

@@ -120,33 +120,93 @@ if none matches, the first outbound tag is used as the default.
 ## DNS
 
 `dns.servers` accepts at most eight IP addresses, socket addresses, or domain
-names with an optional nonzero port. The local TUN anchor `198.18.0.1:53`
-cannot itself be configured as an upstream. The resolver sends UDP A/AAAA
-queries, understands CNAME responses, falls back to the system resolver, and
-caches results.
+names with an optional nonzero port. The TUN-local `198.18.0.1:53` anchor and
+`198.18.0.2:53` client address cannot be configured as upstreams, including as
+IPv4-mapped IPv6 literals. The resolver builds A/AAAA queries and validates
+A/AAAA answers plus CNAME chains in `xray-transport`; the delivery transport is
+replaceable, so TUN resolution sends them through the outbound router rather
+than duplicating the DNS parser. A valid UDP response with `TC=1` retries over
+TCP to the same server. UDP transports ignore responses with an unrelated
+transaction ID, opcode, name, type, or class until the attempt deadline.
+Managed destination results use a bounded 60-second LRU cache; ASCII case is
+canonicalized, and overflow evicts one least-recently-used entry rather than
+flushing the whole cache. Concurrent misses for the same `(domain, port)`
+share one cancellation-safe lookup and the same typed outcome instead of
+opening duplicate routed DNS/VLESS sessions.
 
-When fake-IP is disabled and at least one IP-literal server is present, TUN
-clients can use `198.18.0.1:53` as a local UDP/TCP DNS proxy. The proxy keeps
+For managed runtimes, including TUN, SOCKS, HTTP, and startup probes, `System`
+resolution is `dns.hosts` → routed `dns.servers` → cached operating-system
+fallback when the configured upstreams are unavailable. Authoritative
+NXDOMAIN and A+AAAA NODATA are terminal and do not leak into that fallback;
+SERVFAIL, malformed replies, and transport failures move to the next server.
+The five-second resolution deadline includes the final fallback, and each
+server gets one shared A/AAAA attempt budget. `StaticOnly` uses the same routed
+path and then fails closed; its separate bootstrap resolver never uses
+`dns.servers` or the operating-system resolver. Explicitly injected resolvers
+remain trusted integration dependencies and are used as-is.
+
+When fake-IP is disabled and at least one usable server is present, TUN clients
+can use `198.18.0.1:53` as a local UDP/TCP DNS proxy. The proxy keeps
 server order, removes duplicates, and sends each upstream attempt through the
 normal outbound router, so Freedom sockets retain platform socket protection
-and VLESS routes do not gain a hidden direct-DNS bypass. UDP requests have
-bounded per-attempt and total timeouts; invalid/unavailable upstreams return
+and VLESS routes do not gain a hidden direct-DNS bypass. DNS sessions route on
+their original IP/domain metadata. With `IPIfNonMatch`, domain rules run first;
+only an unmatched domain upstream uses the separate bootstrap resolver for the
+IP-rule pass, so destination DNS cannot recurse into itself. UDP requests have
+bounded per-attempt and total timeouts; unrelated replies from the selected
+peer are ignored, while invalid/unavailable upstreams return
 SERVFAIL, and an oversized reply is converted to a truncated response so the
 client can retry over TCP. TCP is a byte-transparent stream and supports
 multiple length-prefixed DNS messages on one connection; failed opens are
-reset. Domain-name servers do not currently participate in this TUN proxy
-because safe bootstrap resolution is not implemented. If IP and domain
-servers are mixed, only the IP literals are proxy candidates.
+reset. Raw and fake DNS/TCP share a dedicated limit of up to 32 flows. Raw
+DNS/TCP idle time, including blocked bridge writes, is capped by the smaller of
+the inbound `connIdle` policy and five seconds.
+A domain upstream selected through VLESS stays a domain and is resolved
+by the remote endpoint. A domain selected through Freedom uses the separate
+bootstrap policy. Non-intercepting `System` embeddings may use the operating
+system there. The generic C ABI defaults to `System`; the Apple Packet Tunnel
+and Android reference VPN integration pre-populate exact bootstrap host rules
+before installing their DNS anchor, then explicitly select `StaticOnly`. Mobile
+preflight lookups share a five-second start deadline, execute on bounded
+workers, and cannot publish after stop, timeout, or supersession. Blocking
+platform resolver calls themselves may outlive the deadline, so the adapters
+bound worker admission and fail closed rather than accumulating work. In any
+custom `StaticOnly` embedding, a domain upstream's `dns.hosts` alias chain must
+end in an IP or that candidate fails over (and ultimately returns SERVFAIL).
+If an `IPIfNonMatch` lookup itself fails, routing follows Xray-core and selects
+the default outbound; it does not discard the original domain or fail the
+session at the routing layer.
 
-`dns.hosts` maps supported domain matchers to an IP or alias domain.
-`dns.fakeIp` supports `enabled`, an IPv4 `ipv4Pool`, and `ttl` for the current
-TUN routing path. It synthesizes A records and returns NODATA for other
-single-question UDP query types sent to the tunnel-local `198.18.0.1` anchor.
-Fake-IP takes precedence over raw proxying: TCP/53 to the anchor is reset, and
-unsupported query types sent to another resolver continue through the normal
-UDP path. DNS-over-HTTPS/TLS, client-IP, per-server rule objects, domain-server
-bootstrap for the TUN proxy, and the broader Xray DNS feature set are not
-implemented.
+`dns.hosts` maps supported domain matchers to an IP or alias domain. Names are
+canonicalized to lowercase without a terminal dot at the managed resolver
+boundary, and an exact `full:` mapping takes precedence over broader matching
+rules. Alias resolution is bounded to eight hops.
+`dns.fakeIp` supports `enabled`, an IPv4 `ipv4Pool`, optional positive
+`poolSize`, and `ttl` for the current TUN routing path. `poolSize` defaults to
+the smaller of 32768 and the usable pool capacity. The bounded mapping table
+uses Xray-style LRU rollover: active mappings stay stable, and the least
+recently used mapping is evicted when a new domain crosses `poolSize`.
+`198.18.0.1` and `198.18.0.2` are always reserved for the DNS anchor and TUN
+client address. Fake DNS synthesizes A records over UDP and length-prefixed TCP
+for both the anchor and hard-coded port-53 destinations. AAAA returns NODATA on
+both paths; other valid single-question types return NODATA at the anchor and
+over TCP, while non-anchor UDP continues through the normal UDP path. Fake-IP
+takes precedence over raw proxying. When a later TCP/UDP flow targets a fake
+address, the original domain is restored before routing. VLESS carries that
+domain for remote resolution; Freedom resolves it through the managed routed
+resolver, including in mobile `StaticOnly` mode. DNS-over-HTTPS/TLS, client-IP,
+per-server rule objects, richer multi-address/TTL lookup results, and the
+broader Xray DNS feature set are not implemented.
+
+A fake-IP profile does not inherently need `dns.servers` when its restored
+domains always use VLESS, because VLESS preserves them for remote resolution.
+Freedom cannot do that: in `StaticOnly`, a default or domain-routed Freedom
+path needs usable `dns.servers` (or a sufficient terminal `dns.hosts` mapping)
+and otherwise fails closed. Conservatively, the Apple and Android reference VPN
+adapters require nonempty `dns.servers` for such fake-only/Freedom topologies
+before installing the tunnel; they never substitute a public resolver. IP-only
+Freedom split rules remain valid with a default VLESS because an unresolved
+`IPIfNonMatch` pass falls back to that VLESS outbound.
 
 ## Policy
 

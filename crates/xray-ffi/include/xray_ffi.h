@@ -115,6 +115,11 @@ typedef enum XrayTunRuntimeProfile {
   XRAY_TUN_RUNTIME_PROFILE_MOBILE_PLUS = 5
 } XrayTunRuntimeProfile;
 
+typedef enum XrayDnsBootstrapMode {
+  XRAY_DNS_BOOTSTRAP_MODE_SYSTEM = 0,
+  XRAY_DNS_BOOTSTRAP_MODE_STATIC_ONLY = 1
+} XrayDnsBootstrapMode;
+
 typedef enum XrayTcpSlowFlowKind {
   XRAY_TCP_SLOW_FLOW_KIND_UNKNOWN = 0,
   XRAY_TCP_SLOW_FLOW_KIND_OPEN = 1,
@@ -226,6 +231,12 @@ XrayStatus xray_core_set_tun_collect_tcp_timings(
 XrayStatus xray_core_set_tun_runtime_profile(
     XrayCoreHandle *handle,
     int32_t profile,
+    XrayError **error);
+/* Defaults to XRAY_DNS_BOOTSTRAP_MODE_SYSTEM. Set before config load; tunnel
+ * integrations may select STATIC_ONLY after completing host-side bootstrap. */
+XrayStatus xray_core_set_dns_bootstrap_mode(
+    XrayCoreHandle *handle,
+    int32_t mode,
     XrayError **error);
 void xray_core_free(XrayCoreHandle *handle);
 

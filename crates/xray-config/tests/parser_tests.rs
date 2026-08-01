@@ -254,9 +254,97 @@ fn parses_dns_fake_ip_ipv4_pool() {
         Some(DnsFakeIpConfig {
             enabled: true,
             ipv4_pool: IpCidr::new(IpAddr::V4(Ipv4Addr::new(198, 18, 0, 0)), 15).unwrap(),
+            pool_size: 32_768,
             ttl: 120,
         })
     );
+}
+
+#[test]
+fn parses_explicit_dns_fake_ip_pool_size() {
+    let raw = r#"{
+        "dns": {
+          "fakeIp": {
+            "enabled": true,
+            "ipv4Pool": "198.18.0.0/15",
+            "poolSize": 4096
+          }
+        },
+        "inbounds": [],
+        "outbounds": [{ "tag": "direct", "protocol": "freedom" }]
+    }"#;
+
+    let parsed = parse_xray_json(raw).expect("config should parse");
+
+    assert_eq!(parsed.config.dns.fake_ip.unwrap().pool_size, 4_096);
+}
+
+#[test]
+fn defaults_dns_fake_ip_pool_size_to_usable_address_count_for_small_pool() {
+    let raw = r#"{
+        "dns": {
+          "fakeIp": {
+            "enabled": true,
+            "ipv4Pool": "198.19.0.1/32"
+          }
+        },
+        "inbounds": [],
+        "outbounds": [{ "tag": "direct", "protocol": "freedom" }]
+    }"#;
+
+    let parsed = parse_xray_json(raw).expect("config should parse");
+
+    assert_eq!(parsed.config.dns.fake_ip.unwrap().pool_size, 1);
+}
+
+#[test]
+fn rejects_zero_dns_fake_ip_pool_size() {
+    let raw = r#"{
+        "dns": {
+          "fakeIp": {
+            "enabled": true,
+            "ipv4Pool": "198.18.0.0/15",
+            "poolSize": 0
+          }
+        },
+        "inbounds": [],
+        "outbounds": [{ "tag": "direct", "protocol": "freedom" }]
+    }"#;
+
+    assert_parse_error_path(raw, "$.dns.fakeIp.poolSize");
+}
+
+#[test]
+fn rejects_dns_fake_ip_pool_size_exceeding_reserved_address_adjusted_capacity() {
+    let raw = r#"{
+        "dns": {
+          "fakeIp": {
+            "enabled": true,
+            "ipv4Pool": "198.18.0.0/29",
+            "poolSize": 5
+          }
+        },
+        "inbounds": [],
+        "outbounds": [{ "tag": "direct", "protocol": "freedom" }]
+    }"#;
+
+    assert_parse_error_path(raw, "$.dns.fakeIp.poolSize");
+}
+
+#[test]
+fn rejects_dns_fake_ip_pool_containing_only_tun_reserved_addresses() {
+    let raw = r#"{
+        "dns": {
+          "fakeIp": {
+            "enabled": true,
+            "ipv4Pool": "198.18.0.0/30"
+          }
+        },
+        "inbounds": [],
+        "outbounds": [{ "tag": "direct", "protocol": "freedom" }]
+    }"#;
+
+    assert_parse_error_path(raw, "$.dns.fakeIp.ipv4Pool");
 }
 
 #[test]
@@ -943,12 +1031,16 @@ fn rejects_zero_port_for_domain_dns_server() {
 }
 
 #[test]
-fn rejects_local_tun_dns_anchor_as_upstream() {
+fn rejects_tunnel_local_dns_addresses_as_upstreams() {
     for server in [
         "198.18.0.1",
         "198.18.0.1:53",
         "::ffff:198.18.0.1",
         "[::ffff:198.18.0.1]:53",
+        "198.18.0.2",
+        "198.18.0.2:53",
+        "::ffff:198.18.0.2",
+        "[::ffff:198.18.0.2]:53",
     ] {
         let raw = raw_with_dns_servers(&format!(r#""{server}""#));
         let error = parse_xray_json(&raw).unwrap_err();
@@ -959,7 +1051,7 @@ fn rejects_local_tun_dns_anchor_as_upstream() {
         );
         assert_eq!(
             error.diagnostics[0].message,
-            "dns server cannot point at the local TUN DNS anchor"
+            "dns server cannot point at a tunnel-local DNS address"
         );
     }
 }

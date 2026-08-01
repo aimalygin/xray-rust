@@ -18,7 +18,8 @@ use tokio::time::{sleep, Duration, Instant as TokioInstant};
 use xray_config::{CoreConfig, DnsFakeIpConfig, DnsServerConfig, InboundSniffingConfig};
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::{
-    connect_tcp_stream, protect_udp_socket, BoxedTransportStream, DnsResolver, TransportDialer,
+    connect_tcp_stream, dns_response_matches_query, protect_udp_socket, BoxedTransportStream,
+    DnsResolver, TransportDialer,
 };
 use xray_tun::{
     TunEndpoint, TunError, TunTcpBufferState, TunTcpFlowSummaryEvent, TunTcpOpenErrorEvent,
@@ -43,13 +44,14 @@ const ICMPV4_PROTOCOL: u8 = 1;
 const ICMPV6_PROTOCOL: u8 = 58;
 const TCP_PROTOCOL: u8 = 6;
 const UDP_PROTOCOL: u8 = 17;
-const DNS_PORT: u16 = 53;
+pub(crate) const DNS_PORT: u16 = 53;
 const DNS_TYPE_A: u16 = 1;
 const DNS_TYPE_AAAA: u16 = 28;
 const DNS_CLASS_IN: u16 = 1;
 const DNS_RCODE_NOERROR: u16 = 0;
 const DNS_RCODE_SERVFAIL: u16 = 2;
-const TUN_DNS_ANCHOR: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 1);
+pub(crate) const TUN_DNS_ANCHOR: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 1);
+pub(crate) const TUN_CLIENT_IPV4: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 2);
 const TCP_BUFFER_SIZE: usize = 32 * 1024;
 const STACK_EVENT_CHANNEL_DEPTH: usize = 64;
 const TCP_BRIDGE_CHANNEL_DEPTH: usize = 256;
@@ -70,6 +72,7 @@ const MAX_TUN_INBOUND_DRAIN_PER_TICK: usize = 256;
 const MAX_BRIDGE_TASK_COMPLETIONS_PER_TICK: usize = 64;
 const MAX_UDP_TASK_COMPLETIONS_PER_TICK: usize = MAX_TUN_INBOUND_DRAIN_PER_TICK + 1;
 const MAX_DNS_UDP_TASKS: usize = 64;
+const MAX_DNS_TCP_FLOWS: usize = 32;
 const TCP_REMOTE_DRAIN_MAX_PASSES_PER_TICK: usize = 4;
 const TCP_REMOTE_DRAIN_MAX_BYTES_PER_TICK: usize = 4 * 1024 * 1024;
 const TUN_FLOW_STATS_INTERVAL: Duration = Duration::from_secs(1);
@@ -489,6 +492,7 @@ struct FlowBudgetState {
 struct FakeIpRuntimeConfig {
     ipv4_network: Ipv4Addr,
     ipv4_prefix: u8,
+    pool_size: u32,
     ttl: u32,
 }
 
@@ -500,6 +504,7 @@ impl FakeIpRuntimeConfig {
         Some(Self {
             ipv4_network,
             ipv4_prefix: config.ipv4_pool.prefix(),
+            pool_size: config.pool_size,
             ttl: config.ttl,
         })
     }
@@ -510,10 +515,23 @@ struct FakeIpMapper {
     config: FakeIpRuntimeConfig,
     network_base: u32,
     first_offset: u64,
-    usable_addresses: u64,
+    allocation_span: u64,
+    max_mappings: usize,
+    pool_covers_address_space: bool,
     next_offset: u64,
-    by_domain: HashMap<String, Ipv4Addr>,
-    by_ipv4: HashMap<Ipv4Addr, String>,
+    entries: Vec<Option<FakeIpEntry>>,
+    lru_head: Option<usize>,
+    lru_tail: Option<usize>,
+    by_domain: HashMap<Arc<str>, usize>,
+    by_ipv4: HashMap<Ipv4Addr, usize>,
+}
+
+#[derive(Debug)]
+struct FakeIpEntry {
+    domain: Arc<str>,
+    ip: Ipv4Addr,
+    newer: Option<usize>,
+    older: Option<usize>,
 }
 
 impl FakeIpMapper {
@@ -523,13 +541,13 @@ impl FakeIpMapper {
         }
 
         let address_count = 1_u64 << u32::from(32 - config.ipv4_prefix);
-        let first_offset = if address_count > 2 { 1 } else { 0 };
-        let usable_addresses = if address_count > 2 {
+        let first_offset: u64 = if address_count > 2 { 1 } else { 0 };
+        let allocation_span = if address_count > 2 {
             address_count - 2
         } else {
             address_count
         };
-        if usable_addresses == 0 {
+        if allocation_span == 0 {
             return None;
         }
 
@@ -539,13 +557,32 @@ impl FakeIpMapper {
             u32::MAX << u32::from(32 - config.ipv4_prefix)
         };
         let network_base = u32::from(config.ipv4_network) & mask;
+        let allocation_range = first_offset..first_offset.saturating_add(allocation_span);
+        let reserved_addresses = [TUN_DNS_ANCHOR, TUN_CLIENT_IPV4]
+            .into_iter()
+            .filter(|ip| {
+                u32::from(*ip)
+                    .checked_sub(network_base)
+                    .map(u64::from)
+                    .is_some_and(|offset| allocation_range.contains(&offset))
+            })
+            .count();
+        let available_addresses = allocation_span - reserved_addresses as u64;
+        if config.pool_size == 0 || u64::from(config.pool_size) > available_addresses {
+            return None;
+        }
 
         Some(Self {
             config,
             network_base,
             first_offset,
-            usable_addresses,
+            allocation_span,
+            max_mappings: usize::try_from(config.pool_size).ok()?,
+            pool_covers_address_space: u64::from(config.pool_size) == available_addresses,
             next_offset: 0,
+            entries: Vec::new(),
+            lru_head: None,
+            lru_tail: None,
             by_domain: HashMap::new(),
             by_ipv4: HashMap::new(),
         })
@@ -553,37 +590,123 @@ impl FakeIpMapper {
 
     fn fake_ipv4_for_domain(&mut self, domain: &str) -> Option<Ipv4Addr> {
         let domain = normalize_dns_domain(domain)?;
-        if let Some(ip) = self.by_domain.get(&domain) {
-            return Some(*ip);
-        }
-        if self.by_domain.len() as u64 >= self.usable_addresses {
-            return None;
-        }
-
-        for _ in 0..self.usable_addresses {
-            let offset = self.first_offset + (self.next_offset % self.usable_addresses);
-            self.next_offset = self.next_offset.saturating_add(1);
-            let Some(raw_ip) = self.network_base.checked_add(u32::try_from(offset).ok()?) else {
-                continue;
-            };
-            let ip = Ipv4Addr::from(raw_ip);
-            if self.by_ipv4.contains_key(&ip) {
-                continue;
-            }
-
-            self.by_domain.insert(domain.clone(), ip);
-            self.by_ipv4.insert(ip, domain);
+        if let Some(&slot) = self.by_domain.get(domain.as_str()) {
+            let ip = self.entries.get(slot)?.as_ref()?.ip;
+            self.touch_lru(slot)?;
             return Some(ip);
         }
 
+        if self.by_domain.len() >= self.max_mappings {
+            let free_ip = (!self.pool_covers_address_space)
+                .then(|| self.next_available_ipv4())
+                .flatten();
+            let (slot, evicted_ip) = self.remove_lru()?;
+            let ip = free_ip.unwrap_or(evicted_ip);
+            self.insert_mapping(slot, domain, ip)?;
+            return Some(ip);
+        }
+
+        let slot = self.entries.len();
+        let ip = self.next_available_ipv4()?;
+        self.insert_mapping(slot, domain, ip)?;
+        Some(ip)
+    }
+
+    fn next_available_ipv4(&mut self) -> Option<Ipv4Addr> {
+        for _ in 0..self.allocation_span {
+            let offset = self.first_offset + (self.next_offset % self.allocation_span);
+            self.next_offset = (self.next_offset + 1) % self.allocation_span;
+            let raw_ip = self.network_base.checked_add(u32::try_from(offset).ok()?)?;
+            let ip = Ipv4Addr::from(raw_ip);
+            if matches!(ip, TUN_DNS_ANCHOR | TUN_CLIENT_IPV4) {
+                continue;
+            }
+            if !self.by_ipv4.contains_key(&ip) {
+                return Some(ip);
+            }
+        }
         None
     }
 
-    fn domain_for_ipv4(&self, ip: Ipv4Addr) -> Option<&str> {
-        self.by_ipv4.get(&ip).map(String::as_str)
+    fn insert_mapping(&mut self, slot: usize, domain: String, ip: Ipv4Addr) -> Option<()> {
+        let domain = Arc::<str>::from(domain);
+        let entry = FakeIpEntry {
+            domain: Arc::clone(&domain),
+            ip,
+            newer: None,
+            older: None,
+        };
+        if slot == self.entries.len() {
+            self.entries.push(Some(entry));
+        } else {
+            *self.entries.get_mut(slot)? = Some(entry);
+        }
+        self.by_domain.insert(domain, slot);
+        self.by_ipv4.insert(ip, slot);
+        self.attach_lru_head(slot)
     }
 
-    fn target_for_endpoint(&self, endpoint: IpEndpoint, network: RoutingNetwork) -> Option<Target> {
+    fn touch_lru(&mut self, slot: usize) -> Option<()> {
+        if self.lru_head == Some(slot) {
+            return Some(());
+        }
+        self.detach_lru(slot)?;
+        self.attach_lru_head(slot)
+    }
+
+    fn attach_lru_head(&mut self, slot: usize) -> Option<()> {
+        let previous_head = self.lru_head;
+        let entry = self.entries.get_mut(slot)?.as_mut()?;
+        entry.newer = None;
+        entry.older = previous_head;
+        if let Some(previous_head) = previous_head {
+            self.entries.get_mut(previous_head)?.as_mut()?.newer = Some(slot);
+        } else {
+            self.lru_tail = Some(slot);
+        }
+        self.lru_head = Some(slot);
+        Some(())
+    }
+
+    fn detach_lru(&mut self, slot: usize) -> Option<()> {
+        let entry = self.entries.get(slot)?.as_ref()?;
+        let newer = entry.newer;
+        let older = entry.older;
+
+        if let Some(newer) = newer {
+            self.entries.get_mut(newer)?.as_mut()?.older = older;
+        } else {
+            self.lru_head = older;
+        }
+        if let Some(older) = older {
+            self.entries.get_mut(older)?.as_mut()?.newer = newer;
+        } else {
+            self.lru_tail = newer;
+        }
+        Some(())
+    }
+
+    fn remove_lru(&mut self) -> Option<(usize, Ipv4Addr)> {
+        let slot = self.lru_tail?;
+        self.detach_lru(slot)?;
+        let entry = self.entries.get_mut(slot)?.take()?;
+        self.by_domain.remove(entry.domain.as_ref());
+        self.by_ipv4.remove(&entry.ip);
+        Some((slot, entry.ip))
+    }
+
+    fn domain_for_ipv4(&mut self, ip: Ipv4Addr) -> Option<Arc<str>> {
+        let slot = *self.by_ipv4.get(&ip)?;
+        let domain = Arc::clone(&self.entries.get(slot)?.as_ref()?.domain);
+        self.touch_lru(slot)?;
+        Some(domain)
+    }
+
+    fn target_for_endpoint(
+        &mut self,
+        endpoint: IpEndpoint,
+        network: RoutingNetwork,
+    ) -> Option<Target> {
         let IpAddress::Ipv4(ip) = endpoint.addr else {
             return target_from_endpoint_with_network(endpoint, network);
         };
@@ -591,7 +714,7 @@ impl FakeIpMapper {
             return target_from_endpoint_with_network(endpoint, network);
         };
         Some(Target::new(
-            RoutingTargetAddr::Domain(domain.to_owned()),
+            RoutingTargetAddr::Domain(domain.to_string()),
             endpoint.port,
             network,
         ))
@@ -914,6 +1037,7 @@ pub(crate) async fn serve_tun_endpoint(
     config: Arc<CoreConfig>,
     outbound_router: Arc<OutboundRouter>,
     dns_resolver: Arc<dyn DnsResolver>,
+    dns_bootstrap_resolver: Option<Arc<dyn DnsResolver>>,
     transport_dialer: Arc<TransportDialer>,
     tun_runtime_options: TunRuntimeOptions,
     runtime_logger: RuntimeLogger,
@@ -932,6 +1056,9 @@ pub(crate) async fn serve_tun_endpoint(
     let runtime_policy = tun_runtime_policy_for_options(tun_runtime_options);
     let tcp_pending_open_permits =
         Arc::new(Semaphore::new(runtime_policy.flows.tcp.max_pending_opens));
+    let dns_tcp_flow_permits = Arc::new(Semaphore::new(dns_tcp_flow_limit(
+        runtime_policy.flows.tcp.max_active_flows,
+    )));
     let tcp_flow_generation = Arc::new(AtomicU64::new(0));
     let udp_task_limit = runtime_policy.flows.udp.max_active_flows;
     let udp_task_permits = Arc::new(Semaphore::new(udp_task_limit));
@@ -955,12 +1082,14 @@ pub(crate) async fn serve_tun_endpoint(
         config,
         outbound_router,
         dns_resolver,
+        dns_bootstrap_resolver,
         transport_dialer,
         stack_tx,
         tun: Arc::clone(&tun),
         tun_runtime_options,
         runtime_policy,
         tcp_pending_open_permits,
+        dns_tcp_flow_permits,
         tcp_flow_generation,
         udp_task_permits,
         dns_udp_task_permits,
@@ -1421,12 +1550,14 @@ struct TunRuntimeContext {
     config: Arc<CoreConfig>,
     outbound_router: Arc<OutboundRouter>,
     dns_resolver: Arc<dyn DnsResolver>,
+    dns_bootstrap_resolver: Option<Arc<dyn DnsResolver>>,
     transport_dialer: Arc<TransportDialer>,
     stack_tx: mpsc::Sender<StackEvent>,
     tun: Arc<TunEndpoint>,
     tun_runtime_options: TunRuntimeOptions,
     runtime_policy: TunRuntimePolicy,
     tcp_pending_open_permits: Arc<Semaphore>,
+    dns_tcp_flow_permits: Arc<Semaphore>,
     tcp_flow_generation: Arc<AtomicU64>,
     udp_task_permits: Arc<Semaphore>,
     dns_udp_task_permits: Arc<Semaphore>,
@@ -1441,7 +1572,20 @@ fn dns_udp_task_limit(global_udp_task_limit: usize) -> usize {
     (global_udp_task_limit / 4).clamp(1, MAX_DNS_UDP_TASKS)
 }
 
+fn dns_tcp_flow_limit(global_tcp_flow_limit: usize) -> usize {
+    if global_tcp_flow_limit == 0 {
+        return 0;
+    }
+    (global_tcp_flow_limit / 8).clamp(1, MAX_DNS_TCP_FLOWS)
+}
+
 impl TunRuntimeContext {
+    fn bootstrap_dns_resolver(&self) -> &dyn DnsResolver {
+        self.dns_bootstrap_resolver
+            .as_deref()
+            .unwrap_or(self.dns_resolver.as_ref())
+    }
+
     fn target_from_endpoint(
         &self,
         endpoint: IpEndpoint,
@@ -1450,7 +1594,8 @@ impl TunRuntimeContext {
         let Some(mapper) = self.dns_mode.fake_ip_mapper() else {
             return target_from_endpoint_with_network(endpoint, network);
         };
-        mapper.lock().ok()?.target_for_endpoint(endpoint, network)
+        let mut mapper = mapper.lock().ok()?;
+        mapper.target_for_endpoint(endpoint, network)
     }
 }
 
@@ -1489,13 +1634,30 @@ enum TcpBridgeDestination {
 
 enum ReadyTcpFlow {
     Bridge(TcpBridgeDestination),
+    FakeDns(Arc<Mutex<FakeIpMapper>>),
     Reject(&'static str),
     Closed,
 }
 
+enum AdmittedTcpFlow {
+    Bridge {
+        destination: TcpBridgeDestination,
+        permits: TcpBridgePermits,
+    },
+    FakeDns {
+        mapper: Arc<Mutex<FakeIpMapper>>,
+        permit: OwnedSemaphorePermit,
+    },
+}
+
+struct TcpBridgePermits {
+    pending_open: OwnedSemaphorePermit,
+    dns_flow: Option<OwnedSemaphorePermit>,
+}
+
 struct TcpDialCandidate {
     target: Target,
-    dns_upstream: Option<SocketAddr>,
+    dns_upstream: Option<dns_proxy::DnsProxyUpstream>,
 }
 
 impl TcpBridgeDestination {
@@ -1519,12 +1681,8 @@ impl TcpBridgeDestination {
                 .upstreams()
                 .iter()
                 .map(|upstream| TcpDialCandidate {
-                    target: Target::new(
-                        RoutingTargetAddr::Ip(upstream.ip()),
-                        upstream.port(),
-                        RoutingNetwork::Tcp,
-                    ),
-                    dns_upstream: Some(*upstream),
+                    target: upstream.target(RoutingNetwork::Tcp),
+                    dns_upstream: Some(upstream.clone()),
                 })
                 .collect(),
         }
@@ -1719,6 +1877,7 @@ fn open_ready_tcp_flows(
                         None => ReadyTcpFlow::Reject("TUN DNS TCP target is invalid"),
                     }
                 }
+                DnsTcpAction::FakeIp(mapper) => ReadyTcpFlow::FakeDns(mapper),
                 DnsTcpAction::Reject => ReadyTcpFlow::Reject("TUN DNS TCP proxy is unavailable"),
             };
             Some((*endpoint, ready))
@@ -1731,8 +1890,60 @@ fn open_ready_tcp_flows(
         };
         let handle = listener.handle;
         let generation = context.tcp_flow_generation.fetch_add(1, Ordering::Relaxed);
-        let destination = match ready {
-            ReadyTcpFlow::Bridge(destination) => destination,
+        let admitted = match ready {
+            ReadyTcpFlow::Bridge(destination) => {
+                let dns_flow_permit = if destination.is_dns_proxy() {
+                    match Arc::clone(&context.dns_tcp_flow_permits).try_acquire_owned() {
+                        Ok(permit) => Some(permit),
+                        Err(_) => {
+                            record_tcp_admission_rejection(
+                                context,
+                                endpoint,
+                                "TUN DNS TCP flow limit reached",
+                            );
+                            insert_aborted_tcp_flow(handle, generation, flows);
+                            continue;
+                        }
+                    }
+                } else {
+                    None
+                };
+                let pending_open_permit =
+                    match Arc::clone(&context.tcp_pending_open_permits).try_acquire_owned() {
+                        Ok(permit) => permit,
+                        Err(_) => {
+                            record_tcp_admission_rejection(
+                                context,
+                                endpoint,
+                                "TUN TCP pending-open limit reached",
+                            );
+                            insert_aborted_tcp_flow(handle, generation, flows);
+                            continue;
+                        }
+                    };
+                AdmittedTcpFlow::Bridge {
+                    destination,
+                    permits: TcpBridgePermits {
+                        pending_open: pending_open_permit,
+                        dns_flow: dns_flow_permit,
+                    },
+                }
+            }
+            ReadyTcpFlow::FakeDns(mapper) => {
+                let permit = match Arc::clone(&context.dns_tcp_flow_permits).try_acquire_owned() {
+                    Ok(permit) => permit,
+                    Err(_) => {
+                        record_tcp_admission_rejection(
+                            context,
+                            endpoint,
+                            "TUN fake DNS TCP flow limit reached",
+                        );
+                        insert_aborted_tcp_flow(handle, generation, flows);
+                        continue;
+                    }
+                };
+                AdmittedTcpFlow::FakeDns { mapper, permit }
+            }
             ReadyTcpFlow::Reject(reason) => {
                 record_tcp_endpoint_rejection(context, endpoint, reason);
                 insert_aborted_tcp_flow(handle, generation, flows);
@@ -1743,19 +1954,6 @@ fn open_ready_tcp_flows(
                 continue;
             }
         };
-        let pending_open_permit =
-            match Arc::clone(&context.tcp_pending_open_permits).try_acquire_owned() {
-                Ok(permit) => permit,
-                Err(_) => {
-                    record_tcp_admission_rejection(
-                        context,
-                        endpoint,
-                        "TUN TCP pending-open limit reached",
-                    );
-                    insert_aborted_tcp_flow(handle, generation, flows);
-                    continue;
-                }
-            };
         let (to_remote, from_stack) =
             mpsc::channel(context.runtime_policy.tcp_upload.channel_depth);
         flows.insert(
@@ -1771,15 +1969,31 @@ fn open_ready_tcp_flows(
                 remote_aborted: false,
             },
         );
-        let task = bridge_tasks.spawn(bridge_tcp_flow(
-            handle,
-            generation,
-            destination,
-            context.clone(),
-            from_stack,
-            shutdown.clone(),
-            pending_open_permit,
-        ));
+        let task = match admitted {
+            AdmittedTcpFlow::Bridge {
+                destination,
+                permits,
+            } => bridge_tasks.spawn(bridge_tcp_flow(
+                handle,
+                generation,
+                destination,
+                context.clone(),
+                from_stack,
+                shutdown.clone(),
+                permits,
+            )),
+            AdmittedTcpFlow::FakeDns { mapper, permit } => {
+                bridge_tasks.spawn(dns_proxy::bridge_fake_ip_tcp_flow(
+                    handle,
+                    generation,
+                    mapper,
+                    context.clone(),
+                    from_stack,
+                    shutdown.clone(),
+                    permit,
+                ))
+            }
+        };
         if let Some(flow) = flows.get_mut(&handle) {
             flow.task = Some(task);
         } else {
@@ -2274,18 +2488,23 @@ fn elapsed_ms_since(start: &StdInstant) -> u64 {
 async fn open_tcp_bridge_stream(
     outbound: &TcpOutbound,
     target: &Target,
-    dns_upstream: Option<SocketAddr>,
+    dns_upstream: Option<&dns_proxy::DnsProxyUpstream>,
     context: &TunRuntimeContext,
 ) -> Result<BoxedTransportStream, crate::CoreError> {
     if let Some(upstream) = dns_upstream {
         match outbound {
             TcpOutbound::Freedom => {
+                let upstream = dns_proxy::resolve_freedom_dns_upstream(upstream, context).await?;
                 let stream =
                     connect_tcp_stream(upstream, context.transport_dialer.socket_protector())
                         .await?;
                 return Ok(Box::new(stream));
             }
-            TcpOutbound::Vless(_) if socket_addr_has_nonzero_scope(upstream) => {
+            TcpOutbound::Vless(_)
+                if upstream
+                    .socket_addr()
+                    .is_some_and(socket_addr_has_nonzero_scope) =>
+            {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
                     "scoped IPv6 DNS upstream cannot be encoded in a VLESS target",
@@ -2295,13 +2514,23 @@ async fn open_tcp_bridge_stream(
             TcpOutbound::Vless(_) => {}
         }
     }
-    open_tcp_stream_with_resolver_and_dialer(
-        outbound,
-        target,
-        context.dns_resolver.as_ref(),
-        &context.transport_dialer,
-    )
-    .await
+    match outbound {
+        TcpOutbound::Freedom => {
+            let target = resolve_udp_freedom_target(target, context.dns_resolver.as_ref()).await?;
+            let stream =
+                connect_tcp_stream(target, context.transport_dialer.socket_protector()).await?;
+            Ok(Box::new(stream))
+        }
+        TcpOutbound::Vless(_) => {
+            open_tcp_stream_with_resolver_and_dialer(
+                outbound,
+                target,
+                context.bootstrap_dns_resolver(),
+                &context.transport_dialer,
+            )
+            .await
+        }
+    }
 }
 
 fn socket_addr_has_nonzero_scope(addr: SocketAddr) -> bool {
@@ -2315,8 +2544,12 @@ async fn bridge_tcp_flow(
     context: TunRuntimeContext,
     from_stack: mpsc::Receiver<StackToRemoteData>,
     mut shutdown: watch::Receiver<bool>,
-    pending_open_permit: OwnedSemaphorePermit,
+    permits: TcpBridgePermits,
 ) {
+    let TcpBridgePermits {
+        pending_open,
+        dns_flow: _dns_flow_permit,
+    } = permits;
     let mut close_guard = TcpBridgeCloseGuard::new(handle, generation, context.stack_tx.clone());
     let collect_tcp_timings = context.tun_runtime_options.collect_tcp_timings;
     let tcp_timing_start = collect_tcp_timings.then(StdInstant::now);
@@ -2330,6 +2563,7 @@ async fn bridge_tcp_flow(
 
     for candidate in destination.dial_candidates() {
         let dial_target = candidate.target;
+        let dns_upstream = candidate.dns_upstream;
         let candidate_deadline = dns_deadline.map(|total_deadline| {
             total_deadline.min(TokioInstant::now() + dns_proxy::DNS_TCP_PROXY_ATTEMPT_TIMEOUT)
         });
@@ -2343,13 +2577,28 @@ async fn bridge_tcp_flow(
             biased;
             () = wait_for_tun_shutdown(&mut shutdown) => return,
             result = async {
-                let select = context.outbound_router
-                    .select_tcp_outbound_for_session_with_tag_and_resolver(
-                        context.inbound_tag.as_deref(),
-                        &dial_target,
-                        collect_tcp_timings,
-                        context.dns_resolver.as_ref(),
-                    );
+                let select = async {
+                    if is_dns_proxy {
+                        context
+                            .outbound_router
+                            .select_tcp_outbound_for_session_with_tag_and_resolver(
+                                context.inbound_tag.as_deref(),
+                                &dial_target,
+                                collect_tcp_timings,
+                                context.bootstrap_dns_resolver(),
+                            )
+                            .await
+                    } else {
+                        context.outbound_router
+                            .select_tcp_outbound_for_session_with_tag_and_resolver(
+                                context.inbound_tag.as_deref(),
+                                &dial_target,
+                                collect_tcp_timings,
+                                context.dns_resolver.as_ref(),
+                            )
+                            .await
+                    }
+                };
                 if let Some(remaining) = selection_remaining {
                     tokio::time::timeout(remaining, select)
                         .await
@@ -2404,7 +2653,7 @@ async fn bridge_tcp_flow(
                 open_tcp_bridge_stream(
                     &outbound,
                     &dial_target,
-                    candidate.dns_upstream,
+                    dns_upstream.as_ref(),
                     &context,
                 ),
             ) => result,
@@ -2428,7 +2677,7 @@ async fn bridge_tcp_flow(
             }
         }
     }
-    drop(pending_open_permit);
+    drop(pending_open);
     let Some((stream, outbound, outbound_tag, dial_target)) = opened else {
         let (error, outbound_tag) = last_failure
             .unwrap_or_else(|| ("no usable DNS TCP upstream configured".to_owned(), None));
@@ -2459,18 +2708,33 @@ async fn bridge_tcp_flow(
             &error,
         );
         if is_dns_proxy {
-            close_guard.abort().await;
+            let _ =
+                tokio::time::timeout(dns_proxy::DNS_TCP_PROXY_TOTAL_TIMEOUT, close_guard.abort())
+                    .await;
         } else {
             close_guard.close().await;
         }
         return;
     };
-    if context
-        .stack_tx
-        .send(StackEvent::RemoteOpened { handle, generation })
-        .await
-        .is_err()
-    {
+    let bridge_idle_timeout = if is_dns_proxy {
+        context
+            .inbound_policy
+            .conn_idle
+            .min(dns_proxy::DNS_TCP_PROXY_TOTAL_TIMEOUT)
+    } else {
+        context.inbound_policy.conn_idle
+    };
+    let bridge_operation_timeout = is_dns_proxy.then_some(bridge_idle_timeout);
+    if !matches!(
+        await_with_optional_timeout(
+            bridge_operation_timeout,
+            context
+                .stack_tx
+                .send(StackEvent::RemoteOpened { handle, generation }),
+        )
+        .await,
+        Some(Ok(()))
+    ) {
         return;
     }
     if context.runtime_logger.is_enabled() {
@@ -2529,6 +2793,8 @@ async fn bridge_tcp_flow(
             &mut remote_writer,
             outbound_tag.as_deref(),
             &mut timing,
+            bridge_idle_timeout,
+            bridge_operation_timeout,
         )
         .await;
     } else {
@@ -2544,10 +2810,12 @@ async fn bridge_tcp_flow(
             &mut remote_writer,
             outbound_tag.as_deref(),
             &mut timing,
+            bridge_idle_timeout,
+            bridge_operation_timeout,
         )
         .await;
     }
-    close_guard.close().await;
+    let _ = await_with_optional_timeout(bridge_operation_timeout, close_guard.close()).await;
 }
 
 async fn wait_for_tun_shutdown(shutdown: &mut watch::Receiver<bool>) {
@@ -2558,6 +2826,16 @@ async fn wait_for_tun_shutdown(shutdown: &mut watch::Receiver<bool>) {
         if *shutdown.borrow() {
             return;
         }
+    }
+}
+
+async fn await_with_optional_timeout<F>(timeout: Option<Duration>, future: F) -> Option<F::Output>
+where
+    F: std::future::Future,
+{
+    match timeout {
+        Some(timeout) => tokio::time::timeout(timeout, future).await.ok(),
+        None => Some(future.await),
     }
 }
 
@@ -2573,6 +2851,8 @@ async fn bridge_tcp_flow_loop<R, W, T>(
     remote_writer: &mut W,
     outbound_tag: Option<&str>,
     timing: &mut T,
+    idle_timeout: Duration,
+    operation_timeout: Option<Duration>,
 ) where
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
@@ -2582,6 +2862,8 @@ async fn bridge_tcp_flow_loop<R, W, T>(
     let upload_policy = context.runtime_policy.tcp_upload;
     let mut upload_batch = BytesMut::new();
     let mut upload_reservations = Vec::with_capacity(upload_policy.max_batch_messages.min(64));
+    let idle_sleep = tokio::time::sleep(idle_timeout);
+    tokio::pin!(idle_sleep);
 
     loop {
         tokio::select! {
@@ -2590,27 +2872,33 @@ async fn bridge_tcp_flow_loop<R, W, T>(
                     break;
                 }
             }
+            () = &mut idle_sleep => break,
             data = from_stack.recv() => {
                 let Some(data) = data else {
                     break;
                 };
-                if write_stack_batch_to_remote(
-                    remote_writer,
-                    target,
-                    outbound_tag,
-                    data,
-                    &mut from_stack,
-                    context.tun.as_ref(),
-                    upload_policy,
-                    &mut upload_batch,
-                    &mut upload_reservations,
+                let write = await_with_optional_timeout(
+                    operation_timeout,
+                    write_stack_batch_to_remote(
+                        remote_writer,
+                        target,
+                        outbound_tag,
+                        data,
+                        &mut from_stack,
+                        context.tun.as_ref(),
+                        upload_policy,
+                        &mut upload_batch,
+                        &mut upload_reservations,
+                    ),
                 )
-                .await
-                .is_err()
-                {
+                .await;
+                if !matches!(write, Some(Ok(()))) {
                     context.tun.record_tcp_remote_write_error();
                     break;
                 }
+                idle_sleep
+                    .as_mut()
+                    .reset(TokioInstant::now() + idle_timeout);
             }
             read = remote_reader.read(&mut read_buffer) => {
                 let read = match read {
@@ -2627,18 +2915,21 @@ async fn bridge_tcp_flow_loop<R, W, T>(
                 timing.record_first_byte(context.tun.as_ref(), target);
                 context.tun.record_tcp_remote_read(read);
                 timing.record_remote_read(context.tun.as_ref(), target, read);
-                if context
-                    .stack_tx
-                    .send(StackEvent::RemoteData {
+                let delivered = await_with_optional_timeout(
+                    operation_timeout,
+                    context.stack_tx.send(StackEvent::RemoteData {
                         handle,
                         generation,
                         data: Bytes::copy_from_slice(&read_buffer[..read]),
-                    })
-                    .await
-                    .is_err()
-                {
+                    }),
+                )
+                .await;
+                if !matches!(delivered, Some(Ok(()))) {
                     break;
                 }
+                idle_sleep
+                    .as_mut()
+                    .reset(TokioInstant::now() + idle_timeout);
             }
         }
     }
@@ -3393,9 +3684,29 @@ async fn bridge_udp_freedom_flow(
     udp_timing_start: Option<StdInstant>,
     first_payload: Bytes,
 ) {
-    let bind_addr = match key.target.addr {
-        IpAddr::V4(_) => SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
-        IpAddr::V6(_) => SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0),
+    let target_addr = match resolve_udp_freedom_target(&target, context.dns_resolver.as_ref()).await
+    {
+        Ok(target) => target,
+        Err(_) => {
+            if context.runtime_logger.is_enabled() {
+                crate::debug_log::log_access_rejected(
+                    &context.runtime_logger,
+                    "tun",
+                    &target,
+                    "udp target resolution failed",
+                );
+            }
+            context.tun.record_udp_open_error();
+            let _ = context
+                .stack_tx
+                .send(StackEvent::UdpClosed { key, generation })
+                .await;
+            return;
+        }
+    };
+    let bind_addr = match target_addr {
+        SocketAddr::V4(_) => SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
+        SocketAddr::V6(_) => SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0),
     };
     let socket = match UdpSocket::bind(bind_addr).await {
         Ok(socket) => socket,
@@ -3432,26 +3743,6 @@ async fn bridge_udp_freedom_flow(
             .await;
         return;
     }
-    let target_addr = match resolve_udp_freedom_target(&target, context.dns_resolver.as_ref()).await
-    {
-        Ok(target) => target,
-        Err(_) => {
-            if context.runtime_logger.is_enabled() {
-                crate::debug_log::log_access_rejected(
-                    &context.runtime_logger,
-                    "tun",
-                    &target,
-                    "udp target resolution failed",
-                );
-            }
-            context.tun.record_udp_open_error();
-            let _ = context
-                .stack_tx
-                .send(StackEvent::UdpClosed { key, generation })
-                .await;
-            return;
-        }
-    };
     context.tun.record_udp_remote_open(target.port == 443);
     if context.runtime_logger.is_enabled() {
         crate::debug_log::log_access_accepted(&context.runtime_logger, "tun", &target, "freedom");
@@ -3603,7 +3894,7 @@ async fn bridge_udp_vless_flow(
     let (stream, framing) = match open_vless_udp_stream_with_resolver_dialer_and_options(
         &outbound,
         &target,
-        context.dns_resolver.as_ref(),
+        context.bootstrap_dns_resolver(),
         &context.transport_dialer,
         options,
     )
@@ -4628,6 +4919,20 @@ mod tests {
 
     fn stack_to_remote_data(data: Bytes) -> StackToRemoteData {
         StackToRemoteData::untracked(data)
+    }
+
+    #[tokio::test]
+    async fn optional_bridge_operation_timeout_bounds_pending_dns_io() {
+        assert_eq!(
+            await_with_optional_timeout(None, std::future::ready(7_u8)).await,
+            Some(7)
+        );
+        assert!(await_with_optional_timeout(
+            Some(Duration::from_millis(10)),
+            std::future::pending::<()>(),
+        )
+        .await
+        .is_none());
     }
 
     #[test]
@@ -6388,6 +6693,7 @@ mod tests {
         let mut mapper = FakeIpMapper::new(FakeIpRuntimeConfig {
             ipv4_network: Ipv4Addr::new(198, 18, 0, 0),
             ipv4_prefix: 15,
+            pool_size: 32_768,
             ttl: 60,
         })
         .unwrap();
@@ -6401,7 +6707,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(first, Ipv4Addr::new(198, 18, 0, 1));
+        assert_eq!(first, Ipv4Addr::new(198, 18, 0, 3));
         assert_eq!(second, first);
         assert_eq!(
             target,
@@ -6418,20 +6724,21 @@ mod tests {
         let mut mapper = FakeIpMapper::new(FakeIpRuntimeConfig {
             ipv4_network: Ipv4Addr::new(198, 18, 0, 0),
             ipv4_prefix: 15,
+            pool_size: 32_768,
             ttl: 120,
         })
         .unwrap();
         let query = build_dns_a_query(0x1203, "www.example.com");
 
         let response = mapper.fake_dns_response(&query, false).unwrap();
-        let fake_ip = mapper.domain_for_ipv4(Ipv4Addr::new(198, 18, 0, 1));
+        let fake_ip = mapper.domain_for_ipv4(Ipv4Addr::new(198, 18, 0, 3));
 
         assert_eq!(dns_response_id(&response), Some(0x1203));
         assert_eq!(
             dns_response_answer_ipv4(&response),
-            Some(Ipv4Addr::new(198, 18, 0, 1))
+            Some(Ipv4Addr::new(198, 18, 0, 3))
         );
-        assert_eq!(fake_ip, Some("www.example.com"));
+        assert_eq!(fake_ip.as_deref(), Some("www.example.com"));
     }
 
     #[test]
@@ -6439,6 +6746,7 @@ mod tests {
         let mut mapper = FakeIpMapper::new(FakeIpRuntimeConfig {
             ipv4_network: Ipv4Addr::new(198, 18, 0, 0),
             ipv4_prefix: 15,
+            pool_size: 32_768,
             ttl: 120,
         })
         .unwrap();
@@ -6456,6 +6764,7 @@ mod tests {
         let mut mapper = FakeIpMapper::new(FakeIpRuntimeConfig {
             ipv4_network: Ipv4Addr::new(198, 18, 0, 0),
             ipv4_prefix: 15,
+            pool_size: 32_768,
             ttl: 120,
         })
         .unwrap();
@@ -6471,6 +6780,7 @@ mod tests {
         let mut mapper = FakeIpMapper::new(FakeIpRuntimeConfig {
             ipv4_network: Ipv4Addr::new(198, 18, 0, 0),
             ipv4_prefix: 15,
+            pool_size: 32_768,
             ttl: 120,
         })
         .unwrap();
@@ -6487,6 +6797,7 @@ mod tests {
         let mut mapper = FakeIpMapper::new(FakeIpRuntimeConfig {
             ipv4_network: Ipv4Addr::new(198, 18, 0, 0),
             ipv4_prefix: 15,
+            pool_size: 32_768,
             ttl: 120,
         })
         .unwrap();
@@ -6498,20 +6809,61 @@ mod tests {
     }
 
     #[test]
-    fn fake_dns_response_returns_servfail_when_pool_is_exhausted() {
+    fn fake_dns_response_rolls_over_single_entry_pool() {
         let mut mapper = FakeIpMapper::new(FakeIpRuntimeConfig {
             ipv4_network: Ipv4Addr::new(198, 19, 0, 1),
             ipv4_prefix: 32,
+            pool_size: 1,
             ttl: 120,
         })
         .unwrap();
         let first_query = build_dns_a_query(0x1208, "first.example.com");
         let second_query = build_dns_a_query(0x1209, "second.example.com");
-        mapper.fake_dns_response(&first_query, false).unwrap();
+        let first_response = mapper.fake_dns_response(&first_query, false).unwrap();
 
         let response = mapper.fake_dns_response(&second_query, false).unwrap();
 
-        assert_eq!(u16::from_be_bytes([response[2], response[3]]) & 0x000f, 2);
+        assert_eq!(u16::from_be_bytes([response[2], response[3]]) & 0x000f, 0);
+        assert_eq!(
+            dns_response_answer_ipv4(&response),
+            dns_response_answer_ipv4(&first_response)
+        );
+        assert_eq!(
+            mapper
+                .domain_for_ipv4(Ipv4Addr::new(198, 19, 0, 1))
+                .as_deref(),
+            Some("second.example.com")
+        );
+    }
+
+    #[test]
+    fn fake_ip_mapper_evicts_least_recently_used_mapping_at_limit() {
+        let mut mapper = FakeIpMapper::new(FakeIpRuntimeConfig {
+            ipv4_network: Ipv4Addr::new(198, 18, 0, 0),
+            ipv4_prefix: 15,
+            pool_size: 2,
+            ttl: 120,
+        })
+        .unwrap();
+
+        let first = mapper.fake_ipv4_for_domain("first.example").unwrap();
+        let second = mapper.fake_ipv4_for_domain("second.example").unwrap();
+        assert_eq!(mapper.fake_ipv4_for_domain("first.example"), Some(first));
+        let third = mapper.fake_ipv4_for_domain("third.example").unwrap();
+
+        assert_eq!(first, Ipv4Addr::new(198, 18, 0, 3));
+        assert_eq!(second, Ipv4Addr::new(198, 18, 0, 4));
+        assert_eq!(third, Ipv4Addr::new(198, 18, 0, 5));
+        assert_eq!(
+            mapper.domain_for_ipv4(first).as_deref(),
+            Some("first.example")
+        );
+        assert!(mapper.domain_for_ipv4(second).is_none());
+        assert_eq!(
+            mapper.domain_for_ipv4(third).as_deref(),
+            Some("third.example")
+        );
+        assert_eq!(mapper.by_domain.len(), 2);
     }
 
     #[test]
@@ -6519,6 +6871,7 @@ mod tests {
         let mut mapper = FakeIpMapper::new(FakeIpRuntimeConfig {
             ipv4_network: Ipv4Addr::new(198, 18, 0, 0),
             ipv4_prefix: 15,
+            pool_size: 32_768,
             ttl: 60,
         })
         .unwrap();
@@ -6538,7 +6891,7 @@ mod tests {
             ipv4_udp_payload_for_destination(&reply, 53_000)
                 .as_deref()
                 .and_then(dns_response_answer_ipv4),
-            Some(Ipv4Addr::new(198, 18, 0, 1))
+            Some(Ipv4Addr::new(198, 18, 0, 3))
         );
     }
 

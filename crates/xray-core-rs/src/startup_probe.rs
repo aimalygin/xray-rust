@@ -5,7 +5,7 @@ use tokio::time::timeout;
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::{DnsResolver, TlsClientConfig, TlsConnector, TransportDialer};
 
-use crate::outbound::open_tcp_stream_with_resolver_and_dialer;
+use crate::outbound::open_tcp_stream_with_resolvers_and_dialer;
 use crate::{CoreError, OutboundRouter};
 
 const MAX_HTTP_STATUS_LINE_LEN: usize = 1024;
@@ -79,7 +79,8 @@ pub enum StartupProbeError {
 pub(crate) async fn run_startup_probe(
     outbound_router: &OutboundRouter,
     options: StartupProbeOptions,
-    dns_resolver: &dyn DnsResolver,
+    destination_resolver: &dyn DnsResolver,
+    bootstrap_resolver: &dyn DnsResolver,
     transport_dialer: &TransportDialer,
 ) -> Result<(), StartupProbeError> {
     let timeout_ms = options.timeout.as_millis();
@@ -89,7 +90,8 @@ pub(crate) async fn run_startup_probe(
         run_startup_probe_inner(
             outbound_router,
             &options,
-            dns_resolver,
+            destination_resolver,
+            bootstrap_resolver,
             transport_dialer,
             None,
         ),
@@ -107,7 +109,8 @@ pub(crate) fn diagnostic_probe_url(raw: &str) -> String {
 async fn run_startup_probe_inner(
     outbound_router: &OutboundRouter,
     options: &StartupProbeOptions,
-    dns_resolver: &dyn DnsResolver,
+    destination_resolver: &dyn DnsResolver,
+    bootstrap_resolver: &dyn DnsResolver,
     transport_dialer: &TransportDialer,
     tls_connector: Option<&TlsConnector>,
 ) -> Result<(), StartupProbeError> {
@@ -127,10 +130,11 @@ async fn run_startup_probe_inner(
     );
     let mut stream = timeout(
         step_timeout,
-        open_tcp_stream_with_resolver_and_dialer(
+        open_tcp_stream_with_resolvers_and_dialer(
             &outbound,
             &target,
-            dns_resolver,
+            destination_resolver,
+            bootstrap_resolver,
             transport_dialer,
         ),
     )
@@ -709,6 +713,7 @@ mod https_tests {
             run_startup_probe_inner(
                 &outbound_router,
                 &options,
+                &resolver,
                 &resolver,
                 &transport_dialer,
                 Some(&tls),

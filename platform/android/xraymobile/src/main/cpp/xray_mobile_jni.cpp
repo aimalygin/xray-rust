@@ -490,6 +490,25 @@ Java_org_xrayrust_mobile_XrayCore_nativeSetTunCollectTcpTimings(
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_org_xrayrust_mobile_XrayCore_nativeSetDnsBootstrapMode(
+    JNIEnv *env,
+    jobject,
+    jlong handle,
+    jint mode) {
+  NativeCore *native = core_from_handle(handle);
+  if (native == nullptr || native->core == nullptr) {
+    return;
+  }
+
+  XrayError *error = nullptr;
+  XrayStatus status = xray_core_set_dns_bootstrap_mode(
+      native->core,
+      static_cast<int32_t>(mode),
+      &error);
+  check_status(env, status, error);
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativeStart(JNIEnv *env, jobject, jlong handle) {
   NativeCore *native = core_from_handle(handle);
   if (native == nullptr || native->core == nullptr) {

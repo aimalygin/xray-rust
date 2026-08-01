@@ -11,6 +11,9 @@ public enum XrayPacketTunnelProviderError: Error, LocalizedError {
     case missingConfigJSON
     case invalidStartupProbeConfiguration
     case invalidDNSConfiguration
+    case invalidDNSRoutingTopology
+    case outboundServerResolutionFailed
+    case dnsBootstrapTimedOut
     case startSuperseded
 
     public var errorDescription: String? {
@@ -20,7 +23,13 @@ public enum XrayPacketTunnelProviderError: Error, LocalizedError {
         case .invalidStartupProbeConfiguration:
             return "Startup probe requires an explicit HTTP or HTTPS URL and a valid timeout."
         case .invalidDNSConfiguration:
-            return "DNS requires enabled dns.fakeIp, an IP-literal dns.servers upstream, or explicit IPv4 servers; fake-IP cannot be combined with explicit servers."
+            return "DNS requires enabled dns.fakeIp, at least one dns.servers upstream, or explicit IP servers; fake-IP cannot be combined with explicit servers."
+        case .invalidDNSRoutingTopology:
+            return "Fake-IP without dns.servers cannot use Freedom as the default or from a TUN domain-capable routing rule."
+        case .outboundServerResolutionFailed:
+            return "A proxy or DNS bootstrap hostname could not be resolved before tunnel DNS interception was enabled."
+        case .dnsBootstrapTimedOut:
+            return "DNS bootstrap resolution exceeded the overall preflight deadline."
         case .startSuperseded:
             return "Tunnel start was superseded by a newer lifecycle request."
         }
@@ -91,6 +100,7 @@ final class XrayPacketTunnelLifecycle<Resource> {
     private let stopResource: (Resource) -> Void
     private var generation: UInt64 = 0
     private var activeResource: Resource?
+    private var pendingStartCancellation: (generation: UInt64, cancel: () -> Void)?
 
     init(stopResource: @escaping (Resource) -> Void) {
         self.stopResource = stopResource
@@ -98,13 +108,19 @@ final class XrayPacketTunnelLifecycle<Resource> {
 
     func beginStart() -> Token {
         lock.lock()
-        defer { lock.unlock() }
         generation &+= 1
-        if let activeResource {
-            self.activeResource = nil
-            stopResource(activeResource)
+        let cancellation = pendingStartCancellation?.cancel
+        pendingStartCancellation = nil
+        let resource = activeResource
+        activeResource = nil
+        let token = Token(generation: generation)
+        lock.unlock()
+
+        cancellation?()
+        if let resource {
+            stopResource(resource)
         }
-        return Token(generation: generation)
+        return token
     }
 
     func isCurrent(_ token: Token) -> Bool {
@@ -116,12 +132,13 @@ final class XrayPacketTunnelLifecycle<Resource> {
     @discardableResult
     func install(_ resource: Resource, for token: Token) -> Bool {
         lock.lock()
-        defer { lock.unlock() }
         guard token.generation == generation, activeResource == nil else {
+            lock.unlock()
             stopResource(resource)
             return false
         }
         activeResource = resource
+        lock.unlock()
         return true
     }
 
@@ -139,35 +156,78 @@ final class XrayPacketTunnelLifecycle<Resource> {
     @discardableResult
     func cancelStart(_ token: Token) -> Bool {
         lock.lock()
-        defer { lock.unlock() }
         guard token.generation == generation else {
+            lock.unlock()
             return false
         }
         generation &+= 1
+        let cancellation = pendingStartCancellation?.cancel
+        pendingStartCancellation = nil
+        lock.unlock()
+        cancellation?()
+        return true
+    }
+
+    @discardableResult
+    func registerPendingStartCancellation(
+        for token: Token,
+        _ cancellation: @escaping () -> Void
+    ) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard token.generation == generation,
+              pendingStartCancellation == nil,
+              activeResource == nil
+        else {
+            return false
+        }
+        pendingStartCancellation = (token.generation, cancellation)
+        return true
+    }
+
+    @discardableResult
+    func clearPendingStartCancellation(for token: Token) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard pendingStartCancellation?.generation == token.generation else {
+            return false
+        }
+        pendingStartCancellation = nil
         return true
     }
 
     func stop() {
         lock.lock()
-        defer { lock.unlock() }
         generation &+= 1
-        if let activeResource {
-            self.activeResource = nil
-            stopResource(activeResource)
+        let cancellation = pendingStartCancellation?.cancel
+        pendingStartCancellation = nil
+        let resource = activeResource
+        activeResource = nil
+        lock.unlock()
+
+        cancellation?()
+        if let resource {
+            stopResource(resource)
         }
     }
 
     @discardableResult
     func stop(ifCurrent token: Token) -> Bool {
         lock.lock()
-        defer { lock.unlock() }
         guard token.generation == generation else {
+            lock.unlock()
             return false
         }
         generation &+= 1
-        if let activeResource {
-            self.activeResource = nil
-            stopResource(activeResource)
+        let cancellation = pendingStartCancellation?.cancel
+        pendingStartCancellation = nil
+        let resource = activeResource
+        activeResource = nil
+        lock.unlock()
+
+        cancellation?()
+        if let resource {
+            stopResource(resource)
         }
         return true
     }
@@ -176,6 +236,156 @@ final class XrayPacketTunnelLifecycle<Resource> {
         lock.lock()
         defer { lock.unlock() }
         return activeResource
+    }
+}
+
+final class XrayPacketTunnelWorkGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var isOccupied = false
+
+    func tryAcquire() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !isOccupied else {
+            return false
+        }
+        isOccupied = true
+        return true
+    }
+
+    func release() {
+        lock.lock()
+        isOccupied = false
+        lock.unlock()
+    }
+}
+
+final class XrayPacketTunnelBoundedTask<Output>: @unchecked Sendable {
+    typealias Work = (_ shouldContinue: @escaping () -> Bool) throws -> Output
+    typealias Completion = (Result<Output, Error>) -> Void
+
+    private enum State: Equatable {
+        case initialized
+        case running
+        case finished
+    }
+
+    private let lock = NSLock()
+    private let deadline: DispatchTime
+    private let workQueue: DispatchQueue
+    private let workGate: XrayPacketTunnelWorkGate?
+    private let timerQueue: DispatchQueue
+    private let completionQueue: DispatchQueue
+    private let timeoutError: Error
+    private var completion: Completion?
+    private var state = State.initialized
+    private var timer: DispatchSourceTimer?
+    private var workItem: DispatchWorkItem?
+
+    init(
+        deadline: DispatchTime,
+        workQueue: DispatchQueue,
+        workGate: XrayPacketTunnelWorkGate? = nil,
+        timerQueue: DispatchQueue,
+        completionQueue: DispatchQueue,
+        timeoutError: Error,
+        completion: @escaping Completion
+    ) {
+        self.deadline = deadline
+        self.workQueue = workQueue
+        self.workGate = workGate
+        self.timerQueue = timerQueue
+        self.completionQueue = completionQueue
+        self.timeoutError = timeoutError
+        self.completion = completion
+    }
+
+    @discardableResult
+    func start(_ work: @escaping Work) -> Bool {
+        lock.lock()
+        guard state == .initialized else {
+            lock.unlock()
+            return false
+        }
+
+        let timer = DispatchSource.makeTimerSource(queue: timerQueue)
+        timer.schedule(deadline: deadline)
+        timer.setEventHandler { [weak self] in
+            guard let self else {
+                return
+            }
+            self.finish(.failure(self.timeoutError))
+        }
+
+        let workGate = self.workGate
+        let workItem = DispatchWorkItem { [weak self, workGate] in
+            defer { workGate?.release() }
+            guard let self else {
+                return
+            }
+            guard self.shouldContinue() else {
+                self.finish(.failure(self.timeoutError))
+                return
+            }
+            let result = Result {
+                try work { [weak self] in
+                    self?.shouldContinue() == true
+                }
+            }
+            self.finish(result, enforceDeadline: true)
+        }
+
+        state = .running
+        self.timer = timer
+        timer.resume()
+        let acquiredWorker = workGate?.tryAcquire() ?? true
+        if acquiredWorker {
+            self.workItem = workItem
+            workQueue.async(execute: workItem)
+        }
+        lock.unlock()
+        return acquiredWorker
+    }
+
+    func cancel(with error: Error) {
+        finish(.failure(error))
+    }
+
+    func shouldContinue() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return state != .finished && DispatchTime.now() < deadline
+    }
+
+    private func finish(
+        _ result: Result<Output, Error>,
+        enforceDeadline: Bool = false
+    ) {
+        lock.lock()
+        guard state != .finished else {
+            lock.unlock()
+            return
+        }
+        let finalResult: Result<Output, Error>
+        if enforceDeadline, DispatchTime.now() >= deadline {
+            finalResult = .failure(timeoutError)
+        } else {
+            finalResult = result
+        }
+        state = .finished
+        timer?.setEventHandler {}
+        timer?.cancel()
+        timer = nil
+        workItem = nil
+        let completion = self.completion
+        self.completion = nil
+        lock.unlock()
+
+        if let completion {
+            completionQueue.async {
+                completion(finalResult)
+            }
+        }
     }
 }
 
@@ -191,14 +401,30 @@ private final class XrayWeakReference<Value: AnyObject>: @unchecked Sendable {
 open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
     private static let defaultStartupProbeTimeoutMs: UInt64 = 5_000
     private static let maximumStartupProbeTimeoutMs: UInt64 = 60_000
+    private static let dnsBootstrapTimeout: DispatchTimeInterval = .seconds(5)
     private static let maximumCustomDNSServers = 8
+    private static let maximumDNSHostAliasDepth = 8
     static let tunnelRemoteAddress = "198.18.0.1"
+    static let tunnelLocalIPv6Address = "fd00:7872::2"
     private static let debugStatsHandler: @Sendable (XrayCore) -> Void = {
         logDebugStats($0)
     }
+    private static let dnsBootstrapWorkQueue = DispatchQueue(
+        label: "org.xrayrust.apple.packet-tunnel.dns-bootstrap.worker",
+        qos: .userInitiated
+    )
+    private static let dnsBootstrapTimerQueue = DispatchQueue(
+        label: "org.xrayrust.apple.packet-tunnel.dns-bootstrap.deadline",
+        qos: .userInitiated
+    )
+    private static let dnsBootstrapWorkGate = XrayPacketTunnelWorkGate()
 
     private let debugStatsQueue = DispatchQueue(
         label: "org.xrayrust.apple.packet-tunnel.debug-stats"
+    )
+    private let dnsBootstrapCompletionQueue = DispatchQueue(
+        label: "org.xrayrust.apple.packet-tunnel.dns-bootstrap.completion",
+        qos: .userInitiated
     )
     private lazy var lifecycle = XrayPacketTunnelLifecycle<XrayPacketTunnelRuntime> {
         $0.stop()
@@ -208,6 +434,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         options: [String: NSObject]?,
         completionHandler: @escaping (Error?) -> Void
     ) {
+        let dnsBootstrapDeadline = DispatchTime.now() + Self.dnsBootstrapTimeout
         let optionKeys = options?.keys.sorted().joined(separator: ",") ?? "none"
         XrayAppleLog.info(
             "PacketTunnelProvider",
@@ -250,19 +477,93 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             completionHandler(XrayPacketTunnelProviderError.invalidDNSConfiguration)
             return
         }
-        do {
-            try Self.validateConfigBeforeApplyingNetworkSettings(resolvedConfig.json)
-        } catch {
-            if lifecycle.cancelStart(lifecycleToken) {
-                XrayAppleLog.configureFileLogging(directory: nil)
+        startDNSBootstrapPreflight(
+            resolvedConfig: resolvedConfig,
+            deadline: dnsBootstrapDeadline,
+            lifecycleToken: lifecycleToken,
+            completionHandler: completionHandler
+        )
+    }
+
+    private func startDNSBootstrapPreflight(
+        resolvedConfig: ResolvedConfig,
+        deadline: DispatchTime,
+        lifecycleToken: XrayPacketTunnelLifecycle<XrayPacketTunnelRuntime>.Token,
+        completionHandler: @escaping (Error?) -> Void
+    ) {
+        let task = XrayPacketTunnelBoundedTask<ResolvedConfig>(
+            deadline: deadline,
+            workQueue: Self.dnsBootstrapWorkQueue,
+            workGate: Self.dnsBootstrapWorkGate,
+            timerQueue: Self.dnsBootstrapTimerQueue,
+            completionQueue: dnsBootstrapCompletionQueue,
+            timeoutError: XrayPacketTunnelProviderError.dnsBootstrapTimedOut
+        ) { [weak self] result in
+            guard let self else {
+                completionHandler(CocoaError(.userCancelled))
+                return
             }
-            XrayAppleLog.error(
-                "PacketTunnelProvider",
-                "Config validation failed before network settings: \(error.localizedDescription)"
-            )
-            completionHandler(error)
+            _ = self.lifecycle.clearPendingStartCancellation(for: lifecycleToken)
+            guard self.lifecycle.isCurrent(lifecycleToken) else {
+                XrayAppleLog.info(
+                    "PacketTunnelProvider",
+                    "Ignoring superseded DNS bootstrap preflight result"
+                )
+                completionHandler(XrayPacketTunnelProviderError.startSuperseded)
+                return
+            }
+            switch result {
+            case let .success(preparedConfig):
+                self.applyNetworkSettingsAndStartRuntime(
+                    resolvedConfig: preparedConfig,
+                    lifecycleToken: lifecycleToken,
+                    completionHandler: completionHandler
+                )
+            case let .failure(error):
+                if self.lifecycle.cancelStart(lifecycleToken) {
+                    XrayAppleLog.configureFileLogging(directory: nil)
+                }
+                XrayAppleLog.error(
+                    "PacketTunnelProvider",
+                    "Config validation or DNS bootstrap failed before network settings: \(error.localizedDescription)"
+                )
+                completionHandler(error)
+            }
+        }
+
+        guard lifecycle.registerPendingStartCancellation(
+            for: lifecycleToken,
+            { task.cancel(with: XrayPacketTunnelProviderError.startSuperseded) }
+        ) else {
+            task.cancel(with: XrayPacketTunnelProviderError.startSuperseded)
             return
         }
+
+        task.start { shouldContinue in
+            guard shouldContinue() else {
+                throw XrayPacketTunnelProviderError.dnsBootstrapTimedOut
+            }
+            try Self.validateConfigBeforeApplyingNetworkSettings(resolvedConfig.json)
+            guard shouldContinue() else {
+                throw XrayPacketTunnelProviderError.dnsBootstrapTimedOut
+            }
+            let preparedConfig = try Self.configPinningOutboundServerAddresses(
+                resolvedConfig,
+                shouldContinue: shouldContinue
+            )
+            guard shouldContinue() else {
+                throw XrayPacketTunnelProviderError.dnsBootstrapTimedOut
+            }
+            try Self.validateConfigBeforeApplyingNetworkSettings(preparedConfig.json)
+            return preparedConfig
+        }
+    }
+
+    private func applyNetworkSettingsAndStartRuntime(
+        resolvedConfig: ResolvedConfig,
+        lifecycleToken: XrayPacketTunnelLifecycle<XrayPacketTunnelRuntime>.Token,
+        completionHandler: @escaping (Error?) -> Void
+    ) {
         guard let resolvedDNSConfiguration = Self.resolvedDNSConfiguration(
             configJSON: resolvedConfig.json,
             explicit: resolvedConfig.dnsConfiguration
@@ -272,7 +573,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             }
             XrayAppleLog.error(
                 "PacketTunnelProvider",
-                "DNS unavailable: enable dns.fakeIp, configure an IP-literal dns.servers upstream, or configure explicit IPv4 servers"
+                "DNS unavailable: enable dns.fakeIp, configure dns.servers, or configure explicit IP servers"
             )
             completionHandler(XrayPacketTunnelProviderError.invalidDNSConfiguration)
             return
@@ -517,17 +818,8 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             )
             return nil
         }
-        let configJSON: String
-        switch selectedDNSConfiguration {
-        case .system:
-            configJSON = XrayClientProfile.configJSONAddingFakeIPToLegacyDirectConfigIfNeeded(
-                storedConfigJSON
-            )
-        case .custom, .invalid:
-            configJSON = storedConfigJSON
-        }
         return ResolvedConfig(
-            json: configJSON,
+            json: storedConfigJSON,
             source: optionReference == nil ? "providerConfigurationReference" : "startOptionReference",
             serverAddress: serverAddress,
             debugLoggingEnabled: isDebugLoggingEnabled,
@@ -536,6 +828,260 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             startupProbeConfiguration: selectedStartupProbeConfiguration,
             dnsConfiguration: selectedDNSConfiguration
         )
+    }
+
+    static func configPinningOutboundServerAddresses(
+        _ resolvedConfig: ResolvedConfig,
+        shouldContinue: () -> Bool = { true },
+        resolveAddress: (String) -> String? = { systemIPAddress($0) }
+    ) throws -> ResolvedConfig {
+        guard shouldContinue() else {
+            throw XrayPacketTunnelProviderError.dnsBootstrapTimedOut
+        }
+        guard let data = resolvedConfig.json.data(using: .utf8),
+              var root = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            return resolvedConfig
+        }
+
+        var requiredDomains: [String] = []
+        var seenRequiredDomains = Set<String>()
+        var vlessDomains = Set<String>()
+        let outbounds = root["outbounds"] as? [[String: Any]] ?? []
+        for outbound in outbounds {
+            guard (outbound["protocol"] as? String)?.lowercased() == "vless",
+                  let settings = outbound["settings"] as? [String: Any],
+                  let vnext = settings["vnext"] as? [[String: Any]],
+                  !vnext.isEmpty
+            else {
+                continue
+            }
+            for server in vnext {
+                guard let rawAddress = server["address"] as? String,
+                      !isIPAddress(rawAddress, family: AF_INET),
+                      !isIPAddress(rawAddress, family: AF_INET6)
+                else {
+                    continue
+                }
+                guard let domain = canonicalDNSBootstrapDomain(rawAddress) else {
+                    throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
+                }
+
+                // Preserve the exact configured VLESS address for routing and
+                // TLS metadata. Only the dns.hosts lookup key is canonical.
+                vlessDomains.insert(domain)
+                appendBootstrapDomain(
+                    domain,
+                    to: &requiredDomains,
+                    seen: &seenRequiredDomains
+                )
+            }
+        }
+
+        var dns = root["dns"] as? [String: Any] ?? [:]
+        if let servers = dns["servers"] as? [Any] {
+            for rawServer in servers {
+                guard let server = rawServer as? String,
+                      let domain = dnsBootstrapDomain(fromServer: server)
+                else {
+                    continue
+                }
+                appendBootstrapDomain(
+                    domain,
+                    to: &requiredDomains,
+                    seen: &seenRequiredDomains
+                )
+            }
+        }
+
+        guard !requiredDomains.isEmpty else {
+            return resolvedConfig
+        }
+
+        let rawHosts = dns["hosts"]
+        guard rawHosts == nil || rawHosts is [String: Any] else {
+            throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
+        }
+        var hosts = rawHosts as? [String: Any] ?? [:]
+        var exactMappings = try canonicalExactDNSHostMappings(hosts)
+        var bootstrapAddressByDomain: [String: String] = [:]
+        for domain in requiredDomains {
+            guard shouldContinue() else {
+                throw XrayPacketTunnelProviderError.dnsBootstrapTimedOut
+            }
+            bootstrapAddressByDomain[domain] = try bootstrapIPAddress(
+                for: domain,
+                exactMappings: &exactMappings,
+                shouldContinue: shouldContinue,
+                resolveAddress: resolveAddress
+            )
+        }
+
+        for key in hosts.keys.filter({ $0.hasPrefix("full:") }) {
+            hosts.removeValue(forKey: key)
+        }
+        for (domain, target) in exactMappings {
+            hosts["full:\(domain)"] = target
+        }
+        dns["hosts"] = hosts
+        root["dns"] = dns
+        let pinnedData = try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
+        guard let pinnedJSON = String(data: pinnedData, encoding: .utf8) else {
+            throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
+        }
+
+        var prepared = resolvedConfig
+        prepared.json = pinnedJSON
+        if let serverAddress = prepared.serverAddress,
+           let domain = canonicalDNSBootstrapDomain(serverAddress),
+           vlessDomains.contains(domain),
+           let pinnedAddress = bootstrapAddressByDomain[domain]
+        {
+            prepared.serverAddress = pinnedAddress
+        }
+        return prepared
+    }
+
+    private static func appendBootstrapDomain(
+        _ domain: String,
+        to domains: inout [String],
+        seen: inout Set<String>
+    ) {
+        if seen.insert(domain).inserted {
+            domains.append(domain)
+        }
+    }
+
+    private static func dnsBootstrapDomain(fromServer server: String) -> String? {
+        if isNonzeroIPLiteralDNSServer(server) {
+            return nil
+        }
+        if let separator = server.lastIndex(of: ":"),
+           !server[..<separator].contains(":"),
+           UInt16(server[server.index(after: separator)...]) != nil
+        {
+            return canonicalDNSBootstrapDomain(String(server[..<separator]))
+        }
+        return canonicalDNSBootstrapDomain(server)
+    }
+
+    private static func canonicalDNSBootstrapDomain(_ rawDomain: String) -> String? {
+        var domain = rawDomain.trimmingCharacters(in: .whitespacesAndNewlines)
+        while domain.last == "." {
+            domain.removeLast()
+        }
+        guard !domain.isEmpty,
+              !isIPAddress(domain, family: AF_INET),
+              !isIPAddress(domain, family: AF_INET6)
+        else {
+            return nil
+        }
+        return domain.lowercased()
+    }
+
+    private static func canonicalExactDNSHostMappings(
+        _ hosts: [String: Any]
+    ) throws -> [String: String] {
+        var mappings: [String: String] = [:]
+        for key in hosts.keys.sorted() where key.hasPrefix("full:") {
+            guard let domain = canonicalDNSBootstrapDomain(String(key.dropFirst("full:".count))),
+                  let rawTarget = hosts[key] as? String,
+                  let target = canonicalDNSHostTarget(rawTarget)
+            else {
+                throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
+            }
+            if let existing = mappings[domain], existing != target {
+                throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
+            }
+            mappings[domain] = target
+        }
+        return mappings
+    }
+
+    private static func canonicalDNSHostTarget(_ rawTarget: String) -> String? {
+        let target = rawTarget.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let address = canonicalIPAddress(target) {
+            return address
+        }
+        return canonicalDNSBootstrapDomain(target)
+    }
+
+    private static func bootstrapIPAddress(
+        for domain: String,
+        exactMappings: inout [String: String],
+        shouldContinue: () -> Bool,
+        resolveAddress: (String) -> String?
+    ) throws -> String {
+        var current = domain
+        var visited = Set<String>()
+        for depth in 0 ..< maximumDNSHostAliasDepth {
+            guard shouldContinue() else {
+                throw XrayPacketTunnelProviderError.dnsBootstrapTimedOut
+            }
+            guard visited.insert(current).inserted else {
+                throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
+            }
+            guard let target = exactMappings[current] else {
+                guard shouldContinue() else {
+                    throw XrayPacketTunnelProviderError.dnsBootstrapTimedOut
+                }
+                guard let resolvedAddress = resolveAddress(current),
+                      let address = canonicalIPAddress(resolvedAddress)
+                else {
+                    throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
+                }
+                exactMappings[current] = address
+                return address
+            }
+            if let address = canonicalIPAddress(target) {
+                return address
+            }
+            guard let alias = canonicalDNSBootstrapDomain(target),
+                  depth + 1 < maximumDNSHostAliasDepth
+            else {
+                throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
+            }
+            current = alias
+        }
+        throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
+    }
+
+    private static func systemIPAddress(_ domain: String) -> String? {
+        var hints = addrinfo()
+        // AF_UNSPEC preserves getaddrinfo's reachability ordering and allows
+        // DNS64 to return a synthesized IPv6 address on IPv6-only networks.
+        hints.ai_family = AF_UNSPEC
+        var result: UnsafeMutablePointer<addrinfo>?
+        guard getaddrinfo(domain, nil, &hints, &result) == 0, let result else {
+            return nil
+        }
+        defer { freeaddrinfo(result) }
+
+        var cursor: UnsafeMutablePointer<addrinfo>? = result
+        while let current = cursor {
+            let info = current.pointee
+            if info.ai_family == AF_INET, let address = info.ai_addr {
+                var ipv4 = address.withMemoryRebound(
+                    to: sockaddr_in.self,
+                    capacity: 1
+                ) { $0.pointee.sin_addr }
+                var buffer = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+                if inet_ntop(AF_INET, &ipv4, &buffer, socklen_t(INET_ADDRSTRLEN)) != nil {
+                    return String(cString: buffer)
+                }
+            } else if info.ai_family == AF_INET6, let address = info.ai_addr {
+                var ipv6 = address.withMemoryRebound(
+                    to: sockaddr_in6.self,
+                    capacity: 1
+                ) { $0.pointee.sin6_addr }
+                var buffer = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
+                if inet_ntop(AF_INET6, &ipv6, &buffer, socklen_t(INET6_ADDRSTRLEN)) != nil {
+                    return String(cString: buffer)
+                }
+            }
+            cursor = info.ai_next
+        }
+        return nil
     }
 
     static func debugLoggingEnabled(
@@ -760,11 +1306,25 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         if let excludedRoute = ipv4ExcludedRoute(for: serverAddress) {
             XrayAppleLog.info(
                 "PacketTunnelProvider",
-                "Excluding proxy server IPv4 route \(excludedRoute.destinationAddress)/32 from tunnel"
+                "Excluding proxy server IPv4 /32 route from tunnel"
             )
             ipv4Settings.excludedRoutes = [excludedRoute]
         }
         settings.ipv4Settings = ipv4Settings
+
+        let ipv6Settings = NEIPv6Settings(
+            addresses: [tunnelLocalIPv6Address],
+            networkPrefixLengths: [128]
+        )
+        ipv6Settings.includedRoutes = [NEIPv6Route.default()]
+        if let excludedRoute = ipv6ExcludedRoute(for: serverAddress) {
+            XrayAppleLog.info(
+                "PacketTunnelProvider",
+                "Excluding proxy server IPv6 /128 route from tunnel"
+            )
+            ipv6Settings.excludedRoutes = [excludedRoute]
+        }
+        settings.ipv6Settings = ipv6Settings
 
         // A full tunnel must install an explicit DNS destination. Otherwise
         // the system resolver can be routed into the tunnel and blackhole.
@@ -788,7 +1348,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         explicit: XrayPacketTunnelDNSConfiguration
     ) -> XrayPacketTunnelResolvedDNSConfiguration? {
         let hasFakeIP = fakeIPDNSIsAvailable(configJSON)
-        let hasIPLiteralUpstream = ipLiteralDNSUpstreamIsAvailable(configJSON)
+        let hasConfiguredUpstream = configuredDNSUpstreamIsAvailable(configJSON)
         switch explicit {
         case let .custom(servers) where !hasFakeIP:
             return .custom(servers)
@@ -797,7 +1357,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         case .invalid:
             return nil
         case .system:
-            return hasFakeIP || hasIPLiteralUpstream ? .localDNSAnchor : nil
+            return hasFakeIP || hasConfiguredUpstream ? .localDNSAnchor : nil
         }
     }
 
@@ -809,6 +1369,71 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             configJSON: configJSON,
             geodataSearchDirectory: geodataSearchDirectory
         )
+        try validateMobileDNSRoutingTopology(configJSON)
+    }
+
+    private static func validateMobileDNSRoutingTopology(_ configJSON: String) throws {
+        guard let data = configJSON.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let dns = root["dns"] as? [String: Any],
+              let fakeIP = dns["fakeIp"] as? [String: Any],
+              isJSONBooleanTrue(fakeIP["enabled"]),
+              (dns["servers"] as? [Any] ?? []).isEmpty
+        else {
+            return
+        }
+
+        let outbounds = root["outbounds"] as? [[String: Any]] ?? []
+        if let defaultOutbound = outbounds.first,
+           (defaultOutbound["protocol"] as? String)?.lowercased() == "freedom"
+        {
+            throw XrayPacketTunnelProviderError.invalidDNSRoutingTopology
+        }
+
+        let freedomTags = Set(outbounds.compactMap { outbound -> String? in
+            guard (outbound["protocol"] as? String)?.lowercased() == "freedom" else {
+                return nil
+            }
+            return outbound["tag"] as? String
+        })
+        guard !freedomTags.isEmpty else {
+            return
+        }
+
+        let inbounds = root["inbounds"] as? [[String: Any]] ?? []
+        let tunInbounds = inbounds.filter {
+            ($0["protocol"] as? String)?.lowercased() == "tun"
+        }
+        guard !tunInbounds.isEmpty else {
+            return
+        }
+        let tunInboundTags = Set(tunInbounds.compactMap { $0["tag"] as? String })
+        let routing = root["routing"] as? [String: Any]
+        let rules = routing?["rules"] as? [[String: Any]] ?? []
+        for rule in rules {
+            guard let outboundTag = rule["outboundTag"] as? String,
+                  freedomTags.contains(outboundTag),
+                  routingRuleAppliesToTun(rule, tunInboundTags: tunInboundTags)
+            else {
+                continue
+            }
+
+            let domains = (rule["domain"] as? [Any] ?? [])
+                + (rule["domains"] as? [Any] ?? [])
+            let ips = rule["ip"] as? [Any] ?? []
+            let isIPOnly = domains.isEmpty && !ips.isEmpty
+            if !isIPOnly {
+                throw XrayPacketTunnelProviderError.invalidDNSRoutingTopology
+            }
+        }
+    }
+
+    private static func routingRuleAppliesToTun(
+        _ rule: [String: Any],
+        tunInboundTags: Set<String>
+    ) -> Bool {
+        let inboundTags = rule["inboundTag"] as? [String] ?? []
+        return inboundTags.isEmpty || !tunInboundTags.isDisjoint(with: inboundTags)
     }
 
     private static func fakeIPDNSIsAvailable(_ configJSON: String) -> Bool {
@@ -817,7 +1442,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
               let dns = root["dns"] as? [String: Any],
               let fakeIP = dns["fakeIp"] as? [String: Any],
               Set(dns.keys).isSubset(of: ["fakeIp", "servers", "hosts"]),
-              Set(fakeIP.keys).isSubset(of: ["enabled", "ipv4Pool", "ttl"]),
+              Set(fakeIP.keys).isSubset(of: ["enabled", "ipv4Pool", "poolSize", "ttl"]),
               isJSONBooleanTrue(fakeIP["enabled"]),
               let ipv4Pool = fakeIP["ipv4Pool"] as? String
         else {
@@ -826,10 +1451,15 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         if let ttl = fakeIP["ttl"], !isJSONUInt32(ttl) {
             return false
         }
+        if let poolSize = fakeIP["poolSize"],
+           !isJSONUInt32(poolSize) || (poolSize as? NSNumber)?.uint64Value == 0
+        {
+            return false
+        }
         return isValidIPv4Pool(ipv4Pool)
     }
 
-    private static func ipLiteralDNSUpstreamIsAvailable(_ configJSON: String) -> Bool {
+    private static func configuredDNSUpstreamIsAvailable(_ configJSON: String) -> Bool {
         guard let data = configJSON.data(using: .utf8),
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let dns = root["dns"] as? [String: Any],
@@ -837,12 +1467,30 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         else {
             return false
         }
-        return servers.contains { rawServer in
+        return !servers.isEmpty && servers.allSatisfy { rawServer in
             guard let server = rawServer as? String else {
                 return false
             }
-            return isNonzeroIPLiteralDNSServer(server)
+            return isNonzeroDNSServer(server)
         }
+    }
+
+    private static func isNonzeroDNSServer(_ server: String) -> Bool {
+        if isNonzeroIPLiteralDNSServer(server) {
+            return true
+        }
+        if server.contains(":") {
+            let components = server.split(separator: ":", omittingEmptySubsequences: false)
+            guard components.count == 2,
+                  !components[0].isEmpty,
+                  let port = UInt16(components[1]),
+                  port > 0
+            else {
+                return false
+            }
+            return true
+        }
+        return !server.isEmpty
     }
 
     private static func isNonzeroIPLiteralDNSServer(_ server: String) -> Bool {
@@ -960,13 +1608,12 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         var seenServers = Set<String>()
         for rawServer in rawServers {
             guard let server = stringValue(rawServer),
-                  isIPAddress(server, family: AF_INET)
+                  let address = canonicalIPAddress(server)
             else {
                 return .invalid
             }
-            let identity = server.lowercased()
-            if seenServers.insert(identity).inserted {
-                servers.append(server)
+            if seenServers.insert(address).inserted {
+                servers.append(address)
             }
         }
         return servers.isEmpty ? .invalid : .custom(servers)
@@ -1050,6 +1697,38 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             destinationAddress: serverAddress,
             subnetMask: "255.255.255.255"
         )
+    }
+
+    private static func ipv6ExcludedRoute(for serverAddress: String?) -> NEIPv6Route? {
+        guard let serverAddress, isIPAddress(serverAddress, family: AF_INET6) else {
+            return nil
+        }
+        return NEIPv6Route(
+            destinationAddress: serverAddress,
+            networkPrefixLength: 128
+        )
+    }
+
+    private static func canonicalIPAddress(_ rawAddress: String) -> String? {
+        let address = rawAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        var ipv4 = in_addr()
+        if address.withCString({ inet_pton(AF_INET, $0, &ipv4) }) == 1 {
+            var buffer = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+            guard inet_ntop(AF_INET, &ipv4, &buffer, socklen_t(INET_ADDRSTRLEN)) != nil else {
+                return nil
+            }
+            return String(cString: buffer)
+        }
+
+        var ipv6 = in6_addr()
+        if address.withCString({ inet_pton(AF_INET6, $0, &ipv6) }) == 1 {
+            var buffer = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
+            guard inet_ntop(AF_INET6, &ipv6, &buffer, socklen_t(INET6_ADDRSTRLEN)) != nil else {
+                return nil
+            }
+            return String(cString: buffer)
+        }
+        return nil
     }
 
     private static func isIPAddress(_ address: String, family: Int32) -> Bool {
@@ -1149,6 +1828,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                 tunRuntimeProfile: XrayCore.tunRuntimeProfile(
                     named: resolvedConfig.tunRuntimeProfile.rawValue
                 ),
+                dnsBootstrapMode: .staticOnly,
                 geodataSearchDirectory: Bundle.main.resourceURL,
                 startupProbe: resolvedConfig.startupProbeConfiguration.options,
                 fileLogDirectory: diagnosticLogDirectory
@@ -1172,6 +1852,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                 tunRuntimeProfile: XrayCore.tunRuntimeProfile(
                     named: resolvedConfig.tunRuntimeProfile.rawValue
                 ),
+                dnsBootstrapMode: .staticOnly,
                 geodataSearchDirectory: Bundle.main.resourceURL,
                 startupProbe: resolvedConfig.startupProbeConfiguration.options,
                 fileLogDirectory: diagnosticLogDirectory

@@ -69,6 +69,29 @@ Android defaults to fd-backed operation. The Apple provider uses a discovered
 Darwin utun fd when enabled and available, otherwise it falls back to the
 `NEPacketTunnelFlow` packet pump.
 
+### DNS
+
+DNS is split at the wire-transport boundary instead of being owned by TUN.
+`xray-transport` builds and validates DNS messages, handles A/AAAA/CNAME
+resolution, server failover, UDP truncation with same-server TCP retry, and the
+bounded resolver cache. `xray-core-rs` supplies a routed query transport that
+opens each DNS exchange through the normal outbound router. SOCKS, HTTP, TUN,
+startup probes, and future server inbounds can therefore share the same DNS
+semantics without depending on a packet adapter.
+
+Each runtime keeps destination and bootstrap resolution as separate roles.
+Destination resolution may use routed `dns.servers`; bootstrap resolution only
+resolves the proxy or DNS upstream needed to open that route and must not call
+back into destination DNS. TUN's raw DNS proxy and fake-IP engine are consumers
+of these roles, not alternative resolvers.
+
+The generic core and C ABI retain system bootstrap as their default for
+desktop, command-line, and future server embeddings. Mobile full-tunnel
+adapters resolve and pin required bootstrap names before installing the
+interface, then select the fail-closed static policy so captured system DNS
+cannot recurse into the tunnel. This platform preflight is deliberately outside
+the Rust DNS service and does not change the original domain targets.
+
 ## Concurrency and lifecycle
 
 Each FFI handle owns a Tokio runtime. Listener, DNS, outbound, and TUN work runs

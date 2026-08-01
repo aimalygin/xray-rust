@@ -7,6 +7,8 @@ use super::*;
 const DNS_RCODE_FORMERR: u16 = 1;
 const MAX_DNS_PROXY_UPSTREAMS: usize = 8;
 const MAX_DNS_XUDP_METADATA_SIZE: usize = 512;
+const MAX_DNS_RESPONSE_VALIDATION_PREFIX_SIZE: usize = 512;
+const MAX_DNS_PROXY_UDP_RESPONSE_SIZE: usize = 4096;
 const XUDP_CMD_NEW: u8 = 1;
 const XUDP_CMD_KEEP: u8 = 2;
 const XUDP_CMD_DISCARD: u8 = 4;
@@ -14,6 +16,7 @@ const XUDP_OPT_DATA: u8 = 1;
 const DNS_PROXY_FREEDOM_ATTEMPT_TIMEOUT: Duration = Duration::from_millis(750);
 const DNS_PROXY_VLESS_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(2);
 const DNS_PROXY_TOTAL_TIMEOUT: Duration = Duration::from_secs(5);
+const MAX_DNS_TCP_MESSAGE_SIZE: usize = 8 * 1024;
 pub(super) const DNS_TCP_PROXY_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(2);
 pub(super) const DNS_TCP_PROXY_TOTAL_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -45,9 +48,33 @@ impl TunDnsMode {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(super) enum DnsProxyUpstream {
+    Ip(SocketAddr),
+    Domain { domain: String, port: u16 },
+}
+
+impl DnsProxyUpstream {
+    pub(super) fn target(&self, network: RoutingNetwork) -> Target {
+        match self {
+            Self::Ip(addr) => Target::new(RoutingTargetAddr::Ip(addr.ip()), addr.port(), network),
+            Self::Domain { domain, port } => {
+                Target::new(RoutingTargetAddr::Domain(domain.clone()), *port, network)
+            }
+        }
+    }
+
+    pub(super) fn socket_addr(&self) -> Option<SocketAddr> {
+        match self {
+            Self::Ip(addr) => Some(*addr),
+            Self::Domain { .. } => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct DnsProxyPlan {
-    upstreams: Arc<[SocketAddr]>,
+    upstreams: Arc<[DnsProxyUpstream]>,
 }
 
 impl DnsProxyPlan {
@@ -60,10 +87,17 @@ impl DnsProxyPlan {
         let upstreams = servers
             .iter()
             .filter_map(|server| match server {
-                DnsServerConfig::Ip(addr)
-                    if addr.port() != 0 && !is_dns_anchor_socket(*addr) && seen.insert(*addr) =>
-                {
-                    Some(*addr)
+                DnsServerConfig::Ip(addr) if addr.port() != 0 && !is_tun_dns_socket(*addr) => {
+                    let upstream = DnsProxyUpstream::Ip(*addr);
+                    seen.insert(upstream.clone()).then_some(upstream)
+                }
+                DnsServerConfig::Domain { domain, port } if *port != 0 => {
+                    let domain = crate::dns::normalize_dns_name(domain)?;
+                    let upstream = DnsProxyUpstream::Domain {
+                        domain,
+                        port: *port,
+                    };
+                    seen.insert(upstream.clone()).then_some(upstream)
                 }
                 DnsServerConfig::Ip(_) | DnsServerConfig::Domain { .. } => None,
             })
@@ -74,7 +108,7 @@ impl DnsProxyPlan {
         })
     }
 
-    pub(super) fn upstreams(&self) -> &[SocketAddr] {
+    pub(super) fn upstreams(&self) -> &[DnsProxyUpstream] {
         &self.upstreams
     }
 }
@@ -87,6 +121,7 @@ pub(super) enum DnsUdpAction {
 
 pub(super) enum DnsTcpAction {
     Pass,
+    FakeIp(Arc<Mutex<FakeIpMapper>>),
     Proxy(Arc<DnsProxyPlan>),
     Reject,
 }
@@ -102,6 +137,13 @@ impl DnsUpstreamResponse {
         match self {
             Self::Payload(payload) => payload.len(),
             Self::Oversized { observed_len, .. } => *observed_len,
+        }
+    }
+
+    fn matches_query(&self, query: &[u8]) -> bool {
+        match self {
+            Self::Payload(payload) => dns_response_matches_query(query, payload),
+            Self::Oversized { prefix, .. } => dns_response_matches_query(query, prefix),
         }
     }
 }
@@ -122,12 +164,16 @@ fn record_dns_udp_failure(context: &TunRuntimeContext, phase: DnsUdpFailurePhase
 }
 
 pub(super) fn tcp_action(mode: &TunDnsMode, endpoint: IpEndpoint) -> DnsTcpAction {
-    if !is_dns_anchor_endpoint(endpoint) {
+    if endpoint.port != DNS_PORT {
         return DnsTcpAction::Pass;
     }
     match mode {
-        TunDnsMode::RawProxy(plan) => DnsTcpAction::Proxy(Arc::clone(plan)),
-        TunDnsMode::Disabled | TunDnsMode::FakeIp(_) => DnsTcpAction::Reject,
+        TunDnsMode::FakeIp(mapper) => DnsTcpAction::FakeIp(Arc::clone(mapper)),
+        TunDnsMode::RawProxy(plan) if is_dns_anchor_endpoint(endpoint) => {
+            DnsTcpAction::Proxy(Arc::clone(plan))
+        }
+        TunDnsMode::Disabled if is_dns_anchor_endpoint(endpoint) => DnsTcpAction::Reject,
+        TunDnsMode::Disabled | TunDnsMode::RawProxy(_) => DnsTcpAction::Pass,
     }
 }
 
@@ -213,6 +259,147 @@ pub(super) async fn bridge_udp_query(
     let _ = context.tun.push_outbound(reply).await;
 }
 
+pub(super) async fn bridge_fake_ip_tcp_flow(
+    handle: SocketHandle,
+    generation: u64,
+    mapper: Arc<Mutex<FakeIpMapper>>,
+    context: TunRuntimeContext,
+    mut from_stack: mpsc::Receiver<StackToRemoteData>,
+    mut shutdown: watch::Receiver<bool>,
+    _flow_permit: OwnedSemaphorePermit,
+) {
+    let mut close_guard = TcpBridgeCloseGuard::new(handle, generation, context.stack_tx.clone());
+    let opened = tokio::select! {
+        biased;
+        () = wait_for_tun_shutdown(&mut shutdown) => false,
+        result = context.stack_tx.send(StackEvent::RemoteOpened { handle, generation }) => {
+            result.is_ok()
+        }
+    };
+    if !opened {
+        return;
+    }
+
+    let idle_timeout = context.inbound_policy.conn_idle;
+    let idle_sleep = tokio::time::sleep(idle_timeout);
+    tokio::pin!(idle_sleep);
+    let mut buffered = BytesMut::new();
+
+    loop {
+        let data = tokio::select! {
+            biased;
+            () = wait_for_tun_shutdown(&mut shutdown) => {
+                close_guard.close().await;
+                return;
+            }
+            () = &mut idle_sleep => {
+                close_guard.abort().await;
+                return;
+            }
+            data = from_stack.recv() => data,
+        };
+        let Some(data) = data else {
+            close_guard.close().await;
+            return;
+        };
+        buffered.extend_from_slice(&data.data);
+
+        let decoded = fake_ip_tcp_responses(&mapper, &mut buffered);
+        if decoded.processed_message {
+            idle_sleep
+                .as_mut()
+                .reset(TokioInstant::now() + idle_timeout);
+        }
+        let Some(response) = decoded.response else {
+            if decoded.terminal_error {
+                close_guard.abort().await;
+                return;
+            }
+            continue;
+        };
+
+        let sent = tokio::select! {
+            biased;
+            () = wait_for_tun_shutdown(&mut shutdown) => false,
+            () = &mut idle_sleep => false,
+            result = context.stack_tx.send(StackEvent::RemoteData {
+                handle,
+                generation,
+                data: response,
+            }) => result.is_ok(),
+        };
+        if !sent {
+            close_guard.abort().await;
+            return;
+        }
+        if decoded.terminal_error {
+            close_guard.close().await;
+            return;
+        }
+    }
+}
+
+struct FakeDnsTcpDecodeResult {
+    response: Option<Bytes>,
+    processed_message: bool,
+    terminal_error: bool,
+}
+
+fn fake_ip_tcp_responses(
+    mapper: &Arc<Mutex<FakeIpMapper>>,
+    buffered: &mut BytesMut,
+) -> FakeDnsTcpDecodeResult {
+    let mut output = BytesMut::new();
+    let mut processed_message = false;
+
+    loop {
+        if buffered.len() < 2 {
+            break;
+        }
+        let message_len = usize::from(u16::from_be_bytes([buffered[0], buffered[1]]));
+        if message_len == 0 || message_len > MAX_DNS_TCP_MESSAGE_SIZE {
+            return fake_dns_tcp_decode_result(output, processed_message, true);
+        }
+        let Some(frame_len) = message_len.checked_add(2) else {
+            return fake_dns_tcp_decode_result(output, processed_message, true);
+        };
+        if buffered.len() < frame_len {
+            break;
+        }
+
+        let frame = buffered.split_to(frame_len).freeze();
+        let query = &frame[2..];
+        let Some(response) = mapper
+            .lock()
+            .ok()
+            .and_then(|mut mapper| mapper.fake_dns_response(query, true))
+            .or_else(|| dns_error_response(query, DNS_RCODE_SERVFAIL, false))
+        else {
+            return fake_dns_tcp_decode_result(output, processed_message, true);
+        };
+        let Ok(response_len) = u16::try_from(response.len()) else {
+            return fake_dns_tcp_decode_result(output, processed_message, true);
+        };
+        output.extend_from_slice(&response_len.to_be_bytes());
+        output.extend_from_slice(&response);
+        processed_message = true;
+    }
+
+    fake_dns_tcp_decode_result(output, processed_message, false)
+}
+
+fn fake_dns_tcp_decode_result(
+    output: BytesMut,
+    processed_message: bool,
+    terminal_error: bool,
+) -> FakeDnsTcpDecodeResult {
+    FakeDnsTcpDecodeResult {
+        response: (!output.is_empty()).then(|| output.freeze()),
+        processed_message,
+        terminal_error,
+    }
+}
+
 async fn proxy_udp_payload(
     plan: &DnsProxyPlan,
     packet: &UdpTunPacket,
@@ -225,23 +412,19 @@ async fn proxy_udp_payload(
         if remaining.is_zero() {
             break;
         }
-        let target = Target::new(
-            RoutingTargetAddr::Ip(upstream.ip()),
-            upstream.port(),
-            RoutingNetwork::Udp,
-        );
-        let selection = timeout(
+        let target = upstream.target(RoutingNetwork::Udp);
+        let outbound = timeout(
             remaining,
             context
                 .outbound_router
                 .select_udp_outbound_for_session_with_resolver(
                     context.inbound_tag.as_deref(),
                     &target,
-                    context.dns_resolver.as_ref(),
+                    context.bootstrap_dns_resolver(),
                 ),
         )
         .await;
-        let Ok(Ok(outbound)) = selection else {
+        let Ok(Ok(outbound)) = outbound else {
             record_dns_udp_failure(context, DnsUdpFailurePhase::Open);
             continue;
         };
@@ -262,7 +445,7 @@ async fn proxy_udp_payload(
             exchange_udp_candidate(
                 outbound,
                 &target,
-                *upstream,
+                upstream,
                 &packet.payload,
                 max_payload,
                 context,
@@ -277,10 +460,14 @@ async fn proxy_udp_payload(
                 continue;
             }
         };
+        if !response.matches_query(&packet.payload) {
+            record_dns_udp_failure(context, DnsUdpFailurePhase::Read);
+            continue;
+        }
         let response = match response {
             DnsUpstreamResponse::Payload(response) => response,
             DnsUpstreamResponse::Oversized { prefix, .. } => {
-                if valid_dns_response(&packet.payload, &prefix) {
+                if dns_response_matches_query(&packet.payload, &prefix) {
                     log_dns_udp_route(context, packet, &target, outbound_label);
                     return dns_error_response(&packet.payload, DNS_RCODE_NOERROR, true).ok_or(());
                 }
@@ -288,7 +475,7 @@ async fn proxy_udp_payload(
                 continue;
             }
         };
-        if !valid_dns_response(&packet.payload, &response) {
+        if !dns_response_matches_query(&packet.payload, &response) {
             record_dns_udp_failure(context, DnsUdpFailurePhase::Read);
             continue;
         }
@@ -334,7 +521,7 @@ fn log_dns_udp_route(
 async fn exchange_udp_candidate(
     outbound: UdpOutbound,
     target: &Target,
-    upstream: SocketAddr,
+    upstream: &DnsProxyUpstream,
     query: &[u8],
     max_payload: usize,
     context: &TunRuntimeContext,
@@ -342,9 +529,14 @@ async fn exchange_udp_candidate(
 ) -> Result<DnsUpstreamResponse, crate::CoreError> {
     let response = match outbound {
         UdpOutbound::Freedom => {
+            let upstream = resolve_freedom_dns_upstream(upstream, context).await?;
             exchange_udp_freedom(upstream, query, max_payload, context, failure_phase).await?
         }
-        UdpOutbound::Vless(_) if socket_addr_has_nonzero_scope(upstream) => {
+        UdpOutbound::Vless(_)
+            if upstream
+                .socket_addr()
+                .is_some_and(socket_addr_has_nonzero_scope) =>
+        {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "scoped IPv6 DNS upstream cannot be encoded in a VLESS target",
@@ -365,6 +557,48 @@ async fn exchange_udp_candidate(
     };
     context.tun.record_udp_remote_read(response.observed_len());
     Ok(response)
+}
+
+pub(super) async fn resolve_freedom_dns_upstream(
+    upstream: &DnsProxyUpstream,
+    context: &TunRuntimeContext,
+) -> Result<SocketAddr, crate::CoreError> {
+    let resolved = match upstream {
+        DnsProxyUpstream::Ip(addr) => Ok(*addr),
+        DnsProxyUpstream::Domain { domain, port } => {
+            let bootstrap_domain =
+                match crate::dns::static_dns_host_target(context.config.as_ref(), domain) {
+                    Some(xray_config::DnsHostTarget::Ip(ip)) => {
+                        return validate_freedom_dns_upstream(SocketAddr::new(ip, *port));
+                    }
+                    Some(xray_config::DnsHostTarget::Domain(alias)) => alias,
+                    None => domain.clone(),
+                };
+            let Some(resolver) = context.dns_bootstrap_resolver.as_ref() else {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "DNS upstream hostname has no static bootstrap mapping",
+                )
+                .into());
+            };
+            resolver
+                .resolve(&bootstrap_domain, *port)
+                .await
+                .map_err(crate::CoreError::from)
+        }
+    }?;
+    validate_freedom_dns_upstream(resolved)
+}
+
+fn validate_freedom_dns_upstream(addr: SocketAddr) -> Result<SocketAddr, crate::CoreError> {
+    if is_tun_dns_socket(addr) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "DNS upstream resolves to a tunnel-local address",
+        )
+        .into());
+    }
+    Ok(addr)
 }
 
 async fn exchange_udp_freedom(
@@ -392,17 +626,27 @@ async fn exchange_udp_freedom(
     }
     context.tun.record_udp_remote_written(written);
     *failure_phase = DnsUdpFailurePhase::Read;
-    let mut buffer = vec![0_u8; max_payload.saturating_add(1).max(1)];
-    let read = socket.recv(&mut buffer).await?;
-    if read > max_payload {
-        return Ok(DnsUpstreamResponse::Oversized {
-            observed_len: read,
-            prefix: Bytes::copy_from_slice(&buffer[..read.min(12)]),
-        });
+    let buffer_len = MAX_DNS_PROXY_UDP_RESPONSE_SIZE
+        .max(max_payload)
+        .saturating_add(1);
+    let mut buffer = vec![0_u8; buffer_len];
+    loop {
+        let read = socket.recv(&mut buffer).await?;
+        if !dns_response_matches_query(query, &buffer[..read]) {
+            continue;
+        }
+        if read > max_payload {
+            return Ok(DnsUpstreamResponse::Oversized {
+                observed_len: read,
+                prefix: Bytes::copy_from_slice(
+                    &buffer[..read.min(MAX_DNS_RESPONSE_VALIDATION_PREFIX_SIZE)],
+                ),
+            });
+        }
+        return Ok(DnsUpstreamResponse::Payload(Bytes::copy_from_slice(
+            &buffer[..read],
+        )));
     }
-    Ok(DnsUpstreamResponse::Payload(Bytes::copy_from_slice(
-        &buffer[..read],
-    )))
 }
 
 async fn exchange_udp_vless(
@@ -416,7 +660,7 @@ async fn exchange_udp_vless(
     let (stream, framing) = open_vless_udp_stream_with_resolver_dialer_and_options(
         outbound,
         target,
-        context.dns_resolver.as_ref(),
+        context.bootstrap_dns_resolver(),
         &context.transport_dialer,
         VlessUdpOpenOptions::default(),
     )
@@ -435,9 +679,12 @@ async fn exchange_udp_vless(
     writer.flush().await?;
     context.tun.record_udp_remote_written(query.len());
     *failure_phase = DnsUdpFailurePhase::Read;
-    read_dns_vless_udp_response(&mut reader, framing, max_payload)
-        .await
-        .map_err(Into::into)
+    loop {
+        let response = read_dns_vless_udp_response(&mut reader, framing, max_payload).await?;
+        if response.matches_query(query) {
+            return Ok(response);
+        }
+    }
 }
 
 async fn read_dns_vless_udp_response<R>(
@@ -497,8 +744,15 @@ where
 {
     let payload_len = usize::from(reader.read_u16().await?);
     if payload_len > max_payload {
-        let mut prefix = vec![0; payload_len.min(12)];
+        let mut prefix = vec![0; payload_len.min(MAX_DNS_RESPONSE_VALIDATION_PREFIX_SIZE)];
         reader.read_exact(&mut prefix).await?;
+        let mut remaining = payload_len - prefix.len();
+        let mut discard = [0_u8; 1024];
+        while remaining > 0 {
+            let chunk = remaining.min(discard.len());
+            reader.read_exact(&mut discard[..chunk]).await?;
+            remaining -= chunk;
+        }
         return Ok(DnsUpstreamResponse::Oversized {
             observed_len: payload_len,
             prefix: Bytes::from(prefix),
@@ -572,23 +826,18 @@ fn is_dns_query(message: &[u8]) -> bool {
     message.len() >= 12 && u16::from_be_bytes([message[2], message[3]]) & 0x8000 == 0
 }
 
-fn valid_dns_response(query: &[u8], response: &[u8]) -> bool {
-    is_dns_query(query)
-        && response.len() >= 12
-        && response[0..2] == query[0..2]
-        && u16::from_be_bytes([response[2], response[3]]) & 0x8000 != 0
-}
-
 pub(super) fn is_dns_anchor_endpoint(endpoint: IpEndpoint) -> bool {
     endpoint.addr == IpAddress::Ipv4(TUN_DNS_ANCHOR) && endpoint.port == DNS_PORT
 }
 
-fn is_dns_anchor_socket(addr: SocketAddr) -> bool {
-    let is_anchor_ip = match addr.ip() {
-        IpAddr::V4(ip) => ip == TUN_DNS_ANCHOR,
-        IpAddr::V6(ip) => ip.to_ipv4_mapped() == Some(TUN_DNS_ANCHOR),
+fn is_tun_dns_socket(addr: SocketAddr) -> bool {
+    let is_tun_ip = match addr.ip() {
+        IpAddr::V4(ip) => matches!(ip, TUN_DNS_ANCHOR | TUN_CLIENT_IPV4),
+        IpAddr::V6(ip) => ip
+            .to_ipv4_mapped()
+            .is_some_and(|ip| matches!(ip, TUN_DNS_ANCHOR | TUN_CLIENT_IPV4)),
     };
-    is_anchor_ip && addr.port() == DNS_PORT
+    is_tun_ip && addr.port() == DNS_PORT
 }
 
 #[cfg(test)]
@@ -635,13 +884,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn bounded_vless_reader_keeps_only_dns_header_for_oversized_payload() {
+    async fn bounded_vless_reader_keeps_only_validation_prefix_for_oversized_payload() {
         let query = dns_a_query(0x1236, "large.example");
-        let mut response_prefix = query[..12].to_vec();
-        response_prefix[2..4].copy_from_slice(&0x8180_u16.to_be_bytes());
+        let mut response = query.clone();
+        response[2..4].copy_from_slice(&0x8180_u16.to_be_bytes());
+        response.resize(2_000, 0);
         let mut framed = Vec::new();
         framed.extend_from_slice(&2_000_u16.to_be_bytes());
-        framed.extend_from_slice(&response_prefix);
+        framed.extend_from_slice(&response);
         let mut reader = std::io::Cursor::new(framed);
 
         let response = read_bounded_dns_payload(&mut reader, 1_472).await.unwrap();
@@ -654,8 +904,8 @@ mod tests {
             panic!("oversized payload must not be allocated");
         };
         assert_eq!(observed_len, 2_000);
-        assert_eq!(prefix.len(), 12);
-        assert!(valid_dns_response(&query, &prefix));
+        assert_eq!(prefix.len(), MAX_DNS_RESPONSE_VALIDATION_PREFIX_SIZE);
+        assert!(dns_response_matches_query(&query, &prefix));
     }
 
     #[tokio::test]
@@ -680,53 +930,172 @@ mod tests {
         unrelated[0..2].copy_from_slice(&0x9999_u16.to_be_bytes());
         unrelated[2..4].copy_from_slice(&0x8180_u16.to_be_bytes());
 
-        assert!(!valid_dns_response(&query, &unrelated));
+        assert!(!dns_response_matches_query(&query, &unrelated));
     }
 
     #[test]
-    fn proxy_plan_keeps_ordered_unique_ip_servers_and_filters_unsafe_entries() {
+    fn dns_response_with_same_id_but_different_question_is_unrelated() {
+        let query = dns_a_query(0x1238, "expected.example");
+        let mut unrelated = dns_a_query(0x1238, "other.example");
+        unrelated[2..4].copy_from_slice(&0x8180_u16.to_be_bytes());
+
+        assert!(!dns_response_matches_query(&query, &unrelated));
+    }
+
+    fn fake_ip_mapper() -> Arc<Mutex<FakeIpMapper>> {
+        Arc::new(Mutex::new(
+            FakeIpMapper::new(FakeIpRuntimeConfig {
+                ipv4_network: Ipv4Addr::new(198, 18, 0, 0),
+                ipv4_prefix: 15,
+                pool_size: 32_768,
+                ttl: 60,
+            })
+            .unwrap(),
+        ))
+    }
+
+    #[test]
+    fn fake_dns_tcp_decoder_keeps_fragmented_frame_until_complete() {
+        let query = dns_a_query(0x2401, "fragmented.example");
+        let mut frame = Vec::with_capacity(query.len() + 2);
+        frame.extend_from_slice(&(query.len() as u16).to_be_bytes());
+        frame.extend_from_slice(&query);
+        let mut buffered = BytesMut::from(&frame[..1]);
+
+        let partial = fake_ip_tcp_responses(&fake_ip_mapper(), &mut buffered);
+        assert!(partial.response.is_none());
+        assert!(!partial.processed_message);
+        assert!(!partial.terminal_error);
+
+        buffered.extend_from_slice(&frame[1..]);
+        let decoded = fake_ip_tcp_responses(&fake_ip_mapper(), &mut buffered);
+        let response = decoded.response.unwrap();
+        assert!(decoded.processed_message);
+        assert!(!decoded.terminal_error);
+        assert_eq!(
+            usize::from(u16::from_be_bytes([response[0], response[1]])),
+            response.len() - 2
+        );
+        assert_eq!(&response[2..4], &0x2401_u16.to_be_bytes());
+        assert!(buffered.is_empty());
+    }
+
+    #[test]
+    fn fake_dns_tcp_decoder_answers_coalesced_pipelined_frames() {
+        let mut buffered = BytesMut::new();
+        for (id, domain) in [(0x2402, "first.example"), (0x2403, "second.example")] {
+            let query = dns_a_query(id, domain);
+            buffered.extend_from_slice(&(query.len() as u16).to_be_bytes());
+            buffered.extend_from_slice(&query);
+        }
+
+        let decoded = fake_ip_tcp_responses(&fake_ip_mapper(), &mut buffered);
+        let response = decoded.response.unwrap();
+        let first_len = usize::from(u16::from_be_bytes([response[0], response[1]]));
+        let second_offset = first_len + 2;
+
+        assert!(decoded.processed_message);
+        assert!(!decoded.terminal_error);
+        assert_eq!(&response[2..4], &0x2402_u16.to_be_bytes());
+        assert_eq!(
+            &response[second_offset + 2..second_offset + 4],
+            &0x2403_u16.to_be_bytes()
+        );
+        assert!(buffered.is_empty());
+    }
+
+    #[test]
+    fn fake_dns_tcp_decoder_rejects_oversized_frame_before_payload_arrives() {
+        let mut buffered = BytesMut::from(
+            &(u16::try_from(MAX_DNS_TCP_MESSAGE_SIZE + 1).unwrap()).to_be_bytes()[..],
+        );
+
+        let decoded = fake_ip_tcp_responses(&fake_ip_mapper(), &mut buffered);
+
+        assert!(decoded.response.is_none());
+        assert!(!decoded.processed_message);
+        assert!(decoded.terminal_error);
+    }
+
+    #[test]
+    fn fake_dns_tcp_decoder_keeps_valid_response_before_terminal_frame_error() {
+        let query = dns_a_query(0x2404, "valid.example");
+        let mut buffered = BytesMut::new();
+        buffered.extend_from_slice(&(query.len() as u16).to_be_bytes());
+        buffered.extend_from_slice(&query);
+        buffered.extend_from_slice(
+            &(u16::try_from(MAX_DNS_TCP_MESSAGE_SIZE + 1).unwrap()).to_be_bytes(),
+        );
+
+        let decoded = fake_ip_tcp_responses(&fake_ip_mapper(), &mut buffered);
+        let response = decoded.response.unwrap();
+
+        assert!(decoded.processed_message);
+        assert!(decoded.terminal_error);
+        assert_eq!(&response[2..4], &0x2404_u16.to_be_bytes());
+    }
+
+    #[test]
+    fn proxy_plan_keeps_ordered_unique_servers_and_filters_unsafe_entries() {
         let first = SocketAddr::from((Ipv4Addr::new(1, 1, 1, 1), 53));
         let second = SocketAddr::from((Ipv6Addr::LOCALHOST, 5_353));
         let plan = DnsProxyPlan::from_servers(&[
             DnsServerConfig::Domain {
-                domain: "resolver.example".to_owned(),
+                domain: "resolver.example.".to_owned(),
+                port: 53,
+            },
+            DnsServerConfig::Domain {
+                domain: "Resolver.Example".to_owned(),
                 port: 53,
             },
             DnsServerConfig::Ip(first),
             DnsServerConfig::Ip(first),
             DnsServerConfig::Ip(SocketAddr::from((Ipv4Addr::new(9, 9, 9, 9), 0))),
             DnsServerConfig::Ip(SocketAddr::from((TUN_DNS_ANCHOR, DNS_PORT))),
+            DnsServerConfig::Ip(SocketAddr::from((TUN_CLIENT_IPV4, DNS_PORT))),
             DnsServerConfig::Ip("[::ffff:198.18.0.1]:53".parse().unwrap()),
+            DnsServerConfig::Ip("[::ffff:198.18.0.2]:53".parse().unwrap()),
             DnsServerConfig::Ip(second),
         ])
         .unwrap();
 
-        assert_eq!(plan.upstreams(), &[first, second]);
+        assert_eq!(
+            plan.upstreams(),
+            &[
+                DnsProxyUpstream::Domain {
+                    domain: "resolver.example".to_owned(),
+                    port: 53,
+                },
+                DnsProxyUpstream::Ip(first),
+                DnsProxyUpstream::Ip(second),
+            ]
+        );
     }
 
     #[test]
-    fn proxy_plan_requires_at_least_one_safe_ip_literal() {
-        let plan = DnsProxyPlan::from_servers(&[
-            DnsServerConfig::Domain {
-                domain: "resolver.example".to_owned(),
-                port: 53,
-            },
-            DnsServerConfig::Ip(SocketAddr::from((TUN_DNS_ANCHOR, DNS_PORT))),
-        ]);
+    fn proxy_plan_requires_at_least_one_usable_upstream() {
+        let plan = DnsProxyPlan::from_servers(&[DnsServerConfig::Ip(SocketAddr::from((
+            TUN_DNS_ANCHOR,
+            DNS_PORT,
+        )))]);
 
         assert!(plan.is_none());
     }
 
     #[test]
-    fn tcp_anchor_is_proxied_only_in_raw_proxy_mode() {
+    fn tcp_anchor_uses_the_configured_dns_mode() {
         let upstream = SocketAddr::from((Ipv4Addr::new(1, 1, 1, 1), 53));
         let plan = Arc::new(DnsProxyPlan::from_servers(&[DnsServerConfig::Ip(upstream)]).unwrap());
         let anchor = IpEndpoint::new(IpAddress::Ipv4(TUN_DNS_ANCHOR), DNS_PORT);
         let ordinary = IpEndpoint::new(IpAddress::Ipv4(Ipv4Addr::new(203, 0, 113, 1)), DNS_PORT);
 
         assert!(matches!(
-            tcp_action(&TunDnsMode::RawProxy(plan), anchor),
+            tcp_action(&TunDnsMode::RawProxy(Arc::clone(&plan)), anchor),
             DnsTcpAction::Proxy(_)
+        ));
+        assert!(matches!(
+            tcp_action(&TunDnsMode::RawProxy(plan), ordinary),
+            DnsTcpAction::Pass
         ));
         assert!(matches!(
             tcp_action(&TunDnsMode::Disabled, anchor),
@@ -735,15 +1104,18 @@ mod tests {
         let fake_mapper = FakeIpMapper::new(FakeIpRuntimeConfig {
             ipv4_network: Ipv4Addr::new(198, 18, 0, 0),
             ipv4_prefix: 15,
+            pool_size: 32_768,
             ttl: 60,
         })
         .unwrap();
+        let fake_mode = TunDnsMode::FakeIp(Arc::new(Mutex::new(fake_mapper)));
         assert!(matches!(
-            tcp_action(
-                &TunDnsMode::FakeIp(Arc::new(Mutex::new(fake_mapper))),
-                anchor
-            ),
-            DnsTcpAction::Reject
+            tcp_action(&fake_mode, anchor),
+            DnsTcpAction::FakeIp(_)
+        ));
+        assert!(matches!(
+            tcp_action(&fake_mode, ordinary),
+            DnsTcpAction::FakeIp(_)
         ));
         assert!(matches!(
             tcp_action(&TunDnsMode::Disabled, ordinary),

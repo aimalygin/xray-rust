@@ -21,6 +21,7 @@ use xray_routing::{Target, TargetAddr};
 use xray_transport::{connect_tcp_stream, protect_udp_socket, DnsResolver, TransportDialer};
 
 use crate::{
+    dns::RuntimeDnsResolvers,
     open_vless_tcp_stream_with_resolver_and_dialer, open_vless_udp_stream_with_resolver_and_dialer,
     policy::{
         accept_error_wants_backoff, copy_bidirectional_with_idle_timeout,
@@ -70,7 +71,7 @@ struct SocksUdpFlowContext {
     client_addr: SocketAddr,
     inbound_tag: Option<String>,
     outbound_router: Arc<OutboundRouter>,
-    dns_resolver: Arc<dyn DnsResolver>,
+    dns_resolvers: RuntimeDnsResolvers,
     transport_dialer: Arc<TransportDialer>,
     sniffing: Option<InboundSniffingConfig>,
     runtime_logger: RuntimeLogger,
@@ -122,7 +123,7 @@ pub async fn serve_socks_listener(
     inbound_tag: Option<String>,
     config: Arc<CoreConfig>,
     outbound_router: Arc<OutboundRouter>,
-    dns_resolver: Arc<dyn DnsResolver>,
+    dns_resolvers: RuntimeDnsResolvers,
     transport_dialer: Arc<TransportDialer>,
     sniffing: Option<InboundSniffingConfig>,
     policy: EffectivePolicy,
@@ -175,7 +176,7 @@ pub async fn serve_socks_listener(
                 let inbound_tag = inbound_tag.clone();
                 let config = Arc::clone(&config);
                 let outbound_router = Arc::clone(&outbound_router);
-                let dns_resolver = Arc::clone(&dns_resolver);
+                let dns_resolvers = dns_resolvers.clone();
                 let transport_dialer = Arc::clone(&transport_dialer);
                 let sniffing = sniffing.clone();
                 let runtime_logger = runtime_logger.clone();
@@ -187,7 +188,7 @@ pub async fn serve_socks_listener(
                         inbound_tag,
                         config,
                         outbound_router,
-                        dns_resolver,
+                        dns_resolvers,
                         transport_dialer,
                         sniffing,
                         policy,
@@ -216,7 +217,7 @@ async fn handle_socks_connection(
     inbound_tag: Option<String>,
     config: Arc<CoreConfig>,
     outbound_router: Arc<OutboundRouter>,
-    dns_resolver: Arc<dyn DnsResolver>,
+    dns_resolvers: RuntimeDnsResolvers,
     transport_dialer: Arc<TransportDialer>,
     sniffing: Option<InboundSniffingConfig>,
     policy: EffectivePolicy,
@@ -252,7 +253,7 @@ async fn handle_socks_connection(
                 inbound_tag,
                 config,
                 outbound_router,
-                dns_resolver,
+                dns_resolvers,
                 transport_dialer,
                 sniffing,
                 policy,
@@ -265,7 +266,7 @@ async fn handle_socks_connection(
                 inbound,
                 inbound_tag,
                 outbound_router,
-                dns_resolver,
+                dns_resolvers,
                 transport_dialer,
                 sniffing,
                 runtime_logger,
@@ -287,7 +288,7 @@ async fn handle_socks_connect(
     inbound_tag: Option<String>,
     config: Arc<CoreConfig>,
     outbound_router: Arc<OutboundRouter>,
-    dns_resolver: Arc<dyn DnsResolver>,
+    dns_resolvers: RuntimeDnsResolvers,
     transport_dialer: Arc<TransportDialer>,
     sniffing: Option<InboundSniffingConfig>,
     policy: EffectivePolicy,
@@ -325,7 +326,7 @@ async fn handle_socks_connect(
         .select_tcp_outbound_for_session_with_resolver(
             inbound_tag.as_deref(),
             &route_target,
-            dns_resolver.as_ref(),
+            dns_resolvers.destination.as_ref(),
         )
         .await
     {
@@ -367,7 +368,7 @@ async fn handle_socks_connect(
                 policy.handshake,
                 open_freedom_tcp_stream(
                     &dial_target,
-                    dns_resolver.as_ref(),
+                    dns_resolvers.destination.as_ref(),
                     transport_dialer.as_ref(),
                 ),
             )
@@ -437,7 +438,7 @@ async fn handle_socks_connect(
                 open_vless_tcp_stream_with_resolver_and_dialer(
                     &outbound,
                     &dial_target,
-                    dns_resolver.as_ref(),
+                    dns_resolvers.bootstrap.as_ref(),
                     transport_dialer.as_ref(),
                 ),
             )
@@ -559,7 +560,7 @@ async fn handle_socks_udp_associate(
     mut control: TcpStream,
     inbound_tag: Option<String>,
     outbound_router: Arc<OutboundRouter>,
-    dns_resolver: Arc<dyn DnsResolver>,
+    dns_resolvers: RuntimeDnsResolvers,
     transport_dialer: Arc<TransportDialer>,
     sniffing: Option<InboundSniffingConfig>,
     runtime_logger: RuntimeLogger,
@@ -669,7 +670,7 @@ async fn handle_socks_udp_associate(
                     client_addr,
                     inbound_tag: inbound_tag.clone(),
                     outbound_router: Arc::clone(&outbound_router),
-                    dns_resolver: Arc::clone(&dns_resolver),
+                    dns_resolvers: dns_resolvers.clone(),
                     transport_dialer: Arc::clone(&transport_dialer),
                     sniffing: sniffing.clone(),
                     runtime_logger: runtime_logger.clone(),
@@ -863,7 +864,7 @@ async fn bridge_socks_udp_flow(
         .select_udp_outbound_for_session_with_resolver(
             context.inbound_tag.as_deref(),
             &route_target,
-            context.dns_resolver.as_ref(),
+            context.dns_resolvers.destination.as_ref(),
         )
         .await
     {
@@ -1009,7 +1010,8 @@ async fn bridge_socks_udp_freedom_flow(
     first_payload: Bytes,
     pending_open_permit: OwnedSemaphorePermit,
 ) {
-    let Ok(target_addr) = resolve_udp_socket_addr(&target, context.dns_resolver.as_ref()).await
+    let Ok(target_addr) =
+        resolve_udp_socket_addr(&target, context.dns_resolvers.destination.as_ref()).await
     else {
         return;
     };
@@ -1084,7 +1086,7 @@ async fn bridge_socks_udp_vless_flow(
     let Ok((stream, framing)) = open_vless_udp_stream_with_resolver_and_dialer(
         &outbound,
         &target,
-        context.dns_resolver.as_ref(),
+        context.dns_resolvers.bootstrap.as_ref(),
         context.transport_dialer.as_ref(),
     )
     .await

@@ -67,20 +67,19 @@ final class XrayClientProfileTests: XCTestCase {
         XCTAssertTrue(json is [String: Any])
     }
 
-    func testDefaultConfigEnablesFakeIPDNS() throws {
+    func testDefaultDirectConfigLeavesDNSForExplicitHostOverride() throws {
         let data = Data(XrayClientProfile.directTunConfigJSON.utf8)
         let root = try XCTUnwrap(
             try JSONSerialization.jsonObject(with: data) as? [String: Any]
         )
-        let dns = try XCTUnwrap(root["dns"] as? [String: Any])
-        let fakeIP = try XCTUnwrap(dns["fakeIp"] as? [String: Any])
 
-        XCTAssertEqual(fakeIP["enabled"] as? Bool, true)
-        XCTAssertEqual(fakeIP["ipv4Pool"] as? String, "198.19.0.0/16")
-        XCTAssertEqual(fakeIP["ttl"] as? Int, 60)
+        XCTAssertNil(root["dns"])
+        let outbounds = try XCTUnwrap(root["outbounds"] as? [[String: Any]])
+        XCTAssertEqual(outbounds.first?["protocol"] as? String, "freedom")
     }
 
-    func testLegacyDirectConfigMigrationAddsFakeIPDNS() {
+    @available(*, deprecated)
+    func testLegacyDirectConfigMigrationCompatibilityAPIIsNoOp() {
         let legacyConfigJSON = """
         {
           "inbounds": [
@@ -110,9 +109,10 @@ final class XrayClientProfileTests: XCTestCase {
 
         let migrated = profile.addingFakeIPToLegacyDirectConfigIfNeeded()
 
-        XCTAssertEqual(migrated.configJSON, XrayClientProfile.directTunConfigJSON)
+        XCTAssertEqual(migrated, profile)
     }
 
+    @available(*, deprecated)
     func testLegacyDirectConfigMigrationLeavesCustomConfigUntouched() {
         let customConfigJSON = #"{"inbounds":[]}"#
         let profile = XrayClientProfile(
@@ -390,6 +390,7 @@ final class XrayClientProfileTests: XCTestCase {
         let fakeIP = try XCTUnwrap(dns["fakeIp"] as? [String: Any])
         XCTAssertEqual(fakeIP["enabled"] as? Bool, true)
         XCTAssertEqual(fakeIP["ipv4Pool"] as? String, "198.19.0.0/16")
+        XCTAssertEqual(fakeIP["poolSize"] as? Int, 32768)
         XCTAssertEqual(fakeIP["ttl"] as? Int, 60)
 
         let outbounds = try XCTUnwrap(root["outbounds"] as? [[String: Any]])
@@ -398,6 +399,16 @@ final class XrayClientProfileTests: XCTestCase {
         XCTAssertEqual(outbounds[0]["protocol"] as? String, "vless")
         XCTAssertEqual(outbounds[1]["tag"] as? String, "direct")
         XCTAssertEqual(outbounds[1]["protocol"] as? String, "freedom")
+
+        let routing = try XCTUnwrap(root["routing"] as? [String: Any])
+        let rules = try XCTUnwrap(routing["rules"] as? [[String: Any]])
+        XCTAssertEqual(rules.count, 1)
+        XCTAssertEqual(
+            rules[0]["ip"] as? [String],
+            ["geoip:private", "127.0.0.0/8", "fd00::/8"]
+        )
+        XCTAssertNil(rules[0]["domain"])
+        XCTAssertFalse(profile.configJSON.contains("captive.apple.com"))
 
         let settings = try XCTUnwrap(outbounds[0]["settings"] as? [String: Any])
         let vnext = try XCTUnwrap(settings["vnext"] as? [[String: Any]])

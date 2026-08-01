@@ -96,17 +96,57 @@ downloaded `.dat` files are checksum-verified inputs in the ignored
 `platform/apple/XrayClient/dat` directory, not repository contents.
 
 The Apple provider performs no startup connectivity probe and assigns no
-third-party DNS resolver by default. Fake-IP profiles and profiles with at
-least one IP-literal `dns.servers` entry use the tunnel-local `198.18.0.1` DNS
-anchor. The latter proxies UDP and TCP/53 through the selected Freedom/VLESS
-outbound. A profile without either mode can instead provide an explicit IPv4
-DNS override. Combining fake-IP with an explicit override, or configuring none
-of the supported modes, fails before applying network settings. Device tests
-that enable a probe or custom DNS must use endpoints controlled or approved by
-the host application and verify UDP/TCP local-anchor responses, ordered
-upstream failover, oversized-UDP fallback to TCP, and fail-closed handling of
-missing, conflicting, malformed, or unreachable DNS settings. Domain-only
-upstreams do not enable the anchor until safe bootstrap is implemented.
+third-party DNS resolver by default. Fake-IP profiles and profiles with any
+valid nonempty IP/domain `dns.servers` list use the tunnel-local `198.18.0.1`
+DNS anchor. The latter proxies UDP and TCP/53 through selected Freedom/VLESS
+outbounds. VLESS receives a domain upstream unchanged for remote resolution;
+Freedom needs a `dns.hosts` alias chain ending in an IP in mobile `StaticOnly`
+mode, otherwise that candidate fails over. Domains restored from fake-IP and
+sent through Freedom resolve through the same routed `dns.servers`, not the
+operating-system resolver.
+
+Before Network Extension installs the anchor, the provider resolves every
+domain VLESS server and domain `dns.servers` entry through the then-current
+dual-stack system resolver. It writes canonical exact `full:` mappings into
+`dns.hosts` without replacing existing exact mappings, follows aliases for at
+most eight steps, and preserves each VLESS address string exactly in runtime
+JSON. When the protocol's single `serverAddress` matches a resolved VLESS
+domain, its selected IPv4 or IPv6 bootstrap address is used only for the `/32`
+or `/128` excluded route. Apple installs both IPv4 and IPv6 default tunnel
+routes; DNS64 results are accepted on IPv6-only networks. Cycles or resolution
+failure stop tunnel startup. The preflight runs away from the provider callback
+queue and all lookups share one five-second deadline captured at the beginning
+of the start attempt. Stop, timeout, or a superseding start completes the
+pending start exactly once; generation checks discard a late resolver result
+before network settings or the runtime can be installed. Because Darwin's
+`getaddrinfo` is not reliably interruptible, Apple admits only one process-wide
+lookup worker and does not enqueue more work behind a blocked call. A busy
+newer attempt still expires on its own deadline. The selected bootstrap remains
+single-address and valid for one tunnel lifetime; multi-address refresh and
+network-migration failover remain follow-ups. A profile without JSON DNS or
+fake-IP can instead provide an explicit host IPv4/IPv6 DNS override. Combining
+fake-IP with that host override, or configuring none of the supported modes,
+fails before applying network settings. Device tests that enable a probe or
+custom DNS must use endpoints controlled or approved by the host application
+and verify UDP/TCP local-anchor responses, ordered upstream failover,
+UDP-truncation retry over TCP, and fail-closed handling of missing,
+conflicting, malformed, or unreachable DNS settings.
+
+Fake-only mobile configurations are accepted when the default path is VLESS
+and every Freedom split rule is IP-only: restored domains then remain domains
+and are resolved remotely. With no `dns.servers`, a default Freedom outbound or
+a TUN-applicable domain/catch-all Freedom rule is rejected before the VPN is
+installed. This applies to both reference adapters and avoids silently choosing
+a public resolver. The Apple direct reference profile therefore needs an
+explicit host DNS override; the compatibility helper that formerly added
+fake-IP to the legacy direct profile is now a no-op.
+
+The Android reference service applies the same five-second overall deadline
+before `Builder.establish()`. Its public start operation is asynchronous, stop
+does not join a pending start, and lifecycle tokens reject late publication.
+`InetAddress` may also ignore interruption, so both DNS lookups and start
+workers use zero-queue bounded daemon pools; saturation fails closed instead of
+growing threads or queued work.
 
 ## Android native libraries
 

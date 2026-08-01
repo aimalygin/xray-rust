@@ -7,7 +7,15 @@ import java.io.EOFException
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
+import java.util.concurrent.Callable
+import java.util.concurrent.Executor
+import java.util.concurrent.FutureTask
+import java.util.concurrent.SynchronousQueue
+import java.util.concurrent.ThreadFactory
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 enum class XrayTunBackend {
     FileDescriptor,
@@ -15,6 +23,12 @@ enum class XrayTunBackend {
 }
 
 internal val DEFAULT_XRAY_TUN_BACKEND = XrayTunBackend.FileDescriptor
+
+internal sealed interface XrayTunnelStopAction<out Session> {
+    data object None : XrayTunnelStopAction<Nothing>
+    data object CancelStart : XrayTunnelStopAction<Nothing>
+    data class StopSession<Session>(val session: Session) : XrayTunnelStopAction<Session>
+}
 
 internal class XrayTunnelStateMachine<Session> {
     class StartToken internal constructor() {
@@ -40,6 +54,13 @@ internal class XrayTunnelStateMachine<Session> {
             !token.stopRequested
     }
 
+    fun isStartFailureReportable(token: StartToken): Boolean = synchronized(lock) {
+        val current = state
+        val belongsToToken = (current is State.Starting && current.token === token) ||
+            (current is State.Stopping && current.failedStartToken === token)
+        belongsToToken && !token.stopRequested
+    }
+
     fun publish(
         token: StartToken,
         session: Session,
@@ -58,7 +79,7 @@ internal class XrayTunnelStateMachine<Session> {
             lock.notifyAll()
             true
         } catch (error: Throwable) {
-            state = State.Stopping
+            state = State.Stopping(token)
             lock.notifyAll()
             throw error
         }
@@ -68,7 +89,7 @@ internal class XrayTunnelStateMachine<Session> {
         synchronized(lock) {
             val current = state
             if ((current is State.Starting && current.token === token) ||
-                current === State.Stopping
+                (current is State.Stopping && current.failedStartToken === token)
             ) {
                 state = State.Stopped
             }
@@ -76,38 +97,25 @@ internal class XrayTunnelStateMachine<Session> {
         }
     }
 
-    fun takeSessionForStop(): Session? = synchronized(lock) {
-        var restoreInterrupt = false
-        try {
-            while (true) {
-                when (val current = state) {
-                    State.Stopped -> return@synchronized null
-                    is State.Starting -> {
-                        current.token.stopRequested = true
-                        try {
-                            lock.wait()
-                        } catch (_: InterruptedException) {
-                            restoreInterrupt = true
-                        }
-                    }
-                    is State.Running -> {
-                        state = State.Stopping
-                        return@synchronized current.session
-                    }
-                    State.Stopping -> {
-                        try {
-                            lock.wait()
-                        } catch (_: InterruptedException) {
-                            restoreInterrupt = true
-                        }
-                    }
-                }
+    fun requestStop(): XrayTunnelStopAction<Session> = synchronized(lock) {
+        when (val current = state) {
+            State.Stopped -> XrayTunnelStopAction.None
+            is State.Starting -> {
+                current.token.stopRequested = true
+                XrayTunnelStopAction.CancelStart
             }
-            @Suppress("UNREACHABLE_CODE")
-            null
-        } finally {
-            if (restoreInterrupt) {
-                Thread.currentThread().interrupt()
+            is State.Running -> {
+                state = State.Stopping(failedStartToken = null)
+                XrayTunnelStopAction.StopSession(current.session)
+            }
+            is State.Stopping -> {
+                val failedStartToken = current.failedStartToken
+                if (failedStartToken == null) {
+                    XrayTunnelStopAction.None
+                } else {
+                    failedStartToken.stopRequested = true
+                    XrayTunnelStopAction.CancelStart
+                }
             }
         }
     }
@@ -117,7 +125,7 @@ internal class XrayTunnelStateMachine<Session> {
         if (current !is State.Running || current.session !== failedSession) {
             return@synchronized null
         }
-        state = State.Stopping
+        state = State.Stopping(failedStartToken = null)
         current.session
     }
 
@@ -137,7 +145,75 @@ internal class XrayTunnelStateMachine<Session> {
         data object Stopped : State<Nothing>
         class Starting(val token: StartToken) : State<Nothing>
         class Running<Session>(val session: Session) : State<Session>
-        data object Stopping : State<Nothing>
+        class Stopping(val failedStartToken: StartToken?) : State<Nothing>
+    }
+}
+
+internal class XrayAsyncStartCoordinator<Session>(
+    private val lifecycle: XrayTunnelStateMachine<Session>,
+    private val executor: Executor,
+) {
+    private val lock = Any()
+    private var activeTask: FutureTask<Unit>? = null
+    private var activeToken: XrayTunnelStateMachine.StartToken? = null
+
+    fun execute(
+        token: XrayTunnelStateMachine.StartToken,
+        block: () -> Unit,
+    ) = execute(token, block) {}
+
+    fun <Result> execute(
+        token: XrayTunnelStateMachine.StartToken,
+        block: () -> Result,
+        afterRelease: (Result) -> Unit,
+    ) {
+        val workerStarted = AtomicBoolean(false)
+        val task = object : FutureTask<Unit>(
+            Callable {
+                workerStarted.set(true)
+                val result = try {
+                    block()
+                } finally {
+                    clearActiveStart(token)
+                    lifecycle.failStart(token)
+                }
+                afterRelease(result)
+            },
+        ) {
+            override fun done() {
+                clearActiveStart(token)
+                if (!workerStarted.get()) {
+                    lifecycle.failStart(token)
+                }
+            }
+        }
+        synchronized(lock) {
+            check(activeTask == null) { "an Xray start worker is already active" }
+            activeTask = task
+            activeToken = token
+        }
+        try {
+            executor.execute(task)
+        } catch (error: Throwable) {
+            task.cancel(false)
+            throw error
+        }
+    }
+
+    fun cancelActiveStart() {
+        val task = synchronized(lock) { activeTask }
+        task?.cancel(true)
+    }
+
+    fun hasActiveStart(): Boolean = synchronized(lock) { activeTask != null }
+
+    private fun clearActiveStart(token: XrayTunnelStateMachine.StartToken) {
+        synchronized(lock) {
+            if (activeToken === token) {
+                activeTask = null
+                activeToken = null
+            }
+        }
     }
 }
 
@@ -177,6 +253,28 @@ internal fun isRecoverablePacketPushFailure(error: Throwable): Boolean =
 
 open class XrayVpnService : VpnService() {
     private val lifecycle = XrayTunnelStateMachine<TunnelSession>()
+    private val startThreadSequence = AtomicInteger()
+    private val startExecutor = ThreadPoolExecutor(
+        0,
+        MAX_CONCURRENT_START_WORKERS,
+        START_THREAD_KEEP_ALIVE_SECONDS,
+        TimeUnit.SECONDS,
+        SynchronousQueue(),
+        ThreadFactory { runnable ->
+            Thread(
+                runnable,
+                "xray-vpn-start-${startThreadSequence.incrementAndGet()}",
+            ).apply {
+                isDaemon = true
+            }
+        },
+        ThreadPoolExecutor.AbortPolicy(),
+    )
+    private val startCoordinator = XrayAsyncStartCoordinator(
+        lifecycle = lifecycle,
+        executor = startExecutor,
+    )
+    private val dnsBootstrapResolver = BoundedAndroidDnsBootstrapResolver()
 
     open fun startXrayTunnel(
         configJson: String,
@@ -185,21 +283,80 @@ open class XrayVpnService : VpnService() {
         startupProbe: XrayStartupProbeOptions? = null,
     ) {
         val attempt = lifecycle.beginStart() ?: return
+        val dnsBootstrapDeadline = AndroidDnsBootstrapDeadline(
+            TimeUnit.MILLISECONDS.toNanos(DNS_BOOTSTRAP_TIMEOUT_MILLISECONDS),
+        )
+        try {
+            startCoordinator.execute(
+                token = attempt,
+                block = {
+                    runXrayTunnelStart(
+                        attempt = attempt,
+                        configJson = configJson,
+                        tunBackend = tunBackend,
+                        tunRuntimeProfile = tunRuntimeProfile,
+                        startupProbe = startupProbe,
+                        dnsBootstrapDeadline = dnsBootstrapDeadline,
+                    )
+                },
+                afterRelease = { outcome ->
+                    when (outcome) {
+                        is XrayTunnelStartOutcome.Started -> {
+                            if (lifecycle.isRunningSession(outcome.session)) {
+                                runCatching { onXrayTunnelStarted() }
+                            }
+                        }
+                        is XrayTunnelStartOutcome.Failed -> {
+                            if (!Thread.currentThread().isInterrupted) {
+                                notifyXrayTunnelStartFailed(outcome.error)
+                            }
+                        }
+                        XrayTunnelStartOutcome.Cancelled -> Unit
+                    }
+                },
+            )
+        } catch (error: Throwable) {
+            lifecycle.failStart(attempt)
+            throw error
+        }
+    }
 
+    private fun runXrayTunnelStart(
+        attempt: XrayTunnelStateMachine.StartToken,
+        configJson: String,
+        tunBackend: XrayTunBackend,
+        tunRuntimeProfile: XrayTunRuntimeProfile,
+        startupProbe: XrayStartupProbeOptions?,
+        dnsBootstrapDeadline: AndroidDnsBootstrapDeadline,
+    ): XrayTunnelStartOutcome {
+        val prepareAndroidVpnConfig: (String) -> PreparedAndroidVpnConfig = { rawConfig ->
+            prepareAndroidVpnConfigWithinDeadline(
+                configJson = rawConfig,
+                resolver = dnsBootstrapResolver,
+                deadline = dnsBootstrapDeadline,
+            )
+        }
         var tunnel: ParcelFileDescriptor? = null
         var xrayCore: XrayCore? = null
         var coreStarted = false
         try {
             ensureStartIsActive(attempt)
-            tunnel = buildTunnel().establish()
+            val preparedConfig = prepareAndroidVpnConfig(configJson)
+            ensureStartIsActive(attempt)
+            val tunnelBuilder = buildTunnel()
+            if (preparedConfig.usesLocalDnsAnchor) {
+                tunnelBuilder.addDnsServer(XRAY_TUN_DNS_ANCHOR)
+            }
+            tunnel = tunnelBuilder.establish()
                 ?: error("failed to establish Android VPN tunnel")
             ensureStartIsActive(attempt)
 
             xrayCore = XrayCore.create(
-                configJson = configJson,
+                configJson = preparedConfig.json,
                 vpnService = this,
                 tunRuntimeProfile = tunRuntimeProfile,
                 startupProbe = startupProbe,
+                dnsBootstrapMode = XrayDnsBootstrapMode.StaticOnly,
                 tunFileDescriptor = when (tunBackend) {
                     XrayTunBackend.PacketPump -> null
                     XrayTunBackend.FileDescriptor -> XrayTunFileDescriptor(
@@ -237,13 +394,14 @@ open class XrayVpnService : VpnService() {
                 }
             } catch (error: Throwable) {
                 runCatching { session.shutdown() }
-                lifecycle.failStart(attempt)
                 throw error
             }
 
             if (!published) {
                 session.shutdown()
-                lifecycle.failStart(attempt)
+                return XrayTunnelStartOutcome.Cancelled
+            } else {
+                return XrayTunnelStartOutcome.Started(session)
             }
         } catch (_: StartCancelledException) {
             cleanupUnpublishedSession(
@@ -251,31 +409,57 @@ open class XrayVpnService : VpnService() {
                 core = xrayCore,
                 coreStarted = coreStarted,
             )
-            lifecycle.failStart(attempt)
+            return XrayTunnelStartOutcome.Cancelled
+        } catch (_: AndroidDnsBootstrapCancelledException) {
+            cleanupUnpublishedSession(
+                tunnel = tunnel,
+                core = xrayCore,
+                coreStarted = coreStarted,
+            )
+            return XrayTunnelStartOutcome.Cancelled
         } catch (error: Throwable) {
             cleanupUnpublishedSession(
                 tunnel = tunnel,
                 core = xrayCore,
                 coreStarted = coreStarted,
             )
-            lifecycle.failStart(attempt)
-            throw error
+            return if (lifecycle.isStartFailureReportable(attempt) &&
+                !Thread.currentThread().isInterrupted
+            ) {
+                XrayTunnelStartOutcome.Failed(error)
+            } else {
+                XrayTunnelStartOutcome.Cancelled
+            }
         }
     }
 
     open fun stopXrayTunnel() {
-        val session = lifecycle.takeSessionForStop() ?: return
-        try {
-            session.shutdown()
-        } finally {
-            lifecycle.completeStop()
+        when (val action = lifecycle.requestStop()) {
+            XrayTunnelStopAction.None -> Unit
+            XrayTunnelStopAction.CancelStart -> startCoordinator.cancelActiveStart()
+            is XrayTunnelStopAction.StopSession -> {
+                startCoordinator.cancelActiveStart()
+                try {
+                    action.session.shutdown()
+                } finally {
+                    lifecycle.completeStop()
+                }
+            }
         }
     }
+
+    /** Called on the asynchronous start worker after the running session is published. */
+    protected open fun onXrayTunnelStarted() = Unit
+
+    /** Called on the asynchronous start worker when startup fails without cancellation. */
+    protected open fun onXrayTunnelStartFailed(error: Throwable) = Unit
 
     fun protectSocket(fd: Int): Boolean = protect(fd)
 
     override fun onDestroy() {
         stopXrayTunnel()
+        startExecutor.shutdownNow()
+        dnsBootstrapResolver.close()
         super.onDestroy()
     }
 
@@ -299,6 +483,10 @@ open class XrayVpnService : VpnService() {
         if (!lifecycle.isStartActive(attempt)) {
             throw StartCancelledException()
         }
+    }
+
+    private fun notifyXrayTunnelStartFailed(error: Throwable) {
+        runCatching { onXrayTunnelStartFailed(error) }
     }
 
     private fun cleanupUnpublishedSession(
@@ -445,9 +633,18 @@ open class XrayVpnService : VpnService() {
 
     private class StartCancelledException : RuntimeException()
 
+    private sealed interface XrayTunnelStartOutcome {
+        data class Started(val session: TunnelSession) : XrayTunnelStartOutcome
+        data class Failed(val error: Throwable) : XrayTunnelStartOutcome
+        data object Cancelled : XrayTunnelStartOutcome
+    }
+
     private companion object {
         const val PACKET_BYTES = 1_500
         const val MAX_PACKETS_PER_POLL = 64
         const val POLL_WAIT_MILLISECONDS = 250
+        const val DNS_BOOTSTRAP_TIMEOUT_MILLISECONDS = 5_000L
+        const val MAX_CONCURRENT_START_WORKERS = 2
+        const val START_THREAD_KEEP_ALIVE_SECONDS = 30L
     }
 }

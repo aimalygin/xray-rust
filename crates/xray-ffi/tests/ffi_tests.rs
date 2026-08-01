@@ -7,15 +7,16 @@ use std::time::{Duration, Instant};
 
 use xray_ffi::{
     xray_core_config_warnings, xray_core_free, xray_core_load_config_json, xray_core_new,
-    xray_core_set_file_logging, xray_core_set_socket_protect_callback, xray_core_set_startup_probe,
+    xray_core_set_dns_bootstrap_mode, xray_core_set_file_logging,
+    xray_core_set_socket_protect_callback, xray_core_set_startup_probe,
     xray_core_set_tun_collect_tcp_timings, xray_core_set_tun_fd, xray_core_set_tun_runtime_profile,
     xray_core_start, xray_core_stop, xray_error_code, xray_error_free, xray_error_message,
     xray_ffi_version_major, xray_tun_poll_packet, xray_tun_poll_packets,
     xray_tun_poll_tcp_flow_summary_event, xray_tun_poll_tcp_open_error_event,
     xray_tun_poll_tcp_remote_write_slow_event, xray_tun_poll_tcp_slow_flow_event,
     xray_tun_poll_udp_quic_blocked_event, xray_tun_poll_udp_response_gap_event,
-    xray_tun_poll_udp_slow_flow_event, xray_tun_push_packet, xray_tun_stats, XrayStatus,
-    XrayTcpFlowSummaryEvent, XrayTcpOpenErrorEvent, XrayTcpRemoteWriteSlowEvent,
+    xray_tun_poll_udp_slow_flow_event, xray_tun_push_packet, xray_tun_stats, XrayDnsBootstrapMode,
+    XrayStatus, XrayTcpFlowSummaryEvent, XrayTcpOpenErrorEvent, XrayTcpRemoteWriteSlowEvent,
     XrayTcpSlowFlowEvent, XrayTunFdClosePolicy, XrayTunFdPacketFormat, XrayTunRuntimeProfile,
     XrayTunStats, XrayUdpQuicBlockedEvent, XrayUdpResponseGapEvent, XrayUdpSlowFlowEvent,
 };
@@ -839,6 +840,72 @@ fn ffi_rejects_tun_runtime_profile_after_config_load() {
         &mut err,
         XrayStatus::RuntimeError,
         "tun runtime profile must be set before config load",
+    );
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_registers_dns_bootstrap_mode_before_config_load() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    assert!(!core.is_null());
+
+    let status = unsafe {
+        xray_core_set_dns_bootstrap_mode(
+            core,
+            XrayDnsBootstrapMode::StaticOnly as libc::c_int,
+            &mut err,
+        )
+    };
+
+    assert_eq!(status, XrayStatus::Ok);
+    assert!(err.is_null());
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_rejects_invalid_dns_bootstrap_mode_discriminant() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+
+    let status = unsafe { xray_core_set_dns_bootstrap_mode(core, -1, &mut err) };
+
+    assert_eq!(status, XrayStatus::InvalidArgument);
+    assert_error(
+        &mut err,
+        XrayStatus::InvalidArgument,
+        "0 (system) or 1 (static only)",
+    );
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_rejects_dns_bootstrap_mode_after_config_load() {
+    let mut err = std::ptr::null_mut();
+    let core = loaded_core(&mut err);
+
+    let status = unsafe {
+        xray_core_set_dns_bootstrap_mode(
+            core,
+            XrayDnsBootstrapMode::StaticOnly as libc::c_int,
+            &mut err,
+        )
+    };
+
+    assert_eq!(status, XrayStatus::RuntimeError);
+    assert_error(
+        &mut err,
+        XrayStatus::RuntimeError,
+        "DNS bootstrap mode must be set before config load",
     );
 
     unsafe {

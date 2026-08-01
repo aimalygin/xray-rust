@@ -92,27 +92,71 @@ startup instead of selecting a third-party endpoint.
 The provider also does not select a public DNS operator. Network Extension
 advertises the tunnel-local `198.18.0.1` interception anchor when
 `dns.fakeIp` is enabled with a usable IPv4 pool, or when `dns.servers` contains
-at least one IP-literal upstream with a nonzero port. Bare IPv4 and IPv6
-literals use port 53; socket-address strings can select another port. The
-anchor is handled inside the tunnel and is not itself an upstream resolver.
-Domain-only `dns.servers` entries do not enable the local proxy until bootstrap
-resolution is implemented.
+any valid nonempty IP/domain upstream list. Bare IPv4 and IPv6 literals use
+port 53; socket-address and `domain:port` strings can select another nonzero
+port. The anchor is handled inside the tunnel and is not itself an upstream
+resolver. VLESS receives domain upstreams unchanged for remote resolution.
+Freedom uses the separate mobile `StaticOnly` bootstrap populated during the
+provider preflight described below. Domains restored from fake-IP and sent
+through Freedom resolve through the routed `dns.servers` list without a
+system-DNS fallback.
+
+Fake-IP without `dns.servers` is accepted only when TUN domain traffic cannot
+select Freedom. Before applying Network Extension settings, the provider
+rejects a Freedom default outbound and any TUN-applicable Freedom rule that is
+not strictly IP-only. A VLESS default outbound is valid, and private/CIDR
+Freedom rules containing `ip` selectors but no domain selectors remain valid.
+This prevents a restored fake-IP domain from reaching Freedom without a routed
+resolver.
 
 A host can instead set `dnsServers` in provider configuration, or
-`xrayDNSServers` in start options, to one IPv4 address string or a non-empty
-property-list array of at most eight IPv4 address strings. When fake-IP is
-disabled, this explicit setting takes precedence over JSON `dns.servers`.
-Combining explicit servers with fake-IP, or configuring none of the supported
-modes, fails before network settings are applied. The provider validates the
-full JSON config through the Rust parser before applying those settings. IPv6
-resolver overrides are rejected until the provider also installs an IPv6
-tunnel route; IPv6 literals inside JSON `dns.servers` remain valid local-proxy
-upstreams. Invalid explicit values fail startup, and start options take
-precedence over persistent provider configuration. The local anchor currently
-proxies both UDP and TCP/53 through the configured outbound route. Only
-IP-literal JSON upstreams participate; domain-upstream bootstrap remains future
-work. Fake-IP profiles keep local synthesis precedence and reject raw TCP/53
-queries to the anchor.
+`xrayDNSServers` in start options, to one IPv4 or IPv6 address string or a
+non-empty property-list array of at most eight IP address strings. When
+fake-IP is disabled, this explicit setting takes precedence over JSON
+`dns.servers`.
+Combining an explicit host override with fake-IP, or configuring none of the
+supported modes, fails before network settings are applied. The provider
+validates the full JSON config through the Rust parser before applying those
+settings. The provider installs IPv4 and IPv6 default routes; the tunnel IPv6
+interface uses `fd00:7872::2/128`, while the DNS interception anchor remains
+IPv4 `198.18.0.1`. Invalid explicit values fail startup, and start options take
+precedence over persistent provider configuration. The local anchor proxies
+both UDP and TCP/53 through the configured outbound route. Fake-IP profiles
+keep local synthesis precedence and answer both UDP and length-prefixed TCP
+queries at the anchor.
+
+The checked-in `directTunConfigJSON` intentionally has no fake-IP DNS. Direct
+profiles are not automatically migrated to fake-IP and require an explicit
+host `dnsServers` or `xrayDNSServers` override. Imported VLESS profiles keep
+VLESS as the default outbound and only bypass private IP ranges through
+Freedom; the importer does not add domain-based captive-portal bypasses.
+
+Before applying Network Extension DNS and routes, the provider bootstraps every
+domain VLESS server and domain `dns.servers` entry. Existing exact
+`full:<domain>` `dns.hosts` mappings are canonicalized and followed for at most
+eight mapping steps; cycles and deeper chains fail tunnel startup. When an
+alias chain has no terminal mapping, the provider resolves that terminal domain
+with the then-current system resolver and writes its IPv4 or IPv6 result into a
+canonical exact mapping. The system resolver's address ordering is retained,
+including DNS64-synthesized IPv6 results on IPv6-only networks. The original
+VLESS address string is preserved exactly in runtime JSON, so exact-domain
+routing, SNI, and other metadata do not change. If
+`NETunnelProviderProtocol.serverAddress` matches a VLESS domain, the resolved
+address is used for its `/32` IPv4 or `/128` IPv6 excluded route. Resolution
+failure fails tunnel startup. This pre-bootstrap happens before the local
+anchor exists; after Rust starts, mobile `StaticOnly` does not call the system
+resolver.
+
+Bootstrap preflight runs asynchronously with one absolute five-second deadline
+shared by validation and every required lookup. Timeout, provider stop, and a
+superseding start each complete the affected start request exactly once; a late
+resolver result is generation-guarded and cannot apply Network Extension
+settings or create a runtime. Because Darwin `getaddrinfo` is not
+interruptible, all lookups use one process-wide gated worker. A timed-out or
+cancelled lookup may keep that worker occupied until the system call returns,
+but it cannot block provider lifecycle callbacks or create additional resolver
+threads. Starts made while the worker remains occupied are not queued behind
+it and expire on their own overall deadline.
 
 ## Host target requirements
 

@@ -1,8 +1,10 @@
 # Project status
 
-`xray-rust` is an experimental client core, not a complete Rust port of
-Xray-core. The current objective is a small, testable client-side surface for
-local proxy and mobile TUN integrations.
+`xray-rust` is an experimental mobile/client-first core, not a complete Rust
+port of Xray-core. The current objective is a small, testable surface for local
+proxy and mobile TUN integrations. The architecture is intended to grow into
+one embeddable client/server library; server-side Xray protocols are not
+implemented yet.
 
 The implementation has extensive automated tests, including optional local
 interoperability tests against a user-supplied Xray-core checkout. It has not
@@ -25,8 +27,8 @@ parity with every Xray-core release.
 | REALITY client | Supported subset | Deterministic primitive tests and optional local Xray-core REALITY+Vision interoperability tests |
 | `xtls-rprx-vision` | Supported subset | TCP and XUDP paths; UDP/443 behavior follows the selected Vision flow |
 | Domain/IP routing | Supported subset | `field` rules, inbound tags, domain/CIDR/private/geodata matchers |
-| Configured DNS | Supported subset | Static hosts, UDP A/AAAA/CNAME resolver, cache, and routed UDP/TCP TUN proxy for IP-literal upstreams |
-| Fake IP | Supported subset | IPv4 pool used by the TUN routing path |
+| Configured DNS | Supported subset | Static hosts, routed A/AAAA/CNAME resolution for TUN/SOCKS/HTTP/probes, terminal NXDOMAIN/NODATA, bounded single-flight cache, valid UDP-truncation/TCP retry, and routed UDP/TCP TUN proxy for IP/domain upstreams |
+| Fake IP | Supported subset | Bounded IPv4 pool with UDP/TCP synthesis used by the TUN routing path |
 | `geosite.dat` / `geoip.dat` | Supported | Xray-style protobuf data is loaded on demand with size and matcher budgets |
 | Startup probe and runtime stats | Supported | Core and FFI integration tests |
 
