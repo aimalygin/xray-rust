@@ -1784,10 +1784,20 @@ impl ConfiguredDnsResolver {
         query_strategy: DnsQueryStrategy,
     ) -> ConfiguredServersResult {
         let mut last_negative = None;
+        let mut saw_compatible_server = false;
+        let mut saw_incompatible_server = false;
         for &index in selected_servers {
             let Some(name_server) = self.name_servers.get(index) else {
                 continue;
             };
+            if query_strategy
+                .intersect(name_server.query_strategy)
+                .is_none()
+            {
+                saw_incompatible_server = true;
+                continue;
+            }
+            saw_compatible_server = true;
             let deadline =
                 time::sleep(name_server.timeout.unwrap_or(self.server_timeout)).deadline();
             let mut current_domain = domain.to_owned();
@@ -1834,6 +1844,10 @@ impl ConfiguredDnsResolver {
             }
         }
 
+        if !saw_compatible_server && saw_incompatible_server {
+            return ConfiguredServersResult::Negative(ConfiguredDnsNegative::NoData);
+        }
+
         last_negative.map_or(
             ConfiguredServersResult::Unavailable,
             ConfiguredServersResult::Negative,
@@ -1848,8 +1862,9 @@ impl ConfiguredDnsResolver {
         query_strategy: DnsQueryStrategy,
     ) -> io::Result<ConfiguredServerResult> {
         let Some(query_strategy) = query_strategy.intersect(name_server.query_strategy) else {
-            return Ok(ConfiguredServerResult::Negative(
-                ConfiguredDnsNegative::NoData,
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "dns server query strategy has no address family in common with the requested strategy",
             ));
         };
         let (transport, metadata) = match name_server.transport {
@@ -3733,6 +3748,29 @@ mod tests {
         }
     }
 
+    #[derive(Default)]
+    struct FailingFamilyQueryTransport {
+        record_types: Mutex<Vec<u16>>,
+    }
+
+    #[async_trait::async_trait]
+    impl DnsQueryTransport for FailingFamilyQueryTransport {
+        async fn exchange(
+            &self,
+            _server: &NameServer,
+            _transport: DnsQueryTransportKind,
+            _metadata: DnsQueryMetadata<'_>,
+            query: &[u8],
+        ) -> io::Result<Vec<u8>> {
+            let record_type = u16::from_be_bytes([query[query.len() - 4], query[query.len() - 3]]);
+            self.record_types.lock().unwrap().push(record_type);
+            Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "test DNS transport unavailable",
+            ))
+        }
+    }
+
     struct MappedFirstServerQueryTransport {
         first: NameServer,
         calls: Mutex<Vec<NameServer>>,
@@ -3918,6 +3956,36 @@ mod tests {
             TransportError::DnsNoData(domain, 443) if domain == "family.example"
         ));
         assert!(transport.record_types.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn configured_dns_incompatible_server_does_not_mask_compatible_transport_failure() {
+        let first = NameServer::Socket(SocketAddr::from(([192, 0, 2, 53], 53)));
+        let second = NameServer::Socket(SocketAddr::from(([192, 0, 2, 54], 53)));
+        let mut incompatible = NameServerPolicy::new(first);
+        incompatible.query_strategy = DnsQueryStrategy::UseIpv6;
+        let mut compatible = NameServerPolicy::new(second);
+        compatible.query_strategy = DnsQueryStrategy::UseIpv4;
+        let transport = Arc::new(FailingFamilyQueryTransport::default());
+        let resolver =
+            ConfiguredDnsResolver::new(Vec::new(), Vec::new(), Arc::new(RejectingResolver))
+                .with_name_server_policies(vec![incompatible, compatible])
+                .with_query_transport(transport.clone());
+
+        let error = resolver
+            .resolve_all_with_strategy("family.example", 443, DnsQueryStrategy::UseIpv4)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            TransportError::Dns {
+                domain,
+                port: 443,
+                source,
+            } if domain == "family.example" && source.kind() == io::ErrorKind::NotConnected
+        ));
+        assert_eq!(*transport.record_types.lock().unwrap(), [1]);
     }
 
     #[tokio::test]
