@@ -17,6 +17,7 @@ use std::os::windows::io::AsRawSocket;
 
 mod dialer;
 mod dns;
+mod happy_eyeballs;
 mod penetrating_tls;
 pub mod reality;
 pub mod reality_connector;
@@ -31,6 +32,7 @@ pub use dns::{
     DnsQueryTransport, DnsQueryTransportKind, DnsResolver, NameServer, StaticHostRule,
     StaticHostTarget, SystemDnsResolver, TransportDomainMatcher, TransportRegexMatcher,
 };
+pub use happy_eyeballs::{connect_tcp_happy_eyeballs, HappyEyeballsConfig};
 pub(crate) use penetrating_tls::{CapturedTcpStream, PenetratingTlsStream, ServerReadLog};
 pub use reality_connector::{RealityTlsSession, RealityTlsSessionProvider};
 pub use reality_runtime::{
@@ -262,12 +264,34 @@ pub trait SocketProtector: Send + Sync {
 }
 
 #[async_trait]
+pub trait PreparedRealityTlsConnection: Send {
+    /// Completes the one-shot REALITY handshake over an already connected TCP stream.
+    async fn complete(
+        self: Box<Self>,
+        tcp_stream: TcpStream,
+    ) -> Result<BoxedTransportStream, TransportError>;
+}
+
+#[async_trait]
 pub trait RealityTlsEngine: Send + Sync {
     async fn connect(
         &self,
         config: &RealityClientConfig,
         target: &Target,
     ) -> Result<BoxedTransportStream, TransportError>;
+
+    /// Prepares a one-shot REALITY handshake for a caller-managed TCP connection.
+    ///
+    /// The default keeps existing third-party engines source-compatible. Returning
+    /// `None` means that the engine cannot accept a preconnected stream, so callers
+    /// must use [`RealityTlsEngine::connect`] with a single target.
+    fn prepare_preconnected(
+        &self,
+        _config: &RealityClientConfig,
+        _target: &Target,
+    ) -> Result<Option<Box<dyn PreparedRealityTlsConnection>>, TransportError> {
+        Ok(None)
+    }
 }
 
 #[async_trait]

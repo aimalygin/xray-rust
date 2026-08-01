@@ -1,5 +1,6 @@
 use std::{
     net::{Ipv4Addr, SocketAddr},
+    num::NonZeroUsize,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -13,8 +14,9 @@ use xray_transport::{
         RealityClientHelloRequest, RealityHandshakeContext, RealityTlsSession,
         RealityTlsSessionProvider,
     },
-    DnsResolver, RealityClientConfig, RealityHandshakeContextProvider, RealityRuntimeEngine,
-    RealityTlsEngine, TransportError,
+    ConnectorConfig, DnsResolver, HappyEyeballsConfig, RealityClientConfig,
+    RealityHandshakeContextProvider, RealityRuntimeEngine, RealityTlsEngine, TlsConnector,
+    TransportDialer, TransportError,
 };
 
 const CLIENTHELLO_FIXTURE_JSON: &str =
@@ -311,6 +313,24 @@ async fn assert_accept_completed(handle: tokio::task::JoinHandle<()>) {
         .expect("tcp accept task should not panic");
 }
 
+fn happy_eyeballs_config() -> HappyEyeballsConfig {
+    HappyEyeballsConfig {
+        prioritize_ipv6: false,
+        interleave: 1,
+        try_delay: Duration::from_secs(60),
+        max_concurrent: NonZeroUsize::new(2).expect("non-zero concurrency"),
+    }
+}
+
+async fn refused_loopback_addr() -> SocketAddr {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .expect("reserve refused candidate");
+    let addr = listener.local_addr().expect("read refused candidate");
+    drop(listener);
+    addr
+}
+
 #[tokio::test]
 async fn reality_runtime_rejects_unsupported_fingerprint_before_dependencies() {
     let engine = RealityRuntimeEngine::new(Arc::new(PanickingSessionProvider))
@@ -453,6 +473,46 @@ async fn reality_runtime_prepares_handshake_and_connects_ip_before_live_tls_gate
         completions[0].original_session_id
     );
     assert_ne!(completions[0].auth_key, [0u8; 32]);
+}
+
+#[tokio::test]
+async fn reality_runtime_prepares_one_session_and_completes_tcp_race_winner() {
+    let (success, handle) = spawn_accept_once().await;
+    let refused = refused_loopback_addr().await;
+    let provider = Arc::new(RecordingSessionProvider::new(clienthello_fixture()));
+    let context = Arc::new(FixedContextProvider::new(fixed_context()));
+    let engine = Arc::new(
+        RealityRuntimeEngine::new(provider.clone())
+            .with_dns_resolver(Arc::new(PanickingDnsResolver))
+            .with_context_provider(context.clone()),
+    );
+    let dialer = TransportDialer::with_tls_connector(
+        TlsConnector::system().expect("build system TLS connector"),
+    )
+    .with_reality_engine(engine);
+    let target = Target::new(
+        TargetAddr::Domain("origin.example".to_owned()),
+        443,
+        Network::Tcp,
+    );
+    let config = ConnectorConfig::Reality(reality_config());
+    let race_config = happy_eyeballs_config();
+
+    let result = dialer
+        .connect_resolved(&config, &target, &[refused, success], Some(&race_config))
+        .await;
+
+    assert!(matches!(
+        result,
+        Err(TransportError::RealityTlsCompletionUnsupported)
+    ));
+    assert_accept_completed(handle).await;
+    assert_eq!(
+        provider.seen(),
+        vec![("www.example.com".to_owned(), "chrome".to_owned())]
+    );
+    assert_eq!(context.calls(), 1);
+    assert_eq!(provider.completions().len(), 1);
 }
 
 #[tokio::test]

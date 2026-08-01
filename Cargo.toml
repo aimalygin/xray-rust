@@ -27,6 +27,7 @@ aes = { version = "0.8", features = ["zeroize"] }
 aes-gcm = { version = "0.10", features = ["zeroize"] }
 async-trait = "0.1"
 bytes = "1"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 ghash = { version = "0.5", features = ["zeroize"] }
 hkdf = "0.12"
 hmac = "0.12"

@@ -14,6 +14,7 @@ aes.workspace = true
 aes-gcm.workspace = true
 async-trait.workspace = true
 bytes.workspace = true
+futures-util.workspace = true
 ghash.workspace = true
 hkdf.workspace = true
 hmac.workspace = true
@@ -37,3 +38,4 @@ zeroize.workspace = true
 rcgen.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+tokio = { workspace = true, features = ["test-util"] }

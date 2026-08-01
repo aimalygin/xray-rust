@@ -1,11 +1,11 @@
-use std::{fmt, sync::Arc};
+use std::{fmt, io, net::SocketAddr, sync::Arc};
 
 use crate::{
-    connect_tcp_target, BoxedTransportStream, ConnectorConfig, RealityRuntimeEngine,
-    RealityTlsEngine, RustlsRealityTlsSessionProvider, SocketProtector, TlsConnector,
-    TransportError,
+    connect_tcp_happy_eyeballs, connect_tcp_stream, connect_tcp_target, BoxedTransportStream,
+    ConnectorConfig, HappyEyeballsConfig, RealityRuntimeEngine, RealityTlsEngine,
+    RustlsRealityTlsSessionProvider, SocketProtector, TlsConnector, TransportError,
 };
-use xray_routing::Target;
+use xray_routing::{Target, TargetAddr};
 
 #[derive(Clone)]
 pub struct TransportDialer {
@@ -92,5 +92,94 @@ impl TransportDialer {
                 None => Err(TransportError::UnsupportedConnectorConfig("reality")),
             },
         }
+    }
+
+    /// Connects a transport to an already resolved list of TCP candidates.
+    ///
+    /// Happy Eyeballs is enabled only when the policy has a non-zero delay and
+    /// at least two candidates, matching Xray's feature-off sentinels. Without
+    /// it, the first candidate preserves the legacy deterministic behavior.
+    pub async fn connect_resolved(
+        &self,
+        config: &ConnectorConfig,
+        original_target: &Target,
+        candidates: &[SocketAddr],
+        happy_eyeballs: Option<&HappyEyeballsConfig>,
+    ) -> Result<BoxedTransportStream, TransportError> {
+        let first = candidates
+            .first()
+            .copied()
+            .ok_or_else(|| no_resolved_candidates_error(original_target))?;
+        let first_target = resolved_target(original_target, first);
+        let race_config =
+            happy_eyeballs.filter(|config| !config.try_delay.is_zero() && candidates.len() >= 2);
+
+        match config {
+            ConnectorConfig::Tcp => match race_config {
+                Some(race_config) => Ok(Box::new(
+                    connect_tcp_happy_eyeballs(
+                        candidates,
+                        self.socket_protector.as_deref(),
+                        race_config,
+                    )
+                    .await?,
+                )),
+                None => Ok(Box::new(
+                    connect_tcp_stream(first, self.socket_protector.as_deref()).await?,
+                )),
+            },
+            ConnectorConfig::Tls(tls_config) => match race_config {
+                Some(race_config) => {
+                    self.tls
+                        .connect_candidates(candidates, tls_config, race_config)
+                        .await
+                }
+                None => self.tls.connect(&first_target, tls_config).await,
+            },
+            ConnectorConfig::Reality(reality_config) => {
+                let Some(reality) = &self.reality else {
+                    return Err(TransportError::UnsupportedConnectorConfig("reality"));
+                };
+
+                let Some(race_config) = race_config else {
+                    return reality.connect(reality_config, &first_target).await;
+                };
+                let Some(prepared) =
+                    reality.prepare_preconnected(reality_config, original_target)?
+                else {
+                    // Third-party engines that only implement the legacy API remain
+                    // usable, but cannot safely participate in a raw TCP race.
+                    return reality.connect(reality_config, &first_target).await;
+                };
+                let stream = connect_tcp_happy_eyeballs(
+                    candidates,
+                    self.socket_protector.as_deref(),
+                    race_config,
+                )
+                .await?;
+
+                prepared.complete(stream).await
+            }
+        }
+    }
+}
+
+fn resolved_target(original_target: &Target, candidate: SocketAddr) -> Target {
+    Target::new(
+        TargetAddr::Ip(candidate.ip()),
+        candidate.port(),
+        original_target.network,
+    )
+}
+
+fn no_resolved_candidates_error(target: &Target) -> TransportError {
+    match &target.addr {
+        TargetAddr::Domain(domain) => {
+            TransportError::NoResolvedAddress(domain.clone(), target.port)
+        }
+        TargetAddr::Ip(ip) => TransportError::Tcp(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("no resolved TCP candidates for {ip}:{}", target.port),
+        )),
     }
 }

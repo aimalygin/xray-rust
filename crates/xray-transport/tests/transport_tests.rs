@@ -1,6 +1,8 @@
 mod transport_tests {
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::num::NonZeroUsize;
     use std::sync::{Arc, Mutex};
+    use std::time::Duration;
 
     use async_trait::async_trait;
     use rcgen::{generate_simple_self_signed, CertifiedKey};
@@ -10,9 +12,9 @@ mod transport_tests {
     use tokio_rustls::TlsAcceptor;
     use xray_routing::{Network, Target, TargetAddr};
     use xray_transport::{
-        BoxedTransportStream, ConnectorConfig, RealityClientConfig, RealityTlsEngine, SocketHandle,
-        SocketProtector, TcpConnector, TlsClientConfig, TlsConnector, TransportConnector,
-        TransportDialer, TransportError,
+        BoxedTransportStream, ConnectorConfig, HappyEyeballsConfig, RealityClientConfig,
+        RealityTlsEngine, SocketHandle, SocketProtector, TcpConnector, TlsClientConfig,
+        TlsConnector, TransportConnector, TransportDialer, TransportError,
     };
 
     #[derive(Debug)]
@@ -83,6 +85,24 @@ mod transport_tests {
             spider_x: "/".to_owned(),
             mldsa65_verify: None,
         }
+    }
+
+    fn happy_eyeballs_config(try_delay: Duration) -> HappyEyeballsConfig {
+        HappyEyeballsConfig {
+            prioritize_ipv6: false,
+            interleave: 1,
+            try_delay,
+            max_concurrent: NonZeroUsize::new(2).expect("non-zero concurrency"),
+        }
+    }
+
+    async fn refused_loopback_addr() -> SocketAddr {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("reserve refused candidate");
+        let addr = listener.local_addr().expect("read refused candidate");
+        drop(listener);
+        addr
     }
 
     async fn spawn_echo_once() -> (SocketAddr, tokio::task::JoinHandle<()>) {
@@ -364,6 +384,167 @@ mod transport_tests {
     }
 
     #[tokio::test]
+    async fn transport_dialer_resolved_tcp_falls_back_after_fast_failure() {
+        let (client_config, _) = tls_test_configs();
+        let (success, handle) = spawn_echo_once().await;
+        let refused = refused_loopback_addr().await;
+        let dialer =
+            TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config));
+        let original_target = Target::new(
+            TargetAddr::Domain("origin.test".to_owned()),
+            443,
+            Network::Tcp,
+        );
+        let config = ConnectorConfig::Tcp;
+        let race_config = happy_eyeballs_config(Duration::from_secs(60));
+
+        let stream = dialer
+            .connect_resolved(
+                &config,
+                &original_target,
+                &[refused, success],
+                Some(&race_config),
+            )
+            .await
+            .expect("second TCP candidate should connect");
+
+        assert_boxed_transport_stream(stream).await;
+        handle.await.expect("echo task should complete");
+    }
+
+    #[tokio::test]
+    async fn transport_dialer_zero_delay_preserves_first_candidate_behavior() {
+        let (client_config, _) = tls_test_configs();
+        let refused = refused_loopback_addr().await;
+        let success_listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind unused fallback candidate");
+        let success = success_listener
+            .local_addr()
+            .expect("read fallback candidate");
+        let dialer =
+            TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config));
+        let target = Target::new(
+            TargetAddr::Domain("origin.test".to_owned()),
+            443,
+            Network::Tcp,
+        );
+        let race_config = happy_eyeballs_config(Duration::ZERO);
+
+        let result = dialer
+            .connect_resolved(
+                &ConnectorConfig::Tcp,
+                &target,
+                &[refused, success],
+                Some(&race_config),
+            )
+            .await;
+
+        assert!(matches!(result, Err(TransportError::Tcp(_))));
+    }
+
+    #[tokio::test]
+    async fn transport_dialer_resolved_tls_handshakes_after_tcp_fallback() {
+        let (client_config, server_config) = tls_test_configs();
+        let (success, handle) = spawn_tls_echo_once(server_config).await;
+        let refused = refused_loopback_addr().await;
+        let dialer =
+            TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config));
+        let original_target = Target::new(
+            TargetAddr::Domain("origin.test".to_owned()),
+            443,
+            Network::Tcp,
+        );
+        let config = ConnectorConfig::Tls(TlsClientConfig {
+            server_name: "server.test".to_owned(),
+            allow_insecure: false,
+        });
+        let race_config = happy_eyeballs_config(Duration::from_secs(60));
+
+        let stream = dialer
+            .connect_resolved(
+                &config,
+                &original_target,
+                &[refused, success],
+                Some(&race_config),
+            )
+            .await
+            .expect("TLS should use the winning TCP candidate");
+
+        assert_boxed_transport_stream(stream).await;
+        handle.await.expect("TLS echo task should complete");
+    }
+
+    #[tokio::test]
+    async fn tls_handshake_failure_does_not_race_another_tcp_candidate() {
+        let (client_config, _) = tls_test_configs();
+        let plaintext_listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind plaintext candidate");
+        let plaintext = plaintext_listener
+            .local_addr()
+            .expect("read plaintext candidate");
+        let fallback_listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind fallback candidate");
+        let fallback = fallback_listener
+            .local_addr()
+            .expect("read fallback candidate");
+        let first_server = tokio::spawn(async move {
+            let (stream, _) = plaintext_listener
+                .accept()
+                .await
+                .expect("accept first raw TCP winner");
+            drop(stream);
+        });
+        let protector = Arc::new(RecordingSocketProtector::default());
+        let connector = TlsConnector::with_client_config(client_config)
+            .with_socket_protector(protector.clone());
+        let config = TlsClientConfig {
+            server_name: "server.test".to_owned(),
+            allow_insecure: false,
+        };
+        let race_config = happy_eyeballs_config(Duration::from_secs(60));
+
+        let result = connector
+            .connect_candidates(&[plaintext, fallback], &config, &race_config)
+            .await;
+
+        assert!(matches!(result, Err(TransportError::Tls(_))));
+        first_server
+            .await
+            .expect("plaintext server should complete");
+        assert_eq!(protector.seen().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn tls_candidate_connect_rejects_invalid_sni_before_sockets() {
+        let (client_config, _) = tls_test_configs();
+        let protector = Arc::new(RecordingSocketProtector::default());
+        let connector = TlsConnector::with_client_config(client_config)
+            .with_socket_protector(protector.clone());
+        let config = TlsClientConfig {
+            server_name: "bad name".to_owned(),
+            allow_insecure: false,
+        };
+        let race_config = happy_eyeballs_config(Duration::from_millis(250));
+
+        let result = connector
+            .connect_candidates(
+                &[SocketAddr::from((Ipv4Addr::LOCALHOST, 9))],
+                &config,
+                &race_config,
+            )
+            .await;
+
+        assert!(matches!(
+            result,
+            Err(TransportError::InvalidTlsServerName(name)) if name == "bad name"
+        ));
+        assert!(protector.seen().is_empty());
+    }
+
+    #[tokio::test]
     async fn transport_dialer_carries_socket_protector_to_tcp_connects() {
         let (client_config, _) = tls_test_configs();
         let (addr, handle) = spawn_echo_once().await;
@@ -439,6 +620,40 @@ mod transport_tests {
         assert_eq!(seen_target.addr, target.addr);
         assert_eq!(seen_target.port, target.port);
         assert_eq!(seen_target.network, target.network);
+    }
+
+    #[tokio::test]
+    async fn resolved_legacy_reality_engine_receives_first_candidate_once() {
+        let (client_config, _) = tls_test_configs();
+        let (client, _server) = tokio::io::duplex(1024);
+        let engine = Arc::new(RecordingRealityEngine::new(client));
+        let dialer =
+            TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config))
+                .with_reality_engine(engine.clone());
+        let original_target = Target::new(
+            TargetAddr::Domain("origin.test".to_owned()),
+            443,
+            Network::Tcp,
+        );
+        let first = SocketAddr::from((Ipv4Addr::new(192, 0, 2, 1), 8443));
+        let second = SocketAddr::from((Ipv4Addr::new(192, 0, 2, 2), 9443));
+        let race_config = happy_eyeballs_config(Duration::from_millis(250));
+
+        let stream = dialer
+            .connect_resolved(
+                &ConnectorConfig::Reality(reality_test_config()),
+                &original_target,
+                &[first, second],
+                Some(&race_config),
+            )
+            .await
+            .expect("legacy REALITY engine should remain usable");
+        drop(stream);
+
+        let (_, seen_target) = engine.seen().expect("legacy engine should be called once");
+        assert_eq!(seen_target.addr, TargetAddr::Ip(first.ip()));
+        assert_eq!(seen_target.port, first.port());
+        assert_eq!(seen_target.network, Network::Tcp);
     }
 
     #[tokio::test]

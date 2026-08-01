@@ -1927,6 +1927,7 @@ dependencies = [
  "aes-gcm",
  "async-trait",
  "bytes",
+ "futures-util",
  "ghash",
  "hkdf",
  "hmac",

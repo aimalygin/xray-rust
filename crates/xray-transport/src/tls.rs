@@ -14,8 +14,8 @@ use tokio_rustls::TlsConnector as TokioTlsConnector;
 use xray_routing::{Target, TargetAddr};
 
 use crate::{
-    connect_tcp_stream, BoxedTransportStream, SocketProtector, TlsClientConfig, TransportError,
-    TransportStream,
+    connect_tcp_happy_eyeballs, connect_tcp_stream, BoxedTransportStream, HappyEyeballsConfig,
+    SocketProtector, TlsClientConfig, TransportError, TransportStream,
 };
 
 #[derive(Clone)]
@@ -84,6 +84,27 @@ impl TlsConnector {
         };
 
         let stream = connect_tcp_stream(addr, self.socket_protector.as_deref()).await?;
+        self.connect_stream_with_server_name(Box::new(stream), config, server_name)
+            .await
+    }
+
+    /// Races raw TCP candidates, then performs exactly one TLS handshake on
+    /// the winning stream.
+    pub async fn connect_candidates(
+        &self,
+        candidates: &[SocketAddr],
+        config: &TlsClientConfig,
+        happy_eyeballs: &HappyEyeballsConfig,
+    ) -> Result<BoxedTransportStream, TransportError> {
+        // Validate SNI before opening any socket.
+        let server_name = tls_server_name(config)?;
+        let stream = connect_tcp_happy_eyeballs(
+            candidates,
+            self.socket_protector.as_deref(),
+            happy_eyeballs,
+        )
+        .await?;
+
         self.connect_stream_with_server_name(Box::new(stream), config, server_name)
             .await
     }
