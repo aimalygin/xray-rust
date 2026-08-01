@@ -49,6 +49,22 @@ target/benchmarks/<run-id>/<engine>/<workload>/run-002/
 target/benchmarks/<run-id>/<engine>/<workload>/run-003/
 ```
 
+Current `result.json` and `summary.json` files carry the generated `run_id`
+and a `provenance` object. Its JSON fields are `harness_profile` (`debug` or
+`release`), optional `workspace_git` with `revision` and optional `dirty`,
+optional `harness_binary_path`, `harness_binary_sha256`,
+`engine_binary_path`, `engine_binary_sha256`, and `working_directory`, plus
+`invocation_args`. `workspace_git` is the runtime checkout state observed at
+the end of the run; it is not an embedded build revision and can differ from
+the source used by an older binary. The SHA-256 fields identify the exact
+harness and measured engine executable files at run end. `invocation_args` is
+the canonical effective `xray-bench run` CLI argument vector rather than a
+shell-quoted string, so those arguments can be replayed without guessing how
+paths were escaped; it does not capture environment variables or reconstruct
+the binaries' build source. A repeated-run summary is written only when every
+raw result has the same run ID and provenance; fields default cleanly when
+older stored results are read.
+
 ## Run xray-rust Only
 
 ```sh
@@ -292,6 +308,120 @@ missing or its status is not `ok`. Bars show the median across runs;
 whiskers span min to p95 (for latency: min run median up to the median run
 p95).
 
+### DNS chart inputs
+
+DNS publication charts use eight separate xray-rust-only release groups. Build
+the engine once, then keep `--runs`, `--connections`, and `--iterations`
+identical across every invocation. The publication recipe is five runs, 16
+logical clients, and 1000 iterations:
+
+```sh
+cargo build --release -p xray-cli --bin xray-rust
+
+cargo run --release -p xray-bench -- run --engine xray-rust \
+  --xray-rust-bin target/release/xray-rust --workload tun-fake-dns \
+  --runs 5 --connections 16 --iterations 1000 --run-timeout-ms 120000
+cargo run --release -p xray-bench -- run --engine xray-rust \
+  --xray-rust-bin target/release/xray-rust --workload tun-fake-dns-tcp \
+  --runs 5 --connections 16 --iterations 1000 --run-timeout-ms 120000
+
+cargo run --release -p xray-bench -- run --engine xray-rust \
+  --xray-rust-bin target/release/xray-rust --workload tun-dns-proxy \
+  --transport udp --dns-upstream-transport classic \
+  --runs 5 --connections 16 --iterations 1000 --run-timeout-ms 120000
+cargo run --release -p xray-bench -- run --engine xray-rust \
+  --xray-rust-bin target/release/xray-rust --workload tun-dns-proxy \
+  --transport tcp --dns-upstream-transport classic \
+  --runs 5 --connections 16 --iterations 1000 --run-timeout-ms 120000
+cargo run --release -p xray-bench -- run --engine xray-rust \
+  --xray-rust-bin target/release/xray-rust --workload tun-dns-proxy \
+  --transport udp --dns-upstream-transport tcp-routed \
+  --runs 5 --connections 16 --iterations 1000 --run-timeout-ms 120000
+cargo run --release -p xray-bench -- run --engine xray-rust \
+  --xray-rust-bin target/release/xray-rust --workload tun-dns-proxy \
+  --transport tcp --dns-upstream-transport tcp-routed \
+  --runs 5 --connections 16 --iterations 1000 --run-timeout-ms 120000
+cargo run --release -p xray-bench -- run --engine xray-rust \
+  --xray-rust-bin target/release/xray-rust --workload tun-dns-proxy \
+  --transport udp --dns-upstream-transport tcp-local \
+  --runs 5 --connections 16 --iterations 1000 --run-timeout-ms 120000
+cargo run --release -p xray-bench -- run --engine xray-rust \
+  --xray-rust-bin target/release/xray-rust --workload tun-dns-proxy \
+  --transport tcp --dns-upstream-transport tcp-local \
+  --runs 5 --connections 16 --iterations 1000 --run-timeout-ms 120000
+```
+
+`tun-fake-dns` is inherently the UDP-client case and
+`tun-fake-dns-tcp` is inherently the TCP-client case, so neither takes a
+chart-defining `--transport`. The six proxy groups form the UDP/TCP client ×
+`classic`/`tcp-routed`/`tcp-local` upstream matrix. Do not use
+`--transport both` for a chart input: the chart loader rejects combined client
+transports rather than attributing their merged samples to either series.
+The shared value of 16 also matches the TCP driver's active-connection cap;
+using 32 would let UDP run 32 queries concurrently while TCP runs two waves,
+confounding both query-rate and peak-RSS comparisons.
+
+Pass each resulting `target/benchmarks/<run-id>` directory with a repeatable
+`--dns-group` flag. DNS inputs may be rendered on their own:
+
+```sh
+cargo run --release -p xray-bench -- chart \
+  --dns-group target/benchmarks/<fake-dns-udp-run-id> \
+  --dns-group target/benchmarks/<fake-dns-tcp-run-id> \
+  --dns-group target/benchmarks/<proxy-udp-classic-run-id> \
+  --dns-group target/benchmarks/<proxy-tcp-classic-run-id> \
+  --dns-group target/benchmarks/<proxy-udp-tcp-routed-run-id> \
+  --dns-group target/benchmarks/<proxy-tcp-tcp-routed-run-id> \
+  --dns-group target/benchmarks/<proxy-udp-tcp-local-run-id> \
+  --dns-group target/benchmarks/<proxy-tcp-tcp-local-run-id> \
+  --date 2026-08-01 \
+  --hardware "Apple M3 Pro, 18 GB RAM, macOS 26.5.2" \
+  --xray-rust-version <git-short-rev>
+```
+
+The eight `--dns-group` flags can instead be appended to the normal
+`chart --group ...` command to write the regular and DNS charts together.
+Omitting `--dns-group` preserves the old chart behavior and output set.
+Supplying any DNS group requires the complete eight-input matrix with
+`status=ok`; duplicates, mixed workload parameters, missing transport
+metadata, and partial matrices fail closed. Every input must come from a
+release harness, and the Git state, harness/engine binary paths, and working
+directory recorded in `provenance` must agree across the matrix. Both binary
+SHA-256 fields are mandatory, must be 64-character lowercase hexadecimal
+values, and must agree too; run IDs and
+the three scenario selectors in `invocation_args` are expected to differ,
+while every other effective CLI argument must match. Publication inputs with
+fewer than 100 iterations are rejected.
+DNS-only rendering needs only the date, hardware, and xray-rust version; the
+normal cross-engine charts retain their Xray-core and sing-box version
+requirements.
+
+The DNS extension writes four additional light/dark SVG pairs:
+`dns-latency`, `dns-query-rate`, `dns-cpu-per-1k-queries`, and
+`dns-memory-rss`. They compare UDP and TCP clients for FakeDNS, classic DNS,
+routed DNS-over-TCP, and local DNS-over-TCP. Every raw run has exactly
+`2 * connections * iterations` validated queries: one A and one HTTPS query
+per logical client per iteration. Query rate is
+`queries * 1000 / duration_ms`; CPU cost is
+`cpu_millis * 1000 / queries` milliseconds per 1000 queries; RSS is
+`peak_rss_kib / 1024` MiB. Rate, CPU, and RSS are derived separately from each
+raw `result.json` before their min/median/p95 aggregation, avoiding ratios of
+already-aggregated numerators and denominators. Latency uses the median of
+per-run medians for the bar, the minimum run median for the lower whisker, and
+the median run p95 for the upper whisker.
+
+These are hybrid, cache-warmed local fixtures, as the note embedded in every
+DNS SVG states. All logical clients reuse one domain: the first managed A
+lookup warms the shared TTL cache and subsequent A requests mostly measure
+cache hits; FakeDNS likewise reuses its mapping instead of exercising lease
+churn. In the proxy fixture HTTPS is raw-forwarded to a deterministic NODATA
+response; FakeDNS also returns HTTPS NODATA without allocating another
+mapping. Every chart pools the A and HTTPS samples rather than reporting
+per-qtype metrics. The graphs therefore do not claim cold recursive lookup
+cost, diverse-domain cache behavior, successful HTTPS-record payload
+handling, or FakeDNS pool growth. The RSS chart is peak process memory for
+this steady workload, not a lease-index stress result.
+
 ## Metrics
 
 The first scoreboard is intentionally portable and comparable across Go and Rust:
@@ -306,7 +436,7 @@ The first scoreboard is intentionally portable and comparable across Go and Rust
 - setup microsecond breakdown for SOCKS TCP setup workloads: local TCP connect to the inbound, SOCKS method negotiation, SOCKS CONNECT request/response, full SOCKS setup, and total setup time.
 - min, median, and p95 aggregates across repeated runs.
 
-`tcp-freedom`, `udp-freedom`, `tun-udp-freedom`, `tun-fake-dns`, `tun-fake-dns-tcp`, `tun-dns-proxy`, `udp-vless`, `udp-xudp`, `vision-xudp`, and `reality-vision-xudp` record round-trip latency samples for validated traffic. Both fake-DNS workloads record two samples per connection per iteration, one for A and one for HTTPS. `tun-dns-proxy` records the same two samples for each selected client transport, so `--transport both` records four samples per connection per iteration. `summary.json` aggregates each run's latency min/median/p95/p99 across repeated runs; `result.json` also records the selected `dns_transport` for TCP fake-DNS and raw-proxy runs. For `tun-dns-proxy`, both JSON files record `dns_upstream_transport`, so classic, routed TCP, and local TCP runs cannot be accidentally aggregated together.
+`tcp-freedom`, `udp-freedom`, `tun-udp-freedom`, `tun-fake-dns`, `tun-fake-dns-tcp`, `tun-dns-proxy`, `udp-vless`, `udp-xudp`, `vision-xudp`, and `reality-vision-xudp` record round-trip latency samples for validated traffic. Both fake-DNS workloads record two samples per connection per iteration, one for A and one for HTTPS. `tun-dns-proxy` records the same two samples for each selected client transport, so `--transport both` records four samples per connection per iteration. `summary.json` aggregates each run's latency min/median/p95/p99 across repeated runs. Both JSON files record `dns_transport` (`udp` for `tun-fake-dns`, `tcp` for `tun-fake-dns-tcp`, and the selected client transport for `tun-dns-proxy`). For `tun-dns-proxy`, both files also record `dns_upstream_transport`, so classic, routed TCP, and local TCP runs cannot be accidentally aggregated together.
 
 **Use at least a few hundred iterations for any latency number you publish.**
 A freshly spawned engine serves its first flow about twenty milliseconds into

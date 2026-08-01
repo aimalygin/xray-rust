@@ -2,7 +2,7 @@ use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::future::Future;
 use std::hint::black_box;
-use std::io::{self, Write as IoWrite};
+use std::io::{self, Read as IoRead, Write as IoWrite};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener as StdTcpListener};
 #[cfg(unix)]
 use std::os::fd::{AsRawFd, RawFd};
@@ -550,8 +550,42 @@ pub struct ProcessSample {
     pub threads: Option<u64>,
 }
 
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct WorkspaceGitProvenance {
+    #[serde(default)]
+    pub revision: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dirty: Option<bool>,
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct BenchProvenance {
+    #[serde(default)]
+    pub harness_profile: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_git: Option<WorkspaceGitProvenance>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub harness_binary_path: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub harness_binary_sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine_binary_path: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine_binary_sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub working_directory: Option<PathBuf>,
+    /// Canonical effective `xray-bench run` arguments. This is a vector rather than a
+    /// shell-quoted command so paths and values can be replayed without reparsing a shell string.
+    #[serde(default)]
+    pub invocation_args: Vec<String>,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct BenchResult {
+    #[serde(default)]
+    pub run_id: String,
+    #[serde(default)]
+    pub provenance: BenchProvenance,
     pub engine: String,
     pub workload: String,
     pub status: String,
@@ -638,6 +672,10 @@ pub struct FlowSetupSummaryAggregate {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct BenchSummary {
+    #[serde(default)]
+    pub run_id: String,
+    #[serde(default)]
+    pub provenance: BenchProvenance,
     pub engine: String,
     pub workload: String,
     pub status: String,
@@ -656,6 +694,8 @@ pub struct BenchSummary {
     pub iterations: u64,
     #[serde(default)]
     pub payload_size: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dns_transport: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dns_upstream_transport: Option<String>,
     pub latency_us: Option<LatencySummaryAggregate>,
@@ -732,6 +772,7 @@ pub struct RunningEngine {
     child: Child,
     pub pid: u32,
     pub socks_addr: SocketAddr,
+    pub binary_path: PathBuf,
     tun_fd: Option<FdGuard>,
     pub run_dir: PathBuf,
     pub stdout_path: PathBuf,
@@ -1683,6 +1724,14 @@ pub fn summarize_results(results: &[BenchResult]) -> Result<BenchSummary, BenchE
             "cannot summarize mixed benchmark engines or workloads".to_owned(),
         ));
     }
+    if results
+        .iter()
+        .any(|result| result.run_id != first.run_id || result.provenance != first.provenance)
+    {
+        return Err(BenchError::InvalidArguments(
+            "cannot summarize mixed benchmark provenance".to_owned(),
+        ));
+    }
     if results.iter().any(|result| {
         result.connections != first.connections
             || result.iterations != first.iterations
@@ -1702,6 +1751,8 @@ pub fn summarize_results(results: &[BenchResult]) -> Result<BenchSummary, BenchE
     };
 
     Ok(BenchSummary {
+        run_id: first.run_id.clone(),
+        provenance: first.provenance.clone(),
         engine: first.engine.clone(),
         workload: first.workload.clone(),
         status: status.to_owned(),
@@ -1723,6 +1774,7 @@ pub fn summarize_results(results: &[BenchResult]) -> Result<BenchSummary, BenchE
         connections: first.connections,
         iterations: first.iterations,
         payload_size: first.payload_size,
+        dns_transport: first.dns_transport.clone(),
         dns_upstream_transport: first.dns_upstream_transport.clone(),
         latency_us: summarize_latency_results(results),
         setup_us: summarize_setup_results(results),
@@ -7035,6 +7087,7 @@ async fn start_engine(
         source,
     })?;
     let pid = child.id();
+    let binary_path = fs::canonicalize(&binary).unwrap_or(binary);
     let tun_fd = tun_pair.and_then(into_tun_workload_fd);
     if options.workload.uses_tun_fd() {
         wait_for_process_started(&mut child, &stdout_path, &stderr_path).await?;
@@ -7047,6 +7100,7 @@ async fn start_engine(
         child,
         pid,
         socks_addr,
+        binary_path,
         tun_fd,
         run_dir: run_dir.to_path_buf(),
         stdout_path,
@@ -8904,6 +8958,163 @@ fn route_probe_config(rules: usize, outbounds: usize) -> Result<CoreConfig, Benc
     })
 }
 
+fn harness_build_profile() -> &'static str {
+    if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    }
+}
+
+fn workspace_git_provenance() -> Option<WorkspaceGitProvenance> {
+    let root = workspace_root().ok()?;
+    let revision = git_stdout(&root, &["rev-parse", "--verify", "HEAD"])?;
+    if revision.is_empty() {
+        return None;
+    }
+    let dirty = git_stdout(
+        &root,
+        &["status", "--porcelain=v1", "--untracked-files=normal"],
+    )
+    .map(|status| !status.is_empty());
+    Some(WorkspaceGitProvenance { revision, dirty })
+}
+
+fn git_stdout(root: &Path, args: &[&str]) -> Option<String> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(args)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+}
+
+fn file_sha256(path: &Path) -> Option<String> {
+    let mut file = fs::File::open(path).ok()?;
+    let mut hasher = Sha256::new();
+    let mut buffer = vec![0_u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer).ok()?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Some(hex_lower(&hasher.finalize()))
+}
+
+fn push_invocation_value(args: &mut Vec<String>, flag: &str, value: impl Into<String>) {
+    args.push(flag.to_owned());
+    args.push(value.into());
+}
+
+fn push_invocation_path(args: &mut Vec<String>, flag: &str, path: &Path) {
+    push_invocation_value(args, flag, path.to_string_lossy().into_owned());
+}
+
+fn canonical_run_invocation_args(
+    kind: EngineKind,
+    options: &BenchOptions,
+    engine_binary_path: &Path,
+) -> Vec<String> {
+    let mut args = vec!["run".to_owned()];
+    push_invocation_value(&mut args, "--engine", kind.as_str());
+    push_invocation_value(&mut args, "--workload", options.workload.as_str());
+    push_invocation_value(
+        &mut args,
+        "--duration-ms",
+        options.duration.as_millis().to_string(),
+    );
+    push_invocation_value(
+        &mut args,
+        "--sample-interval-ms",
+        options.sample_interval.as_millis().to_string(),
+    );
+    push_invocation_value(
+        &mut args,
+        "--run-timeout-ms",
+        options.run_timeout.as_millis().to_string(),
+    );
+    push_invocation_value(&mut args, "--connections", options.connections.to_string());
+    push_invocation_value(&mut args, "--iterations", options.iterations.to_string());
+    push_invocation_value(
+        &mut args,
+        "--payload-size",
+        options.payload_size.to_string(),
+    );
+    push_invocation_value(&mut args, "--transport", options.dns_transport.as_str());
+    push_invocation_value(
+        &mut args,
+        "--dns-upstream-transport",
+        options.dns_upstream_transport.as_str(),
+    );
+    push_invocation_value(&mut args, "--runs", options.runs.to_string());
+    push_invocation_path(&mut args, "--out-dir", &options.out_dir);
+
+    let xray_rust_bin = (kind == EngineKind::XrayRust)
+        .then_some(engine_binary_path)
+        .or(options.xray_rust_bin.as_deref());
+    if let Some(path) = xray_rust_bin {
+        push_invocation_path(&mut args, "--xray-rust-bin", path);
+    }
+    let xray_core_bin = (kind == EngineKind::XrayCore)
+        .then_some(engine_binary_path)
+        .or(options.xray_core_bin.as_deref());
+    if let Some(path) = xray_core_bin {
+        push_invocation_path(&mut args, "--xray-core-bin", path);
+    }
+    let sing_box_bin = (kind == EngineKind::SingBox)
+        .then_some(engine_binary_path)
+        .or(options.sing_box_bin.as_deref());
+    if let Some(path) = sing_box_bin {
+        push_invocation_path(&mut args, "--sing-box-bin", path);
+    }
+    if let Some(path) = options.xray_core_dir.as_deref() {
+        push_invocation_path(&mut args, "--xray-core-dir", path);
+    }
+    if let Some(path) = options.sing_box_dir.as_deref() {
+        push_invocation_path(&mut args, "--sing-box-dir", path);
+    }
+    if let Some(profile) = options.tun_profile.as_deref() {
+        push_invocation_value(&mut args, "--tun-profile", profile);
+    }
+    if options.no_auto_build {
+        args.push("--no-auto-build".to_owned());
+    }
+    if let Some(path) = options.geodata_dir.as_deref() {
+        push_invocation_path(&mut args, "--geodata-dir", path);
+    }
+    args
+}
+
+fn benchmark_provenance(
+    kind: EngineKind,
+    options: &BenchOptions,
+    engine_binary_path: &Path,
+) -> BenchProvenance {
+    let harness_binary_path = std::env::current_exe()
+        .ok()
+        .map(|path| fs::canonicalize(&path).unwrap_or(path));
+    let engine_binary_path =
+        fs::canonicalize(engine_binary_path).unwrap_or_else(|_| engine_binary_path.to_path_buf());
+    let harness_binary_sha256 = harness_binary_path.as_deref().and_then(file_sha256);
+    let engine_binary_sha256 = file_sha256(&engine_binary_path);
+    BenchProvenance {
+        harness_profile: harness_build_profile().to_owned(),
+        workspace_git: workspace_git_provenance(),
+        harness_binary_path,
+        harness_binary_sha256,
+        engine_binary_path: Some(engine_binary_path.clone()),
+        engine_binary_sha256,
+        working_directory: std::env::current_dir().ok(),
+        invocation_args: canonical_run_invocation_args(kind, options, &engine_binary_path),
+    }
+}
+
 pub async fn run_compare(options: BenchOptions) -> Result<(), BenchError> {
     if matches!(
         options.workload,
@@ -8949,7 +9160,7 @@ pub async fn run_engine_series(
         } else {
             numbered_run_directory(&base_dir, run_index)
         };
-        results.push(run_engine_once(kind, options, &run_dir, &binary_dir).await?);
+        results.push(run_engine_once(kind, options, run_id, &run_dir, &binary_dir).await?);
     }
     let summary = summarize_results(&results)?;
     write_summary_json(&base_dir.join("summary.json"), &summary)?;
@@ -8963,12 +9174,25 @@ pub async fn run_single_engine(
 ) -> Result<BenchResult, BenchError> {
     let run_dir = run_directory(&options.out_dir, run_id, kind, options.workload);
     let binary_dir = run_dir.join("bin");
-    run_engine_once(kind, options, &run_dir, &binary_dir).await
+    run_engine_once(kind, options, run_id, &run_dir, &binary_dir).await
+}
+
+fn workload_dns_transport(
+    workload: WorkloadKind,
+    configured_transport: TunDnsTransport,
+) -> Option<&'static str> {
+    match workload {
+        WorkloadKind::TunDnsProxy => Some(configured_transport.as_str()),
+        WorkloadKind::TunFakeDns => Some("udp"),
+        WorkloadKind::TunFakeDnsTcp => Some("tcp"),
+        _ => None,
+    }
 }
 
 async fn run_engine_once(
     kind: EngineKind,
     options: &BenchOptions,
+    run_id: &str,
     run_dir: &Path,
     binary_dir: &Path,
 ) -> Result<BenchResult, BenchError> {
@@ -9068,8 +9292,11 @@ async fn run_engine_once(
         duration_ms,
         transfer_duration,
     );
+    let provenance = benchmark_provenance(kind, options, &engine.binary_path);
 
     let result = BenchResult {
+        run_id: run_id.to_owned(),
+        provenance,
         engine: kind.as_str().to_owned(),
         workload: options.workload.as_str().to_owned(),
         status: "ok".to_owned(),
@@ -9084,11 +9311,8 @@ async fn run_engine_once(
         connections: options.connections as u64,
         iterations: options.iterations as u64,
         payload_size: options.payload_size as u64,
-        dns_transport: match options.workload {
-            WorkloadKind::TunDnsProxy => Some(options.dns_transport.as_str().to_owned()),
-            WorkloadKind::TunFakeDnsTcp => Some("tcp".to_owned()),
-            _ => None,
-        },
+        dns_transport: workload_dns_transport(options.workload, options.dns_transport)
+            .map(str::to_owned),
         dns_upstream_transport: (options.workload == WorkloadKind::TunDnsProxy)
             .then(|| options.dns_upstream_transport.as_str().to_owned()),
         latency_us,
@@ -9125,6 +9349,32 @@ fn new_run_id() -> String {
         .unwrap_or_default()
         .as_millis();
     millis.to_string()
+}
+
+fn format_benchmark_provenance(run_id: &str, provenance: &BenchProvenance) -> String {
+    let mut formatted = String::new();
+    if !run_id.is_empty() {
+        formatted.push_str(&format!(" run_id={run_id}"));
+    }
+    if !provenance.harness_profile.is_empty() {
+        formatted.push_str(&format!(" harness_profile={}", provenance.harness_profile));
+    }
+    if let Some(git) = provenance.workspace_git.as_ref() {
+        formatted.push_str(&format!(" workspace_git_revision={}", git.revision));
+        if let Some(dirty) = git.dirty {
+            formatted.push_str(&format!(" workspace_git_dirty={dirty}"));
+        }
+    }
+    if let Some(sha256) = provenance.harness_binary_sha256.as_deref() {
+        formatted.push_str(&format!(" harness_binary_sha256={sha256}"));
+    }
+    if let Some(path) = provenance.engine_binary_path.as_deref() {
+        formatted.push_str(&format!(" engine_binary_path={}", path.display()));
+    }
+    if let Some(sha256) = provenance.engine_binary_sha256.as_deref() {
+        formatted.push_str(&format!(" engine_binary_sha256={sha256}"));
+    }
+    formatted
 }
 
 fn print_result(result: &BenchResult) {
@@ -9180,8 +9430,9 @@ fn print_result(result: &BenchResult) {
             format!(" blackhole_connections[accepted/active]={accepted}/{active}")
         })
         .unwrap_or_default();
+    let provenance = format_benchmark_provenance(&result.run_id, &result.provenance);
     println!(
-        "{} {} status={} peak_rss_kib={} cpu_millis={} bytes_sent={} bytes_received={} samples={}{}{}{}{}{}{}{}",
+        "{} {} status={} peak_rss_kib={} cpu_millis={} bytes_sent={} bytes_received={} samples={}{}{}{}{}{}{}{}{}",
         result.engine,
         result.workload,
         result.status,
@@ -9196,7 +9447,8 @@ fn print_result(result: &BenchResult) {
         throughput,
         latency,
         setup,
-        blackhole
+        blackhole,
+        provenance,
     );
 }
 
@@ -9310,9 +9562,8 @@ fn print_summary(summary: &BenchSummary) {
         })
         .unwrap_or_default();
     let dns_transport = summary
-        .results
-        .first()
-        .and_then(|result| result.dns_transport.as_deref())
+        .dns_transport
+        .as_deref()
         .map(|transport| format!(" transport={transport}"))
         .unwrap_or_default();
     let dns_upstream_transport = summary
@@ -9372,8 +9623,9 @@ fn print_summary(summary: &BenchSummary) {
             )
         })
         .unwrap_or_default();
+    let provenance = format_benchmark_provenance(&summary.run_id, &summary.provenance);
     println!(
-        "{} {} runs={} status={} duration_ms[min/median/p95]={}/{}/{} peak_rss_kib[min/median/p95]={}/{}/{} cpu_millis[min/median/p95]={}/{}/{} bytes_sent[min/median/p95]={}/{}/{} bytes_received[min/median/p95]={}/{}/{}{}{}{}{}{}{}",
+        "{} {} runs={} status={} duration_ms[min/median/p95]={}/{}/{} peak_rss_kib[min/median/p95]={}/{}/{} cpu_millis[min/median/p95]={}/{}/{} bytes_sent[min/median/p95]={}/{}/{} bytes_received[min/median/p95]={}/{}/{}{}{}{}{}{}{}{}",
         summary.engine,
         summary.workload,
         summary.runs,
@@ -9399,6 +9651,7 @@ fn print_summary(summary: &BenchSummary) {
         throughput,
         latency,
         setup,
+        provenance,
     );
 }
 
@@ -9407,6 +9660,34 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
     use std::time::Duration;
+
+    fn minimal_bench_result() -> BenchResult {
+        BenchResult {
+            run_id: String::new(),
+            provenance: BenchProvenance::default(),
+            engine: "xray-rust".to_owned(),
+            workload: "tcp-freedom".to_owned(),
+            status: "ok".to_owned(),
+            duration_ms: 10,
+            transfer_duration_ms: None,
+            bytes_sent: 0,
+            bytes_received: 0,
+            peak_rss_kib: 1_000,
+            cpu_millis: 5,
+            cpu_millis_per_gib: None,
+            throughput_mbps: None,
+            connections: 1,
+            iterations: 1,
+            payload_size: 512,
+            dns_transport: None,
+            dns_upstream_transport: None,
+            latency_us: None,
+            setup_us: None,
+            samples: 2,
+            blackhole_connections_accepted: None,
+            blackhole_connections_active: None,
+        }
+    }
 
     fn geo_encode_varint(mut value: u64, out: &mut Vec<u8>) {
         while value >= 0x80 {
@@ -11995,11 +12276,15 @@ mod tests {
         assert_eq!(result.connections, 0);
         assert_eq!(result.dns_transport, None);
         assert_eq!(result.dns_upstream_transport, None);
+        assert_eq!(result.run_id, "");
+        assert_eq!(result.provenance, BenchProvenance::default());
     }
 
     #[test]
     fn records_dns_upstream_transport_in_result_and_summary_json() {
         let result = BenchResult {
+            run_id: String::new(),
+            provenance: BenchProvenance::default(),
             engine: "xray-rust".to_owned(),
             workload: "tun-dns-proxy".to_owned(),
             status: "ok".to_owned(),
@@ -12027,13 +12312,169 @@ mod tests {
         let summary_json = serde_json::to_value(&summary).unwrap();
 
         assert_eq!(result_json["dns_upstream_transport"], "tcp-routed");
+        assert_eq!(summary_json["dns_transport"], "udp");
         assert_eq!(summary_json["dns_upstream_transport"], "tcp-routed");
+    }
+
+    #[test]
+    fn labels_dns_client_transport_for_each_dns_workload() {
+        assert_eq!(
+            [
+                workload_dns_transport(WorkloadKind::TunFakeDns, TunDnsTransport::Both),
+                workload_dns_transport(WorkloadKind::TunFakeDnsTcp, TunDnsTransport::Both),
+                workload_dns_transport(WorkloadKind::TunDnsProxy, TunDnsTransport::Both),
+                workload_dns_transport(WorkloadKind::TcpFreedom, TunDnsTransport::Both),
+            ],
+            [Some("udp"), Some("tcp"), Some("both"), None]
+        );
+    }
+
+    #[test]
+    fn summary_preserves_run_provenance() {
+        let provenance = BenchProvenance {
+            harness_profile: "release".to_owned(),
+            workspace_git: Some(WorkspaceGitProvenance {
+                revision: "0123456789abcdef".to_owned(),
+                dirty: Some(true),
+            }),
+            harness_binary_path: Some(PathBuf::from("/tmp/xray-bench")),
+            harness_binary_sha256: Some("harness-sha256".to_owned()),
+            engine_binary_path: Some(PathBuf::from("/tmp/xray-rust")),
+            engine_binary_sha256: Some("engine-sha256".to_owned()),
+            working_directory: Some(PathBuf::from("/tmp/workspace")),
+            invocation_args: vec![
+                "run".to_owned(),
+                "--engine".to_owned(),
+                "xray-rust".to_owned(),
+            ],
+        };
+        let result = BenchResult {
+            run_id: "run-42".to_owned(),
+            provenance: provenance.clone(),
+            ..minimal_bench_result()
+        };
+
+        let summary = summarize_results(&[result]).unwrap();
+
+        assert_eq!(
+            (summary.run_id, summary.provenance),
+            ("run-42".to_owned(), provenance)
+        );
+    }
+
+    #[test]
+    fn provenance_serializes_binary_sha256_fields() {
+        let provenance = BenchProvenance {
+            harness_binary_sha256: Some("harness-sha256".to_owned()),
+            engine_binary_sha256: Some("engine-sha256".to_owned()),
+            ..BenchProvenance::default()
+        };
+
+        let json = serde_json::to_value(&provenance).unwrap();
+
+        assert_eq!(json["harness_binary_sha256"], "harness-sha256");
+        assert_eq!(json["engine_binary_sha256"], "engine-sha256");
+    }
+
+    #[test]
+    fn provenance_deserializes_without_binary_sha256_fields() {
+        let provenance: BenchProvenance = serde_json::from_str(
+            r#"{"harness_profile":"release","harness_binary_path":"/tmp/xray-bench","engine_binary_path":"/tmp/xray-rust"}"#,
+        )
+        .unwrap();
+
+        assert_eq!(provenance.harness_binary_sha256, None);
+        assert_eq!(provenance.engine_binary_sha256, None);
+    }
+
+    #[test]
+    fn file_sha256_hashes_streamed_file_contents() {
+        let path =
+            std::env::temp_dir().join(format!("xray-bench-known-sha256-{}", std::process::id()));
+        fs::write(&path, b"abc").unwrap();
+
+        let sha256 = file_sha256(&path);
+        fs::remove_file(path).unwrap();
+
+        assert_eq!(
+            sha256.as_deref(),
+            Some("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+        );
+    }
+
+    #[test]
+    fn file_sha256_returns_none_when_file_cannot_be_opened() {
+        let path =
+            std::env::temp_dir().join(format!("xray-bench-missing-sha256-{}", std::process::id()));
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(file_sha256(&path), None);
+    }
+
+    #[test]
+    fn canonical_invocation_replays_effective_options_without_shell_parsing() {
+        let engine_binary = PathBuf::from("/tmp/bin with spaces/xray-rust");
+        let options = BenchOptions {
+            workload: WorkloadKind::TunDnsProxy,
+            duration: Duration::from_millis(1_234),
+            sample_interval: Duration::from_millis(17),
+            run_timeout: Duration::from_millis(98_765),
+            connections: 32,
+            iterations: 777,
+            payload_size: 4_096,
+            dns_transport: TunDnsTransport::Tcp,
+            dns_upstream_transport: TunDnsUpstreamTransport::TcpRouted,
+            runs: 5,
+            out_dir: PathBuf::from("/tmp/results with spaces"),
+            xray_core_bin: Some(PathBuf::from("/tmp/xray core")),
+            xray_core_dir: Some(PathBuf::from("/tmp/xray core source")),
+            sing_box_bin: Some(PathBuf::from("/tmp/sing box")),
+            sing_box_dir: Some(PathBuf::from("/tmp/sing box source")),
+            tun_profile: Some("mobile".to_owned()),
+            no_auto_build: true,
+            geodata_dir: Some(PathBuf::from("/tmp/geo data")),
+            ..BenchOptions::default()
+        };
+        let invocation =
+            canonical_run_invocation_args(EngineKind::XrayRust, &options, &engine_binary);
+        let parsed =
+            parse_cli_args(std::iter::once("xray-bench".to_owned()).chain(invocation)).unwrap();
+        let CliArgs::Run(replayed) = parsed else {
+            panic!("canonical process invocation must parse as `run`");
+        };
+        let mut expected = options;
+        expected.engine = Some(EngineKind::XrayRust);
+        expected.xray_rust_bin = Some(engine_binary);
+
+        assert_eq!(replayed, expected);
+    }
+
+    #[test]
+    fn formatted_provenance_identifies_the_measured_binary_and_source() {
+        let provenance = BenchProvenance {
+            harness_profile: "release".to_owned(),
+            workspace_git: Some(WorkspaceGitProvenance {
+                revision: "abc123".to_owned(),
+                dirty: Some(false),
+            }),
+            harness_binary_sha256: Some("harness-sha256".to_owned()),
+            engine_binary_path: Some(PathBuf::from("/tmp/xray-rust")),
+            engine_binary_sha256: Some("engine-sha256".to_owned()),
+            ..BenchProvenance::default()
+        };
+
+        assert_eq!(
+            format_benchmark_provenance("run-42", &provenance),
+            " run_id=run-42 harness_profile=release workspace_git_revision=abc123 workspace_git_dirty=false harness_binary_sha256=harness-sha256 engine_binary_path=/tmp/xray-rust engine_binary_sha256=engine-sha256"
+        );
     }
 
     #[test]
     fn summarizes_repeated_results_with_min_median_and_p95() {
         let results = vec![
             BenchResult {
+                run_id: String::new(),
+                provenance: BenchProvenance::default(),
                 engine: "xray-rust".to_owned(),
                 workload: "tcp-freedom".to_owned(),
                 status: "ok".to_owned(),
@@ -12062,6 +12503,8 @@ mod tests {
                 blackhole_connections_active: None,
             },
             BenchResult {
+                run_id: String::new(),
+                provenance: BenchProvenance::default(),
                 engine: "xray-rust".to_owned(),
                 workload: "tcp-freedom".to_owned(),
                 status: "ok".to_owned(),
@@ -12090,6 +12533,8 @@ mod tests {
                 blackhole_connections_active: None,
             },
             BenchResult {
+                run_id: String::new(),
+                provenance: BenchProvenance::default(),
                 engine: "xray-rust".to_owned(),
                 workload: "tcp-freedom".to_owned(),
                 status: "ok".to_owned(),
@@ -12222,8 +12667,11 @@ mod tests {
         assert_eq!(summary.connections, 0);
         assert_eq!(summary.iterations, 0);
         assert_eq!(summary.payload_size, 0);
+        assert_eq!(summary.dns_transport, None);
         assert_eq!(summary.transfer_duration_ms, None);
         assert_eq!(summary.dns_upstream_transport, None);
+        assert_eq!(summary.run_id, "");
+        assert_eq!(summary.provenance, BenchProvenance::default());
     }
 
     #[test]
@@ -12253,12 +12701,15 @@ mod tests {
         assert_eq!(summary.connections, 0);
         assert_eq!(summary.iterations, 0);
         assert_eq!(summary.payload_size, 0);
+        assert_eq!(summary.dns_transport, None);
         assert_eq!(summary.dns_upstream_transport, None);
     }
 
     #[test]
     fn summarize_rejects_mixed_workload_parameters() {
         let first = BenchResult {
+            run_id: String::new(),
+            provenance: BenchProvenance::default(),
             engine: "xray-rust".to_owned(),
             workload: "tcp-freedom".to_owned(),
             status: "ok".to_owned(),
@@ -12291,6 +12742,26 @@ mod tests {
         let same = summarize_results(&[first.clone(), first.clone()]).unwrap();
         assert_eq!(same.connections, 100);
         assert_eq!(same.payload_size, 512);
+    }
+
+    #[test]
+    fn summarize_rejects_mixed_run_provenance() {
+        let first = BenchResult {
+            run_id: "run-42".to_owned(),
+            provenance: BenchProvenance {
+                harness_profile: "release".to_owned(),
+                ..BenchProvenance::default()
+            },
+            ..minimal_bench_result()
+        };
+        let mut second = first.clone();
+        second.provenance.harness_profile = "debug".to_owned();
+
+        let error = summarize_results(&[first, second]).unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("cannot summarize mixed benchmark provenance"));
     }
 
     #[test]

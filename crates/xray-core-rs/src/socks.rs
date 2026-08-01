@@ -1,5 +1,7 @@
 use std::collections::HashMap;
+use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::pin::Pin;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
@@ -21,11 +23,11 @@ use xray_routing::{Target, TargetAddr};
 use xray_transport::{protect_udp_socket, DnsResolver, TransportDialer};
 
 use crate::outbound::{
-    open_tcp_stream_with_resolvers_and_dialer, TcpSessionOutbound, UdpSessionOutbound,
+    open_tcp_stream_with_resolvers_and_dialer, DnsOutbound, TcpSessionOutbound, UdpSessionOutbound,
 };
 use crate::{
     dns::RuntimeDnsResolvers,
-    dns_outbound_runtime::FakeIpTargetProvenance,
+    dns_outbound_runtime::{DnsOutboundRuntime, FakeIpTargetProvenance},
     open_vless_tcp_stream_with_resolver_and_dialer, open_vless_udp_stream_with_resolver_and_dialer,
     policy::{
         accept_error_wants_backoff, copy_bidirectional_with_idle_timeout,
@@ -51,6 +53,31 @@ static SOCKS_UDP_GLOBAL_FLOWS: OnceLock<Arc<Semaphore>> = OnceLock::new();
 static SOCKS_UDP_GLOBAL_PENDING_OPENS: OnceLock<Arc<Semaphore>> = OnceLock::new();
 static SOCKS_UDP_BUDGET_EXHAUSTION_LOG: OnceLock<Arc<SocksUdpBudgetExhaustionLog>> =
     OnceLock::new();
+
+type BoxedSocksDnsStreamFuture<'a> = Pin<Box<dyn Future<Output = std::io::Result<()>> + Send + 'a>>;
+
+fn serve_boxed_socks_dns_stream<'a>(
+    runtime: Arc<DnsOutboundRuntime>,
+    inbound: &'a mut TcpStream,
+    initial_payload: Bytes,
+    outbound: DnsOutbound,
+    original_target: Target,
+    inbound_idle_timeout: Duration,
+) -> BoxedSocksDnsStreamFuture<'a> {
+    // Keep the large DNS state machine out of every ordinary SOCKS TCP task.
+    // Dropping this boxed future still cancels the DNS flow synchronously.
+    Box::pin(async move {
+        runtime
+            .serve_tcp_stream(
+                inbound,
+                initial_payload,
+                &outbound,
+                &original_target,
+                inbound_idle_timeout,
+            )
+            .await
+    })
+}
 
 /// One throttle per distinct budget-exhaustion outcome, so a burst of one
 /// kind cannot silence reports of the others.
@@ -386,16 +413,15 @@ async fn handle_socks_connect(
             if !sniff_tcp && write_socks5_success(&mut inbound).await.is_err() {
                 return;
             }
-            let _ = dns_resolvers
-                .outbound
-                .serve_tcp_stream(
-                    &mut inbound,
-                    initial_payload,
-                    &outbound,
-                    &dial_target,
-                    policy.conn_idle,
-                )
-                .await;
+            let _ = serve_boxed_socks_dns_stream(
+                dns_resolvers.outbound,
+                &mut inbound,
+                initial_payload,
+                outbound,
+                dial_target,
+                policy.conn_idle,
+            )
+            .await;
             return;
         }
     };
@@ -1454,6 +1480,7 @@ async fn resolve_udp_socket_addr(
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+    use std::mem::size_of;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::pin::Pin;
     use std::sync::Arc;
@@ -1468,9 +1495,10 @@ mod tests {
 
     use super::{
         admit_socks_udp_flow, apply_fake_ip_sniffed_dial_precedence, evict_oldest_socks_udp_flow,
-        should_sniff_socks_tcp, write_socks_vless_udp_payload, FakeIpTargetProvenance,
-        SocksUdpBudgetExhaustionLog, SocksUdpBudgets, SocksUdpFlowEntry, SocksUdpSniffedTarget,
-        VlessUdpFraming, SOCKS_UDP_FLOW_QUEUE, SOCKS_UDP_MAX_FLOWS_PER_ASSOCIATION,
+        should_sniff_socks_tcp, write_socks_vless_udp_payload, BoxedSocksDnsStreamFuture,
+        FakeIpTargetProvenance, SocksUdpBudgetExhaustionLog, SocksUdpBudgets, SocksUdpFlowEntry,
+        SocksUdpSniffedTarget, VlessUdpFraming, SOCKS_UDP_FLOW_QUEUE,
+        SOCKS_UDP_MAX_FLOWS_PER_ASSOCIATION,
     };
     use crate::{RuntimeLogConfig, RuntimeLogger};
 
@@ -1535,6 +1563,14 @@ mod tests {
             Some(&http_sniffing_config(false)),
             FakeIpTargetProvenance::Outside,
         ));
+    }
+
+    #[test]
+    fn socks_dns_stream_dispatch_future_stays_heap_erased() {
+        assert!(
+            size_of::<BoxedSocksDnsStreamFuture<'static>>() <= 2 * size_of::<usize>(),
+            "boxed DNS dispatch should occupy no more than a trait-object pointer"
+        );
     }
 
     #[test]
