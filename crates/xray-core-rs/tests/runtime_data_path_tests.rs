@@ -1397,6 +1397,70 @@ async fn socks_client_reaches_echo_target_through_freedom_outbound() {
 }
 
 #[tokio::test]
+async fn managed_dns_runtime_is_shared_per_core_and_isolated_between_cores() {
+    timeout(Duration::from_secs(3), async {
+        let (echo_addr, echo_handle) = spawn_multi_echo_server(3).await;
+        let IpAddr::V4(echo_ip) = echo_addr.ip() else {
+            panic!("test echo server must bind IPv4");
+        };
+        let upstream =
+            spawn_observed_udp_dns_a_server_with_delay(echo_ip, Duration::from_millis(50)).await;
+        let probe = upstream.probe();
+
+        let mut single_config = runtime_config_with_freedom_outbound();
+        single_config.dns.query_strategy = DnsQueryStrategy::UseIpv4;
+        single_config.dns.servers = vec![DnsServerConfig::Ip(upstream.addr())];
+
+        let mut shared_config = single_config.clone();
+        shared_config.inbounds[0].tag = Some("socks-a".to_owned());
+        let mut second_inbound = shared_config.inbounds[0].clone();
+        second_inbound.tag = Some("socks-b".to_owned());
+        shared_config.inbounds.push(second_inbound);
+
+        let mut shared_core = Core::new(shared_config).unwrap();
+        shared_core.start().await.unwrap();
+        let connect = |tag: &'static str, payload: &'static [u8]| {
+            let shared_core = &shared_core;
+            async move {
+                let mut client = TcpStream::connect(shared_core.inbound_addr(Some(tag)).unwrap())
+                    .await
+                    .unwrap();
+                socks5_connect_domain(&mut client, "shared-runtime.test", echo_addr.port()).await;
+                client.write_all(payload).await.unwrap();
+                let mut echoed = vec![0; payload.len()];
+                client.read_exact(&mut echoed).await.unwrap();
+                assert_eq!(echoed, payload);
+            }
+        };
+        tokio::join!(connect("socks-a", b"first"), connect("socks-b", b"second"));
+        shared_core.stop().await.unwrap();
+
+        let shared_queries = probe.snapshot();
+        assert_eq!(shared_queries.len(), 1);
+        assert_eq!(dns_query_record_type(&shared_queries[0]), Some(1));
+
+        let mut isolated_core = Core::new(single_config).unwrap();
+        isolated_core.start().await.unwrap();
+        let mut client = TcpStream::connect(isolated_core.inbound_addr(Some("socks-in")).unwrap())
+            .await
+            .unwrap();
+        socks5_connect_domain(&mut client, "shared-runtime.test", echo_addr.port()).await;
+        client.write_all(b"third").await.unwrap();
+        let mut echoed = [0; 5];
+        client.read_exact(&mut echoed).await.unwrap();
+        assert_eq!(&echoed, b"third");
+        drop(client);
+        isolated_core.stop().await.unwrap();
+
+        assert_eq!(probe.snapshot().len(), 2);
+        echo_handle.await.unwrap();
+        upstream.stop().await;
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
 async fn socks_policy_handshake_timeout_closes_idle_client() {
     timeout(
         Duration::from_secs(2),
@@ -7917,6 +7981,13 @@ impl ObservedUdpDnsServer {
 }
 
 async fn spawn_observed_udp_dns_a_server(answer: Ipv4Addr) -> ObservedUdpDnsServer {
+    spawn_observed_udp_dns_a_server_with_delay(answer, Duration::ZERO).await
+}
+
+async fn spawn_observed_udp_dns_a_server_with_delay(
+    answer: Ipv4Addr,
+    response_delay: Duration,
+) -> ObservedUdpDnsServer {
     let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let addr = socket.local_addr().unwrap();
     let queries = Arc::new(Mutex::new(Vec::new()));
@@ -7940,6 +8011,7 @@ async fn spawn_observed_udp_dns_a_server(answer: Ipv4Addr) -> ObservedUdpDnsServ
                 Some(28) => build_dns_nodata_response_for_query(query),
                 record_type => panic!("unexpected observed DNS query type {record_type:?}"),
             };
+            sleep(response_delay).await;
             socket.send_to(&response, peer).await.unwrap();
         }
     });

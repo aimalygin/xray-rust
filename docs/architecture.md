@@ -141,6 +141,15 @@ recursively resolve the upstream required to answer the lookup. SOCKS, HTTP, TUN
 future server inbounds can therefore share the same DNS semantics without
 depending on a packet adapter.
 
+`Core::start` creates one destination/bootstrap resolver pair for the whole
+core instance and passes cloned `Arc`s to every listener, TUN, and startup
+probe. For managed construction, the destination LRU and its in-flight lookup
+table are therefore shared across concurrent ingress consumers instead of
+being multiplied per listener; separate `Core` instances remain isolated.
+This per-instance ownership is the same shape needed by a long-running
+multi-listener server without introducing process-global DNS state into mobile
+embeddings.
+
 Each runtime keeps destination and bootstrap resolution as separate roles.
 Destination resolution answers where application traffic should go and may use
 routed `dns.servers`; global `dns.queryStrategy` applies at this boundary.

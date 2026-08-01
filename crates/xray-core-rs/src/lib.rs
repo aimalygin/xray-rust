@@ -518,14 +518,15 @@ impl Core {
         let config = Arc::new(self.config.clone());
         let outbound_router = Arc::new(OutboundRouter::new(Arc::clone(&config)));
         let has_tun_inbound = !tun_inbounds.is_empty();
+        let runtime_dns_resolvers =
+            self.runtime_dns_resolvers(&config, &outbound_router, has_tun_inbound);
         let mut inbounds = Vec::with_capacity(bound_listeners.len());
         let mut tasks = Vec::with_capacity(
             bound_listeners.len() + usize::from(has_tun_inbound) + usize::from(has_tun_inbound),
         );
         for (bound, protocol, sniffing, policy, listener) in bound_listeners {
             let inbound_tag = bound.tag.clone();
-            let dns_resolvers =
-                self.runtime_dns_resolvers(&config, &outbound_router, has_tun_inbound);
+            let dns_resolvers = runtime_dns_resolvers.clone();
             let transport_dialer = Arc::clone(&self.transport_dialer);
             let task = match protocol {
                 InboundProtocol::Socks => tokio::spawn(socks::serve_socks_listener(
@@ -558,7 +559,6 @@ impl Core {
         }
         if has_tun_inbound {
             let tun_inbound_tag = tun_inbounds.first().and_then(|(tag, _, _)| tag.clone());
-            let tun_dns_resolvers = self.runtime_dns_resolvers(&config, &outbound_router, true);
             let tun_runtime_options = TunRuntimeOptions {
                 collect_tcp_timings: self.tun_runtime_options.collect_tcp_timings
                     || self.runtime_logger.is_enabled(),
@@ -576,8 +576,8 @@ impl Core {
                     .unwrap_or_default(),
                 Arc::clone(&config),
                 Arc::clone(&outbound_router),
-                tun_dns_resolvers.destination,
-                Some(tun_dns_resolvers.bootstrap),
+                Arc::clone(&runtime_dns_resolvers.destination),
+                Some(Arc::clone(&runtime_dns_resolvers.bootstrap)),
                 Arc::clone(&self.transport_dialer),
                 tun_runtime_options,
                 self.runtime_logger.clone(),
@@ -596,8 +596,6 @@ impl Core {
         self.state = CoreState::Running;
 
         if let Some(options) = self.startup_probe.clone() {
-            let probe_dns_resolvers =
-                self.runtime_dns_resolvers(&config, &outbound_router, has_tun_inbound);
             let probe_url = startup_probe::diagnostic_probe_url(&options.url);
             let probe_timeout_ms = options.timeout.as_millis();
             let probe_outbound = if options.outbound_tag.is_some() {
@@ -613,8 +611,8 @@ impl Core {
             if let Err(error) = startup_probe::run_startup_probe(
                 outbound_router.as_ref(),
                 options,
-                probe_dns_resolvers.destination.as_ref(),
-                probe_dns_resolvers.bootstrap.as_ref(),
+                runtime_dns_resolvers.destination.as_ref(),
+                runtime_dns_resolvers.bootstrap.as_ref(),
                 self.transport_dialer.as_ref(),
             )
             .await

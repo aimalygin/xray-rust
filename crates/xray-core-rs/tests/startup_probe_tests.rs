@@ -5,11 +5,11 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, UdpSocket};
+use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use xray_config::{
-    CoreConfig, DnsServerConfig, InboundConfig, InboundProtocol, Network, OutboundConfig,
-    OutboundSettings, PolicyConfig, PolicyLevelConfig, RoutingConfig, RoutingRule, StreamSecurity,
-    StreamSettings,
+    CoreConfig, DnsQueryStrategy, DnsServerConfig, InboundConfig, InboundProtocol, Network,
+    OutboundConfig, OutboundSettings, PolicyConfig, PolicyLevelConfig, RoutingConfig, RoutingRule,
+    StreamSecurity, StreamSettings,
 };
 use xray_core_rs::{
     Core, CoreError, CoreState, DnsBootstrapMode, RuntimeLogConfig, RuntimeLogger,
@@ -103,38 +103,69 @@ async fn spawn_udp_dns_a_once(answer: Ipv4Addr) -> (SocketAddr, tokio::task::Joi
     let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let addr = socket.local_addr().unwrap();
     let handle = tokio::spawn(async move {
-        for _ in 0..2 {
-            let mut buffer = [0_u8; 1232];
-            let (len, peer) = socket.recv_from(&mut buffer).await.unwrap();
-            let query = &buffer[..len];
-            assert!(query.len() >= 16, "DNS query must contain one question");
-            let record_type = u16::from_be_bytes([query[len - 4], query[len - 3]]);
-            let answer_count = if record_type == 1 { 1_u16 } else { 0_u16 };
+        let mut buffer = [0_u8; 1232];
+        let (len, peer) = socket.recv_from(&mut buffer).await.unwrap();
+        let query = &buffer[..len];
+        assert!(query.len() >= 16, "DNS query must contain one question");
+        let record_type = u16::from_be_bytes([query[len - 4], query[len - 3]]);
+        assert_eq!(record_type, 1, "fixture expects one IPv4 query");
 
-            let mut response = Vec::with_capacity(query.len() + 16);
-            response.extend_from_slice(&query[..2]);
-            response.extend_from_slice(&0x8180_u16.to_be_bytes());
-            response.extend_from_slice(&1_u16.to_be_bytes());
-            response.extend_from_slice(&answer_count.to_be_bytes());
-            response.extend_from_slice(&0_u16.to_be_bytes());
-            response.extend_from_slice(&0_u16.to_be_bytes());
-            response.extend_from_slice(&query[12..]);
-            match record_type {
-                1 => {
-                    response.extend_from_slice(&0xC00C_u16.to_be_bytes());
-                    response.extend_from_slice(&1_u16.to_be_bytes());
-                    response.extend_from_slice(&1_u16.to_be_bytes());
-                    response.extend_from_slice(&60_u32.to_be_bytes());
-                    response.extend_from_slice(&4_u16.to_be_bytes());
-                    response.extend_from_slice(&answer.octets());
-                }
-                28 => {}
-                _ => panic!("unexpected DNS query type {record_type}"),
-            }
-            socket.send_to(&response, peer).await.unwrap();
-        }
+        let mut response = Vec::with_capacity(query.len() + 16);
+        response.extend_from_slice(&query[..2]);
+        response.extend_from_slice(&0x8180_u16.to_be_bytes());
+        response.extend_from_slice(&1_u16.to_be_bytes());
+        response.extend_from_slice(&1_u16.to_be_bytes());
+        response.extend_from_slice(&0_u16.to_be_bytes());
+        response.extend_from_slice(&0_u16.to_be_bytes());
+        response.extend_from_slice(&query[12..]);
+        response.extend_from_slice(&0xC00C_u16.to_be_bytes());
+        response.extend_from_slice(&1_u16.to_be_bytes());
+        response.extend_from_slice(&1_u16.to_be_bytes());
+        response.extend_from_slice(&60_u32.to_be_bytes());
+        response.extend_from_slice(&4_u16.to_be_bytes());
+        response.extend_from_slice(&answer.octets());
+        socket.send_to(&response, peer).await.unwrap();
     });
     (addr, handle)
+}
+
+async fn spawn_http_status_then_echo_once(
+    status: u16,
+    expected_target: &'static str,
+) -> (SocketAddr, tokio::task::JoinHandle<()>) {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let handle = tokio::spawn(async move {
+        let (mut probe, _) = listener.accept().await.unwrap();
+        let mut request = vec![0; 512];
+        let read = probe.read(&mut request).await.unwrap();
+        assert!(String::from_utf8_lossy(&request[..read])
+            .starts_with(&format!("GET {expected_target} HTTP/1.1\r\n")));
+        let response = format!("HTTP/1.1 {status} Test\r\nContent-Length: 0\r\n\r\n");
+        probe.write_all(response.as_bytes()).await.unwrap();
+        drop(probe);
+
+        let (mut tunneled, _) = listener.accept().await.unwrap();
+        let mut byte = [0_u8; 1];
+        tunneled.read_exact(&mut byte).await.unwrap();
+        tunneled.write_all(&byte).await.unwrap();
+    });
+    (addr, handle)
+}
+
+async fn socks5_connect_domain(client: &mut TcpStream, domain: &str, port: u16) {
+    client.write_all(&[5, 1, 0]).await.unwrap();
+    let mut method = [0_u8; 2];
+    client.read_exact(&mut method).await.unwrap();
+    assert_eq!(method, [5, 0]);
+
+    let mut request = vec![5, 1, 0, 3, u8::try_from(domain.len()).unwrap()];
+    request.extend_from_slice(domain.as_bytes());
+    request.extend_from_slice(&port.to_be_bytes());
+    client.write_all(&request).await.unwrap();
+    let mut reply = [0_u8; 10];
+    client.read_exact(&mut reply).await.unwrap();
+    assert_eq!(reply, [5, 0, 0, 1, 0, 0, 0, 0, 0, 0]);
 }
 
 async fn spawn_http_split_status_once(status: u16) -> SocketAddr {
@@ -225,10 +256,11 @@ async fn startup_probe_succeeds_for_http_2xx_response() {
 }
 
 #[tokio::test]
-async fn startup_probe_uses_routed_configured_dns_in_static_only_mode() {
-    let addr = spawn_http_status_once(204, "/health").await;
+async fn startup_probe_warms_shared_routed_dns_for_listener_in_static_only_mode() {
+    let (addr, target_handle) = spawn_http_status_then_echo_once(204, "/health").await;
     let (dns_server, dns_handle) = spawn_udp_dns_a_once(Ipv4Addr::LOCALHOST).await;
     let mut config = config_with_outbounds(vec![freedom("direct")], Some("direct"));
+    config.dns.query_strategy = DnsQueryStrategy::UseIpv4;
     config.dns.servers = vec![DnsServerConfig::Ip(dns_server)];
     let mut core = Core::with_tun_runtime_options(
         config,
@@ -247,7 +279,25 @@ async fn startup_probe_uses_routed_configured_dns_in_static_only_mode() {
     core.start().await.unwrap();
 
     assert_eq!(core.state(), CoreState::Running);
+    let mut client = TcpStream::connect(core.inbound_addr(Some("socks-in")).unwrap())
+        .await
+        .unwrap();
+    tokio::time::timeout(
+        Duration::from_secs(2),
+        socks5_connect_domain(&mut client, "probe.test", addr.port()),
+    )
+    .await
+    .unwrap();
+    client.write_all(b"x").await.unwrap();
+    let mut echoed = [0_u8; 1];
+    client.read_exact(&mut echoed).await.unwrap();
+    assert_eq!(&echoed, b"x");
+    drop(client);
     core.stop().await.unwrap();
+    tokio::time::timeout(Duration::from_secs(1), target_handle)
+        .await
+        .unwrap()
+        .unwrap();
     tokio::time::timeout(Duration::from_secs(1), dns_handle)
         .await
         .unwrap()

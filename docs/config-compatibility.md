@@ -271,9 +271,12 @@ chain controls expiry; static `dns.hosts` IPs use 10 seconds, while resolvers
 without TTL metadata use the 300-second policy cap. Cache hits expose the
 remaining TTL rather than extending it. ASCII case is canonicalized, and
 overflow evicts one least-recently-used entry rather than flushing the whole
-cache. Concurrent misses for the same `(domain, port)` share one
-cancellation-safe lookup and the same typed outcome instead of opening
-duplicate routed DNS/VLESS sessions.
+cache. Concurrent misses for the same normalized
+`(domain, port, queryStrategy)` share one cancellation-safe lookup and the same
+typed outcome instead of opening duplicate routed DNS/VLESS sessions. One
+managed destination cache and single-flight table is shared by every
+SOCKS/HTTP listener, TUN consumer, and startup probe in a `Core` runtime; a
+separate `Core` owns a separate cache.
 
 For managed runtimes, including TUN, SOCKS, HTTP, and startup probes, `System`
 resolution is `dns.hosts` → configured `dns.servers`: classic and `tcp://`
