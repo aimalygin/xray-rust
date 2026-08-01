@@ -69,6 +69,9 @@ class XrayTunBackendTest {
                     "address" to "DNS.Example.",
                     "port" to 0,
                     "domains" to listOf("domain:internal.example"),
+                    "expectedIPs" to listOf("geoip:private", "!192.0.2.0/24"),
+                    "expectIPs" to "geoip:private,geoip:cn",
+                    "unexpectedIPs" to null,
                     "skipFallback" to true,
                     "queryStrategy" to "UseIPv4",
                     "finalQuery" to true,
@@ -112,6 +115,12 @@ class XrayTunBackendTest {
             mapOf("address" to "resolver.example", "port" to 65_536),
             mapOf("address" to "resolver.example", "domains" to 42),
             mapOf("address" to "resolver.example", "domains" to listOf("domain:ok", 42)),
+            mapOf("address" to "resolver.example", "expectedIPs" to 42),
+            mapOf("address" to "resolver.example", "expectedIPs" to listOf("geoip:private", 42)),
+            mapOf("address" to "resolver.example", "expectIPs" to true),
+            mapOf("address" to "resolver.example", "expectIPs" to listOf(null)),
+            mapOf("address" to "resolver.example", "unexpectedIPs" to mapOf("ip" to "192.0.2.1")),
+            mapOf("address" to "resolver.example", "unexpectedIPs" to listOf("192.0.2.0/24", false)),
             mapOf("address" to "resolver.example", "skipFallback" to "true"),
             mapOf("address" to "resolver.example", "finalQuery" to 1),
             mapOf("address" to "resolver.example", "queryStrategy" to 42),
@@ -124,6 +133,28 @@ class XrayTunBackendTest {
                 dnsServerBootstrapDomain(server)
             }
         }
+    }
+
+    @Test
+    fun malformedDnsIpPolicyStringListReportsTheFieldAndItemIndex() {
+        val scalarError = assertThrows(IllegalArgumentException::class.java) {
+            dnsServerBootstrapDomain(
+                mapOf("address" to "resolver.example", "expectedIPs" to 42),
+            )
+        }
+        assertTrue(scalarError.message?.contains("expectedIPs") == true)
+        assertTrue(scalarError.message?.contains("string or an array") == true)
+
+        val itemError = assertThrows(IllegalArgumentException::class.java) {
+            dnsServerBootstrapDomain(
+                mapOf(
+                    "address" to "resolver.example",
+                    "unexpectedIPs" to listOf("192.0.2.0/24", false),
+                ),
+            )
+        }
+        assertTrue(itemError.message?.contains("unexpectedIPs") == true)
+        assertTrue(itemError.message?.contains("index 1") == true)
     }
 
     @Test

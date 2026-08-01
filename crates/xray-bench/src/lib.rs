@@ -58,8 +58,9 @@ use xray_proxy::vless::{
 };
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::{
-    select_name_server_indices, CachingDnsResolver, CompiledNameServerPolicies, DnsLookup,
-    DnsResolver, NameServer, NameServerPolicy, TransportDomainMatcher, TransportError,
+    select_name_server_indices, CachingDnsResolver, CompiledDnsIpFilter,
+    CompiledNameServerPolicies, DnsIpFilter, DnsIpMatcher, DnsLookup, DnsResolver, NameServer,
+    NameServerPolicy, TransportDomainMatcher, TransportError,
 };
 use xray_utls::{normalize_reality_supported_fingerprint, XRAY_REALITY_CAPABLE_FINGERPRINTS};
 
@@ -1028,12 +1029,26 @@ pub struct DnsPolicyProbeMetric {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct DnsIpFilterProbeMetric {
+    pub hit_matched: bool,
+    pub miss_rejected: bool,
+    pub compile_us: u128,
+    pub compiled_matchers: usize,
+    pub compiled_ranges: usize,
+    pub hit_total_us: u128,
+    pub hit_avg_ns: u128,
+    pub miss_total_us: u128,
+    pub miss_avg_ns: u128,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct DnsPolicyProbeResult {
     pub iterations: usize,
     pub servers: usize,
     pub matchers: usize,
     pub common_no_domains: DnsPolicyProbeMetric,
     pub worst_case_matchers: DnsPolicyProbeMetric,
+    pub worst_case_ip_filter: DnsIpFilterProbeMetric,
 }
 
 pub fn parse_cli_args<I, S>(args: I) -> Result<CliArgs, BenchError>
@@ -7129,6 +7144,87 @@ fn measure_dns_policy_selection(
     }
 }
 
+fn measure_dns_ip_filter(
+    matcher_count: usize,
+    iterations: usize,
+) -> Result<DnsIpFilterProbeMetric, BenchError> {
+    let matchers = (0..matcher_count)
+        .map(|index| DnsIpMatcher::host(dns_ip_filter_probe_address(index)))
+        .collect();
+    let target = dns_ip_filter_probe_address(matcher_count - 1);
+    let non_match = dns_ip_filter_probe_miss(target);
+
+    let started = Instant::now();
+    let filter = CompiledDnsIpFilter::new(DnsIpFilter::hard(matchers, Vec::new()));
+    let compile_us = started.elapsed().as_micros();
+    let hit_matched = filter.matches(target);
+    let miss_rejected = !filter.matches(non_match);
+    if !hit_matched || !miss_rejected {
+        return Err(BenchError::InvalidArguments(
+            "DNS IP filter probe failed its membership validation".to_owned(),
+        ));
+    }
+
+    let hit_probes = dns_ip_filter_probe_indices(matcher_count)
+        .into_iter()
+        .map(dns_ip_filter_probe_address)
+        .collect::<Vec<_>>();
+    let started = Instant::now();
+    for iteration in 0..iterations {
+        black_box(black_box(&filter).matches(black_box(hit_probes[iteration & 63])));
+    }
+    let hit_elapsed = started.elapsed();
+
+    let miss_probes = hit_probes
+        .iter()
+        .copied()
+        .map(dns_ip_filter_probe_miss)
+        .collect::<Vec<_>>();
+    let started = Instant::now();
+    for iteration in 0..iterations {
+        black_box(black_box(&filter).matches(black_box(miss_probes[iteration & 63])));
+    }
+    let miss_elapsed = started.elapsed();
+    Ok(DnsIpFilterProbeMetric {
+        hit_matched,
+        miss_rejected,
+        compile_us,
+        compiled_matchers: filter.matcher_count(),
+        compiled_ranges: filter.compiled_range_count(),
+        hit_total_us: hit_elapsed.as_micros(),
+        hit_avg_ns: hit_elapsed.as_nanos() / iterations as u128,
+        miss_total_us: miss_elapsed.as_micros(),
+        miss_avg_ns: miss_elapsed.as_nanos() / iterations as u128,
+    })
+}
+
+const DNS_IP_FILTER_PROBE_SAMPLES: usize = 64;
+
+fn dns_ip_filter_probe_indices(matcher_count: usize) -> Vec<usize> {
+    debug_assert!(matcher_count > 0);
+    (0..DNS_IP_FILTER_PROBE_SAMPLES)
+        .map(|index| index * matcher_count / DNS_IP_FILTER_PROBE_SAMPLES)
+        .collect()
+}
+
+fn dns_ip_filter_probe_address(index: usize) -> IpAddr {
+    const PERMUTATION_MASK: u32 = (1 << 20) - 1;
+    const PERMUTATION_MULTIPLIER: u32 = 0x9e37_79b1;
+
+    let index =
+        u32::try_from(index).expect("validated DNS policy probe matcher count should fit u32");
+    let slot = index.wrapping_mul(PERMUTATION_MULTIPLIER) & PERMUTATION_MASK;
+    let base = u32::from(Ipv4Addr::new(10, 0, 0, 0));
+    IpAddr::V4(Ipv4Addr::from(base + slot * 2))
+}
+
+fn dns_ip_filter_probe_miss(address: IpAddr) -> IpAddr {
+    let IpAddr::V4(address) = address else {
+        unreachable!("DNS IP filter probe generates only IPv4 addresses");
+    };
+    IpAddr::V4(Ipv4Addr::from(u32::from(address) + 1))
+}
+
 fn measure_dns_policy_probe(
     options: &DnsPolicyProbeOptions,
 ) -> Result<DnsPolicyProbeResult, BenchError> {
@@ -7190,6 +7286,7 @@ fn measure_dns_policy_probe(
             worst_case_compile_us,
             options.iterations,
         ),
+        worst_case_ip_filter: measure_dns_ip_filter(options.matchers, options.iterations)?,
     })
 }
 
@@ -8534,7 +8631,7 @@ fn print_route_probe_result(result: &RouteProbeResult) {
 
 fn print_dns_policy_probe_result(result: &DnsPolicyProbeResult) {
     println!(
-        "dns-policy-probe iterations={} servers={} matchers={} common_selected={} common_compile_us={} common_pattern_bytes={} common_total_us={} common_avg_ns={} worst_selected={} worst_compile_us={} worst_pattern_bytes={} worst_total_us={} worst_avg_ns={}",
+        "dns-policy-probe iterations={} servers={} matchers={} common_selected={} common_compile_us={} common_pattern_bytes={} common_total_us={} common_avg_ns={} worst_selected={} worst_compile_us={} worst_pattern_bytes={} worst_total_us={} worst_avg_ns={} ip_filter_hit_matched={} ip_filter_miss_rejected={} ip_filter_compile_us={} ip_filter_matchers={} ip_filter_ranges={} ip_filter_hit_total_us={} ip_filter_hit_avg_ns={} ip_filter_miss_total_us={} ip_filter_miss_avg_ns={}",
         result.iterations,
         result.servers,
         result.matchers,
@@ -8548,6 +8645,15 @@ fn print_dns_policy_probe_result(result: &DnsPolicyProbeResult) {
         result.worst_case_matchers.pattern_bytes,
         result.worst_case_matchers.total_us,
         result.worst_case_matchers.avg_ns,
+        result.worst_case_ip_filter.hit_matched,
+        result.worst_case_ip_filter.miss_rejected,
+        result.worst_case_ip_filter.compile_us,
+        result.worst_case_ip_filter.compiled_matchers,
+        result.worst_case_ip_filter.compiled_ranges,
+        result.worst_case_ip_filter.hit_total_us,
+        result.worst_case_ip_filter.hit_avg_ns,
+        result.worst_case_ip_filter.miss_total_us,
+        result.worst_case_ip_filter.miss_avg_ns,
     );
 }
 
@@ -10618,8 +10724,12 @@ mod tests {
                 result.common_no_domains.compiled_matchers,
                 result.worst_case_matchers.selected_per_iteration,
                 result.worst_case_matchers.compiled_matchers,
+                result.worst_case_ip_filter.hit_matched,
+                result.worst_case_ip_filter.miss_rejected,
+                result.worst_case_ip_filter.compiled_matchers,
+                result.worst_case_ip_filter.compiled_ranges,
             ),
-            (3, 4, 4_096, 4, 0, 4, 4_096)
+            (3, 4, 4_096, 4, 0, 4, 4_096, true, true, 4_096, 4_096,)
         );
     }
 
@@ -10634,6 +10744,15 @@ mod tests {
         .unwrap_err();
 
         assert!(error.to_string().contains("--matchers must be between"));
+    }
+
+    #[test]
+    fn dns_ip_filter_probe_indices_cover_large_matcher_sets() {
+        let indices = dns_ip_filter_probe_indices(104_729);
+
+        assert_eq!(indices.len(), DNS_IP_FILTER_PROBE_SAMPLES);
+        assert!(indices.windows(2).all(|window| window[0] < window[1]));
+        assert!(indices.iter().all(|index| *index < 104_729));
     }
 
     #[test]

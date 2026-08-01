@@ -68,9 +68,108 @@ pub enum DnsServerConfig {
 pub struct DnsNameServerConfig {
     pub endpoint: DnsServerEndpoint,
     pub domains: Vec<DomainMatcher>,
+    pub expected_ips: DnsIpFilter,
+    pub unexpected_ips: DnsIpFilter,
     pub skip_fallback: bool,
     pub query_strategy: DnsQueryStrategy,
     pub final_query: bool,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DnsIpFilter {
+    pub custom_matchers: Vec<IpMatcher>,
+    pub geoip_matchers: Vec<IpMatcher>,
+    pub soft: bool,
+}
+
+impl DnsIpFilter {
+    pub fn matches(&self, ip: &IpAddr) -> bool {
+        dns_ip_matcher_group_matches(&self.custom_matchers, ip)
+            || dns_ip_matcher_group_matches(&self.geoip_matchers, ip)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.custom_matchers.is_empty() && self.geoip_matchers.is_empty()
+    }
+}
+
+fn dns_ip_matcher_group_matches(matchers: &[IpMatcher], target_ip: &IpAddr) -> bool {
+    let target_ip = canonicalize_ip_matcher_address(*target_ip);
+    let mut positive_matched = false;
+    let mut inverse_supports_family = false;
+    let mut inverse_contains = false;
+
+    for matcher in matchers {
+        let (matcher, inverse) = dns_ip_matcher_base(matcher);
+        if inverse {
+            if dns_ip_matcher_supports_family(matcher, target_ip) {
+                inverse_supports_family = true;
+                inverse_contains |= dns_ip_matcher_matches(matcher, target_ip);
+            }
+        } else {
+            positive_matched |= dns_ip_matcher_matches(matcher, target_ip);
+        }
+    }
+
+    positive_matched || inverse_supports_family && !inverse_contains
+}
+
+fn dns_ip_matcher_base(mut matcher: &IpMatcher) -> (&IpMatcher, bool) {
+    let mut inverse = false;
+    while let IpMatcher::Not(inner) = matcher {
+        inverse = !inverse;
+        matcher = inner;
+    }
+    (matcher, inverse)
+}
+
+fn dns_ip_matcher_supports_family(matcher: &IpMatcher, target_ip: IpAddr) -> bool {
+    match matcher {
+        IpMatcher::Cidr(cidr) => {
+            matches!(
+                (canonicalize_ip_matcher_address(cidr.network()), target_ip),
+                (IpAddr::V4(_), IpAddr::V4(_)) | (IpAddr::V6(_), IpAddr::V6(_))
+            )
+        }
+        IpMatcher::Private => true,
+        IpMatcher::Not(_) => unreachable!("DNS IP matcher negation should be flattened"),
+    }
+}
+
+fn dns_ip_matcher_matches(matcher: &IpMatcher, target_ip: IpAddr) -> bool {
+    match matcher {
+        IpMatcher::Cidr(cidr) => {
+            let network = canonicalize_ip_matcher_address(cidr.network());
+            let width = match network {
+                IpAddr::V4(_) => 32,
+                IpAddr::V6(_) => 128,
+            };
+            cidr.prefix() <= width
+                && match (network, target_ip) {
+                    (IpAddr::V4(network), IpAddr::V4(ip)) => prefix_matches(
+                        u128::from(u32::from(network)),
+                        u128::from(u32::from(ip)),
+                        cidr.prefix(),
+                        32,
+                    ),
+                    (IpAddr::V6(network), IpAddr::V6(ip)) => {
+                        prefix_matches(u128::from(network), u128::from(ip), cidr.prefix(), 128)
+                    }
+                    (IpAddr::V4(_), IpAddr::V6(_)) | (IpAddr::V6(_), IpAddr::V4(_)) => false,
+                }
+        }
+        IpMatcher::Private => private_cidrs()
+            .iter()
+            .any(|private_cidr| private_cidr.matches(&target_ip)),
+        IpMatcher::Not(_) => unreachable!("DNS IP matcher negation should be flattened"),
+    }
+}
+
+fn canonicalize_ip_matcher_address(ip: IpAddr) -> IpAddr {
+    match ip {
+        IpAddr::V6(ip) => ip.to_ipv4_mapped().map_or(IpAddr::V6(ip), IpAddr::V4),
+        IpAddr::V4(_) => ip,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -192,27 +291,31 @@ impl RoutingRule {
             return false;
         };
 
-        let mut has_positive = false;
-        let mut positive_matched = false;
-        let mut has_inverse = false;
-        let mut all_inverse_matched = true;
+        ip_matcher_group_matches(&self.ip_matchers, target_ip)
+    }
+}
 
-        for matcher in &self.ip_matchers {
-            if matcher.is_inverse() {
-                has_inverse = true;
-                if !matcher.matches(target_ip) {
-                    all_inverse_matched = false;
-                }
-            } else {
-                has_positive = true;
-                if matcher.matches(target_ip) {
-                    positive_matched = true;
-                }
+fn ip_matcher_group_matches(matchers: &[IpMatcher], target_ip: &IpAddr) -> bool {
+    let mut has_positive = false;
+    let mut positive_matched = false;
+    let mut has_inverse = false;
+    let mut all_inverse_matched = true;
+
+    for matcher in matchers {
+        if matcher.is_inverse() {
+            has_inverse = true;
+            if !matcher.matches(target_ip) {
+                all_inverse_matched = false;
+            }
+        } else {
+            has_positive = true;
+            if matcher.matches(target_ip) {
+                positive_matched = true;
             }
         }
-
-        (has_positive && positive_matched) || (has_inverse && all_inverse_matched)
     }
+
+    (has_positive && positive_matched) || (has_inverse && all_inverse_matched)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -325,6 +428,7 @@ pub struct IpCidr {
 
 impl IpCidr {
     pub fn new(network: IpAddr, prefix: u8) -> Result<Self, ConfigModelError> {
+        let network = canonicalize_ip_matcher_address(network);
         let max = match network {
             IpAddr::V4(_) => 32,
             IpAddr::V6(_) => 128,
@@ -337,6 +441,7 @@ impl IpCidr {
     }
 
     pub fn full(ip: IpAddr) -> Self {
+        let ip = canonicalize_ip_matcher_address(ip);
         let prefix = match ip {
             IpAddr::V4(_) => 32,
             IpAddr::V6(_) => 128,

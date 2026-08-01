@@ -660,7 +660,7 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
 
     func testResolvedDnsConfigurationUsesLocalAnchorForObjectAndMixedConfigServers() {
         let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
-            configJSON: #"{"dns":{"servers":[{"address":"resolver.example","port":0,"domains":["domain:internal.example"]},{"address":"2001:db8::53","port":5353},"192.0.2.53"]}}"#,
+            configJSON: #"{"dns":{"servers":[{"address":"resolver.example","port":0,"domains":["domain:internal.example"],"expectedIPs":["geoip:private","!192.0.2.0/24"],"expectIPs":"geoip:private,geoip:cn","unexpectedIPs":null},{"address":"2001:db8::53","port":5353},"192.0.2.53"]}}"#,
             explicit: .system
         )
 
@@ -673,6 +673,25 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
             #"{"address":42}"#,
             #"{"address":"resolver.example","port":65536}"#,
             #"{"address":"tcp://resolver.example"}"#,
+            #"{"address":"resolver.example","unknown":true}"#,
+        ] {
+            let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
+                configJSON: "{\"dns\":{\"servers\":[\(server)]}}",
+                explicit: .system
+            )
+
+            XCTAssertNil(configuration, "server=\(server)")
+        }
+    }
+
+    func testResolvedDnsConfigurationRejectsMalformedDnsIPPolicyStringLists() {
+        for server in [
+            #"{"address":"resolver.example","expectedIPs":42}"#,
+            #"{"address":"resolver.example","expectedIPs":["geoip:private",42]}"#,
+            #"{"address":"resolver.example","expectIPs":true}"#,
+            #"{"address":"resolver.example","expectIPs":[null]}"#,
+            #"{"address":"resolver.example","unexpectedIPs":{}}"#,
+            #"{"address":"resolver.example","unexpectedIPs":["192.0.2.0/24",false]}"#,
         ] {
             let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
                 configJSON: "{\"dns\":{\"servers\":[\(server)]}}",
@@ -1532,7 +1551,7 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
 
     func testConfigPinningAddsHostsForObjectAndMixedDnsServersWithoutCarrierExclusions() throws {
         let resolved = resolvedConfig(
-            json: #"{"dns":{"servers":[{"address":"Object-DNS.Example.","port":0,"domains":["domain:internal.example"]},"String-DNS.Example.:5353"]},"outbounds":[{"protocol":"freedom"}]}"#
+            json: #"{"dns":{"servers":[{"address":"Object-DNS.Example.","port":0,"domains":["domain:internal.example"],"expectedIPs":"geoip:private,geoip:cn","expectIPs":["192.0.2.0/24"],"unexpectedIPs":["geoip:ads"]},"String-DNS.Example.:5353"]},"outbounds":[{"protocol":"freedom"}]}"#
         )
         var resolvedDomains: [String] = []
 

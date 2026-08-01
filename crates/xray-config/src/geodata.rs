@@ -156,6 +156,28 @@ impl GeodataLoader {
         inverse: bool,
         max_matchers: usize,
     ) -> Result<Vec<IpMatcher>, GeodataError> {
+        self.load_ip_matchers_with_asset_reverse(file_name, code, inverse, max_matchers, true)
+    }
+
+    /// Loads Xray DNS IP rules without the legacy asset-level `reverse_match` flag.
+    pub(crate) fn load_dns_ip_matchers(
+        &mut self,
+        file_name: &str,
+        code: &str,
+        inverse: bool,
+        max_matchers: usize,
+    ) -> Result<Vec<IpMatcher>, GeodataError> {
+        self.load_ip_matchers_with_asset_reverse(file_name, code, inverse, max_matchers, false)
+    }
+
+    fn load_ip_matchers_with_asset_reverse(
+        &mut self,
+        file_name: &str,
+        code: &str,
+        inverse: bool,
+        max_matchers: usize,
+        apply_asset_reverse: bool,
+    ) -> Result<Vec<IpMatcher>, GeodataError> {
         let code = normalize_code(code);
         let geoip = self.load_ip(file_name, &code)?;
         if geoip.cidr.len() > max_matchers {
@@ -166,7 +188,7 @@ impl GeodataLoader {
                 remaining: max_matchers,
             });
         }
-        let inverse = inverse ^ geoip.reverse_match;
+        let inverse = inverse ^ (apply_asset_reverse && geoip.reverse_match);
         geoip
             .cidr
             .iter()

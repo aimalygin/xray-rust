@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
+use thiserror::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UdpSocket;
 use tokio::sync::Notify;
@@ -548,6 +549,472 @@ pub enum NameServer {
     Domain { domain: String, port: u16 },
 }
 
+/// A normalized IP network used by managed-DNS response filters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct DnsIpCidr {
+    network: IpAddr,
+    prefix_len: u8,
+}
+
+impl DnsIpCidr {
+    pub fn new(network: IpAddr, prefix_len: u8) -> Result<Self, DnsIpCidrError> {
+        let network = canonicalize_dns_filter_ip(network);
+        let max_prefix = match network {
+            IpAddr::V4(_) => 32,
+            IpAddr::V6(_) => 128,
+        };
+        if prefix_len > max_prefix {
+            return Err(DnsIpCidrError::PrefixTooLong {
+                address: network,
+                prefix_len,
+                max_prefix,
+            });
+        }
+
+        Ok(Self {
+            network: normalize_ip_network(network, prefix_len),
+            prefix_len,
+        })
+    }
+
+    pub fn host(address: IpAddr) -> Self {
+        let address = canonicalize_dns_filter_ip(address);
+        Self {
+            network: address,
+            prefix_len: match address {
+                IpAddr::V4(_) => 32,
+                IpAddr::V6(_) => 128,
+            },
+        }
+    }
+
+    pub fn network(self) -> IpAddr {
+        self.network
+    }
+
+    pub fn prefix_len(self) -> u8 {
+        self.prefix_len
+    }
+
+    pub fn contains(self, address: IpAddr) -> bool {
+        match (self.network, canonicalize_dns_filter_ip(address)) {
+            (IpAddr::V4(network), IpAddr::V4(address)) => {
+                let mask = ipv4_prefix_mask(self.prefix_len);
+                u32::from(address) & mask == u32::from(network)
+            }
+            (IpAddr::V6(network), IpAddr::V6(address)) => {
+                let mask = ipv6_prefix_mask(self.prefix_len);
+                u128::from(address) & mask == u128::from(network)
+            }
+            (IpAddr::V4(_), IpAddr::V6(_)) | (IpAddr::V6(_), IpAddr::V4(_)) => false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum DnsIpCidrError {
+    #[error("DNS IP CIDR prefix length {prefix_len} exceeds {max_prefix} for address {address}")]
+    PrefixTooLong {
+        address: IpAddr,
+        prefix_len: u8,
+        max_prefix: u8,
+    },
+}
+
+/// One portable rule in an Xray-compatible managed-DNS IP filter.
+///
+/// Positive rules within one category are ORed. Inverse rules within the same
+/// category mean "outside every inverse network", matching Xray's optimized
+/// IP-set behavior rather than ORing individual negations.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DnsIpMatcher {
+    Cidr(DnsIpCidr),
+    Private,
+    Not(Box<DnsIpMatcher>),
+}
+
+impl DnsIpMatcher {
+    pub fn cidr(network: IpAddr, prefix_len: u8) -> Result<Self, DnsIpCidrError> {
+        DnsIpCidr::new(network, prefix_len).map(Self::Cidr)
+    }
+
+    pub fn host(address: IpAddr) -> Self {
+        Self::Cidr(DnsIpCidr::host(address))
+    }
+
+    pub fn inverted(self) -> Self {
+        Self::Not(Box::new(self))
+    }
+}
+
+/// Source form of one `expectedIPs` or `unexpectedIPs` filter.
+///
+/// `custom_matchers` and `geoip_matchers` are independent Xray matcher
+/// categories and are ORed together. `soft` corresponds to the `*` marker:
+/// the preferred subset is used only when it is non-empty.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DnsIpFilter {
+    pub custom_matchers: Vec<DnsIpMatcher>,
+    pub geoip_matchers: Vec<DnsIpMatcher>,
+    pub soft: bool,
+}
+
+impl DnsIpFilter {
+    pub fn new(
+        custom_matchers: Vec<DnsIpMatcher>,
+        geoip_matchers: Vec<DnsIpMatcher>,
+        soft: bool,
+    ) -> Self {
+        Self {
+            custom_matchers,
+            geoip_matchers,
+            soft,
+        }
+    }
+
+    pub fn hard(custom_matchers: Vec<DnsIpMatcher>, geoip_matchers: Vec<DnsIpMatcher>) -> Self {
+        Self::new(custom_matchers, geoip_matchers, false)
+    }
+
+    pub fn soft(custom_matchers: Vec<DnsIpMatcher>, geoip_matchers: Vec<DnsIpMatcher>) -> Self {
+        Self::new(custom_matchers, geoip_matchers, true)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.custom_matchers.is_empty() && self.geoip_matchers.is_empty()
+    }
+}
+
+/// Query-ready managed-DNS IP filter compiled into merged address ranges.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompiledDnsIpFilter {
+    custom: CompiledDnsIpMatcherCategory,
+    geoip: CompiledDnsIpMatcherCategory,
+    soft: bool,
+    matcher_count: usize,
+}
+
+impl CompiledDnsIpFilter {
+    pub fn new(filter: DnsIpFilter) -> Self {
+        let matcher_count = filter.custom_matchers.len() + filter.geoip_matchers.len();
+        Self {
+            custom: CompiledDnsIpMatcherCategory::new(filter.custom_matchers),
+            geoip: CompiledDnsIpMatcherCategory::new(filter.geoip_matchers),
+            soft: filter.soft,
+            matcher_count,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.custom.is_empty() && self.geoip.is_empty()
+    }
+
+    pub fn is_soft(&self) -> bool {
+        self.soft
+    }
+
+    /// Returns the number of source matcher entries supplied to the filter.
+    ///
+    /// `Private` counts as one source entry even though compilation expands it
+    /// into the nine Xray private-address networks. A wrapping `Not` also does
+    /// not change the source count.
+    pub fn matcher_count(&self) -> usize {
+        self.matcher_count
+    }
+
+    /// Returns the deterministic number of merged ranges retained by the
+    /// query-time index across custom/GeoIP, positive/inverse, and IP-family
+    /// partitions.
+    pub fn compiled_range_count(&self) -> usize {
+        self.custom.range_count() + self.geoip.range_count()
+    }
+
+    pub fn matches(&self, address: IpAddr) -> bool {
+        self.custom.matches(address) || self.geoip.matches(address)
+    }
+
+    /// Applies this filter as `expectedIPs` and returns false when a hard
+    /// filter rejects every candidate.
+    pub fn apply_expected(&self, addresses: &mut Vec<IpAddr>) -> bool {
+        self.retain_preferred(addresses, true)
+    }
+
+    /// Applies this filter as `unexpectedIPs` and returns false when a hard
+    /// filter rejects every candidate.
+    pub fn apply_unexpected(&self, addresses: &mut Vec<IpAddr>) -> bool {
+        self.retain_preferred(addresses, false)
+    }
+
+    fn retain_preferred(&self, addresses: &mut Vec<IpAddr>, keep_matches: bool) -> bool {
+        if self.is_empty() {
+            return true;
+        }
+        let preferred = |address: &IpAddr| self.matches(*address) == keep_matches;
+        if self.soft && !addresses.iter().any(&preferred) {
+            return true;
+        }
+        addresses.retain(preferred);
+        !addresses.is_empty()
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct CompiledDnsIpMatcherCategory {
+    positive: DnsIpRangeSet,
+    inverse: DnsIpRangeSet,
+}
+
+impl CompiledDnsIpMatcherCategory {
+    fn new(matchers: Vec<DnsIpMatcher>) -> Self {
+        let mut positive = DnsIpRangeSetBuilder::default();
+        let mut inverse = DnsIpRangeSetBuilder::default();
+        for matcher in matchers {
+            add_dns_ip_matcher(matcher, false, &mut positive, &mut inverse);
+        }
+        Self {
+            positive: positive.build(),
+            inverse: inverse.build(),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.positive.is_empty() && self.inverse.is_empty()
+    }
+
+    fn range_count(&self) -> usize {
+        self.positive.range_count() + self.inverse.range_count()
+    }
+
+    fn matches(&self, address: IpAddr) -> bool {
+        self.positive.contains(address)
+            || self.inverse.supports_family(address) && !self.inverse.contains(address)
+    }
+}
+
+fn add_dns_ip_matcher(
+    matcher: DnsIpMatcher,
+    inverted: bool,
+    positive: &mut DnsIpRangeSetBuilder,
+    inverse: &mut DnsIpRangeSetBuilder,
+) {
+    match matcher {
+        DnsIpMatcher::Cidr(cidr) => {
+            if inverted {
+                inverse.insert(cidr);
+            } else {
+                positive.insert(cidr);
+            }
+        }
+        DnsIpMatcher::Private => {
+            for cidr in private_dns_ip_cidrs() {
+                if inverted {
+                    inverse.insert(cidr);
+                } else {
+                    positive.insert(cidr);
+                }
+            }
+        }
+        DnsIpMatcher::Not(matcher) => {
+            add_dns_ip_matcher(*matcher, !inverted, positive, inverse);
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Ipv4Range {
+    start: u32,
+    end: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Ipv6Range {
+    start: u128,
+    end: u128,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct DnsIpRangeSet {
+    ipv4: Box<[Ipv4Range]>,
+    ipv6: Box<[Ipv6Range]>,
+}
+
+impl DnsIpRangeSet {
+    fn is_empty(&self) -> bool {
+        self.ipv4.is_empty() && self.ipv6.is_empty()
+    }
+
+    fn range_count(&self) -> usize {
+        self.ipv4.len() + self.ipv6.len()
+    }
+
+    fn supports_family(&self, address: IpAddr) -> bool {
+        match canonicalize_dns_filter_ip(address) {
+            IpAddr::V4(_) => !self.ipv4.is_empty(),
+            IpAddr::V6(_) => !self.ipv6.is_empty(),
+        }
+    }
+
+    fn contains(&self, address: IpAddr) -> bool {
+        match canonicalize_dns_filter_ip(address) {
+            IpAddr::V4(address) => {
+                let address = u32::from(address);
+                let insertion = self.ipv4.partition_point(|range| range.start <= address);
+                insertion > 0 && address <= self.ipv4[insertion - 1].end
+            }
+            IpAddr::V6(address) => {
+                let address = u128::from(address);
+                let insertion = self.ipv6.partition_point(|range| range.start <= address);
+                insertion > 0 && address <= self.ipv6[insertion - 1].end
+            }
+        }
+    }
+}
+
+#[derive(Default)]
+struct DnsIpRangeSetBuilder {
+    ipv4: Vec<Ipv4Range>,
+    ipv6: Vec<Ipv6Range>,
+}
+
+impl DnsIpRangeSetBuilder {
+    fn insert(&mut self, cidr: DnsIpCidr) {
+        match cidr.network {
+            IpAddr::V4(network) => {
+                let mask = ipv4_prefix_mask(cidr.prefix_len);
+                let start = u32::from(network) & mask;
+                self.ipv4.push(Ipv4Range {
+                    start,
+                    end: start | !mask,
+                });
+            }
+            IpAddr::V6(network) => {
+                let mask = ipv6_prefix_mask(cidr.prefix_len);
+                let start = u128::from(network) & mask;
+                self.ipv6.push(Ipv6Range {
+                    start,
+                    end: start | !mask,
+                });
+            }
+        }
+    }
+
+    fn build(mut self) -> DnsIpRangeSet {
+        merge_ipv4_ranges(&mut self.ipv4);
+        merge_ipv6_ranges(&mut self.ipv6);
+        DnsIpRangeSet {
+            ipv4: self.ipv4.into_boxed_slice(),
+            ipv6: self.ipv6.into_boxed_slice(),
+        }
+    }
+}
+
+fn merge_ipv4_ranges(ranges: &mut Vec<Ipv4Range>) {
+    ranges.sort_unstable_by_key(|range| (range.start, range.end));
+    let mut write = 0;
+    for read in 0..ranges.len() {
+        let current = ranges[read];
+        if write > 0 && current.start <= ranges[write - 1].end.saturating_add(1) {
+            ranges[write - 1].end = ranges[write - 1].end.max(current.end);
+        } else {
+            ranges[write] = current;
+            write += 1;
+        }
+    }
+    ranges.truncate(write);
+}
+
+fn merge_ipv6_ranges(ranges: &mut Vec<Ipv6Range>) {
+    ranges.sort_unstable_by_key(|range| (range.start, range.end));
+    let mut write = 0;
+    for read in 0..ranges.len() {
+        let current = ranges[read];
+        if write > 0 && current.start <= ranges[write - 1].end.saturating_add(1) {
+            ranges[write - 1].end = ranges[write - 1].end.max(current.end);
+        } else {
+            ranges[write] = current;
+            write += 1;
+        }
+    }
+    ranges.truncate(write);
+}
+
+fn normalize_ip_network(network: IpAddr, prefix_len: u8) -> IpAddr {
+    match network {
+        IpAddr::V4(network) => IpAddr::V4(Ipv4Addr::from(
+            u32::from(network) & ipv4_prefix_mask(prefix_len),
+        )),
+        IpAddr::V6(network) => IpAddr::V6(Ipv6Addr::from(
+            u128::from(network) & ipv6_prefix_mask(prefix_len),
+        )),
+    }
+}
+
+fn ipv4_prefix_mask(prefix_len: u8) -> u32 {
+    if prefix_len == 0 {
+        0
+    } else {
+        u32::MAX << (32 - prefix_len)
+    }
+}
+
+fn ipv6_prefix_mask(prefix_len: u8) -> u128 {
+    if prefix_len == 0 {
+        0
+    } else {
+        u128::MAX << (128 - prefix_len)
+    }
+}
+
+fn canonicalize_dns_filter_ip(address: IpAddr) -> IpAddr {
+    match address {
+        IpAddr::V6(address) => address
+            .to_ipv4_mapped()
+            .map_or(IpAddr::V6(address), IpAddr::V4),
+        IpAddr::V4(_) => address,
+    }
+}
+
+fn private_dns_ip_cidrs() -> [DnsIpCidr; 9] {
+    [
+        DnsIpCidr {
+            network: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 0)),
+            prefix_len: 8,
+        },
+        DnsIpCidr {
+            network: IpAddr::V4(Ipv4Addr::new(100, 64, 0, 0)),
+            prefix_len: 10,
+        },
+        DnsIpCidr {
+            network: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 0)),
+            prefix_len: 8,
+        },
+        DnsIpCidr {
+            network: IpAddr::V4(Ipv4Addr::new(169, 254, 0, 0)),
+            prefix_len: 16,
+        },
+        DnsIpCidr {
+            network: IpAddr::V4(Ipv4Addr::new(172, 16, 0, 0)),
+            prefix_len: 12,
+        },
+        DnsIpCidr {
+            network: IpAddr::V4(Ipv4Addr::new(192, 168, 0, 0)),
+            prefix_len: 16,
+        },
+        DnsIpCidr {
+            network: IpAddr::V6(Ipv6Addr::LOCALHOST),
+            prefix_len: 128,
+        },
+        DnsIpCidr {
+            network: IpAddr::V6(Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 0)),
+            prefix_len: 7,
+        },
+        DnsIpCidr {
+            network: IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 0)),
+            prefix_len: 10,
+        },
+    ]
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum DnsQueryStrategy {
     #[default]
@@ -662,6 +1129,8 @@ impl DnsQueryTransport for DirectDnsQueryTransport {
 pub struct NameServerPolicy {
     pub server: NameServer,
     pub domains: Vec<TransportDomainMatcher>,
+    pub expected_ips: DnsIpFilter,
+    pub unexpected_ips: DnsIpFilter,
     pub skip_fallback: bool,
     pub query_strategy: DnsQueryStrategy,
     pub final_query: bool,
@@ -672,6 +1141,8 @@ impl NameServerPolicy {
         Self {
             server,
             domains: Vec::new(),
+            expected_ips: DnsIpFilter::default(),
+            unexpected_ips: DnsIpFilter::default(),
             skip_fallback: false,
             query_strategy: DnsQueryStrategy::UseIp,
             final_query: false,
@@ -703,6 +1174,8 @@ impl CompiledNameServerPolicies {
                 let NameServerPolicy {
                     server,
                     domains,
+                    expected_ips,
+                    unexpected_ips,
                     skip_fallback,
                     query_strategy,
                     final_query,
@@ -713,6 +1186,8 @@ impl CompiledNameServerPolicies {
                 CompiledNameServerPolicy {
                     server,
                     domains,
+                    expected_ips: compile_dns_ip_filter(expected_ips),
+                    unexpected_ips: compile_dns_ip_filter(unexpected_ips),
                     skip_fallback,
                     query_strategy,
                     final_query,
@@ -739,7 +1214,7 @@ impl CompiledNameServerPolicies {
         self.policies.get(index).map(|policy| &policy.server)
     }
 
-    /// Returns the number of source matcher entries compiled into this set.
+    /// Returns the number of source domain-matcher entries compiled into this set.
     pub fn matcher_count(&self) -> usize {
         self.matcher_count
     }
@@ -804,9 +1279,57 @@ impl CompiledNameServerPolicies {
 struct CompiledNameServerPolicy {
     server: NameServer,
     domains: CompiledDomainMatcherSet,
+    expected_ips: Option<CompiledDnsIpFilter>,
+    unexpected_ips: Option<CompiledDnsIpFilter>,
     skip_fallback: bool,
     query_strategy: DnsQueryStrategy,
     final_query: bool,
+}
+
+impl CompiledNameServerPolicy {
+    fn apply_ip_filters(&self, addresses: &mut Vec<IpAddr>) -> bool {
+        // Xray applies both mandatory filters before either preference filter.
+        // The mixed-mode ordering is observable when one filter removes the
+        // only subset preferred by the other.
+        if self
+            .expected_ips
+            .as_ref()
+            .filter(|filter| !filter.is_soft())
+            .is_some_and(|filter| !filter.apply_expected(addresses))
+        {
+            return false;
+        }
+        if self
+            .unexpected_ips
+            .as_ref()
+            .filter(|filter| !filter.is_soft())
+            .is_some_and(|filter| !filter.apply_unexpected(addresses))
+        {
+            return false;
+        }
+        if self
+            .expected_ips
+            .as_ref()
+            .filter(|filter| filter.is_soft())
+            .is_some_and(|filter| !filter.apply_expected(addresses))
+        {
+            return false;
+        }
+        if self
+            .unexpected_ips
+            .as_ref()
+            .filter(|filter| filter.is_soft())
+            .is_some_and(|filter| !filter.apply_unexpected(addresses))
+        {
+            return false;
+        }
+        true
+    }
+}
+
+fn compile_dns_ip_filter(filter: DnsIpFilter) -> Option<CompiledDnsIpFilter> {
+    let compiled = CompiledDnsIpFilter::new(filter);
+    (!compiled.is_empty()).then_some(compiled)
 }
 
 #[derive(Debug, Default)]
@@ -1156,7 +1679,7 @@ impl ConfiguredDnsResolver {
                 "dns server query strategy has no address family in common with the global strategy",
             ));
         };
-        match query_strategy {
+        let result = match query_strategy {
             DnsQueryStrategy::UseIp => {
                 let (ipv4, ipv6) = tokio::join!(
                     self.query_server_with_budget(&name_server.server, domain, DnsRecordType::A),
@@ -1170,6 +1693,21 @@ impl ConfiguredDnsResolver {
             DnsQueryStrategy::UseIpv6 => merge_configured_family_results([self
                 .query_server_with_budget(&name_server.server, domain, DnsRecordType::Aaaa)
                 .await]),
+        }?;
+
+        match result {
+            ConfiguredServerResult::Answer(ConfiguredDnsAnswer::Addresses(mut answer)) => {
+                if name_server.apply_ip_filters(&mut answer.addresses) {
+                    Ok(ConfiguredServerResult::Answer(
+                        ConfiguredDnsAnswer::Addresses(answer),
+                    ))
+                } else {
+                    Ok(ConfiguredServerResult::Negative(
+                        ConfiguredDnsNegative::NoData,
+                    ))
+                }
+            }
+            result => Ok(result),
         }
     }
 
@@ -2156,8 +2694,9 @@ mod tests {
 
     use super::{
         build_dns_query_with_id, parse_dns_response, query_udp_dns_server,
-        select_name_server_indices, CachingDnsResolver, CompiledNameServerPolicies,
-        ConfiguredDnsAddresses, ConfiguredDnsAnswer, ConfiguredDnsResolver, DnsLookup,
+        select_name_server_indices, CachingDnsResolver, CompiledDnsIpFilter,
+        CompiledNameServerPolicies, ConfiguredDnsAddresses, ConfiguredDnsAnswer,
+        ConfiguredDnsResolver, DnsIpCidr, DnsIpCidrError, DnsIpFilter, DnsIpMatcher, DnsLookup,
         DnsQueryStrategy, DnsQueryTransport, DnsQueryTransportKind, DnsRecordType, DnsResolver,
         NameServer, NameServerPolicy, StaticHostRule, StaticHostTarget, TransportDomainMatcher,
         DNS_CACHE_MAX_ENTRIES,
@@ -2170,6 +2709,225 @@ mod tests {
             .expect("valid query should encode");
 
         assert_eq!(&query[..2], &0xA17E_u16.to_be_bytes());
+    }
+
+    fn dns_ip_cidr(network: &str, prefix_len: u8) -> DnsIpMatcher {
+        DnsIpMatcher::cidr(network.parse().expect("valid test IP address"), prefix_len)
+            .expect("valid test prefix")
+    }
+
+    fn hard_dns_ip_filter(matchers: Vec<DnsIpMatcher>) -> CompiledDnsIpFilter {
+        CompiledDnsIpFilter::new(DnsIpFilter::hard(matchers, Vec::new()))
+    }
+
+    fn soft_dns_ip_filter(matchers: Vec<DnsIpMatcher>) -> CompiledDnsIpFilter {
+        CompiledDnsIpFilter::new(DnsIpFilter::soft(matchers, Vec::new()))
+    }
+
+    #[test]
+    fn dns_ip_cidr_normalizes_network_and_validates_prefix() {
+        let cidr = DnsIpCidr::new(Ipv4Addr::new(192, 0, 2, 129).into(), 24).unwrap();
+
+        assert_eq!(cidr.network(), IpAddr::V4(Ipv4Addr::new(192, 0, 2, 0)));
+        assert_eq!(cidr.prefix_len(), 24);
+        assert!(cidr.contains(Ipv4Addr::new(192, 0, 2, 255).into()));
+        assert!(!cidr.contains(Ipv4Addr::new(192, 0, 3, 1).into()));
+        assert_eq!(
+            DnsIpCidr::new(Ipv4Addr::LOCALHOST.into(), 33),
+            Err(DnsIpCidrError::PrefixTooLong {
+                address: IpAddr::V4(Ipv4Addr::LOCALHOST),
+                prefix_len: 33,
+                max_prefix: 32,
+            })
+        );
+
+        let mapped = Ipv4Addr::new(192, 0, 2, 129).to_ipv6_mapped();
+        let mapped_cidr = DnsIpCidr::new(IpAddr::V6(mapped), 24).unwrap();
+        assert_eq!(
+            (mapped_cidr.network(), mapped_cidr.prefix_len()),
+            (IpAddr::V4(Ipv4Addr::new(192, 0, 2, 0)), 24)
+        );
+        assert_eq!(
+            DnsIpCidr::new(IpAddr::V6(mapped), 120),
+            Err(DnsIpCidrError::PrefixTooLong {
+                address: IpAddr::V4(Ipv4Addr::new(192, 0, 2, 129)),
+                prefix_len: 120,
+                max_prefix: 32,
+            })
+        );
+        assert_eq!(
+            DnsIpCidr::host(IpAddr::V6(mapped)),
+            DnsIpCidr::host(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 129)))
+        );
+    }
+
+    #[test]
+    fn compiled_dns_ip_filter_matches_private_and_reports_deterministic_stats() {
+        let filter = hard_dns_ip_filter(vec![DnsIpMatcher::Private]);
+
+        assert_eq!(filter.matcher_count(), 1);
+        assert_eq!(filter.compiled_range_count(), 9);
+        assert!(filter.matches(Ipv4Addr::new(10, 1, 2, 3).into()));
+        assert!(filter.matches(Ipv4Addr::new(100, 64, 1, 2).into()));
+        assert!(filter.matches(Ipv6Addr::LOCALHOST.into()));
+        assert!(filter.matches(Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 1).into()));
+        assert!(!filter.matches(Ipv4Addr::new(8, 8, 8, 8).into()));
+        assert!(!filter.matches(Ipv6Addr::new(0x2001, 0x4860, 0x4860, 0, 0, 0, 0, 0x8888).into()));
+    }
+
+    #[test]
+    fn compiled_dns_ip_filter_merges_ranges_without_losing_source_count() {
+        let filter = hard_dns_ip_filter(vec![
+            dns_ip_cidr("192.0.2.0", 25),
+            dns_ip_cidr("192.0.2.128", 25),
+        ]);
+
+        assert_eq!(filter.matcher_count(), 2);
+        assert_eq!(filter.compiled_range_count(), 1);
+        assert!(filter.matches(Ipv4Addr::new(192, 0, 2, 255).into()));
+    }
+
+    #[test]
+    fn inverse_dns_ip_matchers_complement_the_union_for_their_address_family() {
+        let filter = hard_dns_ip_filter(vec![
+            dns_ip_cidr("10.0.0.0", 8).inverted(),
+            dns_ip_cidr("192.168.0.0", 16).inverted(),
+        ]);
+
+        assert!(filter.matches(Ipv4Addr::new(203, 0, 113, 7).into()));
+        assert!(!filter.matches(Ipv4Addr::new(10, 2, 3, 4).into()));
+        assert!(!filter.matches(Ipv4Addr::new(192, 168, 5, 6).into()));
+        assert!(!filter.matches(Ipv6Addr::LOCALHOST.into()));
+    }
+
+    #[test]
+    fn custom_and_geoip_dns_matcher_categories_are_ored() {
+        let filter = CompiledDnsIpFilter::new(DnsIpFilter::hard(
+            vec![dns_ip_cidr("192.0.2.0", 24)],
+            vec![dns_ip_cidr("2001:db8::", 32)],
+        ));
+
+        assert!(filter.matches(Ipv4Addr::new(192, 0, 2, 10).into()));
+        assert!(filter.matches(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 10).into()));
+        assert!(!filter.matches(Ipv4Addr::new(198, 51, 100, 10).into()));
+    }
+
+    #[test]
+    fn inverse_custom_and_geoip_dns_matcher_categories_remain_independent() {
+        let filter = CompiledDnsIpFilter::new(DnsIpFilter::hard(
+            vec![dns_ip_cidr("10.0.0.0", 8).inverted()],
+            vec![dns_ip_cidr("192.168.0.0", 16).inverted()],
+        ));
+
+        // Each inverse category is its own Xray submatcher; the category not
+        // containing the address still makes the multi-matcher succeed.
+        assert!(filter.matches(Ipv4Addr::new(10, 1, 2, 3).into()));
+        assert!(filter.matches(Ipv4Addr::new(192, 168, 1, 2).into()));
+    }
+
+    #[test]
+    fn dns_ip_filter_unmaps_ipv4_mapped_match_inputs_like_xray() {
+        let filter = hard_dns_ip_filter(vec![dns_ip_cidr("192.0.2.0", 24)]);
+
+        assert!(filter.matches(IpAddr::V6(Ipv4Addr::new(192, 0, 2, 10).to_ipv6_mapped())));
+    }
+
+    #[test]
+    fn expected_dns_ip_filters_keep_matching_candidates_with_hard_and_soft_semantics() {
+        let matching_v4 = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10));
+        let matching_v6 = IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 10));
+        let rejected = IpAddr::V4(Ipv4Addr::new(198, 51, 100, 10));
+        let matchers = vec![dns_ip_cidr("192.0.2.0", 24), dns_ip_cidr("2001:db8::", 32)];
+        let hard = hard_dns_ip_filter(matchers.clone());
+        let soft = soft_dns_ip_filter(matchers);
+
+        let mut hard_candidates = vec![matching_v6, rejected, matching_v4, matching_v6];
+        assert!(hard.apply_expected(&mut hard_candidates));
+        assert_eq!(hard_candidates, [matching_v6, matching_v4, matching_v6]);
+
+        let mut hard_rejected = vec![rejected];
+        assert!(!hard.apply_expected(&mut hard_rejected));
+        assert!(hard_rejected.is_empty());
+
+        let mut soft_preferred = vec![rejected, matching_v4];
+        assert!(soft.apply_expected(&mut soft_preferred));
+        assert_eq!(soft_preferred, [matching_v4]);
+
+        let mut soft_fallback = vec![rejected, rejected];
+        assert!(soft.apply_expected(&mut soft_fallback));
+        assert_eq!(soft_fallback, [rejected, rejected]);
+    }
+
+    #[test]
+    fn unexpected_dns_ip_filters_keep_nonmatching_candidates_with_hard_and_soft_semantics() {
+        let unexpected = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10));
+        let preferred_v4 = IpAddr::V4(Ipv4Addr::new(198, 51, 100, 10));
+        let preferred_v6 = IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 10));
+        let matcher = vec![dns_ip_cidr("192.0.2.0", 24)];
+        let hard = hard_dns_ip_filter(matcher.clone());
+        let soft = soft_dns_ip_filter(matcher);
+
+        let mut hard_candidates = vec![unexpected, preferred_v4, preferred_v6, preferred_v4];
+        assert!(hard.apply_unexpected(&mut hard_candidates));
+        assert_eq!(hard_candidates, [preferred_v4, preferred_v6, preferred_v4]);
+
+        let mut hard_rejected = vec![unexpected, unexpected];
+        assert!(!hard.apply_unexpected(&mut hard_rejected));
+        assert!(hard_rejected.is_empty());
+
+        let mut soft_preferred = vec![unexpected, preferred_v4];
+        assert!(soft.apply_unexpected(&mut soft_preferred));
+        assert_eq!(soft_preferred, [preferred_v4]);
+
+        let mut soft_fallback = vec![unexpected, unexpected];
+        assert!(soft.apply_unexpected(&mut soft_fallback));
+        assert_eq!(soft_fallback, [unexpected, unexpected]);
+    }
+
+    #[test]
+    fn empty_dns_ip_filter_is_a_noop_even_when_hard() {
+        let filter = CompiledDnsIpFilter::new(DnsIpFilter::default());
+        let original = vec![IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))];
+        let mut expected = original.clone();
+        let mut unexpected = original.clone();
+
+        assert!(filter.is_empty());
+        assert!(filter.apply_expected(&mut expected));
+        assert!(filter.apply_unexpected(&mut unexpected));
+        assert_eq!(expected, original);
+        assert_eq!(unexpected, original);
+    }
+
+    #[test]
+    fn compiled_name_server_policy_applies_expected_before_soft_unexpected() {
+        let server = NameServer::Socket(SocketAddr::from(([192, 0, 2, 53], 53)));
+        let mut policy = NameServerPolicy::new(server);
+        policy.expected_ips = DnsIpFilter::hard(vec![dns_ip_cidr("192.0.2.0", 24)], Vec::new());
+        policy.unexpected_ips = DnsIpFilter::soft(vec![dns_ip_cidr("192.0.2.0", 24)], Vec::new());
+        let policies = CompiledNameServerPolicies::new(vec![policy]);
+        let mut addresses = vec![
+            IpAddr::V4(Ipv4Addr::new(198, 51, 100, 1)),
+            IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1)),
+        ];
+
+        assert!(policies.get(0).unwrap().apply_ip_filters(&mut addresses));
+        assert_eq!(addresses, [IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))]);
+    }
+
+    #[test]
+    fn compiled_name_server_policy_applies_hard_unexpected_before_soft_expected() {
+        let server = NameServer::Socket(SocketAddr::from(([192, 0, 2, 53], 53)));
+        let mut policy = NameServerPolicy::new(server);
+        policy.expected_ips = DnsIpFilter::soft(vec![dns_ip_cidr("192.0.2.0", 24)], Vec::new());
+        policy.unexpected_ips = DnsIpFilter::hard(vec![dns_ip_cidr("192.0.2.0", 24)], Vec::new());
+        let policies = CompiledNameServerPolicies::new(vec![policy]);
+        let mut addresses = vec![
+            IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1)),
+            IpAddr::V4(Ipv4Addr::new(198, 51, 100, 1)),
+        ];
+
+        assert!(policies.get(0).unwrap().apply_ip_filters(&mut addresses));
+        assert_eq!(addresses, [IpAddr::V4(Ipv4Addr::new(198, 51, 100, 1))]);
     }
 
     fn policy(server_octet: u8) -> NameServerPolicy {
@@ -2930,6 +3688,39 @@ mod tests {
         }));
     }
 
+    #[tokio::test]
+    async fn configured_dns_filters_merged_families_without_reordering_or_recomputing_ttl() {
+        let server = NameServer::Socket(SocketAddr::from(([192, 0, 2, 53], 53)));
+        let mut policy = NameServerPolicy::new(server);
+        policy.expected_ips = DnsIpFilter::hard(
+            vec![
+                DnsIpMatcher::host(Ipv4Addr::new(192, 0, 2, 80).into()),
+                DnsIpMatcher::host(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 80).into()),
+            ],
+            Vec::new(),
+        );
+        let resolver =
+            ConfiguredDnsResolver::new(Vec::new(), Vec::new(), Arc::new(RejectingResolver))
+                .with_name_server_policies(vec![policy])
+                .with_query_transport(Arc::new(MultiAddressQueryTransport));
+
+        let lookup = resolver
+            .resolve_all("filtered-multi.example", 443)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            lookup.ips().collect::<Vec<_>>(),
+            [
+                IpAddr::V4(Ipv4Addr::new(192, 0, 2, 80)),
+                IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 80)),
+            ]
+        );
+        assert!(lookup.ttl().is_some_and(|ttl| {
+            ttl <= Duration::from_secs(30) && ttl > Duration::from_secs(29)
+        }));
+    }
+
     struct TtlCountingResolver {
         calls: AtomicUsize,
         ttl: Duration,
@@ -3556,6 +4347,85 @@ mod tests {
                 (failing_internal, "origin.internal.test".to_owned(),),
                 (cname_internal.clone(), "origin.internal.test".to_owned()),
                 (cname_internal, "alias.public.test".to_owned()),
+            ]
+        );
+    }
+
+    struct FilteredCnameFailoverQueryTransport {
+        filtered_server: NameServer,
+        calls: Mutex<Vec<(NameServer, String)>>,
+    }
+
+    #[async_trait::async_trait]
+    impl DnsQueryTransport for FilteredCnameFailoverQueryTransport {
+        async fn exchange(
+            &self,
+            server: &NameServer,
+            _transport: DnsQueryTransportKind,
+            query: &[u8],
+        ) -> io::Result<Vec<u8>> {
+            let (domain, record_type, _) = super::parse_dns_question(query)?;
+            if record_type != 1 {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "filtered CNAME test expects only A queries",
+                ));
+            }
+            self.calls
+                .lock()
+                .unwrap()
+                .push((server.clone(), domain.clone()));
+
+            if server == &self.filtered_server {
+                return if domain == "origin.filtered.test" {
+                    Ok(build_test_cname_response(query, "alias.filtered.test"))
+                } else {
+                    Ok(build_test_a_response(query, Ipv4Addr::new(192, 0, 2, 75)))
+                };
+            }
+
+            if domain != "origin.filtered.test" {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "server failover must restart from the original query name",
+                ));
+            }
+            Ok(build_test_a_response(
+                query,
+                Ipv4Addr::new(198, 51, 100, 75),
+            ))
+        }
+    }
+
+    #[tokio::test]
+    async fn configured_dns_filtered_cname_answer_fails_over_with_original_query_name() {
+        let filtered = NameServer::Socket(SocketAddr::from(([192, 0, 2, 1], 53)));
+        let fallback = NameServer::Socket(SocketAddr::from(([192, 0, 2, 2], 53)));
+        let mut filtered_policy = NameServerPolicy::new(filtered.clone());
+        filtered_policy.expected_ips =
+            DnsIpFilter::hard(vec![dns_ip_cidr("203.0.113.0", 24)], Vec::new());
+        let transport = Arc::new(FilteredCnameFailoverQueryTransport {
+            filtered_server: filtered.clone(),
+            calls: Mutex::new(Vec::new()),
+        });
+        let resolver =
+            ConfiguredDnsResolver::new(Vec::new(), Vec::new(), Arc::new(RejectingResolver))
+                .with_name_server_policies(vec![
+                    filtered_policy,
+                    NameServerPolicy::new(fallback.clone()),
+                ])
+                .with_query_strategy(DnsQueryStrategy::UseIpv4)
+                .with_query_transport(transport.clone());
+
+        let resolved = resolver.resolve("origin.filtered.test", 443).await.unwrap();
+
+        assert_eq!(resolved, SocketAddr::from(([198, 51, 100, 75], 443)));
+        assert_eq!(
+            *transport.calls.lock().unwrap(),
+            [
+                (filtered.clone(), "origin.filtered.test".to_owned()),
+                (filtered, "alias.filtered.test".to_owned()),
+                (fallback, "origin.filtered.test".to_owned()),
             ]
         );
     }

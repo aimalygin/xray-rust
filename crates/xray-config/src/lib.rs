@@ -6,9 +6,9 @@ mod parser;
 pub use diagnostic::{Diagnostic, DiagnosticSeverity};
 pub use model::{
     ConfigModelError, CoreConfig, DnsConfig, DnsFakeIpConfig, DnsHostMapping, DnsHostTarget,
-    DnsNameServerConfig, DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint, DomainMatcher,
-    HappyEyeballsSettings, InboundConfig, InboundProtocol, InboundSniffingConfig, IpCidr,
-    IpMatcher, Network, OutboundConfig, OutboundProtocol, OutboundSettings, PolicyConfig,
+    DnsIpFilter, DnsNameServerConfig, DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint,
+    DomainMatcher, HappyEyeballsSettings, InboundConfig, InboundProtocol, InboundSniffingConfig,
+    IpCidr, IpMatcher, Network, OutboundConfig, OutboundProtocol, OutboundSettings, PolicyConfig,
     PolicyLevelConfig, PolicySystemConfig, RealitySettings, RealityShortId, RegexMatcher,
     RoutingConfig, RoutingDomainStrategy, RoutingRule, SniffingDestination, SocketOptions,
     StreamSecurity, StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,

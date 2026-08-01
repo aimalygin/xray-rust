@@ -1100,6 +1100,8 @@ mod tests {
                 domains: vec![xray_config::DomainMatcher::Suffix(
                     "internal.example".to_owned(),
                 )],
+                expected_ips: xray_config::DnsIpFilter::default(),
+                unexpected_ips: xray_config::DnsIpFilter::default(),
                 skip_fallback: true,
                 query_strategy: xray_config::DnsQueryStrategy::UseIpv6,
                 final_query: true,
@@ -1129,6 +1131,35 @@ mod tests {
                 DnsProxyUpstream::Ip(first),
                 DnsProxyUpstream::Ip(second),
             ]
+        );
+    }
+
+    #[test]
+    fn compiled_dns_ip_filters_remain_irrelevant_to_the_raw_proxy_plan() {
+        let raw = r#"{
+          "dns": {
+            "servers": [{
+              "address": "policy.example",
+              "port": 5353,
+              "expectedIPs": ["192.0.2.0/24"],
+              "unexpectedIPs": ["!198.51.100.0/24"]
+            }]
+          },
+          "outbounds": [{ "protocol": "freedom", "tag": "direct" }]
+        }"#;
+        let mut config = xray_config::parse_xray_json(raw)
+            .expect("DNS IP policy should parse")
+            .config;
+
+        let _compiled = crate::take_name_server_policy_set(&mut config);
+        let plan = DnsProxyPlan::from_servers(&config.dns.servers).unwrap();
+
+        assert_eq!(
+            plan.upstreams(),
+            &[DnsProxyUpstream::Domain {
+                domain: "policy.example".to_owned(),
+                port: 5353,
+            }]
         );
     }
 

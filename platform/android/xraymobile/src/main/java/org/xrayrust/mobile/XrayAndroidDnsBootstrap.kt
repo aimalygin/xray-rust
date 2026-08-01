@@ -569,6 +569,9 @@ private fun dnsServerBootstrapDomainFromObjectFields(
         53
     }
     validateDnsServerObjectDomains(server)
+    validateDnsServerStringList(server, "expectedIPs")
+    validateDnsServerStringList(server, "expectIPs")
+    validateDnsServerStringList(server, "unexpectedIPs")
     validateOptionalDnsServerBoolean(server, "skipFallback")
     validateOptionalDnsServerBoolean(server, "finalQuery")
     validateDnsServerObjectQueryStrategy(server)
@@ -610,6 +613,31 @@ private fun validateDnsServerObjectDomains(server: Map<String, Any?>) {
             "DNS server domain matcher must be a non-empty string"
         }
         else -> throw IllegalArgumentException("DNS server domains must be a string or an array")
+    }
+}
+
+private fun validateDnsServerStringList(server: Map<String, Any?>, key: String) {
+    if (key !in server) {
+        return
+    }
+    when (val value = server[key]) {
+        null, JSONObject.NULL -> Unit
+        is String -> Unit
+        is JSONArray -> {
+            for (index in 0 until value.length()) {
+                require(value.get(index) is String) {
+                    "DNS server `$key` item at index $index must be a string"
+                }
+            }
+        }
+        is List<*> -> value.forEachIndexed { index, item ->
+            require(item is String) {
+                "DNS server `$key` item at index $index must be a string"
+            }
+        }
+        else -> throw IllegalArgumentException(
+            "DNS server `$key` must be a string or an array",
+        )
     }
 }
 
@@ -895,6 +923,9 @@ private val DNS_SERVER_OBJECT_FIELDS = setOf(
     "address",
     "port",
     "domains",
+    "expectedIPs",
+    "expectIPs",
+    "unexpectedIPs",
     "skipFallback",
     "queryStrategy",
     "finalQuery",

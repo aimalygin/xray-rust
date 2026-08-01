@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use crate::{
     geodata::{default_geodata_dirs, GeodataLoader},
-    CoreConfig, Diagnostic, DnsConfig, DnsFakeIpConfig, DnsHostMapping, DnsHostTarget,
+    CoreConfig, Diagnostic, DnsConfig, DnsFakeIpConfig, DnsHostMapping, DnsHostTarget, DnsIpFilter,
     DnsNameServerConfig, DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint, DomainMatcher,
     HappyEyeballsSettings, InboundConfig, InboundProtocol, InboundSniffingConfig, IpCidr,
     IpMatcher, Network, OutboundConfig, OutboundProtocol, OutboundSettings, PolicyConfig,
@@ -28,6 +28,12 @@ const MAX_DNS_SERVERS: usize = 8;
 const DEFAULT_FAKE_IP_POOL_SIZE: u32 = 32_768;
 const TUN_DNS_ANCHOR: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 1);
 const TUN_CLIENT_IPV4: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 2);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IpMatcherParseMode {
+    Routing,
+    XrayDns,
+}
 
 fn is_tun_reserved_ip(ip: IpAddr) -> bool {
     match ip {
@@ -405,6 +411,9 @@ impl Parser<'_> {
                 "address",
                 "port",
                 "domains",
+                "expectedIPs",
+                "expectIPs",
+                "unexpectedIPs",
                 "skipFallback",
                 "queryStrategy",
                 "finalQuery",
@@ -427,6 +436,7 @@ impl Parser<'_> {
         let port = if port == 0 { 53 } else { port };
         let endpoint = self.parse_dns_server_endpoint(address, port, &address_path)?;
         let domains = self.parse_dns_server_domains(server, path)?;
+        let (expected_ips, unexpected_ips) = self.parse_dns_server_ip_filters(server, path)?;
         let query_strategy_path = format!("{path}.queryStrategy");
         let query_strategy =
             self.parse_dns_query_strategy_at(server.get("queryStrategy"), &query_strategy_path);
@@ -441,6 +451,8 @@ impl Parser<'_> {
         Some(DnsServerConfig::Policy(DnsNameServerConfig {
             endpoint,
             domains,
+            expected_ips,
+            unexpected_ips,
             skip_fallback: self
                 .optional_bool_at(server, "skipFallback", format!("{path}.skipFallback"))
                 .unwrap_or(false),
@@ -449,6 +461,91 @@ impl Parser<'_> {
                 .optional_bool_at(server, "finalQuery", format!("{path}.finalQuery"))
                 .unwrap_or(false),
         }))
+    }
+
+    fn parse_dns_server_ip_filters(
+        &mut self,
+        server: &Value,
+        path: &str,
+    ) -> Option<(DnsIpFilter, DnsIpFilter)> {
+        let expected_path = format!("{path}.expectedIPs");
+        let alias_path = format!("{path}.expectIPs");
+        let expected = self.parse_dns_string_list(server, "expectedIPs", &expected_path)?;
+        let alias = self.parse_dns_string_list(server, "expectIPs", &alias_path)?;
+        let expected_ips = if expected.is_empty() {
+            self.parse_dns_ip_filter(&alias, &alias_path)?
+        } else {
+            self.parse_dns_ip_filter(&expected, &expected_path)?
+        };
+
+        let unexpected_path = format!("{path}.unexpectedIPs");
+        let unexpected = self.parse_dns_string_list(server, "unexpectedIPs", &unexpected_path)?;
+        let unexpected_ips = self.parse_dns_ip_filter(&unexpected, &unexpected_path)?;
+
+        Some((expected_ips, unexpected_ips))
+    }
+
+    fn parse_dns_string_list<'value>(
+        &mut self,
+        value: &'value Value,
+        key: &str,
+        path: &str,
+    ) -> Option<Vec<&'value str>> {
+        let Some(raw) = value.get(key) else {
+            return Some(Vec::new());
+        };
+
+        match raw {
+            Value::Null => Some(Vec::new()),
+            Value::String(values) => Some(values.split(',').collect()),
+            Value::Array(values) => {
+                let mut strings = Vec::with_capacity(values.len());
+                for (index, value) in values.iter().enumerate() {
+                    let Some(value) = value.as_str() else {
+                        self.error(
+                            format!("{path}[{index}]"),
+                            "dns server IP matcher must be a string",
+                        );
+                        return None;
+                    };
+                    strings.push(value);
+                }
+                Some(strings)
+            }
+            _ => {
+                self.error(path, format!("field `{key}` must be a string or an array"));
+                None
+            }
+        }
+    }
+
+    fn parse_dns_ip_filter(&mut self, values: &[&str], path: &str) -> Option<DnsIpFilter> {
+        let mut filter = DnsIpFilter::default();
+        for (index, value) in values.iter().copied().enumerate() {
+            if value == "*" {
+                filter.soft = true;
+                continue;
+            }
+
+            let item_path = format!("{path}[{index}]");
+            let remaining = self.matcher_budget.remaining_ip_matchers();
+            if remaining == 0 {
+                self.ip_matcher_budget_error(&item_path);
+                return None;
+            }
+            let is_geoip = dns_ip_rule_uses_geodata(value);
+            let matchers = self.parse_dns_ip_matcher(value, &item_path, remaining)?;
+            if !self.matcher_budget.consume_ip_matchers(matchers.len()) {
+                self.ip_matcher_budget_error(&item_path);
+                return None;
+            }
+            if is_geoip {
+                filter.geoip_matchers.extend(matchers);
+            } else {
+                filter.custom_matchers.extend(matchers);
+            }
+        }
+        Some(filter)
     }
 
     fn parse_dns_server_endpoint(
@@ -2348,6 +2445,25 @@ impl Parser<'_> {
         path: &str,
         max_matchers: usize,
     ) -> Option<Vec<IpMatcher>> {
+        self.parse_ip_matcher_with_mode(value, path, max_matchers, IpMatcherParseMode::Routing)
+    }
+
+    fn parse_dns_ip_matcher(
+        &mut self,
+        value: &str,
+        path: &str,
+        max_matchers: usize,
+    ) -> Option<Vec<IpMatcher>> {
+        self.parse_ip_matcher_with_mode(value, path, max_matchers, IpMatcherParseMode::XrayDns)
+    }
+
+    fn parse_ip_matcher_with_mode(
+        &mut self,
+        value: &str,
+        path: &str,
+        max_matchers: usize,
+        mode: IpMatcherParseMode,
+    ) -> Option<Vec<IpMatcher>> {
         let (value, inverse) = strip_inverse_prefix(value);
         if let Some(code) = value.strip_prefix("geoip:") {
             let (code, code_inverse) = strip_inverse_prefix(code);
@@ -2356,17 +2472,17 @@ impl Parser<'_> {
                 self.error(path, "geoip code cannot be empty");
                 return None;
             }
-            if code.eq_ignore_ascii_case("private") {
+            if mode == IpMatcherParseMode::Routing && code.eq_ignore_ascii_case("private") {
                 return Some(vec![wrap_ip_matcher_inverse(IpMatcher::Private, inverse)]);
             }
-            return self.parse_geoip_matchers("geoip.dat", code, inverse, path, max_matchers);
+            return self.parse_geoip_matchers("geoip.dat", code, inverse, path, max_matchers, mode);
         }
 
         if let Some(spec) = value.strip_prefix("ext-ip:") {
-            return self.parse_external_geoip_matchers(spec, inverse, path, max_matchers);
+            return self.parse_external_geoip_matchers(spec, inverse, path, max_matchers, mode);
         }
         if let Some(spec) = value.strip_prefix("ext:") {
-            return self.parse_external_geoip_matchers(spec, inverse, path, max_matchers);
+            return self.parse_external_geoip_matchers(spec, inverse, path, max_matchers, mode);
         }
 
         self.parse_ip_cidr(value, path)
@@ -2379,6 +2495,7 @@ impl Parser<'_> {
         inverse: bool,
         path: &str,
         max_matchers: usize,
+        mode: IpMatcherParseMode,
     ) -> Option<Vec<IpMatcher>> {
         let (file_name, code) = self.parse_external_geodata_ref(spec, path)?;
         let (code, code_inverse) = strip_inverse_prefix(code);
@@ -2388,7 +2505,7 @@ impl Parser<'_> {
             return None;
         }
 
-        self.parse_geoip_matchers(file_name, code, inverse, path, max_matchers)
+        self.parse_geoip_matchers(file_name, code, inverse, path, max_matchers, mode)
     }
 
     fn parse_geoip_matchers(
@@ -2398,11 +2515,19 @@ impl Parser<'_> {
         inverse: bool,
         path: &str,
         max_matchers: usize,
+        mode: IpMatcherParseMode,
     ) -> Option<Vec<IpMatcher>> {
-        match self
-            .geodata_loader
-            .load_ip_matchers(file_name, code, inverse, max_matchers)
-        {
+        let matchers = match mode {
+            IpMatcherParseMode::Routing => {
+                self.geodata_loader
+                    .load_ip_matchers(file_name, code, inverse, max_matchers)
+            }
+            IpMatcherParseMode::XrayDns => {
+                self.geodata_loader
+                    .load_dns_ip_matchers(file_name, code, inverse, max_matchers)
+            }
+        };
+        match matchers {
             Ok(matchers) if matchers.is_empty() => {
                 self.error(
                     path,
@@ -2488,6 +2613,7 @@ impl Parser<'_> {
 
     fn parse_ip_cidr(&mut self, value: &str, path: &str) -> Option<IpCidr> {
         let (ip, prefix) = match value.split_once('/') {
+            Some((ip, "")) => (ip, None),
             Some((ip, prefix)) => {
                 let Some(prefix) = prefix.parse::<u8>().ok() else {
                     self.error(path, format!("invalid routing CIDR prefix `{prefix}`"));
@@ -2498,11 +2624,10 @@ impl Parser<'_> {
             None => (value, None),
         };
 
-        let Some(ip) = ip.parse::<IpAddr>().ok() else {
+        let Some(ip) = parse_xray_ip_address(ip) else {
             self.error(path, format!("invalid routing IP matcher `{value}`"));
             return None;
         };
-
         let cidr = match prefix {
             Some(prefix) => match IpCidr::new(ip, prefix) {
                 Ok(cidr) => cidr,
@@ -2642,6 +2767,31 @@ fn strip_inverse_prefix(mut value: &str) -> (&str, bool) {
         inverse = !inverse;
     }
     (value, inverse)
+}
+
+fn dns_ip_rule_uses_geodata(value: &str) -> bool {
+    let (value, _) = strip_inverse_prefix(value);
+    value.starts_with("geoip:") || value.starts_with("ext:") || value.starts_with("ext-ip:")
+}
+
+fn parse_xray_ip_address(mut value: &str) -> Option<IpAddr> {
+    let bytes = value.as_bytes();
+    if bytes.first() == Some(&b'[') && bytes.last() == Some(&b']') {
+        value = &value[1..value.len() - 1];
+    }
+
+    let bytes = value.as_bytes();
+    if bytes
+        .first()
+        .is_some_and(|byte| !byte.is_ascii_alphanumeric())
+        || bytes
+            .last()
+            .is_some_and(|byte| !byte.is_ascii_alphanumeric())
+    {
+        value = value.trim();
+    }
+
+    value.parse().ok()
 }
 
 fn wrap_ip_matcher_inverse(matcher: IpMatcher, inverse: bool) -> IpMatcher {
@@ -2785,6 +2935,68 @@ mod tests {
         assert!(combined_budget.consume_domain_matchers(200_000));
         assert!(combined_budget.consume_ip_matchers(300_000));
         assert!(!combined_budget.consume_domain_matchers(1));
+    }
+
+    #[test]
+    fn dns_ip_filters_consume_the_global_ip_matcher_budget() {
+        let raw = r#"{
+          "dns": {
+            "servers": [{
+              "address": "192.0.2.53",
+              "expectedIPs": ["192.0.2.0/24", "198.51.100.0/24"]
+            }]
+          },
+          "outbounds": [{ "protocol": "freedom", "tag": "direct" }]
+        }"#;
+        let limits = MatcherBudgetLimits {
+            routing_rules: 16,
+            domain_matchers: 8,
+            ip_matchers: 1,
+            total_matchers: 8,
+        };
+
+        let error = parse_xray_json_with_loader_and_limits(
+            raw,
+            GeodataLoader::from_dirs(Vec::new()),
+            limits,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error.diagnostics[0].path.as_deref(),
+            Some("$.dns.servers[0].expectedIPs[1]")
+        );
+    }
+
+    #[test]
+    fn ignored_expect_ips_alias_does_not_consume_matcher_budget() {
+        let raw = r#"{
+          "dns": {
+            "servers": [{
+              "address": "192.0.2.53",
+              "expectedIPs": ["192.0.2.0/24"],
+              "expectIPs": ["198.51.100.0/24", "203.0.113.0/24"]
+            }]
+          },
+          "outbounds": [{ "protocol": "freedom", "tag": "direct" }]
+        }"#;
+        let limits = MatcherBudgetLimits {
+            routing_rules: 16,
+            domain_matchers: 8,
+            ip_matchers: 1,
+            total_matchers: 8,
+        };
+
+        let parsed = parse_xray_json_with_loader_and_limits(
+            raw,
+            GeodataLoader::from_dirs(Vec::new()),
+            limits,
+        );
+
+        assert!(
+            parsed.is_ok(),
+            "ignored alias must not consume matcher slots"
+        );
     }
 
     #[test]

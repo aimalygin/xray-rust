@@ -99,8 +99,11 @@ once into the same mobile-oriented shape used by Xray's Compact matcher: exact
 names use a hash set, suffixes a reverse-label trie, and the less common
 keyword/regex rules retain linear matching. The compiled set is shared by all
 inbound-specific routed resolvers instead of cloning geosite expansions.
-Global and
-per-server family policies are intersected at this resolver boundary: `UseIP`
+Per-server expected/unexpected IP rules share that lifecycle and compile into
+merged IPv4/IPv6 ranges, keeping GeoIP-sized filters off the per-answer linear
+path. Hard rejections advance the sticky server plan with the original qname;
+soft rules only prefer a nonempty subset. Global and per-server family
+policies are intersected at this resolver boundary: `UseIP`
 queries both families, while `UseIPv4` or `UseIPv6` sends
 only the selected wire query and filters static/fallback candidates. Static
 `dns.hosts` entries can supply one IP, an alias domain, or an ordered nonempty

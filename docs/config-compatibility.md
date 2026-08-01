@@ -181,9 +181,17 @@ comma-separated string and supports bare keyword, `keyword:`, `domain:`,
 `full:`, `regexp:`, `dotless:`, `geosite:`, `ext:`, and `ext-domain:` rules.
 Top-level `disableFallback` and `disableFallbackIfMatch` are also supported.
 Special `localhost`/`fakedns` clients, URL transports, `clientIp`,
-`expectedIPs`/`expectIPs`/`unexpectedIPs`, tags, per-server timeouts,
-cache/stale controls, and parallel queries are rejected until their runtime
-semantics exist; they are not silently approximated as classic UDP.
+tags, per-server timeouts, cache/stale controls, and parallel queries are
+rejected until their runtime semantics exist; they are not silently
+approximated as classic UDP.
+
+Object servers support Xray's `expectedIPs`, legacy `expectIPs` alias, and
+`unexpectedIPs`. Each accepts an array, one comma-separated string, or `null`.
+`expectedIPs` wins when nonempty; otherwise `expectIPs` is used. Rules support
+IP/CIDR, `geoip:`, `ext:`, `ext-ip:`, repeated `!`, and the `*` soft-preference
+marker. As in Xray DNS, GeoIP asset `reverse_match` metadata is ignored and
+`geoip:private` is loaded from the configured `geoip.dat` rather than replaced
+with a built-in approximation.
 
 Managed selection follows Xray: every matching object entry is tried in
 configuration order, followed by unmatched entries in configuration order.
@@ -195,13 +203,22 @@ still tried. Duplicate endpoints in separate policy objects remain separate
 managed clients. A per-server family policy intersects the global policy and
 cannot widen it.
 
+Each candidate filters its merged A/AAAA answer before it can win. The exact
+Xray order is hard expected, hard unexpected, soft expected, then soft
+unexpected. A hard filter that leaves no addresses advances to the next
+selected server using the original query name. A soft filter narrows the
+answer only when its preferred subset is nonempty. Candidate order, address
+order, and the already computed minimum TTL are otherwise preserved.
+
 The core consumes these policy matchers once during construction. Exact rules
 are indexed by hash and suffix rules by reversed domain labels, following
 Xray-core's Compact mobile matcher trade-off; keyword and regex rules remain
-linear. The resulting immutable set is shared across SOCKS, HTTP, TUN, and
-startup-probe routing contexts. Policy domains are released from the retained
-runtime config after compilation, while endpoints and flags remain available
-to the raw DNS proxy planner.
+linear. DNS IP filters compile into merged IPv4/IPv6 ranges with logarithmic
+membership checks instead of scanning expanded GeoIP CIDRs. The resulting
+immutable set is shared across SOCKS, HTTP, TUN, and startup-probe routing
+contexts. Policy domain and IP matchers are released from the retained runtime
+config after compilation, while endpoints and flags remain available to the
+raw DNS proxy planner.
 
 The TUN-local `198.18.0.1:53` anchor and
 `198.18.0.2:53` client address cannot be configured as upstreams, including as
@@ -265,9 +282,10 @@ reset. Raw and fake DNS/TCP share a dedicated limit of up to 32 flows. Raw
 DNS/TCP idle time, including blocked bridge writes, is capped by the smaller of
 the inbound `connIdle` policy and five seconds.
 A raw-anchor query keeps the client's original question type and does not apply
-global/per-server `queryStrategy`, `domains`, or fallback policy. Object entries
-contribute only their endpoint to the raw declaration-order/deduplicated proxy
-plan. This is the byte-transparent equivalent of Xray DNS outbound
+global/per-server `queryStrategy`, `domains`, IP response filters, or fallback
+policy. Object entries contribute only their endpoint to the raw
+declaration-order/deduplicated proxy plan. This is the byte-transparent
+equivalent of Xray DNS outbound
 `Direct`. Xray DNS outbound `Hijack` semantics (including its A/AAAA family
 gate, DNS hosts/cache, and per-server policy) remain a separate unsupported
 feature rather than a partial hybrid in the raw proxy.

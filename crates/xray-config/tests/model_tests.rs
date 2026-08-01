@@ -1,9 +1,9 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use xray_config::{
-    CoreConfig, Diagnostic, DiagnosticSeverity, DnsConfig, DnsQueryStrategy, DomainMatcher,
-    HappyEyeballsSettings, InboundConfig, InboundProtocol, IpCidr, IpMatcher, Network,
-    OutboundConfig, OutboundProtocol, OutboundSettings, RealitySettings, RealityShortId,
+    CoreConfig, Diagnostic, DiagnosticSeverity, DnsConfig, DnsIpFilter, DnsQueryStrategy,
+    DomainMatcher, HappyEyeballsSettings, InboundConfig, InboundProtocol, IpCidr, IpMatcher,
+    Network, OutboundConfig, OutboundProtocol, OutboundSettings, RealitySettings, RealityShortId,
     RegexMatcher, RoutingConfig, RoutingRule, SocketOptions, StreamSecurity, StreamSettings,
     TargetAddr, VlessOutboundSettings, VlessUser,
 };
@@ -262,6 +262,61 @@ fn normalized_model_applies_inverse_ip_matchers_as_a_conjunction() {
     assert!(routing.rules[0].matches_ip(Some(&IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10)))));
     assert!(!routing.rules[0].matches_ip(Some(&IpAddr::V4(Ipv4Addr::new(10, 42, 0, 1)))));
     assert!(!routing.rules[0].matches_ip(Some(&IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)))));
+}
+
+#[test]
+fn dns_ip_filter_keeps_custom_and_geoip_inverse_unions_separate() {
+    let filter = DnsIpFilter {
+        custom_matchers: vec![IpMatcher::Not(Box::new(IpMatcher::Cidr(
+            IpCidr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 0)), 8).unwrap(),
+        )))],
+        geoip_matchers: vec![IpMatcher::Not(Box::new(IpMatcher::Cidr(
+            IpCidr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 0)), 16).unwrap(),
+        )))],
+        soft: false,
+    };
+
+    assert!(!filter.matches(&IpAddr::V4(Ipv4Addr::new(10, 0, 1, 1))));
+    assert!(filter.matches(&IpAddr::V4(Ipv4Addr::new(10, 42, 1, 1))));
+    assert!(filter.matches(&IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))));
+}
+
+#[test]
+fn dns_ip_filter_scopes_inverse_matchers_by_address_family() {
+    let filter = DnsIpFilter {
+        custom_matchers: vec![IpMatcher::Not(Box::new(IpMatcher::Cidr(
+            IpCidr::new(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 0)), 24).unwrap(),
+        )))],
+        geoip_matchers: Vec::new(),
+        soft: false,
+    };
+
+    assert!(filter.matches(&IpAddr::V4(Ipv4Addr::new(198, 51, 100, 1))));
+    assert!(!filter.matches(&IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))));
+    assert!(!filter.matches(&IpAddr::V6(Ipv6Addr::LOCALHOST)));
+}
+
+#[test]
+fn ip_cidr_canonicalizes_ipv4_mapped_ipv6_addresses() {
+    let mapped = IpAddr::V6(Ipv4Addr::new(192, 0, 2, 1).to_ipv6_mapped());
+    let cidr = IpCidr::new(mapped, 24).unwrap();
+
+    assert_eq!(cidr.network(), IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1)));
+    assert_eq!(cidr.prefix(), 24);
+    assert!(DnsIpFilter {
+        custom_matchers: vec![IpMatcher::Cidr(cidr)],
+        geoip_matchers: Vec::new(),
+        soft: false,
+    }
+    .matches(&mapped));
+    assert_eq!(
+        IpCidr::new(mapped, 120).unwrap_err(),
+        xray_config::ConfigModelError::InvalidCidrPrefix {
+            prefix: 120,
+            max: 32,
+        }
+    );
+    assert_eq!(IpCidr::full(mapped).prefix(), 32);
 }
 
 #[test]

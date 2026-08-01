@@ -404,6 +404,13 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
     private static let dnsBootstrapTimeout: DispatchTimeInterval = .seconds(5)
     private static let maximumCustomDNSServers = 8
     private static let maximumDNSHostAliasDepth = 8
+    private static let dnsServerObjectFields: Set<String> = [
+        "address", "port", "domains", "expectedIPs", "expectIPs", "unexpectedIPs",
+        "skipFallback", "queryStrategy", "finalQuery",
+    ]
+    private static let dnsServerIPPolicyFields = [
+        "expectedIPs", "expectIPs", "unexpectedIPs",
+    ]
     static let tunnelRemoteAddress = "198.18.0.1"
     static let tunnelLocalIPv4Address = "198.18.0.2"
     static let tunnelLocalIPv6Address = "fd00:7872::2"
@@ -1072,6 +1079,8 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         }
 
         guard let server = rawServer as? [String: Any],
+              Set(server.keys).isSubset(of: dnsServerObjectFields),
+              dnsServerIPPolicyStringListsAreValid(server),
               let address = server["address"] as? String,
               !address.isEmpty,
               address == address.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1106,6 +1115,28 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             return nil
         }
         return .domain(domain, port: port)
+    }
+
+    private static func dnsServerIPPolicyStringListsAreValid(
+        _ server: [String: Any]
+    ) -> Bool {
+        for field in dnsServerIPPolicyFields {
+            guard let rawValue = server[field] else {
+                continue
+            }
+            if rawValue is NSNull {
+                continue
+            }
+            if rawValue is String {
+                continue
+            }
+            guard let values = rawValue as? [Any],
+                  values.allSatisfy({ $0 is String })
+            else {
+                return false
+            }
+        }
+        return true
     }
 
     private static func dnsBootstrapPort(fromServer server: String) -> UInt16? {
