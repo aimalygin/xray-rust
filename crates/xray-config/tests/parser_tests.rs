@@ -8,9 +8,9 @@ use std::{
 use prost::Message;
 use xray_config::{
     parse_xray_json, parse_xray_json_with_geodata_dirs, DiagnosticSeverity, DnsFakeIpConfig,
-    DnsHostTarget, DnsServerConfig, HappyEyeballsSettings, InboundProtocol, IpCidr,
-    OutboundSettings, RealityShortId, RoutingDomainStrategy, SniffingDestination, StreamSecurity,
-    TargetAddr,
+    DnsHostTarget, DnsQueryStrategy, DnsServerConfig, HappyEyeballsSettings, InboundProtocol,
+    IpCidr, OutboundSettings, RealityShortId, RoutingDomainStrategy, SniffingDestination,
+    StreamSecurity, TargetAddr,
 };
 
 #[test]
@@ -1128,6 +1128,67 @@ fn parses_dns_servers_and_hosts() {
 }
 
 #[test]
+fn parses_xray_dns_query_strategy_aliases() {
+    for (raw_strategy, expected) in [
+        ("UseIP", DnsQueryStrategy::UseIp),
+        ("use_ip", DnsQueryStrategy::UseIp),
+        ("use-ip", DnsQueryStrategy::UseIp),
+        ("UseIP4", DnsQueryStrategy::UseIpv4),
+        ("UseIPv4", DnsQueryStrategy::UseIpv4),
+        ("use_ip4", DnsQueryStrategy::UseIpv4),
+        ("use_ipv4", DnsQueryStrategy::UseIpv4),
+        ("use_ip_v4", DnsQueryStrategy::UseIpv4),
+        ("use-ip4", DnsQueryStrategy::UseIpv4),
+        ("use-ipv4", DnsQueryStrategy::UseIpv4),
+        ("use-ip-v4", DnsQueryStrategy::UseIpv4),
+        ("UseIP6", DnsQueryStrategy::UseIpv6),
+        ("UseIPv6", DnsQueryStrategy::UseIpv6),
+        ("use_ip6", DnsQueryStrategy::UseIpv6),
+        ("use_ipv6", DnsQueryStrategy::UseIpv6),
+        ("use_ip_v6", DnsQueryStrategy::UseIpv6),
+        ("use-ip6", DnsQueryStrategy::UseIpv6),
+        ("use-ipv6", DnsQueryStrategy::UseIpv6),
+        ("use-ip-v6", DnsQueryStrategy::UseIpv6),
+    ] {
+        let raw = raw_with_dns_query_strategy(&format!(r#""{raw_strategy}""#));
+        let parsed = parse_xray_json(&raw).expect("queryStrategy alias should parse");
+
+        assert_eq!(parsed.config.dns.query_strategy, expected, "{raw_strategy}");
+    }
+}
+
+#[test]
+fn rejects_dns_use_system_until_route_capability_is_available() {
+    for strategy in [
+        "UseSys",
+        "UseSystem",
+        "use_sys",
+        "use_system",
+        "use-sys",
+        "use-system",
+    ] {
+        let raw = raw_with_dns_query_strategy(&format!(r#""{strategy}""#));
+        let error = parse_xray_json(&raw).unwrap_err();
+
+        assert_eq!(
+            error.diagnostics[0].path.as_deref(),
+            Some("$.dns.queryStrategy")
+        );
+        assert!(error.diagnostics[0]
+            .message
+            .contains("requires platform route capability"));
+    }
+}
+
+#[test]
+fn rejects_invalid_dns_query_strategy_with_path() {
+    for raw_strategy in ["42", r#""prefer-fast""#, r#""use-i-p-v4""#] {
+        let raw = raw_with_dns_query_strategy(raw_strategy);
+        assert_parse_error_path(&raw, "$.dns.queryStrategy");
+    }
+}
+
+#[test]
 fn parses_dns_host_ip_array_preserving_address_order() {
     let raw = raw_with_dns_host_target(r#"["192.0.2.10", "2001:db8::10"]"#);
     let parsed = parse_xray_json(&raw).expect("DNS host IP array should parse");
@@ -1771,6 +1832,16 @@ fn raw_with_dns_host_target(target: &str) -> String {
     format!(
         r#"{{
           "dns": {{ "hosts": {{ "full:server.example": {target} }} }},
+          "inbounds": [],
+          "outbounds": [{{ "tag": "direct", "protocol": "freedom" }}]
+        }}"#
+    )
+}
+
+fn raw_with_dns_query_strategy(strategy: &str) -> String {
+    format!(
+        r#"{{
+          "dns": {{ "queryStrategy": {strategy} }},
           "inbounds": [],
           "outbounds": [{{ "tag": "direct", "protocol": "freedom" }}]
         }}"#

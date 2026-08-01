@@ -7,6 +7,17 @@ development changes are recorded under `Unreleased`.
 
 ## Unreleased
 
+- Added global Xray-compatible `dns.queryStrategy` for `UseIP`, `UseIPv4`, and
+  `UseIPv6`, including common Xray aliases. The policy controls configured DNS
+  wire queries, destination static host arrays, and destination fallback
+  results; wrong-family static mappings remain terminal NODATA. Bootstrap
+  resolution keeps all pinned/system candidates for IPv6-only and DNS64/NAT64
+  carrier reachability. IPv4-mapped AAAA answers are discarded before server
+  failover, while mapped socket candidates otherwise follow their IPv4
+  semantics. IPv4 fake-IP returns NODATA without allocating a mapping under
+  `UseIPv6`; the byte-transparent raw TUN DNS proxy preserves client qtypes.
+  `UseSystem` fails config validation until route capability can be supplied by
+  the embedding platform instead of being approximated.
 - Added Xray-compatible `streamSettings.sockopt.happyEyeballs` for Freedom and
   VLESS TCP carriers. The modeled defaults are IPv4 preference,
   `interleave: 1`, `tryDelayMs: 0`, and `maxConcurrentTry: 4`; zero delay or

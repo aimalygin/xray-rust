@@ -4,12 +4,15 @@ use async_trait::async_trait;
 use thiserror::Error;
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
-use xray_config::{CoreConfig, DnsHostTarget, DnsServerConfig, DomainMatcher, InboundProtocol};
+use xray_config::{
+    CoreConfig, DnsHostTarget, DnsQueryStrategy as ConfigDnsQueryStrategy, DnsServerConfig,
+    DomainMatcher, InboundProtocol,
+};
 use xray_runtime::Shutdown;
 use xray_transport::{
-    CachingDnsResolver, ConfiguredDnsResolver, DnsQueryTransport, DnsResolver, NameServer,
-    SocketProtector, StaticHostRule, StaticHostTarget, SystemDnsResolver, TransportDialer,
-    TransportDomainMatcher, TransportError,
+    CachingDnsResolver, ConfiguredDnsResolver, DnsQueryStrategy as TransportDnsQueryStrategy,
+    DnsQueryTransport, DnsResolver, NameServer, SocketProtector, StaticHostRule, StaticHostTarget,
+    SystemDnsResolver, TransportDialer, TransportDomainMatcher, TransportError,
 };
 use xray_tun::{TunConfig, TunEndpoint};
 
@@ -413,6 +416,7 @@ impl Core {
             None,
             true,
             Some(query_transport),
+            transport_dns_query_strategy(config.dns.query_strategy),
         );
         dns::RuntimeDnsResolvers {
             destination: Arc::new(CachingDnsResolver::new(resolver)),
@@ -659,7 +663,13 @@ fn host_only_dns_resolver_for_config(
     config: &CoreConfig,
     fallback: Arc<dyn DnsResolver>,
 ) -> Arc<dyn DnsResolver> {
-    configured_dns_resolver_from_config(config, fallback, None, false)
+    configured_dns_resolver_from_config(
+        config,
+        fallback,
+        None,
+        false,
+        TransportDnsQueryStrategy::UseIp,
+    )
 }
 
 fn configured_dns_resolver_for_config(
@@ -674,7 +684,13 @@ fn configured_dns_resolver_for_config_with_socket_protector(
     fallback: Arc<dyn DnsResolver>,
     socket_protector: Option<Arc<dyn SocketProtector>>,
 ) -> Arc<dyn DnsResolver> {
-    configured_dns_resolver_from_config(config, fallback, socket_protector, true)
+    configured_dns_resolver_from_config(
+        config,
+        fallback,
+        socket_protector,
+        true,
+        transport_dns_query_strategy(config.dns.query_strategy),
+    )
 }
 
 fn configured_dns_resolver_from_config(
@@ -682,6 +698,7 @@ fn configured_dns_resolver_from_config(
     fallback: Arc<dyn DnsResolver>,
     socket_protector: Option<Arc<dyn SocketProtector>>,
     include_name_servers: bool,
+    query_strategy: TransportDnsQueryStrategy,
 ) -> Arc<dyn DnsResolver> {
     configured_dns_resolver_from_config_with_transport(
         config,
@@ -689,6 +706,7 @@ fn configured_dns_resolver_from_config(
         socket_protector,
         include_name_servers,
         None,
+        query_strategy,
     )
 }
 
@@ -698,8 +716,12 @@ fn configured_dns_resolver_from_config_with_transport(
     socket_protector: Option<Arc<dyn SocketProtector>>,
     include_name_servers: bool,
     query_transport: Option<Arc<dyn DnsQueryTransport>>,
+    query_strategy: TransportDnsQueryStrategy,
 ) -> Arc<dyn DnsResolver> {
-    if config.dns.hosts.is_empty() && (!include_name_servers || config.dns.servers.is_empty()) {
+    if config.dns.hosts.is_empty()
+        && (!include_name_servers || config.dns.servers.is_empty())
+        && query_strategy == TransportDnsQueryStrategy::UseIp
+    {
         return fallback;
     }
 
@@ -737,13 +759,24 @@ fn configured_dns_resolver_from_config_with_transport(
         Vec::new()
     };
 
-    let mut resolver = ConfiguredDnsResolver::new(host_rules, name_servers, fallback);
+    let mut resolver = ConfiguredDnsResolver::new(host_rules, name_servers, fallback)
+        .with_query_strategy(query_strategy);
     if let Some(transport) = query_transport {
         resolver = resolver.with_query_transport(transport);
     } else if let Some(protector) = socket_protector {
         resolver = resolver.with_socket_protector(protector);
     }
     Arc::new(resolver)
+}
+
+fn transport_dns_query_strategy(
+    query_strategy: ConfigDnsQueryStrategy,
+) -> TransportDnsQueryStrategy {
+    match query_strategy {
+        ConfigDnsQueryStrategy::UseIp => TransportDnsQueryStrategy::UseIp,
+        ConfigDnsQueryStrategy::UseIpv4 => TransportDnsQueryStrategy::UseIpv4,
+        ConfigDnsQueryStrategy::UseIpv6 => TransportDnsQueryStrategy::UseIpv6,
+    }
 }
 
 fn transport_domain_matcher(matcher: &DomainMatcher) -> TransportDomainMatcher {
@@ -763,14 +796,14 @@ fn transport_domain_matcher(matcher: &DomainMatcher) -> TransportDomainMatcher {
 #[cfg(test)]
 mod tests {
     use std::io;
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
     use async_trait::async_trait;
     use xray_config::parse_xray_json;
     use xray_transport::{
-        DnsResolver, SocketHandle, SocketProtector, TransportDialer, TransportError,
+        DnsLookup, DnsResolver, SocketHandle, SocketProtector, TransportDialer, TransportError,
     };
 
     use super::{
@@ -791,6 +824,55 @@ mod tests {
                 _ => Err(TransportError::NoResolvedAddress(domain.to_owned(), port)),
             }
         }
+    }
+
+    struct DualStackResolver;
+
+    #[async_trait]
+    impl DnsResolver for DualStackResolver {
+        async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+            self.resolve_all(domain, port)
+                .await?
+                .socket_addrs()
+                .first()
+                .copied()
+                .ok_or_else(|| TransportError::NoResolvedAddress(domain.to_owned(), port))
+        }
+
+        async fn resolve_all(&self, _domain: &str, port: u16) -> Result<DnsLookup, TransportError> {
+            Ok(DnsLookup::from_ips(
+                [
+                    IpAddr::V4(Ipv4Addr::new(192, 0, 2, 94)),
+                    IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 94)),
+                ],
+                port,
+                None,
+            ))
+        }
+    }
+
+    #[tokio::test]
+    async fn configured_dns_query_strategy_filters_fallback_without_servers_or_hosts() {
+        let raw = r#"{
+            "dns": { "queryStrategy": "UseIPv6" },
+            "inbounds": [],
+            "outbounds": [
+                { "tag": "direct", "protocol": "freedom" }
+            ]
+        }"#;
+        let parsed = parse_xray_json(raw).expect("config should parse");
+        let resolver =
+            configured_dns_resolver_for_config(&parsed.config, Arc::new(DualStackResolver));
+
+        let lookup = resolver.resolve_all("family.example", 443).await.unwrap();
+
+        assert_eq!(
+            lookup.socket_addrs(),
+            [SocketAddr::from((
+                Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 94),
+                443,
+            ))]
+        );
     }
 
     #[tokio::test]
@@ -871,6 +953,7 @@ mod tests {
     async fn static_only_dns_resolver_preserves_all_host_ip_candidates() {
         let raw = r#"{
             "dns": {
+              "queryStrategy": "UseIPv4",
               "hosts": {
                 "full:proxy.example": ["2001:db8::10", "198.51.100.12"]
               }

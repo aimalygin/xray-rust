@@ -43,7 +43,7 @@ exposes an unauthenticated proxy to the network.
 | `inbounds` | Supported subset below |
 | `outbounds` | Supported subset below |
 | `routing` | `field` rules only |
-| `dns` | Hosts, string servers, and `fakeIp` subset |
+| `dns` | Hosts, string servers, global `queryStrategy`, and `fakeIp` subset |
 | `policy` | Level/system fields are parsed; runtime timeout/buffer behavior is a subset |
 | `log` | Accepted for input compatibility, but runtime file logging is configured through the embedding API |
 
@@ -159,15 +159,28 @@ if none matches, the first outbound tag is used as the default.
 
 ## DNS
 
+Global `dns.queryStrategy` supports Xray-compatible `UseIP` (the default),
+`UseIPv4`, and `UseIPv6` spellings and aliases. It controls configured wire
+queries, destination-facing static `dns.hosts` results, and the final
+destination resolver fallback. Bootstrap resolution intentionally keeps every
+pinned/system candidate regardless of this policy, matching Xray's separation
+between its DNS feature and the default system carrier dialer. A destination
+static mapping that contains no address from the selected family returns
+terminal NODATA instead of leaking to another resolver. IPv4-mapped IPv6 values
+count as IPv4 at the TCP dial boundary and are discarded when received in an
+AAAA answer. `UseSystem` is rejected until the universal core has an injectable
+platform route-capability provider; it is not silently treated as `UseIP`.
+
 `dns.servers` accepts at most eight IP addresses, socket addresses, or domain
 names with an optional nonzero port. The TUN-local `198.18.0.1:53` anchor and
 `198.18.0.2:53` client address cannot be configured as upstreams, including as
-IPv4-mapped IPv6 literals. The resolver sends A and AAAA concurrently, retains
-all usable answers in DNS order (A before AAAA), and validates A/AAAA records
-plus CNAME chains in `xray-transport`; the delivery transport is replaceable,
-so TUN resolution sends them through the outbound router rather than
-duplicating the DNS parser. A valid UDP response with `TC=1` retries over TCP
-to the same server. UDP transports ignore responses with an unrelated
+IPv4-mapped IPv6 literals. With `UseIP`, the resolver sends A and AAAA
+concurrently and retains all usable answers in DNS order (A before AAAA);
+single-family strategies send only their selected query. All modes validate
+A/AAAA records plus CNAME chains in `xray-transport`; the delivery transport
+is replaceable, so TUN resolution sends them through the outbound router
+rather than duplicating the DNS parser. A valid UDP response with `TC=1`
+retries over TCP to the same server. UDP transports ignore responses with an unrelated
 transaction ID, opcode, name, type, or class until the attempt deadline.
 Managed destination results use a bounded 256-entry LRU cache. Authoritative
 answer TTLs are clamped to 1–300 seconds and the minimum TTL across the answer
@@ -187,7 +200,8 @@ Xray-core's ordered failover. If no later server succeeds, an authoritative
 negative result is terminal and does not leak into the operating-system
 fallback. SERVFAIL, malformed replies, and transport failures also move to the
 next server. The five-second resolution deadline includes the final fallback;
-A and AAAA run concurrently under the same wall-clock server budget.
+A and AAAA run concurrently under the same wall-clock server budget when
+`UseIP` is selected.
 `StaticOnly` uses the same routed path and then fails closed; its separate
 bootstrap resolver never uses `dns.servers` or the operating-system resolver.
 Explicitly injected resolvers remain trusted integration dependencies and are
@@ -209,6 +223,11 @@ multiple length-prefixed DNS messages on one connection; failed opens are
 reset. Raw and fake DNS/TCP share a dedicated limit of up to 32 flows. Raw
 DNS/TCP idle time, including blocked bridge writes, is capped by the smaller of
 the inbound `connIdle` policy and five seconds.
+A raw-anchor query keeps the client's original question type and does not apply
+`queryStrategy`; this is the byte-transparent equivalent of Xray DNS outbound
+`Direct`. Xray DNS outbound `Hijack` semantics (including its A/AAAA family
+gate, DNS hosts/cache, and per-server policy) remain a separate unsupported
+feature rather than a partial hybrid in the raw proxy.
 A domain upstream selected through VLESS stays a domain and is resolved
 by the remote endpoint. A domain selected through Freedom uses the separate
 bootstrap policy. Non-intercepting `System` embeddings may use the operating
@@ -244,10 +263,11 @@ uses Xray-style LRU rollover: active mappings stay stable, and the least
 recently used mapping is evicted when a new domain crosses `poolSize`.
 `198.18.0.1` and `198.18.0.2` are always reserved for the DNS anchor and TUN
 client address. Fake DNS synthesizes A records over UDP and length-prefixed TCP
-for both the anchor and hard-coded port-53 destinations. AAAA returns NODATA on
-both paths; other valid single-question types return NODATA at the anchor and
-over TCP, while non-anchor UDP continues through the normal UDP path. Fake-IP
-takes precedence over raw proxying. When a later TCP/UDP flow targets a fake
+for both the anchor and hard-coded port-53 destinations. With `UseIPv6`, its
+IPv4-only pool returns NODATA for A without allocating a mapping. AAAA returns
+NODATA on both paths; other valid single-question types return NODATA at the
+anchor and over TCP, while non-anchor UDP continues through the normal UDP
+path. Fake-IP takes precedence over raw proxying. When a later TCP/UDP flow targets a fake
 address, the original domain is restored before routing. VLESS carries that
 domain for remote resolution; Freedom resolves it through the managed routed
 resolver, including in mobile `StaticOnly` mode. DNS-over-HTTPS/TLS, client-IP,

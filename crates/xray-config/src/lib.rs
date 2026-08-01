@@ -6,12 +6,12 @@ mod parser;
 pub use diagnostic::{Diagnostic, DiagnosticSeverity};
 pub use model::{
     ConfigModelError, CoreConfig, DnsConfig, DnsFakeIpConfig, DnsHostMapping, DnsHostTarget,
-    DnsServerConfig, DomainMatcher, HappyEyeballsSettings, InboundConfig, InboundProtocol,
-    InboundSniffingConfig, IpCidr, IpMatcher, Network, OutboundConfig, OutboundProtocol,
-    OutboundSettings, PolicyConfig, PolicyLevelConfig, PolicySystemConfig, RealitySettings,
-    RealityShortId, RegexMatcher, RoutingConfig, RoutingDomainStrategy, RoutingRule,
-    SniffingDestination, SocketOptions, StreamSecurity, StreamSettings, TargetAddr, TlsSettings,
-    VlessOutboundSettings, VlessUser,
+    DnsQueryStrategy, DnsServerConfig, DomainMatcher, HappyEyeballsSettings, InboundConfig,
+    InboundProtocol, InboundSniffingConfig, IpCidr, IpMatcher, Network, OutboundConfig,
+    OutboundProtocol, OutboundSettings, PolicyConfig, PolicyLevelConfig, PolicySystemConfig,
+    RealitySettings, RealityShortId, RegexMatcher, RoutingConfig, RoutingDomainStrategy,
+    RoutingRule, SniffingDestination, SocketOptions, StreamSecurity, StreamSettings, TargetAddr,
+    TlsSettings, VlessOutboundSettings, VlessUser,
 };
 pub use parser::{
     parse_xray_json, parse_xray_json_with_geodata_dir, parse_xray_json_with_geodata_dirs,

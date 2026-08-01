@@ -153,6 +153,10 @@ growing threads or queued work. Every usable system A/AAAA result is retained
 in the generated exact `dns.hosts` IP array. When Happy Eyeballs is enabled,
 each launched raw TCP candidate is independently passed through
 `VpnService.protect(fd)` and losing or cancelled attempts do not remain running.
+The Rust core consumes every pinned carrier candidate independently of global
+`dns.queryStrategy`; the policy applies only to destination-facing managed
+lookups. This preserves DNS64/NAT64 bootstrap on IPv6-only networks. The raw
+UDP/TCP DNS proxy still forwards the client's original question type unchanged.
 
 ## Android native libraries
 

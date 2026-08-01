@@ -92,8 +92,11 @@ DNS is split at the wire-transport boundary instead of being owned by TUN.
 `xray-transport` builds and validates DNS messages, retains ordered A/AAAA
 candidates with authoritative or remaining TTL metadata, handles CNAME
 resolution, server failover, UDP truncation with same-server TCP retry, and the
-bounded resolver cache. Static `dns.hosts` entries can supply one IP, an alias
-domain, or an ordered nonempty IP array; every IP remains a dial candidate.
+bounded resolver cache. The global family policy is applied at this resolver
+boundary: `UseIP` queries both families, while `UseIPv4` or `UseIPv6` sends
+only the selected wire query and filters static/fallback candidates. Static
+`dns.hosts` entries can supply one IP, an alias domain, or an ordered nonempty
+IP array; every permitted-family IP remains a dial candidate.
 Unprefixed host keys follow Xray's exact/full semantics, while explicit matcher
 prefixes retain their normal meaning.
 `xray-core-rs` supplies a routed query transport that opens each DNS exchange
@@ -104,12 +107,13 @@ depending on a packet adapter.
 
 Each runtime keeps destination and bootstrap resolution as separate roles.
 Destination resolution answers where application traffic should go and may use
-routed `dns.servers`. Bootstrap resolution answers how to reach the outer proxy
-or DNS-upstream endpoint needed to open that route and must not call back into
-destination DNS. This non-recursive split belongs to the universal core, not to
-the mobile adapter: TUN's raw DNS proxy and fake-IP engine are consumers of the
-roles, while future server inbounds can reuse destination resolution without
-inheriting mobile bootstrap policy.
+routed `dns.servers`; global `dns.queryStrategy` applies at this boundary.
+Bootstrap resolution answers how to reach the outer proxy or DNS-upstream
+endpoint needed to open that route, keeps all pinned/system address families,
+and must not call back into destination DNS. This non-recursive split belongs to
+the universal core, not to the mobile adapter: TUN's raw DNS proxy and fake-IP
+engine are consumers of the roles, while future server inbounds can reuse
+destination resolution without inheriting mobile bootstrap policy.
 
 The generic core and C ABI retain system bootstrap as their default for
 desktop, command-line, and future server embeddings. Mobile full-tunnel

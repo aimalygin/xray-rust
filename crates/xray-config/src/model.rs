@@ -44,6 +44,15 @@ pub struct DnsConfig {
     pub fake_ip: Option<DnsFakeIpConfig>,
     pub servers: Vec<DnsServerConfig>,
     pub hosts: Vec<DnsHostMapping>,
+    pub query_strategy: DnsQueryStrategy,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum DnsQueryStrategy {
+    #[default]
+    UseIp,
+    UseIpv4,
+    UseIpv6,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

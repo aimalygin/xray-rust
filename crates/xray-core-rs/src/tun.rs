@@ -15,7 +15,10 @@ use tokio::net::UdpSocket;
 use tokio::sync::{mpsc, watch, OwnedSemaphorePermit, Semaphore};
 use tokio::task::{AbortHandle, JoinError, JoinSet};
 use tokio::time::{sleep, Duration, Instant as TokioInstant};
-use xray_config::{CoreConfig, DnsFakeIpConfig, DnsServerConfig, InboundSniffingConfig};
+use xray_config::{
+    CoreConfig, DnsFakeIpConfig, DnsQueryStrategy as ConfigDnsQueryStrategy, DnsServerConfig,
+    InboundSniffingConfig,
+};
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::{
     dns_response_matches_query, protect_udp_socket, BoxedTransportStream, ConnectorConfig,
@@ -513,6 +516,7 @@ impl FakeIpRuntimeConfig {
 #[derive(Debug)]
 struct FakeIpMapper {
     config: FakeIpRuntimeConfig,
+    allow_ipv4_answers: bool,
     network_base: u32,
     first_offset: u64,
     allocation_span: u64,
@@ -574,6 +578,7 @@ impl FakeIpMapper {
 
         Some(Self {
             config,
+            allow_ipv4_answers: true,
             network_base,
             first_offset,
             allocation_span,
@@ -586,6 +591,11 @@ impl FakeIpMapper {
             by_domain: HashMap::new(),
             by_ipv4: HashMap::new(),
         })
+    }
+
+    fn with_query_strategy(mut self, query_strategy: ConfigDnsQueryStrategy) -> Self {
+        self.allow_ipv4_answers = query_strategy != ConfigDnsQueryStrategy::UseIpv6;
+        self
     }
 
     fn fake_ipv4_for_domain(&mut self, domain: &str) -> Option<Ipv4Addr> {
@@ -727,6 +737,15 @@ impl FakeIpMapper {
     ) -> Option<Bytes> {
         let question = parse_dns_question(query)?;
         if question.qtype == DNS_TYPE_A && question.qclass == DNS_CLASS_IN {
+            if !self.allow_ipv4_answers {
+                return Some(build_dns_response(
+                    query,
+                    &question,
+                    None,
+                    self.config.ttl,
+                    DNS_RCODE_NOERROR,
+                ));
+            }
             let Some(ip) = self.fake_ipv4_for_domain(&question.domain) else {
                 return Some(build_dns_response(
                     query,
@@ -1073,6 +1092,7 @@ pub(crate) async fn serve_tun_endpoint(
         .as_ref()
         .and_then(FakeIpRuntimeConfig::from_config)
         .and_then(FakeIpMapper::new)
+        .map(|mapper| mapper.with_query_strategy(config.dns.query_strategy))
         .map(|mapper| Arc::new(Mutex::new(mapper)));
     let dns_mode = TunDnsMode::from_config(config.as_ref(), fake_ip_mapper);
     let runtime_context = TunRuntimeContext {
@@ -6738,6 +6758,26 @@ mod tests {
             Some(Ipv4Addr::new(198, 18, 0, 3))
         );
         assert_eq!(fake_ip.as_deref(), Some("www.example.com"));
+    }
+
+    #[test]
+    fn fake_dns_response_use_ipv6_returns_nodata_without_mapping() {
+        let mut mapper = FakeIpMapper::new(FakeIpRuntimeConfig {
+            ipv4_network: Ipv4Addr::new(198, 18, 0, 0),
+            ipv4_prefix: 15,
+            pool_size: 32_768,
+            ttl: 120,
+        })
+        .unwrap()
+        .with_query_strategy(ConfigDnsQueryStrategy::UseIpv6);
+        let query = build_dns_a_query(0x1207, "www.example.com");
+
+        let response = mapper.fake_dns_response(&query, false).unwrap();
+
+        assert_eq!(dns_response_id(&response), Some(0x1207));
+        assert_eq!(u16::from_be_bytes([response[6], response[7]]), 0);
+        assert!(mapper.by_domain.is_empty());
+        assert!(mapper.by_ipv4.is_empty());
     }
 
     #[test]

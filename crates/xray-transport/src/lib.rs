@@ -29,8 +29,9 @@ mod tls;
 pub use dialer::TransportDialer;
 pub use dns::{
     dns_response_matches_query, CachingDnsResolver, ConfiguredDnsResolver, DnsLookup,
-    DnsQueryTransport, DnsQueryTransportKind, DnsResolver, NameServer, StaticHostRule,
-    StaticHostTarget, SystemDnsResolver, TransportDomainMatcher, TransportRegexMatcher,
+    DnsQueryStrategy, DnsQueryTransport, DnsQueryTransportKind, DnsResolver, NameServer,
+    StaticHostRule, StaticHostTarget, SystemDnsResolver, TransportDomainMatcher,
+    TransportRegexMatcher,
 };
 pub use happy_eyeballs::{connect_tcp_happy_eyeballs, HappyEyeballsConfig};
 pub(crate) use penetrating_tls::{CapturedTcpStream, PenetratingTlsStream, ServerReadLog};

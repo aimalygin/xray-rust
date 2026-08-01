@@ -10,7 +10,9 @@ use tokio::net::UdpSocket;
 use tokio::sync::Notify;
 use tokio::time;
 
-use crate::{connect_tcp_stream, SocketHandle, SocketProtector, TransportError};
+use crate::{
+    canonicalize_socket_addr, connect_tcp_stream, SocketHandle, SocketProtector, TransportError,
+};
 
 /// A DNS lookup result containing every usable address and its remaining TTL.
 ///
@@ -26,10 +28,13 @@ pub struct DnsLookup {
 
 impl DnsLookup {
     /// Builds a lookup while preserving the first occurrence of each address.
+    /// IPv4-mapped IPv6 candidates are canonicalized to IPv4 so routing and
+    /// the eventual socket family observe the same endpoint.
     pub fn new(addresses: impl IntoIterator<Item = SocketAddr>, ttl: Option<Duration>) -> Self {
         let mut unique = Vec::new();
         let mut seen = HashSet::new();
         for address in addresses {
+            let address = canonicalize_socket_addr(address);
             if seen.insert(address) {
                 unique.push(address);
             }
@@ -538,6 +543,30 @@ pub enum NameServer {
     Domain { domain: String, port: u16 },
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum DnsQueryStrategy {
+    #[default]
+    UseIp,
+    UseIpv4,
+    UseIpv6,
+}
+
+impl DnsQueryStrategy {
+    fn accepts(self, ip: IpAddr) -> bool {
+        match self {
+            Self::UseIp => true,
+            Self::UseIpv4 => match ip {
+                IpAddr::V4(_) => true,
+                IpAddr::V6(ipv6) => ipv6.to_ipv4_mapped().is_some(),
+            },
+            Self::UseIpv6 => match ip {
+                IpAddr::V4(_) => false,
+                IpAddr::V6(ipv6) => ipv6.to_ipv4_mapped().is_none(),
+            },
+        }
+    }
+}
+
 /// Wire transport used for a DNS query.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DnsQueryTransportKind {
@@ -619,6 +648,7 @@ pub struct ConfiguredDnsResolver {
     resolution_timeout: Duration,
     query_transport: Arc<dyn DnsQueryTransport>,
     uses_direct_query_transport: bool,
+    query_strategy: DnsQueryStrategy,
 }
 
 impl ConfiguredDnsResolver {
@@ -636,7 +666,13 @@ impl ConfiguredDnsResolver {
             resolution_timeout: DNS_RESOLUTION_TIMEOUT,
             query_transport,
             uses_direct_query_transport: true,
+            query_strategy: DnsQueryStrategy::default(),
         }
+    }
+
+    pub fn with_query_strategy(mut self, query_strategy: DnsQueryStrategy) -> Self {
+        self.query_strategy = query_strategy;
+        self
     }
 
     pub fn with_server_timeout(mut self, timeout: Duration) -> Self {
@@ -704,11 +740,21 @@ impl ConfiguredDnsResolver {
         name_server: &NameServer,
         domain: &str,
     ) -> io::Result<ConfiguredServerResult> {
-        let (ipv4, ipv6) = tokio::join!(
-            self.query_server_with_budget(name_server, domain, DnsRecordType::A),
-            self.query_server_with_budget(name_server, domain, DnsRecordType::Aaaa),
-        );
-        merge_configured_family_results(ipv4, ipv6)
+        match self.query_strategy {
+            DnsQueryStrategy::UseIp => {
+                let (ipv4, ipv6) = tokio::join!(
+                    self.query_server_with_budget(name_server, domain, DnsRecordType::A),
+                    self.query_server_with_budget(name_server, domain, DnsRecordType::Aaaa),
+                );
+                merge_configured_family_results([ipv4, ipv6])
+            }
+            DnsQueryStrategy::UseIpv4 => merge_configured_family_results([self
+                .query_server_with_budget(name_server, domain, DnsRecordType::A)
+                .await]),
+            DnsQueryStrategy::UseIpv6 => merge_configured_family_results([self
+                .query_server_with_budget(name_server, domain, DnsRecordType::Aaaa)
+                .await]),
+        }
     }
 
     async fn query_server_with_budget(
@@ -774,6 +820,12 @@ impl ConfiguredDnsResolver {
             if let Some(rule) = self.matching_host_rule(&current_domain) {
                 match &rule.target {
                     StaticHostTarget::Ip(ip) => {
+                        if !self.query_strategy.accepts(*ip) {
+                            return ConfiguredLookupResult::Negative {
+                                domain: current_domain,
+                                negative: ConfiguredDnsNegative::NoData,
+                            };
+                        }
                         return ConfiguredLookupResult::Resolved(cap_lookup_ttl(
                             DnsLookup::single(
                                 SocketAddr::new(*ip, port),
@@ -783,7 +835,11 @@ impl ConfiguredDnsResolver {
                         ));
                     }
                     StaticHostTarget::Ips(ips) => {
-                        if ips.is_empty() {
+                        if !ips
+                            .iter()
+                            .copied()
+                            .any(|ip| self.query_strategy.accepts(ip))
+                        {
                             return ConfiguredLookupResult::Negative {
                                 domain: current_domain,
                                 negative: ConfiguredDnsNegative::NoData,
@@ -791,7 +847,9 @@ impl ConfiguredDnsResolver {
                         }
                         return ConfiguredLookupResult::Resolved(cap_lookup_ttl(
                             DnsLookup::from_ips(
-                                ips.iter().copied(),
+                                ips.iter()
+                                    .copied()
+                                    .filter(|ip| self.query_strategy.accepts(*ip)),
                                 port,
                                 Some(DNS_STATIC_HOST_TTL),
                             ),
@@ -820,7 +878,20 @@ impl ConfiguredDnsResolver {
             ttl_cap = age_ttl_cap(ttl_cap, started_at.elapsed());
             match result {
                 ConfiguredServersResult::Answer(ConfiguredDnsAnswer::Addresses(answer)) => {
-                    let lookup = DnsLookup::from_ips(answer.addresses, port, Some(answer.ttl));
+                    let lookup = DnsLookup::from_ips(
+                        answer
+                            .addresses
+                            .into_iter()
+                            .filter(|ip| self.query_strategy.accepts(*ip)),
+                        port,
+                        Some(answer.ttl),
+                    );
+                    if lookup.socket_addrs().is_empty() {
+                        return ConfiguredLookupResult::Negative {
+                            domain: current_domain,
+                            negative: ConfiguredDnsNegative::NoData,
+                        };
+                    }
                     return ConfiguredLookupResult::Resolved(cap_lookup_ttl(lookup, ttl_cap));
                 }
                 ConfiguredServersResult::Answer(ConfiguredDnsAnswer::Cname { alias, ttl }) => {
@@ -865,9 +936,8 @@ fn age_ttl_cap(ttl_cap: Option<Duration>, elapsed: Duration) -> Option<Duration>
     ttl_cap.map(|ttl| ttl.saturating_sub(elapsed))
 }
 
-fn merge_configured_family_results(
-    ipv4: io::Result<(ParsedDnsResponse, Instant)>,
-    ipv6: io::Result<(ParsedDnsResponse, Instant)>,
+fn merge_configured_family_results<const N: usize>(
+    results: [io::Result<(ParsedDnsResponse, Instant)>; N],
 ) -> io::Result<ConfiguredServerResult> {
     let mut addresses = Vec::new();
     let mut answer_ttl = None;
@@ -877,7 +947,7 @@ fn merge_configured_family_results(
     let mut saw_no_data = false;
     let mut last_error = None;
 
-    for result in [ipv4, ipv6] {
+    for result in results {
         match result {
             Ok((
                 ParsedDnsResponse::Answer(ConfiguredDnsAnswer::Addresses(mut answer)),
@@ -972,6 +1042,20 @@ impl DnsResolver for ConfiguredDnsResolver {
                         .await
                         .map(|lookup| {
                             cap_lookup_ttl(lookup, age_ttl_cap(ttl_cap, started_at.elapsed()))
+                        })
+                        .and_then(|lookup| match self.query_strategy {
+                            DnsQueryStrategy::UseIp => lookup.ensure_non_empty(&domain, port),
+                            DnsQueryStrategy::UseIpv4 | DnsQueryStrategy::UseIpv6 => {
+                                let ttl = lookup.ttl();
+                                DnsLookup::new(
+                                    lookup.socket_addrs().iter().copied().filter(|address| {
+                                        self.query_strategy.accepts(address.ip())
+                                    }),
+                                    ttl,
+                                )
+                                .ensure_non_empty(&domain, port)
+                                .map_err(|_| TransportError::DnsNoData(domain, port))
+                            }
                         })
                 }
                 ConfiguredLookupResult::Negative {
@@ -1310,19 +1394,26 @@ fn parse_dns_response(
                         read_u16(packet, offset + 12)?,
                         read_u16(packet, offset + 14)?,
                     ];
-                    addresses.push(ParsedDnsAddress {
-                        owner: owner_name,
-                        address: IpAddr::V6(Ipv6Addr::new(
-                            segments[0],
-                            segments[1],
-                            segments[2],
-                            segments[3],
-                            segments[4],
-                            segments[5],
-                            segments[6],
-                            segments[7],
-                        )),
-                    });
+                    let address = Ipv6Addr::new(
+                        segments[0],
+                        segments[1],
+                        segments[2],
+                        segments[3],
+                        segments[4],
+                        segments[5],
+                        segments[6],
+                        segments[7],
+                    );
+                    // Match Xray's address parser: IPv4-mapped data is not a
+                    // usable AAAA result and must remain eligible for
+                    // configured-server failover instead of becoming an IPv4
+                    // dial candidate.
+                    if address.to_ipv4_mapped().is_none() {
+                        addresses.push(ParsedDnsAddress {
+                            owner: owner_name,
+                            address: IpAddr::V6(address),
+                        });
+                    }
                 }
                 _ => {
                     return Err(invalid_dns_response(
@@ -1585,8 +1676,9 @@ mod tests {
     use super::{
         build_dns_query_with_id, parse_dns_response, query_udp_dns_server, CachingDnsResolver,
         ConfiguredDnsAddresses, ConfiguredDnsAnswer, ConfiguredDnsResolver, DnsLookup,
-        DnsQueryTransport, DnsQueryTransportKind, DnsRecordType, DnsResolver, NameServer,
-        StaticHostRule, StaticHostTarget, TransportDomainMatcher, DNS_CACHE_MAX_ENTRIES,
+        DnsQueryStrategy, DnsQueryTransport, DnsQueryTransportKind, DnsRecordType, DnsResolver,
+        NameServer, StaticHostRule, StaticHostTarget, TransportDomainMatcher,
+        DNS_CACHE_MAX_ENTRIES,
     };
     use crate::{SocketHandle, SocketProtector, TransportError};
 
@@ -1621,9 +1713,15 @@ mod tests {
     fn dns_lookup_preserves_order_and_removes_exact_duplicates() {
         let first = SocketAddr::from(([192, 0, 2, 10], 443));
         let second = SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 8443, 7, 9));
+        let mapped_first = SocketAddr::V6(SocketAddrV6::new(
+            Ipv4Addr::new(192, 0, 2, 10).to_ipv6_mapped(),
+            443,
+            7,
+            9,
+        ));
 
         let lookup = DnsLookup::new(
-            [first, second, first, second],
+            [mapped_first, second, first, second],
             Some(Duration::from_secs(30)),
         );
 
@@ -1806,6 +1904,232 @@ mod tests {
         async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
             Err(TransportError::NoResolvedAddress(domain.to_owned(), port))
         }
+    }
+
+    #[derive(Default)]
+    struct FamilyRecordingQueryTransport {
+        record_types: Mutex<Vec<u16>>,
+        ipv6_address: Option<Ipv6Addr>,
+    }
+
+    #[async_trait::async_trait]
+    impl DnsQueryTransport for FamilyRecordingQueryTransport {
+        async fn exchange(
+            &self,
+            _server: &NameServer,
+            _transport: DnsQueryTransportKind,
+            query: &[u8],
+        ) -> io::Result<Vec<u8>> {
+            let record_type = u16::from_be_bytes([query[query.len() - 4], query[query.len() - 3]]);
+            self.record_types.lock().unwrap().push(record_type);
+            match record_type {
+                1 => Ok(build_test_a_response(query, Ipv4Addr::new(192, 0, 2, 90))),
+                28 => Ok(build_test_address_response(
+                    query,
+                    &[(
+                        28,
+                        60,
+                        self.ipv6_address
+                            .unwrap_or(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 90))
+                            .octets()
+                            .to_vec(),
+                    )],
+                )),
+                _ => Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "unexpected DNS record type",
+                )),
+            }
+        }
+    }
+
+    struct MappedFirstServerQueryTransport {
+        first: NameServer,
+        calls: Mutex<Vec<NameServer>>,
+    }
+
+    #[async_trait::async_trait]
+    impl DnsQueryTransport for MappedFirstServerQueryTransport {
+        async fn exchange(
+            &self,
+            server: &NameServer,
+            _transport: DnsQueryTransportKind,
+            query: &[u8],
+        ) -> io::Result<Vec<u8>> {
+            self.calls.lock().unwrap().push(server.clone());
+            let address = if server == &self.first {
+                Ipv4Addr::new(192, 0, 2, 96).to_ipv6_mapped()
+            } else {
+                Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 96)
+            };
+            Ok(build_test_address_response(
+                query,
+                &[(28, 60, address.octets().to_vec())],
+            ))
+        }
+    }
+
+    #[tokio::test]
+    async fn configured_dns_use_ipv6_rejects_mapped_ipv4_wire_answer() {
+        let fallback = Arc::new(DelayedCountingResolver {
+            calls: AtomicUsize::new(0),
+            result: Some(SocketAddr::from(([192, 0, 2, 94], 0))),
+        });
+        let transport = Arc::new(FamilyRecordingQueryTransport {
+            record_types: Mutex::new(Vec::new()),
+            ipv6_address: Some(Ipv4Addr::new(192, 0, 2, 95).to_ipv6_mapped()),
+        });
+        let resolver = ConfiguredDnsResolver::new(
+            Vec::new(),
+            vec![NameServer::Socket(SocketAddr::from(([192, 0, 2, 53], 53)))],
+            fallback.clone(),
+        )
+        .with_query_strategy(DnsQueryStrategy::UseIpv6)
+        .with_query_transport(transport.clone());
+
+        let error = resolver
+            .resolve("mapped-wire.example", 443)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            TransportError::DnsNoData(domain, 443) if domain == "mapped-wire.example"
+        ));
+        assert_eq!(*transport.record_types.lock().unwrap(), [28]);
+        assert_eq!(fallback.calls.load(Ordering::Relaxed), 0);
+    }
+
+    #[tokio::test]
+    async fn configured_dns_mapped_aaaa_keeps_server_failover_available() {
+        let first = NameServer::Socket(SocketAddr::from(([192, 0, 2, 1], 53)));
+        let second = NameServer::Socket(SocketAddr::from(([192, 0, 2, 2], 53)));
+        let transport = Arc::new(MappedFirstServerQueryTransport {
+            first: first.clone(),
+            calls: Mutex::new(Vec::new()),
+        });
+        let resolver = ConfiguredDnsResolver::new(
+            Vec::new(),
+            vec![first.clone(), second.clone()],
+            Arc::new(RejectingResolver),
+        )
+        .with_query_strategy(DnsQueryStrategy::UseIpv6)
+        .with_query_transport(transport.clone());
+
+        let resolved = resolver
+            .resolve("mapped-failover.example", 443)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            resolved,
+            SocketAddr::from((Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 96), 443))
+        );
+        assert_eq!(*transport.calls.lock().unwrap(), [first, second]);
+    }
+
+    #[tokio::test]
+    async fn configured_dns_query_strategy_sends_only_selected_family() {
+        for (strategy, record_type, expected) in [
+            (
+                DnsQueryStrategy::UseIpv4,
+                1,
+                SocketAddr::from(([192, 0, 2, 90], 443)),
+            ),
+            (
+                DnsQueryStrategy::UseIpv6,
+                28,
+                SocketAddr::from((Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 90), 443)),
+            ),
+        ] {
+            let transport = Arc::new(FamilyRecordingQueryTransport::default());
+            let resolver = ConfiguredDnsResolver::new(
+                Vec::new(),
+                vec![NameServer::Socket(SocketAddr::from(([192, 0, 2, 53], 53)))],
+                Arc::new(RejectingResolver),
+            )
+            .with_query_strategy(strategy)
+            .with_query_transport(transport.clone());
+
+            let resolved = resolver.resolve("family.example", 443).await.unwrap();
+
+            assert_eq!(resolved, expected);
+            assert_eq!(*transport.record_types.lock().unwrap(), [record_type]);
+        }
+    }
+
+    #[tokio::test]
+    async fn configured_dns_query_strategy_filters_static_hosts_and_mapped_ipv4() {
+        let native_ipv6 = Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 91);
+        let mapped_ipv4 = Ipv4Addr::new(192, 0, 2, 91).to_ipv6_mapped();
+        let native_ipv4 = Ipv4Addr::new(192, 0, 2, 92);
+        let host_rule = StaticHostRule {
+            matcher: TransportDomainMatcher::Full("mixed.example".to_owned()),
+            target: StaticHostTarget::Ips(vec![
+                IpAddr::V6(native_ipv6),
+                IpAddr::V6(mapped_ipv4),
+                IpAddr::V4(native_ipv4),
+            ]),
+        };
+
+        let ipv4 = ConfiguredDnsResolver::new(
+            vec![host_rule.clone()],
+            Vec::new(),
+            Arc::new(RejectingResolver),
+        )
+        .with_query_strategy(DnsQueryStrategy::UseIpv4)
+        .resolve_all("mixed.example", 443)
+        .await
+        .unwrap();
+        let ipv6 =
+            ConfiguredDnsResolver::new(vec![host_rule], Vec::new(), Arc::new(RejectingResolver))
+                .with_query_strategy(DnsQueryStrategy::UseIpv6)
+                .resolve_all("mixed.example", 443)
+                .await
+                .unwrap();
+
+        assert_eq!(
+            ipv4.socket_addrs(),
+            [
+                SocketAddr::new(
+                    IpAddr::V4(mapped_ipv4.to_ipv4_mapped().expect("mapped IPv4")),
+                    443,
+                ),
+                SocketAddr::new(IpAddr::V4(native_ipv4), 443),
+            ]
+        );
+        assert_eq!(
+            ipv6.socket_addrs(),
+            [SocketAddr::new(IpAddr::V6(native_ipv6), 443)]
+        );
+    }
+
+    #[tokio::test]
+    async fn configured_dns_wrong_family_static_host_is_terminal_nodata() {
+        let fallback = Arc::new(DelayedCountingResolver {
+            calls: AtomicUsize::new(0),
+            result: Some(SocketAddr::from(([192, 0, 2, 93], 0))),
+        });
+        let resolver = ConfiguredDnsResolver::new(
+            vec![StaticHostRule {
+                matcher: TransportDomainMatcher::Full("ipv6-only.example".to_owned()),
+                target: StaticHostTarget::Ip(IpAddr::V6(Ipv6Addr::LOCALHOST)),
+            }],
+            Vec::new(),
+            fallback.clone(),
+        )
+        .with_query_strategy(DnsQueryStrategy::UseIpv4);
+
+        let error = resolver
+            .resolve("ipv6-only.example", 443)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            TransportError::DnsNoData(domain, 443) if domain == "ipv6-only.example"
+        ));
+        assert_eq!(fallback.calls.load(Ordering::Relaxed), 0);
     }
 
     #[tokio::test]
@@ -2345,6 +2669,37 @@ mod tests {
         assert_eq!(fallback.calls.load(Ordering::Relaxed), 0);
     }
 
+    #[tokio::test]
+    async fn configured_dns_single_family_negative_is_terminal() {
+        let fallback = Arc::new(DelayedCountingResolver {
+            calls: AtomicUsize::new(0),
+            result: Some(SocketAddr::from(([192, 0, 2, 71], 0))),
+        });
+        let transport = Arc::new(ResponseCodeQueryTransport {
+            response_code: 3,
+            calls: AtomicUsize::new(0),
+        });
+        let resolver = ConfiguredDnsResolver::new(
+            Vec::new(),
+            vec![NameServer::Socket(SocketAddr::from(([192, 0, 2, 53], 53)))],
+            fallback.clone(),
+        )
+        .with_query_strategy(DnsQueryStrategy::UseIpv6)
+        .with_query_transport(transport.clone());
+
+        let error = resolver
+            .resolve("missing-v6.example", 443)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            TransportError::DnsNameError(domain, 443) if domain == "missing-v6.example"
+        ));
+        assert_eq!(transport.calls.load(Ordering::Relaxed), 1);
+        assert_eq!(fallback.calls.load(Ordering::Relaxed), 0);
+    }
+
     struct FirstServerResponseCodeTransport {
         first: NameServer,
         response_code: u16,
@@ -2391,6 +2746,29 @@ mod tests {
             *transport.calls.lock().unwrap(),
             vec![first.clone(), first, second.clone(), second]
         );
+    }
+
+    #[tokio::test]
+    async fn configured_dns_single_family_failover_queries_each_server_once() {
+        let first = NameServer::Socket(SocketAddr::from(([192, 0, 2, 1], 53)));
+        let second = NameServer::Socket(SocketAddr::from(([192, 0, 2, 2], 53)));
+        let transport = Arc::new(FirstServerResponseCodeTransport {
+            first: first.clone(),
+            response_code: 2,
+            calls: Mutex::new(Vec::new()),
+        });
+        let resolver = ConfiguredDnsResolver::new(
+            Vec::new(),
+            vec![first.clone(), second.clone()],
+            Arc::new(RejectingResolver),
+        )
+        .with_query_strategy(DnsQueryStrategy::UseIpv4)
+        .with_query_transport(transport.clone());
+
+        let resolved = resolver.resolve("servfail-v4.example", 443).await.unwrap();
+
+        assert_eq!(resolved, SocketAddr::from(([192, 0, 2, 72], 443)));
+        assert_eq!(*transport.calls.lock().unwrap(), [first, second]);
     }
 
     #[tokio::test]

@@ -1,10 +1,11 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use xray_config::{
-    CoreConfig, Diagnostic, DiagnosticSeverity, DomainMatcher, HappyEyeballsSettings,
-    InboundConfig, InboundProtocol, IpCidr, IpMatcher, Network, OutboundConfig, OutboundProtocol,
-    OutboundSettings, RealitySettings, RealityShortId, RegexMatcher, RoutingConfig, RoutingRule,
-    SocketOptions, StreamSecurity, StreamSettings, TargetAddr, VlessOutboundSettings, VlessUser,
+    CoreConfig, Diagnostic, DiagnosticSeverity, DnsConfig, DnsQueryStrategy, DomainMatcher,
+    HappyEyeballsSettings, InboundConfig, InboundProtocol, IpCidr, IpMatcher, Network,
+    OutboundConfig, OutboundProtocol, OutboundSettings, RealitySettings, RealityShortId,
+    RegexMatcher, RoutingConfig, RoutingRule, SocketOptions, StreamSecurity, StreamSettings,
+    TargetAddr, VlessOutboundSettings, VlessUser,
 };
 
 #[test]
@@ -163,6 +164,11 @@ fn normalized_model_uses_xray_happy_eyeballs_defaults() {
             max_concurrent_try: 4,
         })
     );
+}
+
+#[test]
+fn normalized_model_uses_xray_dns_query_strategy_default() {
+    assert_eq!(DnsConfig::default().query_strategy, DnsQueryStrategy::UseIp);
 }
 
 #[test]

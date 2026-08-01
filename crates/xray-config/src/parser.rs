@@ -10,12 +10,12 @@ use uuid::Uuid;
 use crate::{
     geodata::{default_geodata_dirs, GeodataLoader},
     CoreConfig, Diagnostic, DnsConfig, DnsFakeIpConfig, DnsHostMapping, DnsHostTarget,
-    DnsServerConfig, DomainMatcher, HappyEyeballsSettings, InboundConfig, InboundProtocol,
-    InboundSniffingConfig, IpCidr, IpMatcher, Network, OutboundConfig, OutboundProtocol,
-    OutboundSettings, PolicyConfig, PolicyLevelConfig, PolicySystemConfig, RealitySettings,
-    RealityShortId, RegexMatcher, RoutingConfig, RoutingDomainStrategy, RoutingRule,
-    SniffingDestination, SocketOptions, StreamSecurity, StreamSettings, TargetAddr, TlsSettings,
-    VlessOutboundSettings, VlessUser,
+    DnsQueryStrategy, DnsServerConfig, DomainMatcher, HappyEyeballsSettings, InboundConfig,
+    InboundProtocol, InboundSniffingConfig, IpCidr, IpMatcher, Network, OutboundConfig,
+    OutboundProtocol, OutboundSettings, PolicyConfig, PolicyLevelConfig, PolicySystemConfig,
+    RealitySettings, RealityShortId, RegexMatcher, RoutingConfig, RoutingDomainStrategy,
+    RoutingRule, SniffingDestination, SocketOptions, StreamSecurity, StreamSettings, TargetAddr,
+    TlsSettings, VlessOutboundSettings, VlessUser,
 };
 
 const MAX_ROUTING_RULES: usize = 4_096;
@@ -272,11 +272,51 @@ impl Parser<'_> {
             return DnsConfig::default();
         }
 
-        self.reject_unknown_fields(dns, dns_path, &["fakeIp", "servers", "hosts"]);
+        self.reject_unknown_fields(
+            dns,
+            dns_path,
+            &["fakeIp", "servers", "hosts", "queryStrategy"],
+        );
         DnsConfig {
             fake_ip: self.parse_dns_fake_ip(dns),
             servers: self.parse_dns_servers(dns),
             hosts: self.parse_dns_hosts(dns),
+            query_strategy: self.parse_dns_query_strategy(dns),
+        }
+    }
+
+    fn parse_dns_query_strategy(&mut self, dns: &Value) -> DnsQueryStrategy {
+        let Some(raw_strategy) = dns.get("queryStrategy") else {
+            return DnsQueryStrategy::default();
+        };
+        let path = "$.dns.queryStrategy";
+        let Some(strategy) = raw_strategy.as_str() else {
+            self.error(path, "dns queryStrategy must be a string");
+            return DnsQueryStrategy::default();
+        };
+
+        match strategy.to_ascii_lowercase().as_str() {
+            "useip" | "use_ip" | "use-ip" => DnsQueryStrategy::UseIp,
+            "useip4" | "useipv4" | "use_ip4" | "use_ipv4" | "use_ip_v4" | "use-ip4"
+            | "use-ipv4" | "use-ip-v4" => DnsQueryStrategy::UseIpv4,
+            "useip6" | "useipv6" | "use_ip6" | "use_ipv6" | "use_ip_v6" | "use-ip6"
+            | "use-ipv6" | "use-ip-v6" => DnsQueryStrategy::UseIpv6,
+            "usesys" | "usesystem" | "use_sys" | "use_system" | "use-sys" | "use-system" => {
+                self.error(
+                    path,
+                    "dns queryStrategy `UseSystem` requires platform route capability and is not supported",
+                );
+                DnsQueryStrategy::default()
+            }
+            _ => {
+                self.error(
+                    path,
+                    format!(
+                        "unsupported dns queryStrategy `{strategy}`; expected UseIP, UseIPv4, or UseIPv6"
+                    ),
+                );
+                DnsQueryStrategy::default()
+            }
         }
     }
 
