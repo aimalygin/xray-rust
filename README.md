@@ -14,35 +14,35 @@ audited, and should not yet be treated as a production-ready VPN SDK.
 
 Synthetic localhost comparison against Xray-core `v26.5.9` and sing-box
 `v1.13.15` with the process-level [benchmark harness](docs/benchmarks.md)
-(medians across 5 runs; measured 2026-07-31 on Apple M3 Pro, macOS 26.5.2,
-xray-rust `3f70759`).
+(medians across 5 runs; measured 2026-08-01 on Apple M3 Pro, macOS 26.5.2,
+xray-rust `af33ae8`).
 
-Lowest resident memory at every scale — 3.56 MiB idle and 17.9 MiB with
-1000 held SOCKS flows, against 80.1 MiB for Xray-core and 46.8 MiB for
+Lowest resident memory at every scale — 3.84 MiB idle and 18.3 MiB with
+1000 held SOCKS flows, against 79.9 MiB for Xray-core and 46.1 MiB for
 sing-box:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/media/memory-rss-dark.svg">
-  <img alt="Peak resident set size, lower is better. Idle: xray-rust 3.56 MiB, Xray-core 27.8, sing-box 21.0. 100 idle flows: xray-rust 5.20, Xray-core 35.2, sing-box 27.2. 1000 idle flows: xray-rust 17.9, Xray-core 80.1, sing-box 46.8." src="docs/benchmarks/media/memory-rss-light.svg">
+  <img alt="Peak resident set size, lower is better. Idle: xray-rust 3.84 MiB, Xray-core 28.1, sing-box 20.9. 100 idle flows: xray-rust 5.50, Xray-core 35.2, sing-box 26.4. 1000 idle flows: xray-rust 18.3, Xray-core 79.9, sing-box 46.1." src="docs/benchmarks/media/memory-rss-light.svg">
 </picture>
 
-Fastest through a full VLESS + REALITY + Vision tunnel — 13.0 Gbps at the
-lowest CPU cost per GiB (840 ms vs 890/880):
+Fastest through a full VLESS + REALITY + Vision tunnel — 14.3 Gbps at the
+lowest CPU cost per GiB (770 ms vs 820/790):
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/media/reality-throughput-dark.svg">
-  <img alt="Bulk TCP throughput through a VLESS + REALITY + Vision tunnel, higher is better: xray-rust 13.0 Gbps, Xray-core 12.4, sing-box 12.5." src="docs/benchmarks/media/reality-throughput-light.svg">
+  <img alt="Bulk TCP throughput through a VLESS + REALITY + Vision tunnel, higher is better: xray-rust 14.3 Gbps, Xray-core 13.7, sing-box 14.0." src="docs/benchmarks/media/reality-throughput-light.svg">
 </picture>
 
 About 4× less memory than Xray-core with real V2Fly geodata loaded:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/media/geo-memory-dark.svg">
-  <img alt="Peak memory with real geodata loaded, lower is better: xray-rust 8.39 MiB, Xray-core 34.7 MiB." src="docs/benchmarks/media/geo-memory-light.svg">
+  <img alt="Peak memory with real geodata loaded, lower is better: xray-rust 8.62 MiB, Xray-core 34.7 MiB." src="docs/benchmarks/media/geo-memory-light.svg">
 </picture>
 
-Latency, plain-SOCKS bulk throughput, and CPU-per-GiB charts, plus the full
-narrative and measurement caveats, are in
+Latency, plain-SOCKS bulk throughput, CPU-per-GiB, and xray-rust DNS charts,
+plus the full narrative and measurement caveats, are in
 [benchmark results](docs/benchmarks/results.md).
 
 ## Current scope

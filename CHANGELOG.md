@@ -7,6 +7,16 @@ development changes are recorded under `Unreleased`.
 
 ## Unreleased
 
+- Kept the DNS outbound TCP handler out of ordinary SOCKS connection futures,
+  allocating its type-erased future only after a DNS route is selected. This
+  removes 1.2 KiB from both enclosing async states and brought the same-machine
+  1000-flow RSS median from 20.52 MiB back to 18.27 MiB without detached tasks
+  or changed cancellation behavior.
+- Extended the process benchmark harness with a strict, repeatable DNS matrix
+  covering FakeDNS and proxied UDP/TCP clients, plus latency, query-rate,
+  CPU-per-1000-query, and RSS charts. Raw artifacts now carry run IDs, DNS
+  transport, Git/worktree provenance, canonical CLI arguments, and SHA-256
+  hashes for the measured binaries; incompatible series fail chart generation.
 - Added global Xray-compatible `dns.queryStrategy` for `UseIP`, `UseIPv4`, and
   `UseIPv6`, including common Xray aliases. The policy controls configured DNS
   wire queries, destination static host arrays, and destination fallback
