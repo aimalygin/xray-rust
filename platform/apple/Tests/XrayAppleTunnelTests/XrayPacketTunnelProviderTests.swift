@@ -660,7 +660,7 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
 
     func testResolvedDnsConfigurationUsesLocalAnchorForObjectAndMixedConfigServers() {
         let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
-            configJSON: #"{"dns":{"servers":[{"address":"resolver.example","port":0,"domains":["domain:internal.example"],"expectedIPs":["geoip:private","!192.0.2.0/24"],"expectIPs":"geoip:private,geoip:cn","unexpectedIPs":null,"timeoutMs":1750},{"address":"2001:db8::53","port":5353,"timeoutMs":null},"192.0.2.53"]}}"#,
+            configJSON: #"{"dns":{"servers":[{"address":"resolver.example","port":0,"domains":["domain:internal.example"],"expectedIPs":["geoip:private","!192.0.2.0/24"],"expectIPs":"geoip:private,geoip:cn","unexpectedIPs":null,"tag":"dns-route","timeoutMs":1750},{"address":"2001:db8::53","port":5353,"tag":null,"timeoutMs":null},"192.0.2.53"]}}"#,
             explicit: .system
         )
 
@@ -673,6 +673,9 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
             #"{"address":42}"#,
             #"{"address":"resolver.example","port":65536}"#,
             #"{"address":"tcp://resolver.example"}"#,
+            #"{"address":"resolver.example","tag":42}"#,
+            #"{"address":"resolver.example","tag":true}"#,
+            #"{"address":"resolver.example","tag":["dns-route"]}"#,
             #"{"address":"resolver.example","unknown":true}"#,
         ] {
             let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
@@ -717,6 +720,24 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
                 explicit: .system
             )
             XCTAssertNil(configuration, "timeout=\(timeout)")
+        }
+    }
+
+    func testResolvedDnsConfigurationAcceptsXrayDnsServerTagValues() {
+        for tag in ["null", "\"\"", "\"dns-route\"", "\" dns route \""] {
+            let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
+                configJSON: "{\"dns\":{\"servers\":[{\"address\":\"resolver.example\",\"tag\":\(tag)}]}}",
+                explicit: .system
+            )
+            XCTAssertNotNil(configuration, "tag=\(tag)")
+        }
+
+        for tag in ["42", "true", "[\"dns-route\"]"] {
+            let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
+                configJSON: "{\"dns\":{\"servers\":[{\"address\":\"resolver.example\",\"tag\":\(tag)}]}}",
+                explicit: .system
+            )
+            XCTAssertNil(configuration, "tag=\(tag)")
         }
     }
 
@@ -1569,7 +1590,7 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
 
     func testConfigPinningAddsHostsForObjectAndMixedDnsServersWithoutCarrierExclusions() throws {
         let resolved = resolvedConfig(
-            json: #"{"dns":{"servers":[{"address":"Object-DNS.Example.","port":0,"domains":["domain:internal.example"],"expectedIPs":"geoip:private,geoip:cn","expectIPs":["192.0.2.0/24"],"unexpectedIPs":["geoip:ads"],"timeoutMs":0},"String-DNS.Example.:5353"]},"outbounds":[{"protocol":"freedom"}]}"#
+            json: #"{"dns":{"servers":[{"address":"Object-DNS.Example.","port":0,"domains":["domain:internal.example"],"expectedIPs":"geoip:private,geoip:cn","expectIPs":["192.0.2.0/24"],"unexpectedIPs":["geoip:ads"],"tag":"dns-route","timeoutMs":0},"String-DNS.Example.:5353"]},"outbounds":[{"protocol":"freedom"}]}"#
         )
         var resolvedDomains: [String] = []
 
@@ -1592,6 +1613,8 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         )
         let dns = try XCTUnwrap(root["dns"] as? [String: Any])
         let hosts = try XCTUnwrap(dns["hosts"] as? [String: Any])
+        let servers = try XCTUnwrap(dns["servers"] as? [Any])
+        let objectServer = try XCTUnwrap(servers[0] as? [String: Any])
 
         XCTAssertEqual(
             hosts["full:object-dns.example"] as? [String],
@@ -1602,6 +1625,7 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
             ["198.51.100.53"]
         )
         XCTAssertEqual(resolvedDomains, ["object-dns.example", "string-dns.example"])
+        XCTAssertEqual(objectServer["tag"] as? String, "dns-route")
         XCTAssertEqual(prepared.excludedServerAddresses, [])
     }
 

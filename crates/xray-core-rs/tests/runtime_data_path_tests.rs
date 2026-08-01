@@ -40,11 +40,11 @@ use tokio_rustls::TlsAcceptor;
 use uuid::Uuid;
 use xray_config::{
     parse_xray_json, CoreConfig, DnsConfig, DnsFakeIpConfig, DnsHostMapping, DnsHostTarget,
-    DnsServerConfig, DomainMatcher, InboundConfig, InboundProtocol, InboundSniffingConfig, IpCidr,
-    IpMatcher, Network, OutboundConfig, OutboundSettings, PolicyConfig, PolicyLevelConfig,
-    RealitySettings, RealityShortId, RoutingConfig, RoutingDomainStrategy, RoutingRule,
-    SniffingDestination, StreamSecurity, StreamSettings, TargetAddr, TlsSettings,
-    VlessOutboundSettings, VlessUser,
+    DnsNameServerConfig, DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint, DomainMatcher,
+    InboundConfig, InboundProtocol, InboundSniffingConfig, IpCidr, IpMatcher, Network,
+    OutboundConfig, OutboundSettings, PolicyConfig, PolicyLevelConfig, RealitySettings,
+    RealityShortId, RoutingConfig, RoutingDomainStrategy, RoutingRule, SniffingDestination,
+    StreamSecurity, StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
 };
 use xray_core_rs::{
     select_tcp_outbound_for_session, select_tcp_outbound_for_session_with_resolver,
@@ -102,6 +102,20 @@ fn freedom_outbound() -> OutboundConfig {
         },
         settings: OutboundSettings::Freedom,
     }
+}
+
+fn tagged_dns_server(endpoint: DnsServerEndpoint, tag: &str) -> DnsServerConfig {
+    DnsServerConfig::Policy(DnsNameServerConfig {
+        endpoint,
+        domains: Vec::new(),
+        expected_ips: Default::default(),
+        unexpected_ips: Default::default(),
+        tag: tag.to_owned(),
+        timeout_ms: 0,
+        skip_fallback: false,
+        query_strategy: DnsQueryStrategy::UseIp,
+        final_query: false,
+    })
 }
 
 fn config_with_outbound(outbound: OutboundConfig) -> CoreConfig {
@@ -452,12 +466,16 @@ fn runtime_tun_dns_proxy_config_routing_second_upstream_to_freedom(
     config.outbounds.push(freedom_outbound());
     let prefix = if second.is_ipv4() { 32 } else { 128 };
     config.routing.rules = vec![RoutingRule {
-        inbound_tags: vec!["tun-in".to_owned()],
+        inbound_tags: vec!["dns-route".to_owned()],
         domain_matchers: Vec::new(),
         ip_matchers: vec![IpMatcher::Cidr(IpCidr::new(second.ip(), prefix).unwrap())],
         outbound_tag: "direct".to_owned(),
     }];
-    config.dns.servers = vec![DnsServerConfig::Ip(first), DnsServerConfig::Ip(second)];
+    config.dns.tag = "dns-global".to_owned();
+    config.dns.servers = vec![
+        DnsServerConfig::Ip(first),
+        tagged_dns_server(DnsServerEndpoint::Ip(second), "dns-route"),
+    ];
     config
 }
 
@@ -3199,15 +3217,43 @@ async fn run_tun_fake_dns_static_only_udp_freedom_scenario() {
     };
     let (dns_server, dns_handle) = spawn_udp_tcp_dns_a_responder(*echo_addr_v4.ip()).await;
     let mut config = runtime_tun_config_with_mobile_fake_dns_freedom(dns_server);
+    let unavailable_proxy = allocate_unused_loopback_port();
+    config.outbounds.insert(
+        0,
+        vless_outbound(
+            StreamSecurity::None,
+            TargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            unavailable_proxy,
+        ),
+    );
+    config.default_outbound_tag = Some("proxy".to_owned());
+    config.routing.rules = vec![
+        RoutingRule {
+            inbound_tags: vec!["dns-route".to_owned()],
+            domain_matchers: Vec::new(),
+            ip_matchers: Vec::new(),
+            outbound_tag: "direct".to_owned(),
+        },
+        RoutingRule {
+            inbound_tags: Vec::new(),
+            domain_matchers: vec![DomainMatcher::Full("mobile-udp.example".to_owned())],
+            ip_matchers: Vec::new(),
+            outbound_tag: "direct".to_owned(),
+        },
+    ];
+    config.dns.tag = "dns-global".to_owned();
     config.dns.servers = vec![
         DnsServerConfig::Domain {
             domain: "unbootstrapped.mobile.test".to_owned(),
             port: 53,
         },
-        DnsServerConfig::Domain {
-            domain: "MOBILE.RESOLVER.TEST.".to_owned(),
-            port: dns_server.port(),
-        },
+        tagged_dns_server(
+            DnsServerEndpoint::Domain {
+                domain: "MOBILE.RESOLVER.TEST.".to_owned(),
+                port: dns_server.port(),
+            },
+            "dns-route",
+        ),
     ];
     config.dns.hosts = vec![DnsHostMapping {
         matcher: DomainMatcher::Full("mobile.resolver.test".to_owned()),
@@ -4079,13 +4125,14 @@ async fn run_tun_dns_proxy_udp_static_ip_routing_scenario() {
     config.outbounds.push(freedom_outbound());
     config.routing.domain_strategy = RoutingDomainStrategy::IpIfNonMatch;
     config.routing.rules = vec![RoutingRule {
-        inbound_tags: vec!["tun-in".to_owned()],
+        inbound_tags: vec!["dns-route".to_owned()],
         domain_matchers: Vec::new(),
         ip_matchers: vec![IpMatcher::Cidr(
             IpCidr::new(upstream.ip(), if upstream.is_ipv4() { 32 } else { 128 }).unwrap(),
         )],
         outbound_tag: "direct".to_owned(),
     }];
+    config.dns.tag = "dns-route".to_owned();
     config.dns.servers = vec![DnsServerConfig::Domain {
         domain: "resolver.static-route.test".to_owned(),
         port: upstream.port(),
@@ -4141,13 +4188,14 @@ async fn run_tun_dns_proxy_udp_dynamic_ip_routing_scenario() {
     config.outbounds.push(freedom_outbound());
     config.routing.domain_strategy = RoutingDomainStrategy::IpIfNonMatch;
     config.routing.rules = vec![RoutingRule {
-        inbound_tags: vec!["tun-in".to_owned()],
+        inbound_tags: vec!["dns-route".to_owned()],
         domain_matchers: Vec::new(),
         ip_matchers: vec![IpMatcher::Cidr(
             IpCidr::new(upstream.ip(), if upstream.is_ipv4() { 32 } else { 128 }).unwrap(),
         )],
         outbound_tag: "direct".to_owned(),
     }];
+    config.dns.tag = "dns-route".to_owned();
     config.dns.servers = vec![DnsServerConfig::Domain {
         domain: "resolver.dynamic-route.test".to_owned(),
         port: upstream.port(),
@@ -4640,6 +4688,16 @@ async fn run_tun_fake_dns_udp_ip_if_non_match_routed_freedom_scenario() {
     let (dns_server, dns_handle) = spawn_udp_dns_a_responder(*echo_addr_v4.ip()).await;
     let mut config =
         runtime_tun_config_with_fake_ip_ip_if_non_match_routed_freedom_outbound(unused_proxy_port);
+    config.routing.rules.insert(
+        0,
+        RoutingRule {
+            inbound_tags: vec!["dns-route".to_owned()],
+            domain_matchers: Vec::new(),
+            ip_matchers: Vec::new(),
+            outbound_tag: "direct".to_owned(),
+        },
+    );
+    config.dns.tag = "dns-route".to_owned();
     config.dns.servers = vec![DnsServerConfig::Domain {
         domain: "MOBILE.RESOLVER.EXAMPLE.COM.".to_owned(),
         port: dns_server.port(),

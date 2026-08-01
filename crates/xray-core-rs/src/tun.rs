@@ -2581,6 +2581,10 @@ async fn bridge_tcp_flow(
     for candidate in destination.dial_candidates() {
         let dial_target = candidate.target;
         let dns_upstream = candidate.dns_upstream;
+        let routing_inbound_tag = dns_upstream
+            .as_ref()
+            .map(dns_proxy::DnsProxyUpstream::inbound_tag)
+            .or(context.inbound_tag.as_deref());
         let candidate_deadline = dns_deadline.map(|total_deadline| {
             total_deadline.min(TokioInstant::now() + dns_proxy::DNS_TCP_PROXY_ATTEMPT_TIMEOUT)
         });
@@ -2599,7 +2603,7 @@ async fn bridge_tcp_flow(
                         context
                             .outbound_router
                             .select_tcp_outbound_for_session_with_tag_and_resolver(
-                                context.inbound_tag.as_deref(),
+                                routing_inbound_tag,
                                 &dial_target,
                                 collect_tcp_timings,
                                 context.bootstrap_dns_resolver(),
@@ -2608,7 +2612,7 @@ async fn bridge_tcp_flow(
                     } else {
                         context.outbound_router
                             .select_tcp_outbound_for_session_with_tag_and_resolver(
-                                context.inbound_tag.as_deref(),
+                                routing_inbound_tag,
                                 &dial_target,
                                 collect_tcp_timings,
                                 context.dns_resolver.as_ref(),
@@ -2679,7 +2683,13 @@ async fn bridge_tcp_flow(
         };
         match open_result {
             Ok(Ok(stream)) => {
-                opened = Some((stream, outbound, outbound_tag, dial_target));
+                opened = Some((
+                    stream,
+                    outbound,
+                    outbound_tag,
+                    dial_target,
+                    routing_inbound_tag.map(ToOwned::to_owned),
+                ));
                 break;
             }
             Ok(Err(error)) => {
@@ -2697,7 +2707,7 @@ async fn bridge_tcp_flow(
         }
     }
     drop(pending_open);
-    let Some((stream, outbound, outbound_tag, dial_target)) = opened else {
+    let Some((stream, outbound, outbound_tag, dial_target, routing_inbound_tag)) = opened else {
         let (error, outbound_tag) = last_failure
             .unwrap_or_else(|| ("no usable DNS TCP upstream configured".to_owned(), None));
         if context.runtime_logger.is_enabled() {
@@ -2763,7 +2773,7 @@ async fn bridge_tcp_flow(
         crate::debug_log::log_route_decision(
             &context.runtime_logger,
             crate::debug_log::RouteDecisionLog {
-                inbound_tag: context.inbound_tag.as_deref(),
+                inbound_tag: routing_inbound_tag.as_deref(),
                 network: client_target.network,
                 original_target: &client_target,
                 sniffed_protocol: None,

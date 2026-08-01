@@ -44,6 +44,11 @@ pub struct DnsConfig {
     pub fake_ip: Option<DnsFakeIpConfig>,
     pub servers: Vec<DnsServerConfig>,
     pub hosts: Vec<DnsHostMapping>,
+    /// Default synthetic inbound tag used by configured DNS clients.
+    ///
+    /// An empty value asks the runtime to supply Xray's generated internal
+    /// tag. UUID generation intentionally stays outside the config model.
+    pub tag: String,
     pub query_strategy: DnsQueryStrategy,
     pub disable_fallback: bool,
     pub disable_fallback_if_match: bool,
@@ -78,6 +83,8 @@ pub struct DnsNameServerConfig {
     pub domains: Vec<DomainMatcher>,
     pub expected_ips: DnsIpFilter,
     pub unexpected_ips: DnsIpFilter,
+    /// Per-client synthetic inbound tag; empty inherits `dns.tag`.
+    pub tag: String,
     /// Raw Xray `timeoutMs`; zero selects [`DEFAULT_DNS_SERVER_TIMEOUT_MS`].
     pub timeout_ms: u64,
     pub skip_fallback: bool,
@@ -226,6 +233,18 @@ impl DnsServerConfig {
         match self {
             Self::Policy(server) if server.timeout_ms != 0 => server.timeout_ms,
             Self::Policy(_) | Self::Ip(_) | Self::Domain { .. } => DEFAULT_DNS_SERVER_TIMEOUT_MS,
+        }
+    }
+
+    /// Returns this client's configured tag after applying Xray inheritance.
+    ///
+    /// String shorthand servers and object servers with an omitted, `null`,
+    /// or empty tag inherit the effective global DNS tag supplied by the
+    /// caller. Runtime generation of an internal tag remains a core concern.
+    pub fn effective_tag<'a>(&'a self, global_tag: &'a str) -> &'a str {
+        match self {
+            Self::Policy(server) if !server.tag.is_empty() => &server.tag,
+            Self::Policy(_) | Self::Ip(_) | Self::Domain { .. } => global_tag,
         }
     }
 }

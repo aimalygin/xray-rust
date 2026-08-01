@@ -35,6 +35,7 @@ mod tun_fd;
 const TUN_MTU: usize = 1500;
 const TUN_INBOUND_QUEUE_DEPTH: usize = 1024;
 const TUN_OUTBOUND_QUEUE_DEPTH: usize = 4096;
+const GENERATED_DNS_TAG_PREFIX: &str = "xray.system.";
 
 pub use outbound::{
     open_tcp_stream_with_resolver_and_dialer, open_vless_tcp_stream,
@@ -339,7 +340,7 @@ impl Core {
     }
 
     fn build(
-        config: CoreConfig,
+        mut config: CoreConfig,
         dns_resolver: Arc<dyn DnsResolver>,
         dns_bootstrap_resolver: Option<Arc<dyn DnsResolver>>,
         dns_name_server_policies: Arc<CompiledNameServerPolicies>,
@@ -347,6 +348,7 @@ impl Core {
         tun_runtime_options: TunRuntimeOptions,
         managed_dns_resolver: bool,
     ) -> Result<Self, CoreError> {
+        ensure_effective_dns_tag(&mut config);
         let shutdown = Shutdown::new();
         let tun_queue_options = tun_runtime_options.tun_queue_options();
         let tun = Arc::new(TunEndpoint::new_with_queue_depths(
@@ -400,7 +402,6 @@ impl Core {
         &self,
         config: &Arc<CoreConfig>,
         outbound_router: &Arc<OutboundRouter>,
-        inbound_tag: Option<String>,
         forbid_tun_runtime_servers: bool,
     ) -> dns::RuntimeDnsResolvers {
         let bootstrap = self
@@ -429,7 +430,6 @@ impl Core {
         let query_transport: Arc<dyn DnsQueryTransport> =
             Arc::new(dns::RoutedDnsQueryTransport::new(
                 Arc::clone(outbound_router),
-                inbound_tag,
                 Arc::clone(&bootstrap),
                 Arc::clone(&self.transport_dialer),
                 forbidden_servers,
@@ -523,12 +523,8 @@ impl Core {
         );
         for (bound, protocol, sniffing, policy, listener) in bound_listeners {
             let inbound_tag = bound.tag.clone();
-            let dns_resolvers = self.runtime_dns_resolvers(
-                &config,
-                &outbound_router,
-                inbound_tag.clone(),
-                has_tun_inbound,
-            );
+            let dns_resolvers =
+                self.runtime_dns_resolvers(&config, &outbound_router, has_tun_inbound);
             let transport_dialer = Arc::clone(&self.transport_dialer);
             let task = match protocol {
                 InboundProtocol::Socks => tokio::spawn(socks::serve_socks_listener(
@@ -561,12 +557,7 @@ impl Core {
         }
         if has_tun_inbound {
             let tun_inbound_tag = tun_inbounds.first().and_then(|(tag, _, _)| tag.clone());
-            let tun_dns_resolvers = self.runtime_dns_resolvers(
-                &config,
-                &outbound_router,
-                tun_inbound_tag.clone(),
-                true,
-            );
+            let tun_dns_resolvers = self.runtime_dns_resolvers(&config, &outbound_router, true);
             let tun_runtime_options = TunRuntimeOptions {
                 collect_tcp_timings: self.tun_runtime_options.collect_tcp_timings
                     || self.runtime_logger.is_enabled(),
@@ -605,7 +596,7 @@ impl Core {
 
         if let Some(options) = self.startup_probe.clone() {
             let probe_dns_resolvers =
-                self.runtime_dns_resolvers(&config, &outbound_router, None, has_tun_inbound);
+                self.runtime_dns_resolvers(&config, &outbound_router, has_tun_inbound);
             let probe_url = startup_probe::diagnostic_probe_url(&options.url);
             let probe_timeout_ms = options.timeout.as_millis();
             let probe_outbound = if options.outbound_tag.is_some() {
@@ -690,6 +681,8 @@ enum DnsResolverRole {
 }
 
 fn take_name_server_policy_set(config: &mut CoreConfig) -> Arc<CompiledNameServerPolicies> {
+    ensure_effective_dns_tag(config);
+    let global_dns_tag = config.dns.tag.clone();
     let name_servers = config
         .dns
         .servers
@@ -706,6 +699,7 @@ fn take_name_server_policy_set(config: &mut CoreConfig) -> Arc<CompiledNameServe
             let query_strategy = transport_dns_query_strategy(server.query_strategy());
             let final_query = server.final_query();
             let timeout = Some(Duration::from_millis(server.timeout_ms()));
+            let tag = server.effective_tag(&global_dns_tag).to_owned();
             let (domains, expected_ips, unexpected_ips) = match server {
                 DnsServerConfig::Policy(policy) => (
                     std::mem::take(&mut policy.domains),
@@ -720,6 +714,7 @@ fn take_name_server_policy_set(config: &mut CoreConfig) -> Arc<CompiledNameServe
             };
             Some(NameServerPolicy {
                 server: name_server,
+                tag: Some(tag),
                 domains: domains
                     .into_iter()
                     .map(into_transport_domain_matcher)
@@ -734,6 +729,12 @@ fn take_name_server_policy_set(config: &mut CoreConfig) -> Arc<CompiledNameServe
         })
         .collect();
     Arc::new(CompiledNameServerPolicies::new(name_servers))
+}
+
+fn ensure_effective_dns_tag(config: &mut CoreConfig) {
+    if config.dns.tag.is_empty() {
+        config.dns.tag = format!("{GENERATED_DNS_TAG_PREFIX}{}", uuid::Uuid::new_v4());
+    }
 }
 
 fn host_only_dns_resolver_for_config(
@@ -931,8 +932,8 @@ mod tests {
     use async_trait::async_trait;
     use xray_config::{parse_xray_json, DnsServerConfig, DnsServerEndpoint};
     use xray_transport::{
-        DnsLookup, DnsQueryTransport, DnsQueryTransportKind, DnsResolver, NameServer, SocketHandle,
-        SocketProtector, TransportDialer, TransportError,
+        DnsLookup, DnsQueryMetadata, DnsQueryTransport, DnsQueryTransportKind, DnsResolver,
+        NameServer, SocketHandle, SocketProtector, TransportDialer, TransportError,
     };
 
     use super::{
@@ -1098,7 +1099,7 @@ mod tests {
 
     #[derive(Default)]
     struct RecordingDnsQueryTransport {
-        calls: Mutex<Vec<(NameServer, u16)>>,
+        calls: Mutex<Vec<(NameServer, u16, Option<String>)>>,
     }
 
     #[async_trait]
@@ -1107,13 +1108,15 @@ mod tests {
             &self,
             server: &NameServer,
             _transport: DnsQueryTransportKind,
+            metadata: DnsQueryMetadata<'_>,
             query: &[u8],
         ) -> io::Result<Vec<u8>> {
             let record_type = u16::from_be_bytes([query[query.len() - 4], query[query.len() - 3]]);
-            self.calls
-                .lock()
-                .unwrap()
-                .push((server.clone(), record_type));
+            self.calls.lock().unwrap().push((
+                server.clone(),
+                record_type,
+                metadata.inbound_tag.map(ToOwned::to_owned),
+            ));
             if record_type != 1 {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
@@ -1142,11 +1145,13 @@ mod tests {
     async fn configured_dns_wires_object_policy_into_managed_resolver() {
         let raw = r#"{
             "dns": {
+              "tag": "dns-global",
               "queryStrategy": "UseIP",
               "disableFallbackIfMatch": true,
               "servers": [
                 {
                   "address": "192.0.2.1",
+                  "tag": "dns-policy",
                   "domains": ["domain:internal.test"],
                   "queryStrategy": "UseIPv4"
                 },
@@ -1176,17 +1181,22 @@ mod tests {
 
         let selected = NameServer::Socket(SocketAddr::from(([192, 0, 2, 1], 53)));
         assert_eq!(resolved, SocketAddr::from(([192, 0, 2, 75], 443)));
-        assert_eq!(*transport.calls.lock().unwrap(), [(selected, 1)]);
+        assert_eq!(
+            *transport.calls.lock().unwrap(),
+            [(selected, 1, Some("dns-policy".to_owned()))]
+        );
     }
 
     #[tokio::test]
     async fn configured_dns_expected_ip_rejection_advances_to_next_server() {
         let raw = r#"{
             "dns": {
+              "tag": "dns-global",
               "queryStrategy": "UseIPv4",
               "servers": [
                 {
                   "address": "192.0.2.1",
+                  "tag": "dns-first",
                   "domains": ["full:filtered.test"],
                   "expectedIPs": ["198.51.100.0/24"]
                 },
@@ -1218,10 +1228,12 @@ mod tests {
                 (
                     NameServer::Socket(SocketAddr::from(([192, 0, 2, 1], 53))),
                     1,
+                    Some("dns-first".to_owned()),
                 ),
                 (
                     NameServer::Socket(SocketAddr::from(([192, 0, 2, 2], 53))),
                     1,
+                    Some("dns-global".to_owned()),
                 ),
             ]
         );
@@ -1285,6 +1297,35 @@ mod tests {
             server.endpoint,
             DnsServerEndpoint::Ip(SocketAddr::from(([192, 0, 2, 53], 53)))
         );
+    }
+
+    #[test]
+    fn missing_dns_tag_is_generated_once_and_compiled_into_clients() {
+        let raw = r#"{
+            "dns": { "servers": ["192.0.2.53"] },
+            "inbounds": [{
+              "tag": "tun-in",
+              "protocol": "tun"
+            }],
+            "outbounds": [{ "tag": "direct", "protocol": "freedom" }]
+        }"#;
+        let parsed = parse_xray_json(raw).expect("DNS server should parse");
+        let mut config = parsed.config;
+
+        let policies = take_name_server_policy_set(&mut config);
+        let generated = config.dns.tag.clone();
+        let uuid = generated
+            .strip_prefix(super::GENERATED_DNS_TAG_PREFIX)
+            .and_then(|value| uuid::Uuid::parse_str(value).ok())
+            .expect("generated DNS tag should end in a UUID");
+
+        assert_eq!(uuid.get_version(), Some(uuid::Version::Random));
+        assert_ne!(generated, "tun-in");
+        assert_eq!(policies.tag(0), Some(generated.as_str()));
+
+        let second = take_name_server_policy_set(&mut config);
+        assert_eq!(config.dns.tag, generated);
+        assert_eq!(second.tag(0), Some(generated.as_str()));
     }
 
     #[tokio::test]

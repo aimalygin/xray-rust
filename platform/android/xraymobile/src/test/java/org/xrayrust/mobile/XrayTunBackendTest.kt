@@ -73,6 +73,7 @@ class XrayTunBackendTest {
                     "expectedIPs" to listOf("geoip:private", "!192.0.2.0/24"),
                     "expectIPs" to "geoip:private,geoip:cn",
                     "unexpectedIPs" to null,
+                    "tag" to "dns-route",
                     "timeoutMs" to 1_750L,
                     "skipFallback" to true,
                     "queryStrategy" to "UseIPv4",
@@ -123,6 +124,9 @@ class XrayTunBackendTest {
             mapOf("address" to "resolver.example", "expectIPs" to listOf(null)),
             mapOf("address" to "resolver.example", "unexpectedIPs" to mapOf("ip" to "192.0.2.1")),
             mapOf("address" to "resolver.example", "unexpectedIPs" to listOf("192.0.2.0/24", false)),
+            mapOf("address" to "resolver.example", "tag" to 42),
+            mapOf("address" to "resolver.example", "tag" to true),
+            mapOf("address" to "resolver.example", "tag" to listOf("dns-route")),
             mapOf("address" to "resolver.example", "timeoutMs" to -1),
             mapOf("address" to "resolver.example", "timeoutMs" to 1.5),
             mapOf("address" to "resolver.example", "timeoutMs" to "1000"),
@@ -182,6 +186,23 @@ class XrayTunBackendTest {
                 )
             }
             assertTrue(error.message?.contains("timeoutMs") == true)
+        }
+    }
+
+    @Test
+    fun dnsServerTagAcceptsXrayStringEmptyAndNullValues() {
+        for (tag in listOf<Any?>(null, JSONObject.NULL, "", "dns-route", " dns route ")) {
+            assertEquals(
+                "resolver.example",
+                dnsServerBootstrapDomain(mapOf("address" to "resolver.example", "tag" to tag)),
+            )
+        }
+
+        for (tag in listOf<Any>(42, true, listOf("dns-route"))) {
+            val error = assertThrows(IllegalArgumentException::class.java) {
+                dnsServerBootstrapDomain(mapOf("address" to "resolver.example", "tag" to tag))
+            }
+            assertTrue(error.message?.contains("tag") == true)
         }
     }
 

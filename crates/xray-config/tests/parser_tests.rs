@@ -1131,6 +1131,7 @@ fn parses_dns_servers_and_hosts() {
 fn parses_xray_dns_server_objects_and_fallback_policy() {
     let raw = r#"{
         "dns": {
+          "tag": "dns-global",
           "queryStrategy": "UseIP",
           "disableFallback": true,
           "disableFallbackIfMatch": true,
@@ -1144,6 +1145,7 @@ fn parses_xray_dns_server_objects_and_fallback_policy() {
                 "dotless:localhost",
                 "dotless:"
               ],
+              "tag": "dns-first",
               "timeoutMs": 1750,
               "skipFallback": true,
               "queryStrategy": "UseIPv4",
@@ -1151,6 +1153,7 @@ fn parses_xray_dns_server_objects_and_fallback_policy() {
             },
             {
               "address": "dns.example",
+              "tag": null,
               "domains": "keyword:corp,full:exact.example"
             }
           ]
@@ -1164,6 +1167,7 @@ fn parses_xray_dns_server_objects_and_fallback_policy() {
     let parsed = parse_xray_json(raw).expect("object DNS servers should parse");
     assert!(parsed.config.dns.disable_fallback);
     assert!(parsed.config.dns.disable_fallback_if_match);
+    assert_eq!(parsed.config.dns.tag, "dns-global");
 
     let DnsServerConfig::Policy(first) = &parsed.config.dns.servers[0] else {
         panic!("expected policy DNS server");
@@ -1180,6 +1184,11 @@ fn parses_xray_dns_server_objects_and_fallback_policy() {
     assert!(first.domains[3].matches("printer"));
     assert!(!first.domains[3].matches("printer.lan"));
     assert!(first.skip_fallback);
+    assert_eq!(first.tag, "dns-first");
+    assert_eq!(
+        parsed.config.dns.servers[0].effective_tag(&parsed.config.dns.tag),
+        "dns-first"
+    );
     assert_eq!(first.timeout_ms, 1_750);
     assert_eq!(parsed.config.dns.servers[0].timeout_ms(), 1_750);
     assert_eq!(first.query_strategy, DnsQueryStrategy::UseIpv4);
@@ -1198,6 +1207,7 @@ fn parses_xray_dns_server_objects_and_fallback_policy() {
             domains: second.domains.clone(),
             expected_ips: DnsIpFilter::default(),
             unexpected_ips: DnsIpFilter::default(),
+            tag: String::new(),
             timeout_ms: 0,
             skip_fallback: false,
             query_strategy: DnsQueryStrategy::UseIp,
@@ -1206,7 +1216,69 @@ fn parses_xray_dns_server_objects_and_fallback_policy() {
     );
     assert!(second.domains[0].matches("my-corp-zone.example"));
     assert!(second.domains[1].matches("exact.example"));
+    assert_eq!(
+        parsed.config.dns.servers[1].effective_tag(&parsed.config.dns.tag),
+        "dns-global"
+    );
     assert_eq!(parsed.config.dns.servers[1].timeout_ms(), 4_000);
+}
+
+#[test]
+fn applies_xray_dns_tag_inheritance_without_generating_runtime_tags() {
+    for (global_tag, expected_global) in [
+        (None, ""),
+        (Some("null"), ""),
+        (Some(r#""dns-global""#), "dns-global"),
+    ] {
+        let global_field = global_tag.map_or(String::new(), |value| format!(r#", "tag": {value}"#));
+        let raw = format!(
+            r#"{{
+              "dns": {{
+                "servers": [
+                  "192.0.2.1",
+                  {{ "address": "192.0.2.2" }},
+                  {{ "address": "192.0.2.3", "tag": null }},
+                  {{ "address": "192.0.2.4", "tag": "" }},
+                  {{ "address": "192.0.2.5", "tag": "dns-override" }}
+                ]{global_field}
+              }},
+              "inbounds": [],
+              "outbounds": [{{ "protocol": "freedom", "tag": "direct" }}]
+            }}"#
+        );
+        let parsed = parse_xray_json(&raw).expect("Xray DNS tags should parse");
+
+        assert_eq!(parsed.config.dns.tag, expected_global);
+        for server in &parsed.config.dns.servers[..4] {
+            assert_eq!(
+                server.effective_tag(&parsed.config.dns.tag),
+                expected_global
+            );
+        }
+        assert_eq!(
+            parsed.config.dns.servers[4].effective_tag(&parsed.config.dns.tag),
+            "dns-override"
+        );
+    }
+}
+
+#[test]
+fn rejects_non_string_xray_dns_tags_at_the_exact_path() {
+    for invalid in ["false", "42", "[]", "{}"] {
+        let raw = format!(
+            r#"{{
+              "dns": {{ "tag": {invalid} }},
+              "inbounds": [],
+              "outbounds": [{{ "protocol": "freedom", "tag": "direct" }}]
+            }}"#
+        );
+        assert_parse_error_path(&raw, "$.dns.tag");
+
+        let raw = raw_with_dns_servers(&format!(
+            r#"{{ "address": "192.0.2.53", "tag": {invalid} }}"#
+        ));
+        assert_parse_error_path(&raw, "$.dns.servers[0].tag");
+    }
 }
 
 #[test]

@@ -290,6 +290,7 @@ impl Parser<'_> {
                 "fakeIp",
                 "servers",
                 "hosts",
+                "tag",
                 "queryStrategy",
                 "disableFallback",
                 "disableFallbackIfMatch",
@@ -300,6 +301,10 @@ impl Parser<'_> {
             fake_ip: self.parse_dns_fake_ip(dns),
             servers: self.parse_dns_servers(dns, query_strategy),
             hosts: self.parse_dns_hosts(dns),
+            tag: self
+                .nullable_string_at(dns, "tag", "$.dns.tag".to_owned())
+                .unwrap_or_default()
+                .to_owned(),
             query_strategy,
             disable_fallback: self
                 .optional_bool_at(dns, "disableFallback", "$.dns.disableFallback".to_owned())
@@ -415,6 +420,7 @@ impl Parser<'_> {
                 "expectedIPs",
                 "expectIPs",
                 "unexpectedIPs",
+                "tag",
                 "timeoutMs",
                 "skipFallback",
                 "queryStrategy",
@@ -469,6 +475,10 @@ impl Parser<'_> {
             domains,
             expected_ips,
             unexpected_ips,
+            tag: self
+                .nullable_string_at(server, "tag", format!("{path}.tag"))
+                .unwrap_or_default()
+                .to_owned(),
             timeout_ms,
             skip_fallback: self
                 .optional_bool_at(server, "skipFallback", format!("{path}.skipFallback"))
@@ -2199,6 +2209,22 @@ impl Parser<'_> {
             Some(Value::String(value)) => Some(value),
             Some(_) => {
                 self.error(path, format!("field `{key}` must be a string"));
+                None
+            }
+        }
+    }
+
+    fn nullable_string_at<'a>(
+        &mut self,
+        value: &'a Value,
+        key: &str,
+        path: String,
+    ) -> Option<&'a str> {
+        match value.get(key) {
+            None | Some(Value::Null) => Some(""),
+            Some(Value::String(value)) => Some(value),
+            Some(_) => {
+                self.error(path, format!("field `{key}` must be a string or null"));
                 None
             }
         }

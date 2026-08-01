@@ -176,12 +176,12 @@ platform route-capability provider; it is not silently treated as `UseIP`.
 string shorthand accepts IP addresses, socket addresses, or domain names with
 an optional nonzero port. The Xray object subset requires `address`, supports
 `port` (`0` or omission means `53`), `domains`, `skipFallback`, per-server
-`queryStrategy`, `finalQuery`, and `timeoutMs`. `domains` may be an array or one
+`queryStrategy`, `finalQuery`, `tag`, and `timeoutMs`. `domains` may be an array or one
 comma-separated string and supports bare keyword, `keyword:`, `domain:`,
 `full:`, `regexp:`, `dotless:`, `geosite:`, `ext:`, and `ext-domain:` rules.
 Top-level `disableFallback` and `disableFallbackIfMatch` are also supported.
 Special `localhost`/`fakedns` clients, URL transports, `clientIp`,
-tags, cache/stale controls, and parallel queries are rejected until their
+cache/stale controls, and parallel queries are rejected until their
 runtime semantics exist; they are not silently approximated as classic UDP.
 
 Object servers support Xray's `expectedIPs`, legacy `expectIPs` alias, and
@@ -201,6 +201,16 @@ If these rules otherwise produce an empty plan, the first configured entry is
 still tried. Duplicate endpoints in separate policy objects remain separate
 managed clients. A per-server family policy intersects the global policy and
 cannot widen it.
+
+Top-level `dns.tag` is the default synthetic inbound tag for configured DNS
+clients. A nonempty object-server `tag` overrides it; an omitted, `null`, or
+empty object value inherits the global value. If the global value is omitted,
+`null`, or empty, the core creates one `xray.system.<uuid>` value for that core,
+matching Xray's isolation from application inbounds. Whitespace in a nonempty
+tag is preserved. This is routing input, not an outbound tag: rules may map
+`inboundTag: ["dns-route"]` to an outbound, and the DNS exchange does not
+inherit the SOCKS, HTTP, TUN, or startup-probe inbound tag that triggered the
+lookup. Ordered failover may therefore change both server and routing tag.
 
 Each candidate filters its merged A/AAAA answer before it can win. The exact
 Xray order is hard expected, hard unexpected, soft expected, then soft
@@ -286,7 +296,8 @@ can use `198.18.0.1:53` as a local UDP/TCP DNS proxy. The proxy keeps
 server order, removes duplicates, and sends each upstream attempt through the
 normal outbound router, so Freedom sockets retain platform socket protection
 and VLESS routes do not gain a hidden direct-DNS bypass. DNS sessions route on
-their original IP/domain metadata. With `IPIfNonMatch`, domain rules run first;
+their original IP/domain metadata and the selected server's effective DNS tag.
+With `IPIfNonMatch`, domain rules run first;
 only an unmatched domain upstream uses the separate bootstrap resolver for the
 IP-rule pass, so destination DNS cannot recurse into itself. UDP requests have
 bounded per-attempt and total timeouts; unrelated replies from the selected
@@ -300,7 +311,9 @@ the inbound `connIdle` policy and five seconds.
 A raw-anchor query keeps the client's original question type and does not apply
 global/per-server `queryStrategy`, `domains`, IP response filters, `timeoutMs`,
 or fallback policy. Object entries contribute only their endpoint to the raw
-declaration-order/deduplicated proxy plan. This is the byte-transparent
+wire exchange, but their effective DNS tag still drives outbound routing.
+The declaration-order plan deduplicates by endpoint plus effective tag, so two
+clients aimed at the same endpoint with different tags remain distinct. This is the byte-transparent
 equivalent of Xray DNS outbound
 `Direct`. Xray DNS outbound `Hijack` semantics (including its A/AAAA family
 gate, DNS hosts/cache, and per-server policy) remain a separate unsupported

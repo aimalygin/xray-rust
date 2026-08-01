@@ -50,15 +50,24 @@ impl TunDnsMode {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(super) enum DnsProxyUpstream {
-    Ip(SocketAddr),
-    Domain { domain: String, port: u16 },
+    Ip {
+        addr: SocketAddr,
+        inbound_tag: String,
+    },
+    Domain {
+        domain: String,
+        port: u16,
+        inbound_tag: String,
+    },
 }
 
 impl DnsProxyUpstream {
     pub(super) fn target(&self, network: RoutingNetwork) -> Target {
         match self {
-            Self::Ip(addr) => Target::new(RoutingTargetAddr::Ip(addr.ip()), addr.port(), network),
-            Self::Domain { domain, port } => {
+            Self::Ip { addr, .. } => {
+                Target::new(RoutingTargetAddr::Ip(addr.ip()), addr.port(), network)
+            }
+            Self::Domain { domain, port, .. } => {
                 Target::new(RoutingTargetAddr::Domain(domain.clone()), *port, network)
             }
         }
@@ -66,8 +75,14 @@ impl DnsProxyUpstream {
 
     pub(super) fn socket_addr(&self) -> Option<SocketAddr> {
         match self {
-            Self::Ip(addr) => Some(*addr),
+            Self::Ip { addr, .. } => Some(*addr),
             Self::Domain { .. } => None,
+        }
+    }
+
+    pub(super) fn inbound_tag(&self) -> &str {
+        match self {
+            Self::Ip { inbound_tag, .. } | Self::Domain { inbound_tag, .. } => inbound_tag,
         }
     }
 }
@@ -79,27 +94,34 @@ pub(super) struct DnsProxyPlan {
 
 impl DnsProxyPlan {
     fn from_config(config: &CoreConfig) -> Option<Self> {
-        Self::from_servers(&config.dns.servers)
+        Self::from_servers(&config.dns.servers, &config.dns.tag)
     }
 
-    fn from_servers(servers: &[DnsServerConfig]) -> Option<Self> {
+    fn from_servers(servers: &[DnsServerConfig], global_tag: &str) -> Option<Self> {
         let mut seen = HashSet::new();
         let upstreams = servers
             .iter()
-            .filter_map(|server| match server.endpoint() {
-                xray_config::DnsServerEndpoint::Ip(addr)
-                    if addr.port() != 0 && !is_tun_dns_socket(addr) =>
-                {
-                    let upstream = DnsProxyUpstream::Ip(addr);
-                    seen.insert(upstream.clone()).then_some(upstream)
+            .filter_map(|server| {
+                let inbound_tag = server.effective_tag(global_tag).to_owned();
+                match server.endpoint() {
+                    xray_config::DnsServerEndpoint::Ip(addr)
+                        if addr.port() != 0 && !is_tun_dns_socket(addr) =>
+                    {
+                        let upstream = DnsProxyUpstream::Ip { addr, inbound_tag };
+                        seen.insert(upstream.clone()).then_some(upstream)
+                    }
+                    xray_config::DnsServerEndpoint::Domain { domain, port } if port != 0 => {
+                        let domain = crate::dns::normalize_dns_name(&domain)?;
+                        let upstream = DnsProxyUpstream::Domain {
+                            domain,
+                            port,
+                            inbound_tag,
+                        };
+                        seen.insert(upstream.clone()).then_some(upstream)
+                    }
+                    xray_config::DnsServerEndpoint::Ip(_)
+                    | xray_config::DnsServerEndpoint::Domain { .. } => None,
                 }
-                xray_config::DnsServerEndpoint::Domain { domain, port } if port != 0 => {
-                    let domain = crate::dns::normalize_dns_name(&domain)?;
-                    let upstream = DnsProxyUpstream::Domain { domain, port };
-                    seen.insert(upstream.clone()).then_some(upstream)
-                }
-                xray_config::DnsServerEndpoint::Ip(_)
-                | xray_config::DnsServerEndpoint::Domain { .. } => None,
             })
             .take(MAX_DNS_PROXY_UPSTREAMS)
             .collect::<Vec<_>>();
@@ -418,7 +440,7 @@ async fn proxy_udp_payload(
             context
                 .outbound_router
                 .select_udp_outbound_for_session_with_resolver(
-                    context.inbound_tag.as_deref(),
+                    Some(upstream.inbound_tag()),
                     &target,
                     context.bootstrap_dns_resolver(),
                 ),
@@ -468,7 +490,13 @@ async fn proxy_udp_payload(
             DnsUpstreamResponse::Payload(response) => response,
             DnsUpstreamResponse::Oversized { prefix, .. } => {
                 if dns_response_matches_query(&packet.payload, &prefix) {
-                    log_dns_udp_route(context, packet, &target, outbound_label);
+                    log_dns_udp_route(
+                        context,
+                        packet,
+                        &target,
+                        upstream.inbound_tag(),
+                        outbound_label,
+                    );
                     return dns_error_response(&packet.payload, DNS_RCODE_NOERROR, true).ok_or(());
                 }
                 record_dns_udp_failure(context, DnsUdpFailurePhase::Read);
@@ -479,7 +507,13 @@ async fn proxy_udp_payload(
             record_dns_udp_failure(context, DnsUdpFailurePhase::Read);
             continue;
         }
-        log_dns_udp_route(context, packet, &target, outbound_label);
+        log_dns_udp_route(
+            context,
+            packet,
+            &target,
+            upstream.inbound_tag(),
+            outbound_label,
+        );
         return Ok(response);
     }
     Err(())
@@ -489,6 +523,7 @@ fn log_dns_udp_route(
     context: &TunRuntimeContext,
     packet: &UdpTunPacket,
     upstream: &Target,
+    dns_inbound_tag: &str,
     outbound_label: &'static str,
 ) {
     if !context.runtime_logger.is_enabled() {
@@ -501,7 +536,7 @@ fn log_dns_udp_route(
     crate::debug_log::log_route_decision(
         &context.runtime_logger,
         crate::debug_log::RouteDecisionLog {
-            inbound_tag: context.inbound_tag.as_deref(),
+            inbound_tag: Some(dns_inbound_tag),
             network: RoutingNetwork::Udp,
             original_target: &original,
             sniffed_protocol: None,
@@ -581,8 +616,8 @@ pub(super) async fn resolve_freedom_dns_upstreams(
     context: &TunRuntimeContext,
 ) -> Result<Vec<SocketAddr>, crate::CoreError> {
     let resolved = match upstream {
-        DnsProxyUpstream::Ip(addr) => vec![*addr],
-        DnsProxyUpstream::Domain { domain, port } => {
+        DnsProxyUpstream::Ip { addr, .. } => vec![*addr],
+        DnsProxyUpstream::Domain { domain, port, .. } => {
             let bootstrap_domain =
                 match crate::dns::static_dns_host_target(context.config.as_ref(), domain) {
                     Some(xray_config::DnsHostTarget::Ip(ip)) => {
@@ -1083,39 +1118,43 @@ mod tests {
     fn proxy_plan_keeps_ordered_unique_servers_and_filters_unsafe_entries() {
         let first = SocketAddr::from((Ipv4Addr::new(1, 1, 1, 1), 53));
         let second = SocketAddr::from((Ipv6Addr::LOCALHOST, 5_353));
-        let plan = DnsProxyPlan::from_servers(&[
-            DnsServerConfig::Domain {
-                domain: "resolver.example.".to_owned(),
-                port: 53,
-            },
-            DnsServerConfig::Domain {
-                domain: "Resolver.Example".to_owned(),
-                port: 53,
-            },
-            DnsServerConfig::Policy(xray_config::DnsNameServerConfig {
-                endpoint: xray_config::DnsServerEndpoint::Domain {
-                    domain: "policy.example.".to_owned(),
-                    port: 5_353,
+        let plan = DnsProxyPlan::from_servers(
+            &[
+                DnsServerConfig::Domain {
+                    domain: "resolver.example.".to_owned(),
+                    port: 53,
                 },
-                domains: vec![xray_config::DomainMatcher::Suffix(
-                    "internal.example".to_owned(),
-                )],
-                expected_ips: xray_config::DnsIpFilter::default(),
-                unexpected_ips: xray_config::DnsIpFilter::default(),
-                timeout_ms: 0,
-                skip_fallback: true,
-                query_strategy: xray_config::DnsQueryStrategy::UseIpv6,
-                final_query: true,
-            }),
-            DnsServerConfig::Ip(first),
-            DnsServerConfig::Ip(first),
-            DnsServerConfig::Ip(SocketAddr::from((Ipv4Addr::new(9, 9, 9, 9), 0))),
-            DnsServerConfig::Ip(SocketAddr::from((TUN_DNS_ANCHOR, DNS_PORT))),
-            DnsServerConfig::Ip(SocketAddr::from((TUN_CLIENT_IPV4, DNS_PORT))),
-            DnsServerConfig::Ip("[::ffff:198.18.0.1]:53".parse().unwrap()),
-            DnsServerConfig::Ip("[::ffff:198.18.0.2]:53".parse().unwrap()),
-            DnsServerConfig::Ip(second),
-        ])
+                DnsServerConfig::Domain {
+                    domain: "Resolver.Example".to_owned(),
+                    port: 53,
+                },
+                DnsServerConfig::Policy(xray_config::DnsNameServerConfig {
+                    endpoint: xray_config::DnsServerEndpoint::Domain {
+                        domain: "policy.example.".to_owned(),
+                        port: 5_353,
+                    },
+                    domains: vec![xray_config::DomainMatcher::Suffix(
+                        "internal.example".to_owned(),
+                    )],
+                    expected_ips: xray_config::DnsIpFilter::default(),
+                    unexpected_ips: xray_config::DnsIpFilter::default(),
+                    tag: "policy-dns".to_owned(),
+                    timeout_ms: 0,
+                    skip_fallback: true,
+                    query_strategy: xray_config::DnsQueryStrategy::UseIpv6,
+                    final_query: true,
+                }),
+                DnsServerConfig::Ip(first),
+                DnsServerConfig::Ip(first),
+                DnsServerConfig::Ip(SocketAddr::from((Ipv4Addr::new(9, 9, 9, 9), 0))),
+                DnsServerConfig::Ip(SocketAddr::from((TUN_DNS_ANCHOR, DNS_PORT))),
+                DnsServerConfig::Ip(SocketAddr::from((TUN_CLIENT_IPV4, DNS_PORT))),
+                DnsServerConfig::Ip("[::ffff:198.18.0.1]:53".parse().unwrap()),
+                DnsServerConfig::Ip("[::ffff:198.18.0.2]:53".parse().unwrap()),
+                DnsServerConfig::Ip(second),
+            ],
+            "global-dns",
+        )
         .unwrap();
 
         assert_eq!(
@@ -1124,13 +1163,21 @@ mod tests {
                 DnsProxyUpstream::Domain {
                     domain: "resolver.example".to_owned(),
                     port: 53,
+                    inbound_tag: "global-dns".to_owned(),
                 },
                 DnsProxyUpstream::Domain {
                     domain: "policy.example".to_owned(),
                     port: 5_353,
+                    inbound_tag: "policy-dns".to_owned(),
                 },
-                DnsProxyUpstream::Ip(first),
-                DnsProxyUpstream::Ip(second),
+                DnsProxyUpstream::Ip {
+                    addr: first,
+                    inbound_tag: "global-dns".to_owned(),
+                },
+                DnsProxyUpstream::Ip {
+                    addr: second,
+                    inbound_tag: "global-dns".to_owned(),
+                },
             ]
         );
     }
@@ -1139,6 +1186,7 @@ mod tests {
     fn compiled_dns_ip_filters_remain_irrelevant_to_the_raw_proxy_plan() {
         let raw = r#"{
           "dns": {
+            "tag": "dns-route",
             "servers": [{
               "address": "policy.example",
               "port": 5353,
@@ -1153,23 +1201,60 @@ mod tests {
             .config;
 
         let _compiled = crate::take_name_server_policy_set(&mut config);
-        let plan = DnsProxyPlan::from_servers(&config.dns.servers).unwrap();
+        let plan = DnsProxyPlan::from_config(&config).unwrap();
 
         assert_eq!(
             plan.upstreams(),
             &[DnsProxyUpstream::Domain {
                 domain: "policy.example".to_owned(),
                 port: 5353,
+                inbound_tag: "dns-route".to_owned(),
             }]
         );
     }
 
     #[test]
+    fn proxy_plan_keeps_same_endpoint_clients_with_different_tags() {
+        let raw = r#"{
+          "dns": {
+            "tag": "dns-global",
+            "servers": [
+              "192.0.2.53",
+              { "address": "192.0.2.53", "tag": "dns-alternate" },
+              { "address": "192.0.2.53", "tag": "dns-alternate" }
+            ]
+          },
+          "outbounds": [{ "protocol": "freedom", "tag": "direct" }]
+        }"#;
+        let config = xray_config::parse_xray_json(raw)
+            .expect("tagged DNS clients should parse")
+            .config;
+        let plan = DnsProxyPlan::from_config(&config).unwrap();
+
+        assert_eq!(
+            plan.upstreams(),
+            &[
+                DnsProxyUpstream::Ip {
+                    addr: SocketAddr::from(([192, 0, 2, 53], 53)),
+                    inbound_tag: "dns-global".to_owned(),
+                },
+                DnsProxyUpstream::Ip {
+                    addr: SocketAddr::from(([192, 0, 2, 53], 53)),
+                    inbound_tag: "dns-alternate".to_owned(),
+                },
+            ]
+        );
+    }
+
+    #[test]
     fn proxy_plan_requires_at_least_one_usable_upstream() {
-        let plan = DnsProxyPlan::from_servers(&[DnsServerConfig::Ip(SocketAddr::from((
-            TUN_DNS_ANCHOR,
-            DNS_PORT,
-        )))]);
+        let plan = DnsProxyPlan::from_servers(
+            &[DnsServerConfig::Ip(SocketAddr::from((
+                TUN_DNS_ANCHOR,
+                DNS_PORT,
+            )))],
+            "dns-route",
+        );
 
         assert!(plan.is_none());
     }
@@ -1177,7 +1262,9 @@ mod tests {
     #[test]
     fn tcp_anchor_uses_the_configured_dns_mode() {
         let upstream = SocketAddr::from((Ipv4Addr::new(1, 1, 1, 1), 53));
-        let plan = Arc::new(DnsProxyPlan::from_servers(&[DnsServerConfig::Ip(upstream)]).unwrap());
+        let plan = Arc::new(
+            DnsProxyPlan::from_servers(&[DnsServerConfig::Ip(upstream)], "dns-route").unwrap(),
+        );
         let anchor = IpEndpoint::new(IpAddress::Ipv4(TUN_DNS_ANCHOR), DNS_PORT);
         let ordinary = IpEndpoint::new(IpAddress::Ipv4(Ipv4Addr::new(203, 0, 113, 1)), DNS_PORT);
 

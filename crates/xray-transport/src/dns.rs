@@ -1055,6 +1055,22 @@ pub enum DnsQueryTransportKind {
     Tcp,
 }
 
+/// Routing metadata attached to one encoded DNS exchange.
+///
+/// The inbound tag identifies the configured DNS client to the routing layer;
+/// it is independent from the inbound that triggered the destination lookup.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct DnsQueryMetadata<'a> {
+    pub inbound_tag: Option<&'a str>,
+}
+
+impl<'a> DnsQueryMetadata<'a> {
+    pub const fn new(inbound_tag: Option<&'a str>) -> Self {
+        Self { inbound_tag }
+    }
+}
+
 /// Exchanges already encoded DNS messages with a configured name server.
 ///
 /// `ConfiguredDnsResolver` remains responsible for query construction,
@@ -1069,6 +1085,7 @@ pub trait DnsQueryTransport: Send + Sync {
         &self,
         server: &NameServer,
         transport: DnsQueryTransportKind,
+        metadata: DnsQueryMetadata<'_>,
         query: &[u8],
     ) -> io::Result<Vec<u8>>;
 }
@@ -1107,6 +1124,7 @@ impl DnsQueryTransport for DirectDnsQueryTransport {
         &self,
         server: &NameServer,
         transport: DnsQueryTransportKind,
+        _metadata: DnsQueryMetadata<'_>,
         query: &[u8],
     ) -> io::Result<Vec<u8>> {
         let server_addr = self.server_addr(server).await?;
@@ -1128,6 +1146,8 @@ impl DnsQueryTransport for DirectDnsQueryTransport {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NameServerPolicy {
     pub server: NameServer,
+    /// Inbound tag presented by this DNS client to the routing layer.
+    pub tag: Option<String>,
     pub domains: Vec<TransportDomainMatcher>,
     pub expected_ips: DnsIpFilter,
     pub unexpected_ips: DnsIpFilter,
@@ -1142,6 +1162,7 @@ impl NameServerPolicy {
     pub fn new(server: NameServer) -> Self {
         Self {
             server,
+            tag: None,
             domains: Vec::new(),
             expected_ips: DnsIpFilter::default(),
             unexpected_ips: DnsIpFilter::default(),
@@ -1176,6 +1197,7 @@ impl CompiledNameServerPolicies {
             .map(|policy| {
                 let NameServerPolicy {
                     server,
+                    tag,
                     domains,
                     expected_ips,
                     unexpected_ips,
@@ -1189,6 +1211,7 @@ impl CompiledNameServerPolicies {
                 pattern_bytes += domains.pattern_bytes();
                 CompiledNameServerPolicy {
                     server,
+                    tag,
                     domains,
                     expected_ips: compile_dns_ip_filter(expected_ips),
                     unexpected_ips: compile_dns_ip_filter(unexpected_ips),
@@ -1217,6 +1240,13 @@ impl CompiledNameServerPolicies {
     /// Returns the configured endpoint at a selected policy index.
     pub fn name_server(&self, index: usize) -> Option<&NameServer> {
         self.policies.get(index).map(|policy| &policy.server)
+    }
+
+    /// Returns the routing inbound tag at a selected policy index.
+    pub fn tag(&self, index: usize) -> Option<&str> {
+        self.policies
+            .get(index)
+            .and_then(|policy| policy.tag.as_deref())
     }
 
     /// Returns the configured timeout override at a selected policy index.
@@ -1288,6 +1318,7 @@ impl CompiledNameServerPolicies {
 #[derive(Debug)]
 struct CompiledNameServerPolicy {
     server: NameServer,
+    tag: Option<String>,
     domains: CompiledDomainMatcherSet,
     expected_ips: Option<CompiledDnsIpFilter>,
     unexpected_ips: Option<CompiledDnsIpFilter>,
@@ -1709,12 +1740,14 @@ impl ConfiguredDnsResolver {
                 let (ipv4, ipv6) = tokio::join!(
                     self.query_server_until(
                         &name_server.server,
+                        name_server.tag.as_deref(),
                         domain,
                         DnsRecordType::A,
                         deadline,
                     ),
                     self.query_server_until(
                         &name_server.server,
+                        name_server.tag.as_deref(),
                         domain,
                         DnsRecordType::Aaaa,
                         deadline,
@@ -1723,10 +1756,22 @@ impl ConfiguredDnsResolver {
                 merge_configured_family_results([ipv4, ipv6])
             }
             DnsQueryStrategy::UseIpv4 => merge_configured_family_results([self
-                .query_server_until(&name_server.server, domain, DnsRecordType::A, deadline)
+                .query_server_until(
+                    &name_server.server,
+                    name_server.tag.as_deref(),
+                    domain,
+                    DnsRecordType::A,
+                    deadline,
+                )
                 .await]),
             DnsQueryStrategy::UseIpv6 => merge_configured_family_results([self
-                .query_server_until(&name_server.server, domain, DnsRecordType::Aaaa, deadline)
+                .query_server_until(
+                    &name_server.server,
+                    name_server.tag.as_deref(),
+                    domain,
+                    DnsRecordType::Aaaa,
+                    deadline,
+                )
                 .await]),
         }?;
 
@@ -1749,6 +1794,7 @@ impl ConfiguredDnsResolver {
     async fn query_server_until(
         &self,
         name_server: &NameServer,
+        inbound_tag: Option<&str>,
         domain: &str,
         record_type: DnsRecordType,
         deadline: time::Instant,
@@ -1756,8 +1802,12 @@ impl ConfiguredDnsResolver {
         let query = build_dns_query(domain, record_type)?;
         let response = time::timeout_at(
             deadline,
-            self.query_transport
-                .exchange(name_server, DnsQueryTransportKind::Udp, &query),
+            self.query_transport.exchange(
+                name_server,
+                DnsQueryTransportKind::Udp,
+                DnsQueryMetadata::new(inbound_tag),
+                &query,
+            ),
         )
         .await
         .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "dns query timed out"))??;
@@ -1771,8 +1821,12 @@ impl ConfiguredDnsResolver {
             ParsedDnsResponse::Truncated => {
                 let response = time::timeout_at(
                     deadline,
-                    self.query_transport
-                        .exchange(name_server, DnsQueryTransportKind::Tcp, &query),
+                    self.query_transport.exchange(
+                        name_server,
+                        DnsQueryTransportKind::Tcp,
+                        DnsQueryMetadata::new(inbound_tag),
+                        &query,
+                    ),
                 )
                 .await
                 .map_err(|_| {
@@ -2736,9 +2790,9 @@ mod tests {
         select_name_server_indices, CachingDnsResolver, CompiledDnsIpFilter,
         CompiledNameServerPolicies, ConfiguredDnsAddresses, ConfiguredDnsAnswer,
         ConfiguredDnsResolver, DnsIpCidr, DnsIpCidrError, DnsIpFilter, DnsIpMatcher, DnsLookup,
-        DnsQueryStrategy, DnsQueryTransport, DnsQueryTransportKind, DnsRecordType, DnsResolver,
-        NameServer, NameServerPolicy, StaticHostRule, StaticHostTarget, TransportDomainMatcher,
-        DNS_CACHE_MAX_ENTRIES,
+        DnsQueryMetadata, DnsQueryStrategy, DnsQueryTransport, DnsQueryTransportKind,
+        DnsRecordType, DnsResolver, NameServer, NameServerPolicy, StaticHostRule, StaticHostTarget,
+        TransportDomainMatcher, DNS_CACHE_MAX_ENTRIES,
     };
     use crate::{SocketHandle, SocketProtector, TransportError};
 
@@ -2984,6 +3038,16 @@ mod tests {
 
         assert_eq!(compiled.timeout(0), Some(Duration::from_millis(37)));
         assert_eq!(compiled.timeout(1), None);
+    }
+
+    #[test]
+    fn compiled_name_server_policy_preserves_routing_tag() {
+        let mut policy = policy(1);
+        policy.tag = Some("dns-primary".to_owned());
+        let compiled = CompiledNameServerPolicies::new(vec![policy]);
+
+        assert_eq!(compiled.tag(0), Some("dns-primary"));
+        assert_eq!(compiled.tag(1), None);
     }
 
     #[test]
@@ -3398,6 +3462,7 @@ mod tests {
             &self,
             _server: &NameServer,
             _transport: DnsQueryTransportKind,
+            _metadata: DnsQueryMetadata<'_>,
             query: &[u8],
         ) -> io::Result<Vec<u8>> {
             let record_type = u16::from_be_bytes([query[query.len() - 4], query[query.len() - 3]]);
@@ -3434,6 +3499,7 @@ mod tests {
             &self,
             server: &NameServer,
             _transport: DnsQueryTransportKind,
+            _metadata: DnsQueryMetadata<'_>,
             query: &[u8],
         ) -> io::Result<Vec<u8>> {
             self.calls.lock().unwrap().push(server.clone());
@@ -3674,6 +3740,7 @@ mod tests {
             &self,
             _server: &NameServer,
             _transport: DnsQueryTransportKind,
+            _metadata: DnsQueryMetadata<'_>,
             query: &[u8],
         ) -> io::Result<Vec<u8>> {
             let record_type = u16::from_be_bytes([query[query.len() - 4], query[query.len() - 3]]);
@@ -4041,6 +4108,7 @@ mod tests {
             &self,
             _server: &NameServer,
             transport: DnsQueryTransportKind,
+            _metadata: DnsQueryMetadata<'_>,
             query: &[u8],
         ) -> io::Result<Vec<u8>> {
             self.calls.lock().unwrap().push(transport);
@@ -4104,6 +4172,7 @@ mod tests {
             &self,
             _server: &NameServer,
             _transport: DnsQueryTransportKind,
+            _metadata: DnsQueryMetadata<'_>,
             _query: &[u8],
         ) -> io::Result<Vec<u8>> {
             std::future::pending().await
@@ -4121,6 +4190,7 @@ mod tests {
             &self,
             _server: &NameServer,
             _transport: DnsQueryTransportKind,
+            _metadata: DnsQueryMetadata<'_>,
             query: &[u8],
         ) -> io::Result<Vec<u8>> {
             self.calls.fetch_add(1, Ordering::Relaxed);
@@ -4225,6 +4295,7 @@ mod tests {
             &self,
             server: &NameServer,
             _transport: DnsQueryTransportKind,
+            _metadata: DnsQueryMetadata<'_>,
             query: &[u8],
         ) -> io::Result<Vec<u8>> {
             self.calls.lock().unwrap().push(server.clone());
@@ -4234,6 +4305,111 @@ mod tests {
                 Ok(build_test_a_response(query, Ipv4Addr::new(192, 0, 2, 72)))
             }
         }
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct TaggedDnsCall {
+        server: NameServer,
+        transport: DnsQueryTransportKind,
+        inbound_tag: Option<String>,
+        domain: String,
+    }
+
+    struct TaggedCnameFailoverTransport {
+        first: NameServer,
+        calls: Mutex<Vec<TaggedDnsCall>>,
+    }
+
+    #[async_trait::async_trait]
+    impl DnsQueryTransport for TaggedCnameFailoverTransport {
+        async fn exchange(
+            &self,
+            server: &NameServer,
+            transport: DnsQueryTransportKind,
+            metadata: DnsQueryMetadata<'_>,
+            query: &[u8],
+        ) -> io::Result<Vec<u8>> {
+            let (domain, _, _) = super::parse_dns_question(query)?;
+            self.calls.lock().unwrap().push(TaggedDnsCall {
+                server: server.clone(),
+                transport,
+                inbound_tag: metadata.inbound_tag.map(str::to_owned),
+                domain: domain.clone(),
+            });
+
+            if server != &self.first {
+                return Ok(build_test_a_response(query, Ipv4Addr::new(192, 0, 2, 73)));
+            }
+            match (domain.as_str(), transport) {
+                ("origin.tag.test", DnsQueryTransportKind::Udp) => {
+                    Ok(build_test_cname_response(query, "alias.tag.test"))
+                }
+                ("alias.tag.test", DnsQueryTransportKind::Udp) => {
+                    Ok(build_test_truncated_response(query))
+                }
+                ("alias.tag.test", DnsQueryTransportKind::Tcp) => {
+                    Ok(build_test_empty_response(query, 2))
+                }
+                _ => Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "unexpected tagged DNS test exchange",
+                )),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn configured_dns_uses_each_policy_tag_across_cname_tcp_retry_and_failover() {
+        let first = NameServer::Socket(SocketAddr::from(([192, 0, 2, 1], 53)));
+        let second = NameServer::Socket(SocketAddr::from(([192, 0, 2, 2], 53)));
+        let mut first_policy = NameServerPolicy::new(first.clone());
+        first_policy.tag = Some("dns-primary".to_owned());
+        first_policy.query_strategy = DnsQueryStrategy::UseIpv4;
+        let mut second_policy = NameServerPolicy::new(second.clone());
+        second_policy.tag = Some("dns-fallback".to_owned());
+        second_policy.query_strategy = DnsQueryStrategy::UseIpv4;
+        let transport = Arc::new(TaggedCnameFailoverTransport {
+            first: first.clone(),
+            calls: Mutex::new(Vec::new()),
+        });
+        let resolver =
+            ConfiguredDnsResolver::new(Vec::new(), Vec::new(), Arc::new(RejectingResolver))
+                .with_name_server_policies(vec![first_policy, second_policy])
+                .with_query_strategy(DnsQueryStrategy::UseIpv4)
+                .with_query_transport(transport.clone());
+
+        let resolved = resolver.resolve("origin.tag.test", 443).await.unwrap();
+
+        assert_eq!(resolved, SocketAddr::from(([192, 0, 2, 73], 443)));
+        assert_eq!(
+            *transport.calls.lock().unwrap(),
+            [
+                TaggedDnsCall {
+                    server: first.clone(),
+                    transport: DnsQueryTransportKind::Udp,
+                    inbound_tag: Some("dns-primary".to_owned()),
+                    domain: "origin.tag.test".to_owned(),
+                },
+                TaggedDnsCall {
+                    server: first.clone(),
+                    transport: DnsQueryTransportKind::Udp,
+                    inbound_tag: Some("dns-primary".to_owned()),
+                    domain: "alias.tag.test".to_owned(),
+                },
+                TaggedDnsCall {
+                    server: first,
+                    transport: DnsQueryTransportKind::Tcp,
+                    inbound_tag: Some("dns-primary".to_owned()),
+                    domain: "alias.tag.test".to_owned(),
+                },
+                TaggedDnsCall {
+                    server: second,
+                    transport: DnsQueryTransportKind::Udp,
+                    inbound_tag: Some("dns-fallback".to_owned()),
+                    domain: "origin.tag.test".to_owned(),
+                },
+            ]
+        );
     }
 
     #[tokio::test]
@@ -4295,6 +4471,7 @@ mod tests {
             &self,
             server: &NameServer,
             _transport: DnsQueryTransportKind,
+            _metadata: DnsQueryMetadata<'_>,
             query: &[u8],
         ) -> io::Result<Vec<u8>> {
             let (_, record_type, _) = super::parse_dns_question(query)?;
@@ -4335,6 +4512,7 @@ mod tests {
             &self,
             server: &NameServer,
             _transport: DnsQueryTransportKind,
+            _metadata: DnsQueryMetadata<'_>,
             query: &[u8],
         ) -> io::Result<Vec<u8>> {
             let (domain, record_type, _) = super::parse_dns_question(query)?;
@@ -4411,6 +4589,7 @@ mod tests {
             &self,
             server: &NameServer,
             _transport: DnsQueryTransportKind,
+            _metadata: DnsQueryMetadata<'_>,
             query: &[u8],
         ) -> io::Result<Vec<u8>> {
             let (domain, record_type, _) = super::parse_dns_question(query)?;
@@ -4487,6 +4666,7 @@ mod tests {
             &self,
             _server: &NameServer,
             _transport: DnsQueryTransportKind,
+            _metadata: DnsQueryMetadata<'_>,
             query: &[u8],
         ) -> io::Result<Vec<u8>> {
             let (domain, _, _) = super::parse_dns_question(query)?;
@@ -4651,6 +4831,7 @@ mod tests {
             &self,
             server: &NameServer,
             _transport: DnsQueryTransportKind,
+            _metadata: DnsQueryMetadata<'_>,
             query: &[u8],
         ) -> io::Result<Vec<u8>> {
             let record_type = u16::from_be_bytes([query[query.len() - 4], query[query.len() - 3]]);
@@ -4677,6 +4858,7 @@ mod tests {
             &self,
             server: &NameServer,
             _transport: DnsQueryTransportKind,
+            _metadata: DnsQueryMetadata<'_>,
             query: &[u8],
         ) -> io::Result<Vec<u8>> {
             self.calls.lock().unwrap().push(server.clone());
@@ -4697,6 +4879,7 @@ mod tests {
             &self,
             _server: &NameServer,
             _transport: DnsQueryTransportKind,
+            _metadata: DnsQueryMetadata<'_>,
             query: &[u8],
         ) -> io::Result<Vec<u8>> {
             let record_type = u16::from_be_bytes([query[query.len() - 4], query[query.len() - 3]]);
@@ -4726,6 +4909,7 @@ mod tests {
             &self,
             _server: &NameServer,
             _transport: DnsQueryTransportKind,
+            _metadata: DnsQueryMetadata<'_>,
             _query: &[u8],
         ) -> io::Result<Vec<u8>> {
             let _guard = ExchangeDropGuard(Arc::clone(&self.dropped));
@@ -4741,6 +4925,7 @@ mod tests {
             &self,
             _server: &NameServer,
             _transport: DnsQueryTransportKind,
+            _metadata: DnsQueryMetadata<'_>,
             query: &[u8],
         ) -> io::Result<Vec<u8>> {
             let record_type = u16::from_be_bytes([query[query.len() - 4], query[query.len() - 3]]);
@@ -4763,6 +4948,7 @@ mod tests {
             &self,
             server: &NameServer,
             transport: DnsQueryTransportKind,
+            _metadata: DnsQueryMetadata<'_>,
             query: &[u8],
         ) -> io::Result<Vec<u8>> {
             self.calls.lock().unwrap().push((server.clone(), transport));
@@ -4791,6 +4977,7 @@ mod tests {
             &self,
             server: &NameServer,
             _transport: DnsQueryTransportKind,
+            _metadata: DnsQueryMetadata<'_>,
             query: &[u8],
         ) -> io::Result<Vec<u8>> {
             let (domain, record_type, _) = super::parse_dns_question(query)?;

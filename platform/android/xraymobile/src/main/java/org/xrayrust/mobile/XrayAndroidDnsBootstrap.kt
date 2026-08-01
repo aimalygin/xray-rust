@@ -572,6 +572,7 @@ private fun dnsServerBootstrapDomainFromObjectFields(
     validateDnsServerStringList(server, "expectedIPs")
     validateDnsServerStringList(server, "expectIPs")
     validateDnsServerStringList(server, "unexpectedIPs")
+    validateDnsServerTag(server)
     validateDnsServerTimeout(server)
     validateOptionalDnsServerBoolean(server, "skipFallback")
     validateOptionalDnsServerBoolean(server, "finalQuery")
@@ -656,6 +657,16 @@ private fun validateDnsServerTimeout(server: Map<String, Any?>) {
     }
     require(timeoutMs != null && timeoutMs in 0..MAX_DNS_SERVER_TIMEOUT_MS) {
         "DNS server `timeoutMs` must be an integer from 0 through $MAX_DNS_SERVER_TIMEOUT_MS"
+    }
+}
+
+private fun validateDnsServerTag(server: Map<String, Any?>) {
+    if ("tag" !in server) {
+        return
+    }
+    val value = server["tag"]
+    require(value == null || value === JSONObject.NULL || value is String) {
+        "DNS server `tag` must be a string or null"
     }
 }
 
@@ -944,6 +955,7 @@ private val DNS_SERVER_OBJECT_FIELDS = setOf(
     "expectedIPs",
     "expectIPs",
     "unexpectedIPs",
+    "tag",
     "timeoutMs",
     "skipFallback",
     "queryStrategy",

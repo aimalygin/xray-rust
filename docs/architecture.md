@@ -98,7 +98,7 @@ CNAME-only continuation stays on the answering name server. Policies compile
 once into the same mobile-oriented shape used by Xray's Compact matcher: exact
 names use a hash set, suffixes a reverse-label trie, and the less common
 keyword/regex rules retain linear matching. The compiled set is shared by all
-inbound-specific routed resolvers instead of cloning geosite expansions.
+routed resolver contexts instead of cloning geosite expansions.
 Per-server expected/unexpected IP rules share that lifecycle and compile into
 merged IPv4/IPv6 ranges, keeping GeoIP-sized filters off the per-answer linear
 path. Hard rejections advance the sticky server plan with the original qname;
@@ -126,7 +126,13 @@ Mobile full-tunnel adapters avoid that path after start by pinning bootstrap
 addresses and selecting `StaticOnly`; a future native async bootstrap backend
 should remove this platform limitation for long-running server embeddings.
 `xray-core-rs` supplies a routed query transport that opens each DNS exchange
-through the normal outbound router. `IPIfNonMatch` tests rules in configuration
+through the normal outbound router. Every compiled name-server policy carries
+its effective `dns.tag` as query metadata. The router sees that synthetic DNS
+inbound tag—generated once as `xray.system.<uuid>` when no tag is configured—
+instead of the application inbound that requested resolution. Per-server tags
+can therefore select different routes during ordered failover without coupling
+the shared resolver to SOCKS, HTTP, TUN, or future server listeners.
+`IPIfNonMatch` tests rules in configuration
 order against every resolved candidate. SOCKS, HTTP, TUN, startup probes, and
 future server inbounds can therefore share the same DNS semantics without
 depending on a packet adapter.
@@ -142,7 +148,9 @@ engine are consumers of the roles, while future server inbounds can reuse
 destination resolution without inheriting mobile bootstrap policy.
 The raw anchor is deliberately DNS `Direct`: object policies select managed
 destination lookups but do not rewrite or reinterpret byte-transparent client
-queries. A future DNS `Hijack` mode must be explicit rather than changing this
+queries. Its candidates still carry the same effective synthetic inbound tag
+into UDP and TCP outbound selection; endpoint deduplication includes that tag.
+A future DNS `Hijack` mode must be explicit rather than changing this
 wire contract.
 
 The generic core and C ABI retain system bootstrap as their default for

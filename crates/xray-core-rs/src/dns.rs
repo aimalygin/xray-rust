@@ -11,8 +11,8 @@ use xray_proxy::vless::{
 };
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr};
 use xray_transport::{
-    dns_response_matches_query, protect_udp_socket, ConnectorConfig, DnsQueryTransport,
-    DnsQueryTransportKind, DnsResolver, NameServer, TransportDialer,
+    dns_response_matches_query, protect_udp_socket, ConnectorConfig, DnsQueryMetadata,
+    DnsQueryTransport, DnsQueryTransportKind, DnsResolver, NameServer, TransportDialer,
 };
 
 use crate::outbound::{
@@ -40,7 +40,6 @@ pub(crate) struct RuntimeDnsResolvers {
 /// reused by future listener and server runtimes.
 pub(crate) struct RoutedDnsQueryTransport {
     outbound_router: Arc<OutboundRouter>,
-    inbound_tag: Option<String>,
     bootstrap_resolver: Arc<dyn DnsResolver>,
     transport_dialer: Arc<TransportDialer>,
     forbidden_servers: Arc<[SocketAddr]>,
@@ -49,14 +48,12 @@ pub(crate) struct RoutedDnsQueryTransport {
 impl RoutedDnsQueryTransport {
     pub(crate) fn new(
         outbound_router: Arc<OutboundRouter>,
-        inbound_tag: Option<String>,
         bootstrap_resolver: Arc<dyn DnsResolver>,
         transport_dialer: Arc<TransportDialer>,
         forbidden_servers: impl Into<Arc<[SocketAddr]>>,
     ) -> Self {
         Self {
             outbound_router,
-            inbound_tag,
             bootstrap_resolver,
             transport_dialer,
             forbidden_servers: forbidden_servers.into(),
@@ -113,12 +110,17 @@ impl RoutedDnsQueryTransport {
         Ok(server)
     }
 
-    async fn exchange_udp(&self, server: &NameServer, query: &[u8]) -> io::Result<Vec<u8>> {
+    async fn exchange_udp(
+        &self,
+        server: &NameServer,
+        metadata: DnsQueryMetadata<'_>,
+        query: &[u8],
+    ) -> io::Result<Vec<u8>> {
         let target = self.target(server, RoutingNetwork::Udp);
         let outbound = self
             .outbound_router
             .select_udp_outbound_for_session_with_resolver(
-                self.inbound_tag.as_deref(),
+                metadata.inbound_tag,
                 &target,
                 self.bootstrap_resolver.as_ref(),
             )
@@ -168,12 +170,17 @@ impl RoutedDnsQueryTransport {
         }
     }
 
-    async fn exchange_tcp(&self, server: &NameServer, query: &[u8]) -> io::Result<Vec<u8>> {
+    async fn exchange_tcp(
+        &self,
+        server: &NameServer,
+        metadata: DnsQueryMetadata<'_>,
+        query: &[u8],
+    ) -> io::Result<Vec<u8>> {
         let target = self.target(server, RoutingNetwork::Tcp);
         let selected = self
             .outbound_router
             .select_tcp_outbound_for_session_with_tag_and_resolver(
-                self.inbound_tag.as_deref(),
+                metadata.inbound_tag,
                 &target,
                 false,
                 self.bootstrap_resolver.as_ref(),
@@ -231,11 +238,12 @@ impl DnsQueryTransport for RoutedDnsQueryTransport {
         &self,
         server: &NameServer,
         transport: DnsQueryTransportKind,
+        metadata: DnsQueryMetadata<'_>,
         query: &[u8],
     ) -> io::Result<Vec<u8>> {
         match transport {
-            DnsQueryTransportKind::Udp => self.exchange_udp(server, query).await,
-            DnsQueryTransportKind::Tcp => self.exchange_tcp(server, query).await,
+            DnsQueryTransportKind::Udp => self.exchange_udp(server, metadata, query).await,
+            DnsQueryTransportKind::Tcp => self.exchange_tcp(server, metadata, query).await,
         }
     }
 }

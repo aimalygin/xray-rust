@@ -407,7 +407,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
     private static let maximumDNSServerTimeoutMs: UInt64 = 4_611_686_018_427
     private static let dnsServerObjectFields: Set<String> = [
         "address", "port", "domains", "expectedIPs", "expectIPs", "unexpectedIPs",
-        "timeoutMs", "skipFallback", "queryStrategy", "finalQuery",
+        "tag", "timeoutMs", "skipFallback", "queryStrategy", "finalQuery",
     ]
     private static let dnsServerIPPolicyFields = [
         "expectedIPs", "expectIPs", "unexpectedIPs",
@@ -1082,6 +1082,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         guard let server = rawServer as? [String: Any],
               Set(server.keys).isSubset(of: dnsServerObjectFields),
               dnsServerIPPolicyStringListsAreValid(server),
+              dnsServerTagIsValid(server),
               dnsServerTimeoutIsValid(server),
               let address = server["address"] as? String,
               !address.isEmpty,
@@ -1149,6 +1150,13 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             return true
         }
         return isJSONUInt64(rawValue, maximum: maximumDNSServerTimeoutMs)
+    }
+
+    private static func dnsServerTagIsValid(_ server: [String: Any]) -> Bool {
+        guard let rawValue = server["tag"] else {
+            return true
+        }
+        return rawValue is NSNull || rawValue is String
     }
 
     private static func dnsBootstrapPort(fromServer server: String) -> UInt16? {
