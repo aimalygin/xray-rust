@@ -19,6 +19,11 @@ internal data class PreparedAndroidVpnConfig(
     val usesLocalDnsAnchor: Boolean,
 )
 
+internal data class AndroidDnsBootstrapDomain(
+    val domain: String,
+    val port: Int,
+)
+
 internal class AndroidDnsBootstrapTimeoutException(message: String) :
     IllegalArgumentException(message)
 
@@ -126,10 +131,26 @@ internal fun prepareAndroidVpnConfigWithinDeadline(
     } else {
         null
     }
+    validateAndroidDnsServerCount(dnsServers?.length() ?: 0)
+    val globalQueryStrategy = dns?.opt("queryStrategy")
+    dnsQueryStrategyFamilies(globalQueryStrategy, "global DNS")
     val usesFakeIp = if (dns?.has("fakeIp") == true) {
-        dns.getJSONObject("fakeIp").optBoolean("enabled", false)
+        val fakeIp = dns.getJSONObject("fakeIp")
+        optionalStrictJsonBoolean(
+            rawValue = fakeIp.opt("enabled"),
+            isPresent = fakeIp.has("enabled"),
+            field = "dns.fakeIp.enabled",
+        )
     } else {
         false
+    }
+    require(
+        isIpv4FakeIpDnsQueryStrategyCompatible(
+            fakeIpEnabled = usesFakeIp,
+            rawStrategy = dns?.opt("queryStrategy"),
+        ),
+    ) {
+        "IPv4 fake-IP DNS cannot be used with an IPv6-only queryStrategy"
     }
     val usesLocalDnsAnchor = usesFakeIp || (dnsServers?.length() ?: 0) > 0
     if (usesFakeIp && (dnsServers?.length() ?: 0) == 0) {
@@ -142,11 +163,20 @@ internal fun prepareAndroidVpnConfigWithinDeadline(
         )
     }
 
-    val bootstrapDomains = linkedSetOf<String>()
-    collectVlessBootstrapDomains(root, bootstrapDomains)
+    val carrierBootstrapDomains = linkedSetOf<String>()
+    val dnsBootstrapDomains = linkedSetOf<AndroidDnsBootstrapDomain>()
+    collectVlessBootstrapDomains(root, carrierBootstrapDomains)
     if (dnsServers != null) {
         for (index in 0 until dnsServers.length()) {
-            dnsServerBootstrapDomain(dnsServers.getString(index))?.let(bootstrapDomains::add)
+            val rawServer = dnsServers.get(index)
+            dnsServerBootstrapUpstreamDomain(rawServer)?.let(dnsBootstrapDomains::add)
+            validateDnsServerQueryStrategyCompatibility(
+                globalStrategy = globalQueryStrategy,
+                serverStrategy = when (rawServer) {
+                    is JSONObject -> rawServer.opt("queryStrategy")
+                    else -> null
+                },
+            )
         }
     }
     val preparedDns = dns ?: JSONObject()
@@ -162,13 +192,24 @@ internal fun prepareAndroidVpnConfigWithinDeadline(
     val resolveSystemBootstrapAddresses: (String) -> List<String> = { domain ->
         resolveAndroidDnsBootstrapAddressesWithinDeadline(domain, resolver, deadline)
     }
-    for (domain in bootstrapDomains) {
+    for (domain in carrierBootstrapDomains) {
         modified = ensureBootstrapHostMapping(
             domain = domain,
             exactMappings = exactMappings,
             resolvedAddresses = resolvedAddresses,
             activeAliases = mutableSetOf(),
             depth = 0,
+            resolveSystemBootstrapAddresses = resolveSystemBootstrapAddresses,
+        ) || modified
+    }
+    for (upstream in dnsBootstrapDomains) {
+        modified = ensureBootstrapHostMapping(
+            domain = upstream.domain,
+            exactMappings = exactMappings,
+            resolvedAddresses = resolvedAddresses,
+            activeAliases = mutableSetOf(),
+            depth = 0,
+            dnsUpstreamPort = upstream.port,
             resolveSystemBootstrapAddresses = resolveSystemBootstrapAddresses,
         ) || modified
     }
@@ -442,46 +483,244 @@ private fun collectVlessBootstrapDomains(
     }
 }
 
-internal fun dnsServerBootstrapDomain(server: String): String? {
+internal fun dnsServerBootstrapDomain(server: Any): String? =
+    dnsServerBootstrapUpstreamDomain(server)?.domain
+
+internal fun dnsServerBootstrapUpstreamDomain(server: Any): AndroidDnsBootstrapDomain? =
+    when (server) {
+        is String -> dnsServerBootstrapDomainFromString(server)
+        is JSONObject -> dnsServerBootstrapDomainFromObject(server)
+        is Map<*, *> -> dnsServerBootstrapDomainFromObjectFields(
+            server.entries.associate { (key, value) ->
+                require(key is String) { "DNS server object fields must have string names" }
+                key to value
+            },
+        )
+        else -> throw IllegalArgumentException("DNS server must be a string or an object")
+    }
+
+private fun dnsServerBootstrapDomainFromString(server: String): AndroidDnsBootstrapDomain? {
+    require(server == server.trim()) {
+        "DNS server must not contain surrounding whitespace"
+    }
     require(server.isNotEmpty()) { "DNS server must not be empty" }
-    if (isIpLiteral(server) || isNumericDnsSocketAddress(server)) {
+    if (isIpLiteral(server)) {
+        validateDirectDnsUpstreamAddress(server, 53)
+        return null
+    }
+    parseNumericDnsSocketAddress(server)?.let { socketAddress ->
+        validateDirectDnsUpstreamAddress(socketAddress.address, socketAddress.port)
         return null
     }
 
     val separator = server.lastIndexOf(':')
-    val domain = if (separator > 0 && server.indexOf(':') == separator) {
+    val (domain, port) = if (separator > 0 && server.indexOf(':') == separator) {
         val port = server.substring(separator + 1).toIntOrNull()
         require(port != null && port in 1..65_535) { "invalid DNS server port" }
-        server.substring(0, separator)
+        server.substring(0, separator) to port
     } else {
-        server
+        server to 53
     }
-    return normalizeBootstrapDomain(domain)
+    return AndroidDnsBootstrapDomain(normalizeBootstrapDomain(domain), port)
 }
 
-private fun isNumericDnsSocketAddress(server: String): Boolean {
+private fun dnsServerBootstrapDomainFromObject(server: JSONObject): AndroidDnsBootstrapDomain? {
+    val fields = linkedMapOf<String, Any?>()
+    val keys = server.keys()
+    while (keys.hasNext()) {
+        val key = keys.next()
+        fields[key] = server.opt(key)
+    }
+    return dnsServerBootstrapDomainFromObjectFields(fields)
+}
+
+private fun dnsServerBootstrapDomainFromObjectFields(
+    server: Map<String, Any?>,
+): AndroidDnsBootstrapDomain? {
+    // Android has no standalone FFI config-validation entry point before Builder.establish().
+    // Keep this preflight limited to the object shape needed for safe bootstrap; Rust remains
+    // authoritative for matcher syntax, geodata expansion, and matcher budgets.
+    for (key in server.keys) {
+        require(key in DNS_SERVER_OBJECT_FIELDS) { "unsupported DNS server field `$key`" }
+    }
+
+    val address = server["address"]
+    require(address is String && address.isNotEmpty()) {
+        "object DNS server address must be a non-empty string"
+    }
+    require(address == address.trim()) {
+        "object DNS server address must not contain surrounding whitespace"
+    }
+    val port = if ("port" in server) {
+        val rawPort = server["port"]
+        val parsedPort = when (rawPort) {
+            is Byte -> rawPort.toLong()
+            is Short -> rawPort.toLong()
+            is Int -> rawPort.toLong()
+            is Long -> rawPort
+            else -> null
+        }
+        require(parsedPort != null && parsedPort in 0..65_535) {
+            "object DNS server port must be an integer from 0 through 65535"
+        }
+        // Match Xray: an explicit zero is valid and selects classic DNS port 53.
+        if (parsedPort == 0L) 53 else parsedPort.toInt()
+    } else {
+        53
+    }
+    validateDnsServerObjectDomains(server)
+    validateOptionalDnsServerBoolean(server, "skipFallback")
+    validateOptionalDnsServerBoolean(server, "finalQuery")
+    validateDnsServerObjectQueryStrategy(server)
+
+    if (isIpLiteral(address)) {
+        validateDirectDnsUpstreamAddress(address, port)
+        return null
+    }
+    require(
+        !address.equals("localhost", ignoreCase = true) &&
+            !address.equals("fakedns", ignoreCase = true),
+    ) {
+        "special DNS server `$address` is not supported yet"
+    }
+    require(':' !in address) {
+        "object DNS server address must not include a port or unsupported URL scheme"
+    }
+    return AndroidDnsBootstrapDomain(normalizeBootstrapDomain(address), port)
+}
+
+private fun validateDnsServerObjectDomains(server: Map<String, Any?>) {
+    if ("domains" !in server) {
+        return
+    }
+    val domains = server["domains"]
+    when (domains) {
+        is String -> require(domains.split(',').all(String::isNotEmpty)) {
+            "DNS server domain matcher cannot be empty"
+        }
+        is JSONArray -> {
+            for (index in 0 until domains.length()) {
+                val domain = domains.get(index)
+                require(domain is String && domain.isNotEmpty()) {
+                    "DNS server domain matcher must be a non-empty string"
+                }
+            }
+        }
+        is List<*> -> require(domains.all { it is String && it.isNotEmpty() }) {
+            "DNS server domain matcher must be a non-empty string"
+        }
+        else -> throw IllegalArgumentException("DNS server domains must be a string or an array")
+    }
+}
+
+private fun validateOptionalDnsServerBoolean(server: Map<String, Any?>, key: String) {
+    if (key in server) {
+        require(server[key] is Boolean) { "DNS server `$key` must be a boolean" }
+    }
+}
+
+private fun validateDnsServerObjectQueryStrategy(server: Map<String, Any?>) {
+    if ("queryStrategy" !in server) {
+        return
+    }
+    val strategy = server["queryStrategy"]
+    require(strategy is String && strategy.lowercase(Locale.ROOT) in DNS_QUERY_STRATEGIES) {
+        "unsupported DNS server queryStrategy"
+    }
+}
+
+internal fun isIpv4FakeIpDnsQueryStrategyCompatible(
+    fakeIpEnabled: Boolean,
+    rawStrategy: Any?,
+): Boolean = !fakeIpEnabled ||
+    (rawStrategy as? String)?.lowercase(Locale.ROOT) !in DNS_IPV6_ONLY_QUERY_STRATEGIES
+
+internal fun optionalStrictJsonBoolean(
+    rawValue: Any?,
+    isPresent: Boolean,
+    field: String,
+): Boolean {
+    if (!isPresent) {
+        return false
+    }
+    require(rawValue is Boolean) { "$field must be a JSON boolean" }
+    return rawValue
+}
+
+internal fun validateAndroidDnsServerCount(serverCount: Int) {
+    require(serverCount in 0..MAX_DNS_SERVERS) {
+        "DNS config contains $serverCount servers; maximum supported is $MAX_DNS_SERVERS"
+    }
+}
+
+internal fun validateDnsServerQueryStrategyCompatibility(
+    globalStrategy: Any?,
+    serverStrategy: Any?,
+) {
+    val globalFamilies = dnsQueryStrategyFamilies(globalStrategy, "global DNS")
+    val serverFamilies = dnsQueryStrategyFamilies(serverStrategy, "DNS server")
+    require(globalFamilies and serverFamilies != 0) {
+        "DNS server queryStrategy has no address family in common with global dns.queryStrategy"
+    }
+}
+
+private fun dnsQueryStrategyFamilies(rawStrategy: Any?, owner: String): Int {
+    if (rawStrategy == null) {
+        return DNS_FAMILY_IPV4 or DNS_FAMILY_IPV6
+    }
+    require(rawStrategy is String) { "$owner queryStrategy must be a string" }
+    return when (rawStrategy.lowercase(Locale.ROOT)) {
+        in DNS_USE_IP_QUERY_STRATEGIES -> DNS_FAMILY_IPV4 or DNS_FAMILY_IPV6
+        in DNS_IPV4_ONLY_QUERY_STRATEGIES -> DNS_FAMILY_IPV4
+        in DNS_IPV6_ONLY_QUERY_STRATEGIES -> DNS_FAMILY_IPV6
+        else -> throw IllegalArgumentException("unsupported $owner queryStrategy")
+    }
+}
+
+private data class NumericDnsSocketAddress(
+    val address: String,
+    val port: Int,
+)
+
+private fun parseNumericDnsSocketAddress(server: String): NumericDnsSocketAddress? {
     if (server.startsWith('[')) {
         val closingBracket = server.lastIndexOf("]:")
         if (closingBracket <= 1) {
-            return false
+            return null
         }
         val port = server.substring(closingBracket + 2).toIntOrNull()
-        return port != null &&
+        val address = server.substring(1, closingBracket)
+        return if (port != null &&
             port in 1..65_535 &&
-            isIpLiteral(
-                value = server.substring(1, closingBracket),
-                allowNumericIpv6Scope = true,
-            )
+            isIpLiteral(value = address, allowNumericIpv6Scope = true)
+        ) {
+            NumericDnsSocketAddress(address, port)
+        } else {
+            null
+        }
     }
 
     val separator = server.indexOf(':')
     if (separator <= 0 || separator != server.lastIndexOf(':')) {
-        return false
+        return null
     }
     val port = server.substring(separator + 1).toIntOrNull()
-    return port != null &&
-        port in 1..65_535 &&
-        isIpv4Literal(server.substring(0, separator))
+    val address = server.substring(0, separator)
+    return if (port != null && port in 1..65_535 && isIpv4Literal(address)) {
+        NumericDnsSocketAddress(address, port)
+    } else {
+        null
+    }
+}
+
+private fun validateDirectDnsUpstreamAddress(address: String, port: Int) {
+    if (port != 53) {
+        return
+    }
+    val canonicalAddress = canonicalIpAddress(address)
+    require(canonicalAddress !in XRAY_TUN_RESERVED_IPV4_ADDRESSES) {
+        "DNS server cannot point at a tunnel-local DNS address"
+    }
 }
 
 internal fun ensureBootstrapHostMapping(
@@ -490,6 +729,7 @@ internal fun ensureBootstrapHostMapping(
     resolvedAddresses: MutableMap<String, List<String>>,
     activeAliases: MutableSet<String>,
     depth: Int,
+    dnsUpstreamPort: Int? = null,
     resolveSystemBootstrapAddresses: (String) -> List<String>,
 ): Boolean {
     require(depth < MAX_BOOTSTRAP_ALIAS_DEPTH) {
@@ -501,13 +741,17 @@ internal fun ensureBootstrapHostMapping(
         val existingKey = "$EXACT_DNS_HOST_PREFIX$identity"
         exactMappings[existingKey]?.let { target ->
             return when (target) {
-                is AndroidDnsHostTarget.Addresses -> false
+                is AndroidDnsHostTarget.Addresses -> {
+                    validateDnsUpstreamBootstrapAddresses(target.values, dnsUpstreamPort)
+                    false
+                }
                 is AndroidDnsHostTarget.Alias -> ensureBootstrapHostMapping(
                     domain = target.domain,
                     exactMappings = exactMappings,
                     resolvedAddresses = resolvedAddresses,
                     activeAliases = activeAliases,
                     depth = depth + 1,
+                    dnsUpstreamPort = dnsUpstreamPort,
                     resolveSystemBootstrapAddresses = resolveSystemBootstrapAddresses,
                 )
             }
@@ -519,10 +763,20 @@ internal fun ensureBootstrapHostMapping(
         require(addresses.isNotEmpty()) {
             "bootstrap domain `$domain` resolved without a usable address"
         }
+        validateDnsUpstreamBootstrapAddresses(addresses, dnsUpstreamPort)
         exactMappings[existingKey] = AndroidDnsHostTarget.Addresses(addresses)
         return true
     } finally {
         activeAliases.remove(identity)
+    }
+}
+
+private fun validateDnsUpstreamBootstrapAddresses(addresses: List<String>, port: Int?) {
+    if (port != 53) {
+        return
+    }
+    require(addresses.none { it in XRAY_TUN_RESERVED_IPV4_ADDRESSES }) {
+        "DNS server resolves to a tunnel-local DNS address"
     }
 }
 
@@ -628,3 +882,70 @@ private const val MAX_BLOCKED_DNS_LOOKUP_THREADS = 2
 private const val DNS_LOOKUP_THREAD_KEEP_ALIVE_SECONDS = 30L
 private const val EXACT_DNS_HOST_PREFIX = "full:"
 internal const val XRAY_TUN_DNS_ANCHOR = "198.18.0.1"
+private const val MAX_DNS_SERVERS = 8
+private const val DNS_FAMILY_IPV4 = 1
+private const val DNS_FAMILY_IPV6 = 2
+
+private val XRAY_TUN_RESERVED_IPV4_ADDRESSES = setOf(
+    XRAY_TUN_DNS_ANCHOR,
+    "198.18.0.2",
+)
+
+private val DNS_SERVER_OBJECT_FIELDS = setOf(
+    "address",
+    "port",
+    "domains",
+    "skipFallback",
+    "queryStrategy",
+    "finalQuery",
+)
+
+private val DNS_QUERY_STRATEGIES = setOf(
+    "useip",
+    "use_ip",
+    "use-ip",
+    "useip4",
+    "useipv4",
+    "use_ip4",
+    "use_ipv4",
+    "use_ip_v4",
+    "use-ip4",
+    "use-ipv4",
+    "use-ip-v4",
+    "useip6",
+    "useipv6",
+    "use_ip6",
+    "use_ipv6",
+    "use_ip_v6",
+    "use-ip6",
+    "use-ipv6",
+    "use-ip-v6",
+)
+
+private val DNS_USE_IP_QUERY_STRATEGIES = setOf(
+    "useip",
+    "use_ip",
+    "use-ip",
+)
+
+private val DNS_IPV4_ONLY_QUERY_STRATEGIES = setOf(
+    "useip4",
+    "useipv4",
+    "use_ip4",
+    "use_ipv4",
+    "use_ip_v4",
+    "use-ip4",
+    "use-ipv4",
+    "use-ip-v4",
+)
+
+private val DNS_IPV6_ONLY_QUERY_STRATEGIES = setOf(
+    "useip6",
+    "useipv6",
+    "use_ip6",
+    "use_ipv6",
+    "use_ip_v6",
+    "use-ip6",
+    "use-ipv6",
+    "use-ip-v6",
+)

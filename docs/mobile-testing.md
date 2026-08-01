@@ -97,7 +97,8 @@ downloaded `.dat` files are checksum-verified inputs in the ignored
 
 The Apple provider performs no startup connectivity probe and assigns no
 third-party DNS resolver by default. Fake-IP profiles and profiles with any
-valid nonempty IP/domain `dns.servers` list use the tunnel-local `198.18.0.1`
+valid nonempty string or `{address, port, ...}` IP/domain `dns.servers` list use
+the tunnel-local `198.18.0.1`
 DNS anchor. The latter proxies UDP and TCP/53 through selected Freedom/VLESS
 outbounds. VLESS receives a domain upstream unchanged for remote resolution;
 Freedom needs a `dns.hosts` alias chain ending in an IP or nonempty IP array in
@@ -106,8 +107,8 @@ from fake-IP and sent through Freedom resolve through the same routed
 `dns.servers`, not the operating-system resolver.
 
 Before Network Extension installs the anchor, the provider resolves every
-domain VLESS server and domain `dns.servers` entry through the then-current
-dual-stack system resolver. It writes every ordered A/AAAA result into a
+domain VLESS server and domain string/object `dns.servers` endpoint through the
+then-current dual-stack system resolver. It writes every ordered A/AAAA result into a
 canonical exact `full:` IP array in `dns.hosts` without replacing existing
 bare or `full:` exact mapping (bare keys are exact in Xray, not keywords),
 follows aliases for at most eight steps, and preserves each
@@ -116,7 +117,8 @@ default tunnel routes plus an excluded `/32` or `/128` for every VLESS carrier
 candidate before the core is created; pinned DNS-upstream addresses remain
 inside the tunnel and follow outbound routing policy. DNS64 results are
 accepted on IPv6-only networks. Tunnel-owned addresses are never installed as
-exclusions; finding one in a carrier result fails startup. Cycles or resolution failure stop tunnel startup. The
+exclusions; finding one in a carrier result or at the end of a port-53 DNS
+upstream alias chain fails startup. Cycles or resolution failure stop tunnel startup. The
 preflight runs away from the provider callback queue and all lookups share one
 five-second deadline captured at the beginning of the start attempt. Stop,
 timeout, or a superseding start completes the pending start exactly once;
@@ -143,6 +145,10 @@ installed. This applies to both reference adapters and avoids silently choosing
 a public resolver. The Apple direct reference profile therefore needs an
 explicit host DNS override; the compatibility helper that formerly added
 fake-IP to the legacy direct profile is now a no-op.
+Because the current fake-IP pool is IPv4-only and takes precedence over raw
+proxying, both reference adapters reject fake-IP combined with global
+`UseIPv6` before installing the VPN; that combination would otherwise return
+NODATA for every usable fake-IP query even when `dns.servers` is present.
 
 The Android reference service applies the same five-second overall deadline
 before `Builder.establish()`. Its public start operation is asynchronous, stop

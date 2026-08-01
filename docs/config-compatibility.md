@@ -43,7 +43,7 @@ exposes an unauthenticated proxy to the network.
 | `inbounds` | Supported subset below |
 | `outbounds` | Supported subset below |
 | `routing` | `field` rules only |
-| `dns` | Hosts, string servers, global `queryStrategy`, and `fakeIp` subset |
+| `dns` | Hosts, string/object servers with managed selection policy, global `queryStrategy`, and `fakeIp` subset |
 | `policy` | Level/system fields are parsed; runtime timeout/buffer behavior is a subset |
 | `log` | Accepted for input compatibility, but runtime file logging is configured through the embedding API |
 
@@ -162,8 +162,9 @@ if none matches, the first outbound tag is used as the default.
 Global `dns.queryStrategy` supports Xray-compatible `UseIP` (the default),
 `UseIPv4`, and `UseIPv6` spellings and aliases. It controls configured wire
 queries, destination-facing static `dns.hosts` results, and the final
-destination resolver fallback. Bootstrap resolution intentionally keeps every
-pinned/system candidate regardless of this policy, matching Xray's separation
+destination resolver used when no `dns.servers` are configured. Bootstrap
+resolution intentionally keeps every pinned/system candidate regardless of
+this policy, matching Xray's separation
 between its DNS feature and the default system carrier dialer. A destination
 static mapping that contains no address from the selected family returns
 terminal NODATA instead of leaking to another resolver. IPv4-mapped IPv6 values
@@ -171,13 +172,38 @@ count as IPv4 at the TCP dial boundary and are discarded when received in an
 AAAA answer. `UseSystem` is rejected until the universal core has an injectable
 platform route-capability provider; it is not silently treated as `UseIP`.
 
-`dns.servers` accepts at most eight IP addresses, socket addresses, or domain
-names with an optional nonzero port. The TUN-local `198.18.0.1:53` anchor and
+`dns.servers` accepts at most eight string or object entries. The existing
+string shorthand accepts IP addresses, socket addresses, or domain names with
+an optional nonzero port. The Xray object subset requires `address`, supports
+`port` (`0` or omission means `53`), `domains`, `skipFallback`, per-server
+`queryStrategy`, and `finalQuery`. `domains` may be an array or one
+comma-separated string and supports bare keyword, `keyword:`, `domain:`,
+`full:`, `regexp:`, `dotless:`, `geosite:`, `ext:`, and `ext-domain:` rules.
+Top-level `disableFallback` and `disableFallbackIfMatch` are also supported.
+Special `localhost`/`fakedns` clients, URL transports, `clientIp`,
+`expectedIPs`/`expectIPs`/`unexpectedIPs`, tags, per-server timeouts,
+cache/stale controls, and parallel queries are rejected until their runtime
+semantics exist; they are not silently approximated as classic UDP.
+
+Managed selection follows Xray: every matching object entry is tried in
+configuration order, followed by unmatched entries in configuration order.
+`skipFallback` removes an entry only from the latter phase;
+`disableFallback` always removes that phase and `disableFallbackIfMatch`
+removes it after any match. `finalQuery` truncates the plan where encountered.
+If these rules otherwise produce an empty plan, the first configured entry is
+still tried. Duplicate endpoints in separate policy objects remain separate
+managed clients. A per-server family policy intersects the global policy and
+cannot widen it.
+
+The TUN-local `198.18.0.1:53` anchor and
 `198.18.0.2:53` client address cannot be configured as upstreams, including as
 IPv4-mapped IPv6 literals. With `UseIP`, the resolver sends A and AAAA
 concurrently and retains all usable answers in DNS order (A before AAAA);
 single-family strategies send only their selected query. All modes validate
-A/AAAA records plus CNAME chains in `xray-transport`; the delivery transport
+A/AAAA records plus CNAME chains in `xray-transport`; a CNAME-only follow stays
+on the server that supplied the alias. If that continuation fails, the next
+selected server is retried with the original name; after the plan is exhausted,
+the alias is not sent to any other resolver. The delivery transport
 is replaceable, so TUN resolution sends them through the outbound router
 rather than duplicating the DNS parser. A valid UDP response with `TC=1`
 retries over TCP to the same server. UDP transports ignore responses with an unrelated
@@ -193,19 +219,26 @@ cancellation-safe lookup and the same typed outcome instead of opening
 duplicate routed DNS/VLESS sessions.
 
 For managed runtimes, including TUN, SOCKS, HTTP, and startup probes, `System`
-resolution is `dns.hosts` → routed `dns.servers` → cached operating-system
-fallback when the configured upstreams are unavailable. Authoritative
+resolution is `dns.hosts` → routed `dns.servers`. When no `dns.servers` are
+configured, unresolved names use the cached operating-system resolver. Authoritative
 NXDOMAIN and A+AAAA NODATA advance to the next configured server, matching
 Xray-core's ordered failover. If no later server succeeds, an authoritative
 negative result is terminal and does not leak into the operating-system
 fallback. SERVFAIL, malformed replies, and transport failures also move to the
-next server. The five-second resolution deadline includes the final fallback;
+next server. Exhausting a nonempty configured server plan is terminal and never
+sends the original qname to the operating-system resolver. The five-second
+resolution deadline includes configured-server endpoint bootstrap and the
+no-server fallback.
 A and AAAA run concurrently under the same wall-clock server budget when
 `UseIP` is selected.
 `StaticOnly` uses the same routed path and then fails closed; its separate
 bootstrap resolver never uses `dns.servers` or the operating-system resolver.
 Explicitly injected resolvers remain trusted integration dependencies and are
 used as-is.
+The two `disableFallback*` fields control Xray's fallback phase within the
+configured name-server list. They are independent from endpoint bootstrap: in
+`System` mode a domain-valued DNS upstream may still use the operating-system
+resolver to find the upstream itself, but never to retry the original qname.
 
 When fake-IP is disabled and at least one usable server is present, TUN clients
 can use `198.18.0.1:53` as a local UDP/TCP DNS proxy. The proxy keeps
@@ -224,7 +257,9 @@ reset. Raw and fake DNS/TCP share a dedicated limit of up to 32 flows. Raw
 DNS/TCP idle time, including blocked bridge writes, is capped by the smaller of
 the inbound `connIdle` policy and five seconds.
 A raw-anchor query keeps the client's original question type and does not apply
-`queryStrategy`; this is the byte-transparent equivalent of Xray DNS outbound
+global/per-server `queryStrategy`, `domains`, or fallback policy. Object entries
+contribute only their endpoint to the raw declaration-order/deduplicated proxy
+plan. This is the byte-transparent equivalent of Xray DNS outbound
 `Direct`. Xray DNS outbound `Hijack` semantics (including its A/AAAA family
 gate, DNS hosts/cache, and per-server policy) remain a separate unsupported
 feature rather than a partial hybrid in the raw proxy.

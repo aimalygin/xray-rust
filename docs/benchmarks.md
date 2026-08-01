@@ -76,6 +76,7 @@ cargo run --release -p xray-bench -- run --engine xray-rust --workload reality-v
 cargo run -p xray-bench -- run --engine xray-rust --workload tcp-freedom --runs 5 --connections 8 --iterations 1000 --payload-size 4096
 cargo run --release -p xray-bench -- route-probe --iterations 100000 --rules 64 --outbounds 8
 cargo run --release -p xray-bench -- route-probe --iterations 100000 --rules 64 --outbounds 8 --dns-candidates 8
+cargo run --release -p xray-bench -- dns-policy-probe --iterations 10000 --servers 4 --matchers 4096
 ```
 
 By default, the harness uses `target/debug/xray-rust` or builds it with:
@@ -383,5 +384,7 @@ has been removed.
 `route-probe` is an in-process xray-rust microprobe for setup-path routing cost. It builds a synthetic config with IP/CIDR routing rules and tagged freedom outbounds, then repeatedly calls the same TCP outbound selection path used by SOCKS CONNECT. This isolates routing/outbound selection from TCP accept, SOCKS parsing, and outbound socket connect noise.
 
 `--dns-candidates N` adds the cached `IPIfNonMatch` second pass without adding network timing. `N=0` is the original synchronous direct-IP probe. For `N>0`, the probe uses a domain target and performs one untimed routing selection to warm a `CachingDnsResolver`; the generated lookup contains `N-1` non-matching IPv4 addresses followed by the address matched by the final CIDR rule. The timed loop verifies that the upstream resolver is not queried again. Compare `N=1` with `N=2` or `N=8` to isolate additional candidate-scan cost; the delta from `N=0` also includes cached name normalization, cache locking and async resolver dispatch. It does not measure DNS wire latency, TTL expiration, or TCP dialing. Candidate count is capped at 4096, and timing runs should use `--release`.
+
+`dns-policy-probe` is an in-process microprobe for the managed DNS object-server selector. Every run measures two prebuilt plans through the production selector: the common path where all `--servers` entries have no `domains`, and a worst-case path where the final server carries `--matchers` exact-domain rules and only its last rule matches. Setup and matcher allocation happen before timing; each timed iteration includes selection and its result allocation, but no DNS packet construction, network I/O, or response parsing. The command verifies the selected order before measuring and writes both timings to `target/benchmarks/<run-id>/dns-policy-probe/result.json`. Matcher count is capped at the parser's 250,000-domain budget, and timing runs should use `--release`.
 
 Later benchmark slices should add TCP-over-TUN workloads and mobile-native traces from Instruments or Perfetto. This harness keeps those paths open without putting benchmark logic into the production runtime.

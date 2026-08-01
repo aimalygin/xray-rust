@@ -44,6 +44,10 @@ class XrayTunBackendTest {
             "dns.example",
             dnsServerBootstrapDomain("DNS.Example.:5353"),
         )
+        assertEquals(
+            AndroidDnsBootstrapDomain("dns.example", 5353),
+            dnsServerBootstrapUpstreamDomain("DNS.Example.:5353"),
+        )
     }
 
     @Test
@@ -54,6 +58,106 @@ class XrayTunBackendTest {
     @Test
     fun scopedIpv6DnsServerDoesNotNeedBootstrap() {
         assertNull(dnsServerBootstrapDomain("[fe80::53%2]:5353"))
+    }
+
+    @Test
+    fun objectDnsServerUsesAddressAndAcceptsXrayDefaultPort() {
+        assertEquals(
+            "dns.example",
+            dnsServerBootstrapDomain(
+                mapOf(
+                    "address" to "DNS.Example.",
+                    "port" to 0,
+                    "domains" to listOf("domain:internal.example"),
+                    "skipFallback" to true,
+                    "queryStrategy" to "UseIPv4",
+                    "finalQuery" to true,
+                ),
+            ),
+        )
+        assertNull(
+            dnsServerBootstrapDomain(mapOf("address" to "2001:db8::53", "port" to 0)),
+        )
+        assertEquals(
+            AndroidDnsBootstrapDomain("dns.example", 53),
+            dnsServerBootstrapUpstreamDomain(
+                mapOf("address" to "DNS.Example.", "port" to 0),
+            ),
+        )
+    }
+
+    @Test
+    fun mixedStringAndObjectDnsServersExposeBootstrapDomainsInStableOrder() {
+        val servers = listOf<Any>(
+            mapOf("address" to "Object-DNS.Example.", "port" to 0),
+            "String-DNS.Example.:5353",
+            mapOf("address" to "2001:db8::53", "port" to 5353),
+        )
+
+        assertEquals(
+            listOf("object-dns.example", "string-dns.example", null),
+            servers.map(::dnsServerBootstrapDomain),
+        )
+    }
+
+    @Test
+    fun malformedObjectDnsServerFailsDuringBootstrapPreflight() {
+        for (server in listOf<Any>(
+            mapOf("port" to 53),
+            mapOf("address" to 42),
+            mapOf("address" to "resolver.example", "port" to true),
+            mapOf("address" to "resolver.example", "port" to 53.0),
+            mapOf("address" to "resolver.example", "port" to null),
+            mapOf("address" to "resolver.example", "port" to -1),
+            mapOf("address" to "resolver.example", "port" to 65_536),
+            mapOf("address" to "resolver.example", "domains" to 42),
+            mapOf("address" to "resolver.example", "domains" to listOf("domain:ok", 42)),
+            mapOf("address" to "resolver.example", "skipFallback" to "true"),
+            mapOf("address" to "resolver.example", "finalQuery" to 1),
+            mapOf("address" to "resolver.example", "queryStrategy" to 42),
+            mapOf("address" to "resolver.example", "queryStrategy" to "UseSystem"),
+            mapOf("address" to "resolver.example", "unexpected" to true),
+            mapOf("address" to "localhost"),
+            mapOf("address" to XRAY_TUN_DNS_ANCHOR, "port" to 0),
+        )) {
+            assertThrows(IllegalArgumentException::class.java) {
+                dnsServerBootstrapDomain(server)
+            }
+        }
+    }
+
+    @Test
+    fun dnsServerEndpointsRejectSurroundingWhitespace() {
+        for (server in listOf<Any>(
+            " resolver.example",
+            "resolver.example ",
+            mapOf("address" to " resolver.example"),
+            mapOf("address" to "resolver.example "),
+            mapOf("address" to " 192.0.2.53 "),
+        )) {
+            assertThrows(IllegalArgumentException::class.java) {
+                dnsServerBootstrapDomain(server)
+            }
+        }
+    }
+
+    @Test
+    fun directDnsServersRejectTunnelOwnedPort53ButAllowOtherPorts() {
+        for (server in listOf<Any>(
+            XRAY_TUN_DNS_ANCHOR,
+            "$XRAY_TUN_DNS_ANCHOR:53",
+            mapOf("address" to XRAY_TUN_DNS_ANCHOR),
+            mapOf("address" to "198.18.0.2", "port" to 0),
+        )) {
+            assertThrows(IllegalArgumentException::class.java) {
+                dnsServerBootstrapDomain(server)
+            }
+        }
+
+        assertNull(dnsServerBootstrapDomain("$XRAY_TUN_DNS_ANCHOR:5353"))
+        assertNull(
+            dnsServerBootstrapDomain(mapOf("address" to "198.18.0.2", "port" to 5353)),
+        )
     }
 
     @Test
@@ -119,6 +223,70 @@ class XrayTunBackendTest {
             mappings["full:alias.example"],
         )
         assertEquals(0, lookups.get())
+    }
+
+    @Test
+    fun port53DnsBootstrapRejectsTunnelOwnedAddressAfterAliasResolution() {
+        val mappings = canonicalizeExactDnsHostMappings(
+            listOf<Pair<String, Any>>(
+                "resolver.example" to "alias.example",
+                "alias.example" to listOf(XRAY_TUN_DNS_ANCHOR),
+            ),
+        ).mappings.toMutableMap()
+
+        assertThrows(IllegalArgumentException::class.java) {
+            ensureBootstrapHostMapping(
+                domain = "resolver.example",
+                exactMappings = mappings,
+                resolvedAddresses = mutableMapOf(),
+                activeAliases = mutableSetOf(),
+                depth = 0,
+                dnsUpstreamPort = 53,
+            ) {
+                error("unexpected system lookup for $it")
+            }
+        }
+    }
+
+    @Test
+    fun port53DnsBootstrapRejectsTunnelOwnedSystemResolutionBeforePublishingMapping() {
+        val mappings = mutableMapOf<String, AndroidDnsHostTarget>()
+
+        assertThrows(IllegalArgumentException::class.java) {
+            ensureBootstrapHostMapping(
+                domain = "resolver.example",
+                exactMappings = mappings,
+                resolvedAddresses = mutableMapOf(),
+                activeAliases = mutableSetOf(),
+                depth = 0,
+                dnsUpstreamPort = 53,
+            ) {
+                listOf(XRAY_TUN_DNS_ANCHOR)
+            }
+        }
+        assertFalse(mappings.containsKey("full:resolver.example"))
+    }
+
+    @Test
+    fun nonstandardDnsPortMayResolveToTunnelOwnedAddress() {
+        val mappings = mutableMapOf<String, AndroidDnsHostTarget>()
+
+        assertTrue(
+            ensureBootstrapHostMapping(
+                domain = "resolver.example",
+                exactMappings = mappings,
+                resolvedAddresses = mutableMapOf(),
+                activeAliases = mutableSetOf(),
+                depth = 0,
+                dnsUpstreamPort = 5353,
+            ) {
+                listOf(XRAY_TUN_DNS_ANCHOR)
+            },
+        )
+        assertEquals(
+            AndroidDnsHostTarget.Addresses(listOf(XRAY_TUN_DNS_ANCHOR)),
+            mappings["full:resolver.example"],
+        )
     }
 
     @Test
@@ -224,6 +392,92 @@ class XrayTunBackendTest {
                 ),
             ),
         )
+    }
+
+    @Test
+    fun ipv4FakeIpRejectsIpv6OnlyQueryStrategyBeforeTunnelSetup() {
+        for (strategy in listOf(
+            "UseIP6",
+            "UseIPv6",
+            "use_ip6",
+            "use_ipv6",
+            "use_ip_v6",
+            "use-ip6",
+            "use-ipv6",
+            "use-ip-v6",
+        )) {
+            assertFalse(
+                isIpv4FakeIpDnsQueryStrategyCompatible(
+                    fakeIpEnabled = true,
+                    rawStrategy = strategy,
+                ),
+            )
+        }
+        assertTrue(isIpv4FakeIpDnsQueryStrategyCompatible(true, "UseIPv4"))
+        assertTrue(isIpv4FakeIpDnsQueryStrategyCompatible(false, "UseIPv6"))
+    }
+
+    @Test
+    fun fakeIpEnabledRequiresAnActualJsonBooleanBeforeTunnelSetup() {
+        assertFalse(
+            optionalStrictJsonBoolean(
+                rawValue = null,
+                isPresent = false,
+                field = "dns.fakeIp.enabled",
+            ),
+        )
+        assertTrue(
+            optionalStrictJsonBoolean(
+                rawValue = true,
+                isPresent = true,
+                field = "dns.fakeIp.enabled",
+            ),
+        )
+        assertFalse(
+            optionalStrictJsonBoolean(
+                rawValue = false,
+                isPresent = true,
+                field = "dns.fakeIp.enabled",
+            ),
+        )
+        for (rawValue in listOf<Any>("true", "false", 1, 0, 1.0)) {
+            assertThrows(IllegalArgumentException::class.java) {
+                optionalStrictJsonBoolean(
+                    rawValue = rawValue,
+                    isPresent = true,
+                    field = "dns.fakeIp.enabled",
+                )
+            }
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            optionalStrictJsonBoolean(
+                rawValue = null,
+                isPresent = true,
+                field = "dns.fakeIp.enabled",
+            )
+        }
+    }
+
+    @Test
+    fun dnsServerStrategyMustIntersectGlobalStrategyBeforeTunnelSetup() {
+        validateDnsServerQueryStrategyCompatibility("UseIP", "UseIPv6")
+        validateDnsServerQueryStrategyCompatibility("UseIPv4", "UseIP")
+        validateDnsServerQueryStrategyCompatibility(null, "UseIPv6")
+
+        assertThrows(IllegalArgumentException::class.java) {
+            validateDnsServerQueryStrategyCompatibility("UseIPv4", "UseIPv6")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            validateDnsServerQueryStrategyCompatibility("UseIPv6", "UseIPv4")
+        }
+    }
+
+    @Test
+    fun dnsServerCountIsBoundedBeforeTunnelSetup() {
+        validateAndroidDnsServerCount(8)
+        assertThrows(IllegalArgumentException::class.java) {
+            validateAndroidDnsServerCount(9)
+        }
     }
 
     @Test

@@ -45,6 +45,8 @@ pub struct DnsConfig {
     pub servers: Vec<DnsServerConfig>,
     pub hosts: Vec<DnsHostMapping>,
     pub query_strategy: DnsQueryStrategy,
+    pub disable_fallback: bool,
+    pub disable_fallback_if_match: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -59,6 +61,57 @@ pub enum DnsQueryStrategy {
 pub enum DnsServerConfig {
     Ip(SocketAddr),
     Domain { domain: String, port: u16 },
+    Policy(DnsNameServerConfig),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DnsNameServerConfig {
+    pub endpoint: DnsServerEndpoint,
+    pub domains: Vec<DomainMatcher>,
+    pub skip_fallback: bool,
+    pub query_strategy: DnsQueryStrategy,
+    pub final_query: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DnsServerEndpoint {
+    Ip(SocketAddr),
+    Domain { domain: String, port: u16 },
+}
+
+impl DnsServerConfig {
+    pub fn endpoint(&self) -> DnsServerEndpoint {
+        match self {
+            Self::Ip(addr) => DnsServerEndpoint::Ip(*addr),
+            Self::Domain { domain, port } => DnsServerEndpoint::Domain {
+                domain: domain.clone(),
+                port: *port,
+            },
+            Self::Policy(server) => server.endpoint.clone(),
+        }
+    }
+
+    pub fn domains(&self) -> &[DomainMatcher] {
+        match self {
+            Self::Policy(server) => &server.domains,
+            Self::Ip(_) | Self::Domain { .. } => &[],
+        }
+    }
+
+    pub fn skip_fallback(&self) -> bool {
+        matches!(self, Self::Policy(server) if server.skip_fallback)
+    }
+
+    pub fn query_strategy(&self) -> DnsQueryStrategy {
+        match self {
+            Self::Policy(server) => server.query_strategy,
+            Self::Ip(_) | Self::Domain { .. } => DnsQueryStrategy::UseIp,
+        }
+    }
+
+    pub fn final_query(&self) -> bool {
+        matches!(self, Self::Policy(server) if server.final_query)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

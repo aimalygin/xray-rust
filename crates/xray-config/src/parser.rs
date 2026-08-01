@@ -10,12 +10,12 @@ use uuid::Uuid;
 use crate::{
     geodata::{default_geodata_dirs, GeodataLoader},
     CoreConfig, Diagnostic, DnsConfig, DnsFakeIpConfig, DnsHostMapping, DnsHostTarget,
-    DnsQueryStrategy, DnsServerConfig, DomainMatcher, HappyEyeballsSettings, InboundConfig,
-    InboundProtocol, InboundSniffingConfig, IpCidr, IpMatcher, Network, OutboundConfig,
-    OutboundProtocol, OutboundSettings, PolicyConfig, PolicyLevelConfig, PolicySystemConfig,
-    RealitySettings, RealityShortId, RegexMatcher, RoutingConfig, RoutingDomainStrategy,
-    RoutingRule, SniffingDestination, SocketOptions, StreamSecurity, StreamSettings, TargetAddr,
-    TlsSettings, VlessOutboundSettings, VlessUser,
+    DnsNameServerConfig, DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint, DomainMatcher,
+    HappyEyeballsSettings, InboundConfig, InboundProtocol, InboundSniffingConfig, IpCidr,
+    IpMatcher, Network, OutboundConfig, OutboundProtocol, OutboundSettings, PolicyConfig,
+    PolicyLevelConfig, PolicySystemConfig, RealitySettings, RealityShortId, RegexMatcher,
+    RoutingConfig, RoutingDomainStrategy, RoutingRule, SniffingDestination, SocketOptions,
+    StreamSecurity, StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
 };
 
 const MAX_ROUTING_RULES: usize = 4_096;
@@ -36,6 +36,10 @@ fn is_tun_reserved_ip(ip: IpAddr) -> bool {
             .to_ipv4_mapped()
             .is_some_and(|ip| matches!(ip, TUN_DNS_ANCHOR | TUN_CLIENT_IPV4)),
     }
+}
+
+fn dns_query_strategies_overlap(global: DnsQueryStrategy, server: DnsQueryStrategy) -> bool {
+    global == DnsQueryStrategy::UseIp || server == DnsQueryStrategy::UseIp || global == server
 }
 
 fn fake_ip_usable_address_count(pool: IpCidr) -> u64 {
@@ -275,21 +279,46 @@ impl Parser<'_> {
         self.reject_unknown_fields(
             dns,
             dns_path,
-            &["fakeIp", "servers", "hosts", "queryStrategy"],
+            &[
+                "fakeIp",
+                "servers",
+                "hosts",
+                "queryStrategy",
+                "disableFallback",
+                "disableFallbackIfMatch",
+            ],
         );
+        let query_strategy = self.parse_dns_query_strategy(dns);
         DnsConfig {
             fake_ip: self.parse_dns_fake_ip(dns),
-            servers: self.parse_dns_servers(dns),
+            servers: self.parse_dns_servers(dns, query_strategy),
             hosts: self.parse_dns_hosts(dns),
-            query_strategy: self.parse_dns_query_strategy(dns),
+            query_strategy,
+            disable_fallback: self
+                .optional_bool_at(dns, "disableFallback", "$.dns.disableFallback".to_owned())
+                .unwrap_or(false),
+            disable_fallback_if_match: self
+                .optional_bool_at(
+                    dns,
+                    "disableFallbackIfMatch",
+                    "$.dns.disableFallbackIfMatch".to_owned(),
+                )
+                .unwrap_or(false),
         }
     }
 
     fn parse_dns_query_strategy(&mut self, dns: &Value) -> DnsQueryStrategy {
-        let Some(raw_strategy) = dns.get("queryStrategy") else {
+        self.parse_dns_query_strategy_at(dns.get("queryStrategy"), "$.dns.queryStrategy")
+    }
+
+    fn parse_dns_query_strategy_at(
+        &mut self,
+        raw_strategy: Option<&Value>,
+        path: &str,
+    ) -> DnsQueryStrategy {
+        let Some(raw_strategy) = raw_strategy else {
             return DnsQueryStrategy::default();
         };
-        let path = "$.dns.queryStrategy";
         let Some(strategy) = raw_strategy.as_str() else {
             self.error(path, "dns queryStrategy must be a string");
             return DnsQueryStrategy::default();
@@ -320,7 +349,11 @@ impl Parser<'_> {
         }
     }
 
-    fn parse_dns_servers(&mut self, dns: &Value) -> Vec<DnsServerConfig> {
+    fn parse_dns_servers(
+        &mut self,
+        dns: &Value,
+        global_query_strategy: DnsQueryStrategy,
+    ) -> Vec<DnsServerConfig> {
         let Some(raw_servers) = dns.get("servers") else {
             return Vec::new();
         };
@@ -345,18 +378,201 @@ impl Parser<'_> {
             .enumerate()
             .filter_map(|(index, server)| {
                 let path = format!("$.dns.servers[{index}]");
-                let Some(server) = server.as_str() else {
-                    self.error(path, "dns server must be a string");
-                    return None;
-                };
-                self.parse_dns_server(server, &path)
+                match server {
+                    Value::String(server) => self.parse_dns_server(server, &path),
+                    Value::Object(_) => {
+                        self.parse_dns_name_server(server, &path, global_query_strategy)
+                    }
+                    _ => {
+                        self.error(path, "dns server must be a string or an object");
+                        None
+                    }
+                }
             })
             .collect()
+    }
+
+    fn parse_dns_name_server(
+        &mut self,
+        server: &Value,
+        path: &str,
+        global_query_strategy: DnsQueryStrategy,
+    ) -> Option<DnsServerConfig> {
+        self.reject_unknown_fields(
+            server,
+            path,
+            &[
+                "address",
+                "port",
+                "domains",
+                "skipFallback",
+                "queryStrategy",
+                "finalQuery",
+            ],
+        );
+
+        let address_path = format!("{path}.address");
+        let Some(address) = self.optional_string_at(server, "address", address_path.clone()) else {
+            if server.get("address").is_none() {
+                self.error(address_path, "missing dns server address");
+            }
+            return None;
+        };
+        let port_path = format!("{path}.port");
+        let port = if server.get("port").is_some() {
+            self.u16_at(server, "port", port_path.clone())?
+        } else {
+            53
+        };
+        let port = if port == 0 { 53 } else { port };
+        let endpoint = self.parse_dns_server_endpoint(address, port, &address_path)?;
+        let domains = self.parse_dns_server_domains(server, path)?;
+        let query_strategy_path = format!("{path}.queryStrategy");
+        let query_strategy =
+            self.parse_dns_query_strategy_at(server.get("queryStrategy"), &query_strategy_path);
+        if !dns_query_strategies_overlap(global_query_strategy, query_strategy) {
+            self.error(
+                query_strategy_path,
+                "dns server queryStrategy has no address family in common with global dns.queryStrategy",
+            );
+            return None;
+        }
+
+        Some(DnsServerConfig::Policy(DnsNameServerConfig {
+            endpoint,
+            domains,
+            skip_fallback: self
+                .optional_bool_at(server, "skipFallback", format!("{path}.skipFallback"))
+                .unwrap_or(false),
+            query_strategy,
+            final_query: self
+                .optional_bool_at(server, "finalQuery", format!("{path}.finalQuery"))
+                .unwrap_or(false),
+        }))
+    }
+
+    fn parse_dns_server_endpoint(
+        &mut self,
+        address: &str,
+        port: u16,
+        path: &str,
+    ) -> Option<DnsServerEndpoint> {
+        if address.is_empty() {
+            self.error(path, "dns server address cannot be empty");
+            return None;
+        }
+        if address.trim() != address {
+            self.error(
+                path,
+                "dns server address must not contain surrounding whitespace",
+            );
+            return None;
+        }
+        if let Ok(ip) = address.parse::<IpAddr>() {
+            if is_tun_reserved_ip(ip) && port == 53 {
+                self.error(
+                    path,
+                    "dns server cannot point at a tunnel-local DNS address",
+                );
+                return None;
+            }
+            return Some(DnsServerEndpoint::Ip(SocketAddr::new(ip, port)));
+        }
+        if address.eq_ignore_ascii_case("localhost") || address.eq_ignore_ascii_case("fakedns") {
+            self.error(
+                path,
+                format!("special dns server `{address}` is not supported yet"),
+            );
+            return None;
+        }
+        if address.parse::<SocketAddr>().is_ok() || address.contains(':') {
+            self.error(
+                path,
+                "object dns server address must not include a port or unsupported URL scheme",
+            );
+            return None;
+        }
+
+        Some(DnsServerEndpoint::Domain {
+            domain: address.to_owned(),
+            port,
+        })
+    }
+
+    fn parse_dns_server_domains(
+        &mut self,
+        server: &Value,
+        path: &str,
+    ) -> Option<Vec<DomainMatcher>> {
+        let domains_path = format!("{path}.domains");
+        let Some(raw_domains) = server.get("domains") else {
+            return Some(Vec::new());
+        };
+        let mut matchers = Vec::new();
+        match raw_domains {
+            Value::String(domains) => {
+                for (index, domain) in domains.split(',').enumerate() {
+                    let item_path = format!("{domains_path}[{index}]");
+                    self.parse_dns_server_domain_matcher(domain, &item_path, &mut matchers)?;
+                }
+            }
+            Value::Array(domains) => {
+                matchers.reserve(
+                    domains
+                        .len()
+                        .min(self.matcher_budget.remaining_domain_matchers()),
+                );
+                for (index, domain) in domains.iter().enumerate() {
+                    let item_path = format!("{domains_path}[{index}]");
+                    let Some(domain) = domain.as_str() else {
+                        self.error(item_path, "dns server domain matcher must be a string");
+                        return None;
+                    };
+                    self.parse_dns_server_domain_matcher(domain, &item_path, &mut matchers)?;
+                }
+            }
+            _ => {
+                self.error(domains_path, "field `domains` must be a string or an array");
+                return None;
+            }
+        }
+        Some(matchers)
+    }
+
+    fn parse_dns_server_domain_matcher(
+        &mut self,
+        domain: &str,
+        path: &str,
+        matchers: &mut Vec<DomainMatcher>,
+    ) -> Option<()> {
+        if domain.is_empty() {
+            self.error(path, "dns server domain matcher cannot be empty");
+            return None;
+        }
+        let remaining = self.matcher_budget.remaining_domain_matchers();
+        if remaining == 0 {
+            self.domain_matcher_budget_error(path);
+            return None;
+        }
+        let parsed_matchers = self.parse_domain_matcher(domain, path, remaining)?;
+        if !self
+            .matcher_budget
+            .consume_domain_matchers(parsed_matchers.len())
+        {
+            self.domain_matcher_budget_error(path);
+            return None;
+        }
+        matchers.extend(parsed_matchers);
+        Some(())
     }
 
     fn parse_dns_server(&mut self, server: &str, path: &str) -> Option<DnsServerConfig> {
         if server.is_empty() {
             self.error(path, "dns server cannot be empty");
+            return None;
+        }
+        if server.trim() != server {
+            self.error(path, "dns server must not contain surrounding whitespace");
             return None;
         }
 
@@ -2004,7 +2220,7 @@ impl Parser<'_> {
         let Some((kind, domain)) = value.split_once(':') else {
             return Some(vec![DomainMatcher::Keyword(value.to_owned())]);
         };
-        if domain.is_empty() {
+        if domain.is_empty() && kind != "dotless" {
             self.error(path, "routing domain cannot be empty");
             return None;
         }
@@ -2013,6 +2229,19 @@ impl Parser<'_> {
             "domain" => Some(vec![DomainMatcher::Suffix(domain.to_owned())]),
             "full" => Some(vec![DomainMatcher::Full(domain.to_owned())]),
             "keyword" => Some(vec![DomainMatcher::Keyword(domain.to_owned())]),
+            "dotless" => {
+                if domain.contains('.') {
+                    self.error(path, "dotless domain matcher must not contain a dot");
+                    return None;
+                }
+                match RegexMatcher::new(format!("^[^.]*{domain}[^.]*$")) {
+                    Ok(matcher) => Some(vec![DomainMatcher::Regex(matcher)]),
+                    Err(error) => {
+                        self.error(path, error.to_string());
+                        None
+                    }
+                }
+            }
             "regexp" => match RegexMatcher::new(domain.to_owned()) {
                 Ok(matcher) => Some(vec![DomainMatcher::Regex(matcher)]),
                 Err(error) => {

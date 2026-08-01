@@ -565,6 +565,15 @@ impl DnsQueryStrategy {
             },
         }
     }
+
+    fn intersect(self, other: Self) -> Option<Self> {
+        match (self, other) {
+            (Self::UseIp, strategy) | (strategy, Self::UseIp) => Some(strategy),
+            (Self::UseIpv4, Self::UseIpv4) => Some(Self::UseIpv4),
+            (Self::UseIpv6, Self::UseIpv6) => Some(Self::UseIpv6),
+            (Self::UseIpv4, Self::UseIpv6) | (Self::UseIpv6, Self::UseIpv4) => None,
+        }
+    }
 }
 
 /// Wire transport used for a DNS query.
@@ -640,15 +649,42 @@ impl DnsQueryTransport for DirectDnsQueryTransport {
     }
 }
 
+/// One configured DNS client together with its Xray selection policy.
+///
+/// Multiple entries may intentionally point at the same endpoint: selection
+/// and failover operate on entries, not on deduplicated socket addresses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NameServerPolicy {
+    pub server: NameServer,
+    pub domains: Vec<TransportDomainMatcher>,
+    pub skip_fallback: bool,
+    pub query_strategy: DnsQueryStrategy,
+    pub final_query: bool,
+}
+
+impl NameServerPolicy {
+    pub fn new(server: NameServer) -> Self {
+        Self {
+            server,
+            domains: Vec::new(),
+            skip_fallback: false,
+            query_strategy: DnsQueryStrategy::UseIp,
+            final_query: false,
+        }
+    }
+}
+
 pub struct ConfiguredDnsResolver {
     host_rules: Vec<StaticHostRule>,
-    name_servers: Vec<NameServer>,
+    name_servers: Vec<NameServerPolicy>,
     fallback: Arc<dyn DnsResolver>,
     server_timeout: Duration,
     resolution_timeout: Duration,
     query_transport: Arc<dyn DnsQueryTransport>,
     uses_direct_query_transport: bool,
     query_strategy: DnsQueryStrategy,
+    disable_fallback: bool,
+    disable_fallback_if_match: bool,
 }
 
 impl ConfiguredDnsResolver {
@@ -660,14 +696,34 @@ impl ConfiguredDnsResolver {
         let query_transport = Arc::new(DirectDnsQueryTransport::new(Arc::clone(&fallback), None));
         Self {
             host_rules,
-            name_servers,
+            name_servers: name_servers
+                .into_iter()
+                .map(NameServerPolicy::new)
+                .collect(),
             fallback,
             server_timeout: Duration::from_secs(2),
             resolution_timeout: DNS_RESOLUTION_TIMEOUT,
             query_transport,
             uses_direct_query_transport: true,
             query_strategy: DnsQueryStrategy::default(),
+            disable_fallback: false,
+            disable_fallback_if_match: false,
         }
+    }
+
+    pub fn with_name_server_policies(mut self, name_servers: Vec<NameServerPolicy>) -> Self {
+        self.name_servers = name_servers;
+        self
+    }
+
+    pub fn with_name_server_fallback_policy(
+        mut self,
+        disable_fallback: bool,
+        disable_fallback_if_match: bool,
+    ) -> Self {
+        self.disable_fallback = disable_fallback;
+        self.disable_fallback_if_match = disable_fallback_if_match;
+        self
     }
 
     pub fn with_query_strategy(mut self, query_strategy: DnsQueryStrategy) -> Self {
@@ -715,17 +771,57 @@ impl ConfiguredDnsResolver {
             })
     }
 
-    async fn query_configured_servers(&self, domain: &str) -> ConfiguredServersResult {
+    async fn query_configured_servers(
+        &self,
+        domain: &str,
+        selected_servers: &[usize],
+    ) -> ConfiguredServersResult {
         let mut last_negative = None;
-        for name_server in &self.name_servers {
-            match self.query_configured_server(name_server, domain).await {
-                Ok(ConfiguredServerResult::Answer(answer)) => {
-                    return ConfiguredServersResult::Answer(answer);
+        for &index in selected_servers {
+            let Some(name_server) = self.name_servers.get(index) else {
+                continue;
+            };
+            let mut current_domain = domain.to_owned();
+            let mut cname_ttl_cap = None;
+            for depth in 0..MAX_DNS_ALIAS_DEPTH {
+                let started_at = Instant::now();
+                let result = self
+                    .query_configured_server(name_server, &current_domain)
+                    .await;
+                cname_ttl_cap = age_ttl_cap(cname_ttl_cap, started_at.elapsed());
+                match result {
+                    Ok(ConfiguredServerResult::Answer(ConfiguredDnsAnswer::Addresses(
+                        mut answer,
+                    ))) => {
+                        if let Some(ttl_cap) = cname_ttl_cap {
+                            answer.ttl = answer.ttl.min(ttl_cap);
+                        }
+                        return ConfiguredServersResult::Answer(answer);
+                    }
+                    Ok(ConfiguredServerResult::Answer(ConfiguredDnsAnswer::Cname {
+                        alias,
+                        ttl,
+                    })) => {
+                        cname_ttl_cap =
+                            Some(cname_ttl_cap.map_or(ttl, |current: Duration| current.min(ttl)));
+                        let alias = normalize_dns_name(&alias).unwrap_or(alias);
+                        if alias == current_domain || depth + 1 == MAX_DNS_ALIAS_DEPTH {
+                            last_negative = Some(ConfiguredDnsNegative::NoData);
+                            break;
+                        }
+                        current_domain = alias;
+                    }
+                    Ok(ConfiguredServerResult::Negative(negative)) => {
+                        last_negative = Some(negative);
+                        break;
+                    }
+                    Err(_) => {
+                        if cname_ttl_cap.is_some() {
+                            last_negative = Some(ConfiguredDnsNegative::NoData);
+                        }
+                        break;
+                    }
                 }
-                Ok(ConfiguredServerResult::Negative(negative)) => {
-                    last_negative = Some(negative);
-                }
-                Err(_) => {}
             }
         }
 
@@ -737,22 +833,28 @@ impl ConfiguredDnsResolver {
 
     async fn query_configured_server(
         &self,
-        name_server: &NameServer,
+        name_server: &NameServerPolicy,
         domain: &str,
     ) -> io::Result<ConfiguredServerResult> {
-        match self.query_strategy {
+        let Some(query_strategy) = self.query_strategy.intersect(name_server.query_strategy) else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "dns server query strategy has no address family in common with the global strategy",
+            ));
+        };
+        match query_strategy {
             DnsQueryStrategy::UseIp => {
                 let (ipv4, ipv6) = tokio::join!(
-                    self.query_server_with_budget(name_server, domain, DnsRecordType::A),
-                    self.query_server_with_budget(name_server, domain, DnsRecordType::Aaaa),
+                    self.query_server_with_budget(&name_server.server, domain, DnsRecordType::A),
+                    self.query_server_with_budget(&name_server.server, domain, DnsRecordType::Aaaa),
                 );
                 merge_configured_family_results([ipv4, ipv6])
             }
             DnsQueryStrategy::UseIpv4 => merge_configured_family_results([self
-                .query_server_with_budget(name_server, domain, DnsRecordType::A)
+                .query_server_with_budget(&name_server.server, domain, DnsRecordType::A)
                 .await]),
             DnsQueryStrategy::UseIpv6 => merge_configured_family_results([self
-                .query_server_with_budget(name_server, domain, DnsRecordType::Aaaa)
+                .query_server_with_budget(&name_server.server, domain, DnsRecordType::Aaaa)
                 .await]),
         }
     }
@@ -874,10 +976,18 @@ impl ConfiguredDnsResolver {
             }
 
             let started_at = Instant::now();
-            let result = self.query_configured_servers(&current_domain).await;
+            let server_plan = select_name_server_indices(
+                &self.name_servers,
+                &current_domain,
+                self.disable_fallback,
+                self.disable_fallback_if_match,
+            );
+            let result = self
+                .query_configured_servers(&current_domain, &server_plan)
+                .await;
             ttl_cap = age_ttl_cap(ttl_cap, started_at.elapsed());
             match result {
-                ConfiguredServersResult::Answer(ConfiguredDnsAnswer::Addresses(answer)) => {
+                ConfiguredServersResult::Answer(answer) => {
                     let lookup = DnsLookup::from_ips(
                         answer
                             .addresses
@@ -894,35 +1004,81 @@ impl ConfiguredDnsResolver {
                     }
                     return ConfiguredLookupResult::Resolved(cap_lookup_ttl(lookup, ttl_cap));
                 }
-                ConfiguredServersResult::Answer(ConfiguredDnsAnswer::Cname { alias, ttl }) => {
-                    ttl_cap = Some(ttl_cap.map_or(ttl, |current: Duration| current.min(ttl)));
-                    let alias = normalize_dns_name(&alias).unwrap_or(alias);
-                    if alias == current_domain {
-                        break;
-                    }
-                    if depth + 1 == MAX_DNS_ALIAS_DEPTH {
-                        return ConfiguredLookupResult::Fallback {
-                            domain: domain.to_owned(),
-                            ttl_cap,
-                        };
-                    }
-                    current_domain = alias;
-                }
                 ConfiguredServersResult::Negative(negative) => {
                     return ConfiguredLookupResult::Negative {
                         domain: current_domain,
                         negative,
                     };
                 }
-                ConfiguredServersResult::Unavailable => break,
+                ConfiguredServersResult::Unavailable => {
+                    if self.name_servers.is_empty() {
+                        break;
+                    }
+                    return ConfiguredLookupResult::Unavailable {
+                        domain: current_domain,
+                    };
+                }
             }
         }
 
-        ConfiguredLookupResult::Fallback {
-            domain: current_domain,
-            ttl_cap,
+        if self.name_servers.is_empty() {
+            ConfiguredLookupResult::Fallback {
+                domain: current_domain,
+                ttl_cap,
+            }
+        } else {
+            ConfiguredLookupResult::Unavailable {
+                domain: current_domain,
+            }
         }
     }
+}
+
+/// Builds the serial managed-DNS candidate plan using Xray's match/fallback
+/// ordering. Returned indices refer to `name_servers` and preserve policy
+/// entries even when multiple entries share one endpoint.
+pub fn select_name_server_indices(
+    name_servers: &[NameServerPolicy],
+    domain: &str,
+    disable_fallback: bool,
+    disable_fallback_if_match: bool,
+) -> Vec<usize> {
+    let mut selected = Vec::with_capacity(name_servers.len());
+    let mut used = vec![false; name_servers.len()];
+    let mut matched = false;
+
+    for (index, name_server) in name_servers.iter().enumerate() {
+        if !name_server
+            .domains
+            .iter()
+            .any(|matcher| matcher.matches(domain))
+        {
+            continue;
+        }
+        matched = true;
+        used[index] = true;
+        selected.push(index);
+        if name_server.final_query {
+            return selected;
+        }
+    }
+
+    if !(disable_fallback || disable_fallback_if_match && matched) {
+        for (index, name_server) in name_servers.iter().enumerate() {
+            if used[index] || name_server.skip_fallback {
+                continue;
+            }
+            selected.push(index);
+            if name_server.final_query {
+                break;
+            }
+        }
+    }
+
+    if selected.is_empty() && !name_servers.is_empty() {
+        selected.push(0);
+    }
+    selected
 }
 
 fn cap_lookup_ttl(lookup: DnsLookup, ttl_cap: Option<Duration>) -> DnsLookup {
@@ -1066,6 +1222,14 @@ impl DnsResolver for ConfiguredDnsResolver {
                     domain,
                     negative: ConfiguredDnsNegative::NoData,
                 } => Err(TransportError::DnsNoData(domain, port)),
+                ConfiguredLookupResult::Unavailable { domain } => Err(TransportError::Dns {
+                    domain,
+                    port,
+                    source: io::Error::new(
+                        io::ErrorKind::NotConnected,
+                        "all configured DNS servers are unavailable",
+                    ),
+                }),
             }
         };
         match time::timeout(self.resolution_timeout, resolution).await {
@@ -1089,6 +1253,9 @@ enum ConfiguredLookupResult {
         domain: String,
         negative: ConfiguredDnsNegative,
     },
+    Unavailable {
+        domain: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1103,7 +1270,7 @@ enum ConfiguredServerResult {
 }
 
 enum ConfiguredServersResult {
-    Answer(ConfiguredDnsAnswer),
+    Answer(ConfiguredDnsAddresses),
     Negative(ConfiguredDnsNegative),
     Unavailable,
 }
@@ -1674,11 +1841,11 @@ mod tests {
     use tokio::sync::{oneshot, Barrier, Notify};
 
     use super::{
-        build_dns_query_with_id, parse_dns_response, query_udp_dns_server, CachingDnsResolver,
-        ConfiguredDnsAddresses, ConfiguredDnsAnswer, ConfiguredDnsResolver, DnsLookup,
-        DnsQueryStrategy, DnsQueryTransport, DnsQueryTransportKind, DnsRecordType, DnsResolver,
-        NameServer, StaticHostRule, StaticHostTarget, TransportDomainMatcher,
-        DNS_CACHE_MAX_ENTRIES,
+        build_dns_query_with_id, parse_dns_response, query_udp_dns_server,
+        select_name_server_indices, CachingDnsResolver, ConfiguredDnsAddresses,
+        ConfiguredDnsAnswer, ConfiguredDnsResolver, DnsLookup, DnsQueryStrategy, DnsQueryTransport,
+        DnsQueryTransportKind, DnsRecordType, DnsResolver, NameServer, NameServerPolicy,
+        StaticHostRule, StaticHostTarget, TransportDomainMatcher, DNS_CACHE_MAX_ENTRIES,
     };
     use crate::{SocketHandle, SocketProtector, TransportError};
 
@@ -1688,6 +1855,86 @@ mod tests {
             .expect("valid query should encode");
 
         assert_eq!(&query[..2], &0xA17E_u16.to_be_bytes());
+    }
+
+    fn policy(server_octet: u8) -> NameServerPolicy {
+        NameServerPolicy::new(NameServer::Socket(SocketAddr::from((
+            [192, 0, 2, server_octet],
+            53,
+        ))))
+    }
+
+    #[test]
+    fn name_server_selector_matches_before_ordered_fallback() {
+        let fallback = policy(1);
+        let mut matched_suffix = policy(2);
+        matched_suffix.domains = vec![TransportDomainMatcher::Suffix("internal.test".to_owned())];
+        let mut matched_full = policy(3);
+        matched_full.domains = vec![TransportDomainMatcher::Full(
+            "service.internal.test".to_owned(),
+        )];
+        let mut skipped = policy(4);
+        skipped.skip_fallback = true;
+        skipped.domains = vec![TransportDomainMatcher::Full(
+            "service.internal.test".to_owned(),
+        )];
+        let servers = [fallback, matched_suffix, matched_full, skipped];
+
+        assert_eq!(
+            select_name_server_indices(&servers, "service.internal.test", false, false),
+            vec![1, 2, 3, 0]
+        );
+        assert_eq!(
+            select_name_server_indices(&servers, "unmatched.test", false, false),
+            vec![0, 1, 2]
+        );
+        assert_eq!(
+            select_name_server_indices(&servers, "service.internal.test", true, false),
+            vec![1, 2, 3]
+        );
+        assert_eq!(
+            select_name_server_indices(&servers, "service.internal.test", false, true),
+            vec![1, 2, 3]
+        );
+        assert_eq!(
+            select_name_server_indices(&servers, "unmatched.test", false, true),
+            vec![0, 1, 2]
+        );
+    }
+
+    #[test]
+    fn name_server_selector_honors_final_query_and_forced_first() {
+        let mut first = policy(1);
+        first.skip_fallback = true;
+        let mut final_match = policy(2);
+        final_match.domains = vec![TransportDomainMatcher::Suffix("internal.test".to_owned())];
+        final_match.final_query = true;
+        let mut later_match = policy(3);
+        later_match.domains = vec![TransportDomainMatcher::Full(
+            "service.internal.test".to_owned(),
+        )];
+        let servers = [first, final_match, later_match];
+
+        assert_eq!(
+            select_name_server_indices(&servers, "service.internal.test", false, false),
+            vec![1]
+        );
+        assert_eq!(
+            select_name_server_indices(&servers, "unmatched.test", true, false),
+            vec![0]
+        );
+
+        let mut fallback_final = policy(1);
+        fallback_final.final_query = true;
+        assert_eq!(
+            select_name_server_indices(
+                &[fallback_final, policy(2)],
+                "unmatched.test",
+                false,
+                false,
+            ),
+            vec![0]
+        );
     }
 
     #[test]
@@ -2771,6 +3018,170 @@ mod tests {
         assert_eq!(*transport.calls.lock().unwrap(), [first, second]);
     }
 
+    #[derive(Default)]
+    struct RecordingAddressQueryTransport {
+        calls: Mutex<Vec<(NameServer, u16)>>,
+    }
+
+    #[async_trait::async_trait]
+    impl DnsQueryTransport for RecordingAddressQueryTransport {
+        async fn exchange(
+            &self,
+            server: &NameServer,
+            _transport: DnsQueryTransportKind,
+            query: &[u8],
+        ) -> io::Result<Vec<u8>> {
+            let (_, record_type, _) = super::parse_dns_question(query)?;
+            self.calls
+                .lock()
+                .unwrap()
+                .push((server.clone(), record_type));
+            Ok(build_test_a_response(query, Ipv4Addr::new(192, 0, 2, 73)))
+        }
+    }
+
+    #[tokio::test]
+    async fn configured_dns_intersects_global_and_per_server_query_strategy() {
+        let server = NameServer::Socket(SocketAddr::from(([192, 0, 2, 53], 53)));
+        let transport = Arc::new(RecordingAddressQueryTransport::default());
+        let mut policy = NameServerPolicy::new(server.clone());
+        policy.query_strategy = DnsQueryStrategy::UseIpv4;
+        let resolver =
+            ConfiguredDnsResolver::new(Vec::new(), Vec::new(), Arc::new(RejectingResolver))
+                .with_name_server_policies(vec![policy])
+                .with_query_strategy(DnsQueryStrategy::UseIp)
+                .with_query_transport(transport.clone());
+
+        let resolved = resolver.resolve("strategy.example", 443).await.unwrap();
+
+        assert_eq!(resolved, SocketAddr::from(([192, 0, 2, 73], 443)));
+        assert_eq!(*transport.calls.lock().unwrap(), [(server, 1)]);
+    }
+
+    struct StickyCnameQueryTransport {
+        cname_server: NameServer,
+        calls: Mutex<Vec<(NameServer, String)>>,
+    }
+
+    #[async_trait::async_trait]
+    impl DnsQueryTransport for StickyCnameQueryTransport {
+        async fn exchange(
+            &self,
+            server: &NameServer,
+            _transport: DnsQueryTransportKind,
+            query: &[u8],
+        ) -> io::Result<Vec<u8>> {
+            let (domain, record_type, _) = super::parse_dns_question(query)?;
+            if record_type != 1 {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "sticky CNAME test expects only A queries",
+                ));
+            }
+            self.calls
+                .lock()
+                .unwrap()
+                .push((server.clone(), domain.clone()));
+            if server != &self.cname_server {
+                if domain == "origin.internal.test" {
+                    return Ok(build_test_empty_response(query, 2));
+                }
+                return Ok(build_test_a_response(
+                    query,
+                    Ipv4Addr::new(198, 51, 100, 99),
+                ));
+            }
+            if domain == "origin.internal.test" {
+                Ok(build_test_cname_response(query, "alias.public.test"))
+            } else {
+                Ok(build_test_a_response(query, Ipv4Addr::new(192, 0, 2, 74)))
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn configured_dns_keeps_cname_follow_on_the_answering_server() {
+        let failing_internal = NameServer::Socket(SocketAddr::from(([192, 0, 2, 1], 53)));
+        let cname_internal = NameServer::Socket(SocketAddr::from(([192, 0, 2, 2], 53)));
+        let public = NameServer::Socket(SocketAddr::from(([192, 0, 2, 3], 53)));
+        let mut failing_policy = NameServerPolicy::new(failing_internal.clone());
+        failing_policy.domains = vec![TransportDomainMatcher::Suffix("internal.test".to_owned())];
+        let mut cname_policy = NameServerPolicy::new(cname_internal.clone());
+        cname_policy.domains = vec![TransportDomainMatcher::Suffix("internal.test".to_owned())];
+        let mut public_policy = NameServerPolicy::new(public);
+        public_policy.domains = vec![TransportDomainMatcher::Suffix("public.test".to_owned())];
+        let transport = Arc::new(StickyCnameQueryTransport {
+            cname_server: cname_internal.clone(),
+            calls: Mutex::new(Vec::new()),
+        });
+        let resolver =
+            ConfiguredDnsResolver::new(Vec::new(), Vec::new(), Arc::new(RejectingResolver))
+                .with_name_server_policies(vec![failing_policy, cname_policy, public_policy])
+                .with_name_server_fallback_policy(false, true)
+                .with_query_strategy(DnsQueryStrategy::UseIpv4)
+                .with_query_transport(transport.clone());
+
+        let resolved = resolver.resolve("origin.internal.test", 443).await.unwrap();
+
+        assert_eq!(resolved, SocketAddr::from(([192, 0, 2, 74], 443)));
+        assert_eq!(
+            *transport.calls.lock().unwrap(),
+            [
+                (failing_internal, "origin.internal.test".to_owned(),),
+                (cname_internal.clone(), "origin.internal.test".to_owned()),
+                (cname_internal, "alias.public.test".to_owned()),
+            ]
+        );
+    }
+
+    struct CnameThenUnavailableQueryTransport;
+
+    #[async_trait::async_trait]
+    impl DnsQueryTransport for CnameThenUnavailableQueryTransport {
+        async fn exchange(
+            &self,
+            _server: &NameServer,
+            _transport: DnsQueryTransportKind,
+            query: &[u8],
+        ) -> io::Result<Vec<u8>> {
+            let (domain, _, _) = super::parse_dns_question(query)?;
+            if domain == "origin.internal.test" {
+                Ok(build_test_cname_response(query, "alias.public.test"))
+            } else {
+                Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "CNAME continuation unavailable",
+                ))
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn configured_dns_cname_continuation_does_not_leak_to_outer_fallback() {
+        let fallback = Arc::new(DelayedCountingResolver {
+            calls: AtomicUsize::new(0),
+            result: Some(SocketAddr::from(([198, 51, 100, 99], 0))),
+        });
+        let mut policy = policy(1);
+        policy.domains = vec![TransportDomainMatcher::Suffix("internal.test".to_owned())];
+        let resolver = ConfiguredDnsResolver::new(Vec::new(), Vec::new(), fallback.clone())
+            .with_name_server_policies(vec![policy])
+            .with_name_server_fallback_policy(false, true)
+            .with_query_strategy(DnsQueryStrategy::UseIpv4)
+            .with_query_transport(Arc::new(CnameThenUnavailableQueryTransport));
+
+        let error = resolver
+            .resolve("origin.internal.test", 443)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            TransportError::DnsNoData(domain, 443) if domain == "origin.internal.test"
+        ));
+        assert_eq!(fallback.calls.load(Ordering::Relaxed), 0);
+    }
+
     #[tokio::test]
     async fn configured_dns_nxdomain_moves_to_the_next_server() {
         let first = NameServer::Socket(SocketAddr::from(([192, 0, 2, 1], 53)));
@@ -3019,6 +3430,25 @@ mod tests {
         response.extend_from_slice(&4_u16.to_be_bytes());
         response.extend_from_slice(&answer.octets());
 
+        response.extend_from_slice(&0xC00C_u16.to_be_bytes());
+        response.extend_from_slice(&5_u16.to_be_bytes());
+        response.extend_from_slice(&1_u16.to_be_bytes());
+        response.extend_from_slice(&20_u32.to_be_bytes());
+        response.extend_from_slice(&(encoded_alias.len() as u16).to_be_bytes());
+        response.extend_from_slice(&encoded_alias);
+        response
+    }
+
+    fn build_test_cname_response(query: &[u8], alias: &str) -> Vec<u8> {
+        let encoded_alias = encode_test_dns_name(alias);
+        let mut response = Vec::with_capacity(query.len() + encoded_alias.len() + 18);
+        response.extend_from_slice(&query[..2]);
+        response.extend_from_slice(&0x8180_u16.to_be_bytes());
+        response.extend_from_slice(&1_u16.to_be_bytes());
+        response.extend_from_slice(&1_u16.to_be_bytes());
+        response.extend_from_slice(&0_u16.to_be_bytes());
+        response.extend_from_slice(&0_u16.to_be_bytes());
+        response.extend_from_slice(&query[12..]);
         response.extend_from_slice(&0xC00C_u16.to_be_bytes());
         response.extend_from_slice(&5_u16.to_be_bytes());
         response.extend_from_slice(&1_u16.to_be_bytes());

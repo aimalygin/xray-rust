@@ -849,6 +849,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         var requiredDomains: [String] = []
         var seenRequiredDomains = Set<String>()
         var excludedCarrierDomains = Set<String>()
+        var protectedDNSDomains = Set<String>()
         var excludedAddresses = resolvedConfig.excludedServerAddresses
         guard excludedAddresses.allSatisfy({ !isTunnelOwnedIPAddress($0) }) else {
             throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
@@ -908,20 +909,24 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         var dns = root["dns"] as? [String: Any] ?? [:]
         if let servers = dns["servers"] as? [Any] {
             for rawServer in servers {
-                guard let server = rawServer as? String else {
-                    continue
+                guard let upstream = dnsBootstrapUpstream(from: rawServer) else {
+                    throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
                 }
-                if dnsBootstrapIPAddress(fromServer: server) != nil {
+                switch upstream {
+                case .ip:
+                    // DNS upstreams retain normal outbound routing and are not
+                    // installed as carrier exclusions.
                     continue
+                case let .domain(domain, port):
+                    appendBootstrapDomain(
+                        domain,
+                        to: &requiredDomains,
+                        seen: &seenRequiredDomains
+                    )
+                    if port == 53 {
+                        protectedDNSDomains.insert(domain)
+                    }
                 }
-                guard let domain = dnsBootstrapDomain(fromServer: server) else {
-                    continue
-                }
-                appendBootstrapDomain(
-                    domain,
-                    to: &requiredDomains,
-                    seen: &seenRequiredDomains
-                )
             }
         }
 
@@ -947,10 +952,12 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                 shouldContinue: shouldContinue,
                 resolveAddress: resolveAddress
             )
-            if excludedCarrierDomains.contains(domain) {
+            if excludedCarrierDomains.contains(domain) || protectedDNSDomains.contains(domain) {
                 guard addresses.allSatisfy({ !isTunnelOwnedIPAddress($0) }) else {
                     throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
                 }
+            }
+            if excludedCarrierDomains.contains(domain) {
                 for address in addresses {
                     appendBootstrapAddress(
                         address,
@@ -1038,6 +1045,95 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             return nil
         }
         return canonicalIPAddress(String(server[..<separator]))
+    }
+
+    private enum DNSBootstrapUpstream: Equatable {
+        case ip(String, port: UInt16)
+        case domain(String, port: UInt16)
+    }
+
+    private static func dnsBootstrapUpstream(from rawServer: Any) -> DNSBootstrapUpstream? {
+        if let server = rawServer as? String {
+            guard server == server.trimmingCharacters(in: .whitespacesAndNewlines),
+                  isNonzeroDNSServer(server),
+                  let port = dnsBootstrapPort(fromServer: server)
+            else {
+                return nil
+            }
+            if let address = dnsBootstrapIPAddress(fromServer: server) {
+                guard port != 53 || !isTunnelOwnedIPAddress(address) else {
+                    return nil
+                }
+                return .ip(address, port: port)
+            }
+            return dnsBootstrapDomain(fromServer: server).map {
+                .domain($0, port: port)
+            }
+        }
+
+        guard let server = rawServer as? [String: Any],
+              let address = server["address"] as? String,
+              !address.isEmpty,
+              address == address.trimmingCharacters(in: .whitespacesAndNewlines)
+        else {
+            return nil
+        }
+        let port: UInt16
+        if let rawPort = server["port"] {
+            guard isJSONUInt32(rawPort),
+                  let number = rawPort as? NSNumber,
+                  number.uint64Value <= UInt64(UInt16.max)
+            else {
+                return nil
+            }
+            // Match Xray classic DNS: an explicit zero selects port 53.
+            port = number.uint16Value == 0 ? 53 : number.uint16Value
+        } else {
+            port = 53
+        }
+
+        if let canonicalAddress = canonicalIPAddress(address) {
+            guard port != 53 || !isTunnelOwnedIPAddress(canonicalAddress) else {
+                return nil
+            }
+            return .ip(canonicalAddress, port: port)
+        }
+        guard address.caseInsensitiveCompare("localhost") != .orderedSame,
+              address.caseInsensitiveCompare("fakedns") != .orderedSame,
+              !address.contains(":"),
+              let domain = canonicalDNSBootstrapDomain(address)
+        else {
+            return nil
+        }
+        return .domain(domain, port: port)
+    }
+
+    private static func dnsBootstrapPort(fromServer server: String) -> UInt16? {
+        if canonicalIPAddress(server) != nil {
+            return 53
+        }
+        if server.first == "[", let closingBracket = server.lastIndex(of: "]") {
+            let portSeparator = server.index(after: closingBracket)
+            guard portSeparator < server.endIndex,
+                  server[portSeparator] == ":",
+                  server.index(after: portSeparator) < server.endIndex,
+                  let port = UInt16(server[server.index(after: portSeparator)...]),
+                  port != 0
+            else {
+                return nil
+            }
+            return port
+        }
+        if let separator = server.lastIndex(of: ":") {
+            guard !server[..<separator].contains(":"),
+                  let port = UInt16(server[server.index(after: separator)...]),
+                  port != 0
+            else {
+                return nil
+            }
+            return port
+        }
+        return server.isEmpty ? nil : 53
     }
 
     private static func canonicalDNSBootstrapDomain(_ rawDomain: String) -> String? {
@@ -1499,6 +1595,9 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         explicit: XrayPacketTunnelDNSConfiguration
     ) -> XrayPacketTunnelResolvedDNSConfiguration? {
         let hasFakeIP = fakeIPDNSIsAvailable(configJSON)
+        if fakeIPDNSIsEnabled(configJSON), !hasFakeIP {
+            return nil
+        }
         let hasConfiguredUpstream = configuredDNSUpstreamIsAvailable(configJSON)
         switch explicit {
         case let .custom(servers) where !hasFakeIP:
@@ -1592,7 +1691,6 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let dns = root["dns"] as? [String: Any],
               let fakeIP = dns["fakeIp"] as? [String: Any],
-              Set(dns.keys).isSubset(of: ["fakeIp", "servers", "hosts"]),
               Set(fakeIP.keys).isSubset(of: ["enabled", "ipv4Pool", "poolSize", "ttl"]),
               isJSONBooleanTrue(fakeIP["enabled"]),
               let ipv4Pool = fakeIP["ipv4Pool"] as? String
@@ -1607,7 +1705,29 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         {
             return false
         }
-        return isValidIPv4Pool(ipv4Pool)
+        return !usesIPv6OnlyDNSQueryStrategy(dns["queryStrategy"])
+            && isValidIPv4Pool(ipv4Pool)
+    }
+
+    private static func fakeIPDNSIsEnabled(_ configJSON: String) -> Bool {
+        guard let data = configJSON.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let dns = root["dns"] as? [String: Any],
+              let fakeIP = dns["fakeIp"] as? [String: Any]
+        else {
+            return false
+        }
+        return isJSONBooleanTrue(fakeIP["enabled"])
+    }
+
+    private static func usesIPv6OnlyDNSQueryStrategy(_ rawStrategy: Any?) -> Bool {
+        guard let strategy = (rawStrategy as? String)?.lowercased() else {
+            return false
+        }
+        return [
+            "useip6", "useipv6", "use_ip6", "use_ipv6", "use_ip_v6",
+            "use-ip6", "use-ipv6", "use-ip-v6",
+        ].contains(strategy)
     }
 
     private static func configuredDNSUpstreamIsAvailable(_ configJSON: String) -> Bool {
@@ -1619,10 +1739,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             return false
         }
         return !servers.isEmpty && servers.allSatisfy { rawServer in
-            guard let server = rawServer as? String else {
-                return false
-            }
-            return isNonzeroDNSServer(server)
+            dnsBootstrapUpstream(from: rawServer) != nil
         }
     }
 

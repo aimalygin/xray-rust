@@ -8,9 +8,9 @@ use std::{
 use prost::Message;
 use xray_config::{
     parse_xray_json, parse_xray_json_with_geodata_dirs, DiagnosticSeverity, DnsFakeIpConfig,
-    DnsHostTarget, DnsQueryStrategy, DnsServerConfig, HappyEyeballsSettings, InboundProtocol,
-    IpCidr, OutboundSettings, RealityShortId, RoutingDomainStrategy, SniffingDestination,
-    StreamSecurity, TargetAddr,
+    DnsHostTarget, DnsNameServerConfig, DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint,
+    HappyEyeballsSettings, InboundProtocol, IpCidr, OutboundSettings, RealityShortId,
+    RoutingDomainStrategy, SniffingDestination, StreamSecurity, TargetAddr,
 };
 
 #[test]
@@ -1124,6 +1124,162 @@ fn parses_dns_servers_and_hosts() {
     assert_eq!(
         parsed.config.dns.hosts[1].target,
         DnsHostTarget::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 53)))
+    );
+}
+
+#[test]
+fn parses_xray_dns_server_objects_and_fallback_policy() {
+    let raw = r#"{
+        "dns": {
+          "queryStrategy": "UseIP",
+          "disableFallback": true,
+          "disableFallbackIfMatch": true,
+          "servers": [
+            {
+              "address": "192.0.2.53",
+              "port": 5353,
+              "domains": [
+                "domain:internal.example",
+                "full:resolver.example",
+                "dotless:localhost",
+                "dotless:"
+              ],
+              "skipFallback": true,
+              "queryStrategy": "UseIPv4",
+              "finalQuery": true
+            },
+            {
+              "address": "dns.example",
+              "domains": "keyword:corp,full:exact.example"
+            }
+          ]
+        },
+        "inbounds": [],
+        "outbounds": [
+          { "tag": "direct", "protocol": "freedom" }
+        ]
+    }"#;
+
+    let parsed = parse_xray_json(raw).expect("object DNS servers should parse");
+    assert!(parsed.config.dns.disable_fallback);
+    assert!(parsed.config.dns.disable_fallback_if_match);
+
+    let DnsServerConfig::Policy(first) = &parsed.config.dns.servers[0] else {
+        panic!("expected policy DNS server");
+    };
+    assert_eq!(
+        first.endpoint,
+        DnsServerEndpoint::Ip(SocketAddr::from(([192, 0, 2, 53], 5353)))
+    );
+    assert!(first.domains[0].matches("service.internal.example"));
+    assert!(first.domains[1].matches("resolver.example"));
+    assert!(!first.domains[1].matches("www.resolver.example"));
+    assert!(first.domains[2].matches("my-localhost-service"));
+    assert!(!first.domains[2].matches("localhost.example"));
+    assert!(first.domains[3].matches("printer"));
+    assert!(!first.domains[3].matches("printer.lan"));
+    assert!(first.skip_fallback);
+    assert_eq!(first.query_strategy, DnsQueryStrategy::UseIpv4);
+    assert!(first.final_query);
+
+    let DnsServerConfig::Policy(second) = &parsed.config.dns.servers[1] else {
+        panic!("expected policy DNS server");
+    };
+    assert_eq!(
+        second,
+        &DnsNameServerConfig {
+            endpoint: DnsServerEndpoint::Domain {
+                domain: "dns.example".to_owned(),
+                port: 53,
+            },
+            domains: second.domains.clone(),
+            skip_fallback: false,
+            query_strategy: DnsQueryStrategy::UseIp,
+            final_query: false,
+        }
+    );
+    assert!(second.domains[0].matches("my-corp-zone.example"));
+    assert!(second.domains[1].matches("exact.example"));
+}
+
+#[test]
+fn rejects_dns_server_object_strategy_disjoint_from_global_strategy() {
+    let raw = r#"{
+        "dns": {
+          "queryStrategy": "UseIPv4",
+          "servers": [{ "address": "192.0.2.53", "queryStrategy": "UseIPv6" }]
+        },
+        "inbounds": [],
+        "outbounds": [{ "tag": "direct", "protocol": "freedom" }]
+    }"#;
+
+    assert_parse_error_path(raw, "$.dns.servers[0].queryStrategy");
+}
+
+#[test]
+fn rejects_invalid_dns_server_object_fields_with_precise_paths() {
+    for (server, path) in [
+        (r#"{}"#, "$.dns.servers[0].address"),
+        (r#"{ "address": 42 }"#, "$.dns.servers[0].address"),
+        (
+            r#"{ "address": "192.0.2.53", "port": 65536 }"#,
+            "$.dns.servers[0].port",
+        ),
+        (
+            r#"{ "address": "192.0.2.53", "domains": [42] }"#,
+            "$.dns.servers[0].domains[0]",
+        ),
+        (
+            r#"{ "address": "192.0.2.53", "domains": ["dotless:bad.rule"] }"#,
+            "$.dns.servers[0].domains[0]",
+        ),
+        (
+            r#"{ "address": "tcp://192.0.2.53" }"#,
+            "$.dns.servers[0].address",
+        ),
+        (
+            r#"{ "address": "192.0.2.53", "expectedIPs": ["geoip:private"] }"#,
+            "$.dns.servers[0].expectedIPs",
+        ),
+    ] {
+        let raw = raw_with_dns_servers(server);
+        assert_parse_error_path(&raw, path);
+    }
+}
+
+#[test]
+fn rejects_special_xray_dns_clients_until_their_transport_is_implemented() {
+    for address in ["localhost", "LOCALHOST", "fakedns", "FakeDns"] {
+        let raw = raw_with_dns_servers(&format!(r#"{{ "address": "{address}" }}"#));
+        assert_parse_error_path(&raw, "$.dns.servers[0].address");
+    }
+}
+
+#[test]
+fn rejects_surrounding_whitespace_in_dns_server_addresses() {
+    for (server, path) in [
+        (r#"" dns.example""#, "$.dns.servers[0]"),
+        (
+            r#"{ "address": "dns.example " }"#,
+            "$.dns.servers[0].address",
+        ),
+    ] {
+        let raw = raw_with_dns_servers(server);
+        assert_parse_error_path(&raw, path);
+    }
+}
+
+#[test]
+fn maps_zero_object_dns_server_port_to_xray_default() {
+    let raw = raw_with_dns_servers(r#"{ "address": "192.0.2.53", "port": 0 }"#);
+    let parsed = parse_xray_json(&raw).expect("Xray object port zero should mean port 53");
+
+    let DnsServerConfig::Policy(server) = &parsed.config.dns.servers[0] else {
+        panic!("expected policy DNS server");
+    };
+    assert_eq!(
+        server.endpoint,
+        DnsServerEndpoint::Ip(SocketAddr::from(([192, 0, 2, 53], 53)))
     );
 }
 

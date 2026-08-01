@@ -92,8 +92,11 @@ DNS is split at the wire-transport boundary instead of being owned by TUN.
 `xray-transport` builds and validates DNS messages, retains ordered A/AAAA
 candidates with authoritative or remaining TTL metadata, handles CNAME
 resolution, server failover, UDP truncation with same-server TCP retry, and the
-bounded resolver cache. The global family policy is applied at this resolver
-boundary: `UseIP` queries both families, while `UseIPv4` or `UseIPv6` sends
+bounded resolver cache. Object name-server policies select matching domains
+before ordered fallback, with Xray-compatible skip/disable/final behavior; a
+CNAME-only continuation stays on the answering name server. Global and
+per-server family policies are intersected at this resolver boundary: `UseIP`
+queries both families, while `UseIPv4` or `UseIPv6` sends
 only the selected wire query and filters static/fallback candidates. Static
 `dns.hosts` entries can supply one IP, an alias domain, or an ordered nonempty
 IP array; every permitted-family IP remains a dial candidate.
@@ -114,6 +117,10 @@ and must not call back into destination DNS. This non-recursive split belongs to
 the universal core, not to the mobile adapter: TUN's raw DNS proxy and fake-IP
 engine are consumers of the roles, while future server inbounds can reuse
 destination resolution without inheriting mobile bootstrap policy.
+The raw anchor is deliberately DNS `Direct`: object policies select managed
+destination lookups but do not rewrite or reinterpret byte-transparent client
+queries. A future DNS `Hijack` mode must be explicit rather than changing this
+wire contract.
 
 The generic core and C ABI retain system bootstrap as their default for
 desktop, command-line, and future server embeddings. Mobile full-tunnel

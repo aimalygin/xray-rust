@@ -229,10 +229,14 @@ async fn configured_dns_ignores_response_for_different_question() {
         fallback.clone(),
     );
 
-    let addr = resolver.resolve("example.net", 443).await.unwrap();
+    let error = resolver.resolve("example.net", 443).await.unwrap_err();
 
-    assert_eq!(addr, SocketAddr::from(([192, 0, 2, 1], 443)));
-    assert_eq!(fallback.calls.load(Ordering::SeqCst), 1);
+    assert!(matches!(
+        error,
+        TransportError::Dns { source, .. }
+            if source.kind() == std::io::ErrorKind::NotConnected
+    ));
+    assert_eq!(fallback.calls.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test]
@@ -249,10 +253,14 @@ async fn configured_dns_ignores_answer_for_different_owner_name() {
         fallback.clone(),
     );
 
-    let addr = resolver.resolve("example.net", 443).await.unwrap();
+    let error = resolver.resolve("example.net", 443).await.unwrap_err();
 
-    assert_eq!(addr, SocketAddr::from(([192, 0, 2, 1], 443)));
-    assert_eq!(fallback.calls.load(Ordering::SeqCst), 1);
+    assert!(matches!(
+        error,
+        TransportError::Dns { source, .. }
+            if source.kind() == std::io::ErrorKind::NotConnected
+    ));
+    assert_eq!(fallback.calls.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test]
@@ -265,14 +273,18 @@ async fn configured_dns_rejects_cname_that_overruns_rdata() {
         fallback.clone(),
     );
 
-    let addr = resolver.resolve("example.net", 443).await.unwrap();
+    let error = resolver.resolve("example.net", 443).await.unwrap_err();
 
-    assert_eq!(addr, SocketAddr::from(([192, 0, 2, 1], 443)));
-    assert_eq!(fallback.calls.load(Ordering::SeqCst), 1);
+    assert!(matches!(
+        error,
+        TransportError::Dns { source, .. }
+            if source.kind() == std::io::ErrorKind::NotConnected
+    ));
+    assert_eq!(fallback.calls.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test]
-async fn configured_dns_server_failure_falls_back() {
+async fn configured_dns_server_exhaustion_does_not_leak_to_system_fallback() {
     let unused_socket = UdpSocket::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
         .await
         .unwrap();
@@ -287,10 +299,17 @@ async fn configured_dns_server_failure_falls_back() {
     )
     .with_server_timeout(Duration::from_millis(25));
 
-    let addr = resolver.resolve("fallback.example", 9443).await.unwrap();
+    let error = resolver
+        .resolve("fallback.example", 9443)
+        .await
+        .unwrap_err();
 
-    assert_eq!(addr, SocketAddr::from(([192, 0, 2, 1], 9443)));
-    assert_eq!(fallback.calls.load(Ordering::SeqCst), 1);
+    assert!(matches!(
+        error,
+        TransportError::Dns { source, .. }
+            if source.kind() == std::io::ErrorKind::NotConnected
+    ));
+    assert_eq!(fallback.calls.load(Ordering::SeqCst), 0);
 }
 
 struct FakeUdpDnsServer {

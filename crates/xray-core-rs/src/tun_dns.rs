@@ -86,20 +86,20 @@ impl DnsProxyPlan {
         let mut seen = HashSet::new();
         let upstreams = servers
             .iter()
-            .filter_map(|server| match server {
-                DnsServerConfig::Ip(addr) if addr.port() != 0 && !is_tun_dns_socket(*addr) => {
-                    let upstream = DnsProxyUpstream::Ip(*addr);
+            .filter_map(|server| match server.endpoint() {
+                xray_config::DnsServerEndpoint::Ip(addr)
+                    if addr.port() != 0 && !is_tun_dns_socket(addr) =>
+                {
+                    let upstream = DnsProxyUpstream::Ip(addr);
                     seen.insert(upstream.clone()).then_some(upstream)
                 }
-                DnsServerConfig::Domain { domain, port } if *port != 0 => {
-                    let domain = crate::dns::normalize_dns_name(domain)?;
-                    let upstream = DnsProxyUpstream::Domain {
-                        domain,
-                        port: *port,
-                    };
+                xray_config::DnsServerEndpoint::Domain { domain, port } if port != 0 => {
+                    let domain = crate::dns::normalize_dns_name(&domain)?;
+                    let upstream = DnsProxyUpstream::Domain { domain, port };
                     seen.insert(upstream.clone()).then_some(upstream)
                 }
-                DnsServerConfig::Ip(_) | DnsServerConfig::Domain { .. } => None,
+                xray_config::DnsServerEndpoint::Ip(_)
+                | xray_config::DnsServerEndpoint::Domain { .. } => None,
             })
             .take(MAX_DNS_PROXY_UPSTREAMS)
             .collect::<Vec<_>>();
@@ -1092,6 +1092,18 @@ mod tests {
                 domain: "Resolver.Example".to_owned(),
                 port: 53,
             },
+            DnsServerConfig::Policy(xray_config::DnsNameServerConfig {
+                endpoint: xray_config::DnsServerEndpoint::Domain {
+                    domain: "policy.example.".to_owned(),
+                    port: 5_353,
+                },
+                domains: vec![xray_config::DomainMatcher::Suffix(
+                    "internal.example".to_owned(),
+                )],
+                skip_fallback: true,
+                query_strategy: xray_config::DnsQueryStrategy::UseIpv6,
+                final_query: true,
+            }),
             DnsServerConfig::Ip(first),
             DnsServerConfig::Ip(first),
             DnsServerConfig::Ip(SocketAddr::from((Ipv4Addr::new(9, 9, 9, 9), 0))),
@@ -1109,6 +1121,10 @@ mod tests {
                 DnsProxyUpstream::Domain {
                     domain: "resolver.example".to_owned(),
                     port: 53,
+                },
+                DnsProxyUpstream::Domain {
+                    domain: "policy.example".to_owned(),
+                    port: 5_353,
                 },
                 DnsProxyUpstream::Ip(first),
                 DnsProxyUpstream::Ip(second),

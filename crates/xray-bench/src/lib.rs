@@ -57,12 +57,16 @@ use xray_proxy::vless::{
     unpad_vision_block, VisionCommand, VisionPadding,
 };
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
-use xray_transport::{CachingDnsResolver, DnsLookup, DnsResolver, TransportError};
+use xray_transport::{
+    select_name_server_indices, CachingDnsResolver, DnsLookup, DnsResolver, NameServer,
+    NameServerPolicy, TransportDomainMatcher, TransportError,
+};
 use xray_utls::{normalize_reality_supported_fingerprint, XRAY_REALITY_CAPABLE_FINGERPRINTS};
 
 pub mod chart;
 
-const USAGE: &str = "usage: xray-bench run|compare|route-probe|reality-matrix|chart [options]";
+const USAGE: &str =
+    "usage: xray-bench run|compare|route-probe|dns-policy-probe|reality-matrix|chart [options]";
 const TEST_VLESS_UUID: [u8; 16] = [
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
 ];
@@ -147,6 +151,7 @@ pub enum CliArgs {
     Run(BenchOptions),
     Compare(BenchOptions),
     RouteProbe(RouteProbeOptions),
+    DnsPolicyProbe(DnsPolicyProbeOptions),
     RealityMatrix(RealityMatrixOptions),
     Chart(chart::ChartOptions),
 }
@@ -352,6 +357,14 @@ pub struct RouteProbeOptions {
     pub rules: usize,
     pub outbounds: usize,
     pub dns_candidates: usize,
+    pub out_dir: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DnsPolicyProbeOptions {
+    pub iterations: usize,
+    pub servers: usize,
+    pub matchers: usize,
     pub out_dir: PathBuf,
 }
 
@@ -959,6 +972,17 @@ impl Default for RouteProbeOptions {
     }
 }
 
+impl Default for DnsPolicyProbeOptions {
+    fn default() -> Self {
+        Self {
+            iterations: 10_000,
+            servers: 4,
+            matchers: 4_096,
+            out_dir: PathBuf::from("target/benchmarks"),
+        }
+    }
+}
+
 impl Default for RealityMatrixOptions {
     fn default() -> Self {
         Self {
@@ -993,6 +1017,22 @@ pub struct RouteProbeResult {
     pub avg_ns: u128,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct DnsPolicyProbeMetric {
+    pub selected_per_iteration: usize,
+    pub total_us: u128,
+    pub avg_ns: u128,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct DnsPolicyProbeResult {
+    pub iterations: usize,
+    pub servers: usize,
+    pub matchers: usize,
+    pub common_no_domains: DnsPolicyProbeMetric,
+    pub worst_case_matchers: DnsPolicyProbeMetric,
+}
+
 pub fn parse_cli_args<I, S>(args: I) -> Result<CliArgs, BenchError>
 where
     I: IntoIterator<Item = S>,
@@ -1008,6 +1048,9 @@ where
     let rest = args.collect::<Vec<_>>();
     if command == "route-probe" {
         return parse_route_probe_args(&rest).map(CliArgs::RouteProbe);
+    }
+    if command == "dns-policy-probe" {
+        return parse_dns_policy_probe_args(&rest).map(CliArgs::DnsPolicyProbe);
     }
     if command == "reality-matrix" {
         return parse_reality_matrix_args(&rest).map(CliArgs::RealityMatrix);
@@ -1118,6 +1161,9 @@ where
             Ok(CliArgs::Compare(options))
         }
         "route-probe" => unreachable!("route-probe is parsed before engine benchmark options"),
+        "dns-policy-probe" => {
+            unreachable!("dns-policy-probe is parsed before engine benchmark options")
+        }
         "reality-matrix" => {
             unreachable!("reality-matrix is parsed before engine benchmark options")
         }
@@ -1148,6 +1194,38 @@ fn parse_route_probe_args(args: &[String]) -> Result<RouteProbeOptions, BenchErr
             "--dns-candidates" => {
                 options.dns_candidates =
                     parse_usize(required_value(args, &mut index, flag)?, flag)?;
+            }
+            "--out-dir" => {
+                options.out_dir = PathBuf::from(required_value(args, &mut index, flag)?);
+            }
+            other => {
+                return Err(BenchError::InvalidArguments(format!(
+                    "unknown argument `{other}`\n{USAGE}"
+                )));
+            }
+        }
+    }
+    Ok(options)
+}
+
+fn parse_dns_policy_probe_args(args: &[String]) -> Result<DnsPolicyProbeOptions, BenchError> {
+    let mut options = DnsPolicyProbeOptions::default();
+    let mut index = 0;
+    while index < args.len() {
+        let flag = args[index].as_str();
+        index += 1;
+        match flag {
+            "--iterations" => {
+                options.iterations =
+                    parse_nonzero_usize(required_value(args, &mut index, flag)?, flag)?;
+            }
+            "--servers" => {
+                options.servers =
+                    parse_nonzero_usize(required_value(args, &mut index, flag)?, flag)?;
+            }
+            "--matchers" => {
+                options.matchers =
+                    parse_nonzero_usize(required_value(args, &mut index, flag)?, flag)?;
             }
             "--out-dir" => {
                 options.out_dir = PathBuf::from(required_value(args, &mut index, flag)?);
@@ -6795,6 +6873,11 @@ where
             print_route_probe_result(&result);
             Ok(())
         }
+        CliArgs::DnsPolicyProbe(options) => {
+            let result = run_dns_policy_probe(&options)?;
+            print_dns_policy_probe_result(&result);
+            Ok(())
+        }
         CliArgs::RealityMatrix(options) => {
             let result = run_reality_matrix(options).await?;
             print_reality_matrix_result(&result);
@@ -6811,6 +6894,9 @@ const ROUTE_PROBE_CACHE_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 const ROUTE_PROBE_IPV4_MISS_BASE: u32 = 0xc612_0000;
 const MAX_ROUTE_PROBE_DNS_CANDIDATES: usize = 4096;
 const ROUTE_PROBE_UNMATCHED_TAG: &str = "route-probe-unmatched";
+const DNS_POLICY_PROBE_DOMAIN: &str = "selected.policy-probe.invalid";
+const MAX_DNS_POLICY_PROBE_SERVERS: usize = 4_096;
+const MAX_DNS_POLICY_PROBE_MATCHERS: usize = 250_000;
 
 struct RouteProbeDnsResolver {
     result: DnsLookup,
@@ -6978,6 +7064,126 @@ pub async fn run_route_probe(options: &RouteProbeOptions) -> Result<RouteProbeRe
     let run_dir = options.out_dir.join(new_run_id()).join("route-probe");
     fs::create_dir_all(&run_dir).map_err(|source| BenchError::Io {
         action: format!("creating route-probe directory `{}`", run_dir.display()),
+        source,
+    })?;
+    write_json(&run_dir.join("result.json"), &result)?;
+    Ok(result)
+}
+
+fn dns_policy_probe_servers(server_count: usize) -> Vec<NameServerPolicy> {
+    (0..server_count)
+        .map(|index| {
+            NameServerPolicy::new(NameServer::Domain {
+                domain: format!("ns-{index}.policy-probe.invalid"),
+                port: 53,
+            })
+        })
+        .collect()
+}
+
+fn dns_policy_probe_worst_case_servers(
+    server_count: usize,
+    matcher_count: usize,
+) -> Vec<NameServerPolicy> {
+    let mut servers = dns_policy_probe_servers(server_count);
+    let Some(last) = servers.last_mut() else {
+        return servers;
+    };
+    last.domains.reserve(matcher_count);
+    last.domains.extend(
+        (0..matcher_count.saturating_sub(1)).map(|index| {
+            TransportDomainMatcher::Full(format!("miss-{index}.policy-probe.invalid"))
+        }),
+    );
+    last.domains.push(TransportDomainMatcher::Full(
+        DNS_POLICY_PROBE_DOMAIN.to_owned(),
+    ));
+    servers
+}
+
+fn measure_dns_policy_selection(
+    policies: &[NameServerPolicy],
+    iterations: usize,
+) -> DnsPolicyProbeMetric {
+    let selected_per_iteration =
+        select_name_server_indices(policies, DNS_POLICY_PROBE_DOMAIN, false, false).len();
+    let started = Instant::now();
+    for _ in 0..iterations {
+        let selected = select_name_server_indices(
+            black_box(policies),
+            black_box(DNS_POLICY_PROBE_DOMAIN),
+            false,
+            false,
+        );
+        black_box(selected);
+    }
+    let elapsed = started.elapsed();
+    DnsPolicyProbeMetric {
+        selected_per_iteration,
+        total_us: elapsed.as_micros(),
+        avg_ns: elapsed.as_nanos() / iterations as u128,
+    }
+}
+
+fn measure_dns_policy_probe(
+    options: &DnsPolicyProbeOptions,
+) -> Result<DnsPolicyProbeResult, BenchError> {
+    if options.iterations == 0 {
+        return Err(BenchError::InvalidArguments(
+            "dns-policy-probe --iterations must be greater than zero".to_owned(),
+        ));
+    }
+    if options.servers == 0 || options.servers > MAX_DNS_POLICY_PROBE_SERVERS {
+        return Err(BenchError::InvalidArguments(format!(
+            "dns-policy-probe --servers must be between 1 and {MAX_DNS_POLICY_PROBE_SERVERS}"
+        )));
+    }
+    if options.matchers == 0 || options.matchers > MAX_DNS_POLICY_PROBE_MATCHERS {
+        return Err(BenchError::InvalidArguments(format!(
+            "dns-policy-probe --matchers must be between 1 and {MAX_DNS_POLICY_PROBE_MATCHERS}"
+        )));
+    }
+
+    let common = dns_policy_probe_servers(options.servers);
+    let expected_common = (0..options.servers).collect::<Vec<_>>();
+    let actual_common = select_name_server_indices(&common, DNS_POLICY_PROBE_DOMAIN, false, false);
+    if actual_common != expected_common {
+        return Err(BenchError::InvalidArguments(format!(
+            "DNS policy common-path probe selected {actual_common:?}, expected {expected_common:?}"
+        )));
+    }
+
+    let worst_case = dns_policy_probe_worst_case_servers(options.servers, options.matchers);
+    let mut expected_worst_case = Vec::with_capacity(options.servers);
+    expected_worst_case.push(options.servers - 1);
+    expected_worst_case.extend(0..options.servers - 1);
+    let actual_worst_case =
+        select_name_server_indices(&worst_case, DNS_POLICY_PROBE_DOMAIN, false, false);
+    if actual_worst_case != expected_worst_case {
+        return Err(BenchError::InvalidArguments(format!(
+            "DNS policy worst-case probe selected {actual_worst_case:?}, expected {expected_worst_case:?}"
+        )));
+    }
+
+    Ok(DnsPolicyProbeResult {
+        iterations: options.iterations,
+        servers: options.servers,
+        matchers: options.matchers,
+        common_no_domains: measure_dns_policy_selection(&common, options.iterations),
+        worst_case_matchers: measure_dns_policy_selection(&worst_case, options.iterations),
+    })
+}
+
+pub fn run_dns_policy_probe(
+    options: &DnsPolicyProbeOptions,
+) -> Result<DnsPolicyProbeResult, BenchError> {
+    let result = measure_dns_policy_probe(options)?;
+    let run_dir = options.out_dir.join(new_run_id()).join("dns-policy-probe");
+    fs::create_dir_all(&run_dir).map_err(|source| BenchError::Io {
+        action: format!(
+            "creating DNS policy probe directory `{}`",
+            run_dir.display()
+        ),
         source,
     })?;
     write_json(&run_dir.join("result.json"), &result)?;
@@ -8304,6 +8510,21 @@ fn print_route_probe_result(result: &RouteProbeResult) {
         result.selected,
         result.total_us,
         result.avg_ns
+    );
+}
+
+fn print_dns_policy_probe_result(result: &DnsPolicyProbeResult) {
+    println!(
+        "dns-policy-probe iterations={} servers={} matchers={} common_selected={} common_total_us={} common_avg_ns={} worst_selected={} worst_total_us={} worst_avg_ns={}",
+        result.iterations,
+        result.servers,
+        result.matchers,
+        result.common_no_domains.selected_per_iteration,
+        result.common_no_domains.total_us,
+        result.common_no_domains.avg_ns,
+        result.worst_case_matchers.selected_per_iteration,
+        result.worst_case_matchers.total_us,
+        result.worst_case_matchers.avg_ns,
     );
 }
 
@@ -10326,6 +10547,68 @@ mod tests {
             panic!("expected route-probe arguments");
         };
         assert_eq!(options.dns_candidates, 8);
+    }
+
+    #[test]
+    fn parses_dns_policy_probe_command() {
+        let args = parse_cli_args([
+            "xray-bench",
+            "dns-policy-probe",
+            "--iterations",
+            "500",
+            "--servers",
+            "8",
+            "--matchers",
+            "16384",
+            "--out-dir",
+            "target/benchmarks/dns-policy-probe",
+        ])
+        .unwrap();
+
+        assert_eq!(
+            args,
+            CliArgs::DnsPolicyProbe(DnsPolicyProbeOptions {
+                iterations: 500,
+                servers: 8,
+                matchers: 16_384,
+                out_dir: PathBuf::from("target/benchmarks/dns-policy-probe"),
+            })
+        );
+    }
+
+    #[test]
+    fn dns_policy_probe_exercises_common_and_worst_case_selection() {
+        let result = measure_dns_policy_probe(&DnsPolicyProbeOptions {
+            iterations: 3,
+            servers: 4,
+            matchers: 4_096,
+            out_dir: PathBuf::from("target/benchmarks/test"),
+        })
+        .unwrap();
+
+        assert_eq!(
+            (
+                result.iterations,
+                result.servers,
+                result.matchers,
+                result.common_no_domains.selected_per_iteration,
+                result.worst_case_matchers.selected_per_iteration,
+            ),
+            (3, 4, 4_096, 4, 4)
+        );
+    }
+
+    #[test]
+    fn dns_policy_probe_rejects_matcher_counts_above_config_budget() {
+        let error = measure_dns_policy_probe(&DnsPolicyProbeOptions {
+            iterations: 1,
+            servers: 1,
+            matchers: MAX_DNS_POLICY_PROBE_MATCHERS + 1,
+            out_dir: PathBuf::from("target/benchmarks/test"),
+        })
+        .unwrap_err();
+
+        assert!(error.to_string().contains("--matchers must be between"));
     }
 
     #[test]

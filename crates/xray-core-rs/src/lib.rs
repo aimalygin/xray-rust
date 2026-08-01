@@ -5,14 +5,14 @@ use thiserror::Error;
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 use xray_config::{
-    CoreConfig, DnsHostTarget, DnsQueryStrategy as ConfigDnsQueryStrategy, DnsServerConfig,
+    CoreConfig, DnsHostTarget, DnsQueryStrategy as ConfigDnsQueryStrategy, DnsServerEndpoint,
     DomainMatcher, InboundProtocol,
 };
 use xray_runtime::Shutdown;
 use xray_transport::{
     CachingDnsResolver, ConfiguredDnsResolver, DnsQueryStrategy as TransportDnsQueryStrategy,
-    DnsQueryTransport, DnsResolver, NameServer, SocketProtector, StaticHostRule, StaticHostTarget,
-    SystemDnsResolver, TransportDialer, TransportDomainMatcher, TransportError,
+    DnsQueryTransport, DnsResolver, NameServer, NameServerPolicy, SocketProtector, StaticHostRule,
+    StaticHostTarget, SystemDnsResolver, TransportDialer, TransportDomainMatcher, TransportError,
 };
 use xray_tun::{TunConfig, TunEndpoint};
 
@@ -745,21 +745,37 @@ fn configured_dns_resolver_from_config_with_transport(
             .dns
             .servers
             .iter()
-            .filter_map(|server| match server {
-                DnsServerConfig::Ip(addr) => Some(NameServer::Socket(*addr)),
-                DnsServerConfig::Domain { domain, port } => {
-                    dns::normalize_dns_name(domain).map(|domain| NameServer::Domain {
-                        domain,
-                        port: *port,
-                    })
-                }
+            .filter_map(|server| {
+                let name_server = match server.endpoint() {
+                    DnsServerEndpoint::Ip(addr) => NameServer::Socket(addr),
+                    DnsServerEndpoint::Domain { domain, port } => NameServer::Domain {
+                        domain: dns::normalize_dns_name(&domain)?,
+                        port,
+                    },
+                };
+                Some(NameServerPolicy {
+                    server: name_server,
+                    domains: server
+                        .domains()
+                        .iter()
+                        .map(transport_domain_matcher)
+                        .collect(),
+                    skip_fallback: server.skip_fallback(),
+                    query_strategy: transport_dns_query_strategy(server.query_strategy()),
+                    final_query: server.final_query(),
+                })
             })
             .collect()
     } else {
         Vec::new()
     };
 
-    let mut resolver = ConfiguredDnsResolver::new(host_rules, name_servers, fallback)
+    let mut resolver = ConfiguredDnsResolver::new(host_rules, Vec::new(), fallback)
+        .with_name_server_policies(name_servers)
+        .with_name_server_fallback_policy(
+            config.dns.disable_fallback,
+            config.dns.disable_fallback_if_match,
+        )
         .with_query_strategy(query_strategy);
     if let Some(transport) = query_transport {
         resolver = resolver.with_query_transport(transport);
@@ -798,17 +814,18 @@ mod tests {
     use std::io;
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
     use async_trait::async_trait;
     use xray_config::parse_xray_json;
     use xray_transport::{
-        DnsLookup, DnsResolver, SocketHandle, SocketProtector, TransportDialer, TransportError,
+        DnsLookup, DnsQueryTransport, DnsQueryTransportKind, DnsResolver, NameServer, SocketHandle,
+        SocketProtector, TransportDialer, TransportError,
     };
 
     use super::{
-        configured_dns_resolver_for_config, static_only_dns_resolver_for_config, Core,
-        TunRuntimeOptions,
+        configured_dns_resolver_for_config, configured_dns_resolver_from_config_with_transport,
+        static_only_dns_resolver_for_config, Core, TransportDnsQueryStrategy, TunRuntimeOptions,
     };
 
     struct StaticResolver;
@@ -897,6 +914,87 @@ mod tests {
             .unwrap();
 
         assert_eq!(addr, SocketAddr::from(([198, 51, 100, 9], 8443)));
+    }
+
+    #[derive(Default)]
+    struct RecordingDnsQueryTransport {
+        calls: Mutex<Vec<(NameServer, u16)>>,
+    }
+
+    #[async_trait]
+    impl DnsQueryTransport for RecordingDnsQueryTransport {
+        async fn exchange(
+            &self,
+            server: &NameServer,
+            _transport: DnsQueryTransportKind,
+            query: &[u8],
+        ) -> io::Result<Vec<u8>> {
+            let record_type = u16::from_be_bytes([query[query.len() - 4], query[query.len() - 3]]);
+            self.calls
+                .lock()
+                .unwrap()
+                .push((server.clone(), record_type));
+            if record_type != 1 {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "object policy test expects an A query",
+                ));
+            }
+            let mut response = Vec::with_capacity(query.len() + 16);
+            response.extend_from_slice(&query[..2]);
+            response.extend_from_slice(&0x8180_u16.to_be_bytes());
+            response.extend_from_slice(&1_u16.to_be_bytes());
+            response.extend_from_slice(&1_u16.to_be_bytes());
+            response.extend_from_slice(&0_u16.to_be_bytes());
+            response.extend_from_slice(&0_u16.to_be_bytes());
+            response.extend_from_slice(&query[12..]);
+            response.extend_from_slice(&0xC00C_u16.to_be_bytes());
+            response.extend_from_slice(&1_u16.to_be_bytes());
+            response.extend_from_slice(&1_u16.to_be_bytes());
+            response.extend_from_slice(&60_u32.to_be_bytes());
+            response.extend_from_slice(&4_u16.to_be_bytes());
+            response.extend_from_slice(&[192, 0, 2, 75]);
+            Ok(response)
+        }
+    }
+
+    #[tokio::test]
+    async fn configured_dns_wires_object_policy_into_managed_resolver() {
+        let raw = r#"{
+            "dns": {
+              "queryStrategy": "UseIP",
+              "disableFallbackIfMatch": true,
+              "servers": [
+                {
+                  "address": "192.0.2.1",
+                  "domains": ["domain:internal.test"],
+                  "queryStrategy": "UseIPv4"
+                },
+                "192.0.2.2"
+              ]
+            },
+            "inbounds": [],
+            "outbounds": [{ "tag": "direct", "protocol": "freedom" }]
+        }"#;
+        let parsed = parse_xray_json(raw).expect("object DNS policy should parse");
+        let transport = Arc::new(RecordingDnsQueryTransport::default());
+        let resolver = configured_dns_resolver_from_config_with_transport(
+            &parsed.config,
+            Arc::new(StaticResolver),
+            None,
+            true,
+            Some(transport.clone()),
+            TransportDnsQueryStrategy::UseIp,
+        );
+
+        let resolved = resolver
+            .resolve("service.internal.test", 443)
+            .await
+            .unwrap();
+
+        let selected = NameServer::Socket(SocketAddr::from(([192, 0, 2, 1], 53)));
+        assert_eq!(resolved, SocketAddr::from(([192, 0, 2, 75], 443)));
+        assert_eq!(*transport.calls.lock().unwrap(), [(selected, 1)]);
     }
 
     #[tokio::test]
@@ -1017,14 +1115,17 @@ mod tests {
         )
         .expect("core should initialize");
 
-        let addr = core
+        let error = core
             .dns_resolver
             .resolve("localhost", 8443)
             .await
-            .expect("system fallback should resolve localhost");
+            .expect_err("configured DNS exhaustion must not use the system resolver");
 
-        assert!(addr.ip().is_loopback());
-        assert_eq!(addr.port(), 8443);
+        assert!(matches!(
+            error,
+            TransportError::Dns { source, .. }
+                if source.kind() == io::ErrorKind::NotConnected
+        ));
         assert_eq!(protector.calls.load(Ordering::Relaxed), 2);
     }
 }
