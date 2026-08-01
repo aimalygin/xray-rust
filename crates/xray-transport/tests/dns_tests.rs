@@ -174,11 +174,11 @@ async fn configured_dns_hosts_regex_matcher_uses_compiled_pattern() {
 }
 
 #[tokio::test]
-async fn configured_dns_alias_depth_exhaustion_falls_back_to_original_domain() {
-    let fallback = Arc::new(
-        MapResolver::default()
-            .with_answer("start.example", IpAddr::V4(Ipv4Addr::new(198, 51, 100, 10))),
-    );
+async fn configured_dns_alias_depth_exhaustion_falls_back_to_terminal_alias_without_servers() {
+    let fallback = Arc::new(MapResolver::default().with_answer(
+        "alias8.example",
+        IpAddr::V4(Ipv4Addr::new(198, 51, 100, 10)),
+    ));
     let host_rules = (0..8)
         .map(|index| StaticHostRule {
             matcher: TransportDomainMatcher::Full(if index == 0 {

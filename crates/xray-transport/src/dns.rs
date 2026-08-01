@@ -1973,14 +1973,10 @@ impl ConfiguredDnsResolver {
                         if alias == current_domain {
                             break;
                         }
-                        if depth + 1 == MAX_DNS_ALIAS_DEPTH {
-                            return ConfiguredLookupResult::Fallback {
-                                domain: domain.to_owned(),
-                                ttl_cap,
-                            };
-                        }
                         current_domain = alias;
-                        continue;
+                        if depth + 1 < MAX_DNS_ALIAS_DEPTH {
+                            continue;
+                        }
                     }
                 }
             }
@@ -5122,6 +5118,19 @@ mod tests {
         }
     }
 
+    struct RecordingFallbackResolver {
+        domains: Mutex<Vec<String>>,
+        result: SocketAddr,
+    }
+
+    #[async_trait::async_trait]
+    impl DnsResolver for RecordingFallbackResolver {
+        async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+            self.domains.lock().unwrap().push(domain.to_owned());
+            Ok(SocketAddr::new(self.result.ip(), port))
+        }
+    }
+
     #[tokio::test]
     async fn configured_dns_resolution_timeout_includes_system_fallback() {
         let resolver =
@@ -5159,29 +5168,76 @@ mod tests {
         assert_eq!(started_at.elapsed(), Duration::from_secs(5));
     }
 
-    #[tokio::test(start_paused = true)]
-    async fn configured_dns_bounds_alias_depth_system_fallback_with_policies() {
+    #[tokio::test]
+    async fn configured_dns_alias_depth_exhaustion_stays_on_configured_servers() {
         let host_rules = (0..8)
             .map(|index| StaticHostRule {
                 matcher: TransportDomainMatcher::Full(format!("alias{index}.example")),
                 target: StaticHostTarget::Domain(format!("alias{}.example", index + 1)),
             })
             .collect();
-        let policy =
-            NameServerPolicy::new(NameServer::Socket(SocketAddr::from(([192, 0, 2, 1], 53))));
-        let resolver =
-            ConfiguredDnsResolver::new(host_rules, Vec::new(), Arc::new(PendingResolver))
-                .with_name_server_policies(vec![policy]);
-        let started_at = tokio::time::Instant::now();
+        let server = NameServer::Socket(SocketAddr::from(([192, 0, 2, 1], 53)));
+        let mut policy = NameServerPolicy::new(server);
+        policy.query_strategy = DnsQueryStrategy::UseIpv4;
+        let fallback = Arc::new(RecordingFallbackResolver {
+            domains: Mutex::new(Vec::new()),
+            result: SocketAddr::from(([198, 51, 100, 1], 0)),
+        });
+        let transport = Arc::new(RecordingPolicyTransport {
+            truncated_server: None,
+            answer: Ipv4Addr::new(192, 0, 2, 80),
+            calls: Mutex::new(Vec::new()),
+        });
+        let resolver = ConfiguredDnsResolver::new(host_rules, Vec::new(), fallback.clone())
+            .with_name_server_policies(vec![policy])
+            .with_query_transport(transport.clone());
 
-        let error = resolver.resolve("alias0.example", 443).await.unwrap_err();
+        let resolved = resolver.resolve("alias0.example", 443).await.unwrap();
+        let queried_domains = transport
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|call| call.domain.clone())
+            .collect::<Vec<_>>();
 
-        assert!(matches!(
-            error,
-            TransportError::Dns { source, .. }
-                if source.kind() == io::ErrorKind::TimedOut
-        ));
-        assert_eq!(started_at.elapsed(), Duration::from_secs(5));
+        assert_eq!(
+            (
+                resolved,
+                queried_domains,
+                fallback.domains.lock().unwrap().clone(),
+            ),
+            (
+                SocketAddr::from(([192, 0, 2, 80], 443)),
+                vec!["alias8.example".to_owned()],
+                Vec::<String>::new(),
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn configured_dns_alias_depth_exhaustion_uses_fallback_without_servers() {
+        let host_rules = (0..8)
+            .map(|index| StaticHostRule {
+                matcher: TransportDomainMatcher::Full(format!("alias{index}.example")),
+                target: StaticHostTarget::Domain(format!("alias{}.example", index + 1)),
+            })
+            .collect();
+        let fallback = Arc::new(RecordingFallbackResolver {
+            domains: Mutex::new(Vec::new()),
+            result: SocketAddr::from(([198, 51, 100, 2], 0)),
+        });
+        let resolver = ConfiguredDnsResolver::new(host_rules, Vec::new(), fallback.clone());
+
+        let resolved = resolver.resolve("alias0.example", 443).await.unwrap();
+
+        assert_eq!(
+            (resolved, fallback.domains.lock().unwrap().clone()),
+            (
+                SocketAddr::from(([198, 51, 100, 2], 443)),
+                vec!["alias8.example".to_owned()],
+            )
+        );
     }
 
     #[tokio::test(start_paused = true)]

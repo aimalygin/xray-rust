@@ -389,7 +389,9 @@ Xray-core, an unprefixed `dns.hosts` key is an exact/full matcher rather than a
 routing-style keyword; explicit `full:` mappings have the same exact semantics
 and take precedence over broader matching rules. Alias
 resolution is bounded to eight hops; static IP candidates use the shared
-10-second hosts TTL.
+10-second hosts TTL. If that bound is reached, the terminal alias still uses
+the configured DNS-server plan; only a configuration without DNS servers may
+send it to the operating-system fallback.
 `dns.fakeIp` supports `enabled`, an IPv4 `ipv4Pool`, optional positive
 `poolSize`, and `ttl` for the current TUN routing path. `poolSize` defaults to
 the smaller of 32768 and the usable pool capacity. The bounded mapping table
