@@ -318,8 +318,13 @@ upstream without recursively resolving the server needed to perform that
 lookup. UDP requests have
 bounded per-attempt and total timeouts; unrelated replies from the selected
 peer are ignored, while invalid/unavailable upstreams return
-SERVFAIL, and an oversized reply is converted to a truncated response so the
-client can retry over TCP. When a UDP client selects a TCP URI upstream, the
+SERVFAIL. The maximum UDP reply is the smaller of the IPv4 tunnel-path payload
+limit and the client's valid EDNS(0) advertised size. A request without a
+well-formed root OPT record uses the legacy 512-byte limit, and advertised
+values below 512 are treated as 512. An oversized reply is converted to a
+matching minimal response with `TC=1` so the client can retry over TCP; valid
+EDNS requests retain the required response OPT record.
+When a UDP client selects a TCP URI upstream, the
 proxy adds/removes RFC 7766 length framing, validates the returned DNS envelope,
 and preserves the same bounded failover behavior. TCP is a byte-transparent
 stream and supports

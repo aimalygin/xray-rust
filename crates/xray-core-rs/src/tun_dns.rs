@@ -5,6 +5,8 @@ use tokio::time::{timeout, Instant as TokioInstant};
 use super::*;
 
 const DNS_RCODE_FORMERR: u16 = 1;
+const DNS_TYPE_OPT: u16 = 41;
+const DNS_LEGACY_UDP_PAYLOAD_SIZE: usize = 512;
 const MAX_DNS_PROXY_UPSTREAMS: usize = 8;
 const MAX_DNS_XUDP_METADATA_SIZE: usize = 512;
 const MAX_DNS_RESPONSE_VALIDATION_PREFIX_SIZE: usize = 512;
@@ -172,6 +174,12 @@ enum DnsUpstreamResponse {
     Oversized { observed_len: usize, prefix: Bytes },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct EdnsRequest {
+    udp_payload_size: usize,
+    dnssec_ok: bool,
+}
+
 impl DnsUpstreamResponse {
     fn observed_len(&self) -> usize {
         match self {
@@ -195,6 +203,18 @@ impl DnsUpstreamResponse {
         response
             .get(2..4)
             .is_some_and(|flags| u16::from_be_bytes([flags[0], flags[1]]) & (0x0200 | 0x000f) == 0)
+    }
+
+    fn into_udp_client_payload(self, query: &[u8], max_payload: usize) -> Option<Bytes> {
+        match self {
+            Self::Payload(payload) => {
+                dns_response_matches_query(query, &payload).then_some(payload)
+            }
+            Self::Oversized { prefix, .. } if dns_response_matches_query(query, &prefix) => {
+                dns_error_response_with_payload_size(query, DNS_RCODE_NOERROR, true, max_payload)
+            }
+            Self::Oversized { .. } => None,
+        }
     }
 }
 
@@ -456,7 +476,8 @@ async fn proxy_udp_payload(
     context: &TunRuntimeContext,
 ) -> Result<Bytes, ()> {
     let deadline = TokioInstant::now() + DNS_PROXY_TOTAL_TIMEOUT;
-    let max_payload = context.tun.mtu().saturating_sub(20 + 8);
+    let path_payload_cap = context.tun.mtu().saturating_sub(20 + 8);
+    let max_payload = dns_udp_client_payload_limit(&packet.payload, path_payload_cap);
     for upstream in plan.upstreams() {
         let remaining = deadline.saturating_duration_since(TokioInstant::now());
         if remaining.is_zero() {
@@ -538,37 +559,16 @@ async fn proxy_udp_payload(
                 continue;
             }
         };
-        if !response.matches_query(&packet.payload) {
-            record_dns_udp_failure(context, DnsUdpFailurePhase::Read);
-            continue;
-        }
         if upstream.transport() != xray_config::DnsServerTransport::Classic
             && !response.is_successful_tcp_response()
         {
             record_dns_udp_failure(context, DnsUdpFailurePhase::Read);
             continue;
         }
-        let response = match response {
-            DnsUpstreamResponse::Payload(response) => response,
-            DnsUpstreamResponse::Oversized { prefix, .. } => {
-                if dns_response_matches_query(&packet.payload, &prefix) {
-                    log_dns_udp_route(
-                        context,
-                        packet,
-                        &target,
-                        upstream.inbound_tag(),
-                        outbound_label,
-                    );
-                    return dns_error_response(&packet.payload, DNS_RCODE_NOERROR, true).ok_or(());
-                }
-                record_dns_udp_failure(context, DnsUdpFailurePhase::Read);
-                continue;
-            }
-        };
-        if !dns_response_matches_query(&packet.payload, &response) {
+        let Some(response) = response.into_udp_client_payload(&packet.payload, max_payload) else {
             record_dns_udp_failure(context, DnsUdpFailurePhase::Read);
             continue;
-        }
+        };
         log_dns_udp_route(
             context,
             packet,
@@ -958,11 +958,24 @@ pub(super) fn dns_error_reply_packet(packet: &UdpTunPacket, rcode: u16) -> Optio
 }
 
 fn dns_error_response(query: &[u8], rcode: u16, truncated: bool) -> Option<Bytes> {
+    let response_payload_size = validated_edns_request(query)
+        .map(|edns| edns.udp_payload_size)
+        .unwrap_or(DNS_LEGACY_UDP_PAYLOAD_SIZE);
+    dns_error_response_with_payload_size(query, rcode, truncated, response_payload_size)
+}
+
+fn dns_error_response_with_payload_size(
+    query: &[u8],
+    rcode: u16,
+    truncated: bool,
+    response_payload_size: usize,
+) -> Option<Bytes> {
     if query.len() < 12 {
         return None;
     }
     let question_end = dns_question_section_end(query).unwrap_or(12);
-    let mut response = Vec::with_capacity(question_end);
+    let edns = validated_edns_request(query);
+    let mut response = Vec::with_capacity(question_end + edns.map_or(0, |_| 11));
     response.extend_from_slice(&query[..question_end]);
     let request_flags = u16::from_be_bytes([query[2], query[3]]);
     let mut response_flags = 0x8000 | (request_flags & 0x7910) | 0x0080 | (rcode & 0x000f);
@@ -974,6 +987,19 @@ fn dns_error_response(query: &[u8], rcode: u16, truncated: bool) -> Option<Bytes
         response[4..6].copy_from_slice(&0_u16.to_be_bytes());
     }
     response[6..12].fill(0);
+    if let Some(edns) = edns {
+        let response_payload_size = response_payload_size
+            .max(DNS_LEGACY_UDP_PAYLOAD_SIZE)
+            .min(usize::from(u16::MAX));
+        let response_payload_size = u16::try_from(response_payload_size).ok()?;
+        response[10..12].copy_from_slice(&1_u16.to_be_bytes());
+        response.push(0);
+        response.extend_from_slice(&DNS_TYPE_OPT.to_be_bytes());
+        response.extend_from_slice(&response_payload_size.to_be_bytes());
+        let response_ttl = if edns.dnssec_ok { 0x8000_u32 } else { 0 };
+        response.extend_from_slice(&response_ttl.to_be_bytes());
+        response.extend_from_slice(&0_u16.to_be_bytes());
+    }
     Some(Bytes::from(response))
 }
 
@@ -981,27 +1007,143 @@ fn dns_question_section_end(message: &[u8]) -> Option<usize> {
     let question_count = usize::from(u16::from_be_bytes([*message.get(4)?, *message.get(5)?]));
     let mut offset = 12usize;
     for _ in 0..question_count {
-        loop {
-            let label_len = usize::from(*message.get(offset)?);
-            offset = offset.checked_add(1)?;
-            if label_len == 0 {
-                break;
-            }
-            if label_len & 0xc0 == 0xc0 {
-                offset = offset.checked_add(1)?;
-                message.get(offset - 1)?;
-                break;
-            }
-            if label_len > 63 {
-                return None;
-            }
-            offset = offset.checked_add(label_len)?;
-            message.get(offset - 1)?;
-        }
+        skip_dns_wire_name(message, &mut offset)?;
         offset = offset.checked_add(4)?;
         message.get(offset - 1)?;
     }
     Some(offset)
+}
+
+fn dns_udp_client_payload_limit(query: &[u8], path_payload_cap: usize) -> usize {
+    validated_edns_request(query)
+        .map(|edns| edns.udp_payload_size)
+        .unwrap_or(DNS_LEGACY_UDP_PAYLOAD_SIZE)
+        .max(DNS_LEGACY_UDP_PAYLOAD_SIZE)
+        .min(path_payload_cap)
+}
+
+fn validated_edns_request(message: &[u8]) -> Option<EdnsRequest> {
+    let question_count = usize::from(read_dns_wire_u16(message, 4)?);
+    let answer_count = usize::from(read_dns_wire_u16(message, 6)?);
+    let authority_count = usize::from(read_dns_wire_u16(message, 8)?);
+    let additional_count = usize::from(read_dns_wire_u16(message, 10)?);
+    let mut offset = 12usize;
+    for _ in 0..question_count {
+        skip_dns_wire_name(message, &mut offset)?;
+        offset = offset.checked_add(4)?;
+        message.get(offset - 1)?;
+    }
+
+    let mut advertised_size = None;
+    for (record_count, is_additional) in [
+        (answer_count, false),
+        (authority_count, false),
+        (additional_count, true),
+    ] {
+        for _ in 0..record_count {
+            let owner_start = offset;
+            skip_dns_wire_name(message, &mut offset)?;
+            let owner_end = offset;
+            let record_type = read_dns_wire_u16(message, offset)?;
+            let record_class = read_dns_wire_u16(message, offset.checked_add(2)?)?;
+            let record_ttl = read_dns_wire_u32(message, offset.checked_add(4)?)?;
+            let data_len = usize::from(read_dns_wire_u16(message, offset.checked_add(8)?)?);
+            offset = offset.checked_add(10)?;
+            let data_end = offset.checked_add(data_len)?;
+            message.get(offset..data_end)?;
+
+            if record_type == DNS_TYPE_OPT && !is_additional {
+                return None;
+            }
+            if is_additional && record_type == DNS_TYPE_OPT {
+                let root_owner = owner_start.checked_add(1) == Some(owner_end)
+                    && message.get(owner_start) == Some(&0);
+                if !root_owner
+                    || advertised_size.is_some()
+                    || !edns_options_are_well_formed(message, offset, data_end)
+                {
+                    return None;
+                }
+                advertised_size = Some(EdnsRequest {
+                    udp_payload_size: usize::from(record_class),
+                    dnssec_ok: record_ttl & 0x8000 != 0,
+                });
+            }
+            offset = data_end;
+        }
+    }
+
+    if offset == message.len() {
+        advertised_size
+    } else {
+        None
+    }
+}
+
+fn edns_options_are_well_formed(message: &[u8], mut offset: usize, data_end: usize) -> bool {
+    while offset < data_end {
+        let Some(option_header_end) = offset.checked_add(4) else {
+            return false;
+        };
+        if option_header_end > data_end {
+            return false;
+        }
+        let Some(option_len_offset) = offset.checked_add(2) else {
+            return false;
+        };
+        let Some(option_len) = read_dns_wire_u16(message, option_len_offset) else {
+            return false;
+        };
+        let Some(option_end) = option_header_end.checked_add(usize::from(option_len)) else {
+            return false;
+        };
+        if option_end > data_end {
+            return false;
+        }
+        offset = option_end;
+    }
+    true
+}
+
+fn read_dns_wire_u16(message: &[u8], offset: usize) -> Option<u16> {
+    let bytes = message.get(offset..offset.checked_add(2)?)?;
+    Some(u16::from_be_bytes([bytes[0], bytes[1]]))
+}
+
+fn read_dns_wire_u32(message: &[u8], offset: usize) -> Option<u32> {
+    let bytes = message.get(offset..offset.checked_add(4)?)?;
+    Some(u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+}
+
+fn skip_dns_wire_name(message: &[u8], offset: &mut usize) -> Option<()> {
+    let name_start = *offset;
+    loop {
+        let label_offset = *offset;
+        let label_len = *message.get(label_offset)?;
+        *offset = (*offset).checked_add(1)?;
+        match label_len & 0xc0 {
+            0x00 if label_len == 0 => {
+                return ((*offset).checked_sub(name_start)? <= 255).then_some(())
+            }
+            0x00 => {
+                *offset = (*offset).checked_add(usize::from(label_len))?;
+                message.get((*offset).checked_sub(1)?)?;
+                if (*offset).checked_sub(name_start)? > 255 {
+                    return None;
+                }
+            }
+            0xc0 => {
+                let pointer_low = usize::from(*message.get(*offset)?);
+                let pointer = (usize::from(label_len & 0x3f) << 8) | pointer_low;
+                if pointer < 12 || pointer >= label_offset {
+                    return None;
+                }
+                *offset = (*offset).checked_add(1)?;
+                return Some(());
+            }
+            _ => return None,
+        }
+    }
 }
 
 fn is_dns_query(message: &[u8]) -> bool {
@@ -1042,6 +1184,166 @@ mod tests {
         query.extend_from_slice(&DNS_TYPE_A.to_be_bytes());
         query.extend_from_slice(&DNS_CLASS_IN.to_be_bytes());
         query
+    }
+
+    fn dns_a_query_with_edns(id: u16, domain: &str, udp_payload_size: u16) -> Vec<u8> {
+        let mut query = dns_a_query(id, domain);
+        query[10..12].copy_from_slice(&1_u16.to_be_bytes());
+        query.push(0);
+        query.extend_from_slice(&DNS_TYPE_OPT.to_be_bytes());
+        query.extend_from_slice(&udp_payload_size.to_be_bytes());
+        query.extend_from_slice(&0_u32.to_be_bytes());
+        query.extend_from_slice(&0_u16.to_be_bytes());
+        query
+    }
+
+    fn framed_dns_response(query: &[u8], response_len: usize) -> Vec<u8> {
+        let mut response = query.to_vec();
+        response[2..4].copy_from_slice(&0x8180_u16.to_be_bytes());
+        response.resize(response_len, 0);
+        let mut framed = Vec::with_capacity(response.len() + 2);
+        framed.extend_from_slice(&u16::try_from(response.len()).unwrap().to_be_bytes());
+        framed.extend_from_slice(&response);
+        framed
+    }
+
+    #[test]
+    fn udp_payload_limit_defaults_to_legacy_size_without_edns() {
+        let query = dns_a_query(0x1200, "legacy.example");
+
+        assert_eq!(dns_udp_client_payload_limit(&query, 1_472), 512);
+    }
+
+    #[test]
+    fn udp_payload_limit_uses_edns_advertised_size() {
+        let query = dns_a_query_with_edns(0x1201, "edns.example", 1_232);
+
+        assert_eq!(dns_udp_client_payload_limit(&query, 1_472), 1_232);
+    }
+
+    #[test]
+    fn udp_payload_limit_caps_edns_size_to_path_mtu() {
+        let query = dns_a_query_with_edns(0x1202, "large-edns.example", 4_096);
+
+        assert_eq!(dns_udp_client_payload_limit(&query, 1_472), 1_472);
+    }
+
+    #[test]
+    fn udp_payload_limit_floors_small_edns_size_to_legacy_size() {
+        let query = dns_a_query_with_edns(0x1203, "small-edns.example", 128);
+
+        assert_eq!(dns_udp_client_payload_limit(&query, 1_472), 512);
+    }
+
+    #[test]
+    fn udp_payload_limit_falls_back_safely_for_truncated_edns_options() {
+        let mut query = dns_a_query_with_edns(0x1204, "broken-edns.example", 1_232);
+        let option_data_len_offset = query.len() - 2;
+        query[option_data_len_offset..].copy_from_slice(&3_u16.to_be_bytes());
+        query.extend_from_slice(&[0, 15, 0]);
+
+        assert_eq!(dns_udp_client_payload_limit(&query, 1_472), 512);
+    }
+
+    #[test]
+    fn udp_payload_limit_falls_back_safely_for_duplicate_opt_records() {
+        let mut query = dns_a_query_with_edns(0x1205, "duplicate-edns.example", 1_232);
+        let opt_start = dns_question_section_end(&query).unwrap();
+        let duplicate_opt = query[opt_start..].to_vec();
+        query[10..12].copy_from_slice(&2_u16.to_be_bytes());
+        query.extend_from_slice(&duplicate_opt);
+
+        assert_eq!(dns_udp_client_payload_limit(&query, 1_472), 512);
+    }
+
+    #[test]
+    fn udp_payload_limit_falls_back_safely_for_non_root_opt_owner() {
+        let mut query = dns_a_query(0x1206, "owned-edns.example");
+        query[10..12].copy_from_slice(&1_u16.to_be_bytes());
+        query.extend_from_slice(&[1, b'x', 0]);
+        query.extend_from_slice(&DNS_TYPE_OPT.to_be_bytes());
+        query.extend_from_slice(&1_232_u16.to_be_bytes());
+        query.extend_from_slice(&0_u32.to_be_bytes());
+        query.extend_from_slice(&0_u16.to_be_bytes());
+
+        assert_eq!(dns_udp_client_payload_limit(&query, 1_472), 512);
+    }
+
+    #[test]
+    fn udp_payload_limit_rejects_opt_outside_additional_section() {
+        let mut query = dns_a_query(0x1207, "answer-edns.example");
+        query[6..8].copy_from_slice(&1_u16.to_be_bytes());
+        query.push(0);
+        query.extend_from_slice(&DNS_TYPE_OPT.to_be_bytes());
+        query.extend_from_slice(&1_232_u16.to_be_bytes());
+        query.extend_from_slice(&0_u32.to_be_bytes());
+        query.extend_from_slice(&0_u16.to_be_bytes());
+
+        assert_eq!(dns_udp_client_payload_limit(&query, 1_472), 512);
+    }
+
+    #[tokio::test]
+    async fn tcp_upstream_response_over_legacy_udp_limit_becomes_matching_tc_response() {
+        let query = dns_a_query(0x1208, "legacy-tcp.example");
+        let mut reader = std::io::Cursor::new(framed_dns_response(&query, 600));
+        let max_payload = dns_udp_client_payload_limit(&query, 1_472);
+
+        let response = read_bounded_dns_payload(&mut reader, max_payload)
+            .await
+            .unwrap()
+            .into_udp_client_payload(&query, max_payload)
+            .unwrap();
+
+        assert!(dns_response_matches_query(&query, &response));
+        assert_ne!(u16::from_be_bytes([response[2], response[3]]) & 0x0200, 0);
+        assert_eq!(response.len(), dns_question_section_end(&query).unwrap());
+        assert_eq!(&response[6..12], &[0; 6]);
+    }
+
+    #[tokio::test]
+    async fn tcp_upstream_response_within_edns_limit_is_preserved() {
+        let query = dns_a_query_with_edns(0x1209, "edns-tcp.example", 1_232);
+        let mut reader = std::io::Cursor::new(framed_dns_response(&query, 800));
+        let max_payload = dns_udp_client_payload_limit(&query, 1_472);
+
+        let response = read_bounded_dns_payload(&mut reader, max_payload)
+            .await
+            .unwrap()
+            .into_udp_client_payload(&query, max_payload)
+            .unwrap();
+
+        assert_eq!(response.len(), 800);
+        assert_eq!(u16::from_be_bytes([response[2], response[3]]) & 0x0200, 0);
+    }
+
+    #[tokio::test]
+    async fn tcp_upstream_response_over_edns_limit_becomes_tc_response() {
+        let mut query = dns_a_query_with_edns(0x120a, "capped-edns-tcp.example", 1_232);
+        let opt_ttl_start = query.len() - 6;
+        query[opt_ttl_start..opt_ttl_start + 4].copy_from_slice(&0x8000_u32.to_be_bytes());
+        let mut reader = std::io::Cursor::new(framed_dns_response(&query, 1_300));
+        let max_payload = dns_udp_client_payload_limit(&query, 1_472);
+
+        let response = read_bounded_dns_payload(&mut reader, max_payload)
+            .await
+            .unwrap()
+            .into_udp_client_payload(&query, max_payload)
+            .unwrap();
+
+        assert!(dns_response_matches_query(&query, &response));
+        assert_ne!(u16::from_be_bytes([response[2], response[3]]) & 0x0200, 0);
+        assert_eq!(
+            response.len(),
+            dns_question_section_end(&query).unwrap() + 11
+        );
+        assert_eq!(u16::from_be_bytes([response[10], response[11]]), 1);
+        assert_eq!(
+            validated_edns_request(&response),
+            Some(EdnsRequest {
+                udp_payload_size: max_payload,
+                dnssec_ok: true,
+            })
+        );
     }
 
     #[test]

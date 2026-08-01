@@ -154,8 +154,11 @@ The raw anchor is deliberately DNS `Direct`: object policies select managed
 destination lookups but do not rewrite client question types. Classic
 candidates preserve byte-transparent UDP/TCP behavior; a UDP client aimed at a
 TCP URI is adapted to RFC 7766 framing, while a TCP client remains a transparent
-stream. Routed candidates carry the effective synthetic inbound tag into
-outbound selection; local TCP candidates bypass it. Endpoint deduplication
+stream. UDP replies honor the client's valid EDNS(0) size and the IPv4 tunnel
+path MTU; missing or malformed EDNS falls back to the legacy 512-byte DNS
+payload limit and oversized replies return `TC=1`. Routed candidates carry the
+effective synthetic inbound tag into outbound selection; local TCP candidates
+bypass it. Endpoint deduplication
 includes transport and tag.
 A future DNS `Hijack` mode must be explicit rather than changing this
 wire contract.
