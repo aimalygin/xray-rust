@@ -94,7 +94,12 @@ candidates with authoritative or remaining TTL metadata, handles CNAME
 resolution, server failover, UDP truncation with same-server TCP retry, and the
 bounded resolver cache. Object name-server policies select matching domains
 before ordered fallback, with Xray-compatible skip/disable/final behavior; a
-CNAME-only continuation stays on the answering name server. Global and
+CNAME-only continuation stays on the answering name server. Policies compile
+once into the same mobile-oriented shape used by Xray's Compact matcher: exact
+names use a hash set, suffixes a reverse-label trie, and the less common
+keyword/regex rules retain linear matching. The compiled set is shared by all
+inbound-specific routed resolvers instead of cloning geosite expansions.
+Global and
 per-server family policies are intersected at this resolver boundary: `UseIP`
 queries both families, while `UseIPv4` or `UseIPv6` sends
 only the selected wire query and filters static/fallback candidates. Static

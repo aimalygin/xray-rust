@@ -195,6 +195,14 @@ still tried. Duplicate endpoints in separate policy objects remain separate
 managed clients. A per-server family policy intersects the global policy and
 cannot widen it.
 
+The core consumes these policy matchers once during construction. Exact rules
+are indexed by hash and suffix rules by reversed domain labels, following
+Xray-core's Compact mobile matcher trade-off; keyword and regex rules remain
+linear. The resulting immutable set is shared across SOCKS, HTTP, TUN, and
+startup-probe routing contexts. Policy domains are released from the retained
+runtime config after compilation, while endpoints and flags remain available
+to the raw DNS proxy planner.
+
 The TUN-local `198.18.0.1:53` anchor and
 `198.18.0.2:53` client address cannot be configured as upstreams, including as
 IPv4-mapped IPv6 literals. With `UseIP`, the resolver sends A and AAAA

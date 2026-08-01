@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket as StdUdpSocket};
@@ -520,6 +521,10 @@ impl TransportRegexMatcher {
     fn matches(&self, domain: &str) -> bool {
         self.regex.is_match(&domain.to_ascii_lowercase())
     }
+
+    fn matches_lowercase(&self, domain: &str) -> bool {
+        self.regex.is_match(domain)
+    }
 }
 
 impl PartialEq for TransportRegexMatcher {
@@ -674,9 +679,306 @@ impl NameServerPolicy {
     }
 }
 
+/// A compact, query-ready set of configured DNS server policies.
+///
+/// Construction consumes the source policies and compiles their domain rules
+/// once. Full-name rules use a hash set, suffix rules use a label trie, while
+/// uncommon keyword and regular-expression rules retain their Xray-compatible
+/// linear semantics. The compiled set preserves configured server indices and
+/// therefore remains suitable for duplicate endpoints and `finalQuery`.
+#[derive(Debug, Default)]
+pub struct CompiledNameServerPolicies {
+    policies: Vec<CompiledNameServerPolicy>,
+    matcher_count: usize,
+    pattern_bytes: usize,
+}
+
+impl CompiledNameServerPolicies {
+    pub fn new(policies: Vec<NameServerPolicy>) -> Self {
+        let mut matcher_count = 0;
+        let mut pattern_bytes = 0;
+        let policies = policies
+            .into_iter()
+            .map(|policy| {
+                let NameServerPolicy {
+                    server,
+                    domains,
+                    skip_fallback,
+                    query_strategy,
+                    final_query,
+                } = policy;
+                matcher_count += domains.len();
+                let domains = CompiledDomainMatcherSet::new(domains);
+                pattern_bytes += domains.pattern_bytes();
+                CompiledNameServerPolicy {
+                    server,
+                    domains,
+                    skip_fallback,
+                    query_strategy,
+                    final_query,
+                }
+            })
+            .collect();
+        Self {
+            policies,
+            matcher_count,
+            pattern_bytes,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.policies.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.policies.is_empty()
+    }
+
+    /// Returns the configured endpoint at a selected policy index.
+    pub fn name_server(&self, index: usize) -> Option<&NameServer> {
+        self.policies.get(index).map(|policy| &policy.server)
+    }
+
+    /// Returns the number of source matcher entries compiled into this set.
+    pub fn matcher_count(&self) -> usize {
+        self.matcher_count
+    }
+
+    /// Returns the matcher-pattern payload retained by the compact set.
+    ///
+    /// This intentionally excludes allocator and regex-engine overhead, so it
+    /// is a deterministic payload metric rather than a process-RSS estimate.
+    pub fn pattern_bytes(&self) -> usize {
+        self.pattern_bytes
+    }
+
+    /// Builds the serial candidate plan with Xray's match/fallback ordering.
+    pub fn select_indices(
+        &self,
+        domain: &str,
+        disable_fallback: bool,
+        disable_fallback_if_match: bool,
+    ) -> Vec<usize> {
+        let domain = lowercase_ascii(domain);
+        let mut selected = Vec::with_capacity(self.policies.len());
+        let mut selected_policies = SelectedPolicyTracker::new(self.policies.len());
+        let mut matched = false;
+
+        for (index, policy) in self.policies.iter().enumerate() {
+            if !policy.domains.matches(&domain) {
+                continue;
+            }
+            matched = true;
+            selected_policies.insert(index);
+            selected.push(index);
+            if policy.final_query {
+                return selected;
+            }
+        }
+
+        if !(disable_fallback || disable_fallback_if_match && matched) {
+            for (index, policy) in self.policies.iter().enumerate() {
+                if selected_policies.contains(index) || policy.skip_fallback {
+                    continue;
+                }
+                selected_policies.insert(index);
+                selected.push(index);
+                if policy.final_query {
+                    break;
+                }
+            }
+        }
+
+        if selected.is_empty() && !self.policies.is_empty() {
+            selected.push(0);
+        }
+        selected
+    }
+
+    fn get(&self, index: usize) -> Option<&CompiledNameServerPolicy> {
+        self.policies.get(index)
+    }
+}
+
+#[derive(Debug)]
+struct CompiledNameServerPolicy {
+    server: NameServer,
+    domains: CompiledDomainMatcherSet,
+    skip_fallback: bool,
+    query_strategy: DnsQueryStrategy,
+    final_query: bool,
+}
+
+#[derive(Debug, Default)]
+struct CompiledDomainMatcherSet {
+    full: HashSet<Box<str>>,
+    suffix: DomainSuffixTrie,
+    matches_empty_suffix: bool,
+    keywords: Vec<Box<str>>,
+    regex: Vec<TransportRegexMatcher>,
+}
+
+impl CompiledDomainMatcherSet {
+    fn new(matchers: Vec<TransportDomainMatcher>) -> Self {
+        let mut compiled = Self::default();
+        for matcher in matchers {
+            match matcher {
+                TransportDomainMatcher::Keyword(mut keyword) => {
+                    keyword.make_ascii_lowercase();
+                    compiled.keywords.push(keyword.into_boxed_str());
+                }
+                TransportDomainMatcher::Full(mut domain) => {
+                    domain.truncate(domain.trim_end_matches('.').len());
+                    domain.make_ascii_lowercase();
+                    compiled.full.insert(domain.into_boxed_str());
+                }
+                TransportDomainMatcher::Suffix(mut suffix) => {
+                    suffix.truncate(suffix.trim_end_matches('.').len());
+                    suffix.make_ascii_lowercase();
+                    if suffix.is_empty() {
+                        compiled.matches_empty_suffix = true;
+                    } else {
+                        compiled.suffix.insert(&suffix);
+                    }
+                }
+                TransportDomainMatcher::Regex(regex) => compiled.regex.push(regex),
+            }
+        }
+        compiled
+    }
+
+    fn matches(&self, lowercase_domain: &str) -> bool {
+        let normalized = lowercase_domain.trim_end_matches('.');
+        self.full.contains(normalized)
+            || self.matches_empty_suffix && normalized.is_empty()
+            || self.suffix.matches(normalized)
+            || self
+                .keywords
+                .iter()
+                .any(|keyword| lowercase_domain.contains(keyword.as_ref()))
+            || self
+                .regex
+                .iter()
+                .any(|regex| regex.matches_lowercase(lowercase_domain))
+    }
+
+    fn pattern_bytes(&self) -> usize {
+        self.full.iter().map(|pattern| pattern.len()).sum::<usize>()
+            + self.suffix.pattern_bytes
+            + self
+                .keywords
+                .iter()
+                .map(|pattern| pattern.len())
+                .sum::<usize>()
+            + self
+                .regex
+                .iter()
+                .map(|matcher| matcher.pattern().len())
+                .sum::<usize>()
+    }
+}
+
+#[derive(Debug, Default)]
+struct DomainSuffixTrie {
+    nodes: Vec<DomainSuffixTrieNode>,
+    pattern_bytes: usize,
+}
+
+impl DomainSuffixTrie {
+    fn insert(&mut self, suffix: &str) {
+        if suffix.is_empty() {
+            return;
+        }
+        if self.nodes.is_empty() {
+            self.nodes.push(DomainSuffixTrieNode::default());
+        }
+        let mut node_index = 0;
+        for label in suffix.rsplit('.') {
+            let next = self.nodes[node_index].children.get(label).copied();
+            node_index = match next {
+                Some(next) => next,
+                None => {
+                    let next = self.nodes.len();
+                    self.nodes.push(DomainSuffixTrieNode::default());
+                    self.nodes[node_index]
+                        .children
+                        .insert(label.to_owned().into_boxed_str(), next);
+                    self.pattern_bytes += label.len();
+                    next
+                }
+            };
+        }
+        self.nodes[node_index].matched = true;
+    }
+
+    fn matches(&self, domain: &str) -> bool {
+        if self.nodes.is_empty() {
+            return false;
+        }
+        let mut node_index = 0;
+        for label in domain.rsplit('.') {
+            let Some(next) = self.nodes[node_index].children.get(label).copied() else {
+                return false;
+            };
+            node_index = next;
+            if self.nodes[node_index].matched {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+#[derive(Debug, Default)]
+struct DomainSuffixTrieNode {
+    matched: bool,
+    children: HashMap<Box<str>, usize>,
+}
+
+fn lowercase_ascii(value: &str) -> Cow<'_, str> {
+    if value.bytes().any(|byte| byte.is_ascii_uppercase()) {
+        Cow::Owned(value.to_ascii_lowercase())
+    } else {
+        Cow::Borrowed(value)
+    }
+}
+
+enum SelectedPolicyTracker {
+    Small(u64),
+    Large(Vec<u64>),
+}
+
+impl SelectedPolicyTracker {
+    fn new(policy_count: usize) -> Self {
+        if policy_count <= u64::BITS as usize {
+            Self::Small(0)
+        } else {
+            Self::Large(vec![0; policy_count.div_ceil(u64::BITS as usize)])
+        }
+    }
+
+    fn insert(&mut self, index: usize) {
+        let word_index = index / u64::BITS as usize;
+        let bit = 1_u64 << (index % u64::BITS as usize);
+        match self {
+            Self::Small(bits) => *bits |= bit,
+            Self::Large(words) => words[word_index] |= bit,
+        }
+    }
+
+    fn contains(&self, index: usize) -> bool {
+        let word_index = index / u64::BITS as usize;
+        let bit = 1_u64 << (index % u64::BITS as usize);
+        match self {
+            Self::Small(bits) => *bits & bit != 0,
+            Self::Large(words) => words[word_index] & bit != 0,
+        }
+    }
+}
+
 pub struct ConfiguredDnsResolver {
     host_rules: Vec<StaticHostRule>,
-    name_servers: Vec<NameServerPolicy>,
+    name_servers: Arc<CompiledNameServerPolicies>,
     fallback: Arc<dyn DnsResolver>,
     server_timeout: Duration,
     resolution_timeout: Duration,
@@ -696,10 +998,12 @@ impl ConfiguredDnsResolver {
         let query_transport = Arc::new(DirectDnsQueryTransport::new(Arc::clone(&fallback), None));
         Self {
             host_rules,
-            name_servers: name_servers
-                .into_iter()
-                .map(NameServerPolicy::new)
-                .collect(),
+            name_servers: Arc::new(CompiledNameServerPolicies::new(
+                name_servers
+                    .into_iter()
+                    .map(NameServerPolicy::new)
+                    .collect(),
+            )),
             fallback,
             server_timeout: Duration::from_secs(2),
             resolution_timeout: DNS_RESOLUTION_TIMEOUT,
@@ -712,6 +1016,16 @@ impl ConfiguredDnsResolver {
     }
 
     pub fn with_name_server_policies(mut self, name_servers: Vec<NameServerPolicy>) -> Self {
+        self.name_servers = Arc::new(CompiledNameServerPolicies::new(name_servers));
+        self
+    }
+
+    /// Reuses an already compiled policy set across resolvers with different
+    /// DNS query transports (for example, multiple inbound routing contexts).
+    pub fn with_name_server_policy_set(
+        mut self,
+        name_servers: Arc<CompiledNameServerPolicies>,
+    ) -> Self {
         self.name_servers = name_servers;
         self
     }
@@ -833,7 +1147,7 @@ impl ConfiguredDnsResolver {
 
     async fn query_configured_server(
         &self,
-        name_server: &NameServerPolicy,
+        name_server: &CompiledNameServerPolicy,
         domain: &str,
     ) -> io::Result<ConfiguredServerResult> {
         let Some(query_strategy) = self.query_strategy.intersect(name_server.query_strategy) else {
@@ -976,8 +1290,7 @@ impl ConfiguredDnsResolver {
             }
 
             let started_at = Instant::now();
-            let server_plan = select_name_server_indices(
-                &self.name_servers,
+            let server_plan = self.name_servers.select_indices(
                 &current_domain,
                 self.disable_fallback,
                 self.disable_fallback_if_match,
@@ -1044,7 +1357,7 @@ pub fn select_name_server_indices(
     disable_fallback_if_match: bool,
 ) -> Vec<usize> {
     let mut selected = Vec::with_capacity(name_servers.len());
-    let mut used = vec![false; name_servers.len()];
+    let mut selected_policies = SelectedPolicyTracker::new(name_servers.len());
     let mut matched = false;
 
     for (index, name_server) in name_servers.iter().enumerate() {
@@ -1056,7 +1369,7 @@ pub fn select_name_server_indices(
             continue;
         }
         matched = true;
-        used[index] = true;
+        selected_policies.insert(index);
         selected.push(index);
         if name_server.final_query {
             return selected;
@@ -1065,9 +1378,10 @@ pub fn select_name_server_indices(
 
     if !(disable_fallback || disable_fallback_if_match && matched) {
         for (index, name_server) in name_servers.iter().enumerate() {
-            if used[index] || name_server.skip_fallback {
+            if selected_policies.contains(index) || name_server.skip_fallback {
                 continue;
             }
+            selected_policies.insert(index);
             selected.push(index);
             if name_server.final_query {
                 break;
@@ -1842,10 +2156,11 @@ mod tests {
 
     use super::{
         build_dns_query_with_id, parse_dns_response, query_udp_dns_server,
-        select_name_server_indices, CachingDnsResolver, ConfiguredDnsAddresses,
-        ConfiguredDnsAnswer, ConfiguredDnsResolver, DnsLookup, DnsQueryStrategy, DnsQueryTransport,
-        DnsQueryTransportKind, DnsRecordType, DnsResolver, NameServer, NameServerPolicy,
-        StaticHostRule, StaticHostTarget, TransportDomainMatcher, DNS_CACHE_MAX_ENTRIES,
+        select_name_server_indices, CachingDnsResolver, CompiledNameServerPolicies,
+        ConfiguredDnsAddresses, ConfiguredDnsAnswer, ConfiguredDnsResolver, DnsLookup,
+        DnsQueryStrategy, DnsQueryTransport, DnsQueryTransportKind, DnsRecordType, DnsResolver,
+        NameServer, NameServerPolicy, StaticHostRule, StaticHostTarget, TransportDomainMatcher,
+        DNS_CACHE_MAX_ENTRIES,
     };
     use crate::{SocketHandle, SocketProtector, TransportError};
 
@@ -1934,6 +2249,117 @@ mod tests {
                 false,
             ),
             vec![0]
+        );
+    }
+
+    #[test]
+    fn compiled_name_server_selector_matches_reference_semantics() {
+        let fallback = policy(1);
+        let mut exact = policy(2);
+        exact.domains = vec![TransportDomainMatcher::Full(
+            "SERVICE.INTERNAL.TEST.".to_owned(),
+        )];
+        let mut mixed = policy(3);
+        mixed.domains = vec![
+            TransportDomainMatcher::Suffix("Internal.Test.".to_owned()),
+            TransportDomainMatcher::Keyword("CORP".to_owned()),
+            TransportDomainMatcher::regex(r"(^|\.)regex\.test\.?$").unwrap(),
+        ];
+        let mut skipped = policy(4);
+        skipped.skip_fallback = true;
+        skipped.domains = vec![TransportDomainMatcher::Full("forced.test".to_owned())];
+        let mut final_query = policy(5);
+        final_query.final_query = true;
+        final_query.domains = vec![TransportDomainMatcher::Suffix("final.test".to_owned())];
+        let policies = vec![fallback, exact, mixed, skipped, final_query];
+        let compiled = CompiledNameServerPolicies::new(policies.clone());
+
+        assert_eq!(compiled.matcher_count(), 6);
+        assert!(compiled.pattern_bytes() > 0);
+        assert_eq!(compiled.name_server(0), Some(&policies[0].server));
+        assert_eq!(compiled.name_server(policies.len()), None);
+        for domain in [
+            "service.internal.test",
+            "SERVICE.INTERNAL.TEST.",
+            "host.internal.test",
+            "my-corp-zone.test",
+            "www.regex.test",
+            "forced.test",
+            "www.final.test",
+            "unmatched.test",
+        ] {
+            for (disable_fallback, disable_fallback_if_match) in
+                [(false, false), (true, false), (false, true)]
+            {
+                assert_eq!(
+                    compiled.select_indices(
+                        domain,
+                        disable_fallback,
+                        disable_fallback_if_match,
+                    ),
+                    select_name_server_indices(
+                        &policies,
+                        domain,
+                        disable_fallback,
+                        disable_fallback_if_match,
+                    ),
+                    "domain={domain} disableFallback={disable_fallback} disableFallbackIfMatch={disable_fallback_if_match}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn compiled_name_server_selector_indexes_large_exact_rule_set() {
+        let mut indexed = policy(2);
+        indexed.domains.extend(
+            (0..9_999)
+                .map(|index| TransportDomainMatcher::Full(format!("miss-{index}.policy.invalid"))),
+        );
+        indexed.domains.push(TransportDomainMatcher::Full(
+            "target.policy.test".to_owned(),
+        ));
+        let policies = vec![policy(1), indexed];
+        let compiled = CompiledNameServerPolicies::new(policies.clone());
+
+        assert_eq!(compiled.matcher_count(), 10_000);
+        assert_eq!(
+            compiled.select_indices("target.policy.test", false, false),
+            select_name_server_indices(&policies, "target.policy.test", false, false),
+        );
+    }
+
+    #[test]
+    fn compiled_name_server_selector_preserves_low_level_empty_suffix_semantics() {
+        let mut empty_suffix = policy(1);
+        empty_suffix.domains = vec![TransportDomainMatcher::Suffix("...".to_owned())];
+        let policies = vec![empty_suffix, policy(2)];
+        let compiled = CompiledNameServerPolicies::new(policies.clone());
+
+        for domain in ["", ".", "...", "example.test"] {
+            assert_eq!(
+                compiled.select_indices(domain, false, true),
+                select_name_server_indices(&policies, domain, false, true),
+            );
+        }
+    }
+
+    #[test]
+    fn name_server_selectors_scale_past_inline_policy_bitset() {
+        let mut policies = (0..130)
+            .map(|index| policy((index % 254 + 1) as u8))
+            .collect::<Vec<_>>();
+        policies[65].skip_fallback = true;
+        policies[100].domains = vec![TransportDomainMatcher::Full("matched.test".to_owned())];
+        let compiled = CompiledNameServerPolicies::new(policies.clone());
+
+        assert_eq!(
+            compiled.select_indices("matched.test", false, false),
+            select_name_server_indices(&policies, "matched.test", false, false),
+        );
+        assert_eq!(
+            compiled.select_indices("unmatched.test", false, false),
+            select_name_server_indices(&policies, "unmatched.test", false, false),
         );
     }
 

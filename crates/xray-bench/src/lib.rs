@@ -58,8 +58,8 @@ use xray_proxy::vless::{
 };
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::{
-    select_name_server_indices, CachingDnsResolver, DnsLookup, DnsResolver, NameServer,
-    NameServerPolicy, TransportDomainMatcher, TransportError,
+    select_name_server_indices, CachingDnsResolver, CompiledNameServerPolicies, DnsLookup,
+    DnsResolver, NameServer, NameServerPolicy, TransportDomainMatcher, TransportError,
 };
 use xray_utls::{normalize_reality_supported_fingerprint, XRAY_REALITY_CAPABLE_FINGERPRINTS};
 
@@ -1020,6 +1020,9 @@ pub struct RouteProbeResult {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct DnsPolicyProbeMetric {
     pub selected_per_iteration: usize,
+    pub compile_us: u128,
+    pub compiled_matchers: usize,
+    pub pattern_bytes: usize,
     pub total_us: u128,
     pub avg_ns: u128,
 }
@@ -7102,24 +7105,25 @@ fn dns_policy_probe_worst_case_servers(
 }
 
 fn measure_dns_policy_selection(
-    policies: &[NameServerPolicy],
+    policies: &CompiledNameServerPolicies,
+    compile_us: u128,
     iterations: usize,
 ) -> DnsPolicyProbeMetric {
-    let selected_per_iteration =
-        select_name_server_indices(policies, DNS_POLICY_PROBE_DOMAIN, false, false).len();
+    let selected_per_iteration = policies
+        .select_indices(DNS_POLICY_PROBE_DOMAIN, false, false)
+        .len();
     let started = Instant::now();
     for _ in 0..iterations {
-        let selected = select_name_server_indices(
-            black_box(policies),
-            black_box(DNS_POLICY_PROBE_DOMAIN),
-            false,
-            false,
-        );
+        let selected =
+            black_box(policies).select_indices(black_box(DNS_POLICY_PROBE_DOMAIN), false, false);
         black_box(selected);
     }
     let elapsed = started.elapsed();
     DnsPolicyProbeMetric {
         selected_per_iteration,
+        compile_us,
+        compiled_matchers: policies.matcher_count(),
+        pattern_bytes: policies.pattern_bytes(),
         total_us: elapsed.as_micros(),
         avg_ns: elapsed.as_nanos() / iterations as u128,
     }
@@ -7165,12 +7169,27 @@ fn measure_dns_policy_probe(
         )));
     }
 
+    let started = Instant::now();
+    let common = CompiledNameServerPolicies::new(common);
+    let common_compile_us = started.elapsed().as_micros();
+    let started = Instant::now();
+    let worst_case = CompiledNameServerPolicies::new(worst_case);
+    let worst_case_compile_us = started.elapsed().as_micros();
+
     Ok(DnsPolicyProbeResult {
         iterations: options.iterations,
         servers: options.servers,
         matchers: options.matchers,
-        common_no_domains: measure_dns_policy_selection(&common, options.iterations),
-        worst_case_matchers: measure_dns_policy_selection(&worst_case, options.iterations),
+        common_no_domains: measure_dns_policy_selection(
+            &common,
+            common_compile_us,
+            options.iterations,
+        ),
+        worst_case_matchers: measure_dns_policy_selection(
+            &worst_case,
+            worst_case_compile_us,
+            options.iterations,
+        ),
     })
 }
 
@@ -8515,14 +8534,18 @@ fn print_route_probe_result(result: &RouteProbeResult) {
 
 fn print_dns_policy_probe_result(result: &DnsPolicyProbeResult) {
     println!(
-        "dns-policy-probe iterations={} servers={} matchers={} common_selected={} common_total_us={} common_avg_ns={} worst_selected={} worst_total_us={} worst_avg_ns={}",
+        "dns-policy-probe iterations={} servers={} matchers={} common_selected={} common_compile_us={} common_pattern_bytes={} common_total_us={} common_avg_ns={} worst_selected={} worst_compile_us={} worst_pattern_bytes={} worst_total_us={} worst_avg_ns={}",
         result.iterations,
         result.servers,
         result.matchers,
         result.common_no_domains.selected_per_iteration,
+        result.common_no_domains.compile_us,
+        result.common_no_domains.pattern_bytes,
         result.common_no_domains.total_us,
         result.common_no_domains.avg_ns,
         result.worst_case_matchers.selected_per_iteration,
+        result.worst_case_matchers.compile_us,
+        result.worst_case_matchers.pattern_bytes,
         result.worst_case_matchers.total_us,
         result.worst_case_matchers.avg_ns,
     );
@@ -10592,9 +10615,11 @@ mod tests {
                 result.servers,
                 result.matchers,
                 result.common_no_domains.selected_per_iteration,
+                result.common_no_domains.compiled_matchers,
                 result.worst_case_matchers.selected_per_iteration,
+                result.worst_case_matchers.compiled_matchers,
             ),
-            (3, 4, 4_096, 4, 4)
+            (3, 4, 4_096, 4, 0, 4, 4_096)
         );
     }
 
