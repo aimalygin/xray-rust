@@ -2052,6 +2052,16 @@ async fn tun_dns_proxy_tcp_matches_reverse_order_pipelined_responses() {
 }
 
 #[tokio::test]
+async fn tun_dns_proxy_tcp_timeout_rolls_back_collateral_query_candidate_end_to_end() {
+    timeout(
+        Duration::from_secs(5),
+        run_tun_dns_proxy_tcp_collateral_timeout_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
 async fn tun_dns_proxy_tcp_replays_only_unanswered_query_after_partial_close() {
     timeout(
         Duration::from_secs(3),
@@ -5412,6 +5422,92 @@ async fn run_tun_dns_proxy_tcp_reverse_response_scenario() {
         vec![first_query, second_query]
     );
     server.stop().await;
+}
+
+async fn run_tun_dns_proxy_tcp_collateral_timeout_scenario() {
+    let old_query = build_dns_a_query(0x2311, "timeout-old.example");
+    let fresh_query = build_dns_a_query(0x2312, "timeout-fresh.example");
+    let primary = spawn_scripted_dns_tcp_server(vec![
+        ScriptedDnsTcpConnection {
+            expected_queries: vec![old_query.clone(), fresh_query.clone()],
+            actions: vec![ScriptedDnsTcpAction::ExpectEof],
+        },
+        ScriptedDnsTcpConnection {
+            expected_queries: vec![fresh_query.clone()],
+            actions: vec![
+                ScriptedDnsTcpAction::Reply {
+                    query_index: 0,
+                    flags: 0x8180,
+                },
+                ScriptedDnsTcpAction::Hang,
+            ],
+        },
+    ])
+    .await;
+    let fallback = spawn_scripted_dns_tcp_server(vec![ScriptedDnsTcpConnection {
+        expected_queries: vec![old_query.clone()],
+        actions: vec![
+            ScriptedDnsTcpAction::Reply {
+                query_index: 0,
+                flags: 0x8180,
+            },
+            ScriptedDnsTcpAction::Hang,
+        ],
+    }])
+    .await;
+    let primary_probe = primary.probe();
+    let fallback_probe = fallback.probe();
+    let (mut core, mut client) =
+        start_tun_dns_tcp_session(vec![primary.addr(), fallback.addr()]).await;
+
+    client.send_payload(&dns_tcp_stream_for_messages(std::slice::from_ref(
+        &old_query,
+    )));
+    pump_tun_until_with_timeout(&mut client, core.tun(), Duration::from_secs(1), |_| {
+        primary_probe.received_query_count() == 1
+    })
+    .await;
+
+    sleep(Duration::from_millis(1_500)).await;
+    client.send_payload(&dns_tcp_stream_for_messages(std::slice::from_ref(
+        &fresh_query,
+    )));
+    pump_tun_until_with_timeout(&mut client, core.tun(), Duration::from_millis(400), |_| {
+        primary_probe.received_query_count() == 2
+    })
+    .await;
+
+    let responses =
+        receive_dns_tcp_frames(&mut client, core.tun(), 2, Duration::from_secs(2)).await;
+
+    assert_eq!(
+        responses,
+        vec![
+            dns_success_response_for_query(&old_query),
+            dns_success_response_for_query(&fresh_query),
+        ]
+    );
+    assert!(client.is_open());
+    let primary_transcript = primary_probe.snapshot();
+    assert_eq!(primary_transcript.accepted_connections, 2);
+    assert_eq!(
+        primary_transcript.received_by_connection,
+        vec![
+            vec![old_query.clone(), fresh_query.clone()],
+            vec![fresh_query.clone()],
+        ]
+    );
+    assert_eq!(primary_transcript.observed_eof_connections, vec![0]);
+    let fallback_transcript = fallback_probe.snapshot();
+    assert_eq!(fallback_transcript.accepted_connections, 1);
+    assert_eq!(
+        fallback_transcript.received_by_connection,
+        vec![vec![old_query]]
+    );
+
+    core.stop().await.unwrap();
+    primary.stop().await;
+    fallback.stop().await;
 }
 
 async fn run_tun_dns_proxy_tcp_partial_response_failover_scenario() {
