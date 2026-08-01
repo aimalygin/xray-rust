@@ -353,7 +353,7 @@ pub(super) async fn bridge_fake_ip_tcp_flow(
     let idle_timeout = context.inbound_policy.conn_idle;
     let idle_sleep = tokio::time::sleep(idle_timeout);
     tokio::pin!(idle_sleep);
-    let mut buffered = BytesMut::new();
+    let mut decoder = DnsTcpFrameDecoder::default();
 
     loop {
         let data = tokio::select! {
@@ -372,9 +372,9 @@ pub(super) async fn bridge_fake_ip_tcp_flow(
             close_guard.close().await;
             return;
         };
-        buffered.extend_from_slice(&data.data);
+        decoder.push(&data.data);
 
-        let decoded = fake_ip_tcp_responses(&mapper, &mut buffered);
+        let decoded = fake_ip_tcp_responses(&mapper, &mut decoder);
         if decoded.processed_message {
             idle_sleep
                 .as_mut()
@@ -415,29 +415,66 @@ struct FakeDnsTcpDecodeResult {
     terminal_error: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DnsTcpFrameDecodeError {
+    ZeroLength,
+    MessageTooLarge,
+}
+
+#[derive(Debug, Default)]
+struct DnsTcpFrameDecoder {
+    buffered: BytesMut,
+    terminal_error: Option<DnsTcpFrameDecodeError>,
+}
+
+impl DnsTcpFrameDecoder {
+    fn push(&mut self, chunk: &[u8]) {
+        self.buffered.extend_from_slice(chunk);
+    }
+
+    fn next_frame(&mut self) -> Result<Option<Bytes>, DnsTcpFrameDecodeError> {
+        if let Some(error) = self.terminal_error {
+            return Err(error);
+        }
+        if self.buffered.len() < 2 {
+            return Ok(None);
+        }
+
+        let message_len = usize::from(u16::from_be_bytes([self.buffered[0], self.buffered[1]]));
+        let error = if message_len == 0 {
+            Some(DnsTcpFrameDecodeError::ZeroLength)
+        } else if message_len > MAX_DNS_TCP_MESSAGE_SIZE {
+            Some(DnsTcpFrameDecodeError::MessageTooLarge)
+        } else {
+            None
+        };
+        if let Some(error) = error {
+            self.terminal_error = Some(error);
+            return Err(error);
+        }
+
+        let frame_len = message_len + 2;
+        if self.buffered.len() < frame_len {
+            return Ok(None);
+        }
+
+        Ok(Some(self.buffered.split_to(frame_len).freeze()))
+    }
+}
+
 fn fake_ip_tcp_responses(
     mapper: &Arc<Mutex<FakeIpMapper>>,
-    buffered: &mut BytesMut,
+    decoder: &mut DnsTcpFrameDecoder,
 ) -> FakeDnsTcpDecodeResult {
     let mut output = BytesMut::new();
     let mut processed_message = false;
 
     loop {
-        if buffered.len() < 2 {
-            break;
-        }
-        let message_len = usize::from(u16::from_be_bytes([buffered[0], buffered[1]]));
-        if message_len == 0 || message_len > MAX_DNS_TCP_MESSAGE_SIZE {
-            return fake_dns_tcp_decode_result(output, processed_message, true);
-        }
-        let Some(frame_len) = message_len.checked_add(2) else {
-            return fake_dns_tcp_decode_result(output, processed_message, true);
+        let frame = match decoder.next_frame() {
+            Ok(Some(frame)) => frame,
+            Ok(None) => break,
+            Err(_) => return fake_dns_tcp_decode_result(output, processed_message, true),
         };
-        if buffered.len() < frame_len {
-            break;
-        }
-
-        let frame = buffered.split_to(frame_len).freeze();
         let query = &frame[2..];
         let Some(response) = mapper
             .lock()
@@ -1438,21 +1475,97 @@ mod tests {
         ))
     }
 
+    fn dns_tcp_frame(payload: &[u8]) -> Vec<u8> {
+        let payload_len = u16::try_from(payload.len()).unwrap();
+        let mut frame = Vec::with_capacity(payload.len() + 2);
+        frame.extend_from_slice(&payload_len.to_be_bytes());
+        frame.extend_from_slice(payload);
+        frame
+    }
+
+    #[test]
+    fn dns_tcp_frame_decoder_reassembles_fragmented_prefix_and_payload() {
+        let frame = dns_tcp_frame(b"fragmented-query");
+        let mut decoder = DnsTcpFrameDecoder::default();
+
+        decoder.push(&frame[..1]);
+        assert_eq!(decoder.next_frame(), Ok(None));
+
+        decoder.push(&frame[1..4]);
+        assert_eq!(decoder.next_frame(), Ok(None));
+
+        decoder.push(&frame[4..]);
+        assert_eq!(
+            decoder.next_frame(),
+            Ok(Some(Bytes::copy_from_slice(&frame)))
+        );
+    }
+
+    #[test]
+    fn dns_tcp_frame_decoder_yields_coalesced_frames_byte_for_byte() {
+        let first = dns_tcp_frame(b"first-query");
+        let second = dns_tcp_frame(b"second-query");
+        let mut coalesced = first.clone();
+        coalesced.extend_from_slice(&second);
+        let mut decoder = DnsTcpFrameDecoder::default();
+        decoder.push(&coalesced);
+
+        assert_eq!(
+            decoder.next_frame(),
+            Ok(Some(Bytes::copy_from_slice(&first)))
+        );
+        assert_eq!(
+            decoder.next_frame(),
+            Ok(Some(Bytes::copy_from_slice(&second)))
+        );
+        assert_eq!(decoder.next_frame(), Ok(None));
+    }
+
+    #[test]
+    fn dns_tcp_frame_decoder_rejects_zero_length_after_prefix() {
+        let mut decoder = DnsTcpFrameDecoder::default();
+        decoder.push(&0_u16.to_be_bytes());
+
+        assert_eq!(
+            decoder.next_frame(),
+            Err(DnsTcpFrameDecodeError::ZeroLength)
+        );
+        assert_eq!(
+            decoder.next_frame(),
+            Err(DnsTcpFrameDecodeError::ZeroLength)
+        );
+    }
+
+    #[test]
+    fn dns_tcp_frame_decoder_rejects_oversized_message_after_prefix() {
+        let oversized_len = u16::try_from(MAX_DNS_TCP_MESSAGE_SIZE + 1).unwrap();
+        let mut decoder = DnsTcpFrameDecoder::default();
+        decoder.push(&oversized_len.to_be_bytes());
+
+        assert_eq!(
+            decoder.next_frame(),
+            Err(DnsTcpFrameDecodeError::MessageTooLarge)
+        );
+        assert_eq!(
+            decoder.next_frame(),
+            Err(DnsTcpFrameDecodeError::MessageTooLarge)
+        );
+    }
+
     #[test]
     fn fake_dns_tcp_decoder_keeps_fragmented_frame_until_complete() {
         let query = dns_a_query(0x2401, "fragmented.example");
-        let mut frame = Vec::with_capacity(query.len() + 2);
-        frame.extend_from_slice(&(query.len() as u16).to_be_bytes());
-        frame.extend_from_slice(&query);
-        let mut buffered = BytesMut::from(&frame[..1]);
+        let frame = dns_tcp_frame(&query);
+        let mut decoder = DnsTcpFrameDecoder::default();
+        decoder.push(&frame[..1]);
 
-        let partial = fake_ip_tcp_responses(&fake_ip_mapper(), &mut buffered);
+        let partial = fake_ip_tcp_responses(&fake_ip_mapper(), &mut decoder);
         assert!(partial.response.is_none());
         assert!(!partial.processed_message);
         assert!(!partial.terminal_error);
 
-        buffered.extend_from_slice(&frame[1..]);
-        let decoded = fake_ip_tcp_responses(&fake_ip_mapper(), &mut buffered);
+        decoder.push(&frame[1..]);
+        let decoded = fake_ip_tcp_responses(&fake_ip_mapper(), &mut decoder);
         let response = decoded.response.unwrap();
         assert!(decoded.processed_message);
         assert!(!decoded.terminal_error);
@@ -1461,19 +1574,18 @@ mod tests {
             response.len() - 2
         );
         assert_eq!(&response[2..4], &0x2401_u16.to_be_bytes());
-        assert!(buffered.is_empty());
+        assert!(decoder.buffered.is_empty());
     }
 
     #[test]
     fn fake_dns_tcp_decoder_answers_coalesced_pipelined_frames() {
-        let mut buffered = BytesMut::new();
+        let mut decoder = DnsTcpFrameDecoder::default();
         for (id, domain) in [(0x2402, "first.example"), (0x2403, "second.example")] {
             let query = dns_a_query(id, domain);
-            buffered.extend_from_slice(&(query.len() as u16).to_be_bytes());
-            buffered.extend_from_slice(&query);
+            decoder.push(&dns_tcp_frame(&query));
         }
 
-        let decoded = fake_ip_tcp_responses(&fake_ip_mapper(), &mut buffered);
+        let decoded = fake_ip_tcp_responses(&fake_ip_mapper(), &mut decoder);
         let response = decoded.response.unwrap();
         let first_len = usize::from(u16::from_be_bytes([response[0], response[1]]));
         let second_offset = first_len + 2;
@@ -1485,16 +1597,16 @@ mod tests {
             &response[second_offset + 2..second_offset + 4],
             &0x2403_u16.to_be_bytes()
         );
-        assert!(buffered.is_empty());
+        assert!(decoder.buffered.is_empty());
     }
 
     #[test]
     fn fake_dns_tcp_decoder_rejects_oversized_frame_before_payload_arrives() {
-        let mut buffered = BytesMut::from(
-            &(u16::try_from(MAX_DNS_TCP_MESSAGE_SIZE + 1).unwrap()).to_be_bytes()[..],
-        );
+        let oversized_len = u16::try_from(MAX_DNS_TCP_MESSAGE_SIZE + 1).unwrap();
+        let mut decoder = DnsTcpFrameDecoder::default();
+        decoder.push(&oversized_len.to_be_bytes());
 
-        let decoded = fake_ip_tcp_responses(&fake_ip_mapper(), &mut buffered);
+        let decoded = fake_ip_tcp_responses(&fake_ip_mapper(), &mut decoder);
 
         assert!(decoded.response.is_none());
         assert!(!decoded.processed_message);
@@ -1504,14 +1616,12 @@ mod tests {
     #[test]
     fn fake_dns_tcp_decoder_keeps_valid_response_before_terminal_frame_error() {
         let query = dns_a_query(0x2404, "valid.example");
-        let mut buffered = BytesMut::new();
-        buffered.extend_from_slice(&(query.len() as u16).to_be_bytes());
-        buffered.extend_from_slice(&query);
-        buffered.extend_from_slice(
-            &(u16::try_from(MAX_DNS_TCP_MESSAGE_SIZE + 1).unwrap()).to_be_bytes(),
-        );
+        let oversized_len = u16::try_from(MAX_DNS_TCP_MESSAGE_SIZE + 1).unwrap();
+        let mut decoder = DnsTcpFrameDecoder::default();
+        decoder.push(&dns_tcp_frame(&query));
+        decoder.push(&oversized_len.to_be_bytes());
 
-        let decoded = fake_ip_tcp_responses(&fake_ip_mapper(), &mut buffered);
+        let decoded = fake_ip_tcp_responses(&fake_ip_mapper(), &mut decoder);
         let response = decoded.response.unwrap();
 
         assert!(decoded.processed_message);
