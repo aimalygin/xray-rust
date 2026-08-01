@@ -812,7 +812,14 @@ fn rejects_tcp_header_type_with_path() {
 fn parses_dns_servers_and_hosts() {
     let raw = r#"{
         "dns": {
-          "servers": ["192.0.2.53", "dns.example"],
+          "servers": [
+            "192.0.2.53",
+            "192.0.2.54:5353",
+            "2001:db8::53",
+            "[2001:db8::54]:5353",
+            "dns.example",
+            "dns-alt.example:5353"
+          ],
           "hosts": {
             "domain:service.example": "alias.example",
             "full:resolver.example": "192.0.2.53"
@@ -832,9 +839,34 @@ fn parses_dns_servers_and_hosts() {
     );
     assert_eq!(
         parsed.config.dns.servers[1],
+        DnsServerConfig::Ip(SocketAddr::from(([192, 0, 2, 54], 5353)))
+    );
+    assert_eq!(
+        parsed.config.dns.servers[2],
+        DnsServerConfig::Ip(SocketAddr::new(
+            IpAddr::V6("2001:db8::53".parse().unwrap()),
+            53,
+        ))
+    );
+    assert_eq!(
+        parsed.config.dns.servers[3],
+        DnsServerConfig::Ip(SocketAddr::new(
+            IpAddr::V6("2001:db8::54".parse().unwrap()),
+            5353,
+        ))
+    );
+    assert_eq!(
+        parsed.config.dns.servers[4],
         DnsServerConfig::Domain {
             domain: "dns.example".to_owned(),
             port: 53,
+        }
+    );
+    assert_eq!(
+        parsed.config.dns.servers[5],
+        DnsServerConfig::Domain {
+            domain: "dns-alt.example".to_owned(),
+            port: 5353,
         }
     );
     assert!(parsed.config.dns.hosts[0]
@@ -848,6 +880,115 @@ fn parses_dns_servers_and_hosts() {
         parsed.config.dns.hosts[1].target,
         DnsHostTarget::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 53)))
     );
+}
+
+#[test]
+fn accepts_eight_dns_servers() {
+    let raw = raw_with_dns_servers(
+        r#"
+          "192.0.2.1",
+          "192.0.2.2",
+          "192.0.2.3",
+          "192.0.2.4",
+          "192.0.2.5",
+          "192.0.2.6",
+          "192.0.2.7",
+          "192.0.2.8"
+        "#,
+    );
+
+    let parsed = parse_xray_json(&raw).expect("eight DNS servers should be supported");
+
+    assert_eq!(parsed.config.dns.servers.len(), 8);
+}
+
+#[test]
+fn rejects_more_than_eight_dns_servers() {
+    let raw = raw_with_dns_servers(
+        r#"
+          "192.0.2.1",
+          "192.0.2.2",
+          "192.0.2.3",
+          "192.0.2.4",
+          "192.0.2.5",
+          "192.0.2.6",
+          "192.0.2.7",
+          "192.0.2.8",
+          "192.0.2.9"
+        "#,
+    );
+
+    let error = parse_xray_json(&raw).unwrap_err();
+
+    assert_eq!(error.diagnostics[0].path.as_deref(), Some("$.dns.servers"));
+    assert!(error.diagnostics[0].message.contains("9 servers"));
+    assert!(error.diagnostics[0]
+        .message
+        .contains("maximum supported per configuration is 8"));
+}
+
+#[test]
+fn rejects_zero_port_for_ipv4_dns_server() {
+    assert_dns_server_zero_port_rejected("192.0.2.53:0");
+}
+
+#[test]
+fn rejects_zero_port_for_bracketed_ipv6_dns_server() {
+    assert_dns_server_zero_port_rejected("[2001:db8::53]:0");
+}
+
+#[test]
+fn rejects_zero_port_for_domain_dns_server() {
+    assert_dns_server_zero_port_rejected("dns.example:0");
+}
+
+#[test]
+fn rejects_local_tun_dns_anchor_as_upstream() {
+    for server in [
+        "198.18.0.1",
+        "198.18.0.1:53",
+        "::ffff:198.18.0.1",
+        "[::ffff:198.18.0.1]:53",
+    ] {
+        let raw = raw_with_dns_servers(&format!(r#""{server}""#));
+        let error = parse_xray_json(&raw).unwrap_err();
+
+        assert_eq!(
+            error.diagnostics[0].path.as_deref(),
+            Some("$.dns.servers[0]")
+        );
+        assert_eq!(
+            error.diagnostics[0].message,
+            "dns server cannot point at the local TUN DNS anchor"
+        );
+    }
+}
+
+#[test]
+fn accepts_anchor_address_with_non_dns_port_as_upstream() {
+    let raw = raw_with_dns_servers(r#""198.18.0.1:5353""#);
+    let parsed = parse_xray_json(&raw).unwrap();
+
+    assert_eq!(
+        parsed.config.dns.servers,
+        vec![DnsServerConfig::Ip(SocketAddr::from((
+            [198, 18, 0, 1],
+            5353
+        )))]
+    );
+}
+
+#[test]
+fn parses_bracketed_ipv6_dns_server_with_numeric_scope_id() {
+    let raw = raw_with_dns_servers(r#""[fe80::53%2]:5353""#);
+    let parsed = parse_xray_json(&raw).unwrap();
+
+    let DnsServerConfig::Ip(SocketAddr::V6(server)) = parsed.config.dns.servers[0] else {
+        panic!("numeric IPv6 scope id must remain an IP-literal upstream");
+    };
+    assert_eq!(server.ip(), &"fe80::53".parse::<Ipv6Addr>().unwrap());
+    assert_eq!(server.scope_id(), 2);
+    assert_eq!(server.port(), 5353);
 }
 
 #[test]
@@ -1269,6 +1410,30 @@ fn assert_parse_error_path(raw: &str, path: &str) {
     let err = parse_xray_json(raw).unwrap_err();
     assert_eq!(err.diagnostics[0].severity, DiagnosticSeverity::Error);
     assert_eq!(err.diagnostics[0].path.as_deref(), Some(path));
+}
+
+fn assert_dns_server_zero_port_rejected(server: &str) {
+    let raw = raw_with_dns_servers(&format!(r#""{server}""#));
+    let error = parse_xray_json(&raw).unwrap_err();
+
+    assert_eq!(
+        error.diagnostics[0].path.as_deref(),
+        Some("$.dns.servers[0]")
+    );
+    assert_eq!(
+        error.diagnostics[0].message,
+        "dns server port must be greater than zero"
+    );
+}
+
+fn raw_with_dns_servers(servers: &str) -> String {
+    format!(
+        r#"{{
+          "dns": {{ "servers": [{servers}] }},
+          "inbounds": [],
+          "outbounds": [{{ "tag": "direct", "protocol": "freedom" }}]
+        }}"#
+    )
 }
 
 fn unique_temp_dir(name: &str) -> PathBuf {

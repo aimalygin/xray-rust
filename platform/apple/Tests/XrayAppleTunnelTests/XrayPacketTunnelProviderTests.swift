@@ -107,7 +107,7 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
     func testNetworkSettingsExcludeIPv4ProxyServerFromDefaultRoute() {
         let settings = XrayPacketTunnelProvider.networkSettings(
             excludingServerAddress: "203.0.113.10",
-            resolvedDNSConfiguration: .localFakeIPAnchor
+            resolvedDNSConfiguration: .localDNSAnchor
         )
 
         let excludedRoute = settings.ipv4Settings?.excludedRoutes?.first
@@ -115,10 +115,10 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         XCTAssertEqual(excludedRoute?.destinationSubnetMask, "255.255.255.255")
     }
 
-    func testNetworkSettingsApplyLocalFakeIPAnchorForAllDomains() {
+    func testNetworkSettingsApplyLocalDNSAnchorForAllDomains() {
         let settings = XrayPacketTunnelProvider.networkSettings(
             excludingServerAddress: "203.0.113.10",
-            resolvedDNSConfiguration: .localFakeIPAnchor
+            resolvedDNSConfiguration: .localDNSAnchor
         )
 
         XCTAssertEqual(settings.dnsSettings?.servers, ["198.18.0.1"])
@@ -151,7 +151,7 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
             explicit: .system
         )
 
-        XCTAssertEqual(configuration, .localFakeIPAnchor)
+        XCTAssertEqual(configuration, .localDNSAnchor)
     }
 
     func testResolvedDnsConfigurationFailsClosedWithoutFakeIPOrExplicitServers() {
@@ -188,6 +188,74 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         )
 
         XCTAssertEqual(configuration, .custom(["192.0.2.53"]))
+    }
+
+    func testResolvedDnsConfigurationUsesLocalAnchorForIPLiteralConfigServers() throws {
+        let serverLists = [
+            ["192.0.2.53"],
+            ["2001:db8::53"],
+            ["192.0.2.53:5353"],
+            ["[2001:db8::53]:5353"],
+            ["[fe80::53%2]:5353"],
+            ["resolver.example", "198.51.100.53"],
+        ]
+
+        for servers in serverLists {
+            let data = try JSONSerialization.data(withJSONObject: [
+                "dns": ["servers": servers],
+            ])
+            let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
+                configJSON: String(decoding: data, as: UTF8.self),
+                explicit: .system
+            )
+
+            XCTAssertEqual(configuration, .localDNSAnchor, "servers=\(servers)")
+        }
+    }
+
+    func testResolvedDnsConfigurationRejectsDomainOnlyConfigServers() {
+        let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
+            configJSON: #"{"dns":{"servers":["resolver.example","resolver.example:5353"]}}"#,
+            explicit: .system
+        )
+
+        XCTAssertNil(configuration)
+    }
+
+    func testResolvedDnsConfigurationRejectsZeroPortIPLiteralConfigServers() {
+        let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
+            configJSON: #"{"dns":{"servers":["192.0.2.53:0","[2001:db8::53]:0"]}}"#,
+            explicit: .system
+        )
+
+        XCTAssertNil(configuration)
+    }
+
+    func testResolvedDnsConfigurationExplicitServersOverrideConfigUpstreams() {
+        let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
+            configJSON: #"{"dns":{"servers":["192.0.2.53","resolver.example"]}}"#,
+            explicit: .custom(["198.51.100.53"])
+        )
+
+        XCTAssertEqual(configuration, .custom(["198.51.100.53"]))
+    }
+
+    func testResolvedDnsConfigurationUsesLocalAnchorForFakeIPWithConfigServers() {
+        let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
+            configJSON: #"{"dns":{"fakeIp":{"enabled":true,"ipv4Pool":"198.19.0.0/16"},"servers":["192.0.2.53"]}}"#,
+            explicit: .system
+        )
+
+        XCTAssertEqual(configuration, .localDNSAnchor)
+    }
+
+    func testResolvedDnsConfigurationRejectsExplicitServersForFakeIPWithConfigServers() {
+        let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
+            configJSON: #"{"dns":{"fakeIp":{"enabled":true,"ipv4Pool":"198.19.0.0/16"},"servers":["192.0.2.53"]}}"#,
+            explicit: .custom(["198.51.100.53"])
+        )
+
+        XCTAssertNil(configuration)
     }
 
     func testResolvedDnsConfigurationDoesNotFallBackFromInvalidExplicitServers() {
@@ -323,7 +391,7 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
     func testNetworkSettingsDoNotInstallIPv6DefaultRouteYet() {
         let settings = XrayPacketTunnelProvider.networkSettings(
             excludingServerAddress: "203.0.113.10",
-            resolvedDNSConfiguration: .localFakeIPAnchor
+            resolvedDNSConfiguration: .localDNSAnchor
         )
 
         XCTAssertNil(settings.ipv6Settings)

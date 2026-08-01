@@ -96,13 +96,17 @@ downloaded `.dat` files are checksum-verified inputs in the ignored
 `platform/apple/XrayClient/dat` directory, not repository contents.
 
 The Apple provider performs no startup connectivity probe and assigns no
-third-party DNS resolver by default. Fake-IP profiles use the tunnel-local
-`198.18.0.1` DNS interception anchor; profiles without fake-IP must provide an
-explicit IPv4 DNS override. Combining both modes, or configuring neither, fails
-before applying network settings. Device tests that enable a probe or custom
-DNS must use endpoints controlled or approved by the host application and
-verify valid configuration, local-anchor responses, and fail-closed handling
-of missing, conflicting, or malformed DNS settings.
+third-party DNS resolver by default. Fake-IP profiles and profiles with at
+least one IP-literal `dns.servers` entry use the tunnel-local `198.18.0.1` DNS
+anchor. The latter proxies UDP and TCP/53 through the selected Freedom/VLESS
+outbound. A profile without either mode can instead provide an explicit IPv4
+DNS override. Combining fake-IP with an explicit override, or configuring none
+of the supported modes, fails before applying network settings. Device tests
+that enable a probe or custom DNS must use endpoints controlled or approved by
+the host application and verify UDP/TCP local-anchor responses, ordered
+upstream failover, oversized-UDP fallback to TCP, and fail-closed handling of
+missing, conflicting, malformed, or unreachable DNS settings. Domain-only
+upstreams do not enable the anchor until safe bootstrap is implemented.
 
 ## Android native libraries
 

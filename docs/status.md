@@ -25,7 +25,7 @@ parity with every Xray-core release.
 | REALITY client | Supported subset | Deterministic primitive tests and optional local Xray-core REALITY+Vision interoperability tests |
 | `xtls-rprx-vision` | Supported subset | TCP and XUDP paths; UDP/443 behavior follows the selected Vision flow |
 | Domain/IP routing | Supported subset | `field` rules, inbound tags, domain/CIDR/private/geodata matchers |
-| Configured DNS | Supported subset | Static hosts, UDP A/AAAA/CNAME queries, system fallback, cache |
+| Configured DNS | Supported subset | Static hosts, UDP A/AAAA/CNAME resolver, cache, and routed UDP/TCP TUN proxy for IP-literal upstreams |
 | Fake IP | Supported subset | IPv4 pool used by the TUN routing path |
 | `geosite.dat` / `geoip.dat` | Supported | Xray-style protobuf data is loaded on demand with size and matcher budgets |
 | Startup probe and runtime stats | Supported | Core and FFI integration tests |

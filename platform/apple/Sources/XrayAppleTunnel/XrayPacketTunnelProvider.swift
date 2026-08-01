@@ -20,7 +20,7 @@ public enum XrayPacketTunnelProviderError: Error, LocalizedError {
         case .invalidStartupProbeConfiguration:
             return "Startup probe requires an explicit HTTP or HTTPS URL and a valid timeout."
         case .invalidDNSConfiguration:
-            return "DNS requires either enabled dns.fakeIp or a non-empty list of valid IPv4 servers, but not both."
+            return "DNS requires enabled dns.fakeIp, an IP-literal dns.servers upstream, or explicit IPv4 servers; fake-IP cannot be combined with explicit servers."
         case .startSuperseded:
             return "Tunnel start was superseded by a newer lifecycle request."
         }
@@ -69,13 +69,13 @@ enum XrayPacketTunnelDNSConfiguration: Equatable {
 }
 
 enum XrayPacketTunnelResolvedDNSConfiguration: Equatable {
-    case localFakeIPAnchor
+    case localDNSAnchor
     case custom([String])
 
     var logDescription: String {
         switch self {
-        case .localFakeIPAnchor:
-            return "localFakeIpAnchor"
+        case .localDNSAnchor:
+            return "localDnsAnchor"
         case let .custom(servers):
             return "custom(\(servers.count))"
         }
@@ -272,7 +272,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             }
             XrayAppleLog.error(
                 "PacketTunnelProvider",
-                "DNS unavailable: enable dns.fakeIp or configure explicit IPv4 servers"
+                "DNS unavailable: enable dns.fakeIp, configure an IP-literal dns.servers upstream, or configure explicit IPv4 servers"
             )
             completionHandler(XrayPacketTunnelProviderError.invalidDNSConfiguration)
             return
@@ -768,11 +768,11 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
 
         // A full tunnel must install an explicit DNS destination. Otherwise
         // the system resolver can be routed into the tunnel and blackhole.
-        // In fake-IP mode the tunnel-local address is an interception anchor,
-        // not an upstream resolver.
+        // In locally handled DNS modes (fake-IP or raw forwarding) the
+        // tunnel-local address is an interception anchor, not an upstream.
         let servers: [String]
         switch resolvedDNSConfiguration {
-        case .localFakeIPAnchor:
+        case .localDNSAnchor:
             servers = [tunnelRemoteAddress]
         case let .custom(custom):
             servers = custom
@@ -788,6 +788,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         explicit: XrayPacketTunnelDNSConfiguration
     ) -> XrayPacketTunnelResolvedDNSConfiguration? {
         let hasFakeIP = fakeIPDNSIsAvailable(configJSON)
+        let hasIPLiteralUpstream = ipLiteralDNSUpstreamIsAvailable(configJSON)
         switch explicit {
         case let .custom(servers) where !hasFakeIP:
             return .custom(servers)
@@ -796,7 +797,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         case .invalid:
             return nil
         case .system:
-            return hasFakeIP ? .localFakeIPAnchor : nil
+            return hasFakeIP || hasIPLiteralUpstream ? .localDNSAnchor : nil
         }
     }
 
@@ -826,6 +827,71 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             return false
         }
         return isValidIPv4Pool(ipv4Pool)
+    }
+
+    private static func ipLiteralDNSUpstreamIsAvailable(_ configJSON: String) -> Bool {
+        guard let data = configJSON.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let dns = root["dns"] as? [String: Any],
+              let servers = dns["servers"] as? [Any]
+        else {
+            return false
+        }
+        return servers.contains { rawServer in
+            guard let server = rawServer as? String else {
+                return false
+            }
+            return isNonzeroIPLiteralDNSServer(server)
+        }
+    }
+
+    private static func isNonzeroIPLiteralDNSServer(_ server: String) -> Bool {
+        // Bare IP literals use the Rust parser's default DNS port 53.
+        if isIPAddress(server, family: AF_INET) || isIPAddress(server, family: AF_INET6) {
+            return true
+        }
+
+        // Brackets are required for an IPv6 SocketAddr with an explicit port.
+        if server.first == "[", let closingBracket = server.lastIndex(of: "]") {
+            let addressStart = server.index(after: server.startIndex)
+            let portSeparator = server.index(after: closingBracket)
+            guard portSeparator < server.endIndex,
+                  server[portSeparator] == ":",
+                  server.index(after: portSeparator) < server.endIndex,
+                  closingBracket > addressStart,
+                  isIPv6SocketAddressLiteral(String(server[addressStart..<closingBracket])),
+                  let port = UInt16(server[server.index(after: portSeparator)...]),
+                  port != 0
+            else {
+                return false
+            }
+            return true
+        }
+
+        // An unbracketed SocketAddr can only be IPv4; domain:port stays domain-only.
+        guard let separator = server.lastIndex(of: ":"),
+              !server[..<separator].contains(":"),
+              isIPAddress(String(server[..<separator]), family: AF_INET),
+              let port = UInt16(server[server.index(after: separator)...]),
+              port != 0
+        else {
+            return false
+        }
+        return true
+    }
+
+    private static func isIPv6SocketAddressLiteral(_ address: String) -> Bool {
+        if isIPAddress(address, family: AF_INET6) {
+            return true
+        }
+        guard let scopeSeparator = address.lastIndex(of: "%"),
+              scopeSeparator > address.startIndex,
+              address.index(after: scopeSeparator) < address.endIndex,
+              UInt32(address[address.index(after: scopeSeparator)...]) != nil
+        else {
+            return false
+        }
+        return isIPAddress(String(address[..<scopeSeparator]), family: AF_INET6)
     }
 
     private static func isJSONBooleanTrue(_ value: Any?) -> Bool {

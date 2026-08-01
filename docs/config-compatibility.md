@@ -119,17 +119,34 @@ if none matches, the first outbound tag is used as the default.
 
 ## DNS
 
-`dns.servers` accepts IP addresses, socket addresses, or domain names with an
-optional port. The resolver sends UDP A/AAAA queries, understands CNAME
-responses, falls back to the system resolver, and caches results.
+`dns.servers` accepts at most eight IP addresses, socket addresses, or domain
+names with an optional nonzero port. The local TUN anchor `198.18.0.1:53`
+cannot itself be configured as an upstream. The resolver sends UDP A/AAAA
+queries, understands CNAME responses, falls back to the system resolver, and
+caches results.
+
+When fake-IP is disabled and at least one IP-literal server is present, TUN
+clients can use `198.18.0.1:53` as a local UDP/TCP DNS proxy. The proxy keeps
+server order, removes duplicates, and sends each upstream attempt through the
+normal outbound router, so Freedom sockets retain platform socket protection
+and VLESS routes do not gain a hidden direct-DNS bypass. UDP requests have
+bounded per-attempt and total timeouts; invalid/unavailable upstreams return
+SERVFAIL, and an oversized reply is converted to a truncated response so the
+client can retry over TCP. TCP is a byte-transparent stream and supports
+multiple length-prefixed DNS messages on one connection; failed opens are
+reset. Domain-name servers do not currently participate in this TUN proxy
+because safe bootstrap resolution is not implemented. If IP and domain
+servers are mixed, only the IP literals are proxy candidates.
 
 `dns.hosts` maps supported domain matchers to an IP or alias domain.
 `dns.fakeIp` supports `enabled`, an IPv4 `ipv4Pool`, and `ttl` for the current
 TUN routing path. It synthesizes A records and returns NODATA for other
-single-question UDP query types sent to the tunnel-local `198.18.0.1` anchor;
+single-question UDP query types sent to the tunnel-local `198.18.0.1` anchor.
+Fake-IP takes precedence over raw proxying: TCP/53 to the anchor is reset, and
 unsupported query types sent to another resolver continue through the normal
-UDP path. DNS-over-TCP, DNS-over-HTTPS/TLS, client-IP, per-server rule objects,
-and the broader Xray DNS feature set are not implemented.
+UDP path. DNS-over-HTTPS/TLS, client-IP, per-server rule objects, domain-server
+bootstrap for the TUN proxy, and the broader Xray DNS feature set are not
+implemented.
 
 ## Policy
 

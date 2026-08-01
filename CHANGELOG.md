@@ -13,6 +13,10 @@ development changes are recorded under `Unreleased`.
   mode—or both conflicting modes—fail closed before applying network settings.
   Fake-IP DNS now returns NODATA for supported non-A queries sent to the anchor
   instead of forwarding them back into the tunnel.
+- Added a bounded tunnel-local UDP/TCP DNS proxy for IP-literal `dns.servers`.
+  Upstream attempts follow configured order and use the existing outbound
+  router (including VLESS and protected Freedom sockets); failures return
+  SERVFAIL or reset TCP without silently selecting a public resolver.
 - Fixed a Vision direct-mode read switching the whole connection to cleartext:
   the TLS session now survives a direct read so the uplink stays encrypted
   until Vision switches that direction too, matching Xray-core's per-direction

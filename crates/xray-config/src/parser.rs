@@ -1,6 +1,6 @@
 use std::{
     collections::HashSet,
-    net::{IpAddr, SocketAddr},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     path::{Path, PathBuf},
 };
 
@@ -23,6 +23,15 @@ const MAX_CONFIG_IP_MATCHERS: usize = 300_000;
 const MAX_CONFIG_MATCHERS: usize = 500_000;
 const MAX_CONFIG_GEODATA_ATTR_FILTERS: usize = 32;
 const MAX_CONFIG_GEODATA_ATTRIBUTE_SIZE: usize = 256;
+const MAX_DNS_SERVERS: usize = 8;
+const TUN_DNS_ANCHOR: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 1);
+
+fn is_tun_dns_anchor_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => ip == TUN_DNS_ANCHOR,
+        IpAddr::V6(ip) => ip.to_ipv4_mapped() == Some(TUN_DNS_ANCHOR),
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 struct MatcherBudgetLimits {
@@ -241,6 +250,17 @@ impl Parser<'_> {
             self.error("$.dns.servers", "field `servers` must be an array");
             return Vec::new();
         };
+        if servers.len() > MAX_DNS_SERVERS {
+            self.error(
+                "$.dns.servers",
+                format!(
+                    "dns config contains {} servers; maximum supported per configuration is {}",
+                    servers.len(),
+                    MAX_DNS_SERVERS
+                ),
+            );
+            return Vec::new();
+        }
 
         servers
             .iter()
@@ -263,9 +283,21 @@ impl Parser<'_> {
         }
 
         if let Ok(socket_addr) = server.parse::<SocketAddr>() {
+            if socket_addr.port() == 0 {
+                self.error(path, "dns server port must be greater than zero");
+                return None;
+            }
+            if is_tun_dns_anchor_ip(socket_addr.ip()) && socket_addr.port() == 53 {
+                self.error(path, "dns server cannot point at the local TUN DNS anchor");
+                return None;
+            }
             return Some(DnsServerConfig::Ip(socket_addr));
         }
         if let Ok(ip) = server.parse::<IpAddr>() {
+            if is_tun_dns_anchor_ip(ip) {
+                self.error(path, "dns server cannot point at the local TUN DNS anchor");
+                return None;
+            }
             return Some(DnsServerConfig::Ip(SocketAddr::new(ip, 53)));
         }
 
@@ -275,6 +307,10 @@ impl Parser<'_> {
                     self.error(path, format!("invalid dns server port `{port}`"));
                     return None;
                 };
+                if port == 0 {
+                    self.error(path, "dns server port must be greater than zero");
+                    return None;
+                }
                 (domain, port)
             }
             _ => (server, 53),

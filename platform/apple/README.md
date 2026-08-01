@@ -89,20 +89,30 @@ provider configuration. Per-start overrides use
 valid URL, or with a timeout outside `1...60000` milliseconds, fails tunnel
 startup instead of selecting a third-party endpoint.
 
-The provider also does not select a public DNS operator. When `dns.fakeIp` is
-enabled with a usable IPv4 pool, Network Extension advertises the tunnel-local
-`198.18.0.1` interception anchor; it is not contacted as an upstream resolver.
+The provider also does not select a public DNS operator. Network Extension
+advertises the tunnel-local `198.18.0.1` interception anchor when
+`dns.fakeIp` is enabled with a usable IPv4 pool, or when `dns.servers` contains
+at least one IP-literal upstream with a nonzero port. Bare IPv4 and IPv6
+literals use port 53; socket-address strings can select another port. The
+anchor is handled inside the tunnel and is not itself an upstream resolver.
+Domain-only `dns.servers` entries do not enable the local proxy until bootstrap
+resolution is implemented.
+
 A host can instead set `dnsServers` in provider configuration, or
 `xrayDNSServers` in start options, to one IPv4 address string or a non-empty
-property-list array of at most eight IPv4 address strings. If neither fake-IP
-nor an explicit override is available—or if both modes are configured—tunnel
-startup fails before network settings are applied. The provider validates the
+property-list array of at most eight IPv4 address strings. When fake-IP is
+disabled, this explicit setting takes precedence over JSON `dns.servers`.
+Combining explicit servers with fake-IP, or configuring none of the supported
+modes, fails before network settings are applied. The provider validates the
 full JSON config through the Rust parser before applying those settings. IPv6
 resolver overrides are rejected until the provider also installs an IPv6
-tunnel route. Invalid explicit values fail startup; start options take
-precedence over persistent provider configuration. The first local-anchor
-implementation covers ordinary single-question UDP DNS; TCP/53 and a full
-upstream DNS proxy remain future work.
+tunnel route; IPv6 literals inside JSON `dns.servers` remain valid local-proxy
+upstreams. Invalid explicit values fail startup, and start options take
+precedence over persistent provider configuration. The local anchor currently
+proxies both UDP and TCP/53 through the configured outbound route. Only
+IP-literal JSON upstreams participate; domain-upstream bootstrap remains future
+work. Fake-IP profiles keep local synthesis precedence and reject raw TCP/53
+queries to the anchor.
 
 ## Host target requirements
 

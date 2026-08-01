@@ -39,11 +39,11 @@ use tokio::time::{sleep, timeout, Duration, Instant as TokioInstant};
 use tokio_rustls::TlsAcceptor;
 use uuid::Uuid;
 use xray_config::{
-    parse_xray_json, CoreConfig, DnsConfig, DnsFakeIpConfig, DomainMatcher, InboundConfig,
-    InboundProtocol, InboundSniffingConfig, IpCidr, IpMatcher, Network, OutboundConfig,
-    OutboundSettings, PolicyConfig, PolicyLevelConfig, RealitySettings, RealityShortId,
-    RoutingConfig, RoutingDomainStrategy, RoutingRule, SniffingDestination, StreamSecurity,
-    StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
+    parse_xray_json, CoreConfig, DnsConfig, DnsFakeIpConfig, DnsServerConfig, DomainMatcher,
+    InboundConfig, InboundProtocol, InboundSniffingConfig, IpCidr, IpMatcher, Network,
+    OutboundConfig, OutboundSettings, PolicyConfig, PolicyLevelConfig, RealitySettings,
+    RealityShortId, RoutingConfig, RoutingDomainStrategy, RoutingRule, SniffingDestination,
+    StreamSecurity, StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
 };
 use xray_core_rs::{
     select_tcp_outbound_for_session, select_tcp_outbound_for_session_with_resolver,
@@ -64,6 +64,7 @@ use xray_tun::{TunEndpoint, TunError, TunStats};
 
 const ICMPV4_PROTOCOL: u8 = 1;
 const ICMPV6_PROTOCOL: u8 = 58;
+const TCP_PROTOCOL: u8 = 6;
 const UDP_PROTOCOL: u8 = 17;
 const TEST_UUID_BYTES: [u8; 16] = [
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
@@ -414,6 +415,30 @@ fn runtime_tun_config_with_fake_ip_domain_routed_freedom_outbound(
         }),
         ..Default::default()
     };
+    config
+}
+
+fn runtime_tun_config_with_dns_proxy_servers(servers: Vec<SocketAddr>) -> CoreConfig {
+    let mut config = runtime_tun_config_with_freedom_outbound();
+    config.dns.servers = servers.into_iter().map(DnsServerConfig::Ip).collect();
+    config
+}
+
+fn runtime_tun_dns_proxy_config_routing_second_upstream_to_freedom(
+    first: SocketAddr,
+    second: SocketAddr,
+) -> CoreConfig {
+    let broken_vless = SocketAddr::from((Ipv4Addr::LOCALHOST, allocate_unused_loopback_port()));
+    let mut config = runtime_tun_config_with_vless_server(broken_vless);
+    config.outbounds.push(freedom_outbound());
+    let prefix = if second.is_ipv4() { 32 } else { 128 };
+    config.routing.rules = vec![RoutingRule {
+        inbound_tags: vec!["tun-in".to_owned()],
+        domain_matchers: Vec::new(),
+        ip_matchers: vec![IpMatcher::Cidr(IpCidr::new(second.ip(), prefix).unwrap())],
+        outbound_tag: "direct".to_owned(),
+    }];
+    config.dns.servers = vec![DnsServerConfig::Ip(first), DnsServerConfig::Ip(second)];
     config
 }
 
@@ -1610,6 +1635,150 @@ async fn tun_fake_dns_pool_exhaustion_returns_servfail_from_original_resolver_ad
     timeout(
         Duration::from_secs(2),
         run_tun_fake_dns_pool_exhaustion_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn tun_dns_proxy_forwards_udp_wire_response_from_local_anchor() {
+    timeout(Duration::from_secs(2), run_tun_dns_proxy_udp_scenario())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn tun_dns_proxy_udp_fails_over_to_second_server() {
+    timeout(
+        Duration::from_secs(3),
+        run_tun_dns_proxy_udp_failover_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn tun_dns_proxy_udp_returns_servfail_when_all_servers_time_out() {
+    timeout(
+        Duration::from_secs(2),
+        run_tun_dns_proxy_udp_servfail_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn tun_dns_proxy_udp_truncates_response_larger_than_tun_mtu() {
+    timeout(
+        Duration::from_secs(2),
+        run_tun_dns_proxy_udp_truncated_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn tun_dns_proxy_udp_rejects_oversized_response_with_wrong_transaction_id() {
+    timeout(
+        Duration::from_secs(2),
+        run_tun_dns_proxy_udp_oversized_wrong_id_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn tun_dns_proxy_udp_uses_vless_outbound_and_keeps_anchor_source() {
+    timeout(
+        Duration::from_secs(2),
+        run_tun_dns_proxy_udp_vless_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn tun_dns_proxy_udp_allows_cold_vless_attempt_beyond_freedom_timeout() {
+    timeout(
+        Duration::from_secs(3),
+        run_tun_dns_proxy_udp_delayed_vless_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn tun_dns_proxy_udp_uses_vision_xudp_with_independent_global_id() {
+    timeout(
+        Duration::from_secs(2),
+        run_tun_dns_proxy_udp_vision_xudp_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn tun_dns_proxy_udp_reselects_outbound_for_each_upstream() {
+    timeout(
+        Duration::from_secs(2),
+        run_tun_dns_proxy_udp_routed_failover_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn tun_dns_proxy_forwards_pipelined_tcp_stream_through_freedom() {
+    timeout(Duration::from_secs(2), run_tun_dns_proxy_tcp_scenario())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn tun_dns_proxy_tcp_fails_over_to_second_server() {
+    timeout(
+        Duration::from_secs(2),
+        run_tun_dns_proxy_tcp_failover_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn tun_dns_proxy_tcp_reselects_outbound_for_each_upstream() {
+    timeout(
+        Duration::from_secs(2),
+        run_tun_dns_proxy_tcp_routed_failover_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn tun_dns_proxy_tcp_resets_client_when_all_servers_fail() {
+    timeout(
+        Duration::from_secs(2),
+        run_tun_dns_proxy_tcp_failure_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn tun_dns_proxy_tcp_uses_vless_outbound() {
+    timeout(
+        Duration::from_secs(2),
+        run_tun_dns_proxy_tcp_vless_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn tun_fake_dns_mode_resets_raw_tcp_queries_to_anchor() {
+    timeout(
+        Duration::from_secs(2),
+        run_tun_fake_dns_tcp_anchor_rejection_scenario(),
     )
     .await
     .unwrap();
@@ -2946,6 +3115,556 @@ async fn run_tun_fake_dns_pool_exhaustion_scenario() {
     core.stop().await.unwrap();
 }
 
+async fn run_tun_dns_proxy_udp_scenario() {
+    let (upstream, upstream_handle) = spawn_udp_dns_responder(0).await;
+    let mut core = Core::new(runtime_tun_config_with_dns_proxy_servers(vec![upstream])).unwrap();
+    core.start().await.unwrap();
+
+    let client_addr = Ipv4Addr::new(10, 10, 0, 2);
+    let anchor = Ipv4Addr::new(198, 18, 0, 1);
+    let client_port = 53_010;
+    let query = build_dns_query(0x2201, "proxy.example", 65, 1);
+    let mut expected = query.clone();
+    expected[2..4].copy_from_slice(&0x8180_u16.to_be_bytes());
+    core.tun()
+        .push_inbound(Bytes::from(ipv4_udp_packet(
+            client_addr,
+            client_port,
+            anchor,
+            53,
+            &query,
+        )))
+        .await
+        .unwrap();
+
+    let reply = poll_tun_outbound_until(core.tun(), |packet| {
+        ipv4_udp_payload(packet) == Some(expected.as_slice())
+    })
+    .await;
+    assert_ipv4_udp_packet(&reply, anchor, 53, client_addr, client_port, &expected);
+
+    core.stop().await.unwrap();
+    timeout(Duration::from_secs(1), upstream_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+async fn run_tun_dns_proxy_udp_failover_scenario() {
+    let blackhole = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let blackhole_addr = blackhole.local_addr().unwrap();
+    let (upstream, upstream_handle) = spawn_udp_dns_responder(0).await;
+    let mut core = Core::new(runtime_tun_config_with_dns_proxy_servers(vec![
+        blackhole_addr,
+        upstream,
+    ]))
+    .unwrap();
+    core.start().await.unwrap();
+
+    let client_addr = Ipv4Addr::new(10, 10, 0, 2);
+    let anchor = Ipv4Addr::new(198, 18, 0, 1);
+    let client_port = 53_011;
+    let query = build_dns_query(0x2202, "failover.example", 65, 1);
+    let mut expected = query.clone();
+    expected[2..4].copy_from_slice(&0x8180_u16.to_be_bytes());
+    core.tun()
+        .push_inbound(Bytes::from(ipv4_udp_packet(
+            client_addr,
+            client_port,
+            anchor,
+            53,
+            &query,
+        )))
+        .await
+        .unwrap();
+
+    let reply =
+        poll_tun_outbound_until_with_timeout(core.tun(), Duration::from_millis(1_500), |packet| {
+            ipv4_udp_payload(packet) == Some(expected.as_slice())
+        })
+        .await;
+    assert_ipv4_udp_packet(&reply, anchor, 53, client_addr, client_port, &expected);
+    assert!(core.tun().stats().await.udp_remote_read_errors >= 1);
+
+    core.stop().await.unwrap();
+    drop(blackhole);
+    timeout(Duration::from_secs(1), upstream_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+async fn run_tun_dns_proxy_udp_routed_failover_scenario() {
+    let first = SocketAddr::from((Ipv4Addr::new(192, 0, 2, 53), 53));
+    let (second, upstream_handle) = spawn_udp_dns_responder(0).await;
+    let config = runtime_tun_dns_proxy_config_routing_second_upstream_to_freedom(first, second);
+    let mut core = Core::new(config).unwrap();
+    core.start().await.unwrap();
+
+    let client_addr = Ipv4Addr::new(10, 10, 0, 2);
+    let anchor = Ipv4Addr::new(198, 18, 0, 1);
+    let client_port = 53_015;
+    let query = build_dns_query(0x2206, "routed-failover.example", 65, 1);
+    let mut expected = query.clone();
+    expected[2..4].copy_from_slice(&0x8180_u16.to_be_bytes());
+    core.tun()
+        .push_inbound(Bytes::from(ipv4_udp_packet(
+            client_addr,
+            client_port,
+            anchor,
+            53,
+            &query,
+        )))
+        .await
+        .unwrap();
+
+    let reply = poll_tun_outbound_until(core.tun(), |packet| {
+        ipv4_udp_payload(packet) == Some(expected.as_slice())
+    })
+    .await;
+    assert_ipv4_udp_packet(&reply, anchor, 53, client_addr, client_port, &expected);
+    assert!(core.tun().stats().await.udp_open_errors >= 1);
+
+    core.stop().await.unwrap();
+    timeout(Duration::from_secs(1), upstream_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+async fn run_tun_dns_proxy_udp_servfail_scenario() {
+    let blackhole = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let blackhole_addr = blackhole.local_addr().unwrap();
+    let mut core = Core::new(runtime_tun_config_with_dns_proxy_servers(vec![
+        blackhole_addr,
+    ]))
+    .unwrap();
+    core.start().await.unwrap();
+
+    let client_addr = Ipv4Addr::new(10, 10, 0, 2);
+    let anchor = Ipv4Addr::new(198, 18, 0, 1);
+    let client_port = 53_012;
+    let query = build_dns_query(0x2203, "unavailable.example", 65, 1);
+    core.tun()
+        .push_inbound(Bytes::from(ipv4_udp_packet(
+            client_addr,
+            client_port,
+            anchor,
+            53,
+            &query,
+        )))
+        .await
+        .unwrap();
+
+    let reply =
+        poll_tun_outbound_until_with_timeout(core.tun(), Duration::from_millis(1_500), |packet| {
+            ipv4_udp_payload(packet).is_some_and(|payload| {
+                payload.len() >= 4
+                    && payload[0..2] == query[0..2]
+                    && u16::from_be_bytes([payload[2], payload[3]]) & 0x000f == 2
+            })
+        })
+        .await;
+    let payload = ipv4_udp_payload(&reply).unwrap();
+    assert_ipv4_udp_packet(&reply, anchor, 53, client_addr, client_port, payload);
+    let stats = core.tun().stats().await;
+    assert_eq!(stats.udp_open_errors, 0);
+    assert!(stats.udp_remote_read_errors >= 1);
+
+    core.stop().await.unwrap();
+    drop(blackhole);
+}
+
+async fn run_tun_dns_proxy_udp_truncated_scenario() {
+    let (upstream, upstream_handle) = spawn_udp_dns_responder(2_000).await;
+    let mut core = Core::new(runtime_tun_config_with_dns_proxy_servers(vec![upstream])).unwrap();
+    core.start().await.unwrap();
+
+    let client_addr = Ipv4Addr::new(10, 10, 0, 2);
+    let anchor = Ipv4Addr::new(198, 18, 0, 1);
+    let client_port = 53_013;
+    let query = build_dns_query(0x2204, "large.example", 65, 1);
+    core.tun()
+        .push_inbound(Bytes::from(ipv4_udp_packet(
+            client_addr,
+            client_port,
+            anchor,
+            53,
+            &query,
+        )))
+        .await
+        .unwrap();
+
+    let reply = poll_tun_outbound_until(core.tun(), |packet| {
+        ipv4_udp_payload(packet).is_some_and(|payload| {
+            payload.len() >= 12
+                && payload[0..2] == query[0..2]
+                && u16::from_be_bytes([payload[2], payload[3]]) & 0x0200 != 0
+        })
+    })
+    .await;
+    let payload = ipv4_udp_payload(&reply).unwrap();
+    assert!(payload.len() <= 1_472);
+    assert_eq!(u16::from_be_bytes([payload[6], payload[7]]), 0);
+    assert_ipv4_udp_packet(&reply, anchor, 53, client_addr, client_port, payload);
+
+    core.stop().await.unwrap();
+    timeout(Duration::from_secs(1), upstream_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+async fn run_tun_dns_proxy_udp_oversized_wrong_id_scenario() {
+    let (upstream, upstream_handle) =
+        spawn_udp_dns_responder_with_transaction_id(2_000, Some(0x9999)).await;
+    let mut core = Core::new(runtime_tun_config_with_dns_proxy_servers(vec![upstream])).unwrap();
+    core.start().await.unwrap();
+
+    let client_addr = Ipv4Addr::new(10, 10, 0, 2);
+    let anchor = Ipv4Addr::new(198, 18, 0, 1);
+    let client_port = 53_016;
+    let query = build_dns_query(0x2207, "wrong-id.example", 65, 1);
+    core.tun()
+        .push_inbound(Bytes::from(ipv4_udp_packet(
+            client_addr,
+            client_port,
+            anchor,
+            53,
+            &query,
+        )))
+        .await
+        .unwrap();
+
+    let reply = poll_tun_outbound_until(core.tun(), |packet| {
+        ipv4_udp_payload(packet).is_some_and(|payload| {
+            payload.len() >= 12
+                && payload[0..2] == query[0..2]
+                && u16::from_be_bytes([payload[2], payload[3]]) & 0x000f == 2
+        })
+    })
+    .await;
+    let payload = ipv4_udp_payload(&reply).unwrap();
+    let flags = u16::from_be_bytes([payload[2], payload[3]]);
+    assert_eq!(flags & 0x000f, 2);
+    assert_eq!(flags & 0x0200, 0);
+    assert_ipv4_udp_packet(&reply, anchor, 53, client_addr, client_port, payload);
+    assert!(core.tun().stats().await.udp_remote_read_errors >= 1);
+
+    core.stop().await.unwrap();
+    timeout(Duration::from_secs(1), upstream_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+async fn run_tun_dns_proxy_udp_vless_scenario() {
+    let upstream = SocketAddr::from((Ipv4Addr::new(192, 0, 2, 53), 53));
+    let query = build_dns_query(0x2205, "vless-proxy.example", 65, 1);
+    let (vless_addr, vless_handle) = spawn_fake_vless_dns_server(upstream, query.clone()).await;
+    let mut config = runtime_tun_config_with_vless_server(vless_addr);
+    config.dns.servers = vec![DnsServerConfig::Ip(upstream)];
+    let mut core = Core::new(config).unwrap();
+    core.start().await.unwrap();
+
+    let client_addr = Ipv4Addr::new(10, 10, 0, 2);
+    let anchor = Ipv4Addr::new(198, 18, 0, 1);
+    let client_port = 53_014;
+    let mut expected = query.clone();
+    expected[2..4].copy_from_slice(&0x8180_u16.to_be_bytes());
+    core.tun()
+        .push_inbound(Bytes::from(ipv4_udp_packet(
+            client_addr,
+            client_port,
+            anchor,
+            53,
+            &query,
+        )))
+        .await
+        .unwrap();
+
+    let reply = poll_tun_outbound_until(core.tun(), |packet| {
+        ipv4_udp_payload(packet) == Some(expected.as_slice())
+    })
+    .await;
+    assert_ipv4_udp_packet(&reply, anchor, 53, client_addr, client_port, &expected);
+
+    core.stop().await.unwrap();
+    timeout(Duration::from_secs(1), vless_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+async fn run_tun_dns_proxy_udp_delayed_vless_scenario() {
+    let upstream = SocketAddr::from((Ipv4Addr::new(192, 0, 2, 54), 53));
+    let query = build_dns_query(0x2208, "cold-vless.example", 65, 1);
+    let (vless_addr, vless_handle) =
+        spawn_fake_vless_dns_server_with_delay(upstream, query.clone(), Duration::from_millis(900))
+            .await;
+    let mut config = runtime_tun_config_with_vless_server(vless_addr);
+    config.dns.servers = vec![DnsServerConfig::Ip(upstream)];
+    let mut core = Core::new(config).unwrap();
+    core.start().await.unwrap();
+
+    let client_addr = Ipv4Addr::new(10, 10, 0, 2);
+    let anchor = Ipv4Addr::new(198, 18, 0, 1);
+    let client_port = 53_017;
+    let mut expected = query.clone();
+    expected[2..4].copy_from_slice(&0x8180_u16.to_be_bytes());
+    core.tun()
+        .push_inbound(Bytes::from(ipv4_udp_packet(
+            client_addr,
+            client_port,
+            anchor,
+            53,
+            &query,
+        )))
+        .await
+        .unwrap();
+
+    let reply =
+        poll_tun_outbound_until_with_timeout(core.tun(), Duration::from_millis(1_800), |packet| {
+            ipv4_udp_payload(packet) == Some(expected.as_slice())
+        })
+        .await;
+    assert_ipv4_udp_packet(&reply, anchor, 53, client_addr, client_port, &expected);
+
+    core.stop().await.unwrap();
+    timeout(Duration::from_secs(1), vless_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+async fn run_tun_dns_proxy_udp_vision_xudp_scenario() {
+    let (client_config, server_config) = tls_test_configs();
+    let upstream = SocketAddr::from((Ipv4Addr::new(192, 0, 2, 55), 53));
+    let query = build_dns_query(0x2209, "vision-xudp.example", 65, 1);
+    let (vless_addr, vless_handle) =
+        spawn_fake_tls_vision_xudp_dns_server(server_config, upstream, query.clone()).await;
+    let resolver = StaticDnsResolver {
+        domain: "vless.test",
+        addr: vless_addr,
+    };
+    let mut config = runtime_tun_config_with_tls_vision_vless_domain_server(
+        "vless.test",
+        vless_addr.port(),
+        "vless.test",
+    );
+    config.dns.servers = vec![DnsServerConfig::Ip(upstream)];
+    let dialer =
+        TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config));
+    let mut core =
+        Core::with_runtime_dependencies(config, Arc::new(resolver), Arc::new(dialer)).unwrap();
+    core.start().await.unwrap();
+
+    let client_addr = Ipv4Addr::new(10, 10, 0, 2);
+    let anchor = Ipv4Addr::new(198, 18, 0, 1);
+    let client_port = 53_018;
+    let mut expected = query.clone();
+    expected[2..4].copy_from_slice(&0x8180_u16.to_be_bytes());
+    core.tun()
+        .push_inbound(Bytes::from(ipv4_udp_packet(
+            client_addr,
+            client_port,
+            anchor,
+            53,
+            &query,
+        )))
+        .await
+        .unwrap();
+
+    let reply = poll_tun_outbound_until(core.tun(), |packet| {
+        ipv4_udp_payload(packet) == Some(expected.as_slice())
+    })
+    .await;
+    assert_ipv4_udp_packet(&reply, anchor, 53, client_addr, client_port, &expected);
+
+    core.stop().await.unwrap();
+    timeout(Duration::from_secs(1), vless_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+fn pipelined_dns_tcp_queries() -> Vec<u8> {
+    let mut stream = Vec::new();
+    for (id, domain) in [
+        (0x2301, "first.tcp.example"),
+        (0x2302, "second.tcp.example"),
+    ] {
+        let query = build_dns_a_query(id, domain);
+        stream.extend_from_slice(&(query.len() as u16).to_be_bytes());
+        stream.extend_from_slice(&query);
+    }
+    stream
+}
+
+async fn run_tun_dns_proxy_tcp_scenario() {
+    let (upstream, upstream_handle) = spawn_echo_server().await;
+    let mut core = Core::new(runtime_tun_config_with_dns_proxy_servers(vec![upstream])).unwrap();
+    core.start().await.unwrap();
+
+    let anchor = SocketAddr::from((Ipv4Addr::new(198, 18, 0, 1), 53));
+    let mut client = TunTcpClient::new();
+    client.connect(anchor);
+    pump_tun_until(&mut client, core.tun(), TunTcpClient::may_send).await;
+
+    let expected = pipelined_dns_tcp_queries();
+    client.send_payload(&expected);
+    let mut received = Vec::new();
+    pump_tun_until(&mut client, core.tun(), |client| {
+        received.extend_from_slice(&client.recv_available());
+        received.len() >= expected.len()
+    })
+    .await;
+    assert_eq!(received, expected);
+
+    core.stop().await.unwrap();
+    timeout(Duration::from_secs(1), upstream_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+async fn run_tun_dns_proxy_tcp_failover_scenario() {
+    let unavailable = SocketAddr::from((Ipv4Addr::LOCALHOST, allocate_unused_loopback_port()));
+    let (upstream, upstream_handle) = spawn_echo_server().await;
+    let mut core = Core::new(runtime_tun_config_with_dns_proxy_servers(vec![
+        unavailable,
+        upstream,
+    ]))
+    .unwrap();
+    core.start().await.unwrap();
+
+    let anchor = SocketAddr::from((Ipv4Addr::new(198, 18, 0, 1), 53));
+    let mut client = TunTcpClient::new();
+    client.connect(anchor);
+    pump_tun_until(&mut client, core.tun(), TunTcpClient::may_send).await;
+
+    let expected = pipelined_dns_tcp_queries();
+    client.send_payload(&expected);
+    let mut received = Vec::new();
+    pump_tun_until(&mut client, core.tun(), |client| {
+        received.extend_from_slice(&client.recv_available());
+        received.len() >= expected.len()
+    })
+    .await;
+    assert_eq!(received, expected);
+
+    core.stop().await.unwrap();
+    timeout(Duration::from_secs(1), upstream_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+async fn run_tun_dns_proxy_tcp_routed_failover_scenario() {
+    let first = SocketAddr::from((Ipv4Addr::new(192, 0, 2, 53), 53));
+    let (second, upstream_handle) = spawn_echo_server().await;
+    let config = runtime_tun_dns_proxy_config_routing_second_upstream_to_freedom(first, second);
+    let mut core = Core::new(config).unwrap();
+    core.start().await.unwrap();
+
+    let anchor = SocketAddr::from((Ipv4Addr::new(198, 18, 0, 1), 53));
+    let mut client = TunTcpClient::new();
+    client.connect(anchor);
+    pump_tun_until(&mut client, core.tun(), TunTcpClient::may_send).await;
+
+    let expected = pipelined_dns_tcp_queries();
+    client.send_payload(&expected);
+    let mut received = Vec::new();
+    pump_tun_until(&mut client, core.tun(), |client| {
+        received.extend_from_slice(&client.recv_available());
+        received.len() >= expected.len()
+    })
+    .await;
+    assert_eq!(received, expected);
+
+    core.stop().await.unwrap();
+    timeout(Duration::from_secs(1), upstream_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+async fn run_tun_dns_proxy_tcp_failure_scenario() {
+    let unavailable = SocketAddr::from((Ipv4Addr::LOCALHOST, allocate_unused_loopback_port()));
+    let mut core = Core::new(runtime_tun_config_with_dns_proxy_servers(vec![unavailable])).unwrap();
+    core.start().await.unwrap();
+
+    let anchor = SocketAddr::from((Ipv4Addr::new(198, 18, 0, 1), 53));
+    let mut client = TunTcpClient::new();
+    client.connect(anchor);
+    let reset_flags = pump_tun_until_tcp_reset(&mut client, core.tun()).await;
+    assert!(!client.is_open());
+    assert_eq!(reset_flags & 0x05, 0x04, "expected RST without FIN");
+    assert!(core.tun().stats().await.tcp_open_errors >= 1);
+
+    core.stop().await.unwrap();
+}
+
+async fn run_tun_dns_proxy_tcp_vless_scenario() {
+    let (upstream, upstream_handle) = spawn_echo_server().await;
+    let (vless_addr, vless_handle) = spawn_fake_vless_server().await;
+    let mut config = runtime_tun_config_with_vless_server(vless_addr);
+    config.dns.servers = vec![DnsServerConfig::Ip(upstream)];
+    let mut core = Core::new(config).unwrap();
+    core.start().await.unwrap();
+
+    let anchor = SocketAddr::from((Ipv4Addr::new(198, 18, 0, 1), 53));
+    let mut client = TunTcpClient::new();
+    client.connect(anchor);
+    pump_tun_until(&mut client, core.tun(), TunTcpClient::may_send).await;
+
+    let expected = pipelined_dns_tcp_queries();
+    client.send_payload(&expected);
+    let mut received = Vec::new();
+    pump_tun_until(&mut client, core.tun(), |client| {
+        received.extend_from_slice(&client.recv_available());
+        received.len() >= expected.len()
+    })
+    .await;
+    assert_eq!(received, expected);
+
+    core.stop().await.unwrap();
+    timeout(Duration::from_secs(1), vless_handle)
+        .await
+        .unwrap()
+        .unwrap();
+    timeout(Duration::from_secs(1), upstream_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+async fn run_tun_fake_dns_tcp_anchor_rejection_scenario() {
+    let (upstream, accepted, upstream_handle) = spawn_tcp_accept_probe().await;
+    let mut config = runtime_tun_config_with_dns_proxy_servers(vec![upstream]);
+    config.dns.fake_ip = Some(DnsFakeIpConfig {
+        enabled: true,
+        ipv4_pool: IpCidr::new(IpAddr::V4(Ipv4Addr::new(198, 18, 0, 0)), 15).unwrap(),
+        ttl: 60,
+    });
+    let mut core = Core::new(config).unwrap();
+    core.start().await.unwrap();
+
+    let anchor = SocketAddr::from((Ipv4Addr::new(198, 18, 0, 1), 53));
+    let mut client = TunTcpClient::new();
+    client.connect(anchor);
+    let reset_flags = pump_tun_until_tcp_reset(&mut client, core.tun()).await;
+    assert!(!client.is_open());
+    assert_eq!(reset_flags & 0x05, 0x04, "expected RST without FIN");
+
+    core.stop().await.unwrap();
+    timeout(Duration::from_secs(1), upstream_handle)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(accepted.load(Ordering::SeqCst), 0);
+}
+
 async fn run_tun_fake_dns_udp_ip_if_non_match_routed_freedom_scenario() {
     let unused_proxy_port = allocate_unused_loopback_port();
     let (echo_addr, echo_handle) = spawn_udp_echo_server().await;
@@ -3904,11 +4623,47 @@ async fn pump_tun_once(client: &mut TunTcpClient, tun: &TunEndpoint) {
     sleep(Duration::from_millis(1)).await;
 }
 
-async fn poll_tun_outbound_until(
+async fn pump_tun_until_tcp_reset(client: &mut TunTcpClient, tun: &TunEndpoint) -> u8 {
+    let deadline = TokioInstant::now() + Duration::from_millis(750);
+    loop {
+        client.poll();
+        while let Some(packet) = client.device.pop_outbound() {
+            tun.push_inbound(packet).await.unwrap();
+        }
+        while let Some(packet) = tun.try_poll_outbound().await.unwrap() {
+            let reset_flags = ipv4_tcp_flags(&packet).filter(|flags| flags & 0x04 != 0);
+            client.device.push_inbound(packet);
+            client.poll();
+            if let Some(flags) = reset_flags {
+                return flags;
+            }
+        }
+        assert!(
+            TokioInstant::now() < deadline,
+            "timed out waiting for TUN TCP reset"
+        );
+        sleep(Duration::from_millis(5)).await;
+    }
+}
+
+fn ipv4_tcp_flags(packet: &[u8]) -> Option<u8> {
+    if packet.first().map(|byte| byte >> 4) != Some(4) || packet.get(9) != Some(&TCP_PROTOCOL) {
+        return None;
+    }
+    let header_len = usize::from(packet[0] & 0x0f).checked_mul(4)?;
+    packet.get(header_len.checked_add(13)?).copied()
+}
+
+async fn poll_tun_outbound_until(tun: &TunEndpoint, is_done: impl FnMut(&[u8]) -> bool) -> Bytes {
+    poll_tun_outbound_until_with_timeout(tun, Duration::from_millis(750), is_done).await
+}
+
+async fn poll_tun_outbound_until_with_timeout(
     tun: &TunEndpoint,
+    wait: Duration,
     mut is_done: impl FnMut(&[u8]) -> bool,
 ) -> Bytes {
-    let deadline = TokioInstant::now() + Duration::from_millis(750);
+    let deadline = TokioInstant::now() + wait;
     loop {
         while let Some(packet) = tun.try_poll_outbound().await.unwrap() {
             if is_done(&packet) {
@@ -4386,6 +5141,22 @@ async fn spawn_echo_server() -> (SocketAddr, JoinHandle<()>) {
     (addr, handle)
 }
 
+async fn spawn_tcp_accept_probe() -> (SocketAddr, Arc<AtomicUsize>, JoinHandle<()>) {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let accepted = Arc::new(AtomicUsize::new(0));
+    let accepted_for_task = Arc::clone(&accepted);
+    let handle = tokio::spawn(async move {
+        if timeout(Duration::from_millis(200), listener.accept())
+            .await
+            .is_ok()
+        {
+            accepted_for_task.fetch_add(1, Ordering::SeqCst);
+        }
+    });
+    (addr, accepted, handle)
+}
+
 async fn spawn_multi_echo_server(connection_count: usize) -> (SocketAddr, JoinHandle<()>) {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -4439,6 +5210,31 @@ async fn spawn_udp_echo_server() -> (SocketAddr, JoinHandle<()>) {
     (addr, handle)
 }
 
+async fn spawn_udp_dns_responder(extra_bytes: usize) -> (SocketAddr, JoinHandle<()>) {
+    spawn_udp_dns_responder_with_transaction_id(extra_bytes, None).await
+}
+
+async fn spawn_udp_dns_responder_with_transaction_id(
+    extra_bytes: usize,
+    transaction_id: Option<u16>,
+) -> (SocketAddr, JoinHandle<()>) {
+    let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let addr = socket.local_addr().unwrap();
+    let handle = tokio::spawn(async move {
+        let mut buffer = vec![0; u16::MAX as usize];
+        let (len, peer) = socket.recv_from(&mut buffer).await.unwrap();
+        let mut response = buffer[..len].to_vec();
+        assert!(response.len() >= 12, "DNS query must contain a header");
+        if let Some(transaction_id) = transaction_id {
+            response[0..2].copy_from_slice(&transaction_id.to_be_bytes());
+        }
+        response[2..4].copy_from_slice(&0x8180_u16.to_be_bytes());
+        response.resize(response.len() + extra_bytes, 0x5a);
+        socket.send_to(&response, peer).await.unwrap();
+    });
+    (addr, handle)
+}
+
 async fn spawn_fake_vless_server() -> (SocketAddr, JoinHandle<()>) {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -4473,6 +5269,41 @@ async fn spawn_fake_vless_udp_server_for_payload(
         assert_eq!(&payload[..], expected_payload);
         inbound
             .write_all(&encode_udp_packet(&payload).unwrap())
+            .await
+            .unwrap();
+    });
+    (addr, handle)
+}
+
+async fn spawn_fake_vless_dns_server(
+    expected_upstream: SocketAddr,
+    expected_query: Vec<u8>,
+) -> (SocketAddr, JoinHandle<()>) {
+    spawn_fake_vless_dns_server_with_delay(expected_upstream, expected_query, Duration::ZERO).await
+}
+
+async fn spawn_fake_vless_dns_server_with_delay(
+    expected_upstream: SocketAddr,
+    expected_query: Vec<u8>,
+    response_delay: Duration,
+) -> (SocketAddr, JoinHandle<()>) {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let handle = tokio::spawn(async move {
+        let (mut inbound, _) = listener.accept().await.unwrap();
+        let target = read_vless_target_with_command(&mut inbound, 2).await;
+        assert_eq!(target.network, RoutingNetwork::Udp);
+        assert_eq!(target.port, expected_upstream.port());
+        assert_eq!(target.addr, RoutingTargetAddr::Ip(expected_upstream.ip()));
+        inbound.write_all(&[0, 0]).await.unwrap();
+
+        let payload = read_udp_packet(&mut inbound).await.unwrap();
+        assert_eq!(&payload[..], expected_query);
+        sleep(response_delay).await;
+        let mut response = payload.to_vec();
+        response[2..4].copy_from_slice(&0x8180_u16.to_be_bytes());
+        inbound
+            .write_all(&encode_udp_packet(&response).unwrap())
             .await
             .unwrap();
     });
@@ -4594,6 +5425,53 @@ async fn spawn_fake_tls_vision_xudp_server(
         assert_eq!(&packet.payload[..], b"hello vision xudp");
 
         let response = encode_xudp_keep_packet(Some(&target), &packet.payload).unwrap();
+        let mut padding = VisionPadding::new(TEST_UUID_BYTES, [0, 0, 0, 0]);
+        let padded = padding
+            .pad(BytesMut::from(&response[..]), VisionCommand::Continue, 0)
+            .unwrap();
+        inbound.write_all(&padded).await.unwrap();
+    });
+
+    (addr, handle)
+}
+
+async fn spawn_fake_tls_vision_xudp_dns_server(
+    server_config: Arc<rustls::ServerConfig>,
+    expected_upstream: SocketAddr,
+    expected_query: Vec<u8>,
+) -> (SocketAddr, JoinHandle<()>) {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let acceptor = TlsAcceptor::from(server_config);
+
+    let handle = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let mut inbound = acceptor.accept(stream).await.unwrap();
+        read_vless_mux_header(&mut inbound).await;
+        inbound.write_all(&[0, 0]).await.unwrap();
+
+        let vision_payload = read_vision_payload(&mut inbound).await;
+        let metadata_len = usize::from(u16::from_be_bytes([vision_payload[0], vision_payload[1]]));
+        assert_eq!(metadata_len, 20, "IPv4 NEW frame metadata layout changed");
+        let metadata = &vision_payload[2..2 + metadata_len];
+        assert_eq!(metadata[2], 1, "DNS query must open a new XUDP session");
+        assert_eq!(
+            &metadata[metadata.len() - 8..],
+            &[0; 8],
+            "per-query DNS XUDP streams use the independent GlobalID"
+        );
+
+        let mut cursor = Cursor::new(vision_payload.to_vec());
+        let packet = read_xudp_packet(&mut cursor).await.unwrap();
+        let target = packet.source.expect("xudp new frame carries target");
+        assert_eq!(target.network, RoutingNetwork::Udp);
+        assert_eq!(target.port, expected_upstream.port());
+        assert_eq!(target.addr, RoutingTargetAddr::Ip(expected_upstream.ip()));
+        assert_eq!(&packet.payload[..], expected_query);
+
+        let mut response = packet.payload.to_vec();
+        response[2..4].copy_from_slice(&0x8180_u16.to_be_bytes());
+        let response = encode_xudp_keep_packet(Some(&target), &response).unwrap();
         let mut padding = VisionPadding::new(TEST_UUID_BYTES, [0, 0, 0, 0]);
         let padded = padding
             .pad(BytesMut::from(&response[..]), VisionCommand::Continue, 0)

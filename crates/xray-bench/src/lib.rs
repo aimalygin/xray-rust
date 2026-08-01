@@ -94,7 +94,7 @@ const DNS_TYPE_HTTPS: u16 = 65;
 #[cfg(unix)]
 const DNS_CLASS_IN: u16 = 1;
 #[cfg(unix)]
-const TUN_FAKE_DNS_ANCHOR: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 1);
+const TUN_DNS_ANCHOR: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 1);
 #[cfg(unix)]
 const TUN_FAKE_DNS_FIRST_IPV4: Ipv4Addr = Ipv4Addr::new(198, 19, 0, 1);
 #[cfg(unix)]
@@ -103,6 +103,16 @@ const TUN_FAKE_DNS_DOMAIN: &str = "bench.example";
 const TUN_FAKE_DNS_MAX_IN_FLIGHT: usize = 32;
 #[cfg(unix)]
 const TUN_FAKE_DNS_IO_TIMEOUT: Duration = Duration::from_secs(5);
+#[cfg(unix)]
+const TUN_DNS_PROXY_ANSWER_IPV4: Ipv4Addr = Ipv4Addr::new(203, 0, 113, 53);
+#[cfg(unix)]
+const TUN_DNS_PROXY_DOMAIN: &str = "proxy-bench.example";
+#[cfg(unix)]
+const TUN_DNS_TCP_MAX_ACTIVE_CONNECTIONS: usize = 16;
+#[cfg(unix)]
+const TUN_DNS_TCP_MAX_QUEUED_FRAMES: usize = 512;
+#[cfg(unix)]
+const TUN_DNS_TCP_STALL_TIMEOUT: Duration = Duration::from_secs(5);
 const REALITY_MATRIX_SOCKS_TAG: &str = "socks-in";
 const REALITY_MATRIX_OUTBOUND_TAG: &str = "proxy";
 const DEFAULT_REALITY_MATRIX_SMALL_PAYLOAD_SIZE: usize = 1024;
@@ -179,6 +189,7 @@ pub enum WorkloadKind {
     UdpFreedom,
     TunUdpFreedom,
     TunFakeDns,
+    TunDnsProxy,
     TunTcpFreedom,
     TunTcpStaleFlows,
     TunRealityBlackhole,
@@ -202,6 +213,7 @@ impl WorkloadKind {
             Self::UdpFreedom => "udp-freedom",
             Self::TunUdpFreedom => "tun-udp-freedom",
             Self::TunFakeDns => "tun-fake-dns",
+            Self::TunDnsProxy => "tun-dns-proxy",
             Self::TunTcpFreedom => "tun-tcp-freedom",
             Self::TunTcpStaleFlows => "tun-tcp-stale-flows",
             Self::TunRealityBlackhole => "tun-reality-blackhole",
@@ -225,6 +237,7 @@ impl WorkloadKind {
             "udp-freedom" => Ok(Self::UdpFreedom),
             "tun-udp-freedom" => Ok(Self::TunUdpFreedom),
             "tun-fake-dns" => Ok(Self::TunFakeDns),
+            "tun-dns-proxy" => Ok(Self::TunDnsProxy),
             "tun-tcp-freedom" => Ok(Self::TunTcpFreedom),
             "tun-tcp-stale-flows" => Ok(Self::TunTcpStaleFlows),
             "tun-reality-blackhole" => Ok(Self::TunRealityBlackhole),
@@ -244,6 +257,7 @@ impl WorkloadKind {
             self,
             Self::TunUdpFreedom
                 | Self::TunFakeDns
+                | Self::TunDnsProxy
                 | Self::TunTcpFreedom
                 | Self::TunTcpStaleFlows
                 | Self::TunRealityBlackhole
@@ -266,6 +280,43 @@ impl WorkloadKind {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum TunDnsTransport {
+    Udp,
+    Tcp,
+    #[default]
+    Both,
+}
+
+impl TunDnsTransport {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Udp => "udp",
+            Self::Tcp => "tcp",
+            Self::Both => "both",
+        }
+    }
+
+    fn parse(raw: &str) -> Result<Self, BenchError> {
+        match raw {
+            "udp" => Ok(Self::Udp),
+            "tcp" => Ok(Self::Tcp),
+            "both" => Ok(Self::Both),
+            other => Err(BenchError::InvalidArguments(format!(
+                "unsupported TUN DNS transport `{other}`; expected udp|tcp|both"
+            ))),
+        }
+    }
+
+    fn includes_udp(self) -> bool {
+        matches!(self, Self::Udp | Self::Both)
+    }
+
+    fn includes_tcp(self) -> bool {
+        matches!(self, Self::Tcp | Self::Both)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BenchOptions {
     pub engine: Option<EngineKind>,
@@ -276,6 +327,7 @@ pub struct BenchOptions {
     pub connections: usize,
     pub iterations: usize,
     pub payload_size: usize,
+    pub dns_transport: TunDnsTransport,
     pub runs: usize,
     pub out_dir: PathBuf,
     pub xray_rust_bin: Option<PathBuf>,
@@ -459,6 +511,8 @@ pub struct BenchResult {
     pub iterations: u64,
     #[serde(default)]
     pub payload_size: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dns_transport: Option<String>,
     pub latency_us: Option<LatencySummary>,
     pub setup_us: Option<FlowSetupSummary>,
     pub samples: usize,
@@ -697,6 +751,7 @@ struct TunSocketPair;
 struct WorkloadFixture {
     vless_addr: Option<SocketAddr>,
     vless_tls_cert_sha256: Option<String>,
+    dns_server_addr: Option<SocketAddr>,
     tcp_blackhole_state: Option<Arc<TcpBlackholeState>>,
     tasks: Vec<JoinHandle<()>>,
     processes: Vec<FixtureProcess>,
@@ -760,6 +815,7 @@ impl WorkloadFixture {
                 Ok(Self {
                     vless_addr: Some(vless_addr),
                     vless_tls_cert_sha256: None,
+                    dns_server_addr: None,
                     tcp_blackhole_state: None,
                     tasks: vec![task],
                     processes: Vec::new(),
@@ -771,6 +827,7 @@ impl WorkloadFixture {
                 Ok(Self {
                     vless_addr: Some(vless_addr),
                     vless_tls_cert_sha256: None,
+                    dns_server_addr: None,
                     tcp_blackhole_state: None,
                     tasks: vec![task],
                     processes: Vec::new(),
@@ -782,6 +839,7 @@ impl WorkloadFixture {
                 Ok(Self {
                     vless_addr: Some(vless_addr),
                     vless_tls_cert_sha256: tls_cert_sha256,
+                    dns_server_addr: None,
                     tcp_blackhole_state: None,
                     tasks: vec![task],
                     processes: Vec::new(),
@@ -793,6 +851,7 @@ impl WorkloadFixture {
                 Ok(Self {
                     vless_addr: Some(vless_addr),
                     vless_tls_cert_sha256: None,
+                    dns_server_addr: None,
                     tcp_blackhole_state: None,
                     tasks: Vec::new(),
                     processes: vec![process],
@@ -803,8 +862,20 @@ impl WorkloadFixture {
                 Ok(Self {
                     vless_addr: Some(vless_addr),
                     vless_tls_cert_sha256: None,
+                    dns_server_addr: None,
                     tcp_blackhole_state: Some(state),
                     tasks: vec![task],
+                    processes: Vec::new(),
+                })
+            }
+            WorkloadKind::TunDnsProxy => {
+                let (dns_server_addr, tasks) = spawn_dns_proxy_servers().await?;
+                Ok(Self {
+                    vless_addr: None,
+                    vless_tls_cert_sha256: None,
+                    dns_server_addr: Some(dns_server_addr),
+                    tcp_blackhole_state: None,
+                    tasks,
                     processes: Vec::new(),
                 })
             }
@@ -853,6 +924,7 @@ impl Default for BenchOptions {
             connections: 1,
             iterations: 1,
             payload_size: 1024,
+            dns_transport: TunDnsTransport::default(),
             runs: 1,
             out_dir: PathBuf::from("target/benchmarks"),
             xray_rust_bin: None,
@@ -973,6 +1045,10 @@ where
             "--payload-size" => {
                 options.payload_size =
                     parse_nonzero_usize(required_value(&rest, &mut index, flag)?, flag)?;
+            }
+            "--transport" | "--dns-transport" => {
+                options.dns_transport =
+                    TunDnsTransport::parse(required_value(&rest, &mut index, flag)?)?;
             }
             "--runs" => {
                 options.runs = parse_nonzero_usize(required_value(&rest, &mut index, flag)?, flag)?;
@@ -1412,6 +1488,7 @@ pub fn summarize_results(results: &[BenchResult]) -> Result<BenchSummary, BenchE
         result.connections != first.connections
             || result.iterations != first.iterations
             || result.payload_size != first.payload_size
+            || result.dns_transport != first.dns_transport
     }) {
         return Err(BenchError::InvalidArguments(
             "cannot summarize mixed workload parameters".to_owned(),
@@ -2144,9 +2221,67 @@ enum TunFakeDnsIoEvent {
 }
 
 #[cfg(unix)]
+#[derive(Debug)]
+struct TunDnsTcpPendingQuery {
+    query: Vec<u8>,
+    expectation: TunFakeDnsExpectation,
+    started: Instant,
+}
+
+#[cfg(unix)]
+struct TunDnsTcpConnection {
+    logical_index: usize,
+    source_port: u16,
+    client: TunTcpBenchmarkClient,
+    next_query: usize,
+    total_queries: usize,
+    pending: Option<TunDnsTcpPendingQuery>,
+    receive_buffer: Vec<u8>,
+    last_validated_response: Instant,
+}
+
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TunDnsTcpIoEvent {
+    Sent,
+    Received(usize),
+    Timer,
+}
+
+#[cfg(unix)]
 pub async fn run_tun_fake_dns_workload(
     tun_fd: RawFd,
     options: &BenchOptions,
+) -> Result<WorkloadOutcome, BenchError> {
+    run_tun_dns_udp_workload(
+        tun_fd,
+        options,
+        TUN_FAKE_DNS_DOMAIN,
+        TUN_FAKE_DNS_FIRST_IPV4,
+    )
+    .await
+}
+
+#[cfg(unix)]
+async fn run_tun_dns_proxy_udp_workload(
+    tun_fd: RawFd,
+    options: &BenchOptions,
+) -> Result<WorkloadOutcome, BenchError> {
+    run_tun_dns_udp_workload(
+        tun_fd,
+        options,
+        TUN_DNS_PROXY_DOMAIN,
+        TUN_DNS_PROXY_ANSWER_IPV4,
+    )
+    .await
+}
+
+#[cfg(unix)]
+async fn run_tun_dns_udp_workload(
+    tun_fd: RawFd,
+    options: &BenchOptions,
+    domain: &'static str,
+    expected_ipv4: Ipv4Addr,
 ) -> Result<WorkloadOutcome, BenchError> {
     let total_queries = options
         .connections
@@ -2154,7 +2289,7 @@ pub async fn run_tun_fake_dns_workload(
         .and_then(|count| count.checked_mul(2))
         .ok_or_else(|| {
             BenchError::InvalidArguments(
-                "tun-fake-dns query count exceeds addressable memory".to_owned(),
+                "TUN DNS query count exceeds addressable memory".to_owned(),
             )
         })?;
     let in_flight_limit = options
@@ -2185,6 +2320,8 @@ pub async fn run_tun_fake_dns_workload(
                 options.connections,
                 source_ip,
                 &pending,
+                domain,
+                expected_ipv4,
             )?);
         }
 
@@ -2201,7 +2338,7 @@ pub async fn run_tun_fake_dns_workload(
             TunFakeDnsIoEvent::Sent(started) => {
                 let query = prepared.take().ok_or_else(|| {
                     BenchError::InvalidArguments(
-                        "TUN fake DNS write completed without a prepared query".to_owned(),
+                        "TUN DNS write completed without a prepared query".to_owned(),
                     )
                 })?;
                 sent = sent.saturating_add(query.query.len() as u64);
@@ -2217,7 +2354,7 @@ pub async fn run_tun_fake_dns_workload(
                     .is_some()
                 {
                     return Err(BenchError::InvalidArguments(format!(
-                        "duplicate in-flight TUN fake DNS query port={} id=0x{:04x} type={}",
+                        "duplicate in-flight TUN DNS query port={} id=0x{:04x} type={}",
                         query.key.client_port, query.key.transaction_id, query.key.query_type
                     )));
                 }
@@ -2228,7 +2365,7 @@ pub async fn run_tun_fake_dns_workload(
                 let Some(datagram) = parse_ipv4_udp_datagram(packet) else {
                     continue;
                 };
-                if datagram.source != TUN_FAKE_DNS_ANCHOR
+                if datagram.source != TUN_DNS_ANCHOR
                     || datagram.source_port != DNS_PORT
                     || datagram.destination != source_ip
                 {
@@ -2243,7 +2380,7 @@ pub async fn run_tun_fake_dns_workload(
                             && key.transaction_id == transaction_id
                     }) {
                         return Err(BenchError::InvalidArguments(format!(
-                            "malformed TUN fake DNS response question port={} id=0x{transaction_id:04x}",
+                            "malformed TUN DNS response question port={} id=0x{transaction_id:04x}",
                             datagram.destination_port
                         )));
                     }
@@ -2260,7 +2397,7 @@ pub async fn run_tun_fake_dns_workload(
                             && pending_key.transaction_id == key.transaction_id
                     }) {
                         return Err(BenchError::InvalidArguments(format!(
-                            "TUN fake DNS response type mismatch port={} id=0x{:04x} type={}",
+                            "TUN DNS response type mismatch port={} id=0x{:04x} type={}",
                             key.client_port, key.transaction_id, key.query_type
                         )));
                     }
@@ -2281,6 +2418,376 @@ pub async fn run_tun_fake_dns_workload(
         setup_samples: Vec::new(),
         ..WorkloadOutcome::default()
     })
+}
+
+#[cfg(unix)]
+pub async fn run_tun_dns_proxy_workload(
+    tun_fd: RawFd,
+    options: &BenchOptions,
+) -> Result<WorkloadOutcome, BenchError> {
+    let mut outcome = WorkloadOutcome::empty();
+    if options.dns_transport.includes_udp() {
+        outcome.extend(run_tun_dns_proxy_udp_workload(tun_fd, options).await?);
+    }
+    if options.dns_transport.includes_tcp() {
+        outcome.extend(run_tun_dns_proxy_tcp_workload(tun_fd, options).await?);
+    }
+    Ok(outcome)
+}
+
+#[cfg(unix)]
+async fn run_tun_dns_proxy_tcp_workload(
+    tun_fd: RawFd,
+    options: &BenchOptions,
+) -> Result<WorkloadOutcome, BenchError> {
+    let queries_per_connection = options.iterations.checked_mul(2).ok_or_else(|| {
+        BenchError::InvalidArguments(
+            "tun-dns-proxy TCP query count exceeds addressable memory".to_owned(),
+        )
+    })?;
+    let total_queries = options
+        .connections
+        .checked_mul(queries_per_connection)
+        .ok_or_else(|| {
+            BenchError::InvalidArguments(
+                "tun-dns-proxy TCP query count exceeds addressable memory".to_owned(),
+            )
+        })?;
+    if options.connections == 0 || queries_per_connection == 0 {
+        return Err(BenchError::InvalidArguments(
+            "tun-dns-proxy TCP requires non-zero connections and iterations".to_owned(),
+        ));
+    }
+
+    let tun = AsyncFd::new(TunFdRef(tun_fd)).map_err(|source| BenchError::Io {
+        action: "registering benchmark TUN fd for DNS-over-TCP readiness".to_owned(),
+        source,
+    })?;
+    let source_ip = Ipv4Addr::new(10, 10, 0, 2);
+    let active_limit = options
+        .connections
+        .clamp(1, TUN_DNS_TCP_MAX_ACTIVE_CONNECTIONS);
+    let mut active = Vec::with_capacity(active_limit);
+    let mut next_connection = 0usize;
+    let mut completed_connections = 0usize;
+    let mut outbound_frames = VecDeque::new();
+    let mut read_buffer = vec![0_u8; 65_535 + DARWIN_UTUN_HEADER_LEN];
+    let mut outcome = WorkloadOutcome {
+        latencies_us: Vec::with_capacity(total_queries),
+        ..WorkloadOutcome::default()
+    };
+    let mut last_validated_response = Instant::now();
+
+    loop {
+        while active.len() < active_limit && next_connection < options.connections {
+            active.push(TunDnsTcpConnection::new(
+                next_connection,
+                queries_per_connection,
+            )?);
+            next_connection += 1;
+        }
+
+        let mut connection_index = 0usize;
+        while connection_index < active.len() {
+            let (finished, validated_response) = active[connection_index].drive(&mut outcome)?;
+            drain_tun_dns_tcp_outbound(&mut active[connection_index].client, &mut outbound_frames)?;
+            if validated_response {
+                last_validated_response = Instant::now();
+            }
+            if finished {
+                active[connection_index].client.abort();
+                active[connection_index].client.poll();
+                drain_tun_dns_tcp_outbound(
+                    &mut active[connection_index].client,
+                    &mut outbound_frames,
+                )?;
+                active.swap_remove(connection_index);
+                completed_connections += 1;
+            } else {
+                connection_index += 1;
+            }
+        }
+
+        if completed_connections == options.connections && outbound_frames.is_empty() {
+            if outcome.latencies_us.len() != total_queries {
+                return Err(BenchError::InvalidArguments(format!(
+                    "tun-dns-proxy TCP completed {} of {total_queries} queries",
+                    outcome.latencies_us.len()
+                )));
+            }
+            return Ok(outcome);
+        }
+        let stalled_connection = active.iter().find(|connection| connection.is_stalled());
+        if stalled_connection.is_some()
+            || (active.is_empty() && last_validated_response.elapsed() >= TUN_DNS_TCP_STALL_TIMEOUT)
+        {
+            let stalled_connection = stalled_connection
+                .map(|connection| format!("; stalled connection={}", connection.logical_index))
+                .unwrap_or_default();
+            return Err(BenchError::InvalidArguments(format!(
+                "timed out running tun-dns-proxy TCP: completed {completed_connections}/{} connections and {}/{} queries{stalled_connection}",
+                options.connections,
+                outcome.latencies_us.len(),
+                total_queries
+            )));
+        }
+
+        let stall_wait = active
+            .iter()
+            .map(TunDnsTcpConnection::stall_wait_duration)
+            .min()
+            .unwrap_or_else(|| {
+                TUN_DNS_TCP_STALL_TIMEOUT.saturating_sub(last_validated_response.elapsed())
+            });
+        let wait_duration = tun_dns_tcp_poll_delay(&mut active).min(stall_wait);
+        let send_frame = outbound_frames.front().map(Vec::as_slice);
+        match wait_tun_dns_tcp_io(
+            &tun,
+            send_frame,
+            !active.is_empty(),
+            &mut read_buffer,
+            wait_duration,
+        )
+        .await?
+        {
+            TunDnsTcpIoEvent::Sent => {
+                outbound_frames.pop_front();
+            }
+            TunDnsTcpIoEvent::Received(len) => {
+                let packet = decode_darwin_utun_frame(&read_buffer[..len])?;
+                let Some(endpoints) = ipv4_tcp_endpoints(packet) else {
+                    continue;
+                };
+                let Some(connection) = active
+                    .iter_mut()
+                    .find(|connection| connection.source_port == endpoints.destination_port)
+                else {
+                    continue;
+                };
+                if endpoints.source != TUN_DNS_ANCHOR
+                    || endpoints.source_port != DNS_PORT
+                    || endpoints.destination != source_ip
+                {
+                    return Err(BenchError::InvalidArguments(format!(
+                        "tun-dns-proxy TCP response source mismatch: expected {TUN_DNS_ANCHOR}:{DNS_PORT} -> {source_ip}:{}, got {}:{} -> {}:{}",
+                        connection.source_port,
+                        endpoints.source,
+                        endpoints.source_port,
+                        endpoints.destination,
+                        endpoints.destination_port
+                    )));
+                }
+                connection
+                    .client
+                    .device
+                    .push_inbound(Bytes::copy_from_slice(packet));
+            }
+            TunDnsTcpIoEvent::Timer => {}
+        }
+    }
+}
+
+#[cfg(unix)]
+impl TunDnsTcpConnection {
+    fn new(logical_index: usize, total_queries: usize) -> Result<Self, BenchError> {
+        let source_port = 54_000 + (logical_index % 10_000) as u16;
+        let mut client = TunTcpBenchmarkClient::new(source_port);
+        client.connect(SocketAddr::from((TUN_DNS_ANCHOR, DNS_PORT)))?;
+        Ok(Self {
+            logical_index,
+            source_port,
+            client,
+            next_query: 0,
+            total_queries,
+            pending: None,
+            receive_buffer: Vec::new(),
+            last_validated_response: Instant::now(),
+        })
+    }
+
+    fn drive(&mut self, outcome: &mut WorkloadOutcome) -> Result<(bool, bool), BenchError> {
+        self.client.poll();
+        let received = self.client.recv_available();
+        let mut validated_response = false;
+        self.receive_buffer.extend_from_slice(&received);
+
+        if let Some(response) = take_dns_tcp_message(&mut self.receive_buffer)? {
+            let pending = self.pending.take().ok_or_else(|| {
+                BenchError::InvalidArguments(format!(
+                    "tun-dns-proxy TCP connection {} received an unsolicited DNS response",
+                    self.logical_index
+                ))
+            })?;
+            validate_tun_fake_dns_response(&pending.query, &response, pending.expectation)?;
+            outcome.bytes_received = outcome.bytes_received.saturating_add(response.len() as u64);
+            let completed_at = Instant::now();
+            outcome.latencies_us.push(
+                completed_at
+                    .saturating_duration_since(pending.started)
+                    .as_micros(),
+            );
+            self.last_validated_response = completed_at;
+            validated_response = true;
+        }
+
+        if self.pending.is_none() && self.next_query < self.total_queries && self.client.may_send()
+        {
+            let query_slot = self.next_query % 2;
+            let query_type = if query_slot == 0 {
+                DNS_TYPE_A
+            } else {
+                DNS_TYPE_HTTPS
+            };
+            let expectation = if query_type == DNS_TYPE_A {
+                TunFakeDnsExpectation::A(TUN_DNS_PROXY_ANSWER_IPV4)
+            } else {
+                TunFakeDnsExpectation::NoData
+            };
+            let transaction_id = self
+                .source_port
+                .wrapping_add(self.next_query as u16)
+                .wrapping_add((self.logical_index / 10_000) as u16);
+            let query = build_dns_query(transaction_id, TUN_DNS_PROXY_DOMAIN, query_type)?;
+            let query_len = u16::try_from(query.len()).map_err(|_| {
+                BenchError::InvalidArguments(
+                    "tun-dns-proxy TCP query exceeds 65535 bytes".to_owned(),
+                )
+            })?;
+            let mut frame = Vec::with_capacity(query.len() + 2);
+            frame.extend_from_slice(&query_len.to_be_bytes());
+            frame.extend_from_slice(&query);
+            let started = Instant::now();
+            self.client.send_payload(&frame)?;
+            outcome.bytes_sent = outcome.bytes_sent.saturating_add(query.len() as u64);
+            self.pending = Some(TunDnsTcpPendingQuery {
+                query,
+                expectation,
+                started,
+            });
+            self.next_query += 1;
+            self.client.poll();
+        }
+
+        Ok((
+            self.next_query == self.total_queries && self.pending.is_none(),
+            validated_response,
+        ))
+    }
+
+    fn stall_started(&self) -> Instant {
+        self.pending
+            .as_ref()
+            .map(|pending| pending.started)
+            .unwrap_or(self.last_validated_response)
+    }
+
+    fn is_stalled(&self) -> bool {
+        self.stall_started().elapsed() >= TUN_DNS_TCP_STALL_TIMEOUT
+    }
+
+    fn stall_wait_duration(&self) -> Duration {
+        TUN_DNS_TCP_STALL_TIMEOUT.saturating_sub(self.stall_started().elapsed())
+    }
+}
+
+#[cfg(unix)]
+fn take_dns_tcp_message(buffer: &mut Vec<u8>) -> Result<Option<Vec<u8>>, BenchError> {
+    let Some(length) = buffer
+        .get(..2)
+        .map(|prefix| usize::from(u16::from_be_bytes([prefix[0], prefix[1]])))
+    else {
+        return Ok(None);
+    };
+    if length == 0 {
+        return Err(BenchError::InvalidArguments(
+            "tun-dns-proxy TCP received a zero-length DNS message".to_owned(),
+        ));
+    }
+    let frame_len = length + 2;
+    if buffer.len() < frame_len {
+        return Ok(None);
+    }
+    let response = buffer[2..frame_len].to_vec();
+    buffer.drain(..frame_len);
+    Ok(Some(response))
+}
+
+#[cfg(unix)]
+fn drain_tun_dns_tcp_outbound(
+    client: &mut TunTcpBenchmarkClient,
+    outbound: &mut VecDeque<Vec<u8>>,
+) -> Result<(), BenchError> {
+    while let Some(packet) = client.device.pop_outbound() {
+        if outbound.len() >= TUN_DNS_TCP_MAX_QUEUED_FRAMES {
+            return Err(BenchError::InvalidArguments(format!(
+                "tun-dns-proxy TCP exceeded its {TUN_DNS_TCP_MAX_QUEUED_FRAMES}-frame backpressure queue"
+            )));
+        }
+        outbound.push_back(encode_darwin_utun_frame(&packet));
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn tun_dns_tcp_poll_delay(active: &mut [TunDnsTcpConnection]) -> Duration {
+    let now = SmolInstant::now();
+    active
+        .iter_mut()
+        .filter_map(|connection| connection.client.poll_at())
+        .map(|deadline| {
+            Duration::from_micros(
+                deadline
+                    .total_micros()
+                    .saturating_sub(now.total_micros())
+                    .max(0) as u64,
+            )
+        })
+        .min()
+        .unwrap_or(Duration::from_millis(50))
+}
+
+#[cfg(unix)]
+async fn wait_tun_dns_tcp_io(
+    tun: &AsyncFd<TunFdRef>,
+    send_frame: Option<&[u8]>,
+    can_receive: bool,
+    read_buffer: &mut [u8],
+    timer: Duration,
+) -> Result<TunDnsTcpIoEvent, BenchError> {
+    match (send_frame, can_receive) {
+        (Some(frame), true) => {
+            tokio::select! {
+                biased;
+                result = write_tun_frame_ready(tun, frame) => {
+                    result.map(|_| TunDnsTcpIoEvent::Sent)
+                }
+                result = read_tun_frame_ready(tun, read_buffer) => {
+                    result.map(TunDnsTcpIoEvent::Received)
+                }
+                () = sleep(timer) => Ok(TunDnsTcpIoEvent::Timer),
+            }
+        }
+        (Some(frame), false) => {
+            tokio::select! {
+                result = write_tun_frame_ready(tun, frame) => {
+                    result.map(|_| TunDnsTcpIoEvent::Sent)
+                }
+                () = sleep(timer) => Ok(TunDnsTcpIoEvent::Timer),
+            }
+        }
+        (None, true) => {
+            tokio::select! {
+                result = read_tun_frame_ready(tun, read_buffer) => {
+                    result.map(TunDnsTcpIoEvent::Received)
+                }
+                () = sleep(timer) => Ok(TunDnsTcpIoEvent::Timer),
+            }
+        }
+        (None, false) => {
+            sleep(timer).await;
+            Ok(TunDnsTcpIoEvent::Timer)
+        }
+    }
 }
 
 #[cfg(unix)]
@@ -2406,6 +2913,16 @@ pub async fn run_tun_fake_dns_workload(
 ) -> Result<WorkloadOutcome, BenchError> {
     Err(BenchError::InvalidArguments(
         "tun-fake-dns workload requires Unix fd support".to_owned(),
+    ))
+}
+
+#[cfg(not(unix))]
+pub async fn run_tun_dns_proxy_workload(
+    _tun_fd: i32,
+    _options: &BenchOptions,
+) -> Result<WorkloadOutcome, BenchError> {
+    Err(BenchError::InvalidArguments(
+        "tun-dns-proxy workload requires Unix fd support".to_owned(),
     ))
 }
 
@@ -2933,14 +3450,16 @@ fn prepare_tun_fake_dns_query(
     connections: usize,
     source_ip: Ipv4Addr,
     pending: &HashMap<TunFakeDnsQueryKey, PendingTunFakeDnsQuery>,
+    domain: &str,
+    expected_ipv4: Ipv4Addr,
 ) -> Result<PreparedTunFakeDnsQuery, BenchError> {
     if connections == 0 {
         return Err(BenchError::InvalidArguments(
-            "tun-fake-dns requires at least one connection".to_owned(),
+            "TUN DNS requires at least one connection".to_owned(),
         ));
     }
     let queries_per_iteration = connections.checked_mul(2).ok_or_else(|| {
-        BenchError::InvalidArguments("tun-fake-dns connection count is too large".to_owned())
+        BenchError::InvalidArguments("TUN DNS connection count is too large".to_owned())
     })?;
     let within_iteration = query_index % queries_per_iteration;
     let iteration = query_index / queries_per_iteration;
@@ -2950,10 +3469,7 @@ fn prepare_tun_fake_dns_query(
     let query_slot = within_iteration / connections;
     let connection_index = within_iteration % connections;
     let (query_type, expectation) = match query_slot {
-        0 => (
-            DNS_TYPE_A,
-            TunFakeDnsExpectation::A(TUN_FAKE_DNS_FIRST_IPV4),
-        ),
+        0 => (DNS_TYPE_A, TunFakeDnsExpectation::A(expected_ipv4)),
         _ => (DNS_TYPE_HTTPS, TunFakeDnsExpectation::NoData),
     };
     let source_port = 53_000 + (connection_index % 10_000) as u16;
@@ -2979,14 +3495,8 @@ fn prepare_tun_fake_dns_query(
             "no free DNS transaction id for benchmark client port {source_port}"
         ))
     })?;
-    let query = build_dns_query(key.transaction_id, TUN_FAKE_DNS_DOMAIN, query_type)?;
-    let packet = ipv4_udp_packet(
-        source_ip,
-        source_port,
-        TUN_FAKE_DNS_ANCHOR,
-        DNS_PORT,
-        &query,
-    )?;
+    let query = build_dns_query(key.transaction_id, domain, query_type)?;
+    let packet = ipv4_udp_packet(source_ip, source_port, TUN_DNS_ANCHOR, DNS_PORT, &query)?;
     Ok(PreparedTunFakeDnsQuery {
         key,
         query,
@@ -3368,17 +3878,17 @@ fn tun_fake_dns_timeout_error(
 ) -> BenchError {
     if let Some((key, _)) = pending.iter().min_by_key(|(_, query)| query.started) {
         return BenchError::InvalidArguments(format!(
-            "timed out waiting for TUN fake DNS response port={} id=0x{:04x} type={}",
+            "timed out waiting for TUN DNS response port={} id=0x{:04x} type={}",
             key.client_port, key.transaction_id, key.query_type
         ));
     }
     if let Some(query) = prepared {
         return BenchError::InvalidArguments(format!(
-            "timed out writing TUN fake DNS query port={} id=0x{:04x} type={}",
+            "timed out writing TUN DNS query port={} id=0x{:04x} type={}",
             query.key.client_port, query.key.transaction_id, query.key.query_type
         ));
     }
-    BenchError::InvalidArguments("TUN fake DNS workload stalled without pending I/O".to_owned())
+    BenchError::InvalidArguments("TUN DNS workload stalled without pending I/O".to_owned())
 }
 
 #[cfg(unix)]
@@ -3410,7 +3920,7 @@ async fn wait_tun_fake_dns_io(
             .await
             .map(TunFakeDnsIoEvent::Received),
         (None, false) => Err(BenchError::InvalidArguments(
-            "TUN fake DNS workload has neither readable nor writable work".to_owned(),
+            "TUN DNS workload has neither readable nor writable work".to_owned(),
         )),
     }
 }
@@ -3593,28 +4103,28 @@ fn validate_tun_fake_dns_response(
 ) -> Result<(), BenchError> {
     if query.len() < 12 || response.len() < query.len() {
         return Err(BenchError::InvalidArguments(
-            "truncated TUN fake DNS response".to_owned(),
+            "truncated TUN DNS response".to_owned(),
         ));
     }
     if response[0..2] != query[0..2] {
         return Err(BenchError::InvalidArguments(
-            "TUN fake DNS transaction id mismatch".to_owned(),
+            "TUN DNS transaction id mismatch".to_owned(),
         ));
     }
     let flags = u16::from_be_bytes([response[2], response[3]]);
     if flags & 0x8000 == 0 || flags & 0x000f != 0 {
         return Err(BenchError::InvalidArguments(format!(
-            "TUN fake DNS response has unexpected flags 0x{flags:04x}"
+            "TUN DNS response has unexpected flags 0x{flags:04x}"
         )));
     }
     if u16::from_be_bytes([response[4], response[5]]) != 1 {
         return Err(BenchError::InvalidArguments(
-            "TUN fake DNS response must contain one question".to_owned(),
+            "TUN DNS response must contain one question".to_owned(),
         ));
     }
     if response[12..query.len()] != query[12..] {
         return Err(BenchError::InvalidArguments(
-            "TUN fake DNS response question mismatch".to_owned(),
+            "TUN DNS response question mismatch".to_owned(),
         ));
     }
 
@@ -3622,16 +4132,16 @@ fn validate_tun_fake_dns_response(
     match expectation {
         TunFakeDnsExpectation::NoData if answer_count == 0 => Ok(()),
         TunFakeDnsExpectation::NoData => Err(BenchError::InvalidArguments(format!(
-            "TUN fake DNS NODATA response contains {answer_count} answers"
+            "TUN DNS NODATA response contains {answer_count} answers"
         ))),
         TunFakeDnsExpectation::A(expected_ip) => {
             if answer_count != 1 {
                 return Err(BenchError::InvalidArguments(format!(
-                    "TUN fake DNS A response contains {answer_count} answers"
+                    "TUN DNS A response contains {answer_count} answers"
                 )));
             }
             let answer = response.get(query.len()..).ok_or_else(|| {
-                BenchError::InvalidArguments("missing TUN fake DNS A answer".to_owned())
+                BenchError::InvalidArguments("missing TUN DNS A answer".to_owned())
             })?;
             if answer.len() < 16
                 || answer[0..2] != [0xc0, 0x0c]
@@ -3640,13 +4150,13 @@ fn validate_tun_fake_dns_response(
                 || u16::from_be_bytes([answer[10], answer[11]]) != 4
             {
                 return Err(BenchError::InvalidArguments(
-                    "malformed TUN fake DNS A answer".to_owned(),
+                    "malformed TUN DNS A answer".to_owned(),
                 ));
             }
             let actual_ip = Ipv4Addr::new(answer[12], answer[13], answer[14], answer[15]);
             if actual_ip != expected_ip {
                 return Err(BenchError::InvalidArguments(format!(
-                    "TUN fake DNS A answer mismatch: expected {expected_ip}, got {actual_ip}"
+                    "TUN DNS A answer mismatch: expected {expected_ip}, got {actual_ip}"
                 )));
             }
             Ok(())
@@ -3973,10 +4483,23 @@ impl TunTcpBenchmarkClient {
             .iface
             .poll(SmolInstant::now(), &mut self.device, &mut self.sockets);
     }
+
+    fn poll_at(&mut self) -> Option<SmolInstant> {
+        self.iface.poll_at(SmolInstant::now(), &self.sockets)
+    }
 }
 
 #[cfg(unix)]
-fn ipv4_tcp_destination_port(packet: &[u8]) -> Option<u16> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Ipv4TcpEndpoints {
+    source: Ipv4Addr,
+    destination: Ipv4Addr,
+    source_port: u16,
+    destination_port: u16,
+}
+
+#[cfg(unix)]
+fn ipv4_tcp_endpoints(packet: &[u8]) -> Option<Ipv4TcpEndpoints> {
     if packet.len() < 20 || packet[0] >> 4 != 4 || packet[9] != TCP_PROTOCOL {
         return None;
     }
@@ -3984,10 +4507,17 @@ fn ipv4_tcp_destination_port(packet: &[u8]) -> Option<u16> {
     if header_len < 20 || packet.len() < header_len + 4 {
         return None;
     }
-    Some(u16::from_be_bytes([
-        packet[header_len + 2],
-        packet[header_len + 3],
-    ]))
+    Some(Ipv4TcpEndpoints {
+        source: Ipv4Addr::new(packet[12], packet[13], packet[14], packet[15]),
+        destination: Ipv4Addr::new(packet[16], packet[17], packet[18], packet[19]),
+        source_port: u16::from_be_bytes([packet[header_len], packet[header_len + 1]]),
+        destination_port: u16::from_be_bytes([packet[header_len + 2], packet[header_len + 3]]),
+    })
+}
+
+#[cfg(unix)]
+fn ipv4_tcp_destination_port(packet: &[u8]) -> Option<u16> {
+    ipv4_tcp_endpoints(packet).map(|endpoints| endpoints.destination_port)
 }
 
 #[cfg(unix)]
@@ -4150,6 +4680,149 @@ impl SmolTxToken for TunTcpTxToken<'_> {
         self.outbound.push_back(Bytes::from(packet));
         result
     }
+}
+
+#[cfg(unix)]
+fn build_dns_proxy_fixture_response(query: &[u8]) -> Result<Vec<u8>, BenchError> {
+    if query.len() < 12 || u16::from_be_bytes([query[2], query[3]]) & 0x8000 != 0 {
+        return Err(BenchError::InvalidArguments(
+            "DNS proxy fixture received a malformed query".to_owned(),
+        ));
+    }
+    let query_type = dns_question_type(query).ok_or_else(|| {
+        BenchError::InvalidArguments("DNS proxy fixture query has no question type".to_owned())
+    })?;
+    let mut response = query.to_vec();
+    let request_flags = u16::from_be_bytes([query[2], query[3]]);
+    response[2..4].copy_from_slice(&(0x8080 | (request_flags & 0x0100)).to_be_bytes());
+    response[6..12].fill(0);
+    if query_type == DNS_TYPE_A {
+        response[6..8].copy_from_slice(&1_u16.to_be_bytes());
+        response.extend_from_slice(&[
+            0xc0,
+            0x0c,
+            0,
+            1,
+            0,
+            1,
+            0,
+            0,
+            0,
+            30,
+            0,
+            4,
+            TUN_DNS_PROXY_ANSWER_IPV4.octets()[0],
+            TUN_DNS_PROXY_ANSWER_IPV4.octets()[1],
+            TUN_DNS_PROXY_ANSWER_IPV4.octets()[2],
+            TUN_DNS_PROXY_ANSWER_IPV4.octets()[3],
+        ]);
+    }
+    Ok(response)
+}
+
+#[cfg(unix)]
+async fn handle_dns_proxy_tcp_connection(mut stream: TcpStream) -> Result<(), BenchError> {
+    loop {
+        let mut length = [0_u8; 2];
+        match stream.read_exact(&mut length).await {
+            Ok(_) => {}
+            Err(source) if source.kind() == io::ErrorKind::UnexpectedEof => return Ok(()),
+            Err(source) => {
+                return Err(BenchError::Io {
+                    action: "reading DNS proxy fixture TCP length".to_owned(),
+                    source,
+                });
+            }
+        }
+        let mut query = vec![0_u8; usize::from(u16::from_be_bytes(length))];
+        stream
+            .read_exact(&mut query)
+            .await
+            .map_err(|source| BenchError::Io {
+                action: "reading DNS proxy fixture TCP query".to_owned(),
+                source,
+            })?;
+        let response = build_dns_proxy_fixture_response(&query)?;
+        let response_len = u16::try_from(response.len()).map_err(|_| {
+            BenchError::InvalidArguments(
+                "DNS proxy fixture TCP response exceeds 65535 bytes".to_owned(),
+            )
+        })?;
+        stream
+            .write_all(&response_len.to_be_bytes())
+            .await
+            .map_err(|source| BenchError::Io {
+                action: "writing DNS proxy fixture TCP length".to_owned(),
+                source,
+            })?;
+        stream
+            .write_all(&response)
+            .await
+            .map_err(|source| BenchError::Io {
+                action: "writing DNS proxy fixture TCP payload".to_owned(),
+                source,
+            })?;
+    }
+}
+
+#[cfg(unix)]
+async fn spawn_dns_proxy_servers() -> Result<(SocketAddr, Vec<JoinHandle<()>>), BenchError> {
+    let udp = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "binding DNS proxy UDP fixture".to_owned(),
+            source,
+        })?;
+    let addr = udp.local_addr().map_err(|source| BenchError::Io {
+        action: "reading DNS proxy UDP fixture address".to_owned(),
+        source,
+    })?;
+    let tcp = TcpListener::bind(addr)
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "binding DNS proxy TCP fixture".to_owned(),
+            source,
+        })?;
+
+    let udp_task = tokio::spawn(async move {
+        let mut buffer = vec![0_u8; u16::MAX as usize];
+        loop {
+            let Ok((len, peer)) = udp.recv_from(&mut buffer).await else {
+                break;
+            };
+            let Ok(response) = build_dns_proxy_fixture_response(&buffer[..len]) else {
+                continue;
+            };
+            let _ = udp.send_to(&response, peer).await;
+        }
+    });
+    let tcp_task = tokio::spawn(async move {
+        let mut connections = JoinSet::new();
+        loop {
+            tokio::select! {
+                accepted = tcp.accept() => {
+                    let Ok((stream, _peer)) = accepted else {
+                        break;
+                    };
+                    connections.spawn(async move {
+                        if let Err(error) = handle_dns_proxy_tcp_connection(stream).await {
+                            eprintln!("DNS proxy TCP fixture error: {error}");
+                        }
+                    });
+                }
+                Some(_) = connections.join_next(), if !connections.is_empty() => {}
+            }
+        }
+        connections.abort_all();
+    });
+    Ok((addr, vec![udp_task, tcp_task]))
+}
+
+#[cfg(not(unix))]
+async fn spawn_dns_proxy_servers() -> Result<(SocketAddr, Vec<JoinHandle<()>>), BenchError> {
+    Err(BenchError::InvalidArguments(
+        "tun-dns-proxy workload requires Unix fd support".to_owned(),
+    ))
 }
 
 async fn spawn_tcp_blackhole_server(
@@ -4770,6 +5443,9 @@ pub fn xray_rust_config(port: u16, workload: WorkloadKind) -> String {
             reality_vision_xudp_config(port, SocketAddr::from((Ipv4Addr::LOCALHOST, 443)))
         }
         WorkloadKind::TunFakeDns => tun_fake_dns_config(),
+        WorkloadKind::TunDnsProxy => {
+            tun_dns_proxy_config(SocketAddr::from((Ipv4Addr::LOCALHOST, 53)))
+        }
         WorkloadKind::TunUdpFreedom
         | WorkloadKind::TunTcpFreedom
         | WorkloadKind::TunTcpStaleFlows => tun_freedom_config(),
@@ -4880,6 +5556,19 @@ fn engine_config(
             EngineKind::XrayCore | EngineKind::SingBox => Err(BenchError::InvalidArguments(
                 "tun-fake-dns currently supports only --engine xray-rust because dns.fakeIp is an xray-rust config extension"
                     .to_owned(),
+            )),
+        },
+        WorkloadKind::TunDnsProxy => match engine {
+            EngineKind::XrayRust => {
+                let upstream = fixture.dns_server_addr.ok_or_else(|| {
+                    BenchError::InvalidArguments(
+                        "tun-dns-proxy workload requires a DNS server fixture".to_owned(),
+                    )
+                })?;
+                Ok(tun_dns_proxy_config(upstream))
+            }
+            EngineKind::XrayCore | EngineKind::SingBox => Err(BenchError::InvalidArguments(
+                "tun-dns-proxy currently supports only --engine xray-rust".to_owned(),
             )),
         },
         WorkloadKind::TunUdpFreedom
@@ -5019,6 +5708,33 @@ fn tun_fake_dns_config() -> String {
   }
 }"#
     .to_owned()
+}
+
+fn tun_dns_proxy_config(upstream: SocketAddr) -> String {
+    format!(
+        r#"{{
+  "log": {{ "loglevel": "warning" }},
+  "inbounds": [
+    {{
+      "tag": "tun-in",
+      "protocol": "tun",
+      "listen": "127.0.0.1",
+      "port": 0,
+      "settings": {{ "name": "utun9", "MTU": 1500 }}
+    }}
+  ],
+  "outbounds": [
+    {{
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {{}}
+    }}
+  ],
+  "dns": {{
+    "servers": ["{upstream}"]
+  }}
+}}"#
+    )
 }
 
 fn tun_reality_blackhole_config(vless_addr: SocketAddr) -> String {
@@ -7085,11 +7801,14 @@ fn route_probe_config(rules: usize, outbounds: usize) -> Result<CoreConfig, Benc
 }
 
 pub async fn run_compare(options: BenchOptions) -> Result<(), BenchError> {
-    if options.workload == WorkloadKind::TunFakeDns {
-        return Err(BenchError::InvalidArguments(
-            "tun-fake-dns is xray-rust-only; use `run --engine xray-rust` instead of `compare`"
-                .to_owned(),
-        ));
+    if matches!(
+        options.workload,
+        WorkloadKind::TunFakeDns | WorkloadKind::TunDnsProxy
+    ) {
+        return Err(BenchError::InvalidArguments(format!(
+            "{} is xray-rust-only; use `run --engine xray-rust` instead of `compare`",
+            options.workload.as_str()
+        )));
     }
     let run_id = new_run_id();
     let rust_summary = run_engine_series(EngineKind::XrayRust, &options, &run_id).await?;
@@ -7180,6 +7899,9 @@ async fn run_engine_once(
                 run_tun_udp_freedom_workload(engine.tun_fd()?, options).await
             }
             WorkloadKind::TunFakeDns => run_tun_fake_dns_workload(engine.tun_fd()?, options).await,
+            WorkloadKind::TunDnsProxy => {
+                run_tun_dns_proxy_workload(engine.tun_fd()?, options).await
+            }
             WorkloadKind::TunTcpFreedom => {
                 run_tun_tcp_freedom_workload(engine.tun_fd()?, options).await
             }
@@ -7255,6 +7977,8 @@ async fn run_engine_once(
         connections: options.connections as u64,
         iterations: options.iterations as u64,
         payload_size: options.payload_size as u64,
+        dns_transport: (options.workload == WorkloadKind::TunDnsProxy)
+            .then(|| options.dns_transport.as_str().to_owned()),
         latency_us,
         setup_us,
         samples: samples.len(),
@@ -7292,6 +8016,11 @@ fn new_run_id() -> String {
 }
 
 fn print_result(result: &BenchResult) {
+    let dns_transport = result
+        .dns_transport
+        .as_deref()
+        .map(|transport| format!(" transport={transport}"))
+        .unwrap_or_default();
     let latency = result
         .latency_us
         .as_ref()
@@ -7335,7 +8064,7 @@ fn print_result(result: &BenchResult) {
         })
         .unwrap_or_default();
     println!(
-        "{} {} status={} peak_rss_kib={} cpu_millis={} bytes_sent={} bytes_received={} samples={}{}{}{}{}{}",
+        "{} {} status={} peak_rss_kib={} cpu_millis={} bytes_sent={} bytes_received={} samples={}{}{}{}{}{}{}",
         result.engine,
         result.workload,
         result.status,
@@ -7344,6 +8073,7 @@ fn print_result(result: &BenchResult) {
         result.bytes_sent,
         result.bytes_received,
         result.samples,
+        dns_transport,
         cpu_per_gib,
         throughput,
         latency,
@@ -7405,6 +8135,12 @@ fn print_summary(summary: &BenchSummary) {
             )
         })
         .unwrap_or_default();
+    let dns_transport = summary
+        .results
+        .first()
+        .and_then(|result| result.dns_transport.as_deref())
+        .map(|transport| format!(" transport={transport}"))
+        .unwrap_or_default();
     let throughput = summary
         .throughput_mbps
         .as_ref()
@@ -7458,7 +8194,7 @@ fn print_summary(summary: &BenchSummary) {
         })
         .unwrap_or_default();
     println!(
-        "{} {} runs={} status={} duration_ms[min/median/p95]={}/{}/{} peak_rss_kib[min/median/p95]={}/{}/{} cpu_millis[min/median/p95]={}/{}/{} bytes_sent[min/median/p95]={}/{}/{} bytes_received[min/median/p95]={}/{}/{}{}{}{}{}",
+        "{} {} runs={} status={} duration_ms[min/median/p95]={}/{}/{} peak_rss_kib[min/median/p95]={}/{}/{} cpu_millis[min/median/p95]={}/{}/{} bytes_sent[min/median/p95]={}/{}/{} bytes_received[min/median/p95]={}/{}/{}{}{}{}{}{}",
         summary.engine,
         summary.workload,
         summary.runs,
@@ -7478,6 +8214,7 @@ fn print_summary(summary: &BenchSummary) {
         summary.bytes_received.min,
         summary.bytes_received.median,
         summary.bytes_received.p95,
+        dns_transport,
         cpu_per_gib,
         throughput,
         latency,
@@ -7616,6 +8353,7 @@ mod tests {
                 connections: 1,
                 iterations: 1,
                 payload_size: 1024,
+                dns_transport: TunDnsTransport::Both,
                 runs: 1,
                 out_dir: PathBuf::from("target/benchmarks/test"),
                 xray_rust_bin: None,
@@ -8051,6 +8789,50 @@ mod tests {
     }
 
     #[test]
+    fn parses_run_tun_dns_proxy_transport() {
+        let args = parse_cli_args([
+            "xray-bench",
+            "run",
+            "--engine",
+            "xray-rust",
+            "--workload",
+            "tun-dns-proxy",
+            "--connections",
+            "8",
+            "--iterations",
+            "25",
+            "--transport",
+            "tcp",
+        ])
+        .unwrap();
+
+        let CliArgs::Run(options) = args else {
+            panic!("expected run args");
+        };
+        assert_eq!(options.workload, WorkloadKind::TunDnsProxy);
+        assert_eq!(options.connections, 8);
+        assert_eq!(options.iterations, 25);
+        assert_eq!(options.dns_transport, TunDnsTransport::Tcp);
+    }
+
+    #[test]
+    fn rejects_unknown_tun_dns_proxy_transport() {
+        let error = parse_cli_args([
+            "xray-bench",
+            "run",
+            "--engine",
+            "xray-rust",
+            "--workload",
+            "tun-dns-proxy",
+            "--transport",
+            "quic",
+        ])
+        .unwrap_err();
+
+        assert!(error.to_string().contains("expected udp|tcp|both"));
+    }
+
+    #[test]
     fn parses_compare_many_idle_flows() {
         let args = parse_cli_args([
             "xray-bench",
@@ -8092,6 +8874,7 @@ mod tests {
     #[test]
     fn tun_tcp_freedom_uses_fd_backed_tun() {
         assert!(WorkloadKind::TunFakeDns.uses_tun_fd());
+        assert!(WorkloadKind::TunDnsProxy.uses_tun_fd());
         assert!(WorkloadKind::TunTcpFreedom.uses_tun_fd());
         assert!(WorkloadKind::TunTcpStaleFlows.uses_tun_fd());
         assert!(WorkloadKind::TunRealityBlackhole.uses_tun_fd());
@@ -8121,6 +8904,343 @@ mod tests {
             TunFakeDnsExpectation::NoData,
         )
         .unwrap();
+    }
+
+    #[cfg(unix)]
+    async fn handle_fragmented_dns_tcp_test_connection(
+        mut stream: TcpStream,
+        queries_per_connection: usize,
+    ) -> Result<Vec<(u16, u16)>, BenchError> {
+        stream.set_nodelay(true).map_err(|source| BenchError::Io {
+            action: "enabling TCP_NODELAY on fragmented DNS fixture connection".to_owned(),
+            source,
+        })?;
+        let mut observed = Vec::with_capacity(queries_per_connection);
+        for _ in 0..queries_per_connection {
+            let mut length = [0_u8; 2];
+            stream
+                .read_exact(&mut length)
+                .await
+                .map_err(|source| BenchError::Io {
+                    action: "reading fragmented DNS fixture TCP length".to_owned(),
+                    source,
+                })?;
+            let query_len = usize::from(u16::from_be_bytes(length));
+            if query_len == 0 {
+                return Err(BenchError::InvalidArguments(
+                    "fragmented DNS fixture received a zero-length query".to_owned(),
+                ));
+            }
+            let mut query = vec![0_u8; query_len];
+            stream
+                .read_exact(&mut query)
+                .await
+                .map_err(|source| BenchError::Io {
+                    action: "reading fragmented DNS fixture TCP query".to_owned(),
+                    source,
+                })?;
+            let transaction_id = dns_message_id(&query).ok_or_else(|| {
+                BenchError::InvalidArguments(
+                    "fragmented DNS fixture query has no transaction id".to_owned(),
+                )
+            })?;
+            let query_type = dns_question_type(&query).ok_or_else(|| {
+                BenchError::InvalidArguments(
+                    "fragmented DNS fixture query has no question type".to_owned(),
+                )
+            })?;
+            observed.push((transaction_id, query_type));
+
+            let response = build_dns_proxy_fixture_response(&query)?;
+            let response_len = u16::try_from(response.len()).map_err(|_| {
+                BenchError::InvalidArguments(
+                    "fragmented DNS fixture response exceeds 65535 bytes".to_owned(),
+                )
+            })?;
+            let response_len = response_len.to_be_bytes();
+
+            // Stagger independent connections so their responses do not follow accept order,
+            // then split both the length prefix and payload across distinct TCP writes.
+            sleep(Duration::from_millis(u64::from(transaction_id % 4))).await;
+            stream
+                .write_all(&response_len[..1])
+                .await
+                .map_err(|source| BenchError::Io {
+                    action: "writing fragmented DNS fixture TCP length prefix".to_owned(),
+                    source,
+                })?;
+            sleep(Duration::from_millis(1)).await;
+            stream
+                .write_all(&response_len[1..])
+                .await
+                .map_err(|source| BenchError::Io {
+                    action: "writing fragmented DNS fixture TCP length suffix".to_owned(),
+                    source,
+                })?;
+            let split = response.len() / 2;
+            stream
+                .write_all(&response[..split])
+                .await
+                .map_err(|source| BenchError::Io {
+                    action: "writing fragmented DNS fixture TCP payload prefix".to_owned(),
+                    source,
+                })?;
+            sleep(Duration::from_millis(1)).await;
+            stream
+                .write_all(&response[split..])
+                .await
+                .map_err(|source| BenchError::Io {
+                    action: "writing fragmented DNS fixture TCP payload suffix".to_owned(),
+                    source,
+                })?;
+        }
+        Ok(observed)
+    }
+
+    #[cfg(unix)]
+    async fn spawn_fragmented_dns_tcp_test_server(
+        expected_connections: usize,
+        queries_per_connection: usize,
+    ) -> Result<
+        (
+            SocketAddr,
+            JoinHandle<Result<Vec<Vec<(u16, u16)>>, BenchError>>,
+        ),
+        BenchError,
+    > {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .map_err(|source| BenchError::Io {
+                action: "binding fragmented DNS fixture".to_owned(),
+                source,
+            })?;
+        let addr = listener.local_addr().map_err(|source| BenchError::Io {
+            action: "reading fragmented DNS fixture address".to_owned(),
+            source,
+        })?;
+        let task = tokio::spawn(async move {
+            let mut connections = JoinSet::new();
+            for _ in 0..expected_connections {
+                let (stream, _) = listener.accept().await.map_err(|source| BenchError::Io {
+                    action: "accepting fragmented DNS fixture connection".to_owned(),
+                    source,
+                })?;
+                connections.spawn(handle_fragmented_dns_tcp_test_connection(
+                    stream,
+                    queries_per_connection,
+                ));
+            }
+
+            let mut observed = Vec::with_capacity(expected_connections);
+            while let Some(result) = connections.join_next().await {
+                observed.push(result.map_err(|source| {
+                    BenchError::InvalidArguments(format!(
+                        "fragmented DNS fixture task failed: {source}"
+                    ))
+                })??);
+            }
+            Ok(observed)
+        });
+        Ok((addr, task))
+    }
+
+    #[cfg(unix)]
+    fn spawn_tun_core_test_bridge(
+        engine_fd: FdGuard,
+        core: &Core,
+    ) -> Result<JoinHandle<Result<(), BenchError>>, BenchError> {
+        set_fd_nonblocking(engine_fd.raw()).map_err(|source| BenchError::Io {
+            action: "setting test Core TUN fd nonblocking".to_owned(),
+            source,
+        })?;
+        let fd =
+            Arc::new(
+                AsyncFd::new(TunFdRef(engine_fd.raw())).map_err(|source| BenchError::Io {
+                    action: "registering test Core TUN fd".to_owned(),
+                    source,
+                })?,
+            );
+        let inbound = core.tun_handle();
+        let outbound = core.tun_handle();
+
+        Ok(tokio::spawn(async move {
+            let _engine_fd = engine_fd;
+            let read_fd = Arc::clone(&fd);
+            let write_fd = Arc::clone(&fd);
+            let inbound_loop = async move {
+                let mut buffer = vec![0_u8; 65_535 + DARWIN_UTUN_HEADER_LEN];
+                loop {
+                    let len = read_tun_frame_ready(&read_fd, &mut buffer).await?;
+                    let packet = decode_darwin_utun_frame(&buffer[..len])?;
+                    inbound
+                        .push_inbound(Bytes::copy_from_slice(packet))
+                        .await
+                        .map_err(|source| {
+                            BenchError::InvalidArguments(format!(
+                                "test Core rejected an inbound TUN packet: {source}"
+                            ))
+                        })?;
+                }
+                #[allow(unreachable_code)]
+                Ok::<(), BenchError>(())
+            };
+            let outbound_loop = async move {
+                loop {
+                    let packet = outbound.poll_outbound().await.map_err(|source| {
+                        BenchError::InvalidArguments(format!(
+                            "test Core stopped producing outbound TUN packets: {source}"
+                        ))
+                    })?;
+                    let frame = encode_darwin_utun_frame(&packet);
+                    write_tun_frame_ready(&write_fd, &frame).await?;
+                }
+                #[allow(unreachable_code)]
+                Ok::<(), BenchError>(())
+            };
+            tokio::try_join!(inbound_loop, outbound_loop).map(|_| ())
+        }))
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn dns_proxy_fixture_answers_matching_udp_and_tcp_queries() {
+        let (addr, tasks) = spawn_dns_proxy_servers().await.unwrap();
+        let query = build_dns_query(0x3412, TUN_DNS_PROXY_DOMAIN, DNS_TYPE_A).unwrap();
+
+        let udp = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        udp.send_to(&query, addr).await.unwrap();
+        let mut udp_buffer = [0_u8; 512];
+        let (udp_len, udp_source) = timeout(Duration::from_secs(1), udp.recv_from(&mut udp_buffer))
+            .await
+            .unwrap()
+            .unwrap();
+        validate_tun_fake_dns_response(
+            &query,
+            &udp_buffer[..udp_len],
+            TunFakeDnsExpectation::A(TUN_DNS_PROXY_ANSWER_IPV4),
+        )
+        .unwrap();
+
+        let mut tcp = TcpStream::connect(addr).await.unwrap();
+        tcp.write_all(&(query.len() as u16).to_be_bytes())
+            .await
+            .unwrap();
+        tcp.write_all(&query).await.unwrap();
+        let tcp_len = tcp.read_u16().await.unwrap();
+        let mut tcp_response = vec![0_u8; usize::from(tcp_len)];
+        tcp.read_exact(&mut tcp_response).await.unwrap();
+        validate_tun_fake_dns_response(
+            &query,
+            &tcp_response,
+            TunFakeDnsExpectation::A(TUN_DNS_PROXY_ANSWER_IPV4),
+        )
+        .unwrap();
+
+        assert_eq!(udp_source, addr);
+        for task in tasks {
+            task.abort();
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn tun_dns_proxy_tcp_runs_bounded_waves_and_validates_fragmented_responses() {
+        let connections = 20usize;
+        let iterations = 2usize;
+        let queries_per_connection = iterations * 2;
+        let (upstream, mut fixture_task) =
+            spawn_fragmented_dns_tcp_test_server(connections, queries_per_connection)
+                .await
+                .unwrap();
+        let parsed = parse_xray_json(&tun_dns_proxy_config(upstream)).unwrap();
+        let mut core = Core::new(parsed.config).unwrap();
+        core.start().await.unwrap();
+
+        let TunSocketPair {
+            engine_fd,
+            workload_fd,
+        } = create_tun_socket_pair().unwrap();
+        let bridge_task = spawn_tun_core_test_bridge(engine_fd, &core).unwrap();
+        let options = BenchOptions {
+            workload: WorkloadKind::TunDnsProxy,
+            connections,
+            iterations,
+            dns_transport: TunDnsTransport::Tcp,
+            ..BenchOptions::default()
+        };
+
+        let workload_result = timeout(
+            Duration::from_secs(4),
+            run_tun_dns_proxy_workload(workload_fd.raw(), &options),
+        )
+        .await;
+        let fixture_result = timeout(Duration::from_secs(1), &mut fixture_task).await;
+        if fixture_result.is_err() {
+            fixture_task.abort();
+        }
+        bridge_task.abort();
+        let _ = bridge_task.await;
+        core.stop().await.unwrap();
+
+        let outcome = workload_result
+            .expect("TCP scheduler must not hang")
+            .expect("TCP scheduler workload must succeed");
+        let observed = fixture_result
+            .expect("all fragmented DNS fixture connections must finish")
+            .expect("fragmented DNS fixture task must not panic")
+            .expect("fragmented DNS fixture must accept valid framing");
+
+        assert_eq!(observed.len(), connections);
+        for connection_queries in &observed {
+            assert_eq!(connection_queries.len(), queries_per_connection);
+            assert_eq!(
+                connection_queries
+                    .iter()
+                    .map(|(_, query_type)| *query_type)
+                    .collect::<Vec<_>>(),
+                vec![DNS_TYPE_A, DNS_TYPE_HTTPS, DNS_TYPE_A, DNS_TYPE_HTTPS]
+            );
+            assert!(connection_queries
+                .windows(2)
+                .all(|pair| pair[1].0 == pair[0].0.wrapping_add(1)));
+        }
+
+        let mut observed_queries = observed.into_iter().flatten().collect::<Vec<_>>();
+        observed_queries.sort_unstable();
+        let mut expected_queries = Vec::with_capacity(connections * queries_per_connection);
+        for logical_index in 0..connections {
+            let source_port = 54_000_u16 + u16::try_from(logical_index).unwrap();
+            for query_index in 0..queries_per_connection {
+                expected_queries.push((
+                    source_port.wrapping_add(u16::try_from(query_index).unwrap()),
+                    if query_index % 2 == 0 {
+                        DNS_TYPE_A
+                    } else {
+                        DNS_TYPE_HTTPS
+                    },
+                ));
+            }
+        }
+        expected_queries.sort_unstable();
+        assert_eq!(observed_queries, expected_queries);
+
+        let a_query = build_dns_query(1, TUN_DNS_PROXY_DOMAIN, DNS_TYPE_A).unwrap();
+        let https_query = build_dns_query(2, TUN_DNS_PROXY_DOMAIN, DNS_TYPE_HTTPS).unwrap();
+        let a_response = build_dns_proxy_fixture_response(&a_query).unwrap();
+        let https_response = build_dns_proxy_fixture_response(&https_query).unwrap();
+        let expected_iterations = u64::try_from(connections * iterations).unwrap();
+        assert_eq!(
+            outcome.bytes_sent,
+            expected_iterations * u64::try_from(a_query.len() + https_query.len()).unwrap()
+        );
+        assert_eq!(
+            outcome.bytes_received,
+            expected_iterations * u64::try_from(a_response.len() + https_response.len()).unwrap()
+        );
+        assert_eq!(
+            outcome.latencies_us.len(),
+            connections * queries_per_connection
+        );
     }
 
     #[cfg(unix)]
@@ -8251,6 +9371,86 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(keys, expected_keys);
+        assert_eq!(outcome.latencies_us.len(), 8);
+    }
+
+    #[cfg(unix)]
+    fn tun_dns_proxy_test_response_frame(
+        frame: &[u8],
+    ) -> Result<(Vec<u8>, TunFakeDnsQueryKey), BenchError> {
+        let packet = decode_darwin_utun_frame(frame)?;
+        let datagram = parse_ipv4_udp_datagram(packet).ok_or_else(|| {
+            BenchError::InvalidArguments("test received malformed proxied DNS packet".to_owned())
+        })?;
+        let transaction_id = dns_message_id(datagram.payload).ok_or_else(|| {
+            BenchError::InvalidArguments("test received proxied DNS query without an id".to_owned())
+        })?;
+        let query_type = dns_question_type(datagram.payload).ok_or_else(|| {
+            BenchError::InvalidArguments(
+                "test received proxied DNS query without a type".to_owned(),
+            )
+        })?;
+        let response = build_dns_proxy_fixture_response(datagram.payload)?;
+        let response_packet = ipv4_udp_packet(
+            datagram.destination,
+            datagram.destination_port,
+            datagram.source,
+            datagram.source_port,
+            &response,
+        )?;
+        Ok((
+            encode_darwin_utun_frame(&response_packet),
+            TunFakeDnsQueryKey {
+                client_port: datagram.source_port,
+                transaction_id,
+                query_type,
+            },
+        ))
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn tun_dns_proxy_udp_sends_connections_concurrently_and_demuxes_reordered_responses() {
+        let TunSocketPair {
+            engine_fd,
+            workload_fd,
+        } = create_tun_socket_pair().unwrap();
+        let responder =
+            std::thread::spawn(move || -> Result<Vec<TunFakeDnsQueryKey>, BenchError> {
+                let mut buffer = vec![0; 65_535 + DARWIN_UTUN_HEADER_LEN];
+                let mut frames = Vec::with_capacity(8);
+                while frames.len() < 8 {
+                    if let Some(len) = read_tun_frame(engine_fd.raw(), &mut buffer)? {
+                        frames.push(buffer[..len].to_vec());
+                    }
+                }
+
+                let mut keys = Vec::with_capacity(frames.len());
+                for frame in frames.into_iter().rev() {
+                    let (response, key) = tun_dns_proxy_test_response_frame(&frame)?;
+                    write_tun_frame(engine_fd.raw(), &response)?;
+                    keys.push(key);
+                }
+                Ok(keys)
+            });
+        let options = BenchOptions {
+            workload: WorkloadKind::TunDnsProxy,
+            connections: 4,
+            iterations: 1,
+            dns_transport: TunDnsTransport::Udp,
+            ..BenchOptions::default()
+        };
+
+        let outcome = timeout(
+            Duration::from_secs(2),
+            run_tun_dns_proxy_workload(workload_fd.raw(), &options),
+        )
+        .await;
+        drop(workload_fd);
+        let keys = responder.join().unwrap().unwrap();
+        let outcome = outcome.unwrap().unwrap();
+
+        assert_eq!(keys.len(), 8);
         assert_eq!(outcome.latencies_us.len(), 8);
     }
 
@@ -8470,6 +9670,28 @@ mod tests {
     }
 
     #[test]
+    fn tun_dns_proxy_config_uses_ip_literal_fixture_for_xray_rust_only() {
+        let fixture = WorkloadFixture {
+            vless_addr: None,
+            vless_tls_cert_sha256: None,
+            dns_server_addr: Some(SocketAddr::from((Ipv4Addr::LOCALHOST, 19_053))),
+            tcp_blackhole_state: None,
+            tasks: Vec::new(),
+            processes: Vec::new(),
+        };
+        let config =
+            engine_config(EngineKind::XrayRust, 0, WorkloadKind::TunDnsProxy, &fixture).unwrap();
+        parse_xray_json(&config).unwrap();
+        let value = serde_json::from_str::<serde_json::Value>(&config).unwrap();
+
+        assert_eq!(value["inbounds"][0]["protocol"], "tun");
+        assert_eq!(value["dns"]["servers"][0], "127.0.0.1:19053");
+        let error = engine_config(EngineKind::XrayCore, 0, WorkloadKind::TunDnsProxy, &fixture)
+            .unwrap_err();
+        assert!(error.to_string().contains("only --engine xray-rust"));
+    }
+
+    #[test]
     fn udp_vless_config_routes_to_vless_outbound() {
         let config = vless_udp_config(
             18083,
@@ -8502,6 +9724,7 @@ mod tests {
             vless_tls_cert_sha256: Some(
                 "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff".to_owned(),
             ),
+            dns_server_addr: None,
             tcp_blackhole_state: None,
             tasks: Vec::new(),
             processes: Vec::new(),
@@ -8621,6 +9844,7 @@ mod tests {
         let fixture = WorkloadFixture {
             vless_addr: Some(SocketAddr::from((Ipv4Addr::LOCALHOST, 19095))),
             vless_tls_cert_sha256: None,
+            dns_server_addr: None,
             tcp_blackhole_state: None,
             tasks: Vec::new(),
             processes: Vec::new(),
@@ -8671,6 +9895,7 @@ mod tests {
         let fixture = WorkloadFixture {
             vless_addr: Some(SocketAddr::from((Ipv4Addr::new(127, 0, 0, 1), 19094))),
             vless_tls_cert_sha256: None,
+            dns_server_addr: None,
             tcp_blackhole_state: None,
             tasks: Vec::new(),
             processes: Vec::new(),
@@ -8705,6 +9930,7 @@ mod tests {
         let fixture = WorkloadFixture {
             vless_addr: Some(SocketAddr::from((Ipv4Addr::new(127, 0, 0, 1), 19094))),
             vless_tls_cert_sha256: None,
+            dns_server_addr: None,
             tcp_blackhole_state: None,
             tasks: Vec::new(),
             processes: Vec::new(),
@@ -9219,6 +10445,7 @@ mod tests {
         assert_eq!(result.throughput_mbps, None);
         assert_eq!(result.transfer_duration_ms, None);
         assert_eq!(result.connections, 0);
+        assert_eq!(result.dns_transport, None);
     }
 
     #[test]
@@ -9239,6 +10466,7 @@ mod tests {
                 connections: 1,
                 iterations: 10,
                 payload_size: 4096,
+                dns_transport: None,
                 latency_us: Some(LatencySummary {
                     min: 10,
                     median: 20,
@@ -9265,6 +10493,7 @@ mod tests {
                 connections: 1,
                 iterations: 10,
                 payload_size: 4096,
+                dns_transport: None,
                 latency_us: Some(LatencySummary {
                     min: 5,
                     median: 10,
@@ -9291,6 +10520,7 @@ mod tests {
                 connections: 1,
                 iterations: 10,
                 payload_size: 4096,
+                dns_transport: None,
                 latency_us: Some(LatencySummary {
                     min: 15,
                     median: 30,
@@ -9456,6 +10686,7 @@ mod tests {
             connections: 100,
             iterations: 1,
             payload_size: 512,
+            dns_transport: None,
             latency_us: None,
             setup_us: None,
             samples: 2,

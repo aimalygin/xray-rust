@@ -1,6 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant as StdInstant;
 
@@ -14,10 +14,12 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::UdpSocket;
 use tokio::sync::{mpsc, watch, OwnedSemaphorePermit, Semaphore};
 use tokio::task::{AbortHandle, JoinError, JoinSet};
-use tokio::time::{sleep, Duration};
-use xray_config::{CoreConfig, DnsFakeIpConfig, InboundSniffingConfig};
+use tokio::time::{sleep, Duration, Instant as TokioInstant};
+use xray_config::{CoreConfig, DnsFakeIpConfig, DnsServerConfig, InboundSniffingConfig};
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
-use xray_transport::{protect_udp_socket, DnsResolver, TransportDialer};
+use xray_transport::{
+    connect_tcp_stream, protect_udp_socket, BoxedTransportStream, DnsResolver, TransportDialer,
+};
 use xray_tun::{
     TunEndpoint, TunError, TunTcpBufferState, TunTcpFlowSummaryEvent, TunTcpOpenErrorEvent,
     TunTcpRemoteWriteSlowEvent, TunTcpSlowFlowEvent, TunTcpSlowFlowKind, TunUdpResponseGapEvent,
@@ -47,7 +49,7 @@ const DNS_TYPE_AAAA: u16 = 28;
 const DNS_CLASS_IN: u16 = 1;
 const DNS_RCODE_NOERROR: u16 = 0;
 const DNS_RCODE_SERVFAIL: u16 = 2;
-const TUN_FAKE_DNS_ANCHOR: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 1);
+const TUN_DNS_ANCHOR: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 1);
 const TCP_BUFFER_SIZE: usize = 32 * 1024;
 const STACK_EVENT_CHANNEL_DEPTH: usize = 64;
 const TCP_BRIDGE_CHANNEL_DEPTH: usize = 256;
@@ -66,6 +68,8 @@ const MOBILE_TCP_BRIDGE_WRITE_BATCH_MAX_BYTES: usize = 1024 * 1024;
 const LOW_MEMORY_TCP_BRIDGE_WRITE_BATCH_MAX_BYTES: usize = 256 * 1024;
 const MAX_TUN_INBOUND_DRAIN_PER_TICK: usize = 256;
 const MAX_BRIDGE_TASK_COMPLETIONS_PER_TICK: usize = 64;
+const MAX_UDP_TASK_COMPLETIONS_PER_TICK: usize = MAX_TUN_INBOUND_DRAIN_PER_TICK + 1;
+const MAX_DNS_UDP_TASKS: usize = 64;
 const TCP_REMOTE_DRAIN_MAX_PASSES_PER_TICK: usize = 4;
 const TCP_REMOTE_DRAIN_MAX_BYTES_PER_TICK: usize = 4 * 1024 * 1024;
 const TUN_FLOW_STATS_INTERVAL: Duration = Duration::from_secs(1);
@@ -80,6 +84,10 @@ const TCP_FLOW_SUMMARY_MILESTONE_BYTES: u64 = 1024 * 1024;
 const UDP_SLOW_FLOW_THRESHOLD_MS: u64 = 500;
 const UDP_RESPONSE_GAP_THRESHOLD_MS: u64 = 500;
 const UDP_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+
+#[path = "tun_dns.rs"]
+mod dns_proxy;
+use dns_proxy::{DnsTcpAction, DnsUdpAction, TunDnsMode};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct TcpRemoteBufferPolicy {
@@ -924,7 +932,10 @@ pub(crate) async fn serve_tun_endpoint(
     let runtime_policy = tun_runtime_policy_for_options(tun_runtime_options);
     let tcp_pending_open_permits =
         Arc::new(Semaphore::new(runtime_policy.flows.tcp.max_pending_opens));
-    let udp_task_permits = Arc::new(Semaphore::new(runtime_policy.flows.udp.max_active_flows));
+    let tcp_flow_generation = Arc::new(AtomicU64::new(0));
+    let udp_task_limit = runtime_policy.flows.udp.max_active_flows;
+    let udp_task_permits = Arc::new(Semaphore::new(udp_task_limit));
+    let dns_udp_task_permits = Arc::new(Semaphore::new(dns_udp_task_limit(udp_task_limit)));
     let mut flow_budget_state = FlowBudgetState::new(runtime_policy.flows);
     let mut udp_flows = HashMap::new();
     let mut delayed_stack_events = VecDeque::new();
@@ -936,6 +947,7 @@ pub(crate) async fn serve_tun_endpoint(
         .and_then(FakeIpRuntimeConfig::from_config)
         .and_then(FakeIpMapper::new)
         .map(|mapper| Arc::new(Mutex::new(mapper)));
+    let dns_mode = TunDnsMode::from_config(config.as_ref(), fake_ip_mapper);
     let runtime_context = TunRuntimeContext {
         inbound_tag,
         sniffing,
@@ -949,8 +961,10 @@ pub(crate) async fn serve_tun_endpoint(
         tun_runtime_options,
         runtime_policy,
         tcp_pending_open_permits,
+        tcp_flow_generation,
         udp_task_permits,
-        fake_ip_mapper,
+        dns_udp_task_permits,
+        dns_mode,
         runtime_logger,
     };
     let mut last_flow_stats = StdInstant::now();
@@ -1033,8 +1047,16 @@ pub(crate) async fn serve_tun_endpoint(
                 timer_expired = true;
             }
         }
-        drain_completed_bridge_tasks(&mut bridge_tasks, &runtime_context.runtime_logger);
-        drain_completed_bridge_tasks(&mut udp_tasks, &runtime_context.runtime_logger);
+        drain_completed_tasks(
+            &mut bridge_tasks,
+            &runtime_context.runtime_logger,
+            MAX_BRIDGE_TASK_COMPLETIONS_PER_TICK,
+        );
+        drain_completed_tasks(
+            &mut udp_tasks,
+            &runtime_context.runtime_logger,
+            MAX_UDP_TASK_COMPLETIONS_PER_TICK,
+        );
 
         for _ in 0..MAX_TUN_INBOUND_DRAIN_PER_TICK {
             match tun.try_poll_inbound().await {
@@ -1130,14 +1152,25 @@ pub(crate) async fn serve_tun_endpoint(
             next_smoltcp_deadline = iface.poll_at(now, &sockets);
         }
 
+        let active_udp_tasks = runtime_context
+            .runtime_policy
+            .flows
+            .udp
+            .max_active_flows
+            .saturating_sub(runtime_context.udp_task_permits.available_permits());
         record_flow_counts(
             tun.as_ref(),
             &flow_budget_state,
             tcp_flows.len(),
-            udp_flows.len(),
+            active_udp_tasks,
         );
         if last_flow_stats.elapsed() >= TUN_FLOW_STATS_INTERVAL {
-            record_flow_budget_stats(tun.as_ref(), &mut flow_budget_state, &tcp_flows, &udp_flows);
+            record_flow_budget_stats(
+                tun.as_ref(),
+                &mut flow_budget_state,
+                &tcp_flows,
+                active_udp_tasks,
+            );
             last_flow_stats = StdInstant::now();
         }
 
@@ -1164,13 +1197,14 @@ fn log_bridge_task_result(result: Result<(), JoinError>, runtime_logger: &Runtim
     }
 }
 
-fn drain_completed_bridge_tasks(
-    bridge_tasks: &mut JoinSet<()>,
+fn drain_completed_tasks(
+    tasks: &mut JoinSet<()>,
     runtime_logger: &RuntimeLogger,
+    max_completions: usize,
 ) -> usize {
     let mut drained = 0usize;
-    for _ in 0..MAX_BRIDGE_TASK_COMPLETIONS_PER_TICK {
-        let Some(result) = bridge_tasks.try_join_next() else {
+    for _ in 0..max_completions {
+        let Some(result) = tasks.try_join_next() else {
             break;
         };
         log_bridge_task_result(result, runtime_logger);
@@ -1268,15 +1302,55 @@ async fn process_tun_packet(
         };
     }
     if let Some(udp_packet) = parse_udp_packet(&packet) {
-        if let Some(reply) = context.fake_dns_reply_packet(&udp_packet) {
-            return match tun.push_outbound(reply).await {
-                Err(TunError::QueueClosed) => TunPacketOutcome::QueueClosed,
-                Ok(()) | Err(TunError::QueueFull | TunError::PacketTooLarge { .. }) => {
-                    TunPacketOutcome::Continue {
-                        tcp_stack_dirty: false,
+        match dns_proxy::udp_action(&context.dns_mode, &udp_packet) {
+            DnsUdpAction::Reply(reply) => {
+                return match tun.push_outbound(reply).await {
+                    Err(TunError::QueueClosed) => TunPacketOutcome::QueueClosed,
+                    Ok(()) | Err(TunError::QueueFull | TunError::PacketTooLarge { .. }) => {
+                        TunPacketOutcome::Continue {
+                            tcp_stack_dirty: false,
+                        }
                     }
-                }
-            };
+                };
+            }
+            DnsUdpAction::Proxy(plan) => {
+                let dns_permit = Arc::clone(&context.dns_udp_task_permits).try_acquire_owned();
+                let Ok(dns_permit) = dns_permit else {
+                    flow_budget_state.record_udp_budget_drop();
+                    if let Some(reply) =
+                        dns_proxy::dns_error_reply_packet(&udp_packet, DNS_RCODE_SERVFAIL)
+                    {
+                        let _ = tun.push_outbound(reply).await;
+                    }
+                    return TunPacketOutcome::Continue {
+                        tcp_stack_dirty: false,
+                    };
+                };
+                let global_permit = Arc::clone(&context.udp_task_permits).try_acquire_owned();
+                let Ok(global_permit) = global_permit else {
+                    flow_budget_state.record_udp_budget_drop();
+                    if let Some(reply) =
+                        dns_proxy::dns_error_reply_packet(&udp_packet, DNS_RCODE_SERVFAIL)
+                    {
+                        let _ = tun.push_outbound(reply).await;
+                    }
+                    return TunPacketOutcome::Continue {
+                        tcp_stack_dirty: false,
+                    };
+                };
+                udp_tasks.spawn(dns_proxy::bridge_udp_query(
+                    plan,
+                    udp_packet,
+                    context.clone(),
+                    shutdown,
+                    global_permit,
+                    dns_permit,
+                ));
+                return TunPacketOutcome::Continue {
+                    tcp_stack_dirty: false,
+                };
+            }
+            DnsUdpAction::Pass => {}
         }
         handle_udp_packet(
             udp_packet,
@@ -1353,9 +1427,18 @@ struct TunRuntimeContext {
     tun_runtime_options: TunRuntimeOptions,
     runtime_policy: TunRuntimePolicy,
     tcp_pending_open_permits: Arc<Semaphore>,
+    tcp_flow_generation: Arc<AtomicU64>,
     udp_task_permits: Arc<Semaphore>,
-    fake_ip_mapper: Option<Arc<Mutex<FakeIpMapper>>>,
+    dns_udp_task_permits: Arc<Semaphore>,
+    dns_mode: TunDnsMode,
     runtime_logger: RuntimeLogger,
+}
+
+fn dns_udp_task_limit(global_udp_task_limit: usize) -> usize {
+    if global_udp_task_limit == 0 {
+        return 0;
+    }
+    (global_udp_task_limit / 4).clamp(1, MAX_DNS_UDP_TASKS)
 }
 
 impl TunRuntimeContext {
@@ -1364,29 +1447,18 @@ impl TunRuntimeContext {
         endpoint: IpEndpoint,
         network: RoutingNetwork,
     ) -> Option<Target> {
-        let Some(mapper) = &self.fake_ip_mapper else {
+        let Some(mapper) = self.dns_mode.fake_ip_mapper() else {
             return target_from_endpoint_with_network(endpoint, network);
         };
         mapper.lock().ok()?.target_for_endpoint(endpoint, network)
-    }
-
-    fn fake_dns_reply_packet(&self, packet: &UdpTunPacket) -> Option<Bytes> {
-        if packet.target.port != DNS_PORT {
-            return None;
-        }
-        let is_local_anchor = packet.target.addr == IpAddress::Ipv4(TUN_FAKE_DNS_ANCHOR);
-        let mapper = self.fake_ip_mapper.as_ref()?;
-        let response = mapper
-            .lock()
-            .ok()?
-            .fake_dns_response(&packet.payload, is_local_anchor)?;
-        build_udp_packet(packet.target, packet.client, &response)
     }
 }
 
 #[derive(Debug)]
 struct TcpFlow {
+    generation: u64,
     to_remote: mpsc::Sender<StackToRemoteData>,
+    task: Option<AbortHandle>,
     remote_open: bool,
     pending_remote: VecDeque<Bytes>,
     pending_remote_bytes: usize,
@@ -1394,20 +1466,87 @@ struct TcpFlow {
     remote_aborted: bool,
 }
 
+impl Drop for TcpFlow {
+    fn drop(&mut self) {
+        if let Some(task) = &self.task {
+            task.abort();
+        }
+    }
+}
+
 struct TcpListenerState {
     handle: SocketHandle,
 }
 
+#[derive(Clone)]
+enum TcpBridgeDestination {
+    Standard(Target),
+    DnsProxy {
+        client_target: Target,
+        plan: Arc<dns_proxy::DnsProxyPlan>,
+    },
+}
+
+enum ReadyTcpFlow {
+    Bridge(TcpBridgeDestination),
+    Reject(&'static str),
+    Closed,
+}
+
+struct TcpDialCandidate {
+    target: Target,
+    dns_upstream: Option<SocketAddr>,
+}
+
+impl TcpBridgeDestination {
+    fn client_target(&self) -> &Target {
+        match self {
+            Self::Standard(target)
+            | Self::DnsProxy {
+                client_target: target,
+                ..
+            } => target,
+        }
+    }
+
+    fn dial_candidates(&self) -> Vec<TcpDialCandidate> {
+        match self {
+            Self::Standard(target) => vec![TcpDialCandidate {
+                target: target.clone(),
+                dns_upstream: None,
+            }],
+            Self::DnsProxy { plan, .. } => plan
+                .upstreams()
+                .iter()
+                .map(|upstream| TcpDialCandidate {
+                    target: Target::new(
+                        RoutingTargetAddr::Ip(upstream.ip()),
+                        upstream.port(),
+                        RoutingNetwork::Tcp,
+                    ),
+                    dns_upstream: Some(*upstream),
+                })
+                .collect(),
+        }
+    }
+
+    fn is_dns_proxy(&self) -> bool {
+        matches!(self, Self::DnsProxy { .. })
+    }
+}
+
 struct TcpBridgeCloseGuard {
     handle: SocketHandle,
+    generation: u64,
     stack_tx: mpsc::Sender<StackEvent>,
     armed: bool,
 }
 
 impl TcpBridgeCloseGuard {
-    fn new(handle: SocketHandle, stack_tx: mpsc::Sender<StackEvent>) -> Self {
+    fn new(handle: SocketHandle, generation: u64, stack_tx: mpsc::Sender<StackEvent>) -> Self {
         Self {
             handle,
+            generation,
             stack_tx,
             armed: true,
         }
@@ -1421,6 +1560,21 @@ impl TcpBridgeCloseGuard {
             .stack_tx
             .send(StackEvent::RemoteClosed {
                 handle: self.handle,
+                generation: self.generation,
+            })
+            .await;
+        self.armed = false;
+    }
+
+    async fn abort(&mut self) {
+        if !self.armed {
+            return;
+        }
+        let _ = self
+            .stack_tx
+            .send(StackEvent::RemoteAborted {
+                handle: self.handle,
+                generation: self.generation,
             })
             .await;
         self.armed = false;
@@ -1432,6 +1586,7 @@ impl Drop for TcpBridgeCloseGuard {
         if self.armed {
             let _ = self.stack_tx.try_send(StackEvent::RemoteAborted {
                 handle: self.handle,
+                generation: self.generation,
             });
         }
     }
@@ -1501,16 +1656,20 @@ struct UdpTunPacket {
 enum StackEvent {
     RemoteOpened {
         handle: SocketHandle,
+        generation: u64,
     },
     RemoteData {
         handle: SocketHandle,
+        generation: u64,
         data: Bytes,
     },
     RemoteClosed {
         handle: SocketHandle,
+        generation: u64,
     },
     RemoteAborted {
         handle: SocketHandle,
+        generation: u64,
     },
     UdpDatagram {
         client: IpEndpoint,
@@ -1538,19 +1697,52 @@ fn open_ready_tcp_flows(
             if socket.is_listening() || flows.contains_key(&listener.handle) {
                 return None;
             }
-            let local_endpoint = socket.local_endpoint()?;
-            Some((
-                *endpoint,
-                context.target_from_endpoint(local_endpoint, RoutingNetwork::Tcp)?,
-            ))
+            let Some(local_endpoint) = socket.local_endpoint() else {
+                return Some((*endpoint, ReadyTcpFlow::Closed));
+            };
+            let ready = match dns_proxy::tcp_action(&context.dns_mode, local_endpoint) {
+                DnsTcpAction::Pass => context
+                    .target_from_endpoint(local_endpoint, RoutingNetwork::Tcp)
+                    .map(TcpBridgeDestination::Standard)
+                    .map(ReadyTcpFlow::Bridge)
+                    .unwrap_or(ReadyTcpFlow::Reject(
+                        "TUN TCP target mapping is unavailable",
+                    )),
+                DnsTcpAction::Proxy(plan) => {
+                    match target_from_endpoint_with_network(local_endpoint, RoutingNetwork::Tcp) {
+                        Some(client_target) => {
+                            ReadyTcpFlow::Bridge(TcpBridgeDestination::DnsProxy {
+                                client_target,
+                                plan,
+                            })
+                        }
+                        None => ReadyTcpFlow::Reject("TUN DNS TCP target is invalid"),
+                    }
+                }
+                DnsTcpAction::Reject => ReadyTcpFlow::Reject("TUN DNS TCP proxy is unavailable"),
+            };
+            Some((*endpoint, ready))
         })
         .collect::<Vec<_>>();
 
-    for (endpoint, target) in ready {
+    for (endpoint, ready) in ready {
         let Some(listener) = listeners.remove(&endpoint) else {
             continue;
         };
         let handle = listener.handle;
+        let generation = context.tcp_flow_generation.fetch_add(1, Ordering::Relaxed);
+        let destination = match ready {
+            ReadyTcpFlow::Bridge(destination) => destination,
+            ReadyTcpFlow::Reject(reason) => {
+                record_tcp_endpoint_rejection(context, endpoint, reason);
+                insert_aborted_tcp_flow(handle, generation, flows);
+                continue;
+            }
+            ReadyTcpFlow::Closed => {
+                sockets.remove(handle);
+                continue;
+            }
+        };
         let pending_open_permit =
             match Arc::clone(&context.tcp_pending_open_permits).try_acquire_owned() {
                 Ok(permit) => permit,
@@ -1560,7 +1752,7 @@ fn open_ready_tcp_flows(
                         endpoint,
                         "TUN TCP pending-open limit reached",
                     );
-                    insert_aborted_tcp_flow(handle, flows);
+                    insert_aborted_tcp_flow(handle, generation, flows);
                     continue;
                 }
             };
@@ -1569,7 +1761,9 @@ fn open_ready_tcp_flows(
         flows.insert(
             handle,
             TcpFlow {
+                generation,
                 to_remote,
+                task: None,
                 remote_open: false,
                 pending_remote: VecDeque::new(),
                 pending_remote_bytes: 0,
@@ -1577,24 +1771,36 @@ fn open_ready_tcp_flows(
                 remote_aborted: false,
             },
         );
-        bridge_tasks.spawn(bridge_tcp_flow(
+        let task = bridge_tasks.spawn(bridge_tcp_flow(
             handle,
-            target,
+            generation,
+            destination,
             context.clone(),
             from_stack,
             shutdown.clone(),
             pending_open_permit,
         ));
+        if let Some(flow) = flows.get_mut(&handle) {
+            flow.task = Some(task);
+        } else {
+            task.abort();
+        }
     }
 }
 
-fn insert_aborted_tcp_flow(handle: SocketHandle, flows: &mut HashMap<SocketHandle, TcpFlow>) {
+fn insert_aborted_tcp_flow(
+    handle: SocketHandle,
+    generation: u64,
+    flows: &mut HashMap<SocketHandle, TcpFlow>,
+) {
     let (to_remote, from_stack) = mpsc::channel(1);
     drop(from_stack);
     flows.insert(
         handle,
         TcpFlow {
+            generation,
             to_remote,
+            task: None,
             remote_open: false,
             pending_remote: VecDeque::new(),
             pending_remote_bytes: 0,
@@ -1783,17 +1989,31 @@ fn try_apply_stack_event(
     device: &mut PacketDevice,
 ) -> Result<(), StackEvent> {
     match event {
-        StackEvent::RemoteOpened { handle } => {
-            if let Some(flow) = tcp_flows.get_mut(&handle) {
+        StackEvent::RemoteOpened { handle, generation } => {
+            if let Some(flow) = tcp_flows
+                .get_mut(&handle)
+                .filter(|flow| flow.generation == generation)
+            {
                 flow.remote_open = true;
             }
         }
-        StackEvent::RemoteData { handle, data } => {
-            let Some(flow) = tcp_flows.get_mut(&handle) else {
+        StackEvent::RemoteData {
+            handle,
+            generation,
+            data,
+        } => {
+            let Some(flow) = tcp_flows
+                .get_mut(&handle)
+                .filter(|flow| flow.generation == generation)
+            else {
                 return Ok(());
             };
             if !flow_budget_state.can_enqueue_remote_data(flow.pending_remote_bytes, data.len()) {
-                return Err(StackEvent::RemoteData { handle, data });
+                return Err(StackEvent::RemoteData {
+                    handle,
+                    generation,
+                    data,
+                });
             }
             let pending_before = flow.pending_remote_bytes;
             let next_pending_bytes = pending_before.saturating_add(data.len());
@@ -1801,13 +2021,19 @@ fn try_apply_stack_event(
             flow_budget_state.record_pending_remote_enqueue(pending_before, data.len());
             flow.pending_remote.push_back(data);
         }
-        StackEvent::RemoteClosed { handle } => {
-            if let Some(flow) = tcp_flows.get_mut(&handle) {
+        StackEvent::RemoteClosed { handle, generation } => {
+            if let Some(flow) = tcp_flows
+                .get_mut(&handle)
+                .filter(|flow| flow.generation == generation)
+            {
                 flow.remote_closed = true;
             }
         }
-        StackEvent::RemoteAborted { handle } => {
-            if let Some(flow) = tcp_flows.get_mut(&handle) {
+        StackEvent::RemoteAborted { handle, generation } => {
+            if let Some(flow) = tcp_flows
+                .get_mut(&handle)
+                .filter(|flow| flow.generation == generation)
+            {
                 flow.remote_aborted = true;
             }
         }
@@ -1846,7 +2072,7 @@ fn record_flow_budget_stats(
     tun: &TunEndpoint,
     flow_budget_state: &mut FlowBudgetState,
     flows: &HashMap<SocketHandle, TcpFlow>,
-    udp_flows: &HashMap<UdpFlowKey, UdpFlow>,
+    active_udp_tasks: usize,
 ) {
     flow_budget_state.refresh_tcp_pressure_state();
     let mut max_pending_bytes = 0usize;
@@ -1868,7 +2094,7 @@ fn record_flow_budget_stats(
         hard_limit_bytes: flow_budget_state.hard_total_bytes(),
         pressure_active: flow_budget_state.pressure_active(),
     });
-    record_flow_counts(tun, flow_budget_state, flows.len(), udp_flows.len());
+    record_flow_counts(tun, flow_budget_state, flows.len(), active_udp_tasks);
 }
 
 fn record_flow_counts(
@@ -2045,141 +2271,203 @@ fn elapsed_ms_since(start: &StdInstant) -> u64 {
     u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX)
 }
 
+async fn open_tcp_bridge_stream(
+    outbound: &TcpOutbound,
+    target: &Target,
+    dns_upstream: Option<SocketAddr>,
+    context: &TunRuntimeContext,
+) -> Result<BoxedTransportStream, crate::CoreError> {
+    if let Some(upstream) = dns_upstream {
+        match outbound {
+            TcpOutbound::Freedom => {
+                let stream =
+                    connect_tcp_stream(upstream, context.transport_dialer.socket_protector())
+                        .await?;
+                return Ok(Box::new(stream));
+            }
+            TcpOutbound::Vless(_) if socket_addr_has_nonzero_scope(upstream) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "scoped IPv6 DNS upstream cannot be encoded in a VLESS target",
+                )
+                .into());
+            }
+            TcpOutbound::Vless(_) => {}
+        }
+    }
+    open_tcp_stream_with_resolver_and_dialer(
+        outbound,
+        target,
+        context.dns_resolver.as_ref(),
+        &context.transport_dialer,
+    )
+    .await
+}
+
+fn socket_addr_has_nonzero_scope(addr: SocketAddr) -> bool {
+    matches!(addr, SocketAddr::V6(addr) if addr.scope_id() != 0)
+}
+
 async fn bridge_tcp_flow(
     handle: SocketHandle,
-    target: Target,
+    generation: u64,
+    destination: TcpBridgeDestination,
     context: TunRuntimeContext,
     from_stack: mpsc::Receiver<StackToRemoteData>,
     mut shutdown: watch::Receiver<bool>,
     pending_open_permit: OwnedSemaphorePermit,
 ) {
-    let mut close_guard = TcpBridgeCloseGuard::new(handle, context.stack_tx.clone());
+    let mut close_guard = TcpBridgeCloseGuard::new(handle, generation, context.stack_tx.clone());
     let collect_tcp_timings = context.tun_runtime_options.collect_tcp_timings;
     let tcp_timing_start = collect_tcp_timings.then(StdInstant::now);
-    let is_tcp443 = target.port == 443;
-    let outbound_result = tokio::select! {
-        biased;
-        () = wait_for_tun_shutdown(&mut shutdown) => return,
-        result = context.outbound_router.select_tcp_outbound_for_session_with_tag_and_resolver(
-            context.inbound_tag.as_deref(),
-            &target,
-            collect_tcp_timings,
-            context.dns_resolver.as_ref(),
-        ) => result.map(|selection| (selection.outbound, selection.tag)),
-    };
-    let (outbound, outbound_tag) = match outbound_result {
-        Ok(selection) => selection,
-        Err(error) => {
-            if context.runtime_logger.is_enabled() {
-                crate::debug_log::log_access_rejected(
-                    &context.runtime_logger,
-                    "tun",
-                    &target,
-                    &error,
-                );
-                context.runtime_logger.error(|| {
-                    format!(
-                        "Debug tcpOpenError target={} outbound=untagged error=<redacted>",
-                        crate::debug_log::target_label(&target)
-                    )
-                });
+    let client_target = destination.client_target().clone();
+    let is_dns_proxy = destination.is_dns_proxy();
+    let is_tcp443 = client_target.port == 443;
+    let dns_deadline =
+        is_dns_proxy.then(|| TokioInstant::now() + dns_proxy::DNS_TCP_PROXY_TOTAL_TIMEOUT);
+    let mut opened = None;
+    let mut last_failure = None;
+
+    for candidate in destination.dial_candidates() {
+        let dial_target = candidate.target;
+        let candidate_deadline = dns_deadline.map(|total_deadline| {
+            total_deadline.min(TokioInstant::now() + dns_proxy::DNS_TCP_PROXY_ATTEMPT_TIMEOUT)
+        });
+        let selection_remaining = candidate_deadline
+            .map(|deadline| deadline.saturating_duration_since(TokioInstant::now()));
+        if selection_remaining.is_some_and(|remaining| remaining.is_zero()) {
+            last_failure = Some(("DNS TCP proxy deadline elapsed".to_owned(), None));
+            break;
+        }
+        let outbound_result = tokio::select! {
+            biased;
+            () = wait_for_tun_shutdown(&mut shutdown) => return,
+            result = async {
+                let select = context.outbound_router
+                    .select_tcp_outbound_for_session_with_tag_and_resolver(
+                        context.inbound_tag.as_deref(),
+                        &dial_target,
+                        collect_tcp_timings,
+                        context.dns_resolver.as_ref(),
+                    );
+                if let Some(remaining) = selection_remaining {
+                    tokio::time::timeout(remaining, select)
+                        .await
+                        .map_err(|_| "DNS TCP route selection timed out".to_owned())?
+                        .map_err(|error| error.to_string())
+                } else {
+                    select.await.map_err(|error| error.to_string())
+                }
+            } => result.map(|selection| (selection.outbound, selection.tag)),
+        };
+        let (outbound, outbound_tag) = match outbound_result {
+            Ok(selection) => selection,
+            Err(error) => {
+                last_failure = Some((error, None));
+                continue;
             }
-            context.tun.record_tcp_open_error();
-            record_tcp_open_error_event(context.tun.as_ref(), &target, None, error);
-            close_guard.close().await;
-            return;
+        };
+        let policy_timeout = match &outbound {
+            TcpOutbound::Freedom => context.inbound_policy.handshake,
+            TcpOutbound::Vless(outbound) => {
+                effective_policy_for_level(&context.config, Some(outbound.user().level)).handshake
+            }
+        };
+        let open_timeout = match candidate_deadline {
+            Some(deadline) => {
+                let remaining = deadline.saturating_duration_since(TokioInstant::now());
+                if remaining.is_zero() {
+                    last_failure = Some((
+                        "DNS TCP proxy candidate deadline elapsed".to_owned(),
+                        outbound_tag,
+                    ));
+                    if dns_deadline.is_some_and(|total_deadline| {
+                        total_deadline
+                            .saturating_duration_since(TokioInstant::now())
+                            .is_zero()
+                    }) {
+                        break;
+                    }
+                    continue;
+                }
+                policy_timeout
+                    .min(dns_proxy::DNS_TCP_PROXY_ATTEMPT_TIMEOUT)
+                    .min(remaining)
+            }
+            None => policy_timeout,
+        };
+        let open_result = tokio::select! {
+            biased;
+            () = wait_for_tun_shutdown(&mut shutdown) => return,
+            result = tokio::time::timeout(
+                open_timeout,
+                open_tcp_bridge_stream(
+                    &outbound,
+                    &dial_target,
+                    candidate.dns_upstream,
+                    &context,
+                ),
+            ) => result,
+        };
+        match open_result {
+            Ok(Ok(stream)) => {
+                opened = Some((stream, outbound, outbound_tag, dial_target));
+                break;
+            }
+            Ok(Err(error)) => {
+                last_failure = Some((error.to_string(), outbound_tag));
+            }
+            Err(_) => {
+                last_failure = Some((
+                    format!(
+                        "outbound open timed out after {} ms",
+                        open_timeout.as_millis()
+                    ),
+                    outbound_tag,
+                ));
+            }
         }
-    };
-    let open_timeout = match &outbound {
-        TcpOutbound::Freedom => context.inbound_policy.handshake,
-        TcpOutbound::Vless(outbound) => {
-            effective_policy_for_level(&context.config, Some(outbound.user().level)).handshake
-        }
-    };
-    let open_result = tokio::select! {
-        biased;
-        () = wait_for_tun_shutdown(&mut shutdown) => return,
-        result = tokio::time::timeout(
-            open_timeout,
-            open_tcp_stream_with_resolver_and_dialer(
-                &outbound,
-                &target,
-                context.dns_resolver.as_ref(),
-                &context.transport_dialer,
-            ),
-        ) => result,
-    };
+    }
     drop(pending_open_permit);
-    let stream = match open_result {
-        Ok(Ok(stream)) => stream,
-        Ok(Err(error)) => {
-            if context.runtime_logger.is_enabled() {
-                let outbound_log_label = if outbound_tag.is_some() {
-                    "<configured>"
-                } else {
-                    "untagged"
-                };
-                crate::debug_log::log_access_rejected(
-                    &context.runtime_logger,
-                    "tun",
-                    &target,
-                    &error,
-                );
-                context.runtime_logger.error(|| {
-                    format!(
-                        "Debug tcpOpenError target={} outbound={outbound_log_label} error=<redacted>",
-                        crate::debug_log::target_label(&target)
-                    )
-                });
-            }
-            context.tun.record_tcp_open_error();
-            record_tcp_open_error_event(
-                context.tun.as_ref(),
-                &target,
-                outbound_tag.as_deref(),
-                error,
-            );
-            close_guard.close().await;
-            return;
-        }
-        Err(_) => {
-            let error = format!(
-                "outbound open timed out after {} ms",
-                open_timeout.as_millis()
-            );
-            if context.runtime_logger.is_enabled() {
-                let outbound_log_label = if outbound_tag.is_some() {
-                    "<configured>"
-                } else {
-                    "untagged"
-                };
-                crate::debug_log::log_access_rejected(
-                    &context.runtime_logger,
-                    "tun",
-                    &target,
-                    &error,
-                );
-                context.runtime_logger.error(|| {
-                    format!(
-                        "Debug tcpOpenError target={} outbound={outbound_log_label} error=<redacted>",
-                        crate::debug_log::target_label(&target)
-                    )
-                });
-            }
-            context.tun.record_tcp_open_error();
-            record_tcp_open_error_event(
-                context.tun.as_ref(),
-                &target,
-                outbound_tag.as_deref(),
+    let Some((stream, outbound, outbound_tag, dial_target)) = opened else {
+        let (error, outbound_tag) = last_failure
+            .unwrap_or_else(|| ("no usable DNS TCP upstream configured".to_owned(), None));
+        if context.runtime_logger.is_enabled() {
+            let outbound_log_label = if outbound_tag.is_some() {
+                "<configured>"
+            } else {
+                "untagged"
+            };
+            crate::debug_log::log_access_rejected(
+                &context.runtime_logger,
+                "tun",
+                &client_target,
                 &error,
             );
-            close_guard.close().await;
-            return;
+            context.runtime_logger.error(|| {
+                format!(
+                    "Debug tcpOpenError target={} outbound={outbound_log_label} error=<redacted>",
+                    crate::debug_log::target_label(&client_target)
+                )
+            });
         }
+        context.tun.record_tcp_open_error();
+        record_tcp_open_error_event(
+            context.tun.as_ref(),
+            &client_target,
+            outbound_tag.as_deref(),
+            &error,
+        );
+        if is_dns_proxy {
+            close_guard.abort().await;
+        } else {
+            close_guard.close().await;
+        }
+        return;
     };
     if context
         .stack_tx
-        .send(StackEvent::RemoteOpened { handle })
+        .send(StackEvent::RemoteOpened { handle, generation })
         .await
         .is_err()
     {
@@ -2193,18 +2481,18 @@ async fn bridge_tcp_flow(
             &context.runtime_logger,
             crate::debug_log::RouteDecisionLog {
                 inbound_tag: context.inbound_tag.as_deref(),
-                network: target.network,
-                original_target: &target,
+                network: client_target.network,
+                original_target: &client_target,
                 sniffed_protocol: None,
-                route_target: &target,
-                dial_target: &target,
+                route_target: &dial_target,
+                dial_target: &dial_target,
                 selected_outbound: outbound_label,
             },
         );
         crate::debug_log::log_access_accepted(
             &context.runtime_logger,
             "tun",
-            &target,
+            &client_target,
             outbound_label,
         );
     }
@@ -2213,7 +2501,7 @@ async fn bridge_tcp_flow(
         context.tun.record_tcp_open_timing(duration_ms, is_tcp443);
         record_tcp_slow_flow_event(
             context.tun.as_ref(),
-            &target,
+            &client_target,
             TunTcpSlowFlowKind::Open,
             duration_ms,
             0,
@@ -2232,7 +2520,8 @@ async fn bridge_tcp_flow(
         );
         bridge_tcp_flow_loop(
             handle,
-            &target,
+            generation,
+            &client_target,
             context,
             from_stack,
             shutdown,
@@ -2246,7 +2535,8 @@ async fn bridge_tcp_flow(
         let mut timing = TcpFirstByteTimingDisabled;
         bridge_tcp_flow_loop(
             handle,
-            &target,
+            generation,
+            &client_target,
             context,
             from_stack,
             shutdown,
@@ -2274,6 +2564,7 @@ async fn wait_for_tun_shutdown(shutdown: &mut watch::Receiver<bool>) {
 #[allow(clippy::too_many_arguments)]
 async fn bridge_tcp_flow_loop<R, W, T>(
     handle: SocketHandle,
+    generation: u64,
     target: &Target,
     context: TunRuntimeContext,
     mut from_stack: mpsc::Receiver<StackToRemoteData>,
@@ -2340,6 +2631,7 @@ async fn bridge_tcp_flow_loop<R, W, T>(
                     .stack_tx
                     .send(StackEvent::RemoteData {
                         handle,
+                        generation,
                         data: Bytes::copy_from_slice(&read_buffer[..read]),
                     })
                     .await
@@ -2838,10 +3130,6 @@ fn handle_udp_packet(
     match flow_budget_state.admit_udp_flow(flows, key) {
         UdpFlowAdmission::Existing => {}
         UdpFlowAdmission::Admit { sequence } => {
-            if udp_tasks.len() >= context.runtime_policy.flows.udp.max_active_flows {
-                flow_budget_state.record_udp_budget_drop();
-                return;
-            }
             let Some(target) = context.target_from_endpoint(packet.target, RoutingNetwork::Udp)
             else {
                 return;
@@ -3581,14 +3869,30 @@ fn record_tcp_admission_rejection(
         return;
     };
 
+    record_tcp_target_rejection(context, &target, reason);
+}
+
+fn record_tcp_endpoint_rejection(
+    context: &TunRuntimeContext,
+    endpoint: IpEndpoint,
+    reason: &'static str,
+) {
+    let Some(target) = target_from_endpoint_with_network(endpoint, RoutingNetwork::Tcp) else {
+        return;
+    };
+
+    record_tcp_target_rejection(context, &target, reason);
+}
+
+fn record_tcp_target_rejection(context: &TunRuntimeContext, target: &Target, reason: &'static str) {
     context.tun.record_tcp_open_error();
-    record_tcp_open_error_event(context.tun.as_ref(), &target, None, reason);
+    record_tcp_open_error_event(context.tun.as_ref(), target, None, reason);
     if context.runtime_logger.is_enabled() {
-        crate::debug_log::log_access_rejected(&context.runtime_logger, "tun", &target, reason);
+        crate::debug_log::log_access_rejected(&context.runtime_logger, "tun", target, reason);
         context.runtime_logger.error(|| {
             format!(
                 "Debug tcpOpenError target={} outbound=unselected error=<redacted>",
-                crate::debug_log::target_label(&target)
+                crate::debug_log::target_label(target)
             )
         });
     }
@@ -5101,6 +5405,24 @@ mod tests {
         assert!(!tcp_listener_capacity_available(policy, 128, 0));
     }
 
+    #[test]
+    fn dns_udp_task_limit_reserves_capacity_for_ordinary_udp_flows() {
+        assert_eq!(dns_udp_task_limit(0), 0);
+        assert_eq!(dns_udp_task_limit(1), 1);
+        assert_eq!(
+            dns_udp_task_limit(LOW_MEMORY_FLOW_BUDGET_POLICY.udp.max_active_flows),
+            32
+        );
+        assert_eq!(
+            dns_udp_task_limit(MOBILE_FLOW_BUDGET_POLICY.udp.max_active_flows),
+            64
+        );
+        assert_eq!(
+            dns_udp_task_limit(THROUGHPUT_FLOW_BUDGET_POLICY.udp.max_active_flows),
+            64
+        );
+    }
+
     fn test_flow_budget(max_active_udp_flows: usize) -> FlowBudgetState {
         FlowBudgetState::new(FlowBudgetPolicy {
             tcp_remote: MOBILE_TCP_REMOTE_BUFFER_POLICY,
@@ -5249,9 +5571,37 @@ mod tests {
             tokio::task::yield_now().await;
         }
 
-        let drained = drain_completed_bridge_tasks(&mut tasks, &RuntimeLogger::disabled());
+        let drained = drain_completed_tasks(
+            &mut tasks,
+            &RuntimeLogger::disabled(),
+            MAX_BRIDGE_TASK_COMPLETIONS_PER_TICK,
+        );
 
         assert_eq!(drained, MAX_BRIDGE_TASK_COMPLETIONS_PER_TICK);
+    }
+
+    #[tokio::test]
+    async fn completed_udp_task_drain_covers_maximum_spawn_burst() {
+        let mut tasks = JoinSet::new();
+        let completed = Arc::new(AtomicUsize::new(0));
+        for _ in 0..MAX_UDP_TASK_COMPLETIONS_PER_TICK {
+            let completed = Arc::clone(&completed);
+            tasks.spawn(async move {
+                completed.fetch_add(1, Ordering::Release);
+            });
+        }
+        while completed.load(Ordering::Acquire) < MAX_UDP_TASK_COMPLETIONS_PER_TICK {
+            tokio::task::yield_now().await;
+        }
+
+        let drained = drain_completed_tasks(
+            &mut tasks,
+            &RuntimeLogger::disabled(),
+            MAX_UDP_TASK_COMPLETIONS_PER_TICK,
+        );
+
+        assert_eq!(drained, MAX_UDP_TASK_COMPLETIONS_PER_TICK);
+        assert!(tasks.is_empty());
     }
 
     #[tokio::test]
@@ -5531,7 +5881,9 @@ mod tests {
         tcp_flows.insert(
             handle,
             TcpFlow {
+                generation: 1,
                 to_remote,
+                task: None,
                 remote_open: true,
                 pending_remote: VecDeque::new(),
                 pending_remote_bytes: 0,
@@ -5563,7 +5915,9 @@ mod tests {
         tcp_flows.insert(
             handle,
             TcpFlow {
+                generation: 1,
                 to_remote,
+                task: None,
                 remote_open: true,
                 pending_remote: VecDeque::new(),
                 pending_remote_bytes: NORMAL_TCP_REMOTE_PENDING_LIMIT,
@@ -5578,6 +5932,7 @@ mod tests {
         stack_tx
             .try_send(StackEvent::RemoteData {
                 handle,
+                generation: 1,
                 data: Bytes::from_static(&[1, 2, 3, 4]),
             })
             .unwrap();
@@ -5611,7 +5966,9 @@ mod tests {
         tcp_flows.insert(
             handle,
             TcpFlow {
+                generation: 1,
                 to_remote,
+                task: None,
                 remote_open: true,
                 pending_remote: VecDeque::new(),
                 pending_remote_bytes: 0,
@@ -5624,6 +5981,7 @@ mod tests {
         let (_stack_tx, mut stack_rx) = mpsc::channel(1);
         let mut delayed_stack_events = VecDeque::from([StackEvent::RemoteData {
             handle,
+            generation: 1,
             data: Bytes::from_static(&[1, 2, 3, 4]),
         }]);
 
@@ -5644,6 +6002,115 @@ mod tests {
     }
 
     #[test]
+    fn stale_tcp_events_do_not_mutate_a_reused_socket_handle() {
+        let mut sockets = SocketSet::new(Vec::new());
+        let handle = sockets.add(tcp::Socket::new(
+            tcp::SocketBuffer::new(vec![0; TCP_BUFFER_SIZE]),
+            tcp::SocketBuffer::new(vec![0; TCP_BUFFER_SIZE]),
+        ));
+        let (to_remote, _from_stack) = mpsc::channel(1);
+        let mut tcp_flows = HashMap::from([(
+            handle,
+            TcpFlow {
+                generation: 2,
+                to_remote,
+                task: None,
+                remote_open: false,
+                pending_remote: VecDeque::new(),
+                pending_remote_bytes: 0,
+                remote_closed: false,
+                remote_aborted: false,
+            },
+        )]);
+        let mut flow_budget_state = test_flow_budget(256);
+        let mut udp_flows = HashMap::new();
+        let mut device = PacketDevice::new(1500);
+
+        for event in [
+            StackEvent::RemoteOpened {
+                handle,
+                generation: 1,
+            },
+            StackEvent::RemoteData {
+                handle,
+                generation: 1,
+                data: Bytes::from_static(b"stale"),
+            },
+            StackEvent::RemoteClosed {
+                handle,
+                generation: 1,
+            },
+            StackEvent::RemoteAborted {
+                handle,
+                generation: 1,
+            },
+        ] {
+            try_apply_stack_event(
+                event,
+                &mut tcp_flows,
+                &mut flow_budget_state,
+                &mut udp_flows,
+                &mut device,
+            )
+            .unwrap();
+        }
+
+        let flow = tcp_flows.get(&handle).unwrap();
+        assert!(!flow.remote_open);
+        assert!(!flow.remote_closed);
+        assert!(!flow.remote_aborted);
+        assert!(flow.pending_remote.is_empty());
+        assert_eq!(flow_budget_state.pending_total_bytes(), 0);
+    }
+
+    #[tokio::test]
+    async fn dropping_tcp_flow_aborts_task_and_releases_pending_open_permit() {
+        let semaphore = Arc::new(Semaphore::new(1));
+        let permit = Arc::clone(&semaphore).acquire_owned().await.unwrap();
+        let mut tasks = JoinSet::new();
+        let task = tasks.spawn(async move {
+            let _permit = permit;
+            std::future::pending::<()>().await;
+        });
+        let (to_remote, _from_stack) = mpsc::channel(1);
+        let flow = TcpFlow {
+            generation: 1,
+            to_remote,
+            task: Some(task),
+            remote_open: false,
+            pending_remote: VecDeque::new(),
+            pending_remote_bytes: 0,
+            remote_closed: false,
+            remote_aborted: false,
+        };
+
+        drop(flow);
+
+        let reacquired = tokio::time::timeout(
+            Duration::from_millis(100),
+            Arc::clone(&semaphore).acquire_owned(),
+        )
+        .await
+        .expect("aborted bridge task should release its permit")
+        .unwrap();
+        drop(reacquired);
+        assert!(tasks.join_next().await.unwrap().unwrap_err().is_cancelled());
+    }
+
+    #[test]
+    fn scoped_ipv6_dns_upstreams_are_detected_before_vless_encoding() {
+        assert!(socket_addr_has_nonzero_scope(
+            "[fe80::53%2]:5353".parse().unwrap()
+        ));
+        assert!(!socket_addr_has_nonzero_scope(
+            "[2001:db8::53]:5353".parse().unwrap()
+        ));
+        assert!(!socket_addr_has_nonzero_scope(
+            "192.0.2.53:5353".parse().unwrap()
+        ));
+    }
+
+    #[test]
     fn remote_tcp_data_can_exceed_1mib_below_soft_budget() {
         let mut sockets = SocketSet::new(Vec::new());
         let handle = sockets.add(tcp::Socket::new(
@@ -5659,7 +6126,9 @@ mod tests {
         tcp_flows.insert(
             handle,
             TcpFlow {
+                generation: 1,
                 to_remote,
+                task: None,
                 remote_open: true,
                 pending_remote,
                 pending_remote_bytes: 1024 * 1024,
@@ -5674,6 +6143,7 @@ mod tests {
         stack_tx
             .try_send(StackEvent::RemoteData {
                 handle,
+                generation: 1,
                 data: Bytes::from_static(&[1, 2, 3, 4]),
             })
             .unwrap();
@@ -5709,7 +6179,9 @@ mod tests {
         tcp_flows.insert(
             handle,
             TcpFlow {
+                generation: 1,
                 to_remote,
+                task: None,
                 remote_open: true,
                 pending_remote: VecDeque::new(),
                 pending_remote_bytes: 0,
@@ -5724,6 +6196,7 @@ mod tests {
         stack_tx
             .try_send(StackEvent::RemoteData {
                 handle,
+                generation: 1,
                 data: Bytes::from_static(&[1, 2, 3, 4]),
             })
             .unwrap();
@@ -5763,7 +6236,9 @@ mod tests {
         tcp_flows.insert(
             handle,
             TcpFlow {
+                generation: 1,
                 to_remote,
+                task: None,
                 remote_open: true,
                 pending_remote,
                 pending_remote_bytes: PRESSURE_TCP_REMOTE_PENDING_LIMIT,
@@ -5778,6 +6253,7 @@ mod tests {
         stack_tx
             .try_send(StackEvent::RemoteData {
                 handle,
+                generation: 1,
                 data: Bytes::from_static(&[1, 2, 3, 4]),
             })
             .unwrap();
@@ -5853,7 +6329,9 @@ mod tests {
         tcp_flows.insert(
             handle,
             TcpFlow {
+                generation: 1,
                 to_remote,
+                task: None,
                 remote_open: true,
                 pending_remote,
                 pending_remote_bytes: TCP_BUFFER_SIZE,
