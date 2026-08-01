@@ -13,6 +13,7 @@ name = "xray-bench"
 path = "src/main.rs"
 
 [dependencies]
+async-trait.workspace = true
 bytes.workspace = true
 libc.workspace = true
 rcgen.workspace = true
@@ -28,4 +29,5 @@ xray-config = { path = "../xray-config" }
 xray-core-rs = { path = "../xray-core-rs" }
 xray-proxy = { path = "../xray-proxy" }
 xray-routing = { path = "../xray-routing" }
+xray-transport = { path = "../xray-transport" }
 xray-utls = { path = "../xray-utls" }

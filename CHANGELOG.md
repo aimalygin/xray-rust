@@ -7,6 +7,14 @@ development changes are recorded under `Unreleased`.
 
 ## Unreleased
 
+- Added ordered multi-address DNS results with TTL metadata. Configured A and
+  AAAA lookups run concurrently, preserve every usable candidate, apply the
+  Xray-core 300-second answer/cache cap and 10-second static-host TTL, and
+  expose remaining TTL on cache hits. `IPIfNonMatch` now evaluates rules in
+  configuration order against all resolved IPs instead of only the first.
+  Authoritative NXDOMAIN/NODATA advances to later configured upstreams before
+  becoming terminal, while the bounded cancellation-safe cache remains
+  mobile-friendly.
 - Added a reusable DNS query-transport boundary: query construction and strict
   A/AAAA/CNAME parsing stay in `xray-transport`, while TUN, SOCKS, HTTP, and
   startup probes can send configured DNS through routed Freedom or VLESS.

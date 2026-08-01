@@ -297,6 +297,7 @@ struct FakeUdpDnsServer {
     addr: SocketAddr,
 }
 
+#[derive(Clone, Copy)]
 enum FakeDnsResponseMode {
     Answer {
         owner: Option<&'static str>,
@@ -316,11 +317,18 @@ impl FakeUdpDnsServer {
         let addr = socket.local_addr().unwrap();
         tokio::spawn(async move {
             let mut buffer = [0_u8; 512];
-            let Ok((len, peer)) = socket.recv_from(&mut buffer).await else {
-                return;
-            };
-            let response = build_dns_response(&buffer[..len], mode);
-            let _ = socket.send_to(&response, peer).await;
+            for _ in 0..2 {
+                let Ok((len, peer)) = socket.recv_from(&mut buffer).await else {
+                    return;
+                };
+                let query = &buffer[..len];
+                let response = if dns_query_type(query) == 1 {
+                    build_dns_response(query, mode)
+                } else {
+                    build_dns_empty_response(query)
+                };
+                let _ = socket.send_to(&response, peer).await;
+            }
         });
         Self { addr }
     }
@@ -340,6 +348,18 @@ fn build_dns_response(query: &[u8], mode: FakeDnsResponseMode) -> Vec<u8> {
         }
         FakeDnsResponseMode::ShortCnameRdata => build_short_cname_response(query),
     }
+}
+
+fn build_dns_empty_response(query: &[u8]) -> Vec<u8> {
+    let mut response = Vec::new();
+    response.extend_from_slice(&query[0..2]);
+    response.extend_from_slice(&0x8180_u16.to_be_bytes());
+    response.extend_from_slice(&1_u16.to_be_bytes());
+    response.extend_from_slice(&0_u16.to_be_bytes());
+    response.extend_from_slice(&0_u16.to_be_bytes());
+    response.extend_from_slice(&0_u16.to_be_bytes());
+    response.extend_from_slice(&query[12..dns_question_end(query)]);
+    response
 }
 
 fn build_dns_a_response(query: &[u8], owner: Option<&str>, answer: Ipv4Addr) -> Vec<u8> {
@@ -402,4 +422,9 @@ fn dns_question_end(query: &[u8]) -> usize {
         index += usize::from(query[index]) + 1;
     }
     index + 5
+}
+
+fn dns_query_type(query: &[u8]) -> u16 {
+    let question_end = dns_question_end(query);
+    u16::from_be_bytes([query[question_end - 4], query[question_end - 3]])
 }

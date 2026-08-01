@@ -102,27 +102,36 @@ async fn spawn_udp_dns_a_once(answer: Ipv4Addr) -> (SocketAddr, tokio::task::Joi
     let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let addr = socket.local_addr().unwrap();
     let handle = tokio::spawn(async move {
-        let mut buffer = [0_u8; 1232];
-        let (len, peer) = socket.recv_from(&mut buffer).await.unwrap();
-        let query = &buffer[..len];
-        assert!(query.len() >= 16, "DNS query must contain one question");
-        assert_eq!(u16::from_be_bytes([query[len - 4], query[len - 3]]), 1);
+        for _ in 0..2 {
+            let mut buffer = [0_u8; 1232];
+            let (len, peer) = socket.recv_from(&mut buffer).await.unwrap();
+            let query = &buffer[..len];
+            assert!(query.len() >= 16, "DNS query must contain one question");
+            let record_type = u16::from_be_bytes([query[len - 4], query[len - 3]]);
+            let answer_count = if record_type == 1 { 1_u16 } else { 0_u16 };
 
-        let mut response = Vec::with_capacity(query.len() + 16);
-        response.extend_from_slice(&query[..2]);
-        response.extend_from_slice(&0x8180_u16.to_be_bytes());
-        response.extend_from_slice(&1_u16.to_be_bytes());
-        response.extend_from_slice(&1_u16.to_be_bytes());
-        response.extend_from_slice(&0_u16.to_be_bytes());
-        response.extend_from_slice(&0_u16.to_be_bytes());
-        response.extend_from_slice(&query[12..]);
-        response.extend_from_slice(&0xC00C_u16.to_be_bytes());
-        response.extend_from_slice(&1_u16.to_be_bytes());
-        response.extend_from_slice(&1_u16.to_be_bytes());
-        response.extend_from_slice(&60_u32.to_be_bytes());
-        response.extend_from_slice(&4_u16.to_be_bytes());
-        response.extend_from_slice(&answer.octets());
-        socket.send_to(&response, peer).await.unwrap();
+            let mut response = Vec::with_capacity(query.len() + 16);
+            response.extend_from_slice(&query[..2]);
+            response.extend_from_slice(&0x8180_u16.to_be_bytes());
+            response.extend_from_slice(&1_u16.to_be_bytes());
+            response.extend_from_slice(&answer_count.to_be_bytes());
+            response.extend_from_slice(&0_u16.to_be_bytes());
+            response.extend_from_slice(&0_u16.to_be_bytes());
+            response.extend_from_slice(&query[12..]);
+            match record_type {
+                1 => {
+                    response.extend_from_slice(&0xC00C_u16.to_be_bytes());
+                    response.extend_from_slice(&1_u16.to_be_bytes());
+                    response.extend_from_slice(&1_u16.to_be_bytes());
+                    response.extend_from_slice(&60_u32.to_be_bytes());
+                    response.extend_from_slice(&4_u16.to_be_bytes());
+                    response.extend_from_slice(&answer.octets());
+                }
+                28 => {}
+                _ => panic!("unexpected DNS query type {record_type}"),
+            }
+            socket.send_to(&response, peer).await.unwrap();
+        }
     });
     (addr, handle)
 }

@@ -6256,12 +6256,18 @@ async fn spawn_udp_dns_a_responder(answer: Ipv4Addr) -> (SocketAddr, JoinHandle<
     let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let addr = socket.local_addr().unwrap();
     let handle = tokio::spawn(async move {
-        let mut buffer = [0_u8; 1232];
-        let (len, peer) = socket.recv_from(&mut buffer).await.unwrap();
-        let query = &buffer[..len];
-        assert!(query.len() >= 12, "DNS query must contain a header");
-        let response = build_dns_a_response_for_query(query, answer);
-        socket.send_to(&response, peer).await.unwrap();
+        for _ in 0..2 {
+            let mut buffer = [0_u8; 1232];
+            let (len, peer) = socket.recv_from(&mut buffer).await.unwrap();
+            let query = &buffer[..len];
+            assert!(query.len() >= 16, "DNS query must contain a question");
+            let response = match u16::from_be_bytes([query[len - 4], query[len - 3]]) {
+                1 => build_dns_a_response_for_query(query, answer),
+                28 => build_dns_nodata_response_for_query(query),
+                record_type => panic!("unexpected DNS query type {record_type}"),
+            };
+            socket.send_to(&response, peer).await.unwrap();
+        }
     });
     (addr, handle)
 }
@@ -6270,19 +6276,15 @@ async fn spawn_udp_dns_aaaa_responder(answer: Ipv6Addr) -> (SocketAddr, JoinHand
     let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let addr = socket.local_addr().unwrap();
     let handle = tokio::spawn(async move {
-        for expected_type in [1_u16, 28_u16] {
+        for _ in 0..2 {
             let mut buffer = [0_u8; 1232];
             let (len, peer) = socket.recv_from(&mut buffer).await.unwrap();
             let query = &buffer[..len];
             assert!(query.len() >= 16, "DNS query must contain a question");
-            assert_eq!(
-                u16::from_be_bytes([query[len - 4], query[len - 3]]),
-                expected_type
-            );
-            let response = if expected_type == 28 {
-                build_dns_aaaa_response_for_query(query, answer)
-            } else {
-                build_dns_nodata_response_for_query(query)
+            let response = match u16::from_be_bytes([query[len - 4], query[len - 3]]) {
+                1 => build_dns_nodata_response_for_query(query),
+                28 => build_dns_aaaa_response_for_query(query, answer),
+                record_type => panic!("unexpected DNS query type {record_type}"),
             };
             socket.send_to(&response, peer).await.unwrap();
         }
@@ -6295,29 +6297,40 @@ async fn spawn_udp_tcp_dns_a_responder(answer: Ipv4Addr) -> (SocketAddr, JoinHan
     let addr = listener.local_addr().unwrap();
     let udp = UdpSocket::bind(addr).await.unwrap();
     let handle = tokio::spawn(async move {
-        let mut udp_query = [0_u8; 1232];
-        let (udp_len, udp_peer) = udp.recv_from(&mut udp_query).await.unwrap();
-        let query = &udp_query[..udp_len];
-        assert!(query.len() >= 12, "DNS query must contain a header");
-        let mut truncated = Vec::with_capacity(query.len());
-        truncated.extend_from_slice(&query[..2]);
-        truncated.extend_from_slice(&0x8380_u16.to_be_bytes());
-        truncated.extend_from_slice(&1_u16.to_be_bytes());
-        truncated.extend_from_slice(&0_u16.to_be_bytes());
-        truncated.extend_from_slice(&0_u16.to_be_bytes());
-        truncated.extend_from_slice(&0_u16.to_be_bytes());
-        truncated.extend_from_slice(&query[12..]);
-        udp.send_to(&truncated, udp_peer).await.unwrap();
+        for _ in 0..2 {
+            let mut udp_query = [0_u8; 1232];
+            let (udp_len, udp_peer) = udp.recv_from(&mut udp_query).await.unwrap();
+            let query = &udp_query[..udp_len];
+            assert!(query.len() >= 16, "DNS query must contain a question");
+            match u16::from_be_bytes([query[udp_len - 4], query[udp_len - 3]]) {
+                1 => {
+                    let mut truncated = Vec::with_capacity(query.len());
+                    truncated.extend_from_slice(&query[..2]);
+                    truncated.extend_from_slice(&0x8380_u16.to_be_bytes());
+                    truncated.extend_from_slice(&1_u16.to_be_bytes());
+                    truncated.extend_from_slice(&0_u16.to_be_bytes());
+                    truncated.extend_from_slice(&0_u16.to_be_bytes());
+                    truncated.extend_from_slice(&0_u16.to_be_bytes());
+                    truncated.extend_from_slice(&query[12..]);
+                    udp.send_to(&truncated, udp_peer).await.unwrap();
 
-        let (mut tcp, _) = listener.accept().await.unwrap();
-        let query_len = usize::from(tcp.read_u16().await.unwrap());
-        let mut query = vec![0_u8; query_len];
-        tcp.read_exact(&mut query).await.unwrap();
-        let response = build_dns_a_response_for_query(&query, answer);
-        tcp.write_u16(u16::try_from(response.len()).unwrap())
-            .await
-            .unwrap();
-        tcp.write_all(&response).await.unwrap();
+                    let (mut tcp, _) = listener.accept().await.unwrap();
+                    let query_len = usize::from(tcp.read_u16().await.unwrap());
+                    let mut query = vec![0_u8; query_len];
+                    tcp.read_exact(&mut query).await.unwrap();
+                    let response = build_dns_a_response_for_query(&query, answer);
+                    tcp.write_u16(u16::try_from(response.len()).unwrap())
+                        .await
+                        .unwrap();
+                    tcp.write_all(&response).await.unwrap();
+                }
+                28 => {
+                    let response = build_dns_nodata_response_for_query(query);
+                    udp.send_to(&response, udp_peer).await.unwrap();
+                }
+                record_type => panic!("unexpected DNS query type {record_type}"),
+            }
+        }
     });
     (addr, handle)
 }

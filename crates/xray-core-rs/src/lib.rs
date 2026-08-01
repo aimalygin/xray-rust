@@ -911,6 +911,6 @@ mod tests {
 
         assert!(addr.ip().is_loopback());
         assert_eq!(addr.port(), 8443);
-        assert_eq!(protector.calls.load(Ordering::Relaxed), 1);
+        assert_eq!(protector.calls.load(Ordering::Relaxed), 2);
     }
 }

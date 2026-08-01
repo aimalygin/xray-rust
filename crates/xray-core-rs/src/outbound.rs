@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::io;
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;
 use std::sync::{Arc, OnceLock};
 use std::task::{Context, Poll};
@@ -510,13 +510,12 @@ impl OutboundRouter {
 
         if self.config.routing.domain_strategy == RoutingDomainStrategy::IpIfNonMatch {
             if let Some(domain) = target_domain(target) {
-                if let Ok(resolved) = dns_resolver.resolve(domain, target.port).await {
-                    let resolved_ip = resolved.ip();
-                    if let Some(routed_tag) = select_routed_outbound_tag(
+                if let Ok(resolved) = dns_resolver.resolve_all(domain, target.port).await {
+                    if let Some(routed_tag) = select_routed_outbound_tag_with_resolved_ips(
                         &self.config,
                         inbound_tag,
                         Some(domain),
-                        Some(&resolved_ip),
+                        resolved.socket_addrs(),
                     ) {
                         return self.index_for_tag(routed_tag);
                     }
@@ -780,13 +779,12 @@ async fn select_configured_outbound_with_resolver<'a>(
 
     if config.routing.domain_strategy == RoutingDomainStrategy::IpIfNonMatch {
         if let Some(domain) = target_domain(target) {
-            if let Ok(resolved) = dns_resolver.resolve(domain, target.port).await {
-                let resolved_ip = resolved.ip();
-                if let Some(routed_tag) = select_routed_outbound_tag(
+            if let Ok(resolved) = dns_resolver.resolve_all(domain, target.port).await {
+                if let Some(routed_tag) = select_routed_outbound_tag_with_resolved_ips(
                     config,
                     inbound_tag,
                     Some(domain),
-                    Some(&resolved_ip),
+                    resolved.socket_addrs(),
                 ) {
                     return select_configured_outbound_by_tag(config, routed_tag);
                 }
@@ -808,6 +806,26 @@ fn select_routed_outbound_tag<'a>(
         .rules
         .iter()
         .find(|rule| rule.matches(inbound_tag, target_domain, target_ip))
+        .map(|rule| rule.outbound_tag.as_str())
+}
+
+fn select_routed_outbound_tag_with_resolved_ips<'a>(
+    config: &'a CoreConfig,
+    inbound_tag: Option<&str>,
+    target_domain: Option<&str>,
+    target_addrs: &[SocketAddr],
+) -> Option<&'a str> {
+    config
+        .routing
+        .rules
+        .iter()
+        .find(|rule| {
+            rule.matches_inbound(inbound_tag)
+                && rule.matches_domain(target_domain)
+                && target_addrs
+                    .iter()
+                    .any(|target_addr| rule.matches_ip(Some(&target_addr.ip())))
+        })
         .map(|rule| rule.outbound_tag.as_str())
 }
 
@@ -1198,7 +1216,7 @@ mod tests {
         StreamSettings, VlessOutboundSettings,
     };
     use xray_proxy::vless::{unpad_vision_block, VisionCommand};
-    use xray_transport::{RealityTlsEngine, TransportError};
+    use xray_transport::{CachingDnsResolver, DnsLookup, RealityTlsEngine, TransportError};
 
     use super::*;
 
@@ -1283,7 +1301,7 @@ mod tests {
 
     #[derive(Debug)]
     struct FakeDnsResolver {
-        result: Result<SocketAddr, TransportError>,
+        result: Result<Vec<SocketAddr>, TransportError>,
         expected: Option<(&'static str, u16)>,
         calls: AtomicUsize,
     }
@@ -1291,7 +1309,15 @@ mod tests {
     impl FakeDnsResolver {
         fn resolving_to(addr: SocketAddr) -> Self {
             Self {
-                result: Ok(addr),
+                result: Ok(vec![addr]),
+                expected: None,
+                calls: AtomicUsize::new(0),
+            }
+        }
+
+        fn resolving_to_many(addrs: Vec<SocketAddr>) -> Self {
+            Self {
+                result: Ok(addrs),
                 expected: None,
                 calls: AtomicUsize::new(0),
             }
@@ -1313,23 +1339,42 @@ mod tests {
         fn calls(&self) -> usize {
             self.calls.load(Ordering::SeqCst)
         }
-    }
 
-    #[async_trait]
-    impl DnsResolver for FakeDnsResolver {
-        async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+        fn record_lookup(
+            &self,
+            domain: &str,
+            port: u16,
+        ) -> Result<Vec<SocketAddr>, TransportError> {
             if let Some((expected_domain, expected_port)) = self.expected {
                 assert_eq!(domain, expected_domain);
                 assert_eq!(port, expected_port);
             }
             self.calls.fetch_add(1, Ordering::SeqCst);
             match &self.result {
-                Ok(addr) => Ok(*addr),
+                Ok(addrs) => Ok(addrs.clone()),
                 Err(TransportError::NoResolvedAddress(domain, port)) => {
                     Err(TransportError::NoResolvedAddress(domain.clone(), *port))
                 }
                 Err(error) => panic!("fake resolver cannot clone transport error: {error}"),
             }
+        }
+    }
+
+    #[async_trait]
+    impl DnsResolver for FakeDnsResolver {
+        async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+            self.record_lookup(domain, port)?
+                .into_iter()
+                .next()
+                .ok_or_else(|| TransportError::NoResolvedAddress(domain.to_owned(), port))
+        }
+
+        async fn resolve_all(&self, domain: &str, port: u16) -> Result<DnsLookup, TransportError> {
+            let addrs = self.record_lookup(domain, port)?;
+            if addrs.is_empty() {
+                return Err(TransportError::NoResolvedAddress(domain.to_owned(), port));
+            }
+            Ok(DnsLookup::new(addrs, None))
         }
     }
 
@@ -1504,6 +1549,94 @@ mod tests {
         .expect("select route using resolved IP");
 
         assert!(matches!(selected, TcpOutbound::Freedom));
+    }
+
+    #[tokio::test]
+    async fn ip_if_non_match_uses_non_first_dns_candidate() {
+        let first = Ipv4Addr::new(198, 51, 100, 10);
+        let second = Ipv4Addr::new(203, 0, 113, 7);
+        let mut config = direct_selection_config();
+        config.routing.domain_strategy = RoutingDomainStrategy::IpIfNonMatch;
+        config.routing.rules = vec![ip_rule("direct", second)];
+        let resolver = FakeDnsResolver::resolving_to_many(vec![
+            SocketAddr::from((first, 443)),
+            SocketAddr::from((second, 443)),
+        ])
+        .expect_lookup("example.test", 443);
+
+        let selected = select_tcp_outbound_for_session_with_resolver(
+            &config,
+            None,
+            &domain_tcp_target("example.test"),
+            &resolver,
+        )
+        .await
+        .expect("select route using a non-first resolved IP");
+
+        assert!(matches!(selected, TcpOutbound::Freedom));
+        assert_eq!(resolver.calls(), 1);
+    }
+
+    #[tokio::test]
+    async fn outbound_router_preserves_rule_priority_across_dns_candidates() {
+        let first_candidate = Ipv4Addr::new(198, 51, 100, 10);
+        let second_candidate = Ipv4Addr::new(203, 0, 113, 7);
+        let mut config = direct_selection_config();
+        config.routing.domain_strategy = RoutingDomainStrategy::IpIfNonMatch;
+        config.routing.rules = vec![
+            ip_rule("direct", second_candidate),
+            ip_rule("proxy", first_candidate),
+        ];
+        let router = OutboundRouter::new(Arc::new(config));
+        let resolver = FakeDnsResolver::resolving_to_many(vec![
+            SocketAddr::from((first_candidate, 443)),
+            SocketAddr::from((second_candidate, 443)),
+        ])
+        .expect_lookup("example.test", 443);
+
+        let selected = router
+            .select_tcp_outbound_for_session_with_resolver(
+                None,
+                &domain_tcp_target("example.test"),
+                &resolver,
+            )
+            .await
+            .expect("select the first matching rule across all resolved IPs");
+
+        assert!(matches!(selected, TcpOutbound::Freedom));
+        assert_eq!(resolver.calls(), 1);
+    }
+
+    #[tokio::test]
+    async fn ip_if_non_match_reuses_cached_multi_address_lookup_without_losing_candidates() {
+        let first_candidate = Ipv4Addr::new(198, 51, 100, 10);
+        let second_candidate = Ipv4Addr::new(203, 0, 113, 7);
+        let mut config = direct_selection_config();
+        config.routing.domain_strategy = RoutingDomainStrategy::IpIfNonMatch;
+        config.routing.rules = vec![ip_rule("direct", second_candidate)];
+        let router = OutboundRouter::new(Arc::new(config));
+        let upstream = Arc::new(
+            FakeDnsResolver::resolving_to_many(vec![
+                SocketAddr::from((first_candidate, 443)),
+                SocketAddr::from((second_candidate, 443)),
+            ])
+            .expect_lookup("example.test", 443),
+        );
+        let resolver = CachingDnsResolver::new(upstream.clone());
+
+        for _ in 0..2 {
+            let selected = router
+                .select_tcp_outbound_for_session_with_resolver(
+                    None,
+                    &domain_tcp_target("example.test"),
+                    &resolver,
+                )
+                .await
+                .expect("select route from a cached multi-address lookup");
+
+            assert!(matches!(selected, TcpOutbound::Freedom));
+        }
+        assert_eq!(upstream.calls(), 1);
     }
 
     #[tokio::test]

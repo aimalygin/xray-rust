@@ -1805,6 +1805,7 @@ dependencies = [
 name = "xray-bench"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "bytes",
  "libc",
  "rcgen",
@@ -1820,6 +1821,7 @@ dependencies = [
  "xray-core-rs",
  "xray-proxy",
  "xray-routing",
+ "xray-transport",
  "xray-utls",
 ]
 

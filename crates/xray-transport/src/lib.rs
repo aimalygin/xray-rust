@@ -27,9 +27,9 @@ mod tls;
 
 pub use dialer::TransportDialer;
 pub use dns::{
-    dns_response_matches_query, CachingDnsResolver, ConfiguredDnsResolver, DnsQueryTransport,
-    DnsQueryTransportKind, DnsResolver, NameServer, StaticHostRule, StaticHostTarget,
-    SystemDnsResolver, TransportDomainMatcher, TransportRegexMatcher,
+    dns_response_matches_query, CachingDnsResolver, ConfiguredDnsResolver, DnsLookup,
+    DnsQueryTransport, DnsQueryTransportKind, DnsResolver, NameServer, StaticHostRule,
+    StaticHostTarget, SystemDnsResolver, TransportDomainMatcher, TransportRegexMatcher,
 };
 pub(crate) use penetrating_tls::{CapturedTcpStream, PenetratingTlsStream, ServerReadLog};
 pub use reality_connector::{RealityTlsSession, RealityTlsSessionProvider};

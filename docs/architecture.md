@@ -72,12 +72,14 @@ Darwin utun fd when enabled and available, otherwise it falls back to the
 ### DNS
 
 DNS is split at the wire-transport boundary instead of being owned by TUN.
-`xray-transport` builds and validates DNS messages, handles A/AAAA/CNAME
+`xray-transport` builds and validates DNS messages, retains ordered A/AAAA
+candidates with authoritative or remaining TTL metadata, handles CNAME
 resolution, server failover, UDP truncation with same-server TCP retry, and the
 bounded resolver cache. `xray-core-rs` supplies a routed query transport that
-opens each DNS exchange through the normal outbound router. SOCKS, HTTP, TUN,
-startup probes, and future server inbounds can therefore share the same DNS
-semantics without depending on a packet adapter.
+opens each DNS exchange through the normal outbound router. `IPIfNonMatch`
+tests rules in configuration order against every resolved candidate. SOCKS,
+HTTP, TUN, startup probes, and future server inbounds can therefore share the
+same DNS semantics without depending on a packet adapter.
 
 Each runtime keeps destination and bootstrap resolution as separate roles.
 Destination resolution may use routed `dns.servers`; bootstrap resolution only

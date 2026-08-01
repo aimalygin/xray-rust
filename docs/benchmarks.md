@@ -74,7 +74,8 @@ cargo run -p xray-bench -- run --engine xray-rust --workload vision-xudp --conne
 cargo run -p xray-bench -- run --engine xray-rust --workload reality-vision-xudp --xray-core-bin /path/to/xray-core --connections 1 --iterations 10 --payload-size 512
 cargo run --release -p xray-bench -- run --engine xray-rust --workload reality-vision-bulk-throughput --xray-core-dir Xray-core --connections 1 --iterations 256 --payload-size 4194304 --run-timeout-ms 120000
 cargo run -p xray-bench -- run --engine xray-rust --workload tcp-freedom --runs 5 --connections 8 --iterations 1000 --payload-size 4096
-cargo run -p xray-bench -- route-probe --iterations 100000 --rules 64 --outbounds 8
+cargo run --release -p xray-bench -- route-probe --iterations 100000 --rules 64 --outbounds 8
+cargo run --release -p xray-bench -- route-probe --iterations 100000 --rules 64 --outbounds 8 --dns-candidates 8
 ```
 
 By default, the harness uses `target/debug/xray-rust` or builds it with:
@@ -380,5 +381,7 @@ has been removed.
 `reality-vision-xudp` uses VLESS Reality with `xtls-rprx-vision` and XUDP/Mux frames against an Xray-core server fixture, then validates echoed UDP payloads through the same SOCKS5 UDP client path. The fixture process is not sampled in RSS/CPU; only the selected client engine is sampled. The harness waits out a fixed REALITY warm-up after the fixture logs `started` (override with `XRAY_BENCH_REALITY_WARMUP_MS`): the REALITY library must first learn the post-handshake record shape of the real `dest`, which takes a TLS handshake to that host plus a five-second read deadline, and a client that connects inside that window stalls — or is dropped when the dest closes the borrowed connection.
 
 `route-probe` is an in-process xray-rust microprobe for setup-path routing cost. It builds a synthetic config with IP/CIDR routing rules and tagged freedom outbounds, then repeatedly calls the same TCP outbound selection path used by SOCKS CONNECT. This isolates routing/outbound selection from TCP accept, SOCKS parsing, and outbound socket connect noise.
+
+`--dns-candidates N` adds the cached `IPIfNonMatch` second pass without adding network timing. `N=0` is the original synchronous direct-IP probe. For `N>0`, the probe uses a domain target and performs one untimed routing selection to warm a `CachingDnsResolver`; the generated lookup contains `N-1` non-matching IPv4 addresses followed by the address matched by the final CIDR rule. The timed loop verifies that the upstream resolver is not queried again. Compare `N=1` with `N=2` or `N=8` to isolate additional candidate-scan cost; the delta from `N=0` also includes cached name normalization, cache locking and async resolver dispatch. It does not measure DNS wire latency, TTL expiration, or TCP dialing. Candidate count is capped at 4096, and timing runs should use `--release`.
 
 Later benchmark slices should add TCP-over-TUN workloads and mobile-native traces from Instruments or Perfetto. This harness keeps those paths open without putting benchmark logic into the production runtime.

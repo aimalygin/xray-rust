@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket as StdUdpSocket};
 use std::sync::{Arc, Mutex};
@@ -12,13 +12,122 @@ use tokio::time;
 
 use crate::{connect_tcp_stream, SocketHandle, SocketProtector, TransportError};
 
-/// Resolves a domain and configured port into the concrete socket address to dial.
+/// A DNS lookup result containing every usable address and its remaining TTL.
 ///
-/// Callers pass the configured port and dial the returned `SocketAddr` as-is.
-/// This keeps platform-specific DNS and deterministic test resolvers explicit.
+/// `ttl = None` means the resolver cannot expose an authoritative TTL (for
+/// example, the platform system resolver). Cache layers may replace it with a
+/// bounded policy TTL.
+#[derive(Debug, Clone)]
+pub struct DnsLookup {
+    socket_addrs: Arc<[SocketAddr]>,
+    ttl: Option<Duration>,
+    observed_at: Instant,
+}
+
+impl DnsLookup {
+    /// Builds a lookup while preserving the first occurrence of each address.
+    pub fn new(addresses: impl IntoIterator<Item = SocketAddr>, ttl: Option<Duration>) -> Self {
+        let mut unique = Vec::new();
+        let mut seen = HashSet::new();
+        for address in addresses {
+            if seen.insert(address) {
+                unique.push(address);
+            }
+        }
+        Self {
+            socket_addrs: unique.into(),
+            ttl,
+            observed_at: Instant::now(),
+        }
+    }
+
+    /// Builds socket addresses for one destination port from resolved IPs.
+    pub fn from_ips(
+        addresses: impl IntoIterator<Item = IpAddr>,
+        port: u16,
+        ttl: Option<Duration>,
+    ) -> Self {
+        Self::new(
+            addresses
+                .into_iter()
+                .map(|address| SocketAddr::new(address, port)),
+            ttl,
+        )
+    }
+
+    /// Builds a lookup containing one address.
+    pub fn single(address: SocketAddr, ttl: Option<Duration>) -> Self {
+        Self::new([address], ttl)
+    }
+
+    /// Returns candidates in resolver order.
+    pub fn socket_addrs(&self) -> &[SocketAddr] {
+        &self.socket_addrs
+    }
+
+    /// Iterates over candidate IPs in resolver order.
+    pub fn ips(&self) -> impl ExactSizeIterator<Item = IpAddr> + '_ {
+        self.socket_addrs.iter().map(|address| address.ip())
+    }
+
+    /// Returns the authoritative or remaining cache TTL when known.
+    pub fn ttl(&self) -> Option<Duration> {
+        self.remaining_ttl_at(Instant::now())
+    }
+
+    fn first_socket_addr(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+        self.socket_addrs
+            .first()
+            .copied()
+            .ok_or_else(|| TransportError::NoResolvedAddress(domain.to_owned(), port))
+    }
+
+    fn ensure_non_empty(self, domain: &str, port: u16) -> Result<Self, TransportError> {
+        if self.socket_addrs.is_empty() {
+            Err(TransportError::NoResolvedAddress(domain.to_owned(), port))
+        } else {
+            Ok(self)
+        }
+    }
+
+    fn with_ttl_cap(mut self, cap: Duration) -> Self {
+        let now = Instant::now();
+        self.ttl = Some(self.remaining_ttl_at(now).map_or(cap, |ttl| ttl.min(cap)));
+        self.observed_at = now;
+        self
+    }
+
+    fn with_remaining_ttl(&self, ttl: Duration) -> Self {
+        Self {
+            socket_addrs: Arc::clone(&self.socket_addrs),
+            ttl: Some(ttl),
+            observed_at: Instant::now(),
+        }
+    }
+
+    fn remaining_ttl_at(&self, now: Instant) -> Option<Duration> {
+        self.ttl
+            .map(|ttl| ttl.saturating_sub(now.saturating_duration_since(self.observed_at)))
+    }
+}
+
+/// Resolves a domain into addresses suitable for the configured port.
+///
+/// Callers pass the configured port and must dial returned `SocketAddr`
+/// candidates as-is. A resolver may intentionally replace the port or attach
+/// IPv6 flow/scope metadata.
+///
+/// Existing implementations only need to implement [`DnsResolver::resolve`].
+/// Rich resolvers should override [`DnsResolver::resolve_all`] so routing and
+/// dialing can consume every answer and the DNS TTL.
 #[async_trait]
 pub trait DnsResolver: Send + Sync {
     async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError>;
+
+    async fn resolve_all(&self, domain: &str, port: u16) -> Result<DnsLookup, TransportError> {
+        let address = self.resolve(domain, port).await?;
+        Ok(DnsLookup::single(address, None))
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -27,7 +136,13 @@ pub struct SystemDnsResolver;
 #[async_trait]
 impl DnsResolver for SystemDnsResolver {
     async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
-        let mut addrs = tokio::net::lookup_host((domain, port))
+        self.resolve_all(domain, port)
+            .await?
+            .first_socket_addr(domain, port)
+    }
+
+    async fn resolve_all(&self, domain: &str, port: u16) -> Result<DnsLookup, TransportError> {
+        let addrs = tokio::net::lookup_host((domain, port))
             .await
             .map_err(|source| TransportError::Dns {
                 domain: domain.to_owned(),
@@ -35,16 +150,16 @@ impl DnsResolver for SystemDnsResolver {
                 source,
             })?;
 
-        addrs
-            .next()
-            .ok_or_else(|| TransportError::NoResolvedAddress(domain.to_owned(), port))
+        DnsLookup::new(addrs, None).ensure_non_empty(domain, port)
     }
 }
 
-const DNS_CACHE_TTL: Duration = Duration::from_secs(60);
+const DNS_DEFAULT_TTL: Duration = Duration::from_secs(300);
+const DNS_STATIC_HOST_TTL: Duration = Duration::from_secs(10);
 const DNS_CACHE_MAX_ENTRIES: usize = 256;
 const MAX_DNS_UDP_RESPONSE_SIZE: usize = 4096;
 const DNS_RESOLUTION_TIMEOUT: Duration = Duration::from_secs(5);
+const MAX_DNS_ALIAS_DEPTH: usize = 8;
 
 /// TTL cache over another resolver. Proxy clients open a new outbound
 /// connection per session; resolving the (usually single) server domain on
@@ -57,14 +172,14 @@ pub struct CachingDnsResolver {
 
 #[derive(Default)]
 struct DnsCacheState {
-    resolved: HashMap<(String, u16), CachedDnsAddress>,
+    resolved: HashMap<(String, u16), CachedDnsLookup>,
     in_flight: HashMap<(String, u16), Arc<InFlightDnsLookup>>,
     access_sequence: u64,
 }
 
-struct CachedDnsAddress {
-    addr: SocketAddr,
-    stored_at: Instant,
+struct CachedDnsLookup {
+    lookup: DnsLookup,
+    expires_at: Instant,
     last_used: u64,
 }
 
@@ -88,7 +203,7 @@ struct InFlightDnsLookup {
 
 #[derive(Clone)]
 enum InFlightDnsOutcome {
-    Resolved(SocketAddr),
+    Resolved(DnsLookup),
     NeedsDns(String),
     Dns {
         domain: String,
@@ -103,9 +218,9 @@ enum InFlightDnsOutcome {
 }
 
 impl InFlightDnsOutcome {
-    fn from_result(result: &Result<SocketAddr, TransportError>) -> Self {
+    fn from_result(result: &Result<DnsLookup, TransportError>) -> Self {
         match result {
-            Ok(addr) => Self::Resolved(*addr),
+            Ok(lookup) => Self::Resolved(lookup.clone()),
             Err(TransportError::NeedsDns(domain)) => Self::NeedsDns(domain.clone()),
             Err(TransportError::Dns {
                 domain,
@@ -132,9 +247,9 @@ impl InFlightDnsOutcome {
         self,
         requested_domain: &str,
         requested_port: u16,
-    ) -> Result<SocketAddr, TransportError> {
+    ) -> Result<DnsLookup, TransportError> {
         match self {
-            Self::Resolved(addr) => Ok(addr),
+            Self::Resolved(lookup) => Ok(lookup),
             Self::NeedsDns(domain) => Err(TransportError::NeedsDns(domain)),
             Self::Dns {
                 domain,
@@ -173,7 +288,6 @@ struct InFlightDnsLeader<'a> {
     state: &'a Mutex<DnsCacheState>,
     key: (String, u16),
     lookup: Arc<InFlightDnsLookup>,
-    ttl: Duration,
     active: bool,
 }
 
@@ -198,32 +312,34 @@ impl InFlightDnsLeader<'_> {
             .is_some_and(|current| Arc::ptr_eq(current, &self.lookup));
         if still_leader {
             state.in_flight.remove(&self.key);
-            if let InFlightDnsOutcome::Resolved(addr) = outcome {
+            if let InFlightDnsOutcome::Resolved(lookup) = outcome {
                 let now = Instant::now();
-                if state.resolved.len() >= DNS_CACHE_MAX_ENTRIES {
-                    state
-                        .resolved
-                        .retain(|_, entry| now.duration_since(entry.stored_at) < self.ttl);
-                }
-                if state.resolved.len() >= DNS_CACHE_MAX_ENTRIES {
-                    let lru_key = state
-                        .resolved
-                        .iter()
-                        .min_by_key(|(_, entry)| entry.last_used)
-                        .map(|(key, _)| key.clone());
-                    if let Some(lru_key) = lru_key {
-                        state.resolved.remove(&lru_key);
+                if let Some(ttl) = lookup.ttl().filter(|ttl| !ttl.is_zero()) {
+                    if let Some(expires_at) = now.checked_add(ttl) {
+                        if state.resolved.len() >= DNS_CACHE_MAX_ENTRIES {
+                            state.resolved.retain(|_, entry| entry.expires_at > now);
+                        }
+                        if state.resolved.len() >= DNS_CACHE_MAX_ENTRIES {
+                            let lru_key = state
+                                .resolved
+                                .iter()
+                                .min_by_key(|(_, entry)| entry.last_used)
+                                .map(|(key, _)| key.clone());
+                            if let Some(lru_key) = lru_key {
+                                state.resolved.remove(&lru_key);
+                            }
+                        }
+                        let access_sequence = state.next_access_sequence();
+                        state.resolved.insert(
+                            self.key.clone(),
+                            CachedDnsLookup {
+                                lookup,
+                                expires_at,
+                                last_used: access_sequence,
+                            },
+                        );
                     }
                 }
-                let access_sequence = state.next_access_sequence();
-                state.resolved.insert(
-                    self.key.clone(),
-                    CachedDnsAddress {
-                        addr,
-                        stored_at: now,
-                        last_used: access_sequence,
-                    },
-                );
             }
         }
         self.active = false;
@@ -256,7 +372,7 @@ impl Drop for InFlightDnsLeader<'_> {
 
 impl CachingDnsResolver {
     pub fn new(inner: Arc<dyn DnsResolver>) -> Self {
-        Self::with_ttl(inner, DNS_CACHE_TTL)
+        Self::with_ttl(inner, DNS_DEFAULT_TTL)
     }
 
     pub fn with_ttl(inner: Arc<dyn DnsResolver>, ttl: Duration) -> Self {
@@ -271,6 +387,12 @@ impl CachingDnsResolver {
 #[async_trait]
 impl DnsResolver for CachingDnsResolver {
     async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+        self.resolve_all(domain, port)
+            .await?
+            .first_socket_addr(domain, port)
+    }
+
+    async fn resolve_all(&self, domain: &str, port: u16) -> Result<DnsLookup, TransportError> {
         let key = (
             normalize_dns_name(domain).unwrap_or_else(|| domain.to_ascii_lowercase()),
             port,
@@ -284,9 +406,11 @@ impl DnsResolver for CachingDnsResolver {
                     .unwrap_or_else(|poisoned| poisoned.into_inner());
                 let access_sequence = state.next_access_sequence();
                 if let Some(entry) = state.resolved.get_mut(&key) {
-                    if now.duration_since(entry.stored_at) < self.ttl {
+                    if entry.expires_at > now {
                         entry.last_used = access_sequence;
-                        return Ok(entry.addr);
+                        return Ok(entry
+                            .lookup
+                            .with_remaining_ttl(entry.expires_at.duration_since(now)));
                     }
                 }
                 state.resolved.remove(&key);
@@ -325,10 +449,14 @@ impl DnsResolver for CachingDnsResolver {
             state: &self.state,
             key,
             lookup,
-            ttl: self.ttl,
             active: true,
         };
-        let resolved = self.inner.resolve(domain, port).await;
+        let resolved = self
+            .inner
+            .resolve_all(domain, port)
+            .await
+            .and_then(|lookup| lookup.ensure_non_empty(domain, port))
+            .map(|lookup| lookup.with_ttl_cap(self.ttl));
         leader.finish(InFlightDnsOutcome::from_result(&resolved));
         resolved
     }
@@ -551,24 +679,23 @@ impl ConfiguredDnsResolver {
     }
 
     async fn query_configured_servers(&self, domain: &str) -> ConfiguredServersResult {
+        let mut last_negative = None;
         for name_server in &self.name_servers {
-            match time::timeout(
-                self.server_timeout,
-                self.query_configured_server(name_server, domain),
-            )
-            .await
-            {
-                Ok(Ok(ConfiguredServerResult::Answer(answer))) => {
+            match self.query_configured_server(name_server, domain).await {
+                Ok(ConfiguredServerResult::Answer(answer)) => {
                     return ConfiguredServersResult::Answer(answer);
                 }
-                Ok(Ok(ConfiguredServerResult::Negative(negative))) => {
-                    return ConfiguredServersResult::Negative(negative);
+                Ok(ConfiguredServerResult::Negative(negative)) => {
+                    last_negative = Some(negative);
                 }
-                Ok(Err(_)) | Err(_) => {}
+                Err(_) => {}
             }
         }
 
-        ConfiguredServersResult::Unavailable
+        last_negative.map_or(
+            ConfiguredServersResult::Unavailable,
+            ConfiguredServersResult::Negative,
+        )
     }
 
     async fn query_configured_server(
@@ -576,45 +703,25 @@ impl ConfiguredDnsResolver {
         name_server: &NameServer,
         domain: &str,
     ) -> io::Result<ConfiguredServerResult> {
-        match self
-            .query_server(name_server, domain, DnsRecordType::A)
-            .await?
-        {
-            ParsedDnsResponse::Answer(answer) => {
-                return Ok(ConfiguredServerResult::Answer(answer));
-            }
-            ParsedDnsResponse::NameError => {
-                return Ok(ConfiguredServerResult::Negative(
-                    ConfiguredDnsNegative::NameError,
-                ));
-            }
-            ParsedDnsResponse::NoData => {}
-            ParsedDnsResponse::ServerFailure(code) => {
-                return Err(dns_response_code_error(code));
-            }
-            ParsedDnsResponse::Truncated => {
-                return Err(invalid_dns_response(
-                    "truncated DNS response after TCP retry",
-                ));
-            }
-        }
+        let (ipv4, ipv6) = tokio::join!(
+            self.query_server_with_budget(name_server, domain, DnsRecordType::A),
+            self.query_server_with_budget(name_server, domain, DnsRecordType::Aaaa),
+        );
+        merge_configured_family_results(ipv4, ipv6)
+    }
 
-        match self
-            .query_server(name_server, domain, DnsRecordType::Aaaa)
-            .await?
-        {
-            ParsedDnsResponse::Answer(answer) => Ok(ConfiguredServerResult::Answer(answer)),
-            ParsedDnsResponse::NoData => Ok(ConfiguredServerResult::Negative(
-                ConfiguredDnsNegative::NoData,
-            )),
-            ParsedDnsResponse::NameError => Ok(ConfiguredServerResult::Negative(
-                ConfiguredDnsNegative::NameError,
-            )),
-            ParsedDnsResponse::ServerFailure(code) => Err(dns_response_code_error(code)),
-            ParsedDnsResponse::Truncated => Err(invalid_dns_response(
-                "truncated DNS response after TCP retry",
-            )),
-        }
+    async fn query_server_with_budget(
+        &self,
+        name_server: &NameServer,
+        domain: &str,
+        record_type: DnsRecordType,
+    ) -> io::Result<(ParsedDnsResponse, Instant)> {
+        time::timeout(
+            self.server_timeout,
+            self.query_server(name_server, domain, record_type),
+        )
+        .await
+        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "dns server budget expired"))?
     }
 
     async fn query_server(
@@ -622,7 +729,7 @@ impl ConfiguredDnsResolver {
         name_server: &NameServer,
         domain: &str,
         record_type: DnsRecordType,
-    ) -> io::Result<ParsedDnsResponse> {
+    ) -> io::Result<(ParsedDnsResponse, Instant)> {
         let query = build_dns_query(domain, record_type)?;
         let response = time::timeout(
             self.server_timeout,
@@ -631,12 +738,13 @@ impl ConfiguredDnsResolver {
         )
         .await
         .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "dns query timed out"))??;
+        let observed_at = Instant::now();
 
         match parse_dns_response(&query, &response, record_type)? {
             response @ (ParsedDnsResponse::Answer(_)
             | ParsedDnsResponse::NoData
             | ParsedDnsResponse::NameError
-            | ParsedDnsResponse::ServerFailure(_)) => Ok(response),
+            | ParsedDnsResponse::ServerFailure(_)) => Ok((response, observed_at)),
             ParsedDnsResponse::Truncated => {
                 let response = time::timeout(
                     self.server_timeout,
@@ -647,33 +755,42 @@ impl ConfiguredDnsResolver {
                 .map_err(|_| {
                     io::Error::new(io::ErrorKind::TimedOut, "dns tcp retry timed out")
                 })??;
+                let observed_at = Instant::now();
                 match parse_dns_response(&query, &response, record_type)? {
                     ParsedDnsResponse::Truncated => Err(invalid_dns_response(
                         "DNS TCP response must not remain truncated",
                     )),
-                    response => Ok(response),
+                    response => Ok((response, observed_at)),
                 }
             }
         }
     }
 
     async fn resolve_configured(&self, domain: &str, port: u16) -> ConfiguredLookupResult {
-        const MAX_ALIAS_DEPTH: usize = 8;
-
         let mut current_domain = normalize_dns_name(domain).unwrap_or_else(|| domain.to_owned());
-        for depth in 0..MAX_ALIAS_DEPTH {
+        let mut ttl_cap = None;
+        for depth in 0..MAX_DNS_ALIAS_DEPTH {
             if let Some(rule) = self.matching_host_rule(&current_domain) {
                 match &rule.target {
                     StaticHostTarget::Ip(ip) => {
-                        return ConfiguredLookupResult::Resolved(SocketAddr::new(*ip, port));
+                        return ConfiguredLookupResult::Resolved(cap_lookup_ttl(
+                            DnsLookup::single(
+                                SocketAddr::new(*ip, port),
+                                Some(DNS_STATIC_HOST_TTL),
+                            ),
+                            ttl_cap,
+                        ));
                     }
                     StaticHostTarget::Domain(alias) => {
                         let alias = normalize_dns_name(alias).unwrap_or_else(|| alias.clone());
                         if alias == current_domain {
                             break;
                         }
-                        if depth + 1 == MAX_ALIAS_DEPTH {
-                            return ConfiguredLookupResult::Fallback(domain.to_owned());
+                        if depth + 1 == MAX_DNS_ALIAS_DEPTH {
+                            return ConfiguredLookupResult::Fallback {
+                                domain: domain.to_owned(),
+                                ttl_cap,
+                            };
                         }
                         current_domain = alias;
                         continue;
@@ -681,17 +798,25 @@ impl ConfiguredDnsResolver {
                 }
             }
 
-            match self.query_configured_servers(&current_domain).await {
-                ConfiguredServersResult::Answer(ConfiguredDnsAnswer::Ip(ip)) => {
-                    return ConfiguredLookupResult::Resolved(SocketAddr::new(ip, port));
+            let started_at = Instant::now();
+            let result = self.query_configured_servers(&current_domain).await;
+            ttl_cap = age_ttl_cap(ttl_cap, started_at.elapsed());
+            match result {
+                ConfiguredServersResult::Answer(ConfiguredDnsAnswer::Addresses(answer)) => {
+                    let lookup = DnsLookup::from_ips(answer.addresses, port, Some(answer.ttl));
+                    return ConfiguredLookupResult::Resolved(cap_lookup_ttl(lookup, ttl_cap));
                 }
-                ConfiguredServersResult::Answer(ConfiguredDnsAnswer::Cname(alias)) => {
+                ConfiguredServersResult::Answer(ConfiguredDnsAnswer::Cname { alias, ttl }) => {
+                    ttl_cap = Some(ttl_cap.map_or(ttl, |current: Duration| current.min(ttl)));
                     let alias = normalize_dns_name(&alias).unwrap_or(alias);
                     if alias == current_domain {
                         break;
                     }
-                    if depth + 1 == MAX_ALIAS_DEPTH {
-                        return ConfiguredLookupResult::Fallback(domain.to_owned());
+                    if depth + 1 == MAX_DNS_ALIAS_DEPTH {
+                        return ConfiguredLookupResult::Fallback {
+                            domain: domain.to_owned(),
+                            ttl_cap,
+                        };
                     }
                     current_domain = alias;
                 }
@@ -705,18 +830,132 @@ impl ConfiguredDnsResolver {
             }
         }
 
-        ConfiguredLookupResult::Fallback(current_domain)
+        ConfiguredLookupResult::Fallback {
+            domain: current_domain,
+            ttl_cap,
+        }
     }
+}
+
+fn cap_lookup_ttl(lookup: DnsLookup, ttl_cap: Option<Duration>) -> DnsLookup {
+    match ttl_cap {
+        Some(ttl_cap) => lookup.with_ttl_cap(ttl_cap),
+        None => lookup,
+    }
+}
+
+fn age_ttl_cap(ttl_cap: Option<Duration>, elapsed: Duration) -> Option<Duration> {
+    ttl_cap.map(|ttl| ttl.saturating_sub(elapsed))
+}
+
+fn merge_configured_family_results(
+    ipv4: io::Result<(ParsedDnsResponse, Instant)>,
+    ipv6: io::Result<(ParsedDnsResponse, Instant)>,
+) -> io::Result<ConfiguredServerResult> {
+    let mut addresses = Vec::new();
+    let mut answer_ttl = None;
+    let mut cname: Option<(String, Duration)> = None;
+    let mut cname_conflict = false;
+    let mut saw_name_error = false;
+    let mut saw_no_data = false;
+    let mut last_error = None;
+
+    for result in [ipv4, ipv6] {
+        match result {
+            Ok((
+                ParsedDnsResponse::Answer(ConfiguredDnsAnswer::Addresses(mut answer)),
+                observed_at,
+            )) => {
+                answer.ttl = answer.ttl.saturating_sub(observed_at.elapsed());
+                addresses.extend_from_slice(&answer.addresses);
+                answer_ttl = Some(
+                    answer_ttl.map_or(answer.ttl, |current: Duration| current.min(answer.ttl)),
+                );
+            }
+            Ok((
+                ParsedDnsResponse::Answer(ConfiguredDnsAnswer::Cname { alias, ttl }),
+                observed_at,
+            )) => {
+                let ttl = ttl.saturating_sub(observed_at.elapsed());
+                answer_ttl = Some(answer_ttl.map_or(ttl, |current: Duration| current.min(ttl)));
+                match &cname {
+                    Some((current, _)) if !alias.eq_ignore_ascii_case(current) => {
+                        cname_conflict = true;
+                    }
+                    Some(_) => {}
+                    None => cname = Some((alias, ttl)),
+                }
+            }
+            Ok((ParsedDnsResponse::NoData, _)) => saw_no_data = true,
+            Ok((ParsedDnsResponse::NameError, _)) => saw_name_error = true,
+            Ok((ParsedDnsResponse::ServerFailure(code), _)) => {
+                last_error = Some(dns_response_code_error(code));
+            }
+            Ok((ParsedDnsResponse::Truncated, _)) => {
+                last_error = Some(invalid_dns_response(
+                    "truncated DNS response after TCP retry",
+                ));
+            }
+            Err(error) => last_error = Some(error),
+        }
+    }
+
+    if !addresses.is_empty() {
+        return Ok(ConfiguredServerResult::Answer(
+            ConfiguredDnsAnswer::Addresses(ConfiguredDnsAddresses {
+                addresses,
+                ttl: answer_ttl.unwrap_or(DNS_DEFAULT_TTL),
+            }),
+        ));
+    }
+    if cname_conflict {
+        return Err(invalid_dns_response(
+            "DNS A and AAAA responses contain conflicting CNAME targets",
+        ));
+    }
+    if let Some((alias, ttl)) = cname {
+        return Ok(ConfiguredServerResult::Answer(ConfiguredDnsAnswer::Cname {
+            alias,
+            ttl: answer_ttl.unwrap_or(ttl),
+        }));
+    }
+    if saw_name_error {
+        return Ok(ConfiguredServerResult::Negative(
+            ConfiguredDnsNegative::NameError,
+        ));
+    }
+    if let Some(error) = last_error {
+        return Err(error);
+    }
+    if saw_no_data {
+        return Ok(ConfiguredServerResult::Negative(
+            ConfiguredDnsNegative::NoData,
+        ));
+    }
+
+    Err(invalid_dns_response("DNS server returned no family result"))
 }
 
 #[async_trait]
 impl DnsResolver for ConfiguredDnsResolver {
     async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+        self.resolve_all(domain, port)
+            .await?
+            .first_socket_addr(domain, port)
+    }
+
+    async fn resolve_all(&self, domain: &str, port: u16) -> Result<DnsLookup, TransportError> {
         let resolution = async {
             match self.resolve_configured(domain, port).await {
-                ConfiguredLookupResult::Resolved(addr) => Ok(addr),
-                ConfiguredLookupResult::Fallback(domain) => {
-                    self.fallback.resolve(&domain, port).await
+                ConfiguredLookupResult::Resolved(lookup) => Ok(lookup),
+                ConfiguredLookupResult::Fallback { domain, ttl_cap } => {
+                    let started_at = Instant::now();
+                    self.fallback
+                        .resolve_all(&domain, port)
+                        .await
+                        .map(|lookup| {
+                            cap_lookup_ttl(lookup, age_ttl_cap(ttl_cap, started_at.elapsed()))
+                        })
                 }
                 ConfiguredLookupResult::Negative {
                     domain,
@@ -740,8 +979,11 @@ impl DnsResolver for ConfiguredDnsResolver {
 }
 
 enum ConfiguredLookupResult {
-    Resolved(SocketAddr),
-    Fallback(String),
+    Resolved(DnsLookup),
+    Fallback {
+        domain: String,
+        ttl_cap: Option<Duration>,
+    },
     Negative {
         domain: String,
         negative: ConfiguredDnsNegative,
@@ -767,8 +1009,14 @@ enum ConfiguredServersResult {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ConfiguredDnsAnswer {
-    Ip(IpAddr),
-    Cname(String),
+    Addresses(ConfiguredDnsAddresses),
+    Cname { alias: String, ttl: Duration },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ConfiguredDnsAddresses {
+    addresses: Vec<IpAddr>,
+    ttl: Duration,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -999,12 +1247,17 @@ fn parse_dns_response(
         return Ok(ParsedDnsResponse::Truncated);
     }
 
-    let mut accepted_answer_names = vec![expected_question];
-    let mut cname = None;
+    let mut response_ttl = DNS_DEFAULT_TTL;
+    let mut addresses = Vec::new();
+    let mut cnames = Vec::new();
     for _ in 0..answer_count {
         let owner_name = read_dns_name(packet, &mut offset)?;
         let record_type = read_u16(packet, offset)?;
         let record_class = read_u16(packet, offset + 2)?;
+        let ttl = Duration::from_secs(u64::from(
+            read_u32(packet, offset + 4)?.clamp(1, DNS_DEFAULT_TTL.as_secs() as u32),
+        ));
+        response_ttl = response_ttl.min(ttl);
         let data_len = usize::from(read_u16(packet, offset + 8)?);
         offset = offset
             .checked_add(10)
@@ -1016,22 +1269,18 @@ fn parse_dns_response(
             return Err(invalid_dns_response("truncated dns rdata"));
         }
 
-        if record_class == 1
-            && record_type == requested_type.code()
-            && accepted_answer_names
-                .iter()
-                .any(|name| name.eq_ignore_ascii_case(&owner_name))
-        {
+        if record_class == 1 && record_type == requested_type.code() {
             match requested_type {
                 DnsRecordType::A if data_len == 4 => {
-                    return Ok(ParsedDnsResponse::Answer(ConfiguredDnsAnswer::Ip(
-                        IpAddr::V4(Ipv4Addr::new(
+                    addresses.push(ParsedDnsAddress {
+                        owner: owner_name,
+                        address: IpAddr::V4(Ipv4Addr::new(
                             packet[offset],
                             packet[offset + 1],
                             packet[offset + 2],
                             packet[offset + 3],
                         )),
-                    )));
+                    });
                 }
                 DnsRecordType::Aaaa if data_len == 16 => {
                     let segments = [
@@ -1044,8 +1293,9 @@ fn parse_dns_response(
                         read_u16(packet, offset + 12)?,
                         read_u16(packet, offset + 14)?,
                     ];
-                    return Ok(ParsedDnsResponse::Answer(ConfiguredDnsAnswer::Ip(
-                        IpAddr::V6(Ipv6Addr::new(
+                    addresses.push(ParsedDnsAddress {
+                        owner: owner_name,
+                        address: IpAddr::V6(Ipv6Addr::new(
                             segments[0],
                             segments[1],
                             segments[2],
@@ -1055,31 +1305,109 @@ fn parse_dns_response(
                             segments[6],
                             segments[7],
                         )),
-                    )));
+                    });
                 }
-                _ => {}
+                _ => {
+                    return Err(invalid_dns_response(
+                        "DNS address record has an invalid RDATA length",
+                    ));
+                }
             }
-        } else if record_class == 1
-            && record_type == 5
-            && accepted_answer_names
-                .iter()
-                .any(|name| name.eq_ignore_ascii_case(&owner_name))
-        {
+        } else if record_class == 1 && record_type == 5 {
             let mut cname_offset = offset;
             let alias = read_dns_name_limited(packet, &mut cname_offset, data_end)?;
             if cname_offset != data_end {
                 return Err(invalid_dns_response("dns cname rdata length mismatch"));
             }
-            accepted_answer_names.push(alias.clone());
-            cname = Some(alias);
+            cnames.push(ParsedDnsCname {
+                owner: owner_name,
+                alias,
+            });
         }
 
         offset = data_end;
     }
 
-    Ok(cname.map_or(ParsedDnsResponse::NoData, |alias| {
-        ParsedDnsResponse::Answer(ConfiguredDnsAnswer::Cname(alias))
-    }))
+    resolve_parsed_dns_answers(&expected_question, addresses, cnames, response_ttl)
+}
+
+struct ParsedDnsAddress {
+    owner: String,
+    address: IpAddr,
+}
+
+struct ParsedDnsCname {
+    owner: String,
+    alias: String,
+}
+
+fn resolve_parsed_dns_answers(
+    expected_name: &str,
+    addresses: Vec<ParsedDnsAddress>,
+    cnames: Vec<ParsedDnsCname>,
+    ttl: Duration,
+) -> io::Result<ParsedDnsResponse> {
+    let mut current_name = expected_name.to_owned();
+    let mut visited = vec![current_name.clone()];
+    let mut followed_cname = false;
+
+    for depth in 0..=MAX_DNS_ALIAS_DEPTH {
+        let matched_addresses = addresses
+            .iter()
+            .filter(|record| record.owner.eq_ignore_ascii_case(&current_name))
+            .map(|record| record.address)
+            .collect::<Vec<_>>();
+        if !matched_addresses.is_empty() {
+            return Ok(ParsedDnsResponse::Answer(ConfiguredDnsAnswer::Addresses(
+                ConfiguredDnsAddresses {
+                    addresses: matched_addresses,
+                    ttl,
+                },
+            )));
+        }
+
+        let mut matching_aliases = cnames
+            .iter()
+            .filter(|record| record.owner.eq_ignore_ascii_case(&current_name));
+        let Some(first_alias) = matching_aliases.next() else {
+            return if followed_cname {
+                Ok(ParsedDnsResponse::Answer(ConfiguredDnsAnswer::Cname {
+                    alias: current_name,
+                    ttl,
+                }))
+            } else if addresses.is_empty() && cnames.is_empty() {
+                Ok(ParsedDnsResponse::NoData)
+            } else {
+                Err(invalid_dns_response(
+                    "DNS response contains no answer for the requested name",
+                ))
+            };
+        };
+        if matching_aliases.any(|record| !record.alias.eq_ignore_ascii_case(&first_alias.alias)) {
+            return Err(invalid_dns_response(
+                "DNS response contains conflicting CNAME targets",
+            ));
+        }
+        if depth == MAX_DNS_ALIAS_DEPTH {
+            return Err(invalid_dns_response(
+                "DNS CNAME chain exceeds the depth limit",
+            ));
+        }
+        if visited
+            .iter()
+            .any(|name| name.eq_ignore_ascii_case(&first_alias.alias))
+        {
+            return Err(invalid_dns_response("DNS CNAME chain contains a cycle"));
+        }
+
+        followed_cname = true;
+        current_name.clone_from(&first_alias.alias);
+        visited.push(current_name.clone());
+    }
+
+    Err(invalid_dns_response(
+        "DNS CNAME chain exceeds the depth limit",
+    ))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1191,6 +1519,13 @@ fn read_u16(packet: &[u8], offset: usize) -> io::Result<u16> {
     Ok(u16::from_be_bytes([bytes[0], bytes[1]]))
 }
 
+fn read_u32(packet: &[u8], offset: usize) -> io::Result<u32> {
+    let bytes = packet
+        .get(offset..offset + 4)
+        .ok_or_else(|| invalid_dns_response("truncated u32"))?;
+    Ok(u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+}
+
 fn invalid_dns_response(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }
@@ -1222,7 +1557,7 @@ fn domain_matches_suffix(domain: &str, suffix: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use std::io;
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV6};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
@@ -1231,10 +1566,10 @@ mod tests {
     use tokio::sync::{oneshot, Barrier, Notify};
 
     use super::{
-        build_dns_query_with_id, query_udp_dns_server, CachingDnsResolver, ConfiguredDnsAnswer,
-        ConfiguredDnsResolver, DnsQueryTransport, DnsQueryTransportKind, DnsRecordType,
-        DnsResolver, NameServer, StaticHostRule, StaticHostTarget, TransportDomainMatcher,
-        DNS_CACHE_MAX_ENTRIES,
+        build_dns_query_with_id, parse_dns_response, query_udp_dns_server, CachingDnsResolver,
+        ConfiguredDnsAddresses, ConfiguredDnsAnswer, ConfiguredDnsResolver, DnsLookup,
+        DnsQueryTransport, DnsQueryTransportKind, DnsRecordType, DnsResolver, NameServer,
+        StaticHostRule, StaticHostTarget, TransportDomainMatcher, DNS_CACHE_MAX_ENTRIES,
     };
     use crate::{SocketHandle, SocketProtector, TransportError};
 
@@ -1244,6 +1579,60 @@ mod tests {
             .expect("valid query should encode");
 
         assert_eq!(&query[..2], &0xA17E_u16.to_be_bytes());
+    }
+
+    #[test]
+    fn dns_parser_flattens_out_of_order_cname_chain_and_uses_minimum_ttl() {
+        let query = build_dns_query_with_id("origin.example", DnsRecordType::A, 0xA17F).unwrap();
+        let response =
+            build_test_cname_and_a_response(&query, "alias.example", Ipv4Addr::new(192, 0, 2, 84));
+
+        let parsed = parse_dns_response(&query, &response, DnsRecordType::A).unwrap();
+
+        assert_eq!(
+            parsed,
+            super::ParsedDnsResponse::Answer(ConfiguredDnsAnswer::Addresses(
+                ConfiguredDnsAddresses {
+                    addresses: vec![IpAddr::V4(Ipv4Addr::new(192, 0, 2, 84))],
+                    ttl: Duration::from_secs(20),
+                },
+            ))
+        );
+    }
+
+    #[test]
+    fn dns_lookup_preserves_order_and_removes_exact_duplicates() {
+        let first = SocketAddr::from(([192, 0, 2, 10], 443));
+        let second = SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 8443, 7, 9));
+
+        let lookup = DnsLookup::new(
+            [first, second, first, second],
+            Some(Duration::from_secs(30)),
+        );
+
+        assert_eq!(lookup.socket_addrs(), &[first, second]);
+        assert!(lookup.ttl().is_some_and(|ttl| {
+            ttl <= Duration::from_secs(30) && ttl > Duration::from_secs(29)
+        }));
+    }
+
+    struct LegacySocketDnsResolver(SocketAddr);
+
+    #[async_trait::async_trait]
+    impl DnsResolver for LegacySocketDnsResolver {
+        async fn resolve(&self, _domain: &str, _port: u16) -> Result<SocketAddr, TransportError> {
+            Ok(self.0)
+        }
+    }
+
+    #[tokio::test]
+    async fn default_resolve_all_preserves_legacy_socket_address_as_is() {
+        let expected = SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 8443, 17, 9));
+        let resolver = LegacySocketDnsResolver(expected);
+
+        let lookup = resolver.resolve_all("legacy.example", 443).await.unwrap();
+
+        assert_eq!(lookup.socket_addrs(), &[expected]);
     }
 
     #[derive(Default)]
@@ -1332,7 +1721,10 @@ mod tests {
 
         assert_eq!(
             answer,
-            ConfiguredDnsAnswer::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 20)))
+            ConfiguredDnsAnswer::Addresses(ConfiguredDnsAddresses {
+                addresses: vec![IpAddr::V4(Ipv4Addr::new(192, 0, 2, 20))],
+                ttl: Duration::from_secs(60),
+            })
         );
     }
 
@@ -1383,7 +1775,10 @@ mod tests {
 
         assert_eq!(
             answer,
-            ConfiguredDnsAnswer::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 21)))
+            ConfiguredDnsAnswer::Addresses(ConfiguredDnsAddresses {
+                addresses: vec![IpAddr::V4(Ipv4Addr::new(192, 0, 2, 21))],
+                ttl: Duration::from_secs(60),
+            })
         );
     }
 
@@ -1413,10 +1808,141 @@ mod tests {
             Arc::new(RejectingResolver),
         );
 
+        let lookup = resolver.resolve_all("PROXY.EXAMPLE.", 443).await.unwrap();
+
         assert_eq!(
-            resolver.resolve("PROXY.EXAMPLE.", 443).await.unwrap(),
-            SocketAddr::from(([192, 0, 2, 2], 443))
+            lookup.socket_addrs(),
+            &[SocketAddr::from(([192, 0, 2, 2], 443))]
         );
+        assert!(lookup
+            .ttl()
+            .is_some_and(|ttl| { ttl <= Duration::from_secs(10) && ttl > Duration::from_secs(9) }));
+    }
+
+    struct MultiAddressQueryTransport;
+
+    #[async_trait::async_trait]
+    impl DnsQueryTransport for MultiAddressQueryTransport {
+        async fn exchange(
+            &self,
+            _server: &NameServer,
+            _transport: DnsQueryTransportKind,
+            query: &[u8],
+        ) -> io::Result<Vec<u8>> {
+            let record_type = u16::from_be_bytes([query[query.len() - 4], query[query.len() - 3]]);
+            match record_type {
+                1 => Ok(build_test_address_response(
+                    query,
+                    &[
+                        (1, 120, Ipv4Addr::new(192, 0, 2, 80).octets().to_vec()),
+                        (1, 30, Ipv4Addr::new(192, 0, 2, 81).octets().to_vec()),
+                    ],
+                )),
+                28 => Ok(build_test_address_response(
+                    query,
+                    &[
+                        (
+                            28,
+                            90,
+                            Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 80)
+                                .octets()
+                                .to_vec(),
+                        ),
+                        (
+                            28,
+                            45,
+                            Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 81)
+                                .octets()
+                                .to_vec(),
+                        ),
+                    ],
+                )),
+                _ => Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "unexpected DNS query type",
+                )),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn configured_dns_returns_all_families_with_minimum_answer_ttl() {
+        let resolver = ConfiguredDnsResolver::new(
+            Vec::new(),
+            vec![NameServer::Socket(SocketAddr::from(([192, 0, 2, 53], 53)))],
+            Arc::new(RejectingResolver),
+        )
+        .with_query_transport(Arc::new(MultiAddressQueryTransport));
+
+        let lookup = resolver.resolve_all("multi.example", 443).await.unwrap();
+
+        assert_eq!(
+            lookup.ips().collect::<Vec<_>>(),
+            vec![
+                IpAddr::V4(Ipv4Addr::new(192, 0, 2, 80)),
+                IpAddr::V4(Ipv4Addr::new(192, 0, 2, 81)),
+                IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 80)),
+                IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 81)),
+            ]
+        );
+        assert!(lookup.ttl().is_some_and(|ttl| {
+            ttl <= Duration::from_secs(30) && ttl > Duration::from_secs(29)
+        }));
+    }
+
+    struct TtlCountingResolver {
+        calls: AtomicUsize,
+        ttl: Duration,
+    }
+
+    #[async_trait::async_trait]
+    impl DnsResolver for TtlCountingResolver {
+        async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+            self.resolve_all(domain, port)
+                .await?
+                .first_socket_addr(domain, port)
+        }
+
+        async fn resolve_all(
+            &self,
+            _domain: &str,
+            _port: u16,
+        ) -> Result<DnsLookup, TransportError> {
+            self.calls.fetch_add(1, Ordering::Relaxed);
+            Ok(DnsLookup::from_ips(
+                [
+                    IpAddr::V4(Ipv4Addr::new(192, 0, 2, 82)),
+                    IpAddr::V4(Ipv4Addr::new(192, 0, 2, 83)),
+                ],
+                _port,
+                Some(self.ttl),
+            ))
+        }
+    }
+
+    #[tokio::test]
+    async fn caching_dns_expires_multi_address_result_using_upstream_ttl() {
+        let inner = Arc::new(TtlCountingResolver {
+            calls: AtomicUsize::new(0),
+            ttl: Duration::from_secs(1),
+        });
+        let resolver = CachingDnsResolver::new(inner.clone());
+
+        let first = resolver.resolve_all("ttl.example", 443).await.unwrap();
+        let first_ttl = first.ttl().unwrap();
+        let cached = resolver.resolve_all("ttl.example", 443).await.unwrap();
+        let cached_ttl = cached.ttl().unwrap();
+        tokio::time::sleep(Duration::from_millis(1_100)).await;
+        let refreshed = resolver.resolve_all("ttl.example", 443).await.unwrap();
+
+        assert_eq!(first.socket_addrs(), cached.socket_addrs());
+        assert_eq!(cached.socket_addrs(), refreshed.socket_addrs());
+        assert!(!cached_ttl.is_zero());
+        assert!(cached_ttl <= first_ttl);
+        assert!(refreshed.ttl().is_some_and(|ttl| {
+            ttl <= Duration::from_secs(1) && ttl > Duration::from_millis(900)
+        }));
+        assert_eq!(inner.calls.load(Ordering::Relaxed), 2);
     }
 
     struct DelayedCountingResolver {
@@ -1672,7 +2198,12 @@ mod tests {
         assert_eq!(resolved, SocketAddr::from(([192, 0, 2, 25], 443)));
         assert_eq!(
             *transport.calls.lock().unwrap(),
-            vec![DnsQueryTransportKind::Udp, DnsQueryTransportKind::Tcp]
+            vec![
+                DnsQueryTransportKind::Udp,
+                DnsQueryTransportKind::Tcp,
+                DnsQueryTransportKind::Udp,
+                DnsQueryTransportKind::Tcp,
+            ]
         );
     }
 
@@ -1740,7 +2271,7 @@ mod tests {
             error,
             TransportError::DnsNameError(domain, 443) if domain == "missing.example"
         ));
-        assert_eq!(transport.calls.load(Ordering::Relaxed), 1);
+        assert_eq!(transport.calls.load(Ordering::Relaxed), 2);
         assert_eq!(fallback.calls.load(Ordering::Relaxed), 0);
     }
 
@@ -1813,7 +2344,35 @@ mod tests {
         let resolved = resolver.resolve("servfail.example", 443).await.unwrap();
 
         assert_eq!(resolved, SocketAddr::from(([192, 0, 2, 72], 443)));
-        assert_eq!(*transport.calls.lock().unwrap(), vec![first, second]);
+        assert_eq!(
+            *transport.calls.lock().unwrap(),
+            vec![first.clone(), first, second.clone(), second]
+        );
+    }
+
+    #[tokio::test]
+    async fn configured_dns_nxdomain_moves_to_the_next_server() {
+        let first = NameServer::Socket(SocketAddr::from(([192, 0, 2, 1], 53)));
+        let second = NameServer::Socket(SocketAddr::from(([192, 0, 2, 2], 53)));
+        let transport = Arc::new(FirstServerResponseCodeTransport {
+            first: first.clone(),
+            response_code: 3,
+            calls: Mutex::new(Vec::new()),
+        });
+        let resolver = ConfiguredDnsResolver::new(
+            Vec::new(),
+            vec![first.clone(), second.clone()],
+            Arc::new(RejectingResolver),
+        )
+        .with_query_transport(transport.clone());
+
+        let resolved = resolver.resolve("nxdomain.example", 443).await.unwrap();
+
+        assert_eq!(resolved, SocketAddr::from(([192, 0, 2, 72], 443)));
+        assert_eq!(
+            *transport.calls.lock().unwrap(),
+            vec![first.clone(), first, second.clone(), second]
+        );
     }
 
     struct PendingResolver;
@@ -1869,6 +2428,83 @@ mod tests {
         }
     }
 
+    struct PendingAaaaQueryTransport;
+
+    #[async_trait::async_trait]
+    impl DnsQueryTransport for PendingAaaaQueryTransport {
+        async fn exchange(
+            &self,
+            _server: &NameServer,
+            _transport: DnsQueryTransportKind,
+            query: &[u8],
+        ) -> io::Result<Vec<u8>> {
+            let record_type = u16::from_be_bytes([query[query.len() - 4], query[query.len() - 3]]);
+            if record_type == 1 {
+                Ok(build_test_a_response(query, Ipv4Addr::new(192, 0, 2, 63)))
+            } else {
+                std::future::pending().await
+            }
+        }
+    }
+
+    struct NxdomainPendingAaaaQueryTransport;
+
+    #[async_trait::async_trait]
+    impl DnsQueryTransport for NxdomainPendingAaaaQueryTransport {
+        async fn exchange(
+            &self,
+            _server: &NameServer,
+            _transport: DnsQueryTransportKind,
+            query: &[u8],
+        ) -> io::Result<Vec<u8>> {
+            let record_type = u16::from_be_bytes([query[query.len() - 4], query[query.len() - 3]]);
+            if record_type == 1 {
+                Ok(build_test_empty_response(query, 3))
+            } else {
+                std::future::pending().await
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn configured_dns_keeps_positive_family_when_other_family_times_out() {
+        let resolver = ConfiguredDnsResolver::new(
+            Vec::new(),
+            vec![NameServer::Socket(SocketAddr::from(([192, 0, 2, 1], 53)))],
+            Arc::new(RejectingResolver),
+        )
+        .with_query_transport(Arc::new(PendingAaaaQueryTransport))
+        .with_server_timeout(Duration::from_millis(10));
+
+        let lookup = resolver.resolve_all("partial.example", 443).await.unwrap();
+
+        assert_eq!(
+            lookup.socket_addrs(),
+            &[SocketAddr::from(([192, 0, 2, 63], 443))]
+        );
+        assert!(lookup
+            .ttl()
+            .is_some_and(|ttl| { ttl < Duration::from_secs(60) && ttl > Duration::from_secs(59) }));
+    }
+
+    #[tokio::test]
+    async fn configured_dns_nxdomain_wins_when_other_family_times_out() {
+        let resolver = ConfiguredDnsResolver::new(
+            Vec::new(),
+            vec![NameServer::Socket(SocketAddr::from(([192, 0, 2, 1], 53)))],
+            Arc::new(RejectingResolver),
+        )
+        .with_query_transport(Arc::new(NxdomainPendingAaaaQueryTransport))
+        .with_server_timeout(Duration::from_millis(10));
+
+        let error = resolver.resolve("missing.example", 443).await.unwrap_err();
+
+        assert!(matches!(
+            error,
+            TransportError::DnsNameError(domain, 443) if domain == "missing.example"
+        ));
+    }
+
     #[tokio::test]
     async fn configured_dns_gives_each_server_one_a_and_aaaa_budget() {
         let first = NameServer::Socket(SocketAddr::from(([192, 0, 2, 1], 53)));
@@ -1891,7 +2527,12 @@ mod tests {
         assert_eq!(resolved, SocketAddr::from(([192, 0, 2, 62], 443)));
         assert_eq!(
             *transport.calls.lock().unwrap(),
-            vec![(first, 1), (second, 1)]
+            vec![
+                (first.clone(), 1),
+                (first, 28),
+                (second.clone(), 1),
+                (second, 28)
+            ]
         );
     }
 
@@ -1916,21 +2557,64 @@ mod tests {
     }
 
     fn build_test_a_response(query: &[u8], answer: Ipv4Addr) -> Vec<u8> {
-        let mut response = Vec::with_capacity(query.len() + 16);
+        build_test_address_response(query, &[(1, 60, answer.octets().to_vec())])
+    }
+
+    fn build_test_address_response(query: &[u8], answers: &[(u16, u32, Vec<u8>)]) -> Vec<u8> {
+        let mut response = Vec::with_capacity(query.len() + answers.len() * 28);
         response.extend_from_slice(&query[..2]);
         response.extend_from_slice(&0x8180_u16.to_be_bytes());
         response.extend_from_slice(&1_u16.to_be_bytes());
-        response.extend_from_slice(&1_u16.to_be_bytes());
+        response.extend_from_slice(&(answers.len() as u16).to_be_bytes());
         response.extend_from_slice(&0_u16.to_be_bytes());
         response.extend_from_slice(&0_u16.to_be_bytes());
         response.extend_from_slice(&query[12..]);
-        response.extend_from_slice(&0xC00C_u16.to_be_bytes());
+        for (record_type, ttl, answer) in answers {
+            response.extend_from_slice(&0xC00C_u16.to_be_bytes());
+            response.extend_from_slice(&record_type.to_be_bytes());
+            response.extend_from_slice(&1_u16.to_be_bytes());
+            response.extend_from_slice(&ttl.to_be_bytes());
+            response.extend_from_slice(&(answer.len() as u16).to_be_bytes());
+            response.extend_from_slice(answer);
+        }
+        response
+    }
+
+    fn build_test_cname_and_a_response(query: &[u8], alias: &str, answer: Ipv4Addr) -> Vec<u8> {
+        let encoded_alias = encode_test_dns_name(alias);
+        let mut response = Vec::with_capacity(query.len() + encoded_alias.len() * 2 + 42);
+        response.extend_from_slice(&query[..2]);
+        response.extend_from_slice(&0x8180_u16.to_be_bytes());
+        response.extend_from_slice(&1_u16.to_be_bytes());
+        response.extend_from_slice(&2_u16.to_be_bytes());
+        response.extend_from_slice(&0_u16.to_be_bytes());
+        response.extend_from_slice(&0_u16.to_be_bytes());
+        response.extend_from_slice(&query[12..]);
+
+        response.extend_from_slice(&encoded_alias);
         response.extend_from_slice(&1_u16.to_be_bytes());
         response.extend_from_slice(&1_u16.to_be_bytes());
-        response.extend_from_slice(&60_u32.to_be_bytes());
+        response.extend_from_slice(&90_u32.to_be_bytes());
         response.extend_from_slice(&4_u16.to_be_bytes());
         response.extend_from_slice(&answer.octets());
+
+        response.extend_from_slice(&0xC00C_u16.to_be_bytes());
+        response.extend_from_slice(&5_u16.to_be_bytes());
+        response.extend_from_slice(&1_u16.to_be_bytes());
+        response.extend_from_slice(&20_u32.to_be_bytes());
+        response.extend_from_slice(&(encoded_alias.len() as u16).to_be_bytes());
+        response.extend_from_slice(&encoded_alias);
         response
+    }
+
+    fn encode_test_dns_name(domain: &str) -> Vec<u8> {
+        let mut encoded = Vec::new();
+        for label in domain.split('.') {
+            encoded.push(label.len() as u8);
+            encoded.extend_from_slice(label.as_bytes());
+        }
+        encoded.push(0);
+        encoded
     }
 
     fn build_test_empty_response(query: &[u8], response_code: u16) -> Vec<u8> {

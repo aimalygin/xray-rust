@@ -122,28 +122,36 @@ if none matches, the first outbound tag is used as the default.
 `dns.servers` accepts at most eight IP addresses, socket addresses, or domain
 names with an optional nonzero port. The TUN-local `198.18.0.1:53` anchor and
 `198.18.0.2:53` client address cannot be configured as upstreams, including as
-IPv4-mapped IPv6 literals. The resolver builds A/AAAA queries and validates
-A/AAAA answers plus CNAME chains in `xray-transport`; the delivery transport is
-replaceable, so TUN resolution sends them through the outbound router rather
-than duplicating the DNS parser. A valid UDP response with `TC=1` retries over
-TCP to the same server. UDP transports ignore responses with an unrelated
+IPv4-mapped IPv6 literals. The resolver sends A and AAAA concurrently, retains
+all usable answers in DNS order (A before AAAA), and validates A/AAAA records
+plus CNAME chains in `xray-transport`; the delivery transport is replaceable,
+so TUN resolution sends them through the outbound router rather than
+duplicating the DNS parser. A valid UDP response with `TC=1` retries over TCP
+to the same server. UDP transports ignore responses with an unrelated
 transaction ID, opcode, name, type, or class until the attempt deadline.
-Managed destination results use a bounded 60-second LRU cache; ASCII case is
-canonicalized, and overflow evicts one least-recently-used entry rather than
-flushing the whole cache. Concurrent misses for the same `(domain, port)`
-share one cancellation-safe lookup and the same typed outcome instead of
-opening duplicate routed DNS/VLESS sessions.
+Managed destination results use a bounded 256-entry LRU cache. Authoritative
+answer TTLs are clamped to 1–300 seconds and the minimum TTL across the answer
+chain controls expiry; static `dns.hosts` IPs use 10 seconds, while resolvers
+without TTL metadata use the 300-second policy cap. Cache hits expose the
+remaining TTL rather than extending it. ASCII case is canonicalized, and
+overflow evicts one least-recently-used entry rather than flushing the whole
+cache. Concurrent misses for the same `(domain, port)` share one
+cancellation-safe lookup and the same typed outcome instead of opening
+duplicate routed DNS/VLESS sessions.
 
 For managed runtimes, including TUN, SOCKS, HTTP, and startup probes, `System`
 resolution is `dns.hosts` → routed `dns.servers` → cached operating-system
 fallback when the configured upstreams are unavailable. Authoritative
-NXDOMAIN and A+AAAA NODATA are terminal and do not leak into that fallback;
-SERVFAIL, malformed replies, and transport failures move to the next server.
-The five-second resolution deadline includes the final fallback, and each
-server gets one shared A/AAAA attempt budget. `StaticOnly` uses the same routed
-path and then fails closed; its separate bootstrap resolver never uses
-`dns.servers` or the operating-system resolver. Explicitly injected resolvers
-remain trusted integration dependencies and are used as-is.
+NXDOMAIN and A+AAAA NODATA advance to the next configured server, matching
+Xray-core's ordered failover. If no later server succeeds, an authoritative
+negative result is terminal and does not leak into the operating-system
+fallback. SERVFAIL, malformed replies, and transport failures also move to the
+next server. The five-second resolution deadline includes the final fallback;
+A and AAAA run concurrently under the same wall-clock server budget.
+`StaticOnly` uses the same routed path and then fails closed; its separate
+bootstrap resolver never uses `dns.servers` or the operating-system resolver.
+Explicitly injected resolvers remain trusted integration dependencies and are
+used as-is.
 
 When fake-IP is disabled and at least one usable server is present, TUN clients
 can use `198.18.0.1:53` as a local UDP/TCP DNS proxy. The proxy keeps
@@ -195,8 +203,10 @@ takes precedence over raw proxying. When a later TCP/UDP flow targets a fake
 address, the original domain is restored before routing. VLESS carries that
 domain for remote resolution; Freedom resolves it through the managed routed
 resolver, including in mobile `StaticOnly` mode. DNS-over-HTTPS/TLS, client-IP,
-per-server rule objects, richer multi-address/TTL lookup results, and the
-broader Xray DNS feature set are not implemented.
+per-server rule objects, negative/stale caching, and the broader Xray DNS
+feature set are not implemented. The public resolver result already carries
+all candidates and TTL metadata, but connection attempts still use the legacy
+first-candidate path until the shared TCP Happy Eyeballs dialer is enabled.
 
 A fake-IP profile does not inherently need `dns.servers` when its restored
 domains always use VLESS, because VLESS preserves them for remote resolution.

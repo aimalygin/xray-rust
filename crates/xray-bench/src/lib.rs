@@ -9,11 +9,12 @@ use std::os::fd::{AsRawFd, RawFd};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{
-    atomic::{AtomicU64, Ordering},
+    atomic::{AtomicU64, AtomicUsize, Ordering},
     Arc,
 };
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
 use rcgen::{generate_simple_self_signed, CertifiedKey};
 use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
@@ -47,8 +48,8 @@ use tokio::time::{sleep, timeout};
 use tokio_rustls::TlsAcceptor;
 use xray_config::{
     parse_xray_json, CoreConfig, InboundConfig, InboundProtocol, IpCidr, IpMatcher,
-    Network as ConfigNetwork, OutboundConfig, OutboundSettings, RoutingConfig, RoutingRule,
-    StreamSecurity, StreamSettings,
+    Network as ConfigNetwork, OutboundConfig, OutboundSettings, RoutingConfig,
+    RoutingDomainStrategy, RoutingRule, StreamSecurity, StreamSettings,
 };
 use xray_core_rs::{Core, OutboundRouter, StartupProbeOptions};
 use xray_proxy::vless::{
@@ -56,6 +57,7 @@ use xray_proxy::vless::{
     unpad_vision_block, VisionCommand, VisionPadding,
 };
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
+use xray_transport::{CachingDnsResolver, DnsLookup, DnsResolver, TransportError};
 use xray_utls::{normalize_reality_supported_fingerprint, XRAY_REALITY_CAPABLE_FINGERPRINTS};
 
 pub mod chart;
@@ -349,6 +351,7 @@ pub struct RouteProbeOptions {
     pub iterations: usize,
     pub rules: usize,
     pub outbounds: usize,
+    pub dns_candidates: usize,
     pub out_dir: PathBuf,
 }
 
@@ -950,6 +953,7 @@ impl Default for RouteProbeOptions {
             iterations: 100_000,
             rules: 64,
             outbounds: 8,
+            dns_candidates: 0,
             out_dir: PathBuf::from("target/benchmarks"),
         }
     }
@@ -982,6 +986,8 @@ pub struct RouteProbeResult {
     pub iterations: usize,
     pub rules: usize,
     pub outbounds: usize,
+    #[serde(default)]
+    pub dns_candidates: usize,
     pub selected: usize,
     pub total_us: u128,
     pub avg_ns: u128,
@@ -1138,6 +1144,10 @@ fn parse_route_probe_args(args: &[String]) -> Result<RouteProbeOptions, BenchErr
             "--outbounds" => {
                 options.outbounds =
                     parse_nonzero_usize(required_value(args, &mut index, flag)?, flag)?;
+            }
+            "--dns-candidates" => {
+                options.dns_candidates =
+                    parse_usize(required_value(args, &mut index, flag)?, flag)?;
             }
             "--out-dir" => {
                 options.out_dir = PathBuf::from(required_value(args, &mut index, flag)?);
@@ -6781,7 +6791,7 @@ where
         }
         CliArgs::Compare(options) => run_compare(options).await,
         CliArgs::RouteProbe(options) => {
-            let result = run_route_probe(&options)?;
+            let result = run_route_probe(&options).await?;
             print_route_probe_result(&result);
             Ok(())
         }
@@ -6794,19 +6804,79 @@ where
     }
 }
 
-pub fn run_route_probe(options: &RouteProbeOptions) -> Result<RouteProbeResult, BenchError> {
-    let config = Arc::new(route_probe_config(options.rules, options.outbounds)?);
-    let outbound_router = OutboundRouter::new(config);
+const ROUTE_PROBE_DOMAIN: &str = "route-probe.invalid";
+const ROUTE_PROBE_PORT: u16 = 443;
+const ROUTE_PROBE_TARGET_IP: Ipv4Addr = Ipv4Addr::new(203, 0, 113, 7);
+const ROUTE_PROBE_CACHE_TTL: Duration = Duration::from_secs(24 * 60 * 60);
+const ROUTE_PROBE_IPV4_MISS_BASE: u32 = 0xc612_0000;
+const MAX_ROUTE_PROBE_DNS_CANDIDATES: usize = 4096;
+const ROUTE_PROBE_UNMATCHED_TAG: &str = "route-probe-unmatched";
+
+struct RouteProbeDnsResolver {
+    result: DnsLookup,
+    lookups: AtomicUsize,
+}
+
+impl RouteProbeDnsResolver {
+    fn new(candidate_count: usize) -> Self {
+        let mut addresses = (0..candidate_count.saturating_sub(1))
+            .map(|index| {
+                let address = Ipv4Addr::from(ROUTE_PROBE_IPV4_MISS_BASE + index as u32);
+                SocketAddr::new(IpAddr::V4(address), ROUTE_PROBE_PORT)
+            })
+            .collect::<Vec<_>>();
+        addresses.push(SocketAddr::new(
+            IpAddr::V4(ROUTE_PROBE_TARGET_IP),
+            ROUTE_PROBE_PORT,
+        ));
+        Self {
+            result: DnsLookup::new(addresses, Some(ROUTE_PROBE_CACHE_TTL)),
+            lookups: AtomicUsize::new(0),
+        }
+    }
+
+    fn record_lookup(&self, domain: &str, port: u16) -> Result<DnsLookup, TransportError> {
+        if domain != ROUTE_PROBE_DOMAIN || port != ROUTE_PROBE_PORT {
+            return Err(TransportError::NoResolvedAddress(domain.to_owned(), port));
+        }
+        self.lookups.fetch_add(1, Ordering::Relaxed);
+        Ok(self.result.clone())
+    }
+
+    fn lookups(&self) -> usize {
+        self.lookups.load(Ordering::Relaxed)
+    }
+}
+
+#[async_trait]
+impl DnsResolver for RouteProbeDnsResolver {
+    async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+        self.record_lookup(domain, port)?
+            .socket_addrs()
+            .first()
+            .copied()
+            .ok_or_else(|| TransportError::NoResolvedAddress(domain.to_owned(), port))
+    }
+
+    async fn resolve_all(&self, domain: &str, port: u16) -> Result<DnsLookup, TransportError> {
+        self.record_lookup(domain, port)
+    }
+}
+
+fn measure_direct_route_probe(
+    outbound_router: &OutboundRouter,
+    iterations: usize,
+) -> Result<(usize, Duration), BenchError> {
     let target = Target::new(
-        RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7))),
-        443,
+        RoutingTargetAddr::Ip(IpAddr::V4(ROUTE_PROBE_TARGET_IP)),
+        ROUTE_PROBE_PORT,
         RoutingNetwork::Tcp,
     );
     let inbound_tag = Some("bench-in");
     let started = Instant::now();
     let mut selected = 0;
-    for _ in 0..options.iterations {
-        let outbound = black_box(&outbound_router)
+    for _ in 0..iterations {
+        let outbound = black_box(outbound_router)
             .select_tcp_outbound_for_session(inbound_tag, black_box(&target))
             .map_err(|error| {
                 BenchError::InvalidArguments(format!("route probe failed: {error}"))
@@ -6815,11 +6885,91 @@ pub fn run_route_probe(options: &RouteProbeOptions) -> Result<RouteProbeResult, 
             selected += 1;
         }
     }
+    Ok((selected, started.elapsed()))
+}
+
+async fn measure_cached_dns_route_probe(
+    outbound_router: &OutboundRouter,
+    iterations: usize,
+    candidate_count: usize,
+) -> Result<(usize, Duration), BenchError> {
+    let upstream = Arc::new(RouteProbeDnsResolver::new(candidate_count));
+    let resolver = CachingDnsResolver::with_ttl(upstream.clone(), ROUTE_PROBE_CACHE_TTL);
+    let target = Target::new(
+        RoutingTargetAddr::Domain(ROUTE_PROBE_DOMAIN.to_owned()),
+        ROUTE_PROBE_PORT,
+        RoutingNetwork::Tcp,
+    );
+    let inbound_tag = Some("bench-in");
+    outbound_router
+        .select_tcp_outbound_for_session_with_resolver(inbound_tag, &target, &resolver)
+        .await
+        .map_err(|error| {
+            BenchError::InvalidArguments(format!("warming route-probe DNS route: {error}"))
+        })?;
+    let warm_lookups = upstream.lookups();
+    if warm_lookups != 1 {
+        return Err(BenchError::InvalidArguments(format!(
+            "DNS route probe expected one warm-up lookup, observed {warm_lookups}"
+        )));
+    }
+    let started = Instant::now();
+    let mut selected = 0;
+    for _ in 0..iterations {
+        let outbound = black_box(outbound_router)
+            .select_tcp_outbound_for_session_with_resolver(
+                inbound_tag,
+                black_box(&target),
+                black_box(&resolver),
+            )
+            .await
+            .map_err(|error| {
+                BenchError::InvalidArguments(format!("DNS route probe failed: {error}"))
+            })?;
+        if matches!(black_box(outbound), xray_core_rs::TcpOutbound::Freedom) {
+            selected += 1;
+        }
+    }
     let elapsed = started.elapsed();
+    let upstream_lookups = upstream.lookups();
+    if upstream_lookups != 1 {
+        return Err(BenchError::InvalidArguments(format!(
+            "DNS route probe expected one warm-up lookup, observed {upstream_lookups}"
+        )));
+    }
+    Ok((selected, elapsed))
+}
+
+pub async fn run_route_probe(options: &RouteProbeOptions) -> Result<RouteProbeResult, BenchError> {
+    if options.dns_candidates > MAX_ROUTE_PROBE_DNS_CANDIDATES {
+        return Err(BenchError::InvalidArguments(format!(
+            "route-probe --dns-candidates must not exceed {MAX_ROUTE_PROBE_DNS_CANDIDATES}"
+        )));
+    }
+    let mut config = route_probe_config(options.rules, options.outbounds)?;
+    if options.dns_candidates > 0 {
+        if options.rules == 0 {
+            return Err(BenchError::InvalidArguments(
+                "route-probe --dns-candidates requires at least one routing rule".to_owned(),
+            ));
+        }
+        config.routing.domain_strategy = RoutingDomainStrategy::IpIfNonMatch;
+        // Make a missing candidate match observable instead of silently using
+        // the synthetic config's normal freedom fallback.
+        config.default_outbound_tag = Some(ROUTE_PROBE_UNMATCHED_TAG.to_owned());
+    }
+    let outbound_router = OutboundRouter::new(Arc::new(config));
+    let (selected, elapsed) = if options.dns_candidates == 0 {
+        measure_direct_route_probe(&outbound_router, options.iterations)?
+    } else {
+        measure_cached_dns_route_probe(&outbound_router, options.iterations, options.dns_candidates)
+            .await?
+    };
     let result = RouteProbeResult {
         iterations: options.iterations,
         rules: options.rules,
         outbounds: options.outbounds,
+        dns_candidates: options.dns_candidates,
         selected,
         total_us: elapsed.as_micros(),
         avg_ns: elapsed.as_nanos() / options.iterations as u128,
@@ -7821,7 +7971,7 @@ fn route_probe_config(rules: usize, outbounds: usize) -> Result<CoreConfig, Benc
     let mut routing_rules = Vec::with_capacity(rules);
     for index in 0..rules {
         let cidr = if index + 1 == rules {
-            IpCidr::full(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7)))
+            IpCidr::full(IpAddr::V4(ROUTE_PROBE_TARGET_IP))
         } else {
             IpCidr::new(IpAddr::V4(Ipv4Addr::new(10, (index % 256) as u8, 0, 0)), 16)
                 .map_err(|error| BenchError::InvalidArguments(error.to_string()))?
@@ -8145,10 +8295,11 @@ fn print_result(result: &BenchResult) {
 
 fn print_route_probe_result(result: &RouteProbeResult) {
     println!(
-        "route-probe iterations={} rules={} outbounds={} selected={} total_us={} avg_ns={}",
+        "route-probe iterations={} rules={} outbounds={} dns_candidates={} selected={} total_us={} avg_ns={}",
         result.iterations,
         result.rules,
         result.outbounds,
+        result.dns_candidates,
         result.selected,
         result.total_us,
         result.avg_ns
@@ -10160,9 +10311,42 @@ mod tests {
                 iterations: 500,
                 rules: 64,
                 outbounds: 8,
+                dns_candidates: 0,
                 out_dir: PathBuf::from("target/benchmarks/route-probe"),
             })
         );
+    }
+
+    #[test]
+    fn parses_route_probe_dns_candidates() {
+        let args = parse_cli_args(["xray-bench", "route-probe", "--dns-candidates", "8"]).unwrap();
+
+        let CliArgs::RouteProbe(options) = args else {
+            panic!("expected route-probe arguments");
+        };
+        assert_eq!(options.dns_candidates, 8);
+    }
+
+    #[test]
+    fn direct_route_probe_remains_the_zero_candidate_baseline() {
+        let config = Arc::new(route_probe_config(4, 2).unwrap());
+        let router = OutboundRouter::new(config);
+
+        let (selected, _) = measure_direct_route_probe(&router, 3).unwrap();
+
+        assert_eq!(selected, 3);
+    }
+
+    #[tokio::test]
+    async fn cached_dns_route_probe_matches_the_final_candidate_from_the_warmed_cache() {
+        let mut config = route_probe_config(4, 2).unwrap();
+        config.routing.domain_strategy = RoutingDomainStrategy::IpIfNonMatch;
+        config.default_outbound_tag = Some(ROUTE_PROBE_UNMATCHED_TAG.to_owned());
+        let router = OutboundRouter::new(Arc::new(config));
+
+        let (selected, _) = measure_cached_dns_route_probe(&router, 3, 4).await.unwrap();
+
+        assert_eq!(selected, 3);
     }
 
     #[test]

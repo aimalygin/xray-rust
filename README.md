@@ -52,7 +52,7 @@ narrative and measurement caveats, are in
 | Local inbounds | SOCKS5 no-auth `CONNECT` and `UDP ASSOCIATE`, HTTP `CONNECT`, TUN | No authenticated proxy inbound or server-side Xray protocols |
 | Outbounds | Freedom/direct and VLESS client over TCP | No VMess, Trojan, Shadowsocks, WireGuard, balancers, or outbound chaining |
 | Security and flow | TLS, REALITY, `xtls-rprx-vision`, VLESS UDP and XUDP paths | Only the documented config subset and supported REALITY fingerprints |
-| Routing and DNS | Field rules, domain/IP matchers, `geosite`/`geoip`, routed A/AAAA/CNAME resolution and UDP/TCP DNS proxy with IP/domain upstreams, bounded fake-IP subset | No DoH/DoT, rich multi-address/TTL lookup API, or full Xray DNS/routing parity |
+| Routing and DNS | Field rules, domain/IP matchers, `geosite`/`geoip`, routed multi-address A/AAAA/CNAME resolution with TTL-aware cache, UDP/TCP DNS proxy with IP/domain upstreams, bounded fake-IP subset | No DoH/DoT, negative/stale cache, shared TCP Happy Eyeballs dialer, or full Xray DNS/routing parity |
 | Mobile | Swift Package/Xcode sample for iOS, tvOS, and macOS; Android library and `VpnService` adapter | Signing, entitlements, VPN consent, foreground policy, and release packaging remain host-app responsibilities |
 
 See [project status](docs/status.md) and
