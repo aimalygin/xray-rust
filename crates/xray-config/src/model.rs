@@ -57,6 +57,14 @@ pub enum DnsQueryStrategy {
     UseIpv6,
 }
 
+pub const DEFAULT_DNS_SERVER_TIMEOUT_MS: u64 = 4_000;
+/// Largest millisecond value safe across Xray-core's duration conversions.
+///
+/// Xray accepts larger `uint64` values, but its cached parallel-query context
+/// doubles the signed nanosecond duration. Rejecting values above this boundary
+/// avoids an overflow into an unintended deadline.
+pub const MAX_DNS_SERVER_TIMEOUT_MS: u64 = i64::MAX as u64 / 2 / 1_000_000;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DnsServerConfig {
     Ip(SocketAddr),
@@ -70,6 +78,8 @@ pub struct DnsNameServerConfig {
     pub domains: Vec<DomainMatcher>,
     pub expected_ips: DnsIpFilter,
     pub unexpected_ips: DnsIpFilter,
+    /// Raw Xray `timeoutMs`; zero selects [`DEFAULT_DNS_SERVER_TIMEOUT_MS`].
+    pub timeout_ms: u64,
     pub skip_fallback: bool,
     pub query_strategy: DnsQueryStrategy,
     pub final_query: bool,
@@ -210,6 +220,13 @@ impl DnsServerConfig {
 
     pub fn final_query(&self) -> bool {
         matches!(self, Self::Policy(server) if server.final_query)
+    }
+
+    pub fn timeout_ms(&self) -> u64 {
+        match self {
+            Self::Policy(server) if server.timeout_ms != 0 => server.timeout_ms,
+            Self::Policy(_) | Self::Ip(_) | Self::Domain { .. } => DEFAULT_DNS_SERVER_TIMEOUT_MS,
+        }
     }
 }
 

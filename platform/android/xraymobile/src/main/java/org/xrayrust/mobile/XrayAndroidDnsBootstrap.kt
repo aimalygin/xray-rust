@@ -572,6 +572,7 @@ private fun dnsServerBootstrapDomainFromObjectFields(
     validateDnsServerStringList(server, "expectedIPs")
     validateDnsServerStringList(server, "expectIPs")
     validateDnsServerStringList(server, "unexpectedIPs")
+    validateDnsServerTimeout(server)
     validateOptionalDnsServerBoolean(server, "skipFallback")
     validateOptionalDnsServerBoolean(server, "finalQuery")
     validateDnsServerObjectQueryStrategy(server)
@@ -638,6 +639,23 @@ private fun validateDnsServerStringList(server: Map<String, Any?>, key: String) 
         else -> throw IllegalArgumentException(
             "DNS server `$key` must be a string or an array",
         )
+    }
+}
+
+private fun validateDnsServerTimeout(server: Map<String, Any?>) {
+    if ("timeoutMs" !in server) {
+        return
+    }
+    val timeoutMs = when (val value = server["timeoutMs"]) {
+        null, JSONObject.NULL -> 0L
+        is Byte -> value.toLong()
+        is Short -> value.toLong()
+        is Int -> value.toLong()
+        is Long -> value
+        else -> null
+    }
+    require(timeoutMs != null && timeoutMs in 0..MAX_DNS_SERVER_TIMEOUT_MS) {
+        "DNS server `timeoutMs` must be an integer from 0 through $MAX_DNS_SERVER_TIMEOUT_MS"
     }
 }
 
@@ -926,10 +944,13 @@ private val DNS_SERVER_OBJECT_FIELDS = setOf(
     "expectedIPs",
     "expectIPs",
     "unexpectedIPs",
+    "timeoutMs",
     "skipFallback",
     "queryStrategy",
     "finalQuery",
 )
+
+private const val MAX_DNS_SERVER_TIMEOUT_MS = 4_611_686_018_427L
 
 private val DNS_QUERY_STRATEGIES = setOf(
     "useip",

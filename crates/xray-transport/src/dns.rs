@@ -1134,6 +1134,8 @@ pub struct NameServerPolicy {
     pub skip_fallback: bool,
     pub query_strategy: DnsQueryStrategy,
     pub final_query: bool,
+    /// Overrides the resolver's default wall-clock budget for this client.
+    pub timeout: Option<Duration>,
 }
 
 impl NameServerPolicy {
@@ -1146,6 +1148,7 @@ impl NameServerPolicy {
             skip_fallback: false,
             query_strategy: DnsQueryStrategy::UseIp,
             final_query: false,
+            timeout: None,
         }
     }
 }
@@ -1179,6 +1182,7 @@ impl CompiledNameServerPolicies {
                     skip_fallback,
                     query_strategy,
                     final_query,
+                    timeout,
                 } = policy;
                 matcher_count += domains.len();
                 let domains = CompiledDomainMatcherSet::new(domains);
@@ -1191,6 +1195,7 @@ impl CompiledNameServerPolicies {
                     skip_fallback,
                     query_strategy,
                     final_query,
+                    timeout,
                 }
             })
             .collect();
@@ -1212,6 +1217,11 @@ impl CompiledNameServerPolicies {
     /// Returns the configured endpoint at a selected policy index.
     pub fn name_server(&self, index: usize) -> Option<&NameServer> {
         self.policies.get(index).map(|policy| &policy.server)
+    }
+
+    /// Returns the configured timeout override at a selected policy index.
+    pub fn timeout(&self, index: usize) -> Option<Duration> {
+        self.policies.get(index).and_then(|policy| policy.timeout)
     }
 
     /// Returns the number of source domain-matcher entries compiled into this set.
@@ -1284,6 +1294,7 @@ struct CompiledNameServerPolicy {
     skip_fallback: bool,
     query_strategy: DnsQueryStrategy,
     final_query: bool,
+    timeout: Option<Duration>,
 }
 
 impl CompiledNameServerPolicy {
@@ -1504,7 +1515,8 @@ pub struct ConfiguredDnsResolver {
     name_servers: Arc<CompiledNameServerPolicies>,
     fallback: Arc<dyn DnsResolver>,
     server_timeout: Duration,
-    resolution_timeout: Duration,
+    system_fallback_timeout: Option<Duration>,
+    resolution_timeout: Option<Duration>,
     query_transport: Arc<dyn DnsQueryTransport>,
     uses_direct_query_transport: bool,
     query_strategy: DnsQueryStrategy,
@@ -1528,8 +1540,9 @@ impl ConfiguredDnsResolver {
                     .collect(),
             )),
             fallback,
-            server_timeout: Duration::from_secs(2),
-            resolution_timeout: DNS_RESOLUTION_TIMEOUT,
+            server_timeout: Duration::from_secs(4),
+            system_fallback_timeout: Some(DNS_RESOLUTION_TIMEOUT),
+            resolution_timeout: None,
             query_transport,
             uses_direct_query_transport: true,
             query_strategy: DnsQueryStrategy::default(),
@@ -1573,8 +1586,17 @@ impl ConfiguredDnsResolver {
         self
     }
 
+    /// Leaves system fallback timing to the surrounding operation.
+    ///
+    /// This is intended for non-recursive endpoint bootstrap performed inside
+    /// an already bounded configured-server attempt.
+    pub fn without_system_fallback_timeout(mut self) -> Self {
+        self.system_fallback_timeout = None;
+        self
+    }
+
     pub fn with_resolution_timeout(mut self, timeout: Duration) -> Self {
-        self.resolution_timeout = timeout;
+        self.resolution_timeout = Some(timeout);
         self
     }
 
@@ -1618,12 +1640,14 @@ impl ConfiguredDnsResolver {
             let Some(name_server) = self.name_servers.get(index) else {
                 continue;
             };
+            let deadline =
+                time::sleep(name_server.timeout.unwrap_or(self.server_timeout)).deadline();
             let mut current_domain = domain.to_owned();
             let mut cname_ttl_cap = None;
             for depth in 0..MAX_DNS_ALIAS_DEPTH {
                 let started_at = Instant::now();
                 let result = self
-                    .query_configured_server(name_server, &current_domain)
+                    .query_configured_server(name_server, &current_domain, deadline)
                     .await;
                 cname_ttl_cap = age_ttl_cap(cname_ttl_cap, started_at.elapsed());
                 match result {
@@ -1672,6 +1696,7 @@ impl ConfiguredDnsResolver {
         &self,
         name_server: &CompiledNameServerPolicy,
         domain: &str,
+        deadline: time::Instant,
     ) -> io::Result<ConfiguredServerResult> {
         let Some(query_strategy) = self.query_strategy.intersect(name_server.query_strategy) else {
             return Err(io::Error::new(
@@ -1682,16 +1707,26 @@ impl ConfiguredDnsResolver {
         let result = match query_strategy {
             DnsQueryStrategy::UseIp => {
                 let (ipv4, ipv6) = tokio::join!(
-                    self.query_server_with_budget(&name_server.server, domain, DnsRecordType::A),
-                    self.query_server_with_budget(&name_server.server, domain, DnsRecordType::Aaaa),
+                    self.query_server_until(
+                        &name_server.server,
+                        domain,
+                        DnsRecordType::A,
+                        deadline,
+                    ),
+                    self.query_server_until(
+                        &name_server.server,
+                        domain,
+                        DnsRecordType::Aaaa,
+                        deadline,
+                    ),
                 );
                 merge_configured_family_results([ipv4, ipv6])
             }
             DnsQueryStrategy::UseIpv4 => merge_configured_family_results([self
-                .query_server_with_budget(&name_server.server, domain, DnsRecordType::A)
+                .query_server_until(&name_server.server, domain, DnsRecordType::A, deadline)
                 .await]),
             DnsQueryStrategy::UseIpv6 => merge_configured_family_results([self
-                .query_server_with_budget(&name_server.server, domain, DnsRecordType::Aaaa)
+                .query_server_until(&name_server.server, domain, DnsRecordType::Aaaa, deadline)
                 .await]),
         }?;
 
@@ -1711,29 +1746,16 @@ impl ConfiguredDnsResolver {
         }
     }
 
-    async fn query_server_with_budget(
+    async fn query_server_until(
         &self,
         name_server: &NameServer,
         domain: &str,
         record_type: DnsRecordType,
-    ) -> io::Result<(ParsedDnsResponse, Instant)> {
-        time::timeout(
-            self.server_timeout,
-            self.query_server(name_server, domain, record_type),
-        )
-        .await
-        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "dns server budget expired"))?
-    }
-
-    async fn query_server(
-        &self,
-        name_server: &NameServer,
-        domain: &str,
-        record_type: DnsRecordType,
+        deadline: time::Instant,
     ) -> io::Result<(ParsedDnsResponse, Instant)> {
         let query = build_dns_query(domain, record_type)?;
-        let response = time::timeout(
-            self.server_timeout,
+        let response = time::timeout_at(
+            deadline,
             self.query_transport
                 .exchange(name_server, DnsQueryTransportKind::Udp, &query),
         )
@@ -1747,8 +1769,8 @@ impl ConfiguredDnsResolver {
             | ParsedDnsResponse::NameError
             | ParsedDnsResponse::ServerFailure(_)) => Ok((response, observed_at)),
             ParsedDnsResponse::Truncated => {
-                let response = time::timeout(
-                    self.server_timeout,
+                let response = time::timeout_at(
+                    deadline,
                     self.query_transport
                         .exchange(name_server, DnsQueryTransportKind::Tcp, &query),
                 )
@@ -2045,9 +2067,23 @@ impl DnsResolver for ConfiguredDnsResolver {
                 ConfiguredLookupResult::Resolved(lookup) => Ok(lookup),
                 ConfiguredLookupResult::Fallback { domain, ttl_cap } => {
                     let started_at = Instant::now();
-                    self.fallback
-                        .resolve_all(&domain, port)
-                        .await
+                    let fallback = self.fallback.resolve_all(&domain, port);
+                    let result = match (self.resolution_timeout, self.system_fallback_timeout) {
+                        (None, Some(fallback_timeout)) => time::timeout(fallback_timeout, fallback)
+                            .await
+                            .unwrap_or_else(|_| {
+                                Err(TransportError::Dns {
+                                    domain: domain.clone(),
+                                    port,
+                                    source: io::Error::new(
+                                        io::ErrorKind::TimedOut,
+                                        "DNS system fallback timed out",
+                                    ),
+                                })
+                            }),
+                        (Some(_), _) | (None, None) => fallback.await,
+                    };
+                    result
                         .map(|lookup| {
                             cap_lookup_ttl(lookup, age_ttl_cap(ttl_cap, started_at.elapsed()))
                         })
@@ -2084,7 +2120,10 @@ impl DnsResolver for ConfiguredDnsResolver {
                 }),
             }
         };
-        match time::timeout(self.resolution_timeout, resolution).await {
+        let Some(resolution_timeout) = self.resolution_timeout else {
+            return resolution.await;
+        };
+        match time::timeout(resolution_timeout, resolution).await {
             Ok(result) => result,
             Err(_) => Err(TransportError::Dns {
                 domain: domain.to_owned(),
@@ -2685,7 +2724,7 @@ fn domain_matches_suffix(domain: &str, suffix: &str) -> bool {
 mod tests {
     use std::io;
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV6};
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
@@ -2935,6 +2974,16 @@ mod tests {
             [192, 0, 2, server_octet],
             53,
         ))))
+    }
+
+    #[test]
+    fn compiled_name_server_policy_preserves_timeout_override() {
+        let mut policy = policy(1);
+        policy.timeout = Some(Duration::from_millis(37));
+        let compiled = CompiledNameServerPolicies::new(vec![policy]);
+
+        assert_eq!(compiled.timeout(0), Some(Duration::from_millis(37)));
+        assert_eq!(compiled.timeout(1), None);
     }
 
     #[test]
@@ -4530,6 +4579,67 @@ mod tests {
         ));
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn configured_dns_bounds_system_fallback_by_default() {
+        let resolver =
+            ConfiguredDnsResolver::new(Vec::new(), Vec::new(), Arc::new(PendingResolver));
+        let started_at = tokio::time::Instant::now();
+
+        let error = resolver
+            .resolve("default-bounded-fallback.example", 443)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            TransportError::Dns { source, .. }
+                if source.kind() == io::ErrorKind::TimedOut
+        ));
+        assert_eq!(started_at.elapsed(), Duration::from_secs(5));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn configured_dns_bounds_alias_depth_system_fallback_with_policies() {
+        let host_rules = (0..8)
+            .map(|index| StaticHostRule {
+                matcher: TransportDomainMatcher::Full(format!("alias{index}.example")),
+                target: StaticHostTarget::Domain(format!("alias{}.example", index + 1)),
+            })
+            .collect();
+        let policy =
+            NameServerPolicy::new(NameServer::Socket(SocketAddr::from(([192, 0, 2, 1], 53))));
+        let resolver =
+            ConfiguredDnsResolver::new(host_rules, Vec::new(), Arc::new(PendingResolver))
+                .with_name_server_policies(vec![policy]);
+        let started_at = tokio::time::Instant::now();
+
+        let error = resolver.resolve("alias0.example", 443).await.unwrap_err();
+
+        assert!(matches!(
+            error,
+            TransportError::Dns { source, .. }
+                if source.kind() == io::ErrorKind::TimedOut
+        ));
+        assert_eq!(started_at.elapsed(), Duration::from_secs(5));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn configured_dns_can_leave_bootstrap_fallback_to_an_outer_deadline() {
+        let resolver =
+            ConfiguredDnsResolver::new(Vec::new(), Vec::new(), Arc::new(PendingResolver))
+                .without_system_fallback_timeout();
+        let started_at = tokio::time::Instant::now();
+
+        let result = tokio::time::timeout(
+            Duration::from_secs(6),
+            resolver.resolve("outer-bounded.example", 443),
+        )
+        .await;
+
+        assert!(result.is_err());
+        assert_eq!(started_at.elapsed(), Duration::from_secs(6));
+    }
+
     struct FirstServerPendingTransport {
         first: NameServer,
         calls: Mutex<Vec<(NameServer, u16)>>,
@@ -4556,6 +4666,29 @@ mod tests {
         }
     }
 
+    struct FreshServerDeadlineTransport {
+        first: NameServer,
+        calls: Mutex<Vec<NameServer>>,
+    }
+
+    #[async_trait::async_trait]
+    impl DnsQueryTransport for FreshServerDeadlineTransport {
+        async fn exchange(
+            &self,
+            server: &NameServer,
+            _transport: DnsQueryTransportKind,
+            query: &[u8],
+        ) -> io::Result<Vec<u8>> {
+            self.calls.lock().unwrap().push(server.clone());
+            if server == &self.first {
+                std::future::pending().await
+            } else {
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                Ok(build_test_a_response(query, Ipv4Addr::new(192, 0, 2, 64)))
+            }
+        }
+    }
+
     struct PendingAaaaQueryTransport;
 
     #[async_trait::async_trait]
@@ -4572,6 +4705,31 @@ mod tests {
             } else {
                 std::future::pending().await
             }
+        }
+    }
+
+    struct ExchangeDropGuard(Arc<AtomicBool>);
+
+    impl Drop for ExchangeDropGuard {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+
+    struct DropObservedPendingTransport {
+        dropped: Arc<AtomicBool>,
+    }
+
+    #[async_trait::async_trait]
+    impl DnsQueryTransport for DropObservedPendingTransport {
+        async fn exchange(
+            &self,
+            _server: &NameServer,
+            _transport: DnsQueryTransportKind,
+            _query: &[u8],
+        ) -> io::Result<Vec<u8>> {
+            let _guard = ExchangeDropGuard(Arc::clone(&self.dropped));
+            std::future::pending().await
         }
     }
 
@@ -4594,15 +4752,249 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn configured_dns_keeps_positive_family_when_other_family_times_out() {
+    struct TcpRetryRemainderTransport {
+        first: NameServer,
+        calls: Mutex<Vec<(NameServer, DnsQueryTransportKind)>>,
+    }
+
+    #[async_trait::async_trait]
+    impl DnsQueryTransport for TcpRetryRemainderTransport {
+        async fn exchange(
+            &self,
+            server: &NameServer,
+            transport: DnsQueryTransportKind,
+            query: &[u8],
+        ) -> io::Result<Vec<u8>> {
+            self.calls.lock().unwrap().push((server.clone(), transport));
+            if server != &self.first {
+                return Ok(build_test_a_response(query, Ipv4Addr::new(192, 0, 2, 65)));
+            }
+
+            tokio::time::sleep(Duration::from_millis(7)).await;
+            match transport {
+                DnsQueryTransportKind::Udp => Ok(build_test_truncated_response(query)),
+                DnsQueryTransportKind::Tcp => {
+                    Ok(build_test_a_response(query, Ipv4Addr::new(192, 0, 2, 66)))
+                }
+            }
+        }
+    }
+
+    struct CnameDeadlineTransport {
+        first: NameServer,
+        calls: Mutex<Vec<(NameServer, String)>>,
+    }
+
+    #[async_trait::async_trait]
+    impl DnsQueryTransport for CnameDeadlineTransport {
+        async fn exchange(
+            &self,
+            server: &NameServer,
+            _transport: DnsQueryTransportKind,
+            query: &[u8],
+        ) -> io::Result<Vec<u8>> {
+            let (domain, record_type, _) = super::parse_dns_question(query)?;
+            if record_type != 1 {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "CNAME deadline test expects only A queries",
+                ));
+            }
+            self.calls
+                .lock()
+                .unwrap()
+                .push((server.clone(), domain.clone()));
+            if server != &self.first {
+                if domain != "origin.deadline.test" {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "server failover must restart from the original query name",
+                    ));
+                }
+                return Ok(build_test_a_response(query, Ipv4Addr::new(192, 0, 2, 67)));
+            }
+
+            tokio::time::sleep(Duration::from_millis(7)).await;
+            if domain == "origin.deadline.test" {
+                Ok(build_test_cname_response(query, "alias.deadline.test"))
+            } else {
+                Ok(build_test_a_response(query, Ipv4Addr::new(192, 0, 2, 68)))
+            }
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn configured_dns_default_server_timeout_matches_xray_four_seconds() {
         let resolver = ConfiguredDnsResolver::new(
             Vec::new(),
             vec![NameServer::Socket(SocketAddr::from(([192, 0, 2, 1], 53)))],
             Arc::new(RejectingResolver),
         )
-        .with_query_transport(Arc::new(PendingAaaaQueryTransport))
-        .with_server_timeout(Duration::from_millis(10));
+        .with_query_strategy(DnsQueryStrategy::UseIpv4)
+        .with_query_transport(Arc::new(PendingQueryTransport));
+        let started_at = tokio::time::Instant::now();
+
+        let error = resolver
+            .resolve("default-timeout.example", 443)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, TransportError::Dns { source, .. }
+            if source.kind() == io::ErrorKind::NotConnected));
+        assert_eq!(started_at.elapsed(), Duration::from_secs(4));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn configured_dns_policy_timeout_overrides_resolver_default() {
+        let mut policy =
+            NameServerPolicy::new(NameServer::Socket(SocketAddr::from(([192, 0, 2, 1], 53))));
+        policy.timeout = Some(Duration::from_millis(10));
+        policy.query_strategy = DnsQueryStrategy::UseIpv4;
+        let resolver =
+            ConfiguredDnsResolver::new(Vec::new(), Vec::new(), Arc::new(RejectingResolver))
+                .with_name_server_policies(vec![policy])
+                .with_query_strategy(DnsQueryStrategy::UseIpv4)
+                .with_query_transport(Arc::new(PendingQueryTransport))
+                .with_server_timeout(Duration::from_millis(1));
+        let started_at = tokio::time::Instant::now();
+
+        let error = resolver
+            .resolve("policy-timeout.example", 443)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, TransportError::Dns { source, .. }
+            if source.kind() == io::ErrorKind::NotConnected));
+        assert_eq!(started_at.elapsed(), Duration::from_millis(10));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn configured_dns_domain_bootstrap_consumes_the_candidate_deadline() {
+        let mut policy = NameServerPolicy::new(NameServer::Domain {
+            domain: "resolver.example".to_owned(),
+            port: 53,
+        });
+        policy.timeout = Some(Duration::from_secs(6));
+        policy.query_strategy = DnsQueryStrategy::UseIpv4;
+        let resolver =
+            ConfiguredDnsResolver::new(Vec::new(), Vec::new(), Arc::new(PendingResolver))
+                .with_name_server_policies(vec![policy])
+                .with_query_strategy(DnsQueryStrategy::UseIpv4);
+        let started_at = tokio::time::Instant::now();
+
+        let error = resolver
+            .resolve("domain-bootstrap.example", 443)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, TransportError::Dns { source, .. }
+            if source.kind() == io::ErrorKind::NotConnected));
+        assert_eq!(started_at.elapsed(), Duration::from_secs(6));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn configured_dns_timeout_drops_the_in_flight_exchange_future() {
+        let dropped = Arc::new(AtomicBool::new(false));
+        let mut policy =
+            NameServerPolicy::new(NameServer::Socket(SocketAddr::from(([192, 0, 2, 1], 53))));
+        policy.timeout = Some(Duration::from_millis(10));
+        policy.query_strategy = DnsQueryStrategy::UseIpv4;
+        let resolver =
+            ConfiguredDnsResolver::new(Vec::new(), Vec::new(), Arc::new(RejectingResolver))
+                .with_name_server_policies(vec![policy])
+                .with_query_strategy(DnsQueryStrategy::UseIpv4)
+                .with_query_transport(Arc::new(DropObservedPendingTransport {
+                    dropped: Arc::clone(&dropped),
+                }));
+
+        let _ = resolver.resolve("cancel.example", 443).await;
+
+        assert!(dropped.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn configured_dns_tcp_retry_uses_only_the_remaining_policy_budget() {
+        let first = NameServer::Socket(SocketAddr::from(([192, 0, 2, 1], 53)));
+        let second = NameServer::Socket(SocketAddr::from(([192, 0, 2, 2], 53)));
+        let mut first_policy = NameServerPolicy::new(first.clone());
+        first_policy.timeout = Some(Duration::from_millis(10));
+        first_policy.query_strategy = DnsQueryStrategy::UseIpv4;
+        let mut second_policy = NameServerPolicy::new(second.clone());
+        second_policy.timeout = Some(Duration::from_millis(20));
+        second_policy.query_strategy = DnsQueryStrategy::UseIpv4;
+        let transport = Arc::new(TcpRetryRemainderTransport {
+            first: first.clone(),
+            calls: Mutex::new(Vec::new()),
+        });
+        let resolver =
+            ConfiguredDnsResolver::new(Vec::new(), Vec::new(), Arc::new(RejectingResolver))
+                .with_name_server_policies(vec![first_policy, second_policy])
+                .with_query_strategy(DnsQueryStrategy::UseIpv4)
+                .with_query_transport(transport.clone());
+        let started_at = tokio::time::Instant::now();
+
+        let resolved = resolver
+            .resolve("tcp-remainder.example", 443)
+            .await
+            .unwrap();
+
+        assert_eq!(resolved, SocketAddr::from(([192, 0, 2, 65], 443)));
+        assert_eq!(started_at.elapsed(), Duration::from_millis(10));
+        assert_eq!(
+            *transport.calls.lock().unwrap(),
+            [
+                (first.clone(), DnsQueryTransportKind::Udp),
+                (first, DnsQueryTransportKind::Tcp),
+                (second, DnsQueryTransportKind::Udp),
+            ]
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn configured_dns_cname_chain_shares_policy_deadline_and_failover_restarts_qname() {
+        let first = NameServer::Socket(SocketAddr::from(([192, 0, 2, 1], 53)));
+        let second = NameServer::Socket(SocketAddr::from(([192, 0, 2, 2], 53)));
+        let mut first_policy = NameServerPolicy::new(first.clone());
+        first_policy.timeout = Some(Duration::from_millis(10));
+        first_policy.query_strategy = DnsQueryStrategy::UseIpv4;
+        let mut second_policy = NameServerPolicy::new(second.clone());
+        second_policy.timeout = Some(Duration::from_millis(20));
+        second_policy.query_strategy = DnsQueryStrategy::UseIpv4;
+        let transport = Arc::new(CnameDeadlineTransport {
+            first: first.clone(),
+            calls: Mutex::new(Vec::new()),
+        });
+        let resolver =
+            ConfiguredDnsResolver::new(Vec::new(), Vec::new(), Arc::new(RejectingResolver))
+                .with_name_server_policies(vec![first_policy, second_policy])
+                .with_query_strategy(DnsQueryStrategy::UseIpv4)
+                .with_query_transport(transport.clone());
+        let started_at = tokio::time::Instant::now();
+
+        let resolved = resolver.resolve("origin.deadline.test", 443).await.unwrap();
+
+        assert_eq!(resolved, SocketAddr::from(([192, 0, 2, 67], 443)));
+        assert_eq!(started_at.elapsed(), Duration::from_millis(10));
+        assert_eq!(
+            *transport.calls.lock().unwrap(),
+            [
+                (first.clone(), "origin.deadline.test".to_owned()),
+                (first, "alias.deadline.test".to_owned()),
+                (second, "origin.deadline.test".to_owned()),
+            ]
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn configured_dns_keeps_positive_family_at_the_shared_policy_deadline() {
+        let mut policy =
+            NameServerPolicy::new(NameServer::Socket(SocketAddr::from(([192, 0, 2, 1], 53))));
+        policy.timeout = Some(Duration::from_millis(10));
+        let resolver =
+            ConfiguredDnsResolver::new(Vec::new(), Vec::new(), Arc::new(RejectingResolver))
+                .with_name_server_policies(vec![policy])
+                .with_query_transport(Arc::new(PendingAaaaQueryTransport));
+        let started_at = tokio::time::Instant::now();
 
         let lookup = resolver.resolve_all("partial.example", 443).await.unwrap();
 
@@ -4613,6 +5005,7 @@ mod tests {
         assert!(lookup
             .ttl()
             .is_some_and(|ttl| { ttl < Duration::from_secs(60) && ttl > Duration::from_secs(59) }));
+        assert_eq!(started_at.elapsed(), Duration::from_millis(10));
     }
 
     #[tokio::test]
@@ -4664,7 +5057,38 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
+    async fn configured_dns_gives_each_policy_a_fresh_deadline_without_hidden_overall_cap() {
+        let first = NameServer::Socket(SocketAddr::from(([192, 0, 2, 1], 53)));
+        let second = NameServer::Socket(SocketAddr::from(([192, 0, 2, 2], 53)));
+        let mut first_policy = NameServerPolicy::new(first.clone());
+        first_policy.timeout = Some(Duration::from_secs(4));
+        first_policy.query_strategy = DnsQueryStrategy::UseIpv4;
+        let mut second_policy = NameServerPolicy::new(second.clone());
+        second_policy.timeout = Some(Duration::from_secs(3));
+        second_policy.query_strategy = DnsQueryStrategy::UseIpv4;
+        let transport = Arc::new(FreshServerDeadlineTransport {
+            first: first.clone(),
+            calls: Mutex::new(Vec::new()),
+        });
+        let resolver =
+            ConfiguredDnsResolver::new(Vec::new(), Vec::new(), Arc::new(RejectingResolver))
+                .with_name_server_policies(vec![first_policy, second_policy])
+                .with_query_strategy(DnsQueryStrategy::UseIpv4)
+                .with_query_transport(transport.clone());
+        let started_at = tokio::time::Instant::now();
+
+        let resolved = resolver
+            .resolve("fresh-deadline.example", 443)
+            .await
+            .unwrap();
+
+        assert_eq!(resolved, SocketAddr::from(([192, 0, 2, 64], 443)));
+        assert_eq!(started_at.elapsed(), Duration::from_secs(6));
+        assert_eq!(*transport.calls.lock().unwrap(), [first, second]);
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn configured_dns_bounds_the_whole_server_alias_and_fallback_sequence() {
         let fallback = SocketAddr::from(([192, 0, 2, 40], 0));
         let resolver = ConfiguredDnsResolver::new(
@@ -4675,6 +5099,8 @@ mod tests {
         .with_query_transport(Arc::new(PendingQueryTransport))
         .with_resolution_timeout(Duration::from_millis(10));
 
+        let started_at = tokio::time::Instant::now();
+
         let error = resolver.resolve("bounded.example", 8443).await.unwrap_err();
 
         assert!(matches!(
@@ -4682,6 +5108,19 @@ mod tests {
             TransportError::Dns { source, .. }
                 if source.kind() == io::ErrorKind::TimedOut
         ));
+        assert_eq!(started_at.elapsed(), Duration::from_millis(10));
+    }
+
+    fn build_test_truncated_response(query: &[u8]) -> Vec<u8> {
+        let mut response = Vec::with_capacity(query.len());
+        response.extend_from_slice(&query[..2]);
+        response.extend_from_slice(&0x8380_u16.to_be_bytes());
+        response.extend_from_slice(&1_u16.to_be_bytes());
+        response.extend_from_slice(&0_u16.to_be_bytes());
+        response.extend_from_slice(&0_u16.to_be_bytes());
+        response.extend_from_slice(&0_u16.to_be_bytes());
+        response.extend_from_slice(&query[12..]);
+        response
     }
 
     fn build_test_a_response(query: &[u8], answer: Ipv4Addr) -> Vec<u8> {

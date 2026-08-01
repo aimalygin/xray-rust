@@ -1102,6 +1102,7 @@ mod tests {
                 )],
                 expected_ips: xray_config::DnsIpFilter::default(),
                 unexpected_ips: xray_config::DnsIpFilter::default(),
+                timeout_ms: 0,
                 skip_fallback: true,
                 query_strategy: xray_config::DnsQueryStrategy::UseIpv6,
                 final_query: true,

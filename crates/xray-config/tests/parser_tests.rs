@@ -1144,6 +1144,7 @@ fn parses_xray_dns_server_objects_and_fallback_policy() {
                 "dotless:localhost",
                 "dotless:"
               ],
+              "timeoutMs": 1750,
               "skipFallback": true,
               "queryStrategy": "UseIPv4",
               "finalQuery": true
@@ -1179,6 +1180,8 @@ fn parses_xray_dns_server_objects_and_fallback_policy() {
     assert!(first.domains[3].matches("printer"));
     assert!(!first.domains[3].matches("printer.lan"));
     assert!(first.skip_fallback);
+    assert_eq!(first.timeout_ms, 1_750);
+    assert_eq!(parsed.config.dns.servers[0].timeout_ms(), 1_750);
     assert_eq!(first.query_strategy, DnsQueryStrategy::UseIpv4);
     assert!(first.final_query);
 
@@ -1195,6 +1198,7 @@ fn parses_xray_dns_server_objects_and_fallback_policy() {
             domains: second.domains.clone(),
             expected_ips: DnsIpFilter::default(),
             unexpected_ips: DnsIpFilter::default(),
+            timeout_ms: 0,
             skip_fallback: false,
             query_strategy: DnsQueryStrategy::UseIp,
             final_query: false,
@@ -1202,6 +1206,7 @@ fn parses_xray_dns_server_objects_and_fallback_policy() {
     );
     assert!(second.domains[0].matches("my-corp-zone.example"));
     assert!(second.domains[1].matches("exact.example"));
+    assert_eq!(parsed.config.dns.servers[1].timeout_ms(), 4_000);
 }
 
 #[test]
@@ -1541,6 +1546,38 @@ fn rejects_invalid_dns_server_object_fields_with_precise_paths() {
             "$.dns.servers[0].unexpectedIPs[0]",
         ),
         (
+            r#"{ "address": "192.0.2.53", "timeoutMs": -1 }"#,
+            "$.dns.servers[0].timeoutMs",
+        ),
+        (
+            r#"{ "address": "192.0.2.53", "timeoutMs": 1.5 }"#,
+            "$.dns.servers[0].timeoutMs",
+        ),
+        (
+            r#"{ "address": "192.0.2.53", "timeoutMs": "1000" }"#,
+            "$.dns.servers[0].timeoutMs",
+        ),
+        (
+            r#"{ "address": "192.0.2.53", "timeoutMs": true }"#,
+            "$.dns.servers[0].timeoutMs",
+        ),
+        (
+            r#"{ "address": "192.0.2.53", "timeoutMs": 1e3 }"#,
+            "$.dns.servers[0].timeoutMs",
+        ),
+        (
+            r#"{ "address": "192.0.2.53", "timeoutMs": [] }"#,
+            "$.dns.servers[0].timeoutMs",
+        ),
+        (
+            r#"{ "address": "192.0.2.53", "timeoutMs": {} }"#,
+            "$.dns.servers[0].timeoutMs",
+        ),
+        (
+            r#"{ "address": "192.0.2.53", "timeoutMs": 4611686018428 }"#,
+            "$.dns.servers[0].timeoutMs",
+        ),
+        (
             r#"{ "address": "192.0.2.53", "expectedIPs": ["192.0.2.0/24"], "expectIPs": [42] }"#,
             "$.dns.servers[0].expectIPs[0]",
         ),
@@ -1584,6 +1621,27 @@ fn maps_zero_object_dns_server_port_to_xray_default() {
         server.endpoint,
         DnsServerEndpoint::Ip(SocketAddr::from(([192, 0, 2, 53], 53)))
     );
+}
+
+#[test]
+fn maps_zero_and_null_dns_timeout_to_default_and_accepts_safe_boundary() {
+    for (timeout, raw_timeout, effective_timeout) in [
+        ("0", 0, 4_000),
+        ("null", 0, 4_000),
+        ("4611686018427", 4_611_686_018_427, 4_611_686_018_427),
+    ] {
+        let raw = raw_with_dns_servers(&format!(
+            r#"{{ "address": "192.0.2.53", "timeoutMs": {timeout} }}"#
+        ));
+        let parsed =
+            parse_xray_json(&raw).expect("Xray zero-like timeout should select its default");
+
+        let DnsServerConfig::Policy(server) = &parsed.config.dns.servers[0] else {
+            panic!("expected policy DNS server");
+        };
+        assert_eq!(server.timeout_ms, raw_timeout);
+        assert_eq!(parsed.config.dns.servers[0].timeout_ms(), effective_timeout);
+    }
 }
 
 #[test]

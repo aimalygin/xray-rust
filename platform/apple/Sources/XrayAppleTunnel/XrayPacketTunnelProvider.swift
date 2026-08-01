@@ -404,9 +404,10 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
     private static let dnsBootstrapTimeout: DispatchTimeInterval = .seconds(5)
     private static let maximumCustomDNSServers = 8
     private static let maximumDNSHostAliasDepth = 8
+    private static let maximumDNSServerTimeoutMs: UInt64 = 4_611_686_018_427
     private static let dnsServerObjectFields: Set<String> = [
         "address", "port", "domains", "expectedIPs", "expectIPs", "unexpectedIPs",
-        "skipFallback", "queryStrategy", "finalQuery",
+        "timeoutMs", "skipFallback", "queryStrategy", "finalQuery",
     ]
     private static let dnsServerIPPolicyFields = [
         "expectedIPs", "expectIPs", "unexpectedIPs",
@@ -1081,6 +1082,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         guard let server = rawServer as? [String: Any],
               Set(server.keys).isSubset(of: dnsServerObjectFields),
               dnsServerIPPolicyStringListsAreValid(server),
+              dnsServerTimeoutIsValid(server),
               let address = server["address"] as? String,
               !address.isEmpty,
               address == address.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1137,6 +1139,16 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             }
         }
         return true
+    }
+
+    private static func dnsServerTimeoutIsValid(_ server: [String: Any]) -> Bool {
+        guard let rawValue = server["timeoutMs"] else {
+            return true
+        }
+        if rawValue is NSNull {
+            return true
+        }
+        return isJSONUInt64(rawValue, maximum: maximumDNSServerTimeoutMs)
     }
 
     private static func dnsBootstrapPort(fromServer server: String) -> UInt16? {
@@ -1851,6 +1863,10 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
     }
 
     private static func isJSONUInt32(_ value: Any) -> Bool {
+        isJSONUInt64(value, maximum: UInt64(UInt32.max))
+    }
+
+    private static func isJSONUInt64(_ value: Any, maximum: UInt64) -> Bool {
         guard let number = value as? NSNumber,
               CFGetTypeID(number) != CFBooleanGetTypeID()
         else {
@@ -1862,8 +1878,10 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         else {
             return false
         }
-        let numericValue = number.doubleValue
-        return numericValue >= 0 && numericValue <= Double(UInt32.max)
+        guard let numericValue = UInt64(number.stringValue) else {
+            return false
+        }
+        return numericValue <= maximum
     }
 
     private static func isValidIPv4Pool(_ value: String) -> Bool {

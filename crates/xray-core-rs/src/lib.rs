@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use thiserror::Error;
@@ -683,6 +683,12 @@ fn static_only_dns_resolver_for_config(config: &CoreConfig) -> Arc<dyn DnsResolv
     host_only_dns_resolver_for_config(config, Arc::new(FailClosedDnsResolver))
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DnsResolverRole {
+    Destination,
+    Bootstrap,
+}
+
 fn take_name_server_policy_set(config: &mut CoreConfig) -> Arc<CompiledNameServerPolicies> {
     let name_servers = config
         .dns
@@ -699,6 +705,7 @@ fn take_name_server_policy_set(config: &mut CoreConfig) -> Arc<CompiledNameServe
             let skip_fallback = server.skip_fallback();
             let query_strategy = transport_dns_query_strategy(server.query_strategy());
             let final_query = server.final_query();
+            let timeout = Some(Duration::from_millis(server.timeout_ms()));
             let (domains, expected_ips, unexpected_ips) = match server {
                 DnsServerConfig::Policy(policy) => (
                     std::mem::take(&mut policy.domains),
@@ -719,6 +726,7 @@ fn take_name_server_policy_set(config: &mut CoreConfig) -> Arc<CompiledNameServe
                     .collect(),
                 expected_ips: into_transport_dns_ip_filter(expected_ips),
                 unexpected_ips: into_transport_dns_ip_filter(unexpected_ips),
+                timeout,
                 skip_fallback,
                 query_strategy,
                 final_query,
@@ -732,12 +740,14 @@ fn host_only_dns_resolver_for_config(
     config: &CoreConfig,
     fallback: Arc<dyn DnsResolver>,
 ) -> Arc<dyn DnsResolver> {
-    configured_dns_resolver_from_config(
+    configured_dns_resolver_from_config_with_transport_mode(
         config,
         fallback,
         None,
         None,
+        None,
         TransportDnsQueryStrategy::UseIp,
+        DnsResolverRole::Bootstrap,
     )
 }
 
@@ -789,15 +799,26 @@ fn configured_dns_resolver_from_config_with_transport(
     query_transport: Option<Arc<dyn DnsQueryTransport>>,
     query_strategy: TransportDnsQueryStrategy,
 ) -> Arc<dyn DnsResolver> {
-    if config.dns.hosts.is_empty()
-        && name_servers
-            .as_ref()
-            .is_none_or(|servers| servers.is_empty())
-        && query_strategy == TransportDnsQueryStrategy::UseIp
-    {
-        return fallback;
-    }
+    configured_dns_resolver_from_config_with_transport_mode(
+        config,
+        fallback,
+        socket_protector,
+        name_servers,
+        query_transport,
+        query_strategy,
+        DnsResolverRole::Destination,
+    )
+}
 
+fn configured_dns_resolver_from_config_with_transport_mode(
+    config: &CoreConfig,
+    fallback: Arc<dyn DnsResolver>,
+    socket_protector: Option<Arc<dyn SocketProtector>>,
+    name_servers: Option<Arc<CompiledNameServerPolicies>>,
+    query_transport: Option<Arc<dyn DnsQueryTransport>>,
+    query_strategy: TransportDnsQueryStrategy,
+    role: DnsResolverRole,
+) -> Arc<dyn DnsResolver> {
     let host_rules = config
         .dns
         .hosts
@@ -823,6 +844,9 @@ fn configured_dns_resolver_from_config_with_transport(
             config.dns.disable_fallback_if_match,
         )
         .with_query_strategy(query_strategy);
+    if role == DnsResolverRole::Bootstrap {
+        resolver = resolver.without_system_fallback_timeout();
+    }
     if let Some(transport) = query_transport {
         resolver = resolver.with_query_transport(transport);
     } else if let Some(protector) = socket_protector {
@@ -902,6 +926,7 @@ mod tests {
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
+    use std::time::Duration;
 
     use async_trait::async_trait;
     use xray_config::{parse_xray_json, DnsServerConfig, DnsServerEndpoint};
@@ -912,8 +937,9 @@ mod tests {
 
     use super::{
         configured_dns_resolver_for_config, configured_dns_resolver_from_config_with_transport,
-        into_transport_dns_ip_filter, static_only_dns_resolver_for_config,
-        take_name_server_policy_set, Core, TransportDnsQueryStrategy, TunRuntimeOptions,
+        host_only_dns_resolver_for_config, into_transport_dns_ip_filter,
+        static_only_dns_resolver_for_config, take_name_server_policy_set, Core,
+        TransportDnsQueryStrategy, TunRuntimeOptions,
     };
 
     struct StaticResolver;
@@ -928,6 +954,15 @@ mod tests {
                 )),
                 _ => Err(TransportError::NoResolvedAddress(domain.to_owned(), port)),
             }
+        }
+    }
+
+    struct PendingResolver;
+
+    #[async_trait]
+    impl DnsResolver for PendingResolver {
+        async fn resolve(&self, _domain: &str, _port: u16) -> Result<SocketAddr, TransportError> {
+            std::future::pending().await
         }
     }
 
@@ -981,6 +1016,56 @@ mod tests {
                 443,
             ))]
         );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn configured_dns_resolver_bounds_no_server_fallback_in_core_wiring() {
+        let raw = r#"{
+            "dns": {},
+            "inbounds": [],
+            "outbounds": [
+                { "tag": "direct", "protocol": "freedom" }
+            ]
+        }"#;
+        let parsed = parse_xray_json(raw).expect("config should parse");
+        let resolver = configured_dns_resolver_for_config(
+            &parsed.config,
+            Arc::new(PendingResolver),
+            Arc::default(),
+        );
+        let started_at = tokio::time::Instant::now();
+
+        let error = resolver.resolve("bounded.example", 443).await.unwrap_err();
+
+        assert!(matches!(
+            error,
+            TransportError::Dns { source, .. }
+                if source.kind() == io::ErrorKind::TimedOut
+        ));
+        assert_eq!(started_at.elapsed(), Duration::from_secs(5));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn bootstrap_dns_resolver_inherits_its_surrounding_deadline() {
+        let raw = r#"{
+            "dns": {},
+            "inbounds": [],
+            "outbounds": [
+                { "tag": "direct", "protocol": "freedom" }
+            ]
+        }"#;
+        let parsed = parse_xray_json(raw).expect("config should parse");
+        let resolver = host_only_dns_resolver_for_config(&parsed.config, Arc::new(PendingResolver));
+        let started_at = tokio::time::Instant::now();
+
+        let result = tokio::time::timeout(
+            Duration::from_secs(6),
+            resolver.resolve("bootstrap.example", 53),
+        )
+        .await;
+
+        assert!(result.is_err());
+        assert_eq!(started_at.elapsed(), Duration::from_secs(6));
     }
 
     #[tokio::test]
@@ -1175,7 +1260,8 @@ mod tests {
                 "address": "192.0.2.53",
                 "domains": ["full:one.example", "domain:two.example"],
                 "expectedIPs": ["192.0.2.0/24"],
-                "unexpectedIPs": ["10.0.0.0/8"]
+                "unexpectedIPs": ["10.0.0.0/8"],
+                "timeoutMs": 37
               }]
             },
             "inbounds": [],
@@ -1188,6 +1274,7 @@ mod tests {
 
         assert_eq!(policies.matcher_count(), 2);
         assert!(policies.pattern_bytes() > 0);
+        assert_eq!(policies.timeout(0), Some(Duration::from_millis(37)));
         let DnsServerConfig::Policy(server) = &config.dns.servers[0] else {
             panic!("object DNS server must remain available for raw endpoint planning");
         };

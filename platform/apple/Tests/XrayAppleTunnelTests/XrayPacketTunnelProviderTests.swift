@@ -660,7 +660,7 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
 
     func testResolvedDnsConfigurationUsesLocalAnchorForObjectAndMixedConfigServers() {
         let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
-            configJSON: #"{"dns":{"servers":[{"address":"resolver.example","port":0,"domains":["domain:internal.example"],"expectedIPs":["geoip:private","!192.0.2.0/24"],"expectIPs":"geoip:private,geoip:cn","unexpectedIPs":null},{"address":"2001:db8::53","port":5353},"192.0.2.53"]}}"#,
+            configJSON: #"{"dns":{"servers":[{"address":"resolver.example","port":0,"domains":["domain:internal.example"],"expectedIPs":["geoip:private","!192.0.2.0/24"],"expectIPs":"geoip:private,geoip:cn","unexpectedIPs":null,"timeoutMs":1750},{"address":"2001:db8::53","port":5353,"timeoutMs":null},"192.0.2.53"]}}"#,
             explicit: .system
         )
 
@@ -699,6 +699,24 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
             )
 
             XCTAssertNil(configuration, "server=\(server)")
+        }
+    }
+
+    func testResolvedDnsConfigurationValidatesDnsServerTimeoutMs() {
+        for timeout in ["0", "null", "1750", "4611686018427"] {
+            let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
+                configJSON: "{\"dns\":{\"servers\":[{\"address\":\"resolver.example\",\"timeoutMs\":\(timeout)}]}}",
+                explicit: .system
+            )
+            XCTAssertNotNil(configuration, "timeout=\(timeout)")
+        }
+
+        for timeout in ["-1", "1.5", "\"1000\"", "true", "4611686018428"] {
+            let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
+                configJSON: "{\"dns\":{\"servers\":[{\"address\":\"resolver.example\",\"timeoutMs\":\(timeout)}]}}",
+                explicit: .system
+            )
+            XCTAssertNil(configuration, "timeout=\(timeout)")
         }
     }
 
@@ -1551,7 +1569,7 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
 
     func testConfigPinningAddsHostsForObjectAndMixedDnsServersWithoutCarrierExclusions() throws {
         let resolved = resolvedConfig(
-            json: #"{"dns":{"servers":[{"address":"Object-DNS.Example.","port":0,"domains":["domain:internal.example"],"expectedIPs":"geoip:private,geoip:cn","expectIPs":["192.0.2.0/24"],"unexpectedIPs":["geoip:ads"]},"String-DNS.Example.:5353"]},"outbounds":[{"protocol":"freedom"}]}"#
+            json: #"{"dns":{"servers":[{"address":"Object-DNS.Example.","port":0,"domains":["domain:internal.example"],"expectedIPs":"geoip:private,geoip:cn","expectIPs":["192.0.2.0/24"],"unexpectedIPs":["geoip:ads"],"timeoutMs":0},"String-DNS.Example.:5353"]},"outbounds":[{"protocol":"freedom"}]}"#
         )
         var resolvedDomains: [String] = []
 

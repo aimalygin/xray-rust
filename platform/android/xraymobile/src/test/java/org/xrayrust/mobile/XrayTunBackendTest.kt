@@ -1,5 +1,6 @@
 package org.xrayrust.mobile
 
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -72,6 +73,7 @@ class XrayTunBackendTest {
                     "expectedIPs" to listOf("geoip:private", "!192.0.2.0/24"),
                     "expectIPs" to "geoip:private,geoip:cn",
                     "unexpectedIPs" to null,
+                    "timeoutMs" to 1_750L,
                     "skipFallback" to true,
                     "queryStrategy" to "UseIPv4",
                     "finalQuery" to true,
@@ -121,6 +123,11 @@ class XrayTunBackendTest {
             mapOf("address" to "resolver.example", "expectIPs" to listOf(null)),
             mapOf("address" to "resolver.example", "unexpectedIPs" to mapOf("ip" to "192.0.2.1")),
             mapOf("address" to "resolver.example", "unexpectedIPs" to listOf("192.0.2.0/24", false)),
+            mapOf("address" to "resolver.example", "timeoutMs" to -1),
+            mapOf("address" to "resolver.example", "timeoutMs" to 1.5),
+            mapOf("address" to "resolver.example", "timeoutMs" to "1000"),
+            mapOf("address" to "resolver.example", "timeoutMs" to true),
+            mapOf("address" to "resolver.example", "timeoutMs" to 4_611_686_018_428L),
             mapOf("address" to "resolver.example", "skipFallback" to "true"),
             mapOf("address" to "resolver.example", "finalQuery" to 1),
             mapOf("address" to "resolver.example", "queryStrategy" to 42),
@@ -155,6 +162,27 @@ class XrayTunBackendTest {
         }
         assertTrue(itemError.message?.contains("unexpectedIPs") == true)
         assertTrue(itemError.message?.contains("index 1") == true)
+    }
+
+    @Test
+    fun dnsServerTimeoutAcceptsXrayZeroAndNullButRejectsUnsafeValues() {
+        for (timeoutMs in listOf<Any?>(0, null, JSONObject.NULL, 1_750L, 4_611_686_018_427L)) {
+            assertEquals(
+                "resolver.example",
+                dnsServerBootstrapDomain(
+                    mapOf("address" to "resolver.example", "timeoutMs" to timeoutMs),
+                ),
+            )
+        }
+
+        for (timeoutMs in listOf<Any>(-1, 1.5, "1000", true, 4_611_686_018_428L)) {
+            val error = assertThrows(IllegalArgumentException::class.java) {
+                dnsServerBootstrapDomain(
+                    mapOf("address" to "resolver.example", "timeoutMs" to timeoutMs),
+                )
+            }
+            assertTrue(error.message?.contains("timeoutMs") == true)
+        }
     }
 
     @Test

@@ -16,6 +16,7 @@ use crate::{
     PolicyLevelConfig, PolicySystemConfig, RealitySettings, RealityShortId, RegexMatcher,
     RoutingConfig, RoutingDomainStrategy, RoutingRule, SniffingDestination, SocketOptions,
     StreamSecurity, StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
+    MAX_DNS_SERVER_TIMEOUT_MS,
 };
 
 const MAX_ROUTING_RULES: usize = 4_096;
@@ -414,6 +415,7 @@ impl Parser<'_> {
                 "expectedIPs",
                 "expectIPs",
                 "unexpectedIPs",
+                "timeoutMs",
                 "skipFallback",
                 "queryStrategy",
                 "finalQuery",
@@ -437,6 +439,20 @@ impl Parser<'_> {
         let endpoint = self.parse_dns_server_endpoint(address, port, &address_path)?;
         let domains = self.parse_dns_server_domains(server, path)?;
         let (expected_ips, unexpected_ips) = self.parse_dns_server_ip_filters(server, path)?;
+        let timeout_path = format!("{path}.timeoutMs");
+        let timeout_ms = match server.get("timeoutMs") {
+            None | Some(Value::Null) => 0,
+            Some(_) => self.optional_u64_at(server, "timeoutMs", timeout_path.clone())?,
+        };
+        if timeout_ms > MAX_DNS_SERVER_TIMEOUT_MS {
+            self.error(
+                timeout_path,
+                format!(
+                    "dns server timeoutMs {timeout_ms} exceeds the largest timeout safe across Xray duration conversions {MAX_DNS_SERVER_TIMEOUT_MS}ms"
+                ),
+            );
+            return None;
+        }
         let query_strategy_path = format!("{path}.queryStrategy");
         let query_strategy =
             self.parse_dns_query_strategy_at(server.get("queryStrategy"), &query_strategy_path);
@@ -453,6 +469,7 @@ impl Parser<'_> {
             domains,
             expected_ips,
             unexpected_ips,
+            timeout_ms,
             skip_fallback: self
                 .optional_bool_at(server, "skipFallback", format!("{path}.skipFallback"))
                 .unwrap_or(false),

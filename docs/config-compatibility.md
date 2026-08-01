@@ -176,14 +176,13 @@ platform route-capability provider; it is not silently treated as `UseIP`.
 string shorthand accepts IP addresses, socket addresses, or domain names with
 an optional nonzero port. The Xray object subset requires `address`, supports
 `port` (`0` or omission means `53`), `domains`, `skipFallback`, per-server
-`queryStrategy`, and `finalQuery`. `domains` may be an array or one
+`queryStrategy`, `finalQuery`, and `timeoutMs`. `domains` may be an array or one
 comma-separated string and supports bare keyword, `keyword:`, `domain:`,
 `full:`, `regexp:`, `dotless:`, `geosite:`, `ext:`, and `ext-domain:` rules.
 Top-level `disableFallback` and `disableFallbackIfMatch` are also supported.
 Special `localhost`/`fakedns` clients, URL transports, `clientIp`,
-tags, per-server timeouts, cache/stale controls, and parallel queries are
-rejected until their runtime semantics exist; they are not silently
-approximated as classic UDP.
+tags, cache/stale controls, and parallel queries are rejected until their
+runtime semantics exist; they are not silently approximated as classic UDP.
 
 Object servers support Xray's `expectedIPs`, legacy `expectIPs` alias, and
 `unexpectedIPs`. Each accepts an array, one comma-separated string, or `null`.
@@ -209,6 +208,18 @@ unexpected. A hard filter that leaves no addresses advances to the next
 selected server using the original query name. A soft filter narrows the
 answer only when its preferred subset is nonempty. Candidate order, address
 order, and the already computed minimum TTL are otherwise preserved.
+
+An object server's `timeoutMs` is one absolute wall-clock budget for that
+managed client attempt. Omission, `null`, or `0` selects Xray's 4000 ms
+default. Other values must be integer milliseconds from 1 through
+4,611,686,018,427. Values above that boundary are rejected because Xray-core's
+cached parallel-query context doubles its signed-nanosecond duration and may
+overflow into an unintended deadline. This is an intentional fail-safe
+divergence for a practically unreachable timeout. With `UseIP`, A and AAAA
+share the deadline. UDP-to-TCP retry and the Rust CNAME continuation extension
+also consume only its remaining time. IP response filters run after the timed
+query. Failure advances to the next selected server with the original name and
+a fresh full per-server budget.
 
 The core consumes these policy matchers once during construction. Exact rules
 are indexed by hash and suffix rules by reversed domain labels, following
@@ -251,15 +262,20 @@ Xray-core's ordered failover. If no later server succeeds, an authoritative
 negative result is terminal and does not leak into the operating-system
 fallback. SERVFAIL, malformed replies, and transport failures also move to the
 next server. Exhausting a nonempty configured server plan is terminal and never
-sends the original qname to the operating-system resolver. The five-second
-resolution deadline includes configured-server endpoint bootstrap and the
-no-server fallback.
-A and AAAA run concurrently under the same wall-clock server budget when
-`UseIP` is selected.
+sends the original qname to the operating-system resolver. Configured servers
+have no hidden aggregate five-second cap: serial failover may consume the sum
+of their individual budgets, as in Xray-core. The no-server operating-system
+fallback for a destination lookup remains bounded by five seconds. Resolving a
+domain-valued upstream is a bootstrap sub-operation and inherits the enclosing
+server candidate's `timeoutMs` instead of being silently clipped at five
+seconds. Embedders and tests may opt into an explicit whole-resolution cap
+through the transport API when their surrounding operation has a stricter
+deadline.
 `StaticOnly` uses the same routed path and then fails closed; its separate
 bootstrap resolver never uses `dns.servers` or the operating-system resolver.
-Explicitly injected resolvers remain trusted integration dependencies and are
-used as-is.
+Explicitly injected fallback resolvers remain trusted integration dependencies;
+their results are used as-is, while the no-server call is still bounded by the
+same five-second fallback deadline.
 The two `disableFallback*` fields control Xray's fallback phase within the
 configured name-server list. They are independent from endpoint bootstrap: in
 `System` mode a domain-valued DNS upstream may still use the operating-system
@@ -282,13 +298,16 @@ reset. Raw and fake DNS/TCP share a dedicated limit of up to 32 flows. Raw
 DNS/TCP idle time, including blocked bridge writes, is capped by the smaller of
 the inbound `connIdle` policy and five seconds.
 A raw-anchor query keeps the client's original question type and does not apply
-global/per-server `queryStrategy`, `domains`, IP response filters, or fallback
-policy. Object entries contribute only their endpoint to the raw
+global/per-server `queryStrategy`, `domains`, IP response filters, `timeoutMs`,
+or fallback policy. Object entries contribute only their endpoint to the raw
 declaration-order/deduplicated proxy plan. This is the byte-transparent
 equivalent of Xray DNS outbound
 `Direct`. Xray DNS outbound `Hijack` semantics (including its A/AAAA family
 gate, DNS hosts/cache, and per-server policy) remain a separate unsupported
-feature rather than a partial hybrid in the raw proxy.
+feature rather than a partial hybrid in the raw proxy. The raw proxy retains
+its own transport-aware per-attempt and five-second overall operational
+budgets; those protect a byte-transparent TUN bridge rather than model a
+managed Xray DNS client.
 A domain upstream selected through VLESS stays a domain and is resolved
 by the remote endpoint. A domain selected through Freedom uses the separate
 bootstrap policy. Non-intercepting `System` embeddings may use the operating

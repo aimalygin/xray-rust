@@ -110,6 +110,21 @@ only the selected wire query and filters static/fallback candidates. Static
 IP array; every permitted-family IP remains a dial candidate.
 Unprefixed host keys follow Xray's exact/full semantics, while explicit matcher
 prefixes retain their normal meaning.
+Each managed policy carries an Xray-compatible per-client deadline, defaulting
+to four seconds. A/AAAA, same-server UDP-to-TCP retry, and the Rust CNAME
+continuation share that absolute deadline; serial failover restarts from the
+original name with a fresh budget for the next policy. Configured resolution
+has no hidden aggregate cap, while the no-server system fallback remains
+bounded and an embedding can explicitly impose a stricter whole-operation
+deadline. Bootstrap of a domain-valued server deliberately has no independent
+five-second cap: it consumes the enclosing candidate deadline. Timeout futures
+own routed socket exchanges directly, so cancellation drops their in-flight I/O
+rather than leaving detached network tasks behind.
+The operating-system `getaddrinfo` used by optional `System` bootstrap is the
+exception: Tokio's blocking lookup may finish after its caller times out.
+Mobile full-tunnel adapters avoid that path after start by pinning bootstrap
+addresses and selecting `StaticOnly`; a future native async bootstrap backend
+should remove this platform limitation for long-running server embeddings.
 `xray-core-rs` supplies a routed query transport that opens each DNS exchange
 through the normal outbound router. `IPIfNonMatch` tests rules in configuration
 order against every resolved candidate. SOCKS, HTTP, TUN, startup probes, and
