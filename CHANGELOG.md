@@ -7,6 +7,13 @@ development changes are recorded under `Unreleased`.
 
 ## Unreleased
 
+- Added non-destructive DNS test controls to the Apple reference client. A
+  saved profile can switch at reconnect between its original JSON, FakeDNS,
+  and the local DNS proxy over classic, routed TCP, or provider-local TCP;
+  an optional FakeDNS upstream also enables restored-domain resolution when
+  routing selects Freedom. The trusted upstream remains user-supplied, and
+  generated effective DNS settings retain `dns.hosts` bootstrap pins and the
+  routed-DNS tag, and never overwrite the source profile JSON.
 - Kept the DNS outbound TCP handler out of ordinary SOCKS connection futures,
   allocating its type-erased future only after a DNS route is selected. This
   removes 1.2 KiB from both enclosing async states and brought the same-machine

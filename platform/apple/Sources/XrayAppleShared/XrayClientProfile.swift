@@ -52,6 +52,77 @@ public enum XrayTunRuntimeProfileSetting: String, Codable, CaseIterable, Hashabl
     }
 }
 
+public enum XrayClientDNSTestMode: String, Codable, CaseIterable, Hashable, Identifiable, Sendable {
+    case configuration
+    case fakeIP = "fake-ip"
+    case proxy
+
+    public var id: String {
+        rawValue
+    }
+
+    public var displayName: String {
+        switch self {
+        case .configuration:
+            return "Config JSON"
+        case .fakeIP:
+            return "FakeDNS"
+        case .proxy:
+            return "DNS Proxy"
+        }
+    }
+
+    public var requiresUpstream: Bool {
+        self == .proxy
+    }
+}
+
+public enum XrayClientDNSTestTransport: String,
+                                        Codable,
+                                        CaseIterable,
+                                        Hashable,
+                                        Identifiable,
+                                        Sendable {
+    case classic
+    case routedTCP = "routed-tcp"
+    case localTCP = "local-tcp"
+
+    public var id: String {
+        rawValue
+    }
+
+    public var displayName: String {
+        switch self {
+        case .classic:
+            return "Classic UDP"
+        case .routedTCP:
+            return "Routed TCP"
+        case .localTCP:
+            return "Local TCP"
+        }
+    }
+}
+
+public enum XrayClientDNSTestConfigurationError: Error, Equatable, LocalizedError {
+    case rootIsNotObject
+    case missingUpstream
+    case upstreamMustNotIncludeScheme
+    case encodingFailed
+
+    public var errorDescription: String? {
+        switch self {
+        case .rootIsNotObject:
+            return "Config must be a JSON object."
+        case .missingUpstream:
+            return "DNS proxy test mode requires an upstream host or IP."
+        case .upstreamMustNotIncludeScheme:
+            return "DNS test upstream must use host[:port] without a URL scheme; select the transport separately."
+        case .encodingFailed:
+            return "Failed to encode DNS test configuration."
+        }
+    }
+}
+
 public enum XrayRegionalRoutingMode: String, Codable, CaseIterable, Hashable, Identifiable, Sendable {
     case off
     case bypassSelected = "bypass-selected"
@@ -383,6 +454,9 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
     public var debugLoggingEnabled: Bool
     public var useTunFileDescriptor: Bool
     public var tunRuntimeProfile: XrayTunRuntimeProfileSetting
+    public var dnsTestMode: XrayClientDNSTestMode
+    public var dnsTestTransport: XrayClientDNSTestTransport
+    public var dnsTestUpstream: String
     public var regionalRoutingMode: XrayRegionalRoutingMode
     public var regionalRoutingRegions: [XrayRegionalRoutingRegion]
 
@@ -396,7 +470,10 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
         useTunFileDescriptor: Bool = true,
         tunRuntimeProfile: XrayTunRuntimeProfileSetting = .default,
         regionalRoutingMode: XrayRegionalRoutingMode = .off,
-        regionalRoutingRegions: [XrayRegionalRoutingRegion] = []
+        regionalRoutingRegions: [XrayRegionalRoutingRegion] = [],
+        dnsTestMode: XrayClientDNSTestMode = .configuration,
+        dnsTestTransport: XrayClientDNSTestTransport = .classic,
+        dnsTestUpstream: String = ""
     ) {
         self.id = id
         self.name = name
@@ -408,6 +485,9 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
         self.tunRuntimeProfile = tunRuntimeProfile
         self.regionalRoutingMode = regionalRoutingMode
         self.regionalRoutingRegions = Self.normalizedRegions(regionalRoutingRegions)
+        self.dnsTestMode = dnsTestMode
+        self.dnsTestTransport = dnsTestTransport
+        self.dnsTestUpstream = dnsTestUpstream
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -419,6 +499,9 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
         case debugLoggingEnabled
         case useTunFileDescriptor
         case tunRuntimeProfile
+        case dnsTestMode
+        case dnsTestTransport
+        case dnsTestUpstream
         case regionalRoutingMode
         case regionalRoutingRegions
     }
@@ -445,6 +528,18 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
             XrayTunRuntimeProfileSetting.self,
             forKey: .tunRuntimeProfile
         ) ?? .default
+        dnsTestMode = try container.decodeIfPresent(
+            XrayClientDNSTestMode.self,
+            forKey: .dnsTestMode
+        ) ?? .configuration
+        dnsTestTransport = try container.decodeIfPresent(
+            XrayClientDNSTestTransport.self,
+            forKey: .dnsTestTransport
+        ) ?? .classic
+        dnsTestUpstream = try container.decodeIfPresent(
+            String.self,
+            forKey: .dnsTestUpstream
+        ) ?? ""
         regionalRoutingMode = try container.decodeIfPresent(
             XrayRegionalRoutingMode.self,
             forKey: .regionalRoutingMode
@@ -574,16 +669,113 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
     }
 
     public func effectiveConfigJSON() throws -> String {
+        let dnsConfigJSON = try Self.configJSON(
+            configJSON,
+            applyingDNSTestMode: dnsTestMode,
+            transport: dnsTestTransport,
+            upstream: dnsTestUpstream
+        )
         let regions = Self.normalizedRegions(regionalRoutingRegions)
         guard regionalRoutingMode != .off, !regions.isEmpty else {
-            return configJSON
+            return dnsConfigJSON
         }
 
         return try Self.configJSON(
-            configJSON,
+            dnsConfigJSON,
             applyingRegionalRoutingMode: regionalRoutingMode,
             regions: regions
         )
+    }
+
+    private static func configJSON(
+        _ configJSON: String,
+        applyingDNSTestMode mode: XrayClientDNSTestMode,
+        transport: XrayClientDNSTestTransport,
+        upstream: String
+    ) throws -> String {
+        guard mode != .configuration else {
+            return configJSON
+        }
+
+        let data = Data(configJSON.utf8)
+        guard var root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw XrayClientDNSTestConfigurationError.rootIsNotObject
+        }
+
+        let server = try dnsTestServer(
+            transport: transport,
+            upstream: upstream,
+            required: mode.requiresUpstream
+        )
+        let sourceDNS = root["dns"] as? [String: Any]
+        var dns: [String: Any] = [
+            "queryStrategy": "UseIP",
+        ]
+        if let hosts = sourceDNS?["hosts"] {
+            dns["hosts"] = hosts
+        }
+        if let tag = sourceDNS?["tag"] {
+            dns["tag"] = tag
+        }
+        if mode == .fakeIP {
+            dns["fakeIp"] = [
+                "enabled": true,
+                "ipv4Pool": "198.19.0.0/16",
+                "poolSize": 32768,
+                "ttl": 60,
+            ]
+        }
+        if let server {
+            dns["servers"] = [server]
+        }
+        root["dns"] = dns
+
+        let encoded = try JSONSerialization.data(
+            withJSONObject: root,
+            options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        )
+        guard let json = String(data: encoded, encoding: .utf8) else {
+            throw XrayClientDNSTestConfigurationError.encodingFailed
+        }
+        return json
+    }
+
+    private static func dnsTestServer(
+        transport: XrayClientDNSTestTransport,
+        upstream: String,
+        required: Bool
+    ) throws -> String? {
+        let normalizedUpstream = upstream.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedUpstream.isEmpty else {
+            if required {
+                throw XrayClientDNSTestConfigurationError.missingUpstream
+            }
+            return nil
+        }
+        guard !normalizedUpstream.contains("://") else {
+            throw XrayClientDNSTestConfigurationError.upstreamMustNotIncludeScheme
+        }
+
+        switch transport {
+        case .classic:
+            return normalizedUpstream
+        case .routedTCP:
+            return "tcp://\(dnsTestTCPAuthority(normalizedUpstream))"
+        case .localTCP:
+            return "tcp+local://\(dnsTestTCPAuthority(normalizedUpstream))"
+        }
+    }
+
+    private static func dnsTestTCPAuthority(_ upstream: String) -> String {
+        guard !upstream.hasPrefix("[") else {
+            return upstream
+        }
+        let colonCount = upstream.reduce(into: 0) { count, character in
+            if character == ":" {
+                count += 1
+            }
+        }
+        return colonCount > 1 ? "[\(upstream)]" : upstream
     }
 
     private static func realityVisionFlowMode(in configJSON: String) -> XrayRealityVisionFlowMode? {

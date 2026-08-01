@@ -44,7 +44,7 @@ public final class XrayClientViewModel: ObservableObject {
         self.geodataSearchDirectory = geodataSearchDirectory
         XrayAppleLog.info(
             "ClientViewModel",
-            "Loaded profile name=\(profile.name) provider=\(profile.providerBundleIdentifier) server=\(profile.serverAddress) configBytes=\(profile.configJSON.utf8.count) debugLogging=\(profile.debugLoggingEnabled) useTunFileDescriptor=\(profile.useTunFileDescriptor) tunRuntimeProfile=\(profile.tunRuntimeProfile.rawValue)"
+            "Loaded profile name=\(profile.name) provider=\(profile.providerBundleIdentifier) server=\(profile.serverAddress) configBytes=\(profile.configJSON.utf8.count) debugLogging=\(profile.debugLoggingEnabled) useTunFileDescriptor=\(profile.useTunFileDescriptor) tunRuntimeProfile=\(profile.tunRuntimeProfile.rawValue) dnsTestMode=\(profile.dnsTestMode.rawValue) dnsTestTransport=\(profile.dnsTestTransport.rawValue)"
         )
     }
 
@@ -91,7 +91,7 @@ public final class XrayClientViewModel: ObservableObject {
         normalizeProfileIfNeeded()
         XrayAppleLog.info(
             "ClientViewModel",
-            "Saving profile name=\(profile.name) provider=\(profile.providerBundleIdentifier) server=\(profile.serverAddress) configBytes=\(profile.configJSON.utf8.count) debugLogging=\(profile.debugLoggingEnabled) useTunFileDescriptor=\(profile.useTunFileDescriptor) tunRuntimeProfile=\(profile.tunRuntimeProfile.rawValue)"
+            "Saving profile name=\(profile.name) provider=\(profile.providerBundleIdentifier) server=\(profile.serverAddress) configBytes=\(profile.configJSON.utf8.count) debugLogging=\(profile.debugLoggingEnabled) useTunFileDescriptor=\(profile.useTunFileDescriptor) tunRuntimeProfile=\(profile.tunRuntimeProfile.rawValue) dnsTestMode=\(profile.dnsTestMode.rawValue) dnsTestTransport=\(profile.dnsTestTransport.rawValue)"
         )
         do {
             try store.save(profile)
@@ -123,6 +123,9 @@ public final class XrayClientViewModel: ObservableObject {
             importedProfile.tunRuntimeProfile = profile.tunRuntimeProfile
             importedProfile.regionalRoutingMode = profile.regionalRoutingMode
             importedProfile.regionalRoutingRegions = profile.regionalRoutingRegions
+            importedProfile.dnsTestMode = profile.dnsTestMode
+            importedProfile.dnsTestTransport = profile.dnsTestTransport
+            importedProfile.dnsTestUpstream = profile.dnsTestUpstream
             XrayAppleLog.info(
                 "ClientViewModel",
                 "Imported VLESS profile name=\(importedProfile.name) provider=\(importedProfile.providerBundleIdentifier) server=\(importedProfile.serverAddress) configBytes=\(importedProfile.configJSON.utf8.count)"
@@ -224,7 +227,7 @@ public final class XrayClientViewModel: ObservableObject {
                     .joined(separator: ",")
                 XrayAppleLog.info(
                     "ClientViewModel",
-                    "Starting tunnel provider=\(profile.providerBundleIdentifier) server=\(profile.serverAddress) configBytes=\(effectiveConfigJSON.utf8.count) debugLogging=\(profile.debugLoggingEnabled) useTunFileDescriptor=\(profile.useTunFileDescriptor) tunRuntimeProfile=\(profile.tunRuntimeProfile.rawValue) regionalRoutingMode=\(profile.regionalRoutingMode.rawValue) regionalRoutingRegions=\(regionalRoutingRegions)"
+                    "Starting tunnel provider=\(profile.providerBundleIdentifier) server=\(profile.serverAddress) configBytes=\(effectiveConfigJSON.utf8.count) debugLogging=\(profile.debugLoggingEnabled) useTunFileDescriptor=\(profile.useTunFileDescriptor) tunRuntimeProfile=\(profile.tunRuntimeProfile.rawValue) regionalRoutingMode=\(profile.regionalRoutingMode.rawValue) regionalRoutingRegions=\(regionalRoutingRegions) dnsTestMode=\(profile.dnsTestMode.rawValue) dnsTestTransport=\(profile.dnsTestTransport.rawValue)"
                 )
                 try XrayConfigValidator.validate(
                     effectiveConfigJSON,

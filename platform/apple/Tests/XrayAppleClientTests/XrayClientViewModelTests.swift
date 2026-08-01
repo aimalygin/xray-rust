@@ -16,7 +16,10 @@ final class XrayClientViewModelTests: XCTestCase {
                 debugLoggingEnabled: true,
                 tunRuntimeProfile: .throughput,
                 regionalRoutingMode: .bypassSelected,
-                regionalRoutingRegions: [.russia]
+                regionalRoutingRegions: [.russia],
+                dnsTestMode: .proxy,
+                dnsTestTransport: .routedTCP,
+                dnsTestUpstream: "192.0.2.53:5353"
             )
         )
         let viewModel = XrayClientViewModel(
@@ -36,6 +39,9 @@ final class XrayClientViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.profile.tunRuntimeProfile, .throughput)
         XCTAssertEqual(viewModel.profile.regionalRoutingMode, .bypassSelected)
         XCTAssertEqual(viewModel.profile.regionalRoutingRegions, [.russia])
+        XCTAssertEqual(viewModel.profile.dnsTestMode, .proxy)
+        XCTAssertEqual(viewModel.profile.dnsTestTransport, .routedTCP)
+        XCTAssertEqual(viewModel.profile.dnsTestUpstream, "192.0.2.53:5353")
 
         let root = try XCTUnwrap(
             try JSONSerialization.jsonObject(
@@ -319,6 +325,59 @@ final class XrayClientViewModelTests: XCTestCase {
         XCTAssertEqual(store.load().configJSON, importedProfile.configJSON)
     }
 
+    func testConnectStartsTunnelWithEffectiveDNSConfigWithoutChangingSourceJSON() async throws {
+        let store = try makeStore()
+        var importedProfile = try XrayVlessURLImporter.profile(
+            from: Self.sampleVlessURL,
+            hostBundleIdentifier: "org.example.XrayClientTv"
+        )
+        importedProfile.dnsTestMode = .proxy
+        importedProfile.dnsTestTransport = .routedTCP
+        importedProfile.dnsTestUpstream = "192.0.2.53:5353"
+        let sourceConfigJSON = importedProfile.configJSON
+        try store.save(importedProfile)
+        let tunnelController = MockTunnelController()
+        let viewModel = XrayClientViewModel(
+            store: store,
+            tunnelController: tunnelController
+        )
+
+        await viewModel.connectOrDisconnect()
+
+        let startedProfile = try XCTUnwrap(tunnelController.startedProfile)
+        let startedDNS = try Self.dnsObject(in: startedProfile.configJSON)
+        XCTAssertEqual(startedDNS["queryStrategy"] as? String, "UseIP")
+        XCTAssertEqual(startedDNS["servers"] as? [String], ["tcp://192.0.2.53:5353"])
+        XCTAssertNil(startedDNS["fakeIp"])
+        XCTAssertEqual(store.load().configJSON, sourceConfigJSON)
+        XCTAssertEqual(store.load().dnsTestMode, .proxy)
+        XCTAssertEqual(viewModel.profile.configJSON, sourceConfigJSON)
+        XCTAssertNil(viewModel.lastErrorMessage)
+    }
+
+    func testConnectRejectsDNSProxyWithoutUpstreamBeforeStartingTunnel() async throws {
+        let store = try makeStore()
+        var importedProfile = try XrayVlessURLImporter.profile(
+            from: Self.sampleVlessURL,
+            hostBundleIdentifier: "org.example.XrayClientTv"
+        )
+        importedProfile.dnsTestMode = .proxy
+        try store.save(importedProfile)
+        let tunnelController = MockTunnelController()
+        let viewModel = XrayClientViewModel(
+            store: store,
+            tunnelController: tunnelController
+        )
+
+        await viewModel.connectOrDisconnect()
+
+        XCTAssertNil(tunnelController.startedProfile)
+        XCTAssertEqual(
+            viewModel.lastErrorMessage,
+            "DNS proxy test mode requires an upstream host or IP."
+        )
+    }
+
     private func makeStore() throws -> XrayClientProfileStore {
         let suiteName = "org.xrayrust.tests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
@@ -362,6 +421,13 @@ final class XrayClientViewModelTests: XCTestCase {
         let geoipURL = directoryURL.appendingPathComponent("geoip.dat")
         return fileManager.fileExists(atPath: geositeURL.path)
             && fileManager.fileExists(atPath: geoipURL.path)
+    }
+
+    private static func dnsObject(in configJSON: String) throws -> [String: Any] {
+        let root = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(configJSON.utf8)) as? [String: Any]
+        )
+        return try XCTUnwrap(root["dns"] as? [String: Any])
     }
 
     private static func configJSONWithoutFlow() throws -> String {

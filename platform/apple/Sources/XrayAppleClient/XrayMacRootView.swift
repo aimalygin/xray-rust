@@ -16,6 +16,11 @@ public struct XrayMacRootView: View {
             List {
                 connectionSection
                 profileSection
+                XrayDNSTestSettingsView(
+                    mode: $viewModel.profile.dnsTestMode,
+                    transport: $viewModel.profile.dnsTestTransport,
+                    upstream: $viewModel.profile.dnsTestUpstream
+                )
                 regionalRoutingSection
             }
             .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 360)

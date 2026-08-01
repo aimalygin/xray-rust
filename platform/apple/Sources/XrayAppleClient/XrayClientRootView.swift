@@ -27,6 +27,11 @@ public struct XrayClientRootView: View {
             Form {
                 connectionSection
                 profileSection
+                XrayDNSTestSettingsView(
+                    mode: $viewModel.profile.dnsTestMode,
+                    transport: $viewModel.profile.dnsTestTransport,
+                    upstream: $viewModel.profile.dnsTestUpstream
+                )
                 regionalRoutingSection
                 configurationSection
                 issueSection

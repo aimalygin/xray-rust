@@ -614,6 +614,7 @@ fn apple_swift_sources_advertise_ios_15_availability() {
     for path in [
         "platform/apple/HostApp/XrayClientApp.swift",
         "platform/apple/Sources/XrayAppleClient/XrayClientRootView.swift",
+        "platform/apple/Sources/XrayAppleClient/XrayDNSTestSettingsView.swift",
         "platform/apple/Sources/XrayAppleClient/XrayRealityVisionFlowPicker.swift",
         "platform/apple/Sources/XrayAppleClient/XrayClientViewModel.swift",
         "platform/apple/Sources/XrayAppleClient/XrayClientTunnelController.swift",
@@ -644,6 +645,65 @@ fn apple_swift_sources_advertise_ios_15_availability() {
         assert!(
             !source.contains("iOSApplicationExtension 16.0"),
             "Swift extension source `{path}` should not require iOS extension 16"
+        );
+    }
+}
+
+#[test]
+fn apple_sample_exposes_dns_test_settings_on_mobile_and_macos() {
+    let root = workspace_root();
+    let mobile_root = fs::read_to_string(
+        root.join("platform/apple/Sources/XrayAppleClient/XrayClientRootView.swift"),
+    )
+    .expect("read Apple mobile root view");
+    let mac_root = fs::read_to_string(
+        root.join("platform/apple/Sources/XrayAppleClient/XrayMacRootView.swift"),
+    )
+    .expect("read Apple macOS root view");
+    let settings = fs::read_to_string(
+        root.join("platform/apple/Sources/XrayAppleClient/XrayDNSTestSettingsView.swift"),
+    )
+    .expect("read Apple DNS test settings view");
+
+    for (name, source) in [("mobile", mobile_root), ("macOS", mac_root)] {
+        let profile = source
+            .find("profileSection")
+            .unwrap_or_else(|| panic!("{name} root view should include its profile section"));
+        let dns = source
+            .find("XrayDNSTestSettingsView(")
+            .unwrap_or_else(|| panic!("{name} root view should include DNS test settings"));
+        let regional = source
+            .find("regionalRoutingSection")
+            .unwrap_or_else(|| panic!("{name} root view should include regional routing"));
+        assert!(
+            profile < dns && dns < regional,
+            "{name} DNS test settings should follow Profile"
+        );
+
+        for binding in [
+            "mode: $viewModel.profile.dnsTestMode",
+            "transport: $viewModel.profile.dnsTestTransport",
+            "upstream: $viewModel.profile.dnsTestUpstream",
+        ] {
+            assert!(
+                source.contains(binding),
+                "{name} root view missing DNS test binding `{binding}`"
+            );
+        }
+    }
+
+    for token in [
+        "Section(\"DNS Testing\")",
+        "Picker(\"DNS Test Mode\"",
+        "Picker(\"DNS Transport\"",
+        "dns-test-mode-picker",
+        "dns-test-transport-picker",
+        "dns-upstream-field",
+        "#if os(tvOS)",
+    ] {
+        assert!(
+            settings.contains(token),
+            "Apple DNS test settings view missing `{token}`"
         );
     }
 }

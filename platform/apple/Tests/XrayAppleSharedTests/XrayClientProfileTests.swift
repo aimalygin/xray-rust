@@ -160,6 +160,19 @@ final class XrayClientProfileTests: XCTestCase {
         XCTAssertTrue(profile.regionalRoutingRegions.isEmpty)
     }
 
+    func testDNSTestSettingsDefaultToConfigurationWithoutAnUpstream() {
+        let profile = XrayClientProfile.defaultProfile(
+            hostBundleIdentifier: "org.example.XrayClient"
+        )
+
+        XCTAssertEqual(profile.dnsTestMode, .configuration)
+        XCTAssertEqual(profile.dnsTestTransport, .classic)
+        XCTAssertTrue(profile.dnsTestUpstream.isEmpty)
+        XCTAssertFalse(XrayClientDNSTestMode.configuration.requiresUpstream)
+        XCTAssertFalse(XrayClientDNSTestMode.fakeIP.requiresUpstream)
+        XCTAssertTrue(XrayClientDNSTestMode.proxy.requiresUpstream)
+    }
+
     func testRealityVisionFlowModeDefaultsMissingFlowToBlocked() throws {
         var profile = try XrayVlessURLImporter.profile(
             from: Self.sampleVlessURL,
@@ -274,6 +287,9 @@ final class XrayClientProfileTests: XCTestCase {
         XCTAssertFalse(profile.debugLoggingEnabled)
         XCTAssertTrue(profile.useTunFileDescriptor)
         XCTAssertEqual(profile.tunRuntimeProfile, .default)
+        XCTAssertEqual(profile.dnsTestMode, .configuration)
+        XCTAssertEqual(profile.dnsTestTransport, .classic)
+        XCTAssertTrue(profile.dnsTestUpstream.isEmpty)
         XCTAssertEqual(profile.regionalRoutingMode, .off)
         XCTAssertTrue(profile.regionalRoutingRegions.isEmpty)
     }
@@ -288,7 +304,10 @@ final class XrayClientProfileTests: XCTestCase {
             useTunFileDescriptor: false,
             tunRuntimeProfile: .mobilePlus,
             regionalRoutingMode: .bypassSelected,
-            regionalRoutingRegions: [.russia, .iran]
+            regionalRoutingRegions: [.russia, .iran],
+            dnsTestMode: .proxy,
+            dnsTestTransport: .routedTCP,
+            dnsTestUpstream: "192.0.2.53:5353"
         )
 
         let root = try XCTUnwrap(
@@ -299,8 +318,238 @@ final class XrayClientProfileTests: XCTestCase {
         XCTAssertEqual(root["useTunFileDescriptor"] as? Bool, false)
         XCTAssertNil(root["blockQUIC"])
         XCTAssertEqual(root["tunRuntimeProfile"] as? String, "mobile-plus")
+        XCTAssertEqual(root["dnsTestMode"] as? String, "proxy")
+        XCTAssertEqual(root["dnsTestTransport"] as? String, "routed-tcp")
+        XCTAssertEqual(root["dnsTestUpstream"] as? String, "192.0.2.53:5353")
         XCTAssertEqual(root["regionalRoutingMode"] as? String, "bypass-selected")
         XCTAssertEqual(root["regionalRoutingRegions"] as? [String], ["russia", "iran"])
+    }
+
+    func testEffectiveConfigLeavesBaseJSONByteForByteInConfigurationMode() throws {
+        let baseConfigJSON = "  {\n  \"dns\": {\"servers\": [\"existing.example\"]}\n}\n"
+        let profile = XrayClientProfile(
+            name: "Config DNS",
+            providerBundleIdentifier: "org.example.XrayClient.Tunnel",
+            serverAddress: "xray-rust",
+            configJSON: baseConfigJSON,
+            dnsTestMode: .configuration,
+            dnsTestTransport: .localTCP,
+            dnsTestUpstream: "tcp://ignored.example"
+        )
+
+        XCTAssertEqual(try profile.effectiveConfigJSON(), baseConfigJSON)
+        XCTAssertEqual(profile.configJSON, baseConfigJSON)
+    }
+
+    func testEffectiveConfigBuildsPureFakeDNSWhenUpstreamIsBlank() throws {
+        let baseConfigJSON = #"{"dns":{"queryStrategy":"UseIPv6","servers":["old.example"],"hosts":{"full:old.example":"192.0.2.1"},"disableFallback":true},"outbounds":[]}"#
+        let profile = XrayClientProfile(
+            name: "FakeDNS",
+            providerBundleIdentifier: "org.example.XrayClient.Tunnel",
+            serverAddress: "xray-rust",
+            configJSON: baseConfigJSON,
+            dnsTestMode: .fakeIP,
+            dnsTestTransport: .routedTCP,
+            dnsTestUpstream: " \n\t "
+        )
+
+        let dns = try Self.dnsObject(in: profile.effectiveConfigJSON())
+        let fakeIP = try XCTUnwrap(dns["fakeIp"] as? [String: Any])
+
+        XCTAssertEqual(Set(dns.keys), Set(["fakeIp", "hosts", "queryStrategy"]))
+        XCTAssertEqual(dns["queryStrategy"] as? String, "UseIP")
+        XCTAssertNil(dns["servers"])
+        XCTAssertEqual(
+            dns["hosts"] as? [String: String],
+            ["full:old.example": "192.0.2.1"]
+        )
+        XCTAssertEqual(fakeIP["enabled"] as? Bool, true)
+        XCTAssertEqual(fakeIP["ipv4Pool"] as? String, "198.19.0.0/16")
+        XCTAssertEqual(fakeIP["poolSize"] as? Int, 32768)
+        XCTAssertEqual(fakeIP["ttl"] as? Int, 60)
+        XCTAssertEqual(profile.configJSON, baseConfigJSON)
+    }
+
+    func testEffectiveConfigFormatsOptionalFakeDNSUpstreamForEveryTransport() throws {
+        for (transport, expectedServer) in [
+            (XrayClientDNSTestTransport.classic, "resolver.example:5353"),
+            (.routedTCP, "tcp://resolver.example:5353"),
+            (.localTCP, "tcp+local://resolver.example:5353"),
+        ] {
+            let profile = XrayClientProfile(
+                name: "FakeDNS",
+                providerBundleIdentifier: "org.example.XrayClient.Tunnel",
+                serverAddress: "xray-rust",
+                configJSON: #"{"outbounds":[]}"#,
+                dnsTestMode: .fakeIP,
+                dnsTestTransport: transport,
+                dnsTestUpstream: " \nresolver.example:5353\t "
+            )
+
+            let dns = try Self.dnsObject(in: profile.effectiveConfigJSON())
+
+            XCTAssertEqual(
+                dns["servers"] as? [String],
+                [expectedServer],
+                "transport=\(transport.rawValue)"
+            )
+            XCTAssertNotNil(dns["fakeIp"], "transport=\(transport.rawValue)")
+            XCTAssertEqual(dns["queryStrategy"] as? String, "UseIP")
+        }
+    }
+
+    func testEffectiveConfigBuildsProxyDNSForEveryTransport() throws {
+        let baseConfigJSON = #"{"dns":{"fakeIp":{"enabled":true,"ipv4Pool":"198.19.0.0/16"},"disableFallback":true},"outbounds":[]}"#
+        for (transport, expectedServer) in [
+            (XrayClientDNSTestTransport.classic, "[2001:db8::53]:5353"),
+            (.routedTCP, "tcp://[2001:db8::53]:5353"),
+            (.localTCP, "tcp+local://[2001:db8::53]:5353"),
+        ] {
+            let profile = XrayClientProfile(
+                name: "DNS Proxy",
+                providerBundleIdentifier: "org.example.XrayClient.Tunnel",
+                serverAddress: "xray-rust",
+                configJSON: baseConfigJSON,
+                dnsTestMode: .proxy,
+                dnsTestTransport: transport,
+                dnsTestUpstream: " [2001:db8::53]:5353 "
+            )
+
+            let dns = try Self.dnsObject(in: profile.effectiveConfigJSON())
+
+            XCTAssertEqual(Set(dns.keys), Set(["queryStrategy", "servers"]))
+            XCTAssertEqual(dns["queryStrategy"] as? String, "UseIP")
+            XCTAssertEqual(
+                dns["servers"] as? [String],
+                [expectedServer],
+                "transport=\(transport.rawValue)"
+            )
+            XCTAssertNil(dns["fakeIp"])
+            XCTAssertEqual(profile.configJSON, baseConfigJSON)
+        }
+    }
+
+    func testEffectiveConfigPreservesDNSRoutingTagInGeneratedModes() throws {
+        for mode in [XrayClientDNSTestMode.fakeIP, .proxy] {
+            let profile = XrayClientProfile(
+                name: "Tagged DNS",
+                providerBundleIdentifier: "org.example.XrayClient.Tunnel",
+                serverAddress: "xray-rust",
+                configJSON: #"{"dns":{"tag":"dns-route"},"outbounds":[]}"#,
+                dnsTestMode: mode,
+                dnsTestTransport: .routedTCP,
+                dnsTestUpstream: "192.0.2.53"
+            )
+
+            let dns = try Self.dnsObject(in: profile.effectiveConfigJSON())
+            XCTAssertEqual(dns["tag"] as? String, "dns-route", "mode=\(mode.rawValue)")
+        }
+    }
+
+    func testEffectiveConfigBracketsBareIPv6ForTCPTransports() throws {
+        for (transport, expectedServer) in [
+            (XrayClientDNSTestTransport.routedTCP, "tcp://[2001:db8::53]"),
+            (.localTCP, "tcp+local://[2001:db8::53]"),
+        ] {
+            let profile = XrayClientProfile(
+                name: "IPv6 DNS Proxy",
+                providerBundleIdentifier: "org.example.XrayClient.Tunnel",
+                serverAddress: "xray-rust",
+                configJSON: #"{"outbounds":[]}"#,
+                dnsTestMode: .proxy,
+                dnsTestTransport: transport,
+                dnsTestUpstream: "2001:db8::53"
+            )
+
+            let dns = try Self.dnsObject(in: profile.effectiveConfigJSON())
+            XCTAssertEqual(
+                dns["servers"] as? [String],
+                [expectedServer],
+                "transport=\(transport.rawValue)"
+            )
+        }
+    }
+
+    func testEffectiveConfigRejectsProxyWithoutExplicitUpstream() {
+        let profile = XrayClientProfile(
+            name: "DNS Proxy",
+            providerBundleIdentifier: "org.example.XrayClient.Tunnel",
+            serverAddress: "xray-rust",
+            configJSON: #"{"outbounds":[]}"#,
+            dnsTestMode: .proxy,
+            dnsTestUpstream: " \n "
+        )
+
+        XCTAssertThrowsError(try profile.effectiveConfigJSON()) { error in
+            XCTAssertEqual(
+                error as? XrayClientDNSTestConfigurationError,
+                .missingUpstream
+            )
+        }
+    }
+
+    func testEffectiveConfigRejectsUpstreamSchemeInGeneratedModes() {
+        for mode in [XrayClientDNSTestMode.fakeIP, .proxy] {
+            let profile = XrayClientProfile(
+                name: "DNS Test",
+                providerBundleIdentifier: "org.example.XrayClient.Tunnel",
+                serverAddress: "xray-rust",
+                configJSON: #"{"outbounds":[]}"#,
+                dnsTestMode: mode,
+                dnsTestTransport: .routedTCP,
+                dnsTestUpstream: "tcp://resolver.example"
+            )
+
+            XCTAssertThrowsError(try profile.effectiveConfigJSON()) { error in
+                XCTAssertEqual(
+                    error as? XrayClientDNSTestConfigurationError,
+                    .upstreamMustNotIncludeScheme,
+                    "mode=\(mode.rawValue)"
+                )
+            }
+        }
+    }
+
+    func testEffectiveConfigRejectsNonObjectRootInGeneratedModes() {
+        for mode in [XrayClientDNSTestMode.fakeIP, .proxy] {
+            let profile = XrayClientProfile(
+                name: "DNS Test",
+                providerBundleIdentifier: "org.example.XrayClient.Tunnel",
+                serverAddress: "xray-rust",
+                configJSON: "[]",
+                dnsTestMode: mode,
+                dnsTestUpstream: "192.0.2.53"
+            )
+
+            XCTAssertThrowsError(try profile.effectiveConfigJSON()) { error in
+                XCTAssertEqual(
+                    error as? XrayClientDNSTestConfigurationError,
+                    .rootIsNotObject,
+                    "mode=\(mode.rawValue)"
+                )
+            }
+        }
+    }
+
+    func testEffectiveConfigComposesDNSTestModeBeforeRegionalRouting() throws {
+        var profile = try XrayVlessURLImporter.profile(
+            from: Self.sampleVlessURL,
+            hostBundleIdentifier: "org.example.XrayClient"
+        ).updatingRegionalRouting(mode: .bypassSelected, regions: [.china])
+        let baseConfigJSON = profile.configJSON
+        profile.dnsTestMode = .proxy
+        profile.dnsTestTransport = .routedTCP
+        profile.dnsTestUpstream = "192.0.2.53"
+
+        let effectiveConfigJSON = try profile.effectiveConfigJSON()
+        let dns = try Self.dnsObject(in: effectiveConfigJSON)
+        let rules = try Self.routingRules(in: effectiveConfigJSON)
+
+        XCTAssertEqual(dns["queryStrategy"] as? String, "UseIP")
+        XCTAssertEqual(dns["servers"] as? [String], ["tcp://192.0.2.53"])
+        XCTAssertEqual(rules[0]["domain"] as? [String], ["geosite:cn"])
+        XCTAssertEqual(rules[0]["outboundTag"] as? String, "direct")
+        XCTAssertEqual(profile.configJSON, baseConfigJSON)
     }
 
     func testEffectiveConfigReturnsBaseConfigWhenRegionalRoutingIsOff() throws {
@@ -521,6 +770,13 @@ final class XrayClientProfileTests: XCTestCase {
         )
         let routing = try XCTUnwrap(root["routing"] as? [String: Any])
         return try XCTUnwrap(routing["rules"] as? [[String: Any]])
+    }
+
+    private static func dnsObject(in configJSON: String) throws -> [String: Any] {
+        let root = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(configJSON.utf8)) as? [String: Any]
+        )
+        return try XCTUnwrap(root["dns"] as? [String: Any])
     }
 
     private static func firstVlessUserFlow(in configJSON: String) throws -> String? {

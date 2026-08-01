@@ -144,10 +144,29 @@ remain length-prefixed TCP. Fake-IP profiles keep local synthesis precedence
 for both transports at the anchor.
 
 The checked-in `directTunConfigJSON` intentionally has no fake-IP DNS. Direct
-profiles are not automatically migrated to fake-IP and require an explicit
-host `dnsServers` or `xrayDNSServers` override. Imported VLESS profiles keep
-VLESS as the default outbound and only bypass private IP ranges through
-Freedom; the importer does not add domain-based captive-portal bypasses.
+profiles are not automatically migrated to fake-IP; when used unchanged they
+require an explicit host `dnsServers` or `xrayDNSServers` override. The
+reference UI's DNS Proxy test override described below is another explicit
+option. Imported VLESS profiles keep VLESS as the default outbound and only
+bypass private IP ranges through Freedom; the importer does not add
+domain-based captive-portal bypasses.
+
+The reference XrayClient UI includes a sample-only **DNS Testing** section.
+`Config JSON` adds no DNS override and leaves DNS behavior to the stored JSON,
+while `FakeDNS` and `DNS Proxy` build a temporary effective `dns` object for
+the next connection; the JSON editor and saved credential-bearing config are
+not rewritten. Existing `dns.hosts` entries and the top-level `dns.tag` are
+retained so bootstrap pins and routed-DNS outbound selection are not discarded.
+The transport picker covers classic UDP with TCP truncation retry, routed
+`tcp://`, and provider-local `tcp+local://`. No public resolver is filled in:
+enter a trusted host or IP (plus an optional port) once and switch modes or
+transports with the pickers. The upstream is optional for FakeDNS when restored
+domains cannot select Freedom, and required for DNS Proxy. Supplying it in
+FakeDNS mode enables routed resolution when a restored domain is sent through
+Freedom. Changes take effect after reconnecting; `TCP (local)` intentionally
+bypasses Xray routing and therefore is not a DNS-leak-safe mode.
+The selected test mode, transport, and trusted upstream remain selected when a
+new VLESS URL is imported; choose `Config JSON` to disable the override.
 
 Before applying Network Extension DNS and routes, the provider bootstraps every
 domain VLESS server and every domain-valued classic, `tcp://`, or
