@@ -868,6 +868,7 @@ mod tests {
             connections,
             iterations: 0,
             payload_size: 0,
+            dns_upstream_transport: None,
             latency_us: None,
             setup_us: None,
             bytes_sent: metric.clone(),

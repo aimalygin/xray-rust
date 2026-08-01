@@ -329,6 +329,43 @@ impl TunDnsTransport {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum TunDnsUpstreamTransport {
+    #[default]
+    Classic,
+    TcpRouted,
+    TcpLocal,
+}
+
+impl TunDnsUpstreamTransport {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Classic => "classic",
+            Self::TcpRouted => "tcp-routed",
+            Self::TcpLocal => "tcp-local",
+        }
+    }
+
+    fn parse(raw: &str) -> Result<Self, BenchError> {
+        match raw {
+            "classic" => Ok(Self::Classic),
+            "tcp-routed" => Ok(Self::TcpRouted),
+            "tcp-local" => Ok(Self::TcpLocal),
+            other => Err(BenchError::InvalidArguments(format!(
+                "unsupported TUN DNS upstream transport `{other}`; expected classic|tcp-routed|tcp-local"
+            ))),
+        }
+    }
+
+    fn server(self, upstream: SocketAddr) -> String {
+        match self {
+            Self::Classic => upstream.to_string(),
+            Self::TcpRouted => format!("tcp://{upstream}"),
+            Self::TcpLocal => format!("tcp+local://{upstream}"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BenchOptions {
     pub engine: Option<EngineKind>,
@@ -340,6 +377,7 @@ pub struct BenchOptions {
     pub iterations: usize,
     pub payload_size: usize,
     pub dns_transport: TunDnsTransport,
+    pub dns_upstream_transport: TunDnsUpstreamTransport,
     pub runs: usize,
     pub out_dir: PathBuf,
     pub xray_rust_bin: Option<PathBuf>,
@@ -534,6 +572,8 @@ pub struct BenchResult {
     pub payload_size: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dns_transport: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dns_upstream_transport: Option<String>,
     pub latency_us: Option<LatencySummary>,
     pub setup_us: Option<FlowSetupSummary>,
     pub samples: usize,
@@ -613,6 +653,8 @@ pub struct BenchSummary {
     pub iterations: u64,
     #[serde(default)]
     pub payload_size: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dns_upstream_transport: Option<String>,
     pub latency_us: Option<LatencySummaryAggregate>,
     pub setup_us: Option<FlowSetupSummaryAggregate>,
     pub bytes_sent: MetricSummary,
@@ -947,6 +989,7 @@ impl Default for BenchOptions {
             iterations: 1,
             payload_size: 1024,
             dns_transport: TunDnsTransport::default(),
+            dns_upstream_transport: TunDnsUpstreamTransport::default(),
             runs: 1,
             out_dir: PathBuf::from("target/benchmarks"),
             xray_rust_bin: None,
@@ -1121,6 +1164,10 @@ where
             "--transport" | "--dns-transport" => {
                 options.dns_transport =
                     TunDnsTransport::parse(required_value(&rest, &mut index, flag)?)?;
+            }
+            "--dns-upstream-transport" => {
+                options.dns_upstream_transport =
+                    TunDnsUpstreamTransport::parse(required_value(&rest, &mut index, flag)?)?;
             }
             "--runs" => {
                 options.runs = parse_nonzero_usize(required_value(&rest, &mut index, flag)?, flag)?;
@@ -1600,6 +1647,7 @@ pub fn summarize_results(results: &[BenchResult]) -> Result<BenchSummary, BenchE
             || result.iterations != first.iterations
             || result.payload_size != first.payload_size
             || result.dns_transport != first.dns_transport
+            || result.dns_upstream_transport != first.dns_upstream_transport
     }) {
         return Err(BenchError::InvalidArguments(
             "cannot summarize mixed workload parameters".to_owned(),
@@ -1634,6 +1682,7 @@ pub fn summarize_results(results: &[BenchResult]) -> Result<BenchSummary, BenchE
         connections: first.connections,
         iterations: first.iterations,
         payload_size: first.payload_size,
+        dns_upstream_transport: first.dns_upstream_transport.clone(),
         latency_us: summarize_latency_results(results),
         setup_us: summarize_setup_results(results),
         bytes_sent: summarize_metric(results.iter().map(|result| u128::from(result.bytes_sent))),
@@ -4881,7 +4930,57 @@ fn build_dns_proxy_fixture_response(query: &[u8]) -> Result<Vec<u8>, BenchError>
 }
 
 #[cfg(unix)]
-async fn handle_dns_proxy_tcp_connection(mut stream: TcpStream) -> Result<(), BenchError> {
+trait DnsProxyFixtureObserver: Clone + Send + Sync + 'static {
+    #[inline]
+    fn record_udp_query(&self) {}
+
+    #[inline]
+    fn record_tcp_query(&self) {}
+}
+
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy)]
+struct IgnoreDnsProxyFixtureQueries;
+
+#[cfg(unix)]
+impl DnsProxyFixtureObserver for IgnoreDnsProxyFixtureQueries {}
+
+#[cfg(all(unix, test))]
+#[derive(Debug, Default)]
+struct DnsProxyFixtureCounters {
+    udp_queries: AtomicU64,
+    tcp_queries: AtomicU64,
+}
+
+#[cfg(all(unix, test))]
+impl DnsProxyFixtureCounters {
+    fn snapshot(&self) -> (u64, u64) {
+        (
+            self.udp_queries.load(Ordering::Relaxed),
+            self.tcp_queries.load(Ordering::Relaxed),
+        )
+    }
+}
+
+#[cfg(all(unix, test))]
+impl DnsProxyFixtureObserver for Arc<DnsProxyFixtureCounters> {
+    fn record_udp_query(&self) {
+        self.udp_queries.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn record_tcp_query(&self) {
+        self.tcp_queries.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+#[cfg(unix)]
+async fn handle_dns_proxy_tcp_connection<O>(
+    mut stream: TcpStream,
+    observer: O,
+) -> Result<(), BenchError>
+where
+    O: DnsProxyFixtureObserver,
+{
     loop {
         let mut length = [0_u8; 2];
         match stream.read_exact(&mut length).await {
@@ -4902,6 +5001,7 @@ async fn handle_dns_proxy_tcp_connection(mut stream: TcpStream) -> Result<(), Be
                 action: "reading DNS proxy fixture TCP query".to_owned(),
                 source,
             })?;
+        observer.record_tcp_query();
         let response = build_dns_proxy_fixture_response(&query)?;
         let response_len = u16::try_from(response.len()).map_err(|_| {
             BenchError::InvalidArguments(
@@ -4927,6 +5027,16 @@ async fn handle_dns_proxy_tcp_connection(mut stream: TcpStream) -> Result<(), Be
 
 #[cfg(unix)]
 async fn spawn_dns_proxy_servers() -> Result<(SocketAddr, Vec<JoinHandle<()>>), BenchError> {
+    spawn_dns_proxy_servers_with_observer(IgnoreDnsProxyFixtureQueries).await
+}
+
+#[cfg(unix)]
+async fn spawn_dns_proxy_servers_with_observer<O>(
+    observer: O,
+) -> Result<(SocketAddr, Vec<JoinHandle<()>>), BenchError>
+where
+    O: DnsProxyFixtureObserver,
+{
     let udp = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
         .await
         .map_err(|source| BenchError::Io {
@@ -4944,18 +5054,21 @@ async fn spawn_dns_proxy_servers() -> Result<(SocketAddr, Vec<JoinHandle<()>>), 
             source,
         })?;
 
+    let udp_observer = observer.clone();
     let udp_task = tokio::spawn(async move {
         let mut buffer = vec![0_u8; u16::MAX as usize];
         loop {
             let Ok((len, peer)) = udp.recv_from(&mut buffer).await else {
                 break;
             };
+            udp_observer.record_udp_query();
             let Ok(response) = build_dns_proxy_fixture_response(&buffer[..len]) else {
                 continue;
             };
             let _ = udp.send_to(&response, peer).await;
         }
     });
+    let tcp_observer = observer;
     let tcp_task = tokio::spawn(async move {
         let mut connections = JoinSet::new();
         loop {
@@ -4964,8 +5077,14 @@ async fn spawn_dns_proxy_servers() -> Result<(SocketAddr, Vec<JoinHandle<()>>), 
                     let Ok((stream, _peer)) = accepted else {
                         break;
                     };
+                    let connection_observer = tcp_observer.clone();
                     connections.spawn(async move {
-                        if let Err(error) = handle_dns_proxy_tcp_connection(stream).await {
+                        if let Err(error) = handle_dns_proxy_tcp_connection(
+                            stream,
+                            connection_observer,
+                        )
+                        .await
+                        {
                             eprintln!("DNS proxy TCP fixture error: {error}");
                         }
                     });
@@ -4976,6 +5095,20 @@ async fn spawn_dns_proxy_servers() -> Result<(SocketAddr, Vec<JoinHandle<()>>), 
         connections.abort_all();
     });
     Ok((addr, vec![udp_task, tcp_task]))
+}
+
+#[cfg(all(unix, test))]
+async fn spawn_counted_dns_proxy_servers() -> Result<
+    (
+        SocketAddr,
+        Vec<JoinHandle<()>>,
+        Arc<DnsProxyFixtureCounters>,
+    ),
+    BenchError,
+> {
+    let counters = Arc::new(DnsProxyFixtureCounters::default());
+    let (addr, tasks) = spawn_dns_proxy_servers_with_observer(Arc::clone(&counters)).await?;
+    Ok((addr, tasks, counters))
 }
 
 #[cfg(not(unix))]
@@ -5603,9 +5736,10 @@ pub fn xray_rust_config(port: u16, workload: WorkloadKind) -> String {
             reality_vision_xudp_config(port, SocketAddr::from((Ipv4Addr::LOCALHOST, 443)))
         }
         WorkloadKind::TunFakeDns | WorkloadKind::TunFakeDnsTcp => tun_fake_dns_config(),
-        WorkloadKind::TunDnsProxy => {
-            tun_dns_proxy_config(SocketAddr::from((Ipv4Addr::LOCALHOST, 53)))
-        }
+        WorkloadKind::TunDnsProxy => tun_dns_proxy_config(
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 53)),
+            TunDnsUpstreamTransport::Classic,
+        ),
         WorkloadKind::TunUdpFreedom
         | WorkloadKind::TunTcpFreedom
         | WorkloadKind::TunTcpStaleFlows => tun_freedom_config(),
@@ -5656,11 +5790,28 @@ fn sing_box_config(
     }
 }
 
+#[cfg(test)]
 fn engine_config(
     engine: EngineKind,
     port: u16,
     workload: WorkloadKind,
     fixture: &WorkloadFixture,
+) -> Result<String, BenchError> {
+    engine_config_with_dns_upstream(
+        engine,
+        port,
+        workload,
+        fixture,
+        TunDnsUpstreamTransport::Classic,
+    )
+}
+
+fn engine_config_with_dns_upstream(
+    engine: EngineKind,
+    port: u16,
+    workload: WorkloadKind,
+    fixture: &WorkloadFixture,
+    dns_upstream_transport: TunDnsUpstreamTransport,
 ) -> Result<String, BenchError> {
     match workload {
         WorkloadKind::UdpVless | WorkloadKind::UdpXudp => {
@@ -5725,7 +5876,7 @@ fn engine_config(
                         "tun-dns-proxy workload requires a DNS server fixture".to_owned(),
                     )
                 })?;
-                Ok(tun_dns_proxy_config(upstream))
+                Ok(tun_dns_proxy_config(upstream, dns_upstream_transport))
             }
             EngineKind::XrayCore | EngineKind::SingBox => Err(BenchError::InvalidArguments(
                 "tun-dns-proxy currently supports only --engine xray-rust".to_owned(),
@@ -5871,7 +6022,11 @@ fn tun_fake_dns_config() -> String {
     .to_owned()
 }
 
-fn tun_dns_proxy_config(upstream: SocketAddr) -> String {
+fn tun_dns_proxy_config(
+    upstream: SocketAddr,
+    upstream_transport: TunDnsUpstreamTransport,
+) -> String {
+    let server = upstream_transport.server(upstream);
     format!(
         r#"{{
   "log": {{ "loglevel": "warning" }},
@@ -5892,7 +6047,7 @@ fn tun_dns_proxy_config(upstream: SocketAddr) -> String {
     }}
   ],
   "dns": {{
-    "servers": ["{upstream}"]
+    "servers": ["{server}"]
   }}
 }}"#
     )
@@ -6735,9 +6890,13 @@ async fn start_engine(
         None
     };
     let config = match kind {
-        EngineKind::XrayRust | EngineKind::XrayCore => {
-            engine_config(kind, port, options.workload, fixture)?
-        }
+        EngineKind::XrayRust | EngineKind::XrayCore => engine_config_with_dns_upstream(
+            kind,
+            port,
+            options.workload,
+            fixture,
+            options.dns_upstream_transport,
+        )?,
         EngineKind::SingBox => sing_box_config(port, options.workload, fixture)?,
     };
     let config_path = run_dir.join("config.json");
@@ -8513,6 +8672,8 @@ async fn run_engine_once(
             WorkloadKind::TunFakeDnsTcp => Some("tcp".to_owned()),
             _ => None,
         },
+        dns_upstream_transport: (options.workload == WorkloadKind::TunDnsProxy)
+            .then(|| options.dns_upstream_transport.as_str().to_owned()),
         latency_us,
         setup_us,
         samples: samples.len(),
@@ -8554,6 +8715,11 @@ fn print_result(result: &BenchResult) {
         .dns_transport
         .as_deref()
         .map(|transport| format!(" transport={transport}"))
+        .unwrap_or_default();
+    let dns_upstream_transport = result
+        .dns_upstream_transport
+        .as_deref()
+        .map(|transport| format!(" upstream_transport={transport}"))
         .unwrap_or_default();
     let latency = result
         .latency_us
@@ -8598,7 +8764,7 @@ fn print_result(result: &BenchResult) {
         })
         .unwrap_or_default();
     println!(
-        "{} {} status={} peak_rss_kib={} cpu_millis={} bytes_sent={} bytes_received={} samples={}{}{}{}{}{}{}",
+        "{} {} status={} peak_rss_kib={} cpu_millis={} bytes_sent={} bytes_received={} samples={}{}{}{}{}{}{}{}",
         result.engine,
         result.workload,
         result.status,
@@ -8608,6 +8774,7 @@ fn print_result(result: &BenchResult) {
         result.bytes_received,
         result.samples,
         dns_transport,
+        dns_upstream_transport,
         cpu_per_gib,
         throughput,
         latency,
@@ -8704,6 +8871,11 @@ fn print_summary(summary: &BenchSummary) {
         .and_then(|result| result.dns_transport.as_deref())
         .map(|transport| format!(" transport={transport}"))
         .unwrap_or_default();
+    let dns_upstream_transport = summary
+        .dns_upstream_transport
+        .as_deref()
+        .map(|transport| format!(" upstream_transport={transport}"))
+        .unwrap_or_default();
     let throughput = summary
         .throughput_mbps
         .as_ref()
@@ -8757,7 +8929,7 @@ fn print_summary(summary: &BenchSummary) {
         })
         .unwrap_or_default();
     println!(
-        "{} {} runs={} status={} duration_ms[min/median/p95]={}/{}/{} peak_rss_kib[min/median/p95]={}/{}/{} cpu_millis[min/median/p95]={}/{}/{} bytes_sent[min/median/p95]={}/{}/{} bytes_received[min/median/p95]={}/{}/{}{}{}{}{}{}",
+        "{} {} runs={} status={} duration_ms[min/median/p95]={}/{}/{} peak_rss_kib[min/median/p95]={}/{}/{} cpu_millis[min/median/p95]={}/{}/{} bytes_sent[min/median/p95]={}/{}/{} bytes_received[min/median/p95]={}/{}/{}{}{}{}{}{}{}",
         summary.engine,
         summary.workload,
         summary.runs,
@@ -8778,6 +8950,7 @@ fn print_summary(summary: &BenchSummary) {
         summary.bytes_received.median,
         summary.bytes_received.p95,
         dns_transport,
+        dns_upstream_transport,
         cpu_per_gib,
         throughput,
         latency,
@@ -8917,6 +9090,7 @@ mod tests {
                 iterations: 1,
                 payload_size: 1024,
                 dns_transport: TunDnsTransport::Both,
+                dns_upstream_transport: TunDnsUpstreamTransport::Classic,
                 runs: 1,
                 out_dir: PathBuf::from("target/benchmarks/test"),
                 xray_rust_bin: None,
@@ -9391,6 +9565,8 @@ mod tests {
             "25",
             "--transport",
             "tcp",
+            "--dns-upstream-transport",
+            "tcp-local",
         ])
         .unwrap();
 
@@ -9401,6 +9577,10 @@ mod tests {
         assert_eq!(options.connections, 8);
         assert_eq!(options.iterations, 25);
         assert_eq!(options.dns_transport, TunDnsTransport::Tcp);
+        assert_eq!(
+            options.dns_upstream_transport,
+            TunDnsUpstreamTransport::TcpLocal
+        );
     }
 
     #[test]
@@ -9418,6 +9598,25 @@ mod tests {
         .unwrap_err();
 
         assert!(error.to_string().contains("expected udp|tcp|both"));
+    }
+
+    #[test]
+    fn rejects_unknown_tun_dns_proxy_upstream_transport() {
+        let error = parse_cli_args([
+            "xray-bench",
+            "run",
+            "--engine",
+            "xray-rust",
+            "--workload",
+            "tun-dns-proxy",
+            "--dns-upstream-transport",
+            "quic",
+        ])
+        .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("expected classic|tcp-routed|tcp-local"));
     }
 
     #[test]
@@ -9741,7 +9940,11 @@ mod tests {
             spawn_fragmented_dns_tcp_test_server(connections, queries_per_connection)
                 .await
                 .unwrap();
-        let parsed = parse_xray_json(&tun_dns_proxy_config(upstream)).unwrap();
+        let parsed = parse_xray_json(&tun_dns_proxy_config(
+            upstream,
+            TunDnsUpstreamTransport::Classic,
+        ))
+        .unwrap();
         let mut core = Core::new(parsed.config).unwrap();
         core.start().await.unwrap();
 
@@ -9830,6 +10033,58 @@ mod tests {
             outcome.latencies_us.len(),
             connections * queries_per_connection
         );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn tun_dns_proxy_udp_measures_routed_and_local_tcp_upstreams() {
+        for upstream_transport in [
+            TunDnsUpstreamTransport::TcpRouted,
+            TunDnsUpstreamTransport::TcpLocal,
+        ] {
+            let (upstream, fixture_tasks, fixture_counters) =
+                spawn_counted_dns_proxy_servers().await.unwrap();
+            let parsed =
+                parse_xray_json(&tun_dns_proxy_config(upstream, upstream_transport)).unwrap();
+            let mut core = Core::new(parsed.config).unwrap();
+            core.start().await.unwrap();
+
+            let TunSocketPair {
+                engine_fd,
+                workload_fd,
+            } = create_tun_socket_pair().unwrap();
+            let bridge_task = spawn_tun_core_test_bridge(engine_fd, &core).unwrap();
+            let options = BenchOptions {
+                workload: WorkloadKind::TunDnsProxy,
+                connections: 2,
+                iterations: 2,
+                dns_transport: TunDnsTransport::Udp,
+                dns_upstream_transport: upstream_transport,
+                ..BenchOptions::default()
+            };
+
+            let outcome = timeout(
+                Duration::from_secs(4),
+                run_tun_dns_proxy_workload(workload_fd.raw(), &options),
+            )
+            .await
+            .expect("UDP-to-TCP DNS benchmark path must not hang")
+            .expect("UDP-to-TCP DNS benchmark path must succeed");
+            let (udp_queries, tcp_queries) = fixture_counters.snapshot();
+
+            bridge_task.abort();
+            let _ = bridge_task.await;
+            core.stop().await.unwrap();
+            for task in fixture_tasks {
+                task.abort();
+            }
+
+            assert!(outcome.bytes_sent > 0);
+            assert!(outcome.bytes_received > outcome.bytes_sent);
+            assert_eq!(outcome.latencies_us.len(), 8);
+            assert_eq!(tcp_queries, 8, "upstream mode {upstream_transport:?}");
+            assert_eq!(udp_queries, 0, "upstream mode {upstream_transport:?}");
+        }
     }
 
     #[cfg(unix)]
@@ -10270,7 +10525,7 @@ mod tests {
     }
 
     #[test]
-    fn tun_dns_proxy_config_uses_ip_literal_fixture_for_xray_rust_only() {
+    fn tun_dns_proxy_config_encodes_selected_upstream_transport_for_xray_rust_only() {
         let fixture = WorkloadFixture {
             vless_addr: None,
             vless_tls_cert_sha256: None,
@@ -10279,13 +10534,28 @@ mod tests {
             tasks: Vec::new(),
             processes: Vec::new(),
         };
-        let config =
-            engine_config(EngineKind::XrayRust, 0, WorkloadKind::TunDnsProxy, &fixture).unwrap();
-        parse_xray_json(&config).unwrap();
-        let value = serde_json::from_str::<serde_json::Value>(&config).unwrap();
+        for (transport, expected) in [
+            (TunDnsUpstreamTransport::Classic, "127.0.0.1:19053"),
+            (TunDnsUpstreamTransport::TcpRouted, "tcp://127.0.0.1:19053"),
+            (
+                TunDnsUpstreamTransport::TcpLocal,
+                "tcp+local://127.0.0.1:19053",
+            ),
+        ] {
+            let config = engine_config_with_dns_upstream(
+                EngineKind::XrayRust,
+                0,
+                WorkloadKind::TunDnsProxy,
+                &fixture,
+                transport,
+            )
+            .unwrap();
+            parse_xray_json(&config).unwrap();
+            let value = serde_json::from_str::<serde_json::Value>(&config).unwrap();
 
-        assert_eq!(value["inbounds"][0]["protocol"], "tun");
-        assert_eq!(value["dns"]["servers"][0], "127.0.0.1:19053");
+            assert_eq!(value["inbounds"][0]["protocol"], "tun");
+            assert_eq!(value["dns"]["servers"][0], expected);
+        }
         let error = engine_config(EngineKind::XrayCore, 0, WorkloadKind::TunDnsProxy, &fixture)
             .unwrap_err();
         assert!(error.to_string().contains("only --engine xray-rust"));
@@ -11156,6 +11426,40 @@ mod tests {
         assert_eq!(result.transfer_duration_ms, None);
         assert_eq!(result.connections, 0);
         assert_eq!(result.dns_transport, None);
+        assert_eq!(result.dns_upstream_transport, None);
+    }
+
+    #[test]
+    fn records_dns_upstream_transport_in_result_and_summary_json() {
+        let result = BenchResult {
+            engine: "xray-rust".to_owned(),
+            workload: "tun-dns-proxy".to_owned(),
+            status: "ok".to_owned(),
+            duration_ms: 10,
+            transfer_duration_ms: None,
+            bytes_sent: 64,
+            bytes_received: 80,
+            peak_rss_kib: 3000,
+            cpu_millis: 2,
+            cpu_millis_per_gib: None,
+            throughput_mbps: None,
+            connections: 1,
+            iterations: 1,
+            payload_size: 1024,
+            dns_transport: Some("udp".to_owned()),
+            dns_upstream_transport: Some("tcp-routed".to_owned()),
+            latency_us: None,
+            setup_us: None,
+            samples: 1,
+            blackhole_connections_accepted: None,
+            blackhole_connections_active: None,
+        };
+        let summary = summarize_results(std::slice::from_ref(&result)).unwrap();
+        let result_json = serde_json::to_value(&result).unwrap();
+        let summary_json = serde_json::to_value(&summary).unwrap();
+
+        assert_eq!(result_json["dns_upstream_transport"], "tcp-routed");
+        assert_eq!(summary_json["dns_upstream_transport"], "tcp-routed");
     }
 
     #[test]
@@ -11177,6 +11481,7 @@ mod tests {
                 iterations: 10,
                 payload_size: 4096,
                 dns_transport: None,
+                dns_upstream_transport: None,
                 latency_us: Some(LatencySummary {
                     min: 10,
                     median: 20,
@@ -11204,6 +11509,7 @@ mod tests {
                 iterations: 10,
                 payload_size: 4096,
                 dns_transport: None,
+                dns_upstream_transport: None,
                 latency_us: Some(LatencySummary {
                     min: 5,
                     median: 10,
@@ -11231,6 +11537,7 @@ mod tests {
                 iterations: 10,
                 payload_size: 4096,
                 dns_transport: None,
+                dns_upstream_transport: None,
                 latency_us: Some(LatencySummary {
                     min: 15,
                     median: 30,
@@ -11348,6 +11655,7 @@ mod tests {
         assert_eq!(summary.iterations, 0);
         assert_eq!(summary.payload_size, 0);
         assert_eq!(summary.transfer_duration_ms, None);
+        assert_eq!(summary.dns_upstream_transport, None);
     }
 
     #[test]
@@ -11377,6 +11685,7 @@ mod tests {
         assert_eq!(summary.connections, 0);
         assert_eq!(summary.iterations, 0);
         assert_eq!(summary.payload_size, 0);
+        assert_eq!(summary.dns_upstream_transport, None);
     }
 
     #[test]
@@ -11397,6 +11706,7 @@ mod tests {
             iterations: 1,
             payload_size: 512,
             dns_transport: None,
+            dns_upstream_transport: None,
             latency_us: None,
             setup_us: None,
             samples: 2,
