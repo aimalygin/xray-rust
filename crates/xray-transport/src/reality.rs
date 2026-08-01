@@ -788,7 +788,11 @@ pub fn seal_reality_client_hello(
 }
 
 fn validate_reality_short_id(input: &RealitySessionIdInput) -> Result<(), RealityError> {
-    if input.short_id.len() > REALITY_MAX_SHORT_ID_LEN {
+    validate_reality_short_id_len(&input.short_id)
+}
+
+pub(crate) fn validate_reality_short_id_len(short_id: &[u8]) -> Result<(), RealityError> {
+    if short_id.len() > REALITY_MAX_SHORT_ID_LEN {
         return Err(RealityError::ShortIdTooLong);
     }
 

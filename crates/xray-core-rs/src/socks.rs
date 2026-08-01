@@ -18,8 +18,9 @@ use xray_proxy::vless::{
     encode_xudp_keep_packet, encode_xudp_new_packet, read_udp_packet, read_xudp_packet,
 };
 use xray_routing::{Target, TargetAddr};
-use xray_transport::{connect_tcp_stream, protect_udp_socket, DnsResolver, TransportDialer};
+use xray_transport::{protect_udp_socket, DnsResolver, TransportDialer};
 
+use crate::outbound::open_tcp_stream_with_resolvers_and_dialer;
 use crate::{
     dns::RuntimeDnsResolvers,
     open_vless_tcp_stream_with_resolver_and_dialer, open_vless_udp_stream_with_resolver_and_dialer,
@@ -363,12 +364,14 @@ async fn handle_socks_connect(
     }
 
     match outbound {
-        TcpOutbound::Freedom => {
+        outbound @ (TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_)) => {
             let mut outbound_stream = match tokio::time::timeout(
                 policy.handshake,
-                open_freedom_tcp_stream(
+                open_tcp_stream_with_resolvers_and_dialer(
+                    &outbound,
                     &dial_target,
                     dns_resolvers.destination.as_ref(),
+                    dns_resolvers.bootstrap.as_ref(),
                     transport_dialer.as_ref(),
                 ),
             )
@@ -532,24 +535,6 @@ async fn read_socks_tcp_sniff_payload(
 
     let sniffed = crate::sniffing::sniff_tcp_initial_payload(config, target, &buffer);
     (Bytes::copy_from_slice(&buffer), sniffed)
-}
-
-async fn open_freedom_tcp_stream(
-    target: &Target,
-    dns_resolver: &dyn DnsResolver,
-    transport_dialer: &TransportDialer,
-) -> Result<TcpStream, ()> {
-    let addr = match &target.addr {
-        TargetAddr::Ip(ip) => SocketAddr::new(*ip, target.port),
-        TargetAddr::Domain(domain) => dns_resolver
-            .resolve(domain, target.port)
-            .await
-            .map_err(|_| ())?,
-    };
-
-    connect_tcp_stream(addr, transport_dialer.socket_protector())
-        .await
-        .map_err(|_| ())
 }
 
 #[expect(

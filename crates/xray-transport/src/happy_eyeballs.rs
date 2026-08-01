@@ -8,7 +8,7 @@ use futures_util::stream::{FuturesUnordered, StreamExt};
 use tokio::net::TcpStream;
 use tokio::time::{sleep_until, Instant};
 
-use crate::{connect_tcp_stream, SocketProtector, TransportError};
+use crate::{canonicalize_socket_addr, connect_tcp_stream, SocketProtector, TransportError};
 
 /// Controls raw TCP Happy Eyeballs candidate ordering and scheduling.
 ///
@@ -49,22 +49,24 @@ impl Default for HappyEyeballsConfig {
 impl HappyEyeballsConfig {
     /// Returns candidates in stable, family-interleaved connection order.
     ///
-    /// The original order within IPv4 and IPv6 candidates is preserved. When
-    /// only one family is present, the input order is returned unchanged.
+    /// The original order within IPv4 and IPv6 candidates is preserved. Xray-style
+    /// IPv4-mapped IPv6 addresses are canonicalized to IPv4 before grouping.
     pub fn order_candidates(&self, candidates: &[SocketAddr]) -> Vec<SocketAddr> {
         let mut ipv4 = Vec::with_capacity(candidates.len());
         let mut ipv6 = Vec::with_capacity(candidates.len());
 
         for candidate in candidates {
+            let candidate = canonicalize_socket_addr(*candidate);
             if candidate.is_ipv4() {
-                ipv4.push(*candidate);
+                ipv4.push(candidate);
             } else {
-                ipv6.push(*candidate);
+                ipv6.push(candidate);
             }
         }
 
         if ipv4.is_empty() || ipv6.is_empty() {
-            return candidates.to_vec();
+            ipv4.extend(ipv6);
+            return ipv4;
         }
 
         let (preferred, alternate) = if self.prioritize_ipv6 {
@@ -153,7 +155,7 @@ where
 
     let max_concurrent = config.max_concurrent.get();
     let mut next_index = 1;
-    let mut next_launch_at = Instant::now() + config.try_delay;
+    let mut next_launch_at = Instant::now().checked_add(config.try_delay);
     let mut last_error = None;
 
     loop {
@@ -162,14 +164,19 @@ where
         }
 
         let result = if next_index < ordered.len() && attempts.len() < max_concurrent {
-            tokio::select! {
-                result = attempts.next() => result,
-                () = sleep_until(next_launch_at) => {
-                    attempts.push(connect(ordered[next_index]));
-                    next_index += 1;
-                    next_launch_at = Instant::now() + config.try_delay;
-                    continue;
+            match next_launch_at {
+                Some(deadline) => {
+                    tokio::select! {
+                        result = attempts.next() => result,
+                        () = sleep_until(deadline) => {
+                            attempts.push(connect(ordered[next_index]));
+                            next_index += 1;
+                            next_launch_at = Instant::now().checked_add(config.try_delay);
+                            continue;
+                        }
+                    }
                 }
+                None => attempts.next().await,
             }
         } else {
             attempts.next().await
@@ -188,7 +195,7 @@ where
         if next_index < ordered.len() {
             attempts.push(connect(ordered[next_index]));
             next_index += 1;
-            next_launch_at = Instant::now() + config.try_delay;
+            next_launch_at = Instant::now().checked_add(config.try_delay);
         }
     }
 }
@@ -204,7 +211,7 @@ fn no_candidates_error() -> TransportError {
 mod tests {
     use std::collections::HashMap;
     use std::future::pending;
-    use std::net::{Ipv4Addr, Ipv6Addr};
+    use std::net::{Ipv4Addr, Ipv6Addr, SocketAddrV6};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
 
@@ -381,6 +388,47 @@ mod tests {
         );
     }
 
+    #[test]
+    fn order_candidates_canonicalizes_ipv4_mapped_ipv6_like_xray() {
+        let mapped = SocketAddr::V6(SocketAddrV6::new(
+            "::ffff:192.0.2.9".parse().expect("mapped IPv6 literal"),
+            443,
+            17,
+            42,
+        ));
+        let native_v4 = ipv4(1);
+        let native_v6 = ipv6(1);
+
+        assert_eq!(
+            config(false, 0, Duration::ZERO, 4).order_candidates(&[native_v6, mapped, native_v4]),
+            [ipv4(9), native_v4, native_v6]
+        );
+    }
+
+    #[tokio::test]
+    async fn scheduler_dials_ipv4_mapped_ipv6_as_ipv4_like_xray() {
+        let mapped = SocketAddr::V6(SocketAddrV6::new(
+            "::ffff:192.0.2.9".parse().expect("mapped IPv6 literal"),
+            443,
+            17,
+            42,
+        ));
+        let canonical = ipv4(9);
+        let connector = FakeConnector::new([(canonical, Behavior::immediate(Outcome::Success(9)))]);
+
+        let result = race_candidates(&[mapped], &config(false, 1, Duration::ZERO, 1), {
+            let connector = connector.clone();
+            move |candidate| {
+                let connector = connector.clone();
+                async move { connector.connect(candidate).await }
+            }
+        })
+        .await;
+
+        assert_eq!(result.expect("mapped candidate succeeds"), 9);
+        assert_eq!(connector.started(), [canonical]);
+    }
+
     #[tokio::test(start_paused = true)]
     async fn scheduler_staggers_pending_attempts_until_try_delay() {
         let first = ipv4(1);
@@ -439,6 +487,31 @@ mod tests {
 
         assert_eq!(result.expect("fallback candidate succeeds"), 2);
         assert_eq!(connector.started(), [first, second]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn unrepresentable_try_deadline_does_not_panic_or_launch_early() {
+        let first = ipv4(1);
+        let second = ipv6(1);
+        let connector = FakeConnector::new([
+            (first, Behavior::immediate(Outcome::Pending)),
+            (second, Behavior::immediate(Outcome::Success(2))),
+        ]);
+        let candidates = [first, second];
+        let race_config = config(false, 1, Duration::MAX, 2);
+        let mut race = Box::pin(race_candidates(&candidates, &race_config, {
+            let connector = connector.clone();
+            move |candidate| {
+                let connector = connector.clone();
+                async move { connector.connect(candidate).await }
+            }
+        }));
+
+        assert!(race.as_mut().now_or_never().is_none());
+        assert_eq!(connector.started(), [first]);
+
+        drop(race);
+        assert_eq!(connector.state.cancelled.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test(start_paused = true)]

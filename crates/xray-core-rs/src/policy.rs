@@ -336,6 +336,7 @@ mod tests {
                 stream: StreamSettings {
                     network: xray_config::Network::Tcp,
                     security: StreamSecurity::None,
+                    socket_options: None,
                 },
                 settings: OutboundSettings::Freedom,
             }],

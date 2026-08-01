@@ -23,6 +23,7 @@ fn freedom(tag: &str) -> OutboundConfig {
         stream: StreamSettings {
             network: Network::Tcp,
             security: StreamSecurity::None,
+            socket_options: None,
         },
         settings: OutboundSettings::Freedom,
     }

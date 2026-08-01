@@ -528,6 +528,7 @@ impl Eq for TransportRegexMatcher {}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StaticHostTarget {
     Ip(IpAddr),
+    Ips(Vec<IpAddr>),
     Domain(String),
 }
 
@@ -776,6 +777,22 @@ impl ConfiguredDnsResolver {
                         return ConfiguredLookupResult::Resolved(cap_lookup_ttl(
                             DnsLookup::single(
                                 SocketAddr::new(*ip, port),
+                                Some(DNS_STATIC_HOST_TTL),
+                            ),
+                            ttl_cap,
+                        ));
+                    }
+                    StaticHostTarget::Ips(ips) => {
+                        if ips.is_empty() {
+                            return ConfiguredLookupResult::Negative {
+                                domain: current_domain,
+                                negative: ConfiguredDnsNegative::NoData,
+                            };
+                        }
+                        return ConfiguredLookupResult::Resolved(cap_lookup_ttl(
+                            DnsLookup::from_ips(
+                                ips.iter().copied(),
+                                port,
                                 Some(DNS_STATIC_HOST_TTL),
                             ),
                             ttl_cap,
@@ -1817,6 +1834,32 @@ mod tests {
         assert!(lookup
             .ttl()
             .is_some_and(|ttl| { ttl <= Duration::from_secs(10) && ttl > Duration::from_secs(9) }));
+    }
+
+    #[tokio::test]
+    async fn configured_dns_static_host_mapping_preserves_all_ip_candidates() {
+        let resolver = ConfiguredDnsResolver::new(
+            vec![StaticHostRule {
+                matcher: TransportDomainMatcher::Full("proxy.example".to_owned()),
+                target: StaticHostTarget::Ips(vec![
+                    Ipv6Addr::LOCALHOST.into(),
+                    Ipv4Addr::new(192, 0, 2, 44).into(),
+                    Ipv6Addr::LOCALHOST.into(),
+                ]),
+            }],
+            Vec::new(),
+            Arc::new(RejectingResolver),
+        );
+
+        let lookup = resolver.resolve_all("proxy.example", 8443).await.unwrap();
+
+        assert_eq!(
+            lookup.socket_addrs(),
+            &[
+                SocketAddr::from((Ipv6Addr::LOCALHOST, 8443)),
+                SocketAddr::from((Ipv4Addr::new(192, 0, 2, 44), 8443)),
+            ]
+        );
     }
 
     struct MultiAddressQueryTransport;

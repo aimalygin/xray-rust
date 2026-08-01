@@ -28,6 +28,7 @@ fn runtime_config() -> CoreConfig {
             stream: StreamSettings {
                 network: Network::Tcp,
                 security: StreamSecurity::None,
+                socket_options: None,
             },
             settings: OutboundSettings::Vless(VlessOutboundSettings {
                 server: TargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),

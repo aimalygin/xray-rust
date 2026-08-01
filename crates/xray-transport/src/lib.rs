@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use std::net::{SocketAddr, UdpSocket as StdUdpSocket};
+use std::net::{SocketAddr, SocketAddrV4, UdpSocket as StdUdpSocket};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::{fmt, io, sync::Arc};
@@ -280,6 +280,28 @@ pub trait RealityTlsEngine: Send + Sync {
         target: &Target,
     ) -> Result<BoxedTransportStream, TransportError>;
 
+    /// Connects one already resolved socket candidate.
+    ///
+    /// Engines that need IPv6 scope or flow metadata can override this method.
+    /// The compatibility default maps the address into the legacy [`Target`]
+    /// representation, which cannot carry those two IPv6 fields.
+    async fn connect_socket_addr(
+        &self,
+        config: &RealityClientConfig,
+        original_target: &Target,
+        candidate: SocketAddr,
+    ) -> Result<BoxedTransportStream, TransportError> {
+        self.connect(
+            config,
+            &Target::new(
+                TargetAddr::Ip(candidate.ip()),
+                candidate.port(),
+                original_target.network,
+            ),
+        )
+        .await
+    }
+
     /// Prepares a one-shot REALITY handshake for a caller-managed TCP connection.
     ///
     /// The default keeps existing third-party engines source-compatible. Returning
@@ -378,6 +400,7 @@ pub async fn connect_tcp_stream(
     addr: SocketAddr,
     socket_protector: Option<&dyn SocketProtector>,
 ) -> Result<TcpStream, TransportError> {
+    let addr = canonicalize_socket_addr(addr);
     let stream = match socket_protector {
         None => TcpStream::connect(addr)
             .await
@@ -402,6 +425,16 @@ pub async fn connect_tcp_stream(
     // Vision blocks, TLS records); Nagle would delay them behind ACKs.
     stream.set_nodelay(true).map_err(TransportError::Tcp)?;
     Ok(stream)
+}
+
+pub(crate) fn canonicalize_socket_addr(addr: SocketAddr) -> SocketAddr {
+    let SocketAddr::V6(ipv6) = addr else {
+        return addr;
+    };
+    match ipv6.ip().to_ipv4_mapped() {
+        Some(ipv4) => SocketAddr::V4(SocketAddrV4::new(ipv4, ipv6.port())),
+        None => addr,
+    }
 }
 
 pub fn protect_udp_socket(

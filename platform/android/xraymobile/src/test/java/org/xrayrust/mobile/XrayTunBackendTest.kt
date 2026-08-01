@@ -64,9 +64,61 @@ class XrayTunBackendTest {
 
         assertTrue(canonical.modified)
         assertEquals(
-            mapOf("full:proxy.example" to "Alias.Example."),
+            mapOf(
+                "full:proxy.example" to AndroidDnsHostTarget.Alias("alias.example"),
+            ),
             canonical.mappings,
         )
+    }
+
+    @Test
+    fun bareDnsHostMappingsAreExactAndCanonicalizedLikeXray() {
+        val canonical = canonicalizeExactDnsHostMappings(
+            listOf<Pair<String, Any>>(
+                "Proxy.Example." to "Alias.Example.",
+                "alias.example" to listOf("192.0.2.7"),
+            ),
+        )
+
+        assertTrue(canonical.modified)
+        assertEquals(
+            AndroidDnsHostTarget.Alias("alias.example"),
+            canonical.mappings["full:proxy.example"],
+        )
+        assertEquals(
+            AndroidDnsHostTarget.Addresses(listOf("192.0.2.7")),
+            canonical.mappings["full:alias.example"],
+        )
+    }
+
+    @Test
+    fun bareAliasAndAddressArrayAvoidSystemBootstrapLookup() {
+        val lookups = AtomicInteger()
+        val canonical = canonicalizeExactDnsHostMappings(
+            listOf<Pair<String, Any>>(
+                "proxy.example" to "alias.example",
+                "alias.example" to listOf("2001:db8::7", "192.0.2.7"),
+            ),
+        )
+        val mappings = canonical.mappings.toMutableMap()
+
+        val modified = ensureBootstrapHostMapping(
+            domain = "proxy.example",
+            exactMappings = mappings,
+            resolvedAddresses = mutableMapOf(),
+            activeAliases = mutableSetOf(),
+            depth = 0,
+        ) {
+            lookups.incrementAndGet()
+            error("unexpected system lookup for $it")
+        }
+
+        assertFalse(modified)
+        assertEquals(
+            AndroidDnsHostTarget.Addresses(listOf("2001:db8:0:0:0:0:0:7", "192.0.2.7")),
+            mappings["full:alias.example"],
+        )
+        assertEquals(0, lookups.get())
     }
 
     @Test
@@ -80,7 +132,11 @@ class XrayTunBackendTest {
 
         assertTrue(canonical.modified)
         assertEquals(
-            mapOf("full:proxy.example" to "198.51.100.7"),
+            mapOf(
+                "full:proxy.example" to AndroidDnsHostTarget.Addresses(
+                    listOf("198.51.100.7"),
+                ),
+            ),
             canonical.mappings,
         )
     }
@@ -203,7 +259,7 @@ class XrayTunBackendTest {
                     // Model InetAddress implementations that ignore interruption.
                 }
             }
-            "192.0.2.1"
+            listOf("192.0.2.1")
         }
         try {
             assertThrows(AndroidDnsBootstrapTimeoutException::class.java) {
@@ -224,7 +280,7 @@ class XrayTunBackendTest {
         val now = AtomicLong(1_000)
         val resolver = BoundedAndroidDnsBootstrapResolver(maxConcurrentLookups = 1) {
             now.set(1_000 + TimeUnit.SECONDS.toNanos(1))
-            "192.0.2.1"
+            listOf("192.0.2.1")
         }
         try {
             val deadline = AndroidDnsBootstrapDeadline(
@@ -233,7 +289,7 @@ class XrayTunBackendTest {
             )
 
             assertThrows(AndroidDnsBootstrapTimeoutException::class.java) {
-                resolveAndroidDnsBootstrapAddressWithinDeadline(
+                resolveAndroidDnsBootstrapAddressesWithinDeadline(
                     domain = "proxy.example",
                     resolver = resolver,
                     deadline = deadline,
@@ -242,6 +298,16 @@ class XrayTunBackendTest {
         } finally {
             resolver.close()
         }
+    }
+
+    @Test
+    fun bootstrapRetainsEveryResolvedAddressInStableOrder() {
+        assertEquals(
+            listOf("2001:db8:0:0:0:0:0:7", "192.0.2.7"),
+            canonicalBootstrapAddresses(
+                listOf("2001:db8::7", "192.0.2.7", "2001:db8::7"),
+            ),
+        )
     }
 
     @Test

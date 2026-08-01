@@ -58,21 +58,24 @@ artifact directory.
 - `xray_mobile_jni.cpp`: checked JNI-to-C-ABI bridge with an ABI-major guard.
 
 When `XrayCore.create` receives a `VpnService`, outbound TCP and UDP sockets are
-passed through `VpnService.protect(fd)` before use. This prevents proxy sockets
-from being routed back into the VPN.
+passed through `VpnService.protect(fd)` before use. With
+`sockopt.happyEyeballs`, protection is applied separately to every launched raw
+TCP candidate before connect; cancelled and losing candidates are not detached.
+This prevents proxy sockets from being routed back into the VPN.
 
 `XrayCore.create` defaults to `XrayDnsBootstrapMode.System`, which preserves the
 generic library/server behavior. Embedders that make system DNS unreachable
 after installing their network interface can select `StaticOnly`, but then
 every proxy and DNS-upstream hostname must resolve through an exact or otherwise
-applicable `dns.hosts` rule.
+applicable `dns.hosts` rule. Bare host keys use Xray's exact/full semantics.
 
 ## Reference VPN DNS bootstrap
 
 `XrayVpnService` uses the stricter mobile policy automatically. Before calling
 `Builder.establish()`, it resolves domain-valued VLESS server addresses and
-domain-valued `dns.servers` with Android's system resolver. It adds the selected
-addresses as exact `full:` entries under `dns.hosts`, then creates the core with
+domain-valued `dns.servers` with Android's system resolver. It preserves every
+usable A/AAAA result in resolver order, removes duplicates, and writes a
+nonempty exact `full:` IP array under `dns.hosts`, then creates the core with
 `XrayDnsBootstrapMode.StaticOnly`. The original VLESS address remains a domain,
 so TLS/REALITY server names and domain-based routing are not changed.
 
@@ -87,16 +90,16 @@ before invoking either callback, so a callback may synchronously stop or retry
 without colliding with the previous start task.
 
 An existing exact `full:` mapping is authoritative and is never overwritten.
-Domain aliases in such mappings are followed and bootstrapped to a terminal IP;
-cycles and chains longer than eight entries are rejected. If any required
-domain cannot be resolved, tunnel startup fails before Android installs the VPN
-interface. All lookups in one start attempt share a five-second monotonic
-deadline that begins as soon as the lifecycle accepts the attempt. A stop during
-startup marks that attempt as cancelled, interrupts its wait, and returns
-without joining the start worker. The token is checked again after preflight and
-before publication, so a late resolver result cannot establish or publish a
-cancelled session. A new start remains rejected until pre-publication cleanup
-has finished.
+It may end in one IP or an ordered nonempty IP array. Domain aliases are
+followed to such a terminal target; cycles and chains longer than eight entries
+are rejected. If any required domain cannot be resolved, tunnel startup fails
+before Android installs the VPN interface. All lookups in one start attempt
+share a five-second monotonic deadline that begins as soon as the lifecycle
+accepts the attempt. A stop during startup marks that attempt as cancelled,
+interrupts its wait, and returns without joining the start worker. The token is
+checked again after preflight and before publication, so a late resolver result
+cannot establish or publish a cancelled session. A new start remains rejected
+until pre-publication cleanup has finished.
 
 Android's `InetAddress.getAllByName` is blocking and may ignore interruption.
 The deadline therefore bounds how long VPN startup waits, but cannot guarantee
@@ -104,9 +107,10 @@ that the platform lookup itself has returned. At most two daemon DNS workers can
 remain blocked; the resolver uses a zero-capacity handoff and fails a later
 lookup instead of growing a queue. The start-worker pool is likewise limited to
 two threads so host callbacks that ignore cancellation cannot create unbounded
-threads. The preflight stores one system-selected address for the tunnel
-lifetime, so applications that require network migration or address failover
-still need a host-specific multi-address policy.
+threads. The preflight pins all returned candidates for the tunnel lifetime.
+An explicitly enabled `sockopt.happyEyeballs` policy can race those candidates;
+its Xray-compatible `tryDelayMs: 0` default is disabled. Network-migration DNS
+refresh still requires a new tunnel start or host-specific policy.
 
 When enabled `dns.fakeIp` or a non-empty `dns.servers` list activates the core's
 local DNS endpoint, the reference service also installs `198.18.0.1` with

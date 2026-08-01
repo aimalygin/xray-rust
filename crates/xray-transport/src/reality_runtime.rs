@@ -10,9 +10,9 @@ use xray_routing::{Target, TargetAddr};
 
 use crate::{
     connect_tcp_stream,
-    reality::RealityPreparedHandshake,
+    reality::validate_reality_short_id_len,
     reality_connector::{
-        RealityClientHelloRequest, RealityConnector, RealityHandshakeContext, RealityTlsSession,
+        RealityClientHelloRequest, RealityConnector, RealityHandshakeContext,
         RealityTlsSessionProvider,
     },
     BoxedTransportStream, DnsResolver, PreparedRealityTlsConnection, RealityClientConfig,
@@ -49,23 +49,33 @@ pub struct RealityRuntimeEngine {
     socket_protector: Option<Arc<dyn SocketProtector>>,
 }
 
-struct PreparedRuntimeRealityConnection {
-    session: Box<dyn RealityTlsSession>,
-    prepared_handshake: RealityPreparedHandshake,
-    mldsa65_verify: Option<Vec<u8>>,
+struct DeferredRuntimeRealityConnection {
+    config: RealityClientConfig,
+    session_provider: Arc<dyn RealityTlsSessionProvider>,
+    context_provider: Arc<dyn RealityHandshakeContextProvider>,
 }
 
 #[async_trait]
-impl PreparedRealityTlsConnection for PreparedRuntimeRealityConnection {
+impl PreparedRealityTlsConnection for DeferredRuntimeRealityConnection {
     async fn complete(
         self: Box<Self>,
         tcp_stream: tokio::net::TcpStream,
     ) -> Result<BoxedTransportStream, TransportError> {
         let Self {
-            session,
-            prepared_handshake,
-            mldsa65_verify,
+            mut config,
+            session_provider,
+            context_provider,
         } = *self;
+        let connector = RealityConnector::new(config.clone());
+        let session = session_provider.create_session(RealityClientHelloRequest {
+            server_name: &config.server_name,
+            fingerprint: &config.fingerprint,
+        })?;
+        let prepared_client_hello = session.prepared_client_hello()?;
+        let context = context_provider.context();
+        let prepared_handshake =
+            connector.prepare_handshake_with_client_hello(prepared_client_hello, context)?;
+        let mldsa65_verify = config.mldsa65_verify.take();
 
         session
             .complete(tcp_stream, prepared_handshake, mldsa65_verify)
@@ -120,28 +130,22 @@ impl RealityRuntimeEngine {
         }
     }
 
-    fn prepare_connection(
+    fn validate_connection_config(config: &RealityClientConfig) -> Result<(), TransportError> {
+        RealityConnector::new(config.clone()).validate_fingerprint()?;
+        validate_reality_short_id_len(&config.short_id)?;
+        Ok(())
+    }
+
+    fn defer_connection(
         &self,
         config: &RealityClientConfig,
     ) -> Result<Box<dyn PreparedRealityTlsConnection>, TransportError> {
-        let connector = RealityConnector::new(config.clone());
-        connector.validate_fingerprint()?;
+        Self::validate_connection_config(config)?;
 
-        let session = self
-            .session_provider
-            .create_session(RealityClientHelloRequest {
-                server_name: &config.server_name,
-                fingerprint: &config.fingerprint,
-            })?;
-        let prepared_client_hello = session.prepared_client_hello()?;
-        let context = self.context_provider.context();
-        let prepared_handshake =
-            connector.prepare_handshake_with_client_hello(prepared_client_hello, context)?;
-
-        Ok(Box::new(PreparedRuntimeRealityConnection {
-            session,
-            prepared_handshake,
-            mldsa65_verify: config.mldsa65_verify.clone(),
+        Ok(Box::new(DeferredRuntimeRealityConnection {
+            config: config.clone(),
+            session_provider: Arc::clone(&self.session_provider),
+            context_provider: Arc::clone(&self.context_provider),
         }))
     }
 }
@@ -153,9 +157,21 @@ impl RealityTlsEngine for RealityRuntimeEngine {
         config: &RealityClientConfig,
         target: &Target,
     ) -> Result<BoxedTransportStream, TransportError> {
-        let prepared = self.prepare_connection(config)?;
+        let prepared = self.defer_connection(config)?;
         let addr = self.resolve_socket_addr(target).await?;
         let stream = connect_tcp_stream(addr, self.socket_protector.as_deref()).await?;
+
+        prepared.complete(stream).await
+    }
+
+    async fn connect_socket_addr(
+        &self,
+        config: &RealityClientConfig,
+        _original_target: &Target,
+        candidate: SocketAddr,
+    ) -> Result<BoxedTransportStream, TransportError> {
+        let prepared = self.defer_connection(config)?;
+        let stream = connect_tcp_stream(candidate, self.socket_protector.as_deref()).await?;
 
         prepared.complete(stream).await
     }
@@ -165,6 +181,6 @@ impl RealityTlsEngine for RealityRuntimeEngine {
         config: &RealityClientConfig,
         _target: &Target,
     ) -> Result<Option<Box<dyn PreparedRealityTlsConnection>>, TransportError> {
-        self.prepare_connection(config).map(Some)
+        self.defer_connection(config).map(Some)
     }
 }

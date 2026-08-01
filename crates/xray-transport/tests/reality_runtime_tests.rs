@@ -1,7 +1,11 @@
 use std::{
+    io,
     net::{Ipv4Addr, SocketAddr},
     num::NonZeroUsize,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        mpsc, Arc, Mutex,
+    },
     time::Duration,
 };
 
@@ -15,8 +19,8 @@ use xray_transport::{
         RealityTlsSessionProvider,
     },
     ConnectorConfig, DnsResolver, HappyEyeballsConfig, RealityClientConfig,
-    RealityHandshakeContextProvider, RealityRuntimeEngine, RealityTlsEngine, TlsConnector,
-    TransportDialer, TransportError,
+    RealityHandshakeContextProvider, RealityRuntimeEngine, RealityTlsEngine, SocketHandle,
+    SocketProtector, TlsConnector, TransportDialer, TransportError,
 };
 
 const CLIENTHELLO_FIXTURE_JSON: &str =
@@ -194,6 +198,51 @@ struct PanickingContextProvider;
 impl RealityHandshakeContextProvider for PanickingContextProvider {
     fn context(&self) -> RealityHandshakeContext {
         panic!("unsupported fingerprint must be rejected before context provider use")
+    }
+}
+
+struct BlockingSocketProtector {
+    calls: AtomicUsize,
+    blocked_call: usize,
+    attempt_started: mpsc::SyncSender<()>,
+    release_attempt: Mutex<mpsc::Receiver<()>>,
+}
+
+impl BlockingSocketProtector {
+    fn new(
+        blocked_call: usize,
+        attempt_started: mpsc::SyncSender<()>,
+        release_attempt: mpsc::Receiver<()>,
+    ) -> Self {
+        Self {
+            calls: AtomicUsize::new(0),
+            blocked_call,
+            attempt_started,
+            release_attempt: Mutex::new(release_attempt),
+        }
+    }
+
+    fn calls(&self) -> usize {
+        self.calls.load(Ordering::SeqCst)
+    }
+}
+
+impl SocketProtector for BlockingSocketProtector {
+    fn protect(&self, _socket: SocketHandle) -> io::Result<()> {
+        let call = self.calls.fetch_add(1, Ordering::SeqCst);
+        if call != self.blocked_call {
+            return Ok(());
+        }
+
+        self.attempt_started
+            .send(())
+            .map_err(|_| io::Error::other("race observer dropped"))?;
+        self.release_attempt
+            .lock()
+            .map_err(|_| io::Error::other("race release lock poisoned"))?
+            .recv_timeout(Duration::from_secs(2))
+            .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "race release timed out"))?;
+        Ok(())
     }
 }
 
@@ -380,6 +429,29 @@ async fn reality_runtime_rejects_known_fingerprint_without_x25519_key_share_befo
 }
 
 #[tokio::test]
+async fn reality_runtime_rejects_overlong_short_id_before_dependencies() {
+    let engine = RealityRuntimeEngine::new(Arc::new(PanickingSessionProvider))
+        .with_dns_resolver(Arc::new(PanickingDnsResolver))
+        .with_context_provider(Arc::new(PanickingContextProvider));
+    let mut config = reality_config();
+    config.short_id = vec![0; 9];
+    let target = Target::new(
+        TargetAddr::Domain("origin.example".to_owned()),
+        443,
+        Network::Tcp,
+    );
+
+    let result = engine.connect(&config, &target).await;
+
+    assert!(matches!(
+        result,
+        Err(TransportError::Reality(
+            xray_transport::reality::RealityError::ShortIdTooLong
+        ))
+    ));
+}
+
+#[tokio::test]
 async fn reality_runtime_accepts_xray_core_fingerprint_before_live_tls_gate() {
     let (addr, handle) = spawn_accept_once().await;
     let provider = Arc::new(RecordingSessionProvider::new(clienthello_fixture()));
@@ -406,7 +478,8 @@ async fn reality_runtime_accepts_xray_core_fingerprint_before_live_tls_gate() {
 }
 
 #[tokio::test]
-async fn reality_runtime_rejects_invalid_session_clienthello_before_dns_or_tcp() {
+async fn reality_runtime_rejects_invalid_session_clienthello_after_tcp_connect() {
+    let (addr, handle) = spawn_accept_once().await;
     let mut fixture = clienthello_fixture();
     fixture.hello_random_hex.replace_range(0..2, "ff");
     let provider = Arc::new(RecordingSessionProvider::new(fixture));
@@ -415,11 +488,7 @@ async fn reality_runtime_rejects_invalid_session_clienthello_before_dns_or_tcp()
         .with_dns_resolver(Arc::new(PanickingDnsResolver))
         .with_context_provider(context.clone());
     let config = reality_config();
-    let target = Target::new(
-        TargetAddr::Domain("origin.example".to_owned()),
-        443,
-        Network::Tcp,
-    );
+    let target = Target::new(TargetAddr::Ip(addr.ip()), addr.port(), Network::Tcp);
 
     let result = engine.connect(&config, &target).await;
 
@@ -429,6 +498,7 @@ async fn reality_runtime_rejects_invalid_session_clienthello_before_dns_or_tcp()
             xray_transport::reality::RealityError::ClientHelloRandomMismatch
         ))
     ));
+    assert_accept_completed(handle).await;
     assert_eq!(
         provider.seen(),
         vec![("www.example.com".to_owned(), "chrome".to_owned())]
@@ -513,6 +583,62 @@ async fn reality_runtime_prepares_one_session_and_completes_tcp_race_winner() {
     );
     assert_eq!(context.calls(), 1);
     assert_eq!(provider.completions().len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn reality_runtime_defers_clienthello_and_time_context_while_tcp_race_is_delayed() {
+    let (success, handle) = spawn_accept_once().await;
+    let refused = refused_loopback_addr().await;
+    let provider = Arc::new(RecordingSessionProvider::new(clienthello_fixture()));
+    let context = Arc::new(FixedContextProvider::new(fixed_context()));
+    let engine = Arc::new(
+        RealityRuntimeEngine::new(provider.clone())
+            .with_dns_resolver(Arc::new(PanickingDnsResolver))
+            .with_context_provider(context.clone()),
+    );
+    let (started_tx, started_rx) = mpsc::sync_channel(1);
+    let (release_tx, release_rx) = mpsc::sync_channel(1);
+    let protector = Arc::new(BlockingSocketProtector::new(1, started_tx, release_rx));
+    let dialer = TransportDialer::with_tls_connector(
+        TlsConnector::system().expect("build system TLS connector"),
+    )
+    .with_socket_protector(protector.clone())
+    .with_reality_engine(engine);
+    let target = Target::new(
+        TargetAddr::Domain("origin.example".to_owned()),
+        443,
+        Network::Tcp,
+    );
+    let config = ConnectorConfig::Reality(reality_config());
+    let race_config = happy_eyeballs_config();
+
+    let connect = tokio::spawn(async move {
+        dialer
+            .connect_resolved(&config, &target, &[refused, success], Some(&race_config))
+            .await
+    });
+    started_rx
+        .recv_timeout(Duration::from_secs(2))
+        .expect("winning TCP attempt should reach the deterministic delay gate");
+    let sessions_before_winner = provider.seen();
+    let contexts_before_winner = context.calls();
+    release_tx
+        .send(())
+        .expect("release the delayed TCP candidate race");
+
+    let result = connect.await.expect("REALITY race task should not panic");
+
+    assert!(sessions_before_winner.is_empty());
+    assert_eq!(contexts_before_winner, 0);
+    assert!(matches!(
+        result,
+        Err(TransportError::RealityTlsCompletionUnsupported)
+    ));
+    assert_accept_completed(handle).await;
+    assert_eq!(provider.seen().len(), 1);
+    assert_eq!(context.calls(), 1);
+    assert_eq!(provider.completions().len(), 1);
+    assert_eq!(protector.calls(), 2);
 }
 
 #[tokio::test]

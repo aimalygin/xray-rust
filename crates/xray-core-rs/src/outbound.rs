@@ -1,14 +1,16 @@
 use std::collections::HashMap;
 use std::io;
 use std::net::{IpAddr, SocketAddr};
+use std::num::NonZeroUsize;
 use std::pin::Pin;
 use std::sync::{Arc, OnceLock};
 use std::task::{Context, Poll};
+use std::time::Duration;
 
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
 use xray_config::{
     CoreConfig, Network, OutboundConfig, OutboundSettings, RoutingDomainStrategy, StreamSecurity,
-    TargetAddr, VlessUser,
+    StreamSettings, TargetAddr, VlessUser,
 };
 use xray_proxy::vless::{
     encode_request_header, VisionStream, VisionStreamIo, VlessCommand, VlessRequest,
@@ -16,8 +18,8 @@ use xray_proxy::vless::{
 };
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::{
-    BoxedTransportStream, ConnectorConfig, DnsResolver, RealityClientConfig, SystemDnsResolver,
-    TlsClientConfig, TransportDialer, TransportStream,
+    BoxedTransportStream, ConnectorConfig, DnsResolver, HappyEyeballsConfig, RealityClientConfig,
+    SystemDnsResolver, TlsClientConfig, TransportDialer, TransportStream,
 };
 
 use crate::CoreError;
@@ -236,11 +238,13 @@ struct VlessTcpOutboundPayload {
     server: Target,
     user: VlessUser,
     transport: ConnectorConfig,
+    happy_eyeballs: Option<HappyEyeballsConfig>,
 }
 
 #[derive(Debug, Clone)]
 pub enum TcpOutbound {
     Freedom,
+    FreedomHappyEyeballs(HappyEyeballsConfig),
     Vless(Box<VlessTcpOutbound>),
 }
 
@@ -275,6 +279,10 @@ impl VlessTcpOutbound {
         &self.payload.user
     }
 
+    pub(crate) fn happy_eyeballs(&self) -> Option<&HappyEyeballsConfig> {
+        self.payload.happy_eyeballs.as_ref()
+    }
+
     /// True for the regular `xtls-rprx-vision` flow, which (matching upstream
     /// xray-core) cannot carry UDP/443 and must refuse it so QUIC apps fall back
     /// to TCP. The `xtls-rprx-vision-udp443` variant returns false.
@@ -282,6 +290,16 @@ impl VlessTcpOutbound {
         validate_connector_flow(self.user().flow.as_deref(), self.transport())
             .map(|flow| flow.uses_vision() && !flow.allows_udp443())
             .unwrap_or(false)
+    }
+}
+
+impl TcpOutbound {
+    pub(crate) fn freedom_happy_eyeballs(&self) -> Option<&HappyEyeballsConfig> {
+        match self {
+            Self::Freedom => None,
+            Self::FreedomHappyEyeballs(config) => Some(config),
+            Self::Vless(_) => None,
+        }
     }
 }
 
@@ -588,7 +606,7 @@ impl OutboundRouter {
                 if outbound.stream.security != StreamSecurity::None {
                     return Err(CachedOutboundError::UnsupportedOutboundSecurity);
                 }
-                Ok(TcpOutbound::Freedom)
+                Ok(build_freedom_tcp_outbound(&outbound.stream))
             }
             OutboundSettings::Vless(_) => self
                 .cached_vless_outbound(index)
@@ -709,7 +727,7 @@ fn build_tcp_outbound(outbound: &OutboundConfig) -> Result<TcpOutbound, CoreErro
             if outbound.stream.security != StreamSecurity::None {
                 return Err(CoreError::UnsupportedOutboundSecurity);
             }
-            Ok(TcpOutbound::Freedom)
+            Ok(build_freedom_tcp_outbound(&outbound.stream))
         }
         OutboundSettings::Vless(_) => build_vless_tcp_outbound(outbound)
             .map(|outbound| TcpOutbound::Vless(Box::new(outbound))),
@@ -938,7 +956,33 @@ fn build_vless_tcp_outbound(outbound: &OutboundConfig) -> Result<VlessTcpOutboun
             server: Target::new(addr, settings.port, RoutingNetwork::Tcp),
             user,
             transport,
+            happy_eyeballs: happy_eyeballs_config(&outbound.stream),
         }),
+    })
+}
+
+fn build_freedom_tcp_outbound(stream: &StreamSettings) -> TcpOutbound {
+    match happy_eyeballs_config(stream) {
+        Some(config) => TcpOutbound::FreedomHappyEyeballs(config),
+        None => TcpOutbound::Freedom,
+    }
+}
+
+fn happy_eyeballs_config(stream: &StreamSettings) -> Option<HappyEyeballsConfig> {
+    let settings = stream.socket_options.as_ref()?.happy_eyeballs.as_ref()?;
+    if settings.try_delay_ms == 0 || settings.max_concurrent_try == 0 {
+        return None;
+    }
+
+    let interleave = usize::try_from(settings.interleave).ok()?;
+    let max_concurrent = usize::try_from(settings.max_concurrent_try).ok()?;
+    let max_concurrent = NonZeroUsize::new(max_concurrent)?;
+
+    Some(HappyEyeballsConfig {
+        prioritize_ipv6: settings.prioritize_ipv6,
+        interleave,
+        try_delay: Duration::from_millis(settings.try_delay_ms),
+        max_concurrent,
     })
 }
 
@@ -975,23 +1019,15 @@ fn validate_vision_flow(flow: Option<&str>, is_protected: bool) -> Result<Vision
     }
 }
 
-async fn resolve_server_target(
+async fn resolve_server_candidates(
     server: &Target,
     dns_resolver: &dyn DnsResolver,
-) -> Result<Target, CoreError> {
+) -> Result<Vec<SocketAddr>, CoreError> {
     match &server.addr {
-        RoutingTargetAddr::Ip(ip) => Ok(Target::new(
-            RoutingTargetAddr::Ip(*ip),
-            server.port,
-            server.network,
-        )),
+        RoutingTargetAddr::Ip(ip) => Ok(vec![SocketAddr::new(*ip, server.port)]),
         RoutingTargetAddr::Domain(domain) => {
-            let resolved = dns_resolver.resolve(domain, server.port).await?;
-            Ok(Target::new(
-                RoutingTargetAddr::Ip(resolved.ip()),
-                resolved.port(),
-                server.network,
-            ))
+            let resolved = dns_resolver.resolve_all(domain, server.port).await?;
+            Ok(resolved.socket_addrs().to_vec())
         }
     }
 }
@@ -1035,10 +1071,15 @@ pub(crate) async fn open_tcp_stream_with_resolvers_and_dialer(
     transport_dialer: &TransportDialer,
 ) -> Result<BoxedTransportStream, CoreError> {
     match outbound {
-        TcpOutbound::Freedom => {
-            let resolved_target = resolve_server_target(target, destination_resolver).await?;
+        TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => {
+            let candidates = resolve_server_candidates(target, destination_resolver).await?;
             Ok(transport_dialer
-                .connect(&ConnectorConfig::Tcp, &resolved_target)
+                .connect_resolved(
+                    &ConnectorConfig::Tcp,
+                    target,
+                    &candidates,
+                    outbound.freedom_happy_eyeballs(),
+                )
                 .await?)
         }
         TcpOutbound::Vless(outbound) => {
@@ -1061,9 +1102,14 @@ pub async fn open_vless_tcp_stream_with_resolver_and_dialer(
 ) -> Result<BoxedTransportStream, CoreError> {
     let flow = validate_connector_flow(outbound.user().flow.as_deref(), outbound.transport())?;
 
-    let resolved_server = resolve_server_target(outbound.server(), dns_resolver).await?;
+    let resolved_server = resolve_server_candidates(outbound.server(), dns_resolver).await?;
     let mut stream = transport_dialer
-        .connect(outbound.transport(), &resolved_server)
+        .connect_resolved(
+            outbound.transport(),
+            outbound.server(),
+            &resolved_server,
+            outbound.happy_eyeballs(),
+        )
         .await?;
     let request = VlessRequest {
         user_id: outbound.user().id,
@@ -1138,9 +1184,14 @@ pub(crate) async fn open_vless_udp_stream_with_resolver_dialer_and_options(
     }
     let uses_xudp = uses_vision || should_use_xudp_for_udp_target(target);
 
-    let resolved_server = resolve_server_target(outbound.server(), dns_resolver).await?;
+    let resolved_server = resolve_server_candidates(outbound.server(), dns_resolver).await?;
     let mut stream = transport_dialer
-        .connect(outbound.transport(), &resolved_server)
+        .connect_resolved(
+            outbound.transport(),
+            outbound.server(),
+            &resolved_server,
+            outbound.happy_eyeballs(),
+        )
         .await?;
     let request = VlessRequest {
         user_id: outbound.user().id,
@@ -1203,17 +1254,20 @@ pub async fn open_vless_tcp_stream(
 #[cfg(test)]
 mod tests {
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::num::NonZeroUsize;
     use std::sync::{
         atomic::{AtomicUsize, Ordering},
         Arc, Mutex,
     };
+    use std::time::Duration;
 
     use async_trait::async_trait;
     use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
     use uuid::Uuid;
     use xray_config::{
-        DomainMatcher, IpCidr, IpMatcher, RoutingConfig, RoutingDomainStrategy, RoutingRule,
-        StreamSettings, VlessOutboundSettings,
+        DomainMatcher, HappyEyeballsSettings, IpCidr, IpMatcher, RoutingConfig,
+        RoutingDomainStrategy, RoutingRule, SocketOptions, StreamSettings, VlessOutboundSettings,
     };
     use xray_proxy::vless::{unpad_vision_block, VisionCommand};
     use xray_transport::{CachingDnsResolver, DnsLookup, RealityTlsEngine, TransportError};
@@ -1252,6 +1306,7 @@ mod tests {
             stream: StreamSettings {
                 network: Network::Tcp,
                 security: StreamSecurity::None,
+                socket_options: None,
             },
             settings: OutboundSettings::Freedom,
         }
@@ -1263,6 +1318,7 @@ mod tests {
             stream: StreamSettings {
                 network: Network::Tcp,
                 security: StreamSecurity::None,
+                socket_options: None,
             },
             settings: OutboundSettings::Vless(VlessOutboundSettings {
                 server: TargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
@@ -1419,6 +1475,178 @@ mod tests {
             select_tcp_outbound_direct(&direct_selection_config(), Some("direct")).unwrap();
 
         assert!(matches!(selected, TcpOutbound::Freedom));
+    }
+
+    #[test]
+    fn explicit_happy_eyeballs_settings_are_compiled_for_freedom() {
+        let mut configured = direct_selection_freedom("direct");
+        configured.stream.socket_options = Some(SocketOptions {
+            happy_eyeballs: Some(HappyEyeballsSettings {
+                prioritize_ipv6: true,
+                interleave: 2,
+                try_delay_ms: 175,
+                max_concurrent_try: 3,
+            }),
+        });
+
+        let TcpOutbound::FreedomHappyEyeballs(compiled) =
+            build_tcp_outbound(&configured).expect("compile freedom outbound")
+        else {
+            panic!("explicit Happy Eyeballs settings should enable candidate racing");
+        };
+
+        assert!(compiled.prioritize_ipv6);
+        assert_eq!(compiled.interleave, 2);
+        assert_eq!(compiled.try_delay, Duration::from_millis(175));
+        assert_eq!(compiled.max_concurrent.get(), 3);
+    }
+
+    #[test]
+    fn zero_happy_eyeballs_delay_preserves_legacy_freedom_variant() {
+        let mut configured = direct_selection_freedom("direct");
+        configured.stream.socket_options = Some(SocketOptions {
+            happy_eyeballs: Some(HappyEyeballsSettings {
+                try_delay_ms: 0,
+                ..HappyEyeballsSettings::default()
+            }),
+        });
+
+        let compiled = build_tcp_outbound(&configured).expect("compile freedom outbound");
+
+        assert!(matches!(compiled, TcpOutbound::Freedom));
+    }
+
+    #[test]
+    fn explicit_happy_eyeballs_settings_are_compiled_for_vless_carrier() {
+        let mut configured = direct_selection_vless("proxy");
+        configured.stream.socket_options = Some(SocketOptions {
+            happy_eyeballs: Some(HappyEyeballsSettings {
+                prioritize_ipv6: false,
+                interleave: 3,
+                try_delay_ms: 250,
+                max_concurrent_try: 5,
+            }),
+        });
+
+        let TcpOutbound::Vless(outbound) =
+            build_tcp_outbound(&configured).expect("compile VLESS outbound")
+        else {
+            panic!("configured outbound should remain VLESS");
+        };
+        let compiled = outbound
+            .happy_eyeballs()
+            .expect("VLESS carrier should retain Happy Eyeballs settings");
+
+        assert_eq!(compiled.interleave, 3);
+        assert_eq!(compiled.try_delay, Duration::from_millis(250));
+        assert_eq!(compiled.max_concurrent.get(), 5);
+    }
+
+    #[tokio::test]
+    async fn freedom_happy_eyeballs_falls_back_to_second_resolved_candidate() {
+        let refused_listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind refused candidate reservation");
+        let refused = refused_listener
+            .local_addr()
+            .expect("read refused candidate address");
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind successful candidate");
+        let successful = listener.local_addr().expect("read listener address");
+        drop(refused_listener);
+        let resolver = FakeDnsResolver::resolving_to_many(vec![refused, successful])
+            .expect_lookup("multi.example", 443);
+        let outbound = TcpOutbound::FreedomHappyEyeballs(HappyEyeballsConfig {
+            prioritize_ipv6: false,
+            interleave: 1,
+            try_delay: Duration::from_secs(30),
+            max_concurrent: NonZeroUsize::new(2).expect("non-zero test concurrency"),
+        });
+        let target = domain_tcp_target("multi.example");
+        let dialer = TransportDialer::system().expect("build transport dialer");
+
+        let (opened, accepted) = tokio::time::timeout(Duration::from_secs(2), async {
+            tokio::join!(
+                open_tcp_stream_with_resolver_and_dialer(&outbound, &target, &resolver, &dialer,),
+                listener.accept(),
+            )
+        })
+        .await
+        .expect("fast failure should accelerate the next candidate");
+
+        let _stream = opened.expect("connect to second resolved candidate");
+        let (_accepted, _peer) = accepted.expect("accept fallback connection");
+        assert_eq!(resolver.calls(), 1);
+    }
+
+    #[tokio::test]
+    async fn vless_tcp_carrier_falls_back_to_second_resolved_candidate() {
+        let refused_listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind refused candidate reservation");
+        let refused = refused_listener
+            .local_addr()
+            .expect("read refused candidate address");
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind successful candidate");
+        let successful = listener.local_addr().expect("read listener address");
+        drop(refused_listener);
+        let resolver = FakeDnsResolver::resolving_to_many(vec![refused, successful])
+            .expect_lookup("proxy.example", 443);
+        let outbound = VlessTcpOutbound {
+            payload: Arc::new(VlessTcpOutboundPayload {
+                server: domain_tcp_target("proxy.example"),
+                user: VlessUser {
+                    id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
+                    encryption: "none".to_owned(),
+                    flow: None,
+                    level: 0,
+                },
+                transport: ConnectorConfig::Tcp,
+                happy_eyeballs: Some(HappyEyeballsConfig {
+                    prioritize_ipv6: false,
+                    interleave: 1,
+                    try_delay: Duration::from_secs(30),
+                    max_concurrent: NonZeroUsize::new(2).expect("non-zero test concurrency"),
+                }),
+            }),
+        };
+        let target = Target::new(
+            RoutingTargetAddr::Domain("destination.example".to_owned()),
+            80,
+            RoutingNetwork::Tcp,
+        );
+        let dialer = TransportDialer::system().expect("build transport dialer");
+
+        let (opened, accepted) = tokio::time::timeout(Duration::from_secs(2), async {
+            tokio::join!(
+                open_vless_tcp_stream_with_resolver_and_dialer(
+                    &outbound, &target, &resolver, &dialer,
+                ),
+                listener.accept(),
+            )
+        })
+        .await
+        .expect("fast failure should accelerate the next VLESS carrier candidate");
+
+        let _stream = opened.expect("open VLESS carrier through second candidate");
+        let (mut accepted, _peer) = accepted.expect("accept VLESS fallback connection");
+        let expected = encode_request_header(&VlessRequest {
+            user_id: outbound.user().id,
+            command: VlessCommand::Tcp,
+            target,
+            flow: None,
+        })
+        .expect("encode expected VLESS request");
+        let mut received = vec![0; expected.len()];
+        accepted
+            .read_exact(&mut received)
+            .await
+            .expect("read VLESS request from fallback connection");
+        assert_eq!(received, expected);
+        assert_eq!(resolver.calls(), 1);
     }
 
     #[test]
@@ -1845,6 +2073,7 @@ mod tests {
                     level: 0,
                 },
                 transport: ConnectorConfig::Tcp,
+                happy_eyeballs: None,
             }),
         };
         let target = Target::new(
@@ -1881,6 +2110,7 @@ mod tests {
                     spider_x: "/".to_owned(),
                     mldsa65_verify: None,
                 }),
+                happy_eyeballs: None,
             }),
         };
         let target = Target::new(
@@ -1921,6 +2151,7 @@ mod tests {
                     level: 0,
                 },
                 transport: ConnectorConfig::Reality(reality_config.clone()),
+                happy_eyeballs: None,
             }),
         };
         let target = Target::new(
@@ -2006,6 +2237,7 @@ mod tests {
                     spider_x: "/".to_owned(),
                     mldsa65_verify: None,
                 }),
+                happy_eyeballs: None,
             }),
         };
         let target = Target::new(
@@ -2060,6 +2292,7 @@ mod tests {
                     spider_x: "/".to_owned(),
                     mldsa65_verify: None,
                 }),
+                happy_eyeballs: None,
             }),
         };
         let target = Target::new(

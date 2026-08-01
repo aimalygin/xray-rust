@@ -10,11 +10,12 @@ use uuid::Uuid;
 use crate::{
     geodata::{default_geodata_dirs, GeodataLoader},
     CoreConfig, Diagnostic, DnsConfig, DnsFakeIpConfig, DnsHostMapping, DnsHostTarget,
-    DnsServerConfig, DomainMatcher, InboundConfig, InboundProtocol, InboundSniffingConfig, IpCidr,
-    IpMatcher, Network, OutboundConfig, OutboundProtocol, OutboundSettings, PolicyConfig,
-    PolicyLevelConfig, PolicySystemConfig, RealitySettings, RealityShortId, RegexMatcher,
-    RoutingConfig, RoutingDomainStrategy, RoutingRule, SniffingDestination, StreamSecurity,
-    StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
+    DnsServerConfig, DomainMatcher, HappyEyeballsSettings, InboundConfig, InboundProtocol,
+    InboundSniffingConfig, IpCidr, IpMatcher, Network, OutboundConfig, OutboundProtocol,
+    OutboundSettings, PolicyConfig, PolicyLevelConfig, PolicySystemConfig, RealitySettings,
+    RealityShortId, RegexMatcher, RoutingConfig, RoutingDomainStrategy, RoutingRule,
+    SniffingDestination, SocketOptions, StreamSecurity, StreamSettings, TargetAddr, TlsSettings,
+    VlessOutboundSettings, VlessUser,
 };
 
 const MAX_ROUTING_RULES: usize = 4_096;
@@ -381,8 +382,7 @@ impl Parser<'_> {
         let mut mappings = Vec::new();
         for (host, target) in hosts {
             let path = format!("$.dns.hosts.{host}");
-            let Some(target) = target.as_str() else {
-                self.error(path, "dns host target must be a string");
+            let Some(target) = self.parse_dns_host_target(target, &path) else {
                 continue;
             };
             let remaining = self.matcher_budget.remaining_domain_matchers();
@@ -390,17 +390,13 @@ impl Parser<'_> {
                 self.domain_matcher_budget_error(&path);
                 continue;
             }
-            let Some(matchers) = self.parse_domain_matcher(host, &path, remaining) else {
+            let Some(matchers) = self.parse_dns_host_matcher(host, &path, remaining) else {
                 continue;
             };
             if !self.matcher_budget.consume_domain_matchers(matchers.len()) {
                 self.domain_matcher_budget_error(&path);
                 continue;
             }
-            let target = match target.parse::<IpAddr>() {
-                Ok(ip) => DnsHostTarget::Ip(ip),
-                Err(_) => DnsHostTarget::Domain(target.to_owned()),
-            };
             mappings.extend(matchers.into_iter().map(|matcher| DnsHostMapping {
                 matcher,
                 target: target.clone(),
@@ -408,6 +404,62 @@ impl Parser<'_> {
         }
 
         mappings
+    }
+
+    fn parse_dns_host_matcher(
+        &mut self,
+        value: &str,
+        path: &str,
+        max_matchers: usize,
+    ) -> Option<Vec<DomainMatcher>> {
+        // Xray's `dns.hosts` grammar defaults an unprefixed key to `full:`.
+        // Routing rules deliberately keep their separate keyword default.
+        if !value.contains(':') {
+            if value.is_empty() {
+                self.error(path, "DNS host domain cannot be empty");
+                return None;
+            }
+            return Some(vec![DomainMatcher::Full(value.to_owned())]);
+        }
+
+        self.parse_domain_matcher(value, path, max_matchers)
+    }
+
+    fn parse_dns_host_target(&mut self, target: &Value, path: &str) -> Option<DnsHostTarget> {
+        if let Some(target) = target.as_str() {
+            return Some(match target.parse::<IpAddr>() {
+                Ok(ip) => DnsHostTarget::Ip(ip),
+                Err(_) => DnsHostTarget::Domain(target.to_owned()),
+            });
+        }
+
+        let Some(targets) = target.as_array() else {
+            self.error(path, "dns host target must be a string or an array");
+            return None;
+        };
+        if targets.is_empty() {
+            self.error(path, "dns host target array must not be empty");
+            return None;
+        }
+
+        let mut ips = Vec::with_capacity(targets.len());
+        for (index, target) in targets.iter().enumerate() {
+            let element_path = format!("{path}[{index}]");
+            let Some(target) = target.as_str() else {
+                self.error(element_path, "dns host target array item must be a string");
+                return None;
+            };
+            let Ok(ip) = target.parse::<IpAddr>() else {
+                self.error(
+                    element_path,
+                    "dns host target array item must be an IP address",
+                );
+                return None;
+            };
+            ips.push(ip);
+        }
+
+        Some(DnsHostTarget::Ips(ips))
     }
 
     fn parse_dns_fake_ip(&mut self, dns: &Value) -> Option<DnsFakeIpConfig> {
@@ -1378,11 +1430,90 @@ impl Parser<'_> {
         let stream = outbound.get("streamSettings");
         let network = self.parse_network(stream, index)?;
         let security = self.parse_security(stream, index)?;
+        let socket_options = self.parse_socket_options(stream, index);
         if let Some(stream) = stream {
             self.validate_stream_settings_compatibility(stream, index);
         }
 
-        Some(StreamSettings { network, security })
+        Some(StreamSettings {
+            network,
+            security,
+            socket_options,
+        })
+    }
+
+    fn parse_socket_options(
+        &mut self,
+        stream: Option<&Value>,
+        index: usize,
+    ) -> Option<SocketOptions> {
+        let socket_options = stream.and_then(|stream| stream.get("sockopt"))?;
+        let socket_options_path = format!("$.outbounds[{index}].streamSettings.sockopt");
+        if !socket_options.is_object() {
+            self.error(socket_options_path, "sockopt must be an object");
+            return None;
+        }
+
+        self.reject_unknown_fields(socket_options, &socket_options_path, &["happyEyeballs"]);
+        let happy_eyeballs = socket_options
+            .get("happyEyeballs")
+            .and_then(|settings| self.parse_happy_eyeballs_settings(settings, index));
+
+        Some(SocketOptions { happy_eyeballs })
+    }
+
+    fn parse_happy_eyeballs_settings(
+        &mut self,
+        settings: &Value,
+        index: usize,
+    ) -> Option<HappyEyeballsSettings> {
+        let settings_path = format!("$.outbounds[{index}].streamSettings.sockopt.happyEyeballs");
+        if !settings.is_object() {
+            self.error(settings_path, "happyEyeballs must be an object");
+            return None;
+        }
+
+        self.reject_unknown_fields(
+            settings,
+            &settings_path,
+            &[
+                "prioritizeIPv6",
+                "interleave",
+                "tryDelayMs",
+                "maxConcurrentTry",
+            ],
+        );
+
+        Some(HappyEyeballsSettings {
+            prioritize_ipv6: self
+                .optional_bool_at(
+                    settings,
+                    "prioritizeIPv6",
+                    format!("{settings_path}.prioritizeIPv6"),
+                )
+                .unwrap_or(false),
+            interleave: self
+                .optional_u32_at(
+                    settings,
+                    "interleave",
+                    format!("{settings_path}.interleave"),
+                )
+                .unwrap_or(1),
+            try_delay_ms: self
+                .optional_u64_at(
+                    settings,
+                    "tryDelayMs",
+                    format!("{settings_path}.tryDelayMs"),
+                )
+                .unwrap_or(0),
+            max_concurrent_try: self
+                .optional_u32_at(
+                    settings,
+                    "maxConcurrentTry",
+                    format!("{settings_path}.maxConcurrentTry"),
+                )
+                .unwrap_or(4),
+        })
     }
 
     fn parse_network(&mut self, stream: Option<&Value>, index: usize) -> Option<Network> {
@@ -1470,6 +1601,7 @@ impl Parser<'_> {
                 "tlsSettings",
                 "realitySettings",
                 "tcpSettings",
+                "sockopt",
             ],
         );
         self.validate_tcp_settings(stream, index);
@@ -2137,6 +2269,19 @@ impl Parser<'_> {
                 Some(value) => Some(value),
                 None => {
                     self.error(path, format!("field `{key}` must fit in u32"));
+                    None
+                }
+            },
+        }
+    }
+
+    fn optional_u64_at(&mut self, value: &Value, key: &str, path: String) -> Option<u64> {
+        match value.get(key) {
+            None => None,
+            Some(raw) => match raw.as_u64() {
+                Some(value) => Some(value),
+                None => {
+                    self.error(path, format!("field `{key}` must fit in u64"));
                     None
                 }
             },

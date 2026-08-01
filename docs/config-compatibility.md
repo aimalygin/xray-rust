@@ -90,6 +90,46 @@ are rejected.
 VLESS UDP is carried over the supported TCP transport using VLESS datagram or
 XUDP framing; it does not make `streamSettings.network: "udp"` valid.
 
+### Happy Eyeballs socket option
+
+`streamSettings.sockopt` currently supports only the Xray-compatible
+`happyEyeballs` object:
+
+```json
+{
+  "streamSettings": {
+    "network": "tcp",
+    "sockopt": {
+      "happyEyeballs": {
+        "prioritizeIPv6": false,
+        "interleave": 1,
+        "tryDelayMs": 250,
+        "maxConcurrentTry": 4
+      }
+    }
+  }
+}
+```
+
+The modeled Xray defaults are `prioritizeIPv6: false`, `interleave: 1`,
+`tryDelayMs: 0`, and `maxConcurrentTry: 4`. An absent object, zero
+`tryDelayMs`, or zero `maxConcurrentTry` disables the candidate race; an empty
+object is therefore disabled by default. `interleave: 0` is not a disable
+sentinel: it tries the preferred address family in resolver order before the
+alternate family. Positive `interleave` values alternate stable chunks of that
+size, and `prioritizeIPv6: true` makes IPv6 the preferred family.
+
+When enabled and DNS supplies at least two socket-address candidates, the first
+raw TCP attempt starts immediately. Pending attempts are staggered by
+`tryDelayMs`, a fast TCP failure accelerates the next candidate, and no more
+than `maxConcurrentTry` connects are active together. The race covers Freedom
+and the TCP carrier used by VLESS, including VLESS UDP/XUDP. For TLS and
+REALITY, only raw TCP is raced; exactly one handshake is performed on the
+winning socket. Every launched socket passes through the configured platform
+protector before connect. Protection failure is fatal, and success, failure,
+caller cancellation, or dropping the dial future drops all losing attempts;
+the scheduler does not leave detached connection tasks running.
+
 ## Routing
 
 Supported routing configuration:
@@ -172,7 +212,9 @@ the inbound `connIdle` policy and five seconds.
 A domain upstream selected through VLESS stays a domain and is resolved
 by the remote endpoint. A domain selected through Freedom uses the separate
 bootstrap policy. Non-intercepting `System` embeddings may use the operating
-system there. The generic C ABI defaults to `System`; the Apple Packet Tunnel
+system there. Destination DNS and this non-recursive outer-endpoint bootstrap
+remain distinct core roles for desktop and future server embeddings as well as
+mobile clients. The generic C ABI defaults to `System`; the Apple Packet Tunnel
 and Android reference VPN integration pre-populate exact bootstrap host rules
 before installing their DNS anchor, then explicitly select `StaticOnly`. Mobile
 preflight lookups share a five-second start deadline, execute on bounded
@@ -180,15 +222,21 @@ workers, and cannot publish after stop, timeout, or supersession. Blocking
 platform resolver calls themselves may outlive the deadline, so the adapters
 bound worker admission and fail closed rather than accumulating work. In any
 custom `StaticOnly` embedding, a domain upstream's `dns.hosts` alias chain must
-end in an IP or that candidate fails over (and ultimately returns SERVFAIL).
+end in an IP or nonempty IP array or that candidate fails over (and ultimately
+returns SERVFAIL).
 If an `IPIfNonMatch` lookup itself fails, routing follows Xray-core and selects
 the default outbound; it does not discard the original domain or fail the
 session at the routing layer.
 
-`dns.hosts` maps supported domain matchers to an IP or alias domain. Names are
-canonicalized to lowercase without a terminal dot at the managed resolver
-boundary, and an exact `full:` mapping takes precedence over broader matching
-rules. Alias resolution is bounded to eight hops.
+`dns.hosts` maps supported domain matchers to a single IP string, an alias
+domain string, or a nonempty ordered array containing only IP strings. Every IP
+in an array is retained as a resolution candidate. Names are canonicalized to
+lowercase without a terminal dot at the managed resolver boundary. As in
+Xray-core, an unprefixed `dns.hosts` key is an exact/full matcher rather than a
+routing-style keyword; explicit `full:` mappings have the same exact semantics
+and take precedence over broader matching rules. Alias
+resolution is bounded to eight hops; static IP candidates use the shared
+10-second hosts TTL.
 `dns.fakeIp` supports `enabled`, an IPv4 `ipv4Pool`, optional positive
 `poolSize`, and `ttl` for the current TUN routing path. `poolSize` defaults to
 the smaller of 32768 and the usable pool capacity. The bounded mapping table
@@ -204,9 +252,10 @@ address, the original domain is restored before routing. VLESS carries that
 domain for remote resolution; Freedom resolves it through the managed routed
 resolver, including in mobile `StaticOnly` mode. DNS-over-HTTPS/TLS, client-IP,
 per-server rule objects, negative/stale caching, and the broader Xray DNS
-feature set are not implemented. The public resolver result already carries
-all candidates and TTL metadata, but connection attempts still use the legacy
-first-candidate path until the shared TCP Happy Eyeballs dialer is enabled.
+feature set are not implemented. The public resolver result carries every
+candidate and TTL metadata. An explicitly enabled `sockopt.happyEyeballs`
+policy consumes those candidates through the bounded raw-TCP race described
+above; its Xray-compatible zero-delay default leaves the race disabled.
 
 A fake-IP profile does not inherently need `dns.servers` when its restored
 domains always use VLESS, because VLESS preserves them for remote resolution.

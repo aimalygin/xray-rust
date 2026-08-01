@@ -132,20 +132,32 @@ VLESS as the default outbound and only bypass private IP ranges through
 Freedom; the importer does not add domain-based captive-portal bypasses.
 
 Before applying Network Extension DNS and routes, the provider bootstraps every
-domain VLESS server and domain `dns.servers` entry. Existing exact
-`full:<domain>` `dns.hosts` mappings are canonicalized and followed for at most
+domain VLESS server and domain `dns.servers` entry. Existing bare or
+`full:<domain>` exact `dns.hosts` mappings are canonicalized and followed for at most
 eight mapping steps; cycles and deeper chains fail tunnel startup. When an
 alias chain has no terminal mapping, the provider resolves that terminal domain
-with the then-current system resolver and writes its IPv4 or IPv6 result into a
-canonical exact mapping. The system resolver's address ordering is retained,
-including DNS64-synthesized IPv6 results on IPv6-only networks. The original
-VLESS address string is preserved exactly in runtime JSON, so exact-domain
-routing, SNI, and other metadata do not change. If
-`NETunnelProviderProtocol.serverAddress` matches a VLESS domain, the resolved
-address is used for its `/32` IPv4 or `/128` IPv6 excluded route. Resolution
-failure fails tunnel startup. This pre-bootstrap happens before the local
-anchor exists; after Rust starts, mobile `StaticOnly` does not call the system
-resolver.
+with the then-current system resolver and writes every ordered A/AAAA result
+into a canonical exact IP array. Existing terminal IP arrays are retained and
+deduplicated in order. IPv4-mapped IPv6 carrier addresses are normalized to
+IPv4 so Rust socket selection and Apple `/32` exclusions stay aligned.
+DNS64-synthesized IPv6 results are accepted on IPv6-only networks. The original VLESS address string and
+`NETunnelProviderProtocol.serverAddress` remain metadata rather than being
+replaced by one candidate, so exact-domain routing, SNI, and other metadata do
+not change.
+
+The provider collects every IPv4/IPv6 outer carrier endpoint from VLESS
+servers, their existing bootstrap mappings, and the configured server address.
+Before creating the Rust core it installs an excluded `/32` or `/128` route for
+each carrier candidate alongside both default tunnel routes. `dns.servers`
+domains are still pinned for fail-closed bootstrap, but their resolved
+addresses are not globally excluded: DNS remains subject to the configured
+outbound routing policy. A carrier resolution containing a tunnel-owned DNS or
+interface address fails closed before network settings are installed. An explicitly enabled
+`sockopt.happyEyeballs` policy can then race the pinned raw TCP candidates and
+perform one TLS/REALITY handshake on the winner; `tryDelayMs: 0` leaves that
+race disabled by default. Resolution failure fails tunnel startup. This
+pre-bootstrap happens before the local anchor exists; after Rust starts, mobile
+`StaticOnly` does not call the system resolver.
 
 Bootstrap preflight runs asynchronously with one absolute five-second deadline
 shared by validation and every required lookup. Timeout, provider stop, and a

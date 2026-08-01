@@ -77,6 +77,7 @@ fn vless_outbound(security: StreamSecurity, server: TargetAddr, port: u16) -> Ou
         stream: StreamSettings {
             network: Network::Tcp,
             security,
+            socket_options: None,
         },
         settings: OutboundSettings::Vless(VlessOutboundSettings {
             server,
@@ -97,6 +98,7 @@ fn freedom_outbound() -> OutboundConfig {
         stream: StreamSettings {
             network: Network::Tcp,
             security: StreamSecurity::None,
+            socket_options: None,
         },
         settings: OutboundSettings::Freedom,
     }

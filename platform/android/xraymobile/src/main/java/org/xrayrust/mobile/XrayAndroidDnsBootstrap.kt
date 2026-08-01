@@ -11,6 +11,7 @@ import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicInteger
+import org.json.JSONArray
 import org.json.JSONObject
 
 internal data class PreparedAndroidVpnConfig(
@@ -47,7 +48,7 @@ internal class AndroidDnsBootstrapDeadline(
 
 internal class BoundedAndroidDnsBootstrapResolver(
     maxConcurrentLookups: Int = MAX_BLOCKED_DNS_LOOKUP_THREADS,
-    private val lookup: (String) -> String = ::lookupSystemBootstrapAddress,
+    private val lookup: (String) -> List<String> = ::lookupSystemBootstrapAddresses,
 ) : AutoCloseable {
     private val threadSequence = AtomicInteger()
     private val executor = ThreadPoolExecutor(
@@ -71,14 +72,14 @@ internal class BoundedAndroidDnsBootstrapResolver(
         require(maxConcurrentLookups > 0) { "DNS lookup worker limit must be positive" }
     }
 
-    fun resolve(domain: String, timeoutNanos: Long): String {
+    fun resolve(domain: String, timeoutNanos: Long): List<String> {
         if (timeoutNanos <= 0) {
             throw AndroidDnsBootstrapTimeoutException(
                 "DNS bootstrap deadline elapsed before resolving `$domain`",
             )
         }
         val future = try {
-            executor.submit<String> { lookup(domain) }
+            executor.submit<List<String>> { lookup(domain) }
         } catch (error: RejectedExecutionException) {
             throw IllegalStateException(
                 "DNS bootstrap worker capacity is exhausted by blocked system lookups",
@@ -154,24 +155,35 @@ internal fun prepareAndroidVpnConfigWithinDeadline(
     } else {
         JSONObject()
     }
-    val resolvedAddresses = mutableMapOf<String, String>()
-    var modified = canonicalizeExactDnsHostMappingKeys(hosts)
-    val resolveSystemBootstrapAddress: (String) -> String = { domain ->
-        resolveAndroidDnsBootstrapAddressWithinDeadline(domain, resolver, deadline)
+    val canonicalMappings = canonicalizeExactDnsHostMappingsFromJson(hosts)
+    val exactMappings = canonicalMappings.mappings.toMutableMap()
+    val resolvedAddresses = mutableMapOf<String, List<String>>()
+    var modified = canonicalMappings.modified
+    val resolveSystemBootstrapAddresses: (String) -> List<String> = { domain ->
+        resolveAndroidDnsBootstrapAddressesWithinDeadline(domain, resolver, deadline)
     }
     for (domain in bootstrapDomains) {
         modified = ensureBootstrapHostMapping(
             domain = domain,
-            hosts = hosts,
+            exactMappings = exactMappings,
             resolvedAddresses = resolvedAddresses,
             activeAliases = mutableSetOf(),
             depth = 0,
-            resolveSystemBootstrapAddress = resolveSystemBootstrapAddress,
+            resolveSystemBootstrapAddresses = resolveSystemBootstrapAddresses,
         ) || modified
     }
 
     if (!modified) {
         return PreparedAndroidVpnConfig(configJson, usesLocalDnsAnchor)
+    }
+    val existingKeys = hosts.keys().asSequence().toList()
+    for (key in existingKeys) {
+        if (exactDnsHostIdentity(key) != null) {
+            hosts.remove(key)
+        }
+    }
+    for ((key, target) in exactMappings) {
+        hosts.put(key, target.toJsonValue())
     }
     if (!preparedDns.has("hosts")) {
         preparedDns.put("hosts", hosts)
@@ -182,14 +194,14 @@ internal fun prepareAndroidVpnConfigWithinDeadline(
     return PreparedAndroidVpnConfig(root.toString(), usesLocalDnsAnchor)
 }
 
-internal fun resolveAndroidDnsBootstrapAddressWithinDeadline(
+internal fun resolveAndroidDnsBootstrapAddressesWithinDeadline(
     domain: String,
     resolver: BoundedAndroidDnsBootstrapResolver,
     deadline: AndroidDnsBootstrapDeadline,
-): String {
-    val address = resolver.resolve(domain, deadline.remainingNanos())
+): List<String> {
+    val addresses = resolver.resolve(domain, deadline.remainingNanos())
     deadline.remainingNanos()
-    return address
+    return addresses
 }
 
 internal data class AndroidDnsPreflightRoutingRule(
@@ -305,20 +317,28 @@ private fun hasArrayEntries(value: JSONObject, key: String): Boolean =
     value.has(key) && value.getJSONArray(key).length() > 0
 
 internal data class CanonicalExactDnsHostMappings(
-    val mappings: Map<String, String>,
+    val mappings: Map<String, AndroidDnsHostTarget>,
     val modified: Boolean,
 )
 
+internal sealed class AndroidDnsHostTarget {
+    data class Alias(val domain: String) : AndroidDnsHostTarget()
+
+    data class Addresses(val values: List<String>) : AndroidDnsHostTarget()
+}
+
 internal fun canonicalizeExactDnsHostMappings(
-    entries: List<Pair<String, String>>,
+    entries: List<Pair<String, Any>>,
 ): CanonicalExactDnsHostMappings {
-    val mappings = linkedMapOf<String, String>()
+    val mappings = linkedMapOf<String, AndroidDnsHostTarget>()
     var modified = false
-    for ((key, target) in entries) {
-        require(key.startsWith(EXACT_DNS_HOST_PREFIX)) { "DNS host mapping must be exact" }
-        val identity = normalizeBootstrapDomain(key.substring(EXACT_DNS_HOST_PREFIX.length))
+    for ((key, rawTarget) in entries) {
+        val identity = requireNotNull(exactDnsHostIdentity(key)) {
+            "DNS host mapping must be exact"
+        }
         val canonicalKey = "$EXACT_DNS_HOST_PREFIX$identity"
-        modified = modified || key != canonicalKey
+        val target = canonicalAndroidDnsHostTarget(rawTarget)
+        modified = modified || key != canonicalKey || !dnsHostTargetMatchesRaw(target, rawTarget)
 
         val existingTarget = mappings[canonicalKey]
         if (existingTarget != null) {
@@ -333,27 +353,72 @@ internal fun canonicalizeExactDnsHostMappings(
     return CanonicalExactDnsHostMappings(mappings, modified)
 }
 
-private fun canonicalizeExactDnsHostMappingKeys(hosts: JSONObject): Boolean {
-    val entries = mutableListOf<Pair<String, String>>()
+private fun canonicalizeExactDnsHostMappingsFromJson(
+    hosts: JSONObject,
+): CanonicalExactDnsHostMappings {
+    val entries = mutableListOf<Pair<String, Any>>()
     val keys = hosts.keys()
     while (keys.hasNext()) {
         val key = keys.next()
-        if (key.startsWith(EXACT_DNS_HOST_PREFIX)) {
-            entries.add(key to hosts.getString(key))
+        if (exactDnsHostIdentity(key) != null) {
+            entries.add(key to hosts.get(key))
         }
     }
 
-    val canonical = canonicalizeExactDnsHostMappings(entries)
-    if (!canonical.modified) {
-        return false
+    return canonicalizeExactDnsHostMappings(entries)
+}
+
+private fun canonicalAndroidDnsHostTarget(rawTarget: Any): AndroidDnsHostTarget =
+    when (rawTarget) {
+        is String -> canonicalIpAddress(rawTarget)?.let {
+            AndroidDnsHostTarget.Addresses(listOf(it))
+        } ?: AndroidDnsHostTarget.Alias(normalizeBootstrapDomain(rawTarget))
+        is JSONArray -> {
+            require(rawTarget.length() > 0) { "DNS host address array must not be empty" }
+            val addresses = linkedSetOf<String>()
+            for (index in 0 until rawTarget.length()) {
+                val rawAddress = rawTarget.getString(index)
+                val address = requireNotNull(canonicalIpAddress(rawAddress)) {
+                    "DNS host address array must contain only IP literals"
+                }
+                addresses.add(address)
+            }
+            AndroidDnsHostTarget.Addresses(addresses.toList())
+        }
+        is List<*> -> {
+            require(rawTarget.isNotEmpty()) { "DNS host address array must not be empty" }
+            val addresses = linkedSetOf<String>()
+            for (rawAddress in rawTarget) {
+                require(rawAddress is String) {
+                    "DNS host address array must contain only strings"
+                }
+                val address = requireNotNull(canonicalIpAddress(rawAddress)) {
+                    "DNS host address array must contain only IP literals"
+                }
+                addresses.add(address)
+            }
+            AndroidDnsHostTarget.Addresses(addresses.toList())
+        }
+        else -> throw IllegalArgumentException("DNS host target must be a string or address array")
     }
-    for ((key, _) in entries) {
-        hosts.remove(key)
+
+private fun dnsHostTargetMatchesRaw(target: AndroidDnsHostTarget, rawTarget: Any): Boolean =
+    when (target) {
+        is AndroidDnsHostTarget.Alias -> rawTarget == target.domain
+        is AndroidDnsHostTarget.Addresses -> {
+            when (rawTarget) {
+                is JSONArray ->
+                    rawTarget.length() == target.values.size &&
+                        target.values.indices.all { rawTarget.optString(it) == target.values[it] }
+                is List<*> -> rawTarget == target.values
+                else -> false
+            }
+        }
     }
-    for ((key, target) in canonical.mappings) {
-        hosts.put(key, target)
-    }
-    return true
+
+private fun AndroidDnsHostTarget.toJsonValue(): Any = when (this) {
+    is AndroidDnsHostTarget.Alias -> domain
+    is AndroidDnsHostTarget.Addresses -> JSONArray(values)
 }
 
 private fun collectVlessBootstrapDomains(
@@ -419,13 +484,13 @@ private fun isNumericDnsSocketAddress(server: String): Boolean {
         isIpv4Literal(server.substring(0, separator))
 }
 
-private fun ensureBootstrapHostMapping(
+internal fun ensureBootstrapHostMapping(
     domain: String,
-    hosts: JSONObject,
-    resolvedAddresses: MutableMap<String, String>,
+    exactMappings: MutableMap<String, AndroidDnsHostTarget>,
+    resolvedAddresses: MutableMap<String, List<String>>,
     activeAliases: MutableSet<String>,
     depth: Int,
-    resolveSystemBootstrapAddress: (String) -> String,
+    resolveSystemBootstrapAddresses: (String) -> List<String>,
 ): Boolean {
     require(depth < MAX_BOOTSTRAP_ALIAS_DEPTH) {
         "DNS bootstrap alias chain exceeds $MAX_BOOTSTRAP_ALIAS_DEPTH entries"
@@ -433,59 +498,83 @@ private fun ensureBootstrapHostMapping(
     val identity = normalizeBootstrapDomain(domain)
     require(activeAliases.add(identity)) { "DNS bootstrap alias cycle at `$domain`" }
     try {
-        val existingKey = findExactDnsHostMappingKey(hosts, identity)
-        if (existingKey != null) {
-            val target = hosts.getString(existingKey)
-            if (isIpLiteral(target)) {
-                return false
+        val existingKey = "$EXACT_DNS_HOST_PREFIX$identity"
+        exactMappings[existingKey]?.let { target ->
+            return when (target) {
+                is AndroidDnsHostTarget.Addresses -> false
+                is AndroidDnsHostTarget.Alias -> ensureBootstrapHostMapping(
+                    domain = target.domain,
+                    exactMappings = exactMappings,
+                    resolvedAddresses = resolvedAddresses,
+                    activeAliases = activeAliases,
+                    depth = depth + 1,
+                    resolveSystemBootstrapAddresses = resolveSystemBootstrapAddresses,
+                )
             }
-            return ensureBootstrapHostMapping(
-                domain = normalizeBootstrapDomain(target),
-                hosts = hosts,
-                resolvedAddresses = resolvedAddresses,
-                activeAliases = activeAliases,
-                depth = depth + 1,
-                resolveSystemBootstrapAddress = resolveSystemBootstrapAddress,
-            )
         }
 
-        val address = resolvedAddresses.getOrPut(identity) {
-            resolveSystemBootstrapAddress(identity)
+        val addresses = resolvedAddresses.getOrPut(identity) {
+            canonicalBootstrapAddresses(resolveSystemBootstrapAddresses(identity))
         }
-        hosts.put("full:$identity", address)
+        require(addresses.isNotEmpty()) {
+            "bootstrap domain `$domain` resolved without a usable address"
+        }
+        exactMappings[existingKey] = AndroidDnsHostTarget.Addresses(addresses)
         return true
     } finally {
         activeAliases.remove(identity)
     }
 }
 
-private fun findExactDnsHostMappingKey(hosts: JSONObject, domain: String): String? {
-    val keys = hosts.keys()
-    while (keys.hasNext()) {
-        val key = keys.next()
-        if (key.startsWith(EXACT_DNS_HOST_PREFIX) &&
-            normalizeBootstrapDomain(key.substring(EXACT_DNS_HOST_PREFIX.length)) == domain
-        ) {
-            return key
-        }
+private fun exactDnsHostIdentity(key: String): String? {
+    val domain = when {
+        key.startsWith(EXACT_DNS_HOST_PREFIX) -> key.substring(EXACT_DNS_HOST_PREFIX.length)
+        ':' !in key -> key
+        else -> return null
     }
-    return null
+    return normalizeBootstrapDomain(domain)
 }
 
-private fun lookupSystemBootstrapAddress(domain: String): String {
-    val address = try {
-        InetAddress.getAllByName(domain).firstOrNull {
-            it !is Inet6Address || it.scopeId == 0
-        }
+private fun lookupSystemBootstrapAddresses(domain: String): List<String> {
+    val resolved = try {
+        InetAddress.getAllByName(domain)
     } catch (error: Exception) {
         throw IllegalArgumentException(
             "failed to resolve bootstrap domain `$domain` before establishing the VPN tunnel",
             error,
         )
     }
-    return requireNotNull(address?.hostAddress) {
+    val addresses = linkedSetOf<String>()
+    for (address in resolved) {
+        if (address is Inet6Address && address.scopeId != 0) {
+            continue
+        }
+        val hostAddress = address.hostAddress ?: continue
+        canonicalIpAddress(hostAddress)?.let(addresses::add)
+    }
+    require(addresses.isNotEmpty()) {
         "bootstrap domain `$domain` resolved without a usable address"
     }
+    return addresses.toList()
+}
+
+private fun canonicalIpAddress(value: String): String? {
+    if (!isIpLiteral(value)) {
+        return null
+    }
+    return runCatching { InetAddress.getByName(value).hostAddress }.getOrNull()
+}
+
+internal fun canonicalBootstrapAddresses(rawAddresses: List<String>): List<String> {
+    require(rawAddresses.isNotEmpty()) { "DNS bootstrap address list must not be empty" }
+    val addresses = linkedSetOf<String>()
+    for (rawAddress in rawAddresses) {
+        val address = requireNotNull(canonicalIpAddress(rawAddress)) {
+            "DNS bootstrap address list must contain only IP literals"
+        }
+        addresses.add(address)
+    }
+    return addresses.toList()
 }
 
 internal fun normalizeBootstrapDomain(domain: String): String {

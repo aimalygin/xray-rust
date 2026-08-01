@@ -608,6 +608,7 @@ mod https_tests {
                 stream: StreamSettings {
                     network: Network::Tcp,
                     security: StreamSecurity::None,
+                    socket_options: None,
                 },
                 settings: OutboundSettings::Freedom,
             }],

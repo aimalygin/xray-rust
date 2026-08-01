@@ -711,6 +711,7 @@ fn configured_dns_resolver_from_config_with_transport(
             matcher: transport_domain_matcher(&host.matcher),
             target: match &host.target {
                 DnsHostTarget::Ip(ip) => StaticHostTarget::Ip(*ip),
+                DnsHostTarget::Ips(ips) => StaticHostTarget::Ips(ips.clone()),
                 DnsHostTarget::Domain(domain) => StaticHostTarget::Domain(
                     dns::normalize_dns_name(domain).unwrap_or_else(|| domain.clone()),
                 ),
@@ -863,6 +864,36 @@ mod tests {
         assert_eq!(
             resolver.resolve("resolver.example", 443).await.unwrap(),
             SocketAddr::from(([198, 51, 100, 11], 443))
+        );
+    }
+
+    #[tokio::test]
+    async fn static_only_dns_resolver_preserves_all_host_ip_candidates() {
+        let raw = r#"{
+            "dns": {
+              "hosts": {
+                "full:proxy.example": ["2001:db8::10", "198.51.100.12"]
+              }
+            },
+            "inbounds": [],
+            "outbounds": [
+                { "tag": "direct", "protocol": "freedom" }
+            ]
+        }"#;
+        let parsed = parse_xray_json(raw).expect("config should parse");
+        let resolver = static_only_dns_resolver_for_config(&parsed.config);
+
+        let lookup = resolver
+            .resolve_all("proxy.example", 443)
+            .await
+            .expect("resolve every static host address");
+
+        assert_eq!(
+            lookup.socket_addrs(),
+            &[
+                "[2001:db8::10]:443".parse().expect("static IPv6 address"),
+                "198.51.100.12:443".parse().expect("static IPv4 address"),
+            ]
         );
     }
 

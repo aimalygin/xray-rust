@@ -110,7 +110,6 @@ impl TransportDialer {
             .first()
             .copied()
             .ok_or_else(|| no_resolved_candidates_error(original_target))?;
-        let first_target = resolved_target(original_target, first);
         let race_config =
             happy_eyeballs.filter(|config| !config.try_delay.is_zero() && candidates.len() >= 2);
 
@@ -134,7 +133,7 @@ impl TransportDialer {
                         .connect_candidates(candidates, tls_config, race_config)
                         .await
                 }
-                None => self.tls.connect(&first_target, tls_config).await,
+                None => self.tls.connect_socket_addr(first, tls_config).await,
             },
             ConnectorConfig::Reality(reality_config) => {
                 let Some(reality) = &self.reality else {
@@ -142,14 +141,18 @@ impl TransportDialer {
                 };
 
                 let Some(race_config) = race_config else {
-                    return reality.connect(reality_config, &first_target).await;
+                    return reality
+                        .connect_socket_addr(reality_config, original_target, first)
+                        .await;
                 };
                 let Some(prepared) =
                     reality.prepare_preconnected(reality_config, original_target)?
                 else {
-                    // Third-party engines that only implement the legacy API remain
-                    // usable, but cannot safely participate in a raw TCP race.
-                    return reality.connect(reality_config, &first_target).await;
+                    // Legacy engines remain usable. They may override
+                    // `connect_socket_addr` to preserve scoped IPv6 metadata.
+                    return reality
+                        .connect_socket_addr(reality_config, original_target, first)
+                        .await;
                 };
                 let stream = connect_tcp_happy_eyeballs(
                     candidates,
@@ -162,14 +165,6 @@ impl TransportDialer {
             }
         }
     }
-}
-
-fn resolved_target(original_target: &Target, candidate: SocketAddr) -> Target {
-    Target::new(
-        TargetAddr::Ip(candidate.ip()),
-        candidate.port(),
-        original_target.network,
-    )
 }
 
 fn no_resolved_candidates_error(target: &Target) -> TransportError {

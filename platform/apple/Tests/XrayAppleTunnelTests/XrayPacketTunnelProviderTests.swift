@@ -432,7 +432,7 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
                         firstLookupEntered.fulfill()
                         firstLookupGate.wait()
                     }
-                    return "203.0.113.10"
+                    return ["203.0.113.10"]
                 }
             )
         }
@@ -445,7 +445,7 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
 
     func testNetworkSettingsExcludeIPv4ProxyServerFromDefaultRoute() {
         let settings = XrayPacketTunnelProvider.networkSettings(
-            excludingServerAddress: "203.0.113.10",
+            excludingServerAddresses: ["203.0.113.10"],
             resolvedDNSConfiguration: .localDNSAnchor
         )
 
@@ -456,7 +456,7 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
 
     func testNetworkSettingsExcludeIPv6ProxyServerFromDefaultRoute() {
         let settings = XrayPacketTunnelProvider.networkSettings(
-            excludingServerAddress: "64:ff9b::cb00:710a",
+            excludingServerAddresses: ["64:ff9b::cb00:710a"],
             resolvedDNSConfiguration: .localDNSAnchor
         )
 
@@ -466,9 +466,60 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         XCTAssertNil(settings.ipv4Settings?.excludedRoutes)
     }
 
+    func testNetworkSettingsExcludeEveryBootstrapAddressFromDefaultRoutes() {
+        let settings = XrayPacketTunnelProvider.networkSettings(
+            excludingServerAddresses: [
+                "203.0.113.10",
+                "2001:db8::10",
+                "203.0.113.11",
+                "2001:0DB8:0:0::10",
+            ],
+            resolvedDNSConfiguration: .localDNSAnchor
+        )
+
+        XCTAssertEqual(
+            settings.ipv4Settings?.excludedRoutes?.map(\.destinationAddress),
+            ["203.0.113.10", "203.0.113.11"]
+        )
+        XCTAssertEqual(
+            settings.ipv6Settings?.excludedRoutes?.map(\.destinationAddress),
+            ["2001:db8::10"]
+        )
+        XCTAssertTrue(
+            settings.ipv4Settings?.excludedRoutes?.allSatisfy {
+                $0.destinationSubnetMask == "255.255.255.255"
+            } == true
+        )
+        XCTAssertTrue(
+            settings.ipv6Settings?.excludedRoutes?.allSatisfy {
+                $0.destinationNetworkPrefixLength.intValue == 128
+            } == true
+        )
+    }
+
+    func testNetworkSettingsNeverExcludeTunnelOwnedAddresses() {
+        let settings = XrayPacketTunnelProvider.networkSettings(
+            excludingServerAddresses: [
+                "198.18.0.1",
+                "198.18.0.2",
+                "::ffff:198.18.0.1",
+                "::ffff:198.18.0.2",
+                "fd00:7872::2",
+                "203.0.113.12",
+            ],
+            resolvedDNSConfiguration: .localDNSAnchor
+        )
+
+        XCTAssertEqual(
+            settings.ipv4Settings?.excludedRoutes?.map(\.destinationAddress),
+            ["203.0.113.12"]
+        )
+        XCTAssertNil(settings.ipv6Settings?.excludedRoutes)
+    }
+
     func testNetworkSettingsApplyLocalDNSAnchorForAllDomains() {
         let settings = XrayPacketTunnelProvider.networkSettings(
-            excludingServerAddress: "203.0.113.10",
+            excludingServerAddresses: ["203.0.113.10"],
             resolvedDNSConfiguration: .localDNSAnchor
         )
 
@@ -478,7 +529,7 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
 
     func testNetworkSettingsUseExplicitCustomDnsForAllDomains() {
         let settings = XrayPacketTunnelProvider.networkSettings(
-            excludingServerAddress: "203.0.113.10",
+            excludingServerAddresses: ["203.0.113.10"],
             resolvedDNSConfiguration: .custom(["192.0.2.53", "198.51.100.53"])
         )
 
@@ -887,7 +938,7 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
 
     func testNetworkSettingsInstallIPv6DefaultRoute() throws {
         let settings = XrayPacketTunnelProvider.networkSettings(
-            excludingServerAddress: "203.0.113.10",
+            excludingServerAddresses: ["203.0.113.10"],
             resolvedDNSConfiguration: .localDNSAnchor
         )
 
@@ -1379,9 +1430,9 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
                 resolvedDomains.append(domain)
                 switch domain {
                 case "proxy.example":
-                    return "203.0.113.44"
+                    return ["2001:db8::44", "203.0.113.44"]
                 case "resolver.example":
-                    return "198.51.100.53"
+                    return ["198.51.100.53", "2001:db8::53"]
                 default:
                     return nil
                 }
@@ -1400,10 +1451,23 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
 
         XCTAssertEqual(vnext[0]["address"] as? String, "Proxy.Example.")
         XCTAssertNil(tls["serverName"])
-        XCTAssertEqual(hosts["full:proxy.example"] as? String, "203.0.113.44")
-        XCTAssertEqual(hosts["full:resolver.example"] as? String, "198.51.100.53")
-        XCTAssertEqual(hosts["full:existing.example"] as? String, "198.51.100.9")
-        XCTAssertEqual(prepared.serverAddress, "203.0.113.44")
+        XCTAssertEqual(
+            hosts["full:proxy.example"] as? [String],
+            ["2001:db8::44", "203.0.113.44"]
+        )
+        XCTAssertEqual(
+            hosts["full:resolver.example"] as? [String],
+            ["198.51.100.53", "2001:db8::53"]
+        )
+        XCTAssertEqual(hosts["full:existing.example"] as? [String], ["198.51.100.9"])
+        XCTAssertEqual(prepared.serverAddress, "proxy.example")
+        XCTAssertEqual(
+            prepared.excludedServerAddresses,
+            [
+                "2001:db8::44",
+                "203.0.113.44",
+            ]
+        )
         XCTAssertEqual(resolvedDomains, ["proxy.example", "resolver.example"])
     }
 
@@ -1417,7 +1481,7 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
             resolved,
             resolveAddress: { domain in
                 XCTAssertEqual(domain, "proxy.example")
-                return "64:ff9b::cb00:712c"
+                return ["64:ff9b::cb00:712c"]
             }
         )
         let root = try XCTUnwrap(
@@ -1430,16 +1494,55 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         let vnext = try XCTUnwrap(settings["vnext"] as? [[String: Any]])
 
         XCTAssertEqual(vnext[0]["address"] as? String, "Proxy.Example.")
-        XCTAssertEqual(hosts["full:proxy.example"] as? String, "64:ff9b::cb00:712c")
-        XCTAssertEqual(prepared.serverAddress, "64:ff9b::cb00:712c")
+        XCTAssertEqual(hosts["full:proxy.example"] as? [String], ["64:ff9b::cb00:712c"])
+        XCTAssertEqual(prepared.serverAddress, "proxy.example")
+        XCTAssertEqual(prepared.excludedServerAddresses, ["64:ff9b::cb00:712c"])
         let networkSettings = XrayPacketTunnelProvider.networkSettings(
-            excludingServerAddress: prepared.serverAddress,
+            excludingServerAddresses: prepared.excludedServerAddresses,
             resolvedDNSConfiguration: .localDNSAnchor
         )
         XCTAssertEqual(
             networkSettings.ipv6Settings?.excludedRoutes?.first?.destinationAddress,
             "64:ff9b::cb00:712c"
         )
+    }
+
+    func testConfigPinningCanonicalizesIPv4MappedCarrierBeforeRouting() throws {
+        let resolved = resolvedConfig(
+            json: #"{"dns":{"hosts":{"full:proxy.example":["::ffff:203.0.113.10","203.0.113.11"]}},"outbounds":[{"protocol":"vless","settings":{"vnext":[{"address":"proxy.example","port":443,"users":[]}]}}]}"#,
+            serverAddress: "proxy.example"
+        )
+
+        let prepared = try XrayPacketTunnelProvider.configPinningOutboundServerAddresses(
+            resolved,
+            resolveAddress: { domain in
+                XCTFail("unexpected system lookup for \(domain)")
+                return nil
+            }
+        )
+        let root = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(prepared.json.utf8)) as? [String: Any]
+        )
+        let dns = try XCTUnwrap(root["dns"] as? [String: Any])
+        let hosts = try XCTUnwrap(dns["hosts"] as? [String: Any])
+
+        XCTAssertEqual(
+            hosts["full:proxy.example"] as? [String],
+            ["203.0.113.10", "203.0.113.11"]
+        )
+        XCTAssertEqual(
+            prepared.excludedServerAddresses,
+            ["203.0.113.10", "203.0.113.11"]
+        )
+        let networkSettings = XrayPacketTunnelProvider.networkSettings(
+            excludingServerAddresses: prepared.excludedServerAddresses,
+            resolvedDNSConfiguration: .localDNSAnchor
+        )
+        XCTAssertEqual(
+            networkSettings.ipv4Settings?.excludedRoutes?.map(\.destinationAddress),
+            ["203.0.113.10", "203.0.113.11"]
+        )
+        XCTAssertNil(networkSettings.ipv6Settings?.excludedRoutes)
     }
 
     func testConfigPinningAcceptsExistingIPv6AliasTerminal() throws {
@@ -1462,8 +1565,41 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         let hosts = try XCTUnwrap(dns["hosts"] as? [String: Any])
 
         XCTAssertEqual(hosts["full:proxy.example"] as? String, "alias.example")
-        XCTAssertEqual(hosts["full:alias.example"] as? String, "2001:db8::45")
-        XCTAssertEqual(prepared.serverAddress, "2001:db8::45")
+        XCTAssertEqual(hosts["full:alias.example"] as? [String], ["2001:db8::45"])
+        XCTAssertEqual(prepared.serverAddress, "Proxy.Example.")
+        XCTAssertEqual(prepared.excludedServerAddresses, ["2001:db8::45"])
+    }
+
+    func testConfigPinningUsesBareExactAliasAndAddressArrayWithoutSystemLookup() throws {
+        let resolved = resolvedConfig(
+            json: #"{"dns":{"hosts":{"Proxy.Example.":"Alias.Example.","Alias.Example.":["2001:0DB8:0:0::47","203.0.113.47"]}},"outbounds":[{"protocol":"vless","settings":{"vnext":[{"address":"proxy.example","port":443,"users":[]}]}}]}"#,
+            serverAddress: "proxy.example"
+        )
+
+        let prepared = try XrayPacketTunnelProvider.configPinningOutboundServerAddresses(
+            resolved,
+            resolveAddress: { domain in
+                XCTFail("unexpected system lookup for \(domain)")
+                return nil
+            }
+        )
+        let root = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(prepared.json.utf8)) as? [String: Any]
+        )
+        let dns = try XCTUnwrap(root["dns"] as? [String: Any])
+        let hosts = try XCTUnwrap(dns["hosts"] as? [String: Any])
+
+        XCTAssertEqual(hosts["full:proxy.example"] as? String, "alias.example")
+        XCTAssertEqual(
+            hosts["full:alias.example"] as? [String],
+            ["2001:db8::47", "203.0.113.47"]
+        )
+        XCTAssertNil(hosts["Proxy.Example."])
+        XCTAssertNil(hosts["Alias.Example."])
+        XCTAssertEqual(
+            prepared.excludedServerAddresses,
+            ["2001:db8::47", "203.0.113.47"]
+        )
     }
 
     func testConfigPinningBootstrapsEveryDomainVLESSServer() throws {
@@ -1477,8 +1613,8 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
             resolveAddress: { domain in
                 resolvedDomains.append(domain)
                 return [
-                    "first.example": "203.0.113.41",
-                    "second.example": "203.0.113.42",
+                    "first.example": ["2001:db8::41", "203.0.113.41"],
+                    "second.example": ["203.0.113.42", "2001:db8::42"],
                 ][domain]
             }
         )
@@ -1496,9 +1632,85 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         XCTAssertEqual(firstVnext[0]["address"] as? String, "First.Example.")
         XCTAssertEqual(firstVnext[1]["address"] as? String, "192.0.2.10")
         XCTAssertEqual(secondVnext[0]["address"] as? String, "Second.Example")
-        XCTAssertEqual(hosts["full:first.example"] as? String, "203.0.113.41")
-        XCTAssertEqual(hosts["full:second.example"] as? String, "203.0.113.42")
+        XCTAssertEqual(
+            hosts["full:first.example"] as? [String],
+            ["2001:db8::41", "203.0.113.41"]
+        )
+        XCTAssertEqual(
+            hosts["full:second.example"] as? [String],
+            ["203.0.113.42", "2001:db8::42"]
+        )
+        XCTAssertEqual(
+            prepared.excludedServerAddresses,
+            [
+                "192.0.2.10",
+                "2001:db8::41",
+                "203.0.113.41",
+                "203.0.113.42",
+                "2001:db8::42",
+            ]
+        )
         XCTAssertEqual(resolvedDomains, ["first.example", "second.example"])
+    }
+
+    func testConfigPinningRetainsExistingAddressArrayWithoutSystemLookup() throws {
+        let resolved = resolvedConfig(
+            json: #"{"dns":{"hosts":{"full:proxy.example":["2001:0DB8:0:0::46","203.0.113.46","203.0.113.46"]}},"outbounds":[{"protocol":"vless","settings":{"vnext":[{"address":"proxy.example","port":443,"users":[]}]}}]}"#
+        )
+
+        let prepared = try XrayPacketTunnelProvider.configPinningOutboundServerAddresses(
+            resolved,
+            resolveAddress: { domain in
+                XCTFail("unexpected system lookup for \(domain)")
+                return nil
+            }
+        )
+        let root = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(prepared.json.utf8)) as? [String: Any]
+        )
+        let dns = try XCTUnwrap(root["dns"] as? [String: Any])
+        let hosts = try XCTUnwrap(dns["hosts"] as? [String: Any])
+
+        XCTAssertEqual(
+            hosts["full:proxy.example"] as? [String],
+            ["2001:db8::46", "203.0.113.46"]
+        )
+        XCTAssertEqual(
+            prepared.excludedServerAddresses,
+            ["2001:db8::46", "203.0.113.46"]
+        )
+    }
+
+    func testConfigPinningExcludesOnlyIPCarrierEndpointsWithoutLookup() throws {
+        let resolved = resolvedConfig(
+            json: #"{"dns":{"servers":["198.51.100.53"]},"outbounds":[{"protocol":"vless","settings":{"vnext":[{"address":"203.0.113.60","port":443,"users":[]},{"address":"2001:db8::60","port":443,"users":[]}]}}]}"#,
+            serverAddress: "203.0.113.60"
+        )
+
+        let prepared = try XrayPacketTunnelProvider.configPinningOutboundServerAddresses(
+            resolved,
+            resolveAddress: { domain in
+                XCTFail("unexpected system lookup for \(domain)")
+                return nil
+            }
+        )
+
+        XCTAssertEqual(
+            prepared.excludedServerAddresses,
+            ["203.0.113.60", "2001:db8::60"]
+        )
+        let settings = XrayPacketTunnelProvider.networkSettings(
+            excludingServerAddresses: prepared.excludedServerAddresses,
+            resolvedDNSConfiguration: .localDNSAnchor
+        )
+        XCTAssertEqual(
+            settings.ipv4Settings?.excludedRoutes?.map(\.destinationAddress),
+            ["203.0.113.60"]
+        )
+        XCTAssertEqual(
+            settings.ipv6Settings?.excludedRoutes?.map(\.destinationAddress),
+            ["2001:db8::60"]
+        )
     }
 
     func testConfigPinningUsesAndCanonicalizesExistingExactAliasChain() throws {
@@ -1524,11 +1736,12 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         let vnext = try XCTUnwrap(settings["vnext"] as? [[String: Any]])
 
         XCTAssertEqual(hosts["full:proxy.example"] as? String, "alias.example")
-        XCTAssertEqual(hosts["full:alias.example"] as? String, "203.0.113.45")
+        XCTAssertEqual(hosts["full:alias.example"] as? [String], ["203.0.113.45"])
         XCTAssertNil(hosts["full:Proxy.Example."])
         XCTAssertNil(hosts["full:Alias.Example."])
         XCTAssertEqual(vnext[0]["address"] as? String, "Proxy.Example.")
-        XCTAssertEqual(prepared.serverAddress, "203.0.113.45")
+        XCTAssertEqual(prepared.serverAddress, "Proxy.Example.")
+        XCTAssertEqual(prepared.excludedServerAddresses, ["203.0.113.45"])
     }
 
     func testConfigPinningResolvesMissingAliasTerminalForDomainDNSUpstream() throws {
@@ -1540,7 +1753,7 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
             resolved,
             resolveAddress: { domain in
                 XCTAssertEqual(domain, "bootstrap.example")
-                return "198.51.100.54"
+                return ["198.51.100.54", "2001:db8::54"]
             }
         )
         let root = try XCTUnwrap(
@@ -1550,7 +1763,14 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         let hosts = try XCTUnwrap(dns["hosts"] as? [String: Any])
 
         XCTAssertEqual(hosts["full:resolver.example"] as? String, "bootstrap.example")
-        XCTAssertEqual(hosts["full:bootstrap.example"] as? String, "198.51.100.54")
+        XCTAssertEqual(
+            hosts["full:bootstrap.example"] as? [String],
+            ["198.51.100.54", "2001:db8::54"]
+        )
+        XCTAssertEqual(
+            prepared.excludedServerAddresses,
+            []
+        )
     }
 
     func testConfigPinningAcceptsEightExactMappingSteps() throws {
@@ -1586,6 +1806,27 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
                 resolveAddress: { domain in
                     XCTFail("unexpected system lookup for \(domain)")
                     return nil
+                }
+            )
+        ) { error in
+            guard case XrayPacketTunnelProviderError.outboundServerResolutionFailed = error else {
+                return XCTFail("unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testConfigPinningRejectsCarrierResolutionContainingTunnelOwnedAddress() {
+        let resolved = resolvedConfig(
+            json: #"{"outbounds":[{"protocol":"vless","settings":{"vnext":[{"address":"proxy.example","port":443,"users":[]}]}}]}"#,
+            serverAddress: "proxy.example"
+        )
+
+        XCTAssertThrowsError(
+            try XrayPacketTunnelProvider.configPinningOutboundServerAddresses(
+                resolved,
+                resolveAddress: { domain in
+                    XCTAssertEqual(domain, "proxy.example")
+                    return ["198.18.0.1", "203.0.113.61"]
                 }
             )
         ) { error in

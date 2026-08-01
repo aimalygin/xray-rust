@@ -1,5 +1,5 @@
 mod transport_tests {
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV6};
     use std::num::NonZeroUsize;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
@@ -51,6 +51,49 @@ mod transport_tests {
                 .take()
                 .expect("fake reality stream should be used once");
 
+            Ok(Box::new(stream))
+        }
+    }
+
+    #[derive(Debug)]
+    struct RecordingSocketAddrRealityEngine {
+        stream: Mutex<Option<tokio::io::DuplexStream>>,
+        seen: Mutex<Option<(Target, SocketAddr)>>,
+    }
+
+    impl RecordingSocketAddrRealityEngine {
+        fn new(stream: tokio::io::DuplexStream) -> Self {
+            Self {
+                stream: Mutex::new(Some(stream)),
+                seen: Mutex::new(None),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl RealityTlsEngine for RecordingSocketAddrRealityEngine {
+        async fn connect(
+            &self,
+            _config: &RealityClientConfig,
+            _target: &Target,
+        ) -> Result<BoxedTransportStream, TransportError> {
+            panic!("resolved dialing should use connect_socket_addr")
+        }
+
+        async fn connect_socket_addr(
+            &self,
+            _config: &RealityClientConfig,
+            original_target: &Target,
+            candidate: SocketAddr,
+        ) -> Result<BoxedTransportStream, TransportError> {
+            *self.seen.lock().expect("resolved candidate lock") =
+                Some((original_target.clone(), candidate));
+            let stream = self
+                .stream
+                .lock()
+                .expect("resolved stream lock")
+                .take()
+                .expect("resolved fake stream should be used once");
             Ok(Box::new(stream))
         }
     }
@@ -527,15 +570,8 @@ mod transport_tests {
             server_name: "bad name".to_owned(),
             allow_insecure: false,
         };
-        let race_config = happy_eyeballs_config(Duration::from_millis(250));
-
-        let result = connector
-            .connect_candidates(
-                &[SocketAddr::from((Ipv4Addr::LOCALHOST, 9))],
-                &config,
-                &race_config,
-            )
-            .await;
+        let scoped = SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 9, 17, 42));
+        let result = connector.connect_socket_addr(scoped, &config).await;
 
         assert!(matches!(
             result,
@@ -657,6 +693,47 @@ mod transport_tests {
     }
 
     #[tokio::test]
+    async fn resolved_reality_engine_receives_full_scoped_ipv6_candidate() {
+        let (client_config, _) = tls_test_configs();
+        let (client, _server) = tokio::io::duplex(1024);
+        let engine = Arc::new(RecordingSocketAddrRealityEngine::new(client));
+        let dialer =
+            TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config))
+                .with_reality_engine(engine.clone());
+        let original_target = Target::new(
+            TargetAddr::Domain("origin.test".to_owned()),
+            443,
+            Network::Tcp,
+        );
+        let candidate = SocketAddr::V6(SocketAddrV6::new(
+            "fe80::1234".parse().expect("link-local IPv6"),
+            8443,
+            17,
+            42,
+        ));
+
+        let stream = dialer
+            .connect_resolved(
+                &ConnectorConfig::Reality(reality_test_config()),
+                &original_target,
+                &[candidate],
+                None,
+            )
+            .await
+            .expect("custom REALITY engine should receive resolved candidate");
+        drop(stream);
+
+        let seen = engine
+            .seen
+            .lock()
+            .expect("resolved candidate lock")
+            .clone()
+            .expect("resolved candidate should be recorded");
+        assert_eq!(seen.0, original_target);
+        assert_eq!(seen.1, candidate);
+    }
+
+    #[tokio::test]
     async fn tcp_connector_requires_dns_for_domain_targets() {
         let config = ConnectorConfig::Tcp;
         let connector = TcpConnector::new(config);
@@ -703,6 +780,26 @@ mod transport_tests {
             .expect("connect");
 
         assert!(stream.nodelay().expect("query nodelay"));
+    }
+
+    #[tokio::test]
+    async fn connect_tcp_stream_dials_ipv4_mapped_ipv6_as_ipv4() {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind IPv4 listener");
+        let ipv4_addr = listener.local_addr().expect("listener addr");
+        let mapped_addr = SocketAddr::V6(SocketAddrV6::new(
+            Ipv4Addr::LOCALHOST.to_ipv6_mapped(),
+            ipv4_addr.port(),
+            17,
+            42,
+        ));
+
+        let stream = xray_transport::connect_tcp_stream(mapped_addr, None)
+            .await
+            .expect("connect through mapped IPv6 address");
+
+        assert_eq!(stream.peer_addr().expect("peer addr"), ipv4_addr);
     }
 
     #[tokio::test]

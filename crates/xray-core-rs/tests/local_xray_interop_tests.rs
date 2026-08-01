@@ -1185,6 +1185,7 @@ fn rust_core_config_with_security(
             stream: StreamSettings {
                 network: Network::Tcp,
                 security,
+                socket_options: None,
             },
             settings: OutboundSettings::Vless(VlessOutboundSettings {
                 server: TargetAddr::Ip(xray_addr.ip()),

@@ -1,10 +1,10 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use xray_config::{
-    CoreConfig, Diagnostic, DiagnosticSeverity, DomainMatcher, InboundConfig, InboundProtocol,
-    IpCidr, IpMatcher, Network, OutboundConfig, OutboundProtocol, OutboundSettings,
-    RealitySettings, RealityShortId, RegexMatcher, RoutingConfig, RoutingRule, StreamSecurity,
-    StreamSettings, TargetAddr, VlessOutboundSettings, VlessUser,
+    CoreConfig, Diagnostic, DiagnosticSeverity, DomainMatcher, HappyEyeballsSettings,
+    InboundConfig, InboundProtocol, IpCidr, IpMatcher, Network, OutboundConfig, OutboundProtocol,
+    OutboundSettings, RealitySettings, RealityShortId, RegexMatcher, RoutingConfig, RoutingRule,
+    SocketOptions, StreamSecurity, StreamSettings, TargetAddr, VlessOutboundSettings, VlessUser,
 };
 
 #[test]
@@ -32,6 +32,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
                 spider_x: "/".to_owned(),
                 mldsa65_verify: None,
             }),
+            socket_options: None,
         },
         settings: OutboundSettings::Vless(VlessOutboundSettings {
             server: TargetAddr::Domain("server.example".to_owned()),
@@ -86,6 +87,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
                     spider_x: "/".to_owned(),
                     mldsa65_verify: None,
                 }),
+                socket_options: None,
             },
             settings: OutboundSettings::Vless(VlessOutboundSettings {
                 server: TargetAddr::Domain("server.example".to_owned()),
@@ -132,11 +134,35 @@ fn normalized_model_can_represent_freedom_outbound() {
         stream: StreamSettings {
             network: Network::Tcp,
             security: StreamSecurity::None,
+            socket_options: None,
         },
         settings: OutboundSettings::Freedom,
     };
 
     assert_eq!(outbound.settings.protocol(), OutboundProtocol::Freedom);
+}
+
+#[test]
+fn normalized_model_uses_xray_happy_eyeballs_defaults() {
+    let stream = StreamSettings {
+        network: Network::Tcp,
+        security: StreamSecurity::None,
+        socket_options: Some(SocketOptions {
+            happy_eyeballs: Some(HappyEyeballsSettings::default()),
+        }),
+    };
+
+    assert_eq!(
+        stream
+            .socket_options
+            .and_then(|options| options.happy_eyeballs),
+        Some(HappyEyeballsSettings {
+            prioritize_ipv6: false,
+            interleave: 1,
+            try_delay_ms: 0,
+            max_concurrent_try: 4,
+        })
+    );
 }
 
 #[test]

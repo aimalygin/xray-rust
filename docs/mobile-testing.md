@@ -100,30 +100,33 @@ third-party DNS resolver by default. Fake-IP profiles and profiles with any
 valid nonempty IP/domain `dns.servers` list use the tunnel-local `198.18.0.1`
 DNS anchor. The latter proxies UDP and TCP/53 through selected Freedom/VLESS
 outbounds. VLESS receives a domain upstream unchanged for remote resolution;
-Freedom needs a `dns.hosts` alias chain ending in an IP in mobile `StaticOnly`
-mode, otherwise that candidate fails over. Domains restored from fake-IP and
-sent through Freedom resolve through the same routed `dns.servers`, not the
-operating-system resolver.
+Freedom needs a `dns.hosts` alias chain ending in an IP or nonempty IP array in
+mobile `StaticOnly` mode, otherwise that candidate fails over. Domains restored
+from fake-IP and sent through Freedom resolve through the same routed
+`dns.servers`, not the operating-system resolver.
 
 Before Network Extension installs the anchor, the provider resolves every
 domain VLESS server and domain `dns.servers` entry through the then-current
-dual-stack system resolver. It writes canonical exact `full:` mappings into
-`dns.hosts` without replacing existing exact mappings, follows aliases for at
-most eight steps, and preserves each VLESS address string exactly in runtime
-JSON. When the protocol's single `serverAddress` matches a resolved VLESS
-domain, its selected IPv4 or IPv6 bootstrap address is used only for the `/32`
-or `/128` excluded route. Apple installs both IPv4 and IPv6 default tunnel
-routes; DNS64 results are accepted on IPv6-only networks. Cycles or resolution
-failure stop tunnel startup. The preflight runs away from the provider callback
-queue and all lookups share one five-second deadline captured at the beginning
-of the start attempt. Stop, timeout, or a superseding start completes the
-pending start exactly once; generation checks discard a late resolver result
-before network settings or the runtime can be installed. Because Darwin's
-`getaddrinfo` is not reliably interruptible, Apple admits only one process-wide
-lookup worker and does not enqueue more work behind a blocked call. A busy
-newer attempt still expires on its own deadline. The selected bootstrap remains
-single-address and valid for one tunnel lifetime; multi-address refresh and
-network-migration failover remain follow-ups. A profile without JSON DNS or
+dual-stack system resolver. It writes every ordered A/AAAA result into a
+canonical exact `full:` IP array in `dns.hosts` without replacing existing
+bare or `full:` exact mapping (bare keys are exact in Xray, not keywords),
+follows aliases for at most eight steps, and preserves each
+VLESS address string exactly in runtime JSON. Apple installs both IPv4 and IPv6
+default tunnel routes plus an excluded `/32` or `/128` for every VLESS carrier
+candidate before the core is created; pinned DNS-upstream addresses remain
+inside the tunnel and follow outbound routing policy. DNS64 results are
+accepted on IPv6-only networks. Tunnel-owned addresses are never installed as
+exclusions; finding one in a carrier result fails startup. Cycles or resolution failure stop tunnel startup. The
+preflight runs away from the provider callback queue and all lookups share one
+five-second deadline captured at the beginning of the start attempt. Stop,
+timeout, or a superseding start completes the pending start exactly once;
+generation checks discard a late resolver result before network settings or the
+runtime can be installed. Because Darwin's `getaddrinfo` is not reliably
+interruptible, Apple admits only one process-wide lookup worker and does not
+enqueue more work behind a blocked call. A busy newer attempt still expires on
+its own deadline. Pinned candidates remain fixed for one tunnel lifetime;
+opt-in `sockopt.happyEyeballs` can race them, but DNS refresh and
+network-migration re-bootstrap remain follow-ups. A profile without JSON DNS or
 fake-IP can instead provide an explicit host IPv4/IPv6 DNS override. Combining
 fake-IP with that host override, or configuring none of the supported modes,
 fails before applying network settings. Device tests that enable a probe or
@@ -146,7 +149,10 @@ before `Builder.establish()`. Its public start operation is asynchronous, stop
 does not join a pending start, and lifecycle tokens reject late publication.
 `InetAddress` may also ignore interruption, so both DNS lookups and start
 workers use zero-queue bounded daemon pools; saturation fails closed instead of
-growing threads or queued work.
+growing threads or queued work. Every usable system A/AAAA result is retained
+in the generated exact `dns.hosts` IP array. When Happy Eyeballs is enabled,
+each launched raw TCP candidate is independently passed through
+`VpnService.protect(fd)` and losing or cancelled attempts do not remain running.
 
 ## Android native libraries
 
@@ -205,6 +211,8 @@ verify at minimum:
 
 - start, stop, rapid stop-during-start, and repeated connect cycles;
 - IPv4 and IPv6 traffic where the target network supports them;
+- dual-stack bootstrap with Happy Eyeballs enabled and disabled, including a
+  failed preferred-family candidate and cancellation during the stagger;
 - TCP and UDP through the intended Freedom/VLESS/TLS/REALITY profile;
 - DNS behavior and captive-network transitions;
 - airplane mode, interface changes, sleep/wake, and process termination;

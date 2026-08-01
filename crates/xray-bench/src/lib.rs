@@ -7963,6 +7963,7 @@ fn route_probe_config(rules: usize, outbounds: usize) -> Result<CoreConfig, Benc
             stream: StreamSettings {
                 network: ConfigNetwork::Tcp,
                 security: StreamSecurity::None,
+                socket_options: None,
             },
             settings: OutboundSettings::Freedom,
         })

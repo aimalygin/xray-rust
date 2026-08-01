@@ -25,9 +25,10 @@ parity with every Xray-core release.
 | VLESS over TCP | Supported | Local fake-server and optional Xray-core interoperability tests |
 | TLS | Supported | Certificate-verified local integration tests; `allowInsecure` is accepted with a warning |
 | REALITY client | Supported subset | Deterministic primitive tests and optional local Xray-core REALITY+Vision interoperability tests |
+| TCP Happy Eyeballs | Supported subset | Opt-in Xray-compatible Freedom/VLESS raw-TCP candidate race; bounded and cancellation-safe, with one TLS/REALITY handshake after connect |
 | `xtls-rprx-vision` | Supported subset | TCP and XUDP paths; UDP/443 behavior follows the selected Vision flow |
 | Domain/IP routing | Supported subset | `field` rules, inbound tags, domain/CIDR/private/geodata matchers |
-| Configured DNS | Supported subset | Static hosts, routed multi-address A/AAAA/CNAME resolution with TTL-aware single-flight cache for TUN/SOCKS/HTTP/probes, ordered upstream failover, valid UDP-truncation/TCP retry, all-IP `IPIfNonMatch`, and routed UDP/TCP TUN proxy for IP/domain upstreams |
+| Configured DNS | Supported subset | Static single/ordered-array hosts, routed multi-address A/AAAA/CNAME resolution with TTL-aware single-flight cache for TUN/SOCKS/HTTP/probes, ordered upstream failover, valid UDP-truncation/TCP retry, all-IP `IPIfNonMatch`, and routed UDP/TCP TUN proxy for IP/domain upstreams |
 | Fake IP | Supported subset | Bounded IPv4 pool with UDP/TCP synthesis used by the TUN routing path |
 | `geosite.dat` / `geoip.dat` | Supported | Xray-style protobuf data is loaded on demand with size and matcher budgets |
 | Startup probe and runtime stats | Supported | Core and FFI integration tests |

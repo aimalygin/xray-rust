@@ -245,6 +245,20 @@ fn apple_packet_pump_reuses_poll_storage_and_fails_outside_worker_queue() {
     assert!(provider.contains("lifecycle.stop(ifCurrent: lifecycleToken)"));
     assert!(core.contains("public enum XrayDNSBootstrapMode"));
     assert!(provider.contains("dnsBootstrapMode: .staticOnly"));
+    assert!(provider.contains("resolveAddress: (String) -> [String]?"));
+    assert!(provider.contains("excludingServerAddresses: resolvedConfig.excludedServerAddresses"));
+    assert!(provider.contains("ipv4Settings.excludedRoutes = ipv4ExcludedRoutes"));
+    assert!(provider.contains("ipv6Settings.excludedRoutes = ipv6ExcludedRoutes"));
+    let apply_network_settings = provider
+        .find("setTunnelNetworkSettings(")
+        .expect("Apple provider should apply packet-tunnel routes");
+    let start_runtime = provider[apply_network_settings..]
+        .find("let runtime = try self.makeRuntime(")
+        .expect("Apple provider should start the runtime after applying routes");
+    assert!(
+        start_runtime > 0,
+        "Apple core must start only after every bootstrap route is installed"
+    );
     assert!(mobile_log.contains("XrayLogSanitizer.sanitize"));
 }
 
@@ -399,11 +413,13 @@ fn android_reference_vpn_bootstraps_dns_before_establishing_the_tunnel() {
     for token in [
         "InetAddress.getAllByName(domain)",
         "equals(\"vless\", ignoreCase = true)",
-        "findExactDnsHostMappingKey",
-        "canonicalizeExactDnsHostMappingKeys(hosts)",
-        "normalizeBootstrapDomain(key.substring(EXACT_DNS_HOST_PREFIX.length)) == domain",
-        "hosts.put(\"full:$identity\", address)",
-        "resolveSystemBootstrapAddress(identity)",
+        "exactDnsHostIdentity(key)",
+        "':' !in key",
+        "canonicalizeExactDnsHostMappingsFromJson(hosts)",
+        "exactMappings[existingKey] = AndroidDnsHostTarget.Addresses(addresses)",
+        "is JSONArray",
+        "JSONArray(values)",
+        "resolveSystemBootstrapAddresses(identity)",
         "198.18.0.1",
         "getJSONArray(\"servers\")",
         "getJSONObject(\"fakeIp\")",
@@ -416,6 +432,10 @@ fn android_reference_vpn_bootstraps_dns_before_establishing_the_tunnel() {
     assert!(
         !bootstrap.contains("put(\"address\""),
         "Android bootstrap must preserve VLESS domain addresses"
+    );
+    assert!(
+        !bootstrap.contains("firstOrNull"),
+        "Android bootstrap must retain every usable system address"
     );
     assert!(service.contains("XrayDnsBootstrapMode.StaticOnly"));
     assert!(service.contains("addDnsServer(XRAY_TUN_DNS_ANCHOR)"));
@@ -439,14 +459,14 @@ fn android_reference_vpn_bootstraps_dns_before_establishing_the_tunnel() {
     );
 
     let ensure_mapping = bootstrap
-        .find("private fun ensureBootstrapHostMapping(")
+        .find("internal fun ensureBootstrapHostMapping(")
         .expect("reference VPN should define bootstrap mapping preparation");
     let ensure_mapping_body = &bootstrap[ensure_mapping..];
     let existing_mapping = ensure_mapping_body
-        .find("if (existingKey != null)")
+        .find("exactMappings[existingKey]?.let { target ->")
         .expect("reference VPN should preserve an existing exact mapping");
     let insert_mapping = ensure_mapping_body
-        .find("hosts.put(\"full:$identity\", address)")
+        .find("exactMappings[existingKey] = AndroidDnsHostTarget.Addresses(addresses)")
         .expect("reference VPN should add an exact bootstrap mapping");
     assert!(
         existing_mapping < insert_mapping,

@@ -8,8 +8,9 @@ use std::{
 use prost::Message;
 use xray_config::{
     parse_xray_json, parse_xray_json_with_geodata_dirs, DiagnosticSeverity, DnsFakeIpConfig,
-    DnsHostTarget, DnsServerConfig, InboundProtocol, IpCidr, OutboundSettings, RealityShortId,
-    RoutingDomainStrategy, SniffingDestination, StreamSecurity, TargetAddr,
+    DnsHostTarget, DnsServerConfig, HappyEyeballsSettings, InboundProtocol, IpCidr,
+    OutboundSettings, RealityShortId, RoutingDomainStrategy, SniffingDestination, StreamSecurity,
+    TargetAddr,
 };
 
 #[test]
@@ -22,6 +23,7 @@ fn parses_vless_reality_vision_subset() {
     assert!(parsed.diagnostics.is_empty());
     assert_eq!(parsed.config.default_outbound_tag.as_deref(), Some("proxy"));
     assert_eq!(parsed.config.outbounds[0].tag.as_deref(), Some("proxy"));
+    assert!(parsed.config.outbounds[0].stream.socket_options.is_none());
 
     let OutboundSettings::Vless(vless) = &parsed.config.outbounds[0].settings else {
         panic!("expected vless outbound");
@@ -897,6 +899,161 @@ fn rejects_tcp_header_type_with_path() {
 }
 
 #[test]
+fn parses_empty_sockopt_without_enabling_happy_eyeballs() {
+    let raw = raw_with_sockopt("{}");
+    let parsed = parse_xray_json(&raw).expect("empty sockopt should parse");
+
+    assert!(parsed.config.outbounds[0]
+        .stream
+        .socket_options
+        .as_ref()
+        .is_some_and(|options| options.happy_eyeballs.is_none()));
+}
+
+#[test]
+fn parses_empty_happy_eyeballs_with_xray_defaults() {
+    let raw = raw_with_sockopt(r#"{ "happyEyeballs": {} }"#);
+    let parsed = parse_xray_json(&raw).expect("empty happyEyeballs should use defaults");
+
+    assert_eq!(
+        parsed.config.outbounds[0]
+            .stream
+            .socket_options
+            .as_ref()
+            .and_then(|options| options.happy_eyeballs),
+        Some(HappyEyeballsSettings::default())
+    );
+}
+
+#[test]
+fn parses_explicit_happy_eyeballs_raw_integer_values() {
+    let raw = raw_with_sockopt(
+        r#"{
+          "happyEyeballs": {
+            "prioritizeIPv6": true,
+            "interleave": 0,
+            "tryDelayMs": 18446744073709551615,
+            "maxConcurrentTry": 4294967295
+          }
+        }"#,
+    );
+    let parsed = parse_xray_json(&raw).expect("happyEyeballs settings should parse");
+
+    assert_eq!(
+        parsed.config.outbounds[0]
+            .stream
+            .socket_options
+            .as_ref()
+            .and_then(|options| options.happy_eyeballs),
+        Some(HappyEyeballsSettings {
+            prioritize_ipv6: true,
+            interleave: 0,
+            try_delay_ms: u64::MAX,
+            max_concurrent_try: u32::MAX,
+        })
+    );
+}
+
+#[test]
+fn preserves_explicit_zero_happy_eyeballs_integer_values() {
+    let raw = raw_with_sockopt(
+        r#"{
+          "happyEyeballs": {
+            "interleave": 0,
+            "tryDelayMs": 0,
+            "maxConcurrentTry": 0
+          }
+        }"#,
+    );
+    let parsed = parse_xray_json(&raw).expect("zero values should not be replaced by defaults");
+
+    assert_eq!(
+        parsed.config.outbounds[0]
+            .stream
+            .socket_options
+            .as_ref()
+            .and_then(|options| options.happy_eyeballs),
+        Some(HappyEyeballsSettings {
+            prioritize_ipv6: false,
+            interleave: 0,
+            try_delay_ms: 0,
+            max_concurrent_try: 0,
+        })
+    );
+}
+
+#[test]
+fn rejects_non_object_sockopt_with_path() {
+    let raw = raw_with_sockopt("false");
+
+    assert_parse_error_path(&raw, "$.outbounds[0].streamSettings.sockopt");
+}
+
+#[test]
+fn rejects_unknown_sockopt_field_with_path() {
+    let raw = raw_with_sockopt(r#"{ "mark": 1 }"#);
+
+    assert_parse_error_path(&raw, "$.outbounds[0].streamSettings.sockopt.mark");
+}
+
+#[test]
+fn rejects_non_object_happy_eyeballs_with_path() {
+    let raw = raw_with_sockopt(r#"{ "happyEyeballs": true }"#);
+
+    assert_parse_error_path(&raw, "$.outbounds[0].streamSettings.sockopt.happyEyeballs");
+}
+
+#[test]
+fn rejects_unknown_happy_eyeballs_field_with_path() {
+    let raw = raw_with_sockopt(r#"{ "happyEyeballs": { "delay": 250 } }"#);
+
+    assert_parse_error_path(
+        &raw,
+        "$.outbounds[0].streamSettings.sockopt.happyEyeballs.delay",
+    );
+}
+
+#[test]
+fn rejects_non_boolean_happy_eyeballs_preference_with_path() {
+    let raw = raw_with_sockopt(r#"{ "happyEyeballs": { "prioritizeIPv6": 1 } }"#);
+
+    assert_parse_error_path(
+        &raw,
+        "$.outbounds[0].streamSettings.sockopt.happyEyeballs.prioritizeIPv6",
+    );
+}
+
+#[test]
+fn rejects_happy_eyeballs_interleave_overflow_with_path() {
+    let raw = raw_with_sockopt(r#"{ "happyEyeballs": { "interleave": 4294967296 } }"#);
+
+    assert_parse_error_path(
+        &raw,
+        "$.outbounds[0].streamSettings.sockopt.happyEyeballs.interleave",
+    );
+}
+
+#[test]
+fn rejects_negative_happy_eyeballs_try_delay_with_path() {
+    let raw = raw_with_sockopt(r#"{ "happyEyeballs": { "tryDelayMs": -1 } }"#);
+
+    assert_parse_error_path(
+        &raw,
+        "$.outbounds[0].streamSettings.sockopt.happyEyeballs.tryDelayMs",
+    );
+}
+
+#[test]
+fn rejects_non_integer_happy_eyeballs_max_concurrency_with_path() {
+    let raw = raw_with_sockopt(r#"{ "happyEyeballs": { "maxConcurrentTry": 4.5 } }"#);
+
+    assert_parse_error_path(
+        &raw,
+        "$.outbounds[0].streamSettings.sockopt.happyEyeballs.maxConcurrentTry",
+    );
+}
+
+#[test]
 fn parses_dns_servers_and_hosts() {
     let raw = r#"{
         "dns": {
@@ -968,6 +1125,88 @@ fn parses_dns_servers_and_hosts() {
         parsed.config.dns.hosts[1].target,
         DnsHostTarget::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 53)))
     );
+}
+
+#[test]
+fn parses_dns_host_ip_array_preserving_address_order() {
+    let raw = raw_with_dns_host_target(r#"["192.0.2.10", "2001:db8::10"]"#);
+    let parsed = parse_xray_json(&raw).expect("DNS host IP array should parse");
+
+    assert_eq!(
+        parsed.config.dns.hosts[0].target,
+        DnsHostTarget::Ips(vec![
+            IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10)),
+            IpAddr::V6("2001:db8::10".parse().unwrap()),
+        ])
+    );
+}
+
+#[test]
+fn unprefixed_dns_host_key_is_an_exact_match_like_xray() {
+    let raw = r#"{
+        "dns": { "hosts": { "proxy.example": "192.0.2.10" } },
+        "inbounds": [],
+        "outbounds": [{ "tag": "direct", "protocol": "freedom" }]
+    }"#;
+    let parsed = parse_xray_json(raw).expect("bare DNS host key should parse");
+    let mapping = &parsed.config.dns.hosts[0];
+
+    assert!(mapping.matcher.matches("proxy.example"));
+    assert!(!mapping.matcher.matches("www.proxy.example"));
+    assert!(!mapping.matcher.matches("unrelated-proxy.example.test"));
+    assert_eq!(
+        mapping.target,
+        DnsHostTarget::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10)))
+    );
+}
+
+#[test]
+fn unprefixed_dns_host_key_accepts_ip_arrays() {
+    let raw = r#"{
+        "dns": {
+          "hosts": { "proxy.example": ["192.0.2.10", "2001:db8::10"] }
+        },
+        "inbounds": [],
+        "outbounds": [{ "tag": "direct", "protocol": "freedom" }]
+    }"#;
+    let parsed = parse_xray_json(raw).expect("bare DNS host IP array should parse");
+
+    assert!(parsed.config.dns.hosts[0].matcher.matches("proxy.example"));
+    assert_eq!(
+        parsed.config.dns.hosts[0].target,
+        DnsHostTarget::Ips(vec![
+            IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10)),
+            IpAddr::V6("2001:db8::10".parse().unwrap()),
+        ])
+    );
+}
+
+#[test]
+fn rejects_empty_dns_host_ip_array_with_path() {
+    let raw = raw_with_dns_host_target("[]");
+
+    assert_parse_error_path(&raw, "$.dns.hosts.full:server.example");
+}
+
+#[test]
+fn rejects_domain_in_dns_host_ip_array_with_item_path() {
+    let raw = raw_with_dns_host_target(r#"["192.0.2.10", "alias.example"]"#);
+
+    assert_parse_error_path(&raw, "$.dns.hosts.full:server.example[1]");
+}
+
+#[test]
+fn rejects_non_string_in_dns_host_ip_array_with_item_path() {
+    let raw = raw_with_dns_host_target(r#"["192.0.2.10", 42]"#);
+
+    assert_parse_error_path(&raw, "$.dns.hosts.full:server.example[1]");
+}
+
+#[test]
+fn rejects_non_string_or_array_dns_host_target_with_path() {
+    let raw = raw_with_dns_host_target(r#"{ "address": "192.0.2.10" }"#);
+
+    assert_parse_error_path(&raw, "$.dns.hosts.full:server.example");
 }
 
 #[test]
@@ -1528,6 +1767,16 @@ fn raw_with_dns_servers(servers: &str) -> String {
     )
 }
 
+fn raw_with_dns_host_target(target: &str) -> String {
+    format!(
+        r#"{{
+          "dns": {{ "hosts": {{ "full:server.example": {target} }} }},
+          "inbounds": [],
+          "outbounds": [{{ "tag": "direct", "protocol": "freedom" }}]
+        }}"#
+    )
+}
+
 fn unique_temp_dir(name: &str) -> PathBuf {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1787,6 +2036,23 @@ fn raw_with_tcp_settings(tcp_settings: &str) -> String {
               "security": "none",
               "tcpSettings": {{ {tcp_settings} }}
             }}
+          }}]
+        }}"#
+    )
+}
+
+fn raw_with_sockopt(sockopt: &str) -> String {
+    format!(
+        r#"{{
+          "inbounds": [],
+          "outbounds": [{{
+              "tag": "direct",
+              "protocol": "freedom",
+              "streamSettings": {{
+                  "network": "tcp",
+                  "security": "none",
+                  "sockopt": {sockopt}
+              }}
           }}]
         }}"#
     )

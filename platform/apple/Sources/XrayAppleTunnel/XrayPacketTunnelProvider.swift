@@ -405,6 +405,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
     private static let maximumCustomDNSServers = 8
     private static let maximumDNSHostAliasDepth = 8
     static let tunnelRemoteAddress = "198.18.0.1"
+    static let tunnelLocalIPv4Address = "198.18.0.2"
     static let tunnelLocalIPv6Address = "fd00:7872::2"
     private static let debugStatsHandler: @Sendable (XrayCore) -> Void = {
         logDebugStats($0)
@@ -595,7 +596,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
 
         setTunnelNetworkSettings(
             Self.networkSettings(
-                excludingServerAddress: resolvedConfig.serverAddress,
+                excludingServerAddresses: resolvedConfig.excludedServerAddresses,
                 resolvedDNSConfiguration: resolvedDNSConfiguration
             )
         ) { [weak self] error in
@@ -753,6 +754,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         var json: String
         var source: String
         var serverAddress: String?
+        var excludedServerAddresses: [String] = []
         var debugLoggingEnabled: Bool
         var useTunFileDescriptor: Bool
         var tunRuntimeProfile: XrayTunRuntimeProfileSetting
@@ -833,7 +835,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
     static func configPinningOutboundServerAddresses(
         _ resolvedConfig: ResolvedConfig,
         shouldContinue: () -> Bool = { true },
-        resolveAddress: (String) -> String? = { systemIPAddress($0) }
+        resolveAddress: (String) -> [String]? = { systemIPAddresses($0) }
     ) throws -> ResolvedConfig {
         guard shouldContinue() else {
             throw XrayPacketTunnelProviderError.dnsBootstrapTimedOut
@@ -846,7 +848,24 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
 
         var requiredDomains: [String] = []
         var seenRequiredDomains = Set<String>()
-        var vlessDomains = Set<String>()
+        var excludedCarrierDomains = Set<String>()
+        var excludedAddresses = resolvedConfig.excludedServerAddresses
+        guard excludedAddresses.allSatisfy({ !isTunnelOwnedIPAddress($0) }) else {
+            throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
+        }
+        var seenExcludedAddresses = Set(excludedAddresses)
+        if let serverAddress = resolvedConfig.serverAddress,
+           let address = canonicalIPAddress(serverAddress)
+        {
+            guard !isTunnelOwnedIPAddress(address) else {
+                throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
+            }
+            appendBootstrapAddress(
+                address,
+                to: &excludedAddresses,
+                seen: &seenExcludedAddresses
+            )
+        }
         let outbounds = root["outbounds"] as? [[String: Any]] ?? []
         for outbound in outbounds {
             guard (outbound["protocol"] as? String)?.lowercased() == "vless",
@@ -857,10 +876,18 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                 continue
             }
             for server in vnext {
-                guard let rawAddress = server["address"] as? String,
-                      !isIPAddress(rawAddress, family: AF_INET),
-                      !isIPAddress(rawAddress, family: AF_INET6)
-                else {
+                guard let rawAddress = server["address"] as? String else {
+                    continue
+                }
+                if let address = canonicalIPAddress(rawAddress) {
+                    guard !isTunnelOwnedIPAddress(address) else {
+                        throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
+                    }
+                    appendBootstrapAddress(
+                        address,
+                        to: &excludedAddresses,
+                        seen: &seenExcludedAddresses
+                    )
                     continue
                 }
                 guard let domain = canonicalDNSBootstrapDomain(rawAddress) else {
@@ -869,21 +896,25 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
 
                 // Preserve the exact configured VLESS address for routing and
                 // TLS metadata. Only the dns.hosts lookup key is canonical.
-                vlessDomains.insert(domain)
                 appendBootstrapDomain(
                     domain,
                     to: &requiredDomains,
                     seen: &seenRequiredDomains
                 )
+                excludedCarrierDomains.insert(domain)
             }
         }
 
         var dns = root["dns"] as? [String: Any] ?? [:]
         if let servers = dns["servers"] as? [Any] {
             for rawServer in servers {
-                guard let server = rawServer as? String,
-                      let domain = dnsBootstrapDomain(fromServer: server)
-                else {
+                guard let server = rawServer as? String else {
+                    continue
+                }
+                if dnsBootstrapIPAddress(fromServer: server) != nil {
+                    continue
+                }
+                guard let domain = dnsBootstrapDomain(fromServer: server) else {
                     continue
                 }
                 appendBootstrapDomain(
@@ -895,7 +926,9 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         }
 
         guard !requiredDomains.isEmpty else {
-            return resolvedConfig
+            var prepared = resolvedConfig
+            prepared.excludedServerAddresses = excludedAddresses
+            return prepared
         }
 
         let rawHosts = dns["hosts"]
@@ -904,24 +937,35 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         }
         var hosts = rawHosts as? [String: Any] ?? [:]
         var exactMappings = try canonicalExactDNSHostMappings(hosts)
-        var bootstrapAddressByDomain: [String: String] = [:]
         for domain in requiredDomains {
             guard shouldContinue() else {
                 throw XrayPacketTunnelProviderError.dnsBootstrapTimedOut
             }
-            bootstrapAddressByDomain[domain] = try bootstrapIPAddress(
+            let addresses = try bootstrapIPAddresses(
                 for: domain,
                 exactMappings: &exactMappings,
                 shouldContinue: shouldContinue,
                 resolveAddress: resolveAddress
             )
+            if excludedCarrierDomains.contains(domain) {
+                guard addresses.allSatisfy({ !isTunnelOwnedIPAddress($0) }) else {
+                    throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
+                }
+                for address in addresses {
+                    appendBootstrapAddress(
+                        address,
+                        to: &excludedAddresses,
+                        seen: &seenExcludedAddresses
+                    )
+                }
+            }
         }
 
-        for key in hosts.keys.filter({ $0.hasPrefix("full:") }) {
+        for key in hosts.keys.filter({ isExactDNSHostKey($0) }) {
             hosts.removeValue(forKey: key)
         }
         for (domain, target) in exactMappings {
-            hosts["full:\(domain)"] = target
+            hosts["full:\(domain)"] = target.jsonValue
         }
         dns["hosts"] = hosts
         root["dns"] = dns
@@ -932,13 +976,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
 
         var prepared = resolvedConfig
         prepared.json = pinnedJSON
-        if let serverAddress = prepared.serverAddress,
-           let domain = canonicalDNSBootstrapDomain(serverAddress),
-           vlessDomains.contains(domain),
-           let pinnedAddress = bootstrapAddressByDomain[domain]
-        {
-            prepared.serverAddress = pinnedAddress
-        }
+        prepared.excludedServerAddresses = excludedAddresses
         return prepared
     }
 
@@ -949,6 +987,16 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
     ) {
         if seen.insert(domain).inserted {
             domains.append(domain)
+        }
+    }
+
+    private static func appendBootstrapAddress(
+        _ address: String,
+        to addresses: inout [String],
+        seen: inout Set<String>
+    ) {
+        if seen.insert(address).inserted {
+            addresses.append(address)
         }
     }
 
@@ -965,6 +1013,33 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         return canonicalDNSBootstrapDomain(server)
     }
 
+    private static func dnsBootstrapIPAddress(fromServer server: String) -> String? {
+        if let address = canonicalIPAddress(server) {
+            return address
+        }
+        if server.first == "[", let closingBracket = server.lastIndex(of: "]") {
+            let addressStart = server.index(after: server.startIndex)
+            let portSeparator = server.index(after: closingBracket)
+            guard portSeparator < server.endIndex,
+                  server[portSeparator] == ":",
+                  server.index(after: portSeparator) < server.endIndex,
+                  let port = UInt16(server[server.index(after: portSeparator)...]),
+                  port != 0
+            else {
+                return nil
+            }
+            return canonicalIPAddress(String(server[addressStart..<closingBracket]))
+        }
+        guard let separator = server.lastIndex(of: ":"),
+              !server[..<separator].contains(":"),
+              let port = UInt16(server[server.index(after: separator)...]),
+              port != 0
+        else {
+            return nil
+        }
+        return canonicalIPAddress(String(server[..<separator]))
+    }
+
     private static func canonicalDNSBootstrapDomain(_ rawDomain: String) -> String? {
         var domain = rawDomain.trimmingCharacters(in: .whitespacesAndNewlines)
         while domain.last == "." {
@@ -979,13 +1054,27 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         return domain.lowercased()
     }
 
+    private enum DNSBootstrapHostTarget: Equatable {
+        case alias(String)
+        case addresses([String])
+
+        var jsonValue: Any {
+            switch self {
+            case let .alias(domain):
+                return domain
+            case let .addresses(addresses):
+                return addresses
+            }
+        }
+    }
+
     private static func canonicalExactDNSHostMappings(
         _ hosts: [String: Any]
-    ) throws -> [String: String] {
-        var mappings: [String: String] = [:]
-        for key in hosts.keys.sorted() where key.hasPrefix("full:") {
-            guard let domain = canonicalDNSBootstrapDomain(String(key.dropFirst("full:".count))),
-                  let rawTarget = hosts[key] as? String,
+    ) throws -> [String: DNSBootstrapHostTarget] {
+        var mappings: [String: DNSBootstrapHostTarget] = [:]
+        for key in hosts.keys.sorted() where isExactDNSHostKey(key) {
+            guard let domain = exactDNSHostIdentity(key),
+                  let rawTarget = hosts[key],
                   let target = canonicalDNSHostTarget(rawTarget)
             else {
                 throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
@@ -998,20 +1087,52 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         return mappings
     }
 
-    private static func canonicalDNSHostTarget(_ rawTarget: String) -> String? {
-        let target = rawTarget.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let address = canonicalIPAddress(target) {
-            return address
-        }
-        return canonicalDNSBootstrapDomain(target)
+    private static func isExactDNSHostKey(_ key: String) -> Bool {
+        key.hasPrefix("full:") || !key.contains(":")
     }
 
-    private static func bootstrapIPAddress(
+    private static func exactDNSHostIdentity(_ key: String) -> String? {
+        guard isExactDNSHostKey(key) else {
+            return nil
+        }
+        let domain = key.hasPrefix("full:")
+            ? String(key.dropFirst("full:".count))
+            : key
+        return canonicalDNSBootstrapDomain(domain)
+    }
+
+    private static func canonicalDNSHostTarget(_ rawTarget: Any) -> DNSBootstrapHostTarget? {
+        if let rawTarget = rawTarget as? String {
+            let target = rawTarget.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let address = canonicalIPAddress(target) {
+                return .addresses([address])
+            }
+            return canonicalDNSBootstrapDomain(target).map(DNSBootstrapHostTarget.alias)
+        }
+        guard let rawAddresses = rawTarget as? [Any], !rawAddresses.isEmpty else {
+            return nil
+        }
+        var addresses: [String] = []
+        var seen = Set<String>()
+        for rawAddress in rawAddresses {
+            guard let rawAddress = rawAddress as? String,
+                  let address = canonicalIPAddress(rawAddress)
+            else {
+                return nil
+            }
+            if seen.insert(address).inserted {
+                addresses.append(address)
+            }
+        }
+        return .addresses(addresses)
+    }
+
+    private static func bootstrapIPAddresses(
         for domain: String,
-        exactMappings: inout [String: String],
+        exactMappings: inout [String: DNSBootstrapHostTarget],
         shouldContinue: () -> Bool,
-        resolveAddress: (String) -> String?
-    ) throws -> String {
+        resolveAddress: (String) -> [String]?
+    ) throws -> [String] {
         var current = domain
         var visited = Set<String>()
         for depth in 0 ..< maximumDNSHostAliasDepth {
@@ -1025,28 +1146,45 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                 guard shouldContinue() else {
                     throw XrayPacketTunnelProviderError.dnsBootstrapTimedOut
                 }
-                guard let resolvedAddress = resolveAddress(current),
-                      let address = canonicalIPAddress(resolvedAddress)
+                guard let resolvedAddresses = resolveAddress(current),
+                      let addresses = canonicalBootstrapIPAddresses(resolvedAddresses)
                 else {
                     throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
                 }
-                exactMappings[current] = address
-                return address
+                exactMappings[current] = .addresses(addresses)
+                return addresses
             }
-            if let address = canonicalIPAddress(target) {
-                return address
+            switch target {
+            case let .addresses(addresses):
+                return addresses
+            case let .alias(alias):
+                guard depth + 1 < maximumDNSHostAliasDepth else {
+                    throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
+                }
+                current = alias
             }
-            guard let alias = canonicalDNSBootstrapDomain(target),
-                  depth + 1 < maximumDNSHostAliasDepth
-            else {
-                throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
-            }
-            current = alias
         }
         throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
     }
 
-    private static func systemIPAddress(_ domain: String) -> String? {
+    private static func canonicalBootstrapIPAddresses(_ rawAddresses: [String]) -> [String]? {
+        guard !rawAddresses.isEmpty else {
+            return nil
+        }
+        var addresses: [String] = []
+        var seen = Set<String>()
+        for rawAddress in rawAddresses {
+            guard let address = canonicalIPAddress(rawAddress) else {
+                return nil
+            }
+            if seen.insert(address).inserted {
+                addresses.append(address)
+            }
+        }
+        return addresses
+    }
+
+    private static func systemIPAddresses(_ domain: String) -> [String]? {
         var hints = addrinfo()
         // AF_UNSPEC preserves getaddrinfo's reachability ordering and allows
         // DNS64 to return a synthesized IPv6 address on IPv6-only networks.
@@ -1057,6 +1195,8 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         }
         defer { freeaddrinfo(result) }
 
+        var addresses: [String] = []
+        var seen = Set<String>()
         var cursor: UnsafeMutablePointer<addrinfo>? = result
         while let current = cursor {
             let info = current.pointee
@@ -1067,21 +1207,30 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                 ) { $0.pointee.sin_addr }
                 var buffer = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
                 if inet_ntop(AF_INET, &ipv4, &buffer, socklen_t(INET_ADDRSTRLEN)) != nil {
-                    return String(cString: buffer)
+                    let address = String(cString: buffer)
+                    if seen.insert(address).inserted {
+                        addresses.append(address)
+                    }
                 }
             } else if info.ai_family == AF_INET6, let address = info.ai_addr {
-                var ipv6 = address.withMemoryRebound(
+                let socketAddress = address.withMemoryRebound(
                     to: sockaddr_in6.self,
                     capacity: 1
-                ) { $0.pointee.sin6_addr }
-                var buffer = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
-                if inet_ntop(AF_INET6, &ipv6, &buffer, socklen_t(INET6_ADDRSTRLEN)) != nil {
-                    return String(cString: buffer)
+                ) { $0.pointee }
+                if socketAddress.sin6_scope_id == 0 {
+                    var ipv6 = socketAddress.sin6_addr
+                    var buffer = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
+                    if inet_ntop(AF_INET6, &ipv6, &buffer, socklen_t(INET6_ADDRSTRLEN)) != nil {
+                        let address = String(cString: buffer)
+                        if seen.insert(address).inserted {
+                            addresses.append(address)
+                        }
+                    }
                 }
             }
             cursor = info.ai_next
         }
-        return nil
+        return addresses.isEmpty ? nil : addresses
     }
 
     static func debugLoggingEnabled(
@@ -1292,23 +1441,24 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
     }
 
     static func networkSettings(
-        excludingServerAddress serverAddress: String? = nil,
+        excludingServerAddresses serverAddresses: [String] = [],
         resolvedDNSConfiguration: XrayPacketTunnelResolvedDNSConfiguration
     ) -> NEPacketTunnelNetworkSettings {
         let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: tunnelRemoteAddress)
         settings.mtu = 1500
 
         let ipv4Settings = NEIPv4Settings(
-            addresses: ["198.18.0.2"],
+            addresses: [tunnelLocalIPv4Address],
             subnetMasks: ["255.255.255.0"]
         )
         ipv4Settings.includedRoutes = [NEIPv4Route.default()]
-        if let excludedRoute = ipv4ExcludedRoute(for: serverAddress) {
+        let ipv4ExcludedRoutes = ipv4ExcludedRoutes(for: serverAddresses)
+        if !ipv4ExcludedRoutes.isEmpty {
             XrayAppleLog.info(
                 "PacketTunnelProvider",
-                "Excluding proxy server IPv4 /32 route from tunnel"
+                "Excluding \(ipv4ExcludedRoutes.count) bootstrap IPv4 /32 route(s) from tunnel"
             )
-            ipv4Settings.excludedRoutes = [excludedRoute]
+            ipv4Settings.excludedRoutes = ipv4ExcludedRoutes
         }
         settings.ipv4Settings = ipv4Settings
 
@@ -1317,12 +1467,13 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             networkPrefixLengths: [128]
         )
         ipv6Settings.includedRoutes = [NEIPv6Route.default()]
-        if let excludedRoute = ipv6ExcludedRoute(for: serverAddress) {
+        let ipv6ExcludedRoutes = ipv6ExcludedRoutes(for: serverAddresses)
+        if !ipv6ExcludedRoutes.isEmpty {
             XrayAppleLog.info(
                 "PacketTunnelProvider",
-                "Excluding proxy server IPv6 /128 route from tunnel"
+                "Excluding \(ipv6ExcludedRoutes.count) bootstrap IPv6 /128 route(s) from tunnel"
             )
-            ipv6Settings.excludedRoutes = [excludedRoute]
+            ipv6Settings.excludedRoutes = ipv6ExcludedRoutes
         }
         settings.ipv6Settings = ipv6Settings
 
@@ -1689,24 +1840,38 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         }
     }
 
-    private static func ipv4ExcludedRoute(for serverAddress: String?) -> NEIPv4Route? {
-        guard let serverAddress, isIPAddress(serverAddress, family: AF_INET) else {
-            return nil
+    private static func ipv4ExcludedRoutes(for serverAddresses: [String]) -> [NEIPv4Route] {
+        var seen = Set<String>()
+        return serverAddresses.compactMap { rawAddress in
+            guard let address = canonicalIPAddress(rawAddress),
+                  isIPAddress(address, family: AF_INET),
+                  !isTunnelOwnedIPAddress(address),
+                  seen.insert(address).inserted
+            else {
+                return nil
+            }
+            return NEIPv4Route(
+                destinationAddress: address,
+                subnetMask: "255.255.255.255"
+            )
         }
-        return NEIPv4Route(
-            destinationAddress: serverAddress,
-            subnetMask: "255.255.255.255"
-        )
     }
 
-    private static func ipv6ExcludedRoute(for serverAddress: String?) -> NEIPv6Route? {
-        guard let serverAddress, isIPAddress(serverAddress, family: AF_INET6) else {
-            return nil
+    private static func ipv6ExcludedRoutes(for serverAddresses: [String]) -> [NEIPv6Route] {
+        var seen = Set<String>()
+        return serverAddresses.compactMap { rawAddress in
+            guard let address = canonicalIPAddress(rawAddress),
+                  isIPAddress(address, family: AF_INET6),
+                  !isTunnelOwnedIPAddress(address),
+                  seen.insert(address).inserted
+            else {
+                return nil
+            }
+            return NEIPv6Route(
+                destinationAddress: address,
+                networkPrefixLength: 128
+            )
         }
-        return NEIPv6Route(
-            destinationAddress: serverAddress,
-            networkPrefixLength: 128
-        )
     }
 
     private static func canonicalIPAddress(_ rawAddress: String) -> String? {
@@ -1722,6 +1887,14 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
 
         var ipv6 = in6_addr()
         if address.withCString({ inet_pton(AF_INET6, $0, &ipv6) }) == 1 {
+            let bytes = withUnsafeBytes(of: &ipv6) { Array($0) }
+            if bytes.count == 16,
+               bytes[..<10].allSatisfy({ $0 == 0 }),
+               bytes[10] == 0xFF,
+               bytes[11] == 0xFF
+            {
+                return "\(bytes[12]).\(bytes[13]).\(bytes[14]).\(bytes[15])"
+            }
             var buffer = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
             guard inet_ntop(AF_INET6, &ipv6, &buffer, socklen_t(INET6_ADDRSTRLEN)) != nil else {
                 return nil
@@ -1729,6 +1902,19 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             return String(cString: buffer)
         }
         return nil
+    }
+
+    private static func isTunnelOwnedIPAddress(_ rawAddress: String) -> Bool {
+        guard let address = canonicalIPAddress(rawAddress) else {
+            return false
+        }
+        if address == tunnelRemoteAddress ||
+            address == tunnelLocalIPv4Address ||
+            address == tunnelLocalIPv6Address
+        {
+            return true
+        }
+        return false
     }
 
     private static func isIPAddress(_ address: String, family: Int32) -> Bool {

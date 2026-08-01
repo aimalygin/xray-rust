@@ -563,13 +563,39 @@ pub(super) async fn resolve_freedom_dns_upstream(
     upstream: &DnsProxyUpstream,
     context: &TunRuntimeContext,
 ) -> Result<SocketAddr, crate::CoreError> {
+    resolve_freedom_dns_upstreams(upstream, context)
+        .await?
+        .into_iter()
+        .next()
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "DNS upstream hostname has no bootstrap address",
+            )
+            .into()
+        })
+}
+
+pub(super) async fn resolve_freedom_dns_upstreams(
+    upstream: &DnsProxyUpstream,
+    context: &TunRuntimeContext,
+) -> Result<Vec<SocketAddr>, crate::CoreError> {
     let resolved = match upstream {
-        DnsProxyUpstream::Ip(addr) => Ok(*addr),
+        DnsProxyUpstream::Ip(addr) => vec![*addr],
         DnsProxyUpstream::Domain { domain, port } => {
             let bootstrap_domain =
                 match crate::dns::static_dns_host_target(context.config.as_ref(), domain) {
                     Some(xray_config::DnsHostTarget::Ip(ip)) => {
-                        return validate_freedom_dns_upstream(SocketAddr::new(ip, *port));
+                        return Ok(vec![validate_freedom_dns_upstream(SocketAddr::new(
+                            ip, *port,
+                        ))?]);
+                    }
+                    Some(xray_config::DnsHostTarget::Ips(ips)) => {
+                        return ips
+                            .into_iter()
+                            .map(|ip| validate_freedom_dns_upstream(SocketAddr::new(ip, *port)))
+                            .collect::<Result<Vec<_>, _>>()
+                            .and_then(ensure_freedom_dns_upstreams);
                     }
                     Some(xray_config::DnsHostTarget::Domain(alias)) => alias,
                     None => domain.clone(),
@@ -582,12 +608,30 @@ pub(super) async fn resolve_freedom_dns_upstream(
                 .into());
             };
             resolver
-                .resolve(&bootstrap_domain, *port)
+                .resolve_all(&bootstrap_domain, *port)
                 .await
                 .map_err(crate::CoreError::from)
+                .map(|lookup| lookup.socket_addrs().to_vec())?
         }
-    }?;
-    validate_freedom_dns_upstream(resolved)
+    };
+    resolved
+        .into_iter()
+        .map(validate_freedom_dns_upstream)
+        .collect::<Result<Vec<_>, _>>()
+        .and_then(ensure_freedom_dns_upstreams)
+}
+
+fn ensure_freedom_dns_upstreams(
+    resolved: Vec<SocketAddr>,
+) -> Result<Vec<SocketAddr>, crate::CoreError> {
+    if resolved.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "DNS upstream hostname has no bootstrap address",
+        )
+        .into());
+    }
+    Ok(resolved)
 }
 
 fn validate_freedom_dns_upstream(addr: SocketAddr) -> Result<SocketAddr, crate::CoreError> {

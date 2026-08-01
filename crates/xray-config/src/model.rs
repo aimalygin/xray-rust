@@ -61,6 +61,7 @@ pub struct DnsHostMapping {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DnsHostTarget {
     Ip(IpAddr),
+    Ips(Vec<IpAddr>),
     Domain(String),
 }
 
@@ -466,6 +467,31 @@ pub struct PolicySystemConfig {
 pub struct StreamSettings {
     pub network: Network,
     pub security: StreamSecurity,
+    pub socket_options: Option<SocketOptions>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SocketOptions {
+    pub happy_eyeballs: Option<HappyEyeballsSettings>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HappyEyeballsSettings {
+    pub prioritize_ipv6: bool,
+    pub interleave: u32,
+    pub try_delay_ms: u64,
+    pub max_concurrent_try: u32,
+}
+
+impl Default for HappyEyeballsSettings {
+    fn default() -> Self {
+        Self {
+            prioritize_ipv6: false,
+            interleave: 1,
+            try_delay_ms: 0,
+            max_concurrent_try: 4,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

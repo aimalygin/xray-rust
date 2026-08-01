@@ -11,7 +11,7 @@ use xray_proxy::vless::{
 };
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr};
 use xray_transport::{
-    connect_tcp_stream, dns_response_matches_query, protect_udp_socket, DnsQueryTransport,
+    dns_response_matches_query, protect_udp_socket, ConnectorConfig, DnsQueryTransport,
     DnsQueryTransportKind, DnsResolver, NameServer, TransportDialer,
 };
 
@@ -75,15 +75,28 @@ impl RoutedDnsQueryTransport {
     }
 
     async fn resolved_server(&self, server: &NameServer) -> io::Result<SocketAddr> {
+        self.resolved_servers(server)
+            .await?
+            .into_iter()
+            .next()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "DNS server has no address"))
+    }
+
+    async fn resolved_servers(&self, server: &NameServer) -> io::Result<Vec<SocketAddr>> {
         let resolved = match server {
-            NameServer::Socket(addr) => *addr,
+            NameServer::Socket(addr) => vec![*addr],
             NameServer::Domain { domain, port } => self
                 .bootstrap_resolver
-                .resolve(domain, *port)
+                .resolve_all(domain, *port)
                 .await
-                .map_err(io::Error::other)?,
+                .map_err(io::Error::other)?
+                .socket_addrs()
+                .to_vec(),
         };
-        self.validate_server(resolved)
+        resolved
+            .into_iter()
+            .map(|candidate| self.validate_server(candidate))
+            .collect()
     }
 
     fn validate_server(&self, server: SocketAddr) -> io::Result<SocketAddr> {
@@ -169,13 +182,17 @@ impl RoutedDnsQueryTransport {
             .map_err(io::Error::other)?;
 
         let mut stream = match selected.outbound {
-            TcpOutbound::Freedom => {
-                let server = self.resolved_server(server).await?;
-                Box::new(
-                    connect_tcp_stream(server, self.transport_dialer.socket_protector())
-                        .await
-                        .map_err(io::Error::other)?,
-                ) as xray_transport::BoxedTransportStream
+            outbound @ (TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_)) => {
+                let candidates = self.resolved_servers(server).await?;
+                self.transport_dialer
+                    .connect_resolved(
+                        &ConnectorConfig::Tcp,
+                        &target,
+                        &candidates,
+                        outbound.freedom_happy_eyeballs(),
+                    )
+                    .await
+                    .map_err(io::Error::other)?
             }
             outbound @ TcpOutbound::Vless(_) => {
                 if server_socket_has_nonzero_scope(server) {
@@ -284,6 +301,7 @@ pub(crate) fn static_dns_host_target(config: &CoreConfig, domain: &str) -> Optio
         };
         match &mapping.target {
             DnsHostTarget::Ip(ip) => return Some(DnsHostTarget::Ip(*ip)),
+            DnsHostTarget::Ips(ips) => return Some(DnsHostTarget::Ips(ips.clone())),
             DnsHostTarget::Domain(alias) => {
                 let alias = normalize_dns_name(alias)?;
                 if alias == current {

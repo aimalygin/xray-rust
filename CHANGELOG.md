@@ -7,11 +7,25 @@ development changes are recorded under `Unreleased`.
 
 ## Unreleased
 
+- Added Xray-compatible `streamSettings.sockopt.happyEyeballs` for Freedom and
+  VLESS TCP carriers. The modeled defaults are IPv4 preference,
+  `interleave: 1`, `tryDelayMs: 0`, and `maxConcurrentTry: 4`; zero delay or
+  zero concurrency is the feature-off sentinel, while `interleave: 0`
+  exhausts the preferred address family before trying the alternate family.
+  When enabled with multiple candidates, the scheduler races raw TCP only,
+  accelerates the next candidate after a fast failure, bounds concurrency, and
+  performs exactly one TLS or REALITY handshake on the winning socket. Losing
+  and caller-cancelled attempts are dropped in place without detached tasks;
+  socket protection is applied independently to every launched candidate.
 - Added ordered multi-address DNS results with TTL metadata. Configured A and
   AAAA lookups run concurrently, preserve every usable candidate, apply the
   Xray-core 300-second answer/cache cap and 10-second static-host TTL, and
   expose remaining TTL on cache hits. `IPIfNonMatch` now evaluates rules in
   configuration order against all resolved IPs instead of only the first.
+  Xray-compatible `dns.hosts` values may now be a single IP/domain string or a
+  nonempty ordered array of IP strings; every array candidate is retained. Bare
+  host keys now use Xray's exact/full default instead of routing keyword
+  semantics, including during Android and Apple bootstrap.
   Authoritative NXDOMAIN/NODATA advances to later configured upstreams before
   becoming terminal, while the bounded cancellation-safe cache remains
   mobile-friendly.
@@ -29,9 +43,9 @@ development changes are recorded under `Unreleased`.
   deadline now includes any operating-system fallback.
 - Extended routed DNS to preserve domain upstreams. VLESS sends them for remote
   resolution; Freedom uses the separate bootstrap resolver and fails over when
-  `StaticOnly` has no terminal `dns.hosts` IP. After domain rules miss,
-  DNS-upstream `IPIfNonMatch` routing uses only that bootstrap role for its IP
-  pass and cannot recurse through destination DNS. Like Xray-core, a failed
+  `StaticOnly` has no terminal `dns.hosts` IP or IP array. After domain rules
+  miss, DNS-upstream `IPIfNonMatch` routing uses only that bootstrap role for
+  its IP pass and cannot recurse through destination DNS. Like Xray-core, a failed
   `IPIfNonMatch` lookup continues to the default outbound instead of aborting
   routing, so a default VLESS can still resolve the domain remotely.
 - Added fake-IP DNS-over-TCP and Xray-style bounded LRU mappings through
@@ -42,14 +56,19 @@ development changes are recorded under `Unreleased`.
   any valid IP/domain `dns.servers` profile advertise the tunnel-local
   `198.18.0.1` interception anchor, while explicit host IPv4/IPv6 DNS overrides
   remain supported. Before applying the anchor, the provider resolves domain
-  VLESS servers and domain DNS upstreams, installs canonical exact `dns.hosts`
-  bootstrap mappings, preserves VLESS addresses exactly, bounds alias
-  traversal, accepts IPv4/IPv6/DNS64 bootstrap results, and fails startup on
-  cycles or unresolved bootstrap. The asynchronous preflight has one shared
-  five-second deadline, exactly-once lifecycle completion, and a process-wide
-  gated resolver worker so a non-interruptible `getaddrinfo` cannot block the
-  provider callback or create an unbounded queue. Apple now installs IPv4 and
-  IPv6 default routes with a matching `/32` or `/128` proxy-server exclusion.
+  VLESS servers and domain DNS upstreams, installs every ordered IPv4/IPv6
+  bootstrap result as canonical exact `dns.hosts` arrays, preserves VLESS
+  addresses exactly, bounds alias traversal, accepts DNS64 results, and fails
+  startup on cycles or unresolved bootstrap. The asynchronous preflight has
+  one shared five-second deadline, exactly-once lifecycle completion, and a
+  process-wide gated resolver worker so a non-interruptible `getaddrinfo`
+  cannot block the provider callback or create an unbounded queue. Before the
+  core starts, Apple installs an excluded `/32` or `/128` route for every VLESS
+  carrier candidate alongside both default tunnel routes. Pinned DNS-upstream
+  addresses remain routed through the tunnel instead of gaining a global
+  privacy-bypassing exclusion, and tunnel-owned addresses fail closed instead
+  of becoming route-poisoning carrier exclusions. IPv4-mapped IPv6 carriers
+  are normalized consistently before both Rust dialing and Apple route setup.
   Missing or conflicting host DNS modes still fail closed.
   Fake-IP DNS returns NODATA for supported non-A queries sent to the anchor.
 - Made fake-only mobile profiles topology-aware without choosing a public DNS:
@@ -61,8 +80,10 @@ development changes are recorded under `Unreleased`.
 - Made Android reference VPN startup asynchronous and cancellation-safe. DNS
   bootstrap lookups share one five-second deadline; start and blocking resolver
   workers use bounded zero-queue pools, stop never waits for a pending lookup,
-  and token-scoped state transitions prevent late publication or rapid-restart
-  races.
+  token-scoped state transitions prevent late publication or rapid-restart
+  races, and every ordered A/AAAA bootstrap result is pinned in a `dns.hosts`
+  array. Each Happy Eyeballs TCP candidate is protected separately through
+  `VpnService.protect(fd)` before connect.
 - Added a bounded tunnel-local UDP/TCP DNS proxy for IP/domain `dns.servers`.
   Upstream attempts follow configured order and use the existing outbound
   router (including VLESS and protected Freedom sockets); failures return

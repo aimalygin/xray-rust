@@ -88,6 +88,18 @@ impl TlsConnector {
             .await
     }
 
+    /// Connects one resolved address without discarding IPv6 scope or flow metadata.
+    pub async fn connect_socket_addr(
+        &self,
+        addr: SocketAddr,
+        config: &TlsClientConfig,
+    ) -> Result<BoxedTransportStream, TransportError> {
+        let server_name = tls_server_name(config)?;
+        let stream = connect_tcp_stream(addr, self.socket_protector.as_deref()).await?;
+        self.connect_stream_with_server_name(Box::new(stream), config, server_name)
+            .await
+    }
+
     /// Races raw TCP candidates, then performs exactly one TLS handshake on
     /// the winning stream.
     pub async fn connect_candidates(

@@ -18,7 +18,7 @@ use tokio::time::{sleep, Duration, Instant as TokioInstant};
 use xray_config::{CoreConfig, DnsFakeIpConfig, DnsServerConfig, InboundSniffingConfig};
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::{
-    connect_tcp_stream, dns_response_matches_query, protect_udp_socket, BoxedTransportStream,
+    dns_response_matches_query, protect_udp_socket, BoxedTransportStream, ConnectorConfig,
     DnsResolver, TransportDialer,
 };
 use xray_tun::{
@@ -2493,12 +2493,18 @@ async fn open_tcp_bridge_stream(
 ) -> Result<BoxedTransportStream, crate::CoreError> {
     if let Some(upstream) = dns_upstream {
         match outbound {
-            TcpOutbound::Freedom => {
-                let upstream = dns_proxy::resolve_freedom_dns_upstream(upstream, context).await?;
-                let stream =
-                    connect_tcp_stream(upstream, context.transport_dialer.socket_protector())
-                        .await?;
-                return Ok(Box::new(stream));
+            TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => {
+                let candidates =
+                    dns_proxy::resolve_freedom_dns_upstreams(upstream, context).await?;
+                return Ok(context
+                    .transport_dialer
+                    .connect_resolved(
+                        &ConnectorConfig::Tcp,
+                        target,
+                        &candidates,
+                        outbound.freedom_happy_eyeballs(),
+                    )
+                    .await?);
             }
             TcpOutbound::Vless(_)
                 if upstream
@@ -2514,23 +2520,14 @@ async fn open_tcp_bridge_stream(
             TcpOutbound::Vless(_) => {}
         }
     }
-    match outbound {
-        TcpOutbound::Freedom => {
-            let target = resolve_udp_freedom_target(target, context.dns_resolver.as_ref()).await?;
-            let stream =
-                connect_tcp_stream(target, context.transport_dialer.socket_protector()).await?;
-            Ok(Box::new(stream))
+    let resolver = match outbound {
+        TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => {
+            context.dns_resolver.as_ref()
         }
-        TcpOutbound::Vless(_) => {
-            open_tcp_stream_with_resolver_and_dialer(
-                outbound,
-                target,
-                context.bootstrap_dns_resolver(),
-                &context.transport_dialer,
-            )
-            .await
-        }
-    }
+        TcpOutbound::Vless(_) => context.bootstrap_dns_resolver(),
+    };
+    open_tcp_stream_with_resolver_and_dialer(outbound, target, resolver, &context.transport_dialer)
+        .await
 }
 
 fn socket_addr_has_nonzero_scope(addr: SocketAddr) -> bool {
@@ -2617,7 +2614,9 @@ async fn bridge_tcp_flow(
             }
         };
         let policy_timeout = match &outbound {
-            TcpOutbound::Freedom => context.inbound_policy.handshake,
+            TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => {
+                context.inbound_policy.handshake
+            }
             TcpOutbound::Vless(outbound) => {
                 effective_policy_for_level(&context.config, Some(outbound.user().level)).handshake
             }
