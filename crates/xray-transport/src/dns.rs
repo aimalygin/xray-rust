@@ -136,6 +136,22 @@ pub trait DnsResolver: Send + Sync {
         let address = self.resolve(domain, port).await?;
         Ok(DnsLookup::single(address, None))
     }
+
+    /// Resolves addresses permitted by `strategy`.
+    ///
+    /// The default preserves compatibility with address-oriented resolvers by
+    /// filtering [`DnsResolver::resolve_all`] after it completes. Resolvers
+    /// that control DNS wire queries or family-aware caches should override
+    /// this method so the strategy is applied before I/O and single-flight.
+    async fn resolve_all_with_strategy(
+        &self,
+        domain: &str,
+        port: u16,
+        strategy: DnsQueryStrategy,
+    ) -> Result<DnsLookup, TransportError> {
+        let lookup = self.resolve_all(domain, port).await?;
+        filter_dns_lookup_by_strategy(lookup, domain, port, strategy)
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -181,8 +197,8 @@ pub struct CachingDnsResolver {
 
 #[derive(Default)]
 struct DnsCacheState {
-    resolved: HashMap<(String, u16), CachedDnsLookup>,
-    in_flight: HashMap<(String, u16), Arc<InFlightDnsLookup>>,
+    resolved: HashMap<(String, u16, DnsQueryStrategy), CachedDnsLookup>,
+    in_flight: HashMap<(String, u16, DnsQueryStrategy), Arc<InFlightDnsLookup>>,
     access_sequence: u64,
 }
 
@@ -295,7 +311,7 @@ impl InFlightDnsLookup {
 
 struct InFlightDnsLeader<'a> {
     state: &'a Mutex<DnsCacheState>,
-    key: (String, u16),
+    key: (String, u16, DnsQueryStrategy),
     lookup: Arc<InFlightDnsLookup>,
     active: bool,
 }
@@ -402,9 +418,20 @@ impl DnsResolver for CachingDnsResolver {
     }
 
     async fn resolve_all(&self, domain: &str, port: u16) -> Result<DnsLookup, TransportError> {
+        self.resolve_all_with_strategy(domain, port, DnsQueryStrategy::UseIp)
+            .await
+    }
+
+    async fn resolve_all_with_strategy(
+        &self,
+        domain: &str,
+        port: u16,
+        strategy: DnsQueryStrategy,
+    ) -> Result<DnsLookup, TransportError> {
         let key = (
             normalize_dns_name(domain).unwrap_or_else(|| domain.to_ascii_lowercase()),
             port,
+            strategy,
         );
         let lookup = loop {
             let now = Instant::now();
@@ -460,12 +487,16 @@ impl DnsResolver for CachingDnsResolver {
             lookup,
             active: true,
         };
-        let resolved = self
-            .inner
-            .resolve_all(domain, port)
-            .await
-            .and_then(|lookup| lookup.ensure_non_empty(domain, port))
-            .map(|lookup| lookup.with_ttl_cap(self.ttl));
+        let resolved = match strategy {
+            DnsQueryStrategy::UseIp => self.inner.resolve_all(domain, port).await,
+            DnsQueryStrategy::UseIpv4 | DnsQueryStrategy::UseIpv6 => {
+                self.inner
+                    .resolve_all_with_strategy(domain, port, strategy)
+                    .await
+            }
+        }
+        .and_then(|lookup| lookup.ensure_non_empty(domain, port))
+        .map(|lookup| lookup.with_ttl_cap(self.ttl));
         leader.finish(InFlightDnsOutcome::from_result(&resolved));
         resolved
     }
@@ -1017,7 +1048,7 @@ fn private_dns_ip_cidrs() -> [DnsIpCidr; 9] {
     ]
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub enum DnsQueryStrategy {
     #[default]
     UseIp,
@@ -1048,6 +1079,29 @@ impl DnsQueryStrategy {
             (Self::UseIpv4, Self::UseIpv6) | (Self::UseIpv6, Self::UseIpv4) => None,
         }
     }
+}
+
+fn filter_dns_lookup_by_strategy(
+    lookup: DnsLookup,
+    domain: &str,
+    port: u16,
+    strategy: DnsQueryStrategy,
+) -> Result<DnsLookup, TransportError> {
+    if strategy == DnsQueryStrategy::UseIp {
+        return lookup.ensure_non_empty(domain, port);
+    }
+
+    let ttl = lookup.ttl();
+    DnsLookup::new(
+        lookup
+            .socket_addrs()
+            .iter()
+            .copied()
+            .filter(|address| strategy.accepts(address.ip())),
+        ttl,
+    )
+    .ensure_non_empty(domain, port)
+    .map_err(|_| TransportError::DnsNoData(domain.to_owned(), port))
 }
 
 /// Wire transport used for a DNS query.
@@ -1727,6 +1781,7 @@ impl ConfiguredDnsResolver {
         &self,
         domain: &str,
         selected_servers: &[usize],
+        query_strategy: DnsQueryStrategy,
     ) -> ConfiguredServersResult {
         let mut last_negative = None;
         for &index in selected_servers {
@@ -1740,7 +1795,7 @@ impl ConfiguredDnsResolver {
             for depth in 0..MAX_DNS_ALIAS_DEPTH {
                 let started_at = Instant::now();
                 let result = self
-                    .query_configured_server(name_server, &current_domain, deadline)
+                    .query_configured_server(name_server, &current_domain, deadline, query_strategy)
                     .await;
                 cname_ttl_cap = age_ttl_cap(cname_ttl_cap, started_at.elapsed());
                 match result {
@@ -1790,11 +1845,11 @@ impl ConfiguredDnsResolver {
         name_server: &CompiledNameServerPolicy,
         domain: &str,
         deadline: time::Instant,
+        query_strategy: DnsQueryStrategy,
     ) -> io::Result<ConfiguredServerResult> {
-        let Some(query_strategy) = self.query_strategy.intersect(name_server.query_strategy) else {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "dns server query strategy has no address family in common with the global strategy",
+        let Some(query_strategy) = query_strategy.intersect(name_server.query_strategy) else {
+            return Ok(ConfiguredServerResult::Negative(
+                ConfiguredDnsNegative::NoData,
             ));
         };
         let (transport, metadata) = match name_server.transport {
@@ -1925,14 +1980,19 @@ impl ConfiguredDnsResolver {
         }
     }
 
-    async fn resolve_configured(&self, domain: &str, port: u16) -> ConfiguredLookupResult {
+    async fn resolve_configured(
+        &self,
+        domain: &str,
+        port: u16,
+        query_strategy: DnsQueryStrategy,
+    ) -> ConfiguredLookupResult {
         let mut current_domain = normalize_dns_name(domain).unwrap_or_else(|| domain.to_owned());
         let mut ttl_cap = None;
         for depth in 0..MAX_DNS_ALIAS_DEPTH {
             if let Some(rule) = self.matching_host_rule(&current_domain) {
                 match &rule.target {
                     StaticHostTarget::Ip(ip) => {
-                        if !self.query_strategy.accepts(*ip) {
+                        if !query_strategy.accepts(*ip) {
                             return ConfiguredLookupResult::Negative {
                                 domain: current_domain,
                                 negative: ConfiguredDnsNegative::NoData,
@@ -1947,11 +2007,7 @@ impl ConfiguredDnsResolver {
                         ));
                     }
                     StaticHostTarget::Ips(ips) => {
-                        if !ips
-                            .iter()
-                            .copied()
-                            .any(|ip| self.query_strategy.accepts(ip))
-                        {
+                        if !ips.iter().copied().any(|ip| query_strategy.accepts(ip)) {
                             return ConfiguredLookupResult::Negative {
                                 domain: current_domain,
                                 negative: ConfiguredDnsNegative::NoData,
@@ -1959,9 +2015,7 @@ impl ConfiguredDnsResolver {
                         }
                         return ConfiguredLookupResult::Resolved(cap_lookup_ttl(
                             DnsLookup::from_ips(
-                                ips.iter()
-                                    .copied()
-                                    .filter(|ip| self.query_strategy.accepts(*ip)),
+                                ips.iter().copied().filter(|ip| query_strategy.accepts(*ip)),
                                 port,
                                 Some(DNS_STATIC_HOST_TTL),
                             ),
@@ -1988,7 +2042,7 @@ impl ConfiguredDnsResolver {
                 self.disable_fallback_if_match,
             );
             let result = self
-                .query_configured_servers(&current_domain, &server_plan)
+                .query_configured_servers(&current_domain, &server_plan, query_strategy)
                 .await;
             ttl_cap = age_ttl_cap(ttl_cap, started_at.elapsed());
             match result {
@@ -1997,7 +2051,7 @@ impl ConfiguredDnsResolver {
                         answer
                             .addresses
                             .into_iter()
-                            .filter(|ip| self.query_strategy.accepts(*ip)),
+                            .filter(|ip| query_strategy.accepts(*ip)),
                         port,
                         Some(answer.ttl),
                     );
@@ -2185,21 +2239,24 @@ fn merge_configured_family_results<const N: usize>(
     Err(invalid_dns_response("DNS server returned no family result"))
 }
 
-#[async_trait]
-impl DnsResolver for ConfiguredDnsResolver {
-    async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
-        self.resolve_all(domain, port)
-            .await?
-            .first_socket_addr(domain, port)
-    }
-
-    async fn resolve_all(&self, domain: &str, port: u16) -> Result<DnsLookup, TransportError> {
+impl ConfiguredDnsResolver {
+    async fn resolve_all_for_strategy(
+        &self,
+        domain: &str,
+        port: u16,
+        requested_strategy: DnsQueryStrategy,
+    ) -> Result<DnsLookup, TransportError> {
+        let Some(query_strategy) = self.query_strategy.intersect(requested_strategy) else {
+            return Err(TransportError::DnsNoData(domain.to_owned(), port));
+        };
         let resolution = async {
-            match self.resolve_configured(domain, port).await {
+            match self.resolve_configured(domain, port, query_strategy).await {
                 ConfiguredLookupResult::Resolved(lookup) => Ok(lookup),
                 ConfiguredLookupResult::Fallback { domain, ttl_cap } => {
                     let started_at = Instant::now();
-                    let fallback = self.fallback.resolve_all(&domain, port);
+                    let fallback =
+                        self.fallback
+                            .resolve_all_with_strategy(&domain, port, query_strategy);
                     let result = match (self.resolution_timeout, self.system_fallback_timeout) {
                         (None, Some(fallback_timeout)) => time::timeout(fallback_timeout, fallback)
                             .await
@@ -2219,19 +2276,8 @@ impl DnsResolver for ConfiguredDnsResolver {
                         .map(|lookup| {
                             cap_lookup_ttl(lookup, age_ttl_cap(ttl_cap, started_at.elapsed()))
                         })
-                        .and_then(|lookup| match self.query_strategy {
-                            DnsQueryStrategy::UseIp => lookup.ensure_non_empty(&domain, port),
-                            DnsQueryStrategy::UseIpv4 | DnsQueryStrategy::UseIpv6 => {
-                                let ttl = lookup.ttl();
-                                DnsLookup::new(
-                                    lookup.socket_addrs().iter().copied().filter(|address| {
-                                        self.query_strategy.accepts(address.ip())
-                                    }),
-                                    ttl,
-                                )
-                                .ensure_non_empty(&domain, port)
-                                .map_err(|_| TransportError::DnsNoData(domain, port))
-                            }
+                        .and_then(|lookup| {
+                            filter_dns_lookup_by_strategy(lookup, &domain, port, query_strategy)
                         })
                 }
                 ConfiguredLookupResult::Negative {
@@ -2263,6 +2309,29 @@ impl DnsResolver for ConfiguredDnsResolver {
                 source: io::Error::new(io::ErrorKind::TimedOut, "DNS resolution timed out"),
             }),
         }
+    }
+}
+
+#[async_trait]
+impl DnsResolver for ConfiguredDnsResolver {
+    async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+        self.resolve_all(domain, port)
+            .await?
+            .first_socket_addr(domain, port)
+    }
+
+    async fn resolve_all(&self, domain: &str, port: u16) -> Result<DnsLookup, TransportError> {
+        self.resolve_all_for_strategy(domain, port, DnsQueryStrategy::UseIp)
+            .await
+    }
+
+    async fn resolve_all_with_strategy(
+        &self,
+        domain: &str,
+        port: u16,
+        strategy: DnsQueryStrategy,
+    ) -> Result<DnsLookup, TransportError> {
+        self.resolve_all_for_strategy(domain, port, strategy).await
     }
 }
 
@@ -3410,6 +3479,21 @@ mod tests {
         assert_eq!(lookup.socket_addrs(), &[expected]);
     }
 
+    #[tokio::test]
+    async fn default_resolve_all_with_strategy_filters_legacy_result() {
+        let resolver = LegacySocketDnsResolver(SocketAddr::from((Ipv6Addr::LOCALHOST, 443)));
+
+        let error = resolver
+            .resolve_all_with_strategy("legacy.example", 443, DnsQueryStrategy::UseIpv4)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            TransportError::DnsNoData(domain, 443) if domain == "legacy.example"
+        ));
+    }
+
     #[derive(Default)]
     struct CountingProtector {
         calls: AtomicUsize,
@@ -3563,6 +3647,51 @@ mod tests {
     impl DnsResolver for RejectingResolver {
         async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
             Err(TransportError::NoResolvedAddress(domain.to_owned(), port))
+        }
+    }
+
+    #[derive(Default)]
+    struct StrategyRecordingFallback {
+        strategies: Mutex<Vec<DnsQueryStrategy>>,
+    }
+
+    #[async_trait::async_trait]
+    impl DnsResolver for StrategyRecordingFallback {
+        async fn resolve(&self, _domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+            Ok(SocketAddr::from(([192, 0, 2, 97], port)))
+        }
+
+        async fn resolve_all(&self, _domain: &str, port: u16) -> Result<DnsLookup, TransportError> {
+            Ok(DnsLookup::from_ips(
+                [
+                    IpAddr::V4(Ipv4Addr::new(192, 0, 2, 97)),
+                    IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 97)),
+                ],
+                port,
+                Some(Duration::from_secs(60)),
+            ))
+        }
+
+        async fn resolve_all_with_strategy(
+            &self,
+            _domain: &str,
+            port: u16,
+            strategy: DnsQueryStrategy,
+        ) -> Result<DnsLookup, TransportError> {
+            self.strategies.lock().unwrap().push(strategy);
+            let address = match strategy {
+                DnsQueryStrategy::UseIp | DnsQueryStrategy::UseIpv4 => {
+                    IpAddr::V4(Ipv4Addr::new(192, 0, 2, 97))
+                }
+                DnsQueryStrategy::UseIpv6 => {
+                    IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 97))
+                }
+            };
+            Ok(DnsLookup::from_ips(
+                [address],
+                port,
+                Some(Duration::from_secs(60)),
+            ))
         }
     }
 
@@ -3721,6 +3850,133 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn configured_dns_requested_ipv4_queries_only_a() {
+        let transport = Arc::new(FamilyRecordingQueryTransport::default());
+        let resolver = ConfiguredDnsResolver::new(
+            Vec::new(),
+            vec![NameServer::Socket(SocketAddr::from(([192, 0, 2, 53], 53)))],
+            Arc::new(RejectingResolver),
+        )
+        .with_query_transport(transport.clone());
+
+        let lookup = resolver
+            .resolve_all_with_strategy("family.example", 443, DnsQueryStrategy::UseIpv4)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            lookup.socket_addrs(),
+            &[SocketAddr::from(([192, 0, 2, 90], 443))]
+        );
+        assert_eq!(*transport.record_types.lock().unwrap(), [1]);
+    }
+
+    #[tokio::test]
+    async fn configured_dns_requested_family_skips_incompatible_server_without_io() {
+        let first = NameServer::Socket(SocketAddr::from(([192, 0, 2, 53], 53)));
+        let second = NameServer::Socket(SocketAddr::from(([192, 0, 2, 54], 53)));
+        let mut incompatible = NameServerPolicy::new(first);
+        incompatible.query_strategy = DnsQueryStrategy::UseIpv6;
+        let mut compatible = NameServerPolicy::new(second);
+        compatible.query_strategy = DnsQueryStrategy::UseIpv4;
+        let transport = Arc::new(FamilyRecordingQueryTransport::default());
+        let resolver =
+            ConfiguredDnsResolver::new(Vec::new(), Vec::new(), Arc::new(RejectingResolver))
+                .with_name_server_policies(vec![incompatible, compatible])
+                .with_query_transport(transport.clone());
+
+        let lookup = resolver
+            .resolve_all_with_strategy("family.example", 443, DnsQueryStrategy::UseIpv4)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            lookup.socket_addrs(),
+            &[SocketAddr::from(([192, 0, 2, 90], 443))]
+        );
+        assert_eq!(*transport.record_types.lock().unwrap(), [1]);
+    }
+
+    #[tokio::test]
+    async fn configured_dns_all_incompatible_servers_return_nodata_without_io() {
+        let server = NameServer::Socket(SocketAddr::from(([192, 0, 2, 53], 53)));
+        let mut incompatible = NameServerPolicy::new(server);
+        incompatible.query_strategy = DnsQueryStrategy::UseIpv6;
+        let transport = Arc::new(FamilyRecordingQueryTransport::default());
+        let resolver =
+            ConfiguredDnsResolver::new(Vec::new(), Vec::new(), Arc::new(RejectingResolver))
+                .with_name_server_policies(vec![incompatible])
+                .with_query_transport(transport.clone());
+
+        let error = resolver
+            .resolve_all_with_strategy("family.example", 443, DnsQueryStrategy::UseIpv4)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            TransportError::DnsNoData(domain, 443) if domain == "family.example"
+        ));
+        assert!(transport.record_types.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn configured_dns_requested_ipv6_queries_only_aaaa() {
+        let transport = Arc::new(FamilyRecordingQueryTransport::default());
+        let resolver = ConfiguredDnsResolver::new(
+            Vec::new(),
+            vec![NameServer::Socket(SocketAddr::from(([192, 0, 2, 53], 53)))],
+            Arc::new(RejectingResolver),
+        )
+        .with_query_transport(transport.clone());
+
+        let lookup = resolver
+            .resolve_all_with_strategy("family.example", 443, DnsQueryStrategy::UseIpv6)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            lookup.socket_addrs(),
+            &[SocketAddr::from((
+                Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 90),
+                443,
+            ))]
+        );
+        assert_eq!(*transport.record_types.lock().unwrap(), [28]);
+    }
+
+    #[tokio::test]
+    async fn configured_dns_propagates_requested_family_to_system_fallback() {
+        let fallback = Arc::new(StrategyRecordingFallback::default());
+        let resolver = ConfiguredDnsResolver::new(Vec::new(), Vec::new(), fallback.clone());
+
+        let ipv4 = resolver
+            .resolve_all_with_strategy("fallback.example", 443, DnsQueryStrategy::UseIpv4)
+            .await
+            .unwrap();
+        let ipv6 = resolver
+            .resolve_all_with_strategy("fallback.example", 443, DnsQueryStrategy::UseIpv6)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            ipv4.socket_addrs(),
+            &[SocketAddr::from(([192, 0, 2, 97], 443))]
+        );
+        assert_eq!(
+            ipv6.socket_addrs(),
+            &[SocketAddr::from((
+                Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 97),
+                443,
+            ))]
+        );
+        assert_eq!(
+            *fallback.strategies.lock().unwrap(),
+            [DnsQueryStrategy::UseIpv4, DnsQueryStrategy::UseIpv6]
+        );
+    }
+
+    #[tokio::test]
     async fn configured_dns_query_strategy_filters_static_hosts_and_mapped_ipv4() {
         let native_ipv6 = Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 91);
         let mapped_ipv4 = Ipv4Addr::new(192, 0, 2, 91).to_ipv6_mapped();
@@ -3764,6 +4020,39 @@ mod tests {
             ipv6.socket_addrs(),
             [SocketAddr::new(IpAddr::V6(native_ipv6), 443)]
         );
+    }
+
+    #[tokio::test]
+    async fn configured_dns_requested_family_filters_static_hosts_before_fallback() {
+        let fallback = Arc::new(DelayedCountingResolver {
+            calls: AtomicUsize::new(0),
+            result: Some(SocketAddr::from(([192, 0, 2, 94], 0))),
+        });
+        let resolver = ConfiguredDnsResolver::new(
+            vec![StaticHostRule {
+                matcher: TransportDomainMatcher::Full("mixed-host.example".to_owned()),
+                target: StaticHostTarget::Ips(vec![
+                    Ipv4Addr::new(192, 0, 2, 95).into(),
+                    Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 95).into(),
+                ]),
+            }],
+            Vec::new(),
+            fallback.clone(),
+        );
+
+        let lookup = resolver
+            .resolve_all_with_strategy("mixed-host.example", 443, DnsQueryStrategy::UseIpv6)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            lookup.socket_addrs(),
+            &[SocketAddr::from((
+                Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 95),
+                443,
+            ))]
+        );
+        assert_eq!(fallback.calls.load(Ordering::Relaxed), 0);
     }
 
     #[tokio::test]
@@ -3951,6 +4240,95 @@ mod tests {
         assert!(lookup.ttl().is_some_and(|ttl| {
             ttl <= Duration::from_secs(30) && ttl > Duration::from_secs(29)
         }));
+    }
+
+    #[derive(Default)]
+    struct FamilyTtlRecordingQueryTransport {
+        record_types: Mutex<Vec<u16>>,
+    }
+
+    #[async_trait::async_trait]
+    impl DnsQueryTransport for FamilyTtlRecordingQueryTransport {
+        async fn exchange(
+            &self,
+            _server: &NameServer,
+            _transport: DnsQueryTransportKind,
+            _metadata: DnsQueryMetadata<'_>,
+            query: &[u8],
+        ) -> io::Result<Vec<u8>> {
+            let record_type = u16::from_be_bytes([query[query.len() - 4], query[query.len() - 3]]);
+            self.record_types.lock().unwrap().push(record_type);
+            match record_type {
+                1 => Ok(build_test_address_response(
+                    query,
+                    &[(1, 20, Ipv4Addr::new(192, 0, 2, 98).octets().to_vec())],
+                )),
+                28 => Ok(build_test_address_response(
+                    query,
+                    &[(
+                        28,
+                        120,
+                        Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 98)
+                            .octets()
+                            .to_vec(),
+                    )],
+                )),
+                _ => Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "unexpected DNS query type",
+                )),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn caching_dns_separates_family_keys_and_preserves_family_ttl() {
+        let transport = Arc::new(FamilyTtlRecordingQueryTransport::default());
+        let configured = ConfiguredDnsResolver::new(
+            Vec::new(),
+            vec![NameServer::Socket(SocketAddr::from(([192, 0, 2, 53], 53)))],
+            Arc::new(RejectingResolver),
+        )
+        .with_query_transport(transport.clone());
+        let resolver = CachingDnsResolver::new(Arc::new(configured));
+
+        let ipv4 = resolver
+            .resolve_all_with_strategy("family-cache.example", 443, DnsQueryStrategy::UseIpv4)
+            .await
+            .unwrap();
+        let ipv4_cached = resolver
+            .resolve_all_with_strategy("family-cache.example", 443, DnsQueryStrategy::UseIpv4)
+            .await
+            .unwrap();
+        let ipv6 = resolver
+            .resolve_all_with_strategy("family-cache.example", 443, DnsQueryStrategy::UseIpv6)
+            .await
+            .unwrap();
+        let ipv6_cached = resolver
+            .resolve_all_with_strategy("family-cache.example", 443, DnsQueryStrategy::UseIpv6)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            ipv4.socket_addrs(),
+            &[SocketAddr::from(([192, 0, 2, 98], 443))]
+        );
+        assert_eq!(ipv4_cached.socket_addrs(), ipv4.socket_addrs());
+        assert_eq!(
+            ipv6.socket_addrs(),
+            &[SocketAddr::from((
+                Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 98),
+                443,
+            ))]
+        );
+        assert_eq!(ipv6_cached.socket_addrs(), ipv6.socket_addrs());
+        assert!(ipv4.ttl().is_some_and(|ttl| {
+            ttl <= Duration::from_secs(20) && ttl > Duration::from_secs(19)
+        }));
+        assert!(ipv6.ttl().is_some_and(|ttl| {
+            ttl <= Duration::from_secs(120) && ttl > Duration::from_secs(119)
+        }));
+        assert_eq!(*transport.record_types.lock().unwrap(), [1, 28]);
     }
 
     struct TtlCountingResolver {
