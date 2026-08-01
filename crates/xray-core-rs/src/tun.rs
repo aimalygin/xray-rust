@@ -2001,15 +2001,37 @@ fn open_ready_tcp_flows(
             AdmittedTcpFlow::Bridge {
                 destination,
                 permits,
-            } => bridge_tasks.spawn(bridge_tcp_flow(
-                handle,
-                generation,
-                destination,
-                context.clone(),
-                from_stack,
-                shutdown.clone(),
-                permits,
-            )),
+            } => match destination {
+                TcpBridgeDestination::DnsProxy {
+                    client_target,
+                    plan,
+                } => {
+                    let TcpBridgePermits {
+                        pending_open,
+                        dns_flow,
+                    } = permits;
+                    bridge_tasks.spawn(dns_proxy::bridge_raw_dns_tcp_flow(
+                        handle,
+                        generation,
+                        client_target,
+                        plan,
+                        context.clone(),
+                        from_stack,
+                        shutdown.clone(),
+                        pending_open,
+                        dns_flow,
+                    ))
+                }
+                destination => bridge_tasks.spawn(bridge_tcp_flow(
+                    handle,
+                    generation,
+                    destination,
+                    context.clone(),
+                    from_stack,
+                    shutdown.clone(),
+                    permits,
+                )),
+            },
             AdmittedTcpFlow::FakeDns { mapper, permit } => {
                 bridge_tasks.spawn(dns_proxy::bridge_fake_ip_tcp_flow(
                     handle,
@@ -2575,14 +2597,82 @@ async fn bridge_tcp_flow(
     destination: TcpBridgeDestination,
     context: TunRuntimeContext,
     from_stack: mpsc::Receiver<StackToRemoteData>,
-    mut shutdown: watch::Receiver<bool>,
+    shutdown: watch::Receiver<bool>,
     permits: TcpBridgePermits,
 ) {
     let TcpBridgePermits {
         pending_open,
-        dns_flow: _dns_flow_permit,
+        dns_flow: dns_flow_permit,
     } = permits;
-    let mut close_guard = TcpBridgeCloseGuard::new(handle, generation, context.stack_tx.clone());
+    let close_guard = TcpBridgeCloseGuard::new(handle, generation, context.stack_tx.clone());
+    bridge_tcp_flow_inner(
+        handle,
+        generation,
+        destination,
+        context,
+        from_stack,
+        shutdown,
+        Some(pending_open),
+        dns_flow_permit,
+        close_guard,
+        false,
+        VecDeque::new(),
+    )
+    .await;
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "transparent DNS fallback transfers already-open client state into the generic bridge"
+)]
+async fn bridge_preopened_dns_tcp_flow(
+    handle: SocketHandle,
+    generation: u64,
+    client_target: Target,
+    plan: Arc<dns_proxy::DnsProxyPlan>,
+    context: TunRuntimeContext,
+    from_stack: mpsc::Receiver<StackToRemoteData>,
+    shutdown: watch::Receiver<bool>,
+    dns_flow_permit: Option<OwnedSemaphorePermit>,
+    close_guard: TcpBridgeCloseGuard,
+    initial_upload: VecDeque<StackToRemoteData>,
+) {
+    bridge_tcp_flow_inner(
+        handle,
+        generation,
+        TcpBridgeDestination::DnsProxy {
+            client_target,
+            plan,
+        },
+        context,
+        from_stack,
+        shutdown,
+        None,
+        dns_flow_permit,
+        close_guard,
+        true,
+        initial_upload,
+    )
+    .await;
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "generic bridge state is shared with the pre-opened transparent DNS handoff"
+)]
+async fn bridge_tcp_flow_inner(
+    handle: SocketHandle,
+    generation: u64,
+    destination: TcpBridgeDestination,
+    context: TunRuntimeContext,
+    from_stack: mpsc::Receiver<StackToRemoteData>,
+    mut shutdown: watch::Receiver<bool>,
+    pending_open: Option<OwnedSemaphorePermit>,
+    _dns_flow_permit: Option<OwnedSemaphorePermit>,
+    mut close_guard: TcpBridgeCloseGuard,
+    client_already_opened: bool,
+    mut initial_upload: VecDeque<StackToRemoteData>,
+) {
     let collect_tcp_timings = context.tun_runtime_options.collect_tcp_timings;
     let tcp_timing_start = collect_tcp_timings.then(StdInstant::now);
     let client_target = destination.client_target().clone();
@@ -2593,7 +2683,9 @@ async fn bridge_tcp_flow(
     let mut opened = None;
     let mut last_failure = None;
 
-    for candidate in destination.dial_candidates() {
+    let dial_candidates = destination.dial_candidates();
+    let dial_candidate_count = dial_candidates.len();
+    for (candidate_index, candidate) in dial_candidates.into_iter().enumerate() {
         let dial_target = candidate.target;
         let dns_upstream = candidate.dns_upstream;
         let routing_inbound_tag = dns_upstream
@@ -2601,7 +2693,11 @@ async fn bridge_tcp_flow(
             .map(dns_proxy::DnsProxyUpstream::inbound_tag)
             .or(context.inbound_tag.as_deref());
         let candidate_deadline = dns_deadline.map(|total_deadline| {
-            total_deadline.min(TokioInstant::now() + dns_proxy::DNS_TCP_PROXY_ATTEMPT_TIMEOUT)
+            let now = TokioInstant::now();
+            let remaining = total_deadline.saturating_duration_since(now);
+            let remaining_candidate_count = dial_candidate_count.saturating_sub(candidate_index);
+            let divisor = u32::try_from(remaining_candidate_count.max(1)).unwrap_or(u32::MAX);
+            now + (remaining / divisor).min(dns_proxy::DNS_TCP_PROXY_ATTEMPT_TIMEOUT)
         });
         let selection_remaining = candidate_deadline
             .map(|deadline| deadline.saturating_duration_since(TokioInstant::now()));
@@ -2765,25 +2861,21 @@ async fn bridge_tcp_flow(
         }
         return;
     };
-    let bridge_idle_timeout = if is_dns_proxy {
-        context
-            .inbound_policy
-            .conn_idle
-            .min(dns_proxy::DNS_TCP_PROXY_TOTAL_TIMEOUT)
-    } else {
-        context.inbound_policy.conn_idle
-    };
-    let bridge_operation_timeout = is_dns_proxy.then_some(bridge_idle_timeout);
-    if !matches!(
-        await_with_optional_timeout(
-            bridge_operation_timeout,
-            context
-                .stack_tx
-                .send(StackEvent::RemoteOpened { handle, generation }),
+    let bridge_idle_timeout = context.inbound_policy.conn_idle;
+    let bridge_operation_timeout =
+        is_dns_proxy.then_some(bridge_idle_timeout.min(dns_proxy::DNS_TCP_PROXY_TOTAL_TIMEOUT));
+    if !client_already_opened
+        && !matches!(
+            await_with_optional_timeout(
+                bridge_operation_timeout,
+                context
+                    .stack_tx
+                    .send(StackEvent::RemoteOpened { handle, generation }),
+            )
+            .await,
+            Some(Ok(()))
         )
-        .await,
-        Some(Ok(()))
-    ) {
+    {
         return;
     }
     if context.runtime_logger.is_enabled() {
@@ -2824,6 +2916,26 @@ async fn bridge_tcp_flow(
         None
     };
     let (mut remote_reader, mut remote_writer) = tokio::io::split(stream);
+    if !initial_upload.is_empty()
+        && !matches!(
+            await_with_optional_timeout(
+                bridge_operation_timeout,
+                write_prebuffered_stack_data(
+                    &mut remote_writer,
+                    &dial_target,
+                    outbound_tag.as_deref(),
+                    &mut initial_upload,
+                    context.tun.as_ref(),
+                ),
+            )
+            .await,
+            Some(Ok(()))
+        )
+    {
+        context.tun.record_tcp_remote_write_error();
+        let _ = await_with_optional_timeout(bridge_operation_timeout, close_guard.close()).await;
+        return;
+    }
     if let (Some(start), Some(open_duration_ms)) = (tcp_timing_start, tcp_open_duration_ms) {
         let mut timing = TcpFirstByteTimingEnabled::new(
             start,
@@ -2886,6 +2998,47 @@ where
         Some(timeout) => tokio::time::timeout(timeout, future).await.ok(),
         None => Some(future.await),
     }
+}
+
+async fn write_prebuffered_stack_data<W>(
+    remote_writer: &mut W,
+    target: &Target,
+    outbound_tag: Option<&str>,
+    initial_upload: &mut VecDeque<StackToRemoteData>,
+    tun: &TunEndpoint,
+) -> std::io::Result<()>
+where
+    W: AsyncWrite + Unpin,
+{
+    let write_start = StdInstant::now();
+    let mut bytes = 0usize;
+    let mut messages = 0usize;
+    let mut reservations = Vec::with_capacity(initial_upload.len());
+    while let Some(mut data) = initial_upload.pop_front() {
+        remote_writer.write_all(&data.data).await?;
+        bytes = bytes.saturating_add(data.len());
+        messages = messages.saturating_add(1);
+        if let Some(reservation) = data.reservation.take() {
+            reservations.push(reservation);
+        }
+    }
+    let write_duration_ms = elapsed_ms_since(&write_start);
+    tun.record_tcp_remote_write_wait(write_duration_ms);
+    record_tcp_remote_write_slow_event(
+        tun,
+        target,
+        outbound_tag,
+        write_duration_ms,
+        bytes,
+        messages,
+    );
+    tun.record_tcp_remote_written(bytes);
+    let flush_start = StdInstant::now();
+    remote_writer.flush().await?;
+    tun.record_tcp_remote_flush_wait(elapsed_ms_since(&flush_start));
+    tun.record_tcp_remote_write_batch(messages, bytes);
+    drop(reservations);
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]

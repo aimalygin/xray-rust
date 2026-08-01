@@ -152,14 +152,32 @@ engine are consumers of the roles, while future server inbounds can reuse
 destination resolution without inheriting mobile bootstrap policy.
 The raw anchor is deliberately DNS `Direct`: object policies select managed
 destination lookups but do not rewrite client question types. Classic
-candidates preserve byte-transparent UDP/TCP behavior; a UDP client aimed at a
-TCP URI is adapted to RFC 7766 framing through a bounded persistent-connection
-pool, while a TCP client remains a transparent stream. The adapter keeps one
-request in flight per upstream stream, retries a stale reused stream once on a
-fresh protected/routed connection, and discards a leased stream whenever the
-request is cancelled so partial framing is never reused. Per-upstream and
-runtime-wide socket caps are selected by the TUN runtime profile. UDP replies
-honor the client's valid EDNS(0) size and the IPv4 tunnel
+candidates preserve client DNS messages. A UDP client aimed at a TCP URI is
+adapted to RFC 7766 framing through a bounded persistent-connection pool. A TCP
+client carrying ordinary, well-formed single-question QUERY messages uses one
+bounded multiplexed upstream session: responses are correlated by transaction
+ID, opcode, and question, may arrive out of order, and only unanswered queries
+are replayed after a post-open failure. EOF, I/O failure, timeout, malformed or
+unmatched responses, `TC=1`, and SERVFAIL advance through `dns.servers` via the
+same routed/protected dial path; other matching RCODEs, including NXDOMAIN and
+NOERROR/NODATA, are terminal. Exhaustion returns one framed SERVFAIL per
+unanswered query without closing the client TCP session, so its next query can
+start a fresh cycle. The first AXFR, IXFR, non-QUERY opcode, multi-question, or
+otherwise unsupported DNS message hands the entire connection to the
+byte-transparent bridge, including its exact prebuffer. This preserves zone
+transfer and extension semantics instead of partially interpreting them.
+
+The query-aware TCP adapter accepts at most 16 pending questions and 128 KiB of
+decoded input per client flow. Upload reservations remain charged to the TUN
+runtime until their frames are first flushed upstream or answered locally;
+candidate and total budgets are tracked per query. Client and upstream framing
+use cancellation-safe incremental decoders, and no detached task owns a DNS
+query. The UDP-to-TCP adapter keeps one request in flight per pooled upstream
+stream, retries a stale reused stream once on a fresh protected/routed
+connection, and discards a leased stream whenever the request is cancelled so
+partial framing is never reused. Per-upstream and runtime-wide socket caps are
+selected by the TUN runtime profile. UDP replies honor the client's valid
+EDNS(0) size and the IPv4 tunnel
 path MTU; missing or malformed EDNS falls back to the legacy 512-byte DNS
 payload limit and oversized replies return `TC=1`. Routed candidates carry the
 effective synthetic inbound tag into outbound selection; local TCP candidates

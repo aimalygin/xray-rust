@@ -1,11 +1,14 @@
 use std::collections::HashSet;
 
-use tokio::time::{timeout, Instant as TokioInstant};
+use tokio::time::{timeout, timeout_at, Instant as TokioInstant};
 
 use super::*;
 
 const DNS_RCODE_FORMERR: u16 = 1;
+const DNS_RCODE_REFUSED: u16 = 5;
 const DNS_TYPE_OPT: u16 = 41;
+const DNS_TYPE_IXFR: u16 = 251;
+const DNS_TYPE_AXFR: u16 = 252;
 const DNS_LEGACY_UDP_PAYLOAD_SIZE: usize = 512;
 const MAX_DNS_PROXY_UPSTREAMS: usize = 8;
 const MAX_DNS_XUDP_METADATA_SIZE: usize = 512;
@@ -19,6 +22,10 @@ const DNS_PROXY_FREEDOM_ATTEMPT_TIMEOUT: Duration = Duration::from_millis(750);
 const DNS_PROXY_VLESS_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(2);
 const DNS_PROXY_TOTAL_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_DNS_TCP_MESSAGE_SIZE: usize = 8 * 1024;
+const MAX_RAW_DNS_TCP_PENDING_QUERIES: usize = 16;
+const MAX_RAW_DNS_TCP_PENDING_BYTES: usize = 128 * 1024;
+const RAW_DNS_TCP_DRAIN_QUANTUM: usize = 16;
+const RAW_DNS_TCP_WRITE_QUANTUM_BYTES: usize = 16 * 1024;
 pub(super) const DNS_TCP_PROXY_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(2);
 pub(super) const DNS_TCP_PROXY_TOTAL_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -682,6 +689,1526 @@ pub(super) async fn bridge_fake_ip_tcp_flow(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RawDnsTcpClientFrameKind {
+    Query,
+    Transparent,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RawDnsTcpResponseKind {
+    Terminal,
+    Retry,
+}
+
+#[derive(Debug)]
+struct RawDnsTcpPendingQuery {
+    framed: Bytes,
+    payload: Bytes,
+    sequence: u64,
+    deadline: TokioInstant,
+    attempted_candidates: u16,
+    preferred_candidate: Option<usize>,
+    generation: u64,
+    attempt_deadline: Option<TokioInstant>,
+    sent: bool,
+    upload_frame_id: Option<u64>,
+}
+
+#[derive(Debug)]
+struct RawDnsTcpUploadChunk {
+    end: usize,
+    _reservation: Option<TcpUploadReservation>,
+}
+
+#[derive(Debug)]
+struct RawDnsTcpUploadFrame {
+    id: u64,
+    end: usize,
+    committed: bool,
+}
+
+#[derive(Debug, Default)]
+struct RawDnsTcpUploadLedger {
+    received_end: usize,
+    decoded_end: usize,
+    committed_end: usize,
+    next_frame_id: u64,
+    chunks: VecDeque<RawDnsTcpUploadChunk>,
+    frames: VecDeque<RawDnsTcpUploadFrame>,
+}
+
+impl RawDnsTcpUploadLedger {
+    fn push(&mut self, mut data: StackToRemoteData) -> bool {
+        let Some(end) = self.received_end.checked_add(data.len()) else {
+            return false;
+        };
+        self.received_end = end;
+        self.chunks.push_back(RawDnsTcpUploadChunk {
+            end,
+            _reservation: data.reservation.take(),
+        });
+        true
+    }
+
+    fn register_frame(&mut self, frame_len: usize) -> Option<u64> {
+        let end = self.decoded_end.checked_add(frame_len)?;
+        if end > self.received_end {
+            return None;
+        }
+        let id = self.next_frame_id;
+        self.next_frame_id = self.next_frame_id.wrapping_add(1);
+        self.decoded_end = end;
+        self.frames.push_back(RawDnsTcpUploadFrame {
+            id,
+            end,
+            committed: false,
+        });
+        Some(id)
+    }
+
+    fn commit_frame(&mut self, id: u64) -> bool {
+        let Some(frame) = self.frames.iter_mut().find(|frame| frame.id == id) else {
+            return false;
+        };
+        frame.committed = true;
+        while self.frames.front().is_some_and(|frame| frame.committed) {
+            let frame = self
+                .frames
+                .pop_front()
+                .expect("committed upload frame must remain at the front");
+            self.committed_end = frame.end;
+        }
+        while self
+            .chunks
+            .front()
+            .is_some_and(|chunk| chunk.end <= self.committed_end)
+        {
+            self.chunks.pop_front();
+        }
+        true
+    }
+}
+
+#[derive(Debug, Default)]
+struct RawDnsTcpPendingQueries {
+    entries: VecDeque<RawDnsTcpPendingQuery>,
+    bytes: usize,
+    next_sequence: u64,
+}
+
+impl RawDnsTcpPendingQueries {
+    fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    fn buffered_bytes(&self) -> usize {
+        self.bytes
+    }
+
+    #[cfg(test)]
+    fn push(&mut self, framed: Bytes, now: TokioInstant) -> bool {
+        self.push_with_preferred_candidate(framed, now, None, None)
+    }
+
+    fn push_with_preferred_candidate(
+        &mut self,
+        framed: Bytes,
+        now: TokioInstant,
+        preferred_candidate: Option<usize>,
+        upload_frame_id: Option<u64>,
+    ) -> bool {
+        let next_bytes = self.bytes.saturating_add(framed.len());
+        if self.entries.len() >= MAX_RAW_DNS_TCP_PENDING_QUERIES
+            || next_bytes > MAX_RAW_DNS_TCP_PENDING_BYTES
+        {
+            return false;
+        }
+        let payload = framed.slice(2..);
+        let sequence = self.next_sequence;
+        self.next_sequence = self.next_sequence.wrapping_add(1);
+        self.entries.push_back(RawDnsTcpPendingQuery {
+            framed,
+            payload,
+            sequence,
+            deadline: now + DNS_TCP_PROXY_TOTAL_TIMEOUT,
+            attempted_candidates: 0,
+            preferred_candidate,
+            generation: 0,
+            attempt_deadline: None,
+            sent: false,
+            upload_frame_id,
+        });
+        self.bytes = next_bytes;
+        true
+    }
+
+    fn remove(&mut self, index: usize) -> Option<RawDnsTcpPendingQuery> {
+        let query = self.entries.remove(index)?;
+        self.bytes = self.bytes.saturating_sub(query.framed.len());
+        Some(query)
+    }
+
+    fn matching_response_index(&self, generation: u64, response: &[u8]) -> Option<usize> {
+        self.entries
+            .iter()
+            .enumerate()
+            .filter(|(_, query)| query.generation == generation && query.sent)
+            .filter(|(_, query)| dns_response_matches_query(&query.payload, response))
+            .min_by_key(|(_, query)| query.sequence)
+            .map(|(index, _)| index)
+    }
+
+    fn next_candidate(&self, candidate_count: usize) -> Option<usize> {
+        let query = self.entries.iter().find(|query| query.generation == 0)?;
+        raw_dns_next_candidate(
+            query.attempted_candidates,
+            query.preferred_candidate,
+            candidate_count,
+        )
+    }
+
+    fn prepare_candidate(
+        &mut self,
+        candidate_index: usize,
+        candidate_count: usize,
+        generation: u64,
+        now: TokioInstant,
+    ) -> Option<TokioInstant> {
+        let candidate_bit = raw_dns_candidate_bit(candidate_index);
+        let mut earliest_deadline = self
+            .entries
+            .iter()
+            .filter(|query| query.generation == generation)
+            .filter_map(|query| query.attempt_deadline)
+            .min();
+        for query in &mut self.entries {
+            if query.generation != 0 || query.attempted_candidates & candidate_bit != 0 {
+                continue;
+            }
+            if raw_dns_next_candidate(
+                query.attempted_candidates,
+                query.preferred_candidate,
+                candidate_count,
+            ) != Some(candidate_index)
+            {
+                continue;
+            }
+            let remaining = query.deadline.saturating_duration_since(now);
+            if remaining.is_zero() {
+                continue;
+            }
+            let attempted =
+                usize::try_from(query.attempted_candidates.count_ones()).unwrap_or(candidate_count);
+            let remaining_candidates = candidate_count.saturating_sub(attempted).max(1);
+            let divisor = u32::try_from(remaining_candidates).unwrap_or(u32::MAX);
+            let candidate_budget = remaining / divisor;
+            if candidate_budget.is_zero() {
+                continue;
+            }
+            let attempt_deadline = now + candidate_budget.min(DNS_TCP_PROXY_ATTEMPT_TIMEOUT);
+            query.attempted_candidates |= candidate_bit;
+            query.generation = generation;
+            query.attempt_deadline = Some(attempt_deadline);
+            query.sent = false;
+            earliest_deadline = Some(
+                earliest_deadline.map_or(attempt_deadline, |current: TokioInstant| {
+                    current.min(attempt_deadline)
+                }),
+            );
+        }
+        earliest_deadline
+    }
+
+    fn retire_generation_preserving_attempts(&mut self, generation: u64) {
+        for query in &mut self.entries {
+            if query.generation == generation {
+                query.generation = 0;
+                query.attempt_deadline = None;
+                query.sent = false;
+            }
+        }
+    }
+
+    fn retire_generation_for_timeout(
+        &mut self,
+        generation: u64,
+        candidate_index: usize,
+        now: TokioInstant,
+    ) {
+        let candidate_bit = raw_dns_candidate_bit(candidate_index);
+        for query in &mut self.entries {
+            if query.generation != generation {
+                continue;
+            }
+            let attempt_expired = query
+                .attempt_deadline
+                .is_some_and(|deadline| deadline <= now);
+            if !attempt_expired {
+                query.attempted_candidates &= !candidate_bit;
+            }
+            query.generation = 0;
+            query.attempt_deadline = None;
+            query.sent = false;
+        }
+    }
+
+    fn has_generation(&self, generation: u64) -> bool {
+        self.entries
+            .iter()
+            .any(|query| query.generation == generation)
+    }
+
+    fn has_unsent_generation(&self, generation: u64) -> bool {
+        self.entries
+            .iter()
+            .any(|query| query.generation == generation && !query.sent)
+    }
+
+    fn mark_generation_sent(&mut self, generation: u64) -> Vec<u64> {
+        let mut upload_frame_ids = Vec::new();
+        for query in &mut self.entries {
+            if query.generation == generation {
+                query.sent = true;
+                if let Some(upload_frame_id) = query.upload_frame_id.take() {
+                    upload_frame_ids.push(upload_frame_id);
+                }
+            }
+        }
+        upload_frame_ids
+    }
+
+    fn nearest_deadline(&self) -> Option<TokioInstant> {
+        self.entries.iter().fold(None, |nearest, query| {
+            let nearest = Some(nearest.map_or(query.deadline, |current: TokioInstant| {
+                current.min(query.deadline)
+            }));
+            match query.attempt_deadline {
+                Some(attempt_deadline) => {
+                    Some(nearest.map_or(attempt_deadline, |current| current.min(attempt_deadline)))
+                }
+                None => nearest,
+            }
+        })
+    }
+
+    fn next_failed_index(&self, candidate_count: usize, now: TokioInstant) -> Option<usize> {
+        let all_candidates = raw_dns_all_candidates_mask(candidate_count);
+        self.entries.iter().position(|query| {
+            query.deadline <= now
+                || (query.generation == 0
+                    && query.attempted_candidates & all_candidates == all_candidates)
+        })
+    }
+
+    fn generation_has_expired_query(&self, generation: u64, now: TokioInstant) -> bool {
+        self.entries.iter().any(|query| {
+            query.generation == generation
+                && (query.deadline <= now
+                    || query
+                        .attempt_deadline
+                        .is_some_and(|deadline| deadline <= now))
+        })
+    }
+}
+
+struct RawDnsTcpUpstreamSession {
+    stream: BoxedTransportStream,
+    decoder: DnsTcpFrameDecoder,
+    candidate_index: usize,
+    generation: u64,
+    target: Target,
+    outbound_tag: Option<String>,
+    timing: Option<TcpFirstByteTimingEnabled>,
+}
+
+struct RawDnsTcpOpenedCandidate {
+    stream: BoxedTransportStream,
+    target: Target,
+    outbound_tag: Option<String>,
+    timing: Option<TcpFirstByteTimingEnabled>,
+}
+
+enum RawDnsTcpOpenResult {
+    Opened(RawDnsTcpOpenedCandidate),
+    Failed,
+    TimedOut,
+    Shutdown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RawDnsTcpRetireReason {
+    CandidateFailure,
+    Timeout(TokioInstant),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RawDnsTcpIoResult {
+    Complete,
+    Failed,
+    TimedOut,
+    Shutdown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RawDnsTcpDrainResult {
+    Complete,
+    More,
+    Close,
+    Shutdown,
+}
+
+enum RawDnsTcpLoopEvent {
+    Client(Option<StackToRemoteData>),
+    Upstream(std::io::Result<usize>),
+    Drain,
+    Deadline,
+    Idle,
+    Shutdown,
+}
+
+fn retire_raw_dns_tcp_upstream(
+    upstream: &mut Option<RawDnsTcpUpstreamSession>,
+    pending: &mut RawDnsTcpPendingQueries,
+    context: &TunRuntimeContext,
+    reason: RawDnsTcpRetireReason,
+) {
+    let Some(mut session) = upstream.take() else {
+        return;
+    };
+    match reason {
+        RawDnsTcpRetireReason::CandidateFailure => {
+            pending.retire_generation_preserving_attempts(session.generation);
+        }
+        RawDnsTcpRetireReason::Timeout(now) => {
+            pending.retire_generation_for_timeout(session.generation, session.candidate_index, now)
+        }
+    }
+    if let Some(timing) = session.timing.as_mut() {
+        timing.record_flow_summary(context.tun.as_ref(), &session.target, true);
+    }
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "raw DNS bridge owns the admitted TUN flow, routing plan, shutdown, and permits"
+)]
+pub(super) async fn bridge_raw_dns_tcp_flow(
+    handle: SocketHandle,
+    generation: u64,
+    client_target: Target,
+    plan: Arc<DnsProxyPlan>,
+    context: TunRuntimeContext,
+    mut from_stack: mpsc::Receiver<StackToRemoteData>,
+    mut shutdown: watch::Receiver<bool>,
+    pending_open: OwnedSemaphorePermit,
+    dns_flow_permit: Option<OwnedSemaphorePermit>,
+) {
+    drop(pending_open);
+    let mut close_guard = TcpBridgeCloseGuard::new(handle, generation, context.stack_tx.clone());
+    let opened = tokio::select! {
+        biased;
+        () = wait_for_tun_shutdown(&mut shutdown) => false,
+        result = timeout(
+            DNS_TCP_PROXY_ATTEMPT_TIMEOUT,
+            context.stack_tx.send(StackEvent::RemoteOpened { handle, generation }),
+        ) => matches!(result, Ok(Ok(()))),
+    };
+    if !opened {
+        return;
+    }
+
+    let idle_timeout = context.inbound_policy.conn_idle;
+    let idle_sleep = tokio::time::sleep(idle_timeout);
+    tokio::pin!(idle_sleep);
+    let mut client_decoder = DnsTcpFrameDecoder::default();
+    let mut initial_upload = VecDeque::new();
+    let first_frame = loop {
+        let event = tokio::select! {
+            biased;
+            () = wait_for_tun_shutdown(&mut shutdown) => RawDnsTcpLoopEvent::Shutdown,
+            () = &mut idle_sleep => RawDnsTcpLoopEvent::Idle,
+            data = from_stack.recv() => RawDnsTcpLoopEvent::Client(data),
+        };
+        let RawDnsTcpLoopEvent::Client(Some(data)) = event else {
+            if matches!(event, RawDnsTcpLoopEvent::Idle) {
+                bounded_raw_dns_tcp_close(&mut close_guard, true).await;
+            } else {
+                bounded_raw_dns_tcp_close(&mut close_guard, false).await;
+            }
+            return;
+        };
+        let buffered = client_decoder
+            .buffered_len()
+            .saturating_add(data.data.len());
+        if buffered > MAX_RAW_DNS_TCP_PENDING_BYTES {
+            bounded_raw_dns_tcp_close(&mut close_guard, true).await;
+            return;
+        }
+        client_decoder.push(&data.data);
+        initial_upload.push_back(data);
+        idle_sleep
+            .as_mut()
+            .reset(TokioInstant::now() + idle_timeout);
+        match client_decoder.next_frame() {
+            Ok(Some(frame)) => break frame,
+            Ok(None) => {}
+            Err(_) => {
+                bounded_raw_dns_tcp_close(&mut close_guard, true).await;
+                return;
+            }
+        }
+    };
+
+    if raw_dns_tcp_client_frame_kind(&first_frame[2..]) == RawDnsTcpClientFrameKind::Transparent {
+        bridge_preopened_dns_tcp_flow(
+            handle,
+            generation,
+            client_target,
+            plan,
+            context,
+            from_stack,
+            shutdown,
+            dns_flow_permit,
+            close_guard,
+            initial_upload,
+        )
+        .await;
+        return;
+    }
+    let mut upload_ledger = RawDnsTcpUploadLedger::default();
+    while let Some(data) = initial_upload.pop_front() {
+        if !upload_ledger.push(data) {
+            bounded_raw_dns_tcp_close(&mut close_guard, true).await;
+            return;
+        }
+    }
+    let Some(first_upload_frame_id) = upload_ledger.register_frame(first_frame.len()) else {
+        bounded_raw_dns_tcp_close(&mut close_guard, true).await;
+        return;
+    };
+    let mut pending = RawDnsTcpPendingQueries::default();
+    if !pending.push_with_preferred_candidate(
+        first_frame,
+        TokioInstant::now(),
+        None,
+        Some(first_upload_frame_id),
+    ) {
+        bounded_raw_dns_tcp_close(&mut close_guard, true).await;
+        return;
+    }
+    let mut upstream: Option<RawDnsTcpUpstreamSession> = None;
+    let mut upstream_buffer = vec![0_u8; BRIDGE_READ_BUFFER_SIZE];
+    let mut next_generation = 1_u64;
+
+    loop {
+        let preferred_candidate = upstream.as_ref().map(|session| session.candidate_index);
+        let client_drain_more = match drain_raw_dns_client_frames(
+            &mut client_decoder,
+            &mut pending,
+            &mut upload_ledger,
+            preferred_candidate,
+            handle,
+            generation,
+            &context,
+            &mut shutdown,
+        )
+        .await
+        {
+            RawDnsTcpDrainResult::Complete => false,
+            RawDnsTcpDrainResult::More => true,
+            RawDnsTcpDrainResult::Close => {
+                retire_raw_dns_tcp_upstream(
+                    &mut upstream,
+                    &mut pending,
+                    &context,
+                    RawDnsTcpRetireReason::CandidateFailure,
+                );
+                bounded_raw_dns_tcp_close(&mut close_guard, true).await;
+                return;
+            }
+            RawDnsTcpDrainResult::Shutdown => {
+                retire_raw_dns_tcp_upstream(
+                    &mut upstream,
+                    &mut pending,
+                    &context,
+                    RawDnsTcpRetireReason::CandidateFailure,
+                );
+                bounded_raw_dns_tcp_close(&mut close_guard, false).await;
+                return;
+            }
+        };
+        let now = TokioInstant::now();
+        if upstream
+            .as_ref()
+            .is_some_and(|session| pending.generation_has_expired_query(session.generation, now))
+        {
+            context.tun.record_tcp_remote_read_error();
+            retire_raw_dns_tcp_upstream(
+                &mut upstream,
+                &mut pending,
+                &context,
+                RawDnsTcpRetireReason::Timeout(now),
+            );
+        }
+        match fail_finished_raw_dns_queries(
+            &mut pending,
+            plan.upstreams().len(),
+            handle,
+            generation,
+            &context,
+            &mut upload_ledger,
+            &mut shutdown,
+        )
+        .await
+        {
+            RawDnsTcpIoResult::Complete => {}
+            RawDnsTcpIoResult::Shutdown => {
+                retire_raw_dns_tcp_upstream(
+                    &mut upstream,
+                    &mut pending,
+                    &context,
+                    RawDnsTcpRetireReason::CandidateFailure,
+                );
+                bounded_raw_dns_tcp_close(&mut close_guard, false).await;
+                return;
+            }
+            RawDnsTcpIoResult::Failed | RawDnsTcpIoResult::TimedOut => {
+                retire_raw_dns_tcp_upstream(
+                    &mut upstream,
+                    &mut pending,
+                    &context,
+                    RawDnsTcpRetireReason::CandidateFailure,
+                );
+                bounded_raw_dns_tcp_close(&mut close_guard, true).await;
+                return;
+            }
+        }
+
+        if let Some(session) = upstream.as_mut() {
+            pending.prepare_candidate(
+                session.candidate_index,
+                plan.upstreams().len(),
+                session.generation,
+                TokioInstant::now(),
+            );
+            if pending.has_unsent_generation(session.generation) {
+                match write_raw_dns_pending(
+                    session,
+                    &mut pending,
+                    &mut upload_ledger,
+                    &context,
+                    &mut shutdown,
+                )
+                .await
+                {
+                    RawDnsTcpIoResult::Complete => {}
+                    RawDnsTcpIoResult::Failed => {
+                        retire_raw_dns_tcp_upstream(
+                            &mut upstream,
+                            &mut pending,
+                            &context,
+                            RawDnsTcpRetireReason::CandidateFailure,
+                        );
+                        continue;
+                    }
+                    RawDnsTcpIoResult::TimedOut => {
+                        retire_raw_dns_tcp_upstream(
+                            &mut upstream,
+                            &mut pending,
+                            &context,
+                            RawDnsTcpRetireReason::Timeout(TokioInstant::now()),
+                        );
+                        continue;
+                    }
+                    RawDnsTcpIoResult::Shutdown => {
+                        retire_raw_dns_tcp_upstream(
+                            &mut upstream,
+                            &mut pending,
+                            &context,
+                            RawDnsTcpRetireReason::CandidateFailure,
+                        );
+                        bounded_raw_dns_tcp_close(&mut close_guard, false).await;
+                        return;
+                    }
+                }
+            }
+            if !pending.has_generation(session.generation) && !pending.is_empty() {
+                retire_raw_dns_tcp_upstream(
+                    &mut upstream,
+                    &mut pending,
+                    &context,
+                    RawDnsTcpRetireReason::CandidateFailure,
+                );
+                continue;
+            }
+        } else if !pending.is_empty() {
+            let Some(candidate_index) = pending.next_candidate(plan.upstreams().len()) else {
+                continue;
+            };
+            let attempt_generation = next_generation;
+            next_generation = next_generation.wrapping_add(1).max(1);
+            let Some(candidate_deadline) = pending.prepare_candidate(
+                candidate_index,
+                plan.upstreams().len(),
+                attempt_generation,
+                TokioInstant::now(),
+            ) else {
+                continue;
+            };
+            match open_raw_dns_tcp_candidate(
+                candidate_index,
+                candidate_deadline,
+                plan.as_ref(),
+                &client_target,
+                &context,
+                &mut shutdown,
+            )
+            .await
+            {
+                RawDnsTcpOpenResult::Opened(opened) => {
+                    upstream = Some(RawDnsTcpUpstreamSession {
+                        stream: opened.stream,
+                        decoder: DnsTcpFrameDecoder::default(),
+                        candidate_index,
+                        generation: attempt_generation,
+                        target: opened.target,
+                        outbound_tag: opened.outbound_tag,
+                        timing: opened.timing,
+                    });
+                    continue;
+                }
+                RawDnsTcpOpenResult::Failed => {
+                    pending.retire_generation_preserving_attempts(attempt_generation);
+                    continue;
+                }
+                RawDnsTcpOpenResult::TimedOut => {
+                    pending.retire_generation_for_timeout(
+                        attempt_generation,
+                        candidate_index,
+                        TokioInstant::now(),
+                    );
+                    continue;
+                }
+                RawDnsTcpOpenResult::Shutdown => {
+                    bounded_raw_dns_tcp_close(&mut close_guard, false).await;
+                    return;
+                }
+            }
+        }
+
+        let now = TokioInstant::now();
+        let wake_deadline = pending
+            .nearest_deadline()
+            .unwrap_or_else(|| now + idle_timeout);
+        let deadline_sleep = tokio::time::sleep_until(wake_deadline);
+        tokio::pin!(deadline_sleep);
+        let can_read_client = pending.len() < MAX_RAW_DNS_TCP_PENDING_QUERIES
+            && pending
+                .buffered_bytes()
+                .saturating_add(client_decoder.buffered_len())
+                < MAX_RAW_DNS_TCP_PENDING_BYTES;
+        let event = if let Some(session) = upstream.as_mut() {
+            tokio::select! {
+                biased;
+                () = wait_for_tun_shutdown(&mut shutdown) => RawDnsTcpLoopEvent::Shutdown,
+                () = &mut idle_sleep => RawDnsTcpLoopEvent::Idle,
+                () = &mut deadline_sleep => RawDnsTcpLoopEvent::Deadline,
+                read = session.stream.read(&mut upstream_buffer) => RawDnsTcpLoopEvent::Upstream(read),
+                () = tokio::task::yield_now(), if client_drain_more => RawDnsTcpLoopEvent::Drain,
+                data = from_stack.recv(), if can_read_client => RawDnsTcpLoopEvent::Client(data),
+            }
+        } else {
+            tokio::select! {
+                biased;
+                () = wait_for_tun_shutdown(&mut shutdown) => RawDnsTcpLoopEvent::Shutdown,
+                () = &mut idle_sleep => RawDnsTcpLoopEvent::Idle,
+                () = &mut deadline_sleep => RawDnsTcpLoopEvent::Deadline,
+                () = tokio::task::yield_now(), if client_drain_more => RawDnsTcpLoopEvent::Drain,
+                data = from_stack.recv(), if can_read_client => RawDnsTcpLoopEvent::Client(data),
+            }
+        };
+
+        match event {
+            RawDnsTcpLoopEvent::Drain => {}
+            RawDnsTcpLoopEvent::Client(Some(data)) => {
+                let total_buffered = pending
+                    .buffered_bytes()
+                    .saturating_add(client_decoder.buffered_len())
+                    .saturating_add(data.data.len());
+                if total_buffered > MAX_RAW_DNS_TCP_PENDING_BYTES {
+                    retire_raw_dns_tcp_upstream(
+                        &mut upstream,
+                        &mut pending,
+                        &context,
+                        RawDnsTcpRetireReason::CandidateFailure,
+                    );
+                    bounded_raw_dns_tcp_close(&mut close_guard, true).await;
+                    return;
+                }
+                let bytes = data.data.clone();
+                if !upload_ledger.push(data) {
+                    retire_raw_dns_tcp_upstream(
+                        &mut upstream,
+                        &mut pending,
+                        &context,
+                        RawDnsTcpRetireReason::CandidateFailure,
+                    );
+                    bounded_raw_dns_tcp_close(&mut close_guard, true).await;
+                    return;
+                }
+                client_decoder.push(&bytes);
+                idle_sleep
+                    .as_mut()
+                    .reset(TokioInstant::now() + idle_timeout);
+            }
+            RawDnsTcpLoopEvent::Client(None) | RawDnsTcpLoopEvent::Shutdown => {
+                retire_raw_dns_tcp_upstream(
+                    &mut upstream,
+                    &mut pending,
+                    &context,
+                    RawDnsTcpRetireReason::CandidateFailure,
+                );
+                bounded_raw_dns_tcp_close(&mut close_guard, false).await;
+                return;
+            }
+            RawDnsTcpLoopEvent::Idle => {
+                retire_raw_dns_tcp_upstream(
+                    &mut upstream,
+                    &mut pending,
+                    &context,
+                    RawDnsTcpRetireReason::CandidateFailure,
+                );
+                bounded_raw_dns_tcp_close(&mut close_guard, true).await;
+                return;
+            }
+            RawDnsTcpLoopEvent::Deadline => {
+                let now = TokioInstant::now();
+                if let Some(session) = upstream.as_ref() {
+                    let attempt_expired = pending.entries.iter().any(|query| {
+                        query.generation == session.generation
+                            && query
+                                .attempt_deadline
+                                .is_some_and(|deadline| deadline <= now)
+                    });
+                    if attempt_expired {
+                        context.tun.record_tcp_remote_read_error();
+                        retire_raw_dns_tcp_upstream(
+                            &mut upstream,
+                            &mut pending,
+                            &context,
+                            RawDnsTcpRetireReason::Timeout(now),
+                        );
+                    }
+                }
+            }
+            RawDnsTcpLoopEvent::Upstream(Ok(0)) => {
+                context.tun.record_tcp_remote_closed();
+                retire_raw_dns_tcp_upstream(
+                    &mut upstream,
+                    &mut pending,
+                    &context,
+                    RawDnsTcpRetireReason::CandidateFailure,
+                );
+            }
+            RawDnsTcpLoopEvent::Upstream(Err(_)) => {
+                context.tun.record_tcp_remote_read_error();
+                retire_raw_dns_tcp_upstream(
+                    &mut upstream,
+                    &mut pending,
+                    &context,
+                    RawDnsTcpRetireReason::CandidateFailure,
+                );
+            }
+            RawDnsTcpLoopEvent::Upstream(Ok(read)) => {
+                context.tun.record_tcp_remote_read(read);
+                idle_sleep
+                    .as_mut()
+                    .reset(TokioInstant::now() + idle_timeout);
+                let Some(session) = upstream.as_mut() else {
+                    continue;
+                };
+                if let Some(timing) = session.timing.as_mut() {
+                    timing.record_first_byte(context.tun.as_ref(), &session.target);
+                    timing.record_remote_read(context.tun.as_ref(), &session.target, read);
+                }
+                session.decoder.push(&upstream_buffer[..read]);
+                match handle_raw_dns_upstream_frames(
+                    session,
+                    &mut pending,
+                    handle,
+                    generation,
+                    &context,
+                    &mut shutdown,
+                )
+                .await
+                {
+                    RawDnsTcpUpstreamFramesResult::Continue => {}
+                    RawDnsTcpUpstreamFramesResult::Retire => {
+                        retire_raw_dns_tcp_upstream(
+                            &mut upstream,
+                            &mut pending,
+                            &context,
+                            RawDnsTcpRetireReason::CandidateFailure,
+                        );
+                    }
+                    RawDnsTcpUpstreamFramesResult::Close => {
+                        retire_raw_dns_tcp_upstream(
+                            &mut upstream,
+                            &mut pending,
+                            &context,
+                            RawDnsTcpRetireReason::CandidateFailure,
+                        );
+                        bounded_raw_dns_tcp_close(&mut close_guard, true).await;
+                        return;
+                    }
+                    RawDnsTcpUpstreamFramesResult::Shutdown => {
+                        retire_raw_dns_tcp_upstream(
+                            &mut upstream,
+                            &mut pending,
+                            &context,
+                            RawDnsTcpRetireReason::CandidateFailure,
+                        );
+                        bounded_raw_dns_tcp_close(&mut close_guard, false).await;
+                        return;
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RawDnsTcpUpstreamFramesResult {
+    Continue,
+    Retire,
+    Close,
+    Shutdown,
+}
+
+fn raw_dns_candidate_bit(candidate_index: usize) -> u16 {
+    let shift = u32::try_from(candidate_index).unwrap_or(u32::MAX);
+    1_u16.checked_shl(shift).unwrap_or(0)
+}
+
+fn raw_dns_next_candidate(
+    attempted_candidates: u16,
+    preferred_candidate: Option<usize>,
+    candidate_count: usize,
+) -> Option<usize> {
+    if let Some(candidate_index) = preferred_candidate.filter(|index| *index < candidate_count) {
+        if attempted_candidates & raw_dns_candidate_bit(candidate_index) == 0 {
+            return Some(candidate_index);
+        }
+    }
+    (0..candidate_count).find(|index| {
+        let mask = raw_dns_candidate_bit(*index);
+        attempted_candidates & mask == 0
+    })
+}
+
+fn raw_dns_all_candidates_mask(candidate_count: usize) -> u16 {
+    if candidate_count >= u16::BITS as usize {
+        u16::MAX
+    } else {
+        let shift = u32::try_from(candidate_count).unwrap_or(u32::MAX);
+        1_u16.checked_shl(shift).unwrap_or(0).saturating_sub(1)
+    }
+}
+
+fn raw_dns_tcp_client_frame_kind(message: &[u8]) -> RawDnsTcpClientFrameKind {
+    if !dns_wire_envelope_is_well_formed(message) {
+        return RawDnsTcpClientFrameKind::Transparent;
+    }
+    let Some(flags) = read_dns_wire_u16(message, 2) else {
+        return RawDnsTcpClientFrameKind::Transparent;
+    };
+    if flags & 0x8000 != 0 || flags & 0x7800 != 0 || read_dns_wire_u16(message, 4) != Some(1) {
+        return RawDnsTcpClientFrameKind::Transparent;
+    }
+    let Some(question_end) = dns_question_section_end(message) else {
+        return RawDnsTcpClientFrameKind::Transparent;
+    };
+    let Some(question_type_offset) = question_end.checked_sub(4) else {
+        return RawDnsTcpClientFrameKind::Transparent;
+    };
+    match read_dns_wire_u16(message, question_type_offset) {
+        Some(DNS_TYPE_AXFR | DNS_TYPE_IXFR) | None => RawDnsTcpClientFrameKind::Transparent,
+        Some(_) => RawDnsTcpClientFrameKind::Query,
+    }
+}
+
+fn raw_dns_tcp_response_kind(message: &[u8]) -> Option<RawDnsTcpResponseKind> {
+    if !dns_wire_envelope_is_well_formed(message) {
+        return None;
+    }
+    let flags = read_dns_wire_u16(message, 2)?;
+    if flags & 0x8000 == 0 {
+        return None;
+    }
+    if flags & 0x0200 != 0 || flags & 0x000f == DNS_RCODE_SERVFAIL {
+        Some(RawDnsTcpResponseKind::Retry)
+    } else {
+        Some(RawDnsTcpResponseKind::Terminal)
+    }
+}
+
+fn dns_wire_envelope_is_well_formed(message: &[u8]) -> bool {
+    let Some(question_count) = read_dns_wire_u16(message, 4).map(usize::from) else {
+        return false;
+    };
+    let Some(answer_count) = read_dns_wire_u16(message, 6).map(usize::from) else {
+        return false;
+    };
+    let Some(authority_count) = read_dns_wire_u16(message, 8).map(usize::from) else {
+        return false;
+    };
+    let Some(additional_count) = read_dns_wire_u16(message, 10).map(usize::from) else {
+        return false;
+    };
+    let mut offset = 12usize;
+    for _ in 0..question_count {
+        if validate_dns_wire_name(message, &mut offset).is_none() {
+            return false;
+        }
+        let Some(question_end) = offset.checked_add(4) else {
+            return false;
+        };
+        if message.get(offset..question_end).is_none() {
+            return false;
+        }
+        offset = question_end;
+    }
+    for record_count in [answer_count, authority_count, additional_count] {
+        for _ in 0..record_count {
+            if validate_dns_wire_name(message, &mut offset).is_none() {
+                return false;
+            }
+            let Some(record_header_end) = offset.checked_add(10) else {
+                return false;
+            };
+            if message.get(offset..record_header_end).is_none() {
+                return false;
+            }
+            let Some(data_len_offset) = offset.checked_add(8) else {
+                return false;
+            };
+            let Some(data_len) = read_dns_wire_u16(message, data_len_offset).map(usize::from)
+            else {
+                return false;
+            };
+            let Some(record_end) = record_header_end.checked_add(data_len) else {
+                return false;
+            };
+            if message.get(record_header_end..record_end).is_none() {
+                return false;
+            }
+            offset = record_end;
+        }
+    }
+    offset == message.len()
+}
+
+fn validate_dns_wire_name(message: &[u8], offset: &mut usize) -> Option<()> {
+    let mut cursor = *offset;
+    let mut encoded_end = None;
+    let mut expanded_len = 0usize;
+    for _ in 0..128 {
+        let label_offset = cursor;
+        let label_len = *message.get(cursor)?;
+        cursor = cursor.checked_add(1)?;
+        match label_len & 0xc0 {
+            0x00 if label_len == 0 => {
+                expanded_len = expanded_len.checked_add(1)?;
+                if expanded_len > 255 {
+                    return None;
+                }
+                *offset = encoded_end.unwrap_or(cursor);
+                return Some(());
+            }
+            0x00 => {
+                let label_len = usize::from(label_len);
+                if label_len > 63 {
+                    return None;
+                }
+                let label_end = cursor.checked_add(label_len)?;
+                message.get(cursor..label_end)?;
+                expanded_len = expanded_len.checked_add(label_len + 1)?;
+                if expanded_len > 255 {
+                    return None;
+                }
+                cursor = label_end;
+            }
+            0xc0 => {
+                let pointer_low = usize::from(*message.get(cursor)?);
+                let pointer = (usize::from(label_len & 0x3f) << 8) | pointer_low;
+                if pointer < 12 || pointer >= label_offset {
+                    return None;
+                }
+                encoded_end.get_or_insert(cursor.checked_add(1)?);
+                cursor = pointer;
+            }
+            _ => return None,
+        }
+    }
+    None
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "client frame draining keeps flow identity, upload accounting, and shutdown explicit"
+)]
+async fn drain_raw_dns_client_frames(
+    decoder: &mut DnsTcpFrameDecoder,
+    pending: &mut RawDnsTcpPendingQueries,
+    upload_ledger: &mut RawDnsTcpUploadLedger,
+    preferred_candidate: Option<usize>,
+    handle: SocketHandle,
+    generation: u64,
+    context: &TunRuntimeContext,
+    shutdown: &mut watch::Receiver<bool>,
+) -> RawDnsTcpDrainResult {
+    let mut processed = 0usize;
+    while pending.len() < MAX_RAW_DNS_TCP_PENDING_QUERIES && processed < RAW_DNS_TCP_DRAIN_QUANTUM {
+        let frame = match decoder.next_frame() {
+            Ok(Some(frame)) => frame,
+            Ok(None) => return RawDnsTcpDrainResult::Complete,
+            Err(_) => return RawDnsTcpDrainResult::Close,
+        };
+        processed = processed.saturating_add(1);
+        let Some(upload_frame_id) = upload_ledger.register_frame(frame.len()) else {
+            return RawDnsTcpDrainResult::Close;
+        };
+        let payload = &frame[2..];
+        match raw_dns_tcp_client_frame_kind(payload) {
+            RawDnsTcpClientFrameKind::Query => {
+                if !pending.push_with_preferred_candidate(
+                    frame,
+                    TokioInstant::now(),
+                    preferred_candidate,
+                    Some(upload_frame_id),
+                ) {
+                    return RawDnsTcpDrainResult::Close;
+                }
+            }
+            RawDnsTcpClientFrameKind::Transparent => {
+                let Some(response) = framed_dns_error_response(payload, DNS_RCODE_REFUSED) else {
+                    return RawDnsTcpDrainResult::Close;
+                };
+                match send_raw_dns_tcp_frame(handle, generation, response, context, shutdown).await
+                {
+                    RawDnsTcpIoResult::Complete => {
+                        if !upload_ledger.commit_frame(upload_frame_id) {
+                            return RawDnsTcpDrainResult::Close;
+                        }
+                    }
+                    RawDnsTcpIoResult::Shutdown => return RawDnsTcpDrainResult::Shutdown,
+                    RawDnsTcpIoResult::Failed | RawDnsTcpIoResult::TimedOut => {
+                        return RawDnsTcpDrainResult::Close;
+                    }
+                }
+            }
+        }
+    }
+    if pending.len() >= MAX_RAW_DNS_TCP_PENDING_QUERIES {
+        return RawDnsTcpDrainResult::Complete;
+    }
+    match decoder.peek_frame_len() {
+        Ok(Some(_)) => RawDnsTcpDrainResult::More,
+        Ok(None) => RawDnsTcpDrainResult::Complete,
+        Err(_) => RawDnsTcpDrainResult::Close,
+    }
+}
+
+async fn fail_finished_raw_dns_queries(
+    pending: &mut RawDnsTcpPendingQueries,
+    candidate_count: usize,
+    handle: SocketHandle,
+    generation: u64,
+    context: &TunRuntimeContext,
+    upload_ledger: &mut RawDnsTcpUploadLedger,
+    shutdown: &mut watch::Receiver<bool>,
+) -> RawDnsTcpIoResult {
+    loop {
+        let Some(index) = pending.next_failed_index(candidate_count, TokioInstant::now()) else {
+            return RawDnsTcpIoResult::Complete;
+        };
+        let Some(query) = pending.remove(index) else {
+            return RawDnsTcpIoResult::Failed;
+        };
+        let Some(response) = framed_dns_error_response(&query.payload, DNS_RCODE_SERVFAIL) else {
+            return RawDnsTcpIoResult::Failed;
+        };
+        let result = send_raw_dns_tcp_frame(handle, generation, response, context, shutdown).await;
+        if result != RawDnsTcpIoResult::Complete {
+            return result;
+        }
+        if query
+            .upload_frame_id
+            .is_some_and(|upload_frame_id| !upload_ledger.commit_frame(upload_frame_id))
+        {
+            return RawDnsTcpIoResult::Failed;
+        }
+    }
+}
+
+fn framed_dns_error_response(query: &[u8], rcode: u16) -> Option<Bytes> {
+    let response = dns_error_response(query, rcode, false)?;
+    if !dns_response_matches_query(query, &response) {
+        return None;
+    }
+    let response_len = u16::try_from(response.len()).ok()?;
+    let mut framed = BytesMut::with_capacity(response.len() + 2);
+    framed.extend_from_slice(&response_len.to_be_bytes());
+    framed.extend_from_slice(&response);
+    Some(framed.freeze())
+}
+
+async fn send_raw_dns_tcp_frame(
+    handle: SocketHandle,
+    generation: u64,
+    frame: Bytes,
+    context: &TunRuntimeContext,
+    shutdown: &mut watch::Receiver<bool>,
+) -> RawDnsTcpIoResult {
+    let result = tokio::select! {
+        biased;
+        () = wait_for_tun_shutdown(shutdown) => return RawDnsTcpIoResult::Shutdown,
+        result = timeout(
+            DNS_TCP_PROXY_ATTEMPT_TIMEOUT,
+            context.stack_tx.send(StackEvent::RemoteData {
+                handle,
+                generation,
+                data: frame,
+            }),
+        ) => result,
+    };
+    match result {
+        Ok(Ok(())) => RawDnsTcpIoResult::Complete,
+        Ok(Err(_)) => RawDnsTcpIoResult::Failed,
+        Err(_) => RawDnsTcpIoResult::TimedOut,
+    }
+}
+
+async fn bounded_raw_dns_tcp_close(close_guard: &mut TcpBridgeCloseGuard, abort: bool) {
+    let close = async {
+        if abort {
+            close_guard.abort().await;
+        } else {
+            close_guard.close().await;
+        }
+    };
+    let _ = timeout(DNS_TCP_PROXY_ATTEMPT_TIMEOUT, close).await;
+}
+
+async fn write_raw_dns_pending(
+    session: &mut RawDnsTcpUpstreamSession,
+    pending: &mut RawDnsTcpPendingQueries,
+    upload_ledger: &mut RawDnsTcpUploadLedger,
+    context: &TunRuntimeContext,
+    shutdown: &mut watch::Receiver<bool>,
+) -> RawDnsTcpIoResult {
+    let frames = pending
+        .entries
+        .iter()
+        .filter(|query| query.generation == session.generation && !query.sent)
+        .map(|query| (query.framed.clone(), query.attempt_deadline))
+        .collect::<Vec<_>>();
+    if frames.is_empty() {
+        return RawDnsTcpIoResult::Complete;
+    }
+    let now = TokioInstant::now();
+    let deadline = frames
+        .iter()
+        .filter_map(|(_, deadline)| *deadline)
+        .min()
+        .unwrap_or(now);
+    let remaining = deadline.saturating_duration_since(now);
+    if remaining.is_zero() {
+        context.tun.record_tcp_remote_write_error();
+        return RawDnsTcpIoResult::TimedOut;
+    }
+    let bytes = frames.iter().fold(0usize, |total, (frame, _)| {
+        total.saturating_add(frame.len())
+    });
+    let messages = frames.len();
+    let write_start = StdInstant::now();
+    let mut result = RawDnsTcpIoResult::Complete;
+    let mut bytes_since_yield = 0usize;
+    'write: for (frame, _) in &frames {
+        let frame_result = tokio::select! {
+            biased;
+            () = wait_for_tun_shutdown(shutdown) => RawDnsTcpIoResult::Shutdown,
+            result = timeout_at(deadline, session.stream.write_all(frame)) => match result {
+                Ok(Ok(())) => RawDnsTcpIoResult::Complete,
+                Ok(Err(_)) => RawDnsTcpIoResult::Failed,
+                Err(_) => RawDnsTcpIoResult::TimedOut,
+            },
+        };
+        if frame_result != RawDnsTcpIoResult::Complete {
+            result = frame_result;
+            break 'write;
+        }
+        bytes_since_yield = bytes_since_yield.saturating_add(frame.len());
+        if bytes_since_yield >= RAW_DNS_TCP_WRITE_QUANTUM_BYTES {
+            bytes_since_yield = 0;
+            let shutdown_requested = tokio::select! {
+                biased;
+                () = wait_for_tun_shutdown(shutdown) => true,
+                () = tokio::task::yield_now() => false,
+            };
+            if shutdown_requested {
+                result = RawDnsTcpIoResult::Shutdown;
+                break 'write;
+            }
+        }
+    }
+    if result == RawDnsTcpIoResult::Complete {
+        result = tokio::select! {
+            biased;
+            () = wait_for_tun_shutdown(shutdown) => RawDnsTcpIoResult::Shutdown,
+            flush = timeout_at(deadline, session.stream.flush()) => match flush {
+                Ok(Ok(())) => RawDnsTcpIoResult::Complete,
+                Ok(Err(_)) => RawDnsTcpIoResult::Failed,
+                Err(_) => RawDnsTcpIoResult::TimedOut,
+            },
+        };
+    }
+    let write_duration_ms = elapsed_ms_since(&write_start);
+    context.tun.record_tcp_remote_write_wait(write_duration_ms);
+    record_tcp_remote_write_slow_event(
+        context.tun.as_ref(),
+        &session.target,
+        session.outbound_tag.as_deref(),
+        write_duration_ms,
+        bytes,
+        messages,
+    );
+    if matches!(
+        result,
+        RawDnsTcpIoResult::Failed | RawDnsTcpIoResult::TimedOut
+    ) {
+        context.tun.record_tcp_remote_write_error();
+    }
+    if result != RawDnsTcpIoResult::Complete {
+        return result;
+    }
+    context.tun.record_tcp_remote_written(bytes);
+    context.tun.record_tcp_remote_write_batch(messages, bytes);
+    let upload_frame_ids = pending.mark_generation_sent(session.generation);
+    if upload_frame_ids
+        .into_iter()
+        .any(|upload_frame_id| !upload_ledger.commit_frame(upload_frame_id))
+    {
+        context.tun.record_tcp_remote_write_error();
+        return RawDnsTcpIoResult::Failed;
+    }
+    RawDnsTcpIoResult::Complete
+}
+
+async fn handle_raw_dns_upstream_frames(
+    session: &mut RawDnsTcpUpstreamSession,
+    pending: &mut RawDnsTcpPendingQueries,
+    handle: SocketHandle,
+    generation: u64,
+    context: &TunRuntimeContext,
+    shutdown: &mut watch::Receiver<bool>,
+) -> RawDnsTcpUpstreamFramesResult {
+    let mut processed = 0usize;
+    loop {
+        let frame = match session.decoder.next_frame() {
+            Ok(Some(frame)) => frame,
+            Ok(None) => return RawDnsTcpUpstreamFramesResult::Continue,
+            Err(_) => {
+                context.tun.record_tcp_remote_read_error();
+                return RawDnsTcpUpstreamFramesResult::Retire;
+            }
+        };
+        let response = &frame[2..];
+        let Some(response_kind) = raw_dns_tcp_response_kind(response) else {
+            context.tun.record_tcp_remote_read_error();
+            return RawDnsTcpUpstreamFramesResult::Retire;
+        };
+        let Some(index) = pending.matching_response_index(session.generation, response) else {
+            context.tun.record_tcp_remote_read_error();
+            return RawDnsTcpUpstreamFramesResult::Retire;
+        };
+        if response_kind == RawDnsTcpResponseKind::Retry {
+            return RawDnsTcpUpstreamFramesResult::Retire;
+        }
+        match send_raw_dns_tcp_frame(handle, generation, frame, context, shutdown).await {
+            RawDnsTcpIoResult::Complete => {}
+            RawDnsTcpIoResult::Shutdown => return RawDnsTcpUpstreamFramesResult::Shutdown,
+            RawDnsTcpIoResult::Failed | RawDnsTcpIoResult::TimedOut => {
+                return RawDnsTcpUpstreamFramesResult::Close;
+            }
+        }
+        if pending.remove(index).is_none() {
+            return RawDnsTcpUpstreamFramesResult::Close;
+        }
+        processed = processed.saturating_add(1);
+        if processed >= RAW_DNS_TCP_DRAIN_QUANTUM {
+            processed = 0;
+            let shutdown_requested = tokio::select! {
+                biased;
+                () = wait_for_tun_shutdown(shutdown) => true,
+                () = tokio::task::yield_now() => false,
+            };
+            if shutdown_requested {
+                return RawDnsTcpUpstreamFramesResult::Shutdown;
+            }
+        }
+    }
+}
+
+async fn open_raw_dns_tcp_candidate(
+    candidate_index: usize,
+    candidate_deadline: TokioInstant,
+    plan: &DnsProxyPlan,
+    client_target: &Target,
+    context: &TunRuntimeContext,
+    shutdown: &mut watch::Receiver<bool>,
+) -> RawDnsTcpOpenResult {
+    let Some(upstream) = plan.upstreams().get(candidate_index) else {
+        return RawDnsTcpOpenResult::Failed;
+    };
+    let target = upstream.target(RoutingNetwork::Tcp);
+    let routing_inbound_tag = upstream.inbound_tag();
+    let collect_tcp_timings = context.tun_runtime_options.collect_tcp_timings;
+    let open_started = collect_tcp_timings.then(StdInstant::now);
+    let selection = if upstream.is_local() {
+        Ok((TcpOutbound::Freedom, None))
+    } else {
+        context
+            .outbound_router
+            .select_tcp_outbound_for_session_with_tag(
+                Some(routing_inbound_tag),
+                &target,
+                collect_tcp_timings,
+            )
+            .map(|selection| (selection.outbound, selection.tag))
+            .map_err(|error| error.to_string())
+    };
+    let (outbound, outbound_tag) = match selection {
+        Ok(selection) => selection,
+        Err(error) => {
+            record_raw_dns_tcp_open_failure(context, client_target, None, &error);
+            return RawDnsTcpOpenResult::Failed;
+        }
+    };
+    let remaining = candidate_deadline.saturating_duration_since(TokioInstant::now());
+    if remaining.is_zero() {
+        record_raw_dns_tcp_open_failure(
+            context,
+            client_target,
+            outbound_tag.as_deref(),
+            "DNS TCP proxy candidate deadline elapsed",
+        );
+        return RawDnsTcpOpenResult::TimedOut;
+    }
+    let policy_timeout = match &outbound {
+        TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => {
+            context.inbound_policy.handshake
+        }
+        TcpOutbound::Vless(outbound) => {
+            effective_policy_for_level(&context.config, Some(outbound.user().level)).handshake
+        }
+    };
+    let policy_deadline = TokioInstant::now() + DNS_TCP_PROXY_ATTEMPT_TIMEOUT.min(policy_timeout);
+    let open_deadline = candidate_deadline.min(policy_deadline);
+    let result = tokio::select! {
+        biased;
+        () = wait_for_tun_shutdown(shutdown) => return RawDnsTcpOpenResult::Shutdown,
+        result = timeout_at(
+            open_deadline,
+            open_tcp_bridge_stream(&outbound, &target, Some(upstream), context),
+        ) => result,
+    };
+    let stream = match result {
+        Ok(Ok(stream)) => stream,
+        Ok(Err(error)) => {
+            record_raw_dns_tcp_open_failure(
+                context,
+                client_target,
+                outbound_tag.as_deref(),
+                &error.to_string(),
+            );
+            return RawDnsTcpOpenResult::Failed;
+        }
+        Err(_) => {
+            record_raw_dns_tcp_open_failure(
+                context,
+                client_target,
+                outbound_tag.as_deref(),
+                "DNS TCP upstream open timed out",
+            );
+            return if candidate_deadline <= TokioInstant::now() {
+                RawDnsTcpOpenResult::TimedOut
+            } else {
+                RawDnsTcpOpenResult::Failed
+            };
+        }
+    };
+    let outbound_label = outbound_tag
+        .as_deref()
+        .unwrap_or_else(|| crate::debug_log::tcp_outbound_label(&outbound));
+    if context.runtime_logger.is_enabled() {
+        crate::debug_log::log_route_decision(
+            &context.runtime_logger,
+            crate::debug_log::RouteDecisionLog {
+                inbound_tag: Some(routing_inbound_tag),
+                network: client_target.network,
+                original_target: client_target,
+                sniffed_protocol: None,
+                route_target: &target,
+                dial_target: &target,
+                selected_outbound: outbound_label,
+            },
+        );
+        crate::debug_log::log_access_accepted(
+            &context.runtime_logger,
+            "tun",
+            client_target,
+            outbound_label,
+        );
+    }
+    let timing = open_started.map(|open_started| {
+        let duration_ms = elapsed_ms_since(&open_started);
+        context.tun.record_tcp_open_timing(duration_ms, false);
+        record_tcp_slow_flow_event(
+            context.tun.as_ref(),
+            client_target,
+            TunTcpSlowFlowKind::Open,
+            duration_ms,
+            0,
+        );
+        TcpFirstByteTimingEnabled::new(open_started, false, duration_ms, outbound_tag.clone())
+    });
+    RawDnsTcpOpenResult::Opened(RawDnsTcpOpenedCandidate {
+        stream,
+        target,
+        outbound_tag,
+        timing,
+    })
+}
+
+fn record_raw_dns_tcp_open_failure(
+    context: &TunRuntimeContext,
+    client_target: &Target,
+    outbound_tag: Option<&str>,
+    error: &str,
+) {
+    context.tun.record_tcp_open_error();
+    record_tcp_open_error_event(context.tun.as_ref(), client_target, outbound_tag, error);
+    if context.runtime_logger.is_enabled() {
+        crate::debug_log::log_access_rejected(&context.runtime_logger, "tun", client_target, error);
+    }
+}
+
 struct FakeDnsTcpDecodeResult {
     response: Option<Bytes>,
     processed_message: bool,
@@ -705,7 +2232,11 @@ impl DnsTcpFrameDecoder {
         self.buffered.extend_from_slice(chunk);
     }
 
-    fn next_frame(&mut self) -> Result<Option<Bytes>, DnsTcpFrameDecodeError> {
+    fn buffered_len(&self) -> usize {
+        self.buffered.len()
+    }
+
+    fn peek_frame_len(&mut self) -> Result<Option<usize>, DnsTcpFrameDecodeError> {
         if let Some(error) = self.terminal_error {
             return Err(error);
         }
@@ -731,6 +2262,13 @@ impl DnsTcpFrameDecoder {
             return Ok(None);
         }
 
+        Ok(Some(frame_len))
+    }
+
+    fn next_frame(&mut self) -> Result<Option<Bytes>, DnsTcpFrameDecodeError> {
+        let Some(frame_len) = self.peek_frame_len()? else {
+            return Ok(None);
+        };
         Ok(Some(self.buffered.split_to(frame_len).freeze()))
     }
 }
@@ -1756,6 +3294,295 @@ mod tests {
         framed.extend_from_slice(&u16::try_from(response.len()).unwrap().to_be_bytes());
         framed.extend_from_slice(&response);
         framed
+    }
+
+    fn dns_response_with_flags(query: &[u8], flags: u16) -> Vec<u8> {
+        let mut response = query.to_vec();
+        response[2..4].copy_from_slice(&flags.to_be_bytes());
+        response
+    }
+
+    fn framed_dns_query(query: &[u8]) -> Bytes {
+        let mut framed = BytesMut::with_capacity(query.len() + 2);
+        framed.extend_from_slice(&u16::try_from(query.len()).unwrap().to_be_bytes());
+        framed.extend_from_slice(query);
+        framed.freeze()
+    }
+
+    fn dns_a_response_with_answer(query: &[u8]) -> Vec<u8> {
+        let mut response = dns_response_with_flags(query, 0x8180);
+        response[6..8].copy_from_slice(&1_u16.to_be_bytes());
+        response.extend_from_slice(&[0xc0, 0x0c]);
+        response.extend_from_slice(&DNS_TYPE_A.to_be_bytes());
+        response.extend_from_slice(&DNS_CLASS_IN.to_be_bytes());
+        response.extend_from_slice(&60_u32.to_be_bytes());
+        response.extend_from_slice(&4_u16.to_be_bytes());
+        response.extend_from_slice(&[192, 0, 2, 1]);
+        response
+    }
+
+    #[test]
+    fn raw_dns_tcp_classifier_accepts_standard_single_question_query() {
+        let query = dns_a_query(0x4100, "standard.example");
+
+        assert_eq!(
+            raw_dns_tcp_client_frame_kind(&query),
+            RawDnsTcpClientFrameKind::Query
+        );
+    }
+
+    #[test]
+    fn raw_dns_tcp_classifier_uses_transparent_mode_for_axfr_and_ixfr() {
+        let kinds = [DNS_TYPE_AXFR, DNS_TYPE_IXFR].map(|query_type| {
+            let mut query = dns_a_query(0x4101, "transfer.example");
+            let type_offset = query.len() - 4;
+            query[type_offset..type_offset + 2].copy_from_slice(&query_type.to_be_bytes());
+            raw_dns_tcp_client_frame_kind(&query)
+        });
+
+        assert_eq!(kinds, [RawDnsTcpClientFrameKind::Transparent; 2]);
+    }
+
+    #[test]
+    fn raw_dns_tcp_classifier_uses_transparent_mode_for_non_query_opcode() {
+        let mut query = dns_a_query(0x4102, "opcode.example");
+        query[2..4].copy_from_slice(&0x0900_u16.to_be_bytes());
+
+        assert_eq!(
+            raw_dns_tcp_client_frame_kind(&query),
+            RawDnsTcpClientFrameKind::Transparent
+        );
+    }
+
+    #[test]
+    fn raw_dns_tcp_classifier_uses_transparent_mode_for_non_single_question() {
+        let mut query = dns_a_query(0x4103, "multi.example");
+        query[4..6].copy_from_slice(&2_u16.to_be_bytes());
+
+        assert_eq!(
+            raw_dns_tcp_client_frame_kind(&query),
+            RawDnsTcpClientFrameKind::Transparent
+        );
+    }
+
+    #[test]
+    fn raw_dns_tcp_envelope_rejects_record_with_truncated_rdata() {
+        let query = dns_a_query(0x4104, "rdlength.example");
+        let mut response = dns_a_response_with_answer(&query);
+        let rdlength_offset = response.len() - 6;
+        response[rdlength_offset..rdlength_offset + 2].copy_from_slice(&5_u16.to_be_bytes());
+
+        assert!(!dns_wire_envelope_is_well_formed(&response));
+    }
+
+    #[test]
+    fn raw_dns_tcp_envelope_rejects_trailing_bytes() {
+        let query = dns_a_query(0x4105, "trailing.example");
+        let mut response = dns_a_response_with_answer(&query);
+        response.push(0);
+
+        assert!(!dns_wire_envelope_is_well_formed(&response));
+    }
+
+    #[test]
+    fn raw_dns_tcp_response_classifier_retries_tc_and_servfail() {
+        let query = dns_a_query(0x4106, "retry.example");
+        let kinds = [0x8380_u16, 0x8182_u16]
+            .map(|flags| raw_dns_tcp_response_kind(&dns_response_with_flags(&query, flags)));
+
+        assert_eq!(kinds, [Some(RawDnsTcpResponseKind::Retry); 2]);
+    }
+
+    #[test]
+    fn raw_dns_tcp_response_classifier_accepts_nxdomain_and_nodata_as_terminal() {
+        let query = dns_a_query(0x4107, "terminal.example");
+        let kinds = [0x8183_u16, 0x8180_u16]
+            .map(|flags| raw_dns_tcp_response_kind(&dns_response_with_flags(&query, flags)));
+
+        assert_eq!(kinds, [Some(RawDnsTcpResponseKind::Terminal); 2]);
+    }
+
+    #[test]
+    fn raw_dns_tcp_pending_matches_duplicate_id_by_question() {
+        let first = dns_a_query(0x4108, "first.example");
+        let second = dns_a_query(0x4108, "second.example");
+        let now = TokioInstant::now();
+        let mut pending = RawDnsTcpPendingQueries::default();
+        assert!(pending.push(framed_dns_query(&first), now));
+        assert!(pending.push(framed_dns_query(&second), now));
+        pending.prepare_candidate(0, 2, 7, now);
+        let _ = pending.mark_generation_sent(7);
+        let response = dns_response_with_flags(&second, 0x8180);
+
+        assert_eq!(pending.matching_response_index(7, &response), Some(1));
+    }
+
+    #[test]
+    fn raw_dns_tcp_pending_exhausts_each_candidate_once() {
+        let query = dns_a_query(0x4109, "exhaust.example");
+        let now = TokioInstant::now();
+        let mut pending = RawDnsTcpPendingQueries::default();
+        assert!(pending.push(framed_dns_query(&query), now));
+        assert_eq!(pending.next_candidate(2), Some(0));
+        pending.prepare_candidate(0, 2, 1, now);
+        pending.retire_generation_preserving_attempts(1);
+        assert_eq!(pending.next_candidate(2), Some(1));
+        pending.prepare_candidate(1, 2, 2, now);
+        pending.retire_generation_preserving_attempts(2);
+
+        assert_eq!(pending.next_failed_index(2, now), Some(0));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn raw_dns_tcp_timeout_rolls_back_collateral_query_candidate() {
+        let first = dns_a_query(0x4110, "old.example");
+        let second = dns_a_query(0x4111, "new.example");
+        let now = TokioInstant::now();
+        let mut pending = RawDnsTcpPendingQueries::default();
+        assert!(pending.push(framed_dns_query(&first), now));
+        let first_deadline = pending.prepare_candidate(0, 2, 9, now).unwrap();
+        tokio::time::advance(
+            first_deadline
+                .saturating_duration_since(now)
+                .saturating_sub(Duration::from_millis(1)),
+        )
+        .await;
+        let almost_expired = TokioInstant::now();
+        assert!(pending.push(framed_dns_query(&second), almost_expired));
+        pending.prepare_candidate(0, 2, 9, almost_expired);
+
+        assert_eq!(pending.entries[1].generation, 9);
+        assert!(pending.entries[1].attempt_deadline > pending.entries[0].attempt_deadline);
+        tokio::time::advance(Duration::from_millis(1)).await;
+        pending.retire_generation_for_timeout(9, 0, TokioInstant::now());
+
+        assert_eq!(pending.entries[0].attempted_candidates, 0b01);
+        assert_eq!(pending.entries[1].attempted_candidates, 0);
+        assert_eq!(pending.next_candidate(2), Some(1));
+        pending.remove(0);
+        assert_eq!(pending.next_candidate(2), Some(0));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn raw_dns_tcp_pending_joins_generation_while_candidate_budget_is_usable() {
+        let first = dns_a_query(0x4113, "early-first.example");
+        let second = dns_a_query(0x4114, "early-second.example");
+        let now = TokioInstant::now();
+        let mut pending = RawDnsTcpPendingQueries::default();
+        assert!(pending.push(framed_dns_query(&first), now));
+        pending.prepare_candidate(0, 2, 11, now);
+        tokio::time::advance(Duration::from_millis(100)).await;
+        assert!(pending.push(framed_dns_query(&second), TokioInstant::now()));
+        pending.prepare_candidate(0, 2, 11, TokioInstant::now());
+
+        assert_eq!(pending.entries[1].generation, 11);
+        assert!(pending.entries[1].attempt_deadline > pending.entries[0].attempt_deadline);
+    }
+
+    #[test]
+    fn raw_dns_tcp_pending_reuses_healthy_fallback_for_a_fresh_cycle() {
+        let query = dns_a_query(0x4115, "sticky-fallback.example");
+        let now = TokioInstant::now();
+        let mut pending = RawDnsTcpPendingQueries::default();
+        assert!(pending.push_with_preferred_candidate(
+            framed_dns_query(&query),
+            now,
+            Some(1),
+            None,
+        ));
+        assert_eq!(pending.next_candidate(2), Some(1));
+
+        pending.prepare_candidate(1, 2, 12, now);
+
+        assert_eq!(pending.entries[0].attempted_candidates, 0b10);
+    }
+
+    #[test]
+    fn raw_dns_tcp_pending_joins_healthy_fallback_during_continuous_pipeline() {
+        let first = dns_a_query(0x4116, "fallback-old.example");
+        let second = dns_a_query(0x4117, "fallback-new.example");
+        let now = TokioInstant::now();
+        let mut pending = RawDnsTcpPendingQueries::default();
+        assert!(pending.push_with_preferred_candidate(
+            framed_dns_query(&first),
+            now,
+            Some(1),
+            None,
+        ));
+        pending.prepare_candidate(1, 2, 13, now);
+        assert!(pending.push_with_preferred_candidate(
+            framed_dns_query(&second),
+            now,
+            Some(1),
+            None,
+        ));
+        pending.prepare_candidate(1, 2, 13, now);
+
+        assert_eq!(pending.entries[1].generation, 13);
+        assert_eq!(pending.entries[1].attempted_candidates, 0b10);
+    }
+
+    #[test]
+    fn raw_dns_tcp_upload_ledger_releases_only_committed_prefix() {
+        let state = Arc::new(TcpUploadBufferState::default());
+        let bytes = Bytes::from_static(b"abcdefgh");
+        let reservation = TcpUploadReservation::new(Arc::clone(&state), bytes.len());
+        let mut ledger = RawDnsTcpUploadLedger::default();
+        assert!(ledger.push(StackToRemoteData::tracked(bytes, reservation)));
+        let first = ledger.register_frame(4).unwrap();
+        let second = ledger.register_frame(4).unwrap();
+
+        assert!(ledger.commit_frame(second));
+        assert_eq!(state.pending_bytes(), 8);
+        assert!(ledger.commit_frame(first));
+        assert_eq!(state.pending_bytes(), 0);
+        assert_eq!(ledger.committed_end, 8);
+    }
+
+    #[test]
+    fn raw_dns_tcp_upload_ledger_handles_fragmented_frame_and_replay_once() {
+        let state = Arc::new(TcpUploadBufferState::default());
+        let mut ledger = RawDnsTcpUploadLedger::default();
+        let query = dns_a_query(0x4118, "replay-accounting.example");
+        let framed = framed_dns_query(&query);
+        for bytes in [framed.slice(..3), framed.slice(3..)] {
+            let reservation = TcpUploadReservation::new(Arc::clone(&state), bytes.len());
+            assert!(ledger.push(StackToRemoteData::tracked(bytes, reservation)));
+        }
+        let upload_frame_id = ledger.register_frame(framed.len()).unwrap();
+        let now = TokioInstant::now();
+        let mut pending = RawDnsTcpPendingQueries::default();
+        assert!(pending.push_with_preferred_candidate(framed, now, None, Some(upload_frame_id),));
+        pending.prepare_candidate(0, 2, 14, now);
+        let first_flush = pending.mark_generation_sent(14);
+        assert_eq!(first_flush, vec![upload_frame_id]);
+        for frame_id in first_flush {
+            assert!(ledger.commit_frame(frame_id));
+        }
+        assert_eq!(state.pending_bytes(), 0);
+
+        pending.retire_generation_preserving_attempts(14);
+        pending.prepare_candidate(1, 2, 15, now);
+        assert!(pending.mark_generation_sent(15).is_empty());
+        assert_eq!(state.pending_bytes(), 0);
+    }
+
+    #[test]
+    fn raw_dns_tcp_pending_enforces_query_and_byte_bounds() {
+        let now = TokioInstant::now();
+        let mut count_bounded = RawDnsTcpPendingQueries::default();
+        let query = dns_a_query(0x4112, "bound.example");
+        for _ in 0..MAX_RAW_DNS_TCP_PENDING_QUERIES {
+            assert!(count_bounded.push(framed_dns_query(&query), now));
+        }
+        assert!(!count_bounded.push(framed_dns_query(&query), now));
+
+        let mut byte_bounded = RawDnsTcpPendingQueries::default();
+        let maximum_frame = Bytes::from(vec![0_u8; MAX_DNS_TCP_MESSAGE_SIZE + 2]);
+        for _ in 0..(MAX_RAW_DNS_TCP_PENDING_QUERIES - 1) {
+            assert!(byte_bounded.push(maximum_frame.clone(), now));
+        }
+        assert!(!byte_bounded.push(maximum_frame, now));
     }
 
     #[test]

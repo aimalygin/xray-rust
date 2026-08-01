@@ -5,7 +5,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::pin::Pin;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
-    Arc,
+    Arc, Mutex,
 };
 use std::task::{Context, Poll};
 
@@ -66,7 +66,6 @@ use xray_tun::{TunEndpoint, TunError, TunStats};
 
 const ICMPV4_PROTOCOL: u8 = 1;
 const ICMPV6_PROTOCOL: u8 = 58;
-const TCP_PROTOCOL: u8 = 6;
 const UDP_PROTOCOL: u8 = 17;
 const TEST_UUID_BYTES: [u8; 16] = [
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
@@ -2043,10 +2042,80 @@ async fn tun_dns_proxy_tcp_routed_domain_uses_second_bootstrap_candidate() {
 }
 
 #[tokio::test]
-async fn tun_dns_proxy_tcp_resets_client_when_all_servers_fail() {
+async fn tun_dns_proxy_tcp_matches_reverse_order_pipelined_responses() {
+    timeout(
+        Duration::from_secs(3),
+        run_tun_dns_proxy_tcp_reverse_response_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn tun_dns_proxy_tcp_replays_only_unanswered_query_after_partial_close() {
+    timeout(
+        Duration::from_secs(3),
+        run_tun_dns_proxy_tcp_partial_response_failover_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn tun_dns_proxy_tcp_retries_tc_and_servfail_responses() {
+    timeout(
+        Duration::from_secs(4),
+        run_tun_dns_proxy_tcp_retryable_status_scenarios(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn tun_dns_proxy_tcp_forwards_nxdomain_and_nodata_without_fallback() {
+    timeout(
+        Duration::from_secs(4),
+        run_tun_dns_proxy_tcp_terminal_status_scenarios(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn tun_dns_proxy_tcp_retries_wrong_question_malformed_and_read_timeout() {
+    timeout(
+        Duration::from_secs(6),
+        run_tun_dns_proxy_tcp_invalid_response_scenarios(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn tun_dns_proxy_tcp_keeps_client_open_and_recovers_after_exhausted_cycle() {
+    timeout(
+        Duration::from_secs(4),
+        run_tun_dns_proxy_tcp_exhausted_then_recovered_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn tun_dns_proxy_tcp_stop_closes_hanging_upstream_with_eof_bounded() {
     timeout(
         Duration::from_secs(2),
-        run_tun_dns_proxy_tcp_failure_scenario(),
+        run_tun_dns_proxy_tcp_hanging_shutdown_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn tun_dns_proxy_tcp_transparent_queries_preserve_multiple_response_frames() {
+    timeout(
+        Duration::from_secs(6),
+        run_tun_dns_proxy_tcp_transparent_scenarios(),
     )
     .await
     .unwrap();
@@ -5032,22 +5101,33 @@ fn pipelined_dns_tcp_queries() -> Vec<u8> {
     stream
 }
 
-fn dns_success_response_for_query(query: &[u8]) -> Vec<u8> {
+fn dns_response_for_query_with_flags(query: &[u8], flags: u16) -> Vec<u8> {
     assert!(query.len() >= 12, "DNS query must contain a header");
     let mut response = query.to_vec();
-    response[2..4].copy_from_slice(&0x8180_u16.to_be_bytes());
+    response[2..4].copy_from_slice(&flags.to_be_bytes());
     response
+}
+
+fn dns_success_response_for_query(query: &[u8]) -> Vec<u8> {
+    dns_response_for_query_with_flags(query, 0x8180)
+}
+
+fn dns_tcp_stream_for_messages(messages: &[Vec<u8>]) -> Vec<u8> {
+    let mut stream = Vec::new();
+    for message in messages {
+        stream.extend_from_slice(&u16::try_from(message.len()).unwrap().to_be_bytes());
+        stream.extend_from_slice(message);
+    }
+    stream
 }
 
 fn dns_tcp_success_response_stream(query_stream: &[u8]) -> Vec<u8> {
     let queries = complete_dns_tcp_messages(query_stream).expect("complete DNS-over-TCP queries");
-    let mut responses = Vec::with_capacity(query_stream.len());
-    for query in queries {
-        let response = dns_success_response_for_query(&query);
-        responses.extend_from_slice(&u16::try_from(response.len()).unwrap().to_be_bytes());
-        responses.extend_from_slice(&response);
-    }
-    responses
+    let responses = queries
+        .iter()
+        .map(|query| dns_success_response_for_query(query))
+        .collect::<Vec<_>>();
+    dns_tcp_stream_for_messages(&responses)
 }
 
 async fn run_tun_dns_proxy_tcp_scenario() {
@@ -5226,20 +5306,479 @@ async fn run_tun_dns_proxy_tcp_routed_domain_candidate_fallback_scenario() {
         .unwrap();
 }
 
-async fn run_tun_dns_proxy_tcp_failure_scenario() {
-    let unavailable = SocketAddr::from((Ipv4Addr::LOCALHOST, allocate_unused_loopback_port()));
-    let mut core = Core::new(runtime_tun_config_with_dns_proxy_servers(vec![unavailable])).unwrap();
+async fn start_tun_dns_tcp_session(upstreams: Vec<SocketAddr>) -> (Core, TunTcpClient) {
+    start_tun_dns_tcp_session_with_config(runtime_tun_config_with_dns_proxy_servers(upstreams))
+        .await
+}
+
+async fn start_tun_dns_tcp_session_with_config(config: CoreConfig) -> (Core, TunTcpClient) {
+    let mut core = Core::new(config).unwrap();
     core.start().await.unwrap();
 
     let anchor = SocketAddr::from((Ipv4Addr::new(198, 18, 0, 1), 53));
     let mut client = TunTcpClient::new();
     client.connect(anchor);
-    let reset_flags = pump_tun_until_tcp_reset(&mut client, core.tun()).await;
-    assert!(!client.is_open());
-    assert_eq!(reset_flags & 0x05, 0x04, "expected RST without FIN");
-    assert!(core.tun().stats().await.tcp_open_errors >= 1);
+    pump_tun_until(&mut client, core.tun(), TunTcpClient::may_send).await;
+    (core, client)
+}
+
+async fn receive_dns_tcp_frames(
+    client: &mut TunTcpClient,
+    tun: &TunEndpoint,
+    expected_count: usize,
+    wait: Duration,
+) -> Vec<Vec<u8>> {
+    let mut received = Vec::new();
+    pump_tun_until_with_timeout(client, tun, wait, |client| {
+        received.extend_from_slice(&client.recv_available());
+        complete_dns_tcp_messages(&received)
+            .is_some_and(|messages| messages.len() >= expected_count)
+    })
+    .await;
+    let messages = complete_dns_tcp_messages(&received).expect("complete DNS-over-TCP responses");
+    assert_eq!(messages.len(), expected_count);
+    messages
+}
+
+async fn assert_dns_tcp_quiescent(
+    client: &mut TunTcpClient,
+    tun: &TunEndpoint,
+    fallback_probe: &ScriptedDnsTcpProbe,
+    observation: Duration,
+) {
+    let deadline = TokioInstant::now() + observation;
+    let mut extra_payload = Vec::new();
+    loop {
+        client.poll();
+        while let Some(packet) = client.device.pop_outbound() {
+            tun.push_inbound(packet).await.unwrap();
+        }
+        while let Some(packet) = tun.try_poll_outbound().await.unwrap() {
+            client.device.push_inbound(packet);
+        }
+        client.poll();
+        extra_payload.extend_from_slice(&client.recv_available());
+        assert_eq!(
+            fallback_probe.snapshot(),
+            ScriptedDnsTcpTranscript::default()
+        );
+        if TokioInstant::now() >= deadline {
+            break;
+        }
+        sleep(Duration::from_millis(5)).await;
+    }
+    assert!(extra_payload.is_empty());
+}
+
+async fn run_tun_dns_proxy_tcp_reverse_response_scenario() {
+    let first_query = build_dns_a_query(0x2310, "reverse-first.example");
+    let second_query = build_dns_a_query(0x2310, "reverse-second.example");
+    let server = spawn_scripted_dns_tcp_server(vec![ScriptedDnsTcpConnection {
+        expected_queries: vec![first_query.clone(), second_query.clone()],
+        actions: vec![
+            ScriptedDnsTcpAction::Reply {
+                query_index: 1,
+                flags: 0x8180,
+            },
+            ScriptedDnsTcpAction::Reply {
+                query_index: 0,
+                flags: 0x8180,
+            },
+            ScriptedDnsTcpAction::Hang,
+        ],
+    }])
+    .await;
+    let probe = server.probe();
+    let (mut core, mut client) = start_tun_dns_tcp_session(vec![server.addr()]).await;
+
+    client.send_payload(&dns_tcp_stream_for_messages(&[
+        first_query.clone(),
+        second_query.clone(),
+    ]));
+    let responses =
+        receive_dns_tcp_frames(&mut client, core.tun(), 2, Duration::from_secs(1)).await;
+
+    assert_eq!(
+        responses,
+        vec![
+            dns_success_response_for_query(&second_query),
+            dns_success_response_for_query(&first_query),
+        ]
+    );
+    assert!(client.is_open());
+    core.stop().await.unwrap();
+    assert_eq!(
+        probe.snapshot().received_queries,
+        vec![first_query, second_query]
+    );
+    server.stop().await;
+}
+
+async fn run_tun_dns_proxy_tcp_partial_response_failover_scenario() {
+    let first_query = build_dns_a_query(0x2312, "partial-first.example");
+    let second_query = build_dns_a_query(0x2312, "partial-second.example");
+    let first = spawn_scripted_dns_tcp_server(vec![ScriptedDnsTcpConnection {
+        expected_queries: vec![first_query.clone(), second_query.clone()],
+        actions: vec![
+            ScriptedDnsTcpAction::Reply {
+                query_index: 1,
+                flags: 0x8180,
+            },
+            ScriptedDnsTcpAction::Close,
+        ],
+    }])
+    .await;
+    let fallback = spawn_scripted_dns_tcp_server(vec![ScriptedDnsTcpConnection {
+        expected_queries: vec![first_query.clone()],
+        actions: vec![
+            ScriptedDnsTcpAction::Reply {
+                query_index: 0,
+                flags: 0x8180,
+            },
+            ScriptedDnsTcpAction::Hang,
+        ],
+    }])
+    .await;
+    let first_probe = first.probe();
+    let fallback_probe = fallback.probe();
+    let (vless_addr, vless_handle, vless_targets) = spawn_observed_fake_vless_server(2).await;
+    let mut config = runtime_tun_config_with_vless_server(vless_addr);
+    config.dns.servers = vec![
+        tagged_dns_server(DnsServerEndpoint::Ip(first.addr()), "dns-vless"),
+        tagged_dns_server(DnsServerEndpoint::Ip(fallback.addr()), "dns-vless"),
+    ];
+    config.routing.rules = vec![RoutingRule {
+        inbound_tags: vec!["dns-vless".to_owned()],
+        domain_matchers: Vec::new(),
+        ip_matchers: Vec::new(),
+        outbound_tag: "proxy".to_owned(),
+    }];
+    let (mut core, mut client) = start_tun_dns_tcp_session_with_config(config).await;
+
+    client.send_payload(&dns_tcp_stream_for_messages(&[
+        first_query.clone(),
+        second_query.clone(),
+    ]));
+    let responses =
+        receive_dns_tcp_frames(&mut client, core.tun(), 2, Duration::from_secs(2)).await;
+
+    assert_eq!(
+        responses,
+        vec![
+            dns_success_response_for_query(&second_query),
+            dns_success_response_for_query(&first_query),
+        ]
+    );
+    assert!(client.is_open());
+    core.stop().await.unwrap();
+    assert_eq!(
+        first_probe.snapshot().received_queries,
+        vec![first_query.clone(), second_query]
+    );
+    assert_eq!(
+        fallback_probe.snapshot().received_queries,
+        vec![first_query]
+    );
+    assert_eq!(
+        *vless_targets.lock().unwrap(),
+        vec![first.addr(), fallback.addr()]
+    );
+    first.stop().await;
+    fallback.stop().await;
+    timeout(Duration::from_secs(1), vless_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+async fn run_tun_dns_proxy_tcp_retryable_status_scenarios() {
+    for (transaction_id, flags) in [(0x2314, 0x8380), (0x2315, 0x8182)] {
+        run_tun_dns_proxy_tcp_status_scenario(transaction_id, flags, true).await;
+    }
+}
+
+async fn run_tun_dns_proxy_tcp_terminal_status_scenarios() {
+    for (transaction_id, flags) in [(0x2316, 0x8183), (0x2317, 0x8180)] {
+        run_tun_dns_proxy_tcp_status_scenario(transaction_id, flags, false).await;
+    }
+}
+
+async fn run_tun_dns_proxy_tcp_status_scenario(
+    transaction_id: u16,
+    first_flags: u16,
+    retry_expected: bool,
+) {
+    let query = build_dns_a_query(transaction_id, "status.example");
+    let first = spawn_scripted_dns_tcp_server(vec![ScriptedDnsTcpConnection {
+        expected_queries: vec![query.clone()],
+        actions: vec![
+            ScriptedDnsTcpAction::Reply {
+                query_index: 0,
+                flags: first_flags,
+            },
+            ScriptedDnsTcpAction::Hang,
+        ],
+    }])
+    .await;
+    let fallback = spawn_scripted_dns_tcp_server(vec![ScriptedDnsTcpConnection {
+        expected_queries: vec![query.clone()],
+        actions: vec![
+            ScriptedDnsTcpAction::Reply {
+                query_index: 0,
+                flags: 0x8180,
+            },
+            ScriptedDnsTcpAction::Hang,
+        ],
+    }])
+    .await;
+    let first_probe = first.probe();
+    let fallback_probe = fallback.probe();
+    let (mut core, mut client) =
+        start_tun_dns_tcp_session(vec![first.addr(), fallback.addr()]).await;
+
+    client.send_payload(&dns_tcp_stream_for_messages(std::slice::from_ref(&query)));
+    let responses =
+        receive_dns_tcp_frames(&mut client, core.tun(), 1, Duration::from_secs(2)).await;
+    let expected_flags = if retry_expected { 0x8180 } else { first_flags };
+
+    assert_eq!(
+        responses,
+        vec![dns_response_for_query_with_flags(&query, expected_flags)]
+    );
+    assert!(client.is_open());
+    if !retry_expected {
+        assert_dns_tcp_quiescent(
+            &mut client,
+            core.tun(),
+            &fallback_probe,
+            Duration::from_millis(150),
+        )
+        .await;
+    }
+    core.stop().await.unwrap();
+    assert_eq!(first_probe.snapshot().received_queries, vec![query.clone()]);
+    let fallback_transcript = fallback_probe.snapshot();
+    if retry_expected {
+        assert_eq!(fallback_transcript.received_queries, vec![query]);
+    } else {
+        assert_eq!(fallback_transcript, ScriptedDnsTcpTranscript::default());
+    }
+    first.stop().await;
+    fallback.stop().await;
+}
+
+async fn run_tun_dns_proxy_tcp_invalid_response_scenarios() {
+    let wrong_query = build_dns_a_query(0x2318, "wrong-question.example");
+    run_tun_dns_proxy_tcp_invalid_response_scenario(
+        wrong_query,
+        vec![
+            ScriptedDnsTcpAction::WrongQuestion {
+                query_index: 0,
+                domain: "unrelated-answer.example".to_owned(),
+                flags: 0x8180,
+            },
+            ScriptedDnsTcpAction::Hang,
+        ],
+    )
+    .await;
+
+    let timeout_query = build_dns_a_query(0x2319, "read-timeout.example");
+    run_tun_dns_proxy_tcp_invalid_response_scenario(
+        timeout_query,
+        vec![ScriptedDnsTcpAction::Hang],
+    )
+    .await;
+
+    let malformed_query = build_dns_a_query(0x231a, "malformed-response.example");
+    run_tun_dns_proxy_tcp_invalid_response_scenario(
+        malformed_query,
+        vec![
+            ScriptedDnsTcpAction::MalformedMatching { query_index: 0 },
+            ScriptedDnsTcpAction::Hang,
+        ],
+    )
+    .await;
+}
+
+async fn run_tun_dns_proxy_tcp_invalid_response_scenario(
+    query: Vec<u8>,
+    first_actions: Vec<ScriptedDnsTcpAction>,
+) {
+    let first = spawn_scripted_dns_tcp_server(vec![ScriptedDnsTcpConnection {
+        expected_queries: vec![query.clone()],
+        actions: first_actions,
+    }])
+    .await;
+    let fallback = spawn_scripted_dns_tcp_server(vec![ScriptedDnsTcpConnection {
+        expected_queries: vec![query.clone()],
+        actions: vec![
+            ScriptedDnsTcpAction::Reply {
+                query_index: 0,
+                flags: 0x8180,
+            },
+            ScriptedDnsTcpAction::Hang,
+        ],
+    }])
+    .await;
+    let first_probe = first.probe();
+    let fallback_probe = fallback.probe();
+    let (mut core, mut client) =
+        start_tun_dns_tcp_session(vec![first.addr(), fallback.addr()]).await;
+
+    client.send_payload(&dns_tcp_stream_for_messages(std::slice::from_ref(&query)));
+    let responses =
+        receive_dns_tcp_frames(&mut client, core.tun(), 1, Duration::from_secs(4)).await;
+
+    assert_eq!(responses, vec![dns_success_response_for_query(&query)]);
+    assert!(client.is_open());
+    core.stop().await.unwrap();
+    assert_eq!(first_probe.snapshot().received_queries, vec![query.clone()]);
+    assert_eq!(fallback_probe.snapshot().received_queries, vec![query]);
+    first.stop().await;
+    fallback.stop().await;
+}
+
+async fn run_tun_dns_proxy_tcp_exhausted_then_recovered_scenario() {
+    let first_failed_query = build_dns_a_query(0x2320, "exhausted-first.example");
+    let second_failed_query = build_dns_a_query(0x2321, "exhausted-second.example");
+    let recovered_query = build_dns_a_query(0x2322, "recovered.example");
+    let first = spawn_scripted_dns_tcp_server(vec![
+        ScriptedDnsTcpConnection {
+            expected_queries: vec![first_failed_query.clone(), second_failed_query.clone()],
+            actions: vec![ScriptedDnsTcpAction::Close],
+        },
+        ScriptedDnsTcpConnection {
+            expected_queries: vec![recovered_query.clone()],
+            actions: vec![
+                ScriptedDnsTcpAction::Reply {
+                    query_index: 0,
+                    flags: 0x8180,
+                },
+                ScriptedDnsTcpAction::Hang,
+            ],
+        },
+    ])
+    .await;
+    let second = spawn_scripted_dns_tcp_server(vec![ScriptedDnsTcpConnection {
+        expected_queries: vec![first_failed_query.clone(), second_failed_query.clone()],
+        actions: vec![ScriptedDnsTcpAction::Close],
+    }])
+    .await;
+    let first_probe = first.probe();
+    let second_probe = second.probe();
+    let (mut core, mut client) = start_tun_dns_tcp_session(vec![first.addr(), second.addr()]).await;
+
+    client.send_payload(&dns_tcp_stream_for_messages(&[
+        first_failed_query.clone(),
+        second_failed_query.clone(),
+    ]));
+    let failed_responses =
+        receive_dns_tcp_frames(&mut client, core.tun(), 2, Duration::from_secs(2)).await;
+    assert_eq!(
+        failed_responses,
+        vec![
+            dns_response_for_query_with_flags(&first_failed_query, 0x8182),
+            dns_response_for_query_with_flags(&second_failed_query, 0x8182),
+        ]
+    );
+    assert!(client.is_open());
+
+    client.send_payload(&dns_tcp_stream_for_messages(std::slice::from_ref(
+        &recovered_query,
+    )));
+    let recovered_response =
+        receive_dns_tcp_frames(&mut client, core.tun(), 1, Duration::from_secs(1)).await;
+    assert_eq!(
+        recovered_response,
+        vec![dns_success_response_for_query(&recovered_query)]
+    );
+    assert!(client.is_open());
 
     core.stop().await.unwrap();
+    let first_transcript = first_probe.snapshot();
+    assert_eq!(first_transcript.accepted_connections, 2);
+    assert_eq!(
+        first_transcript.received_queries,
+        vec![
+            first_failed_query.clone(),
+            second_failed_query.clone(),
+            recovered_query,
+        ]
+    );
+    let second_transcript = second_probe.snapshot();
+    assert_eq!(second_transcript.accepted_connections, 1);
+    assert_eq!(
+        second_transcript.received_queries,
+        vec![first_failed_query, second_failed_query]
+    );
+    first.stop().await;
+    second.stop().await;
+}
+
+async fn run_tun_dns_proxy_tcp_hanging_shutdown_scenario() {
+    let query = build_dns_a_query(0x2323, "shutdown-hang.example");
+    let server = spawn_scripted_dns_tcp_server(vec![ScriptedDnsTcpConnection {
+        expected_queries: vec![query.clone()],
+        actions: vec![ScriptedDnsTcpAction::ExpectEof],
+    }])
+    .await;
+    let probe = server.probe();
+    let (mut core, mut client) = start_tun_dns_tcp_session(vec![server.addr()]).await;
+
+    client.send_payload(&dns_tcp_stream_for_messages(&[query]));
+    pump_tun_until_with_timeout(&mut client, core.tun(), Duration::from_secs(1), |_| {
+        probe.received_query_count() == 1
+    })
+    .await;
+    probe.wait_for_received_queries(1).await;
+
+    let started = TokioInstant::now();
+    timeout(Duration::from_secs(1), core.stop())
+        .await
+        .expect("core stop must cancel a hanging DNS TCP attempt")
+        .unwrap();
+    assert!(started.elapsed() < Duration::from_secs(1));
+    probe.wait_for_observed_eof(1).await;
+    assert_eq!(probe.snapshot().observed_eof_connections, vec![0]);
+    server.finish().await;
+}
+
+async fn run_tun_dns_proxy_tcp_transparent_scenarios() {
+    let axfr = build_dns_query(0x2324, "axfr-transfer.example", 252, 1);
+    let ixfr = build_dns_query(0x2325, "ixfr-transfer.example", 251, 1);
+    let mut non_query_opcode = build_dns_a_query(0x2326, "opcode-transfer.example");
+    non_query_opcode[2..4].copy_from_slice(&0x0900_u16.to_be_bytes());
+
+    for (query, response_flags) in [(axfr, 0x8180), (ixfr, 0x8180), (non_query_opcode, 0x8980)] {
+        let server = spawn_scripted_dns_tcp_server(vec![ScriptedDnsTcpConnection {
+            expected_queries: vec![query.clone()],
+            actions: vec![
+                ScriptedDnsTcpAction::Reply {
+                    query_index: 0,
+                    flags: response_flags,
+                },
+                ScriptedDnsTcpAction::Reply {
+                    query_index: 0,
+                    flags: response_flags,
+                },
+                ScriptedDnsTcpAction::Hang,
+            ],
+        }])
+        .await;
+        let probe = server.probe();
+        let (mut core, mut client) = start_tun_dns_tcp_session(vec![server.addr()]).await;
+
+        client.send_payload(&dns_tcp_stream_for_messages(std::slice::from_ref(&query)));
+        let responses =
+            receive_dns_tcp_frames(&mut client, core.tun(), 2, Duration::from_secs(1)).await;
+        let response = dns_response_for_query_with_flags(&query, response_flags);
+
+        assert_eq!(responses, vec![response.clone(), response]);
+        assert!(client.is_open());
+        core.stop().await.unwrap();
+        assert_eq!(probe.snapshot().received_queries, vec![query]);
+        server.stop().await;
+    }
 }
 
 async fn run_tun_dns_proxy_tcp_vless_scenario() {
@@ -6314,9 +6853,18 @@ impl TunTcpMultiClient {
 async fn pump_tun_until(
     client: &mut TunTcpClient,
     tun: &TunEndpoint,
+    is_done: impl FnMut(&mut TunTcpClient) -> bool,
+) {
+    pump_tun_until_with_timeout(client, tun, Duration::from_millis(750), is_done).await;
+}
+
+async fn pump_tun_until_with_timeout(
+    client: &mut TunTcpClient,
+    tun: &TunEndpoint,
+    wait: Duration,
     mut is_done: impl FnMut(&mut TunTcpClient) -> bool,
 ) {
-    let deadline = TokioInstant::now() + Duration::from_millis(750);
+    let deadline = TokioInstant::now() + wait;
     loop {
         client.poll();
         while let Some(packet) = client.device.pop_outbound() {
@@ -6388,37 +6936,6 @@ async fn pump_tun_once(client: &mut TunTcpClient, tun: &TunEndpoint) {
     }
     client.poll();
     sleep(Duration::from_millis(1)).await;
-}
-
-async fn pump_tun_until_tcp_reset(client: &mut TunTcpClient, tun: &TunEndpoint) -> u8 {
-    let deadline = TokioInstant::now() + Duration::from_millis(750);
-    loop {
-        client.poll();
-        while let Some(packet) = client.device.pop_outbound() {
-            tun.push_inbound(packet).await.unwrap();
-        }
-        while let Some(packet) = tun.try_poll_outbound().await.unwrap() {
-            let reset_flags = ipv4_tcp_flags(&packet).filter(|flags| flags & 0x04 != 0);
-            client.device.push_inbound(packet);
-            client.poll();
-            if let Some(flags) = reset_flags {
-                return flags;
-            }
-        }
-        assert!(
-            TokioInstant::now() < deadline,
-            "timed out waiting for TUN TCP reset"
-        );
-        sleep(Duration::from_millis(5)).await;
-    }
-}
-
-fn ipv4_tcp_flags(packet: &[u8]) -> Option<u8> {
-    if packet.first().map(|byte| byte >> 4) != Some(4) || packet.get(9) != Some(&TCP_PROTOCOL) {
-        return None;
-    }
-    let header_len = usize::from(packet[0] & 0x0f).checked_mul(4)?;
-    packet.get(header_len.checked_add(13)?).copied()
 }
 
 async fn poll_tun_outbound_until(tun: &TunEndpoint, is_done: impl FnMut(&[u8]) -> bool) -> Bytes {
@@ -7035,6 +7552,285 @@ async fn spawn_tcp_dns_responder() -> (SocketAddr, JoinHandle<()>) {
     spawn_tcp_dns_responder_with_flags(0x8180).await
 }
 
+#[derive(Debug, Clone)]
+struct ScriptedDnsTcpConnection {
+    expected_queries: Vec<Vec<u8>>,
+    actions: Vec<ScriptedDnsTcpAction>,
+}
+
+#[derive(Debug, Clone)]
+enum ScriptedDnsTcpAction {
+    Reply {
+        query_index: usize,
+        flags: u16,
+    },
+    WrongQuestion {
+        query_index: usize,
+        domain: String,
+        flags: u16,
+    },
+    MalformedMatching {
+        query_index: usize,
+    },
+    Close,
+    Hang,
+    ExpectEof,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct ScriptedDnsTcpTranscript {
+    accepted_connections: usize,
+    received_queries: Vec<Vec<u8>>,
+    received_by_connection: Vec<Vec<Vec<u8>>>,
+    sent_responses: Vec<Vec<u8>>,
+    observed_eof_connections: Vec<usize>,
+}
+
+#[derive(Clone)]
+struct ScriptedDnsTcpProbe {
+    transcript: Arc<Mutex<ScriptedDnsTcpTranscript>>,
+    changed: Arc<Notify>,
+}
+
+impl ScriptedDnsTcpProbe {
+    fn snapshot(&self) -> ScriptedDnsTcpTranscript {
+        self.transcript.lock().unwrap().clone()
+    }
+
+    fn received_query_count(&self) -> usize {
+        self.transcript.lock().unwrap().received_queries.len()
+    }
+
+    fn observed_eof_count(&self) -> usize {
+        self.transcript
+            .lock()
+            .unwrap()
+            .observed_eof_connections
+            .len()
+    }
+
+    async fn wait_for_received_queries(&self, expected_count: usize) {
+        timeout(Duration::from_secs(1), async {
+            loop {
+                if self.received_query_count() >= expected_count {
+                    return;
+                }
+                self.changed.notified().await;
+            }
+        })
+        .await
+        .expect("scripted DNS TCP responder did not receive expected queries");
+    }
+
+    async fn wait_for_observed_eof(&self, expected_count: usize) {
+        timeout(Duration::from_secs(1), async {
+            loop {
+                if self.observed_eof_count() >= expected_count {
+                    return;
+                }
+                self.changed.notified().await;
+            }
+        })
+        .await
+        .expect("scripted DNS TCP responder did not observe expected EOF");
+    }
+}
+
+struct ScriptedDnsTcpServer {
+    addr: SocketAddr,
+    probe: ScriptedDnsTcpProbe,
+    shutdown: Arc<Notify>,
+    handle: JoinHandle<()>,
+}
+
+impl ScriptedDnsTcpServer {
+    fn addr(&self) -> SocketAddr {
+        self.addr
+    }
+
+    fn probe(&self) -> ScriptedDnsTcpProbe {
+        self.probe.clone()
+    }
+
+    async fn stop(self) {
+        self.shutdown.notify_one();
+        await_scripted_dns_tcp_server(self.handle).await;
+    }
+
+    async fn finish(self) {
+        await_scripted_dns_tcp_server(self.handle).await;
+    }
+}
+
+async fn await_scripted_dns_tcp_server(mut handle: JoinHandle<()>) {
+    match timeout(Duration::from_secs(1), &mut handle).await {
+        Ok(result) => result.unwrap(),
+        Err(_) => {
+            handle.abort();
+            let _ = handle.await;
+            panic!("scripted DNS TCP responder did not finish");
+        }
+    }
+}
+
+async fn spawn_scripted_dns_tcp_server(
+    scripts: Vec<ScriptedDnsTcpConnection>,
+) -> ScriptedDnsTcpServer {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let transcript = Arc::new(Mutex::new(ScriptedDnsTcpTranscript::default()));
+    let changed = Arc::new(Notify::new());
+    let shutdown = Arc::new(Notify::new());
+    let transcript_for_task = Arc::clone(&transcript);
+    let changed_for_task = Arc::clone(&changed);
+    let shutdown_for_task = Arc::clone(&shutdown);
+    let handle = tokio::spawn(async move {
+        for script in scripts {
+            let accepted = tokio::select! {
+                accepted = listener.accept() => Some(accepted.unwrap()),
+                () = shutdown_for_task.notified() => None,
+            };
+            let Some((mut stream, _)) = accepted else {
+                return;
+            };
+            let connection_index = {
+                let mut transcript = transcript_for_task.lock().unwrap();
+                transcript.accepted_connections += 1;
+                transcript.received_by_connection.push(Vec::new());
+                transcript.accepted_connections - 1
+            };
+            changed_for_task.notify_one();
+
+            let should_stop = run_scripted_dns_tcp_connection(
+                &mut stream,
+                connection_index,
+                script,
+                &transcript_for_task,
+                &changed_for_task,
+                &shutdown_for_task,
+            )
+            .await;
+            if should_stop {
+                return;
+            }
+        }
+    });
+    ScriptedDnsTcpServer {
+        addr,
+        probe: ScriptedDnsTcpProbe {
+            transcript,
+            changed,
+        },
+        shutdown,
+        handle,
+    }
+}
+
+async fn run_scripted_dns_tcp_connection(
+    stream: &mut TcpStream,
+    connection_index: usize,
+    script: ScriptedDnsTcpConnection,
+    transcript: &Arc<Mutex<ScriptedDnsTcpTranscript>>,
+    changed: &Arc<Notify>,
+    shutdown: &Arc<Notify>,
+) -> bool {
+    let mut received_queries = Vec::with_capacity(script.expected_queries.len());
+    for expected_query in script.expected_queries {
+        let query_len = usize::from(stream.read_u16().await.unwrap());
+        let mut query = vec![0_u8; query_len];
+        stream.read_exact(&mut query).await.unwrap();
+        assert_eq!(query, expected_query);
+        {
+            let mut transcript = transcript.lock().unwrap();
+            transcript.received_queries.push(query.clone());
+            transcript.received_by_connection[connection_index].push(query.clone());
+        }
+        changed.notify_one();
+        received_queries.push(query);
+    }
+
+    for action in script.actions {
+        match action {
+            ScriptedDnsTcpAction::Reply { query_index, flags } => {
+                let query = received_queries
+                    .get(query_index)
+                    .expect("scripted DNS TCP reply query index");
+                let response = dns_response_for_query_with_flags(query, flags);
+                write_scripted_dns_tcp_response(stream, &response, transcript).await;
+            }
+            ScriptedDnsTcpAction::WrongQuestion {
+                query_index,
+                domain,
+                flags,
+            } => {
+                let query = received_queries
+                    .get(query_index)
+                    .expect("scripted DNS TCP wrong-question query index");
+                let transaction_id = u16::from_be_bytes([query[0], query[1]]);
+                let mut response = build_dns_a_query(transaction_id, &domain);
+                response[2..4].copy_from_slice(&flags.to_be_bytes());
+                write_scripted_dns_tcp_response(stream, &response, transcript).await;
+            }
+            ScriptedDnsTcpAction::MalformedMatching { query_index } => {
+                let query = received_queries
+                    .get(query_index)
+                    .expect("scripted malformed DNS TCP response query index");
+                let response = malformed_matching_dns_response(query);
+                write_scripted_dns_tcp_response(stream, &response, transcript).await;
+            }
+            ScriptedDnsTcpAction::Close => {
+                stream.shutdown().await.unwrap();
+                return false;
+            }
+            ScriptedDnsTcpAction::Hang => {
+                shutdown.notified().await;
+                return true;
+            }
+            ScriptedDnsTcpAction::ExpectEof => {
+                let mut byte = [0_u8; 1];
+                assert_eq!(stream.read(&mut byte).await.unwrap(), 0);
+                transcript
+                    .lock()
+                    .unwrap()
+                    .observed_eof_connections
+                    .push(connection_index);
+                changed.notify_one();
+            }
+        }
+    }
+    false
+}
+
+fn malformed_matching_dns_response(query: &[u8]) -> Vec<u8> {
+    let mut response = dns_success_response_for_query(query);
+    response[6..8].copy_from_slice(&1_u16.to_be_bytes());
+    response.extend_from_slice(&0xc00c_u16.to_be_bytes());
+    response.extend_from_slice(&1_u16.to_be_bytes());
+    response.extend_from_slice(&1_u16.to_be_bytes());
+    response.extend_from_slice(&60_u32.to_be_bytes());
+    response.extend_from_slice(&4_u16.to_be_bytes());
+    response.extend_from_slice(&[192, 0]);
+    response
+}
+
+async fn write_scripted_dns_tcp_response(
+    stream: &mut TcpStream,
+    response: &[u8],
+    transcript: &Arc<Mutex<ScriptedDnsTcpTranscript>>,
+) {
+    stream
+        .write_u16(u16::try_from(response.len()).unwrap())
+        .await
+        .unwrap();
+    stream.write_all(response).await.unwrap();
+    stream.flush().await.unwrap();
+    transcript
+        .lock()
+        .unwrap()
+        .sent_responses
+        .push(response.to_vec());
+}
+
 async fn reply_to_expected_dns_tcp_queries<S>(stream: &mut S, expected_query_stream: &[u8])
 where
     S: AsyncRead + AsyncWrite + Unpin,
@@ -7387,6 +8183,34 @@ async fn spawn_fake_vless_server() -> (SocketAddr, JoinHandle<()>) {
         }
     });
     (addr, handle)
+}
+
+async fn spawn_observed_fake_vless_server(
+    connection_count: usize,
+) -> (SocketAddr, JoinHandle<()>, Arc<Mutex<Vec<SocketAddr>>>) {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let observed_targets = Arc::new(Mutex::new(Vec::with_capacity(connection_count)));
+    let observed_for_task = Arc::clone(&observed_targets);
+    let handle = tokio::spawn(async move {
+        let mut handlers = JoinSet::new();
+        for _ in 0..connection_count {
+            let (mut inbound, _) = listener.accept().await.unwrap();
+            let target = read_vless_header(&mut inbound).await;
+            observed_for_task.lock().unwrap().push(target);
+            handlers.spawn(async move {
+                let mut target_stream = TcpStream::connect(target).await.unwrap();
+                inbound.write_all(&[0, 0]).await.unwrap();
+                if let Err(error) = copy_bidirectional(&mut inbound, &mut target_stream).await {
+                    assert_eq!(error.kind(), ErrorKind::ConnectionReset);
+                }
+            });
+        }
+        while let Some(result) = handlers.join_next().await {
+            result.unwrap();
+        }
+    });
+    (addr, handle, observed_targets)
 }
 
 async fn spawn_fake_vless_udp_server() -> (SocketAddr, JoinHandle<()>) {

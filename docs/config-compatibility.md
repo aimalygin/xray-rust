@@ -336,12 +336,18 @@ for `Mobile`, `4/32` for `MobilePlus` and `Desktop`, and `8/64` for `Throughput`
 limits elsewhere. Idle connections count toward the global limit and expire
 after 15 seconds (`LowMemory`), 30 seconds (`Mobile`), 45 seconds (`MobilePlus`),
 or 60 seconds (`Desktop`/`Throughput`), as well as being released with the TUN
-runtime. TCP is a byte-transparent
-stream and supports
-multiple length-prefixed DNS messages on one connection; failed opens are
-reset. Raw and fake DNS/TCP share a dedicated limit of up to 32 flows. Raw
-DNS/TCP idle time, including blocked bridge writes, is capped by the smaller of
-the inbound `connIdle` policy and five seconds.
+runtime. TCP is byte-transparent only when its first DNS message requires
+transparent semantics (AXFR, IXFR, a non-QUERY opcode, multiple questions, or
+an unsupported/malformed envelope). Ordinary single-question QUERY messages
+use a bounded, multiplexed DNS/TCP session with up to 16 pending questions and
+128 KiB of decoded input. Responses are matched by transaction ID, opcode, and
+question; post-open EOF/I/O/timeout/protocol failures and `TC=1`/SERVFAIL retry
+only unanswered queries on the next configured server. NXDOMAIN,
+NOERROR/NODATA, and other matching RCODEs are returned without fallback.
+Exhaustion emits a framed SERVFAIL for each unresolved query while keeping the
+client connection open. Raw and fake DNS/TCP share a dedicated limit of up to
+32 flows. The client session uses inbound `connIdle`; individual raw-DNS
+operations remain bounded by the smaller of `connIdle` and five seconds.
 A raw-anchor query keeps the client's original question type and does not apply
 global/per-server `queryStrategy`, `domains`, IP response filters, `timeoutMs`,
 or fallback policy. Object entries contribute their endpoint, transport, and
@@ -349,13 +355,13 @@ effective DNS tag to the raw wire exchange. The tag drives outbound routing
 for routed transports and is intentionally inert for `tcp+local://`.
 The declaration-order plan deduplicates by endpoint, transport, and effective
 tag, so two clients aimed at the same endpoint with different tags remain
-distinct. This is the byte-transparent equivalent of Xray DNS outbound
-`Direct`. Xray DNS outbound `Hijack` semantics (including its A/AAAA family
+distinct. This is the raw-message equivalent of Xray DNS outbound `Direct`;
+the TCP adapter interprets only enough of ordinary QUERY envelopes to provide
+safe correlation and failover. Xray DNS outbound `Hijack` semantics (including its A/AAAA family
 gate, DNS hosts/cache, and per-server policy) remain a separate unsupported
 feature rather than a partial hybrid in the raw proxy. The raw proxy retains
-its own transport-aware per-attempt and five-second overall operational
-budgets; those protect a byte-transparent TUN bridge rather than model a
-managed Xray DNS client.
+its own transport-aware per-attempt and five-second per-query budget; those
+protect the TUN adapter rather than model a managed Xray DNS client.
 A domain upstream selected through VLESS stays a domain and is resolved
 by the remote endpoint. A domain selected through Freedom uses the separate
 bootstrap policy. Non-intercepting `System` embeddings may use the operating
