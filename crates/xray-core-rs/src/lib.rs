@@ -6,16 +6,17 @@ use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 use xray_config::{
     CoreConfig, DnsHostTarget, DnsIpFilter as ConfigDnsIpFilter,
-    DnsQueryStrategy as ConfigDnsQueryStrategy, DnsServerConfig, DnsServerEndpoint, DomainMatcher,
-    InboundProtocol, IpMatcher as ConfigIpMatcher,
+    DnsQueryStrategy as ConfigDnsQueryStrategy, DnsServerConfig, DnsServerEndpoint,
+    DnsServerTransport as ConfigDnsServerTransport, DomainMatcher, InboundProtocol,
+    IpMatcher as ConfigIpMatcher,
 };
 use xray_runtime::Shutdown;
 use xray_transport::{
     CachingDnsResolver, CompiledNameServerPolicies, ConfiguredDnsResolver,
     DnsIpFilter as TransportDnsIpFilter, DnsIpMatcher as TransportDnsIpMatcher,
     DnsQueryStrategy as TransportDnsQueryStrategy, DnsQueryTransport, DnsResolver, NameServer,
-    NameServerPolicy, SocketProtector, StaticHostRule, StaticHostTarget, SystemDnsResolver,
-    TransportDialer, TransportDomainMatcher, TransportError,
+    NameServerPolicy, NameServerTransport, SocketProtector, StaticHostRule, StaticHostTarget,
+    SystemDnsResolver, TransportDialer, TransportDomainMatcher, TransportError,
 };
 use xray_tun::{TunConfig, TunEndpoint};
 
@@ -67,14 +68,14 @@ pub struct TunRuntimeOptions {
 /// Controls bootstrap and no-configured-server fallback for managed runtime DNS.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum DnsBootstrapMode {
-    /// Resolve destinations through `dns.hosts` and routed `dns.servers`.
+    /// Resolve destinations through `dns.hosts` and configured `dns.servers`.
     /// With no configured servers, use the operating-system resolver. DNS
     /// upstream and outbound-server bootstrap uses `dns.hosts` plus the
     /// operating-system resolver. This is the default for embeddings that do
     /// not install a local DNS anchor and for future server runtimes.
     #[default]
     System,
-    /// Resolve destinations through `dns.hosts` and routed `dns.servers`, and
+    /// Resolve destinations through `dns.hosts` and configured `dns.servers`, and
     /// fail closed when neither can answer. Bootstrap itself uses only
     /// `dns.hosts`, so it cannot recurse through a tunnel-local DNS anchor.
     /// Mobile VPN integrations should use this after installing that anchor.
@@ -696,6 +697,11 @@ fn take_name_server_policy_set(config: &mut CoreConfig) -> Arc<CompiledNameServe
                 },
             };
             let skip_fallback = server.skip_fallback();
+            let transport = match server.transport() {
+                ConfigDnsServerTransport::Classic => NameServerTransport::Classic,
+                ConfigDnsServerTransport::TcpRouted => NameServerTransport::TcpRouted,
+                ConfigDnsServerTransport::TcpLocal => NameServerTransport::TcpLocal,
+            };
             let query_strategy = transport_dns_query_strategy(server.query_strategy());
             let final_query = server.final_query();
             let timeout = Some(Duration::from_millis(server.timeout_ms()));
@@ -715,6 +721,7 @@ fn take_name_server_policy_set(config: &mut CoreConfig) -> Arc<CompiledNameServe
             Some(NameServerPolicy {
                 server: name_server,
                 tag: Some(tag),
+                transport,
                 domains: domains
                     .into_iter()
                     .map(into_transport_domain_matcher)
@@ -933,7 +940,8 @@ mod tests {
     use xray_config::{parse_xray_json, DnsServerConfig, DnsServerEndpoint};
     use xray_transport::{
         DnsLookup, DnsQueryMetadata, DnsQueryTransport, DnsQueryTransportKind, DnsResolver,
-        NameServer, SocketHandle, SocketProtector, TransportDialer, TransportError,
+        NameServer, NameServerTransport, SocketHandle, SocketProtector, TransportDialer,
+        TransportError,
     };
 
     use super::{
@@ -1296,6 +1304,36 @@ mod tests {
         assert_eq!(
             server.endpoint,
             DnsServerEndpoint::Ip(SocketAddr::from(([192, 0, 2, 53], 53)))
+        );
+    }
+
+    #[test]
+    fn compiling_dns_policies_preserves_tcp_dispatch_modes() {
+        let raw = r#"{
+            "dns": {
+              "servers": [
+                "192.0.2.53",
+                "tcp://resolver.example:5353",
+                "tcp+local://[2001:db8::53]"
+              ]
+            },
+            "inbounds": [],
+            "outbounds": [{ "tag": "direct", "protocol": "freedom" }]
+        }"#;
+        let parsed = parse_xray_json(raw).expect("mixed DNS transports should parse");
+        let mut config = parsed.config;
+
+        let policies = take_name_server_policy_set(&mut config);
+
+        assert_eq!(
+            (0..policies.len())
+                .map(|index| policies.transport(index).unwrap())
+                .collect::<Vec<_>>(),
+            [
+                NameServerTransport::Classic,
+                NameServerTransport::TcpRouted,
+                NameServerTransport::TcpLocal,
+            ]
         );
     }
 

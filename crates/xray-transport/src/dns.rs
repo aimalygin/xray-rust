@@ -13,7 +13,8 @@ use tokio::sync::Notify;
 use tokio::time;
 
 use crate::{
-    canonicalize_socket_addr, connect_tcp_stream, SocketHandle, SocketProtector, TransportError,
+    canonicalize_socket_addr, connect_tcp_happy_eyeballs, HappyEyeballsConfig, SocketHandle,
+    SocketProtector, TransportError,
 };
 
 /// A DNS lookup result containing every usable address and its remaining TTL.
@@ -166,6 +167,7 @@ const DNS_STATIC_HOST_TTL: Duration = Duration::from_secs(10);
 const DNS_CACHE_MAX_ENTRIES: usize = 256;
 const MAX_DNS_UDP_RESPONSE_SIZE: usize = 4096;
 const DNS_RESOLUTION_TIMEOUT: Duration = Duration::from_secs(5);
+const DNS_LOCAL_TCP_FALLBACK_DELAY: Duration = Duration::from_millis(300);
 const MAX_DNS_ALIAS_DEPTH: usize = 8;
 
 /// TTL cache over another resolver. Proxy clients open a new outbound
@@ -1055,6 +1057,16 @@ pub enum DnsQueryTransportKind {
     Tcp,
 }
 
+/// Determines whether a DNS exchange enters the routing layer.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum DnsQueryDispatch {
+    /// Route the exchange like any other outbound connection.
+    #[default]
+    Routed,
+    /// Connect to the name server directly, outside configured routing.
+    Local,
+}
+
 /// Routing metadata attached to one encoded DNS exchange.
 ///
 /// The inbound tag identifies the configured DNS client to the routing layer;
@@ -1063,12 +1075,38 @@ pub enum DnsQueryTransportKind {
 #[non_exhaustive]
 pub struct DnsQueryMetadata<'a> {
     pub inbound_tag: Option<&'a str>,
+    pub dispatch: DnsQueryDispatch,
 }
 
 impl<'a> DnsQueryMetadata<'a> {
+    /// Constructs metadata for a routed DNS exchange.
     pub const fn new(inbound_tag: Option<&'a str>) -> Self {
-        Self { inbound_tag }
+        Self {
+            inbound_tag,
+            dispatch: DnsQueryDispatch::Routed,
+        }
     }
+
+    /// Constructs metadata for a local DNS exchange that bypasses routing.
+    pub const fn local(inbound_tag: Option<&'a str>) -> Self {
+        Self {
+            inbound_tag,
+            dispatch: DnsQueryDispatch::Local,
+        }
+    }
+}
+
+/// Wire and dispatch behavior for one configured DNS client.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum NameServerTransport {
+    /// Start with routed UDP and retry over routed TCP only after a valid
+    /// truncated response.
+    #[default]
+    Classic,
+    /// Start immediately with routed TCP.
+    TcpRouted,
+    /// Start immediately with local TCP, bypassing configured routing.
+    TcpLocal,
 }
 
 /// Exchanges already encoded DNS messages with a configured name server.
@@ -1106,14 +1144,23 @@ impl DirectDnsQueryTransport {
         }
     }
 
-    async fn server_addr(&self, server: &NameServer) -> io::Result<SocketAddr> {
+    async fn server_addrs(&self, server: &NameServer) -> io::Result<Vec<SocketAddr>> {
         match server {
-            NameServer::Socket(addr) => Ok(*addr),
-            NameServer::Domain { domain, port } => self
-                .bootstrap_resolver
-                .resolve(domain, *port)
-                .await
-                .map_err(io::Error::other),
+            NameServer::Socket(addr) => Ok(vec![*addr]),
+            NameServer::Domain { domain, port } => {
+                let lookup = self
+                    .bootstrap_resolver
+                    .resolve_all(domain, *port)
+                    .await
+                    .map_err(io::Error::other)?;
+                if lookup.socket_addrs().is_empty() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::NotFound,
+                        format!("no bootstrap address resolved for DNS server {domain}:{port}"),
+                    ));
+                }
+                Ok(lookup.socket_addrs().to_vec())
+            }
         }
     }
 }
@@ -1127,13 +1174,18 @@ impl DnsQueryTransport for DirectDnsQueryTransport {
         _metadata: DnsQueryMetadata<'_>,
         query: &[u8],
     ) -> io::Result<Vec<u8>> {
-        let server_addr = self.server_addr(server).await?;
+        let server_addrs = self.server_addrs(server).await?;
         match transport {
             DnsQueryTransportKind::Udp => {
-                exchange_direct_udp(server_addr, query, self.socket_protector.as_deref()).await
+                exchange_direct_udp(server_addrs[0], query, self.socket_protector.as_deref()).await
             }
             DnsQueryTransportKind::Tcp => {
-                exchange_direct_tcp(server_addr, query, self.socket_protector.as_deref()).await
+                exchange_direct_tcp_candidates(
+                    &server_addrs,
+                    query,
+                    self.socket_protector.as_deref(),
+                )
+                .await
             }
         }
     }
@@ -1148,6 +1200,7 @@ pub struct NameServerPolicy {
     pub server: NameServer,
     /// Inbound tag presented by this DNS client to the routing layer.
     pub tag: Option<String>,
+    pub transport: NameServerTransport,
     pub domains: Vec<TransportDomainMatcher>,
     pub expected_ips: DnsIpFilter,
     pub unexpected_ips: DnsIpFilter,
@@ -1163,6 +1216,7 @@ impl NameServerPolicy {
         Self {
             server,
             tag: None,
+            transport: NameServerTransport::Classic,
             domains: Vec::new(),
             expected_ips: DnsIpFilter::default(),
             unexpected_ips: DnsIpFilter::default(),
@@ -1198,6 +1252,7 @@ impl CompiledNameServerPolicies {
                 let NameServerPolicy {
                     server,
                     tag,
+                    transport,
                     domains,
                     expected_ips,
                     unexpected_ips,
@@ -1212,6 +1267,7 @@ impl CompiledNameServerPolicies {
                 CompiledNameServerPolicy {
                     server,
                     tag,
+                    transport,
                     domains,
                     expected_ips: compile_dns_ip_filter(expected_ips),
                     unexpected_ips: compile_dns_ip_filter(unexpected_ips),
@@ -1247,6 +1303,11 @@ impl CompiledNameServerPolicies {
         self.policies
             .get(index)
             .and_then(|policy| policy.tag.as_deref())
+    }
+
+    /// Returns the wire and dispatch behavior at a selected policy index.
+    pub fn transport(&self, index: usize) -> Option<NameServerTransport> {
+        self.policies.get(index).map(|policy| policy.transport)
     }
 
     /// Returns the configured timeout override at a selected policy index.
@@ -1319,6 +1380,7 @@ impl CompiledNameServerPolicies {
 struct CompiledNameServerPolicy {
     server: NameServer,
     tag: Option<String>,
+    transport: NameServerTransport,
     domains: CompiledDomainMatcherSet,
     expected_ips: Option<CompiledDnsIpFilter>,
     unexpected_ips: Option<CompiledDnsIpFilter>,
@@ -1735,19 +1797,35 @@ impl ConfiguredDnsResolver {
                 "dns server query strategy has no address family in common with the global strategy",
             ));
         };
+        let (transport, metadata) = match name_server.transport {
+            NameServerTransport::Classic => (
+                DnsQueryTransportKind::Udp,
+                DnsQueryMetadata::new(name_server.tag.as_deref()),
+            ),
+            NameServerTransport::TcpRouted => (
+                DnsQueryTransportKind::Tcp,
+                DnsQueryMetadata::new(name_server.tag.as_deref()),
+            ),
+            NameServerTransport::TcpLocal => (
+                DnsQueryTransportKind::Tcp,
+                DnsQueryMetadata::local(name_server.tag.as_deref()),
+            ),
+        };
         let result = match query_strategy {
             DnsQueryStrategy::UseIp => {
                 let (ipv4, ipv6) = tokio::join!(
                     self.query_server_until(
                         &name_server.server,
-                        name_server.tag.as_deref(),
+                        transport,
+                        metadata,
                         domain,
                         DnsRecordType::A,
                         deadline,
                     ),
                     self.query_server_until(
                         &name_server.server,
-                        name_server.tag.as_deref(),
+                        transport,
+                        metadata,
                         domain,
                         DnsRecordType::Aaaa,
                         deadline,
@@ -1758,7 +1836,8 @@ impl ConfiguredDnsResolver {
             DnsQueryStrategy::UseIpv4 => merge_configured_family_results([self
                 .query_server_until(
                     &name_server.server,
-                    name_server.tag.as_deref(),
+                    transport,
+                    metadata,
                     domain,
                     DnsRecordType::A,
                     deadline,
@@ -1767,7 +1846,8 @@ impl ConfiguredDnsResolver {
             DnsQueryStrategy::UseIpv6 => merge_configured_family_results([self
                 .query_server_until(
                     &name_server.server,
-                    name_server.tag.as_deref(),
+                    transport,
+                    metadata,
                     domain,
                     DnsRecordType::Aaaa,
                     deadline,
@@ -1794,7 +1874,8 @@ impl ConfiguredDnsResolver {
     async fn query_server_until(
         &self,
         name_server: &NameServer,
-        inbound_tag: Option<&str>,
+        initial_transport: DnsQueryTransportKind,
+        metadata: DnsQueryMetadata<'_>,
         domain: &str,
         record_type: DnsRecordType,
         deadline: time::Instant,
@@ -1802,12 +1883,8 @@ impl ConfiguredDnsResolver {
         let query = build_dns_query(domain, record_type)?;
         let response = time::timeout_at(
             deadline,
-            self.query_transport.exchange(
-                name_server,
-                DnsQueryTransportKind::Udp,
-                DnsQueryMetadata::new(inbound_tag),
-                &query,
-            ),
+            self.query_transport
+                .exchange(name_server, initial_transport, metadata, &query),
         )
         .await
         .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "dns query timed out"))??;
@@ -1819,12 +1896,17 @@ impl ConfiguredDnsResolver {
             | ParsedDnsResponse::NameError
             | ParsedDnsResponse::ServerFailure(_)) => Ok((response, observed_at)),
             ParsedDnsResponse::Truncated => {
+                if initial_transport == DnsQueryTransportKind::Tcp {
+                    return Err(invalid_dns_response(
+                        "DNS TCP response must not be truncated",
+                    ));
+                }
                 let response = time::timeout_at(
                     deadline,
                     self.query_transport.exchange(
                         name_server,
                         DnsQueryTransportKind::Tcp,
-                        DnsQueryMetadata::new(inbound_tag),
+                        metadata,
                         &query,
                     ),
                 )
@@ -1835,7 +1917,7 @@ impl ConfiguredDnsResolver {
                 let observed_at = Instant::now();
                 match parse_dns_response(&query, &response, record_type)? {
                     ParsedDnsResponse::Truncated => Err(invalid_dns_response(
-                        "DNS TCP response must not remain truncated",
+                        "DNS TCP response must not be truncated",
                     )),
                     response => Ok((response, observed_at)),
                 }
@@ -2289,14 +2371,22 @@ async fn exchange_direct_udp(
     }
 }
 
-async fn exchange_direct_tcp(
-    server_addr: SocketAddr,
+async fn exchange_direct_tcp_candidates(
+    server_addrs: &[SocketAddr],
     query: &[u8],
     socket_protector: Option<&dyn SocketProtector>,
 ) -> io::Result<Vec<u8>> {
     let query_len = u16::try_from(query.len())
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "dns tcp query is too large"))?;
-    let mut stream = connect_tcp_stream(server_addr, socket_protector)
+    let prioritize_ipv6 = server_addrs
+        .first()
+        .is_some_and(|address| canonicalize_socket_addr(*address).is_ipv6());
+    let happy_eyeballs = HappyEyeballsConfig {
+        prioritize_ipv6,
+        try_delay: DNS_LOCAL_TCP_FALLBACK_DELAY,
+        ..HappyEyeballsConfig::default()
+    };
+    let mut stream = connect_tcp_happy_eyeballs(server_addrs, socket_protector, &happy_eyeballs)
         .await
         .map_err(io::Error::other)?;
     stream.write_u16(query_len).await?;
@@ -2782,7 +2872,8 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
-    use tokio::net::UdpSocket;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::{TcpListener, UdpSocket};
     use tokio::sync::{oneshot, Barrier, Notify};
 
     use super::{
@@ -2790,9 +2881,10 @@ mod tests {
         select_name_server_indices, CachingDnsResolver, CompiledDnsIpFilter,
         CompiledNameServerPolicies, ConfiguredDnsAddresses, ConfiguredDnsAnswer,
         ConfiguredDnsResolver, DnsIpCidr, DnsIpCidrError, DnsIpFilter, DnsIpMatcher, DnsLookup,
-        DnsQueryMetadata, DnsQueryStrategy, DnsQueryTransport, DnsQueryTransportKind,
-        DnsRecordType, DnsResolver, NameServer, NameServerPolicy, StaticHostRule, StaticHostTarget,
-        TransportDomainMatcher, DNS_CACHE_MAX_ENTRIES,
+        DnsQueryDispatch, DnsQueryMetadata, DnsQueryStrategy, DnsQueryTransport,
+        DnsQueryTransportKind, DnsRecordType, DnsResolver, NameServer, NameServerPolicy,
+        NameServerTransport, StaticHostRule, StaticHostTarget, TransportDomainMatcher,
+        DNS_CACHE_MAX_ENTRIES,
     };
     use crate::{SocketHandle, SocketProtector, TransportError};
 
@@ -3048,6 +3140,34 @@ mod tests {
 
         assert_eq!(compiled.tag(0), Some("dns-primary"));
         assert_eq!(compiled.tag(1), None);
+    }
+
+    #[test]
+    fn compiled_name_server_policy_preserves_transport() {
+        let mut policy = policy(1);
+        policy.transport = NameServerTransport::TcpLocal;
+        let compiled = CompiledNameServerPolicies::new(vec![policy]);
+
+        assert_eq!(compiled.transport(0), Some(NameServerTransport::TcpLocal));
+        assert_eq!(compiled.transport(1), None);
+    }
+
+    #[test]
+    fn dns_query_metadata_defaults_to_routed_dispatch() {
+        assert_eq!(
+            DnsQueryMetadata::new(Some("dns-client")),
+            DnsQueryMetadata {
+                inbound_tag: Some("dns-client"),
+                dispatch: DnsQueryDispatch::Routed,
+            }
+        );
+        assert_eq!(
+            DnsQueryMetadata::local(Some("dns-client")),
+            DnsQueryMetadata {
+                inbound_tag: Some("dns-client"),
+                dispatch: DnsQueryDispatch::Local,
+            }
+        );
     }
 
     #[test]
@@ -4102,6 +4222,11 @@ mod tests {
         calls: Mutex<Vec<DnsQueryTransportKind>>,
     }
 
+    struct InvalidTruncatedQueryTransport {
+        first: NameServer,
+        calls: Mutex<Vec<(NameServer, DnsQueryTransportKind)>>,
+    }
+
     #[async_trait::async_trait]
     impl DnsQueryTransport for TruncatingQueryTransport {
         async fn exchange(
@@ -4131,6 +4256,26 @@ mod tests {
         }
     }
 
+    #[async_trait::async_trait]
+    impl DnsQueryTransport for InvalidTruncatedQueryTransport {
+        async fn exchange(
+            &self,
+            server: &NameServer,
+            transport: DnsQueryTransportKind,
+            _metadata: DnsQueryMetadata<'_>,
+            query: &[u8],
+        ) -> io::Result<Vec<u8>> {
+            self.calls.lock().unwrap().push((server.clone(), transport));
+            if server == &self.first {
+                let mut response = build_test_truncated_response(query);
+                response[0] ^= 1;
+                Ok(response)
+            } else {
+                Ok(build_test_a_response(query, Ipv4Addr::new(192, 0, 2, 26)))
+            }
+        }
+    }
+
     #[tokio::test]
     async fn configured_dns_retries_valid_truncated_udp_response_over_tcp() {
         let transport = Arc::new(TruncatingQueryTransport::default());
@@ -4151,6 +4296,36 @@ mod tests {
                 DnsQueryTransportKind::Tcp,
                 DnsQueryTransportKind::Udp,
                 DnsQueryTransportKind::Tcp,
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn configured_dns_does_not_retry_invalid_truncated_udp_response_over_tcp() {
+        let first = NameServer::Socket(SocketAddr::from(([192, 0, 2, 53], 53)));
+        let second = NameServer::Socket(SocketAddr::from(([192, 0, 2, 54], 53)));
+        let mut first_policy = NameServerPolicy::new(first.clone());
+        first_policy.query_strategy = DnsQueryStrategy::UseIpv4;
+        let mut second_policy = NameServerPolicy::new(second.clone());
+        second_policy.query_strategy = DnsQueryStrategy::UseIpv4;
+        let transport = Arc::new(InvalidTruncatedQueryTransport {
+            first: first.clone(),
+            calls: Mutex::new(Vec::new()),
+        });
+        let resolver =
+            ConfiguredDnsResolver::new(Vec::new(), Vec::new(), Arc::new(RejectingResolver))
+                .with_name_server_policies(vec![first_policy, second_policy])
+                .with_query_strategy(DnsQueryStrategy::UseIpv4)
+                .with_query_transport(transport.clone());
+
+        let resolved = resolver.resolve("invalid-tc.test", 443).await.unwrap();
+
+        assert_eq!(resolved, SocketAddr::from(([192, 0, 2, 26], 443)));
+        assert_eq!(
+            *transport.calls.lock().unwrap(),
+            [
+                (first, DnsQueryTransportKind::Udp),
+                (second, DnsQueryTransportKind::Udp),
             ]
         );
     }
@@ -4311,6 +4486,7 @@ mod tests {
     struct TaggedDnsCall {
         server: NameServer,
         transport: DnsQueryTransportKind,
+        dispatch: DnsQueryDispatch,
         inbound_tag: Option<String>,
         domain: String,
     }
@@ -4318,6 +4494,37 @@ mod tests {
     struct TaggedCnameFailoverTransport {
         first: NameServer,
         calls: Mutex<Vec<TaggedDnsCall>>,
+    }
+
+    struct RecordingPolicyTransport {
+        truncated_server: Option<NameServer>,
+        answer: Ipv4Addr,
+        calls: Mutex<Vec<TaggedDnsCall>>,
+    }
+
+    #[async_trait::async_trait]
+    impl DnsQueryTransport for RecordingPolicyTransport {
+        async fn exchange(
+            &self,
+            server: &NameServer,
+            transport: DnsQueryTransportKind,
+            metadata: DnsQueryMetadata<'_>,
+            query: &[u8],
+        ) -> io::Result<Vec<u8>> {
+            let (domain, _, _) = super::parse_dns_question(query)?;
+            self.calls.lock().unwrap().push(TaggedDnsCall {
+                server: server.clone(),
+                transport,
+                dispatch: metadata.dispatch,
+                inbound_tag: metadata.inbound_tag.map(str::to_owned),
+                domain,
+            });
+            if self.truncated_server.as_ref() == Some(server) {
+                Ok(build_test_truncated_response(query))
+            } else {
+                Ok(build_test_a_response(query, self.answer))
+            }
+        }
     }
 
     #[async_trait::async_trait]
@@ -4333,6 +4540,7 @@ mod tests {
             self.calls.lock().unwrap().push(TaggedDnsCall {
                 server: server.clone(),
                 transport,
+                dispatch: metadata.dispatch,
                 inbound_tag: metadata.inbound_tag.map(str::to_owned),
                 domain: domain.clone(),
             });
@@ -4387,26 +4595,199 @@ mod tests {
                 TaggedDnsCall {
                     server: first.clone(),
                     transport: DnsQueryTransportKind::Udp,
+                    dispatch: DnsQueryDispatch::Routed,
                     inbound_tag: Some("dns-primary".to_owned()),
                     domain: "origin.tag.test".to_owned(),
                 },
                 TaggedDnsCall {
                     server: first.clone(),
                     transport: DnsQueryTransportKind::Udp,
+                    dispatch: DnsQueryDispatch::Routed,
                     inbound_tag: Some("dns-primary".to_owned()),
                     domain: "alias.tag.test".to_owned(),
                 },
                 TaggedDnsCall {
                     server: first,
                     transport: DnsQueryTransportKind::Tcp,
+                    dispatch: DnsQueryDispatch::Routed,
                     inbound_tag: Some("dns-primary".to_owned()),
                     domain: "alias.tag.test".to_owned(),
                 },
                 TaggedDnsCall {
                     server: second,
                     transport: DnsQueryTransportKind::Udp,
+                    dispatch: DnsQueryDispatch::Routed,
                     inbound_tag: Some("dns-fallback".to_owned()),
                     domain: "origin.tag.test".to_owned(),
+                },
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn configured_dns_tcp_routed_starts_with_tagged_routed_tcp() {
+        let server = NameServer::Socket(SocketAddr::from(([192, 0, 2, 10], 53)));
+        let mut policy = NameServerPolicy::new(server.clone());
+        policy.tag = Some("dns-tcp".to_owned());
+        policy.transport = NameServerTransport::TcpRouted;
+        policy.query_strategy = DnsQueryStrategy::UseIpv4;
+        let transport = Arc::new(RecordingPolicyTransport {
+            truncated_server: None,
+            answer: Ipv4Addr::new(192, 0, 2, 74),
+            calls: Mutex::new(Vec::new()),
+        });
+        let resolver =
+            ConfiguredDnsResolver::new(Vec::new(), Vec::new(), Arc::new(RejectingResolver))
+                .with_name_server_policies(vec![policy])
+                .with_query_strategy(DnsQueryStrategy::UseIpv4)
+                .with_query_transport(transport.clone());
+
+        let resolved = resolver.resolve("tcp-routed.test", 443).await.unwrap();
+
+        assert_eq!(resolved, SocketAddr::from(([192, 0, 2, 74], 443)));
+        assert_eq!(
+            *transport.calls.lock().unwrap(),
+            [TaggedDnsCall {
+                server,
+                transport: DnsQueryTransportKind::Tcp,
+                dispatch: DnsQueryDispatch::Routed,
+                inbound_tag: Some("dns-tcp".to_owned()),
+                domain: "tcp-routed.test".to_owned(),
+            }]
+        );
+    }
+
+    #[tokio::test]
+    async fn configured_dns_tcp_local_starts_with_tagged_local_tcp() {
+        let server = NameServer::Socket(SocketAddr::from(([192, 0, 2, 11], 53)));
+        let mut policy = NameServerPolicy::new(server.clone());
+        policy.tag = Some("dns-local".to_owned());
+        policy.transport = NameServerTransport::TcpLocal;
+        policy.query_strategy = DnsQueryStrategy::UseIpv4;
+        let transport = Arc::new(RecordingPolicyTransport {
+            truncated_server: None,
+            answer: Ipv4Addr::new(192, 0, 2, 75),
+            calls: Mutex::new(Vec::new()),
+        });
+        let resolver =
+            ConfiguredDnsResolver::new(Vec::new(), Vec::new(), Arc::new(RejectingResolver))
+                .with_name_server_policies(vec![policy])
+                .with_query_strategy(DnsQueryStrategy::UseIpv4)
+                .with_query_transport(transport.clone());
+
+        let resolved = resolver.resolve("tcp-local.test", 443).await.unwrap();
+
+        assert_eq!(resolved, SocketAddr::from(([192, 0, 2, 75], 443)));
+        assert_eq!(
+            *transport.calls.lock().unwrap(),
+            [TaggedDnsCall {
+                server,
+                transport: DnsQueryTransportKind::Tcp,
+                dispatch: DnsQueryDispatch::Local,
+                inbound_tag: Some("dns-local".to_owned()),
+                domain: "tcp-local.test".to_owned(),
+            }]
+        );
+    }
+
+    struct MultiCandidateBootstrapResolver {
+        candidates: Vec<SocketAddr>,
+    }
+
+    #[async_trait::async_trait]
+    impl DnsResolver for MultiCandidateBootstrapResolver {
+        async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+            self.resolve_all(domain, port)
+                .await?
+                .first_socket_addr(domain, port)
+        }
+
+        async fn resolve_all(
+            &self,
+            _domain: &str,
+            _port: u16,
+        ) -> Result<DnsLookup, TransportError> {
+            Ok(DnsLookup::new(self.candidates.iter().copied(), None))
+        }
+    }
+
+    #[tokio::test]
+    async fn direct_tcp_dns_falls_forward_across_bootstrap_candidates() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let working = listener.local_addr().unwrap();
+        let refused = SocketAddr::from((Ipv4Addr::new(127, 0, 0, 2), working.port()));
+        let server_task = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let query_len = usize::from(stream.read_u16().await.unwrap());
+            let mut query = vec![0_u8; query_len];
+            stream.read_exact(&mut query).await.unwrap();
+            let response = build_test_a_response(&query, Ipv4Addr::new(192, 0, 2, 77));
+            stream.write_u16(response.len() as u16).await.unwrap();
+            stream.write_all(&response).await.unwrap();
+        });
+
+        let bootstrap = Arc::new(MultiCandidateBootstrapResolver {
+            candidates: vec![refused, working],
+        });
+        let mut policy = NameServerPolicy::new(NameServer::Domain {
+            domain: "bootstrap.multi.test".to_owned(),
+            port: working.port(),
+        });
+        policy.transport = NameServerTransport::TcpLocal;
+        policy.query_strategy = DnsQueryStrategy::UseIpv4;
+        let resolver = ConfiguredDnsResolver::new(Vec::new(), Vec::new(), bootstrap)
+            .with_name_server_policies(vec![policy])
+            .with_name_server_fallback_policy(true, false)
+            .with_query_strategy(DnsQueryStrategy::UseIpv4);
+
+        let resolved = resolver.resolve("answer.multi.test", 443).await.unwrap();
+
+        assert_eq!(resolved, SocketAddr::from(([192, 0, 2, 77], 443)));
+        server_task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn configured_dns_does_not_retry_truncated_initial_tcp_response() {
+        let first = NameServer::Socket(SocketAddr::from(([192, 0, 2, 12], 53)));
+        let second = NameServer::Socket(SocketAddr::from(([192, 0, 2, 13], 53)));
+        let mut first_policy = NameServerPolicy::new(first.clone());
+        first_policy.tag = Some("dns-primary".to_owned());
+        first_policy.transport = NameServerTransport::TcpRouted;
+        first_policy.query_strategy = DnsQueryStrategy::UseIpv4;
+        let mut second_policy = NameServerPolicy::new(second.clone());
+        second_policy.tag = Some("dns-fallback".to_owned());
+        second_policy.transport = NameServerTransport::TcpLocal;
+        second_policy.query_strategy = DnsQueryStrategy::UseIpv4;
+        let transport = Arc::new(RecordingPolicyTransport {
+            truncated_server: Some(first.clone()),
+            answer: Ipv4Addr::new(192, 0, 2, 76),
+            calls: Mutex::new(Vec::new()),
+        });
+        let resolver =
+            ConfiguredDnsResolver::new(Vec::new(), Vec::new(), Arc::new(RejectingResolver))
+                .with_name_server_policies(vec![first_policy, second_policy])
+                .with_query_strategy(DnsQueryStrategy::UseIpv4)
+                .with_query_transport(transport.clone());
+
+        let resolved = resolver.resolve("tcp-truncated.test", 443).await.unwrap();
+
+        assert_eq!(resolved, SocketAddr::from(([192, 0, 2, 76], 443)));
+        assert_eq!(
+            *transport.calls.lock().unwrap(),
+            [
+                TaggedDnsCall {
+                    server: first,
+                    transport: DnsQueryTransportKind::Tcp,
+                    dispatch: DnsQueryDispatch::Routed,
+                    inbound_tag: Some("dns-primary".to_owned()),
+                    domain: "tcp-truncated.test".to_owned(),
+                },
+                TaggedDnsCall {
+                    server: second,
+                    transport: DnsQueryTransportKind::Tcp,
+                    dispatch: DnsQueryDispatch::Local,
+                    inbound_tag: Some("dns-fallback".to_owned()),
+                    domain: "tcp-truncated.test".to_owned(),
                 },
             ]
         );
@@ -4968,7 +5349,7 @@ mod tests {
 
     struct CnameDeadlineTransport {
         first: NameServer,
-        calls: Mutex<Vec<(NameServer, String)>>,
+        calls: Mutex<Vec<TaggedDnsCall>>,
     }
 
     #[async_trait::async_trait]
@@ -4976,8 +5357,8 @@ mod tests {
         async fn exchange(
             &self,
             server: &NameServer,
-            _transport: DnsQueryTransportKind,
-            _metadata: DnsQueryMetadata<'_>,
+            transport: DnsQueryTransportKind,
+            metadata: DnsQueryMetadata<'_>,
             query: &[u8],
         ) -> io::Result<Vec<u8>> {
             let (domain, record_type, _) = super::parse_dns_question(query)?;
@@ -4987,10 +5368,13 @@ mod tests {
                     "CNAME deadline test expects only A queries",
                 ));
             }
-            self.calls
-                .lock()
-                .unwrap()
-                .push((server.clone(), domain.clone()));
+            self.calls.lock().unwrap().push(TaggedDnsCall {
+                server: server.clone(),
+                transport,
+                dispatch: metadata.dispatch,
+                inbound_tag: metadata.inbound_tag.map(str::to_owned),
+                domain: domain.clone(),
+            });
             if server != &self.first {
                 if domain != "origin.deadline.test" {
                     return Err(io::Error::new(
@@ -5142,9 +5526,13 @@ mod tests {
         let first = NameServer::Socket(SocketAddr::from(([192, 0, 2, 1], 53)));
         let second = NameServer::Socket(SocketAddr::from(([192, 0, 2, 2], 53)));
         let mut first_policy = NameServerPolicy::new(first.clone());
+        first_policy.tag = Some("dns-local".to_owned());
+        first_policy.transport = NameServerTransport::TcpLocal;
         first_policy.timeout = Some(Duration::from_millis(10));
         first_policy.query_strategy = DnsQueryStrategy::UseIpv4;
         let mut second_policy = NameServerPolicy::new(second.clone());
+        second_policy.tag = Some("dns-routed".to_owned());
+        second_policy.transport = NameServerTransport::TcpRouted;
         second_policy.timeout = Some(Duration::from_millis(20));
         second_policy.query_strategy = DnsQueryStrategy::UseIpv4;
         let transport = Arc::new(CnameDeadlineTransport {
@@ -5165,9 +5553,27 @@ mod tests {
         assert_eq!(
             *transport.calls.lock().unwrap(),
             [
-                (first.clone(), "origin.deadline.test".to_owned()),
-                (first, "alias.deadline.test".to_owned()),
-                (second, "origin.deadline.test".to_owned()),
+                TaggedDnsCall {
+                    server: first.clone(),
+                    transport: DnsQueryTransportKind::Tcp,
+                    dispatch: DnsQueryDispatch::Local,
+                    inbound_tag: Some("dns-local".to_owned()),
+                    domain: "origin.deadline.test".to_owned(),
+                },
+                TaggedDnsCall {
+                    server: first,
+                    transport: DnsQueryTransportKind::Tcp,
+                    dispatch: DnsQueryDispatch::Local,
+                    inbound_tag: Some("dns-local".to_owned()),
+                    domain: "alias.deadline.test".to_owned(),
+                },
+                TaggedDnsCall {
+                    server: second,
+                    transport: DnsQueryTransportKind::Tcp,
+                    dispatch: DnsQueryDispatch::Routed,
+                    inbound_tag: Some("dns-routed".to_owned()),
+                    domain: "origin.deadline.test".to_owned(),
+                },
             ]
         );
     }

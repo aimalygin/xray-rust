@@ -396,6 +396,28 @@ impl OutboundRouter {
         self.cached_tcp_outbound(index)
     }
 
+    /// Selects a TCP outbound from the original session metadata and retains
+    /// its configured tag for runtime logging.
+    ///
+    /// Unlike the resolver-backed selector, this deliberately does not run an
+    /// `IPIfNonMatch` DNS second pass. Internal DNS clients use this path to
+    /// match Xray's `SkipDNSResolve` routing context and avoid recursively
+    /// resolving the name server that is needed to perform the lookup.
+    pub(crate) fn select_tcp_outbound_for_session_with_tag(
+        &self,
+        inbound_tag: Option<&str>,
+        target: &Target,
+        include_tag: bool,
+    ) -> Result<SelectedTcpOutbound, CoreError> {
+        let index =
+            self.select_configured_index(inbound_tag, target_domain(target), target_ip(target))?;
+        let tag = include_tag
+            .then(|| self.config.outbounds[index].tag.clone())
+            .flatten();
+        let outbound = self.cached_tcp_outbound(index)?;
+        Ok(SelectedTcpOutbound { outbound, tag })
+    }
+
     #[cfg(test)]
     pub(crate) fn select_tcp_outbound_for_session_with_tag_and_resolved_ip(
         &self,
@@ -1908,6 +1930,26 @@ mod tests {
             .expect("select cached combined domain and resolved-IP route");
 
         assert!(matches!(selected, TcpOutbound::Freedom));
+    }
+
+    #[test]
+    fn outbound_router_original_metadata_selector_skips_ip_if_non_match_second_pass() {
+        let resolved_ip = Ipv4Addr::new(203, 0, 113, 7);
+        let mut config = direct_selection_config();
+        config.routing.domain_strategy = RoutingDomainStrategy::IpIfNonMatch;
+        config.routing.rules = vec![ip_rule("direct", resolved_ip)];
+        let router = OutboundRouter::new(Arc::new(config));
+
+        let selected = router
+            .select_tcp_outbound_for_session_with_tag(
+                None,
+                &domain_tcp_target("dns-upstream.example"),
+                true,
+            )
+            .expect("DNS routing should use the default without resolving the upstream");
+
+        assert!(matches!(selected.outbound, TcpOutbound::Vless(_)));
+        assert_eq!(selected.tag.as_deref(), Some("proxy"));
     }
 
     #[test]

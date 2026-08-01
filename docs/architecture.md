@@ -125,15 +125,19 @@ exception: Tokio's blocking lookup may finish after its caller times out.
 Mobile full-tunnel adapters avoid that path after start by pinning bootstrap
 addresses and selecting `StaticOnly`; a future native async bootstrap backend
 should remove this platform limitation for long-running server embeddings.
-`xray-core-rs` supplies a routed query transport that opens each DNS exchange
-through the normal outbound router. Every compiled name-server policy carries
+`xray-core-rs` supplies a transport-aware query service. Classic DNS and
+`tcp://` exchanges open through the normal outbound router; `tcp+local://`
+resolves only through the bootstrap role and opens a protected direct TCP
+socket without invoking routing. Every compiled name-server policy carries
 its effective `dns.tag` as query metadata. The router sees that synthetic DNS
 inbound tag—generated once as `xray.system.<uuid>` when no tag is configured—
 instead of the application inbound that requested resolution. Per-server tags
 can therefore select different routes during ordered failover without coupling
 the shared resolver to SOCKS, HTTP, TUN, or future server listeners.
-`IPIfNonMatch` tests rules in configuration
-order against every resolved candidate. SOCKS, HTTP, TUN, startup probes, and
+Application `IPIfNonMatch` tests rules in configuration order against every
+resolved candidate. Internal DNS-upstream sessions deliberately set Xray's
+`SkipDNSResolve` equivalent: tag/domain rules still apply, but routing cannot
+recursively resolve the upstream required to answer the lookup. SOCKS, HTTP, TUN, startup probes, and
 future server inbounds can therefore share the same DNS semantics without
 depending on a packet adapter.
 
@@ -147,9 +151,12 @@ the universal core, not to the mobile adapter: TUN's raw DNS proxy and fake-IP
 engine are consumers of the roles, while future server inbounds can reuse
 destination resolution without inheriting mobile bootstrap policy.
 The raw anchor is deliberately DNS `Direct`: object policies select managed
-destination lookups but do not rewrite or reinterpret byte-transparent client
-queries. Its candidates still carry the same effective synthetic inbound tag
-into UDP and TCP outbound selection; endpoint deduplication includes that tag.
+destination lookups but do not rewrite client question types. Classic
+candidates preserve byte-transparent UDP/TCP behavior; a UDP client aimed at a
+TCP URI is adapted to RFC 7766 framing, while a TCP client remains a transparent
+stream. Routed candidates carry the effective synthetic inbound tag into
+outbound selection; local TCP candidates bypass it. Endpoint deduplication
+includes transport and tag.
 A future DNS `Hijack` mode must be explicit rather than changing this
 wire contract.
 

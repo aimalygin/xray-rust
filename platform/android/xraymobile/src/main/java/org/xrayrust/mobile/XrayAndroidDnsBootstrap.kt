@@ -22,6 +22,7 @@ internal data class PreparedAndroidVpnConfig(
 internal data class AndroidDnsBootstrapDomain(
     val domain: String,
     val port: Int,
+    val rejectsTunnelOwnedAddress: Boolean = false,
 )
 
 internal class AndroidDnsBootstrapTimeoutException(message: String) :
@@ -210,6 +211,7 @@ internal fun prepareAndroidVpnConfigWithinDeadline(
             activeAliases = mutableSetOf(),
             depth = 0,
             dnsUpstreamPort = upstream.port,
+            rejectsTunnelOwnedAddress = upstream.rejectsTunnelOwnedAddress,
             resolveSystemBootstrapAddresses = resolveSystemBootstrapAddresses,
         ) || modified
     }
@@ -500,6 +502,9 @@ internal fun dnsServerBootstrapUpstreamDomain(server: Any): AndroidDnsBootstrapD
     }
 
 private fun dnsServerBootstrapDomainFromString(server: String): AndroidDnsBootstrapDomain? {
+    if (hasDnsTcpUrlScheme(server)) {
+        return dnsServerBootstrapDomainFromTcpUrl(server)
+    }
     require(server == server.trim()) {
         "DNS server must not contain surrounding whitespace"
     }
@@ -551,6 +556,15 @@ private fun dnsServerBootstrapDomainFromObjectFields(
     require(address == address.trim()) {
         "object DNS server address must not contain surrounding whitespace"
     }
+    validateDnsServerObjectDomains(server)
+    validateDnsServerStringList(server, "expectedIPs")
+    validateDnsServerStringList(server, "expectIPs")
+    validateDnsServerStringList(server, "unexpectedIPs")
+    validateDnsServerTag(server)
+    validateDnsServerTimeout(server)
+    validateOptionalDnsServerBoolean(server, "skipFallback")
+    validateOptionalDnsServerBoolean(server, "finalQuery")
+    validateDnsServerObjectQueryStrategy(server)
     val port = if ("port" in server) {
         val rawPort = server["port"]
         val parsedPort = when (rawPort) {
@@ -568,15 +582,11 @@ private fun dnsServerBootstrapDomainFromObjectFields(
     } else {
         53
     }
-    validateDnsServerObjectDomains(server)
-    validateDnsServerStringList(server, "expectedIPs")
-    validateDnsServerStringList(server, "expectIPs")
-    validateDnsServerStringList(server, "unexpectedIPs")
-    validateDnsServerTag(server)
-    validateDnsServerTimeout(server)
-    validateOptionalDnsServerBoolean(server, "skipFallback")
-    validateOptionalDnsServerBoolean(server, "finalQuery")
-    validateDnsServerObjectQueryStrategy(server)
+    if (hasDnsTcpUrlScheme(address)) {
+        // Xray validates the sibling object `port` as uint16, but takes the
+        // TCP endpoint entirely from the URL and preserves both.
+        return dnsServerBootstrapDomainFromTcpUrl(address)
+    }
 
     if (isIpLiteral(address)) {
         validateDirectDnsUpstreamAddress(address, port)
@@ -592,6 +602,112 @@ private fun dnsServerBootstrapDomainFromObjectFields(
         "object DNS server address must not include a port or unsupported URL scheme"
     }
     return AndroidDnsBootstrapDomain(normalizeBootstrapDomain(address), port)
+}
+
+private fun hasDnsTcpUrlScheme(server: String): Boolean {
+    val separator = server.indexOf(':')
+    if (separator <= 0) {
+        return false
+    }
+    val scheme = server.substring(0, separator)
+    return scheme.equals("tcp", ignoreCase = true) ||
+        scheme.equals("tcp+local", ignoreCase = true)
+}
+
+private fun dnsServerBootstrapDomainFromTcpUrl(server: String): AndroidDnsBootstrapDomain? {
+    require(server.none(::isForbiddenDnsTcpUrlCharacter)) {
+        "DNS TCP server URL must not contain whitespace or control characters"
+    }
+    val schemeSeparator = server.indexOf(':')
+    require(schemeSeparator > 0 && hasDnsTcpUrlScheme(server)) {
+        "unsupported DNS TCP server URL scheme"
+    }
+    require(server.regionMatches(schemeSeparator + 1, "//", 0, 2)) {
+        "DNS TCP server URL must use an authority"
+    }
+    val authority = server.substring(schemeSeparator + 3)
+    require(
+        authority.isNotEmpty() && authority.none { it in "/?#@\\%" },
+    ) {
+        "DNS TCP server URL must contain only an authority host and optional port"
+    }
+
+    val host: String
+    val port: Int
+    if (authority.startsWith('[')) {
+        val closingBracket = authority.indexOf(']')
+        require(
+            closingBracket > 1 &&
+                authority.indexOf(']', closingBracket + 1) == -1,
+        ) {
+            "DNS TCP server URL contains malformed IPv6 brackets"
+        }
+        host = authority.substring(1, closingBracket)
+        require(':' in host && isIpLiteral(host)) {
+            "DNS TCP server URL brackets require an IPv6 literal"
+        }
+        val remainder = authority.substring(closingBracket + 1)
+        port = if (remainder.isEmpty()) {
+            53
+        } else {
+            require(remainder.startsWith(':')) {
+                "DNS TCP server URL contains data after its host"
+            }
+            parseDnsTcpUrlPort(remainder.substring(1))
+        }
+    } else {
+        require('[' !in authority && ']' !in authority) {
+            "DNS TCP server URL contains malformed host brackets"
+        }
+        require(authority.count { it == ':' } <= 1) {
+            "DNS TCP server URL requires brackets around IPv6 literals"
+        }
+        val portSeparator = authority.indexOf(':')
+        if (portSeparator >= 0) {
+            host = authority.substring(0, portSeparator)
+            port = parseDnsTcpUrlPort(authority.substring(portSeparator + 1))
+        } else {
+            host = authority
+            port = 53
+        }
+        require(host.isNotEmpty()) { "DNS TCP server URL host must not be empty" }
+    }
+
+    if (isIpLiteral(host)) {
+        validateDnsTcpUrlUpstreamAddress(host)
+        return null
+    }
+    require(':' !in host) { "DNS TCP server URL contains an invalid host" }
+    return AndroidDnsBootstrapDomain(
+        domain = normalizeBootstrapDomain(host),
+        port = port,
+        rejectsTunnelOwnedAddress = true,
+    )
+}
+
+private fun isForbiddenDnsTcpUrlCharacter(character: Char): Boolean =
+    character.isISOControl() ||
+        character.isWhitespace() ||
+        Character.isSpaceChar(character)
+
+private fun parseDnsTcpUrlPort(rawPort: String): Int {
+    require(rawPort.isNotEmpty() && rawPort.all { it in '0'..'9' }) {
+        "DNS TCP server URL port must be an integer from 1 through 65535"
+    }
+    val port = rawPort.toIntOrNull()
+    require(port != null && port in 1..65_535) {
+        "DNS TCP server URL port must be an integer from 1 through 65535"
+    }
+    return port
+}
+
+private fun validateDnsTcpUrlUpstreamAddress(address: String) {
+    val canonicalAddress = requireNotNull(canonicalIpAddress(address)) {
+        "DNS TCP server URL contains an invalid IP address"
+    }
+    require(canonicalAddress !in XRAY_TUN_OWNED_ADDRESSES) {
+        "DNS TCP server URL cannot point at a tunnel-local DNS address"
+    }
 }
 
 private fun validateDnsServerObjectDomains(server: Map<String, Any?>) {
@@ -775,7 +891,7 @@ private fun validateDirectDnsUpstreamAddress(address: String, port: Int) {
         return
     }
     val canonicalAddress = canonicalIpAddress(address)
-    require(canonicalAddress !in XRAY_TUN_RESERVED_IPV4_ADDRESSES) {
+    require(canonicalAddress !in XRAY_TUN_OWNED_ADDRESSES) {
         "DNS server cannot point at a tunnel-local DNS address"
     }
 }
@@ -787,6 +903,7 @@ internal fun ensureBootstrapHostMapping(
     activeAliases: MutableSet<String>,
     depth: Int,
     dnsUpstreamPort: Int? = null,
+    rejectsTunnelOwnedAddress: Boolean = false,
     resolveSystemBootstrapAddresses: (String) -> List<String>,
 ): Boolean {
     require(depth < MAX_BOOTSTRAP_ALIAS_DEPTH) {
@@ -799,7 +916,11 @@ internal fun ensureBootstrapHostMapping(
         exactMappings[existingKey]?.let { target ->
             return when (target) {
                 is AndroidDnsHostTarget.Addresses -> {
-                    validateDnsUpstreamBootstrapAddresses(target.values, dnsUpstreamPort)
+                    validateDnsUpstreamBootstrapAddresses(
+                        target.values,
+                        dnsUpstreamPort,
+                        rejectsTunnelOwnedAddress,
+                    )
                     false
                 }
                 is AndroidDnsHostTarget.Alias -> ensureBootstrapHostMapping(
@@ -809,6 +930,7 @@ internal fun ensureBootstrapHostMapping(
                     activeAliases = activeAliases,
                     depth = depth + 1,
                     dnsUpstreamPort = dnsUpstreamPort,
+                    rejectsTunnelOwnedAddress = rejectsTunnelOwnedAddress,
                     resolveSystemBootstrapAddresses = resolveSystemBootstrapAddresses,
                 )
             }
@@ -820,7 +942,11 @@ internal fun ensureBootstrapHostMapping(
         require(addresses.isNotEmpty()) {
             "bootstrap domain `$domain` resolved without a usable address"
         }
-        validateDnsUpstreamBootstrapAddresses(addresses, dnsUpstreamPort)
+        validateDnsUpstreamBootstrapAddresses(
+            addresses,
+            dnsUpstreamPort,
+            rejectsTunnelOwnedAddress,
+        )
         exactMappings[existingKey] = AndroidDnsHostTarget.Addresses(addresses)
         return true
     } finally {
@@ -828,11 +954,15 @@ internal fun ensureBootstrapHostMapping(
     }
 }
 
-private fun validateDnsUpstreamBootstrapAddresses(addresses: List<String>, port: Int?) {
-    if (port != 53) {
+private fun validateDnsUpstreamBootstrapAddresses(
+    addresses: List<String>,
+    port: Int?,
+    rejectsTunnelOwnedAddress: Boolean,
+) {
+    if (!rejectsTunnelOwnedAddress && port != 53) {
         return
     }
-    require(addresses.none { it in XRAY_TUN_RESERVED_IPV4_ADDRESSES }) {
+    require(addresses.none { it in XRAY_TUN_OWNED_ADDRESSES }) {
         "DNS server resolves to a tunnel-local DNS address"
     }
 }
@@ -943,10 +1073,14 @@ private const val MAX_DNS_SERVERS = 8
 private const val DNS_FAMILY_IPV4 = 1
 private const val DNS_FAMILY_IPV6 = 2
 
-private val XRAY_TUN_RESERVED_IPV4_ADDRESSES = setOf(
+private val XRAY_TUN_OWNED_ADDRESSES = listOf(
     XRAY_TUN_DNS_ANCHOR,
     "198.18.0.2",
-)
+    "10.7.0.1",
+    "fd00:7872::1",
+).mapTo(linkedSetOf()) { address ->
+    requireNotNull(canonicalIpAddress(address))
+}
 
 private val DNS_SERVER_OBJECT_FIELDS = setOf(
     "address",

@@ -247,7 +247,8 @@ fn apple_packet_pump_reuses_poll_storage_and_fails_outside_worker_queue() {
     assert!(provider.contains("dnsBootstrapMode: .staticOnly"));
     assert!(provider.contains("resolveAddress: (String) -> [String]?"));
     assert!(provider.contains("dnsBootstrapUpstream(from: rawServer)"));
-    assert!(provider.contains("case let .domain(domain, port):"));
+    assert!(provider.contains("case let .domain(domain, port, rejectsTunnelOwnedAddress):"));
+    assert!(provider.contains("if rejectsTunnelOwnedAddress || port == 53"));
     assert!(provider.contains("protectedDNSDomains.contains(domain)"));
     assert!(provider.contains("excludingServerAddresses: resolvedConfig.excludedServerAddresses"));
     assert!(provider.contains("ipv4Settings.excludedRoutes = ipv4ExcludedRoutes"));
@@ -427,7 +428,8 @@ fn android_reference_vpn_bootstraps_dns_before_establishing_the_tunnel() {
         "getJSONArray(\"servers\")",
         "dnsServerBootstrapUpstreamDomain(rawServer)",
         "dnsUpstreamPort = upstream.port",
-        "validateDnsUpstreamBootstrapAddresses(addresses, dnsUpstreamPort)",
+        "validateDnsUpstreamBootstrapAddresses(",
+        "rejectsTunnelOwnedAddress = upstream.rejectsTunnelOwnedAddress",
         "is JSONObject -> dnsServerBootstrapDomainFromObject(server)",
         "getJSONObject(\"fakeIp\")",
     ] {

@@ -172,15 +172,23 @@ count as IPv4 at the TCP dial boundary and are discarded when received in an
 AAAA answer. `UseSystem` is rejected until the universal core has an injectable
 platform route-capability provider; it is not silently treated as `UseIP`.
 
-`dns.servers` accepts at most eight string or object entries. The existing
-string shorthand accepts IP addresses, socket addresses, or domain names with
-an optional nonzero port. The Xray object subset requires `address`, supports
+`dns.servers` accepts at most eight string or object entries. String shorthand
+accepts IP addresses, socket addresses, domain names with an optional nonzero
+port, and `tcp://host[:port]` / `tcp+local://host[:port]`. TCP schemes are
+case-insensitive, default to port `53`, support bracketed IPv6 literals, and
+use TCP from the first query rather than as a truncation retry. `tcp://` enters
+normal outbound routing; `tcp+local://` bypasses routing and opens a protected
+direct socket. The accepted URI subset is deliberately authority-only:
+userinfo, paths, queries, fragments, whitespace, scoped IPv6, and zero ports
+fail closed. In an object entry, the port embedded in the TCP URI is
+authoritative and the separate `port` field is ignored after validation,
+matching Xray-core's effective behavior. The Xray object subset requires `address`, supports
 `port` (`0` or omission means `53`), `domains`, `skipFallback`, per-server
 `queryStrategy`, `finalQuery`, `tag`, and `timeoutMs`. `domains` may be an array or one
 comma-separated string and supports bare keyword, `keyword:`, `domain:`,
 `full:`, `regexp:`, `dotless:`, `geosite:`, `ext:`, and `ext-domain:` rules.
 Top-level `disableFallback` and `disableFallbackIfMatch` are also supported.
-Special `localhost`/`fakedns` clients, URL transports, `clientIp`,
+Special `localhost`/`fakedns` clients, DoH/DoQ URL transports, `clientIp`,
 cache/stale controls, and parallel queries are rejected until their
 runtime semantics exist; they are not silently approximated as classic UDP.
 
@@ -249,7 +257,10 @@ single-family strategies send only their selected query. All modes validate
 A/AAAA records plus CNAME chains in `xray-transport`; a CNAME-only follow stays
 on the server that supplied the alias. If that continuation fails, the next
 selected server is retried with the original name; after the plan is exhausted,
-the alias is not sent to any other resolver. The delivery transport
+the alias is not sent to any other resolver. Classic delivery starts with UDP
+and retries the same server over TCP only after a valid truncated response.
+TCP URI clients start with TCP, and a truncated TCP response is invalid rather
+than retried. The delivery transport
 is replaceable, so TUN resolution sends them through the outbound router
 rather than duplicating the DNS parser. A valid UDP response with `TC=1`
 retries over TCP to the same server. UDP transports ignore responses with an unrelated
@@ -265,7 +276,9 @@ cancellation-safe lookup and the same typed outcome instead of opening
 duplicate routed DNS/VLESS sessions.
 
 For managed runtimes, including TUN, SOCKS, HTTP, and startup probes, `System`
-resolution is `dns.hosts` → routed `dns.servers`. When no `dns.servers` are
+resolution is `dns.hosts` → configured `dns.servers`: classic and `tcp://`
+clients are routed, while `tcp+local://` clients intentionally dial directly.
+When no `dns.servers` are
 configured, unresolved names use the cached operating-system resolver. Authoritative
 NXDOMAIN and A+AAAA NODATA advance to the next configured server, matching
 Xray-core's ordered failover. If no later server succeeds, an authoritative
@@ -293,28 +306,35 @@ resolver to find the upstream itself, but never to retry the original qname.
 
 When fake-IP is disabled and at least one usable server is present, TUN clients
 can use `198.18.0.1:53` as a local UDP/TCP DNS proxy. The proxy keeps
-server order, removes duplicates, and sends each upstream attempt through the
-normal outbound router, so Freedom sockets retain platform socket protection
-and VLESS routes do not gain a hidden direct-DNS bypass. DNS sessions route on
-their original IP/domain metadata and the selected server's effective DNS tag.
-With `IPIfNonMatch`, domain rules run first;
-only an unmatched domain upstream uses the separate bootstrap resolver for the
-IP-rule pass, so destination DNS cannot recurse into itself. UDP requests have
+server order and removes duplicates by endpoint, effective tag, and transport.
+Classic and `tcp://` attempts enter the normal outbound router, so Freedom
+sockets retain platform socket protection and VLESS routes do not gain a
+hidden direct-DNS bypass. `tcp+local://` deliberately skips route selection and
+uses the same protected, non-recursive direct dialer as managed DNS. DNS
+sessions route on their original IP/domain metadata and the selected server's
+effective DNS tag. As in Xray's internal DNS context, upstream routing never
+runs the `IPIfNonMatch` DNS second pass; domain/tag rules apply to a domain
+upstream without recursively resolving the server needed to perform that
+lookup. UDP requests have
 bounded per-attempt and total timeouts; unrelated replies from the selected
 peer are ignored, while invalid/unavailable upstreams return
 SERVFAIL, and an oversized reply is converted to a truncated response so the
-client can retry over TCP. TCP is a byte-transparent stream and supports
+client can retry over TCP. When a UDP client selects a TCP URI upstream, the
+proxy adds/removes RFC 7766 length framing, validates the returned DNS envelope,
+and preserves the same bounded failover behavior. TCP is a byte-transparent
+stream and supports
 multiple length-prefixed DNS messages on one connection; failed opens are
 reset. Raw and fake DNS/TCP share a dedicated limit of up to 32 flows. Raw
 DNS/TCP idle time, including blocked bridge writes, is capped by the smaller of
 the inbound `connIdle` policy and five seconds.
 A raw-anchor query keeps the client's original question type and does not apply
 global/per-server `queryStrategy`, `domains`, IP response filters, `timeoutMs`,
-or fallback policy. Object entries contribute only their endpoint to the raw
-wire exchange, but their effective DNS tag still drives outbound routing.
-The declaration-order plan deduplicates by endpoint plus effective tag, so two
-clients aimed at the same endpoint with different tags remain distinct. This is the byte-transparent
-equivalent of Xray DNS outbound
+or fallback policy. Object entries contribute their endpoint, transport, and
+effective DNS tag to the raw wire exchange. The tag drives outbound routing
+for routed transports and is intentionally inert for `tcp+local://`.
+The declaration-order plan deduplicates by endpoint, transport, and effective
+tag, so two clients aimed at the same endpoint with different tags remain
+distinct. This is the byte-transparent equivalent of Xray DNS outbound
 `Direct`. Xray DNS outbound `Hijack` semantics (including its A/AAAA family
 gate, DNS hosts/cache, and per-server policy) remain a separate unsupported
 feature rather than a partial hybrid in the raw proxy. The raw proxy retains

@@ -21,8 +21,8 @@ use xray_config::{
 };
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::{
-    dns_response_matches_query, protect_udp_socket, BoxedTransportStream, ConnectorConfig,
-    DnsResolver, TransportDialer,
+    dns_response_matches_query, protect_udp_socket, BoxedTransportStream, DnsResolver,
+    TransportDialer,
 };
 use xray_tun::{
     TunEndpoint, TunError, TunTcpBufferState, TunTcpFlowSummaryEvent, TunTcpOpenErrorEvent,
@@ -2512,19 +2512,26 @@ async fn open_tcp_bridge_stream(
     context: &TunRuntimeContext,
 ) -> Result<BoxedTransportStream, crate::CoreError> {
     if let Some(upstream) = dns_upstream {
+        if upstream.is_local() {
+            let candidates = dns_proxy::resolve_freedom_dns_upstreams(upstream, context).await?;
+            return Ok(crate::dns::open_local_dns_tcp_stream(
+                context.transport_dialer.as_ref(),
+                target,
+                &candidates,
+            )
+            .await?);
+        }
         match outbound {
             TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => {
                 let candidates =
                     dns_proxy::resolve_freedom_dns_upstreams(upstream, context).await?;
-                return Ok(context
-                    .transport_dialer
-                    .connect_resolved(
-                        &ConnectorConfig::Tcp,
-                        target,
-                        &candidates,
-                        outbound.freedom_happy_eyeballs(),
-                    )
-                    .await?);
+                return Ok(crate::dns::open_routed_freedom_dns_tcp_stream(
+                    context.transport_dialer.as_ref(),
+                    target,
+                    &candidates,
+                    outbound.freedom_happy_eyeballs(),
+                )
+                .await?);
             }
             TcpOutbound::Vless(_)
                 if upstream
@@ -2594,41 +2601,46 @@ async fn bridge_tcp_flow(
             last_failure = Some(("DNS TCP proxy deadline elapsed".to_owned(), None));
             break;
         }
-        let outbound_result = tokio::select! {
-            biased;
-            () = wait_for_tun_shutdown(&mut shutdown) => return,
-            result = async {
-                let select = async {
-                    if is_dns_proxy {
-                        context
-                            .outbound_router
-                            .select_tcp_outbound_for_session_with_tag_and_resolver(
-                                routing_inbound_tag,
-                                &dial_target,
-                                collect_tcp_timings,
-                                context.bootstrap_dns_resolver(),
-                            )
+        let outbound_result = if dns_upstream
+            .as_ref()
+            .is_some_and(dns_proxy::DnsProxyUpstream::is_local)
+        {
+            Ok((TcpOutbound::Freedom, None))
+        } else {
+            tokio::select! {
+                biased;
+                () = wait_for_tun_shutdown(&mut shutdown) => return,
+                result = async {
+                    let select = async {
+                        if is_dns_proxy {
+                            context
+                                .outbound_router
+                                .select_tcp_outbound_for_session_with_tag(
+                                    routing_inbound_tag,
+                                    &dial_target,
+                                    collect_tcp_timings,
+                                )
+                        } else {
+                            context.outbound_router
+                                .select_tcp_outbound_for_session_with_tag_and_resolver(
+                                    routing_inbound_tag,
+                                    &dial_target,
+                                    collect_tcp_timings,
+                                    context.dns_resolver.as_ref(),
+                                )
+                                .await
+                        }
+                    };
+                    if let Some(remaining) = selection_remaining {
+                        tokio::time::timeout(remaining, select)
                             .await
+                            .map_err(|_| "DNS TCP route selection timed out".to_owned())?
+                            .map_err(|error| error.to_string())
                     } else {
-                        context.outbound_router
-                            .select_tcp_outbound_for_session_with_tag_and_resolver(
-                                routing_inbound_tag,
-                                &dial_target,
-                                collect_tcp_timings,
-                                context.dns_resolver.as_ref(),
-                            )
-                            .await
+                        select.await.map_err(|error| error.to_string())
                     }
-                };
-                if let Some(remaining) = selection_remaining {
-                    tokio::time::timeout(remaining, select)
-                        .await
-                        .map_err(|_| "DNS TCP route selection timed out".to_owned())?
-                        .map_err(|error| error.to_string())
-                } else {
-                    select.await.map_err(|error| error.to_string())
-                }
-            } => result.map(|selection| (selection.outbound, selection.tag)),
+                } => result.map(|selection| (selection.outbound, selection.tag)),
+            }
         };
         let (outbound, outbound_tag) = match outbound_result {
             Ok(selection) => selection,

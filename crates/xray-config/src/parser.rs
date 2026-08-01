@@ -10,9 +10,9 @@ use uuid::Uuid;
 use crate::{
     geodata::{default_geodata_dirs, GeodataLoader},
     CoreConfig, Diagnostic, DnsConfig, DnsFakeIpConfig, DnsHostMapping, DnsHostTarget, DnsIpFilter,
-    DnsNameServerConfig, DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint, DomainMatcher,
-    HappyEyeballsSettings, InboundConfig, InboundProtocol, InboundSniffingConfig, IpCidr,
-    IpMatcher, Network, OutboundConfig, OutboundProtocol, OutboundSettings, PolicyConfig,
+    DnsNameServerConfig, DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint, DnsServerTransport,
+    DomainMatcher, HappyEyeballsSettings, InboundConfig, InboundProtocol, InboundSniffingConfig,
+    IpCidr, IpMatcher, Network, OutboundConfig, OutboundProtocol, OutboundSettings, PolicyConfig,
     PolicyLevelConfig, PolicySystemConfig, RealitySettings, RealityShortId, RegexMatcher,
     RoutingConfig, RoutingDomainStrategy, RoutingRule, SniffingDestination, SocketOptions,
     StreamSecurity, StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
@@ -47,6 +47,138 @@ fn is_tun_reserved_ip(ip: IpAddr) -> bool {
 
 fn dns_query_strategies_overlap(global: DnsQueryStrategy, server: DnsQueryStrategy) -> bool {
     global == DnsQueryStrategy::UseIp || server == DnsQueryStrategy::UseIp || global == server
+}
+
+fn parse_dns_tcp_server_uri(
+    address: &str,
+) -> Result<Option<(DnsServerTransport, DnsServerEndpoint)>, String> {
+    let Some((scheme, remainder)) = address.split_once(':') else {
+        return Ok(None);
+    };
+    let transport = if scheme.eq_ignore_ascii_case("tcp") {
+        DnsServerTransport::TcpRouted
+    } else if scheme.eq_ignore_ascii_case("tcp+local") {
+        DnsServerTransport::TcpLocal
+    } else {
+        return Ok(None);
+    };
+    let Some(authority) = remainder.strip_prefix("//") else {
+        return Err("dns TCP server URL must use `tcp://` or `tcp+local://`".to_owned());
+    };
+    if address
+        .chars()
+        .any(|character| character.is_whitespace() || character.is_control())
+    {
+        return Err(
+            "dns TCP server URL must not contain whitespace or control characters".to_owned(),
+        );
+    }
+    if authority.is_empty() {
+        return Err("dns TCP server URL must include a host".to_owned());
+    }
+    if authority.contains('@') {
+        return Err("dns TCP server URL must not include userinfo".to_owned());
+    }
+    if authority.contains('/') {
+        return Err("dns TCP server URL must not include a path".to_owned());
+    }
+    if authority.contains('?') {
+        return Err("dns TCP server URL must not include a query".to_owned());
+    }
+    if authority.contains('#') {
+        return Err("dns TCP server URL must not include a fragment".to_owned());
+    }
+
+    let endpoint = if let Some(bracketed) = authority.strip_prefix('[') {
+        let Some((host, suffix)) = bracketed.split_once(']') else {
+            return Err("dns TCP server URL contains a malformed bracketed IPv6 host".to_owned());
+        };
+        if host.is_empty() || host.contains(['[', ']']) {
+            return Err("dns TCP server URL contains a malformed bracketed IPv6 host".to_owned());
+        }
+        let port = match suffix {
+            "" => 53,
+            suffix => {
+                let Some(port) = suffix.strip_prefix(':') else {
+                    return Err(
+                        "dns TCP server URL must contain only a host and optional port".to_owned(),
+                    );
+                };
+                parse_dns_tcp_server_port(port)?
+            }
+        };
+        let socket = format!("[{host}]:{port}")
+            .parse::<SocketAddr>()
+            .map_err(|_| "dns TCP server URL contains an invalid bracketed IPv6 host".to_owned())?;
+        if !socket.is_ipv6() {
+            return Err("dns TCP server URL brackets are only valid for IPv6 hosts".to_owned());
+        }
+        DnsServerEndpoint::Ip(socket)
+    } else {
+        if authority.contains(['[', ']']) {
+            return Err("dns TCP server URL contains malformed host brackets".to_owned());
+        }
+        if authority.bytes().filter(|byte| *byte == b':').count() > 1 {
+            return Err("dns TCP server URL requires brackets around an IPv6 host".to_owned());
+        }
+        let (host, port) = match authority.split_once(':') {
+            Some((host, port)) => (host, parse_dns_tcp_server_port(port)?),
+            None => (authority, 53),
+        };
+        if host.is_empty() {
+            return Err("dns TCP server URL must include a host".to_owned());
+        }
+        if host.contains(['\\', '%']) {
+            return Err("dns TCP server URL contains an invalid host".to_owned());
+        }
+        match host.parse::<IpAddr>() {
+            Ok(IpAddr::V4(ip)) => DnsServerEndpoint::Ip(SocketAddr::new(ip.into(), port)),
+            Ok(IpAddr::V6(_)) => {
+                return Err("dns TCP server URL requires brackets around an IPv6 host".to_owned());
+            }
+            Err(_) => DnsServerEndpoint::Domain {
+                domain: host.to_owned(),
+                port,
+            },
+        }
+    };
+
+    if matches!(&endpoint, DnsServerEndpoint::Ip(address) if is_tun_reserved_ip(address.ip())) {
+        return Err("dns server cannot point at a tunnel-local DNS address".to_owned());
+    }
+
+    Ok(Some((transport, endpoint)))
+}
+
+fn parse_dns_tcp_server_port(port: &str) -> Result<u16, String> {
+    if port.is_empty() || !port.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err("dns TCP server URL contains an invalid port".to_owned());
+    }
+    let port = port
+        .parse::<u16>()
+        .map_err(|_| "dns TCP server URL contains an invalid port".to_owned())?;
+    if port == 0 {
+        return Err("dns server port must be greater than zero".to_owned());
+    }
+    Ok(port)
+}
+
+fn dns_tcp_server_policy(
+    transport: DnsServerTransport,
+    endpoint: DnsServerEndpoint,
+) -> DnsServerConfig {
+    DnsServerConfig::Policy(DnsNameServerConfig {
+        endpoint,
+        transport,
+        domains: Vec::new(),
+        expected_ips: DnsIpFilter::default(),
+        unexpected_ips: DnsIpFilter::default(),
+        tag: String::new(),
+        timeout_ms: 0,
+        skip_fallback: false,
+        query_strategy: DnsQueryStrategy::UseIp,
+        final_query: false,
+    })
 }
 
 fn fake_ip_usable_address_count(pool: IpCidr) -> u64 {
@@ -442,7 +574,17 @@ impl Parser<'_> {
             53
         };
         let port = if port == 0 { 53 } else { port };
-        let endpoint = self.parse_dns_server_endpoint(address, port, &address_path)?;
+        let (transport, endpoint) = match parse_dns_tcp_server_uri(address) {
+            Ok(Some((transport, endpoint))) => (transport, endpoint),
+            Ok(None) => (
+                DnsServerTransport::Classic,
+                self.parse_dns_server_endpoint(address, port, &address_path)?,
+            ),
+            Err(message) => {
+                self.error(&address_path, message);
+                return None;
+            }
+        };
         let domains = self.parse_dns_server_domains(server, path)?;
         let (expected_ips, unexpected_ips) = self.parse_dns_server_ip_filters(server, path)?;
         let timeout_path = format!("{path}.timeoutMs");
@@ -472,6 +614,7 @@ impl Parser<'_> {
 
         Some(DnsServerConfig::Policy(DnsNameServerConfig {
             endpoint,
+            transport,
             domains,
             expected_ips,
             unexpected_ips,
@@ -698,6 +841,17 @@ impl Parser<'_> {
         if server.trim() != server {
             self.error(path, "dns server must not contain surrounding whitespace");
             return None;
+        }
+
+        match parse_dns_tcp_server_uri(server) {
+            Ok(Some((transport, endpoint))) => {
+                return Some(dns_tcp_server_policy(transport, endpoint));
+            }
+            Ok(None) => {}
+            Err(message) => {
+                self.error(path, message);
+                return None;
+            }
         }
 
         if let Ok(socket_addr) = server.parse::<SocketAddr>() {

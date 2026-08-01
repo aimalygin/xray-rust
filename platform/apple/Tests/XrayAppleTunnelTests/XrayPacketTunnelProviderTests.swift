@@ -672,7 +672,6 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
             #"{}"#,
             #"{"address":42}"#,
             #"{"address":"resolver.example","port":65536}"#,
-            #"{"address":"tcp://resolver.example"}"#,
             #"{"address":"resolver.example","tag":42}"#,
             #"{"address":"resolver.example","tag":true}"#,
             #"{"address":"resolver.example","tag":["dns-route"]}"#,
@@ -685,6 +684,55 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
 
             XCTAssertNil(configuration, "server=\(server)")
         }
+    }
+
+    func testResolvedDnsConfigurationAcceptsStrictTcpServerURLs() {
+        for server in [
+            #""tcp://192.0.2.53""#,
+            #""TCP+LOCAL://[2001:db8::53]:5353""#,
+            #""Tcp://Resolver.Example.:5353""#,
+            #"{"address":"tcp+local://resolver.example","port":0,"tag":"dns-local"}"#,
+        ] {
+            let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
+                configJSON: "{\"dns\":{\"servers\":[\(server)]}}",
+                explicit: .system
+            )
+
+            XCTAssertEqual(configuration, .localDNSAnchor, "server=\(server)")
+        }
+    }
+
+    func testResolvedDnsConfigurationRejectsInvalidTcpServerURLs() {
+        for server in [
+            #""tcp:/resolver.example""#,
+            #""tcp://""#,
+            #""tcp://user@resolver.example""#,
+            #""tcp://resolver.example/path""#,
+            #""tcp://resolver.example?query""#,
+            #""tcp://resolver.example#fragment""#,
+            #""tcp://resolver.example:0""#,
+            #""tcp://resolver.example:65536""#,
+            #""tcp://resolver.example:not-a-port""#,
+            #""tcp://resolver.example:+53""#,
+            #""tcp://2001:db8::53""#,
+            #""tcp://[192.0.2.53]""#,
+            #""tcp://[2001:db8::53""#,
+            #""tcp://resolver example""#,
+            #""tcp://resolver\u0001.example""#,
+            #""tcp://198.18.0.1""#,
+            #""tcp://198.18.0.1:5353""#,
+            #"{"address":"tcp+local://resolver.example/path"}"#,
+            #"{"address":"tcp://resolver.example","port":"53"}"#,
+            #"{"address":"tcp://resolver.example","port":65536}"#,
+        ] {
+            let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
+                configJSON: "{\"dns\":{\"servers\":[\(server)]}}",
+                explicit: .system
+            )
+
+            XCTAssertNil(configuration, "server=\(server)")
+        }
+
     }
 
     func testResolvedDnsConfigurationRejectsMalformedDnsIPPolicyStringLists() {
@@ -1629,6 +1677,53 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         XCTAssertEqual(prepared.excludedServerAddresses, [])
     }
 
+    func testConfigPinningPreservesTcpServerURLsAndUsesTheirEmbeddedPorts() throws {
+        let stringURL = "TCP://String-DNS.Example.:5353"
+        let objectURL = "tcp+local://Object-DNS.Example.:5443"
+        let resolved = resolvedConfig(
+            json: """
+            {"dns":{"servers":[
+              "\(stringURL)",
+              {"address":"\(objectURL)","port":53,"domains":["domain:internal.example"],"expectedIPs":["geoip:private"],"unexpectedIPs":["192.0.2.0/24"],"tag":"dns-local","timeoutMs":1750,"skipFallback":true,"queryStrategy":"UseIPv4","finalQuery":true}
+            ]},"outbounds":[{"protocol":"freedom"}]}
+            """
+        )
+        var resolvedDomains: [String] = []
+
+        let prepared = try XrayPacketTunnelProvider.configPinningOutboundServerAddresses(
+            resolved,
+            resolveAddress: { domain in
+                resolvedDomains.append(domain)
+                return domain == "string-dns.example"
+                    ? ["198.51.100.53"]
+                    : ["198.51.100.54"]
+            }
+        )
+        let root = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(prepared.json.utf8)) as? [String: Any]
+        )
+        let dns = try XCTUnwrap(root["dns"] as? [String: Any])
+        let hosts = try XCTUnwrap(dns["hosts"] as? [String: Any])
+        let servers = try XCTUnwrap(dns["servers"] as? [Any])
+        let preservedStringURL = try XCTUnwrap(servers[0] as? String)
+        let objectServer = try XCTUnwrap(servers[1] as? [String: Any])
+
+        XCTAssertEqual(resolvedDomains, ["string-dns.example", "object-dns.example"])
+        XCTAssertEqual(hosts["full:string-dns.example"] as? [String], ["198.51.100.53"])
+        XCTAssertEqual(hosts["full:object-dns.example"] as? [String], ["198.51.100.54"])
+        XCTAssertEqual(preservedStringURL, stringURL)
+        XCTAssertEqual(objectServer["address"] as? String, objectURL)
+        XCTAssertEqual((objectServer["port"] as? NSNumber)?.intValue, 53)
+        XCTAssertEqual(objectServer["domains"] as? [String], ["domain:internal.example"])
+        XCTAssertEqual(objectServer["expectedIPs"] as? [String], ["geoip:private"])
+        XCTAssertEqual(objectServer["unexpectedIPs"] as? [String], ["192.0.2.0/24"])
+        XCTAssertEqual(objectServer["tag"] as? String, "dns-local")
+        XCTAssertEqual((objectServer["timeoutMs"] as? NSNumber)?.intValue, 1750)
+        XCTAssertEqual((objectServer["skipFallback"] as? NSNumber)?.boolValue, true)
+        XCTAssertEqual(objectServer["queryStrategy"] as? String, "UseIPv4")
+        XCTAssertEqual((objectServer["finalQuery"] as? NSNumber)?.boolValue, true)
+    }
+
     func testConfigPinningAcceptsIPv6OnlySystemBootstrapAndPreservesVLESSAddress() throws {
         let resolved = resolvedConfig(
             json: #"{"outbounds":[{"protocol":"vless","settings":{"vnext":[{"address":"Proxy.Example.","port":443,"users":[]}]}}]}"#,
@@ -2025,6 +2120,26 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
                 resolveAddress: { domain in
                     XCTFail("unexpected system lookup for \(domain)")
                     return nil
+                }
+            )
+        ) { error in
+            guard case XrayPacketTunnelProviderError.outboundServerResolutionFailed = error else {
+                return XCTFail("unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testConfigPinningRejectsTCPURLResolutionAtNonstandardPort() {
+        let resolved = resolvedConfig(
+            json: #"{"dns":{"servers":["tcp://resolver.example:5353"]},"outbounds":[{"protocol":"freedom"}]}"#
+        )
+
+        XCTAssertThrowsError(
+            try XrayPacketTunnelProvider.configPinningOutboundServerAddresses(
+                resolved,
+                resolveAddress: { domain in
+                    XCTAssertEqual(domain, "resolver.example")
+                    return ["198.18.0.1"]
                 }
             )
         ) { error in

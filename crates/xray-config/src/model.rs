@@ -62,6 +62,18 @@ pub enum DnsQueryStrategy {
     UseIpv6,
 }
 
+/// Transport used by one configured DNS server.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub enum DnsServerTransport {
+    /// Classic DNS over UDP with the existing TCP retry on truncation.
+    #[default]
+    Classic,
+    /// DNS over TCP dispatched through Xray routing.
+    TcpRouted,
+    /// DNS over TCP dialed directly through the local network stack.
+    TcpLocal,
+}
+
 pub const DEFAULT_DNS_SERVER_TIMEOUT_MS: u64 = 4_000;
 /// Largest millisecond value safe across Xray-core's duration conversions.
 ///
@@ -80,6 +92,7 @@ pub enum DnsServerConfig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DnsNameServerConfig {
     pub endpoint: DnsServerEndpoint,
+    pub transport: DnsServerTransport,
     pub domains: Vec<DomainMatcher>,
     pub expected_ips: DnsIpFilter,
     pub unexpected_ips: DnsIpFilter,
@@ -211,6 +224,14 @@ impl DnsServerConfig {
         match self {
             Self::Policy(server) => &server.domains,
             Self::Ip(_) | Self::Domain { .. } => &[],
+        }
+    }
+
+    /// Returns the effective transport, including classic shorthand servers.
+    pub fn transport(&self) -> DnsServerTransport {
+        match self {
+            Self::Policy(server) => server.transport,
+            Self::Ip(_) | Self::Domain { .. } => DnsServerTransport::Classic,
         }
     }
 

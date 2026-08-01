@@ -92,14 +92,30 @@ startup instead of selecting a third-party endpoint.
 The provider also does not select a public DNS operator. Network Extension
 advertises the tunnel-local `198.18.0.1` interception anchor when
 `dns.fakeIp` is enabled with a usable IPv4 pool, or when `dns.servers` contains
-any valid nonempty IP/domain upstream list. Bare IPv4 and IPv6 literals use
-port 53; socket-address and `domain:port` strings can select another nonzero
-port. The anchor is handled inside the tunnel and is not itself an upstream
-resolver. VLESS receives domain upstreams unchanged for remote resolution.
-Freedom uses the separate mobile `StaticOnly` bootstrap populated during the
-provider preflight described below. Domains restored from fake-IP and sent
-through Freedom resolve through the routed `dns.servers` list without a
-system-DNS fallback.
+any supported nonempty upstream list. Classic IPv4 and IPv6 literals use port
+53; socket-address and `domain:port` strings can select another nonzero port.
+The strict `tcp://host[:port]` form selects routed DNS-over-TCP, so normal
+Freedom/VLESS outbound selection and an object server's `tag` still apply.
+`tcp+local://host[:port]` instead opens a provider-local/system TCP socket and
+bypasses the Xray router; Network Extension's provider-process routing policy
+keeps that connection off the provider's own tunnel interface. The anchor is
+handled inside the tunnel and is not itself an upstream resolver. VLESS
+receives routed domain upstreams unchanged for remote resolution. Freedom uses
+the separate mobile `StaticOnly` bootstrap populated during the provider
+preflight described below. Domains restored from fake-IP and sent through
+Freedom resolve through the routed `dns.servers` list without a system-DNS
+fallback.
+
+TCP URL schemes are case-insensitive, but the mobile parser intentionally
+accepts only an authority: IPv4, a domain, or bracketed IPv6, followed by an
+optional port from 1 through 65535 (default 53). Userinfo, path, query,
+fragment, percent encoding, unbracketed IPv6, whitespace/control characters,
+and malformed brackets are rejected before network settings are applied. In an
+object server, the URL's embedded/default port is authoritative. A sibling
+`port` is still validated as an integer from 0 through 65535 and preserved, but
+is ignored when selecting that endpoint. A TCP URL pointing directly to, or
+pinning a domain onto, a tunnel-owned address is rejected on every URL port;
+classic non-URL servers retain their legacy port-53 check.
 
 Fake-IP without `dns.servers` is accepted only when TUN domain traffic cannot
 select Freedom. Before applying Network Extension settings, the provider
@@ -121,9 +137,11 @@ settings. The provider installs IPv4 and IPv6 default routes; the tunnel IPv6
 interface uses `fd00:7872::2/128`, while the DNS interception anchor remains
 IPv4 `198.18.0.1`. Invalid explicit values fail startup, and start options take
 precedence over persistent provider configuration. The local anchor proxies
-both UDP and TCP/53 through the configured outbound route. Fake-IP profiles
-keep local synthesis precedence and answer both UDP and length-prefixed TCP
-queries at the anchor.
+both UDP and TCP/53. A `tcp://` upstream uses the configured outbound route;
+`tcp+local://` is the explicit routing exception described above. UDP client
+messages sent to either TCP URL are framed onto DNS-over-TCP, while TCP clients
+remain length-prefixed TCP. Fake-IP profiles keep local synthesis precedence
+for both transports at the anchor.
 
 The checked-in `directTunConfigJSON` intentionally has no fake-IP DNS. Direct
 profiles are not automatically migrated to fake-IP and require an explicit
@@ -132,14 +150,18 @@ VLESS as the default outbound and only bypass private IP ranges through
 Freedom; the importer does not add domain-based captive-portal bypasses.
 
 Before applying Network Extension DNS and routes, the provider bootstraps every
-domain VLESS server and domain `dns.servers` entry. Existing bare or
-`full:<domain>` exact `dns.hosts` mappings are canonicalized and followed for at most
-eight mapping steps; cycles and deeper chains fail tunnel startup. When an
-alias chain has no terminal mapping, the provider resolves that terminal domain
-with the then-current system resolver and writes every ordered A/AAAA result
-into a canonical exact IP array. Existing terminal IP arrays are retained and
-deduplicated in order. IPv4-mapped IPv6 carrier addresses are normalized to
-IPv4 so Rust socket selection and Apple `/32` exclusions stay aligned.
+domain VLESS server and every domain-valued classic, `tcp://`, or
+`tcp+local://` DNS endpoint. An IP-literal TCP URL needs no system lookup. Both
+TCP URL modes use the URL port for endpoint safety checks and pin a domain host
+into `dns.hosts`; the original server URI, object policy fields, and `tag` stay
+unchanged. Existing bare or `full:<domain>` exact `dns.hosts` mappings are
+canonicalized and followed for at most eight mapping steps; cycles and deeper
+chains fail tunnel startup. When an alias chain has no terminal mapping, the
+provider resolves that terminal domain with the then-current system resolver
+and writes every ordered A/AAAA result into a canonical exact IP array.
+Existing terminal IP arrays are retained and deduplicated in order.
+IPv4-mapped IPv6 carrier addresses are normalized to IPv4 so Rust socket
+selection and Apple `/32` exclusions stay aligned.
 DNS64-synthesized IPv6 results are accepted on IPv6-only networks. The original VLESS address string and
 `NETunnelProviderProtocol.serverAddress` remain metadata rather than being
 replaced by one candidate, so exact-domain routing, SNI, and other metadata do
@@ -149,10 +171,12 @@ The provider collects every IPv4/IPv6 outer carrier endpoint from VLESS
 servers, their existing bootstrap mappings, and the configured server address.
 Before creating the Rust core it installs an excluded `/32` or `/128` route for
 each carrier candidate alongside both default tunnel routes. `dns.servers`
-domains are still pinned for fail-closed bootstrap, but their resolved
-addresses are not globally excluded: DNS remains subject to the configured
-outbound routing policy. A carrier resolution containing a tunnel-owned DNS or
-interface address fails closed before network settings are installed. An explicitly enabled
+domains, including local TCP URL hosts, are still pinned for fail-closed
+bootstrap, but their resolved addresses are not globally excluded. Routed DNS
+remains subject to outbound policy; a `tcp+local://` socket bypasses that policy
+and relies on the Network Extension provider-process routing policy. A carrier
+resolution containing a tunnel-owned DNS or interface address fails closed
+before network settings are installed. An explicitly enabled
 `sockopt.happyEyeballs` policy can then race the pinned raw TCP candidates and
 perform one TLS/REALITY handshake on the winner; `tryDelayMs: 0` leaves that
 race disabled by default. Resolution failure fails tunnel startup. This

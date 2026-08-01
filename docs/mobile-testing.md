@@ -97,30 +97,47 @@ downloaded `.dat` files are checksum-verified inputs in the ignored
 
 The Apple provider performs no startup connectivity probe and assigns no
 third-party DNS resolver by default. Fake-IP profiles and profiles with any
-valid nonempty string or `{address, port, ...}` IP/domain `dns.servers` list use
-the tunnel-local `198.18.0.1`
-DNS anchor. The latter proxies UDP and TCP/53 through selected Freedom/VLESS
-outbounds. VLESS receives a domain upstream unchanged for remote resolution;
+supported nonempty string or object `dns.servers` list use the tunnel-local
+`198.18.0.1` DNS anchor. Classic servers and strict `tcp://host[:port]` servers
+are routed through selected Freedom/VLESS outbounds; an object server's `tag`
+still applies. Strict `tcp+local://host[:port]` is the explicit exception: it
+bypasses routing and uses a provider-local/system TCP socket. On Apple,
+Network Extension's provider-process routing policy keeps that socket off the
+provider's own tunnel; Android explicitly calls `VpnService.protect(fd)`.
+VLESS receives a routed domain upstream unchanged for remote resolution;
 Freedom needs a `dns.hosts` alias chain ending in an IP or nonempty IP array in
 mobile `StaticOnly` mode, otherwise that candidate fails over. Domains restored
 from fake-IP and sent through Freedom resolve through the same routed
 `dns.servers`, not the operating-system resolver.
 
+For both TCP URL schemes, matching is case-insensitive and the mobile preflight
+accepts only an authority containing IPv4, a domain, or bracketed IPv6 with an
+optional port from 1 through 65535 (default 53). It rejects userinfo, path,
+query, fragment, percent encoding, unbracketed IPv6, whitespace/control
+characters, and malformed brackets. In an object server, the URL's port is
+authoritative. The sibling `port` is validated as an integer from 0 through
+65535 and preserved, but ignored when selecting the endpoint. TCP URLs reject a
+direct or pinned tunnel-owned address on every URL port; classic non-URL
+servers retain their legacy port-53 safety check.
+
 Before Network Extension installs the anchor, the provider resolves every
-domain VLESS server and domain string/object `dns.servers` endpoint through the
-then-current dual-stack system resolver. It writes every ordered A/AAAA result into a
-canonical exact `full:` IP array in `dns.hosts` without replacing existing
-bare or `full:` exact mapping (bare keys are exact in Xray, not keywords),
-follows aliases for at most eight steps, and preserves each
-VLESS address string exactly in runtime JSON. Apple installs both IPv4 and IPv6
+domain VLESS server and domain classic/TCP-URL `dns.servers` endpoint through
+the then-current dual-stack system resolver. Domain hosts from both `tcp://`
+and `tcp+local://` are pinned with the URI port; IP-literal URLs skip the system
+lookup. It writes every ordered A/AAAA result into a canonical exact `full:` IP
+array in `dns.hosts` without replacing an existing bare or `full:` exact
+mapping (bare keys are exact in Xray, not keywords), follows aliases for at most
+eight steps, and preserves each VLESS address, DNS server URI, and object policy
+field exactly in runtime JSON. Apple installs both IPv4 and IPv6
 default tunnel routes plus an excluded `/32` or `/128` for every VLESS carrier
-candidate before the core is created; pinned DNS-upstream addresses remain
-inside the tunnel and follow outbound routing policy. DNS64 results are
-accepted on IPv6-only networks. Tunnel-owned addresses are never installed as
-exclusions; finding one in a carrier result or at the end of a port-53 DNS
-upstream alias chain fails startup. Cycles or resolution failure stop tunnel startup. The
-preflight runs away from the provider callback queue and all lookups share one
-five-second deadline captured at the beginning of the start attempt. Stop,
+candidate before the core is created; pinned DNS-upstream addresses receive no
+global route exclusion. Routed DNS follows outbound policy, while local TCP DNS
+uses the provider-process policy described above. DNS64 results are accepted on
+IPv6-only networks. Tunnel-owned addresses are never installed as exclusions;
+finding one in a carrier result, a classic port-53 DNS alias chain, or any TCP
+URL alias chain fails startup. Cycles or resolution failure stop tunnel startup.
+The preflight runs away from the provider callback queue and all lookups share
+one five-second deadline captured at the beginning of the start attempt. Stop,
 timeout, or a superseding start completes the pending start exactly once;
 generation checks discard a late resolver result before network settings or the
 runtime can be installed. Because Darwin's `getaddrinfo` is not reliably
@@ -133,9 +150,10 @@ fake-IP can instead provide an explicit host IPv4/IPv6 DNS override. Combining
 fake-IP with that host override, or configuring none of the supported modes,
 fails before applying network settings. Device tests that enable a probe or
 custom DNS must use endpoints controlled or approved by the host application
-and verify UDP/TCP local-anchor responses, ordered upstream failover,
-UDP-truncation retry over TCP, and fail-closed handling of missing,
-conflicting, malformed, or unreachable DNS settings.
+and verify UDP/TCP local-anchor responses, routed versus protected-local TCP
+URL behavior, UDP-message framing onto TCP upstreams, ordered upstream failover,
+UDP-truncation retry over TCP, and fail-closed handling of missing, conflicting,
+malformed, or unreachable DNS settings.
 
 Fake-only mobile configurations are accepted when the default path is VLESS
 and every Freedom split rule is IP-only: restored domains then remain domains
@@ -156,7 +174,10 @@ does not join a pending start, and lifecycle tokens reject late publication.
 `InetAddress` may also ignore interruption, so both DNS lookups and start
 workers use zero-queue bounded daemon pools; saturation fails closed instead of
 growing threads or queued work. Every usable system A/AAAA result is retained
-in the generated exact `dns.hosts` IP array. When Happy Eyeballs is enabled,
+in the generated exact `dns.hosts` IP array. Domain TCP URLs use the same
+bootstrap/pinning rules before `Builder.establish()`, while every
+`tcp+local://` socket is passed through `VpnService.protect(fd)`. When Happy
+Eyeballs is enabled,
 each launched raw TCP candidate is independently passed through
 `VpnService.protect(fd)` and losing or cancelled attempts do not remain running.
 The Rust core consumes every pinned carrier candidate independently of global

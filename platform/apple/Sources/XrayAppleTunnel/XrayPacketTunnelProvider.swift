@@ -922,16 +922,17 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                 }
                 switch upstream {
                 case .ip:
-                    // DNS upstreams retain normal outbound routing and are not
-                    // installed as carrier exclusions.
+                    // DNS endpoints never become carrier exclusions. Routed
+                    // mode uses the Xray router; local mode relies on the
+                    // provider-process Network Extension policy.
                     continue
-                case let .domain(domain, port):
+                case let .domain(domain, port, rejectsTunnelOwnedAddress):
                     appendBootstrapDomain(
                         domain,
                         to: &requiredDomains,
                         seen: &seenRequiredDomains
                     )
-                    if port == 53 {
+                    if rejectsTunnelOwnedAddress || port == 53 {
                         protectedDNSDomains.insert(domain)
                     }
                 }
@@ -1057,11 +1058,14 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
 
     private enum DNSBootstrapUpstream: Equatable {
         case ip(String, port: UInt16)
-        case domain(String, port: UInt16)
+        case domain(String, port: UInt16, rejectsTunnelOwnedAddress: Bool)
     }
 
     private static func dnsBootstrapUpstream(from rawServer: Any) -> DNSBootstrapUpstream? {
         if let server = rawServer as? String {
+            if hasDNSTCPURLScheme(server) {
+                return dnsTCPBootstrapUpstream(from: server)
+            }
             guard server == server.trimmingCharacters(in: .whitespacesAndNewlines),
                   isNonzeroDNSServer(server),
                   let port = dnsBootstrapPort(fromServer: server)
@@ -1075,7 +1079,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                 return .ip(address, port: port)
             }
             return dnsBootstrapDomain(fromServer: server).map {
-                .domain($0, port: port)
+                .domain($0, port: port, rejectsTunnelOwnedAddress: false)
             }
         }
 
@@ -1103,6 +1107,11 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         } else {
             port = 53
         }
+        if hasDNSTCPURLScheme(address) {
+            // Xray validates the sibling object `port` as uint16, but takes
+            // the TCP endpoint entirely from the URL and preserves both.
+            return dnsTCPBootstrapUpstream(from: address)
+        }
 
         if let canonicalAddress = canonicalIPAddress(address) {
             guard port != 53 || !isTunnelOwnedIPAddress(canonicalAddress) else {
@@ -1117,7 +1126,120 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         else {
             return nil
         }
-        return .domain(domain, port: port)
+        return .domain(domain, port: port, rejectsTunnelOwnedAddress: false)
+    }
+
+    private static func hasDNSTCPURLScheme(_ server: String) -> Bool {
+        guard let separator = server.firstIndex(of: ":") else {
+            return false
+        }
+        let scheme = String(server[..<separator])
+        return scheme.caseInsensitiveCompare("tcp") == .orderedSame ||
+            scheme.caseInsensitiveCompare("tcp+local") == .orderedSame
+    }
+
+    private static func dnsTCPBootstrapUpstream(
+        from server: String
+    ) -> DNSBootstrapUpstream? {
+        guard server.unicodeScalars.allSatisfy({ scalar in
+            !CharacterSet.whitespacesAndNewlines.contains(scalar) &&
+                !CharacterSet.controlCharacters.contains(scalar)
+        }),
+              let schemeSeparator = server.firstIndex(of: ":"),
+              hasDNSTCPURLScheme(server)
+        else {
+            return nil
+        }
+        let authorityPrefix = server.index(after: schemeSeparator)
+        guard server[authorityPrefix...].hasPrefix("//") else {
+            return nil
+        }
+        let authorityStart = server.index(authorityPrefix, offsetBy: 2)
+        let authority = String(server[authorityStart...])
+        guard !authority.isEmpty,
+              !authority.contains(where: { "/?#@\\%".contains($0) })
+        else {
+            return nil
+        }
+
+        let host: String
+        let port: UInt16
+        if authority.first == "[" {
+            guard let closingBracket = authority.firstIndex(of: "]"),
+                  closingBracket > authority.startIndex,
+                  authority[authority.index(after: closingBracket)...].firstIndex(of: "]") == nil
+            else {
+                return nil
+            }
+            let hostStart = authority.index(after: authority.startIndex)
+            host = String(authority[hostStart..<closingBracket])
+            guard host.contains(":"), canonicalIPAddress(host) != nil else {
+                return nil
+            }
+            let remainderStart = authority.index(after: closingBracket)
+            let remainder = authority[remainderStart...]
+            if remainder.isEmpty {
+                port = 53
+            } else {
+                guard remainder.first == ":",
+                      let parsedPort = dnsTCPURLPort(
+                          remainder[remainder.index(after: remainder.startIndex)...]
+                      )
+                else {
+                    return nil
+                }
+                port = parsedPort
+            }
+        } else {
+            guard !authority.contains("["), !authority.contains("]") else {
+                return nil
+            }
+            let separators = authority.indices.filter { authority[$0] == ":" }
+            guard separators.count <= 1 else {
+                return nil
+            }
+            if let separator = separators.first {
+                host = String(authority[..<separator])
+                let portStart = authority.index(after: separator)
+                guard let parsedPort = dnsTCPURLPort(authority[portStart...])
+                else {
+                    return nil
+                }
+                port = parsedPort
+            } else {
+                host = authority
+                port = 53
+            }
+            guard !host.isEmpty else {
+                return nil
+            }
+        }
+
+        if let address = canonicalIPAddress(host) {
+            guard !isTunnelOwnedIPAddress(address) else {
+                return nil
+            }
+            return .ip(address, port: port)
+        }
+        guard !host.contains(":"),
+              let domain = canonicalDNSBootstrapDomain(host)
+        else {
+            return nil
+        }
+        return .domain(domain, port: port, rejectsTunnelOwnedAddress: true)
+    }
+
+    private static func dnsTCPURLPort(_ rawPort: Substring) -> UInt16? {
+        guard !rawPort.isEmpty,
+              rawPort.unicodeScalars.allSatisfy({ scalar in
+                  scalar.value >= 48 && scalar.value <= 57
+              }),
+              let port = UInt16(rawPort),
+              port != 0
+        else {
+            return nil
+        }
+        return port
     }
 
     private static func dnsServerIPPolicyStringListsAreValid(

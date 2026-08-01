@@ -53,11 +53,13 @@ pub(super) enum DnsProxyUpstream {
     Ip {
         addr: SocketAddr,
         inbound_tag: String,
+        transport: xray_config::DnsServerTransport,
     },
     Domain {
         domain: String,
         port: u16,
         inbound_tag: String,
+        transport: xray_config::DnsServerTransport,
     },
 }
 
@@ -85,6 +87,16 @@ impl DnsProxyUpstream {
             Self::Ip { inbound_tag, .. } | Self::Domain { inbound_tag, .. } => inbound_tag,
         }
     }
+
+    pub(super) fn transport(&self) -> xray_config::DnsServerTransport {
+        match self {
+            Self::Ip { transport, .. } | Self::Domain { transport, .. } => *transport,
+        }
+    }
+
+    pub(super) fn is_local(&self) -> bool {
+        self.transport() == xray_config::DnsServerTransport::TcpLocal
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -103,11 +115,16 @@ impl DnsProxyPlan {
             .iter()
             .filter_map(|server| {
                 let inbound_tag = server.effective_tag(global_tag).to_owned();
+                let transport = server.transport();
                 match server.endpoint() {
                     xray_config::DnsServerEndpoint::Ip(addr)
                         if addr.port() != 0 && !is_tun_dns_socket(addr) =>
                     {
-                        let upstream = DnsProxyUpstream::Ip { addr, inbound_tag };
+                        let upstream = DnsProxyUpstream::Ip {
+                            addr,
+                            inbound_tag,
+                            transport,
+                        };
                         seen.insert(upstream.clone()).then_some(upstream)
                     }
                     xray_config::DnsServerEndpoint::Domain { domain, port } if port != 0 => {
@@ -116,6 +133,7 @@ impl DnsProxyPlan {
                             domain,
                             port,
                             inbound_tag,
+                            transport,
                         };
                         seen.insert(upstream.clone()).then_some(upstream)
                     }
@@ -167,6 +185,16 @@ impl DnsUpstreamResponse {
             Self::Payload(payload) => dns_response_matches_query(query, payload),
             Self::Oversized { prefix, .. } => dns_response_matches_query(query, prefix),
         }
+    }
+
+    fn is_successful_tcp_response(&self) -> bool {
+        let response = match self {
+            Self::Payload(payload) => payload,
+            Self::Oversized { prefix, .. } => prefix,
+        };
+        response
+            .get(2..4)
+            .is_some_and(|flags| u16::from_be_bytes([flags[0], flags[1]]) & (0x0200 | 0x000f) == 0)
     }
 }
 
@@ -434,47 +462,75 @@ async fn proxy_udp_payload(
         if remaining.is_zero() {
             break;
         }
-        let target = upstream.target(RoutingNetwork::Udp);
-        let outbound = timeout(
-            remaining,
-            context
-                .outbound_router
-                .select_udp_outbound_for_session_with_resolver(
-                    Some(upstream.inbound_tag()),
-                    &target,
-                    context.bootstrap_dns_resolver(),
-                ),
-        )
-        .await;
-        let Ok(Ok(outbound)) = outbound else {
-            record_dns_udp_failure(context, DnsUdpFailurePhase::Open);
-            continue;
-        };
-        let remaining = deadline.saturating_duration_since(TokioInstant::now());
-        if remaining.is_zero() {
-            record_dns_udp_failure(context, DnsUdpFailurePhase::Open);
-            break;
-        }
-        let outbound_timeout = match &outbound {
-            UdpOutbound::Freedom => DNS_PROXY_FREEDOM_ATTEMPT_TIMEOUT,
-            UdpOutbound::Vless(_) => DNS_PROXY_VLESS_ATTEMPT_TIMEOUT,
-        };
-        let outbound_label = crate::debug_log::udp_outbound_label(&outbound);
-        let attempt_timeout = remaining.min(outbound_timeout);
         let mut failure_phase = DnsUdpFailurePhase::Open;
-        let attempt = timeout(
-            attempt_timeout,
-            exchange_udp_candidate(
-                outbound,
-                &target,
-                upstream,
-                &packet.payload,
-                max_payload,
-                context,
-                &mut failure_phase,
-            ),
-        )
-        .await;
+        let (target, outbound_label, attempt) = match upstream.transport() {
+            xray_config::DnsServerTransport::Classic => {
+                let target = upstream.target(RoutingNetwork::Udp);
+                let outbound = context
+                    .outbound_router
+                    .select_udp_outbound_for_session(Some(upstream.inbound_tag()), &target);
+                let Ok(outbound) = outbound else {
+                    record_dns_udp_failure(context, DnsUdpFailurePhase::Open);
+                    continue;
+                };
+                let outbound_timeout = match &outbound {
+                    UdpOutbound::Freedom => DNS_PROXY_FREEDOM_ATTEMPT_TIMEOUT,
+                    UdpOutbound::Vless(_) => DNS_PROXY_VLESS_ATTEMPT_TIMEOUT,
+                };
+                let outbound_label = crate::debug_log::udp_outbound_label(&outbound);
+                let attempt = timeout(
+                    remaining.min(outbound_timeout),
+                    exchange_udp_candidate(
+                        outbound,
+                        &target,
+                        upstream,
+                        &packet.payload,
+                        max_payload,
+                        context,
+                        &mut failure_phase,
+                    ),
+                )
+                .await;
+                (target, outbound_label, attempt)
+            }
+            xray_config::DnsServerTransport::TcpRouted
+            | xray_config::DnsServerTransport::TcpLocal => {
+                let target = upstream.target(RoutingNetwork::Tcp);
+                let selected = if upstream.is_local() {
+                    Ok((None, "local"))
+                } else {
+                    context
+                        .outbound_router
+                        .select_tcp_outbound_for_session_with_tag(
+                            Some(upstream.inbound_tag()),
+                            &target,
+                            false,
+                        )
+                        .map(|selected| {
+                            let label = crate::debug_log::tcp_outbound_label(&selected.outbound);
+                            (Some(selected.outbound), label)
+                        })
+                };
+                let Ok((outbound, outbound_label)) = selected else {
+                    record_dns_udp_failure(context, DnsUdpFailurePhase::Open);
+                    continue;
+                };
+                let attempt = timeout(
+                    remaining.min(DNS_TCP_PROXY_ATTEMPT_TIMEOUT),
+                    exchange_tcp_candidate_for_udp_client(
+                        outbound,
+                        &target,
+                        upstream,
+                        &packet.payload,
+                        max_payload,
+                        context,
+                        &mut failure_phase,
+                    ),
+                )
+                .await;
+                (target, outbound_label, attempt)
+            }
+        };
         let response = match attempt {
             Ok(Ok(response)) => response,
             Ok(Err(_)) | Err(_) => {
@@ -483,6 +539,12 @@ async fn proxy_udp_payload(
             }
         };
         if !response.matches_query(&packet.payload) {
+            record_dns_udp_failure(context, DnsUdpFailurePhase::Read);
+            continue;
+        }
+        if upstream.transport() != xray_config::DnsServerTransport::Classic
+            && !response.is_successful_tcp_response()
+        {
             record_dns_udp_failure(context, DnsUdpFailurePhase::Read);
             continue;
         }
@@ -517,6 +579,47 @@ async fn proxy_udp_payload(
         return Ok(response);
     }
     Err(())
+}
+
+async fn exchange_tcp_candidate_for_udp_client(
+    outbound: Option<TcpOutbound>,
+    target: &Target,
+    upstream: &DnsProxyUpstream,
+    query: &[u8],
+    max_payload: usize,
+    context: &TunRuntimeContext,
+    failure_phase: &mut DnsUdpFailurePhase,
+) -> Result<DnsUpstreamResponse, crate::CoreError> {
+    let mut stream = match outbound {
+        Some(outbound) => {
+            open_tcp_bridge_stream(&outbound, target, Some(upstream), context).await?
+        }
+        None => {
+            let candidates = resolve_freedom_dns_upstreams(upstream, context).await?;
+            crate::dns::open_local_dns_tcp_stream(
+                context.transport_dialer.as_ref(),
+                target,
+                &candidates,
+            )
+            .await?
+        }
+    };
+    context.tun.record_udp_remote_open(false);
+    *failure_phase = DnsUdpFailurePhase::Write;
+    let query_len = u16::try_from(query.len()).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "DNS TCP query is too large",
+        )
+    })?;
+    stream.write_u16(query_len).await?;
+    stream.write_all(query).await?;
+    stream.flush().await?;
+    context.tun.record_udp_remote_written(query.len());
+    *failure_phase = DnsUdpFailurePhase::Read;
+    let response = read_bounded_dns_payload(&mut stream, max_payload).await?;
+    context.tun.record_udp_remote_read(response.observed_len());
+    Ok(response)
 }
 
 fn log_dns_udp_route(
@@ -1133,6 +1236,7 @@ mod tests {
                         domain: "policy.example.".to_owned(),
                         port: 5_353,
                     },
+                    transport: xray_config::DnsServerTransport::Classic,
                     domains: vec![xray_config::DomainMatcher::Suffix(
                         "internal.example".to_owned(),
                     )],
@@ -1164,19 +1268,23 @@ mod tests {
                     domain: "resolver.example".to_owned(),
                     port: 53,
                     inbound_tag: "global-dns".to_owned(),
+                    transport: xray_config::DnsServerTransport::Classic,
                 },
                 DnsProxyUpstream::Domain {
                     domain: "policy.example".to_owned(),
                     port: 5_353,
                     inbound_tag: "policy-dns".to_owned(),
+                    transport: xray_config::DnsServerTransport::Classic,
                 },
                 DnsProxyUpstream::Ip {
                     addr: first,
                     inbound_tag: "global-dns".to_owned(),
+                    transport: xray_config::DnsServerTransport::Classic,
                 },
                 DnsProxyUpstream::Ip {
                     addr: second,
                     inbound_tag: "global-dns".to_owned(),
+                    transport: xray_config::DnsServerTransport::Classic,
                 },
             ]
         );
@@ -1209,6 +1317,7 @@ mod tests {
                 domain: "policy.example".to_owned(),
                 port: 5353,
                 inbound_tag: "dns-route".to_owned(),
+                transport: xray_config::DnsServerTransport::Classic,
             }]
         );
     }
@@ -1237,11 +1346,46 @@ mod tests {
                 DnsProxyUpstream::Ip {
                     addr: SocketAddr::from(([192, 0, 2, 53], 53)),
                     inbound_tag: "dns-global".to_owned(),
+                    transport: xray_config::DnsServerTransport::Classic,
                 },
                 DnsProxyUpstream::Ip {
                     addr: SocketAddr::from(([192, 0, 2, 53], 53)),
                     inbound_tag: "dns-alternate".to_owned(),
+                    transport: xray_config::DnsServerTransport::Classic,
                 },
+            ]
+        );
+    }
+
+    #[test]
+    fn proxy_plan_keeps_same_endpoint_with_distinct_transports() {
+        let raw = r#"{
+          "dns": {
+            "tag": "dns-route",
+            "servers": [
+              "192.0.2.53",
+              "tcp://192.0.2.53",
+              "tcp+local://192.0.2.53",
+              "tcp://192.0.2.53"
+            ]
+          },
+          "outbounds": [{ "protocol": "freedom", "tag": "direct" }]
+        }"#;
+        let config = xray_config::parse_xray_json(raw)
+            .expect("mixed DNS transports should parse")
+            .config;
+        let plan = DnsProxyPlan::from_config(&config).unwrap();
+
+        assert_eq!(plan.upstreams().len(), 3);
+        assert_eq!(
+            plan.upstreams()
+                .iter()
+                .map(DnsProxyUpstream::transport)
+                .collect::<Vec<_>>(),
+            [
+                xray_config::DnsServerTransport::Classic,
+                xray_config::DnsServerTransport::TcpRouted,
+                xray_config::DnsServerTransport::TcpLocal,
             ]
         );
     }

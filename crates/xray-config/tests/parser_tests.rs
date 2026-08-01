@@ -9,8 +9,9 @@ use prost::Message;
 use xray_config::{
     parse_xray_json, parse_xray_json_with_geodata_dirs, DiagnosticSeverity, DnsFakeIpConfig,
     DnsHostTarget, DnsIpFilter, DnsNameServerConfig, DnsQueryStrategy, DnsServerConfig,
-    DnsServerEndpoint, HappyEyeballsSettings, InboundProtocol, IpCidr, OutboundSettings,
-    RealityShortId, RoutingDomainStrategy, SniffingDestination, StreamSecurity, TargetAddr,
+    DnsServerEndpoint, DnsServerTransport, HappyEyeballsSettings, InboundProtocol, IpCidr,
+    OutboundSettings, RealityShortId, RoutingDomainStrategy, SniffingDestination, StreamSecurity,
+    TargetAddr,
 };
 
 #[test]
@@ -1128,6 +1129,166 @@ fn parses_dns_servers_and_hosts() {
 }
 
 #[test]
+fn parses_tcp_dns_string_shorthand_as_default_policy() {
+    let raw = raw_with_dns_servers(r#""tcp://192.0.2.53""#);
+
+    let parsed = parse_xray_json(&raw).expect("TCP DNS shorthand should parse");
+    assert_eq!(
+        parsed.config.dns.servers,
+        [DnsServerConfig::Policy(DnsNameServerConfig {
+            endpoint: DnsServerEndpoint::Ip(SocketAddr::from(([192, 0, 2, 53], 53))),
+            transport: DnsServerTransport::TcpRouted,
+            domains: Vec::new(),
+            expected_ips: DnsIpFilter::default(),
+            unexpected_ips: DnsIpFilter::default(),
+            tag: String::new(),
+            timeout_ms: 0,
+            skip_fallback: false,
+            query_strategy: DnsQueryStrategy::UseIp,
+            final_query: false,
+        })]
+    );
+}
+
+#[test]
+fn parses_case_insensitive_tcp_dns_schemes_and_authority_forms() {
+    let raw = raw_with_dns_servers(
+        r#"
+          "TcP://dns.example:5353",
+          "TCP+LOCAL://[2001:db8::53]",
+          "tcp+local://192.0.2.54:8053"
+        "#,
+    );
+
+    let parsed = parse_xray_json(&raw).expect("TCP DNS authority forms should parse");
+    let actual = parsed
+        .config
+        .dns
+        .servers
+        .iter()
+        .map(|server| (server.transport(), server.endpoint()))
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        actual,
+        [
+            (
+                DnsServerTransport::TcpRouted,
+                DnsServerEndpoint::Domain {
+                    domain: "dns.example".to_owned(),
+                    port: 5353,
+                },
+            ),
+            (
+                DnsServerTransport::TcpLocal,
+                DnsServerEndpoint::Ip(SocketAddr::new(
+                    IpAddr::V6("2001:db8::53".parse().unwrap()),
+                    53,
+                )),
+            ),
+            (
+                DnsServerTransport::TcpLocal,
+                DnsServerEndpoint::Ip(SocketAddr::from(([192, 0, 2, 54], 8053))),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn tcp_dns_object_ignores_object_port_and_keeps_policy_fields() {
+    let raw = raw_with_dns_servers(
+        r#"{
+          "address": "TCP://dns.example",
+          "port": 5353,
+          "domains": ["full:internal.example"],
+          "skipFallback": true
+        }"#,
+    );
+
+    let parsed = parse_xray_json(&raw).expect("TCP DNS object should parse");
+    let DnsServerConfig::Policy(server) = &parsed.config.dns.servers[0] else {
+        panic!("TCP DNS object must remain a policy server");
+    };
+
+    assert_eq!(
+        (
+            server.transport,
+            &server.endpoint,
+            server.domains[0].matches("internal.example"),
+            server.skip_fallback,
+        ),
+        (
+            DnsServerTransport::TcpRouted,
+            &DnsServerEndpoint::Domain {
+                domain: "dns.example".to_owned(),
+                port: 53,
+            },
+            true,
+            true,
+        )
+    );
+}
+
+#[test]
+fn classic_dns_shorthands_report_classic_transport() {
+    let raw = raw_with_dns_servers(r#""192.0.2.53", "dns.example""#);
+    let parsed = parse_xray_json(&raw).expect("classic DNS shorthands should parse");
+
+    assert!(parsed
+        .config
+        .dns
+        .servers
+        .iter()
+        .all(|server| server.transport() == DnsServerTransport::Classic));
+}
+
+#[test]
+fn rejects_non_authority_tcp_dns_urls() {
+    for address in [
+        "tcp://",
+        "tcp:/dns.example",
+        "tcp://user@dns.example",
+        "tcp://dns.example/path",
+        "tcp://dns.example?query",
+        "tcp://dns.example#fragment",
+        "tcp://2001:db8::53",
+        "tcp://[2001:db8::53",
+        "tcp://[not-an-ip]",
+        "tcp://[192.0.2.53]",
+        "tcp://dns.example:0",
+        "tcp://dns.example:65536",
+        "tcp://dns.example:+53",
+        "tcp://dns.example:not-a-port",
+        "tcp://dns example",
+    ] {
+        let raw = raw_with_dns_servers(&format!(r#""{address}""#));
+
+        assert_parse_error_path(&raw, "$.dns.servers[0]");
+    }
+}
+
+#[test]
+fn rejects_invalid_tcp_dns_object_address_at_address_path() {
+    let raw = raw_with_dns_servers(r#"{ "address": "tcp://dns.example/path", "port": 5353 }"#);
+
+    assert_parse_error_path(&raw, "$.dns.servers[0].address");
+}
+
+#[test]
+fn rejects_tunnel_local_tcp_dns_urls() {
+    for address in [
+        "tcp://198.18.0.1",
+        "tcp://198.18.0.2:5353",
+        "tcp+local://[::ffff:198.18.0.1]",
+        "tcp+local://[::ffff:198.18.0.2]:5353",
+    ] {
+        let raw = raw_with_dns_servers(&format!(r#""{address}""#));
+
+        assert_parse_error_path(&raw, "$.dns.servers[0]");
+    }
+}
+
+#[test]
 fn parses_xray_dns_server_objects_and_fallback_policy() {
     let raw = r#"{
         "dns": {
@@ -1204,6 +1365,7 @@ fn parses_xray_dns_server_objects_and_fallback_policy() {
                 domain: "dns.example".to_owned(),
                 port: 53,
             },
+            transport: DnsServerTransport::Classic,
             domains: second.domains.clone(),
             expected_ips: DnsIpFilter::default(),
             unexpected_ips: DnsIpFilter::default(),
@@ -1596,10 +1758,6 @@ fn rejects_invalid_dns_server_object_fields_with_precise_paths() {
         (
             r#"{ "address": "192.0.2.53", "domains": ["dotless:bad.rule"] }"#,
             "$.dns.servers[0].domains[0]",
-        ),
-        (
-            r#"{ "address": "tcp://192.0.2.53" }"#,
-            "$.dns.servers[0].address",
         ),
         (
             r#"{ "address": "192.0.2.53", "expectedIPs": 42 }"#,

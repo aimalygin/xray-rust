@@ -93,6 +93,59 @@ class XrayTunBackendTest {
     }
 
     @Test
+    fun tcpDnsServerUrlsUseStrictAuthorityAndEmbeddedPortSemantics() {
+        assertNull(dnsServerBootstrapUpstreamDomain("tcp://192.0.2.53"))
+        assertNull(dnsServerBootstrapUpstreamDomain("TCP+LOCAL://[2001:db8::53]:5353"))
+        assertEquals(
+            AndroidDnsBootstrapDomain("resolver.example", 53, rejectsTunnelOwnedAddress = true),
+            dnsServerBootstrapUpstreamDomain("Tcp://Resolver.Example."),
+        )
+        assertEquals(
+            AndroidDnsBootstrapDomain("resolver.example", 5353, rejectsTunnelOwnedAddress = true),
+            dnsServerBootstrapUpstreamDomain(
+                mapOf(
+                    "address" to "tcp+local://Resolver.Example.:5353",
+                    "port" to 0,
+                    "tag" to "dns-local",
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun malformedTcpDnsServerUrlsFailDuringBootstrapPreflight() {
+        for (server in listOf<Any>(
+            "tcp:/resolver.example",
+            "tcp://",
+            "tcp://user@resolver.example",
+            "tcp://resolver.example/path",
+            "tcp://resolver.example?query",
+            "tcp://resolver.example#fragment",
+            "tcp://resolver.example:0",
+            "tcp://resolver.example:65536",
+            "tcp://resolver.example:not-a-port",
+            "tcp://resolver.example:+53",
+            "tcp://resolver.example:٥٣",
+            "tcp://2001:db8::53",
+            "tcp://[192.0.2.53]",
+            "tcp://[2001:db8::53",
+            "tcp://resolver example",
+            "tcp://resolver\u0001.example",
+            "tcp://$XRAY_TUN_DNS_ANCHOR",
+            "tcp://$XRAY_TUN_DNS_ANCHOR:5353",
+            "tcp://10.7.0.1:5353",
+            "tcp+local://[fd00:7872::1]:5353",
+            mapOf("address" to "tcp+local://resolver.example/path"),
+            mapOf("address" to "tcp://resolver.example", "port" to "53"),
+            mapOf("address" to "tcp://resolver.example", "port" to 65_536),
+        )) {
+            assertThrows(IllegalArgumentException::class.java) {
+                dnsServerBootstrapUpstreamDomain(server)
+            }
+        }
+    }
+
+    @Test
     fun mixedStringAndObjectDnsServersExposeBootstrapDomainsInStableOrder() {
         val servers = listOf<Any>(
             mapOf("address" to "Object-DNS.Example.", "port" to 0),
@@ -631,6 +684,82 @@ class XrayTunBackendTest {
             }
         } finally {
             resolver.close()
+        }
+    }
+
+    @Test
+    fun configPinningPreservesTcpDnsServerUrlsAndObjectPolicyFields() {
+        val stringUrl = "TCP://String-DNS.Example.:5353"
+        val objectUrl = "tcp+local://Object-DNS.Example.:5443"
+        val config = """
+            {"dns":{"servers":[
+              "$stringUrl",
+              {"address":"$objectUrl","port":53,"domains":["domain:internal.example"],"expectedIPs":["geoip:private"],"unexpectedIPs":["192.0.2.0/24"],"tag":"dns-local","timeoutMs":1750,"skipFallback":true,"queryStrategy":"UseIPv4","finalQuery":true},
+              "tcp://192.0.2.53"
+            ]},"outbounds":[{"protocol":"freedom"}]}
+        """.trimIndent()
+        val resolvedDomains = mutableListOf<String>()
+        val resolver = BoundedAndroidDnsBootstrapResolver(maxConcurrentLookups = 2) { domain ->
+            resolvedDomains.add(domain)
+            if (domain == "string-dns.example") {
+                listOf("198.51.100.53")
+            } else {
+                listOf("198.51.100.54")
+            }
+        }
+        try {
+            val prepared = prepareAndroidVpnConfigWithinDeadline(
+                configJson = config,
+                resolver = resolver,
+                deadline = AndroidDnsBootstrapDeadline(TimeUnit.SECONDS.toNanos(1)),
+            )
+            val root = JSONObject(prepared.json)
+            val dns = root.getJSONObject("dns")
+            val servers = dns.getJSONArray("servers")
+            val objectServer = servers.getJSONObject(1)
+            val hosts = dns.getJSONObject("hosts")
+
+            assertEquals(
+                listOf("string-dns.example", "object-dns.example"),
+                resolvedDomains,
+            )
+            assertEquals("198.51.100.53", hosts.getJSONArray("full:string-dns.example").getString(0))
+            assertEquals("198.51.100.54", hosts.getJSONArray("full:object-dns.example").getString(0))
+            assertEquals(stringUrl, servers.getString(0))
+            assertEquals("tcp://192.0.2.53", servers.getString(2))
+            assertEquals(objectUrl, objectServer.getString("address"))
+            assertEquals(53, objectServer.getInt("port"))
+            assertEquals("domain:internal.example", objectServer.getJSONArray("domains").getString(0))
+            assertEquals("geoip:private", objectServer.getJSONArray("expectedIPs").getString(0))
+            assertEquals("192.0.2.0/24", objectServer.getJSONArray("unexpectedIPs").getString(0))
+            assertEquals("dns-local", objectServer.getString("tag"))
+            assertEquals(1_750, objectServer.getInt("timeoutMs"))
+            assertTrue(objectServer.getBoolean("skipFallback"))
+            assertEquals("UseIPv4", objectServer.getString("queryStrategy"))
+            assertTrue(objectServer.getBoolean("finalQuery"))
+        } finally {
+            resolver.close()
+        }
+    }
+
+    @Test
+    fun tcpDnsServerUrlRejectsTunnelOwnedResolutionAtNonstandardPort() {
+        for (address in listOf(XRAY_TUN_DNS_ANCHOR, "10.7.0.1", "fd00:7872::1")) {
+            val resolver = BoundedAndroidDnsBootstrapResolver(maxConcurrentLookups = 1) {
+                listOf(address)
+            }
+            try {
+                assertThrows(IllegalArgumentException::class.java) {
+                    prepareAndroidVpnConfigWithinDeadline(
+                        configJson =
+                            "{\"dns\":{\"servers\":[\"tcp://resolver.example:5353\"]}}",
+                        resolver = resolver,
+                        deadline = AndroidDnsBootstrapDeadline(TimeUnit.SECONDS.toNanos(1)),
+                    )
+                }
+            } finally {
+                resolver.close()
+            }
         }
     }
 
