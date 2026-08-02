@@ -29,7 +29,7 @@ async-trait = "0.1"
 bytes = "1"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 ghash = { version = "0.5", features = ["zeroize"] }
-hkdf = "0.12"
+hkdf = "0.13"
 hmac = "0.12"
 libc = "0.2"
 ml-dsa = { version = "0.1.1", default-features = false, features = ["alloc"] }
