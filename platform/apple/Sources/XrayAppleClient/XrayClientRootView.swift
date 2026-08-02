@@ -34,7 +34,6 @@ public struct XrayClientRootView: View {
                 )
                 regionalRoutingSection
                 configurationSection
-                issueSection
             }
             .navigationTitle("Xray")
             .toolbar {
@@ -78,6 +77,12 @@ public struct XrayClientRootView: View {
                 statsRow("Inbound", value: runtimeStats.inboundPackets)
                 statsRow("Outbound", value: runtimeStats.outboundPackets)
                 statsRow("Dropped", value: runtimeStats.droppedPackets)
+            }
+
+            if let lastErrorMessage = viewModel.lastErrorMessage {
+                Label(lastErrorMessage, systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.red)
+                    .accessibilityLabel("Issue: \(lastErrorMessage)")
             }
 
             Button {
@@ -223,16 +228,6 @@ public struct XrayClientRootView: View {
             }
             viewModel.profile.regionalRoutingRegions = XrayRegionalRoutingRegion.allCases
                 .filter { selected.contains($0) }
-        }
-    }
-
-    @ViewBuilder
-    private var issueSection: some View {
-        if let lastErrorMessage = viewModel.lastErrorMessage {
-            Section("Issue") {
-                Label(lastErrorMessage, systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.red)
-            }
         }
     }
 

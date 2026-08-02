@@ -86,6 +86,12 @@ public struct XrayMacRootView: View {
                 statsRow("Dropped", value: runtimeStats.droppedPackets)
             }
 
+            if let lastErrorMessage = viewModel.lastErrorMessage {
+                Label(lastErrorMessage, systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.red)
+                    .accessibilityLabel("Issue: \(lastErrorMessage)")
+            }
+
             Button {
                 Task { await viewModel.connectOrDisconnect() }
             } label: {
@@ -161,11 +167,6 @@ public struct XrayMacRootView: View {
                 .frame(minHeight: 320)
                 .accessibilityLabel("Xray JSON configuration")
 
-            if let lastErrorMessage = viewModel.lastErrorMessage {
-                Label(lastErrorMessage, systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.red)
-                    .accessibilityLabel("Issue: \(lastErrorMessage)")
-            }
         }
         .padding()
     }

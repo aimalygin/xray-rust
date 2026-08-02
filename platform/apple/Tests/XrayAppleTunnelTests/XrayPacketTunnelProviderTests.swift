@@ -918,6 +918,29 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         )
     }
 
+    func testConfigPreflightRejectsMissingDNSBeforeNetworkSettings() {
+        XCTAssertThrowsError(
+            try XrayPacketTunnelProvider.validateConfigBeforeApplyingNetworkSettings(
+                XrayClientProfile.directTunConfigJSON,
+                geodataSearchDirectory: nil
+            )
+        ) { error in
+            guard case XrayPacketTunnelProviderError.invalidDNSConfiguration = error else {
+                return XCTFail("unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testConfigPreflightAcceptsExplicitDNSForConfigWithoutDNS() {
+        XCTAssertNoThrow(
+            try XrayPacketTunnelProvider.validateConfigBeforeApplyingNetworkSettings(
+                XrayClientProfile.directTunConfigJSON,
+                dnsConfiguration: .custom(["192.0.2.53"]),
+                geodataSearchDirectory: nil
+            )
+        )
+    }
+
     func testConfigPreflightRejectsFakeIPWithoutServersAndDefaultFreedom() throws {
         let configJSON = try fakeIPTopologyConfig(freedomFirst: true)
 

@@ -54,8 +54,11 @@ public enum XrayTunRuntimeProfileSetting: String, Codable, CaseIterable, Hashabl
 
 public enum XrayClientDNSTestMode: String, Codable, CaseIterable, Hashable, Identifiable, Sendable {
     case configuration
+    case defaultDNS = "default-dns"
     case fakeIP = "fake-ip"
     case proxy
+
+    public static let defaultDNSUpstream = "1.1.1.1"
 
     public var id: String {
         rawValue
@@ -65,6 +68,8 @@ public enum XrayClientDNSTestMode: String, Codable, CaseIterable, Hashable, Iden
         switch self {
         case .configuration:
             return "Config JSON"
+        case .defaultDNS:
+            return "Default DNS"
         case .fakeIP:
             return "FakeDNS"
         case .proxy:
@@ -561,7 +566,8 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
                 hostBundleIdentifier: hostBundleIdentifier
             ),
             serverAddress: "xray-rust",
-            configJSON: directTunConfigJSON
+            configJSON: directTunConfigJSON,
+            dnsTestMode: .defaultDNS
         )
     }
 
@@ -693,8 +699,17 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
         transport: XrayClientDNSTestTransport,
         upstream: String
     ) throws -> String {
-        guard mode != .configuration else {
+        let effectiveTransport: XrayClientDNSTestTransport
+        let effectiveUpstream: String
+        switch mode {
+        case .configuration:
             return configJSON
+        case .defaultDNS:
+            effectiveTransport = .routedTCP
+            effectiveUpstream = XrayClientDNSTestMode.defaultDNSUpstream
+        case .fakeIP, .proxy:
+            effectiveTransport = transport
+            effectiveUpstream = upstream
         }
 
         let data = Data(configJSON.utf8)
@@ -703,8 +718,8 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
         }
 
         let server = try dnsTestServer(
-            transport: transport,
-            upstream: upstream,
+            transport: effectiveTransport,
+            upstream: effectiveUpstream,
             required: mode.requiresUpstream
         )
         let sourceDNS = root["dns"] as? [String: Any]
@@ -717,7 +732,7 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
         if let tag = sourceDNS?["tag"] {
             dns["tag"] = tag
         }
-        if mode == .fakeIP {
+        if mode == .defaultDNS || mode == .fakeIP {
             dns["fakeIp"] = [
                 "enabled": true,
                 "ipv4Pool": "198.19.0.0/16",

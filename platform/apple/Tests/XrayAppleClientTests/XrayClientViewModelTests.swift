@@ -108,7 +108,8 @@ final class XrayClientViewModelTests: XCTestCase {
                 providerBundleIdentifier: "org.example.XrayClientTv.Tunnel",
                 serverAddress: "203.0.113.10",
                 configJSON: configWithoutFlow,
-                debugLoggingEnabled: true
+                debugLoggingEnabled: true,
+                dnsTestMode: .defaultDNS
             )
         )
         let tunnelController = MockTunnelController()
@@ -191,7 +192,8 @@ final class XrayClientViewModelTests: XCTestCase {
                 serverAddress: "old-server",
                 configJSON: XrayClientProfile.directTunConfigJSON,
                 debugLoggingEnabled: true,
-                useTunFileDescriptor: true
+                useTunFileDescriptor: true,
+                dnsTestMode: .defaultDNS
             )
         )
         let tunnelController = MockTunnelController()
@@ -222,7 +224,8 @@ final class XrayClientViewModelTests: XCTestCase {
                 name: "Existing",
                 providerBundleIdentifier: "org.example.XrayClientTv.Tunnel",
                 serverAddress: "old-server",
-                configJSON: XrayClientProfile.directTunConfigJSON
+                configJSON: XrayClientProfile.directTunConfigJSON,
+                dnsTestMode: .defaultDNS
             )
         )
         let tunnelController = MockTunnelController()
@@ -308,8 +311,13 @@ final class XrayClientViewModelTests: XCTestCase {
         let importedProfile = try XrayVlessURLImporter.profile(
             from: Self.sampleVlessURL,
             hostBundleIdentifier: "org.example.XrayClientTv"
-        ).updatingRegionalRouting(mode: .bypassSelected, regions: [.china])
-        try store.save(importedProfile)
+        )
+        var routableProfile = importedProfile.updatingRegionalRouting(
+            mode: .bypassSelected,
+            regions: [.china]
+        )
+        routableProfile.dnsTestMode = .defaultDNS
+        try store.save(routableProfile)
         let tunnelController = MockTunnelController()
         let viewModel = XrayClientViewModel(
             store: store,
@@ -320,9 +328,9 @@ final class XrayClientViewModelTests: XCTestCase {
         await viewModel.connectOrDisconnect()
 
         let startedProfile = try XCTUnwrap(tunnelController.startedProfile)
-        XCTAssertNotEqual(startedProfile.configJSON, importedProfile.configJSON)
+        XCTAssertNotEqual(startedProfile.configJSON, routableProfile.configJSON)
         XCTAssertEqual(try Self.firstRoutingRuleDomains(in: startedProfile.configJSON), ["geosite:cn"])
-        XCTAssertEqual(store.load().configJSON, importedProfile.configJSON)
+        XCTAssertEqual(store.load().configJSON, routableProfile.configJSON)
     }
 
     func testConnectStartsTunnelWithEffectiveDNSConfigWithoutChangingSourceJSON() async throws {
@@ -376,6 +384,225 @@ final class XrayClientViewModelTests: XCTestCase {
             viewModel.lastErrorMessage,
             "DNS proxy test mode requires an upstream host or IP."
         )
+    }
+
+    func testConnectRejectsConfigJSONWithoutMobileDNSBeforeStartingTunnel() async throws {
+        let store = try makeStore()
+        try store.save(
+            XrayClientProfile(
+                name: "No DNS",
+                providerBundleIdentifier: "org.example.XrayClientTv.Tunnel",
+                serverAddress: "old-server",
+                configJSON: XrayClientProfile.directTunConfigJSON
+            )
+        )
+        let tunnelController = MockTunnelController()
+        let viewModel = XrayClientViewModel(
+            store: store,
+            tunnelController: tunnelController
+        )
+
+        await viewModel.connectOrDisconnect()
+
+        XCTAssertNil(tunnelController.startedProfile)
+        XCTAssertEqual(
+            viewModel.lastErrorMessage,
+            XrayMobileDNSPreflightError.unavailable.localizedDescription
+        )
+    }
+
+    func testConnectRejectsFakeDNSWithoutUpstreamAndDomainFreedomRule() async throws {
+        let store = try makeStore()
+        var profile = try XrayVlessURLImporter.profile(
+            from: Self.sampleVlessURL,
+            hostBundleIdentifier: "org.example.XrayClientTv"
+        ).updatingRegionalRouting(mode: .bypassSelected, regions: [.russia])
+        profile.dnsTestMode = .fakeIP
+        profile.dnsTestUpstream = ""
+        try store.save(profile)
+        let tunnelController = MockTunnelController()
+        let viewModel = XrayClientViewModel(
+            store: store,
+            tunnelController: tunnelController,
+            geodataSearchDirectory: Self.geodataDirectoryURL
+        )
+
+        await viewModel.connectOrDisconnect()
+
+        XCTAssertNil(tunnelController.startedProfile)
+        XCTAssertEqual(
+            viewModel.lastErrorMessage,
+            XrayMobileDNSPreflightError.unsafeFakeIPFreedomRouting.localizedDescription
+        )
+    }
+
+    func testConnectDefaultDNSPresetPassesMobilePreflight() async throws {
+        let store = try makeStore()
+        var profile = try XrayVlessURLImporter.profile(
+            from: Self.sampleVlessURL,
+            hostBundleIdentifier: "org.example.XrayClientTv"
+        )
+        profile.dnsTestMode = .defaultDNS
+        try store.save(profile)
+        let tunnelController = MockTunnelController()
+        let viewModel = XrayClientViewModel(
+            store: store,
+            tunnelController: tunnelController
+        )
+
+        await viewModel.connectOrDisconnect()
+
+        let startedProfile = try XCTUnwrap(tunnelController.startedProfile)
+        let dns = try Self.dnsObject(in: startedProfile.configJSON)
+        XCTAssertNotNil(dns["fakeIp"])
+        XCTAssertEqual(dns["servers"] as? [String], ["tcp://1.1.1.1"])
+        XCTAssertNil(viewModel.lastErrorMessage)
+    }
+
+    func testConnectAcceptsConfirmedManualFakeDNSRegionalRoutingCombination() async throws {
+        let store = try makeStore()
+        var profile = try XrayVlessURLImporter.profile(
+            from: Self.sampleVlessURL,
+            hostBundleIdentifier: "org.example.XrayClientTv"
+        ).updatingRegionalRouting(mode: .bypassSelected, regions: [.russia])
+        profile.dnsTestMode = .fakeIP
+        profile.dnsTestTransport = .routedTCP
+        profile.dnsTestUpstream = "1.1.1.1"
+        try store.save(profile)
+        let tunnelController = MockTunnelController()
+        let viewModel = XrayClientViewModel(
+            store: store,
+            tunnelController: tunnelController,
+            geodataSearchDirectory: Self.geodataDirectoryURL
+        )
+
+        await viewModel.connectOrDisconnect()
+
+        let startedProfile = try XCTUnwrap(tunnelController.startedProfile)
+        let dns = try Self.dnsObject(in: startedProfile.configJSON)
+        XCTAssertNotNil(dns["fakeIp"])
+        XCTAssertEqual(dns["servers"] as? [String], ["tcp://1.1.1.1"])
+        XCTAssertEqual(
+            try Self.firstRoutingRuleDomains(in: startedProfile.configJSON),
+            ["geosite:category-ru"]
+        )
+        XCTAssertNil(viewModel.lastErrorMessage)
+    }
+
+    func testConnectSurfacesAsynchronousTunnelStartupFailure() async throws {
+        let store = try makeStore()
+        try store.save(
+            XrayClientProfile(
+                name: "Existing",
+                providerBundleIdentifier: "org.example.XrayClientTv.Tunnel",
+                serverAddress: "old-server",
+                configJSON: XrayClientProfile.directTunConfigJSON,
+                dnsTestMode: .defaultDNS
+            )
+        )
+        let tunnelController = MockTunnelController()
+        tunnelController.startError = MockTunnelStartupError(
+            message: "VPN failed to start: DNS configuration is unavailable."
+        )
+        let viewModel = XrayClientViewModel(
+            store: store,
+            tunnelController: tunnelController
+        )
+
+        await viewModel.connectOrDisconnect()
+
+        XCTAssertNotNil(tunnelController.startedProfile)
+        XCTAssertEqual(viewModel.connectionStatus, .disconnected)
+        XCTAssertEqual(
+            viewModel.lastErrorMessage,
+            "VPN failed to start: DNS configuration is unavailable."
+        )
+        XCTAssertFalse(viewModel.isBusy)
+    }
+
+    func testObservedConnectedDisconnectingDisconnectedSurfacesProviderError() async throws {
+        let store = try makeStore()
+        let tunnelController = StatusObservingMockTunnelController(status: .connected)
+        tunnelController.disconnectError = NSError(
+            domain: "org.xrayrust.tests.provider",
+            code: 2,
+            userInfo: [NSLocalizedDescriptionKey: "Packet pump failed."]
+        )
+        let viewModel = XrayClientViewModel(
+            store: store,
+            tunnelController: tunnelController
+        )
+        await waitUntil("status observation subscription") {
+            tunnelController.statusUpdatesRequested
+        }
+        await waitUntil("initial connected status") {
+            viewModel.connectionStatus == .connected
+        }
+
+        tunnelController.emit(.disconnecting)
+        tunnelController.emit(.disconnected)
+
+        await waitUntil("unexpected disconnect error") {
+            viewModel.lastErrorMessage == "VPN disconnected: Packet pump failed."
+        }
+        XCTAssertEqual(viewModel.connectionStatus, .disconnected)
+        XCTAssertEqual(tunnelController.disconnectErrorRequests, 1)
+    }
+
+    func testPersistentObserverDoesNotOverwriteExactStartupFailure() async throws {
+        let store = try makeStore()
+        try store.save(
+            XrayClientProfile(
+                name: "Existing",
+                providerBundleIdentifier: "org.example.XrayClientTv.Tunnel",
+                serverAddress: "old-server",
+                configJSON: XrayClientProfile.directTunConfigJSON,
+                dnsTestMode: .defaultDNS
+            )
+        )
+        let tunnelController = StatusObservingMockTunnelController(status: .disconnected)
+        tunnelController.disconnectError = NSError(
+            domain: "org.xrayrust.tests.provider",
+            code: 3,
+            userInfo: [NSLocalizedDescriptionKey: "Delayed generic disconnect."]
+        )
+        tunnelController.startAction = { [weak tunnelController] in
+            tunnelController?.emit(.connected)
+            tunnelController?.emit(.disconnecting)
+            tunnelController?.emit(.disconnected)
+            try await Task.sleep(nanoseconds: 20_000_000)
+            throw MockTunnelStartupError(message: "Exact startup failure.")
+        }
+        let viewModel = XrayClientViewModel(
+            store: store,
+            tunnelController: tunnelController
+        )
+        await waitUntil("status observation subscription") {
+            tunnelController.statusUpdatesRequested
+        }
+
+        await viewModel.connectOrDisconnect()
+
+        await waitUntil("delayed disconnect error fetch") {
+            tunnelController.disconnectErrorRequests == 1
+        }
+        XCTAssertEqual(viewModel.lastErrorMessage, "Exact startup failure.")
+        XCTAssertEqual(viewModel.connectionStatus, .disconnected)
+    }
+
+    private func waitUntil(
+        _ description: String,
+        condition: @MainActor () -> Bool,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        for _ in 0 ..< 500 {
+            if condition() {
+                return
+            }
+            try? await Task.sleep(nanoseconds: 1_000_000)
+        }
+        XCTFail("Timed out waiting for \(description)", file: file, line: line)
     }
 
     private func makeStore() throws -> XrayClientProfileStore {
@@ -514,6 +741,7 @@ private final class TestSecureConfigStore: XraySecureConfigStoring, @unchecked S
 @MainActor
 private final class MockTunnelController: XrayClientTunnelControlling {
     private(set) var startedProfile: XrayClientProfile?
+    var startError: Error?
 
     func currentStatus() async -> XrayClientConnectionStatus {
         .disconnected
@@ -521,11 +749,86 @@ private final class MockTunnelController: XrayClientTunnelControlling {
 
     func start(profile: XrayClientProfile) async throws {
         startedProfile = profile
+        if let startError {
+            throw startError
+        }
     }
 
     func stop() async throws {}
 
     func runtimeStats() async throws -> XrayClientRuntimeStats? {
         nil
+    }
+}
+
+@available(macOS 13.0, *)
+@MainActor
+private final class StatusObservingMockTunnelController: XrayClientTunnelControlling {
+    private let statusStream: AsyncStream<XrayClientConnectionStatus>
+    private let statusContinuation: AsyncStream<XrayClientConnectionStatus>.Continuation
+
+    private(set) var startedProfile: XrayClientProfile?
+    private(set) var statusUpdatesRequested = false
+    private(set) var disconnectErrorRequests = 0
+    var status: XrayClientConnectionStatus
+    var disconnectError: Error?
+    var startAction: (@MainActor () async throws -> Void)?
+
+    init(status: XrayClientConnectionStatus) {
+        self.status = status
+        var capturedContinuation: AsyncStream<XrayClientConnectionStatus>.Continuation?
+        statusStream = AsyncStream(bufferingPolicy: .unbounded) { continuation in
+            capturedContinuation = continuation
+        }
+        guard let capturedContinuation else {
+            preconditionFailure("AsyncStream must synchronously provide its continuation")
+        }
+        statusContinuation = capturedContinuation
+    }
+
+    func currentStatus() async -> XrayClientConnectionStatus {
+        status
+    }
+
+    func statusUpdates() async -> AsyncStream<XrayClientConnectionStatus> {
+        statusUpdatesRequested = true
+        statusContinuation.yield(status)
+        return statusStream
+    }
+
+    func lastDisconnectError() async -> Error? {
+        disconnectErrorRequests += 1
+        return disconnectError
+    }
+
+    func start(profile: XrayClientProfile) async throws {
+        startedProfile = profile
+        try await startAction?()
+    }
+
+    func stop() async throws {
+        emit(.disconnecting)
+        emit(.disconnected)
+    }
+
+    func runtimeStats() async throws -> XrayClientRuntimeStats? {
+        nil
+    }
+
+    func emit(_ status: XrayClientConnectionStatus) {
+        self.status = status
+        statusContinuation.yield(status)
+    }
+
+    deinit {
+        statusContinuation.finish()
+    }
+}
+
+private struct MockTunnelStartupError: LocalizedError {
+    let message: String
+
+    var errorDescription: String? {
+        message
     }
 }

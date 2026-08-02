@@ -15,6 +15,10 @@ public final class XrayClientViewModel: ObservableObject {
     private let store: XrayClientProfileStore
     private let tunnelController: any XrayClientTunnelControlling
     private let geodataSearchDirectory: URL?
+    private var statusObservationTask: Task<Void, Never>?
+    private var suppressNextDisconnectError = false
+    private var hasObservedConnectedStatus = false
+    private var statusObservationGeneration: UInt64 = 0
 
     public init(
         store: XrayClientProfileStore = XrayClientProfileStore(),
@@ -46,6 +50,11 @@ public final class XrayClientViewModel: ObservableObject {
             "ClientViewModel",
             "Loaded profile name=\(profile.name) provider=\(profile.providerBundleIdentifier) server=\(profile.serverAddress) configBytes=\(profile.configJSON.utf8.count) debugLogging=\(profile.debugLoggingEnabled) useTunFileDescriptor=\(profile.useTunFileDescriptor) tunRuntimeProfile=\(profile.tunRuntimeProfile.rawValue) dnsTestMode=\(profile.dnsTestMode.rawValue) dnsTestTransport=\(profile.dnsTestTransport.rawValue)"
         )
+        startStatusObservation()
+    }
+
+    deinit {
+        statusObservationTask?.cancel()
     }
 
     public var realityVisionFlowMode: XrayRealityVisionFlowMode? {
@@ -59,6 +68,9 @@ public final class XrayClientViewModel: ObservableObject {
     public func refresh() async {
         XrayAppleLog.info("ClientViewModel", "Refreshing tunnel status")
         connectionStatus = await tunnelController.currentStatus()
+        if connectionStatus == .connected {
+            hasObservedConnectedStatus = true
+        }
         XrayAppleLog.info(
             "ClientViewModel",
             "Tunnel status is \(connectionStatus.displayName)"
@@ -216,8 +228,16 @@ public final class XrayClientViewModel: ObservableObject {
                     "ClientViewModel",
                     "Stopping tunnel from status \(connectionStatus.displayName)"
                 )
-                try await tunnelController.stop()
+                suppressNextDisconnectError = true
+                do {
+                    try await tunnelController.stop()
+                } catch {
+                    suppressNextDisconnectError = false
+                    throw error
+                }
             } else {
+                suppressNextDisconnectError = false
+                hasObservedConnectedStatus = false
                 normalizeProfileIfNeeded()
                 let effectiveConfigJSON = try profile.effectiveConfigJSON()
                 var startProfile = profile
@@ -233,11 +253,15 @@ public final class XrayClientViewModel: ObservableObject {
                     effectiveConfigJSON,
                     geodataSearchDirectory: geodataSearchDirectory
                 )
+                try XrayMobileDNSPreflight.validate(effectiveConfigJSON)
                 XrayAppleLog.info("ClientViewModel", "Config validation passed before start")
                 try store.save(profile)
                 XrayAppleLog.info("ClientViewModel", "Profile saved before start")
+                lastErrorMessage = nil
+                runtimeStats = nil
+                connectionStatus = .connecting
                 try await tunnelController.start(profile: startProfile)
-                XrayAppleLog.info("ClientViewModel", "Start tunnel request returned")
+                XrayAppleLog.info("ClientViewModel", "Tunnel startup completed")
             }
             lastErrorMessage = nil
             await refresh()
@@ -316,6 +340,69 @@ public final class XrayClientViewModel: ObservableObject {
         XrayAppleLog.info(
             "ClientViewModel",
             "Normalized profile configBytes=\(profile.configJSON.utf8.count)"
+        )
+    }
+
+    private func startStatusObservation() {
+        let tunnelController = tunnelController
+        statusObservationTask = Task { [weak self] in
+            let statusUpdates = await tunnelController.statusUpdates()
+            for await status in statusUpdates {
+                guard !Task.isCancelled else {
+                    return
+                }
+                await self?.applyObservedStatus(status)
+            }
+        }
+    }
+
+    private func applyObservedStatus(_ status: XrayClientConnectionStatus) async {
+        statusObservationGeneration &+= 1
+        let generation = statusObservationGeneration
+        connectionStatus = status
+        if status == .connected {
+            hasObservedConnectedStatus = true
+        }
+        if status != .connected {
+            runtimeStats = nil
+        }
+
+        guard status == .disconnected || status == .invalid else {
+            return
+        }
+        let disconnectedAfterConnection = hasObservedConnectedStatus
+        hasObservedConnectedStatus = false
+        if suppressNextDisconnectError {
+            suppressNextDisconnectError = false
+            return
+        }
+        guard disconnectedAfterConnection,
+              connectionStatus == status,
+              statusObservationGeneration == generation
+        else {
+            return
+        }
+
+        while isBusy {
+            do {
+                try await Task.sleep(nanoseconds: 10_000_000)
+            } catch {
+                return
+            }
+        }
+        guard connectionStatus == status,
+              statusObservationGeneration == generation,
+              let error = await tunnelController.lastDisconnectError(),
+              connectionStatus == status,
+              statusObservationGeneration == generation,
+              lastErrorMessage == nil
+        else {
+            return
+        }
+        lastErrorMessage = "VPN disconnected: \(error.localizedDescription)"
+        XrayAppleLog.error(
+            "ClientViewModel",
+            "Tunnel disconnected unexpectedly: \(error.localizedDescription)"
         )
     }
 }

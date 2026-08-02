@@ -7,13 +7,20 @@ development changes are recorded under `Unreleased`.
 
 ## Unreleased
 
+- Added a sample-only `Default DNS` preset (`FakeDNS` with routed
+  `tcp://1.1.1.1`) and shared mobile DNS preflight so invalid full-tunnel DNS
+  topologies are rejected by the host before Network Extension startup. The
+  Apple client now waits for a real connected or failed status and surfaces the
+  provider's last disconnect error instead of treating submission of the start
+  request as success.
 - Added non-destructive DNS test controls to the Apple reference client. A
-  saved profile can switch at reconnect between its original JSON, FakeDNS,
-  and the local DNS proxy over classic, routed TCP, or provider-local TCP;
+  saved profile can switch at reconnect between its original JSON, the fixed
+  sample preset, FakeDNS, and the local DNS proxy over classic, routed TCP, or
+  provider-local TCP;
   an optional FakeDNS upstream also enables restored-domain resolution when
-  routing selects Freedom. The trusted upstream remains user-supplied, and
-  generated effective DNS settings retain `dns.hosts` bootstrap pins and the
-  routed-DNS tag, and never overwrite the source profile JSON.
+  routing selects Freedom. Manual modes keep the trusted upstream
+  user-supplied; generated effective DNS settings retain `dns.hosts` bootstrap
+  pins and the routed-DNS tag, and never overwrite the source profile JSON.
 - Kept the DNS outbound TCP handler out of ordinary SOCKS connection futures,
   allocating its type-erased future only after a DNS route is selected. This
   removes 1.2 KiB from both enclosing async states and brought the same-machine

@@ -11,7 +11,16 @@ struct XrayDNSTestSettingsView: View {
         Section("DNS Testing") {
             modePicker
 
-            if mode != .configuration {
+            if mode == .defaultDNS {
+                Text(
+                    "FakeDNS with \(XrayClientDNSTestMode.defaultDNSUpstream) over routed TCP."
+                )
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel(
+                        "Default DNS uses FakeDNS with \(XrayClientDNSTestMode.defaultDNSUpstream) over routed TCP."
+                    )
+            } else if mode != .configuration {
                 transportPicker
                 upstreamField
 

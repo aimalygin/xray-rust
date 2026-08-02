@@ -160,17 +160,40 @@ final class XrayClientProfileTests: XCTestCase {
         XCTAssertTrue(profile.regionalRoutingRegions.isEmpty)
     }
 
-    func testDNSTestSettingsDefaultToConfigurationWithoutAnUpstream() {
+    func testFreshDefaultProfileUsesDefaultDNSWithoutManualFields() {
         let profile = XrayClientProfile.defaultProfile(
             hostBundleIdentifier: "org.example.XrayClient"
         )
 
-        XCTAssertEqual(profile.dnsTestMode, .configuration)
+        XCTAssertEqual(profile.dnsTestMode, .defaultDNS)
         XCTAssertEqual(profile.dnsTestTransport, .classic)
         XCTAssertTrue(profile.dnsTestUpstream.isEmpty)
         XCTAssertFalse(XrayClientDNSTestMode.configuration.requiresUpstream)
+        XCTAssertFalse(XrayClientDNSTestMode.defaultDNS.requiresUpstream)
         XCTAssertFalse(XrayClientDNSTestMode.fakeIP.requiresUpstream)
         XCTAssertTrue(XrayClientDNSTestMode.proxy.requiresUpstream)
+    }
+
+    func testFreshDefaultProfileEffectiveConfigPassesMobileDNSPreflight() throws {
+        let profile = XrayClientProfile.defaultProfile(
+            hostBundleIdentifier: "org.example.XrayClient"
+        )
+        let sourceConfigJSON = profile.configJSON
+
+        let effectiveConfigJSON = try profile.effectiveConfigJSON()
+
+        XCTAssertNoThrow(try XrayMobileDNSPreflight.validate(effectiveConfigJSON))
+        XCTAssertEqual(profile.configJSON, sourceConfigJSON)
+    }
+
+    func testDefaultDNSModeCodableValueIsStable() throws {
+        let encoded = try JSONEncoder().encode(XrayClientDNSTestMode.defaultDNS)
+
+        XCTAssertEqual(String(decoding: encoded, as: UTF8.self), #""default-dns""#)
+        XCTAssertEqual(
+            try JSONDecoder().decode(XrayClientDNSTestMode.self, from: encoded),
+            .defaultDNS
+        )
     }
 
     func testRealityVisionFlowModeDefaultsMissingFlowToBlocked() throws {
@@ -341,6 +364,43 @@ final class XrayClientProfileTests: XCTestCase {
         XCTAssertEqual(profile.configJSON, baseConfigJSON)
     }
 
+    func testEffectiveConfigBuildsExactDefaultDNSPresetWithoutChangingSourceJSON() throws {
+        let baseConfigJSON = #"{"dns":{"hosts":{"full:bootstrap.example":"192.0.2.1"},"tag":"dns-route"},"outbounds":[]}"#
+        let profile = XrayClientProfile(
+            name: "Default DNS",
+            providerBundleIdentifier: "org.example.XrayClient.Tunnel",
+            serverAddress: "xray-rust",
+            configJSON: baseConfigJSON,
+            dnsTestMode: .defaultDNS,
+            dnsTestTransport: .localTCP,
+            dnsTestUpstream: "tcp://ignored.example"
+        )
+
+        let effectiveRoot = try XCTUnwrap(
+            try JSONSerialization.jsonObject(
+                with: Data(profile.effectiveConfigJSON().utf8)
+            ) as? NSDictionary
+        )
+        let expectedRoot: NSDictionary = [
+            "dns": [
+                "fakeIp": [
+                    "enabled": true,
+                    "ipv4Pool": "198.19.0.0/16",
+                    "poolSize": 32_768,
+                    "ttl": 60,
+                ],
+                "hosts": ["full:bootstrap.example": "192.0.2.1"],
+                "queryStrategy": "UseIP",
+                "servers": ["tcp://1.1.1.1"],
+                "tag": "dns-route",
+            ],
+            "outbounds": [],
+        ]
+
+        XCTAssertEqual(effectiveRoot, expectedRoot)
+        XCTAssertEqual(profile.configJSON, baseConfigJSON)
+    }
+
     func testEffectiveConfigBuildsPureFakeDNSWhenUpstreamIsBlank() throws {
         let baseConfigJSON = #"{"dns":{"queryStrategy":"UseIPv6","servers":["old.example"],"hosts":{"full:old.example":"192.0.2.1"},"disableFallback":true},"outbounds":[]}"#
         let profile = XrayClientProfile(
@@ -430,7 +490,7 @@ final class XrayClientProfileTests: XCTestCase {
     }
 
     func testEffectiveConfigPreservesDNSRoutingTagInGeneratedModes() throws {
-        for mode in [XrayClientDNSTestMode.fakeIP, .proxy] {
+        for mode in [XrayClientDNSTestMode.defaultDNS, .fakeIP, .proxy] {
             let profile = XrayClientProfile(
                 name: "Tagged DNS",
                 providerBundleIdentifier: "org.example.XrayClient.Tunnel",

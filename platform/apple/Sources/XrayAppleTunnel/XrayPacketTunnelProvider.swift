@@ -552,7 +552,10 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             guard shouldContinue() else {
                 throw XrayPacketTunnelProviderError.dnsBootstrapTimedOut
             }
-            try Self.validateConfigBeforeApplyingNetworkSettings(resolvedConfig.json)
+            try Self.validateConfigBeforeApplyingNetworkSettings(
+                resolvedConfig.json,
+                dnsConfiguration: resolvedConfig.dnsConfiguration
+            )
             guard shouldContinue() else {
                 throw XrayPacketTunnelProviderError.dnsBootstrapTimedOut
             }
@@ -563,7 +566,10 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             guard shouldContinue() else {
                 throw XrayPacketTunnelProviderError.dnsBootstrapTimedOut
             }
-            try Self.validateConfigBeforeApplyingNetworkSettings(preparedConfig.json)
+            try Self.validateConfigBeforeApplyingNetworkSettings(
+                preparedConfig.json,
+                dnsConfiguration: preparedConfig.dnsConfiguration
+            )
             return preparedConfig
         }
     }
@@ -1786,77 +1792,32 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
 
     static func validateConfigBeforeApplyingNetworkSettings(
         _ configJSON: String,
+        dnsConfiguration: XrayPacketTunnelDNSConfiguration = .system,
         geodataSearchDirectory: URL? = Bundle.main.resourceURL
     ) throws {
         _ = try XrayCore(
             configJSON: configJSON,
             geodataSearchDirectory: geodataSearchDirectory
         )
-        try validateMobileDNSRoutingTopology(configJSON)
-    }
-
-    private static func validateMobileDNSRoutingTopology(_ configJSON: String) throws {
-        guard let data = configJSON.data(using: .utf8),
-              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let dns = root["dns"] as? [String: Any],
-              let fakeIP = dns["fakeIp"] as? [String: Any],
-              isJSONBooleanTrue(fakeIP["enabled"]),
-              (dns["servers"] as? [Any] ?? []).isEmpty
-        else {
-            return
+        let explicitDNS: XrayMobileExplicitDNSConfiguration
+        switch dnsConfiguration {
+        case .system:
+            explicitDNS = .system
+        case .custom:
+            explicitDNS = .custom
+        case .invalid:
+            explicitDNS = .invalid
         }
-
-        let outbounds = root["outbounds"] as? [[String: Any]] ?? []
-        if let defaultOutbound = outbounds.first,
-           (defaultOutbound["protocol"] as? String)?.lowercased() == "freedom"
-        {
+        do {
+            try XrayMobileDNSPreflight.validate(
+                configJSON,
+                explicitDNS: explicitDNS
+            )
+        } catch XrayMobileDNSPreflightError.unavailable {
+            throw XrayPacketTunnelProviderError.invalidDNSConfiguration
+        } catch XrayMobileDNSPreflightError.unsafeFakeIPFreedomRouting {
             throw XrayPacketTunnelProviderError.invalidDNSRoutingTopology
         }
-
-        let freedomTags = Set(outbounds.compactMap { outbound -> String? in
-            guard (outbound["protocol"] as? String)?.lowercased() == "freedom" else {
-                return nil
-            }
-            return outbound["tag"] as? String
-        })
-        guard !freedomTags.isEmpty else {
-            return
-        }
-
-        let inbounds = root["inbounds"] as? [[String: Any]] ?? []
-        let tunInbounds = inbounds.filter {
-            ($0["protocol"] as? String)?.lowercased() == "tun"
-        }
-        guard !tunInbounds.isEmpty else {
-            return
-        }
-        let tunInboundTags = Set(tunInbounds.compactMap { $0["tag"] as? String })
-        let routing = root["routing"] as? [String: Any]
-        let rules = routing?["rules"] as? [[String: Any]] ?? []
-        for rule in rules {
-            guard let outboundTag = rule["outboundTag"] as? String,
-                  freedomTags.contains(outboundTag),
-                  routingRuleAppliesToTun(rule, tunInboundTags: tunInboundTags)
-            else {
-                continue
-            }
-
-            let domains = (rule["domain"] as? [Any] ?? [])
-                + (rule["domains"] as? [Any] ?? [])
-            let ips = rule["ip"] as? [Any] ?? []
-            let isIPOnly = domains.isEmpty && !ips.isEmpty
-            if !isIPOnly {
-                throw XrayPacketTunnelProviderError.invalidDNSRoutingTopology
-            }
-        }
-    }
-
-    private static func routingRuleAppliesToTun(
-        _ rule: [String: Any],
-        tunInboundTags: Set<String>
-    ) -> Bool {
-        let inboundTags = rule["inboundTag"] as? [String] ?? []
-        return inboundTags.isEmpty || !tunInboundTags.isDisjoint(with: inboundTags)
     }
 
     private static func fakeIPDNSIsAvailable(_ configJSON: String) -> Bool {

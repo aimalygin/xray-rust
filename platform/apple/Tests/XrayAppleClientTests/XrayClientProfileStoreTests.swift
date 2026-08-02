@@ -344,11 +344,189 @@ final class XrayClientProfileStoreTests: XCTestCase {
         XCTAssertFalse(options.values.contains { "\($0)".contains(Self.vlessUserID) })
     }
 
+    @available(macOS 13.0, *)
+    @MainActor
+    func testTunnelStartupWaitReturnsAfterConnectedStatusChange() async throws {
+        let (statusChanges, continuation) = makeStatusStream()
+        continuation.yield(.connecting)
+        continuation.yield(.connected)
+
+        try await NetworkExtensionTunnelController.waitForStartup(
+            statusAfterStartRequest: .disconnected,
+            statusChanges: statusChanges,
+            timeoutNanoseconds: 1_000_000_000,
+            timeoutSecondsForMessage: 1,
+            lastDisconnectError: { nil }
+        )
+
+        continuation.finish()
+    }
+
+    @available(macOS 13.0, *)
+    @MainActor
+    func testTunnelStartupWaitDoesNotTreatDisconnectingAsTerminal() async throws {
+        let (statusChanges, continuation) = makeStatusStream()
+        continuation.yield(.disconnecting)
+        continuation.yield(.connected)
+
+        try await NetworkExtensionTunnelController.waitForStartup(
+            statusAfterStartRequest: .connecting,
+            statusChanges: statusChanges,
+            timeoutNanoseconds: 1_000_000_000,
+            timeoutSecondsForMessage: 1,
+            lastDisconnectError: {
+                XCTFail("Disconnecting must not fetch a stale disconnect error")
+                return nil
+            }
+        )
+
+        continuation.finish()
+    }
+
+    @available(macOS 13.0, *)
+    @MainActor
+    func testTunnelStartupFailureIncludesProviderDisconnectError() async {
+        let (statusChanges, continuation) = makeStatusStream()
+        continuation.yield(.connecting)
+        continuation.yield(.disconnected)
+        let providerError = NSError(
+            domain: "org.xrayrust.tests.provider",
+            code: 1,
+            userInfo: [
+                NSLocalizedDescriptionKey: "DNS configuration is unavailable.",
+            ]
+        )
+
+        do {
+            try await NetworkExtensionTunnelController.waitForStartup(
+                statusAfterStartRequest: .connecting,
+                statusChanges: statusChanges,
+                timeoutNanoseconds: 1_000_000_000,
+                timeoutSecondsForMessage: 1,
+                lastDisconnectError: { providerError }
+            )
+            XCTFail("Expected startup failure")
+        } catch {
+            XCTAssertEqual(
+                error as? XrayTunnelStartupError,
+                .failed(reason: "DNS configuration is unavailable.")
+            )
+            XCTAssertEqual(
+                error.localizedDescription,
+                "VPN failed to start: DNS configuration is unavailable."
+            )
+        }
+
+        continuation.finish()
+    }
+
+    @available(macOS 13.0, *)
+    @MainActor
+    func testTunnelStartupFailureHasUsefulIOS15FallbackMessage() async {
+        let (statusChanges, continuation) = makeStatusStream()
+        continuation.yield(.disconnected)
+
+        do {
+            try await NetworkExtensionTunnelController.waitForStartup(
+                statusAfterStartRequest: .connecting,
+                statusChanges: statusChanges,
+                timeoutNanoseconds: 1_000_000_000,
+                timeoutSecondsForMessage: 1,
+                lastDisconnectError: { nil }
+            )
+            XCTFail("Expected startup failure")
+        } catch {
+            XCTAssertEqual(
+                error as? XrayTunnelStartupError,
+                .failed(reason: nil)
+            )
+            XCTAssertEqual(
+                error.localizedDescription,
+                "VPN failed to start. Check the Tunnel extension logs for details."
+            )
+        }
+
+        continuation.finish()
+    }
+
+    @available(macOS 13.0, *)
+    @MainActor
+    func testTunnelStartupWaitTimesOut() async {
+        let (statusChanges, continuation) = makeStatusStream()
+
+        do {
+            try await NetworkExtensionTunnelController.waitForStartup(
+                statusAfterStartRequest: .connecting,
+                statusChanges: statusChanges,
+                timeoutNanoseconds: 1_000_000,
+                timeoutSecondsForMessage: 7,
+                lastDisconnectError: { nil }
+            )
+            XCTFail("Expected startup timeout")
+        } catch {
+            XCTAssertEqual(
+                error as? XrayTunnelStartupError,
+                .timedOut(seconds: 7)
+            )
+            XCTAssertEqual(
+                error.localizedDescription,
+                "VPN did not finish starting within 7 seconds."
+            )
+        }
+
+        continuation.finish()
+    }
+
+    @available(macOS 13.0, *)
+    @MainActor
+    func testTunnelStartupWaitPreservesTaskCancellation() async {
+        let (statusChanges, continuation) = makeStatusStream()
+        let waitTask = Task { @MainActor in
+            try await NetworkExtensionTunnelController.waitForStartup(
+                statusAfterStartRequest: .connecting,
+                statusChanges: statusChanges,
+                timeoutNanoseconds: 1_000_000_000,
+                timeoutSecondsForMessage: 1,
+                lastDisconnectError: { nil }
+            )
+        }
+
+        await Task.yield()
+        waitTask.cancel()
+
+        do {
+            try await waitTask.value
+            XCTFail("Expected startup wait cancellation")
+        } catch is CancellationError {
+            // Expected: cancellation must not be rewritten as a startup failure.
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        continuation.finish()
+    }
+
     private func makeDefaults() throws -> UserDefaults {
         let suiteName = "org.xrayrust.profile-store-tests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
         return defaults
+    }
+
+    @available(macOS 13.0, *)
+    @MainActor
+    private func makeStatusStream() -> (
+        AsyncStream<XrayClientConnectionStatus>,
+        AsyncStream<XrayClientConnectionStatus>.Continuation
+    ) {
+        var capturedContinuation: AsyncStream<XrayClientConnectionStatus>.Continuation?
+        let stream = AsyncStream<XrayClientConnectionStatus> { continuation in
+            capturedContinuation = continuation
+        }
+        guard let capturedContinuation else {
+            preconditionFailure("AsyncStream must synchronously provide its continuation")
+        }
+        return (stream, capturedContinuation)
     }
 
     private func makeProfile() -> XrayClientProfile {
