@@ -2,10 +2,12 @@
 
 All notable changes will be documented in this file.
 
-The project has not made a stable release. Until the first tagged release,
-development changes are recorded under `Unreleased`.
+The project has not made a stable release. Versions before 1.0 are
+prerelease-quality and do not establish a supported release series.
 
 ## Unreleased
+
+## 0.1.0 - 2026-08-02
 
 - Added a sample-only `Default DNS` preset (`FakeDNS` with routed
   `tcp://1.1.1.1`) and shared mobile DNS preflight so invalid full-tunnel DNS

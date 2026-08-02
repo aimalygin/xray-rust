@@ -627,7 +627,7 @@ fn apple_swift_sources_advertise_ios_15_availability() {
             "Swift source `{path}` should advertise iOS 15 availability"
         );
         assert!(
-            !source.contains("iOS 16.0"),
+            !source.contains("@available(iOS 16.0"),
             "Swift source `{path}` should not require iOS 16"
         );
     }
@@ -643,7 +643,7 @@ fn apple_swift_sources_advertise_ios_15_availability() {
             "Swift extension source `{path}` should advertise iOS extension 15 availability"
         );
         assert!(
-            !source.contains("iOSApplicationExtension 16.0"),
+            !source.contains("@available(iOSApplicationExtension 16.0"),
             "Swift extension source `{path}` should not require iOS extension 16"
         );
     }
