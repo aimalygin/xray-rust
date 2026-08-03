@@ -11,7 +11,9 @@ use std::slice;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::runtime::{Builder, Runtime};
-use xray_config::{parse_xray_json, parse_xray_json_with_geodata_dirs};
+use xray_config::{
+    parse_xray_json, parse_xray_json_with_exclusive_geodata_dirs, parse_xray_json_with_geodata_dirs,
+};
 use xray_core_rs::{
     Core, DnsBootstrapMode, RuntimeLogConfig, RuntimeLogger, StartupProbeOptions, TunFdClosePolicy,
     TunFdConfig, TunFdPacketFormat, TunFdRuntime, TunRuntimeOptions, TunRuntimeProfile,
@@ -403,13 +405,25 @@ pub struct XrayCoreHandle {
     runtime: Runtime,
     pending_outbound_packets: Mutex<VecDeque<Bytes>>,
     socket_protector: Option<Arc<dyn SocketProtector>>,
-    geodata_search_dirs: Vec<PathBuf>,
+    geodata_search: GeodataSearch,
     startup_probe_options: Option<StartupProbeOptions>,
     file_log_config: Option<RuntimeLogConfig>,
     tun_fd_config: Option<TunFdConfig>,
     tun_fd_runtime: Option<TunFdRuntime>,
     tun_runtime_options: TunRuntimeOptions,
     config_warnings: String,
+}
+
+enum GeodataSearch {
+    Defaults,
+    WithDefaults(PathBuf),
+    Exclusive(PathBuf),
+}
+
+#[derive(Clone, Copy)]
+enum GeodataSearchMode {
+    WithDefaults,
+    Exclusive,
 }
 
 pub type XraySocketProtectCallback =
@@ -500,7 +514,7 @@ unsafe fn xray_core_new_inner(error: *mut *mut XrayError) -> *mut XrayCoreHandle
         runtime,
         pending_outbound_packets: Mutex::new(VecDeque::new()),
         socket_protector: None,
-        geodata_search_dirs: Vec::new(),
+        geodata_search: GeodataSearch::Defaults,
         startup_probe_options: None,
         file_log_config: None,
         tun_fd_config: None,
@@ -527,7 +541,36 @@ pub unsafe extern "C" fn xray_core_set_geodata_search_dir(
 ) -> XrayStatus {
     unsafe {
         ffi_status(error, || {
-            xray_core_set_geodata_search_dir_inner(handle, dir, error)
+            xray_core_set_geodata_search_dir_inner(
+                handle,
+                dir,
+                GeodataSearchMode::WithDefaults,
+                error,
+            )
+        })
+    }
+}
+
+/// Sets the only geodata search directory used by subsequent config loads.
+///
+/// Unlike [`xray_core_set_geodata_search_dir`], this does not fall back to
+/// process-wide default directories. A referenced asset missing from `dir`
+/// therefore fails config loading instead of mixing geodata generations.
+///
+/// # Safety
+///
+/// `handle` must either be null or a pointer returned by `xray_core_new` that
+/// has not been freed. `dir` must either be null or point to a valid
+/// NUL-terminated C string.
+#[no_mangle]
+pub unsafe extern "C" fn xray_core_set_geodata_search_dir_exclusive(
+    handle: *mut XrayCoreHandle,
+    dir: *const c_char,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            xray_core_set_geodata_search_dir_inner(handle, dir, GeodataSearchMode::Exclusive, error)
         })
     }
 }
@@ -535,6 +578,7 @@ pub unsafe extern "C" fn xray_core_set_geodata_search_dir(
 unsafe fn xray_core_set_geodata_search_dir_inner(
     handle: *mut XrayCoreHandle,
     dir: *const c_char,
+    mode: GeodataSearchMode,
     error: *mut *mut XrayError,
 ) -> XrayStatus {
     unsafe {
@@ -584,9 +628,12 @@ unsafe fn xray_core_set_geodata_search_dir_inner(
         return XrayStatus::ConfigError;
     }
 
+    let dir = PathBuf::from(dir);
     unsafe {
-        (*handle).geodata_search_dirs.clear();
-        (*handle).geodata_search_dirs.push(PathBuf::from(dir));
+        (*handle).geodata_search = match mode {
+            GeodataSearchMode::WithDefaults => GeodataSearch::WithDefaults(dir),
+            GeodataSearchMode::Exclusive => GeodataSearch::Exclusive(dir),
+        };
     }
 
     XrayStatus::Ok
@@ -766,11 +813,14 @@ unsafe fn xray_core_load_config_json_inner(
     };
 
     let parsed = unsafe {
-        let geodata_search_dirs = &(*handle).geodata_search_dirs;
-        if geodata_search_dirs.is_empty() {
-            parse_xray_json(raw)
-        } else {
-            parse_xray_json_with_geodata_dirs(raw, geodata_search_dirs)
+        match &(*handle).geodata_search {
+            GeodataSearch::Defaults => parse_xray_json(raw),
+            GeodataSearch::WithDefaults(dir) => {
+                parse_xray_json_with_geodata_dirs(raw, slice::from_ref(dir))
+            }
+            GeodataSearch::Exclusive(dir) => {
+                parse_xray_json_with_exclusive_geodata_dirs(raw, slice::from_ref(dir))
+            }
         }
     };
     let parsed = match parsed {

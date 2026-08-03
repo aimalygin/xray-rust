@@ -7,7 +7,7 @@ import Foundation
 import XrayAppleShared
 import XrayMobileAdapter
 
-public enum XrayPacketTunnelProviderError: Error, LocalizedError {
+public enum XrayPacketTunnelProviderError: Error, LocalizedError, CustomNSError {
     case missingConfigJSON
     case invalidStartupProbeConfiguration
     case invalidDNSConfiguration
@@ -15,6 +15,30 @@ public enum XrayPacketTunnelProviderError: Error, LocalizedError {
     case outboundServerResolutionFailed
     case dnsBootstrapTimedOut
     case startSuperseded
+    case invalidGeodataConfiguration
+
+    public static let errorDomain = "XrayAppleTunnel.XrayPacketTunnelProviderError"
+
+    public var errorCode: Int {
+        switch self {
+        case .missingConfigJSON:
+            return 0
+        case .invalidStartupProbeConfiguration:
+            return 1
+        case .invalidDNSConfiguration:
+            return 2
+        case .invalidDNSRoutingTopology:
+            return 3
+        case .outboundServerResolutionFailed:
+            return 4
+        case .dnsBootstrapTimedOut:
+            return 5
+        case .startSuperseded:
+            return 6
+        case .invalidGeodataConfiguration:
+            return 7
+        }
+    }
 
     public var errorDescription: String? {
         switch self {
@@ -32,6 +56,8 @@ public enum XrayPacketTunnelProviderError: Error, LocalizedError {
             return "DNS bootstrap resolution exceeded the overall preflight deadline."
         case .startSuperseded:
             return "Tunnel start was superseded by a newer lifecycle request."
+        case .invalidGeodataConfiguration:
+            return "Geodata requires both an App Group identifier and an existing safe relative directory without symbolic links."
         }
     }
 }
@@ -451,10 +477,24 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         )
         let lifecycleToken = lifecycle.beginStart()
 
-        guard let resolvedConfig = Self.configJSON(
-            options: options,
-            protocolConfiguration: protocolConfiguration
-        ) else {
+        let resolvedConfig: ResolvedConfig?
+        do {
+            resolvedConfig = try Self.resolvedStartConfiguration(
+                options: options,
+                protocolConfiguration: protocolConfiguration
+            )
+        } catch {
+            if lifecycle.cancelStart(lifecycleToken) {
+                XrayAppleLog.configureFileLogging(directory: nil)
+            }
+            XrayAppleLog.error(
+                "PacketTunnelProvider",
+                "Invalid explicit geodata configuration"
+            )
+            completionHandler(error)
+            return
+        }
+        guard let resolvedConfig else {
             if lifecycle.cancelStart(lifecycleToken) {
                 XrayAppleLog.configureFileLogging(directory: nil)
             }
@@ -554,7 +594,8 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             }
             try Self.validateConfigBeforeApplyingNetworkSettings(
                 resolvedConfig.json,
-                dnsConfiguration: resolvedConfig.dnsConfiguration
+                dnsConfiguration: resolvedConfig.dnsConfiguration,
+                geodataSelection: resolvedConfig.geodataSelection
             )
             guard shouldContinue() else {
                 throw XrayPacketTunnelProviderError.dnsBootstrapTimedOut
@@ -568,7 +609,8 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             }
             try Self.validateConfigBeforeApplyingNetworkSettings(
                 preparedConfig.json,
-                dnsConfiguration: preparedConfig.dnsConfiguration
+                dnsConfiguration: preparedConfig.dnsConfiguration,
+                geodataSelection: preparedConfig.geodataSelection
             )
             return preparedConfig
         }
@@ -764,6 +806,104 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         return .darwinUtunFileDescriptor(discoveredTunFileDescriptor)
     }
 
+    struct GeodataSelection: Equatable {
+        var directory: URL?
+        var policy: XrayGeodataSearchPolicy
+    }
+
+    static func geodataSelection(
+        providerConfiguration: [String: Any]?,
+        bundleResourceURL: URL? = Bundle.main.resourceURL,
+        appGroupContainerURL: (String) -> URL? = {
+            FileManager.default.containerURL(
+                forSecurityApplicationGroupIdentifier: $0
+            )
+        },
+        fileManager: FileManager = .default
+    ) throws -> GeodataSelection {
+        let appGroupValue = providerConfiguration?[
+            XrayTunnelProviderMessage.providerGeodataAppGroupIdentifierKey
+        ]
+        let relativeDirectoryValue = providerConfiguration?[
+            XrayTunnelProviderMessage.providerGeodataRelativeDirectoryKey
+        ]
+        guard appGroupValue != nil || relativeDirectoryValue != nil else {
+            return GeodataSelection(
+                directory: bundleResourceURL,
+                policy: .fallbackToDefaults
+            )
+        }
+        guard let rawAppGroupIdentifier = appGroupValue as? String,
+              let rawRelativeDirectory = relativeDirectoryValue as? String
+        else {
+            throw XrayPacketTunnelProviderError.invalidGeodataConfiguration
+        }
+
+        let appGroupIdentifier = rawAppGroupIdentifier.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        let relativeDirectory = rawRelativeDirectory.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        guard !appGroupIdentifier.isEmpty,
+              let components = safeRelativeGeodataPathComponents(relativeDirectory),
+              let containerURL = appGroupContainerURL(appGroupIdentifier),
+              containerURL.isFileURL,
+              isExistingDirectoryWithoutSymbolicLink(
+                  containerURL,
+                  fileManager: fileManager
+              )
+        else {
+            throw XrayPacketTunnelProviderError.invalidGeodataConfiguration
+        }
+
+        var directoryURL = containerURL
+        for component in components {
+            directoryURL.appendPathComponent(component, isDirectory: true)
+            guard isExistingDirectoryWithoutSymbolicLink(
+                directoryURL,
+                fileManager: fileManager
+            ) else {
+                throw XrayPacketTunnelProviderError.invalidGeodataConfiguration
+            }
+        }
+        return GeodataSelection(
+            directory: directoryURL.standardizedFileURL,
+            policy: .exclusive
+        )
+    }
+
+    static func safeRelativeGeodataPathComponents(_ path: String) -> [String]? {
+        guard !path.isEmpty,
+              !NSString(string: path).isAbsolutePath,
+              !path.unicodeScalars.contains(where: { $0.value == 0 })
+        else {
+            return nil
+        }
+        let components = path.split(
+            separator: "/",
+            omittingEmptySubsequences: false
+        ).map(String.init)
+        guard !components.isEmpty,
+              components.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." })
+        else {
+            return nil
+        }
+        return components
+    }
+
+    private static func isExistingDirectoryWithoutSymbolicLink(
+        _ url: URL,
+        fileManager: FileManager
+    ) -> Bool {
+        guard let attributes = try? fileManager.attributesOfItem(atPath: url.path),
+              let type = attributes[.type] as? FileAttributeType
+        else {
+            return false
+        }
+        return type == .typeDirectory
+    }
+
     struct ResolvedConfig {
         var json: String
         var source: String
@@ -774,6 +914,40 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         var tunRuntimeProfile: XrayTunRuntimeProfileSetting
         var startupProbeConfiguration: XrayPacketTunnelStartupProbeConfiguration
         var dnsConfiguration: XrayPacketTunnelDNSConfiguration
+        var geodataSelection = GeodataSelection(
+            directory: Bundle.main.resourceURL,
+            policy: .fallbackToDefaults
+        )
+    }
+
+    static func resolvedStartConfiguration(
+        options: [String: NSObject]?,
+        protocolConfiguration: NEVPNProtocol,
+        secureConfigStore: XraySecureConfigStoring = XrayKeychainConfigStore(),
+        bundleResourceURL: URL? = Bundle.main.resourceURL,
+        appGroupContainerURL: (String) -> URL? = {
+            FileManager.default.containerURL(
+                forSecurityApplicationGroupIdentifier: $0
+            )
+        },
+        fileManager: FileManager = .default
+    ) throws -> ResolvedConfig? {
+        guard var resolvedConfig = configJSON(
+            options: options,
+            protocolConfiguration: protocolConfiguration,
+            secureConfigStore: secureConfigStore
+        ) else {
+            return nil
+        }
+        let providerConfiguration = (protocolConfiguration as? NETunnelProviderProtocol)?
+            .providerConfiguration
+        resolvedConfig.geodataSelection = try geodataSelection(
+            providerConfiguration: providerConfiguration,
+            bundleResourceURL: bundleResourceURL,
+            appGroupContainerURL: appGroupContainerURL,
+            fileManager: fileManager
+        )
+        return resolvedConfig
     }
 
     static func configJSON(
@@ -1793,11 +1967,15 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
     static func validateConfigBeforeApplyingNetworkSettings(
         _ configJSON: String,
         dnsConfiguration: XrayPacketTunnelDNSConfiguration = .system,
-        geodataSearchDirectory: URL? = Bundle.main.resourceURL
+        geodataSelection: GeodataSelection = GeodataSelection(
+            directory: Bundle.main.resourceURL,
+            policy: .fallbackToDefaults
+        )
     ) throws {
         _ = try XrayCore(
             configJSON: configJSON,
-            geodataSearchDirectory: geodataSearchDirectory
+            geodataSearchDirectory: geodataSelection.directory,
+            geodataSearchPolicy: geodataSelection.policy
         )
         let explicitDNS: XrayMobileExplicitDNSConfiguration
         switch dnsConfiguration {
@@ -2246,6 +2424,40 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         }
     }
 
+    static func makeCore(
+        resolvedConfig: ResolvedConfig,
+        borrowedDarwinTunFileDescriptor: Int32?,
+        diagnosticLogDirectory: URL?
+    ) throws -> XrayCore {
+        if let borrowedDarwinTunFileDescriptor {
+            return try XrayCore(
+                configJSON: resolvedConfig.json,
+                borrowedDarwinTunFileDescriptor: borrowedDarwinTunFileDescriptor,
+                collectTcpTimings: resolvedConfig.debugLoggingEnabled,
+                tunRuntimeProfile: XrayCore.tunRuntimeProfile(
+                    named: resolvedConfig.tunRuntimeProfile.rawValue
+                ),
+                dnsBootstrapMode: .staticOnly,
+                geodataSearchDirectory: resolvedConfig.geodataSelection.directory,
+                geodataSearchPolicy: resolvedConfig.geodataSelection.policy,
+                startupProbe: resolvedConfig.startupProbeConfiguration.options,
+                fileLogDirectory: diagnosticLogDirectory
+            )
+        }
+        return try XrayCore(
+            configJSON: resolvedConfig.json,
+            collectTcpTimings: resolvedConfig.debugLoggingEnabled,
+            tunRuntimeProfile: XrayCore.tunRuntimeProfile(
+                named: resolvedConfig.tunRuntimeProfile.rawValue
+            ),
+            dnsBootstrapMode: .staticOnly,
+            geodataSearchDirectory: resolvedConfig.geodataSelection.directory,
+            geodataSearchPolicy: resolvedConfig.geodataSelection.policy,
+            startupProbe: resolvedConfig.startupProbeConfiguration.options,
+            fileLogDirectory: diagnosticLogDirectory
+        )
+    }
+
     private func makeRuntime(
         resolvedConfig: ResolvedConfig,
         diagnosticLogDirectory: URL?,
@@ -2264,17 +2476,10 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                 "PacketTunnelProvider",
                 "Using Darwin utun file descriptor for packet I/O"
             )
-            core = try XrayCore(
-                configJSON: resolvedConfig.json,
+            core = try Self.makeCore(
+                resolvedConfig: resolvedConfig,
                 borrowedDarwinTunFileDescriptor: fd,
-                collectTcpTimings: resolvedConfig.debugLoggingEnabled,
-                tunRuntimeProfile: XrayCore.tunRuntimeProfile(
-                    named: resolvedConfig.tunRuntimeProfile.rawValue
-                ),
-                dnsBootstrapMode: .staticOnly,
-                geodataSearchDirectory: Bundle.main.resourceURL,
-                startupProbe: resolvedConfig.startupProbeConfiguration.options,
-                fileLogDirectory: diagnosticLogDirectory
+                diagnosticLogDirectory: diagnosticLogDirectory
             )
             pump = nil
         case .packetFlowPump:
@@ -2289,16 +2494,10 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                     "Darwin utun fd disabled; using packetFlow pump for packet I/O"
                 )
             }
-            core = try XrayCore(
-                configJSON: resolvedConfig.json,
-                collectTcpTimings: resolvedConfig.debugLoggingEnabled,
-                tunRuntimeProfile: XrayCore.tunRuntimeProfile(
-                    named: resolvedConfig.tunRuntimeProfile.rawValue
-                ),
-                dnsBootstrapMode: .staticOnly,
-                geodataSearchDirectory: Bundle.main.resourceURL,
-                startupProbe: resolvedConfig.startupProbeConfiguration.options,
-                fileLogDirectory: diagnosticLogDirectory
+            core = try Self.makeCore(
+                resolvedConfig: resolvedConfig,
+                borrowedDarwinTunFileDescriptor: nil,
+                diagnosticLogDirectory: diagnosticLogDirectory
             )
             let providerReference = XrayWeakReference(self)
             pump = XrayPacketTunnelPump(

@@ -7,18 +7,19 @@ use std::time::{Duration, Instant};
 
 use xray_ffi::{
     xray_core_config_warnings, xray_core_free, xray_core_load_config_json, xray_core_new,
-    xray_core_set_dns_bootstrap_mode, xray_core_set_file_logging,
-    xray_core_set_socket_protect_callback, xray_core_set_startup_probe,
-    xray_core_set_tun_collect_tcp_timings, xray_core_set_tun_fd, xray_core_set_tun_runtime_profile,
-    xray_core_start, xray_core_stop, xray_error_code, xray_error_free, xray_error_message,
-    xray_ffi_version_major, xray_tun_poll_packet, xray_tun_poll_packets,
-    xray_tun_poll_tcp_flow_summary_event, xray_tun_poll_tcp_open_error_event,
-    xray_tun_poll_tcp_remote_write_slow_event, xray_tun_poll_tcp_slow_flow_event,
-    xray_tun_poll_udp_quic_blocked_event, xray_tun_poll_udp_response_gap_event,
-    xray_tun_poll_udp_slow_flow_event, xray_tun_push_packet, xray_tun_stats, XrayDnsBootstrapMode,
-    XrayStatus, XrayTcpFlowSummaryEvent, XrayTcpOpenErrorEvent, XrayTcpRemoteWriteSlowEvent,
-    XrayTcpSlowFlowEvent, XrayTunFdClosePolicy, XrayTunFdPacketFormat, XrayTunRuntimeProfile,
-    XrayTunStats, XrayUdpQuicBlockedEvent, XrayUdpResponseGapEvent, XrayUdpSlowFlowEvent,
+    xray_core_set_dns_bootstrap_mode, xray_core_set_file_logging, xray_core_set_geodata_search_dir,
+    xray_core_set_geodata_search_dir_exclusive, xray_core_set_socket_protect_callback,
+    xray_core_set_startup_probe, xray_core_set_tun_collect_tcp_timings, xray_core_set_tun_fd,
+    xray_core_set_tun_runtime_profile, xray_core_start, xray_core_stop, xray_error_code,
+    xray_error_free, xray_error_message, xray_ffi_version_major, xray_tun_poll_packet,
+    xray_tun_poll_packets, xray_tun_poll_tcp_flow_summary_event,
+    xray_tun_poll_tcp_open_error_event, xray_tun_poll_tcp_remote_write_slow_event,
+    xray_tun_poll_tcp_slow_flow_event, xray_tun_poll_udp_quic_blocked_event,
+    xray_tun_poll_udp_response_gap_event, xray_tun_poll_udp_slow_flow_event, xray_tun_push_packet,
+    xray_tun_stats, XrayDnsBootstrapMode, XrayStatus, XrayTcpFlowSummaryEvent,
+    XrayTcpOpenErrorEvent, XrayTcpRemoteWriteSlowEvent, XrayTcpSlowFlowEvent, XrayTunFdClosePolicy,
+    XrayTunFdPacketFormat, XrayTunRuntimeProfile, XrayTunStats, XrayUdpQuicBlockedEvent,
+    XrayUdpResponseGapEvent, XrayUdpSlowFlowEvent,
 };
 
 #[test]
@@ -63,6 +64,71 @@ fn ffi_loads_tun_config_without_port() {
     unsafe {
         xray_core_free(core);
     }
+}
+
+#[test]
+fn ffi_exclusive_geodata_dir_does_not_fall_back_to_executable_dir() {
+    let executable_dir = std::env::current_exe()
+        .expect("current executable should resolve")
+        .parent()
+        .expect("current executable should have a parent")
+        .to_path_buf();
+    let file_name = format!(
+        "xray-ffi-exclusive-geosite-{}-{}.dat",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time should be after epoch")
+            .as_nanos()
+    );
+    let fallback_path = executable_dir.join(&file_name);
+    std::fs::write(&fallback_path, minimal_geosite_data())
+        .expect("fallback geosite fixture should be written");
+    let explicit_dir = unique_temp_dir("xray-ffi-exclusive-geodata");
+    let explicit_dir_c = CString::new(explicit_dir.to_string_lossy().as_bytes()).unwrap();
+    let raw = CString::new(format!(
+        r#"{{"outbounds":[{{"tag":"direct","protocol":"freedom"}}],"routing":{{"rules":[{{"type":"field","domain":["ext-domain:{file_name}:test"],"outboundTag":"direct"}}]}}}}"#
+    ))
+    .unwrap();
+    let mut err = std::ptr::null_mut();
+
+    let fallback_core = unsafe { xray_core_new(&mut err) };
+    assert_eq!(
+        unsafe {
+            xray_core_set_geodata_search_dir(fallback_core, explicit_dir_c.as_ptr(), &mut err)
+        },
+        XrayStatus::Ok
+    );
+    assert_eq!(
+        unsafe { xray_core_load_config_json(fallback_core, raw.as_ptr(), &mut err) },
+        XrayStatus::Ok,
+        "control load error: {}",
+        error_message(err)
+    );
+    unsafe { xray_core_free(fallback_core) };
+
+    let exclusive_core = unsafe { xray_core_new(&mut err) };
+    assert_eq!(
+        unsafe {
+            xray_core_set_geodata_search_dir_exclusive(
+                exclusive_core,
+                explicit_dir_c.as_ptr(),
+                &mut err,
+            )
+        },
+        XrayStatus::Ok
+    );
+    assert_eq!(
+        unsafe { xray_core_load_config_json(exclusive_core, raw.as_ptr(), &mut err) },
+        XrayStatus::ConfigError
+    );
+
+    unsafe {
+        xray_core_free(exclusive_core);
+        xray_error_free(err);
+    }
+    std::fs::remove_file(fallback_path).expect("fallback geosite fixture should be removed");
+    std::fs::remove_dir_all(explicit_dir).expect("explicit geodata fixture should be removed");
 }
 
 #[test]
@@ -1771,6 +1837,20 @@ fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {
     ));
     std::fs::create_dir_all(&dir).expect("temp dir should be created");
     dir
+}
+
+fn minimal_geosite_data() -> Vec<u8> {
+    let code = b"TEST";
+    let domain = b"example.test";
+    let mut domain_message = vec![0x08, 0x02, 0x12, domain.len() as u8];
+    domain_message.extend_from_slice(domain);
+    let mut site_message = vec![0x0a, code.len() as u8];
+    site_message.extend_from_slice(code);
+    site_message.extend_from_slice(&[0x12, domain_message.len() as u8]);
+    site_message.extend_from_slice(&domain_message);
+    let mut data = vec![0x0a, site_message.len() as u8];
+    data.extend_from_slice(&site_message);
+    data
 }
 
 unsafe extern "C" fn record_socket_protect_call(

@@ -54,6 +54,15 @@ public enum XrayDNSBootstrapMode: Equatable, Sendable {
     }
 }
 
+/// Controls whether an explicit geodata directory may fall back to process defaults.
+public enum XrayGeodataSearchPolicy: Equatable, Sendable {
+    /// Searches the explicit directory first, then the process default directories.
+    case fallbackToDefaults
+
+    /// Searches only the explicit directory and fails if a referenced asset is absent.
+    case exclusive
+}
+
 final class XrayPacketBatchPollStorage: @unchecked Sendable {
     let maxPackets: Int
     let maxPacketBytes: Int
@@ -453,6 +462,7 @@ public final class XrayCore: @unchecked Sendable {
         tunRuntimeProfile: XrayTunRuntimeProfile = XRAY_TUN_RUNTIME_PROFILE_DEFAULT,
         dnsBootstrapMode: XrayDNSBootstrapMode = .system,
         geodataSearchDirectory: URL? = nil,
+        geodataSearchPolicy: XrayGeodataSearchPolicy = .fallbackToDefaults,
         startupProbe: XrayStartupProbeOptions? = nil,
         fileLogDirectory: URL? = nil
     ) throws {
@@ -462,6 +472,7 @@ public final class XrayCore: @unchecked Sendable {
             tunRuntimeProfile: tunRuntimeProfile,
             dnsBootstrapMode: dnsBootstrapMode,
             geodataSearchDirectory: geodataSearchDirectory,
+            geodataSearchPolicy: geodataSearchPolicy,
             startupProbe: startupProbe,
             fileLogDirectory: fileLogDirectory,
             tunFileDescriptor: fd,
@@ -476,6 +487,7 @@ public final class XrayCore: @unchecked Sendable {
         tunRuntimeProfile: XrayTunRuntimeProfile = XRAY_TUN_RUNTIME_PROFILE_DEFAULT,
         dnsBootstrapMode: XrayDNSBootstrapMode = .system,
         geodataSearchDirectory: URL? = nil,
+        geodataSearchPolicy: XrayGeodataSearchPolicy = .fallbackToDefaults,
         startupProbe: XrayStartupProbeOptions? = nil,
         fileLogDirectory: URL? = nil,
         socketProtector: XraySocketProtecting? = nil,
@@ -597,10 +609,18 @@ public final class XrayCore: @unchecked Sendable {
             )
             if let geodataSearchDirectory {
                 try geodataSearchDirectory.path.withCString { pointer in
-                    try check(
-                        xray_core_set_geodata_search_dir(handle, pointer, &error),
-                        error: error
-                    )
+                    let status: XrayStatus
+                    switch geodataSearchPolicy {
+                    case .fallbackToDefaults:
+                        status = xray_core_set_geodata_search_dir(handle, pointer, &error)
+                    case .exclusive:
+                        status = xray_core_set_geodata_search_dir_exclusive(
+                            handle,
+                            pointer,
+                            &error
+                        )
+                    }
+                    try check(status, error: error)
                 }
             }
             try configJSON.withCString { pointer in

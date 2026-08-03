@@ -1,5 +1,6 @@
 import Foundation
 import XrayAppleShared
+import XrayMobileAdapter
 
 @available(iOS 15.0, tvOS 17.0, macOS 13.0, *)
 @MainActor
@@ -15,15 +16,21 @@ public final class XrayClientViewModel: ObservableObject {
     private let store: XrayClientProfileStore
     private let tunnelController: any XrayClientTunnelControlling
     private let geodataSearchDirectory: URL?
+    private let geodataSearchPolicy: XrayGeodataSearchPolicy
     private var statusObservationTask: Task<Void, Never>?
     private var suppressNextDisconnectError = false
     private var hasObservedConnectedStatus = false
     private var statusObservationGeneration: UInt64 = 0
 
+    /// Creates a view model whose geodata settings are used for host-side
+    /// configuration validation only. To use the same generation at runtime,
+    /// inject a tunnel controller that writes the documented App Group keys to
+    /// the Packet Tunnel provider configuration.
     public init(
         store: XrayClientProfileStore = XrayClientProfileStore(),
         tunnelController: (any XrayClientTunnelControlling)? = nil,
-        geodataSearchDirectory: URL? = Bundle.main.resourceURL
+        geodataSearchDirectory: URL? = Bundle.main.resourceURL,
+        geodataSearchPolicy: XrayGeodataSearchPolicy = .fallbackToDefaults
     ) {
         self.store = store
         let loadedProfile = store.load()
@@ -46,6 +53,7 @@ public final class XrayClientViewModel: ObservableObject {
         self.profile = preparedProfile
         self.tunnelController = tunnelController ?? NetworkExtensionTunnelController()
         self.geodataSearchDirectory = geodataSearchDirectory
+        self.geodataSearchPolicy = geodataSearchPolicy
         XrayAppleLog.info(
             "ClientViewModel",
             "Loaded profile name=\(profile.name) provider=\(profile.providerBundleIdentifier) server=\(profile.serverAddress) configBytes=\(profile.configJSON.utf8.count) debugLogging=\(profile.debugLoggingEnabled) useTunFileDescriptor=\(profile.useTunFileDescriptor) tunRuntimeProfile=\(profile.tunRuntimeProfile.rawValue) dnsTestMode=\(profile.dnsTestMode.rawValue) dnsTestTransport=\(profile.dnsTestTransport.rawValue)"
@@ -144,7 +152,8 @@ public final class XrayClientViewModel: ObservableObject {
             )
             try XrayConfigValidator.validate(
                 importedProfile.configJSON,
-                geodataSearchDirectory: geodataSearchDirectory
+                geodataSearchDirectory: geodataSearchDirectory,
+                geodataSearchPolicy: geodataSearchPolicy
             )
             XrayAppleLog.info("ClientViewModel", "Imported VLESS config validated")
             profile = importedProfile
@@ -251,7 +260,8 @@ public final class XrayClientViewModel: ObservableObject {
                 )
                 try XrayConfigValidator.validate(
                     effectiveConfigJSON,
-                    geodataSearchDirectory: geodataSearchDirectory
+                    geodataSearchDirectory: geodataSearchDirectory,
+                    geodataSearchPolicy: geodataSearchPolicy
                 )
                 try XrayMobileDNSPreflight.validate(effectiveConfigJSON)
                 XrayAppleLog.info("ClientViewModel", "Config validation passed before start")

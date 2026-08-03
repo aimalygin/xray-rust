@@ -19,6 +19,8 @@ public enum XrayTunnelProviderMessage {
     public static let providerStartupProbeTimeoutMsKey = "startupProbeTimeoutMs"
     public static let providerStartupProbeOutboundTagKey = "startupProbeOutboundTag"
     public static let providerDNSServersKey = "dnsServers"
+    public static let providerGeodataAppGroupIdentifierKey = "geodataAppGroupIdentifier"
+    public static let providerGeodataRelativeDirectoryKey = "geodataRelativeDirectory"
     public static let statsRequest = "stats"
 
     public static func encodeStatsResponse(_ stats: XrayClientRuntimeStats) throws -> Data {

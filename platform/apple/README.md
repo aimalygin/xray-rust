@@ -250,11 +250,74 @@ assets:
 scripts/fetch-geodata.sh
 ```
 
-The Xcode project already references the resulting files under
-`platform/apple/XrayClient/dat` from its app and Packet Tunnel targets. Custom
-host projects must add verified files to both the containing app resources (for
-validation) and extension resources (for runtime loading). The adapter passes
-each bundle's resource directory to the core. Review
+The checked-in reference project adds the resulting files under
+`platform/apple/XrayClient/dat` to both the app and Packet Tunnel bundles. When
+no explicit shared directory is configured, the adapter retains this behavior
+and uses `Bundle.main.resourceURL`.
+
+Custom hosts that download or share geodata should instead give the containing
+app and Packet Tunnel extension the same App Group entitlement:
+
+```xml
+<key>com.apple.security.application-groups</key>
+<array>
+    <string>group.com.example.xray</string>
+</array>
+```
+
+Publish each verified generation into its own real directory inside that
+container, for example:
+
+```text
+Library/Application Support/XrayGeodata/<version>-<sha256>/
+  geosite.dat
+  geoip.dat
+```
+
+Set both provider-configuration keys to select that exact generation:
+
+```swift
+providerConfiguration[
+    XrayTunnelProviderMessage.providerGeodataAppGroupIdentifierKey
+] = "group.com.example.xray"
+providerConfiguration[
+    XrayTunnelProviderMessage.providerGeodataRelativeDirectoryKey
+] = "Library/Application Support/XrayGeodata/<version>-<sha256>"
+```
+
+Both values are required together. The relative path must already exist, stay
+inside the App Group, contain no empty, `.` or `..` components, and contain no
+symbolic-link directory components. Invalid explicit settings fail before
+Packet Tunnel network settings are applied.
+
+Download into a sibling staging directory, verify the expected checksums, and
+atomically rename the completed directory to its final generation name. Treat
+published generations as immutable: do not replace their files or point the
+provider at a mutable `current` symlink. Retain the selected generation until
+the tunnel has stopped and no saved provider configuration refers to it.
+
+The App Group is a trusted cooperation boundary. The adapter validates the
+selected path when the tunnel starts, but it does not hold directory file
+descriptors or defend against another App Group writer replacing a published
+generation concurrently. Under the host-enforced immutability and retention
+contract above, preflight and runtime select the same generation path.
+
+Host-side validation must use the same published directory exclusively so it
+cannot mix generations with bundle resources:
+
+```swift
+try XrayConfigValidator.validate(
+    configJSON,
+    geodataSearchDirectory: publishedGenerationURL,
+    geodataSearchPolicy: .exclusive
+)
+```
+
+`XrayClientViewModel` accepts the same `geodataSearchDirectory` and
+`geodataSearchPolicy` arguments for host-side validation only. They do not
+modify the Packet Tunnel provider configuration; inject a custom tunnel
+controller that writes the two App Group keys above when using a shared
+generation. Review
 [third-party notices](../../THIRD_PARTY_NOTICES.md) before redistribution.
 
 Profiles without `geosite:` or non-private `geoip:` references do not need

@@ -178,7 +178,13 @@ typedef int32_t (*XraySocketProtectCallback)(int32_t fd, void *user_data);
 uint32_t xray_ffi_version_major(void);
 
 XrayCoreHandle *xray_core_new(XrayError **error);
+/* Searches dir first, then the process default geodata directories. */
 XrayStatus xray_core_set_geodata_search_dir(
+    XrayCoreHandle *handle,
+    const char *dir,
+    XrayError **error);
+/* Searches only dir; missing referenced assets fail config loading. */
+XrayStatus xray_core_set_geodata_search_dir_exclusive(
     XrayCoreHandle *handle,
     const char *dir,
     XrayError **error);

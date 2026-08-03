@@ -368,11 +368,19 @@ pub fn parse_xray_json_with_geodata_dirs<P: AsRef<Path>>(
     )
 }
 
+pub fn parse_xray_json_with_exclusive_geodata_dirs<P: AsRef<Path>>(
+    raw: &str,
+    dirs: &[P],
+) -> Result<ParsedConfig, ConfigParseError> {
+    parse_xray_json_with_loader(raw, GeodataLoader::from_dirs(configured_geodata_dirs(dirs)))
+}
+
+fn configured_geodata_dirs<P: AsRef<Path>>(dirs: &[P]) -> Vec<PathBuf> {
+    dirs.iter().map(|dir| dir.as_ref().to_path_buf()).collect()
+}
+
 fn geodata_dirs_with_defaults<P: AsRef<Path>>(dirs: &[P]) -> Vec<PathBuf> {
-    let mut search_dirs = dirs
-        .iter()
-        .map(|dir| dir.as_ref().to_path_buf())
-        .collect::<Vec<PathBuf>>();
+    let mut search_dirs = configured_geodata_dirs(dirs);
 
     for dir in default_geodata_dirs() {
         if !search_dirs.iter().any(|existing| existing == &dir) {
@@ -3858,9 +3866,9 @@ mod tests {
     use prost::Message;
 
     use super::{
-        default_geodata_dirs, geodata_dirs_with_defaults, parse_xray_json_with_loader_and_limits,
-        GeodataLoader, MatcherBudget, MatcherBudgetLimits, Parser, SelectorBudget,
-        DEFAULT_MATCHER_BUDGET_LIMITS, MAX_CONFIG_GEODATA_ATTRIBUTE_SIZE,
+        configured_geodata_dirs, default_geodata_dirs, geodata_dirs_with_defaults,
+        parse_xray_json_with_loader_and_limits, GeodataLoader, MatcherBudget, MatcherBudgetLimits,
+        Parser, SelectorBudget, DEFAULT_MATCHER_BUDGET_LIMITS, MAX_CONFIG_GEODATA_ATTRIBUTE_SIZE,
         MAX_CONFIG_GEODATA_ATTR_FILTERS, MAX_DNS_OUTBOUND_RULES, MAX_DNS_QTYPE_SELECTORS,
         MAX_ROUTING_PORT_SELECTORS,
     };
@@ -3881,6 +3889,14 @@ mod tests {
         let dirs = geodata_dirs_with_defaults::<PathBuf>(&[]);
 
         assert_eq!(dirs, default_geodata_dirs());
+    }
+
+    #[test]
+    fn exclusive_geodata_dirs_omit_defaults() {
+        let custom_dir = PathBuf::from("exclusive-geodata");
+        let dirs = configured_geodata_dirs(std::slice::from_ref(&custom_dir));
+
+        assert_eq!(dirs, vec![custom_dir]);
     }
 
     #[test]

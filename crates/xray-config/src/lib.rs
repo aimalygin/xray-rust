@@ -16,8 +16,8 @@ pub use model::{
     VlessUser, DEFAULT_DNS_SERVER_TIMEOUT_MS, MAX_DNS_SERVER_TIMEOUT_MS,
 };
 pub use parser::{
-    parse_xray_json, parse_xray_json_with_geodata_dir, parse_xray_json_with_geodata_dirs,
-    ConfigParseError, ParsedConfig,
+    parse_xray_json, parse_xray_json_with_exclusive_geodata_dirs, parse_xray_json_with_geodata_dir,
+    parse_xray_json_with_geodata_dirs, ConfigParseError, ParsedConfig,
 };
 
 pub fn version() -> &'static str {

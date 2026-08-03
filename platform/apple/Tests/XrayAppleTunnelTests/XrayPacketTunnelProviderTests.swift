@@ -1,10 +1,32 @@
 import XCTest
 import XrayAppleShared
+import XrayMobileAdapter
 import NetworkExtension
 @testable import XrayAppleTunnel
 
 @available(macOS 13.0, *)
 final class XrayPacketTunnelProviderTests: XCTestCase {
+    func testProviderErrorNSErrorContractIsStable() {
+        let expectedDomain = "XrayAppleTunnel.XrayPacketTunnelProviderError"
+        let expectedCodes: [(XrayPacketTunnelProviderError, Int)] = [
+            (.missingConfigJSON, 0),
+            (.invalidStartupProbeConfiguration, 1),
+            (.invalidDNSConfiguration, 2),
+            (.invalidDNSRoutingTopology, 3),
+            (.outboundServerResolutionFailed, 4),
+            (.dnsBootstrapTimedOut, 5),
+            (.startSuperseded, 6),
+            (.invalidGeodataConfiguration, 7),
+        ]
+
+        for (error, expectedCode) in expectedCodes {
+            let bridged = error as NSError
+            XCTAssertEqual(bridged.domain, expectedDomain)
+            XCTAssertEqual(bridged.code, expectedCode)
+            XCTAssertEqual(bridged.localizedDescription, error.errorDescription)
+        }
+    }
+
     func testLifecycleStopInvalidatesDelayedNetworkSettingsCallback() {
         var stoppedResources: [Int] = []
         let lifecycle = XrayPacketTunnelLifecycle<Int> {
@@ -913,7 +935,10 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         XCTAssertThrowsError(
             try XrayPacketTunnelProvider.validateConfigBeforeApplyingNetworkSettings(
                 invalidConfigJSON,
-                geodataSearchDirectory: nil
+                geodataSelection: .init(
+                    directory: nil,
+                    policy: .fallbackToDefaults
+                )
             )
         )
     }
@@ -922,7 +947,10 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         XCTAssertThrowsError(
             try XrayPacketTunnelProvider.validateConfigBeforeApplyingNetworkSettings(
                 XrayClientProfile.directTunConfigJSON,
-                geodataSearchDirectory: nil
+                geodataSelection: .init(
+                    directory: nil,
+                    policy: .fallbackToDefaults
+                )
             )
         ) { error in
             guard case XrayPacketTunnelProviderError.invalidDNSConfiguration = error else {
@@ -936,7 +964,10 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
             try XrayPacketTunnelProvider.validateConfigBeforeApplyingNetworkSettings(
                 XrayClientProfile.directTunConfigJSON,
                 dnsConfiguration: .custom(["192.0.2.53"]),
-                geodataSearchDirectory: nil
+                geodataSelection: .init(
+                    directory: nil,
+                    policy: .fallbackToDefaults
+                )
             )
         )
     }
@@ -1005,7 +1036,10 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         XCTAssertNoThrow(
             try XrayPacketTunnelProvider.validateConfigBeforeApplyingNetworkSettings(
                 configJSON,
-                geodataSearchDirectory: nil
+                geodataSelection: .init(
+                    directory: nil,
+                    policy: .fallbackToDefaults
+                )
             )
         )
     }
@@ -1025,7 +1059,10 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         XCTAssertNoThrow(
             try XrayPacketTunnelProvider.validateConfigBeforeApplyingNetworkSettings(
                 configJSON,
-                geodataSearchDirectory: nil
+                geodataSelection: .init(
+                    directory: nil,
+                    policy: .fallbackToDefaults
+                )
             )
         )
     }
@@ -1039,7 +1076,10 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         XCTAssertNoThrow(
             try XrayPacketTunnelProvider.validateConfigBeforeApplyingNetworkSettings(
                 configJSON,
-                geodataSearchDirectory: nil
+                geodataSelection: .init(
+                    directory: nil,
+                    policy: .fallbackToDefaults
+                )
             )
         )
     }
@@ -1453,6 +1493,279 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         )
     }
 
+    func testGeodataSelectionUsesBundleFallbackWhenProviderSettingsAreMissing() throws {
+        let bundleResourceURL = URL(fileURLWithPath: "/test/extension-bundle", isDirectory: true)
+        var didResolveAppGroup = false
+
+        let resolved = try XrayPacketTunnelProvider.geodataSelection(
+            providerConfiguration: ["unrelated": true],
+            bundleResourceURL: bundleResourceURL,
+            appGroupContainerURL: { _ in
+                didResolveAppGroup = true
+                return nil
+            }
+        )
+
+        XCTAssertEqual(resolved.directory, bundleResourceURL)
+        XCTAssertEqual(resolved.policy, .fallbackToDefaults)
+        XCTAssertFalse(didResolveAppGroup)
+    }
+
+    func testGeodataSelectionResolvesExclusiveSafeAppGroupDirectory() throws {
+        let containerURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: containerURL) }
+        let expectedURL = containerURL
+            .appendingPathComponent("Library", isDirectory: true)
+            .appendingPathComponent("Application Support", isDirectory: true)
+            .appendingPathComponent("Geodata", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: expectedURL,
+            withIntermediateDirectories: true
+        )
+        var resolvedIdentifier: String?
+
+        let resolved = try XrayPacketTunnelProvider.geodataSelection(
+            providerConfiguration: [
+                XrayTunnelProviderMessage.providerGeodataAppGroupIdentifierKey:
+                    " group.org.example.XrayClient ",
+                XrayTunnelProviderMessage.providerGeodataRelativeDirectoryKey:
+                    " Library/Application Support/Geodata ",
+            ],
+            bundleResourceURL: nil,
+            appGroupContainerURL: { identifier in
+                resolvedIdentifier = identifier
+                return containerURL
+            }
+        )
+
+        XCTAssertEqual(resolvedIdentifier, "group.org.example.XrayClient")
+        XCTAssertEqual(resolved.directory, expectedURL.standardizedFileURL)
+        XCTAssertEqual(resolved.policy, .exclusive)
+    }
+
+    func testResolvedStartConfigurationUsesProviderAppGroupGeodataDirectory() throws {
+        let secureStore = TunnelTestSecureConfigStore()
+        let configJSON = #"{"inbounds":[]}"#
+        try secureStore.store(configJSON: configJSON, reference: "geodata-reference")
+        let containerURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: containerURL) }
+        let expectedURL = containerURL
+            .appendingPathComponent("Library", isDirectory: true)
+            .appendingPathComponent("Application Support", isDirectory: true)
+            .appendingPathComponent("XrayGeodata", isDirectory: true)
+            .appendingPathComponent("version-sha256", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: expectedURL,
+            withIntermediateDirectories: true
+        )
+        let tunnelProtocol = NETunnelProviderProtocol()
+        tunnelProtocol.providerConfiguration = [
+            XrayTunnelProviderMessage.providerConfigReferenceKey: "geodata-reference",
+            XrayTunnelProviderMessage.providerGeodataAppGroupIdentifierKey:
+                "group.org.example.XrayClient",
+            XrayTunnelProviderMessage.providerGeodataRelativeDirectoryKey:
+                "Library/Application Support/XrayGeodata/version-sha256",
+        ]
+
+        let resolved = try XCTUnwrap(
+            try XrayPacketTunnelProvider.resolvedStartConfiguration(
+                options: nil,
+                protocolConfiguration: tunnelProtocol,
+                secureConfigStore: secureStore,
+                bundleResourceURL: nil,
+                appGroupContainerURL: { identifier in
+                    XCTAssertEqual(identifier, "group.org.example.XrayClient")
+                    return containerURL
+                }
+            )
+        )
+
+        XCTAssertEqual(resolved.json, configJSON)
+        XCTAssertEqual(resolved.source, "providerConfigurationReference")
+        XCTAssertEqual(resolved.geodataSelection.directory, expectedURL.standardizedFileURL)
+        XCTAssertEqual(resolved.geodataSelection.policy, .exclusive)
+    }
+
+    func testGeodataSelectionRejectsPartialProviderConfiguration() throws {
+        let containerURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: containerURL) }
+        let partialConfigurations: [[String: Any]] = [
+            [
+                XrayTunnelProviderMessage.providerGeodataAppGroupIdentifierKey:
+                    "group.org.example.XrayClient",
+            ],
+            [
+                XrayTunnelProviderMessage.providerGeodataRelativeDirectoryKey: "Geodata",
+            ],
+        ]
+
+        for configuration in partialConfigurations {
+            var didResolveAppGroup = false
+            assertInvalidGeodataConfiguration(
+                try XrayPacketTunnelProvider.geodataSelection(
+                    providerConfiguration: configuration,
+                    appGroupContainerURL: { _ in
+                        didResolveAppGroup = true
+                        return containerURL
+                    }
+                )
+            )
+            XCTAssertFalse(didResolveAppGroup)
+        }
+    }
+
+    func testSafeRelativeGeodataPathComponentsRejectsUnsafePaths() {
+        let unsafePaths = [
+            "",
+            "/Geodata",
+            "../Geodata",
+            "Library/../Geodata",
+            "Library/./Geodata",
+            "Library//Geodata",
+            "Geodata/",
+            "Geodata\0Ignored",
+        ]
+
+        for path in unsafePaths {
+            XCTAssertNil(
+                XrayPacketTunnelProvider.safeRelativeGeodataPathComponents(path),
+                "path=\(path)"
+            )
+        }
+
+        XCTAssertEqual(
+            XrayPacketTunnelProvider.safeRelativeGeodataPathComponents(
+                "Library/Application Support/XrayGeodata/version-sha256"
+            ),
+            [
+                "Library",
+                "Application Support",
+                "XrayGeodata",
+                "version-sha256",
+            ]
+        )
+    }
+
+    func testGeodataSelectionRejectsMissingDirectory() throws {
+        let containerURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: containerURL) }
+
+        assertInvalidGeodataConfiguration(
+            try XrayPacketTunnelProvider.geodataSelection(
+                providerConfiguration: geodataProviderConfiguration(
+                    relativeDirectory: "Missing"
+                ),
+                appGroupContainerURL: { _ in containerURL }
+            )
+        )
+    }
+
+    func testGeodataSelectionRejectsSymbolicLinkComponent() throws {
+        let containerURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: containerURL) }
+        let realDirectoryURL = containerURL.appendingPathComponent("Real", isDirectory: true)
+        let linkURL = containerURL.appendingPathComponent("Linked", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: realDirectoryURL,
+            withIntermediateDirectories: false
+        )
+        try FileManager.default.createSymbolicLink(
+            at: linkURL,
+            withDestinationURL: realDirectoryURL
+        )
+
+        assertInvalidGeodataConfiguration(
+            try XrayPacketTunnelProvider.geodataSelection(
+                providerConfiguration: geodataProviderConfiguration(
+                    relativeDirectory: "Linked"
+                ),
+                appGroupContainerURL: { _ in containerURL }
+            )
+        )
+    }
+
+    func testConfigPreflightLoadsGeodataFromExplicitSearchDirectory() throws {
+        let geodataDirectoryURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: geodataDirectoryURL) }
+        try minimalGeositeData().write(
+            to: geodataDirectoryURL.appendingPathComponent("geosite.dat")
+        )
+        let configJSON = #"{"dns":{"servers":["1.1.1.1"]},"outbounds":[{"tag":"direct","protocol":"freedom"}],"routing":{"rules":[{"type":"field","domain":["geosite:test"],"outboundTag":"direct"}]}}"#
+
+        XCTAssertNoThrow(
+            try XrayPacketTunnelProvider.validateConfigBeforeApplyingNetworkSettings(
+                configJSON,
+                geodataSelection: .init(
+                    directory: geodataDirectoryURL,
+                    policy: .exclusive
+                )
+            )
+        )
+    }
+
+    func testRuntimeCoreLoadsGeodataFromResolvedSearchDirectory() throws {
+        let geodataDirectoryURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: geodataDirectoryURL) }
+        try minimalGeositeData().write(
+            to: geodataDirectoryURL.appendingPathComponent("geosite.dat")
+        )
+        let configJSON = #"{"inbounds":[{"tag":"tun-in","protocol":"tun","listen":"127.0.0.1","port":0,"settings":{}}],"dns":{"servers":["1.1.1.1"]},"outbounds":[{"tag":"direct","protocol":"freedom","settings":{}}],"routing":{"rules":[{"type":"field","domain":["geosite:test"],"outboundTag":"direct"}]}}"#
+        let resolved = resolvedConfig(
+            json: configJSON,
+            geodataSearchDirectory: geodataDirectoryURL,
+            geodataSearchPolicy: .exclusive
+        )
+        let core = try XrayPacketTunnelProvider.makeCore(
+            resolvedConfig: resolved,
+            borrowedDarwinTunFileDescriptor: nil,
+            diagnosticLogDirectory: nil
+        )
+
+        try core.start()
+        try core.stop()
+    }
+
+    func testConfigPreflightExclusiveGeodataDoesNotMixDefaultGeneration() throws {
+        try withMixedGenerationGeodataFixture { configJSON, selectedDirectoryURL in
+            XCTAssertNoThrow(
+                try XrayPacketTunnelProvider.validateConfigBeforeApplyingNetworkSettings(
+                    configJSON,
+                    geodataSelection: .init(
+                        directory: selectedDirectoryURL,
+                        policy: .fallbackToDefaults
+                    )
+                )
+            )
+            XCTAssertThrowsError(
+                try XrayPacketTunnelProvider.validateConfigBeforeApplyingNetworkSettings(
+                    configJSON,
+                    geodataSelection: .init(
+                        directory: selectedDirectoryURL,
+                        policy: .exclusive
+                    )
+                )
+            )
+        }
+    }
+
+    func testRuntimeCoreExclusiveGeodataDoesNotMixDefaultGeneration() throws {
+        try withMixedGenerationGeodataFixture { configJSON, selectedDirectoryURL in
+            let resolved = resolvedConfig(
+                json: configJSON,
+                geodataSearchDirectory: selectedDirectoryURL,
+                geodataSearchPolicy: .exclusive
+            )
+
+            XCTAssertThrowsError(
+                try XrayPacketTunnelProvider.makeCore(
+                    resolvedConfig: resolved,
+                    borrowedDarwinTunFileDescriptor: nil,
+                    diagnosticLogDirectory: nil
+                )
+            )
+        }
+    }
+
     func testConfigIsResolvedFromOpaqueSecureReference() throws {
         let secureStore = TunnelTestSecureConfigStore()
         try secureStore.store(configJSON: #"{"inbounds":[]}"#, reference: "opaque-reference")
@@ -1606,9 +1919,15 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
     }
 
     func testConfigPinningAddsExactBootstrapHostsAndKeepsVLESSDomain() throws {
+        let geodataSearchDirectory = URL(
+            fileURLWithPath: "/test/app-group/XrayGeodata/version-sha256",
+            isDirectory: true
+        )
         let resolved = resolvedConfig(
             json: #"{"dns":{"servers":["Resolver.Example.:5353","192.0.2.53"],"hosts":{"full:existing.example":"198.51.100.9"}},"outbounds":[{"protocol":"vless","settings":{"vnext":[{"address":"Proxy.Example.","port":443,"users":[]}]},"streamSettings":{"network":"tcp","security":"tls","tlsSettings":{}}}]}"#,
-            serverAddress: "proxy.example"
+            serverAddress: "proxy.example",
+            geodataSearchDirectory: geodataSearchDirectory,
+            geodataSearchPolicy: .exclusive
         )
         var resolvedDomains: [String] = []
 
@@ -1649,6 +1968,8 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         )
         XCTAssertEqual(hosts["full:existing.example"] as? [String], ["198.51.100.9"])
         XCTAssertEqual(prepared.serverAddress, "proxy.example")
+        XCTAssertEqual(prepared.geodataSelection.directory, geodataSearchDirectory)
+        XCTAssertEqual(prepared.geodataSelection.policy, .exclusive)
         XCTAssertEqual(
             prepared.excludedServerAddresses,
             [
@@ -2273,7 +2594,10 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         XCTAssertThrowsError(
             try XrayPacketTunnelProvider.validateConfigBeforeApplyingNetworkSettings(
                 configJSON,
-                geodataSearchDirectory: nil
+                geodataSelection: .init(
+                    directory: nil,
+                    policy: .fallbackToDefaults
+                )
             ),
             file: file,
             line: line
@@ -2286,7 +2610,9 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
 
     private func resolvedConfig(
         json: String,
-        serverAddress: String? = nil
+        serverAddress: String? = nil,
+        geodataSearchDirectory: URL? = Bundle.main.resourceURL,
+        geodataSearchPolicy: XrayGeodataSearchPolicy = .fallbackToDefaults
     ) -> XrayPacketTunnelProvider.ResolvedConfig {
         XrayPacketTunnelProvider.ResolvedConfig(
             json: json,
@@ -2296,7 +2622,11 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
             useTunFileDescriptor: true,
             tunRuntimeProfile: .default,
             startupProbeConfiguration: .disabled,
-            dnsConfiguration: .system
+            dnsConfiguration: .system,
+            geodataSelection: .init(
+                directory: geodataSearchDirectory,
+                policy: geodataSearchPolicy
+            )
         )
     }
 
@@ -2315,6 +2645,83 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         ]
         let data = try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
         return resolvedConfig(json: String(decoding: data, as: UTF8.self))
+    }
+
+    private func makeTemporaryDirectory() throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "XrayPacketTunnelProviderTests-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: url,
+            withIntermediateDirectories: false
+        )
+        return url
+    }
+
+    private func geodataProviderConfiguration(
+        relativeDirectory: String
+    ) -> [String: Any] {
+        [
+            XrayTunnelProviderMessage.providerGeodataAppGroupIdentifierKey:
+                "group.org.example.XrayClient",
+            XrayTunnelProviderMessage.providerGeodataRelativeDirectoryKey: relativeDirectory,
+        ]
+    }
+
+    private func assertInvalidGeodataConfiguration(
+        _ expression: @autoclosure () throws -> XrayPacketTunnelProvider.GeodataSelection,
+        message: String = "",
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertThrowsError(try expression(), message, file: file, line: line) { error in
+            guard case XrayPacketTunnelProviderError.invalidGeodataConfiguration = error else {
+                return XCTFail("unexpected error: \(error)", file: file, line: line)
+            }
+        }
+    }
+
+    private func withMixedGenerationGeodataFixture<T>(
+        _ body: (String, URL) throws -> T
+    ) throws -> T {
+        let selectedDirectoryURL = try makeTemporaryDirectory()
+        let fallbackFileName = "xray-mixed-geoip-\(UUID().uuidString).dat"
+        let fallbackFileURL = URL(
+            fileURLWithPath: FileManager.default.currentDirectoryPath,
+            isDirectory: true
+        ).appendingPathComponent(fallbackFileName)
+        try minimalGeositeData().write(
+            to: selectedDirectoryURL.appendingPathComponent("geosite.dat")
+        )
+        try minimalGeoipData().write(to: fallbackFileURL)
+        defer {
+            try? FileManager.default.removeItem(at: selectedDirectoryURL)
+            try? FileManager.default.removeItem(at: fallbackFileURL)
+        }
+        let configJSON = #"{"dns":{"servers":["1.1.1.1"]},"outbounds":[{"tag":"direct","protocol":"freedom"}],"routing":{"rules":[{"type":"field","domain":["geosite:test"],"ip":["ext-ip:\#(fallbackFileName):test"],"outboundTag":"direct"}]}}"#
+
+        return try body(configJSON, selectedDirectoryURL)
+    }
+
+    private func minimalGeositeData() -> Data {
+        let code = Array("TEST".utf8)
+        let domain = Array("example.test".utf8)
+        let domainMessage = [UInt8(0x08), 0x02, 0x12, UInt8(domain.count)] + domain
+        let siteMessage = [UInt8(0x0A), UInt8(code.count)] + code
+            + [0x12, UInt8(domainMessage.count)] + domainMessage
+        return Data([0x0A, UInt8(siteMessage.count)] + siteMessage)
+    }
+
+    private func minimalGeoipData() -> Data {
+        let code = Array("TEST".utf8)
+        let cidrMessage: [UInt8] = [
+            0x0A, 0x04, 203, 0, 113, 0,
+            0x10, 24,
+        ]
+        let geoipMessage = [UInt8(0x0A), UInt8(code.count)] + code
+            + [0x12, UInt8(cidrMessage.count)] + cidrMessage
+        return Data([0x0A, UInt8(geoipMessage.count)] + geoipMessage)
     }
 
 }

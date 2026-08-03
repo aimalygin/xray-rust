@@ -30,6 +30,7 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
         "XrayError",
         "xray_core_new",
         "xray_core_set_geodata_search_dir",
+        "xray_core_set_geodata_search_dir_exclusive",
         "xray_core_load_config_json",
         "xray_core_config_warnings",
         "xray_core_start",
@@ -140,6 +141,7 @@ fn apple_adapter_declares_packet_tunnel_pump() {
     assert!(core.contains("expectedFFIMajorVersion: UInt32 = 1"));
     assert!(core.contains("xray_core_set_socket_protect_callback"));
     assert!(core.contains("xray_core_set_geodata_search_dir"));
+    assert!(core.contains("xray_core_set_geodata_search_dir_exclusive"));
     assert!(core.contains("XrayStartupProbeOptions"));
     assert!(core.contains("startupProbe"));
     assert!(core.contains("xray_core_set_startup_probe"));
@@ -858,6 +860,7 @@ const EXPORTED_SYMBOLS: &[&str] = &[
     "xray_ffi_version_major",
     "xray_core_new",
     "xray_core_set_geodata_search_dir",
+    "xray_core_set_geodata_search_dir_exclusive",
     "xray_core_load_config_json",
     "xray_core_config_warnings",
     "xray_core_start",
@@ -933,6 +936,7 @@ static void use_xray_ffi_api(void) {
 
   (void)xray_ffi_version_major();
   (void)xray_core_set_geodata_search_dir(handle, ".", &error);
+  (void)xray_core_set_geodata_search_dir_exclusive(handle, ".", &error);
   (void)xray_core_set_socket_protect_callback(handle, NULL, NULL, &error);
   (void)xray_core_set_file_logging(handle, ".", 0, &error);
   (void)xray_core_set_startup_probe(

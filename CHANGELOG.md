@@ -7,6 +7,20 @@ prerelease-quality and do not establish a supported release series.
 
 ## Unreleased
 
+## 0.1.1 - 2026-08-03
+
+- Added Packet Tunnel support for loading verified geodata generations from a
+  shared App Group directory. Explicit App Group generations are searched
+  exclusively so missing assets fail closed instead of mixing with bundle or
+  process-default geodata; configurations without App Group settings preserve
+  the existing bundle-resource fallback.
+- Stabilized the Packet Tunnel provider's cross-process `NSError` domain and
+  codes, and expanded tests for App Group path validation, start configuration,
+  DNS pinning, and runtime geodata loading. Swift clients with an exhaustive
+  switch over `XrayPacketTunnelProviderError` must handle the new
+  `invalidGeodataConfiguration` case.
+- Documented an atomic, immutable-generation workflow for host-managed geodata.
+
 ## 0.1.0 - 2026-08-02
 
 - Added a sample-only `Default DNS` preset (`FakeDNS` with routed
