@@ -327,7 +327,49 @@ fn open_log_file(path: &Path) -> io::Result<BufWriter<File>> {
     }
 }
 
-#[cfg(unix)]
+/// The sandbox on iOS (and hardened macOS contexts) grants search/traversal
+/// through the ancestors of the app container but refuses to open them for
+/// reading, so the component-by-component `openat` walk used on other unix
+/// platforms fails with EPERM inside a Network Extension. Resolving the whole
+/// path in one call is allowed; `O_NOFOLLOW_ANY` rejects symlinks in every
+/// path component, which is the property the walk existed to enforce.
+#[cfg(target_vendor = "apple")]
+fn open_log_file_unix(path: &Path) -> io::Result<File> {
+    use std::ffi::CString;
+    use std::os::fd::FromRawFd;
+    use std::os::unix::ffi::OsStringExt;
+    use std::os::unix::fs::DirBuilderExt;
+
+    let path = normalize_apple_system_directory_alias(path);
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(parent)?;
+    }
+    let path = CString::new(path.into_os_string().into_vec()).map_err(|_| {
+        io::Error::new(io::ErrorKind::InvalidInput, "runtime log path contains NUL")
+    })?;
+    let flags = libc::O_WRONLY
+        | libc::O_APPEND
+        | libc::O_CREAT
+        | libc::O_CLOEXEC
+        | libc::O_NOFOLLOW_ANY
+        | libc::O_NONBLOCK;
+    // SAFETY: `path` is NUL-terminated and a creation mode is supplied
+    // because O_CREAT is set. The returned fd is uniquely owned.
+    let fd = unsafe { libc::open(path.as_ptr(), flags, 0o600) };
+    if fd < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: `open` returned a fresh owned fd and this is its sole owner.
+    validate_log_file(unsafe { File::from_raw_fd(fd) })
+}
+
+#[cfg(all(unix, not(target_vendor = "apple")))]
 fn open_log_file_unix(path: &Path) -> io::Result<File> {
     use std::ffi::CString;
     use std::os::fd::{AsRawFd, FromRawFd};
@@ -349,11 +391,6 @@ fn open_log_file_unix(path: &Path) -> io::Result<File> {
         // SAFETY: `open` returned a fresh owned fd and this is its sole owner.
         Ok(unsafe { File::from_raw_fd(fd) })
     }
-
-    #[cfg(target_vendor = "apple")]
-    let normalized_path = normalize_apple_system_directory_alias(path);
-    #[cfg(target_vendor = "apple")]
-    let path = normalized_path.as_path();
 
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     let file_name = path.file_name().ok_or_else(|| {
@@ -428,7 +465,13 @@ fn open_log_file_unix(path: &Path) -> io::Result<File> {
         return Err(io::Error::last_os_error());
     }
     // SAFETY: `openat` returned a fresh owned fd and this is its sole owner.
-    let file = unsafe { File::from_raw_fd(fd) };
+    validate_log_file(unsafe { File::from_raw_fd(fd) })
+}
+
+#[cfg(unix)]
+fn validate_log_file(file: File) -> io::Result<File> {
+    use std::os::fd::AsRawFd;
+
     if !file.metadata()?.file_type().is_file() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -635,6 +678,34 @@ mod tests {
 
         assert_ne!(error.kind(), std::io::ErrorKind::NotFound);
         assert!(started.elapsed().as_secs() < 1);
+    }
+
+    #[cfg(target_vendor = "apple")]
+    #[test]
+    fn logger_opens_logs_behind_search_only_ancestor() {
+        use std::os::unix::fs::PermissionsExt;
+
+        // SAFETY: `geteuid` has no preconditions.
+        if unsafe { libc::geteuid() } == 0 {
+            return; // root bypasses permission checks, so the scenario cannot be built
+        }
+
+        // The iOS Network Extension sandbox lets the process traverse (search)
+        // ancestors of the app-group container but not read them. Model that
+        // with an ancestor directory whose read bit is dropped.
+        let root = unique_temp_dir("xray-runtime-log-search-only");
+        let locked = root.join("locked");
+        let logs = locked.join("logs");
+        std::fs::create_dir_all(&logs).unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o311)).unwrap();
+
+        let result = RuntimeLogger::new(RuntimeLogConfig::directory(&logs));
+
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let logger = result.expect("search-only ancestor must not break file logging");
+        drop(logger);
+        assert!(logs.join("xray-access.log").exists());
+        assert!(logs.join("xray-error.log").exists());
     }
 
     fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {
