@@ -7,6 +7,16 @@ prerelease-quality and do not establish a supported release series.
 
 ## Unreleased
 
+## 0.2.0 - 2026-08-05
+
+- Fixed file logging initialization inside the iOS Network Extension sandbox.
+  `xray_core_new` failed with "Operation not permitted" because runtime log
+  files were opened by walking every ancestor directory with read access,
+  which the sandbox denies outside the app-group container. Apple platforms
+  now resolve the log path with a single `O_NOFOLLOW_ANY` open, which keeps
+  rejecting symlinks in any path component; other unix targets keep the
+  hardened directory walk.
+
 ## 0.1.1 - 2026-08-03
 
 - Added Packet Tunnel support for loading verified geodata generations from a
