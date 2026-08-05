@@ -23,7 +23,7 @@ repository = "https://github.com/aimalygin/xray-rust"
 publish = false
 
 [workspace.dependencies]
-aes = { version = "0.8", features = ["zeroize"] }
+aes = { version = "0.9", features = ["zeroize"] }
 aes-gcm = { version = "0.10", features = ["zeroize"] }
 async-trait = "0.1"
 bytes = "1"
