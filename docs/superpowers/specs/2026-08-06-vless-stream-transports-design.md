@@ -39,13 +39,13 @@ timing, and that gap is stated plainly rather than claimed as parity.
   protocol correctly but sends bare RFC headers is trivially separable from the
   xray population it is trying to blend into. This project already holds that
   bar for the REALITY ClientHello; HTTP headers get the same treatment.
-- **The TLS hello matters more than the headers.** These transports are the
-  CDN-fronted deployments, where a middlebox reads the ClientHello long before
-  it sees an HTTP request — and often never sees the request at all. Xray-core
-  shapes that hello with uTLS on every TLS connection; xray-rust currently
-  rejects `fingerprint` and sends rustls' own. Closing that is a prerequisite
-  for these transports, not a follow-up, and it is a lift of machinery we
-  already wrote for REALITY rather than new work.
+- **The TLS hello matters more than the headers.** Xray-core shapes the
+  ClientHello with uTLS on every TLS connection. xray-rust shapes it only under
+  REALITY, and ws and httpupgrade cannot use REALITY at all — so those two would
+  ship entirely unshaped, on the CDN-fronted deployments where the hello is what
+  gets read. Closing this is a prerequisite for these transports, not a
+  follow-up, and it lifts machinery already written for REALITY rather than
+  building new.
 
 ## Architecture
 
@@ -177,14 +177,27 @@ and `GetFingerprint("")` returns `&utls.HelloChrome_Auto`
 bogus fingerprint. In practice **every Xray-core TLS connection carries a shaped,
 Chrome-by-default ClientHello.**
 
-xray-rust does the opposite today: `tlsSettings.fingerprint` is rejected outright
-(`crates/xray-config/src/parser.rs:2752`, "tls fingerprint is unsupported") and
-`TlsConnector` hands rustls' own ClientHello to the wire. That is already a
-divergence on `raw` + `tls`, independent of this work. It becomes far more
-costly with the web transports, because ws/httpupgrade/XHTTP are exactly the
-CDN-fronted deployments where the TLS ClientHello, not the HTTP headers, is the
-primary discriminator. Shipping them on a stock rustls hello would mean pairing
-byte-exact HTTP headers with a ClientHello that no Chrome ever sent.
+xray-rust supports fingerprints on exactly one of its two TLS paths. Under
+`security: "reality"` the support is complete: `realitySettings.fingerprint`
+accepts all 122 Xray names, defaults to `chrome` on an empty value
+(`xray-utls/src/lib.rs:134`), additionally rejects profiles with no
+X25519-compatible key share, and reaches the wire through the shaped-rustls
+fork. Under `security: "tls"` it is refused twice — the parser errors with
+"tls fingerprint is unsupported" (`crates/xray-config/src/parser.rs:2752`), and
+`build_connector` returns `UnsupportedOutboundSecurity` for any non-empty
+fingerprint (`crates/xray-core-rs/src/outbound.rs:1498`). `TlsClientConfig` has
+no fingerprint field at all; plain TLS gets rustls' own ClientHello.
+
+That is already a divergence on `raw` + `tls`, independent of this work. What
+makes it blocking here is the compatibility matrix above: **ws and httpupgrade
+cannot use REALITY** — Xray-core rejects that combination outright. For those
+two transports plain TLS is the *only* available security, so they would ship
+with no shaping whatsoever, on precisely the CDN-fronted deployments where a
+middlebox reads the ClientHello long before it sees an HTTP request, and often
+never sees the request at all. Byte-exact browser headers behind a ClientHello
+no Chrome ever sent is not parity; it is a more precise way to stand out.
+gRPC and XHTTP are shaped today whenever REALITY is configured, and unshaped
+whenever it is not.
 
 The machinery already exists and is generic — it is only bound to REALITY by
 module visibility. Our rustls fork exposes `ClientConfig.client_hello_customizer`
@@ -209,8 +222,14 @@ So the work is a lift, not a build:
   behind an `Arc`, so a small map replaces the two fixed instances
   (`crates/xray-transport/src/tls.rs:23`).
 - The parser stops rejecting `tlsSettings.fingerprint`, validates it against the
-  supported table, and defaults it to `chrome` when absent, matching
-  `GetFingerprint("")`.
+  same table `realitySettings.fingerprint` already uses, and defaults it to
+  `chrome` when absent, matching `GetFingerprint("")`. The extra
+  X25519-key-share requirement stays REALITY-only — plain TLS has no such
+  constraint, so `normalize_reality_supported_fingerprint` is not applied here.
+- `build_connector` (`crates/xray-core-rs/src/outbound.rs:1498`) stops returning
+  `UnsupportedOutboundSecurity` for a non-empty TLS fingerprint and passes it
+  through to `TlsClientConfig` instead. The same change applies at the second
+  site (`outbound.rs:1552`, the DNS outbound's connector).
 
 ### ALPN comes from the fingerprint, not from the config
 
