@@ -974,6 +974,30 @@ holding two fixed instances."
 
 ---
 
+### Task 5A: Pin the extension order for TLS-1.2-era profiles
+
+**This task was added mid-execution, after Task 4's review found a pre-existing defect. It must land before Task 6, because Task 6 is what first lets a user select the affected fingerprints.**
+
+`apply_utls_profile` pins the ClientHello extension order only when the profile declares `supported_versions` (`crates/xray-transport/src/utls_shaping.rs:110-112`, and the parallel gate at `:83-85`). **8 of the 34 distinct profiles — 14 of the 61 fingerprint names — declare none**, and they are all REALITY-incapable, which is why nothing has caught this: `rustls_reality_provider_matches_utls_xray_fingerprints_in_order` iterates only `XRAY_REALITY_CAPABLE_FINGERPRINTS`, *and* it is `#[ignore]`d because it needs the Go oracle, so it does not run in `cargo test` at all.
+
+Two defects follow for those profiles, both measured during Task 4's review:
+
+1. **The extension order is randomized per connection.** Dumping `android`'s hello twice gives two different orders. Real clients have a stable order; per-connection shuffling is itself a distinguishing signal, and arguably a worse one than a wrong-but-stable order.
+2. **The extension set is wrong.** They emit `supported_versions` (0x002b), which they never declare. `android` declares `[0000, 0017, ff01, 000a, 000b, 0005, 000d]` and emits `[ff01, 000b, 000d, 0005, 0017, 000a, 0000, 002b]`. `hellochrome_58` is a 2017 TLS-1.2-era fingerprint whose real ClientHello carries no such extension at all.
+
+**Acceptance criteria:**
+
+- For every profile with empty `supported_versions`, the emitted extension order is stable across connections and matches what uTLS emits for that fingerprint.
+- Those profiles no longer emit a `supported_versions` extension they do not declare.
+- Profiles that *do* declare `supported_versions` are byte-identical to today — verify by dumping the emitted order for all 47 affected fingerprint names before and after, as Task 4's review did, and diffing.
+- Coverage runs in CI. Reuse Task 9's pattern — a checked-in shape fixture consumed with `include_str!` — rather than adding to the `#[ignore]`d live-oracle test. Fixture at least `android` and `hellochrome_58`.
+
+**Likely design question, which is why this task is scoped rather than specified:** suppressing `supported_versions` may require configuring rustls to TLS 1.2 only for these profiles, since rustls emits that extension whenever TLS 1.3 is offered. That would mean the shaped config's protocol versions become profile-dependent, which reaches into `shaped_client_config` and therefore into Task 5's memoization key. **If the fix needs that, stop and escalate rather than deciding alone** — it changes the shape of `TlsConnector`'s cache and I want to weigh it.
+
+**Standing hazard this exposed, worth remembering beyond this task:** "the oracle test passes" has been treated as evidence about shaping fidelity throughout this plan. It is not, while that test is `#[ignore]`d and scoped to REALITY-capable names. Any claim of fingerprint parity needs a test that actually runs.
+
+---
+
 ### Task 6: Accept `fingerprint` and `alpn` in config parsing
 
 **Files:**
