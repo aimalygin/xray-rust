@@ -281,6 +281,8 @@ mod transport_tests {
         let config = TlsClientConfig {
             server_name: "server.test".to_owned(),
             allow_insecure: false,
+            alpn: Vec::new(),
+            fingerprint: None,
         };
 
         let stream = connector
@@ -311,6 +313,8 @@ mod transport_tests {
         let config = TlsClientConfig {
             server_name: "server.test".to_owned(),
             allow_insecure: false,
+            alpn: Vec::new(),
+            fingerprint: None,
         };
 
         let stream = connector
@@ -333,6 +337,8 @@ mod transport_tests {
         let config = TlsClientConfig {
             server_name: "server.test".to_owned(),
             allow_insecure: false,
+            alpn: Vec::new(),
+            fingerprint: None,
         };
 
         let stream = connector
@@ -358,6 +364,8 @@ mod transport_tests {
         let config = TlsClientConfig {
             server_name: "server.test".to_owned(),
             allow_insecure: false,
+            alpn: Vec::new(),
+            fingerprint: None,
         };
 
         let result = connector.connect(&target, &config).await;
@@ -377,6 +385,8 @@ mod transport_tests {
         let config = TlsClientConfig {
             server_name: "bad name".to_owned(),
             allow_insecure: false,
+            alpn: Vec::new(),
+            fingerprint: None,
         };
 
         let result = connector.connect(&target, &config).await;
@@ -397,6 +407,8 @@ mod transport_tests {
         let config = ConnectorConfig::Tls(TlsClientConfig {
             server_name: "server.test".to_owned(),
             allow_insecure: false,
+            alpn: Vec::new(),
+            fingerprint: None,
         });
 
         let stream = dialer
@@ -501,6 +513,8 @@ mod transport_tests {
         let config = ConnectorConfig::Tls(TlsClientConfig {
             server_name: "server.test".to_owned(),
             allow_insecure: false,
+            alpn: Vec::new(),
+            fingerprint: None,
         });
         let race_config = happy_eyeballs_config(Duration::from_secs(60));
 
@@ -546,6 +560,8 @@ mod transport_tests {
         let config = TlsClientConfig {
             server_name: "server.test".to_owned(),
             allow_insecure: false,
+            alpn: Vec::new(),
+            fingerprint: None,
         };
         let race_config = happy_eyeballs_config(Duration::from_secs(60));
 
@@ -569,6 +585,8 @@ mod transport_tests {
         let config = TlsClientConfig {
             server_name: "bad name".to_owned(),
             allow_insecure: false,
+            alpn: Vec::new(),
+            fingerprint: None,
         };
         let scoped = SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 9, 17, 42));
         let result = connector.connect_socket_addr(scoped, &config).await;
@@ -753,6 +771,8 @@ mod transport_tests {
         let connector = TcpConnector::new(ConnectorConfig::Tls(TlsClientConfig {
             server_name: "example.com".to_owned(),
             allow_insecure: false,
+            alpn: Vec::new(),
+            fingerprint: None,
         }));
         let target = Target::new(
             TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),

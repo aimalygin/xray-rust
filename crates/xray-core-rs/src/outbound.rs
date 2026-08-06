@@ -410,6 +410,8 @@ impl DnsOutbound {
                 Ok(ConnectorConfig::Tls(TlsClientConfig {
                     server_name,
                     allow_insecure: *allow_insecure,
+                    alpn: Vec::new(),
+                    fingerprint: None,
                 }))
             }
         }
@@ -1511,6 +1513,8 @@ fn build_vless_tcp_outbound(outbound: &OutboundConfig) -> Result<VlessTcpOutboun
             ConnectorConfig::Tls(TlsClientConfig {
                 server_name,
                 allow_insecure: tls.allow_insecure,
+                alpn: Vec::new(),
+                fingerprint: None,
             })
         }
         StreamSecurity::Reality(reality) => ConnectorConfig::Reality(RealityClientConfig {
@@ -1557,6 +1561,8 @@ fn dns_tcp_connector(stream: &StreamSettings) -> Result<DnsTcpConnector, CoreErr
                     ConnectorConfig::Tls(TlsClientConfig {
                         server_name: server_name.to_owned(),
                         allow_insecure: tls.allow_insecure,
+                        alpn: Vec::new(),
+                        fingerprint: None,
                     }),
                 )),
                 Some(_) | None => Ok(DnsTcpConnector::TlsFromTarget {
@@ -2240,6 +2246,8 @@ mod tests {
             ConnectorConfig::Tls(TlsClientConfig {
                 server_name: "resolver.example".to_owned(),
                 allow_insecure: true,
+                alpn: Vec::new(),
+                fingerprint: None,
             })
         );
         assert!(!explicit.supports_direct_udp());
@@ -2266,6 +2274,8 @@ mod tests {
                 ConnectorConfig::Tls(TlsClientConfig {
                     server_name: "rewritten.example".to_owned(),
                     allow_insecure: false,
+                    alpn: Vec::new(),
+                    fingerprint: None,
                 })
             );
         }

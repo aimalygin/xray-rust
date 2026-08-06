@@ -26,6 +26,7 @@ mod reality_rustls;
 mod tls;
 mod utls_profiles;
 mod utls_shaping;
+mod utls_tls;
 
 pub use dialer::TransportDialer;
 pub use dns::{
@@ -44,6 +45,7 @@ pub use reality_runtime::{
 };
 pub use reality_rustls::RustlsRealityTlsSessionProvider;
 pub use tls::TlsConnector;
+pub use utls_tls::plain_tls_client_hello_bytes;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConnectorConfig {
@@ -56,6 +58,14 @@ pub enum ConnectorConfig {
 pub struct TlsClientConfig {
     pub server_name: String,
     pub allow_insecure: bool,
+    /// `tlsSettings.alpn`. Reaches the ClientHello only when it is exactly
+    /// `["http/1.1"]`; otherwise the fingerprint profile's own ALPN wins.
+    /// It still selects the HTTP version for transports that ask.
+    pub alpn: Vec<String>,
+    /// Normalized `tlsSettings.fingerprint`. `None` and `Some("unsafe")` both
+    /// mean no shaping; `None` is the value used by call sites that predate
+    /// fingerprint support.
+    pub fingerprint: Option<String>,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -121,6 +131,8 @@ pub enum TransportError {
     UnsupportedConnectorConfig(&'static str),
     #[error("unsupported REALITY fingerprint {0}")]
     UnsupportedRealityFingerprint(String),
+    #[error("unsupported TLS fingerprint {0}")]
+    UnsupportedTlsFingerprint(String),
     #[error("reality handshake failed: {0}")]
     Reality(#[from] reality::RealityError),
     #[error("REALITY live TLS completion is not implemented")]

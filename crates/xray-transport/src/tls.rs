@@ -36,14 +36,9 @@ impl std::fmt::Debug for TlsConnector {
 
 impl TlsConnector {
     pub fn system() -> Result<Self, TransportError> {
-        let root_store = rustls::RootCertStore {
-            roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
-        };
-        let client_config = rustls_client_config(root_store)?;
-
         Ok(Self {
-            client_config: Arc::new(client_config),
-            insecure_client_config: Arc::new(insecure_rustls_client_config()?),
+            client_config: Arc::new(base_client_config(false)?),
+            insecure_client_config: Arc::new(base_client_config(true)?),
             socket_protector: None,
         })
     }
@@ -216,10 +211,62 @@ impl ServerCertVerifier for NoCertificateVerification {
     }
 }
 
+/// Builds the client config for a handshake that sends rustls' own
+/// ClientHello, on the *ring* provider plain TLS has always used.
+pub(crate) fn base_client_config(
+    allow_insecure: bool,
+) -> Result<rustls::ClientConfig, TransportError> {
+    client_config_with_provider(
+        Arc::new(rustls::crypto::ring::default_provider()),
+        allow_insecure,
+    )
+}
+
+/// Builds the client config for a uTLS-shaped handshake.
+///
+/// Current fingerprint profiles plan post-quantum key shares — X25519MLKEM768
+/// and X25519Kyber768Draft00 — that *ring* does not implement, and rustls
+/// refuses a planned key share whose group its provider lacks. So shaped
+/// handshakes run on the same aws-lc-rs provider REALITY already uses.
+pub(crate) fn shaped_client_config(
+    allow_insecure: bool,
+) -> Result<rustls::ClientConfig, TransportError> {
+    client_config_with_provider(Arc::new(shaping_crypto_provider()), allow_insecure)
+}
+
+fn client_config_with_provider(
+    provider: Arc<crypto::CryptoProvider>,
+    allow_insecure: bool,
+) -> Result<rustls::ClientConfig, TransportError> {
+    if allow_insecure {
+        return insecure_rustls_client_config(provider);
+    }
+
+    let root_store = rustls::RootCertStore {
+        roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
+    };
+    rustls_client_config(provider, root_store)
+}
+
+/// Mirrors `reality_rustls::reality_crypto_provider`: every key exchange group
+/// a fingerprint profile can name, with the post-quantum ones first.
+fn shaping_crypto_provider() -> crypto::CryptoProvider {
+    let mut provider = crypto::aws_lc_rs::default_provider();
+    provider.kx_groups = vec![
+        crypto::aws_lc_rs::kx_group::X25519KYBER768DRAFT00,
+        crypto::aws_lc_rs::kx_group::X25519MLKEM768,
+        crypto::aws_lc_rs::kx_group::X25519,
+        crypto::aws_lc_rs::kx_group::SECP256R1,
+        crypto::aws_lc_rs::kx_group::SECP384R1,
+    ];
+    provider
+}
+
 fn rustls_client_config(
+    provider: Arc<crypto::CryptoProvider>,
     root_store: rustls::RootCertStore,
 ) -> Result<rustls::ClientConfig, TransportError> {
-    rustls::ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+    rustls::ClientConfig::builder_with_provider(provider)
         .with_safe_default_protocol_versions()
         .map_err(|error| TransportError::TlsConfig(error.to_string()))
         .map(|builder| {
@@ -229,8 +276,10 @@ fn rustls_client_config(
         })
 }
 
-fn insecure_rustls_client_config() -> Result<rustls::ClientConfig, TransportError> {
-    rustls::ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+fn insecure_rustls_client_config(
+    provider: Arc<crypto::CryptoProvider>,
+) -> Result<rustls::ClientConfig, TransportError> {
+    rustls::ClientConfig::builder_with_provider(provider)
         .with_safe_default_protocol_versions()
         .map_err(|error| TransportError::TlsConfig(error.to_string()))
         .map(|builder| {

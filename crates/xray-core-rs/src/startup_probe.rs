@@ -167,6 +167,8 @@ async fn run_startup_probe_inner(
                 &TlsClientConfig {
                     server_name: parsed.host.clone(),
                     allow_insecure: false,
+                    alpn: Vec::new(),
+                    fingerprint: None,
                 },
             ),
         )
