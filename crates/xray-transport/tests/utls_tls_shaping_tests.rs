@@ -169,6 +169,53 @@ mod utls_tls_shaping_tests {
         );
     }
 
+    /// Xray's `unsafe` sentinel falls through to stock `tls.Client`, and stock
+    /// Go TLS sends `tlsConfig.NextProtos` -- so an unshaped hello still has to
+    /// carry the configured ALPN. The list reaches the wire verbatim here:
+    /// the `["http/1.1"]` override rule belongs to the shaped path.
+    #[test]
+    fn an_unshaped_hello_advertises_the_configured_alpn() {
+        for fingerprint in [Some("unsafe".to_owned()), None] {
+            let hello = plain_tls_client_hello_bytes(&TlsClientConfig {
+                server_name: "example.com".to_owned(),
+                allow_insecure: false,
+                alpn: vec!["h2".to_owned(), "http/1.1".to_owned()],
+                fingerprint: fingerprint.clone(),
+            })
+            .expect("unshaped ClientHello must be produced");
+
+            assert_eq!(
+                alpn_protocols(&hello),
+                alpn(&["h2", "http/1.1"]),
+                "{fingerprint:?}: an unshaped hello must advertise the configured ALPN"
+            );
+        }
+    }
+
+    /// The other side of that boundary: the ALPN carry-through is gated on the
+    /// configured list being non-empty, never on the fingerprint value, so the
+    /// `fingerprint: None` + empty-list shape every legacy call site passes
+    /// keeps emitting the hello it always did -- one with no ALPN extension at
+    /// all, which is distinct from an empty one.
+    #[test]
+    fn an_empty_alpn_list_leaves_the_unshaped_hello_without_the_extension() {
+        for fingerprint in [Some("unsafe".to_owned()), None] {
+            let hello = plain_tls_client_hello_bytes(&TlsClientConfig {
+                server_name: "example.com".to_owned(),
+                allow_insecure: false,
+                alpn: Vec::new(),
+                fingerprint: fingerprint.clone(),
+            })
+            .expect("unshaped ClientHello must be produced");
+
+            assert_eq!(
+                alpn_protocols(&hello),
+                None,
+                "{fingerprint:?}: an empty list must not add an ALPN extension"
+            );
+        }
+    }
+
     /// Pins the layout contract the helpers above walk on: exactly one
     /// handshake record, header included, with lengths covering the whole
     /// flight. A shaped hello that ever spanned two records -- or a change

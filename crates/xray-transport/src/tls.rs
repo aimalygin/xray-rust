@@ -297,7 +297,24 @@ fn build_client_config(config: &TlsClientConfig) -> Result<rustls::ClientConfig,
             ));
             client_config
         }
-        None => unshaped_client_config(config.allow_insecure)?,
+        None => {
+            let mut client_config = unshaped_client_config(config.allow_insecure)?;
+            // Xray's `unsafe` sentinel falls through to stock `tls.Client`,
+            // which sends `tlsConfig.NextProtos`, so an unshaped hello has to
+            // advertise the configured list too. Gated on the list rather than
+            // on the fingerprint: `fingerprint: None` is what call sites that
+            // predate fingerprint support pass, and with no ALPN configured
+            // they must keep getting the hello they always got -- one with no
+            // ALPN extension, which an empty list is not the same as.
+            if !config.alpn.is_empty() {
+                client_config.alpn_protocols = config
+                    .alpn
+                    .iter()
+                    .map(|protocol| protocol.as_bytes().to_vec())
+                    .collect();
+            }
+            client_config
+        }
     };
 
     Ok(client_config)

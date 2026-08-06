@@ -887,6 +887,46 @@ mod transport_tests {
         );
     }
 
+    /// `alpn` earns its place in the key only because it now reaches the
+    /// unshaped config too. Were it still ignored there, two outbounds to one
+    /// server differing only in ALPN would get byte-identical configs on
+    /// separate resumption session stores -- a split with no upside. So assert
+    /// the key both ways *and* that the distinction it draws is real.
+    #[test]
+    fn tls_connector_keys_unshaped_configs_on_alpn() {
+        let connector = TlsConnector::system().expect("system roots must load");
+
+        let h2 = TlsClientConfig {
+            server_name: "example.com".to_owned(),
+            allow_insecure: false,
+            alpn: vec!["h2".to_owned()],
+            fingerprint: Some("unsafe".to_owned()),
+        };
+        let http11 = TlsClientConfig {
+            alpn: vec!["http/1.1".to_owned()],
+            ..h2.clone()
+        };
+
+        let first = connector.client_config_for(&h2).expect("h2 config");
+        let again = connector.client_config_for(&h2).expect("h2 config");
+        let other = connector.client_config_for(&http11).expect("http/1.1");
+
+        assert!(
+            Arc::ptr_eq(&first, &again),
+            "one ALPN list must reuse one config"
+        );
+        assert!(
+            !Arc::ptr_eq(&first, &other),
+            "different ALPN lists must not share a config"
+        );
+        assert_eq!(
+            first.alpn_protocols,
+            vec![b"h2".to_vec()],
+            "the split must reflect a real difference in the config"
+        );
+        assert_eq!(other.alpn_protocols, vec![b"http/1.1".to_vec()]);
+    }
+
     /// `allow_insecure` picks between two different certificate verifiers, so
     /// sharing a config across it would hand a verifying connection the one
     /// that accepts every certificate.

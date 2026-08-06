@@ -2686,14 +2686,40 @@ impl Parser<'_> {
                         "allowInsecure=true disables TLS certificate verification; the proxy connection can be intercepted",
                     );
                 }
+                // An absent fingerprint normalizes to chrome, matching Xray's
+                // GetFingerprint(""): shaping is the default, not an opt-in.
+                let raw_fingerprint = tls_settings
+                    .and_then(|settings| self.string_at(settings, "fingerprint"))
+                    .unwrap_or_default();
+                let fingerprint = match xray_utls::normalize_tls_fingerprint(raw_fingerprint) {
+                    Some(fingerprint) => Some(fingerprint.to_owned()),
+                    None => {
+                        self.error(
+                            format!("$.outbounds[{index}].streamSettings.tlsSettings.fingerprint"),
+                            format!("unsupported tls fingerprint `{raw_fingerprint}`"),
+                        );
+                        None
+                    }
+                };
+                let alpn = tls_settings
+                    .and_then(|settings| settings.get("alpn"))
+                    .and_then(Value::as_array)
+                    .map(|values| {
+                        values
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .map(ToOwned::to_owned)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
                 Some(StreamSecurity::Tls(TlsSettings {
                     server_name: tls_settings
                         .and_then(|settings| self.string_at(settings, "serverName"))
                         .map(ToOwned::to_owned),
-                    fingerprint: tls_settings
-                        .and_then(|settings| self.string_at(settings, "fingerprint"))
-                        .map(ToOwned::to_owned),
+                    fingerprint,
                     allow_insecure,
+                    alpn,
                 }))
             }
             "reality" => self
@@ -2749,18 +2775,22 @@ impl Parser<'_> {
             &["serverName", "allowInsecure", "fingerprint", "alpn"],
         );
 
-        if settings.get("fingerprint").is_some() {
-            self.error(
-                format!("{settings_path}.fingerprint"),
-                "tls fingerprint is unsupported",
-            );
-        }
-
         if let Some(alpn) = settings.get("alpn") {
             match alpn.as_array() {
-                Some(values) if values.is_empty() => {}
-                Some(_) => self.error(format!("{settings_path}.alpn"), "tls alpn is unsupported"),
                 None => self.error(format!("{settings_path}.alpn"), "tls alpn must be an array"),
+                // Xray unmarshals `alpn` into a `[]string` and fails outright on
+                // an entry that is not one; dropping it silently would put a
+                // list on the wire that the config never asked for.
+                Some(values) => {
+                    for (index, value) in values.iter().enumerate() {
+                        if !value.is_string() {
+                            self.error(
+                                format!("{settings_path}.alpn[{index}]"),
+                                "tls alpn entry must be a string",
+                            );
+                        }
+                    }
+                }
             }
         }
     }

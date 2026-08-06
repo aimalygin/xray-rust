@@ -57,9 +57,12 @@ pub enum ConnectorConfig {
 pub struct TlsClientConfig {
     pub server_name: String,
     pub allow_insecure: bool,
-    /// `tlsSettings.alpn`. Reaches the ClientHello only when it is exactly
-    /// `["http/1.1"]`; otherwise the fingerprint profile's own ALPN wins.
-    /// It still selects the HTTP version for transports that ask.
+    /// `tlsSettings.alpn`. How it reaches the ClientHello depends on whether
+    /// the hello is shaped: a shaped one keeps the fingerprint profile's own
+    /// ALPN unless this is exactly `["http/1.1"]`, while an unshaped one --
+    /// `None` or `Some("unsafe")` -- advertises the list verbatim, as stock Go
+    /// TLS does with `NextProtos`. Either way it still selects the HTTP
+    /// version for transports that ask.
     pub alpn: Vec<String>,
     /// Normalized `tlsSettings.fingerprint`. `None` and `Some("unsafe")` both
     /// mean no shaping; `None` is the value used by call sites that predate

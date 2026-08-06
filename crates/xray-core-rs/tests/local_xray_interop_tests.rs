@@ -179,6 +179,7 @@ async fn run_local_xray_vless_tls_interop(flow: Option<&'static str>) {
             server_name: Some(TLS_SERVER_NAME.to_owned()),
             fingerprint: None,
             allow_insecure: false,
+            alpn: Vec::new(),
         }),
         flow,
     );

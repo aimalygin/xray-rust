@@ -1290,13 +1290,87 @@ fn rejects_tls_allow_insecure_non_bool_with_path() {
 }
 
 #[test]
-fn rejects_tls_fingerprint_with_path() {
-    let raw = raw_with_tls_settings(r#""serverName": "server.example", "fingerprint": "chrome""#);
+fn parses_tls_fingerprint() {
+    let raw = raw_with_tls_settings(r#""serverName": "server.example", "fingerprint": "firefox""#);
+    let parsed = parse_xray_json(&raw).expect("a TLS fingerprint should be accepted");
 
-    assert_parse_error_path(
-        &raw,
-        "$.outbounds[0].streamSettings.tlsSettings.fingerprint",
+    let StreamSecurity::Tls(tls) = &parsed.config.outbounds[0].stream.security else {
+        panic!("expected tls security");
+    };
+    assert_eq!(tls.fingerprint.as_deref(), Some("firefox"));
+}
+
+#[test]
+fn defaults_missing_tls_fingerprint_to_chrome() {
+    let raw = raw_with_tls_settings(r#""serverName": "server.example""#);
+    let parsed = parse_xray_json(&raw).expect("TLS without a fingerprint should parse");
+
+    let StreamSecurity::Tls(tls) = &parsed.config.outbounds[0].stream.security else {
+        panic!("expected tls security");
+    };
+    assert_eq!(
+        tls.fingerprint.as_deref(),
+        Some("chrome"),
+        "an absent fingerprint means chrome, matching Xray's GetFingerprint(\"\")"
     );
+}
+
+/// `unsafe` is a sentinel, not a profile name: it has to survive normalization
+/// intact so the transport can recognize it and leave the hello unshaped.
+#[test]
+fn passes_the_unsafe_tls_fingerprint_sentinel_through() {
+    let raw = raw_with_tls_settings(r#""serverName": "server.example", "fingerprint": "UNSAFE""#);
+    let parsed = parse_xray_json(&raw).expect("the unsafe sentinel should be accepted");
+
+    let StreamSecurity::Tls(tls) = &parsed.config.outbounds[0].stream.security else {
+        panic!("expected tls security");
+    };
+    assert_eq!(tls.fingerprint.as_deref(), Some("unsafe"));
+}
+
+#[test]
+fn parses_tls_alpn_list() {
+    let raw =
+        raw_with_tls_settings(r#""serverName": "server.example", "alpn": ["h2", "http/1.1"]"#);
+    let parsed = parse_xray_json(&raw).expect("a TLS alpn list should be accepted");
+
+    let StreamSecurity::Tls(tls) = &parsed.config.outbounds[0].stream.security else {
+        panic!("expected tls security");
+    };
+    assert_eq!(tls.alpn, ["h2".to_owned(), "http/1.1".to_owned()]);
+}
+
+#[test]
+fn rejects_unsupported_tls_fingerprint_with_path() {
+    let raw =
+        raw_with_tls_settings(r#""serverName": "server.example", "fingerprint": "nosuchbrowser""#);
+
+    let error = parse_xray_json(&raw).expect_err("an unknown fingerprint must be rejected");
+
+    assert_eq!(error.diagnostics[0].severity, DiagnosticSeverity::Error);
+    assert_eq!(
+        error.diagnostics[0].path.as_deref(),
+        Some("$.outbounds[0].streamSettings.tlsSettings.fingerprint")
+    );
+    assert!(
+        error.diagnostics[0].message.contains("nosuchbrowser"),
+        "the error must name the fingerprint, got: {}",
+        error.diagnostics[0].message
+    );
+}
+
+#[test]
+fn rejects_non_array_tls_alpn_with_path() {
+    let raw = raw_with_tls_settings(r#""serverName": "server.example", "alpn": "h2""#);
+
+    assert_parse_error_path(&raw, "$.outbounds[0].streamSettings.tlsSettings.alpn");
+}
+
+#[test]
+fn rejects_non_string_tls_alpn_entry_with_path() {
+    let raw = raw_with_tls_settings(r#""serverName": "server.example", "alpn": ["h2", 42]"#);
+
+    assert_parse_error_path(&raw, "$.outbounds[0].streamSettings.tlsSettings.alpn[1]");
 }
 
 #[test]

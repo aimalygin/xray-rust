@@ -909,8 +909,14 @@ pub enum StreamSecurity {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TlsSettings {
     pub server_name: Option<String>,
+    /// Normalized uTLS fingerprint. A parsed config always populates it: an
+    /// absent `tlsSettings.fingerprint` means `chrome`, and `unsafe` means no
+    /// shaping. `None` reaches here only from call sites that build the model
+    /// directly, where it also means no shaping.
     pub fingerprint: Option<String>,
     pub allow_insecure: bool,
+    /// `tlsSettings.alpn`, verbatim.
+    pub alpn: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
