@@ -24,7 +24,7 @@ The profile-name set in `crates/xray-utls` mirrors Xray/uTLS identifiers. The
 deterministic tools under `tools/reality-oracle/` execute the pinned uTLS
 implementation, and their reviewed output supplies ClientHello ordering,
 protocol identifiers, and lengths used by
-`crates/xray-transport/src/reality_utls_profiles.rs`.
+`crates/xray-transport/src/utls_profiles.rs`.
 
 Copyright (c) 2009 The Go Authors. All rights reserved.
 

@@ -17,7 +17,7 @@ const fingerprints = fingerprintsSource
 const oracleBinary = process.argv[2] ?? "/tmp/clienthello_shape";
 const outputPath =
   process.argv[3] ??
-  resolve(workspaceRoot, "crates/xray-transport/src/reality_utls_profiles.rs");
+  resolve(workspaceRoot, "crates/xray-transport/src/utls_profiles.rs");
 
 function numericValue(value) {
   return value === "GREASE" ? 0x0a0a : Number.parseInt(value, 16);
