@@ -159,8 +159,14 @@ impl TransportStream for tokio_rustls::client::TlsStream<BoxedTransportStream> {
     }
 }
 
+/// Skips certificate verification, but still verifies handshake signatures
+/// with the algorithms of the provider it was built alongside. Pinning ring's
+/// set here would reject signatures the shaped provider's own profile
+/// advertises — P-521, for one.
 #[derive(Debug)]
-struct NoCertificateVerification;
+struct NoCertificateVerification {
+    provider: Arc<crypto::CryptoProvider>,
+}
 
 impl ServerCertVerifier for NoCertificateVerification {
     fn verify_server_cert(
@@ -180,12 +186,11 @@ impl ServerCertVerifier for NoCertificateVerification {
         cert: &CertificateDer<'_>,
         dss: &DigitallySignedStruct,
     ) -> Result<HandshakeSignatureValid, RustlsError> {
-        let provider = crypto::ring::default_provider();
         crypto::verify_tls12_signature(
             message,
             cert,
             dss,
-            &provider.signature_verification_algorithms,
+            &self.provider.signature_verification_algorithms,
         )
     }
 
@@ -195,17 +200,16 @@ impl ServerCertVerifier for NoCertificateVerification {
         cert: &CertificateDer<'_>,
         dss: &DigitallySignedStruct,
     ) -> Result<HandshakeSignatureValid, RustlsError> {
-        let provider = crypto::ring::default_provider();
         crypto::verify_tls13_signature(
             message,
             cert,
             dss,
-            &provider.signature_verification_algorithms,
+            &self.provider.signature_verification_algorithms,
         )
     }
 
     fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-        crypto::ring::default_provider()
+        self.provider
             .signature_verification_algorithms
             .supported_schemes()
     }
@@ -231,7 +235,13 @@ pub(crate) fn base_client_config(
 pub(crate) fn shaped_client_config(
     allow_insecure: bool,
 ) -> Result<rustls::ClientConfig, TransportError> {
-    client_config_with_provider(Arc::new(shaping_crypto_provider()), allow_insecure)
+    let mut config =
+        client_config_with_provider(Arc::new(shaping_crypto_provider()), allow_insecure)?;
+    // A resumed handshake sends a second ClientHello carrying pre_shared_key,
+    // which is outside the shape the fingerprint describes.
+    config.resumption = rustls::client::Resumption::disabled();
+
+    Ok(config)
 }
 
 fn client_config_with_provider(
@@ -279,13 +289,16 @@ fn rustls_client_config(
 fn insecure_rustls_client_config(
     provider: Arc<crypto::CryptoProvider>,
 ) -> Result<rustls::ClientConfig, TransportError> {
+    let verifier = Arc::new(NoCertificateVerification {
+        provider: Arc::clone(&provider),
+    });
     rustls::ClientConfig::builder_with_provider(provider)
         .with_safe_default_protocol_versions()
         .map_err(|error| TransportError::TlsConfig(error.to_string()))
         .map(|builder| {
             builder
                 .dangerous()
-                .with_custom_certificate_verifier(Arc::new(NoCertificateVerification))
+                .with_custom_certificate_verifier(verifier)
                 .with_no_client_auth()
         })
 }
