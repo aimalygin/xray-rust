@@ -269,7 +269,13 @@ struct DnsOutboundPayload {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum DnsTcpConnector {
     Static(ConnectorConfig),
-    TlsFromTarget { allow_insecure: bool },
+    /// Only the server name waits for the rewritten destination, so the rest
+    /// of the shape is carried here rather than rebuilt per dial.
+    TlsFromTarget {
+        allow_insecure: bool,
+        alpn: Vec<String>,
+        fingerprint: Option<String>,
+    },
 }
 
 /// Distinguishes an omitted Happy Eyeballs policy from Xray's explicit
@@ -399,7 +405,11 @@ impl DnsOutbound {
         }
         match &self.payload.tcp_connector {
             DnsTcpConnector::Static(connector) => Ok(connector.clone()),
-            DnsTcpConnector::TlsFromTarget { allow_insecure } => {
+            DnsTcpConnector::TlsFromTarget {
+                allow_insecure,
+                alpn,
+                fingerprint,
+            } => {
                 let server_name = match &target.addr {
                     RoutingTargetAddr::Domain(domain) if !domain.is_empty() => domain.clone(),
                     RoutingTargetAddr::Domain(_) => {
@@ -410,8 +420,8 @@ impl DnsOutbound {
                 Ok(ConnectorConfig::Tls(TlsClientConfig {
                     server_name,
                     allow_insecure: *allow_insecure,
-                    alpn: Vec::new(),
-                    fingerprint: None,
+                    alpn: alpn.clone(),
+                    fingerprint: fingerprint.clone(),
                 }))
             }
         }
@@ -1497,10 +1507,6 @@ fn build_vless_tcp_outbound(outbound: &OutboundConfig) -> Result<VlessTcpOutboun
     let transport = match &outbound.stream.security {
         StreamSecurity::None => ConnectorConfig::Tcp,
         StreamSecurity::Tls(tls) => {
-            if tls.fingerprint.is_some() {
-                return Err(CoreError::UnsupportedOutboundSecurity);
-            }
-
             let server_name = match tls.server_name.as_deref() {
                 Some(name) if !name.is_empty() => name.to_owned(),
                 Some(_) => return Err(CoreError::UnsupportedOutboundSecurity),
@@ -1513,8 +1519,8 @@ fn build_vless_tcp_outbound(outbound: &OutboundConfig) -> Result<VlessTcpOutboun
             ConnectorConfig::Tls(TlsClientConfig {
                 server_name,
                 allow_insecure: tls.allow_insecure,
-                alpn: Vec::new(),
-                fingerprint: None,
+                alpn: tls.alpn.clone(),
+                fingerprint: tls.fingerprint.clone(),
             })
         }
         StreamSecurity::Reality(reality) => ConnectorConfig::Reality(RealityClientConfig {
@@ -1552,24 +1558,21 @@ fn build_freedom_tcp_outbound(stream: &StreamSettings) -> TcpOutbound {
 fn dns_tcp_connector(stream: &StreamSettings) -> Result<DnsTcpConnector, CoreError> {
     match &stream.security {
         StreamSecurity::None => Ok(DnsTcpConnector::Static(ConnectorConfig::Tcp)),
-        StreamSecurity::Tls(tls) => {
-            if tls.fingerprint.is_some() {
-                return Err(CoreError::UnsupportedOutboundSecurity);
-            }
-            match tls.server_name.as_deref() {
-                Some(server_name) if !server_name.is_empty() => Ok(DnsTcpConnector::Static(
-                    ConnectorConfig::Tls(TlsClientConfig {
-                        server_name: server_name.to_owned(),
-                        allow_insecure: tls.allow_insecure,
-                        alpn: Vec::new(),
-                        fingerprint: None,
-                    }),
-                )),
-                Some(_) | None => Ok(DnsTcpConnector::TlsFromTarget {
+        StreamSecurity::Tls(tls) => match tls.server_name.as_deref() {
+            Some(server_name) if !server_name.is_empty() => Ok(DnsTcpConnector::Static(
+                ConnectorConfig::Tls(TlsClientConfig {
+                    server_name: server_name.to_owned(),
                     allow_insecure: tls.allow_insecure,
+                    alpn: tls.alpn.clone(),
+                    fingerprint: tls.fingerprint.clone(),
                 }),
-            }
-        }
+            )),
+            Some(_) | None => Ok(DnsTcpConnector::TlsFromTarget {
+                allow_insecure: tls.allow_insecure,
+                alpn: tls.alpn.clone(),
+                fingerprint: tls.fingerprint.clone(),
+            }),
+        },
         StreamSecurity::Reality(reality) => Ok(DnsTcpConnector::Static(ConnectorConfig::Reality(
             RealityClientConfig {
                 server_name: reality.server_name.clone(),
@@ -2284,27 +2287,62 @@ mod tests {
     }
 
     #[test]
-    fn dns_outbound_rejects_unimplemented_stream_settings_instead_of_downgrading() {
-        let fingerprint = DnsOutbound::new_with_stream(
+    fn tls_outbound_carries_the_fingerprint_into_the_connector() {
+        let stream = StreamSettings {
+            network: Network::Tcp,
+            security: StreamSecurity::Tls(TlsSettings {
+                server_name: Some("example.com".to_owned()),
+                fingerprint: Some("firefox".to_owned()),
+                allow_insecure: false,
+                alpn: vec!["http/1.1".to_owned()],
+            }),
+            socket_options: None,
+        };
+
+        let connector = dns_tcp_connector(&stream).expect("a TLS fingerprint must be accepted");
+
+        let DnsTcpConnector::Static(ConnectorConfig::Tls(tls)) = connector else {
+            panic!("expected a static TLS connector");
+        };
+        assert_eq!(tls.fingerprint.as_deref(), Some("firefox"));
+        assert_eq!(tls.alpn, vec!["http/1.1".to_owned()]);
+    }
+
+    #[test]
+    fn target_derived_tls_connector_carries_the_fingerprint() {
+        // An omitted server name defers the whole config to dial time, so the
+        // shape has to survive the deferral, not just the static branch.
+        let outbound = DnsOutbound::new_with_stream(
             DnsOutboundSettings::default(),
             &StreamSettings {
                 network: Network::Tcp,
                 security: StreamSecurity::Tls(TlsSettings {
-                    server_name: Some("resolver.example".to_owned()),
-                    fingerprint: Some("chrome".to_owned()),
+                    server_name: None,
+                    fingerprint: Some("firefox".to_owned()),
                     allow_insecure: false,
-                    alpn: Vec::new(),
+                    alpn: vec!["h2".to_owned()],
                 }),
                 socket_options: None,
             },
             Duration::from_secs(60),
         )
-        .expect_err("unsupported DNS TLS fingerprint must fail closed");
-        assert!(matches!(
-            fingerprint,
-            CoreError::UnsupportedOutboundSecurity
-        ));
+        .expect("a TLS fingerprint must be accepted");
 
+        assert_eq!(
+            outbound
+                .tcp_connector_for(&domain_tcp_target("rewritten.example"))
+                .expect("derive DNS TLS connector"),
+            ConnectorConfig::Tls(TlsClientConfig {
+                server_name: "rewritten.example".to_owned(),
+                allow_insecure: false,
+                alpn: vec!["h2".to_owned()],
+                fingerprint: Some("firefox".to_owned()),
+            })
+        );
+    }
+
+    #[test]
+    fn dns_outbound_rejects_an_unsupported_stream_network_instead_of_downgrading() {
         let non_tcp = DnsOutbound::new_with_stream(
             DnsOutboundSettings::default(),
             &StreamSettings {

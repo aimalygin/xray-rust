@@ -1052,15 +1052,6 @@ fn reality_security_with_fingerprint(fingerprint: &str) -> StreamSecurity {
     })
 }
 
-fn tls_security() -> StreamSecurity {
-    StreamSecurity::Tls(TlsSettings {
-        server_name: Some("example.com".to_owned()),
-        fingerprint: Some("chrome".to_owned()),
-        allow_insecure: false,
-        alpn: Vec::new(),
-    })
-}
-
 #[test]
 fn selects_raw_tcp_vless_outbound_with_ip_server() {
     let config = config_with_outbound(vless_outbound(
@@ -1261,20 +1252,129 @@ fn parsed_config_reality_fingerprint_reaches_transport_config() {
     ));
 }
 
+/// The gap this closes: for a while every piece of a plain-TLS config parsed
+/// cleanly and then failed to build, because the parser had started filling in
+/// the default `chrome` fingerprint while the builder still rejected any
+/// fingerprint at all. Nothing caught it, because nothing ran a plain-TLS
+/// config through both halves.
 #[test]
-fn rejects_tls_fingerprint_for_runtime_path() {
-    let config = config_with_outbound(vless_outbound(
-        tls_security(),
-        TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
-        443,
-    ));
+fn parsed_plain_tls_config_builds_an_outbound_with_the_default_fingerprint() {
+    let raw = r#"{
+        "inbounds": [],
+        "outbounds": [
+            {
+                "tag": "proxy",
+                "protocol": "vless",
+                "settings": {
+                    "vnext": [
+                        {
+                            "address": "203.0.113.10",
+                            "port": 443,
+                            "users": [
+                                {
+                                    "id": "00010203-0405-0607-0809-0a0b0c0d0e0f",
+                                    "encryption": "none"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "streamSettings": {
+                    "network": "tcp",
+                    "security": "tls",
+                    "tlsSettings": {
+                        "serverName": "server.example"
+                    }
+                }
+            }
+        ]
+    }"#;
+    let parsed = parse_xray_json(raw).expect("a plain-TLS config should parse");
 
-    let result = select_vless_tcp_outbound(&config);
+    let selected =
+        select_vless_tcp_outbound(&parsed.config).expect("a plain-TLS config should also build");
 
+    let xray_transport::ConnectorConfig::Tls(tls) = selected.transport() else {
+        panic!("expected a TLS transport");
+    };
+    assert_eq!(tls.server_name, "server.example");
+    // An absent `tlsSettings.fingerprint` means chrome, as it does in Xray.
+    assert_eq!(tls.fingerprint.as_deref(), Some("chrome"));
+    assert!(tls.alpn.is_empty());
+
+    // The parser and the transport normalize fingerprints separately; this
+    // proves the name one emits is a name the other can still shape with.
+    TlsConnector::system()
+        .expect("build a system TLS connector")
+        .client_config_for(tls)
+        .expect("the parsed fingerprint must build a client config");
+
+    // The per-session router compiles the same outbound through its own cache,
+    // and that is the path a live tunnel takes.
+    let routed = select_tcp_outbound_for_session(
+        &parsed.config,
+        None,
+        &Target::new(
+            RoutingTargetAddr::Domain("destination.example".to_owned()),
+            443,
+            RoutingNetwork::Tcp,
+        ),
+    )
+    .expect("a plain-TLS outbound should be selectable for a session");
+    let TcpOutbound::Vless(routed) = routed else {
+        panic!("expected the VLESS outbound");
+    };
     assert!(matches!(
-        result,
-        Err(CoreError::UnsupportedOutboundSecurity)
+        routed.transport(),
+        xray_transport::ConnectorConfig::Tls(config)
+            if config.fingerprint.as_deref() == Some("chrome")
     ));
+}
+
+#[test]
+fn parsed_config_tls_fingerprint_and_alpn_reach_transport_config() {
+    let raw = r#"{
+        "inbounds": [],
+        "outbounds": [
+            {
+                "tag": "proxy",
+                "protocol": "vless",
+                "settings": {
+                    "vnext": [
+                        {
+                            "address": "203.0.113.10",
+                            "port": 443,
+                            "users": [
+                                {
+                                    "id": "00010203-0405-0607-0809-0a0b0c0d0e0f",
+                                    "encryption": "none",
+                                    "flow": "xtls-rprx-vision"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "streamSettings": {
+                    "network": "tcp",
+                    "security": "tls",
+                    "tlsSettings": {
+                        "serverName": "server.example",
+                        "fingerprint": "firefox",
+                        "alpn": ["h2", "http/1.1"]
+                    }
+                }
+            }
+        ]
+    }"#;
+    let parsed = parse_xray_json(raw).expect("an explicitly shaped TLS config should parse");
+
+    let selected = select_vless_tcp_outbound(&parsed.config).expect("build the shaped outbound");
+
+    let xray_transport::ConnectorConfig::Tls(tls) = selected.transport() else {
+        panic!("expected a TLS transport");
+    };
+    assert_eq!(tls.fingerprint.as_deref(), Some("firefox"));
+    assert_eq!(tls.alpn, vec!["h2".to_owned(), "http/1.1".to_owned()]);
 }
 
 #[test]
@@ -1372,27 +1472,6 @@ fn rejects_tls_ip_server_without_server_name() {
             alpn: Vec::new(),
         }),
         TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
-        443,
-    ));
-
-    let result = select_vless_tcp_outbound(&config);
-
-    assert!(matches!(
-        result,
-        Err(CoreError::UnsupportedOutboundSecurity)
-    ));
-}
-
-#[test]
-fn rejects_tls_fingerprint_without_plain_rustls_downgrade() {
-    let config = config_with_outbound(vless_outbound(
-        StreamSecurity::Tls(TlsSettings {
-            server_name: Some("server.example".to_owned()),
-            fingerprint: Some("chrome".to_owned()),
-            allow_insecure: false,
-            alpn: Vec::new(),
-        }),
-        TargetAddr::Domain("vless.test".to_owned()),
         443,
     ));
 
