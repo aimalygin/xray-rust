@@ -99,14 +99,14 @@ pub(crate) fn apply_utls_profile(
     }
 
     let forced_extensions = forced_extensions(profile);
-    let extension_plan = extension_plan(profile)?;
+    let extension_plan = extension_plan(profile, false)?;
     let (exact_extensions, raw_extensions) = extension_payloads(profile)?;
 
     plan = plan
         .with_forced_extensions(forced_extensions)
         .with_extensions(extension_plan);
     if !profile.supported_versions.is_empty() {
-        plan = plan.with_extension_order(extension_order(profile)?);
+        plan = plan.with_extension_order(extension_order(profile, false)?);
     }
 
     if let Some(exact_extensions) = exact_extensions {
@@ -261,21 +261,54 @@ fn certificate_compression(
     ])
 }
 
+/// Replaces the profile's own ALPN list with a configured one.
+///
+/// A profile that carries no ALPN extension needs more than a new list: the
+/// extension is suppressed by the profile's extension plan, and rustls rejects
+/// an extension order that omits an emitted extension, so appending ALPN to
+/// the hello means un-suppressing *and* ordering it in the same breath. Xray
+/// appends it last (`tls.go`'s `if !hasALPNExtension`), so this does too.
+pub(crate) fn apply_alpn_override(
+    mut plan: ClientHelloPlan,
+    profile: &'static UtlsClientHelloProfile,
+    protocols: &[Vec<u8>],
+) -> Result<ClientHelloPlan, RustlsError> {
+    plan = plan.with_alpn_protocols(ClientHelloAlpnProtocols::try_from(protocols.to_vec())?);
+    if profile_has_extension(profile, EXT_ALPN) {
+        return Ok(plan);
+    }
+
+    plan = plan.with_extensions(extension_plan(profile, true)?);
+    // No profile that lacks ALPN pins an extension order today, but the two
+    // must move together: enabling the extension without ordering it is an
+    // error inside rustls, not a shape difference.
+    if !profile.supported_versions.is_empty() {
+        plan = plan.with_extension_order(extension_order(profile, true)?);
+    }
+
+    Ok(plan)
+}
+
 fn extension_order(
     profile: &UtlsClientHelloProfile,
+    appended_alpn: bool,
 ) -> Result<ClientHelloExtensionOrder, RustlsError> {
-    ClientHelloExtensionOrder::try_from(
-        profile
-            .extensions
-            .iter()
-            .map(|extension| extension.extension_type)
-            .filter(|extension_type| !is_grease_value(*extension_type))
-            .collect::<Vec<_>>(),
-    )
+    let mut order = profile
+        .extensions
+        .iter()
+        .map(|extension| extension.extension_type)
+        .filter(|extension_type| !is_grease_value(*extension_type))
+        .collect::<Vec<_>>();
+    if appended_alpn {
+        order.push(EXT_ALPN);
+    }
+
+    ClientHelloExtensionOrder::try_from(order)
 }
 
 fn extension_plan(
     profile: &UtlsClientHelloProfile,
+    appended_alpn: bool,
 ) -> Result<ClientHelloExtensionPlan, RustlsError> {
     let disabled = STRUCTURED_OPTIONAL_EXTENSIONS
         .iter()
@@ -285,6 +318,7 @@ fn extension_plan(
             *extension_type != EXT_CERTIFICATE_COMPRESSION
                 || !profile_uses_structured_certificate_compression(profile)
         })
+        .filter(|extension_type| !appended_alpn || *extension_type != EXT_ALPN)
         .collect::<Vec<_>>();
 
     ClientHelloExtensionPlan::try_from(disabled)

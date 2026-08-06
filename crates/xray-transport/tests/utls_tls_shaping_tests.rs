@@ -14,10 +14,11 @@ mod utls_tls_shaping_tests {
     }
 
     /// Walks the ClientHello extension list and returns the ALPN protocol
-    /// names, in order. Layout: record header (5) + handshake header (4) +
-    /// version (2) + random (32) + session id + cipher suites + compression
-    /// methods + extensions.
-    fn alpn_protocols(hello: &[u8]) -> Vec<String> {
+    /// names, in order, or `None` when the hello carries no ALPN extension at
+    /// all -- a distinction an empty list would hide. Layout: record header
+    /// (5) + handshake header (4) + version (2) + random (32) + session id +
+    /// cipher suites + compression methods + extensions.
+    fn alpn_protocols(hello: &[u8]) -> Option<Vec<String>> {
         let mut cursor = 5 + 4 + 2 + 32;
         let session_id_len = usize::from(hello[cursor]);
         cursor += 1 + session_id_len;
@@ -49,10 +50,19 @@ mod utls_tls_shaping_tests {
                     .push(String::from_utf8_lossy(&payload[offset..offset + len]).into_owned());
                 offset += len;
             }
-            return protocols;
+            return Some(protocols);
         }
 
-        Vec::new()
+        None
+    }
+
+    fn alpn(protocols: &[&str]) -> Option<Vec<String>> {
+        Some(
+            protocols
+                .iter()
+                .map(|protocol| (*protocol).to_owned())
+                .collect(),
+        )
     }
 
     fn cipher_suites(hello: &[u8]) -> Vec<u16> {
@@ -83,7 +93,7 @@ mod utls_tls_shaping_tests {
         let hello = plain_tls_client_hello_bytes(&config("chrome", &[]))
             .expect("chrome ClientHello must be produced");
 
-        assert_eq!(alpn_protocols(&hello), vec!["h2", "http/1.1"]);
+        assert_eq!(alpn_protocols(&hello), alpn(&["h2", "http/1.1"]));
     }
 
     #[test]
@@ -91,17 +101,40 @@ mod utls_tls_shaping_tests {
         let hello = plain_tls_client_hello_bytes(&config("chrome", &["http/1.1"]))
             .expect("chrome ClientHello must be produced");
 
-        assert_eq!(alpn_protocols(&hello), vec!["http/1.1"]);
+        assert_eq!(alpn_protocols(&hello), alpn(&["http/1.1"]));
     }
 
     #[test]
     fn other_alpn_lists_do_not_override_the_profile() {
-        // Xray only rebuilds the hello when the configured list is exactly
-        // ["http/1.1"]; every other list leaves the profile's ALPN in place.
+        // The RAW transport reaches the ALPN-forcing handshake only when the
+        // configured list is exactly ["http/1.1"] (tcp/dialer.go); any other
+        // list takes the plain handshake and keeps the profile's own ALPN.
+        // ws and httpupgrade invert this -- they force http/1.1 for every list
+        // except exactly ["h2", "http/1.1"] -- but they call a different
+        // handshake, and they land in a later plan with their own gate.
         let hello = plain_tls_client_hello_bytes(&config("chrome", &["h2"]))
             .expect("chrome ClientHello must be produced");
 
-        assert_eq!(alpn_protocols(&hello), vec!["h2", "http/1.1"]);
+        assert_eq!(alpn_protocols(&hello), alpn(&["h2", "http/1.1"]));
+    }
+
+    #[test]
+    fn profiles_without_an_alpn_extension_stay_without_one() {
+        let hello = plain_tls_client_hello_bytes(&config("android", &[]))
+            .expect("android ClientHello must be produced");
+
+        assert_eq!(alpn_protocols(&hello), None);
+    }
+
+    #[test]
+    fn the_override_appends_alpn_to_a_profile_that_carries_none() {
+        // Xray appends an ALPNExtension when the fingerprint has none, so the
+        // override must reach the wire even here -- otherwise the connection
+        // offers no ALPN at all where Xray offers http/1.1.
+        let hello = plain_tls_client_hello_bytes(&config("android", &["http/1.1"]))
+            .expect("android ClientHello must be produced");
+
+        assert_eq!(alpn_protocols(&hello), alpn(&["http/1.1"]));
     }
 
     #[test]

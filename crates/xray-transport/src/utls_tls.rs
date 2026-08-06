@@ -10,18 +10,17 @@ use std::fmt;
 use std::sync::{Arc, Mutex};
 
 use rustls::client::{
-    CapturesClientHello, ClientHelloAlpnProtocols, ClientHelloContext, ClientHelloCustomizer,
-    ClientHelloPlan,
+    CapturesClientHello, ClientHelloContext, ClientHelloCustomizer, ClientHelloPlan,
 };
 use rustls::pki_types::ServerName;
 use rustls::{ClientConnection, Error as RustlsError};
 
 use crate::utls_profiles::{profile_for_fingerprint, UtlsClientHelloProfile};
-use crate::utls_shaping::apply_utls_profile;
+use crate::utls_shaping::{apply_alpn_override, apply_utls_profile};
 use crate::{TlsClientConfig, TransportError};
 
-/// The one configured ALPN list Xray rebuilds the ClientHello for. Anything
-/// else leaves the fingerprint profile's own ALPN in place.
+/// The one configured ALPN list the RAW transport rebuilds the ClientHello
+/// for. Anything else leaves the fingerprint profile's own ALPN in place.
 const ALPN_OVERRIDE_TRIGGER: &str = "http/1.1";
 
 const TLS_RECORD_HANDSHAKE: u8 = 0x16;
@@ -75,8 +74,21 @@ impl UtlsClientHelloCustomizer {
     }
 }
 
-/// Mirrors `UConn.WebsocketHandshakeContext`: the hello is rebuilt with ALPN
-/// forced to `http/1.1` only when the configured list is exactly that.
+/// Implements the RAW transport's gate, not `WebsocketHandshakeContext`'s own
+/// rule. Which handshake Xray calls is transport-dependent, and only RAW is
+/// reachable today:
+///
+/// - RAW (`tcp/dialer.go`) calls `WebsocketHandshakeContext` — which forces
+///   `http/1.1` — only when the configured list is exactly `["http/1.1"]`,
+///   and the plain `HandshakeContext` otherwise. So every other list keeps the
+///   profile's own ALPN, which is what this returns.
+/// - ws (`websocket/dialer.go`) and httpupgrade (`httpupgrade/dialer.go`) call
+///   `WebsocketHandshakeContext` unconditionally, so there the inner rule
+///   governs: force `http/1.1` for every list *except* exactly
+///   `["h2", "http/1.1"]`.
+///
+/// Those two transports land in a later plan and need their own gate. Widening
+/// this one to match `WebsocketHandshakeContext` would be wrong for RAW.
 fn alpn_override_for(alpn: &[String]) -> Option<Vec<Vec<u8>>> {
     match alpn {
         [only] if only == ALPN_OVERRIDE_TRIGGER => {
@@ -104,10 +116,8 @@ impl ClientHelloCustomizer for UtlsClientHelloCustomizer {
     ) -> Result<Option<ClientHelloPlan>, RustlsError> {
         let mut plan = apply_utls_profile(ClientHelloPlan::new(), self.profile)?;
 
-        // Plan setters are last-write-wins, so this replaces the profile's own
-        // ALPN list rather than adding a second extension.
         if let Some(protocols) = &self.alpn_override {
-            plan = plan.with_alpn_protocols(ClientHelloAlpnProtocols::try_from(protocols.clone())?);
+            plan = apply_alpn_override(plan, self.profile, protocols)?;
         }
         if let Some(capture) = &self.capture {
             plan = plan.with_capture(capture.clone());
