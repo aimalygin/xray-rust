@@ -1129,7 +1129,15 @@ cargo test -p xray-config --test parser_tests
 
 Expected: FAIL — the fingerprint tests report the `tls fingerprint is unsupported` error, and the ALPN test reports `tls alpn is unsupported`.
 
-- [ ] **Step 3: Extend the model**
+- [ ] **Step 3: Handle two ALPN consequences this task makes reachable**
+
+Both were found during Task 5's review and are inert until this task lets `alpn` actually vary. Deal with them here, before Task 7 puts them on live connections.
+
+**`fingerprint: "unsafe"` must honor `alpn`.** Xray's `unsafe` sentinel falls through to stock `tls.Client(conn, tlsConfig)`, and stock Go TLS *does* send `tlsConfig.NextProtos`. Our unshaped path never assigns `ClientConfig::alpn_protocols`, so `fingerprint: "unsafe"` with `alpn: ["h2"]` would advertise nothing. Set `alpn_protocols` on the unshaped config from `TlsClientConfig::alpn`. Note the boundary carefully: `fingerprint: None` — the value legacy call sites pass — must keep producing a byte-identical hello, so gate this on the configured list being non-empty rather than on the fingerprint value, and add a test pinning both.
+
+**`alpn` in the cache key when unshaped.** `alpn` participates in `ClientConfigKey` but had no effect on an unshaped config, so two outbounds to one server differing only in ALPN got separate `rustls::ClientConfig`s and therefore separate resumption session stores — they would stop sharing session tickets, a regression against today's single shared config. Once the fix above lands, `alpn` genuinely affects the unshaped config too and the key becomes honest, so this resolves itself. Verify that it did rather than assuming: assert that two unshaped shapes with the same non-empty `alpn` share one `Arc`, and that differing lists do not.
+
+- [ ] **Step 4: Extend the model**
 
 In `crates/xray-config/src/model.rs`, replace the `TlsSettings` struct (line 908):
 
@@ -1146,7 +1154,7 @@ pub struct TlsSettings {
 }
 ```
 
-- [ ] **Step 4: Accept both keys in the parser**
+- [ ] **Step 5: Accept both keys in the parser**
 
 In `crates/xray-config/src/parser.rs`, inside `validate_tls_settings`, delete the whole `if settings.get("fingerprint").is_some() { ... }` block (lines 2752–2757) and replace the ALPN block (lines 2759–2765) with a shape check only:
 
