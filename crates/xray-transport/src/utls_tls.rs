@@ -6,15 +6,12 @@
 //! shape while leaving the hello random, session id, and key share to rustls,
 //! which is exactly what separates it from `reality_rustls`'s customizer.
 
-use std::sync::Arc;
-
 use rustls::client::{ClientHelloContext, ClientHelloCustomizer, ClientHelloPlan};
-use rustls::pki_types::ServerName;
-use rustls::{ClientConnection, Error as RustlsError};
+use rustls::Error as RustlsError;
 
 use crate::utls_profiles::{profile_for_fingerprint, UtlsClientHelloProfile};
 use crate::utls_shaping::{apply_alpn_override, apply_utls_profile};
-use crate::{TlsClientConfig, TransportError};
+use crate::TransportError;
 
 /// The one configured ALPN list the RAW transport rebuilds the ClientHello
 /// for. Anything else leaves the fingerprint profile's own ALPN in place.
@@ -96,51 +93,4 @@ impl ClientHelloCustomizer for UtlsClientHelloCustomizer {
 
         Ok(Some(plan))
     }
-}
-
-/// Builds the rustls config one `TlsClientConfig` asks for: shaped by its
-/// fingerprint profile, or rustls' own ClientHello when it names none.
-///
-/// `TlsConnector` and `plain_tls_client_hello_bytes` both route through this,
-/// so the bytes the parity tests inspect stay the bytes a real connection
-/// sends. Note which builder each branch picks — the shaped one runs on
-/// aws-lc-rs because current profiles plan an X25519MLKEM768 key share that
-/// *ring* does not carry, while the unshaped branch must stay on *ring* so
-/// that asking for no shaping reproduces the pre-shaping ClientHello exactly.
-pub(crate) fn build_client_config(
-    config: &TlsClientConfig,
-) -> Result<rustls::ClientConfig, TransportError> {
-    let client_config = match shaping_profile(config.fingerprint.as_deref())? {
-        Some(profile) => {
-            let mut client_config = crate::tls::shaped_client_config(config.allow_insecure)?;
-            client_config.client_hello_customizer = Some(Arc::new(UtlsClientHelloCustomizer::new(
-                profile,
-                &config.alpn,
-            )));
-            client_config
-        }
-        None => crate::tls::base_client_config(config.allow_insecure)?,
-    };
-
-    Ok(client_config)
-}
-
-/// Produces the ClientHello a plain-TLS connection would send, without opening
-/// a socket. Exposed for byte-parity tests against Xray-core.
-///
-/// The returned bytes are the connection's whole first flight: one TLS
-/// handshake record, header included, shaped or not.
-pub fn plain_tls_client_hello_bytes(config: &TlsClientConfig) -> Result<Vec<u8>, TransportError> {
-    let client_config = build_client_config(config)?;
-
-    let server_name = ServerName::try_from(config.server_name.clone())
-        .map_err(|_| TransportError::InvalidTlsServerName(config.server_name.clone()))?;
-    let mut connection = ClientConnection::new(Arc::new(client_config), server_name)
-        .map_err(|error| TransportError::TlsConfig(error.to_string()))?;
-    let mut first_flight = Vec::new();
-    connection
-        .write_tls(&mut first_flight)
-        .map_err(TransportError::Tcp)?;
-
-    Ok(first_flight)
 }

@@ -44,8 +44,7 @@ pub use reality_runtime::{
     RealityHandshakeContextProvider, RealityRuntimeEngine, SystemRealityHandshakeContextProvider,
 };
 pub use reality_rustls::RustlsRealityTlsSessionProvider;
-pub use tls::TlsConnector;
-pub use utls_tls::plain_tls_client_hello_bytes;
+pub use tls::{plain_tls_client_hello_bytes, TlsConnector};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConnectorConfig {

@@ -703,7 +703,7 @@ mod https_tests {
             domain: "probe.test",
             addr,
         };
-        let tls = TlsConnector::with_client_config(client_config);
+        let tls = TlsConnector::with_pinned_client_config(client_config);
         let protector = Arc::new(RecordingSocketProtector::default());
         let dialer_protector: Arc<dyn SocketProtector> = protector.clone();
         let transport_dialer =

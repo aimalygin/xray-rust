@@ -3086,7 +3086,7 @@ async fn run_socks_udp_vision_xudp_echo_scenario() {
         "vless.test",
     );
     let dialer =
-        TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config));
+        TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(client_config));
     let mut core =
         Core::with_runtime_dependencies(config, Arc::new(resolver), Arc::new(dialer)).unwrap();
     core.start().await.unwrap();
@@ -3256,7 +3256,7 @@ async fn run_tun_tcp_vless_echo_scenario() {
 async fn run_tun_tcp_upload_backpressure_scenario() {
     let (client_config, _) = tls_test_configs();
     let dialer =
-        TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config))
+        TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(client_config))
             .with_reality_engine(Arc::new(StalledWriteRealityEngine));
     let mut core = Core::with_runtime_dependencies(
         runtime_tun_config_with_reality_vision_vless_server(443),
@@ -3305,7 +3305,7 @@ async fn start_tun_reality_blackhole(
     let state = Arc::new(PendingRealityOpenState::default());
     let (client_config, _) = tls_test_configs();
     let dialer =
-        TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config))
+        TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(client_config))
             .with_reality_engine(Arc::new(PendingRealityEngine {
                 state: Arc::clone(&state),
             }));
@@ -3385,7 +3385,7 @@ async fn run_tun_reality_pending_open_budget_scenario() {
     let state = Arc::new(PendingRealityOpenState::default());
     let (client_config, _) = tls_test_configs();
     let dialer =
-        TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config))
+        TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(client_config))
             .with_reality_engine(Arc::new(PendingRealityEngine {
                 state: Arc::clone(&state),
             }));
@@ -3449,7 +3449,7 @@ async fn run_tun_reality_open_error_burst_scenario() {
     let attempts = Arc::new(AtomicUsize::new(0));
     let (client_config, _) = tls_test_configs();
     let dialer =
-        TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config))
+        TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(client_config))
             .with_reality_engine(Arc::new(FailingRealityEngine {
                 attempts: Arc::clone(&attempts),
             }));
@@ -3508,7 +3508,7 @@ async fn run_tun_reality_bridge_panic_scenario() {
     let log_dir = create_runtime_log_temp_dir("xray-rust-tun-bridge-panic");
     let (client_config, _) = tls_test_configs();
     let dialer =
-        TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config))
+        TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(client_config))
             .with_reality_engine(Arc::new(PanickingRealityEngine));
     let mut core = Core::with_runtime_dependencies(
         runtime_tun_config_with_reality_vision_vless_server(443),
@@ -6517,7 +6517,7 @@ async fn run_tun_dns_proxy_udp_vision_xudp_scenario() {
     );
     config.dns.servers = vec![DnsServerConfig::Ip(upstream)];
     let dialer =
-        TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config));
+        TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(client_config));
     let mut core =
         Core::with_runtime_dependencies(config, Arc::new(resolver), Arc::new(dialer)).unwrap();
     core.start().await.unwrap();
@@ -7739,7 +7739,7 @@ async fn run_tun_udp_vision_xudp_echo_scenario() {
         "vless.test",
     );
     let dialer =
-        TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config));
+        TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(client_config));
 
     let mut core =
         Core::with_runtime_dependencies(config, Arc::new(resolver), Arc::new(dialer)).unwrap();
@@ -7797,7 +7797,7 @@ async fn run_tun_regular_vision_udp443_rejection_scenario() {
         "vless.test",
     );
     let dialer =
-        TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config));
+        TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(client_config));
     let mut core = Core::with_runtime_dependencies_and_tun_options(
         config,
         Arc::new(resolver),
@@ -7845,8 +7845,9 @@ async fn run_tun_regular_vision_udp443_rejection_storm_scenario() {
             vless_addr.port(),
             "vless.test",
         );
-        let dialer =
-            TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config));
+        let dialer = TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(
+            client_config,
+        ));
         let mut core = Core::with_runtime_dependencies_and_tun_options(
             config,
             Arc::new(resolver),
@@ -8293,7 +8294,7 @@ async fn run_socks_to_vless_tls_echo_scenario() {
     let config =
         runtime_config_with_tls_vless_domain_server("vless.test", vless_addr.port(), "vless.test");
     let dialer =
-        TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config));
+        TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(client_config));
 
     let mut core =
         Core::with_runtime_dependencies(config, Arc::new(resolver), Arc::new(dialer)).unwrap();

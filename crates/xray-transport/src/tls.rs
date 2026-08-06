@@ -9,7 +9,9 @@ use std::{
 
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
-use rustls::{crypto, DigitallySignedStruct, Error as RustlsError, SignatureScheme};
+use rustls::{
+    crypto, ClientConnection, DigitallySignedStruct, Error as RustlsError, SignatureScheme,
+};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio_rustls::TlsConnector as TokioTlsConnector;
 use xray_routing::{Target, TargetAddr};
@@ -20,8 +22,10 @@ use crate::{
 };
 
 /// Identifies one rustls configuration shape. Two connections that agree on
-/// all three fields can share a config, which matters because building one
-/// parses the whole root store.
+/// all three fields share a config, which matters less for build cost —
+/// webpki-roots ships pre-parsed statics, so building one is microseconds —
+/// than for continuity: a `ClientConfig` owns the resumption session store, so
+/// splitting configs splits session tickets and kx hints along with them.
 ///
 /// `server_name` is deliberately not part of a shape: rustls takes it as a
 /// `connect` argument, so it never reaches the config. `client_config_for`
@@ -61,9 +65,17 @@ impl TlsConnector {
         })
     }
 
-    /// Pins one prebuilt config for every connection, bypassing shaping.
-    /// Used by tests that supply their own roots.
-    pub fn with_client_config(client_config: Arc<rustls::ClientConfig>) -> Self {
+    /// Pins one prebuilt config for every connection, for tests that supply
+    /// their own roots.
+    ///
+    /// This skips both the cache and fingerprint validation: a connector built
+    /// this way ignores `TlsClientConfig::fingerprint` entirely, so it sends an
+    /// unshaped ClientHello and returns `Ok` even for a fingerprint that
+    /// `system()` would reject with `UnsupportedTlsFingerprint`. A test that
+    /// means to exercise shaping must use `system()` — with
+    /// `allow_insecure: true` if it needs to reach a self-signed local
+    /// listener.
+    pub fn with_pinned_client_config(client_config: Arc<rustls::ClientConfig>) -> Self {
         Self {
             configs: Arc::new(Mutex::new(HashMap::new())),
             override_config: Some(client_config),
@@ -99,13 +111,10 @@ impl TlsConnector {
             fingerprint: fingerprint.clone(),
         };
 
-        // Poisoning is safe to ignore here, and deliberately ignored: this map
-        // is a pure memo table with no invariant for a poisoned lock to
-        // protect. `insert` runs strictly after the fallible build, so a panic
-        // can leave an entry absent but never half-built. Failing closed —
-        // right for handshake-critical state, as in `reality_rustls` — would
-        // turn one unrelated panic into a tunnel that stays down until the
-        // process restarts.
+        // Deliberately fails open where the plan said to fail closed: `insert`
+        // runs after the fallible build, so a panic leaves an entry absent but
+        // never half-built, and erroring would turn one unrelated panic into a
+        // tunnel that stays down until the process restarts.
         let mut configs = self
             .configs
             .lock()
@@ -114,7 +123,7 @@ impl TlsConnector {
             return Ok(Arc::clone(cached));
         }
 
-        let client_config = Arc::new(crate::utls_tls::build_client_config(config)?);
+        let client_config = Arc::new(build_client_config(config)?);
         configs.insert(key, Arc::clone(&client_config));
 
         Ok(client_config)
@@ -275,11 +284,51 @@ impl ServerCertVerifier for NoCertificateVerification {
     }
 }
 
+/// Builds the rustls config one `TlsClientConfig` asks for, and is the only
+/// way to obtain one: the two builders below are private so that no future
+/// transport can reach past the fingerprint and emit an unshaped ClientHello
+/// by accident.
+fn build_client_config(config: &TlsClientConfig) -> Result<rustls::ClientConfig, TransportError> {
+    let client_config = match crate::utls_tls::shaping_profile(config.fingerprint.as_deref())? {
+        Some(profile) => {
+            let mut client_config = shaped_client_config(config.allow_insecure)?;
+            client_config.client_hello_customizer = Some(Arc::new(
+                crate::utls_tls::UtlsClientHelloCustomizer::new(profile, &config.alpn),
+            ));
+            client_config
+        }
+        None => unshaped_client_config(config.allow_insecure)?,
+    };
+
+    Ok(client_config)
+}
+
+/// Produces the ClientHello a plain-TLS connection would send, without opening
+/// a socket. Exposed for byte-parity tests against Xray-core.
+///
+/// The returned bytes are the connection's whole first flight: one TLS
+/// handshake record, header included, shaped or not. It shares
+/// `build_client_config` with `TlsConnector` so the bytes the parity tests
+/// inspect stay the bytes a real connection sends.
+pub fn plain_tls_client_hello_bytes(config: &TlsClientConfig) -> Result<Vec<u8>, TransportError> {
+    let client_config = build_client_config(config)?;
+
+    let server_name = tls_server_name(config)?;
+    let mut connection = ClientConnection::new(Arc::new(client_config), server_name)
+        .map_err(|error| TransportError::TlsConfig(error.to_string()))?;
+    let mut first_flight = Vec::new();
+    connection
+        .write_tls(&mut first_flight)
+        .map_err(TransportError::Tcp)?;
+
+    Ok(first_flight)
+}
+
 /// Builds the client config for a handshake that sends rustls' own
-/// ClientHello, on the *ring* provider plain TLS has always used.
-pub(crate) fn base_client_config(
-    allow_insecure: bool,
-) -> Result<rustls::ClientConfig, TransportError> {
+/// ClientHello, on the *ring* provider plain TLS has always used. Keeping this
+/// branch on *ring* is what makes "no shaping" reproduce the pre-shaping
+/// ClientHello exactly.
+fn unshaped_client_config(allow_insecure: bool) -> Result<rustls::ClientConfig, TransportError> {
     client_config_with_provider(
         Arc::new(rustls::crypto::ring::default_provider()),
         allow_insecure,
@@ -292,9 +341,7 @@ pub(crate) fn base_client_config(
 /// and X25519Kyber768Draft00 — that *ring* does not implement, and rustls
 /// refuses a planned key share whose group its provider lacks. So shaped
 /// handshakes run on the same aws-lc-rs provider REALITY already uses.
-pub(crate) fn shaped_client_config(
-    allow_insecure: bool,
-) -> Result<rustls::ClientConfig, TransportError> {
+fn shaped_client_config(allow_insecure: bool) -> Result<rustls::ClientConfig, TransportError> {
     let mut config =
         client_config_with_provider(Arc::new(shaping_crypto_provider()), allow_insecure)?;
     // A resumed handshake sends a second ClientHello carrying pre_shared_key,

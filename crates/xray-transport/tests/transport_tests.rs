@@ -276,7 +276,7 @@ mod transport_tests {
     async fn tls_connector_returns_boxed_transport_stream() {
         let (client_config, server_config) = tls_test_configs();
         let (addr, handle) = spawn_tls_echo_once(server_config).await;
-        let connector = TlsConnector::with_client_config(client_config);
+        let connector = TlsConnector::with_pinned_client_config(client_config);
         let target = Target::new(TargetAddr::Ip(addr.ip()), addr.port(), Network::Tcp);
         let config = TlsClientConfig {
             server_name: "server.test".to_owned(),
@@ -309,7 +309,7 @@ mod transport_tests {
             stream.write_all(&buf).await.expect("write pong");
         });
 
-        let connector = TlsConnector::with_client_config(client_config);
+        let connector = TlsConnector::with_pinned_client_config(client_config);
         let config = TlsClientConfig {
             server_name: "server.test".to_owned(),
             allow_insecure: false,
@@ -331,7 +331,7 @@ mod transport_tests {
         let (client_config, server_config) = tls_test_configs();
         let (addr, handle) = spawn_tls_echo_once(server_config).await;
         let protector = Arc::new(RecordingSocketProtector::default());
-        let connector = TlsConnector::with_client_config(client_config)
+        let connector = TlsConnector::with_pinned_client_config(client_config)
             .with_socket_protector(protector.clone());
         let target = Target::new(TargetAddr::Ip(addr.ip()), addr.port(), Network::Tcp);
         let config = TlsClientConfig {
@@ -355,7 +355,7 @@ mod transport_tests {
     #[tokio::test]
     async fn tls_connector_requires_dns_for_domain_targets() {
         let (client_config, _) = tls_test_configs();
-        let connector = TlsConnector::with_client_config(client_config);
+        let connector = TlsConnector::with_pinned_client_config(client_config);
         let target = Target::new(
             TargetAddr::Domain("server.test".to_owned()),
             443,
@@ -376,7 +376,7 @@ mod transport_tests {
     #[tokio::test]
     async fn tls_connector_rejects_invalid_server_name_before_network_io() {
         let (client_config, _) = tls_test_configs();
-        let connector = TlsConnector::with_client_config(client_config);
+        let connector = TlsConnector::with_pinned_client_config(client_config);
         let target = Target::new(
             TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
             9,
@@ -401,8 +401,9 @@ mod transport_tests {
     async fn transport_dialer_routes_tls_configs_to_tls_connector() {
         let (client_config, server_config) = tls_test_configs();
         let (addr, handle) = spawn_tls_echo_once(server_config).await;
-        let dialer =
-            TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config));
+        let dialer = TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(
+            client_config,
+        ));
         let target = Target::new(TargetAddr::Ip(addr.ip()), addr.port(), Network::Tcp);
         let config = ConnectorConfig::Tls(TlsClientConfig {
             server_name: "server.test".to_owned(),
@@ -424,8 +425,9 @@ mod transport_tests {
     async fn transport_dialer_routes_tcp_configs_to_tcp_connector() {
         let (client_config, _) = tls_test_configs();
         let (addr, handle) = spawn_echo_once().await;
-        let dialer =
-            TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config));
+        let dialer = TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(
+            client_config,
+        ));
         let target = Target::new(TargetAddr::Ip(addr.ip()), addr.port(), Network::Tcp);
         let config = ConnectorConfig::Tcp;
 
@@ -443,8 +445,9 @@ mod transport_tests {
         let (client_config, _) = tls_test_configs();
         let (success, handle) = spawn_echo_once().await;
         let refused = refused_loopback_addr().await;
-        let dialer =
-            TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config));
+        let dialer = TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(
+            client_config,
+        ));
         let original_target = Target::new(
             TargetAddr::Domain("origin.test".to_owned()),
             443,
@@ -477,8 +480,9 @@ mod transport_tests {
         let success = success_listener
             .local_addr()
             .expect("read fallback candidate");
-        let dialer =
-            TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config));
+        let dialer = TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(
+            client_config,
+        ));
         let target = Target::new(
             TargetAddr::Domain("origin.test".to_owned()),
             443,
@@ -503,8 +507,9 @@ mod transport_tests {
         let (client_config, server_config) = tls_test_configs();
         let (success, handle) = spawn_tls_echo_once(server_config).await;
         let refused = refused_loopback_addr().await;
-        let dialer =
-            TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config));
+        let dialer = TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(
+            client_config,
+        ));
         let original_target = Target::new(
             TargetAddr::Domain("origin.test".to_owned()),
             443,
@@ -555,7 +560,7 @@ mod transport_tests {
             drop(stream);
         });
         let protector = Arc::new(RecordingSocketProtector::default());
-        let connector = TlsConnector::with_client_config(client_config)
+        let connector = TlsConnector::with_pinned_client_config(client_config)
             .with_socket_protector(protector.clone());
         let config = TlsClientConfig {
             server_name: "server.test".to_owned(),
@@ -580,7 +585,7 @@ mod transport_tests {
     async fn tls_candidate_connect_rejects_invalid_sni_before_sockets() {
         let (client_config, _) = tls_test_configs();
         let protector = Arc::new(RecordingSocketProtector::default());
-        let connector = TlsConnector::with_client_config(client_config)
+        let connector = TlsConnector::with_pinned_client_config(client_config)
             .with_socket_protector(protector.clone());
         let config = TlsClientConfig {
             server_name: "bad name".to_owned(),
@@ -603,9 +608,10 @@ mod transport_tests {
         let (client_config, _) = tls_test_configs();
         let (addr, handle) = spawn_echo_once().await;
         let protector = Arc::new(RecordingSocketProtector::default());
-        let dialer =
-            TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config))
-                .with_socket_protector(protector.clone());
+        let dialer = TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(
+            client_config,
+        ))
+        .with_socket_protector(protector.clone());
         let target = Target::new(TargetAddr::Ip(addr.ip()), addr.port(), Network::Tcp);
         let config = ConnectorConfig::Tcp;
 
@@ -622,8 +628,9 @@ mod transport_tests {
     #[tokio::test]
     async fn transport_dialer_rejects_reality_configs_without_plaintext_downgrade() {
         let (client_config, _) = tls_test_configs();
-        let dialer =
-            TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config));
+        let dialer = TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(
+            client_config,
+        ));
         let target = Target::new(
             TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
             9,
@@ -644,9 +651,10 @@ mod transport_tests {
         let (client_config, _) = tls_test_configs();
         let (client, mut server) = tokio::io::duplex(1024);
         let engine = Arc::new(RecordingRealityEngine::new(client));
-        let dialer =
-            TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config))
-                .with_reality_engine(engine.clone());
+        let dialer = TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(
+            client_config,
+        ))
+        .with_reality_engine(engine.clone());
         let target = Target::new(
             TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
             443,
@@ -681,9 +689,10 @@ mod transport_tests {
         let (client_config, _) = tls_test_configs();
         let (client, _server) = tokio::io::duplex(1024);
         let engine = Arc::new(RecordingRealityEngine::new(client));
-        let dialer =
-            TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config))
-                .with_reality_engine(engine.clone());
+        let dialer = TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(
+            client_config,
+        ))
+        .with_reality_engine(engine.clone());
         let original_target = Target::new(
             TargetAddr::Domain("origin.test".to_owned()),
             443,
@@ -715,9 +724,10 @@ mod transport_tests {
         let (client_config, _) = tls_test_configs();
         let (client, _server) = tokio::io::duplex(1024);
         let engine = Arc::new(RecordingSocketAddrRealityEngine::new(client));
-        let dialer =
-            TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config))
-                .with_reality_engine(engine.clone());
+        let dialer = TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(
+            client_config,
+        ))
+        .with_reality_engine(engine.clone());
         let original_target = Target::new(
             TargetAddr::Domain("origin.test".to_owned()),
             443,
@@ -875,6 +885,66 @@ mod transport_tests {
             !Arc::ptr_eq(&first, &other),
             "different fingerprints must not share a config"
         );
+    }
+
+    /// `allow_insecure` picks between two different certificate verifiers, so
+    /// sharing a config across it would hand a verifying connection the one
+    /// that accepts every certificate.
+    #[test]
+    fn tls_connector_does_not_share_configs_across_allow_insecure() {
+        let connector = TlsConnector::system().expect("system roots must load");
+
+        let verifying = TlsClientConfig {
+            server_name: "example.com".to_owned(),
+            allow_insecure: false,
+            alpn: Vec::new(),
+            fingerprint: Some("chrome".to_owned()),
+        };
+        let insecure = TlsClientConfig {
+            allow_insecure: true,
+            ..verifying.clone()
+        };
+
+        let verifying_config = connector
+            .client_config_for(&verifying)
+            .expect("verifying config");
+        let insecure_config = connector
+            .client_config_for(&insecure)
+            .expect("insecure config");
+
+        assert!(
+            !Arc::ptr_eq(&verifying_config, &insecure_config),
+            "a verifying connection must not receive the insecure config"
+        );
+    }
+
+    /// The pinned config wins over every shape, including one that
+    /// `system()` would reject outright.
+    #[test]
+    fn pinned_connector_ignores_shape_and_fingerprint_validation() {
+        let (client_config, _server_config) = tls_test_configs();
+        let connector = TlsConnector::with_pinned_client_config(Arc::clone(&client_config));
+
+        let chrome = TlsClientConfig {
+            server_name: "example.com".to_owned(),
+            allow_insecure: false,
+            alpn: Vec::new(),
+            fingerprint: Some("chrome".to_owned()),
+        };
+        let unknown = TlsClientConfig {
+            fingerprint: Some("nosuchbrowser".to_owned()),
+            ..chrome.clone()
+        };
+
+        for config in [&chrome, &unknown] {
+            let pinned = connector
+                .client_config_for(config)
+                .expect("a pinned connector validates nothing");
+            assert!(
+                Arc::ptr_eq(&pinned, &client_config),
+                "the pinned config must win over every shape"
+            );
+        }
     }
 
     #[test]

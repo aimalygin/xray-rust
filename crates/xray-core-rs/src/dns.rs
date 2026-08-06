@@ -1881,9 +1881,10 @@ mod tests {
             RoutingNetwork::Udp,
         );
         let protector = Arc::new(CountingSocketProtector::default());
-        let dialer =
-            TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config))
-                .with_socket_protector(protector.clone());
+        let dialer = TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(
+            client_config,
+        ))
+        .with_socket_protector(protector.clone());
 
         let response = tokio::time::timeout(
             Duration::from_secs(2),
@@ -1983,8 +1984,9 @@ mod tests {
             53,
             RoutingNetwork::Tcp,
         );
-        let dialer =
-            TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config));
+        let dialer = TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(
+            client_config,
+        ));
 
         let mut session = DirectDnsTcpSession::open(&original, &outbound, &bootstrap, &dialer, &[])
             .await

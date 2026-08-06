@@ -182,8 +182,9 @@ async fn run_local_xray_vless_tls_interop(flow: Option<&'static str>) {
         }),
         flow,
     );
-    let dialer =
-        TransportDialer::with_tls_connector(TlsConnector::with_client_config(tls_client_config));
+    let dialer = TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(
+        tls_client_config,
+    ));
 
     run_local_xray_vless_interop_scenario(xray, rust_config, Some(dialer)).await;
 }
