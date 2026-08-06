@@ -1612,6 +1612,11 @@ hellos are otherwise byte-identical to uTLS. Removing it entirely would need a
 change in the `shaped-rustls` fork, so say plainly that these names are shaped
 but not byte-exact rather than implying full parity.
 
+**The `tls` bullet in the security enumeration is stale too.** Lines 81-82 list
+`security: "tls"` as taking only `serverName` and `allowInsecure`; it now also
+takes `fingerprint` and `alpn`, so the bullet has to name them or a reader who
+stops at the list still concludes they are unsupported.
+
 - [ ] **Step 2: Verify the surrounding text still reads correctly**
 
 ```bash
@@ -1619,6 +1624,19 @@ sed -n 70,100p docs/config-compatibility.md
 ```
 
 Expected: no leftover claim that fingerprints are unsupported.
+
+Two spec documents also went stale as Task 7 landed. Both are point-in-time
+records rather than living docs, so leave them unless this plan's owner says
+otherwise — but do not cite them as current behavior:
+
+- `docs/superpowers/specs/2026-08-06-vless-stream-transports-design.md:188-197`
+  describes the parser and `build_connector` as refusing a plain-TLS
+  fingerprint. That was the state this plan set out to change.
+- `docs/superpowers/specs/2026-05-20-tls-connector-design.md:106` and `:128`
+  state the rejection as core behavior for that earlier slice.
+- `docs/superpowers/plans/2026-05-20-tls-connector.md:490,791` still name
+  `rejects_tls_fingerprint_without_plain_rustls_downgrade`, a test Task 7
+  deleted.
 
 - [ ] **Step 3: Commit**
 
