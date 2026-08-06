@@ -188,7 +188,7 @@ connection carries a shaped, Chrome-by-default ClientHello.**
 
 xray-rust supports fingerprints on exactly one of its two TLS paths. Under
 `security: "reality"` the support is complete: `realitySettings.fingerprint`
-accepts all 122 Xray names, defaults to `chrome` on an empty value
+accepts all 61 Xray names, defaults to `chrome` on an empty value
 (`xray-utls/src/lib.rs:134`), additionally rejects profiles with no
 X25519-compatible key share, and reaches the wire through the shaped-rustls
 fork. Under `security: "tls"` it is refused twice — the parser errors with
@@ -212,9 +212,11 @@ The machinery already exists and is generic — it is only bound to REALITY by
 module visibility. Our rustls fork exposes `ClientConfig.client_hello_customizer`
 as a plain field (`crates/xray-transport/src/reality_rustls.rs:1147`),
 `ClientHelloPlan` is transport-agnostic, and `apply_utls_profile` plus the
-profile table already translate a uTLS profile into that plan — 43 distinct
-shaping profiles in `reality_utls_profiles.rs` behind the 122 fingerprint names
-`xray-utls` accepts. The REALITY
+profile table already translate a uTLS profile into that plan: `xray-utls`
+accepts 61 fingerprint names and every one of them resolves to a shaping profile
+(43 distinct profiles, the rest aliases). 14 of those names are REALITY-incapable
+for want of an X25519 key share and are rejected today; under plain TLS they
+have no such constraint and become usable for the first time. The REALITY
 customizer adds exactly three REALITY-specific things on top: a fixed hello
 random, a session id carrying the auth key, and a fixed X25519 key share
 (`reality_rustls.rs:338`). A plain-TLS customizer is the same call without them.
