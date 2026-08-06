@@ -907,10 +907,6 @@ impl TlsConnector {
                 client_config.client_hello_customizer = Some(Arc::new(
                     crate::utls_tls::UtlsClientHelloCustomizer::new(profile, &config.alpn),
                 ));
-                // A resumed handshake would emit a second ClientHello carrying
-                // pre_shared_key, outside the shape the fingerprint describes.
-                // REALITY disables resumption for the same reason.
-                client_config.resumption = rustls::client::Resumption::disabled();
                 client_config
             }
             None => base_client_config(config.allow_insecure)?,
@@ -927,7 +923,7 @@ Two things here that Task 4 established and that are easy to get wrong:
 
 **Use `shaped_client_config`, not `base_client_config`, on the shaping branch.** Task 4 discovered that `rustls::crypto::ring` carries only X25519/secp256r1/secp384r1, while the current Chrome profile plans an X25519MLKEM768 key share; building a shaped config on ring fails the handshake with "ClientHello key share group is not supported by this config". `tls.rs` therefore has two builders — `base_client_config` on ring, byte-identical to the pre-shaping behavior, and `shaped_client_config` on aws-lc-rs with REALITY's key-exchange group list. The unshaped branch (`fingerprint: None` or `"unsafe"`) must stay on ring so that asking for no shaping really does reproduce today's ClientHello.
 
-**Disable resumption on shaped configs.** Nothing in Task 4 needed this, because it only ever built one-shot hellos. Once shaped configs reach `TlsConnector`, a resumed session emits a second ClientHello carrying `pre_shared_key` — an extension the fingerprint profile never described — which defeats the shaping on exactly the connections a long-lived client makes most. `reality_rustls.rs` disables resumption for the same reason.
+**Resumption is already disabled inside `shaped_client_config`** — Task 4 landed it there, so this task does not repeat it. The reason is worth knowing anyway: a resumed session emits a second ClientHello carrying `pre_shared_key`, an extension the fingerprint profile never described, which would defeat the shaping on exactly the connections a long-lived client makes most. `reality_rustls.rs` disables it for the same reason, in its own builder rather than at the call site — the builder owning its shaping invariants is this crate's established pattern.
 
 Add to the imports at the top of the file:
 
@@ -1513,6 +1509,8 @@ Append to `crates/xray-transport/tests/utls_tls_shaping_tests.rs`, mirroring how
 ```
 
 Match the fixture's actual field name for the ALPN list — inspect the generated JSON and adjust `ShapeFixture` to it rather than assuming.
+
+**Generate a second fixture for `android`, not just `chrome`.** A `chrome`-only fixture proves very little: Chrome's profile already declares `["h2", "http/1.1"]`, so the override merely narrows a list that was there. The `android` profile declares no ALPN extension at all, which means the override has to *insert* one — the case Xray handles with its `if !hasALPNExtension` append, and the case Task 4 had to add support for after a review found we silently emitted no ALPN there. Fixture both, and assert both, or this test passes without exercising the code path it exists to protect.
 
 - [ ] **Step 4: Run the test**
 
