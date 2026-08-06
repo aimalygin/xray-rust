@@ -106,10 +106,8 @@ pub(crate) fn apply_utls_profile(
 
     plan = plan
         .with_forced_extensions(forced_extensions)
-        .with_extensions(extension_plan);
-    if !profile.supported_versions.is_empty() {
-        plan = plan.with_extension_order(extension_order(profile, false)?);
-    }
+        .with_extensions(extension_plan)
+        .with_extension_order(extension_order(profile, false)?);
 
     if let Some(exact_extensions) = exact_extensions {
         plan = plan.with_exact_extensions(exact_extensions);
@@ -271,8 +269,7 @@ fn certificate_compression(
 /// the hello means un-suppressing *and* ordering it in the same breath.
 ///
 /// Xray appends it last (`tls.go`'s `if !hasALPNExtension`) and the order
-/// pinned here matches — but both profiles that reach this today pin no
-/// extension order at all, so rustls places their extensions itself.
+/// pinned here matches.
 pub(crate) fn apply_alpn_override(
     mut plan: ClientHelloPlan,
     profile: &'static UtlsClientHelloProfile,
@@ -283,17 +280,30 @@ pub(crate) fn apply_alpn_override(
         return Ok(plan);
     }
 
-    plan = plan.with_extensions(extension_plan(profile, true)?);
-    // No profile that lacks ALPN pins an extension order today, but the two
-    // must move together: enabling the extension without ordering it is an
-    // error inside rustls, not a shape difference.
-    if !profile.supported_versions.is_empty() {
-        plan = plan.with_extension_order(extension_order(profile, true)?);
-    }
+    // The two must move together: un-suppressing the extension without also
+    // ordering it is an error inside rustls, not a shape difference.
+    plan = plan
+        .with_extensions(extension_plan(profile, true)?)
+        .with_extension_order(extension_order(profile, true)?);
 
     Ok(plan)
 }
 
+/// Builds the pinned extension order: the profile's own order, plus whatever
+/// rustls emits on top of it.
+///
+/// GREASE is left out on purpose -- `grease_plan` re-inserts it by position,
+/// counted against the non-GREASE extensions, so listing it here would place
+/// it twice.
+///
+/// The order has to name every extension rustls emits, or rustls rejects it.
+/// That is why `supported_versions` is appended for TLS-1.2-era profiles that
+/// never declared it: rustls builds that extension into every ClientHello --
+/// even a TLS-1.2-only one, where it carries just `0x0303` -- and neither the
+/// extension plan (which calls it required) nor the finalizer (which may only
+/// rewrite the legacy session id) can take it back out. Appending it keeps the
+/// whole of uTLS' real order intact as a prefix and confines the one extension
+/// we cannot suppress to the tail.
 fn extension_order(
     profile: &UtlsClientHelloProfile,
     appended_alpn: bool,
@@ -306,6 +316,9 @@ fn extension_order(
         .collect::<Vec<_>>();
     if appended_alpn {
         order.push(EXT_ALPN);
+    }
+    if !profile_has_extension(profile, EXT_SUPPORTED_VERSIONS) {
+        order.push(EXT_SUPPORTED_VERSIONS);
     }
 
     ClientHelloExtensionOrder::try_from(order)

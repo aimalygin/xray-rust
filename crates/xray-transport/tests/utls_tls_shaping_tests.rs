@@ -2,7 +2,22 @@ mod utls_tls_shaping_tests {
     use xray_transport::{plain_tls_client_hello_bytes, TlsClientConfig};
 
     const EXT_ALPN: u16 = 0x0010;
+    const EXT_SUPPORTED_VERSIONS: u16 = 0x002b;
     const CHROME_GREASE_CIPHER: u16 = 0x0a0a;
+
+    /// uTLS ClientHello shapes emitted by the pinned Go oracle
+    /// (`tools/reality-oracle/clienthello_shape.go`) and checked in so this
+    /// coverage runs under a plain `cargo test`. Regenerate with:
+    ///
+    /// ```text
+    /// go run -tags reality_oracle_clienthello_shape \
+    ///   ./tools/reality-oracle/clienthello_shape.go -fingerprint android \
+    ///   > tests/fixtures/reality/clienthello_shape_android.json
+    /// ```
+    const CLIENTHELLO_SHAPE_ANDROID_JSON: &str =
+        include_str!("../../../tests/fixtures/reality/clienthello_shape_android.json");
+    const CLIENTHELLO_SHAPE_HELLOCHROME_58_JSON: &str =
+        include_str!("../../../tests/fixtures/reality/clienthello_shape_hellochrome_58.json");
 
     fn config(fingerprint: &str, alpn: &[&str]) -> TlsClientConfig {
         TlsClientConfig {
@@ -194,6 +209,112 @@ mod utls_tls_shaping_tests {
             .expect("a REALITY-incapable fingerprint must still shape plain TLS");
 
         assert!(!hello.is_empty());
+    }
+
+    /// Walks the extension list and renders it the way the Go oracle's
+    /// `extension_order` field does: `GREASE` for any GREASE value, a
+    /// `0x`-prefixed hex type otherwise.
+    fn extension_order(hello: &[u8]) -> Vec<String> {
+        let mut cursor = 5 + 4 + 2 + 32;
+        cursor += 1 + usize::from(hello[cursor]);
+        let cipher_suites_len = usize::from(u16::from_be_bytes([hello[cursor], hello[cursor + 1]]));
+        cursor += 2 + cipher_suites_len;
+        cursor += 1 + usize::from(hello[cursor]);
+        let extensions_len = usize::from(u16::from_be_bytes([hello[cursor], hello[cursor + 1]]));
+        cursor += 2;
+        let end = cursor + extensions_len;
+
+        let mut order = Vec::new();
+        while cursor + 4 <= end {
+            let extension_type = u16::from_be_bytes([hello[cursor], hello[cursor + 1]]);
+            let payload_len =
+                usize::from(u16::from_be_bytes([hello[cursor + 2], hello[cursor + 3]]));
+            cursor += 4 + payload_len;
+            order.push(if is_grease(extension_type) {
+                "GREASE".to_owned()
+            } else {
+                format!("0x{extension_type:04x}")
+            });
+        }
+        order
+    }
+
+    fn is_grease(value: u16) -> bool {
+        let [high, low] = value.to_be_bytes();
+        high == low && high & 0x0f == 0x0a
+    }
+
+    fn oracle_extension_order(shape_json: &str) -> (String, Vec<String>) {
+        let shape: serde_json::Value =
+            serde_json::from_str(shape_json).expect("uTLS shape fixture should decode");
+        let fingerprint = shape["fingerprint"]
+            .as_str()
+            .expect("fixture names its fingerprint")
+            .to_owned();
+        let order = shape["extension_order"]
+            .as_array()
+            .expect("fixture carries an extension order")
+            .iter()
+            .map(|value| {
+                value
+                    .as_str()
+                    .expect("extension order entries are strings")
+                    .to_owned()
+            })
+            .collect();
+        (fingerprint, order)
+    }
+
+    /// The TLS-1.2-era profiles -- the ones whose uTLS hello carries no
+    /// `supported_versions` extension -- must still emit their extensions in
+    /// uTLS' order.
+    ///
+    /// rustls emits `supported_versions` on every ClientHello it builds, TLS
+    /// 1.2-only configs included, and refuses both to have it disabled and to
+    /// have it left out of a pinned order. So the one permitted divergence is
+    /// that single extension, kept at the very end: everything before it is
+    /// uTLS' own order, byte for byte.
+    #[test]
+    fn tls12_era_profiles_pin_the_utls_extension_order() {
+        for shape_json in [
+            CLIENTHELLO_SHAPE_ANDROID_JSON,
+            CLIENTHELLO_SHAPE_HELLOCHROME_58_JSON,
+        ] {
+            let (fingerprint, mut expected) = oracle_extension_order(shape_json);
+            assert!(
+                !expected.contains(&format!("0x{EXT_SUPPORTED_VERSIONS:04x}")),
+                "{fingerprint}: fixture is meant to be a TLS-1.2-era shape"
+            );
+            expected.push(format!("0x{EXT_SUPPORTED_VERSIONS:04x}"));
+
+            let hello = plain_tls_client_hello_bytes(&config(&fingerprint, &[]))
+                .unwrap_or_else(|error| panic!("{fingerprint}: ClientHello: {error}"));
+
+            assert_eq!(extension_order(&hello), expected, "{fingerprint}");
+        }
+    }
+
+    /// A ClientHello whose extension order is reshuffled per connection is
+    /// itself a fingerprint: no real client does that. rustls randomizes the
+    /// order of any extension it was not given an explicit position for, so
+    /// every profile has to pin one.
+    #[test]
+    fn every_fingerprint_emits_a_stable_extension_order() {
+        for fingerprint in xray_utls::XRAY_REALITY_FINGERPRINTS {
+            for alpn in [&[][..], &["http/1.1"][..]] {
+                let first = plain_tls_client_hello_bytes(&config(fingerprint, alpn))
+                    .unwrap_or_else(|error| panic!("{fingerprint}: ClientHello: {error}"));
+                for _ in 0..8 {
+                    let next = plain_tls_client_hello_bytes(&config(fingerprint, alpn))
+                        .unwrap_or_else(|error| panic!("{fingerprint}: ClientHello: {error}"));
+                    assert_eq!(
+                        extension_order(&next),
+                        extension_order(&first),
+                        "{fingerprint} (alpn {alpn:?}): extension order must not vary per connection"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
