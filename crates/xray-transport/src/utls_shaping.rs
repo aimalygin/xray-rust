@@ -10,9 +10,11 @@
 //!
 //! Callers that need to override part of the shaped plan may do so after
 //! `apply_utls_profile` returns: `ClientHelloPlan` setters are last-write-wins
-//! and the plan is only read once, at encode time. For example, a later
-//! `.with_alpn_protocols(...)` call cleanly replaces the profile's own ALPN
-//! list.
+//! and the plan is only read once, at encode time. Replacing a list is not
+//! always enough to change the hello, though — an extension the profile never
+//! declared is suppressed no matter what payload it is given, which is why
+//! ALPN overrides go through `apply_alpn_override` rather than a bare
+//! `.with_alpn_protocols(...)`.
 
 use rustls::{
     client::{
@@ -266,8 +268,11 @@ fn certificate_compression(
 /// A profile that carries no ALPN extension needs more than a new list: the
 /// extension is suppressed by the profile's extension plan, and rustls rejects
 /// an extension order that omits an emitted extension, so appending ALPN to
-/// the hello means un-suppressing *and* ordering it in the same breath. Xray
-/// appends it last (`tls.go`'s `if !hasALPNExtension`), so this does too.
+/// the hello means un-suppressing *and* ordering it in the same breath.
+///
+/// Xray appends it last (`tls.go`'s `if !hasALPNExtension`) and the order
+/// pinned here matches — but both profiles that reach this today pin no
+/// extension order at all, so rustls places their extensions itself.
 pub(crate) fn apply_alpn_override(
     mut plan: ClientHelloPlan,
     profile: &'static UtlsClientHelloProfile,
