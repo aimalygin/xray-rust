@@ -845,4 +845,51 @@ mod transport_tests {
             Err(TransportError::UnsupportedConnectorConfig("reality"))
         ));
     }
+
+    #[test]
+    fn tls_connector_memoizes_configs_per_shape() {
+        let connector = TlsConnector::system().expect("system roots must load");
+
+        let chrome = TlsClientConfig {
+            server_name: "example.com".to_owned(),
+            allow_insecure: false,
+            alpn: Vec::new(),
+            fingerprint: Some("chrome".to_owned()),
+        };
+        let firefox = TlsClientConfig {
+            fingerprint: Some("firefox".to_owned()),
+            ..chrome.clone()
+        };
+
+        let first = connector.client_config_for(&chrome).expect("chrome config");
+        let again = connector.client_config_for(&chrome).expect("chrome config");
+        let other = connector
+            .client_config_for(&firefox)
+            .expect("firefox config");
+
+        assert!(
+            Arc::ptr_eq(&first, &again),
+            "the same shape must reuse one config"
+        );
+        assert!(
+            !Arc::ptr_eq(&first, &other),
+            "different fingerprints must not share a config"
+        );
+    }
+
+    #[test]
+    fn tls_connector_rejects_unknown_fingerprints() {
+        let connector = TlsConnector::system().expect("system roots must load");
+
+        let error = connector
+            .client_config_for(&TlsClientConfig {
+                server_name: "example.com".to_owned(),
+                allow_insecure: false,
+                alpn: Vec::new(),
+                fingerprint: Some("nosuchbrowser".to_owned()),
+            })
+            .expect_err("an unknown fingerprint must fail");
+
+        assert!(error.to_string().contains("nosuchbrowser"));
+    }
 }

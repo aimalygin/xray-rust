@@ -1,8 +1,9 @@
 use std::{
+    collections::HashMap,
     io,
     net::SocketAddr,
     pin::Pin,
-    sync::Arc,
+    sync::{Arc, Mutex},
     task::{Context, Poll},
 };
 
@@ -18,10 +19,27 @@ use crate::{
     SocketProtector, TlsClientConfig, TransportError, TransportStream,
 };
 
+/// Identifies one rustls configuration shape. Two connections that agree on
+/// all three fields can share a config, which matters because building one
+/// parses the whole root store.
+///
+/// `server_name` is deliberately not part of a shape: rustls takes it as a
+/// `connect` argument, so it never reaches the config. `client_config_for`
+/// destructures `TlsClientConfig` rather than reading fields, so a field added
+/// there stops this file from compiling until someone decides which kind it is.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+struct ClientConfigKey {
+    allow_insecure: bool,
+    alpn: Vec<String>,
+    fingerprint: Option<String>,
+}
+
 #[derive(Clone)]
 pub struct TlsConnector {
-    client_config: Arc<rustls::ClientConfig>,
-    insecure_client_config: Arc<rustls::ClientConfig>,
+    /// Shared with every clone of this connector, so a shape is built once per
+    /// connector family rather than once per clone.
+    configs: Arc<Mutex<HashMap<ClientConfigKey, Arc<rustls::ClientConfig>>>>,
+    override_config: Option<Arc<rustls::ClientConfig>>,
     socket_protector: Option<Arc<dyn SocketProtector>>,
 }
 
@@ -37,16 +55,18 @@ impl std::fmt::Debug for TlsConnector {
 impl TlsConnector {
     pub fn system() -> Result<Self, TransportError> {
         Ok(Self {
-            client_config: Arc::new(base_client_config(false)?),
-            insecure_client_config: Arc::new(base_client_config(true)?),
+            configs: Arc::new(Mutex::new(HashMap::new())),
+            override_config: None,
             socket_protector: None,
         })
     }
 
+    /// Pins one prebuilt config for every connection, bypassing shaping.
+    /// Used by tests that supply their own roots.
     pub fn with_client_config(client_config: Arc<rustls::ClientConfig>) -> Self {
         Self {
-            insecure_client_config: Arc::clone(&client_config),
-            client_config,
+            configs: Arc::new(Mutex::new(HashMap::new())),
+            override_config: Some(client_config),
             socket_protector: None,
         }
     }
@@ -54,6 +74,42 @@ impl TlsConnector {
     pub fn with_socket_protector(mut self, protector: Arc<dyn SocketProtector>) -> Self {
         self.socket_protector = Some(protector);
         self
+    }
+
+    /// Returns the config for one connection shape, building and caching it on
+    /// first use.
+    pub fn client_config_for(
+        &self,
+        config: &TlsClientConfig,
+    ) -> Result<Arc<rustls::ClientConfig>, TransportError> {
+        if let Some(override_config) = &self.override_config {
+            return Ok(Arc::clone(override_config));
+        }
+
+        let TlsClientConfig {
+            // Per-connection, not per-config: rustls receives it at `connect`.
+            server_name: _,
+            allow_insecure,
+            alpn,
+            fingerprint,
+        } = config;
+        let key = ClientConfigKey {
+            allow_insecure: *allow_insecure,
+            alpn: alpn.clone(),
+            fingerprint: fingerprint.clone(),
+        };
+
+        let mut configs = self.configs.lock().map_err(|_| {
+            TransportError::TlsConfig("TLS config cache lock was poisoned".to_owned())
+        })?;
+        if let Some(cached) = configs.get(&key) {
+            return Ok(Arc::clone(cached));
+        }
+
+        let client_config = Arc::new(crate::utls_tls::build_client_config(config)?);
+        configs.insert(key, Arc::clone(&client_config));
+
+        Ok(client_config)
     }
 
     pub async fn connect_stream(
@@ -122,12 +178,8 @@ impl TlsConnector {
         config: &TlsClientConfig,
         server_name: ServerName<'static>,
     ) -> Result<BoxedTransportStream, TransportError> {
-        let client_config = if config.allow_insecure {
-            &self.insecure_client_config
-        } else {
-            &self.client_config
-        };
-        let stream = TokioTlsConnector::from(Arc::clone(client_config))
+        let client_config = self.client_config_for(config)?;
+        let stream = TokioTlsConnector::from(client_config)
             .connect(server_name, stream)
             .await
             .map_err(TransportError::Tls)?;

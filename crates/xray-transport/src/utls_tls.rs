@@ -98,12 +98,18 @@ impl ClientHelloCustomizer for UtlsClientHelloCustomizer {
     }
 }
 
-/// Produces the ClientHello a plain-TLS connection would send, without opening
-/// a socket. Exposed for byte-parity tests against Xray-core.
+/// Builds the rustls config one `TlsClientConfig` asks for: shaped by its
+/// fingerprint profile, or rustls' own ClientHello when it names none.
 ///
-/// The returned bytes are the connection's whole first flight: one TLS
-/// handshake record, header included, shaped or not.
-pub fn plain_tls_client_hello_bytes(config: &TlsClientConfig) -> Result<Vec<u8>, TransportError> {
+/// `TlsConnector` and `plain_tls_client_hello_bytes` both route through this,
+/// so the bytes the parity tests inspect stay the bytes a real connection
+/// sends. Note which builder each branch picks — the shaped one runs on
+/// aws-lc-rs because current profiles plan an X25519MLKEM768 key share that
+/// *ring* does not carry, while the unshaped branch must stay on *ring* so
+/// that asking for no shaping reproduces the pre-shaping ClientHello exactly.
+pub(crate) fn build_client_config(
+    config: &TlsClientConfig,
+) -> Result<rustls::ClientConfig, TransportError> {
     let client_config = match shaping_profile(config.fingerprint.as_deref())? {
         Some(profile) => {
             let mut client_config = crate::tls::shaped_client_config(config.allow_insecure)?;
@@ -115,6 +121,17 @@ pub fn plain_tls_client_hello_bytes(config: &TlsClientConfig) -> Result<Vec<u8>,
         }
         None => crate::tls::base_client_config(config.allow_insecure)?,
     };
+
+    Ok(client_config)
+}
+
+/// Produces the ClientHello a plain-TLS connection would send, without opening
+/// a socket. Exposed for byte-parity tests against Xray-core.
+///
+/// The returned bytes are the connection's whole first flight: one TLS
+/// handshake record, header included, shaped or not.
+pub fn plain_tls_client_hello_bytes(config: &TlsClientConfig) -> Result<Vec<u8>, TransportError> {
+    let client_config = build_client_config(config)?;
 
     let server_name = ServerName::try_from(config.server_name.clone())
         .map_err(|_| TransportError::InvalidTlsServerName(config.server_name.clone()))?;
