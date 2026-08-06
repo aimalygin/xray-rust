@@ -1593,6 +1593,25 @@ fingerprint profile and overwrites the configured list, except on the
 `WebsocketHandshakeContext` path.
 ```
 
+Also document these two consequences, both established during implementation:
+
+**Shaped connections use a different crypto backend.** With shaping on — which is
+now the default, since an absent fingerprint means `chrome` — the handshake runs
+on aws-lc-rs rather than ring, and actually offers an X25519MLKEM768 key share.
+That is what matching Chrome requires, but it is a real change in what goes on
+the wire and in which backend does the handshake. `fingerprint: "unsafe"` keeps
+the old ring path.
+
+**Fourteen fingerprint names carry one extension uTLS does not.** The ten
+TLS-1.2-era profiles declare no `supported_versions`, but rustls emits that
+extension on every ClientHello it builds — a TLS-1.2-only config included, where
+it carries just `0x0303` — and neither the extension plan nor the ClientHello
+finalizer can suppress it. Task 5A pins the order so uTLS's real order survives
+as an exact prefix and confines the extra extension to the tail; the affected
+hellos are otherwise byte-identical to uTLS. Removing it entirely would need a
+change in the `shaped-rustls` fork, so say plainly that these names are shaped
+but not byte-exact rather than implying full parity.
+
 - [ ] **Step 2: Verify the surrounding text still reads correctly**
 
 ```bash
