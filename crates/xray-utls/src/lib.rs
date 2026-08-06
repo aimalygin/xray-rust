@@ -144,6 +144,26 @@ pub fn normalize_reality_fingerprint(name: &str) -> Option<&'static str> {
         .find(|fingerprint| fingerprint.eq_ignore_ascii_case(name))
 }
 
+/// Xray's escape hatch: `fingerprint: "unsafe"` disables uTLS shaping and lets
+/// the TLS stack send its own ClientHello. Its entry in Xray's fingerprint map
+/// is permanently nil, unlike `random`/`randomized`, which `init()` fills with
+/// real profiles at startup.
+pub const UNSAFE_TLS_FINGERPRINT: &str = "unsafe";
+
+/// Normalizes a `tlsSettings.fingerprint` value.
+///
+/// Same name table as REALITY — Xray shares one uTLS fingerprint namespace
+/// across both — but without the X25519 key-share requirement, which is a
+/// REALITY protocol constraint rather than a property of the fingerprint.
+/// An empty name means `chrome`, matching Xray's `GetFingerprint("")`.
+pub fn normalize_tls_fingerprint(name: &str) -> Option<&'static str> {
+    if name.eq_ignore_ascii_case(UNSAFE_TLS_FINGERPRINT) {
+        return Some(UNSAFE_TLS_FINGERPRINT);
+    }
+
+    normalize_reality_fingerprint(name)
+}
+
 pub fn normalize_reality_supported_fingerprint(name: &str) -> Option<&'static str> {
     let fingerprint = normalize_reality_fingerprint(name)?;
     XRAY_REALITY_CAPABLE_FINGERPRINTS
@@ -160,9 +180,9 @@ pub fn is_reality_fingerprint_supported(name: &str) -> bool {
 mod tests {
     use super::{
         is_reality_fingerprint_supported, normalize_reality_fingerprint,
-        normalize_reality_supported_fingerprint, DEFAULT_REALITY_FINGERPRINT,
-        XRAY_REALITY_CAPABLE_FINGERPRINTS, XRAY_REALITY_FINGERPRINTS,
-        XRAY_REALITY_INCAPABLE_FINGERPRINTS,
+        normalize_reality_supported_fingerprint, normalize_tls_fingerprint,
+        DEFAULT_REALITY_FINGERPRINT, UNSAFE_TLS_FINGERPRINT, XRAY_REALITY_CAPABLE_FINGERPRINTS,
+        XRAY_REALITY_FINGERPRINTS, XRAY_REALITY_INCAPABLE_FINGERPRINTS,
     };
 
     #[test]
@@ -241,5 +261,48 @@ mod tests {
             XRAY_REALITY_CAPABLE_FINGERPRINTS.len() + XRAY_REALITY_INCAPABLE_FINGERPRINTS.len(),
             XRAY_REALITY_FINGERPRINTS.len()
         );
+    }
+
+    #[test]
+    fn normalize_tls_fingerprint_defaults_empty_to_chrome() {
+        assert_eq!(
+            normalize_tls_fingerprint(""),
+            Some(DEFAULT_REALITY_FINGERPRINT)
+        );
+    }
+
+    #[test]
+    fn normalize_tls_fingerprint_passes_through_the_unsafe_sentinel() {
+        assert_eq!(
+            normalize_tls_fingerprint("unsafe"),
+            Some(UNSAFE_TLS_FINGERPRINT)
+        );
+        assert_eq!(
+            normalize_tls_fingerprint("UNSAFE"),
+            Some(UNSAFE_TLS_FINGERPRINT)
+        );
+    }
+
+    #[test]
+    fn normalize_tls_fingerprint_accepts_reality_incapable_names() {
+        // Plain TLS has no X25519 key-share requirement, so every name in the
+        // table is usable even when REALITY rejects it.
+        for name in XRAY_REALITY_INCAPABLE_FINGERPRINTS {
+            assert_eq!(
+                normalize_tls_fingerprint(name),
+                Some(*name),
+                "plain TLS must accept {name}"
+            );
+            assert_eq!(
+                normalize_reality_supported_fingerprint(name),
+                None,
+                "{name} is expected to stay REALITY-incapable"
+            );
+        }
+    }
+
+    #[test]
+    fn normalize_tls_fingerprint_rejects_unknown_names() {
+        assert_eq!(normalize_tls_fingerprint("nosuchbrowser"), None);
     }
 }
