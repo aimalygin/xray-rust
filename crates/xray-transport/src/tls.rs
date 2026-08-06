@@ -99,9 +99,17 @@ impl TlsConnector {
             fingerprint: fingerprint.clone(),
         };
 
-        let mut configs = self.configs.lock().map_err(|_| {
-            TransportError::TlsConfig("TLS config cache lock was poisoned".to_owned())
-        })?;
+        // Poisoning is safe to ignore here, and deliberately ignored: this map
+        // is a pure memo table with no invariant for a poisoned lock to
+        // protect. `insert` runs strictly after the fallible build, so a panic
+        // can leave an entry absent but never half-built. Failing closed —
+        // right for handshake-critical state, as in `reality_rustls` — would
+        // turn one unrelated panic into a tunnel that stays down until the
+        // process restarts.
+        let mut configs = self
+            .configs
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         if let Some(cached) = configs.get(&key) {
             return Ok(Arc::clone(cached));
         }
