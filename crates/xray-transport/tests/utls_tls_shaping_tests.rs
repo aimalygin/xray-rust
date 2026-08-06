@@ -154,9 +154,11 @@ mod utls_tls_shaping_tests {
         );
     }
 
-    /// The shaped hello is reframed by hand, the unshaped one comes framed by
-    /// rustls; both must hand back the same layout or every parser above --
-    /// including the helpers in this file -- reads the wrong offsets.
+    /// Pins the layout contract the helpers above walk on: exactly one
+    /// handshake record, header included, with lengths covering the whole
+    /// flight. A shaped hello that ever spanned two records -- or a change
+    /// that returned the bare handshake message -- would silently shift every
+    /// offset in this file.
     #[test]
     fn both_paths_return_one_well_formed_handshake_record() {
         for fingerprint in ["chrome", "unsafe"] {

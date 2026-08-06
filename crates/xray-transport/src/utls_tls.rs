@@ -6,12 +6,9 @@
 //! shape while leaving the hello random, session id, and key share to rustls,
 //! which is exactly what separates it from `reality_rustls`'s customizer.
 
-use std::fmt;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use rustls::client::{
-    CapturesClientHello, ClientHelloContext, ClientHelloCustomizer, ClientHelloPlan,
-};
+use rustls::client::{ClientHelloContext, ClientHelloCustomizer, ClientHelloPlan};
 use rustls::pki_types::ServerName;
 use rustls::{ClientConnection, Error as RustlsError};
 
@@ -22,12 +19,6 @@ use crate::{TlsClientConfig, TransportError};
 /// The one configured ALPN list the RAW transport rebuilds the ClientHello
 /// for. Anything else leaves the fingerprint profile's own ALPN in place.
 const ALPN_OVERRIDE_TRIGGER: &str = "http/1.1";
-
-const TLS_RECORD_HANDSHAKE: u8 = 0x16;
-/// Every ClientHello record carries the legacy 0x0301 version for middlebox
-/// compatibility, whatever version the handshake actually negotiates.
-const TLS_LEGACY_RECORD_VERSION: [u8; 2] = [0x03, 0x01];
-const TLS_RECORD_HEADER_LEN: usize = 5;
 
 /// Resolves a normalized fingerprint to a shaping profile.
 ///
@@ -53,10 +44,10 @@ pub(crate) fn shaping_profile(
 /// Unlike the REALITY customizer this sets no hello random, no session id, and
 /// no fixed key share — those carry REALITY's authentication and have no place
 /// in a plain handshake.
+#[derive(Debug)]
 pub(crate) struct UtlsClientHelloCustomizer {
     profile: &'static UtlsClientHelloProfile,
     alpn_override: Option<Vec<Vec<u8>>>,
-    capture: Option<Arc<PlainClientHelloCapture>>,
 }
 
 impl UtlsClientHelloCustomizer {
@@ -64,13 +55,7 @@ impl UtlsClientHelloCustomizer {
         Self {
             profile,
             alpn_override: alpn_override_for(alpn),
-            capture: None,
         }
-    }
-
-    fn with_capture(mut self, capture: Arc<PlainClientHelloCapture>) -> Self {
-        self.capture = Some(capture);
-        self
     }
 }
 
@@ -98,17 +83,6 @@ fn alpn_override_for(alpn: &[String]) -> Option<Vec<Vec<u8>>> {
     }
 }
 
-impl fmt::Debug for UtlsClientHelloCustomizer {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("UtlsClientHelloCustomizer")
-            .field("profile", &self.profile)
-            .field("alpn_override", &self.alpn_override)
-            .field("capture", &self.capture.is_some())
-            .finish()
-    }
-}
-
 impl ClientHelloCustomizer for UtlsClientHelloCustomizer {
     fn build_client_hello_plan(
         &self,
@@ -119,88 +93,37 @@ impl ClientHelloCustomizer for UtlsClientHelloCustomizer {
         if let Some(protocols) = &self.alpn_override {
             plan = apply_alpn_override(plan, self.profile, protocols)?;
         }
-        if let Some(capture) = &self.capture {
-            plan = plan.with_capture(capture.clone());
-        }
 
         Ok(Some(plan))
-    }
-}
-
-#[derive(Debug, Default)]
-pub(crate) struct PlainClientHelloCapture {
-    bytes: Mutex<Option<Vec<u8>>>,
-}
-
-impl PlainClientHelloCapture {
-    fn take(&self) -> Result<Vec<u8>, TransportError> {
-        let mut bytes = self.bytes.lock().map_err(|_| {
-            TransportError::TlsConfig("ClientHello capture lock was poisoned".to_owned())
-        })?;
-        bytes.take().ok_or_else(|| {
-            TransportError::TlsConfig("rustls did not capture a ClientHello".to_owned())
-        })
-    }
-}
-
-impl CapturesClientHello for PlainClientHelloCapture {
-    fn capture_client_hello(&self, bytes: &[u8]) -> Result<(), RustlsError> {
-        let mut captured = self.bytes.lock().map_err(|_| {
-            RustlsError::General("ClientHello capture lock was poisoned".to_owned())
-        })?;
-        *captured = Some(bytes.to_vec());
-        Ok(())
     }
 }
 
 /// Produces the ClientHello a plain-TLS connection would send, without opening
 /// a socket. Exposed for byte-parity tests against Xray-core.
 ///
-/// The returned bytes are one TLS handshake record: a 5-byte record header
-/// followed by the ClientHello message, whether or not the hello was shaped.
+/// The returned bytes are the connection's whole first flight: one TLS
+/// handshake record, header included, shaped or not.
 pub fn plain_tls_client_hello_bytes(config: &TlsClientConfig) -> Result<Vec<u8>, TransportError> {
-    let (client_config, capture) = match shaping_profile(config.fingerprint.as_deref())? {
+    let client_config = match shaping_profile(config.fingerprint.as_deref())? {
         Some(profile) => {
-            let capture = Arc::new(PlainClientHelloCapture::default());
             let mut client_config = crate::tls::shaped_client_config(config.allow_insecure)?;
-            client_config.client_hello_customizer = Some(Arc::new(
-                UtlsClientHelloCustomizer::new(profile, &config.alpn)
-                    .with_capture(Arc::clone(&capture)),
-            ));
-            (client_config, Some(capture))
+            client_config.client_hello_customizer = Some(Arc::new(UtlsClientHelloCustomizer::new(
+                profile,
+                &config.alpn,
+            )));
+            client_config
         }
-        None => (crate::tls::base_client_config(config.allow_insecure)?, None),
+        None => crate::tls::base_client_config(config.allow_insecure)?,
     };
 
     let server_name = ServerName::try_from(config.server_name.clone())
         .map_err(|_| TransportError::InvalidTlsServerName(config.server_name.clone()))?;
     let mut connection = ClientConnection::new(Arc::new(client_config), server_name)
         .map_err(|error| TransportError::TlsConfig(error.to_string()))?;
-    // Emitting the hello is what runs the capture hook; draining it also gives
-    // the unshaped path the only copy it can read.
     let mut first_flight = Vec::new();
     connection
         .write_tls(&mut first_flight)
         .map_err(TransportError::Tcp)?;
 
-    match capture {
-        // The capture hook yields the bare handshake message, so frame it the
-        // way the record layer would have.
-        Some(capture) => framed_handshake_record(&capture.take()?),
-        // Unshaped: rustls emitted its own hello, and the drained first flight
-        // already carries its record header.
-        None => Ok(first_flight),
-    }
-}
-
-fn framed_handshake_record(handshake: &[u8]) -> Result<Vec<u8>, TransportError> {
-    let length = u16::try_from(handshake.len()).map_err(|_| {
-        TransportError::TlsConfig("ClientHello does not fit in one TLS record".to_owned())
-    })?;
-    let mut record = Vec::with_capacity(TLS_RECORD_HEADER_LEN + handshake.len());
-    record.push(TLS_RECORD_HANDSHAKE);
-    record.extend_from_slice(&TLS_LEGACY_RECORD_VERSION);
-    record.extend_from_slice(&length.to_be_bytes());
-    record.extend_from_slice(handshake);
-    Ok(record)
+    Ok(first_flight)
 }
