@@ -1,5 +1,5 @@
 #[derive(Clone, Copy, Debug)]
-pub(super) struct UtlsClientHelloProfile {
+pub(crate) struct UtlsClientHelloProfile {
     pub cipher_suites: &'static [u16],
     pub supported_versions: &'static [u16],
     pub supported_groups: &'static [u16],
@@ -16,19 +16,19 @@ pub(super) struct UtlsClientHelloProfile {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(super) struct UtlsKeyShare {
+pub(crate) struct UtlsKeyShare {
     pub group: u16,
     pub key_exchange_len: usize,
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(super) struct UtlsApplicationSettings {
+pub(crate) struct UtlsApplicationSettings {
     pub extension_type: u16,
     pub protocols: &'static [&'static [u8]],
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(super) struct UtlsExtension {
+pub(crate) struct UtlsExtension {
     pub extension_type: u16,
     pub payload_len: usize,
 }
@@ -4376,7 +4376,7 @@ const PROFILE_42: UtlsClientHelloProfile = UtlsClientHelloProfile {
     encrypted_client_hello_length: Some(186),
 };
 
-pub(super) fn profile_for_fingerprint(
+pub(crate) fn profile_for_fingerprint(
     fingerprint: &str,
 ) -> Option<&'static UtlsClientHelloProfile> {
     match fingerprint {

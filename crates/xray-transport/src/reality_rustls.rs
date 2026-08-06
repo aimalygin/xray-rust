@@ -34,7 +34,7 @@ use crate::{
         RealityHandshakeInput, RealityMldsa65CertificateInput, RealityPreparedClientHello,
     },
     reality_connector::{RealityClientHelloRequest, RealityTlsSession, RealityTlsSessionProvider},
-    reality_utls_profiles::{profile_for_fingerprint, UtlsClientHelloProfile},
+    utls_profiles::{profile_for_fingerprint, UtlsClientHelloProfile},
     BoxedTransportStream, CapturedTcpStream, PenetratingTlsStream, ServerReadLog, TransportError,
 };
 
