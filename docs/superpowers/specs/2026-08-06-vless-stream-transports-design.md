@@ -171,11 +171,20 @@ if fingerprint := tls.GetFingerprint(tConfig.Fingerprint); fingerprint != nil {
 ```
 
 and `GetFingerprint("")` returns `&utls.HelloChrome_Auto`
-(`Xray-core/transport/internet/tls/tls.go:186`). It returns nil only for an
-*unrecognized non-empty* name, so the stock `tls.Client` fallback
-(`transport/internet/tcp/dialer.go:84`) is reachable only when a user typed a
-bogus fingerprint. In practice **every Xray-core TLS connection carries a shaped,
-Chrome-by-default ClientHello.**
+(`Xray-core/transport/internet/tls/tls.go:186`). `fingerprint` is a documented
+field of `tlsSettings` — `TLSConfig.Fingerprint`
+(`infra/conf/transport_internet.go:653`), validated at config-build time,
+carried as `fingerprint = 11` in `transport/internet/tls/config.proto`.
+
+`GetFingerprint` returns nil in two cases: an unrecognized name, which the
+config builder has already rejected, and the deliberate value `"unsafe"`, whose
+map entry is permanently nil (`tls.go:214`) and which the config builder
+explicitly waves through (`transport_internet.go:700`). `"random"`,
+`"randomized"`, and `"randomizednoalpn"` look nil in the same map but are filled
+with real profiles by `init()` at startup. So the stock `tls.Client` path
+(`transport/internet/tcp/dialer.go:84`) is a deliberate escape hatch reached
+only by asking for it by name. Absent that one word, **every Xray-core TLS
+connection carries a shaped, Chrome-by-default ClientHello.**
 
 xray-rust supports fingerprints on exactly one of its two TLS paths. Under
 `security: "reality"` the support is complete: `realitySettings.fingerprint`
@@ -226,6 +235,9 @@ So the work is a lift, not a build:
   `chrome` when absent, matching `GetFingerprint("")`. The extra
   X25519-key-share requirement stays REALITY-only — plain TLS has no such
   constraint, so `normalize_reality_supported_fingerprint` is not applied here.
+- `fingerprint: "unsafe"` is accepted as Xray-core's escape hatch and means no
+  shaping: rustls' own ClientHello, i.e. exactly today's behavior. It is the
+  only way to get an unshaped hello, and it must be spelled out to get it.
 - `build_connector` (`crates/xray-core-rs/src/outbound.rs:1498`) stops returning
   `UnsupportedOutboundSecurity` for a non-empty TLS fingerprint and passes it
   through to `TlsClientConfig` instead. The same change applies at the second
