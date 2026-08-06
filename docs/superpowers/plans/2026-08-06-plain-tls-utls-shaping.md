@@ -1403,6 +1403,11 @@ Append inside the test module:
             buffer
         });
 
+        // `system()` plus `allow_insecure: true` is the only combination that
+        // gives both shaping and a self-signed local listener. Do NOT reach for
+        // `with_pinned_client_config` here: it bypasses the cache *and* the
+        // fingerprint validation, so this test would pass while shaping never
+        // ran — which is precisely the failure it exists to detect.
         let connector = xray_transport::TlsConnector::system().expect("system roots must load");
         let config = xray_transport::TlsClientConfig {
             server_name: "example.com".to_owned(),
