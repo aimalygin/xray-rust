@@ -25,6 +25,7 @@ pub mod reality_runtime;
 mod reality_rustls;
 mod tls;
 mod utls_profiles;
+mod utls_shaping;
 
 pub use dialer::TransportDialer;
 pub use dns::{
