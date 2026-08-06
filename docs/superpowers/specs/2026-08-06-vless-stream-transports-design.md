@@ -16,10 +16,12 @@ for XHTTP (needs a full QUIC stack), and the server side of any transport
 
 Parity target is byte-exact for the contents of every request and response we
 emit or accept, including the browser-masquerade header block and Go's header
-serialization order. One thing falls outside that target: XHTTP's `xmux`
-connection-reuse scheduler, which no single request reveals, is parsed but not
-implemented — it remains observable as a pattern of connection timing, and that
-gap is stated plainly rather than claimed as parity.
+serialization order. It extends one layer down: `security: "tls"` gains uTLS
+ClientHello shaping with a `chrome` default, matching what Xray-core does on
+every transport including `raw` today. One thing falls outside the target:
+XHTTP's `xmux` connection-reuse scheduler, which no single request reveals, is
+parsed but not implemented — it remains observable as a pattern of connection
+timing, and that gap is stated plainly rather than claimed as parity.
 
 ## Rationale
 
@@ -37,6 +39,13 @@ gap is stated plainly rather than claimed as parity.
   protocol correctly but sends bare RFC headers is trivially separable from the
   xray population it is trying to blend into. This project already holds that
   bar for the REALITY ClientHello; HTTP headers get the same treatment.
+- **The TLS hello matters more than the headers.** These transports are the
+  CDN-fronted deployments, where a middlebox reads the ClientHello long before
+  it sees an HTTP request — and often never sees the request at all. Xray-core
+  shapes that hello with uTLS on every TLS connection; xray-rust currently
+  rejects `fingerprint` and sends rustls' own. Closing that is a prerequisite
+  for these transports, not a follow-up, and it is a lift of machinery we
+  already wrote for REALITY rather than new work.
 
 ## Architecture
 
@@ -149,27 +158,97 @@ with messages that echo Xray-core's so a user recognizes them:
   stays raw-only, rejecting the four new transports explicitly. Xray-core does
   not offer DoT over a web transport either.
 
-### ALPN becomes a first-class setting
+### uTLS ClientHello shaping extends to plain TLS
 
-gRPC and XHTTP-over-H2 require ALPN `h2`, and xray-rust supports no ALPN at all
-today: the parser rejects a non-empty `tlsSettings.alpn`
-(`crates/xray-config/src/parser.rs:2762`) and `TlsConnector` holds two
-pre-built `rustls::ClientConfig`s with no ALPN
-(`crates/xray-transport/src/tls.rs:23`). Three changes follow:
+Xray-core does **not** use stock crypto/tls for `security: "tls"`. Every
+transport — including `raw` — resolves a uTLS fingerprint and wraps the
+connection with `tls.UClient`:
 
-- `TlsClientConfig` gains `alpn: Vec<String>`.
-- `TlsConnector` builds configs on demand, memoized by
-  `(allow_insecure, alpn)`; `rustls::ClientConfig` is immutable behind an `Arc`,
-  so a small map replaces the two fixed instances.
-- The parser accepts `tlsSettings.alpn`. When the user leaves it empty, each
-  transport supplies the default Xray-core uses for that transport's client:
-  ws and httpupgrade offer `["http/1.1"]` alone (not the usual pair), gRPC
-  offers `["h2"]`, and XHTTP offers `["h2", "http/1.1"]`. When the user sets
-  `alpn` explicitly it is passed through verbatim — and for XHTTP it also
-  selects the HTTP version (see Stage 3).
+```go
+if fingerprint := tls.GetFingerprint(tConfig.Fingerprint); fingerprint != nil {
+    conn = tls.UClient(pconn, tlsConfig, fingerprint)
+}
+```
 
-REALITY needs nothing here: ALPN is baked into the uTLS fingerprint profile and
-already offers `h2`/`http/1.1` (`crates/xray-transport/src/reality_utls_profiles.rs`).
+and `GetFingerprint("")` returns `&utls.HelloChrome_Auto`
+(`Xray-core/transport/internet/tls/tls.go:186`). It returns nil only for an
+*unrecognized non-empty* name, so the stock `tls.Client` fallback
+(`transport/internet/tcp/dialer.go:84`) is reachable only when a user typed a
+bogus fingerprint. In practice **every Xray-core TLS connection carries a shaped,
+Chrome-by-default ClientHello.**
+
+xray-rust does the opposite today: `tlsSettings.fingerprint` is rejected outright
+(`crates/xray-config/src/parser.rs:2752`, "tls fingerprint is unsupported") and
+`TlsConnector` hands rustls' own ClientHello to the wire. That is already a
+divergence on `raw` + `tls`, independent of this work. It becomes far more
+costly with the web transports, because ws/httpupgrade/XHTTP are exactly the
+CDN-fronted deployments where the TLS ClientHello, not the HTTP headers, is the
+primary discriminator. Shipping them on a stock rustls hello would mean pairing
+byte-exact HTTP headers with a ClientHello that no Chrome ever sent.
+
+The machinery already exists and is generic — it is only bound to REALITY by
+module visibility. Our rustls fork exposes `ClientConfig.client_hello_customizer`
+as a plain field (`crates/xray-transport/src/reality_rustls.rs:1147`),
+`ClientHelloPlan` is transport-agnostic, and `apply_utls_profile` plus the
+profile table (`reality_utls_profiles.rs`, ~57 fingerprints listed in
+`xray-utls`) already translate a uTLS profile into that plan. The REALITY
+customizer adds exactly three REALITY-specific things on top: a fixed hello
+random, a session id carrying the auth key, and a fixed X25519 key share
+(`reality_rustls.rs:338`). A plain-TLS customizer is the same call without them.
+
+So the work is a lift, not a build:
+
+- Move `profile_for_fingerprint`, `apply_utls_profile`, and the profile table
+  out of the REALITY-private module (`pub(super)` today) into a shared
+  `utls_profiles` module, dropping the `reality_` prefix. No logic changes.
+- Add a `UtlsClientHelloCustomizer` that applies only the profile.
+- `TlsClientConfig` gains `fingerprint: Option<String>` and `alpn: Vec<String>`.
+  `TlsConnector` builds configs on demand memoized by
+  `(allow_insecure, alpn, fingerprint)` — `rustls::ClientConfig` is immutable
+  behind an `Arc`, so a small map replaces the two fixed instances
+  (`crates/xray-transport/src/tls.rs:23`).
+- The parser stops rejecting `tlsSettings.fingerprint`, validates it against the
+  supported table, and defaults it to `chrome` when absent, matching
+  `GetFingerprint("")`.
+
+### ALPN comes from the fingerprint, not from the config
+
+The obvious reading — that `tlsSettings.alpn` decides what the ClientHello
+advertises — is backwards. uTLS applies the extension in the fingerprint spec
+and **overwrites the config** with it
+(`utls/u_tls_extensions.go:613`):
+
+```go
+func (e *ALPNExtension) writeToUConn(uc *UConn) error {
+    if uc.config.EncryptedClientHelloConfigList == nil {
+        uc.config.NextProtos = e.AlpnProtocols
+        uc.HandshakeState.Hello.AlpnProtocols = e.AlpnProtocols
+    }
+    return nil
+}
+```
+
+The one escape is `WebsocketHandshakeContext`
+(`transport/internet/tls/tls.go:96`), which rebuilds the hello *after*
+`BuildHandshakeState` and forces the ALPN extension to `http/1.1` — or leaves
+`h2, http/1.1` if exactly that pair was configured for camouflage. Which
+handshake each transport uses gives the actual rule:
+
+| transport | handshake | ALPN advertised in the ClientHello |
+|---|---|---|
+| ws, httpupgrade | `WebsocketHandshakeContext` | `["http/1.1"]`, or `["h2","http/1.1"]` if exactly that was configured |
+| raw, `alpn: ["http/1.1"]` | `WebsocketHandshakeContext` | same as above |
+| raw otherwise, grpc, xhttp | `HandshakeContext` | the fingerprint profile's list (Chrome: `["h2","http/1.1"]`) |
+
+So for gRPC and XHTTP, setting `tlsSettings.alpn` does not change the
+ClientHello at all — the profile wins. It still has an effect client-side:
+XHTTP's `decideHTTPVersion` reads the *configured* list to pick H1 vs H2
+(Stage 3), and that decision is independent of what was advertised.
+
+Our REALITY path already implements the general rule correctly, since
+`apply_utls_profile` applies `profile.alpn_protocols`. The new work is the
+`WebsocketHandshakeContext` override — a post-profile ALPN replacement in the
+plan — and applying the same rule on the plain-TLS path.
 
 ## Configuration surface
 
@@ -194,10 +273,26 @@ Where both spellings of a settings key exist, `xhttpSettings` wins over
 `splithttpSettings`, matching Xray-core. `streamSettings`'s allowlist
 (`parser.rs:2719`) grows the five new keys.
 
-## Stage 1 — transport layer, WebSocket, HTTPUpgrade
+Inside `tlsSettings`, two keys change from rejected to supported:
+`fingerprint` (validated against the uTLS profile table, defaulting to `chrome`
+when absent) and `alpn` (accepted, with the caveat that it reaches the wire only
+through the `WebsocketHandshakeContext` path — see above). `TlsSettings`
+(`model.rs:910`) already carries a `fingerprint` field that the parser fills and
+then errors on; the field stays and the error goes.
+
+## Stage 1 — transport layer, TLS shaping, WebSocket, HTTPUpgrade
 
 New dependency: `sha1` 0.10 (same RustCrypto generation as our `sha2`), needed
 only to validate `Sec-WebSocket-Accept`.
+
+TLS shaping lands here rather than with gRPC, because ws and httpupgrade are the
+CDN-fronted transports where the ClientHello matters most; shipping them before
+the shaping seam would ship a fingerprinting hole in the exact deployment they
+serve. This stage therefore also carries the `utls_profiles` module lift, the
+`UtlsClientHelloCustomizer`, `TlsClientConfig.{fingerprint, alpn}` with memoized
+rustls configs, the `WebsocketHandshakeContext` ALPN override, and lifting the
+parser's rejection of `tlsSettings.fingerprint` and `tlsSettings.alpn`. It fixes
+the pre-existing `raw` + `tls` divergence as a side effect.
 
 ### Shared config handling
 
@@ -278,11 +373,13 @@ for httpupgrade, canonicalized for ws): `host`, `path`, `headers`, plus ws-only
 `heartbeatPeriod`. `acceptProxyProtocol` is inbound-only and is accepted and
 ignored.
 
-## Stage 2 — ALPN and gRPC
+## Stage 2 — gRPC
 
 New dependency: `h2` (bare, without `hyper` or `tonic`). No protobuf codegen is
 needed — `prost` is already in the tree but the gRPC message is small enough to
-hand-encode.
+hand-encode. TLS shaping and ALPN arrived in Stage 1, so this stage inherits a
+Chrome ClientHello advertising the profile's `h2, http/1.1` and needs no TLS
+work of its own.
 
 ### Framing
 
@@ -467,17 +564,26 @@ listener, capture the exact request it emits, and assert our client emits the
 same bytes for the same config. This is the only mechanism that catches
 divergences like header ordering or the `%3F` escaping, which interop tests pass
 straight through. It follows the pattern already used for the REALITY
-ClientHello oracle.
+ClientHello oracle, and it now covers two surfaces per connection: the shaped
+ClientHello and the HTTP request that follows it.
+
+The existing REALITY ClientHello oracle extends to plain TLS with the same
+fixtures (`tests/fixtures/reality/clienthello_*.json`), asserting that a
+`security: "tls"` connection with a given `fingerprint` produces the same hello
+Xray-core produces — including the `WebsocketHandshakeContext` ALPN override for
+ws and httpupgrade, which is the one case where the advertised ALPN differs from
+the profile's own list.
 
 ## Staging
 
-1. **Transport layer, WebSocket, HTTPUpgrade.** The `stream/` module,
-   `connect_stream`, the compatibility-matrix validation (including the Vision
-   and REALITY restrictions), the shared header builder, and the two simplest
-   transports. New dependency: `sha1`.
-2. **ALPN and gRPC.** `TlsClientConfig.alpn` with memoized rustls configs,
-   `tlsSettings.alpn` parsing, the hand-rolled gRPC codec, and the H2 connection
-   pool. New dependency: `h2`.
+1. **Transport layer, TLS shaping, WebSocket, HTTPUpgrade.** The `stream/`
+   module, `connect_stream`, the compatibility-matrix validation (including the
+   Vision and REALITY restrictions), the shared header builder, the
+   `utls_profiles` lift with a plain-TLS ClientHello customizer,
+   `TlsClientConfig.{fingerprint, alpn}`, and the two simplest transports.
+   New dependency: `sha1`.
+2. **gRPC.** The hand-rolled gRPC codec and the H2 connection pool.
+   New dependency: `h2`.
 3. **XHTTP.** All three modes over H1 and H2, mandatory padding, the full
    config surface with `xmux` parsed-only, and H3 rejected explicitly.
 
@@ -487,8 +593,10 @@ live Xray-core.
 ## Documentation
 
 `docs/config-compatibility.md:76-95` currently states that only the TCP
-transport is supported and that "WebSocket, HTTP/2, gRPC, QUIC, KCP, and other
-stream transports are not supported", and that non-empty ALPN lists are
-rejected. Both statements are rewritten per stage, including the compatibility
-matrix and the explicit non-goals (mkcp, hysteria, HTTP/3, `downloadSettings`,
-xmux scheduling).
+transport is supported, that "WebSocket, HTTP/2, gRPC, QUIC, KCP, and other
+stream transports are not supported", and that "TLS fingerprint shaping and
+non-empty custom ALPN lists are not supported". All three statements are
+rewritten per stage, including the compatibility matrix, the supported
+fingerprint list with its `chrome` default, the rule that ALPN comes from the
+fingerprint profile rather than the config, and the explicit non-goals (mkcp,
+hysteria, HTTP/3, `downloadSettings`, xmux scheduling).
