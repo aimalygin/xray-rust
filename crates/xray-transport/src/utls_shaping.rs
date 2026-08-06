@@ -1,3 +1,19 @@
+//! Translates a uTLS ClientHello profile into a rustls `ClientHelloPlan`.
+//!
+//! `apply_utls_profile` sets everything the profile describes — cipher
+//! suites, extensions, GREASE, padding — but deliberately leaves the hello
+//! random, session id, and key share untouched; filling those in is the
+//! caller's responsibility. That split is what lets REALITY's customizer
+//! (which pins all three for its handshake patching) and the plain-TLS
+//! customizer (which lets rustls generate them normally) share this same
+//! plan-building logic.
+//!
+//! Callers that need to override part of the shaped plan may do so after
+//! `apply_utls_profile` returns: `ClientHelloPlan` setters are last-write-wins
+//! and the plan is only read once, at encode time. For example, a later
+//! `.with_alpn_protocols(...)` call cleanly replaces the profile's own ALPN
+//! list.
+
 use rustls::{
     client::{
         ClientHelloAdvertisedCipherSuites, ClientHelloAdvertisedSupportedGroups,
@@ -15,33 +31,33 @@ use rustls::{
 
 use crate::utls_profiles::UtlsClientHelloProfile;
 
-pub(crate) const EXT_SERVER_NAME: u16 = 0x0000;
-pub(crate) const EXT_STATUS_REQUEST: u16 = 0x0005;
-pub(crate) const EXT_SUPPORTED_GROUPS: u16 = 0x000a;
-pub(crate) const EXT_EC_POINT_FORMATS: u16 = 0x000b;
-pub(crate) const EXT_SIGNATURE_ALGORITHMS: u16 = 0x000d;
-pub(crate) const EXT_ALPN: u16 = 0x0010;
-pub(crate) const EXT_SIGNED_CERTIFICATE_TIMESTAMP: u16 = 0x0012;
-pub(crate) const EXT_PADDING: u16 = 0x0015;
-pub(crate) const EXT_EXTENDED_MASTER_SECRET: u16 = 0x0017;
-pub(crate) const EXT_CERTIFICATE_COMPRESSION: u16 = 0x001b;
-pub(crate) const EXT_RECORD_SIZE_LIMIT: u16 = 0x001c;
-pub(crate) const EXT_DELEGATED_CREDENTIALS: u16 = 0x0022;
-pub(crate) const EXT_SESSION_TICKET: u16 = 0x0023;
-pub(crate) const EXT_SUPPORTED_VERSIONS: u16 = 0x002b;
-pub(crate) const EXT_PSK_KEY_EXCHANGE_MODES: u16 = 0x002d;
-pub(crate) const EXT_KEY_SHARE: u16 = 0x0033;
-pub(crate) const EXT_ENCRYPTED_CLIENT_HELLO: u16 = 0xfe0d;
-pub(crate) const EXT_RENEGOTIATION_INFO: u16 = 0xff01;
-pub(crate) const GROUP_X25519: u16 = 0x001d;
-pub(crate) const GROUP_SECP256R1: u16 = 0x0017;
-pub(crate) const GROUP_SECP384R1: u16 = 0x0018;
-pub(crate) const GROUP_X25519_MLKEM768: u16 = 0x11ec;
-pub(crate) const GROUP_X25519_MLKEM768_DRAFT: u16 = 0x6399;
-pub(crate) const TLS_VERSION_1_3: u16 = 0x0304;
-pub(crate) const BROTLI_CERTIFICATE_COMPRESSION: u16 = 0x0002;
-pub(crate) const BORINGSSL_PADDING_TARGET_HANDSHAKE_SIZE: usize = 512;
-pub(crate) const STRUCTURED_OPTIONAL_EXTENSIONS: &[u16] = &[
+const EXT_SERVER_NAME: u16 = 0x0000;
+const EXT_STATUS_REQUEST: u16 = 0x0005;
+const EXT_SUPPORTED_GROUPS: u16 = 0x000a;
+const EXT_EC_POINT_FORMATS: u16 = 0x000b;
+const EXT_SIGNATURE_ALGORITHMS: u16 = 0x000d;
+const EXT_ALPN: u16 = 0x0010;
+const EXT_SIGNED_CERTIFICATE_TIMESTAMP: u16 = 0x0012;
+const EXT_PADDING: u16 = 0x0015;
+const EXT_EXTENDED_MASTER_SECRET: u16 = 0x0017;
+const EXT_CERTIFICATE_COMPRESSION: u16 = 0x001b;
+const EXT_RECORD_SIZE_LIMIT: u16 = 0x001c;
+const EXT_DELEGATED_CREDENTIALS: u16 = 0x0022;
+const EXT_SESSION_TICKET: u16 = 0x0023;
+const EXT_SUPPORTED_VERSIONS: u16 = 0x002b;
+const EXT_PSK_KEY_EXCHANGE_MODES: u16 = 0x002d;
+const EXT_KEY_SHARE: u16 = 0x0033;
+const EXT_ENCRYPTED_CLIENT_HELLO: u16 = 0xfe0d;
+const EXT_RENEGOTIATION_INFO: u16 = 0xff01;
+const GROUP_X25519: u16 = 0x001d;
+const GROUP_SECP256R1: u16 = 0x0017;
+const GROUP_SECP384R1: u16 = 0x0018;
+const GROUP_X25519_MLKEM768: u16 = 0x11ec;
+const GROUP_X25519_MLKEM768_DRAFT: u16 = 0x6399;
+const TLS_VERSION_1_3: u16 = 0x0304;
+const BROTLI_CERTIFICATE_COMPRESSION: u16 = 0x0002;
+const BORINGSSL_PADDING_TARGET_HANDSHAKE_SIZE: usize = 512;
+const STRUCTURED_OPTIONAL_EXTENSIONS: &[u16] = &[
     EXT_SERVER_NAME,
     EXT_STATUS_REQUEST,
     EXT_SUPPORTED_GROUPS,
