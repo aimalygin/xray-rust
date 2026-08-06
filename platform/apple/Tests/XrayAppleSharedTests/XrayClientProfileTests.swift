@@ -782,6 +782,22 @@ final class XrayClientProfileTests: XCTestCase {
         XCTAssertEqual(profile.serverAddress, "203.0.113.10")
     }
 
+    func testVlessURLImporterAcceptsRawTransportAlias() throws {
+        let url = Self.sampleVlessURL.replacingOccurrences(of: "type=tcp", with: "type=raw")
+
+        let profile = try XrayVlessURLImporter.profile(
+            from: url,
+            hostBundleIdentifier: "org.example.XrayClient"
+        )
+
+        let root = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(profile.configJSON.utf8)) as? [String: Any]
+        )
+        let outbounds = try XCTUnwrap(root["outbounds"] as? [[String: Any]])
+        let stream = try XCTUnwrap(outbounds[0]["streamSettings"] as? [String: Any])
+        XCTAssertEqual(stream["network"] as? String, "tcp")
+    }
+
     func testVlessURLImporterAcceptsVisionUdp443Flow() throws {
         let url = Self.sampleVlessURL.replacingOccurrences(
             of: "flow=xtls-rprx-vision",

@@ -2646,7 +2646,8 @@ impl Parser<'_> {
             .and_then(Value::as_str)
             .unwrap_or("tcp")
         {
-            "tcp" => Some(Network::Tcp),
+            // Xray renamed the `tcp` transport to `raw`; both names stay valid.
+            "tcp" | "raw" => Some(Network::Tcp),
             network => {
                 self.error(
                     network_path,
@@ -2724,10 +2725,12 @@ impl Parser<'_> {
                 "tlsSettings",
                 "realitySettings",
                 "tcpSettings",
+                "rawSettings",
                 "sockopt",
             ],
         );
-        self.validate_tcp_settings(stream, index);
+        self.validate_tcp_settings(stream, "tcpSettings", index);
+        self.validate_tcp_settings(stream, "rawSettings", index);
     }
 
     fn validate_tls_settings(&mut self, settings: Option<&Value>, index: usize) {
@@ -2762,13 +2765,13 @@ impl Parser<'_> {
         }
     }
 
-    fn validate_tcp_settings(&mut self, stream: &Value, index: usize) {
-        let Some(settings) = stream.get("tcpSettings") else {
+    fn validate_tcp_settings(&mut self, stream: &Value, key: &str, index: usize) {
+        let Some(settings) = stream.get(key) else {
             return;
         };
-        let settings_path = format!("$.outbounds[{index}].streamSettings.tcpSettings");
+        let settings_path = format!("$.outbounds[{index}].streamSettings.{key}");
         if !settings.is_object() {
-            self.error(settings_path, "tcpSettings must be an object");
+            self.error(settings_path, format!("{key} must be an object"));
             return;
         }
 
@@ -2779,7 +2782,7 @@ impl Parser<'_> {
         };
         let header_path = format!("{settings_path}.header");
         if !header.is_object() {
-            self.error(header_path, "tcpSettings header must be an object");
+            self.error(header_path, format!("{key} header must be an object"));
             return;
         }
         self.reject_unknown_fields(header, &header_path, &["type", "request", "response"]);

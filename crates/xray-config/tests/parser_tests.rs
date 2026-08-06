@@ -1310,6 +1310,25 @@ fn rejects_tcp_header_type_with_path() {
 }
 
 #[test]
+fn parses_raw_settings_alias() {
+    let raw = raw_with_raw_settings(r#""header": { "type": "none" }"#);
+
+    let parsed = parse_xray_json(&raw).expect("rawSettings alias should parse");
+
+    assert_eq!(parsed.config.outbounds[0].stream.network, Network::Tcp);
+}
+
+#[test]
+fn rejects_raw_header_type_with_path() {
+    let raw = raw_with_raw_settings(r#""header": { "type": "http" }"#);
+
+    assert_parse_error_path(
+        &raw,
+        "$.outbounds[0].streamSettings.rawSettings.header.type",
+    );
+}
+
+#[test]
 fn parses_empty_sockopt_without_enabling_happy_eyeballs() {
     let raw = raw_with_sockopt("{}");
     let parsed = parse_xray_json(&raw).expect("empty sockopt should parse");
@@ -2802,6 +2821,23 @@ fn rejects_vless_port_overflow_with_path() {
 }
 
 #[test]
+fn parses_raw_stream_network_alias() {
+    let raw = vless_raw_with_network(
+        "raw",
+        r#""users": [{ "id": "00010203-0405-0607-0809-0a0b0c0d0e0f" }]"#,
+        "",
+        443,
+        valid_public_key(),
+        "02030405",
+    );
+
+    let parsed = parse_xray_json(&raw).expect("`raw` network alias should parse");
+
+    assert_eq!(parsed.config.outbounds[0].stream.network, Network::Tcp);
+    assert!(parsed.diagnostics.is_empty());
+}
+
+#[test]
 fn rejects_udp_stream_network_with_path() {
     let raw = vless_raw_with_network(
         "udp",
@@ -3266,6 +3302,32 @@ fn raw_with_tcp_settings(tcp_settings: &str) -> String {
               "network": "tcp",
               "security": "none",
               "tcpSettings": {{ {tcp_settings} }}
+            }}
+          }}]
+        }}"#
+    )
+}
+
+fn raw_with_raw_settings(raw_settings: &str) -> String {
+    format!(
+        r#"{{
+          "inbounds": [],
+          "outbounds": [{{
+            "tag": "proxy",
+            "protocol": "vless",
+            "settings": {{
+              "vnext": [
+                {{
+                  "address": "server.example",
+                  "port": 443,
+                  "users": [{{ "id": "00010203-0405-0607-0809-0a0b0c0d0e0f" }}]
+                }}
+              ]
+            }},
+            "streamSettings": {{
+              "network": "raw",
+              "security": "none",
+              "rawSettings": {{ {raw_settings} }}
             }}
           }}]
         }}"#

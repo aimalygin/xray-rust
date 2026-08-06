@@ -73,7 +73,9 @@ runtime currently selects the first user.
 - `xtls-rprx-vision`;
 - `xtls-rprx-vision-udp443`.
 
-`streamSettings.network` is currently `tcp` only. Security values are:
+`streamSettings.network` is currently the TCP transport only, spelled either
+`tcp` or `raw` (Xray renamed it to `raw`; both names are accepted and mean the
+same thing). Security values are:
 
 - `none`;
 - `tls`, with `serverName` and `allowInsecure` (certificate verification is
@@ -83,7 +85,8 @@ runtime currently selects the first user.
   `mldsa65Verify`.
 
 TLS fingerprint shaping and non-empty custom ALPN lists are not supported.
-`tcpSettings.header.type` may be absent, empty, or `none`. WebSocket, HTTP/2,
+`tcpSettings.header.type` — equally `rawSettings.header.type` — may be absent,
+empty, or `none`. WebSocket, HTTP/2,
 gRPC, QUIC, KCP, and other stream transports are not supported. Outbound mux,
 `proxySettings`, `sendThrough`, multiple VLESS servers, and outbound chaining
 are rejected.
