@@ -4453,13 +4453,10 @@ fn modern_fingerprint_at(entropy: u64) -> &'static str {
 fn named_profile(fingerprint: &str) -> Option<&'static UtlsClientHelloProfile> {
     match fingerprint {
         "chrome" => Some(&PROFILE_0),
-        "hellochrome_133" => Some(&PROFILE_0),
         "hellochrome_auto" => Some(&PROFILE_0),
         "firefox" => Some(&PROFILE_1),
-        "hellofirefox_148" => Some(&PROFILE_1),
         "hellofirefox_auto" => Some(&PROFILE_1),
         "safari" => Some(&PROFILE_2),
-        "hellosafari_26_3" => Some(&PROFILE_2),
         "hellosafari_auto" => Some(&PROFILE_2),
         "ios" => Some(&PROFILE_3),
         "helloios_14" => Some(&PROFILE_3),

@@ -304,7 +304,7 @@ fn rustls_reality_provider_raw_clienthello_matches_utls_oracle_for_risky_fingerp
         "hellofirefox_102",
         "hellofirefox_105",
         "hellofirefox_120",
-        "hellofirefox_148",
+        "hellofirefox_auto",
     ] {
         let expected = utls_client_hello_raw_from_oracle(fingerprint);
         let session = provider
@@ -342,7 +342,7 @@ fn rustls_reality_provider_final_reality_clienthello_matches_utls_oracle_for_ris
         "hellofirefox_102",
         "hellofirefox_105",
         "hellofirefox_120",
-        "hellofirefox_148",
+        "hellofirefox_auto",
     ] {
         let expected = utls_client_hello_raw_from_oracle(fingerprint);
         let expected_raw = decode_hex(&expected.client_hello_hex)

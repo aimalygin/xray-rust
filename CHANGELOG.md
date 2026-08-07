@@ -7,6 +7,18 @@ prerelease-quality and do not establish a supported release series.
 
 ## Unreleased
 
+- Removed three `fingerprint` names that xray-core does not accept:
+  `hellochrome_133`, `hellofirefox_148` and `hellosafari_26_3`. They are real
+  uTLS `ClientHelloID`s but appear in none of the three maps Xray's
+  `GetFingerprint` consults, so a profile naming one parsed here and then
+  failed on xray-core with `unknown "fingerprint"`. The accepted set is now
+  exactly Xray's, and `tlsSettings.fingerprint` / `realitySettings.fingerprint`
+  reject the three at parse time. Replace them with `chrome`, `firefox` and
+  `safari` respectively — those are the shapes the dropped names already
+  resolved to, byte for byte, so the ClientHello on the wire does not change.
+  The Apple `XrayRealityFingerprintMode` constants and picker entries are gone
+  with them; a stored profile still naming one reads back as no selection.
+
 ## 0.2.0 - 2026-08-05
 
 - Fixed file logging initialization inside the iOS Network Extension sandbox.

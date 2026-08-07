@@ -96,12 +96,22 @@ XUDP framing; it does not make `streamSettings.network: "udp"` valid.
 ### TLS ClientHello shaping
 
 `security: "tls"` sends a uTLS-shaped ClientHello, as Xray-core does on every
-TLS connection. `tlsSettings.fingerprint` selects the shape from the same 61
+TLS connection. `tlsSettings.fingerprint` selects the shape from the same 58
 names Xray accepts. An absent or empty value means `chrome`, matching Xray's
 `GetFingerprint("")`, so shaping is the default rather than an opt-in; an
 unknown name is rejected at parse time with a JSON path and the offending
 value. Unlike `realitySettings.fingerprint`, no X25519 key share is required,
 so the fourteen names REALITY rejects are usable here.
+
+Those 58 are the union of the three maps Xray's `GetFingerprint` consults --
+`PresetFingerprints`, `ModernFingerprints`, `OtherFingerprints` -- less
+`unsafe`, described below, and `hellogolang`, which names a shape we carry no
+profile for. The set is deliberately not a superset of Xray's: uTLS itself
+knows further `ClientHelloID`s that Xray has never mapped, and accepting one
+would let a profile parse here and then fail on xray-core with
+`unknown "fingerprint"`, which is a break the user only discovers after moving
+the profile. Nothing is given up by matching Xray exactly, because every such
+name is a shape an accepted name already reaches.
 
 `fingerprint: "unsafe"` is Xray's own escape hatch, spelled the same way: it
 disables shaping and sends the TLS stack's own ClientHello.
@@ -124,7 +134,7 @@ disabled while shaping, because a resumed handshake emits a second ClientHello
 carrying `pre_shared_key`, an extension the fingerprint never described.
 `fingerprint: "unsafe"` keeps the previous ring path, resumption included.
 
-Fourteen of the 61 names are shaped but not byte-exact: the TLS-1.2-era
+Fourteen of the 58 names are shaped but not byte-exact: the TLS-1.2-era
 profiles, which are exactly the ones REALITY rejects. Their uTLS hello declares
 no `supported_versions` extension, while the TLS stack emits that extension on
 every ClientHello it builds — a TLS-1.2-only configuration included, where it

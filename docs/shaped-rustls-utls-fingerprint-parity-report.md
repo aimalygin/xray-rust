@@ -10,8 +10,8 @@ XRAY_UTLS_REPORT_MD=docs/shaped-rustls-utls-fingerprint-parity-report.md cargo t
 
 ## Summary
 
-- Total fingerprints: `61`
-- Matches: `45`
+- Total fingerprints: `58`
+- Matches: `42`
 - Mismatches: `0`
 - Not REALITY-capable fingerprints: `14`
 - Drawn per process (no fixed shape to compare): `2`
@@ -51,55 +51,52 @@ XRAY_UTLS_REPORT_MD=docs/shaped-rustls-utls-fingerprint-parity-report.md cargo t
 | 10 | `randomized` | `Randomized-0` | `drawn-per-process` | `skipped: resolved from a per-process draw over Xray's ModernFingerprints, so it has no fixed shape to compare` |
 | 11 | `randomizednoalpn` | `Randomized-NoALPN-0` | `not-reality-capable` | `skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share` |
 | 12 | `hellofirefox_120` | `Firefox-120` | `match` | `none` |
-| 13 | `hellofirefox_148` | `Firefox-148` | `match` | `none` |
-| 14 | `hellochrome_120` | `Chrome-120` | `match` | `none` |
-| 15 | `hellochrome_131` | `Chrome-131` | `match` | `none` |
-| 16 | `hellochrome_133` | `Chrome-133` | `match` | `none` |
-| 17 | `helloios_13` | `iOS-13` | `match` | `none` |
-| 18 | `helloios_14` | `iOS-14` | `match` | `none` |
-| 19 | `helloedge_106` | `Edge-106` | `match` | `none` |
-| 20 | `hellosafari_26_3` | `Safari-26.3` | `match` | `none` |
-| 21 | `hello360_11_0` | `360Browser-11.0` | `match` | `none` |
-| 22 | `helloqq_11_1` | `QQBrowser-11.1` | `match` | `none` |
-| 23 | `hellorandomized` | `Randomized-0` | `match` | `none` |
-| 24 | `hellorandomizedalpn` | `Randomized-ALPN-0` | `not-reality-capable` | `skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share` |
-| 25 | `hellorandomizednoalpn` | `Randomized-NoALPN-0` | `not-reality-capable` | `skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share` |
-| 26 | `hellofirefox_auto` | `Firefox-148` | `match` | `none` |
-| 27 | `hellofirefox_55` | `Firefox-55` | `not-reality-capable` | `skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share` |
-| 28 | `hellofirefox_56` | `Firefox-56` | `not-reality-capable` | `skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share` |
-| 29 | `hellofirefox_63` | `Firefox-63` | `match` | `none` |
-| 30 | `hellofirefox_65` | `Firefox-65` | `match` | `none` |
-| 31 | `hellofirefox_99` | `Firefox-99` | `match` | `none` |
-| 32 | `hellofirefox_102` | `Firefox-102` | `match` | `none` |
-| 33 | `hellofirefox_105` | `Firefox-105` | `match` | `none` |
-| 34 | `hellochrome_auto` | `Chrome-133` | `match` | `none` |
-| 35 | `hellochrome_58` | `Chrome-58` | `not-reality-capable` | `skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share` |
-| 36 | `hellochrome_62` | `Chrome-62` | `not-reality-capable` | `skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share` |
-| 37 | `hellochrome_70` | `Chrome-70` | `match` | `none` |
-| 38 | `hellochrome_72` | `Chrome-72` | `match` | `none` |
-| 39 | `hellochrome_83` | `Chrome-83` | `match` | `none` |
-| 40 | `hellochrome_87` | `Chrome-87` | `match` | `none` |
-| 41 | `hellochrome_96` | `Chrome-96` | `match` | `none` |
-| 42 | `hellochrome_100` | `Chrome-100` | `match` | `none` |
-| 43 | `hellochrome_102` | `Chrome-102` | `match` | `none` |
-| 44 | `hellochrome_106_shuffle` | `Chrome-106` | `match` | `none` |
-| 45 | `helloios_auto` | `iOS-14` | `match` | `none` |
-| 46 | `helloios_11_1` | `iOS-111` | `not-reality-capable` | `skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share` |
-| 47 | `helloios_12_1` | `iOS-12.1` | `not-reality-capable` | `skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share` |
-| 48 | `helloandroid_11_okhttp` | `Android-11` | `not-reality-capable` | `skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share` |
-| 49 | `helloedge_85` | `Edge-85` | `match` | `none` |
-| 50 | `helloedge_auto` | `Edge-85` | `match` | `none` |
-| 51 | `hellosafari_16_0` | `Safari-16.0` | `match` | `none` |
-| 52 | `hellosafari_auto` | `Safari-26.3` | `match` | `none` |
-| 53 | `hello360_auto` | `360Browser-7.5` | `not-reality-capable` | `skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share` |
-| 54 | `hello360_7_5` | `360Browser-7.5` | `not-reality-capable` | `skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share` |
-| 55 | `helloqq_auto` | `QQBrowser-11.1` | `match` | `none` |
-| 56 | `hellochrome_100_psk` | `Chrome-100_PSK` | `match` | `none` |
-| 57 | `hellochrome_112_psk_shuf` | `Chrome-112_PSK` | `match` | `none` |
-| 58 | `hellochrome_114_padding_psk_shuf` | `Chrome-114_PSK` | `match` | `none` |
-| 59 | `hellochrome_115_pq` | `Chrome-115_PQ` | `match` | `none` |
-| 60 | `hellochrome_115_pq_psk` | `Chrome-115_PQ_PSK` | `match` | `none` |
-| 61 | `hellochrome_120_pq` | `Chrome-120_PQ` | `match` | `none` |
+| 13 | `hellochrome_120` | `Chrome-120` | `match` | `none` |
+| 14 | `hellochrome_131` | `Chrome-131` | `match` | `none` |
+| 15 | `helloios_13` | `iOS-13` | `match` | `none` |
+| 16 | `helloios_14` | `iOS-14` | `match` | `none` |
+| 17 | `helloedge_106` | `Edge-106` | `match` | `none` |
+| 18 | `hello360_11_0` | `360Browser-11.0` | `match` | `none` |
+| 19 | `helloqq_11_1` | `QQBrowser-11.1` | `match` | `none` |
+| 20 | `hellorandomized` | `Randomized-0` | `match` | `none` |
+| 21 | `hellorandomizedalpn` | `Randomized-ALPN-0` | `not-reality-capable` | `skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share` |
+| 22 | `hellorandomizednoalpn` | `Randomized-NoALPN-0` | `not-reality-capable` | `skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share` |
+| 23 | `hellofirefox_auto` | `Firefox-148` | `match` | `none` |
+| 24 | `hellofirefox_55` | `Firefox-55` | `not-reality-capable` | `skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share` |
+| 25 | `hellofirefox_56` | `Firefox-56` | `not-reality-capable` | `skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share` |
+| 26 | `hellofirefox_63` | `Firefox-63` | `match` | `none` |
+| 27 | `hellofirefox_65` | `Firefox-65` | `match` | `none` |
+| 28 | `hellofirefox_99` | `Firefox-99` | `match` | `none` |
+| 29 | `hellofirefox_102` | `Firefox-102` | `match` | `none` |
+| 30 | `hellofirefox_105` | `Firefox-105` | `match` | `none` |
+| 31 | `hellochrome_auto` | `Chrome-133` | `match` | `none` |
+| 32 | `hellochrome_58` | `Chrome-58` | `not-reality-capable` | `skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share` |
+| 33 | `hellochrome_62` | `Chrome-62` | `not-reality-capable` | `skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share` |
+| 34 | `hellochrome_70` | `Chrome-70` | `match` | `none` |
+| 35 | `hellochrome_72` | `Chrome-72` | `match` | `none` |
+| 36 | `hellochrome_83` | `Chrome-83` | `match` | `none` |
+| 37 | `hellochrome_87` | `Chrome-87` | `match` | `none` |
+| 38 | `hellochrome_96` | `Chrome-96` | `match` | `none` |
+| 39 | `hellochrome_100` | `Chrome-100` | `match` | `none` |
+| 40 | `hellochrome_102` | `Chrome-102` | `match` | `none` |
+| 41 | `hellochrome_106_shuffle` | `Chrome-106` | `match` | `none` |
+| 42 | `helloios_auto` | `iOS-14` | `match` | `none` |
+| 43 | `helloios_11_1` | `iOS-111` | `not-reality-capable` | `skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share` |
+| 44 | `helloios_12_1` | `iOS-12.1` | `not-reality-capable` | `skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share` |
+| 45 | `helloandroid_11_okhttp` | `Android-11` | `not-reality-capable` | `skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share` |
+| 46 | `helloedge_85` | `Edge-85` | `match` | `none` |
+| 47 | `helloedge_auto` | `Edge-85` | `match` | `none` |
+| 48 | `hellosafari_16_0` | `Safari-16.0` | `match` | `none` |
+| 49 | `hellosafari_auto` | `Safari-26.3` | `match` | `none` |
+| 50 | `hello360_auto` | `360Browser-7.5` | `not-reality-capable` | `skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share` |
+| 51 | `hello360_7_5` | `360Browser-7.5` | `not-reality-capable` | `skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share` |
+| 52 | `helloqq_auto` | `QQBrowser-11.1` | `match` | `none` |
+| 53 | `hellochrome_100_psk` | `Chrome-100_PSK` | `match` | `none` |
+| 54 | `hellochrome_112_psk_shuf` | `Chrome-112_PSK` | `match` | `none` |
+| 55 | `hellochrome_114_padding_psk_shuf` | `Chrome-114_PSK` | `match` | `none` |
+| 56 | `hellochrome_115_pq` | `Chrome-115_PQ` | `match` | `none` |
+| 57 | `hellochrome_115_pq_psk` | `Chrome-115_PQ_PSK` | `match` | `none` |
+| 58 | `hellochrome_120_pq` | `Chrome-120_PQ` | `match` | `none` |
 
 ## Detailed Non-Match Rows
 

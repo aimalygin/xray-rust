@@ -238,14 +238,11 @@ public struct XrayRealityFingerprintMode: RawRepresentable,
     public static let random = Self("random")
     public static let randomized = Self("randomized")
     public static let hellofirefox120 = Self("hellofirefox_120")
-    public static let hellofirefox148 = Self("hellofirefox_148")
     public static let hellochrome120 = Self("hellochrome_120")
     public static let hellochrome131 = Self("hellochrome_131")
-    public static let hellochrome133 = Self("hellochrome_133")
     public static let helloios13 = Self("helloios_13")
     public static let helloios14 = Self("helloios_14")
     public static let helloedge106 = Self("helloedge_106")
-    public static let hellosafari263 = Self("hellosafari_26_3")
     public static let hello360110 = Self("hello360_11_0")
     public static let helloqq111 = Self("helloqq_11_1")
     public static let hellorandomized = Self("hellorandomized")
@@ -287,14 +284,11 @@ public struct XrayRealityFingerprintMode: RawRepresentable,
         .random,
         .randomized,
         .hellofirefox120,
-        .hellofirefox148,
         .hellochrome120,
         .hellochrome131,
-        .hellochrome133,
         .helloios13,
         .helloios14,
         .helloedge106,
-        .hellosafari263,
         .hello360110,
         .helloqq111,
         .hellorandomized,
