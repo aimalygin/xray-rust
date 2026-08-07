@@ -262,6 +262,9 @@ pub struct XrayTunStats {
     pub tun_fd_write_batches: u64,
     pub tun_fd_write_batch_packets: u64,
     pub tun_fd_write_batch_max_packets: u64,
+    pub tun_fd_read_loop_exits: u64,
+    pub tun_fd_write_loop_exits: u64,
+    pub tun_fd_transient_io_errors: u64,
 }
 
 impl Default for XrayTunStats {
@@ -337,6 +340,9 @@ impl Default for XrayTunStats {
             tun_fd_write_batches: 0,
             tun_fd_write_batch_packets: 0,
             tun_fd_write_batch_max_packets: 0,
+            tun_fd_read_loop_exits: 0,
+            tun_fd_write_loop_exits: 0,
+            tun_fd_transient_io_errors: 0,
         }
     }
 }
@@ -3361,6 +3367,9 @@ unsafe fn xray_tun_stats_inner(
             tun_fd_write_batches: snapshot.tun_fd_write_batches,
             tun_fd_write_batch_packets: snapshot.tun_fd_write_batch_packets,
             tun_fd_write_batch_max_packets: snapshot.tun_fd_write_batch_max_packets,
+            tun_fd_read_loop_exits: snapshot.tun_fd_read_loop_exits,
+            tun_fd_write_loop_exits: snapshot.tun_fd_write_loop_exits,
+            tun_fd_transient_io_errors: snapshot.tun_fd_transient_io_errors,
         };
     }
 

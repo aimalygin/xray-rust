@@ -89,6 +89,11 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
     ] {
         assert!(header.contains(field), "header missing `{field}`");
     }
+    // Swift reads the counters positionally through the C struct, so the tail
+    // must stay in the same order as the Rust declaration.
+    assert!(header.contains(
+        "  uint64_t tun_fd_write_batch_max_packets;\n  uint64_t tun_fd_read_loop_exits;\n  uint64_t tun_fd_write_loop_exits;\n  uint64_t tun_fd_transient_io_errors;\n"
+    ));
 }
 
 #[test]
@@ -1048,6 +1053,9 @@ static void use_xray_ffi_api(void) {
   stats_probe += stats.tcp_remote_flush_wait_events;
   stats_probe += stats.tcp_remote_flush_wait_ms_total;
   stats_probe += stats.tcp_remote_flush_wait_ms_max;
+  stats_probe += stats.tun_fd_read_loop_exits;
+  stats_probe += stats.tun_fd_write_loop_exits;
+  stats_probe += stats.tun_fd_transient_io_errors;
   (void)stats_probe;
   (void)xray_error_code(error);
   (void)xray_error_message(error);

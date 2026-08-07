@@ -295,6 +295,9 @@ final class XrayPacketTunnelPumpTests: XCTestCase {
         XCTAssertTrue(joined.contains("udpVisionUDP443Rejections=7"))
         XCTAssertTrue(joined.contains("udpQuicBlockedPackets=10"))
         XCTAssertTrue(joined.contains("udpUDP443OpenEvents=27"))
+        XCTAssertTrue(joined.contains("tunFdReadLoopExits=1"))
+        XCTAssertTrue(joined.contains("tunFdWriteLoopExits=2"))
+        XCTAssertTrue(joined.contains("tunFdTransientIoErrors=9"))
     }
 
     func testTunRuntimeProfileNameMapsToFfiProfile() {
@@ -486,7 +489,10 @@ final class XrayPacketTunnelPumpTests: XCTestCase {
         outboundQueueMaxPackets: 30,
         tunFdWriteBatches: 4218,
         tunFdWriteBatchPackets: 32654,
-        tunFdWriteBatchMaxPackets: 30
+        tunFdWriteBatchMaxPackets: 30,
+        tunFdReadLoopExits: 1,
+        tunFdWriteLoopExits: 2,
+        tunFdTransientIoErrors: 9
     )
 }
 

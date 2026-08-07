@@ -787,7 +787,10 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             outboundQueueMaxPackets: stats.outboundQueueMaxPackets,
             tunFdWriteBatches: stats.tunFdWriteBatches,
             tunFdWriteBatchPackets: stats.tunFdWriteBatchPackets,
-            tunFdWriteBatchMaxPackets: stats.tunFdWriteBatchMaxPackets
+            tunFdWriteBatchMaxPackets: stats.tunFdWriteBatchMaxPackets,
+            tunFdReadLoopExits: stats.tunFdReadLoopExits,
+            tunFdWriteLoopExits: stats.tunFdWriteLoopExits,
+            tunFdTransientIoErrors: stats.tunFdTransientIoErrors
         )
         XrayAppleLog.info(
             "PacketTunnelProvider",

@@ -1142,6 +1142,9 @@ fn ffi_tun_push_packet_updates_stats() {
     assert_eq!(stats.tun_fd_write_batches, 0);
     assert_eq!(stats.tun_fd_write_batch_packets, 0);
     assert_eq!(stats.tun_fd_write_batch_max_packets, 0);
+    assert_eq!(stats.tun_fd_read_loop_exits, 0);
+    assert_eq!(stats.tun_fd_write_loop_exits, 0);
+    assert_eq!(stats.tun_fd_transient_io_errors, 0);
 
     unsafe {
         xray_core_free(core);

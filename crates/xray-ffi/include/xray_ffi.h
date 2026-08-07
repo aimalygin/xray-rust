@@ -94,6 +94,9 @@ typedef struct XrayTunStats {
   uint64_t tun_fd_write_batches;
   uint64_t tun_fd_write_batch_packets;
   uint64_t tun_fd_write_batch_max_packets;
+  uint64_t tun_fd_read_loop_exits;
+  uint64_t tun_fd_write_loop_exits;
+  uint64_t tun_fd_transient_io_errors;
 } XrayTunStats;
 
 typedef enum XrayTunFdPacketFormat {

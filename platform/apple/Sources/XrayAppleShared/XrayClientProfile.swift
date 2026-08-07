@@ -1274,6 +1274,9 @@ public struct XrayClientRuntimeStats: Codable, Equatable, Sendable {
     public var tunFdWriteBatches: UInt64
     public var tunFdWriteBatchPackets: UInt64
     public var tunFdWriteBatchMaxPackets: UInt64
+    public var tunFdReadLoopExits: UInt64
+    public var tunFdWriteLoopExits: UInt64
+    public var tunFdTransientIoErrors: UInt64
 
     private enum CodingKeys: String, CodingKey {
         case inboundPackets
@@ -1314,6 +1317,9 @@ public struct XrayClientRuntimeStats: Codable, Equatable, Sendable {
         case tunFdWriteBatches
         case tunFdWriteBatchPackets
         case tunFdWriteBatchMaxPackets
+        case tunFdReadLoopExits
+        case tunFdWriteLoopExits
+        case tunFdTransientIoErrors
     }
 
     public init(
@@ -1354,7 +1360,10 @@ public struct XrayClientRuntimeStats: Codable, Equatable, Sendable {
         outboundQueueMaxPackets: UInt64 = 0,
         tunFdWriteBatches: UInt64 = 0,
         tunFdWriteBatchPackets: UInt64 = 0,
-        tunFdWriteBatchMaxPackets: UInt64 = 0
+        tunFdWriteBatchMaxPackets: UInt64 = 0,
+        tunFdReadLoopExits: UInt64 = 0,
+        tunFdWriteLoopExits: UInt64 = 0,
+        tunFdTransientIoErrors: UInt64 = 0
     ) {
         self.inboundPackets = inboundPackets
         self.outboundPackets = outboundPackets
@@ -1394,6 +1403,9 @@ public struct XrayClientRuntimeStats: Codable, Equatable, Sendable {
         self.tunFdWriteBatches = tunFdWriteBatches
         self.tunFdWriteBatchPackets = tunFdWriteBatchPackets
         self.tunFdWriteBatchMaxPackets = tunFdWriteBatchMaxPackets
+        self.tunFdReadLoopExits = tunFdReadLoopExits
+        self.tunFdWriteLoopExits = tunFdWriteLoopExits
+        self.tunFdTransientIoErrors = tunFdTransientIoErrors
     }
 
     public init(from decoder: Decoder) throws {
@@ -1519,6 +1531,18 @@ public struct XrayClientRuntimeStats: Codable, Equatable, Sendable {
         tunFdWriteBatchMaxPackets = try container.decodeIfPresent(
             UInt64.self,
             forKey: .tunFdWriteBatchMaxPackets
+        ) ?? 0
+        tunFdReadLoopExits = try container.decodeIfPresent(
+            UInt64.self,
+            forKey: .tunFdReadLoopExits
+        ) ?? 0
+        tunFdWriteLoopExits = try container.decodeIfPresent(
+            UInt64.self,
+            forKey: .tunFdWriteLoopExits
+        ) ?? 0
+        tunFdTransientIoErrors = try container.decodeIfPresent(
+            UInt64.self,
+            forKey: .tunFdTransientIoErrors
         ) ?? 0
     }
 }
