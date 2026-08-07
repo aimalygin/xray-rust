@@ -116,7 +116,11 @@ Add to the `mod tests` block in `crates/xray-core-rs/src/tun_fd.rs` (after `darw
         fn interrupts_are_retried_without_counting_as_failures() {
             assert_eq!(
                 io_disposition(&io::Error::from_raw_os_error(libc::EINTR)),
-                TunFdIoDisposition::Retry
+                TunFdIoDisposition::RetryImmediately
+            );
+            assert_eq!(
+                io_disposition(&io::Error::new(io::ErrorKind::Interrupted, "eintr")),
+                TunFdIoDisposition::RetryImmediately
             );
         }
 ```
@@ -143,6 +147,9 @@ In `crates/xray-core-rs/src/tun_fd.rs`, inside `mod platform` (the `#[cfg(unix)]
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum TunFdIoDisposition {
+        /// The syscall was interrupted and should be reissued at once. Not a
+        /// failure: it neither backs off nor counts against the give-up bound.
+        RetryImmediately,
         Retry,
         Fatal,
     }
@@ -151,6 +158,9 @@ In `crates/xray-core-rs/src/tun_fd.rs`, inside `mod platform` (the `#[cfg(unix)]
     /// that mean the descriptor itself is gone, because a tunnel that stops
     /// moving packets is far worse than one that retries a doomed read.
     fn io_disposition(error: &io::Error) -> TunFdIoDisposition {
+        if error.kind() == io::ErrorKind::Interrupted {
+            return TunFdIoDisposition::RetryImmediately;
+        }
         if error.kind() == io::ErrorKind::UnexpectedEof {
             return TunFdIoDisposition::Fatal;
         }
@@ -199,16 +209,17 @@ Replace the body of `read_loop` in `crates/xray-core-rs/src/tun_fd.rs` (currentl
                         Ok(None) => {
                             consecutive_errors = 0;
                         }
-                        Err(err) => {
-                            if io_disposition(&err) == TunFdIoDisposition::Fatal {
-                                break;
+                        Err(err) => match io_disposition(&err) {
+                            TunFdIoDisposition::RetryImmediately => {}
+                            TunFdIoDisposition::Fatal => break,
+                            TunFdIoDisposition::Retry => {
+                                consecutive_errors += 1;
+                                if consecutive_errors >= MAX_CONSECUTIVE_TUN_FD_IO_ERRORS {
+                                    break;
+                                }
+                                tokio::time::sleep(TUN_FD_IO_RETRY_BACKOFF).await;
                             }
-                            consecutive_errors += 1;
-                            if consecutive_errors >= MAX_CONSECUTIVE_TUN_FD_IO_ERRORS {
-                                break;
-                            }
-                            tokio::time::sleep(TUN_FD_IO_RETRY_BACKOFF).await;
-                        }
+                        },
                     }
                 }
             }
@@ -248,16 +259,17 @@ Replace the body of `write_loop` in `crates/xray-core-rs/src/tun_fd.rs` (current
                                     consecutive_errors = 0;
                                     tun.record_tun_fd_write_batch(batch.len());
                                 }
-                                Err(err) => {
-                                    if io_disposition(&err) == TunFdIoDisposition::Fatal {
-                                        break;
+                                Err(err) => match io_disposition(&err) {
+                                    TunFdIoDisposition::RetryImmediately => {}
+                                    TunFdIoDisposition::Fatal => break,
+                                    TunFdIoDisposition::Retry => {
+                                        consecutive_errors += 1;
+                                        if consecutive_errors >= MAX_CONSECUTIVE_TUN_FD_IO_ERRORS {
+                                            break;
+                                        }
+                                        tokio::time::sleep(TUN_FD_IO_RETRY_BACKOFF).await;
                                     }
-                                    consecutive_errors += 1;
-                                    if consecutive_errors >= MAX_CONSECUTIVE_TUN_FD_IO_ERRORS {
-                                        break;
-                                    }
-                                    tokio::time::sleep(TUN_FD_IO_RETRY_BACKOFF).await;
-                                }
+                                },
                             }
                         }
                         Err(TunError::QueueClosed) => break,
@@ -396,37 +408,43 @@ In `impl TunEndpoint`, immediately after `pub fn record_tun_fd_write_batch(&self
 In `crates/xray-core-rs/src/tun_fd.rs`, in `read_loop`, replace the `Err(err)` arm written in Task 1 with:
 
 ```rust
-                        Err(err) => {
-                            if io_disposition(&err) == TunFdIoDisposition::Fatal {
+                        Err(err) => match io_disposition(&err) {
+                            TunFdIoDisposition::RetryImmediately => {}
+                            TunFdIoDisposition::Fatal => {
                                 tun.record_tun_fd_read_loop_exit();
                                 break;
                             }
-                            consecutive_errors += 1;
-                            tun.record_tun_fd_transient_io_error();
-                            if consecutive_errors >= MAX_CONSECUTIVE_TUN_FD_IO_ERRORS {
-                                tun.record_tun_fd_read_loop_exit();
-                                break;
+                            TunFdIoDisposition::Retry => {
+                                consecutive_errors += 1;
+                                tun.record_tun_fd_transient_io_error();
+                                if consecutive_errors >= MAX_CONSECUTIVE_TUN_FD_IO_ERRORS {
+                                    tun.record_tun_fd_read_loop_exit();
+                                    break;
+                                }
+                                tokio::time::sleep(TUN_FD_IO_RETRY_BACKOFF).await;
                             }
-                            tokio::time::sleep(TUN_FD_IO_RETRY_BACKOFF).await;
-                        }
+                        },
 ```
 
 In `write_loop`, replace its `Err(err)` arm with:
 
 ```rust
-                                Err(err) => {
-                                    if io_disposition(&err) == TunFdIoDisposition::Fatal {
+                                Err(err) => match io_disposition(&err) {
+                                    TunFdIoDisposition::RetryImmediately => {}
+                                    TunFdIoDisposition::Fatal => {
                                         tun.record_tun_fd_write_loop_exit();
                                         break;
                                     }
-                                    consecutive_errors += 1;
-                                    tun.record_tun_fd_transient_io_error();
-                                    if consecutive_errors >= MAX_CONSECUTIVE_TUN_FD_IO_ERRORS {
-                                        tun.record_tun_fd_write_loop_exit();
-                                        break;
+                                    TunFdIoDisposition::Retry => {
+                                        consecutive_errors += 1;
+                                        tun.record_tun_fd_transient_io_error();
+                                        if consecutive_errors >= MAX_CONSECUTIVE_TUN_FD_IO_ERRORS {
+                                            tun.record_tun_fd_write_loop_exit();
+                                            break;
+                                        }
+                                        tokio::time::sleep(TUN_FD_IO_RETRY_BACKOFF).await;
                                     }
-                                    tokio::time::sleep(TUN_FD_IO_RETRY_BACKOFF).await;
-                                }
+                                },
 ```
 
 - [ ] **Step 7: Run the tests to verify they pass**
