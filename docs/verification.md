@@ -91,6 +91,30 @@ cargo test --locked -p xray-transport reality
 They cover session-ID sealing, ClientHello shaping/patching, certificate
 binding, connector validation, and the Rust REALITY transport path.
 
+## Go-oracle fixtures
+
+The fixtures under `tests/fixtures/reality` and `tests/fixtures/masquerade` are
+what pins our ClientHello and masquerade-header shaping to the Go reference
+implementation, and the Rust suite asserts against them without ever running
+the oracles that produced them. This replays every oracle and compares:
+
+```sh
+bash scripts/verify-oracle-fixtures.sh
+```
+
+It discovers the fixtures itself and reads each one's generation flags out of
+the fixture's own contents, so a new fixture is covered as soon as it is
+committed and a fixture no oracle claims fails the run. It needs Go and
+`python3`, takes about ten seconds cold, and is what the `go-oracles` CI job
+runs.
+
+One family cannot be reproduced byte for byte away from the machine that
+generated it: Xray derives browser versions from the current date offset by a
+draw from a CPU-seeded PRNG, so `tests/fixtures/masquerade/headers_*.json`
+report `drift` on any other host. Header keys, their order, and every value the
+draw does not reach are still checked strictly; anything left unverified is
+named in the output.
+
 ## Local Xray-core interoperability
 
 The repository does not vendor or declare a pinned Xray-core oracle revision.
