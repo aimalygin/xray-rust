@@ -7,6 +7,27 @@ prerelease-quality and do not establish a supported release series.
 
 ## Unreleased
 
+- Added the WebSocket and HTTPUpgrade stream transports for VLESS outbounds.
+  `streamSettings.network` now accepts `ws`/`websocket` and `httpupgrade`
+  alongside `tcp`/`raw`, with `wsSettings` and `httpupgradeSettings` carrying
+  `path`, `host`, `headers` and — for WebSocket — `heartbeatPeriod`. Both
+  transports send Xray's browser-masquerade header block and serialize the
+  request the way Go writes an `http.Request`, and both are verified against a
+  live xray-core rather than against a reading of it.
+  `?ed=N` in the path means different things on the two despite the shared
+  spelling: on WebSocket it is an early-data budget carried in
+  `Sec-WebSocket-Protocol`, on HTTPUpgrade it only means "do not wait for the
+  101". `docs/config-compatibility.md` has the full surface, including the
+  header-casing split between the two and the one place the masqueraded
+  browser version diverges from Xray's.
+- Rejected two transport pairings xray-core also refuses, so that a profile
+  cannot build here and then fail on the wire: REALITY with `ws` or
+  `httpupgrade`, which xray-core answers with "REALITY only supports RAW,
+  XHTTP and gRPC for now", and `xtls-rprx-vision` with any transport other
+  than raw, because Vision splices itself into the TLS connection's internals
+  and breaks when anything sits between. A `freedom` outbound also refuses ws
+  and httpupgrade; they are implemented for VLESS only, and refusing beats
+  silently dialling plain TCP.
 - TLS connections are now shaped to look like a browser.
   `tlsSettings.fingerprint` selects a uTLS ClientHello shape from the same 58
   names xray-core accepts, and an absent or empty value means `chrome` rather

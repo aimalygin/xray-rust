@@ -23,6 +23,7 @@ parity with every Xray-core release.
 | Direct fd-backed TUN | Supported | Raw-IP Android and Darwin-utun framing paths; host integration is platform-owned |
 | Freedom/direct outbound | Supported | TCP and UDP integration tests |
 | VLESS over TCP | Supported | Local fake-server and optional Xray-core interoperability tests |
+| VLESS over WebSocket / HTTPUpgrade | Supported subset | Browser-masqueraded HTTP/1.1 upgrade with early data and keepalive; REALITY and Vision are refused on both, matching Xray; live Xray-core interoperability tests |
 | TLS | Supported | Certificate-verified local integration tests; the uTLS-shaped ClientHello sent by default is covered by per-fingerprint shape tests; `allowInsecure` is accepted with a warning |
 | REALITY client | Supported subset | Deterministic primitive tests and optional local Xray-core REALITY+Vision interoperability tests |
 | TCP Happy Eyeballs | Supported subset | Opt-in Xray-compatible Freedom/VLESS raw-TCP candidate race; bounded and cancellation-safe, with one TLS/REALITY handshake after connect |
@@ -43,7 +44,8 @@ See [configuration compatibility](config-compatibility.md) for accepted values.
 Notable unsupported areas include:
 
 - VMess, Trojan, Shadowsocks, WireGuard, and server-side VLESS;
-- WebSocket, HTTP/2, gRPC, QUIC, KCP, and other non-TCP stream transports;
+- HTTP/2, gRPC, QUIC, KCP, XHTTP, and other stream transports beyond raw,
+  WebSocket and HTTPUpgrade;
 - mux, balancers, reverse proxy, observatory/API services, and outbound chaining;
 - SOCKS/HTTP authentication and HTTP transparent proxy mode;
 - full Xray DNS, policy/statistics, sniffing, and routing semantics.

@@ -73,9 +73,10 @@ runtime currently selects the first user.
 - `xtls-rprx-vision`;
 - `xtls-rprx-vision-udp443`.
 
-`streamSettings.network` is currently the TCP transport only, spelled either
-`tcp` or `raw` (Xray renamed it to `raw`; both names are accepted and mean the
-same thing). Security values are:
+`streamSettings.network` accepts `tcp`/`raw`, `ws`/`websocket`, and
+`httpupgrade`. Xray renamed the TCP transport to `raw`; both spellings are
+accepted and mean the same thing, as do `ws` and `websocket`. Security values
+are:
 
 - `none`;
 - `tls`, with `serverName`, `allowInsecure` (certificate verification is
@@ -85,13 +86,93 @@ same thing). Security values are:
   `mldsa65Verify`.
 
 `tcpSettings.header.type` — equally `rawSettings.header.type` — may be absent,
-empty, or `none`. WebSocket, HTTP/2,
-gRPC, QUIC, KCP, and other stream transports are not supported. Outbound mux,
-`proxySettings`, `sendThrough`, multiple VLESS servers, and outbound chaining
-are rejected.
+empty, or `none`. HTTP/2, gRPC, QUIC, KCP, XHTTP and other stream transports
+are not supported. Outbound mux, `proxySettings`, `sendThrough`, multiple VLESS
+servers, and outbound chaining are rejected.
 
 VLESS UDP is carried over the supported TCP transport using VLESS datagram or
 XUDP framing; it does not make `streamSettings.network: "udp"` valid.
+
+### WebSocket and HTTPUpgrade
+
+Both transports carry VLESS over an HTTP/1.1 upgrade and share Xray's
+browser-masquerade header block, so a request from either looks like a
+browser's. Their requests are serialized the way Go writes an `http.Request`:
+request line, `Host`, `User-Agent`, then every remaining header sorted
+case-sensitively by its literal key.
+
+`wsSettings` accepts `path`, `host`, `headers`, `heartbeatPeriod` and
+`acceptProxyProtocol`; `httpupgradeSettings` accepts the same less
+`heartbeatPeriod`. A settings block belonging to another network is validated
+but ignored, with a warning — Xray builds every block that is present and only
+picks between them at dial time, which is how a copy-pasted `wsSettings`
+silently downgrades a profile to plain TCP.
+
+The `Host` header is the transport's own `host`, else `tlsSettings.serverName`,
+else the destination address, and never carries a port. WebSocket also accepts
+a `Host` inside `headers`, folding it into `host` with a deprecation warning;
+HTTPUpgrade rejects it, because Xray reads its `Host` from `host` alone. The
+two also disagree on header casing, deliberately: WebSocket feeds `headers`
+through Go's `header.Add`, which MIME-canonicalizes the key, so `accept`
+reaches the wire as `Accept`; HTTPUpgrade assigns into the map directly and
+keeps whatever casing was written.
+
+**`?ed=N` in the path means different things on the two transports**, despite
+the shared spelling. On both it is stripped from the path and the remaining
+query is re-encoded the way Go's `url.Values.Encode` does. On WebSocket it is
+an early-data budget: nothing touches the network until the first write, and
+if that write is at most `N` bytes it travels inside `Sec-WebSocket-Protocol`
+as unpadded base64url with no frame sent for it. A larger first write disables
+early data for the whole connection rather than being truncated — the boundary
+is inclusive. On HTTPUpgrade it carries no payload at all; any positive value
+only means the dial returns without waiting for the `101`.
+
+One more asymmetry worth knowing before writing a path: HTTPUpgrade assigns the
+path to Go's `URL.Path`, which escapes `?`, so a configured `/ws?foo=bar` goes
+out as `GET /ws%3Ffoo=bar`. WebSocket sends a real query string. The Xray
+server unescapes it back, so either round-trips — against Xray.
+
+`heartbeatPeriod` is in seconds and applies to WebSocket only. It sends an
+empty ping every period, the first one a full period after connect. Closing
+writes a close frame with code 1000 and no reason before the socket closes.
+
+#### The masqueraded browser version is redrawn on every start
+
+A **known divergence**, and the one place the header block differs from Xray's.
+Xray derives the Chrome, Firefox, Safari and curl versions in its `User-Agent`
+and `Sec-CH-UA` headers from the calendar minus a random offset seeded with the
+host CPU's identity, so one install reports the same versions until its
+hardware changes. Ours draws that offset from the OS CSPRNG once per process,
+which reproduces the spread across Xray's installs — on 2026-08-07, 55% of them
+said Chrome 148 and the rest 145 to 147 — but not its stability per machine.
+
+Within a process the versions never move: a client whose `User-Agent` changed
+between connections would stand out more than one that never changes. What an
+observer can see is a client whose claimed browser version changes across
+restarts, which is ordinary for a browser on a 35-day release cadence and the
+better side of the trade against a whole user base frozen on one version.
+
+Setting a `User-Agent` in `headers` opts out of all of it. Any value other than
+the magic keywords `chrome`, `firefox`, `safari`, `edge`, `curl` and `golang`
+suppresses the entire masquerade block — about ten headers — which is Xray's
+behavior too, and rarely what the author intended.
+
+#### What these transports cannot be combined with
+
+Both restrictions are Xray's, enforced at config-build time there and at parse
+or build time here, because a profile that pairs them builds cleanly and then
+fails on the wire:
+
+- **REALITY is rejected**, matching Xray's "REALITY only supports RAW, XHTTP
+  and gRPC for now". Plain TLS is the only security these transports take.
+- **`xtls-rprx-vision` is rejected.** Vision splices itself into the TLS
+  connection's internals, so anything layered between the two breaks it; Xray
+  fails the same pairing with "XTLS only supports TLS and REALITY directly for
+  now".
+
+A `freedom` outbound is also refused these transports. Xray would dial the
+destination itself through them; here they are implemented for VLESS only, and
+refusing is better than silently dialling plain TCP.
 
 ### TLS ClientHello shaping
 
