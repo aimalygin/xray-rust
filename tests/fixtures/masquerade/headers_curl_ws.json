@@ -1,0 +1,16 @@
+{
+  "variant": "ws",
+  "user_agent": "curl",
+  "versions": {
+    "chrome": 148,
+    "firefox": 151,
+    "safari": "26.6",
+    "curl": "8.19.0"
+  },
+  "headers": [
+    {
+      "key": "User-Agent",
+      "value": "curl/8.19.0"
+    }
+  ]
+}

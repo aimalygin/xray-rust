@@ -1,0 +1,6 @@
+github.com/klauspost/cpuid/v2 v2.3.0 h1:S4CRMLnYUhGeDFDqkGriYKdfoFlDnMtqTiI/sFzhA9Y=
+github.com/klauspost/cpuid/v2 v2.3.0/go.mod h1:hqwkgyIinND0mEev00jJYCxPNVRVXFQeu1XKlok6oO0=
+github.com/xtls/xray-core v1.260327.1-0.20260509173629-1bdb488c9ec0 h1:ft6HiTHelF1z9i3zZVPG9Q1LcLcvEB5jzBxky/+wljk=
+github.com/xtls/xray-core v1.260327.1-0.20260509173629-1bdb488c9ec0/go.mod h1:LWadz6mFBKGPHAe0KscKjugHjmQeyDt5Na6J86ol/hY=
+golang.org/x/sys v0.43.0 h1:Rlag2XtaFTxp19wS8MXlJwTvoh8ArU6ezoyFsMyCTNI=
+golang.org/x/sys v0.43.0/go.mod h1:4GL1E5IUh+htKOUEOaiffhrAeqysfVGipDYzABqnCmw=

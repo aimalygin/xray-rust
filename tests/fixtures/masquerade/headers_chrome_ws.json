@@ -1,0 +1,60 @@
+{
+  "variant": "ws",
+  "user_agent": "",
+  "versions": {
+    "chrome": 148,
+    "firefox": 151,
+    "safari": "26.6",
+    "curl": "8.19.0"
+  },
+  "headers": [
+    {
+      "key": "Accept",
+      "value": "*/*"
+    },
+    {
+      "key": "Accept-Language",
+      "value": "en-US,en;q=0.9"
+    },
+    {
+      "key": "Cache-Control",
+      "value": "no-cache"
+    },
+    {
+      "key": "DNT",
+      "value": "1"
+    },
+    {
+      "key": "Pragma",
+      "value": "no-cache"
+    },
+    {
+      "key": "Sec-CH-UA",
+      "value": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\""
+    },
+    {
+      "key": "Sec-CH-UA-Mobile",
+      "value": "?0"
+    },
+    {
+      "key": "Sec-CH-UA-Platform",
+      "value": "\"Windows\""
+    },
+    {
+      "key": "Sec-Fetch-Dest",
+      "value": "empty"
+    },
+    {
+      "key": "Sec-Fetch-Mode",
+      "value": "websocket"
+    },
+    {
+      "key": "Sec-Fetch-Site",
+      "value": "same-origin"
+    },
+    {
+      "key": "User-Agent",
+      "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+    }
+  ]
+}
