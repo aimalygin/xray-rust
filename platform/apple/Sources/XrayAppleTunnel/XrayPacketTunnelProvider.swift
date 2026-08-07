@@ -1914,20 +1914,12 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         }
         settings.ipv4Settings = ipv4Settings
 
-        let ipv6Settings = NEIPv6Settings(
-            addresses: [tunnelLocalIPv6Address],
-            networkPrefixLengths: [128]
-        )
-        ipv6Settings.includedRoutes = [NEIPv6Route.default()]
-        let ipv6ExcludedRoutes = ipv6ExcludedRoutes(for: serverAddresses)
-        if !ipv6ExcludedRoutes.isEmpty {
-            XrayAppleLog.info(
-                "PacketTunnelProvider",
-                "Excluding \(ipv6ExcludedRoutes.count) bootstrap IPv6 /128 route(s) from tunnel"
-            )
-            ipv6Settings.excludedRoutes = ipv6ExcludedRoutes
-        }
-        settings.ipv6Settings = ipv6Settings
+        // IPv6 is deliberately not advertised. The fake-IP pool is IPv4-only, so
+        // an IPv6 destination can never be restored to a domain and would be
+        // dialled as a literal through a server that may have no IPv6 at all —
+        // a flow that hangs instead of failing over to IPv4. Traffic to IPv6
+        // literals therefore leaves outside the tunnel; capturing ::/0 and
+        // rejecting it in the engine is the fix that removes that trade-off.
 
         // A full tunnel must install an explicit DNS destination. Otherwise
         // the system resolver can be routed into the tunnel and blackhole.
@@ -2291,23 +2283,6 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             return NEIPv4Route(
                 destinationAddress: address,
                 subnetMask: "255.255.255.255"
-            )
-        }
-    }
-
-    private static func ipv6ExcludedRoutes(for serverAddresses: [String]) -> [NEIPv6Route] {
-        var seen = Set<String>()
-        return serverAddresses.compactMap { rawAddress in
-            guard let address = canonicalIPAddress(rawAddress),
-                  isIPAddress(address, family: AF_INET6),
-                  !isTunnelOwnedIPAddress(address),
-                  seen.insert(address).inserted
-            else {
-                return nil
-            }
-            return NEIPv6Route(
-                destinationAddress: address,
-                networkPrefixLength: 128
             )
         }
     }
