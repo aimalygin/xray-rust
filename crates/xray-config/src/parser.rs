@@ -2568,6 +2568,7 @@ impl Parser<'_> {
         if let Some(stream) = stream {
             self.validate_stream_settings_compatibility(stream, index);
         }
+        self.validate_unconsumed_transport_settings(stream, stream_network, index);
         let transport = self.parse_stream_transport(stream, stream_network, index)?;
 
         Some(StreamSettings {
@@ -2594,6 +2595,60 @@ impl Parser<'_> {
             StreamNetwork::HttpUpgrade => self
                 .parse_httpupgrade_settings(stream, index)
                 .map(StreamTransport::HttpUpgrade),
+        }
+    }
+
+    /// Flags a settings block the selected network will never read.
+    ///
+    /// Xray's `StreamConfig.Build` builds *every* block that is present, not
+    /// just the selected one, and only picks between them by protocol name at
+    /// dial time. So the block is still validated — under `network: "raw"` an
+    /// Xray config with `httpupgradeSettings.headers.Host` still fails to
+    /// build — but it is also inert, which is how a copy-pasted `wsSettings`
+    /// silently downgrades a profile to plain TCP. Hence a warning for its
+    /// presence plus the block's own validation, which is exactly as strict as
+    /// Xray and no stricter.
+    fn validate_unconsumed_transport_settings(
+        &mut self,
+        stream: Option<&Value>,
+        network: StreamNetwork,
+        index: usize,
+    ) {
+        let Some(stream) = stream else {
+            return;
+        };
+        // `rawSettings` is `tcpSettings` renamed, so the raw transport reads
+        // either spelling. Both are validated for every network already.
+        let consumed: &[&str] = match network {
+            StreamNetwork::Raw => &["tcpSettings", "rawSettings"],
+            StreamNetwork::WebSocket => &["wsSettings"],
+            StreamNetwork::HttpUpgrade => &["httpupgradeSettings"],
+        };
+
+        for key in [
+            "tcpSettings",
+            "rawSettings",
+            "wsSettings",
+            "httpupgradeSettings",
+        ] {
+            if consumed.contains(&key) || stream.get(key).is_none() {
+                continue;
+            }
+
+            self.warning(
+                format!("$.outbounds[{index}].streamSettings.{key}"),
+                format!("`{key}` is ignored because `network` selects another transport"),
+            );
+            match key {
+                "wsSettings" => {
+                    let _ = self.parse_websocket_settings(Some(stream), index);
+                }
+                "httpupgradeSettings" => {
+                    let _ = self.parse_httpupgrade_settings(Some(stream), index);
+                }
+                // `validate_tcp_settings` already ran for both spellings.
+                _ => {}
+            }
         }
     }
 
@@ -3986,19 +4041,21 @@ fn normalize_u16_ranges(mut ranges: Vec<(u16, u16)>) -> Vec<(u16, u16)> {
 /// byte-for-byte with its original parameter order. Sorting those too would
 /// itself be a path mismatch.
 ///
-/// Two things Xray gets from routing the value through `url.Parse` are left
-/// out here, both because they only fire on a path no config would hold. Xray
-/// skips the whole rewrite when `url.Parse` fails (a control byte, or a
-/// truncated `%` escape), and it reads the query only up to a `#`, treating
-/// the rest as a fragment; this splits on the first `?` either way. Note also
-/// that percent-escaping the *path* is not done here: Xray escapes it when it
-/// builds the request, so it belongs to the transport, not the config.
+/// Everything that makes Xray *skip* the rewrite is reproduced, because those
+/// are the cases where rewriting anyway silently changes the path: a query
+/// with no usable `ed`, a `url.Parse` failure (a control byte or a truncated
+/// `%` escape), and a `?` that is really inside a `#` fragment.
+///
+/// The one thing not reproduced is that `u.String()` percent-escapes the path
+/// on the way out, so `/日本?ed=1` leaves Xray's config builder already
+/// escaped as `/%E6%97%A5%E6%9C%AC` where this returns `/日本`. For websocket
+/// that is invisible: its dialer concatenates a URI string and re-parses it,
+/// so the escape happens once either way. HTTPUpgrade is different — it
+/// assigns the whole path into `url.URL.Path`, which escapes it *again*, so
+/// Xray puts the double-escaped `/%25E6%2597%25A5%25E6%259C%25AC` on the
+/// wire. The HTTPUpgrade transport has to reproduce that double escape, and
+/// cannot get there by escaping this value once.
 fn split_early_data_from_path(raw: &str) -> (String, u32) {
-    let (path, query) = match raw.split_once('?') {
-        Some((path, query)) => (path, Some(query)),
-        None => (raw, None),
-    };
-
     let normalized_path = |path: &str| {
         if path.is_empty() {
             "/".to_owned()
@@ -4009,38 +4066,96 @@ fn split_early_data_from_path(raw: &str) -> (String, u32) {
         }
     };
 
-    let Some(query) = query else {
+    // Go runs the value through `url.Parse` first and leaves the path
+    // untouched when that fails, which a control byte does.
+    if raw.bytes().any(|byte| byte < 0x20 || byte == 0x7F) {
         return (normalized_path(raw), 0);
+    }
+
+    // `url.Parse` splits the fragment off before the query, so a `?` that
+    // follows a `#` is part of the fragment and never carries an `ed`.
+    let (before_fragment, fragment) = match raw.split_once('#') {
+        Some((before_fragment, fragment)) => (before_fragment, Some(fragment)),
+        None => (raw, None),
     };
 
+    let Some((path, query)) = before_fragment.split_once('?') else {
+        return (normalized_path(raw), 0);
+    };
+    // The other way `url.Parse` fails: a `%` in the path that is not a
+    // complete hex escape.
+    if !has_valid_percent_escapes(path) {
+        return (normalized_path(raw), 0);
+    }
+
     let parsed = parse_go_query(query);
+    // `q.Get("ed")` reads the first value stored under the key, whatever it
+    // is. A first `ed` that is empty ends the rewrite even when a later one
+    // carries a number: `/x?ed=&ed=7` keeps its whole query and no early data.
     let Some(early_data) = parsed
         .iter()
-        .find(|(key, value)| key == "ed" && !value.is_empty())
+        .find(|(key, _)| key == b"ed")
         .map(|(_, value)| value)
+        .filter(|value| !value.is_empty())
     else {
         return (normalized_path(raw), 0);
     };
 
     // Go's `Ed, _ := strconv.Atoi(...); ed = uint32(Ed)` keeps zero on a
-    // non-numeric value, truncates a wider one, and wraps a negative one —
-    // and deletes the parameter regardless of which happened. (Only a value
-    // past `i64` still differs: Go saturates where this gives up and takes 0.)
-    let early_data = early_data.parse::<i64>().unwrap_or(0) as u32;
-    let kept = encode_go_query(parsed.into_iter().filter(|(key, _)| key != "ed"));
+    // non-numeric value, truncates a wider one, wraps a negative one, and
+    // saturates at `int` range on overflow — and deletes the parameter
+    // regardless of which happened. Parsing wide and clamping reproduces all
+    // four.
+    let early_data = std::str::from_utf8(early_data)
+        .ok()
+        .and_then(|value| value.parse::<i128>().ok())
+        .unwrap_or(0)
+        .clamp(i64::MIN as i128, i64::MAX as i128) as i64 as u32;
+    let kept = encode_go_query(parsed.into_iter().filter(|(key, _)| key != b"ed"));
 
     let mut normalized = normalized_path(path);
     if !kept.is_empty() {
         normalized.push('?');
         normalized.push_str(&kept);
     }
+    if let Some(fragment) = fragment {
+        normalized.push('#');
+        normalized.push_str(fragment);
+    }
     (normalized, early_data)
+}
+
+/// Whether every `%` in the value begins a complete two-digit hex escape.
+/// Go's `url.Parse` rejects a path where one does not, which makes Xray leave
+/// the whole path alone.
+fn has_valid_percent_escapes(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] != b'%' {
+            index += 1;
+            continue;
+        }
+        let valid = bytes
+            .get(index + 1)
+            .zip(bytes.get(index + 2))
+            .is_some_and(|(high, low)| hex_value(*high).is_ok() && hex_value(*low).is_ok());
+        if !valid {
+            return false;
+        }
+        index += 3;
+    }
+    true
 }
 
 /// Go's `url.ParseQuery`: `&`-separated pairs, percent-decoded with `+` as a
 /// space. Segments that are empty, contain `;`, or carry a broken escape are
 /// dropped, and `url.URL.Query()` discards the resulting error.
-fn parse_go_query(query: &str) -> Vec<(String, String)> {
+///
+/// Keys and values stay raw bytes. `%FF` decodes to one byte in Go and
+/// re-encodes to `%FF`; forcing it through a `String` would replace it with
+/// U+FFFD and put `%EF%BF%BD` on the wire.
+fn parse_go_query(query: &str) -> Vec<(Vec<u8>, Vec<u8>)> {
     query
         .split('&')
         .filter(|segment| !segment.is_empty() && !segment.contains(';'))
@@ -4054,9 +4169,9 @@ fn parse_go_query(query: &str) -> Vec<(String, String)> {
 /// Go's `url.Values.Encode`: keys sorted, values kept in their original order
 /// within a key, every pair emitted as `key=value` even when the value is
 /// empty.
-fn encode_go_query(pairs: impl Iterator<Item = (String, String)>) -> String {
-    let mut pairs: Vec<(String, String)> = pairs.collect();
-    pairs.sort_by(|(left, _), (right, _)| left.as_bytes().cmp(right.as_bytes()));
+fn encode_go_query(pairs: impl Iterator<Item = (Vec<u8>, Vec<u8>)>) -> String {
+    let mut pairs: Vec<(Vec<u8>, Vec<u8>)> = pairs.collect();
+    pairs.sort_by(|(left, _), (right, _)| left.cmp(right));
     pairs
         .iter()
         .map(|(key, value)| format!("{}={}", query_escape(key), query_escape(value)))
@@ -4066,7 +4181,7 @@ fn encode_go_query(pairs: impl Iterator<Item = (String, String)>) -> String {
 
 /// Go's `url.QueryUnescape`. `None` on a truncated or non-hex `%` escape,
 /// which is how Go signals the segment should be dropped.
-fn query_unescape(value: &str) -> Option<String> {
+fn query_unescape(value: &str) -> Option<Vec<u8>> {
     let bytes = value.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut index = 0;
@@ -4088,15 +4203,14 @@ fn query_unescape(value: &str) -> Option<String> {
             }
         }
     }
-    // Go keeps the raw bytes; a decoded escape need not be valid UTF-8.
-    Some(String::from_utf8_lossy(&out).into_owned())
+    Some(out)
 }
 
 /// Go's `url.QueryEscape`: only unreserved characters survive, and a space
-/// becomes `+`.
-fn query_escape(value: &str) -> String {
+/// becomes `+`. Takes bytes, since a decoded escape need not be UTF-8.
+fn query_escape(value: &[u8]) -> String {
     let mut out = String::with_capacity(value.len());
-    for byte in value.bytes() {
+    for &byte in value {
         match byte {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
                 out.push(byte as char)
@@ -4317,6 +4431,33 @@ mod tests {
             ("/x?a=1;b=2&ed=1", "/x", 1),
             ("/x?ed=1&%zz=1", "/x", 1),
             ("/x?a b=c&ed=1", "/x?a+b=c", 1),
+            // `q.Get` reads the first value under the key whatever it is, so a
+            // leading empty `ed` ends the rewrite and a trailing one does not.
+            ("/x?ed=&ed=7", "/x?ed=&ed=7", 0),
+            ("/x?ed=7&ed=", "/x", 7),
+            ("/x?ed=2048&ed=", "/x", 2048),
+            ("/x?a=1&ed", "/x?a=1&ed", 0),
+            // Raw bytes survive the decode/encode round trip.
+            ("/x?k=%FF&ed=1", "/x?k=%FF", 1),
+            ("/x?%FF=1&ed=1", "/x?%FF=1", 1),
+            ("/x?ed=%37", "/x", 7),
+            // Key matching is case-sensitive.
+            ("/x?ED=8&ed=9", "/x?ED=8", 9),
+            ("/x?ED=8", "/x?ED=8", 0),
+            // Fragments are split off before the query is read.
+            ("/x?ed=1#frag", "/x#frag", 1),
+            ("/x#frag?ed=1", "/x#frag?ed=1", 0),
+            // A path `url.Parse` rejects is left entirely alone.
+            ("/%zz?ed=1", "/%zz?ed=1", 0),
+            // `strconv.Atoi` saturates at int range before the uint32 cast.
+            ("/x?ed=99999999999999999999", "/x", 4294967295),
+            ("/x?ed=2147483648", "/x", 2147483648),
+            ("/x?ed=+5", "/x", 0),
+            ("/x?ed=0x10", "/x", 0),
+            ("/x?ed= 5", "/x", 0),
+            ("//host/x?ed=1", "//host/x", 1),
+            ("/x%2Fy?ed=1", "/x%2Fy", 1),
+            ("/x?ed=1&a=%2F", "/x?a=%2F", 1),
         ];
 
         for (raw, path, early_data) in oracle {
@@ -4325,6 +4466,25 @@ mod tests {
                 (path.to_owned(), early_data),
                 "path {raw:?}"
             );
+        }
+    }
+
+    /// The one place this deliberately differs from Go, kept visible rather
+    /// than omitted from the table above. `u.String()` percent-escapes the
+    /// path when the rewrite fires, so Xray's *config* value is already
+    /// escaped once. Websocket cannot tell — its dialer re-parses a
+    /// concatenated URI, so the escape happens once either way — but
+    /// HTTPUpgrade assigns the path into `url.URL.Path` and escapes it again,
+    /// which is why it must not simply escape this value once.
+    #[test]
+    fn the_path_is_not_percent_escaped_the_way_go_escapes_it() {
+        for (raw, ours, go) in [
+            ("/a b?ed=1", "/a b", "/a%20b"),
+            ("/日本?ed=1", "/日本", "/%E6%97%A5%E6%9C%AC"),
+        ] {
+            let (path, early_data) = split_early_data_from_path(raw);
+            assert_eq!((path.as_str(), early_data), (ours, 1), "path {raw:?}");
+            assert_ne!(path, go, "if this now matches Go, drop the divergence");
         }
     }
 

@@ -3308,6 +3308,84 @@ fn transports_xray_still_has_but_we_do_not_say_so() {
 }
 
 #[test]
+fn a_settings_block_the_network_will_not_consume_warns() {
+    // Xray's StreamConfig.Build builds every block that is present and only
+    // picks one at dial time, so this parses — but silently as plain TCP,
+    // which is the copy-paste worth naming.
+    for (network, ignored) in [
+        ("raw", "wsSettings"),
+        ("raw", "httpupgradeSettings"),
+        ("ws", "httpupgradeSettings"),
+        ("ws", "tcpSettings"),
+        ("httpupgrade", "wsSettings"),
+        ("httpupgrade", "rawSettings"),
+    ] {
+        let parsed = parse_xray_json(&raw_with_stream_settings(&format!(
+            r#""network": "{network}", "security": "none", "{ignored}": {{}}"#
+        )))
+        .unwrap_or_else(|error| panic!("{network} with {ignored} must parse: {error:?}"));
+
+        let warning = parsed
+            .diagnostics
+            .iter()
+            .find(|diagnostic| {
+                diagnostic.path.as_deref()
+                    == Some(&format!("$.outbounds[0].streamSettings.{ignored}"))
+            })
+            .unwrap_or_else(|| {
+                panic!(
+                    "{network} must flag {ignored}, got: {:?}",
+                    parsed.diagnostics
+                )
+            });
+        assert_eq!(warning.severity, DiagnosticSeverity::Warning);
+    }
+}
+
+#[test]
+fn a_settings_block_the_network_will_not_consume_is_still_validated() {
+    // Xray builds the block regardless of the network, so a config that fails
+    // to build there must fail here; skipping it would make us more lenient
+    // than the reference, not equal to it.
+    let error = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "raw", "security": "none",
+           "httpupgradeSettings": {"headers": {"Host": "x"}}"#,
+    ))
+    .expect_err("an unconsumed block still has to build");
+
+    assert!(
+        error.diagnostics.iter().any(|diagnostic| {
+            diagnostic.severity == DiagnosticSeverity::Error
+                && diagnostic.path.as_deref()
+                    == Some("$.outbounds[0].streamSettings.httpupgradeSettings.headers")
+        }),
+        "got: {:?}",
+        error.diagnostics
+    );
+}
+
+#[test]
+fn a_consumed_settings_block_does_not_warn() {
+    for (network, consumed) in [
+        ("raw", "tcpSettings"),
+        ("raw", "rawSettings"),
+        ("ws", "wsSettings"),
+        ("httpupgrade", "httpupgradeSettings"),
+    ] {
+        let parsed = parse_xray_json(&raw_with_stream_settings(&format!(
+            r#""network": "{network}", "security": "none", "{consumed}": {{}}"#
+        )))
+        .expect("a matching settings block must parse");
+
+        assert!(
+            parsed.diagnostics.is_empty(),
+            "{network} with {consumed} got: {:?}",
+            parsed.diagnostics
+        );
+    }
+}
+
+#[test]
 fn rejects_unknown_ws_settings_field_with_path() {
     assert_parse_error_path(
         &raw_with_stream_settings(
