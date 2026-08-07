@@ -1,0 +1,91 @@
+{
+  "fingerprint": "android",
+  "utls_id": "Android-11",
+  "server_name": "example.com",
+  "websocket_alpn": true,
+  "handshake_length": 196,
+  "legacy_version": "0x0303",
+  "cipher_suites": [
+    "0xc02b",
+    "0xc02c",
+    "0xcca9",
+    "0xc02f",
+    "0xc030",
+    "0xcca8",
+    "0xc013",
+    "0xc014",
+    "0x009c",
+    "0x009d",
+    "0x002f",
+    "0x0035"
+  ],
+  "compression_methods": [
+    "0x00"
+  ],
+  "extension_order": [
+    "0x0000",
+    "0x0017",
+    "0xff01",
+    "0x000a",
+    "0x000b",
+    "0x0005",
+    "0x000d",
+    "0x0010"
+  ],
+  "extensions": [
+    {
+      "type": "0x0000",
+      "length": 16
+    },
+    {
+      "type": "0x0017",
+      "length": 0
+    },
+    {
+      "type": "0xff01",
+      "length": 1
+    },
+    {
+      "type": "0x000a",
+      "length": 8
+    },
+    {
+      "type": "0x000b",
+      "length": 2
+    },
+    {
+      "type": "0x0005",
+      "length": 5
+    },
+    {
+      "type": "0x000d",
+      "length": 20
+    },
+    {
+      "type": "0x0010",
+      "length": 11
+    }
+  ],
+  "supported_groups": [
+    "0x001d",
+    "0x0017",
+    "0x0018"
+  ],
+  "ec_point_formats": [
+    "0x00"
+  ],
+  "signature_algorithms": [
+    "0x0403",
+    "0x0804",
+    "0x0401",
+    "0x0503",
+    "0x0805",
+    "0x0501",
+    "0x0806",
+    "0x0601",
+    "0x0201"
+  ],
+  "alpn_protocols": [
+    "http/1.1"
+  ]
+}

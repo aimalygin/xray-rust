@@ -20,6 +20,23 @@ mod utls_tls_shaping_tests {
     const CLIENTHELLO_SHAPE_HELLOCHROME_58_JSON: &str =
         include_str!("../../../tests/fixtures/reality/clienthello_shape_hellochrome_58.json");
 
+    /// The same oracle run with `-websocket-alpn`, which applies Xray's
+    /// `WebsocketHandshakeContext` ALPN rebuild before emitting the shape.
+    /// Regenerate with:
+    ///
+    /// ```text
+    /// go run -tags reality_oracle_clienthello_shape \
+    ///   ./tools/reality-oracle/clienthello_shape.go -fingerprint android \
+    ///   -websocket-alpn \
+    ///   > tests/fixtures/reality/clienthello_shape_android_websocket_alpn.json
+    /// ```
+    const CLIENTHELLO_SHAPE_CHROME_WEBSOCKET_ALPN_JSON: &str = include_str!(
+        "../../../tests/fixtures/reality/clienthello_shape_chrome_websocket_alpn.json"
+    );
+    const CLIENTHELLO_SHAPE_ANDROID_WEBSOCKET_ALPN_JSON: &str = include_str!(
+        "../../../tests/fixtures/reality/clienthello_shape_android_websocket_alpn.json"
+    );
+
     fn config(fingerprint: &str, alpn: &[&str]) -> TlsClientConfig {
         TlsClientConfig {
             server_name: "example.com".to_owned(),
@@ -151,6 +168,73 @@ mod utls_tls_shaping_tests {
             .expect("android ClientHello must be produced");
 
         assert_eq!(alpn_protocols(&hello), alpn(&["http/1.1"]));
+    }
+
+    /// The two assertions above state what the override *should* do; this one
+    /// checks it against what uTLS actually does when Xray drives it, so the
+    /// expectation cannot drift on a guess.
+    ///
+    /// Every other shape in this repo is oracle-checked per fingerprint, but
+    /// that comparison only ever sees the profile's own ALPN -- the override is
+    /// applied after `BuildHandshakeState`, so no per-fingerprint fixture
+    /// covers it.
+    ///
+    /// `chrome` alone would prove close to nothing: its profile already
+    /// declares `["h2", "http/1.1"]`, so the override just narrows a list that
+    /// was already there, in a slot that was already there. `android` declares
+    /// no ALPN extension at all, so the override has to insert one -- Xray's
+    /// `if !hasALPNExtension` append -- and *where* it lands is precisely what
+    /// a hand-written expectation gets wrong. Hence both.
+    #[test]
+    fn the_http11_override_matches_the_utls_oracle() {
+        #[derive(serde::Deserialize)]
+        struct WebsocketAlpnShape {
+            fingerprint: String,
+            #[serde(default)]
+            websocket_alpn: bool,
+            alpn_protocols: Vec<String>,
+            extension_order: Vec<String>,
+        }
+
+        for shape_json in [
+            CLIENTHELLO_SHAPE_CHROME_WEBSOCKET_ALPN_JSON,
+            CLIENTHELLO_SHAPE_ANDROID_WEBSOCKET_ALPN_JSON,
+        ] {
+            let shape: WebsocketAlpnShape = serde_json::from_str(shape_json)
+                .expect("the websocket-ALPN shape fixture should decode");
+            let fingerprint = shape.fingerprint.as_str();
+            assert!(
+                shape.websocket_alpn,
+                "{fingerprint}: the fixture must come from the oracle's -websocket-alpn mode, \
+                 or it is just the plain profile shape and asserts nothing"
+            );
+
+            let hello = plain_tls_client_hello_bytes(&config(fingerprint, &["http/1.1"]))
+                .unwrap_or_else(|error| panic!("{fingerprint}: ClientHello: {error}"));
+
+            assert_eq!(
+                alpn_protocols(&hello),
+                Some(shape.alpn_protocols),
+                "{fingerprint}: the override must offer the ALPN uTLS offers"
+            );
+
+            // Same single divergence Task 5A pinned: rustls emits
+            // `supported_versions` on every hello it builds and cannot be made
+            // to leave it out, so a TLS-1.2-era shape carries it at the tail
+            // and uTLS' own order stays an exact prefix.
+            let mut expected = shape.extension_order;
+            let supported_versions = format!("0x{EXT_SUPPORTED_VERSIONS:04x}");
+            if !expected.contains(&supported_versions) {
+                expected.push(supported_versions);
+            }
+
+            assert_eq!(
+                extension_order(&hello),
+                expected,
+                "{fingerprint}: the override must leave the extension order where uTLS puts it, \
+                 an appended ALPN included"
+            );
+        }
     }
 
     #[test]

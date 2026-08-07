@@ -29,6 +29,13 @@ import (
 // off the reference implementation.
 var serverName = "example.com"
 
+// websocketALPN mirrors Xray's `UConn.WebsocketHandshakeContext` ALPN rebuild.
+// It defaults off so every committed fixture keeps checking out unchanged;
+// `-websocket-alpn` turns it on, which is how the `http/1.1` override -- the
+// one shape the per-fingerprint oracle never sees -- is read off the reference
+// implementation.
+var websocketALPN = false
+
 const (
 	clientHelloHandshakeType = byte(0x01)
 
@@ -74,6 +81,7 @@ type clientHelloShape struct {
 	Fingerprint                      string            `json:"fingerprint"`
 	UTLSID                           string            `json:"utls_id"`
 	ServerName                       string            `json:"server_name"`
+	WebsocketALPN                    bool              `json:"websocket_alpn,omitempty"`
 	HandshakeLength                  int               `json:"handshake_length"`
 	LegacyVersion                    string            `json:"legacy_version"`
 	CipherSuites                     []string          `json:"cipher_suites"`
@@ -122,8 +130,11 @@ func main() {
 	checkPath := flag.String("check", "", "compare generated shape with a committed JSON file")
 	rawOutput := flag.Bool("raw", false, "emit deterministic raw ClientHello bytes as hex JSON")
 	sni := flag.String("server-name", serverName, "SNI to shape around; an IP literal suppresses the server_name extension")
+	websocket := flag.Bool("websocket-alpn", websocketALPN,
+		"rebuild the hello with ALPN forced to http/1.1, as UConn.WebsocketHandshakeContext does")
 	flag.Parse()
 	serverName = *sni
+	websocketALPN = *websocket
 
 	if *rawOutput {
 		raw, utlsID, err := buildRawClientHello(*fingerprint)
@@ -207,11 +218,41 @@ func buildRawClientHello(fingerprint string) ([]byte, string, error) {
 		return nil, "", err
 	}
 
+	if websocketALPN {
+		if err := applyWebsocketALPNOverride(uConn); err != nil {
+			return nil, "", err
+		}
+	}
+
 	hello := uConn.HandshakeState.Hello
 	if hello == nil {
 		return nil, "", errors.New("uTLS did not build a ClientHello")
 	}
 	return append([]byte(nil), hello.Raw...), id.Str(), nil
+}
+
+// applyWebsocketALPNOverride mirrors `UConn.WebsocketHandshakeContext` in
+// Xray-core/transport/internet/tls/tls.go: the ALPN of an already-built hello
+// is forced to `http/1.1`, overwriting the fingerprint profile's own list --
+// or, for a profile that declares no ALPN extension at all, appending one --
+// and the hello is then rebuilt from the amended extension list.
+//
+// The ECH branch Xray takes before this is left out: it needs an
+// `EncryptedClientHelloConfigList`, which nothing here configures.
+func applyWebsocketALPNOverride(uConn *utls.UConn) error {
+	forced := []string{"http/1.1"}
+	hasALPN := false
+	for _, extension := range uConn.Extensions {
+		if alpn, ok := extension.(*utls.ALPNExtension); ok {
+			hasALPN = true
+			alpn.AlpnProtocols = forced
+			break
+		}
+	}
+	if !hasALPN {
+		uConn.Extensions = append(uConn.Extensions, &utls.ALPNExtension{AlpnProtocols: forced})
+	}
+	return uConn.BuildHandshakeState()
 }
 
 func clientHelloID(fingerprint string) (utls.ClientHelloID, error) {
@@ -387,6 +428,7 @@ func parseClientHelloShape(fingerprint string, utlsID string, raw []byte) (clien
 		Fingerprint:        fingerprint,
 		UTLSID:             utlsID,
 		ServerName:         serverName,
+		WebsocketALPN:      websocketALPN,
 		HandshakeLength:    len(raw),
 		LegacyVersion:      formatU16(uint16(legacyVersion)),
 		CipherSuites:       formatU16s(cipherSuites),
