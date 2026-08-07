@@ -22,9 +22,14 @@ import (
 	utls "github.com/refraction-networking/utls"
 )
 
-const (
-	serverName = "example.com"
+// serverName is the SNI uTLS is asked to shape around. It defaults to a domain
+// so every committed fixture keeps checking out unchanged; `-server-name` moves
+// it, which is how the IP-literal case -- where RFC 6066 forbids SNI and uTLS
+// emits a zero-length, and therefore absent, server_name extension -- is read
+// off the reference implementation.
+var serverName = "example.com"
 
+const (
 	clientHelloHandshakeType = byte(0x01)
 
 	extensionServerName             = uint16(0x0000)
@@ -116,7 +121,9 @@ func main() {
 	fingerprint := flag.String("fingerprint", "hellochrome_100", "uTLS fingerprint to shape")
 	checkPath := flag.String("check", "", "compare generated shape with a committed JSON file")
 	rawOutput := flag.Bool("raw", false, "emit deterministic raw ClientHello bytes as hex JSON")
+	sni := flag.String("server-name", serverName, "SNI to shape around; an IP literal suppresses the server_name extension")
 	flag.Parse()
+	serverName = *sni
 
 	if *rawOutput {
 		raw, utlsID, err := buildRawClientHello(*fingerprint)

@@ -1,6 +1,7 @@
 mod utls_tls_shaping_tests {
     use xray_transport::{plain_tls_client_hello_bytes, TlsClientConfig};
 
+    const EXT_SERVER_NAME: u16 = 0x0000;
     const EXT_ALPN: u16 = 0x0010;
     const EXT_SUPPORTED_VERSIONS: u16 = 0x002b;
     const CHROME_GREASE_CIPHER: u16 = 0x0a0a;
@@ -360,6 +361,57 @@ mod utls_tls_shaping_tests {
                         "{fingerprint} (alpn {alpn:?}): extension order must not vary per connection"
                     );
                 }
+            }
+        }
+    }
+
+    /// RFC 6066 forbids SNI for an IP address, so rustls omits the extension
+    /// when the server name is an IP literal -- but the shaping plan is built
+    /// from a browser fingerprint that has no idea what the server name will
+    /// be, so it still lists `server_name` and still counts GREASE positions
+    /// against it. Reconciling those is `shaped-rustls`' job; it failed to,
+    /// and every shaped dial to an IP-addressed server died after the TCP
+    /// connect with an error naming neither the fingerprint nor the SNI. Two
+    /// ordinary configs land here: a DoT outbound with no `serverName`, and a
+    /// VLESS outbound whose `serverName` is an IP literal.
+    ///
+    /// uTLS keeps a zero-length `SNIExtension` in its list and writes nothing
+    /// for it, so the whole shape is the domain shape with that one extension
+    /// gone -- which is what this asserts, per fingerprint, against the very
+    /// hello the domain SNI produces.
+    #[test]
+    fn an_ip_literal_sni_shapes_the_hello_without_the_server_name_extension() {
+        for fingerprint in xray_utls::XRAY_REALITY_FINGERPRINTS {
+            for alpn in [&[][..], &["http/1.1"][..]] {
+                let ip = plain_tls_client_hello_bytes(&TlsClientConfig {
+                    server_name: "203.0.113.10".to_owned(),
+                    allow_insecure: true,
+                    alpn: alpn.iter().map(|value| (*value).to_owned()).collect(),
+                    fingerprint: Some((*fingerprint).to_owned()),
+                })
+                .unwrap_or_else(|error| {
+                    panic!("{fingerprint} (alpn {alpn:?}): IP-literal ClientHello: {error}")
+                });
+
+                let mut expected = extension_order(
+                    &plain_tls_client_hello_bytes(&config(fingerprint, alpn))
+                        .unwrap_or_else(|error| panic!("{fingerprint}: ClientHello: {error}")),
+                );
+                let server_name = format!("0x{EXT_SERVER_NAME:04x}");
+                let position = expected
+                    .iter()
+                    .position(|extension| *extension == server_name)
+                    .unwrap_or_else(|| {
+                        panic!("{fingerprint}: a domain SNI must produce a server_name extension")
+                    });
+                expected.remove(position);
+
+                assert_eq!(
+                    extension_order(&ip),
+                    expected,
+                    "{fingerprint} (alpn {alpn:?}): an IP-literal SNI must drop server_name \
+                     and leave every other extension, GREASE included, where it was"
+                );
             }
         }
     }
