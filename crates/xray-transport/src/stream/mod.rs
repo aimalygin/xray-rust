@@ -9,4 +9,6 @@ mod http_headers;
 mod masquerade;
 
 pub use http_headers::{serialize_request, HeaderMap};
-pub use masquerade::{apply_masquerade, apply_masquerade_with_versions, BrowserVersions};
+pub use masquerade::{
+    apply_masquerade, apply_masquerade_with_versions, BrowserVersions, VersionOffsets,
+};

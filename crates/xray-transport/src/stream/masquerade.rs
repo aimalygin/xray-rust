@@ -19,29 +19,36 @@
 //!
 //! Xray derives every browser version from the calendar and then subtracts a
 //! random number of days drawn from a PRNG seeded with the host CPU's identity
-//! (`GetRandomizer`, `ChromeVersion` in `browser.go`). The draw is fixed per
-//! machine, so two Xray installs on different CPUs disagree about today's
-//! Chrome version — as of writing, roughly 55% of machines say 148 and the rest
-//! say 145 to 147.
+//! (`GetRandomizer`, `ChromeVersion` in `browser.go`). So two Xray installs on
+//! different CPUs disagree about today's Chrome version — on 2026-08-07,
+//! roughly 55% of machines said 148 and the rest 145 to 147.
 //!
-//! Reproducing a specific machine's draw would mean porting Go's `math/rand`
-//! generator and `klauspost/cpuid`'s per-platform CPU probing, and it would buy
-//! nothing: no peer checks our version against what Xray-on-this-CPU would have
-//! picked. What matters is that the number keeps moving with the calendar, so
-//! it never freezes into a fingerprint of its own.
+//! [`VersionOffsets::drawn`] reproduces that spread from the OS CSPRNG instead,
+//! because the seed is the one part of Xray's model that buys nothing to copy:
+//! no peer checks our version against what Xray-on-this-CPU would have picked,
+//! only whether our population spreads the way theirs does. Porting Go's
+//! `math/rand` and `klauspost/cpuid`'s per-platform probing would answer a
+//! question nobody asks.
 //!
-//! So [`BrowserVersions::at`] ports Xray's date formulas exactly and takes the
-//! random term as zero — the single most likely draw (about 10% of machines,
-//! against 1% for any other single value) and the newest version Xray's own
-//! model allows. We are therefore never older than an Xray client, and at most
-//! three Chrome versions newer.
+//! It leaves one difference that does show. Xray's seed is a property of the
+//! machine, so an install reports the same version until its hardware changes;
+//! ours is redrawn on every start. An observer watching one client across
+//! restarts therefore sees the version move. That is the better half of the
+//! trade — a real Chrome ships a new major every 35 days, so a version that
+//! moves across restarts is ordinary where a whole user base sharing one
+//! version is not — but it is a divergence, not a match.
 //!
-//! One further deviation: Xray's formulas are unbounded below, so a device with
-//! a badly wrong clock would announce `Chrome/-441`. Each version is floored at
-//! the anchor release its table was written against.
+//! Two further deviations, both from Xray's formulas rather than its seed:
+//! the draw is made once per process and pinned, since a client whose
+//! User-Agent changes between connections is easier to pick out than one that
+//! never changes; and each version is floored at the anchor release its table
+//! was written against, because Xray's formulas are unbounded below and a
+//! device with a badly wrong clock would otherwise announce `Chrome/-441`.
 
 use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+use rand::{rngs::OsRng, RngCore};
 
 use super::HeaderMap;
 
@@ -64,22 +71,95 @@ pub struct BrowserVersions {
 }
 
 impl BrowserVersions {
-    /// The versions this process claims, resolved once on first use.
+    /// The versions this process claims, drawn once on first use.
     pub fn anchored() -> &'static Self {
         static ANCHORED: OnceLock<BrowserVersions> = OnceLock::new();
-        ANCHORED.get_or_init(|| Self::at(unix_now()))
+        ANCHORED.get_or_init(|| Self::at(unix_now(), &VersionOffsets::drawn()))
     }
 
-    /// The versions Xray's formulas yield at `unix_seconds`, with the random
-    /// term at zero. See the module docs.
-    pub fn at(unix_seconds: i64) -> Self {
+    /// The versions Xray's formulas yield at `unix_seconds` for an install that
+    /// drew `offsets`.
+    pub fn at(unix_seconds: i64, offsets: &VersionOffsets) -> Self {
         Self {
-            chrome: chrome_version_at(unix_seconds),
-            firefox: firefox_version_at(unix_seconds),
-            safari: safari_version_at(unix_seconds),
-            curl: curl_version_at(unix_seconds),
+            chrome: chrome_version_at(unix_seconds, offsets.chrome_days),
+            firefox: firefox_version_at(unix_seconds, offsets.firefox_days),
+            safari: safari_version_at(unix_seconds, offsets.safari_days),
+            curl: curl_version_at(unix_seconds, offsets.curl_days),
         }
     }
+}
+
+/// How far behind the calendar one install's browsers run, in days.
+///
+/// Xray gives each of its four generators its own draw over its own curve, so
+/// this is four numbers rather than one: `floor(U^power * span)` days for `U`
+/// uniform on `[0, 1)`, which crowds installs towards the current release and
+/// leaves a thin tail on the old ones. Chrome spans 105 days squared, Firefox
+/// 50 squared, curl 165 squared, and Safari 75 cubed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VersionOffsets {
+    /// Days subtracted before Chrome's and Edge's 35-day release cadence.
+    pub chrome_days: i64,
+    /// Days subtracted before Firefox's 30-day cadence.
+    pub firefox_days: i64,
+    /// Days subtracted before curl's 57-day cadence.
+    pub curl_days: i64,
+    /// Days the 23 September Safari rollover is held back by. Safari is the one
+    /// generator whose draw delays the anchor instead of the elapsed time.
+    pub safari_days: i64,
+}
+
+impl VersionOffsets {
+    /// The newest versions Xray's model allows: every draw at zero.
+    ///
+    /// This is what tests pin the calendar arithmetic against, and the fallback
+    /// when the OS RNG refuses. It is also the single likeliest draw — about
+    /// 10% of Chrome installs, against 1% for any other one value.
+    pub const NONE: Self = Self {
+        chrome_days: 0,
+        firefox_days: 0,
+        curl_days: 0,
+        safari_days: 0,
+    };
+
+    /// One install's draw, from the OS CSPRNG.
+    pub fn drawn() -> Self {
+        let mut entropy = [0u8; 32];
+        if OsRng.try_fill_bytes(&mut entropy).is_err() {
+            // An OS RNG this broken has already broken the handshake this
+            // header block belongs to, so failing the dial here would only bury
+            // the real cause. Fall back to the likeliest draw.
+            return Self::NONE;
+        }
+
+        let word = |i: usize| u64::from_be_bytes(entropy[i * 8..(i + 1) * 8].try_into().unwrap());
+        Self::from_entropy([word(0), word(1), word(2), word(3)])
+    }
+
+    /// Maps four independent words of entropy onto the four curves.
+    ///
+    /// Xray draws these from one PRNG stream in a fixed order; independent
+    /// words give the same joint distribution, since the whole point of the
+    /// seed is that no two installs share it. Public so tests can sweep the
+    /// distribution without spawning processes.
+    pub fn from_entropy(entropy: [u64; 4]) -> Self {
+        Self {
+            chrome_days: scaled_offset(entropy[0], 2, 105),
+            firefox_days: scaled_offset(entropy[1], 2, 50),
+            curl_days: scaled_offset(entropy[2], 2, 165),
+            safari_days: scaled_offset(entropy[3], 3, 75),
+        }
+    }
+}
+
+/// Go's `int(math.Floor(math.Pow(rng.Float64(), power) * span))`.
+///
+/// `Float64` is 53 bits of mantissa over `[0, 1)`, which is exactly what the
+/// top 53 bits of `entropy` give, so the largest word lands on `span - 1` and
+/// never on `span`.
+fn scaled_offset(entropy: u64, power: i32, span: i64) -> i64 {
+    let uniform = (entropy >> 11) as f64 / (1u64 << 53) as f64;
+    (uniform.powi(power) * span as f64).floor() as i64
 }
 
 /// Applies the persona Xray would apply for this variant.
@@ -338,29 +418,31 @@ const SAFARI_MINOR_MAP: [u32; 25] = [
 ];
 const SAFARI_ANCHOR_MAJOR: i64 = 26;
 
-fn chrome_version_at(unix_seconds: i64) -> u32 {
-    let elapsed = whole_days(unix_seconds) - CHROME_ANCHOR_DAY - 35;
+fn chrome_version_at(unix_seconds: i64, offset_days: i64) -> u32 {
+    let elapsed = whole_days(unix_seconds) - CHROME_ANCHOR_DAY - 35 - offset_days;
     (CHROME_ANCHOR_VERSION + elapsed / 35).max(CHROME_ANCHOR_VERSION) as u32
 }
 
-fn firefox_version_at(unix_seconds: i64) -> u32 {
-    let elapsed = whole_days(unix_seconds) - FIREFOX_ANCHOR_DAY - 25;
+fn firefox_version_at(unix_seconds: i64, offset_days: i64) -> u32 {
+    let elapsed = whole_days(unix_seconds) - FIREFOX_ANCHOR_DAY - 25 - offset_days;
     (FIREFOX_ANCHOR_VERSION + elapsed / 30).max(FIREFOX_ANCHOR_VERSION) as u32
 }
 
-fn curl_version_at(unix_seconds: i64) -> String {
-    let elapsed = whole_days(unix_seconds) - CURL_ANCHOR_DAY - 60;
+fn curl_version_at(unix_seconds: i64, offset_days: i64) -> String {
+    let elapsed = whole_days(unix_seconds) - CURL_ANCHOR_DAY - 60 - offset_days;
     format!("8.{}.0", (elapsed / 57).max(0))
 }
 
-fn safari_version_at(unix_seconds: i64) -> String {
+fn safari_version_at(unix_seconds: i64, delayed_days: i64) -> String {
     // Xray anchors on the previous 23 September when the current year's has not
-    // arrived yet, then counts 15-day steps through its minor table.
+    // arrived yet, then counts 15-day steps through its minor table. The draw
+    // holds the split point back rather than the elapsed time, so near the
+    // rollover it decides the major and not just the minor.
     let mut release_year = civil_year(whole_days(unix_seconds));
-    let mut split = days_from_civil(release_year, 9, 23) * 86_400;
+    let mut split = (days_from_civil(release_year, 9, 23) + delayed_days) * 86_400;
     if unix_seconds < split {
         release_year -= 1;
-        split = days_from_civil(release_year, 9, 23) * 86_400;
+        split = (days_from_civil(release_year, 9, 23) + delayed_days) * 86_400;
     }
 
     let step = ((unix_seconds - split) / 1_296_000).clamp(0, SAFARI_MINOR_MAP.len() as i64 - 1);

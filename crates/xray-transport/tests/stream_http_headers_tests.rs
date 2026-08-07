@@ -1,8 +1,23 @@
 mod stream_http_headers_tests {
+    use std::collections::{BTreeMap, BTreeSet};
+
     use xray_transport::stream::{
         apply_masquerade, apply_masquerade_with_versions, serialize_request, BrowserVersions,
-        HeaderMap,
+        HeaderMap, VersionOffsets,
     };
+
+    /// 2026-08-07 00:00:00 UTC. The instant the version-distribution fixture is
+    /// frozen at, so the assertions below and the oracle's shares describe the
+    /// same day.
+    const MEASURED_DAY: i64 = 1_786_060_800;
+
+    /// The entropy the `i`th of `total` evenly spaced draws would carry.
+    ///
+    /// Sweeping the entropy space rather than sampling it is what lets the
+    /// distribution assertions be tight without ever flaking.
+    fn swept_entropy(i: u64, total: u64) -> u64 {
+        ((u128::from(i) << 64) / u128::from(total)) as u64
+    }
 
     #[test]
     fn host_and_user_agent_lead_then_case_sensitive_key_order() {
@@ -256,7 +271,7 @@ mod stream_http_headers_tests {
         // Xray's own formulas with the PRNG term at zero. The Chrome anchor is
         // 144 on 2026-01-13, but the formula subtracts 35 days before dividing,
         // so it does not actually reach 144 until 2026-02-17.
-        let at = |unix: i64| BrowserVersions::at(unix);
+        let at = |unix: i64| BrowserVersions::at(unix, &VersionOffsets::NONE);
 
         assert_eq!(
             at(1_771_286_400).chrome,
@@ -293,7 +308,7 @@ mod stream_http_headers_tests {
         // Xray's formulas are unbounded below: at the Unix epoch they yield
         // Chrome/-441 and curl/8.-342.0, which is a louder fingerprint than any
         // stale version. A phone with a dead RTC really does boot in 1970.
-        let epoch = BrowserVersions::at(0);
+        let epoch = BrowserVersions::at(0, &VersionOffsets::NONE);
 
         assert_eq!(epoch.chrome, 144);
         assert_eq!(epoch.firefox, 128);
@@ -307,32 +322,232 @@ mod stream_http_headers_tests {
         // The floor holds right up to the anchor date, where Xray itself would
         // still say 143: the formula subtracts 35 days before dividing.
         assert_eq!(
-            BrowserVersions::at(1_768_262_400).chrome,
+            BrowserVersions::at(1_768_262_400, &VersionOffsets::NONE).chrome,
             144,
             "2026-01-13, the stated Chrome 144 release date"
         );
     }
 
-    #[test]
-    fn the_anchored_versions_are_never_older_than_the_oracles() {
-        // Xray subtracts a random number of days from the calendar; we subtract
-        // none. Our version can therefore be newer than the fixture's, never
-        // older, and it must keep moving as the fixture ages.
-        let fixture = decode(CHROME_WS_FIXTURE);
-        let anchored = BrowserVersions::anchored();
+    /// One of Xray's four offset curves: its name, the field it lands in, and
+    /// the `span` and `power` of `floor(U^power * span)`.
+    type OffsetDomain = (&'static str, fn(&VersionOffsets) -> i64, i64, f64);
 
-        assert!(
-            anchored.chrome >= fixture.versions.chrome,
-            "anchored Chrome {} is older than the oracle's {}",
-            anchored.chrome,
-            fixture.versions.chrome
+    #[test]
+    fn the_offset_draw_reproduces_xrays_distribution() {
+        // Xray subtracts `floor(U^power * span)` days from the calendar, U
+        // uniform on [0, 1), so the chance of an offset of at most k is
+        // ((k+1)/span)^(1/power). Reproducing that curve is the whole
+        // requirement: nothing checks our draw against what Xray-on-this-CPU
+        // would have picked, only that our population spreads the way theirs
+        // does.
+        const SAMPLES: u64 = 200_000;
+
+        let domains: [OffsetDomain; 4] = [
+            ("chrome", |o| o.chrome_days, 105, 2.0),
+            ("firefox", |o| o.firefox_days, 50, 2.0),
+            ("curl", |o| o.curl_days, 165, 2.0),
+            ("safari", |o| o.safari_days, 75, 3.0),
+        ];
+
+        for (name, offset_of, span, power) in domains {
+            let mut histogram = vec![0u64; span as usize];
+            for i in 0..SAMPLES {
+                let entropy = swept_entropy(i, SAMPLES);
+                let offset = offset_of(&VersionOffsets::from_entropy([entropy; 4]));
+                assert!(
+                    (0..span).contains(&offset),
+                    "{name} drew {offset}, outside 0..{span}"
+                );
+                histogram[offset as usize] += 1;
+            }
+
+            assert_eq!(
+                offset_of(&VersionOffsets::from_entropy([u64::MAX; 4])),
+                span - 1,
+                "{name}: the largest word of entropy must land inside the span, \
+                 not one past it"
+            );
+
+            let mut seen = 0u64;
+            for (days, count) in histogram.iter().enumerate() {
+                seen += count;
+                let ours = seen as f64 / SAMPLES as f64;
+                let xrays = ((days + 1) as f64 / span as f64).powf(1.0 / power);
+                assert!(
+                    (ours - xrays).abs() < 1e-3,
+                    "{name}: we put {ours} of installs at an offset of at most \
+                     {days} days, Xray puts {xrays}"
+                );
+            }
+        }
+    }
+
+    /// Regenerate with:
+    ///
+    ///   go run -C tools/reality-oracle/masquerade \
+    ///     -tags reality_oracle_version_distribution . \
+    ///     > tests/fixtures/masquerade/version_distribution.json
+    const VERSION_DISTRIBUTION_FIXTURE: &str =
+        include_str!("../../../tests/fixtures/masquerade/version_distribution.json");
+
+    #[derive(serde::Deserialize)]
+    struct VersionDistribution {
+        unix: i64,
+        chrome: Vec<VersionShare>,
+        firefox: Vec<VersionShare>,
+        safari: Vec<VersionShare>,
+        curl: Vec<VersionShare>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct VersionShare {
+        version: String,
+        share: f64,
+    }
+
+    #[test]
+    fn the_drawn_versions_spread_the_way_xray_installs_do() {
+        // The oracle runs Xray's own generators over 25 600 synthetic CPU
+        // identities; we sweep our entropy space at the same instant. Neither
+        // side can reproduce the other's individual draw -- ours comes from the
+        // OS CSPRNG, Xray's from the host CPU -- so matching the population is
+        // the whole of what we owe them, and the only thing an observer
+        // aggregating across installs can see.
+        const SAMPLES: u64 = 200_000;
+        // The oracle's grid samples the curve where our sweep is its exact
+        // limit, so the two disagree by up to about 0.004.
+        const TOLERANCE: f64 = 0.01;
+
+        let oracle: VersionDistribution =
+            serde_json::from_str(VERSION_DISTRIBUTION_FIXTURE).expect("the fixture must decode");
+
+        let mut ours: [BTreeMap<String, u64>; 4] = std::array::from_fn(|_| BTreeMap::new());
+        for i in 0..SAMPLES {
+            let offsets = VersionOffsets::from_entropy([swept_entropy(i, SAMPLES); 4]);
+            let versions = BrowserVersions::at(oracle.unix, &offsets);
+            let reported = [
+                versions.chrome.to_string(),
+                versions.firefox.to_string(),
+                versions.safari,
+                versions.curl,
+            ];
+            for (counts, version) in ours.iter_mut().zip(reported) {
+                *counts.entry(version).or_default() += 1;
+            }
+        }
+
+        for (browser, xrays, ours) in [
+            ("chrome", &oracle.chrome, &ours[0]),
+            ("firefox", &oracle.firefox, &ours[1]),
+            ("safari", &oracle.safari, &ours[2]),
+            ("curl", &oracle.curl, &ours[3]),
+        ] {
+            let reached: BTreeSet<&str> = ours.keys().map(String::as_str).collect();
+            let xray_reaches: BTreeSet<&str> =
+                xrays.iter().map(|entry| entry.version.as_str()).collect();
+            assert_eq!(
+                reached, xray_reaches,
+                "{browser}: our installs reach a different set of versions than Xray's"
+            );
+
+            for entry in xrays {
+                let ours = ours[&entry.version] as f64 / SAMPLES as f64;
+                assert!(
+                    (ours - entry.share).abs() < TOLERANCE,
+                    "{browser} {}: {ours} of our installs report it, against Xray's {}",
+                    entry.version,
+                    entry.share
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_delayed_safari_split_point_holds_the_older_version() {
+        // Safari is the one generator whose draw delays the 23 September
+        // rollover rather than subtracting from the elapsed time. The effect is
+        // the same direction -- an older version -- but it reaches the major,
+        // not just the minor.
+        let delayed = |days| VersionOffsets {
+            safari_days: days,
+            ..VersionOffsets::NONE
+        };
+
+        // 2026-08-07 sits 318 days past the 2025 split point: 21 fifteen-day
+        // steps in with no delay, 16 with the largest one.
+        assert_eq!(
+            BrowserVersions::at(MEASURED_DAY, &VersionOffsets::NONE).safari,
+            "26.6"
         );
-        assert!(
-            anchored.firefox >= fixture.versions.firefox,
-            "anchored Firefox {} is older than the oracle's {}",
-            anchored.firefox,
-            fixture.versions.firefox
+        assert_eq!(
+            BrowserVersions::at(MEASURED_DAY, &delayed(74)).safari,
+            "26.5"
         );
+
+        // On rollover day itself, one delayed day is enough to keep the
+        // previous major for another year.
+        let rollover = 1_790_121_600; // 2026-09-23
+        assert_eq!(
+            BrowserVersions::at(rollover, &VersionOffsets::NONE).safari,
+            "27.0"
+        );
+        assert_eq!(BrowserVersions::at(rollover, &delayed(1)).safari, "26.6");
+    }
+
+    #[test]
+    fn every_drawn_version_is_one_xrays_model_can_produce() {
+        // The OS CSPRNG path has to agree with the pure one it is documented
+        // against. The offset domain is small enough to enumerate, so the set
+        // of reachable versions is exact rather than sampled.
+        let reachable: BTreeSet<u32> = (0..105)
+            .map(|days| {
+                let offsets = VersionOffsets {
+                    chrome_days: days,
+                    ..VersionOffsets::NONE
+                };
+                BrowserVersions::at(MEASURED_DAY, &offsets).chrome
+            })
+            .collect();
+
+        for _ in 0..200 {
+            let drawn = BrowserVersions::at(MEASURED_DAY, &VersionOffsets::drawn()).chrome;
+            assert!(
+                reachable.contains(&drawn),
+                "drew Chrome {drawn}, which is outside {reachable:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn separate_draws_disagree() {
+        // The point of the whole exercise: two installs must not report the
+        // same browser. Repeated draws stand in for separate processes, the way
+        // the fingerprint draw is sampled.
+        let mut drawn = BTreeSet::new();
+        for _ in 0..200 {
+            drawn.insert(BrowserVersions::at(MEASURED_DAY, &VersionOffsets::drawn()).chrome);
+        }
+
+        assert!(drawn.len() > 1, "200 draws all reported {drawn:?}");
+    }
+
+    #[test]
+    fn the_anchored_versions_stay_fixed_for_the_whole_process() {
+        // And the other half of it: a client whose User-Agent moves between
+        // connections is easier to pick out than one that never moves, so the
+        // draw is made once and pinned.
+        assert_eq!(BrowserVersions::anchored(), BrowserVersions::anchored());
+
+        let user_agent = || {
+            let mut headers = HeaderMap::new();
+            apply_masquerade(&mut headers, "ws");
+            headers
+                .get("User-Agent")
+                .expect("the chrome profile sets a User-Agent")
+                .to_owned()
+        };
+
+        assert_eq!(user_agent(), user_agent());
     }
 
     #[test]
