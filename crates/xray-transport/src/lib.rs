@@ -137,6 +137,8 @@ pub enum TransportError {
     UnsupportedRealityFingerprint(String),
     #[error("unsupported TLS fingerprint {0}")]
     UnsupportedTlsFingerprint(String),
+    #[error("httpupgrade handshake rejected: {0}")]
+    HttpUpgradeRejected(String),
     #[error("reality handshake failed: {0}")]
     Reality(#[from] reality::RealityError),
     #[error("REALITY live TLS completion is not implemented")]
