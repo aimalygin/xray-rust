@@ -771,6 +771,8 @@ The network arms:
 
 Add `wsSettings` and `httpupgradeSettings` to `validate_stream_settings_compatibility`'s allowlist, and write the two settings parsers. For ws, a `Host` key inside `headers` (any case) folds into `host` when `host` is empty and is then removed, with a warning; for httpupgrade it is an error.
 
+**The two transports disagree on config-header casing, and it is visible on the wire.** Found while implementing Task 2. ws adds config headers with Go's `header.Add`, which MIME-canonicalizes the key (`accept` becomes `Accept`); httpupgrade uses `header[key] = append(...)`, which keeps the literal casing — its own comment says people want to send `Web*S*ocket`. Our `HeaderMap` stores literal keys, so it already matches httpupgrade exactly. For **ws only**, canonicalize each config header key at insert time (uppercase the first letter and every letter after a `-`, lowercase the rest), or a user writing `accept:` will produce two `Accept` headers where Xray produces one. Add a test pinning both behaviors, since they differ deliberately.
+
 - [ ] **Step 5: Run the tests to verify they pass**
 
 ```bash
