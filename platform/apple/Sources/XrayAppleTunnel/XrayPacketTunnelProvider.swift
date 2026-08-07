@@ -2475,9 +2475,10 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         let pump: XrayPacketTunnelPump?
         switch backend {
         case let .darwinUtunFileDescriptor(fd):
+            let interfaceName = XrayDarwinTunFileDescriptor.interfaceName(for: fd) ?? "unknown"
             XrayAppleLog.info(
                 "PacketTunnelProvider",
-                "Using Darwin utun file descriptor for packet I/O"
+                "Using Darwin utun file descriptor for packet I/O fd=\(fd) interface=\(interfaceName)"
             )
             core = try Self.makeCore(
                 resolvedConfig: resolvedConfig,
