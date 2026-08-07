@@ -60,6 +60,7 @@ mod platform {
     use std::io;
     use std::os::fd::{AsRawFd, RawFd};
     use std::sync::Arc;
+    use std::time::Duration;
 
     use bytes::Bytes;
     use tokio::io::unix::AsyncFd;
@@ -143,6 +144,42 @@ mod platform {
         }
     }
 
+    /// Bounds how many consecutive transient failures a pump loop tolerates
+    /// before it gives up. A utun that errors this many times in a row is not
+    /// recovering, and spinning forever would hide the failure completely.
+    const MAX_CONSECUTIVE_TUN_FD_IO_ERRORS: u32 = 64;
+
+    /// Backoff between retries so a persistently failing descriptor cannot spin
+    /// the executor at full speed.
+    const TUN_FD_IO_RETRY_BACKOFF: Duration = Duration::from_millis(10);
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum TunFdIoDisposition {
+        /// The syscall was interrupted and should be reissued at once. Not a
+        /// failure: it neither backs off nor counts against the give-up bound.
+        RetryImmediately,
+        Retry,
+        Fatal,
+    }
+
+    /// Classifies a pump I/O error. Everything is retryable except conditions
+    /// that mean the descriptor itself is gone, because a tunnel that stops
+    /// moving packets is far worse than one that retries a doomed read.
+    fn io_disposition(error: &io::Error) -> TunFdIoDisposition {
+        if error.kind() == io::ErrorKind::Interrupted {
+            return TunFdIoDisposition::RetryImmediately;
+        }
+        if error.kind() == io::ErrorKind::UnexpectedEof {
+            return TunFdIoDisposition::Fatal;
+        }
+        match error.raw_os_error() {
+            Some(libc::EBADF) | Some(libc::ENXIO) | Some(libc::ENOTCONN) => {
+                TunFdIoDisposition::Fatal
+            }
+            _ => TunFdIoDisposition::Retry,
+        }
+    }
+
     async fn read_loop(
         fd: Arc<AsyncFd<TunFd>>,
         tun: Arc<TunEndpoint>,
@@ -150,6 +187,7 @@ mod platform {
         packet_format: TunFdPacketFormat,
     ) {
         let mut buffer = vec![0_u8; read_buffer_len(packet_format)];
+        let mut consecutive_errors: u32 = 0;
 
         loop {
             tokio::select! {
@@ -160,13 +198,28 @@ mod platform {
                 }
                 packet = read_packet(&fd, packet_format, &mut buffer) => {
                     match packet {
-                        Ok(Some(packet)) => match tun.push_inbound(packet).await {
-                            Ok(()) | Err(TunError::QueueFull | TunError::PacketTooLarge { .. }) => {}
-                            Err(TunError::QueueClosed) => break,
+                        Ok(Some(packet)) => {
+                            consecutive_errors = 0;
+                            match tun.push_inbound(packet).await {
+                                Ok(())
+                                | Err(TunError::QueueFull | TunError::PacketTooLarge { .. }) => {}
+                                Err(TunError::QueueClosed) => break,
+                            }
+                        }
+                        Ok(None) => {
+                            consecutive_errors = 0;
+                        }
+                        Err(err) => match io_disposition(&err) {
+                            TunFdIoDisposition::RetryImmediately => {}
+                            TunFdIoDisposition::Fatal => break,
+                            TunFdIoDisposition::Retry => {
+                                consecutive_errors += 1;
+                                if consecutive_errors >= MAX_CONSECUTIVE_TUN_FD_IO_ERRORS {
+                                    break;
+                                }
+                                tokio::time::sleep(TUN_FD_IO_RETRY_BACKOFF).await;
+                            }
                         },
-                        Ok(None) => {}
-                        Err(err) if err.kind() == io::ErrorKind::Interrupted => {}
-                        Err(_) => break,
                     }
                 }
             }
@@ -180,6 +233,7 @@ mod platform {
         packet_format: TunFdPacketFormat,
     ) {
         let mut batch = Vec::with_capacity(TUN_FD_WRITE_BATCH_MAX_PACKETS);
+        let mut consecutive_errors: u32 = 0;
 
         loop {
             tokio::select! {
@@ -194,10 +248,25 @@ mod platform {
                 ) => {
                     match result {
                         Ok(()) => {
-                            if write_packet_batch(&fd, packet_format, &batch).await.is_err() {
-                                break;
+                            match write_packet_batch(&fd, packet_format, &batch).await {
+                                Ok(()) => {
+                                    consecutive_errors = 0;
+                                    tun.record_tun_fd_write_batch(batch.len());
+                                }
+                                Err(err) => match io_disposition(&err) {
+                                    TunFdIoDisposition::RetryImmediately => {}
+                                    TunFdIoDisposition::Fatal => break,
+                                    TunFdIoDisposition::Retry => {
+                                        consecutive_errors += 1;
+                                        if consecutive_errors
+                                            >= MAX_CONSECUTIVE_TUN_FD_IO_ERRORS
+                                        {
+                                            break;
+                                        }
+                                        tokio::time::sleep(TUN_FD_IO_RETRY_BACKOFF).await;
+                                    }
+                                },
                             }
-                            tun.record_tun_fd_write_batch(batch.len());
                         }
                         Err(TunError::QueueClosed) => break,
                         Err(TunError::QueueFull | TunError::PacketTooLarge { .. }) => {}
@@ -415,6 +484,54 @@ mod platform {
             assert_eq!(encoded.len(), DARWIN_UTUN_HEADER_LEN + packet.len());
             assert_eq!(encoded.header(), Some([0, 0, 0, libc::AF_INET as u8]));
             assert!(std::ptr::eq(encoded.payload().as_ptr(), packet.as_ptr()));
+        }
+
+        #[test]
+        fn transient_tun_fd_errors_are_retried_not_fatal() {
+            for errno in [
+                libc::ENOBUFS,
+                libc::ENOMEM,
+                libc::ENETDOWN,
+                libc::ENETUNREACH,
+                libc::EHOSTDOWN,
+                libc::EHOSTUNREACH,
+                libc::ETIMEDOUT,
+                libc::EIO,
+            ] {
+                assert_eq!(
+                    io_disposition(&io::Error::from_raw_os_error(errno)),
+                    TunFdIoDisposition::Retry,
+                    "errno {errno} must be retried"
+                );
+            }
+        }
+
+        #[test]
+        fn a_closed_descriptor_is_fatal() {
+            assert_eq!(
+                io_disposition(&io::Error::from_raw_os_error(libc::EBADF)),
+                TunFdIoDisposition::Fatal
+            );
+            assert_eq!(
+                io_disposition(&io::Error::from_raw_os_error(libc::ENXIO)),
+                TunFdIoDisposition::Fatal
+            );
+            assert_eq!(
+                io_disposition(&io::Error::new(io::ErrorKind::UnexpectedEof, "eof")),
+                TunFdIoDisposition::Fatal
+            );
+        }
+
+        #[test]
+        fn interrupts_are_retried_without_counting_as_failures() {
+            assert_eq!(
+                io_disposition(&io::Error::from_raw_os_error(libc::EINTR)),
+                TunFdIoDisposition::RetryImmediately
+            );
+            assert_eq!(
+                io_disposition(&io::Error::new(io::ErrorKind::Interrupted, "eintr")),
+                TunFdIoDisposition::RetryImmediately
+            );
         }
 
         #[tokio::test]
