@@ -9,7 +9,7 @@ use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use xray_config::{
     CoreConfig, DnsQueryStrategy, DnsServerConfig, InboundConfig, InboundProtocol, Network,
     OutboundConfig, OutboundSettings, PolicyConfig, PolicyLevelConfig, RoutingConfig, RoutingRule,
-    StreamSecurity, StreamSettings,
+    StreamSecurity, StreamSettings, StreamTransport,
 };
 use xray_core_rs::{
     Core, CoreError, CoreState, DnsBootstrapMode, RuntimeLogConfig, RuntimeLogger,
@@ -22,6 +22,7 @@ fn freedom(tag: &str) -> OutboundConfig {
         tag: Some(tag.to_owned()),
         stream: StreamSettings {
             network: Network::Tcp,
+            transport: StreamTransport::Raw,
             security: StreamSecurity::None,
             socket_options: None,
         },

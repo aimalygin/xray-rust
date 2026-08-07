@@ -1902,7 +1902,8 @@ mod tests {
     use xray_config::{
         DnsConfig, DnsServerConfig, DomainMatcher, HappyEyeballsSettings, IpCidr, IpMatcher,
         RealitySettings, RealityShortId, RoutingConfig, RoutingDomainStrategy, RoutingPortRange,
-        RoutingRule, SocketOptions, StreamSettings, TlsSettings, VlessOutboundSettings,
+        RoutingRule, SocketOptions, StreamSettings, StreamTransport, TlsSettings,
+        VlessOutboundSettings,
     };
     use xray_proxy::vless::{unpad_vision_block, VisionCommand};
     use xray_transport::{CachingDnsResolver, DnsLookup, RealityTlsEngine, TransportError};
@@ -1940,6 +1941,7 @@ mod tests {
             tag: Some(tag.to_owned()),
             stream: StreamSettings {
                 network: Network::Tcp,
+                transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 socket_options: None,
             },
@@ -1952,6 +1954,7 @@ mod tests {
             tag: Some(tag.to_owned()),
             stream: StreamSettings {
                 network: Network::Tcp,
+                transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 socket_options: None,
             },
@@ -1973,6 +1976,7 @@ mod tests {
             tag: Some(tag.to_owned()),
             stream: StreamSettings {
                 network: Network::Tcp,
+                transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 socket_options: None,
             },
@@ -2227,6 +2231,7 @@ mod tests {
             DnsOutboundSettings::default(),
             &StreamSettings {
                 network: Network::Tcp,
+                transport: StreamTransport::Raw,
                 security: StreamSecurity::Tls(TlsSettings {
                     server_name: Some("resolver.example".to_owned()),
                     fingerprint: None,
@@ -2261,6 +2266,7 @@ mod tests {
                 DnsOutboundSettings::default(),
                 &StreamSettings {
                     network: Network::Tcp,
+                    transport: StreamTransport::Raw,
                     security: StreamSecurity::Tls(TlsSettings {
                         server_name,
                         fingerprint: None,
@@ -2290,6 +2296,7 @@ mod tests {
     fn tls_outbound_carries_the_fingerprint_into_the_connector() {
         let stream = StreamSettings {
             network: Network::Tcp,
+            transport: StreamTransport::Raw,
             security: StreamSecurity::Tls(TlsSettings {
                 server_name: Some("example.com".to_owned()),
                 fingerprint: Some("firefox".to_owned()),
@@ -2316,6 +2323,7 @@ mod tests {
             DnsOutboundSettings::default(),
             &StreamSettings {
                 network: Network::Tcp,
+                transport: StreamTransport::Raw,
                 security: StreamSecurity::Tls(TlsSettings {
                     server_name: None,
                     fingerprint: Some("firefox".to_owned()),
@@ -2347,6 +2355,7 @@ mod tests {
             DnsOutboundSettings::default(),
             &StreamSettings {
                 network: Network::Udp,
+                transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 socket_options: None,
             },
@@ -2381,6 +2390,7 @@ mod tests {
             DnsOutboundSettings::default(),
             &StreamSettings {
                 network: Network::Tcp,
+                transport: StreamTransport::Raw,
                 security: StreamSecurity::Reality(reality.clone()),
                 socket_options: Some(SocketOptions {
                     happy_eyeballs: Some(HappyEyeballsSettings {
@@ -2420,6 +2430,7 @@ mod tests {
             DnsOutboundSettings::default(),
             &StreamSettings {
                 network: Network::Tcp,
+                transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 socket_options: None,
             },
@@ -2435,6 +2446,7 @@ mod tests {
             DnsOutboundSettings::default(),
             &StreamSettings {
                 network: Network::Tcp,
+                transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 socket_options: Some(SocketOptions {
                     happy_eyeballs: Some(HappyEyeballsSettings::default()),
@@ -2455,6 +2467,7 @@ mod tests {
             DnsOutboundSettings::default(),
             &StreamSettings {
                 network: Network::Tcp,
+                transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 socket_options: None,
             },
@@ -2466,6 +2479,7 @@ mod tests {
             DnsOutboundSettings::default(),
             &StreamSettings {
                 network: Network::Tcp,
+                transport: StreamTransport::Raw,
                 security: StreamSecurity::Tls(TlsSettings {
                     server_name: Some("resolver.example".to_owned()),
                     fingerprint: None,

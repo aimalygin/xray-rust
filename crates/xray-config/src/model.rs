@@ -865,8 +865,56 @@ pub struct PolicySystemConfig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StreamSettings {
     pub network: Network,
+    pub transport: StreamTransport,
     pub security: StreamSecurity,
     pub socket_options: Option<SocketOptions>,
+}
+
+/// The stream transport `streamSettings.network` selected, with its own
+/// settings block already parsed.
+///
+/// `network` above stays `Network::Tcp` for all of these: every transport we
+/// support runs over a TCP connection, and the variant only says what gets
+/// layered on top of it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StreamTransport {
+    /// `tcp` / `raw`: nothing layered on top.
+    Raw,
+    WebSocket(WebSocketSettings),
+    HttpUpgrade(HttpUpgradeSettings),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct WebSocketSettings {
+    /// Normalized: always begins with `/`, and `?ed=N` has been stripped with
+    /// the remaining query re-encoded the way Go's `url.Values.Encode` does.
+    pub path: String,
+    /// `Host` header. Falls back to the TLS server name, then the destination
+    /// address. Never carries a port.
+    pub host: Option<String>,
+    /// Extra headers, MIME-canonicalized. Xray feeds them to Go's `header.Add`,
+    /// which title-cases the key, so `accept` reaches the wire as `Accept` —
+    /// unlike `HttpUpgradeSettings::headers`, which keeps the literal casing.
+    /// Order here is not meaningful; the serializer sorts them.
+    pub headers: Vec<(String, String)>,
+    /// From `?ed=N`. Zero means early data is off.
+    pub early_data_bytes: u32,
+    /// Seconds between client pings. Zero means no keepalive.
+    pub heartbeat_period_secs: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct HttpUpgradeSettings {
+    pub path: String,
+    pub host: Option<String>,
+    /// Extra headers with their literal casing preserved: Xray assigns these
+    /// into the header map directly rather than through `header.Add`, on
+    /// purpose, so that a config can send names like `Sec-WebSocket-Key`
+    /// exactly as written.
+    pub headers: Vec<(String, String)>,
+    /// From `?ed=N`. For HTTPUpgrade this carries no payload — any positive
+    /// value only means "do not block waiting for the 101".
+    pub early_data_bytes: u32,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

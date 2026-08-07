@@ -6,7 +6,7 @@ use xray_config::{
     HappyEyeballsSettings, InboundConfig, InboundProtocol, IpCidr, IpMatcher, Network,
     OutboundConfig, OutboundProtocol, OutboundSettings, RealitySettings, RealityShortId,
     RegexMatcher, RoutingConfig, RoutingPortRange, RoutingRule, SocketOptions, StreamSecurity,
-    StreamSettings, TargetAddr, VlessOutboundSettings, VlessUser,
+    StreamSettings, StreamTransport, TargetAddr, VlessOutboundSettings, VlessUser,
 };
 
 #[test]
@@ -26,6 +26,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
         tag: Some("proxy".to_owned()),
         stream: StreamSettings {
             network: Network::Tcp,
+            transport: StreamTransport::Raw,
             security: StreamSecurity::Reality(RealitySettings {
                 server_name: "www.example.com".to_owned(),
                 fingerprint: "chrome".to_owned(),
@@ -81,6 +82,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
             tag: Some("proxy".to_owned()),
             stream: StreamSettings {
                 network: Network::Tcp,
+                transport: StreamTransport::Raw,
                 security: StreamSecurity::Reality(RealitySettings {
                     server_name: "www.example.com".to_owned(),
                     fingerprint: "chrome".to_owned(),
@@ -135,6 +137,7 @@ fn normalized_model_can_represent_freedom_outbound() {
         tag: Some("direct".to_owned()),
         stream: StreamSettings {
             network: Network::Tcp,
+            transport: StreamTransport::Raw,
             security: StreamSecurity::None,
             socket_options: None,
         },
@@ -228,6 +231,7 @@ fn routing_network_and_port_selectors_fail_closed_without_target_metadata() {
 fn normalized_model_uses_xray_happy_eyeballs_defaults() {
     let stream = StreamSettings {
         network: Network::Tcp,
+        transport: StreamTransport::Raw,
         security: StreamSecurity::None,
         socket_options: Some(SocketOptions {
             happy_eyeballs: Some(HappyEyeballsSettings::default()),

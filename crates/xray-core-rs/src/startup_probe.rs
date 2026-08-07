@@ -548,7 +548,7 @@ mod https_tests {
     use tokio_rustls::TlsAcceptor;
     use xray_config::{
         CoreConfig, InboundConfig, InboundProtocol, Network, OutboundConfig, OutboundSettings,
-        RoutingConfig, StreamSecurity, StreamSettings,
+        RoutingConfig, StreamSecurity, StreamSettings, StreamTransport,
     };
     use xray_transport::{
         DnsResolver, SocketHandle, SocketProtector, TlsConnector, TransportDialer, TransportError,
@@ -609,6 +609,7 @@ mod https_tests {
                 tag: Some("direct".to_owned()),
                 stream: StreamSettings {
                     network: Network::Tcp,
+                    transport: StreamTransport::Raw,
                     security: StreamSecurity::None,
                     socket_options: None,
                 },

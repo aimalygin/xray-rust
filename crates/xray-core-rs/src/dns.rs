@@ -885,7 +885,7 @@ mod tests {
         CoreConfig, DnsConfig, DnsHostMapping, DnsHostTarget, DnsOutboundRule,
         DnsOutboundRuleAction, DnsOutboundSettings, DnsQTypeRange, DnsServerConfig, DomainMatcher,
         IpCidr, IpMatcher, Network, OutboundConfig, OutboundSettings, PolicyConfig, RoutingConfig,
-        RoutingDomainStrategy, RoutingRule, StreamSecurity, StreamSettings,
+        RoutingDomainStrategy, RoutingRule, StreamSecurity, StreamSettings, StreamTransport,
         TargetAddr as ConfigTargetAddr, TlsSettings,
     };
     use xray_transport::{
@@ -975,6 +975,7 @@ mod tests {
             dns,
             StreamSettings {
                 network: Network::Tcp,
+                transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 socket_options: None,
             },
@@ -1010,6 +1011,7 @@ mod tests {
             tag: Some("direct".to_owned()),
             stream: StreamSettings {
                 network: Network::Tcp,
+                transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 socket_options: None,
             },
@@ -1019,6 +1021,7 @@ mod tests {
             tag: Some("dns-out".to_owned()),
             stream: StreamSettings {
                 network: Network::Tcp,
+                transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 socket_options: None,
             },
@@ -1063,6 +1066,7 @@ mod tests {
             settings,
             StreamSettings {
                 network: Network::Tcp,
+                transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 socket_options: None,
             },
@@ -1436,6 +1440,7 @@ mod tests {
                 tag: Some("direct".to_owned()),
                 stream: StreamSettings {
                     network: Network::Tcp,
+                    transport: StreamTransport::Raw,
                     security: StreamSecurity::None,
                     socket_options: None,
                 },
@@ -1808,6 +1813,7 @@ mod tests {
             },
             StreamSettings {
                 network: Network::Tcp,
+                transport: StreamTransport::Raw,
                 security: StreamSecurity::Tls(TlsSettings {
                     server_name: Some("explicit-sni.test".to_owned()),
                     fingerprint: None,
@@ -1862,6 +1868,7 @@ mod tests {
             },
             StreamSettings {
                 network: Network::Tcp,
+                transport: StreamTransport::Raw,
                 security: StreamSecurity::Tls(TlsSettings {
                     server_name: None,
                     fingerprint: None,
@@ -1967,6 +1974,7 @@ mod tests {
             },
             StreamSettings {
                 network: Network::Tcp,
+                transport: StreamTransport::Raw,
                 security: StreamSecurity::Tls(TlsSettings {
                     server_name: None,
                     fingerprint: None,
@@ -2030,6 +2038,7 @@ mod tests {
             },
             StreamSettings {
                 network: Network::Tcp,
+                transport: StreamTransport::Raw,
                 security: StreamSecurity::Tls(TlsSettings {
                     server_name: Some("resolver.test".to_owned()),
                     fingerprint: None,
@@ -2473,6 +2482,7 @@ mod tests {
                 tag: Some("direct".to_owned()),
                 stream: StreamSettings {
                     network: Network::Tcp,
+                    transport: StreamTransport::Raw,
                     security: StreamSecurity::None,
                     socket_options: None,
                 },

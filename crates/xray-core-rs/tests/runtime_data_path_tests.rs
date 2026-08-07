@@ -46,7 +46,7 @@ use xray_config::{
     InboundConfig, InboundProtocol, InboundSniffingConfig, IpCidr, IpMatcher, Network,
     OutboundConfig, OutboundSettings, PolicyConfig, PolicyLevelConfig, RealitySettings,
     RealityShortId, RoutingConfig, RoutingDomainStrategy, RoutingPortRange, RoutingRule,
-    SniffingDestination, StreamSecurity, StreamSettings, TargetAddr, TlsSettings,
+    SniffingDestination, StreamSecurity, StreamSettings, StreamTransport, TargetAddr, TlsSettings,
     VlessOutboundSettings, VlessUser,
 };
 use xray_core_rs::{
@@ -78,6 +78,7 @@ fn vless_outbound(security: StreamSecurity, server: TargetAddr, port: u16) -> Ou
         tag: Some("proxy".to_owned()),
         stream: StreamSettings {
             network: Network::Tcp,
+            transport: StreamTransport::Raw,
             security,
             socket_options: None,
         },
@@ -99,6 +100,7 @@ fn freedom_outbound() -> OutboundConfig {
         tag: Some("direct".to_owned()),
         stream: StreamSettings {
             network: Network::Tcp,
+            transport: StreamTransport::Raw,
             security: StreamSecurity::None,
             socket_options: None,
         },
@@ -111,6 +113,7 @@ fn dns_outbound(settings: DnsOutboundSettings) -> OutboundConfig {
         tag: Some("dns-out".to_owned()),
         stream: StreamSettings {
             network: Network::Tcp,
+            transport: StreamTransport::Raw,
             security: StreamSecurity::None,
             socket_options: None,
         },

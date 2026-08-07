@@ -13,8 +13,8 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::time::{sleep, timeout, Duration, Instant};
 use xray_config::{
     CoreConfig, InboundConfig, InboundProtocol, Network, OutboundConfig, OutboundSettings,
-    RealitySettings, RealityShortId, RoutingConfig, StreamSecurity, StreamSettings, TargetAddr,
-    TlsSettings, VlessOutboundSettings, VlessUser,
+    RealitySettings, RealityShortId, RoutingConfig, StreamSecurity, StreamSettings,
+    StreamTransport, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
 };
 use xray_core_rs::Core;
 use xray_transport::{SystemDnsResolver, TlsConnector, TransportDialer};
@@ -1186,6 +1186,7 @@ fn rust_core_config_with_security(
             tag: Some("proxy".to_owned()),
             stream: StreamSettings {
                 network: Network::Tcp,
+                transport: StreamTransport::Raw,
                 security,
                 socket_options: None,
             },

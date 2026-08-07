@@ -50,7 +50,7 @@ use xray_config::{
     parse_xray_json, CoreConfig, DnsOutboundRule, DnsOutboundRuleAction, DnsOutboundSettings,
     DomainMatcher, InboundConfig, InboundProtocol, IpCidr, IpMatcher, Network as ConfigNetwork,
     OutboundConfig, OutboundSettings, RoutingConfig, RoutingDomainStrategy, RoutingPortRange,
-    RoutingRule, StreamSecurity, StreamSettings,
+    RoutingRule, StreamSecurity, StreamSettings, StreamTransport,
 };
 use xray_core_rs::{
     CompiledDnsOutboundPolicy, Core, DnsOutboundDecision, OutboundRouter, StartupProbeOptions,
@@ -7554,6 +7554,7 @@ fn dns_outbound_selector_probe_config(rule_count: usize) -> CoreConfig {
         tag: Some("direct".to_owned()),
         stream: StreamSettings {
             network: ConfigNetwork::Tcp,
+            transport: StreamTransport::Raw,
             security: StreamSecurity::None,
             socket_options: None,
         },
@@ -7563,6 +7564,7 @@ fn dns_outbound_selector_probe_config(rule_count: usize) -> CoreConfig {
         tag: Some("dns-out".to_owned()),
         stream: StreamSettings {
             network: ConfigNetwork::Tcp,
+            transport: StreamTransport::Raw,
             security: StreamSecurity::None,
             socket_options: None,
         },
@@ -8912,6 +8914,7 @@ fn route_probe_config(rules: usize, outbounds: usize) -> Result<CoreConfig, Benc
             tag: Some(format!("out-{index}")),
             stream: StreamSettings {
                 network: ConfigNetwork::Tcp,
+                transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 socket_options: None,
             },

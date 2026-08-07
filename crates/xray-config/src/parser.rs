@@ -12,12 +12,13 @@ use crate::{
     CoreConfig, Diagnostic, DnsConfig, DnsFakeIpConfig, DnsHostMapping, DnsHostTarget, DnsIpFilter,
     DnsNameServerConfig, DnsOutboundRule, DnsOutboundRuleAction, DnsOutboundSettings,
     DnsQTypeRange, DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint, DnsServerTransport,
-    DomainMatcher, HappyEyeballsSettings, InboundConfig, InboundProtocol, InboundSniffingConfig,
-    IpCidr, IpMatcher, Network, OutboundConfig, OutboundProtocol, OutboundSettings, PolicyConfig,
-    PolicyLevelConfig, PolicySystemConfig, RealitySettings, RealityShortId, RegexMatcher,
-    RoutingConfig, RoutingDomainStrategy, RoutingPortRange, RoutingRule, SniffingDestination,
-    SocketOptions, StreamSecurity, StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings,
-    VlessUser, MAX_DNS_SERVER_TIMEOUT_MS,
+    DomainMatcher, HappyEyeballsSettings, HttpUpgradeSettings, InboundConfig, InboundProtocol,
+    InboundSniffingConfig, IpCidr, IpMatcher, Network, OutboundConfig, OutboundProtocol,
+    OutboundSettings, PolicyConfig, PolicyLevelConfig, PolicySystemConfig, RealitySettings,
+    RealityShortId, RegexMatcher, RoutingConfig, RoutingDomainStrategy, RoutingPortRange,
+    RoutingRule, SniffingDestination, SocketOptions, StreamSecurity, StreamSettings,
+    StreamTransport, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser, WebSocketSettings,
+    MAX_DNS_SERVER_TIMEOUT_MS,
 };
 
 const MAX_ROUTING_RULES: usize = 4_096;
@@ -33,6 +34,16 @@ const MAX_DNS_SERVERS: usize = 8;
 const DEFAULT_FAKE_IP_POOL_SIZE: u32 = 32_768;
 const TUN_DNS_ANCHOR: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 1);
 const TUN_CLIENT_IPV4: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 2);
+
+/// The transport `streamSettings.network` names, before their settings block
+/// has been read. All of them dial TCP; the variant only says what gets
+/// layered on top.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StreamNetwork {
+    Raw,
+    WebSocket,
+    HttpUpgrade,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum IpMatcherParseMode {
@@ -2551,18 +2562,203 @@ impl Parser<'_> {
 
     fn parse_stream_settings(&mut self, outbound: &Value, index: usize) -> Option<StreamSettings> {
         let stream = outbound.get("streamSettings");
-        let network = self.parse_network(stream, index)?;
+        let stream_network = self.parse_network(stream, index)?;
         let security = self.parse_security(stream, index)?;
         let socket_options = self.parse_socket_options(stream, index);
         if let Some(stream) = stream {
             self.validate_stream_settings_compatibility(stream, index);
         }
+        let transport = self.parse_stream_transport(stream, stream_network, index)?;
 
         Some(StreamSettings {
-            network,
+            // Every transport we accept dials TCP; `transport` carries what
+            // gets layered on top of it.
+            network: Network::Tcp,
+            transport,
             security,
             socket_options,
         })
+    }
+
+    fn parse_stream_transport(
+        &mut self,
+        stream: Option<&Value>,
+        network: StreamNetwork,
+        index: usize,
+    ) -> Option<StreamTransport> {
+        match network {
+            StreamNetwork::Raw => Some(StreamTransport::Raw),
+            StreamNetwork::WebSocket => self
+                .parse_websocket_settings(stream, index)
+                .map(StreamTransport::WebSocket),
+            StreamNetwork::HttpUpgrade => self
+                .parse_httpupgrade_settings(stream, index)
+                .map(StreamTransport::HttpUpgrade),
+        }
+    }
+
+    fn parse_websocket_settings(
+        &mut self,
+        stream: Option<&Value>,
+        index: usize,
+    ) -> Option<WebSocketSettings> {
+        let settings_path = format!("$.outbounds[{index}].streamSettings.wsSettings");
+        let Some(settings) = stream.and_then(|stream| stream.get("wsSettings")) else {
+            // Xray builds a zero-valued config when the block is absent, and a
+            // zero path normalizes to `/`.
+            return Some(WebSocketSettings {
+                path: "/".to_owned(),
+                ..WebSocketSettings::default()
+            });
+        };
+        if !settings.is_object() {
+            self.error(settings_path, "wsSettings must be an object");
+            return None;
+        }
+        self.reject_unknown_fields(
+            settings,
+            &settings_path,
+            &[
+                "path",
+                "host",
+                "headers",
+                "acceptProxyProtocol",
+                "heartbeatPeriod",
+            ],
+        );
+
+        let (path, early_data_bytes) =
+            split_early_data_from_path(self.string_at(settings, "path").unwrap_or_default());
+        let mut host = self
+            .string_at(settings, "host")
+            .filter(|host| !host.is_empty())
+            .map(ToOwned::to_owned);
+        let mut headers = self.parse_transport_headers(settings, &settings_path)?;
+
+        // Xray folds a `Host` key of any casing out of `headers` and into
+        // `host`, keeping the explicit `host` when both are set, and warns.
+        if let Some(position) = headers
+            .iter()
+            .position(|(name, _)| name.eq_ignore_ascii_case("host"))
+        {
+            let (_, value) = headers.remove(position);
+            headers.retain(|(name, _)| !name.eq_ignore_ascii_case("host"));
+            if host.is_none() {
+                host = Some(value);
+            }
+            self.warning(
+                format!("{settings_path}.headers"),
+                "`host` in `headers` is deprecated; use the independent `host` field",
+            );
+        }
+
+        Some(WebSocketSettings {
+            path,
+            host,
+            // Go's `header.Add` MIME-canonicalizes the key on the way in, so a
+            // config that writes `accept` puts `Accept` on the wire.
+            headers: headers
+                .into_iter()
+                .map(|(name, value)| (canonical_header_name(&name), value))
+                .collect(),
+            early_data_bytes,
+            heartbeat_period_secs: self
+                .optional_u32_at(
+                    settings,
+                    "heartbeatPeriod",
+                    format!("{settings_path}.heartbeatPeriod"),
+                )
+                .unwrap_or_default(),
+        })
+    }
+
+    fn parse_httpupgrade_settings(
+        &mut self,
+        stream: Option<&Value>,
+        index: usize,
+    ) -> Option<HttpUpgradeSettings> {
+        let settings_path = format!("$.outbounds[{index}].streamSettings.httpupgradeSettings");
+        let Some(settings) = stream.and_then(|stream| stream.get("httpupgradeSettings")) else {
+            return Some(HttpUpgradeSettings {
+                path: "/".to_owned(),
+                ..HttpUpgradeSettings::default()
+            });
+        };
+        if !settings.is_object() {
+            self.error(settings_path, "httpupgradeSettings must be an object");
+            return None;
+        }
+        self.reject_unknown_fields(
+            settings,
+            &settings_path,
+            &["path", "host", "headers", "acceptProxyProtocol"],
+        );
+
+        let (path, early_data_bytes) =
+            split_early_data_from_path(self.string_at(settings, "path").unwrap_or_default());
+        let headers = self.parse_transport_headers(settings, &settings_path)?;
+
+        // Where websocket folds it away with a warning, httpupgrade refuses:
+        // its `Host` comes from `host` alone.
+        if headers
+            .iter()
+            .any(|(name, _)| name.eq_ignore_ascii_case("host"))
+        {
+            self.error(
+                format!("{settings_path}.headers"),
+                "`headers` can't contain `host`; use the independent `host` field",
+            );
+            return None;
+        }
+
+        Some(HttpUpgradeSettings {
+            path,
+            host: self
+                .string_at(settings, "host")
+                .filter(|host| !host.is_empty())
+                .map(ToOwned::to_owned),
+            // No canonicalization here: Xray assigns straight into the header
+            // map so that a config keeps the casing it wrote.
+            headers,
+            early_data_bytes,
+        })
+    }
+
+    /// Reads a transport `headers` object. Xray types it as
+    /// `map[string]string`, so a non-string value fails the whole config.
+    fn parse_transport_headers(
+        &mut self,
+        settings: &Value,
+        settings_path: &str,
+    ) -> Option<Vec<(String, String)>> {
+        let Some(headers) = settings.get("headers") else {
+            return Some(Vec::new());
+        };
+        let headers_path = format!("{settings_path}.headers");
+        let Some(headers) = headers.as_object() else {
+            self.error(headers_path, "headers must be an object");
+            return None;
+        };
+
+        let mut parsed = Vec::with_capacity(headers.len());
+        let mut rejected = false;
+        for (name, value) in headers {
+            match value.as_str() {
+                Some(value) => parsed.push((name.clone(), value.to_owned())),
+                None => {
+                    self.error(
+                        format!("{headers_path}.{name}"),
+                        "header value must be a string",
+                    );
+                    rejected = true;
+                }
+            }
+        }
+
+        if rejected {
+            return None;
+        }
+        Some(parsed)
     }
 
     fn parse_socket_options(
@@ -2639,7 +2835,7 @@ impl Parser<'_> {
         })
     }
 
-    fn parse_network(&mut self, stream: Option<&Value>, index: usize) -> Option<Network> {
+    fn parse_network(&mut self, stream: Option<&Value>, index: usize) -> Option<StreamNetwork> {
         let network_path = format!("$.outbounds[{index}].streamSettings.network");
         match stream
             .and_then(|stream| stream.get("network"))
@@ -2647,7 +2843,27 @@ impl Parser<'_> {
             .unwrap_or("tcp")
         {
             // Xray renamed the `tcp` transport to `raw`; both names stay valid.
-            "tcp" | "raw" => Some(Network::Tcp),
+            "tcp" | "raw" => Some(StreamNetwork::Raw),
+            "ws" | "websocket" => Some(StreamNetwork::WebSocket),
+            "httpupgrade" => Some(StreamNetwork::HttpUpgrade),
+            // Xray deleted these outright, so `unsupported` would send someone
+            // hunting for a flag to turn them on.
+            network @ ("h2" | "h3" | "http" | "quic") => {
+                self.error(
+                    network_path,
+                    format!(
+                        "stream network `{network}` was removed from Xray; use `xhttp` instead"
+                    ),
+                );
+                None
+            }
+            network @ ("kcp" | "mkcp" | "hysteria") => {
+                self.error(
+                    network_path,
+                    format!("stream network `{network}` is not supported by xray-rust"),
+                );
+                None
+            }
             network => {
                 self.error(
                     network_path,
@@ -2752,6 +2968,8 @@ impl Parser<'_> {
                 "realitySettings",
                 "tcpSettings",
                 "rawSettings",
+                "wsSettings",
+                "httpupgradeSettings",
                 "sockopt",
             ],
         );
@@ -3751,6 +3969,167 @@ fn normalize_u16_ranges(mut ranges: Vec<(u16, u16)>) -> Vec<(u16, u16)> {
     normalized
 }
 
+/// Splits `?ed=N` out of a configured path, returning the normalized path and
+/// the early-data budget.
+///
+/// Xray strips `ed` at config-build time, so it never reaches the wire, and
+/// re-encodes whatever query remains through Go's `url.Values.Encode()` —
+/// which sorts parameters alphabetically. The server compares the whole path,
+/// so both halves of that are load-bearing.
+///
+/// The rewrite is gated on `q.Get("ed") != ""`, which is narrower than it
+/// looks: a path with no `ed`, or with an empty `ed=`, is passed through
+/// byte-for-byte with its original parameter order. Sorting those too would
+/// itself be a path mismatch.
+///
+/// Two things Xray gets from routing the value through `url.Parse` are left
+/// out here, both because they only fire on a path no config would hold. Xray
+/// skips the whole rewrite when `url.Parse` fails (a control byte, or a
+/// truncated `%` escape), and it reads the query only up to a `#`, treating
+/// the rest as a fragment; this splits on the first `?` either way. Note also
+/// that percent-escaping the *path* is not done here: Xray escapes it when it
+/// builds the request, so it belongs to the transport, not the config.
+fn split_early_data_from_path(raw: &str) -> (String, u32) {
+    let (path, query) = match raw.split_once('?') {
+        Some((path, query)) => (path, Some(query)),
+        None => (raw, None),
+    };
+
+    let normalized_path = |path: &str| {
+        if path.is_empty() {
+            "/".to_owned()
+        } else if path.starts_with('/') {
+            path.to_owned()
+        } else {
+            format!("/{path}")
+        }
+    };
+
+    let Some(query) = query else {
+        return (normalized_path(raw), 0);
+    };
+
+    let parsed = parse_go_query(query);
+    let Some(early_data) = parsed
+        .iter()
+        .find(|(key, value)| key == "ed" && !value.is_empty())
+        .map(|(_, value)| value)
+    else {
+        return (normalized_path(raw), 0);
+    };
+
+    // Go's `Ed, _ := strconv.Atoi(...); ed = uint32(Ed)` keeps zero on a
+    // non-numeric value, truncates a wider one, and wraps a negative one —
+    // and deletes the parameter regardless of which happened. (Only a value
+    // past `i64` still differs: Go saturates where this gives up and takes 0.)
+    let early_data = early_data.parse::<i64>().unwrap_or(0) as u32;
+    let kept = encode_go_query(parsed.into_iter().filter(|(key, _)| key != "ed"));
+
+    let mut normalized = normalized_path(path);
+    if !kept.is_empty() {
+        normalized.push('?');
+        normalized.push_str(&kept);
+    }
+    (normalized, early_data)
+}
+
+/// Go's `url.ParseQuery`: `&`-separated pairs, percent-decoded with `+` as a
+/// space. Segments that are empty, contain `;`, or carry a broken escape are
+/// dropped, and `url.URL.Query()` discards the resulting error.
+fn parse_go_query(query: &str) -> Vec<(String, String)> {
+    query
+        .split('&')
+        .filter(|segment| !segment.is_empty() && !segment.contains(';'))
+        .filter_map(|segment| {
+            let (key, value) = segment.split_once('=').unwrap_or((segment, ""));
+            Some((query_unescape(key)?, query_unescape(value)?))
+        })
+        .collect()
+}
+
+/// Go's `url.Values.Encode`: keys sorted, values kept in their original order
+/// within a key, every pair emitted as `key=value` even when the value is
+/// empty.
+fn encode_go_query(pairs: impl Iterator<Item = (String, String)>) -> String {
+    let mut pairs: Vec<(String, String)> = pairs.collect();
+    pairs.sort_by(|(left, _), (right, _)| left.as_bytes().cmp(right.as_bytes()));
+    pairs
+        .iter()
+        .map(|(key, value)| format!("{}={}", query_escape(key), query_escape(value)))
+        .collect::<Vec<_>>()
+        .join("&")
+}
+
+/// Go's `url.QueryUnescape`. `None` on a truncated or non-hex `%` escape,
+/// which is how Go signals the segment should be dropped.
+fn query_unescape(value: &str) -> Option<String> {
+    let bytes = value.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'%' => {
+                let high = hex_value(*bytes.get(index + 1)?).ok()?;
+                let low = hex_value(*bytes.get(index + 2)?).ok()?;
+                out.push((high << 4) | low);
+                index += 3;
+            }
+            b'+' => {
+                out.push(b' ');
+                index += 1;
+            }
+            byte => {
+                out.push(byte);
+                index += 1;
+            }
+        }
+    }
+    // Go keeps the raw bytes; a decoded escape need not be valid UTF-8.
+    Some(String::from_utf8_lossy(&out).into_owned())
+}
+
+/// Go's `url.QueryEscape`: only unreserved characters survive, and a space
+/// becomes `+`.
+fn query_escape(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char)
+            }
+            b' ' => out.push('+'),
+            byte => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
+}
+
+/// Go's `textproto.CanonicalMIMEHeaderKey`, which `http.Header.Add` applies:
+/// the first letter and every letter after a `-` is upper-cased and the rest
+/// lower-cased. A key holding a byte that is invalid in a header name is left
+/// exactly as it came in, matching Go's bail-out.
+fn canonical_header_name(name: &str) -> String {
+    let valid = name
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte));
+    if !valid {
+        return name.to_owned();
+    }
+
+    let mut canonical = String::with_capacity(name.len());
+    let mut upper = true;
+    for byte in name.bytes() {
+        let byte = if upper {
+            byte.to_ascii_uppercase()
+        } else {
+            byte.to_ascii_lowercase()
+        };
+        upper = byte == b'-';
+        canonical.push(byte as char);
+    }
+    canonical
+}
+
 fn child_path(base_path: &str, key: &str) -> String {
     if base_path == "$" {
         format!("$.{key}")
@@ -3899,12 +4278,68 @@ mod tests {
     use prost::Message;
 
     use super::{
-        configured_geodata_dirs, default_geodata_dirs, geodata_dirs_with_defaults,
-        parse_xray_json_with_loader_and_limits, GeodataLoader, MatcherBudget, MatcherBudgetLimits,
-        Parser, SelectorBudget, DEFAULT_MATCHER_BUDGET_LIMITS, MAX_CONFIG_GEODATA_ATTRIBUTE_SIZE,
+        canonical_header_name, configured_geodata_dirs, default_geodata_dirs,
+        geodata_dirs_with_defaults, parse_xray_json_with_loader_and_limits,
+        split_early_data_from_path, GeodataLoader, MatcherBudget, MatcherBudgetLimits, Parser,
+        SelectorBudget, DEFAULT_MATCHER_BUDGET_LIMITS, MAX_CONFIG_GEODATA_ATTRIBUTE_SIZE,
         MAX_CONFIG_GEODATA_ATTR_FILTERS, MAX_DNS_OUTBOUND_RULES, MAX_DNS_QTYPE_SELECTORS,
         MAX_ROUTING_PORT_SELECTORS,
     };
+
+    /// Every expectation below is the printed output of a Go program running
+    /// Xray's own `WebSocketConfig.Build` ed block followed by
+    /// `Config.GetNormalizedPath` — the two steps that decide what path the
+    /// server is asked for.
+    #[test]
+    fn path_normalization_matches_the_go_config_builder() {
+        let oracle = [
+            ("", "/", 0),
+            ("/", "/", 0),
+            ("chat", "/chat", 0),
+            ("/chat", "/chat", 0),
+            ("/x?ed=2048", "/x", 2048),
+            ("/x?zulu=1&alpha=2&ed=64", "/x?alpha=2&zulu=1", 64),
+            ("/x?ed=lots&keep=1", "/x?keep=1", 0),
+            ("/x?zulu=1&alpha=2", "/x?zulu=1&alpha=2", 0),
+            ("/x?ed=&zulu=1", "/x?ed=&zulu=1", 0),
+            ("/x?ed=16&ed=32", "/x", 16),
+            ("/x?b=a+b&a&ed=8", "/x?a=&b=a+b", 8),
+            ("?ed=2048", "/", 2048),
+            ("/x?ed=0", "/x", 0),
+            ("/x?ed=-1", "/x", 4294967295),
+            ("/x?ed=4294967296", "/x", 0),
+            ("/x?a%2Fb=1&ed=1", "/x?a%2Fb=1", 1),
+            ("/x?flag&ed=1", "/x?flag=", 1),
+            ("/x?a=1;b=2&ed=1", "/x", 1),
+            ("/x?ed=1&%zz=1", "/x", 1),
+            ("/x?a b=c&ed=1", "/x?a+b=c", 1),
+        ];
+
+        for (raw, path, early_data) in oracle {
+            assert_eq!(
+                split_early_data_from_path(raw),
+                (path.to_owned(), early_data),
+                "path {raw:?}"
+            );
+        }
+    }
+
+    /// Go's `http.Header.Add` runs the key through
+    /// `textproto.CanonicalMIMEHeaderKey`, which websocket depends on and
+    /// httpupgrade deliberately skips.
+    #[test]
+    fn header_names_are_canonicalized_the_way_go_canonicalizes_them() {
+        assert_eq!(canonical_header_name("accept"), "Accept");
+        assert_eq!(canonical_header_name("SEC-ch-ua"), "Sec-Ch-Ua");
+        assert_eq!(canonical_header_name("X-Thing"), "X-Thing");
+        assert_eq!(canonical_header_name("x--y"), "X--Y");
+        assert_eq!(canonical_header_name("-x"), "-X");
+        assert_eq!(canonical_header_name(""), "");
+        // A byte that cannot appear in a header name makes Go give up and
+        // return the key untouched.
+        assert_eq!(canonical_header_name("bad key"), "bad key");
+        assert_eq!(canonical_header_name("naïve"), "naïve");
+    }
 
     #[test]
     fn explicit_geodata_dirs_are_searched_before_defaults() {

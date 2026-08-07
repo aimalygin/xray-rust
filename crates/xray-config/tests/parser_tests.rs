@@ -11,7 +11,7 @@ use xray_config::{
     DnsHostTarget, DnsIpFilter, DnsNameServerConfig, DnsOutboundRuleAction, DnsOutboundSettings,
     DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint, DnsServerTransport,
     HappyEyeballsSettings, InboundProtocol, IpCidr, Network, OutboundSettings, RealityShortId,
-    RoutingDomainStrategy, SniffingDestination, StreamSecurity, TargetAddr,
+    RoutingDomainStrategy, SniffingDestination, StreamSecurity, StreamTransport, TargetAddr,
 };
 
 #[test]
@@ -2928,7 +2928,7 @@ fn rejects_udp_stream_network_with_path() {
 #[test]
 fn rejects_other_stream_network_with_path() {
     let raw = vless_raw_with_network(
-        "ws",
+        "grpc",
         r#""users": [{ "id": "00010203-0405-0607-0809-0a0b0c0d0e0f" }]"#,
         "",
         443,
@@ -2937,6 +2937,394 @@ fn rejects_other_stream_network_with_path() {
     );
 
     assert_parse_error_path(&raw, "$.outbounds[0].streamSettings.network");
+}
+
+#[test]
+fn tcp_and_raw_networks_parse_as_the_raw_transport() {
+    for network in ["tcp", "raw"] {
+        let parsed = parse_xray_json(&raw_with_stream_settings(&format!(
+            r#""network": "{network}", "security": "none""#
+        )))
+        .expect("the raw transport must parse");
+
+        assert_eq!(
+            parsed.config.outbounds[0].stream.transport,
+            StreamTransport::Raw
+        );
+    }
+}
+
+#[test]
+fn ws_network_parses_with_its_settings() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "ws", "security": "none",
+           "wsSettings": {"path": "/chat", "host": "cdn.example.com",
+                          "headers": {"X-Thing": "v"}, "heartbeatPeriod": 30}"#,
+    ))
+    .expect("a ws outbound must parse");
+
+    let StreamTransport::WebSocket(ws) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected a websocket transport");
+    };
+    assert_eq!(ws.path, "/chat");
+    assert_eq!(ws.host.as_deref(), Some("cdn.example.com"));
+    assert_eq!(ws.headers, vec![("X-Thing".to_owned(), "v".to_owned())]);
+    assert_eq!(ws.heartbeat_period_secs, 30);
+    assert_eq!(ws.early_data_bytes, 0);
+    assert!(parsed.diagnostics.is_empty());
+}
+
+#[test]
+fn websocket_is_an_alias_for_ws() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "websocket", "security": "none""#,
+    ))
+    .expect("the websocket alias must parse");
+
+    assert!(matches!(
+        parsed.config.outbounds[0].stream.transport,
+        StreamTransport::WebSocket(_)
+    ));
+    assert_eq!(parsed.config.outbounds[0].stream.network, Network::Tcp);
+}
+
+#[test]
+fn httpupgrade_network_parses_with_its_settings() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "httpupgrade", "security": "none",
+           "httpupgradeSettings": {"path": "/up?ed=32", "host": "cdn.example.com",
+                                   "headers": {"X-Thing": "v"}}"#,
+    ))
+    .expect("an httpupgrade outbound must parse");
+
+    let StreamTransport::HttpUpgrade(httpupgrade) = &parsed.config.outbounds[0].stream.transport
+    else {
+        panic!("expected an httpupgrade transport");
+    };
+    assert_eq!(httpupgrade.path, "/up");
+    assert_eq!(httpupgrade.host.as_deref(), Some("cdn.example.com"));
+    assert_eq!(
+        httpupgrade.headers,
+        vec![("X-Thing".to_owned(), "v".to_owned())]
+    );
+    assert_eq!(httpupgrade.early_data_bytes, 32);
+    assert_eq!(parsed.config.outbounds[0].stream.network, Network::Tcp);
+}
+
+#[test]
+fn a_network_without_its_settings_block_still_gets_a_transport() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "httpupgrade", "security": "none""#,
+    ))
+    .expect("an omitted settings block must parse");
+
+    let StreamTransport::HttpUpgrade(httpupgrade) = &parsed.config.outbounds[0].stream.transport
+    else {
+        panic!("expected an httpupgrade transport");
+    };
+    assert_eq!(httpupgrade.path, "/");
+    assert_eq!(httpupgrade.host, None);
+    assert!(httpupgrade.headers.is_empty());
+}
+
+#[test]
+fn the_ed_query_parameter_is_stripped_from_the_path() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "ws", "security": "none",
+           "wsSettings": {"path": "/x?ed=2048"}"#,
+    ))
+    .expect("an ed path must parse");
+
+    let StreamTransport::WebSocket(ws) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected a websocket transport");
+    };
+    assert_eq!(ws.path, "/x", "ed never reaches the wire");
+    assert_eq!(ws.early_data_bytes, 2048);
+}
+
+#[test]
+fn the_remaining_query_is_re_encoded_alphabetically() {
+    // Go's url.Values.Encode() sorts, so a path that keeps its query comes out
+    // reordered. The server compares the whole path, so we must match.
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "ws", "security": "none",
+           "wsSettings": {"path": "/x?zulu=1&alpha=2&ed=64"}"#,
+    ))
+    .expect("a multi-parameter path must parse");
+
+    let StreamTransport::WebSocket(ws) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected a websocket transport");
+    };
+    assert_eq!(ws.path, "/x?alpha=2&zulu=1");
+    assert_eq!(ws.early_data_bytes, 64);
+}
+
+#[test]
+fn a_non_numeric_ed_value_is_still_stripped() {
+    // Go's `Ed, _ := strconv.Atoi(...)` swallows the error and leaves ed zero,
+    // but the deletion happens either way.
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "ws", "security": "none",
+           "wsSettings": {"path": "/x?ed=lots&keep=1"}"#,
+    ))
+    .expect("a non-numeric ed must parse");
+
+    let StreamTransport::WebSocket(ws) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected a websocket transport");
+    };
+    assert_eq!(ws.path, "/x?keep=1");
+    assert_eq!(ws.early_data_bytes, 0);
+}
+
+#[test]
+fn a_query_without_ed_is_left_byte_for_byte_alone() {
+    // Xray only rewrites the path inside the `q.Get("ed") != ""` branch, so a
+    // path that never mentions ed keeps its original parameter order and
+    // escaping. Sorting it here would be a path mismatch on the wire.
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "ws", "security": "none",
+           "wsSettings": {"path": "/x?zulu=1&alpha=2"}"#,
+    ))
+    .expect("a query without ed must parse");
+
+    let StreamTransport::WebSocket(ws) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected a websocket transport");
+    };
+    assert_eq!(ws.path, "/x?zulu=1&alpha=2");
+    assert_eq!(ws.early_data_bytes, 0);
+}
+
+#[test]
+fn an_empty_ed_value_is_not_an_ed_at_all() {
+    // `q.Get("ed")` returns "" for `?ed=`, so Xray skips the whole rewrite and
+    // sends `ed=` verbatim.
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "ws", "security": "none",
+           "wsSettings": {"path": "/x?ed=&zulu=1"}"#,
+    ))
+    .expect("an empty ed must parse");
+
+    let StreamTransport::WebSocket(ws) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected a websocket transport");
+    };
+    assert_eq!(ws.path, "/x?ed=&zulu=1");
+    assert_eq!(ws.early_data_bytes, 0);
+}
+
+#[test]
+fn a_repeated_ed_takes_the_first_value_and_drops_every_copy() {
+    // `Values.Get` reads the first entry and `Values.Del` removes them all.
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "ws", "security": "none",
+           "wsSettings": {"path": "/x?ed=16&ed=32"}"#,
+    ))
+    .expect("a repeated ed must parse");
+
+    let StreamTransport::WebSocket(ws) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected a websocket transport");
+    };
+    assert_eq!(ws.path, "/x");
+    assert_eq!(ws.early_data_bytes, 16);
+}
+
+#[test]
+fn the_kept_query_is_percent_encoded_the_way_go_encodes_it() {
+    // url.Values round-trips through QueryUnescape/QueryEscape, so `+` means a
+    // space on the way in and comes back out as `+`, and a bare key gains `=`.
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "ws", "security": "none",
+           "wsSettings": {"path": "/x?b=a+b&a&ed=8"}"#,
+    ))
+    .expect("an escaped query must parse");
+
+    let StreamTransport::WebSocket(ws) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected a websocket transport");
+    };
+    assert_eq!(ws.path, "/x?a=&b=a+b");
+    assert_eq!(ws.early_data_bytes, 8);
+}
+
+#[test]
+fn an_empty_path_becomes_a_single_slash() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "ws", "security": "none", "wsSettings": {}"#,
+    ))
+    .expect("wsSettings may be empty");
+
+    let StreamTransport::WebSocket(ws) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected a websocket transport");
+    };
+    assert_eq!(ws.path, "/");
+}
+
+#[test]
+fn a_relative_path_gains_its_leading_slash() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "ws", "security": "none", "wsSettings": {"path": "chat"}"#,
+    ))
+    .expect("a relative path must parse");
+
+    let StreamTransport::WebSocket(ws) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected a websocket transport");
+    };
+    assert_eq!(ws.path, "/chat");
+}
+
+#[test]
+fn ws_folds_a_host_header_into_host_with_a_deprecation_warning() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "ws", "security": "none",
+           "wsSettings": {"headers": {"host": "cdn.example.com", "X-Thing": "v"}}"#,
+    ))
+    .expect("headers.host must parse for ws");
+
+    let StreamTransport::WebSocket(ws) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected a websocket transport");
+    };
+    assert_eq!(ws.host.as_deref(), Some("cdn.example.com"));
+    assert_eq!(ws.headers, vec![("X-Thing".to_owned(), "v".to_owned())]);
+    assert_eq!(parsed.diagnostics.len(), 1);
+    assert_eq!(
+        parsed.diagnostics[0].severity,
+        DiagnosticSeverity::Warning,
+        "{:?}",
+        parsed.diagnostics
+    );
+    assert_eq!(
+        parsed.diagnostics[0].path.as_deref(),
+        Some("$.outbounds[0].streamSettings.wsSettings.headers")
+    );
+}
+
+#[test]
+fn an_explicit_ws_host_wins_over_a_host_header() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "ws", "security": "none",
+           "wsSettings": {"host": "wins.example.com",
+                          "headers": {"Host": "loses.example.com"}}"#,
+    ))
+    .expect("headers.Host must parse for ws");
+
+    let StreamTransport::WebSocket(ws) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected a websocket transport");
+    };
+    assert_eq!(ws.host.as_deref(), Some("wins.example.com"));
+    assert!(ws.headers.is_empty(), "the folded header is still removed");
+}
+
+#[test]
+fn httpupgrade_rejects_a_host_header_inside_headers() {
+    // ws folds headers.Host into host with a deprecation warning; httpupgrade
+    // makes it a hard error.
+    assert_parse_error_path(
+        &raw_with_stream_settings(
+            r#""network": "httpupgrade", "security": "none",
+               "httpupgradeSettings": {"headers": {"Host": "x"}}"#,
+        ),
+        "$.outbounds[0].streamSettings.httpupgradeSettings.headers",
+    );
+}
+
+#[test]
+fn ws_canonicalizes_header_names_but_httpupgrade_keeps_them_literal() {
+    // Xray's ws config goes through Go's `header.Add`, which MIME-canonicalizes
+    // the key; httpupgrade assigns into the map directly so that people can
+    // send `Sec-WebSocket-*` with their own casing. The split is deliberate and
+    // visible on the wire.
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "ws", "security": "none",
+           "wsSettings": {"headers": {"accept-language": "en", "SEC-ch-ua": "x"}}"#,
+    ))
+    .expect("lowercase ws headers must parse");
+
+    let StreamTransport::WebSocket(ws) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected a websocket transport");
+    };
+    assert_eq!(
+        sorted_header_names(&ws.headers),
+        vec!["Accept-Language", "Sec-Ch-Ua"]
+    );
+
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "httpupgrade", "security": "none",
+           "httpupgradeSettings": {"headers": {"accept-language": "en", "SEC-ch-ua": "x"}}"#,
+    ))
+    .expect("lowercase httpupgrade headers must parse");
+
+    let StreamTransport::HttpUpgrade(httpupgrade) = &parsed.config.outbounds[0].stream.transport
+    else {
+        panic!("expected an httpupgrade transport");
+    };
+    assert_eq!(
+        sorted_header_names(&httpupgrade.headers),
+        vec!["SEC-ch-ua", "accept-language"]
+    );
+}
+
+/// Header order in the model is whatever the JSON object iteration produced;
+/// only the serializer's sort is observable on the wire, so tests compare the
+/// names sorted the same way it sorts them.
+fn sorted_header_names(headers: &[(String, String)]) -> Vec<&str> {
+    let mut names: Vec<&str> = headers.iter().map(|(name, _)| name.as_str()).collect();
+    names.sort_unstable_by_key(|name| name.as_bytes());
+    names
+}
+
+#[test]
+fn removed_transports_say_they_were_removed() {
+    for network in ["h2", "h3", "http", "quic"] {
+        let error = parse_xray_json(&raw_with_stream_settings(&format!(
+            r#""network": "{network}", "security": "none""#
+        )))
+        .expect_err("a removed transport must be rejected");
+        assert!(
+            error
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.message.contains("removed")),
+            "{network} must say it was removed, got: {:?}",
+            error.diagnostics
+        );
+    }
+}
+
+#[test]
+fn transports_xray_still_has_but_we_do_not_say_so() {
+    for network in ["kcp", "mkcp", "hysteria"] {
+        let error = parse_xray_json(&raw_with_stream_settings(&format!(
+            r#""network": "{network}", "security": "none""#
+        )))
+        .expect_err("an unimplemented transport must be rejected");
+        assert_eq!(
+            error.diagnostics[0].path.as_deref(),
+            Some("$.outbounds[0].streamSettings.network")
+        );
+        assert!(
+            error.diagnostics[0].message.contains("not supported"),
+            "{network} got: {:?}",
+            error.diagnostics
+        );
+    }
+}
+
+#[test]
+fn rejects_unknown_ws_settings_field_with_path() {
+    assert_parse_error_path(
+        &raw_with_stream_settings(
+            r#""network": "ws", "security": "none", "wsSettings": {"nope": 1}"#,
+        ),
+        "$.outbounds[0].streamSettings.wsSettings.nope",
+    );
+}
+
+#[test]
+fn rejects_non_string_ws_header_value_with_path() {
+    assert_parse_error_path(
+        &raw_with_stream_settings(
+            r#""network": "ws", "security": "none", "wsSettings": {"headers": {"X-Thing": 1}}"#,
+        ),
+        "$.outbounds[0].streamSettings.wsSettings.headers.X-Thing",
+    );
 }
 
 #[test]
@@ -3351,6 +3739,28 @@ fn raw_with_tls_settings(tls_settings: &str) -> String {
               "security": "tls",
               "tlsSettings": {{ {tls_settings} }}
             }}
+          }}]
+        }}"#
+    )
+}
+
+fn raw_with_stream_settings(stream_settings: &str) -> String {
+    format!(
+        r#"{{
+          "inbounds": [],
+          "outbounds": [{{
+            "tag": "proxy",
+            "protocol": "vless",
+            "settings": {{
+              "vnext": [
+                {{
+                  "address": "server.example",
+                  "port": 443,
+                  "users": [{{ "id": "00010203-0405-0607-0809-0a0b0c0d0e0f" }}]
+                }}
+              ]
+            }},
+            "streamSettings": {{ {stream_settings} }}
           }}]
         }}"#
     )
