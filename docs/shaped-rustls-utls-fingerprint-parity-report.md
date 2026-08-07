@@ -11,9 +11,10 @@ XRAY_UTLS_REPORT_MD=docs/shaped-rustls-utls-fingerprint-parity-report.md cargo t
 ## Summary
 
 - Total fingerprints: `61`
-- Matches: `47`
+- Matches: `45`
 - Mismatches: `0`
 - Not REALITY-capable fingerprints: `14`
+- Drawn per process (no fixed shape to compare): `2`
 - Go uTLS oracle errors: `0`
 - Rust generation errors: `0`
 
@@ -22,13 +23,15 @@ XRAY_UTLS_REPORT_MD=docs/shaped-rustls-utls-fingerprint-parity-report.md cargo t
 - Work in the shaped-rustls fork, currently expected at `aimalygin/shaped-rustls` branch `xray/rustls-0.23.40`.
 - Use this report as the current wire-parity oracle after xray-rust adopted the shaped-rustls primitives for advertised cipher suites, advertised versions/groups, raw key shares, exact extension payloads, duplicate signature algorithms, ALPS, ECH, and GREASE.
 - Treat this as the regression oracle for shaped-rustls ClientHello shaping. All REALITY-capable rows should remain `match`; the TLS1.2-only rows should remain `not-reality-capable` in xray-rust.
+- This is a byte-shape oracle only. It does not prove key-share cryptographic validity or REALITY prepare/complete ClientHello reproducibility; those must stay covered by dedicated runtime invariants.
 - Acceptance criterion: rerun the reproduce command from this report and get all REALITY-capable fingerprints as `match`, `0` mismatches, `0` Go uTLS oracle errors, `0` Rust generation errors, and keep the known TLS1.2-only rows as `not-reality-capable`.
 
 ## Current Findings
 
 - shaped-rustls now represents GREASE extension positions relative to the final non-GREASE extension order, including slots before padding and after the final real extension. xray-rust passes those positions through without the old workaround that compensated for previously inserted GREASE entries.
 - All REALITY-capable xray-core/uTLS fingerprints currently match the Go uTLS oracle byte-shape fields tracked by this report.
-- xray-rust now works around multi-share fixed-X25519 limitations by keeping only X25519 as a real rustls key share and advertising P-256/P-384/hybrid shares as raw wire-shape entries. That keeps REALITY's X25519 public key stable while preserving ClientHello shape.
+- xray-rust uses real rustls key shares for X25519, final `X25519MLKEM768`, and draft `X25519Kyber768Draft00`; P-256/P-384 shares remain raw wire-shape entries where needed. `FixedX25519KeyShare` keeps REALITY's X25519 public key stable inside X25519 and both hybrid shares.
+- Runtime REALITY completion uses shaped-rustls' ClientHello finalizer to seal the actual generated ClientHello before transcript/write. Dedicated tests assert nonzero final `X25519MLKEM768` ML-KEM material and finalizer-derived auth/session state; this report remains the byte-shape oracle.
 - The `not-reality-capable` rows are TLS1.2-only uTLS fingerprints with no X25519-compatible key_share extension. That is not a shaped-rustls primitive gap: REALITY cannot derive the server-side shared secret without a ClientHello X25519 public key. xray-rust intentionally rejects these before ClientHello generation.
 - If xray-rust decides to expose non-REALITY uTLS shaping later, those TLS1.2-only profiles should be tested outside the REALITY provider path.
 
@@ -44,8 +47,8 @@ XRAY_UTLS_REPORT_MD=docs/shaped-rustls-utls-fingerprint-parity-report.md cargo t
 | 6 | `edge` | `Edge-85` | `match` | `none` |
 | 7 | `360` | `360Browser-7.5` | `not-reality-capable` | `skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share` |
 | 8 | `qq` | `QQBrowser-11.1` | `match` | `none` |
-| 9 | `random` | `Randomized-0` | `match` | `none` |
-| 10 | `randomized` | `Randomized-0` | `match` | `none` |
+| 9 | `random` | `Randomized-0` | `drawn-per-process` | `skipped: resolved from a per-process draw over Xray's ModernFingerprints, so it has no fixed shape to compare` |
+| 10 | `randomized` | `Randomized-0` | `drawn-per-process` | `skipped: resolved from a per-process draw over Xray's ModernFingerprints, so it has no fixed shape to compare` |
 | 11 | `randomizednoalpn` | `Randomized-NoALPN-0` | `not-reality-capable` | `skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share` |
 | 12 | `hellofirefox_120` | `Firefox-120` | `match` | `none` |
 | 13 | `hellofirefox_148` | `Firefox-148` | `match` | `none` |
@@ -124,7 +127,31 @@ REALITY capability skip:
 skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share
 ```
 
-### 3. `randomizednoalpn`
+### 3. `random`
+
+- Status: `drawn-per-process`
+- uTLS ID: `Randomized-0`
+- First actionable difference: `skipped: resolved from a per-process draw over Xray's ModernFingerprints, so it has no fixed shape to compare`
+
+Per-process draw skip:
+
+```text
+skipped: resolved from a per-process draw over Xray's ModernFingerprints, so it has no fixed shape to compare
+```
+
+### 4. `randomized`
+
+- Status: `drawn-per-process`
+- uTLS ID: `Randomized-0`
+- First actionable difference: `skipped: resolved from a per-process draw over Xray's ModernFingerprints, so it has no fixed shape to compare`
+
+Per-process draw skip:
+
+```text
+skipped: resolved from a per-process draw over Xray's ModernFingerprints, so it has no fixed shape to compare
+```
+
+### 5. `randomizednoalpn`
 
 - Status: `not-reality-capable`
 - uTLS ID: `Randomized-NoALPN-0`
@@ -136,7 +163,7 @@ REALITY capability skip:
 skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share
 ```
 
-### 4. `hellorandomizedalpn`
+### 6. `hellorandomizedalpn`
 
 - Status: `not-reality-capable`
 - uTLS ID: `Randomized-ALPN-0`
@@ -148,7 +175,7 @@ REALITY capability skip:
 skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share
 ```
 
-### 5. `hellorandomizednoalpn`
+### 7. `hellorandomizednoalpn`
 
 - Status: `not-reality-capable`
 - uTLS ID: `Randomized-NoALPN-0`
@@ -160,7 +187,7 @@ REALITY capability skip:
 skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share
 ```
 
-### 6. `hellofirefox_55`
+### 8. `hellofirefox_55`
 
 - Status: `not-reality-capable`
 - uTLS ID: `Firefox-55`
@@ -172,7 +199,7 @@ REALITY capability skip:
 skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share
 ```
 
-### 7. `hellofirefox_56`
+### 9. `hellofirefox_56`
 
 - Status: `not-reality-capable`
 - uTLS ID: `Firefox-56`
@@ -184,7 +211,7 @@ REALITY capability skip:
 skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share
 ```
 
-### 8. `hellochrome_58`
+### 10. `hellochrome_58`
 
 - Status: `not-reality-capable`
 - uTLS ID: `Chrome-58`
@@ -196,7 +223,7 @@ REALITY capability skip:
 skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share
 ```
 
-### 9. `hellochrome_62`
+### 11. `hellochrome_62`
 
 - Status: `not-reality-capable`
 - uTLS ID: `Chrome-62`
@@ -208,7 +235,7 @@ REALITY capability skip:
 skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share
 ```
 
-### 10. `helloios_11_1`
+### 12. `helloios_11_1`
 
 - Status: `not-reality-capable`
 - uTLS ID: `iOS-111`
@@ -220,7 +247,7 @@ REALITY capability skip:
 skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share
 ```
 
-### 11. `helloios_12_1`
+### 13. `helloios_12_1`
 
 - Status: `not-reality-capable`
 - uTLS ID: `iOS-12.1`
@@ -232,7 +259,7 @@ REALITY capability skip:
 skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share
 ```
 
-### 12. `helloandroid_11_okhttp`
+### 14. `helloandroid_11_okhttp`
 
 - Status: `not-reality-capable`
 - uTLS ID: `Android-11`
@@ -244,7 +271,7 @@ REALITY capability skip:
 skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share
 ```
 
-### 13. `hello360_auto`
+### 15. `hello360_auto`
 
 - Status: `not-reality-capable`
 - uTLS ID: `360Browser-7.5`
@@ -256,7 +283,7 @@ REALITY capability skip:
 skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share
 ```
 
-### 14. `hello360_7_5`
+### 16. `hello360_7_5`
 
 - Status: `not-reality-capable`
 - uTLS ID: `360Browser-7.5`

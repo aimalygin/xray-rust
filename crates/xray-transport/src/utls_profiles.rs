@@ -1,3 +1,7 @@
+use std::sync::OnceLock;
+
+use rand::{rngs::OsRng, RngCore};
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct UtlsClientHelloProfile {
     pub cipher_suites: &'static [u16],
@@ -4376,9 +4380,77 @@ const PROFILE_42: UtlsClientHelloProfile = UtlsClientHelloProfile {
     encrypted_client_hello_length: Some(186),
 };
 
+/// Resolves a fingerprint name to the ClientHello shape it stands for.
+///
+/// `random` and `randomized` do not name a fixed shape. Xray's `init()` draws
+/// one of `ModernFingerprints` from `crypto/rand` at process start and pins it
+/// for the process's lifetime, so those names mean a different real browser on
+/// every install; this reproduces that. Both properties matter, and they pull
+/// in opposite directions: a name that never varies gives our whole user base
+/// one shared signature, while a name that varies *between connections* makes
+/// a single client stand out more than a fixed one ever would. Hence one draw,
+/// cached forever.
+///
+/// The drawn name is then resolved as an ordinary fingerprint, which is what
+/// keeps the drawn shape identical to the one that name emits on its own.
 pub(crate) fn profile_for_fingerprint(
     fingerprint: &str,
 ) -> Option<&'static UtlsClientHelloProfile> {
+    match fingerprint {
+        "random" => named_profile(process_random_fingerprint()),
+        "randomized" => named_profile(process_randomized_fingerprint()),
+        name => named_profile(name),
+    }
+}
+
+/// The name `random` resolves to for the rest of this process.
+fn process_random_fingerprint() -> &'static str {
+    static DRAWN: OnceLock<&'static str> = OnceLock::new();
+    DRAWN.get_or_init(draw_modern_fingerprint)
+}
+
+/// The name `randomized` resolves to for the rest of this process.
+///
+/// Drawn separately from `random`'s, because Xray's `init()` fills the two map
+/// entries from two independent draws. A config naming both therefore gets two
+/// shapes there, and gets two here.
+fn process_randomized_fingerprint() -> &'static str {
+    static DRAWN: OnceLock<&'static str> = OnceLock::new();
+    DRAWN.get_or_init(draw_modern_fingerprint)
+}
+
+/// Draws one of Xray's `ModernFingerprints` from the OS CSPRNG.
+///
+/// Every call is an independent draw. Production code reaches the *cached*
+/// draw through `fingerprint: "random"`; this is public so tests can sample
+/// the distribution without spawning processes.
+pub fn draw_modern_fingerprint() -> &'static str {
+    let names = xray_utls::XRAY_MODERN_FINGERPRINTS;
+    let mut entropy = [0u8; 8];
+    if OsRng.try_fill_bytes(&mut entropy).is_err() {
+        // Xray discards this error too -- `bigInt, _ := rand.Int(...)` leaves
+        // `bigInt` nil and the loop stops at index 0. An OS RNG this broken has
+        // already broken the handshake that follows, so refusing to dial here
+        // would only bury the real cause.
+        return names[0];
+    }
+
+    modern_fingerprint_at(u64::from_be_bytes(entropy))
+}
+
+/// Maps 64 bits of entropy onto the name table.
+///
+/// Multiply-shift rather than `% len`: 19 divides neither 2^64 nor any power of
+/// two, so a modulo would make the first names likelier than the last. This
+/// keeps the skew under `len / 2^64` -- around 1e-18 -- and, unlike the
+/// rejection sampling an exactly-uniform draw needs, it cannot loop.
+fn modern_fingerprint_at(entropy: u64) -> &'static str {
+    let names = xray_utls::XRAY_MODERN_FINGERPRINTS;
+    let index = (u128::from(entropy) * names.len() as u128) >> 64;
+    names[index as usize]
+}
+
+fn named_profile(fingerprint: &str) -> Option<&'static UtlsClientHelloProfile> {
     match fingerprint {
         "chrome" => Some(&PROFILE_0),
         "hellochrome_133" => Some(&PROFILE_0),
@@ -4403,8 +4475,10 @@ pub(crate) fn profile_for_fingerprint(
         "qq" => Some(&PROFILE_7),
         "helloqq_11_1" => Some(&PROFILE_7),
         "helloqq_auto" => Some(&PROFILE_7),
-        "random" => Some(&PROFILE_8),
-        "randomized" => Some(&PROFILE_8),
+        // `random` and `randomized` are resolved by the caller: they name a
+        // per-process draw, not a fixed shape. `hellorandomized` and its two
+        // siblings keep their frozen snapshots -- see
+        // `docs/config-compatibility.md`.
         "hellorandomized" => Some(&PROFILE_8),
         "randomizednoalpn" => Some(&PROFILE_9),
         "hellorandomizednoalpn" => Some(&PROFILE_9),

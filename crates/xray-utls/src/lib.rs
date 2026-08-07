@@ -64,6 +64,41 @@ pub const XRAY_UTLS_FINGERPRINTS: &[&str] = &[
     "hellochrome_120_pq",
 ];
 
+/// Xray's `ModernFingerprints` (`transport/internet/tls/tls.go`), in Xray's
+/// own source order.
+///
+/// This is the set `fingerprint: "random"` draws from. Xray's `init()` picks
+/// one member with `crypto/rand` at process start and pins it for the
+/// process's lifetime, so the name resolves to a different real browser on
+/// every install.
+///
+/// Two properties this list has to keep, both asserted below: every member is
+/// a name [`normalize_utls_fingerprint`] already knows, and every member is
+/// REALITY-capable. The second is what lets `random` stay in
+/// [`XRAY_REALITY_CAPABLE_FINGERPRINTS`] -- whatever it draws must itself be
+/// usable for a REALITY handshake.
+pub const XRAY_MODERN_FINGERPRINTS: &[&str] = &[
+    "hellofirefox_99",
+    "hellofirefox_102",
+    "hellofirefox_105",
+    "hellofirefox_120",
+    "hellochrome_83",
+    "hellochrome_87",
+    "hellochrome_96",
+    "hellochrome_100",
+    "hellochrome_102",
+    "hellochrome_106_shuffle",
+    "hellochrome_120",
+    "hellochrome_131",
+    "helloios_13",
+    "helloios_14",
+    "helloedge_85",
+    "helloedge_106",
+    "hellosafari_16_0",
+    "hello360_11_0",
+    "helloqq_11_1",
+];
+
 pub const XRAY_REALITY_INCAPABLE_FINGERPRINTS: &[&str] = &[
     "android",
     "360",
@@ -191,7 +226,7 @@ mod tests {
     use super::{
         is_reality_fingerprint_supported, normalize_reality_supported_fingerprint,
         normalize_tls_fingerprint, normalize_utls_fingerprint, DEFAULT_UTLS_FINGERPRINT,
-        UNSAFE_TLS_FINGERPRINT, XRAY_REALITY_CAPABLE_FINGERPRINTS,
+        UNSAFE_TLS_FINGERPRINT, XRAY_MODERN_FINGERPRINTS, XRAY_REALITY_CAPABLE_FINGERPRINTS,
         XRAY_REALITY_INCAPABLE_FINGERPRINTS, XRAY_UTLS_FINGERPRINTS,
     };
 
@@ -271,6 +306,52 @@ mod tests {
             XRAY_REALITY_CAPABLE_FINGERPRINTS.len() + XRAY_REALITY_INCAPABLE_FINGERPRINTS.len(),
             XRAY_UTLS_FINGERPRINTS.len()
         );
+    }
+
+    /// The draw feeds its result straight back into the name lookup, so a
+    /// member Xray knows but we do not would resolve to nothing.
+    #[test]
+    fn modern_fingerprints_are_all_known_names() {
+        for fingerprint in XRAY_MODERN_FINGERPRINTS {
+            assert_eq!(
+                normalize_utls_fingerprint(fingerprint),
+                Some(*fingerprint),
+                "{fingerprint}"
+            );
+        }
+    }
+
+    /// `random` is REALITY-capable, so everything it can draw has to be too.
+    /// Xray gets this for free because `ModernFingerprints` happens to hold
+    /// only X25519-bearing profiles; nothing enforces it there, so we assert
+    /// it here.
+    #[test]
+    fn modern_fingerprints_are_all_reality_capable() {
+        for fingerprint in XRAY_MODERN_FINGERPRINTS {
+            assert!(
+                is_reality_fingerprint_supported(fingerprint),
+                "{fingerprint} is drawable by `random`, which REALITY accepts"
+            );
+        }
+    }
+
+    /// A drawn name is resolved through the ordinary fingerprint table, which
+    /// has no entry for the drawing names themselves. One of them appearing
+    /// here would resolve to nothing and fail every dial that drew it --
+    /// intermittently, on one install in nineteen.
+    #[test]
+    fn modern_fingerprints_contain_no_drawing_names() {
+        for fingerprint in XRAY_MODERN_FINGERPRINTS {
+            assert!(
+                !matches!(*fingerprint, "random" | "randomized" | "randomizednoalpn"),
+                "{fingerprint}"
+            );
+        }
+    }
+
+    #[test]
+    fn modern_fingerprints_match_xrays_table_size() {
+        assert_eq!(XRAY_MODERN_FINGERPRINTS.len(), 19);
     }
 
     #[test]

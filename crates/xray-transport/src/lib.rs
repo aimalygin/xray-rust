@@ -46,6 +46,7 @@ pub use reality_runtime::{
 };
 pub use reality_rustls::RustlsRealityTlsSessionProvider;
 pub use tls::{plain_tls_client_hello_bytes, TlsConnector};
+pub use utls_profiles::draw_modern_fingerprint;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConnectorConfig {

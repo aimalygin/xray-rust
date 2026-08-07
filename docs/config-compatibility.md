@@ -137,6 +137,39 @@ An IP-literal `serverName` is supported. As in uTLS, the SNI extension is
 elided and the rest of the shape shifts to match, rather than the handshake
 failing.
 
+#### What `random` and `randomized` resolve to
+
+`fingerprint: "random"` matches Xray: one of the nineteen names in Xray's
+`ModernFingerprints` table is drawn from the OS CSPRNG the first time the name
+is used, and that draw stands for the rest of the process. Two installs
+therefore send different hellos, while a single install never changes its hello
+between connections — a client whose fingerprint moves from one connection to
+the next is easier to pick out than one that never moves, so both halves
+matter. `randomized` behaves the same way, from its own independent draw.
+
+`randomized` is where we diverge from Xray, and a user picking it should know
+which behaviour they get. Xray hands `randomized` to uTLS's randomized-spec
+generator, which synthesizes a novel ClientHello from a fresh PRNG seed and a
+weight table. We have no port of that generator, so we draw a **real browser
+fingerprint** instead of synthesizing one. The practical difference: a
+synthesized hello is unique to the install but belongs to no real client — its
+JA3 is one no browser produces — whereas a drawn one is shared with every real
+user of that browser version and with every Xray user whose `random` landed on
+the same name. Against a detector asking "is this a shape a browser sends", the
+drawn fingerprint is strictly better; against one asking "have I seen this exact
+shape before", nineteen buckets shared with the Xray population is the crowd we
+would rather be in than a bucket of one.
+
+`randomizednoalpn` is the one name still pinned to a fixed shape. Every entry in
+`ModernFingerprints` carries ALPN, so resolving it by the same draw would add
+the extension the name exists to suppress; the honest fix for it is the
+generator port, not an alias. `hellorandomized`, `hellorandomizedalpn` and
+`hellorandomizednoalpn` are likewise fixed. In Xray those three come from the
+`OtherFingerprints` table with no seed pinned, which makes uTLS synthesize a
+*fresh* spec on every connection — a shape that changes per connection, which is
+worse than a fixed one for the reason above. Ours is a recorded snapshot of one
+such spec.
+
 ### Happy Eyeballs socket option
 
 `streamSettings.sockopt` currently supports only the Xray-compatible

@@ -257,6 +257,13 @@ fn rustls_reality_provider_matches_utls_xray_fingerprints_in_order() {
     let provider = RustlsRealityTlsSessionProvider::new();
 
     for fingerprint in xray_utls::XRAY_REALITY_CAPABLE_FINGERPRINTS {
+        if DRAWN_PER_PROCESS_FINGERPRINTS.contains(fingerprint) {
+            // No fixed shape to compare: these resolve to a per-process draw
+            // over Xray's ModernFingerprints, each of which this loop already
+            // checks under its own name.
+            continue;
+        }
+
         let expected = utls_client_hello_shape_from_oracle(fingerprint);
         let session = provider
             .create_session(RealityClientHelloRequest {
@@ -686,8 +693,19 @@ struct FingerprintParityResult {
     actual: Result<ClientHelloShape, String>,
 }
 
+/// Names that stand for a per-process draw over Xray's `ModernFingerprints`
+/// rather than a fixed shape, so there is nothing for the oracle to compare
+/// them against: the oracle answers `random` with `utls.HelloRandomized` under
+/// a zeroed `crypto/rand`, which is neither what Xray's `init()` produces nor
+/// what we produce. See `docs/config-compatibility.md`.
+const DRAWN_PER_PROCESS_FINGERPRINTS: &[&str] = &["random", "randomized"];
+
 impl FingerprintParityResult {
     fn status(&self) -> &'static str {
+        if DRAWN_PER_PROCESS_FINGERPRINTS.contains(&self.fingerprint) {
+            return "drawn-per-process";
+        }
+
         match (&self.expected, &self.actual) {
             (Err(_), _) => "oracle-error",
             _ if !xray_utls::is_reality_fingerprint_supported(self.fingerprint) => {
@@ -727,7 +745,12 @@ fn collect_fingerprint_parity_results() -> Vec<FingerprintParityResult> {
         .iter()
         .map(|&fingerprint| {
             let expected = try_utls_client_hello_shape_from_oracle(fingerprint);
-            let actual = if !xray_utls::is_reality_fingerprint_supported(fingerprint) {
+            let actual = if DRAWN_PER_PROCESS_FINGERPRINTS.contains(&fingerprint) {
+                Err(
+                    "skipped: resolved from a per-process draw over Xray's ModernFingerprints, so it has no fixed shape to compare"
+                        .to_owned(),
+                )
+            } else if !xray_utls::is_reality_fingerprint_supported(fingerprint) {
                 Err(
                     "skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share"
                         .to_owned(),
@@ -795,6 +818,10 @@ fn build_fingerprint_parity_report(results: &[FingerprintParityResult]) -> Strin
         .iter()
         .filter(|result| result.status() == "not-reality-capable")
         .count();
+    let drawn_per_process = results
+        .iter()
+        .filter(|result| result.status() == "drawn-per-process")
+        .count();
     let mut report = String::new();
 
     writeln!(report, "# shaped-rustls uTLS Fingerprint Parity Report\n").unwrap();
@@ -816,6 +843,11 @@ fn build_fingerprint_parity_report(results: &[FingerprintParityResult]) -> Strin
     writeln!(
         report,
         "- Not REALITY-capable fingerprints: `{not_reality_capable}`"
+    )
+    .unwrap();
+    writeln!(
+        report,
+        "- Drawn per process (no fixed shape to compare): `{drawn_per_process}`"
     )
     .unwrap();
     writeln!(report, "- Go uTLS oracle errors: `{oracle_errors}`").unwrap();
@@ -926,10 +958,10 @@ fn build_fingerprint_parity_report(results: &[FingerprintParityResult]) -> Strin
                 writeln!(report, "Go uTLS oracle error:\n\n```text\n{}\n```", error).unwrap();
             }
             (_, Err(error)) => {
-                let heading = if result.status() == "not-reality-capable" {
-                    "REALITY capability skip"
-                } else {
-                    "Rust generation error"
+                let heading = match result.status() {
+                    "not-reality-capable" => "REALITY capability skip",
+                    "drawn-per-process" => "Per-process draw skip",
+                    _ => "Rust generation error",
                 };
                 writeln!(report, "{heading}:\n\n```text\n{}\n```", error).unwrap();
             }

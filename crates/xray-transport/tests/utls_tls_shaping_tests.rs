@@ -9,6 +9,7 @@ mod utls_tls_shaping_tests {
     const EXT_SERVER_NAME: u16 = 0x0000;
     const EXT_ALPN: u16 = 0x0010;
     const EXT_SUPPORTED_VERSIONS: u16 = 0x002b;
+    const EXT_KEY_SHARE: u16 = 0x0033;
     const CHROME_GREASE_CIPHER: u16 = 0x0a0a;
 
     /// uTLS ClientHello shapes emitted by the pinned Go oracle
@@ -346,6 +347,141 @@ mod utls_tls_shaping_tests {
             .expect("a REALITY-incapable fingerprint must still shape plain TLS");
 
         assert!(!hello.is_empty());
+    }
+
+    /// Rewrites every field a fresh handshake regenerates -- the hello random,
+    /// the legacy session id, and each key share's key exchange -- to zero, so
+    /// two hellos compare equal exactly when they have the same *shape*.
+    ///
+    /// Comparing raw bytes without this would compare fresh entropy and always
+    /// differ; comparing only the extension order would miss a profile swap
+    /// that happened to preserve it.
+    fn shape_signature(hello: &[u8]) -> Vec<u8> {
+        let mut hello = hello.to_vec();
+        let mut cursor = 5 + 4 + 2;
+
+        hello[cursor..cursor + 32].fill(0);
+        cursor += 32;
+        let session_id_len = usize::from(hello[cursor]);
+        cursor += 1;
+        hello[cursor..cursor + session_id_len].fill(0);
+        cursor += session_id_len;
+
+        let cipher_suites_len = usize::from(u16::from_be_bytes([hello[cursor], hello[cursor + 1]]));
+        cursor += 2 + cipher_suites_len;
+        cursor += 1 + usize::from(hello[cursor]);
+        let extensions_len = usize::from(u16::from_be_bytes([hello[cursor], hello[cursor + 1]]));
+        cursor += 2;
+        let end = cursor + extensions_len;
+
+        while cursor + 4 <= end {
+            let extension_type = u16::from_be_bytes([hello[cursor], hello[cursor + 1]]);
+            let payload_len =
+                usize::from(u16::from_be_bytes([hello[cursor + 2], hello[cursor + 3]]));
+            let payload_start = cursor + 4;
+            cursor = payload_start + payload_len;
+
+            if extension_type != EXT_KEY_SHARE {
+                continue;
+            }
+            let mut share = payload_start + 2;
+            while share + 4 <= payload_start + payload_len {
+                let key_exchange_len =
+                    usize::from(u16::from_be_bytes([hello[share + 2], hello[share + 3]]));
+                hello[share + 4..share + 4 + key_exchange_len].fill(0);
+                share += 4 + key_exchange_len;
+            }
+        }
+
+        hello
+    }
+
+    fn shape_of(fingerprint: &str) -> Vec<u8> {
+        shape_signature(
+            &plain_tls_client_hello_bytes(&config(fingerprint, &[]))
+                .unwrap_or_else(|error| panic!("{fingerprint}: ClientHello: {error}")),
+        )
+    }
+
+    /// Xray seeds `random` from `crypto/rand` at process start, so the name
+    /// means a different real browser on every install. A fixed answer would
+    /// hand our whole user base one shared signature -- the opposite of what
+    /// the name promises.
+    ///
+    /// A thousand draws from nineteen names leave a given name unseen with
+    /// probability `(18/19)^1000`, about `1e-23`, so requiring all nineteen is
+    /// not a flaky assertion; it is how a stuck draw gets caught.
+    #[test]
+    fn the_random_draw_covers_every_modern_fingerprint() {
+        let mut seen = std::collections::BTreeSet::new();
+        for _ in 0..1000 {
+            let drawn = xray_transport::draw_modern_fingerprint();
+            assert!(
+                xray_utls::XRAY_MODERN_FINGERPRINTS.contains(&drawn),
+                "drew {drawn}, which is not one of Xray's ModernFingerprints"
+            );
+            seen.insert(drawn);
+        }
+
+        assert_eq!(
+            seen.len(),
+            xray_utls::XRAY_MODERN_FINGERPRINTS.len(),
+            "every modern fingerprint must be reachable, saw {seen:?}"
+        );
+    }
+
+    /// The drawn name has to resolve to the very profile that name resolves to
+    /// on its own -- a real browser shape, not a synthesized one.
+    #[test]
+    fn random_names_resolve_to_a_modern_fingerprints_shape() {
+        let candidates = xray_utls::XRAY_MODERN_FINGERPRINTS
+            .iter()
+            .map(|fingerprint| shape_of(fingerprint))
+            .collect::<Vec<_>>();
+
+        for fingerprint in ["random", "randomized"] {
+            let shape = shape_of(fingerprint);
+            assert!(
+                candidates.contains(&shape),
+                "{fingerprint} must emit one of the modern fingerprints' shapes"
+            );
+        }
+    }
+
+    /// A client whose hello changes between connections is more
+    /// distinguishable than one that never changes, so the draw is made once
+    /// and cached for the process.
+    #[test]
+    fn random_names_are_stable_for_the_life_of_the_process() {
+        for fingerprint in ["random", "randomized"] {
+            for alpn in [&[][..], &["http/1.1"][..]] {
+                let first = shape_signature(
+                    &plain_tls_client_hello_bytes(&config(fingerprint, alpn))
+                        .unwrap_or_else(|error| panic!("{fingerprint}: ClientHello: {error}")),
+                );
+                for _ in 0..16 {
+                    let next = shape_signature(
+                        &plain_tls_client_hello_bytes(&config(fingerprint, alpn))
+                            .unwrap_or_else(|error| panic!("{fingerprint}: ClientHello: {error}")),
+                    );
+                    assert_eq!(
+                        next, first,
+                        "{fingerprint} (alpn {alpn:?}): the draw must not change between connections"
+                    );
+                }
+            }
+        }
+    }
+
+    /// `randomizednoalpn` keeps its frozen snapshot on purpose: every modern
+    /// fingerprint carries ALPN, so drawing one would add the extension the
+    /// name exists to suppress. Documented in `docs/config-compatibility.md`.
+    #[test]
+    fn randomizednoalpn_still_emits_no_alpn_extension() {
+        let hello = plain_tls_client_hello_bytes(&config("randomizednoalpn", &[]))
+            .expect("randomizednoalpn ClientHello must be produced");
+
+        assert_eq!(alpn_protocols(&hello), None);
     }
 
     /// Walks the extension list and renders it the way the Go oracle's
