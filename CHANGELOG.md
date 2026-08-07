@@ -7,6 +7,49 @@ prerelease-quality and do not establish a supported release series.
 
 ## Unreleased
 
+- Fixed the fd-backed TUN pump giving up permanently on a single transient I/O
+  error. Both the read and the write loop used to break on anything that was
+  not `EINTR`, and nothing supervises those tasks, so one `ENOBUFS` or
+  `ENETDOWN` — ordinary conditions while a phone moves between Wi-Fi and
+  cellular — stopped all packet flow for good while the tunnel went on
+  reporting itself connected. Errors are now classified: an interrupted
+  syscall is reissued for free, a packet that cannot be encoded is dropped
+  without consuming the retry budget, a genuinely transient failure backs off
+  and retries, and only a closed descriptor ends the loop.
+- Added `tunFdReadLoopExits`, `tunFdWriteLoopExits` and
+  `tunFdTransientIoErrors`, surfaced through the FFI, the periodic debug log
+  and the Swift adapter. A pump that gives up is no longer silent: a non-zero
+  exit counter means the tunnel has stopped moving packets while still
+  reporting connected, and transient errors growing without an exit means the
+  descriptor is unhealthy but recovering. The packet-I/O log line now also
+  records which utun descriptor and interface the pump bound to.
+- Apple utun discovery now identifies the interface by its kernel control id
+  rather than by an interface-name prefix. Option 2 on `SYSPROTO_CONTROL` is
+  defined per control, and an ordinary `AF_UNIX` socket answers it with four
+  unrelated bytes instead of failing — so a successful lookup never implied
+  "this is a utun". This is the same technique WireGuard adopted after
+  73 minutes with the prefix version, and the one sing-box and Tun2SocksKit
+  use today. It still returns the first match; proving the interface belongs
+  to this provider needs `virtualInterface`, which is iOS 18 and later.
+- `XrayCoreError` now carries its status code and message through the NSError
+  bridge. It conformed only to `Error`, so Swift bridged it using the type
+  name and case index alone and a real engine failure reached the user as
+  "The operation couldn't be completed. (XrayMobileAdapter.XrayCoreError
+  error 0.)", discarding the one thing that said what went wrong.
+- Imported VLESS configs now enable `http`, `tls` and `quic` sniffing and pin
+  `dns.queryStrategy` to `UseIPv4`, and a DNS mode switch no longer discards
+  that pin. Sniffing is the only way a flow recovers its domain when the
+  fake-IP mapping is gone — after a tunnel restart the table is empty while
+  clients still hold cached fake IPs, and without it those connections are
+  dialled literally as unroutable `198.19.x.y`. Existing profiles keep the
+  config they were imported with; re-import the share link to pick this up.
+- The Apple tunnel no longer advertises IPv6. It used to install a `::/0`
+  default route, but the fake-IP pool is IPv4-only, so a captured IPv6
+  destination could never be restored to a domain and was dialled as a literal
+  through a server that may have no IPv6 at all — a flow that hangs rather
+  than failing over. The trade-off is real and deliberate: traffic to IPv6
+  literals now leaves outside the tunnel. Capturing `::/0` and rejecting it in
+  the engine is the fix that removes the trade-off, and is not done yet.
 - Added the WebSocket and HTTPUpgrade stream transports for VLESS outbounds.
   `streamSettings.network` now accepts `ws`/`websocket` and `httpupgrade`
   alongside `tcp`/`raw`, with `wsSettings` and `httpupgradeSettings` carrying
