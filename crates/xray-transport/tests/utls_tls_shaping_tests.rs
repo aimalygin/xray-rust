@@ -1,5 +1,10 @@
 mod utls_tls_shaping_tests {
-    use xray_transport::{plain_tls_client_hello_bytes, TlsClientConfig};
+    use std::net::Ipv4Addr;
+
+    use tokio::io::AsyncReadExt;
+    use tokio::net::TcpListener;
+    use xray_routing::{Network, Target, TargetAddr};
+    use xray_transport::{plain_tls_client_hello_bytes, TlsClientConfig, TlsConnector};
 
     const EXT_SERVER_NAME: u16 = 0x0000;
     const EXT_ALPN: u16 = 0x0010;
@@ -509,5 +514,112 @@ mod utls_tls_shaping_tests {
             error.to_string().contains("nosuchbrowser"),
             "the error must name the offending fingerprint, got: {error}"
         );
+    }
+
+    /// Dials `connector` at a throwaway loopback listener and hands back the
+    /// first TLS record that listener saw. It never replies, so the handshake
+    /// dies right after -- by then the bytes under test are already on the wire.
+    async fn recorded_client_hello(connector: &TlsConnector, config: &TlsClientConfig) -> Vec<u8> {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("loopback listener must bind");
+        let addr = listener
+            .local_addr()
+            .expect("listener must report its address");
+
+        let recorded = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("a client must connect");
+            // One read is not one record: a shaped hello runs past a kilobyte,
+            // and a short one would truncate the extension list into a parse
+            // that walks off the end of the buffer.
+            let mut record = vec![0u8; 5];
+            stream
+                .read_exact(&mut record)
+                .await
+                .expect("the record header must arrive");
+            let payload_len = usize::from(u16::from_be_bytes([record[3], record[4]]));
+            record.resize(5 + payload_len, 0);
+            stream
+                .read_exact(&mut record[5..])
+                .await
+                .expect("the whole record must arrive");
+            record
+        });
+
+        // The handshake cannot complete against a listener that never speaks;
+        // which error it dies with is not what this is about.
+        let _ = connector
+            .connect(
+                &Target::new(TargetAddr::Ip(addr.ip()), addr.port(), Network::Tcp),
+                config,
+            )
+            .await;
+
+        recorded.await.expect("the recording task must finish")
+    }
+
+    /// Every other test in this file inspects a hello synthesized without a
+    /// socket. This one inspects the bytes a real dial puts on the wire, so a
+    /// change to the connect path cannot silently unshape live handshakes while
+    /// the synthesized tests stay green.
+    #[tokio::test]
+    async fn dialed_connections_send_the_shaped_hello() {
+        // `system()` plus `allow_insecure: true` is the only combination that
+        // gives both shaping and a self-signed local listener. Do NOT reach for
+        // `with_pinned_client_config` here: it bypasses the cache *and* the
+        // fingerprint validation, so this test would pass while shaping never
+        // ran -- which is precisely the failure it exists to detect, and
+        // precisely what the repo's other live-handshake test
+        // (`crates/xray-core-rs/tests/local_xray_interop_tests.rs`) does.
+        let connector = TlsConnector::system().expect("system roots must load");
+        let config = TlsClientConfig {
+            server_name: "example.com".to_owned(),
+            allow_insecure: true,
+            alpn: Vec::new(),
+            fingerprint: Some("chrome".to_owned()),
+        };
+
+        // Twice through the same connector. The second dial takes the memoized
+        // config, and with it the `Arc`-shared customizer -- the path every
+        // connection after the first takes in production, and the one no
+        // synthesized test can reach: `plain_tls_client_hello_bytes` builds a
+        // fresh config per call, so a customizer that shaped only its first
+        // hello would leave every test above green.
+        let dialed = [
+            ("first", recorded_client_hello(&connector, &config).await),
+            ("second", recorded_client_hello(&connector, &config).await),
+        ];
+        let synthesized =
+            plain_tls_client_hello_bytes(&config).expect("chrome ClientHello must be produced");
+
+        for (dial, hello) in &dialed {
+            assert_eq!(
+                cipher_suites(hello).first().copied(),
+                Some(CHROME_GREASE_CIPHER),
+                "{dial} dial: the hello on the wire must be shaped"
+            );
+            assert_eq!(
+                alpn_protocols(hello),
+                alpn(&["h2", "http/1.1"]),
+                "{dial} dial: the hello on the wire must carry the profile's ALPN"
+            );
+
+            // Those two spot checks would still pass if the wire hello lost its
+            // pinned extension order -- the part rustls randomizes per
+            // connection when nobody pins it, and the part the oracle fixtures
+            // above exist to hold. Comparing the whole shape against the hello
+            // built from this very config carries that oracle coverage onto the
+            // wire instead of restating a fraction of it.
+            assert_eq!(
+                cipher_suites(hello),
+                cipher_suites(&synthesized),
+                "{dial} dial: the wire cipher suites must be the shaped ones"
+            );
+            assert_eq!(
+                extension_order(hello),
+                extension_order(&synthesized),
+                "{dial} dial: the wire extension order must be the shaped one"
+            );
+        }
     }
 }
