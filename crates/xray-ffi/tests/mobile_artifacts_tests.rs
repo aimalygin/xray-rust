@@ -259,7 +259,11 @@ fn apple_packet_pump_reuses_poll_storage_and_fails_outside_worker_queue() {
     assert!(provider.contains("protectedDNSDomains.contains(domain)"));
     assert!(provider.contains("excludingServerAddresses: resolvedConfig.excludedServerAddresses"));
     assert!(provider.contains("ipv4Settings.excludedRoutes = ipv4ExcludedRoutes"));
-    assert!(provider.contains("ipv6Settings.excludedRoutes = ipv6ExcludedRoutes"));
+    // The tunnel must not advertise IPv6: the fake-IP pool is IPv4-only, so a
+    // captured IPv6 destination can never be restored to a domain and would
+    // hang instead of failing over. Re-adding these settings silently would
+    // reintroduce that, so pin their absence rather than deleting the check.
+    assert!(!provider.contains("settings.ipv6Settings = "));
     let apply_network_settings = provider
         .find("setTunnelNetworkSettings(")
         .expect("Apple provider should apply packet-tunnel routes");
