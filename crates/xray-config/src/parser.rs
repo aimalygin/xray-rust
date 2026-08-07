@@ -2627,10 +2627,12 @@ impl Parser<'_> {
             ],
         );
 
-        let (path, early_data_bytes) =
-            split_early_data_from_path(self.string_at(settings, "path").unwrap_or_default());
+        let (path, early_data_bytes) = split_early_data_from_path(
+            self.optional_string_at(settings, "path", format!("{settings_path}.path"))
+                .unwrap_or_default(),
+        );
         let mut host = self
-            .string_at(settings, "host")
+            .optional_string_at(settings, "host", format!("{settings_path}.host"))
             .filter(|host| !host.is_empty())
             .map(ToOwned::to_owned);
         let mut headers = self.parse_transport_headers(settings, &settings_path)?;
@@ -2694,8 +2696,10 @@ impl Parser<'_> {
             &["path", "host", "headers", "acceptProxyProtocol"],
         );
 
-        let (path, early_data_bytes) =
-            split_early_data_from_path(self.string_at(settings, "path").unwrap_or_default());
+        let (path, early_data_bytes) = split_early_data_from_path(
+            self.optional_string_at(settings, "path", format!("{settings_path}.path"))
+                .unwrap_or_default(),
+        );
         let headers = self.parse_transport_headers(settings, &settings_path)?;
 
         // Where websocket folds it away with a warning, httpupgrade refuses:
@@ -2714,7 +2718,7 @@ impl Parser<'_> {
         Some(HttpUpgradeSettings {
             path,
             host: self
-                .string_at(settings, "host")
+                .optional_string_at(settings, "host", format!("{settings_path}.host"))
                 .filter(|host| !host.is_empty())
                 .map(ToOwned::to_owned),
             // No canonicalization here: Xray assigns straight into the header

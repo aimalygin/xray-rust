@@ -3318,6 +3318,28 @@ fn rejects_unknown_ws_settings_field_with_path() {
 }
 
 #[test]
+fn rejects_non_string_ws_path_with_path() {
+    // A silently ignored path would dial `/` and 404 against a real server.
+    assert_parse_error_path(
+        &raw_with_stream_settings(
+            r#""network": "ws", "security": "none", "wsSettings": {"path": 8}"#,
+        ),
+        "$.outbounds[0].streamSettings.wsSettings.path",
+    );
+}
+
+#[test]
+fn rejects_non_string_httpupgrade_host_with_path() {
+    assert_parse_error_path(
+        &raw_with_stream_settings(
+            r#""network": "httpupgrade", "security": "none",
+               "httpupgradeSettings": {"host": true}"#,
+        ),
+        "$.outbounds[0].streamSettings.httpupgradeSettings.host",
+    );
+}
+
+#[test]
 fn rejects_non_string_ws_header_value_with_path() {
     assert_parse_error_path(
         &raw_with_stream_settings(
