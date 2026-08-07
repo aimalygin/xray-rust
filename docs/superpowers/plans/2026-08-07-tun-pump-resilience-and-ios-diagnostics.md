@@ -66,6 +66,11 @@ Nothing supervises the spawned tasks — `TunFdRuntime` only awaits them in `sto
 - Modify: `crates/xray-core-rs/src/tun_fd.rs` (add classifier; rewrite loop bodies at 146-208)
 - Test: `crates/xray-core-rs/src/tun_fd.rs` inline `mod tests`
 
+**This task lands as a single commit, deliberately.** `.cargo/config.toml:2` sets
+`rustflags = ["-Dwarnings"]`, so `dead_code` is an error. A classifier with no
+production caller does not compile, which rules out committing it separately
+from the loop changes that call it.
+
 - [ ] **Step 1: Write the failing test**
 
 Add to the `mod tests` block in `crates/xray-core-rs/src/tun_fd.rs` (after `darwin_utun_encoded_packet_borrows_payload_and_adds_family_header`):
@@ -160,20 +165,7 @@ In `crates/xray-core-rs/src/tun_fd.rs`, inside `mod platform` (the `#[cfg(unix)]
 
 Add `use std::time::Duration;` to the `mod platform` imports if it is not already present.
 
-- [ ] **Step 4: Run the tests to verify they pass**
-
-Run: `cargo test -p xray-core-rs --lib tun_fd`
-
-Expected: PASS — 6 tests (3 new, 3 pre-existing).
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add crates/xray-core-rs/src/tun_fd.rs
-git commit -m "feat(tun): classify tun fd io errors as retryable or fatal"
-```
-
-- [ ] **Step 6: Wire the classifier into the read loop**
+- [ ] **Step 4: Wire the classifier into the read loop**
 
 Replace the body of `read_loop` in `crates/xray-core-rs/src/tun_fd.rs` (currently lines 146-174) with:
 
@@ -224,7 +216,7 @@ Replace the body of `read_loop` in `crates/xray-core-rs/src/tun_fd.rs` (currentl
     }
 ```
 
-- [ ] **Step 7: Wire the classifier into the write loop**
+- [ ] **Step 5: Wire the classifier into the write loop**
 
 Replace the body of `write_loop` in `crates/xray-core-rs/src/tun_fd.rs` (currently lines 176-208) with:
 
@@ -279,13 +271,13 @@ Replace the body of `write_loop` in `crates/xray-core-rs/src/tun_fd.rs` (current
 
 Note the behaviour change beyond error handling: `record_tun_fd_write_batch` now runs only when the batch actually reached the descriptor. Previously it was recorded even when `write_packet_batch` had failed, which inflated `tunFdWriteBatches`.
 
-- [ ] **Step 8: Verify the crate still builds and its tests pass**
+- [ ] **Step 6: Verify the crate builds and its tests pass**
 
 Run: `cargo test -p xray-core-rs --lib tun_fd`
 
-Expected: PASS. The loops now retry transient failures; the counters that make a give-up visible arrive in Task 2.
+Expected: PASS — 6 tests (3 new, 3 pre-existing). The loops now retry transient failures; the counters that make a give-up visible arrive in Task 2.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add crates/xray-core-rs/src/tun_fd.rs
