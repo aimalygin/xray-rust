@@ -1372,6 +1372,42 @@ tlsSettings.fingerprint; they now forward it, together with alpn."
 
 ---
 
+### Task 7A: Let a shaped ClientHello survive an IP-literal SNI
+
+**Added mid-execution after review of Tasks 6 and 7 found a blocking defect. Must land before this branch is usable.**
+
+rustls omits the `server_name` extension when the SNI is an IP literal — correct per RFC 6066, which forbids sending SNI for IP addresses. But the shaping plan still lists `EXT_SERVER_NAME` in the extension order and counts GREASE positions against it, so the finalizer rejects the hello outright. Reproduced directly:
+
+```
+None/ip:       OK (225 bytes)
+unsafe/ip:     OK (225 bytes)
+chrome/ip:     FAIL — ClientHello GREASE position is out of range for extensions
+chrome/domain: OK (1721 bytes)
+firefox/ip:    FAIL — extension order must contain every non-final emitted extension exactly once
+```
+
+Two production paths reach it, and both worked before this branch, because `fingerprint` was hardcoded `None` at each site:
+
+1. **DNS outbound**, `security: "tls"` with no `tlsSettings.serverName`, resolving to `DnsTcpConnector::TlsFromTarget` with an IP target — the ordinary DoT case. Every dial fails.
+2. **VLESS outbound** with `tlsSettings.serverName` set to an IP literal, the common no-domain plus `allowInsecure` setup.
+
+The failure mode is the bad one: the config parses, the outbound builds, `client_config_for` returns a config, and the rejection only arrives at dial time after the TCP connect, as an opaque error naming neither the fingerprint nor the SNI.
+
+**Decision: fix it in the `shaped-rustls` fork**, at `/Users/antonmalygin/shaped-rustls` (pinned in `Cargo.toml:65` at `f5ddf3a7`). The finalizer must tolerate a planned-but-unemitted extension, which is exactly what uTLS does — it elides a zero-length `SNIExtension` and shifts the rest — so this is our divergence from the reference, not a property of the protocol. Two alternatives were considered and rejected: dropping SNI from the plan on our side breaks `build_client_config`'s documented "never sees the server name" invariant, expands the config cache key, and puts the fiddly GREASE-position recount in the harder place; rejecting the config outright would refuse configs Xray-core accepts, which is the compatibility this whole plan exists to gain.
+
+**Acceptance criteria:**
+
+- A shaped ClientHello builds for an IP-literal SNI, for every fingerprint, with the SNI extension absent and GREASE positions consistent with the shortened list.
+- The emitted order for an IP SNI matches what uTLS emits for the same fingerprint and an IP SNI. Use the Go oracle to establish that, rather than assuming the shortened order is simply the domain order minus one entry.
+- Domain-SNI hellos are byte-identical to before the fork change. Dump all 61 fingerprint names on both ALPN paths before and after and diff — the method Task 5's and Task 5A's reviews used.
+- REALITY is unaffected. The same finalizer backs it, so the full REALITY oracle suite must still pass, including the `#[ignore]`d live-oracle tests, which must be run explicitly with `-- --include-ignored`.
+- The fork change is pushed and `Cargo.toml:65` repinned to the new rev.
+- A regression test in `xray-transport` covering IP-literal SNI across several fingerprints, running under plain `cargo test`.
+
+**Note the latent REALITY case.** REALITY uses the same finalizer and is only safe today because its `serverName` is always a camouflage domain. Fixing this removes a trap rather than just unblocking plain TLS.
+
+---
+
 ### Task 8: End-to-end shaping check against a local TLS listener
 
 The unit tests assert bytes from a synthesized hello. This asserts the bytes that actually leave the socket, so a future change to the connector cannot silently unshape the handshake.
