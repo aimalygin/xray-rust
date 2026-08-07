@@ -2896,11 +2896,20 @@ impl Parser<'_> {
 
     fn parse_network(&mut self, stream: Option<&Value>, index: usize) -> Option<StreamNetwork> {
         let network_path = format!("$.outbounds[{index}].streamSettings.network");
-        match stream
-            .and_then(|stream| stream.get("network"))
-            .and_then(Value::as_str)
-            .unwrap_or("tcp")
-        {
+        // Only an absent `network` falls back to `tcp`, the way Xray's nil
+        // `*TransportProtocol` does. A present one has to be a string, or
+        // `"network": 5` quietly dials plain TCP instead of the transport the
+        // rest of `streamSettings` was written for.
+        let Some(stream_settings) = stream.filter(|stream| stream.get("network").is_some()) else {
+            return Some(StreamNetwork::Raw);
+        };
+        // `TransportProtocol.Build` lowercases before matching, so `WS` and
+        // `RAW` are as valid as `ws` and `raw`.
+        let network = self
+            .optional_string_at(stream_settings, "network", network_path.clone())?
+            .to_ascii_lowercase();
+
+        match network.as_str() {
             // Xray renamed the `tcp` transport to `raw`; both names stay valid.
             "tcp" | "raw" => Some(StreamNetwork::Raw),
             "ws" | "websocket" => Some(StreamNetwork::WebSocket),
@@ -2935,11 +2944,19 @@ impl Parser<'_> {
 
     fn parse_security(&mut self, stream: Option<&Value>, index: usize) -> Option<StreamSecurity> {
         let security_path = format!("$.outbounds[{index}].streamSettings.security");
-        match stream
-            .and_then(|stream| stream.get("security"))
-            .and_then(Value::as_str)
-            .unwrap_or("none")
-        {
+        // As with `network`, only an absent key defaults. A silent fallback
+        // here is worse than a wrong transport: `"security": 5` would strip a
+        // REALITY or TLS outbound down to plaintext.
+        let Some(stream_settings) = stream.filter(|stream| stream.get("security").is_some()) else {
+            return Some(StreamSecurity::None);
+        };
+        // Xray switches on `strings.ToLower(c.Security)`, so `TLS` and
+        // `REALITY` are as valid as their lowercase spellings.
+        let security = self
+            .optional_string_at(stream_settings, "security", security_path.clone())?
+            .to_ascii_lowercase();
+
+        match security.as_str() {
             "none" => Some(StreamSecurity::None),
             "tls" => {
                 let tls_settings = stream.and_then(|stream| stream.get("tlsSettings"));

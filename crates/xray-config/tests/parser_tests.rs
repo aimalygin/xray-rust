@@ -2940,6 +2940,95 @@ fn rejects_other_stream_network_with_path() {
 }
 
 #[test]
+fn rejects_non_string_stream_network_with_path() {
+    // Falling back to `tcp` here would dial plain TCP against a server
+    // expecting the transport the rest of `streamSettings` describes.
+    assert_parse_error_path(
+        &raw_with_stream_settings(r#""network": 5, "security": "none""#),
+        "$.outbounds[0].streamSettings.network",
+    );
+}
+
+#[test]
+fn rejects_null_stream_network_with_path() {
+    assert_parse_error_path(
+        &raw_with_stream_settings(r#""network": null, "security": "none""#),
+        "$.outbounds[0].streamSettings.network",
+    );
+}
+
+#[test]
+fn uppercase_stream_networks_parse_the_way_xray_lowercases_them() {
+    for network in ["RAW", "TCP", "Raw"] {
+        let parsed = parse_xray_json(&raw_with_stream_settings(&format!(
+            r#""network": "{network}", "security": "none""#
+        )))
+        .unwrap_or_else(|_| panic!("`{network}` must parse as the raw transport"));
+
+        assert_eq!(
+            parsed.config.outbounds[0].stream.transport,
+            StreamTransport::Raw
+        );
+    }
+
+    for network in ["WS", "WebSocket"] {
+        let parsed = parse_xray_json(&raw_with_stream_settings(&format!(
+            r#""network": "{network}", "security": "none""#
+        )))
+        .unwrap_or_else(|_| panic!("`{network}` must parse as the websocket transport"));
+
+        assert!(matches!(
+            parsed.config.outbounds[0].stream.transport,
+            StreamTransport::WebSocket(_)
+        ));
+    }
+}
+
+#[test]
+fn rejects_non_string_stream_security_with_path() {
+    // Defaulting to `none` would silently strip TLS off the outbound and send
+    // the tunnel out in plaintext.
+    assert_parse_error_path(
+        &raw_with_stream_settings(r#""network": "tcp", "security": 5"#),
+        "$.outbounds[0].streamSettings.security",
+    );
+}
+
+#[test]
+fn rejects_null_stream_security_with_path() {
+    assert_parse_error_path(
+        &raw_with_stream_settings(r#""network": "tcp", "security": null"#),
+        "$.outbounds[0].streamSettings.security",
+    );
+}
+
+#[test]
+fn uppercase_stream_security_parses_the_way_xray_lowercases_it() {
+    for security in ["NONE", "None"] {
+        let parsed = parse_xray_json(&raw_with_stream_settings(&format!(
+            r#""network": "tcp", "security": "{security}""#
+        )))
+        .unwrap_or_else(|_| panic!("`{security}` must parse as no stream security"));
+
+        assert_eq!(
+            parsed.config.outbounds[0].stream.security,
+            StreamSecurity::None
+        );
+    }
+
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "tcp", "security": "TLS",
+           "tlsSettings": {"serverName": "server.example"}"#,
+    ))
+    .expect("`TLS` must parse as tls");
+
+    assert!(matches!(
+        parsed.config.outbounds[0].stream.security,
+        StreamSecurity::Tls(_)
+    ));
+}
+
+#[test]
 fn tcp_and_raw_networks_parse_as_the_raw_transport() {
     for network in ["tcp", "raw"] {
         let parsed = parse_xray_json(&raw_with_stream_settings(&format!(
