@@ -11,7 +11,8 @@ use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
 use xray_config::{
     CoreConfig, DnsOutboundSettings, Network, OutboundConfig, OutboundSettings,
-    RoutingDomainStrategy, RoutingRule, StreamSecurity, StreamSettings, TargetAddr, VlessUser,
+    RoutingDomainStrategy, RoutingRule, StreamSecurity, StreamSettings, StreamTransport,
+    TargetAddr, VlessUser,
 };
 use xray_proxy::vless::{
     encode_request_header, VisionStream, VisionStreamIo, VlessCommand, VlessRequest,
@@ -348,6 +349,9 @@ impl DnsOutbound {
         stream: &StreamSettings,
         conn_idle_timeout: Duration,
     ) -> Result<Self, CoreError> {
+        if !stream_transport_is_dialable(stream) {
+            return Err(CoreError::UnsupportedOutboundNetwork);
+        }
         let tcp_connector = dns_tcp_connector(stream)?;
         let happy_eyeballs = dns_happy_eyeballs_mode(stream);
         Ok(Self::new_with_transport(
@@ -1127,7 +1131,9 @@ impl OutboundRouter {
 
     fn compile_tcp_outbound(&self, index: usize) -> Result<TcpOutbound, CachedOutboundError> {
         let outbound = &self.config.outbounds[index];
-        if outbound.stream.network != Network::Tcp {
+        if outbound.stream.network != Network::Tcp
+            || !stream_transport_is_dialable(&outbound.stream)
+        {
             return Err(CachedOutboundError::UnsupportedOutboundNetwork);
         }
 
@@ -1268,8 +1274,21 @@ pub async fn select_udp_outbound_for_session_with_resolver(
     build_udp_outbound(outbound)
 }
 
+/// Whether the stream's transport is one the dialers actually implement.
+///
+/// `streamSettings.network: "ws"` and `"httpupgrade"` parse into a
+/// `StreamTransport` but nothing below the config layer reads it yet, and the
+/// stream's `network` is `Tcp` for all three — so without this a ws profile
+/// would build a plain TCP outbound, connect, and then fail somewhere in the
+/// proxy layer with nothing pointing back at the transport.
+///
+/// Delete this and every guard that calls it when the transports are wired.
+fn stream_transport_is_dialable(stream: &StreamSettings) -> bool {
+    matches!(stream.transport, StreamTransport::Raw)
+}
+
 fn build_tcp_outbound(outbound: &OutboundConfig) -> Result<TcpOutbound, CoreError> {
-    if outbound.stream.network != Network::Tcp {
+    if outbound.stream.network != Network::Tcp || !stream_transport_is_dialable(&outbound.stream) {
         return Err(CoreError::UnsupportedOutboundNetwork);
     }
 
@@ -1490,7 +1509,7 @@ fn target_network(target: &Target) -> Network {
 }
 
 fn build_vless_tcp_outbound(outbound: &OutboundConfig) -> Result<VlessTcpOutbound, CoreError> {
-    if outbound.stream.network != Network::Tcp {
+    if outbound.stream.network != Network::Tcp || !stream_transport_is_dialable(&outbound.stream) {
         return Err(CoreError::UnsupportedOutboundNetwork);
     }
 
@@ -1900,10 +1919,10 @@ mod tests {
     use tokio::net::TcpListener;
     use uuid::Uuid;
     use xray_config::{
-        DnsConfig, DnsServerConfig, DomainMatcher, HappyEyeballsSettings, IpCidr, IpMatcher,
-        RealitySettings, RealityShortId, RoutingConfig, RoutingDomainStrategy, RoutingPortRange,
-        RoutingRule, SocketOptions, StreamSettings, StreamTransport, TlsSettings,
-        VlessOutboundSettings,
+        DnsConfig, DnsServerConfig, DomainMatcher, HappyEyeballsSettings, HttpUpgradeSettings,
+        IpCidr, IpMatcher, RealitySettings, RealityShortId, RoutingConfig, RoutingDomainStrategy,
+        RoutingPortRange, RoutingRule, SocketOptions, StreamSettings, TlsSettings,
+        VlessOutboundSettings, WebSocketSettings,
     };
     use xray_proxy::vless::{unpad_vision_block, VisionCommand};
     use xray_transport::{CachingDnsResolver, DnsLookup, RealityTlsEngine, TransportError};
@@ -3076,6 +3095,70 @@ mod tests {
             cached_error,
             CoreError::UnsupportedOutboundNetwork
         ));
+    }
+
+    /// The ws and httpupgrade transports parse but nothing below the config
+    /// layer dials them yet, and `stream.network` is `Tcp` for all three — so
+    /// every builder has to refuse rather than quietly hand back a plain TCP
+    /// outbound. Delete this test together with `stream_transport_is_dialable`
+    /// when the transports are wired.
+    #[test]
+    fn an_unwired_stream_transport_fails_closed_instead_of_dialing_plain_tcp() {
+        let websocket = StreamTransport::WebSocket(WebSocketSettings {
+            path: "/chat".to_owned(),
+            ..WebSocketSettings::default()
+        });
+        let httpupgrade = StreamTransport::HttpUpgrade(HttpUpgradeSettings {
+            path: "/up".to_owned(),
+            ..HttpUpgradeSettings::default()
+        });
+
+        for transport in [websocket, httpupgrade] {
+            for mut outbound in [
+                direct_selection_freedom("proxy"),
+                direct_selection_vless("proxy"),
+            ] {
+                outbound.stream.transport = transport.clone();
+
+                let error = build_tcp_outbound(&outbound)
+                    .err()
+                    .unwrap_or_else(|| panic!("{transport:?} must not build a TCP outbound"));
+                assert!(matches!(error, CoreError::UnsupportedOutboundNetwork));
+            }
+
+            let mut vless = direct_selection_vless("proxy");
+            vless.stream.transport = transport.clone();
+            assert!(matches!(
+                build_vless_tcp_outbound(&vless).unwrap_err(),
+                CoreError::UnsupportedOutboundNetwork
+            ));
+            assert!(matches!(
+                build_udp_outbound(&vless).unwrap_err(),
+                CoreError::UnsupportedOutboundNetwork
+            ));
+
+            // The cached router path builds through its own copy of the check.
+            let mut config = direct_selection_config();
+            config.outbounds = vec![vless.clone()];
+            config.default_outbound_tag = Some("proxy".to_owned());
+            config.routing.rules.clear();
+            let router = OutboundRouter::new(Arc::new(config));
+            assert!(matches!(
+                router.select_tcp_outbound().unwrap_err(),
+                CoreError::UnsupportedOutboundNetwork
+            ));
+
+            // As does the DNS outbound, which reads the stream separately.
+            assert!(matches!(
+                DnsOutbound::new_with_stream(
+                    DnsOutboundSettings::default(),
+                    &vless.stream,
+                    Duration::from_secs(60),
+                )
+                .unwrap_err(),
+                CoreError::UnsupportedOutboundNetwork
+            ));
+        }
     }
 
     #[test]
