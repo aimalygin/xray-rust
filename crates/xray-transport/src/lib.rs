@@ -23,6 +23,7 @@ pub mod reality;
 pub mod reality_connector;
 pub mod reality_runtime;
 mod reality_rustls;
+pub mod stream;
 mod tls;
 mod utls_profiles;
 mod utls_shaping;
