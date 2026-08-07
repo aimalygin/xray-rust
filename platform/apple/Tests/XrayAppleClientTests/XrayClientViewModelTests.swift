@@ -354,7 +354,7 @@ final class XrayClientViewModelTests: XCTestCase {
 
         let startedProfile = try XCTUnwrap(tunnelController.startedProfile)
         let startedDNS = try Self.dnsObject(in: startedProfile.configJSON)
-        XCTAssertEqual(startedDNS["queryStrategy"] as? String, "UseIP")
+        XCTAssertEqual(startedDNS["queryStrategy"] as? String, "UseIPv4")
         XCTAssertEqual(startedDNS["servers"] as? [String], ["tcp://192.0.2.53:5353"])
         XCTAssertNil(startedDNS["fakeIp"])
         XCTAssertEqual(store.load().configJSON, sourceConfigJSON)

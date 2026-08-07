@@ -717,8 +717,11 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
             required: mode.requiresUpstream
         )
         let sourceDNS = root["dns"] as? [String: Any]
+        // `queryStrategy` belongs to the profile, not to the DNS mode override:
+        // an IPv4-only pin exists because the tunnel cannot carry IPv6, and a
+        // mode switch must not quietly re-enable it.
         var dns: [String: Any] = [
-            "queryStrategy": "UseIP",
+            "queryStrategy": sourceDNS?["queryStrategy"] ?? "UseIP",
         ]
         if let hosts = sourceDNS?["hosts"] {
             dns["hosts"] = hosts

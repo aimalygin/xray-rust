@@ -417,7 +417,7 @@ final class XrayClientProfileTests: XCTestCase {
         let fakeIP = try XCTUnwrap(dns["fakeIp"] as? [String: Any])
 
         XCTAssertEqual(Set(dns.keys), Set(["fakeIp", "hosts", "queryStrategy"]))
-        XCTAssertEqual(dns["queryStrategy"] as? String, "UseIP")
+        XCTAssertEqual(dns["queryStrategy"] as? String, "UseIPv6")
         XCTAssertNil(dns["servers"])
         XCTAssertEqual(
             dns["hosts"] as? [String: String],
@@ -504,6 +504,38 @@ final class XrayClientProfileTests: XCTestCase {
             let dns = try Self.dnsObject(in: profile.effectiveConfigJSON())
             XCTAssertEqual(dns["tag"] as? String, "dns-route", "mode=\(mode.rawValue)")
         }
+    }
+
+    func testEffectiveConfigPreservesSourceQueryStrategyInGeneratedModes() throws {
+        let profile = XrayClientProfile(
+            name: "IPv4 DNS",
+            providerBundleIdentifier: "org.example.XrayClient.Tunnel",
+            serverAddress: "xray-rust",
+            configJSON: #"{"dns":{"queryStrategy":"UseIPv4"},"outbounds":[]}"#,
+            dnsTestMode: .fakeIP,
+            dnsTestTransport: .routedTCP,
+            dnsTestUpstream: "192.0.2.53"
+        )
+
+        let dns = try Self.dnsObject(in: profile.effectiveConfigJSON())
+
+        XCTAssertEqual(dns["queryStrategy"] as? String, "UseIPv4")
+    }
+
+    func testEffectiveConfigDefaultsQueryStrategyWhenSourceOmitsIt() throws {
+        let profile = XrayClientProfile(
+            name: "Unpinned DNS",
+            providerBundleIdentifier: "org.example.XrayClient.Tunnel",
+            serverAddress: "xray-rust",
+            configJSON: #"{"dns":{"tag":"dns-route"},"outbounds":[]}"#,
+            dnsTestMode: .fakeIP,
+            dnsTestTransport: .routedTCP,
+            dnsTestUpstream: "192.0.2.53"
+        )
+
+        let dns = try Self.dnsObject(in: profile.effectiveConfigJSON())
+
+        XCTAssertEqual(dns["queryStrategy"] as? String, "UseIP")
     }
 
     func testEffectiveConfigBracketsBareIPv6ForTCPTransports() throws {
@@ -605,7 +637,7 @@ final class XrayClientProfileTests: XCTestCase {
         let dns = try Self.dnsObject(in: effectiveConfigJSON)
         let rules = try Self.routingRules(in: effectiveConfigJSON)
 
-        XCTAssertEqual(dns["queryStrategy"] as? String, "UseIP")
+        XCTAssertEqual(dns["queryStrategy"] as? String, "UseIPv4")
         XCTAssertEqual(dns["servers"] as? [String], ["tcp://192.0.2.53"])
         XCTAssertEqual(rules[0]["domain"] as? [String], ["geosite:cn"])
         XCTAssertEqual(rules[0]["outboundTag"] as? String, "direct")
