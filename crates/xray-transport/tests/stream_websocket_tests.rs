@@ -197,3 +197,356 @@ mod stream_websocket_tests {
             .is_none());
     }
 }
+
+/// The handshake and the framed stream, against a hand-rolled server.
+mod stream_websocket_handshake_tests {
+    use std::time::Duration;
+
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::{TcpListener, TcpStream};
+    use xray_transport::stream::{
+        accept_key_for, connect_websocket, encode_early_data, WebSocketConfig,
+    };
+
+    async fn loopback() -> (TcpListener, std::net::SocketAddr) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = listener.local_addr().expect("local_addr");
+        (listener, addr)
+    }
+
+    fn config(path: &str) -> WebSocketConfig {
+        WebSocketConfig {
+            path: path.to_owned(),
+            host: "example.com".to_owned(),
+            headers: Vec::new(),
+            early_data_bytes: 0,
+            heartbeat_period_secs: 0,
+        }
+    }
+
+    fn header_value(request: &str, name: &str) -> Option<String> {
+        request.lines().find_map(|line| {
+            let (key, value) = line.split_once(':')?;
+            key.eq_ignore_ascii_case(name)
+                .then(|| value.trim().to_owned())
+        })
+    }
+
+    /// Answers the handshake with a valid 101 derived from the client's key,
+    /// then hands back the request and keeps the socket for the test.
+    async fn accept_handshake(listener: &TcpListener) -> (TcpStream, String) {
+        let (mut stream, _) = listener.accept().await.expect("a client must connect");
+        let mut buffer = vec![0u8; 8192];
+        let read = stream.read(&mut buffer).await.expect("a request arrives");
+        buffer.truncate(read);
+        let request = String::from_utf8(buffer).expect("the request must be UTF-8");
+
+        let key = header_value(&request, "Sec-WebSocket-Key")
+            .expect("the handshake must carry Sec-WebSocket-Key");
+        let response = format!(
+            "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n\
+             Connection: Upgrade\r\nSec-WebSocket-Accept: {}\r\n\r\n",
+            accept_key_for(&key)
+        );
+        stream
+            .write_all(response.as_bytes())
+            .await
+            .expect("the response must go out");
+
+        (stream, request)
+    }
+
+    #[test]
+    fn the_accept_key_follows_rfc_6455() {
+        // The RFC's own worked example.
+        assert_eq!(
+            accept_key_for("dGhlIHNhbXBsZSBub25jZQ=="),
+            "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+        );
+    }
+
+    #[test]
+    fn early_data_is_base64url_without_padding() {
+        // Standard base64 of these bytes ends in '=' and uses '+' and '/';
+        // Xray uses RawURLEncoding, so neither may appear.
+        let encoded = encode_early_data(&[0xfb, 0xff, 0xfe]);
+
+        assert!(!encoded.contains('='), "no padding: {encoded}");
+        assert!(
+            !encoded.contains('+') && !encoded.contains('/'),
+            "url alphabet: {encoded}"
+        );
+        assert_eq!(encoded, "-__-");
+    }
+
+    #[tokio::test]
+    async fn the_handshake_carries_the_rfc_6455_headers() {
+        let (listener, addr) = loopback().await;
+        let server = tokio::spawn(async move {
+            let (stream, request) = accept_handshake(&listener).await;
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            drop(stream);
+            request
+        });
+
+        let stream = TcpStream::connect(addr).await.expect("connect");
+        connect_websocket(Box::new(stream), &config("/chat?x=1"))
+            .await
+            .expect("the handshake must succeed");
+
+        let request = server.await.expect("server task");
+        assert!(
+            request.starts_with("GET /chat?x=1 HTTP/1.1\r\n"),
+            "WebSocket sends a real query string, unescaped:\n{request}"
+        );
+        assert!(request.contains("\r\nHost: example.com\r\n"), "{request}");
+        assert!(request.contains("\r\nUpgrade: websocket\r\n"), "{request}");
+        assert!(request.contains("\r\nConnection: Upgrade\r\n"), "{request}");
+        assert!(
+            request.contains("\r\nSec-WebSocket-Version: 13\r\n"),
+            "{request}"
+        );
+        assert!(request.contains("\r\nSec-WebSocket-Key: "), "{request}");
+        assert!(
+            !request.contains("Sec-WebSocket-Protocol"),
+            "no early data was configured:\n{request}"
+        );
+        // The browser persona rides along here too.
+        assert!(
+            request.contains("\r\nSec-Fetch-Mode: websocket\r\n"),
+            "{request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_wrong_accept_key_is_rejected() {
+        let (listener, addr) = loopback().await;
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept");
+            let mut buffer = vec![0u8; 8192];
+            let _ = stream.read(&mut buffer).await;
+            let _ = stream
+                .write_all(
+                    b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n\
+                      Connection: Upgrade\r\nSec-WebSocket-Accept: AAAAAAAAAAAAAAAAAAAAAAAAAAA=\r\n\r\n",
+                )
+                .await;
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        });
+
+        let stream = TcpStream::connect(addr).await.expect("connect");
+        assert!(
+            connect_websocket(Box::new(stream), &config("/chat"))
+                .await
+                .is_err(),
+            "an accept key that does not derive from ours must be refused"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_connection_token_list_is_accepted() {
+        // Unlike httpupgrade, gorilla parses these as token lists, so a proxy
+        // appending `keep-alive` does not break the handshake.
+        let (listener, addr) = loopback().await;
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept");
+            let mut buffer = vec![0u8; 8192];
+            let read = stream.read(&mut buffer).await.expect("request");
+            buffer.truncate(read);
+            let request = String::from_utf8(buffer).expect("UTF-8");
+            let key = header_value(&request, "Sec-WebSocket-Key").expect("key");
+            let response = format!(
+                "HTTP/1.1 101 Web Socket Protocol Handshake\r\n\
+                 Upgrade: WebSocket, foo\r\nConnection: keep-alive, Upgrade\r\n\
+                 Sec-WebSocket-Accept: {}\r\n\r\n",
+                accept_key_for(&key)
+            );
+            let _ = stream.write_all(response.as_bytes()).await;
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        });
+
+        let stream = TcpStream::connect(addr).await.expect("connect");
+        connect_websocket(Box::new(stream), &config("/chat"))
+            .await
+            .expect("token lists and a different reason phrase are both fine");
+    }
+
+    #[tokio::test]
+    async fn a_first_write_within_the_budget_travels_in_the_handshake() {
+        let (listener, addr) = loopback().await;
+        let server = tokio::spawn(async move {
+            let (mut stream, request) = accept_handshake(&listener).await;
+            // Anything the client sends after the handshake would be a frame.
+            let mut trailing = vec![0u8; 256];
+            let read = tokio::time::timeout(Duration::from_millis(300), stream.read(&mut trailing))
+                .await
+                .map(|read| read.expect("read"))
+                .unwrap_or(0);
+            trailing.truncate(read);
+            (request, trailing)
+        });
+
+        let stream = TcpStream::connect(addr).await.expect("connect");
+        let mut config = config("/chat");
+        config.early_data_bytes = 16;
+
+        let mut upgraded = connect_websocket(Box::new(stream), &config)
+            .await
+            .expect("the deferred dial must not fail before the first write");
+        upgraded
+            .write_all(b"0123456789abcdef")
+            .await
+            .expect("exactly 16 bytes, the inclusive boundary");
+
+        let (request, trailing) = server.await.expect("server task");
+        assert_eq!(
+            header_value(&request, "Sec-WebSocket-Protocol").as_deref(),
+            Some(encode_early_data(b"0123456789abcdef").as_str()),
+            "the write must ride inside the handshake:\n{request}"
+        );
+        assert!(
+            trailing.is_empty(),
+            "no frame may be sent for data the handshake already carried, got {trailing:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_first_write_over_the_budget_disables_early_data() {
+        let (listener, addr) = loopback().await;
+        let server = tokio::spawn(async move {
+            let (mut stream, request) = accept_handshake(&listener).await;
+            let mut trailing = vec![0u8; 256];
+            let read = tokio::time::timeout(Duration::from_millis(500), stream.read(&mut trailing))
+                .await
+                .map(|read| read.expect("read"))
+                .unwrap_or(0);
+            trailing.truncate(read);
+            (request, trailing)
+        });
+
+        let stream = TcpStream::connect(addr).await.expect("connect");
+        let mut config = config("/chat");
+        config.early_data_bytes = 16;
+
+        let mut upgraded = connect_websocket(Box::new(stream), &config)
+            .await
+            .expect("deferred dial");
+        upgraded
+            .write_all(b"0123456789abcdefg")
+            .await
+            .expect("one byte past the budget");
+
+        let (request, trailing) = server.await.expect("server task");
+        assert!(
+            !request.contains("Sec-WebSocket-Protocol"),
+            "Xray omits the header outright rather than truncating:\n{request}"
+        );
+        assert_eq!(trailing[0], 0x82, "the payload goes out as a binary frame");
+        assert_eq!(trailing[1], 0x80 | 17, "masked, 17 bytes");
+    }
+
+    #[tokio::test]
+    async fn a_config_header_gorilla_owns_fails_the_dial() {
+        // gorilla answers this with "duplicate header not allowed" rather than
+        // overwriting, so the dial fails on Xray too.
+        let (listener, addr) = loopback().await;
+        tokio::spawn(async move {
+            let _ = listener.accept().await;
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        });
+
+        let stream = TcpStream::connect(addr).await.expect("connect");
+        let mut config = config("/chat");
+        config.headers = vec![("Connection".to_owned(), "keep-alive".to_owned())];
+
+        assert!(
+            connect_websocket(Box::new(stream), &config).await.is_err(),
+            "a config header gorilla writes itself must fail the dial"
+        );
+    }
+
+    #[tokio::test]
+    async fn payload_round_trips_as_frames() {
+        let (listener, addr) = loopback().await;
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = accept_handshake(&listener).await;
+            // One unmasked binary frame carrying "pong-me".
+            let _ = stream.write_all(&[0x82, 0x07]).await;
+            let _ = stream.write_all(b"pong-me").await;
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        });
+
+        let stream = TcpStream::connect(addr).await.expect("connect");
+        let mut upgraded = connect_websocket(Box::new(stream), &config("/chat"))
+            .await
+            .expect("handshake");
+
+        let mut received = [0u8; 7];
+        upgraded.read_exact(&mut received).await.expect("read");
+        assert_eq!(&received, b"pong-me");
+
+        server.await.expect("server task");
+    }
+
+    #[tokio::test]
+    async fn a_heartbeat_period_sends_an_empty_ping() {
+        let (listener, addr) = loopback().await;
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = accept_handshake(&listener).await;
+            let mut frame = [0u8; 8];
+            let read = tokio::time::timeout(Duration::from_secs(4), stream.read(&mut frame))
+                .await
+                .expect("a ping must arrive within a few periods")
+                .expect("read");
+            frame[..read].to_vec()
+        });
+
+        let stream = TcpStream::connect(addr).await.expect("connect");
+        let mut config = config("/chat");
+        config.heartbeat_period_secs = 1;
+        let mut upgraded = connect_websocket(Box::new(stream), &config)
+            .await
+            .expect("handshake");
+
+        // The keepalive rides the read path, which is where a relay parks.
+        let mut sink = [0u8; 16];
+        let _ = tokio::time::timeout(Duration::from_secs(3), upgraded.read(&mut sink)).await;
+
+        let frame = server.await.expect("server task");
+        assert_eq!(frame[0], 0x89, "FIN set, opcode 0x9 (ping)");
+        assert_eq!(frame[1], 0x80, "masked, empty payload");
+        assert_eq!(frame.len(), 6, "header plus the mask key: {frame:?}");
+    }
+
+    #[tokio::test]
+    async fn shutdown_writes_a_close_frame_with_code_1000() {
+        let (listener, addr) = loopback().await;
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = accept_handshake(&listener).await;
+            let mut frame = [0u8; 16];
+            let read = tokio::time::timeout(Duration::from_secs(3), stream.read(&mut frame))
+                .await
+                .expect("a close frame must arrive")
+                .expect("read");
+            frame[..read].to_vec()
+        });
+
+        let stream = TcpStream::connect(addr).await.expect("connect");
+        let mut upgraded = connect_websocket(Box::new(stream), &config("/chat"))
+            .await
+            .expect("handshake");
+        upgraded.shutdown().await.expect("shutdown");
+
+        let frame = server.await.expect("server task");
+        assert_eq!(frame[0], 0x88, "FIN set, opcode 0x8 (close)");
+        assert_eq!(frame[1], 0x80 | 2, "masked, two-byte payload");
+
+        let key = [frame[2], frame[3], frame[4], frame[5]];
+        let payload = [frame[6] ^ key[0], frame[7] ^ key[1]];
+        assert_eq!(
+            payload,
+            1000u16.to_be_bytes(),
+            "CloseNormalClosure, no reason"
+        );
+    }
+}
