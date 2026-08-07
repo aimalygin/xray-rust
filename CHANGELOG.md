@@ -7,6 +7,38 @@ prerelease-quality and do not establish a supported release series.
 
 ## Unreleased
 
+- TLS connections are now shaped to look like a browser.
+  `tlsSettings.fingerprint` selects a uTLS ClientHello shape from the same 58
+  names xray-core accepts, and an absent or empty value means `chrome` rather
+  than no shaping, which is the default xray-core itself applies.
+  `fingerprint: "unsafe"` is the opt-out and sends the TLS stack's own hello.
+  Fourteen of the 58 names — the TLS-1.2-era profiles — are shaped but not
+  byte-exact, because rustls emits a `supported_versions` extension uTLS does
+  not and nothing in the shaping API can suppress it; `docs/config-compatibility.md`
+  carries the detail and the full name list.
+- Shaped connections handshake on the aws-lc-rs crypto backend rather than
+  ring, and offer the post-quantum key share their profile plans:
+  X25519MLKEM768 for `chrome`, none at all for a TLS-1.2-era profile. Matching
+  a current browser requires both, and both are real changes — in what goes on
+  the wire, and in which backend performs the handshake.
+  `fingerprint: "unsafe"` keeps the previous ring path.
+- Session resumption is disabled on shaped connections. A resumed handshake
+  emits a second ClientHello carrying `pre_shared_key`, an extension the
+  fingerprint never described, so shaping and resumption cannot both hold.
+  Every reconnect is now a full handshake where it previously resumed, which
+  costs a round trip and a signature verification on links that reconnect
+  often. `fingerprint: "unsafe"` keeps resumption.
+- `fingerprint: "random"` and `fingerprint: "randomized"` now draw a real
+  fingerprint per process instead of both resolving to one frozen shape. Every
+  install used to send the same ClientHello for these names — the opposite of
+  what someone selecting them is asking for. Each name now draws independently
+  from xray-core's `ModernFingerprints` on first use and keeps that draw for
+  the life of the process, so two installs differ while one install never
+  changes between connections. `randomized` diverges from xray-core in kind:
+  xray-core hands it to uTLS's randomized-spec generator, which has no port
+  here, so a real browser shape is drawn rather than a novel one synthesized.
+  `randomizednoalpn` stays pinned to a fixed shape, because every modern
+  fingerprint carries the ALPN extension that name exists to suppress.
 - Removed three `fingerprint` names that xray-core does not accept:
   `hellochrome_133`, `hellofirefox_148` and `hellosafari_26_3`. They are real
   uTLS `ClientHelloID`s but appear in none of the three maps Xray's
