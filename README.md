@@ -51,7 +51,7 @@ plus the full narrative and measurement caveats, are in
 | --- | --- | --- |
 | Local inbounds | SOCKS5 no-auth `CONNECT` and `UDP ASSOCIATE`, HTTP `CONNECT`, TUN | No authenticated proxy inbound or server-side Xray protocols |
 | Outbounds | Freedom/direct, VLESS client over TCP, and DNS | No VMess, Trojan, Shadowsocks, WireGuard, balancers, or outbound chaining |
-| Security and flow | TLS, REALITY, `xtls-rprx-vision`, VLESS UDP and XUDP paths | Only the documented config subset and supported REALITY fingerprints |
+| Security and flow | TLS and REALITY with uTLS-shaped ClientHellos, `xtls-rprx-vision`, VLESS UDP and XUDP paths | Only the documented config subset; REALITY rejects the 14 fingerprints that carry no X25519 key share, while plain TLS accepts all 61 |
 | Routing and DNS | Field rules with domain/IP/network/port matchers, `geosite`/`geoip`, Xray-style string/object DNS server selection, routed multi-address A/AAAA/CNAME resolution with global/per-server `queryStrategy` and TTL-aware cache, ordered `dns.hosts` IP arrays, one bounded per-Core fake-IP mapper, and ordered DNS-outbound Direct/Drop/Reject/Hijack policy shared by TUN, SOCKS TCP/UDP, and HTTP CONNECT; Direct supports UDP/TCP rewrite plus TCP/TLS/REALITY `streamSettings` | No `UseSystem` route probing, managed `dns.servers` DoH/DoT/DoQ, negative/stale cache, or full Xray DNS/routing parity |
 | Mobile | Swift Package/Xcode sample for iOS, tvOS, and macOS; Android library and `VpnService` adapter | Signing, entitlements, VPN consent, foreground policy, and release packaging remain host-app responsibilities |
 

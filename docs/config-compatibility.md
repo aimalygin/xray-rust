@@ -78,13 +78,12 @@ runtime currently selects the first user.
 same thing). Security values are:
 
 - `none`;
-- `tls`, with `serverName` and `allowInsecure` (certificate verification is
-  enabled by default);
+- `tls`, with `serverName`, `allowInsecure` (certificate verification is
+  enabled by default), `fingerprint`, and `alpn`, described below;
 - `reality`, with `serverName`, a supported `fingerprint`, base64url
   `publicKey`, hexadecimal `shortId`, optional `spiderX`, and optional
   `mldsa65Verify`.
 
-TLS fingerprint shaping and non-empty custom ALPN lists are not supported.
 `tcpSettings.header.type` — equally `rawSettings.header.type` — may be absent,
 empty, or `none`. WebSocket, HTTP/2,
 gRPC, QUIC, KCP, and other stream transports are not supported. Outbound mux,
@@ -93,6 +92,50 @@ are rejected.
 
 VLESS UDP is carried over the supported TCP transport using VLESS datagram or
 XUDP framing; it does not make `streamSettings.network: "udp"` valid.
+
+### TLS ClientHello shaping
+
+`security: "tls"` sends a uTLS-shaped ClientHello, as Xray-core does on every
+TLS connection. `tlsSettings.fingerprint` selects the shape from the same 61
+names Xray accepts. An absent or empty value means `chrome`, matching Xray's
+`GetFingerprint("")`, so shaping is the default rather than an opt-in; an
+unknown name is rejected at parse time with a JSON path and the offending
+value. Unlike `realitySettings.fingerprint`, no X25519 key share is required,
+so the fourteen names REALITY rejects are usable here.
+
+`fingerprint: "unsafe"` is Xray's own escape hatch, spelled the same way: it
+disables shaping and sends the TLS stack's own ClientHello.
+
+`tlsSettings.alpn` is an array of strings; a non-string entry is rejected with
+an indexed path. Where the configured list lands follows Xray rather than
+approximating it: uTLS takes ALPN from the fingerprint profile and overwrites
+the configured list, so on this transport the configured list reaches the
+ClientHello only when it is exactly `["http/1.1"]`, the one case Xray rebuilds
+the hello for. Every other list is ignored, leaving whatever ALPN the profile
+itself declares — for some profiles, none at all. With `fingerprint: "unsafe"`
+there is no profile, so a nonempty configured list is sent as-is.
+
+A shaped connection runs on the aws-lc-rs crypto backend rather than ring, and
+offers the post-quantum key share its profile plans — X25519MLKEM768 for
+`chrome`, none at all for a TLS-1.2-era profile. That is what matching a
+current browser requires, but it is a real change both in what goes on the wire
+and in which backend performs the handshake. Session resumption is also
+disabled while shaping, because a resumed handshake emits a second ClientHello
+carrying `pre_shared_key`, an extension the fingerprint never described.
+`fingerprint: "unsafe"` keeps the previous ring path, resumption included.
+
+Fourteen of the 61 names are shaped but not byte-exact: the TLS-1.2-era
+profiles, which are exactly the ones REALITY rejects. Their uTLS hello declares
+no `supported_versions` extension, while the TLS stack emits that extension on
+every ClientHello it builds — a TLS-1.2-only configuration included, where it
+carries just `0x0303` — and nothing in the shaping API can suppress it. The
+extension order is pinned so uTLS's own order survives as an exact prefix and
+the one extra extension sits last. The remaining names declare the extension
+themselves, so nothing is appended to their hellos.
+
+An IP-literal `serverName` is supported. As in uTLS, the SNI extension is
+elided and the rest of the shape shifts to match, rather than the handshake
+failing.
 
 ### Happy Eyeballs socket option
 

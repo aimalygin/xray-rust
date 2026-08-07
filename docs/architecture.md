@@ -25,7 +25,7 @@ flowchart LR
 | `xray-config` | Parses the supported Xray JSON subset, diagnostics, geodata lookup, and resource budgets |
 | `xray-routing` | Platform-neutral target/session types and router contracts |
 | `xray-proxy` | SOCKS/HTTP parsing plus VLESS, Vision, UDP, and XUDP wire framing |
-| `xray-utls` | Supported REALITY fingerprint names and normalization |
+| `xray-utls` | uTLS fingerprint names and normalization, shared by plain TLS and REALITY |
 | `xray-transport` | DNS, socket protection, TCP, TLS, REALITY handshake, and shaped ClientHello support |
 | `xray-tun` | Bounded packet queues, counters, and diagnostic events |
 | `xray-runtime` | Cooperative shutdown primitive |
