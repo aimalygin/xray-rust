@@ -19,6 +19,7 @@ use xray_proxy::vless::{
     VlessResponseStream, DEFAULT_VISION_SEED,
 };
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
+use xray_transport::stream::{HttpUpgradeConfig, TransportLayer, WebSocketConfig};
 use xray_transport::{
     BoxedTransportStream, ConnectorConfig, DnsResolver, HappyEyeballsConfig, RealityClientConfig,
     SystemDnsResolver, TlsClientConfig, TransportDialer, TransportStream,
@@ -243,9 +244,9 @@ struct VlessTcpOutboundPayload {
     server: Target,
     user: VlessUser,
     transport: ConnectorConfig,
-    /// What the config layers over the security layer. Only `Raw` admits
-    /// Vision; the dial-time framing itself is built from this.
-    stream_transport: StreamTransport,
+    /// The dial-ready framing layered over the security layer, with the host
+    /// precedence already resolved. Only `Raw` admits Vision.
+    transport_layer: TransportLayer,
     happy_eyeballs: Option<HappyEyeballsConfig>,
 }
 
@@ -492,8 +493,8 @@ impl VlessTcpOutbound {
         &self.payload.transport
     }
 
-    pub fn stream_transport(&self) -> &StreamTransport {
-        &self.payload.stream_transport
+    pub fn transport_layer(&self) -> &TransportLayer {
+        &self.payload.transport_layer
     }
 
     pub fn user(&self) -> &VlessUser {
@@ -511,7 +512,7 @@ impl VlessTcpOutbound {
         validate_connector_flow(
             self.user().flow.as_deref(),
             self.transport(),
-            self.stream_transport(),
+            self.transport_layer(),
         )
         .map(|flow| flow.uses_vision() && !flow.allows_udp443())
         .unwrap_or(false)
@@ -1142,15 +1143,16 @@ impl OutboundRouter {
 
     fn compile_tcp_outbound(&self, index: usize) -> Result<TcpOutbound, CachedOutboundError> {
         let outbound = &self.config.outbounds[index];
-        if outbound.stream.network != Network::Tcp
-            || !stream_transport_is_dialable(&outbound.stream)
-        {
+        if outbound.stream.network != Network::Tcp {
             return Err(CachedOutboundError::UnsupportedOutboundNetwork);
         }
 
         match &outbound.settings {
             OutboundSettings::Dns(_) => Err(CachedOutboundError::NoSupportedOutbound),
             OutboundSettings::Freedom => {
+                if !stream_transport_is_dialable(&outbound.stream) {
+                    return Err(CachedOutboundError::UnsupportedOutboundNetwork);
+                }
                 if outbound.stream.security != StreamSecurity::None {
                     return Err(CachedOutboundError::UnsupportedOutboundSecurity);
                 }
@@ -1285,27 +1287,73 @@ pub async fn select_udp_outbound_for_session_with_resolver(
     build_udp_outbound(outbound)
 }
 
-/// Whether the stream's transport is one the dialers actually implement.
+/// Whether this stream's transport is one the *freedom* and *DNS* outbounds
+/// can dial.
 ///
-/// `streamSettings.network: "ws"` and `"httpupgrade"` parse into a
-/// `StreamTransport` but nothing below the config layer reads it yet, and the
-/// stream's `network` is `Tcp` for all three — so without this a ws profile
-/// would build a plain TCP outbound, connect, and then fail somewhere in the
-/// proxy layer with nothing pointing back at the transport.
-///
-/// Delete this and every guard that calls it when the transports are wired.
+/// VLESS carries a `TransportLayer` and dials ws and httpupgrade for real.
+/// These two do not: they hand the stream straight to a socket, and the
+/// stream's `network` is `Tcp` for all three transports, so without this a
+/// `network: "ws"` freedom outbound would silently dial plain TCP.
 fn stream_transport_is_dialable(stream: &StreamSettings) -> bool {
     matches!(stream.transport, StreamTransport::Raw)
 }
 
+/// Resolves the config's transport into the dial-ready one.
+///
+/// The `Host` header follows Xray's precedence -- the transport's own `host`,
+/// else the TLS server name, else the destination address -- and never carries
+/// a port, because Xray sets the header from those three values directly and
+/// only appends a port to the dial URI.
+fn build_transport_layer(
+    outbound: &OutboundConfig,
+    connector: &ConnectorConfig,
+) -> Result<TransportLayer, CoreError> {
+    let OutboundSettings::Vless(settings) = &outbound.settings else {
+        return Err(CoreError::NoSupportedOutbound);
+    };
+
+    let host_fallback = || match connector {
+        ConnectorConfig::Tls(tls) if !tls.server_name.is_empty() => tls.server_name.clone(),
+        ConnectorConfig::Reality(reality) if !reality.server_name.is_empty() => {
+            reality.server_name.clone()
+        }
+        _ => match &settings.server {
+            TargetAddr::Domain(domain) => domain.clone(),
+            TargetAddr::Ip(ip) => ip.to_string(),
+        },
+    };
+
+    Ok(match &outbound.stream.transport {
+        StreamTransport::Raw => TransportLayer::Raw,
+        StreamTransport::WebSocket(websocket) => TransportLayer::WebSocket(WebSocketConfig {
+            path: websocket.path.clone(),
+            host: websocket.host.clone().unwrap_or_else(host_fallback),
+            headers: websocket.headers.clone(),
+            early_data_bytes: websocket.early_data_bytes,
+            heartbeat_period_secs: websocket.heartbeat_period_secs,
+        }),
+        StreamTransport::HttpUpgrade(upgrade) => TransportLayer::HttpUpgrade(HttpUpgradeConfig {
+            path: upgrade.path.clone(),
+            host: upgrade.host.clone().unwrap_or_else(host_fallback),
+            headers: upgrade.headers.clone(),
+            // `ed` on this transport carries no payload; any positive value
+            // only means "do not block waiting for the 101".
+            wait_for_response: upgrade.early_data_bytes == 0,
+        }),
+    })
+}
+
 fn build_tcp_outbound(outbound: &OutboundConfig) -> Result<TcpOutbound, CoreError> {
-    if outbound.stream.network != Network::Tcp || !stream_transport_is_dialable(&outbound.stream) {
+    if outbound.stream.network != Network::Tcp {
         return Err(CoreError::UnsupportedOutboundNetwork);
     }
 
     match &outbound.settings {
         OutboundSettings::Dns(_) => Err(CoreError::NoSupportedOutbound),
         OutboundSettings::Freedom => {
+            if !stream_transport_is_dialable(&outbound.stream) {
+                return Err(CoreError::UnsupportedOutboundNetwork);
+            }
             if outbound.stream.security != StreamSecurity::None {
                 return Err(CoreError::UnsupportedOutboundSecurity);
             }
@@ -1320,6 +1368,9 @@ fn build_udp_outbound(outbound: &OutboundConfig) -> Result<UdpOutbound, CoreErro
     match &outbound.settings {
         OutboundSettings::Dns(_) => Err(CoreError::NoSupportedOutbound),
         OutboundSettings::Freedom => {
+            if !stream_transport_is_dialable(&outbound.stream) {
+                return Err(CoreError::UnsupportedOutboundNetwork);
+            }
             if outbound.stream.security != StreamSecurity::None {
                 return Err(CoreError::UnsupportedOutboundSecurity);
             }
@@ -1520,7 +1571,7 @@ fn target_network(target: &Target) -> Network {
 }
 
 fn build_vless_tcp_outbound(outbound: &OutboundConfig) -> Result<VlessTcpOutbound, CoreError> {
-    if outbound.stream.network != Network::Tcp || !stream_transport_is_dialable(&outbound.stream) {
+    if outbound.stream.network != Network::Tcp {
         return Err(CoreError::UnsupportedOutboundNetwork);
     }
 
@@ -1572,8 +1623,8 @@ fn build_vless_tcp_outbound(outbound: &OutboundConfig) -> Result<VlessTcpOutboun
         payload: Arc::new(VlessTcpOutboundPayload {
             server: Target::new(addr, settings.port, RoutingNetwork::Tcp),
             user,
+            transport_layer: build_transport_layer(outbound, &transport)?,
             transport,
-            stream_transport: outbound.stream.transport.clone(),
             happy_eyeballs: happy_eyeballs_config(&outbound.stream),
         }),
     })
@@ -1665,12 +1716,12 @@ fn validate_stream_flow(flow: Option<&str>, security: &StreamSecurity) -> Result
 fn validate_connector_flow(
     flow: Option<&str>,
     transport: &ConnectorConfig,
-    stream_transport: &StreamTransport,
+    stream_transport: &TransportLayer,
 ) -> Result<VisionFlow, CoreError> {
     // Vision splices itself into the TLS connection's internals, so anything
     // layered between the two breaks it. Xray refuses the same pairing with
     // "XTLS only supports TLS and REALITY directly for now."
-    if !matches!(stream_transport, StreamTransport::Raw) {
+    if !matches!(stream_transport, TransportLayer::Raw) {
         return validate_vision_flow(flow, false);
     }
 
@@ -1776,13 +1827,14 @@ pub async fn open_vless_tcp_stream_with_resolver_and_dialer(
     let flow = validate_connector_flow(
         outbound.user().flow.as_deref(),
         outbound.transport(),
-        outbound.stream_transport(),
+        outbound.transport_layer(),
     )?;
 
     let resolved_server = resolve_server_candidates(outbound.server(), dns_resolver).await?;
     let mut stream = transport_dialer
-        .connect_resolved(
+        .connect_stream(
             outbound.transport(),
+            outbound.transport_layer(),
             outbound.server(),
             &resolved_server,
             outbound.happy_eyeballs(),
@@ -1853,7 +1905,7 @@ pub(crate) async fn open_vless_udp_stream_with_resolver_dialer_and_options(
     let flow = validate_connector_flow(
         outbound.user().flow.as_deref(),
         outbound.transport(),
-        outbound.stream_transport(),
+        outbound.transport_layer(),
     )?;
     let uses_vision = flow.uses_vision();
     if options.reject_udp443_for_regular_vision
@@ -1867,8 +1919,9 @@ pub(crate) async fn open_vless_udp_stream_with_resolver_dialer_and_options(
 
     let resolved_server = resolve_server_candidates(outbound.server(), dns_resolver).await?;
     let mut stream = transport_dialer
-        .connect_resolved(
+        .connect_stream(
             outbound.transport(),
+            outbound.transport_layer(),
             outbound.server(),
             &resolved_server,
             outbound.happy_eyeballs(),
@@ -3005,7 +3058,7 @@ mod tests {
                     level: 0,
                 },
                 transport: ConnectorConfig::Tcp,
-                stream_transport: StreamTransport::Raw,
+                transport_layer: TransportLayer::Raw,
                 happy_eyeballs: Some(HappyEyeballsConfig {
                     prioritize_ipv6: false,
                     interleave: 1,
@@ -3126,13 +3179,12 @@ mod tests {
         ));
     }
 
-    /// The ws and httpupgrade transports parse but nothing below the config
-    /// layer dials them yet, and `stream.network` is `Tcp` for all three — so
-    /// every builder has to refuse rather than quietly hand back a plain TCP
-    /// outbound. Delete this test together with `stream_transport_is_dialable`
-    /// when the transports are wired.
+    /// VLESS dials ws and httpupgrade for real now, but freedom and the DNS
+    /// outbound hand the stream straight to a socket and carry no transport
+    /// layer. Since `stream.network` is `Tcp` for all three transports, those
+    /// two have to refuse rather than quietly dial plain TCP.
     #[test]
-    fn an_unwired_stream_transport_fails_closed_instead_of_dialing_plain_tcp() {
+    fn a_transport_freedom_cannot_dial_fails_closed_instead_of_dialing_plain_tcp() {
         let websocket = StreamTransport::WebSocket(WebSocketSettings {
             path: "/chat".to_owned(),
             ..WebSocketSettings::default()
@@ -3143,51 +3195,72 @@ mod tests {
         });
 
         for transport in [websocket, httpupgrade] {
-            for mut outbound in [
-                direct_selection_freedom("proxy"),
-                direct_selection_vless("proxy"),
-            ] {
-                outbound.stream.transport = transport.clone();
-
-                let error = build_tcp_outbound(&outbound)
-                    .err()
-                    .unwrap_or_else(|| panic!("{transport:?} must not build a TCP outbound"));
-                assert!(matches!(error, CoreError::UnsupportedOutboundNetwork));
-            }
-
-            let mut vless = direct_selection_vless("proxy");
-            vless.stream.transport = transport.clone();
+            let mut freedom = direct_selection_freedom("proxy");
+            freedom.stream.transport = transport.clone();
             assert!(matches!(
-                build_vless_tcp_outbound(&vless).unwrap_err(),
+                build_tcp_outbound(&freedom).unwrap_err(),
                 CoreError::UnsupportedOutboundNetwork
             ));
             assert!(matches!(
-                build_udp_outbound(&vless).unwrap_err(),
+                build_udp_outbound(&freedom).unwrap_err(),
                 CoreError::UnsupportedOutboundNetwork
             ));
 
-            // The cached router path builds through its own copy of the check.
-            let mut config = direct_selection_config();
-            config.outbounds = vec![vless.clone()];
-            config.default_outbound_tag = Some("proxy".to_owned());
-            config.routing.rules.clear();
-            let router = OutboundRouter::new(Arc::new(config));
-            assert!(matches!(
-                router.select_tcp_outbound().unwrap_err(),
-                CoreError::UnsupportedOutboundNetwork
-            ));
-
-            // As does the DNS outbound, which reads the stream separately.
+            // The DNS outbound reads the stream settings separately.
             assert!(matches!(
                 DnsOutbound::new_with_stream(
                     DnsOutboundSettings::default(),
-                    &vless.stream,
+                    &freedom.stream,
                     Duration::from_secs(60),
                 )
                 .unwrap_err(),
                 CoreError::UnsupportedOutboundNetwork
             ));
         }
+    }
+
+    /// The other half: every VLESS builder, including the cached router's own
+    /// path, now produces an outbound carrying the dial-ready layer.
+    #[test]
+    fn every_vless_builder_carries_the_stream_transport() {
+        let mut vless = direct_selection_vless("proxy");
+        vless.stream.transport = StreamTransport::WebSocket(WebSocketSettings {
+            path: "/chat".to_owned(),
+            ..WebSocketSettings::default()
+        });
+
+        for built in [
+            build_vless_tcp_outbound(&vless).expect("the direct VLESS builder"),
+            match build_tcp_outbound(&vless).expect("the TCP builder") {
+                TcpOutbound::Vless(outbound) => *outbound,
+                other => panic!("expected a VLESS outbound, got {other:?}"),
+            },
+            match build_udp_outbound(&vless).expect("the UDP builder") {
+                UdpOutbound::Vless(outbound) => *outbound,
+                other => panic!("expected a VLESS outbound, got {other:?}"),
+            },
+        ] {
+            assert!(matches!(
+                built.transport_layer(),
+                TransportLayer::WebSocket(_)
+            ));
+        }
+
+        let mut config = direct_selection_config();
+        config.outbounds = vec![vless];
+        config.default_outbound_tag = Some("proxy".to_owned());
+        config.routing.rules.clear();
+        let router = OutboundRouter::new(Arc::new(config));
+        let TcpOutbound::Vless(selected) = router
+            .select_tcp_outbound()
+            .expect("the cached router path must build it too")
+        else {
+            panic!("expected a VLESS outbound");
+        };
+        assert!(matches!(
+            selected.transport_layer(),
+            TransportLayer::WebSocket(_)
+        ));
     }
 
     #[test]
@@ -3567,7 +3640,7 @@ mod tests {
                     level: 0,
                 },
                 transport: ConnectorConfig::Tcp,
-                stream_transport: StreamTransport::Raw,
+                transport_layer: TransportLayer::Raw,
                 happy_eyeballs: None,
             }),
         };
@@ -3605,7 +3678,7 @@ mod tests {
                     spider_x: "/".to_owned(),
                     mldsa65_verify: None,
                 }),
-                stream_transport: StreamTransport::Raw,
+                transport_layer: TransportLayer::Raw,
                 happy_eyeballs: None,
             }),
         };
@@ -3647,7 +3720,7 @@ mod tests {
                     level: 0,
                 },
                 transport: ConnectorConfig::Reality(reality_config.clone()),
-                stream_transport: StreamTransport::Raw,
+                transport_layer: TransportLayer::Raw,
                 happy_eyeballs: None,
             }),
         };
@@ -3734,7 +3807,7 @@ mod tests {
                     spider_x: "/".to_owned(),
                     mldsa65_verify: None,
                 }),
-                stream_transport: StreamTransport::Raw,
+                transport_layer: TransportLayer::Raw,
                 happy_eyeballs: None,
             }),
         };
@@ -3790,7 +3863,7 @@ mod tests {
                     spider_x: "/".to_owned(),
                     mldsa65_verify: None,
                 }),
-                stream_transport: StreamTransport::Raw,
+                transport_layer: TransportLayer::Raw,
                 happy_eyeballs: None,
             }),
         };
@@ -3844,7 +3917,13 @@ mod tests {
                 alpn: Vec::new(),
                 fingerprint: Some("chrome".to_owned()),
             }),
-            &StreamTransport::WebSocket(WebSocketSettings::default()),
+            &TransportLayer::WebSocket(WebSocketConfig {
+                path: "/chat".to_owned(),
+                host: "example.com".to_owned(),
+                headers: Vec::new(),
+                early_data_bytes: 0,
+                heartbeat_period_secs: 0,
+            }),
         )
         .expect_err("Vision needs a raw transport");
 
@@ -3861,7 +3940,7 @@ mod tests {
                 alpn: Vec::new(),
                 fingerprint: Some("chrome".to_owned()),
             }),
-            &StreamTransport::Raw,
+            &TransportLayer::Raw,
         )
         .expect("Vision over raw TLS stays valid");
 

@@ -1,5 +1,6 @@
 use std::{fmt, io, net::SocketAddr, sync::Arc};
 
+use crate::stream::TransportLayer;
 use crate::{
     connect_tcp_happy_eyeballs, connect_tcp_stream, connect_tcp_target, BoxedTransportStream,
     ConnectorConfig, HappyEyeballsConfig, RealityRuntimeEngine, RealityTlsEngine,
@@ -92,6 +93,25 @@ impl TransportDialer {
                 None => Err(TransportError::UnsupportedConnectorConfig("reality")),
             },
         }
+    }
+
+    /// Dials through the security layer, then applies the stream transport.
+    ///
+    /// The candidate race and the REALITY preconnect stay entirely inside
+    /// [`connect_resolved`](Self::connect_resolved); this only layers framing
+    /// on top of its result.
+    pub async fn connect_stream(
+        &self,
+        config: &ConnectorConfig,
+        transport: &TransportLayer,
+        original_target: &Target,
+        candidates: &[SocketAddr],
+        happy_eyeballs: Option<&HappyEyeballsConfig>,
+    ) -> Result<BoxedTransportStream, TransportError> {
+        let stream = self
+            .connect_resolved(config, original_target, candidates, happy_eyeballs)
+            .await?;
+        transport.wrap(stream).await
     }
 
     /// Connects a transport to an already resolved list of TCP candidates.

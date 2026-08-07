@@ -9,6 +9,8 @@ use std::sync::{
 };
 use std::task::{Context, Poll};
 
+use xray_transport::stream::TransportLayer;
+
 use aes::cipher::{BlockEncrypt, KeyInit};
 use aes::Aes128;
 use aes_gcm::aead::{Aead, Payload as AeadPayload};
@@ -10859,4 +10861,101 @@ where
         panic!("this E2E expects an IP VLESS target");
     };
     SocketAddr::new(ip, target.port)
+}
+
+#[test]
+fn ws_config_builds_an_outbound_carrying_the_transport() {
+    let raw = r#"{
+        "inbounds": [],
+        "outbounds": [
+            {
+                "tag": "proxy",
+                "protocol": "vless",
+                "settings": {
+                    "vnext": [
+                        {
+                            "address": "203.0.113.10",
+                            "port": 443,
+                            "users": [
+                                {
+                                    "id": "00010203-0405-0607-0809-0a0b0c0d0e0f",
+                                    "encryption": "none"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "streamSettings": {
+                    "network": "ws",
+                    "security": "tls",
+                    "tlsSettings": { "serverName": "server.example" },
+                    "wsSettings": {
+                        "path": "/chat?ed=2048",
+                        "headers": { "X-Extra": "value" }
+                    }
+                }
+            }
+        ]
+    }"#;
+    let parsed = parse_xray_json(raw).expect("a ws config should parse");
+
+    let selected = select_vless_tcp_outbound(&parsed.config)
+        .expect("a ws config must now build an outbound rather than fail closed");
+
+    let TransportLayer::WebSocket(websocket) = selected.transport_layer() else {
+        panic!("expected the WebSocket transport layer");
+    };
+    assert_eq!(websocket.path, "/chat");
+    assert_eq!(
+        websocket.early_data_bytes, 2048,
+        "`?ed=N` is stripped from the path and becomes the early-data budget"
+    );
+    // Host falls back to the TLS server name when wsSettings.host is absent.
+    assert_eq!(websocket.host, "server.example");
+    assert_eq!(
+        websocket.headers,
+        vec![("X-Extra".to_owned(), "value".to_owned())]
+    );
+}
+
+#[test]
+fn httpupgrade_host_falls_back_past_tls_to_the_destination() {
+    let raw = r#"{
+        "inbounds": [],
+        "outbounds": [
+            {
+                "tag": "proxy",
+                "protocol": "vless",
+                "settings": {
+                    "vnext": [
+                        {
+                            "address": "203.0.113.10",
+                            "port": 443,
+                            "users": [{ "id": "00010203-0405-0607-0809-0a0b0c0d0e0f" }]
+                        }
+                    ]
+                },
+                "streamSettings": {
+                    "network": "httpupgrade",
+                    "httpupgradeSettings": { "path": "/up" }
+                }
+            }
+        ]
+    }"#;
+    let parsed = parse_xray_json(raw).expect("an httpupgrade config should parse");
+
+    let selected =
+        select_vless_tcp_outbound(&parsed.config).expect("an httpupgrade config must build");
+
+    let TransportLayer::HttpUpgrade(upgrade) = selected.transport_layer() else {
+        panic!("expected the HTTPUpgrade transport layer");
+    };
+    assert_eq!(upgrade.path, "/up");
+    // No wsSettings.host and no TLS, so the destination address stands in --
+    // and never with a port.
+    assert_eq!(upgrade.host, "203.0.113.10");
+    assert!(
+        upgrade.wait_for_response,
+        "no `ed`, so the dial waits for the 101"
+    );
 }

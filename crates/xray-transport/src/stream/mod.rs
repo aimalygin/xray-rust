@@ -17,4 +17,32 @@ pub use masquerade::{
     apply_masquerade, apply_masquerade_with_versions, BrowserVersions, VersionOffsets,
 };
 pub use websocket::{accept_key_for, connect_websocket, encode_early_data, WebSocketConfig};
+
+use crate::{BoxedTransportStream, TransportError};
+
+/// The transport layered over the security layer. `Raw` is a no-op.
+///
+/// Deliberately **not** named `StreamTransport`: `xray_config::StreamTransport`
+/// is the parsed config shape, this is the dial-ready one with the host
+/// precedence already resolved. Two types with one name across two crates in
+/// the same call chain is how the wrong one gets imported.
+#[derive(Debug, Clone)]
+pub enum TransportLayer {
+    Raw,
+    WebSocket(WebSocketConfig),
+    HttpUpgrade(HttpUpgradeConfig),
+}
+
+impl TransportLayer {
+    pub async fn wrap(
+        &self,
+        stream: BoxedTransportStream,
+    ) -> Result<BoxedTransportStream, TransportError> {
+        match self {
+            Self::Raw => Ok(stream),
+            Self::WebSocket(config) => connect_websocket(stream, config).await,
+            Self::HttpUpgrade(config) => connect_httpupgrade(stream, config).await,
+        }
+    }
+}
 pub use websocket_frame::{encode_client_frames, FrameDecoder, FrameEvent, MAX_FRAME_PAYLOAD};
