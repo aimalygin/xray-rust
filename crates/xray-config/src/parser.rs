@@ -2564,6 +2564,16 @@ impl Parser<'_> {
         let stream = outbound.get("streamSettings");
         let stream_network = self.parse_network(stream, index)?;
         let security = self.parse_security(stream, index)?;
+        // Xray refuses this in `StreamConfig.Build`, so a profile pairing them
+        // would build cleanly here and then fail against a real server. The
+        // check lives here rather than in `validate_stream_settings_compatibility`
+        // because only this function has both halves parsed.
+        if matches!(security, StreamSecurity::Reality(_)) && stream_network != StreamNetwork::Raw {
+            self.error(
+                format!("$.outbounds[{index}].streamSettings.security"),
+                "REALITY only supports RAW, XHTTP and gRPC for now",
+            );
+        }
         let socket_options = self.parse_socket_options(stream, index);
         if let Some(stream) = stream {
             self.validate_stream_settings_compatibility(stream, index);

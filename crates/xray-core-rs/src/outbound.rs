@@ -243,6 +243,9 @@ struct VlessTcpOutboundPayload {
     server: Target,
     user: VlessUser,
     transport: ConnectorConfig,
+    /// What the config layers over the security layer. Only `Raw` admits
+    /// Vision; the dial-time framing itself is built from this.
+    stream_transport: StreamTransport,
     happy_eyeballs: Option<HappyEyeballsConfig>,
 }
 
@@ -489,6 +492,10 @@ impl VlessTcpOutbound {
         &self.payload.transport
     }
 
+    pub fn stream_transport(&self) -> &StreamTransport {
+        &self.payload.stream_transport
+    }
+
     pub fn user(&self) -> &VlessUser {
         &self.payload.user
     }
@@ -501,9 +508,13 @@ impl VlessTcpOutbound {
     /// xray-core) cannot carry UDP/443 and must refuse it so QUIC apps fall back
     /// to TCP. The `xtls-rprx-vision-udp443` variant returns false.
     pub(crate) fn blocks_udp443(&self) -> bool {
-        validate_connector_flow(self.user().flow.as_deref(), self.transport())
-            .map(|flow| flow.uses_vision() && !flow.allows_udp443())
-            .unwrap_or(false)
+        validate_connector_flow(
+            self.user().flow.as_deref(),
+            self.transport(),
+            self.stream_transport(),
+        )
+        .map(|flow| flow.uses_vision() && !flow.allows_udp443())
+        .unwrap_or(false)
     }
 }
 
@@ -1562,6 +1573,7 @@ fn build_vless_tcp_outbound(outbound: &OutboundConfig) -> Result<VlessTcpOutboun
             server: Target::new(addr, settings.port, RoutingNetwork::Tcp),
             user,
             transport,
+            stream_transport: outbound.stream.transport.clone(),
             happy_eyeballs: happy_eyeballs_config(&outbound.stream),
         }),
     })
@@ -1653,7 +1665,15 @@ fn validate_stream_flow(flow: Option<&str>, security: &StreamSecurity) -> Result
 fn validate_connector_flow(
     flow: Option<&str>,
     transport: &ConnectorConfig,
+    stream_transport: &StreamTransport,
 ) -> Result<VisionFlow, CoreError> {
+    // Vision splices itself into the TLS connection's internals, so anything
+    // layered between the two breaks it. Xray refuses the same pairing with
+    // "XTLS only supports TLS and REALITY directly for now."
+    if !matches!(stream_transport, StreamTransport::Raw) {
+        return validate_vision_flow(flow, false);
+    }
+
     validate_vision_flow(
         flow,
         matches!(
@@ -1753,7 +1773,11 @@ pub async fn open_vless_tcp_stream_with_resolver_and_dialer(
     dns_resolver: &dyn DnsResolver,
     transport_dialer: &TransportDialer,
 ) -> Result<BoxedTransportStream, CoreError> {
-    let flow = validate_connector_flow(outbound.user().flow.as_deref(), outbound.transport())?;
+    let flow = validate_connector_flow(
+        outbound.user().flow.as_deref(),
+        outbound.transport(),
+        outbound.stream_transport(),
+    )?;
 
     let resolved_server = resolve_server_candidates(outbound.server(), dns_resolver).await?;
     let mut stream = transport_dialer
@@ -1826,7 +1850,11 @@ pub(crate) async fn open_vless_udp_stream_with_resolver_dialer_and_options(
     transport_dialer: &TransportDialer,
     options: VlessUdpOpenOptions,
 ) -> Result<(BoxedTransportStream, VlessUdpFraming), CoreError> {
-    let flow = validate_connector_flow(outbound.user().flow.as_deref(), outbound.transport())?;
+    let flow = validate_connector_flow(
+        outbound.user().flow.as_deref(),
+        outbound.transport(),
+        outbound.stream_transport(),
+    )?;
     let uses_vision = flow.uses_vision();
     if options.reject_udp443_for_regular_vision
         && uses_vision
@@ -2977,6 +3005,7 @@ mod tests {
                     level: 0,
                 },
                 transport: ConnectorConfig::Tcp,
+                stream_transport: StreamTransport::Raw,
                 happy_eyeballs: Some(HappyEyeballsConfig {
                     prioritize_ipv6: false,
                     interleave: 1,
@@ -3538,6 +3567,7 @@ mod tests {
                     level: 0,
                 },
                 transport: ConnectorConfig::Tcp,
+                stream_transport: StreamTransport::Raw,
                 happy_eyeballs: None,
             }),
         };
@@ -3575,6 +3605,7 @@ mod tests {
                     spider_x: "/".to_owned(),
                     mldsa65_verify: None,
                 }),
+                stream_transport: StreamTransport::Raw,
                 happy_eyeballs: None,
             }),
         };
@@ -3616,6 +3647,7 @@ mod tests {
                     level: 0,
                 },
                 transport: ConnectorConfig::Reality(reality_config.clone()),
+                stream_transport: StreamTransport::Raw,
                 happy_eyeballs: None,
             }),
         };
@@ -3702,6 +3734,7 @@ mod tests {
                     spider_x: "/".to_owned(),
                     mldsa65_verify: None,
                 }),
+                stream_transport: StreamTransport::Raw,
                 happy_eyeballs: None,
             }),
         };
@@ -3757,6 +3790,7 @@ mod tests {
                     spider_x: "/".to_owned(),
                     mldsa65_verify: None,
                 }),
+                stream_transport: StreamTransport::Raw,
                 happy_eyeballs: None,
             }),
         };
@@ -3795,5 +3829,42 @@ mod tests {
             .expect("read VLESS header from protected stream");
         assert_eq!(received_header, expected_header);
         assert!(engine.seen().is_some());
+    }
+
+    #[test]
+    fn vision_is_rejected_outside_the_raw_transport() {
+        // Xray's VLESS outbound reaches into the TLS connection's private
+        // fields to splice Vision in, so anything layered between the two
+        // breaks it: "XTLS only supports TLS and REALITY directly for now."
+        let error = validate_connector_flow(
+            Some(VISION_FLOW),
+            &ConnectorConfig::Tls(TlsClientConfig {
+                server_name: "example.com".to_owned(),
+                allow_insecure: false,
+                alpn: Vec::new(),
+                fingerprint: Some("chrome".to_owned()),
+            }),
+            &StreamTransport::WebSocket(WebSocketSettings::default()),
+        )
+        .expect_err("Vision needs a raw transport");
+
+        assert!(matches!(error, CoreError::UnsupportedOutboundFlow));
+    }
+
+    #[test]
+    fn vision_is_accepted_over_raw_tls() {
+        let flow = validate_connector_flow(
+            Some(VISION_FLOW),
+            &ConnectorConfig::Tls(TlsClientConfig {
+                server_name: "example.com".to_owned(),
+                allow_insecure: false,
+                alpn: Vec::new(),
+                fingerprint: Some("chrome".to_owned()),
+            }),
+            &StreamTransport::Raw,
+        )
+        .expect("Vision over raw TLS stays valid");
+
+        assert!(flow.uses_vision());
     }
 }

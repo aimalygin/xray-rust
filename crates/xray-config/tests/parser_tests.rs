@@ -4308,3 +4308,54 @@ fn explicit_lan_opt_in_accepts_non_loopback_listener_with_warning() {
             && diagnostic.message.contains("explicitly exposed")
     }));
 }
+
+#[test]
+fn reality_is_rejected_for_ws_and_httpupgrade() {
+    // Xray refuses this at config-build time
+    // (`infra/conf/transport_internet.go`, "REALITY only supports RAW, XHTTP
+    // and gRPC for now."). Without the same refusal a profile builds cleanly
+    // here and then fails on the wire against a real server.
+    for network in ["ws", "httpupgrade"] {
+        let error = parse_xray_json(&raw_with_stream_settings(&format!(
+            r#""network": "{network}", "security": "reality",
+               "realitySettings": {{"serverName": "server.example",
+                                    "fingerprint": "chrome",
+                                    "publicKey": "E59WjnvZcQMu7tR7_BgyhycuEdBS-CtKxfImRCdAvFM",
+                                    "shortId": "02030405"}}"#
+        )))
+        .expect_err("REALITY must be rejected for this transport");
+
+        assert!(
+            error
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.message.contains("REALITY only supports")),
+            "{network} must echo Xray's message, got: {:?}",
+            error.diagnostics
+        );
+        assert!(
+            error.diagnostics.iter().any(|diagnostic| {
+                diagnostic.path.as_deref() == Some("$.outbounds[0].streamSettings.security")
+            }),
+            "{network} must point at the security field, got: {:?}",
+            error.diagnostics
+        );
+    }
+}
+
+#[test]
+fn reality_stays_valid_on_the_raw_transport() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "raw", "security": "reality",
+           "realitySettings": {"serverName": "server.example",
+                               "fingerprint": "chrome",
+                               "publicKey": "E59WjnvZcQMu7tR7_BgyhycuEdBS-CtKxfImRCdAvFM",
+                               "shortId": "02030405"}"#,
+    ))
+    .expect("REALITY over raw must keep parsing");
+
+    assert!(matches!(
+        parsed.config.outbounds[0].stream.security,
+        StreamSecurity::Reality(_)
+    ));
+}
