@@ -137,6 +137,101 @@ fn parses_tun_inbound_without_port_as_packet_boundary_inbound() {
 }
 
 #[test]
+fn parses_the_config_the_apple_vless_url_importer_generates() {
+    // Unknown keys are a hard config error, so the importer's sniffing and
+    // queryStrategy blocks have to match what the parser accepts verbatim.
+    let raw = r#"{
+      "dns" : {
+        "fakeIp" : {
+          "enabled" : true,
+          "ipv4Pool" : "198.19.0.0/16",
+          "poolSize" : 32768,
+          "ttl" : 60
+        },
+        "queryStrategy" : "UseIPv4"
+      },
+      "inbounds" : [
+        {
+          "listen" : "127.0.0.1",
+          "port" : 0,
+          "protocol" : "tun",
+          "settings" : {},
+          "sniffing" : {
+            "destOverride" : ["http", "tls", "quic"],
+            "enabled" : true,
+            "metadataOnly" : false
+          },
+          "tag" : "tun-in"
+        }
+      ],
+      "outbounds" : [
+        {
+          "protocol" : "vless",
+          "settings" : {
+            "vnext" : [
+              {
+                "address" : "203.0.113.7",
+                "port" : 443,
+                "users" : [
+                  {
+                    "encryption" : "none",
+                    "flow" : "xtls-rprx-vision",
+                    "id" : "49c1a053-d257-466d-a900-048ff5173866"
+                  }
+                ]
+              }
+            ]
+          },
+          "streamSettings" : {
+            "network" : "tcp",
+            "realitySettings" : {
+              "fingerprint" : "chrome",
+              "publicKey" : "3jNx5A3WTFKhvCj3IPljaxbcBjCxhH2dVCNobKv_X1c",
+              "serverName" : "example.com",
+              "shortId" : "1c5694e878",
+              "spiderX" : ""
+            },
+            "security" : "reality"
+          },
+          "tag" : "proxy"
+        },
+        {
+          "protocol" : "freedom",
+          "settings" : {},
+          "tag" : "direct"
+        }
+      ],
+      "routing" : {
+        "domainStrategy" : "AsIs",
+        "rules" : [
+          {
+            "ip" : ["geoip:private", "127.0.0.0/8", "fd00::/8"],
+            "outboundTag" : "direct",
+            "type" : "field"
+          }
+        ]
+      }
+    }"#;
+
+    let parsed = parse_xray_json(raw).expect("importer config should parse");
+
+    let sniffing = parsed.config.inbounds[0]
+        .sniffing
+        .as_ref()
+        .expect("enabled sniffing should be modeled");
+    assert_eq!(
+        sniffing.dest_override,
+        [
+            SniffingDestination::Http,
+            SniffingDestination::Tls,
+            SniffingDestination::Quic
+        ]
+    );
+    assert!(!sniffing.metadata_only);
+    assert_eq!(parsed.config.dns.query_strategy, DnsQueryStrategy::UseIpv4);
+}
+
+#[test]
 fn parses_xray_core_reality_split_routing_fixture() {
     // Xray-core oracle:
     // REPO_ROOT=/path/to/xray-rust

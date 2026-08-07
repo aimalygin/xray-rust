@@ -166,6 +166,14 @@ private struct VlessEndpoint {
                     "listen": "127.0.0.1",
                     "port": 0,
                     "settings": [:],
+                    // Sniffing is the only way a flow recovers its domain when
+                    // the fake-IP mapping is missing — after a tunnel restart the
+                    // table is empty while clients still hold cached fake IPs.
+                    "sniffing": [
+                        "enabled": true,
+                        "destOverride": ["http", "tls", "quic"],
+                        "metadataOnly": false,
+                    ],
                 ],
             ],
             "outbounds": [
@@ -204,6 +212,7 @@ private struct VlessEndpoint {
                 ],
             ],
             "dns": [
+                "queryStrategy": "UseIPv4",
                 "fakeIp": [
                     "enabled": true,
                     "ipv4Pool": "198.19.0.0/16",
