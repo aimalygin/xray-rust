@@ -1,7 +1,7 @@
 import Foundation
 import XrayRust
 
-public enum XrayCoreError: Error, CustomStringConvertible {
+public enum XrayCoreError: Error, CustomStringConvertible, CustomNSError, LocalizedError {
     case status(code: XrayStatus, message: String)
     case incompatibleFFIMajorVersion(expected: UInt32, actual: UInt32)
     case invalidPacketPollSize(Int)
@@ -33,6 +33,43 @@ public enum XrayCoreError: Error, CustomStringConvertible {
         case .invalidUtf8:
             return "xray returned an invalid UTF-8 error message"
         }
+    }
+
+    // Without CustomNSError, Swift bridges this enum to NSError using only the
+    // type name and case index, so the engine status and message — the only
+    // parts that say what failed — never reach the NEVPNManager error a user
+    // sees. Both conformances reuse `description` rather than duplicating it.
+    public static let errorDomain = "XrayMobileAdapter.XrayCoreError"
+
+    public var errorCode: Int {
+        switch self {
+        case .status:
+            return 0
+        case .incompatibleFFIMajorVersion:
+            return 1
+        case .invalidPacketPollSize:
+            return 2
+        case .invalidPacketBatchLimits:
+            return 3
+        case .packetBatchSizeOverflow:
+            return 4
+        case .packetBatchTooLarge:
+            return 5
+        case .missingHandle:
+            return 6
+        case .notRunning:
+            return 7
+        case .invalidUtf8:
+            return 8
+        }
+    }
+
+    public var errorUserInfo: [String: Any] {
+        [NSLocalizedDescriptionKey: description]
+    }
+
+    public var errorDescription: String? {
+        description
     }
 }
 
