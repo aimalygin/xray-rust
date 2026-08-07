@@ -6,8 +6,16 @@ pub const DEFAULT_UTLS_FINGERPRINT: &str = "chrome";
 /// (`transport/internet/tls/tls.go`) consults in order -- `PresetFingerprints`,
 /// `ModernFingerprints`, `OtherFingerprints` -- minus two names that are not
 /// plain table lookups there: `unsafe`, whose map entry stays nil and which
-/// [`normalize_tls_fingerprint`] special-cases, and `hellogolang`, which names
-/// a shape we do not carry a profile for.
+/// [`normalize_tls_fingerprint`] special-cases, and `hellogolang`.
+///
+/// Excluding `hellogolang` is a known divergence, and the one direction in
+/// which this set is narrower than Xray's: the name parses on xray-core for
+/// plain TLS (`infra/conf/transport_internet.go:700`) and is rejected here. In
+/// uTLS it does not name a shape at all -- it means emit Go's own `crypto/tls`
+/// ClientHello and apply no shaping, which is what `unsafe` already does
+/// through a different TLS stack. REALITY rejects it and `unsafe` on one line
+/// (`infra/conf/transport_internet.go:925`), so that path is unaffected. See
+/// `docs/superpowers/plans/2026-08-07-hellogolang-divergence.md`.
 ///
 /// The set is deliberately not a superset. uTLS knows `ClientHelloID`s Xray
 /// has never mapped -- `hellochrome_133`, `hellofirefox_148`, `hellosafari_26_3`
@@ -334,8 +342,10 @@ mod tests {
     }
 
     /// Xray's three maps hold 60 entries. `unsafe` is a nil entry the config
-    /// builder special-cases rather than a shape, and `hellogolang` names a
-    /// profile we do not carry, which leaves 58.
+    /// builder special-cases rather than a shape, and `hellogolang` names no
+    /// shape at all, which leaves 58. Dropping `hellogolang` is the one place
+    /// this table is narrower than Xray's -- a known divergence, recorded on
+    /// [`XRAY_UTLS_FINGERPRINTS`]; if it is ever closed, this count moves.
     #[test]
     fn fingerprint_table_matches_xrays_map_union() {
         assert_eq!(XRAY_UTLS_FINGERPRINTS.len(), 58);

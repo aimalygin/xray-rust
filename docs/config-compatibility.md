@@ -105,8 +105,19 @@ so the fourteen names REALITY rejects are usable here.
 
 Those 58 are the union of the three maps Xray's `GetFingerprint` consults --
 `PresetFingerprints`, `ModernFingerprints`, `OtherFingerprints` -- less
-`unsafe`, described below, and `hellogolang`, which names a shape we carry no
-profile for. The set is deliberately not a superset of Xray's: uTLS itself
+`unsafe`, described below, and `hellogolang`.
+
+That second exclusion is a **known divergence**, and the one place this set is
+narrower than Xray's: `tlsSettings.fingerprint: "hellogolang"` parses on
+xray-core and is rejected here. It is not a browser shape. In uTLS the name
+means *emit Go's own `crypto/tls` ClientHello and apply no shaping at all*, so
+the nearest thing this implementation can send is `unsafe` -- the same intent
+through a different TLS stack. The divergence is confined to plain TLS; on the
+REALITY path we and Xray agree, because Xray rejects `hellogolang` and `unsafe`
+alike there. Tracked in
+`docs/superpowers/plans/2026-08-07-hellogolang-divergence.md`.
+
+The set is otherwise deliberately not a superset of Xray's: uTLS itself
 knows further `ClientHelloID`s that Xray has never mapped, and accepting one
 would let a profile parse here and then fail on xray-core with
 `unknown "fingerprint"`, which is a break the user only discovers after moving
