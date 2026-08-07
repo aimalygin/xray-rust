@@ -1,6 +1,6 @@
-pub const DEFAULT_REALITY_FINGERPRINT: &str = "chrome";
+pub const DEFAULT_UTLS_FINGERPRINT: &str = "chrome";
 
-pub const XRAY_REALITY_FINGERPRINTS: &[&str] = &[
+pub const XRAY_UTLS_FINGERPRINTS: &[&str] = &[
     "chrome",
     "firefox",
     "safari",
@@ -131,14 +131,23 @@ pub const XRAY_REALITY_CAPABLE_FINGERPRINTS: &[&str] = &[
     "hellochrome_120_pq",
 ];
 
-pub fn normalize_reality_fingerprint(name: &str) -> Option<&'static str> {
+/// Looks a name up in Xray's uTLS fingerprint table, defaulting an empty name
+/// to `chrome`.
+///
+/// This is the shared lookup both `security` modes build on, so it knows
+/// nothing about either one's extra rules. Callers almost always want a
+/// mode-specific wrapper instead: [`normalize_tls_fingerprint`] for
+/// `tlsSettings`, which additionally honours the `unsafe` sentinel, or
+/// [`normalize_reality_supported_fingerprint`] for `realitySettings`, which
+/// additionally rejects names without an X25519 key share.
+pub fn normalize_utls_fingerprint(name: &str) -> Option<&'static str> {
     let name = if name.is_empty() {
-        DEFAULT_REALITY_FINGERPRINT
+        DEFAULT_UTLS_FINGERPRINT
     } else {
         name
     };
 
-    XRAY_REALITY_FINGERPRINTS
+    XRAY_UTLS_FINGERPRINTS
         .iter()
         .copied()
         .find(|fingerprint| fingerprint.eq_ignore_ascii_case(name))
@@ -152,20 +161,21 @@ pub const UNSAFE_TLS_FINGERPRINT: &str = "unsafe";
 
 /// Normalizes a `tlsSettings.fingerprint` value.
 ///
-/// Same name table as REALITY — Xray shares one uTLS fingerprint namespace
-/// across both — but without the X25519 key-share requirement, which is a
-/// REALITY protocol constraint rather than a property of the fingerprint.
-/// An empty name means `chrome`, matching Xray's `GetFingerprint("")`.
+/// Reads the same [`XRAY_UTLS_FINGERPRINTS`] table REALITY does — Xray shares
+/// one uTLS fingerprint namespace across both — but without the X25519
+/// key-share requirement, which is a REALITY protocol constraint rather than a
+/// property of the fingerprint. An empty name means `chrome`, matching Xray's
+/// `GetFingerprint("")`.
 pub fn normalize_tls_fingerprint(name: &str) -> Option<&'static str> {
     if name.eq_ignore_ascii_case(UNSAFE_TLS_FINGERPRINT) {
         return Some(UNSAFE_TLS_FINGERPRINT);
     }
 
-    normalize_reality_fingerprint(name)
+    normalize_utls_fingerprint(name)
 }
 
 pub fn normalize_reality_supported_fingerprint(name: &str) -> Option<&'static str> {
-    let fingerprint = normalize_reality_fingerprint(name)?;
+    let fingerprint = normalize_utls_fingerprint(name)?;
     XRAY_REALITY_CAPABLE_FINGERPRINTS
         .iter()
         .copied()
@@ -179,30 +189,30 @@ pub fn is_reality_fingerprint_supported(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_reality_fingerprint_supported, normalize_reality_fingerprint,
-        normalize_reality_supported_fingerprint, normalize_tls_fingerprint,
-        DEFAULT_REALITY_FINGERPRINT, UNSAFE_TLS_FINGERPRINT, XRAY_REALITY_CAPABLE_FINGERPRINTS,
-        XRAY_REALITY_FINGERPRINTS, XRAY_REALITY_INCAPABLE_FINGERPRINTS,
+        is_reality_fingerprint_supported, normalize_reality_supported_fingerprint,
+        normalize_tls_fingerprint, normalize_utls_fingerprint, DEFAULT_UTLS_FINGERPRINT,
+        UNSAFE_TLS_FINGERPRINT, XRAY_REALITY_CAPABLE_FINGERPRINTS,
+        XRAY_REALITY_INCAPABLE_FINGERPRINTS, XRAY_UTLS_FINGERPRINTS,
     };
 
     #[test]
-    fn normalize_reality_fingerprint_defaults_empty_to_chrome() {
+    fn normalize_utls_fingerprint_defaults_empty_to_chrome() {
         assert_eq!(
-            normalize_reality_fingerprint(""),
-            Some(DEFAULT_REALITY_FINGERPRINT)
+            normalize_utls_fingerprint(""),
+            Some(DEFAULT_UTLS_FINGERPRINT)
         );
     }
 
     #[test]
-    fn normalize_reality_fingerprint_accepts_case_insensitive_names() {
-        assert_eq!(normalize_reality_fingerprint("FireFox"), Some("firefox"));
+    fn normalize_utls_fingerprint_accepts_case_insensitive_names() {
+        assert_eq!(normalize_utls_fingerprint("FireFox"), Some("firefox"));
     }
 
     #[test]
-    fn normalize_reality_fingerprint_accepts_every_xray_reality_name() {
-        for fingerprint in XRAY_REALITY_FINGERPRINTS {
+    fn normalize_utls_fingerprint_accepts_every_xray_name() {
+        for fingerprint in XRAY_UTLS_FINGERPRINTS {
             assert_eq!(
-                normalize_reality_fingerprint(fingerprint),
+                normalize_utls_fingerprint(fingerprint),
                 Some(*fingerprint),
                 "{fingerprint}"
             );
@@ -210,10 +220,10 @@ mod tests {
     }
 
     #[test]
-    fn normalize_reality_fingerprint_rejects_xray_reality_invalid_names() {
+    fn normalize_utls_fingerprint_rejects_names_outside_the_table() {
         for fingerprint in ["unsafe", "hellogolang", "madeup-browser"] {
             assert_eq!(
-                normalize_reality_fingerprint(fingerprint),
+                normalize_utls_fingerprint(fingerprint),
                 None,
                 "{fingerprint}"
             );
@@ -224,7 +234,7 @@ mod tests {
     fn reality_support_rejects_known_fingerprints_without_key_share() {
         for fingerprint in XRAY_REALITY_INCAPABLE_FINGERPRINTS {
             assert!(
-                normalize_reality_fingerprint(fingerprint).is_some(),
+                normalize_utls_fingerprint(fingerprint).is_some(),
                 "{fingerprint}"
             );
             assert!(
@@ -259,7 +269,7 @@ mod tests {
     fn reality_capability_lists_partition_known_fingerprints() {
         assert_eq!(
             XRAY_REALITY_CAPABLE_FINGERPRINTS.len() + XRAY_REALITY_INCAPABLE_FINGERPRINTS.len(),
-            XRAY_REALITY_FINGERPRINTS.len()
+            XRAY_UTLS_FINGERPRINTS.len()
         );
     }
 
@@ -267,7 +277,7 @@ mod tests {
     fn normalize_tls_fingerprint_defaults_empty_to_chrome() {
         assert_eq!(
             normalize_tls_fingerprint(""),
-            Some(DEFAULT_REALITY_FINGERPRINT)
+            Some(DEFAULT_UTLS_FINGERPRINT)
         );
     }
 

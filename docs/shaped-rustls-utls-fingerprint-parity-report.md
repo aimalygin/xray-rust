@@ -1,6 +1,6 @@
 # shaped-rustls uTLS Fingerprint Parity Report
 
-This report compares every fingerprint in `xray_utls::XRAY_REALITY_FINGERPRINTS` against the Go uTLS oracle used by xray-core-compatible REALITY tests.
+This report compares every fingerprint in `xray_utls::XRAY_UTLS_FINGERPRINTS` against the Go uTLS oracle used by xray-core-compatible REALITY tests.
 
 ## Reproduce
 

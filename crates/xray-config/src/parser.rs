@@ -2855,7 +2855,7 @@ impl Parser<'_> {
         let raw_fingerprint = settings
             .and_then(|settings| self.string_at(settings, "fingerprint"))
             .unwrap_or_default();
-        let Some(fingerprint) = xray_utls::normalize_reality_fingerprint(raw_fingerprint) else {
+        let Some(fingerprint) = xray_utls::normalize_utls_fingerprint(raw_fingerprint) else {
             self.error(
                 fingerprint_path,
                 format!("unsupported reality fingerprint `{raw_fingerprint}`"),

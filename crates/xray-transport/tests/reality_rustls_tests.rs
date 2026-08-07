@@ -387,7 +387,7 @@ fn rustls_reality_provider_reports_utls_xray_fingerprint_parity() {
         println!("{report}");
     }
 
-    assert_eq!(results.len(), xray_utls::XRAY_REALITY_FINGERPRINTS.len());
+    assert_eq!(results.len(), xray_utls::XRAY_UTLS_FINGERPRINTS.len());
     assert!(
         results.iter().all(|result| !result.is_tooling_error()),
         "report includes oracle or rustls generation errors"
@@ -723,7 +723,7 @@ impl FingerprintParityResult {
 fn collect_fingerprint_parity_results() -> Vec<FingerprintParityResult> {
     let provider = RustlsRealityTlsSessionProvider::new();
 
-    xray_utls::XRAY_REALITY_FINGERPRINTS
+    xray_utls::XRAY_UTLS_FINGERPRINTS
         .iter()
         .map(|&fingerprint| {
             let expected = try_utls_client_hello_shape_from_oracle(fingerprint);
@@ -800,7 +800,7 @@ fn build_fingerprint_parity_report(results: &[FingerprintParityResult]) -> Strin
     writeln!(report, "# shaped-rustls uTLS Fingerprint Parity Report\n").unwrap();
     writeln!(
         report,
-        "This report compares every fingerprint in `xray_utls::XRAY_REALITY_FINGERPRINTS` against the Go uTLS oracle used by xray-core-compatible REALITY tests.\n"
+        "This report compares every fingerprint in `xray_utls::XRAY_UTLS_FINGERPRINTS` against the Go uTLS oracle used by xray-core-compatible REALITY tests.\n"
     )
     .unwrap();
     writeln!(report, "## Reproduce\n").unwrap();

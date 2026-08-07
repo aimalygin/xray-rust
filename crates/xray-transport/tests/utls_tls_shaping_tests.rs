@@ -437,7 +437,7 @@ mod utls_tls_shaping_tests {
     /// every profile has to pin one.
     #[test]
     fn every_fingerprint_emits_a_stable_extension_order() {
-        for fingerprint in xray_utls::XRAY_REALITY_FINGERPRINTS {
+        for fingerprint in xray_utls::XRAY_UTLS_FINGERPRINTS {
             for alpn in [&[][..], &["http/1.1"][..]] {
                 let first = plain_tls_client_hello_bytes(&config(fingerprint, alpn))
                     .unwrap_or_else(|error| panic!("{fingerprint}: ClientHello: {error}"));
@@ -470,7 +470,7 @@ mod utls_tls_shaping_tests {
     /// hello the domain SNI produces.
     #[test]
     fn an_ip_literal_sni_shapes_the_hello_without_the_server_name_extension() {
-        for fingerprint in xray_utls::XRAY_REALITY_FINGERPRINTS {
+        for fingerprint in xray_utls::XRAY_UTLS_FINGERPRINTS {
             for alpn in [&[][..], &["http/1.1"][..]] {
                 let ip = plain_tls_client_hello_bytes(&TlsClientConfig {
                     server_name: "203.0.113.10".to_owned(),

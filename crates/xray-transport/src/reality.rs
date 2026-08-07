@@ -258,7 +258,7 @@ pub enum RealityError {
 }
 
 pub fn validate_reality_fingerprint(fingerprint: &str) -> Result<&'static str, RealityError> {
-    let Some(fingerprint) = xray_utls::normalize_reality_fingerprint(fingerprint) else {
+    let Some(fingerprint) = xray_utls::normalize_utls_fingerprint(fingerprint) else {
         return Err(RealityError::UnsupportedRealityFingerprint(
             fingerprint.to_owned(),
         ));
