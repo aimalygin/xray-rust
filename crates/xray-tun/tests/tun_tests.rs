@@ -806,3 +806,26 @@ async fn tun_endpoint_drains_queued_packet_after_close_then_reports_closed() {
     );
     assert_eq!(tun.poll_inbound().await.unwrap_err(), TunError::QueueClosed);
 }
+
+#[tokio::test]
+async fn tun_fd_pump_failure_counters_start_at_zero_and_increment() {
+    let tun = TunEndpoint::new(TunConfig {
+        mtu: 1500,
+        queue_depth: 4,
+    });
+
+    let initial = tun.stats().await;
+    assert_eq!(initial.tun_fd_read_loop_exits, 0);
+    assert_eq!(initial.tun_fd_write_loop_exits, 0);
+    assert_eq!(initial.tun_fd_transient_io_errors, 0);
+
+    tun.record_tun_fd_read_loop_exit();
+    tun.record_tun_fd_write_loop_exit();
+    tun.record_tun_fd_transient_io_error();
+    tun.record_tun_fd_transient_io_error();
+
+    let stats = tun.stats().await;
+    assert_eq!(stats.tun_fd_read_loop_exits, 1);
+    assert_eq!(stats.tun_fd_write_loop_exits, 1);
+    assert_eq!(stats.tun_fd_transient_io_errors, 2);
+}

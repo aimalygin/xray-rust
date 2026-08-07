@@ -102,6 +102,9 @@ pub struct TunStats {
     pub tun_fd_write_batches: u64,
     pub tun_fd_write_batch_packets: u64,
     pub tun_fd_write_batch_max_packets: u64,
+    pub tun_fd_read_loop_exits: u64,
+    pub tun_fd_write_loop_exits: u64,
+    pub tun_fd_transient_io_errors: u64,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -203,6 +206,9 @@ pub struct TunEndpoint {
     tun_fd_write_batches: AtomicU64,
     tun_fd_write_batch_packets: AtomicU64,
     tun_fd_write_batch_max_packets: AtomicU64,
+    tun_fd_read_loop_exits: AtomicU64,
+    tun_fd_write_loop_exits: AtomicU64,
+    tun_fd_transient_io_errors: AtomicU64,
     tcp_stack_to_remote_bytes: AtomicU64,
     tcp_remote_written_bytes: AtomicU64,
     tcp_remote_read_bytes: AtomicU64,
@@ -305,6 +311,9 @@ impl TunEndpoint {
             tun_fd_write_batches: AtomicU64::new(0),
             tun_fd_write_batch_packets: AtomicU64::new(0),
             tun_fd_write_batch_max_packets: AtomicU64::new(0),
+            tun_fd_read_loop_exits: AtomicU64::new(0),
+            tun_fd_write_loop_exits: AtomicU64::new(0),
+            tun_fd_transient_io_errors: AtomicU64::new(0),
             tcp_stack_to_remote_bytes: AtomicU64::new(0),
             tcp_remote_written_bytes: AtomicU64::new(0),
             tcp_remote_read_bytes: AtomicU64::new(0),
@@ -564,6 +573,9 @@ impl TunEndpoint {
             tun_fd_write_batch_max_packets: self
                 .tun_fd_write_batch_max_packets
                 .load(Ordering::Relaxed),
+            tun_fd_read_loop_exits: self.tun_fd_read_loop_exits.load(Ordering::Relaxed),
+            tun_fd_write_loop_exits: self.tun_fd_write_loop_exits.load(Ordering::Relaxed),
+            tun_fd_transient_io_errors: self.tun_fd_transient_io_errors.load(Ordering::Relaxed),
         }
     }
 
@@ -654,6 +666,24 @@ impl TunEndpoint {
             .fetch_add(packets as u64, Ordering::Relaxed);
         self.tun_fd_write_batch_max_packets
             .fetch_max(packets as u64, Ordering::Relaxed);
+    }
+
+    /// Records that the fd-backed read pump gave up. A non-zero value means the
+    /// tunnel has stopped ingesting packets while still reporting as connected.
+    pub fn record_tun_fd_read_loop_exit(&self) {
+        self.tun_fd_read_loop_exits.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Records that the fd-backed write pump gave up.
+    pub fn record_tun_fd_write_loop_exit(&self) {
+        self.tun_fd_write_loop_exits.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Records a retried pump I/O error. Steady growth here without a loop exit
+    /// means the descriptor is unhealthy but still recovering.
+    pub fn record_tun_fd_transient_io_error(&self) {
+        self.tun_fd_transient_io_errors
+            .fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn record_tcp_remote_write_error(&self) {

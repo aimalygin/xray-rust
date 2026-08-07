@@ -216,6 +216,23 @@ mod platform {
         }
     }
 
+    /// Classifies one pump I/O failure, records it, and advances the give-up
+    /// budget. Only a `Retry` reflects on the descriptor, so it is the only
+    /// disposition the stats see: an interrupt is not a failure and an
+    /// unencodable packet is a data defect. The exit counters stay with the
+    /// loops, which are the only ones that know which direction gave up.
+    fn observe_io_failure(
+        tun: &TunEndpoint,
+        error: &io::Error,
+        consecutive_errors: &mut u32,
+    ) -> TunFdLoopAction {
+        let disposition = io_disposition(error);
+        if disposition == TunFdIoDisposition::Retry {
+            tun.record_tun_fd_transient_io_error();
+        }
+        advance_failure_budget(disposition, consecutive_errors)
+    }
+
     async fn read_loop(
         fd: Arc<AsyncFd<TunFd>>,
         tun: Arc<TunEndpoint>,
@@ -246,15 +263,15 @@ mod platform {
                             consecutive_errors = 0;
                         }
                         Err(err) => {
-                            match advance_failure_budget(
-                                io_disposition(&err),
-                                &mut consecutive_errors,
-                            ) {
+                            match observe_io_failure(&tun, &err, &mut consecutive_errors) {
                                 TunFdLoopAction::Continue => {}
                                 TunFdLoopAction::BackOff => {
                                     tokio::time::sleep(TUN_FD_IO_RETRY_BACKOFF).await;
                                 }
-                                TunFdLoopAction::Stop => break,
+                                TunFdLoopAction::Stop => {
+                                    tun.record_tun_fd_read_loop_exit();
+                                    break;
+                                }
                             }
                         }
                     }
@@ -291,15 +308,15 @@ mod platform {
                                     tun.record_tun_fd_write_batch(batch.len());
                                 }
                                 Err(err) => {
-                                    match advance_failure_budget(
-                                        io_disposition(&err),
-                                        &mut consecutive_errors,
-                                    ) {
+                                    match observe_io_failure(&tun, &err, &mut consecutive_errors) {
                                         TunFdLoopAction::Continue => {}
                                         TunFdLoopAction::BackOff => {
                                             tokio::time::sleep(TUN_FD_IO_RETRY_BACKOFF).await;
                                         }
-                                        TunFdLoopAction::Stop => break,
+                                        TunFdLoopAction::Stop => {
+                                            tun.record_tun_fd_write_loop_exit();
+                                            break;
+                                        }
                                     }
                                 }
                             }
