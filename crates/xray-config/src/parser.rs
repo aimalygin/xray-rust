@@ -2957,7 +2957,9 @@ impl Parser<'_> {
             .to_ascii_lowercase();
 
         match security.as_str() {
-            "none" => Some(StreamSecurity::None),
+            // Xray's arm is `case "", "none":` — an explicitly empty security
+            // is how a lot of generated configs spell "no TLS".
+            "" | "none" => Some(StreamSecurity::None),
             "tls" => {
                 let tls_settings = stream.and_then(|stream| stream.get("tlsSettings"));
                 self.validate_tls_settings(tls_settings, index);
@@ -3017,6 +3019,15 @@ impl Parser<'_> {
             "reality" => self
                 .parse_reality_settings(stream, index)
                 .map(StreamSecurity::Reality),
+            // Xray deleted legacy XTLS outright, so `unsupported` would send
+            // someone hunting for a flag to turn it back on.
+            "xtls" => {
+                self.error(
+                    security_path,
+                    "stream security `xtls` was removed from Xray; use `tls` or `reality` with the `xtls-rprx-vision` flow",
+                );
+                None
+            }
             security => {
                 self.error(
                     security_path,

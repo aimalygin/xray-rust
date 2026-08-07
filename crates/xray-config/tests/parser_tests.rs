@@ -3029,6 +3029,38 @@ fn uppercase_stream_security_parses_the_way_xray_lowercases_it() {
 }
 
 #[test]
+fn empty_stream_security_means_none_like_xray() {
+    // Xray's arm is `case "", "none":`, and generated configs lean on it.
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "tcp", "security": """#,
+    ))
+    .expect("an empty security must parse as no stream security");
+
+    assert_eq!(
+        parsed.config.outbounds[0].stream.security,
+        StreamSecurity::None
+    );
+}
+
+#[test]
+fn removed_xtls_security_says_it_was_removed() {
+    let error = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "tcp", "security": "xtls""#,
+    ))
+    .expect_err("legacy xtls must be rejected");
+
+    assert_eq!(
+        error.diagnostics[0].path.as_deref(),
+        Some("$.outbounds[0].streamSettings.security")
+    );
+    assert!(
+        error.diagnostics[0].message.contains("removed"),
+        "xtls must say it was removed, got: {:?}",
+        error.diagnostics
+    );
+}
+
+#[test]
 fn tcp_and_raw_networks_parse_as_the_raw_transport() {
     for network in ["tcp", "raw"] {
         let parsed = parse_xray_json(&raw_with_stream_settings(&format!(
