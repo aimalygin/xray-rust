@@ -60,7 +60,13 @@ impl HeaderMap {
 ///
 /// `host` becomes the `Host` header; Go carries it in `Request.Host` rather
 /// than the header map, which is why it is a separate argument and why it is
-/// never subject to the sort.
+/// never subject to the sort. `Host` and `User-Agent` are both excluded from
+/// the sorted remainder for the same reason: Go writes each from its own
+/// `Request` field (`Request.Host`, and the `User-Agent` line emitted above),
+/// so a map entry under either name would duplicate a line this function
+/// already wrote. Go's own writer excludes both via `reqWriteExcludeHeader`;
+/// an unfiltered `Host` entry would produce two `Host:` lines, an RFC 7230
+/// §5.4 violation most servers reject outright.
 pub fn serialize_request(method: &str, path: &str, host: &str, headers: &HeaderMap) -> Vec<u8> {
     let mut out = Vec::new();
     out.extend_from_slice(format!("{method} {path} HTTP/1.1\r\n").as_bytes());
@@ -73,7 +79,7 @@ pub fn serialize_request(method: &str, path: &str, host: &str, headers: &HeaderM
     let mut rest: Vec<&(String, String)> = headers
         .entries
         .iter()
-        .filter(|(name, _)| name != "User-Agent")
+        .filter(|(name, _)| name != "User-Agent" && name != "Host")
         .collect();
     rest.sort_by(|(left, _), (right, _)| left.as_bytes().cmp(right.as_bytes()));
 

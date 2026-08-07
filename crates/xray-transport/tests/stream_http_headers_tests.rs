@@ -73,4 +73,19 @@ mod stream_http_headers_tests {
             "{text}"
         );
     }
+
+    #[test]
+    fn a_host_entry_in_the_map_does_not_duplicate_the_host_line() {
+        // Go writes Host from Request.Host, not the header map, and excludes it
+        // from the sorted remainder. Two Host lines would be an RFC 7230 §5.4
+        // violation most servers reject.
+        let mut headers = HeaderMap::new();
+        headers.set("Host", "attacker.example");
+
+        let request = serialize_request("GET", "/", "example.com", &headers);
+        let text = String::from_utf8(request).expect("the request must be UTF-8");
+
+        assert_eq!(text.matches("Host:").count(), 1, "{text}");
+        assert!(text.contains("Host: example.com"), "{text}");
+    }
 }
