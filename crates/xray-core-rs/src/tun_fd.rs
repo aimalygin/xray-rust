@@ -158,6 +158,9 @@ mod platform {
         /// The syscall was interrupted and should be reissued at once. Not a
         /// failure: it neither backs off nor counts against the give-up bound.
         RetryImmediately,
+        /// The payload cannot be encoded and never will be. Dropping it is the
+        /// only progress available, and it says nothing about the descriptor.
+        DropPacket,
         Retry,
         Fatal,
     }
@@ -169,6 +172,9 @@ mod platform {
         if error.kind() == io::ErrorKind::Interrupted {
             return TunFdIoDisposition::RetryImmediately;
         }
+        if error.kind() == io::ErrorKind::InvalidData {
+            return TunFdIoDisposition::DropPacket;
+        }
         if error.kind() == io::ErrorKind::UnexpectedEof {
             return TunFdIoDisposition::Fatal;
         }
@@ -177,6 +183,36 @@ mod platform {
                 TunFdIoDisposition::Fatal
             }
             _ => TunFdIoDisposition::Retry,
+        }
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum TunFdLoopAction {
+        Continue,
+        BackOff,
+        Stop,
+    }
+
+    /// Advances the consecutive-failure budget for one I/O outcome and reports
+    /// what the pump should do next. Only `Retry` consumes budget: an interrupt
+    /// is not a failure, and an unencodable packet says nothing about the fd.
+    fn advance_failure_budget(
+        disposition: TunFdIoDisposition,
+        consecutive_errors: &mut u32,
+    ) -> TunFdLoopAction {
+        match disposition {
+            TunFdIoDisposition::RetryImmediately | TunFdIoDisposition::DropPacket => {
+                TunFdLoopAction::Continue
+            }
+            TunFdIoDisposition::Fatal => TunFdLoopAction::Stop,
+            TunFdIoDisposition::Retry => {
+                *consecutive_errors += 1;
+                if *consecutive_errors >= MAX_CONSECUTIVE_TUN_FD_IO_ERRORS {
+                    TunFdLoopAction::Stop
+                } else {
+                    TunFdLoopAction::BackOff
+                }
+            }
         }
     }
 
@@ -209,17 +245,18 @@ mod platform {
                         Ok(None) => {
                             consecutive_errors = 0;
                         }
-                        Err(err) => match io_disposition(&err) {
-                            TunFdIoDisposition::RetryImmediately => {}
-                            TunFdIoDisposition::Fatal => break,
-                            TunFdIoDisposition::Retry => {
-                                consecutive_errors += 1;
-                                if consecutive_errors >= MAX_CONSECUTIVE_TUN_FD_IO_ERRORS {
-                                    break;
+                        Err(err) => {
+                            match advance_failure_budget(
+                                io_disposition(&err),
+                                &mut consecutive_errors,
+                            ) {
+                                TunFdLoopAction::Continue => {}
+                                TunFdLoopAction::BackOff => {
+                                    tokio::time::sleep(TUN_FD_IO_RETRY_BACKOFF).await;
                                 }
-                                tokio::time::sleep(TUN_FD_IO_RETRY_BACKOFF).await;
+                                TunFdLoopAction::Stop => break,
                             }
-                        },
+                        }
                     }
                 }
             }
@@ -253,19 +290,18 @@ mod platform {
                                     consecutive_errors = 0;
                                     tun.record_tun_fd_write_batch(batch.len());
                                 }
-                                Err(err) => match io_disposition(&err) {
-                                    TunFdIoDisposition::RetryImmediately => {}
-                                    TunFdIoDisposition::Fatal => break,
-                                    TunFdIoDisposition::Retry => {
-                                        consecutive_errors += 1;
-                                        if consecutive_errors
-                                            >= MAX_CONSECUTIVE_TUN_FD_IO_ERRORS
-                                        {
-                                            break;
+                                Err(err) => {
+                                    match advance_failure_budget(
+                                        io_disposition(&err),
+                                        &mut consecutive_errors,
+                                    ) {
+                                        TunFdLoopAction::Continue => {}
+                                        TunFdLoopAction::BackOff => {
+                                            tokio::time::sleep(TUN_FD_IO_RETRY_BACKOFF).await;
                                         }
-                                        tokio::time::sleep(TUN_FD_IO_RETRY_BACKOFF).await;
+                                        TunFdLoopAction::Stop => break,
                                     }
-                                },
+                                }
                             }
                         }
                         Err(TunError::QueueClosed) => break,
@@ -517,6 +553,10 @@ mod platform {
                 TunFdIoDisposition::Fatal
             );
             assert_eq!(
+                io_disposition(&io::Error::from_raw_os_error(libc::ENOTCONN)),
+                TunFdIoDisposition::Fatal
+            );
+            assert_eq!(
                 io_disposition(&io::Error::new(io::ErrorKind::UnexpectedEof, "eof")),
                 TunFdIoDisposition::Fatal
             );
@@ -532,6 +572,62 @@ mod platform {
                 io_disposition(&io::Error::new(io::ErrorKind::Interrupted, "eintr")),
                 TunFdIoDisposition::RetryImmediately
             );
+        }
+
+        #[test]
+        fn only_retries_consume_the_failure_budget() {
+            let mut consecutive = 0;
+
+            assert_eq!(
+                advance_failure_budget(TunFdIoDisposition::RetryImmediately, &mut consecutive),
+                TunFdLoopAction::Continue
+            );
+            assert_eq!(consecutive, 0);
+
+            assert_eq!(
+                advance_failure_budget(TunFdIoDisposition::DropPacket, &mut consecutive),
+                TunFdLoopAction::Continue
+            );
+            assert_eq!(consecutive, 0);
+
+            assert_eq!(
+                advance_failure_budget(TunFdIoDisposition::Retry, &mut consecutive),
+                TunFdLoopAction::BackOff
+            );
+            assert_eq!(consecutive, 1);
+
+            assert_eq!(
+                advance_failure_budget(TunFdIoDisposition::Fatal, &mut consecutive),
+                TunFdLoopAction::Stop
+            );
+        }
+
+        #[test]
+        fn the_pump_gives_up_only_at_the_bound() {
+            let mut consecutive = MAX_CONSECUTIVE_TUN_FD_IO_ERRORS - 2;
+
+            assert_eq!(
+                advance_failure_budget(TunFdIoDisposition::Retry, &mut consecutive),
+                TunFdLoopAction::BackOff,
+                "one below the bound must keep the pump alive"
+            );
+            assert_eq!(
+                advance_failure_budget(TunFdIoDisposition::Retry, &mut consecutive),
+                TunFdLoopAction::Stop
+            );
+            assert_eq!(consecutive, MAX_CONSECUTIVE_TUN_FD_IO_ERRORS);
+        }
+
+        #[test]
+        fn an_unencodable_packet_is_dropped_not_retried() {
+            let malformed = [0x00, 0x00, 0x00, 0x00];
+            // `EncodedPacket` is not `Debug`, so `expect_err` is unavailable here.
+            let error = match EncodedPacket::new(TunFdPacketFormat::DarwinUtun, &malformed) {
+                Ok(_) => panic!("a packet with no IP version must not encode"),
+                Err(error) => error,
+            };
+
+            assert_eq!(io_disposition(&error), TunFdIoDisposition::DropPacket);
         }
 
         #[tokio::test]
