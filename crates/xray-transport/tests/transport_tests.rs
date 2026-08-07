@@ -887,6 +887,32 @@ mod transport_tests {
         );
     }
 
+    /// The cache sits behind the connector's own `Arc`, so cloning shares it.
+    /// Nothing else here pins that: a clone that built its own map would pass
+    /// every other test in this file while rebuilding each shape once per
+    /// clone -- and handing the two clones separate resumption session stores,
+    /// which is the split `ClientConfigKey` exists to avoid.
+    #[test]
+    fn tls_connector_clones_share_one_config_cache() {
+        let connector = TlsConnector::system().expect("system roots must load");
+        let clone = connector.clone();
+
+        let chrome = TlsClientConfig {
+            server_name: "example.com".to_owned(),
+            allow_insecure: false,
+            alpn: Vec::new(),
+            fingerprint: Some("chrome".to_owned()),
+        };
+
+        let original = connector.client_config_for(&chrome).expect("chrome config");
+        let cloned = clone.client_config_for(&chrome).expect("chrome config");
+
+        assert!(
+            Arc::ptr_eq(&original, &cloned),
+            "clones of one connector must share the config cache"
+        );
+    }
+
     /// `alpn` earns its place in the key only because it now reaches the
     /// unshaped config too. Were it still ignored there, two outbounds to one
     /// server differing only in ALPN would get byte-identical configs on

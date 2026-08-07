@@ -38,12 +38,23 @@ struct ClientConfigKey {
     fingerprint: Option<String>,
 }
 
+/// Where a connector's rustls configs come from. The two kinds are mutually
+/// exclusive by construction, so they are mutually exclusive by type: a pinned
+/// connector cannot also carry a cache to consult, and a cached one cannot be
+/// silently overridden.
+enum ConfigSource {
+    /// Builds one config per shape on demand and remembers it.
+    Cached(Mutex<HashMap<ClientConfigKey, Arc<rustls::ClientConfig>>>),
+    /// One prebuilt config, handed out for every shape.
+    Pinned(Arc<rustls::ClientConfig>),
+}
+
 #[derive(Clone)]
 pub struct TlsConnector {
-    /// Shared with every clone of this connector, so a shape is built once per
-    /// connector family rather than once per clone.
-    configs: Arc<Mutex<HashMap<ClientConfigKey, Arc<rustls::ClientConfig>>>>,
-    override_config: Option<Arc<rustls::ClientConfig>>,
+    /// Shared with every clone of this connector, so a cached connector builds
+    /// a shape once per connector family rather than once per clone --
+    /// `tls_connector_clones_share_one_config_cache` pins that.
+    source: Arc<ConfigSource>,
     socket_protector: Option<Arc<dyn SocketProtector>>,
 }
 
@@ -59,8 +70,7 @@ impl std::fmt::Debug for TlsConnector {
 impl TlsConnector {
     pub fn system() -> Result<Self, TransportError> {
         Ok(Self {
-            configs: Arc::new(Mutex::new(HashMap::new())),
-            override_config: None,
+            source: Arc::new(ConfigSource::Cached(Mutex::new(HashMap::new()))),
             socket_protector: None,
         })
     }
@@ -68,17 +78,16 @@ impl TlsConnector {
     /// Pins one prebuilt config for every connection, for tests that supply
     /// their own roots.
     ///
-    /// This skips both the cache and fingerprint validation: a connector built
-    /// this way ignores `TlsClientConfig::fingerprint` entirely, so it sends an
-    /// unshaped ClientHello and returns `Ok` even for a fingerprint that
-    /// `system()` would reject with `UnsupportedTlsFingerprint`. A test that
-    /// means to exercise shaping must use `system()` — with
+    /// Such a connector has no config cache and performs no fingerprint
+    /// validation: it ignores `TlsClientConfig::fingerprint` entirely, so it
+    /// sends an unshaped ClientHello and returns `Ok` even for a fingerprint
+    /// that `system()` would reject with `UnsupportedTlsFingerprint`. A test
+    /// that means to exercise shaping must use `system()` — with
     /// `allow_insecure: true` if it needs to reach a self-signed local
     /// listener.
     pub fn with_pinned_client_config(client_config: Arc<rustls::ClientConfig>) -> Self {
         Self {
-            configs: Arc::new(Mutex::new(HashMap::new())),
-            override_config: Some(client_config),
+            source: Arc::new(ConfigSource::Pinned(client_config)),
             socket_protector: None,
         }
     }
@@ -94,39 +103,40 @@ impl TlsConnector {
         &self,
         config: &TlsClientConfig,
     ) -> Result<Arc<rustls::ClientConfig>, TransportError> {
-        if let Some(override_config) = &self.override_config {
-            return Ok(Arc::clone(override_config));
+        match &*self.source {
+            ConfigSource::Pinned(pinned) => Ok(Arc::clone(pinned)),
+            ConfigSource::Cached(configs) => {
+                let TlsClientConfig {
+                    // Per-connection, not per-config: rustls receives it at `connect`.
+                    server_name: _,
+                    allow_insecure,
+                    alpn,
+                    fingerprint,
+                } = config;
+                let key = ClientConfigKey {
+                    allow_insecure: *allow_insecure,
+                    alpn: alpn.clone(),
+                    fingerprint: fingerprint.clone(),
+                };
+
+                // Deliberately fails open where the plan said to fail closed:
+                // `insert` runs after the fallible build, so a panic leaves an
+                // entry absent but never half-built, and erroring would turn
+                // one unrelated panic into a tunnel that stays down until the
+                // process restarts.
+                let mut configs = configs
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                if let Some(cached) = configs.get(&key) {
+                    return Ok(Arc::clone(cached));
+                }
+
+                let client_config = Arc::new(build_client_config(config)?);
+                configs.insert(key, Arc::clone(&client_config));
+
+                Ok(client_config)
+            }
         }
-
-        let TlsClientConfig {
-            // Per-connection, not per-config: rustls receives it at `connect`.
-            server_name: _,
-            allow_insecure,
-            alpn,
-            fingerprint,
-        } = config;
-        let key = ClientConfigKey {
-            allow_insecure: *allow_insecure,
-            alpn: alpn.clone(),
-            fingerprint: fingerprint.clone(),
-        };
-
-        // Deliberately fails open where the plan said to fail closed: `insert`
-        // runs after the fallible build, so a panic leaves an entry absent but
-        // never half-built, and erroring would turn one unrelated panic into a
-        // tunnel that stays down until the process restarts.
-        let mut configs = self
-            .configs
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if let Some(cached) = configs.get(&key) {
-            return Ok(Arc::clone(cached));
-        }
-
-        let client_config = Arc::new(build_client_config(config)?);
-        configs.insert(key, Arc::clone(&client_config));
-
-        Ok(client_config)
     }
 
     pub async fn connect_stream(
