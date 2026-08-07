@@ -12,9 +12,10 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::time::{sleep, timeout, Duration, Instant};
 use xray_config::{
-    CoreConfig, InboundConfig, InboundProtocol, Network, OutboundConfig, OutboundSettings,
-    RealitySettings, RealityShortId, RoutingConfig, StreamSecurity, StreamSettings,
-    StreamTransport, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
+    CoreConfig, HttpUpgradeSettings, InboundConfig, InboundProtocol, Network, OutboundConfig,
+    OutboundSettings, RealitySettings, RealityShortId, RoutingConfig, StreamSecurity,
+    StreamSettings, StreamTransport, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
+    WebSocketSettings,
 };
 use xray_core_rs::Core;
 use xray_transport::{SystemDnsResolver, TlsConnector, TransportDialer};
@@ -143,6 +144,7 @@ async fn run_local_xray_vless_interop() {
             &xray_checkout,
             XrayVlessServerConfig {
                 security: XrayInboundSecurity::None,
+                transport: XrayInboundTransport::Raw,
                 flow: None,
             },
         ),
@@ -162,6 +164,7 @@ async fn run_local_xray_vless_tls_interop(flow: Option<&'static str>) {
             &xray_checkout,
             XrayVlessServerConfig {
                 security: XrayInboundSecurity::Tls,
+                transport: XrayInboundTransport::Raw,
                 flow,
             },
         ),
@@ -273,6 +276,7 @@ async fn run_local_xray_vless_reality_vision_interop(fingerprint: &str) {
             &xray_checkout,
             XrayVlessServerConfig {
                 security: XrayInboundSecurity::Reality,
+                transport: XrayInboundTransport::Raw,
                 flow: Some("xtls-rprx-vision"),
             },
         ),
@@ -293,6 +297,7 @@ async fn run_local_xray_reality_vision_inner_tls_interop(fingerprint: &str) {
             &xray_checkout,
             XrayVlessServerConfig {
                 security: XrayInboundSecurity::Reality,
+                transport: XrayInboundTransport::Raw,
                 flow: Some("xtls-rprx-vision"),
             },
         ),
@@ -410,6 +415,7 @@ async fn run_local_xray_vless_reality_vision_burst_interop(fingerprint: &str, fl
             &xray_checkout,
             XrayVlessServerConfig {
                 security: XrayInboundSecurity::Reality,
+                transport: XrayInboundTransport::Raw,
                 flow: Some("xtls-rprx-vision"),
             },
         ),
@@ -433,6 +439,7 @@ async fn run_xray_core_client_vless_reality_vision_burst_interop(
             &xray_checkout,
             XrayVlessServerConfig {
                 security: XrayInboundSecurity::Reality,
+                transport: XrayInboundTransport::Raw,
                 flow: Some("xtls-rprx-vision"),
             },
         ),
@@ -732,9 +739,20 @@ enum XrayInboundSecurity {
     Reality,
 }
 
+/// The stream transport the Go inbound is configured with. REALITY is absent
+/// on purpose: Xray refuses it for anything but raw, which is the very rule
+/// the compatibility matrix reproduces.
+#[derive(Debug, Clone, Copy)]
+enum XrayInboundTransport {
+    Raw,
+    WebSocket { path: &'static str },
+    HttpUpgrade { path: &'static str },
+}
+
 #[derive(Debug, Clone, Copy)]
 struct XrayVlessServerConfig {
     security: XrayInboundSecurity,
+    transport: XrayInboundTransport,
     flow: Option<&'static str>,
 }
 
@@ -897,17 +915,34 @@ fn write_xray_vless_config(
         Some(flow) => format!(r#"{{ "id": "{TEST_UUID}", "flow": "{flow}" }}"#),
         None => format!(r#"{{ "id": "{TEST_UUID}" }}"#),
     };
-    let stream_settings = match server_config.security {
-        XrayInboundSecurity::None => String::new(),
+    // The network and its settings block come from the transport, the security
+    // block from the security. A raw, unsecured inbound keeps emitting no
+    // streamSettings at all, which is what the pre-existing scenarios expect.
+    let (network, transport_settings) = match server_config.transport {
+        XrayInboundTransport::Raw => ("tcp", String::new()),
+        XrayInboundTransport::WebSocket { path } => (
+            "ws",
+            format!(
+                r#",
+        "wsSettings": {{ "path": "{path}" }}"#
+            ),
+        ),
+        XrayInboundTransport::HttpUpgrade { path } => (
+            "httpupgrade",
+            format!(
+                r#",
+        "httpupgradeSettings": {{ "path": "{path}" }}"#
+            ),
+        ),
+    };
+    let security_settings = match server_config.security {
+        XrayInboundSecurity::None => r#""security": "none""#.to_owned(),
         XrayInboundSecurity::Tls => {
             let identity = tls_identity.expect("TLS config requires generated identity");
             let cert_path = identity.cert_path.to_string_lossy();
             let key_path = identity.key_path.to_string_lossy();
             format!(
-                r#",
-      "streamSettings": {{
-        "network": "tcp",
-        "security": "tls",
+                r#""security": "tls",
         "tlsSettings": {{
           "certificates": [
             {{
@@ -915,15 +950,11 @@ fn write_xray_vless_config(
               "keyFile": "{key_path}"
             }}
           ]
-        }}
-      }}"#
+        }}"#
             )
         }
         XrayInboundSecurity::Reality => format!(
-            r#",
-      "streamSettings": {{
-        "network": "tcp",
-        "security": "reality",
+            r#""security": "reality",
         "realitySettings": {{
           "show": true,
           "dest": "{REALITY_SERVER_NAME}:443",
@@ -931,9 +962,21 @@ fn write_xray_vless_config(
           "privateKey": "{REALITY_PRIVATE_KEY}",
           "shortIds": ["{REALITY_SHORT_ID_HEX}"],
           "type": "tcp"
-        }}
-      }}"#
+        }}"#
         ),
+    };
+    let stream_settings = if matches!(server_config.transport, XrayInboundTransport::Raw)
+        && matches!(server_config.security, XrayInboundSecurity::None)
+    {
+        String::new()
+    } else {
+        format!(
+            r#",
+      "streamSettings": {{
+        "network": "{network}",
+        {security_settings}{transport_settings}
+      }}"#
+        )
     };
     let config = format!(
         r#"{{
@@ -1172,6 +1215,15 @@ fn rust_core_config_with_security(
     security: StreamSecurity,
     flow: Option<&str>,
 ) -> CoreConfig {
+    rust_core_config_with_transport(xray_addr, security, flow, StreamTransport::Raw)
+}
+
+fn rust_core_config_with_transport(
+    xray_addr: SocketAddr,
+    security: StreamSecurity,
+    flow: Option<&str>,
+    transport: StreamTransport,
+) -> CoreConfig {
     CoreConfig {
         inbounds: vec![InboundConfig {
             tag: Some("socks-in".to_owned()),
@@ -1186,7 +1238,7 @@ fn rust_core_config_with_security(
             tag: Some("proxy".to_owned()),
             stream: StreamSettings {
                 network: Network::Tcp,
-                transport: StreamTransport::Raw,
+                transport,
                 security,
                 socket_options: None,
             },
@@ -1395,4 +1447,166 @@ async fn socks5_connect(client: &mut TcpStream, target: SocketAddr) -> Result<()
     }
 
     Ok(())
+}
+
+// ---- ws and httpupgrade -----------------------------------------------------
+//
+// The wire format for both transports is asserted against our own reading of
+// Xray in the unit tests; these prove it against the reference implementation
+// itself, which is the only place a divergence in header order, frame
+// boundaries or early-data encoding actually shows up.
+
+const WS_PATH: &str = "/interop-ws";
+const HTTPUPGRADE_PATH: &str = "/interop-upgrade";
+
+#[tokio::test]
+#[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
+async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_ws() {
+    timeout(
+        Duration::from_secs(120),
+        run_local_xray_stream_transport_interop(
+            XrayInboundTransport::WebSocket { path: WS_PATH },
+            StreamTransport::WebSocket(WebSocketSettings {
+                path: WS_PATH.to_owned(),
+                ..WebSocketSettings::default()
+            }),
+            false,
+        ),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
+async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_ws_tls() {
+    timeout(
+        Duration::from_secs(120),
+        run_local_xray_stream_transport_interop(
+            XrayInboundTransport::WebSocket { path: WS_PATH },
+            StreamTransport::WebSocket(WebSocketSettings {
+                path: WS_PATH.to_owned(),
+                ..WebSocketSettings::default()
+            }),
+            true,
+        ),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
+async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_ws_early_data() {
+    // The VLESS request header plus the first payload is well under 2 KiB, so
+    // this exercises the path where the whole first write travels inside
+    // Sec-WebSocket-Protocol and no frame is sent for it.
+    timeout(
+        Duration::from_secs(120),
+        run_local_xray_stream_transport_interop(
+            XrayInboundTransport::WebSocket {
+                path: "/interop-ws?ed=2048",
+            },
+            StreamTransport::WebSocket(WebSocketSettings {
+                path: WS_PATH.to_owned(),
+                early_data_bytes: 2048,
+                ..WebSocketSettings::default()
+            }),
+            false,
+        ),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
+async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_httpupgrade() {
+    timeout(
+        Duration::from_secs(120),
+        run_local_xray_stream_transport_interop(
+            XrayInboundTransport::HttpUpgrade {
+                path: HTTPUPGRADE_PATH,
+            },
+            StreamTransport::HttpUpgrade(HttpUpgradeSettings {
+                path: HTTPUPGRADE_PATH.to_owned(),
+                ..HttpUpgradeSettings::default()
+            }),
+            false,
+        ),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
+async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_httpupgrade_tls() {
+    timeout(
+        Duration::from_secs(120),
+        run_local_xray_stream_transport_interop(
+            XrayInboundTransport::HttpUpgrade {
+                path: HTTPUPGRADE_PATH,
+            },
+            StreamTransport::HttpUpgrade(HttpUpgradeSettings {
+                path: HTTPUPGRADE_PATH.to_owned(),
+                ..HttpUpgradeSettings::default()
+            }),
+            true,
+        ),
+    )
+    .await
+    .unwrap();
+}
+
+async fn run_local_xray_stream_transport_interop(
+    inbound: XrayInboundTransport,
+    outbound: StreamTransport,
+    over_tls: bool,
+) {
+    let xray_checkout = resolve_xray_checkout();
+    let security = if over_tls {
+        XrayInboundSecurity::Tls
+    } else {
+        XrayInboundSecurity::None
+    };
+    let xray = timeout(
+        Duration::from_secs(60),
+        start_xray_vless_server(
+            &xray_checkout,
+            XrayVlessServerConfig {
+                security,
+                transport: inbound,
+                // Vision cannot ride these transports; the compatibility
+                // matrix refuses the pairing on both sides.
+                flow: None,
+            },
+        ),
+    )
+    .await
+    .expect("start xray timeout");
+
+    let (client_security, dialer) = if over_tls {
+        let tls_client_config = Arc::clone(
+            xray.tls_client_config
+                .as_ref()
+                .expect("TLS Xray server should expose trusted client config"),
+        );
+        (
+            StreamSecurity::Tls(TlsSettings {
+                server_name: Some(TLS_SERVER_NAME.to_owned()),
+                fingerprint: None,
+                allow_insecure: false,
+                alpn: Vec::new(),
+            }),
+            Some(TransportDialer::with_tls_connector(
+                TlsConnector::with_pinned_client_config(tls_client_config),
+            )),
+        )
+    } else {
+        (StreamSecurity::None, None)
+    };
+
+    let rust_config = rust_core_config_with_transport(xray.addr, client_security, None, outbound);
+    run_local_xray_vless_interop_scenario(xray, rust_config, dialer).await;
 }
