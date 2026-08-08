@@ -15,13 +15,13 @@ use std::io;
 use std::pin::Pin;
 use std::task::{ready, Context, Poll};
 
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use h2::client::ResponseFuture;
 use h2::{RecvStream, SendStream};
 use http::HeaderMap;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
-use super::framing::{encode_hunk, HunkDecoder};
+use super::framing::{encode_hunk_into, HunkDecoder};
 use super::h2client::H2ConnectionDriver;
 use crate::{TransportError, TransportStream};
 
@@ -50,6 +50,17 @@ pub struct GrpcStream {
     /// The encoded `Hunk` that has not been handed to h2 in full yet, because
     /// the flow-control window ran out mid-frame.
     pending_write: Bytes,
+    /// Where the next `Hunk` is encoded. Kept across writes so that the last
+    /// frame's allocation can be reclaimed rather than replaced — see
+    /// `encode_hunk_into` for when that does and does not happen.
+    ///
+    /// Keeping it costs an idle flow nothing, which is the point: `split` hands
+    /// the whole allocation to the frame, and the last `split_to` in
+    /// `poll_drain_uplink` releases the stream's own reference to it rather
+    /// than holding a zero-length view into it
+    /// (`bytes-1.11.1/src/bytes.rs:544-548`), so what stays here between writes
+    /// is a few bytes of tail, not a frame.
+    write_buffer: BytesMut,
     /// Set once `data()` has yielded `None` and the trailers have been read.
     eof: bool,
     send_closed: bool,
@@ -72,6 +83,7 @@ impl GrpcStream {
             pending_read: Vec::new(),
             pending_read_pos: 0,
             pending_write: Bytes::new(),
+            write_buffer: BytesMut::new(),
             eof: false,
             send_closed: false,
             driver,
@@ -79,7 +91,12 @@ impl GrpcStream {
     }
 
     /// Whether the connection underneath has ended — a graceful `GOAWAY`
-    /// included. See [`H2ConnectionDriver`].
+    /// included.
+    ///
+    /// Completion is not success, which is why this exists at all: h2 resolves
+    /// its connection future as `Ok(())` after a `GOAWAY(NO_ERROR)`
+    /// (`h2-0.4.15/src/proto/connection.rs:216-235`), so a pool that retired a
+    /// connection only on `Err` would go on handing out a dead one.
     pub fn connection_is_finished(&self) -> bool {
         self.driver.is_finished()
     }
@@ -167,6 +184,13 @@ impl GrpcStream {
             self.eof = true;
             return Poll::Ready(Ok(()));
         };
+        // `poll_trailers` is `#[doc(hidden)]` (`h2-0.4.15/src/share.rs:
+        // 425-436`), so an h2 bump can drop it with no deprecation cycle and
+        // this will fail to compile rather than misbehave. It is still the
+        // only option: the supported `RecvStream::trailers` is `async`, and
+        // this is a manual `poll` impl with nowhere to hold the future. If it
+        // does go, the replacement is to store a boxed `trailers()` future in
+        // `Downlink`.
         let trailers = ready!(recv.poll_trailers(cx))
             .map_err(|error| h2_io_error("could not read the gRPC trailers", &error))?;
 
@@ -306,7 +330,8 @@ impl AsyncWrite for GrpcStream {
         // One write, one `Hunk`: `HunkReaderWriter.Write` hands the whole
         // buffer to a single `Send` (`hunkconn.go:131-141`), so the peer's
         // reads see the same boundaries ours did.
-        this.pending_write = Bytes::from(encode_hunk(input));
+        encode_hunk_into(&mut this.write_buffer, input);
+        this.pending_write = this.write_buffer.split().freeze();
         if let Poll::Ready(Err(error)) = this.poll_drain_uplink(cx) {
             return Poll::Ready(Err(error));
         }
@@ -328,14 +353,45 @@ impl AsyncWrite for GrpcStream {
     /// with a nil cancel function (`dial.go:74`), so the `h.cancel()` branch at
     /// `hunkconn.go:143-146` is dead on the client and the call is never
     /// cancelled, only half-closed.
+    ///
+    /// **A stream the peer already reset is a success here, not a failure.**
+    /// grpc-go's server sends `RST_STREAM(NO_ERROR)` right behind its trailers
+    /// whenever the client has not half-closed first — `rst := s.getState() ==
+    /// streamActive` in `writeStatus` (`grpc@v1.81.0/internal/transport/
+    /// http2_server.go:1127-1129`) — so every call an Xray inbound ends before
+    /// we do leaves nothing to half-close, and h2 answers `send_data` on it
+    /// with `UserError::InactiveStreamId`. Xray's own client cannot fail here:
+    /// `CloseSend` returns nil unconditionally, "Always return nil" and all
+    /// (`grpc@v1.81.0/stream.go:1039-1052`), so `HunkReaderWriter.Close` has no
+    /// error to report on this path. Reporting one would fail a completed
+    /// tunnel — `relay_bidirectional` propagates a shutdown error and aborts
+    /// its select, dropping a downlink still draining into the local socket.
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         let this = self.get_mut();
         ready!(this.poll_drain_uplink(cx))?;
 
         if !this.send_closed {
-            this.uplink
-                .send_data(Bytes::new(), true)
-                .map_err(|error| h2_io_error("could not half-close the gRPC call", &error))?;
+            if let Err(error) = this.uplink.send_data(Bytes::new(), true) {
+                // Which failure this was is asked of the stream, not of the
+                // error: h2 keeps `Error::Kind` private and offers no accessor
+                // for the `UserError` inside it, while `reason`, `is_reset`
+                // and `is_io` all answer for a *received frame* rather than a
+                // user error (`h2-0.4.15/src/error.rs:20-64`). `poll_reset`
+                // asks the question directly — it yields the reason a closed
+                // stream carries and stays `Pending` while the stream is still
+                // streaming (`h2-0.4.15/src/proto/streams/state.rs:446-461`) —
+                // which is exactly the line between "the peer took the stream
+                // away", the normal end of a call, and "we asked for something
+                // illegal", which must keep surfacing. The pre-check is the
+                // wrong way round on purpose: it would register a waker on
+                // every clean shutdown to catch a case that never happened.
+                if this.uplink.poll_reset(cx).is_pending() {
+                    return Poll::Ready(Err(h2_io_error(
+                        "could not half-close the gRPC call",
+                        &error,
+                    )));
+                }
+            }
             this.send_closed = true;
         }
 

@@ -23,8 +23,14 @@
 //! gRPC frame (length 0 in the five-byte prefix), just with no protobuf body
 //! after it — not `0a 00`, which would claim a present-but-empty field.
 
+use bytes::{BufMut, BytesMut};
+
 /// `payloadLen + sizeLen` (`grpc@v1.81.0/rpc_util.go:858-860`).
 const GRPC_HEADER_LEN: usize = 5;
+
+/// No varint of a `usize` is longer, so reserving this much never has to
+/// derive the varint's real width a second time.
+const MAX_VARINT_LEN: usize = 10;
 
 /// grpc-go's `defaultClientMaxReceiveMessageSize`
 /// (`grpc@v1.81.0/clientconn.go:141`). Xray installs no `MaxCallRecvMsgSize`
@@ -32,19 +38,31 @@ const GRPC_HEADER_LEN: usize = 5;
 /// default is what a real Xray peer holds itself to and what we hold it to.
 const MAX_RECEIVE_MESSAGE_SIZE: usize = 1024 * 1024 * 4;
 
-fn put_varint(out: &mut Vec<u8>, mut value: usize) {
+fn put_varint(out: &mut BytesMut, mut value: usize) {
     while value >= 0x80 {
-        out.push((value as u8) | 0x80);
+        out.put_u8((value as u8) | 0x80);
         value >>= 7;
     }
-    out.push(value as u8);
+    out.put_u8(value as u8);
 }
 
-/// Encodes one write as a single uncompressed `Hunk` message.
+/// Appends one write to `out` as a single uncompressed `Hunk` message.
+///
+/// It appends rather than fills a buffer of its own so that `GrpcStream` can
+/// hand it the same `BytesMut` on every write. Building the frame in a fresh
+/// `Vec` costs two allocations, not one: the `Vec`, and the `Shared` header
+/// `Bytes::from(Vec<u8>)` boxes whenever `len != cap`
+/// (`bytes-1.11.1/src/bytes.rs:960-979`), which the deliberately over-estimated
+/// capacity below guarantees. Reusing the buffer saves both, but only once h2
+/// has flushed the previous frame to the socket and dropped its chunks — until
+/// then the allocation is still shared and `reserve` has to allocate, exactly
+/// as the `Vec` did. So this is a saving on a relay that waits on its source
+/// between writes and a wash on one that never lets the connection catch up;
+/// it is never worse than a fresh `Vec`.
 ///
 /// The length prefix is filled in *after* the tag, varint and payload are
-/// already in `out`, by patching the four length bytes from `out.len() -
-/// GRPC_HEADER_LEN`, rather than computed up front from a second walk of
+/// already in `out`, by patching the four length bytes back at the message's
+/// own start, rather than computed up front from a second walk of
 /// `payload.len()`. Two
 /// independent derivations of "how many bytes will the varint take" — one
 /// sizing the prefix, one driving what `put_varint` actually emits — would
@@ -53,32 +71,43 @@ fn put_varint(out: &mut Vec<u8>, mut value: usize) {
 /// Task 3's decoder trusts this prefix to know where the message ends.
 /// Reading the length back from what was actually written makes it true by
 /// construction instead of by two functions agreeing.
-pub fn encode_hunk(payload: &[u8]) -> Vec<u8> {
+pub(super) fn encode_hunk_into(out: &mut BytesMut, payload: &[u8]) {
+    // Everything below indexes from here rather than from zero, so appending
+    // to a buffer that already holds bytes patches this message's prefix and
+    // not an earlier one's.
+    let start = out.len();
+
+    // A safe upper bound, not a byte-exact count: the header and the one-byte
+    // tag are fixed and no varint is longer than `MAX_VARINT_LEN`, so this
+    // never reallocates and never needs a second, independent varint length
+    // computed just to size the buffer.
+    out.reserve(payload.len() + GRPC_HEADER_LEN + 1 + MAX_VARINT_LEN);
+    out.put_bytes(0x00, GRPC_HEADER_LEN); // compression flag + length placeholder
     if payload.is_empty() {
         // No tag, no varint: proto3 drops a zero-length `bytes` field
         // entirely (see module doc), so the message body is empty and only
-        // the five-byte gRPC prefix (with length 0) goes on the wire.
-        return vec![0x00; GRPC_HEADER_LEN];
+        // the five-byte gRPC prefix (with length 0) goes on the wire — which
+        // the placeholder already is.
+        return;
     }
 
-    // Capacity is a safe upper bound, not a byte-exact count: the header and
-    // the one-byte tag are fixed, and no varint of a `usize` needs more than
-    // ten bytes, so this never reallocates and never needs a second,
-    // independent varint length computed just to size the `Vec`.
-    let mut out = Vec::with_capacity(payload.len() + GRPC_HEADER_LEN + 1 + 10);
-    out.extend_from_slice(&[0x00; GRPC_HEADER_LEN]); // compression flag + length placeholder
-    out.push(0x0a);
-    put_varint(&mut out, payload.len());
-    out.extend_from_slice(payload);
+    out.put_u8(0x0a);
+    put_varint(out, payload.len());
+    out.put_slice(payload);
 
-    let body_len = out.len() - GRPC_HEADER_LEN;
+    let body_len = out.len() - start - GRPC_HEADER_LEN;
     debug_assert!(
         u32::try_from(body_len).is_ok(),
         "gRPC message body exceeds gRPC's own u32 length prefix"
     );
-    out[1..GRPC_HEADER_LEN].copy_from_slice(&(body_len as u32).to_be_bytes());
+    out[start + 1..start + GRPC_HEADER_LEN].copy_from_slice(&(body_len as u32).to_be_bytes());
+}
 
-    out
+/// `encode_hunk_into` for callers that have no buffer to reuse.
+pub fn encode_hunk(payload: &[u8]) -> Vec<u8> {
+    let mut out = BytesMut::new();
+    encode_hunk_into(&mut out, payload);
+    out.to_vec()
 }
 
 /// Reassembles `Hunk` messages from however the HTTP/2 layer chops the stream.

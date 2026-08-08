@@ -541,7 +541,7 @@ mod stream_grpc_h2_tests {
     use bytes::Bytes;
     use h2::server::{self, SendResponse};
     use h2::SendStream;
-    use http::{HeaderMap, Response};
+    use http::{HeaderMap, Method, Response};
     use tokio::io::{duplex, AsyncReadExt, AsyncWriteExt, DuplexStream};
     use xray_transport::stream::{encode_hunk, open_grpc_h2_stream, GrpcStream};
     use xray_transport::BoxedTransportStream;
@@ -593,6 +593,9 @@ mod stream_grpc_h2_tests {
         /// Write these DATA payloads — already framed by the test — and close
         /// with these trailers.
         Say(Vec<Bytes>, HeaderMap),
+        /// [`Script::Say`], and then reset the stream the way grpc-go's server
+        /// does when it ends the RPC before the client half-closes.
+        SayThenReset(Vec<Bytes>, HeaderMap),
         /// Accept the call and answer nothing at all.
         Silent,
     }
@@ -610,6 +613,22 @@ mod stream_grpc_h2_tests {
             let script = script
                 .take()
                 .expect("the tests open one call per connection");
+
+            // `SayThenReset` is the one script that has to finish before the
+            // connection moves on, and the only one not spawned. h2 puts
+            // `RST_STREAM` on the wire when the last handle to a stream is
+            // dropped, so the reset happens as `handle_call` returns; the
+            // graceful shutdown behind it is what turns "the reset has been
+            // queued" into something the client can wait for, since a client
+            // whose driver has finished has necessarily parsed every frame
+            // ahead of the `GOAWAY`.
+            if matches!(script, Script::SayThenReset(..)) {
+                handle_call(request, respond, script).await;
+                connection.graceful_shutdown();
+                while connection.accept().await.is_some() {}
+                return;
+            }
+
             tokio::spawn(handle_call(request, respond, script));
         }
     }
@@ -626,13 +645,32 @@ mod stream_grpc_h2_tests {
         mut respond: SendResponse<Bytes>,
         script: Script,
     ) {
-        let mut body = request.into_parts().1;
+        let (head, mut body) = request.into_parts();
+        assert_request_line(&head);
 
         match script {
             Script::Silent => {
                 // Hold both halves so the stream stays open and unanswered.
                 let _held = (body, respond);
                 std::future::pending::<()>().await;
+            }
+            Script::SayThenReset(chunks, trailers) => {
+                let mut send = respond
+                    .send_response(grpc_response(), false)
+                    .expect("respond");
+                for chunk in chunks {
+                    send_all(&mut send, chunk).await;
+                }
+                send.send_trailers(trailers).expect("trailers");
+                // `writeStatus` puts a RST_STREAM(NO_ERROR) right behind the
+                // trailing HEADERS whenever the client has not half-closed
+                // first — `rst := s.getState() == streamActive`
+                // (`grpc@v1.81.0/internal/transport/http2_server.go:
+                // 1127-1129`). Dropping the handles is how that is asked of
+                // h2, *not* `send_reset`: a `send_reset` here discards the
+                // response and trailers already queued behind it, and the
+                // client sees a bare reset with no call in front of it.
+                drop((send, body, respond));
             }
             Script::Say(chunks, trailers) => {
                 let mut send = respond
@@ -676,6 +714,52 @@ mod stream_grpc_h2_tests {
                 };
                 send.send_trailers(trailers("0")).expect("trailers");
             }
+        }
+    }
+
+    /// The request every script is served over, checked once where all of them
+    /// pass through.
+    ///
+    /// Without this the whole block runs on `into_parts().1` and never looks at
+    /// the head, so a `:path` mangled by the URI, a GET, or a dropped `te:
+    /// trailers` would sail through every test here: h2 needs none of them, and
+    /// neither does this peer. Nor, for `te`, does a stock grpc-go inbound —
+    /// v1.81.0's server checks only `content-type`
+    /// (`grpc@v1.81.0/internal/transport/http2_server.go:417-427,495-497`) —
+    /// which is exactly why nothing else would catch it going missing. The
+    /// client sends it on every call regardless (`http2_client.go:573-579`
+    /// builds `:method`, `:scheme`, `:path`, `:authority`, `content-type`,
+    /// `user-agent`, `te` in that order and none of them conditionally), so it
+    /// is part of what a censor sees, and any middlebox on the path holding to
+    /// the gRPC HTTP/2 spec is entitled to refuse a call without it.
+    ///
+    /// Which values are *right* is Task 7's question. This pins only the fields
+    /// the request builder itself puts on the wire.
+    fn assert_request_line(head: &http::request::Parts) {
+        assert_eq!(head.method, Method::POST, "gRPC calls are POSTs");
+        // `:scheme` stays `http`: Xray dials gRPC with
+        // `insecure.NewCredentials()` and wraps the connection itself
+        // (`Xray-core/transport/internet/grpc/dial.go:103-157`), so grpc-go
+        // believes the transport is plaintext.
+        assert_eq!(head.uri.scheme_str(), Some("http"), "scheme");
+        assert_eq!(
+            head.uri.authority().map(|authority| authority.as_str()),
+            Some(AUTHORITY),
+            ":authority"
+        );
+        assert_eq!(head.uri.path(), PATH, ":path");
+        assert_eq!(head.uri.query(), None, "the :path carries no query");
+
+        for (name, expected) in [
+            ("content-type", "application/grpc"),
+            ("te", "trailers"),
+            ("user-agent", USER_AGENT),
+        ] {
+            assert_eq!(
+                head.headers.get(name).map(|value| value.to_str().unwrap()),
+                Some(expected),
+                "{name}"
+            );
         }
     }
 
@@ -860,6 +944,82 @@ mod stream_grpc_h2_tests {
                 error.to_string().contains("14"),
                 "the error should name the grpc-status, got: {error}"
             );
+        })
+        .await;
+    }
+
+    /// A call the *server* ends first, which is the ordinary shape of one: an
+    /// Xray inbound whose tunnel finished writes its trailers and, because the
+    /// client has not half-closed yet, a `RST_STREAM(NO_ERROR)` right behind
+    /// them (`rst := s.getState() == streamActive`,
+    /// `grpc@v1.81.0/internal/transport/http2_server.go:1127-1129`). There is
+    /// then no stream left to half-close, and h2 answers `send_data` on it with
+    /// `UserError::InactiveStreamId`.
+    ///
+    /// That must not surface. `CloseSend` returns nil unconditionally
+    /// (`grpc@v1.81.0/stream.go:1039-1052`), so Xray's own `Close` cannot fail
+    /// here, and `relay_bidirectional` shuts the writer down on EOF and
+    /// propagates whatever it returns — a completed tunnel would be reported as
+    /// a failed relay, and the error aborting the select would drop a downlink
+    /// still draining into the local socket.
+    #[tokio::test]
+    async fn a_half_close_after_the_peer_reset_the_stream_succeeds() {
+        let (client_io, server_io) = duplex(64 * 1024);
+        tokio::spawn(serve_one_call(
+            server_io,
+            Script::SayThenReset(hunks(&[b"done"]), trailers("0")),
+        ));
+        let mut stream = within_deadline(open(client_io)).await;
+
+        within_deadline(async {
+            let mut received = Vec::new();
+            stream
+                .read_to_end(&mut received)
+                .await
+                .expect("read to eof");
+            assert_eq!(received, b"done");
+
+            // Reading to EOF only proves the trailers arrived, and the reset
+            // is queued behind them — half-closing here would race it and pass
+            // for the wrong reason. The driver finishing is the barrier that
+            // does not race: the peer sends the reset before the `GOAWAY` that
+            // ends the driver, and the driver parses frames in order.
+            while !stream.connection_is_finished() {
+                tokio::task::yield_now().await;
+            }
+
+            stream
+                .shutdown()
+                .await
+                .expect("a peer that ended the call first is not a failed relay");
+        })
+        .await;
+    }
+
+    /// `connection_is_finished` is what Task 8's pool has to ask, because the
+    /// obvious question gives the wrong answer: h2 resolves its connection
+    /// future as `Ok(())` after a graceful `GOAWAY`
+    /// (`h2-0.4.15/src/proto/connection.rs:216-235`), so a pool that retired a
+    /// connection only when the driver returned `Err` would keep handing out a
+    /// dead one.
+    #[tokio::test]
+    async fn a_connection_whose_peer_went_away_reports_itself_finished() {
+        let (client_io, server_io) = duplex(64 * 1024);
+        let server = tokio::spawn(serve_one_call(server_io, Script::Silent));
+        let stream = within_deadline(open(client_io)).await;
+        assert!(
+            !stream.connection_is_finished(),
+            "a connection with a live call on it is not finished"
+        );
+
+        // Takes the peer's whole connection down, not just the call — the
+        // driver ends either way, and this is the case a pool must not miss.
+        server.abort();
+
+        within_deadline(async {
+            while !stream.connection_is_finished() {
+                tokio::task::yield_now().await;
+            }
         })
         .await;
     }
