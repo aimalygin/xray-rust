@@ -553,8 +553,8 @@ mod stream_grpc_h2_tests {
     const AUTHORITY: &str = "grpc.example.com";
     /// `grpc_request_path("xray.grpc", false)`.
     const PATH: &str = "/xray.grpc/Tun";
-    /// `utils.ChromeUA` stands in for whatever Task 7 settles on; this block
-    /// only cares that a value reaches the request.
+    /// Stands in for whatever Task 7 settles on; this block only cares that
+    /// whatever value is dialled with reaches the request unchanged.
     const USER_AGENT: &str = "grpc-go/1.81.0";
 
     /// Every test here can stall rather than fail — an unreleased window, a
@@ -570,11 +570,15 @@ mod stream_grpc_h2_tests {
     }
 
     async fn open(io: DuplexStream) -> GrpcStream {
+        open_with_user_agent(io, USER_AGENT).await
+    }
+
+    async fn open_with_user_agent(io: DuplexStream, user_agent: &str) -> GrpcStream {
         open_grpc_h2_stream(
             Box::new(io) as BoxedTransportStream,
             AUTHORITY,
             PATH,
-            USER_AGENT,
+            user_agent,
         )
         .await
         .expect("the POST opens")
@@ -641,6 +645,16 @@ mod stream_grpc_h2_tests {
     /// `Connection` is the connection, and nothing moves on the socket unless
     /// `accept` is being polled.
     async fn serve_one_call(io: DuplexStream, script: Script) {
+        serve_one_call_expecting(io, script, USER_AGENT).await;
+    }
+
+    /// [`serve_one_call`] for a test that dials with a `user-agent` other than
+    /// [`USER_AGENT`], which every request assertion runs against.
+    async fn serve_one_call_expecting(
+        io: DuplexStream,
+        script: Script,
+        expected_user_agent: &'static str,
+    ) {
         let mut connection = server::handshake(io).await.expect("server handshake");
         let mut script = Some(script);
         while let Some(accepted) = connection.accept().await {
@@ -663,7 +677,7 @@ mod stream_grpc_h2_tests {
             // and `StallThenSayThenReset` waits on a DATA frame that will
             // never arrive if nothing is reading the socket.
             if script.ends_with_a_reset() {
-                let call = tokio::spawn(handle_call(request, respond, script));
+                let call = tokio::spawn(handle_call(request, respond, script, expected_user_agent));
                 tokio::select! {
                     accepted = connection.accept() => {
                         assert!(accepted.is_none(), "the tests open one call per connection");
@@ -675,7 +689,7 @@ mod stream_grpc_h2_tests {
                 return;
             }
 
-            tokio::spawn(handle_call(request, respond, script));
+            tokio::spawn(handle_call(request, respond, script, expected_user_agent));
         }
     }
 
@@ -690,9 +704,10 @@ mod stream_grpc_h2_tests {
         request: http::Request<h2::RecvStream>,
         mut respond: SendResponse<Bytes>,
         script: Script,
+        expected_user_agent: &str,
     ) {
         let (head, mut body) = request.into_parts();
-        assert_request_line(&head);
+        assert_request_line(&head, expected_user_agent);
 
         match script {
             Script::Silent => {
@@ -831,7 +846,7 @@ mod stream_grpc_h2_tests {
     ///
     /// Which values are *right* is Task 7's question. This pins only the fields
     /// the request builder itself puts on the wire.
-    fn assert_request_line(head: &http::request::Parts) {
+    fn assert_request_line(head: &http::request::Parts, expected_user_agent: &str) {
         assert_eq!(head.method, Method::POST, "gRPC calls are POSTs");
         // `:scheme` stays `http`: Xray dials gRPC with
         // `insecure.NewCredentials()` and wraps the connection itself
@@ -849,7 +864,7 @@ mod stream_grpc_h2_tests {
         for (name, expected) in [
             ("content-type", "application/grpc"),
             ("te", "trailers"),
-            ("user-agent", USER_AGENT),
+            ("user-agent", expected_user_agent),
         ] {
             assert_eq!(
                 head.headers.get(name).map(|value| value.to_str().unwrap()),
@@ -946,6 +961,77 @@ mod stream_grpc_h2_tests {
         })
         .await;
         uplink.await.expect("the uplink task finishes");
+    }
+
+    /// The read path's leftover buffer, which nothing else here reaches even
+    /// though production takes that branch on almost every read:
+    /// `copy_direction` starts with a 4 KiB buffer
+    /// (`crates/xray-core-rs/src/policy.rs:13,187`) and a peer's `Hunk` may be
+    /// up to 4 MiB, while every other test in this block sizes its buffer to
+    /// the whole payload, so `pending_read_pos` never advances without also
+    /// resetting.
+    ///
+    /// The byte pattern's period is 251, which divides neither the payload nor
+    /// the buffer, so an offset the delivery loop got wrong by any amount
+    /// shows up as a mismatch rather than as plausible-looking bytes.
+    #[tokio::test]
+    async fn a_hunk_larger_than_the_read_buffer_is_delivered_across_reads() {
+        const SIZE: usize = 96 * 1024;
+        const BUFFER: usize = 8 * 1024;
+
+        let payload: Vec<u8> = (0..SIZE).map(|index| (index % 251) as u8).collect();
+        let (client_io, server_io) = duplex(64 * 1024);
+        tokio::spawn(serve_one_call(
+            server_io,
+            Script::Say(hunks(&[&payload]), trailers("0")),
+        ));
+        let mut stream = within_deadline(open(client_io)).await;
+
+        within_deadline(async {
+            let mut received = Vec::new();
+            let mut buffer = vec![0u8; BUFFER];
+            let mut reads = 0;
+            loop {
+                let len = stream.read(&mut buffer).await.expect("downlink read");
+                if len == 0 {
+                    break;
+                }
+                reads += 1;
+                received.extend_from_slice(&buffer[..len]);
+            }
+
+            assert_eq!(received, payload);
+            // One buffer-full per pass, so the payload really was carried
+            // across reads rather than arriving as several smaller `Hunk`s.
+            assert_eq!(reads, SIZE / BUFFER, "reads to drain one Hunk");
+        })
+        .await;
+    }
+
+    /// The header goes out even when the value is empty, which is not an edge
+    /// case but Xray's default: `grpcSettings.user_agent` of `"golang"` maps to
+    /// `""` (`Xray-core/transport/internet/grpc/dial.go:202-203`), and grpc-go
+    /// appends the header unconditionally
+    /// (`grpc@v1.81.0/internal/transport/http2_client.go:578`). Dropping it
+    /// instead is the obvious cleanup and changes what a censor sees, so it is
+    /// pinned: `Some("")` is the header present and empty, `None` is it gone.
+    #[tokio::test]
+    async fn an_empty_user_agent_is_still_sent_as_a_header() {
+        let (client_io, server_io) = duplex(64 * 1024);
+        tokio::spawn(serve_one_call_expecting(server_io, Script::Echo, ""));
+        let mut stream = within_deadline(open_with_user_agent(client_io, "")).await;
+
+        // The peer asserts the request line, so the call has to get far enough
+        // for its handler to run and for a failed assertion to reach this test
+        // as a stall or a broken stream rather than passing unnoticed.
+        within_deadline(async {
+            stream.write_all(b"ping").await.expect("uplink write");
+            stream.flush().await.expect("uplink flush");
+            let mut echoed = [0u8; 4];
+            stream.read_exact(&mut echoed).await.expect("downlink read");
+            assert_eq!(&echoed, b"ping");
+        })
+        .await;
     }
 
     /// The trap `HunkDecoder`'s doc comment names: a zero-length `Hunk` is a

@@ -66,18 +66,12 @@ fn put_varint(out: &mut [u8; MAX_VARINT_LEN], mut value: usize) -> usize {
 /// 16 and 128 KiB: 1.00 allocations per write here against 2.00 for an
 /// over-reserved `BytesMut`, at every size.
 ///
-/// A `BytesMut` carried across writes gets that to 0.00 — but only while the
-/// connection is drained, and only by keeping the frame's whole allocation
-/// alive between writes. `BytesMut::split` is `split_to(len)`, which
+/// A `BytesMut` carried on the stream and split per write is the tempting way
+/// to reach 0.00, and it is a trap: `BytesMut::split` is `split_to(len)`, which
 /// `shallow_clone`s both halves onto one `Shared`
-/// (`bytes-1.11.1/src/bytes_mut.rs:394-411,1061-1069`), so the stream would
-/// hold a reference to the largest frame it ever encoded for as long as it
-/// lived while reporting a `capacity()` of single digits: measured at 131128
-/// bytes still live after a 128 KiB frame was encoded, split off and dropped.
-/// A per-idle-flow high-water mark of up to `MAX_COPY_BUFFER_SIZE` is the
-/// wrong side of this project's memory trade, and on a connection that is
-/// *not* drained — a bulk relay, where throughput is the point — the reuse
-/// measures 2.00 allocations per write, worse than this.
+/// (`bytes-1.11.1/src/bytes_mut.rs:394-411,1061-1069`), so the stream keeps the
+/// largest frame it ever encoded alive for as long as it lives while reporting
+/// a `capacity()` of single digits.
 ///
 /// The length prefix is written last, patched back over the placeholder from
 /// what actually landed in the buffer rather than from the count that sized
@@ -85,6 +79,14 @@ fn put_varint(out: &mut [u8; MAX_VARINT_LEN], mut value: usize) -> usize {
 /// `len == cap` check below is exactly that assertion: a prefix that lied
 /// about its body would corrupt the wire silently, since the decoder trusts it
 /// to know where the message ends.
+///
+/// # Panics
+///
+/// If `payload` does not fit gRPC's own `u32` length prefix. Unreachable from
+/// this crate's relay, which caps a single write at `MAX_COPY_BUFFER_SIZE`,
+/// but this is `pub`: a truncated big-endian length is the same silent wire
+/// corruption the length-prefix paragraph above is written to prevent, so the
+/// check is a real one rather than a `debug_assert!` a release build drops.
 pub fn encode_hunk(payload: &[u8]) -> Vec<u8> {
     let mut varint = [0u8; MAX_VARINT_LEN];
     let varint_len = put_varint(&mut varint, payload.len());
@@ -108,11 +110,9 @@ pub fn encode_hunk(payload: &[u8]) -> Vec<u8> {
     }
 
     let written_body = out.len() - GRPC_HEADER_LEN;
-    debug_assert!(
-        u32::try_from(written_body).is_ok(),
-        "gRPC message body exceeds gRPC's own u32 length prefix"
-    );
-    out[1..GRPC_HEADER_LEN].copy_from_slice(&(written_body as u32).to_be_bytes());
+    let written_body = u32::try_from(written_body)
+        .expect("gRPC message body exceeds gRPC's own u32 length prefix");
+    out[1..GRPC_HEADER_LEN].copy_from_slice(&written_body.to_be_bytes());
     debug_assert_eq!(
         out.len(),
         out.capacity(),

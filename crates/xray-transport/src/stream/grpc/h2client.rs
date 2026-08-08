@@ -66,11 +66,21 @@ impl H2ConnectionDriver {
 /// nothing to send until the tunnel it opened does, so waiting would deadlock
 /// every dial. The returned stream awaits it on its first read.
 pub async fn open_grpc_h2_stream(
-    io: BoxedTransportStream,
+    mut io: BoxedTransportStream,
     authority: &str,
     path: &str,
     user_agent: &str,
 ) -> Result<GrpcStream, TransportError> {
+    // Here because here is the last place it can be: the handshake below moves
+    // `io` into h2's `Connection`, so an outbound's `release_record_alignment`
+    // (`crates/xray-core-rs/src/outbound.rs:1873,1967`) only ever reaches
+    // `GrpcStream` and its default no-op. Unconditional is sound because the
+    // alignment serves a Vision direct-mode unwrap and nothing else, and
+    // `validate_connector_flow` refuses Vision on every non-`Raw` transport.
+    // Held, it costs two socket reads per TLS record for the tunnel's whole
+    // life (`penetrating_tls.rs`, `TlsRecordReadLimiter`).
+    io.release_record_alignment();
+
     // The bare handshake, with no `Builder` knobs: it puts the 24-byte preface
     // and an *empty* SETTINGS frame on the wire, which is what grpc-go emits
     // under Xray's defaults. Setting `initial_connection_window_size` in

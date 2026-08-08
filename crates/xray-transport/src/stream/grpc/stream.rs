@@ -67,8 +67,8 @@ pub struct GrpcStream {
     /// payload that arrived inside a single DATA frame instead of copying it,
     /// and a payload that fits the caller's buffer whole never needs to land
     /// here at all — but both are decoder API changes, and the uplink is the
-    /// side a relay's cost sits on. Deferred to Task 13, which is where there
-    /// will be a number to move.
+    /// side a relay's cost sits on. Deferred until there is a benchmark number
+    /// to move.
     pending_read: Vec<u8>,
     pending_read_pos: usize,
     /// The encoded `Hunk` that has not been handed to h2 in full yet, because
@@ -79,12 +79,6 @@ pub struct GrpcStream {
     send_closed: bool,
     /// Keeps the connection task alive for as long as the call is: h2 reads
     /// and writes nothing unless that task is polled.
-    ///
-    /// Where this sits among the fields does not matter. Dropping the handle
-    /// detaches the task rather than aborting it, which `h2client.rs` spells
-    /// out and depends on, so the `RST_STREAM` that dropping the two halves
-    /// above queues is flushed by a task that outlives all of them whatever
-    /// order they go in.
     driver: H2ConnectionDriver,
 }
 
@@ -195,6 +189,12 @@ impl GrpcStream {
     /// exemption unreachable for any call whose peer stopped reading first —
     /// which is every call an Xray inbound ends, since a peer that has
     /// finished the RPC has long since stopped opening the window.
+    ///
+    /// Flush is not only an end-of-call caller, so the discard has to hold
+    /// mid-relay too: `copy_direction` also flushes at 64 KiB unflushed and
+    /// every 2 ms (`policy.rs:212-220`). It does, for a different reason —
+    /// mid-stream a send half that will take no more means the stream is gone,
+    /// and the very next `poll_write` says so rather than swallowing bytes.
     fn poll_drain_uplink_for_end_of_call(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         match ready!(self.poll_drain_uplink(cx))? {
             Uplink::Drained => Poll::Ready(Ok(())),
@@ -422,8 +422,7 @@ impl AsyncWrite for GrpcStream {
     /// its select, dropping a downlink still draining into the local socket.
     /// That covers the drain this starts with as much as the half-close it
     /// ends with — `poll_drain_uplink_for_end_of_call` is where a call that
-    /// stalled mid-frame is let through. (Named rather than linked: it is
-    /// private, and a rustdoc link from here to it is a `cargo doc` warning.)
+    /// stalled mid-frame is let through.
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         let this = self.get_mut();
         ready!(this.poll_drain_uplink_for_end_of_call(cx))?;
