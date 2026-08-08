@@ -1600,6 +1600,18 @@ Expected: FAIL — non-exhaustive match in `build_transport_layer`.
 the port. Do not reuse `host_fallback` verbatim — it never carries a port, which is right for a
 `Host` header and wrong for this.
 
+Two things Task 5 deliberately left for this task, both of which will announce themselves:
+
+- **A red test that is a tripwire, not a regression.** `the_grpc_placeholder_refuses_every_vless_config_vision_or_not`
+  pins the placeholder arm this task removes, and it will fail the moment the real arm lands. Its doc
+  comment says so and names the assertion that should replace it. Read that comment; do not delete
+  the test reflexively.
+- **The Vision pin that could not be written earlier.** `validate_connector_flow` keys off
+  `TransportLayer`, which had no `Grpc` variant until now, so nothing in the tree currently fails if
+  the Vision guard is widened to admit gRPC. Once the variant exists, add the honest assertion:
+  `xtls-rprx-vision` over gRPC must fail with `UnsupportedOutboundFlow`, matching Xray refusing the
+  same pairing at runtime because a hunk connection is not a `*tls.Conn`.
+
 - [ ] **Step 4: Run to verify it passes**
 
 Run: `cargo test --workspace`
@@ -1772,8 +1784,11 @@ will otherwise cost an afternoon each:
   is never empty. Do not add an assertion that the log is clean.
 
 Vision + gRPC passes `xray -test` but cannot work — the inbound errors with *"XTLS only supports TLS
-and REALITY directly for now"*. Our parser already refuses the pairing; add a test asserting the
-refusal rather than an interop scenario exercising it.
+and REALITY directly for now"*. Note where each side refuses it, because the symmetry is the point:
+Xray's config layer accepts the pairing (`infra/conf/vless.go:326-330` validates the flow string and
+never compares it against the network) and refuses at runtime, and we accept it at parse time and
+refuse in `validate_connector_flow`. A parse-time refusal here would be the divergence, not the fix.
+Task 9 adds the build-time pin; this task adds no interop scenario for a combination that cannot work.
 
 Note in the commit message that this suite is not run by CI: `cargo test --workspace --all-targets`
 compiles `#[ignore]`d tests without executing them. And per the known flake, do not read a REALITY
