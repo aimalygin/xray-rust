@@ -2006,10 +2006,10 @@ mod tests {
     use tokio::net::TcpListener;
     use uuid::Uuid;
     use xray_config::{
-        DnsConfig, DnsServerConfig, DomainMatcher, HappyEyeballsSettings, HttpUpgradeSettings,
-        IpCidr, IpMatcher, RealitySettings, RealityShortId, RoutingConfig, RoutingDomainStrategy,
-        RoutingPortRange, RoutingRule, SocketOptions, StreamSettings, TlsSettings,
-        VlessOutboundSettings, WebSocketSettings,
+        DnsConfig, DnsServerConfig, DomainMatcher, GrpcSettings, HappyEyeballsSettings,
+        HttpUpgradeSettings, IpCidr, IpMatcher, RealitySettings, RealityShortId, RoutingConfig,
+        RoutingDomainStrategy, RoutingPortRange, RoutingRule, SocketOptions, StreamSettings,
+        TlsSettings, VlessOutboundSettings, WebSocketSettings,
     };
     use xray_proxy::vless::{unpad_vision_block, VisionCommand};
     use xray_transport::{CachingDnsResolver, DnsLookup, RealityTlsEngine, TransportError};
@@ -3934,6 +3934,43 @@ mod tests {
         .expect_err("Vision needs a raw transport");
 
         assert!(matches!(error, CoreError::UnsupportedOutboundFlow));
+    }
+
+    /// The config layer stopped refusing REALITY + gRPC, so `xtls-rprx-vision`
+    /// alongside it now reaches this crate for the first time. It must not
+    /// build: Xray's own outbound refuses the pairing with "XTLS only supports
+    /// TLS and REALITY directly for now"
+    /// (`Xray-core/proxy/vless/outbound/outbound.go:284`).
+    ///
+    /// The assertion is deliberately only "some error". Today the refusal
+    /// comes from `build_transport_layer`'s placeholder arm, which has no
+    /// `TransportLayer` to hand back yet; once the gRPC transport lands, the
+    /// same config is caught one layer down by `validate_connector_flow` and
+    /// the variant changes. Pinning either variant would make this test read
+    /// as a Vision assertion while actually asserting which layer happened to
+    /// refuse first.
+    #[test]
+    fn vision_never_builds_over_grpc() {
+        let mut vless = direct_selection_vless("proxy");
+        vless.stream.transport = StreamTransport::Grpc(GrpcSettings {
+            service_name: "GunService".to_owned(),
+            ..GrpcSettings::default()
+        });
+        vless.stream.security = StreamSecurity::Reality(RealitySettings {
+            server_name: "reality.example".to_owned(),
+            fingerprint: "chrome".to_owned(),
+            public_key: [7; 32],
+            short_id: RealityShortId::try_from_slice(&[1, 2, 3, 4])
+                .expect("valid Reality short id"),
+            spider_x: "/".to_owned(),
+            mldsa65_verify: None,
+        });
+        let OutboundSettings::Vless(settings) = &mut vless.settings else {
+            panic!("expected a VLESS outbound");
+        };
+        settings.users[0].flow = Some(VISION_FLOW.to_owned());
+
+        build_vless_tcp_outbound(&vless).expect_err("Vision over gRPC must never build");
     }
 
     #[test]

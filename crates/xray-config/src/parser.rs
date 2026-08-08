@@ -2569,7 +2569,15 @@ impl Parser<'_> {
         // would build cleanly here and then fail against a real server. The
         // check lives here rather than in `validate_stream_settings_compatibility`
         // because only this function has both halves parsed.
-        if matches!(security, StreamSecurity::Reality(_)) && stream_network != StreamNetwork::Raw {
+        //
+        // Xray permits REALITY on tcp, splithttp and grpc
+        // (`infra/conf/transport_internet.go:1989`). The message below has
+        // always quoted that rule; the condition now matches it. `splithttp`
+        // is absent from the allow-list because that network does not parse
+        // here yet — a branch for an unreachable variant is dead code.
+        if matches!(security, StreamSecurity::Reality(_))
+            && !matches!(stream_network, StreamNetwork::Raw | StreamNetwork::Grpc)
+        {
             self.error(
                 format!("$.outbounds[{index}].streamSettings.security"),
                 "REALITY only supports RAW, XHTTP and gRPC for now",

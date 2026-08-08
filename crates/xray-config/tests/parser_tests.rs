@@ -4617,6 +4617,33 @@ fn reality_is_rejected_for_ws_and_httpupgrade() {
 }
 
 #[test]
+fn reality_is_accepted_on_grpc() {
+    // `if config.ProtocolName != "tcp" && config.ProtocolName != "splithttp"
+    // && config.ProtocolName != "grpc"` (`Xray-core/infra/conf/
+    // transport_internet.go:1989`) — so the message our guard has always
+    // quoted names gRPC because Xray really does build it, and REALITY over
+    // gRPC is the deployment this transport mostly exists for.
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "grpc", "security": "reality",
+           "grpcSettings": {"serviceName": "GunService"},
+           "realitySettings": {"serverName": "server.example",
+                               "fingerprint": "chrome",
+                               "publicKey": "E59WjnvZcQMu7tR7_BgyhycuEdBS-CtKxfImRCdAvFM",
+                               "shortId": "02030405"}"#,
+    ))
+    .expect("REALITY + gRPC is a configuration xray-core builds");
+
+    assert!(matches!(
+        parsed.config.outbounds[0].stream.security,
+        StreamSecurity::Reality(_)
+    ));
+    assert!(matches!(
+        parsed.config.outbounds[0].stream.transport,
+        StreamTransport::Grpc(_)
+    ));
+}
+
+#[test]
 fn reality_stays_valid_on_the_raw_transport() {
     let parsed = parse_xray_json(&raw_with_stream_settings(
         r#""network": "raw", "security": "reality",
