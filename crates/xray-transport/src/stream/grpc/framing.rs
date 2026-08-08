@@ -23,13 +23,11 @@
 //! gRPC frame (length 0 in the five-byte prefix), just with no protobuf body
 //! after it — not `0a 00`, which would claim a present-but-empty field.
 
-use bytes::{BufMut, BytesMut};
-
 /// `payloadLen + sizeLen` (`grpc@v1.81.0/rpc_util.go:858-860`).
 const GRPC_HEADER_LEN: usize = 5;
 
-/// No varint of a `usize` is longer, so reserving this much never has to
-/// derive the varint's real width a second time.
+/// No varint of a `usize` is longer, so one fixed-size scratch array holds any
+/// of them.
 const MAX_VARINT_LEN: usize = 10;
 
 /// grpc-go's `defaultClientMaxReceiveMessageSize`
@@ -38,76 +36,91 @@ const MAX_VARINT_LEN: usize = 10;
 /// default is what a real Xray peer holds itself to and what we hold it to.
 const MAX_RECEIVE_MESSAGE_SIZE: usize = 1024 * 1024 * 4;
 
-fn put_varint(out: &mut BytesMut, mut value: usize) {
+/// Writes `value` into `out` and reports how many bytes it took.
+///
+/// The width is wanted before the message is assembled, because it is what
+/// makes the buffer exactly the right size — see [`encode_hunk`]. Encoding
+/// into scratch and measuring is the only derivation of it there is: computing
+/// the width a second way, to size the buffer, would be a second opinion that
+/// need only disagree once, after an edit to either, to leave the length
+/// prefix describing a body that is not there.
+fn put_varint(out: &mut [u8; MAX_VARINT_LEN], mut value: usize) -> usize {
+    let mut width = 0;
     while value >= 0x80 {
-        out.put_u8((value as u8) | 0x80);
+        out[width] = (value as u8) | 0x80;
+        width += 1;
         value >>= 7;
     }
-    out.put_u8(value as u8);
+    out[width] = value as u8;
+    width + 1
 }
 
-/// Appends one write to `out` as a single uncompressed `Hunk` message.
+/// Encodes one write as a single uncompressed `Hunk` message.
 ///
-/// It appends rather than fills a buffer of its own so that `GrpcStream` can
-/// hand it the same `BytesMut` on every write. Building the frame in a fresh
-/// `Vec` costs two allocations, not one: the `Vec`, and the `Shared` header
-/// `Bytes::from(Vec<u8>)` boxes whenever `len != cap`
-/// (`bytes-1.11.1/src/bytes.rs:960-979`), which the deliberately over-estimated
-/// capacity below guarantees. Reusing the buffer saves both, but only once h2
-/// has flushed the previous frame to the socket and dropped its chunks — until
-/// then the allocation is still shared and `reserve` has to allocate, exactly
-/// as the `Vec` did. So this is a saving on a relay that waits on its source
-/// between writes and a wash on one that never lets the connection catch up;
-/// it is never worse than a fresh `Vec`.
+/// The buffer is allocated to the encoded size *exactly*, which is the whole
+/// cost of the write path rather than tidiness: `Bytes::from(Vec<u8>)` adopts
+/// the allocation as it stands when `len == cap` and otherwise boxes a
+/// `Shared` header alongside it (`bytes-1.11.1/src/bytes.rs:960-979`), so a
+/// buffer sized by a safe upper bound costs a second allocation on every
+/// write. Measured with a counting global allocator over 10000 writes at 4,
+/// 16 and 128 KiB: 1.00 allocations per write here against 2.00 for an
+/// over-reserved `BytesMut`, at every size.
 ///
-/// The length prefix is filled in *after* the tag, varint and payload are
-/// already in `out`, by patching the four length bytes back at the message's
-/// own start, rather than computed up front from a second walk of
-/// `payload.len()`. Two
-/// independent derivations of "how many bytes will the varint take" — one
-/// sizing the prefix, one driving what `put_varint` actually emits — would
-/// only need to disagree once, after an edit to either, to make the length
-/// prefix lie about the body it precedes. That corrupts the wire silently:
-/// Task 3's decoder trusts this prefix to know where the message ends.
-/// Reading the length back from what was actually written makes it true by
-/// construction instead of by two functions agreeing.
-pub(super) fn encode_hunk_into(out: &mut BytesMut, payload: &[u8]) {
-    // Everything below indexes from here rather than from zero, so appending
-    // to a buffer that already holds bytes patches this message's prefix and
-    // not an earlier one's.
-    let start = out.len();
+/// A `BytesMut` carried across writes gets that to 0.00 — but only while the
+/// connection is drained, and only by keeping the frame's whole allocation
+/// alive between writes. `BytesMut::split` is `split_to(len)`, which
+/// `shallow_clone`s both halves onto one `Shared`
+/// (`bytes-1.11.1/src/bytes_mut.rs:394-411,1061-1069`), so the stream would
+/// hold a reference to the largest frame it ever encoded for as long as it
+/// lived while reporting a `capacity()` of single digits: measured at 131128
+/// bytes still live after a 128 KiB frame was encoded, split off and dropped.
+/// A per-idle-flow high-water mark of up to `MAX_COPY_BUFFER_SIZE` is the
+/// wrong side of this project's memory trade, and on a connection that is
+/// *not* drained — a bulk relay, where throughput is the point — the reuse
+/// measures 2.00 allocations per write, worse than this.
+///
+/// The length prefix is written last, patched back over the placeholder from
+/// what actually landed in the buffer rather than from the count that sized
+/// it. The two agreeing is then the one thing worth asserting, and the
+/// `len == cap` check below is exactly that assertion: a prefix that lied
+/// about its body would corrupt the wire silently, since the decoder trusts it
+/// to know where the message ends.
+pub fn encode_hunk(payload: &[u8]) -> Vec<u8> {
+    let mut varint = [0u8; MAX_VARINT_LEN];
+    let varint_len = put_varint(&mut varint, payload.len());
 
-    // A safe upper bound, not a byte-exact count: the header and the one-byte
-    // tag are fixed and no varint is longer than `MAX_VARINT_LEN`, so this
-    // never reallocates and never needs a second, independent varint length
-    // computed just to size the buffer.
-    out.reserve(payload.len() + GRPC_HEADER_LEN + 1 + MAX_VARINT_LEN);
-    out.put_bytes(0x00, GRPC_HEADER_LEN); // compression flag + length placeholder
-    if payload.is_empty() {
-        // No tag, no varint: proto3 drops a zero-length `bytes` field
-        // entirely (see module doc), so the message body is empty and only
-        // the five-byte gRPC prefix (with length 0) goes on the wire — which
-        // the placeholder already is.
-        return;
+    // No tag, no varint for an empty payload: proto3 drops a zero-length
+    // `bytes` field entirely (see the module doc), so the message body is
+    // empty and only the five-byte gRPC prefix, with length 0, goes out.
+    let sized_body = if payload.is_empty() {
+        0
+    } else {
+        1 + varint_len + payload.len()
+    };
+
+    let mut out = Vec::with_capacity(GRPC_HEADER_LEN + sized_body);
+    out.push(0x00); // uncompressed
+    out.extend_from_slice(&[0x00; GRPC_HEADER_LEN - 1]); // length placeholder
+    if !payload.is_empty() {
+        out.push(0x0a); // field 1, wire type 2
+        out.extend_from_slice(&varint[..varint_len]);
+        out.extend_from_slice(payload);
     }
 
-    out.put_u8(0x0a);
-    put_varint(out, payload.len());
-    out.put_slice(payload);
-
-    let body_len = out.len() - start - GRPC_HEADER_LEN;
+    let written_body = out.len() - GRPC_HEADER_LEN;
     debug_assert!(
-        u32::try_from(body_len).is_ok(),
+        u32::try_from(written_body).is_ok(),
         "gRPC message body exceeds gRPC's own u32 length prefix"
     );
-    out[start + 1..start + GRPC_HEADER_LEN].copy_from_slice(&(body_len as u32).to_be_bytes());
-}
+    out[1..GRPC_HEADER_LEN].copy_from_slice(&(written_body as u32).to_be_bytes());
+    debug_assert_eq!(
+        out.len(),
+        out.capacity(),
+        "the sized body and the written body disagree, which both costs \
+         `Bytes::from` an allocation and means the length prefix is wrong"
+    );
 
-/// `encode_hunk_into` for callers that have no buffer to reuse.
-pub fn encode_hunk(payload: &[u8]) -> Vec<u8> {
-    let mut out = BytesMut::new();
-    encode_hunk_into(&mut out, payload);
-    out.to_vec()
+    out
 }
 
 /// Reassembles `Hunk` messages from however the HTTP/2 layer chops the stream.

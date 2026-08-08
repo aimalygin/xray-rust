@@ -15,15 +15,29 @@ use std::io;
 use std::pin::Pin;
 use std::task::{ready, Context, Poll};
 
-use bytes::{Bytes, BytesMut};
+use bytes::Bytes;
 use h2::client::ResponseFuture;
 use h2::{RecvStream, SendStream};
 use http::HeaderMap;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
-use super::framing::{encode_hunk_into, HunkDecoder};
+use super::framing::{encode_hunk, HunkDecoder};
 use super::h2client::H2ConnectionDriver;
 use crate::{TransportError, TransportStream};
+
+/// Where [`GrpcStream::poll_drain_uplink`] stopped.
+enum Uplink {
+    /// Everything queued is h2's now.
+    Drained,
+    /// h2 will take no more. `poll_capacity` reports that only for a send half
+    /// that has stopped streaming (`h2-0.4.15/src/proto/streams/send.rs:
+    /// 366-369`), and the request went out with `end_of_stream: false`, so
+    /// past its HEADERS the only ways there are our own END_STREAM — which
+    /// cannot be it while bytes are still queued, since the half-close comes
+    /// after the drain — and the stream being gone: reset by the peer, or
+    /// taken down with the connection under it.
+    Closed,
+}
 
 /// The downlink before and after the server's HEADERS arrive.
 enum Downlink {
@@ -45,28 +59,32 @@ pub struct GrpcStream {
     uplink: SendStream<Bytes>,
     decoder: HunkDecoder,
     /// A decoded `Hunk` payload part-way through being handed to the caller.
+    ///
+    /// A payload reaches the caller in three copies: h2's `Bytes` into
+    /// `HunkDecoder`'s buffer (`framing.rs`, `push`), that buffer into the
+    /// `Vec` `parse_hunk` returns, and this into the caller's `ReadBuf`. Two
+    /// of the three are avoidable — a decoder holding `Bytes` could slice a
+    /// payload that arrived inside a single DATA frame instead of copying it,
+    /// and a payload that fits the caller's buffer whole never needs to land
+    /// here at all — but both are decoder API changes, and the uplink is the
+    /// side a relay's cost sits on. Deferred to Task 13, which is where there
+    /// will be a number to move.
     pending_read: Vec<u8>,
     pending_read_pos: usize,
     /// The encoded `Hunk` that has not been handed to h2 in full yet, because
     /// the flow-control window ran out mid-frame.
     pending_write: Bytes,
-    /// Where the next `Hunk` is encoded. Kept across writes so that the last
-    /// frame's allocation can be reclaimed rather than replaced — see
-    /// `encode_hunk_into` for when that does and does not happen.
-    ///
-    /// Keeping it costs an idle flow nothing, which is the point: `split` hands
-    /// the whole allocation to the frame, and the last `split_to` in
-    /// `poll_drain_uplink` releases the stream's own reference to it rather
-    /// than holding a zero-length view into it
-    /// (`bytes-1.11.1/src/bytes.rs:544-548`), so what stays here between writes
-    /// is a few bytes of tail, not a frame.
-    write_buffer: BytesMut,
     /// Set once `data()` has yielded `None` and the trailers have been read.
     eof: bool,
     send_closed: bool,
-    /// Declared last so it is dropped last: the two stream halves above have to
-    /// go first for the `RST_STREAM` they queue to have a live driver to flush
-    /// it.
+    /// Keeps the connection task alive for as long as the call is: h2 reads
+    /// and writes nothing unless that task is polled.
+    ///
+    /// Where this sits among the fields does not matter. Dropping the handle
+    /// detaches the task rather than aborting it, which `h2client.rs` spells
+    /// out and depends on, so the `RST_STREAM` that dropping the two halves
+    /// above queues is flushed by a task that outlives all of them whatever
+    /// order they go in.
     driver: H2ConnectionDriver,
 }
 
@@ -83,7 +101,6 @@ impl GrpcStream {
             pending_read: Vec::new(),
             pending_read_pos: 0,
             pending_write: Bytes::new(),
-            write_buffer: BytesMut::new(),
             eof: false,
             send_closed: false,
             driver,
@@ -128,19 +145,18 @@ impl GrpcStream {
     /// the reservation has to come first — and it never grants zero. And
     /// nothing is ever handed over unreserved: `send_data` would buffer it
     /// without bound, which is the same as having no backpressure at all.
-    fn poll_drain_uplink(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+    ///
+    /// It reports rather than judges a send half that will take no more,
+    /// because the two callers answer for it differently: see
+    /// [`Self::poll_drain_uplink_for_write`] and
+    /// [`Self::poll_drain_uplink_for_end_of_call`].
+    fn poll_drain_uplink(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<Uplink>> {
         while !self.pending_write.is_empty() {
             self.uplink.reserve_capacity(self.pending_write.len());
             let granted = match ready!(self.uplink.poll_capacity(cx)) {
                 Some(Ok(granted)) => granted,
                 Some(Err(error)) => return Poll::Ready(Err(h2_io_error("uplink stalled", &error))),
-                // The send half stopped streaming: END_STREAM has gone out, or
-                // the peer reset us.
-                None => {
-                    return Poll::Ready(Err(protocol_io_error(
-                        "the gRPC uplink is closed".to_owned(),
-                    )))
-                }
+                None => return Poll::Ready(Ok(Uplink::Closed)),
             };
 
             let take = granted.min(self.pending_write.len());
@@ -149,7 +165,46 @@ impl GrpcStream {
                 .map_err(|error| h2_io_error("could not send a Hunk", &error))?;
         }
 
-        Poll::Ready(Ok(()))
+        Poll::Ready(Ok(Uplink::Drained))
+    }
+
+    /// The drain for a caller that still has bytes to deliver.
+    ///
+    /// A stream that will take no more fails the write, as `hc.Send` does on
+    /// Xray's side. Accepting bytes no peer will ever read would lose them
+    /// with nothing said, and the relay would go on pumping its source into
+    /// the void until the downlink noticed.
+    fn poll_drain_uplink_for_write(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        match ready!(self.poll_drain_uplink(cx))? {
+            Uplink::Drained => Poll::Ready(Ok(())),
+            Uplink::Closed => Poll::Ready(Err(protocol_io_error(
+                "the gRPC uplink is closed".to_owned(),
+            ))),
+        }
+    }
+
+    /// The drain for the two calls that end the tunnel, where a stream the
+    /// peer already took away is the normal end of a call — see
+    /// [`AsyncWrite::poll_shutdown`]'s doc for whose end that is and why.
+    ///
+    /// Both of them reach it: `copy_direction` answers EOF with
+    /// `writer.flush()` and then `writer.shutdown()` and propagates either
+    /// (`crates/xray-core-rs/src/policy.rs:196-200`), and every path through
+    /// this adapter runs the drain before it gets anywhere near the half-close
+    /// itself. Exempting only the empty END_STREAM DATA frame would leave the
+    /// exemption unreachable for any call whose peer stopped reading first —
+    /// which is every call an Xray inbound ends, since a peer that has
+    /// finished the RPC has long since stopped opening the window.
+    fn poll_drain_uplink_for_end_of_call(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        match ready!(self.poll_drain_uplink(cx))? {
+            Uplink::Drained => Poll::Ready(Ok(())),
+            Uplink::Closed => {
+                // Dropped rather than kept: nothing will ever carry them, and
+                // a relay's last frame can be a megabyte.
+                self.pending_write = Bytes::new();
+                Poll::Ready(Ok(()))
+            }
+        }
     }
 
     /// Turns the end of the h2 stream into either EOF or an error.
@@ -317,7 +372,7 @@ impl AsyncWrite for GrpcStream {
         let this = self.get_mut();
         // Anything left over goes first, so two `Hunk`s are never interleaved
         // on the wire. Returning `Pending` here has accepted nothing yet.
-        match this.poll_drain_uplink(cx) {
+        match this.poll_drain_uplink_for_write(cx) {
             Poll::Ready(Ok(())) => {}
             Poll::Ready(Err(error)) => return Poll::Ready(Err(error)),
             Poll::Pending => return Poll::Pending,
@@ -330,9 +385,8 @@ impl AsyncWrite for GrpcStream {
         // One write, one `Hunk`: `HunkReaderWriter.Write` hands the whole
         // buffer to a single `Send` (`hunkconn.go:131-141`), so the peer's
         // reads see the same boundaries ours did.
-        encode_hunk_into(&mut this.write_buffer, input);
-        this.pending_write = this.write_buffer.split().freeze();
-        if let Poll::Ready(Err(error)) = this.poll_drain_uplink(cx) {
+        this.pending_write = Bytes::from(encode_hunk(input));
+        if let Poll::Ready(Err(error)) = this.poll_drain_uplink_for_write(cx) {
             return Poll::Ready(Err(error));
         }
 
@@ -342,7 +396,7 @@ impl AsyncWrite for GrpcStream {
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        self.get_mut().poll_drain_uplink(cx)
+        self.get_mut().poll_drain_uplink_for_end_of_call(cx)
     }
 
     /// Half-closes the call: an empty DATA frame with END_STREAM, and no
@@ -366,9 +420,13 @@ impl AsyncWrite for GrpcStream {
     /// error to report on this path. Reporting one would fail a completed
     /// tunnel — `relay_bidirectional` propagates a shutdown error and aborts
     /// its select, dropping a downlink still draining into the local socket.
+    /// That covers the drain this starts with as much as the half-close it
+    /// ends with — `poll_drain_uplink_for_end_of_call` is where a call that
+    /// stalled mid-frame is let through. (Named rather than linked: it is
+    /// private, and a rustdoc link from here to it is a `cargo doc` warning.)
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         let this = self.get_mut();
-        ready!(this.poll_drain_uplink(cx))?;
+        ready!(this.poll_drain_uplink_for_end_of_call(cx))?;
 
         if !this.send_closed {
             if let Err(error) = this.uplink.send_data(Bytes::new(), true) {

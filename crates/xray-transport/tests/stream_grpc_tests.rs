@@ -540,9 +540,10 @@ mod stream_grpc_h2_tests {
 
     use bytes::Bytes;
     use h2::server::{self, SendResponse};
-    use h2::SendStream;
+    use h2::{RecvStream, SendStream};
     use http::{HeaderMap, Method, Response};
     use tokio::io::{duplex, AsyncReadExt, AsyncWriteExt, DuplexStream};
+    use tokio::sync::oneshot;
     use xray_transport::stream::{encode_hunk, open_grpc_h2_stream, GrpcStream};
     use xray_transport::BoxedTransportStream;
 
@@ -596,8 +597,42 @@ mod stream_grpc_h2_tests {
         /// [`Script::Say`], and then reset the stream the way grpc-go's server
         /// does when it ends the RPC before the client half-closes.
         SayThenReset(Vec<Bytes>, HeaderMap),
+        /// [`Script::SayThenReset`] against a client left mid-frame, which is
+        /// where a real uplink is when an Xray inbound ends a call: a peer
+        /// that has stopped reading has stopped opening the window too.
+        ///
+        /// One DATA frame is taken and the client's flow-control window is
+        /// never released, so whatever the client queued past 65535 bytes
+        /// stays queued. `reached` reports that first frame and `resume` waits
+        /// for the client's word before the call ends — both halves are load
+        /// bearing. Without the report the client cannot know its window is
+        /// spent; without the wait the reset can land while the client is
+        /// still inside the flush that spent it, which tests the drained case
+        /// over again.
+        StallThenSayThenReset {
+            reached: oneshot::Sender<()>,
+            resume: oneshot::Receiver<()>,
+            chunks: Vec<Bytes>,
+            trailers: HeaderMap,
+        },
         /// Accept the call and answer nothing at all.
         Silent,
+        /// Accept the call, answer nothing, and report how the client's
+        /// request body ended.
+        ReportHowTheUplinkEnded(oneshot::Sender<Result<(), h2::Error>>),
+    }
+
+    impl Script {
+        /// Whether the peer ends the call by dropping its stream handles,
+        /// which is what h2 turns into `RST_STREAM`. Those scripts need the
+        /// connection held open until the handler has returned; see
+        /// [`serve_one_call`].
+        fn ends_with_a_reset(&self) -> bool {
+            matches!(
+                self,
+                Script::SayThenReset(..) | Script::StallThenSayThenReset { .. }
+            )
+        }
     }
 
     /// Serves one gRPC call over `io`.
@@ -614,16 +649,27 @@ mod stream_grpc_h2_tests {
                 .take()
                 .expect("the tests open one call per connection");
 
-            // `SayThenReset` is the one script that has to finish before the
-            // connection moves on, and the only one not spawned. h2 puts
-            // `RST_STREAM` on the wire when the last handle to a stream is
-            // dropped, so the reset happens as `handle_call` returns; the
-            // graceful shutdown behind it is what turns "the reset has been
-            // queued" into something the client can wait for, since a client
-            // whose driver has finished has necessarily parsed every frame
-            // ahead of the `GOAWAY`.
-            if matches!(script, Script::SayThenReset(..)) {
-                handle_call(request, respond, script).await;
+            // The resetting scripts are the ones the connection must not move
+            // on from until the handler has returned. h2 puts `RST_STREAM` on
+            // the wire when the last handle to a stream is dropped, so the
+            // reset happens as `handle_call` returns; the graceful shutdown
+            // behind it is what turns "the reset has been queued" into
+            // something the client can wait for, since a client whose driver
+            // has finished has necessarily parsed every frame ahead of the
+            // `GOAWAY`.
+            //
+            // The handler still runs on its own task rather than inline,
+            // because `accept` is the only thing that polls this connection
+            // and `StallThenSayThenReset` waits on a DATA frame that will
+            // never arrive if nothing is reading the socket.
+            if script.ends_with_a_reset() {
+                let call = tokio::spawn(handle_call(request, respond, script));
+                tokio::select! {
+                    accepted = connection.accept() => {
+                        assert!(accepted.is_none(), "the tests open one call per connection");
+                    }
+                    finished = call => finished.expect("the call handler does not panic"),
+                }
                 connection.graceful_shutdown();
                 while connection.accept().await.is_some() {}
                 return;
@@ -655,22 +701,47 @@ mod stream_grpc_h2_tests {
                 std::future::pending::<()>().await;
             }
             Script::SayThenReset(chunks, trailers) => {
-                let mut send = respond
-                    .send_response(grpc_response(), false)
-                    .expect("respond");
-                for chunk in chunks {
-                    send_all(&mut send, chunk).await;
-                }
-                send.send_trailers(trailers).expect("trailers");
-                // `writeStatus` puts a RST_STREAM(NO_ERROR) right behind the
-                // trailing HEADERS whenever the client has not half-closed
-                // first — `rst := s.getState() == streamActive`
-                // (`grpc@v1.81.0/internal/transport/http2_server.go:
-                // 1127-1129`). Dropping the handles is how that is asked of
-                // h2, *not* `send_reset`: a `send_reset` here discards the
-                // response and trailers already queued behind it, and the
-                // client sees a bare reset with no call in front of it.
-                drop((send, body, respond));
+                say_then_reset(respond, body, chunks, trailers).await;
+            }
+            Script::StallThenSayThenReset {
+                reached,
+                resume,
+                chunks,
+                trailers,
+            } => {
+                body.data()
+                    .await
+                    .expect("the client writes before the peer ends the call")
+                    .expect("client data");
+                reached.send(()).expect("the client is still waiting");
+                resume.await.expect("the client hands the call back");
+                say_then_reset(respond, body, chunks, trailers).await;
+            }
+            Script::ReportHowTheUplinkEnded(report) => {
+                // The first `Hunk` is echoed so the client can tell the call is
+                // established in both directions before it drops anything.
+                // Without that the dial could be dropped before its HEADERS
+                // ever left the socket, and there would be no call to reset.
+                let mut echo = None;
+                let outcome = loop {
+                    match body.data().await {
+                        Some(Ok(chunk)) => {
+                            body.flow_control()
+                                .release_capacity(chunk.len())
+                                .expect("release the client's window");
+                            if echo.is_none() {
+                                let mut send = respond
+                                    .send_response(grpc_response(), false)
+                                    .expect("respond");
+                                send_all(&mut send, chunk).await;
+                                echo = Some(send);
+                            }
+                        }
+                        Some(Err(error)) => break Err(error),
+                        None => break Ok(()),
+                    }
+                };
+                let _ = report.send(outcome);
             }
             Script::Say(chunks, trailers) => {
                 let mut send = respond
@@ -715,6 +786,31 @@ mod stream_grpc_h2_tests {
                 send.send_trailers(trailers("0")).expect("trailers");
             }
         }
+    }
+
+    /// The trailers, and the reset right behind them.
+    ///
+    /// `writeStatus` puts a RST_STREAM(NO_ERROR) behind the trailing HEADERS
+    /// whenever the client has not half-closed first — `rst := s.getState() ==
+    /// streamActive` (`grpc@v1.81.0/internal/transport/http2_server.go:
+    /// 1127-1129`). Dropping the handles is how that is asked of h2, *not*
+    /// `send_reset`: a `send_reset` here discards the response and trailers
+    /// already queued behind it, and the client sees a bare reset with no call
+    /// in front of it.
+    async fn say_then_reset(
+        mut respond: SendResponse<Bytes>,
+        body: RecvStream,
+        chunks: Vec<Bytes>,
+        trailers: HeaderMap,
+    ) {
+        let mut send = respond
+            .send_response(grpc_response(), false)
+            .expect("respond");
+        for chunk in chunks {
+            send_all(&mut send, chunk).await;
+        }
+        send.send_trailers(trailers).expect("trailers");
+        drop((send, body, respond));
     }
 
     /// The request every script is served over, checked once where all of them
@@ -994,6 +1090,138 @@ mod stream_grpc_h2_tests {
                 .expect("a peer that ended the call first is not a failed relay");
         })
         .await;
+    }
+
+    /// The same ending, reached from the state the uplink is actually in when
+    /// it happens: mid-frame.
+    ///
+    /// A peer that has finished the RPC stopped reading the request body a
+    /// while ago, so its flow-control window is shut and whatever the relay
+    /// wrote last is still queued here. Every path out of the call then runs
+    /// the uplink drain before it gets anywhere near the half-close, and
+    /// `poll_capacity` on a stream the peer took away reports the send half is
+    /// no longer streaming (`h2-0.4.15/src/proto/streams/send.rs:366-369`). So
+    /// the exemption has to cover the drain and not just the empty END_STREAM
+    /// DATA frame, or it never runs: `copy_direction` reaches the shutdown
+    /// through `writer.flush()` (`crates/xray-core-rs/src/policy.rs:196-200`)
+    /// and both propagate.
+    ///
+    /// What must still fail is a *write*. `hc.Send` on a finished stream is an
+    /// error on Xray's side too, and quietly accepting bytes no peer will ever
+    /// read would lose them with nothing said.
+    #[tokio::test]
+    async fn a_half_close_over_a_frame_the_peer_will_never_take_succeeds() {
+        // Four times the 65535-byte stream window, which the peer never
+        // reopens, so the write is certain to leave a partial frame behind.
+        const SIZE: usize = 256 * 1024;
+
+        let (client_io, server_io) = duplex(64 * 1024);
+        let (reached, arrived) = oneshot::channel();
+        let (resume, awaited) = oneshot::channel();
+        tokio::spawn(serve_one_call(
+            server_io,
+            Script::StallThenSayThenReset {
+                reached,
+                resume: awaited,
+                chunks: hunks(&[b"done"]),
+                trailers: trailers("0"),
+            },
+        ));
+        let mut stream = within_deadline(open(client_io)).await;
+
+        within_deadline(async {
+            stream
+                .write_all(&vec![0x5a; SIZE])
+                .await
+                .expect("the write is accepted while the call is live");
+
+            // `write_all` returns with the frame only *queued*: `poll_capacity`
+            // is edge-triggered and grants nothing until the connection has
+            // run (`h2-0.4.15/src/proto/streams/send.rs:371-374`), so the first
+            // drain reserves and parks. This flush is what pushes the window's
+            // worth onto the wire, and it can never finish — the peer reads one
+            // frame and never reopens the window — so it is raced against the
+            // peer saying it has the bytes rather than awaited.
+            tokio::select! {
+                arrived = arrived => arrived.expect("the peer reports the first Hunk"),
+                flushed = stream.flush() => {
+                    panic!("the peer never reopens the window, so this cannot finish: {flushed:?}")
+                }
+            }
+            // Only now, with that flush dropped and the rest of the frame
+            // still queued, may the peer end the call.
+            resume.send(()).expect("the peer is still waiting");
+
+            let mut received = Vec::new();
+            stream
+                .read_to_end(&mut received)
+                .await
+                .expect("read to eof");
+            assert_eq!(received, b"done");
+
+            // The same barrier as the drained case: the reset is queued behind
+            // the trailers, and the driver finishing is what proves it has
+            // been parsed rather than raced.
+            while !stream.connection_is_finished() {
+                tokio::task::yield_now().await;
+            }
+
+            stream
+                .flush()
+                .await
+                .expect("a peer that ended the call first is not a failed relay");
+            stream
+                .shutdown()
+                .await
+                .expect("a peer that ended the call first is not a failed relay");
+
+            stream
+                .write_all(b"late")
+                .await
+                .expect_err("bytes no peer will read must not be swallowed");
+        })
+        .await;
+    }
+
+    /// What `GrpcStream` owning both halves of the h2 stream buys, asserted
+    /// from the peer's side rather than assumed.
+    ///
+    /// h2 emits `RST_STREAM` only once every reference to a stream is gone, so
+    /// a refactor that parked the `RecvStream` somewhere else — a pool owning
+    /// connections makes that plausible — would leave abandoned calls open on
+    /// the server with nothing in this file failing. Dropping the stream is
+    /// how a cancelled dial or a torn-down outbound tells the peer the call is
+    /// over.
+    #[tokio::test]
+    async fn dropping_the_stream_tells_the_peer_the_call_is_over() {
+        let (client_io, server_io) = duplex(64 * 1024);
+        let (report, observed) = oneshot::channel();
+        tokio::spawn(serve_one_call(
+            server_io,
+            Script::ReportHowTheUplinkEnded(report),
+        ));
+
+        let mut stream = within_deadline(open(client_io)).await;
+        within_deadline(async {
+            // The call has to be live in both directions first, or there is
+            // nothing for the peer to have reset.
+            stream.write_all(b"open").await.expect("uplink write");
+            stream.flush().await.expect("uplink flush");
+            let mut echoed = [0u8; 4];
+            stream.read_exact(&mut echoed).await.expect("downlink read");
+        })
+        .await;
+        drop(stream);
+
+        let outcome = within_deadline(observed)
+            .await
+            .expect("the peer reports how the body ended");
+        let error = outcome.expect_err("an abandoned call must be reset, not left half-open");
+        assert_eq!(
+            error.reason(),
+            Some(h2::Reason::CANCEL),
+            "the peer should see a cancellation, got: {error}"
+        );
     }
 
     /// `connection_is_finished` is what Task 8's pool has to ask, because the
