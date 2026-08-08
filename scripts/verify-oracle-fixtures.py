@@ -87,6 +87,13 @@ def claims_raw_clienthello(document: Any) -> bool:
     return isinstance(document, dict) and "raw_client_hello_hex" in document
 
 
+def claims_clienthello_raw(document: Any) -> bool:
+    # `client_hello_hex`, not the `raw_client_hello_hex` that
+    # `claims_raw_clienthello` above looks for: two oracles emit a whole
+    # ClientHello, and the key is the only thing telling their output apart.
+    return isinstance(document, dict) and "client_hello_hex" in document
+
+
 def claims_clienthello_shape(document: Any) -> bool:
     return (
         isinstance(document, dict)
@@ -142,6 +149,11 @@ def clienthello_shape_flags(document: Any) -> list[str]:
     return flags
 
 
+def clienthello_raw_flags(document: Any) -> list[str]:
+    """Same binary and same flags as the shape mode, plus `-raw`."""
+    return [*clienthello_shape_flags(document), "-raw"]
+
+
 def masquerade_headers_flags(document: Any) -> list[str]:
     """Read `masquerade_headers.go`'s own flags back out of its output."""
     return [
@@ -187,6 +199,15 @@ ORACLES: tuple[Oracle, ...] = (
         ),
         claims=claims_clienthello_shape,
         flags=clienthello_shape_flags,
+    ),
+    Oracle(
+        name="clienthello-raw",
+        command=root_oracle(
+            "./tools/reality-oracle/clienthello_shape.go",
+            tag="reality_oracle_clienthello_shape",
+        ),
+        claims=claims_clienthello_raw,
+        flags=clienthello_raw_flags,
     ),
     Oracle(
         name="session-id-vectors",

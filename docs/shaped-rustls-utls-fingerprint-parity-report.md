@@ -2,6 +2,12 @@
 
 This report compares every fingerprint in `xray_utls::XRAY_UTLS_FINGERPRINTS` against the Go uTLS oracle used by xray-core-compatible REALITY tests.
 
+## What a `match` here does and does not mean
+
+Every row below compares normalised shape JSON, in which an extension is a type and a length. Anything wrong *inside* a body of the right length is a `match` here. ECH is the worked example: this report recorded `encrypted_client_hello_length: 186` and called it parity while the body underneath declared a zero-length `enc`, carried no X25519 key, and padded the remaining 176 bytes with zeroes -- a structure no ECH parser accepts and a DPI can pick out deterministically. It shipped that way from before v0.1.1.
+
+Byte-level agreement is a separate guard, and the one to reach for when a body's contents matter: `rustls_reality_provider_raw_clienthello_matches_utls_oracle_for_risky_fingerprints` compares whole ClientHellos against committed oracle output, masking only what uTLS redraws per connection, and runs in the ordinary `cargo test --workspace` CI job.
+
 ## Reproduce
 
 ```sh

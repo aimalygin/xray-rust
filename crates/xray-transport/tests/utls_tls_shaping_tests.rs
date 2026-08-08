@@ -10,6 +10,7 @@ mod utls_tls_shaping_tests {
     const EXT_ALPN: u16 = 0x0010;
     const EXT_SUPPORTED_VERSIONS: u16 = 0x002b;
     const EXT_KEY_SHARE: u16 = 0x0033;
+    const EXT_ENCRYPTED_CLIENT_HELLO: u16 = 0xfe0d;
     const CHROME_GREASE_CIPHER: u16 = 0x0a0a;
 
     /// uTLS ClientHello shapes emitted by the pinned Go oracle
@@ -350,8 +351,9 @@ mod utls_tls_shaping_tests {
     }
 
     /// Rewrites every field a fresh handshake regenerates -- the hello random,
-    /// the legacy session id, and each key share's key exchange -- to zero, so
-    /// two hellos compare equal exactly when they have the same *shape*.
+    /// the legacy session id, each key share's key exchange, and ECH GREASE's
+    /// config id, encapsulated key and payload -- to zero, so two hellos
+    /// compare equal exactly when they have the same *shape*.
     ///
     /// Comparing raw bytes without this would compare fresh entropy and always
     /// differ; comparing only the extension order would miss a profile swap
@@ -381,15 +383,31 @@ mod utls_tls_shaping_tests {
             let payload_start = cursor + 4;
             cursor = payload_start + payload_len;
 
-            if extension_type != EXT_KEY_SHARE {
-                continue;
-            }
-            let mut share = payload_start + 2;
-            while share + 4 <= payload_start + payload_len {
-                let key_exchange_len =
-                    usize::from(u16::from_be_bytes([hello[share + 2], hello[share + 3]]));
-                hello[share + 4..share + 4 + key_exchange_len].fill(0);
-                share += 4 + key_exchange_len;
+            match extension_type {
+                EXT_KEY_SHARE => {
+                    let mut share = payload_start + 2;
+                    while share + 4 <= payload_start + payload_len {
+                        let key_exchange_len =
+                            usize::from(u16::from_be_bytes([hello[share + 2], hello[share + 3]]));
+                        hello[share + 4..share + 4 + key_exchange_len].fill(0);
+                        share += 4 + key_exchange_len;
+                    }
+                }
+                EXT_ENCRYPTED_CLIENT_HELLO => {
+                    // Outer hello: type, KDF id and AEAD id are fixed by the
+                    // profile, then a config id and two length-prefixed fields
+                    // -- the encapsulated key and the payload -- that uTLS
+                    // redraws per connection just like a key share.
+                    hello[payload_start + 5] = 0;
+                    let mut field = payload_start + 6;
+                    for _ in 0..2 {
+                        let field_len =
+                            usize::from(u16::from_be_bytes([hello[field], hello[field + 1]]));
+                        hello[field + 2..field + 2 + field_len].fill(0);
+                        field += 2 + field_len;
+                    }
+                }
+                _ => {}
             }
         }
 
@@ -427,6 +445,26 @@ mod utls_tls_shaping_tests {
             seen.len(),
             xray_utls::XRAY_MODERN_FINGERPRINTS.len(),
             "every modern fingerprint must be reachable, saw {seen:?}"
+        );
+    }
+
+    /// Two connections on one fixed name must reduce to one shape, or the
+    /// `random` assertions below are testing the entropy in a hello rather
+    /// than the profile behind it.
+    ///
+    /// `chrome` is the case that catches it: ECH GREASE redraws a config id, an
+    /// X25519 encapsulated key and a payload per hello, so a signature that
+    /// does not blank them differs every time. Only some of Xray's
+    /// `ModernFingerprints` carry ECH, so without this test the same defect
+    /// reaches the `random` tests as a failure on roughly half of all runs.
+    #[test]
+    fn one_fingerprint_reduces_to_one_shape_across_connections() {
+        let first = shape_of("chrome");
+        let second = shape_of("chrome");
+
+        assert_eq!(
+            first, second,
+            "chrome must reduce to one shape across connections"
         );
     }
 

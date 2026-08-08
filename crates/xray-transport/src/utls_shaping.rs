@@ -16,6 +16,7 @@
 //! ALPN overrides go through `apply_alpn_override` rather than a bare
 //! `.with_alpn_protocols(...)`.
 
+use rand::{rngs::OsRng, RngCore};
 use rustls::{
     client::{
         ClientHelloAdvertisedCipherSuites, ClientHelloAdvertisedSupportedGroups,
@@ -30,6 +31,8 @@ use rustls::{
     CertificateCompressionAlgorithm, CipherSuite, Error as RustlsError, NamedGroup,
     ProtocolVersion,
 };
+use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret as X25519StaticSecret};
+use zeroize::Zeroize;
 
 use crate::utls_profiles::UtlsClientHelloProfile;
 
@@ -57,6 +60,10 @@ const GROUP_SECP384R1: u16 = 0x0018;
 const GROUP_X25519_MLKEM768: u16 = 0x11ec;
 const GROUP_X25519_MLKEM768_DRAFT: u16 = 0x6399;
 const TLS_VERSION_1_3: u16 = 0x0304;
+/// Length of the `enc` field in an ECH GREASE outer hello: uTLS sets its HPKE
+/// KEM to `DHKEM_X25519_HKDF_SHA256`, whose encapsulated key is an X25519
+/// public key.
+const ENCAPSULATED_KEY_LEN: usize = 32;
 const BROTLI_CERTIFICATE_COMPRESSION: u16 = 0x0002;
 const BORINGSSL_PADDING_TARGET_HANDSHAKE_SIZE: usize = 512;
 const STRUCTURED_OPTIONAL_EXTENSIONS: &[u16] = &[
@@ -450,34 +457,70 @@ fn extension_payloads(
     Ok((exact_extensions, raw_extensions))
 }
 
+/// Builds the ECH GREASE body uTLS's `GREASEEncryptedClientHelloExtension`
+/// writes: an `ECHClientHelloOuter` carrying a freshly generated X25519 HPKE
+/// encapsulated key and a random payload.
+///
+/// `length` is the body length the profile recorded, and the payload is
+/// whatever the fixed outer header leaves of it. Chrome's 186 leaves 144 --
+/// uTLS `BoringGREASEECH` draws 128 from `CandidatePayloadLens` and the AEAD
+/// tag adds 16 -- and Firefox's 281 leaves 239, from its own `{223}`.
+///
+/// Every field uTLS draws per connection is drawn here too: config id,
+/// encapsulated key, and payload. Real ECH GREASE is indistinguishable from a
+/// real outer ECH precisely because those are high-entropy, so filler would
+/// give a parser that reads past the length prefixes something to match on.
+/// One draw covers a HelloRetryRequest as well, because the plan this lands in
+/// is built once per connection and reused for the second flight -- the reuse
+/// rule uTLS states for the same fields.
 fn encrypted_client_hello_payload(length: usize) -> Result<Vec<u8>, RustlsError> {
-    // The finalizer path reparses ClientHello, so the ECH GREASE placeholder
-    // must be syntactically valid even though it remains opaque filler.
     const OUTER_TYPE: u8 = 0;
     const HPKE_KDF_HKDF_SHA256: u16 = 0x0001;
     const HPKE_AEAD_AES_128_GCM: u16 = 0x0001;
-    const CONFIG_ID: u8 = 0;
-    const MIN_OUTER_LEN: usize = 11;
+    // Type, KDF id, AEAD id, config id, and the two length prefixes, plus the
+    // X25519 encapsulated key those prefixes bracket.
+    const OUTER_HEADER_LEN: usize = 10 + ENCAPSULATED_KEY_LEN;
+    // The payload is an AEAD ciphertext, so it can never be shorter than its
+    // tag; `cipherLen` in uTLS adds exactly this to the drawn length.
+    const AEAD_TAG_LEN: usize = 16;
 
-    if length < MIN_OUTER_LEN {
-        return Err(RustlsError::General(
-            "encrypted_client_hello payload is too short".into(),
-        ));
-    }
-
-    let encrypted_payload_len = length - 10;
-    let encrypted_payload_len = u16::try_from(encrypted_payload_len).map_err(|_| {
+    let payload_len = length
+        .checked_sub(OUTER_HEADER_LEN)
+        .filter(|payload_len| *payload_len >= AEAD_TAG_LEN)
+        .ok_or_else(|| {
+            RustlsError::General("encrypted_client_hello payload is too short".into())
+        })?;
+    let encoded_payload_len = u16::try_from(payload_len).map_err(|_| {
         RustlsError::General("encrypted_client_hello payload cannot exceed 65535 bytes".into())
     })?;
-    let mut payload = Vec::with_capacity(length);
-    payload.push(OUTER_TYPE);
-    payload.extend_from_slice(&HPKE_KDF_HKDF_SHA256.to_be_bytes());
-    payload.extend_from_slice(&HPKE_AEAD_AES_128_GCM.to_be_bytes());
-    payload.push(CONFIG_ID);
-    payload.extend_from_slice(&0u16.to_be_bytes());
-    payload.extend_from_slice(&encrypted_payload_len.to_be_bytes());
-    payload.resize(length, 0);
-    Ok(payload)
+
+    let mut config_id = [0; 1];
+    let mut encapsulated_key_secret = [0; ENCAPSULATED_KEY_LEN];
+    let mut encrypted_payload = vec![0; payload_len];
+    for bytes in [
+        config_id.as_mut_slice(),
+        encapsulated_key_secret.as_mut_slice(),
+        encrypted_payload.as_mut_slice(),
+    ] {
+        OsRng.try_fill_bytes(bytes).map_err(|error| {
+            RustlsError::General(format!("encrypted_client_hello needs randomness: {error}"))
+        })?;
+    }
+    let encapsulated_key =
+        X25519PublicKey::from(&X25519StaticSecret::from(encapsulated_key_secret)).to_bytes();
+    encapsulated_key_secret.zeroize();
+
+    let mut body = Vec::with_capacity(length);
+    body.push(OUTER_TYPE);
+    body.extend_from_slice(&HPKE_KDF_HKDF_SHA256.to_be_bytes());
+    body.extend_from_slice(&HPKE_AEAD_AES_128_GCM.to_be_bytes());
+    body.push(config_id[0]);
+    body.extend_from_slice(&(ENCAPSULATED_KEY_LEN as u16).to_be_bytes());
+    body.extend_from_slice(&encapsulated_key);
+    body.extend_from_slice(&encoded_payload_len.to_be_bytes());
+    body.extend_from_slice(&encrypted_payload);
+    debug_assert_eq!(body.len(), length);
+    Ok(body)
 }
 
 fn grease_plan(
@@ -659,4 +702,87 @@ fn real_key_share_group(group: u16) -> Option<NamedGroup> {
 fn is_grease_value(value: u16) -> bool {
     let [high, low] = value.to_be_bytes();
     high == low && high & 0x0f == 0x0a
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use super::*;
+
+    /// The two ECH GREASE body lengths the profile table records: 186 for the
+    /// Chrome family (uTLS `BoringGREASEECH`, payload 144) and 281 for the
+    /// Firefox family (`CandidatePayloadLens: []uint16{223}`, payload 239).
+    const PROFILE_ECH_LENGTHS: [usize; 2] = [186, 281];
+
+    #[test]
+    fn ech_grease_payload_matches_utls_outer_layout() {
+        for length in PROFILE_ECH_LENGTHS {
+            let body = encrypted_client_hello_payload(length)
+                .unwrap_or_else(|error| panic!("ECH GREASE body of {length} bytes: {error}"));
+
+            assert_eq!(body.len(), length, "body length for {length}");
+            assert_eq!(body[0], 0x00, "ECHClientHelloType outer for {length}");
+            assert_eq!(&body[1..3], [0x00, 0x01], "HKDF-SHA256 kdf id for {length}");
+            assert_eq!(
+                &body[3..5],
+                [0x00, 0x01],
+                "AES-128-GCM aead id for {length}"
+            );
+            assert_eq!(&body[6..8], [0x00, 0x20], "enc length for {length}");
+            assert_eq!(
+                &body[40..42],
+                (length as u16 - 42).to_be_bytes(),
+                "payload length for {length}"
+            );
+        }
+    }
+
+    #[test]
+    fn ech_grease_payload_draws_fresh_randomness_per_call() {
+        const DRAWS: usize = 32;
+
+        let bodies = (0..DRAWS)
+            .map(|_| encrypted_client_hello_payload(186).expect("ECH GREASE body should be built"))
+            .collect::<Vec<_>>();
+
+        let config_ids = bodies.iter().map(|body| body[5]).collect::<HashSet<_>>();
+        let keys = bodies
+            .iter()
+            .map(|body| body[8..40].to_vec())
+            .collect::<HashSet<_>>();
+        let payloads = bodies
+            .iter()
+            .map(|body| body[42..].to_vec())
+            .collect::<HashSet<_>>();
+
+        assert!(
+            config_ids.len() > 1,
+            "config_id is constant across {DRAWS} draws"
+        );
+        assert_eq!(keys.len(), DRAWS, "enc repeats across {DRAWS} draws");
+        assert_eq!(
+            payloads.len(),
+            DRAWS,
+            "payload repeats across {DRAWS} draws"
+        );
+        assert!(
+            keys.iter().all(|key| key.iter().any(|byte| *byte != 0)),
+            "enc is zero filled"
+        );
+        assert!(
+            payloads
+                .iter()
+                .all(|payload| payload.iter().any(|byte| *byte != 0)),
+            "payload is zero filled"
+        );
+    }
+
+    #[test]
+    fn ech_grease_payload_rejects_bodies_too_short_for_an_outer_hello() {
+        assert!(
+            encrypted_client_hello_payload(57).is_err(),
+            "a 57-byte body cannot hold the 42-byte outer header and a 16-byte AEAD tag"
+        );
+    }
 }

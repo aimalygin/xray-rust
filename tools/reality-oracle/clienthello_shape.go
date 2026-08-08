@@ -152,8 +152,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "marshal raw ClientHello: %v\n", err)
 			os.Exit(1)
 		}
-		generated = append(generated, '\n')
-		_, _ = os.Stdout.Write(generated)
+		emitOrCheck(append(generated, '\n'), *checkPath)
 		return
 	}
 
@@ -168,20 +167,29 @@ func main() {
 		fmt.Fprintf(os.Stderr, "marshal shape: %v\n", err)
 		os.Exit(1)
 	}
-	generated = append(generated, '\n')
 
-	if *checkPath == "" {
+	emitOrCheck(append(generated, '\n'), *checkPath)
+}
+
+// emitOrCheck writes the generated artefact to stdout, or compares it with a
+// committed fixture when -check names one.
+//
+// Both output modes go through this, because both have committed fixtures:
+// scripts/verify-oracle-fixtures.py regenerates every one of them, and a mode
+// that could only print would leave its fixtures unverifiable.
+func emitOrCheck(generated []byte, checkPath string) {
+	if checkPath == "" {
 		_, _ = os.Stdout.Write(generated)
 		return
 	}
 
-	expected, err := os.ReadFile(*checkPath)
+	expected, err := os.ReadFile(checkPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "read fixture: %v\n", err)
 		os.Exit(1)
 	}
 	if !bytes.Equal(expected, generated) {
-		fmt.Fprintf(os.Stderr, "fixture mismatch: %s\n", *checkPath)
+		fmt.Fprintf(os.Stderr, "fixture mismatch: %s\n", checkPath)
 		os.Exit(1)
 	}
 }

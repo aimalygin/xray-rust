@@ -288,25 +288,74 @@ fn rustls_reality_provider_matches_utls_xray_fingerprints_in_order() {
     }
 }
 
+/// The fingerprints whose raw bytes are compared with the Go uTLS oracle, each
+/// paired with the oracle output committed for it.
+///
+/// "Risky" is the shaping we would not trust a shape comparison to police:
+/// normalised shape JSON records an extension as a type and a length, so any
+/// divergence inside a body of the right length is invisible to it. ECH GREASE
+/// spent from before v0.1.1 until this table existed emitting a zero-length
+/// `enc` -- a body no ECH parser accepts -- at exactly the promised 186 bytes.
+///
+/// Reading committed fixtures rather than spawning `go run` is what lets these
+/// tests run in the plain `cargo test --workspace` CI job instead of sitting
+/// behind `#[ignore]`. The fixtures are held to the real thing from the other
+/// side: `scripts/verify-oracle-fixtures.py` regenerates every one of them
+/// against live uTLS in the `go-oracles` job, so neither half can drift alone.
+const RISKY_FINGERPRINT_RAW_ORACLES: &[(&str, &str)] = &[
+    (
+        "chrome",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_chrome.json"),
+    ),
+    (
+        "helloios_13",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_helloios_13.json"),
+    ),
+    (
+        "hellochrome_120_pq",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_hellochrome_120_pq.json"),
+    ),
+    (
+        "hello360_11_0",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_hello360_11_0.json"),
+    ),
+    (
+        "hellofirefox_63",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_hellofirefox_63.json"),
+    ),
+    (
+        "hellofirefox_65",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_hellofirefox_65.json"),
+    ),
+    (
+        "hellofirefox_99",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_hellofirefox_99.json"),
+    ),
+    (
+        "hellofirefox_102",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_hellofirefox_102.json"),
+    ),
+    (
+        "hellofirefox_105",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_hellofirefox_105.json"),
+    ),
+    (
+        "hellofirefox_120",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_hellofirefox_120.json"),
+    ),
+    (
+        "hellofirefox_auto",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_hellofirefox_auto.json"),
+    ),
+];
+
 #[test]
-#[ignore = "requires Go uTLS oracle; deep raw-byte comparison for risky fingerprints"]
 fn rustls_reality_provider_raw_clienthello_matches_utls_oracle_for_risky_fingerprints() {
     let provider = RustlsRealityTlsSessionProvider::new();
 
-    for fingerprint in [
-        "chrome",
-        "helloios_13",
-        "hellochrome_120_pq",
-        "hello360_11_0",
-        "hellofirefox_63",
-        "hellofirefox_65",
-        "hellofirefox_99",
-        "hellofirefox_102",
-        "hellofirefox_105",
-        "hellofirefox_120",
-        "hellofirefox_auto",
-    ] {
-        let expected = utls_client_hello_raw_from_oracle(fingerprint);
+    for (fingerprint, oracle) in RISKY_FINGERPRINT_RAW_ORACLES {
+        let fingerprint = *fingerprint;
+        let expected = utls_client_hello_raw_from_fixture(fingerprint, oracle);
         let session = provider
             .create_session(RealityClientHelloRequest {
                 server_name: "example.com",
@@ -326,25 +375,13 @@ fn rustls_reality_provider_raw_clienthello_matches_utls_oracle_for_risky_fingerp
 }
 
 #[test]
-#[ignore = "requires Go uTLS oracle; deep raw-byte comparison for finalized REALITY ClientHello"]
 fn rustls_reality_provider_final_reality_clienthello_matches_utls_oracle_for_risky_fingerprints() {
     let provider = RustlsRealityTlsSessionProvider::new();
     let server_public_key = X25519PublicKey::from(&X25519StaticSecret::from([7u8; 32])).to_bytes();
 
-    for fingerprint in [
-        "chrome",
-        "helloios_13",
-        "hellochrome_120_pq",
-        "hello360_11_0",
-        "hellofirefox_63",
-        "hellofirefox_65",
-        "hellofirefox_99",
-        "hellofirefox_102",
-        "hellofirefox_105",
-        "hellofirefox_120",
-        "hellofirefox_auto",
-    ] {
-        let expected = utls_client_hello_raw_from_oracle(fingerprint);
+    for (fingerprint, oracle) in RISKY_FINGERPRINT_RAW_ORACLES {
+        let fingerprint = *fingerprint;
+        let expected = utls_client_hello_raw_from_fixture(fingerprint, oracle);
         let expected_raw = decode_hex(&expected.client_hello_hex)
             .unwrap_or_else(|error| panic!("{fingerprint}: Go raw hex decode: {error}"));
         let session = provider
@@ -466,39 +503,25 @@ fn try_utls_client_hello_shape_from_oracle(fingerprint: &str) -> Result<ClientHe
         .map_err(|error| format!("uTLS ClientHello shape JSON: {error}"))
 }
 
-fn utls_client_hello_raw_from_oracle(fingerprint: &str) -> RawClientHelloOracle {
-    try_utls_client_hello_raw_from_oracle(fingerprint)
-        .unwrap_or_else(|error| panic!("{fingerprint}: {error}"))
-}
+/// Parses one committed `clienthello_shape.go -raw` fixture.
+///
+/// The fingerprint and SNI the fixture records are checked against the ones it
+/// was looked up under, so a table entry pointing at the wrong file compares
+/// two unrelated hellos loudly rather than quietly.
+fn utls_client_hello_raw_from_fixture(fingerprint: &str, oracle: &str) -> RawClientHelloOracle {
+    let oracle: RawClientHelloOracle = serde_json::from_str(oracle)
+        .unwrap_or_else(|error| panic!("{fingerprint}: raw ClientHello fixture JSON: {error}"));
 
-fn try_utls_client_hello_raw_from_oracle(
-    fingerprint: &str,
-) -> Result<RawClientHelloOracle, String> {
-    let output = Command::new("go")
-        .current_dir(workspace_root())
-        .args([
-            "run",
-            "-tags",
-            "reality_oracle_clienthello_shape",
-            "./tools/reality-oracle/clienthello_shape.go",
-            "-fingerprint",
-            fingerprint,
-            "-raw",
-        ])
-        .output()
-        .map_err(|error| format!("failed to run Go uTLS raw oracle: {error}"))?;
+    assert_eq!(
+        oracle.fingerprint, fingerprint,
+        "raw ClientHello fixture records another fingerprint"
+    );
+    assert_eq!(
+        oracle.server_name, "example.com",
+        "{fingerprint}: raw ClientHello fixture records another SNI"
+    );
 
-    if !output.status.success() {
-        return Err(format!(
-            "Go uTLS raw oracle failed with status {}\nstdout:\n{}\nstderr:\n{}",
-            output.status,
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        ));
-    }
-
-    serde_json::from_slice(&output.stdout)
-        .map_err(|error| format!("uTLS raw ClientHello JSON: {error}"))
+    oracle
 }
 
 fn decode_hex(input: &str) -> Result<Vec<u8>, String> {
@@ -592,6 +615,11 @@ fn masked_client_hello_for_raw_oracle(raw: &[u8]) -> Result<Vec<u8>, String> {
         let extension_data_offset = cursor.offset;
         cursor.take(extension_len, "truncated extension data")?;
 
+        // Padding (0x0015) is deliberately absent: both sides zero fill it --
+        // uTLS through `FakePaddingExtension`, rustls through `zero_padding`
+        // -- so there is nothing per-connection to hide, and comparing it
+        // keeps the BoringSSL pad-to-512 arithmetic under the same guard as
+        // everything else. Seven of the eleven fingerprints below carry one.
         match extension_type {
             0x0033 => {
                 mask_key_share_exchange_ranges(
@@ -601,8 +629,13 @@ fn masked_client_hello_for_raw_oracle(raw: &[u8]) -> Result<Vec<u8>, String> {
                     &mut masked,
                 )?;
             }
-            0x0015 | 0xfe0d => {
-                mask_range(&mut masked, extension_data_offset, extension_len);
+            0xfe0d => {
+                mask_encrypted_client_hello_random_ranges(
+                    raw,
+                    extension_data_offset,
+                    extension_len,
+                    &mut masked,
+                )?;
             }
             value if is_grease(value) => {
                 mask_range(&mut masked, extension_data_offset, extension_len);
@@ -651,6 +684,70 @@ fn mask_key_share_exchange_ranges(
         let key_exchange_offset = extension_data_offset + cursor.offset;
         cursor.take(key_exchange_length, "truncated key_exchange")?;
         mask_range(masked, key_exchange_offset, key_exchange_length);
+    }
+
+    Ok(())
+}
+
+/// Masks the three ECH GREASE fields uTLS redraws per connection, leaving the
+/// structure around them to be compared byte for byte.
+///
+/// Blanking the whole extension instead -- which this used to do -- hides
+/// everything that makes an outer ECH well formed: the `enc` length prefix in
+/// particular, which spent several releases reading 0 with no key behind it
+/// while the extension still measured the length the profile promised. What is
+/// left comparable here is exactly what a DPI reading past the length header
+/// sees: the outer type, the HPKE cipher suite, and the two length prefixes.
+///
+/// The Go oracle runs under a zeroed `crypto/rand`, so its config id is 0, its
+/// key is the one X25519 point a zero seed derives, and its payload is zero
+/// filled. None of those are what a real client sends, which is why they are
+/// masked rather than compared.
+fn mask_encrypted_client_hello_random_ranges(
+    raw: &[u8],
+    extension_data_offset: usize,
+    extension_len: usize,
+    masked: &mut [u8],
+) -> Result<(), String> {
+    let extension_end = extension_data_offset
+        .checked_add(extension_len)
+        .filter(|end| *end <= raw.len())
+        .ok_or_else(|| {
+            format!(
+                "encrypted_client_hello extension range out of bounds: offset={extension_data_offset} len={extension_len} raw={}",
+                raw.len()
+            )
+        })?;
+    let mut cursor = ByteCursor::new(&raw[extension_data_offset..extension_end]);
+
+    let client_hello_type = cursor.read_u8("missing ECHClientHello type")?;
+    if client_hello_type != 0 {
+        return Err(format!(
+            "encrypted_client_hello is not an outer hello: type={client_hello_type}"
+        ));
+    }
+    cursor.read_u16("missing ECH HPKE KDF id")?;
+    cursor.read_u16("missing ECH HPKE AEAD id")?;
+
+    let config_id_offset = extension_data_offset + cursor.offset;
+    cursor.read_u8("missing ECH config id")?;
+    mask_range(masked, config_id_offset, 1);
+
+    let encapsulated_key_len = cursor.read_u16("missing ECH enc length")?;
+    let encapsulated_key_offset = extension_data_offset + cursor.offset;
+    cursor.take(encapsulated_key_len, "truncated ECH enc")?;
+    mask_range(masked, encapsulated_key_offset, encapsulated_key_len);
+
+    let payload_len = cursor.read_u16("missing ECH payload length")?;
+    let payload_offset = extension_data_offset + cursor.offset;
+    cursor.take(payload_len, "truncated ECH payload")?;
+    mask_range(masked, payload_offset, payload_len);
+
+    if cursor.offset != extension_len {
+        return Err(format!(
+            "encrypted_client_hello has {} trailing byte(s) after the payload",
+            extension_len - cursor.offset
+        ));
     }
 
     Ok(())
@@ -828,6 +925,17 @@ fn build_fingerprint_parity_report(results: &[FingerprintParityResult]) -> Strin
     writeln!(
         report,
         "This report compares every fingerprint in `xray_utls::XRAY_UTLS_FINGERPRINTS` against the Go uTLS oracle used by xray-core-compatible REALITY tests.\n"
+    )
+    .unwrap();
+    writeln!(report, "## What a `match` here does and does not mean\n").unwrap();
+    writeln!(
+        report,
+        "Every row below compares normalised shape JSON, in which an extension is a type and a length. Anything wrong *inside* a body of the right length is a `match` here. ECH is the worked example: this report recorded `encrypted_client_hello_length: 186` and called it parity while the body underneath declared a zero-length `enc`, carried no X25519 key, and padded the remaining 176 bytes with zeroes -- a structure no ECH parser accepts and a DPI can pick out deterministically. It shipped that way from before v0.1.1.\n"
+    )
+    .unwrap();
+    writeln!(
+        report,
+        "Byte-level agreement is a separate guard, and the one to reach for when a body's contents matter: `rustls_reality_provider_raw_clienthello_matches_utls_oracle_for_risky_fingerprints` compares whole ClientHellos against committed oracle output, masking only what uTLS redraws per connection, and runs in the ordinary `cargo test --workspace` CI job.\n"
     )
     .unwrap();
     writeln!(report, "## Reproduce\n").unwrap();
