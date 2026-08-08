@@ -638,7 +638,23 @@ mod stream_grpc_h2_tests {
         /// For an Xray inbound that is `Tun` returning on a tunnel whose remote
         /// said not one byte, and every call to a `serviceName` it does not
         /// serve.
+        ///
+        /// This is the half of that shape a client which has *already
+        /// half-closed* sees. [`Script::TrailersOnlyThenReset`] is the other
+        /// half, and the one a relay reaches.
         TrailersOnly(HeaderMap),
+        /// [`Script::TrailersOnly`] with the `RST_STREAM(NO_ERROR)` grpc-go
+        /// puts behind the block whenever the client has not half-closed —
+        /// `rst := s.getState() == streamActive` in `writeStatus`
+        /// (`grpc@v1.81.0/internal/transport/http2_server.go:1127-1129`).
+        ///
+        /// A relay's uplink is open for the whole call, so this, not the quiet
+        /// one, is what a real Xray inbound sends *us*. The two look nothing
+        /// alike by the time they reach the client adapter — h2 folds the
+        /// reset over the state that recorded the END_STREAM
+        /// (`h2-0.4.15/src/proto/streams/state.rs:252-289`) — which is why
+        /// every Trailers-Only test here runs against both.
+        TrailersOnlyThenReset(HeaderMap),
         /// Write these DATA payloads and then END_STREAM on an empty DATA
         /// frame, with no trailing HEADERS at all. grpc-go's server never does
         /// this — `writeStatus` is the only way it ends an RPC — so it stands
@@ -680,7 +696,9 @@ mod stream_grpc_h2_tests {
         fn ends_with_a_reset(&self) -> bool {
             matches!(
                 self,
-                Script::SayThenReset(..) | Script::StallThenSayThenReset { .. }
+                Script::SayThenReset(..)
+                    | Script::StallThenSayThenReset { .. }
+                    | Script::TrailersOnlyThenReset(..)
             )
         }
     }
@@ -815,19 +833,29 @@ mod stream_grpc_h2_tests {
                 drain_the_client(body).await;
             }
             Script::TrailersOnly(fields) => {
-                let mut response = grpc_response();
-                response.headers_mut().extend(fields);
-                let send = respond
-                    .send_response(response, true)
-                    .expect("a trailers-only response");
+                let send = respond_trailers_only(&mut respond, fields);
                 // Both handles are held rather than dropped, because dropping
-                // them is what makes h2 reset the stream and a reset would
-                // reach the client ahead of its first read. grpc-go sends none
-                // here either once the client has half-closed — `rst :=
+                // them is what makes h2 reset the stream and this script is
+                // the shape that carries no reset. Having nothing left to say
+                // is *not* what withholds it on grpc-go's side: `rst :=
                 // s.getState() == streamActive` (`http2_server.go:1127-1129`)
-                // — and the client this serves has nothing to write.
+                // asks whether the client has sent END_STREAM, and the client
+                // this serves never does. So a real grpc-go server in this
+                // position would send one — this is the shape it sends only to
+                // a client that closed its request body first, and
+                // `TrailersOnlyThenReset` is the shape it sends to every other.
                 let _held = (send, body);
                 std::future::pending::<()>().await;
+            }
+            Script::TrailersOnlyThenReset(fields) => {
+                let send = respond_trailers_only(&mut respond, fields);
+                // Dropping every handle is how the reset is asked of h2 — see
+                // `say_then_reset` for why not `send_reset` — and h2 picks
+                // NO_ERROR for exactly this state, a server whose send half is
+                // closed while the client's is still streaming
+                // (`h2-0.4.15/src/proto/streams/streams.rs:1601-1619`), which
+                // is the code `writeStatus` uses too.
+                drop((send, body, respond));
             }
             Script::SayAndEndTheDataStream(chunks) => {
                 let mut send = respond
@@ -869,6 +897,19 @@ mod stream_grpc_h2_tests {
                 send.send_trailers(trailers("0")).expect("trailers");
             }
         }
+    }
+
+    /// The one END_STREAM header block a Trailers-Only response consists of:
+    /// `:status 200`, `content-type`, and whatever `fields` carries.
+    fn respond_trailers_only(
+        respond: &mut SendResponse<Bytes>,
+        fields: HeaderMap,
+    ) -> SendStream<Bytes> {
+        let mut response = grpc_response();
+        response.headers_mut().extend(fields);
+        respond
+            .send_response(response, true)
+            .expect("a trailers-only response")
     }
 
     /// Keeps reading the client's request body after the peer has said its
@@ -1344,6 +1385,27 @@ mod stream_grpc_h2_tests {
         .await;
     }
 
+    /// One entry of [`TRAILERS_ONLY_SHAPES`]: what to call it in a failure
+    /// message, and the [`Script`] that puts it on the wire.
+    type TrailersOnlyShape = (&'static str, fn(HeaderMap) -> Script);
+
+    /// The two wire shapes a Trailers-Only response comes in, which every test
+    /// of one runs against.
+    ///
+    /// They differ only in the `RST_STREAM(NO_ERROR)` grpc-go's server puts
+    /// behind the header block whenever the client has not half-closed — see
+    /// [`Script::TrailersOnlyThenReset`] — and a relay's uplink is open for
+    /// the whole call, so the reset is the shape a real Xray inbound sends us.
+    /// A grpc-go *client* reaches the same verdict for both, because
+    /// `operateHeaders` has already closed the stream with the block's status
+    /// by the time the reset is parsed
+    /// (`grpc@v1.81.0/internal/transport/http2_client.go:1618-1627`); h2 hands
+    /// us the two looking nothing alike, so ours is the code that has to.
+    const TRAILERS_ONLY_SHAPES: [TrailersOnlyShape; 2] = [
+        ("the client half-closed first", Script::TrailersOnly),
+        ("the client is still active", Script::TrailersOnlyThenReset),
+    ];
+
     /// The sibling of the two above that must *not* be an error, and the one a
     /// real peer reaches: a Trailers-Only response saying the call went fine.
     ///
@@ -1362,30 +1424,35 @@ mod stream_grpc_h2_tests {
     /// successful call broken. Reachable in a relay: the local side closes its
     /// write half, the uplink half-closes, and `Tun` returns having never seen
     /// a byte from the remote.
+    ///
+    /// Run against both shapes, because the verdict must not depend on the
+    /// reset — see [`TRAILERS_ONLY_SHAPES`].
     #[tokio::test]
     async fn a_trailers_only_response_with_status_zero_is_a_clean_eof() {
-        let (client_io, server_io) = duplex(64 * 1024);
-        tokio::spawn(serve_one_call(
-            server_io,
-            Script::TrailersOnly(trailers("0")),
-        ));
-        let mut stream = within_deadline(open(client_io)).await;
+        for (shape, script) in TRAILERS_ONLY_SHAPES {
+            let (client_io, server_io) = duplex(64 * 1024);
+            tokio::spawn(serve_one_call(server_io, script(trailers("0"))));
+            let mut stream = within_deadline(open(client_io)).await;
 
-        within_deadline(async {
-            let mut received = Vec::new();
-            stream
-                .read_to_end(&mut received)
-                .await
-                .expect("a trailers-only success is the end of a call, not a broken one");
-            assert!(
-                received.is_empty(),
-                "the peer sent no message, got: {received:?}"
-            );
+            within_deadline(async {
+                let mut received = Vec::new();
+                if let Err(error) = stream.read_to_end(&mut received).await {
+                    panic!("{shape}: a trailers-only success is the end of a call, not a broken one: {error}");
+                }
+                assert!(
+                    received.is_empty(),
+                    "{shape}: the peer sent no message, got: {received:?}"
+                );
 
-            let mut after = [0u8; 8];
-            assert_eq!(stream.read(&mut after).await.expect("read after eof"), 0);
-        })
-        .await;
+                let mut after = [0u8; 8];
+                assert_eq!(
+                    stream.read(&mut after).await.expect("read after eof"),
+                    0,
+                    "{shape}"
+                );
+            })
+            .await;
+        }
     }
 
     /// The same shape carrying a failure, which is how a `serviceName` typo
@@ -1395,56 +1462,71 @@ mod stream_grpc_h2_tests {
     /// `WriteStatus` with nothing sent before it — a Trailers-Only response.
     /// The status the peer *did* send has to reach the user, or a mistyped
     /// `serviceName` reads as a server that hung up.
+    ///
+    /// The reset shape is the only one a typo actually produces — the client
+    /// has not written a byte, let alone half-closed, when the mux answers —
+    /// so a diagnostic that only survives the quiet shape is no diagnostic.
     #[tokio::test]
     async fn a_trailers_only_response_reports_the_status_it_carries() {
         const MESSAGE: &str = "unknown method Tun for service xray.grpc";
 
-        let mut fields = trailers("12");
-        fields.insert("grpc-message", MESSAGE.parse().expect("a legal header"));
+        for (shape, script) in TRAILERS_ONLY_SHAPES {
+            let mut fields = trailers("12");
+            fields.insert("grpc-message", MESSAGE.parse().expect("a legal header"));
 
-        let (client_io, server_io) = duplex(64 * 1024);
-        tokio::spawn(serve_one_call(server_io, Script::TrailersOnly(fields)));
-        let mut stream = within_deadline(open(client_io)).await;
+            let (client_io, server_io) = duplex(64 * 1024);
+            tokio::spawn(serve_one_call(server_io, script(fields)));
+            let mut stream = within_deadline(open(client_io)).await;
 
-        within_deadline(async {
-            let mut received = Vec::new();
-            let error = stream
-                .read_to_end(&mut received)
-                .await
-                .expect_err("a failed call must not read as a clean eof");
-            assert!(
-                error.to_string().contains("12") && error.to_string().contains(MESSAGE),
-                "the error should carry the peer's status and message, got: {error}"
-            );
-        })
-        .await;
+            within_deadline(async {
+                let mut received = Vec::new();
+                let error = stream
+                    .read_to_end(&mut received)
+                    .await
+                    .expect_err("a failed call must not read as a clean eof");
+                assert!(
+                    error.to_string().contains("12") && error.to_string().contains(MESSAGE),
+                    "{shape}: the error should carry the peer's status and message, got: {error}"
+                );
+            })
+            .await;
+        }
     }
 
     /// And the same shape with no status in it at all, which grpc-go reads as
     /// `codes.Unknown` like any other status-less end (`grpcStatusCode =
     /// codes.Unknown`, `http2_client.go:1481`) rather than as the clean EOF the
-    /// `grpc-status: 0` case is.
+    /// `grpc-status: 0` case is. Confirmed against a real grpc-go client, which
+    /// answers this exact frame sequence with `Unknown` and an empty message.
+    ///
+    /// Both shapes fail, and this is the one place they say different things.
+    /// A `grpc-status` is what tells the adapter that a reset-truncated head
+    /// was a trailers block — see
+    /// `GrpcStream::the_reset_behind_a_trailers_only_response` — so a head
+    /// without one is indistinguishable from a peer that answered and then
+    /// took the stream away, and the reset is what gets reported.
     #[tokio::test]
     async fn a_trailers_only_response_without_a_status_is_an_error() {
-        let (client_io, server_io) = duplex(64 * 1024);
-        tokio::spawn(serve_one_call(
-            server_io,
-            Script::TrailersOnly(HeaderMap::new()),
-        ));
-        let mut stream = within_deadline(open(client_io)).await;
+        let complaints = ["grpc-status", "downlink failed"];
 
-        within_deadline(async {
-            let mut received = Vec::new();
-            let error = stream
-                .read_to_end(&mut received)
-                .await
-                .expect_err("a status-less call must not read as a clean eof");
-            assert!(
-                error.to_string().contains("grpc-status"),
-                "the error should name the missing status, got: {error}"
-            );
-        })
-        .await;
+        for ((shape, script), expected) in TRAILERS_ONLY_SHAPES.into_iter().zip(complaints) {
+            let (client_io, server_io) = duplex(64 * 1024);
+            tokio::spawn(serve_one_call(server_io, script(HeaderMap::new())));
+            let mut stream = within_deadline(open(client_io)).await;
+
+            within_deadline(async {
+                let mut received = Vec::new();
+                let error = stream
+                    .read_to_end(&mut received)
+                    .await
+                    .expect_err("a status-less call must not read as a clean eof");
+                assert!(
+                    error.to_string().contains(expected),
+                    "{shape}: the error should say {expected:?}, got: {error}"
+                );
+            })
+            .await;
+        }
     }
 
     /// A call the *server* ends first, which is the ordinary shape of one: an
