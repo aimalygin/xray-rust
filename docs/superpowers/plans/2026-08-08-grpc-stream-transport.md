@@ -17,7 +17,7 @@
 Stage 1 (`ws` + `httpupgrade` + plain-TLS uTLS shaping) shipped on this branch and is the pattern to copy:
 
 - A transport is one private module under `crates/xray-transport/src/stream/`, exposing a `#[derive(Debug, Clone)]` config struct with owned, fully-resolved `pub` fields and a free `pub async fn connect_<name>(stream, &config) -> Result<BoxedTransportStream, TransportError>`.
-- There are **no `#[cfg(test)]` unit tests** in the stream module. Every test is an integration test in `crates/xray-transport/tests/stream_<name>_tests.rs`, organised into `mod` blocks, standing up a real `TcpListener` on `127.0.0.1:0`.
+- There are **no `#[cfg(test)]` unit tests** in the stream module. Every test is an integration test in `crates/xray-transport/tests/stream_<name>_tests.rs`, organised into `mod` blocks, standing up a real `TcpListener` on `127.0.0.1:0`. Those blocks are named `stream_<transport>_<aspect>_tests`, matching the sibling files — the task texts below sometimes write the bare aspect (`mod path`, `mod framing_write`); use the convention rather than the literal.
 - Errors are flat `thiserror` variants on `TransportError` (`crates/xray-transport/src/lib.rs:108`), lowercase, no trailing period, one `String` per transport.
 - Doc comments explain *why*, usually by naming the Xray-core behaviour being matched.
 
@@ -296,10 +296,14 @@ mod framing_write {
     }
 
     #[test]
-    fn an_empty_payload_still_produces_a_message() {
-        // Xray writes whatever the layer above hands it; a zero-length write
-        // must not silently vanish, or a half-close looks like a stall.
-        assert_eq!(encode_hunk(&[]), vec![0x00, 0x00, 0x00, 0x00, 0x02, 0x0a, 0x00]);
+    fn an_empty_payload_produces_a_message_with_an_empty_body() {
+        // Proto3 implicit presence: `bytes data = 1` is not serialized at all
+        // when empty, so the tag never reaches the wire. What goes out is the
+        // five-byte prefix with length zero -- a message, not nothing, so a
+        // zero-length write still does not look like a stall.
+        // `encoding/stream.pb.go:26` (no `optional`), and protobuf-go's
+        // `appendBytesNoZero`, which returns the buffer untouched at length 0.
+        assert_eq!(encode_hunk(&[]), vec![0x00, 0x00, 0x00, 0x00, 0x00]);
     }
 }
 ```
