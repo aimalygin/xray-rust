@@ -23,6 +23,15 @@
 //! gRPC frame (length 0 in the five-byte prefix), just with no protobuf body
 //! after it — not `0a 00`, which would claim a present-but-empty field.
 
+/// `payloadLen + sizeLen` (`grpc@v1.81.0/rpc_util.go:858-860`).
+const GRPC_HEADER_LEN: usize = 5;
+
+/// grpc-go's `defaultClientMaxReceiveMessageSize`
+/// (`grpc@v1.81.0/clientconn.go:141`). Xray installs no `MaxCallRecvMsgSize`
+/// call option anywhere under `transport/internet/grpc/`, so the stock client
+/// default is what a real Xray peer holds itself to and what we hold it to.
+const MAX_RECEIVE_MESSAGE_SIZE: usize = 1024 * 1024 * 4;
+
 fn put_varint(out: &mut Vec<u8>, mut value: usize) {
     while value >= 0x80 {
         out.push((value as u8) | 0x80);
@@ -34,8 +43,9 @@ fn put_varint(out: &mut Vec<u8>, mut value: usize) {
 /// Encodes one write as a single uncompressed `Hunk` message.
 ///
 /// The length prefix is filled in *after* the tag, varint and payload are
-/// already in `out`, by patching `out[1..5]` from `out.len() - 5`, rather
-/// than computed up front from a second walk of `payload.len()`. Two
+/// already in `out`, by patching the four length bytes from `out.len() -
+/// GRPC_HEADER_LEN`, rather than computed up front from a second walk of
+/// `payload.len()`. Two
 /// independent derivations of "how many bytes will the varint take" — one
 /// sizing the prefix, one driving what `put_varint` actually emits — would
 /// only need to disagree once, after an edit to either, to make the length
@@ -48,37 +58,28 @@ pub fn encode_hunk(payload: &[u8]) -> Vec<u8> {
         // No tag, no varint: proto3 drops a zero-length `bytes` field
         // entirely (see module doc), so the message body is empty and only
         // the five-byte gRPC prefix (with length 0) goes on the wire.
-        return vec![0x00, 0x00, 0x00, 0x00, 0x00];
+        return vec![0x00; GRPC_HEADER_LEN];
     }
 
-    // Capacity is a safe upper bound, not a byte-exact count: 5 for the
-    // prefix and 1 for the tag are fixed, and no varint of a `usize` needs
-    // more than 10 bytes, so `+ 16` never triggers a reallocation without
-    // computing a second, independent varint length just to size the `Vec`.
-    let mut out = Vec::with_capacity(payload.len() + 16);
-    out.extend_from_slice(&[0x00, 0x00, 0x00, 0x00, 0x00]); // compression flag + length placeholder
+    // Capacity is a safe upper bound, not a byte-exact count: the header and
+    // the one-byte tag are fixed, and no varint of a `usize` needs more than
+    // ten bytes, so this never reallocates and never needs a second,
+    // independent varint length computed just to size the `Vec`.
+    let mut out = Vec::with_capacity(payload.len() + GRPC_HEADER_LEN + 1 + 10);
+    out.extend_from_slice(&[0x00; GRPC_HEADER_LEN]); // compression flag + length placeholder
     out.push(0x0a);
     put_varint(&mut out, payload.len());
     out.extend_from_slice(payload);
 
-    let body_len = out.len() - 5;
+    let body_len = out.len() - GRPC_HEADER_LEN;
     debug_assert!(
         u32::try_from(body_len).is_ok(),
         "gRPC message body exceeds gRPC's own u32 length prefix"
     );
-    out[1..5].copy_from_slice(&(body_len as u32).to_be_bytes());
+    out[1..GRPC_HEADER_LEN].copy_from_slice(&(body_len as u32).to_be_bytes());
 
     out
 }
-
-/// `payloadLen + sizeLen` (`grpc@v1.81.0/rpc_util.go:858-860`).
-const GRPC_HEADER_LEN: usize = 5;
-
-/// grpc-go's `defaultClientMaxReceiveMessageSize`
-/// (`grpc@v1.81.0/clientconn.go:141`). Xray installs no `MaxCallRecvMsgSize`
-/// call option anywhere under `transport/internet/grpc/`, so the stock client
-/// default is what a real Xray peer holds itself to and what we hold it to.
-const MAX_RECEIVE_MESSAGE_SIZE: usize = 1024 * 1024 * 4;
 
 /// Reassembles `Hunk` messages from however the HTTP/2 layer chops the stream.
 ///
@@ -109,6 +110,13 @@ impl HunkDecoder {
 
     /// The next complete message's payload, or `None` when more bytes are
     /// needed. `Err` means the stream is unusable, not that it stalled.
+    ///
+    /// The error type is `String` rather than a `TransportError` variant only
+    /// because there is no gRPC variant to return yet — the sibling decoder
+    /// returns `TransportError::WebSocketProtocol`
+    /// (`websocket_frame.rs:next_event`). Task 6 introduces
+    /// `TransportError::Grpc` along with the h2 client that has to surface
+    /// these, and this signature changes with it.
     pub fn next_payload(&mut self) -> Result<Option<Vec<u8>>, String> {
         let Some((payload, length)) = self.parse_message()? else {
             self.compact();
@@ -116,6 +124,27 @@ impl HunkDecoder {
         };
         self.consumed += length;
         Ok(Some(payload))
+    }
+
+    /// How many bytes the decoder is holding. Between messages — which is
+    /// after `next_payload` has reported `None`, since that is what compacts —
+    /// this is exactly the prefix of a message that has not finished arriving.
+    ///
+    /// `Ok(None)` alone cannot tell "the peer has sent whole messages and
+    /// stopped" from "a Hunk arrived cut in half": both stall identically, so
+    /// an `AsyncRead` wrapper that only watched `next_payload` would report a
+    /// clean EOF over a truncated message and silently drop it. grpc-go draws
+    /// the line — an `io.EOF` landing part-way through the five-byte header
+    /// becomes `io.ErrUnexpectedEOF`
+    /// (`grpc@v1.81.0/internal/transport/transport.go:360-380`), and so does
+    /// one landing inside a body the header already promised
+    /// (`rpc_util.go:787-792`). This is what Task 6 needs to draw it too: a
+    /// non-zero count when the h2 stream ends is truncation, not EOF.
+    ///
+    /// Called straight after an `Ok(Some(..))` it also counts the message just
+    /// handed out, which is not dropped until the next compaction.
+    pub fn buffered_len(&self) -> usize {
+        self.buffer.len()
     }
 
     /// Drops the bytes already handed out, so a long-lived stream does not

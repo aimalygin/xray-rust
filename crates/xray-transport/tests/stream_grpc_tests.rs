@@ -266,6 +266,64 @@ mod stream_grpc_framing_read_tests {
         );
     }
 
+    /// The ordinary shape of an HTTP/2 DATA frame once a stream is running:
+    /// one whole message plus the head of the next. That is the only way to
+    /// reach compaction with a non-empty tail, and compaction is the decoder's
+    /// one piece of carried state — drop a byte too many and every *later*
+    /// message is lost while this one still looks right, which is the failure
+    /// mode a byte-stream tunnel notices last. Neither existing multi-message
+    /// test gets there: `two_messages_in_one_chunk_both_come_out` compacts
+    /// only once the buffer is already empty, and the byte-by-byte test
+    /// carries a single message, so its tail is always empty too.
+    ///
+    /// Every split point is covered, so the tail runs from one byte (inside
+    /// the gRPC header) through the whole message bar its last byte.
+    #[test]
+    fn a_partial_next_message_survives_compaction() {
+        let second = encode_hunk(b"second");
+
+        for split in 1..second.len() {
+            let (head, tail) = second.split_at(split);
+            let mut chunk = encode_hunk(b"first");
+            chunk.extend_from_slice(head);
+
+            let mut decoder = HunkDecoder::new();
+            decoder.push(&chunk);
+            assert_eq!(
+                drain(&mut decoder),
+                vec![b"first".to_vec()],
+                "split {split}"
+            );
+            // Compaction has run: the delivered message is gone and the head
+            // of the next one is all that is left.
+            assert_eq!(decoder.buffered_len(), head.len(), "split {split}");
+
+            decoder.push(tail);
+            assert_eq!(
+                drain(&mut decoder),
+                vec![b"second".to_vec()],
+                "split {split}"
+            );
+            assert_eq!(decoder.buffered_len(), 0, "split {split}");
+        }
+    }
+
+    /// What compaction exists for: a stream that runs for hours must not still
+    /// be holding every byte it ever decoded. Nothing observes the allocation
+    /// itself; `buffered_len` is the proxy, and it is an exact one between
+    /// messages because `next_payload` compacts before it reports `None`.
+    #[test]
+    fn a_long_stream_does_not_retain_the_messages_it_handed_out() {
+        let mut decoder = HunkDecoder::new();
+
+        for index in 0..128u8 {
+            let payload = vec![index; 64];
+            decoder.push(&encode_hunk(&payload));
+            assert_eq!(drain(&mut decoder), vec![payload], "message {index}");
+            assert_eq!(decoder.buffered_len(), 0, "message {index}");
+        }
+    }
+
     #[test]
     fn a_zero_length_hunk_is_a_message_not_an_end_of_stream() {
         let mut decoder = HunkDecoder::new();
