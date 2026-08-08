@@ -141,6 +141,8 @@ pub enum TransportError {
     HttpUpgradeRejected(String),
     #[error("websocket protocol error: {0}")]
     WebSocketProtocol(String),
+    #[error("grpc transport error: {0}")]
+    Grpc(String),
     #[error("reality handshake failed: {0}")]
     Reality(#[from] reality::RealityError),
     #[error("REALITY live TLS completion is not implemented")]

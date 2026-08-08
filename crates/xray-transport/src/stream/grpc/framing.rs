@@ -111,12 +111,13 @@ impl HunkDecoder {
     /// The next complete message's payload, or `None` when more bytes are
     /// needed. `Err` means the stream is unusable, not that it stalled.
     ///
-    /// The error type is `String` rather than a `TransportError` variant only
-    /// because there is no gRPC variant to return yet — the sibling decoder
+    /// The error stays a `String` rather than becoming
+    /// `TransportError::Grpc`, which now exists: this decoder is pure framing
+    /// with nothing transport-shaped to say, and `GrpcStream` is where the
+    /// message picks up its `io::Error` wrapper anyway. The sibling decoder
     /// returns `TransportError::WebSocketProtocol`
-    /// (`websocket_frame.rs:next_event`). Task 6 introduces
-    /// `TransportError::Grpc` along with the h2 client that has to surface
-    /// these, and this signature changes with it.
+    /// (`websocket_frame.rs:next_event`) only because it was written before
+    /// there was a caller to hold that concern.
     pub fn next_payload(&mut self) -> Result<Option<Vec<u8>>, String> {
         let Some((payload, length)) = self.parse_message()? else {
             self.compact();
@@ -126,9 +127,8 @@ impl HunkDecoder {
         Ok(Some(payload))
     }
 
-    /// How many bytes the decoder is holding. Between messages — which is
-    /// after `next_payload` has reported `None`, since that is what compacts —
-    /// this is exactly the prefix of a message that has not finished arriving.
+    /// How many bytes of a message that has not finished arriving the decoder
+    /// is holding.
     ///
     /// `Ok(None)` alone cannot tell "the peer has sent whole messages and
     /// stopped" from "a Hunk arrived cut in half": both stall identically, so
@@ -138,13 +138,10 @@ impl HunkDecoder {
     /// becomes `io.ErrUnexpectedEOF`
     /// (`grpc@v1.81.0/internal/transport/transport.go:360-380`), and so does
     /// one landing inside a body the header already promised
-    /// (`rpc_util.go:787-792`). This is what Task 6 needs to draw it too: a
-    /// non-zero count when the h2 stream ends is truncation, not EOF.
-    ///
-    /// Called straight after an `Ok(Some(..))` it also counts the message just
-    /// handed out, which is not dropped until the next compaction.
+    /// (`rpc_util.go:787-792`). `GrpcStream` draws it the same way: a non-zero
+    /// count when the h2 stream ends is truncation, not EOF.
     pub fn buffered_len(&self) -> usize {
-        self.buffer.len()
+        self.buffer.len() - self.consumed
     }
 
     /// Drops the bytes already handed out, so a long-lived stream does not

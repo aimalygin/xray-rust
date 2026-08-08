@@ -531,3 +531,362 @@ mod stream_grpc_framing_read_tests {
         assert!(decoder.next_payload().is_err());
     }
 }
+
+/// The `Hunk` stream on a real HTTP/2 POST, against an in-process peer shaped
+/// like xray-core's gRPC inbound.
+mod stream_grpc_h2_tests {
+    use std::future::{poll_fn, Future};
+    use std::time::Duration;
+
+    use bytes::Bytes;
+    use h2::server::{self, SendResponse};
+    use h2::SendStream;
+    use http::{HeaderMap, Response};
+    use tokio::io::{duplex, AsyncReadExt, AsyncWriteExt, DuplexStream};
+    use xray_transport::stream::{encode_hunk, open_grpc_h2_stream, GrpcStream};
+    use xray_transport::BoxedTransportStream;
+
+    /// `grpcSettings.authority` when it is set; the tests never exercise the
+    /// fallbacks (`Xray-core/transport/internet/grpc/dial.go:159-167`), which
+    /// are the caller's job to resolve.
+    const AUTHORITY: &str = "grpc.example.com";
+    /// `grpc_request_path("xray.grpc", false)`.
+    const PATH: &str = "/xray.grpc/Tun";
+    /// `utils.ChromeUA` stands in for whatever Task 7 settles on; this block
+    /// only cares that a value reaches the request.
+    const USER_AGENT: &str = "grpc-go/1.81.0";
+
+    /// Every test here can stall rather than fail — an unreleased window, a
+    /// read waiting on a message the peer will not send, an EOF that never
+    /// arrives — and a stalled `#[tokio::test]` hangs the whole run. Each one
+    /// is therefore fenced by a deadline that turns the stall into a failure.
+    const DEADLINE: Duration = Duration::from_secs(10);
+
+    async fn within_deadline<F: Future>(future: F) -> F::Output {
+        tokio::time::timeout(DEADLINE, future)
+            .await
+            .expect("the exchange completes rather than stalling")
+    }
+
+    async fn open(io: DuplexStream) -> GrpcStream {
+        open_grpc_h2_stream(
+            Box::new(io) as BoxedTransportStream,
+            AUTHORITY,
+            PATH,
+            USER_AGENT,
+        )
+        .await
+        .expect("the POST opens")
+    }
+
+    fn trailers(status: &str) -> HeaderMap {
+        let mut trailers = HeaderMap::new();
+        trailers.insert("grpc-status", status.parse().expect("a legal header value"));
+        trailers
+    }
+
+    /// What the in-process peer does once the client's HEADERS arrive.
+    enum Script {
+        /// Send every `Hunk` straight back, then close with `grpc-status: 0`
+        /// when the client half-closes.
+        Echo,
+        /// Write these DATA payloads — already framed by the test — and close
+        /// with these trailers.
+        Say(Vec<Bytes>, HeaderMap),
+        /// Accept the call and answer nothing at all.
+        Silent,
+    }
+
+    /// Serves one gRPC call over `io`.
+    ///
+    /// The accept loop keeps running while the call is handled: h2's server
+    /// `Connection` is the connection, and nothing moves on the socket unless
+    /// `accept` is being polled.
+    async fn serve_one_call(io: DuplexStream, script: Script) {
+        let mut connection = server::handshake(io).await.expect("server handshake");
+        let mut script = Some(script);
+        while let Some(accepted) = connection.accept().await {
+            let (request, respond) = accepted.expect("a well-formed request");
+            let script = script
+                .take()
+                .expect("the tests open one call per connection");
+            tokio::spawn(handle_call(request, respond, script));
+        }
+    }
+
+    /// The response HEADERS are withheld until the handler has something to
+    /// send, exactly as grpc-go does: `http2Server.write` calls `writeHeader`
+    /// only on the first data write
+    /// (`grpc@v1.81.0/internal/transport/http2_server.go:1142-1146`). A client
+    /// that waited for the response while dialling would deadlock against a
+    /// real Xray inbound, which says nothing until the tunnel it opened has
+    /// spoken.
+    async fn handle_call(
+        request: http::Request<h2::RecvStream>,
+        mut respond: SendResponse<Bytes>,
+        script: Script,
+    ) {
+        let mut body = request.into_parts().1;
+
+        match script {
+            Script::Silent => {
+                // Hold both halves so the stream stays open and unanswered.
+                let _held = (body, respond);
+                std::future::pending::<()>().await;
+            }
+            Script::Say(chunks, trailers) => {
+                let mut send = respond
+                    .send_response(grpc_response(), false)
+                    .expect("respond");
+                for chunk in chunks {
+                    send_all(&mut send, chunk).await;
+                }
+                send.send_trailers(trailers).expect("trailers");
+                // The client may still be writing; keep reading so its window
+                // never closes under it.
+                while let Some(chunk) = body.data().await {
+                    let chunk = chunk.expect("client data");
+                    body.flow_control()
+                        .release_capacity(chunk.len())
+                        .expect("release the client's window");
+                }
+            }
+            Script::Echo => {
+                let mut send = None;
+                while let Some(chunk) = body.data().await {
+                    let chunk = chunk.expect("client data");
+                    body.flow_control()
+                        .release_capacity(chunk.len())
+                        .expect("release the client's window");
+                    let send = match send {
+                        Some(ref mut send) => send,
+                        None => send.insert(
+                            respond
+                                .send_response(grpc_response(), false)
+                                .expect("respond"),
+                        ),
+                    };
+                    send_all(send, chunk).await;
+                }
+                let mut send = match send {
+                    Some(send) => send,
+                    None => respond
+                        .send_response(grpc_response(), false)
+                        .expect("respond"),
+                };
+                send.send_trailers(trailers("0")).expect("trailers");
+            }
+        }
+    }
+
+    fn grpc_response() -> Response<()> {
+        Response::builder()
+            .status(200)
+            .header("content-type", "application/grpc")
+            .body(())
+            .expect("a well-formed response")
+    }
+
+    /// The server-side mirror of the client's uplink loop: reserve, wait for
+    /// capacity, send at most what was granted.
+    async fn send_all(send: &mut SendStream<Bytes>, mut chunk: Bytes) {
+        while !chunk.is_empty() {
+            send.reserve_capacity(chunk.len());
+            let granted = poll_fn(|cx| send.poll_capacity(cx))
+                .await
+                .expect("the send half is still streaming")
+                .expect("capacity, not an error");
+            let take = granted.min(chunk.len());
+            send.send_data(chunk.split_to(take), false)
+                .expect("send data");
+        }
+    }
+
+    /// Frames each payload as its own `Hunk`, the way the peer's writes arrive.
+    fn hunks(payloads: &[&[u8]]) -> Vec<Bytes> {
+        payloads
+            .iter()
+            .map(|payload| Bytes::from(encode_hunk(payload)))
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn a_bidirectional_post_carries_bytes_both_ways() {
+        let (client_io, server_io) = duplex(64 * 1024);
+        tokio::spawn(serve_one_call(server_io, Script::Echo));
+        let mut stream = within_deadline(open(client_io)).await;
+
+        within_deadline(async {
+            // Two round trips, not one: the second write is the first to
+            // re-reserve capacity on a stream that has already spent some, and
+            // h2's reservation is a running total rather than an increment.
+            for message in [b"ping", b"pong"] {
+                stream.write_all(message).await.expect("uplink write");
+                stream.flush().await.expect("uplink flush");
+
+                let mut echoed = [0u8; 4];
+                stream.read_exact(&mut echoed).await.expect("downlink read");
+                assert_eq!(&echoed, message);
+            }
+
+            // The half-close is what makes the peer's handler finish and send
+            // its trailers, which is the only clean end of a gRPC call.
+            stream.shutdown().await.expect("half-close");
+            let mut rest = Vec::new();
+            stream.read_to_end(&mut rest).await.expect("read to eof");
+            assert!(rest.is_empty(), "unexpected trailing bytes: {rest:?}");
+        })
+        .await;
+    }
+
+    /// The connection and stream windows both start at 65535 bytes. Neither
+    /// side gets past that without giving the window back, so this is the test
+    /// that fails — by stalling until the deadline — if the read path forgets
+    /// `release_capacity`.
+    #[tokio::test]
+    async fn a_payload_past_the_default_window_still_completes() {
+        const SIZE: usize = 512 * 1024;
+
+        let (client_io, server_io) = duplex(64 * 1024);
+        tokio::spawn(serve_one_call(server_io, Script::Echo));
+        let stream = within_deadline(open(client_io)).await;
+
+        let payload: Vec<u8> = (0..SIZE).map(|index| (index % 251) as u8).collect();
+        let (mut reader, mut writer) = tokio::io::split(stream);
+        let sent = payload.clone();
+        let uplink = tokio::spawn(async move {
+            writer.write_all(&sent).await.expect("uplink write");
+            writer.flush().await.expect("uplink flush");
+        });
+
+        within_deadline(async {
+            let mut echoed = vec![0u8; SIZE];
+            reader.read_exact(&mut echoed).await.expect("downlink read");
+            assert_eq!(echoed, payload);
+        })
+        .await;
+        uplink.await.expect("the uplink task finishes");
+    }
+
+    /// The trap `HunkDecoder`'s doc comment names: a zero-length `Hunk` is a
+    /// legal zero-byte write on Xray's side
+    /// (`Xray-core/transport/internet/grpc/encoding/hunkconn.go:91-105`
+    /// returns `(0, nil)` for it), but `Ok(0)` out of an `AsyncRead` means EOF.
+    /// An adapter that forwards the empty payload loses everything after it.
+    #[tokio::test]
+    async fn an_empty_hunk_mid_stream_does_not_end_it() {
+        let (client_io, server_io) = duplex(64 * 1024);
+        tokio::spawn(serve_one_call(
+            server_io,
+            Script::Say(hunks(&[b"before", b"", b"after"]), trailers("0")),
+        ));
+        let mut stream = within_deadline(open(client_io)).await;
+
+        within_deadline(async {
+            let mut received = Vec::new();
+            stream
+                .read_to_end(&mut received)
+                .await
+                .expect("read to eof");
+            assert_eq!(received, b"beforeafter");
+        })
+        .await;
+    }
+
+    /// A gRPC call ends with a HEADERS frame carrying `grpc-status`, not with
+    /// END_STREAM on a DATA frame. h2 reports that as `data()` yielding `None`
+    /// while `is_end_stream()` is still false, so an adapter that watches
+    /// `is_end_stream()` never sees the end and hangs here.
+    #[tokio::test]
+    async fn trailers_are_the_end_of_the_downlink() {
+        let (client_io, server_io) = duplex(64 * 1024);
+        tokio::spawn(serve_one_call(
+            server_io,
+            Script::Say(hunks(&[b"tail"]), trailers("0")),
+        ));
+        let mut stream = within_deadline(open(client_io)).await;
+
+        within_deadline(async {
+            let mut received = Vec::new();
+            stream
+                .read_to_end(&mut received)
+                .await
+                .expect("read to eof");
+            assert_eq!(received, b"tail");
+
+            // EOF is sticky: a second read must not resurrect the stream.
+            let mut after = [0u8; 8];
+            assert_eq!(stream.read(&mut after).await.expect("read after eof"), 0);
+        })
+        .await;
+    }
+
+    /// grpc-go's server writes its response HEADERS only on the first message
+    /// (`internal/transport/http2_server.go:1142-1146`), and Xray's inbound has
+    /// nothing to say until the tunnel it opened does. So the dial must return
+    /// with the response still outstanding — awaiting it would deadlock every
+    /// connection against a real server.
+    #[tokio::test]
+    async fn the_dial_does_not_wait_for_the_response_headers() {
+        let (client_io, server_io) = duplex(64 * 1024);
+        tokio::spawn(serve_one_call(server_io, Script::Silent));
+
+        let stream = within_deadline(open(client_io)).await;
+        drop(stream);
+    }
+
+    /// Xray's reader separates the two: `Recv` returning `io.EOF` — which is
+    /// what grpc-go gives for `grpc-status: 0` — is a clean end, and anything
+    /// else becomes "failed to fetch hunk from gRPC tunnel"
+    /// (`hunkconn.go:75-89`). Reporting a failed call as EOF would silently
+    /// truncate a tunnel.
+    #[tokio::test]
+    async fn a_failed_grpc_status_is_an_error_not_an_eof() {
+        let (client_io, server_io) = duplex(64 * 1024);
+        tokio::spawn(serve_one_call(
+            server_io,
+            Script::Say(hunks(&[b"partial"]), trailers("14")),
+        ));
+        let mut stream = within_deadline(open(client_io)).await;
+
+        within_deadline(async {
+            let mut received = Vec::new();
+            let error = stream
+                .read_to_end(&mut received)
+                .await
+                .expect_err("a failed call must not read as a clean eof");
+            assert_eq!(received, b"partial");
+            assert!(
+                error.to_string().contains("14"),
+                "the error should name the grpc-status, got: {error}"
+            );
+        })
+        .await;
+    }
+
+    /// The other half of the same distinction: a message the stream ended in
+    /// the middle of. grpc-go turns an EOF inside a gRPC header into
+    /// `io.ErrUnexpectedEOF` (`internal/transport/transport.go:360-380`), so a
+    /// half-arrived `Hunk` must not read as a clean end either.
+    #[tokio::test]
+    async fn a_hunk_cut_short_by_the_end_of_the_stream_is_an_error() {
+        let whole = encode_hunk(b"truncated");
+        let cut = Bytes::from(whole[..whole.len() - 3].to_vec());
+
+        let (client_io, server_io) = duplex(64 * 1024);
+        tokio::spawn(serve_one_call(
+            server_io,
+            Script::Say(vec![cut], trailers("0")),
+        ));
+        let mut stream = within_deadline(open(client_io)).await;
+
+        within_deadline(async {
+            let mut received = Vec::new();
+            stream
+                .read_to_end(&mut received)
+                .await
+                .expect_err("a truncated message must not read as a clean eof");
+        })
+        .await;
+    }
+}
