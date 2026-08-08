@@ -974,8 +974,10 @@ mod stream_grpc_h2_tests {
     /// is part of what a censor sees, and any middlebox on the path holding to
     /// the gRPC HTTP/2 spec is entitled to refuse a call without it.
     ///
-    /// Which values are *right* is Task 7's question. This pins only the fields
-    /// the request builder itself puts on the wire.
+    /// Which values are *right*, and which fields are absent on purpose, is
+    /// `stream_grpc_request_headers_tests`'s question. This pins only that the
+    /// request builder put a well-formed call on the wire, so the scripts below
+    /// are reading one.
     fn assert_request_line(head: &http::request::Parts, expected_user_agent: &str) {
         assert_eq!(head.method, Method::POST, "gRPC calls are POSTs");
         // `:scheme` stays `http`: Xray dials gRPC with
@@ -1799,6 +1801,39 @@ mod stream_grpc_h2_tests {
 /// prefix and is refused by the `switch` on the byte after it. `te` is never
 /// looked at. Everything else is here to fit the population a censor sees,
 /// not to interoperate, so none of it is dead weight to be optimised away.
+///
+/// **The order above is grpc-go's, and ours is not.** Nothing in this block can
+/// see that — `http::request::Parts` has thrown the order away by the time a
+/// test reads it — so it is recorded here. Captured off the wire from both
+/// clients, same authority, same user agent, same seven fields, the two HEADERS
+/// payloads come to 65 bytes each and differ in exactly three places:
+///
+/// ```text
+/// grpc-go  83 86 45 8b <path> 41 8c <authority> 5f 8b <type> 7a 8a <ua> 40 02 7465 86 <trailers>
+/// ours     83 86 41 8c <authority> 04 8b <path> 5f 8b <type> 7a 8a <ua> 40 82 497f 86 <trailers>
+/// ```
+///
+/// * `:authority` before `:path`. h2 emits the pseudo-headers from a fixed
+///   iterator — method, scheme, authority, path
+///   (`h2-0.4.15/src/frame/headers.rs:707-721`) — while grpc-go appends them
+///   method, scheme, path, authority
+///   (`grpc@v1.81.0/internal/transport/http2_client.go:573-579`).
+/// * grpc-go indexes `:path` (`45`: literal *with* incremental indexing, off
+///   static name 5), so it also lands in the dynamic table. h2 hard-codes
+///   `Header::Path(..) => true` in `skip_value_index`
+///   (`h2-0.4.15/src/hpack/header.rs:189-207`), so ours is always `04`,
+///   literal *without* indexing off static name 4, and the table never sees
+///   it — which will make the divergence grow, not shrink, on the second call
+///   over a pooled connection.
+/// * grpc-go writes the literal name `te` raw (`02 74 65`), because
+///   `appendHpackString` Huffman-codes only a string the coding shortens and
+///   at two bytes it does not (`x/net@v0.53.0/http2/hpack/encode.go:218-230`).
+///   h2 Huffman-codes it regardless (`82 49 7f`).
+///
+/// None of the three is ours to change — they are h2's frame writer and HPACK
+/// encoder, not this file's — so they are written down rather than asserted.
+/// Task 11's byte fixtures should expect them instead of reading them as a
+/// regression.
 mod stream_grpc_request_headers_tests {
     use std::time::Duration;
 
@@ -1855,6 +1890,19 @@ mod stream_grpc_request_headers_tests {
         tokio::time::timeout(DEADLINE, dial)
             .await
             .expect("the dial completes rather than stalling")
+    }
+
+    /// A peer that completes the handshake and never sees a request.
+    ///
+    /// The dial it serves fails while assembling the URI, which happens after
+    /// `client::handshake` — so a peer is still needed for the dial to get that
+    /// far — and `capture_one_head` would panic on the `accept` that never
+    /// arrives.
+    async fn serve_no_call(io: DuplexStream) {
+        let Ok(mut connection) = server::handshake(io).await else {
+            return;
+        };
+        while connection.accept().await.is_some() {}
     }
 
     /// Reports the first request's head and then keeps the connection polled.
@@ -2072,6 +2120,51 @@ mod stream_grpc_request_headers_tests {
                 head.uri.authority().map(|value| value.as_str()),
                 Some(authority),
                 ":authority"
+            );
+        }
+    }
+
+    /// The other half of that: an authority that is not one has to fail the
+    /// dial rather than quietly reshape the request.
+    ///
+    /// `grpcSettings.authority` is free-form JSON and the config layer only
+    /// drops it when empty (`crates/xray-config/src/parser.rs:2869-2872`), so
+    /// these reach the dial as written. Interpolated into one URI string they
+    /// re-partition it instead of failing — `example.com/api` parses as
+    /// authority `example.com` with path `/api/xray.grpc/Tun`, and
+    /// `example.com#frag` leaves the path as a bare `/`. That is a call to a
+    /// gRPC method nobody configured, answered by an UNIMPLEMENTED that names
+    /// nothing, which is why the URI is assembled part by part.
+    ///
+    /// A divergence from grpc-go, deliberately: it validates a `WithAuthority`
+    /// not at all (`grpc@v1.81.0/clientconn.go:1976-1978`) and, confirmed on
+    /// the wire, sends `:authority: example.com/api` verbatim with the `:path`
+    /// intact. `http::uri::Authority` cannot hold a `/`, so copying that is not
+    /// on the table; failing loudly is the option that remains.
+    #[tokio::test]
+    async fn an_authority_that_is_not_an_authority_fails_the_dial() {
+        for authority in [
+            "example.com/api",
+            "example.com?q=1",
+            "example.com#frag",
+            "exa mple.com",
+        ] {
+            let (client_io, server_io) = duplex(64 * 1024);
+            tokio::spawn(serve_no_call(server_io));
+
+            let config = config(authority);
+            let dial = open_grpc_h2_stream(Box::new(client_io) as BoxedTransportStream, &config);
+            let Err(error) = tokio::time::timeout(DEADLINE, dial)
+                .await
+                .expect("the dial completes rather than stalling")
+            else {
+                panic!("an authority that cannot be sent must not dial: {authority:?}");
+            };
+
+            let reported = error.to_string();
+            assert!(
+                reported.contains(authority),
+                "the error has to name the authority, got: {reported}"
             );
         }
     }

@@ -20,6 +20,12 @@ pub struct GrpcConfig {
     /// even there `encodeAuthority` leaves `:`, `[`, `]` and `@` alone
     /// (`grpc@v1.81.0/clientconn.go:1889-1942,1977-1986`) — which is what lets
     /// a bracketed IPv6 literal survive.
+    ///
+    /// Untouched, but not unchecked: this is free-form JSON that the config
+    /// layer only rejects for emptiness, so a value that is not an authority
+    /// at all fails the dial rather than reshaping the request. The reasoning,
+    /// and why it diverges from grpc-go, is at the URI assembly in
+    /// [`super::open_grpc_h2_stream`].
     pub authority: String,
     /// Already resolved through Xray's table by [`resolve_user_agent`], so
     /// `golang` has become the empty string by the time it lands here.
