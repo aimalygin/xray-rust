@@ -1169,6 +1169,9 @@ impl OutboundRouter {
         match &outbound.settings {
             OutboundSettings::Dns(_) => Err(CachedOutboundError::NoSupportedOutbound),
             OutboundSettings::Freedom => {
+                if !stream_transport_is_dialable(&outbound.stream) {
+                    return Err(CachedOutboundError::UnsupportedOutboundNetwork);
+                }
                 if outbound.stream.security != StreamSecurity::None {
                     return Err(CachedOutboundError::UnsupportedOutboundSecurity);
                 }
@@ -3223,6 +3226,44 @@ mod tests {
                 CoreError::UnsupportedOutboundNetwork
             ));
         }
+    }
+
+    /// `compile_udp_outbound` is the router's cached twin of
+    /// `build_udp_outbound`, and the two are reached from the same config by
+    /// different callers. A guard only one of them applies makes the verdict
+    /// depend on whether the cache is live, which is not a property a config
+    /// should have.
+    #[test]
+    fn the_cached_and_uncached_udp_freedom_paths_agree_on_an_undialable_transport() {
+        let mut freedom = direct_selection_freedom("direct");
+        freedom.stream.transport = StreamTransport::WebSocket(WebSocketSettings {
+            path: "/chat".to_owned(),
+            ..WebSocketSettings::default()
+        });
+
+        let mut config = direct_selection_config();
+        config.outbounds = vec![freedom.clone()];
+        config.default_outbound_tag = Some("direct".to_owned());
+        config.routing.rules.clear();
+        let router = OutboundRouter::new(Arc::new(config));
+
+        let tcp_target = domain_tcp_target("example.test");
+        let target = Target::new(
+            tcp_target.addr.clone(),
+            tcp_target.port,
+            RoutingNetwork::Udp,
+        );
+
+        assert!(matches!(
+            build_udp_outbound(&freedom).unwrap_err(),
+            CoreError::UnsupportedOutboundNetwork
+        ));
+        assert!(matches!(
+            router
+                .select_udp_outbound_for_session(None, &target)
+                .unwrap_err(),
+            CoreError::UnsupportedOutboundNetwork
+        ));
     }
 
     /// The other half: every VLESS builder, including the cached router's own
