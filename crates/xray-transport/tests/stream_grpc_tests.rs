@@ -139,6 +139,58 @@ mod stream_grpc_framing_write_tests {
     }
 
     #[test]
+    fn a_127_byte_payload_is_the_largest_with_a_one_byte_varint() {
+        let payload = vec![0x41; 127];
+        let encoded = encode_hunk(&payload);
+
+        assert_eq!(encoded[0], 0x00);
+        assert_eq!(&encoded[1..5], &[0x00, 0x00, 0x00, 0x81]); // 1 + 1 + 127
+        assert_eq!(encoded[5], 0x0a);
+        assert_eq!(encoded[6], 0x7f); // varint 127, one byte
+        assert_eq!(&encoded[7..], &payload[..]);
+        assert_eq!(encoded.len(), 5 + 129);
+    }
+
+    #[test]
+    fn a_128_byte_payload_is_the_smallest_with_a_two_byte_varint() {
+        let payload = vec![0x41; 128];
+        let encoded = encode_hunk(&payload);
+
+        assert_eq!(encoded[0], 0x00);
+        assert_eq!(&encoded[1..5], &[0x00, 0x00, 0x00, 0x83]); // 1 + 2 + 128
+        assert_eq!(encoded[5], 0x0a);
+        assert_eq!(&encoded[6..8], &[0x80, 0x01]); // varint 128
+        assert_eq!(&encoded[8..], &payload[..]);
+        assert_eq!(encoded.len(), 5 + 131);
+    }
+
+    #[test]
+    fn a_16383_byte_payload_is_the_largest_with_a_two_byte_varint() {
+        let payload = vec![0x41; 16383];
+        let encoded = encode_hunk(&payload);
+
+        assert_eq!(encoded[0], 0x00);
+        assert_eq!(&encoded[1..5], &[0x00, 0x00, 0x40, 0x02]); // 1 + 2 + 16383
+        assert_eq!(encoded[5], 0x0a);
+        assert_eq!(&encoded[6..8], &[0xff, 0x7f]); // varint 16383
+        assert_eq!(&encoded[8..], &payload[..]);
+        assert_eq!(encoded.len(), 5 + 16386);
+    }
+
+    #[test]
+    fn a_16384_byte_payload_is_the_smallest_with_a_three_byte_varint() {
+        let payload = vec![0x41; 16384];
+        let encoded = encode_hunk(&payload);
+
+        assert_eq!(encoded[0], 0x00);
+        assert_eq!(&encoded[1..5], &[0x00, 0x00, 0x40, 0x04]); // 1 + 3 + 16384
+        assert_eq!(encoded[5], 0x0a);
+        assert_eq!(&encoded[6..9], &[0x80, 0x80, 0x01]); // varint 16384
+        assert_eq!(&encoded[9..], &payload[..]);
+        assert_eq!(encoded.len(), 5 + 16388);
+    }
+
+    #[test]
     fn an_empty_payload_still_produces_a_message_with_no_body() {
         // Xray writes whatever the layer above hands it (`hunkconn.go:131-140`
         // `Write` never special-cases a zero-length buffer), so a half-close

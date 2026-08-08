@@ -23,17 +23,6 @@
 //! gRPC frame (length 0 in the five-byte prefix), just with no protobuf body
 //! after it — not `0a 00`, which would claim a present-but-empty field.
 
-/// Number of bytes a protobuf varint needs for `value`.
-fn varint_len(value: usize) -> usize {
-    let mut len = 1;
-    let mut remaining = value >> 7;
-    while remaining > 0 {
-        len += 1;
-        remaining >>= 7;
-    }
-    len
-}
-
 fn put_varint(out: &mut Vec<u8>, mut value: usize) {
     while value >= 0x80 {
         out.push((value as u8) | 0x80);
@@ -43,6 +32,17 @@ fn put_varint(out: &mut Vec<u8>, mut value: usize) {
 }
 
 /// Encodes one write as a single uncompressed `Hunk` message.
+///
+/// The length prefix is filled in *after* the tag, varint and payload are
+/// already in `out`, by patching `out[1..5]` from `out.len() - 5`, rather
+/// than computed up front from a second walk of `payload.len()`. Two
+/// independent derivations of "how many bytes will the varint take" — one
+/// sizing the prefix, one driving what `put_varint` actually emits — would
+/// only need to disagree once, after an edit to either, to make the length
+/// prefix lie about the body it precedes. That corrupts the wire silently:
+/// Task 3's decoder trusts this prefix to know where the message ends.
+/// Reading the length back from what was actually written makes it true by
+/// construction instead of by two functions agreeing.
 pub fn encode_hunk(payload: &[u8]) -> Vec<u8> {
     if payload.is_empty() {
         // No tag, no varint: proto3 drops a zero-length `bytes` field
@@ -51,14 +51,22 @@ pub fn encode_hunk(payload: &[u8]) -> Vec<u8> {
         return vec![0x00, 0x00, 0x00, 0x00, 0x00];
     }
 
-    let body_len = 1 + varint_len(payload.len()) + payload.len();
-    let mut out = Vec::with_capacity(5 + body_len);
-
-    out.push(0x00);
-    out.extend_from_slice(&(body_len as u32).to_be_bytes());
+    // Capacity is a safe upper bound, not a byte-exact count: 5 for the
+    // prefix and 1 for the tag are fixed, and no varint of a `usize` needs
+    // more than 10 bytes, so `+ 16` never triggers a reallocation without
+    // computing a second, independent varint length just to size the `Vec`.
+    let mut out = Vec::with_capacity(payload.len() + 16);
+    out.extend_from_slice(&[0x00, 0x00, 0x00, 0x00, 0x00]); // compression flag + length placeholder
     out.push(0x0a);
     put_varint(&mut out, payload.len());
     out.extend_from_slice(payload);
+
+    let body_len = out.len() - 5;
+    debug_assert!(
+        u32::try_from(body_len).is_ok(),
+        "gRPC message body exceeds gRPC's own u32 length prefix"
+    );
+    out[1..5].copy_from_slice(&(body_len as u32).to_be_bytes());
 
     out
 }
