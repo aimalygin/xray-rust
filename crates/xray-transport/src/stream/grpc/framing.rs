@@ -36,6 +36,23 @@ const MAX_VARINT_LEN: usize = 10;
 /// default is what a real Xray peer holds itself to and what we hold it to.
 const MAX_RECEIVE_MESSAGE_SIZE: usize = 1024 * 1024 * 4;
 
+/// The largest payload one `Hunk` may carry, which
+/// [`GrpcStream::poll_write`](super::GrpcStream) clamps every write to.
+///
+/// The bound is the peer's receive cap rather than gRPC's own `u32` length
+/// prefix, because that is the one a real call reaches: an Xray gRPC inbound is
+/// a stock grpc-go server — nothing under `Xray-core/transport/internet/grpc/`
+/// installs a `MaxRecvMsgSize` — so it holds a message to
+/// `defaultServerMaxReceiveMessageSize` (`grpc@v1.81.0/server.go:60,191`) and
+/// answers a longer one with `ResourceExhausted`, ending the RPC. Our own
+/// decoder refuses one on the same grounds, so an unclamped write could frame a
+/// message neither end would read.
+///
+/// Five bytes below the cap: the protobuf tag, plus the four-byte varint a
+/// length this size takes. [`encode_hunk`] of exactly this many bytes therefore
+/// produces a body of exactly the cap.
+pub const MAX_HUNK_PAYLOAD_LEN: usize = MAX_RECEIVE_MESSAGE_SIZE - 5;
+
 /// Writes `value` into `out` and reports how many bytes it took.
 ///
 /// The width is wanted before the message is assembled, because it is what
@@ -80,13 +97,14 @@ fn put_varint(out: &mut [u8; MAX_VARINT_LEN], mut value: usize) -> usize {
 /// about its body would corrupt the wire silently, since the decoder trusts it
 /// to know where the message ends.
 ///
-/// # Panics
-///
-/// If `payload` does not fit gRPC's own `u32` length prefix. Unreachable from
-/// this crate's relay, which caps a single write at `MAX_COPY_BUFFER_SIZE`,
-/// but this is `pub`: a truncated big-endian length is the same silent wire
-/// corruption the length-prefix paragraph above is written to prevent, so the
-/// check is a real one rather than a `debug_assert!` a release build drops.
+/// The one input this cannot frame is a payload past gRPC's `u32` length
+/// prefix, and the guard for it lives in the caller rather than here:
+/// [`GrpcStream::poll_write`](super::GrpcStream) clamps to
+/// [`MAX_HUNK_PAYLOAD_LEN`] and returns the shorter count, which `AsyncWrite`
+/// permits and `write_all` loops on. A transport crate in a proxy should not
+/// crash on how large a caller's buffer is, and the clamp is three orders of
+/// magnitude below the prefix's ceiling, so the assertion below is a statement
+/// of that contract rather than a check anything is expected to reach.
 pub fn encode_hunk(payload: &[u8]) -> Vec<u8> {
     let mut varint = [0u8; MAX_VARINT_LEN];
     let varint_len = put_varint(&mut varint, payload.len());
@@ -110,9 +128,12 @@ pub fn encode_hunk(payload: &[u8]) -> Vec<u8> {
     }
 
     let written_body = out.len() - GRPC_HEADER_LEN;
-    let written_body = u32::try_from(written_body)
-        .expect("gRPC message body exceeds gRPC's own u32 length prefix");
-    out[1..GRPC_HEADER_LEN].copy_from_slice(&written_body.to_be_bytes());
+    debug_assert!(
+        u32::try_from(written_body).is_ok(),
+        "a Hunk body of {written_body} bytes cannot state its own length in gRPC's u32 prefix; \
+         `poll_write` clamps every payload to {MAX_HUNK_PAYLOAD_LEN} bytes"
+    );
+    out[1..GRPC_HEADER_LEN].copy_from_slice(&(written_body as u32).to_be_bytes());
     debug_assert_eq!(
         out.len(),
         out.capacity(),

@@ -108,7 +108,33 @@ mod stream_grpc_path_tests {
 }
 
 mod stream_grpc_framing_write_tests {
-    use xray_transport::stream::encode_hunk;
+    use xray_transport::stream::{encode_hunk, MAX_HUNK_PAYLOAD_LEN};
+
+    /// gRPC's four-byte receive cap, which is both what a stock grpc-go peer
+    /// holds a message to (`grpc@v1.81.0/server.go:60,191` — Xray installs no
+    /// `MaxRecvMsgSize`) and what `HunkDecoder` holds one to.
+    const RECEIVE_LIMIT: usize = 4 * 1024 * 1024;
+
+    /// The clamp `GrpcStream::poll_write` holds a write to, pinned from both
+    /// sides so the `- 5` in its definition cannot drift: at the limit the
+    /// encoded body is exactly the receive cap, and one byte more is one byte
+    /// over it.
+    ///
+    /// The `+ 1` case is deliberately still encoded rather than refused.
+    /// `MAX_HUNK_PAYLOAD_LEN` is what a *peer* accepts, not what the framing
+    /// can express — gRPC's own ceiling is the `u32` length prefix, three
+    /// orders of magnitude further out — so keeping the clamp in the one place
+    /// that has a caller to report a short write to is what makes it a clamp
+    /// rather than a second failure mode.
+    #[test]
+    fn the_largest_hunk_payload_exactly_fills_the_receive_limit() {
+        let at_the_limit = encode_hunk(&vec![0x41; MAX_HUNK_PAYLOAD_LEN]);
+        assert_eq!(at_the_limit.len(), 5 + RECEIVE_LIMIT);
+        assert_eq!(&at_the_limit[1..5], &(RECEIVE_LIMIT as u32).to_be_bytes());
+
+        let one_over = encode_hunk(&vec![0x41; MAX_HUNK_PAYLOAD_LEN + 1]);
+        assert_eq!(one_over.len(), 5 + RECEIVE_LIMIT + 1);
+    }
 
     #[test]
     fn a_short_payload_costs_seven_bytes_of_overhead() {
@@ -536,15 +562,18 @@ mod stream_grpc_framing_read_tests {
 /// like xray-core's gRPC inbound.
 mod stream_grpc_h2_tests {
     use std::future::{poll_fn, Future};
+    use std::pin::Pin;
     use std::time::Duration;
 
     use bytes::Bytes;
     use h2::server::{self, SendResponse};
     use h2::{RecvStream, SendStream};
     use http::{HeaderMap, Method, Response};
-    use tokio::io::{duplex, AsyncReadExt, AsyncWriteExt, DuplexStream};
+    use tokio::io::{duplex, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream};
     use tokio::sync::oneshot;
-    use xray_transport::stream::{encode_hunk, open_grpc_h2_stream, GrpcStream};
+    use xray_transport::stream::{
+        encode_hunk, open_grpc_h2_stream, GrpcStream, MAX_HUNK_PAYLOAD_LEN,
+    };
     use xray_transport::BoxedTransportStream;
 
     /// `grpcSettings.authority` when it is set; the tests never exercise the
@@ -961,6 +990,64 @@ mod stream_grpc_h2_tests {
         })
         .await;
         uplink.await.expect("the uplink task finishes");
+    }
+
+    /// A write bigger than one `Hunk` may carry is a short write, not a panic
+    /// and not a message the peer would refuse.
+    ///
+    /// `AsyncWrite` allows a short write and `write_all` loops on one, so the
+    /// caller loses nothing and nothing has to thread a `Result` back through
+    /// the framing. The alternative the write path had was to encode it anyway,
+    /// which puts a message on the wire past the 4 MiB a stock grpc-go peer
+    /// receives (`grpc@v1.81.0/server.go:60,191`) — and past what our own
+    /// `HunkDecoder` accepts, which is why the echo below fails outright
+    /// without the clamp rather than merely returning the wrong count.
+    ///
+    /// Unreachable from this crate's relay, whose buffer is capped at 1 MiB
+    /// (`crates/xray-core-rs/src/policy.rs:15`). But `poll_write` is public
+    /// surface, and how big a caller's buffer is must not be a question of
+    /// whether a proxy stays up.
+    #[tokio::test]
+    async fn a_write_past_the_hunk_limit_is_short_and_the_rest_follows() {
+        let payload = vec![0x7e; MAX_HUNK_PAYLOAD_LEN + 1];
+
+        let (client_io, server_io) = duplex(64 * 1024);
+        tokio::spawn(serve_one_call(server_io, Script::Echo));
+        let stream = within_deadline(open(client_io)).await;
+
+        // Read concurrently or the echo deadlocks: the peer stops reading the
+        // request body while its own send is blocked on a window this side is
+        // not reopening.
+        let (mut reader, mut writer) = tokio::io::split(stream);
+        let expected = payload.clone();
+        let downlink = tokio::spawn(async move {
+            let mut echoed = vec![0u8; expected.len()];
+            reader.read_exact(&mut echoed).await.expect("downlink read");
+            assert_eq!(echoed, expected, "the payload arrives whole");
+        });
+
+        within_deadline(async {
+            // `write_all` would hide the short count by looping over it, so
+            // the first write is driven by hand.
+            let taken = poll_fn(|cx| Pin::new(&mut writer).poll_write(cx, &payload))
+                .await
+                .expect("the write is accepted");
+            assert_eq!(
+                taken, MAX_HUNK_PAYLOAD_LEN,
+                "an over-long write is clamped, not framed whole"
+            );
+
+            writer
+                .write_all(&payload[taken..])
+                .await
+                .expect("the tail follows in a second Hunk");
+            writer.flush().await.expect("uplink flush");
+        })
+        .await;
+
+        within_deadline(downlink)
+            .await
+            .expect("the downlink task finishes");
     }
 
     /// The read path's leftover buffer, which nothing else here reaches even

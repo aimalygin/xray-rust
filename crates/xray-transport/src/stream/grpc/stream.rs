@@ -21,7 +21,7 @@ use h2::{RecvStream, SendStream};
 use http::HeaderMap;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
-use super::framing::{encode_hunk, HunkDecoder};
+use super::framing::{encode_hunk, HunkDecoder, MAX_HUNK_PAYLOAD_LEN};
 use super::h2client::H2ConnectionDriver;
 use crate::{TransportError, TransportStream};
 
@@ -381,6 +381,17 @@ impl AsyncWrite for GrpcStream {
         if input.is_empty() {
             return Poll::Ready(Ok(0));
         }
+
+        // Clamped, not refused and not panicked on: a short write is what
+        // `AsyncWrite` is for, `write_all` loops until the tail follows, and
+        // nothing has to thread a `Result` back out of the framing. What it
+        // keeps off the wire is a `Hunk` past the 4 MiB a stock grpc-go peer
+        // will receive — and past what our own decoder accepts — see
+        // `MAX_HUNK_PAYLOAD_LEN`. No caller in this crate reaches it, since the
+        // relay caps a single write at 1 MiB
+        // (`crates/xray-core-rs/src/policy.rs:15`), but that is a property of
+        // today's callers rather than of this transport.
+        let input = &input[..input.len().min(MAX_HUNK_PAYLOAD_LEN)];
 
         // One write, one `Hunk`: `HunkReaderWriter.Write` hands the whole
         // buffer to a single `Send` (`hunkconn.go:131-141`), so the peer's
