@@ -272,6 +272,39 @@ generator port, not an alias. `hellorandomized`, `hellorandomizedalpn` and
 worse than a fixed one for the reason above. Ours is a recorded snapshot of one
 such spec.
 
+#### ECH GREASE
+
+Six of the profiles carry an `encrypted_client_hello` extension. It is GREASE —
+a decoy outer hello, not real Encrypted Client Hello — because that is what the
+browsers being imitated send by default, and omitting it would itself be the
+tell. We build the whole structure: outer type, HPKE cipher suite, config id, a
+real X25519 encapsulated key, and a random payload of the right length. The
+config id, key and payload are drawn per connection, as uTLS draws them.
+
+uTLS varies two further fields per connection, and we match one of them:
+
+| Field | uTLS | xray-rust |
+| --- | --- | --- |
+| HPKE AEAD, Firefox profiles | draws AES-128-GCM or ChaCha20-Poly1305 | drawn per connection |
+| HPKE AEAD, Chrome profiles | AES-128-GCM only (`BoringGREASEECH` declares one suite) | fixed, matching |
+| Payload length, Firefox | 223, fixed | fixed, matching |
+| Payload length, Chrome | draws 128, 160, 192 or 224 | **pinned to 128** |
+
+The last row is a known divergence. Real Chrome spreads its ClientHello across
+four lengths — and because the ML-KEM key share already pushes the hello past
+BoringSSL's 512-byte padding target, that spread is visible in the total hello
+length rather than absorbed by padding. We send the shortest every time, so a
+censor watching several connections from one client sees a length distribution
+Chrome does not produce.
+
+It is pinned because both the raw-hello and shape fixtures record one length per
+fingerprint, and the Go oracle that generates them runs under a zeroed
+`crypto/rand`, which always picks the first candidate. Drawing per connection
+would fail those byte-exact comparisons three runs in four. Lifting it means
+teaching `clienthello_shape.go` to force a candidate index and committing a
+fixture per candidate, so the comparison can assert the hello matches one of the
+four uTLS can produce rather than dropping to a weaker check.
+
 ### Happy Eyeballs socket option
 
 `streamSettings.sockopt` currently supports only the Xray-compatible
