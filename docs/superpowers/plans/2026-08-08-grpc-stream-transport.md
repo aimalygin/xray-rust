@@ -1164,6 +1164,11 @@ requirements specific to this adapter:
   `crates/xray-transport/src/stream/httpupgrade.rs:231-248`.
 - `is_end_stream()` is **false** when the stream ended with trailers. EOF is `data()` returning
   `None`, never `is_end_stream()`.
+- **An empty `Hunk` must not become EOF.** Go's `Read` in `hunkconn.go` copies zero bytes and returns
+  `(0, nil)` for an empty message, which is a legal zero-length read there. In Rust, an `AsyncRead`
+  returning `Ok(0)` means end of stream, and we emit five-byte zero-body messages ourselves, so a
+  literal port silently turns one of our own frames into a hang-up. The adapter must loop past an
+  empty payload rather than surfacing it.
 
 Writes go through `encode_hunk` before `send_data`; reads feed `HunkDecoder` and hand up the
 decoded payloads. `poll_shutdown` sends the empty DATA with END_STREAM that `CloseSend` produces
