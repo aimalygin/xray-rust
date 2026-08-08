@@ -776,6 +776,27 @@ iteration behind the XHTTP-over-h2 carve-out all survived.
   follows from the goal being importability — a profile that runs on xray-core
   runs here, or is refused where xray-core refuses it and for the same reason.
 
+### On upstream's deprecation notices
+
+`TransportProtocol.Build` prints a deprecation warning for gRPC, pointing at
+"XHTTP stream-up H2". It prints the same kind of warning for WebSocket and for
+HTTPUpgrade, pointing at "XHTTP H2 & H3". Three of the four transports in this
+document are deprecated upstream, including the two that already shipped.
+
+The call is `PrintNonRemovalDeprecatedFeatureWarning`, and the name is the
+point. The same `match` uses `PrintRemovedFeatureError` for `h2`/`h3`/`http` and
+`quic`, which are hard errors — Xray draws the line explicitly between what it
+discourages and what it has removed. All three of ours are on the discouraged
+side, and a profile written against any of them still runs.
+
+So the notices do not bear on whether we implement gRPC. This project consumes
+profiles other people already deployed, and a deployed gRPC profile does not
+stop existing because new deployments are steered elsewhere. What the notices
+do say is worth carrying: XHTTP is where upstream is consolidating and the only
+one of the four not deprecated, which argues against deferring it indefinitely —
+and it argues against spending fidelity effort on gRPC beyond the bar set above,
+since the surface a censor studies next is XHTTP's, not gRPC's.
+
 ### Corrections folded into the sections above
 
 1. The parity target promised byte-exact output for *every* request. Unreachable
