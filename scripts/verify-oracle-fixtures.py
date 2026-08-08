@@ -60,6 +60,13 @@ MASQUERADE_MODULE = "tools/reality-oracle/masquerade"
 # fixture's `versions` object lists them.
 BROWSERS = ("chrome", "firefox", "safari", "curl")
 
+# The one header whose value cannot be restated in the oracle's version
+# numbers, and so the only one allowed the weaker verdict in
+# `classify_version_drift`. Every other value -- `User-Agent` included -- prints
+# its version rather than being seeded by it, so substitution reproduces it
+# exactly and a mismatch there is a real regression.
+CHROME_SEEDED_HEADER = "Sec-CH-UA"
+
 
 def root_oracle(entry: str, tag: str | None = None) -> tuple[str, ...]:
     """Build the `go run` invocation for an oracle in the root module."""
@@ -332,15 +339,23 @@ def classify_version_drift(
         draw -- its template is byte-identical, which is the strongest claim
         available. A drifted User-Agent template fails here even though the
         numbers moved.
-      * otherwise, excuse it only when the Chrome version moved and each side
-        carries its own Chrome version. That is the one value the reference
-        implementation *seeds* with a version rather than merely printing it:
-        `common/utils/browser.go` builds `Sec-CH-UA` through
+      * otherwise, excuse it only for `Sec-CH-UA`, and only when the Chrome
+        version moved and each side carries its own. That is the one value the
+        reference implementation *seeds* with a version rather than merely
+        printing it: `common/utils/browser.go` builds it through
         `getGreasedChUa(AnchoredChromeVersion, ...)`, where the major version
         also picks the GREASE brand's punctuation, its fake version, and the
         order of the whole brand list -- so no substitution can reproduce it.
         Values excused this way are named in the report, because an unverified
         value nobody sees is the hole this script exists to close.
+
+        The excuse is deliberately keyed to that header rather than to the
+        shape of the value. Any value carrying a Chrome version looks seeded by
+        one, so a wider rule would excuse a `User-Agent` whose template had
+        genuinely drifted -- a real regression -- whenever it happened to
+        coincide with a version bump. `User-Agent` prints the version, so the
+        restatement tier above reproduces it exactly and a mismatch there has
+        to fail.
 
     Returns the excused header keys and the reasons to fail; an empty reason
     list means the mismatch was fully explained by the draw.
@@ -389,7 +404,8 @@ def classify_version_drift(
         ):
             continue
         seeded_by_chrome_version = (
-            committed_chrome != generated_chrome
+            committed_entry["key"] == CHROME_SEEDED_HEADER
+            and committed_chrome != generated_chrome
             and committed_chrome in committed_value
             and generated_chrome in generated_value
         )
