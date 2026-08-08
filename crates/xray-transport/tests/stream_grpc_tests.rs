@@ -106,3 +106,52 @@ mod stream_grpc_path_tests {
         }
     }
 }
+
+mod stream_grpc_framing_write_tests {
+    use xray_transport::stream::encode_hunk;
+
+    #[test]
+    fn a_short_payload_costs_seven_bytes_of_overhead() {
+        let encoded = encode_hunk(b"hello");
+        assert_eq!(
+            encoded,
+            vec![
+                0x00, // uncompressed
+                0x00, 0x00, 0x00, 0x07, // length: tag + varint + payload
+                0x0a, // field 1, wire type 2
+                0x05, // varint length
+                b'h', b'e', b'l', b'l', b'o',
+            ]
+        );
+    }
+
+    #[test]
+    fn a_payload_over_127_bytes_uses_a_two_byte_varint() {
+        let payload = vec![0x41; 200];
+        let encoded = encode_hunk(&payload);
+
+        assert_eq!(encoded[0], 0x00);
+        assert_eq!(&encoded[1..5], &[0x00, 0x00, 0x00, 0xcb]); // 1 + 2 + 200
+        assert_eq!(encoded[5], 0x0a);
+        assert_eq!(&encoded[6..8], &[0xc8, 0x01]); // varint 200
+        assert_eq!(&encoded[8..], &payload[..]);
+        assert_eq!(encoded.len(), 5 + 203);
+    }
+
+    #[test]
+    fn an_empty_payload_still_produces_a_message_with_no_body() {
+        // Xray writes whatever the layer above hands it (`hunkconn.go:131-140`
+        // `Write` never special-cases a zero-length buffer), so a half-close
+        // must still put a frame on the wire or it looks like a stall.
+        //
+        // But the frame's *body* is empty, not `0a 00`. Proto3 `bytes` fields
+        // have implicit presence: protobuf-go's generated codec skips a field
+        // whose value has length zero rather than encoding a present-but-empty
+        // entry (`coderBytesNoZero` in `internal/impl/codec_tables.go:200,
+        // 273-278` and `codec_gen.go:5477-5485`, selected because `Hunk.Data`
+        // carries no `optional` keyword). A Go client marshalling
+        // `&Hunk{Data: nil}` (or `Data: []byte{}}`, same length-zero check)
+        // therefore writes a gRPC message with length 0 and nothing after it.
+        assert_eq!(encode_hunk(&[]), vec![0x00, 0x00, 0x00, 0x00, 0x00]);
+    }
+}

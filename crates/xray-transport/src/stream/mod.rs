@@ -12,7 +12,7 @@ mod masquerade;
 mod websocket;
 mod websocket_frame;
 
-pub use grpc::grpc_request_path;
+pub use grpc::{encode_hunk, grpc_request_path};
 pub use http_headers::{serialize_request, HeaderMap};
 pub use httpupgrade::{connect_httpupgrade, HttpUpgradeConfig};
 pub use masquerade::{
