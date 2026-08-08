@@ -5,12 +5,14 @@
 //! request header, Vision, XUDP — is unaware of which transport produced the
 //! stream it was handed.
 
+mod grpc;
 mod http_headers;
 mod httpupgrade;
 mod masquerade;
 mod websocket;
 mod websocket_frame;
 
+pub use grpc::grpc_request_path;
 pub use http_headers::{serialize_request, HeaderMap};
 pub use httpupgrade::{connect_httpupgrade, HttpUpgradeConfig};
 pub use masquerade::{
