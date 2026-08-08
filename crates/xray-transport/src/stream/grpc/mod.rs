@@ -4,5 +4,5 @@
 mod framing;
 mod path;
 
-pub use framing::encode_hunk;
+pub use framing::{encode_hunk, HunkDecoder};
 pub use path::grpc_request_path;
