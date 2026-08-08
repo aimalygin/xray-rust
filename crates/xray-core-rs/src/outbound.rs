@@ -1340,6 +1340,12 @@ fn build_transport_layer(
             // only means "do not block waiting for the 101".
             wait_for_response: upgrade.early_data_bytes == 0,
         }),
+        // The config layer parses `grpcSettings` before a gRPC dialer exists.
+        // Refusing here keeps that gap loud: the alternative to an arm is no
+        // arm, and the config crate cannot grow the variant without this match
+        // failing to compile. Wiring it to a real `TransportLayer` is the
+        // outbound task's job, not the parser's.
+        StreamTransport::Grpc(_) => return Err(CoreError::UnsupportedOutboundNetwork),
     })
 }
 

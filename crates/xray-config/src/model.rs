@@ -882,6 +882,32 @@ pub enum StreamTransport {
     Raw,
     WebSocket(WebSocketSettings),
     HttpUpgrade(HttpUpgradeSettings),
+    Grpc(GrpcSettings),
+}
+
+/// `grpcSettings`. Key spellings are Xray's, inconsistencies included: five of
+/// the eight are snake_case upstream (`idle_timeout`, `health_check_timeout`,
+/// `permit_without_stream`, `initial_windows_size`, `user_agent`) while
+/// `serviceName` and `multiMode` are not, and regularising either group here
+/// would accept a config xray-core ignores (`Xray-core/infra/conf/
+/// grpc.go:8-17`).
+///
+/// The three numbers are `int32` there and clamp a negative to zero rather
+/// than failing, so an unsigned field holds every value that survives
+/// `GRPCConfig.Build`. `authority` and `user_agent` are `Option` because Xray
+/// cannot tell an absent key from an empty string either: both leave the Go
+/// field `""`, which is what selects the authority fallback chain and the
+/// Chrome user agent (`transport/internet/grpc/dial.go:159-166,193-205`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct GrpcSettings {
+    pub service_name: String,
+    pub multi_mode: bool,
+    pub authority: Option<String>,
+    pub user_agent: Option<String>,
+    pub idle_timeout_secs: u32,
+    pub health_check_timeout_secs: u32,
+    pub permit_without_stream: bool,
+    pub initial_windows_size: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

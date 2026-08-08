@@ -12,13 +12,13 @@ use crate::{
     CoreConfig, Diagnostic, DnsConfig, DnsFakeIpConfig, DnsHostMapping, DnsHostTarget, DnsIpFilter,
     DnsNameServerConfig, DnsOutboundRule, DnsOutboundRuleAction, DnsOutboundSettings,
     DnsQTypeRange, DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint, DnsServerTransport,
-    DomainMatcher, HappyEyeballsSettings, HttpUpgradeSettings, InboundConfig, InboundProtocol,
-    InboundSniffingConfig, IpCidr, IpMatcher, Network, OutboundConfig, OutboundProtocol,
-    OutboundSettings, PolicyConfig, PolicyLevelConfig, PolicySystemConfig, RealitySettings,
-    RealityShortId, RegexMatcher, RoutingConfig, RoutingDomainStrategy, RoutingPortRange,
-    RoutingRule, SniffingDestination, SocketOptions, StreamSecurity, StreamSettings,
-    StreamTransport, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser, WebSocketSettings,
-    MAX_DNS_SERVER_TIMEOUT_MS,
+    DomainMatcher, GrpcSettings, HappyEyeballsSettings, HttpUpgradeSettings, InboundConfig,
+    InboundProtocol, InboundSniffingConfig, IpCidr, IpMatcher, Network, OutboundConfig,
+    OutboundProtocol, OutboundSettings, PolicyConfig, PolicyLevelConfig, PolicySystemConfig,
+    RealitySettings, RealityShortId, RegexMatcher, RoutingConfig, RoutingDomainStrategy,
+    RoutingPortRange, RoutingRule, SniffingDestination, SocketOptions, StreamSecurity,
+    StreamSettings, StreamTransport, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
+    WebSocketSettings, MAX_DNS_SERVER_TIMEOUT_MS,
 };
 
 const MAX_ROUTING_RULES: usize = 4_096;
@@ -43,6 +43,7 @@ enum StreamNetwork {
     Raw,
     WebSocket,
     HttpUpgrade,
+    Grpc,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2605,6 +2606,9 @@ impl Parser<'_> {
             StreamNetwork::HttpUpgrade => self
                 .parse_httpupgrade_settings(stream, index)
                 .map(StreamTransport::HttpUpgrade),
+            StreamNetwork::Grpc => self
+                .parse_grpc_settings(stream, index)
+                .map(StreamTransport::Grpc),
         }
     }
 
@@ -2633,6 +2637,7 @@ impl Parser<'_> {
             StreamNetwork::Raw => &["tcpSettings", "rawSettings"],
             StreamNetwork::WebSocket => &["wsSettings"],
             StreamNetwork::HttpUpgrade => &["httpupgradeSettings"],
+            StreamNetwork::Grpc => &["grpcSettings"],
         };
 
         for key in [
@@ -2640,6 +2645,7 @@ impl Parser<'_> {
             "rawSettings",
             "wsSettings",
             "httpupgradeSettings",
+            "grpcSettings",
         ] {
             if consumed.contains(&key) || stream.get(key).is_none() {
                 continue;
@@ -2655,6 +2661,9 @@ impl Parser<'_> {
                 }
                 "httpupgradeSettings" => {
                     let _ = self.parse_httpupgrade_settings(Some(stream), index);
+                }
+                "grpcSettings" => {
+                    let _ = self.parse_grpc_settings(Some(stream), index);
                 }
                 // `validate_tcp_settings` already ran for both spellings.
                 _ => {}
@@ -2793,6 +2802,114 @@ impl Parser<'_> {
         })
     }
 
+    /// Reads `grpcSettings`. No `path`, no `host`, no `headers`, no `?ed=`:
+    /// `GRPCConfig` has eight fields and none of them are those
+    /// (`Xray-core/infra/conf/grpc.go:8-17`).
+    fn parse_grpc_settings(
+        &mut self,
+        stream: Option<&Value>,
+        index: usize,
+    ) -> Option<GrpcSettings> {
+        let settings_path = format!("$.outbounds[{index}].streamSettings.grpcSettings");
+        let Some(settings) = stream.and_then(|stream| stream.get("grpcSettings")) else {
+            // `StreamConfig.Build` only appends a transport entry for a block
+            // that is present, and `GetTransportSettingsFor` then falls
+            // through to a zero-valued `CreateTransportConfig`
+            // (`transport/internet/config.go:71-81`) — which is a legal gRPC
+            // outbound dialing `//Tun`, not a missing one.
+            return Some(GrpcSettings::default());
+        };
+        if !settings.is_object() {
+            self.error(settings_path, "grpcSettings must be an object");
+            return None;
+        }
+        // Spelled exactly as the struct tags spell them: five snake_case,
+        // `serviceName` and `multiMode` camelCase, `authority` neither. Go
+        // matches on the tag, so `idleTimeout` is an unknown key upstream that
+        // is silently dropped, and accepting it here would let a profile work
+        // that does nothing against a real server.
+        self.reject_unknown_fields(
+            settings,
+            &settings_path,
+            &[
+                "authority",
+                "serviceName",
+                "multiMode",
+                "user_agent",
+                "idle_timeout",
+                "health_check_timeout",
+                "permit_without_stream",
+                "initial_windows_size",
+            ],
+        );
+
+        Some(GrpcSettings {
+            // Passed through untouched, including a leading `/`: which of the
+            // two `:path` dialects it selects is the transport's decision, not
+            // the parser's.
+            service_name: self
+                .optional_string_at(
+                    settings,
+                    "serviceName",
+                    format!("{settings_path}.serviceName"),
+                )
+                .unwrap_or_default()
+                .to_owned(),
+            multi_mode: self
+                .optional_bool_at(settings, "multiMode", format!("{settings_path}.multiMode"))
+                .unwrap_or_default(),
+            authority: self
+                .optional_string_at(settings, "authority", format!("{settings_path}.authority"))
+                .filter(|authority| !authority.is_empty())
+                .map(ToOwned::to_owned),
+            // Not validated against `chrome`/`firefox`/`edge`/`golang`: those
+            // are resolved at dial time and anything else is a literal UA
+            // (`transport/internet/grpc/dial.go:193-205`).
+            user_agent: self
+                .optional_string_at(
+                    settings,
+                    "user_agent",
+                    format!("{settings_path}.user_agent"),
+                )
+                .filter(|user_agent| !user_agent.is_empty())
+                .map(ToOwned::to_owned),
+            idle_timeout_secs: self.grpc_clamped_int32_at(settings, "idle_timeout", &settings_path),
+            health_check_timeout_secs: self.grpc_clamped_int32_at(
+                settings,
+                "health_check_timeout",
+                &settings_path,
+            ),
+            permit_without_stream: self
+                .optional_bool_at(
+                    settings,
+                    "permit_without_stream",
+                    format!("{settings_path}.permit_without_stream"),
+                )
+                .unwrap_or_default(),
+            initial_windows_size: self.grpc_clamped_int32_at(
+                settings,
+                "initial_windows_size",
+                &settings_path,
+            ),
+        })
+    }
+
+    /// One of `grpcSettings`' three `int32` numbers, clamped the way
+    /// `GRPCConfig.Build` clamps it.
+    ///
+    /// All three are negative-to-zero there (`Xray-core/infra/conf/
+    /// grpc.go:20-29`), so nothing negative survives into `grpc.Config` and an
+    /// unsigned field loses no reachable value. Reading through `i32` rather
+    /// than `u32` is what keeps that true in both directions: it accepts the
+    /// negatives Xray accepts, and it still refuses anything past `i32::MAX`,
+    /// which Go's decoder refuses too ("cannot unmarshal number 2147483648
+    /// into Go struct field GRPCConfig.idle_timeout of type int32").
+    fn grpc_clamped_int32_at(&mut self, settings: &Value, key: &str, settings_path: &str) -> u32 {
+        self.optional_i32_at(settings, key, format!("{settings_path}.{key}"))
+            .unwrap_or_default()
+            .max(0) as u32
+    }
+
     /// Reads a transport `headers` object. Xray types it as
     /// `map[string]string`, so a non-string value fails the whole config.
     fn parse_transport_headers(
@@ -2924,6 +3041,10 @@ impl Parser<'_> {
             "tcp" | "raw" => Some(StreamNetwork::Raw),
             "ws" | "websocket" => Some(StreamNetwork::WebSocket),
             "httpupgrade" => Some(StreamNetwork::HttpUpgrade),
+            // No `gun` alias: v26.5.9's `TransportProtocol.Build` has only the
+            // `grpc` arm, and `gun` falls through to "unknown transport
+            // protocol" there.
+            "grpc" => Some(StreamNetwork::Grpc),
             // Xray deleted these outright, so `unsupported` would send someone
             // hunting for a flag to turn them on.
             network @ ("h2" | "h3" | "http" | "quic") => {
@@ -3067,6 +3188,7 @@ impl Parser<'_> {
                 "rawSettings",
                 "wsSettings",
                 "httpupgradeSettings",
+                "grpcSettings",
                 "sockopt",
             ],
         );

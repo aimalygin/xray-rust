@@ -3022,8 +3022,10 @@ fn rejects_udp_stream_network_with_path() {
 
 #[test]
 fn rejects_other_stream_network_with_path() {
+    // The example moved off `grpc` when this crate learned to parse it; `kcp`
+    // is still a network xray-core has and xray-rust does not.
     let raw = vless_raw_with_network(
-        "grpc",
+        "kcp",
         r#""users": [{ "id": "00010203-0405-0607-0809-0a0b0c0d0e0f" }]"#,
         "",
         443,
@@ -3241,6 +3243,179 @@ fn a_network_without_its_settings_block_still_gets_a_transport() {
     assert_eq!(httpupgrade.path, "/");
     assert_eq!(httpupgrade.host, None);
     assert!(httpupgrade.headers.is_empty());
+}
+
+#[test]
+fn grpc_network_parses_with_its_settings() {
+    // Every key `GRPCConfig` declares, spelled as it is spelled there
+    // (`Xray-core/infra/conf/grpc.go:8-17`): five snake_case, `serviceName`
+    // and `multiMode` camelCase, `authority` neither. Go's decoder matches the
+    // tag, so a camelCase `idleTimeout` reaches xray-core as nothing at all.
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "grpc", "security": "none",
+           "grpcSettings": {"authority": "authority.example",
+                            "serviceName": "GunService",
+                            "multiMode": true,
+                            "user_agent": "custom-agent/1.0",
+                            "idle_timeout": 60,
+                            "health_check_timeout": 20,
+                            "permit_without_stream": true,
+                            "initial_windows_size": 65536}"#,
+    ))
+    .expect("a grpc outbound must parse");
+
+    let StreamTransport::Grpc(grpc) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected a grpc transport");
+    };
+    assert_eq!(grpc.authority.as_deref(), Some("authority.example"));
+    assert_eq!(grpc.service_name, "GunService");
+    assert!(grpc.multi_mode);
+    assert_eq!(grpc.user_agent.as_deref(), Some("custom-agent/1.0"));
+    assert_eq!(grpc.idle_timeout_secs, 60);
+    assert_eq!(grpc.health_check_timeout_secs, 20);
+    assert!(grpc.permit_without_stream);
+    assert_eq!(grpc.initial_windows_size, 65_536);
+    assert_eq!(parsed.config.outbounds[0].stream.network, Network::Tcp);
+    assert!(parsed.diagnostics.is_empty());
+}
+
+#[test]
+fn a_grpc_network_without_its_settings_block_still_gets_a_transport() {
+    // `StreamConfig.Build` only appends a transport entry when the block is
+    // present, and `GetTransportSettingsFor` then falls through to
+    // `CreateTransportConfig` for a zero-valued one
+    // (`Xray-core/transport/internet/config.go:71-81`). A zero `serviceName`
+    // is what makes the stock client dial `//Tun`.
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "grpc", "security": "none""#,
+    ))
+    .expect("an omitted grpcSettings block must parse");
+
+    let StreamTransport::Grpc(grpc) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected a grpc transport");
+    };
+    assert_eq!(grpc.authority, None);
+    assert_eq!(grpc.service_name, "");
+    assert!(!grpc.multi_mode);
+    assert_eq!(grpc.user_agent, None);
+    assert_eq!(grpc.idle_timeout_secs, 0);
+    assert_eq!(grpc.health_check_timeout_secs, 0);
+    assert!(!grpc.permit_without_stream);
+    assert_eq!(grpc.initial_windows_size, 0);
+    assert!(parsed.diagnostics.is_empty());
+}
+
+#[test]
+fn negative_grpc_numbers_clamp_to_zero_instead_of_failing() {
+    // The only validation `GRPCConfig.Build` performs: three negative-to-zero
+    // clamps (`Xray-core/infra/conf/grpc.go:20-29`). Rejecting these would
+    // refuse a config xray-core accepts and quietly normalizes.
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "grpc", "security": "none",
+           "grpcSettings": {"idle_timeout": -1,
+                            "health_check_timeout": -5,
+                            "initial_windows_size": -100}"#,
+    ))
+    .expect("negative grpc numbers must parse");
+
+    let StreamTransport::Grpc(grpc) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected a grpc transport");
+    };
+    assert_eq!(grpc.idle_timeout_secs, 0);
+    assert_eq!(grpc.health_check_timeout_secs, 0);
+    assert_eq!(grpc.initial_windows_size, 0);
+    assert!(parsed.diagnostics.is_empty());
+}
+
+#[test]
+fn rejects_grpc_numbers_past_int32_with_path() {
+    // The clamp is the *only* normalization; the width still binds. Go's
+    // decoder refuses one past `int32` outright — "cannot unmarshal number
+    // 2147483648 into Go struct field GRPCConfig.idle_timeout of type int32" —
+    // so silently truncating would be more permissive than the reference.
+    for key in [
+        "idle_timeout",
+        "health_check_timeout",
+        "initial_windows_size",
+    ] {
+        assert_parse_error_path(
+            &raw_with_stream_settings(&format!(
+                r#""network": "grpc", "security": "none",
+                   "grpcSettings": {{"{key}": 2147483648}}"#
+            )),
+            &format!("$.outbounds[0].streamSettings.grpcSettings.{key}"),
+        );
+    }
+}
+
+#[test]
+fn an_arbitrary_grpc_user_agent_is_passed_through() {
+    // `user_agent` reaches `grpc.Config` untouched; the magic values are
+    // resolved at dial time (`transport/internet/grpc/dial.go:193-205`), so
+    // anything else is a literal UA rather than a config error.
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "grpc", "security": "none",
+           "grpcSettings": {"user_agent": "not-a-known-browser"}"#,
+    ))
+    .expect("an arbitrary grpc user agent must parse");
+
+    let StreamTransport::Grpc(grpc) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected a grpc transport");
+    };
+    assert_eq!(grpc.user_agent.as_deref(), Some("not-a-known-browser"));
+}
+
+#[test]
+fn rejects_non_string_grpc_service_name_with_path() {
+    // Go fails the whole config here — "cannot unmarshal number into Go struct
+    // field GRPCConfig.serviceName of type string" — so a silent default would
+    // dial `//Tun` against a server expecting a named service.
+    assert_parse_error_path(
+        &raw_with_stream_settings(
+            r#""network": "grpc", "security": "none", "grpcSettings": {"serviceName": 5}"#,
+        ),
+        "$.outbounds[0].streamSettings.grpcSettings.serviceName",
+    );
+}
+
+#[test]
+fn rejects_camel_case_grpc_key_spellings_with_path() {
+    // The camelCase spelling of each of the five snake_case keys. Go's decoder
+    // matches the struct tag, so `idleTimeout` is an unknown key upstream and
+    // is dropped without a word; accepting it would make a config work here
+    // that does nothing there.
+    for key in [
+        "idleTimeout",
+        "healthCheckTimeout",
+        "permitWithoutStream",
+        "initialWindowsSize",
+        "userAgent",
+    ] {
+        assert_parse_error_path(
+            &raw_with_stream_settings(&format!(
+                r#""network": "grpc", "security": "none", "grpcSettings": {{"{key}": 1}}"#
+            )),
+            &format!("$.outbounds[0].streamSettings.grpcSettings.{key}"),
+        );
+    }
+}
+
+#[test]
+fn rejects_the_gun_stream_network_with_path() {
+    // `gun` was the transport's original name, but v26.5.9 has no such arm in
+    // `TransportProtocol.Build` and no `gunSettings` key anywhere in the tree:
+    // both are "unknown transport protocol: gun". Accepting either would let a
+    // profile parse here and fail against a real server.
+    assert_parse_error_path(
+        &raw_with_stream_settings(r#""network": "gun", "security": "none""#),
+        "$.outbounds[0].streamSettings.network",
+    );
+    assert_parse_error_path(
+        &raw_with_stream_settings(
+            r#""network": "grpc", "security": "none", "gunSettings": {"serviceName": "S"}"#,
+        ),
+        "$.outbounds[0].streamSettings.gunSettings",
+    );
 }
 
 #[test]
@@ -3535,6 +3710,8 @@ fn a_settings_block_the_network_will_not_consume_warns() {
         ("ws", "tcpSettings"),
         ("httpupgrade", "wsSettings"),
         ("httpupgrade", "rawSettings"),
+        ("raw", "grpcSettings"),
+        ("grpc", "wsSettings"),
     ] {
         let parsed = parse_xray_json(&raw_with_stream_settings(&format!(
             r#""network": "{network}", "security": "none", "{ignored}": {{}}"#
@@ -3587,6 +3764,7 @@ fn a_consumed_settings_block_does_not_warn() {
         ("raw", "rawSettings"),
         ("ws", "wsSettings"),
         ("httpupgrade", "httpupgradeSettings"),
+        ("grpc", "grpcSettings"),
     ] {
         let parsed = parse_xray_json(&raw_with_stream_settings(&format!(
             r#""network": "{network}", "security": "none", "{consumed}": {{}}"#
