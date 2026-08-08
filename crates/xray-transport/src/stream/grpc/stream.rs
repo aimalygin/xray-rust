@@ -74,7 +74,8 @@ pub struct GrpcStream {
     /// The encoded `Hunk` that has not been handed to h2 in full yet, because
     /// the flow-control window ran out mid-frame.
     pending_write: Bytes,
-    /// Set once `data()` has yielded `None` and the trailers have been read.
+    /// Set once `data()` has yielded `None` and the trailers have said the call
+    /// succeeded. Every other way a downlink can end is an error, not this.
     eof: bool,
     send_closed: bool,
     /// Keeps the connection task alive for as long as the call is: h2 reads
@@ -215,10 +216,24 @@ impl GrpcStream {
     /// (`hunkconn.go:75-89`). A failed call reported as EOF would truncate a
     /// tunnel with no trace.
     ///
-    /// A stream that simply ends with no trailers at all is treated as EOF.
-    /// That is a bare half-close rather than a completed RPC, and the sibling
-    /// WebSocket adapter takes the same view of a socket that closes without a
-    /// close frame: a half-closed relay is ordinary.
+    /// **Only `grpc-status: 0` is that clean end.** Trailers carrying no status
+    /// at all are not: grpc-go opens the trailing header block at
+    /// `grpcStatusCode = codes.Unknown` and builds the call's final status from
+    /// whatever it still holds once the block is parsed
+    /// (`grpc@v1.81.0/internal/transport/http2_client.go:1481,1622`), so a
+    /// status-less trailer is a non-OK status, and `RecvMsg` hands it to the
+    /// caller in place of `io.EOF` (`grpc@v1.81.0/stream.go:1174-1184`).
+    ///
+    /// **Nor is END_STREAM on a DATA frame with no trailers behind it.**
+    /// grpc-go closes such a stream with `codes.Internal`, "server closed the
+    /// stream without sending trailers" (`http2_client.go:1244`). A grpc-go
+    /// server always sends trailers — `writeStatus` is the only way it ends an
+    /// RPC — so this is the pathological path, reached by a peer that is not
+    /// one or by one that died mid-response. It is still worth the divergence
+    /// from the sibling WebSocket adapter, which does treat a socket closed
+    /// without a close frame as an ordinary half-close: a truncated response
+    /// that we call success and xray-core calls an error is the kind of
+    /// disagreement that gets debugged on someone else's server.
     fn poll_finish_downlink(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         // Checked first because it is the more precise complaint: grpc-go
         // turns an EOF inside a message into `io.ErrUnexpectedEOF` rather than
@@ -249,17 +264,26 @@ impl GrpcStream {
         let trailers = ready!(recv.poll_trailers(cx))
             .map_err(|error| h2_io_error("could not read the gRPC trailers", &error))?;
 
-        if let Some(status) = trailers.as_ref().and_then(grpc_status) {
-            if status != "0" {
-                let message = trailers
-                    .as_ref()
-                    .and_then(|trailers| trailers.get("grpc-message"))
-                    .and_then(|message| message.to_str().ok())
-                    .unwrap_or("no message");
-                return Poll::Ready(Err(protocol_io_error(format!(
-                    "the gRPC call failed with status {status}: {message}"
-                ))));
-            }
+        let Some(trailers) = trailers else {
+            return Poll::Ready(Err(protocol_io_error(
+                "the gRPC server closed the stream without sending trailers".to_owned(),
+            )));
+        };
+
+        let Some(status) = grpc_status(&trailers) else {
+            return Poll::Ready(Err(protocol_io_error(
+                "the gRPC trailers carry no grpc-status".to_owned(),
+            )));
+        };
+
+        if status != "0" {
+            let message = trailers
+                .get("grpc-message")
+                .and_then(|message| message.to_str().ok())
+                .unwrap_or("no message");
+            return Poll::Ready(Err(protocol_io_error(format!(
+                "the gRPC call failed with status {status}: {message}"
+            ))));
         }
 
         self.eof = true;

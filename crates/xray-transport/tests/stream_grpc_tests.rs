@@ -627,6 +627,11 @@ mod stream_grpc_h2_tests {
         /// Write these DATA payloads — already framed by the test — and close
         /// with these trailers.
         Say(Vec<Bytes>, HeaderMap),
+        /// Write these DATA payloads and then END_STREAM on an empty DATA
+        /// frame, with no trailing HEADERS at all. grpc-go's server never does
+        /// this — `writeStatus` is the only way it ends an RPC — so it stands
+        /// in for a peer that is not one, or for one that died mid-response.
+        SayAndEndTheDataStream(Vec<Bytes>),
         /// [`Script::Say`], and then reset the stream the way grpc-go's server
         /// does when it ends the RPC before the client half-closes.
         SayThenReset(Vec<Bytes>, HeaderMap),
@@ -795,14 +800,21 @@ mod stream_grpc_h2_tests {
                     send_all(&mut send, chunk).await;
                 }
                 send.send_trailers(trailers).expect("trailers");
-                // The client may still be writing; keep reading so its window
-                // never closes under it.
-                while let Some(chunk) = body.data().await {
-                    let chunk = chunk.expect("client data");
-                    body.flow_control()
-                        .release_capacity(chunk.len())
-                        .expect("release the client's window");
+                drain_the_client(body).await;
+            }
+            Script::SayAndEndTheDataStream(chunks) => {
+                let mut send = respond
+                    .send_response(grpc_response(), false)
+                    .expect("respond");
+                for chunk in chunks {
+                    send_all(&mut send, chunk).await;
                 }
+                // The END_STREAM goes on a DATA frame of its own rather than on
+                // the last payload, so the client is certain to have taken the
+                // payload as data before it sees the end.
+                send.send_data(Bytes::new(), true)
+                    .expect("end the data stream");
+                drain_the_client(body).await;
             }
             Script::Echo => {
                 let mut send = None;
@@ -829,6 +841,18 @@ mod stream_grpc_h2_tests {
                 };
                 send.send_trailers(trailers("0")).expect("trailers");
             }
+        }
+    }
+
+    /// Keeps reading the client's request body after the peer has said its
+    /// piece, so the client's flow-control window never closes under a relay
+    /// that is still writing.
+    async fn drain_the_client(mut body: RecvStream) {
+        while let Some(chunk) = body.data().await {
+            let chunk = chunk.expect("client data");
+            body.flow_control()
+                .release_capacity(chunk.len())
+                .expect("release the client's window");
         }
     }
 
@@ -1212,6 +1236,82 @@ mod stream_grpc_h2_tests {
             assert!(
                 error.to_string().contains("14"),
                 "the error should name the grpc-status, got: {error}"
+            );
+        })
+        .await;
+    }
+
+    /// Trailers that carry no `grpc-status` are a failed call, not a clean end.
+    ///
+    /// grpc-go opens the trailing header block at `grpcStatusCode =
+    /// codes.Unknown` and builds the call's final status from whatever it still
+    /// holds once the block is parsed
+    /// (`grpc@v1.81.0/internal/transport/http2_client.go:1481,1622`), so a
+    /// status-less trailer is a non-OK status; `RecvMsg` then returns it in
+    /// place of `io.EOF` (`stream.go:1174-1184`) and Xray turns that into
+    /// "failed to fetch hunk from gRPC tunnel" (`hunkconn.go:75-89`). Reading
+    /// it as EOF would hand a truncated response to the relay as a complete
+    /// one.
+    #[tokio::test]
+    async fn trailers_without_a_grpc_status_are_an_error() {
+        let mut unrelated = HeaderMap::new();
+        unrelated.insert("x-note", "done".parse().expect("a legal header value"));
+
+        for (name, trailers) in [("empty", HeaderMap::new()), ("unrelated", unrelated)] {
+            let (client_io, server_io) = duplex(64 * 1024);
+            tokio::spawn(serve_one_call(
+                server_io,
+                Script::Say(hunks(&[b"partial"]), trailers),
+            ));
+            let mut stream = within_deadline(open(client_io)).await;
+
+            within_deadline(async {
+                let mut received = Vec::new();
+                let error = stream
+                    .read_to_end(&mut received)
+                    .await
+                    .expect_err("a status-less call must not read as a clean eof");
+                assert_eq!(received, b"partial", "{name} trailers");
+                assert!(
+                    error.to_string().contains("grpc-status"),
+                    "{name} trailers: the error should name the missing status, got: {error}"
+                );
+            })
+            .await;
+        }
+    }
+
+    /// END_STREAM on a DATA frame with no trailing HEADERS behind it at all,
+    /// which is the same class and equally not an EOF: grpc-go closes such a
+    /// stream with `codes.Internal`, "server closed the stream without sending
+    /// trailers" (`grpc@v1.81.0/internal/transport/http2_client.go:1244`).
+    ///
+    /// A real grpc-go peer always sends trailers, so this is the pathological
+    /// path. It is still the one that matters: a truncated response we call
+    /// success and xray-core calls an error is exactly the divergence that
+    /// costs an afternoon of debugging someone else's server.
+    #[tokio::test]
+    async fn a_stream_that_ends_without_any_trailers_is_an_error() {
+        let (client_io, server_io) = duplex(64 * 1024);
+        tokio::spawn(serve_one_call(
+            server_io,
+            Script::SayAndEndTheDataStream(hunks(&[b"partial"])),
+        ));
+        let mut stream = within_deadline(open(client_io)).await;
+
+        within_deadline(async {
+            let mut received = Vec::new();
+            let error = stream
+                .read_to_end(&mut received)
+                .await
+                .expect_err("a stream that ends without trailers must not read as a clean eof");
+            assert_eq!(received, b"partial");
+            // Not merely "trailers": the sibling complaint about trailers that
+            // arrived without a status contains that word too, and this test
+            // is only meaningful if it pins the branch that has none at all.
+            assert!(
+                error.to_string().contains("without sending trailers"),
+                "the error should name the missing trailers, got: {error}"
             );
         })
         .await;
