@@ -16,6 +16,8 @@ use h2::client;
 use http::{Method, Request, Version};
 use tokio::task::JoinHandle;
 
+use super::config::GrpcConfig;
+use super::path::grpc_request_path;
 use super::stream::GrpcStream;
 use crate::{BoxedTransportStream, TransportError};
 
@@ -50,15 +52,26 @@ impl H2ConnectionDriver {
 
 /// Opens one bidirectional POST over `io` and returns it as a byte stream.
 ///
-/// `authority` is `grpcSettings.authority` once the caller has resolved it
-/// through Xray's fallbacks (`dial.go:159-167`, then grpc-go's own
+/// The seven fields this puts in the HEADERS frame are the seven a grpc-go
+/// v1.81.0 client sends and nothing more; which of them a server actually
+/// reads, and which are there only to fit the population, is pinned in
+/// `tests/stream_grpc_tests.rs`, `stream_grpc_request_headers_tests`.
+///
+/// `config.authority` is `grpcSettings.authority` once the caller has resolved
+/// it through Xray's fallbacks (`dial.go:159-167`, then grpc-go's own
 /// `initAuthority` precedence in `clientconn.go:1956-1988`, which ends at the
-/// dial target's `host:port` — it is never empty in practice). `path` is what
-/// [`super::grpc_request_path`] built. `user_agent` is sent even when empty,
-/// because grpc-go appends the header unconditionally
+/// dial target's `host:port` — it is never empty in practice), and goes out
+/// untouched. The `:path` is derived here rather than carried, because
+/// `multiMode` picks a different stream name and the mode is a property of the
+/// dial. `config.user_agent` is sent even when empty, because grpc-go appends
+/// the header unconditionally
 /// (`grpc@v1.81.0/internal/transport/http2_client.go:578`), which is how
-/// Xray's `"golang"` setting — mapped to `""` at `dial.go:202-203` — reaches
-/// the wire.
+/// Xray's `"golang"` setting — mapped to `""` by
+/// [`super::resolve_user_agent`] — reaches the wire.
+///
+/// The keepalive triple and `initial_windows_size` are not read here. They are
+/// connection properties, and this function's connection lives exactly as long
+/// as the one call it opens; they belong to the pool that replaces it.
 ///
 /// The response is **not** awaited here. grpc-go's server writes its response
 /// HEADERS on the first message rather than on accept
@@ -67,9 +80,7 @@ impl H2ConnectionDriver {
 /// every dial. The returned stream awaits it on its first read.
 pub async fn open_grpc_h2_stream(
     mut io: BoxedTransportStream,
-    authority: &str,
-    path: &str,
-    user_agent: &str,
+    config: &GrpcConfig,
 ) -> Result<GrpcStream, TransportError> {
     // Here because here is the last place it can be: the handshake below moves
     // `io` into h2's `Connection`, so an outbound's `release_record_alignment`
@@ -105,13 +116,22 @@ pub async fn open_grpc_h2_stream(
     // The URI has to be absolute: with `Version::HTTP_2` and no scheme plus
     // authority, `send_request` fails with `MissingUriSchemeAndAuthority`
     // (`h2-0.4.15/src/client.rs:1644`), because those two are where `:scheme`
-    // and `:authority` come from.
+    // and `:authority` come from. `http` even over TLS, for the reason the
+    // module doc gives: grpc-go believes the transport is plaintext.
+    //
+    // Nothing below is redundant, however little of it a server reads. A stock
+    // grpc-go inbound validates `:method` and `content-type` and no more —
+    // `te` and `user-agent` are never looked at
+    // (`http2_server.go:417-427,495-497,548-556`) — but grpc-go's *client*
+    // sends both on every call, unconditionally, so a dial missing either
+    // stands out from the population it is hiding in.
+    let path = grpc_request_path(&config.service_name, config.multi_mode);
     let request = Request::builder()
         .version(Version::HTTP_2)
         .method(Method::POST)
-        .uri(format!("http://{authority}{path}"))
+        .uri(format!("http://{}{path}", config.authority))
         .header("content-type", "application/grpc")
-        .header("user-agent", user_agent)
+        .header("user-agent", &config.user_agent)
         .header("te", "trailers")
         .body(())
         .map_err(|error| grpc_error("could not build the gRPC request", &error))?;

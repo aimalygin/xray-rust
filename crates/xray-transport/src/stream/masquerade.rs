@@ -326,6 +326,31 @@ fn fill_if_blank(headers: &mut HeaderMap, key: &str, value: &str) {
 
 // ---- User agents ----------------------------------------------------------
 
+/// `utils.ChromeUA` (`Xray-core/common/utils/browser.go:123`).
+///
+/// These three exist for the one caller outside this module that needs a bare
+/// `User-Agent` rather than the whole header block: Xray's gRPC dial, which
+/// resolves `chrome`, `firefox` and `edge` straight to these package-level
+/// variables (`transport/internet/grpc/dial.go:195-201`). They read
+/// [`BrowserVersions::anchored`] for the same reason the header block does — a
+/// gRPC dial and a WebSocket dial out of one install have to claim the same
+/// browser, since two Chrome majors from one process is a stronger signal than
+/// either user agent alone.
+pub(crate) fn anchored_chrome_user_agent() -> String {
+    chromium_user_agent(Profile::Chrome, BrowserVersions::anchored().chrome)
+}
+
+/// `utils.MSEdgeUA` (`browser.go:125`), missing space and all — see
+/// [`chromium_user_agent`].
+pub(crate) fn anchored_edge_user_agent() -> String {
+    chromium_user_agent(Profile::Edge, BrowserVersions::anchored().chrome)
+}
+
+/// `utils.FirefoxUA` (`browser.go:119`).
+pub(crate) fn anchored_firefox_user_agent() -> String {
+    firefox_user_agent(BrowserVersions::anchored().firefox)
+}
+
 fn chromium_user_agent(profile: Profile, chrome: u32) -> String {
     let chrome_ua = format!(
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) \

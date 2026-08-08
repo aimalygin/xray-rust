@@ -572,7 +572,7 @@ mod stream_grpc_h2_tests {
     use tokio::io::{duplex, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream};
     use tokio::sync::oneshot;
     use xray_transport::stream::{
-        encode_hunk, open_grpc_h2_stream, GrpcStream, MAX_HUNK_PAYLOAD_LEN,
+        encode_hunk, open_grpc_h2_stream, GrpcConfig, GrpcStream, MAX_HUNK_PAYLOAD_LEN,
     };
     use xray_transport::BoxedTransportStream;
 
@@ -580,10 +580,14 @@ mod stream_grpc_h2_tests {
     /// fallbacks (`Xray-core/transport/internet/grpc/dial.go:159-167`), which
     /// are the caller's job to resolve.
     const AUTHORITY: &str = "grpc.example.com";
-    /// `grpc_request_path("xray.grpc", false)`.
+    /// `grpc_request_path(SERVICE_NAME, false)`, which is what the dial derives
+    /// for the config below.
     const PATH: &str = "/xray.grpc/Tun";
-    /// Stands in for whatever Task 7 settles on; this block only cares that
-    /// whatever value is dialled with reaches the request unchanged.
+    const SERVICE_NAME: &str = "xray.grpc";
+    /// A literal user agent, so it survives `resolve_user_agent` untouched.
+    /// This block only cares that whatever value is dialled with reaches the
+    /// request unchanged; the table itself is
+    /// `stream_grpc_request_headers_tests`'.
     const USER_AGENT: &str = "grpc-go/1.81.0";
 
     /// Every test here can stall rather than fail — an unreleased window, a
@@ -603,14 +607,19 @@ mod stream_grpc_h2_tests {
     }
 
     async fn open_with_user_agent(io: DuplexStream, user_agent: &str) -> GrpcStream {
-        open_grpc_h2_stream(
-            Box::new(io) as BoxedTransportStream,
-            AUTHORITY,
-            PATH,
-            user_agent,
-        )
-        .await
-        .expect("the POST opens")
+        let config = GrpcConfig {
+            service_name: SERVICE_NAME.to_owned(),
+            multi_mode: false,
+            authority: AUTHORITY.to_owned(),
+            user_agent: user_agent.to_owned(),
+            idle_timeout_secs: 0,
+            health_check_timeout_secs: 0,
+            permit_without_stream: false,
+            initial_windows_size: 0,
+        };
+        open_grpc_h2_stream(Box::new(io) as BoxedTransportStream, &config)
+            .await
+            .expect("the POST opens")
     }
 
     fn trailers(status: &str) -> HeaderMap {
@@ -1761,5 +1770,309 @@ mod stream_grpc_h2_tests {
                 .expect_err("a truncated message must not read as a clean eof");
         })
         .await;
+    }
+}
+
+/// What one gRPC dial puts in its HEADERS frame.
+///
+/// Every value here was read back off a real grpc-go v1.81.0 client — Xray's
+/// exact dial options, `insecure.NewCredentials()` and `WithAuthority`, against
+/// a raw HTTP/2 framer that decodes the block and prints it — rather than
+/// traced through `createHeaderFields`. That run emitted these seven fields in
+/// this order and nothing else:
+///
+/// ```text
+/// :method       "POST"
+/// :scheme       "http"
+/// :path         "/xray.grpc/Tun"
+/// :authority    "grpc.example.com"
+/// content-type  "application/grpc"
+/// user-agent    "Mozilla/5.0 the-user-agent"
+/// te            "trailers"
+/// ```
+///
+/// **Only two of them are load-bearing for the server.** grpc-go's checks that
+/// `:method` is POST (`internal/transport/http2_server.go:548-556`) and that
+/// `content-type` is exactly `application/grpc` or continues with `+` or `;`
+/// (`http2_server.go:420-427,495-497`, through
+/// `internal/grpcutil/method.go:61-78`) — `application/grpc-web` shares the
+/// prefix and is refused by the `switch` on the byte after it. `te` is never
+/// looked at. Everything else is here to fit the population a censor sees,
+/// not to interoperate, so none of it is dead weight to be optimised away.
+mod stream_grpc_request_headers_tests {
+    use std::time::Duration;
+
+    use h2::server;
+    use http::Method;
+    use tokio::io::{duplex, DuplexStream};
+    use tokio::sync::oneshot;
+    use xray_transport::stream::{
+        apply_masquerade, grpc_request_path, open_grpc_h2_stream, resolve_user_agent, GrpcConfig,
+        HeaderMap,
+    };
+    use xray_transport::BoxedTransportStream;
+
+    const DEADLINE: Duration = Duration::from_secs(10);
+    /// A literal, so `resolve_user_agent` hands it back untouched and the case
+    /// under test is never the user agent unless a test says so.
+    const USER_AGENT: &str = "grpc-go/1.81.0";
+
+    /// The four fields this block varies. The keepalive triple and
+    /// `initial_windows_size` are left at zero throughout: nothing on the dial
+    /// path reads them yet, and a value that changed no byte of the request
+    /// would only suggest one did.
+    fn config(authority: &str) -> GrpcConfig {
+        GrpcConfig {
+            service_name: "xray.grpc".to_owned(),
+            multi_mode: false,
+            authority: authority.to_owned(),
+            user_agent: resolve_user_agent(Some(USER_AGENT)),
+            idle_timeout_secs: 0,
+            health_check_timeout_secs: 0,
+            permit_without_stream: false,
+            initial_windows_size: 0,
+        }
+    }
+
+    /// The head of the one call `config` opens.
+    ///
+    /// Nothing is answered: the dial does not wait for a response
+    /// (`h2client.rs`), so the HEADERS frame is on the wire by the time
+    /// `open_grpc_h2_stream` returns, and the stream is dropped straight after.
+    async fn captured_head(config: &GrpcConfig) -> http::request::Parts {
+        let (client_io, server_io) = duplex(64 * 1024);
+        let (send_head, head) = oneshot::channel();
+        tokio::spawn(capture_one_head(server_io, send_head));
+
+        let dial = async {
+            let stream = open_grpc_h2_stream(Box::new(client_io) as BoxedTransportStream, config)
+                .await
+                .expect("the POST opens");
+            let head = head.await.expect("the peer captured the request head");
+            drop(stream);
+            head
+        };
+        tokio::time::timeout(DEADLINE, dial)
+            .await
+            .expect("the dial completes rather than stalling")
+    }
+
+    /// Reports the first request's head and then keeps the connection polled.
+    ///
+    /// h2's server `Connection` is the connection — no frame is read unless
+    /// `accept` is being polled — so the loop at the end is what lets the
+    /// client's RST_STREAM and GOAWAY land instead of stalling the duplex.
+    async fn capture_one_head(io: DuplexStream, send_head: oneshot::Sender<http::request::Parts>) {
+        let mut connection = server::handshake(io).await.expect("server handshake");
+        let (request, respond) = connection
+            .accept()
+            .await
+            .expect("a call arrives")
+            .expect("a well-formed request");
+        let (head, body) = request.into_parts();
+        send_head.send(head).expect("the test is still waiting");
+
+        // Held rather than dropped so the call stays open while the client
+        // decides it is done with it.
+        let _held = (body, respond);
+        while connection.accept().await.is_some() {}
+    }
+
+    /// The `User-Agent` the masquerade block puts on a WebSocket request for
+    /// this profile, which is the value the gRPC table must agree with.
+    ///
+    /// Asserting against that rather than against a copy of the format string
+    /// is the point of the test: `utils.ChromeUA` and the UA
+    /// `applyMasqueradedHeaders` writes are the same Go variable
+    /// (`Xray-core/common/utils/browser.go:123,136`), so a gRPC dial and a
+    /// WebSocket dial out of one install have to claim the same browser
+    /// version. Two Chrome majors from one process is a stronger signal than
+    /// either user agent alone.
+    fn masqueraded_user_agent(keyword: Option<&str>) -> String {
+        let mut headers = HeaderMap::new();
+        if let Some(keyword) = keyword {
+            headers.set("User-Agent", keyword);
+        }
+        apply_masquerade(&mut headers, "ws");
+        headers
+            .get("User-Agent")
+            .expect("the profile sets a User-Agent")
+            .to_owned()
+    }
+
+    fn header<'a>(head: &'a http::request::Parts, name: &str) -> Option<&'a str> {
+        head.headers
+            .get(name)
+            .map(|value| value.to_str().expect("a printable header value"))
+    }
+
+    #[tokio::test]
+    async fn the_request_head_carries_exactly_what_grpc_go_sends() {
+        let head = captured_head(&config("grpc.example.com")).await;
+
+        assert_eq!(head.method, Method::POST, ":method");
+        // `:scheme` is `http` even when the connection underneath is TLS, and
+        // this transport has no way to learn otherwise: Xray dials gRPC with
+        // `insecure.NewCredentials()` and wraps the socket itself in the dial
+        // option's `WithContextDialer`
+        // (`Xray-core/transport/internet/grpc/dial.go:103-157`), so grpc-go
+        // believes it is speaking plaintext and says so in the pseudo-header.
+        // `open_grpc_h2_stream` takes an already-secured stream and hard-codes
+        // the same `http`, which is why a TLS variant of this test would prove
+        // nothing there is not a knob for.
+        assert_eq!(head.uri.scheme_str(), Some("http"), ":scheme");
+        assert_eq!(head.uri.path(), "/xray.grpc/Tun", ":path");
+        assert_eq!(
+            head.uri.authority().map(|authority| authority.as_str()),
+            Some("grpc.example.com"),
+            ":authority"
+        );
+
+        assert_eq!(header(&head, "content-type"), Some("application/grpc"));
+        assert_eq!(header(&head, "user-agent"), Some(USER_AGENT));
+        assert_eq!(header(&head, "te"), Some("trailers"));
+
+        // The three above are *all* the ordinary headers there are. Counting
+        // them is what makes this test say "exactly": the absences below are
+        // the three worth naming, but a fourth header nobody thought of is
+        // just as visible to a censor comparing us against grpc-go.
+        assert_eq!(
+            head.headers.len(),
+            3,
+            "an unexpected header joined the request: {:?}",
+            head.headers
+        );
+
+        // Absent on purpose, all three:
+        //
+        // * `grpc-accept-encoding` carries grpc-go's compressor registry and is
+        //   skipped when that is empty (`internal/transport/http2_client.go:
+        //   556,597-599`, over `grpcutil.RegisteredCompressorNames`, which only
+        //   `encoding.RegisterCompressor` ever appends to). Nothing under
+        //   `Xray-core/transport/internet/grpc/` imports a compressor, so it is
+        //   empty and the header is never built. Confirmed in the run above:
+        //   `encoding.GetCompressor("gzip")` was nil and no such field arrived.
+        // * `grpc-timeout` is written only for a context with a deadline
+        //   (`http2_client.go:600-608`), and nothing on Xray's outbound dial
+        //   path installs one — there is no `context.WithTimeout` between the
+        //   proxy handler and `internet.Dial`.
+        // * `content-length` is never sent for a streaming RPC, and would be a
+        //   lie for a tunnel whose length is not known when it opens.
+        for absent in ["grpc-accept-encoding", "grpc-timeout", "content-length"] {
+            assert_eq!(header(&head, absent), None, "{absent} must not be sent");
+        }
+    }
+
+    /// `multiMode` picks a different stream name, so the `:path` is derived per
+    /// dial from the config rather than resolved once when it is built
+    /// (`Xray-core/transport/internet/grpc/dial.go:59-72`).
+    #[tokio::test]
+    async fn multi_mode_changes_the_path_the_dial_derives() {
+        let mut config = config("grpc.example.com");
+        config.multi_mode = true;
+
+        let head = captured_head(&config).await;
+        assert_eq!(
+            head.uri.path(),
+            grpc_request_path("xray.grpc", true),
+            ":path"
+        );
+        assert_eq!(head.uri.path(), "/xray.grpc/TunMulti", ":path");
+    }
+
+    /// Xray's switch, `dial.go:193-205`.
+    ///
+    /// The two easy inversions are both here. An **unset** user agent is not
+    /// the empty case — `case "chrome", ""` maps it to the Chrome persona, so
+    /// the default gRPC dial claims to be a browser. The one value that empties
+    /// the header is `golang`. Xray's own comment above the switch says setting
+    /// a browser UA on gRPC is not recommended, because browsers cannot
+    /// initiate gRPC; we match the behaviour anyway, because parity with the
+    /// population is the goal rather than defensible taste.
+    #[test]
+    fn the_user_agent_table_resolves_the_way_xrays_switch_does() {
+        assert_eq!(resolve_user_agent(None), masqueraded_user_agent(None));
+        assert_eq!(
+            resolve_user_agent(Some("chrome")),
+            masqueraded_user_agent(Some("chrome"))
+        );
+        // Xray cannot tell an absent `user_agent` from an empty one — both
+        // leave the Go string `""` and hit the same `case "chrome", ""` — so
+        // the empty string is Chrome too, not an empty header.
+        assert_eq!(resolve_user_agent(Some("")), masqueraded_user_agent(None));
+        assert_eq!(
+            resolve_user_agent(Some("firefox")),
+            masqueraded_user_agent(Some("firefox"))
+        );
+        assert_eq!(
+            resolve_user_agent(Some("edge")),
+            masqueraded_user_agent(Some("edge"))
+        );
+        assert_eq!(resolve_user_agent(Some("golang")), "");
+
+        // Everything else falls off the switch untouched, `safari` and `curl`
+        // included: those are masquerade keywords, and the gRPC table does not
+        // know them.
+        for verbatim in ["safari", "curl", "grpc-go/1.81.0", "Chrome", " chrome"] {
+            assert_eq!(resolve_user_agent(Some(verbatim)), verbatim);
+        }
+    }
+
+    /// Every arm of the table, end to end.
+    ///
+    /// `golang` is the one worth the wire trip: it resolves to the empty
+    /// string, and the header still goes out, because grpc-go appends it
+    /// unconditionally (`http2_client.go:578`). `Some("")` below is the header
+    /// present and empty; `None` would be it gone.
+    #[tokio::test]
+    async fn every_resolved_user_agent_reaches_the_wire_verbatim() {
+        for configured in [
+            None,
+            Some("chrome"),
+            Some("firefox"),
+            Some("edge"),
+            Some("golang"),
+            Some("grpc-go/1.81.0"),
+        ] {
+            let resolved = resolve_user_agent(configured);
+            let mut config = config("grpc.example.com");
+            config.user_agent = resolved.clone();
+
+            let head = captured_head(&config).await;
+            assert_eq!(
+                header(&head, "user-agent"),
+                Some(resolved.as_str()),
+                "user_agent {configured:?}"
+            );
+        }
+    }
+
+    /// The authority is already resolved by the time it reaches the dial — the
+    /// precedence chain is `build_transport_layer`'s — so all this side owes it
+    /// is to send it untouched.
+    ///
+    /// A port and a bracketed IPv6 literal both survive on grpc-go's side:
+    /// `initAuthority` takes a `WithAuthority` verbatim, with no escaping at
+    /// all (`grpc@v1.81.0/clientconn.go:1977-1978`), and the `host:port`
+    /// fallback it drops to when Xray configures no authority — which is where
+    /// a bracketed literal actually comes from, via `net.JoinHostPort` at
+    /// `dial.go:181-189` — goes through `encodeAuthority`, whose escape set
+    /// spares `:`, `[`, `]` and `@` (`clientconn.go:1889-1942`). Both were
+    /// confirmed against a real client: `[2001:db8::1]:443` arrives as itself.
+    #[tokio::test]
+    async fn a_resolved_authority_reaches_the_wire_untouched() {
+        for authority in [
+            "grpc.example.com",
+            "example.com:443",
+            "[2001:db8::1]:443",
+            "127.0.0.1:443",
+        ] {
+            let head = captured_head(&config(authority)).await;
+            assert_eq!(
+                head.uri.authority().map(|value| value.as_str()),
+                Some(authority),
+                ":authority"
+            );
+        }
     }
 }
