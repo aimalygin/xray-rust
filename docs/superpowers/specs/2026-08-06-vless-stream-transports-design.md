@@ -18,10 +18,22 @@ Parity target is byte-exact for the contents of every request and response we
 emit or accept, including the browser-masquerade header block and Go's header
 serialization order. It extends one layer down: `security: "tls"` gains uTLS
 ClientHello shaping with a `chrome` default, matching what Xray-core does on
-every transport including `raw` today. One thing falls outside the target:
+every transport including `raw` today. Two things fall outside the target, and
+both are stated plainly rather than claimed as parity.
+
 XHTTP's `xmux` connection-reuse scheduler, which no single request reveals, is
 parsed but not implemented — it remains observable as a pattern of connection
-timing, and that gap is stated plainly rather than claimed as parity.
+timing.
+
+And on HTTP/2 the target is the connection preamble and the first HEADERS block,
+not the whole connection. `h2` is taken as published rather than forked, so the
+pseudo-header order differs from grpc-go's by one swap — the crate hardcodes
+`:method, :scheme, :authority, :path` where grpc-go sends `:path` before
+`:authority` — and everything past the first request carries no claim at all:
+HPACK dynamic-table evolution across pooled streams, BDP-estimation PINGs,
+WINDOW_UPDATE cadence. For XHTTP over HTTP/2 a byte-exact claim is not merely
+expensive but unavailable: `x/net/http2` iterates `req.Header` as a Go map, so
+Xray's own bytes differ between two runs of one config.
 
 ## Rationale
 
@@ -439,18 +451,47 @@ the `TunMulti` stream name — supported, since it must match the server.
 `:path` is built from `serviceName`: a name without a leading `/` is
 `PathEscape`d whole and the stream name is literally `Tun`/`TunMulti`
 (`"hello"` → `/hello/Tun`); a name with a leading `/` splits into a path prefix
-and a trailing stream segment.
+and a trailing stream segment. A `|` splits it once more, into
+`tunName|tunMultiName` — both halves client-side, the first used with
+`multiMode` off and the second with it on, so `/a/b|c` dials `/a/b` or `/a/c`.
+The default `serviceName` is the empty string, which makes the default request
+line `POST //Tun`, double slash included. A mis-escaped path returns an opaque
+UNIMPLEMENTED rather than a config error, so the escaping table is ported
+wholesale from `config_test.go` rather than re-derived.
 
 Headers, in Go's order: `:method POST`, `:scheme http` (Xray-core dials gRPC
 with `insecure.NewCredentials()` and applies TLS itself, so the scheme stays
 `http` even over TLS), `:path`, `:authority`, `content-type: application/grpc`,
-`user-agent` (Chrome persona by default, with `grpc-go/x.y.z` stripped), `te:
-trailers`. Notably absent: `grpc-accept-encoding`, `grpc-timeout`,
-`content-length`.
+`user-agent`, `te: trailers`. Notably absent: `grpc-accept-encoding`,
+`grpc-timeout`, `content-length`. Only two of them are load-bearing for the
+server: `:method POST`, and a content type that is exactly `application/grpc` or
+continues with `+` or `;` — `application/grpc-web` shares the prefix and is
+refused. `te: trailers` is not validated at all; a request omitting it reaches
+the handler. The rest are sent to fit the population, not to interoperate.
 
-`:authority` precedence: `authority` → SNI → destination domain → `host:port`.
+`user-agent` is not grpc-go's default with a suffix appended. `WithUserAgent` is
+the call that appends one, and Xray never makes it — it reaches into the built
+connection by reflection and overwrites the field. An unset `user_agent` is not
+the empty case: it maps to the Chrome persona, same as `chrome`. The one value
+that empties it is `golang`, and because the transport copies the field verbatim
+and emits the header unconditionally, that produces `user-agent` with an empty
+value on the wire rather than a fallback to `grpc-go/x.y.z`.
+
+`:authority` precedence: `authority` → `tlsSettings.serverName` → the
+destination domain **only when REALITY is absent** → otherwise empty. An empty
+one is not an omitted header: grpc-go falls back to its resolver endpoint, so
+what goes out is `host:port` with the port included, escaped by grpc's own
+`encodeAuthority` rather than Go's URL escaping, which is why an IPv6
+destination keeps its brackets. Under REALITY that fallback is the default path,
+not an edge case.
 
 Half-close on the write side; a trailers HEADERS frame with END_STREAM is EOF.
+Teardown has two shapes with two different triggers, and conflating them puts
+the wrong frames on the wire. `CloseSend` writes an empty DATA with END_STREAM.
+Cancelling the RPC context writes RST_STREAM(CANCEL) and no DATA at all. Xray's
+own client constructs its hunk connection with a nil cancel function, so its
+ordinary close is the quiet one, and the RST appears only when the surrounding
+context is separately cancelled.
 
 ### Connection reuse is required, not an optimization
 
@@ -461,11 +502,41 @@ gRPC transport therefore owns a small pool: one H2 connection per
 (server, settings), streams multiplexed over it, reconnect on GOAWAY or
 transport error.
 
+The pool does not fit the seam this project has. `TransportLayer::wrap(stream)
+-> stream` is one socket in, one stream out; gRPC is N flows over one
+connection. The pool therefore hangs off `VlessTcpOutboundPayload`, which is
+already `Arc`-backed and memoized per outbound index by the cached router, and
+dials keep going through `TransportDialer` — that last part is not stylistic. A
+socket opened anywhere else misses Android's `VpnService.protect(fd)` and routes
+straight back into the tunnel it is meant to leave. One hazard to keep in view:
+the free `select_tcp_outbound*` functions rebuild the outbound on every call, so
+a pool hung off the payload would be a fresh pool per flow through them. Every
+runtime path is safe today — SOCKS holds an `Arc<OutboundRouter>`, and the TUN
+and DNS paths call the router's methods — so those free functions are reached
+only from tests and one bench call site. The consequence is not a live defect
+but a rule for whoever adds the next call site, and a test that would pass while
+measuring nothing.
+
+Two upstream defects are deliberately not reproduced. Xray keys its pool on a
+raw `*MemoryStreamConfig` pointer, so two outbounds with byte-identical
+`grpcSettings` never share a connection. And it writes the map even when the
+dial failed: that nil entry poisons the key for the process lifetime, because
+the next lookup calls `GetState()` on a nil receiver and panics rather than
+retrying. The map is never pruned either. A third apparent defect — replacing a
+connection in `Shutdown` without closing it — is dead code, since nothing in the
+gRPC transport ever closes a pooled connection, and is not a lesson to carry.
+
 By default Xray-core sends **no SETTINGS entries at all** (an empty SETTINGS
 frame after the preface) and never sends a PING unless `idle_timeout`,
 `health_check_timeout`, or `permit_without_stream` is configured. We match both,
 since an empty SETTINGS frame is itself a strong signal of the grpc-go
-population.
+population. `initial_windows_size` reaches the wire through three independent
+gates — the dial option attaches only above zero, the transport adopts the value
+only at 65535 or more, and the SETTINGS entry is written only when the adopted
+value differs from 65535 — so a config asking for `30000` still produces an
+empty SETTINGS frame. It does also disable BDP estimation, but through a
+separate mechanism worth not conflating with the gates: setting the dial option
+at all marks the window static, and the estimator is built only when it is not.
 
 Config keys: `authority`, `serviceName`, `multiMode`, `idle_timeout` (seconds,
 clamped up to a 10 s floor as grpc-go does), `health_check_timeout` (default
@@ -538,6 +609,13 @@ uses straightforward per-connection reuse. This is the one place where the spec
 deliberately stops short of behavioral parity, and it is revisited only if
 profiling shows connection churn matters.
 
+The gap is narrower than that framing suggests. With `xmux` omitted,
+`maxConcurrency` defaults to `1-1`, so Xray-core itself opens a new connection
+per concurrent flow — straightforward per-connection reuse *is* the upstream
+default, and the divergence appears only once a profile sets `xmux` explicitly.
+Note also that `maxConnections: 0` means the pool never grows for that reason,
+not that it is unlimited; unlimited is what `maxConcurrency: 0` says.
+
 `downloadSettings` — a separate full stream config that sends the download
 request to a different host or over a different transport — is parsed and, if
 actually populated, rejected with a clear message, since supporting it means
@@ -601,6 +679,28 @@ straight through. It follows the pattern already used for the REALITY
 ClientHello oracle, and it now covers two surfaces per connection: the shaped
 ClientHello and the HTTP request that follows it.
 
+What that oracle can assert differs by transport, and promising one bar for all
+four would write an acceptance criterion nobody can meet:
+
+- **HTTP/1.1 transports (ws, httpupgrade, XHTTP over h1).** Byte-exact, as
+  today. Go's `Request.Write` emits a deterministic order.
+- **gRPC.** Byte-exact for the preamble and the first HEADERS block: grpc-go
+  builds its header list as an ordered slice, so the HPACK output is stable.
+  Later HEADERS blocks are not asserted — the dynamic table has evolved by then.
+- **XHTTP over HTTP/2.** Normalized shape only: ordered pseudo-headers, then the
+  regular header set compared as a set. `x/net/http2` ranges over `req.Header`,
+  a Go map, so no byte sequence exists to pin — Xray disagrees with itself
+  between runs.
+
+Two operational rules the fixtures live under. The Go oracle for gRPC goes in
+its own nested module beside `tools/reality-oracle/masquerade`, never the root
+module: the root builds against uTLS, and pulling xray-core in there lifts
+`x/crypto` and moves every committed ClientHello fixture. And each fixture
+records the grpc-go and `x/net/http2` version it was generated under, because
+`http::HeaderMap` documents that iteration order may change without a semver
+bump, and an unexplained mismatch after a routine dependency bump is exactly the
+failure this repository has already lived through with `x/crypto`.
+
 The existing REALITY ClientHello oracle extends to plain TLS with the same
 fixtures (`tests/fixtures/reality/clienthello_*.json`), asserting that a
 `security: "tls"` connection with a given `fingerprint` produces the same hello
@@ -616,10 +716,15 @@ the profile's own list.
    `utls_profiles` lift with a plain-TLS ClientHello customizer,
    `TlsClientConfig.{fingerprint, alpn}`, and the two simplest transports.
    New dependency: `sha1`.
-2. **gRPC.** The hand-rolled gRPC codec and the H2 connection pool.
-   New dependency: `h2`.
+2. **gRPC.** The hand-rolled gRPC codec, the H2 connection pool, and the dial
+   seam both remaining transports need — a second dial shape on
+   `TransportDialer` with connection state on the outbound payload. The seam is
+   built here rather than as a standalone refactor, because a refactor with no
+   consumer cannot be validated. New dependency: `h2`.
 3. **XHTTP.** All three modes over H1 and H2, mandatory padding, the full
-   config surface with `xmux` parsed-only, and H3 rejected explicitly.
+   config surface with `xmux` parsed-only, and H3 rejected explicitly. Its first
+   task is deciding which Xray-core revision it targets: the wire moved after
+   the vendored v26.5.9 and the protocol has no version negotiation left.
 
 Each stage is independently shippable and independently verifiable against a
 live Xray-core.
@@ -634,3 +739,81 @@ rewritten per stage, including the compatibility matrix, the supported
 fingerprint list with its `chrome` default, the rule that ALPN comes from the
 fingerprint profile rather than the config, and the explicit non-goals (mkcp,
 hysteria, HTTP/3, `downloadSettings`, xmux scheduling).
+
+## Amendment, 2026-08-08 — before Stage 2
+
+Stage 1 shipped. Rereading this document against the vendored v26.5.9 before
+starting gRPC turned up claims that were wrong rather than merely incomplete,
+and three decisions it had left open. Corrections are folded into the sections
+above, where the wrong sentence was, rather than collected here — a correction
+filed at the end of a document is a correction nobody reads. This section
+records what moved and why.
+
+Every wire claim in Stage 2 was then rechecked against the vendored source, the
+grpc-go module in the build cache, and — where the question was behaviour rather
+than code — captures from a real grpc-go client driven against a raw HTTP/2
+framer. Four of the claims written during this pass were themselves wrong and
+are corrected above; the pseudo-header swap, the three `initial_windows_size`
+gates, the `|` split, the empty `serviceName` double slash, and the Go map
+iteration behind the XHTTP-over-h2 carve-out all survived.
+
+### Decisions taken
+
+- **HTTP/2 fidelity bar: the preamble and the first HEADERS block.** `h2` is a
+  normal dependency, not a second fork alongside shaped-rustls. The residual
+  pseudo-header swap against grpc-go is recorded as a known divergence when the
+  stage lands — in `docs/status.md`, not in an acceptance criterion. Revisit only if an oracle demands it; the fix is
+  a small patch to a vendored copy, not a redesign.
+- **The dial seam.** A second dial shape on `TransportDialer` with connection
+  state on the `Arc`-backed outbound payload, built inside the gRPC stage. The
+  two rejected options are worth recording: one connection per flow pays a
+  TLS/REALITY handshake per flow and is visibly not a gRPC client, and inverting
+  the model so every transport owns its dial rewrites Happy Eyeballs and the
+  REALITY preconnect for no benefit available today.
+- **Config strictness.** Accept the whole documented key surface, implement the
+  defaults, and reject what is unimplemented with a specific message. Never
+  silently ignore: a key accepted and dropped is discovered on the wire. This
+  follows from the goal being importability — a profile that runs on xray-core
+  runs here, or is refused where xray-core refuses it and for the same reason.
+
+### Corrections folded into the sections above
+
+1. The parity target promised byte-exact output for *every* request. Unreachable
+   for XHTTP over HTTP/2 at any price, because `x/net/http2` iterates a Go map.
+   The Testing section now states what each transport family can assert.
+2. Stage 2 described `user-agent` as the grpc-go default with the suffix
+   stripped. Xray overwrites the field outright, and there is no fallback to
+   strip a suffix from: the one value that clears the persona, `golang`, puts an
+   empty header value on the wire.
+3. Stage 2's `:authority` precedence omitted that the destination-domain step is
+   skipped under REALITY, and that the empty case falls back to `host:port`
+   under grpc's own escaping rather than Go's.
+4. Stage 2 described teardown as a half-close and stopped there. There are two
+   shapes with two triggers — `CloseSend` produces the empty DATA, context
+   cancellation produces RST_STREAM(CANCEL) and no DATA — and Xray's own client
+   normally takes the quiet one.
+5. Stage 2 left `:path` incomplete: the `|` split, the double slash the default
+   empty `serviceName` produces, and the three gates on `initial_windows_size`.
+6. Stage 3 called `xmux` the one deliberate parity gap without noting that
+   upstream's own default is no multiplexing, which makes the gap much smaller
+   than the paragraph implied.
+
+### Implementation findings that belong in the plan, not here
+
+- `crates/xray-config/src/parser.rs:2571` refuses REALITY on everything but
+  `Raw`, with a message that already reads *"REALITY only supports RAW, XHTTP
+  and gRPC for now"*. The text describes Xray's rule; the condition does not.
+  Both transports are unreachable in their flagship deployment until that
+  becomes an allowlist.
+- `stream_transport_is_dialable` guards freedom and DNS outbounds. The cached
+  router applies it on the TCP path (`outbound.rs:1153`) and omits it on the UDP
+  path, where the uncached twin (`outbound.rs:1371`) applies it — so one config
+  gets two verdicts depending on whether the router cache is live. The guard
+  list has to grow for grpc and xhttp anyway; it is fixed there.
+- gRPC gets the repository's first benchmark workload that measures transport
+  framing. There is still none for ws or httpupgrade.
+- The Swift `vless://` importer stays out of scope, and not because gRPC changed
+  anything: it accepts only `type ∈ {tcp, raw}` with `security=reality`, so it
+  already refuses the ws and httpupgrade profiles the engine dials. Fixing it is
+  one job for all five transports, and it needs a source of truth for share-link
+  parameters that this repository does not contain.
