@@ -74,6 +74,16 @@ pub struct GrpcStream {
     /// The encoded `Hunk` that has not been handed to h2 in full yet, because
     /// the flow-control window ran out mid-frame.
     pending_write: Bytes,
+    /// The response HEADERS when they were the *whole* response: one header
+    /// block carrying `:status`, `content-type`, the `grpc-status` and
+    /// END_STREAM, with no DATA and no trailers behind it.
+    ///
+    /// gRPC calls this shape Trailers-Only, and it is where the call's status
+    /// lives when it happens — see [`Self::poll_finish_downlink`]. Held from
+    /// the moment the response arrives because h2 hands the block over as the
+    /// response head and keeps nothing of it: by the time the downlink ends
+    /// there is no way back to it.
+    trailers_only: Option<HeaderMap>,
     /// Set once `data()` has yielded `None` and the trailers have said the call
     /// succeeded. Every other way a downlink can end is an error, not this.
     eof: bool,
@@ -96,6 +106,7 @@ impl GrpcStream {
             pending_read: Vec::new(),
             pending_read_pos: 0,
             pending_write: Bytes::new(),
+            trailers_only: None,
             eof: false,
             send_closed: false,
             driver,
@@ -216,13 +227,33 @@ impl GrpcStream {
     /// (`hunkconn.go:75-89`). A failed call reported as EOF would truncate a
     /// tunnel with no trace.
     ///
-    /// **Only `grpc-status: 0` is that clean end.** Trailers carrying no status
-    /// at all are not: grpc-go opens the trailing header block at
-    /// `grpcStatusCode = codes.Unknown` and builds the call's final status from
-    /// whatever it still holds once the block is parsed
-    /// (`grpc@v1.81.0/internal/transport/http2_client.go:1481,1622`), so a
-    /// status-less trailer is a non-OK status, and `RecvMsg` hands it to the
-    /// caller in place of `io.EOF` (`grpc@v1.81.0/stream.go:1174-1184`).
+    /// **The status comes from whichever header block ended the call.**
+    /// Usually that is the trailers, but a call the server ends having sent no
+    /// message has no trailers: `writeStatus` finds no headers sent, so it puts
+    /// `:status 200`, `content-type` and the `grpc-status` into a single
+    /// END_STREAM header block with no DATA behind it — gRPC's Trailers-Only
+    /// response (`grpc@v1.81.0/internal/transport/http2_server.go:1082-1093`).
+    /// h2 hands that block over as the response head and `poll_trailers` then
+    /// yields `None`, which is why [`Self::trailers_only`] exists: without it a
+    /// `grpc-status: 0` there would read as a call that never said how it went.
+    /// An Xray inbound answers this way whenever `Tun` returns having written
+    /// nothing — a tunnel whose remote closed without a byte — and, with
+    /// `grpc-status: 12`, whenever the `serviceName` does not match the one it
+    /// serves.
+    ///
+    /// grpc-go reads it the same way round, and only that way round:
+    /// `operateHeaders` parses `grpc-status` into a block-local variable and
+    /// builds the call's status from it only once the block it is holding
+    /// carried END_STREAM (`http2_client.go:1499-1506,1618-1627`). A status in
+    /// a header block that did *not* end the call is dropped on the `if
+    /// !endStream { return }` above it, so the head's status is consulted here
+    /// only when the head was the end.
+    ///
+    /// **A block carrying no status at all is not a clean end.** grpc-go opens
+    /// each one at `grpcStatusCode = codes.Unknown` (`http2_client.go:1481`)
+    /// and builds the final status from whatever it still holds, so a
+    /// status-less end is a non-OK status, and `RecvMsg` hands it to the caller
+    /// in place of `io.EOF` (`grpc@v1.81.0/stream.go:1174-1184`).
     ///
     /// **Nor is END_STREAM on a DATA frame with no trailers behind it.**
     /// grpc-go closes such a stream with `codes.Internal`, "server closed the
@@ -264,20 +295,24 @@ impl GrpcStream {
         let trailers = ready!(recv.poll_trailers(cx))
             .map_err(|error| h2_io_error("could not read the gRPC trailers", &error))?;
 
-        let Some(trailers) = trailers else {
+        // The head block is borrowed rather than taken: an error below leaves
+        // `eof` unset, so a caller that reads again comes back through here,
+        // and a Trailers-Only call has to reach the same verdict the second
+        // time instead of decaying into the missing-trailers complaint.
+        let Some(ending) = trailers.as_ref().or(self.trailers_only.as_ref()) else {
             return Poll::Ready(Err(protocol_io_error(
                 "the gRPC server closed the stream without sending trailers".to_owned(),
             )));
         };
 
-        let Some(status) = grpc_status(&trailers) else {
+        let Some(status) = grpc_status(ending) else {
             return Poll::Ready(Err(protocol_io_error(
-                "the gRPC trailers carry no grpc-status".to_owned(),
+                "the gRPC call ended with no grpc-status".to_owned(),
             )));
         };
 
         if status != "0" {
-            let message = trailers
+            let message = ending
                 .get("grpc-message")
                 .and_then(|message| message.to_str().ok())
                 .unwrap_or("no message");
@@ -354,7 +389,20 @@ impl AsyncRead for GrpcStream {
                 Downlink::Awaiting(response) => {
                     let response = ready!(Pin::new(response).poll(cx))
                         .map_err(|error| h2_io_error("no gRPC response", &error))?;
-                    this.downlink = Downlink::Reading(response.into_body());
+                    let (head, body) = response.into_parts();
+                    // `is_end_stream()` is exactly "this header block carried
+                    // END_STREAM" at this one moment and nowhere later: it is
+                    // the recv half being closed *and* nothing queued behind it
+                    // (`h2-0.4.15/src/proto/streams/recv.rs:633-638`), and
+                    // resolving the response is what took the block off that
+                    // queue (`recv.rs:336-346`). A DATA or trailers frame that
+                    // has already arrived is still sitting on it, so a head
+                    // that did not end the call reads as false even when the
+                    // rest of the call is in hand.
+                    if body.is_end_stream() {
+                        this.trailers_only = Some(head.headers);
+                    }
+                    this.downlink = Downlink::Reading(body);
                     continue;
                 }
                 Downlink::Reading(recv) => recv,
@@ -414,7 +462,9 @@ impl AsyncWrite for GrpcStream {
         // `MAX_HUNK_PAYLOAD_LEN`. No caller in this crate reaches it, since the
         // relay caps a single write at 1 MiB
         // (`crates/xray-core-rs/src/policy.rs:15`), but that is a property of
-        // today's callers rather than of this transport.
+        // today's callers rather than of this transport. One that did would see
+        // its write split across two `Hunk`s, which is the only framing a peer
+        // capped at 4 MiB per message could have taken in the first place.
         let input = &input[..input.len().min(MAX_HUNK_PAYLOAD_LEN)];
 
         // One write, one `Hunk`: `HunkReaderWriter.Write` hands the whole

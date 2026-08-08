@@ -627,6 +627,18 @@ mod stream_grpc_h2_tests {
         /// Write these DATA payloads — already framed by the test — and close
         /// with these trailers.
         Say(Vec<Bytes>, HeaderMap),
+        /// Answer with one HEADERS block — `:status 200`, `content-type`,
+        /// these fields — carrying END_STREAM, and no DATA and no trailers
+        /// behind it.
+        ///
+        /// gRPC's Trailers-Only response, and not a pathological shape at all:
+        /// `writeStatus` emits exactly this whenever it finds no headers sent
+        /// yet (`grpc@v1.81.0/internal/transport/http2_server.go:1082-1093`),
+        /// which is every RPC a grpc-go handler ends having written nothing.
+        /// For an Xray inbound that is `Tun` returning on a tunnel whose remote
+        /// said not one byte, and every call to a `serviceName` it does not
+        /// serve.
+        TrailersOnly(HeaderMap),
         /// Write these DATA payloads and then END_STREAM on an empty DATA
         /// frame, with no trailing HEADERS at all. grpc-go's server never does
         /// this — `writeStatus` is the only way it ends an RPC — so it stands
@@ -801,6 +813,21 @@ mod stream_grpc_h2_tests {
                 }
                 send.send_trailers(trailers).expect("trailers");
                 drain_the_client(body).await;
+            }
+            Script::TrailersOnly(fields) => {
+                let mut response = grpc_response();
+                response.headers_mut().extend(fields);
+                let send = respond
+                    .send_response(response, true)
+                    .expect("a trailers-only response");
+                // Both handles are held rather than dropped, because dropping
+                // them is what makes h2 reset the stream and a reset would
+                // reach the client ahead of its first read. grpc-go sends none
+                // here either once the client has half-closed — `rst :=
+                // s.getState() == streamActive` (`http2_server.go:1127-1129`)
+                // — and the client this serves has nothing to write.
+                let _held = (send, body);
+                std::future::pending::<()>().await;
             }
             Script::SayAndEndTheDataStream(chunks) => {
                 let mut send = respond
@@ -1312,6 +1339,109 @@ mod stream_grpc_h2_tests {
             assert!(
                 error.to_string().contains("without sending trailers"),
                 "the error should name the missing trailers, got: {error}"
+            );
+        })
+        .await;
+    }
+
+    /// The sibling of the two above that must *not* be an error, and the one a
+    /// real peer reaches: a Trailers-Only response saying the call went fine.
+    ///
+    /// grpc-go's server ends every RPC whose handler wrote nothing with a
+    /// single END_STREAM header block — `:status 200`, `content-type`,
+    /// `grpc-status` — and no DATA (`writeStatus`,
+    /// `grpc@v1.81.0/internal/transport/http2_server.go:1082-1093`). Its client
+    /// reads the status straight out of that block, since `operateHeaders`
+    /// builds the call's status from whichever block carried END_STREAM
+    /// (`http2_client.go:1487-1503,1617-1626`), so `RecvMsg` returns plain
+    /// `io.EOF` (`stream.go:1174-1184`) and Xray passes it through as the end
+    /// of the read (`hunkconn.go:75-89`).
+    ///
+    /// h2 gives us that block as the response head with no trailers behind it,
+    /// so a client that only ever looked at `poll_trailers` would call a
+    /// successful call broken. Reachable in a relay: the local side closes its
+    /// write half, the uplink half-closes, and `Tun` returns having never seen
+    /// a byte from the remote.
+    #[tokio::test]
+    async fn a_trailers_only_response_with_status_zero_is_a_clean_eof() {
+        let (client_io, server_io) = duplex(64 * 1024);
+        tokio::spawn(serve_one_call(
+            server_io,
+            Script::TrailersOnly(trailers("0")),
+        ));
+        let mut stream = within_deadline(open(client_io)).await;
+
+        within_deadline(async {
+            let mut received = Vec::new();
+            stream
+                .read_to_end(&mut received)
+                .await
+                .expect("a trailers-only success is the end of a call, not a broken one");
+            assert!(
+                received.is_empty(),
+                "the peer sent no message, got: {received:?}"
+            );
+
+            let mut after = [0u8; 8];
+            assert_eq!(stream.read(&mut after).await.expect("read after eof"), 0);
+        })
+        .await;
+    }
+
+    /// The same shape carrying a failure, which is how a `serviceName` typo
+    /// surfaces: grpc-go's mux answers a service or method it does not serve
+    /// with `codes.Unimplemented` and "unknown service …" or "unknown method …
+    /// for service …" (`grpc@v1.81.0/server.go:1864-1879`), written through
+    /// `WriteStatus` with nothing sent before it — a Trailers-Only response.
+    /// The status the peer *did* send has to reach the user, or a mistyped
+    /// `serviceName` reads as a server that hung up.
+    #[tokio::test]
+    async fn a_trailers_only_response_reports_the_status_it_carries() {
+        const MESSAGE: &str = "unknown method Tun for service xray.grpc";
+
+        let mut fields = trailers("12");
+        fields.insert("grpc-message", MESSAGE.parse().expect("a legal header"));
+
+        let (client_io, server_io) = duplex(64 * 1024);
+        tokio::spawn(serve_one_call(server_io, Script::TrailersOnly(fields)));
+        let mut stream = within_deadline(open(client_io)).await;
+
+        within_deadline(async {
+            let mut received = Vec::new();
+            let error = stream
+                .read_to_end(&mut received)
+                .await
+                .expect_err("a failed call must not read as a clean eof");
+            assert!(
+                error.to_string().contains("12") && error.to_string().contains(MESSAGE),
+                "the error should carry the peer's status and message, got: {error}"
+            );
+        })
+        .await;
+    }
+
+    /// And the same shape with no status in it at all, which grpc-go reads as
+    /// `codes.Unknown` like any other status-less end (`grpcStatusCode =
+    /// codes.Unknown`, `http2_client.go:1481`) rather than as the clean EOF the
+    /// `grpc-status: 0` case is.
+    #[tokio::test]
+    async fn a_trailers_only_response_without_a_status_is_an_error() {
+        let (client_io, server_io) = duplex(64 * 1024);
+        tokio::spawn(serve_one_call(
+            server_io,
+            Script::TrailersOnly(HeaderMap::new()),
+        ));
+        let mut stream = within_deadline(open(client_io)).await;
+
+        within_deadline(async {
+            let mut received = Vec::new();
+            let error = stream
+                .read_to_end(&mut received)
+                .await
+                .expect_err("a status-less call must not read as a clean eof");
+            assert!(
+                error.to_string().contains("grpc-status"),
+                "the error should name the missing status, got: {error}"
             );
         })
         .await;
