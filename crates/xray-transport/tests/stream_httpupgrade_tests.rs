@@ -198,4 +198,64 @@ mod stream_httpupgrade_tests {
         let request = String::from_utf8(recorded.await.expect("recorder")).expect("UTF-8");
         assert!(request.starts_with("GET /ws HTTP/1.1\r\n"), "{request}");
     }
+
+    #[tokio::test]
+    async fn early_data_still_strips_the_response_before_the_payload() {
+        // Skipping the wait defers the 101, it does not remove it: the server
+        // sends the response either way. Xray's `ConnRF` reads and validates it
+        // on the first read no matter what `ed` was, so the caller never sees
+        // it. Handing back the raw socket would deliver the status line as
+        // payload, and the VLESS layer would parse it as a protocol response.
+        let (listener, addr) = loopback().await;
+        let _recorded = serve_once(
+            listener,
+            b"HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\nHELLO",
+        );
+
+        let stream = TcpStream::connect(addr).await.expect("connect");
+        let mut config = config("/ws");
+        config.wait_for_response = false;
+
+        let mut upgraded = connect_httpupgrade(Box::new(stream), &config)
+            .await
+            .expect("the upgrade must succeed");
+
+        let mut buffer = [0u8; 5];
+        upgraded
+            .read_exact(&mut buffer)
+            .await
+            .expect("the first read must yield payload, not the response");
+        assert_eq!(
+            &buffer, b"HELLO",
+            "the 101 must be consumed before the caller's payload"
+        );
+    }
+
+    #[tokio::test]
+    async fn early_data_surfaces_a_rejected_upgrade_on_the_first_read() {
+        // A dial that never waited for the response cannot report a rejection,
+        // so the first read has to: Go fails it there with `unrecognized
+        // reply`. Passing the body through as payload would turn a refused
+        // upgrade into a corrupt tunnel.
+        let (listener, addr) = loopback().await;
+        let _recorded = serve_once(
+            listener,
+            b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nnope!",
+        );
+
+        let stream = TcpStream::connect(addr).await.expect("connect");
+        let mut config = config("/ws");
+        config.wait_for_response = false;
+
+        let mut upgraded = connect_httpupgrade(Box::new(stream), &config)
+            .await
+            .expect("the dial itself must not wait for the response");
+
+        let mut buffer = [0u8; 5];
+        let result = upgraded.read_exact(&mut buffer).await;
+        assert!(
+            result.is_err(),
+            "a refused upgrade must fail the read, not arrive as payload"
+        );
+    }
 }

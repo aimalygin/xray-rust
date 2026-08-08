@@ -12,11 +12,12 @@
 //!    `/ws?foo=bar` goes out as `/ws%3Ffoo=bar` where WebSocket would send a
 //!    real query string.
 //! 3. `ed` carries no payload here. Any positive value only means "do not block
-//!    waiting for the 101".
+//!    waiting for the 101" — the server still sends one, and it is stripped on
+//!    the first read instead of during the dial.
 
 use std::io;
 use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::task::{ready, Context, Poll};
 
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 
@@ -70,7 +71,8 @@ pub async fn connect_httpupgrade(
         .map_err(TransportError::Tcp)?;
 
     if !config.wait_for_response {
-        return Ok(stream);
+        // The 101 is still coming; it is stripped on the first read instead.
+        return Ok(Box::new(DeferredUpgradeStream::new(stream)));
     }
 
     let leftover = read_and_validate_response(&mut stream).await?;
@@ -106,6 +108,16 @@ async fn read_and_validate_response(
     };
 
     let head = String::from_utf8_lossy(&buffer[..header_end]).into_owned();
+    validate_response_head(&head)?;
+
+    Ok(buffer[header_end + 4..].to_vec())
+}
+
+/// Checks the status line and the two upgrade headers.
+///
+/// Shared by both dial modes: whether the response is read during the dial or
+/// on the first read afterwards, it is held to the same rules.
+fn validate_response_head(head: &str) -> Result<(), TransportError> {
     let mut lines = head.split("\r\n");
     let status = lines.next().unwrap_or_default();
     if status != EXPECTED_STATUS {
@@ -141,11 +153,156 @@ async fn read_and_validate_response(
         ));
     }
 
-    Ok(buffer[header_end + 4..].to_vec())
+    Ok(())
 }
 
 fn find_header_end(buffer: &[u8]) -> Option<usize> {
     buffer.windows(4).position(|window| window == b"\r\n\r\n")
+}
+
+fn rejected(reason: String) -> io::Error {
+    io::Error::new(
+        io::ErrorKind::InvalidData,
+        TransportError::HttpUpgradeRejected(reason),
+    )
+}
+
+/// A stream that consumes the upgrade response on its first read.
+///
+/// `ed` does not take the 101 off the wire — the server sends it either way. It
+/// only means the dial must not block waiting for it, so the first payload
+/// write can follow the request immediately. Xray defers the response the same
+/// way and then strips it in `ConnRF.Read`, which reads and validates it on the
+/// first read whatever `ed` was set to.
+///
+/// Returning the bare socket instead would hand the status line to the caller
+/// as payload, and for VLESS that means parsing `HTTP/1.1 101 ...` as a
+/// protocol response: a silent corruption of every early-data connection.
+pub(crate) struct DeferredUpgradeStream {
+    inner: BoxedTransportStream,
+    /// Bytes read while looking for the end of the response head. Once the head
+    /// is validated this holds only what followed it.
+    buffer: Vec<u8>,
+    consumed: usize,
+    validated: bool,
+}
+
+impl DeferredUpgradeStream {
+    pub(crate) fn new(inner: BoxedTransportStream) -> Self {
+        Self {
+            inner,
+            buffer: Vec::new(),
+            consumed: 0,
+            validated: false,
+        }
+    }
+
+    /// Reads until the response head is complete, then validates it and keeps
+    /// whatever followed for the caller.
+    fn poll_consume_response(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        loop {
+            if let Some(position) = find_header_end(&self.buffer) {
+                let head = String::from_utf8_lossy(&self.buffer[..position]).into_owned();
+                validate_response_head(&head).map_err(|error| match error {
+                    TransportError::HttpUpgradeRejected(reason) => rejected(reason),
+                    other => io::Error::other(other),
+                })?;
+                self.buffer.drain(..position + 4);
+                self.validated = true;
+                return Poll::Ready(Ok(()));
+            }
+
+            if self.buffer.len() > MAX_RESPONSE_HEAD {
+                return Poll::Ready(Err(rejected("response headers exceeded 64 KiB".to_owned())));
+            }
+
+            let mut chunk = [0u8; 512];
+            let mut staging = ReadBuf::new(&mut chunk);
+            ready!(Pin::new(&mut self.inner).poll_read(cx, &mut staging))?;
+            let filled = staging.filled();
+            if filled.is_empty() {
+                return Poll::Ready(Err(rejected(
+                    "connection closed before the response headers".to_owned(),
+                )));
+            }
+            self.buffer.extend_from_slice(filled);
+        }
+    }
+
+    /// Serves the next read from what followed the response, if any is left.
+    fn drain_buffered(&mut self, output: &mut ReadBuf<'_>) -> bool {
+        let remaining = &self.buffer[self.consumed..];
+        if remaining.is_empty() {
+            return false;
+        }
+
+        let take = remaining.len().min(output.remaining());
+        output.put_slice(&remaining[..take]);
+        self.consumed += take;
+        if self.consumed == self.buffer.len() {
+            self.buffer = Vec::new();
+            self.consumed = 0;
+        }
+        true
+    }
+}
+
+impl AsyncRead for DeferredUpgradeStream {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        output: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let this = self.get_mut();
+        if !this.validated {
+            ready!(this.poll_consume_response(cx))?;
+        }
+        if this.drain_buffered(output) {
+            return Poll::Ready(Ok(()));
+        }
+        Pin::new(&mut this.inner).poll_read(cx, output)
+    }
+}
+
+/// Writes never wait on the response: sending without waiting is the whole
+/// point of early data.
+impl AsyncWrite for DeferredUpgradeStream {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        input: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.get_mut().inner).poll_write(cx, input)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.get_mut().inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.get_mut().inner).poll_shutdown(cx)
+    }
+}
+
+/// The direct-mode methods forward to the plain ones, as they do for
+/// `PrefixedStream`: record alignment exists only for Vision, which the
+/// compatibility matrix keeps off this transport.
+impl TransportStream for DeferredUpgradeStream {
+    fn poll_read_direct(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        output: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        AsyncRead::poll_read(self, cx, output)
+    }
+
+    fn poll_write_direct(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        input: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        AsyncWrite::poll_write(self, cx, input)
+    }
 }
 
 /// A stream that drains a leading buffer before delegating to the socket.

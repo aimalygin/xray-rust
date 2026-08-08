@@ -1541,6 +1541,31 @@ async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_httpupgr
 
 #[tokio::test]
 #[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
+async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_httpupgrade_early_data() {
+    // `ed` carries no payload on HTTPUpgrade: it only means the dial returns
+    // without waiting for the 101. A real server still sends one, so this
+    // pins that the response is stripped before the VLESS layer reads the
+    // stream — against Xray itself, where the loopback tests can only mock it.
+    timeout(
+        Duration::from_secs(120),
+        run_local_xray_stream_transport_interop(
+            XrayInboundTransport::HttpUpgrade {
+                path: "/interop-upgrade?ed=2048",
+            },
+            StreamTransport::HttpUpgrade(HttpUpgradeSettings {
+                path: HTTPUPGRADE_PATH.to_owned(),
+                early_data_bytes: 2048,
+                ..HttpUpgradeSettings::default()
+            }),
+            false,
+        ),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
 async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_httpupgrade_tls() {
     timeout(
         Duration::from_secs(120),
