@@ -547,21 +547,15 @@ impl HunkDecoder {
         Ok(Some(payload))
     }
 
-    /// Drops the consumed prefix once it dominates the buffer, so a long-lived
-    /// stream does not grow without bound.
+    /// Drops the consumed prefix so a long-lived stream does not grow without
+    /// bound. Unconditional, matching `FrameDecoder` in `websocket_frame.rs`
+    /// rather than inventing a threshold this codebase does not use elsewhere.
     fn compact(&mut self) {
         if self.consumed == 0 {
             return;
         }
-        if self.consumed == self.buffer.len() {
-            self.buffer.clear();
-            self.consumed = 0;
-            return;
-        }
-        if self.consumed >= 8 * 1024 {
-            self.buffer.drain(..self.consumed);
-            self.consumed = 0;
-        }
+        self.buffer.drain(..self.consumed);
+        self.consumed = 0;
     }
 }
 
@@ -585,6 +579,15 @@ fn read_varint(body: &[u8], cursor: &mut usize) -> Result<u64, String> {
 }
 
 /// Reads field 1 out of a `Hunk`, skipping anything else the peer sent.
+///
+/// Two protobuf-go behaviours this must match, both settled by running bodies
+/// through the real `encoding.Hunk` rather than by reading the spec:
+///
+/// * **A repeated field 1 is last-one-wins, not concatenation.** The generated
+///   coder assigns rather than appends, so `0a02"hi" 0a03"yo!"` decodes to
+///   `"yo!"`. An earlier draft of this plan said concatenation; it was wrong.
+/// * **A wire-type mismatch on field 1 is not a parse error.** It falls through
+///   to the unknown-field skip, so `0801` alone yields an empty payload.
 fn hunk_data(body: &[u8]) -> Result<Vec<u8>, String> {
     let mut cursor = 0;
     let mut data = Vec::new();
@@ -601,7 +604,7 @@ fn hunk_data(body: &[u8]) -> Result<Vec<u8>, String> {
                     .checked_add(len)
                     .filter(|end| *end <= body.len())
                     .ok_or_else(|| "gRPC Hunk declares more data than it carries".to_owned())?;
-                data.extend_from_slice(&body[cursor..end]);
+                data = body[cursor..end].to_vec(); // last one wins
                 cursor = end;
             }
             (_, 0) => {
