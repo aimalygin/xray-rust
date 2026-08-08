@@ -3978,40 +3978,65 @@ mod tests {
     }
 
     /// The config layer stopped refusing REALITY + gRPC, so `xtls-rprx-vision`
-    /// alongside it now reaches this crate for the first time. It must not
-    /// build: Xray's own outbound refuses the pairing with "XTLS only supports
-    /// TLS and REALITY directly for now"
-    /// (`Xray-core/proxy/vless/outbound/outbound.go:284`).
+    /// alongside it now reaches this crate for the first time. Xray refuses
+    /// that pairing with "XTLS only supports TLS and REALITY directly for now"
+    /// (`Xray-core/proxy/vless/outbound/outbound.go:284`), and this test is
+    /// *not* a pin on that rule — no such pin is expressible today, and a name
+    /// claiming otherwise would be worse than none.
     ///
-    /// The assertion is deliberately only "some error". Today the refusal
-    /// comes from `build_transport_layer`'s placeholder arm, which has no
-    /// `TransportLayer` to hand back yet; once the gRPC transport lands, the
-    /// same config is caught one layer down by `validate_connector_flow` and
-    /// the variant changes. Pinning either variant would make this test read
-    /// as a Vision assertion while actually asserting which layer happened to
-    /// refuse first.
+    /// Why it is not expressible: the rule lives in `validate_connector_flow`,
+    /// which refuses Vision on any non-`Raw` `TransportLayer`, and
+    /// `xray_transport::TransportLayer` has no `Grpc` variant to hand it yet.
+    /// `build_vless_tcp_outbound` does not consult it either; its only flow
+    /// check is `validate_stream_flow`, which tests flow against *security*
+    /// alone and so accepts Vision under REALITY. The transport-agnostic half
+    /// of the rule is pinned by `vision_is_rejected_outside_the_raw_transport`,
+    /// with WebSocket standing in for "any non-`Raw` layer".
+    ///
+    /// What the build path really does today is refuse *every* gRPC config
+    /// from `build_transport_layer`'s placeholder arm, flow or no flow. That
+    /// is what this pins, and the flowless half of the assertion is here so
+    /// the test cannot drift into reading as a Vision pin.
+    ///
+    /// For task 9: replacing the placeholder with a real `TransportLayer::Grpc`
+    /// makes both halves return `Ok`, and this test fails outright — that is
+    /// the intended tripwire, not a regression. The refusal then moves to
+    /// connect time, where `validate_connector_flow` catches gRPC through the
+    /// same non-`Raw` branch. Retire this test there and pin the real rule:
+    /// `validate_connector_flow(Some(VISION_FLOW), &reality, &TransportLayer::Grpc(..))`
+    /// must be `Err(UnsupportedOutboundFlow)`.
     #[test]
-    fn vision_never_builds_over_grpc() {
-        let mut vless = direct_selection_vless("proxy");
-        vless.stream.transport = StreamTransport::Grpc(GrpcSettings {
-            service_name: "GunService".to_owned(),
-            ..GrpcSettings::default()
-        });
-        vless.stream.security = StreamSecurity::Reality(RealitySettings {
-            server_name: "reality.example".to_owned(),
-            fingerprint: "chrome".to_owned(),
-            public_key: [7; 32],
-            short_id: RealityShortId::try_from_slice(&[1, 2, 3, 4])
-                .expect("valid Reality short id"),
-            spider_x: "/".to_owned(),
-            mldsa65_verify: None,
-        });
-        let OutboundSettings::Vless(settings) = &mut vless.settings else {
-            panic!("expected a VLESS outbound");
+    fn the_grpc_placeholder_refuses_every_vless_config_vision_or_not() {
+        let grpc_reality_vless = |flow: Option<&str>| {
+            let mut vless = direct_selection_vless("proxy");
+            vless.stream.transport = StreamTransport::Grpc(GrpcSettings {
+                service_name: "GunService".to_owned(),
+                ..GrpcSettings::default()
+            });
+            vless.stream.security = StreamSecurity::Reality(RealitySettings {
+                server_name: "reality.example".to_owned(),
+                fingerprint: "chrome".to_owned(),
+                public_key: [7; 32],
+                short_id: RealityShortId::try_from_slice(&[1, 2, 3, 4])
+                    .expect("valid Reality short id"),
+                spider_x: "/".to_owned(),
+                mldsa65_verify: None,
+            });
+            let OutboundSettings::Vless(settings) = &mut vless.settings else {
+                panic!("expected a VLESS outbound");
+            };
+            settings.users[0].flow = flow.map(str::to_owned);
+            vless
         };
-        settings.users[0].flow = Some(VISION_FLOW.to_owned());
 
-        build_vless_tcp_outbound(&vless).expect_err("Vision over gRPC must never build");
+        assert!(matches!(
+            build_vless_tcp_outbound(&grpc_reality_vless(Some(VISION_FLOW))).unwrap_err(),
+            CoreError::UnsupportedOutboundNetwork
+        ));
+        assert!(matches!(
+            build_vless_tcp_outbound(&grpc_reality_vless(None)).unwrap_err(),
+            CoreError::UnsupportedOutboundNetwork
+        ));
     }
 
     #[test]
