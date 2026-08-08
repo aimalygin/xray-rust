@@ -647,7 +647,9 @@ git commit -m "feat(transport): decode gRPC Hunk messages across frame boundarie
 
 ### Task 4: `grpcSettings` in the config layer
 
-Eight keys, four of them snake_case upstream and four not. Copy the spelling verbatim: a camelCase
+Eight keys with three spellings between them: `idle_timeout`, `health_check_timeout`,
+`permit_without_stream`, `initial_windows_size` and `user_agent` are snake_case, `serviceName` and
+`multiMode` are camelCase, and `authority` is a single word and so is neither. Copy each verbatim: a camelCase
 `idleTimeout` would be silently ignored by xray-core, so accepting it here would let a config work
 that does not work there.
 
