@@ -1,4 +1,5 @@
 mod utls_tls_shaping_tests {
+    use std::collections::BTreeSet;
     use std::net::Ipv4Addr;
 
     use tokio::io::AsyncReadExt;
@@ -548,6 +549,69 @@ mod utls_tls_shaping_tests {
             });
         }
         order
+    }
+
+    /// The HPKE AEAD id inside the ECH GREASE extension, if the profile emits
+    /// one. The body is `type(1) | kdf(2) | aead(2) | ...`.
+    fn ech_aead_id(hello: &[u8]) -> Option<u16> {
+        let mut cursor = 5 + 4 + 2 + 32;
+        cursor += 1 + usize::from(hello[cursor]);
+        let cipher_suites_len = usize::from(u16::from_be_bytes([hello[cursor], hello[cursor + 1]]));
+        cursor += 2 + cipher_suites_len;
+        cursor += 1 + usize::from(hello[cursor]);
+        let extensions_len = usize::from(u16::from_be_bytes([hello[cursor], hello[cursor + 1]]));
+        cursor += 2;
+        let end = cursor + extensions_len;
+
+        while cursor + 4 <= end {
+            let extension_type = u16::from_be_bytes([hello[cursor], hello[cursor + 1]]);
+            let payload_len =
+                usize::from(u16::from_be_bytes([hello[cursor + 2], hello[cursor + 3]]));
+            let body = &hello[cursor + 4..cursor + 4 + payload_len];
+            if extension_type == 0xfe0d {
+                return Some(u16::from_be_bytes([body[3], body[4]]));
+            }
+            cursor += 4 + payload_len;
+        }
+        None
+    }
+
+    #[test]
+    fn ech_grease_draws_every_candidate_aead() {
+        // uTLS gives the Firefox parrots two HPKE cipher suites and picks one
+        // per connection. Sending AES-128-GCM every time would make a handful
+        // of connections from one client conclusive, so this is the property
+        // the byte-oracle cannot see: it runs under a zeroed `crypto/rand` and
+        // can only ever record the first candidate.
+        //
+        // A fair draw misses a side across 40 tries with probability 2^-40.
+        let mut seen = BTreeSet::new();
+        for _ in 0..40 {
+            let hello = plain_tls_client_hello_bytes(&config("firefox", &[]))
+                .expect("firefox ClientHello must be produced");
+            seen.insert(ech_aead_id(&hello).expect("firefox carries an ECH GREASE extension"));
+        }
+
+        assert_eq!(
+            seen,
+            BTreeSet::from([0x0001, 0x0003]),
+            "Firefox draws between AES-128-GCM and ChaCha20-Poly1305"
+        );
+    }
+
+    #[test]
+    fn ech_grease_holds_the_chrome_aead_fixed() {
+        // `BoringGREASEECH` declares a single cipher suite, so varying this
+        // would be its own tell rather than a fix.
+        for _ in 0..20 {
+            let hello = plain_tls_client_hello_bytes(&config("chrome", &[]))
+                .expect("chrome ClientHello must be produced");
+            assert_eq!(
+                ech_aead_id(&hello),
+                Some(0x0001),
+                "Chrome always offers AES-128-GCM"
+            );
+        }
     }
 
     fn is_grease(value: u16) -> bool {

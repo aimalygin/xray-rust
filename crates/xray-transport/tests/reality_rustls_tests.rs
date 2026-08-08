@@ -727,7 +727,17 @@ fn mask_encrypted_client_hello_random_ranges(
         ));
     }
     cursor.read_u16("missing ECH HPKE KDF id")?;
+
+    // The AEAD id is masked, unlike the KDF id beside it, because uTLS draws it
+    // per connection wherever a profile offers more than one: Firefox picks
+    // between AES-128-GCM and ChaCha20-Poly1305, so this side legitimately
+    // disagrees with the oracle half the time. The oracle runs under a zeroed
+    // `crypto/rand` and so always records the first candidate, which means this
+    // comparison could only ever pin one of the two -- it cannot see the draw at
+    // all. `ech_grease_draws_every_candidate_aead` guards that instead.
+    let aead_id_offset = extension_data_offset + cursor.offset;
     cursor.read_u16("missing ECH HPKE AEAD id")?;
+    mask_range(masked, aead_id_offset, 2);
 
     let config_id_offset = extension_data_offset + cursor.offset;
     cursor.read_u8("missing ECH config id")?;
