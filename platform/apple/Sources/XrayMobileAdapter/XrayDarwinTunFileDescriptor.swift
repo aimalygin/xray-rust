@@ -1,20 +1,20 @@
 import Darwin
 import Foundation
+import XrayKernelControl
 
 public enum XrayDarwinTunFileDescriptor {
     private static let utunControlName = "com.apple.net.utun_control"
     private static let sysprotoControl: Int32 = 2
     private static let utunOptionInterfaceName: Int32 = 2
 
-    /// `CTLIOCGINFO` expands to `_IOWR('N', 3, struct ctl_info)`, and Swift
-    /// refuses to import a macro whose value depends on the size of a struct,
-    /// so the request is rebuilt here from the same `_IOC` encoding. The size
-    /// comes from the SDK's own layout so it tracks the header.
-    private static let controlInfoRequest: UInt = {
-        let direction = UInt(0x8000_0000) | UInt(0x4000_0000) // IOC_IN | IOC_OUT
-        let length = UInt(MemoryLayout<ctl_info>.size) & 0x1FFF // IOCPARM_MASK
-        return direction | (length << 16) | (UInt(UInt8(ascii: "N")) << 8) | 3
-    }()
+    /// `CTLIOCGINFO`, evaluated by the C shim.
+    ///
+    /// Swift refuses to import a macro whose value depends on the size of a
+    /// struct, so this used to be rebuilt from the `_IOC` encoding by hand.
+    /// `XrayKernelControl` evaluates the SDK's own macro instead — and declares
+    /// the two structures below, which `<sys/kern_control.h>` provides on macOS
+    /// but not on iOS or tvOS.
+    private static let controlInfoRequest = XRAY_CTLIOCGINFO
 
     /// Locates the descriptor of the utun device the Network Extension opened
     /// for this provider.
@@ -88,8 +88,8 @@ public enum XrayDarwinTunFileDescriptor {
 
     /// Returns the peer address only for a connected `AF_SYSTEM` socket, which
     /// is the precondition for asking it which kernel control it belongs to.
-    private static func controlPeerAddress(of fileDescriptor: Int32) -> sockaddr_ctl? {
-        var address = sockaddr_ctl()
+    private static func controlPeerAddress(of fileDescriptor: Int32) -> xray_sockaddr_ctl? {
+        var address = xray_sockaddr_ctl()
         var length = socklen_t(MemoryLayout.size(ofValue: address))
         var result: Int32 = -1
         withUnsafeMutablePointer(to: &address) { addressPointer in
@@ -103,8 +103,8 @@ public enum XrayDarwinTunFileDescriptor {
         return address
     }
 
-    private static func utunControlInfo() -> ctl_info {
-        var controlInfo = ctl_info()
+    private static func utunControlInfo() -> xray_ctl_info {
+        var controlInfo = xray_ctl_info()
         withUnsafeMutablePointer(to: &controlInfo.ctl_name) { namePointer in
             namePointer.withMemoryRebound(
                 to: CChar.self,
