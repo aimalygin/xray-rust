@@ -36,9 +36,20 @@ fn service_name(configured: &str) -> String {
         return path_escape(configured);
     }
 
-    // `lastIndex < 1` is clamped to 1 upstream, which turns `/hello` into an
-    // empty service name rather than panicking on an empty slice.
-    let last_slash = configured.rfind('/').unwrap_or(0).max(1);
+    // Go clamps `lastIndex < 1` up to 1. Without the clamp, a bare "/" (its
+    // only '/' at index 0) would give `last_slash == 0` and the slice below
+    // would be `configured[1..0]` — an inverted range, which is what actually
+    // panics here (`configured[1..1]`, the clamped form, is legal and simply
+    // empty). Clamping to 1 turns `/hello` into an empty service name instead.
+    //
+    // `stream_name` below needs no equivalent guard: it always slices from
+    // `last_slash + 1` onward, and `last_slash` is a byte index found within
+    // `configured`, so `last_slash + 1 <= configured.len()` always holds and
+    // that range can never invert.
+    let last_slash = configured
+        .rfind('/')
+        .expect("checked for a leading slash")
+        .max(1);
     configured[1..last_slash]
         .split('/')
         .map(path_escape)
