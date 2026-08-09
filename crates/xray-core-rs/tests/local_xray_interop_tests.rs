@@ -342,26 +342,7 @@ async fn run_inner_tls_interop_scenario(xray: XrayServer, rust_config: CoreConfi
         .inbound_addr(Some("socks-in"))
         .expect("bound socks addr");
 
-    let mut client = timeout(Duration::from_secs(5), TcpStream::connect(socks_addr))
-        .await
-        .expect("connect rust socks timeout")
-        .expect("connect rust socks");
-    match timeout(
-        Duration::from_secs(5),
-        socks5_connect(&mut client, tls_echo_addr),
-    )
-    .await
-    {
-        Ok(Ok(())) => {}
-        Ok(Err(error)) => {
-            eprintln!("{}", xray.logs());
-            panic!("socks connect failed: {error}");
-        }
-        Err(error) => {
-            eprintln!("{}", xray.logs());
-            panic!("socks connect timeout: {error}");
-        }
-    }
+    let client = open_socks_flow(&xray, socks_addr, tls_echo_addr).await;
 
     let server_name = rustls::pki_types::ServerName::try_from(INNER_TLS_SERVER_NAME)
         .expect("inner tls server name");
@@ -526,26 +507,7 @@ async fn run_local_xray_vless_interop_scenario(
         .inbound_addr(Some("socks-in"))
         .expect("bound socks addr");
 
-    let mut client = timeout(Duration::from_secs(5), TcpStream::connect(socks_addr))
-        .await
-        .expect("connect rust socks timeout")
-        .expect("connect rust socks");
-    match timeout(
-        Duration::from_secs(5),
-        socks5_connect(&mut client, echo_addr),
-    )
-    .await
-    {
-        Ok(Ok(())) => {}
-        Ok(Err(error)) => {
-            eprintln!("{}", xray.logs());
-            panic!("socks connect failed: {error}");
-        }
-        Err(error) => {
-            eprintln!("{}", xray.logs());
-            panic!("socks connect timeout: {error}");
-        }
-    }
+    let mut client = open_socks_flow(&xray, socks_addr, echo_addr).await;
 
     let payload = b"hello local xray interop";
     timeout(Duration::from_secs(5), client.write_all(payload))
@@ -786,8 +748,8 @@ enum XrayInboundTransport {
     /// it registers both stream names on one service descriptor —
     /// `getTunStreamName()` and `getTunMultiStreamName()`, i.e. `Tun` and
     /// `TunMulti` for a name without a leading `/`
-    /// (`Xray-core/transport/internet/grpc/hub.go:129`,
-    /// `encoding/customSeviceName.go:9-29,57-60`) — so a server config
+    /// (`Xray-core/transport/internet/grpc/hub.go:128`,
+    /// `encoding/customSeviceName.go:9-30,57-60`) — so a server config
     /// carrying it would document a requirement that does not exist.
     Grpc {
         service_name: &'static str,
@@ -1440,6 +1402,34 @@ async fn spawn_multi_echo_server(
     (addr, handle)
 }
 
+/// Opens one SOCKS flow at `socks_addr` and asks it for `target`, printing the
+/// Go process's log if either step fails.
+///
+/// Three scenario runners had this verbatim before the gRPC bulk one would
+/// have been a fourth.
+async fn open_socks_flow(
+    xray: &XrayServer,
+    socks_addr: SocketAddr,
+    target: SocketAddr,
+) -> TcpStream {
+    let mut client = timeout(Duration::from_secs(5), TcpStream::connect(socks_addr))
+        .await
+        .expect("connect rust socks timeout")
+        .expect("connect rust socks");
+    match timeout(Duration::from_secs(5), socks5_connect(&mut client, target)).await {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => {
+            eprintln!("{}", xray.logs());
+            panic!("socks connect failed: {error}");
+        }
+        Err(error) => {
+            eprintln!("{}", xray.logs());
+            panic!("socks connect timeout: {error}");
+        }
+    }
+    client
+}
+
 async fn socks5_connect(client: &mut TcpStream, target: SocketAddr) -> Result<(), String> {
     let SocketAddr::V4(target) = target else {
         return Err("local interop test uses IPv4 targets only".to_owned());
@@ -1710,12 +1700,14 @@ async fn run_local_xray_stream_transport_interop(
 // relays bytes, which is a different claim: the oracle cannot notice a header
 // grpc-go sends that its *server* also insists on, nor a `serviceName` we
 // escape into a service the server never registered.
-//
-// The space is load-bearing. Both ends run the name through Go's
-// `url.PathEscape` (`Xray-core/transport/internet/grpc/config.go:17-33`), so a
-// plain identifier would prove nothing about our port of it; `%20` is a byte
-// outside the keep-set, and getting it wrong means the server answers
-// UNIMPLEMENTED.
+
+/// The `serviceName` both ends are configured with.
+///
+/// The space is load-bearing. Both ends run the name through Go's
+/// `url.PathEscape` (`Xray-core/transport/internet/grpc/config.go:17-33`), so
+/// a plain identifier would prove nothing about our port of it; `%20` is a
+/// byte outside the keep-set, and getting it wrong means the server answers
+/// UNIMPLEMENTED.
 const GRPC_SERVICE_NAME: &str = "interop grpc";
 
 /// The fingerprint the gRPC TLS scenario shapes its ClientHello with.
@@ -1724,26 +1716,31 @@ const GRPC_SERVICE_NAME: &str = "interop grpc";
 /// grpc-go the TLS credentials (`transport/internet/grpc/hub.go:84`), and
 /// grpc-go's `ServerHandshake` closes any connection whose
 /// `NegotiatedProtocol` came back empty — `GRPC_ENFORCE_ALPN_ENABLED` defaults
-/// to true (`grpc@v1.81.0/credentials/tls.go:167-182`,
+/// to true (`grpc@v1.81.0/credentials/tls.go:168-183`,
 /// `internal/envconfig/envconfig.go:53`) — and the server offers only `h2`,
 /// because `hub.go:84` passes `tls.WithNextProto("h2")`. It is also silent
 /// about it: "gRPC server may silently ignore TLS errors", as the line above
 /// it says, so the failure reaches the client as a bare EOF part-way through
 /// the tunnel.
 ///
-/// A parsed profile always shapes: an absent `tlsSettings.fingerprint` means
-/// `chrome` (`crates/xray-config/src/model.rs`, `TlsSettings::fingerprint`),
-/// and every shaping profile advertises `["h2", "http/1.1"]`, so a real gRPC
-/// TLS outbound offers `h2` without anyone configuring it. Naming one here is
-/// what puts this test on that path rather than beside it; the unshaped path
-/// this suite's other TLS scenarios take sends no ALPN extension at all and
-/// cannot reach a gRPC inbound. See `run_local_xray_grpc_interop` for why the
+/// A parsed profile always shapes, and the modern browser profiles carry
+/// `["h2", "http/1.1"]`: an absent `tlsSettings.fingerprint` means `chrome`
+/// (`crates/xray-config/src/model.rs`, `TlsSettings::fingerprint`), so a real
+/// gRPC TLS outbound offers `h2` without anyone configuring it. Naming one
+/// here is what puts this test on that path rather than beside it; the
+/// unshaped path this suite's other TLS scenarios take sends no ALPN
+/// extension at all. See `run_local_xray_grpc_interop` for why the
 /// pinned-certificate dialer cannot be used with it.
+///
+/// Not *every* profile carries it — `helloandroid_11_okhttp`,
+/// `hello360_7_5`, `helloios_11_1`, `helloios_12_1` and
+/// `hellorandomizednoalpn` do not — and those cannot reach a gRPC TLS inbound
+/// at all. That is parity rather than a gap: uTLS emits the spec's extension
+/// list and nothing else, and its `ALPNExtension` overwrites `NextProtos`
+/// rather than deferring to it
+/// (`utls@v1.8.3-.../u_tls_extensions.go:613-621`), so xray-core with the same
+/// fingerprint sends the same hello and is refused the same way.
 const GRPC_TLS_FINGERPRINT: &str = "chrome";
-
-/// The uTLS fingerprint the gRPC REALITY scenario handshakes with, matching
-/// the base Vision REALITY scenario's.
-const GRPC_REALITY_FINGERPRINT: &str = "chrome";
 
 #[tokio::test]
 #[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
@@ -1819,10 +1816,10 @@ async fn run_local_xray_grpc_interop(security: XrayInboundSecurity) {
 /// Our writer never batches — one `poll_write` is one element — so the uplink
 /// stays single-element whatever the size. The *server* batches: Xray reads
 /// the echo server with a `readv` reader whose allocation strategy doubles up
-/// to eight 8 KiB buffers (`Xray-core/common/buf/readv_reader.go:22-43`,
+/// to eight 8 KiB buffers (`Xray-core/common/buf/readv_reader.go:22-44`,
 /// `common/buf/buffer.go:13`), and `WriteMultiBuffer` puts one element per
 /// buffer into a single `MultiHunk`
-/// (`transport/internet/grpc/encoding/multiconn.go:114-131`). So a downlink
+/// (`transport/internet/grpc/encoding/multiconn.go:115-134`). So a downlink
 /// that stays ahead of the reader produces exactly the message a single-mode
 /// decoder would silently truncate to its last element.
 ///
@@ -1876,17 +1873,19 @@ fn grpc_client_security(security: XrayInboundSecurity) -> StreamSecurity {
             // fact that the profile is what supplies `h2`.
             alpn: Vec::new(),
         }),
-        XrayInboundSecurity::Reality => reality_security(GRPC_REALITY_FINGERPRINT),
+        // The same fingerprint the base Vision REALITY scenario uses; REALITY
+        // negotiates no ALPN of its own, so nothing here turns on the choice.
+        XrayInboundSecurity::Reality => reality_security("chrome"),
     }
 }
 
 /// `multi_mode` has no server-side counterpart here, and that is not an
 /// omission. The listener never reads the field: it registers `Tun` and
 /// `TunMulti` on one service descriptor whatever the setting
-/// (`Xray-core/transport/internet/grpc/hub.go:129`,
-/// `encoding/customSeviceName.go:9-29,57-60`), so for a `serviceName` without
+/// (`Xray-core/transport/internet/grpc/hub.go:128`,
+/// `encoding/customSeviceName.go:9-30,57-60`), so for a `serviceName` without
 /// a leading `/` — where the two stream names are those constants
-/// (`transport/internet/grpc/config.go:35-59`) — a client in either mode
+/// (`transport/internet/grpc/config.go:36-59`) — a client in either mode
 /// reaches a handler. A custom path is where the two sides must agree, because
 /// there the names come from the config's last segment split on `|`.
 fn rust_grpc_core_config(
@@ -1933,26 +1932,7 @@ async fn run_local_xray_grpc_bulk_interop_scenario(xray: XrayServer, rust_config
         .inbound_addr(Some("socks-in"))
         .expect("bound socks addr");
 
-    let mut client = timeout(Duration::from_secs(5), TcpStream::connect(socks_addr))
-        .await
-        .expect("connect rust socks timeout")
-        .expect("connect rust socks");
-    match timeout(
-        Duration::from_secs(5),
-        socks5_connect(&mut client, echo_addr),
-    )
-    .await
-    {
-        Ok(Ok(())) => {}
-        Ok(Err(error)) => {
-            eprintln!("{}", xray.logs());
-            panic!("socks connect failed: {error}");
-        }
-        Err(error) => {
-            eprintln!("{}", xray.logs());
-            panic!("socks connect timeout: {error}");
-        }
-    }
+    let mut client = open_socks_flow(&xray, socks_addr, echo_addr).await;
 
     let payload = bulk_interop_payload(GRPC_BULK_PAYLOAD_LEN);
     let mut echoed = vec![0; payload.len()];
@@ -2004,9 +1984,9 @@ async fn run_local_xray_grpc_bulk_interop_scenario(xray: XrayServer, rust_config
         .expect("echo task should not panic");
 }
 
-/// A deterministic filler with no repeating byte run, so a chunk the tunnel
-/// dropped shifts everything after it and the first-difference search lands on
-/// the loss rather than somewhere later.
+/// A deterministic filler with no short repeating run, so a tunnel that
+/// reordered, duplicated or truncated a chunk cannot land on matching bytes by
+/// luck the way a constant or a low-period pattern would.
 fn bulk_interop_payload(len: usize) -> Vec<u8> {
     let mut state = 0x9e37_79b9u32;
     (0..len)
