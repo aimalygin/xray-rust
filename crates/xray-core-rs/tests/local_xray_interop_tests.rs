@@ -12,10 +12,10 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::time::{sleep, timeout, Duration, Instant};
 use xray_config::{
-    CoreConfig, HttpUpgradeSettings, InboundConfig, InboundProtocol, Network, OutboundConfig,
-    OutboundSettings, RealitySettings, RealityShortId, RoutingConfig, StreamSecurity,
-    StreamSettings, StreamTransport, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
-    WebSocketSettings,
+    CoreConfig, GrpcSettings, HttpUpgradeSettings, InboundConfig, InboundProtocol, Network,
+    OutboundConfig, OutboundSettings, RealitySettings, RealityShortId, RoutingConfig,
+    StreamSecurity, StreamSettings, StreamTransport, TargetAddr, TlsSettings,
+    VlessOutboundSettings, VlessUser, WebSocketSettings,
 };
 use xray_core_rs::Core;
 use xray_transport::{SystemDnsResolver, TlsConnector, TransportDialer};
@@ -739,14 +739,33 @@ enum XrayInboundSecurity {
     Reality,
 }
 
-/// The stream transport the Go inbound is configured with. REALITY is absent
-/// on purpose: Xray refuses it for anything but raw, which is the very rule
-/// the compatibility matrix reproduces.
+/// The stream transport the Go inbound is configured with.
+///
+/// Which of these may be paired with `XrayInboundSecurity::Reality` is not a
+/// free choice: Xray allows REALITY over `tcp`, `splithttp` and `grpc` and
+/// refuses everything else with "REALITY only supports RAW, XHTTP and gRPC for
+/// now" (`Xray-core/infra/conf/transport_internet.go:1989`). So the pairing is
+/// unreachable for the two HTTP/1.1 transports below and reachable for
+/// [`Self::Grpc`], which is the rule the compatibility matrix reproduces.
 #[derive(Debug, Clone, Copy)]
 enum XrayInboundTransport {
     Raw,
-    WebSocket { path: &'static str },
-    HttpUpgrade { path: &'static str },
+    WebSocket {
+        path: &'static str,
+    },
+    HttpUpgrade {
+        path: &'static str,
+    },
+    /// `multiMode` is deliberately not a field. The listener never reads it:
+    /// it registers both stream names on one service descriptor —
+    /// `getTunStreamName()` and `getTunMultiStreamName()`, i.e. `Tun` and
+    /// `TunMulti` for a name without a leading `/`
+    /// (`Xray-core/transport/internet/grpc/hub.go:129`,
+    /// `encoding/customSeviceName.go:9-29,57-60`) — so a server config
+    /// carrying it would document a requirement that does not exist.
+    Grpc {
+        service_name: &'static str,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -932,6 +951,18 @@ fn write_xray_vless_config(
             format!(
                 r#",
         "httpupgradeSettings": {{ "path": "{path}" }}"#
+            ),
+        ),
+        // `network` is the only mandatory half: `grpcSettings` is an optional
+        // pointer (`Xray-core/infra/conf/transport_internet.go:1950,2044`) and
+        // every field in it has a usable zero — an absent block leaves
+        // `serviceName` empty, which serves `//Tun`. It is pinned anyway so a
+        // successful flow says something about the `:path` we built.
+        XrayInboundTransport::Grpc { service_name } => (
+            "grpc",
+            format!(
+                r#",
+        "grpcSettings": {{ "serviceName": "{service_name}" }}"#
             ),
         ),
     };
@@ -1634,4 +1665,65 @@ async fn run_local_xray_stream_transport_interop(
 
     let rust_config = rust_core_config_with_transport(xray.addr, client_security, None, outbound);
     run_local_xray_vless_interop_scenario(xray, rust_config, dialer).await;
+}
+
+// ---- grpc -------------------------------------------------------------------
+//
+// The `:path`, the `Hunk` framing and the HEADERS block are all pinned against
+// a Go oracle in `crates/xray-transport/tests/stream_grpc_tests.rs`, which
+// proves we look like grpc-go. These prove a real Xray inbound accepts us and
+// relays bytes, which is a different claim: the oracle cannot notice a header
+// grpc-go sends that its *server* also insists on, nor a `serviceName` we
+// escape into a service the server never registered.
+//
+// The space is load-bearing. Both ends run the name through Go's
+// `url.PathEscape` (`Xray-core/transport/internet/grpc/config.go:17-33`), so a
+// plain identifier would prove nothing about our port of it; `%20` is a byte
+// outside the keep-set, and getting it wrong means the server answers
+// UNIMPLEMENTED.
+const GRPC_SERVICE_NAME: &str = "interop grpc";
+
+#[tokio::test]
+#[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
+async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_grpc() {
+    timeout(Duration::from_secs(120), run_local_xray_grpc_interop())
+        .await
+        .unwrap();
+}
+
+async fn run_local_xray_grpc_interop() {
+    let xray_checkout = resolve_xray_checkout();
+    let xray = timeout(
+        Duration::from_secs(60),
+        start_xray_vless_server(
+            &xray_checkout,
+            XrayVlessServerConfig {
+                security: XrayInboundSecurity::None,
+                transport: XrayInboundTransport::Grpc {
+                    service_name: GRPC_SERVICE_NAME,
+                },
+                // Vision cannot ride gRPC: `validate_connector_flow` refuses
+                // the pairing when we build the outbound, and Xray refuses it
+                // too, so an interop scenario for it would be theatre.
+                flow: None,
+            },
+        ),
+    )
+    .await
+    .expect("start xray timeout");
+
+    let rust_config = rust_grpc_core_config(xray.addr, StreamSecurity::None);
+    run_local_xray_vless_interop_scenario(xray, rust_config, None).await;
+}
+
+fn rust_grpc_core_config(xray_addr: SocketAddr, security: StreamSecurity) -> CoreConfig {
+    rust_core_config_with_transport(
+        xray_addr,
+        security,
+        None,
+        StreamTransport::Grpc(GrpcSettings {
+            service_name: GRPC_SERVICE_NAME.to_owned(),
+            ..GrpcSettings::default()
+        }),
+    )
 }
