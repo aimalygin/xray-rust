@@ -1763,9 +1763,17 @@ table, and streams 3, 5, 7 emit a mostly-indexed block. A test that reuses a war
 two different things and passes while asserting nothing. Assert the invariant explicitly rather
 than relying on test ordering.
 
-Expect one known divergence and encode it as such: `h2` emits `:method, :scheme, :authority, :path`
-where grpc-go emits `:path` before `:authority`. Compare the pseudo-header **set** and the regular
-header block byte-for-byte, and let the test name say which half is exact.
+Expect **two** known divergences, both confirmed in Task 7 against a live grpc-go client, and encode
+them as such rather than discovering them here:
+
+- `h2` emits `:method, :scheme, :authority, :path` where grpc-go emits `:path` before `:authority`.
+- The HPACK representation differs even where the fields agree: `h2` writes `:path` as a literal
+  without indexing, grpc-go's encoder indexes it incrementally.
+
+Either alone defeats a byte comparison of the block, so do not attempt one. Compare the **decoded**
+field set and values, assert the pseudo-header order we actually emit so a future `h2` bump cannot
+change it silently, and let the test name say that the preamble is the byte-exact half and the
+header block is not.
 
 - [ ] **Step 2: Run**
 

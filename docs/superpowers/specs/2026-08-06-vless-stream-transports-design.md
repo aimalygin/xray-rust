@@ -25,11 +25,16 @@ XHTTP's `xmux` connection-reuse scheduler, which no single request reveals, is
 parsed but not implemented — it remains observable as a pattern of connection
 timing.
 
-And on HTTP/2 the target is the connection preamble and the first HEADERS block,
-not the whole connection. `h2` is taken as published rather than forked, so the
-pseudo-header order differs from grpc-go's by one swap — the crate hardcodes
-`:method, :scheme, :authority, :path` where grpc-go sends `:path` before
-`:authority` — and everything past the first request carries no claim at all:
+And on HTTP/2 the target is the connection preamble, plus the *contents* of the
+first HEADERS block — not its bytes, and not the whole connection. `h2` is taken
+as published rather than forked, and it differs from grpc-go's encoder twice
+over. The pseudo-header order is one swap off: the crate hardcodes `:method,
+:scheme, :authority, :path` where grpc-go sends `:path` before `:authority`. And
+the HPACK representation differs even where the fields agree — `h2` writes
+`:path` as a literal without indexing where grpc-go's encoder indexes
+incrementally. Either alone would defeat a byte comparison, so the gRPC oracle
+asserts the field set and the pseudo-header order, never the encoded block.
+Everything past the first request carries no claim at all:
 HPACK dynamic-table evolution across pooled streams, BDP-estimation PINGs,
 WINDOW_UPDATE cadence. For XHTTP over HTTP/2 a byte-exact claim is not merely
 expensive but unavailable: `x/net/http2` iterates `req.Header` as a Go map, so
