@@ -1154,6 +1154,41 @@ mod stream_grpc_h2_tests {
         .await;
     }
 
+    /// A write reaches the peer even when the caller never writes again and
+    /// never flushes.
+    ///
+    /// Every other test here writes in pairs or flushes, and either hides this:
+    /// a second `poll_write` drains what the first one left, and so does
+    /// `poll_flush`. What neither covers is the caller that writes once and
+    /// then only reads, which is the shape of every tunnel whose peer speaks
+    /// first — SSH, SMTP, IMAP, FTP — and of the VLESS request header itself,
+    /// which `open_vless_tcp_stream_with_resolver_and_dialer` writes before the
+    /// relay starts (`crates/xray-core-rs/src/outbound.rs`). The Xray inbound
+    /// dials the target off that header, so a header still in this adapter is a
+    /// server with nothing to answer and a client waiting for the answer.
+    ///
+    /// It stalls rather than corrupts, because h2 grants stream capacity from
+    /// the connection task and the grant lands after `poll_write` has already
+    /// returned: the encoded `Hunk` is left queued, and without the read path
+    /// draining it too, nothing polls the uplink again.
+    #[tokio::test]
+    async fn a_lone_write_reaches_the_peer_without_a_second_write_or_a_flush() {
+        const GREETING: &[u8] = b"220 ready";
+
+        let (client_io, server_io) = duplex(64 * 1024);
+        tokio::spawn(serve_one_call(server_io, Script::Echo));
+        let mut stream = within_deadline(open(client_io)).await;
+
+        stream.write_all(GREETING).await.expect("uplink write");
+
+        within_deadline(async {
+            let mut echoed = [0u8; GREETING.len()];
+            stream.read_exact(&mut echoed).await.expect("downlink read");
+            assert_eq!(&echoed, GREETING);
+        })
+        .await;
+    }
+
     /// The connection and stream windows both start at 65535 bytes. Neither
     /// side gets past that without giving the window back, so this is the test
     /// that fails — by stalling until the deadline — if the read path forgets
@@ -1740,7 +1775,9 @@ mod stream_grpc_h2_tests {
     ///
     /// A peer that has finished the RPC stopped reading the request body a
     /// while ago, so its flow-control window is shut and whatever the relay
-    /// wrote last is still queued here. Every path out of the call then runs
+    /// wrote last is still queued here — a write the relay gave up on, since a
+    /// write that returned is a frame already handed over. Every path out of
+    /// the call then runs
     /// the uplink drain before it gets anywhere near the half-close, and
     /// `poll_capacity` on a stream the peer took away reports the send half is
     /// no longer streaming (`h2-0.4.15/src/proto/streams/send.rs:366-369`). So
@@ -1773,25 +1810,21 @@ mod stream_grpc_h2_tests {
         let mut stream = within_deadline(open(client_io)).await;
 
         within_deadline(async {
-            stream
-                .write_all(&vec![0x5a; SIZE])
-                .await
-                .expect("the write is accepted while the call is live");
-
-            // `write_all` returns with the frame only *queued*: `poll_capacity`
-            // is edge-triggered and grants nothing until the connection has
-            // run (`h2-0.4.15/src/proto/streams/send.rs:371-374`), so the first
-            // drain reserves and parks. This flush is what pushes the window's
-            // worth onto the wire, and it can never finish — the peer reads one
-            // frame and never reopens the window — so it is raced against the
-            // peer saying it has the bytes rather than awaited.
+            // The write itself is what cannot finish, and dropping it is what
+            // leaves the frame half-delivered. `poll_write` hands the window's
+            // worth over and parks for the rest — it reports a write only once
+            // the whole `Hunk` is h2's — and the peer reads one frame and never
+            // reopens the window, so it parks for good. Racing it against the
+            // peer's report and then dropping it is the only way into this
+            // state that does not require a peer that reopens.
+            let payload = vec![0x5a; SIZE];
             tokio::select! {
                 arrived = arrived => arrived.expect("the peer reports the first Hunk"),
-                flushed = stream.flush() => {
-                    panic!("the peer never reopens the window, so this cannot finish: {flushed:?}")
+                written = stream.write_all(&payload) => {
+                    panic!("the peer never reopens the window, so this cannot finish: {written:?}")
                 }
             }
-            // Only now, with that flush dropped and the rest of the frame
+            // Only now, with that write dropped and the rest of the frame
             // still queued, may the peer end the call.
             resume.send(()).expect("the peer is still waiting");
 

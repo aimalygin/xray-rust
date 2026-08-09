@@ -77,6 +77,31 @@ pub struct GrpcStream {
     /// The encoded `Hunk` that has not been handed to h2 in full yet, because
     /// the flow-control window ran out mid-frame.
     pending_write: Bytes,
+    /// The caller's write [`Self::pending_write`] was encoded from, held from
+    /// the moment it is encoded until the whole frame is h2's.
+    ///
+    /// It exists so that [`AsyncWrite::poll_write`] can return `Pending` on a
+    /// frame the window will not take yet and still be idempotent when the
+    /// caller retries: the retry finds the frame already built and finishes
+    /// handing *it* over rather than encoding a second copy of the same bytes.
+    ///
+    /// h2 grants stream capacity from the connection task, so the grant lands
+    /// after the write that reserved it has returned. Reporting such a write
+    /// as accepted and leaving its frame queued — which is what this replaced —
+    /// is invisible to a caller that writes again, because the next write
+    /// drains it, and fatal to one that writes once and then waits for a reply:
+    /// nothing else polls the uplink, so the peer never receives the write it
+    /// is being waited on for. Every tunnel whose far end speaks first is that
+    /// caller, and so is the VLESS request header that
+    /// `open_vless_tcp_stream_with_resolver_and_dialer` writes before handing
+    /// the stream to the relay (`crates/xray-core-rs/src/outbound.rs`), off
+    /// which an Xray inbound dials the target.
+    ///
+    /// Keeping the count here rather than draining from the read path is what
+    /// leaves both halves usable from separate tasks: h2 holds one capacity
+    /// waker per send half, so a reader that reserved capacity would overwrite
+    /// a writer's and strand it.
+    accepted: Option<usize>,
     /// The response HEADERS, held from the moment they arrive.
     ///
     /// h2 hands the block over as the response head and keeps nothing of it,
@@ -136,6 +161,7 @@ impl GrpcStream {
             pending_read: Vec::new(),
             pending_read_pos: 0,
             pending_write: Bytes::new(),
+            accepted: None,
             response_head: None,
             head_ended_the_call: false,
             downlink_carried_data: false,
@@ -259,7 +285,8 @@ impl GrpcStream {
             Uplink::Drained => Poll::Ready(Ok(())),
             Uplink::Closed => {
                 // Dropped rather than kept: nothing will ever carry them, and
-                // a relay's last frame can be a megabyte.
+                // a relay's last frame can be a megabyte. [`Self::accepted`] is
+                // retired by the emptied queue, in `poll_write`.
                 self.pending_write = Bytes::new();
                 Poll::Ready(Ok(()))
             }
@@ -569,12 +596,29 @@ impl AsyncWrite for GrpcStream {
         input: &[u8],
     ) -> Poll<io::Result<usize>> {
         let this = self.get_mut();
-        // Anything left over goes first, so two `Hunk`s are never interleaved
-        // on the wire. Returning `Pending` here has accepted nothing yet.
-        match this.poll_drain_uplink_for_write(cx) {
-            Poll::Ready(Ok(())) => {}
-            Poll::Ready(Err(error)) => return Poll::Ready(Err(error)),
-            Poll::Pending => return Poll::Pending,
+        // A frame an earlier poll encoded but could not finish handing over
+        // goes out before anything else — two `Hunk`s are never interleaved on
+        // the wire — and is then reported as the write it was encoded from.
+        //
+        // `input` is not consulted on this path and does not need to be:
+        // `AsyncWrite` callers retry a `Pending` write with the same buffer,
+        // and the count that comes back is the one taken from it. Reading the
+        // retry's buffer instead would let a caller be told a different number
+        // than the frame already on its way carries. A caller that *abandons* a
+        // `Pending` write and then writes something else is told the abandoned
+        // length — which is inside the unspecified state tokio already
+        // documents for a cancelled `write_all`, and is why nothing in this
+        // workspace cancels one.
+        //
+        // The count outlives its frame when a flush or a half-close drains it,
+        // so an emptied queue retires it here rather than at every drain site.
+        if this.pending_write.is_empty() {
+            this.accepted = None;
+        }
+        if let Some(accepted) = this.accepted {
+            ready!(this.poll_drain_uplink_for_write(cx))?;
+            this.accepted = None;
+            return Poll::Ready(Ok(accepted));
         }
 
         if input.is_empty() {
@@ -598,12 +642,15 @@ impl AsyncWrite for GrpcStream {
         // buffer to a single `Send` (`hunkconn.go:131-141`), so the peer's
         // reads see the same boundaries ours did.
         this.pending_write = Bytes::from(encode_hunk(input));
-        if let Poll::Ready(Err(error)) = this.poll_drain_uplink_for_write(cx) {
-            return Poll::Ready(Err(error));
-        }
-
-        // The frame is ours now; whatever the window would not take drains on
-        // the next poll.
+        this.accepted = Some(input.len());
+        // Not reported until the whole frame is h2's. A `Pending` here is the
+        // ordinary case rather than the rare one — the connection task assigns
+        // the capacity this just reserved, so the grant cannot arrive inside
+        // this poll — and returning `Ready` on it would hand the caller a write
+        // that is still sitting in this struct. See [`Self::accepted`] for what
+        // that costs; the retry lands on the branch above.
+        ready!(this.poll_drain_uplink_for_write(cx))?;
+        this.accepted = None;
         Poll::Ready(Ok(input.len()))
     }
 

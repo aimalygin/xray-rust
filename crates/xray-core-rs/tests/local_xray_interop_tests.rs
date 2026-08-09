@@ -1795,6 +1795,32 @@ async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_grpc_rea
     .unwrap();
 }
 
+/// A tunnel whose *peer* speaks first, against a real Xray inbound. Every echo
+/// scenario above writes before it reads, and that is what makes this one a
+/// separate test rather than a variation.
+///
+/// The VLESS request header is written and then nothing else is, until the
+/// server answers. Over gRPC that header is a `Hunk` handed to `h2`, which
+/// takes it only once the connection task has granted stream capacity — after
+/// the write has been asked for. `GrpcStream::poll_write` therefore does not
+/// report a write until the whole frame is h2's; when it did report earlier,
+/// the header sat in the adapter, the inbound had nothing to dial the target
+/// off, and this flow deadlocked while every echo scenario passed, because
+/// their next write carried the previous one out for them.
+///
+/// SSH, SMTP, IMAP and FTP all greet the client first, so this is the shape of
+/// a whole class of tunnels rather than a corner.
+#[tokio::test]
+#[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
+async fn rust_socks_client_reads_a_server_greeting_through_local_xray_vless_grpc() {
+    timeout(
+        Duration::from_secs(120),
+        run_local_xray_grpc_server_speaks_first_interop(),
+    )
+    .await
+    .unwrap();
+}
+
 #[tokio::test]
 #[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
 async fn rust_socks_client_streams_bulk_echo_through_local_xray_vless_grpc_multi_mode() {
@@ -1854,6 +1880,56 @@ async fn run_local_xray_grpc_multi_mode_interop() {
     let xray = start_xray_grpc_server(XrayInboundSecurity::None).await;
     let rust_config = rust_grpc_core_config(xray.addr, StreamSecurity::None, true);
     run_local_xray_grpc_bulk_interop_scenario(xray, rust_config).await;
+}
+
+async fn run_local_xray_grpc_server_speaks_first_interop() {
+    const GREETING: &[u8] = b"220 interop.invalid ESMTP ready\r\n";
+
+    let xray = start_xray_grpc_server(XrayInboundSecurity::None).await;
+    let rust_config = rust_grpc_core_config(xray.addr, StreamSecurity::None, false);
+
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .expect("bind greeting server");
+    let greeting_addr = listener.local_addr().expect("greeting local addr");
+    let greeting_handle = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.expect("accept greeting");
+        stream.write_all(GREETING).await.expect("write greeting");
+        stream.flush().await.expect("flush greeting");
+        // Held open so the read below cannot be satisfied by an EOF.
+        tokio::time::sleep(Duration::from_secs(30)).await;
+    });
+
+    let mut core = Core::new(rust_config).expect("create rust core");
+    timeout(Duration::from_secs(5), core.start())
+        .await
+        .expect("start rust core timeout")
+        .expect("start rust core");
+    let socks_addr = core
+        .inbound_addr(Some("socks-in"))
+        .expect("bound socks addr");
+
+    let mut client = open_socks_flow(&xray, socks_addr, greeting_addr).await;
+    let mut greeting = vec![0; GREETING.len()];
+    // The client writes nothing at all before this read, which is the whole
+    // assertion: any byte it sent would carry the request header out for it.
+    match timeout(Duration::from_secs(20), client.read_exact(&mut greeting)).await {
+        Ok(Ok(_)) => {}
+        Ok(Err(error)) => {
+            eprintln!("{}", xray.logs());
+            panic!("read greeting: {error}");
+        }
+        Err(_) => {
+            eprintln!("{}", xray.logs());
+            panic!("the greeting never arrived: the request header never reached the inbound");
+        }
+    }
+    assert_eq!(greeting, GREETING);
+
+    drop(client);
+    core.stop().await.expect("stop rust core");
+    drop(xray);
+    greeting_handle.abort();
 }
 
 async fn start_xray_grpc_server(security: XrayInboundSecurity) -> XrayServer {
