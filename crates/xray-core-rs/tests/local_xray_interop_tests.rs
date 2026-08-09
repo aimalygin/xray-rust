@@ -534,8 +534,14 @@ async fn run_local_xray_vless_interop_scenario(
         .expect("write payload");
     let mut echoed = vec![0; payload.len()];
     match timeout(Duration::from_secs(15), client.read_exact(&mut echoed)).await {
-        Ok(result) => {
-            result.expect("read echo");
+        Ok(Ok(_)) => {}
+        // A tunnel the far side tore down arrives here as a bare
+        // `UnexpectedEof`, which names nothing; whatever the Go process
+        // thought is in its log. Printed on this arm as well as the timeout
+        // one, or every such failure costs a rerun to find out anything.
+        Ok(Err(error)) => {
+            eprintln!("{}", xray.logs());
+            panic!("read echo failed: {error}");
         }
         Err(error) => {
             eprintln!("{}", xray.logs());
@@ -1683,22 +1689,59 @@ async fn run_local_xray_stream_transport_interop(
 // UNIMPLEMENTED.
 const GRPC_SERVICE_NAME: &str = "interop grpc";
 
+/// The fingerprint the gRPC TLS scenario shapes its ClientHello with.
+///
+/// **Not cosmetic: without it the handshake fails.** A gRPC inbound hands
+/// grpc-go the TLS credentials (`transport/internet/grpc/hub.go:84`), and
+/// grpc-go's `ServerHandshake` closes any connection whose
+/// `NegotiatedProtocol` came back empty — `GRPC_ENFORCE_ALPN_ENABLED` defaults
+/// to true (`grpc@v1.81.0/credentials/tls.go:167-182`,
+/// `internal/envconfig/envconfig.go:53`) — and the server offers only `h2`,
+/// because `hub.go:84` passes `tls.WithNextProto("h2")`. It is also silent
+/// about it: "gRPC server may silently ignore TLS errors", as the line above
+/// it says, so the failure reaches the client as a bare EOF part-way through
+/// the tunnel.
+///
+/// A parsed profile always shapes: an absent `tlsSettings.fingerprint` means
+/// `chrome` (`crates/xray-config/src/model.rs`, `TlsSettings::fingerprint`),
+/// and every shaping profile advertises `["h2", "http/1.1"]`, so a real gRPC
+/// TLS outbound offers `h2` without anyone configuring it. Naming one here is
+/// what puts this test on that path rather than beside it; the unshaped path
+/// this suite's other TLS scenarios take sends no ALPN extension at all and
+/// cannot reach a gRPC inbound. See `run_local_xray_grpc_interop` for why the
+/// pinned-certificate dialer cannot be used with it.
+const GRPC_TLS_FINGERPRINT: &str = "chrome";
+
 #[tokio::test]
 #[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
 async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_grpc() {
-    timeout(Duration::from_secs(120), run_local_xray_grpc_interop())
-        .await
-        .unwrap();
+    timeout(
+        Duration::from_secs(120),
+        run_local_xray_grpc_interop(XrayInboundSecurity::None),
+    )
+    .await
+    .unwrap();
 }
 
-async fn run_local_xray_grpc_interop() {
+#[tokio::test]
+#[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
+async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_grpc_tls() {
+    timeout(
+        Duration::from_secs(120),
+        run_local_xray_grpc_interop(XrayInboundSecurity::Tls),
+    )
+    .await
+    .unwrap();
+}
+
+async fn run_local_xray_grpc_interop(security: XrayInboundSecurity) {
     let xray_checkout = resolve_xray_checkout();
     let xray = timeout(
         Duration::from_secs(60),
         start_xray_vless_server(
             &xray_checkout,
             XrayVlessServerConfig {
-                security: XrayInboundSecurity::None,
+                security,
                 transport: XrayInboundTransport::Grpc {
                     service_name: GRPC_SERVICE_NAME,
                 },
@@ -1712,8 +1755,34 @@ async fn run_local_xray_grpc_interop() {
     .await
     .expect("start xray timeout");
 
-    let rust_config = rust_grpc_core_config(xray.addr, StreamSecurity::None);
+    let rust_config = rust_grpc_core_config(xray.addr, grpc_client_security(security));
+    // No dialer override, so the Core builds `TransportDialer::system()` and
+    // the handshake runs through the shaped path -- which is the whole point:
+    // `TlsConnector::with_pinned_client_config` ignores the fingerprint and
+    // sends an unshaped ClientHello, so the pinned-root dialer the other TLS
+    // scenarios use cannot offer ALPN at all. Trading the pinned root for
+    // `allowInsecure` is what buys the shaping; the certificate is a
+    // throwaway self-signed one either way.
     run_local_xray_vless_interop_scenario(xray, rust_config, None).await;
+}
+
+fn grpc_client_security(security: XrayInboundSecurity) -> StreamSecurity {
+    match security {
+        XrayInboundSecurity::None => StreamSecurity::None,
+        XrayInboundSecurity::Tls => StreamSecurity::Tls(TlsSettings {
+            server_name: Some(TLS_SERVER_NAME.to_owned()),
+            fingerprint: Some(GRPC_TLS_FINGERPRINT.to_owned()),
+            allow_insecure: true,
+            // Left empty on purpose. An `alpn` of `["h2"]` would also reach
+            // the server, but by a route no profile takes: the shaped path
+            // narrows the profile's list only for exactly `["http/1.1"]`
+            // (`crates/xray-transport/src/utls_tls.rs`, `alpn_override_for`),
+            // so an explicit list here would be inert *and* would hide the
+            // fact that the profile is what supplies `h2`.
+            alpn: Vec::new(),
+        }),
+        XrayInboundSecurity::Reality => unreachable!("REALITY gRPC lands in its own scenario"),
+    }
 }
 
 fn rust_grpc_core_config(xray_addr: SocketAddr, security: StreamSecurity) -> CoreConfig {
