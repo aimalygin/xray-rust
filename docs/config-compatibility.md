@@ -73,10 +73,11 @@ runtime currently selects the first user.
 - `xtls-rprx-vision`;
 - `xtls-rprx-vision-udp443`.
 
-`streamSettings.network` accepts `tcp`/`raw`, `ws`/`websocket`, and
-`httpupgrade`. Xray renamed the TCP transport to `raw`; both spellings are
-accepted and mean the same thing, as do `ws` and `websocket`. Security values
-are:
+`streamSettings.network` accepts `tcp`/`raw`, `ws`/`websocket`, `httpupgrade`,
+and `grpc`. Xray renamed the TCP transport to `raw`; both spellings are
+accepted and mean the same thing, as do `ws` and `websocket`. `gun` is not an
+accepted alias for `grpc`, because v26.5.9's `TransportProtocol.Build` has no
+such arm either. Security values are:
 
 - `none`;
 - `tls`, with `serverName`, `allowInsecure` (certificate verification is
@@ -86,8 +87,8 @@ are:
   `mldsa65Verify`.
 
 `tcpSettings.header.type` — equally `rawSettings.header.type` — may be absent,
-empty, or `none`. HTTP/2, gRPC, QUIC, KCP, XHTTP and other stream transports
-are not supported. Outbound mux, `proxySettings`, `sendThrough`, multiple VLESS
+empty, or `none`. HTTP/2, QUIC, KCP, XHTTP and other stream transports are not
+supported. Outbound mux, `proxySettings`, `sendThrough`, multiple VLESS
 servers, and outbound chaining are rejected.
 
 VLESS UDP is carried over the supported TCP transport using VLESS datagram or
@@ -170,9 +171,193 @@ fails on the wire:
   fails the same pairing with "XTLS only supports TLS and REALITY directly for
   now".
 
-A `freedom` outbound is also refused these transports. Xray would dial the
-destination itself through them; here they are implemented for VLESS only, and
-refusing is better than silently dialling plain TCP.
+A `freedom` outbound is also refused these transports, and `grpc` with them.
+Xray would dial the destination itself through them; here they are implemented
+for VLESS only, and refusing is better than silently dialling plain TCP.
+
+### gRPC
+
+`network: "grpc"` carries VLESS inside `Hunk` messages on one bidirectional
+HTTP/2 POST, and it is shaped unlike the other two transports because of it:
+ws and httpupgrade take a socket and give back a stream, while every gRPC flow
+to one server becomes one more stream on a *shared* HTTP/2 connection. The
+first flow opens that connection and it is held between flows, as Xray holds
+its `*grpc.ClientConn` in `globalDialerMap`.
+
+Upstream marks the transport deprecated — building a `grpc` stream prints a
+non-removal deprecation warning pointing at XHTTP stream-up H2
+(`Xray-core/infra/conf/transport_internet.go:1003-1005`) — so it still works
+and still interoperates, but it is not where xray-core is going. We do not
+print that warning.
+
+`grpcSettings` accepts eight keys and no others. There is no `path`, no `host`,
+no `headers` and no `?ed=`, because `GRPCConfig` has none of them
+(`Xray-core/infra/conf/grpc.go:8-17`). Their spelling is inconsistent, and the
+inconsistency is Xray's: five are snake_case, two are camelCase, and one is
+neither.
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `serviceName` | string | The `:path`, in one of two dialects; see below |
+| `multiMode` | bool | Selects the `TunMulti` RPC and the `MultiHunk` message |
+| `authority` | string | `:authority` outright, ahead of the whole chain below |
+| `user_agent` | string | `chrome`, `firefox`, `edge`, `golang`, or a literal |
+| `idle_timeout` | int32 | Keepalive ping interval, in seconds |
+| `health_check_timeout` | int32 | How long a ping may go unacknowledged, in seconds |
+| `permit_without_stream` | bool | Ping a connection with no call open on it |
+| `initial_windows_size` | int32 | `SETTINGS_INITIAL_WINDOW_SIZE` for the connection |
+
+**A camelCase `idleTimeout` is rejected**, and that is a deliberate refusal of
+something xray-core tolerates. Go matches on the struct tag, so upstream reads
+`idleTimeout` as an unknown key and drops it in silence — the profile loads and
+dials with no keepalive at all. Accepting it here would let a config work that
+does nothing against a real server. The three `int32` values are clamped
+negative-to-zero as `GRPCConfig.Build` clamps them, and a value past `i32::MAX`
+is rejected, as Go's own decoder rejects it.
+
+`user_agent` follows Xray's switch (`transport/internet/grpc/dial.go:193-205`).
+An absent or empty value is *not* the empty case: it shares an arm with
+`chrome` and sends a Chrome user agent, so the default gRPC dial claims to be a
+browser. `golang` is the one value that empties the header, and the header is
+still sent, because grpc-go appends it unconditionally. Anything else is a
+literal and goes out verbatim — `safari` and `curl` included, which are
+masquerade keywords the gRPC table does not know. The `chrome`, `firefox` and
+`edge` strings come from the same table the WebSocket masquerade uses, so the
+redrawn-browser-version divergence described above applies to them too. Xray's
+own comment is worth repeating: a browser UA on gRPC is **not recommended**,
+because browsers cannot initiate gRPC. We match the behaviour anyway.
+
+#### `serviceName` has two dialects
+
+The leading `/` picks between them
+(`Xray-core/transport/internet/grpc/config.go:17-59`).
+
+A name **without** a leading `/` is an old-school service name. It is escaped
+whole with Go's `url.PathEscape`, so an inner `/` becomes `%2F` and the result
+is a single path segment; the stream name is then `Tun`, or `TunMulti` under
+`multiMode`. `xray.grpc` dials `/xray.grpc/Tun`.
+
+**The default is the empty string, and it dials `//Tun`** — an empty service
+name between two slashes, not a single slash. A `grpcSettings` block that is
+absent altogether resolves the same way, because Xray falls through to a
+zero-valued transport config rather than treating the block as mandatory. An
+Xray inbound with no `serviceName` registers the same empty name, so the two
+ends agree; a server expecting `/Tun` is a different configuration.
+
+A name **with** a leading `/` is a custom path. Everything between the first
+and the last `/` is the service name, escaped segment by segment so its inner
+slashes survive as separators, and the last segment is the stream name. That
+last segment may carry a `|`: the part before it is the `Tun` name and the part
+after it the `TunMulti` name, so `/a/b/Tun|TunMulti` dials `/a/b/Tun` normally
+and `/a/b/TunMulti` under `multiMode`. With no `|`, the one part is used for
+whichever RPC the mode selects. Upstream calls the one-part form the client
+spelling and the two-part form the server spelling; the client honours both.
+
+#### `multiMode` selects a different message
+
+Not merely a different stream name. `Tun` streams `Hunk`, whose `data` is a
+singular `bytes`; `TunMulti` streams `MultiHunk`, whose `data` is
+`repeated bytes` (`transport/internet/grpc/encoding/stream.proto:6-17`). One
+multi-mode message therefore carries a whole batch of payload chunks, and a
+reader in the wrong mode keeps only the last of them — silently, with no error
+and nothing logged.
+
+**Nothing negotiates it.** Each side reads the flag from its own config, so a
+server configured for `multiMode` is unreachable by a client that is not, and
+the reverse. The two ends have to be set together.
+
+#### The `:authority` chain is not the `Host` chain
+
+Xray resolves `:authority` as `grpcSettings.authority`, else
+`tlsSettings.serverName`, else the destination address **but only when it is a
+domain and REALITY is not configured**, else the empty string
+(`transport/internet/grpc/dial.go:159-167`). Under REALITY the third branch is
+skipped rather than answered with `realitySettings.serverName`, and the second
+has nothing to read either, because `tls.ConfigFromStreamSettings` returns nil
+for a REALITY stream.
+
+**The empty string is not an omitted header.** grpc-go then walks its own
+precedence to the dial target, which Xray builds as `passthrough:///host:port`,
+so what reaches the wire is the destination *with its port*:
+`example.com:443`, `198.51.100.7:443`, `[2001:db8::1]:443`. That is the default
+under REALITY and under any configuration whose destination is an IP literal,
+rather than a corner case. We resolve the same chain, once, when the outbound
+is built rather than on every dial.
+
+#### REALITY yes, `xtls-rprx-vision` no
+
+REALITY is accepted with gRPC, matching Xray's "REALITY only supports RAW,
+XHTTP and gRPC for now" — gRPC is on that list where ws and httpupgrade are
+not.
+
+`xtls-rprx-vision` is rejected, and both ends refuse it in different places.
+Here it is refused when the outbound is built, because Vision is accepted only
+on the raw transport. On xray-core the transport dial *succeeds* and the
+refusal comes later, from the VLESS outbound's `Process`: Vision needs the
+connection under it to be a `*tls.Conn`, `*tls.UConn` or `*reality.UConn`, and
+the gRPC dialer returns a `HunkConn` or `MultiHunkConn` wrapper instead
+(`proxy/vless/outbound/outbound.go:268-285`, "XTLS only supports TLS and
+REALITY directly for now."). Adding `security: tls` does not change that; the
+wrapper is what the dialer returns either way.
+
+#### Keepalive is three knobs behind one gate
+
+`idle_timeout`, `health_check_timeout` and `permit_without_stream` are one
+setting in three parts, and the gate over them is a **three-way OR** rather
+than a check on the durations: keepalive is attached when any of
+`idle_timeout > 0`, `health_check_timeout > 0`, or `permit_without_stream`
+holds (`dial.go:169-175`).
+
+So `permit_without_stream: true` on its own turns pings on, with both durations
+at zero — and zero is not "no pings". grpc-go's `WithKeepaliveParams` raises a
+zero or small interval to its ten-second floor, and the transport substitutes
+twenty seconds for a zero timeout, so that config pings every ten seconds and
+gives up on a ping unanswered for twenty.
+
+`permit_without_stream` is then read a second time for an unrelated decision:
+with it false, the ping loop goes **dormant** while no call is open on the
+connection. Because this transport holds its connection between flows, "no call
+open" is the ordinary state here and not an edge case — `idle_timeout` on its
+own therefore turns keepalive on and leaves it asleep for as long as no flow is
+using the connection, exactly as grpc-go does. A flow arriving on a dormant
+connection takes a ping out alongside its first request.
+
+`initial_windows_size` reaches the wire only *above* grpc-go's own default of
+65535. At or below it, no `SETTINGS_INITIAL_WINDOW_SIZE` entry is written and
+the connection runs on the default — which is also what grpc-go does, so the
+opening bytes match.
+
+#### An authority `http::uri::Authority` cannot hold is refused
+
+**One class of configuration xray-core dials and this client does not.** The
+`h2` crate reads `:authority` out of the request's `http::Uri` and nowhere
+else, and a `Uri`'s authority *is* an `http::uri::Authority`, so a value that
+type rejects is one no request can carry. Two whole classes fall in there and
+grpc-go sends both: any byte above `0x7f`, which makes an
+internationalized name such as `例え.jp` unsendable, and `%` anywhere in a host,
+which rules out grpc-go's own percent-escaped `host:port` fallback for such a
+destination. Both were checked on the wire against grpc-go v1.81.0.
+
+Such a name reaches the chain either as `grpcSettings.authority` or as the
+destination address a later branch derives the authority from, and the refusal
+happens when the outbound is built. Which of two messages you see depends on
+whose value it was:
+
+```text
+grpcSettings.authority `例え.jp` is not a valid HTTP/2 authority
+the gRPC :authority derived from settings.vnext[0].address `例え.jp` is not a valid HTTP/2 authority
+```
+
+The first is a string in the profile, which can be edited. The second is a
+value derived on the profile's behalf, so the message names the key that
+produced it rather than a key the config does not contain; the other two keys
+it can name are `streamSettings.tlsSettings.serverName` and the composed
+`settings.vnext[0].address and settings.vnext[0].port`.
+
+Writing the IDNA A-label (`xn--r8jz45g.jp`) instead is accepted, and is the
+workaround. Nothing here converts one for you: no IDNA implementation is in
+this workspace's dependency graph, and converting silently would put an
+authority on the wire that xray-core does not send.
 
 ### TLS ClientHello shaping
 
