@@ -2360,6 +2360,936 @@ mod stream_grpc_request_headers_tests {
     }
 }
 
+/// Our wire against the Go oracle's, one committed fixture at a time.
+///
+/// Every test here reads `tests/fixtures/grpc/`, which
+/// `tools/reality-oracle/grpc/grpc_wire.go` captures off one live grpc-go dial
+/// and `scripts/verify-oracle-fixtures.py` regenerates in CI's `go-oracles`
+/// job. Reading the committed copy rather than spawning `go run` is what lets
+/// these run in the plain `cargo test --workspace` job instead of behind
+/// `#[ignore]`; the regeneration is what stops the committed copy drifting
+/// away from what grpc-go now emits. Neither half can move alone, which is the
+/// same split `reality_rustls_tests` runs on.
+///
+/// **Three of the four artefacts are byte-exact and one is not**, and the test
+/// names say which. The preamble and both framing sets are compared byte for
+/// byte. The HEADERS block cannot be: `h2` and grpc-go disagree twice over on
+/// how to *encode* the same seven fields, so the field list is the bar and our
+/// own encoding is pinned separately — see
+/// [`the_first_headers_block_carries_the_oracles_fields_but_not_its_bytes`]
+/// and [`our_pseudo_header_order_is_pinned_where_it_diverges_from_grpc_gos`].
+mod stream_grpc_oracle_tests {
+    use std::pin::Pin;
+    use std::sync::{Arc, Mutex};
+    use std::task::{Context, Poll};
+    use std::time::Duration;
+
+    use h2::server;
+    use tokio::io::{duplex, AsyncRead, AsyncWrite, DuplexStream, ReadBuf};
+    use tokio::sync::oneshot;
+    use xray_transport::stream::{
+        encode_hunk, grpc_request_path, open_grpc_h2_stream, GrpcConfig, HunkDecoder, HunkMode,
+    };
+    use xray_transport::BoxedTransportStream;
+
+    const CONNECTION_PREAMBLE_JSON: &str =
+        include_str!("../../../tests/fixtures/grpc/connection_preamble.json");
+    const REQUEST_HEADERS_JSON: &str =
+        include_str!("../../../tests/fixtures/grpc/request_headers.json");
+    const HUNK_FRAMING_JSON: &str = include_str!("../../../tests/fixtures/grpc/hunk_framing.json");
+    const MULTI_HUNK_FRAMING_JSON: &str =
+        include_str!("../../../tests/fixtures/grpc/multi_hunk_framing.json");
+
+    /// A dial that stalls hangs the whole run, so each one is fenced the way
+    /// `stream_grpc_h2_tests` fences its exchanges.
+    const DEADLINE: Duration = Duration::from_secs(10);
+
+    /// RFC 9113 section 3.4, and `grpc@v1.81.0/internal/transport/
+    /// http_util.go:53`. Held as a constant so the frame reader can step over
+    /// it; the fixture's own copy is what
+    /// [`the_connection_preamble_matches_the_go_oracle_byte_for_byte`]
+    /// compares against.
+    const PREFACE: &[u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
+
+    const FRAME_HEADERS: u8 = 0x1;
+    const FRAME_SETTINGS: u8 = 0x4;
+    const FLAG_ACK: u8 = 0x1;
+    const FLAG_END_HEADERS: u8 = 0x4;
+    const FLAG_PADDED: u8 = 0x8;
+    const FLAG_PRIORITY: u8 = 0x20;
+    const FRAME_HEADER_LEN: usize = 9;
+
+    /// The first index HPACK's dynamic table occupies: entries 1 through 61
+    /// are the static table, and 62 upwards are whatever this connection has
+    /// already sent (RFC 7541 sections 2.3.3 and 6).
+    const FIRST_DYNAMIC_TABLE_INDEX: u64 = 62;
+
+    /// `payload_rule` as `grpc_wire.go:157` states it. The vectors record no
+    /// payload bytes — they are a literal suffix of `message_hex` — so this
+    /// string is the whole of the contract for rebuilding them, and a rule
+    /// that changed under us would otherwise be compared against silently
+    /// wrong input.
+    const PAYLOAD_RULE: &str = "payload[i] = i mod 256";
+    /// The same for `MultiHunk` (`grpc_wire.go:196`). The element index is in
+    /// the rule so that two elements of one length are not the same bytes.
+    const MULTI_PAYLOAD_RULE: &str = "payload[element][i] = (i + element) mod 256";
+
+    #[derive(serde::Deserialize)]
+    struct PreambleFixture {
+        preface_hex: String,
+        preface_text: String,
+        settings_frame_hex: String,
+        frames_before_first_headers: Vec<FrameDescriptor>,
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize)]
+    struct FrameDescriptor {
+        r#type: String,
+        flags: Vec<String>,
+        stream_id: u32,
+        payload_len: usize,
+    }
+
+    impl FrameDescriptor {
+        fn is_settings_ack(&self) -> bool {
+            self.r#type == "SETTINGS" && self.flags.iter().any(|flag| flag == "ACK")
+        }
+    }
+
+    #[derive(serde::Deserialize)]
+    struct HeadersFixture {
+        call: CallShape,
+        headers: Vec<HeaderField>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct CallShape {
+        service_name: String,
+        stream_name: String,
+        authority: String,
+        user_agent: String,
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Deserialize)]
+    struct HeaderField {
+        name: String,
+        value: String,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct FramingFixture {
+        payload_rule: String,
+        vectors: Vec<HunkVector>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct HunkVector {
+        payload_len: usize,
+        message_hex: String,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct MultiFramingFixture {
+        call: MultiCallShape,
+        payload_rule: String,
+        vectors: Vec<MultiHunkVector>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct MultiCallShape {
+        service_name: String,
+        stream_name: String,
+        path: String,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct MultiHunkVector {
+        element_lens: Vec<usize>,
+        message_hex: String,
+    }
+
+    fn request_headers_fixture() -> HeadersFixture {
+        serde_json::from_str(REQUEST_HEADERS_JSON).expect("the request headers fixture decodes")
+    }
+
+    /// The dial the oracle made, as this side's configuration.
+    ///
+    /// `user_agent` is the fixture's literal, put into the config as it stands
+    /// rather than through [`resolve_user_agent`](xray_transport::stream::resolve_user_agent).
+    /// That is the claim this block is allowed to make: the transport sends
+    /// the string it is handed. Xray's default resolves to a date-derived,
+    /// CPU-seeded Chrome UA that no fixture can pin without the version-drift
+    /// classifier the masquerade family carries, so the oracle dials a literal
+    /// on purpose (`grpc_wire.go:79-89`) and the table that maps `chrome`,
+    /// `golang` and the rest stays where it is already pinned, in
+    /// `stream_grpc_request_headers_tests`'
+    /// `the_user_agent_table_resolves_the_way_xrays_switch_does`.
+    fn oracle_config(call: &CallShape) -> GrpcConfig {
+        GrpcConfig {
+            service_name: call.service_name.clone(),
+            multi_mode: false,
+            authority: call
+                .authority
+                .parse()
+                .expect("the oracle dialled an authority"),
+            user_agent: call.user_agent.clone(),
+            idle_timeout_secs: 0,
+            health_check_timeout_secs: 0,
+            permit_without_stream: false,
+            initial_windows_size: 0,
+        }
+    }
+
+    /// The peer's end of a connection, and every byte the client sent it.
+    ///
+    /// The oracle taps the client's socket for the same reason
+    /// (`grpc_wire.go`, `recordingConn`): all four artefacts are about what a
+    /// client *writes*, and taking both the raw bytes and the decoded request
+    /// off one dial means recording on the way past. Only reads are recorded,
+    /// because a read on this end is a write on the client's.
+    struct RecordingIo {
+        peer: DuplexStream,
+        recorded: Arc<Mutex<Vec<u8>>>,
+    }
+
+    impl AsyncRead for RecordingIo {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &mut ReadBuf<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            let this = self.get_mut();
+            let before = buf.filled().len();
+            let outcome = Pin::new(&mut this.peer).poll_read(cx, buf);
+            if outcome.is_ready() {
+                this.recorded
+                    .lock()
+                    .expect("the recording mutex is not poisoned")
+                    .extend_from_slice(&buf.filled()[before..]);
+            }
+            outcome
+        }
+    }
+
+    impl AsyncWrite for RecordingIo {
+        fn poll_write(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<std::io::Result<usize>> {
+            Pin::new(&mut self.peer).poll_write(cx, buf)
+        }
+
+        fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Pin::new(&mut self.peer).poll_flush(cx)
+        }
+
+        fn poll_shutdown(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            Pin::new(&mut self.peer).poll_shutdown(cx)
+        }
+    }
+
+    /// One dial's opening bytes and the request the peer decoded out of them.
+    struct FirstCall {
+        written: Vec<u8>,
+        head: http::request::Parts,
+    }
+
+    /// Dials `config` on a connection of its own and returns its first call.
+    ///
+    /// **This harness never pools, and that is the point.** Only the first
+    /// stream on a connection has a virgin HPACK table: by stream 3 the
+    /// dynamic table holds `:authority`, `content-type`, `user-agent` and
+    /// `te`, and the block is mostly back-references. Comparing one of those
+    /// with the oracle's first block would be comparing two different things
+    /// and passing while asserting nothing.
+    /// [`open_grpc_h2_stream`] is the unpooled dial — it drops its
+    /// `SendRequest` so the connection dies with the one call — so a fresh
+    /// table is structural here rather than a matter of test ordering, and
+    /// [`the_compared_headers_block_is_the_first_one_on_the_connection`]
+    /// asserts it outright anyway.
+    async fn capture_the_first_call(config: &GrpcConfig) -> FirstCall {
+        let (client_io, peer_io) = duplex(64 * 1024);
+        let recorded = Arc::new(Mutex::new(Vec::new()));
+        let (send_head, head) = oneshot::channel();
+        tokio::spawn(serve_one_head(
+            RecordingIo {
+                peer: peer_io,
+                recorded: Arc::clone(&recorded),
+            },
+            send_head,
+        ));
+
+        let dial = async {
+            let stream = open_grpc_h2_stream(Box::new(client_io) as BoxedTransportStream, config)
+                .await
+                .expect("the POST opens");
+            let head = head.await.expect("the peer captured the request head");
+            drop(stream);
+            head
+        };
+        let head = tokio::time::timeout(DEADLINE, dial)
+            .await
+            .expect("the dial completes rather than stalling");
+
+        // Taken after the head arrived, which is what makes the bytes
+        // complete: the peer cannot have decoded the HEADERS block before
+        // `poll_read` handed it — and so recorded — every byte of it.
+        let written = recorded
+            .lock()
+            .expect("the recording mutex is not poisoned")
+            .clone();
+        FirstCall { written, head }
+    }
+
+    /// Reports the first request's head and then keeps the connection polled,
+    /// so the client's RST_STREAM and GOAWAY land instead of stalling.
+    async fn serve_one_head(io: RecordingIo, send_head: oneshot::Sender<http::request::Parts>) {
+        let mut connection = server::handshake(io).await.expect("server handshake");
+        let (request, respond) = connection
+            .accept()
+            .await
+            .expect("a call arrives")
+            .expect("a well-formed request");
+        let (head, body) = request.into_parts();
+        send_head.send(head).expect("the test is still waiting");
+
+        let _held = (body, respond);
+        while connection.accept().await.is_some() {}
+    }
+
+    /// One HTTP/2 frame, read the way the oracle's `readFrame` reads one.
+    struct Http2Frame<'a> {
+        kind: u8,
+        flags: u8,
+        stream_id: u32,
+        payload: &'a [u8],
+        raw: &'a [u8],
+    }
+
+    impl Http2Frame<'_> {
+        fn is_settings_ack(&self) -> bool {
+            self.kind == FRAME_SETTINGS && self.flags & FLAG_ACK != 0
+        }
+
+        fn describe(&self) -> FrameDescriptor {
+            FrameDescriptor {
+                r#type: frame_type_name(self.kind),
+                flags: describe_flags(self.kind, self.flags),
+                stream_id: self.stream_id,
+                payload_len: self.payload.len(),
+            }
+        }
+    }
+
+    /// RFC 9113 section 11.2. Anything unregistered is printed as its number
+    /// rather than guessed at, so a frame `h2` starts sending shows up as a
+    /// diff instead of a plausible-looking name — `frameTypeName` in the
+    /// oracle, for the same reason.
+    fn frame_type_name(kind: u8) -> String {
+        match kind {
+            0x0 => "DATA".to_owned(),
+            0x1 => "HEADERS".to_owned(),
+            0x2 => "PRIORITY".to_owned(),
+            0x3 => "RST_STREAM".to_owned(),
+            0x4 => "SETTINGS".to_owned(),
+            0x5 => "PUSH_PROMISE".to_owned(),
+            0x6 => "PING".to_owned(),
+            0x7 => "GOAWAY".to_owned(),
+            0x8 => "WINDOW_UPDATE".to_owned(),
+            0x9 => "CONTINUATION".to_owned(),
+            other => format!("UNKNOWN(0x{other:02x})"),
+        }
+    }
+
+    /// The oracle's `describeFlags`: only the one flag an opening burst can
+    /// carry is named, and any other bit is printed raw.
+    fn describe_flags(kind: u8, flags: u8) -> Vec<String> {
+        let mut named = Vec::new();
+        let mut remaining = flags;
+        if kind == FRAME_SETTINGS && flags & FLAG_ACK != 0 {
+            named.push("ACK".to_owned());
+            remaining &= !FLAG_ACK;
+        }
+        if remaining != 0 {
+            named.push(format!("0x{remaining:02x}"));
+        }
+        named
+    }
+
+    /// Every whole frame the client wrote after the preface.
+    ///
+    /// A frame still in flight when the tap was read is dropped rather than
+    /// reported, exactly as `parseCapture` drops one: everything asserted on
+    /// here is at or before the first HEADERS, which the peer had already
+    /// decoded.
+    fn frames_after_the_preface(written: &[u8]) -> Vec<Http2Frame<'_>> {
+        let mut rest = written
+            .strip_prefix(PREFACE)
+            .expect("the client opens with the HTTP/2 connection preface");
+        let mut frames = Vec::new();
+        while rest.len() >= FRAME_HEADER_LEN {
+            let length =
+                (usize::from(rest[0]) << 16) | (usize::from(rest[1]) << 8) | usize::from(rest[2]);
+            let total = FRAME_HEADER_LEN + length;
+            if rest.len() < total {
+                break;
+            }
+            frames.push(Http2Frame {
+                kind: rest[3],
+                flags: rest[4],
+                stream_id: u32::from_be_bytes([rest[5], rest[6], rest[7], rest[8]]) & !(1 << 31),
+                payload: &rest[FRAME_HEADER_LEN..total],
+                raw: &rest[..total],
+            });
+            rest = &rest[total..];
+        }
+        frames
+    }
+
+    /// The call's HEADERS frame: its stream id and its HPACK block.
+    fn first_headers_frame(written: &[u8]) -> (u32, &[u8]) {
+        let frames = frames_after_the_preface(written);
+        let headers = frames
+            .iter()
+            .find(|frame| frame.kind == FRAME_HEADERS)
+            .expect("the client opened a call");
+        assert_ne!(
+            headers.flags & FLAG_END_HEADERS,
+            0,
+            "the block spans CONTINUATION frames, which this test does not join"
+        );
+        assert_eq!(
+            headers.flags & (FLAG_PADDED | FLAG_PRIORITY),
+            0,
+            "the frame is padded or carries a priority section, which this test does not strip"
+        );
+        (headers.stream_id, headers.payload)
+    }
+
+    /// One HPACK representation, reduced to what these tests read off it.
+    ///
+    /// The names are never decoded, and do not need to be: `h2` huffman-codes
+    /// every literal string it writes (`h2-0.4.15/src/hpack/encoder.rs:
+    /// 216-224`), but it takes every *name* from the table by index, because
+    /// all seven fields of a gRPC request have their name there. So the field
+    /// a representation names is an index, and an index is all that
+    /// [`our_pseudo_header_order_is_pinned_where_it_diverges_from_grpc_gos`]
+    /// and [`the_compared_headers_block_is_the_first_one_on_the_connection`]
+    /// need. Values are stepped over by their length prefix.
+    #[derive(Debug)]
+    enum Representation {
+        /// `1xxxxxxx`: name and value both from the table.
+        Indexed { index: u64 },
+        /// A literal value, its name either from the table or spelled out.
+        Literal { name_index: Option<u64> },
+        /// `001xxxxx`: an instruction to the decoder's table that names no
+        /// field at all.
+        TableSizeUpdate,
+    }
+
+    impl Representation {
+        /// The table entry this representation names, if it names one.
+        fn table_index(&self) -> Option<u64> {
+            match self {
+                Representation::Indexed { index } => Some(*index),
+                Representation::Literal { name_index } => *name_index,
+                Representation::TableSizeUpdate => None,
+            }
+        }
+
+        /// The pseudo-header this representation names, if it names one.
+        ///
+        /// Static entries 1 through 7 are the request pseudo-headers, two of
+        /// them twice over: `:method` is 2 (`GET`) and 3 (`POST`), `:path` is
+        /// 4 (`/`) and 5 (`/index.html`), `:scheme` is 6 (`http`) and 7
+        /// (`https`) (RFC 7541 appendix A).
+        fn pseudo_header_name(&self) -> Option<&'static str> {
+            match self.table_index()? {
+                1 => Some(":authority"),
+                2 | 3 => Some(":method"),
+                4 | 5 => Some(":path"),
+                6 | 7 => Some(":scheme"),
+                _ => None,
+            }
+        }
+    }
+
+    /// Walks a HEADERS block into its representations, in order.
+    fn read_hpack_representations(block: &[u8]) -> Vec<Representation> {
+        let mut rest = block;
+        let mut representations = Vec::new();
+        while let Some(&first) = rest.first() {
+            // RFC 7541 section 6. Each form's index shares its first byte with
+            // the bits that pick the form, so the prefix width goes with it.
+            // `0000xxxx` (without indexing) and `0001xxxx` (never indexed) are
+            // two instructions to the decoder's table and one shape here.
+            let (literal, prefix_bits) = if first & 0b1000_0000 != 0 {
+                (false, 7)
+            } else if first & 0b1100_0000 == 0b0100_0000 {
+                (true, 6)
+            } else if first & 0b1110_0000 == 0b0010_0000 {
+                representations.push(Representation::TableSizeUpdate);
+                rest = read_hpack_integer(rest, 5).1;
+                continue;
+            } else {
+                (true, 4)
+            };
+
+            let (index, after_index) = read_hpack_integer(rest, prefix_bits);
+            rest = after_index;
+            if !literal {
+                representations.push(Representation::Indexed { index });
+                continue;
+            }
+
+            if index == 0 {
+                rest = skip_hpack_string(rest);
+            }
+            rest = skip_hpack_string(rest);
+            representations.push(Representation::Literal {
+                name_index: (index != 0).then_some(index),
+            });
+        }
+        representations
+    }
+
+    /// RFC 7541 section 5.1: a value that fills the prefix continues into as
+    /// many seven-bit groups as it needs.
+    fn read_hpack_integer(bytes: &[u8], prefix_bits: u32) -> (u64, &[u8]) {
+        let mask = (1u64 << prefix_bits) - 1;
+        let mut value = u64::from(bytes[0]) & mask;
+        let mut rest = &bytes[1..];
+        if value != mask {
+            return (value, rest);
+        }
+
+        let mut shift = 0;
+        loop {
+            let (&byte, tail) = rest
+                .split_first()
+                .expect("an HPACK integer runs past the end of the block");
+            rest = tail;
+            value += u64::from(byte & 0x7f) << shift;
+            shift += 7;
+            if byte & 0x80 == 0 {
+                return (value, rest);
+            }
+        }
+    }
+
+    /// Steps over one string literal, huffman-coded or not: the top bit of the
+    /// length byte says which, and the length is a seven-bit prefix integer
+    /// either way (RFC 7541 section 5.2).
+    fn skip_hpack_string(bytes: &[u8]) -> &[u8] {
+        let (length, rest) = read_hpack_integer(bytes, 7);
+        let length = usize::try_from(length).expect("an HPACK string length fits a usize");
+        assert!(
+            rest.len() >= length,
+            "an HPACK string runs past the end of the block"
+        );
+        &rest[length..]
+    }
+
+    /// The request the peer decoded, as the oracle records a field list: the
+    /// four pseudo-headers first because that is where HTTP/2 puts them, then
+    /// the ordinary ones.
+    fn decoded_fields(head: &http::request::Parts) -> Vec<HeaderField> {
+        let field = |name: &str, value: &str| HeaderField {
+            name: name.to_owned(),
+            value: value.to_owned(),
+        };
+        let mut fields = vec![
+            field(":method", head.method.as_str()),
+            field(
+                ":scheme",
+                head.uri.scheme_str().expect("the request carries a scheme"),
+            ),
+            field(
+                ":authority",
+                head.uri
+                    .authority()
+                    .expect("the request carries an authority")
+                    .as_str(),
+            ),
+            field(
+                ":path",
+                head.uri
+                    .path_and_query()
+                    .expect("the request carries a path")
+                    .as_str(),
+            ),
+        ];
+        for (name, value) in &head.headers {
+            fields.push(field(
+                name.as_str(),
+                value.to_str().expect("a printable header value"),
+            ));
+        }
+        fields
+    }
+
+    fn decode_hex(hex: &str) -> Vec<u8> {
+        assert!(
+            hex.len().is_multiple_of(2),
+            "a fixture hex string of odd length {}",
+            hex.len()
+        );
+        (0..hex.len())
+            .step_by(2)
+            .map(|index| {
+                u8::from_str_radix(&hex[index..index + 2], 16).expect("a fixture hex byte")
+            })
+            .collect()
+    }
+
+    /// [`PAYLOAD_RULE`], as `payloadOf` applies it.
+    fn payload_of(length: usize) -> Vec<u8> {
+        (0..length).map(|index| index as u8).collect()
+    }
+
+    /// [`MULTI_PAYLOAD_RULE`], as `multiPayloadOf` applies it.
+    fn multi_payload_of(element: usize, length: usize) -> Vec<u8> {
+        (0..length).map(|index| (index + element) as u8).collect()
+    }
+
+    /// Reads `tests/fixtures/grpc/connection_preamble.json`, which
+    /// `grpc_wire.go -wire connection_preamble` regenerates against live
+    /// grpc-go.
+    ///
+    /// **The one place the two clients agree to the byte.** Under Xray's
+    /// defaults grpc-go's opening burst is the 24-byte preface and an *empty*
+    /// SETTINGS frame: `initialWindowSize` reaches the wire only above
+    /// grpc-go's own default and `MaxHeaderListSize` only when a dial option
+    /// sets it (`grpc@v1.81.0/internal/transport/http2_client.go:433-451`),
+    /// and Xray configures neither by default. A default `h2` client writes
+    /// the same nine bytes, because `Settings::default()` leaves every field
+    /// `None` (`h2-0.4.15/src/frame/settings.rs:6-17`) and `handshake2`
+    /// buffers exactly that frame (`src/client.rs:1322-1325`). Nine bytes of
+    /// agreement is worth pinning precisely because it is so easy to lose: one
+    /// `Builder` knob applied unconditionally and the connection announces
+    /// itself.
+    ///
+    /// **The SETTINGS ACK the fixture also records is filtered out of both
+    /// sides.** It is a reply to the *server's* SETTINGS, not an initiative,
+    /// and where it falls relative to the call's HEADERS is timing rather than
+    /// shaping: grpc-go queues it before `newHTTP2Client` returns and so always
+    /// sends it first, while `h2`'s handshake deliberately does not wait for
+    /// the peer's SETTINGS (`h2-0.4.15/src/client.rs:1165-1166`), which leaves
+    /// our ACK racing the request. Comparing the burst without it still fails
+    /// on the thing worth catching — a WINDOW_UPDATE, a PRIORITY, a second
+    /// SETTINGS — while the byte comparison above covers the frame's contents.
+    #[tokio::test]
+    async fn the_connection_preamble_matches_the_go_oracle_byte_for_byte() {
+        let fixture: PreambleFixture =
+            serde_json::from_str(CONNECTION_PREAMBLE_JSON).expect("the preamble fixture decodes");
+        let call = capture_the_first_call(&oracle_config(&request_headers_fixture().call)).await;
+
+        let preface = decode_hex(&fixture.preface_hex);
+        assert_eq!(
+            preface,
+            fixture.preface_text.as_bytes(),
+            "the fixture's two spellings of the preface disagree"
+        );
+        assert_eq!(
+            call.written.get(..preface.len()),
+            Some(&preface[..]),
+            "the HTTP/2 connection preface"
+        );
+
+        let frames = frames_after_the_preface(&call.written);
+        let settings = frames
+            .first()
+            .expect("the client writes a frame after the preface");
+        assert_eq!(
+            settings.raw,
+            decode_hex(&fixture.settings_frame_hex),
+            "the client's own SETTINGS frame"
+        );
+
+        assert!(
+            frames.iter().any(|frame| frame.kind == FRAME_HEADERS),
+            "the capture never reached the call's HEADERS frame, so there is no burst to bound"
+        );
+        let ours: Vec<FrameDescriptor> = frames
+            .iter()
+            .take_while(|frame| frame.kind != FRAME_HEADERS)
+            .filter(|frame| !frame.is_settings_ack())
+            .map(Http2Frame::describe)
+            .collect();
+        let theirs: Vec<FrameDescriptor> = fixture
+            .frames_before_first_headers
+            .iter()
+            .filter(|frame| !frame.is_settings_ack())
+            .cloned()
+            .collect();
+        assert_eq!(
+            ours, theirs,
+            "the frames written before the first call, ACKs aside"
+        );
+    }
+
+    /// Reads `tests/fixtures/grpc/request_headers.json`, which
+    /// `grpc_wire.go -wire request_headers` regenerates against live grpc-go.
+    ///
+    /// **The fields and their values, not the bytes**, and the fixture is the
+    /// decoded field list for that reason. Our HPACK block differs from
+    /// grpc-go's twice over, and neither divergence is reachable without
+    /// forking `h2`:
+    ///
+    /// * it writes the pseudo-headers in the order its own `Pseudo` iterator
+    ///   yields them, method, scheme, authority, path
+    ///   (`h2-0.4.15/src/frame/headers.rs:704-731`), where grpc-go puts
+    ///   `:path` before `:authority`; and
+    /// * it encodes `:path` as a literal *without* indexing, because
+    ///   `skip_value_index` returns true for `Header::Path`
+    ///   (`h2-0.4.15/src/hpack/header.rs:189-208`, logic borrowed from
+    ///   nghttp2), where grpc-go indexes it incrementally.
+    ///
+    /// Both were measured against a live client when the header block was
+    /// written. What stops them drifting into a third shape that is neither
+    /// ours nor grpc-go's is
+    /// [`our_pseudo_header_order_is_pinned_where_it_diverges_from_grpc_gos`],
+    /// not this test.
+    ///
+    /// `user-agent` is the oracle's literal on both sides, which is the claim
+    /// this makes about it: the transport sends the string it is handed. See
+    /// [`oracle_config`] for why the fixture cannot carry Xray's default.
+    #[tokio::test]
+    async fn the_first_headers_block_carries_the_oracles_fields_but_not_its_bytes() {
+        let fixture = request_headers_fixture();
+        assert_eq!(
+            fixture.call.stream_name, "Tun",
+            "this test dials single mode, so the fixture has to be the `Tun` capture"
+        );
+        let recorded_path = fixture
+            .headers
+            .iter()
+            .find(|field| field.name == ":path")
+            .expect("the fixture records a :path")
+            .value
+            .clone();
+        assert_eq!(
+            recorded_path,
+            grpc_request_path(&fixture.call.service_name, HunkMode::Single),
+            "the RPC grpc-go named and the one our path builder derives"
+        );
+
+        let call = capture_the_first_call(&oracle_config(&fixture.call)).await;
+
+        // Sorted rather than compared in place: the order is the one thing
+        // here that legitimately differs, and it is asserted on its own.
+        let mut ours = decoded_fields(&call.head);
+        let mut theirs = fixture.headers;
+        ours.sort();
+        theirs.sort();
+        assert_eq!(ours, theirs, "the decoded field list grpc-go sends");
+    }
+
+    /// Reads `tests/fixtures/grpc/request_headers.json`, regenerated by
+    /// `grpc_wire.go -wire request_headers`.
+    ///
+    /// **Not a comparison — a pin on each side separately.** The two orders
+    /// are known to differ, so comparing them would only restate that. What a
+    /// set comparison cannot catch is our order drifting to a third one that
+    /// neither client emits, which an `h2` bump reordering the `Pseudo`
+    /// iterator (`h2-0.4.15/src/frame/headers.rs:704-731`) would do silently:
+    /// the fields would still all be there with the right values, and
+    /// [`the_first_headers_block_carries_the_oracles_fields_but_not_its_bytes`]
+    /// would still pass. The grpc-go side is pinned off the fixture for the
+    /// same reason the oracle bothers to record the order at all — a
+    /// divergence excused as known has to stay the one that was measured.
+    #[tokio::test]
+    async fn our_pseudo_header_order_is_pinned_where_it_diverges_from_grpc_gos() {
+        let fixture = request_headers_fixture();
+        let call = capture_the_first_call(&oracle_config(&fixture.call)).await;
+
+        let (_stream_id, block) = first_headers_frame(&call.written);
+        let ours: Vec<&str> = read_hpack_representations(block)
+            .iter()
+            .filter_map(Representation::pseudo_header_name)
+            .collect();
+        assert_eq!(
+            ours,
+            [":method", ":scheme", ":authority", ":path"],
+            "the order `h2` writes the pseudo-headers in"
+        );
+
+        let theirs: Vec<&str> = fixture
+            .headers
+            .iter()
+            .map(|field| field.name.as_str())
+            .filter(|name| name.starts_with(':'))
+            .collect();
+        assert_eq!(
+            theirs,
+            [":method", ":scheme", ":path", ":authority"],
+            "the order grpc-go writes them in, as the oracle recorded it"
+        );
+    }
+
+    /// The invariant the two header tests above stand on: the block they
+    /// compare is the *first* on its connection.
+    ///
+    /// Only a virgin HPACK table makes our block and the oracle's comparable.
+    /// The oracle's is stream 1 of a fresh connection, and a warmed one would
+    /// answer with something else entirely: `h2` indexes `:authority`,
+    /// `content-type`, `user-agent` and `te` incrementally, so by stream 3
+    /// most of the block is back-references into the dynamic table and the
+    /// field *set* is unchanged while the bytes are unrecognisable. A test
+    /// that let a pooled connection supply the block would pass while
+    /// comparing two different things.
+    ///
+    /// Both halves are asserted rather than assumed: the stream id is 1, and
+    /// every table index in the block is inside the static table, so the block
+    /// is decodable with no connection history at all.
+    #[tokio::test]
+    async fn the_compared_headers_block_is_the_first_one_on_the_connection() {
+        let call = capture_the_first_call(&oracle_config(&request_headers_fixture().call)).await;
+
+        let (stream_id, block) = first_headers_frame(&call.written);
+        assert_eq!(
+            stream_id, 1,
+            "the compared block has to be the connection's first stream"
+        );
+
+        let representations = read_hpack_representations(block);
+        assert_eq!(
+            representations.len(),
+            7,
+            "the block should hold one representation per field: {representations:?}"
+        );
+        for representation in &representations {
+            assert!(
+                representation
+                    .table_index()
+                    .is_none_or(|index| index < FIRST_DYNAMIC_TABLE_INDEX),
+                "the block reaches into the dynamic table, so it is not a fresh \
+                 connection's: {representation:?}"
+            );
+        }
+    }
+
+    /// Reads `tests/fixtures/grpc/hunk_framing.json`, which
+    /// `grpc_wire.go -wire hunk_framing` regenerates against live grpc-go.
+    ///
+    /// Each vector is one `hc.Send(&Hunk{Data: ...})` as it left the wire,
+    /// reassembled from the call's DATA frames, so the 16 KiB vector is one
+    /// message across two frames rather than two messages — which is why the
+    /// read side is asserted from the same bytes: a decoder that split on
+    /// frames rather than on the length prefix would come apart there and
+    /// nowhere else.
+    #[test]
+    fn the_hunk_framing_vectors_match_the_go_oracle_byte_for_byte() {
+        let fixture: FramingFixture =
+            serde_json::from_str(HUNK_FRAMING_JSON).expect("the hunk framing fixture decodes");
+        assert_eq!(
+            fixture.payload_rule, PAYLOAD_RULE,
+            "the oracle changed how it builds the payloads it does not record"
+        );
+
+        for vector in &fixture.vectors {
+            let payload = payload_of(vector.payload_len);
+            let expected = decode_hex(&vector.message_hex);
+
+            assert_eq!(
+                encode_hunk(&payload),
+                expected,
+                "the message for a {} byte payload",
+                vector.payload_len
+            );
+
+            let mut decoder = HunkDecoder::new(HunkMode::Single);
+            decoder.push(&expected);
+            assert_eq!(
+                decoder.next_payload().expect("a legal Hunk"),
+                Some(payload),
+                "the payload read back out of a {} byte message",
+                vector.payload_len
+            );
+            assert_eq!(decoder.buffered_len(), 0, "the message was consumed whole");
+        }
+    }
+
+    /// Reads `tests/fixtures/grpc/multi_hunk_framing.json`, which
+    /// `grpc_wire.go -wire multi_hunk_framing` regenerates against live
+    /// grpc-go.
+    ///
+    /// **The read side is the whole point of this fixture.** A `MultiHunk`
+    /// carrying one element marshals to the bytes a `Hunk` of that payload
+    /// does, so the write side has nothing new to say and only the vectors of
+    /// one element or none have a write counterpart at all: [`encode_hunk`]
+    /// emits one element per message by design, because `poll_write` is handed
+    /// one contiguous slice per call and holding a write back for a sibling
+    /// that may never come would buy a few bytes of protobuf overhead at the
+    /// cost of latency. What only the multi-element vectors can show is that
+    /// every element reaches the caller — and, in the same bytes, what a
+    /// single-mode decoder would silently do with them instead.
+    #[test]
+    fn the_multi_hunk_framing_vectors_match_the_go_oracle_byte_for_byte() {
+        let fixture: MultiFramingFixture = serde_json::from_str(MULTI_HUNK_FRAMING_JSON)
+            .expect("the multi hunk framing fixture decodes");
+        assert_eq!(
+            fixture.payload_rule, MULTI_PAYLOAD_RULE,
+            "the oracle changed how it builds the elements it does not record"
+        );
+        assert_eq!(
+            fixture.call.stream_name, "TunMulti",
+            "these vectors have to be the `TunMulti` capture"
+        );
+        assert_eq!(
+            fixture.call.path,
+            grpc_request_path(&fixture.call.service_name, HunkMode::Multi),
+            "the RPC grpc-go named and the one our path builder derives"
+        );
+
+        for vector in &fixture.vectors {
+            let elements: Vec<Vec<u8>> = vector
+                .element_lens
+                .iter()
+                .enumerate()
+                .map(|(element, length)| multi_payload_of(element, *length))
+                .collect();
+            let expected = decode_hex(&vector.message_hex);
+            let lengths = &vector.element_lens;
+
+            let mut decoder = HunkDecoder::new(HunkMode::Multi);
+            decoder.push(&expected);
+            assert_eq!(
+                decoder.next_payload().expect("a legal MultiHunk"),
+                Some(elements.concat()),
+                "every element of a MultiHunk of {lengths:?} reaches the caller, in order"
+            );
+            assert_eq!(decoder.buffered_len(), 0, "the message was consumed whole");
+
+            if elements.len() > 1 {
+                // The cost of getting the mode wrong, in grpc-go's own bytes:
+                // `Hunk.data` is a singular `bytes`, so protobuf-go assigns
+                // each occurrence over the last rather than appending
+                // (`protobuf@v1.36.11/internal/impl/codec_gen.go:5489-5500`),
+                // and a single-mode decoder on a `TunMulti` call hands the
+                // caller the tail of every message with nothing logged.
+                let mut wrong_mode = HunkDecoder::new(HunkMode::Single);
+                wrong_mode.push(&expected);
+                assert_eq!(
+                    wrong_mode.next_payload().expect("a legal Hunk"),
+                    elements.last().cloned(),
+                    "single mode over a MultiHunk of {lengths:?} keeps only the last element"
+                );
+            } else {
+                assert_eq!(
+                    encode_hunk(elements.first().map_or(&[][..], Vec::as_slice)),
+                    expected,
+                    "the message for a MultiHunk of {lengths:?}"
+                );
+            }
+        }
+    }
+}
+
 /// The pool and the dial seam: where a gRPC connection comes from, and what
 /// the connection-level settings put on the wire.
 ///
