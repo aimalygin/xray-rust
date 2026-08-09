@@ -93,10 +93,11 @@ binding, connector validation, and the Rust REALITY transport path.
 
 ## Go-oracle fixtures
 
-The fixtures under `tests/fixtures/reality` and `tests/fixtures/masquerade` are
-what pins our ClientHello and masquerade-header shaping to the Go reference
-implementation, and the Rust suite asserts against them without ever running
-the oracles that produced them. This replays every oracle and compares:
+The fixtures under `tests/fixtures/reality`, `tests/fixtures/masquerade` and
+`tests/fixtures/grpc` are what pins our ClientHello shaping, masquerade headers
+and gRPC wire shape to the Go reference implementations, and the Rust suite
+asserts against them without ever running the oracles that produced them. This
+replays every oracle and compares:
 
 ```sh
 bash scripts/verify-oracle-fixtures.sh
@@ -114,6 +115,40 @@ draw from a CPU-seeded PRNG, so `tests/fixtures/masquerade/headers_*.json`
 report `drift` on any other host. Header keys, their order, and every value the
 draw does not reach are still checked strictly; anything left unverified is
 named in the output.
+
+### The gRPC oracle
+
+`tools/reality-oracle/grpc/grpc_wire.go` makes one real gRPC dial through
+grpc-go v1.81.0 over an in-memory pipe whose client end is tapped, opens `Tun`
+and then `TunMulti` on it, and reads everything the client wrote back as HTTP/2
+frames. All four fixtures come off that one connection rather than from four
+separate transcriptions, and each claims a different amount:
+
+| Fixture | What it pins |
+| --- | --- |
+| `connection_preamble.json` | The 24-byte client preface and the opening SETTINGS frame, byte for byte, plus every frame written before the first HEADERS so that a grpc-go adding one fails the check |
+| `request_headers.json` | The first call's HEADERS as a decoded field list in order — not the HPACK bytes, which diverge in three known places; see the divergences in [status](status.md) |
+| `hunk_framing.json` | Each `Tun` message as it left the wire, byte for byte, reassembled across DATA frames |
+| `multi_hunk_framing.json` | The same for `TunMulti`, with mostly multi-element `MultiHunk` messages — the shape a single-element writer cannot produce — and the `:path` read back off the call's own HEADERS |
+
+The oracle lives in a Go module of its own. Both `google.golang.org/grpc` and
+xray-core raise the root module's `golang.org/x/crypto`, and uTLS compiled
+against a different `x/crypto` emits different ClientHello bytes, which would
+break the committed REALITY fixtures. Read the comment in that directory's
+`go.mod` before moving it.
+
+`scripts/verify-oracle-fixtures.sh` regenerates and compares all four, so
+running the oracle by hand is only needed when changing what it captures:
+
+```sh
+go run -C tools/reality-oracle/grpc -tags reality_oracle_grpc_wire . \
+  -wire connection_preamble \
+  -check ../../../tests/fixtures/grpc/connection_preamble.json
+```
+
+`-C` moves Go rather than the shell, so `-check` takes a path relative to the
+oracle's directory while a redirect would still be relative to the repository
+root.
 
 ## Local Xray-core interoperability
 
@@ -151,8 +186,39 @@ cargo test --locked -p xray-core-rs \
 
 These tests generate loopback server/client configurations and ephemeral TLS or
 REALITY test material. They cover VLESS TCP, TLS, TLS+Vision, REALITY+Vision,
-selected fingerprints, and parallel flows. They do not establish compatibility
-with every Xray-core revision or configuration.
+selected fingerprints, parallel flows, and the WebSocket, HTTPUpgrade and gRPC
+stream transports. They do not establish compatibility with every Xray-core
+revision or configuration.
+
+**No CI job runs any of them.** They are `#[ignore]`d, and the Rust job runs
+`cargo test --workspace --all-targets --locked` without `--ignored`, so every
+scenario below is evidence only once someone has run it locally and said so.
+
+### gRPC interoperability
+
+Five ignored scenarios reach a real Xray gRPC inbound. Run them together with:
+
+```sh
+XRAY_CORE_CHECKOUT="$XRAY_CORE_CHECKOUT" \
+cargo test --locked -p xray-core-rs \
+  --test local_xray_interop_tests grpc -- --ignored --nocapture
+```
+
+| Scenario | What it adds |
+| --- | --- |
+| `..._vless_grpc` | Plaintext h2c, and a `serviceName` with a space in it, so both ends have to agree on Go's `url.PathEscape` |
+| `..._vless_grpc_tls` | TLS under gRPC. The ClientHello has to offer `h2`, because a gRPC inbound closes a connection that negotiates no ALPN — and does it silently, so the failure arrives as a bare EOF |
+| `..._vless_grpc_reality` | REALITY under gRPC, the pairing ws and httpupgrade are refused |
+| `rust_socks_client_reads_a_server_greeting_...grpc` | A tunnel whose *peer* speaks first, which every echo scenario hides: a write that is reported accepted before `h2` has taken it deadlocks here and nowhere else |
+| `..._grpc_multi_mode` | A megabyte through `multiMode`, which is the only way to make the server batch several elements into one `MultiHunk` and so the only end-to-end cover for the multi-element read path |
+
+The REALITY scenario dials a live cover origin (`www.google.com:443`) during
+its warm-up, so it needs outbound network access on top of the Go toolchain and
+the checkout. REALITY-fronted scenarios in this suite have been observed to
+fail in a full sequential `--ignored` run of every test while passing in
+isolation and as a filtered subset — a live origin and ephemeral-port
+contention, not a regression — so read a failure there against a subset run
+before believing it.
 
 If the checkout is placed at `./Xray-core`, the lightweight default-suite smoke
 test also detects it. Set `XRAY_RUST_REQUIRE_XRAY_CORE=1` to make absence of
