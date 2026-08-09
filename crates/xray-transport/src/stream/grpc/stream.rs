@@ -13,6 +13,7 @@
 use std::future::Future;
 use std::io;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{ready, Context, Poll};
 
 use bytes::Bytes;
@@ -102,14 +103,17 @@ pub struct GrpcStream {
     send_closed: bool,
     /// Keeps the connection task alive for as long as the call is: h2 reads
     /// and writes nothing unless that task is polled.
-    driver: H2ConnectionDriver,
+    ///
+    /// Shared rather than owned, because a pooled connection carries many
+    /// calls at once and the last of them to go is not knowable from here.
+    driver: Arc<H2ConnectionDriver>,
 }
 
 impl GrpcStream {
     pub(super) fn new(
         response: ResponseFuture,
         uplink: SendStream<Bytes>,
-        driver: H2ConnectionDriver,
+        driver: Arc<H2ConnectionDriver>,
     ) -> Self {
         Self {
             downlink: Downlink::Awaiting(response),

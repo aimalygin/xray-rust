@@ -2208,3 +2208,623 @@ mod stream_grpc_request_headers_tests {
         }
     }
 }
+
+/// The pool and the dial seam: where a gRPC connection comes from, and what
+/// the connection-level settings put on the wire.
+///
+/// These run over a loopback `TcpListener` rather than a `duplex` pair,
+/// because the thing under test is `TransportDialer::connect_stream` — the one
+/// seam every transport shares, and the only one that reaches Android's
+/// `VpnService.protect(fd)`. A test that handed the pool a socket directly
+/// would prove nothing about where the socket came from.
+mod stream_grpc_pool_tests {
+    use std::future::poll_fn;
+    use std::net::SocketAddr;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use bytes::Bytes;
+    use h2::server::{self, SendResponse};
+    use h2::{Reason, RecvStream, SendStream};
+    use http::{HeaderMap, Response};
+    use tokio::io::{duplex, AsyncReadExt, AsyncWriteExt, DuplexStream};
+    use tokio::net::{TcpListener, TcpStream};
+    use xray_routing::{Network, Target, TargetAddr};
+    use xray_transport::stream::{
+        open_grpc_h2_stream, resolve_keepalive, GrpcConfig, GrpcTransport, TransportLayer,
+    };
+    use xray_transport::{BoxedTransportStream, ConnectorConfig, TransportDialer};
+
+    /// Every test here can stall rather than fail, so each is fenced by a
+    /// deadline the way `stream_grpc_h2_tests` is.
+    const DEADLINE: Duration = Duration::from_secs(10);
+    /// RFC 9113 3.4.
+    const PREFACE: &[u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
+    /// RFC 9113 6.5.2.
+    const SETTINGS_INITIAL_WINDOW_SIZE: u16 = 0x4;
+    const SETTINGS_FRAME: u8 = 0x4;
+    const PING_FRAME: u8 = 0x6;
+
+    async fn within_deadline<F: std::future::Future>(future: F) -> F::Output {
+        tokio::time::timeout(DEADLINE, future)
+            .await
+            .expect("the exchange completes rather than stalling")
+    }
+
+    fn config() -> GrpcConfig {
+        GrpcConfig {
+            service_name: "xray.grpc".to_owned(),
+            multi_mode: false,
+            authority: "grpc.example.com".parse().expect("a literal authority"),
+            user_agent: "grpc-go/1.81.0".to_owned(),
+            idle_timeout_secs: 0,
+            health_check_timeout_secs: 0,
+            permit_without_stream: false,
+            initial_windows_size: 0,
+        }
+    }
+
+    /// A dialer with no REALITY engine, because every dial here is
+    /// `ConnectorConfig::Tcp`: the pool's job is to reach `connect_resolved`,
+    /// and which security layer that picks is not this block's question.
+    fn dialer() -> TransportDialer {
+        TransportDialer::system().expect("a system dialer")
+    }
+
+    async fn open_flow(
+        dialer: &TransportDialer,
+        transport: &TransportLayer,
+        addr: SocketAddr,
+    ) -> BoxedTransportStream {
+        let target = Target::new(TargetAddr::Ip(addr.ip()), addr.port(), Network::Tcp);
+        dialer
+            .connect_stream(&ConnectorConfig::Tcp, transport, &target, &[addr], None)
+            .await
+            .expect("the flow opens")
+    }
+
+    /// Writes `payload` and reads exactly that many bytes back off the echo.
+    ///
+    /// The flush is not decoration: `poll_write` hands h2 whatever the
+    /// flow-control window will take and leaves the rest queued for the next
+    /// poll, and the first write on a fresh stream is granted no capacity at
+    /// all until the connection has been polled once. The relay flushes for
+    /// the same reason (`crates/xray-core-rs/src/policy.rs:196-220`).
+    async fn round_trip(stream: &mut BoxedTransportStream, payload: &[u8]) {
+        stream.write_all(payload).await.expect("the flow writes");
+        stream.flush().await.expect("the flow flushes");
+        let mut echoed = vec![0; payload.len()];
+        stream
+            .read_exact(&mut echoed)
+            .await
+            .expect("the flow reads its echo back");
+        assert_eq!(echoed, payload, "a flow reads back its own bytes");
+    }
+
+    /// Ends a flow the way a relay does: half-close, drain, drop.
+    async fn end_flow(mut stream: BoxedTransportStream) {
+        stream.shutdown().await.expect("the flow half-closes");
+        let mut rest = Vec::new();
+        stream
+            .read_to_end(&mut rest)
+            .await
+            .expect("the call ends cleanly");
+    }
+
+    /// What the peer does once its first call has finished.
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum AfterFirstCall {
+        KeepServing,
+        /// The `GOAWAY(NO_ERROR)` of a graceful shutdown, which h2 resolves the
+        /// client's connection future as `Ok(())` for.
+        GoAwayGracefully,
+        /// `GOAWAY(INTERNAL_ERROR)`, which the client's driver reports as an
+        /// error instead.
+        GoAwayWithAnError,
+    }
+
+    impl AfterFirstCall {
+        fn reason(self) -> Option<Reason> {
+            match self {
+                Self::KeepServing => None,
+                Self::GoAwayGracefully => Some(Reason::NO_ERROR),
+                Self::GoAwayWithAnError => Some(Reason::INTERNAL_ERROR),
+            }
+        }
+    }
+
+    /// A loopback gRPC peer that counts the TCP connections it accepts.
+    ///
+    /// The count is the whole point: it is the number of times the pool
+    /// decided it had nothing to hand out, and it is observable only because
+    /// the dial goes through a real socket.
+    ///
+    /// Only the *first* connection is walked away from. The replacement the
+    /// pool dials serves normally, so a test that ends on it is asserting the
+    /// recovery rather than the failure over again.
+    struct GrpcPeer {
+        addr: SocketAddr,
+        accepted: Arc<AtomicUsize>,
+    }
+
+    impl GrpcPeer {
+        async fn spawn(after_first_call: AfterFirstCall) -> Self {
+            let listener = TcpListener::bind(("127.0.0.1", 0))
+                .await
+                .expect("a loopback listener");
+            let addr = listener.local_addr().expect("the listener's address");
+            let accepted = Arc::new(AtomicUsize::new(0));
+            let counter = Arc::clone(&accepted);
+            tokio::spawn(async move {
+                let mut behaviour = after_first_call;
+                while let Ok((socket, _)) = listener.accept().await {
+                    counter.fetch_add(1, Ordering::SeqCst);
+                    tokio::spawn(serve_grpc_connection(socket, behaviour));
+                    behaviour = AfterFirstCall::KeepServing;
+                }
+            });
+            Self { addr, accepted }
+        }
+
+        fn accepted(&self) -> usize {
+            self.accepted.load(Ordering::SeqCst)
+        }
+    }
+
+    /// Serves every call the connection carries, echoing each `Hunk` back.
+    async fn serve_grpc_connection(socket: TcpStream, after_first_call: AfterFirstCall) {
+        let mut connection = server::handshake(socket).await.expect("server handshake");
+        let mut served_one = false;
+        while let Some(accepted) = connection.accept().await {
+            let (request, respond) = accepted.expect("a well-formed request");
+            let call = tokio::spawn(echo_call(request.into_body(), respond));
+
+            let shutdown = if served_one {
+                None
+            } else {
+                after_first_call.reason()
+            };
+            served_one = true;
+            let Some(shutdown) = shutdown else { continue };
+
+            // `accept` is the only thing that polls this connection, so the
+            // call has to be raced against it rather than awaited inline.
+            tokio::select! {
+                accepted = connection.accept() => {
+                    assert!(accepted.is_none(), "a shutting-down peer serves one call");
+                }
+                finished = call => finished.expect("the call handler does not panic"),
+            }
+            if shutdown == Reason::NO_ERROR {
+                connection.graceful_shutdown();
+            } else {
+                connection.abrupt_shutdown(shutdown);
+            }
+            while connection.accept().await.is_some() {}
+            return;
+        }
+    }
+
+    /// Sends every DATA frame straight back, then closes with `grpc-status: 0`.
+    async fn echo_call(mut body: RecvStream, mut respond: SendResponse<Bytes>) {
+        let mut send = None;
+        while let Some(chunk) = body.data().await {
+            let Ok(chunk) = chunk else { return };
+            body.flow_control()
+                .release_capacity(chunk.len())
+                .expect("release the client's window");
+            let send = match send {
+                Some(ref mut send) => send,
+                None => send.insert(
+                    respond
+                        .send_response(grpc_response(), false)
+                        .expect("respond"),
+                ),
+            };
+            send_all(send, chunk).await;
+        }
+
+        let mut send = match send {
+            Some(send) => send,
+            None => respond
+                .send_response(grpc_response(), false)
+                .expect("respond"),
+        };
+        let mut trailers = HeaderMap::new();
+        trailers.insert("grpc-status", "0".parse().expect("a legal header value"));
+        let _ = send.send_trailers(trailers);
+    }
+
+    fn grpc_response() -> Response<()> {
+        Response::builder()
+            .status(200)
+            .header("content-type", "application/grpc")
+            .body(())
+            .expect("a well-formed response")
+    }
+
+    async fn send_all(send: &mut SendStream<Bytes>, mut chunk: Bytes) {
+        while !chunk.is_empty() {
+            send.reserve_capacity(chunk.len());
+            let Some(Ok(granted)) = poll_fn(|cx| send.poll_capacity(cx)).await else {
+                return;
+            };
+            let take = granted.min(chunk.len());
+            send.send_data(chunk.split_to(take), false)
+                .expect("send data");
+        }
+    }
+
+    /// Spins until the pool has nothing to hand out.
+    ///
+    /// A `GOAWAY` reaches the client asynchronously: the driver task has to be
+    /// scheduled, parse the frame and resolve before `is_finished` flips.
+    /// Without this the next flow races that and reuses a connection the peer
+    /// has already walked away from.
+    async fn until_the_pool_is_empty(transport: &GrpcTransport) {
+        within_deadline(async {
+            while transport.holds_a_live_connection().await {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await;
+    }
+
+    /// Eight flows arrive together, one connection carries them all.
+    ///
+    /// Without single-flighting each of the eight misses the empty pool, dials,
+    /// and pays its own handshake — and seven of the eight connections then
+    /// leak, because only one can be the pooled one. That is the exact cost
+    /// pooling exists to remove, so the count is the test.
+    #[tokio::test]
+    async fn eight_concurrent_first_flows_open_exactly_one_connection() {
+        let peer = GrpcPeer::spawn(AfterFirstCall::KeepServing).await;
+        let dialer = dialer();
+        let transport = TransportLayer::Grpc(GrpcTransport::new(config()));
+
+        let flows: Vec<_> = (0..8u8)
+            .map(|index| {
+                let dialer = dialer.clone();
+                let transport = transport.clone();
+                let addr = peer.addr;
+                tokio::spawn(async move {
+                    let mut flow = open_flow(&dialer, &transport, addr).await;
+                    round_trip(&mut flow, &vec![index; 4096]).await;
+                    end_flow(flow).await;
+                })
+            })
+            .collect();
+
+        within_deadline(async {
+            for flow in flows {
+                flow.await.expect("no flow panics");
+            }
+        })
+        .await;
+
+        assert_eq!(peer.accepted(), 1, "one connection carries every flow");
+    }
+
+    /// Two calls at once on the pooled connection, neither reading the other's
+    /// bytes.
+    #[tokio::test]
+    async fn two_concurrent_flows_multiplex_without_interleaving() {
+        let peer = GrpcPeer::spawn(AfterFirstCall::KeepServing).await;
+        let dialer = dialer();
+        let transport = TransportLayer::Grpc(GrpcTransport::new(config()));
+
+        within_deadline(async {
+            let mut first = open_flow(&dialer, &transport, peer.addr).await;
+            let mut second = open_flow(&dialer, &transport, peer.addr).await;
+
+            let ones = vec![1u8; 8192];
+            let twos = vec![2u8; 8192];
+            first.write_all(&ones).await.expect("the first flow writes");
+            second
+                .write_all(&twos)
+                .await
+                .expect("the second flow writes");
+            first.flush().await.expect("the first flow flushes");
+            second.flush().await.expect("the second flow flushes");
+
+            let mut from_first = vec![0; ones.len()];
+            let mut from_second = vec![0; twos.len()];
+            first
+                .read_exact(&mut from_first)
+                .await
+                .expect("the first flow reads");
+            second
+                .read_exact(&mut from_second)
+                .await
+                .expect("the second flow reads");
+
+            assert_eq!(from_first, ones, "the first flow's own bytes");
+            assert_eq!(from_second, twos, "the second flow's own bytes");
+        })
+        .await;
+
+        assert_eq!(peer.accepted(), 1, "both calls ran on one connection");
+    }
+
+    /// A `GOAWAY(NO_ERROR)` is the case a pool gets wrong by checking only for
+    /// errors: h2 resolves the driver as `Ok(())`
+    /// (`h2-0.4.15/src/proto/connection.rs:216-235`), and a pool that reads
+    /// that as health hands out a connection the peer has closed.
+    #[tokio::test]
+    async fn a_graceful_goaway_retires_the_pooled_connection() {
+        let peer = GrpcPeer::spawn(AfterFirstCall::GoAwayGracefully).await;
+        let dialer = dialer();
+        let transport = TransportLayer::Grpc(GrpcTransport::new(config()));
+        let TransportLayer::Grpc(grpc) = &transport else {
+            panic!("the transport under test is gRPC");
+        };
+
+        within_deadline(async {
+            let mut first = open_flow(&dialer, &transport, peer.addr).await;
+            round_trip(&mut first, b"first").await;
+            end_flow(first).await;
+        })
+        .await;
+
+        until_the_pool_is_empty(grpc).await;
+
+        within_deadline(async {
+            let mut second = open_flow(&dialer, &transport, peer.addr).await;
+            round_trip(&mut second, b"second").await;
+            end_flow(second).await;
+        })
+        .await;
+
+        assert_eq!(peer.accepted(), 2, "the retired connection was replaced");
+    }
+
+    /// The other half of the same rule: a driver that ends in `Err` is retired
+    /// too.
+    #[tokio::test]
+    async fn a_driver_that_errored_retires_the_pooled_connection() {
+        let peer = GrpcPeer::spawn(AfterFirstCall::GoAwayWithAnError).await;
+        let dialer = dialer();
+        let transport = TransportLayer::Grpc(GrpcTransport::new(config()));
+        let TransportLayer::Grpc(grpc) = &transport else {
+            panic!("the transport under test is gRPC");
+        };
+
+        within_deadline(async {
+            let mut first = open_flow(&dialer, &transport, peer.addr).await;
+            round_trip(&mut first, b"first").await;
+            // Dropped rather than half-closed and drained, because an abrupt
+            // `GOAWAY` discards whatever was queued behind it — the peer's
+            // trailers included — so there is no clean end of call to wait
+            // for. That is the shape of a peer that went away mid-connection,
+            // which is what this test is about.
+            drop(first);
+        })
+        .await;
+
+        until_the_pool_is_empty(grpc).await;
+
+        within_deadline(async {
+            let mut second = open_flow(&dialer, &transport, peer.addr).await;
+            round_trip(&mut second, b"second").await;
+            end_flow(second).await;
+        })
+        .await;
+
+        assert_eq!(peer.accepted(), 2, "the retired connection was replaced");
+    }
+
+    /// `initialWindowsSize` passes three independent gates in grpc-go before a
+    /// byte of it reaches the wire, and only the third is about the wire.
+    ///
+    /// The dial option is attached above zero
+    /// (`Xray-core/transport/internet/grpc/dial.go:177-179`); the transport
+    /// adopts the value only at `defaultWindowSize` or more
+    /// (`grpc@v1.81.0/internal/transport/http2_client.go:383-385`, with
+    /// `defaultWindowSize = 65535` at `internal/transport/defaults.go:28`);
+    /// and a `SETTINGS_INITIAL_WINDOW_SIZE` entry is written only when the
+    /// adopted value differs from that default (`http2_client.go:435-447`).
+    /// 30000 is stopped by the second gate and 65535 by the third, so the three
+    /// collapse to one condition: 65536 or more.
+    ///
+    /// The frame is read off the socket rather than the builder inspected,
+    /// because the builder is not what a censor sees.
+    #[tokio::test]
+    async fn only_a_window_of_65536_or_more_puts_a_settings_entry_on_the_wire() {
+        for (window, expected) in [
+            (0u32, Vec::new()),
+            (30_000, Vec::new()),
+            (65_535, Vec::new()),
+            (
+                1_048_576,
+                vec![(SETTINGS_INITIAL_WINDOW_SIZE, 1_048_576u32)],
+            ),
+        ] {
+            let settings = within_deadline(client_settings_for_window(window)).await;
+            assert_eq!(settings, expected, "initialWindowsSize {window}");
+        }
+    }
+
+    /// The SETTINGS frame the client opens `window` with.
+    async fn client_settings_for_window(window: u32) -> Vec<(u16, u32)> {
+        let (client_io, mut server_io) = duplex(64 * 1024);
+        let mut config = config();
+        config.initial_windows_size = window;
+
+        // Nothing answers the dial, and nothing has to: h2 flushes the preface
+        // and its SETTINGS without waiting for the peer's
+        // (`h2-0.4.15/src/client.rs:1305-1350`). The dial is held rather than
+        // dropped so the connection is not torn down mid-read.
+        let dial = tokio::spawn(async move {
+            let _held = open_grpc_h2_stream(Box::new(client_io) as BoxedTransportStream, &config)
+                .await
+                .expect("the POST opens");
+            std::future::pending::<()>().await;
+        });
+
+        let mut preface = [0u8; PREFACE.len()];
+        server_io
+            .read_exact(&mut preface)
+            .await
+            .expect("the client preface");
+        assert_eq!(preface, PREFACE, "the connection preface");
+
+        let frame = read_frame(&mut server_io).await;
+        assert_eq!(frame.kind, SETTINGS_FRAME, "the frame behind the preface");
+        assert_eq!(frame.stream, 0, "SETTINGS is a connection-level frame");
+        dial.abort();
+
+        parse_settings(&frame.payload)
+    }
+
+    struct Frame {
+        kind: u8,
+        stream: u32,
+        payload: Vec<u8>,
+    }
+
+    /// One HTTP/2 frame off the wire (RFC 9113 4.1).
+    async fn read_frame(io: &mut DuplexStream) -> Frame {
+        let mut header = [0u8; 9];
+        io.read_exact(&mut header).await.expect("a frame header");
+        let length = u32::from_be_bytes([0, header[0], header[1], header[2]]) as usize;
+        let mut payload = vec![0; length];
+        io.read_exact(&mut payload).await.expect("a frame payload");
+        Frame {
+            kind: header[3],
+            stream: u32::from_be_bytes([header[5] & 0x7f, header[6], header[7], header[8]]),
+            payload,
+        }
+    }
+
+    fn parse_settings(payload: &[u8]) -> Vec<(u16, u32)> {
+        assert_eq!(payload.len() % 6, 0, "SETTINGS carries six-byte entries");
+        payload
+            .chunks_exact(6)
+            .map(|entry| {
+                (
+                    u16::from_be_bytes([entry[0], entry[1]]),
+                    u32::from_be_bytes([entry[2], entry[3], entry[4], entry[5]]),
+                )
+            })
+            .collect()
+    }
+
+    /// Keepalive is off under Xray's defaults and on if *any* of the three
+    /// settings is set — a three-way OR at
+    /// `Xray-core/transport/internet/grpc/dial.go:169-175`, which is why
+    /// `permitWithoutStream` alone turns it on with both durations left at
+    /// zero.
+    #[test]
+    fn keepalive_is_off_only_while_all_three_settings_are() {
+        assert_eq!(
+            resolve_keepalive(&config()),
+            None,
+            "Xray's defaults ask for no keepalive"
+        );
+
+        for (idle, health, permit) in [(1, 0, false), (0, 1, false), (0, 0, true)] {
+            let mut config = config();
+            config.idle_timeout_secs = idle;
+            config.health_check_timeout_secs = health;
+            config.permit_without_stream = permit;
+            assert!(
+                resolve_keepalive(&config).is_some(),
+                "idleTimeout {idle}, healthCheckTimeout {health}, permitWithoutStream {permit}"
+            );
+        }
+    }
+
+    /// `WithKeepaliveParams` raises anything under ten seconds to ten before
+    /// the transport ever sees it (`grpc@v1.81.0/dialoptions.go:561-569`,
+    /// `internal/internal.go:40-42`), so a zero `idleTimeout` that only got
+    /// here because `permitWithoutStream` opened the gate pings every ten
+    /// seconds rather than never.
+    #[test]
+    fn a_keepalive_time_under_ten_seconds_is_raised_to_ten() {
+        for (idle, expected) in [
+            (0u32, 10u64),
+            (1, 10),
+            (9, 10),
+            (10, 10),
+            (11, 11),
+            (600, 600),
+        ] {
+            let mut config = config();
+            config.idle_timeout_secs = idle;
+            config.permit_without_stream = true;
+            let keepalive = resolve_keepalive(&config).expect("the gate is open");
+            assert_eq!(
+                keepalive.time,
+                Duration::from_secs(expected),
+                "idleTimeout {idle}"
+            );
+        }
+    }
+
+    /// An unset `healthCheckTimeout` is grpc-go's twenty seconds, not zero:
+    /// the transport fills a zero `Timeout` in with
+    /// `defaultClientKeepaliveTimeout`
+    /// (`grpc@v1.81.0/internal/transport/http2_client.go:268-270`,
+    /// `internal/transport/defaults.go:33`). A zero here would fail every
+    /// ping the instant it was sent.
+    #[test]
+    fn an_unset_health_check_timeout_is_grpc_gos_twenty_seconds() {
+        let mut config = config();
+        config.permit_without_stream = true;
+        assert_eq!(
+            resolve_keepalive(&config)
+                .expect("the gate is open")
+                .timeout,
+            Duration::from_secs(20)
+        );
+
+        config.health_check_timeout_secs = 7;
+        assert_eq!(
+            resolve_keepalive(&config)
+                .expect("the gate is open")
+                .timeout,
+            Duration::from_secs(7)
+        );
+    }
+
+    /// The resolved interval reaches the wire, and it is the clamped one.
+    ///
+    /// `idleTimeout: 1` asks for a ping a second; grpc-go's floor makes it ten,
+    /// so the first PING must not arrive before then. Time is paused, so the
+    /// ten seconds cost nothing: the runtime jumps the clock once every task
+    /// is parked.
+    #[tokio::test(start_paused = true)]
+    async fn a_keepalive_connection_pings_at_the_clamped_interval() {
+        let (client_io, mut server_io) = duplex(64 * 1024);
+        let mut config = config();
+        config.idle_timeout_secs = 1;
+
+        let dial = tokio::spawn(async move {
+            let _held = open_grpc_h2_stream(Box::new(client_io) as BoxedTransportStream, &config)
+                .await
+                .expect("the POST opens");
+            std::future::pending::<()>().await;
+        });
+
+        let started = tokio::time::Instant::now();
+        let mut preface = [0u8; PREFACE.len()];
+        server_io
+            .read_exact(&mut preface)
+            .await
+            .expect("the client preface");
+        loop {
+            let frame = read_frame(&mut server_io).await;
+            if frame.kind == PING_FRAME {
+                break;
+            }
+        }
+        let waited = started.elapsed();
+        dial.abort();
+
+        assert!(
+            waited >= Duration::from_secs(10),
+            "the first ping waited {waited:?}, not the ten seconds grpc-go clamps to"
+        );
+    }
+}

@@ -5,10 +5,12 @@ mod config;
 mod framing;
 mod h2client;
 mod path;
+mod pool;
 mod stream;
 
-pub use config::{resolve_user_agent, Authority, GrpcConfig};
+pub use config::{resolve_keepalive, resolve_user_agent, Authority, GrpcConfig, GrpcKeepalive};
 pub use framing::{encode_hunk, HunkDecoder, MAX_HUNK_PAYLOAD_LEN};
 pub use h2client::open_grpc_h2_stream;
 pub use path::grpc_request_path;
+pub use pool::GrpcTransport;
 pub use stream::GrpcStream;

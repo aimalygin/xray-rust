@@ -1,6 +1,6 @@
 use std::{fmt, io, net::SocketAddr, sync::Arc};
 
-use crate::stream::TransportLayer;
+use crate::stream::{connect_httpupgrade, connect_websocket, TransportLayer};
 use crate::{
     connect_tcp_happy_eyeballs, connect_tcp_stream, connect_tcp_target, BoxedTransportStream,
     ConnectorConfig, HappyEyeballsConfig, RealityRuntimeEngine, RealityTlsEngine,
@@ -98,8 +98,14 @@ impl TransportDialer {
     /// Dials through the security layer, then applies the stream transport.
     ///
     /// The candidate race and the REALITY preconnect stay entirely inside
-    /// [`connect_resolved`](Self::connect_resolved); this only layers framing
-    /// on top of its result.
+    /// [`connect_resolved`](Self::connect_resolved), which is why every arm
+    /// below reaches it rather than opening a socket of its own — a socket
+    /// opened anywhere else misses Android's `VpnService.protect(fd)`.
+    ///
+    /// gRPC is the arm that does not dial *first*. Its flows share one HTTP/2
+    /// connection, so whether this call needs a socket at all is a question
+    /// only its pool can answer, and it is handed `connect_resolved` to ask
+    /// with.
     pub async fn connect_stream(
         &self,
         config: &ConnectorConfig,
@@ -108,10 +114,22 @@ impl TransportDialer {
         candidates: &[SocketAddr],
         happy_eyeballs: Option<&HappyEyeballsConfig>,
     ) -> Result<BoxedTransportStream, TransportError> {
-        let stream = self
-            .connect_resolved(config, original_target, candidates, happy_eyeballs)
-            .await?;
-        transport.wrap(stream).await
+        let dial =
+            move || self.connect_resolved(config, original_target, candidates, happy_eyeballs);
+
+        match transport {
+            TransportLayer::Raw => dial().await,
+            TransportLayer::WebSocket(websocket) => {
+                connect_websocket(dial().await?, websocket).await
+            }
+            TransportLayer::HttpUpgrade(upgrade) => {
+                connect_httpupgrade(dial().await?, upgrade).await
+            }
+            TransportLayer::Grpc(grpc) => {
+                grpc.open_stream(self, config, original_target, candidates, happy_eyeballs)
+                    .await
+            }
+        }
     }
 
     /// Connects a transport to an already resolved list of TCP candidates.

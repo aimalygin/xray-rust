@@ -1,5 +1,7 @@
 //! The dial-ready gRPC settings, and Xray's user-agent table.
 
+use std::time::Duration;
+
 use crate::stream::masquerade::{
     anchored_chrome_user_agent, anchored_edge_user_agent, anchored_firefox_user_agent,
 };
@@ -52,10 +54,9 @@ pub struct GrpcConfig {
     /// Already resolved through Xray's table by [`resolve_user_agent`], so
     /// `golang` has become the empty string by the time it lands here.
     pub user_agent: String,
-    /// `grpcSettings.idle_timeout`. Carried, not yet consumed: it is a
-    /// connection property (grpc-go turns the three of these into
-    /// `keepalive.ClientParameters`, `dial.go:169-175`), and there is no
-    /// connection to hang it on until the pool exists.
+    /// `grpcSettings.idle_timeout`. A connection property: grpc-go turns the
+    /// three of these into `keepalive.ClientParameters` (`dial.go:169-175`),
+    /// which [`resolve_keepalive`] resolves for the connection the pool holds.
     pub idle_timeout_secs: u32,
     /// `grpcSettings.health_check_timeout`. See [`Self::idle_timeout_secs`].
     pub health_check_timeout_secs: u32,
@@ -63,8 +64,76 @@ pub struct GrpcConfig {
     pub permit_without_stream: bool,
     /// `grpcSettings.initial_windows_size`, which grpc-go applies as
     /// `WithInitialWindowSize` (`dial.go:177-179`) — an HTTP/2 SETTINGS value,
-    /// so also the pool's to consume.
+    /// so the connection's rather than the call's.
     pub initial_windows_size: u32,
+}
+
+/// The keepalive a connection was dialled with, once grpc-go's floors and
+/// defaults have been applied.
+///
+/// `permitWithoutStream` is deliberately absent: it decides whether keepalive
+/// is on at all (see [`resolve_keepalive`]) and, in grpc-go, whether the ping
+/// loop goes dormant while no stream is open — and the dormancy is the half we
+/// do not reproduce. Carrying a field nothing reads would suggest we did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GrpcKeepalive {
+    /// How long a connection may go unpinged.
+    pub time: Duration,
+    /// How long a ping may go unacknowledged before the connection is over.
+    pub timeout: Duration,
+}
+
+/// grpc-go's minimum ping interval, applied by `WithKeepaliveParams` itself
+/// (`grpc@v1.81.0/dialoptions.go:561-569`, `internal/internal.go:40-42`).
+const KEEPALIVE_MIN_PING_TIME: Duration = Duration::from_secs(10);
+/// `defaultClientKeepaliveTimeout`, which the transport substitutes for a zero
+/// `Timeout` (`grpc@v1.81.0/internal/transport/defaults.go:33`).
+const DEFAULT_KEEPALIVE_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// The keepalive parameters this config dials with, or `None` for no keepalive.
+///
+/// **The gate is a three-way OR**, not a check on the durations:
+/// `idleTimeout > 0 || healthCheckTimeout > 0 || permitWithoutStream`
+/// (`Xray-core/transport/internet/grpc/dial.go:169-175`). So
+/// `permitWithoutStream: true` on its own attaches `WithKeepaliveParams` with
+/// both durations at zero, and the two defaults below are what that turns
+/// into — keepalive every ten seconds, not none.
+///
+/// **Zero `Time` is not "no pings".** It is `WithKeepaliveParams` that raises
+/// it, before the transport is built, so the `kp.Time == 0` branch in
+/// `newHTTP2Client` (`http2_client.go:265-267`, which would have made it
+/// `infinity`) is unreachable from this path. Reading the transport's default
+/// instead of the dial option's clamp is the easy way to conclude that a
+/// keepalive Xray asked for sends nothing.
+///
+/// **Two things grpc-go does with these that we do not**, both because h2
+/// exposes neither the state they read nor a hook to read it from:
+///
+/// * It skips a ping when the socket has been read since the last one
+///   (`t.lastRead`, `http2_client.go:1744-1752`), so a busy connection is
+///   never pinged. We ping on the interval regardless, which is extra pings on
+///   a busy tunnel.
+/// * With `permitWithoutStream` false it goes dormant while no stream is open
+///   (`http2_client.go:1770-1778`) and we do not, which is pings on an idle
+///   pooled connection where grpc-go sends none.
+///
+/// Both are invisible under Xray's defaults, where all three settings are off
+/// and no ping is sent at all.
+pub fn resolve_keepalive(config: &GrpcConfig) -> Option<GrpcKeepalive> {
+    if config.idle_timeout_secs == 0
+        && config.health_check_timeout_secs == 0
+        && !config.permit_without_stream
+    {
+        return None;
+    }
+
+    Some(GrpcKeepalive {
+        time: Duration::from_secs(u64::from(config.idle_timeout_secs)).max(KEEPALIVE_MIN_PING_TIME),
+        timeout: match config.health_check_timeout_secs {
+            0 => DEFAULT_KEEPALIVE_TIMEOUT,
+            seconds => Duration::from_secs(u64::from(seconds)),
+        },
+    })
 }
 
 /// `grpcSettings.user_agent` through Xray's switch
