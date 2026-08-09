@@ -370,7 +370,20 @@ impl HunkDecoder {
 /// a group in it, so a group here means the peer is not sending one of them,
 /// and refusing is safer than recursing on its say-so.
 fn parse_hunk(body: &[u8], mode: HunkMode) -> Result<Vec<u8>, String> {
-    // protowire's valid field-number range (`protowire/wire.go:24-27`).
+    // `MaxValidNumber` (`protobuf@v1.36.11/encoding/protowire/wire.go:24-27`),
+    // enforced here because the decoder that unmarshals a `Hunk` enforces it:
+    // `unmarshalPointerEager` parses every tag inline and refuses a field
+    // number outside `MinValidNumber..=MaxValidNumber` with `errDecode`
+    // (`internal/impl/decode.go:153-158`).
+    //
+    // **`protowire.ConsumeTag` is the more permissive reading and the wrong
+    // one to match.** It checks only `num < MinValidNumber`, and `DecodeTag`
+    // cuts at `MaxInt32` rather than at `MaxValidNumber`
+    // (`wire.go:168-178,525-531`), so on its own it passes every number below
+    // 2^31. Nothing on `proto.Unmarshal`'s path calls it. Checked rather than
+    // reasoned: a body whose unknown field is numbered 2^29 comes back from
+    // both `encoding.Hunk` and `encoding.MultiHunk` as "cannot parse invalid
+    // wire-format data", and one numbered 2^29 - 1 unmarshals clean.
     const MAX_FIELD_NUMBER: u64 = (1 << 29) - 1;
 
     let mut data: Vec<u8> = Vec::new();

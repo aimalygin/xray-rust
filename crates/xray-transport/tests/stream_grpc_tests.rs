@@ -599,6 +599,56 @@ mod stream_grpc_framing_read_tests {
         }
     }
 
+    /// The field-number ceiling, both sides of it.
+    ///
+    /// The range is `MinValidNumber..=MaxValidNumber`, `1..=1<<29 - 1`
+    /// (`protobuf@v1.36.11/encoding/protowire/wire.go:24-27`), and the code
+    /// that enforces it for a `Hunk` is the decoder itself:
+    /// `unmarshalPointerEager` parses each tag inline and refuses anything
+    /// outside that range with `errDecode`
+    /// (`internal/impl/decode.go:153-158`).
+    ///
+    /// `protowire.ConsumeTag` is the more permissive reading and the wrong one
+    /// to match — it checks only `num < MinValidNumber`, and `DecodeTag` cuts
+    /// at `MaxInt32` rather than at `MaxValidNumber`
+    /// (`wire.go:168-178,525-531`), so it passes everything below `1<<31`.
+    /// Nothing on `proto.Unmarshal`'s path calls it.
+    ///
+    /// Both bodies below are the ones a Go program built with
+    /// `protowire.AppendTag` and handed to `proto.Unmarshal`: at `1<<29 - 1`
+    /// both `encoding.Hunk` and `encoding.MultiHunk` come back with `"hi"` and
+    /// no error, and at `1<<29` both come back "cannot parse invalid
+    /// wire-format data".
+    #[test]
+    fn the_field_number_ceiling_is_the_one_protobuf_gos_decoder_enforces() {
+        // `0a 02 "hi"`, then an unknown bytes field carrying `"x"` whose
+        // number is `1<<29 - 1` and then `1<<29`.
+        let largest_valid: &[u8] = &[
+            0x0a, 0x02, b'h', b'i', 0xfa, 0xff, 0xff, 0xff, 0x0f, 0x01, b'x',
+        ];
+        let first_invalid: &[u8] = &[
+            0x0a, 0x02, b'h', b'i', 0x82, 0x80, 0x80, 0x80, 0x10, 0x01, b'x',
+        ];
+
+        for mode in [HunkMode::Single, HunkMode::Multi] {
+            let mut decoder = HunkDecoder::new(mode);
+            decoder.push(&frame(largest_valid));
+            assert_eq!(
+                drain(&mut decoder),
+                vec![b"hi".to_vec()],
+                "{mode:?}: field 1<<29 - 1 is a skippable unknown field"
+            );
+
+            let mut decoder = HunkDecoder::new(mode);
+            decoder.push(&frame(first_invalid));
+            let decoded = decoder.next_payload();
+            assert!(
+                decoded.is_err(),
+                "{mode:?}: field 1<<29 should be refused, got {decoded:?}"
+            );
+        }
+    }
+
     /// A deliberate divergence, tested so it stays deliberate. protobuf-go
     /// walks an unknown group to its `EndGroupType` and skips it
     /// (`protowire/wire.go:130-153`), so Go reads `"hi"` out of this body. A
