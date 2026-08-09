@@ -7,13 +7,14 @@
 // crate is the point: the framing, the pool and the dial are driven across the
 // same boundary a real caller sits on, so nothing here can reach a private and
 // quietly test something a caller could not do. It is a convention, not a
-// constraint — six modules in `xray-transport/src/` are in-src `#[cfg(test)]`
-// — and it is paid for in visibility. Four names are the gRPC transport's
-// actual API (`GrpcConfig`, `GrpcTransport`, `Authority`,
-// `resolve_user_agent`); everything else these blocks import comes from
-// `xray_transport::stream::grpc_test_only`, a `#[doc(hidden)]` module that
-// exists for this file alone. Import from there rather than asking for a name
-// to be re-exported beside the four.
+// constraint — five modules in `xray-transport/src/` are in-src `#[cfg(test)]
+// mod tests` (`happy_eyeballs.rs`, `dns.rs`, `reality_rustls.rs`,
+// `utls_shaping.rs`, `penetrating_tls.rs`) — and it is paid for in visibility.
+// Four names are the gRPC transport's actual API (`GrpcConfig`,
+// `GrpcTransport`, `Authority`, `resolve_user_agent`); everything else these
+// blocks import comes from `xray_transport::stream::grpc_test_only`, a
+// `#[doc(hidden)]` module that exists for this file alone. Import from there
+// rather than asking for a name to be re-exported beside the four.
 mod stream_grpc_path_tests {
     use xray_transport::stream::grpc_test_only::{grpc_request_path, HunkMode};
 

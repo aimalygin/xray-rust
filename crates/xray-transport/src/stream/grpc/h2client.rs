@@ -431,8 +431,9 @@ pub(crate) async fn open_grpc_call(
 
 /// One gRPC call on a connection of its own, which dies with it.
 ///
-/// **Not a dial, and reachable only through
-/// [`super::test_only`].** Every real dial goes through
+/// **Not a dial. Still `pub` and reachable from outside the crate, but only
+/// through [`super::test_only`], whose name is the warning.** Every real dial
+/// goes through
 /// [`connect_stream`](crate::TransportDialer::connect_stream) to
 /// [`super::GrpcTransport`] and its pool, which reaches
 /// [`TransportDialer::connect_resolved`](crate::TransportDialer::connect_resolved)

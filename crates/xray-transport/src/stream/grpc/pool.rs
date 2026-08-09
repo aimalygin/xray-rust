@@ -85,9 +85,14 @@ impl GrpcTransport {
     /// the settings': two `GrpcTransport`s resolved from identical config are
     /// *not* one pool. `Arc::ptr_eq` answers it, and this wrapper is what lets
     /// it be asked from outside the crate without making the pool type public.
-    /// `pub` for the same reason [`Self::config`] is, and for the same test:
-    /// what `xray-core-rs` checks is that its cached router hands every session
-    /// the one pool.
+    /// `pub` for the same reason [`Self::config`] is — a caller in another
+    /// crate — though for a different test in it. This one is read by
+    /// `two_selections_of_one_grpc_outbound_share_a_pool` in
+    /// `crates/xray-core-rs/src/outbound.rs`, which checks that `xray-core-rs`'s
+    /// cached router hands every session the one pool; `config` is read by the
+    /// authority tests and `every_grpc_setting_reaches_the_dial_ready_config`
+    /// in that same module — named rather than cited by line, since a test name
+    /// survives an edit above it and a line number does not.
     #[doc(hidden)]
     pub fn shares_pool_with(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.pool, &other.pool)
@@ -104,14 +109,15 @@ impl GrpcTransport {
     /// differs from [`Self::config`]. Its only caller is this crate's own
     /// `tests/stream_grpc_tests.rs`, and those are integration tests — a
     /// separate crate, so they cannot reach a `pub(crate)`. But nothing forced
-    /// them to be integration tests: six modules elsewhere in this crate are
-    /// `#[cfg(test)]` and in-src, and an in-src module here would let this be
-    /// private. The gRPC transport keeps its tests outside so that the framing
-    /// and the pool are driven across the crate boundary a real caller sits on,
-    /// and pays for that with this. Hidden rather than left in the rendered
-    /// API, because nothing outside those tests should find it and be tempted
-    /// to branch on it. Its sibling is
-    /// [`GrpcStream::connection_is_finished`].
+    /// them to be integration tests: five modules elsewhere in this crate are
+    /// in-src `#[cfg(test)] mod tests` (`happy_eyeballs.rs`, `dns.rs`,
+    /// `reality_rustls.rs`, `utls_shaping.rs`, `penetrating_tls.rs`), and an
+    /// in-src module here would let this be private. The gRPC transport keeps
+    /// its tests outside so that the framing and the pool are driven across the
+    /// crate boundary a real caller sits on, and pays for that with this.
+    /// Hidden rather than left in the rendered API, because nothing outside
+    /// those tests should find it and be tempted to branch on it. Its sibling
+    /// is [`GrpcStream::connection_is_finished`].
     ///
     /// [`GrpcStream::connection_is_finished`]:
     ///     super::test_only::GrpcStream::connection_is_finished

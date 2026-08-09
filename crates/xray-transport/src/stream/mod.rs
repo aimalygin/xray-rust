@@ -13,9 +13,11 @@ mod websocket;
 mod websocket_frame;
 
 /// Test scaffolding, not API: `tests/stream_grpc_tests.rs` imports from here
-/// and nothing else may. The four gRPC names on the line below are the
-/// transport's whole public surface; `grpc::test_only` says why the rest is
-/// behind a door with its purpose in the name.
+/// and nothing else should. The nine names behind it are still `pub` and still
+/// in the crate's semver promise — `#[doc(hidden)]` hides them from rustdoc,
+/// not from a downstream `use`. The four gRPC names on the line below are the
+/// transport's whole *supported* surface; `grpc::test_only` says why the rest
+/// is behind a door with its purpose in the name rather than beside them.
 #[doc(hidden)]
 pub use grpc::test_only as grpc_test_only;
 pub use grpc::{resolve_user_agent, Authority, GrpcConfig, GrpcTransport};
