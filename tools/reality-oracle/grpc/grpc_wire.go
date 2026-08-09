@@ -21,9 +21,10 @@
 // # What it captures
 //
 // One real gRPC dial, through grpc-go, over an in-memory pipe whose client end
-// is tapped. Everything the client writes is recorded and then read back as
-// HTTP/2 frames, so all three artefacts below come from the same connection
-// rather than from three transcriptions of one.
+// is tapped, and two calls on it: `Tun` and then `TunMulti`. Everything the
+// client writes is recorded and then read back as HTTP/2 frames, so all four
+// artefacts below come from the same connection rather than from four
+// transcriptions of one.
 //
 // The dial options are transcribed from `Xray-core/transport/internet/grpc/
 // dial.go:93-179` rather than called, because `dialgRPC` wants a
@@ -32,7 +33,7 @@
 // diffed by eye; `grpc.WithConnectParams` changes no byte on a connection that
 // never reconnects and is here for exactly that reason.
 //
-// The three artefacts, and how far each one is allowed to claim:
+// The four artefacts, and how far each one is allowed to claim:
 //
 //   - `connection_preamble` is byte-exact. Under Xray's defaults grpc-go's
 //     opening burst is the 24-byte client preface and an *empty* SETTINGS
@@ -63,6 +64,17 @@
 //     messages. Payload *content* is not recorded: it is a literal suffix of
 //     `message_hex`, so storing it twice would only be a second copy to keep
 //     in step. `payload_rule` is what the reader needs to rebuild the input.
+//
+//   - `multi_hunk_framing` is byte-exact, and is `hunk_framing` for the other
+//     RPC. `multiMode` is not a different `:path` with the same payload behind
+//     it: `TunMulti` streams `MultiHunk`, whose `data` is `repeated bytes`
+//     (`encoding/stream.proto:10-12,16`), so one message carries a whole
+//     `buf.MultiBuffer` and a reader that keeps only the last element silently
+//     drops the rest. The vectors are therefore mostly *multi-element*, which
+//     is the shape a single-element writer can never produce and so the shape
+//     nothing else here would catch. The `:path` is recorded alongside them,
+//     read back off the call's own HEADERS block, because the RPC named on the
+//     wire and the message read off it are two halves of one choice.
 //
 // # What it does not claim
 //
@@ -144,6 +156,45 @@ var payloadLengths = []int{0, 1, 5, 127, 128, 16384}
 // because they are not stored.
 const payloadRule = "payload[i] = i mod 256"
 
+// The element lengths the `MultiHunk` framing vectors cover.
+//
+// Mostly multi-element on purpose: a `MultiHunk` carrying one element marshals
+// to the same bytes as the `Hunk` of that payload, so a single-element vector
+// pins nothing the `Tun` capture does not already pin. What only these can show
+// is where the second element's tag goes.
+//
+//   - The empty set is what `WriteMultiBuffer` sends for a `buf.MultiBuffer`
+//     with nothing in it, or with nothing but zero-length buffers, since it
+//     filters those out before it builds the slice
+//     (`encoding/multiconn.go:121-129`). A slice with no elements gives
+//     `appendBytesSlice` nothing to loop over, so the body vanishes exactly as
+//     a `Hunk`'s does -- by a different route, since that loop does not skip a
+//     zero-length element the way the singular coder skips a zero-length value.
+//   - {5} is the single-element case, kept precisely so the fixture states that
+//     it is byte-identical to the `Tun` vector of the same length.
+//   - {1, 5} is the smallest honest multi-element message.
+//   - {127, 128} puts both varint widths of the element length prefix in one
+//     message.
+//   - {8192, 8192} is two elements at `buf.Size`, the largest a buffer in a
+//     `buf.MultiBuffer` is allocated at (`Xray-core/common/buf/buffer.go:13`).
+//     Together they outgrow HTTP/2's default 16 KiB frame, so the message
+//     spans two DATA frames with the split falling inside the second element --
+//     which is where a reader that parsed frames rather than reassembled
+//     messages would come apart.
+var multiElementLengths = [][]int{
+	{},
+	{5},
+	{1, 5},
+	{127, 128},
+	{8192, 8192},
+}
+
+// How the multi framing vectors' element bytes are rebuilt. The element index
+// is in the rule so that two elements of the same length are not the same
+// bytes: order is what these vectors are for, and it cannot be claimed with
+// interchangeable payloads.
+const multiPayloadRule = "payload[element][i] = (i + element) mod 256"
+
 // deadline bounds the whole capture. A pipe deadlock would otherwise hang CI
 // rather than fail it.
 const deadline = 30 * time.Second
@@ -182,6 +233,17 @@ type hunkVector struct {
 	MessageHex string `json:"message_hex"`
 }
 
+type multiCallShape struct {
+	ServiceName string `json:"service_name"`
+	StreamName  string `json:"stream_name"`
+	Path        string `json:"path"`
+}
+
+type multiHunkVector struct {
+	ElementLens []int  `json:"element_lens"`
+	MessageHex  string `json:"message_hex"`
+}
+
 type preambleFixture struct {
 	Wire             string            `json:"wire"`
 	Modules          moduleVersions    `json:"modules"`
@@ -206,6 +268,14 @@ type framingFixture struct {
 	Vectors     []hunkVector   `json:"vectors"`
 }
 
+type multiFramingFixture struct {
+	Wire        string            `json:"wire"`
+	Modules     moduleVersions    `json:"modules"`
+	Call        multiCallShape    `json:"call"`
+	PayloadRule string            `json:"payload_rule"`
+	Vectors     []multiHunkVector `json:"vectors"`
+}
+
 // recordedFrame is one HTTP/2 frame with the bytes it occupied, so an artefact
 // can be byte-exact without re-encoding anything.
 type recordedFrame struct {
@@ -216,12 +286,30 @@ type recordedFrame struct {
 	raw      []byte
 }
 
-// capture is everything one dial produced.
+// capture is everything one dial produced: the connection's opening bytes, and
+// the two calls made on it.
 type capture struct {
 	preface  []byte
 	frames   []recordedFrame
+	tun      call
+	tunMulti call
+}
+
+// call is one RPC's decoded HEADERS block and the gRPC messages its DATA frames
+// carried.
+type call struct {
 	headers  []hpack.HeaderField
 	messages [][]byte
+}
+
+// path is the `:path` the call opened with, or "" if the block carried none.
+func (c call) path() string {
+	for _, field := range c.headers {
+		if field.Name == ":path" {
+			return field.Value
+		}
+	}
+	return ""
 }
 
 // recordingConn tees the client half of the connection.
@@ -234,12 +322,25 @@ type recordingConn struct {
 	written bytes.Buffer
 }
 
+// Write records before it writes, which is the ordering the capture depends
+// on.
+//
+// `net.Pipe` hands the bytes to the reader inside `Conn.Write`, before it
+// returns, and the capture reads the tap as soon as the drain server has
+// received its last message. Recording afterwards therefore leaves a window in
+// which the far end has a message the tap does not, and the capture is a byte
+// comparison -- the one kind of job that must not be flaky. Recording first
+// closes it: anything the reader can have seen is already in the buffer.
+//
+// The cost is that `p` is recorded whole rather than the `n` bytes that landed.
+// A short write on a pipe means it was closed or its deadline expired, which
+// breaks the connection and fails the capture through `readMessages`, so the
+// difference is unobservable in a run that produces a fixture at all.
 func (c *recordingConn) Write(p []byte) (int, error) {
-	n, err := c.Conn.Write(p)
 	c.mu.Lock()
-	c.written.Write(p[:n])
+	c.written.Write(p)
 	c.mu.Unlock()
-	return n, err
+	return c.Conn.Write(p)
 }
 
 func (c *recordingConn) recorded() []byte {
@@ -283,20 +384,45 @@ type pipeAddr struct{}
 func (pipeAddr) Network() string { return "pipe" }
 func (pipeAddr) String() string  { return "pipe" }
 
-// drainServer accepts the tunnel and reads it, which is all the capture needs
-// from a server: a `Send` is only proof of a write once the far end has the
-// message.
+// drainServer accepts the tunnels and reads them, which is all the capture
+// needs from a server: a `Send` is only proof of a write once the far end has
+// the message.
 type drainServer struct {
 	encoding.UnimplementedGRPCServiceServer
+	tun      *drainCount
+	tunMulti *drainCount
+}
+
+// drainCount closes `received` once the handler has taken `want` messages.
+type drainCount struct {
 	want     int
 	received chan struct{}
 	once     sync.Once
 }
 
+func newDrainCount(want int) *drainCount {
+	return &drainCount{want: want, received: make(chan struct{})}
+}
+
+func (d *drainCount) reached() {
+	d.once.Do(func() { close(d.received) })
+}
+
 func (s *drainServer) Tun(stream encoding.GRPCService_TunServer) error {
 	for count := 0; ; count++ {
-		if count == s.want {
-			s.once.Do(func() { close(s.received) })
+		if count == s.tun.want {
+			s.tun.reached()
+		}
+		if _, err := stream.Recv(); err != nil {
+			return nil
+		}
+	}
+}
+
+func (s *drainServer) TunMulti(stream encoding.GRPCService_TunMultiServer) error {
+	for count := 0; ; count++ {
+		if count == s.tunMulti.want {
+			s.tunMulti.reached()
 		}
 		if _, err := stream.Recv(); err != nil {
 			return nil
@@ -326,6 +452,25 @@ func payloadOf(length int) []byte {
 	return payload
 }
 
+// multiPayloadOf builds one element of a `MultiHunk`, per `multiPayloadRule`.
+func multiPayloadOf(element, length int) []byte {
+	payload := make([]byte, length)
+	for i := range payload {
+		payload[i] = byte(i + element)
+	}
+	return payload
+}
+
+// multiHunkOf is `WriteMultiBuffer`'s `&MultiHunk{Data: hunks}` for a
+// `buf.MultiBuffer` of buffers these lengths (`encoding/multiconn.go:121-129`).
+func multiHunkOf(lengths []int) *encoding.MultiHunk {
+	elements := make([][]byte, 0, len(lengths))
+	for element, length := range lengths {
+		elements = append(elements, multiPayloadOf(element, length))
+	}
+	return &encoding.MultiHunk{Data: elements}
+}
+
 func captureDial(ctx context.Context) (*capture, error) {
 	// The call runs on a context that can be cancelled but carries no
 	// deadline, and `ctx` reaches it only as a cancellation. grpc-go writes a
@@ -344,7 +489,10 @@ func captureDial(ctx context.Context) (*capture, error) {
 	tap := &recordingConn{Conn: clientEnd}
 
 	server := grpc.NewServer()
-	drain := &drainServer{want: len(payloadLengths), received: make(chan struct{})}
+	drain := &drainServer{
+		tun:      newDrainCount(len(payloadLengths)),
+		tunMulti: newDrainCount(len(multiElementLengths)),
+	}
 	encoding.RegisterGRPCServiceServerX(server, drain, serviceName, tunStreamName, tunMultiStreamName)
 
 	listener := newPipeListener(serverEnd)
@@ -358,7 +506,7 @@ func captureDial(ctx context.Context) (*capture, error) {
 		<-served
 	}()
 
-	// Transcribed from `dial.go:93-166`, in its order. The context dialer is
+	// Transcribed from `dial.go:93-167`, in its order. The context dialer is
 	// the one option with different contents: Xray's reaches
 	// `internet.DialSystem` and then layers TLS or REALITY on top, all of
 	// which is below the bytes this oracle is about.
@@ -395,6 +543,11 @@ func captureDial(ctx context.Context) (*capture, error) {
 	if !ok {
 		return nil, errors.New("the generated client no longer offers TunCustomName")
 	}
+
+	// The two calls run one after the other, not at once. Nothing about the
+	// artefacts needs them concurrent, and sequencing them keeps each call's
+	// DATA frames in one run so that a `readMessages` failure names the call it
+	// happened on rather than an interleaving.
 	stream, err := client.TunCustomName(callCtx, serviceName, tunStreamName)
 	if err != nil {
 		return nil, fmt.Errorf("open the tunnel: %w", err)
@@ -412,9 +565,29 @@ func captureDial(ctx context.Context) (*capture, error) {
 	// `Send` only queues onto grpc-go's control buffer, so the far end having
 	// every message is the proof that every message was written.
 	select {
-	case <-drain.received:
+	case <-drain.tun.received:
 	case <-ctx.Done():
 		return nil, fmt.Errorf("the peer never received all %d hunks: %w", len(payloadLengths), ctx.Err())
+	}
+
+	multiStream, err := client.TunMultiCustomName(callCtx, serviceName, tunMultiStreamName)
+	if err != nil {
+		return nil, fmt.Errorf("open the multi tunnel: %w", err)
+	}
+
+	for _, lengths := range multiElementLengths {
+		if err := multiStream.Send(multiHunkOf(lengths)); err != nil {
+			return nil, fmt.Errorf("send a multi hunk of %v: %w", lengths, err)
+		}
+	}
+	if err := multiStream.CloseSend(); err != nil {
+		return nil, fmt.Errorf("half-close the multi tunnel: %w", err)
+	}
+
+	select {
+	case <-drain.tunMulti.received:
+	case <-ctx.Done():
+		return nil, fmt.Errorf("the peer never received all %d multi hunks: %w", len(multiElementLengths), ctx.Err())
 	}
 
 	return parseCapture(tap.recorded())
@@ -431,8 +604,8 @@ func parseCapture(raw []byte) (*capture, error) {
 	// every message, so the half-close queued behind the last one may or may
 	// not have reached the wire, and demanding a whole frame there would fail
 	// on a race no artefact depends on: the preamble is the first frame, the
-	// call is the first HEADERS, and `readMessages` insists on exactly the
-	// messages that were sent, so a truncation that mattered still fails.
+	// calls are the first two HEADERS, and `readMessages` insists on exactly
+	// the messages that were sent, so a truncation that mattered still fails.
 	rest := raw[len(clientPreface):]
 	for {
 		frame, width, whole := readFrame(rest)
@@ -443,11 +616,7 @@ func parseCapture(raw []byte) (*capture, error) {
 		rest = rest[width:]
 	}
 
-	callStream, err := captured.readHeaders()
-	if err != nil {
-		return nil, err
-	}
-	return captured, captured.readMessages(callStream)
+	return captured, captured.readCalls()
 }
 
 const (
@@ -481,37 +650,59 @@ func readFrame(bytesIn []byte) (recordedFrame, int, bool) {
 	}, total, true
 }
 
-// readHeaders decodes the call's HEADERS block and returns the stream it
-// opened.
-func (c *capture) readHeaders() (uint32, error) {
+// readCalls decodes the two HEADERS blocks the client sent and splits the DATA
+// frames between the calls they opened.
+//
+// **One `hpack.Decoder` for the whole connection, not one per block.** HPACK's
+// dynamic table is connection state: grpc-go indexes `:path` incrementally, so
+// the second block refers back into the table the first one built. A fresh
+// decoder there would either fail on the index or, worse, resolve it against
+// the static table and record a plausible-looking wrong value.
+func (c *capture) readCalls() error {
+	decoder := hpack.NewDecoder(4096, nil)
+	streams := []uint32{}
+	blocks := [][]hpack.HeaderField{}
 	for _, frame := range c.frames {
 		if frame.kind != frameHeaders {
 			continue
 		}
 		if frame.flags&flagEndHeaders == 0 {
-			return 0, errors.New("the HEADERS block spans CONTINUATION frames, which this oracle does not join")
+			return errors.New("a HEADERS block spans CONTINUATION frames, which this oracle does not join")
 		}
 		if frame.flags&(flagPadded|flagPriority) != 0 {
-			return 0, errors.New("the HEADERS frame is padded or carries a priority section, which this oracle does not strip")
+			return errors.New("a HEADERS frame is padded or carries a priority section, which this oracle does not strip")
 		}
-		fields, err := hpack.NewDecoder(4096, nil).DecodeFull(frame.payload)
+		fields, err := decoder.DecodeFull(frame.payload)
 		if err != nil {
-			return 0, fmt.Errorf("decode the HEADERS block: %w", err)
+			return fmt.Errorf("decode a HEADERS block: %w", err)
 		}
-		c.headers = fields
-		return frame.streamID, nil
+		streams = append(streams, frame.streamID)
+		blocks = append(blocks, fields)
 	}
-	return 0, errors.New("the client never opened a call")
+
+	if len(blocks) != 2 {
+		return fmt.Errorf("the client opened %d calls, not the 2 this oracle makes", len(blocks))
+	}
+
+	c.tun.headers = blocks[0]
+	c.tunMulti.headers = blocks[1]
+	if err := c.tun.readMessages(c.frames, streams[0], len(payloadLengths)); err != nil {
+		return fmt.Errorf("%s: %w", tunStreamName, err)
+	}
+	if err := c.tunMulti.readMessages(c.frames, streams[1], len(multiElementLengths)); err != nil {
+		return fmt.Errorf("%s: %w", tunMultiStreamName, err)
+	}
+	return nil
 }
 
-// readMessages reassembles the gRPC messages the call's DATA frames carried.
+// readMessages reassembles the gRPC messages this call's DATA frames carried.
 //
 // Frames are concatenated first and split on the five-byte prefixes second,
 // which is what a receiver does and the only reading that survives a message
 // larger than one frame.
-func (c *capture) readMessages(callStream uint32) error {
+func (c *call) readMessages(frames []recordedFrame, callStream uint32, sent int) error {
 	var body []byte
-	for _, frame := range c.frames {
+	for _, frame := range frames {
 		if frame.kind != frameData || frame.streamID != callStream {
 			continue
 		}
@@ -536,8 +727,8 @@ func (c *capture) readMessages(callStream uint32) error {
 		body = body[5+length:]
 	}
 
-	if len(c.messages) != len(payloadLengths) {
-		return fmt.Errorf("the call carried %d messages, not the %d that were sent", len(c.messages), len(payloadLengths))
+	if len(c.messages) != sent {
+		return fmt.Errorf("the call carried %d messages, not the %d that were sent", len(c.messages), sent)
 	}
 	return nil
 }
@@ -659,9 +850,9 @@ func (c *capture) preamble() (preambleFixture, error) {
 }
 
 func (c *capture) requestHeaders() (headersFixture, error) {
-	fields := make([]headerField, 0, len(c.headers))
+	fields := make([]headerField, 0, len(c.tun.headers))
 	seen := map[string]string{}
-	for _, field := range c.headers {
+	for _, field := range c.tun.headers {
 		fields = append(fields, headerField{Name: field.Name, Value: field.Value})
 		seen[field.Name] = field.Value
 	}
@@ -704,8 +895,8 @@ func (c *capture) requestHeaders() (headersFixture, error) {
 }
 
 func (c *capture) hunkFraming() (framingFixture, error) {
-	vectors := make([]hunkVector, 0, len(c.messages))
-	for index, message := range c.messages {
+	vectors := make([]hunkVector, 0, len(c.tun.messages))
+	for index, message := range c.tun.messages {
 		vectors = append(vectors, hunkVector{
 			PayloadLen: payloadLengths[index],
 			MessageHex: hex.EncodeToString(message),
@@ -720,6 +911,54 @@ func (c *capture) hunkFraming() (framingFixture, error) {
 		Wire:        "hunk_framing",
 		Modules:     modules,
 		PayloadRule: payloadRule,
+		Vectors:     vectors,
+	}, nil
+}
+
+// multiHunkFraming is `hunkFraming` for the `TunMulti` call, plus the `:path`
+// that call opened with.
+//
+// The path is read back off the captured HEADERS block rather than composed
+// from the constants, because composing it would restate this file rather than
+// record the wire: the claim worth pinning is that `TunMulti` is the RPC
+// grpc-go actually named. It is still checked against the composition, on the
+// same grounds `requestHeaders` checks its three fields -- a capture of the
+// wrong call would otherwise be pinned as though it were the right one.
+func (c *capture) multiHunkFraming() (multiFramingFixture, error) {
+	path := c.tunMulti.path()
+	if expected := "/" + serviceName + "/" + tunMultiStreamName; path != expected {
+		return multiFramingFixture{}, fmt.Errorf(
+			"the captured :path is %q, not the %q this oracle dialled", path, expected)
+	}
+
+	vectors := make([]multiHunkVector, 0, len(c.tunMulti.messages))
+	for index, message := range c.tunMulti.messages {
+		// Copied rather than aliased: `element_lens` is marshalled straight
+		// into the fixture, and a shared backing array would be a way for a
+		// later edit to rewrite a vector's own record of itself. Allocated
+		// rather than started at nil, because `encoding/json` writes a nil
+		// slice as `null` and the no-element vector would then say something
+		// other than "no elements".
+		lengths := append(make([]int, 0, len(multiElementLengths[index])), multiElementLengths[index]...)
+		vectors = append(vectors, multiHunkVector{
+			ElementLens: lengths,
+			MessageHex:  hex.EncodeToString(message),
+		})
+	}
+
+	modules, err := modulesUsed()
+	if err != nil {
+		return multiFramingFixture{}, err
+	}
+	return multiFramingFixture{
+		Wire:    "multi_hunk_framing",
+		Modules: modules,
+		Call: multiCallShape{
+			ServiceName: serviceName,
+			StreamName:  tunMultiStreamName,
+			Path:        path,
+		},
+		PayloadRule: multiPayloadRule,
 		Vectors:     vectors,
 	}, nil
 }
@@ -769,14 +1008,18 @@ func render(wire string, captured *capture) (any, error) {
 		return captured.requestHeaders()
 	case "hunk_framing":
 		return captured.hunkFraming()
+	case "multi_hunk_framing":
+		return captured.multiHunkFraming()
 	default:
-		return nil, fmt.Errorf("unknown -wire %q: want connection_preamble, request_headers or hunk_framing", wire)
+		return nil, fmt.Errorf(
+			"unknown -wire %q: want connection_preamble, request_headers, hunk_framing or multi_hunk_framing",
+			wire)
 	}
 }
 
 func main() {
 	wire := flag.String("wire", "connection_preamble",
-		"which artefact to print: connection_preamble, request_headers or hunk_framing")
+		"which artefact to print: connection_preamble, request_headers, hunk_framing or multi_hunk_framing")
 	checkPath := flag.String("check", "", "compare the generated artefact with a committed JSON file")
 	flag.Parse()
 

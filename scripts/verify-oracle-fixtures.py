@@ -283,10 +283,11 @@ ORACLES: tuple[Oracle, ...] = (
         claims=claims_version_distribution,
         flags=no_flags,
     ),
-    # Three oracles over one program: the capture that produces a connection
+    # Four oracles over one program: the capture that produces a connection
     # preamble is the same capture that produces the HEADERS block and the
-    # framed Hunks, and splitting it into three programs would be three
-    # transcriptions of one dial. `-wire` picks which artefact is printed.
+    # framed Hunks of both calls on it, and splitting it into four programs
+    # would be four transcriptions of one dial. `-wire` picks which artefact is
+    # printed.
     Oracle(
         name="grpc-connection-preamble",
         command=grpc_oracle("reality_oracle_grpc_wire"),
@@ -303,6 +304,12 @@ ORACLES: tuple[Oracle, ...] = (
         name="grpc-hunk-framing",
         command=grpc_oracle("reality_oracle_grpc_wire"),
         claims=claims_grpc_wire("hunk_framing"),
+        flags=grpc_wire_flags,
+    ),
+    Oracle(
+        name="grpc-multi-hunk-framing",
+        command=grpc_oracle("reality_oracle_grpc_wire"),
+        claims=claims_grpc_wire("multi_hunk_framing"),
         flags=grpc_wire_flags,
     ),
 )
