@@ -65,10 +65,25 @@ const DEFAULT_WINDOW_SIZE: u32 = 65535;
 /// estimator will grow a window to (`internal/transport/bdp_estimator.go:
 /// 27-30`), so it is the largest connection window a grpc-go client under
 /// Xray ever reaches rather than a number of our own. It costs no memory: what
-/// a peer can make us buffer is bounded by the sum of the *stream* windows,
-/// still [`DEFAULT_WINDOW_SIZE`] each, and this only stops the connection
-/// window being the binding constraint. At 65535 per stalled flow it takes 256
-/// of them at once to bind again.
+/// a peer can make us buffer is bounded by the sum of the *stream* windows —
+/// [`DEFAULT_WINDOW_SIZE`] each unless `initialWindowsSize` raises them — and
+/// this only stops the connection window being the binding constraint. At the
+/// default it takes 256 stalled flows at once to bind it again.
+///
+/// **It is a constant, and does not move with `initialWindowsSize`.** Deriving
+/// one from the other would put an unbounded config number on a path that can
+/// panic: `initialWindowsSize` is an `int32` clamped only at zero
+/// (`crates/xray-config/src/parser.rs`, `grpc_clamped_int32_at`), and h2
+/// `debug_assert`s on a connection target its flow control refuses
+/// (`h2-0.4.15/src/proto/connection.rs:147-151`), which the `i32` arithmetic
+/// under `assign_capacity` does past HTTP/2's own maximum window
+/// (`proto/streams/flow_control.rs:82-84,224-236`). What that leaves is a
+/// profile setting the stream window to 16 MiB or beyond, 256 times the
+/// default: the margin narrows back to nothing and one flow can hold the
+/// connection again. Even there this is not worse than what it imitates —
+/// grpc-go given the same setting raises the stream window and leaves its
+/// connection window at 65535, so it stalls the whole connection sooner rather
+/// than later.
 ///
 /// **What it costs on the wire is one `WINDOW_UPDATE(stream 0)`**, written
 /// immediately behind SETTINGS — h2 answers the builder knob by raising the
@@ -82,12 +97,13 @@ const DEFAULT_WINDOW_SIZE: u32 = 65535;
 ///
 /// **This is not a free fix, and the honest comparison is not against a
 /// connection window that never moves.** Under Xray's default `grpcSettings`
-/// no window option is set, `StaticWindowSize` stays false
-/// (`grpc@v1.81.0/dialoptions.go:213-218` is the only thing that sets it, from
-/// `WithInitialWindowSize`, which `dial.go:177-179` attaches only above zero),
-/// so grpc-go's BDP estimator is live (`http2_client.go:386-391`) and grows
-/// both the connection window and the stream window mid-connection, up to that
-/// same 16 MiB (`updateFlowControl`, `http2_client.go:1161-1180`). Never
+/// no window option is set and `StaticWindowSize` stays false: the only such
+/// option Xray ever attaches is `WithInitialWindowSize`, above zero
+/// (`Xray-core/transport/internet/grpc/dial.go:177-179`), and that is what
+/// would set the flag (`grpc@v1.81.0/dialoptions.go:213-218`). So grpc-go's
+/// BDP estimator is live (`http2_client.go:386-391`) and grows both the
+/// connection window and the stream window mid-connection, up to that same
+/// 16 MiB (`updateFlowControl`, `http2_client.go:1162-1180`). Never
 /// growing the connection window is therefore *also* a divergence from the
 /// client we are imitating, just a later and quieter one. The choice taken is
 /// an earlier, smaller, constant divergence — one extra frame in the preamble —

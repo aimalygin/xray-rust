@@ -136,8 +136,13 @@ prerelease-quality and do not establish a supported release series.
   The `:path`, the `Hunk` and `MultiHunk` framing and the first HEADERS block
   are pinned against a live grpc-go v1.81.0 oracle, and five ignored scenarios
   carry real traffic through an xray-core gRPC inbound over plaintext, TLS and
-  REALITY. `docs/config-compatibility.md` has the full surface, `docs/status.md`
-  the three HPACK differences that remain.
+  REALITY. One thing is deliberately not grpc-go's: the connection-level
+  receive window is opened to 16 MiB, because `h2` pins it at 65535 whatever
+  SETTINGS say and releases it only from the application's read path, so on a
+  connection every flow of an outbound shares, one flow whose consumer stops
+  reading would hold the window all the others need. It costs one extra
+  `WINDOW_UPDATE` in the opening burst. `docs/config-compatibility.md` has the
+  full surface, `docs/status.md` the four differences that remain.
 - REALITY is now accepted with `network: "grpc"`, where it was refused. The
   guard allowed only the raw transport while its own error message read
   "REALITY only supports RAW, XHTTP and gRPC for now" — the message quoted

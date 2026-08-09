@@ -1252,12 +1252,13 @@ mod stream_grpc_h2_tests {
     /// errors, and the far end acts on the same request twice.
     ///
     /// No caller in this workspace reaches it today, which is exactly why it
-    /// is worth a test — `copy_direction` awaits `write_all` inside the read
-    /// arm's body rather than as a select arm
-    /// (`crates/xray-core-rs/src/policy.rs:203`) and the tun loop breaks on a
-    /// failed send, so both happen to retry a parked write before they flush.
-    /// This is a public `AsyncWrite`, and that ordering is a property of
-    /// today's callers rather than of the contract.
+    /// is worth a test. `copy_direction` awaits `write_all` inside the read
+    /// arm's *body* rather than as a select arm
+    /// (`crates/xray-core-rs/src/policy.rs:203`), so its flush deadline cannot
+    /// fire while a write is parked; the tun loop breaks on a failed send. In
+    /// both, nothing else drains the uplink between a parked write and its
+    /// retry. That is a property of today's two callers, not of the public
+    /// `AsyncWrite` this type offers.
     ///
     /// The first write on a fresh stream is the one that parks, and does so
     /// every time rather than by luck: h2 assigns the capacity `poll_write`
@@ -3197,8 +3198,8 @@ mod stream_grpc_oracle_tests {
     /// grpc-go.
     ///
     /// **The preface and the SETTINGS frame agree to the byte; the burst
-    /// carries one frame more than grpc-go's.** Under Xray's
-    /// defaults grpc-go's opening burst is the 24-byte preface and an *empty*
+    /// carries one frame more than grpc-go's.** Under Xray's defaults
+    /// grpc-go's opening burst is the 24-byte preface and an *empty*
     /// SETTINGS frame: `initialWindowSize` reaches the wire only above
     /// grpc-go's own default and `MaxHeaderListSize` only when a dial option
     /// sets it (`grpc@v1.81.0/internal/transport/http2_client.go:433-451`),
@@ -3222,11 +3223,10 @@ mod stream_grpc_oracle_tests {
     /// contents.
     ///
     /// **The `WINDOW_UPDATE(stream 0)` is ours, declared here rather than
-    /// excused.** It is the cost of `CONNECTION_WINDOW_SIZE` in
-    /// `h2client.rs` — the connection window opened so that one flow which
-    /// stops reading cannot hold the window every other flow on the outbound
-    /// shares; see `stream_grpc_flow_control_tests`. The fixture is left
-    /// alone, because it
+    /// excused.** It is the cost of `CONNECTION_WINDOW_SIZE` in `h2client.rs`
+    /// — the connection window opened so that one flow which stops reading
+    /// cannot hold the window every other flow on the outbound shares; see
+    /// `stream_grpc_flow_control_tests`. The fixture is left alone, because it
     /// is the record of what grpc-go emits and should go on telling the truth
     /// about upstream; the *expectation* is the fixture's burst plus this one
     /// frame. So a second divergence, or a change to this one's stream, length
