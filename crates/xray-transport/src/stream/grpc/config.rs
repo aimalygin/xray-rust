@@ -14,6 +14,23 @@ pub use http::uri::Authority;
 
 /// Everything the gRPC dial needs, resolved from config plus the security
 /// layer's server name.
+///
+/// **Two of these arrive resolved and the rest arrive raw, and the line is not
+/// arbitrary.** [`Self::authority`] has to be resolved by the caller: its
+/// precedence chain reads the security block and the destination address, which
+/// this crate never sees, and the outbound is the only place that can name the
+/// config key a bad value came from. [`Self::user_agent`] is resolved with it
+/// because it belongs to the same moment — both are per-outbound, both are
+/// settled once when the outbound is built, and both then reach the HEADERS
+/// block verbatim.
+///
+/// The keepalive trio stays raw for the opposite reason: it is not a property
+/// of the request at all but of the *connection*, so it is resolved where the
+/// connection is made, by [`resolve_keepalive`] in `h2_handshake`. grpc-go
+/// splits it at the same seam — `WithKeepaliveParams` is a dial option and the
+/// transport applies it when it builds. Folding [`resolve_user_agent`] in here
+/// too would move a per-outbound decision to per-dial and leave the struct
+/// exactly as mixed as it is now, with the halves swapped.
 #[derive(Debug, Clone)]
 pub struct GrpcConfig {
     /// Raw `serviceName`; the `:path` is derived per dial because `multiMode`
@@ -39,10 +56,11 @@ pub struct GrpcConfig {
     /// — which calls a gRPC method nobody configured and gets back an
     /// UNIMPLEMENTED that names nothing. An [`Authority`] cannot hold any of
     /// the three, so no assembly of one can re-partition anything, and the
-    /// config that would have is refused once at startup instead of on every
-    /// dial — each of which would otherwise pay a TCP connect and a TLS or
-    /// REALITY handshake first, since [`super::open_grpc_h2_stream`] is handed
-    /// the far side of both.
+    /// config that would have is refused when the outbound is built rather than
+    /// once per dial. What that buys is the message, not the work: it is
+    /// `xray_core_rs`'s `grpc_authority` that fails, so the error can name the
+    /// config key the value came from, where a failure down here could only be
+    /// one more connection error on one more flow.
     ///
     /// That diverges from grpc-go, which validates a `WithAuthority` not at
     /// all (`grpc@v1.81.0/clientconn.go:1976-1978`) and — confirmed on the

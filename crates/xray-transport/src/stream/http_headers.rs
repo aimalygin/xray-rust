@@ -31,15 +31,6 @@ impl HeaderMap {
         }
     }
 
-    /// Sets the value only when the key is absent. Xray uses this for
-    /// `Accept`, `Cache-Control` and `Pragma`, which never override a
-    /// user-supplied value.
-    pub fn set_if_absent(&mut self, key: &str, value: &str) {
-        if self.get(key).is_none() {
-            self.set(key, value);
-        }
-    }
-
     pub fn get(&self, key: &str) -> Option<&str> {
         self.entries
             .iter()
@@ -49,10 +40,6 @@ impl HeaderMap {
 
     pub fn remove(&mut self, key: &str) {
         self.entries.retain(|(name, _)| name != key);
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
     }
 }
 

@@ -139,8 +139,23 @@ pub struct GrpcStream {
     /// succeeded. Every other way a downlink can end is an error, not this.
     eof: bool,
     send_closed: bool,
-    /// Keeps the connection task alive for as long as the call is: h2 reads
-    /// and writes nothing unless that task is polled.
+    /// The connection task this call rides on, held so that
+    /// [`Self::connection_is_finished`] has something to ask.
+    ///
+    /// **That is the whole of it, and the field is exactly as load-bearing as
+    /// that method.** Holding the handle does not keep the task running: a
+    /// dropped `JoinHandle` detaches a tokio task rather than aborting it,
+    /// which `super::h2client` relies on deliberately so that a final
+    /// `RST_STREAM` and the connection's `GOAWAY` still reach the peer. What
+    /// keeps the connection alive for the life of the call is the `SendStream`
+    /// and `RecvStream` above; h2 ends a connection once nothing references it
+    /// and no stream is left.
+    ///
+    /// So this is not the sibling of [`Self::_open_call`], whose *drop* is the
+    /// event, even though the two sit together and look alike. If
+    /// `connection_is_finished` is ever demoted or deleted, this field goes
+    /// dead with it — the compiler will say so, and the answer is to delete it
+    /// too, not to rename it `_driver` and keep holding an `Arc` for nothing.
     ///
     /// Shared rather than owned, because a pooled connection carries many
     /// calls at once and the last of them to go is not knowable from here.
@@ -188,13 +203,24 @@ impl GrpcStream {
     /// included.
     ///
     /// **A test-only accessor**, like `GrpcTransport::holds_a_live_connection`
-    /// next door. Nothing in the crate calls it: the pool asks
-    /// `H2Connection::is_live`, which is the same question of the same
-    /// `JoinHandle`. It exists because `H2ConnectionDriver` is `pub(crate)`
-    /// and the integration tests need some window onto it, and the unpooled
-    /// `open_grpc_h2_stream` hands back a `GrpcStream` and nothing
-    /// else — which is the only shape in which a peer that answers no ping,
-    /// or none at all, can be put in front of the driver.
+    /// next door, and `pub` for the same reason: by this transport's
+    /// convention that its tests live in `tests/stream_grpc_tests.rs`, not
+    /// because anything forces them there. An in-src `#[cfg(test)]` module —
+    /// which six other modules in this crate have — would let this be private.
+    /// See [`GrpcTransport::holds_a_live_connection`] for the trade that
+    /// convention makes, and note that it is a *different* reason from
+    /// `GrpcTransport::config`'s, which really is forced: that one is read from
+    /// another crate.
+    ///
+    /// Nothing in this crate calls it. The pool asks `H2Connection::is_live`,
+    /// which is the same question of the same `JoinHandle`; this exists because
+    /// `H2ConnectionDriver` is `pub(crate)` and a test needs some window onto
+    /// it, and because the unpooled `open_grpc_h2_stream` hands back a
+    /// `GrpcStream` and nothing else — which is the only shape in which a peer
+    /// that answers no ping, or none at all, can be put in front of the driver.
+    ///
+    /// It is also what keeps [`Self::driver`] alive: that field is read here
+    /// and nowhere else.
     ///
     /// Completion is not success, which is why the question is "finished"
     /// rather than "failed": h2 resolves its connection future as `Ok(())`
@@ -202,8 +228,8 @@ impl GrpcStream {
     /// (`h2-0.4.15/src/proto/connection.rs:216-235`), so a pool that retired a
     /// connection only on `Err` would go on handing out a dead one.
     ///
-    /// `pub` only because those tests are integration tests and cannot reach a
-    /// `pub(crate)`; hidden for the reason its sibling is.
+    /// [`GrpcTransport::holds_a_live_connection`]:
+    ///     super::GrpcTransport::holds_a_live_connection
     #[doc(hidden)]
     pub fn connection_is_finished(&self) -> bool {
         self.driver.is_finished()

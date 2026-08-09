@@ -431,11 +431,19 @@ pub(crate) async fn open_grpc_call(
 
 /// One gRPC call on a connection of its own, which dies with it.
 ///
-/// Every dial through
-/// [`connect_stream`](crate::TransportDialer::connect_stream) goes to
-/// [`super::GrpcTransport`] and its pool instead. This is the unpooled form,
-/// which the h2 tests exercise; it is built out of the same two halves as the
-/// pooled path so that neither can drift from the other.
+/// **Not a dial, and reachable only through
+/// [`super::test_only`].** Every real dial goes through
+/// [`connect_stream`](crate::TransportDialer::connect_stream) to
+/// [`super::GrpcTransport`] and its pool, which reaches
+/// [`TransportDialer::connect_resolved`](crate::TransportDialer::connect_resolved)
+/// for its socket — a socket opened anywhere else misses Android's
+/// `VpnService.protect(fd)` and routes back into the tunnel it is leaving. This
+/// takes whatever stream a caller hands it, which is exactly what a test wants
+/// and exactly what production must not have.
+///
+/// It is built out of the same two halves as the pooled path so that neither
+/// can drift from the other, and it is the only shape in which a peer can be
+/// put in front of one connection with nothing else on it.
 pub async fn open_grpc_h2_stream(
     io: BoxedTransportStream,
     config: &GrpcConfig,

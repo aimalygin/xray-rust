@@ -67,11 +67,13 @@ impl GrpcTransport {
 
     /// The settings this transport dials with.
     ///
-    /// **`pub` for `xray-core-rs`'s tests**, which resolve the config out of a
-    /// `grpcSettings` block and need to read back what they resolved; the
-    /// crate boundary rules out `pub(crate)`. Hidden for the same reason as
-    /// [`Self::holds_a_live_connection`]: nothing outside a test should reach
-    /// past `TransportLayer` into a dialled transport's settings.
+    /// **`pub` because the test that needs it is in another crate**, and no
+    /// narrower visibility crosses that: `xray-core-rs`'s own `#[cfg(test)]`
+    /// module resolves a `grpcSettings` block into one of these and reads back
+    /// what it resolved. That is the whole reason, and it is a different reason
+    /// from [`Self::holds_a_live_connection`]'s — see there. Hidden so that
+    /// nothing outside a test finds it and reaches past `TransportLayer` into a
+    /// dialled transport's settings.
     #[doc(hidden)]
     pub fn config(&self) -> &GrpcConfig {
         &self.config
@@ -83,7 +85,9 @@ impl GrpcTransport {
     /// the settings': two `GrpcTransport`s resolved from identical config are
     /// *not* one pool. `Arc::ptr_eq` answers it, and this wrapper is what lets
     /// it be asked from outside the crate without making the pool type public.
-    /// See [`Self::config`] on why the method is `pub` at all.
+    /// `pub` for the same reason [`Self::config`] is, and for the same test:
+    /// what `xray-core-rs` checks is that its cached router hands every session
+    /// the one pool.
     #[doc(hidden)]
     pub fn shares_pool_with(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.pool, &other.pool)
@@ -96,13 +100,21 @@ impl GrpcTransport {
     /// exists so a test can wait for a retirement it would otherwise have to
     /// race.
     ///
-    /// **`pub` only because the tests are integration tests**, which are
-    /// separate crates and so cannot reach a `pub(crate)` — a convention this
-    /// crate's gRPC transport holds to deliberately, see
-    /// `crates/xray-transport/tests/stream_grpc_tests.rs`. Hidden rather than
-    /// left in the rendered API, because nothing outside those tests should
-    /// find it and be tempted to branch on it. Its sibling is
-    /// [`super::GrpcStream::connection_is_finished`].
+    /// **`pub` by convention rather than by necessity**, which is where this
+    /// differs from [`Self::config`]. Its only caller is this crate's own
+    /// `tests/stream_grpc_tests.rs`, and those are integration tests — a
+    /// separate crate, so they cannot reach a `pub(crate)`. But nothing forced
+    /// them to be integration tests: six modules elsewhere in this crate are
+    /// `#[cfg(test)]` and in-src, and an in-src module here would let this be
+    /// private. The gRPC transport keeps its tests outside so that the framing
+    /// and the pool are driven across the crate boundary a real caller sits on,
+    /// and pays for that with this. Hidden rather than left in the rendered
+    /// API, because nothing outside those tests should find it and be tempted
+    /// to branch on it. Its sibling is
+    /// [`GrpcStream::connection_is_finished`].
+    ///
+    /// [`GrpcStream::connection_is_finished`]:
+    ///     super::test_only::GrpcStream::connection_is_finished
     #[doc(hidden)]
     pub async fn holds_a_live_connection(&self) -> bool {
         self.pool
@@ -114,6 +126,12 @@ impl GrpcTransport {
     }
 
     /// Opens one flow, dialling only if the pool has nothing live.
+    ///
+    /// `pub(crate)` because its one caller anywhere is
+    /// [`TransportDialer::connect_stream`](crate::TransportDialer::connect_stream),
+    /// which is the door every transport is dispatched through and the only one
+    /// that should exist: a caller reaching this directly would be choosing the
+    /// gRPC arm for itself, which is the shape of bug the enum exists to stop.
     ///
     /// **The dial goes through [`TransportDialer::connect_resolved`]**, the
     /// same method every other transport reaches through `connect_stream`.
@@ -149,7 +167,7 @@ impl GrpcTransport {
     /// fails at once instead of waiting. Closing that needs a dial timeout the
     /// crate does not have anywhere — none of the other transports has one
     /// either — so it is deferred rather than papered over here.
-    pub async fn open_stream(
+    pub(crate) async fn open_stream(
         &self,
         dialer: &TransportDialer,
         connector: &ConnectorConfig,

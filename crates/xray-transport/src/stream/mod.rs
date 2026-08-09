@@ -12,11 +12,13 @@ mod masquerade;
 mod websocket;
 mod websocket_frame;
 
-pub use grpc::{
-    encode_hunk, grpc_request_path, open_grpc_h2_stream, resolve_keepalive, resolve_user_agent,
-    Authority, GrpcConfig, GrpcKeepalive, GrpcStream, GrpcTransport, HunkDecoder, HunkMode,
-    MAX_HUNK_PAYLOAD_LEN,
-};
+/// Test scaffolding, not API: `tests/stream_grpc_tests.rs` imports from here
+/// and nothing else may. The four gRPC names on the line below are the
+/// transport's whole public surface; `grpc::test_only` says why the rest is
+/// behind a door with its purpose in the name.
+#[doc(hidden)]
+pub use grpc::test_only as grpc_test_only;
+pub use grpc::{resolve_user_agent, Authority, GrpcConfig, GrpcTransport};
 pub use http_headers::{serialize_request, HeaderMap};
 pub use httpupgrade::{connect_httpupgrade, HttpUpgradeConfig};
 pub use masquerade::{

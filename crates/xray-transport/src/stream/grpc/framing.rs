@@ -41,11 +41,13 @@
 /// single mode only the last one is.
 ///
 /// It is a constructor argument of [`HunkDecoder`] rather than a setter, and
-/// the same value picks the `:path` in [`grpc_request_path`](crate::stream::grpc_request_path),
+/// the same value picks the `:path` in [`grpc_request_path`],
 /// because the two must agree: a decoder in single mode on a `TunMulti` call
 /// drops every chunk of a message bar its last, with no error and nothing
 /// logged. `h2client::GrpcCall` is where the one value is derived and the pair
 /// travels together.
+///
+/// [`grpc_request_path`]: super::test_only::grpc_request_path
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HunkMode {
     /// `rpc Tun (stream Hunk)`.
@@ -68,7 +70,8 @@ const MAX_VARINT_LEN: usize = 10;
 const MAX_RECEIVE_MESSAGE_SIZE: usize = 1024 * 1024 * 4;
 
 /// The largest payload one `Hunk` may carry, which
-/// [`GrpcStream::poll_write`](super::GrpcStream) clamps every write to.
+/// [`GrpcStream::poll_write`](super::test_only::GrpcStream) clamps every write
+/// to.
 ///
 /// The bound is the peer's receive cap rather than gRPC's own `u32` length
 /// prefix, because that is the one a real call reaches: an Xray gRPC inbound is
@@ -150,7 +153,7 @@ fn put_varint(out: &mut [u8; MAX_VARINT_LEN], mut value: usize) -> usize {
 ///
 /// The one input this cannot frame is a payload past gRPC's `u32` length
 /// prefix, and the guard for it lives in the caller rather than here:
-/// [`GrpcStream::poll_write`](super::GrpcStream) clamps to
+/// [`GrpcStream::poll_write`](super::test_only::GrpcStream) clamps to
 /// [`MAX_HUNK_PAYLOAD_LEN`] and returns the shorter count, which `AsyncWrite`
 /// permits and `write_all` loops on. A transport crate in a proxy should not
 /// crash on how large a caller's buffer is, and the clamp is three orders of

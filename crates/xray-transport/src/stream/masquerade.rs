@@ -312,8 +312,15 @@ fn apply_variant(headers: &mut HeaderMap, profile: Profile, variant: &str) {
 }
 
 /// Go's gap-fill test is `header.Get(key) == ""`, which an explicitly empty
-/// value satisfies. `HeaderMap::set_if_absent` tests for absence only, so it
+/// value satisfies — so "is it absent" is the wrong question, and asking it
 /// would leave a bare `Accept:` on the wire where Xray writes `Accept: */*`.
+///
+/// `HeaderMap` used to carry a `set_if_absent` that asked exactly that, with a
+/// doc comment recommending it for `Accept`, `Cache-Control` and `Pragma` —
+/// the three headers filled here, and the three it is wrong for. It never
+/// acquired a caller, and these are the only gap-fills in the workspace, so
+/// there was no correct one for it to acquire. Deleted rather than corrected:
+/// a correct version would be this function under another name.
 fn is_blank(headers: &HeaderMap, key: &str) -> bool {
     headers.get(key).is_none_or(str::is_empty)
 }

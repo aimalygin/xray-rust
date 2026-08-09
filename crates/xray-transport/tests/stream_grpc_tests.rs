@@ -2,8 +2,20 @@
 // `stream_websocket_tests.rs`'s `stream_websocket_handshake_tests`) rather
 // than a bare `mod path`, so later gRPC test modules — framing, pool — read
 // consistently in `cargo test` output alongside this one.
+//
+// **Why these are integration tests, and what it costs.** Being a separate
+// crate is the point: the framing, the pool and the dial are driven across the
+// same boundary a real caller sits on, so nothing here can reach a private and
+// quietly test something a caller could not do. It is a convention, not a
+// constraint — six modules in `xray-transport/src/` are in-src `#[cfg(test)]`
+// — and it is paid for in visibility. Four names are the gRPC transport's
+// actual API (`GrpcConfig`, `GrpcTransport`, `Authority`,
+// `resolve_user_agent`); everything else these blocks import comes from
+// `xray_transport::stream::grpc_test_only`, a `#[doc(hidden)]` module that
+// exists for this file alone. Import from there rather than asking for a name
+// to be re-exported beside the four.
 mod stream_grpc_path_tests {
-    use xray_transport::stream::{grpc_request_path, HunkMode};
+    use xray_transport::stream::grpc_test_only::{grpc_request_path, HunkMode};
 
     /// Vectors read off `Xray-core/transport/internet/grpc/config.go:17-59`
     /// and `encoding/customSeviceName.go:33`, which assembles the path as
@@ -116,7 +128,7 @@ mod stream_grpc_path_tests {
 }
 
 mod stream_grpc_framing_write_tests {
-    use xray_transport::stream::{encode_hunk, MAX_HUNK_PAYLOAD_LEN};
+    use xray_transport::stream::grpc_test_only::{encode_hunk, MAX_HUNK_PAYLOAD_LEN};
 
     /// gRPC's four-byte receive cap, which is both what a stock grpc-go peer
     /// holds a message to (`grpc@v1.81.0/server.go:60,191` — Xray installs no
@@ -243,7 +255,7 @@ mod stream_grpc_framing_write_tests {
 }
 
 mod stream_grpc_framing_read_tests {
-    use xray_transport::stream::{encode_hunk, HunkDecoder, HunkMode};
+    use xray_transport::stream::grpc_test_only::{encode_hunk, HunkDecoder, HunkMode};
 
     fn drain(decoder: &mut HunkDecoder) -> Vec<Vec<u8>> {
         let mut out = Vec::new();
@@ -677,9 +689,10 @@ mod stream_grpc_h2_tests {
     use http::{HeaderMap, Method, Response};
     use tokio::io::{duplex, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream};
     use tokio::sync::oneshot;
-    use xray_transport::stream::{
-        encode_hunk, open_grpc_h2_stream, GrpcConfig, GrpcStream, MAX_HUNK_PAYLOAD_LEN,
+    use xray_transport::stream::grpc_test_only::{
+        encode_hunk, open_grpc_h2_stream, GrpcStream, MAX_HUNK_PAYLOAD_LEN,
     };
+    use xray_transport::stream::GrpcConfig;
     use xray_transport::BoxedTransportStream;
 
     /// `grpcSettings.authority` when it is set; the tests never exercise the
@@ -2199,9 +2212,11 @@ mod stream_grpc_request_headers_tests {
     use http::Method;
     use tokio::io::{duplex, DuplexStream};
     use tokio::sync::oneshot;
+    use xray_transport::stream::grpc_test_only::{
+        grpc_request_path, open_grpc_h2_stream, HunkMode,
+    };
     use xray_transport::stream::{
-        apply_masquerade, grpc_request_path, open_grpc_h2_stream, resolve_user_agent, Authority,
-        GrpcConfig, HeaderMap, HunkMode,
+        apply_masquerade, resolve_user_agent, Authority, GrpcConfig, HeaderMap,
     };
     use xray_transport::BoxedTransportStream;
 
@@ -2594,9 +2609,10 @@ mod stream_grpc_oracle_tests {
     use h2::server;
     use tokio::io::{duplex, AsyncRead, AsyncWrite, DuplexStream, ReadBuf};
     use tokio::sync::oneshot;
-    use xray_transport::stream::{
-        encode_hunk, grpc_request_path, open_grpc_h2_stream, GrpcConfig, HunkDecoder, HunkMode,
+    use xray_transport::stream::grpc_test_only::{
+        encode_hunk, grpc_request_path, open_grpc_h2_stream, HunkDecoder, HunkMode,
     };
+    use xray_transport::stream::GrpcConfig;
     use xray_transport::BoxedTransportStream;
 
     const CONNECTION_PREAMBLE_JSON: &str =
@@ -3608,9 +3624,8 @@ mod stream_grpc_pool_tests {
     use tokio::io::{duplex, AsyncReadExt, AsyncWriteExt, DuplexStream};
     use tokio::net::{TcpListener, TcpStream};
     use xray_routing::{Network, Target, TargetAddr};
-    use xray_transport::stream::{
-        open_grpc_h2_stream, resolve_keepalive, GrpcConfig, GrpcTransport, TransportLayer,
-    };
+    use xray_transport::stream::grpc_test_only::{open_grpc_h2_stream, resolve_keepalive};
+    use xray_transport::stream::{GrpcConfig, GrpcTransport, TransportLayer};
     use xray_transport::{BoxedTransportStream, ConnectorConfig, TransportDialer};
 
     /// Every test here can stall rather than fail, so each is fenced by a
@@ -4653,7 +4668,8 @@ mod stream_grpc_flow_control_tests {
     use tokio::net::{TcpListener, TcpStream};
     use tokio::sync::oneshot;
     use xray_routing::{Network, Target, TargetAddr};
-    use xray_transport::stream::{encode_hunk, GrpcConfig, GrpcTransport, TransportLayer};
+    use xray_transport::stream::grpc_test_only::encode_hunk;
+    use xray_transport::stream::{GrpcConfig, GrpcTransport, TransportLayer};
     use xray_transport::{BoxedTransportStream, ConnectorConfig, TransportDialer};
 
     /// A starved flow stalls rather than fails, so the deadline is what turns

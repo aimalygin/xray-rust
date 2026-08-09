@@ -89,9 +89,11 @@ fn stream_name(configured: &str, mode: HunkMode) -> String {
 /// The `:path` pseudo-header for one gRPC dial.
 ///
 /// The mode is a [`HunkMode`] rather than Xray's `multiMode` bool because the
-/// RPC this names and the message [`HunkDecoder`](super::HunkDecoder) reads off
-/// it are two halves of one choice — see [`HunkMode`], and
-/// `h2client::GrpcCall`, where the single value both take is derived.
+/// RPC this names and the message [`HunkDecoder`] reads off it are two halves
+/// of one choice — see [`HunkMode`], and `h2client::GrpcCall`, where the single
+/// value both take is derived.
+///
+/// [`HunkDecoder`]: super::test_only::HunkDecoder
 pub fn grpc_request_path(configured_service_name: &str, mode: HunkMode) -> String {
     format!(
         "/{}/{}",
