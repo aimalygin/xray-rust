@@ -466,13 +466,18 @@ repository that measures a stream transport's framing rather than raw TCP;
 `ws` and `httpupgrade` have no equivalent yet. Both the client outbound and the
 fixture inbound use `serviceName: "bench"` and `security: none`, so the number
 covers the `Hunk` framing and one HTTP/2 stream and not three different TLS
-stacks. `xtls-rprx-vision` is deliberately absent: Xray refuses that flow on
-anything but RAW, so the REALITY/Vision configs cannot simply be reused with
-the network swapped. Unlike the REALITY fixture, the gRPC fixture has no
-warm-up wait — there is no cover origin whose record shape has to be learned
-before a client may connect.
+stacks. `xtls-rprx-vision` is deliberately absent: Xray's VLESS outbound
+accepts that flow only when the connection under it is a `*tls.Conn`,
+`*tls.UConn` or `*reality.UConn` and refuses everything else with "XTLS only
+supports TLS and REALITY directly for now."
+(`Xray-core/proxy/vless/outbound/outbound.go:274-285`). A gRPC stream is none
+of the three — and neither is RAW with `security: none`, so the criterion is
+the security layer, not the network. Either way the REALITY/Vision configs
+cannot simply be reused with the network swapped. Unlike the REALITY fixture,
+the gRPC fixture has no warm-up wait — there is no cover origin whose record
+shape has to be learned before a client may connect.
 
-Two properties of this number are easy to misread, and both change what it
+Three properties of this number are easy to misread, and each changes what it
 means:
 
 - **The sing-box leg is not grpc-go.** `SING_BOX_BUILD_TAGS` omits
@@ -484,17 +489,39 @@ means:
   sing-box bar as "sing-box as it ships in this harness", not as a grpc-go
   datapoint.
 - **Throughput is measured over the transfer window, not the whole run**, as it
-  is for every workload here (see the throughput bullet above) — and for a
-  pooled transport that is a real distortion rather than a rounding one. The
-  first dial pays a TCP connect, the HTTP/2 preface and SETTINGS exchange, and
-  the TLS handshake when one is configured, and all of it lands outside the
-  rate. The two engines also put that cost on opposite sides of the SOCKS
-  reply: xray-rust dials before answering SOCKS CONNECT, so its setup is
-  charged to the harness's connect phase, while Xray-core answers SOCKS first
-  and dials lazily, so its setup falls inside the measured span *before* the
-  first byte and is excluded from the rate rather than added to it. Quote
-  `transfer_duration_ms` and `duration_ms` alongside the rate, or the gRPC bar
-  reads as if setup were free.
+  is for every workload here (see the throughput bullet above). Everything
+  before the first validated byte is outside the rate: the SOCKS handshake, the
+  engine's dial, the TCP connect, the HTTP/2 preface and SETTINGS exchange, and
+  the TLS handshake when one is configured. For a pooled transport that is
+  worth naming rather than assuming — the preface is paid on the first dial and
+  never again, so a run that opens one connection charges it once and hides it,
+  and a run that opens many amortises it further. The two engines also put it
+  on opposite sides of the SOCKS reply: xray-rust dials before answering SOCKS
+  CONNECT, so its setup is charged to the harness's connect phase, while
+  Xray-core answers SOCKS first and dials lazily. Neither placement costs more
+  than about a millisecond on loopback h2c — in the harness's own debug log
+  Xray-core goes from `proxy/socks: TCP Connect request` to
+  `proxy/vless/outbound: tunneling request` in 1.1 ms, TCP connect and preface
+  included — so the gap in the table below is not this. Quote
+  `transfer_duration_ms` and `duration_ms` alongside the rate anyway, or the
+  gRPC bar reads as if setup were free.
+- **Xray-core's half-second before first byte is a VLESS header hold, not
+  transport setup.** Its VLESS outbound buffers the request header and waits up
+  to 500 ms for a first *client* payload to pack alongside it
+  (`ReadMultiBufferTimeout(time.Millisecond * 500)`,
+  `Xray-core/proxy/vless/outbound/outbound.go:334-336`; the header is flushed
+  by `SetBuffered(false)` at :354). This workload is server-first — the client
+  issues SOCKS CONNECT and only reads — so no uplink payload ever arrives, the
+  timeout expires in full, and only then does the server see the header and
+  dial the source. Probed against these same two configs: first byte lands
+  507 ms after the SOCKS reply on the first connection *and* on the second one,
+  which reuses the pooled `ClientConn`, and 2.7 ms when the client writes a
+  single byte before reading; the fixture's VLESS inbound logs `firstLen` at
+  T+504 ms in the first case and T+0.5 ms in the second. The hold is
+  per-stream and protocol-level, neither gRPC-specific nor pooling-specific:
+  the same probe against the same pair of configs with `network: tcp` measures
+  506 ms too. But it is why Xray-core's transfer window below is half its run
+  duration.
 
 A local three-engine anchor from this machine (Apple M3 Pro, 18 GB RAM, macOS 26.5.2;
 release harness and release `xray-rust`, five runs, one connection, 256 × 4 MiB
@@ -507,8 +534,9 @@ release harness and release `xray-rust`, five runs, one connection, 256 × 4 MiB
 | sing-box (lite) | 5586 Mbps | 1550 | 1538 | 37.2 MiB | 3100 |
 
 Medians across five runs. Xray-core streams the gigabyte at twice our rate
-once it starts and spends 518 ms getting there, so the same gigabyte takes
-both engines the same wall-clock second; we and sing-box spend 12 ms. Neither
+once it starts, but spends 518 ms getting there — the 500 ms VLESS header hold
+above, not tunnel setup — so the same gigabyte takes both engines the same
+wall-clock second; we and sing-box reach first byte in 12 ms. Neither
 column alone is the whole story, which is why both are here. On memory and CPU
 per gigabyte the ordering does not depend on the window: 4.9 MiB against
 132.5 MiB and 37.2 MiB, and 890 CPU-ms/GiB against 1160 and 3100.
