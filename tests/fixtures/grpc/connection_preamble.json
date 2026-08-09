@@ -1,0 +1,27 @@
+{
+  "wire": "connection_preamble",
+  "modules": {
+    "google.golang.org/grpc": "v1.81.0",
+    "golang.org/x/net": "v0.53.0"
+  },
+  "preface_hex": "505249202a20485454502f322e300d0a0d0a534d0d0a0d0a",
+  "preface_text": "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n",
+  "settings_frame_hex": "000000040000000000",
+  "settings": [],
+  "frames_before_first_headers": [
+    {
+      "type": "SETTINGS",
+      "flags": [],
+      "stream_id": 0,
+      "payload_len": 0
+    },
+    {
+      "type": "SETTINGS",
+      "flags": [
+        "ACK"
+      ],
+      "stream_id": 0,
+      "payload_len": 0
+    }
+  ]
+}

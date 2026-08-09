@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Regenerate every Go-oracle fixture and compare it with the committed copy.
 
-The fixtures under `tests/fixtures/reality` and `tests/fixtures/masquerade` are
-the only thing pinning xray-rust's ClientHello and masquerade-header shaping to
-the Go reference implementation. Nothing else in CI runs the oracles, so a
-fixture can drift away from what its oracle now produces -- after a `go get`, a
-Go toolchain change, or an Xray-core resync -- without a single test turning
-red.
+The fixtures under `tests/fixtures/reality`, `tests/fixtures/masquerade` and
+`tests/fixtures/grpc` are the only thing pinning xray-rust's ClientHello,
+masquerade-header and gRPC wire shaping to the Go reference implementation.
+Nothing else in CI runs the oracles, so a fixture can drift away from what its
+oracle now produces -- after a `go get`, a Go toolchain change, or an Xray-core
+resync -- without a single test turning red.
 
 Every oracle already supports `-check <fixture>`: it regenerates its artefact
 from the flags it is given and compares the result byte for byte. The flags
@@ -20,7 +20,8 @@ adds a fixture, each oracle below declares two functions:
     own output shape, and
   * `flags`, which reads the generation parameters back out of that same
     output -- the shape fixtures record `fingerprint`, `server_name` and
-    `websocket_alpn`, the masquerade ones record `variant` and `user_agent`.
+    `websocket_alpn`, the masquerade ones record `variant` and `user_agent`,
+    the gRPC ones record `wire`.
 
 A new fixture is therefore covered automatically as long as an oracle
 recognises it, and a fixture no oracle recognises is a hard failure rather than
@@ -52,9 +53,14 @@ FIXTURE_ROOT = REPOSITORY_ROOT / "tests" / "fixtures"
 # The directories whose JSON is Go-oracle output. `tests/fixtures/configs` is
 # deliberately absent: it holds Rust configuration fixtures that no oracle
 # generates.
-FIXTURE_DIRECTORIES = (FIXTURE_ROOT / "reality", FIXTURE_ROOT / "masquerade")
+FIXTURE_DIRECTORIES = (
+    FIXTURE_ROOT / "reality",
+    FIXTURE_ROOT / "masquerade",
+    FIXTURE_ROOT / "grpc",
+)
 
 MASQUERADE_MODULE = "tools/reality-oracle/masquerade"
+GRPC_MODULE = "tools/reality-oracle/grpc"
 
 # The browsers a masquerade header block draws a version for, in the order the
 # fixture's `versions` object lists them.
@@ -88,6 +94,19 @@ def masquerade_oracle(tag: str) -> tuple[str, ...]:
     from the repository root.
     """
     return ("go", "run", "-C", MASQUERADE_MODULE, "-tags", tag, ".")
+
+
+def grpc_oracle(tag: str) -> tuple[str, ...]:
+    """Build the `go run` invocation for an oracle in the gRPC module.
+
+    A third module for the reason there is a second one, twice over: this
+    oracle imports `google.golang.org/grpc`, which raises the root module's
+    `golang.org/x/crypto` from v0.36.0 to v0.48.0 on its own, and Xray-core,
+    which raises it to v0.50.0 -- and uTLS built against a different
+    `x/crypto` emits different ClientHello bytes. See the header of
+    `tools/reality-oracle/grpc/go.mod`.
+    """
+    return ("go", "run", "-C", GRPC_MODULE, "-tags", tag, ".")
 
 
 def claims_raw_clienthello(document: Any) -> bool:
@@ -132,6 +151,24 @@ def claims_version_distribution(document: Any) -> bool:
     )
 
 
+def claims_grpc_wire(artefact: str) -> Callable[[Any], bool]:
+    """Recognise one of the gRPC oracle's three artefacts by its own `wire` key.
+
+    Keyed on `wire` rather than on the shape of the payload, because the
+    payload shapes collide with oracles already here. The header artefact
+    carries a `headers` array, and `claims_masquerade_headers` fires on
+    `"variant" in document and "headers" in document` -- so a gRPC fixture that
+    grew a `variant` key would be claimed twice and fail as ambiguous. `wire`
+    is read by no other oracle, and it doubles as the flag the artefact was
+    generated with; see `grpc_wire_flags`.
+    """
+
+    def claims(document: Any) -> bool:
+        return isinstance(document, dict) and document.get("wire") == artefact
+
+    return claims
+
+
 def no_flags(document: Any) -> list[str]:
     """For oracles whose output records no generation parameters."""
     del document
@@ -169,6 +206,17 @@ def masquerade_headers_flags(document: Any) -> list[str]:
         "-user-agent",
         require_string(document, "user_agent"),
     ]
+
+
+def grpc_wire_flags(document: Any) -> list[str]:
+    """Read `grpc_wire.go`'s one flag back out of its output.
+
+    One capture produces all three artefacts, so `-wire` only selects which of
+    them is printed. Reading it back off the fixture rather than hard-coding it
+    per oracle keeps the pairing honest: a fixture renamed or re-keyed by hand
+    is checked against the artefact it says it is.
+    """
+    return ["-wire", require_string(document, "wire")]
 
 
 def require_string(document: Any, key: str) -> str:
@@ -234,6 +282,28 @@ ORACLES: tuple[Oracle, ...] = (
         command=masquerade_oracle("reality_oracle_version_distribution"),
         claims=claims_version_distribution,
         flags=no_flags,
+    ),
+    # Three oracles over one program: the capture that produces a connection
+    # preamble is the same capture that produces the HEADERS block and the
+    # framed Hunks, and splitting it into three programs would be three
+    # transcriptions of one dial. `-wire` picks which artefact is printed.
+    Oracle(
+        name="grpc-connection-preamble",
+        command=grpc_oracle("reality_oracle_grpc_wire"),
+        claims=claims_grpc_wire("connection_preamble"),
+        flags=grpc_wire_flags,
+    ),
+    Oracle(
+        name="grpc-request-headers",
+        command=grpc_oracle("reality_oracle_grpc_wire"),
+        claims=claims_grpc_wire("request_headers"),
+        flags=grpc_wire_flags,
+    ),
+    Oracle(
+        name="grpc-hunk-framing",
+        command=grpc_oracle("reality_oracle_grpc_wire"),
+        claims=claims_grpc_wire("hunk_framing"),
+        flags=grpc_wire_flags,
     ),
 )
 

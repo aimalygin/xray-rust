@@ -120,10 +120,15 @@ jobs:
         with:
           persist-credentials: false
 
-      # One toolchain builds both oracle modules: the root one declares
-      # `go 1.24` and the masquerade one `go 1.26`, and a `go` directive is a
-      # minimum. The committed fixtures reproduce byte for byte under 1.24.0,
-      # 1.26.0, 1.26.3 and 1.26.5, so the pin below is a pin, not a constraint.
+      # One toolchain builds all three oracle modules: the root one declares
+      # `go 1.24` and the masquerade and gRPC ones `go 1.26`, and a `go`
+      # directive is a minimum. The committed fixtures reproduce byte for byte
+      # under 1.24.0, 1.26.0, 1.26.3 and 1.26.5, so the pin below is a pin, not
+      # a constraint.
+      #
+      # Every module's `go.sum` is listed: the cache key is built from these
+      # paths alone, so a module missing from the list has its dependencies
+      # re-downloaded on every run.
       - name: Install pinned Go toolchain
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -131,6 +136,7 @@ jobs:
           cache-dependency-path: |
             go.sum
             tools/reality-oracle/masquerade/go.sum
+            tools/reality-oracle/grpc/go.sum
 
       - name: Verify Go-oracle fixtures
         run: bash scripts/verify-oracle-fixtures.sh

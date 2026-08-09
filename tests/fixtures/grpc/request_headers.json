@@ -1,0 +1,43 @@
+{
+  "wire": "request_headers",
+  "modules": {
+    "google.golang.org/grpc": "v1.81.0",
+    "golang.org/x/net": "v0.53.0"
+  },
+  "call": {
+    "service_name": "xray.grpc",
+    "stream_name": "Tun",
+    "authority": "grpc.example.com",
+    "user_agent": "xray-grpc-oracle/1"
+  },
+  "headers": [
+    {
+      "name": ":method",
+      "value": "POST"
+    },
+    {
+      "name": ":scheme",
+      "value": "http"
+    },
+    {
+      "name": ":path",
+      "value": "/xray.grpc/Tun"
+    },
+    {
+      "name": ":authority",
+      "value": "grpc.example.com"
+    },
+    {
+      "name": "content-type",
+      "value": "application/grpc"
+    },
+    {
+      "name": "user-agent",
+      "value": "xray-grpc-oracle/1"
+    },
+    {
+      "name": "te",
+      "value": "trailers"
+    }
+  ]
+}
