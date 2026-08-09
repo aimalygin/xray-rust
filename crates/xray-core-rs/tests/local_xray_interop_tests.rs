@@ -1778,9 +1778,70 @@ async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_grpc_rea
     .unwrap();
 }
 
+#[tokio::test]
+#[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
+async fn rust_socks_client_streams_bulk_echo_through_local_xray_vless_grpc_multi_mode() {
+    timeout(
+        Duration::from_secs(180),
+        run_local_xray_grpc_multi_mode_interop(),
+    )
+    .await
+    .unwrap();
+}
+
 async fn run_local_xray_grpc_interop(security: XrayInboundSecurity) {
+    let xray = start_xray_grpc_server(security).await;
+
+    let rust_config = rust_grpc_core_config(xray.addr, grpc_client_security(security), false);
+    if security == XrayInboundSecurity::Reality {
+        // Warmed with a gRPC profile, not the Vision one the REALITY helpers
+        // build: the inbound serves gRPC and nothing else, so a Vision probe
+        // fails in the warmup and the scenario's own pairing is never tried.
+        warm_up_reality_server_detector(
+            &xray,
+            rust_grpc_core_config(xray.addr, grpc_client_security(security), false),
+        )
+        .await;
+    }
+    // No dialer override, so the Core builds `TransportDialer::system()` and
+    // the handshake runs through the shaped path -- which is the whole point:
+    // `TlsConnector::with_pinned_client_config` ignores the fingerprint and
+    // sends an unshaped ClientHello, so the pinned-root dialer the other TLS
+    // scenarios use cannot offer ALPN at all. Trading the pinned root for
+    // `allowInsecure` is what buys the shaping; the certificate is a
+    // throwaway self-signed one either way.
+    run_local_xray_vless_interop_scenario(xray, rust_config, None).await;
+}
+
+/// The only end-to-end proof of the multi-element `MultiHunk` read path, and
+/// the reason it moves a megabyte rather than a greeting.
+///
+/// Our writer never batches — one `poll_write` is one element — so the uplink
+/// stays single-element whatever the size. The *server* batches: Xray reads
+/// the echo server with a `readv` reader whose allocation strategy doubles up
+/// to eight 8 KiB buffers (`Xray-core/common/buf/readv_reader.go:22-43`,
+/// `common/buf/buffer.go:13`), and `WriteMultiBuffer` puts one element per
+/// buffer into a single `MultiHunk`
+/// (`transport/internet/grpc/encoding/multiconn.go:114-131`). So a downlink
+/// that stays ahead of the reader produces exactly the message a single-mode
+/// decoder would silently truncate to its last element.
+///
+/// Confirmed to reach that state rather than assumed: with `parse_hunk`
+/// temporarily made to assign in multi mode instead of appending — the bug the
+/// mode exists to prevent — this scenario fails and the other three gRPC ones
+/// still pass. It fails by starving rather than by corrupting, because a
+/// dropped element is payload that never arrives: the read never reaches a
+/// megabyte and the transfer times out. That is why the byte comparison below
+/// is not the whole assertion, and why a generous timeout is one.
+async fn run_local_xray_grpc_multi_mode_interop() {
+    let xray = start_xray_grpc_server(XrayInboundSecurity::None).await;
+    let rust_config = rust_grpc_core_config(xray.addr, StreamSecurity::None, true);
+    run_local_xray_grpc_bulk_interop_scenario(xray, rust_config).await;
+}
+
+async fn start_xray_grpc_server(security: XrayInboundSecurity) -> XrayServer {
     let xray_checkout = resolve_xray_checkout();
-    let xray = timeout(
+    timeout(
         Duration::from_secs(60),
         start_xray_vless_server(
             &xray_checkout,
@@ -1797,27 +1858,7 @@ async fn run_local_xray_grpc_interop(security: XrayInboundSecurity) {
         ),
     )
     .await
-    .expect("start xray timeout");
-
-    let rust_config = rust_grpc_core_config(xray.addr, grpc_client_security(security));
-    if security == XrayInboundSecurity::Reality {
-        // Warmed with a gRPC profile, not the Vision one the REALITY helpers
-        // build: the inbound serves gRPC and nothing else, so a Vision probe
-        // fails in the warmup and the scenario's own pairing is never tried.
-        warm_up_reality_server_detector(
-            &xray,
-            rust_grpc_core_config(xray.addr, grpc_client_security(security)),
-        )
-        .await;
-    }
-    // No dialer override, so the Core builds `TransportDialer::system()` and
-    // the handshake runs through the shaped path -- which is the whole point:
-    // `TlsConnector::with_pinned_client_config` ignores the fingerprint and
-    // sends an unshaped ClientHello, so the pinned-root dialer the other TLS
-    // scenarios use cannot offer ALPN at all. Trading the pinned root for
-    // `allowInsecure` is what buys the shaping; the certificate is a
-    // throwaway self-signed one either way.
-    run_local_xray_vless_interop_scenario(xray, rust_config, None).await;
+    .expect("start xray timeout")
 }
 
 fn grpc_client_security(security: XrayInboundSecurity) -> StreamSecurity {
@@ -1839,14 +1880,141 @@ fn grpc_client_security(security: XrayInboundSecurity) -> StreamSecurity {
     }
 }
 
-fn rust_grpc_core_config(xray_addr: SocketAddr, security: StreamSecurity) -> CoreConfig {
+/// `multi_mode` has no server-side counterpart here, and that is not an
+/// omission. The listener never reads the field: it registers `Tun` and
+/// `TunMulti` on one service descriptor whatever the setting
+/// (`Xray-core/transport/internet/grpc/hub.go:129`,
+/// `encoding/customSeviceName.go:9-29,57-60`), so for a `serviceName` without
+/// a leading `/` — where the two stream names are those constants
+/// (`transport/internet/grpc/config.go:35-59`) — a client in either mode
+/// reaches a handler. A custom path is where the two sides must agree, because
+/// there the names come from the config's last segment split on `|`.
+fn rust_grpc_core_config(
+    xray_addr: SocketAddr,
+    security: StreamSecurity,
+    multi_mode: bool,
+) -> CoreConfig {
     rust_core_config_with_transport(
         xray_addr,
         security,
         None,
         StreamTransport::Grpc(GrpcSettings {
             service_name: GRPC_SERVICE_NAME.to_owned(),
+            multi_mode,
             ..GrpcSettings::default()
         }),
     )
+}
+
+/// One megabyte, which is what makes the server batch. Eight 8 KiB buffers is
+/// the readv reader's ceiling, so anything past a few hundred kilobytes is
+/// well into the regime; a megabyte crosses loopback in well under a second
+/// and leaves room for the transfer to be slow without the scenario being
+/// flaky.
+const GRPC_BULK_PAYLOAD_LEN: usize = 1024 * 1024;
+
+/// Writes and reads [`GRPC_BULK_PAYLOAD_LEN`] bytes at once through the
+/// tunnel, and reports the first byte that came back wrong.
+///
+/// The two directions run concurrently because they have to: a megabyte does
+/// not fit in the socket buffers between here and the echo server, so writing
+/// it all before reading any of it deadlocks. And the comparison is a
+/// first-difference search rather than `assert_eq!`, which on a mismatch would
+/// try to print two megabytes of hex.
+async fn run_local_xray_grpc_bulk_interop_scenario(xray: XrayServer, rust_config: CoreConfig) {
+    let (echo_addr, echo_handle) = spawn_echo_server().await;
+    let mut core = Core::new(rust_config).expect("create rust core");
+
+    timeout(Duration::from_secs(5), core.start())
+        .await
+        .expect("start rust core timeout")
+        .expect("start rust core");
+    let socks_addr = core
+        .inbound_addr(Some("socks-in"))
+        .expect("bound socks addr");
+
+    let mut client = timeout(Duration::from_secs(5), TcpStream::connect(socks_addr))
+        .await
+        .expect("connect rust socks timeout")
+        .expect("connect rust socks");
+    match timeout(
+        Duration::from_secs(5),
+        socks5_connect(&mut client, echo_addr),
+    )
+    .await
+    {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => {
+            eprintln!("{}", xray.logs());
+            panic!("socks connect failed: {error}");
+        }
+        Err(error) => {
+            eprintln!("{}", xray.logs());
+            panic!("socks connect timeout: {error}");
+        }
+    }
+
+    let payload = bulk_interop_payload(GRPC_BULK_PAYLOAD_LEN);
+    let mut echoed = vec![0; payload.len()];
+    let (mut reader, mut writer) = client.split();
+    let transfer = async {
+        let (written, read) = tokio::join!(
+            async {
+                writer.write_all(&payload).await?;
+                writer.flush().await
+            },
+            reader.read_exact(&mut echoed),
+        );
+        written.map_err(|error| format!("write bulk payload: {error}"))?;
+        read.map_err(|error| format!("read bulk echo: {error}"))?;
+        Ok::<(), String>(())
+    };
+    match timeout(Duration::from_secs(60), transfer).await {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => {
+            eprintln!("{}", xray.logs());
+            panic!("bulk echo failed: {error}");
+        }
+        Err(error) => {
+            eprintln!("{}", xray.logs());
+            panic!("bulk echo timeout: {error}");
+        }
+    }
+
+    if let Some(index) = echoed
+        .iter()
+        .zip(payload.iter())
+        .position(|(echoed, sent)| echoed != sent)
+    {
+        eprintln!("{}", xray.logs());
+        panic!(
+            "bulk echo differs at byte {index} of {}: {:#04x} != {:#04x}",
+            payload.len(),
+            echoed[index],
+            payload[index]
+        );
+    }
+
+    drop(client);
+    core.stop().await.expect("stop rust core");
+    drop(xray);
+    timeout(Duration::from_secs(5), echo_handle)
+        .await
+        .expect("echo task should finish")
+        .expect("echo task should not panic");
+}
+
+/// A deterministic filler with no repeating byte run, so a chunk the tunnel
+/// dropped shifts everything after it and the first-difference search lands on
+/// the loss rather than somewhere later.
+fn bulk_interop_payload(len: usize) -> Vec<u8> {
+    let mut state = 0x9e37_79b9u32;
+    (0..len)
+        .map(|_| {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            state as u8
+        })
+        .collect()
 }
