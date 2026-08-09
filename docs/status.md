@@ -24,6 +24,7 @@ parity with every Xray-core release.
 | Freedom/direct outbound | Supported | TCP and UDP integration tests |
 | VLESS over TCP | Supported | Local fake-server and optional Xray-core interoperability tests |
 | VLESS over WebSocket / HTTPUpgrade | Supported subset | Browser-masqueraded HTTP/1.1 upgrade with early data and keepalive; REALITY and Vision are refused on both, matching Xray; live Xray-core interoperability tests |
+| VLESS over gRPC | Supported subset | One pooled HTTP/2 connection per outbound carrying `Hunk` or `MultiHunk` messages, with grpc-go's keepalive gate and dormancy; REALITY is accepted and Vision refused, matching Xray; Go-oracle wire fixtures and live Xray-core interoperability tests |
 | TLS | Supported | Certificate-verified local integration tests; the uTLS-shaped ClientHello sent by default is covered by per-fingerprint shape tests; `allowInsecure` is accepted with a warning |
 | REALITY client | Supported subset | Deterministic primitive tests and optional local Xray-core REALITY+Vision interoperability tests |
 | TCP Happy Eyeballs | Supported subset | Opt-in Xray-compatible Freedom/VLESS raw-TCP candidate race; bounded and cancellation-safe, with one TLS/REALITY handshake after connect |
@@ -44,8 +45,8 @@ See [configuration compatibility](config-compatibility.md) for accepted values.
 Notable unsupported areas include:
 
 - VMess, Trojan, Shadowsocks, WireGuard, and server-side VLESS;
-- HTTP/2, gRPC, QUIC, KCP, XHTTP, and other stream transports beyond raw,
-  WebSocket and HTTPUpgrade;
+- HTTP/2, QUIC, KCP, XHTTP, and other stream transports beyond raw, WebSocket,
+  HTTPUpgrade and gRPC;
 - mux, balancers, reverse proxy, observatory/API services, and outbound chaining;
 - SOCKS/HTTP authentication and HTTP transparent proxy mode;
 - full Xray DNS, policy/statistics, sniffing, and routing semantics.
@@ -82,5 +83,34 @@ of the maintainer's public `shaped-rustls` fork rather than the crates.io
 `rustls` release. The revision is pinned in `Cargo.toml`, recorded in
 `Cargo.lock`, and constrained by `deny.toml`; consumers should include that fork
 in dependency and security reviews.
+
+### Known gRPC divergences from grpc-go
+
+Three of them, all at the HPACK layer, all measured against a live grpc-go
+v1.81.0 client making the same call, and none reachable without forking the
+`h2` crate:
+
+- **Pseudo-header order.** `h2` writes `:method`, `:scheme`, `:authority`,
+  `:path`; grpc-go writes `:method`, `:scheme`, `:path`, `:authority`.
+- **`:path` indexing.** grpc-go encodes it as a literal *with* incremental
+  indexing, so the value also enters the dynamic table. `h2` hard-codes `:path`
+  as a literal *without* indexing, so the table never sees it — which makes the
+  two encodings diverge further over the life of a connection rather than
+  converge.
+- **Huffman coding of `te`.** grpc-go's encoder codes a string only when coding
+  shortens it, and the two-byte name `te` is not shortened, so it goes out raw.
+  `h2` codes it regardless.
+
+The two HEADERS payloads are the same length — 65 bytes each for the captured
+call — and differ in exactly those three places.
+
+The parity bar is set to what can actually be held. The connection preamble is
+compared byte for byte, and so is the `Hunk` and `MultiHunk` message framing.
+The first HEADERS block is compared by its decoded fields and their order, not
+by its bytes, with each client's pseudo-header order pinned separately so ours
+cannot drift into a third order that neither client emits. **Nothing past the
+first request on a connection carries a parity claim**: by the second stream
+most of the block is back-references into a dynamic table the two clients
+filled differently, and no fixture covers that.
 
 Use [verification](verification.md) for exact commands and prerequisites.
