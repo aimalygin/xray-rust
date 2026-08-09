@@ -1741,23 +1741,25 @@ const GRPC_SERVICE_NAME: &str = "interop grpc";
 /// else, and its `ALPNExtension` overwrites `NextProtos` rather than deferring
 /// to it (`utls@v1.8.3-.../u_tls_extensions.go:613-621`), so a Go client on
 /// the same fingerprint negotiates an empty protocol against a
-/// `NextProtos: ["h2"]` server and grpc-go closes on it.
+/// `NextProtos: ["h2"]` server and grpc-go closes on it. The three `360` names
+/// never get that far here: `build_client_config` refuses them outright,
+/// because rustls implements none of the cipher suites that parrot offers
+/// (`crates/xray-transport/src/tls.rs`, `reject_unnegotiable_fingerprint`).
 ///
-/// The TLS-1.2-only parrots *are* a gap, and one this fingerprint choice
-/// steps around rather than covers. `helloios_11_1` and `helloios_12_1`
-/// advertise `h2` first
+/// The TLS-1.2-era parrots that *do* carry `h2` reach the inbound as well,
+/// which they did not while a profile declaring no `supported_versions`
+/// extension still got a rustls config offering TLS 1.3 — the server then
+/// answered with TLS 1.2, and rustls read the RFC 8446 §4.1.3 downgrade
+/// sentinel in that ServerHello as an attack
+/// (`AttemptedDowngradeToTls12WhenTls13IsSupported`). Such a config is capped
+/// at TLS 1.2 now, so nothing claims a version the hello never mentioned.
+/// `helloios_11_1` and `helloios_12_1` advertise `h2` first
 /// (`utls@v1.8.3-.../u_parrots.go:1639,1701`, and `PROFILE_34`/`PROFILE_35` in
-/// `crates/xray-transport/src/utls_profiles.rs` carry the same list), and uTLS
-/// on either negotiates `h2` over TLS 1.2 against the server `hub.go:84`
-/// builds, so xray-core does reach the inbound with them. We do not: a profile
-/// with no `supported_versions` extension still gets a rustls config that
-/// offers TLS 1.3, and rustls then reads the RFC 8446 §4.1.3 downgrade
-/// sentinel in a TLS 1.2 ServerHello as an attack
-/// (`AttemptedDowngradeToTls12WhenTls13IsSupported`). Substituting either
-/// fingerprint below fails this scenario at the SOCKS reply. It is not a gRPC
-/// problem — every profile with an empty `supported_versions` list, ten of
-/// them today, fails the same way against any TLS-1.3-capable server —
-/// which is why the scenario is not the place to chase it.
+/// `crates/xray-transport/src/utls_profiles.rs` carry the same list), and
+/// substituting either name below passes this scenario — measured on both —
+/// which means `h2` negotiated over TLS 1.2 against the server `hub.go:84`
+/// builds, the same pairing uTLS reaches. `chrome` stays because it is the
+/// shape an unset `tlsSettings.fingerprint` sends.
 const GRPC_TLS_FINGERPRINT: &str = "chrome";
 
 #[tokio::test]
