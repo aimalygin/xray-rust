@@ -1293,7 +1293,12 @@ pub struct GrpcConfig {
     /// `:authority`: config `authority`, else the TLS server name, else — only
     /// when REALITY is absent — the destination domain. When all three are
     /// empty grpc-go falls back to `host:port`, port included.
-    pub authority: String,
+    ///
+    /// Typed, not a `String`. The value is static and free-form, so it is
+    /// parsed once where it is resolved (Task 9) rather than on every dial,
+    /// and an `Authority` cannot hold the `/`, `?` or `#` that would
+    /// re-partition the request URI.
+    pub authority: Authority,
     /// Already resolved through Xray's table, so `golang` has become the empty
     /// string by the time it lands here.
     pub user_agent: String,
@@ -1586,7 +1591,9 @@ Expected: FAIL — non-exhaustive match in `build_transport_layer`.
             authority: grpc
                 .authority
                 .clone()
-                .unwrap_or_else(|| authority_fallback(connector, settings)),
+                .unwrap_or_else(|| authority_fallback(connector, settings))
+                .parse()
+                .map_err(|_| CoreError::…)?,
             user_agent: resolve_grpc_user_agent(grpc.user_agent.as_deref()),
             idle_timeout_secs: grpc.idle_timeout_secs,
             health_check_timeout_secs: grpc.health_check_timeout_secs,
@@ -1599,6 +1606,15 @@ Expected: FAIL — non-exhaustive match in `build_transport_layer`.
 `ConnectorConfig::Reality` it must **not** fall through to the destination domain, and must append
 the port. Do not reuse `host_fallback` verbatim — it never carries a port, which is right for a
 `Host` header and wrong for this.
+
+**This is where a bad `authority` is reported.** `GrpcConfig::authority` is an
+`xray_transport::stream::Authority`, not a `String`: `grpcSettings.authority` is free-form JSON that
+the config layer only drops when empty, and a `/`, `?` or `#` in it re-partitions a request URI
+rather than failing. Since the value is resolved exactly once, here, that is the one place the parse
+should cost anything — the dial is handed an already-connected, already-TLS'd socket, so a check
+there would burn a full handshake per dial on a static config error, forever. Pick or add the
+`CoreError` variant that names the key; `an_authority_that_is_not_an_authority_never_reaches_a_dial`
+in `stream_grpc_tests.rs` has the four vectors and the grpc-go divergence this costs.
 
 Two things Task 5 deliberately left for this task, both of which will announce themselves:
 

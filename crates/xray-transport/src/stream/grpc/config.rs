@@ -4,6 +4,12 @@ use crate::stream::masquerade::{
     anchored_chrome_user_agent, anchored_edge_user_agent, anchored_firefox_user_agent,
 };
 
+/// Re-exported because [`GrpcConfig::authority`] is one and the crate that
+/// builds the config (`xray-core-rs`) has no `http` dependency of its own.
+/// Handing it out from here also means there is only ever one `http` in the
+/// chain: a second, differently-versioned `Authority` would not be this type.
+pub use http::uri::Authority;
+
 /// Everything the gRPC dial needs, resolved from config plus the security
 /// layer's server name.
 #[derive(Debug, Clone)]
@@ -21,12 +27,28 @@ pub struct GrpcConfig {
     /// (`grpc@v1.81.0/clientconn.go:1889-1942,1977-1986`) — which is what lets
     /// a bracketed IPv6 literal survive.
     ///
-    /// Untouched, but not unchecked: this is free-form JSON that the config
-    /// layer only rejects for emptiness, so a value that is not an authority
-    /// at all fails the dial rather than reshaping the request. The reasoning,
-    /// and why it diverges from grpc-go, is at the URI assembly in
-    /// [`super::open_grpc_h2_stream`].
-    pub authority: String,
+    /// **Parsed here rather than at the dial**, because the value is
+    /// free-form JSON that the config layer only rejects for emptiness
+    /// (`crates/xray-config/src/parser.rs:2869-2872`), and it is static: it is
+    /// resolved once, when the outbound is built. A `/`, `?` or `#` in it
+    /// re-partitions an interpolated request URI instead of failing —
+    /// `example.com/api` parses as authority `example.com` with path
+    /// `/api/xray.grpc/Tun`, and `example.com#frag` leaves the path a bare `/`
+    /// — which calls a gRPC method nobody configured and gets back an
+    /// UNIMPLEMENTED that names nothing. An [`Authority`] cannot hold any of
+    /// the three, so no assembly of one can re-partition anything, and the
+    /// config that would have is refused once at startup instead of on every
+    /// dial — each of which would otherwise pay a TCP connect and a TLS or
+    /// REALITY handshake first, since [`super::open_grpc_h2_stream`] is handed
+    /// the far side of both.
+    ///
+    /// That diverges from grpc-go, which validates a `WithAuthority` not at
+    /// all (`grpc@v1.81.0/clientconn.go:1976-1978`) and — confirmed on the
+    /// wire — sends `:authority: example.com/api` verbatim with the `:path`
+    /// intact. `Authority` cannot hold a `/`, so matching that is not on the
+    /// table; between refusing the config and silently calling a different
+    /// method, refusing is the one that says what is wrong.
+    pub authority: Authority,
     /// Already resolved through Xray's table by [`resolve_user_agent`], so
     /// `golang` has become the empty string by the time it lands here.
     pub user_agent: String,

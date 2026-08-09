@@ -13,6 +13,7 @@
 //! adapter.
 
 use h2::client;
+use http::uri::Scheme;
 use http::{Method, Request, Uri, Version};
 use tokio::task::JoinHandle;
 
@@ -61,9 +62,10 @@ impl H2ConnectionDriver {
 /// it through Xray's fallbacks (`dial.go:159-167`, then grpc-go's own
 /// `initAuthority` precedence in `clientconn.go:1956-1988`, which ends at the
 /// dial target's `host:port` — it is never empty in practice), and goes out
-/// untouched, or fails the dial when it is not an authority at all. The `:path`
-/// is derived here rather than carried, because `multiMode` picks a different
-/// stream name and the mode is a property of the dial. `config.user_agent` is
+/// untouched; a value that is not an authority at all never reaches this
+/// function, having failed when the config was built. The `:path` is derived
+/// here rather than carried, because `multiMode` picks a different stream name
+/// and the mode is a property of the dial. `config.user_agent` is
 /// sent even when empty, because grpc-go appends the header unconditionally
 /// (`grpc@v1.81.0/internal/transport/http2_client.go:578`), which is how
 /// Xray's `"golang"` setting — mapped to `""` by
@@ -82,6 +84,35 @@ pub async fn open_grpc_h2_stream(
     mut io: BoxedTransportStream,
     config: &GrpcConfig,
 ) -> Result<GrpcStream, TransportError> {
+    // Ahead of every byte of I/O below, because it reads nothing but `config`.
+    // A request this dial cannot even build should not first put the preface
+    // and SETTINGS on the wire and then hang up without a HEADERS frame: those
+    // opening bytes are the ones a censor fingerprints — the handshake comment
+    // below is about nothing else — and a complete h2 handshake followed by
+    // silence is not a shape grpc-go produces.
+    //
+    // The URI has to be absolute: with `Version::HTTP_2` and no scheme plus
+    // authority, `send_request` fails with `MissingUriSchemeAndAuthority`
+    // (`h2-0.4.15/src/client.rs:1644`), because those two are where `:scheme`
+    // and `:authority` come from. `http` even over TLS, for the reason the
+    // module doc gives: grpc-go believes the transport is plaintext.
+    //
+    // Of the three parts only the path can fail to parse. The scheme is a
+    // constant and the authority arrived already parsed — deliberately, so a
+    // static config error is reported once at startup rather than once per
+    // dial; [`GrpcConfig::authority`] has the reasoning and the grpc-go
+    // divergence it costs. `grpc_request_path` percent-escapes everything
+    // outside Go's `encodePathSegment` keep-set, so in practice it cannot fail
+    // either, but "in practice" is not something to unwrap on: a path is the
+    // one part of this URI a future caller could supply.
+    let path = grpc_request_path(&config.service_name, config.multi_mode);
+    let uri = Uri::builder()
+        .scheme(Scheme::HTTP)
+        .authority(config.authority.clone())
+        .path_and_query(path.as_str())
+        .build()
+        .map_err(|error| grpc_error(&format!("invalid gRPC request path {path:?}"), &error))?;
+
     // Here because here is the last place it can be: the handshake below moves
     // `io` into h2's `Connection`, so an outbound's `release_record_alignment`
     // (`crates/xray-core-rs/src/outbound.rs:1873,1967`) only ever reaches
@@ -112,42 +143,6 @@ pub async fn open_grpc_h2_stream(
         .ready()
         .await
         .map_err(|error| grpc_error("http/2 connection is not ready", &error))?;
-
-    // The URI has to be absolute: with `Version::HTTP_2` and no scheme plus
-    // authority, `send_request` fails with `MissingUriSchemeAndAuthority`
-    // (`h2-0.4.15/src/client.rs:1644`), because those two are where `:scheme`
-    // and `:authority` come from. `http` even over TLS, for the reason the
-    // module doc gives: grpc-go believes the transport is plaintext.
-    //
-    // Assembled part by part rather than interpolated into one string, because
-    // `config.authority` is free-form JSON that the config layer only drops
-    // when it is empty (`crates/xray-config/src/parser.rs:2869-2872`). A `/`,
-    // `?` or `#` in it re-partitions an interpolated URI instead of failing:
-    // measured against `http` 1.5, `example.com/api` parses as authority
-    // `example.com` with path `/api/xray.grpc/Tun`, and `example.com#frag`
-    // leaves the path as bare `/`. The call then names a gRPC method nobody
-    // configured, and the UNIMPLEMENTED that comes back points nowhere near
-    // the authority. Every one of those three is a build error here instead.
-    //
-    // That is a deliberate divergence: grpc-go takes a `WithAuthority` with no
-    // validation whatsoever (`grpc@v1.81.0/clientconn.go:1976-1978`) and — as
-    // a wire capture confirms — sends `:authority: example.com/api` verbatim
-    // with the `:path` intact. `http::uri::Authority` cannot hold a `/`, so
-    // that behaviour is not open to us; between failing the dial and silently
-    // calling a different method, the dial that never had a chance of reaching
-    // the configured service is the one that should say so.
-    let path = grpc_request_path(&config.service_name, config.multi_mode);
-    let uri = Uri::builder()
-        .scheme("http")
-        .authority(config.authority.as_str())
-        .path_and_query(path)
-        .build()
-        .map_err(|error| {
-            grpc_error(
-                &format!("invalid gRPC authority {:?}", config.authority),
-                &error,
-            )
-        })?;
 
     // Nothing below is redundant, however little of it a server reads. A stock
     // grpc-go inbound validates `:method` and `content-type` and no more —

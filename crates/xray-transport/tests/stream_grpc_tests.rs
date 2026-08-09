@@ -610,7 +610,7 @@ mod stream_grpc_h2_tests {
         let config = GrpcConfig {
             service_name: SERVICE_NAME.to_owned(),
             multi_mode: false,
-            authority: AUTHORITY.to_owned(),
+            authority: AUTHORITY.parse().expect("a literal authority"),
             user_agent: user_agent.to_owned(),
             idle_timeout_secs: 0,
             health_check_timeout_secs: 0,
@@ -1842,8 +1842,8 @@ mod stream_grpc_request_headers_tests {
     use tokio::io::{duplex, DuplexStream};
     use tokio::sync::oneshot;
     use xray_transport::stream::{
-        apply_masquerade, grpc_request_path, open_grpc_h2_stream, resolve_user_agent, GrpcConfig,
-        HeaderMap,
+        apply_masquerade, grpc_request_path, open_grpc_h2_stream, resolve_user_agent, Authority,
+        GrpcConfig, HeaderMap,
     };
     use xray_transport::BoxedTransportStream;
 
@@ -1856,11 +1856,16 @@ mod stream_grpc_request_headers_tests {
     /// `initial_windows_size` are left at zero throughout: nothing on the dial
     /// path reads them yet, and a value that changed no byte of the request
     /// would only suggest one did.
+    ///
+    /// The `expect` is not a shortcut around the error path: `authority` is an
+    /// [`Authority`], so a value that is not one cannot be built into a config
+    /// here or anywhere else, which is the whole of
+    /// [`an_authority_that_is_not_an_authority_never_reaches_a_dial`].
     fn config(authority: &str) -> GrpcConfig {
         GrpcConfig {
             service_name: "xray.grpc".to_owned(),
             multi_mode: false,
-            authority: authority.to_owned(),
+            authority: authority.parse().expect("a literal authority"),
             user_agent: resolve_user_agent(Some(USER_AGENT)),
             idle_timeout_secs: 0,
             health_check_timeout_secs: 0,
@@ -1890,19 +1895,6 @@ mod stream_grpc_request_headers_tests {
         tokio::time::timeout(DEADLINE, dial)
             .await
             .expect("the dial completes rather than stalling")
-    }
-
-    /// A peer that completes the handshake and never sees a request.
-    ///
-    /// The dial it serves fails while assembling the URI, which happens after
-    /// `client::handshake` — so a peer is still needed for the dial to get that
-    /// far — and `capture_one_head` would panic on the `accept` that never
-    /// arrives.
-    async fn serve_no_call(io: DuplexStream) {
-        let Ok(mut connection) = server::handshake(io).await else {
-            return;
-        };
-        while connection.accept().await.is_some() {}
     }
 
     /// Reports the first request's head and then keeps the connection polled.
@@ -2028,6 +2020,54 @@ mod stream_grpc_request_headers_tests {
         assert_eq!(head.uri.path(), "/xray.grpc/TunMulti", ":path");
     }
 
+    /// A `:path` that needs escaping has to survive the URI assembly.
+    ///
+    /// `stream_grpc_path_tests` pins around thirty escaped paths and every one
+    /// of them stops at the string. The dial does not send a string: it hands
+    /// the path to `path_and_query`, which parses it, and h2 rebuilds a `Uri`
+    /// from the pseudo-headers on the far side. That seam is where a `%2F`
+    /// could be decoded back into a separator or a leading `//` could be
+    /// folded, and neither block would notice.
+    ///
+    /// An empty `serviceName` is the case that matters most: it is proto3's
+    /// default, so `//Tun` is the common shape and not an exotic one. `$&+:=@`
+    /// is the other end — Go's `encodePathSegment` keeps all six unescaped, and
+    /// `@` and `:` are exactly what a parser handed the whole URI as one string
+    /// would try to read as userinfo and a port.
+    #[tokio::test]
+    async fn a_path_that_needs_escaping_reaches_the_wire_intact() {
+        for (service_name, multi_mode, expected) in [
+            ("", false, "//Tun"),
+            ("", true, "//TunMulti"),
+            ("a/b", false, "/a%2Fb/Tun"),
+            ("$&+:=@", false, "/$&+:=@/Tun"),
+            (
+                "/m y/sa !mple/pa\\th/tun\\_serv!ice",
+                false,
+                "/m%20y/sa%20%21mple/pa%5Cth/tun%5C_serv%21ice",
+            ),
+        ] {
+            let mut config = config("grpc.example.com");
+            config.service_name = service_name.to_owned();
+            config.multi_mode = multi_mode;
+
+            let head = captured_head(&config).await;
+            assert_eq!(
+                head.uri.path(),
+                expected,
+                ":path for serviceName {service_name:?} multiMode {multi_mode}"
+            );
+            // The literal above is the wire; this is the claim that the wire is
+            // what `grpc_request_path` said, so the two cannot drift apart
+            // without one of them failing.
+            assert_eq!(
+                head.uri.path(),
+                grpc_request_path(service_name, multi_mode),
+                "serviceName {service_name:?} multiMode {multi_mode}"
+            );
+        }
+    }
+
     /// Xray's switch, `dial.go:193-205`.
     ///
     /// The two easy inversions are both here. An **unset** user agent is not
@@ -2124,47 +2164,46 @@ mod stream_grpc_request_headers_tests {
         }
     }
 
-    /// The other half of that: an authority that is not one has to fail the
-    /// dial rather than quietly reshape the request.
+    /// The other half of that: an authority that is not one has to be refused
+    /// rather than quietly reshape the request.
     ///
-    /// `grpcSettings.authority` is free-form JSON and the config layer only
-    /// drops it when empty (`crates/xray-config/src/parser.rs:2869-2872`), so
-    /// these reach the dial as written. Interpolated into one URI string they
-    /// re-partition it instead of failing — `example.com/api` parses as
-    /// authority `example.com` with path `/api/xray.grpc/Tun`, and
-    /// `example.com#frag` leaves the path as a bare `/`. That is a call to a
-    /// gRPC method nobody configured, answered by an UNIMPLEMENTED that names
-    /// nothing, which is why the URI is assembled part by part.
+    /// It is refused by the type, which is why this is a parse test and not a
+    /// dial test. `grpcSettings.authority` is free-form JSON that the config
+    /// layer only drops when empty
+    /// (`crates/xray-config/src/parser.rs:2869-2872`), but it is also static —
+    /// resolved once, when the outbound is built — so `GrpcConfig::authority`
+    /// is an [`Authority`] and none of the vectors below can be built into a
+    /// config at all. Reporting that refusal is `build_transport_layer`'s, and
+    /// so is its test; what this pins is that the type is still the boundary
+    /// that makes the bug unrepresentable.
+    ///
+    /// **Three of the four are the regression.** Interpolated into one URI
+    /// string, `example.com/api` re-partitions into authority `example.com`
+    /// with path `/api/xray.grpc/Tun`; `example.com?q=1` leaves the path a bare
+    /// `/` and carries the gRPC method off in a query, `q=1/xray.grpc/Tun`; and
+    /// `example.com#frag` leaves the path a bare `/` with the method gone
+    /// entirely. Each is a call to a method nobody configured, answered by an
+    /// UNIMPLEMENTED that names nothing. `exa mple.com` never had that problem:
+    /// `"http://exa mple.com/xray.grpc/Tun"` is not a URI either, so the old
+    /// interpolation already failed it. It is here as the edge of the same
+    /// check, not as a case that ever silently reshaped anything.
     ///
     /// A divergence from grpc-go, deliberately: it validates a `WithAuthority`
     /// not at all (`grpc@v1.81.0/clientconn.go:1976-1978`) and, confirmed on
     /// the wire, sends `:authority: example.com/api` verbatim with the `:path`
-    /// intact. `http::uri::Authority` cannot hold a `/`, so copying that is not
-    /// on the table; failing loudly is the option that remains.
-    #[tokio::test]
-    async fn an_authority_that_is_not_an_authority_fails_the_dial() {
+    /// intact. `Authority` cannot hold a `/`, so copying that is not on the
+    /// table; refusing the config is the option that remains.
+    #[test]
+    fn an_authority_that_is_not_an_authority_never_reaches_a_dial() {
         for authority in [
             "example.com/api",
             "example.com?q=1",
             "example.com#frag",
             "exa mple.com",
         ] {
-            let (client_io, server_io) = duplex(64 * 1024);
-            tokio::spawn(serve_no_call(server_io));
-
-            let config = config(authority);
-            let dial = open_grpc_h2_stream(Box::new(client_io) as BoxedTransportStream, &config);
-            let Err(error) = tokio::time::timeout(DEADLINE, dial)
-                .await
-                .expect("the dial completes rather than stalling")
-            else {
-                panic!("an authority that cannot be sent must not dial: {authority:?}");
-            };
-
-            let reported = error.to_string();
             assert!(
-                reported.contains(authority),
-                "the error has to name the authority, got: {reported}"
+                authority.parse::<Authority>().is_err(),
+                "{authority:?} must not be representable as a dialled authority"
             );
         }
     }
