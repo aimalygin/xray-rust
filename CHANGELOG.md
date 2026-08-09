@@ -139,11 +139,14 @@ prerelease-quality and do not establish a supported release series.
   `xtls-rprx-vision` is still refused alongside it, as xray-core refuses it:
   Vision needs the connection under it to be a TLS or REALITY one, and the
   gRPC dialer returns a `Hunk` wrapper on both sides of the port.
-- Added one direct dependency, `h2` 0.4.15, for the HTTP/2 client the gRPC
-  transport speaks over. Eight crates land in the lockfile with it —
-  `atomic-waker`, `fnv`, `futures-sink`, `h2`, `http`, `tokio-util`, `tracing`
-  and `tracing-core` — and `cargo deny check advisories bans licenses sources`
-  is clean against the existing allow-list.
+- Added two direct dependencies for the gRPC transport: `h2` 0.4.15 for the
+  HTTP/2 client it speaks over, and `http` 1 for the request and header types
+  that client takes — `grpcSettings.authority` is parsed and stored as an
+  `http::uri::Authority`, so the type is part of the transport's public
+  surface. Six more crates land in the lockfile behind them — `atomic-waker`,
+  `fnv`, `futures-sink`, `tokio-util`, `tracing` and `tracing-core` — and
+  `cargo deny check advisories bans licenses sources` is clean against the
+  existing allow-list.
 - Fixed nine uTLS profiles — eleven of the accepted `fingerprint` names — being
   unable to complete a plain-TLS handshake at all. Their parrot sends a
   TLS-1.2-era ClientHello with no `supported_versions` extension while the
