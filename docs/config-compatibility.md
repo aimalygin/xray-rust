@@ -258,13 +258,34 @@ spelling and the two-part form the server spelling; the client honours both.
 Not merely a different stream name. `Tun` streams `Hunk`, whose `data` is a
 singular `bytes`; `TunMulti` streams `MultiHunk`, whose `data` is
 `repeated bytes` (`transport/internet/grpc/encoding/stream.proto:6-17`). One
-multi-mode message therefore carries a whole batch of payload chunks, and a
-reader in the wrong mode keeps only the last of them — silently, with no error
-and nothing logged.
+multi-mode message therefore carries a whole batch of payload chunks
+(`encoding/multiconn.go:114-133` packs one per buffer), and a `Hunk` reader
+handed one of those keeps only the last element — silently, with no error and
+nothing logged. Reaching that state takes a particular `serviceName` spelling,
+and only that one; see below.
 
-**Nothing negotiates it.** Each side reads the flag from its own config, so a
-server configured for `multiMode` is unreachable by a client that is not, and
-the reverse. The two ends have to be set together.
+**Only the client reads the flag.** `MultiMode` is consulted on the dial path
+(`transport/internet/grpc/dial.go:59`) and nowhere else in the transport. The
+listener never looks at it: it registers *both* RPCs on one service descriptor
+whatever its own setting (`hub.go:127-128`,
+`encoding/customSeviceName.go:9-30,57-60`), and the two stream names it
+registers them under come from `serviceName` (`config.go:36-59`). So for any
+`serviceName` without a leading `/` — the default empty one included, where the
+names are the constants `Tun` and `TunMulti` — a client in either mode reaches
+the handler that matches it, and the server's own `multiMode` is inert. Our
+`multiMode: true` bulk interop scenario runs against an xray-core inbound whose
+only gRPC setting is a `serviceName`.
+
+The one spelling that constrains the client is a **one-part custom path** such
+as `/a/b/Name`. There `getTunStreamName` and `getTunMultiStreamName` both
+return `Name`, the descriptor carries that name twice, and grpc-go keeps the
+last entry when it builds its stream map
+(`google.golang.org/grpc@v1.81.0/server.go:788-791`), so `TunMulti` is the
+handler installed. A single-mode client then talks `Hunk` to a `MultiHunk`
+handler: its own writes survive, because one `bytes` decodes as a one-element
+`repeated bytes`, but a reply that batched several buffers into one message
+loses all but the last. Use the two-part `/a/b/Tun|TunMulti` form, or no
+leading `/` at all, and the mode stays a client-side choice.
 
 #### The `:authority` chain is not the `Host` chain
 
