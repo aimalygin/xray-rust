@@ -17,8 +17,9 @@ use tokio_rustls::TlsConnector as TokioTlsConnector;
 use xray_routing::{Target, TargetAddr};
 
 use crate::{
-    connect_tcp_happy_eyeballs, connect_tcp_stream, BoxedTransportStream, HappyEyeballsConfig,
-    SocketProtector, TlsClientConfig, TransportError, TransportStream,
+    connect_tcp_happy_eyeballs, connect_tcp_stream, utls_profiles::UtlsClientHelloProfile,
+    utls_shaping::profile_offers_tls13, BoxedTransportStream, HappyEyeballsConfig, SocketProtector,
+    TlsClientConfig, TransportError, TransportStream,
 };
 
 /// Identifies one rustls configuration shape. Two connections that agree on
@@ -300,8 +301,13 @@ impl ServerCertVerifier for NoCertificateVerification {
 /// by accident.
 fn build_client_config(config: &TlsClientConfig) -> Result<rustls::ClientConfig, TransportError> {
     let client_config = match crate::utls_tls::shaping_profile(config.fingerprint.as_deref())? {
-        Some(profile) => {
-            let mut client_config = shaped_client_config(config.allow_insecure)?;
+        Some((fingerprint, profile)) => {
+            let versions = profile_protocol_versions(profile);
+            let provider = Arc::new(shaping_crypto_provider());
+            reject_unnegotiable_fingerprint(fingerprint, profile, &provider, versions)?;
+
+            let mut client_config =
+                shaped_client_config(provider, config.allow_insecure, versions)?;
             client_config.client_hello_customizer = Some(Arc::new(
                 crate::utls_tls::UtlsClientHelloCustomizer::new(profile, &config.alpn),
             ));
@@ -351,6 +357,71 @@ pub fn plain_tls_client_hello_bytes(config: &TlsClientConfig) -> Result<Vec<u8>,
     Ok(first_flight)
 }
 
+/// The protocol versions a shaped config may offer.
+///
+/// Ten of the profiles describe a TLS-1.2-era ClientHello — no
+/// `supported_versions` extension at all — and a config that offers TLS 1.3
+/// behind one of those hellos cannot complete a handshake with anything: the
+/// server answers with TLS 1.2, its ServerHello random carries the RFC 8446
+/// §4.1.3 downgrade sentinel, and rustls reads that sentinel as an attack
+/// because *its config* claimed 1.3 (`rustls/src/client/hs.rs:1673`, whose
+/// `tls13_supported` comes from the config and not from the plan). uTLS avoids
+/// it by writing the parrot's ceiling into `config.MaxVersion`; this is that
+/// same write.
+///
+/// TLS 1.0 and 1.1, which uTLS also allows for these parrots, have no rustls
+/// implementation, so the floor stays at 1.2 either way.
+fn profile_protocol_versions(
+    profile: &UtlsClientHelloProfile,
+) -> &'static [&'static rustls::SupportedProtocolVersion] {
+    const TLS12_ONLY: &[&rustls::SupportedProtocolVersion] = &[&rustls::version::TLS12];
+
+    if profile_offers_tls13(profile) {
+        rustls::DEFAULT_VERSIONS
+    } else {
+        TLS12_ONLY
+    }
+}
+
+/// Refuses a fingerprint whose ClientHello no handshake of ours could finish.
+///
+/// A profile's cipher suites go on the wire verbatim, but rustls can only *use*
+/// one its provider implements: when the server picks any of the others,
+/// `find_cipher_suite` comes back empty and the connection dies at ServerHello
+/// with `SelectedUnofferedCipherSuite` (`rustls/src/client/hs.rs:1774`).
+/// `hello360_7_5` is such a profile — twenty suites, every one CBC, RC4 or
+/// 3DES, against rustls' six TLS 1.2 AEAD suites — so every dial on it is a
+/// socket opened to lose. Measured against a Go server keeping its legacy
+/// suites enabled: it selects `TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA` (0xc009)
+/// and we abort. uTLS completes that same handshake, so this is our limit
+/// rather than the parrot's, and saying so here beats discovering it a round
+/// trip later under an error that names neither the fingerprint nor the cause.
+///
+/// `versions` is part of the question rather than context for it: a suite this
+/// provider implements only for the version the profile just gave up is a suite
+/// this connection cannot reach.
+fn reject_unnegotiable_fingerprint(
+    fingerprint: &str,
+    profile: &UtlsClientHelloProfile,
+    provider: &crypto::CryptoProvider,
+    versions: &[&'static rustls::SupportedProtocolVersion],
+) -> Result<(), TransportError> {
+    let negotiable = provider.cipher_suites.iter().any(|suite| {
+        profile.cipher_suites.contains(&u16::from(suite.suite()))
+            && versions
+                .iter()
+                .any(|version| version.version == suite.version().version)
+    });
+
+    if negotiable {
+        return Ok(());
+    }
+
+    Err(TransportError::UnnegotiableTlsFingerprint(
+        fingerprint.to_owned(),
+    ))
+}
+
 /// Builds the client config for a handshake that sends rustls' own
 /// ClientHello, on the *ring* provider plain TLS has always used. Keeping this
 /// branch on *ring* is what makes "no shaping" reproduce the pre-shaping
@@ -359,18 +430,22 @@ fn unshaped_client_config(allow_insecure: bool) -> Result<rustls::ClientConfig, 
     client_config_with_provider(
         Arc::new(rustls::crypto::ring::default_provider()),
         allow_insecure,
+        rustls::DEFAULT_VERSIONS,
     )
 }
 
 /// Builds the client config for a uTLS-shaped handshake.
 ///
-/// Current fingerprint profiles plan post-quantum key shares — X25519MLKEM768
-/// and X25519Kyber768Draft00 — that *ring* does not implement, and rustls
-/// refuses a planned key share whose group its provider lacks. So shaped
-/// handshakes run on the same aws-lc-rs provider REALITY already uses.
-fn shaped_client_config(allow_insecure: bool) -> Result<rustls::ClientConfig, TransportError> {
-    let mut config =
-        client_config_with_provider(Arc::new(shaping_crypto_provider()), allow_insecure)?;
+/// The provider arrives built because `build_client_config` has already
+/// consulted its cipher suites: whether the fingerprint is negotiable at all is
+/// a question about this very provider, and asking it twice would let the two
+/// answers drift.
+fn shaped_client_config(
+    provider: Arc<crypto::CryptoProvider>,
+    allow_insecure: bool,
+    versions: &[&'static rustls::SupportedProtocolVersion],
+) -> Result<rustls::ClientConfig, TransportError> {
+    let mut config = client_config_with_provider(provider, allow_insecure, versions)?;
     // A resumed handshake sends a second ClientHello carrying pre_shared_key,
     // which is outside the shape the fingerprint describes.
     config.resumption = rustls::client::Resumption::disabled();
@@ -381,19 +456,27 @@ fn shaped_client_config(allow_insecure: bool) -> Result<rustls::ClientConfig, Tr
 fn client_config_with_provider(
     provider: Arc<crypto::CryptoProvider>,
     allow_insecure: bool,
+    versions: &[&'static rustls::SupportedProtocolVersion],
 ) -> Result<rustls::ClientConfig, TransportError> {
     if allow_insecure {
-        return insecure_rustls_client_config(provider);
+        return insecure_rustls_client_config(provider, versions);
     }
 
     let root_store = rustls::RootCertStore {
         roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
     };
-    rustls_client_config(provider, root_store)
+    rustls_client_config(provider, root_store, versions)
 }
 
-/// Mirrors `reality_rustls::reality_crypto_provider`: every key exchange group
-/// a fingerprint profile can name, with the post-quantum ones first.
+/// The provider every uTLS-shaped handshake runs on.
+///
+/// aws-lc-rs rather than the *ring* an unshaped hello keeps: current profiles
+/// plan post-quantum key shares — X25519MLKEM768 and X25519Kyber768Draft00 —
+/// that *ring* does not implement, and rustls refuses a planned key share whose
+/// group its provider lacks. It is also what REALITY already uses.
+///
+/// The kx group list mirrors `reality_rustls::reality_crypto_provider`: every
+/// key exchange group a fingerprint profile can name, post-quantum ones first.
 fn shaping_crypto_provider() -> crypto::CryptoProvider {
     let mut provider = crypto::aws_lc_rs::default_provider();
     provider.kx_groups = vec![
@@ -409,9 +492,10 @@ fn shaping_crypto_provider() -> crypto::CryptoProvider {
 fn rustls_client_config(
     provider: Arc<crypto::CryptoProvider>,
     root_store: rustls::RootCertStore,
+    versions: &[&'static rustls::SupportedProtocolVersion],
 ) -> Result<rustls::ClientConfig, TransportError> {
     rustls::ClientConfig::builder_with_provider(provider)
-        .with_safe_default_protocol_versions()
+        .with_protocol_versions(versions)
         .map_err(|error| TransportError::TlsConfig(error.to_string()))
         .map(|builder| {
             builder
@@ -422,12 +506,13 @@ fn rustls_client_config(
 
 fn insecure_rustls_client_config(
     provider: Arc<crypto::CryptoProvider>,
+    versions: &[&'static rustls::SupportedProtocolVersion],
 ) -> Result<rustls::ClientConfig, TransportError> {
     let verifier = Arc::new(NoCertificateVerification {
         provider: Arc::clone(&provider),
     });
     rustls::ClientConfig::builder_with_provider(provider)
-        .with_safe_default_protocol_versions()
+        .with_protocol_versions(versions)
         .map_err(|error| TransportError::TlsConfig(error.to_string()))
         .map(|builder| {
             builder

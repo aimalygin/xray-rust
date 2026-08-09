@@ -5,8 +5,8 @@
 //! random, session id, and key share untouched; filling those in is the
 //! caller's responsibility. That split is what lets REALITY's customizer
 //! (which pins all three for its handshake patching) and the plain-TLS
-//! customizer (which lets rustls generate them normally) share this same
-//! plan-building logic.
+//! customizer (which leaves them to rustls, bar the session id a TLS-1.2-era
+//! profile needs put back) share this same plan-building logic.
 //!
 //! Callers that need to override part of the shaped plan may do so after
 //! `apply_utls_profile` returns: `ClientHelloPlan` setters are last-write-wins
@@ -148,10 +148,28 @@ fn advertised_cipher_suites(
     )
 }
 
+/// Whether a handshake wearing this profile may negotiate TLS 1.3.
+///
+/// uTLS decides the same thing from the same place. `SetTLSVers` takes the
+/// parrot's own `TLSVersMin`/`TLSVersMax` when it declares them, otherwise
+/// reads the range off its `supported_versions` extension, and — when the
+/// parrot carries no such extension — defaults to TLS 1.0-1.2
+/// (`utls@v1.8.3-0.20260301010127-aa6edf4b11af/u_conn.go:696-732`). Every
+/// parrot in `utls_profiles` either lists 0x0304 or lists nothing at all, so
+/// this one test covers both branches.
+///
+/// The answer has to reach the rustls *config*, not just the ClientHello plan:
+/// uTLS writes the ceiling into `config.MaxVersion` (`u_conn.go:748-752`) and
+/// rustls reads its own config, not the plan, when it decides whether a TLS 1.2
+/// ServerHello carrying the RFC 8446 §4.1.3 downgrade sentinel is an attack.
+pub(crate) fn profile_offers_tls13(profile: &UtlsClientHelloProfile) -> bool {
+    profile.supported_versions.contains(&TLS_VERSION_1_3)
+}
+
 fn supported_versions(
     profile: &UtlsClientHelloProfile,
 ) -> Result<ClientHelloSupportedVersions, RustlsError> {
-    let versions = if profile.supported_versions.contains(&TLS_VERSION_1_3) {
+    let versions = if profile_offers_tls13(profile) {
         vec![ProtocolVersion::TLSv1_3, ProtocolVersion::TLSv1_2]
     } else {
         vec![ProtocolVersion::TLSv1_2]

@@ -1,11 +1,18 @@
 mod utls_tls_shaping_tests {
     use std::collections::BTreeSet;
-    use std::net::Ipv4Addr;
+    use std::net::{Ipv4Addr, SocketAddr};
+    use std::sync::Arc;
 
+    use rcgen::{generate_simple_self_signed, CertifiedKey};
+    use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
+    use rustls::ProtocolVersion;
     use tokio::io::AsyncReadExt;
     use tokio::net::TcpListener;
+    use tokio_rustls::TlsAcceptor;
     use xray_routing::{Network, Target, TargetAddr};
-    use xray_transport::{plain_tls_client_hello_bytes, TlsClientConfig, TlsConnector};
+    use xray_transport::{
+        plain_tls_client_hello_bytes, TlsClientConfig, TlsConnector, TransportError,
+    };
 
     const EXT_SERVER_NAME: u16 = 0x0000;
     const EXT_ALPN: u16 = 0x0010;
@@ -343,6 +350,9 @@ mod utls_tls_shaping_tests {
         }
     }
 
+    /// Nearly all of them, at least: `hello360_7_5` is REALITY-incapable and
+    /// unusable on plain TLS too, for a second and unrelated reason --
+    /// `a_fingerprint_with_no_implemented_cipher_suite_is_refused`.
     #[test]
     fn reality_incapable_fingerprints_are_usable_on_plain_tls() {
         let hello = plain_tls_client_hello_bytes(&config("hellochrome_58", &[]))
@@ -675,7 +685,7 @@ mod utls_tls_shaping_tests {
     /// every profile has to pin one.
     #[test]
     fn every_fingerprint_emits_a_stable_extension_order() {
-        for fingerprint in xray_utls::XRAY_UTLS_FINGERPRINTS {
+        for fingerprint in selectable_fingerprints() {
             for alpn in [&[][..], &["http/1.1"][..]] {
                 let first = plain_tls_client_hello_bytes(&config(fingerprint, alpn))
                     .unwrap_or_else(|error| panic!("{fingerprint}: ClientHello: {error}"));
@@ -708,13 +718,13 @@ mod utls_tls_shaping_tests {
     /// hello the domain SNI produces.
     #[test]
     fn an_ip_literal_sni_shapes_the_hello_without_the_server_name_extension() {
-        for fingerprint in xray_utls::XRAY_UTLS_FINGERPRINTS {
+        for fingerprint in selectable_fingerprints() {
             for alpn in [&[][..], &["http/1.1"][..]] {
                 let ip = plain_tls_client_hello_bytes(&TlsClientConfig {
                     server_name: "203.0.113.10".to_owned(),
                     allow_insecure: true,
                     alpn: alpn.iter().map(|value| (*value).to_owned()).collect(),
-                    fingerprint: Some((*fingerprint).to_owned()),
+                    fingerprint: Some(fingerprint.to_owned()),
                 })
                 .unwrap_or_else(|error| {
                     panic!("{fingerprint} (alpn {alpn:?}): IP-literal ClientHello: {error}")
@@ -859,5 +869,247 @@ mod utls_tls_shaping_tests {
                 "{dial} dial: the wire extension order must be the shaped one"
             );
         }
+    }
+
+    /// The fingerprints whose uTLS parrot emits a TLS-1.2-era ClientHello: one
+    /// carrying no `supported_versions` extension at all.
+    ///
+    /// uTLS reads that absence as a version range rather than ignoring it.
+    /// `SetTLSVers` defaults to TLS 1.0-1.2 when the parrot declares neither
+    /// `TLSVersMin`/`TLSVersMax` nor the extension, then writes the ceiling
+    /// into `config.MaxVersion`
+    /// (`utls@v1.8.3-0.20260301010127-aa6edf4b11af/u_conn.go:728-752`). A Go
+    /// client on one of these names therefore never claims TLS 1.3, so it never
+    /// reaches its own downgrade check. Measured, not inferred: each parrot
+    /// against a Go `tls.Listen` with `MaxVersion: VersionTLS13` negotiates TLS
+    /// 1.2 and completes.
+    ///
+    /// The two `randomized` names are here on their frozen snapshots, not on
+    /// uTLS' live behaviour: uTLS re-rolls those specs per call and lands on TLS
+    /// 1.3 some of the time. `docs/config-compatibility.md` covers why we hold
+    /// one recorded spec instead.
+    ///
+    /// Every name a profile answers to is listed, because a name is what a
+    /// config file carries.
+    const TLS12_ERA_FINGERPRINTS: &[&str] = &[
+        "android",
+        "helloandroid_11_okhttp",
+        "randomizednoalpn",
+        "hellorandomizednoalpn",
+        "hellorandomizedalpn",
+        "hellofirefox_55",
+        "hellofirefox_56",
+        "hellochrome_58",
+        "hellochrome_62",
+        "helloios_11_1",
+        "helloios_12_1",
+    ];
+
+    /// `hello360_7_5` under each of its names -- the one TLS-1.2-era parrot
+    /// that a version fix cannot rescue.
+    ///
+    /// Its twenty cipher suites are CBC, RC4 or 3DES, not an AEAD among them
+    /// (`utls@v1.8.3-.../u_parrots.go:2352-2374`), while rustls' TLS 1.2 half is
+    /// six AEAD suites -- so the two lists do not intersect. uTLS does negotiate
+    /// it: a Go server keeping its legacy suites enabled picks
+    /// `TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA` (0xc009), which makes this our
+    /// limit rather than the parrot's.
+    const UNNEGOTIABLE_FINGERPRINTS: &[&str] = &["360", "hello360_auto", "hello360_7_5"];
+
+    /// Every fingerprint a config can select: Xray's whole list, less the ones
+    /// the client refuses outright.
+    ///
+    /// The sweeping tests want this rather than the raw list. A refused
+    /// fingerprint has no ClientHello for them to inspect, and pretending
+    /// otherwise -- by building one down a path no dial takes -- would be
+    /// coverage of nothing. What it does instead is pinned by
+    /// `a_fingerprint_with_no_implemented_cipher_suite_is_refused`.
+    fn selectable_fingerprints() -> impl Iterator<Item = &'static str> {
+        xray_utls::XRAY_UTLS_FINGERPRINTS
+            .iter()
+            .copied()
+            .filter(|fingerprint| !UNNEGOTIABLE_FINGERPRINTS.contains(fingerprint))
+    }
+
+    /// A TLS-1.3-capable loopback listener that reports the version it settled
+    /// on.
+    ///
+    /// Capable matters: RFC 8446 §4.1.3's downgrade sentinel only appears in a
+    /// ServerHello random when a server that could have spoken TLS 1.3 settles
+    /// for TLS 1.2, which is what every current server does with these hellos.
+    /// Reporting matters too: a dial that returns `Ok` says nothing about which
+    /// version carried it.
+    async fn spawn_version_reporting_tls_server() -> (
+        SocketAddr,
+        tokio::task::JoinHandle<Result<ProtocolVersion, String>>,
+    ) {
+        let CertifiedKey { cert, signing_key } =
+            generate_simple_self_signed(vec!["server.test".to_owned()])
+                .expect("a self-signed certificate must generate");
+        let certificate = cert.der().clone();
+        let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(signing_key.serialize_der()));
+
+        let server_config = rustls::ServerConfig::builder_with_provider(Arc::new(
+            rustls::crypto::aws_lc_rs::default_provider(),
+        ))
+        .with_safe_default_protocol_versions()
+        .expect("the provider must support the default TLS versions")
+        .with_no_client_auth()
+        .with_single_cert(vec![certificate], key)
+        .expect("the TLS server config must build");
+
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("loopback listener must bind");
+        let addr = listener
+            .local_addr()
+            .expect("listener must report its address");
+        let acceptor = TlsAcceptor::from(Arc::new(server_config));
+
+        let served = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.map_err(|e| e.to_string())?;
+            let stream = acceptor.accept(stream).await.map_err(|e| e.to_string())?;
+            stream
+                .get_ref()
+                .1
+                .protocol_version()
+                .ok_or_else(|| "the server negotiated no version".to_owned())
+        });
+
+        (addr, served)
+    }
+
+    /// Dials `addr` with one fingerprint through the shaping path.
+    ///
+    /// `system()` plus `allow_insecure: true` for the reason
+    /// `dialed_connections_send_the_shaped_hello` gives: a pinned config would
+    /// skip shaping altogether and pass whatever the fingerprint is.
+    async fn dial_shaped(fingerprint: &str, addr: SocketAddr) -> Result<(), TransportError> {
+        let connector = TlsConnector::system().expect("system roots must load");
+        let config = TlsClientConfig {
+            server_name: "server.test".to_owned(),
+            allow_insecure: true,
+            alpn: Vec::new(),
+            fingerprint: Some(fingerprint.to_owned()),
+        };
+
+        connector
+            .connect(
+                &Target::new(TargetAddr::Ip(addr.ip()), addr.port(), Network::Tcp),
+                &config,
+            )
+            .await
+            .map(|_| ())
+    }
+
+    /// A fingerprint that cannot finish a handshake is a fingerprint nobody can
+    /// select, and `security: "tls"` with any of these was exactly that: the
+    /// rustls config offered TLS 1.3 while the shaped hello said nothing about
+    /// it, so the server's TLS 1.2 ServerHello carried the downgrade sentinel
+    /// and rustls read it as an attack.
+    #[tokio::test]
+    async fn tls12_era_fingerprints_complete_a_handshake() {
+        for fingerprint in TLS12_ERA_FINGERPRINTS {
+            let (addr, served) = spawn_version_reporting_tls_server().await;
+
+            dial_shaped(fingerprint, addr)
+                .await
+                .unwrap_or_else(|error| panic!("{fingerprint}: the dial must succeed: {error}"));
+
+            let negotiated = served.await.expect("the server task must finish");
+            assert_eq!(
+                negotiated,
+                Ok(ProtocolVersion::TLSv1_2),
+                "{fingerprint}: a hello with no supported_versions must land on TLS 1.2"
+            );
+        }
+    }
+
+    /// The control: capping the config at TLS 1.2 must follow the profile, not
+    /// the shaping path, or the fix above would quietly downgrade every
+    /// fingerprint anyone actually uses.
+    #[tokio::test]
+    async fn a_modern_fingerprint_still_negotiates_tls13() {
+        let (addr, served) = spawn_version_reporting_tls_server().await;
+
+        dial_shaped("chrome", addr)
+            .await
+            .expect("chrome must still complete a handshake");
+
+        let negotiated = served.await.expect("the server task must finish");
+        assert_eq!(negotiated, Ok(ProtocolVersion::TLSv1_3));
+    }
+
+    /// uTLS puts 32 random bytes in the legacy session id of every ClientHello,
+    /// TLS-1.2-era parrots included: `makeClientHello` fills it unconditionally
+    /// for anything that is not QUIC
+    /// (`utls@v1.8.3-.../handshake_client.go:126-136`), and reading
+    /// `HandshakeState.Hello.SessionId` off each parrot above reports 32.
+    ///
+    /// rustls empties it the moment its config stops offering TLS 1.3
+    /// (`rustls/src/client/hs.rs:125`), which is a trap laid directly under the
+    /// version fix: capping the config alone would buy a working handshake at
+    /// the price of a hello 32 bytes shorter than any real client's.
+    #[test]
+    fn tls12_era_fingerprints_keep_a_32_byte_session_id() {
+        for fingerprint in TLS12_ERA_FINGERPRINTS {
+            let hello = plain_tls_client_hello_bytes(&config(fingerprint, &[]))
+                .unwrap_or_else(|error| panic!("{fingerprint}: ClientHello: {error}"));
+
+            assert_eq!(
+                session_id_len(&hello),
+                32,
+                "{fingerprint}: uTLS sends a 32-byte legacy session id"
+            );
+        }
+    }
+
+    /// Reads the legacy session id's length. Layout: record header (5) +
+    /// handshake header (4) + version (2) + random (32).
+    fn session_id_len(hello: &[u8]) -> usize {
+        usize::from(hello[5 + 4 + 2 + 32])
+    }
+
+    /// Faking support would mean advertising suites we cannot use and losing
+    /// the connection at ServerHello with `SelectedUnofferedCipherSuite`, after
+    /// a socket, a round trip and an error naming neither the fingerprint nor
+    /// the reason. Refusing the config says the same thing for free.
+    #[test]
+    fn a_fingerprint_with_no_implemented_cipher_suite_is_refused() {
+        for fingerprint in UNNEGOTIABLE_FINGERPRINTS {
+            let error = plain_tls_client_hello_bytes(&config(fingerprint, &[])).expect_err(
+                "a fingerprint whose suites rustls cannot implement must not build a config",
+            );
+            let message = error.to_string();
+
+            assert!(
+                message.contains(fingerprint),
+                "{fingerprint}: the error must name the fingerprint, got: {message}"
+            );
+            assert!(
+                message.contains("cipher suite"),
+                "{fingerprint}: the error must name the reason, got: {message}"
+            );
+        }
+    }
+
+    /// Together the two lists above are Xray's REALITY-incapable set, and this
+    /// is what keeps them exhaustive as profiles are added.
+    ///
+    /// A profile with no TLS 1.3 declares no key share, and a REALITY
+    /// ClientHello without an X25519 key share has nowhere to put its
+    /// authentication -- so Xray's REALITY-incapable set is exactly the set of
+    /// TLS-1.2-era parrots, under every alias.
+    #[test]
+    fn the_tls12_era_lists_cover_every_reality_incapable_fingerprint() {
+        let listed = TLS12_ERA_FINGERPRINTS
+            .iter()
+            .chain(UNNEGOTIABLE_FINGERPRINTS)
+            .collect::<BTreeSet<_>>();
+        let reality_incapable = xray_utls::XRAY_REALITY_INCAPABLE_FINGERPRINTS
+            .iter()
+            .collect::<BTreeSet<_>>();
+
+        assert_eq!(listed, reality_incapable);
     }
 }

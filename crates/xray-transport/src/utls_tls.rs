@@ -3,14 +3,17 @@
 //! Xray-core sends a uTLS-shaped ClientHello on every TLS connection, not just
 //! REALITY ones, defaulting to `chrome` when `tlsSettings.fingerprint` is
 //! unset. This module is the plain-TLS half of that: it applies a profile's
-//! shape while leaving the hello random, session id, and key share to rustls,
-//! which is exactly what separates it from `reality_rustls`'s customizer.
+//! shape while leaving the hello random and key share to rustls, which is
+//! exactly what separates it from `reality_rustls`'s customizer.
 
-use rustls::client::{ClientHelloContext, ClientHelloCustomizer, ClientHelloPlan};
+use rand::{rngs::OsRng, RngCore};
+use rustls::client::{
+    ClientHelloContext, ClientHelloCustomizer, ClientHelloPlan, ClientHelloSessionId,
+};
 use rustls::Error as RustlsError;
 
 use crate::utls_profiles::{profile_for_fingerprint, UtlsClientHelloProfile};
-use crate::utls_shaping::{apply_alpn_override, apply_utls_profile};
+use crate::utls_shaping::{apply_alpn_override, apply_utls_profile, profile_offers_tls13};
 use crate::TransportError;
 
 /// The one configured ALPN list the RAW transport rebuilds the ClientHello
@@ -21,9 +24,14 @@ const ALPN_OVERRIDE_TRIGGER: &str = "http/1.1";
 ///
 /// `None` means the hello is left unshaped: either no fingerprint was
 /// configured, or it was Xray's `unsafe` sentinel.
+///
+/// The configured name comes back alongside the profile so that a caller
+/// refusing the profile can name what the user wrote. That is not always the
+/// name the profile answers to — `random` and `randomized` resolve to a drawn
+/// one — and the name in a config file is the one worth reporting.
 pub(crate) fn shaping_profile(
     fingerprint: Option<&str>,
-) -> Result<Option<&'static UtlsClientHelloProfile>, TransportError> {
+) -> Result<Option<(&str, &'static UtlsClientHelloProfile)>, TransportError> {
     let Some(fingerprint) = fingerprint else {
         return Ok(None);
     };
@@ -32,15 +40,16 @@ pub(crate) fn shaping_profile(
     }
 
     profile_for_fingerprint(fingerprint)
-        .map(Some)
+        .map(|profile| Some((fingerprint, profile)))
         .ok_or_else(|| TransportError::UnsupportedTlsFingerprint(fingerprint.to_owned()))
 }
 
 /// Applies the fingerprint's ClientHello shape to an ordinary TLS handshake.
 ///
-/// Unlike the REALITY customizer this sets no hello random, no session id, and
-/// no fixed key share — those carry REALITY's authentication and have no place
-/// in a plain handshake.
+/// Unlike the REALITY customizer this sets no hello random and no fixed key
+/// share — those carry REALITY's authentication and have no place in a plain
+/// handshake. It does set a session id, but only for TLS-1.2-era profiles and
+/// only to a fresh random value: see `parroted_session_id`.
 #[derive(Debug)]
 pub(crate) struct UtlsClientHelloCustomizer {
     profile: &'static UtlsClientHelloProfile,
@@ -87,10 +96,34 @@ impl ClientHelloCustomizer for UtlsClientHelloCustomizer {
     ) -> Result<Option<ClientHelloPlan>, RustlsError> {
         let mut plan = apply_utls_profile(ClientHelloPlan::new(), self.profile)?;
 
+        if !profile_offers_tls13(self.profile) {
+            plan = plan.with_session_id(parroted_session_id()?);
+        }
         if let Some(protocols) = &self.alpn_override {
             plan = apply_alpn_override(plan, self.profile, protocols)?;
         }
 
         Ok(Some(plan))
     }
+}
+
+/// The 32 random bytes uTLS puts in every ClientHello's legacy session id.
+///
+/// Go fills it for any connection that is not QUIC, with no version test at all
+/// (`utls@v1.8.3-0.20260301010127-aa6edf4b11af/handshake_client.go:126-136`),
+/// and `BuildHandshakeState` on each TLS-1.2-era parrot does report 32 bytes.
+/// rustls disagrees: it empties the field as soon as its config stops offering
+/// TLS 1.3 (`rustls/src/client/hs.rs:125`), which is exactly the config those
+/// parrots need. Restoring the field is therefore part of capping the version,
+/// not a separate nicety — capping alone would leave the hello 32 bytes shorter
+/// than any client it is imitating.
+///
+/// Redrawn per connection, because Go redraws it per hello.
+fn parroted_session_id() -> Result<ClientHelloSessionId, RustlsError> {
+    let mut session_id = vec![0u8; 32];
+    OsRng
+        .try_fill_bytes(&mut session_id)
+        .map_err(|error| RustlsError::General(format!("session id needs randomness: {error}")))?;
+
+    ClientHelloSessionId::try_from(session_id)
 }

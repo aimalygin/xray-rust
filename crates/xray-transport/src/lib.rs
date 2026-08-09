@@ -137,6 +137,12 @@ pub enum TransportError {
     UnsupportedRealityFingerprint(String),
     #[error("unsupported TLS fingerprint {0}")]
     UnsupportedTlsFingerprint(String),
+    /// A fingerprint this client knows but cannot use: every cipher suite its
+    /// ClientHello advertises is one rustls does not implement, so whichever
+    /// the server picks is one we cannot speak. Distinct from
+    /// `UnsupportedTlsFingerprint`, which means the name itself is unknown.
+    #[error("TLS fingerprint {0} advertises no cipher suite this client implements")]
+    UnnegotiableTlsFingerprint(String),
     #[error("httpupgrade handshake rejected: {0}")]
     HttpUpgradeRejected(String),
     #[error("websocket protocol error: {0}")]

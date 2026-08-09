@@ -182,7 +182,8 @@ names Xray accepts. An absent or empty value means `chrome`, matching Xray's
 `GetFingerprint("")`, so shaping is the default rather than an opt-in; an
 unknown name is rejected at parse time with a JSON path and the offending
 value. Unlike `realitySettings.fingerprint`, no X25519 key share is required,
-so the fourteen names REALITY rejects are usable here.
+so thirteen of the fourteen names REALITY rejects are usable here; the
+fourteenth, `hello360_7_5`, is refused for a separate reason given below.
 
 Those 58 are the union of the three maps Xray's `GetFingerprint` consults --
 `PresetFingerprints`, `ModernFingerprints`, `OtherFingerprints` -- less
@@ -234,6 +235,21 @@ carries just `0x0303` — and nothing in the shaping API can suppress it. The
 extension order is pinned so uTLS's own order survives as an exact prefix and
 the one extra extension sits last. The remaining names declare the extension
 themselves, so nothing is appended to their hellos.
+
+Those hellos go out under a TLS-1.2-only configuration, as uTLS's do: uTLS
+reads the missing extension as a TLS 1.0–1.2 range and caps its own config
+there. Offering TLS 1.3 behind a hello that never mentions it cannot work —
+the server answers with TLS 1.2, its ServerHello carries the RFC 8446 §4.1.3
+downgrade sentinel, and the client is obliged to treat that as an attack.
+
+`hello360_7_5` — with its aliases `360` and `hello360_auto` — is **refused at
+config time** rather than dialled. Its twenty cipher suites are CBC, RC4 or
+3DES, not an AEAD among them, and this client implements none of them, so
+whichever the server picks is one it cannot speak. xray-core completes that
+handshake, because Go still ships the legacy suites; here the fingerprint simply
+cannot be offered on plain TLS, and saying so at config time beats losing the
+connection a round trip later. It stays refused on REALITY too, as it always
+was.
 
 An IP-literal `serverName` is supported. As in uTLS, the SNI extension is
 elided and the rest of the shape shifts to match, rather than the handshake
