@@ -1928,8 +1928,16 @@ git commit -m "bench: measure bulk throughput through the gRPC transport"
 
 A `### gRPC` section beside the WebSocket/HTTPUpgrade one, covering: every accepted key with its
 Xray spelling; that `serviceName` has two dialects and what each produces, including the default
-`//Tun`; that `multiMode` must match the server because nothing negotiates it; the `:authority`
-precedence including the REALITY branch; and that REALITY is accepted here while Vision is not.
+`//Tun`; that `multiMode` selects a different message rather than only a different stream name; the
+`:authority` precedence including the REALITY branch; and that REALITY is accepted here while Vision
+is not.
+
+> **Falsified during execution.** This paragraph originally said `multiMode` "must match the server
+> because nothing negotiates it". The server never reads it: only the client does (`dial.go:59`), and
+> the listener registers both RPCs unconditionally (`hub.go:127-128`). Xray's own
+> `testing/scenarios/tls_test.go:574` configures the inbound without it and the outbound with it. The
+> claim came from the research pass, reached the spec and this plan, and was caught only when Task 14
+> went to write it into user-facing documentation.
 
 - [ ] **Step 2: Record the known divergence**
 
