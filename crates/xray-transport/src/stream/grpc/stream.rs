@@ -109,6 +109,17 @@ pub struct GrpcStream {
     /// gRPC's Trailers-Only response this is the block the call's status lives
     /// in. See [`Self::finish_downlink`].
     response_head: Option<HeaderMap>,
+    /// The trailing HEADERS, held from the moment they arrive, for the reason
+    /// [`Self::response_head`] is: h2 yields the block from `poll_trailers`
+    /// once and `None` for ever after (`h2-0.4.15/src/share.rs:425-436`).
+    ///
+    /// A failed call leaves [`Self::eof`] unset so that a caller which reads
+    /// again comes back through [`Self::finish_downlink`], which is only worth
+    /// doing if the verdict survives the trip. Without this the second read
+    /// finds no ending block at all and reports the peer as having closed the
+    /// stream without trailers — a different fault, about a peer that did
+    /// nothing of the kind, in place of the `grpc-status` it actually sent.
+    trailers: Option<HeaderMap>,
     /// Whether [`Self::response_head`] is the block that *ended* the call: one
     /// header block carrying `:status`, `content-type` and the `grpc-status`,
     /// with no DATA and no trailers behind it.
@@ -163,6 +174,7 @@ impl GrpcStream {
             pending_write: Bytes::new(),
             accepted: None,
             response_head: None,
+            trailers: None,
             head_ended_the_call: false,
             downlink_carried_data: false,
             eof: false,
@@ -325,7 +337,14 @@ impl GrpcStream {
         let trailers = ready!(recv.poll_trailers(cx))
             .map_err(|error| h2_io_error("could not read the gRPC trailers", &error))?;
 
-        Poll::Ready(self.finish_downlink(trailers))
+        // Kept rather than passed straight on, because this call is the only
+        // one that ever yields them — see [`Self::trailers`]. Guarded so that a
+        // second pass through here, which finds `None`, cannot erase what the
+        // first one took.
+        if trailers.is_some() {
+            self.trailers = trailers;
+        }
+        Poll::Ready(self.finish_downlink())
     }
 
     /// Turns the end of the h2 stream into either EOF or an error.
@@ -374,7 +393,7 @@ impl GrpcStream {
     /// without a close frame as an ordinary half-close: a truncated response
     /// that we call success and xray-core calls an error is the kind of
     /// disagreement that gets debugged on someone else's server.
-    fn finish_downlink(&mut self, trailers: Option<HeaderMap>) -> io::Result<()> {
+    fn finish_downlink(&mut self) -> io::Result<()> {
         // Checked before the status because it is the more precise complaint:
         // grpc-go turns an EOF inside a message into `io.ErrUnexpectedEOF`
         // rather than letting it pass as the end of the stream
@@ -386,15 +405,17 @@ impl GrpcStream {
             )));
         }
 
-        // The head block is borrowed rather than taken: an error below leaves
-        // `eof` unset, so a caller that reads again comes back through here,
-        // and a Trailers-Only call has to reach the same verdict the second
-        // time instead of decaying into the missing-trailers complaint.
+        // Both blocks are borrowed out of `self` rather than taken or passed
+        // in: an error below leaves `eof` unset, so a caller that reads again
+        // comes back through here, and it has to reach the same verdict the
+        // second time instead of decaying into the missing-trailers complaint.
+        // That holds for an ordinary trailing block only because
+        // `poll_finish_downlink` kept it — see [`Self::trailers`].
         let head = self
             .response_head
             .as_ref()
             .filter(|_| self.head_ended_the_call);
-        let Some(ending) = trailers.as_ref().or(head) else {
+        let Some(ending) = self.trailers.as_ref().or(head) else {
             return Err(protocol_io_error(
                 "the gRPC server closed the stream without sending trailers".to_owned(),
             ));
@@ -585,7 +606,7 @@ impl AsyncRead for GrpcStream {
                     // The reset is all that is left of the peer's END_STREAM,
                     // so it stands in for the `is_end_stream()` it erased.
                     this.head_ended_the_call = true;
-                    return Poll::Ready(this.finish_downlink(None));
+                    return Poll::Ready(this.finish_downlink());
                 }
                 // Not `is_end_stream()`: a gRPC call ends with a trailing
                 // HEADERS frame, and h2 leaves `is_end_stream()` false until

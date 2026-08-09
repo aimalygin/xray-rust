@@ -1568,6 +1568,63 @@ mod stream_grpc_h2_tests {
         .await;
     }
 
+    /// Reading again after a failed call reaches the same verdict, and says
+    /// the same thing.
+    ///
+    /// A failed call leaves `eof` unset on purpose, so a caller that reads
+    /// again comes back through the same decision — which is only worth doing
+    /// if the decision survives. `poll_trailers` yields the block once and
+    /// `None` for ever after (`h2-0.4.15/src/share.rs:425-436`), so a verdict
+    /// read straight off that call is gone by the second read and the status
+    /// the peer actually sent decays into "closed the stream without sending
+    /// trailers" — a different complaint about a different fault, pointing a
+    /// reader at the peer's framing instead of at the `grpc-status` it was
+    /// handed.
+    ///
+    /// The Trailers-Only shapes are already immune, because the block they
+    /// end on is the response head and `GrpcStream` keeps that. This is the
+    /// ordinary shape: a peer that answered, sent something, and then failed.
+    #[tokio::test]
+    async fn a_second_read_after_a_failed_call_repeats_its_verdict() {
+        const MESSAGE: &str = "the tunnel failed";
+
+        let mut fields = trailers("13");
+        fields.insert("grpc-message", MESSAGE.parse().expect("a legal header"));
+
+        let (client_io, server_io) = duplex(64 * 1024);
+        tokio::spawn(serve_one_call(
+            server_io,
+            Script::Say(hunks(&[b"partial"]), fields),
+        ));
+        let mut stream = within_deadline(open(client_io)).await;
+
+        within_deadline(async {
+            let mut buffer = [0u8; 16];
+            let read = stream.read(&mut buffer).await.expect("the peer's message");
+            assert_eq!(&buffer[..read], b"partial");
+
+            let first = stream
+                .read(&mut buffer)
+                .await
+                .expect_err("a failed call must not read as a clean eof");
+            assert!(
+                first.to_string().contains("13") && first.to_string().contains(MESSAGE),
+                "the first read should carry the peer's status and message, got: {first}"
+            );
+
+            let second = stream
+                .read(&mut buffer)
+                .await
+                .expect_err("a failed call is still failed on the second read");
+            assert_eq!(
+                second.to_string(),
+                first.to_string(),
+                "the second read reported a different fault than the first"
+            );
+        })
+        .await;
+    }
+
     /// Trailers that carry no `grpc-status` are a failed call, not a clean end.
     ///
     /// grpc-go opens the trailing header block at `grpcStatusCode =
