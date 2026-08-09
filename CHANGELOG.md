@@ -63,14 +63,21 @@ prerelease-quality and do not establish a supported release series.
   101". `docs/config-compatibility.md` has the full surface, including the
   header-casing split between the two and the one place the masqueraded
   browser version diverges from Xray's.
-- Rejected two transport pairings xray-core also refuses, so that a profile
-  cannot build here and then fail on the wire: REALITY with `ws` or
-  `httpupgrade`, which xray-core answers with "REALITY only supports RAW,
-  XHTTP and gRPC for now", and `xtls-rprx-vision` with any transport other
-  than raw, because Vision splices itself into the TLS connection's internals
-  and breaks when anything sits between. A `freedom` outbound also refuses ws
-  and httpupgrade; they are implemented for VLESS only, and refusing beats
-  silently dialling plain TCP.
+- Rejected two transport pairings that would otherwise build here and then
+  fail on the wire: REALITY with `ws` or `httpupgrade`, which xray-core
+  answers with "REALITY only supports RAW, XHTTP and gRPC for now", and
+  `xtls-rprx-vision` with anything but raw under `tls` or `reality`, because
+  Vision splices itself into the security connection's internals and breaks
+  when a transport wraps it. The second is narrower than xray-core's own rule
+  rather than a copy of it — xray-core asks whether the transport dialer
+  handed the security conn straight back, which mKCP does and raw with a
+  `tcpSettings.header.type` authenticator does not, and it skips the question
+  entirely when VLESS `encryption` is on. Neither case arises here: no
+  transport we implement hands the conn back except raw, and
+  `encryption: "none"` is the only value we accept.
+  `docs/config-compatibility.md` has the full account. A `freedom` outbound
+  also refuses ws and httpupgrade; they are implemented for VLESS only, and
+  refusing beats silently dialling plain TCP.
 - TLS connections are now shaped to look like a browser.
   `tlsSettings.fingerprint` selects a uTLS ClientHello shape from the same 58
   names xray-core accepts, and an absent or empty value means `chrome` rather
@@ -136,9 +143,14 @@ prerelease-quality and do not establish a supported release series.
   "REALITY only supports RAW, XHTTP and gRPC for now" — the message quoted
   Xray's rule correctly and the condition did not. REALITY over gRPC is the
   deployment gRPC mostly exists for, so this is the pairing that unblocks it.
-  `xtls-rprx-vision` is still refused alongside it, as xray-core refuses it:
-  Vision needs the connection under it to be a TLS or REALITY one, and the
-  gRPC dialer returns a `Hunk` wrapper on both sides of the port.
+  `xtls-rprx-vision` is still refused alongside it, and xray-core refuses it
+  over gRPC too: the gRPC dialer returns a `Hunk` wrapper rather than the
+  security conn, so the connection under Vision is neither a `*tls.Conn`, a
+  `*tls.UConn` nor a `*reality.UConn`. That is a fact about the dialer, not
+  about the network name — mKCP hands its TLS conn straight back and carries
+  Vision fine — and it holds only because VLESS `encryption` is off, which is
+  the sole setting we accept. `docs/config-compatibility.md` has the full
+  account.
 - Added two direct dependencies for the gRPC transport: `h2` 0.4.15 for the
   HTTP/2 client it speaks over, and `http` 1 for the request and header types
   that client takes — `grpcSettings.authority` is parsed and stored as an

@@ -160,16 +160,20 @@ behavior too, and rarely what the author intended.
 
 #### What these transports cannot be combined with
 
-Both restrictions are Xray's, enforced at config-build time there and at parse
-or build time here, because a profile that pairs them builds cleanly and then
-fails on the wire:
+Xray refuses both pairings too, so refusing them here only moves the failure
+earlier — from the wire to parse or build time:
 
 - **REALITY is rejected**, matching Xray's "REALITY only supports RAW, XHTTP
-  and gRPC for now". Plain TLS is the only security these transports take.
-- **`xtls-rprx-vision` is rejected.** Vision splices itself into the TLS
-  connection's internals, so anything layered between the two breaks it; Xray
-  fails the same pairing with "XTLS only supports TLS and REALITY directly for
-  now".
+  and gRPC for now", which Xray raises while building the stream config
+  (`infra/conf/transport_internet.go:1989`). Plain TLS is the only security
+  these transports take.
+- **`xtls-rprx-vision` is rejected.** Vision splices itself into the security
+  connection's internals, and both transports wrap that connection rather than
+  handing it back, so Vision has nothing to splice into. Xray gets as far as a
+  successful dial and then fails the flow with "XTLS only supports TLS and
+  REALITY directly for now". That is a property of these two dialers, not a
+  rule about transports in general — see the gRPC section below for the test
+  Xray actually applies.
 
 A `freedom` outbound is also refused these transports, and `grpc` with them.
 Xray would dial the destination itself through them; here they are implemented
@@ -312,14 +316,35 @@ XHTTP and gRPC for now" — gRPC is on that list where ws and httpupgrade are
 not.
 
 `xtls-rprx-vision` is rejected, and both ends refuse it in different places.
-Here it is refused when the outbound is built, because Vision is accepted only
-on the raw transport. On xray-core the transport dial *succeeds* and the
-refusal comes later, from the VLESS outbound's `Process`: Vision needs the
-connection under it to be a `*tls.Conn`, `*tls.UConn` or `*reality.UConn`, and
-the gRPC dialer returns a `HunkConn` or `MultiHunkConn` wrapper instead
-(`proxy/vless/outbound/outbound.go:268-285`, "XTLS only supports TLS and
-REALITY directly for now."). Adding `security: tls` does not change that; the
-wrapper is what the dialer returns either way.
+Here it is refused when the outbound is built, because this client admits
+Vision only on the raw transport under `tls` or `reality`. On xray-core the
+transport dial *succeeds* and the refusal comes later, from the VLESS
+outbound's `Process`, which accepts exactly two shapes
+(`proxy/vless/outbound/outbound.go:268-285`): a `*encryption.CommonConn` —
+VLESS `encryption` is on — which is tested first and does not care what the
+network is; or, failing that, an `iConn` that is a `*tls.Conn`, `*tls.UConn`
+or `*reality.UConn`. Everything else gets "XTLS only supports TLS and REALITY
+directly for now."
+
+Neither shape is reachable over gRPC here. `conn` becomes a
+`*encryption.CommonConn` whenever `h.encryption != nil`
+(`outbound.go:211-216`), and this client accepts `encryption: "none"` alone,
+so the first branch is out for every profile we parse. The second asks whether
+the transport dialer handed the security conn straight back as `iConn`, which
+is a property of the dialer and not of `network` or of `security`: the gRPC
+dialer feeds that conn to grpc's `ContextDialer`
+(`transport/internet/grpc/dial.go:138-151`) and returns a `HunkConn` or
+`MultiHunkConn` wrapper instead (`dial.go:65,74`). Adding `security: tls` does
+not change that; the wrapper is what the dialer returns either way, and ws,
+httpupgrade and xhttp wrap their TLS conn the same way.
+
+Resist restating that as a list of networks; every such shortcut written here
+so far has been wrong. mKCP carries Vision, because its dialer ends
+`iConn = tls.Client(iConn, ...); return iConn`
+(`transport/internet/kcp/dialer.go:99-103`), and RAW stops carrying it as soon
+as a `tcpSettings.header.type` authenticator wraps the conn on the way out
+(`transport/internet/tcp/dialer.go:105-115`). `docs/benchmarks.md` records the
+four configurations this was measured with against the vendored 26.5.9 binary.
 
 #### Keepalive is three knobs behind one gate
 
