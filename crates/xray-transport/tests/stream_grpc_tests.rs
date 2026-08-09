@@ -618,6 +618,7 @@ mod stream_grpc_framing_read_tests {
 mod stream_grpc_h2_tests {
     use std::future::{poll_fn, Future};
     use std::pin::Pin;
+    use std::task::Poll;
     use std::time::Duration;
 
     use bytes::Bytes;
@@ -1185,6 +1186,71 @@ mod stream_grpc_h2_tests {
             let mut echoed = [0u8; GREETING.len()];
             stream.read_exact(&mut echoed).await.expect("downlink read");
             assert_eq!(&echoed, GREETING);
+        })
+        .await;
+    }
+
+    /// A write that parked and was then drained by a flush is reported to its
+    /// caller, not encoded a second time.
+    ///
+    /// The parked write leaves its frame in `pending_write` and its count in
+    /// `accepted`. A flush or a half-close hands that frame to h2 and empties
+    /// the queue, and the count then has to be *reported* on the retry — a
+    /// retry that reads the empty queue as "no frame outstanding" builds a
+    /// second copy of the caller's buffer and puts it on the wire behind the
+    /// first. Duplicated bytes are the worst failure a tunnel has: nothing
+    /// errors, and the far end acts on the same request twice.
+    ///
+    /// No caller in this workspace reaches it today, which is exactly why it
+    /// is worth a test — `copy_direction` awaits `write_all` inside the read
+    /// arm's body rather than as a select arm
+    /// (`crates/xray-core-rs/src/policy.rs:203`) and the tun loop breaks on a
+    /// failed send, so both happen to retry a parked write before they flush.
+    /// This is a public `AsyncWrite`, and that ordering is a property of
+    /// today's callers rather than of the contract.
+    ///
+    /// The first write on a fresh stream is the one that parks, and does so
+    /// every time rather than by luck: h2 assigns the capacity `poll_write`
+    /// reserves from the connection task, so the grant cannot arrive inside
+    /// the poll that asked for it.
+    #[tokio::test]
+    async fn a_parked_write_a_flush_drained_is_reported_rather_than_re_encoded() {
+        const MESSAGE: &[u8] = b"exactly once";
+
+        let (client_io, server_io) = duplex(64 * 1024);
+        tokio::spawn(serve_one_call(server_io, Script::Echo));
+        let mut stream = within_deadline(open(client_io)).await;
+
+        let parked = poll_fn(|cx| Poll::Ready(Pin::new(&mut stream).poll_write(cx, MESSAGE))).await;
+        assert!(
+            parked.is_pending(),
+            "the first write did not park, so this test is no longer reproducing the retry"
+        );
+
+        within_deadline(stream.flush()).await.expect("uplink flush");
+
+        // The retry an `AsyncWrite` caller makes: same buffer, because it was
+        // never told any of it was taken.
+        let written = within_deadline(poll_fn(|cx| Pin::new(&mut stream).poll_write(cx, MESSAGE)))
+            .await
+            .expect("the retried write");
+        assert_eq!(
+            written,
+            MESSAGE.len(),
+            "the retry reports the frame the flush sent"
+        );
+
+        within_deadline(async {
+            stream.shutdown().await.expect("half-close");
+            let mut echoed = Vec::new();
+            stream.read_to_end(&mut echoed).await.expect("read to eof");
+            assert_eq!(
+                echoed,
+                MESSAGE,
+                "the peer received {} bytes for one {}-byte write",
+                echoed.len(),
+                MESSAGE.len()
+            );
         })
         .await;
     }

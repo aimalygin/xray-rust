@@ -285,9 +285,20 @@ impl GrpcStream {
             Uplink::Drained => Poll::Ready(Ok(())),
             Uplink::Closed => {
                 // Dropped rather than kept: nothing will ever carry them, and
-                // a relay's last frame can be a megabyte. [`Self::accepted`] is
-                // retired by the emptied queue, in `poll_write`.
+                // a relay's last frame can be a megabyte.
+                //
+                // **This is the one place a frame leaves the queue unsent, so
+                // it is the one place [`Self::accepted`] is void.** The count
+                // is cleared here rather than inferred from the emptied queue
+                // in `poll_write`, because the queue empties two ways that
+                // must not be confused: everything went to h2 — which is what
+                // the other drain and the success arm above mean, and which
+                // the retry has to *report* — or it was discarded here, which
+                // the retry has to re-encode and be refused for. Inferring
+                // treats the first as the second and puts a second copy of the
+                // caller's bytes on the wire.
                 self.pending_write = Bytes::new();
+                self.accepted = None;
                 Poll::Ready(Ok(()))
             }
         }
@@ -610,11 +621,13 @@ impl AsyncWrite for GrpcStream {
         // documents for a cancelled `write_all`, and is why nothing in this
         // workspace cancels one.
         //
-        // The count outlives its frame when a flush or a half-close drains it,
-        // so an emptied queue retires it here rather than at every drain site.
-        if this.pending_write.is_empty() {
-            this.accepted = None;
-        }
+        // The count outlives its frame whenever a flush or a half-close drains
+        // it first, and that is precisely when it has to be reported rather
+        // than dropped: the drain below then finds nothing to do and this
+        // returns the write the flush already sent. An emptied queue is *not*
+        // grounds to forget the count and start again — see
+        // [`Self::poll_drain_uplink_for_end_of_call`], which clears it on the
+        // one path that empties the queue without sending.
         if let Some(accepted) = this.accepted {
             ready!(this.poll_drain_uplink_for_write(cx))?;
             this.accepted = None;
