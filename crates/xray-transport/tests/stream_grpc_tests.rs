@@ -2860,6 +2860,10 @@ mod stream_grpc_oracle_tests {
     /// RFC 7541 section 5.1: a value that fills the prefix continues into as
     /// many seven-bit groups as it needs.
     fn read_hpack_integer(bytes: &[u8], prefix_bits: u32) -> (u64, &[u8]) {
+        assert!(
+            !bytes.is_empty(),
+            "an HPACK integer starts past the end of the block"
+        );
         let mask = (1u64 << prefix_bits) - 1;
         let mut value = u64::from(bytes[0]) & mask;
         let mut rest = &bytes[1..];
@@ -2930,6 +2934,20 @@ mod stream_grpc_oracle_tests {
             ));
         }
         fields
+    }
+
+    /// The fields that are not pseudo-headers, in the order they were given.
+    ///
+    /// HTTP/2 puts the pseudo-headers first and forbids one after an ordinary
+    /// field (RFC 9113 8.3), so this is the tail of the block on either side.
+    /// For [`decoded_fields`] it is the peer's decode order, and so `h2`'s
+    /// write order: `HeaderMap` iterates in insertion order, h2's server
+    /// inserts as it decodes, and h2's client encodes what it iterates.
+    fn ordinary_tail(fields: &[HeaderField]) -> Vec<&HeaderField> {
+        fields
+            .iter()
+            .filter(|field| !field.name.starts_with(':'))
+            .collect()
     }
 
     fn decode_hex(hex: &str) -> Vec<u8> {
@@ -3055,6 +3073,20 @@ mod stream_grpc_oracle_tests {
     /// [`our_pseudo_header_order_is_pinned_where_it_diverges_from_grpc_gos`],
     /// not this test.
     ///
+    /// **Past the pseudo-headers the two clients agree, so that tail is
+    /// compared in order rather than as a set.** grpc-go appends
+    /// `content-type`, `user-agent`, `te`
+    /// (`grpc@v1.81.0/internal/transport/http2_client.go:577-579`) and so do
+    /// we, but only because `build_grpc_call`
+    /// (`crates/xray-transport/src/stream/grpc/h2client.rs:291-293`) makes
+    /// three `.header()` calls in that order: `HeaderMap` iterates in insertion
+    /// order and `h2` encodes what it iterates, so swapping two of those lines
+    /// changes the bytes on the wire *and* the dynamic-table insertion order
+    /// every later stream on the connection back-references. Unlike the
+    /// pseudo-headers there is no divergence here to excuse, which is exactly
+    /// why sorting it away would be wrong: this is an order we chose and can
+    /// lose.
+    ///
     /// `user-agent` is the oracle's literal on both sides, which is the claim
     /// this makes about it: the transport sends the string it is handed. See
     /// [`oracle_config`] for why the fixture cannot carry Xray's default.
@@ -3079,11 +3111,17 @@ mod stream_grpc_oracle_tests {
         );
 
         let call = capture_the_first_call(&oracle_config(&fixture.call)).await;
-
-        // Sorted rather than compared in place: the order is the one thing
-        // here that legitimately differs, and it is asserted on its own.
         let mut ours = decoded_fields(&call.head);
         let mut theirs = fixture.headers;
+
+        assert_eq!(
+            ordinary_tail(&ours),
+            ordinary_tail(&theirs),
+            "the order the ordinary headers go out in"
+        );
+
+        // Only now sorted: the pseudo-header order is the one thing here that
+        // legitimately differs, and it is asserted on its own.
         ours.sort();
         theirs.sort();
         assert_eq!(ours, theirs, "the decoded field list grpc-go sends");
@@ -3157,9 +3195,15 @@ mod stream_grpc_oracle_tests {
         );
 
         let representations = read_hpack_representations(block);
+        // A dynamic-table size update is legal at the head of a block and names
+        // no field, so it is filtered out rather than counted: `h2` emitting
+        // one on some future bump should not be reported as a field appearing.
+        let fields = representations
+            .iter()
+            .filter(|representation| !matches!(representation, Representation::TableSizeUpdate))
+            .count();
         assert_eq!(
-            representations.len(),
-            7,
+            fields, 7,
             "the block should hold one representation per field: {representations:?}"
         );
         for representation in &representations {
@@ -3229,7 +3273,7 @@ mod stream_grpc_oracle_tests {
     /// every element reaches the caller — and, in the same bytes, what a
     /// single-mode decoder would silently do with them instead.
     #[test]
-    fn the_multi_hunk_framing_vectors_match_the_go_oracle_byte_for_byte() {
+    fn the_multi_hunk_framing_vectors_are_read_and_reproduced_as_the_go_oracle_wrote_them() {
         let fixture: MultiFramingFixture = serde_json::from_str(MULTI_HUNK_FRAMING_JSON)
             .expect("the multi hunk framing fixture decodes");
         assert_eq!(
