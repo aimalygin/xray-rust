@@ -27,13 +27,16 @@ timing.
 
 And on HTTP/2 the target is the connection preamble, plus the *contents* of the
 first HEADERS block — not its bytes, and not the whole connection. `h2` is taken
-as published rather than forked, and it differs from grpc-go's encoder twice
-over. The pseudo-header order is one swap off: the crate hardcodes `:method,
-:scheme, :authority, :path` where grpc-go sends `:path` before `:authority`. And
-the HPACK representation differs even where the fields agree — `h2` writes
-`:path` as a literal without indexing where grpc-go's encoder indexes
-incrementally. Either alone would defeat a byte comparison, so the gRPC oracle
-asserts the field set and the pseudo-header order, never the encoded block.
+as published rather than forked, and it differs from grpc-go's encoder in three
+places, each measured against a live client rather than reasoned about. The
+pseudo-header order is one swap off: the crate hardcodes `:method, :scheme,
+:authority, :path` where grpc-go sends `:path` before `:authority`. The HPACK
+representation differs even where the fields agree — `h2` writes `:path` as a
+literal without indexing where grpc-go indexes incrementally. And the two
+disagree on when to Huffman-code a string: grpc-go codes a header name only when
+that shortens it, so `te` goes out raw, while `h2` codes unconditionally. Any
+one of the three defeats a byte comparison, so the gRPC oracle asserts the field
+set and the pseudo-header order, never the encoded block.
 Everything past the first request carries no claim at all:
 HPACK dynamic-table evolution across pooled streams, BDP-estimation PINGs,
 WINDOW_UPDATE cadence. For XHTTP over HTTP/2 a byte-exact claim is not merely
