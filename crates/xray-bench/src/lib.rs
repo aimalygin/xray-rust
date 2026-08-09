@@ -6582,8 +6582,9 @@ fn grpc_fixture_vless_addr(
 /// else gets "XTLS only supports TLS and REALITY directly for now."
 /// (`Xray-core/proxy/vless/outbound/outbound.go:268-285`). This outbound is
 /// `encryption: none` over gRPC, so it is neither — and adding `security: tls`
-/// would not help, since the gRPC dialer returns an `encoding.HunkConn` rather
-/// than the TLS conn (`Xray-core/transport/internet/grpc/dial.go:65,75`). So
+/// would not help, since the gRPC dialer returns a `HunkConn` or
+/// `MultiHunkConn` wrapper rather than the TLS conn
+/// (`Xray-core/transport/internet/grpc/dial.go:65,74`). So
 /// this cannot be the REALITY configs with the network swapped; it is a
 /// separate outbound.
 ///
@@ -11892,10 +11893,14 @@ mod tests {
                 value["outbounds"][0]["streamSettings"]["grpcSettings"]["serviceName"],
                 GRPC_BENCH_SERVICE_NAME
             );
-            // `xtls-rprx-vision` over gRPC is refused at dial time by Xray
-            // (`Xray-core/proxy/vless/outbound/outbound.go:283-285`) and by
+            // `xtls-rprx-vision` over gRPC is refused by Xray's VLESS outbound
+            // (`Xray-core/proxy/vless/outbound/outbound.go:268-285`) and by
             // `validate_connector_flow` on our side, so a flow leaking in from
-            // the REALITY configs would break the run rather than slow it.
+            // the REALITY configs would break the run rather than slow it. The
+            // Xray-side refusal is not a dial failure: the gRPC dial succeeds
+            // and the outbound logs `tunneling request to ...`
+            // (`outbound.go:209`) before `Process` inspects the conn shape and
+            // gives up.
             assert!(value["outbounds"][0]["settings"]["vnext"][0]["users"][0]
                 .get("flow")
                 .is_none());

@@ -474,23 +474,33 @@ accepts exactly two shapes
 `*encryption.CommonConn` — VLESS `encryption` is on — which is tested first and
 does not care what the network is; or, failing that, an `iConn` that is a
 `*tls.Conn`, `*tls.UConn` or `*reality.UConn`. Everything else gets "XTLS only
-supports TLS and REALITY directly for now." So the accurate rule is *RAW with
-`tls` or `reality` security, or VLESS `encryption` on any network* — the second
-clause is easy to miss, and the criterion is not the security layer alone.
-Setting `security: tls` under gRPC does **not** buy the second shape: only the
-RAW dialer hands its TLS conn back as `iConn`, whereas the gRPC dialer feeds
-that conn to grpc's `ContextDialer`
-(`Xray-core/transport/internet/grpc/dial.go:138-151`) and returns an
-`encoding.HunkConn` (`dial.go:65,75`); ws, httpupgrade and xhttp wrap their TLS
-conn the same way. Both halves were checked against the vendored 26.5.9
-binary: `network: grpc, security: none` plus a `decryption`/`encryption` pair
-carries Vision fine — the client logs `proxy: Xtls Unpadding new block` and the
-tunnel serves traffic — while `network: grpc, security: tls` is refused with
-exactly that error. This fixture has neither VLESS encryption nor a TLS-shaped
-`iConn`, so Vision is out, and the REALITY/Vision configs still cannot be
-reused with the network swapped. Unlike the REALITY fixture, the gRPC fixture
-has no warm-up wait — there is no cover origin whose record shape has to be
-learned before a client may connect.
+supports TLS and REALITY directly for now." Resist restating that as a list of
+networks; every such shortcut written here so far has been wrong. The criterion
+is whether the transport dialer hands the security conn straight back as
+`iConn`, and it is a property of the dialer, not of `network` or of `security`:
+RAW does (`Xray-core/transport/internet/tcp/dialer.go:76-102`) — unless a
+`header` authenticator wraps it again on the way out (`dialer.go:105-115`) —
+and so does mKCP, whose dialer ends `iConn = tls.Client(iConn, ...); return
+iConn` (`Xray-core/transport/internet/kcp/dialer.go:99-103`). The stream
+transports never expose it. Setting `security: tls` under gRPC therefore does
+**not** buy the second shape: the gRPC dialer feeds that conn to grpc's
+`ContextDialer` (`Xray-core/transport/internet/grpc/dial.go:138-151`) and
+returns a `HunkConn` or `MultiHunkConn` wrapper instead (`dial.go:65,74`); ws,
+httpupgrade and xhttp wrap their TLS conn the same way. Four configurations
+were run against the vendored 26.5.9 binary, each with `xtls-rprx-vision` set
+on both ends. `network: grpc, security: none` plus a `decryption`/`encryption`
+pair carries Vision fine — the client logs `proxy: Xtls Unpadding new block`
+and the tunnel serves traffic. So does `network: kcp, security: tls` with
+`encryption: none`, which is the case the "only RAW" shortcut got wrong:
+HTTP 200 through the tunnel, `XtlsPadding 78 70 0` on the client and `Xtls
+Unpadding new block, content 78 padding 70 command 0` on the server.
+`network: grpc, security: tls` is refused with exactly that error — and so is
+RAW with `security: tls` plus `tcpSettings.header.type: "http"`, which is the
+case the "RAW with `tls`" shortcut got wrong. This fixture has
+neither VLESS encryption nor a TLS-shaped `iConn`, so Vision is out, and the
+REALITY/Vision configs still cannot be reused with the network swapped. Unlike
+the REALITY fixture, the gRPC fixture has no warm-up wait — there is no cover
+origin whose record shape has to be learned before a client may connect.
 
 Three properties of this number are easy to misread, and each changes what it
 means:
