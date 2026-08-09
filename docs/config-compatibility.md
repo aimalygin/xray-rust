@@ -161,19 +161,22 @@ behavior too, and rarely what the author intended.
 #### What these transports cannot be combined with
 
 Xray refuses both pairings too, so refusing them here only moves the failure
-earlier — from the wire to parse or build time:
+earlier — the two land in different places, but neither reaches the wire:
 
-- **REALITY is rejected**, matching Xray's "REALITY only supports RAW, XHTTP
-  and gRPC for now", which Xray raises while building the stream config
-  (`infra/conf/transport_internet.go:1989`). Plain TLS is the only security
-  these transports take.
-- **`xtls-rprx-vision` is rejected.** Vision splices itself into the security
-  connection's internals, and both transports wrap that connection rather than
-  handing it back, so Vision has nothing to splice into. Xray gets as far as a
-  successful dial and then fails the flow with "XTLS only supports TLS and
-  REALITY directly for now". That is a property of these two dialers, not a
-  rule about transports in general — see the gRPC section below for the test
-  Xray actually applies.
+- **REALITY is rejected** at parse time, matching Xray's "REALITY only supports
+  RAW, XHTTP and gRPC for now", which Xray raises while building the stream
+  config (`infra/conf/transport_internet.go:1989`). Plain TLS is the only
+  security these transports take.
+- **`xtls-rprx-vision` is rejected** when the stream is opened, not when the
+  outbound is built: the pairing is a property of the dialer, so the profile
+  parses and the outbound builds, and the guard the connect path runs before it
+  dials is what refuses. Vision splices itself into the security connection's
+  internals, and both transports wrap that connection rather than handing it
+  back, so Vision has nothing to splice into. Xray refuses later still — it
+  gets as far as a successful dial and then fails the flow with "XTLS only
+  supports TLS and REALITY directly for now". That is a property of these two
+  dialers, not a rule about transports in general — see the gRPC section below
+  for the test Xray actually applies.
 
 A `freedom` outbound is also refused these transports, and `grpc` with them.
 Xray would dial the destination itself through them; here they are implemented
@@ -315,11 +318,12 @@ REALITY is accepted with gRPC, matching Xray's "REALITY only supports RAW,
 XHTTP and gRPC for now" — gRPC is on that list where ws and httpupgrade are
 not.
 
-`xtls-rprx-vision` is rejected, and both ends refuse it in different places.
-Here it is refused when the outbound is built, because this client admits
-Vision only on the raw transport under `tls` or `reality`. On xray-core the
-transport dial *succeeds* and the refusal comes later, from the VLESS
-outbound's `Process`, which accepts exactly two shapes
+`xtls-rprx-vision` is rejected, and both ends refuse it in different places —
+on neither end at config time. Here the profile parses and the outbound builds;
+what refuses is the guard the connect path runs before it dials, because this
+client admits Vision only on the raw transport under `tls` or `reality`. On
+xray-core the transport dial *succeeds* and the refusal comes later still, from
+the VLESS outbound's `Process`, which accepts exactly two shapes
 (`proxy/vless/outbound/outbound.go:268-285`): a `*encryption.CommonConn` —
 VLESS `encryption` is on — which is tested first and does not care what the
 network is; or, failing that, an `iConn` that is a `*tls.Conn`, `*tls.UConn`

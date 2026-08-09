@@ -469,30 +469,39 @@ mod utls_tls_shaping_tests {
     /// `random` assertions below are testing the entropy in a hello rather
     /// than the profile behind it.
     ///
-    /// `hellofirefox_120` is the case that catches it: its ECH GREASE redraws a
-    /// config id, an X25519 encapsulated key, a payload *and* the HPKE AEAD id
-    /// per hello, so a signature that leaves any of the four alone differs
-    /// between connections. `chrome` cannot stand in -- `BoringGREASEECH`
-    /// declares a single cipher suite (`u_ech.go:296`), so an unmasked AEAD id
-    /// sails past it, which is how the AEAD stayed unmasked here until it
-    /// started failing the `random` tests below.
+    /// Every modern fingerprint is checked rather than one representative,
+    /// because which name exposes a per-connection field moves with the
+    /// profiles. `hellofirefox_120` is what catches it today: its ECH GREASE
+    /// redraws a config id, an X25519 encapsulated key, a payload *and* the HPKE
+    /// AEAD id per hello, so a signature that leaves any of the four alone
+    /// differs between connections, whereas `chrome` cannot expose the AEAD at
+    /// all -- `BoringGREASEECH` declares a single cipher suite
+    /// (`u_ech.go:296`), so an unmasked AEAD id sails past it, which is how the
+    /// AEAD stayed unmasked here until it started failing the `random` tests
+    /// below. Naming either one blinds the guard to the other: `chrome` pins one
+    /// of uTLS's four ECH payload lengths (`ECH_GREASE_BORING`,
+    /// `crates/xray-transport/src/utls_profiles.rs:68`) whose own doc records
+    /// unpinning as intended work, and the day that lands `chrome`'s hello
+    /// varies per connection while `hellofirefox_120`'s still does not.
     ///
-    /// `hellofirefox_120` is also the only member of Xray's
-    /// `ModernFingerprints` on the Firefox GREASE scheme, so a field left
-    /// unblanked reaches those tests as a one-run-in-nineteen failure on
-    /// whichever machine happens to draw it. Repeating the draw makes this
-    /// guard itself deterministic instead: sixteen further hellos agree with
-    /// the first by chance with probability 2^-16.
+    /// Only a handful of the nineteen names carry ECH at all, so a field left
+    /// unblanked reaches
+    /// `random_names_are_stable_for_the_life_of_the_process` as a failure on
+    /// the few runs in nineteen that draw an affected name. Repeating each draw
+    /// makes this guard itself deterministic instead: sixteen further hellos
+    /// agree with the first by chance with probability 2^-16.
     #[test]
-    fn one_fingerprint_reduces_to_one_shape_across_connections() {
-        let first = shape_of("hellofirefox_120");
+    fn every_fingerprint_reduces_to_one_shape_across_connections() {
+        for fingerprint in xray_utls::XRAY_MODERN_FINGERPRINTS {
+            let first = shape_of(fingerprint);
 
-        for _ in 0..16 {
-            assert_eq!(
-                shape_of("hellofirefox_120"),
-                first,
-                "hellofirefox_120 must reduce to one shape across connections"
-            );
+            for _ in 0..16 {
+                assert_eq!(
+                    shape_of(fingerprint),
+                    first,
+                    "{fingerprint} must reduce to one shape across connections"
+                );
+            }
         }
     }
 

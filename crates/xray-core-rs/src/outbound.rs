@@ -1947,9 +1947,19 @@ fn validate_connector_flow(
     transport: &ConnectorConfig,
     stream_transport: &TransportLayer,
 ) -> Result<VisionFlow, CoreError> {
-    // Vision splices itself into the TLS connection's internals, so anything
-    // layered between the two breaks it. Xray refuses the same pairing with
-    // "XTLS only supports TLS and REALITY directly for now."
+    // Vision splices itself into the security connection's internals, and every
+    // non-raw transport implemented here wraps that connection instead of
+    // handing it back, so Vision has nothing to splice into.
+    //
+    // Keying on the transport is narrower than xray-core's own rule rather than
+    // a copy of it. `Process` asks whether the dialer returned the security
+    // conn itself as `iConn` (`proxy/vless/outbound/outbound.go:268-285`), which
+    // mKCP satisfies and raw with a `tcpSettings.header.type` authenticator does
+    // not, and it skips the question entirely when VLESS `encryption` is on.
+    // Neither divergence is reachable here — raw is the only dialer that hands
+    // the conn back, and `encryption: "none"` is the only value we accept — so
+    // the two rules agree on every profile we parse. See
+    // `docs/config-compatibility.md` for the full account.
     if !matches!(stream_transport, TransportLayer::Raw) {
         return validate_vision_flow(flow, false);
     }
@@ -4617,9 +4627,11 @@ mod tests {
 
     #[test]
     fn vision_is_rejected_outside_the_raw_transport() {
-        // Xray's VLESS outbound reaches into the TLS connection's private
-        // fields to splice Vision in, so anything layered between the two
-        // breaks it: "XTLS only supports TLS and REALITY directly for now."
+        // Xray's VLESS outbound reaches into the private `input`/`rawInput`
+        // fields of the security connection the dialer returns, so a dialer
+        // that wraps that connection rather than returning it gets "XTLS only
+        // supports TLS and REALITY directly for now." — which is every non-raw
+        // transport implemented here.
         let error = validate_connector_flow(
             Some(VISION_FLOW),
             &ConnectorConfig::Tls(TlsClientConfig {
