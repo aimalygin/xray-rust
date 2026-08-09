@@ -50,6 +50,21 @@ pub struct GrpcConfig {
     /// intact. `Authority` cannot hold a `/`, so matching that is not on the
     /// table; between refusing the config and silently calling a different
     /// method, refusing is the one that says what is wrong.
+    ///
+    /// **The type is a ceiling as well as a policy, and the ceiling is not
+    /// ours to raise.** `build_grpc_request` hands `h2` an
+    /// [`http::Request`], and `h2` reads `:authority` out of its
+    /// [`http::Uri`] and nowhere else
+    /// (`h2-0.4.15/src/frame/headers.rs:561-604`); a `Uri`'s authority *is*
+    /// this type. So an authority `Authority` rejects is not a config we
+    /// refuse by choice — it is one no request can carry. Two whole classes
+    /// fall in there and grpc-go sends both: every byte above `0x7f`, which
+    /// makes an IDN authority like `例え.jp` unsendable, and `%` anywhere in a
+    /// host (`http-1.5.0/src/uri/authority.rs:493-516,564-567`), which makes
+    /// grpc-go's own `encodeAuthority` output for an IDN `host:port` fallback
+    /// unsendable too even though it is pure ASCII. Both verified on the wire
+    /// against grpc-go v1.81.0. `xray_core_rs`'s `grpc_authority` is where the
+    /// consequence is faced, since it is what decides which key gets told.
     pub authority: Authority,
     /// Already resolved through Xray's table by [`resolve_user_agent`], so
     /// `golang` has become the empty string by the time it lands here.

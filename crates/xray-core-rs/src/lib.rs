@@ -239,8 +239,35 @@ pub enum CoreError {
     /// whose `grpcSettings.authority` holds a `/` would conclude that
     /// `network: "grpc"` is unimplemented, which is now the wrong answer to a
     /// question about one character in one string.
-    #[error("invalid gRPC authority `{0}`")]
+    ///
+    /// Names the key as well as the value, because
+    /// [`Self::UnrepresentableGrpcAuthority`] is the same complaint about a
+    /// value the user never wrote and the two have to be told apart from the
+    /// message alone.
+    #[error("grpcSettings.authority `{0}` is not a valid HTTP/2 authority")]
     InvalidGrpcAuthority(String),
+    /// The rest of Xray's `:authority` chain — `tlsSettings.serverName`, the
+    /// destination domain, the `host:port` last resort
+    /// (`Xray-core/transport/internet/grpc/dial.go:159-167`) — resolving to
+    /// something `http::uri::Authority` will not hold.
+    ///
+    /// Separate from [`Self::InvalidGrpcAuthority`] because the *cause* is
+    /// separate. That one is a string in `grpcSettings.authority` and the user
+    /// can edit the character that is wrong. This one is a value we derived on
+    /// their behalf, so naming `grpcSettings.authority` would send them
+    /// looking for a key their config does not contain; `key` names the one it
+    /// does. Why it is still a refusal rather than a fallback is in
+    /// `outbound::grpc_authority` — briefly, `h2` reads `:authority` out of an
+    /// `http::Uri` and nothing else, so a value no `Authority` can hold is one
+    /// no request can carry.
+    #[error("the gRPC :authority derived from {key} `{value}` is not a valid HTTP/2 authority")]
+    UnrepresentableGrpcAuthority {
+        /// The config key the value came from, for the message to name.
+        key: &'static str,
+        /// The resolved authority, which is the key's value plus a `:port` on
+        /// the last-resort branch.
+        value: String,
+    },
     #[error("XTLS rejected UDP/443 traffic")]
     VisionUdp443Rejected,
     #[error("transport error: {0}")]
