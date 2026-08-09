@@ -65,6 +65,30 @@ impl GrpcTransport {
         }
     }
 
+    /// The settings this transport dials with.
+    ///
+    /// **`pub` for `xray-core-rs`'s tests**, which resolve the config out of a
+    /// `grpcSettings` block and need to read back what they resolved; the
+    /// crate boundary rules out `pub(crate)`. Hidden for the same reason as
+    /// [`Self::holds_a_live_connection`]: nothing outside a test should reach
+    /// past `TransportLayer` into a dialled transport's settings.
+    #[doc(hidden)]
+    pub fn config(&self) -> &GrpcConfig {
+        &self.config
+    }
+
+    /// Whether two handles would dial into the same pooled connection.
+    ///
+    /// The question a caller actually has is about the pool's identity, not
+    /// the settings': two `GrpcTransport`s resolved from identical config are
+    /// *not* one pool. `Arc::ptr_eq` answers it, and this wrapper is what lets
+    /// it be asked from outside the crate without making the pool type public.
+    /// See [`Self::config`] on why the method is `pub` at all.
+    #[doc(hidden)]
+    pub fn shares_pool_with(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.pool, &other.pool)
+    }
+
     /// Whether the pool is holding a connection it would hand the next flow.
     ///
     /// A point-in-time answer, and only useful as one: nothing may act on it,

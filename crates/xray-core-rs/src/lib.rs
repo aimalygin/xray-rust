@@ -234,6 +234,13 @@ pub enum CoreError {
     UnsupportedOutboundServerAddress,
     #[error("outbound flow is not supported")]
     UnsupportedOutboundFlow,
+    /// Carries the offending value because the other outbound-config errors
+    /// above cannot: told only that "outbound network is not supported", a user
+    /// whose `grpcSettings.authority` holds a `/` would conclude that
+    /// `network: "grpc"` is unimplemented, which is now the wrong answer to a
+    /// question about one character in one string.
+    #[error("invalid gRPC authority `{0}`")]
+    InvalidGrpcAuthority(String),
     #[error("XTLS rejected UDP/443 traffic")]
     VisionUdp443Rejected,
     #[error("transport error: {0}")]

@@ -19,7 +19,10 @@ use xray_proxy::vless::{
     VlessResponseStream, DEFAULT_VISION_SEED,
 };
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
-use xray_transport::stream::{HttpUpgradeConfig, TransportLayer, WebSocketConfig};
+use xray_transport::stream::{
+    resolve_user_agent, Authority, GrpcConfig, GrpcTransport, HttpUpgradeConfig, TransportLayer,
+    WebSocketConfig,
+};
 use xray_transport::{
     BoxedTransportStream, ConnectorConfig, DnsResolver, HappyEyeballsConfig, RealityClientConfig,
     SystemDnsResolver, TlsClientConfig, TransportDialer, TransportStream,
@@ -529,13 +532,21 @@ impl TcpOutbound {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Every build failure the router is allowed to memoize.
+///
+/// **Not `Copy` since `InvalidGrpcAuthority` joined it**, which is the price of
+/// an error that names the value it rejected. `from_core_error` panics on
+/// anything absent from this list, so a new `CoreError` returned by a builder
+/// has to be added here too or the cached path turns a config error into a
+/// crash.
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum CachedOutboundError {
     NoSupportedOutbound,
     UnsupportedOutboundNetwork,
     UnsupportedOutboundSecurity,
     UnsupportedOutboundServerAddress,
     UnsupportedOutboundFlow,
+    InvalidGrpcAuthority(String),
 }
 
 impl CachedOutboundError {
@@ -546,6 +557,7 @@ impl CachedOutboundError {
             CoreError::UnsupportedOutboundSecurity => Self::UnsupportedOutboundSecurity,
             CoreError::UnsupportedOutboundServerAddress => Self::UnsupportedOutboundServerAddress,
             CoreError::UnsupportedOutboundFlow => Self::UnsupportedOutboundFlow,
+            CoreError::InvalidGrpcAuthority(authority) => Self::InvalidGrpcAuthority(authority),
             other => unreachable!("outbound compilation returned non-cacheable error: {other}"),
         }
     }
@@ -557,6 +569,7 @@ impl CachedOutboundError {
             Self::UnsupportedOutboundSecurity => CoreError::UnsupportedOutboundSecurity,
             Self::UnsupportedOutboundServerAddress => CoreError::UnsupportedOutboundServerAddress,
             Self::UnsupportedOutboundFlow => CoreError::UnsupportedOutboundFlow,
+            Self::InvalidGrpcAuthority(authority) => CoreError::InvalidGrpcAuthority(authority),
         }
     }
 }
@@ -1137,7 +1150,7 @@ impl OutboundRouter {
         });
         match cached {
             Ok(outbound) => Ok(outbound.clone()),
-            Err(error) => Err(*error),
+            Err(error) => Err(error.clone()),
         }
     }
 
@@ -1208,7 +1221,7 @@ fn clone_cached_outbound<T: Clone>(
 ) -> Result<T, CoreError> {
     match cached {
         Ok(outbound) => Ok(outbound.clone()),
-        Err(error) => Err(error.into_core_error()),
+        Err(error) => Err(error.clone().into_core_error()),
     }
 }
 
@@ -1293,9 +1306,9 @@ pub async fn select_udp_outbound_for_session_with_resolver(
 /// Whether this stream's transport is one the *freedom* and *DNS* outbounds
 /// can dial.
 ///
-/// VLESS carries a `TransportLayer` and dials ws and httpupgrade for real.
-/// These two do not: they hand the stream straight to a socket, and the
-/// stream's `network` is `Tcp` for all three transports, so without this a
+/// VLESS carries a `TransportLayer` and dials ws, httpupgrade and gRPC for
+/// real. These two do not: they hand the stream straight to a socket, and the
+/// stream's `network` is `Tcp` for every transport, so without this a
 /// `network: "ws"` freedom outbound would silently dial plain TCP.
 fn stream_transport_is_dialable(stream: &StreamSettings) -> bool {
     matches!(stream.transport, StreamTransport::Raw)
@@ -1307,6 +1320,11 @@ fn stream_transport_is_dialable(stream: &StreamSettings) -> bool {
 /// else the TLS server name, else the destination address -- and never carries
 /// a port, because Xray sets the header from those three values directly and
 /// only appends a port to the dial URI.
+///
+/// gRPC's `:authority` looks like the same question and is not: it has its own
+/// chain, its own view of REALITY, and a fallback that does carry the port.
+/// [`grpc_authority`] has it, and `host_fallback` below is the wrong answer to
+/// it in three separate ways.
 fn build_transport_layer(
     outbound: &OutboundConfig,
     connector: &ConnectorConfig,
@@ -1343,13 +1361,112 @@ fn build_transport_layer(
             // only means "do not block waiting for the 101".
             wait_for_response: upgrade.early_data_bytes == 0,
         }),
-        // The config layer parses `grpcSettings` before a gRPC dialer exists.
-        // Refusing here keeps that gap loud: the alternative to an arm is no
-        // arm, and the config crate cannot grow the variant without this match
-        // failing to compile. Wiring it to a real `TransportLayer` is the
-        // outbound task's job, not the parser's.
-        StreamTransport::Grpc(_) => return Err(CoreError::UnsupportedOutboundNetwork),
+        StreamTransport::Grpc(grpc) => TransportLayer::Grpc(GrpcTransport::new(GrpcConfig {
+            service_name: grpc.service_name.clone(),
+            multi_mode: grpc.multi_mode,
+            authority: grpc_authority(
+                grpc.authority.as_deref(),
+                connector,
+                &settings.server,
+                settings.port,
+            )?,
+            user_agent: resolve_user_agent(grpc.user_agent.as_deref()),
+            idle_timeout_secs: grpc.idle_timeout_secs,
+            health_check_timeout_secs: grpc.health_check_timeout_secs,
+            permit_without_stream: grpc.permit_without_stream,
+            initial_windows_size: grpc.initial_windows_size,
+        })),
     })
+}
+
+/// The `:authority` one gRPC outbound dials with.
+///
+/// Xray's chain is `grpcSettings.authority`, else `tlsSettings.serverName`,
+/// else the destination *domain* and only when REALITY is absent, else the
+/// empty string (`Xray-core/transport/internet/grpc/dial.go:159-167`).
+///
+/// **Three ways this differs from `build_transport_layer`'s `host_fallback`**,
+/// which resolves the `Host` header for ws and httpupgrade and is the obvious
+/// thing to reuse here:
+///
+/// * REALITY's server name is not in the chain. `dial.go:162` reads
+///   `tlsConfig.ServerName`, and `tls.ConfigFromStreamSettings` returns nil for
+///   a REALITY stream because the type assertion on `SecuritySettings` fails
+///   (`transport/internet/tls/config.go:510-519`), so under REALITY the whole
+///   branch is skipped rather than answered with the REALITY SNI.
+/// * The destination branch needs the destination to be a domain. An IP one
+///   leaves the authority empty even with no REALITY in sight.
+/// * **The empty string is not an omitted header.** `initAuthority` walks past
+///   the dial option to the transport credentials, and Xray's are
+///   `insecure.NewCredentials()` (`dial.go:157`), whose `Info().ServerName` is
+///   empty (`grpc@v1.81.0/credentials/insecure/insecure.go:51-53`); the
+///   passthrough resolver is no `AuthorityOverrider` either, so the chain ends
+///   at `encodeAuthority(endpoint)` (`clientconn.go:1976-1986`) over the target
+///   Xray built as `passthrough:///host:port` (`dial.go:181-191`) — port
+///   included. Verified on the wire against grpc-go v1.81.0 for a domain, an
+///   IPv4 and an IPv6 destination. `encodeAuthority` leaves `:`, `[`, `]` and
+///   `@` unescaped (`clientconn.go:1889-1942`), which is why an IPv6 literal
+///   keeps its brackets instead of arriving as `%5B`. Under REALITY this
+///   fallback is the default path, not an edge case.
+///
+/// The parse is the one place a malformed `grpcSettings.authority` is caught:
+/// see [`xray_transport::stream::GrpcConfig::authority`] for why it is refused
+/// rather than sent verbatim the way grpc-go would.
+fn grpc_authority(
+    configured: Option<&str>,
+    connector: &ConnectorConfig,
+    server: &TargetAddr,
+    port: u16,
+) -> Result<Authority, CoreError> {
+    // The config layer has already collapsed an empty `authority` to `None`,
+    // matching Go's inability to tell one from an absent key.
+    let resolved = if let Some(authority) = configured {
+        authority.to_owned()
+    } else if let Some(server_name) = configured_tls_server_name(connector) {
+        server_name.to_owned()
+    } else {
+        match server {
+            TargetAddr::Domain(domain) if !matches!(connector, ConnectorConfig::Reality(_)) => {
+                domain.clone()
+            }
+            _ => host_and_port(server, port),
+        }
+    };
+
+    match Authority::try_from(resolved.as_str()) {
+        Ok(authority) => Ok(authority),
+        Err(_) => Err(CoreError::InvalidGrpcAuthority(resolved)),
+    }
+}
+
+/// `tlsSettings.serverName` as `dial.go:162` reads it, and nothing else.
+///
+/// The empty-name arm is unreachable from `build_vless_tcp_outbound`, which
+/// refuses a TLS stream whose server name resolves to nothing long before this
+/// runs. It is kept because `dial.go:162` tests emptiness too: without it the
+/// function would encode an invariant of one caller rather than Xray's rule,
+/// and a caller that stops holding it would silently send `:authority: ` empty
+/// instead of falling through to the destination.
+fn configured_tls_server_name(connector: &ConnectorConfig) -> Option<&str> {
+    match connector {
+        ConnectorConfig::Tls(tls) if !tls.server_name.is_empty() => Some(&tls.server_name),
+        ConnectorConfig::Tcp | ConnectorConfig::Tls(_) | ConnectorConfig::Reality(_) => None,
+    }
+}
+
+/// grpc-go's resolver-endpoint fallback, i.e. Go's `net.JoinHostPort` over the
+/// destination — which brackets an IPv6 literal, as `SocketAddr` does.
+///
+/// `to_canonical` is what makes the IPv4-mapped case agree: Go builds the host
+/// from `dest.Address.IP().String()` (`dial.go:181-186`), and `net.IP.String`
+/// writes a 16-byte address whose `To4()` matches as a dotted quad, where
+/// Rust's `Display` would keep `::ffff:`. Both fold exactly the v4-mapped
+/// prefix and nothing else, so the two agree everywhere once this is applied.
+fn host_and_port(server: &TargetAddr, port: u16) -> String {
+    match server {
+        TargetAddr::Domain(domain) => format!("{domain}:{port}"),
+        TargetAddr::Ip(ip) => SocketAddr::new(ip.to_canonical(), port).to_string(),
+    }
 }
 
 fn build_tcp_outbound(outbound: &OutboundConfig) -> Result<TcpOutbound, CoreError> {
@@ -1996,7 +2113,7 @@ pub async fn open_vless_tcp_stream(
 
 #[cfg(test)]
 mod tests {
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
     use std::num::NonZeroUsize;
     use std::sync::{
         atomic::{AtomicUsize, Ordering},
@@ -3202,8 +3319,12 @@ mod tests {
             path: "/up".to_owned(),
             ..HttpUpgradeSettings::default()
         });
+        let grpc = StreamTransport::Grpc(GrpcSettings {
+            service_name: "GunService".to_owned(),
+            ..GrpcSettings::default()
+        });
 
-        for transport in [websocket, httpupgrade] {
+        for transport in [websocket, httpupgrade, grpc] {
             let mut freedom = direct_selection_freedom("proxy");
             freedom.stream.transport = transport.clone();
             assert!(matches!(
@@ -3341,6 +3462,277 @@ mod tests {
 
         assert!(Arc::ptr_eq(&first_tcp.payload, &second_tcp.payload));
         assert!(Arc::ptr_eq(&first_tcp.payload, &udp.payload));
+    }
+
+    fn reality_settings() -> RealitySettings {
+        RealitySettings {
+            server_name: "reality.example".to_owned(),
+            fingerprint: "chrome".to_owned(),
+            public_key: [7; 32],
+            short_id: RealityShortId::try_from_slice(&[1, 2, 3, 4])
+                .expect("valid Reality short id"),
+            spider_x: "/".to_owned(),
+            mldsa65_verify: None,
+        }
+    }
+
+    fn grpc_settings(authority: Option<&str>) -> GrpcSettings {
+        GrpcSettings {
+            service_name: "GunService".to_owned(),
+            authority: authority.map(str::to_owned),
+            ..GrpcSettings::default()
+        }
+    }
+
+    fn grpc_vless(
+        grpc: GrpcSettings,
+        security: StreamSecurity,
+        server: TargetAddr,
+    ) -> OutboundConfig {
+        let mut vless = direct_selection_vless("proxy");
+        vless.stream.transport = StreamTransport::Grpc(grpc);
+        vless.stream.security = security;
+        let OutboundSettings::Vless(settings) = &mut vless.settings else {
+            panic!("expected a VLESS outbound");
+        };
+        settings.server = server;
+        vless
+    }
+
+    fn grpc_reality_vless(flow: Option<&str>) -> OutboundConfig {
+        let mut vless = grpc_vless(
+            grpc_settings(None),
+            StreamSecurity::Reality(reality_settings()),
+            TargetAddr::Domain("dest.example.com".to_owned()),
+        );
+        let OutboundSettings::Vless(settings) = &mut vless.settings else {
+            panic!("expected a VLESS outbound");
+        };
+        settings.users[0].flow = flow.map(str::to_owned);
+        vless
+    }
+
+    fn built_grpc_transport(outbound: &OutboundConfig) -> GrpcTransport {
+        let built = build_vless_tcp_outbound(outbound).expect("a gRPC VLESS outbound");
+        let TransportLayer::Grpc(grpc) = built.transport_layer() else {
+            panic!("expected the gRPC transport layer");
+        };
+        grpc.clone()
+    }
+
+    /// Xray's `:authority` chain, in order:
+    /// `grpcSettings.authority`, else `tlsSettings.serverName`, else the
+    /// destination domain but *only when REALITY is absent*, else the empty
+    /// string (`Xray-core/transport/internet/grpc/dial.go:159-167`).
+    ///
+    /// The empty string is not an omitted header. grpc-go falls back to the
+    /// resolver endpoint, which Xray builds as `passthrough:///host:port`
+    /// (`dial.go:188-191`), so what goes out carries the port — confirmed on
+    /// the wire against grpc-go v1.81.0. Under REALITY that fallback is the
+    /// default path rather than an edge case, which is why the last row is not
+    /// a curiosity. [`grpc_authority`] has the rest of the reasoning, including
+    /// why the `Host` header's `host_fallback` cannot answer this.
+    #[test]
+    fn the_grpc_authority_follows_xrays_precedence_chain() {
+        for (configured, tls_server_name, reality, expected) in [
+            (
+                Some("cdn.example.com"),
+                Some("sni.example.com"),
+                false,
+                "cdn.example.com",
+            ),
+            (Some("cdn.example.com"), None, true, "cdn.example.com"),
+            (None, Some("sni.example.com"), false, "sni.example.com"),
+            (None, None, false, "dest.example.com"),
+            (None, None, true, "dest.example.com:443"),
+        ] {
+            let security = match (tls_server_name, reality) {
+                (Some(name), false) => StreamSecurity::Tls(TlsSettings {
+                    server_name: Some(name.to_owned()),
+                    fingerprint: None,
+                    allow_insecure: false,
+                    alpn: Vec::new(),
+                }),
+                (None, true) => StreamSecurity::Reality(reality_settings()),
+                (None, false) => StreamSecurity::None,
+                (Some(_), true) => panic!("a stream carries one security layer, not two"),
+            };
+            let outbound = grpc_vless(
+                grpc_settings(configured),
+                security,
+                TargetAddr::Domain("dest.example.com".to_owned()),
+            );
+
+            assert_eq!(
+                built_grpc_transport(&outbound).config().authority,
+                expected,
+                "authority={configured:?} serverName={tls_server_name:?} reality={reality}"
+            );
+        }
+    }
+
+    /// The destination branch of the chain is `realityConfig == nil &&
+    /// dest.Address.Family().IsDomain()` (`dial.go:164`), so an IP destination
+    /// leaves the authority empty with or without REALITY and takes the same
+    /// `host:port` fallback. grpc-go's `encodeAuthority` leaves `:`, `[` and
+    /// `]` alone (`grpc@v1.81.0/clientconn.go:1889-1942`), which is what keeps
+    /// an IPv6 literal bracketed rather than percent-escaped.
+    ///
+    /// The last row is Go's `net.IP.String()` writing a v4-mapped address as a
+    /// dotted quad when `To4()` matches, which is the only shape where Rust's
+    /// `Display` and Go's disagree.
+    #[test]
+    fn an_ip_destination_carries_its_port_into_the_authority() {
+        for (server, security, expected) in [
+            (
+                TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))),
+                StreamSecurity::None,
+                "192.0.2.1:443",
+            ),
+            (
+                TargetAddr::Ip(IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1))),
+                StreamSecurity::Reality(reality_settings()),
+                "[2001:db8::1]:443",
+            ),
+            (
+                TargetAddr::Ip(IpAddr::V6(Ipv6Addr::new(
+                    0, 0, 0, 0, 0, 0xffff, 0xc000, 0x0201,
+                ))),
+                StreamSecurity::None,
+                "192.0.2.1:443",
+            ),
+        ] {
+            let outbound = grpc_vless(grpc_settings(None), security, server.clone());
+            assert_eq!(
+                built_grpc_transport(&outbound).config().authority,
+                expected,
+                "server={server:?}"
+            );
+        }
+    }
+
+    /// Every `grpcSettings` key has to survive the trip into the dial-ready
+    /// config; a field silently left at its default is a setting the user
+    /// wrote and the wire never sees.
+    #[test]
+    fn every_grpc_setting_reaches_the_dial_ready_config() {
+        let outbound = grpc_vless(
+            GrpcSettings {
+                service_name: "/my/Service|Multi".to_owned(),
+                multi_mode: true,
+                authority: Some("cdn.example.com".to_owned()),
+                user_agent: Some("golang".to_owned()),
+                idle_timeout_secs: 17,
+                health_check_timeout_secs: 23,
+                permit_without_stream: true,
+                initial_windows_size: 65_536,
+            },
+            StreamSecurity::None,
+            TargetAddr::Domain("dest.example.com".to_owned()),
+        );
+
+        let transport = built_grpc_transport(&outbound);
+        let config = transport.config();
+        assert_eq!(config.service_name, "/my/Service|Multi");
+        assert!(config.multi_mode);
+        assert_eq!(config.authority, "cdn.example.com");
+        // `golang` is the one keyword that empties the header rather than
+        // naming a browser (`dial.go:202-203`).
+        assert_eq!(config.user_agent, "");
+        assert_eq!(config.idle_timeout_secs, 17);
+        assert_eq!(config.health_check_timeout_secs, 23);
+        assert!(config.permit_without_stream);
+        assert_eq!(config.initial_windows_size, 65_536);
+    }
+
+    /// `GrpcConfig::authority` is an `http::uri::Authority` so that a value no
+    /// authority can hold is refused once, here, rather than silently calling
+    /// a gRPC method nobody configured on every dial.
+    ///
+    /// grpc-go validates `WithAuthority` not at all and sends
+    /// `example.com/api` verbatim, so this refusal is a deliberate divergence.
+    /// It has to reach the cached router intact too: `CachedOutboundError`
+    /// memoizes build failures and panics on any `CoreError` it cannot
+    /// represent.
+    #[test]
+    fn a_malformed_authority_refuses_the_outbound_once_instead_of_every_dial() {
+        let outbound = grpc_vless(
+            grpc_settings(Some("example.com/api")),
+            StreamSecurity::None,
+            TargetAddr::Domain("dest.example.com".to_owned()),
+        );
+
+        let error =
+            build_vless_tcp_outbound(&outbound).expect_err("a path cannot live in an authority");
+        assert!(matches!(
+            &error,
+            CoreError::InvalidGrpcAuthority(value) if value == "example.com/api"
+        ));
+        assert!(error.to_string().contains("example.com/api"));
+
+        let mut config = direct_selection_config();
+        config.outbounds = vec![outbound];
+        config.default_outbound_tag = Some("proxy".to_owned());
+        config.routing.rules.clear();
+        let router = OutboundRouter::new(Arc::new(config));
+        assert!(matches!(
+            router.select_tcp_outbound().unwrap_err(),
+            CoreError::InvalidGrpcAuthority(_)
+        ));
+    }
+
+    /// A pool that every selection rebuilt would be a pool of one flow. The
+    /// `Arc` inside `GrpcTransport` is what makes it shared, and the cached
+    /// router is what makes the same `GrpcTransport` reach every session.
+    #[test]
+    fn two_selections_of_one_grpc_outbound_share_a_pool() {
+        let mut config = direct_selection_config();
+        config.outbounds = vec![grpc_vless(
+            grpc_settings(None),
+            StreamSecurity::None,
+            TargetAddr::Domain("dest.example.com".to_owned()),
+        )];
+        config.default_outbound_tag = Some("proxy".to_owned());
+        config.routing.rules.clear();
+        let router = OutboundRouter::new(Arc::new(config));
+        let target = domain_tcp_target("example.test");
+
+        let TcpOutbound::Vless(first_tcp) = router
+            .select_tcp_outbound_for_session(None, &target)
+            .unwrap()
+        else {
+            panic!("expected a cached VLESS TCP outbound");
+        };
+        let TcpOutbound::Vless(second_tcp) = router
+            .select_tcp_outbound_for_session(None, &target)
+            .unwrap()
+        else {
+            panic!("expected a cached VLESS TCP outbound");
+        };
+        let UdpOutbound::Vless(udp) = router
+            .select_udp_outbound_for_session(
+                None,
+                &Target::new(target.addr.clone(), target.port, RoutingNetwork::Udp),
+            )
+            .unwrap()
+        else {
+            panic!("expected a cached VLESS UDP outbound");
+        };
+
+        let pools: Vec<_> = [
+            first_tcp.transport_layer(),
+            second_tcp.transport_layer(),
+            udp.transport_layer(),
+        ]
+        .into_iter()
+        .map(|layer| match layer {
+            TransportLayer::Grpc(grpc) => grpc,
+            other => panic!("expected the gRPC transport layer, got {other:?}"),
+        })
+        .collect();
+
+        assert!(pools[0].shares_pool_with(pools[1]));
+        assert!(pools[0].shares_pool_with(pools[2]));
     }
 
     #[tokio::test]
@@ -3977,66 +4369,45 @@ mod tests {
         assert!(matches!(error, CoreError::UnsupportedOutboundFlow));
     }
 
-    /// The config layer stopped refusing REALITY + gRPC, so `xtls-rprx-vision`
-    /// alongside it now reaches this crate for the first time. Xray refuses
-    /// that pairing with "XTLS only supports TLS and REALITY directly for now"
-    /// (`Xray-core/proxy/vless/outbound/outbound.go:284`), and this test is
-    /// *not* a pin on that rule — no such pin is expressible today, and a name
-    /// claiming otherwise would be worse than none.
+    /// The rule the retired `the_grpc_placeholder_refuses_every_vless_config_vision_or_not`
+    /// asked for, now that `TransportLayer` has a `Grpc` variant to hand
+    /// `validate_connector_flow`.
     ///
-    /// Why it is not expressible: the rule lives in `validate_connector_flow`,
-    /// which refuses Vision on any non-`Raw` `TransportLayer`, and
-    /// `xray_transport::TransportLayer` has no `Grpc` variant to hand it yet.
-    /// `build_vless_tcp_outbound` does not consult it either; its only flow
-    /// check is `validate_stream_flow`, which tests flow against *security*
-    /// alone and so accepts Vision under REALITY. The transport-agnostic half
-    /// of the rule is pinned by `vision_is_rejected_outside_the_raw_transport`,
-    /// with WebSocket standing in for "any non-`Raw` layer".
+    /// Xray refuses `xtls-rprx-vision` over gRPC, but at *runtime*, not in the
+    /// config layer: `proxy/vless/outbound/outbound.go:207` unwraps the dialled
+    /// connection and `:274-283` needs it to be a `*tls.Conn`, `*tls.UConn` or
+    /// `*reality.UConn` for Vision to splice itself into, which a gRPC hunk
+    /// connection is not, so `:284` errors with "XTLS only supports TLS and
+    /// REALITY directly for now.". Its config layer takes the pairing
+    /// (`infra/conf/vless.go:326-330` looks at the flow string and nothing
+    /// else), so refusing at *our* parse layer would be the divergence.
     ///
-    /// What the build path really does today is refuse *every* gRPC config
-    /// from `build_transport_layer`'s placeholder arm, flow or no flow. That
-    /// is what this pins, and the flowless half of the assertion is here so
-    /// the test cannot drift into reading as a Vision pin.
-    ///
-    /// For task 9: replacing the placeholder with a real `TransportLayer::Grpc`
-    /// makes both halves return `Ok`, and this test fails outright — that is
-    /// the intended tripwire, not a regression. The refusal then moves to
-    /// connect time, where `validate_connector_flow` catches gRPC through the
-    /// same non-`Raw` branch. Retire this test there and pin the real rule:
-    /// `validate_connector_flow(Some(VISION_FLOW), &reality, &TransportLayer::Grpc(..))`
-    /// must be `Err(UnsupportedOutboundFlow)`.
+    /// Hence the two halves: the build succeeds, and the guard the connect path
+    /// runs first refuses. `vision_is_rejected_outside_the_raw_transport` pins
+    /// the transport-agnostic half of the same rule.
     #[test]
-    fn the_grpc_placeholder_refuses_every_vless_config_vision_or_not() {
-        let grpc_reality_vless = |flow: Option<&str>| {
-            let mut vless = direct_selection_vless("proxy");
-            vless.stream.transport = StreamTransport::Grpc(GrpcSettings {
-                service_name: "GunService".to_owned(),
-                ..GrpcSettings::default()
-            });
-            vless.stream.security = StreamSecurity::Reality(RealitySettings {
-                server_name: "reality.example".to_owned(),
-                fingerprint: "chrome".to_owned(),
-                public_key: [7; 32],
-                short_id: RealityShortId::try_from_slice(&[1, 2, 3, 4])
-                    .expect("valid Reality short id"),
-                spider_x: "/".to_owned(),
-                mldsa65_verify: None,
-            });
-            let OutboundSettings::Vless(settings) = &mut vless.settings else {
-                panic!("expected a VLESS outbound");
-            };
-            settings.users[0].flow = flow.map(str::to_owned);
-            vless
-        };
+    fn vision_over_grpc_is_refused_at_the_connect_guard_not_at_the_build() {
+        let visioned = build_vless_tcp_outbound(&grpc_reality_vless(Some(VISION_FLOW)))
+            .expect("Xray's config layer accepts the pairing, so ours must build it");
+        let error = validate_connector_flow(
+            visioned.user().flow.as_deref(),
+            visioned.transport(),
+            visioned.transport_layer(),
+        )
+        .expect_err("Vision cannot reach into a gRPC hunk connection");
+        assert!(matches!(error, CoreError::UnsupportedOutboundFlow));
 
-        assert!(matches!(
-            build_vless_tcp_outbound(&grpc_reality_vless(Some(VISION_FLOW))).unwrap_err(),
-            CoreError::UnsupportedOutboundNetwork
-        ));
-        assert!(matches!(
-            build_vless_tcp_outbound(&grpc_reality_vless(None)).unwrap_err(),
-            CoreError::UnsupportedOutboundNetwork
-        ));
+        let flowless = build_vless_tcp_outbound(&grpc_reality_vless(None))
+            .expect("gRPC without a flow is an ordinary outbound");
+        assert_eq!(
+            validate_connector_flow(
+                flowless.user().flow.as_deref(),
+                flowless.transport(),
+                flowless.transport_layer(),
+            )
+            .expect("no flow, nothing to refuse"),
+            VisionFlow::None
+        );
     }
 
     #[test]
