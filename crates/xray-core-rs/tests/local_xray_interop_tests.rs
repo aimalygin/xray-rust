@@ -1405,8 +1405,9 @@ async fn spawn_multi_echo_server(
 /// Opens one SOCKS flow at `socks_addr` and asks it for `target`, printing the
 /// Go process's log if either step fails.
 ///
-/// Three scenario runners had this verbatim before the gRPC bulk one would
-/// have been a fourth.
+/// Two scenario runners had this verbatim before the gRPC bulk one would have
+/// been a third. The parallel runner's version is a Result-returning form that
+/// names the flow it belongs to, so it is not one of them.
 async fn open_socks_flow(
     xray: &XrayServer,
     socks_addr: SocketAddr,
@@ -1732,14 +1733,31 @@ const GRPC_SERVICE_NAME: &str = "interop grpc";
 /// extension at all. See `run_local_xray_grpc_interop` for why the
 /// pinned-certificate dialer cannot be used with it.
 ///
-/// Not *every* profile carries it — `helloandroid_11_okhttp`,
-/// `hello360_7_5`, `helloios_11_1`, `helloios_12_1` and
-/// `hellorandomizednoalpn` do not — and those cannot reach a gRPC TLS inbound
-/// at all. That is parity rather than a gap: uTLS emits the spec's extension
-/// list and nothing else, and its `ALPNExtension` overwrites `NextProtos`
-/// rather than deferring to it
-/// (`utls@v1.8.3-.../u_tls_extensions.go:613-621`), so xray-core with the same
-/// fingerprint sends the same hello and is refused the same way.
+/// Not *every* profile carries it: `helloandroid_11_okhttp`,
+/// `hello360_7_5` and `hellorandomizednoalpn` do not, nor do their aliases
+/// `android`, `360`, `hello360_auto` and `randomizednoalpn`. No gRPC TLS
+/// inbound is reachable on those — for xray-core either, so it is parity
+/// rather than a gap. uTLS emits the parrot's own extension list and nothing
+/// else, and its `ALPNExtension` overwrites `NextProtos` rather than deferring
+/// to it (`utls@v1.8.3-.../u_tls_extensions.go:613-621`), so a Go client on
+/// the same fingerprint negotiates an empty protocol against a
+/// `NextProtos: ["h2"]` server and grpc-go closes on it.
+///
+/// The TLS-1.2-only parrots *are* a gap, and one this fingerprint choice
+/// steps around rather than covers. `helloios_11_1` and `helloios_12_1`
+/// advertise `h2` first
+/// (`utls@v1.8.3-.../u_parrots.go:1639,1701`, and `PROFILE_34`/`PROFILE_35` in
+/// `crates/xray-transport/src/utls_profiles.rs` carry the same list), and uTLS
+/// on either negotiates `h2` over TLS 1.2 against the server `hub.go:84`
+/// builds, so xray-core does reach the inbound with them. We do not: a profile
+/// with no `supported_versions` extension still gets a rustls config that
+/// offers TLS 1.3, and rustls then reads the RFC 8446 §4.1.3 downgrade
+/// sentinel in a TLS 1.2 ServerHello as an attack
+/// (`AttemptedDowngradeToTls12WhenTls13IsSupported`). Substituting either
+/// fingerprint below fails this scenario at the SOCKS reply. It is not a gRPC
+/// problem — every profile with an empty `supported_versions` list, ten of
+/// them today, fails the same way against any TLS-1.3-capable server —
+/// which is why the scenario is not the place to chase it.
 const GRPC_TLS_FINGERPRINT: &str = "chrome";
 
 #[tokio::test]
