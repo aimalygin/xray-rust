@@ -262,10 +262,14 @@ pub enum CoreError {
     /// no request can carry.
     #[error("the gRPC :authority derived from {key} `{value}` is not a valid HTTP/2 authority")]
     UnrepresentableGrpcAuthority {
-        /// The config key the value came from, for the message to name.
+        /// The config key that produced the value, so the message hands the
+        /// user something to search their profile for. Names *two* keys on the
+        /// last-resort branch, where the authority is composed rather than
+        /// copied and neither key on its own holds `value`.
         key: &'static str,
-        /// The resolved authority, which is the key's value plus a `:port` on
-        /// the last-resort branch.
+        /// The resolved authority: the named key's value verbatim on the
+        /// branches that copy one, and `address:port` on the last-resort
+        /// branch, which is why `key` names the port key there too.
         value: String,
     },
     #[error("XTLS rejected UDP/443 traffic")]

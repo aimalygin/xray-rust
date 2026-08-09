@@ -1386,15 +1386,24 @@ fn build_transport_layer(
     })
 }
 
-/// The two keys the derived half of the `:authority` chain can come from, as
-/// [`CoreError::UnrepresentableGrpcAuthority`] names them.
-///
-/// Spelled as the paths the config parser reports its own errors under
-/// (`crates/xray-config/src/parser.rs:2440,3211,3287`), minus the
-/// `$.outbounds[N]` prefix this layer no longer knows, so the message is
-/// something to search a profile for rather than a description of it.
+// The config keys the derived half of the `:authority` chain can come from, as
+// `CoreError::UnrepresentableGrpcAuthority` names them.
+//
+// Spelled as the paths the config parser reports its own errors under — the
+// address key verbatim (`crates/xray-config/src/parser.rs:2440`), and the TLS
+// server name as the object path the parser uses plus the key it accepts
+// inside it (`parser.rs:3211,3220`) — minus the `$.outbounds[N]` prefix this
+// layer no longer knows, so the message is something to search a profile for
+// rather than a description of it. `realitySettings.serverName` is not among
+// them on purpose: `dial.go:162` never reads it, for the reason `grpc_authority`
+// gives.
+//
+// `SERVER_ENDPOINT_KEYS` names a pair because the last-resort branch *composes*
+// its value out of two keys, and printing one of them next to `例え.jp:443`
+// would send the user looking for a `:443` that key does not hold.
 const TLS_SERVER_NAME_KEY: &str = "streamSettings.tlsSettings.serverName";
 const SERVER_ADDRESS_KEY: &str = "settings.vnext[0].address";
+const SERVER_ENDPOINT_KEYS: &str = "settings.vnext[0].address and settings.vnext[0].port";
 
 /// The `:authority` one gRPC outbound dials with.
 ///
@@ -1467,6 +1476,17 @@ const SERVER_ADDRESS_KEY: &str = "settings.vnext[0].address";
 ///   REALITY — also verified — and that form is *pure ASCII*. It still will not
 ///   parse: `http` allows `%` only in userinfo or an IPv6 zone id and rejects
 ///   it in a host (`authority.rs:503-514,564-567`).
+/// * **The IDNA A-label is the one form that would parse, and nothing here can
+///   build it.** `Authority::try_from("xn--r8jz45g.jp")` is `Ok` where the raw
+///   `例え.jp` is `InvalidUriChar` and grpc-go's escaping is
+///   `InvalidAuthority`, all three checked against `http` 1.5.0 — so punycode
+///   is a real escape hatch and it is still not reachable: no `idna` crate
+///   appears anywhere in this workspace's dependency graph. Adding one to
+///   convert silently would put an authority on the wire that upstream does
+///   not send, and under TLS the same name is refused a layer down regardless,
+///   since an IDN is not a rustls `ServerName` either
+///   (`crates/xray-transport/src/tls.rs:220`). A profile that wants the
+///   A-label can write it, and that already works.
 ///
 /// So an IDN gRPC profile runs on xray-core and does not run here. That is a
 /// real parity gap, and it is a property of `http`/`h2`, not of this function;
@@ -1491,7 +1511,7 @@ fn grpc_authority(
             TargetAddr::Domain(domain) if !matches!(security, StreamSecurity::Reality(_)) => {
                 (SERVER_ADDRESS_KEY, domain.clone())
             }
-            _ => (SERVER_ADDRESS_KEY, host_and_port(server, port)),
+            _ => (SERVER_ENDPOINT_KEYS, host_and_port(server, port)),
         },
     };
 
@@ -1512,9 +1532,11 @@ fn grpc_authority(
 /// the domain in happens later, inside the dial closure, on a `*gotls.Config`
 /// the authority chain never sees (`dial.go:136-142`). Reading the connector
 /// therefore answers branch 2 with a value upstream answers branch 3 with,
-/// which is the same string, from a key the user may never have written.
+/// which is the same string, from a key the user may never have written. The
+/// difference is only observable once that key reaches a message, which is the
+/// last row of `a_derived_authority_is_not_refused_as_the_configured_one`.
 ///
-/// The one input where the two would genuinely part is a TLS stream over an IP
+/// The one input where the two would part in *value* is a TLS stream over an IP
 /// destination: upstream leaves the authority empty and falls to `host:port`,
 /// and the connector has nothing to offer. `build_vless_tcp_outbound` refuses
 /// that config with `UnsupportedOutboundSecurity` before the authority is
@@ -3815,7 +3837,22 @@ mod tests {
     /// [`super::grpc_authority`] documents why nothing else is reachable, but
     /// it must not refuse it as the configured key. It also has to survive
     /// `CachedOutboundError`, which panics on any `CoreError` it cannot
-    /// represent.
+    /// represent, and which has to carry the key and the value across rather
+    /// than rebuild them.
+    ///
+    /// Row 2 is the last-resort branch, whose value is composed out of an
+    /// address and a port, so it names both keys — printing only the address
+    /// key beside `例え.jp:443` would send the user hunting for a `:443` that
+    /// key does not hold.
+    ///
+    /// Row 4 is the row that pins
+    /// [`super::configured_tls_server_name`] to the *config*: it is the only
+    /// input where reading the built connector instead would answer with a
+    /// different key. `build_vless_tcp_outbound` fills
+    /// `ConnectorConfig::Tls::server_name` from the destination domain when
+    /// `tlsSettings.serverName` is absent, so a connector-driven read blames
+    /// `streamSettings.tlsSettings.serverName` for a key the profile does not
+    /// contain. Every other row agrees between the two.
     #[test]
     fn a_derived_authority_is_not_refused_as_the_configured_one() {
         for (security, server, key, value) in [
@@ -3828,7 +3865,7 @@ mod tests {
             (
                 StreamSecurity::Reality(reality_settings()),
                 TargetAddr::Domain("例え.jp".to_owned()),
-                "settings.vnext[0].address",
+                "settings.vnext[0].address and settings.vnext[0].port",
                 "例え.jp:443",
             ),
             (
@@ -3840,6 +3877,17 @@ mod tests {
                 }),
                 TargetAddr::Domain("dest.example.com".to_owned()),
                 "streamSettings.tlsSettings.serverName",
+                "例え.jp",
+            ),
+            (
+                StreamSecurity::Tls(TlsSettings {
+                    server_name: None,
+                    fingerprint: None,
+                    allow_insecure: false,
+                    alpn: Vec::new(),
+                }),
+                TargetAddr::Domain("例え.jp".to_owned()),
+                "settings.vnext[0].address",
                 "例え.jp",
             ),
         ] {
@@ -3867,10 +3915,15 @@ mod tests {
             config.default_outbound_tag = Some("proxy".to_owned());
             config.routing.rules.clear();
             let router = OutboundRouter::new(Arc::new(config));
-            assert!(matches!(
-                router.select_tcp_outbound().unwrap_err(),
-                CoreError::UnrepresentableGrpcAuthority { .. }
-            ));
+            let cached = router.select_tcp_outbound().unwrap_err();
+            assert!(
+                matches!(
+                    &cached,
+                    CoreError::UnrepresentableGrpcAuthority { key: got_key, value: got_value }
+                        if *got_key == key && got_value == value
+                ),
+                "server={server:?} cached={cached}"
+            );
         }
     }
 
