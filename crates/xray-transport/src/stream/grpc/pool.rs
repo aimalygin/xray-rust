@@ -39,7 +39,7 @@ use tokio::sync::Mutex;
 use xray_routing::Target;
 
 use super::config::GrpcConfig;
-use super::h2client::{build_grpc_request, h2_handshake, open_grpc_call, H2Connection};
+use super::h2client::{build_grpc_call, h2_handshake, open_grpc_call, H2Connection};
 use crate::{
     BoxedTransportStream, ConnectorConfig, HappyEyeballsConfig, TransportDialer, TransportError,
 };
@@ -165,9 +165,9 @@ impl GrpcTransport {
             // request is a static config error that would be identical on a
             // brand-new connection, so treating it as a dead connection would
             // retire a healthy one and redial for nothing, once per flow.
-            // [`build_grpc_request`] has the rest of that reasoning.
-            let request = build_grpc_request(&self.config)?;
-            if let Ok(stream) = open_grpc_call(connection, request).await {
+            // [`build_grpc_call`] has the rest of that reasoning.
+            let call = build_grpc_call(&self.config)?;
+            if let Ok(stream) = open_grpc_call(connection, call).await {
                 return Ok(Box::new(stream));
             }
             // Reached when a connection this task had just called live refused
@@ -189,12 +189,12 @@ impl GrpcTransport {
 
         // Before the dial for the same reason: a config error should not cost
         // a TCP connect and a REALITY handshake first.
-        let request = build_grpc_request(&self.config)?;
+        let call = build_grpc_call(&self.config)?;
         let io = dialer
             .connect_resolved(connector, original_target, candidates, happy_eyeballs)
             .await?;
         let connection = h2_handshake(io, &self.config).await?;
-        let stream = open_grpc_call(&connection, request).await?;
+        let stream = open_grpc_call(&connection, call).await?;
         *pooled = Some(connection);
         Ok(Box::new(stream))
     }

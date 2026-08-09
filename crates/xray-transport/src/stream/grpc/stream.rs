@@ -23,7 +23,7 @@ use h2::{RecvStream, SendStream};
 use http::HeaderMap;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
-use super::framing::{encode_hunk, HunkDecoder, MAX_HUNK_PAYLOAD_LEN};
+use super::framing::{encode_hunk, HunkDecoder, HunkMode, MAX_HUNK_PAYLOAD_LEN};
 use super::h2client::H2ConnectionDriver;
 use super::keepalive::OpenCall;
 use crate::{TransportError, TransportStream};
@@ -119,16 +119,20 @@ pub struct GrpcStream {
 }
 
 impl GrpcStream {
+    /// `mode` arrives from [`GrpcCall`](super::h2client::GrpcCall) rather than
+    /// from the config, so the decoder below is necessarily reading the message
+    /// the `:path` in that same call asked for.
     pub(super) fn new(
         response: ResponseFuture,
         uplink: SendStream<Bytes>,
+        mode: HunkMode,
         driver: Arc<H2ConnectionDriver>,
         open_call: OpenCall,
     ) -> Self {
         Self {
             downlink: Downlink::Awaiting(response),
             uplink,
-            decoder: HunkDecoder::new(),
+            decoder: HunkDecoder::new(mode),
             pending_read: Vec::new(),
             pending_read_pos: 0,
             pending_write: Bytes::new(),

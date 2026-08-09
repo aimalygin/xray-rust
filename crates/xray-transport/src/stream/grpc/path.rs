@@ -7,6 +7,8 @@
 //! optionally split on `|` into the plain and multi-mode names.
 //! `Xray-core/transport/internet/grpc/config.go:17-59`.
 
+use super::framing::HunkMode;
+
 /// Go's `url.PathEscape`, i.e. `escape(s, encodePathSegment)`.
 ///
 /// Alphanumerics and `-_.~` pass; of the reserved set, `encodePathSegment`
@@ -57,9 +59,13 @@ fn service_name(configured: &str) -> String {
         .join("/")
 }
 
-fn stream_name(configured: &str, multi_mode: bool) -> String {
+fn stream_name(configured: &str, mode: HunkMode) -> String {
     if !configured.starts_with('/') {
-        return if multi_mode { "TunMulti" } else { "Tun" }.to_owned();
+        return match mode {
+            HunkMode::Multi => "TunMulti",
+            HunkMode::Single => "Tun",
+        }
+        .to_owned();
     }
 
     let last_slash = configured.rfind('/').expect("checked for a leading slash");
@@ -67,7 +73,7 @@ fn stream_name(configured: &str, multi_mode: bool) -> String {
     let mut parts = ending.split('|');
     let first = parts.next().unwrap_or_default();
 
-    if !multi_mode {
+    if mode == HunkMode::Single {
         return path_escape(first);
     }
 
@@ -81,10 +87,15 @@ fn stream_name(configured: &str, multi_mode: bool) -> String {
 }
 
 /// The `:path` pseudo-header for one gRPC dial.
-pub fn grpc_request_path(configured_service_name: &str, multi_mode: bool) -> String {
+///
+/// The mode is a [`HunkMode`] rather than Xray's `multiMode` bool because the
+/// RPC this names and the message [`HunkDecoder`](super::HunkDecoder) reads off
+/// it are two halves of one choice — see [`HunkMode`], and
+/// `h2client::GrpcCall`, where the single value both take is derived.
+pub fn grpc_request_path(configured_service_name: &str, mode: HunkMode) -> String {
     format!(
         "/{}/{}",
         service_name(configured_service_name),
-        stream_name(configured_service_name, multi_mode)
+        stream_name(configured_service_name, mode)
     )
 }

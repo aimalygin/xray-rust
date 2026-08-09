@@ -52,7 +52,7 @@ pub struct GrpcConfig {
     /// method, refusing is the one that says what is wrong.
     ///
     /// **The type is a ceiling as well as a policy, and the ceiling is not
-    /// ours to raise.** `build_grpc_request` hands `h2` an
+    /// ours to raise.** `build_grpc_call` hands `h2` an
     /// [`http::Request`], and `h2` reads `:authority` out of its
     /// [`http::Uri`] and nowhere else
     /// (`h2-0.4.15/src/frame/headers.rs:561-604`); a `Uri`'s authority *is*

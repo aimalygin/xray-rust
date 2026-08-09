@@ -22,6 +22,37 @@
 //! So an empty write serializes to a *zero-length* Hunk message: still a real
 //! gRPC frame (length 0 in the five-byte prefix), just with no protobuf body
 //! after it — not `0a 00`, which would claim a present-but-empty field.
+//!
+//! Everything above is the `Tun` RPC. `TunMulti` carries `MultiHunk`, a
+//! different message, and the difference reaches only the read side: see
+//! [`HunkMode`] for what it is, and [`encode_hunk`] for why one encoder still
+//! serves both.
+
+/// Which of Xray's two tunnel messages a call carries.
+///
+/// `multiMode` is not a different `:path` with the same payload behind it: the
+/// two RPCs carry different messages. `rpc Tun` streams `Hunk`, whose `data` is
+/// a singular `bytes`; `rpc TunMulti` streams `MultiHunk`, whose `data` is
+/// `repeated bytes` (`Xray-core/transport/internet/grpc/encoding/
+/// stream.proto:6-17`). On the read side that is the whole difference:
+/// `MultiHunkReaderWriter.forceFetch` takes `hunk.Data` as a `[][]byte` and
+/// `ReadMultiBuffer` walks every element of it (`encoding/multiconn.go:
+/// 71-113`), so in multi mode each occurrence of field 1 is payload, where in
+/// single mode only the last one is.
+///
+/// It is a constructor argument of [`HunkDecoder`] rather than a setter, and
+/// the same value picks the `:path` in [`grpc_request_path`](crate::stream::grpc_request_path),
+/// because the two must agree: a decoder in single mode on a `TunMulti` call
+/// drops every chunk of a message bar its last, with no error and nothing
+/// logged. `h2client::GrpcCall` is where the one value is derived and the pair
+/// travels together.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HunkMode {
+    /// `rpc Tun (stream Hunk)`.
+    Single,
+    /// `rpc TunMulti (stream MultiHunk)`.
+    Multi,
+}
 
 /// `payloadLen + sizeLen` (`grpc@v1.81.0/rpc_util.go:858-860`).
 const GRPC_HEADER_LEN: usize = 5;
@@ -73,6 +104,26 @@ fn put_varint(out: &mut [u8; MAX_VARINT_LEN], mut value: usize) -> usize {
 }
 
 /// Encodes one write as a single uncompressed `Hunk` message.
+///
+/// **The same bytes serve [`HunkMode::Multi`], which is why there is no
+/// multi-mode encoder.** A `MultiHunk` carrying one element marshals to the
+/// identical body: `appendBytesSlice` writes `0a <varint> <payload>` per
+/// element (`protobuf@v1.36.11/internal/impl/codec_gen.go:5558-5565`), which
+/// for one element is what the singular coder writes. An empty write matches
+/// too, by a different route — that loop does *not* skip a zero-length element,
+/// but `WriteMultiBuffer` never hands it one: it drops every zero-length buffer
+/// before building the slice (`Xray-core/transport/internet/grpc/encoding/
+/// multiconn.go:121-129`), so an empty `MultiBuffer` becomes `MultiHunk{Data:
+/// [][]byte{}}`, over which the loop writes nothing at all, exactly as
+/// `Hunk{Data: nil}` does. Checked by marshalling both with Xray's own
+/// generated types.
+///
+/// **What is forgone is the batching**, and deliberately. Xray writes several
+/// elements per message because the layer above hands it a `buf.MultiBuffer`
+/// with several buffers already in it; `AsyncWrite::poll_write` is handed one
+/// contiguous slice per call, so there is no batch here to pack. Making one
+/// would mean holding a write back for a sibling that may never come, which
+/// buys a few bytes of protobuf overhead at the cost of latency on a tunnel.
 ///
 /// The buffer is allocated to the encoded size *exactly*, which is the whole
 /// cost of the write path rather than tidiness: `Bytes::from(Vec<u8>)` adopts
@@ -156,15 +207,24 @@ pub fn encode_hunk(payload: &[u8]) -> Vec<u8> {
 /// payload to its caller as a completed read — it has to loop and ask for the
 /// next message. Translating one into EOF would tear down a live tunnel the
 /// moment a peer flushed an empty write.
-#[derive(Debug, Default)]
+///
+/// **The mode is not defaulted.** There is no `Default` impl and no setter, so
+/// a decoder cannot exist without being told which message it is reading; see
+/// [`HunkMode`] for what the wrong answer costs.
+#[derive(Debug)]
 pub struct HunkDecoder {
+    mode: HunkMode,
     buffer: Vec<u8>,
     consumed: usize,
 }
 
 impl HunkDecoder {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(mode: HunkMode) -> Self {
+        Self {
+            mode,
+            buffer: Vec::new(),
+            consumed: 0,
+        }
     }
 
     pub fn push(&mut self, bytes: &[u8]) {
@@ -258,39 +318,62 @@ impl HunkDecoder {
             return Ok(None);
         }
 
-        Ok(Some((parse_hunk(&bytes[GRPC_HEADER_LEN..total])?, total)))
+        Ok(Some((
+            parse_hunk(&bytes[GRPC_HEADER_LEN..total], self.mode)?,
+            total,
+        )))
     }
 }
 
-/// The `Hunk` body: field 1 is the payload, everything else is skipped.
+/// The body of a `Hunk` or a `MultiHunk`: field 1 is the payload, everything
+/// else is skipped.
 ///
-/// Two protobuf-go behaviours this reproduces rather than improves on, both
-/// checked by unmarshalling the same bytes into Xray's own `encoding.Hunk`:
+/// **What `mode` decides is what a *repeated* field 1 means**, and the two
+/// answers are opposites because the two messages are:
 ///
-/// * **A repeated field 1 is last-one-wins, not concatenation.**
-///   `consumeBytesNoZero` assigns — `*p.Bytes() = append(([]byte)(nil), v...)`
-///   (`protobuf@v1.36.11/internal/impl/codec_gen.go:5489-5500`) — so the
-///   earlier entry is overwritten, and `0a 02 "hi" 0a 03 "yo!"` decodes to
-///   `"yo!"`. Concatenating would put bytes into the tunnel that the Go peer
-///   on the other end never put there, which for a byte stream is worse than
-///   matching a quirk: Xray only ever marshals one `Data`, so any second entry
-///   already means we and the peer disagree about the message.
-/// * **A wire-type mismatch on field 1 is not a parse error.** The field coder
-///   returns `errUnknown` for `wtyp != BytesType` (`codec_gen.go:5490-5492`),
-///   and `unmarshalPointerEager` then skips the value as an unknown field
-///   instead of failing (`internal/impl/decode.go:218-231`). So it is handled
-///   here by the same skip path as an unrecognised field number.
+/// * `Hunk.data` is a singular `bytes`, so protobuf-go assigns it —
+///   `consumeBytesNoZero` does `*p.Bytes() = append(([]byte)(nil), v...)`
+///   (`protobuf@v1.36.11/internal/impl/codec_gen.go:5489-5500`) — and the
+///   earlier entry is overwritten: `0a 02 "hi" 0a 03 "yo!"` decodes to `"yo!"`.
+///   Concatenating would put bytes into the tunnel that the Go peer never put
+///   there, which for a byte stream is worse than matching a quirk: Xray
+///   marshals one `Data` per `Hunk`, so a second entry already means we and the
+///   peer disagree about the message.
+/// * `MultiHunk.data` is `repeated bytes` (`Xray-core/transport/internet/grpc/
+///   encoding/stream.proto:10-12`), so `consumeBytesSlice` *appends* —
+///   `*sp = append(*sp, append(emptyBuf[:], v...))` (`codec_gen.go:5568-5580`)
+///   — and the same body decodes to two elements. Every one of them is payload:
+///   `forceFetch` keeps the whole `[][]byte` and `ReadMultiBuffer` walks it
+///   into the `MultiBuffer` it returns (`encoding/multiconn.go:71-113`).
+///   Dropping all but the last is the entire point of the mode, silently
+///   discarded.
+///
+/// Both verified by unmarshalling the same bytes into Xray's own generated
+/// types: `Hunk.Data` comes back `"yo!"`, `MultiHunk.Data` comes back
+/// `["hi" "yo!"]`.
+///
+/// The elements are concatenated rather than handed over separately because
+/// the layer above is a byte stream: `ReadMultiBuffer` feeds its elements to a
+/// `cnc.Connection` that copies them out in order, and it skips the zero-length
+/// ones (`multiconn.go:96-99`) — which concatenation does by construction.
+///
+/// One behaviour common to both messages: **a wire-type mismatch on field 1 is
+/// not a parse error.** Both field coders return `errUnknown` for `wtyp !=
+/// BytesType` (`codec_gen.go:5490-5492` and `:5570-5572`), and
+/// `unmarshalPointerEager` then skips the value as an unknown field instead of
+/// failing (`internal/impl/decode.go:218-231`). So it is handled here by the
+/// same skip path as an unrecognised field number.
 ///
 /// One deliberate divergence: wire type 3 (start group). protobuf-go walks the
 /// group to its `EndGroupType` and skips it (`protowire/wire.go:130-153`),
-/// which needs a recursive skipper and its own depth limit. `Hunk` has a
-/// single `bytes` field and no groups, so a group here means the peer is not
-/// sending a `Hunk`, and refusing is safer than recursing on its say-so.
-fn parse_hunk(body: &[u8]) -> Result<Vec<u8>, String> {
+/// which needs a recursive skipper and its own depth limit. Neither message has
+/// a group in it, so a group here means the peer is not sending one of them,
+/// and refusing is safer than recursing on its say-so.
+fn parse_hunk(body: &[u8], mode: HunkMode) -> Result<Vec<u8>, String> {
     // protowire's valid field-number range (`protowire/wire.go:24-27`).
     const MAX_FIELD_NUMBER: u64 = (1 << 29) - 1;
 
-    let mut data: &[u8] = &[];
+    let mut data: Vec<u8> = Vec::new();
     let mut cursor = 0;
 
     while cursor < body.len() {
@@ -315,7 +398,12 @@ fn parse_hunk(body: &[u8]) -> Result<Vec<u8>, String> {
                 })?;
 
             if field == 1 {
-                data = &body[start..end];
+                // The one line the mode changes: `Hunk` assigns, `MultiHunk`
+                // appends. See this function's doc for the two coders.
+                if mode == HunkMode::Single {
+                    data.clear();
+                }
+                data.extend_from_slice(&body[start..end]);
             }
             cursor = end;
             continue;
@@ -336,7 +424,7 @@ fn parse_hunk(body: &[u8]) -> Result<Vec<u8>, String> {
             })?;
     }
 
-    Ok(data.to_vec())
+    Ok(data)
 }
 
 /// protowire's `ConsumeVarint` (`protobuf@v1.36.11/encoding/protowire/

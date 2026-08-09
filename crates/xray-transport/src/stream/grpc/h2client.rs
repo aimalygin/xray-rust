@@ -9,7 +9,7 @@
 //!
 //! Nothing here decides *where* a connection comes from. The pieces are
 //! deliberately separate — [`h2_handshake`] runs once per connection,
-//! [`build_grpc_request`] and [`open_grpc_call`] once per flow — because that
+//! [`build_grpc_call`] and [`open_grpc_call`] once per flow — because that
 //! is the seam [`super::pool`] needs: it keeps the first and repeats the rest,
 //! and it needs the request built before it decides anything about a
 //! connection.
@@ -23,6 +23,7 @@ use http::{Method, Request, Uri, Version};
 use tokio::task::JoinHandle;
 
 use super::config::{resolve_keepalive, GrpcConfig};
+use super::framing::HunkMode;
 use super::keepalive::{OpenCalls, Pings, WatchedIo};
 use super::path::grpc_request_path;
 use super::stream::GrpcStream;
@@ -197,6 +198,22 @@ async fn drive(
     }
 }
 
+/// One gRPC call, ready to be opened on a connection: its HEADERS block and the
+/// message its replies will be read as.
+///
+/// **The two travel together so that they cannot disagree.** They are two
+/// halves of one choice — `multiMode` picks `TunMulti` over `Tun` in the
+/// `:path` *and* `MultiHunk` over `Hunk` on the wire (see [`HunkMode`]) — and
+/// the failure when they part company is silent: a single-mode decoder on a
+/// `TunMulti` call hands the caller only the last chunk of every message it
+/// reads, with no error to notice. [`build_grpc_call`] derives one [`HunkMode`]
+/// and gives it to both, so there is no second value to get backwards and no
+/// way to reach [`open_grpc_call`] with a request whose mode was left behind.
+pub(crate) struct GrpcCall {
+    request: Request<()>,
+    mode: HunkMode,
+}
+
 /// The HEADERS block one gRPC call opens with, built out of `config` alone.
 ///
 /// **Separate from [`open_grpc_call`], and built by [`super::pool`] before it
@@ -229,7 +246,16 @@ async fn drive(
 /// (`grpc@v1.81.0/internal/transport/http2_client.go:578`), which is how
 /// Xray's `"golang"` setting — mapped to `""` by
 /// [`super::resolve_user_agent`] — reaches the wire.
-pub(crate) fn build_grpc_request(config: &GrpcConfig) -> Result<Request<()>, TransportError> {
+pub(crate) fn build_grpc_call(config: &GrpcConfig) -> Result<GrpcCall, TransportError> {
+    // The one place `multiMode` becomes a mode. Everything downstream takes
+    // this value rather than reading the config again, which is what makes a
+    // `:path` and a decoder that disagree unrepresentable — see [`GrpcCall`].
+    let mode = if config.multi_mode {
+        HunkMode::Multi
+    } else {
+        HunkMode::Single
+    };
+
     // The URI has to be absolute: with `Version::HTTP_2` and no scheme plus
     // authority, `send_request` fails with `MissingUriSchemeAndAuthority`
     // (`h2-0.4.15/src/client.rs:1644`), because those two are where `:scheme`
@@ -244,7 +270,7 @@ pub(crate) fn build_grpc_request(config: &GrpcConfig) -> Result<Request<()>, Tra
     // outside Go's `encodePathSegment` keep-set, so in practice it cannot fail
     // either, but "in practice" is not something to unwrap on: a path is the
     // one part of this URI a future caller could supply.
-    let path = grpc_request_path(&config.service_name, config.multi_mode);
+    let path = grpc_request_path(&config.service_name, mode);
     let uri = Uri::builder()
         .scheme(Scheme::HTTP)
         .authority(config.authority.clone())
@@ -258,7 +284,7 @@ pub(crate) fn build_grpc_request(config: &GrpcConfig) -> Result<Request<()>, Tra
     // (`http2_server.go:417-427,495-497,548-556`) — but grpc-go's *client*
     // sends both on every call, unconditionally, so a dial missing either
     // stands out from the population it is hiding in.
-    Request::builder()
+    let request = Request::builder()
         .version(Version::HTTP_2)
         .method(Method::POST)
         .uri(uri)
@@ -266,16 +292,17 @@ pub(crate) fn build_grpc_request(config: &GrpcConfig) -> Result<Request<()>, Tra
         .header("user-agent", &config.user_agent)
         .header("te", "trailers")
         .body(())
-        .map_err(|error| grpc_error("could not build the gRPC request", &error))
+        .map_err(|error| grpc_error("could not build the gRPC request", &error))?;
+
+    Ok(GrpcCall { request, mode })
 }
 
 /// Opens one bidirectional POST on `connection` and returns it as a byte
 /// stream.
 ///
-/// `request` comes from [`build_grpc_request`] rather than being built here,
-/// so that the only thing an error out of this function can mean is that the
-/// connection would not carry the call — which is what [`super::pool`] acts
-/// on.
+/// `call` comes from [`build_grpc_call`] rather than being built here, so that
+/// the only thing an error out of this function can mean is that the connection
+/// would not carry the call — which is what [`super::pool`] acts on.
 ///
 /// The `SendRequest` is cloned rather than borrowed, so each call gets its own
 /// `pending` slot. h2 refuses a second stream queued behind a still-unopened
@@ -291,7 +318,7 @@ pub(crate) fn build_grpc_request(config: &GrpcConfig) -> Result<Request<()>, Tra
 /// every dial. The returned stream awaits it on its first read.
 pub(crate) async fn open_grpc_call(
     connection: &H2Connection,
-    request: Request<()>,
+    call: GrpcCall,
 ) -> Result<GrpcStream, TransportError> {
     // Not a concurrency gate despite the name — h2 parks a stream past the
     // peer's advertised MAX_CONCURRENT_STREAMS rather than refusing it — but
@@ -310,7 +337,7 @@ pub(crate) async fn open_grpc_call(
     // `end_of_stream: false` is what makes this a tunnel rather than a
     // one-shot POST: the request body stays open for the life of the call.
     let (response, uplink) = send_request
-        .send_request(request, false)
+        .send_request(call.request, false)
         .map_err(|error| grpc_error("could not send the gRPC request", &error))?;
 
     // Counted in here rather than in `GrpcStream::new`, because this is where
@@ -320,6 +347,7 @@ pub(crate) async fn open_grpc_call(
     Ok(GrpcStream::new(
         response,
         uplink,
+        call.mode,
         Arc::clone(&connection.driver),
         connection.calls.open(),
     ))
@@ -336,9 +364,9 @@ pub async fn open_grpc_h2_stream(
     io: BoxedTransportStream,
     config: &GrpcConfig,
 ) -> Result<GrpcStream, TransportError> {
-    let request = build_grpc_request(config)?;
+    let call = build_grpc_call(config)?;
     let connection = h2_handshake(io, config).await?;
-    open_grpc_call(&connection, request).await
+    open_grpc_call(&connection, call).await
     // `connection` is dropped here on purpose. Its `SendRequest` is the last
     // outside reference, and h2 closes a connection once nothing references it
     // and no stream is left, so letting it go is what makes this connection

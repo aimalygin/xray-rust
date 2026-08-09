@@ -10,7 +10,7 @@ mod pool;
 mod stream;
 
 pub use config::{resolve_keepalive, resolve_user_agent, Authority, GrpcConfig, GrpcKeepalive};
-pub use framing::{encode_hunk, HunkDecoder, MAX_HUNK_PAYLOAD_LEN};
+pub use framing::{encode_hunk, HunkDecoder, HunkMode, MAX_HUNK_PAYLOAD_LEN};
 pub use h2client::open_grpc_h2_stream;
 pub use path::grpc_request_path;
 pub use pool::GrpcTransport;

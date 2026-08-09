@@ -3,47 +3,47 @@
 // than a bare `mod path`, so later gRPC test modules — framing, pool — read
 // consistently in `cargo test` output alongside this one.
 mod stream_grpc_path_tests {
-    use xray_transport::stream::grpc_request_path;
+    use xray_transport::stream::{grpc_request_path, HunkMode};
 
     /// Vectors read off `Xray-core/transport/internet/grpc/config.go:17-59`
     /// and `encoding/customSeviceName.go:33`, which assembles the path as
     /// `"/" + getServiceName() + "/" + getTunStreamName()`.
     ///
-    /// `(service_name, multi_mode, expected_path)`
-    const VECTORS: &[(&str, bool, &str)] = &[
+    /// `(service_name, mode, expected_path)`
+    const VECTORS: &[(&str, HunkMode, &str)] = &[
         // The proto3 default. Both halves of the join are present, so the
         // empty service name leaves a double slash.
-        ("", false, "//Tun"),
-        ("", true, "//TunMulti"),
+        ("", HunkMode::Single, "//Tun"),
+        ("", HunkMode::Multi, "//TunMulti"),
         // Plain names are escaped whole, stream name is a literal.
-        ("hello", false, "/hello/Tun"),
-        ("hello", true, "/hello/TunMulti"),
+        ("hello", HunkMode::Single, "/hello/Tun"),
+        ("hello", HunkMode::Multi, "/hello/TunMulti"),
         // Whole-string escaping means an inner slash is escaped, not kept.
-        ("a/b", false, "/a%2Fb/Tun"),
+        ("a/b", HunkMode::Single, "/a%2Fb/Tun"),
         // Go's encodePathSegment set: these pass through unescaped ...
-        ("$&+:=@", false, "/$&+:=@/Tun"),
+        ("$&+:=@", HunkMode::Single, "/$&+:=@/Tun"),
         // ... and these do not. Escapes are uppercase hex.
-        ("a b", false, "/a%20b/Tun"),
-        ("a;b", false, "/a%3Bb/Tun"),
-        ("a,b", false, "/a%2Cb/Tun"),
-        ("a?b", false, "/a%3Fb/Tun"),
-        ("a!b", false, "/a%21b/Tun"),
-        ("a*b", false, "/a%2Ab/Tun"),
+        ("a b", HunkMode::Single, "/a%20b/Tun"),
+        ("a;b", HunkMode::Single, "/a%3Bb/Tun"),
+        ("a,b", HunkMode::Single, "/a%2Cb/Tun"),
+        ("a?b", HunkMode::Single, "/a%3Fb/Tun"),
+        ("a!b", HunkMode::Single, "/a%21b/Tun"),
+        ("a*b", HunkMode::Single, "/a%2Ab/Tun"),
         // Custom paths: a leading slash switches dialects. The last segment is
         // the stream name, everything between the first and last slash is the
         // service name, escaped per segment rather than whole.
-        ("/a/b", false, "/a/b"),
-        ("/a/b", true, "/a/b"),
+        ("/a/b", HunkMode::Single, "/a/b"),
+        ("/a/b", HunkMode::Multi, "/a/b"),
         // `|` splits the last segment into tun|tunMulti, both client-side.
-        ("/a/b|c", false, "/a/b"),
-        ("/a/b|c", true, "/a/c"),
+        ("/a/b|c", HunkMode::Single, "/a/b"),
+        ("/a/b|c", HunkMode::Multi, "/a/c"),
         // Multi-segment service names keep their separators.
-        ("/x/y/z", false, "/x/y/z"),
-        ("/x/y/z|w", true, "/x/y/w"),
+        ("/x/y/z", HunkMode::Single, "/x/y/z"),
+        ("/x/y/z|w", HunkMode::Multi, "/x/y/w"),
         // `lastIndex < 1` is clamped to 1, so a single leading segment yields
         // an empty service name and the double slash comes back.
-        ("/hello", false, "//hello"),
-        ("/hello|multi", true, "//multi"),
+        ("/hello", HunkMode::Single, "//hello"),
+        ("/hello|multi", HunkMode::Multi, "//multi"),
         // Everything below is ported from
         // `Xray-core/transport/internet/grpc/config_test.go`, whose table
         // tests exercise `getServiceName`/`getTunStreamName`/
@@ -55,26 +55,34 @@ mod stream_grpc_path_tests {
         //
         // `TestConfig_GetServiceName`, "escape no absolute path", line 23-27:
         // whole-string escaping of two special characters at once.
-        ("hello/world!", false, "/hello%2Fworld%21/Tun"),
+        ("hello/world!", HunkMode::Single, "/hello%2Fworld%21/Tun"),
         // `TestConfig_GetServiceName`, "absolute path", line 28-32, combined
         // with the client/server `|` split.
-        ("/my/sample/path/a|b", false, "/my/sample/path/a"),
-        ("/my/sample/path/a|b", true, "/my/sample/path/b"),
+        ("/my/sample/path/a|b", HunkMode::Single, "/my/sample/path/a"),
+        ("/my/sample/path/a|b", HunkMode::Multi, "/my/sample/path/b"),
         // `TestConfig_GetServiceName`, "escape absolute path", line 33-37: a
         // *middle* service-name segment ("hello ", "world!") needs escaping,
         // not just the whole string as in the no-leading-slash dialect.
-        ("/hello /world!/a|b", false, "/hello%20/world%21/a"),
-        ("/hello /world!/a|b", true, "/hello%20/world%21/b"),
+        (
+            "/hello /world!/a|b",
+            HunkMode::Single,
+            "/hello%20/world%21/a",
+        ),
+        (
+            "/hello /world!/a|b",
+            HunkMode::Multi,
+            "/hello%20/world%21/b",
+        ),
         // `TestConfig_GetTunStreamName`/`GetTunMultiStreamName`, "absolute
         // path server", line 63-67 / 98-102: realistic tun|tunMulti names.
         (
             "/my/sample/path/tun_service|multi_service",
-            false,
+            HunkMode::Single,
             "/my/sample/path/tun_service",
         ),
         (
             "/my/sample/path/tun_service|multi_service",
-            true,
+            HunkMode::Multi,
             "/my/sample/path/multi_service",
         ),
         // `TestConfig_GetTunStreamName`, "escape absolute path client", line
@@ -82,7 +90,7 @@ mod stream_grpc_path_tests {
         // backslash and a `!`), not just a literal pass-through.
         (
             "/m y/sa !mple/pa\\th/tun\\_serv!ice",
-            false,
+            HunkMode::Single,
             "/m%20y/sa%20%21mple/pa%5Cth/tun%5C_serv%21ice",
         ),
         // `TestConfig_GetTunMultiStreamName`, "escape absolute path client",
@@ -90,18 +98,18 @@ mod stream_grpc_path_tests {
         // itself be escaped to `%25`.
         (
             "/m y/sa !mple/pa\\th/mu%lti\\_serv!ice",
-            true,
+            HunkMode::Multi,
             "/m%20y/sa%20%21mple/pa%5Cth/mu%25lti%5C_serv%21ice",
         ),
     ];
 
     #[test]
     fn the_request_path_matches_xrays_service_name_rules() {
-        for (service_name, multi_mode, expected) in VECTORS {
+        for (service_name, mode, expected) in VECTORS {
             assert_eq!(
-                grpc_request_path(service_name, *multi_mode),
+                grpc_request_path(service_name, *mode),
                 *expected,
-                "serviceName {service_name:?} multiMode {multi_mode}"
+                "serviceName {service_name:?} {mode:?}"
             );
         }
     }
@@ -235,7 +243,7 @@ mod stream_grpc_framing_write_tests {
 }
 
 mod stream_grpc_framing_read_tests {
-    use xray_transport::stream::{encode_hunk, HunkDecoder};
+    use xray_transport::stream::{encode_hunk, HunkDecoder, HunkMode};
 
     fn drain(decoder: &mut HunkDecoder) -> Vec<Vec<u8>> {
         let mut out = Vec::new();
@@ -255,7 +263,7 @@ mod stream_grpc_framing_read_tests {
 
     #[test]
     fn one_whole_message_yields_its_payload() {
-        let mut decoder = HunkDecoder::new();
+        let mut decoder = HunkDecoder::new(HunkMode::Single);
         decoder.push(&encode_hunk(b"hello"));
         assert_eq!(drain(&mut decoder), vec![b"hello".to_vec()]);
     }
@@ -267,7 +275,7 @@ mod stream_grpc_framing_read_tests {
         let payload = vec![0x37; 500];
         let encoded = encode_hunk(&payload);
 
-        let mut decoder = HunkDecoder::new();
+        let mut decoder = HunkDecoder::new(HunkMode::Single);
         let mut collected = Vec::new();
         for byte in &encoded {
             decoder.push(std::slice::from_ref(byte));
@@ -284,7 +292,7 @@ mod stream_grpc_framing_read_tests {
         let mut chunk = encode_hunk(b"first");
         chunk.extend_from_slice(&encode_hunk(b"second"));
 
-        let mut decoder = HunkDecoder::new();
+        let mut decoder = HunkDecoder::new(HunkMode::Single);
         decoder.push(&chunk);
         assert_eq!(
             drain(&mut decoder),
@@ -313,7 +321,7 @@ mod stream_grpc_framing_read_tests {
             let mut chunk = encode_hunk(b"first");
             chunk.extend_from_slice(head);
 
-            let mut decoder = HunkDecoder::new();
+            let mut decoder = HunkDecoder::new(HunkMode::Single);
             decoder.push(&chunk);
             assert_eq!(
                 drain(&mut decoder),
@@ -340,7 +348,7 @@ mod stream_grpc_framing_read_tests {
     /// messages because `next_payload` compacts before it reports `None`.
     #[test]
     fn a_long_stream_does_not_retain_the_messages_it_handed_out() {
-        let mut decoder = HunkDecoder::new();
+        let mut decoder = HunkDecoder::new(HunkMode::Single);
 
         for index in 0..128u8 {
             let payload = vec![index; 64];
@@ -352,7 +360,7 @@ mod stream_grpc_framing_read_tests {
 
     #[test]
     fn a_zero_length_hunk_is_a_message_not_an_end_of_stream() {
-        let mut decoder = HunkDecoder::new();
+        let mut decoder = HunkDecoder::new(HunkMode::Single);
         decoder.push(&encode_hunk(&[]));
         assert_eq!(drain(&mut decoder), vec![Vec::<u8>::new()]);
     }
@@ -362,7 +370,7 @@ mod stream_grpc_framing_read_tests {
         // field 2, wire type 0 (varint), value 1 -- then the real field 1.
         let framed = frame(&[0x10, 0x01, 0x0a, 0x02, b'h', b'i']);
 
-        let mut decoder = HunkDecoder::new();
+        let mut decoder = HunkDecoder::new(HunkMode::Single);
         decoder.push(&framed);
         assert_eq!(drain(&mut decoder), vec![b"hi".to_vec()]);
     }
@@ -375,7 +383,7 @@ mod stream_grpc_framing_read_tests {
         framed.extend_from_slice(&4u32.to_be_bytes());
         framed.extend_from_slice(&[0x0a, 0x02, b'h', b'i']);
 
-        let mut decoder = HunkDecoder::new();
+        let mut decoder = HunkDecoder::new(HunkMode::Single);
         decoder.push(&framed);
         let error = decoder
             .next_payload()
@@ -396,7 +404,7 @@ mod stream_grpc_framing_read_tests {
         framed.extend_from_slice(&4u32.to_be_bytes());
         framed.extend_from_slice(&[0x0a, 0x02, b'h', b'i']);
 
-        let mut decoder = HunkDecoder::new();
+        let mut decoder = HunkDecoder::new(HunkMode::Single);
         decoder.push(&framed);
         let error = decoder
             .next_payload()
@@ -421,7 +429,7 @@ mod stream_grpc_framing_read_tests {
     fn a_length_over_four_mib_is_refused_from_the_header_alone() {
         const CAP: u32 = 4 * 1024 * 1024;
 
-        let mut decoder = HunkDecoder::new();
+        let mut decoder = HunkDecoder::new(HunkMode::Single);
         decoder.push(&[0x00]); // uncompressed
         decoder.push(&(CAP + 1).to_be_bytes());
         let error = decoder
@@ -443,7 +451,7 @@ mod stream_grpc_framing_read_tests {
         let mut header = vec![0x00];
         header.extend_from_slice(&CAP.to_be_bytes());
 
-        let mut decoder = HunkDecoder::new();
+        let mut decoder = HunkDecoder::new(HunkMode::Single);
         decoder.push(&header);
         assert_eq!(
             decoder.next_payload().expect("4 MiB is within the cap"),
@@ -460,28 +468,75 @@ mod stream_grpc_framing_read_tests {
     /// exact bytes into Xray's own `encoding.Hunk`: `Data` comes out `"hi"`.
     #[test]
     fn field_one_with_the_wrong_wire_type_is_skipped_not_refused() {
-        let mut decoder = HunkDecoder::new();
+        let mut decoder = HunkDecoder::new(HunkMode::Single);
         decoder.push(&frame(&[0x08, 0x01, 0x0a, 0x02, b'h', b'i']));
         assert_eq!(drain(&mut decoder), vec![b"hi".to_vec()]);
 
         // And on its own it leaves the field absent, which is an empty read.
-        let mut decoder = HunkDecoder::new();
+        let mut decoder = HunkDecoder::new(HunkMode::Single);
         decoder.push(&frame(&[0x08, 0x01]));
         assert_eq!(drain(&mut decoder), vec![Vec::<u8>::new()]);
     }
+
+    /// The body `MultiHunk{Data: [][]byte{"hi", "yo!"}}` marshals to, which is
+    /// also a legal `Hunk` body with field 1 repeated. Read as one message it
+    /// carries two chunks; read as the other it carries one.
+    ///
+    /// Taken from Xray's own generated types rather than hand-assembled:
+    /// `proto.Marshal` of that `MultiHunk` prints `0a0268690a03796f21`, and
+    /// `proto.Unmarshal` of those same bytes gives `MultiHunk.Data` two
+    /// elements, `["hi" "yo!"]`, and `Hunk.Data` the one value `"yo!"`.
+    const TWO_CHUNKS: &[u8] = &[0x0a, 0x02, b'h', b'i', 0x0a, 0x03, b'y', b'o', b'!'];
 
     /// A repeated singular `bytes` field is last-one-wins, not concatenation:
     /// `consumeBytesNoZero` assigns with `append(([]byte)(nil), v...)`
     /// (`protobuf@v1.36.11/internal/impl/codec_gen.go:5497`), overwriting
     /// whatever an earlier entry left. Unmarshalling this body into Xray's
     /// `encoding.Hunk` yields `Data == "yo!"`, not `"hiyo!"`.
+    ///
+    /// The pair of [`every_chunk_of_a_multi_hunk_is_delivered_in_order`]: the
+    /// same bytes, the other mode, the other answer. Concatenating here would
+    /// put bytes into the tunnel the Go peer never sent.
     #[test]
     fn the_last_field_one_wins_when_a_hunk_repeats_it() {
-        let mut decoder = HunkDecoder::new();
-        decoder.push(&frame(&[
-            0x0a, 0x02, b'h', b'i', 0x0a, 0x03, b'y', b'o', b'!',
-        ]));
+        let mut decoder = HunkDecoder::new(HunkMode::Single);
+        decoder.push(&frame(TWO_CHUNKS));
         assert_eq!(drain(&mut decoder), vec![b"yo!".to_vec()]);
+    }
+
+    /// `MultiHunk.Data` is `repeated bytes` (`Xray-core/transport/internet/
+    /// grpc/encoding/stream.proto:10-12`), so in multi mode the repetition is
+    /// the message rather than a quirk of it: `forceFetch` takes the whole
+    /// `[][]byte` and `ReadMultiBuffer` walks every element into the buffer it
+    /// returns (`encoding/multiconn.go:71-113`).
+    ///
+    /// Delivering only the last one is silent data loss — no error, no log,
+    /// just a tunnel that corrupts — and a one-element message round-trips
+    /// identically either way, so nothing but a multi-element message can catch
+    /// it.
+    ///
+    /// The chunks are concatenated rather than kept apart because this is a
+    /// byte stream: `ReadMultiBuffer` hands its elements to a `cnc.Connection`
+    /// that copies them out in order, and it drops the zero-length ones
+    /// (`multiconn.go:96-99`), which concatenation does by construction.
+    #[test]
+    fn every_chunk_of_a_multi_hunk_is_delivered_in_order() {
+        let mut decoder = HunkDecoder::new(HunkMode::Multi);
+        decoder.push(&frame(TWO_CHUNKS));
+        assert_eq!(drain(&mut decoder), vec![b"hiyo!".to_vec()]);
+    }
+
+    /// Why the bug survived: every message this client writes carries one
+    /// element, and one element decodes the same in both modes. A round trip
+    /// against our own writer therefore proves nothing about multi mode — only
+    /// a peer that batches does.
+    #[test]
+    fn a_one_element_message_decodes_the_same_in_both_modes() {
+        for mode in [HunkMode::Single, HunkMode::Multi] {
+            let mut decoder = HunkDecoder::new(mode);
+            decoder.push(&encode_hunk(b"hello"));
+            assert_eq!(drain(&mut decoder), vec![b"hello".to_vec()], "{mode:?}");
+        }
     }
 
     /// Every unknown wire type protobuf-go's `consumeFieldValueD` handles by
@@ -499,7 +554,7 @@ mod stream_grpc_framing_read_tests {
             let mut body = prefix.to_vec();
             body.extend_from_slice(&[0x0a, 0x02, b'h', b'i']);
 
-            let mut decoder = HunkDecoder::new();
+            let mut decoder = HunkDecoder::new(HunkMode::Single);
             decoder.push(&frame(&body));
             assert_eq!(drain(&mut decoder), vec![b"hi".to_vec()], "{name}");
         }
@@ -534,7 +589,7 @@ mod stream_grpc_framing_read_tests {
         ];
 
         for (name, body) in bodies {
-            let mut decoder = HunkDecoder::new();
+            let mut decoder = HunkDecoder::new(HunkMode::Single);
             decoder.push(&frame(body));
             let decoded = decoder.next_payload();
             assert!(
@@ -552,7 +607,7 @@ mod stream_grpc_framing_read_tests {
     /// refuse it.
     #[test]
     fn an_unknown_group_is_refused_where_protobuf_go_would_skip_it() {
-        let mut decoder = HunkDecoder::new();
+        let mut decoder = HunkDecoder::new(HunkMode::Single);
         decoder.push(&frame(&[0x13, 0x18, 0x01, 0x14, 0x0a, 0x02, b'h', b'i']));
         assert!(decoder.next_payload().is_err());
     }
@@ -580,9 +635,13 @@ mod stream_grpc_h2_tests {
     /// fallbacks (`Xray-core/transport/internet/grpc/dial.go:159-167`), which
     /// are the caller's job to resolve.
     const AUTHORITY: &str = "grpc.example.com";
-    /// `grpc_request_path(SERVICE_NAME, false)`, which is what the dial derives
-    /// for the config below.
+    /// `grpc_request_path(SERVICE_NAME, HunkMode::Single)`, which is what the
+    /// dial derives for the config below.
     const PATH: &str = "/xray.grpc/Tun";
+    /// The same for `HunkMode::Multi`. Asserted on the peer's side of a
+    /// multi-mode call, so a mode that reached the decoder without reaching the
+    /// `:path` — or the other way round — fails rather than passes quietly.
+    const MULTI_PATH: &str = "/xray.grpc/TunMulti";
     const SERVICE_NAME: &str = "xray.grpc";
     /// A literal user agent, so it survives `resolve_user_agent` untouched.
     /// This block only cares that whatever value is dialled with reaches the
@@ -607,9 +666,19 @@ mod stream_grpc_h2_tests {
     }
 
     async fn open_with_user_agent(io: DuplexStream, user_agent: &str) -> GrpcStream {
+        open_dialling(io, user_agent, false).await
+    }
+
+    /// A dial with `grpcSettings.multiMode` set, which is `rpc TunMulti` and
+    /// `MultiHunk` rather than `rpc Tun` and `Hunk`.
+    async fn open_in_multi_mode(io: DuplexStream) -> GrpcStream {
+        open_dialling(io, USER_AGENT, true).await
+    }
+
+    async fn open_dialling(io: DuplexStream, user_agent: &str, multi_mode: bool) -> GrpcStream {
         let config = GrpcConfig {
             service_name: SERVICE_NAME.to_owned(),
-            multi_mode: false,
+            multi_mode,
             authority: AUTHORITY.parse().expect("a literal authority"),
             user_agent: user_agent.to_owned(),
             idle_timeout_secs: 0,
@@ -718,14 +787,16 @@ mod stream_grpc_h2_tests {
     /// `Connection` is the connection, and nothing moves on the socket unless
     /// `accept` is being polled.
     async fn serve_one_call(io: DuplexStream, script: Script) {
-        serve_one_call_expecting(io, script, USER_AGENT).await;
+        serve_one_call_expecting(io, script, PATH, USER_AGENT).await;
     }
 
-    /// [`serve_one_call`] for a test that dials with a `user-agent` other than
-    /// [`USER_AGENT`], which every request assertion runs against.
+    /// [`serve_one_call`] for a test that dials with a `:path` or a
+    /// `user-agent` other than the [`PATH`] and [`USER_AGENT`] every request
+    /// assertion runs against.
     async fn serve_one_call_expecting(
         io: DuplexStream,
         script: Script,
+        expected_path: &'static str,
         expected_user_agent: &'static str,
     ) {
         let mut connection = server::handshake(io).await.expect("server handshake");
@@ -750,7 +821,13 @@ mod stream_grpc_h2_tests {
             // and `StallThenSayThenReset` waits on a DATA frame that will
             // never arrive if nothing is reading the socket.
             if script.ends_with_a_reset() {
-                let call = tokio::spawn(handle_call(request, respond, script, expected_user_agent));
+                let call = tokio::spawn(handle_call(
+                    request,
+                    respond,
+                    script,
+                    expected_path,
+                    expected_user_agent,
+                ));
                 tokio::select! {
                     accepted = connection.accept() => {
                         assert!(accepted.is_none(), "the tests open one call per connection");
@@ -762,7 +839,13 @@ mod stream_grpc_h2_tests {
                 return;
             }
 
-            tokio::spawn(handle_call(request, respond, script, expected_user_agent));
+            tokio::spawn(handle_call(
+                request,
+                respond,
+                script,
+                expected_path,
+                expected_user_agent,
+            ));
         }
     }
 
@@ -777,10 +860,11 @@ mod stream_grpc_h2_tests {
         request: http::Request<h2::RecvStream>,
         mut respond: SendResponse<Bytes>,
         script: Script,
+        expected_path: &str,
         expected_user_agent: &str,
     ) {
         let (head, mut body) = request.into_parts();
-        assert_request_line(&head, expected_user_agent);
+        assert_request_line(&head, expected_path, expected_user_agent);
 
         match script {
             Script::Silent => {
@@ -978,7 +1062,11 @@ mod stream_grpc_h2_tests {
     /// `stream_grpc_request_headers_tests`'s question. This pins only that the
     /// request builder put a well-formed call on the wire, so the scripts below
     /// are reading one.
-    fn assert_request_line(head: &http::request::Parts, expected_user_agent: &str) {
+    fn assert_request_line(
+        head: &http::request::Parts,
+        expected_path: &str,
+        expected_user_agent: &str,
+    ) {
         assert_eq!(head.method, Method::POST, "gRPC calls are POSTs");
         // `:scheme` stays `http`: Xray dials gRPC with
         // `insecure.NewCredentials()` and wraps the connection itself
@@ -990,7 +1078,7 @@ mod stream_grpc_h2_tests {
             Some(AUTHORITY),
             ":authority"
         );
-        assert_eq!(head.uri.path(), PATH, ":path");
+        assert_eq!(head.uri.path(), expected_path, ":path");
         assert_eq!(head.uri.query(), None, "the :path carries no query");
 
         for (name, expected) in [
@@ -1208,7 +1296,7 @@ mod stream_grpc_h2_tests {
     #[tokio::test]
     async fn an_empty_user_agent_is_still_sent_as_a_header() {
         let (client_io, server_io) = duplex(64 * 1024);
-        tokio::spawn(serve_one_call_expecting(server_io, Script::Echo, ""));
+        tokio::spawn(serve_one_call_expecting(server_io, Script::Echo, PATH, ""));
         let mut stream = within_deadline(open_with_user_agent(client_io, "")).await;
 
         // The peer asserts the request line, so the call has to get far enough
@@ -1245,6 +1333,65 @@ mod stream_grpc_h2_tests {
                 .await
                 .expect("read to eof");
             assert_eq!(received, b"beforeafter");
+        })
+        .await;
+    }
+
+    /// One `MultiHunk` message carrying `payloads` as its elements.
+    ///
+    /// `encode_hunk` frames one element and there is deliberately no encoder
+    /// that frames several — our writer never batches, see its doc — so a
+    /// batching peer has to be built here. The body is the elements' `0a
+    /// <varint> <bytes>` groups back to back, which is what protobuf-go's
+    /// `coderBytesSlice` emits and what `proto.Marshal` of Xray's own
+    /// `encoding.MultiHunk` was checked to produce.
+    fn multi_hunk(payloads: &[&[u8]]) -> Bytes {
+        let mut body = Vec::new();
+        for payload in payloads {
+            body.extend_from_slice(&encode_hunk(payload)[5..]);
+        }
+
+        let mut message = vec![0x00];
+        message.extend_from_slice(&(body.len() as u32).to_be_bytes());
+        message.extend_from_slice(&body);
+        Bytes::from(message)
+    }
+
+    /// The bug a one-element writer cannot find. `multiMode` is not a different
+    /// `:path` with the same payload behind it — `rpc TunMulti` carries
+    /// `MultiHunk`, whose `data` is `repeated bytes`, and
+    /// `MultiHunkReaderWriter.forceFetch` hands every element of it to
+    /// `ReadMultiBuffer` (`Xray-core/transport/internet/grpc/encoding/
+    /// multiconn.go:71-113`). A decoder still reading `Hunk` keeps only the
+    /// last element of each message and drops the rest with no error, which on
+    /// a tunnel is corruption the user finds somewhere else entirely.
+    ///
+    /// It has to be an end-to-end dial rather than a decoder test:
+    /// `stream_grpc_framing_read_tests` pins what each mode does with the
+    /// bytes, and this pins that `grpcSettings.multiMode` is what chooses the
+    /// mode. The peer asserts the `:path` too, so the RPC named on the wire and
+    /// the message read off it are checked to be the same choice.
+    #[tokio::test]
+    async fn multi_mode_delivers_every_element_of_a_multi_hunk() {
+        let (client_io, server_io) = duplex(64 * 1024);
+        tokio::spawn(serve_one_call_expecting(
+            server_io,
+            Script::Say(
+                vec![multi_hunk(&[b"first", b"second", b"third"])],
+                trailers("0"),
+            ),
+            MULTI_PATH,
+            USER_AGENT,
+        ));
+        let mut stream = within_deadline(open_in_multi_mode(client_io)).await;
+
+        within_deadline(async {
+            let mut received = Vec::new();
+            stream
+                .read_to_end(&mut received)
+                .await
+                .expect("read to eof");
+            assert_eq!(received, b"firstsecondthird");
         })
         .await;
     }
@@ -1847,7 +1994,7 @@ mod stream_grpc_request_headers_tests {
     use tokio::sync::oneshot;
     use xray_transport::stream::{
         apply_masquerade, grpc_request_path, open_grpc_h2_stream, resolve_user_agent, Authority,
-        GrpcConfig, HeaderMap,
+        GrpcConfig, HeaderMap, HunkMode,
     };
     use xray_transport::BoxedTransportStream;
 
@@ -2018,7 +2165,7 @@ mod stream_grpc_request_headers_tests {
         let head = captured_head(&config).await;
         assert_eq!(
             head.uri.path(),
-            grpc_request_path("xray.grpc", true),
+            grpc_request_path("xray.grpc", HunkMode::Multi),
             ":path"
         );
         assert_eq!(head.uri.path(), "/xray.grpc/TunMulti", ":path");
@@ -2040,34 +2187,34 @@ mod stream_grpc_request_headers_tests {
     /// would try to read as userinfo and a port.
     #[tokio::test]
     async fn a_path_that_needs_escaping_reaches_the_wire_intact() {
-        for (service_name, multi_mode, expected) in [
-            ("", false, "//Tun"),
-            ("", true, "//TunMulti"),
-            ("a/b", false, "/a%2Fb/Tun"),
-            ("$&+:=@", false, "/$&+:=@/Tun"),
+        for (service_name, mode, expected) in [
+            ("", HunkMode::Single, "//Tun"),
+            ("", HunkMode::Multi, "//TunMulti"),
+            ("a/b", HunkMode::Single, "/a%2Fb/Tun"),
+            ("$&+:=@", HunkMode::Single, "/$&+:=@/Tun"),
             (
                 "/m y/sa !mple/pa\\th/tun\\_serv!ice",
-                false,
+                HunkMode::Single,
                 "/m%20y/sa%20%21mple/pa%5Cth/tun%5C_serv%21ice",
             ),
         ] {
             let mut config = config("grpc.example.com");
             config.service_name = service_name.to_owned();
-            config.multi_mode = multi_mode;
+            config.multi_mode = mode == HunkMode::Multi;
 
             let head = captured_head(&config).await;
             assert_eq!(
                 head.uri.path(),
                 expected,
-                ":path for serviceName {service_name:?} multiMode {multi_mode}"
+                ":path for serviceName {service_name:?} {mode:?}"
             );
             // The literal above is the wire; this is the claim that the wire is
             // what `grpc_request_path` said, so the two cannot drift apart
             // without one of them failing.
             assert_eq!(
                 head.uri.path(),
-                grpc_request_path(service_name, multi_mode),
-                "serviceName {service_name:?} multiMode {multi_mode}"
+                grpc_request_path(service_name, mode),
+                "serviceName {service_name:?} {mode:?}"
             );
         }
     }
