@@ -248,11 +248,19 @@ fn selected_reality_server_warmup_timeout() -> Duration {
         .unwrap_or(DEFAULT_REALITY_SERVER_WARMUP_TIMEOUT)
 }
 
-async fn warm_up_reality_server_detector(xray: &XrayServer, fingerprint: &str) {
-    let rust_config = rust_reality_vision_core_config(xray.addr, fingerprint);
+/// Drives one echo flow through `probe_config` before the scenario proper, so
+/// the Go REALITY listener's first, slow contact with the real `dest` is not
+/// on the clock the scenario is measured against.
+///
+/// **The config is a parameter rather than built here**, which it was until
+/// gRPC arrived: the built one was a Vision one, so a scenario over any other
+/// stream transport would have warmed the server up by dialling a profile the
+/// inbound does not serve, and failed in the warmup with the scenario's own
+/// pairing never tried.
+async fn warm_up_reality_server_detector(xray: &XrayServer, probe_config: CoreConfig) {
     match timeout(
         selected_reality_server_warmup_timeout(),
-        run_rust_core_socks_echo_probe(rust_config),
+        run_rust_core_socks_echo_probe(probe_config),
     )
     .await
     {
@@ -283,7 +291,11 @@ async fn run_local_xray_vless_reality_vision_interop(fingerprint: &str) {
     )
     .await
     .expect("start xray timeout");
-    warm_up_reality_server_detector(&xray, fingerprint).await;
+    warm_up_reality_server_detector(
+        &xray,
+        rust_reality_vision_core_config(xray.addr, fingerprint),
+    )
+    .await;
     let rust_config = rust_reality_vision_core_config(xray.addr, fingerprint);
 
     run_local_xray_vless_interop_scenario(xray, rust_config, None).await;
@@ -304,7 +316,11 @@ async fn run_local_xray_reality_vision_inner_tls_interop(fingerprint: &str) {
     )
     .await
     .expect("start xray timeout");
-    warm_up_reality_server_detector(&xray, fingerprint).await;
+    warm_up_reality_server_detector(
+        &xray,
+        rust_reality_vision_core_config(xray.addr, fingerprint),
+    )
+    .await;
     let rust_config = rust_reality_vision_core_config(xray.addr, fingerprint);
 
     run_inner_tls_interop_scenario(xray, rust_config).await;
@@ -422,7 +438,11 @@ async fn run_local_xray_vless_reality_vision_burst_interop(fingerprint: &str, fl
     )
     .await
     .expect("start xray timeout");
-    warm_up_reality_server_detector(&xray, fingerprint).await;
+    warm_up_reality_server_detector(
+        &xray,
+        rust_reality_vision_core_config(xray.addr, fingerprint),
+    )
+    .await;
     let rust_config = rust_reality_vision_core_config(xray.addr, fingerprint);
 
     run_local_xray_vless_parallel_interop_scenario(xray, rust_config, flow_count).await;
@@ -1300,17 +1320,26 @@ fn rust_core_config_with_transport(
 fn rust_reality_vision_core_config(xray_addr: SocketAddr, fingerprint: &str) -> CoreConfig {
     rust_core_config_with_security(
         xray_addr,
-        StreamSecurity::Reality(RealitySettings {
-            server_name: REALITY_SERVER_NAME.to_owned(),
-            fingerprint: fingerprint.to_owned(),
-            public_key: REALITY_PUBLIC_KEY,
-            short_id: RealityShortId::try_from_slice(&REALITY_SHORT_ID)
-                .expect("static REALITY short id"),
-            spider_x: "/".to_owned(),
-            mldsa65_verify: None,
-        }),
+        reality_security(fingerprint),
         Some("xtls-rprx-vision"),
     )
+}
+
+/// The client half of the REALITY inbound `start_xray_vless_server` writes.
+///
+/// Extracted from `rust_reality_vision_core_config` when gRPC needed the same
+/// settings without the flow: that helper hardcodes `xtls-rprx-vision`, and
+/// Vision cannot ride gRPC.
+fn reality_security(fingerprint: &str) -> StreamSecurity {
+    StreamSecurity::Reality(RealitySettings {
+        server_name: REALITY_SERVER_NAME.to_owned(),
+        fingerprint: fingerprint.to_owned(),
+        public_key: REALITY_PUBLIC_KEY,
+        short_id: RealityShortId::try_from_slice(&REALITY_SHORT_ID)
+            .expect("static REALITY short id"),
+        spider_x: "/".to_owned(),
+        mldsa65_verify: None,
+    })
 }
 
 async fn spawn_inner_tls_echo_server() -> (
@@ -1712,6 +1741,10 @@ const GRPC_SERVICE_NAME: &str = "interop grpc";
 /// pinned-certificate dialer cannot be used with it.
 const GRPC_TLS_FINGERPRINT: &str = "chrome";
 
+/// The uTLS fingerprint the gRPC REALITY scenario handshakes with, matching
+/// the base Vision REALITY scenario's.
+const GRPC_REALITY_FINGERPRINT: &str = "chrome";
+
 #[tokio::test]
 #[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
 async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_grpc() {
@@ -1729,6 +1762,17 @@ async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_grpc_tls
     timeout(
         Duration::from_secs(120),
         run_local_xray_grpc_interop(XrayInboundSecurity::Tls),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
+async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_grpc_reality() {
+    timeout(
+        Duration::from_secs(180),
+        run_local_xray_grpc_interop(XrayInboundSecurity::Reality),
     )
     .await
     .unwrap();
@@ -1756,6 +1800,16 @@ async fn run_local_xray_grpc_interop(security: XrayInboundSecurity) {
     .expect("start xray timeout");
 
     let rust_config = rust_grpc_core_config(xray.addr, grpc_client_security(security));
+    if security == XrayInboundSecurity::Reality {
+        // Warmed with a gRPC profile, not the Vision one the REALITY helpers
+        // build: the inbound serves gRPC and nothing else, so a Vision probe
+        // fails in the warmup and the scenario's own pairing is never tried.
+        warm_up_reality_server_detector(
+            &xray,
+            rust_grpc_core_config(xray.addr, grpc_client_security(security)),
+        )
+        .await;
+    }
     // No dialer override, so the Core builds `TransportDialer::system()` and
     // the handshake runs through the shaped path -- which is the whole point:
     // `TlsConnector::with_pinned_client_config` ignores the fingerprint and
@@ -1781,7 +1835,7 @@ fn grpc_client_security(security: XrayInboundSecurity) -> StreamSecurity {
             // fact that the profile is what supplies `h2`.
             alpn: Vec::new(),
         }),
-        XrayInboundSecurity::Reality => unreachable!("REALITY gRPC lands in its own scenario"),
+        XrayInboundSecurity::Reality => reality_security(GRPC_REALITY_FINGERPRINT),
     }
 }
 
