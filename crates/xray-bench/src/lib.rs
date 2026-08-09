@@ -210,6 +210,7 @@ pub enum WorkloadKind {
     VisionXudp,
     RealityVisionXudp,
     RealityVisionBulkThroughput,
+    GrpcBulkThroughput,
 }
 
 impl WorkloadKind {
@@ -235,6 +236,7 @@ impl WorkloadKind {
             Self::VisionXudp => "vision-xudp",
             Self::RealityVisionXudp => "reality-vision-xudp",
             Self::RealityVisionBulkThroughput => "reality-vision-bulk-throughput",
+            Self::GrpcBulkThroughput => "grpc-bulk-throughput",
         }
     }
 
@@ -260,6 +262,7 @@ impl WorkloadKind {
             "vision-xudp" => Ok(Self::VisionXudp),
             "reality-vision-xudp" => Ok(Self::RealityVisionXudp),
             "reality-vision-bulk-throughput" => Ok(Self::RealityVisionBulkThroughput),
+            "grpc-bulk-throughput" => Ok(Self::GrpcBulkThroughput),
             other => Err(BenchError::InvalidArguments(format!(
                 "unsupported workload `{other}`"
             ))),
@@ -291,6 +294,7 @@ impl WorkloadKind {
                 | Self::UdpFreedom
                 | Self::RealityVisionXudp
                 | Self::RealityVisionBulkThroughput
+                | Self::GrpcBulkThroughput
         )
     }
 }
@@ -955,6 +959,18 @@ impl WorkloadFixture {
             WorkloadKind::RealityVisionXudp | WorkloadKind::RealityVisionBulkThroughput => {
                 let (vless_addr, process) =
                     start_xray_core_reality_vision_server(options, run_dir, binary_dir).await?;
+                Ok(Self {
+                    vless_addr: Some(vless_addr),
+                    vless_tls_cert_sha256: None,
+                    dns_server_addr: None,
+                    tcp_blackhole_state: None,
+                    tasks: Vec::new(),
+                    processes: vec![process],
+                })
+            }
+            WorkloadKind::GrpcBulkThroughput => {
+                let (vless_addr, process) =
+                    start_xray_core_grpc_server(options, run_dir, binary_dir).await?;
                 Ok(Self {
                     vless_addr: Some(vless_addr),
                     vless_tls_cert_sha256: None,
@@ -5882,6 +5898,9 @@ pub fn xray_rust_config(port: u16, workload: WorkloadKind) -> String {
         WorkloadKind::TunRealityBlackhole => {
             tun_reality_blackhole_config(SocketAddr::from((Ipv4Addr::LOCALHOST, 443)))
         }
+        WorkloadKind::GrpcBulkThroughput => {
+            vless_grpc_config(port, SocketAddr::from((Ipv4Addr::LOCALHOST, 443)))
+        }
         WorkloadKind::RoutedTcpFreedom => routed_freedom_config(port, EngineKind::XrayRust),
         WorkloadKind::Idle
         | WorkloadKind::TcpFreedom
@@ -5917,6 +5936,10 @@ fn sing_box_config(
                 ))
             })?;
             Ok(sing_box_reality_vision_xudp_config(port, vless_addr))
+        }
+        WorkloadKind::GrpcBulkThroughput => {
+            let vless_addr = grpc_fixture_vless_addr(workload, fixture)?;
+            Ok(sing_box_vless_grpc_config(port, vless_addr))
         }
         _ if workload.supports_sing_box_process_engine() => Ok(sing_box_direct_config(port)),
         _ => Err(BenchError::InvalidArguments(format!(
@@ -5990,6 +6013,10 @@ fn engine_config_with_dns_upstream(
             })?;
             Ok(reality_vision_xudp_config(port, vless_addr))
         }
+        WorkloadKind::GrpcBulkThroughput => {
+            let vless_addr = grpc_fixture_vless_addr(workload, fixture)?;
+            Ok(vless_grpc_config(port, vless_addr))
+        }
         WorkloadKind::TunRealityBlackhole => {
             let vless_addr = fixture.vless_addr.ok_or_else(|| {
                 BenchError::InvalidArguments(
@@ -6058,6 +6085,48 @@ fn sing_box_direct_config(port: u16) -> String {
   ],
   "route": {{ "final": "direct" }}
 }}"#
+    )
+}
+
+/// The `serviceName` every engine in the gRPC comparison dials.
+///
+/// It carries no leading `/`, which is the dialect all three clients agree on:
+/// Xray escapes such a name whole and appends the `Tun` stream name
+/// (`Xray-core/transport/internet/grpc/config.go:17-59`), and sing-box's lite
+/// client hardcodes the same shape, `"/" + service_name + "/Tun"`
+/// (`transport/v2raygrpclite/client.go:56-59`). A leading-slash custom path
+/// would be an Xray-only spelling and would take sing-box out of the run.
+const GRPC_BENCH_SERVICE_NAME: &str = "bench";
+
+fn sing_box_vless_grpc_config(port: u16, vless_addr: SocketAddr) -> String {
+    format!(
+        r#"{{
+  "log": {{ "level": "warn" }},
+  "inbounds": [
+    {{
+      "type": "socks",
+      "tag": "socks-in",
+      "listen": "127.0.0.1",
+      "listen_port": {port}
+    }}
+  ],
+  "outbounds": [
+    {{
+      "type": "vless",
+      "tag": "proxy",
+      "server": "{}",
+      "server_port": {},
+      "uuid": "{TEST_VLESS_UUID_STRING}",
+      "transport": {{
+        "type": "grpc",
+        "service_name": "{GRPC_BENCH_SERVICE_NAME}"
+      }}
+    }}
+  ],
+  "route": {{ "final": "proxy" }}
+}}"#,
+        vless_addr.ip(),
+        vless_addr.port()
     )
 }
 
@@ -6490,6 +6559,121 @@ fn reality_vision_xudp_config_with_fingerprint(
     )
 }
 
+/// Read by both the client configs and the sing-box one, so a missing fixture
+/// is one error rather than three spellings of it.
+fn grpc_fixture_vless_addr(
+    workload: WorkloadKind,
+    fixture: &WorkloadFixture,
+) -> Result<SocketAddr, BenchError> {
+    fixture.vless_addr.ok_or_else(|| {
+        BenchError::InvalidArguments(format!(
+            "{} workload requires a VLESS gRPC server fixture",
+            workload.as_str()
+        ))
+    })
+}
+
+/// The client half of the gRPC comparison, in Xray JSON — read by `xray-rust`
+/// and Xray-core alike.
+///
+/// **No `flow`.** Xray's VLESS outbound refuses `xtls-rprx-vision` on a
+/// connection whose inner conn is not a TLS, uTLS or REALITY one — "XTLS only
+/// supports TLS and REALITY directly for now."
+/// (`Xray-core/proxy/vless/outbound/outbound.go:283-285`) — and a gRPC stream
+/// is none of the three. So this cannot be the REALITY configs with the
+/// network swapped; it is a separate outbound.
+///
+/// **`security: none`.** gRPC without TLS is h2c on both ends, which keeps the
+/// measurement on the framing rather than on three different TLS stacks. It
+/// also removes the reason the REALITY fixture needs a warm-up: see
+/// [`start_xray_core_grpc_server`].
+fn vless_grpc_config(port: u16, vless_addr: SocketAddr) -> String {
+    format!(
+        r#"{{
+  "log": {{ "loglevel": "warning" }},
+  "inbounds": [
+    {{
+      "tag": "socks-in",
+      "protocol": "socks",
+      "listen": "127.0.0.1",
+      "port": {port},
+      "settings": {{ "auth": "noauth", "udp": false }}
+    }}
+  ],
+  "outbounds": [
+    {{
+      "tag": "proxy",
+      "protocol": "vless",
+      "settings": {{
+        "vnext": [
+          {{
+            "address": "{}",
+            "port": {},
+            "users": [
+              {{
+                "id": "{TEST_VLESS_UUID_STRING}",
+                "encryption": "none"
+              }}
+            ]
+          }}
+        ]
+      }},
+      "streamSettings": {{
+        "network": "grpc",
+        "security": "none",
+        "grpcSettings": {{ "serviceName": "{GRPC_BENCH_SERVICE_NAME}" }}
+      }}
+    }}
+  ]
+}}"#,
+        vless_addr.ip(),
+        vless_addr.port()
+    )
+}
+
+/// The Xray-core server fixture the gRPC clients dial.
+///
+/// `multiMode` is absent by design: the listener registers both stream names on
+/// one service descriptor regardless — `Tun` and `TunMulti`
+/// (`Xray-core/transport/internet/grpc/hub.go:128`,
+/// `transport/internet/grpc/encoding/customSeviceName.go:9-30,57-60`) — so
+/// writing it here would document a server requirement that does not exist.
+fn xray_core_grpc_server_config(port: u16) -> String {
+    format!(
+        r#"{{
+  "log": {{ "loglevel": "warning" }},
+  "inbounds": [
+    {{
+      "listen": "127.0.0.1",
+      "port": {port},
+      "protocol": "vless",
+      "settings": {{
+        "clients": [
+          {{
+            "id": "{TEST_VLESS_UUID_STRING}"
+          }}
+        ],
+        "decryption": "none"
+      }},
+      "streamSettings": {{
+        "network": "grpc",
+        "security": "none",
+        "grpcSettings": {{ "serviceName": "{GRPC_BENCH_SERVICE_NAME}" }}
+      }}
+    }}
+  ],
+  "outbounds": [
+    {{
+      "protocol": "freedom",
+      "settings": {{
+        "finalRules": [{{ "action": "allow" }}]
+      }}
+    }}
+  ]
+}}"#
+    )
+}
+
 fn xray_core_reality_vision_server_config(port: u16) -> String {
     format!(
         r#"{{
@@ -6763,6 +6947,71 @@ fn reality_fixture_warmup_from_env(raw: Option<&str>) -> Duration {
     raw.and_then(|value| value.parse::<u64>().ok())
         .map(Duration::from_millis)
         .unwrap_or(REALITY_FIXTURE_WARMUP)
+}
+
+/// Starts the Xray-core VLESS gRPC server the `grpc-bulk-throughput` clients
+/// dial.
+///
+/// **There is no warm-up sleep here, and that is deliberate.** The REALITY
+/// fixture next door waits out [`REALITY_FIXTURE_WARMUP`] because the REALITY
+/// library must first handshake the real `dest` to learn its post-handshake
+/// record shape, and a client arriving inside that window stalls. This inbound
+/// is `security: none`; once the listener is bound there is nothing further to
+/// learn, so the same sleep would only be eight seconds of an idle process
+/// inside a benchmark.
+async fn start_xray_core_grpc_server(
+    options: &BenchOptions,
+    run_dir: &Path,
+    binary_dir: &Path,
+) -> Result<(SocketAddr, FixtureProcess), BenchError> {
+    let fixture_dir = run_dir.join("fixture").join("grpc-server");
+    fs::create_dir_all(&fixture_dir).map_err(|source| BenchError::Io {
+        action: format!("creating fixture directory `{}`", fixture_dir.display()),
+        source,
+    })?;
+    let port = allocate_loopback_port()?;
+    let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
+    let config_path = fixture_dir.join("config.json");
+    fs::write(&config_path, xray_core_grpc_server_config(port)).map_err(|source| {
+        BenchError::Io {
+            action: format!("writing fixture config `{}`", config_path.display()),
+            source,
+        }
+    })?;
+    let stdout_path = fixture_dir.join("stdout.log");
+    let stderr_path = fixture_dir.join("stderr.log");
+    let stdout = fs::File::create(&stdout_path).map_err(|source| BenchError::Io {
+        action: format!("creating fixture stdout log `{}`", stdout_path.display()),
+        source,
+    })?;
+    let stderr = fs::File::create(&stderr_path).map_err(|source| BenchError::Io {
+        action: format!("creating fixture stderr log `{}`", stderr_path.display()),
+        source,
+    })?;
+    let fixture_binary_dir = binary_dir.join("xray-core-fixture");
+    let binary = ensure_xray_core_binary(options, &fixture_binary_dir)?;
+    let mut child = Command::new(&binary)
+        .arg("run")
+        .arg("-config")
+        .arg(&config_path)
+        .stdout(Stdio::from(stdout))
+        .stderr(Stdio::from(stderr))
+        .spawn()
+        .map_err(|source| BenchError::Io {
+            action: format!("spawning fixture `{}`", binary.display()),
+            source,
+        })?;
+
+    wait_for_process_log_contains(
+        &mut child,
+        &stdout_path,
+        &stderr_path,
+        "started",
+        Duration::from_secs(10),
+    )
+    .await?;
+
+    Ok((addr, FixtureProcess { child }))
 }
 
 async fn start_xray_core_reality_vision_server(
@@ -9256,8 +9505,10 @@ async fn run_engine_once(
             WorkloadKind::RealityVisionXudp => {
                 run_reality_vision_xudp_workload(engine.socks_addr, options).await
             }
-            // Reuses the reality-vision client configs and server fixture; only the traffic driver differs.
-            WorkloadKind::RealityVisionBulkThroughput => {
+            // Both run `tcp-bulk-throughput`'s traffic driver unchanged; what
+            // differs is the fixture and the outbound it is carried over, which
+            // is the point of measuring them separately.
+            WorkloadKind::RealityVisionBulkThroughput | WorkloadKind::GrpcBulkThroughput => {
                 run_tcp_bulk_throughput_workload(engine.socks_addr, options).await
             }
         }
@@ -11586,6 +11837,126 @@ mod tests {
         )
         .unwrap();
         assert!(xr.contains("xtls-rprx-vision"));
+    }
+
+    #[test]
+    fn parses_compare_grpc_bulk_throughput() {
+        let args = parse_cli_args([
+            "xray-bench",
+            "compare",
+            "--workload",
+            "grpc-bulk-throughput",
+            "--connections",
+            "1",
+            "--iterations",
+            "256",
+            "--payload-size",
+            "4194304",
+        ])
+        .unwrap();
+
+        let CliArgs::Compare(options) = args else {
+            panic!("expected compare args");
+        };
+        assert_eq!(options.workload, WorkloadKind::GrpcBulkThroughput);
+        assert_eq!(options.workload.as_str(), "grpc-bulk-throughput");
+    }
+
+    #[test]
+    fn grpc_bulk_throughput_dials_vless_over_grpc_on_both_xray_engines() {
+        let fixture = WorkloadFixture {
+            vless_addr: Some(SocketAddr::from((Ipv4Addr::new(127, 0, 0, 1), 19096))),
+            vless_tls_cert_sha256: None,
+            dns_server_addr: None,
+            tcp_blackhole_state: None,
+            tasks: Vec::new(),
+            processes: Vec::new(),
+        };
+
+        for engine in [EngineKind::XrayRust, EngineKind::XrayCore] {
+            let config = engine_config(engine, 18093, WorkloadKind::GrpcBulkThroughput, &fixture)
+                .unwrap_or_else(|error| panic!("{} config: {error}", engine.as_str()));
+            let value = serde_json::from_str::<serde_json::Value>(&config).unwrap();
+
+            assert_eq!(value["inbounds"][0]["protocol"], "socks");
+            assert_eq!(value["inbounds"][0]["settings"]["udp"], false);
+            assert_eq!(value["outbounds"][0]["protocol"], "vless");
+            assert_eq!(value["outbounds"][0]["settings"]["vnext"][0]["port"], 19096);
+            assert_eq!(value["outbounds"][0]["streamSettings"]["network"], "grpc");
+            assert_eq!(value["outbounds"][0]["streamSettings"]["security"], "none");
+            assert_eq!(
+                value["outbounds"][0]["streamSettings"]["grpcSettings"]["serviceName"],
+                GRPC_BENCH_SERVICE_NAME
+            );
+            // `xtls-rprx-vision` over gRPC is refused at dial time by Xray
+            // (`Xray-core/proxy/vless/outbound/outbound.go:283-285`) and by
+            // `validate_connector_flow` on our side, so a flow leaking in from
+            // the REALITY configs would break the run rather than slow it.
+            assert!(value["outbounds"][0]["settings"]["vnext"][0]["users"][0]
+                .get("flow")
+                .is_none());
+        }
+    }
+
+    #[test]
+    fn grpc_bulk_throughput_sing_box_config_uses_grpc_transport() {
+        // `sing_box_config` is not exhaustive: without an explicit arm here a
+        // workload that claims sing-box support falls through to the direct
+        // config, and `run_compare` would publish a three-engine chart whose
+        // sing-box bar never touched the transport under test.
+        assert!(WorkloadKind::GrpcBulkThroughput.supports_sing_box_process_engine());
+
+        let fixture = WorkloadFixture {
+            vless_addr: Some(SocketAddr::from((Ipv4Addr::new(127, 0, 0, 1), 19097))),
+            vless_tls_cert_sha256: None,
+            dns_server_addr: None,
+            tcp_blackhole_state: None,
+            tasks: Vec::new(),
+            processes: Vec::new(),
+        };
+        let config = sing_box_config(18094, WorkloadKind::GrpcBulkThroughput, &fixture).unwrap();
+        let value = serde_json::from_str::<serde_json::Value>(&config).unwrap();
+
+        assert_eq!(value["inbounds"][0]["type"], "socks");
+        assert_eq!(value["outbounds"][0]["type"], "vless");
+        assert_eq!(value["outbounds"][0]["server"], "127.0.0.1");
+        assert_eq!(value["outbounds"][0]["server_port"], 19097);
+        assert_eq!(value["outbounds"][0]["transport"]["type"], "grpc");
+        assert_eq!(
+            value["outbounds"][0]["transport"]["service_name"],
+            GRPC_BENCH_SERVICE_NAME
+        );
+        assert_eq!(value["route"]["final"], "proxy");
+    }
+
+    #[test]
+    fn grpc_bulk_throughput_sing_box_config_needs_the_server_fixture() {
+        let error = sing_box_config(
+            18095,
+            WorkloadKind::GrpcBulkThroughput,
+            &WorkloadFixture::default(),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("grpc-bulk-throughput"));
+    }
+
+    #[test]
+    fn xray_core_grpc_fixture_serves_the_service_name_the_clients_dial() {
+        let config = xray_core_grpc_server_config(19098);
+        let value = serde_json::from_str::<serde_json::Value>(&config).unwrap();
+
+        assert_eq!(value["inbounds"][0]["protocol"], "vless");
+        assert_eq!(value["inbounds"][0]["port"], 19098);
+        assert_eq!(value["inbounds"][0]["streamSettings"]["network"], "grpc");
+        assert_eq!(value["inbounds"][0]["streamSettings"]["security"], "none");
+        assert_eq!(
+            value["inbounds"][0]["streamSettings"]["grpcSettings"]["serviceName"],
+            GRPC_BENCH_SERVICE_NAME
+        );
+        assert!(value["inbounds"][0]["settings"]["clients"][0]
+            .get("flow")
+            .is_none());
+        assert_eq!(value["outbounds"][0]["protocol"], "freedom");
     }
 
     #[test]

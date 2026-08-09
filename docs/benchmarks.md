@@ -26,6 +26,7 @@ Supported workloads:
 - `vision-xudp`
 - `reality-vision-xudp`
 - `reality-vision-bulk-throughput`
+- `grpc-bulk-throughput`
 
 The harness writes results under:
 
@@ -91,6 +92,7 @@ cargo run -p xray-bench -- run --engine xray-rust --workload udp-xudp --connecti
 cargo run -p xray-bench -- run --engine xray-rust --workload vision-xudp --connections 1 --iterations 10 --payload-size 512
 cargo run -p xray-bench -- run --engine xray-rust --workload reality-vision-xudp --xray-core-bin /path/to/xray-core --connections 1 --iterations 10 --payload-size 512
 cargo run --release -p xray-bench -- run --engine xray-rust --workload reality-vision-bulk-throughput --xray-core-dir Xray-core --connections 1 --iterations 256 --payload-size 4194304 --run-timeout-ms 120000
+cargo run --release -p xray-bench -- run --engine xray-rust --workload grpc-bulk-throughput --xray-core-dir Xray-core --connections 1 --iterations 256 --payload-size 4194304 --run-timeout-ms 120000
 cargo run -p xray-bench -- run --engine xray-rust --workload tcp-freedom --runs 5 --connections 8 --iterations 1000 --payload-size 4096
 cargo run --release -p xray-bench -- route-probe --iterations 100000 --rules 64 --outbounds 8
 cargo run --release -p xray-bench -- route-probe --iterations 100000 --rules 64 --outbounds 8 --dns-candidates 8
@@ -174,7 +176,7 @@ cargo run -p xray-bench -- run --engine sing-box --sing-box-bin "$SING_BOX_BIN" 
 cargo run -p xray-bench -- run --engine sing-box --sing-box-bin "$SING_BOX_BIN" --workload many-idle-flows --connections 100 --duration-ms 1000 --no-auto-build
 ```
 
-The first sing-box slice supports the SOCKS/process-level workloads: `idle`, `tcp-freedom`, `tcp-bulk-throughput`, `many-idle-flows`, `reconnect-burst`, `mixed-long-lived`, `udp-freedom`, `reality-vision-xudp`, and `reality-vision-bulk-throughput`. The Reality/Vision workload starts an Xray-core VLESS Reality server fixture and samples only the client engine process. The sing-box binary must include `with_utls`; the harness uses `with_gvisor,with_utls,badlinkname,tfogo_checklinkname0` when auto-building sing-box. TUN and fake VLESS/XUDP sing-box workloads are intentionally not part of this slice because they need a different topology than the rootless fd-backed harness.
+The first sing-box slice supports the SOCKS/process-level workloads: `idle`, `tcp-freedom`, `tcp-bulk-throughput`, `many-idle-flows`, `reconnect-burst`, `mixed-long-lived`, `udp-freedom`, `reality-vision-xudp`, `reality-vision-bulk-throughput`, and `grpc-bulk-throughput`. The Reality/Vision and gRPC workloads start an Xray-core VLESS server fixture and sample only the client engine process. The sing-box binary must include `with_utls`; the harness uses `with_gvisor,with_utls,badlinkname,tfogo_checklinkname0` when auto-building sing-box. TUN and fake VLESS/XUDP sing-box workloads are intentionally not part of this slice because they need a different topology than the rootless fd-backed harness.
 
 Each run has a watchdog timeout. The default is 30 seconds; override it with
 `--run-timeout-ms <milliseconds>` when exercising intentionally slow workloads.
@@ -195,6 +197,7 @@ cargo run -p xray-bench -- compare --workload mixed-long-lived --xray-core-dir X
 cargo run -p xray-bench -- compare --workload udp-freedom --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload reality-vision-xudp --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run --release -p xray-bench -- compare --workload reality-vision-bulk-throughput --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 1 --iterations 256 --payload-size 4194304 --run-timeout-ms 120000
+cargo run --release -p xray-bench -- compare --workload grpc-bulk-throughput --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 1 --iterations 256 --payload-size 4194304 --run-timeout-ms 120000
 ```
 
 The TUN and fake VLESS/XUDP workloads remain comparable between `xray-rust` and Xray-core in this slice, except for `tun-fake-dns`, `tun-fake-dns-tcp`, and `tun-dns-proxy`. These workloads deliberately exercise the xray-rust local DNS extensions (`dns.fakeIp` and anchor proxying through `dns.servers`, respectively); run them with `run --engine xray-rust`, since `compare` rejects them until equivalent cross-engine configurations are defined. The compare command skips sing-box for the other TUN workloads because sing-box's CLI TUN path uses a real platform TUN topology, while the older VLESS/XUDP fake-server workloads use Xray JSON configs instead of sing-box outbound schema. `routed-tcp-freedom` is also xray-rust vs Xray-core only: sing-box ≥1.8 does not read Xray-format `.dat` geodata, and semantically equivalent `.srs` rule-sets cannot be guaranteed.
@@ -456,6 +459,64 @@ absolute numbers understate a dedicated-server setup. The bulk pattern is not
 inner TLS, so Vision does not switch to direct copy: the stream stays
 REALITY-encrypted end to end, and the chart measures the encrypted relay
 path.
+`grpc-bulk-throughput` is `tcp-bulk-throughput` carried through VLESS over the
+gRPC stream transport to an Xray-core server fixture whose `freedom` outbound
+dials back to the local source server. It is the first workload in this
+repository that measures a stream transport's framing rather than raw TCP;
+`ws` and `httpupgrade` have no equivalent yet. Both the client outbound and the
+fixture inbound use `serviceName: "bench"` and `security: none`, so the number
+covers the `Hunk` framing and one HTTP/2 stream and not three different TLS
+stacks. `xtls-rprx-vision` is deliberately absent: Xray refuses that flow on
+anything but RAW, so the REALITY/Vision configs cannot simply be reused with
+the network swapped. Unlike the REALITY fixture, the gRPC fixture has no
+warm-up wait — there is no cover origin whose record shape has to be learned
+before a client may connect.
+
+Two properties of this number are easy to misread, and both change what it
+means:
+
+- **The sing-box leg is not grpc-go.** `SING_BOX_BUILD_TAGS` omits
+  `with_grpc`, so sing-box builds `transport/v2raygrpclite` — an
+  `http2.Transport` speaking the same `/serviceName/Tun` shape by hand — rather
+  than the real gRPC stack Xray-core and this client are ported against. Adding
+  `with_grpc` would invalidate every sing-box number previously published from
+  this harness, so the tag stays off and the caveat is stated instead. Read the
+  sing-box bar as "sing-box as it ships in this harness", not as a grpc-go
+  datapoint.
+- **Throughput is measured over the transfer window, not the whole run**, as it
+  is for every workload here (see the throughput bullet above) — and for a
+  pooled transport that is a real distortion rather than a rounding one. The
+  first dial pays a TCP connect, the HTTP/2 preface and SETTINGS exchange, and
+  the TLS handshake when one is configured, and all of it lands outside the
+  rate. The two engines also put that cost on opposite sides of the SOCKS
+  reply: xray-rust dials before answering SOCKS CONNECT, so its setup is
+  charged to the harness's connect phase, while Xray-core answers SOCKS first
+  and dials lazily, so its setup falls inside the measured span *before* the
+  first byte and is excluded from the rate rather than added to it. Quote
+  `transfer_duration_ms` and `duration_ms` alongside the rate, or the gRPC bar
+  reads as if setup were free.
+
+A local three-engine anchor from this machine (Apple M3 Pro, 18 GB RAM, macOS 26.5.2;
+release harness and release `xray-rust`, five runs, one connection, 256 × 4 MiB
+= 1 GiB per run) shows how far apart the two windows put the same run:
+
+| engine | throughput (transfer window) | duration_ms | transfer_ms | peak RSS | CPU ms/GiB |
+| --- | --- | --- | --- | --- | --- |
+| xray-rust | 8268 Mbps | 1052 | 1039 | 4.9 MiB | 890 |
+| Xray-core | 16615 Mbps | 1034 | 517 | 132.5 MiB | 1160 |
+| sing-box (lite) | 5586 Mbps | 1550 | 1538 | 37.2 MiB | 3100 |
+
+Medians across five runs. Xray-core streams the gigabyte at twice our rate
+once it starts and spends 518 ms getting there, so the same gigabyte takes
+both engines the same wall-clock second; we and sing-box spend 12 ms. Neither
+column alone is the whole story, which is why both are here. On memory and CPU
+per gigabyte the ordering does not depend on the window: 4.9 MiB against
+132.5 MiB and 37.2 MiB, and 890 CPU-ms/GiB against 1160 and 3100.
+
+These are regression anchors for this machine, not published cross-engine
+claims: `grpc-bulk-throughput` is not one of the charted series and `chart`
+does not read it.
+
 `routed-tcp-freedom` is `tcp-freedom` with SOCKS5 domain CONNECT through a
 config carrying real geosite/geoip routing rules
 (`geosite:category-ads-all`, `geoip:private`, `geoip:cn`, `geosite:cn`) and
