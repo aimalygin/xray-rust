@@ -7,10 +7,12 @@
 //! stays `http` for the same reason: grpc-go believes the connection is
 //! plaintext.
 //!
-//! Nothing here decides *where* a connection comes from. The two halves are
-//! deliberately separate — [`h2_handshake`] runs once per connection and
-//! [`open_grpc_call`] once per flow — because that is the seam
-//! [`super::pool`] needs: it keeps the first and repeats the second.
+//! Nothing here decides *where* a connection comes from. The pieces are
+//! deliberately separate — [`h2_handshake`] runs once per connection,
+//! [`build_grpc_request`] and [`open_grpc_call`] once per flow — because that
+//! is the seam [`super::pool`] needs: it keeps the first and repeats the rest,
+//! and it needs the request built before it decides anything about a
+//! connection.
 
 use std::sync::Arc;
 
@@ -196,12 +198,24 @@ async fn keep_alive(mut ping_pong: h2::PingPong, keepalive: GrpcKeepalive) {
     }
 }
 
-/// Opens one bidirectional POST on `connection` and returns it as a byte
-/// stream.
+/// The HEADERS block one gRPC call opens with, built out of `config` alone.
 ///
-/// The seven fields this puts in the HEADERS frame are the seven a grpc-go
-/// v1.81.0 client sends and nothing more; which of them a server actually
-/// reads, and which are there only to fit the population, is pinned in
+/// **Separate from [`open_grpc_call`], and built by [`super::pool`] before it
+/// looks at a connection, because the two fail for unrelated reasons.**
+/// Everything here comes from static configuration and nothing from the
+/// connection, so a failure is identical on every flow and says nothing about
+/// any connection's health. Folded into the call it would reach the pool as
+/// "this connection refused the call", which retires a healthy shared
+/// connection and pays a TCP connect plus a TLS or REALITY handshake to be
+/// told the same thing again — once per flow, for as long as the config
+/// stands. It is also ahead of the first frame a flow puts on the wire: a call
+/// that cannot even be built should not open a stream and then abandon it,
+/// because a HEADERS immediately followed by a RST_STREAM is not a shape
+/// grpc-go produces.
+///
+/// The seven fields this puts in the frame are the seven a grpc-go v1.81.0
+/// client sends and nothing more; which of them a server actually reads, and
+/// which are there only to fit the population, is pinned in
 /// `tests/stream_grpc_tests.rs`, `stream_grpc_request_headers_tests`.
 ///
 /// `config.authority` is `grpcSettings.authority` once the caller has resolved
@@ -211,34 +225,12 @@ async fn keep_alive(mut ping_pong: h2::PingPong, keepalive: GrpcKeepalive) {
 /// untouched; a value that is not an authority at all never reaches this
 /// function, having failed when the config was built. The `:path` is derived
 /// here rather than carried, because `multiMode` picks a different stream name
-/// and the mode is a property of the dial. `config.user_agent` is
-/// sent even when empty, because grpc-go appends the header unconditionally
+/// and the mode is a property of the dial. `config.user_agent` is sent even
+/// when empty, because grpc-go appends the header unconditionally
 /// (`grpc@v1.81.0/internal/transport/http2_client.go:578`), which is how
 /// Xray's `"golang"` setting — mapped to `""` by
 /// [`super::resolve_user_agent`] — reaches the wire.
-///
-/// The `SendRequest` is cloned rather than borrowed, so each call gets its own
-/// `pending` slot. h2 refuses a second stream queued behind a still-unopened
-/// one on the *same* handle — `UserError::Rejected`
-/// (`h2-0.4.15/src/proto/streams/streams.rs:252-256`) — and past the peer's
-/// MAX_CONCURRENT_STREAMS that is where a pooled connection's second flow
-/// would land.
-///
-/// The response is **not** awaited here. grpc-go's server writes its response
-/// HEADERS on the first message rather than on accept
-/// (`internal/transport/http2_server.go:1142-1146`), and Xray's inbound has
-/// nothing to send until the tunnel it opened does, so waiting would deadlock
-/// every dial. The returned stream awaits it on its first read.
-pub(crate) async fn open_grpc_call(
-    connection: &H2Connection,
-    config: &GrpcConfig,
-) -> Result<GrpcStream, TransportError> {
-    // Ahead of the first frame this puts on the wire, because it reads nothing
-    // but `config`. A call this cannot even build should not open a stream and
-    // then abandon it: a HEADERS immediately followed by a RST_STREAM is not a
-    // shape grpc-go produces, and on a pooled connection it is a shape the
-    // peer would see repeated for every flow.
-    //
+pub(crate) fn build_grpc_request(config: &GrpcConfig) -> Result<Request<()>, TransportError> {
     // The URI has to be absolute: with `Version::HTTP_2` and no scheme plus
     // authority, `send_request` fails with `MissingUriSchemeAndAuthority`
     // (`h2-0.4.15/src/client.rs:1644`), because those two are where `:scheme`
@@ -261,25 +253,13 @@ pub(crate) async fn open_grpc_call(
         .build()
         .map_err(|error| grpc_error(&format!("invalid gRPC request path {path:?}"), &error))?;
 
-    // Not a concurrency gate despite the name — h2 parks a stream past the
-    // peer's advertised MAX_CONCURRENT_STREAMS rather than refusing it — but
-    // it is the point at which a connection that has already failed says so,
-    // which on the pooled path is the difference between an error here and a
-    // stream the peer will never answer.
-    let mut send_request = connection
-        .send_request
-        .clone()
-        .ready()
-        .await
-        .map_err(|error| grpc_error("http/2 connection is not ready", &error))?;
-
     // Nothing below is redundant, however little of it a server reads. A stock
     // grpc-go inbound validates `:method` and `content-type` and no more —
     // `te` and `user-agent` are never looked at
     // (`http2_server.go:417-427,495-497,548-556`) — but grpc-go's *client*
     // sends both on every call, unconditionally, so a dial missing either
     // stands out from the population it is hiding in.
-    let request = Request::builder()
+    Request::builder()
         .version(Version::HTTP_2)
         .method(Method::POST)
         .uri(uri)
@@ -287,7 +267,46 @@ pub(crate) async fn open_grpc_call(
         .header("user-agent", &config.user_agent)
         .header("te", "trailers")
         .body(())
-        .map_err(|error| grpc_error("could not build the gRPC request", &error))?;
+        .map_err(|error| grpc_error("could not build the gRPC request", &error))
+}
+
+/// Opens one bidirectional POST on `connection` and returns it as a byte
+/// stream.
+///
+/// `request` comes from [`build_grpc_request`] rather than being built here,
+/// so that the only thing an error out of this function can mean is that the
+/// connection would not carry the call — which is what [`super::pool`] acts
+/// on.
+///
+/// The `SendRequest` is cloned rather than borrowed, so each call gets its own
+/// `pending` slot. h2 refuses a second stream queued behind a still-unopened
+/// one on the *same* handle — `UserError::Rejected`
+/// (`h2-0.4.15/src/proto/streams/streams.rs:252-256`) — and past the peer's
+/// MAX_CONCURRENT_STREAMS that is where a pooled connection's second flow
+/// would land.
+///
+/// The response is **not** awaited here. grpc-go's server writes its response
+/// HEADERS on the first message rather than on accept
+/// (`internal/transport/http2_server.go:1142-1146`), and Xray's inbound has
+/// nothing to send until the tunnel it opened does, so waiting would deadlock
+/// every dial. The returned stream awaits it on its first read.
+pub(crate) async fn open_grpc_call(
+    connection: &H2Connection,
+    request: Request<()>,
+) -> Result<GrpcStream, TransportError> {
+    // Not a concurrency gate despite the name — h2 parks a stream past the
+    // peer's advertised MAX_CONCURRENT_STREAMS rather than refusing it — but
+    // it is the point at which a connection that has already failed says so,
+    // which on the pooled path is the difference between an error here and a
+    // stream the peer will never answer. A `GOAWAY` of any reason, `NO_ERROR`
+    // included, is one of those failures
+    // (`h2-0.4.15/src/proto/streams/streams.rs:762,1004,1722-1728`).
+    let mut send_request = connection
+        .send_request
+        .clone()
+        .ready()
+        .await
+        .map_err(|error| grpc_error("http/2 connection is not ready", &error))?;
 
     // `end_of_stream: false` is what makes this a tunnel rather than a
     // one-shot POST: the request body stays open for the life of the call.
@@ -313,8 +332,9 @@ pub async fn open_grpc_h2_stream(
     io: BoxedTransportStream,
     config: &GrpcConfig,
 ) -> Result<GrpcStream, TransportError> {
+    let request = build_grpc_request(config)?;
     let connection = h2_handshake(io, config).await?;
-    open_grpc_call(&connection, config).await
+    open_grpc_call(&connection, request).await
     // `connection` is dropped here on purpose. Its `SendRequest` is the last
     // outside reference, and h2 closes a connection once nothing references it
     // and no stream is left, so letting it go is what makes this connection

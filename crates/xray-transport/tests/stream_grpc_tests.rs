@@ -1720,12 +1720,16 @@ mod stream_grpc_h2_tests {
         );
     }
 
-    /// `connection_is_finished` is what Task 8's pool has to ask, because the
-    /// obvious question gives the wrong answer: h2 resolves its connection
-    /// future as `Ok(())` after a graceful `GOAWAY`
+    /// "Has the connection ended" is what the pool retires on, and the obvious
+    /// question gives the wrong answer: h2 resolves its connection future as
+    /// `Ok(())` after a graceful `GOAWAY`
     /// (`h2-0.4.15/src/proto/connection.rs:216-235`), so a pool that retired a
     /// connection only when the driver returned `Err` would keep handing out a
     /// dead one.
+    ///
+    /// `GrpcStream::connection_is_finished` is this block's window onto the
+    /// same `JoinHandle` the pool reads through `H2Connection::is_live`; the
+    /// pool's own view of it is `stream_grpc_pool_tests`'.
     #[tokio::test]
     async fn a_connection_whose_peer_went_away_reports_itself_finished() {
         let (client_io, server_io) = duplex(64 * 1024);
@@ -2239,6 +2243,12 @@ mod stream_grpc_pool_tests {
     /// Every test here can stall rather than fail, so each is fenced by a
     /// deadline the way `stream_grpc_h2_tests` is.
     const DEADLINE: Duration = Duration::from_secs(10);
+    /// The same fence for the `start_paused` tests, which wait out keepalive
+    /// intervals measured in tens of seconds: it has to clear those rather
+    /// than race them, and under paused time the extra minutes cost nothing —
+    /// the runtime jumps to whichever timer is nearest, so a test that stops
+    /// making progress hits this immediately in wall-clock terms.
+    const PAUSED_DEADLINE: Duration = Duration::from_secs(600);
     /// RFC 9113 3.4.
     const PREFACE: &[u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
     /// RFC 9113 6.5.2.
@@ -2248,6 +2258,12 @@ mod stream_grpc_pool_tests {
 
     async fn within_deadline<F: std::future::Future>(future: F) -> F::Output {
         tokio::time::timeout(DEADLINE, future)
+            .await
+            .expect("the exchange completes rather than stalling")
+    }
+
+    async fn within_paused_deadline<F: std::future::Future>(future: F) -> F::Output {
+        tokio::time::timeout(PAUSED_DEADLINE, future)
             .await
             .expect("the exchange completes rather than stalling")
     }
@@ -2312,25 +2328,36 @@ mod stream_grpc_pool_tests {
             .expect("the call ends cleanly");
     }
 
-    /// What the peer does once its first call has finished.
+    /// What the peer does about the first call it accepts.
     #[derive(Clone, Copy, PartialEq, Eq)]
     enum AfterFirstCall {
         KeepServing,
-        /// The `GOAWAY(NO_ERROR)` of a graceful shutdown, which h2 resolves the
-        /// client's connection future as `Ok(())` for.
+        /// The `GOAWAY(NO_ERROR)` of a graceful shutdown, sent once the call
+        /// has ended — which h2 resolves the client's connection future as
+        /// `Ok(())` for.
         GoAwayGracefully,
         /// `GOAWAY(INTERNAL_ERROR)`, which the client's driver reports as an
         /// error instead.
         GoAwayWithAnError,
+        /// The same graceful `GOAWAY(NO_ERROR)`, sent while the call is still
+        /// open. h2 keeps the client's driver running until the last stream
+        /// has drained, so this is the one shape in which a pooled connection
+        /// is live and unusable at once.
+        GoAwayUnderAnOpenCall,
     }
 
     impl AfterFirstCall {
         fn reason(self) -> Option<Reason> {
             match self {
                 Self::KeepServing => None,
-                Self::GoAwayGracefully => Some(Reason::NO_ERROR),
+                Self::GoAwayGracefully | Self::GoAwayUnderAnOpenCall => Some(Reason::NO_ERROR),
                 Self::GoAwayWithAnError => Some(Reason::INTERNAL_ERROR),
             }
+        }
+
+        /// Whether the `GOAWAY` waits for the first call to end.
+        fn waits_for_the_call(self) -> bool {
+            self != Self::GoAwayUnderAnOpenCall
         }
     }
 
@@ -2388,14 +2415,22 @@ mod stream_grpc_pool_tests {
             served_one = true;
             let Some(shutdown) = shutdown else { continue };
 
-            // `accept` is the only thing that polls this connection, so the
-            // call has to be raced against it rather than awaited inline.
-            tokio::select! {
-                accepted = connection.accept() => {
-                    assert!(accepted.is_none(), "a shutting-down peer serves one call");
+            if after_first_call.waits_for_the_call() {
+                // `accept` is the only thing that polls this connection, so
+                // the call has to be raced against it rather than awaited
+                // inline.
+                tokio::select! {
+                    accepted = connection.accept() => {
+                        assert!(accepted.is_none(), "a shutting-down peer serves one call");
+                    }
+                    finished = call => finished.expect("the call handler does not panic"),
                 }
-                finished = call => finished.expect("the call handler does not panic"),
             }
+            // Nothing has awaited since the call was spawned, so on the
+            // mid-call arm this queues the `GOAWAY` before the echo's response
+            // has been written — and h2 flushes a pending `GOAWAY` ahead of
+            // any stream frame (`h2-0.4.15/src/proto/connection.rs:317-329`),
+            // so the client is guaranteed to see it first.
             if shutdown == Reason::NO_ERROR {
                 connection.graceful_shutdown();
             } else {
@@ -2614,6 +2649,115 @@ mod stream_grpc_pool_tests {
         assert_eq!(peer.accepted(), 2, "the retired connection was replaced");
     }
 
+    /// The third retirement, and the only one the pool cannot reach by finding
+    /// its slot empty: a connection that is live and unusable at once.
+    ///
+    /// A `GOAWAY` arriving under a still-open call does not end the client's
+    /// driver — h2 keeps the connection future running until the last stream
+    /// has drained — so `holds_a_live_connection` says yes for as long as that
+    /// tunnel lasts, which on a proxy is as long as the user's download.
+    /// `recv_go_away` meanwhile records a connection error for *every* reason,
+    /// `NO_ERROR` included
+    /// (`h2-0.4.15/src/proto/streams/streams.rs:762`), and that is what
+    /// `SendRequest::ready` is checked against (`streams.rs:1004,1722-1728`),
+    /// so every new call on it fails. Only noticing that from the failed call
+    /// and redialling keeps the outbound working; grpc-go answers the same
+    /// frame by building a fresh transport under the same `ClientConn`.
+    ///
+    /// The two retirement tests above cannot reach this branch: both wait for
+    /// [`until_the_pool_is_empty`] first, which is precisely the state in
+    /// which it is skipped.
+    #[tokio::test]
+    async fn a_goaway_under_an_open_call_redials_rather_than_failing_the_flow() {
+        let peer = GrpcPeer::spawn(AfterFirstCall::GoAwayUnderAnOpenCall).await;
+        let dialer = dialer();
+        let transport = TransportLayer::Grpc(GrpcTransport::new(config()));
+        let TransportLayer::Grpc(grpc) = &transport else {
+            panic!("the transport under test is gRPC");
+        };
+
+        within_deadline(async {
+            // Held open for the rest of the test. The `GOAWAY` goes out ahead
+            // of this echo, so reading the echo back is proof the client's
+            // driver has already processed it — no spin needed, unlike the
+            // retirements that wait for the driver to *end*.
+            let mut draining = open_flow(&dialer, &transport, peer.addr).await;
+            round_trip(&mut draining, b"first").await;
+
+            assert!(
+                grpc.holds_a_live_connection().await,
+                "the open call keeps the driver alive, so the pool still holds the connection"
+            );
+
+            let mut second = open_flow(&dialer, &transport, peer.addr).await;
+            round_trip(&mut second, b"second").await;
+
+            // Retiring the slot must not take the draining tunnel down with
+            // it: dropping the pool's `H2Connection` drops a `SendRequest`,
+            // and h2 closes a connection only once no stream is left either.
+            round_trip(&mut draining, b"still here").await;
+
+            end_flow(second).await;
+            end_flow(draining).await;
+        })
+        .await;
+
+        assert_eq!(peer.accepted(), 2, "the unusable connection was replaced");
+    }
+
+    /// A request that cannot be built is a config error, and the pool has to
+    /// answer it as one rather than as a connection that went bad.
+    ///
+    /// This is reachable, not theoretical: `user_agent` arrives as free-form
+    /// JSON that the config layer only drops when it is empty
+    /// (`crates/xray-config/src/parser.rs:2876-2883`), so a control character
+    /// in it makes the HEADERS block unbuildable on every flow for as long as
+    /// the config stands. Built inside the call, that failure would be
+    /// indistinguishable from "this connection refused the call": a warm pool
+    /// would retire a healthy shared connection and a cold one would pay a TCP
+    /// connect and a TLS or REALITY handshake, each flow, to arrive back at
+    /// the same error.
+    ///
+    /// The dial is aimed at a closed port rather than at a [`GrpcPeer`], which
+    /// is what makes "never reaches a dial" observable rather than raced: a
+    /// build that happened after the dial would report the refused connection
+    /// instead, and a peer's accept count answers too late to tell the two
+    /// apart.
+    #[tokio::test]
+    async fn a_request_that_cannot_be_built_never_reaches_a_dial() {
+        let listener = TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("a loopback listener");
+        let addr = listener.local_addr().expect("the listener's address");
+        drop(listener);
+
+        let dialer = dialer();
+        let mut config = config();
+        config.user_agent = "grpc-go/1.81.0\r\nx-injected: 1".to_owned();
+        let transport = TransportLayer::Grpc(GrpcTransport::new(config));
+
+        let target = Target::new(TargetAddr::Ip(addr.ip()), addr.port(), Network::Tcp);
+        let opened = within_deadline(dialer.connect_stream(
+            &ConnectorConfig::Tcp,
+            &transport,
+            &target,
+            &[addr],
+            None,
+        ))
+        .await;
+        // `BoxedTransportStream` is not `Debug`, so `expect_err` is out.
+        let Err(error) = opened else {
+            panic!("an unbuildable request is an error, not a flow");
+        };
+
+        assert!(
+            error
+                .to_string()
+                .contains("could not build the gRPC request"),
+            "the error names the request, not the socket it never opened, got: {error}"
+        );
+    }
+
     /// `initialWindowsSize` passes three independent gates in grpc-go before a
     /// byte of it reaches the wire, and only the third is about the wire.
     ///
@@ -2791,9 +2935,18 @@ mod stream_grpc_pool_tests {
     /// The resolved interval reaches the wire, and it is the clamped one.
     ///
     /// `idleTimeout: 1` asks for a ping a second; grpc-go's floor makes it ten,
-    /// so the first PING must not arrive before then. Time is paused, so the
-    /// ten seconds cost nothing: the runtime jumps the clock once every task
-    /// is parked.
+    /// so the first PING must arrive at ten seconds — not before, and not
+    /// after. Time is paused, so the ten seconds cost nothing: the runtime
+    /// jumps the clock to the nearest timer once every task is parked, which
+    /// is exactly why the *upper* bound is the load-bearing half. A lower
+    /// bound alone passes just as happily on twenty seconds
+    /// (`healthCheckTimeout` wired to the wrong field) or on the unclamped six
+    /// hundred, because the clock simply jumps to whatever was asked for.
+    ///
+    /// The fence is [`PAUSED_DEADLINE`] rather than [`DEADLINE`] for the same
+    /// reason: a ten-second deadline would be racing the ping it is waiting
+    /// for. Without any fence a regression that stops keepalive leaves no
+    /// timer pending at all and hangs the run instead of failing it.
     #[tokio::test(start_paused = true)]
     async fn a_keepalive_connection_pings_at_the_clamped_interval() {
         let (client_io, mut server_io) = duplex(64 * 1024);
@@ -2808,23 +2961,75 @@ mod stream_grpc_pool_tests {
         });
 
         let started = tokio::time::Instant::now();
-        let mut preface = [0u8; PREFACE.len()];
-        server_io
-            .read_exact(&mut preface)
-            .await
-            .expect("the client preface");
-        loop {
-            let frame = read_frame(&mut server_io).await;
-            if frame.kind == PING_FRAME {
-                break;
-            }
-        }
-        let waited = started.elapsed();
+        let waited = within_paused_deadline(async {
+            read_until_the_first_ping(&mut server_io).await;
+            started.elapsed()
+        })
+        .await;
         dial.abort();
 
-        assert!(
-            waited >= Duration::from_secs(10),
+        assert_eq!(
+            waited,
+            Duration::from_secs(10),
             "the first ping waited {waited:?}, not the ten seconds grpc-go clamps to"
         );
+    }
+
+    /// A ping nobody answers has to end the connection, because ending is the
+    /// only thing the pool retires on.
+    ///
+    /// grpc-go calls an unacknowledged keepalive a connection error —
+    /// "keepalive ping failed to receive ACK within timeout"
+    /// (`grpc@v1.81.0/internal/transport/http2_client.go:1754-1757`) — and
+    /// `drive`'s `select!` is that: the ping loop returning drops the
+    /// `Connection`. Nothing above it would notice on its own, so a keepalive
+    /// that quietly gave up would leave the pool handing out a connection to a
+    /// peer that has stopped answering, which is the failure keepalive exists
+    /// to catch.
+    ///
+    /// The peer is a bare duplex rather than [`GrpcPeer`] because it has to
+    /// read the PING and send no PONG, and no h2 server does that — h2
+    /// acknowledges pings itself, below the API. That is also why this reaches
+    /// the driver through `GrpcStream::connection_is_finished` instead of
+    /// [`until_the_pool_is_empty`]: it is the same `JoinHandle` either way,
+    /// and the pooled path cannot be given a peer this rude.
+    #[tokio::test(start_paused = true)]
+    async fn a_ping_that_is_never_acknowledged_ends_the_connection() {
+        let (client_io, mut server_io) = duplex(64 * 1024);
+        let mut config = config();
+        // Ten seconds after the clamp, then five to be answered in.
+        config.idle_timeout_secs = 1;
+        config.health_check_timeout_secs = 5;
+
+        let stream = within_paused_deadline(open_grpc_h2_stream(
+            Box::new(client_io) as BoxedTransportStream,
+            &config,
+        ))
+        .await
+        .expect("the POST opens");
+
+        within_paused_deadline(read_until_the_first_ping(&mut server_io)).await;
+        assert!(
+            !stream.connection_is_finished(),
+            "the ping has only just gone out"
+        );
+
+        // Past the five seconds it had to be answered in. `server_io` is held
+        // rather than dropped, so the connection ends on the keepalive giving
+        // up and not on an EOF underneath it.
+        tokio::time::sleep(Duration::from_secs(6)).await;
+        assert!(
+            stream.connection_is_finished(),
+            "an unacknowledged ping has to take the connection with it"
+        );
+    }
+
+    /// Reads frames off `io` until a PING arrives, discarding the rest.
+    async fn read_until_the_first_ping(io: &mut DuplexStream) {
+        let mut preface = [0u8; PREFACE.len()];
+        io.read_exact(&mut preface)
+            .await
+            .expect("the client preface");
+        while read_frame(io).await.kind != PING_FRAME {}
     }
 }

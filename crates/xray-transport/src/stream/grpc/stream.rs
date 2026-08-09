@@ -7,8 +7,9 @@
 //!
 //! It is separate from `h2client.rs` because the two have different lifetimes.
 //! Everything here runs on every read and every write for the life of a
-//! tunnel; the handshake and request next door run once and will be replaced
-//! wholesale when connections start being pooled.
+//! tunnel; next door the handshake runs once per connection and the request
+//! once per call, which is the seam the pool splits on — it keeps the
+//! connection and repeats the call.
 
 use std::future::Future;
 use std::io;
@@ -134,8 +135,18 @@ impl GrpcStream {
     /// Whether the connection underneath has ended — a graceful `GOAWAY`
     /// included.
     ///
-    /// Completion is not success, which is why this exists at all: h2 resolves
-    /// its connection future as `Ok(())` after a `GOAWAY(NO_ERROR)`
+    /// **A test-only accessor**, like `GrpcTransport::holds_a_live_connection`
+    /// next door. Nothing in the crate calls it: the pool asks
+    /// `H2Connection::is_live`, which is the same question of the same
+    /// `JoinHandle`. It exists because `H2ConnectionDriver` is `pub(crate)`
+    /// and the integration tests need some window onto it, and the unpooled
+    /// `open_grpc_h2_stream` hands back a `GrpcStream` and nothing
+    /// else — which is the only shape in which a peer that answers no ping,
+    /// or none at all, can be put in front of the driver.
+    ///
+    /// Completion is not success, which is why the question is "finished"
+    /// rather than "failed": h2 resolves its connection future as `Ok(())`
+    /// after a `GOAWAY(NO_ERROR)`
     /// (`h2-0.4.15/src/proto/connection.rs:216-235`), so a pool that retired a
     /// connection only on `Err` would go on handing out a dead one.
     pub fn connection_is_finished(&self) -> bool {

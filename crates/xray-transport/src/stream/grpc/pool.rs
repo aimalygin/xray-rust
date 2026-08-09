@@ -33,7 +33,7 @@ use tokio::sync::Mutex;
 use xray_routing::Target;
 
 use super::config::GrpcConfig;
-use super::h2client::{h2_handshake, open_grpc_call, H2Connection};
+use super::h2client::{build_grpc_request, h2_handshake, open_grpc_call, H2Connection};
 use crate::{
     BoxedTransportStream, ConnectorConfig, HappyEyeballsConfig, TransportDialer, TransportError,
 };
@@ -96,6 +96,20 @@ impl GrpcTransport {
     /// a warm pool and buys the one thing a check-then-use split cannot have:
     /// the liveness test and the stream it justifies are one step, so a
     /// connection that ends in between is never the one a flow is handed.
+    ///
+    /// **The larger cost the lock accepts is that there is no dial timeout
+    /// under it.** [`crate::connect_tcp_stream`] is a bare
+    /// `TcpStream::connect` (`crates/xray-transport/src/lib.rs:425`), so
+    /// against a server whose SYNs are blackholed every flow on this outbound
+    /// queues behind one hung dial and they fail one after another, at N times
+    /// the OS connect timeout rather than together. grpc-go is not this shape:
+    /// its `ClientConn` connects in the background under Xray's
+    /// `MinConnectTimeout` of five seconds and its half-second-to-nineteen-
+    /// second backoff (`Xray-core/transport/internet/grpc/dial.go:92-100`),
+    /// and an RPC that arrives while the channel is in `TRANSIENT_FAILURE`
+    /// fails at once instead of waiting. Closing that needs a dial timeout the
+    /// crate does not have anywhere — none of the other transports has one
+    /// either — so it is deferred rather than papered over here.
     pub async fn open_stream(
         &self,
         dialer: &TransportDialer,
@@ -107,7 +121,14 @@ impl GrpcTransport {
         let mut pooled = self.pool.connection.lock().await;
 
         if let Some(connection) = pooled.as_ref().filter(|connection| connection.is_live()) {
-            if let Ok(stream) = open_grpc_call(connection, &self.config).await {
+            // Built ahead of the call and propagated rather than swallowed,
+            // because the two failures below are unrelated: an unbuildable
+            // request is a static config error that would be identical on a
+            // brand-new connection, so treating it as a dead connection would
+            // retire a healthy one and redial for nothing, once per flow.
+            // [`build_grpc_request`] has the rest of that reasoning.
+            let request = build_grpc_request(&self.config)?;
+            if let Ok(stream) = open_grpc_call(connection, request).await {
                 return Ok(Box::new(stream));
             }
             // Reached when a connection this task had just called live refused
@@ -118,14 +139,23 @@ impl GrpcTransport {
             // fresh transport under the same `ClientConn`; retiring and
             // redialling here is the closest thing to it, and the alternative
             // is failing every flow for as long as the drain lasts.
+            //
+            // Dropping the error is safe only because of the line above it:
+            // past the build, the sole thing an error out of `open_grpc_call`
+            // can say is that this connection would not carry the call, which
+            // is exactly what the redial answers. Whatever the redial hits is
+            // the error a caller sees.
         }
         *pooled = None;
 
+        // Before the dial for the same reason: a config error should not cost
+        // a TCP connect and a REALITY handshake first.
+        let request = build_grpc_request(&self.config)?;
         let io = dialer
             .connect_resolved(connector, original_target, candidates, happy_eyeballs)
             .await?;
         let connection = h2_handshake(io, &self.config).await?;
-        let stream = open_grpc_call(&connection, &self.config).await?;
+        let stream = open_grpc_call(&connection, request).await?;
         *pooled = Some(connection);
         Ok(Box::new(stream))
     }
