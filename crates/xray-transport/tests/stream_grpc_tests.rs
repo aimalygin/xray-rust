@@ -2446,6 +2446,7 @@ mod stream_grpc_oracle_tests {
 
     const FRAME_HEADERS: u8 = 0x1;
     const FRAME_SETTINGS: u8 = 0x4;
+    const FRAME_WINDOW_UPDATE: u8 = 0x8;
     const FLAG_ACK: u8 = 0x1;
     const FLAG_END_HEADERS: u8 = 0x4;
     const FLAG_PADDED: u8 = 0x8;
@@ -2466,6 +2467,17 @@ mod stream_grpc_oracle_tests {
     /// The same for `MultiHunk` (`grpc_wire.go:196`). The element index is in
     /// the rule so that two elements of one length are not the same bytes.
     const MULTI_PAYLOAD_RULE: &str = "payload[element][i] = (i + element) mod 256";
+
+    /// The increment on the one frame our opening burst carries and grpc-go's
+    /// does not: the 16 MiB connection window `h2client.rs` opens with, less
+    /// HTTP/2's own default of 65535, which is the window already granted
+    /// (RFC 9113 6.9.2).
+    ///
+    /// Spelled out rather than read off `CONNECTION_WINDOW_SIZE`, because an
+    /// expectation derived from the value under test asserts nothing: this has
+    /// to fail if that constant moves, which is the whole point of declaring
+    /// the divergence rather than exempting it.
+    const OUR_CONNECTION_WINDOW_INCREMENT: u32 = 16 * 1024 * 1024 - 65535;
 
     #[derive(serde::Deserialize)]
     struct PreambleFixture {
@@ -3011,7 +3023,8 @@ mod stream_grpc_oracle_tests {
     /// `grpc_wire.go -wire connection_preamble` regenerates against live
     /// grpc-go.
     ///
-    /// **The one place the two clients agree to the byte.** Under Xray's
+    /// **The preface and the SETTINGS frame agree to the byte; the burst
+    /// carries one frame more than grpc-go's.** Under Xray's
     /// defaults grpc-go's opening burst is the 24-byte preface and an *empty*
     /// SETTINGS frame: `initialWindowSize` reaches the wire only above
     /// grpc-go's own default and `MaxHeaderListSize` only when a dial option
@@ -3031,8 +3044,20 @@ mod stream_grpc_oracle_tests {
     /// sends it first, while `h2`'s handshake deliberately does not wait for
     /// the peer's SETTINGS (`h2-0.4.15/src/client.rs:1165-1166`), which leaves
     /// our ACK racing the request. Comparing the burst without it still fails
-    /// on the thing worth catching — a WINDOW_UPDATE, a PRIORITY, a second
-    /// SETTINGS — while the byte comparison above covers the frame's contents.
+    /// on the thing worth catching — a PRIORITY, a second SETTINGS, a second
+    /// WINDOW_UPDATE — while the byte comparison above covers the frame's
+    /// contents.
+    ///
+    /// **The `WINDOW_UPDATE(stream 0)` is ours, declared here rather than
+    /// excused.** It is the cost of `CONNECTION_WINDOW_SIZE` in
+    /// `h2client.rs` — the connection window opened so that one flow which
+    /// stops reading cannot hold the window every other flow on the outbound
+    /// shares; see `stream_grpc_flow_control_tests`. The fixture is left
+    /// alone, because it
+    /// is the record of what grpc-go emits and should go on telling the truth
+    /// about upstream; the *expectation* is the fixture's burst plus this one
+    /// frame. So a second divergence, or a change to this one's stream, length
+    /// or increment, still fails.
     #[tokio::test]
     async fn the_connection_preamble_matches_the_go_oracle_byte_for_byte() {
         let fixture: PreambleFixture =
@@ -3071,15 +3096,36 @@ mod stream_grpc_oracle_tests {
             .filter(|frame| !frame.is_settings_ack())
             .map(Http2Frame::describe)
             .collect();
-        let theirs: Vec<FrameDescriptor> = fixture
+        let mut expected: Vec<FrameDescriptor> = fixture
             .frames_before_first_headers
             .iter()
             .filter(|frame| !frame.is_settings_ack())
             .cloned()
             .collect();
+        // Appended rather than folded into the fixture, and appended is also
+        // where it belongs on the wire: h2 raises the connection window on the
+        // `Connection` before its first poll (`h2-0.4.15/src/client.rs:
+        // 1345-1348`), so the frame follows the SETTINGS the handshake already
+        // flushed.
+        expected.push(FrameDescriptor {
+            r#type: "WINDOW_UPDATE".to_owned(),
+            flags: Vec::new(),
+            stream_id: 0,
+            payload_len: 4,
+        });
         assert_eq!(
-            ours, theirs,
-            "the frames written before the first call, ACKs aside"
+            ours, expected,
+            "grpc-go's opening burst plus our one declared extra frame, ACKs aside"
+        );
+
+        let window_update = frames
+            .iter()
+            .find(|frame| frame.kind == FRAME_WINDOW_UPDATE)
+            .expect("the burst the assertion above matched carries a WINDOW_UPDATE");
+        assert_eq!(
+            window_update.payload,
+            OUR_CONNECTION_WINDOW_INCREMENT.to_be_bytes(),
+            "the connection-window increment (RFC 9113 6.9)"
         );
     }
 
@@ -4411,5 +4457,219 @@ mod stream_grpc_pool_tests {
             Duration::from_secs(19),
             "the ping waited {waited:?}, not the ten seconds past the peer's last word"
         );
+    }
+}
+
+/// Connection-level flow control: what one flow that stops reading costs the
+/// other flows sharing its outbound's connection.
+///
+/// Over a loopback `TcpListener` and the real pool, for the same reason
+/// `stream_grpc_pool_tests` is: the whole subject is what happens when several
+/// flows are HTTP/2 streams on *one* connection, which the unpooled
+/// `open_grpc_h2_stream` cannot produce.
+mod stream_grpc_flow_control_tests {
+    use std::future::poll_fn;
+    use std::net::SocketAddr;
+    use std::time::Duration;
+
+    use bytes::Bytes;
+    use h2::server::{self, SendResponse};
+    use h2::SendStream;
+    use http::Response;
+    use tokio::io::AsyncReadExt;
+    use tokio::net::{TcpListener, TcpStream};
+    use tokio::sync::oneshot;
+    use xray_routing::{Network, Target, TargetAddr};
+    use xray_transport::stream::{encode_hunk, GrpcConfig, GrpcTransport, TransportLayer};
+    use xray_transport::{BoxedTransportStream, ConnectorConfig, TransportDialer};
+
+    /// A starved flow stalls rather than fails, so the deadline is what turns
+    /// the bug into a test failure — the same fence the sibling blocks use.
+    const DEADLINE: Duration = Duration::from_secs(10);
+
+    /// HTTP/2's default flow-control window (RFC 9113 6.9.2): the stream
+    /// window each side starts every stream with here, since neither sends a
+    /// `SETTINGS_INITIAL_WINDOW_SIZE` entry.
+    const DEFAULT_WINDOW: usize = 65535;
+
+    /// A payload whose `Hunk` is exactly [`DEFAULT_WINDOW`] bytes on the wire:
+    /// five bytes of gRPC prefix, the protobuf tag, and the three-byte varint
+    /// a length this size takes. One of them spends the stalled flow's entire
+    /// stream window, which is the point — the flow can take no more, and the
+    /// question is whether it has also taken the connection's.
+    const STALLING_PAYLOAD_LEN: usize = DEFAULT_WINDOW - 5 - 1 - 3;
+
+    /// What the second flow is waiting for. Short on purpose: the claim is
+    /// that it gets *anything*, not that it gets a lot.
+    const VICTIM_PAYLOAD: &[u8] = b"the second flow's bytes";
+
+    fn config() -> GrpcConfig {
+        GrpcConfig {
+            service_name: "xray.grpc".to_owned(),
+            multi_mode: false,
+            authority: "grpc.example.com".parse().expect("a literal authority"),
+            user_agent: "grpc-go/1.81.0".to_owned(),
+            idle_timeout_secs: 0,
+            health_check_timeout_secs: 0,
+            permit_without_stream: false,
+            initial_windows_size: 0,
+        }
+    }
+
+    async fn open_flow(
+        dialer: &TransportDialer,
+        transport: &TransportLayer,
+        addr: SocketAddr,
+    ) -> BoxedTransportStream {
+        let target = Target::new(TargetAddr::Ip(addr.ip()), addr.port(), Network::Tcp);
+        dialer
+            .connect_stream(&ConnectorConfig::Tcp, transport, &target, &[addr], None)
+            .await
+            .expect("the flow opens")
+    }
+
+    fn grpc_response() -> Response<()> {
+        Response::builder()
+            .status(200)
+            .header("content-type", "application/grpc")
+            .body(())
+            .expect("a well-formed response")
+    }
+
+    /// Reserve, wait for capacity, send at most what was granted — the same
+    /// loop the client's uplink runs, and the reason this peer is the one that
+    /// knows when the client's window is spent: `poll_capacity` reports the
+    /// capacity h2 has assigned out of the *connection's* send window, so a
+    /// send that completes is a window that was there.
+    async fn send_all(send: &mut SendStream<Bytes>, mut chunk: Bytes) {
+        while !chunk.is_empty() {
+            send.reserve_capacity(chunk.len());
+            let granted = poll_fn(|cx| send.poll_capacity(cx))
+                .await
+                .expect("the send half is still streaming")
+                .expect("capacity, not an error");
+            let take = granted.min(chunk.len());
+            send.send_data(chunk.split_to(take), false)
+                .expect("send data");
+        }
+    }
+
+    /// A loopback peer that serves exactly two calls on one connection.
+    async fn spawn_peer() -> SocketAddr {
+        let listener = TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("a loopback listener");
+        let addr = listener.local_addr().expect("the listener's address");
+        tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.expect("the client dials");
+            serve_the_stall_and_the_victim(socket).await;
+        });
+        addr
+    }
+
+    /// The first call fills the client's window and says so; the second waits
+    /// for that word and then speaks.
+    ///
+    /// The order is the whole experiment, and it is enforced from this side
+    /// because this is the side that can observe it: the client cannot tell
+    /// when bytes it never reads have arrived. Both handlers run on tasks of
+    /// their own because `accept` is the only thing polling this connection,
+    /// and both of them park.
+    async fn serve_the_stall_and_the_victim(socket: TcpStream) {
+        let mut connection = server::handshake(socket).await.expect("server handshake");
+        let (window_is_spent, wait_for_the_window) = oneshot::channel();
+        let mut window_is_spent = Some(window_is_spent);
+        let mut wait_for_the_window = Some(wait_for_the_window);
+
+        while let Some(accepted) = connection.accept().await {
+            let (_request, respond) = accepted.expect("a well-formed request");
+            match window_is_spent.take() {
+                Some(report) => {
+                    tokio::spawn(fill_the_window(respond, report));
+                }
+                None => {
+                    let wait = wait_for_the_window
+                        .take()
+                        .expect("the test opens two calls on one connection");
+                    tokio::spawn(speak_once_the_window_is_spent(respond, wait));
+                }
+            }
+        }
+    }
+
+    /// Writes one window's worth on the first call and reports it, then holds
+    /// the call open. Nothing on the client ever reads this flow, so nothing
+    /// ever hands the window back.
+    async fn fill_the_window(mut respond: SendResponse<Bytes>, report: oneshot::Sender<()>) {
+        let mut send = respond
+            .send_response(grpc_response(), false)
+            .expect("respond");
+        send_all(
+            &mut send,
+            Bytes::from(encode_hunk(&vec![0xa5; STALLING_PAYLOAD_LEN])),
+        )
+        .await;
+        report.send(()).expect("the second call is still waiting");
+        // Held rather than dropped: dropping every handle is what makes h2
+        // reset the stream, and a reset would hand the window back.
+        let _held = send;
+        std::future::pending::<()>().await;
+    }
+
+    async fn speak_once_the_window_is_spent(
+        mut respond: SendResponse<Bytes>,
+        wait: oneshot::Receiver<()>,
+    ) {
+        wait.await.expect("the first call filled the window");
+        let mut send = respond
+            .send_response(grpc_response(), false)
+            .expect("respond");
+        send_all(&mut send, Bytes::from(encode_hunk(VICTIM_PAYLOAD))).await;
+        let _held = send;
+        std::future::pending::<()>().await;
+    }
+
+    /// A flow whose consumer has stopped reading must not stop the flows
+    /// beside it.
+    ///
+    /// h2 releases the stream and connection windows together — the only
+    /// `release_capacity` in the crate is on the read path
+    /// (`crates/xray-transport/src/stream/grpc/stream.rs`, `poll_read`) — and
+    /// its connection receive window is pinned at 65535 whatever SETTINGS say
+    /// (`h2-0.4.15/src/proto/streams/recv.rs:92-97`). The pool puts every flow
+    /// of an outbound on one connection, so one flow that stops reading holds
+    /// the shared window and every other flow on the outbound stops with it,
+    /// until the 300 s idle timeout takes them.
+    ///
+    /// Both production relays reach it. `crates/xray-core-rs/src/tun.rs`
+    /// stops polling the remote reader while a send into a backed-up TUN stack
+    /// is pending, and `copy_direction` in
+    /// `crates/xray-core-rs/src/policy.rs` stops polling the read half while a
+    /// write to a slow local socket is pending.
+    ///
+    /// grpc-go decouples exactly this, and says why: *"Decoupling the
+    /// connection flow control will prevent other active(fast) streams from
+    /// starving in presence of slow or inactive streams"*
+    /// (`grpc@v1.81.0/internal/transport/http2_client.go:1183-1203`).
+    #[tokio::test]
+    async fn a_flow_that_stops_reading_does_not_starve_the_others_on_its_connection() {
+        let addr = spawn_peer().await;
+        let dialer = TransportDialer::system().expect("a system dialer");
+        let transport = TransportLayer::Grpc(GrpcTransport::new(config()));
+
+        // Never read from, and never dropped: a dropped flow resets its stream
+        // and h2 hands the window back, which is the bug curing itself.
+        let _stalled = open_flow(&dialer, &transport, addr).await;
+        let mut victim = open_flow(&dialer, &transport, addr).await;
+
+        let mut received = vec![0u8; VICTIM_PAYLOAD.len()];
+        tokio::time::timeout(DEADLINE, victim.read_exact(&mut received))
+            .await
+            .expect(
+                "the second flow never received a byte: the first flow is holding the whole \
+                 connection-level window",
+            )
+            .expect("the second flow reads");
+        assert_eq!(received, VICTIM_PAYLOAD, "the second flow's own bytes");
     }
 }

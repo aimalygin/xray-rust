@@ -846,3 +846,54 @@ since the surface a censor studies next is XHTTP's, not gRPC's.
   already refuses the ws and httpupgrade profiles the engine dials. Fixing it is
   one job for all five transports, and it needs a source of truth for share-link
   parameters that this repository does not contain.
+
+## Amendment, 2026-08-09 — one deliberate step outside grpc-go's preamble
+
+Stage 2's fidelity bar was "the preamble and the first HEADERS block", and the
+preamble was the half we could hold to the byte. We are giving up one frame of
+it on purpose, and this records the decision so that a later reader does not
+read the extra frame as drift.
+
+**What changed.** The h2 client is built with a 16 MiB connection-level receive
+window, so a `WINDOW_UPDATE(stream 0)` with an increment of `16 MiB − 65535`
+goes out immediately behind SETTINGS. A grpc-go client under Xray writes no such
+frame: it writes one only when `InitialConnWindowSize` exceeds the default
+(`grpc@v1.81.0/internal/transport/http2_client.go:315-317,452-458`), and nothing
+under `Xray-core/transport/internet/grpc/` sets it.
+
+**Why.** `h2` pins its connection-level receive window at 65535 whatever
+SETTINGS say (`h2-0.4.15/src/proto/streams/recv.rs:92-97`) and releases the
+stream and connection windows together, from the application's read path. The
+pool puts every flow of an outbound on one connection. So at the default, one
+flow whose consumer has stopped reading holds the window every other flow on
+that outbound needs, and those flows wait out the 300 s idle timeout; and the
+outbound's whole downlink is capped at 65535 bytes per round trip, roughly
+10 Mbit/s at 50 ms. Both relays in this repository stop reading under
+backpressure — the TUN loop while a send into a backed-up stack is pending, and
+`copy_direction` while a write to a slow local socket is pending — so the
+triggering state is ordinary. grpc-go decouples exactly this, and the comment
+that does it says why: *"Decoupling the connection flow control will prevent
+other active(fast) streams from starving in presence of slow or inactive
+streams"* (`http2_client.go:1183-1203`).
+
+**Why 16 MiB.** It is grpc-go's own `bdpLimit`
+(`internal/transport/bdp_estimator.go:27-30`), the ceiling its estimator grows a
+window to, so the number is upstream's rather than ours. It costs no memory:
+what a peer can make us buffer is bounded by the sum of the per-stream windows,
+still 65535 each, and this only stops the connection window being the binding
+constraint. It takes 256 simultaneously stalled flows to bind it again.
+
+**What this is not.** It is not a divergence traded for parity. Under Xray's
+default `grpcSettings` no window option is set, `StaticWindowSize` stays false,
+and grpc-go's BDP estimator grows both the connection and stream windows
+mid-connection up to that same 16 MiB (`updateFlowControl`,
+`http2_client.go:1161-1180`). A connection window that never moves is therefore
+also unlike the client we are imitating — just later, and only under load. The
+decision is to take an earlier, smaller, constant divergence in exchange for
+removing a starvation bug and a per-outbound throughput ceiling.
+
+**What holds the line.** The oracle fixture is unchanged and still records what
+grpc-go emits. The preamble test compares our burst against that fixture *plus*
+this one declared frame, and separately asserts the frame's increment, so a
+second divergence or a change to this one fails the test rather than being
+absorbed by it. `docs/status.md` lists it beside the three HPACK divergences.

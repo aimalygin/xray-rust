@@ -86,9 +86,9 @@ in dependency and security reviews.
 
 ### Known gRPC divergences from grpc-go
 
-Three of them, all at the HPACK layer, all measured against a live grpc-go
-v1.81.0 client making the same call, and none reachable without forking the
-`h2` crate:
+Four of them. Three are at the HPACK layer, all measured against a live grpc-go
+v1.81.0 client making the same call, and none of the three reachable without
+forking the `h2` crate:
 
 - **Pseudo-header order.** `h2` writes `:method`, `:scheme`, `:authority`,
   `:path`; grpc-go writes `:method`, `:scheme`, `:path`, `:authority`.
@@ -104,8 +104,35 @@ v1.81.0 client making the same call, and none reachable without forking the
 The two HEADERS payloads are the same length — 65 bytes each for the captured
 call — and differ in exactly those three places.
 
-The parity bar is set to what can actually be held. The connection preamble is
-compared byte for byte, and so is the `Hunk` and `MultiHunk` message framing.
+The fourth is not an HPACK question and is not forced on us; it is chosen:
+
+- **One extra `WINDOW_UPDATE(stream 0)` in the opening burst.** We open the
+  connection-level receive window at 16 MiB, so a `WINDOW_UPDATE` with an
+  increment of `16 MiB − 65535` follows the SETTINGS frame. A grpc-go client
+  under Xray writes no such frame, because Xray never sets
+  `InitialConnWindowSize`. The reason we do is that `h2` pins its
+  connection-level receive window at 65535 whatever SETTINGS say and releases
+  it only from the application's read path, while the pool puts every flow of
+  an outbound on one connection: at the default, one flow whose consumer stops
+  reading holds the window every other flow on that outbound needs, and the
+  outbound's whole downlink is capped at 65535 bytes per round trip. Both
+  relays in this repository stop reading under backpressure, so that is an
+  ordinary state rather than a pathological one. grpc-go avoids it by
+  returning the connection window as frames are parsed
+  (`internal/transport/http2_client.go:1183-1203`).
+
+  It is worth being clear about what the alternative was. Under Xray's default
+  `grpcSettings`, grpc-go's BDP estimator is live and grows *both* windows
+  mid-connection up to the same 16 MiB, so a connection window that never moves
+  is also a divergence — a later and quieter one. The choice is an earlier,
+  smaller, constant divergence over a starvation bug and a throughput ceiling,
+  not a divergence over none.
+
+The parity bar is set to what can actually be held. The connection preface and
+the client's own SETTINGS frame are compared byte for byte; the burst around
+them is compared against grpc-go's plus that one declared frame, so a second
+divergence — or a change to this one's stream, length or increment — still
+fails. The `Hunk` and `MultiHunk` message framing is compared byte for byte.
 The first HEADERS block is compared by its decoded fields and their order, not
 by its bytes, with each client's pseudo-header order pinned separately so ours
 cannot drift into a third order that neither client emits. **Nothing past the

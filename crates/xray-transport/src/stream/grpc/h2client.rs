@@ -35,6 +35,65 @@ use crate::{BoxedTransportStream, TransportError};
 /// be restating.
 const DEFAULT_WINDOW_SIZE: u32 = 65535;
 
+/// The connection-level receive window every connection opens with, and the
+/// one frame in our opening burst that grpc-go does not write.
+///
+/// **What the default costs.** h2 pins its connection receive window at
+/// [`DEFAULT_WINDOW_SIZE`] whatever SETTINGS say
+/// (`h2-0.4.15/src/proto/streams/recv.rs:92-97`), and it releases the stream
+/// and connection windows together, out of the one `release_capacity` this
+/// crate has — on the read path (`super::stream`, `poll_read`). [`super::pool`]
+/// puts every flow of an outbound on one connection, so at the default a
+/// single flow whose consumer has stopped reading holds the whole shared
+/// window and every other flow on that outbound stops with it, until the
+/// 300 s idle timeout takes them. Neither relay has to misbehave to get there:
+/// `crates/xray-core-rs/src/tun.rs:3212-3236` stops polling the remote reader
+/// while a send into a backed-up TUN stack is pending, and `copy_direction`
+/// (`crates/xray-core-rs/src/policy.rs:196-212`) stops polling the read half
+/// while a write to a slow local socket is pending. The same 65535 is also the
+/// outbound's entire downlink budget per round trip — about 10 Mbit/s at
+/// 50 ms — however many flows are sharing it.
+///
+/// grpc-go decouples exactly this and says why: *"Decoupling the connection
+/// flow control will prevent other active(fast) streams from starving in
+/// presence of slow or inactive streams"*
+/// (`grpc@v1.81.0/internal/transport/http2_client.go:1183-1203`), where
+/// `handleData` returns the connection's window as the frame is parsed and
+/// leaves only the stream's window waiting on the application.
+///
+/// **Why this value.** 16 MiB is grpc-go's `bdpLimit`, the ceiling its own
+/// estimator will grow a window to (`internal/transport/bdp_estimator.go:
+/// 27-30`), so it is the largest connection window a grpc-go client under
+/// Xray ever reaches rather than a number of our own. It costs no memory: what
+/// a peer can make us buffer is bounded by the sum of the *stream* windows,
+/// still [`DEFAULT_WINDOW_SIZE`] each, and this only stops the connection
+/// window being the binding constraint. At 65535 per stalled flow it takes 256
+/// of them at once to bind again.
+///
+/// **What it costs on the wire is one `WINDOW_UPDATE(stream 0)`**, written
+/// immediately behind SETTINGS — h2 answers the builder knob by raising the
+/// target window on the `Connection` before it is first polled
+/// (`h2-0.4.15/src/client.rs:1345-1348`). A stock grpc-go client writes that
+/// frame only above `defaultWindowSize` for the connection window
+/// (`http2_client.go:315-317,452-458`), and Xray never sets
+/// `InitialConnWindowSize` — nothing under `Xray-core/transport/internet/grpc/`
+/// passes `WithInitialConnWindowSize` — so the frame is ours alone and the
+/// opening burst is no longer byte-identical to the oracle's.
+///
+/// **This is not a free fix, and the honest comparison is not against a
+/// connection window that never moves.** Under Xray's default `grpcSettings`
+/// no window option is set, `StaticWindowSize` stays false
+/// (`grpc@v1.81.0/dialoptions.go:213-218` is the only thing that sets it, from
+/// `WithInitialWindowSize`, which `dial.go:177-179` attaches only above zero),
+/// so grpc-go's BDP estimator is live (`http2_client.go:386-391`) and grows
+/// both the connection window and the stream window mid-connection, up to that
+/// same 16 MiB (`updateFlowControl`, `http2_client.go:1161-1180`). Never
+/// growing the connection window is therefore *also* a divergence from the
+/// client we are imitating, just a later and quieter one. The choice taken is
+/// an earlier, smaller, constant divergence — one extra frame in the preamble —
+/// over a starvation bug and a per-outbound throughput ceiling.
+const CONNECTION_WINDOW_SIZE: u32 = 16 * 1024 * 1024;
+
 /// The spawned task that drives one HTTP/2 connection.
 ///
 /// h2's `Connection` *is* the connection: no frame is read from or written to
@@ -113,11 +172,11 @@ impl H2Connection {
 /// as the connection warms up. Reproducing BDP pings is outside the parity bar
 /// and is not attempted either way.
 ///
-/// `initial_connection_window_size` is deliberately left alone: h2 answers it
-/// with a WINDOW_UPDATE right behind SETTINGS, and grpc-go writes one only
-/// above `defaultWindowSize` for the *connection* window
-/// (`http2_client.go:453-458`), which Xray never configures. The opening bytes
-/// of a connection are exactly what a censor fingerprints.
+/// `initial_connection_window_size` is set, and it is the one place this
+/// transport knowingly steps outside grpc-go's opening burst. It is not a
+/// `grpcSettings` key and does not come from config: see
+/// [`CONNECTION_WINDOW_SIZE`] for the starvation it answers, the value's
+/// derivation, and the extra frame it puts on the wire.
 ///
 /// **The `PingPong` handle is taken before the driver is spawned**, because it
 /// can be taken only once and only from the `Connection`, which the spawn
@@ -141,6 +200,7 @@ pub(crate) async fn h2_handshake(
     io.release_record_alignment();
 
     let mut builder = client::Builder::new();
+    builder.initial_connection_window_size(CONNECTION_WINDOW_SIZE);
     if config.initial_windows_size > DEFAULT_WINDOW_SIZE {
         builder.initial_window_size(config.initial_windows_size);
     }
