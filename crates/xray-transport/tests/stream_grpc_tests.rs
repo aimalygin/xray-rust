@@ -2255,6 +2255,14 @@ mod stream_grpc_pool_tests {
     const SETTINGS_INITIAL_WINDOW_SIZE: u16 = 0x4;
     const SETTINGS_FRAME: u8 = 0x4;
     const PING_FRAME: u8 = 0x6;
+    /// RFC 9113 6.7.
+    const PING_ACK: u8 = 0x1;
+    /// A SETTINGS frame with no entries: length 0, type SETTINGS, no flags,
+    /// stream 0 (RFC 9113 4.1, 6.5).
+    const EMPTY_SETTINGS_FRAME: &[u8] = &[0, 0, 0, SETTINGS_FRAME, 0, 0, 0, 0, 0];
+    /// Six intervals at grpc-go's ten-second floor — long enough that a
+    /// keepalive which was ever going to fire has, and free under paused time.
+    const SEVERAL_INTERVALS: Duration = Duration::from_secs(60);
 
     async fn within_deadline<F: std::future::Future>(future: F) -> F::Output {
         tokio::time::timeout(DEADLINE, future)
@@ -2823,12 +2831,13 @@ mod stream_grpc_pool_tests {
 
     struct Frame {
         kind: u8,
+        flags: u8,
         stream: u32,
         payload: Vec<u8>,
     }
 
     /// One HTTP/2 frame off the wire (RFC 9113 4.1).
-    async fn read_frame(io: &mut DuplexStream) -> Frame {
+    async fn read_frame<R: tokio::io::AsyncRead + Unpin>(io: &mut R) -> Frame {
         let mut header = [0u8; 9];
         io.read_exact(&mut header).await.expect("a frame header");
         let length = u32::from_be_bytes([0, header[0], header[1], header[2]]) as usize;
@@ -2836,9 +2845,20 @@ mod stream_grpc_pool_tests {
         io.read_exact(&mut payload).await.expect("a frame payload");
         Frame {
             kind: header[3],
+            flags: header[4],
             stream: u32::from_be_bytes([header[5] & 0x7f, header[6], header[7], header[8]]),
             payload,
         }
+    }
+
+    /// Reads the client's connection preface, after which every byte the peer
+    /// sees is part of a frame.
+    async fn read_the_preface<R: tokio::io::AsyncRead + Unpin>(io: &mut R) {
+        let mut preface = [0u8; PREFACE.len()];
+        io.read_exact(&mut preface)
+            .await
+            .expect("the client preface");
+        assert_eq!(preface, PREFACE, "the connection preface");
     }
 
     fn parse_settings(payload: &[u8]) -> Vec<(u16, u32)> {
@@ -3026,10 +3046,216 @@ mod stream_grpc_pool_tests {
 
     /// Reads frames off `io` until a PING arrives, discarding the rest.
     async fn read_until_the_first_ping(io: &mut DuplexStream) {
-        let mut preface = [0u8; PREFACE.len()];
-        io.read_exact(&mut preface)
-            .await
-            .expect("the client preface");
+        read_the_preface(io).await;
         while read_frame(io).await.kind != PING_FRAME {}
+    }
+
+    /// A peer that finishes the TCP handshake and then says nothing.
+    ///
+    /// The three dormancy tests below need the *pool* rather than
+    /// [`open_grpc_h2_stream`], because the state they are about is a live
+    /// connection with no call open on it and only the pool holds one. That
+    /// rules out [`GrpcPeer`]: `h2::server` acknowledges pings below its own
+    /// API, so a PING is invisible from behind it, and the pool dials a real
+    /// socket rather than taking one. Nothing has to answer — h2 flushes its
+    /// preface and SETTINGS without waiting for the peer's, and
+    /// `open_grpc_call` does not await the response.
+    async fn silent_peer() -> TcpListener {
+        TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("a loopback listener")
+    }
+
+    /// Opens one flow through `transport`, ends it, and hands back the socket
+    /// the peer sees — a pooled connection with no call on it, on a clock that
+    /// has been stopped at the moment it became one.
+    ///
+    /// **The flow is dropped before the accept**, with nothing awaited in
+    /// between, so that no interval can pass while a call is still open on the
+    /// connection: a keepalive that pinged then would be doing its job, and
+    /// the test would be measuring the wrong thing.
+    ///
+    /// **The clock is paused here rather than by `start_paused` on the test**
+    /// for the same reason. Everything above is real I/O on a real socket, and
+    /// under a paused clock every await in it is a chance for the runtime to
+    /// idle and jump straight to the keepalive's ten-second deadline — which
+    /// spends the first interval before the test has said anything about it.
+    /// The setup costs microseconds of real time, so running it on the real
+    /// clock costs nothing.
+    async fn a_pooled_connection_with_no_call_on_it(
+        dialer: &TransportDialer,
+        transport: &TransportLayer,
+        listener: &TcpListener,
+    ) -> TcpStream {
+        let addr = listener.local_addr().expect("the listener's address");
+        let flow = open_flow(dialer, transport, addr).await;
+        drop(flow);
+
+        let (mut peer, _) = listener.accept().await.expect("the client's connection");
+        read_the_preface(&mut peer).await;
+        tokio::time::pause();
+        peer
+    }
+
+    /// Whether a keepalive PING reaches the peer inside `window`, reading past
+    /// whatever else the client sends.
+    ///
+    /// A PING carrying ACK is the client answering one of *ours* and is not a
+    /// keepalive, so the flag is part of the question (RFC 9113 6.7).
+    ///
+    /// Under paused time the window costs nothing: the runtime steps the clock
+    /// to the nearest timer once every task is parked, so it reaches the
+    /// keepalive's own deadline before it reaches this one.
+    async fn pinged_within(io: &mut TcpStream, window: Duration) -> bool {
+        tokio::time::timeout(window, async {
+            loop {
+                let frame = read_frame(io).await;
+                if frame.kind == PING_FRAME && frame.flags & PING_ACK == 0 {
+                    return;
+                }
+            }
+        })
+        .await
+        .is_ok()
+    }
+
+    /// grpc-go's keepalive goroutine parks on `kpDormancyCond` for as long as
+    /// `len(t.activeStreams) < 1 && !kp.PermitWithoutStream`
+    /// (`grpc@v1.81.0/internal/transport/http2_client.go:1769-1778`), so the
+    /// likeliest keepalive a config can ask for — `idleTimeout` on its own —
+    /// puts nothing on the wire while no call is open. Measured against a real
+    /// grpc-go v1.81.0 client under Xray's dial options: zero PINGs in
+    /// twenty-five seconds.
+    ///
+    /// That state is an edge case in an ordinary client and the *steady state*
+    /// here, because the pool deliberately holds a connection open between
+    /// flows. A ping every ten seconds on an idle connection would be a
+    /// heartbeat no member of the population we hide in sends.
+    #[tokio::test]
+    async fn an_idle_pooled_connection_is_not_pinged() {
+        let listener = silent_peer().await;
+        let dialer = dialer();
+        let mut config = config();
+        // Ten seconds after grpc-go's floor, and `permitWithoutStream` left
+        // false — the config the doc above is about.
+        config.idle_timeout_secs = 1;
+        let transport = TransportLayer::Grpc(GrpcTransport::new(config));
+
+        let mut peer = a_pooled_connection_with_no_call_on_it(&dialer, &transport, &listener).await;
+
+        assert!(
+            !pinged_within(&mut peer, SEVERAL_INTERVALS).await,
+            "a pooled connection with no call on it was pinged where grpc-go goes dormant"
+        );
+    }
+
+    /// The other half of dormancy: a call is what lifts it, and grpc-go pings
+    /// the moment it does rather than waiting out another interval — the
+    /// `if !outstandingPing` send sits directly under the `Wait()`, and the
+    /// comment between them says both ways in are the same
+    /// (`grpc@v1.81.0/internal/transport/http2_client.go:1779-1792`).
+    #[tokio::test]
+    async fn a_call_brings_the_keepalive_back_to_a_dormant_connection() {
+        let listener = silent_peer().await;
+        let addr = listener.local_addr().expect("the listener's address");
+        let dialer = dialer();
+        let mut config = config();
+        config.idle_timeout_secs = 1;
+        let transport = TransportLayer::Grpc(GrpcTransport::new(config));
+
+        let mut peer = a_pooled_connection_with_no_call_on_it(&dialer, &transport, &listener).await;
+        assert!(
+            !pinged_within(&mut peer, SEVERAL_INTERVALS).await,
+            "the connection has to be dormant before a call can be what wakes it"
+        );
+
+        let second = open_flow(&dialer, &transport, addr).await;
+        assert!(
+            pinged_within(&mut peer, SEVERAL_INTERVALS).await,
+            "a call on the pooled connection has to bring the keepalive back"
+        );
+        drop(second);
+    }
+
+    /// `permitWithoutStream` exists to switch the dormancy off, and switching
+    /// it off is the whole of what it does here: the same idle connection, and
+    /// now it is pinged. Measured against grpc-go: PINGs at ten and twenty
+    /// seconds.
+    #[tokio::test]
+    async fn permit_without_stream_pings_a_connection_with_no_call_on_it() {
+        let listener = silent_peer().await;
+        let dialer = dialer();
+        let mut config = config();
+        config.permit_without_stream = true;
+        let transport = TransportLayer::Grpc(GrpcTransport::new(config));
+
+        let mut peer = a_pooled_connection_with_no_call_on_it(&dialer, &transport, &listener).await;
+
+        assert!(
+            pinged_within(&mut peer, SEVERAL_INTERVALS).await,
+            "permitWithoutStream asks for pings with no call open, and got none"
+        );
+    }
+
+    /// grpc-go skips a ping whenever the socket has been read since the last
+    /// pass, and rearms its timer for `lastRead + kp.Time` rather than for a
+    /// fresh interval (`http2_client.go:1745-1752`), so a connection carrying
+    /// traffic is never pinged at all.
+    ///
+    /// Worth the clock the read path has to keep for the same reason the
+    /// dormancy is: a heartbeat that appears only on a *quiet* connection is a
+    /// sharper signal than one that appears always.
+    ///
+    /// **The rearm target is what makes the assertion exact.** A peer speaking
+    /// one second before the ping was due buys ten more seconds and not
+    /// twenty; a port that slept a whole fresh interval on hearing something
+    /// would answer nineteen here too but would drift up to a full interval
+    /// away from grpc-go on any other schedule, so nineteen is checked rather
+    /// than "later than ten".
+    ///
+    /// A duplex rather than the pooled path over a socket, and one call left
+    /// open rather than `permitWithoutStream`, because this is the one
+    /// keepalive test whose verdict is a *time*: a write into a duplex makes
+    /// the reader runnable there and then, while a loopback socket has to go
+    /// through the io driver — and a paused clock jumps to the next timer
+    /// whenever the runtime finds nothing runnable, which is exactly the gap a
+    /// socket leaves.
+    ///
+    /// An empty SETTINGS frame is what the peer speaks with: the cheapest
+    /// legal thing a server can say at any point in a connection. What it says
+    /// does not matter — grpc-go stamps `t.lastRead` on every frame it reads,
+    /// whatever the frame is (`http2_client.go:1663,1671`).
+    #[tokio::test(start_paused = true)]
+    async fn a_peer_that_speaks_pushes_the_ping_out_to_ten_seconds_past_it() {
+        let (client_io, mut server_io) = duplex(64 * 1024);
+        let mut config = config();
+        config.idle_timeout_secs = 1;
+
+        let dial = tokio::spawn(async move {
+            let _held = open_grpc_h2_stream(Box::new(client_io) as BoxedTransportStream, &config)
+                .await
+                .expect("the POST opens");
+            std::future::pending::<()>().await;
+        });
+
+        let started = tokio::time::Instant::now();
+        let waited = within_paused_deadline(async {
+            // One second before the ping was due.
+            tokio::time::sleep(Duration::from_secs(9)).await;
+            server_io
+                .write_all(EMPTY_SETTINGS_FRAME)
+                .await
+                .expect("the peer speaks");
+            read_until_the_first_ping(&mut server_io).await;
+            started.elapsed()
+        })
+        .await;
+        dial.abort();
+
+        assert_eq!(
+            waited,
+            Duration::from_secs(19),
+            "the ping waited {waited:?}, not the ten seconds past the peer's last word"
+        );
     }
 }

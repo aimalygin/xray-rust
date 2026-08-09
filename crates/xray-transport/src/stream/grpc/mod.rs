@@ -4,6 +4,7 @@
 mod config;
 mod framing;
 mod h2client;
+mod keepalive;
 mod path;
 mod pool;
 mod stream;

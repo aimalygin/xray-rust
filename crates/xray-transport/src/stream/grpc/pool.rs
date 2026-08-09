@@ -20,10 +20,16 @@
 //! which Xray never overrides (`grpc@v1.81.0/dialoptions.go:715`,
 //! `clientconn.go:257`); the next dial rebuilds it. A slot here is held until
 //! it dies or is retired, so a proxy left untouched overnight keeps a socket
-//! open that Xray would have dropped. Closing it on a timer needs a count of
-//! the calls in flight, which h2 does not expose, and the same count is what
-//! grpc-go's keepalive dormancy turns on — see [`super::resolve_keepalive`]
-//! for the other half of that gap.
+//! open that Xray would have dropped. What it would take is a timer over the
+//! count of calls in flight — [`super::keepalive::OpenCalls`], which the
+//! dormancy already keeps — plus somewhere to hang the close, and it is
+//! deferred rather than absent for want of the second.
+//!
+//! **What the pool holding a connection between flows does change is the
+//! keepalive**, and that half is not deferred: "no call open" is this
+//! transport's steady state rather than an edge case, so grpc-go's dormancy is
+//! reproduced in [`super::keepalive`] instead of being written off as an
+//! idle-connection detail.
 
 use std::fmt;
 use std::net::SocketAddr;
@@ -65,6 +71,15 @@ impl GrpcTransport {
     /// because the connection can die between the question and the use. It
     /// exists so a test can wait for a retirement it would otherwise have to
     /// race.
+    ///
+    /// **`pub` only because the tests are integration tests**, which are
+    /// separate crates and so cannot reach a `pub(crate)` — a convention this
+    /// crate's gRPC transport holds to deliberately, see
+    /// `crates/xray-transport/tests/stream_grpc_tests.rs`. Hidden rather than
+    /// left in the rendered API, because nothing outside those tests should
+    /// find it and be tempted to branch on it. Its sibling is
+    /// [`super::GrpcStream::connection_is_finished`].
+    #[doc(hidden)]
     pub async fn holds_a_live_connection(&self) -> bool {
         self.pool
             .connection

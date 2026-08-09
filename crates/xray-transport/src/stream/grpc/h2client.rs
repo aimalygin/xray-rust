@@ -18,12 +18,12 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use h2::client::{self, SendRequest};
-use h2::Ping;
 use http::uri::Scheme;
 use http::{Method, Request, Uri, Version};
 use tokio::task::JoinHandle;
 
-use super::config::{resolve_keepalive, GrpcConfig, GrpcKeepalive};
+use super::config::{resolve_keepalive, GrpcConfig};
+use super::keepalive::{OpenCalls, Pings, WatchedIo};
 use super::path::grpc_request_path;
 use super::stream::GrpcStream;
 use crate::{BoxedTransportStream, TransportError};
@@ -74,6 +74,9 @@ impl H2ConnectionDriver {
 pub(crate) struct H2Connection {
     send_request: SendRequest<Bytes>,
     driver: Arc<H2ConnectionDriver>,
+    /// Shared with the keepalive, which pings only a connection that has one —
+    /// see [`super::keepalive`].
+    calls: Arc<OpenCalls>,
 }
 
 impl H2Connection {
@@ -118,6 +121,10 @@ impl H2Connection {
 /// **The `PingPong` handle is taken before the driver is spawned**, because it
 /// can be taken only once and only from the `Connection`, which the spawn
 /// moves.
+///
+/// **The socket is wrapped before the handshake and not after**, for the same
+/// reason: past it h2 owns the socket, and [`WatchedIo`] is the only way the
+/// keepalive can see the reads grpc-go suppresses a ping on.
 pub(crate) async fn h2_handshake(
     mut io: BoxedTransportStream,
     config: &GrpcConfig,
@@ -137,24 +144,30 @@ pub(crate) async fn h2_handshake(
         builder.initial_window_size(config.initial_windows_size);
     }
 
+    let keepalive = resolve_keepalive(config);
+    let (io, last_read) = WatchedIo::new(io, keepalive);
     let (send_request, mut connection) = builder
         .handshake::<_, Bytes>(io)
         .await
         .map_err(|error| grpc_error("http/2 handshake failed", &error))?;
 
-    let keepalive = match resolve_keepalive(config) {
-        Some(keepalive) => connection
-            .ping_pong()
-            .map(|ping_pong| (ping_pong, keepalive)),
-        None => None,
-    };
+    let calls = Arc::new(OpenCalls::default());
+    let pings = keepalive.zip(last_read).and_then(|(keepalive, last_read)| {
+        connection.ping_pong().map(|ping_pong| Pings {
+            ping_pong,
+            keepalive,
+            last_read,
+            calls: Arc::clone(&calls),
+        })
+    });
 
     let driver = Arc::new(H2ConnectionDriver {
-        task: tokio::spawn(drive(connection, keepalive)),
+        task: tokio::spawn(drive(connection, pings)),
     });
     Ok(H2Connection {
         send_request,
         driver,
+        calls,
     })
 }
 
@@ -168,10 +181,10 @@ pub(crate) async fn h2_handshake(
 /// receive ACK within timeout" (`http2_client.go:1754-1757`) — and dropping
 /// the `Connection` out of the `select!` is exactly that.
 async fn drive(
-    connection: client::Connection<BoxedTransportStream, Bytes>,
-    keepalive: Option<(h2::PingPong, GrpcKeepalive)>,
+    connection: client::Connection<WatchedIo, Bytes>,
+    pings: Option<Pings>,
 ) -> Result<(), h2::Error> {
-    let Some((ping_pong, keepalive)) = keepalive else {
+    let Some(pings) = pings else {
         return connection.await;
     };
 
@@ -180,21 +193,7 @@ async fn drive(
         // The pool asks `is_finished`, not what the task returned, so a
         // keepalive that gave up retires the connection just as an error
         // would — see `H2ConnectionDriver`.
-        () = keep_alive(ping_pong, keepalive) => Ok(()),
-    }
-}
-
-/// Pings until one goes unacknowledged for longer than `timeout`.
-///
-/// Which pings grpc-go would have skipped, and would not have sent at all, is
-/// [`resolve_keepalive`]'s doc.
-async fn keep_alive(mut ping_pong: h2::PingPong, keepalive: GrpcKeepalive) {
-    loop {
-        tokio::time::sleep(keepalive.time).await;
-        let pong = tokio::time::timeout(keepalive.timeout, ping_pong.ping(Ping::opaque()));
-        if !matches!(pong.await, Ok(Ok(_))) {
-            return;
-        }
+        () = pings.run() => Ok(()),
     }
 }
 
@@ -314,10 +313,15 @@ pub(crate) async fn open_grpc_call(
         .send_request(request, false)
         .map_err(|error| grpc_error("could not send the gRPC request", &error))?;
 
+    // Counted in here rather than in `GrpcStream::new`, because this is where
+    // grpc-go counts it: `initStream` runs as the HEADERS is written, and it
+    // is also what signals the keepalive out of dormancy
+    // (`grpc@v1.81.0/internal/transport/http2_client.go:805-822`).
     Ok(GrpcStream::new(
         response,
         uplink,
         Arc::clone(&connection.driver),
+        connection.calls.open(),
     ))
 }
 

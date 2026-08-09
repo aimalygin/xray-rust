@@ -70,17 +70,24 @@ pub struct GrpcConfig {
 
 /// The keepalive a connection was dialled with, once grpc-go's floors and
 /// defaults have been applied.
-///
-/// `permitWithoutStream` is deliberately absent: it decides whether keepalive
-/// is on at all (see [`resolve_keepalive`]) and, in grpc-go, whether the ping
-/// loop goes dormant while no stream is open — and the dormancy is the half we
-/// do not reproduce. Carrying a field nothing reads would suggest we did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GrpcKeepalive {
     /// How long a connection may go unpinged.
     pub time: Duration,
     /// How long a ping may go unacknowledged before the connection is over.
     pub timeout: Duration,
+    /// Whether a connection with no call open on it is pinged at all.
+    ///
+    /// The setting is read twice on its way to the wire, for two unrelated
+    /// decisions, and carrying it here is what makes the second reachable. In
+    /// [`resolve_keepalive`] it is one of the three that decide whether
+    /// keepalive is attached to the dial at all; in the ping loop it is what
+    /// grpc-go checks before going dormant on `len(t.activeStreams) < 1`
+    /// (`grpc@v1.81.0/internal/transport/http2_client.go:1769-1778`). So
+    /// `permitWithoutStream` alone turns keepalive on *and* keeps it awake,
+    /// while `idleTimeout` alone turns it on and leaves it asleep for as long
+    /// as no flow is using the connection.
+    pub permit_without_stream: bool,
 }
 
 /// grpc-go's minimum ping interval, applied by `WithKeepaliveParams` itself
@@ -106,19 +113,11 @@ const DEFAULT_KEEPALIVE_TIMEOUT: Duration = Duration::from_secs(20);
 /// instead of the dial option's clamp is the easy way to conclude that a
 /// keepalive Xray asked for sends nothing.
 ///
-/// **Two things grpc-go does with these that we do not**, both because h2
-/// exposes neither the state they read nor a hook to read it from:
-///
-/// * It skips a ping when the socket has been read since the last one
-///   (`t.lastRead`, `http2_client.go:1744-1752`), so a busy connection is
-///   never pinged. We ping on the interval regardless, which is extra pings on
-///   a busy tunnel.
-/// * With `permitWithoutStream` false it goes dormant while no stream is open
-///   (`http2_client.go:1770-1778`) and we do not, which is pings on an idle
-///   pooled connection where grpc-go sends none.
-///
-/// Both are invisible under Xray's defaults, where all three settings are off
-/// and no ping is sent at all.
+/// **What grpc-go does with these beyond the interval** belongs to the ping
+/// loop, `super::keepalive`: the two suppressions that keep a real grpc-go
+/// client silent on an idle connection and on a busy one are reproduced there,
+/// and the one place the port still diverges — an unacknowledged ping being
+/// forgiven by other traffic — is written down there too.
 pub fn resolve_keepalive(config: &GrpcConfig) -> Option<GrpcKeepalive> {
     if config.idle_timeout_secs == 0
         && config.health_check_timeout_secs == 0
@@ -133,6 +132,7 @@ pub fn resolve_keepalive(config: &GrpcConfig) -> Option<GrpcKeepalive> {
             0 => DEFAULT_KEEPALIVE_TIMEOUT,
             seconds => Duration::from_secs(u64::from(seconds)),
         },
+        permit_without_stream: config.permit_without_stream,
     })
 }
 

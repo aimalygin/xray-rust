@@ -25,6 +25,7 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 use super::framing::{encode_hunk, HunkDecoder, MAX_HUNK_PAYLOAD_LEN};
 use super::h2client::H2ConnectionDriver;
+use super::keepalive::OpenCall;
 use crate::{TransportError, TransportStream};
 
 /// Where [`GrpcStream::poll_drain_uplink`] stopped.
@@ -108,6 +109,13 @@ pub struct GrpcStream {
     /// Shared rather than owned, because a pooled connection carries many
     /// calls at once and the last of them to go is not knowable from here.
     driver: Arc<H2ConnectionDriver>,
+    /// Keeps the connection's keepalive out of dormancy for as long as this
+    /// call is open — see [`super::keepalive`].
+    ///
+    /// Nothing reads it. It is held because dropping it is the event: every
+    /// way a call can end, a peer's reset and a relay dropping the tunnel
+    /// mid-transfer included, ends at this struct's own drop.
+    _open_call: OpenCall,
 }
 
 impl GrpcStream {
@@ -115,6 +123,7 @@ impl GrpcStream {
         response: ResponseFuture,
         uplink: SendStream<Bytes>,
         driver: Arc<H2ConnectionDriver>,
+        open_call: OpenCall,
     ) -> Self {
         Self {
             downlink: Downlink::Awaiting(response),
@@ -129,6 +138,7 @@ impl GrpcStream {
             eof: false,
             send_closed: false,
             driver,
+            _open_call: open_call,
         }
     }
 
@@ -149,6 +159,10 @@ impl GrpcStream {
     /// after a `GOAWAY(NO_ERROR)`
     /// (`h2-0.4.15/src/proto/connection.rs:216-235`), so a pool that retired a
     /// connection only on `Err` would go on handing out a dead one.
+    ///
+    /// `pub` only because those tests are integration tests and cannot reach a
+    /// `pub(crate)`; hidden for the reason its sibling is.
+    #[doc(hidden)]
     pub fn connection_is_finished(&self) -> bool {
         self.driver.is_finished()
     }
