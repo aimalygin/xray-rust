@@ -363,8 +363,8 @@ mod utls_tls_shaping_tests {
 
     /// Rewrites every field a fresh handshake regenerates -- the hello random,
     /// the legacy session id, each key share's key exchange, and ECH GREASE's
-    /// config id, encapsulated key and payload -- to zero, so two hellos
-    /// compare equal exactly when they have the same *shape*.
+    /// AEAD id, config id, encapsulated key and payload -- to zero, so two
+    /// hellos compare equal exactly when they have the same *shape*.
     ///
     /// Comparing raw bytes without this would compare fresh entropy and always
     /// differ; comparing only the extension order would miss a profile swap
@@ -405,10 +405,16 @@ mod utls_tls_shaping_tests {
                     }
                 }
                 EXT_ENCRYPTED_CLIENT_HELLO => {
-                    // Outer hello: type, KDF id and AEAD id are fixed by the
-                    // profile, then a config id and two length-prefixed fields
-                    // -- the encapsulated key and the payload -- that uTLS
-                    // redraws per connection just like a key share.
+                    // Outer hello (`u_ech.go:177`): type and KDF id are fixed
+                    // by the profile, then an AEAD id, a config id and two
+                    // length-prefixed fields -- the encapsulated key and the
+                    // payload -- that uTLS redraws per connection just like a
+                    // key share. The AEAD is drawn from the profile's
+                    // `CandidateCipherSuites`, so it is only constant for the
+                    // profiles that declare one suite; blanking it here is what
+                    // lets the Firefox scheme's coin flip reduce to one shape.
+                    hello[payload_start + 3] = 0;
+                    hello[payload_start + 4] = 0;
                     hello[payload_start + 5] = 0;
                     let mut field = payload_start + 6;
                     for _ in 0..2 {
@@ -463,20 +469,31 @@ mod utls_tls_shaping_tests {
     /// `random` assertions below are testing the entropy in a hello rather
     /// than the profile behind it.
     ///
-    /// `chrome` is the case that catches it: ECH GREASE redraws a config id, an
-    /// X25519 encapsulated key and a payload per hello, so a signature that
-    /// does not blank them differs every time. Only some of Xray's
-    /// `ModernFingerprints` carry ECH, so without this test the same defect
-    /// reaches the `random` tests as a failure on roughly half of all runs.
+    /// `hellofirefox_120` is the case that catches it: its ECH GREASE redraws a
+    /// config id, an X25519 encapsulated key, a payload *and* the HPKE AEAD id
+    /// per hello, so a signature that leaves any of the four alone differs
+    /// between connections. `chrome` cannot stand in -- `BoringGREASEECH`
+    /// declares a single cipher suite (`u_ech.go:296`), so an unmasked AEAD id
+    /// sails past it, which is how the AEAD stayed unmasked here until it
+    /// started failing the `random` tests below.
+    ///
+    /// `hellofirefox_120` is also the only member of Xray's
+    /// `ModernFingerprints` on the Firefox GREASE scheme, so a field left
+    /// unblanked reaches those tests as a one-run-in-nineteen failure on
+    /// whichever machine happens to draw it. Repeating the draw makes this
+    /// guard itself deterministic instead: sixteen further hellos agree with
+    /// the first by chance with probability 2^-16.
     #[test]
     fn one_fingerprint_reduces_to_one_shape_across_connections() {
-        let first = shape_of("chrome");
-        let second = shape_of("chrome");
+        let first = shape_of("hellofirefox_120");
 
-        assert_eq!(
-            first, second,
-            "chrome must reduce to one shape across connections"
-        );
+        for _ in 0..16 {
+            assert_eq!(
+                shape_of("hellofirefox_120"),
+                first,
+                "hellofirefox_120 must reduce to one shape across connections"
+            );
+        }
     }
 
     /// The drawn name has to resolve to the very profile that name resolves to
