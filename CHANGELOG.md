@@ -76,10 +76,11 @@ prerelease-quality and do not establish a supported release series.
   names xray-core accepts, and an absent or empty value means `chrome` rather
   than no shaping, which is the default xray-core itself applies.
   `fingerprint: "unsafe"` is the opt-out and sends the TLS stack's own hello.
-  Fourteen of the 58 names — the TLS-1.2-era profiles — are shaped but not
+  Fourteen of the 58 names are TLS-1.2-era: eleven of those are shaped but not
   byte-exact, because rustls emits a `supported_versions` extension uTLS does
-  not and nothing in the shaping API can suppress it; `docs/config-compatibility.md`
-  carries the detail and the full name list.
+  not and nothing in the shaping API can suppress it, and the other three — the
+  `hello360_7_5` aliases refused below — build no ClientHello at all.
+  `docs/config-compatibility.md` carries the detail and the full name list.
 - Shaped connections handshake on the aws-lc-rs crypto backend rather than
   ring, and offer the post-quantum key share their profile plans:
   X25519MLKEM768 for `chrome`, none at all for a TLS-1.2-era profile. Matching
@@ -114,6 +115,55 @@ prerelease-quality and do not establish a supported release series.
   resolved to, byte for byte, so the ClientHello on the wire does not change.
   The Apple `XrayRealityFingerprintMode` constants and picker entries are gone
   with them; a stored profile still naming one reads back as no selection.
+- Added the gRPC stream transport for VLESS outbounds.
+  `streamSettings.network` now accepts `grpc`, with `grpcSettings` carrying
+  Xray's own eight keys — `serviceName`, `multiMode`, `authority`,
+  `user_agent`, `idle_timeout`, `health_check_timeout`,
+  `permit_without_stream` and `initial_windows_size`. Unlike the other stream
+  transports it does not wrap one socket: every flow to one server becomes
+  another stream on one shared HTTP/2 connection, opened by the first flow and
+  held between them, with grpc-go's keepalive gate and its dormancy on a
+  connection carrying no call. A camelCase `idleTimeout` is rejected rather
+  than accepted, because Go matches on the struct tag and drops that key in
+  silence, leaving a profile that looks configured and dials with no keepalive.
+  The `:path`, the `Hunk` and `MultiHunk` framing and the first HEADERS block
+  are pinned against a live grpc-go v1.81.0 oracle, and five ignored scenarios
+  carry real traffic through an xray-core gRPC inbound over plaintext, TLS and
+  REALITY. `docs/config-compatibility.md` has the full surface, `docs/status.md`
+  the three HPACK differences that remain.
+- REALITY is now accepted with `network: "grpc"`, where it was refused. The
+  guard allowed only the raw transport while its own error message read
+  "REALITY only supports RAW, XHTTP and gRPC for now" — the message quoted
+  Xray's rule correctly and the condition did not. REALITY over gRPC is the
+  deployment gRPC mostly exists for, so this is the pairing that unblocks it.
+  `xtls-rprx-vision` is still refused alongside it, as xray-core refuses it:
+  Vision needs the connection under it to be a TLS or REALITY one, and the
+  gRPC dialer returns a `Hunk` wrapper on both sides of the port.
+- Added one direct dependency, `h2` 0.4.15, for the HTTP/2 client the gRPC
+  transport speaks over. Eight crates land in the lockfile with it —
+  `atomic-waker`, `fnv`, `futures-sink`, `h2`, `http`, `tokio-util`, `tracing`
+  and `tracing-core` — and `cargo deny check advisories bans licenses sources`
+  is clean against the existing allow-list.
+- Fixed nine uTLS profiles — eleven of the accepted `fingerprint` names — being
+  unable to complete a plain-TLS handshake at all. Their parrot sends a
+  TLS-1.2-era ClientHello with no `supported_versions` extension while the
+  rustls config still offered TLS 1.3, so a 1.3-capable server answered with
+  TLS 1.2, its ServerHello carried the RFC 8446 §4.1.3 downgrade sentinel, and
+  rustls read that as an attack. The config is now capped at the version the
+  hello actually claims, as uTLS caps its own, and the 32-byte legacy session
+  id rustls drops along with TLS 1.3 is redrawn per connection so the hello
+  does not change shape in exchange. Nothing had exercised these before
+  `security: "tls"` started shaping: REALITY has always refused them for
+  lacking an X25519 key share, which is the same fact from the other side.
+- `fingerprint: "hello360_7_5"`, and its aliases `360` and `hello360_auto`, are
+  now refused with a reason instead of dialling. All twenty of that profile's
+  cipher suites are CBC, RC4 or 3DES and this client implements none of them,
+  so whichever the server picked was one it could not speak and the connection
+  died at ServerHello under an error naming neither the fingerprint nor the
+  cause. The refusal happens where the rustls config is built, so the TCP
+  socket is still opened but no ClientHello is sent. xray-core completes that
+  handshake, because Go still ships the legacy suites; this is our limit rather
+  than the parrot's, and saying so beats discovering it a round trip later.
 
 ## 0.2.0 - 2026-08-05
 
