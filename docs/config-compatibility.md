@@ -266,7 +266,7 @@ Not merely a different stream name. `Tun` streams `Hunk`, whose `data` is a
 singular `bytes`; `TunMulti` streams `MultiHunk`, whose `data` is
 `repeated bytes` (`transport/internet/grpc/encoding/stream.proto:6-17`). One
 multi-mode message therefore carries a whole batch of payload chunks
-(`encoding/multiconn.go:114-133` packs one per buffer), and a `Hunk` reader
+(`encoding/multiconn.go:115-134` packs one per buffer), and a `Hunk` reader
 handed one of those keeps only the last element — silently, with no error and
 nothing logged. Reaching that state takes a particular `serviceName` spelling,
 and only that one; see below.

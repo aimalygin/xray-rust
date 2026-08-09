@@ -1,13 +1,25 @@
 # VLESS Stream Transports: WebSocket, HTTPUpgrade, gRPC, XHTTP
 
+> **On the line numbers below.** Citations into `Xray-core/` are to the vendored
+> v26.5.9 checkout and do not move. Citations into `crates/` are of two kinds,
+> and they are not interchangeable. Ones in the planning sections describe the
+> tree this document was written against and are pinned to it — resolve them
+> with `git show 2a51d52^:<path>`, not against `main`, where Stages 1 and 2 have
+> moved them. Ones that describe what *shipped*, including everything added by
+> an amendment, are to the current tree. The same split applies to counts of
+> things in this repository: Stage 1 narrowed the uTLS fingerprint table from
+> the 61 names the planning sections quote to the 58 it accepts today
+> (`crates/xray-utls/src/lib.rs`, `fingerprint_table_matches_xrays_map_union`),
+> and `docs/config-compatibility.md` is the count to trust.
+
 ## Decision
 
 xray-rust gains four outbound stream transports — `ws`/`websocket`,
 `httpupgrade`, `grpc`, and `xhttp`/`splithttp` — reaching wire parity with
-Xray-core v26.5.9 (local checkout `Xray-core/`, commit `1bdb488c`). Today only
-`tcp`/`raw` is accepted; every other `streamSettings.network` is rejected at
-config parse time (`crates/xray-config/src/parser.rs:2650`), so no VLESS profile
-using a web transport can be imported at all.
+Xray-core v26.5.9 (local checkout `Xray-core/`, commit `1bdb488c`). At the time
+of writing only `tcp`/`raw` was accepted; every other `streamSettings.network`
+was rejected at config parse time (`crates/xray-config/src/parser.rs:2650`), so
+no VLESS profile using a web transport could be imported at all.
 
 Out of scope: `mkcp`/`kcp` and `hysteria` (both UDP-based with their own
 congestion protocols — each is comparable in size to this entire work), HTTP/3
@@ -18,14 +30,14 @@ Parity target is byte-exact for the contents of every request and response we
 emit or accept, including the browser-masquerade header block and Go's header
 serialization order. It extends one layer down: `security: "tls"` gains uTLS
 ClientHello shaping with a `chrome` default, matching what Xray-core does on
-every transport including `raw` today. Two things fall outside the target, and
-both are stated plainly rather than claimed as parity.
+every transport including `raw` today. Three things fall outside the target, and
+each is stated plainly rather than claimed as parity.
 
 XHTTP's `xmux` connection-reuse scheduler, which no single request reveals, is
 parsed but not implemented — it remains observable as a pattern of connection
 timing.
 
-And on HTTP/2 the target is the connection preamble, plus the *contents* of the
+On HTTP/2 the target is the connection preamble, plus the *contents* of the
 first HEADERS block — not its bytes, and not the whole connection. `h2` is taken
 as published rather than forked, and it differs from grpc-go's encoder in three
 places, each measured against a live client rather than reasoned about. The
@@ -36,12 +48,26 @@ literal without indexing where grpc-go indexes incrementally. And the two
 disagree on when to Huffman-code a string: grpc-go codes a header name only when
 that shortens it, so `te` goes out raw, while `h2` codes unconditionally. Any
 one of the three defeats a byte comparison, so the gRPC oracle asserts the field
-set and the pseudo-header order, never the encoded block.
-Everything past the first request carries no claim at all:
-HPACK dynamic-table evolution across pooled streams, BDP-estimation PINGs,
-WINDOW_UPDATE cadence. For XHTTP over HTTP/2 a byte-exact claim is not merely
-expensive but unavailable: `x/net/http2` iterates `req.Header` as a Go map, so
-Xray's own bytes differ between two runs of one config.
+set and the pseudo-header order, never the encoded block. Past that first
+request there is no claim at all: HPACK dynamic-table evolution across pooled
+streams, BDP-estimation PINGs, WINDOW_UPDATE cadence. For XHTTP over HTTP/2 a
+byte-exact claim is not merely expensive but unavailable: `x/net/http2` iterates
+`req.Header` as a Go map, so Xray's own bytes differ between two runs of one
+config.
+
+And one class of gRPC destination cannot be dialled here at all, which is a
+narrower claim than the two above: not "we send different bytes" but "we send
+nothing and refuse the profile". `h2` reads `:authority` out of the request's
+`http::Uri` and nowhere else, and a `Uri`'s authority *is* an
+`http::uri::Authority` — a type that refuses every byte above `0x7f` and `%`
+anywhere in a host. So an internationalized destination such as `例え.jp`, which
+xray-core dials either verbatim or through grpc-go's own percent-escaped
+`host:port` fallback, is refused when the outbound is built. The A-label
+(`xn--r8jz45g.jp`) is accepted and is the workaround; nothing here converts one
+for the user, because no IDNA implementation is in the dependency graph and
+converting silently would put an authority on the wire that xray-core does not
+send. `docs/config-compatibility.md` carries the two error messages and which
+config key each names.
 
 ## Rationale
 
@@ -71,36 +97,48 @@ Xray's own bytes differ between two runs of one config.
 
 ### The transport layer sits above security, not inside it
 
-`ConnectorConfig` (`crates/xray-transport/src/lib.rs:48`) stays what it is: the
+`ConnectorConfig` (`crates/xray-transport/src/lib.rs:52`) stays what it is: the
 **security** layer, `{ Tcp, Tls, Reality }`. Stream transports are an orthogonal
-axis and get their own type in a new `crates/xray-transport/src/stream/` module:
+axis and get their own type in a new `crates/xray-transport/src/stream/` module.
+What shipped, with Stage 3's variant still to come:
 
 ```rust
-pub enum StreamTransport {
+pub enum TransportLayer {
     Raw,
-    WebSocket(WebSocketSettings),
-    HttpUpgrade(HttpUpgradeSettings),
-    Grpc(GrpcSettings),
-    Xhttp(XhttpSettings),
+    WebSocket(WebSocketConfig),
+    HttpUpgrade(HttpUpgradeConfig),
+    Grpc(GrpcTransport),
 }
 ```
+
+Two things about that differ from the sketch this section originally carried,
+and both are deliberate. The type is **not** called `StreamTransport`:
+`xray_config::StreamTransport` is the parsed config shape and this is the
+dial-ready one, and two types with one name across two crates in the same call
+chain is how the wrong one gets imported. And the gRPC variant carries a
+`GrpcTransport` — a live, `Arc`-backed connection pool — rather than settings,
+because its flows share one HTTP/2 connection; the other three carry plain
+settings because each of them wraps one socket.
 
 `TransportDialer` gains one method:
 
 ```rust
 pub async fn connect_stream(
     &self,
-    security: &ConnectorConfig,
-    transport: &StreamTransport,
-    server: &Target,
+    config: &ConnectorConfig,
+    transport: &TransportLayer,
+    original_target: &Target,
     candidates: &[SocketAddr],
     happy_eyeballs: Option<&HappyEyeballsConfig>,
 ) -> Result<BoxedTransportStream, TransportError>
 ```
 
-It calls the existing `connect_resolved` to obtain a secured stream — the Happy
-Eyeballs race and the REALITY `prepare_preconnected` path are untouched — and
-then applies the transport's framing, returning a `BoxedTransportStream` again.
+For three of the four it calls the existing `connect_resolved` to obtain a
+secured stream — the Happy Eyeballs race and the REALITY `prepare_preconnected`
+path are untouched — and then applies the transport's framing, returning a
+`BoxedTransportStream` again. gRPC is the arm that does not dial first: whether
+the call needs a socket at all is a question only its pool can answer, so the
+pool is handed `connect_resolved` to ask with rather than calling it here.
 Everything above (VLESS header encoding, Vision, XUDP) is unchanged; it already
 operates on `BoxedTransportStream` and does not care what produced it.
 
@@ -118,10 +156,21 @@ statically known transports in a client.
 ### Each transport is a `TransportStream`
 
 Every wrapper implements `AsyncRead + AsyncWrite` plus the `TransportStream`
-trait (`crates/xray-transport/src/lib.rs:129`), forwarding `poll_read_direct` /
-`poll_write_direct` to the plain poll methods. `release_record_alignment` is a
-no-op for all four: record alignment exists only to let Vision unwrap into
-direct mode, and Vision cannot run over a non-raw transport (see below).
+trait (`crates/xray-transport/src/lib.rs:158`), forwarding `poll_read_direct` /
+`poll_write_direct` to the plain poll methods. `release_record_alignment` is
+left at its default no-op on all four wrappers: record alignment exists only to
+let Vision unwrap into direct mode, and Vision cannot run over a non-raw
+transport (see below).
+
+That is not the same as the alignment never being released, and gRPC is where
+the difference shows. Its handshake moves the secured stream into h2's
+`Connection`, so an outbound's `release_record_alignment` reaches only
+`GrpcStream` and its no-op — by then nothing else holds the socket. The call is
+therefore made once on the secured stream immediately before the handshake
+(`crates/xray-transport/src/stream/grpc/h2client.rs`, `h2_handshake`), which is
+the last point at which anything can. Unconditional is sound for the reason
+above, and not making it would cost two socket reads per TLS record for the
+tunnel's whole life.
 
 ### Shared HTTP request builder
 
@@ -429,15 +478,19 @@ ignored.
 
 ## Stage 2 — gRPC
 
-New dependency: `h2` (bare, without `hyper` or `tonic`). No protobuf codegen is
-needed — `prost` is already in the tree but the gRPC message is small enough to
-hand-encode. TLS shaping and ALPN arrived in Stage 1, so this stage inherits a
-Chrome ClientHello advertising the profile's `h2, http/1.1` and needs no TLS
-work of its own.
+Two new dependencies: `h2` (bare, without `hyper` or `tonic`) and `http`, whose
+request, URI and header types `h2` takes. `http` is not an implementation
+detail — `GrpcConfig::authority` is a re-exported `http::uri::Authority`, so the
+type is in this crate's public API, and the divergence in the Decision section
+is a property of it. No protobuf codegen is needed — `prost` is already in the
+tree but the gRPC message is small enough to hand-encode. TLS shaping and ALPN
+arrived in Stage 1, so this stage inherits a Chrome ClientHello advertising the
+profile's `h2, http/1.1` and needs no TLS work of its own.
 
 ### Framing
 
-The `.proto` is `message Hunk { bytes data = 1; }`, so one write of N bytes is:
+The `.proto` is `message Hunk { bytes data = 1; }`, so one write of N > 0 bytes
+is:
 
 ```
 00                 compression flag (0 = uncompressed)
@@ -447,8 +500,20 @@ LL LL LL LL        u32 big-endian: 1 + varint_len(N) + N
 <N payload bytes>
 ```
 
-Overhead is 7 bytes for N < 128 and 8 for N < 16384, which covers our buffer
-sizes. One write is one message; the decoder must reassemble across HTTP/2 DATA
+Overhead is 7 bytes for 0 < N < 128 and 8 for N < 16384, which covers our buffer
+sizes.
+
+**N = 0 is a different shape, not that one with the payload omitted.** proto3
+`bytes` has implicit presence, so a zero-length value is the field's default and
+the generated marshaller drops the field rather than emitting `0a 00`. An empty
+write is therefore the bare five-byte prefix with length 0 and no body at all —
+five bytes of overhead, not seven. Xray's write side does not special-case it
+(`hc.Send(&Hunk{Data: buf[:]})` runs for every write), so this is a message a
+peer really sends, and the reader must treat it as a legal zero-byte read rather
+than as end of stream — which in Rust means a wrapper must loop for the next
+message instead of returning `Ok(0)`.
+
+One write is one message; the decoder must reassemble across HTTP/2 DATA
 frames, tolerate zero-length messages, skip unknown fields, and treat a non-zero
 compression flag as a hard error. Keep messages under the server's 4 MiB
 default. `multiMode` switches to `MultiHunk { repeated bytes data = 1; }` and
@@ -548,8 +613,11 @@ at all marks the window static, and the estimator is built only when it is not.
 
 Config keys: `authority`, `serviceName`, `multiMode`, `idle_timeout` (seconds,
 clamped up to a 10 s floor as grpc-go does), `health_check_timeout` (default
-20 s), `permit_without_stream`, `initial_windows_size` (applied only when
->= 65535), `user_agent`.
+20 s), `permit_without_stream`, `initial_windows_size` (applied only *above*
+65535, strictly — the three gates above stop 65535 itself, and applying it there
+would put a `SETTINGS_INITIAL_WINDOW_SIZE` entry on the wire that grpc-go never
+writes, which is the exact fingerprint those gates exist to protect),
+`user_agent`.
 
 ## Stage 3 — XHTTP
 
@@ -650,12 +718,19 @@ Header/cookie uplink data placement (base64url chunks in `X-Data-<i>` headers or
 
 ## Error handling
 
-`TransportError` gains one variant group per transport, distinguishing the
-failures an operator can act on: handshake rejection with the observed status,
-response-validation failure naming the specific check, HTTP/2 connection loss,
-and XHTTP sequence or padding rejection with the server's status code. Transport
-setup failures surface as connection failures to the VLESS layer, which already
-handles them.
+`TransportError` gains variants distinguishing the failures an operator can act
+on: handshake rejection with the observed status, response-validation failure
+naming the specific check, HTTP/2 connection loss, and XHTTP sequence or padding
+rejection with the server's status code. Transport setup failures surface as
+connection failures to the VLESS layer, which already handles them.
+
+What shipped is one variant per transport rather than a group per transport —
+`HttpUpgradeRejected(String)`, `WebSocketProtocol(String)`, `Grpc(String)` —
+with the distinctions carried in the message. This section over-promised: the
+distinctions are worth making, but nothing in the chain branches on *which*
+gRPC failure it was, and a variant nobody matches on is a wider enum for the
+same information. gRPC's single `Grpc(String)` is consistent with what Stage 1
+had already settled on.
 
 Config-level errors mirror Xray-core's wording where a user is likely to have
 seen it there: the REALITY transport restriction, the removed `h2`/`quic`
@@ -692,9 +767,14 @@ four would write an acceptance criterion nobody can meet:
 
 - **HTTP/1.1 transports (ws, httpupgrade, XHTTP over h1).** Byte-exact, as
   today. Go's `Request.Write` emits a deterministic order.
-- **gRPC.** Byte-exact for the preamble and the first HEADERS block: grpc-go
-  builds its header list as an ordered slice, so the HPACK output is stable.
-  Later HEADERS blocks are not asserted — the dynamic table has evolved by then.
+- **gRPC.** Byte-exact for the preface and for the client's own SETTINGS frame,
+  and the frames written before the first HEADERS compared as decoded
+  descriptors so that an added frame fails the check. The first HEADERS block
+  itself is **not** byte-exact: `h2`'s HPACK encoder diverges from grpc-go's in
+  three places, listed in the Decision section, and any one of them defeats a
+  byte comparison. It is asserted as a decoded field list in order instead.
+  Later HEADERS blocks are not asserted at all — the dynamic table has evolved
+  by then.
 - **XHTTP over HTTP/2.** Normalized shape only: ordered pseudo-headers, then the
   regular header set compared as a set. `x/net/http2` ranges over `req.Header`,
   a Go map, so no byte sequence exists to pin — Xray disagrees with itself
@@ -728,7 +808,7 @@ the profile's own list.
    seam both remaining transports need — a second dial shape on
    `TransportDialer` with connection state on the outbound payload. The seam is
    built here rather than as a standalone refactor, because a refactor with no
-   consumer cannot be validated. New dependency: `h2`.
+   consumer cannot be validated. New dependencies: `h2` and `http`.
 3. **XHTTP.** All three modes over H1 and H2, mandatory padding, the full
    config surface with `xmux` parsed-only, and H3 rejected explicitly. Its first
    task is deciding which Xray-core revision it targets: the wire moved after
@@ -829,6 +909,12 @@ since the surface a censor studies next is XHTTP's, not gRPC's.
 
 ### Implementation findings that belong in the plan, not here
 
+Recorded as of this amendment, before Stage 2 started. The first two describe
+code that Stage 2 then changed — Task 5 turned the REALITY condition into an
+allowlist and gave the two `stream_transport_is_dialable` sites the same
+verdict — so read them as the reason those tasks exist, not as a description of
+the tree today.
+
 - `crates/xray-config/src/parser.rs:2571` refuses REALITY on everything but
   `Raw`, with a message that already reads *"REALITY only supports RAW, XHTTP
   and gRPC for now"*. The text describes Xray's rule; the condition does not.
@@ -887,7 +973,7 @@ constraint. It takes 256 simultaneously stalled flows to bind it again.
 default `grpcSettings` no window option is set, `StaticWindowSize` stays false,
 and grpc-go's BDP estimator grows both the connection and stream windows
 mid-connection up to that same 16 MiB (`updateFlowControl`,
-`http2_client.go:1161-1180`). A connection window that never moves is therefore
+`http2_client.go:1162-1181`). A connection window that never moves is therefore
 also unlike the client we are imitating — just later, and only under load. The
 decision is to take an earlier, smaller, constant divergence in exchange for
 removing a starvation bug and a per-outbound throughput ceiling.
@@ -897,3 +983,51 @@ grpc-go emits. The preamble test compares our burst against that fixture *plus*
 this one declared frame, and separately asserts the frame's increment, so a
 second divergence or a change to this one fails the test rather than being
 absorbed by it. `docs/status.md` lists it beside the three HPACK divergences.
+
+## Amendment, 2026-08-09 — the document read against what shipped
+
+Stage 2 is done. Reading this document line by line against the code it
+produced turned up eight places where it describes something other than what
+was built. All eight are corrected in the sections above, in the sentence that
+was wrong, per this document's standing convention; they are listed here so
+that a reader who remembers the old text can find out what happened to it.
+
+1. **The Testing section still set a byte-exact bar for the first HEADERS
+   block** — the bar the Decision section abandoned two amendments ago and the
+   shipped oracle deliberately does not meet. `ead0993` fixed one of the two
+   sites and missed this one. Both now say the same thing.
+2. **`initial_windows_size` was described as applying at `>= 65535`** where the
+   code, and this section's own three-gate paragraph, say strictly above.
+   Following the bullet would have emitted a SETTINGS entry grpc-go never
+   writes — the fingerprint the gates exist to protect.
+3. **The Decision section counted two things outside parity; there are three.**
+   `http::uri::Authority` refuses every byte above `0x7f` and `%` in a host, so
+   an IDN destination cannot be dialled where xray-core dials it. It was
+   documented honestly for users in `docs/config-compatibility.md` and missing
+   from the spec.
+4. **The Hunk layout was wrong at N = 0.** proto3 implicit presence drops a
+   zero-length `bytes` field, so an empty write is a bare five-byte message and
+   "overhead is 7 bytes" does not hold there.
+5. **Stage 2 claimed one new dependency where two shipped**, and `http` is in
+   the public API rather than behind it. The CHANGELOG was corrected in
+   `8641580`; this was not.
+6. **The Architecture sketch named `StreamTransport(GrpcSettings)`.** Shipped is
+   `TransportLayer::Grpc(GrpcTransport)`, and both halves of that are
+   deliberate — the rename avoids colliding with `xray_config::StreamTransport`,
+   and the variant carries a live pool rather than settings because gRPC's Nth
+   flow wants no socket. The `connect_stream` sketch had drifted too, and it
+   claimed every arm dials first, which the gRPC arm does not.
+7. **`release_record_alignment` was called a no-op for all four** without
+   noting that the gRPC path calls it, unconditionally, on the secured stream
+   just before the h2 handshake — the last point at which anything can reach
+   the socket.
+8. **Error handling promised a variant group per transport.** gRPC shipped a
+   single `Grpc(String)`, consistent with Stage 1 and defensible; the promise
+   was the wrong shape, not the implementation.
+
+Two smaller things went with them. The Decision section's HTTP/2 paragraph had
+a prose seam left by an earlier amendment and now joins cleanly. And the
+document acquired a note about its own citations: the ones in the planning
+sections are pinned to the tree it was written against, because Stages 1 and 2
+have moved almost every line they name, and a citation that has moved is worse
+than no citation — it looks verified.

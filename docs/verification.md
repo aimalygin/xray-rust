@@ -106,8 +106,10 @@ bash scripts/verify-oracle-fixtures.sh
 It discovers the fixtures itself and reads each one's generation flags out of
 the fixture's own contents, so a new fixture is covered as soon as it is
 committed and a fixture no oracle claims fails the run. It needs Go and
-`python3`, takes about ten seconds cold, and is what the `go-oracles` CI job
-runs.
+`python3`, and is what the `go-oracles` CI job runs. Measured on an M-series
+Mac: about 17 s against a cold Go build cache, 3-5 s once the oracles' packages
+are cached. CI pays the cold price on every run unless the Go cache is
+restored.
 
 One family cannot be reproduced byte for byte away from the machine that
 generated it: Xray derives browser versions from the current date offset by a
@@ -126,7 +128,7 @@ separate transcriptions, and each claims a different amount:
 
 | Fixture | What it pins |
 | --- | --- |
-| `connection_preamble.json` | The 24-byte client preface and the opening SETTINGS frame, byte for byte, plus every frame written before the first HEADERS so that a grpc-go adding one fails the check |
+| `connection_preamble.json` | The 24-byte client preface and the client's own SETTINGS frame, byte for byte. The rest of the burst before the first HEADERS is compared as decoded frame descriptors — type, flags, stream, payload length — not bytes, with SETTINGS ACKs filtered out of both sides because ours races the request where grpc-go's is always first. The expectation is the fixture's burst *plus* one `WINDOW_UPDATE(stream 0)` that is ours and not grpc-go's, whose increment is asserted separately; see [status](status.md). So an added frame on either side still fails |
 | `request_headers.json` | The first call's HEADERS as a decoded field list in order — not the HPACK bytes, which diverge in three known places; see the divergences in [status](status.md) |
 | `hunk_framing.json` | Each `Tun` message as it left the wire, byte for byte, reassembled across DATA frames |
 | `multi_hunk_framing.json` | The same for `TunMulti`, with mostly multi-element `MultiHunk` messages — the shape a single-element writer cannot produce — and the `:path` read back off the call's own HEADERS |
