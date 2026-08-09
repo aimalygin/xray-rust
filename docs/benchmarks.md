@@ -432,7 +432,7 @@ The first scoreboard is intentionally portable and comparable across Go and Rust
 - peak resident set size from `ps` RSS.
 - CPU time delta from `ps` cumulative process time.
 - CPU milliseconds per GiB transferred when a workload moves payload bytes.
-- throughput megabits per second when a workload moves payload bytes, computed from validated bytes over the transfer window only — first byte to last validated byte, excluding connection setup. This rate is exact only at `--connections 1`; with concurrent connections it is the aggregate over the union of the per-connection transfer windows, not a per-connection average. The whole-run window stays available as `duration_ms` and the transfer window as `transfer_duration_ms`, so their difference exposes the setup cost instead of hiding it. This matters for tunneled workloads such as `reality-vision-bulk-throughput`: against the shared local REALITY fixture, Xray-core answers SOCKS eagerly and completes its REALITY handshake lazily, spending roughly 640 ms before the first byte, against roughly 90-120 ms for sing-box and xray-rust — folded into the denominator, that gap would be amortized into the rate and understate the engine that dials slowly but streams quickly. Workloads that do not measure a transfer window fall back to the whole-run window. `cpu_millis_per_gib` is still measured over the whole-run window rather than the transfer window; at gigabyte scale this is immaterial (setup burns a few milliseconds of CPU) but is worth noting since the two metrics sit adjacent and now cover different windows. The byte count aggregates both directions, matching the CPU-per-GiB convention, so echo-style workloads read roughly twice their one-way goodput; quote streaming throughput from `tcp-bulk-throughput`, where traffic is one-directional.
+- throughput megabits per second when a workload moves payload bytes, computed from validated bytes over the transfer window only — first byte to last validated byte, excluding connection setup. This rate is exact only at `--connections 1`; with concurrent connections it is the aggregate over the union of the per-connection transfer windows, not a per-connection average. The whole-run window stays available as `duration_ms` and the transfer window as `transfer_duration_ms`, so their difference exposes the setup cost instead of hiding it. This matters for tunneled workloads such as `reality-vision-bulk-throughput`: against the shared local REALITY fixture, Xray-core spends roughly 640 ms before the first byte, against roughly 90-120 ms for sing-box and xray-rust — folded into the denominator, that gap would be amortized into the rate and understate the engine that dials slowly but streams quickly. Most of that 640 ms is not the handshake. It is the same VLESS header hold described under `grpc-bulk-throughput` below: these bulk workloads are server-first, so Xray-core's outbound waits out its full 500 ms `ReadMultiBufferTimeout` looking for a first client payload to pack with the header (`Xray-core/proxy/vless/outbound/outbound.go:334-336`; `xtls-rprx-vision` only changes the else branch at :344-350, not the timeout). Probed against the fixture, first byte lands 595-649 ms after the SOCKS reply when the client only reads, and 72-73 ms when it writes one byte first — so roughly 500 ms is the header hold and only the remainder is Xray-core answering SOCKS eagerly and dialing REALITY lazily. Workloads that do not measure a transfer window fall back to the whole-run window. `cpu_millis_per_gib` is still measured over the whole-run window rather than the transfer window; at gigabyte scale this is immaterial (setup burns a few milliseconds of CPU) but is worth noting since the two metrics sit adjacent and now cover different windows. The byte count aggregates both directions, matching the CPU-per-GiB convention, so echo-style workloads read roughly twice their one-way goodput; quote streaming throughput from `tcp-bulk-throughput`, where traffic is one-directional.
 - thread count when the local `ps` implementation exposes it.
 - validated bytes sent and received by the workload.
 - latency microsecond percentiles for traffic workloads. For `many-idle-flows`, latency is SOCKS TCP flow setup time.
@@ -466,16 +466,31 @@ repository that measures a stream transport's framing rather than raw TCP;
 `ws` and `httpupgrade` have no equivalent yet. Both the client outbound and the
 fixture inbound use `serviceName: "bench"` and `security: none`, so the number
 covers the `Hunk` framing and one HTTP/2 stream and not three different TLS
-stacks. `xtls-rprx-vision` is deliberately absent: Xray's VLESS outbound
-accepts that flow only when the connection under it is a `*tls.Conn`,
-`*tls.UConn` or `*reality.UConn` and refuses everything else with "XTLS only
-supports TLS and REALITY directly for now."
-(`Xray-core/proxy/vless/outbound/outbound.go:274-285`). A gRPC stream is none
-of the three — and neither is RAW with `security: none`, so the criterion is
-the security layer, not the network. Either way the REALITY/Vision configs
-cannot simply be reused with the network swapped. Unlike the REALITY fixture,
-the gRPC fixture has no warm-up wait — there is no cover origin whose record
-shape has to be learned before a client may connect.
+stacks. `xtls-rprx-vision` is deliberately absent, and the rule that excludes
+it is neither "only RAW" nor "only TLS". Xray's VLESS outbound reaches into the
+connection under it for the `input`/`rawInput` fields Vision needs, and it
+accepts exactly two shapes
+(`Xray-core/proxy/vless/outbound/outbound.go:268-285`): a
+`*encryption.CommonConn` — VLESS `encryption` is on — which is tested first and
+does not care what the network is; or, failing that, an `iConn` that is a
+`*tls.Conn`, `*tls.UConn` or `*reality.UConn`. Everything else gets "XTLS only
+supports TLS and REALITY directly for now." So the accurate rule is *RAW with
+`tls` or `reality` security, or VLESS `encryption` on any network* — the second
+clause is easy to miss, and the criterion is not the security layer alone.
+Setting `security: tls` under gRPC does **not** buy the second shape: only the
+RAW dialer hands its TLS conn back as `iConn`, whereas the gRPC dialer feeds
+that conn to grpc's `ContextDialer`
+(`Xray-core/transport/internet/grpc/dial.go:138-151`) and returns an
+`encoding.HunkConn` (`dial.go:65,75`); ws, httpupgrade and xhttp wrap their TLS
+conn the same way. Both halves were checked against the vendored 26.5.9
+binary: `network: grpc, security: none` plus a `decryption`/`encryption` pair
+carries Vision fine — the client logs `proxy: Xtls Unpadding new block` and the
+tunnel serves traffic — while `network: grpc, security: tls` is refused with
+exactly that error. This fixture has neither VLESS encryption nor a TLS-shaped
+`iConn`, so Vision is out, and the REALITY/Vision configs still cannot be
+reused with the network swapped. Unlike the REALITY fixture, the gRPC fixture
+has no warm-up wait — there is no cover origin whose record shape has to be
+learned before a client may connect.
 
 Three properties of this number are easy to misread, and each changes what it
 means:

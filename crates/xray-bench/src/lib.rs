@@ -6576,12 +6576,16 @@ fn grpc_fixture_vless_addr(
 /// The client half of the gRPC comparison, in Xray JSON — read by `xray-rust`
 /// and Xray-core alike.
 ///
-/// **No `flow`.** Xray's VLESS outbound refuses `xtls-rprx-vision` on a
-/// connection whose inner conn is not a TLS, uTLS or REALITY one — "XTLS only
-/// supports TLS and REALITY directly for now."
-/// (`Xray-core/proxy/vless/outbound/outbound.go:283-285`) — and a gRPC stream
-/// is none of the three. So this cannot be the REALITY configs with the
-/// network swapped; it is a separate outbound.
+/// **No `flow`.** Xray's VLESS outbound takes `xtls-rprx-vision` only when the
+/// conn is a `*encryption.CommonConn` (VLESS `encryption`, checked first and
+/// network-agnostic) or the inner conn is a TLS, uTLS or REALITY one; anything
+/// else gets "XTLS only supports TLS and REALITY directly for now."
+/// (`Xray-core/proxy/vless/outbound/outbound.go:268-285`). This outbound is
+/// `encryption: none` over gRPC, so it is neither — and adding `security: tls`
+/// would not help, since the gRPC dialer returns an `encoding.HunkConn` rather
+/// than the TLS conn (`Xray-core/transport/internet/grpc/dial.go:65,75`). So
+/// this cannot be the REALITY configs with the network swapped; it is a
+/// separate outbound.
 ///
 /// **`security: none`.** gRPC without TLS is h2c on both ends, which keeps the
 /// measurement on the framing rather than on three different TLS stacks. It
