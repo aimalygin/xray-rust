@@ -258,12 +258,50 @@ fn apple_packet_pump_reuses_poll_storage_and_fails_outside_worker_queue() {
     assert!(provider.contains("if rejectsTunnelOwnedAddress || port == 53"));
     assert!(provider.contains("protectedDNSDomains.contains(domain)"));
     assert!(provider.contains("excludingServerAddresses: resolvedConfig.excludedServerAddresses"));
-    assert!(provider.contains("ipv4Settings.excludedRoutes = ipv4ExcludedRoutes"));
-    // The tunnel must not advertise IPv6: the fake-IP pool is IPv4-only, so a
-    // captured IPv6 destination can never be restored to a domain and would
-    // hang instead of failing over. Re-adding these settings silently would
-    // reintroduce that, so pin their absence rather than deleting the check.
-    assert!(!provider.contains("settings.ipv6Settings = "));
+    // Full-tunnel privacy fails closed only when both default routes are
+    // installed, the resolved outer endpoints bypass those routes narrowly,
+    // and every DNS query is captured by an explicit tunnel DNS destination.
+    for token in [
+        "ipv4Settings.includedRoutes = [NEIPv4Route.default()]",
+        "ipv4Settings.excludedRoutes = ipv4ExcludedRoutes",
+        "settings.ipv4Settings = ipv4Settings",
+        "let ipv6Settings = NEIPv6Settings(",
+        "networkPrefixLengths: [128]",
+        "ipv6Settings.includedRoutes = [NEIPv6Route.default()]",
+        "let ipv6ExcludedRoutes = ipv6ExcludedRoutes(for: serverAddresses)",
+        "ipv6Settings.excludedRoutes = ipv6ExcludedRoutes",
+        "settings.ipv6Settings = ipv6Settings",
+        "case .localDNSAnchor:",
+        "servers = [tunnelRemoteAddress]",
+        "let dnsSettings = NEDNSSettings(servers: servers)",
+        "dnsSettings.matchDomains = [\"\"]",
+        "settings.dnsSettings = dnsSettings",
+    ] {
+        assert!(
+            provider.contains(token),
+            "Apple provider missing fail-closed route/DNS contract `{token}`"
+        );
+    }
+
+    let ipv6_exclusion_start = provider
+        .find("private static func ipv6ExcludedRoutes")
+        .expect("Apple provider should build outer IPv6 route exclusions");
+    let ipv6_exclusion_end = provider[ipv6_exclusion_start..]
+        .find("private static func canonicalIPAddress")
+        .map(|offset| ipv6_exclusion_start + offset)
+        .expect("Apple IPv6 exclusion helper should precede IP canonicalization");
+    let ipv6_exclusion_helper = &provider[ipv6_exclusion_start..ipv6_exclusion_end];
+    for token in [
+        "isIPAddress(address, family: AF_INET6)",
+        "!isTunnelOwnedIPAddress(address)",
+        "seen.insert(address).inserted",
+        "networkPrefixLength: 128",
+    ] {
+        assert!(
+            ipv6_exclusion_helper.contains(token),
+            "Apple IPv6 outer-route protection missing `{token}`"
+        );
+    }
     let apply_network_settings = provider
         .find("setTunnelNetworkSettings(")
         .expect("Apple provider should apply packet-tunnel routes");

@@ -977,6 +977,7 @@ mod tests {
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
+                quic_params: None,
                 socket_options: None,
             },
         )
@@ -1013,6 +1014,7 @@ mod tests {
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
+                quic_params: None,
                 socket_options: None,
             },
             settings: OutboundSettings::Freedom,
@@ -1023,6 +1025,7 @@ mod tests {
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
+                quic_params: None,
                 socket_options: None,
             },
             settings: OutboundSettings::Dns(DnsOutboundSettings {
@@ -1068,6 +1071,7 @@ mod tests {
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
+                quic_params: None,
                 socket_options: None,
             },
         )
@@ -1442,6 +1446,7 @@ mod tests {
                     network: Network::Tcp,
                     transport: StreamTransport::Raw,
                     security: StreamSecurity::None,
+                    quic_params: None,
                     socket_options: None,
                 },
                 settings: OutboundSettings::Freedom,
@@ -1820,6 +1825,7 @@ mod tests {
                     allow_insecure: true,
                     alpn: Vec::new(),
                 }),
+                quic_params: None,
                 socket_options: None,
             },
         );
@@ -1875,6 +1881,7 @@ mod tests {
                     allow_insecure: false,
                     alpn: Vec::new(),
                 }),
+                quic_params: None,
                 socket_options: None,
             },
         );
@@ -1981,6 +1988,7 @@ mod tests {
                     allow_insecure: false,
                     alpn: Vec::new(),
                 }),
+                quic_params: None,
                 socket_options: None,
             },
         );
@@ -2045,6 +2053,7 @@ mod tests {
                     allow_insecure: true,
                     alpn: Vec::new(),
                 }),
+                quic_params: None,
                 socket_options: None,
             },
         );
@@ -2484,6 +2493,7 @@ mod tests {
                     network: Network::Tcp,
                     transport: StreamTransport::Raw,
                     security: StreamSecurity::None,
+                    quic_params: None,
                     socket_options: None,
                 },
                 settings: OutboundSettings::Freedom,

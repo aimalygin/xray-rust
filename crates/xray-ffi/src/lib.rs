@@ -191,7 +191,9 @@ pub struct XrayTunStats {
     /// Size of the caller's `XrayTunStats` allocation in bytes.
     ///
     /// Callers must initialize this to `sizeof(XrayTunStats)` before invoking
-    /// `xray_tun_stats`. The callee validates it before writing any fields.
+    /// `xray_tun_stats`. ABI-major-1 libraries accept the original prefix that
+    /// ends with `tun_fd_write_batch_max_packets` and write no more than the
+    /// supplied number of bytes, so fields appended later remain optional.
     pub struct_size: usize,
     pub inbound_packets: u64,
     pub outbound_packets: u64,
@@ -266,6 +268,12 @@ pub struct XrayTunStats {
     pub tun_fd_write_loop_exits: u64,
     pub tun_fd_transient_io_errors: u64,
 }
+
+/// The original ABI-major-1 `XrayTunStats` prefix, before the three TUN-fd
+/// loop/error counters were appended. Keeping this boundary tied to the first
+/// appended field makes the compatibility rule portable across C ABIs.
+const XRAY_TUN_STATS_V1_PREFIX_SIZE: usize =
+    std::mem::offset_of!(XrayTunStats, tun_fd_read_loop_exits);
 
 impl Default for XrayTunStats {
     fn default() -> Self {
@@ -3225,10 +3233,13 @@ unsafe fn xray_tun_poll_udp_quic_blocked_event_inner(
 /// # Safety
 ///
 /// `handle` must either be null or a pointer returned by `xray_core_new` that
-/// has not been freed. `stats` must point to writable memory for one
-/// `XrayTunStats`. If `error` is non-null, it must point to an initialized
-/// `*mut XrayError` value that is either null or a live error pointer returned
-/// by this library. This function may free and replace that error pointer.
+/// has not been freed. `stats` must be properly aligned and point to writable
+/// memory for the number of bytes supplied in its leading `struct_size` field;
+/// that size must cover at least the ABI-major-1 compatible prefix. It may be
+/// an older prefix layout cast to `XrayTunStats`. If `error` is non-null, it
+/// must point to an initialized `*mut XrayError` value that is either null or a
+/// live error pointer returned by this library. This function may free and
+/// replace that error pointer.
 #[no_mangle]
 pub unsafe extern "C" fn xray_tun_stats(
     handle: *mut XrayCoreHandle,
@@ -3259,15 +3270,19 @@ unsafe fn xray_tun_stats_inner(
         }
         return XrayStatus::NullArgument;
     }
-    let expected_size = std::mem::size_of::<XrayTunStats>();
-    let caller_size = unsafe { (*stats).struct_size };
-    if caller_size < expected_size {
+    let current_size = std::mem::size_of::<XrayTunStats>();
+    // Read only the common leading field: an ABI-major-1 caller may have
+    // allocated the shorter historical layout rather than a full current
+    // `XrayTunStats`.
+    let caller_size = unsafe { std::ptr::read_unaligned(stats.cast::<usize>()) };
+    if caller_size < XRAY_TUN_STATS_V1_PREFIX_SIZE {
         unsafe {
             set_error(
                 error,
                 XrayStatus::BufferTooSmall,
                 format!(
-                    "tun stats struct is {caller_size} bytes; at least {expected_size} bytes are required"
+                    "tun stats struct is {caller_size} bytes; at least {} bytes are required",
+                    XRAY_TUN_STATS_V1_PREFIX_SIZE
                 ),
             );
         }
@@ -3289,88 +3304,95 @@ unsafe fn xray_tun_stats_inner(
     };
 
     let snapshot = handle.runtime.block_on(core.tun().stats());
+    let stats_snapshot = XrayTunStats {
+        // This field describes the caller's writable allocation. Preserve it:
+        // replacing a legacy caller's 560 with 584 would make a second call
+        // through the same object overrun the allocation unless the caller
+        // remembered to restore the size first.
+        struct_size: caller_size,
+        inbound_packets: snapshot.inbound_packets,
+        outbound_packets: snapshot.outbound_packets,
+        dropped_packets: snapshot.dropped_packets,
+        inbound_dropped_packets: snapshot.inbound_dropped_packets,
+        outbound_dropped_packets: snapshot.outbound_dropped_packets,
+        tcp_stack_to_remote_bytes: snapshot.tcp_stack_to_remote_bytes,
+        tcp_remote_written_bytes: snapshot.tcp_remote_written_bytes,
+        tcp_remote_read_bytes: snapshot.tcp_remote_read_bytes,
+        tcp_backpressure_events: snapshot.tcp_backpressure_events,
+        tcp_stack_to_remote_backpressure_events: snapshot.tcp_stack_to_remote_backpressure_events,
+        tcp_remote_to_stack_backpressure_events: snapshot.tcp_remote_to_stack_backpressure_events,
+        tcp_remote_write_batches: snapshot.tcp_remote_write_batches,
+        tcp_remote_write_batch_messages: snapshot.tcp_remote_write_batch_messages,
+        tcp_remote_write_batch_max_messages: snapshot.tcp_remote_write_batch_max_messages,
+        tcp_remote_write_batch_max_bytes: snapshot.tcp_remote_write_batch_max_bytes,
+        tcp_remote_write_wait_events: snapshot.tcp_remote_write_wait_events,
+        tcp_remote_write_wait_ms_total: snapshot.tcp_remote_write_wait_ms_total,
+        tcp_remote_write_wait_ms_max: snapshot.tcp_remote_write_wait_ms_max,
+        tcp_remote_flush_wait_events: snapshot.tcp_remote_flush_wait_events,
+        tcp_remote_flush_wait_ms_total: snapshot.tcp_remote_flush_wait_ms_total,
+        tcp_remote_flush_wait_ms_max: snapshot.tcp_remote_flush_wait_ms_max,
+        tcp_pending_remote_bytes: snapshot.tcp_pending_remote_bytes,
+        tcp_pending_remote_flows: snapshot.tcp_pending_remote_flows,
+        tcp_pending_remote_max_bytes: snapshot.tcp_pending_remote_max_bytes,
+        tcp_pending_upload_bytes: snapshot.tcp_pending_upload_bytes,
+        tcp_pending_upload_max_bytes: snapshot.tcp_pending_upload_max_bytes,
+        tcp_pending_total_bytes: snapshot.tcp_pending_total_bytes,
+        tcp_remote_buffer_limit_bytes: snapshot.tcp_remote_buffer_limit_bytes,
+        tcp_buffer_hard_limit_bytes: snapshot.tcp_buffer_hard_limit_bytes,
+        tcp_remote_buffer_pressure_active: if snapshot.tcp_remote_buffer_pressure_active {
+            1
+        } else {
+            0
+        },
+        tcp_remote_write_errors: snapshot.tcp_remote_write_errors,
+        tcp_remote_closed_events: snapshot.tcp_remote_closed_events,
+        tcp_remote_read_errors: snapshot.tcp_remote_read_errors,
+        tcp_open_errors: snapshot.tcp_open_errors,
+        tcp_open_events: snapshot.tcp_open_events,
+        tcp_open_duration_ms_total: snapshot.tcp_open_duration_ms_total,
+        tcp_open_duration_ms_max: snapshot.tcp_open_duration_ms_max,
+        tcp_first_byte_events: snapshot.tcp_first_byte_events,
+        tcp_first_byte_duration_ms_total: snapshot.tcp_first_byte_duration_ms_total,
+        tcp_first_byte_duration_ms_max: snapshot.tcp_first_byte_duration_ms_max,
+        tcp443_open_events: snapshot.tcp443_open_events,
+        tcp443_open_duration_ms_total: snapshot.tcp443_open_duration_ms_total,
+        tcp443_open_duration_ms_max: snapshot.tcp443_open_duration_ms_max,
+        tcp443_first_byte_events: snapshot.tcp443_first_byte_events,
+        tcp443_first_byte_duration_ms_total: snapshot.tcp443_first_byte_duration_ms_total,
+        tcp443_first_byte_duration_ms_max: snapshot.tcp443_first_byte_duration_ms_max,
+        active_tcp_flows: snapshot.active_tcp_flows,
+        active_udp_flows: snapshot.active_udp_flows,
+        udp_flow_limit: snapshot.udp_flow_limit,
+        udp_budget_drops: snapshot.udp_budget_drops,
+        udp_evicted_flows: snapshot.udp_evicted_flows,
+        udp_channel_dropped_packets: snapshot.udp_channel_dropped_packets,
+        udp_remote_open_events: snapshot.udp_remote_open_events,
+        udp_remote_udp443_open_events: snapshot.udp_remote_udp443_open_events,
+        udp_remote_written_bytes: snapshot.udp_remote_written_bytes,
+        udp_remote_read_bytes: snapshot.udp_remote_read_bytes,
+        udp_open_errors: snapshot.udp_open_errors,
+        udp_vision_udp443_rejections: snapshot.udp_vision_udp443_rejections,
+        udp_remote_write_errors: snapshot.udp_remote_write_errors,
+        udp_remote_read_errors: snapshot.udp_remote_read_errors,
+        udp_remote_closed_events: snapshot.udp_remote_closed_events,
+        udp_quic_blocked_packets: snapshot.udp_quic_blocked_packets,
+        inbound_queue_depth: snapshot.inbound_queue_depth,
+        outbound_queue_depth: snapshot.outbound_queue_depth,
+        inbound_queue_max_packets: snapshot.inbound_queue_max_packets,
+        outbound_queue_max_packets: snapshot.outbound_queue_max_packets,
+        tun_fd_write_batches: snapshot.tun_fd_write_batches,
+        tun_fd_write_batch_packets: snapshot.tun_fd_write_batch_packets,
+        tun_fd_write_batch_max_packets: snapshot.tun_fd_write_batch_max_packets,
+        tun_fd_read_loop_exits: snapshot.tun_fd_read_loop_exits,
+        tun_fd_write_loop_exits: snapshot.tun_fd_write_loop_exits,
+        tun_fd_transient_io_errors: snapshot.tun_fd_transient_io_errors,
+    };
     unsafe {
-        *stats = XrayTunStats {
-            struct_size: expected_size,
-            inbound_packets: snapshot.inbound_packets,
-            outbound_packets: snapshot.outbound_packets,
-            dropped_packets: snapshot.dropped_packets,
-            inbound_dropped_packets: snapshot.inbound_dropped_packets,
-            outbound_dropped_packets: snapshot.outbound_dropped_packets,
-            tcp_stack_to_remote_bytes: snapshot.tcp_stack_to_remote_bytes,
-            tcp_remote_written_bytes: snapshot.tcp_remote_written_bytes,
-            tcp_remote_read_bytes: snapshot.tcp_remote_read_bytes,
-            tcp_backpressure_events: snapshot.tcp_backpressure_events,
-            tcp_stack_to_remote_backpressure_events: snapshot
-                .tcp_stack_to_remote_backpressure_events,
-            tcp_remote_to_stack_backpressure_events: snapshot
-                .tcp_remote_to_stack_backpressure_events,
-            tcp_remote_write_batches: snapshot.tcp_remote_write_batches,
-            tcp_remote_write_batch_messages: snapshot.tcp_remote_write_batch_messages,
-            tcp_remote_write_batch_max_messages: snapshot.tcp_remote_write_batch_max_messages,
-            tcp_remote_write_batch_max_bytes: snapshot.tcp_remote_write_batch_max_bytes,
-            tcp_remote_write_wait_events: snapshot.tcp_remote_write_wait_events,
-            tcp_remote_write_wait_ms_total: snapshot.tcp_remote_write_wait_ms_total,
-            tcp_remote_write_wait_ms_max: snapshot.tcp_remote_write_wait_ms_max,
-            tcp_remote_flush_wait_events: snapshot.tcp_remote_flush_wait_events,
-            tcp_remote_flush_wait_ms_total: snapshot.tcp_remote_flush_wait_ms_total,
-            tcp_remote_flush_wait_ms_max: snapshot.tcp_remote_flush_wait_ms_max,
-            tcp_pending_remote_bytes: snapshot.tcp_pending_remote_bytes,
-            tcp_pending_remote_flows: snapshot.tcp_pending_remote_flows,
-            tcp_pending_remote_max_bytes: snapshot.tcp_pending_remote_max_bytes,
-            tcp_pending_upload_bytes: snapshot.tcp_pending_upload_bytes,
-            tcp_pending_upload_max_bytes: snapshot.tcp_pending_upload_max_bytes,
-            tcp_pending_total_bytes: snapshot.tcp_pending_total_bytes,
-            tcp_remote_buffer_limit_bytes: snapshot.tcp_remote_buffer_limit_bytes,
-            tcp_buffer_hard_limit_bytes: snapshot.tcp_buffer_hard_limit_bytes,
-            tcp_remote_buffer_pressure_active: if snapshot.tcp_remote_buffer_pressure_active {
-                1
-            } else {
-                0
-            },
-            tcp_remote_write_errors: snapshot.tcp_remote_write_errors,
-            tcp_remote_closed_events: snapshot.tcp_remote_closed_events,
-            tcp_remote_read_errors: snapshot.tcp_remote_read_errors,
-            tcp_open_errors: snapshot.tcp_open_errors,
-            tcp_open_events: snapshot.tcp_open_events,
-            tcp_open_duration_ms_total: snapshot.tcp_open_duration_ms_total,
-            tcp_open_duration_ms_max: snapshot.tcp_open_duration_ms_max,
-            tcp_first_byte_events: snapshot.tcp_first_byte_events,
-            tcp_first_byte_duration_ms_total: snapshot.tcp_first_byte_duration_ms_total,
-            tcp_first_byte_duration_ms_max: snapshot.tcp_first_byte_duration_ms_max,
-            tcp443_open_events: snapshot.tcp443_open_events,
-            tcp443_open_duration_ms_total: snapshot.tcp443_open_duration_ms_total,
-            tcp443_open_duration_ms_max: snapshot.tcp443_open_duration_ms_max,
-            tcp443_first_byte_events: snapshot.tcp443_first_byte_events,
-            tcp443_first_byte_duration_ms_total: snapshot.tcp443_first_byte_duration_ms_total,
-            tcp443_first_byte_duration_ms_max: snapshot.tcp443_first_byte_duration_ms_max,
-            active_tcp_flows: snapshot.active_tcp_flows,
-            active_udp_flows: snapshot.active_udp_flows,
-            udp_flow_limit: snapshot.udp_flow_limit,
-            udp_budget_drops: snapshot.udp_budget_drops,
-            udp_evicted_flows: snapshot.udp_evicted_flows,
-            udp_channel_dropped_packets: snapshot.udp_channel_dropped_packets,
-            udp_remote_open_events: snapshot.udp_remote_open_events,
-            udp_remote_udp443_open_events: snapshot.udp_remote_udp443_open_events,
-            udp_remote_written_bytes: snapshot.udp_remote_written_bytes,
-            udp_remote_read_bytes: snapshot.udp_remote_read_bytes,
-            udp_open_errors: snapshot.udp_open_errors,
-            udp_vision_udp443_rejections: snapshot.udp_vision_udp443_rejections,
-            udp_remote_write_errors: snapshot.udp_remote_write_errors,
-            udp_remote_read_errors: snapshot.udp_remote_read_errors,
-            udp_remote_closed_events: snapshot.udp_remote_closed_events,
-            udp_quic_blocked_packets: snapshot.udp_quic_blocked_packets,
-            inbound_queue_depth: snapshot.inbound_queue_depth,
-            outbound_queue_depth: snapshot.outbound_queue_depth,
-            inbound_queue_max_packets: snapshot.inbound_queue_max_packets,
-            outbound_queue_max_packets: snapshot.outbound_queue_max_packets,
-            tun_fd_write_batches: snapshot.tun_fd_write_batches,
-            tun_fd_write_batch_packets: snapshot.tun_fd_write_batch_packets,
-            tun_fd_write_batch_max_packets: snapshot.tun_fd_write_batch_max_packets,
-            tun_fd_read_loop_exits: snapshot.tun_fd_read_loop_exits,
-            tun_fd_write_loop_exits: snapshot.tun_fd_write_loop_exits,
-            tun_fd_transient_io_errors: snapshot.tun_fd_transient_io_errors,
-        };
+        std::ptr::copy_nonoverlapping(
+            std::ptr::from_ref(&stats_snapshot).cast::<u8>(),
+            stats.cast::<u8>(),
+            caller_size.min(current_size),
+        );
     }
 
     XrayStatus::Ok

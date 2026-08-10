@@ -17,13 +17,16 @@ use tokio_rustls::TlsConnector as TokioTlsConnector;
 use xray_routing::{Target, TargetAddr};
 
 use crate::{
-    connect_tcp_happy_eyeballs, connect_tcp_stream, utls_profiles::UtlsClientHelloProfile,
-    utls_shaping::profile_offers_tls13, BoxedTransportStream, HappyEyeballsConfig, SocketProtector,
-    TlsClientConfig, TransportError, TransportStream,
+    connect_tcp_happy_eyeballs, connect_tcp_stream,
+    utls_profiles::UtlsClientHelloProfile,
+    utls_shaping::profile_offers_tls13,
+    utls_tls::{unshaped_alpn_protocols, TlsAlpnPolicy},
+    BoxedTransportStream, HappyEyeballsConfig, SocketProtector, TlsClientConfig, TransportError,
+    TransportStream,
 };
 
 /// Identifies one rustls configuration shape. Two connections that agree on
-/// all three fields share a config, which matters less for build cost —
+/// all four fields share a config, which matters less for build cost —
 /// webpki-roots ships pre-parsed statics, so building one is microseconds —
 /// than for continuity: a `ClientConfig` owns the resumption session store, so
 /// splitting configs splits session tickets and kx hints along with them.
@@ -37,6 +40,13 @@ struct ClientConfigKey {
     allow_insecure: bool,
     alpn: Vec<String>,
     fingerprint: Option<String>,
+    alpn_policy: TlsAlpnPolicy,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+enum Http3ClientConfigKey {
+    System { allow_insecure: bool },
+    Pinned,
 }
 
 /// Where a connector's rustls configs come from. The two kinds are mutually
@@ -56,6 +66,11 @@ pub struct TlsConnector {
     /// a shape once per connector family rather than once per clone --
     /// `tls_connector_clones_share_one_config_cache` pins that.
     source: Arc<ConfigSource>,
+    /// HTTP/3 deliberately bypasses uTLS shaping and the ordinary stream
+    /// config cache. Keeping its own semantic cache preserves QUIC session
+    /// tickets while coalescing configs that differ only in ignored
+    /// fingerprint or configured ALPN fields.
+    http3_configs: Arc<Mutex<HashMap<Http3ClientConfigKey, Arc<rustls::ClientConfig>>>>,
     socket_protector: Option<Arc<dyn SocketProtector>>,
 }
 
@@ -72,6 +87,7 @@ impl TlsConnector {
     pub fn system() -> Result<Self, TransportError> {
         Ok(Self {
             source: Arc::new(ConfigSource::Cached(Mutex::new(HashMap::new()))),
+            http3_configs: Arc::new(Mutex::new(HashMap::new())),
             socket_protector: None,
         })
     }
@@ -89,6 +105,7 @@ impl TlsConnector {
     pub fn with_pinned_client_config(client_config: Arc<rustls::ClientConfig>) -> Self {
         Self {
             source: Arc::new(ConfigSource::Pinned(client_config)),
+            http3_configs: Arc::new(Mutex::new(HashMap::new())),
             socket_protector: None,
         }
     }
@@ -98,11 +115,63 @@ impl TlsConnector {
         self
     }
 
+    pub(crate) fn socket_protector_arc(&self) -> Option<Arc<dyn SocketProtector>> {
+        self.socket_protector.clone()
+    }
+
     /// Returns the config for one connection shape, building and caching it on
     /// first use.
     pub fn client_config_for(
         &self,
         config: &TlsClientConfig,
+    ) -> Result<Arc<rustls::ClientConfig>, TransportError> {
+        self.client_config_for_policy(config, TlsAlpnPolicy::Raw)
+    }
+
+    /// Builds the stock TLS configuration used by XHTTP HTTP/3.
+    ///
+    /// Xray's H3 path hands its ordinary Go TLS config directly to QUIC; its
+    /// uTLS TCP dial callback is not used. Accordingly this path ignores both
+    /// the fingerprint and configured ALPN, always advertises exactly `h3`,
+    /// and never installs a ClientHello customizer.
+    pub(crate) fn http3_client_config_for(
+        &self,
+        config: &TlsClientConfig,
+    ) -> Result<Arc<rustls::ClientConfig>, TransportError> {
+        let key = match &*self.source {
+            ConfigSource::Cached(_) => Http3ClientConfigKey::System {
+                allow_insecure: config.allow_insecure,
+            },
+            ConfigSource::Pinned(_) => Http3ClientConfigKey::Pinned,
+        };
+        let mut configs = self
+            .http3_configs
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(cached) = configs.get(&key) {
+            return Ok(Arc::clone(cached));
+        }
+
+        let mut client_config = match &*self.source {
+            ConfigSource::Cached(_) => client_config_with_provider(
+                Arc::new(rustls::crypto::ring::default_provider()),
+                config.allow_insecure,
+                &[&rustls::version::TLS13],
+            )?,
+            ConfigSource::Pinned(pinned) => (**pinned).clone(),
+        };
+        client_config.alpn_protocols = vec![b"h3".to_vec()];
+        client_config.client_hello_customizer = None;
+        validate_http3_client_config(&client_config)?;
+        let client_config = Arc::new(client_config);
+        configs.insert(key, Arc::clone(&client_config));
+        Ok(client_config)
+    }
+
+    fn client_config_for_policy(
+        &self,
+        config: &TlsClientConfig,
+        alpn_policy: TlsAlpnPolicy,
     ) -> Result<Arc<rustls::ClientConfig>, TransportError> {
         match &*self.source {
             ConfigSource::Pinned(pinned) => Ok(Arc::clone(pinned)),
@@ -118,6 +187,7 @@ impl TlsConnector {
                     allow_insecure: *allow_insecure,
                     alpn: alpn.clone(),
                     fingerprint: fingerprint.clone(),
+                    alpn_policy,
                 };
 
                 // Deliberately fails open where the plan said to fail closed:
@@ -132,7 +202,7 @@ impl TlsConnector {
                     return Ok(Arc::clone(cached));
                 }
 
-                let client_config = Arc::new(build_client_config(config)?);
+                let client_config = Arc::new(build_client_config(config, alpn_policy)?);
                 configs.insert(key, Arc::clone(&client_config));
 
                 Ok(client_config)
@@ -146,7 +216,7 @@ impl TlsConnector {
         config: &TlsClientConfig,
     ) -> Result<BoxedTransportStream, TransportError> {
         let server_name = tls_server_name(config)?;
-        self.connect_stream_with_server_name(stream, config, server_name)
+        self.connect_stream_with_server_name(stream, config, server_name, TlsAlpnPolicy::Raw)
             .await
     }
 
@@ -163,8 +233,13 @@ impl TlsConnector {
         };
 
         let stream = connect_tcp_stream(addr, self.socket_protector.as_deref()).await?;
-        self.connect_stream_with_server_name(Box::new(stream), config, server_name)
-            .await
+        self.connect_stream_with_server_name(
+            Box::new(stream),
+            config,
+            server_name,
+            TlsAlpnPolicy::Raw,
+        )
+        .await
     }
 
     /// Connects one resolved address without discarding IPv6 scope or flow metadata.
@@ -175,7 +250,24 @@ impl TlsConnector {
     ) -> Result<BoxedTransportStream, TransportError> {
         let server_name = tls_server_name(config)?;
         let stream = connect_tcp_stream(addr, self.socket_protector.as_deref()).await?;
-        self.connect_stream_with_server_name(Box::new(stream), config, server_name)
+        self.connect_stream_with_server_name(
+            Box::new(stream),
+            config,
+            server_name,
+            TlsAlpnPolicy::Raw,
+        )
+        .await
+    }
+
+    pub(crate) async fn connect_socket_addr_with_alpn_policy(
+        &self,
+        addr: SocketAddr,
+        config: &TlsClientConfig,
+        alpn_policy: TlsAlpnPolicy,
+    ) -> Result<BoxedTransportStream, TransportError> {
+        let server_name = tls_server_name(config)?;
+        let stream = connect_tcp_stream(addr, self.socket_protector.as_deref()).await?;
+        self.connect_stream_with_server_name(Box::new(stream), config, server_name, alpn_policy)
             .await
     }
 
@@ -196,7 +288,31 @@ impl TlsConnector {
         )
         .await?;
 
-        self.connect_stream_with_server_name(Box::new(stream), config, server_name)
+        self.connect_stream_with_server_name(
+            Box::new(stream),
+            config,
+            server_name,
+            TlsAlpnPolicy::Raw,
+        )
+        .await
+    }
+
+    pub(crate) async fn connect_candidates_with_alpn_policy(
+        &self,
+        candidates: &[SocketAddr],
+        config: &TlsClientConfig,
+        happy_eyeballs: &HappyEyeballsConfig,
+        alpn_policy: TlsAlpnPolicy,
+    ) -> Result<BoxedTransportStream, TransportError> {
+        let server_name = tls_server_name(config)?;
+        let stream = connect_tcp_happy_eyeballs(
+            candidates,
+            self.socket_protector.as_deref(),
+            happy_eyeballs,
+        )
+        .await?;
+
+        self.connect_stream_with_server_name(Box::new(stream), config, server_name, alpn_policy)
             .await
     }
 
@@ -205,8 +321,9 @@ impl TlsConnector {
         stream: BoxedTransportStream,
         config: &TlsClientConfig,
         server_name: ServerName<'static>,
+        alpn_policy: TlsAlpnPolicy,
     ) -> Result<BoxedTransportStream, TransportError> {
-        let client_config = self.client_config_for(config)?;
+        let client_config = self.client_config_for_policy(config, alpn_policy)?;
         let stream = TokioTlsConnector::from(client_config)
             .connect(server_name, stream)
             .await
@@ -217,8 +334,30 @@ impl TlsConnector {
 }
 
 fn tls_server_name(config: &TlsClientConfig) -> Result<ServerName<'static>, TransportError> {
-    ServerName::try_from(config.server_name.clone())
-        .map_err(|_| TransportError::InvalidTlsServerName(config.server_name.clone()))
+    parse_tls_server_name(&config.server_name)
+}
+
+pub(crate) fn parse_tls_server_name(
+    server_name: &str,
+) -> Result<ServerName<'static>, TransportError> {
+    ServerName::try_from(server_name.to_owned())
+        .map_err(|_| TransportError::InvalidTlsServerName(server_name.to_owned()))
+}
+
+fn validate_http3_client_config(
+    client_config: &rustls::ClientConfig,
+) -> Result<(), TransportError> {
+    let mut probe = client_config.clone();
+    probe.resumption = rustls::client::Resumption::disabled();
+    let server_name = parse_tls_server_name("h3-preflight.invalid")?;
+    rustls::quic::ClientConnection::new(
+        Arc::new(probe),
+        rustls::quic::Version::V1,
+        server_name,
+        Vec::new(),
+    )
+    .map(|_| ())
+    .map_err(|error| TransportError::TlsConfig(error.to_string()))
 }
 
 impl TransportStream for tokio_rustls::client::TlsStream<BoxedTransportStream> {
@@ -299,7 +438,10 @@ impl ServerCertVerifier for NoCertificateVerification {
 /// way to obtain one: the two builders below are private so that no future
 /// transport can reach past the fingerprint and emit an unshaped ClientHello
 /// by accident.
-fn build_client_config(config: &TlsClientConfig) -> Result<rustls::ClientConfig, TransportError> {
+fn build_client_config(
+    config: &TlsClientConfig,
+    alpn_policy: TlsAlpnPolicy,
+) -> Result<rustls::ClientConfig, TransportError> {
     let client_config = match crate::utls_tls::shaping_profile(config.fingerprint.as_deref())? {
         Some((fingerprint, profile)) => {
             let versions = profile_protocol_versions(profile);
@@ -308,8 +450,12 @@ fn build_client_config(config: &TlsClientConfig) -> Result<rustls::ClientConfig,
 
             let mut client_config =
                 shaped_client_config(provider, config.allow_insecure, versions)?;
+            crate::utls_shaping::retain_profile_certificate_decompressors(
+                profile,
+                &mut client_config.cert_decompressors,
+            );
             client_config.client_hello_customizer = Some(Arc::new(
-                crate::utls_tls::UtlsClientHelloCustomizer::new(profile, &config.alpn),
+                crate::utls_tls::UtlsClientHelloCustomizer::new(profile, &config.alpn, alpn_policy),
             ));
             client_config
         }
@@ -322,12 +468,9 @@ fn build_client_config(config: &TlsClientConfig) -> Result<rustls::ClientConfig,
             // predate fingerprint support pass, and with no ALPN configured
             // they must keep getting the hello they always got -- one with no
             // ALPN extension, which an empty list is not the same as.
-            if !config.alpn.is_empty() {
-                client_config.alpn_protocols = config
-                    .alpn
-                    .iter()
-                    .map(|protocol| protocol.as_bytes().to_vec())
-                    .collect();
+            let alpn_protocols = unshaped_alpn_protocols(&config.alpn, alpn_policy);
+            if !alpn_protocols.is_empty() {
+                client_config.alpn_protocols = alpn_protocols;
             }
             client_config
         }
@@ -344,7 +487,7 @@ fn build_client_config(config: &TlsClientConfig) -> Result<rustls::ClientConfig,
 /// `build_client_config` with `TlsConnector` so the bytes the parity tests
 /// inspect stay the bytes a real connection sends.
 pub fn plain_tls_client_hello_bytes(config: &TlsClientConfig) -> Result<Vec<u8>, TransportError> {
-    let client_config = build_client_config(config)?;
+    let client_config = build_client_config(config, TlsAlpnPolicy::Raw)?;
 
     let server_name = tls_server_name(config)?;
     let mut connection = ClientConnection::new(Arc::new(client_config), server_name)
@@ -385,17 +528,13 @@ fn profile_protocol_versions(
 
 /// Refuses a fingerprint whose ClientHello no handshake of ours could finish.
 ///
-/// A profile's cipher suites go on the wire verbatim, but rustls can only *use*
-/// one its provider implements: when the server picks any of the others,
-/// `find_cipher_suite` comes back empty and the connection dies at ServerHello
-/// with `SelectedUnofferedCipherSuite` (`rustls/src/client/hs.rs:1774`).
-/// `hello360_7_5` is such a profile — twenty suites, every one CBC, RC4 or
-/// 3DES, against rustls' six TLS 1.2 AEAD suites — so every dial on it is a
-/// socket opened to lose. Measured against a Go server keeping its legacy
-/// suites enabled: it selects `TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA` (0xc009)
-/// and we abort. uTLS completes that same handshake, so this is our limit
-/// rather than the parrot's, and saying so here beats discovering it a round
-/// trip later under an error that names neither the fingerprint nor the cause.
+/// Runtime shaping filters the profile's list to suites implemented by the
+/// selected provider and enabled protocol versions before building the
+/// ClientHello. A profile such as `hello360_7_5` contains only CBC, RC4, and
+/// 3DES suites, while rustls exposes only AEAD suites, so filtering would leave
+/// no usable offer. Rejecting that profile here produces a stable,
+/// fingerprint-specific error before a socket is opened instead of relying on
+/// a later generic ClientHello planning failure.
 ///
 /// `versions` is part of the question rather than context for it: a suite this
 /// provider implements only for the version the profile just gave up is a suite
@@ -520,4 +659,74 @@ fn insecure_rustls_client_config(
                 .with_custom_certificate_verifier(verifier)
                 .with_no_client_auth()
         })
+}
+
+#[cfg(test)]
+mod http3_tests {
+    use super::*;
+
+    fn input(allow_insecure: bool, alpn: &[&str], fingerprint: Option<&str>) -> TlsClientConfig {
+        TlsClientConfig {
+            server_name: "example.com".to_owned(),
+            allow_insecure,
+            alpn: alpn.iter().map(|value| (*value).to_owned()).collect(),
+            fingerprint: fingerprint.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn stock_http3_tls_ignores_stream_shape_and_shares_a_semantic_cache() {
+        let connector = TlsConnector::system().expect("system TLS connector");
+        let first = connector
+            .http3_client_config_for(&input(
+                false,
+                &["http/1.1"],
+                Some("unsupported-stream-fingerprint"),
+            ))
+            .expect("H3 ignores stream fingerprint shaping");
+        assert_eq!(first.alpn_protocols, [b"h3".to_vec()]);
+        assert!(first.client_hello_customizer.is_none());
+
+        let equivalent = connector
+            .http3_client_config_for(&input(false, &["h2"], Some("chrome")))
+            .expect("equivalent secure H3 config");
+        assert!(Arc::ptr_eq(&first, &equivalent));
+
+        let cloned_connector = connector.clone();
+        let from_clone = cloned_connector
+            .http3_client_config_for(&input(false, &[], None))
+            .expect("connector clone shares H3 cache");
+        assert!(Arc::ptr_eq(&first, &from_clone));
+
+        let insecure = connector
+            .http3_client_config_for(&input(true, &[], None))
+            .expect("insecure H3 config");
+        assert!(!Arc::ptr_eq(&first, &insecure));
+    }
+
+    #[test]
+    fn pinned_http3_tls_is_cloned_sanitized_and_requires_tls13() {
+        let mut pinned = unshaped_client_config(false).expect("pinned TLS config");
+        pinned.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+        let pinned = Arc::new(pinned);
+        let connector = TlsConnector::with_pinned_client_config(Arc::clone(&pinned));
+        let h3 = connector
+            .http3_client_config_for(&input(false, &["ignored"], Some("ignored")))
+            .expect("derive H3 config from pinned roots/verifier");
+        assert!(!Arc::ptr_eq(&pinned, &h3));
+        assert_eq!(h3.alpn_protocols, [b"h3".to_vec()]);
+        assert!(h3.client_hello_customizer.is_none());
+
+        let tls12_only = client_config_with_provider(
+            Arc::new(rustls::crypto::ring::default_provider()),
+            false,
+            &[&rustls::version::TLS12],
+        )
+        .expect("TLS 1.2-only pinned config");
+        let connector = TlsConnector::with_pinned_client_config(Arc::new(tls12_only));
+        assert!(matches!(
+            connector.http3_client_config_for(&input(false, &[], None)),
+            Err(TransportError::TlsConfig(_))
+        ));
+    }
 }

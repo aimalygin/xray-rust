@@ -74,10 +74,10 @@ runtime currently selects the first user.
 - `xtls-rprx-vision-udp443`.
 
 `streamSettings.network` accepts `tcp`/`raw`, `ws`/`websocket`, `httpupgrade`,
-and `grpc`. Xray renamed the TCP transport to `raw`; both spellings are
-accepted and mean the same thing, as do `ws` and `websocket`. `gun` is not an
-accepted alias for `grpc`, because v26.5.9's `TransportProtocol.Build` has no
-such arm either. Security values are:
+`grpc`, and `xhttp`/`splithttp`. Xray renamed the TCP transport to `raw` and
+XHTTP from `splithttp`; both pairs are accepted aliases, as are `ws` and
+`websocket`. `gun` is not an accepted alias for `grpc`, because v26.5.9's
+`TransportProtocol.Build` has no such arm either. Security values are:
 
 - `none`;
 - `tls`, with `serverName`, `allowInsecure` (certificate verification is
@@ -87,9 +87,10 @@ such arm either. Security values are:
   `mldsa65Verify`.
 
 `tcpSettings.header.type` — equally `rawSettings.header.type` — may be absent,
-empty, or `none`. HTTP/2, QUIC, KCP, XHTTP and other stream transports are not
-supported. Outbound mux, `proxySettings`, `sendThrough`, multiple VLESS
-servers, and outbound chaining are rejected.
+empty, or `none`. Generic HTTP/2, QUIC, KCP and other stream transports are not
+supported; HTTP/2 and QUIC v1 are available only as XHTTP's selected wire
+engines. Outbound mux, `proxySettings`, `sendThrough`, multiple VLESS servers,
+and outbound chaining are rejected.
 
 VLESS UDP is carried over the supported TCP transport using VLESS datagram or
 XUDP framing; it does not make `streamSettings.network: "udp"` valid.
@@ -100,7 +101,10 @@ Both transports carry VLESS over an HTTP/1.1 upgrade and share Xray's
 browser-masquerade header block, so a request from either looks like a
 browser's. Their requests are serialized the way Go writes an `http.Request`:
 request line, `Host`, `User-Agent`, then every remaining header sorted
-case-sensitively by its literal key.
+case-sensitively by its literal key. Header CR/LF is replaced with spaces,
+invalid field names are dropped, IDN hosts are written as Punycode, and an
+absent `User-Agent` becomes Go's `Go-http-client/1.1` default. Those details
+matter for both wire parity and request-smuggling resistance.
 
 `wsSettings` accepts `path`, `host`, `headers`, `heartbeatPeriod` and
 `acceptProxyProtocol`; `httpupgradeSettings` accepts the same less
@@ -125,13 +129,19 @@ an early-data budget: nothing touches the network until the first write, and
 if that write is at most `N` bytes it travels inside `Sec-WebSocket-Protocol`
 as unpadded base64url with no frame sent for it. A larger first write disables
 early data for the whole connection rather than being truncated — the boundary
-is inclusive. On HTTPUpgrade it carries no payload at all; any positive value
-only means the dial returns without waiting for the `101`.
+is inclusive. On HTTPUpgrade it carries no payload at all. The client still
+waits for and validates the `101`: Xray's inbound handler can otherwise leave
+application bytes coalesced behind the request in its buffered reader, causing
+silent loss. A configured HTTPUpgrade `ed` therefore produces a warning.
 
 One more asymmetry worth knowing before writing a path: HTTPUpgrade assigns the
-path to Go's `URL.Path`, which escapes `?`, so a configured `/ws?foo=bar` goes
-out as `GET /ws%3Ffoo=bar`. WebSocket sends a real query string. The Xray
-server unescapes it back, so either round-trips — against Xray.
+path to Go's decoded `URL.Path`, which escapes `?`, `%`, `#`, whitespace and
+non-ASCII bytes, so a configured `/ws?foo=bar` goes out as
+`GET /ws%3Ffoo=bar`. When `?ed=` triggered a config rewrite the path was
+already escaped once by `URL.String`, and HTTPUpgrade escapes that `%` again,
+matching Xray's double-escaped wire form. WebSocket reparses a URI instead: it
+keeps valid existing path escapes, sends a real raw query, and omits fragments.
+The Xray server unescapes the transport path back, so both round-trip.
 
 `heartbeatPeriod` is in seconds and applies to WebSocket only. It sends an
 empty ping every period, the first one a full period after connect. Closing
@@ -181,6 +191,134 @@ earlier — the two land in different places, but neither reaches the wire:
 A `freedom` outbound is also refused these transports, and `grpc` with them.
 Xray would dial the destination itself through them; here they are implemented
 for VLESS only, and refusing is better than silently dialling plain TCP.
+
+### XHTTP
+
+`network: "xhttp"` and the legacy `"splithttp"` spelling select the same
+client transport. Their settings blocks are `xhttpSettings` and
+`splithttpSettings`; when both non-null blocks are present, Xray gives
+`xhttpSettings` unconditional priority and so do we. The ignored legacy block
+must still have JSON-decodable field types, but its mode and cross-field
+semantics cannot affect the selected block. A missing or null selected block
+is the ordinary zero-valued Xray config, not an error.
+
+The configured security and ALPN list choose the wire engine before dialing:
+
+| Stream security and configured ALPN | XHTTP engine |
+| --- | --- |
+| `none` | HTTP/1.1 |
+| TLS with exactly `["http/1.1"]` | HTTP/1.1 |
+| TLS with exactly `["h3"]` | HTTP/3 over QUIC v1 |
+| TLS with any other list, including empty or multi-valued | HTTP/2 |
+| REALITY | HTTP/2 |
+
+This follows Xray's configured-list decision; it is not an ALPN fallback
+ladder. In particular, the H3 branch requires TLS, advertises exactly `h3`, and
+never retries over H2/H1. REALITY is supported on H2. Vision is not: as with
+gRPC, XHTTP returns an HTTP stream wrapper rather than the TLS/REALITY
+connection Vision needs to inspect directly, and xray-core refuses the same
+shape later in its VLESS outbound.
+
+`host` resolves the HTTP authority ahead of `tlsSettings.serverName` or
+`realitySettings.serverName`, then the VLESS server address. The native client
+path does not append the VLESS destination port; a port is sent only when it
+was written explicitly in `host`. IPv6 authorities are bracketed and domain
+names are normalized through IDNA. A `Host` entry inside `headers` is rejected
+because it conflicts with the independent field. Other valid header names are
+MIME-canonicalized as Xray's `http.Header.Add` does.
+
+All three modes are active on HTTP/1.1, HTTP/2, and HTTP/3:
+
+- `packet-up` opens one session downlink and sends numbered, bounded uplink
+  requests. HTTP/1.1 waits for and drains each response before safely reusing
+  that upload socket; H2/H3 may monitor bounded responses concurrently after
+  the corresponding request body has uploaded.
+- `stream-up` opens a separate session downlink and streaming uplink. H1 uses
+  chunked transfer encoding; H2/H3 use streaming DATA. The upload response is
+  drained in the background and participates in cancellation/error teardown.
+- `stream-one` uses one full-duplex request with no session or sequence.
+
+`mode: "auto"` becomes `packet-up` without REALITY and `stream-one` with
+REALITY. `stream-up` remains available explicitly. A session UUID is generated
+for the two split modes; path, cookie, header, and query placements, mandatory
+padding, sequence numbers, packet pacing, and half-close/EOF behavior are all
+handled by the shared request composer.
+
+The HTTP clients also match Go's transparent gzip policy. Stream requests and
+H2/H3 packet requests add `Accept-Encoding: gzip` only when the caller did not
+select another encoding or a non-empty Range and the method is not HEAD; an
+explicit empty encoding has Go's same auto-gzip meaning. Responses are decoded
+only when the transport added that header itself. H1/H2 accept case-insensitive
+`Content-Encoding: gzip`, while H3 keeps quic-go's exact lowercase check. The
+raw H1 packet uploader bypasses both injection and decoding, as Xray's direct
+`Request.Write` path does.
+
+The accepted `xhttpSettings` surface is:
+
+- routing/request identity: `host`, `path`, `mode`, and `headers`;
+- padding: `xPaddingBytes`, `xPaddingObfsMode`, `xPaddingKey`,
+  `xPaddingHeader`, `xPaddingPlacement`, and `xPaddingMethod`;
+- uplink metadata: `uplinkHTTPMethod`, `sessionPlacement`, `sessionKey`,
+  `seqPlacement`, `seqKey`, `uplinkDataPlacement`, `uplinkDataKey`, and
+  `uplinkChunkSize`;
+- packet/stream controls: `noGRPCHeader`, `noSSEHeader`,
+  `scMaxEachPostBytes`, `scMinPostsIntervalMs`, `scMaxBufferedPosts`,
+  `scStreamUpServerSecs`, and `serverMaxHeaderBytes`;
+- `xmux`, with `maxConcurrency`, `maxConnections`, `cMaxReuseTimes`,
+  `hMaxRequestTimes`, `hMaxReusableSecs`, and `hKeepAlivePeriod`.
+
+Range fields accept a JSON integer or Xray's string form such as
+`"100-1000"`; null scalar/range/xmux values retain Go's zero-value semantics.
+`uplinkHTTPMethod` must be an HTTP token and `GET` is allowed only in
+`packet-up`; cookie/header uplink-data placement is also packet-up-only.
+`noSSEHeader` and `serverMaxHeaderBytes` are accepted but have no client-side
+effect because they configure Xray's inbound response/listener. A null
+`downloadSettings` is equivalent to absent; a populated value is rejected
+because it requires a second independent transport stack. `extra` is rejected
+even when null: it is a `json.RawMessage` upstream and its presence replaces
+most outer settings, which cannot be approximated without changing the wire.
+
+The xmux scheduler is implemented rather than merely parsed. Its random ranges
+bound logical concurrency, client-slot count, connection reuse, HTTP request
+count, and reusable lifetime. Enabling positive `maxConnections` together with
+positive `maxConcurrency` is rejected as Xray rejects it. The default is one
+logical flow per client slot, so simultaneous flows get distinct HTTP clients
+while sequential flows can reuse one. H2/H3 keep capacity-aware reusable
+connection pools; H1 reuses only packet-upload sockets whose response was
+fully consumed. The scheduler is shared by every cached selection of one
+outbound, including TCP and UDP sessions, rather than being cloned per flow.
+
+#### HTTP/3 phase-one QUIC surface
+
+The H3 path uses a protected UDP socket and the same resolved-candidate Happy
+Eyeballs policy as the other outbounds. Its stock TLS 1.3 config ignores
+`tlsSettings.fingerprint` and the configured ALPN payload after the exact
+`["h3"]` branch is selected, then advertises exactly `h3`; that is the same
+separation Xray makes between its QUIC TLS path and uTLS TCP callback.
+
+`streamSettings.finalmask.quicParams` is parsed for every stream but applied
+only to H3. The phase-one engine implements QUIC v1, Reno, the default/standard
+BBR selection, initial receive windows, equal explicit maximum windows,
+`maxIdleTimeout`, `keepAlivePeriod`, `disablePathMTUDiscovery`, and
+`maxIncomingStreams`. With no overrides it uses Xray's 2 MiB stream and 3 MiB
+connection initial windows, a 300-second idle timeout, and a ten-second H3
+keepalive.
+
+Receive-window growth is deliberately not claimed: Quinn holds those windows
+static, while quic-go adapts them toward 6 MiB per stream and 15 MiB per
+connection. Standard BBR is likewise a Quinn-BBR approximation with Xray's
+initial congestion window, not quic-go's exact controller. Distinct
+`maxStreamReceiveWindow`/`maxConnectionReceiveWindow` values, QUIC v2 through
+the transport API, conservative/aggressive BBR profiles, Brutal and
+force-Brutal, non-empty `udpHop`, and `debug: true` fail closed before opening
+a socket. Nonempty `finalmask.tcp` or `finalmask.udp` masks also remain
+unsupported. H3 has hermetic mode, wire, pool, lifecycle, TLS, and protected
+UDP tests, and the ignored live Xray-core `packet-up`, `stream-up`, and
+`stream-one` interoperability cases pass. The current pool conservatively
+allows one active HTTP request per QUIC connection and opens another
+connection for concurrent work. That functional evidence does not establish
+performance parity; release throughput plus controlled RTT/loss runs remain
+required for the static-window, pool, and Quinn-BBR differences.
 
 ### gRPC
 
@@ -373,6 +511,13 @@ open" is the ordinary state here and not an edge case — `idle_timeout` on its
 own therefore turns keepalive on and leaves it asleep for as long as no flow is
 using the connection, exactly as grpc-go does. A flow arriving on a dormant
 connection takes a ping out alongside its first request.
+
+This keepalive field is separate from grpc-go's `ClientConn` idleness manager.
+Xray does not override that manager's 30-minute default, so the pooled HTTP/2
+connection here is also retired after thirty minutes with no open call. The
+timer starts when the last call closes; retirement drops the pool's reusable
+handle without aborting a stream that was already opened, and the next flow
+performs a fresh bounded dial.
 
 `initial_windows_size` reaches the wire only *above* grpc-go's own default of
 65535. At or below it, no `SETTINGS_INITIAL_WINDOW_SIZE` entry is written and

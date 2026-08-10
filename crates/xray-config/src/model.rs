@@ -867,7 +867,69 @@ pub struct StreamSettings {
     pub network: Network,
     pub transport: StreamTransport,
     pub security: StreamSecurity,
+    /// Normalized `streamSettings.finalmask.quicParams` values. `None`
+    /// preserves the distinction between an absent/null Go pointer and an
+    /// explicitly present (possibly default-valued) configuration.
+    pub quic_params: Option<QuicParamsSettings>,
     pub socket_options: Option<SocketOptions>,
+}
+
+/// Xray's final QUIC parameters after config-build normalization.
+///
+/// Bandwidths are stored in bytes per second, matching the protobuf/runtime
+/// representation rather than the bits-per-second JSON spelling.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct QuicParamsSettings {
+    pub congestion: QuicCongestion,
+    pub bbr_profile: QuicBbrProfile,
+    pub brutal_up_bytes_per_sec: u64,
+    pub brutal_down_bytes_per_sec: u64,
+    pub udp_hop: QuicUdpHopSettings,
+    pub init_stream_receive_window: u64,
+    pub max_stream_receive_window: u64,
+    pub init_connection_receive_window: u64,
+    pub max_connection_receive_window: u64,
+    pub max_idle_timeout_secs: i64,
+    pub keep_alive_period_secs: i64,
+    pub disable_path_mtu_discovery: bool,
+    pub max_incoming_streams: i64,
+    /// Retained for fail-closed runtime handling. Unlike Xray's config build,
+    /// parsing this flag does not mutate process-global environment variables.
+    pub debug: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum QuicCongestion {
+    /// Xray leaves an empty congestion name for the QUIC runtime to resolve.
+    #[default]
+    Default,
+    Brutal,
+    Reno,
+    Bbr,
+    ForceBrutal,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum QuicBbrProfile {
+    Conservative,
+    /// Xray normalizes an absent/empty profile to `standard`.
+    #[default]
+    Standard,
+    Aggressive,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct QuicUdpHopSettings {
+    /// Expanded in configured order; duplicates are intentionally preserved.
+    pub ports: Vec<u16>,
+    pub interval: QuicIntervalRange,
+}
+
+/// An ordered Xray `Int32Range` used for the UDP-hop interval.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct QuicIntervalRange {
+    pub from: i32,
+    pub to: i32,
 }
 
 /// The stream transport `streamSettings.network` selected, with its own
@@ -883,6 +945,161 @@ pub enum StreamTransport {
     WebSocket(WebSocketSettings),
     HttpUpgrade(HttpUpgradeSettings),
     Grpc(GrpcSettings),
+    /// `xhttp` / the legacy `splithttp` spelling.
+    Xhttp(Box<XhttpSettings>),
+}
+
+/// An ordered XHTTP integer range. Xray accepts either a JSON integer or a
+/// string such as `"100-1000"`; a single value has identical bounds.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct XhttpRange {
+    pub from: i32,
+    pub to: i32,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum XhttpMode {
+    #[default]
+    Auto,
+    PacketUp,
+    StreamUp,
+    StreamOne,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum XhttpPaddingPlacement {
+    Cookie,
+    Header,
+    Query,
+    #[default]
+    QueryInHeader,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum XhttpPaddingMethod {
+    #[default]
+    RepeatX,
+    Tokenish,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum XhttpPlacement {
+    #[default]
+    Path,
+    Cookie,
+    Header,
+    Query,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum XhttpUplinkDataPlacement {
+    #[default]
+    Auto,
+    Body,
+    Cookie,
+    Header,
+}
+
+/// The client-side XHTTP connection-reuse policy. The runtime may initially
+/// use direct per-connection reuse, but retaining and validating this surface
+/// prevents real Xray profiles from being silently reinterpreted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct XhttpXmuxSettings {
+    pub max_concurrency: XhttpRange,
+    pub max_connections: XhttpRange,
+    pub c_max_reuse_times: XhttpRange,
+    pub h_max_request_times: XhttpRange,
+    pub h_max_reusable_secs: XhttpRange,
+    pub h_keep_alive_period_secs: i64,
+}
+
+impl Default for XhttpXmuxSettings {
+    fn default() -> Self {
+        Self {
+            max_concurrency: XhttpRange { from: 1, to: 1 },
+            max_connections: XhttpRange::default(),
+            c_max_reuse_times: XhttpRange::default(),
+            h_max_request_times: XhttpRange { from: 600, to: 900 },
+            h_max_reusable_secs: XhttpRange {
+                from: 1_800,
+                to: 3_000,
+            },
+            h_keep_alive_period_secs: 0,
+        }
+    }
+}
+
+/// Config-build-normalized `xhttpSettings` / `splithttpSettings` from Xray
+/// v26.5.9. Zero ranges remain zero here where Xray's `Build` leaves them;
+/// the transport must apply its mode/placement-dependent `GetNormalized*`
+/// defaults when it creates a connection.
+///
+/// `downloadSettings` and `extra` are intentionally absent: both replace or
+/// add an independent transport stack and must be rejected until the runtime
+/// can honor them, rather than being accepted and ignored.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct XhttpSettings {
+    pub host: Option<String>,
+    /// The configured path, before XHTTP adds a leading/trailing slash and
+    /// separates its query string for individual requests.
+    pub path: String,
+    pub mode: XhttpMode,
+    pub headers: Vec<(String, String)>,
+    pub x_padding_bytes: XhttpRange,
+    pub x_padding_obfs_mode: bool,
+    pub x_padding_key: String,
+    pub x_padding_header: String,
+    pub x_padding_placement: XhttpPaddingPlacement,
+    pub x_padding_method: XhttpPaddingMethod,
+    pub uplink_http_method: String,
+    pub session_placement: XhttpPlacement,
+    pub session_key: String,
+    pub seq_placement: XhttpPlacement,
+    pub seq_key: String,
+    pub uplink_data_placement: XhttpUplinkDataPlacement,
+    pub uplink_data_key: String,
+    pub uplink_chunk_size: XhttpRange,
+    pub no_grpc_header: bool,
+    pub no_sse_header: bool,
+    pub sc_max_each_post_bytes: XhttpRange,
+    pub sc_min_posts_interval_ms: XhttpRange,
+    pub sc_max_buffered_posts: i64,
+    pub sc_stream_up_server_secs: XhttpRange,
+    pub server_max_header_bytes: i32,
+    pub xmux: XhttpXmuxSettings,
+}
+
+impl Default for XhttpSettings {
+    fn default() -> Self {
+        Self {
+            host: None,
+            path: String::new(),
+            mode: XhttpMode::Auto,
+            headers: Vec::new(),
+            x_padding_bytes: XhttpRange::default(),
+            x_padding_obfs_mode: false,
+            x_padding_key: "x_padding".to_owned(),
+            x_padding_header: "X-Padding".to_owned(),
+            x_padding_placement: XhttpPaddingPlacement::QueryInHeader,
+            x_padding_method: XhttpPaddingMethod::RepeatX,
+            uplink_http_method: "POST".to_owned(),
+            session_placement: XhttpPlacement::Path,
+            session_key: String::new(),
+            seq_placement: XhttpPlacement::Path,
+            seq_key: String::new(),
+            uplink_data_placement: XhttpUplinkDataPlacement::Auto,
+            uplink_data_key: "X-Data".to_owned(),
+            uplink_chunk_size: XhttpRange::default(),
+            no_grpc_header: false,
+            no_sse_header: false,
+            sc_max_each_post_bytes: XhttpRange::default(),
+            sc_min_posts_interval_ms: XhttpRange::default(),
+            sc_max_buffered_posts: 0,
+            sc_stream_up_server_secs: XhttpRange::default(),
+            server_max_header_bytes: 0,
+            xmux: XhttpXmuxSettings::default(),
+        }
+    }
 }
 
 /// `grpcSettings`. Key spellings are Xray's, inconsistencies included: five of
@@ -939,7 +1156,9 @@ pub struct HttpUpgradeSettings {
     /// exactly as written.
     pub headers: Vec<(String, String)>,
     /// From `?ed=N`. For HTTPUpgrade this carries no payload — any positive
-    /// value only means "do not block waiting for the 101".
+    /// value is retained only for config compatibility; the client still
+    /// waits for the 101 to avoid stranding coalesced bytes in Xray's inbound
+    /// buffered reader.
     pub early_data_bytes: u32,
 }
 

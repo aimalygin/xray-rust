@@ -43,13 +43,12 @@ prerelease-quality and do not establish a supported release series.
   clients still hold cached fake IPs, and without it those connections are
   dialled literally as unroutable `198.19.x.y`. Existing profiles keep the
   config they were imported with; re-import the share link to pick this up.
-- The Apple tunnel no longer advertises IPv6. It used to install a `::/0`
-  default route, but the fake-IP pool is IPv4-only, so a captured IPv6
-  destination could never be restored to a domain and was dialled as a literal
-  through a server that may have no IPv6 at all — a flow that hangs rather
-  than failing over. The trade-off is real and deliberate: traffic to IPv6
-  literals now leaves outside the tunnel. Capturing `::/0` and rejecting it in
-  the engine is the fix that removes the trade-off, and is not done yet.
+- The Apple full tunnel continues to install both IPv4 and IPv6 default
+  routes. An earlier implementation of this work removed `::/0` because the
+  fake-IP pool is IPv4-only, but that made IPv6 literals and AAAA destinations
+  bypass the VPN. The Rust TUN data path supports literal IPv6 TCP/UDP, so the
+  privacy-preserving default is to capture it; only resolved outer proxy
+  endpoints receive narrow `/128` bootstrap exclusions.
 - Added the WebSocket and HTTPUpgrade stream transports for VLESS outbounds.
   `streamSettings.network` now accepts `ws`/`websocket` and `httpupgrade`
   alongside `tcp`/`raw`, with `wsSettings` and `httpupgradeSettings` carrying
@@ -59,8 +58,10 @@ prerelease-quality and do not establish a supported release series.
   live xray-core rather than against a reading of it.
   `?ed=N` in the path means different things on the two despite the shared
   spelling: on WebSocket it is an early-data budget carried in
-  `Sec-WebSocket-Protocol`, on HTTPUpgrade it only means "do not wait for the
-  101". `docs/config-compatibility.md` has the full surface, including the
+  `Sec-WebSocket-Protocol`; HTTPUpgrade retains the spelling for config
+  compatibility but waits for the `101` because sending payload before it can
+  strand bytes in Xray's inbound buffered reader. `docs/config-compatibility.md`
+  has the full surface, including the
   header-casing split between the two and the one place the masqueraded
   browser version diverges from Xray's.
 - Rejected two transport pairings that would otherwise build here and then
@@ -130,9 +131,12 @@ prerelease-quality and do not establish a supported release series.
   transports it does not wrap one socket: every flow to one server becomes
   another stream on one shared HTTP/2 connection, opened by the first flow and
   held between them, with grpc-go's keepalive gate and its dormancy on a
-  connection carrying no call. A camelCase `idleTimeout` is rejected rather
-  than accepted, because Go matches on the struct tag and drops that key in
-  silence, leaving a profile that looks configured and dials with no keepalive.
+  connection carrying no call. The reusable connection is also retired after
+  grpc-go's independent 30-minute no-RPC timeout, which Xray leaves at its
+  default; active streams are not interrupted, and the next flow performs a
+  fresh bounded dial. A camelCase `idleTimeout` is rejected rather than
+  accepted, because Go matches on the struct tag and drops that key in silence,
+  leaving a profile that looks configured and dials with no keepalive.
   The `:path`, the `Hunk` and `MultiHunk` framing and the first HEADERS block
   are pinned against a live grpc-go v1.81.0 oracle, and five ignored scenarios
   carry real traffic through an xray-core gRPC inbound over plaintext, TLS and
@@ -164,6 +168,44 @@ prerelease-quality and do not establish a supported release series.
   `fnv`, `futures-sink`, `tokio-util`, `tracing` and `tracing-core` — and
   `cargo deny check advisories bans licenses sources` is clean against the
   existing allow-list.
+- Added the XHTTP stream transport for VLESS outbounds. `network` accepts
+  `xhttp` and the legacy `splithttp` alias, with Xray-compatible priority
+  between their settings blocks and all three modes: `packet-up`, `stream-up`,
+  and `stream-one`. The runtime normalizes the complete modeled padding,
+  metadata-placement, packet-pacing, and xmux surface instead of accepting
+  those settings and ignoring them. HTTP/1.1 has safe packet-connection reuse;
+  HTTP/2 uses capacity-aware pooled connections; the xmux manager persists
+  across every cached selection of one outbound. H1/H2 mode, wire, lifecycle,
+  and live Xray-core interoperability matrices cover the production paths.
+- Replaced the public one-shot `select_*` helpers with methods on a long-lived
+  `OutboundRouter`. Callers embedding `xray-core-rs` must construct one
+  `Arc<OutboundRouter>` from their immutable `Arc<CoreConfig>`, retain it for
+  that configuration's lifetime, and call its selector methods. Reconstructing
+  a router for each selection discards the gRPC and XHTTP connection pools, so
+  compatibility wrappers would preserve source syntax while silently losing
+  the lifecycle behavior this release adds.
+- Added phase-one XHTTP over HTTP/3. Exact TLS `alpn: ["h3"]` selects a
+  protected UDP/QUIC v1 path with no TCP downgrade, stock TLS 1.3, Happy
+  Eyeballs candidate racing, reusable H3 connections, and all three XHTTP
+  modes. Its declared limits fail closed: receive windows are static in Quinn
+  rather than quic-go-adaptive, standard BBR is a Quinn approximation, and
+  the pool conservatively permits one active HTTP request per QUIC connection.
+  QUIC v2, unequal adaptive maxima, non-standard BBR profiles, Brutal,
+  UDP-hop, and debug side effects are not accepted. Hermetic H3 wire and
+  lifecycle tests plus live Xray-core `packet-up`, `stream-up`, and
+  `stream-one` cases pass. The generic stream benchmark now exposes
+  `xhttp-h3` with an exact `h3`/UDP fixture and default QUIC parameters. Actual
+  release and controlled-RTT/loss runs remain required before any H3
+  performance-parity claim.
+- Patched the vendored `h3-quinn` 0.0.10 receive adapter so cancelling a
+  pending response read can send `STOP_SENDING(H3_REQUEST_CANCELLED)` instead
+  of panicking on an empty internal stream slot. Focused regressions cover the
+  pending-poll edge, the exact cancellation code, and reuse of the same QUIC
+  connection for a later request.
+- Matched Go's XHTTP automatic gzip behavior across H1, H2, and H3, including
+  Range/HEAD and explicit-header suppression, H1/H2 versus H3 casing rules,
+  raw H1 packet bypass, concatenated gzip members, and stream-local malformed
+  response errors that do not retire a healthy multiplexed connection.
 - Fixed nine uTLS profiles — eleven of the accepted `fingerprint` names — being
   unable to complete a plain-TLS handshake at all. Their parrot sends a
   TLS-1.2-era ClientHello with no `supported_versions` extension while the

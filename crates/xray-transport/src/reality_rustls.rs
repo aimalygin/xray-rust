@@ -27,7 +27,7 @@ use crate::{
     },
     reality_connector::{RealityClientHelloRequest, RealityTlsSession, RealityTlsSessionProvider},
     utls_profiles::{profile_for_fingerprint, UtlsClientHelloProfile},
-    utls_shaping::{apply_utls_profile, profile_uses_structured_certificate_compression},
+    utls_shaping::{apply_utls_profile, retain_profile_certificate_decompressors},
     BoxedTransportStream, CapturedTcpStream, PenetratingTlsStream, ServerReadLog, TransportError,
 };
 
@@ -193,7 +193,7 @@ impl RustlsRealityPlan {
             },
             None,
             Some(customizer),
-            profile_uses_structured_certificate_compression(profile),
+            profile,
         )?;
         let server_name = ServerName::try_from(server_name.to_owned())
             .map_err(|_| TransportError::InvalidTlsServerName(server_name.to_owned()))?;
@@ -287,7 +287,7 @@ impl Drop for RustlsRealityClientHelloCustomizer {
 impl ClientHelloCustomizer for RustlsRealityClientHelloCustomizer {
     fn build_client_hello_plan(
         &self,
-        _context: ClientHelloContext<'_>,
+        context: ClientHelloContext<'_>,
     ) -> Result<Option<ClientHelloPlan>, RustlsError> {
         let session_id = ClientHelloSessionId::try_from(self.session_id.to_vec())?;
         let mut plan = ClientHelloPlan::new()
@@ -295,7 +295,7 @@ impl ClientHelloCustomizer for RustlsRealityClientHelloCustomizer {
             .with_session_id(session_id)
             .with_fixed_x25519(FixedX25519KeyShare::new(self.local_x25519_private_key));
 
-        plan = apply_utls_profile(plan, self.profile)?;
+        plan = apply_utls_profile(plan, self.profile, context)?;
 
         if let Some(capture) = &self.capture {
             plan = plan.with_capture(capture.clone());
@@ -530,7 +530,7 @@ impl RealityTlsSession for RustlsRealityTlsSession {
             RealityVerificationMaterial::Finalized(finalized_state),
             mldsa65,
             Some(customizer),
-            profile_uses_structured_certificate_compression(profile),
+            profile,
         )?);
         let server_name = ServerName::try_from(self.server_name.clone())
             .map_err(|_| TransportError::InvalidTlsServerName(self.server_name.clone()))?;
@@ -547,7 +547,7 @@ fn reality_client_config(
     material: RealityVerificationMaterial,
     mldsa65: Option<RealityMldsa65VerifierContext>,
     client_hello_customizer: Option<Arc<dyn ClientHelloCustomizer>>,
-    certificate_compression: bool,
+    profile: &'static UtlsClientHelloProfile,
 ) -> Result<ClientConfig, TransportError> {
     let provider = Arc::new(reality_crypto_provider());
     let builder = ClientConfig::builder_with_provider(provider)
@@ -558,9 +558,7 @@ fn reality_client_config(
         .dangerous()
         .with_custom_certificate_verifier(Arc::new(verifier))
         .with_no_client_auth();
-    if !certificate_compression {
-        config.cert_decompressors.clear();
-    }
+    retain_profile_certificate_decompressors(profile, &mut config.cert_decompressors);
     config.resumption = rustls::client::Resumption::disabled();
     config.client_hello_customizer = client_hello_customizer;
 
@@ -815,8 +813,39 @@ impl ServerCertVerifier for RealityServerVerifier {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::*;
     use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret as X25519StaticSecret};
+
+    #[test]
+    fn reality_config_keeps_supported_profile_certificate_decompressors() {
+        for (fingerprint, expected) in [
+            ("safari", BTreeSet::from([1u16])),
+            ("firefox", BTreeSet::from([1u16, 2u16, 3u16])),
+            ("android", BTreeSet::new()),
+        ] {
+            let profile = profile_for_fingerprint(fingerprint)
+                .unwrap_or_else(|| panic!("{fingerprint}: profile must exist"));
+            let config = reality_client_config(
+                RealityVerificationMaterial::Static {
+                    auth_key: [0; 32],
+                    client_hello: None,
+                },
+                None,
+                None,
+                profile,
+            )
+            .unwrap_or_else(|error| panic!("{fingerprint}: config: {error}"));
+            let algorithms = config
+                .cert_decompressors
+                .iter()
+                .map(|decompressor| u16::from(decompressor.algorithm()))
+                .collect::<BTreeSet<_>>();
+
+            assert_eq!(algorithms, expected, "{fingerprint}");
+        }
+    }
 
     #[test]
     fn reality_client_hello_finalizer_seals_actual_chrome_client_hello() {

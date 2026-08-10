@@ -12,18 +12,23 @@ description = "TCP, TLS, REALITY, DNS, and dialing transports for xray-rust"
 # Direct RustCrypto deps enable zeroize feature unification for AES-GCM internal state.
 aes.workspace = true
 aes-gcm.workspace = true
+async-compression.workspace = true
 async-trait.workspace = true
 bytes.workspace = true
 futures-util.workspace = true
 ghash.workspace = true
 h2.workspace = true
+h3.workspace = true
+h3-quinn.workspace = true
 hkdf.workspace = true
 hmac.workspace = true
 http.workspace = true
+idna.workspace = true
 ml-dsa.workspace = true
 polyval.workspace = true
 rand.workspace = true
 regex.workspace = true
+quinn.workspace = true
 rustls.workspace = true
 sha1.workspace = true
 sha2.workspace = true
@@ -36,6 +41,7 @@ x509-parser.workspace = true
 xray-routing = { path = "../xray-routing" }
 xray-utls = { path = "../xray-utls" }
 zeroize.workspace = true
+zstd.workspace = true
 
 [dev-dependencies]
 rcgen.workspace = true

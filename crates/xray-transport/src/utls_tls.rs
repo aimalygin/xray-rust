@@ -16,9 +16,28 @@ use crate::utls_profiles::{profile_for_fingerprint, UtlsClientHelloProfile};
 use crate::utls_shaping::{apply_alpn_override, apply_utls_profile, profile_offers_tls13};
 use crate::TransportError;
 
-/// The one configured ALPN list the RAW transport rebuilds the ClientHello
-/// for. Anything else leaves the fingerprint profile's own ALPN in place.
-const ALPN_OVERRIDE_TRIGGER: &str = "http/1.1";
+const ALPN_HTTP11: &str = "http/1.1";
+const ALPN_H2: &str = "h2";
+
+/// Selects the uTLS handshake entry point Xray uses for a stream transport.
+///
+/// A configured ALPN list alone is not enough to derive this: RAW, HTTP
+/// clients, and WebSocket deliberately treat the same list differently,
+/// while gRPC must never negotiate HTTP/1.1. Keeping the distinction in the
+/// TLS config cache also prevents one outbound from reusing another
+/// transport's ClientHello.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum TlsAlpnPolicy {
+    Raw,
+    /// Xray's ordinary HTTP-client handshake, used by XHTTP/2.
+    ///
+    /// A shaped ClientHello retains the profile's ALPN extension. Stock TLS
+    /// retains a configured list, or supplies Go's default HTTP pair when the
+    /// list is empty.
+    HttpClient,
+    Http1Upgrade,
+    Http2,
+}
 
 /// Resolves a normalized fingerprint to a shaping profile.
 ///
@@ -57,10 +76,14 @@ pub(crate) struct UtlsClientHelloCustomizer {
 }
 
 impl UtlsClientHelloCustomizer {
-    pub(crate) fn new(profile: &'static UtlsClientHelloProfile, alpn: &[String]) -> Self {
+    pub(crate) fn new(
+        profile: &'static UtlsClientHelloProfile,
+        alpn: &[String],
+        policy: TlsAlpnPolicy,
+    ) -> Self {
         Self {
             profile,
-            alpn_override: alpn_override_for(alpn),
+            alpn_override: alpn_override_for(alpn, policy),
         }
     }
 }
@@ -77,24 +100,59 @@ impl UtlsClientHelloCustomizer {
 ///   `WebsocketHandshakeContext` unconditionally, so there the inner rule
 ///   governs: force `http/1.1` for every list *except* exactly
 ///   `["h2", "http/1.1"]`.
+/// - XHTTP/2 calls the ordinary `HandshakeContext`, so a shaped profile keeps
+///   its own ALPN rather than being rewritten to gRPC's `h2`-only offer.
 ///
-/// Those two transports land in a later plan and need their own gate. Widening
-/// this one to match `WebsocketHandshakeContext` would be wrong for RAW.
-fn alpn_override_for(alpn: &[String]) -> Option<Vec<Vec<u8>>> {
-    match alpn {
-        [only] if only == ALPN_OVERRIDE_TRIGGER => {
-            Some(vec![ALPN_OVERRIDE_TRIGGER.as_bytes().to_vec()])
+fn alpn_override_for(alpn: &[String], policy: TlsAlpnPolicy) -> Option<Vec<Vec<u8>>> {
+    match policy {
+        TlsAlpnPolicy::Raw => match alpn {
+            [only] if only == ALPN_HTTP11 => Some(vec![ALPN_HTTP11.as_bytes().to_vec()]),
+            _ => None,
+        },
+        TlsAlpnPolicy::HttpClient => None,
+        TlsAlpnPolicy::Http1Upgrade => match alpn {
+            [h2, http11] if h2 == ALPN_H2 && http11 == ALPN_HTTP11 => None,
+            _ => Some(vec![ALPN_HTTP11.as_bytes().to_vec()]),
+        },
+        TlsAlpnPolicy::Http2 => Some(vec![ALPN_H2.as_bytes().to_vec()]),
+    }
+}
+
+/// ALPN applied to an unshaped (`unsafe`) ClientHello for the same handshake
+/// policy. Unlike a shaped profile, stock TLS has no embedded ALPN to keep.
+pub(crate) fn unshaped_alpn_protocols(
+    configured: &[String],
+    policy: TlsAlpnPolicy,
+) -> Vec<Vec<u8>> {
+    match policy {
+        TlsAlpnPolicy::Raw => configured
+            .iter()
+            .map(|protocol| protocol.as_bytes().to_vec())
+            .collect(),
+        TlsAlpnPolicy::HttpClient if configured.is_empty() => {
+            vec![ALPN_H2.as_bytes().to_vec(), ALPN_HTTP11.as_bytes().to_vec()]
         }
-        _ => None,
+        TlsAlpnPolicy::HttpClient => configured
+            .iter()
+            .map(|protocol| protocol.as_bytes().to_vec())
+            .collect(),
+        TlsAlpnPolicy::Http1Upgrade if matches!(configured, [h2, http11] if h2 == ALPN_H2 && http11 == ALPN_HTTP11) => {
+            configured
+                .iter()
+                .map(|protocol| protocol.as_bytes().to_vec())
+                .collect()
+        }
+        TlsAlpnPolicy::Http1Upgrade => vec![ALPN_HTTP11.as_bytes().to_vec()],
+        TlsAlpnPolicy::Http2 => vec![ALPN_H2.as_bytes().to_vec()],
     }
 }
 
 impl ClientHelloCustomizer for UtlsClientHelloCustomizer {
     fn build_client_hello_plan(
         &self,
-        _context: ClientHelloContext<'_>,
+        context: ClientHelloContext<'_>,
     ) -> Result<Option<ClientHelloPlan>, RustlsError> {
-        let mut plan = apply_utls_profile(ClientHelloPlan::new(), self.profile)?;
+        let mut plan = apply_utls_profile(ClientHelloPlan::new(), self.profile, context)?;
 
         if !profile_offers_tls13(self.profile) {
             plan = plan.with_session_id(parroted_session_id()?);
@@ -126,4 +184,58 @@ fn parroted_session_id() -> Result<ClientHelloSessionId, RustlsError> {
         .map_err(|error| RustlsError::General(format!("session id needs randomness: {error}")))?;
 
     ClientHelloSessionId::try_from(session_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{alpn_override_for, unshaped_alpn_protocols, TlsAlpnPolicy};
+
+    fn configured(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| (*value).to_owned()).collect()
+    }
+
+    #[test]
+    fn stream_transport_alpn_policies_are_distinct() {
+        let empty = configured(&[]);
+        let h2 = configured(&["h2"]);
+        let pair = configured(&["h2", "http/1.1"]);
+
+        assert_eq!(alpn_override_for(&h2, TlsAlpnPolicy::Raw), None);
+        assert_eq!(
+            alpn_override_for(&h2, TlsAlpnPolicy::HttpClient),
+            None,
+            "XHTTP keeps a shaped profile's ALPN"
+        );
+        assert_eq!(
+            alpn_override_for(&empty, TlsAlpnPolicy::Http1Upgrade),
+            Some(vec![b"http/1.1".to_vec()])
+        );
+        assert_eq!(
+            alpn_override_for(&pair, TlsAlpnPolicy::Http1Upgrade),
+            None,
+            "Xray preserves its exact h2/http1 compatibility exception"
+        );
+        assert_eq!(
+            alpn_override_for(&empty, TlsAlpnPolicy::Http2),
+            Some(vec![b"h2".to_vec()])
+        );
+
+        assert_eq!(
+            unshaped_alpn_protocols(&empty, TlsAlpnPolicy::Http1Upgrade),
+            vec![b"http/1.1".to_vec()]
+        );
+        assert_eq!(
+            unshaped_alpn_protocols(&empty, TlsAlpnPolicy::HttpClient),
+            vec![b"h2".to_vec(), b"http/1.1".to_vec()]
+        );
+        assert_eq!(
+            unshaped_alpn_protocols(&h2, TlsAlpnPolicy::HttpClient),
+            vec![b"h2".to_vec()],
+            "an explicit stock-TLS ALPN list is preserved"
+        );
+        assert_eq!(
+            unshaped_alpn_protocols(&empty, TlsAlpnPolicy::Http2),
+            vec![b"h2".to_vec()]
+        );
+    }
 }

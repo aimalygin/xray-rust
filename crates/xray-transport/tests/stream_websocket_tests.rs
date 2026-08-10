@@ -207,6 +207,7 @@ mod stream_websocket_handshake_tests {
     use xray_transport::stream::{
         accept_key_for, connect_websocket, encode_early_data, WebSocketConfig,
     };
+    use xray_transport::TransportError;
 
     async fn loopback() -> (TcpListener, std::net::SocketAddr) {
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
@@ -316,6 +317,46 @@ mod stream_websocket_handshake_tests {
             request.contains("\r\nSec-Fetch-Mode: websocket\r\n"),
             "{request}"
         );
+    }
+
+    #[tokio::test]
+    async fn the_handshake_reparses_and_escapes_the_configured_uri_path() {
+        let (listener, addr) = loopback().await;
+        let server = tokio::spawn(async move {
+            let (stream, request) = accept_handshake(&listener).await;
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            drop(stream);
+            request
+        });
+
+        let stream = TcpStream::connect(addr).await.expect("connect");
+        connect_websocket(Box::new(stream), &config("/日本%2f room?x=%zz#not-sent"))
+            .await
+            .expect("the handshake must succeed");
+
+        let request = server.await.expect("server task");
+        assert!(
+            request.starts_with("GET /%E6%97%A5%E6%9C%AC%2f%20room?x=%zz HTTP/1.1\r\n"),
+            "valid path escapes and raw query survive, while the fragment is omitted:\n{request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_invalid_path_escape_is_rejected_before_a_request_is_written() {
+        let (listener, addr) = loopback().await;
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept");
+            let mut byte = [0u8; 1];
+            stream.read(&mut byte).await.expect("read")
+        });
+
+        let stream = TcpStream::connect(addr).await.expect("connect");
+        let result = connect_websocket(Box::new(stream), &config("/broken%zz")).await;
+        assert!(
+            matches!(result, Err(TransportError::WebSocketProtocol(_))),
+            "a URL parse failure must abort the gorilla-compatible dial"
+        );
+        assert_eq!(server.await.expect("server task"), 0);
     }
 
     #[tokio::test]

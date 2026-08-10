@@ -69,6 +69,12 @@ const MAX_VARINT_LEN: usize = 10;
 /// default is what a real Xray peer holds itself to and what we hold it to.
 const MAX_RECEIVE_MESSAGE_SIZE: usize = 1024 * 1024 * 4;
 
+/// A single legal gRPC message may be 4 MiB, but one such response must not
+/// make every later small read on that stream carry a 4 MiB allocation. Small
+/// framing bursts keep their allocation; unusually large spent buffers are
+/// released once they no longer hold useful bytes.
+const MAX_RETAINED_DECODER_CAPACITY: usize = 64 * 1024;
+
 /// The largest payload one `Hunk` may carry, which
 /// [`GrpcStream::poll_write`](super::test_only::GrpcStream) clamps every write
 /// to.
@@ -250,6 +256,7 @@ impl HunkDecoder {
             return Ok(None);
         };
         self.consumed += length;
+        self.compact();
         Ok(Some(payload))
     }
 
@@ -276,7 +283,28 @@ impl HunkDecoder {
         if self.consumed == 0 {
             return;
         }
-        self.buffer.drain(..self.consumed);
+
+        let remaining = self.buffer.len() - self.consumed;
+        if remaining == 0 {
+            if self.buffer.capacity() > MAX_RETAINED_DECODER_CAPACITY {
+                self.buffer = Vec::new();
+            } else {
+                self.buffer.clear();
+            }
+            self.consumed = 0;
+            return;
+        }
+
+        if self.buffer.capacity() > MAX_RETAINED_DECODER_CAPACITY
+            && remaining <= self.buffer.capacity() / 2
+        {
+            let mut compact = Vec::with_capacity(remaining);
+            compact.extend_from_slice(&self.buffer[self.consumed..]);
+            self.buffer = compact;
+        } else {
+            self.buffer.copy_within(self.consumed.., 0);
+            self.buffer.truncate(remaining);
+        }
         self.consumed = 0;
     }
 
@@ -464,4 +492,53 @@ fn read_varint(bytes: &[u8]) -> Result<(u64, usize), String> {
     }
 
     Err("protobuf varint runs past the end of the gRPC message".to_owned())
+}
+
+#[cfg(test)]
+mod memory_tests {
+    use super::*;
+
+    #[test]
+    fn a_large_message_does_not_pin_its_allocation_for_the_stream_lifetime() {
+        let payload = vec![0x5a; MAX_HUNK_PAYLOAD_LEN];
+        let frame = encode_hunk(&payload);
+        let mut decoder = HunkDecoder::new(HunkMode::Single);
+
+        decoder.push(&frame);
+        let decoded = decoder
+            .next_payload()
+            .expect("the frame must decode")
+            .expect("the frame is complete");
+
+        assert_eq!(decoded.len(), payload.len());
+        assert_eq!(decoder.buffered_len(), 0);
+        assert!(
+            decoder.buffer.capacity() <= MAX_RETAINED_DECODER_CAPACITY,
+            "spent 4 MiB frame retained {} bytes",
+            decoder.buffer.capacity()
+        );
+    }
+
+    #[test]
+    fn compaction_preserves_a_second_message_already_in_the_buffer() {
+        let first = encode_hunk(&vec![0x41; 128 * 1024]);
+        let second_payload = b"next";
+        let second = encode_hunk(second_payload);
+        let mut decoder = HunkDecoder::new(HunkMode::Single);
+        decoder.push(&first);
+        decoder.push(&second);
+
+        let decoded = decoder
+            .next_payload()
+            .expect("first frame")
+            .expect("first complete");
+        assert_eq!(decoded.len(), 128 * 1024);
+        assert_eq!(
+            decoder
+                .next_payload()
+                .expect("second frame")
+                .expect("second complete"),
+            second_payload
+        );
+    }
 }

@@ -78,18 +78,91 @@ mod stream_http_headers_tests {
     }
 
     #[test]
-    fn absent_user_agent_is_not_emitted() {
+    fn add_preserves_value_order_and_set_replaces_every_value() {
+        let mut headers = HeaderMap::new();
+        headers.add("X-Thing", "first");
+        headers.add("X-Thing", "second");
+
+        let request = serialize_request("GET", "/", "h", &headers);
+        let text = String::from_utf8(request).expect("the request must be UTF-8");
+        assert!(
+            text.contains("\r\nX-Thing: first\r\nX-Thing: second\r\n"),
+            "{text}"
+        );
+
+        headers.set("X-Thing", "replacement");
+        let request = serialize_request("GET", "/", "h", &headers);
+        let text = String::from_utf8(request).expect("the request must be UTF-8");
+        assert_eq!(text.matches("X-Thing:").count(), 1, "{text}");
+        assert!(text.contains("X-Thing: replacement"), "{text}");
+    }
+
+    #[test]
+    fn absent_user_agent_uses_go_http_default() {
         let mut headers = HeaderMap::new();
         headers.set("Upgrade", "websocket");
 
         let request = serialize_request("GET", "/", "example.com", &headers);
         let text = String::from_utf8(request).expect("the request must be UTF-8");
 
-        assert!(!text.contains("User-Agent"), "{text}");
+        assert!(
+            text.contains("\r\nUser-Agent: Go-http-client/1.1\r\n"),
+            "{text}"
+        );
         assert!(
             text.starts_with("GET / HTTP/1.1\r\nHost: example.com\r\n"),
             "{text}"
         );
+    }
+
+    #[test]
+    fn an_explicitly_empty_user_agent_suppresses_the_default() {
+        let mut headers = HeaderMap::new();
+        headers.set("User-Agent", "");
+
+        let request = serialize_request("GET", "/", "example.com", &headers);
+        let text = String::from_utf8(request).expect("the request must be UTF-8");
+
+        assert!(!text.contains("User-Agent:"), "{text}");
+    }
+
+    #[test]
+    fn newlines_in_header_values_are_spaces_and_invalid_names_are_dropped() {
+        let mut headers = HeaderMap::new();
+        headers.set("User-Agent", "  Agent\r\nInjected  ");
+        headers.set("X-Good", "  first\r\nsecond\t ");
+        headers.set("Bad Name", "must not be written");
+        headers.set("Bad\r\nInjected", "must not be written either");
+
+        let request = serialize_request("GET", "/", "example.com", &headers);
+        let text = String::from_utf8(request).expect("the request must be UTF-8");
+
+        assert!(
+            text.contains("\r\nUser-Agent: Agent  Injected\r\n"),
+            "{text}"
+        );
+        assert!(text.contains("\r\nX-Good: first  second\r\n"), "{text}");
+        assert!(!text.contains("Bad Name"), "{text}");
+        assert!(!text.contains("Injected: must"), "{text}");
+    }
+
+    #[test]
+    fn host_is_punycoded_and_an_injectable_host_becomes_empty() {
+        let headers = HeaderMap::new();
+
+        let idn = String::from_utf8(serialize_request("GET", "/", "bücher.example", &headers))
+            .expect("the request must be UTF-8");
+        assert!(idn.contains("\r\nHost: xn--bcher-kva.example\r\n"), "{idn}");
+
+        let injected = String::from_utf8(serialize_request(
+            "GET",
+            "/",
+            "safe.example\r\nX-Injected: yes",
+            &headers,
+        ))
+        .expect("the request must be UTF-8");
+        assert!(injected.contains("\r\nHost: \r\n"), "{injected}");
+        assert!(!injected.contains("X-Injected"), "{injected}");
     }
 
     // ---- The browser-masquerade block, against the Go oracle ------------------
@@ -168,6 +241,9 @@ mod stream_http_headers_tests {
     /// header we emit that Xray does not.
     fn oracle_request(fixture: &MasqueradeFixture) -> String {
         let mut out = String::from("GET /path HTTP/1.1\r\nHost: oracle.example\r\n");
+        if !fixture.headers.iter().any(|h| h.key == "User-Agent") {
+            out.push_str("User-Agent: Go-http-client/1.1\r\n");
+        }
         for header in fixture.headers.iter().filter(|h| h.key == "User-Agent") {
             out.push_str(&format!("{}: {}\r\n", header.key, header.value));
         }

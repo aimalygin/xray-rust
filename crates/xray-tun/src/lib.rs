@@ -668,6 +668,19 @@ impl TunEndpoint {
             .fetch_max(packets as u64, Ordering::Relaxed);
     }
 
+    /// Records outbound packets that the fd-backed pump dequeued but could not
+    /// deliver. This is separate from queue admission drops because ownership
+    /// has already moved into the pump's pending batch.
+    pub fn record_tun_fd_outbound_drops(&self, packets: usize) {
+        if packets == 0 {
+            return;
+        }
+        self.dropped_packets
+            .fetch_add(packets as u64, Ordering::Relaxed);
+        self.outbound_dropped_packets
+            .fetch_add(packets as u64, Ordering::Relaxed);
+    }
+
     /// Records that the fd-backed read pump gave up. A non-zero value means the
     /// tunnel has stopped ingesting packets while still reporting as connected.
     pub fn record_tun_fd_read_loop_exit(&self) {

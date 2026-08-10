@@ -30,6 +30,7 @@ fn runtime_config() -> CoreConfig {
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
+                quic_params: None,
                 socket_options: None,
             },
             settings: OutboundSettings::Vless(VlessOutboundSettings {

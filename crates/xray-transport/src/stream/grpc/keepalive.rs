@@ -20,8 +20,8 @@
 
 use std::io;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::task::{Context, Poll};
 
 use h2::Ping;
@@ -169,13 +169,41 @@ impl AsyncWrite for WatchedIo {
 /// signals `kpDormancyCond` from `initStream` when a stream is created
 /// (`http2_client.go:818-821`). The count is kept here for the same reason
 /// [`LastRead`] is: h2 tracks its streams but tells nobody how many there are.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(super) struct OpenCalls {
-    open: AtomicUsize,
+    state: Mutex<OpenCallsState>,
     opened: Notify,
+    changed: Notify,
+}
+
+#[derive(Debug)]
+struct OpenCallsState {
+    open: usize,
+    /// `Some` exactly while no call is open. It starts at connection creation
+    /// so a successful dial whose callers are all cancelled is retired too.
+    idle_since: Option<Instant>,
+}
+
+impl Default for OpenCalls {
+    fn default() -> Self {
+        Self {
+            state: Mutex::new(OpenCallsState {
+                open: 0,
+                idle_since: Some(Instant::now()),
+            }),
+            opened: Notify::new(),
+            changed: Notify::new(),
+        }
+    }
 }
 
 impl OpenCalls {
+    fn state(&self) -> MutexGuard<'_, OpenCallsState> {
+        self.state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     /// Counts one call in until the returned guard is dropped.
     ///
     /// A guard rather than a pair of calls because the decrement has to happen
@@ -183,12 +211,65 @@ impl OpenCalls {
     /// reset, a relay dropping it mid-transfer, and the ordinary half-close
     /// all end at the same `drop`.
     pub(super) fn open(self: &Arc<Self>) -> OpenCall {
-        self.open.fetch_add(1, Ordering::SeqCst);
+        {
+            let mut state = self.state();
+            state.open += 1;
+            state.idle_since = None;
+        }
         // `notify_one` rather than `notify_waiters` so that a call opening in
         // the gap between the loop's count check and its park is not lost: a
         // permit with no waiter is kept, and the park consumes it.
         self.opened.notify_one();
+        // The idle waiter may be sleeping until the old idle deadline. A call
+        // invalidates that deadline immediately.
+        self.changed.notify_one();
         OpenCall(Arc::clone(self))
+    }
+
+    fn close(&self) {
+        {
+            let mut state = self.state();
+            state.open = state
+                .open
+                .checked_sub(1)
+                .expect("every closed gRPC call was opened");
+            if state.open == 0 {
+                state.idle_since = Some(Instant::now());
+            }
+        }
+        self.changed.notify_one();
+    }
+
+    pub(super) fn has_been_idle_for(&self, duration: Duration) -> bool {
+        self.state()
+            .idle_since
+            .is_some_and(|since| Instant::now() >= since + duration)
+    }
+
+    /// Waits until the connection has continuously carried no calls for
+    /// `duration`. Every transition wakes the waiter so a new call cancels an
+    /// old deadline, and the deadline is derived from the recorded transition
+    /// rather than from when this task happens to be scheduled.
+    pub(super) async fn wait_until_idle_for(&self, duration: Duration) {
+        loop {
+            // Create the waiter first. `notify_one` retains a permit, so a
+            // transition between the state read and the await cannot be lost.
+            let changed = self.changed.notified();
+            let deadline = self.state().idle_since.map(|since| since + duration);
+            let Some(deadline) = deadline else {
+                changed.await;
+                continue;
+            };
+
+            tokio::select! {
+                () = tokio::time::sleep_until(deadline) => {
+                    if self.has_been_idle_for(duration) {
+                        return;
+                    }
+                }
+                () = changed => {}
+            }
+        }
     }
 
     /// Parks until at least one call is open.
@@ -202,7 +283,7 @@ impl OpenCalls {
     /// costs is a ping for a call that opened and closed inside the scheduler's
     /// own latency, which grpc-go would have sent.
     async fn wait_for_one(&self) {
-        while self.open.load(Ordering::SeqCst) == 0 {
+        while self.state().open == 0 {
             self.opened.notified().await;
         }
     }
@@ -214,7 +295,7 @@ pub(super) struct OpenCall(Arc<OpenCalls>);
 
 impl Drop for OpenCall {
     fn drop(&mut self) {
-        self.0.open.fetch_sub(1, Ordering::SeqCst);
+        self.0.close();
     }
 }
 

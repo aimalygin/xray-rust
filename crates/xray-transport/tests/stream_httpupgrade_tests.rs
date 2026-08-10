@@ -40,7 +40,6 @@ mod stream_httpupgrade_tests {
             path: path.to_owned(),
             host: "example.com".to_owned(),
             headers: Vec::new(),
-            wait_for_response: true,
         }
     }
 
@@ -88,6 +87,24 @@ mod stream_httpupgrade_tests {
         assert!(
             !request.contains("Sec-WebSocket"),
             "httpupgrade sends no RFC 6455 headers:\n{request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_request_escapes_every_byte_go_escapes_in_url_path() {
+        let (listener, addr) = loopback().await;
+        let recorded = serve_once(listener, ACCEPTED);
+
+        let stream = TcpStream::connect(addr).await.expect("connect");
+        connect_httpupgrade(Box::new(stream), &config("/a b/日本%?x#y!'()"))
+            .await
+            .expect("the upgrade must succeed");
+
+        let request = String::from_utf8(recorded.await.expect("recorder")).expect("UTF-8");
+        assert!(
+            request
+                .starts_with("GET /a%20b/%E6%97%A5%E6%9C%AC%25%3Fx%23y%21%27%28%29 HTTP/1.1\r\n"),
+            "URL.Path is decoded data, so an existing percent sign is escaped too:\n{request}"
         );
     }
 
@@ -165,97 +182,5 @@ mod stream_httpupgrade_tests {
             .await
             .expect("payload sent with the response must not be lost");
         assert_eq!(&buffer, b"HELLO");
-    }
-
-    #[tokio::test]
-    async fn early_data_skips_the_wait_for_the_response() {
-        // With `ed` set, Xray returns the connection without reading the 101,
-        // so the first payload write goes out right behind the request.
-        let (listener, addr) = loopback().await;
-        let recorded = tokio::spawn(async move {
-            let (mut stream, _) = listener.accept().await.expect("a client must connect");
-            let mut buffer = vec![0u8; 4096];
-            let read = stream.read(&mut buffer).await.expect("a request arrives");
-            buffer.truncate(read);
-            // Deliberately never answer: a waiting dial would hang here.
-            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-            buffer
-        });
-
-        let stream = TcpStream::connect(addr).await.expect("connect");
-        let mut config = config("/ws");
-        config.wait_for_response = false;
-
-        let upgraded = tokio::time::timeout(
-            std::time::Duration::from_secs(2),
-            connect_httpupgrade(Box::new(stream), &config),
-        )
-        .await
-        .expect("the dial must not wait for a response")
-        .expect("the upgrade must succeed");
-        drop(upgraded);
-
-        let request = String::from_utf8(recorded.await.expect("recorder")).expect("UTF-8");
-        assert!(request.starts_with("GET /ws HTTP/1.1\r\n"), "{request}");
-    }
-
-    #[tokio::test]
-    async fn early_data_still_strips_the_response_before_the_payload() {
-        // Skipping the wait defers the 101, it does not remove it: the server
-        // sends the response either way. Xray's `ConnRF` reads and validates it
-        // on the first read no matter what `ed` was, so the caller never sees
-        // it. Handing back the raw socket would deliver the status line as
-        // payload, and the VLESS layer would parse it as a protocol response.
-        let (listener, addr) = loopback().await;
-        let _recorded = serve_once(
-            listener,
-            b"HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\nHELLO",
-        );
-
-        let stream = TcpStream::connect(addr).await.expect("connect");
-        let mut config = config("/ws");
-        config.wait_for_response = false;
-
-        let mut upgraded = connect_httpupgrade(Box::new(stream), &config)
-            .await
-            .expect("the upgrade must succeed");
-
-        let mut buffer = [0u8; 5];
-        upgraded
-            .read_exact(&mut buffer)
-            .await
-            .expect("the first read must yield payload, not the response");
-        assert_eq!(
-            &buffer, b"HELLO",
-            "the 101 must be consumed before the caller's payload"
-        );
-    }
-
-    #[tokio::test]
-    async fn early_data_surfaces_a_rejected_upgrade_on_the_first_read() {
-        // A dial that never waited for the response cannot report a rejection,
-        // so the first read has to: Go fails it there with `unrecognized
-        // reply`. Passing the body through as payload would turn a refused
-        // upgrade into a corrupt tunnel.
-        let (listener, addr) = loopback().await;
-        let _recorded = serve_once(
-            listener,
-            b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nnope!",
-        );
-
-        let stream = TcpStream::connect(addr).await.expect("connect");
-        let mut config = config("/ws");
-        config.wait_for_response = false;
-
-        let mut upgraded = connect_httpupgrade(Box::new(stream), &config)
-            .await
-            .expect("the dial itself must not wait for the response");
-
-        let mut buffer = [0u8; 5];
-        let result = upgraded.read_exact(&mut buffer).await;
-        assert!(
-            result.is_err(),
-            "a refused upgrade must fail the read, not arrive as payload"
-        );
     }
 }

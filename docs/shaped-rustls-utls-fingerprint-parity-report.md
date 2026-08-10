@@ -27,16 +27,16 @@ XRAY_UTLS_REPORT_MD=docs/shaped-rustls-utls-fingerprint-parity-report.md cargo t
 ## Agent Task
 
 - Work in the shaped-rustls fork, currently expected at `aimalygin/shaped-rustls` branch `xray/rustls-0.23.40`.
-- Use this report as the current wire-parity oracle after xray-rust adopted the shaped-rustls primitives for advertised cipher suites, advertised versions/groups, raw key shares, exact extension payloads, duplicate signature algorithms, ALPS, ECH, and GREASE.
+- Use this report as the current wire-parity oracle after applying xray-rust's deliberate provider-capability cipher filter to the uTLS expectation. Every other tracked field remains the shaped-rustls byte-shape oracle: advertised versions/groups, real key shares, exact extension payloads, duplicate signature algorithms, ALPS, ECH, and GREASE.
 - Treat this as the regression oracle for shaped-rustls ClientHello shaping. All REALITY-capable rows should remain `match`; the TLS1.2-only rows should remain `not-reality-capable` in xray-rust.
 - This is a byte-shape oracle only. It does not prove key-share cryptographic validity or REALITY prepare/complete ClientHello reproducibility; those must stay covered by dedicated runtime invariants.
-- Acceptance criterion: rerun the reproduce command from this report and get all REALITY-capable fingerprints as `match`, `0` mismatches, `0` Go uTLS oracle errors, `0` Rust generation errors, and keep the known TLS1.2-only rows as `not-reality-capable`.
+- Acceptance criterion: rerun the reproduce command from this report and get all REALITY-capable provider-filtered fingerprints as `match`, `0` mismatches, `0` Go uTLS oracle errors, `0` Rust generation errors, and keep the known TLS1.2-only rows as `not-reality-capable`.
 
 ## Current Findings
 
 - shaped-rustls now represents GREASE extension positions relative to the final non-GREASE extension order, including slots before padding and after the final real extension. xray-rust passes those positions through without the old workaround that compensated for previously inserted GREASE entries.
-- All REALITY-capable xray-core/uTLS fingerprints currently match the Go uTLS oracle byte-shape fields tracked by this report.
-- xray-rust uses real rustls key shares for X25519, final `X25519MLKEM768`, and draft `X25519Kyber768Draft00`; P-256/P-384 shares remain raw wire-shape entries where needed. `FixedX25519KeyShare` keeps REALITY's X25519 public key stable inside X25519 and both hybrid shares.
+- All REALITY-capable xray-core/uTLS fingerprints currently match the provider-filtered Go uTLS byte-shape fields tracked by this report.
+- xray-rust uses real rustls key shares for X25519, P-256, P-384, final `X25519MLKEM768`, and draft `X25519Kyber768Draft00`. `FixedX25519KeyShare` keeps REALITY's X25519 public key stable inside X25519 and both hybrid shares.
 - Runtime REALITY completion uses shaped-rustls' ClientHello finalizer to seal the actual generated ClientHello before transcript/write. Dedicated tests assert nonzero final `X25519MLKEM768` ML-KEM material and finalizer-derived auth/session state; this report remains the byte-shape oracle.
 - The `not-reality-capable` rows are TLS1.2-only uTLS fingerprints with no X25519-compatible key_share extension. That is not a shaped-rustls primitive gap: REALITY cannot derive the server-side shared secret without a ClientHello X25519 public key. xray-rust intentionally rejects these before ClientHello generation.
 - If xray-rust decides to expose non-REALITY uTLS shaping later, those TLS1.2-only profiles should be tested outside the REALITY provider path.

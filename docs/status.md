@@ -25,6 +25,7 @@ parity with every Xray-core release.
 | VLESS over TCP | Supported | Local fake-server and optional Xray-core interoperability tests |
 | VLESS over WebSocket / HTTPUpgrade | Supported subset | Browser-masqueraded HTTP/1.1 upgrade with early data and keepalive; REALITY and Vision are refused on both, matching Xray; live Xray-core interoperability tests |
 | VLESS over gRPC | Supported subset | One pooled HTTP/2 connection per outbound carrying `Hunk` or `MultiHunk` messages, with grpc-go's keepalive gate and dormancy; REALITY is accepted and Vision refused, matching Xray; Go-oracle wire fixtures and live Xray-core interoperability tests |
+| VLESS over XHTTP | Supported subset | All three modes over production HTTP/1.1, pooled HTTP/2, and protected HTTP/3 over QUIC v1, including xmux, hermetic wire/lifecycle/pooling coverage, and live Xray-core interoperability for `packet-up`, `stream-up`, and `stream-one` |
 | TLS | Supported | Certificate-verified local integration tests; the uTLS-shaped ClientHello sent by default is covered by per-fingerprint shape tests; `allowInsecure` is accepted with a warning |
 | REALITY client | Supported subset | Deterministic primitive tests and optional local Xray-core REALITY+Vision interoperability tests |
 | TCP Happy Eyeballs | Supported subset | Opt-in Xray-compatible Freedom/VLESS raw-TCP candidate race; bounded and cancellation-safe, with one TLS/REALITY handshake after connect |
@@ -45,8 +46,8 @@ See [configuration compatibility](config-compatibility.md) for accepted values.
 Notable unsupported areas include:
 
 - VMess, Trojan, Shadowsocks, WireGuard, and server-side VLESS;
-- HTTP/2, QUIC, KCP, XHTTP, and other stream transports beyond raw, WebSocket,
-  HTTPUpgrade and gRPC;
+- generic HTTP/2, QUIC and KCP transports, and stream transports beyond raw,
+  WebSocket, HTTPUpgrade, gRPC and XHTTP;
 - mux, balancers, reverse proxy, observatory/API services, and outbound chaining;
 - SOCKS/HTTP authentication and HTTP transparent proxy mode;
 - full Xray DNS, policy/statistics, sniffing, and routing semantics.
@@ -84,10 +85,48 @@ of the maintainer's public `shaped-rustls` fork rather than the crates.io
 `Cargo.lock`, and constrained by `deny.toml`; consumers should include that fork
 in dependency and security reviews.
 
-### Known gRPC divergences from grpc-go
+### XHTTP HTTP/3 phase-one limits
 
-Four of them. Three are at the HPACK layer, all measured against a live grpc-go
-v1.81.0 client making the same call, and none of the three reachable without
+XHTTP over HTTP/1.1 and HTTP/2 is the complete production path for the modeled
+client-side surface: `packet-up`, `stream-up`, and `stream-one`, the request
+composer and padding/metadata placements, HTTP connection reuse, and Xray's
+xmux slot policy are all active. Plain security selects HTTP/1.1; TLS with the
+exact configured ALPN list `["http/1.1"]` also selects HTTP/1.1; REALITY and
+every TLS ALPN list other than the exact H1/H3 cases select HTTP/2. REALITY is
+accepted, but Vision remains refused because XHTTP returns an HTTP wrapper
+rather than the security connection Vision needs to splice into.
+
+The production HTTP/3 branch is intentionally narrower. It is selected only by
+TLS with the exact configured ALPN list `["h3"]`, opens a protected UDP socket,
+races resolved candidates with the normal Happy Eyeballs policy, requires
+negotiated ALPN `h3`, and never downgrades to TCP. It uses stock TLS 1.3, as
+Xray's QUIC path does, so `tlsSettings.fingerprint` does not shape this
+ClientHello. QUIC v1, Xray's default 300-second idle timeout, keepalive,
+path-MTU control, stream limits, Reno, and all three XHTTP modes are
+implemented.
+
+Three performance details are explicit approximations rather than parity
+claims. First, Quinn uses static receive windows (2 MiB per stream and 3 MiB
+per connection by default), while quic-go adapts those initial values toward
+6 MiB and 15 MiB. Second, Xray's standard BBR selection maps to Quinn BBR with
+Xray's initial window, not quic-go's controller. Third, the pool conservatively
+allows one active HTTP request per QUIC connection, opening another connection
+for concurrent work instead of claiming broader request multiplexing. Explicit
+unequal initial/maximum receive windows, QUIC v2, conservative/aggressive BBR
+profiles, Brutal/force-Brutal, non-empty UDP hopping, and QUIC debug side
+effects fail closed before a socket is opened. The ignored live Xray-core
+matrix has passed all three XHTTP modes, establishing functional
+interoperability for those cases. A branch-local release loopback smoke now
+covers H3 throughput/resource sampling and selected single-flow and 32-flow
+cases, as recorded in the [benchmark guide](benchmarks.md#recorded-branch-local-release-smoke-2026-08-10).
+Controlled RTT/loss runs and the complete 42-case, five-run matrix have not
+been run, so this remains explicitly not a performance-parity claim.
+
+### Known gRPC opening-wire divergences from grpc-go
+
+The first request's opening burst has four declared wire-shape differences.
+Three are at the HPACK layer, all measured against a live grpc-go v1.81.0
+client making the same call, and none of those three is reachable without
 forking the `h2` crate:
 
 - **Pseudo-header order.** `h2` writes `:method`, `:scheme`, `:authority`,
@@ -104,7 +143,8 @@ forking the `h2` crate:
 The two HEADERS payloads are the same length — 65 bytes each for the captured
 call — and differ in exactly those three places.
 
-The fourth is not an HPACK question and is not forced on us; it is chosen:
+The fourth opening-wire difference is not an HPACK question and is not forced
+on us; it is chosen:
 
 - **One extra `WINDOW_UPDATE(stream 0)` in the opening burst.** We open the
   connection-level receive window at 16 MiB, so a `WINDOW_UPDATE` with an

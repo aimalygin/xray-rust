@@ -14,16 +14,12 @@
 //! outbound, which has one destination and one set of stream settings, so the
 //! outbound *is* the key and the map collapses to a single slot.
 //!
-//! **One thing a `*grpc.ClientConn` does that this slot does not: go idle.**
-//! grpc-go's idleness manager closes the transport under a `ClientConn` that
-//! has had no RPC for `idleTimeout`, which defaults to thirty minutes and
+//! grpc-go's idleness manager also closes the transport under a `ClientConn`
+//! that has had no RPC for `idleTimeout`, which defaults to thirty minutes and
 //! which Xray never overrides (`grpc@v1.81.0/dialoptions.go:715`,
-//! `clientconn.go:257`); the next dial rebuilds it. A slot here is held until
-//! it dies or is retired, so a proxy left untouched overnight keeps a socket
-//! open that Xray would have dropped. What it would take is a timer over the
-//! count of calls in flight — [`super::keepalive::OpenCalls`], which the
-//! dormancy already keeps — plus somewhere to hang the close, and it is
-//! deferred rather than absent for want of the second.
+//! `clientconn.go:257`). The slot below follows that lifecycle: its timer is
+//! reset when the last call closes, and retirement drops the pooled
+//! `SendRequest` without disturbing any stream that was already opened.
 //!
 //! **What the pool holding a connection between flows does change is the
 //! keepalive**, and that half is not deferred: "no call open" is this
@@ -34,15 +30,27 @@
 use std::fmt;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
-use tokio::sync::Mutex;
+use tokio::sync::{watch, Mutex};
 use xray_routing::Target;
 
 use super::config::GrpcConfig;
-use super::h2client::{build_grpc_call, h2_handshake, open_grpc_call, H2Connection};
-use crate::{
-    BoxedTransportStream, ConnectorConfig, HappyEyeballsConfig, TransportDialer, TransportError,
+use super::h2client::{
+    build_grpc_call, h2_handshake, open_grpc_call, H2Connection, H2ConnectionIdleWatch,
 };
+use crate::{
+    utls_tls::TlsAlpnPolicy, BoxedTransportStream, ConnectorConfig, HappyEyeballsConfig,
+    TransportDialer, TransportError,
+};
+
+/// Xray supplies grpc-go's `MinConnectTimeout` as five seconds
+/// (`Xray-core/transport/internet/grpc/dial.go:92-100`). One shared attempt is
+/// bounded by the same interval so a blackholed security or h2 handshake does
+/// not pin every flow behind the operating system's TCP timeout.
+const COLD_DIAL_TIMEOUT: Duration = Duration::from_secs(5);
+/// grpc-go's default `ClientConn` idle timeout, which Xray does not override.
+const CONNECTION_IDLE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 
 /// The dial-ready gRPC transport: its settings, and the connection its flows
 /// share.
@@ -61,7 +69,7 @@ impl GrpcTransport {
     pub fn new(config: GrpcConfig) -> Self {
         Self {
             config,
-            pool: Arc::new(GrpcConnectionPool::default()),
+            pool: Arc::new(GrpcConnectionPool::new()),
         }
     }
 
@@ -123,12 +131,10 @@ impl GrpcTransport {
     ///     super::test_only::GrpcStream::connection_is_finished
     #[doc(hidden)]
     pub async fn holds_a_live_connection(&self) -> bool {
-        self.pool
-            .connection
-            .lock()
-            .await
-            .as_ref()
-            .is_some_and(H2Connection::is_live)
+        match &*self.pool.state.lock().await {
+            PoolState::Ready(connection) => connection.is_live(),
+            PoolState::Empty | PoolState::Dialing(_) => false,
+        }
     }
 
     /// Opens one flow, dialling only if the pool has nothing live.
@@ -146,33 +152,19 @@ impl GrpcTransport {
     /// supposed to be leaving. Reaching the shared method is also what brings
     /// the REALITY preconnect and the Happy Eyeballs race along at no cost.
     ///
-    /// **The lock is held across the dial, and that is the single-flighting.**
-    /// Without it, N flows arriving on a cold pool each miss, each pay a TCP
-    /// connect and a TLS or REALITY handshake, and N-1 of the connections they
-    /// open are then dropped on the floor — the exact cost pooling exists to
-    /// remove, paid at the worst possible moment. It has to be a
-    /// [`tokio::sync::Mutex`] for the same reason: a `std` guard held across
-    /// an `.await` is not `Send`, and both callers of `connect_stream` are
-    /// spawned.
+    /// **A cold dial is a shared task, and that is the single-flighting.**
+    /// Without it, N flows arriving on an empty pool each pay a TCP connect and
+    /// a TLS or REALITY handshake, and N-1 of the connections they open are
+    /// dropped on the floor. Every waiter observes the one task's result; the
+    /// task is independent of the first waiter's cancellation and bounded by
+    /// [`COLD_DIAL_TIMEOUT`].
     ///
-    /// Holding it across [`open_grpc_call`] too costs a little concurrency on
+    /// The state lock is held across [`open_grpc_call`]. That costs a little
+    /// concurrency on
     /// a warm pool and buys the one thing a check-then-use split cannot have:
     /// the liveness test and the stream it justifies are one step, so a
     /// connection that ends in between is never the one a flow is handed.
     ///
-    /// **The larger cost the lock accepts is that there is no dial timeout
-    /// under it.** [`crate::connect_tcp_stream`] is a bare
-    /// `TcpStream::connect` (`crates/xray-transport/src/lib.rs:425`), so
-    /// against a server whose SYNs are blackholed every flow on this outbound
-    /// queues behind one hung dial and they fail one after another, at N times
-    /// the OS connect timeout rather than together. grpc-go is not this shape:
-    /// its `ClientConn` connects in the background under Xray's
-    /// `MinConnectTimeout` of five seconds and its half-second-to-nineteen-
-    /// second backoff (`Xray-core/transport/internet/grpc/dial.go:92-100`),
-    /// and an RPC that arrives while the channel is in `TRANSIENT_FAILURE`
-    /// fails at once instead of waiting. Closing that needs a dial timeout the
-    /// crate does not have anywhere — none of the other transports has one
-    /// either — so it is deferred rather than papered over here.
     pub(crate) async fn open_stream(
         &self,
         dialer: &TransportDialer,
@@ -181,46 +173,66 @@ impl GrpcTransport {
         candidates: &[SocketAddr],
         happy_eyeballs: Option<&HappyEyeballsConfig>,
     ) -> Result<BoxedTransportStream, TransportError> {
-        let mut pooled = self.pool.connection.lock().await;
+        // Before any pool state for the same reason as before: a static config
+        // error must not start a shared TCP/TLS/REALITY attempt.
+        let mut call = Some(build_grpc_call(&self.config)?);
+        // A live-but-refusing connection (normally GOAWAY under an open call)
+        // gets one replacement. A call refused by that fresh replacement is
+        // returned rather than becoming an unbounded redial loop.
+        let mut may_replace_refusing_connection = true;
 
-        if let Some(connection) = pooled.as_ref().filter(|connection| connection.is_live()) {
-            // Built ahead of the call and propagated rather than swallowed,
-            // because the two failures below are unrelated: an unbuildable
-            // request is a static config error that would be identical on a
-            // brand-new connection, so treating it as a dead connection would
-            // retire a healthy one and redial for nothing, once per flow.
-            // [`build_grpc_call`] has the rest of that reasoning.
-            let call = build_grpc_call(&self.config)?;
-            if let Ok(stream) = open_grpc_call(connection, call).await {
-                return Ok(Box::new(stream));
+        loop {
+            let mut state = self.pool.state.lock().await;
+            match &mut *state {
+                PoolState::Ready(connection) => {
+                    if !connection.is_live()
+                        || connection.has_been_idle_for(self.pool.connection_idle_timeout)
+                    {
+                        *state = PoolState::Empty;
+                        continue;
+                    }
+
+                    let current_call = call
+                        .take()
+                        .expect("a gRPC call is rebuilt before every retry");
+                    match open_grpc_call(connection, current_call).await {
+                        Ok(stream) => return Ok(Box::new(stream)),
+                        Err(error) => {
+                            *state = PoolState::Empty;
+                            if !may_replace_refusing_connection {
+                                return Err(error);
+                            }
+                            may_replace_refusing_connection = false;
+                            call = Some(build_grpc_call(&self.config)?);
+                        }
+                    }
+                }
+                PoolState::Dialing(attempt) => {
+                    let attempt = Arc::clone(attempt);
+                    drop(state);
+                    attempt.wait().await?;
+                    // The connection this attempt produced is already the
+                    // replacement. If it refuses a call, surface that error.
+                    may_replace_refusing_connection = false;
+                }
+                PoolState::Empty => {
+                    let attempt = Arc::new(DialAttempt::new());
+                    *state = PoolState::Dialing(Arc::clone(&attempt));
+                    self.pool.spawn_dial(
+                        dialer.clone(),
+                        connector.clone(),
+                        original_target.clone(),
+                        candidates.to_vec(),
+                        happy_eyeballs.copied(),
+                        self.config.clone(),
+                        Arc::clone(&attempt),
+                    );
+                    drop(state);
+                    attempt.wait().await?;
+                    may_replace_refusing_connection = false;
+                }
             }
-            // Reached when a connection this task had just called live refused
-            // the call anyway: h2 keeps a `Connection` future running until
-            // every stream on it has ended, so a peer's `GOAWAY` leaves the
-            // driver alive and unable to open anything new until the last
-            // tunnel drains. grpc-go answers the same frame by building a
-            // fresh transport under the same `ClientConn`; retiring and
-            // redialling here is the closest thing to it, and the alternative
-            // is failing every flow for as long as the drain lasts.
-            //
-            // Dropping the error is safe only because of the line above it:
-            // past the build, the sole thing an error out of `open_grpc_call`
-            // can say is that this connection would not carry the call, which
-            // is exactly what the redial answers. Whatever the redial hits is
-            // the error a caller sees.
         }
-        *pooled = None;
-
-        // Before the dial for the same reason: a config error should not cost
-        // a TCP connect and a REALITY handshake first.
-        let call = build_grpc_call(&self.config)?;
-        let io = dialer
-            .connect_resolved(connector, original_target, candidates, happy_eyeballs)
-            .await?;
-        let connection = h2_handshake(io, &self.config).await?;
-        let stream = open_grpc_call(&connection, call).await?;
-        *pooled = Some(connection);
-        Ok(Box::new(stream))
     }
 }
 
@@ -232,9 +244,176 @@ impl GrpcTransport {
 /// `Ok(())` (`h2-0.4.15/src/proto/connection.rs:216-235`), so a pool that
 /// looked for an `Err` would go on handing out a connection whose peer has
 /// already said goodbye.
-#[derive(Default)]
 struct GrpcConnectionPool {
-    connection: Mutex<Option<H2Connection>>,
+    state: Mutex<PoolState>,
+    cold_dial_timeout: Duration,
+    connection_idle_timeout: Duration,
+}
+
+enum PoolState {
+    Empty,
+    Dialing(Arc<DialAttempt>),
+    Ready(H2Connection),
+}
+
+#[derive(Clone)]
+enum DialOutcome {
+    Pending,
+    Ready,
+    Failed(Arc<str>),
+}
+
+struct DialAttempt {
+    outcome: watch::Sender<DialOutcome>,
+}
+
+impl DialAttempt {
+    fn new() -> Self {
+        let (outcome, _) = watch::channel(DialOutcome::Pending);
+        Self { outcome }
+    }
+
+    fn complete(&self, outcome: DialOutcome) {
+        self.outcome.send_replace(outcome);
+    }
+
+    async fn wait(&self) -> Result<(), TransportError> {
+        let mut outcome = self.outcome.subscribe();
+        loop {
+            match outcome.borrow().clone() {
+                DialOutcome::Pending => {}
+                DialOutcome::Ready => return Ok(()),
+                DialOutcome::Failed(reason) => {
+                    return Err(TransportError::Grpc(reason.to_string()))
+                }
+            }
+            // `self` owns the sender for the whole wait, so closure would be
+            // an internal lifecycle bug rather than a connection failure.
+            if outcome.changed().await.is_err() {
+                return Err(TransportError::Grpc(
+                    "shared gRPC connection attempt disappeared".to_owned(),
+                ));
+            }
+        }
+    }
+}
+
+impl GrpcConnectionPool {
+    fn new() -> Self {
+        Self {
+            state: Mutex::new(PoolState::Empty),
+            cold_dial_timeout: COLD_DIAL_TIMEOUT,
+            connection_idle_timeout: CONNECTION_IDLE_TIMEOUT,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn spawn_dial(
+        self: &Arc<Self>,
+        dialer: TransportDialer,
+        connector: ConnectorConfig,
+        original_target: Target,
+        candidates: Vec<SocketAddr>,
+        happy_eyeballs: Option<HappyEyeballsConfig>,
+        config: GrpcConfig,
+        attempt: Arc<DialAttempt>,
+    ) {
+        let pool = Arc::clone(self);
+        tokio::spawn(async move {
+            let timeout = pool.cold_dial_timeout;
+            let dialled = tokio::time::timeout(timeout, async {
+                let io = dialer
+                    .connect_resolved_with_alpn_policy(
+                        &connector,
+                        &original_target,
+                        &candidates,
+                        happy_eyeballs.as_ref(),
+                        TlsAlpnPolicy::Http2,
+                    )
+                    .await?;
+                h2_handshake(io, &config).await
+            })
+            .await;
+
+            match dialled {
+                Ok(Ok(connection)) => {
+                    let idle_watch = connection.idle_watch();
+                    let installed = {
+                        let mut state = pool.state.lock().await;
+                        let current = matches!(
+                            &*state,
+                            PoolState::Dialing(current) if Arc::ptr_eq(current, &attempt)
+                        );
+                        if current {
+                            *state = PoolState::Ready(connection);
+                        }
+                        current
+                    };
+
+                    if installed {
+                        attempt.complete(DialOutcome::Ready);
+                        pool.spawn_idle_retirement(idle_watch);
+                    } else {
+                        attempt.complete(DialOutcome::Failed(Arc::from(
+                            "shared gRPC connection attempt was superseded",
+                        )));
+                    }
+                }
+                Ok(Err(error)) => {
+                    let reason: Arc<str> =
+                        Arc::from(format!("gRPC connection attempt failed: {error}"));
+                    pool.fail_attempt(&attempt, reason).await;
+                }
+                Err(_) => {
+                    let reason: Arc<str> = Arc::from(format!(
+                        "gRPC connection attempt timed out after {:?}",
+                        pool.cold_dial_timeout
+                    ));
+                    pool.fail_attempt(&attempt, reason).await;
+                }
+            }
+        });
+    }
+
+    async fn fail_attempt(&self, attempt: &Arc<DialAttempt>, reason: Arc<str>) {
+        let mut state = self.state.lock().await;
+        if matches!(
+            &*state,
+            PoolState::Dialing(current) if Arc::ptr_eq(current, attempt)
+        ) {
+            *state = PoolState::Empty;
+        }
+        drop(state);
+        attempt.complete(DialOutcome::Failed(reason));
+    }
+
+    fn spawn_idle_retirement(self: &Arc<Self>, idle: H2ConnectionIdleWatch) {
+        let pool = Arc::downgrade(self);
+        let timeout = self.connection_idle_timeout;
+        tokio::spawn(async move {
+            loop {
+                idle.wait_until_idle_for(timeout).await;
+                let Some(pool) = pool.upgrade() else {
+                    return;
+                };
+                let mut state = pool.state.lock().await;
+                let current = matches!(
+                    &*state,
+                    PoolState::Ready(connection) if idle.watches(connection)
+                );
+                if !current {
+                    return;
+                }
+                // A call may have opened between the timer firing and this
+                // task acquiring the pool lock. Recheck under the same lock
+                // every call opening uses before retiring the slot.
+                if idle.has_been_idle_for(timeout) {
+                    *state = PoolState::Empty;
+                    return;
+                }
+            }
+        });
+    }
 }
 
 impl fmt::Debug for GrpcConnectionPool {
@@ -242,12 +421,17 @@ impl fmt::Debug for GrpcConnectionPool {
     /// in outbound diagnostics: `try_lock` keeps that from blocking, or
     /// deadlocking against a dial that is holding the lock on this task.
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let live = match self.connection.try_lock() {
-            Ok(connection) => connection.as_ref().map(H2Connection::is_live),
-            Err(_) => None,
+        let (state, live) = match self.state.try_lock() {
+            Ok(state) => match &*state {
+                PoolState::Empty => ("empty", None),
+                PoolState::Dialing(_) => ("dialing", None),
+                PoolState::Ready(connection) => ("ready", Some(connection.is_live())),
+            },
+            Err(_) => ("locked", None),
         };
         formatter
             .debug_struct("GrpcConnectionPool")
+            .field("state", &state)
             .field("live_connection", &live)
             .finish()
     }

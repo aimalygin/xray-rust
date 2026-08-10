@@ -68,6 +68,11 @@ use xray_transport::{
 use xray_utls::{normalize_reality_supported_fingerprint, XRAY_REALITY_CAPABLE_FINGERPRINTS};
 
 pub mod chart;
+mod stream_transport;
+
+pub use stream_transport::{
+    StreamBenchScenario, StreamBenchTraffic, StreamBenchTransport, StreamBenchXhttpMode,
+};
 
 const USAGE: &str =
     "usage: xray-bench run|compare|route-probe|dns-policy-probe|reality-matrix|chart [options]";
@@ -211,6 +216,7 @@ pub enum WorkloadKind {
     RealityVisionXudp,
     RealityVisionBulkThroughput,
     GrpcBulkThroughput,
+    StreamTransport,
 }
 
 impl WorkloadKind {
@@ -237,6 +243,7 @@ impl WorkloadKind {
             Self::RealityVisionXudp => "reality-vision-xudp",
             Self::RealityVisionBulkThroughput => "reality-vision-bulk-throughput",
             Self::GrpcBulkThroughput => "grpc-bulk-throughput",
+            Self::StreamTransport => "stream-transport",
         }
     }
 
@@ -263,6 +270,7 @@ impl WorkloadKind {
             "reality-vision-xudp" => Ok(Self::RealityVisionXudp),
             "reality-vision-bulk-throughput" => Ok(Self::RealityVisionBulkThroughput),
             "grpc-bulk-throughput" => Ok(Self::GrpcBulkThroughput),
+            "stream-transport" => Ok(Self::StreamTransport),
             other => Err(BenchError::InvalidArguments(format!(
                 "unsupported workload `{other}`"
             ))),
@@ -295,6 +303,7 @@ impl WorkloadKind {
                 | Self::RealityVisionXudp
                 | Self::RealityVisionBulkThroughput
                 | Self::GrpcBulkThroughput
+                | Self::StreamTransport
         )
     }
 }
@@ -383,6 +392,9 @@ pub struct BenchOptions {
     pub connections: usize,
     pub iterations: usize,
     pub payload_size: usize,
+    pub stream_transport: Option<StreamBenchTransport>,
+    pub stream_traffic: Option<StreamBenchTraffic>,
+    pub xhttp_mode: Option<StreamBenchXhttpMode>,
     pub dns_transport: TunDnsTransport,
     pub dns_upstream_transport: TunDnsUpstreamTransport,
     pub runs: usize,
@@ -612,6 +624,16 @@ pub struct BenchResult {
     #[serde(default)]
     pub payload_size: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream_transport: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream_traffic: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub xhttp_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uplink_write_ops: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uplink_write_ops_per_second: Option<u128>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dns_transport: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dns_upstream_transport: Option<String>,
@@ -699,6 +721,16 @@ pub struct BenchSummary {
     #[serde(default)]
     pub payload_size: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream_transport: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream_traffic: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub xhttp_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uplink_write_ops: Option<MetricSummary>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uplink_write_ops_per_second: Option<MetricSummary>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dns_transport: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dns_upstream_transport: Option<String>,
@@ -730,6 +762,9 @@ pub struct WorkloadOutcome {
     /// two connections with staggered handshakes can have disjoint windows whose union
     /// exceeds either one's span.
     pub transfer_window: Option<(Instant, Instant)>,
+    /// Logical payload-bearing `write_all` calls issued by the packet-up pressure workload.
+    /// This is deliberately not labelled as an HTTP request count: XHTTP may batch writes.
+    pub uplink_write_ops: Option<u64>,
     pub blackhole_connections_accepted: Option<u64>,
     pub blackhole_connections_active: Option<u64>,
 }
@@ -759,6 +794,10 @@ impl WorkloadOutcome {
             (Some((start_a, end_a)), Some((start_b, end_b))) => {
                 Some((start_a.min(start_b), end_a.max(end_b)))
             }
+            (current, incoming) => current.or(incoming),
+        };
+        self.uplink_write_ops = match (self.uplink_write_ops, other.uplink_write_ops) {
+            (Some(current), Some(incoming)) => Some(current.saturating_add(incoming)),
             (current, incoming) => current.or(incoming),
         };
         self.blackhole_connections_accepted = other
@@ -980,6 +1019,19 @@ impl WorkloadFixture {
                     processes: vec![process],
                 })
             }
+            WorkloadKind::StreamTransport => {
+                let scenario = options.stream_scenario()?;
+                let fixture =
+                    stream_transport::start_fixture(options, scenario, run_dir, binary_dir).await?;
+                Ok(Self {
+                    vless_addr: Some(fixture.addr),
+                    vless_tls_cert_sha256: Some(fixture.cert_sha256),
+                    dns_server_addr: None,
+                    tcp_blackhole_state: None,
+                    tasks: Vec::new(),
+                    processes: vec![fixture.process],
+                })
+            }
             WorkloadKind::TunRealityBlackhole => {
                 let (vless_addr, task, state) = spawn_tcp_blackhole_server().await?;
                 Ok(Self {
@@ -1048,6 +1100,9 @@ impl Default for BenchOptions {
             connections: 1,
             iterations: 1,
             payload_size: 1024,
+            stream_transport: None,
+            stream_traffic: None,
+            xhttp_mode: None,
             dns_transport: TunDnsTransport::default(),
             dns_upstream_transport: TunDnsUpstreamTransport::default(),
             runs: 1,
@@ -1060,6 +1115,39 @@ impl Default for BenchOptions {
             tun_profile: None,
             no_auto_build: false,
             geodata_dir: None,
+        }
+    }
+}
+
+impl BenchOptions {
+    fn stream_scenario(&self) -> Result<StreamBenchScenario, BenchError> {
+        if self.workload != WorkloadKind::StreamTransport {
+            return Err(BenchError::InvalidArguments(
+                "stream benchmark scenario requested for a different workload".to_owned(),
+            ));
+        }
+        let scenario = StreamBenchScenario::resolve(
+            self.stream_transport,
+            self.stream_traffic,
+            self.xhttp_mode,
+        )?;
+        scenario.validate_payload_size(self.payload_size)?;
+        Ok(scenario)
+    }
+
+    fn validate_stream_options(&self) -> Result<(), BenchError> {
+        if self.workload == WorkloadKind::StreamTransport {
+            self.stream_scenario().map(|_| ())
+        } else if self.stream_transport.is_some()
+            || self.stream_traffic.is_some()
+            || self.xhttp_mode.is_some()
+        {
+            Err(BenchError::InvalidArguments(
+                "--stream-transport, --traffic, and --xhttp-mode require --workload stream-transport"
+                    .to_owned(),
+            ))
+        } else {
+            Ok(())
         }
     }
 }
@@ -1259,6 +1347,21 @@ where
                 options.payload_size =
                     parse_nonzero_usize(required_value(&rest, &mut index, flag)?, flag)?;
             }
+            "--stream-transport" => {
+                options.stream_transport = Some(StreamBenchTransport::parse(required_value(
+                    &rest, &mut index, flag,
+                )?)?);
+            }
+            "--traffic" => {
+                options.stream_traffic = Some(StreamBenchTraffic::parse(required_value(
+                    &rest, &mut index, flag,
+                )?)?);
+            }
+            "--xhttp-mode" => {
+                options.xhttp_mode = Some(StreamBenchXhttpMode::parse(required_value(
+                    &rest, &mut index, flag,
+                )?)?);
+            }
             "--transport" | "--dns-transport" => {
                 options.dns_transport =
                     TunDnsTransport::parse(required_value(&rest, &mut index, flag)?)?;
@@ -1309,6 +1412,8 @@ where
             }
         }
     }
+
+    options.validate_stream_options()?;
 
     match command.as_str() {
         "run" => {
@@ -1752,6 +1857,9 @@ pub fn summarize_results(results: &[BenchResult]) -> Result<BenchSummary, BenchE
         result.connections != first.connections
             || result.iterations != first.iterations
             || result.payload_size != first.payload_size
+            || result.stream_transport != first.stream_transport
+            || result.stream_traffic != first.stream_traffic
+            || result.xhttp_mode != first.xhttp_mode
             || result.dns_transport != first.dns_transport
             || result.dns_upstream_transport != first.dns_upstream_transport
     }) {
@@ -1790,6 +1898,19 @@ pub fn summarize_results(results: &[BenchResult]) -> Result<BenchSummary, BenchE
         connections: first.connections,
         iterations: first.iterations,
         payload_size: first.payload_size,
+        stream_transport: first.stream_transport.clone(),
+        stream_traffic: first.stream_traffic.clone(),
+        xhttp_mode: first.xhttp_mode.clone(),
+        uplink_write_ops: summarize_optional_metric(
+            results
+                .iter()
+                .map(|result| result.uplink_write_ops.map(u128::from)),
+        ),
+        uplink_write_ops_per_second: summarize_optional_metric(
+            results
+                .iter()
+                .map(|result| result.uplink_write_ops_per_second),
+        ),
         dns_transport: first.dns_transport.clone(),
         dns_upstream_transport: first.dns_upstream_transport.clone(),
         latency_us: summarize_latency_results(results),
@@ -1947,6 +2068,15 @@ fn throughput_mbps(
         return None;
     }
     Some((bytes * 8).div_ceil(duration_ms * 1000))
+}
+
+fn operations_per_second(operations: Option<u64>, transfer: Option<Duration>) -> Option<u128> {
+    let operations = u128::from(operations?);
+    let duration_ns = transfer?.as_nanos();
+    if operations == 0 || duration_ns == 0 {
+        return None;
+    }
+    Some((operations * 1_000_000_000).div_ceil(duration_ns))
 }
 
 pub async fn run_idle_workload(duration: Duration) -> Result<WorkloadOutcome, BenchError> {
@@ -5901,6 +6031,9 @@ pub fn xray_rust_config(port: u16, workload: WorkloadKind) -> String {
         WorkloadKind::GrpcBulkThroughput => {
             vless_grpc_config(port, SocketAddr::from((Ipv4Addr::LOCALHOST, 443)))
         }
+        // The public legacy helper has no transport/traffic axes. Runtime config
+        // generation for this parameterized workload goes through `start_engine`.
+        WorkloadKind::StreamTransport => freedom_config(port, false),
         WorkloadKind::RoutedTcpFreedom => routed_freedom_config(port, EngineKind::XrayRust),
         WorkloadKind::Idle
         | WorkloadKind::TcpFreedom
@@ -5941,6 +6074,9 @@ fn sing_box_config(
             let vless_addr = grpc_fixture_vless_addr(workload, fixture)?;
             Ok(sing_box_vless_grpc_config(port, vless_addr))
         }
+        WorkloadKind::StreamTransport => Err(BenchError::InvalidArguments(
+            "stream-transport config requires the parameterized benchmark options".to_owned(),
+        )),
         _ if workload.supports_sing_box_process_engine() => Ok(sing_box_direct_config(port)),
         _ => Err(BenchError::InvalidArguments(format!(
             "unsupported sing-box workload `{}` in process-level comparison",
@@ -6017,6 +6153,9 @@ fn engine_config_with_dns_upstream(
             let vless_addr = grpc_fixture_vless_addr(workload, fixture)?;
             Ok(vless_grpc_config(port, vless_addr))
         }
+        WorkloadKind::StreamTransport => Err(BenchError::InvalidArguments(
+            "stream-transport config requires the parameterized benchmark options".to_owned(),
+        )),
         WorkloadKind::TunRealityBlackhole => {
             let vless_addr = fixture.vless_addr.ok_or_else(|| {
                 BenchError::InvalidArguments(
@@ -7279,15 +7418,19 @@ async fn start_engine(
     } else {
         None
     };
-    let config = match kind {
-        EngineKind::XrayRust | EngineKind::XrayCore => engine_config_with_dns_upstream(
-            kind,
-            port,
-            options.workload,
-            fixture,
-            options.dns_upstream_transport,
-        )?,
-        EngineKind::SingBox => sing_box_config(port, options.workload, fixture)?,
+    let config = if options.workload == WorkloadKind::StreamTransport {
+        stream_transport::engine_config(kind, port, options, options.stream_scenario()?, fixture)?
+    } else {
+        match kind {
+            EngineKind::XrayRust | EngineKind::XrayCore => engine_config_with_dns_upstream(
+                kind,
+                port,
+                options.workload,
+                fixture,
+                options.dns_upstream_transport,
+            )?,
+            EngineKind::SingBox => sing_box_config(port, options.workload, fixture)?,
+        }
     };
     let config_path = run_dir.join("config.json");
     fs::write(&config_path, config).map_err(|source| BenchError::Io {
@@ -7810,6 +7953,7 @@ fn dns_outbound_selector_probe_config(rule_count: usize) -> CoreConfig {
             network: ConfigNetwork::Tcp,
             transport: StreamTransport::Raw,
             security: StreamSecurity::None,
+            quic_params: None,
             socket_options: None,
         },
         settings: OutboundSettings::Freedom,
@@ -7820,6 +7964,7 @@ fn dns_outbound_selector_probe_config(rule_count: usize) -> CoreConfig {
             network: ConfigNetwork::Tcp,
             transport: StreamTransport::Raw,
             security: StreamSecurity::None,
+            quic_params: None,
             socket_options: None,
         },
         settings: OutboundSettings::Dns(DnsOutboundSettings::default()),
@@ -9170,6 +9315,7 @@ fn route_probe_config(rules: usize, outbounds: usize) -> Result<CoreConfig, Benc
                 network: ConfigNetwork::Tcp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
+                quic_params: None,
                 socket_options: None,
             },
             settings: OutboundSettings::Freedom,
@@ -9303,6 +9449,13 @@ fn canonical_run_invocation_args(
         "--payload-size",
         options.payload_size.to_string(),
     );
+    if let Ok(scenario) = options.stream_scenario() {
+        push_invocation_value(&mut args, "--stream-transport", scenario.transport.as_str());
+        push_invocation_value(&mut args, "--traffic", scenario.traffic.as_str());
+        if let Some(mode) = scenario.xhttp_mode {
+            push_invocation_value(&mut args, "--xhttp-mode", mode.as_str());
+        }
+    }
     push_invocation_value(&mut args, "--transport", options.dns_transport.as_str());
     push_invocation_value(
         &mut args,
@@ -9387,7 +9540,7 @@ pub async fn run_compare(options: BenchOptions) -> Result<(), BenchError> {
     print_summary(&rust_summary);
     let xray_summary = run_engine_series(EngineKind::XrayCore, &options, &run_id).await?;
     print_summary(&xray_summary);
-    if options.workload.supports_sing_box_process_engine() {
+    if benchmark_supports_sing_box(&options)? {
         let sing_box_summary = run_engine_series(EngineKind::SingBox, &options, &run_id).await?;
         print_summary(&sing_box_summary);
     } else {
@@ -9397,6 +9550,14 @@ pub async fn run_compare(options: BenchOptions) -> Result<(), BenchError> {
         );
     }
     Ok(())
+}
+
+fn benchmark_supports_sing_box(options: &BenchOptions) -> Result<bool, BenchError> {
+    if options.workload == WorkloadKind::StreamTransport {
+        Ok(options.stream_scenario()?.transport.supports_sing_box())
+    } else {
+        Ok(options.workload.supports_sing_box_process_engine())
+    }
 }
 
 pub async fn run_engine_series(
@@ -9453,6 +9614,16 @@ async fn run_engine_once(
     run_dir: &Path,
     binary_dir: &Path,
 ) -> Result<BenchResult, BenchError> {
+    if options.workload == WorkloadKind::StreamTransport {
+        let scenario = options.stream_scenario()?;
+        if !scenario.supports_engine(kind) {
+            return Err(BenchError::InvalidArguments(format!(
+                "{} does not support the {} stream transport",
+                kind.as_str(),
+                scenario.transport.as_str()
+            )));
+        }
+    }
     fs::create_dir_all(run_dir).map_err(|source| BenchError::Io {
         action: format!("creating run directory `{}`", run_dir.display()),
         source,
@@ -9516,6 +9687,14 @@ async fn run_engine_once(
             WorkloadKind::RealityVisionBulkThroughput | WorkloadKind::GrpcBulkThroughput => {
                 run_tcp_bulk_throughput_workload(engine.socks_addr, options).await
             }
+            WorkloadKind::StreamTransport => {
+                stream_transport::run_workload(
+                    engine.socks_addr,
+                    options,
+                    options.stream_scenario()?,
+                )
+                .await
+            }
         }
     };
     let (workload_outcome, samples) = match timeout(
@@ -9551,6 +9730,11 @@ async fn run_engine_once(
         duration_ms,
         transfer_duration,
     );
+    let uplink_write_ops = workload_outcome.uplink_write_ops;
+    let uplink_write_ops_per_second = operations_per_second(uplink_write_ops, transfer_duration);
+    let stream_scenario = (options.workload == WorkloadKind::StreamTransport)
+        .then(|| options.stream_scenario())
+        .transpose()?;
     let provenance = benchmark_provenance(kind, options, &engine.binary_path);
 
     let result = BenchResult {
@@ -9570,6 +9754,13 @@ async fn run_engine_once(
         connections: options.connections as u64,
         iterations: options.iterations as u64,
         payload_size: options.payload_size as u64,
+        stream_transport: stream_scenario.map(|scenario| scenario.transport.as_str().to_owned()),
+        stream_traffic: stream_scenario.map(|scenario| scenario.traffic.as_str().to_owned()),
+        xhttp_mode: stream_scenario
+            .and_then(|scenario| scenario.xhttp_mode)
+            .map(|mode| mode.as_str().to_owned()),
+        uplink_write_ops,
+        uplink_write_ops_per_second,
         dns_transport: workload_dns_transport(options.workload, options.dns_transport)
             .map(str::to_owned),
         dns_upstream_transport: (options.workload == WorkloadKind::TunDnsProxy)
@@ -9637,6 +9828,26 @@ fn format_benchmark_provenance(run_id: &str, provenance: &BenchProvenance) -> St
 }
 
 fn print_result(result: &BenchResult) {
+    let stream_scenario = result
+        .stream_transport
+        .as_deref()
+        .zip(result.stream_traffic.as_deref())
+        .map(|(transport, traffic)| {
+            let mode = result
+                .xhttp_mode
+                .as_deref()
+                .map(|mode| format!(" xhttp_mode={mode}"))
+                .unwrap_or_default();
+            format!(" stream_transport={transport} traffic={traffic}{mode}")
+        })
+        .unwrap_or_default();
+    let uplink_write_ops = result
+        .uplink_write_ops
+        .zip(result.uplink_write_ops_per_second)
+        .map(|(operations, rate)| {
+            format!(" uplink_write_ops={operations} uplink_write_ops_per_second={rate}")
+        })
+        .unwrap_or_default();
     let dns_transport = result
         .dns_transport
         .as_deref()
@@ -9691,7 +9902,7 @@ fn print_result(result: &BenchResult) {
         .unwrap_or_default();
     let provenance = format_benchmark_provenance(&result.run_id, &result.provenance);
     println!(
-        "{} {} status={} peak_rss_kib={} cpu_millis={} bytes_sent={} bytes_received={} samples={}{}{}{}{}{}{}{}{}",
+        "{} {} status={} peak_rss_kib={} cpu_millis={} bytes_sent={} bytes_received={} samples={}{}{}{}{}{}{}{}{}{}{}",
         result.engine,
         result.workload,
         result.status,
@@ -9700,6 +9911,8 @@ fn print_result(result: &BenchResult) {
         result.bytes_sent,
         result.bytes_received,
         result.samples,
+        stream_scenario,
+        uplink_write_ops,
         dns_transport,
         dns_upstream_transport,
         cpu_per_gib,
@@ -9820,6 +10033,35 @@ fn print_summary(summary: &BenchSummary) {
             )
         })
         .unwrap_or_default();
+    let stream_scenario = summary
+        .stream_transport
+        .as_deref()
+        .zip(summary.stream_traffic.as_deref())
+        .map(|(transport, traffic)| {
+            let mode = summary
+                .xhttp_mode
+                .as_deref()
+                .map(|mode| format!(" xhttp_mode={mode}"))
+                .unwrap_or_default();
+            format!(" stream_transport={transport} traffic={traffic}{mode}")
+        })
+        .unwrap_or_default();
+    let uplink_write_ops = summary
+        .uplink_write_ops
+        .as_ref()
+        .zip(summary.uplink_write_ops_per_second.as_ref())
+        .map(|(operations, rate)| {
+            format!(
+                " uplink_write_ops[min/median/p95]={}/{}/{} uplink_write_ops_per_second[min/median/p95]={}/{}/{}",
+                operations.min,
+                operations.median,
+                operations.p95,
+                rate.min,
+                rate.median,
+                rate.p95,
+            )
+        })
+        .unwrap_or_default();
     let dns_transport = summary
         .dns_transport
         .as_deref()
@@ -9884,7 +10126,7 @@ fn print_summary(summary: &BenchSummary) {
         .unwrap_or_default();
     let provenance = format_benchmark_provenance(&summary.run_id, &summary.provenance);
     println!(
-        "{} {} runs={} status={} duration_ms[min/median/p95]={}/{}/{} peak_rss_kib[min/median/p95]={}/{}/{} cpu_millis[min/median/p95]={}/{}/{} bytes_sent[min/median/p95]={}/{}/{} bytes_received[min/median/p95]={}/{}/{}{}{}{}{}{}{}{}",
+        "{} {} runs={} status={} duration_ms[min/median/p95]={}/{}/{} peak_rss_kib[min/median/p95]={}/{}/{} cpu_millis[min/median/p95]={}/{}/{} bytes_sent[min/median/p95]={}/{}/{} bytes_received[min/median/p95]={}/{}/{}{}{}{}{}{}{}{}{}{}",
         summary.engine,
         summary.workload,
         summary.runs,
@@ -9904,6 +10146,8 @@ fn print_summary(summary: &BenchSummary) {
         summary.bytes_received.min,
         summary.bytes_received.median,
         summary.bytes_received.p95,
+        stream_scenario,
+        uplink_write_ops,
         dns_transport,
         dns_upstream_transport,
         cpu_per_gib,
@@ -9938,6 +10182,11 @@ mod tests {
             connections: 1,
             iterations: 1,
             payload_size: 512,
+            stream_transport: None,
+            stream_traffic: None,
+            xhttp_mode: None,
+            uplink_write_ops: None,
+            uplink_write_ops_per_second: None,
             dns_transport: None,
             dns_upstream_transport: None,
             latency_us: None,
@@ -10073,6 +10322,9 @@ mod tests {
                 connections: 1,
                 iterations: 1,
                 payload_size: 1024,
+                stream_transport: None,
+                stream_traffic: None,
+                xhttp_mode: None,
                 dns_transport: TunDnsTransport::Both,
                 dns_upstream_transport: TunDnsUpstreamTransport::Classic,
                 runs: 1,
@@ -10230,6 +10482,117 @@ mod tests {
         assert_eq!(options.connections, 1);
         assert_eq!(options.iterations, 256);
         assert_eq!(options.payload_size, 4_194_304);
+    }
+
+    #[test]
+    fn parses_stream_transport_axes_without_changing_legacy_workloads() {
+        let args = parse_cli_args([
+            "xray-bench",
+            "compare",
+            "--workload",
+            "stream-transport",
+            "--stream-transport",
+            "xhttp-h2",
+            "--traffic",
+            "full-duplex",
+            "--xhttp-mode",
+            "stream-up",
+            "--connections",
+            "32",
+            "--iterations",
+            "4096",
+            "--payload-size",
+            "65536",
+        ])
+        .unwrap();
+
+        let CliArgs::Compare(options) = args else {
+            panic!("expected compare args");
+        };
+        assert_eq!(options.workload, WorkloadKind::StreamTransport);
+        assert_eq!(
+            options.stream_transport,
+            Some(StreamBenchTransport::XhttpHttp2)
+        );
+        assert_eq!(options.stream_traffic, Some(StreamBenchTraffic::FullDuplex));
+        assert_eq!(options.xhttp_mode, Some(StreamBenchXhttpMode::StreamUp));
+        assert_eq!(
+            (
+                options.connections,
+                options.iterations,
+                options.payload_size
+            ),
+            (32, 4096, 65536)
+        );
+    }
+
+    #[test]
+    fn parses_xhttp_h3_stream_transport_axis() {
+        let args = parse_cli_args([
+            "xray-bench",
+            "run",
+            "--engine",
+            "xray-rust",
+            "--workload",
+            "stream-transport",
+            "--stream-transport",
+            "xhttp-h3",
+            "--traffic",
+            "download",
+            "--xhttp-mode",
+            "stream-one",
+        ])
+        .unwrap();
+
+        let CliArgs::Run(options) = args else {
+            panic!("expected run args");
+        };
+        assert_eq!(
+            (
+                options.stream_transport,
+                options.stream_traffic,
+                options.xhttp_mode,
+            ),
+            (
+                Some(StreamBenchTransport::XhttpHttp3),
+                Some(StreamBenchTraffic::Download),
+                Some(StreamBenchXhttpMode::StreamOne),
+            )
+        );
+    }
+
+    #[test]
+    fn xhttp_h3_compare_explicitly_skips_sing_box() {
+        let options = BenchOptions {
+            workload: WorkloadKind::StreamTransport,
+            stream_transport: Some(StreamBenchTransport::XhttpHttp3),
+            stream_traffic: Some(StreamBenchTraffic::Upload),
+            xhttp_mode: Some(StreamBenchXhttpMode::PacketUp),
+            ..BenchOptions::default()
+        };
+
+        assert!(!benchmark_supports_sing_box(&options).unwrap());
+    }
+
+    #[test]
+    fn rejects_stream_axes_on_legacy_workloads() {
+        let error = parse_cli_args([
+            "xray-bench",
+            "run",
+            "--engine",
+            "xray-rust",
+            "--workload",
+            "grpc-bulk-throughput",
+            "--stream-transport",
+            "grpc",
+            "--traffic",
+            "download",
+        ])
+        .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("require --workload stream-transport"));
     }
 
     #[test]
@@ -12682,6 +13045,11 @@ mod tests {
             connections: 1,
             iterations: 1,
             payload_size: 1024,
+            stream_transport: None,
+            stream_traffic: None,
+            xhttp_mode: None,
+            uplink_write_ops: None,
+            uplink_write_ops_per_second: None,
             dns_transport: Some("udp".to_owned()),
             dns_upstream_transport: Some("tcp-routed".to_owned()),
             latency_us: None,
@@ -12697,6 +13065,58 @@ mod tests {
         assert_eq!(result_json["dns_upstream_transport"], "tcp-routed");
         assert_eq!(summary_json["dns_transport"], "udp");
         assert_eq!(summary_json["dns_upstream_transport"], "tcp-routed");
+    }
+
+    #[test]
+    fn stream_result_and_summary_preserve_axes_and_write_operation_metric() {
+        let first = BenchResult {
+            workload: "stream-transport".to_owned(),
+            stream_transport: Some("xhttp-h3".to_owned()),
+            stream_traffic: Some("packet-up".to_owned()),
+            xhttp_mode: Some("packet-up".to_owned()),
+            uplink_write_ops: Some(100),
+            uplink_write_ops_per_second: Some(2_000),
+            ..minimal_bench_result()
+        };
+        let second = BenchResult {
+            uplink_write_ops: Some(120),
+            uplink_write_ops_per_second: Some(3_000),
+            ..first.clone()
+        };
+
+        let summary = summarize_results(&[first, second]).unwrap();
+        assert_eq!(summary.stream_transport.as_deref(), Some("xhttp-h3"));
+        assert_eq!(summary.stream_traffic.as_deref(), Some("packet-up"));
+        assert_eq!(summary.xhttp_mode.as_deref(), Some("packet-up"));
+        assert_eq!(
+            summary.uplink_write_ops,
+            Some(MetricSummary {
+                min: 100,
+                median: 110,
+                p95: 120,
+            })
+        );
+        assert_eq!(
+            summary.uplink_write_ops_per_second,
+            Some(MetricSummary {
+                min: 2_000,
+                median: 2_500,
+                p95: 3_000,
+            })
+        );
+    }
+
+    #[test]
+    fn packet_write_rate_uses_the_payload_transfer_window() {
+        assert_eq!(
+            operations_per_second(Some(250), Some(Duration::from_millis(100))),
+            Some(2_500)
+        );
+        assert_eq!(
+            operations_per_second(Some(0), Some(Duration::from_secs(1))),
+            None
+        );
+        assert_eq!(operations_per_second(Some(1), None), None);
     }
 
     #[test]
@@ -12833,6 +13253,34 @@ mod tests {
     }
 
     #[test]
+    fn canonical_invocation_records_xhttp_h3_axes() {
+        let engine_binary = PathBuf::from("/tmp/xray-rust");
+        let options = BenchOptions {
+            workload: WorkloadKind::StreamTransport,
+            stream_transport: Some(StreamBenchTransport::XhttpHttp3),
+            stream_traffic: Some(StreamBenchTraffic::PacketUp),
+            xhttp_mode: Some(StreamBenchXhttpMode::PacketUp),
+            connections: 32,
+            iterations: 400,
+            payload_size: 16_384,
+            ..BenchOptions::default()
+        };
+
+        let invocation =
+            canonical_run_invocation_args(EngineKind::XrayRust, &options, &engine_binary);
+        let parsed =
+            parse_cli_args(std::iter::once("xray-bench".to_owned()).chain(invocation)).unwrap();
+        let CliArgs::Run(replayed) = parsed else {
+            panic!("canonical stream invocation must parse as `run`");
+        };
+
+        assert_eq!(replayed.stream_transport, options.stream_transport);
+        assert_eq!(replayed.stream_traffic, options.stream_traffic);
+        assert_eq!(replayed.xhttp_mode, options.xhttp_mode);
+        assert_eq!((replayed.connections, replayed.iterations), (32, 400));
+    }
+
+    #[test]
     fn formatted_provenance_identifies_the_measured_binary_and_source() {
         let provenance = BenchProvenance {
             harness_profile: "release".to_owned(),
@@ -12872,6 +13320,11 @@ mod tests {
                 connections: 1,
                 iterations: 10,
                 payload_size: 4096,
+                stream_transport: None,
+                stream_traffic: None,
+                xhttp_mode: None,
+                uplink_write_ops: None,
+                uplink_write_ops_per_second: None,
                 dns_transport: None,
                 dns_upstream_transport: None,
                 latency_us: Some(LatencySummary {
@@ -12902,6 +13355,11 @@ mod tests {
                 connections: 1,
                 iterations: 10,
                 payload_size: 4096,
+                stream_transport: None,
+                stream_traffic: None,
+                xhttp_mode: None,
+                uplink_write_ops: None,
+                uplink_write_ops_per_second: None,
                 dns_transport: None,
                 dns_upstream_transport: None,
                 latency_us: Some(LatencySummary {
@@ -12932,6 +13390,11 @@ mod tests {
                 connections: 1,
                 iterations: 10,
                 payload_size: 4096,
+                stream_transport: None,
+                stream_traffic: None,
+                xhttp_mode: None,
+                uplink_write_ops: None,
+                uplink_write_ops_per_second: None,
                 dns_transport: None,
                 dns_upstream_transport: None,
                 latency_us: Some(LatencySummary {
@@ -13107,6 +13570,11 @@ mod tests {
             connections: 100,
             iterations: 1,
             payload_size: 512,
+            stream_transport: None,
+            stream_traffic: None,
+            xhttp_mode: None,
+            uplink_write_ops: None,
+            uplink_write_ops_per_second: None,
             dns_transport: None,
             dns_upstream_transport: None,
             latency_us: None,

@@ -6,7 +6,7 @@ mod utls_tls_shaping_tests {
     use rcgen::{generate_simple_self_signed, CertifiedKey};
     use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
     use rustls::ProtocolVersion;
-    use tokio::io::AsyncReadExt;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
     use tokio_rustls::TlsAcceptor;
     use xray_routing::{Network, Target, TargetAddr};
@@ -16,10 +16,16 @@ mod utls_tls_shaping_tests {
 
     const EXT_SERVER_NAME: u16 = 0x0000;
     const EXT_ALPN: u16 = 0x0010;
+    const EXT_CERTIFICATE_COMPRESSION: u16 = 0x001b;
     const EXT_SUPPORTED_VERSIONS: u16 = 0x002b;
     const EXT_KEY_SHARE: u16 = 0x0033;
     const EXT_ENCRYPTED_CLIENT_HELLO: u16 = 0xfe0d;
+    const GROUP_SECP256R1: u16 = 0x0017;
     const CHROME_GREASE_CIPHER: u16 = 0x0a0a;
+    const CHROME_PROVIDER_SUPPORTED_CIPHERS: &[u16] = &[
+        0x0a0a, 0x1301, 0x1302, 0x1303, 0xc02b, 0xc02f, 0xc02c, 0xc030, 0xcca9, 0xcca8,
+    ];
+    const CHROME_LEGACY_TLS12_CIPHERS: &[u16] = &[0xc013, 0xc014, 0x009c, 0x009d, 0x002f, 0x0035];
 
     /// uTLS ClientHello shapes emitted by the pinned Go oracle
     /// (`tools/reality-oracle/clienthello_shape.go`) and checked in so this
@@ -113,6 +119,64 @@ mod utls_tls_shaping_tests {
         )
     }
 
+    fn extension_payload(hello: &[u8], wanted_type: u16) -> Option<&[u8]> {
+        let mut cursor = 5 + 4 + 2 + 32;
+        cursor += 1 + usize::from(hello[cursor]);
+        let cipher_suites_len = usize::from(u16::from_be_bytes([hello[cursor], hello[cursor + 1]]));
+        cursor += 2 + cipher_suites_len;
+        cursor += 1 + usize::from(hello[cursor]);
+        let extensions_len = usize::from(u16::from_be_bytes([hello[cursor], hello[cursor + 1]]));
+        cursor += 2;
+        let end = cursor + extensions_len;
+
+        while cursor + 4 <= end {
+            let extension_type = u16::from_be_bytes([hello[cursor], hello[cursor + 1]]);
+            let payload_len =
+                usize::from(u16::from_be_bytes([hello[cursor + 2], hello[cursor + 3]]));
+            let payload_start = cursor + 4;
+            cursor = payload_start + payload_len;
+            if extension_type == wanted_type {
+                return Some(&hello[payload_start..cursor]);
+            }
+        }
+
+        None
+    }
+
+    fn certificate_compression_algorithms(hello: &[u8]) -> Option<Vec<u16>> {
+        let payload = extension_payload(hello, EXT_CERTIFICATE_COMPRESSION)?;
+        let algorithms_len = usize::from(*payload.first()?);
+        let algorithms = payload.get(1..1 + algorithms_len)?;
+        Some(
+            algorithms
+                .chunks_exact(2)
+                .map(|pair| u16::from_be_bytes([pair[0], pair[1]]))
+                .collect(),
+        )
+    }
+
+    fn key_share(hello: &[u8], wanted_group: u16) -> Option<&[u8]> {
+        let payload = extension_payload(hello, EXT_KEY_SHARE)?;
+        let shares_len = usize::from(u16::from_be_bytes([*payload.first()?, *payload.get(1)?]));
+        let mut cursor = 2;
+        let end = cursor + shares_len;
+
+        while cursor + 4 <= end {
+            let group = u16::from_be_bytes([payload[cursor], payload[cursor + 1]]);
+            let key_exchange_len = usize::from(u16::from_be_bytes([
+                payload[cursor + 2],
+                payload[cursor + 3],
+            ]));
+            let key_exchange_start = cursor + 4;
+            cursor = key_exchange_start + key_exchange_len;
+            if group == wanted_group {
+                return Some(&payload[key_exchange_start..cursor]);
+            }
+        }
+
+        None
+    }
+
     fn cipher_suites(hello: &[u8]) -> Vec<u16> {
         let mut cursor = 5 + 4 + 2 + 32;
         cursor += 1 + usize::from(hello[cursor]);
@@ -121,6 +185,15 @@ mod utls_tls_shaping_tests {
         hello[cursor..cursor + len]
             .chunks_exact(2)
             .map(|pair| u16::from_be_bytes([pair[0], pair[1]]))
+            .collect()
+    }
+
+    fn provider_cipher_suites(versions: &[ProtocolVersion]) -> BTreeSet<u16> {
+        rustls::crypto::aws_lc_rs::default_provider()
+            .cipher_suites
+            .iter()
+            .filter(|suite| versions.contains(&suite.version().version))
+            .map(|suite| u16::from(suite.suite()))
             .collect()
     }
 
@@ -133,6 +206,75 @@ mod utls_tls_shaping_tests {
             cipher_suites(&hello).first().copied(),
             Some(CHROME_GREASE_CIPHER),
             "a shaped Chrome hello leads with a GREASE cipher suite"
+        );
+    }
+
+    #[test]
+    fn legacy_cipher_advertisement_keeps_chrome_order_and_grease() {
+        let hello = plain_tls_client_hello_bytes(&config("chrome", &[]))
+            .expect("chrome ClientHello must be produced");
+
+        assert_eq!(
+            cipher_suites(&hello),
+            CHROME_PROVIDER_SUPPORTED_CIPHERS,
+            "filtering must preserve the profile order and its leading GREASE slot"
+        );
+    }
+
+    #[test]
+    fn legacy_cipher_advertisement_is_supported_for_every_selectable_profile() {
+        for fingerprint in selectable_fingerprints() {
+            let hello = plain_tls_client_hello_bytes(&config(fingerprint, &[]))
+                .unwrap_or_else(|error| panic!("{fingerprint}: ClientHello: {error}"));
+            let versions = if TLS12_ERA_FINGERPRINTS.contains(&fingerprint) {
+                &[ProtocolVersion::TLSv1_2][..]
+            } else {
+                &[ProtocolVersion::TLSv1_3, ProtocolVersion::TLSv1_2][..]
+            };
+            let supported = provider_cipher_suites(versions);
+            let advertised = cipher_suites(&hello)
+                .into_iter()
+                .filter(|suite| !is_grease(*suite))
+                .collect::<Vec<_>>();
+
+            assert!(
+                !advertised.is_empty(),
+                "{fingerprint}: a selectable profile needs a negotiable suite"
+            );
+            assert!(
+                advertised.iter().all(|suite| supported.contains(suite)),
+                "{fingerprint}: advertised {advertised:04x?}, provider supports {supported:04x?}"
+            );
+        }
+    }
+
+    #[test]
+    fn safari_and_firefox_keep_their_certificate_compression_fingerprint() {
+        let safari = plain_tls_client_hello_bytes(&config("safari", &[]))
+            .expect("Safari ClientHello must be produced");
+        let firefox = plain_tls_client_hello_bytes(&config("firefox", &[]))
+            .expect("Firefox ClientHello must be produced");
+
+        assert_eq!(certificate_compression_algorithms(&safari), Some(vec![1]));
+        assert_eq!(
+            certificate_compression_algorithms(&firefox),
+            Some(vec![1, 2, 3]),
+            "Firefox's zlib/brotli/zstd order is part of the fingerprint"
+        );
+    }
+
+    #[test]
+    fn firefox_plain_tls_uses_a_real_p256_key_share() {
+        let hello = plain_tls_client_hello_bytes(&config("firefox", &[]))
+            .expect("Firefox ClientHello must be produced");
+        let p256 = key_share(&hello, GROUP_SECP256R1)
+            .expect("the Firefox profile must carry a P-256 key share");
+
+        assert_eq!(p256.len(), 65);
+        assert_eq!(p256[0], 0x04, "P-256 uses an uncompressed SEC1 point");
+        assert!(
+            p256[1..].iter().any(|byte| *byte != 0),
+            "the key share must be generated, not a zero-filled placeholder"
         );
     }
 
@@ -1005,6 +1147,113 @@ mod utls_tls_shaping_tests {
         (addr, served)
     }
 
+    /// Minimal TLS 1.2 legacy-only peer. It reads the real wire ClientHello,
+    /// records its suites, then sends the handshake_failure a server with no
+    /// common cipher is required to produce. The suites are intentionally the
+    /// compatibility tail Chrome used to advertise despite being unusable by
+    /// our provider.
+    async fn spawn_tls12_legacy_only_server() -> (
+        SocketAddr,
+        tokio::task::JoinHandle<Result<Vec<u16>, String>>,
+    ) {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("loopback listener must bind");
+        let addr = listener
+            .local_addr()
+            .expect("listener must report its address");
+
+        let served = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.map_err(|e| e.to_string())?;
+            let mut record = vec![0u8; 5];
+            stream
+                .read_exact(&mut record)
+                .await
+                .map_err(|e| e.to_string())?;
+            let payload_len = usize::from(u16::from_be_bytes([record[3], record[4]]));
+            record.resize(5 + payload_len, 0);
+            stream
+                .read_exact(&mut record[5..])
+                .await
+                .map_err(|e| e.to_string())?;
+            let offered = cipher_suites(&record);
+
+            // fatal handshake_failure, encoded as a TLS 1.2 alert record.
+            stream
+                .write_all(&[0x15, 0x03, 0x03, 0x00, 0x02, 0x02, 0x28])
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(offered)
+        });
+
+        (addr, served)
+    }
+
+    /// A TLS 1.3 listener that always chooses its sole compressor when the
+    /// client advertises it. A successful handshake therefore exercises the
+    /// client's decompression path, not just its ClientHello bytes.
+    async fn spawn_compressed_certificate_tls_server(
+        compressor: &'static dyn rustls::compress::CertCompressor,
+    ) -> (SocketAddr, tokio::task::JoinHandle<Result<(), String>>) {
+        let CertifiedKey { cert, signing_key } =
+            generate_simple_self_signed(vec!["server.test".to_owned()])
+                .expect("a self-signed certificate must generate");
+        let certificate = cert.der().clone();
+        let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(signing_key.serialize_der()));
+
+        let mut server_config = rustls::ServerConfig::builder_with_provider(Arc::new(
+            rustls::crypto::aws_lc_rs::default_provider(),
+        ))
+        .with_safe_default_protocol_versions()
+        .expect("the provider must support the default TLS versions")
+        .with_no_client_auth()
+        .with_single_cert(vec![certificate], key)
+        .expect("the TLS server config must build");
+        server_config.cert_compressors = vec![compressor];
+
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("loopback listener must bind");
+        let addr = listener
+            .local_addr()
+            .expect("listener must report its address");
+        let acceptor = TlsAcceptor::from(Arc::new(server_config));
+
+        let served = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.map_err(|e| e.to_string())?;
+            acceptor
+                .accept(stream)
+                .await
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        });
+
+        (addr, served)
+    }
+
+    #[derive(Debug)]
+    struct ZstdCertificateCompressor;
+
+    impl rustls::compress::CertCompressor for ZstdCertificateCompressor {
+        fn compress(
+            &self,
+            input: Vec<u8>,
+            level: rustls::compress::CompressionLevel,
+        ) -> Result<Vec<u8>, rustls::compress::CompressionFailed> {
+            let level = match level {
+                rustls::compress::CompressionLevel::Interactive => 1,
+                rustls::compress::CompressionLevel::Amortized => 3,
+            };
+            zstd::bulk::compress(&input, level).map_err(|_| rustls::compress::CompressionFailed)
+        }
+
+        fn algorithm(&self) -> rustls::CertificateCompressionAlgorithm {
+            rustls::CertificateCompressionAlgorithm::Zstd
+        }
+    }
+
+    static ZSTD_CERTIFICATE_COMPRESSOR: ZstdCertificateCompressor = ZstdCertificateCompressor;
+
     /// Dials `addr` with one fingerprint through the shaping path.
     ///
     /// `system()` plus `allow_insecure: true` for the reason
@@ -1064,6 +1313,63 @@ mod utls_tls_shaping_tests {
 
         let negotiated = served.await.expect("the server task must finish");
         assert_eq!(negotiated, Ok(ProtocolVersion::TLSv1_3));
+    }
+
+    #[tokio::test]
+    async fn legacy_cipher_advertisement_has_no_chrome_tls12_legacy_server_overlap() {
+        let (addr, served) = spawn_tls12_legacy_only_server().await;
+
+        dial_shaped("chrome", addr)
+            .await
+            .expect_err("a legacy-only server has no common cipher with this provider");
+        let offered = served
+            .await
+            .expect("the server task must finish")
+            .expect("the server must read the ClientHello");
+        let overlap = offered
+            .iter()
+            .copied()
+            .filter(|suite| CHROME_LEGACY_TLS12_CIPHERS.contains(suite))
+            .collect::<Vec<_>>();
+
+        assert!(
+            overlap.is_empty(),
+            "Chrome advertised legacy-only suites the provider cannot finish: {overlap:04x?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn safari_and_firefox_accept_a_zlib_compressed_certificate() {
+        for fingerprint in ["safari", "firefox"] {
+            let (addr, served) =
+                spawn_compressed_certificate_tls_server(rustls::compress::ZLIB_COMPRESSOR).await;
+
+            dial_shaped(fingerprint, addr)
+                .await
+                .unwrap_or_else(|error| {
+                    panic!("{fingerprint}: the zlib-compressed handshake must succeed: {error}")
+                });
+
+            served
+                .await
+                .expect("the server task must finish")
+                .unwrap_or_else(|error| panic!("{fingerprint}: server handshake: {error}"));
+        }
+    }
+
+    #[tokio::test]
+    async fn firefox_accepts_a_zstd_compressed_certificate() {
+        let (addr, served) =
+            spawn_compressed_certificate_tls_server(&ZSTD_CERTIFICATE_COMPRESSOR).await;
+
+        dial_shaped("firefox", addr)
+            .await
+            .unwrap_or_else(|error| panic!("zstd-compressed handshake: {error}"));
+
+        served
+            .await
+            .expect("the server task must finish")
+            .unwrap_or_else(|error| panic!("server handshake: {error}"));
     }
 
     /// uTLS puts 32 random bytes in the legacy session id of every ClientHello,

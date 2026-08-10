@@ -52,11 +52,8 @@ pub use dns_outbound::{
 pub use outbound::{
     open_tcp_stream_with_resolver_and_dialer, open_vless_tcp_stream,
     open_vless_tcp_stream_with_resolver, open_vless_tcp_stream_with_resolver_and_dialer,
-    open_vless_udp_stream_with_resolver_and_dialer, select_tcp_outbound,
-    select_tcp_outbound_for_session, select_tcp_outbound_for_session_with_resolver,
-    select_udp_outbound_for_session, select_udp_outbound_for_session_with_resolver,
-    select_vless_tcp_outbound, DnsOutbound, OutboundRouter, TcpOutbound, UdpOutbound,
-    VlessTcpOutbound, VlessUdpFraming,
+    open_vless_udp_stream_with_resolver_and_dialer, DnsOutbound, OutboundRouter, TcpOutbound,
+    UdpOutbound, VlessTcpOutbound, VlessUdpFraming,
 };
 pub use runtime_log::{RuntimeLogConfig, RuntimeLogger};
 pub use startup_probe::{StartupProbeError, StartupProbeOptions};
@@ -310,6 +307,10 @@ pub enum CoreError {
     /// states the rule for all three.
     #[error("grpcSettings.user_agent {0:?} is not a valid HTTP header value")]
     InvalidGrpcUserAgent(String),
+    /// An XHTTP setting that parsed successfully but cannot be represented by
+    /// the selected HTTP engine without silently changing its behavior.
+    #[error("invalid or unsupported XHTTP configuration: {0:?}")]
+    InvalidXhttpConfiguration(String),
     #[error("XTLS rejected UDP/443 traffic")]
     VisionUdp443Rejected,
     #[error("transport error: {0}")]

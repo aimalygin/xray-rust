@@ -189,12 +189,43 @@ cargo test --locked -p xray-core-rs \
 These tests generate loopback server/client configurations and ephemeral TLS or
 REALITY test material. They cover VLESS TCP, TLS, TLS+Vision, REALITY+Vision,
 selected fingerprints, parallel flows, and the WebSocket, HTTPUpgrade and gRPC
-stream transports. They do not establish compatibility with every Xray-core
-revision or configuration.
+stream transports, plus the 15-case XHTTP H1/H2/H3 matrix below. They do not
+establish compatibility with every Xray-core revision or configuration.
 
 **No CI job runs any of them.** They are `#[ignore]`d, and the Rust job runs
 `cargo test --workspace --all-targets --locked` without `--ignored`, so every
 scenario below is evidence only once someone has run it locally and said so.
+
+### XHTTP interoperability
+
+The XHTTP matrix has 15 cases: `packet-up`, `stream-up`, and `stream-one` over
+cleartext H1, TLS H1, TLS H2, REALITY H2, and TLS H3. Run the exact complete
+matrix with the stable `all` selector:
+
+```sh
+XRAY_CORE_CHECKOUT="$XRAY_CORE_CHECKOUT" \
+XRAY_XHTTP_INTEROP_CASES=all \
+cargo test --locked -p xray-core-rs \
+  --test local_xray_interop_tests \
+  rust_socks_client_reaches_echo_server_through_local_xray_vless_xhttp_selected_cases \
+  -- --ignored --nocapture
+```
+
+Omitting `XRAY_XHTTP_INTEROP_CASES` also selects all 15. For a stable subset,
+pass comma-separated case ids; for example, the exact H3 slice is:
+
+```sh
+XRAY_CORE_CHECKOUT="$XRAY_CORE_CHECKOUT" \
+XRAY_XHTTP_INTEROP_CASES=h3-tls-packet-up,h3-tls-stream-up,h3-tls-stream-one \
+cargo test --locked -p xray-core-rs \
+  --test local_xray_interop_tests \
+  rust_socks_client_reaches_echo_server_through_local_xray_vless_xhttp_selected_cases \
+  -- --ignored --nocapture
+```
+
+The full 15-case matrix, including all three H3 cases, has passed locally.
+This is functional interoperability evidence only; it is not an H3
+throughput, resource-use, congestion-controller, or performance-parity claim.
 
 ### gRPC interoperability
 

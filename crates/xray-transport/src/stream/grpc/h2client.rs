@@ -21,6 +21,7 @@ use h2::client::{self, SendRequest};
 use http::uri::Scheme;
 use http::{Method, Request, Uri, Version};
 use tokio::task::JoinHandle;
+use tokio::time::Duration;
 
 use super::config::{resolve_keepalive, GrpcConfig};
 use super::framing::HunkMode;
@@ -162,6 +163,40 @@ impl H2Connection {
     /// whether the driver is *finished*, not whether it failed.
     pub(crate) fn is_live(&self) -> bool {
         !self.driver.is_finished()
+    }
+
+    pub(crate) fn has_been_idle_for(&self, duration: Duration) -> bool {
+        self.calls.has_been_idle_for(duration)
+    }
+
+    pub(crate) fn idle_watch(&self) -> H2ConnectionIdleWatch {
+        H2ConnectionIdleWatch {
+            driver: Arc::clone(&self.driver),
+            calls: Arc::clone(&self.calls),
+        }
+    }
+}
+
+/// The connection identity and call lifecycle an idle-retirement task needs,
+/// without a [`SendRequest`] that would keep an already-retired connection
+/// alive merely because its old timer still exists.
+#[derive(Debug)]
+pub(crate) struct H2ConnectionIdleWatch {
+    driver: Arc<H2ConnectionDriver>,
+    calls: Arc<OpenCalls>,
+}
+
+impl H2ConnectionIdleWatch {
+    pub(crate) async fn wait_until_idle_for(&self, duration: Duration) {
+        self.calls.wait_until_idle_for(duration).await;
+    }
+
+    pub(crate) fn has_been_idle_for(&self, duration: Duration) -> bool {
+        self.calls.has_been_idle_for(duration)
+    }
+
+    pub(crate) fn watches(&self, connection: &H2Connection) -> bool {
+        Arc::ptr_eq(&self.driver, &connection.driver)
     }
 }
 

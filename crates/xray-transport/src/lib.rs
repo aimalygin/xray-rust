@@ -59,12 +59,11 @@ pub enum ConnectorConfig {
 pub struct TlsClientConfig {
     pub server_name: String,
     pub allow_insecure: bool,
-    /// `tlsSettings.alpn`. How it reaches the ClientHello depends on whether
-    /// the hello is shaped: a shaped one keeps the fingerprint profile's own
-    /// ALPN unless this is exactly `["http/1.1"]`, while an unshaped one --
-    /// `None` or `Some("unsafe")` -- advertises the list verbatim, as stock Go
-    /// TLS does with `NextProtos`. Either way it still selects the HTTP
-    /// version for transports that ask.
+    /// `tlsSettings.alpn`. The TLS dial combines this list with the stream
+    /// transport's handshake policy: RAW follows Xray's exact-list gate,
+    /// WebSocket/HTTPUpgrade force HTTP/1.1 except for Xray's h2/http1
+    /// compatibility pair, and gRPC forces h2. An unshaped `unsafe` hello uses
+    /// the same transport policy through stock rustls ALPN configuration.
     pub alpn: Vec<String>,
     /// Normalized `tlsSettings.fingerprint`. `None` and `Some("unsafe")` both
     /// mean no shaping; `None` is the value used by call sites that predate
@@ -133,6 +132,8 @@ pub enum TransportError {
     InvalidTlsServerName(String),
     #[error("{0} connector config is not supported by TcpConnector")]
     UnsupportedConnectorConfig(&'static str),
+    #[error("HTTP/3 requires stock TLS and cannot use the {0} security connector")]
+    UnsupportedHttp3Security(&'static str),
     #[error("unsupported REALITY fingerprint {0}")]
     UnsupportedRealityFingerprint(String),
     #[error("unsupported TLS fingerprint {0}")]
@@ -149,6 +150,8 @@ pub enum TransportError {
     WebSocketProtocol(String),
     #[error("grpc transport error: {0}")]
     Grpc(String),
+    #[error("xhttp transport error: {0}")]
+    Xhttp(String),
     #[error("reality handshake failed: {0}")]
     Reality(#[from] reality::RealityError),
     #[error("REALITY live TLS completion is not implemented")]

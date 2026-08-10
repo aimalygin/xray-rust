@@ -76,7 +76,12 @@ CHROME_SEEDED_HEADER = "Sec-CH-UA"
 
 def root_oracle(entry: str, tag: str | None = None) -> tuple[str, ...]:
     """Build the `go run` invocation for an oracle in the root module."""
-    command = ["go", "run"]
+    # The repository also vendors a patched Rust `h3-quinn` crate under the
+    # conventional `vendor/` directory. Go otherwise mistakes that directory
+    # for its own module vendor tree and refuses every root-module oracle as
+    # "inconsistent vendoring". These checks must use the pinned go.mod/go.sum
+    # graph; they never consume the Rust vendor directory.
+    command = ["go", "run", "-mod=readonly"]
     if tag is not None:
         command += ["-tags", tag]
     command.append(entry)

@@ -1152,6 +1152,126 @@ fn ffi_tun_push_packet_updates_stats() {
 }
 
 #[test]
+fn ffi_tun_stats_accepts_legacy_v1_prefix_without_overwriting_tail() {
+    const LEGACY_COUNTER_COUNT: usize = 69;
+    const GUARD: [u64; 3] = [
+        0xa5a5_a5a5_a5a5_a5a5,
+        0x5a5a_5a5a_5a5a_5a5a,
+        0x0123_4567_89ab_cdef,
+    ];
+
+    #[repr(C)]
+    struct LegacyXrayTunStats {
+        struct_size: usize,
+        counters: [u64; LEGACY_COUNTER_COUNT],
+    }
+
+    #[repr(C)]
+    struct GuardedLegacyXrayTunStats {
+        stats: LegacyXrayTunStats,
+        guard: [u64; 3],
+    }
+
+    let legacy_size = std::mem::size_of::<LegacyXrayTunStats>();
+    let current_size = std::mem::size_of::<XrayTunStats>();
+    assert_eq!(
+        legacy_size,
+        std::mem::offset_of!(XrayTunStats, tun_fd_read_loop_exits)
+    );
+    assert_eq!(current_size, legacy_size + 3 * std::mem::size_of::<u64>());
+    #[cfg(target_pointer_width = "64")]
+    {
+        assert_eq!(legacy_size, 560);
+        assert_eq!(current_size, 584);
+    }
+
+    let mut guarded = GuardedLegacyXrayTunStats {
+        stats: LegacyXrayTunStats {
+            struct_size: legacy_size,
+            counters: [u64::MAX; LEGACY_COUNTER_COUNT],
+        },
+        guard: GUARD,
+    };
+    let mut err = std::ptr::null_mut();
+    let core = loaded_core(&mut err);
+
+    let status = unsafe {
+        xray_tun_stats(
+            core,
+            std::ptr::from_mut(&mut guarded.stats).cast::<XrayTunStats>(),
+            &mut err,
+        )
+    };
+
+    assert_eq!(status, XrayStatus::Ok);
+    assert!(err.is_null());
+    assert_eq!(guarded.stats.struct_size, legacy_size);
+    assert_eq!(guarded.stats.counters[0], 0);
+    assert_eq!(guarded.guard, GUARD);
+
+    // `struct_size` is both the compatibility discriminator and the caller's
+    // allocation bound. A legacy host commonly reuses one stats object for
+    // every polling interval, so the first call must not replace 560 with the
+    // current 584 and turn the second call into an out-of-bounds write.
+    guarded.stats.counters.fill(u64::MAX);
+    let status = unsafe {
+        xray_tun_stats(
+            core,
+            std::ptr::from_mut(&mut guarded.stats).cast::<XrayTunStats>(),
+            &mut err,
+        )
+    };
+    assert_eq!(status, XrayStatus::Ok);
+    assert!(err.is_null());
+    assert_eq!(guarded.stats.struct_size, legacy_size);
+    assert_eq!(guarded.stats.counters[0], 0);
+    assert_eq!(guarded.guard, GUARD);
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_tun_stats_writes_only_current_prefix_of_larger_layout() {
+    const EXTENSION: [u64; 3] = [
+        0xfedc_ba98_7654_3210,
+        0x1122_3344_5566_7788,
+        0x8877_6655_4433_2211,
+    ];
+
+    #[repr(C)]
+    struct ExtendedXrayTunStats {
+        current: XrayTunStats,
+        extension: [u64; 3],
+    }
+
+    let mut extended = ExtendedXrayTunStats {
+        current: XrayTunStats {
+            struct_size: std::mem::size_of::<ExtendedXrayTunStats>(),
+            ..XrayTunStats::default()
+        },
+        extension: EXTENSION,
+    };
+    let mut err = std::ptr::null_mut();
+    let core = loaded_core(&mut err);
+
+    let status = unsafe { xray_tun_stats(core, &mut extended.current, &mut err) };
+
+    assert_eq!(status, XrayStatus::Ok);
+    assert!(err.is_null());
+    assert_eq!(
+        extended.current.struct_size,
+        std::mem::size_of::<ExtendedXrayTunStats>()
+    );
+    assert_eq!(extended.extension, EXTENSION);
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
 fn ffi_tun_push_packet_rejects_null_data() {
     let mut err = std::ptr::null_mut();
     let core = loaded_core(&mut err);

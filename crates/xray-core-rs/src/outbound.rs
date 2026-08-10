@@ -10,9 +10,9 @@ use std::time::Duration;
 
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
 use xray_config::{
-    CoreConfig, DnsOutboundSettings, Network, OutboundConfig, OutboundSettings,
+    CoreConfig, DnsOutboundSettings, Network, OutboundConfig, OutboundSettings, QuicParamsSettings,
     RoutingDomainStrategy, RoutingRule, StreamSecurity, StreamSettings, StreamTransport,
-    TargetAddr, VlessUser,
+    TargetAddr, VlessUser, XhttpSettings,
 };
 use xray_proxy::vless::{
     encode_request_header, VisionStream, VisionStreamIo, VlessCommand, VlessRequest,
@@ -20,8 +20,11 @@ use xray_proxy::vless::{
 };
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::stream::{
-    resolve_user_agent, Authority, GrpcConfig, GrpcTransport, HeaderValue, HttpUpgradeConfig,
-    TransportLayer, WebSocketConfig,
+    resolve_user_agent, Authority, GrpcConfig, GrpcTransport, H3Congestion, H3QuicConfig,
+    H3UdpHopConfig, HeaderMap, HeaderValue, HttpUpgradeConfig, TransportLayer, WebSocketConfig,
+    XhttpConfig, XhttpConfigInput, XhttpEndpoint, XhttpHttpVersion, XhttpMetadataPlacement,
+    XhttpModeSelection, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpRange, XhttpScheme,
+    XhttpTransport, XhttpUplinkDataPlacement, XhttpXmuxPolicy,
 };
 use xray_transport::{
     BoxedTransportStream, ConnectorConfig, DnsResolver, HappyEyeballsConfig, RealityClientConfig,
@@ -549,6 +552,7 @@ enum CachedOutboundError {
     InvalidGrpcAuthority(String),
     UnrepresentableGrpcAuthority { key: &'static str, value: String },
     InvalidGrpcUserAgent(String),
+    InvalidXhttpConfiguration(String),
 }
 
 impl CachedOutboundError {
@@ -564,6 +568,9 @@ impl CachedOutboundError {
                 Self::UnrepresentableGrpcAuthority { key, value }
             }
             CoreError::InvalidGrpcUserAgent(user_agent) => Self::InvalidGrpcUserAgent(user_agent),
+            CoreError::InvalidXhttpConfiguration(message) => {
+                Self::InvalidXhttpConfiguration(message)
+            }
             other => unreachable!("outbound compilation returned non-cacheable error: {other}"),
         }
     }
@@ -580,6 +587,9 @@ impl CachedOutboundError {
                 CoreError::UnrepresentableGrpcAuthority { key, value }
             }
             Self::InvalidGrpcUserAgent(user_agent) => CoreError::InvalidGrpcUserAgent(user_agent),
+            Self::InvalidXhttpConfiguration(message) => {
+                CoreError::InvalidXhttpConfiguration(message)
+            }
         }
     }
 }
@@ -722,7 +732,9 @@ impl DnsRoutePrefilter {
 ///
 /// Routing-rule order remains authoritative, duplicate outbound tags resolve to
 /// their first configured entry, and invalid outbounds are compiled only when
-/// selected.
+/// selected. Keep one router alive for the lifetime of that config: recreating
+/// it per selection also recreates stateful transport resources such as gRPC
+/// and XHTTP connection pools.
 #[derive(Debug)]
 pub struct OutboundRouter {
     config: Arc<CoreConfig>,
@@ -1235,84 +1247,6 @@ fn clone_cached_outbound<T: Clone>(
     }
 }
 
-pub fn select_tcp_outbound(config: &CoreConfig) -> Result<TcpOutbound, CoreError> {
-    let outbound = select_configured_outbound(config, None, None, None, None, None)?;
-    build_tcp_outbound(outbound)
-}
-
-#[allow(dead_code)]
-pub(crate) fn select_tcp_outbound_direct(
-    config: &CoreConfig,
-    outbound_tag: Option<&str>,
-) -> Result<TcpOutbound, CoreError> {
-    let outbound = select_configured_outbound_direct(config, outbound_tag)?;
-    build_tcp_outbound(outbound)
-}
-
-/// Selects a session outbound using only the original target metadata.
-///
-/// Runtime paths that need `routing.domainStrategy = IPIfNonMatch` should use
-/// `select_tcp_outbound_for_session_with_resolver` so DNS-based second-pass
-/// routing can run.
-pub fn select_tcp_outbound_for_session(
-    config: &CoreConfig,
-    inbound_tag: Option<&str>,
-    target: &Target,
-) -> Result<TcpOutbound, CoreError> {
-    let outbound = select_configured_outbound(
-        config,
-        inbound_tag,
-        target_domain(target),
-        target_ip(target),
-        Some(target_network(target)),
-        Some(target.port),
-    )?;
-    build_tcp_outbound(outbound)
-}
-
-pub async fn select_tcp_outbound_for_session_with_resolver(
-    config: &CoreConfig,
-    inbound_tag: Option<&str>,
-    target: &Target,
-    dns_resolver: &dyn DnsResolver,
-) -> Result<TcpOutbound, CoreError> {
-    let outbound =
-        select_configured_outbound_with_resolver(config, inbound_tag, target, dns_resolver).await?;
-    build_tcp_outbound(outbound)
-}
-
-/// Selects a UDP session outbound using only the original target metadata.
-///
-/// Runtime paths that need `routing.domainStrategy = IPIfNonMatch` should use
-/// `select_udp_outbound_for_session_with_resolver` so DNS-based second-pass
-/// routing can run.
-pub fn select_udp_outbound_for_session(
-    config: &CoreConfig,
-    inbound_tag: Option<&str>,
-    target: &Target,
-) -> Result<UdpOutbound, CoreError> {
-    let outbound = select_configured_outbound(
-        config,
-        inbound_tag,
-        target_domain(target),
-        target_ip(target),
-        Some(target_network(target)),
-        Some(target.port),
-    )?;
-    build_udp_outbound(outbound)
-}
-
-pub async fn select_udp_outbound_for_session_with_resolver(
-    config: &CoreConfig,
-    inbound_tag: Option<&str>,
-    target: &Target,
-    dns_resolver: &dyn DnsResolver,
-) -> Result<UdpOutbound, CoreError> {
-    let outbound =
-        select_configured_outbound_with_resolver(config, inbound_tag, target, dns_resolver).await?;
-    build_udp_outbound(outbound)
-}
-
 /// Whether this stream's transport is one the *freedom* and *DNS* outbounds
 /// can dial.
 ///
@@ -1326,10 +1260,11 @@ fn stream_transport_is_dialable(stream: &StreamSettings) -> bool {
 
 /// Resolves the config's transport into the dial-ready one.
 ///
-/// The `Host` header follows Xray's precedence -- the transport's own `host`,
-/// else the TLS server name, else the destination address -- and never carries
-/// a port, because Xray sets the header from those three values directly and
-/// only appends a port to the dial URI.
+/// WebSocket and HTTPUpgrade's `Host` header follows Xray's precedence -- the
+/// transport's own `host`, else the TLS/REALITY server name, else the
+/// destination address -- and never carries a port. XHTTP resolves the same
+/// sources separately below because its scheme, authority validation, and
+/// native-client port rule belong to its request URL.
 ///
 /// gRPC's `:authority` looks like the same question and is not: it has its own
 /// chain, its own view of REALITY, and a fallback that does carry the port.
@@ -1367,9 +1302,6 @@ fn build_transport_layer(
             path: upgrade.path.clone(),
             host: upgrade.host.clone().unwrap_or_else(host_fallback),
             headers: upgrade.headers.clone(),
-            // `ed` on this transport carries no payload; any positive value
-            // only means "do not block waiting for the 101".
-            wait_for_response: upgrade.early_data_bytes == 0,
         }),
         StreamTransport::Grpc(grpc) => TransportLayer::Grpc(GrpcTransport::new(GrpcConfig {
             service_name: grpc.service_name.clone(),
@@ -1386,7 +1318,358 @@ fn build_transport_layer(
             permit_without_stream: grpc.permit_without_stream,
             initial_windows_size: grpc.initial_windows_size,
         })),
+        StreamTransport::Xhttp(xhttp) => TransportLayer::Xhttp(build_xhttp_transport(
+            xhttp,
+            &outbound.stream.security,
+            &settings.server,
+            outbound.stream.quic_params.as_ref(),
+        )?),
     })
+}
+
+fn build_xhttp_transport(
+    settings: &XhttpSettings,
+    security: &StreamSecurity,
+    destination: &TargetAddr,
+    quic_params: Option<&QuicParamsSettings>,
+) -> Result<XhttpTransport, CoreError> {
+    let http_version = xhttp_http_version(security)?;
+    let endpoint = xhttp_endpoint(settings, security, destination)?;
+    let config = xhttp_config(settings, matches!(security, StreamSecurity::Reality(_)))?;
+    let xmux = xhttp_xmux_policy(settings);
+    let h3_quic = if http_version == XhttpHttpVersion::Http3 {
+        xhttp_h3_quic_config(quic_params)?
+    } else {
+        // Xray retains finalmask.quicParams in every stream config but only
+        // consults it after exact `alpn: ["h3"]` selected the UDP path.
+        H3QuicConfig::default()
+    };
+
+    XhttpTransport::new_with_h3_quic(config, endpoint, http_version, xmux, h3_quic)
+        .map_err(invalid_xhttp_configuration)
+}
+
+/// Xray's `decideHTTPVersion` decision, before a socket is opened.
+///
+/// HTTP/3 changes the destination to UDP inside the transport dialer. Every
+/// other TLS list follows Xray's HTTP/2 branch, including an empty or
+/// multi-value list; REALITY is always HTTP/2.
+fn xhttp_http_version(security: &StreamSecurity) -> Result<XhttpHttpVersion, CoreError> {
+    match security {
+        StreamSecurity::None => Ok(XhttpHttpVersion::Http1),
+        StreamSecurity::Reality(_) => Ok(XhttpHttpVersion::Http2),
+        StreamSecurity::Tls(tls) => match tls.alpn.as_slice() {
+            [only] if only == "http/1.1" => Ok(XhttpHttpVersion::Http1),
+            [only] if only == "h3" => Ok(XhttpHttpVersion::Http3),
+            _ => Ok(XhttpHttpVersion::Http2),
+        },
+    }
+}
+
+/// Resolves XHTTP's request URL endpoint.
+///
+/// The native Xray HTTP client fixes the dial destination in its custom
+/// dialer and does not append the VLESS destination port to `URL.Host`.
+/// Non-default ports are appended only by Xray's optional browser dialer,
+/// which this runtime does not use. A port explicitly written in
+/// `xhttpSettings.host` remains part of the authority.
+fn xhttp_endpoint(
+    settings: &XhttpSettings,
+    security: &StreamSecurity,
+    destination: &TargetAddr,
+) -> Result<XhttpEndpoint, CoreError> {
+    let scheme = match security {
+        StreamSecurity::None => XhttpScheme::Http,
+        StreamSecurity::Tls(_) | StreamSecurity::Reality(_) => XhttpScheme::Https,
+    };
+    let authority = settings
+        .host
+        .as_deref()
+        .filter(|host| !host.is_empty())
+        .or_else(|| match security {
+            StreamSecurity::Tls(tls) => tls
+                .server_name
+                .as_deref()
+                .filter(|server_name| !server_name.is_empty()),
+            StreamSecurity::Reality(reality) => {
+                (!reality.server_name.is_empty()).then_some(reality.server_name.as_str())
+            }
+            StreamSecurity::None => None,
+        })
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| xhttp_destination_authority(destination));
+
+    XhttpEndpoint::new(scheme, authority).map_err(invalid_xhttp_configuration)
+}
+
+fn xhttp_destination_authority(destination: &TargetAddr) -> String {
+    match destination {
+        TargetAddr::Domain(domain) => domain.clone(),
+        TargetAddr::Ip(ip) => match ip.to_canonical() {
+            IpAddr::V4(address) => address.to_string(),
+            IpAddr::V6(address) => format!("[{address}]"),
+        },
+    }
+}
+
+fn xhttp_config(settings: &XhttpSettings, is_reality: bool) -> Result<XhttpConfig, CoreError> {
+    let mut headers = HeaderMap::new();
+    for (name, value) in &settings.headers {
+        // Xray feeds the protobuf map through `http.Header.Add`. The JSON map
+        // can contain keys which differ only by case; config parsing MIME-
+        // canonicalizes both, so appending is what preserves both values.
+        headers.add(name, value);
+    }
+
+    // `noSSEHeader` and `serverMaxHeaderBytes` are deliberately absent. Both
+    // are inbound/server-only in Xray: the former changes hub response
+    // headers, while the latter caps listener request heads. The H1/H2 client
+    // engines retain their independent defensive 10 MiB response-head cap.
+    XhttpConfig::normalize(XhttpConfigInput {
+        mode: xhttp_mode_selection(settings.mode),
+        is_reality,
+        path: settings.path.clone(),
+        headers,
+        x_padding_bytes: xhttp_range(settings.x_padding_bytes),
+        x_padding_obfs_mode: settings.x_padding_obfs_mode,
+        x_padding_key: settings.x_padding_key.clone(),
+        x_padding_header: settings.x_padding_header.clone(),
+        x_padding_placement: xhttp_padding_placement(settings.x_padding_placement),
+        x_padding_method: xhttp_padding_method(settings.x_padding_method),
+        uplink_http_method: settings.uplink_http_method.clone(),
+        session_placement: xhttp_metadata_placement(settings.session_placement),
+        session_key: settings.session_key.clone(),
+        seq_placement: xhttp_metadata_placement(settings.seq_placement),
+        seq_key: settings.seq_key.clone(),
+        uplink_data_placement: xhttp_uplink_data_placement(settings.uplink_data_placement),
+        uplink_data_key: settings.uplink_data_key.clone(),
+        uplink_chunk_size: xhttp_range(settings.uplink_chunk_size),
+        no_grpc_header: settings.no_grpc_header,
+        sc_max_each_post_bytes: xhttp_range(settings.sc_max_each_post_bytes),
+        sc_min_posts_interval_ms: xhttp_range(settings.sc_min_posts_interval_ms),
+        sc_max_buffered_posts: settings.sc_max_buffered_posts,
+        sc_stream_up_server_secs: xhttp_range(settings.sc_stream_up_server_secs),
+    })
+    .map_err(invalid_xhttp_configuration)
+}
+
+fn invalid_xhttp_configuration(error: impl ToString) -> CoreError {
+    CoreError::InvalidXhttpConfiguration(error.to_string())
+}
+
+/// Maps Xray's QUIC surface into the phase-one HTTP/3 engine.
+///
+/// Defaults remain usable and interoperable, with the engine's diagnostics
+/// naming its fixed-window and Quinn-BBR performance approximations. Explicit
+/// UDP hopping, debug side-effects, adaptive receive-window pairs,
+/// non-standard BBR profiles and Brutal are retained by the parser but
+/// rejected by `H3QuicConfig` (or here) until their runtime implementation
+/// exists.
+fn xhttp_h3_quic_config(settings: Option<&QuicParamsSettings>) -> Result<H3QuicConfig, CoreError> {
+    let Some(settings) = settings else {
+        return Ok(H3QuicConfig::default());
+    };
+    let mut config = H3QuicConfig::default();
+    config.initial_stream_receive_window = quic_u64_or_default(
+        "initStreamReceiveWindow",
+        settings.init_stream_receive_window,
+        config.initial_stream_receive_window,
+    )?;
+    config.max_stream_receive_window =
+        quic_optional_u64("maxStreamReceiveWindow", settings.max_stream_receive_window)?;
+    config.initial_connection_receive_window = quic_u64_or_default(
+        "initConnectionReceiveWindow",
+        settings.init_connection_receive_window,
+        config.initial_connection_receive_window,
+    )?;
+    config.max_connection_receive_window = quic_optional_u64(
+        "maxConnectionReceiveWindow",
+        settings.max_connection_receive_window,
+    )?;
+    match settings.max_idle_timeout_secs {
+        0 => {}
+        value if value > 0 => {
+            config.max_idle_timeout = Duration::from_secs(u64::try_from(value).map_err(|_| {
+                CoreError::InvalidXhttpConfiguration(
+                    "finalmask.quicParams.maxIdleTimeout is negative".to_owned(),
+                )
+            })?);
+        }
+        _ => {
+            return Err(CoreError::InvalidXhttpConfiguration(
+                "finalmask.quicParams.maxIdleTimeout is negative".to_owned(),
+            ));
+        }
+    }
+    config.keep_alive_interval = match settings.keep_alive_period_secs {
+        0 => None,
+        value if value > 0 => Some(Duration::from_secs(u64::try_from(value).map_err(|_| {
+            CoreError::InvalidXhttpConfiguration(
+                "finalmask.quicParams.keepAlivePeriod is negative".to_owned(),
+            )
+        })?)),
+        _ => {
+            return Err(CoreError::InvalidXhttpConfiguration(
+                "finalmask.quicParams.keepAlivePeriod is negative".to_owned(),
+            ));
+        }
+    };
+    config.max_incoming_bidirectional_streams = quic_incoming_streams_or_default(
+        "maxIncomingStreams",
+        settings.max_incoming_streams,
+        config.max_incoming_bidirectional_streams,
+    )?;
+    config.disable_path_mtu_discovery = settings.disable_path_mtu_discovery
+        || !cfg!(any(
+            target_os = "linux",
+            target_os = "windows",
+            target_os = "macos"
+        ));
+    config.congestion = match settings.congestion {
+        xray_config::QuicCongestion::Reno => H3Congestion::Reno,
+        xray_config::QuicCongestion::Brutal => H3Congestion::Brutal,
+        xray_config::QuicCongestion::ForceBrutal => H3Congestion::ForceBrutal {
+            bytes_per_second: settings.brutal_up_bytes_per_sec,
+        },
+        xray_config::QuicCongestion::Default | xray_config::QuicCongestion::Bbr => {
+            match settings.bbr_profile {
+                xray_config::QuicBbrProfile::Conservative => H3Congestion::BbrConservative,
+                xray_config::QuicBbrProfile::Standard => H3Congestion::BbrStandard,
+                xray_config::QuicBbrProfile::Aggressive => H3Congestion::BbrAggressive,
+            }
+        }
+    };
+    config.udp_hop = H3UdpHopConfig {
+        ports: settings.udp_hop.ports.clone(),
+        interval_min: quic_i32_seconds("udpHop.interval.from", settings.udp_hop.interval.from)?,
+        interval_max: quic_i32_seconds("udpHop.interval.to", settings.udp_hop.interval.to)?,
+    };
+    config.debug = settings.debug;
+    Ok(config)
+}
+
+const QUIC_VARINT_MAX: u64 = (1_u64 << 62) - 1;
+const QUIC_MAX_STREAM_COUNT: u64 = 1_u64 << 60;
+
+fn quic_u64_or_default(name: &'static str, value: u64, default: u64) -> Result<u64, CoreError> {
+    if value == 0 {
+        Ok(default)
+    } else {
+        quic_varint(name, value)
+    }
+}
+
+fn quic_optional_u64(name: &'static str, value: u64) -> Result<Option<u64>, CoreError> {
+    if value == 0 {
+        Ok(None)
+    } else {
+        quic_varint(name, value).map(Some)
+    }
+}
+
+fn quic_varint(name: &'static str, value: u64) -> Result<u64, CoreError> {
+    if value <= QUIC_VARINT_MAX {
+        Ok(value)
+    } else {
+        Err(CoreError::InvalidXhttpConfiguration(format!(
+            "finalmask.quicParams.{name}={value} exceeds QUIC's 62-bit varint limit"
+        )))
+    }
+}
+
+fn quic_incoming_streams_or_default(
+    name: &'static str,
+    value: i64,
+    default: u64,
+) -> Result<u64, CoreError> {
+    if value == 0 {
+        return Ok(default);
+    }
+    let value = u64::try_from(value).map_err(|_| {
+        CoreError::InvalidXhttpConfiguration(format!(
+            "finalmask.quicParams.{name}={value} cannot be negative"
+        ))
+    })?;
+    // quic-go clamps this transport parameter to the QUIC stream-count
+    // domain during config validation. Mirror that instead of allowing Quinn
+    // to emit a peer-invalid INITIAL_MAX_STREAMS value.
+    Ok(value.min(QUIC_MAX_STREAM_COUNT))
+}
+
+fn quic_i32_seconds(name: &'static str, value: i32) -> Result<Duration, CoreError> {
+    let value = u64::try_from(value).map_err(|_| {
+        CoreError::InvalidXhttpConfiguration(format!(
+            "finalmask.quicParams.{name}={value} cannot be negative"
+        ))
+    })?;
+    Ok(Duration::from_secs(value))
+}
+
+fn xhttp_xmux_policy(settings: &XhttpSettings) -> XhttpXmuxPolicy {
+    XhttpXmuxPolicy {
+        max_concurrency: xhttp_range(settings.xmux.max_concurrency),
+        max_connections: xhttp_range(settings.xmux.max_connections),
+        c_max_reuse_times: xhttp_range(settings.xmux.c_max_reuse_times),
+        h_max_request_times: xhttp_range(settings.xmux.h_max_request_times),
+        h_max_reusable_secs: xhttp_range(settings.xmux.h_max_reusable_secs),
+        h_keep_alive_period_secs: settings.xmux.h_keep_alive_period_secs,
+    }
+}
+
+const fn xhttp_range(range: xray_config::XhttpRange) -> XhttpRange {
+    XhttpRange {
+        from: range.from,
+        to: range.to,
+    }
+}
+
+const fn xhttp_mode_selection(mode: xray_config::XhttpMode) -> XhttpModeSelection {
+    match mode {
+        xray_config::XhttpMode::Auto => XhttpModeSelection::Auto,
+        xray_config::XhttpMode::PacketUp => XhttpModeSelection::PacketUp,
+        xray_config::XhttpMode::StreamUp => XhttpModeSelection::StreamUp,
+        xray_config::XhttpMode::StreamOne => XhttpModeSelection::StreamOne,
+    }
+}
+
+const fn xhttp_padding_placement(
+    placement: xray_config::XhttpPaddingPlacement,
+) -> XhttpPaddingPlacement {
+    match placement {
+        xray_config::XhttpPaddingPlacement::Cookie => XhttpPaddingPlacement::Cookie,
+        xray_config::XhttpPaddingPlacement::Header => XhttpPaddingPlacement::Header,
+        xray_config::XhttpPaddingPlacement::Query => XhttpPaddingPlacement::Query,
+        xray_config::XhttpPaddingPlacement::QueryInHeader => XhttpPaddingPlacement::QueryInHeader,
+    }
+}
+
+const fn xhttp_padding_method(method: xray_config::XhttpPaddingMethod) -> XhttpPaddingMethod {
+    match method {
+        xray_config::XhttpPaddingMethod::RepeatX => XhttpPaddingMethod::RepeatX,
+        xray_config::XhttpPaddingMethod::Tokenish => XhttpPaddingMethod::Tokenish,
+    }
+}
+
+const fn xhttp_metadata_placement(
+    placement: xray_config::XhttpPlacement,
+) -> XhttpMetadataPlacement {
+    match placement {
+        xray_config::XhttpPlacement::Path => XhttpMetadataPlacement::Path,
+        xray_config::XhttpPlacement::Cookie => XhttpMetadataPlacement::Cookie,
+        xray_config::XhttpPlacement::Header => XhttpMetadataPlacement::Header,
+        xray_config::XhttpPlacement::Query => XhttpMetadataPlacement::Query,
+    }
+}
+
+const fn xhttp_uplink_data_placement(
+    placement: xray_config::XhttpUplinkDataPlacement,
+) -> XhttpUplinkDataPlacement {
+    match placement {
+        xray_config::XhttpUplinkDataPlacement::Auto => XhttpUplinkDataPlacement::Auto,
+        xray_config::XhttpUplinkDataPlacement::Body => XhttpUplinkDataPlacement::Body,
+        xray_config::XhttpUplinkDataPlacement::Cookie => XhttpUplinkDataPlacement::Cookie,
+        xray_config::XhttpUplinkDataPlacement::Header => XhttpUplinkDataPlacement::Header,
+    }
 }
 
 // The config keys the derived half of the `:authority` chain can come from, as
@@ -1600,6 +1883,7 @@ fn host_and_port(server: &TargetAddr, port: u16) -> String {
     }
 }
 
+#[cfg(test)]
 fn build_tcp_outbound(outbound: &OutboundConfig) -> Result<TcpOutbound, CoreError> {
     if outbound.stream.network != Network::Tcp {
         return Err(CoreError::UnsupportedOutboundNetwork);
@@ -1621,6 +1905,7 @@ fn build_tcp_outbound(outbound: &OutboundConfig) -> Result<TcpOutbound, CoreErro
     }
 }
 
+#[cfg(test)]
 fn build_udp_outbound(outbound: &OutboundConfig) -> Result<UdpOutbound, CoreError> {
     match &outbound.settings {
         OutboundSettings::Dns(_) => Err(CoreError::NoSupportedOutbound),
@@ -1641,80 +1926,6 @@ fn build_udp_outbound(outbound: &OutboundConfig) -> Result<UdpOutbound, CoreErro
                 .map(|outbound| UdpOutbound::Vless(Box::new(outbound)))
         }
     }
-}
-
-pub fn select_vless_tcp_outbound(config: &CoreConfig) -> Result<VlessTcpOutbound, CoreError> {
-    let outbound = select_configured_outbound(config, None, None, None, None, None)?;
-    build_vless_tcp_outbound(outbound)
-}
-
-fn select_configured_outbound<'a>(
-    config: &'a CoreConfig,
-    inbound_tag: Option<&str>,
-    target_domain: Option<&str>,
-    target_ip: Option<&IpAddr>,
-    target_network: Option<Network>,
-    target_port: Option<u16>,
-) -> Result<&'a OutboundConfig, CoreError> {
-    let routed_tag = select_routed_outbound_tag(
-        config,
-        inbound_tag,
-        target_domain,
-        target_ip,
-        target_network,
-        target_port,
-    );
-
-    let outbound = match routed_tag.or(config.default_outbound_tag.as_deref()) {
-        Some(tag) => config
-            .outbounds
-            .iter()
-            .find(|outbound| outbound.tag.as_deref() == Some(tag))
-            .ok_or(CoreError::NoSupportedOutbound)?,
-        None => config
-            .outbounds
-            .first()
-            .ok_or(CoreError::NoSupportedOutbound)?,
-    };
-
-    Ok(outbound)
-}
-
-async fn select_configured_outbound_with_resolver<'a>(
-    config: &'a CoreConfig,
-    inbound_tag: Option<&str>,
-    target: &Target,
-    dns_resolver: &dyn DnsResolver,
-) -> Result<&'a OutboundConfig, CoreError> {
-    if let Some(routed_tag) = select_routed_outbound_tag(
-        config,
-        inbound_tag,
-        target_domain(target),
-        target_ip(target),
-        Some(target_network(target)),
-        Some(target.port),
-    ) {
-        return select_configured_outbound_by_tag(config, routed_tag);
-    }
-
-    if config.routing.domain_strategy == RoutingDomainStrategy::IpIfNonMatch {
-        if let Some(domain) = target_domain(target) {
-            if let Ok(resolved) = dns_resolver.resolve_all(domain, target.port).await {
-                if let Some(routed_tag) = select_routed_outbound_tag_with_resolved_ips(
-                    config,
-                    inbound_tag,
-                    Some(domain),
-                    resolved.socket_addrs(),
-                    Some(target_network(target)),
-                    Some(target.port),
-                ) {
-                    return select_configured_outbound_by_tag(config, routed_tag);
-                }
-            }
-        }
-    }
-
-    select_default_configured_outbound(config)
 }
 
 fn select_routed_outbound_tag<'a>(
@@ -1765,45 +1976,6 @@ fn select_routed_outbound_tag_with_resolved_ips<'a>(
             })
         })
         .map(|rule| rule.outbound_tag.as_str())
-}
-
-fn select_configured_outbound_by_tag<'a>(
-    config: &'a CoreConfig,
-    tag: &str,
-) -> Result<&'a OutboundConfig, CoreError> {
-    config
-        .outbounds
-        .iter()
-        .find(|outbound| outbound.tag.as_deref() == Some(tag))
-        .ok_or(CoreError::NoSupportedOutbound)
-}
-
-fn select_default_configured_outbound(config: &CoreConfig) -> Result<&OutboundConfig, CoreError> {
-    match config.default_outbound_tag.as_deref() {
-        Some(tag) => select_configured_outbound_by_tag(config, tag),
-        None => config
-            .outbounds
-            .first()
-            .ok_or(CoreError::NoSupportedOutbound),
-    }
-}
-
-#[allow(dead_code)]
-fn select_configured_outbound_direct<'a>(
-    config: &'a CoreConfig,
-    outbound_tag: Option<&str>,
-) -> Result<&'a OutboundConfig, CoreError> {
-    match outbound_tag.or(config.default_outbound_tag.as_deref()) {
-        Some(tag) => config
-            .outbounds
-            .iter()
-            .find(|outbound| outbound.tag.as_deref() == Some(tag))
-            .ok_or(CoreError::NoSupportedOutbound),
-        None => config
-            .outbounds
-            .first()
-            .ok_or(CoreError::NoSupportedOutbound),
-    }
 }
 
 fn target_domain(target: &Target) -> Option<&str> {
@@ -2310,6 +2482,7 @@ mod tests {
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
+                quic_params: None,
                 socket_options: None,
             },
             settings: OutboundSettings::Freedom,
@@ -2323,6 +2496,7 @@ mod tests {
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
+                quic_params: None,
                 socket_options: None,
             },
             settings: OutboundSettings::Vless(VlessOutboundSettings {
@@ -2345,6 +2519,7 @@ mod tests {
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
+                quic_params: None,
                 socket_options: None,
             },
             settings: OutboundSettings::Dns(settings),
@@ -2511,17 +2686,18 @@ mod tests {
     }
 
     #[test]
-    fn standalone_tcp_session_selector_matches_target_network_and_port() {
+    fn outbound_router_tcp_session_selector_matches_target_network_and_port() {
         let mut config = direct_selection_config();
         config.routing.rules = vec![network_port_rule(
             "direct",
             Network::Tcp,
             RoutingPortRange::single(443),
         )];
+        let router = OutboundRouter::new(Arc::new(config));
 
-        let selected =
-            select_tcp_outbound_for_session(&config, None, &domain_tcp_target("example.test"))
-                .expect("select target-aware TCP route");
+        let selected = router
+            .select_tcp_outbound_for_session(None, &domain_tcp_target("example.test"))
+            .expect("select target-aware TCP route");
 
         assert!(matches!(selected, TcpOutbound::Freedom));
     }
@@ -2605,6 +2781,7 @@ mod tests {
                     allow_insecure: true,
                     alpn: Vec::new(),
                 }),
+                quic_params: None,
                 socket_options: None,
             },
             Duration::from_secs(60),
@@ -2640,6 +2817,7 @@ mod tests {
                         allow_insecure: false,
                         alpn: Vec::new(),
                     }),
+                    quic_params: None,
                     socket_options: None,
                 },
                 Duration::from_secs(60),
@@ -2670,6 +2848,7 @@ mod tests {
                 allow_insecure: false,
                 alpn: vec!["http/1.1".to_owned()],
             }),
+            quic_params: None,
             socket_options: None,
         };
 
@@ -2697,6 +2876,7 @@ mod tests {
                     allow_insecure: false,
                     alpn: vec!["h2".to_owned()],
                 }),
+                quic_params: None,
                 socket_options: None,
             },
             Duration::from_secs(60),
@@ -2724,6 +2904,7 @@ mod tests {
                 network: Network::Udp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
+                quic_params: None,
                 socket_options: None,
             },
             Duration::from_secs(60),
@@ -2759,6 +2940,7 @@ mod tests {
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::Reality(reality.clone()),
+                quic_params: None,
                 socket_options: Some(SocketOptions {
                     happy_eyeballs: Some(HappyEyeballsSettings {
                         prioritize_ipv6: configured.prioritize_ipv6,
@@ -2799,6 +2981,7 @@ mod tests {
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
+                quic_params: None,
                 socket_options: None,
             },
             Duration::from_secs(60),
@@ -2815,6 +2998,7 @@ mod tests {
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
+                quic_params: None,
                 socket_options: Some(SocketOptions {
                     happy_eyeballs: Some(HappyEyeballsSettings::default()),
                 }),
@@ -2836,6 +3020,7 @@ mod tests {
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
+                quic_params: None,
                 socket_options: None,
             },
             Duration::from_secs(60),
@@ -2853,6 +3038,7 @@ mod tests {
                     allow_insecure: false,
                     alpn: Vec::new(),
                 }),
+                quic_params: None,
                 socket_options: None,
             },
             Duration::from_secs(60),
@@ -3095,20 +3281,22 @@ mod tests {
     }
 
     #[test]
-    fn standalone_session_selector_rejects_target_network_mismatch() {
+    fn outbound_router_session_selector_rejects_target_network_mismatch() {
         let mut config = direct_selection_config();
         config.routing.rules = vec![network_port_rule(
             "direct",
             Network::Tcp,
             RoutingPortRange::single(53),
         )];
+        let router = OutboundRouter::new(Arc::new(config));
         let target = Target::new(
             RoutingTargetAddr::Domain("example.test".to_owned()),
             53,
             RoutingNetwork::Udp,
         );
 
-        let selected = select_udp_outbound_for_session(&config, None, &target)
+        let selected = router
+            .select_udp_outbound_for_session(None, &target)
             .expect("network mismatch should use the default route");
 
         assert!(matches!(selected, UdpOutbound::Vless(_)));
@@ -3132,21 +3320,6 @@ mod tests {
         let selected = router
             .select_tcp_outbound_for_session(None, &target)
             .expect("port mismatch should use the default route");
-
-        assert!(matches!(selected, TcpOutbound::Vless(_)));
-    }
-
-    #[test]
-    fn legacy_selector_without_target_ignores_network_and_port_rule() {
-        let mut config = direct_selection_config();
-        config.routing.rules = vec![network_port_rule(
-            "direct",
-            Network::Tcp,
-            RoutingPortRange::single(443),
-        )];
-
-        let selected = select_tcp_outbound(&config)
-            .expect("legacy selection should use the configured default route");
 
         assert!(matches!(selected, TcpOutbound::Vless(_)));
     }
@@ -3190,9 +3363,9 @@ mod tests {
     }
 
     #[test]
-    fn select_tcp_outbound_direct_uses_explicit_tag() {
-        let selected =
-            select_tcp_outbound_direct(&direct_selection_config(), Some("direct")).unwrap();
+    fn outbound_router_direct_selector_uses_explicit_tag() {
+        let router = OutboundRouter::new(Arc::new(direct_selection_config()));
+        let selected = router.select_tcp_outbound_direct(Some("direct")).unwrap();
 
         assert!(matches!(selected, TcpOutbound::Freedom));
     }
@@ -3371,26 +3544,30 @@ mod tests {
     }
 
     #[test]
-    fn select_tcp_outbound_direct_uses_default_tag_without_routing() {
-        let selected = select_tcp_outbound_direct(&direct_selection_config(), None).unwrap();
+    fn outbound_router_direct_selector_uses_default_tag_without_routing() {
+        let router = OutboundRouter::new(Arc::new(direct_selection_config()));
+        let selected = router.select_tcp_outbound_direct(None).unwrap();
 
         assert!(matches!(selected, TcpOutbound::Vless(_)));
     }
 
     #[test]
-    fn select_tcp_outbound_direct_errors_when_explicit_tag_is_missing() {
-        let error =
-            select_tcp_outbound_direct(&direct_selection_config(), Some("missing")).unwrap_err();
+    fn outbound_router_direct_selector_errors_when_explicit_tag_is_missing() {
+        let router = OutboundRouter::new(Arc::new(direct_selection_config()));
+        let error = router
+            .select_tcp_outbound_direct(Some("missing"))
+            .unwrap_err();
 
         assert!(matches!(error, CoreError::NoSupportedOutbound));
     }
 
     #[test]
-    fn select_tcp_outbound_direct_uses_first_outbound_without_default() {
+    fn outbound_router_direct_selector_uses_first_outbound_without_default() {
         let mut config = direct_selection_config();
         config.default_outbound_tag = None;
+        let router = OutboundRouter::new(Arc::new(config));
 
-        let selected = select_tcp_outbound_direct(&config, None).unwrap();
+        let selected = router.select_tcp_outbound_direct(None).unwrap();
 
         assert!(matches!(selected, TcpOutbound::Freedom));
     }
@@ -3659,6 +3836,473 @@ mod tests {
             panic!("expected the gRPC transport layer");
         };
         grpc.clone()
+    }
+
+    fn tls_security(server_name: Option<&str>, alpn: &[&str]) -> StreamSecurity {
+        StreamSecurity::Tls(TlsSettings {
+            server_name: server_name.map(str::to_owned),
+            fingerprint: Some("chrome".to_owned()),
+            allow_insecure: false,
+            alpn: alpn.iter().map(|protocol| (*protocol).to_owned()).collect(),
+        })
+    }
+
+    fn xhttp_vless(
+        xhttp: XhttpSettings,
+        security: StreamSecurity,
+        server: TargetAddr,
+        port: u16,
+    ) -> OutboundConfig {
+        let mut vless = direct_selection_vless("proxy");
+        vless.stream.transport = StreamTransport::Xhttp(Box::new(xhttp));
+        vless.stream.security = security;
+        let OutboundSettings::Vless(settings) = &mut vless.settings else {
+            panic!("expected a VLESS outbound");
+        };
+        settings.server = server;
+        settings.port = port;
+        vless
+    }
+
+    fn built_xhttp_transport(outbound: &OutboundConfig) -> XhttpTransport {
+        let built = build_vless_tcp_outbound(outbound).expect("an XHTTP VLESS outbound");
+        xhttp_transport(&built).clone()
+    }
+
+    fn xhttp_transport(outbound: &VlessTcpOutbound) -> &XhttpTransport {
+        let TransportLayer::Xhttp(xhttp) = outbound.transport_layer() else {
+            panic!("expected the XHTTP transport layer");
+        };
+        xhttp
+    }
+
+    #[test]
+    fn xhttp_http_version_matches_xrays_security_and_exact_alpn_rules() {
+        for (security, expected) in [
+            (StreamSecurity::None, XhttpHttpVersion::Http1),
+            (
+                StreamSecurity::Reality(reality_settings()),
+                XhttpHttpVersion::Http2,
+            ),
+            (
+                tls_security(Some("sni.example"), &[]),
+                XhttpHttpVersion::Http2,
+            ),
+            (
+                tls_security(Some("sni.example"), &["http/1.1"]),
+                XhttpHttpVersion::Http1,
+            ),
+            (
+                tls_security(Some("sni.example"), &["h2"]),
+                XhttpHttpVersion::Http2,
+            ),
+            (
+                tls_security(Some("sni.example"), &["h2", "http/1.1"]),
+                XhttpHttpVersion::Http2,
+            ),
+            (
+                tls_security(Some("sni.example"), &["h3", "h2"]),
+                XhttpHttpVersion::Http2,
+            ),
+            (
+                tls_security(Some("sni.example"), &["h3"]),
+                XhttpHttpVersion::Http3,
+            ),
+        ] {
+            assert_eq!(xhttp_http_version(&security).unwrap(), expected);
+        }
+
+        let h3 = tls_security(Some("sni.example"), &["h3"]);
+        let outbound = xhttp_vless(
+            XhttpSettings::default(),
+            h3,
+            TargetAddr::Domain("origin.example".to_owned()),
+            443,
+        );
+        let built = build_vless_tcp_outbound(&outbound).expect("exact h3 builds XHTTP over UDP");
+        assert_eq!(
+            xhttp_transport(&built).h3_quic_config().keep_alive_interval,
+            Some(Duration::from_secs(10)),
+            "zero QUIC and xmux keepalive selects Xray's H3 default"
+        );
+    }
+
+    #[test]
+    fn xhttp_endpoint_follows_precedence_scheme_and_native_port_semantics() {
+        let destination = TargetAddr::Domain("origin.example".to_owned());
+        let tls = tls_security(Some("sni.example"), &[]);
+        let mut configured = XhttpSettings {
+            host: Some("CDN.example:8443".to_owned()),
+            ..XhttpSettings::default()
+        };
+        assert_eq!(
+            xhttp_endpoint(&configured, &tls, &destination).unwrap(),
+            XhttpEndpoint {
+                scheme: XhttpScheme::Https,
+                authority: "cdn.example:8443".to_owned(),
+            }
+        );
+
+        configured.host = None;
+        assert_eq!(
+            xhttp_endpoint(&configured, &tls, &destination)
+                .unwrap()
+                .authority,
+            "sni.example"
+        );
+        assert_eq!(
+            xhttp_endpoint(
+                &configured,
+                &StreamSecurity::Reality(reality_settings()),
+                &destination,
+            )
+            .unwrap()
+            .authority,
+            "reality.example"
+        );
+
+        let outbound = xhttp_vless(configured.clone(), StreamSecurity::None, destination, 8_443);
+        let OutboundSettings::Vless(server) = &outbound.settings else {
+            panic!("expected VLESS settings");
+        };
+        let StreamTransport::Xhttp(settings) = &outbound.stream.transport else {
+            panic!("expected XHTTP settings");
+        };
+        let endpoint = xhttp_endpoint(settings, &outbound.stream.security, &server.server).unwrap();
+        assert_eq!(server.port, 8_443);
+        assert_eq!(endpoint.scheme, XhttpScheme::Http);
+        assert_eq!(endpoint.authority, "origin.example");
+
+        assert_eq!(
+            xhttp_endpoint(
+                &configured,
+                &StreamSecurity::None,
+                &TargetAddr::Ip(IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1,))),
+            )
+            .unwrap()
+            .authority,
+            "[2001:db8::1]"
+        );
+        assert_eq!(
+            xhttp_endpoint(
+                &configured,
+                &StreamSecurity::None,
+                &TargetAddr::Ip(IpAddr::V6(Ipv6Addr::new(
+                    0, 0, 0, 0, 0, 0xffff, 0xc000, 0x0201,
+                ))),
+            )
+            .unwrap()
+            .authority,
+            "192.0.2.1"
+        );
+    }
+
+    #[test]
+    fn xhttp_auto_mode_uses_reality_and_preserves_explicit_modes() {
+        for (security, configured, expected) in [
+            (
+                StreamSecurity::None,
+                xray_config::XhttpMode::Auto,
+                xray_transport::stream::XhttpMode::PacketUp,
+            ),
+            (
+                StreamSecurity::Reality(reality_settings()),
+                xray_config::XhttpMode::Auto,
+                xray_transport::stream::XhttpMode::StreamOne,
+            ),
+            (
+                StreamSecurity::Reality(reality_settings()),
+                xray_config::XhttpMode::StreamUp,
+                xray_transport::stream::XhttpMode::StreamUp,
+            ),
+        ] {
+            let outbound = xhttp_vless(
+                XhttpSettings {
+                    mode: configured,
+                    ..XhttpSettings::default()
+                },
+                security,
+                TargetAddr::Domain("origin.example".to_owned()),
+                443,
+            );
+            assert_eq!(built_xhttp_transport(&outbound).config().mode, expected);
+        }
+    }
+
+    #[test]
+    fn every_xhttp_client_setting_reaches_the_dial_ready_policy() {
+        let settings = XhttpSettings {
+            host: Some("cdn.example".to_owned()),
+            path: "wire?existing=1#part".to_owned(),
+            mode: xray_config::XhttpMode::StreamUp,
+            headers: vec![
+                ("X-First".to_owned(), "one".to_owned()),
+                ("X-Second".to_owned(), "two".to_owned()),
+            ],
+            x_padding_bytes: xray_config::XhttpRange { from: 101, to: 102 },
+            x_padding_obfs_mode: true,
+            x_padding_key: "pad_key".to_owned(),
+            x_padding_header: "X-Pad-Key".to_owned(),
+            x_padding_placement: xray_config::XhttpPaddingPlacement::Header,
+            x_padding_method: xray_config::XhttpPaddingMethod::Tokenish,
+            uplink_http_method: "PUT".to_owned(),
+            session_placement: xray_config::XhttpPlacement::Cookie,
+            session_key: "session_key".to_owned(),
+            seq_placement: xray_config::XhttpPlacement::Header,
+            seq_key: "X-Sequence-Key".to_owned(),
+            uplink_data_placement: xray_config::XhttpUplinkDataPlacement::Body,
+            uplink_data_key: "unused_body_key".to_owned(),
+            uplink_chunk_size: xray_config::XhttpRange { from: 201, to: 202 },
+            no_grpc_header: true,
+            no_sse_header: true,
+            sc_max_each_post_bytes: xray_config::XhttpRange {
+                from: 1_001,
+                to: 1_002,
+            },
+            sc_min_posts_interval_ms: xray_config::XhttpRange { from: 31, to: 32 },
+            sc_max_buffered_posts: 37,
+            sc_stream_up_server_secs: xray_config::XhttpRange { from: 41, to: 42 },
+            server_max_header_bytes: 4_096,
+            xmux: xray_config::XhttpXmuxSettings {
+                max_concurrency: xray_config::XhttpRange { from: -2, to: -1 },
+                max_connections: xray_config::XhttpRange { from: 2, to: 3 },
+                c_max_reuse_times: xray_config::XhttpRange { from: 4, to: 5 },
+                h_max_request_times: xray_config::XhttpRange { from: 6, to: 7 },
+                h_max_reusable_secs: xray_config::XhttpRange { from: 8, to: 9 },
+                h_keep_alive_period_secs: -10,
+            },
+        };
+
+        let config = xhttp_config(&settings, false).unwrap();
+        assert_eq!(config.mode, xray_transport::stream::XhttpMode::StreamUp);
+        assert_eq!(config.path, "/wire/");
+        assert_eq!(config.raw_query, "existing=1");
+        assert_eq!(config.fragment, "part");
+        assert_eq!(config.headers.get("X-First"), Some("one"));
+        assert_eq!(config.headers.get("X-Second"), Some("two"));
+        assert_eq!(config.padding.range.from, 101);
+        assert_eq!(config.padding.range.to, 102);
+        assert!(config.padding.obfs_mode);
+        assert_eq!(config.padding.key, "pad_key");
+        assert_eq!(config.padding.header, "X-Pad-Key");
+        assert_eq!(config.padding.placement, XhttpPaddingPlacement::Header);
+        assert_eq!(config.padding.method, XhttpPaddingMethod::Tokenish);
+        assert_eq!(config.uplink_http_method, "PUT");
+        assert_eq!(config.session.placement, XhttpMetadataPlacement::Cookie);
+        assert_eq!(config.session.key, "session_key");
+        assert_eq!(config.sequence.placement, XhttpMetadataPlacement::Header);
+        assert_eq!(config.sequence.key, "X-Sequence-Key");
+        assert_eq!(config.uplink_data.placement, XhttpUplinkDataPlacement::Body);
+        assert_eq!(config.uplink_data.key, "unused_body_key");
+        assert_eq!(config.uplink_data.chunk_size.from, 201);
+        assert_eq!(config.uplink_data.chunk_size.to, 202);
+        assert!(config.no_grpc_header);
+        assert_eq!(config.max_each_post_bytes.from, 1_001);
+        assert_eq!(config.max_each_post_bytes.to, 1_002);
+        assert_eq!(config.min_posts_interval_ms.from, 31);
+        assert_eq!(config.min_posts_interval_ms.to, 32);
+        assert_eq!(config.max_buffered_posts, 37);
+        assert_eq!(config.stream_up_server_secs.from, 41);
+        assert_eq!(config.stream_up_server_secs.to, 42);
+
+        assert_eq!(
+            xhttp_xmux_policy(&settings),
+            XhttpXmuxPolicy {
+                max_concurrency: XhttpRange { from: -2, to: -1 },
+                max_connections: XhttpRange { from: 2, to: 3 },
+                c_max_reuse_times: XhttpRange { from: 4, to: 5 },
+                h_max_request_times: XhttpRange { from: 6, to: 7 },
+                h_max_reusable_secs: XhttpRange { from: 8, to: 9 },
+                h_keep_alive_period_secs: -10,
+            }
+        );
+    }
+
+    #[test]
+    fn xhttp_duplicate_canonical_headers_reach_h1_wire_in_add_order() {
+        // The parser has already canonicalized case-variant JSON keys at this
+        // layer. Runtime mapping must retain both protobuf-map values rather
+        // than treating the second Add as a Set.
+        let settings = XhttpSettings {
+            headers: vec![
+                ("X-Foo".to_owned(), "first".to_owned()),
+                ("X-Foo".to_owned(), "second".to_owned()),
+            ],
+            ..XhttpSettings::default()
+        };
+        let config = xhttp_config(&settings, false).expect("XHTTP config");
+        let wire =
+            xray_transport::stream::serialize_request("GET", "/", "example.com", &config.headers);
+        let wire = String::from_utf8(wire).expect("ASCII request");
+
+        assert!(
+            wire.contains("\r\nX-Foo: first\r\nX-Foo: second\r\n"),
+            "{wire}"
+        );
+    }
+
+    #[test]
+    fn every_supported_quic_parameter_reaches_the_h3_engine() {
+        let mut outbound = xhttp_vless(
+            XhttpSettings::default(),
+            tls_security(Some("sni.example"), &["h3"]),
+            TargetAddr::Domain("origin.example".to_owned()),
+            443,
+        );
+        outbound.stream.quic_params = Some(QuicParamsSettings {
+            congestion: xray_config::QuicCongestion::Reno,
+            bbr_profile: xray_config::QuicBbrProfile::Standard,
+            brutal_up_bytes_per_sec: 65_536,
+            brutal_down_bytes_per_sec: 131_072,
+            udp_hop: xray_config::QuicUdpHopSettings::default(),
+            init_stream_receive_window: 2_100_000,
+            max_stream_receive_window: 2_100_000,
+            init_connection_receive_window: 3_100_000,
+            max_connection_receive_window: 3_100_000,
+            max_idle_timeout_secs: 17,
+            keep_alive_period_secs: 11,
+            disable_path_mtu_discovery: true,
+            max_incoming_streams: 16,
+            debug: false,
+        });
+
+        let built = built_xhttp_transport(&outbound);
+        let quic = built.h3_quic_config();
+        assert_eq!(quic.initial_stream_receive_window, 2_100_000);
+        assert_eq!(quic.max_stream_receive_window, Some(2_100_000));
+        assert_eq!(quic.initial_connection_receive_window, 3_100_000);
+        assert_eq!(quic.max_connection_receive_window, Some(3_100_000));
+        assert_eq!(quic.max_idle_timeout, Duration::from_secs(17));
+        assert_eq!(quic.keep_alive_interval, Some(Duration::from_secs(11)));
+        assert_eq!(quic.max_incoming_bidirectional_streams, 16);
+        assert!(quic.disable_path_mtu_discovery);
+        assert_eq!(quic.congestion, H3Congestion::Reno);
+    }
+
+    #[test]
+    fn unsupported_explicit_h3_quic_features_fail_closed_but_h2_ignores_them() {
+        let invalid = QuicParamsSettings {
+            udp_hop: xray_config::QuicUdpHopSettings {
+                ports: vec![4_443],
+                interval: xray_config::QuicIntervalRange { from: 5, to: 6 },
+            },
+            ..QuicParamsSettings::default()
+        };
+        let mut h3 = xhttp_vless(
+            XhttpSettings::default(),
+            tls_security(Some("sni.example"), &["h3"]),
+            TargetAddr::Domain("origin.example".to_owned()),
+            443,
+        );
+        h3.stream.quic_params = Some(invalid.clone());
+        assert!(matches!(
+            build_vless_tcp_outbound(&h3),
+            Err(CoreError::InvalidXhttpConfiguration(message)) if message.contains("UDP hop")
+        ));
+
+        let mut h2 = h3;
+        h2.stream.security = tls_security(Some("sni.example"), &["h2"]);
+        build_vless_tcp_outbound(&h2)
+            .expect("Xray does not consult QUIC-only settings on the H2 branch");
+
+        for invalid in [
+            QuicParamsSettings {
+                debug: true,
+                ..QuicParamsSettings::default()
+            },
+            QuicParamsSettings {
+                congestion: xray_config::QuicCongestion::Bbr,
+                bbr_profile: xray_config::QuicBbrProfile::Conservative,
+                ..QuicParamsSettings::default()
+            },
+            QuicParamsSettings {
+                init_stream_receive_window: 2 * 1024 * 1024,
+                max_stream_receive_window: 6 * 1024 * 1024,
+                ..QuicParamsSettings::default()
+            },
+            QuicParamsSettings {
+                congestion: xray_config::QuicCongestion::ForceBrutal,
+                brutal_up_bytes_per_sec: 65_536,
+                ..QuicParamsSettings::default()
+            },
+        ] {
+            let mut outbound = xhttp_vless(
+                XhttpSettings::default(),
+                tls_security(Some("sni.example"), &["h3"]),
+                TargetAddr::Domain("origin.example".to_owned()),
+                443,
+            );
+            outbound.stream.quic_params = Some(invalid);
+            assert!(matches!(
+                build_vless_tcp_outbound(&outbound),
+                Err(CoreError::InvalidXhttpConfiguration(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn h3_quic_transport_parameters_respect_the_quic_varint_domain() {
+        let clamped = xhttp_h3_quic_config(Some(&QuicParamsSettings {
+            max_incoming_streams: i64::MAX,
+            ..QuicParamsSettings::default()
+        }))
+        .expect("quic-go clamps oversized incoming-stream limits");
+        assert_eq!(
+            clamped.max_incoming_bidirectional_streams,
+            QUIC_MAX_STREAM_COUNT
+        );
+
+        let mut outbound = xhttp_vless(
+            XhttpSettings::default(),
+            tls_security(Some("sni.example"), &["h3"]),
+            TargetAddr::Domain("origin.example".to_owned()),
+            443,
+        );
+        outbound.stream.quic_params = Some(QuicParamsSettings {
+            init_stream_receive_window: QUIC_VARINT_MAX + 1,
+            max_stream_receive_window: QUIC_VARINT_MAX + 1,
+            ..QuicParamsSettings::default()
+        });
+
+        assert!(matches!(
+            build_vless_tcp_outbound(&outbound),
+            Err(CoreError::InvalidXhttpConfiguration(message))
+                if message.contains("62-bit varint limit")
+        ));
+    }
+
+    #[test]
+    fn cached_xhttp_selections_share_one_xmux_manager() {
+        let mut config = direct_selection_config();
+        config.outbounds = vec![xhttp_vless(
+            XhttpSettings::default(),
+            StreamSecurity::None,
+            TargetAddr::Domain("origin.example".to_owned()),
+            443,
+        )];
+        config.default_outbound_tag = Some("proxy".to_owned());
+        config.routing.rules.clear();
+        let router = OutboundRouter::new(Arc::new(config));
+        let target = domain_tcp_target("example.test");
+
+        let TcpOutbound::Vless(first) = router.select_tcp_outbound().unwrap() else {
+            panic!("expected cached VLESS outbound");
+        };
+        let TcpOutbound::Vless(second) = router.select_tcp_outbound().unwrap() else {
+            panic!("expected cached VLESS outbound");
+        };
+        let UdpOutbound::Vless(udp) = router
+            .select_udp_outbound_for_session(
+                None,
+                &Target::new(target.addr, target.port, RoutingNetwork::Udp),
+            )
+            .unwrap()
+        else {
+            panic!("expected cached VLESS UDP outbound");
+        };
+
+        assert!(xhttp_transport(&first).shares_xmux_with(xhttp_transport(&second)));
+        assert!(xhttp_transport(&first).shares_xmux_with(xhttp_transport(&udp)));
     }
 
     /// Xray's `:authority` chain, in order:
@@ -4195,18 +4839,19 @@ mod tests {
         rule.networks = vec![Network::Tcp];
         rule.port_ranges = vec![RoutingPortRange::single(443)];
         config.routing.rules = vec![rule];
+        let router = OutboundRouter::new(Arc::new(config));
         let resolver =
             FakeDnsResolver::resolving_to(SocketAddr::from((Ipv4Addr::new(203, 0, 113, 7), 443)))
                 .expect_lookup("example.test", 443);
 
-        let selected = select_tcp_outbound_for_session_with_resolver(
-            &config,
-            None,
-            &domain_tcp_target("example.test"),
-            &resolver,
-        )
-        .await
-        .expect("select route using resolved IP");
+        let selected = router
+            .select_tcp_outbound_for_session_with_resolver(
+                None,
+                &domain_tcp_target("example.test"),
+                &resolver,
+            )
+            .await
+            .expect("select route using resolved IP");
 
         assert!(matches!(selected, TcpOutbound::Freedom));
     }
@@ -4218,20 +4863,21 @@ mod tests {
         let mut config = direct_selection_config();
         config.routing.domain_strategy = RoutingDomainStrategy::IpIfNonMatch;
         config.routing.rules = vec![ip_rule("direct", second)];
+        let router = OutboundRouter::new(Arc::new(config));
         let resolver = FakeDnsResolver::resolving_to_many(vec![
             SocketAddr::from((first, 443)),
             SocketAddr::from((second, 443)),
         ])
         .expect_lookup("example.test", 443);
 
-        let selected = select_tcp_outbound_for_session_with_resolver(
-            &config,
-            None,
-            &domain_tcp_target("example.test"),
-            &resolver,
-        )
-        .await
-        .expect("select route using a non-first resolved IP");
+        let selected = router
+            .select_tcp_outbound_for_session_with_resolver(
+                None,
+                &domain_tcp_target("example.test"),
+                &resolver,
+            )
+            .await
+            .expect("select route using a non-first resolved IP");
 
         assert!(matches!(selected, TcpOutbound::Freedom));
         assert_eq!(resolver.calls(), 1);
@@ -4305,17 +4951,18 @@ mod tests {
         let mut config = direct_selection_config();
         config.routing.domain_strategy = RoutingDomainStrategy::IpIfNonMatch;
         config.routing.rules = vec![domain_and_ip_rule("direct", "example.test", resolved_ip)];
+        let router = OutboundRouter::new(Arc::new(config));
         let resolver = FakeDnsResolver::resolving_to(SocketAddr::from((resolved_ip, 443)))
             .expect_lookup("example.test", 443);
 
-        let selected = select_tcp_outbound_for_session_with_resolver(
-            &config,
-            None,
-            &domain_tcp_target("example.test"),
-            &resolver,
-        )
-        .await
-        .expect("select combined domain and resolved-IP route");
+        let selected = router
+            .select_tcp_outbound_for_session_with_resolver(
+                None,
+                &domain_tcp_target("example.test"),
+                &resolver,
+            )
+            .await
+            .expect("select combined domain and resolved-IP route");
 
         assert!(matches!(selected, TcpOutbound::Freedom));
     }
@@ -4397,17 +5044,18 @@ mod tests {
             inbound_rule("socks-in", "proxy"),
             ip_rule("direct", Ipv4Addr::new(203, 0, 113, 7)),
         ];
+        let router = OutboundRouter::new(Arc::new(config));
         let resolver =
             FakeDnsResolver::resolving_to(SocketAddr::from((Ipv4Addr::new(203, 0, 113, 7), 443)));
 
-        let selected = select_tcp_outbound_for_session_with_resolver(
-            &config,
-            Some("socks-in"),
-            &domain_tcp_target("example.test"),
-            &resolver,
-        )
-        .await
-        .expect("select first-pass route");
+        let selected = router
+            .select_tcp_outbound_for_session_with_resolver(
+                Some("socks-in"),
+                &domain_tcp_target("example.test"),
+                &resolver,
+            )
+            .await
+            .expect("select first-pass route");
 
         assert!(matches!(selected, TcpOutbound::Vless(_)));
         assert_eq!(resolver.calls(), 0);
@@ -4417,21 +5065,16 @@ mod tests {
     fn missing_outbound_tag_errors_only_when_selected() {
         let mut config = direct_selection_config();
         config.routing.rules = vec![inbound_rule("api", "api")];
+        let router = OutboundRouter::new(Arc::new(config));
 
-        let selected = select_tcp_outbound_for_session(
-            &config,
-            Some("socks-in"),
-            &domain_tcp_target("example.test"),
-        )
-        .expect("unmatched missing tag rule should fall back to default");
+        let selected = router
+            .select_tcp_outbound_for_session(Some("socks-in"), &domain_tcp_target("example.test"))
+            .expect("unmatched missing tag rule should fall back to default");
         assert!(matches!(selected, TcpOutbound::Vless(_)));
 
-        let error = select_tcp_outbound_for_session(
-            &config,
-            Some("api"),
-            &domain_tcp_target("example.test"),
-        )
-        .unwrap_err();
+        let error = router
+            .select_tcp_outbound_for_session(Some("api"), &domain_tcp_target("example.test"))
+            .unwrap_err();
         assert!(matches!(error, CoreError::NoSupportedOutbound));
     }
 
@@ -4440,41 +5083,24 @@ mod tests {
         let mut config = direct_selection_config();
         config.routing.domain_strategy = RoutingDomainStrategy::IpIfNonMatch;
         config.routing.rules = vec![ip_rule("direct", Ipv4Addr::new(203, 0, 113, 7))];
+        let router = OutboundRouter::new(Arc::new(config));
         let resolver = FakeDnsResolver::failing_with(TransportError::NoResolvedAddress(
             "example.test".to_owned(),
             443,
         ))
         .expect_lookup("example.test", 443);
 
-        let selected = select_tcp_outbound_for_session_with_resolver(
-            &config,
-            None,
-            &domain_tcp_target("example.test"),
-            &resolver,
-        )
-        .await
-        .expect("DNS failure should fall back to the configured default outbound");
-
-        assert!(matches!(selected, TcpOutbound::Vless(_)));
-        assert_eq!(resolver.calls(), 1);
-
-        let router = OutboundRouter::new(Arc::new(config));
-        let cached_resolver = FakeDnsResolver::failing_with(TransportError::NoResolvedAddress(
-            "example.test".to_owned(),
-            443,
-        ))
-        .expect_lookup("example.test", 443);
         let selected = router
             .select_tcp_outbound_for_session_with_resolver(
                 None,
                 &domain_tcp_target("example.test"),
-                &cached_resolver,
+                &resolver,
             )
             .await
-            .expect("cached router should use the configured default outbound");
+            .expect("DNS failure should fall back to the configured default outbound");
 
         assert!(matches!(selected, TcpOutbound::Vless(_)));
-        assert_eq!(cached_resolver.calls(), 1);
+        assert_eq!(resolver.calls(), 1);
     }
 
     #[derive(Debug)]
@@ -4821,6 +5447,54 @@ mod tests {
         .expect_err("Vision needs a raw transport");
 
         assert!(matches!(error, CoreError::UnsupportedOutboundFlow));
+    }
+
+    #[test]
+    fn vision_over_xhttp_is_rejected_as_non_raw_for_tls_and_reality() {
+        for security in [
+            tls_security(Some("sni.example"), &[]),
+            StreamSecurity::Reality(reality_settings()),
+        ] {
+            let mut outbound = xhttp_vless(
+                XhttpSettings::default(),
+                security,
+                TargetAddr::Domain("origin.example".to_owned()),
+                443,
+            );
+            let OutboundSettings::Vless(settings) = &mut outbound.settings else {
+                panic!("expected VLESS settings");
+            };
+            settings.users[0].flow = Some(VISION_FLOW.to_owned());
+
+            let built = build_vless_tcp_outbound(&outbound)
+                .expect("Xray accepts the XHTTP/Vision pairing at config-build time");
+            assert!(matches!(built.transport_layer(), TransportLayer::Xhttp(_)));
+            assert!(matches!(
+                validate_connector_flow(
+                    built.user().flow.as_deref(),
+                    built.transport(),
+                    built.transport_layer(),
+                ),
+                Err(CoreError::UnsupportedOutboundFlow)
+            ));
+        }
+
+        let mut raw = direct_selection_vless("proxy");
+        raw.stream.security = StreamSecurity::Reality(reality_settings());
+        let OutboundSettings::Vless(settings) = &mut raw.settings else {
+            panic!("expected VLESS settings");
+        };
+        settings.server = TargetAddr::Domain("origin.example".to_owned());
+        settings.users[0].flow = Some(VISION_FLOW.to_owned());
+        let built = build_vless_tcp_outbound(&raw).expect("raw REALITY Vision remains supported");
+        assert!(matches!(built.transport_layer(), TransportLayer::Raw));
+        assert!(validate_connector_flow(
+            built.user().flow.as_deref(),
+            built.transport(),
+            built.transport_layer(),
+        )
+        .unwrap()
+        .uses_vision());
     }
 
     /// The rule the retired `the_grpc_placeholder_refuses_every_vless_config_vision_or_not`

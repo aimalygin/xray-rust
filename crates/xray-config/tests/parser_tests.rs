@@ -10,8 +10,11 @@ use xray_config::{
     parse_xray_json, parse_xray_json_with_geodata_dirs, DiagnosticSeverity, DnsFakeIpConfig,
     DnsHostTarget, DnsIpFilter, DnsNameServerConfig, DnsOutboundRuleAction, DnsOutboundSettings,
     DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint, DnsServerTransport,
-    HappyEyeballsSettings, InboundProtocol, IpCidr, Network, OutboundSettings, RealityShortId,
+    HappyEyeballsSettings, InboundProtocol, IpCidr, Network, OutboundSettings, QuicBbrProfile,
+    QuicCongestion, QuicIntervalRange, QuicParamsSettings, QuicUdpHopSettings, RealityShortId,
     RoutingDomainStrategy, SniffingDestination, StreamSecurity, StreamTransport, TargetAddr,
+    XhttpMode, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpPlacement, XhttpRange,
+    XhttpSettings, XhttpUplinkDataPlacement,
 };
 
 #[test]
@@ -1452,6 +1455,20 @@ fn rejects_unsupported_tls_fingerprint_with_path() {
         "the error must name the fingerprint, got: {}",
         error.diagnostics[0].message
     );
+}
+
+#[test]
+fn rejects_non_string_tls_fingerprint_with_path() {
+    for value in ["42", "false", r#"{"browser":"chrome"}"#] {
+        let raw = raw_with_tls_settings(&format!(
+            r#""serverName": "server.example", "fingerprint": {value}"#
+        ));
+
+        assert_parse_error_path(
+            &raw,
+            "$.outbounds[0].streamSettings.tlsSettings.fingerprint",
+        );
+    }
 }
 
 #[test]
@@ -3419,6 +3436,733 @@ fn rejects_the_gun_stream_network_with_path() {
 }
 
 #[test]
+fn xhttp_and_splithttp_aliases_parse_with_xray_defaults() {
+    for (network, settings_key) in [
+        ("xhttp", "xhttpSettings"),
+        ("splithttp", "splithttpSettings"),
+    ] {
+        let parsed = parse_xray_json(&raw_with_stream_settings(&format!(
+            r#""network": "{network}", "security": "none", "{settings_key}": {{}}"#
+        )))
+        .unwrap_or_else(|error| panic!("{network} must parse: {error:?}"));
+
+        let StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport else {
+            panic!("expected xhttp for {network}");
+        };
+        assert_eq!(xhttp.mode, XhttpMode::Auto);
+        assert_eq!(xhttp.x_padding_key, "x_padding");
+        assert_eq!(xhttp.x_padding_header, "X-Padding");
+        assert_eq!(
+            xhttp.x_padding_placement,
+            XhttpPaddingPlacement::QueryInHeader
+        );
+        assert_eq!(xhttp.x_padding_method, XhttpPaddingMethod::RepeatX);
+        assert_eq!(xhttp.uplink_http_method, "POST");
+        assert_eq!(xhttp.session_placement, XhttpPlacement::Path);
+        assert_eq!(xhttp.seq_placement, XhttpPlacement::Path);
+        assert_eq!(xhttp.uplink_data_placement, XhttpUplinkDataPlacement::Auto);
+        assert_eq!(xhttp.uplink_data_key, "X-Data");
+        assert_eq!(xhttp.xmux.max_concurrency, XhttpRange { from: 1, to: 1 });
+        assert_eq!(
+            xhttp.xmux.h_max_request_times,
+            XhttpRange { from: 600, to: 900 }
+        );
+        assert_eq!(
+            xhttp.xmux.h_max_reusable_secs,
+            XhttpRange {
+                from: 1_800,
+                to: 3_000
+            }
+        );
+        assert!(
+            parsed.diagnostics.is_empty(),
+            "{network}: {:?}",
+            parsed.diagnostics
+        );
+    }
+}
+
+#[test]
+fn xhttp_null_value_fields_normalize_to_go_zero_defaults() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "xhttp", "security": "none",
+           "xhttpSettings": {
+             "host": null, "path": null, "mode": null, "headers": null,
+             "xPaddingBytes": null, "xPaddingObfsMode": null,
+             "xPaddingKey": null, "xPaddingHeader": null,
+             "xPaddingPlacement": null, "xPaddingMethod": null,
+             "uplinkHTTPMethod": null,
+             "sessionPlacement": null, "sessionKey": null,
+             "seqPlacement": null, "seqKey": null,
+             "uplinkDataPlacement": null, "uplinkDataKey": null,
+             "uplinkChunkSize": null,
+             "noGRPCHeader": null, "noSSEHeader": null,
+             "scMaxEachPostBytes": null, "scMinPostsIntervalMs": null,
+             "scMaxBufferedPosts": null, "scStreamUpServerSecs": null,
+             "serverMaxHeaderBytes": null, "xmux": null,
+             "downloadSettings": null
+           }"#,
+    ))
+    .expect("null must leave every non-pointer Go field at its zero value");
+
+    let StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected xhttp");
+    };
+    assert_eq!(xhttp.as_ref(), &XhttpSettings::default());
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+}
+
+#[test]
+fn xhttp_null_header_value_and_xmux_fields_follow_go_decoding() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "xhttp", "security": "none",
+           "xhttpSettings": {
+             "headers": {"X-Null": null},
+             "xmux": {
+               "maxConcurrency": null, "maxConnections": null,
+               "cMaxReuseTimes": null, "hMaxRequestTimes": null,
+               "hMaxReusableSecs": null, "hKeepAlivePeriod": null
+             }
+           }"#,
+    ))
+    .expect("null map values and xmux fields must decode to Go zero values");
+
+    let StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected xhttp");
+    };
+    let expected = XhttpSettings {
+        headers: vec![("X-Null".to_owned(), String::new())],
+        ..XhttpSettings::default()
+    };
+    assert_eq!(xhttp.as_ref(), &expected);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+}
+
+#[test]
+fn xhttp_case_variant_headers_canonicalize_without_losing_values() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "xhttp", "security": "none",
+           "xhttpSettings": {
+             "headers": {"X-Foo": "first", "x-foo": "second"}
+           }"#,
+    ))
+    .expect("case-variant XHTTP headers must preserve both Add values");
+
+    let StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected xhttp");
+    };
+    assert_eq!(
+        xhttp.headers,
+        vec![
+            ("X-Foo".to_owned(), "first".to_owned()),
+            ("X-Foo".to_owned(), "second".to_owned()),
+        ]
+    );
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+}
+
+#[test]
+fn xhttp_full_v26_config_surface_is_normalized() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "xhttp", "security": "none",
+           "xhttpSettings": {
+             "host": "cdn.example.com", "path": "/split", "mode": "packet-up",
+             "headers": {"X-Test": "yes"},
+             "xPaddingBytes": "1000-100", "xPaddingObfsMode": true,
+             "xPaddingKey": "pad", "xPaddingHeader": "X-Pad",
+             "xPaddingPlacement": "cookie", "xPaddingMethod": "tokenish",
+             "uplinkHTTPMethod": "get",
+             "sessionPlacement": "header", "seqPlacement": "query",
+             "uplinkDataPlacement": "cookie", "uplinkChunkSize": 4096,
+             "noGRPCHeader": true, "noSSEHeader": true,
+             "scMaxEachPostBytes": "2000000-1000000",
+             "scMinPostsIntervalMs": "20", "scMaxBufferedPosts": 31,
+             "scStreamUpServerSecs": "90-120", "serverMaxHeaderBytes": 8192,
+             "xmux": {
+               "maxConnections": "4-2", "cMaxReuseTimes": 8,
+               "hMaxRequestTimes": "50-60", "hMaxReusableSecs": 300,
+               "hKeepAlivePeriod": 15
+             }
+           }"#,
+    ))
+    .expect("the complete supported XHTTP surface must parse");
+
+    let StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected xhttp");
+    };
+    assert_eq!(xhttp.host.as_deref(), Some("cdn.example.com"));
+    assert_eq!(xhttp.path, "/split");
+    assert_eq!(xhttp.mode, XhttpMode::PacketUp);
+    assert_eq!(xhttp.headers, vec![("X-Test".to_owned(), "yes".to_owned())]);
+    assert_eq!(
+        xhttp.x_padding_bytes,
+        XhttpRange {
+            from: 100,
+            to: 1000
+        }
+    );
+    assert!(xhttp.x_padding_obfs_mode);
+    assert_eq!(xhttp.x_padding_key, "pad");
+    assert_eq!(xhttp.x_padding_header, "X-Pad");
+    assert_eq!(xhttp.x_padding_placement, XhttpPaddingPlacement::Cookie);
+    assert_eq!(xhttp.x_padding_method, XhttpPaddingMethod::Tokenish);
+    assert_eq!(xhttp.uplink_http_method, "GET");
+    assert_eq!(xhttp.session_placement, XhttpPlacement::Header);
+    assert_eq!(xhttp.session_key, "X-Session");
+    assert_eq!(xhttp.seq_placement, XhttpPlacement::Query);
+    assert_eq!(xhttp.seq_key, "x_seq");
+    assert_eq!(
+        xhttp.uplink_data_placement,
+        XhttpUplinkDataPlacement::Cookie
+    );
+    assert_eq!(xhttp.uplink_data_key, "x_data");
+    assert_eq!(
+        xhttp.uplink_chunk_size,
+        XhttpRange {
+            from: 4096,
+            to: 4096
+        }
+    );
+    assert!(xhttp.no_grpc_header);
+    assert!(xhttp.no_sse_header);
+    assert_eq!(
+        xhttp.sc_max_each_post_bytes,
+        XhttpRange {
+            from: 1_000_000,
+            to: 2_000_000
+        }
+    );
+    assert_eq!(
+        xhttp.sc_min_posts_interval_ms,
+        XhttpRange { from: 20, to: 20 }
+    );
+    assert_eq!(xhttp.sc_max_buffered_posts, 31);
+    assert_eq!(
+        xhttp.sc_stream_up_server_secs,
+        XhttpRange { from: 90, to: 120 }
+    );
+    assert_eq!(xhttp.server_max_header_bytes, 8192);
+    assert_eq!(xhttp.xmux.max_connections, XhttpRange { from: 2, to: 4 });
+    assert_eq!(xhttp.xmux.max_concurrency, XhttpRange::default());
+    assert_eq!(xhttp.xmux.c_max_reuse_times, XhttpRange { from: 8, to: 8 });
+    assert_eq!(xhttp.xmux.h_keep_alive_period_secs, 15);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+}
+
+#[test]
+fn xhttp_settings_take_priority_over_splithttp_settings() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "splithttp", "security": "none",
+           "splithttpSettings": {"host": "legacy.example", "mode": "packet-up"},
+           "xhttpSettings": {"host": "current.example", "mode": "stream-one"}"#,
+    ))
+    .expect("the current XHTTP spelling must win");
+
+    let StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected xhttp");
+    };
+    assert_eq!(xhttp.host.as_deref(), Some("current.example"));
+    assert_eq!(xhttp.mode, XhttpMode::StreamOne);
+    assert!(parsed.diagnostics.iter().any(|diagnostic| {
+        diagnostic.severity == DiagnosticSeverity::Warning
+            && diagnostic.path.as_deref() == Some("$.outbounds[0].streamSettings.splithttpSettings")
+            && diagnostic.message.contains("takes priority")
+    }));
+}
+
+#[test]
+fn null_xhttp_aliases_are_absent_go_pointers() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "xhttp", "security": "none",
+           "xhttpSettings": null,
+           "splithttpSettings": {"host": "legacy.example", "mode": "packet-up"}"#,
+    ))
+    .expect("a null current pointer must fall through to the legacy block");
+    let StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected xhttp");
+    };
+    assert_eq!(xhttp.host.as_deref(), Some("legacy.example"));
+    assert_eq!(xhttp.mode, XhttpMode::PacketUp);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "splithttp", "security": "none",
+           "xhttpSettings": {"host": "current.example"},
+           "splithttpSettings": null"#,
+    ))
+    .expect("a null legacy pointer must not trigger an alias warning");
+    let StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected xhttp");
+    };
+    assert_eq!(xhttp.host.as_deref(), Some("current.example"));
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "xhttp", "security": "none",
+           "xhttpSettings": null, "splithttpSettings": null"#,
+    ))
+    .expect("two null pointers must select the zero-valued XHTTP config");
+    let StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected xhttp");
+    };
+    assert_eq!(xhttp.mode, XhttpMode::Auto);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "raw", "security": "none", "xhttpSettings": null"#,
+    ))
+    .expect("a null XHTTP pointer is not an ignored transport block");
+    assert!(matches!(
+        parsed.config.outbounds[0].stream.transport,
+        StreamTransport::Raw
+    ));
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+}
+
+#[test]
+fn lower_priority_splithttp_settings_are_shape_checked_only() {
+    // These values are invalid under SplitHTTPConfig.Build, but that method is
+    // invoked only for xhttpSettings after priority is applied. Their JSON
+    // types are valid, so Go accepts the config and ignores the legacy block.
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "xhttp", "security": "none",
+           "xhttpSettings": {"host": "current.example", "mode": "stream-one"},
+           "splithttpSettings": {
+             "mode": "not-a-mode", "headers": {"Host": "ignored.example"},
+             "xPaddingBytes": "0-100", "uplinkDataPlacement": "cookie",
+             "xmux": {"maxConcurrency": 1, "maxConnections": 1}
+           }"#,
+    ))
+    .expect("semantic validation must apply only to the winning alias");
+    let StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected xhttp");
+    };
+    assert_eq!(xhttp.host.as_deref(), Some("current.example"));
+    assert_eq!(xhttp.mode, XhttpMode::StreamOne);
+    assert_eq!(parsed.diagnostics.len(), 1, "{:?}", parsed.diagnostics);
+    assert_eq!(parsed.diagnostics[0].severity, DiagnosticSeverity::Warning);
+}
+
+#[test]
+fn lower_priority_splithttp_null_fields_are_valid_decode_shapes() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "xhttp", "security": "none",
+           "xhttpSettings": {"host": "current.example", "mode": "stream-one"},
+           "splithttpSettings": {
+             "host": null, "path": null, "mode": null,
+             "headers": {"X-Null": null},
+             "xPaddingBytes": null, "xPaddingObfsMode": null,
+             "xPaddingKey": null, "xPaddingHeader": null,
+             "xPaddingPlacement": null, "xPaddingMethod": null,
+             "uplinkHTTPMethod": null,
+             "sessionPlacement": null, "sessionKey": null,
+             "seqPlacement": null, "seqKey": null,
+             "uplinkDataPlacement": null, "uplinkDataKey": null,
+             "uplinkChunkSize": null,
+             "noGRPCHeader": null, "noSSEHeader": null,
+             "scMaxEachPostBytes": null, "scMinPostsIntervalMs": null,
+             "scMaxBufferedPosts": null, "scStreamUpServerSecs": null,
+             "serverMaxHeaderBytes": null,
+             "xmux": {
+               "maxConcurrency": null, "maxConnections": null,
+               "cMaxReuseTimes": null, "hMaxRequestTimes": null,
+               "hMaxReusableSecs": null, "hKeepAlivePeriod": null
+             },
+             "downloadSettings": null
+           }"#,
+    ))
+    .expect("the ignored alias must still accept every Go-valid null decode shape");
+
+    let StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected xhttp");
+    };
+    assert_eq!(xhttp.host.as_deref(), Some("current.example"));
+    assert_eq!(xhttp.mode, XhttpMode::StreamOne);
+    assert_eq!(parsed.diagnostics.len(), 1, "{:?}", parsed.diagnostics);
+    assert_eq!(parsed.diagnostics[0].severity, DiagnosticSeverity::Warning);
+    assert_eq!(
+        parsed.diagnostics[0].path.as_deref(),
+        Some("$.outbounds[0].streamSettings.splithttpSettings")
+    );
+}
+
+#[test]
+fn lower_priority_splithttp_settings_still_require_decodable_types() {
+    for (fragment, path) in [
+        (r#""host": 5"#, "host"),
+        (r#""xPaddingBytes": "not-a-range""#, "xPaddingBytes"),
+        (r#""headers": {"X-Test": 5}"#, "headers.X-Test"),
+        (
+            r#""xmux": {"hKeepAlivePeriod": "forever"}"#,
+            "xmux.hKeepAlivePeriod",
+        ),
+    ] {
+        assert_parse_error_path(
+            &raw_with_stream_settings(&format!(
+                r#""network": "xhttp", "security": "none",
+                   "xhttpSettings": {{"mode": "stream-one"}},
+                   "splithttpSettings": {{{fragment}}}"#
+            )),
+            &format!("$.outbounds[0].streamSettings.splithttpSettings.{path}"),
+        );
+    }
+}
+
+#[test]
+fn xhttp_rejects_invalid_modes_placements_methods_and_limits() {
+    for (fragment, path) in [
+        (r#""mode": "burst""#, "mode"),
+        (r#""xPaddingPlacement": "body""#, "xPaddingPlacement"),
+        (r#""xPaddingMethod": "random""#, "xPaddingMethod"),
+        (r#""sessionPlacement": "body""#, "sessionPlacement"),
+        (r#""seqPlacement": "auto""#, "seqPlacement"),
+        (r#""uplinkDataPlacement": "query""#, "uplinkDataPlacement"),
+        (
+            r#""mode": "stream-up", "uplinkDataPlacement": "cookie""#,
+            "uplinkDataPlacement",
+        ),
+        (
+            r#""mode": "stream-one", "uplinkHTTPMethod": "GET""#,
+            "uplinkHTTPMethod",
+        ),
+        (r#""xPaddingBytes": "0-100""#, "xPaddingBytes"),
+        (r#""serverMaxHeaderBytes": -1"#, "serverMaxHeaderBytes"),
+    ] {
+        assert_parse_error_path(
+            &raw_with_stream_settings(&format!(
+                r#""network": "xhttp", "security": "none", "xhttpSettings": {{{fragment}}}"#
+            )),
+            &format!("$.outbounds[0].streamSettings.xhttpSettings.{path}"),
+        );
+    }
+}
+
+#[test]
+fn xhttp_uplink_http_method_is_a_valid_ascii_token() {
+    for method in [
+        r#""POST\r\nX-Evil: 1""#,
+        r#""POST GET""#,
+        r#""méthod""#,
+        r#""\u0000PING""#,
+    ] {
+        assert_parse_error_path(
+            &raw_with_stream_settings(&format!(
+                r#""network": "xhttp", "security": "none",
+                   "xhttpSettings": {{"mode": "packet-up", "uplinkHTTPMethod": {method}}}"#
+            )),
+            "$.outbounds[0].streamSettings.xhttpSettings.uplinkHTTPMethod",
+        );
+    }
+
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "xhttp", "security": "none",
+           "xhttpSettings": {"mode": "packet-up", "uplinkHTTPMethod": "m-search*"}"#,
+    ))
+    .expect("RFC tchar extension methods must remain supported");
+    let StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected xhttp");
+    };
+    assert_eq!(xhttp.uplink_http_method, "M-SEARCH*");
+}
+
+#[test]
+fn xhttp_rejects_invalid_ranges_and_conflicting_xmux_limits() {
+    for value in [r#""1-two""#, r#"1.5"#, r#""2147483648""#] {
+        assert_parse_error_path(
+            &raw_with_stream_settings(&format!(
+                r#""network": "xhttp", "security": "none",
+                   "xhttpSettings": {{"uplinkChunkSize": {value}}}"#
+            )),
+            "$.outbounds[0].streamSettings.xhttpSettings.uplinkChunkSize",
+        );
+    }
+
+    assert_parse_error_path(
+        &raw_with_stream_settings(
+            r#""network": "xhttp", "security": "none",
+               "xhttpSettings": {"xmux": {"maxConcurrency": 2, "maxConnections": 3}}"#,
+        ),
+        "$.outbounds[0].streamSettings.xhttpSettings.xmux",
+    );
+}
+
+#[test]
+fn xhttp_ranges_accept_signed_single_empty_and_reversed_forms() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "xhttp", "security": "none",
+           "xhttpSettings": {
+             "uplinkChunkSize": "-1919--810",
+             "scMaxEachPostBytes": "",
+             "scMinPostsIntervalMs": -7,
+             "scStreamUpServerSecs": "120-90"
+           }"#,
+    ))
+    .expect("all Int32Range forms accepted by Xray must parse");
+
+    let StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected xhttp");
+    };
+    assert_eq!(
+        xhttp.uplink_chunk_size,
+        XhttpRange {
+            from: -1919,
+            to: -810
+        }
+    );
+    assert_eq!(xhttp.sc_max_each_post_bytes, XhttpRange::default());
+    assert_eq!(
+        xhttp.sc_min_posts_interval_ms,
+        XhttpRange { from: -7, to: -7 }
+    );
+    assert_eq!(
+        xhttp.sc_stream_up_server_secs,
+        XhttpRange { from: 90, to: 120 }
+    );
+}
+
+#[test]
+fn xhttp_rejects_host_header_download_settings_and_extra_explicitly() {
+    for (fragment, path) in [
+        (r#""headers": {"hOsT": "bad.example"}"#, "headers"),
+        (r#""downloadSettings": {}"#, "downloadSettings"),
+        (r#""extra": {}"#, "extra"),
+        (r#""extra": null"#, "extra"),
+    ] {
+        assert_parse_error_path(
+            &raw_with_stream_settings(&format!(
+                r#""network": "xhttp", "security": "none", "xhttpSettings": {{{fragment}}}"#
+            )),
+            &format!("$.outbounds[0].streamSettings.xhttpSettings.{path}"),
+        );
+    }
+}
+
+#[test]
+fn finalmask_quic_params_full_v26_surface_is_normalized() {
+    let parsed = parse_xray_json(&raw_with_quic_params(
+        r#"
+          "congestion": "BRUTAL",
+          "bbrProfile": "AGGRESSIVE",
+          "brutalUp": "512 kbps",
+          "brutalDown": "8 Mbps",
+          "udpHop": { "ports": "443, 1000-1002, 443", "interval": "30-10" },
+          "initStreamReceiveWindow": 16384,
+          "maxStreamReceiveWindow": 32768,
+          "initConnectionReceiveWindow": 65536,
+          "maxConnectionReceiveWindow": 131072,
+          "maxIdleTimeout": 120,
+          "keepAlivePeriod": 60,
+          "disablePathMTUDiscovery": true,
+          "maxIncomingStreams": 8,
+          "debug": true
+        "#,
+    ))
+    .expect("full finalmask QUIC parameters should parse");
+
+    assert!(parsed.diagnostics.is_empty());
+    assert_eq!(
+        parsed.config.outbounds[0].stream.quic_params,
+        Some(QuicParamsSettings {
+            congestion: QuicCongestion::Brutal,
+            bbr_profile: QuicBbrProfile::Aggressive,
+            brutal_up_bytes_per_sec: 65_536,
+            brutal_down_bytes_per_sec: 1_048_576,
+            udp_hop: QuicUdpHopSettings {
+                ports: vec![443, 1000, 1001, 1002, 443],
+                interval: QuicIntervalRange { from: 10, to: 30 },
+            },
+            init_stream_receive_window: 16_384,
+            max_stream_receive_window: 32_768,
+            init_connection_receive_window: 65_536,
+            max_connection_receive_window: 131_072,
+            max_idle_timeout_secs: 120,
+            keep_alive_period_secs: 60,
+            disable_path_mtu_discovery: true,
+            max_incoming_streams: 8,
+            debug: true,
+        })
+    );
+}
+
+#[test]
+fn finalmask_quic_params_preserves_pointer_presence_and_xray_defaults() {
+    for stream_settings in [
+        r#""network": "xhttp", "security": "none""#,
+        r#""network": "xhttp", "security": "none", "finalmask": null"#,
+        r#""network": "xhttp", "security": "none", "finalmask": {}"#,
+        r#""network": "xhttp", "security": "none", "finalmask": {"quicParams": null}"#,
+    ] {
+        let parsed = parse_xray_json(&raw_with_stream_settings(stream_settings))
+            .expect("absent QUIC pointer should parse");
+        assert_eq!(parsed.config.outbounds[0].stream.quic_params, None);
+    }
+
+    let parsed = parse_xray_json(&raw_with_quic_params(
+        r#"
+          "congestion": null,
+          "bbrProfile": null,
+          "brutalUp": null,
+          "brutalDown": null,
+          "udpHop": null,
+          "initStreamReceiveWindow": null,
+          "maxStreamReceiveWindow": null,
+          "initConnectionReceiveWindow": null,
+          "maxConnectionReceiveWindow": null,
+          "maxIdleTimeout": null,
+          "keepAlivePeriod": null,
+          "disablePathMTUDiscovery": null,
+          "maxIncomingStreams": null,
+          "debug": null
+        "#,
+    ))
+    .expect("null scalar values should retain Go zero defaults");
+    assert_eq!(
+        parsed.config.outbounds[0].stream.quic_params,
+        Some(QuicParamsSettings::default())
+    );
+}
+
+#[test]
+fn finalmask_empty_masks_are_accepted_but_nonempty_masks_fail_closed() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "xhttp", "security": "none",
+           "finalmask": {"tcp": [], "udp": [], "quicParams": {}}"#,
+    ))
+    .expect("empty final masks should parse");
+    assert_eq!(
+        parsed.config.outbounds[0].stream.quic_params,
+        Some(QuicParamsSettings::default())
+    );
+
+    for mask in ["tcp", "udp"] {
+        assert_parse_error_path(
+            &raw_with_stream_settings(&format!(
+                r#""network": "xhttp", "security": "none",
+                   "finalmask": {{"{mask}": [{{"type": "example"}}]}}"#
+            )),
+            &format!("$.outbounds[0].streamSettings.finalmask.{mask}"),
+        );
+    }
+}
+
+#[test]
+fn finalmask_udp_hop_zero_and_null_normalize_to_empty_defaults() {
+    for udp_hop in [
+        r#""udpHop": {"ports": 0, "interval": 0}"#,
+        r#""udpHop": {"ports": null, "interval": null}"#,
+    ] {
+        let parsed = parse_xray_json(&raw_with_quic_params(udp_hop))
+            .expect("zero and null are Xray's empty UDP-hop values");
+        let quic = parsed.config.outbounds[0]
+            .stream
+            .quic_params
+            .as_ref()
+            .expect("explicit QUIC params");
+        assert!(quic.udp_hop.ports.is_empty());
+        assert_eq!(quic.udp_hop.interval, QuicIntervalRange::default());
+    }
+}
+
+#[test]
+fn finalmask_accepts_every_upstream_congestion_name_case_insensitively() {
+    for (configured, expected) in [
+        ("", QuicCongestion::Default),
+        ("brutal", QuicCongestion::Brutal),
+        ("RENO", QuicCongestion::Reno),
+        ("BbR", QuicCongestion::Bbr),
+        ("force-brutal", QuicCongestion::ForceBrutal),
+    ] {
+        let parsed = parse_xray_json(&raw_with_quic_params(&format!(
+            r#""congestion": "{configured}", "brutalUp": "512kbps""#
+        )))
+        .expect("upstream congestion spelling should parse");
+        assert_eq!(
+            parsed.config.outbounds[0]
+                .stream
+                .quic_params
+                .as_ref()
+                .expect("explicit QUIC params")
+                .congestion,
+            expected
+        );
+    }
+}
+
+#[test]
+fn finalmask_quic_params_rejects_invalid_values_at_exact_paths() {
+    let cases = [
+        (r#""congestion": "cubic""#, "congestion"),
+        (r#""bbrProfile": "fast""#, "bbrProfile"),
+        (r#""brutalUp": 524288"#, "brutalUp"),
+        (r#""brutalUp": "not-a-rate""#, "brutalUp"),
+        (r#""brutalUp": "524287bps""#, "brutalUp"),
+        (r#""brutalDown": "524287bps""#, "brutalDown"),
+        (r#""congestion": "force-brutal""#, "congestion"),
+        (r#""udpHop": {"ports": "0"}"#, "udpHop.ports"),
+        (r#""udpHop": {"ports": "65536"}"#, "udpHop.ports"),
+        (r#""udpHop": {"ports": "10-9"}"#, "udpHop.ports"),
+        (r#""udpHop": {"ports": "env:QUIC_PORTS"}"#, "udpHop.ports"),
+        (r#""udpHop": {"interval": 4}"#, "udpHop.interval"),
+        (
+            r#""initStreamReceiveWindow": 16383"#,
+            "initStreamReceiveWindow",
+        ),
+        (
+            r#""maxStreamReceiveWindow": 16383"#,
+            "maxStreamReceiveWindow",
+        ),
+        (
+            r#""initConnectionReceiveWindow": 16383"#,
+            "initConnectionReceiveWindow",
+        ),
+        (
+            r#""maxConnectionReceiveWindow": 16383"#,
+            "maxConnectionReceiveWindow",
+        ),
+        (r#""maxIdleTimeout": 3"#, "maxIdleTimeout"),
+        (r#""maxIdleTimeout": 121"#, "maxIdleTimeout"),
+        (r#""keepAlivePeriod": 1"#, "keepAlivePeriod"),
+        (r#""keepAlivePeriod": 61"#, "keepAlivePeriod"),
+        (r#""maxIncomingStreams": -1"#, "maxIncomingStreams"),
+        (r#""maxIncomingStreams": 7"#, "maxIncomingStreams"),
+        (
+            r#""disablePathMTUDiscovery": "true""#,
+            "disablePathMTUDiscovery",
+        ),
+        (r#""debug": 1"#, "debug"),
+    ];
+
+    for (fragment, path) in cases {
+        assert_parse_error_path(
+            &raw_with_quic_params(fragment),
+            &format!("$.outbounds[0].streamSettings.finalmask.quicParams.{path}"),
+        );
+    }
+}
+
+#[test]
+fn finalmask_json_field_casing_is_exact_and_unknown_fields_fail_closed() {
+    for (stream_settings, path) in [
+        (
+            r#""network": "xhttp", "security": "none", "finalMask": {}"#,
+            "$.outbounds[0].streamSettings.finalMask",
+        ),
+        (
+            r#""network": "xhttp", "security": "none",
+               "finalmask": {"quicparams": {}}"#,
+            "$.outbounds[0].streamSettings.finalmask.quicparams",
+        ),
+        (
+            r#""network": "xhttp", "security": "none",
+               "finalmask": {"quicParams": {"disablePathMtuDiscovery": true}}"#,
+            "$.outbounds[0].streamSettings.finalmask.quicParams.disablePathMtuDiscovery",
+        ),
+    ] {
+        assert_parse_error_path(&raw_with_stream_settings(stream_settings), path);
+    }
+}
+
+#[test]
 fn the_ed_query_parameter_is_stripped_from_the_path() {
     let parsed = parse_xray_json(&raw_with_stream_settings(
         r#""network": "ws", "security": "none",
@@ -3712,6 +4456,8 @@ fn a_settings_block_the_network_will_not_consume_warns() {
         ("httpupgrade", "rawSettings"),
         ("raw", "grpcSettings"),
         ("grpc", "wsSettings"),
+        ("raw", "xhttpSettings"),
+        ("grpc", "splithttpSettings"),
     ] {
         let parsed = parse_xray_json(&raw_with_stream_settings(&format!(
             r#""network": "{network}", "security": "none", "{ignored}": {{}}"#
@@ -3765,6 +4511,8 @@ fn a_consumed_settings_block_does_not_warn() {
         ("ws", "wsSettings"),
         ("httpupgrade", "httpupgradeSettings"),
         ("grpc", "grpcSettings"),
+        ("xhttp", "xhttpSettings"),
+        ("splithttp", "splithttpSettings"),
     ] {
         let parsed = parse_xray_json(&raw_with_stream_settings(&format!(
             r#""network": "{network}", "security": "none", "{consumed}": {{}}"#
@@ -4260,6 +5008,13 @@ fn raw_with_stream_settings(stream_settings: &str) -> String {
     )
 }
 
+fn raw_with_quic_params(quic_params: &str) -> String {
+    raw_with_stream_settings(&format!(
+        r#""network": "xhttp", "security": "none",
+           "finalmask": {{"quicParams": {{{quic_params}}}}}"#
+    ))
+}
+
 fn raw_with_tcp_settings(tcp_settings: &str) -> String {
     format!(
         r#"{{
@@ -4641,6 +5396,33 @@ fn reality_is_accepted_on_grpc() {
         parsed.config.outbounds[0].stream.transport,
         StreamTransport::Grpc(_)
     ));
+}
+
+#[test]
+fn reality_is_accepted_on_both_xhttp_network_spellings() {
+    for (network, settings_key) in [
+        ("xhttp", "xhttpSettings"),
+        ("splithttp", "splithttpSettings"),
+    ] {
+        let parsed = parse_xray_json(&raw_with_stream_settings(&format!(
+            r#""network": "{network}", "security": "reality",
+               "{settings_key}": {{"mode": "stream-one"}},
+               "realitySettings": {{"serverName": "server.example",
+                                     "fingerprint": "chrome",
+                                     "publicKey": "E59WjnvZcQMu7tR7_BgyhycuEdBS-CtKxfImRCdAvFM",
+                                     "shortId": "02030405"}}"#
+        )))
+        .unwrap_or_else(|error| panic!("REALITY + {network} must parse: {error:?}"));
+
+        assert!(matches!(
+            parsed.config.outbounds[0].stream.security,
+            StreamSecurity::Reality(_)
+        ));
+        assert!(matches!(
+            parsed.config.outbounds[0].stream.transport,
+            StreamTransport::Xhttp(_)
+        ));
+    }
 }
 
 #[test]

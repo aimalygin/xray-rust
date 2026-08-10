@@ -19,9 +19,9 @@
 use rand::{rngs::OsRng, RngCore};
 use rustls::{
     client::{
-        ClientHelloAdvertisedCipherSuites, ClientHelloAdvertisedSupportedGroups,
-        ClientHelloAdvertisedSupportedVersions, ClientHelloAlpnProtocols,
-        ClientHelloCertificateCompressionAlgorithms, ClientHelloExactExtension,
+        ClientHelloAdvertisedSupportedGroups, ClientHelloAdvertisedSupportedVersions,
+        ClientHelloAlpnProtocols, ClientHelloCertificateCompressionAlgorithms,
+        ClientHelloCipherSuites, ClientHelloContext, ClientHelloExactExtension,
         ClientHelloExactExtensions, ClientHelloExtensionOrder, ClientHelloExtensionPlan,
         ClientHelloForcedExtensions, ClientHelloGreaseExtension, ClientHelloGreasePlan,
         ClientHelloKeySharePlan, ClientHelloPaddingPlan, ClientHelloPlan, ClientHelloRawExtension,
@@ -64,7 +64,9 @@ const TLS_VERSION_1_3: u16 = 0x0304;
 /// KEM to `DHKEM_X25519_HKDF_SHA256`, whose encapsulated key is an X25519
 /// public key.
 const ENCAPSULATED_KEY_LEN: usize = 32;
+const ZLIB_CERTIFICATE_COMPRESSION: u16 = 0x0001;
 const BROTLI_CERTIFICATE_COMPRESSION: u16 = 0x0002;
+const ZSTD_CERTIFICATE_COMPRESSION: u16 = 0x0003;
 const BORINGSSL_PADDING_TARGET_HANDSHAKE_SIZE: usize = 512;
 const STRUCTURED_OPTIONAL_EXTENSIONS: &[u16] = &[
     EXT_SERVER_NAME,
@@ -82,10 +84,13 @@ const STRUCTURED_OPTIONAL_EXTENSIONS: &[u16] = &[
 pub(crate) fn apply_utls_profile(
     mut plan: ClientHelloPlan,
     profile: &'static UtlsClientHelloProfile,
+    context: ClientHelloContext<'_>,
 ) -> Result<ClientHelloPlan, RustlsError> {
+    let supported_versions = supported_versions(profile)?;
+    let cipher_suites = cipher_suites(profile, context, supported_versions.as_slice())?;
     plan = plan
-        .with_advertised_cipher_suites(advertised_cipher_suites(profile)?)
-        .with_supported_versions(supported_versions(profile)?);
+        .with_cipher_suites(cipher_suites)
+        .with_supported_versions(supported_versions);
 
     if !profile.supported_versions.is_empty() {
         plan = plan.with_advertised_supported_versions(advertised_supported_versions(profile)?);
@@ -103,7 +108,7 @@ pub(crate) fn apply_utls_profile(
     if !profile.alpn_protocols.is_empty() {
         plan = plan.with_alpn_protocols(alpn_protocols(profile)?);
     }
-    if profile_uses_structured_certificate_compression(profile) {
+    if profile_has_supported_certificate_compression(profile) {
         plan = plan.with_certificate_compression_algorithms(certificate_compression(profile)?);
     }
 
@@ -122,7 +127,7 @@ pub(crate) fn apply_utls_profile(
     if let Some(raw_extensions) = raw_extensions {
         plan = plan.with_raw_extensions(raw_extensions);
     }
-    if let Some(grease) = grease_plan(profile)? {
+    if let Some(grease) = grease_plan(profile, context)? {
         plan = plan.with_grease(grease);
     }
     if profile.padding_length.is_some() {
@@ -134,18 +139,42 @@ pub(crate) fn apply_utls_profile(
     Ok(plan)
 }
 
-fn advertised_cipher_suites(
+fn cipher_suites(
     profile: &UtlsClientHelloProfile,
-) -> Result<ClientHelloAdvertisedCipherSuites, RustlsError> {
-    ClientHelloAdvertisedCipherSuites::try_from(
+    context: ClientHelloContext<'_>,
+    supported_versions: &[ProtocolVersion],
+) -> Result<ClientHelloCipherSuites, RustlsError> {
+    ClientHelloCipherSuites::try_from(
         profile
             .cipher_suites
             .iter()
             .copied()
             .filter(|suite| !is_grease_value(*suite))
+            .filter(|suite| provider_supports_cipher_suite(*suite, context, supported_versions))
             .map(CipherSuite::from)
             .collect::<Vec<_>>(),
     )
+}
+
+fn provider_supports_cipher_suite(
+    suite: u16,
+    context: ClientHelloContext<'_>,
+    supported_versions: &[ProtocolVersion],
+) -> bool {
+    let suite = CipherSuite::from(suite);
+    context
+        .crypto_provider
+        .cipher_suites
+        .iter()
+        .any(|candidate| {
+            let version = candidate.version().version;
+            candidate.suite() == suite
+                && supported_versions.contains(&version)
+                && context
+                    .versions
+                    .iter()
+                    .any(|enabled| enabled.version == version)
+        })
 }
 
 /// Whether a handshake wearing this profile may negotiate TLS 1.3.
@@ -279,11 +308,59 @@ fn alpn_protocols(
 }
 
 fn certificate_compression(
-    _profile: &UtlsClientHelloProfile,
+    profile: &UtlsClientHelloProfile,
 ) -> Result<ClientHelloCertificateCompressionAlgorithms, RustlsError> {
-    ClientHelloCertificateCompressionAlgorithms::try_from(vec![
-        CertificateCompressionAlgorithm::Brotli,
-    ])
+    ClientHelloCertificateCompressionAlgorithms::try_from(
+        profile
+            .certificate_compression_algorithms
+            .iter()
+            .filter_map(|algorithm| supported_certificate_compression(*algorithm))
+            .collect::<Vec<_>>(),
+    )
+}
+
+/// Restricts a rustls config to the certificate compression algorithms the
+/// selected profile actually advertises and this build can decode.
+pub(crate) fn retain_profile_certificate_decompressors(
+    profile: &UtlsClientHelloProfile,
+    decompressors: &mut Vec<&'static dyn rustls::compress::CertDecompressor>,
+) {
+    if profile
+        .certificate_compression_algorithms
+        .contains(&ZSTD_CERTIFICATE_COMPRESSION)
+        && !decompressors
+            .iter()
+            .any(|decompressor| u16::from(decompressor.algorithm()) == ZSTD_CERTIFICATE_COMPRESSION)
+    {
+        decompressors.push(&ZstdCertificateDecompressor);
+    }
+    decompressors.retain(|decompressor| {
+        let algorithm = u16::from(decompressor.algorithm());
+        profile
+            .certificate_compression_algorithms
+            .contains(&algorithm)
+            && supported_certificate_compression(algorithm).is_some()
+    });
+}
+
+#[derive(Debug)]
+struct ZstdCertificateDecompressor;
+
+impl rustls::compress::CertDecompressor for ZstdCertificateDecompressor {
+    fn decompress(
+        &self,
+        input: &[u8],
+        output: &mut [u8],
+    ) -> Result<(), rustls::compress::DecompressionFailed> {
+        match zstd::bulk::decompress_to_buffer(input, output) {
+            Ok(written) if written == output.len() => Ok(()),
+            _ => Err(rustls::compress::DecompressionFailed),
+        }
+    }
+
+    fn algorithm(&self) -> CertificateCompressionAlgorithm {
+        CertificateCompressionAlgorithm::Zstd
+    }
 }
 
 /// Replaces the profile's own ALPN list with a configured one.
@@ -359,7 +436,7 @@ fn extension_plan(
         .filter(|extension_type| !profile_has_extension(profile, *extension_type))
         .filter(|extension_type| {
             *extension_type != EXT_CERTIFICATE_COMPRESSION
-                || !profile_uses_structured_certificate_compression(profile)
+                || !profile_has_supported_certificate_compression(profile)
         })
         .filter(|extension_type| !appended_alpn || *extension_type != EXT_ALPN)
         .collect::<Vec<_>>();
@@ -407,7 +484,7 @@ fn extension_payloads(
             signature_algorithms_payload(profile.delegated_credentials_algorithms)?,
         )?;
     }
-    if !profile_uses_structured_certificate_compression(profile)
+    if !profile_certificate_compression_is_fully_supported(profile)
         && profile_has_extension(profile, EXT_CERTIFICATE_COMPRESSION)
     {
         exact_extensions.push(ClientHelloExactExtension::new(
@@ -569,6 +646,7 @@ fn draw_candidate<T: Copy>(candidates: &[T], what: &str) -> Result<T, RustlsErro
 
 fn grease_plan(
     profile: &UtlsClientHelloProfile,
+    context: ClientHelloContext<'_>,
 ) -> Result<Option<ClientHelloGreasePlan>, RustlsError> {
     let grease_value = profile
         .cipher_suites
@@ -587,11 +665,18 @@ fn grease_plan(
     };
 
     let mut grease = ClientHelloGreasePlan::new(grease_value)?;
-    if let Some(position) = profile
+    if let Some(grease_index) = profile
         .cipher_suites
         .iter()
         .position(|suite| is_grease_value(*suite))
     {
+        let supported_versions = supported_versions(profile)?;
+        let position = profile.cipher_suites[..grease_index]
+            .iter()
+            .filter(|suite| {
+                provider_supports_cipher_suite(**suite, context, supported_versions.as_slice())
+            })
+            .count();
         grease = grease.with_cipher_suite_position(position);
     }
     if let Some(position) = profile
@@ -707,7 +792,7 @@ fn is_structured_extension(profile: &UtlsClientHelloProfile, extension_type: u16
             | EXT_KEY_SHARE
             | EXT_RENEGOTIATION_INFO
     ) || extension_type == EXT_CERTIFICATE_COMPRESSION
-        && profile_uses_structured_certificate_compression(profile)
+        && profile_has_supported_certificate_compression(profile)
 }
 
 fn profile_has_extension(profile: &UtlsClientHelloProfile, extension_type: u16) -> bool {
@@ -717,10 +802,28 @@ fn profile_has_extension(profile: &UtlsClientHelloProfile, extension_type: u16) 
         .any(|extension| extension.extension_type == extension_type)
 }
 
-pub(crate) fn profile_uses_structured_certificate_compression(
-    profile: &UtlsClientHelloProfile,
-) -> bool {
-    profile.certificate_compression_algorithms == [BROTLI_CERTIFICATE_COMPRESSION]
+fn profile_has_supported_certificate_compression(profile: &UtlsClientHelloProfile) -> bool {
+    profile
+        .certificate_compression_algorithms
+        .iter()
+        .any(|algorithm| supported_certificate_compression(*algorithm).is_some())
+}
+
+fn profile_certificate_compression_is_fully_supported(profile: &UtlsClientHelloProfile) -> bool {
+    !profile.certificate_compression_algorithms.is_empty()
+        && profile
+            .certificate_compression_algorithms
+            .iter()
+            .all(|algorithm| supported_certificate_compression(*algorithm).is_some())
+}
+
+fn supported_certificate_compression(algorithm: u16) -> Option<CertificateCompressionAlgorithm> {
+    match algorithm {
+        ZLIB_CERTIFICATE_COMPRESSION => Some(CertificateCompressionAlgorithm::Zlib),
+        BROTLI_CERTIFICATE_COMPRESSION => Some(CertificateCompressionAlgorithm::Brotli),
+        ZSTD_CERTIFICATE_COMPRESSION => Some(CertificateCompressionAlgorithm::Zstd),
+        _ => None,
+    }
 }
 
 fn real_supported_group(group: u16) -> Option<NamedGroup> {
@@ -739,6 +842,7 @@ fn real_key_share_group(group: u16) -> Option<NamedGroup> {
         GROUP_X25519 => Some(NamedGroup::X25519),
         GROUP_X25519_MLKEM768 => Some(NamedGroup::X25519MLKEM768),
         GROUP_X25519_MLKEM768_DRAFT => Some(NamedGroup::Unknown(GROUP_X25519_MLKEM768_DRAFT)),
+        GROUP_SECP256R1 => Some(NamedGroup::secp256r1),
         _ => None,
     }
 }

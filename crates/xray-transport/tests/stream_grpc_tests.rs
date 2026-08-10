@@ -688,7 +688,7 @@ mod stream_grpc_h2_tests {
     use bytes::Bytes;
     use h2::server::{self, SendResponse};
     use h2::{RecvStream, SendStream};
-    use http::{HeaderMap, HeaderValue, Method, Response};
+    use http::{HeaderMap, HeaderValue, Method, Response, StatusCode};
     use tokio::io::{duplex, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream};
     use tokio::sync::oneshot;
     use xray_transport::stream::grpc_test_only::{
@@ -771,6 +771,8 @@ mod stream_grpc_h2_tests {
         /// Write these DATA payloads — already framed by the test — and close
         /// with these trailers.
         Say(Vec<Bytes>, HeaderMap),
+        /// [`Script::Say`] with a caller-supplied response head.
+        SayWithResponse(Response<()>, Vec<Bytes>, HeaderMap),
         /// Answer with one HEADERS block — `:status 200`, `content-type`,
         /// these fields — carrying END_STREAM, and no DATA and no trailers
         /// behind it.
@@ -991,6 +993,14 @@ mod stream_grpc_h2_tests {
                 send.send_trailers(trailers).expect("trailers");
                 drain_the_client(body).await;
             }
+            Script::SayWithResponse(response, chunks, trailers) => {
+                let mut send = respond.send_response(response, false).expect("respond");
+                for chunk in chunks {
+                    send_all(&mut send, chunk).await;
+                }
+                send.send_trailers(trailers).expect("trailers");
+                drain_the_client(body).await;
+            }
             Script::TrailersOnly(fields) => {
                 let send = respond_trailers_only(&mut respond, fields);
                 // Both handles are held rather than dropped, because dropping
@@ -1161,11 +1171,15 @@ mod stream_grpc_h2_tests {
     }
 
     fn grpc_response() -> Response<()> {
-        Response::builder()
-            .status(200)
-            .header("content-type", "application/grpc")
-            .body(())
-            .expect("a well-formed response")
+        grpc_response_with(StatusCode::OK, Some("application/grpc"))
+    }
+
+    fn grpc_response_with(status: StatusCode, content_type: Option<&str>) -> Response<()> {
+        let mut response = Response::builder().status(status);
+        if let Some(content_type) = content_type {
+            response = response.header("content-type", content_type);
+        }
+        response.body(()).expect("a well-formed response")
     }
 
     /// The server-side mirror of the client's uplink loop: reserve, wait for
@@ -1251,6 +1265,45 @@ mod stream_grpc_h2_tests {
             let mut echoed = [0u8; GREETING.len()];
             stream.read_exact(&mut echoed).await.expect("downlink read");
             assert_eq!(&echoed, GREETING);
+        })
+        .await;
+    }
+
+    /// A `Pending` write does not consume its buffer. The caller may therefore
+    /// cancel that future and start a shorter write; the old frame must not be
+    /// reported as though it came from the new buffer.
+    #[tokio::test]
+    async fn a_cancelled_pending_write_is_replaced_by_the_next_write() {
+        const ABANDONED: &[u8] = b"this write is abandoned";
+        const REPLACEMENT: &[u8] = b"B";
+
+        let (client_io, server_io) = duplex(64 * 1024);
+        tokio::spawn(serve_one_call(server_io, Script::Echo));
+        let mut stream = within_deadline(open(client_io)).await;
+
+        let abandoned =
+            poll_fn(|cx| Poll::Ready(Pin::new(&mut stream).poll_write(cx, ABANDONED))).await;
+        assert!(
+            abandoned.is_pending(),
+            "the first write did not park, so this test did not cancel a pending write"
+        );
+
+        let written = within_deadline(poll_fn(|cx| {
+            Pin::new(&mut stream).poll_write(cx, REPLACEMENT)
+        }))
+        .await
+        .expect("the replacement write");
+        assert_eq!(
+            written,
+            REPLACEMENT.len(),
+            "poll_write cannot consume more than the replacement buffer"
+        );
+
+        within_deadline(async {
+            stream.shutdown().await.expect("half-close");
+            let mut echoed = Vec::new();
+            stream.read_to_end(&mut echoed).await.expect("read to eof");
+            assert_eq!(echoed, REPLACEMENT, "only the replacement reaches the peer");
         })
         .await;
     }
@@ -1605,6 +1658,178 @@ mod stream_grpc_h2_tests {
         drop(stream);
     }
 
+    /// HTTP failure responses can carry arbitrary bodies. Reject the head
+    /// itself so a body which happens to resemble a `Hunk` cannot enter the
+    /// tunnel byte stream.
+    #[tokio::test]
+    async fn response_headers_reject_a_non_grpc_404_before_data() {
+        let response = grpc_response_with(StatusCode::NOT_FOUND, Some("text/html"));
+        let (client_io, server_io) = duplex(64 * 1024);
+        tokio::spawn(serve_one_call(
+            server_io,
+            Script::SayWithResponse(response, hunks(&[b"must not escape"]), trailers("0")),
+        ));
+        let mut stream = within_deadline(open(client_io)).await;
+
+        within_deadline(async {
+            let mut received = Vec::new();
+            let first = stream
+                .read_to_end(&mut received)
+                .await
+                .expect_err("an HTTP error page is not a gRPC response");
+            assert!(received.is_empty(), "response DATA must not be exposed");
+            assert!(
+                first.to_string().contains("404") && first.to_string().contains("text/html"),
+                "the error should name the HTTP status and media type, got: {first}"
+            );
+
+            let mut byte = [0u8; 1];
+            let second = stream
+                .read(&mut byte)
+                .await
+                .expect_err("a rejected response stays rejected");
+            assert_eq!(second.to_string(), first.to_string());
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn response_headers_require_content_type_before_data() {
+        let response = grpc_response_with(StatusCode::OK, None);
+        let (client_io, server_io) = duplex(64 * 1024);
+        tokio::spawn(serve_one_call(
+            server_io,
+            Script::SayWithResponse(response, hunks(&[b"must not escape"]), trailers("0")),
+        ));
+        let mut stream = within_deadline(open(client_io)).await;
+
+        within_deadline(async {
+            let mut received = Vec::new();
+            let error = stream
+                .read_to_end(&mut received)
+                .await
+                .expect_err("content-type is required");
+            assert!(received.is_empty(), "response DATA must not be exposed");
+            assert!(
+                error.to_string().contains("missing content-type"),
+                "the error should name the missing header, got: {error}"
+            );
+        })
+        .await;
+    }
+
+    /// Initial HEADERS are validated in both ordinary and Trailers-Only calls.
+    /// The latter must not bypass validation just because its `grpc-status`
+    /// lives in the same block.
+    #[tokio::test]
+    async fn response_headers_reject_non_grpc_content_type_in_every_shape() {
+        let response = grpc_response_with(StatusCode::OK, Some("text/plain"));
+        let (client_io, server_io) = duplex(64 * 1024);
+        tokio::spawn(serve_one_call(
+            server_io,
+            Script::SayWithResponse(response, hunks(&[b"must not escape"]), trailers("0")),
+        ));
+        let mut stream = within_deadline(open(client_io)).await;
+
+        within_deadline(async {
+            let mut received = Vec::new();
+            let error = stream
+                .read_to_end(&mut received)
+                .await
+                .expect_err("text/plain is not a gRPC response");
+            assert!(received.is_empty(), "response DATA must not be exposed");
+            assert!(
+                error.to_string().contains("content-type")
+                    && error.to_string().contains("text/plain"),
+                "the error should name the invalid content type, got: {error}"
+            );
+        })
+        .await;
+
+        for (shape, script) in TRAILERS_ONLY_SHAPES {
+            let mut fields = trailers("0");
+            fields.insert("content-type", HeaderValue::from_static("text/plain"));
+            let (client_io, server_io) = duplex(64 * 1024);
+            tokio::spawn(serve_one_call(server_io, script(fields)));
+            let mut stream = within_deadline(open(client_io)).await;
+
+            within_deadline(async {
+                let mut received = Vec::new();
+                let error = stream
+                    .read_to_end(&mut received)
+                    .await
+                    .expect_err("text/plain is not a gRPC response");
+                assert!(received.is_empty(), "{shape}: no DATA was sent");
+                assert!(
+                    error.to_string().contains("content-type")
+                        && error.to_string().contains("text/plain"),
+                    "{shape}: the invalid content type should win, got: {error}"
+                );
+            })
+            .await;
+        }
+    }
+
+    /// Match grpc-go's accepted media-type family: the bare type, a codec
+    /// suffix, and media-type parameters. Exercise DATA and both Trailers-Only
+    /// wire shapes so validation does not accidentally depend on END_STREAM.
+    #[tokio::test]
+    async fn response_headers_accept_application_grpc_variants() {
+        for (status, content_type) in [
+            (StatusCode::OK, "application/grpc"),
+            (StatusCode::OK, "application/grpc+proto"),
+            (StatusCode::OK, "application/grpc; charset=utf-8"),
+            // grpc-go treats a valid gRPC media type as authoritative and no
+            // longer maps the HTTP status. Xray inherits that behavior.
+            (StatusCode::NOT_FOUND, "application/grpc"),
+        ] {
+            let response = grpc_response_with(status, Some(content_type));
+            let (client_io, server_io) = duplex(64 * 1024);
+            tokio::spawn(serve_one_call(
+                server_io,
+                Script::SayWithResponse(response, hunks(&[b"accepted"]), trailers("0")),
+            ));
+            let mut stream = within_deadline(open(client_io)).await;
+
+            within_deadline(async {
+                stream.shutdown().await.expect("half-close the request");
+                let mut received = Vec::new();
+                stream
+                    .read_to_end(&mut received)
+                    .await
+                    .unwrap_or_else(|error| panic!("{status}, {content_type}: rejected: {error}"));
+                assert_eq!(received, b"accepted", "{status}, {content_type}");
+            })
+            .await;
+
+            if status != StatusCode::OK {
+                continue;
+            }
+            for (shape, script) in TRAILERS_ONLY_SHAPES {
+                let mut fields = trailers("0");
+                fields.insert(
+                    "content-type",
+                    HeaderValue::from_str(content_type).expect("a legal content type"),
+                );
+                let (client_io, server_io) = duplex(64 * 1024);
+                tokio::spawn(serve_one_call(server_io, script(fields)));
+                let mut stream = within_deadline(open(client_io)).await;
+
+                within_deadline(async {
+                    let mut received = Vec::new();
+                    stream
+                        .read_to_end(&mut received)
+                        .await
+                        .unwrap_or_else(|error| {
+                            panic!("{shape}, {status}, {content_type}: rejected: {error}")
+                        });
+                    assert!(received.is_empty(), "{shape}, {status}, {content_type}");
+                })
+                .await;
+            }
+        }
+    }
+
     /// Xray's reader separates the two: `Recv` returning `io.EOF` — which is
     /// what grpc-go gives for `grpc-status: 0` — is a clean end, and anything
     /// else becomes "failed to fetch hunk from gRPC tunnel"
@@ -1629,6 +1854,131 @@ mod stream_grpc_h2_tests {
             assert!(
                 error.to_string().contains("14"),
                 "the error should name the grpc-status, got: {error}"
+            );
+        })
+        .await;
+    }
+
+    /// grpc-go parses every `grpc-status` field as a signed 32-bit decimal
+    /// integer, and the last valid duplicate wins. Comparing the wire text to
+    /// exactly `"0"` rejects legal zero spellings and looking at only the
+    /// first field disagrees with grpc-go when an intermediary preserved
+    /// duplicates.
+    #[tokio::test]
+    async fn grpc_status_uses_grpc_go_numeric_and_duplicate_semantics() {
+        for status in ["0", "00", "+0", "-0"] {
+            let (client_io, server_io) = duplex(64 * 1024);
+            tokio::spawn(serve_one_call(
+                server_io,
+                Script::Say(Vec::new(), trailers(status)),
+            ));
+            let mut stream = within_deadline(open(client_io)).await;
+
+            within_deadline(async {
+                let mut received = Vec::new();
+                stream
+                    .read_to_end(&mut received)
+                    .await
+                    .unwrap_or_else(|error| panic!("status {status:?} was rejected: {error}"));
+                assert!(received.is_empty(), "status {status:?}");
+            })
+            .await;
+        }
+
+        for (statuses, succeeds) in [(["14", "0"], true), (["0", "14"], false)] {
+            let mut fields = HeaderMap::new();
+            for status in statuses {
+                fields.append(
+                    "grpc-status",
+                    HeaderValue::from_str(status).expect("a legal grpc-status"),
+                );
+            }
+
+            let (client_io, server_io) = duplex(64 * 1024);
+            tokio::spawn(serve_one_call(server_io, Script::Say(Vec::new(), fields)));
+            let mut stream = within_deadline(open(client_io)).await;
+
+            within_deadline(async {
+                let mut received = Vec::new();
+                let result = stream.read_to_end(&mut received).await;
+                if succeeds {
+                    result.expect("the last grpc-status is zero");
+                } else {
+                    let error = result.expect_err("the last grpc-status is nonzero");
+                    assert!(
+                        error.to_string().contains("status 14"),
+                        "the last status should win, got: {error}"
+                    );
+                }
+                assert!(received.is_empty());
+            })
+            .await;
+        }
+    }
+
+    /// A malformed status is fatal even when a later duplicate is valid;
+    /// grpc-go returns from `operateHeaders` as soon as `ParseInt` fails.
+    #[tokio::test]
+    async fn malformed_duplicate_grpc_status_is_not_hidden_by_a_later_zero() {
+        let mut fields = HeaderMap::new();
+        for status in ["14", "not-a-number", "0"] {
+            fields.append(
+                "grpc-status",
+                HeaderValue::from_str(status).expect("a legal header value"),
+            );
+        }
+
+        let (client_io, server_io) = duplex(64 * 1024);
+        tokio::spawn(serve_one_call(server_io, Script::Say(Vec::new(), fields)));
+        let mut stream = within_deadline(open(client_io)).await;
+
+        within_deadline(async {
+            let mut received = Vec::new();
+            let error = stream
+                .read_to_end(&mut received)
+                .await
+                .expect_err("a malformed grpc-status is a protocol error");
+            assert!(received.is_empty());
+            assert!(
+                error.to_string().contains("malformed grpc-status"),
+                "the error should identify grpc-status, got: {error}"
+            );
+        })
+        .await;
+    }
+
+    /// `grpc-message` uses the same percent decoder as grpc-go, and later
+    /// duplicates replace earlier ones while the header block is walked.
+    #[tokio::test]
+    async fn grpc_message_is_percent_decoded_and_the_last_duplicate_wins() {
+        let mut fields = trailers("13");
+        fields.append(
+            "grpc-message",
+            HeaderValue::from_static("ignored%20message"),
+        );
+        fields.append(
+            "grpc-message",
+            HeaderValue::from_static("last%20value%3A%20100%25%20failed"),
+        );
+
+        let (client_io, server_io) = duplex(64 * 1024);
+        tokio::spawn(serve_one_call(server_io, Script::Say(Vec::new(), fields)));
+        let mut stream = within_deadline(open(client_io)).await;
+
+        within_deadline(async {
+            let mut received = Vec::new();
+            let error = stream
+                .read_to_end(&mut received)
+                .await
+                .expect_err("status 13 fails the call");
+            assert!(received.is_empty());
+            assert!(
+                error.to_string().contains("last value: 100% failed"),
+                "the last decoded grpc-message should be reported, got: {error}"
+            );
+            assert!(
+                !error.to_string().contains("ignored"),
+                "the earlier duplicate must not win, got: {error}"
             );
         })
         .await;
@@ -3771,10 +4121,11 @@ mod stream_grpc_user_agent_validity_tests {
 /// `VpnService.protect(fd)`. A test that handed the pool a socket directly
 /// would prove nothing about where the socket came from.
 mod stream_grpc_pool_tests {
-    use std::future::poll_fn;
+    use std::future::{poll_fn, Future};
     use std::net::SocketAddr;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::task::Poll;
     use std::time::Duration;
 
     use bytes::Bytes;
@@ -3786,7 +4137,9 @@ mod stream_grpc_pool_tests {
     use xray_routing::{Network, Target, TargetAddr};
     use xray_transport::stream::grpc_test_only::{open_grpc_h2_stream, resolve_keepalive};
     use xray_transport::stream::{GrpcConfig, GrpcTransport, TransportLayer};
-    use xray_transport::{BoxedTransportStream, ConnectorConfig, TransportDialer};
+    use xray_transport::{
+        BoxedTransportStream, ConnectorConfig, TlsClientConfig, TransportDialer, TransportError,
+    };
 
     /// Every test here can stall rather than fail, so each is fenced by a
     /// deadline the way `stream_grpc_h2_tests` is.
@@ -3854,6 +4207,13 @@ mod stream_grpc_pool_tests {
             .connect_stream(&ConnectorConfig::Tcp, transport, &target, &[addr], None)
             .await
             .expect("the flow opens")
+    }
+
+    fn connection_error(result: Result<BoxedTransportStream, TransportError>) -> TransportError {
+        match result {
+            Ok(_) => panic!("the connection unexpectedly opened"),
+            Err(error) => error,
+        }
     }
 
     /// Writes `payload` and reads exactly that many bytes back off the echo.
@@ -4095,6 +4455,138 @@ mod stream_grpc_pool_tests {
         .await;
 
         assert_eq!(peer.accepted(), 1, "one connection carries every flow");
+    }
+
+    /// A cold security handshake is one shared attempt with one deadline. The
+    /// peer accepts TCP and then blackholes TLS, so the operating system would
+    /// keep the socket alive indefinitely; all eight callers must instead see
+    /// the same five-second pool timeout, without the seven waiters starting
+    /// seven serial retries behind it.
+    #[tokio::test]
+    async fn concurrent_waiters_share_one_cold_dial_timeout() {
+        let listener = TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("a loopback listener");
+        let addr = listener.local_addr().expect("the listener's address");
+        let connector = ConnectorConfig::Tls(TlsClientConfig {
+            server_name: "localhost".to_owned(),
+            allow_insecure: true,
+            alpn: Vec::new(),
+            fingerprint: None,
+        });
+        let target = Target::new(TargetAddr::Ip(addr.ip()), addr.port(), Network::Tcp);
+        let dialer = dialer();
+        let transport = TransportLayer::Grpc(GrpcTransport::new(config()));
+
+        let leader = {
+            let dialer = dialer.clone();
+            let transport = transport.clone();
+            let connector = connector.clone();
+            let target = target.clone();
+            tokio::spawn(async move {
+                dialer
+                    .connect_stream(&connector, &transport, &target, &[addr], None)
+                    .await
+            })
+        };
+
+        // TCP completes, but this socket never answers the ClientHello.
+        let (_blackholed, _) = within_deadline(listener.accept())
+            .await
+            .expect("the blackholed TCP connection is accepted");
+
+        // Freeze after real TCP setup but before registering the waiters, so
+        // machine load cannot spend any of the five-second dial budget. Each
+        // future is polled manually below, so the paused runtime never gets an
+        // idle turn in which it could auto-advance the clock.
+        tokio::time::pause();
+        let candidates = [addr];
+        let mut waiters: Vec<_> = (0..7)
+            .map(|_| {
+                Box::pin(dialer.connect_stream(&connector, &transport, &target, &candidates, None))
+            })
+            .collect();
+        for waiter in &mut waiters {
+            let first_poll = poll_fn(|cx| Poll::Ready(waiter.as_mut().poll(cx))).await;
+            assert!(
+                first_poll.is_pending(),
+                "every waiter parks on the in-flight attempt"
+            );
+        }
+
+        // Advancing the Tokio clock makes the five-second production timeout
+        // deterministic without sleeping in wall-clock time.
+        tokio::time::advance(Duration::from_secs(5)).await;
+
+        let mut errors = Vec::with_capacity(8);
+        errors.push(connection_error(
+            leader.await.expect("the leader task does not panic"),
+        ));
+        for waiter in waiters {
+            errors.push(connection_error(waiter.await));
+        }
+        tokio::time::resume();
+
+        let first = errors[0].to_string();
+        assert!(
+            first.contains("timed out") && first.contains("5s"),
+            "the shared attempt reports its bounded deadline, got: {first}"
+        );
+        for error in &errors[1..] {
+            assert_eq!(
+                error.to_string(),
+                first,
+                "every waiter observes the same attempt outcome"
+            );
+        }
+        let listener = listener
+            .into_std()
+            .expect("inspect the nonblocking listener backlog");
+        let second = listener.accept();
+        assert!(
+            matches!(&second, Err(error) if error.kind() == std::io::ErrorKind::WouldBlock),
+            "the timed-out waiters must not start serial replacement dials, got: {second:?}"
+        );
+    }
+
+    /// Xray leaves grpc-go's `ClientConn` idle timeout at its thirty-minute
+    /// default. Once the last call closes, the pooled transport is retired at
+    /// that deadline and the next flow gets a fresh TCP/h2 connection.
+    #[tokio::test]
+    async fn a_connection_idle_for_thirty_minutes_is_replaced() {
+        let peer = GrpcPeer::spawn(AfterFirstCall::KeepServing).await;
+        let dialer = dialer();
+        let transport = TransportLayer::Grpc(GrpcTransport::new(config()));
+        let TransportLayer::Grpc(grpc) = &transport else {
+            panic!("the transport under test is gRPC");
+        };
+
+        within_deadline(async {
+            let mut first = open_flow(&dialer, &transport, peer.addr).await;
+            round_trip(&mut first, b"first").await;
+            end_flow(first).await;
+        })
+        .await;
+        assert_eq!(peer.accepted(), 1, "the first flow established the pool");
+
+        tokio::time::pause();
+        tokio::time::advance(Duration::from_secs(29 * 60)).await;
+        assert!(
+            grpc.holds_a_live_connection().await,
+            "twenty-nine idle minutes do not retire a thirty-minute pool"
+        );
+        tokio::time::advance(Duration::from_secs(61)).await;
+        until_the_pool_is_empty(grpc).await;
+        tokio::time::resume();
+
+        within_deadline(async {
+            let mut second = open_flow(&dialer, &transport, peer.addr).await;
+            round_trip(&mut second, b"second").await;
+            end_flow(second).await;
+        })
+        .await;
+
+        assert_eq!(peer.accepted(), 2, "the idle connection was replaced");
     }
 
     /// Two calls at once on the pooled connection, neither reading the other's

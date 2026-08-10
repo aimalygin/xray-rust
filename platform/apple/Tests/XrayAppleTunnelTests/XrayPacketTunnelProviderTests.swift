@@ -476,15 +476,15 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         XCTAssertEqual(excludedRoute?.destinationSubnetMask, "255.255.255.255")
     }
 
-    func testNetworkSettingsNeedNoIPv6ExclusionForAnIPv6ProxyServer() {
+    func testNetworkSettingsExcludeIPv6ProxyServerFromDefaultRoute() {
         let settings = XrayPacketTunnelProvider.networkSettings(
             excludingServerAddresses: ["64:ff9b::cb00:710a"],
             resolvedDNSConfiguration: .localDNSAnchor
         )
 
-        // An IPv6 bootstrap address needs no /128 exclusion now that the tunnel
-        // never captures ::/0, and it must not leak into the IPv4 routes either.
-        XCTAssertNil(settings.ipv6Settings)
+        let excludedRoute = settings.ipv6Settings?.excludedRoutes?.first
+        XCTAssertEqual(excludedRoute?.destinationAddress, "64:ff9b::cb00:710a")
+        XCTAssertEqual(excludedRoute?.destinationNetworkPrefixLength.intValue, 128)
         XCTAssertNil(settings.ipv4Settings?.excludedRoutes)
     }
 
@@ -503,12 +503,20 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
             settings.ipv4Settings?.excludedRoutes?.map(\.destinationAddress),
             ["203.0.113.10", "203.0.113.11"]
         )
+        XCTAssertEqual(
+            settings.ipv6Settings?.excludedRoutes?.map(\.destinationAddress),
+            ["2001:db8::10"]
+        )
         XCTAssertTrue(
             settings.ipv4Settings?.excludedRoutes?.allSatisfy {
                 $0.destinationSubnetMask == "255.255.255.255"
             } == true
         )
-        XCTAssertNil(settings.ipv6Settings)
+        XCTAssertTrue(
+            settings.ipv6Settings?.excludedRoutes?.allSatisfy {
+                $0.destinationNetworkPrefixLength.intValue == 128
+            } == true
+        )
     }
 
     func testNetworkSettingsNeverExcludeTunnelOwnedAddresses() {
@@ -528,7 +536,7 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
             settings.ipv4Settings?.excludedRoutes?.map(\.destinationAddress),
             ["203.0.113.12"]
         )
-        XCTAssertNil(settings.ipv6Settings)
+        XCTAssertNil(settings.ipv6Settings?.excludedRoutes)
     }
 
     func testNetworkSettingsApplyLocalDNSAnchorForAllDomains() {
@@ -1156,14 +1164,20 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         )
     }
 
-    func testNetworkSettingsDoNotAdvertiseIPv6() {
+    func testNetworkSettingsInstallIPv6DefaultRoute() throws {
         let settings = XrayPacketTunnelProvider.networkSettings(
             resolvedDNSConfiguration: .localDNSAnchor
         )
 
-        // The fake-IP pool is IPv4-only and no IPv6 destination can be restored
-        // to a domain, so capturing ::/0 would only produce hanging flows.
-        XCTAssertNil(settings.ipv6Settings)
+        let ipv6Settings = try XCTUnwrap(settings.ipv6Settings)
+        XCTAssertEqual(ipv6Settings.addresses, [XrayPacketTunnelProvider.tunnelLocalIPv6Address])
+        XCTAssertEqual(ipv6Settings.networkPrefixLengths.map(\.intValue), [128])
+        XCTAssertEqual(ipv6Settings.includedRoutes?.count, 1)
+        XCTAssertEqual(ipv6Settings.includedRoutes?.first?.destinationAddress, "::")
+        XCTAssertEqual(
+            ipv6Settings.includedRoutes?.first?.destinationNetworkPrefixLength.intValue,
+            0
+        )
         XCTAssertNotNil(settings.ipv4Settings)
     }
 
@@ -2086,7 +2100,10 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
             excludingServerAddresses: prepared.excludedServerAddresses,
             resolvedDNSConfiguration: .localDNSAnchor
         )
-        XCTAssertNil(networkSettings.ipv6Settings)
+        XCTAssertEqual(
+            networkSettings.ipv6Settings?.excludedRoutes?.first?.destinationAddress,
+            "64:ff9b::cb00:712c"
+        )
     }
 
     func testConfigPinningCanonicalizesIPv4MappedCarrierBeforeRouting() throws {
@@ -2124,7 +2141,7 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
             networkSettings.ipv4Settings?.excludedRoutes?.map(\.destinationAddress),
             ["203.0.113.10", "203.0.113.11"]
         )
-        XCTAssertNil(networkSettings.ipv6Settings)
+        XCTAssertNil(networkSettings.ipv6Settings?.excludedRoutes)
     }
 
     func testConfigPinningAcceptsExistingIPv6AliasTerminal() throws {
@@ -2289,7 +2306,10 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
             settings.ipv4Settings?.excludedRoutes?.map(\.destinationAddress),
             ["203.0.113.60"]
         )
-        XCTAssertNil(settings.ipv6Settings)
+        XCTAssertEqual(
+            settings.ipv6Settings?.excludedRoutes?.map(\.destinationAddress),
+            ["2001:db8::60"]
+        )
     }
 
     func testConfigPinningUsesAndCanonicalizesExistingExactAliasChain() throws {

@@ -25,22 +25,27 @@ publish = false
 [workspace.dependencies]
 aes = { version = "0.8", features = ["zeroize"] }
 aes-gcm = { version = "0.10", features = ["zeroize"] }
+async-compression = { version = "=0.4.42", default-features = false, features = ["gzip", "tokio"] }
 async-trait = "0.1"
 bytes = "1"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 ghash = { version = "0.5", features = ["zeroize"] }
 h2 = "0.4.15"
+h3 = "=0.0.8"
+h3-quinn = "=0.0.10"
 hkdf = "0.12"
 hmac = "0.12"
 http = "1"
+idna = "1"
 libc = "0.2"
 ml-dsa = { version = "0.1.1", default-features = false, features = ["alloc"] }
 polyval = { version = "0.6", features = ["zeroize"] }
-prost = "0.13"
+prost = "0.14"
 rand = "0.8"
 rcgen = { version = "0.14", default-features = false, features = ["ring"] }
 regex = "1"
-rustls = { version = "0.23.40", default-features = false, features = ["aws_lc_rs", "brotli", "logging", "ring", "std", "tls12"] }
+quinn = { version = "=0.11.9", default-features = false, features = ["runtime-tokio", "rustls-ring"] }
+rustls = { version = "0.23.40", default-features = false, features = ["aws_lc_rs", "brotli", "logging", "ring", "std", "tls12", "zlib"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha1 = "0.10"
@@ -54,6 +59,7 @@ webpki-roots = "1"
 x25519-dalek = { version = "2", features = ["static_secrets", "zeroize"] }
 x509-parser = { version = "0.18", default-features = false }
 zeroize = "1"
+zstd = { version = "0.13.3", default-features = false }
 
 [profile.release]
 codegen-units = 1
@@ -65,4 +71,5 @@ strip = "symbols"
 panic = "unwind"
 
 [patch.crates-io]
-rustls = { git = "https://github.com/aimalygin/shaped-rustls", rev = "c2cff3051dbd8cc898a999577a788e3e02022190" }
+h3-quinn = { path = "vendor/h3-quinn" }
+rustls = { git = "https://github.com/aimalygin/shaped-rustls", rev = "3a131beaef0183b0cb61e5a9070a703b6be39ed3" }

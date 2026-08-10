@@ -34,6 +34,7 @@ use rand::{rngs::OsRng, RngCore};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::time::{interval_at, Instant, Interval, MissedTickBehavior};
 
+use super::http_headers::websocket_request_target;
 use super::websocket_frame::{
     encode_client_frames, encode_frame, FrameDecoder, FrameEvent, OPCODE_CLOSE, OPCODE_PING,
     OPCODE_PONG,
@@ -185,7 +186,9 @@ async fn exchange(
         headers.set("Sec-WebSocket-Protocol", &encode_early_data(early_data));
     }
 
-    let request = serialize_request("GET", &config.path, &config.host, &headers);
+    let target = websocket_request_target(&config.path)
+        .map_err(|error| TransportError::WebSocketProtocol(error.to_owned()))?;
+    let request = serialize_request("GET", &target, &config.host, &headers);
     stream
         .write_all(&request)
         .await
@@ -524,18 +527,13 @@ impl TransportStream for WebSocketStream {
 
 // ---- The deferred dial, for `ed > 0` ----------------------------------------
 
-type HandshakeFuture =
-    Pin<Box<dyn Future<Output = Result<WebSocketStream, TransportError>> + Send>>;
-
 enum DeferredState {
     /// Nothing has touched the network yet.
     Waiting(Box<(BoxedTransportStream, WebSocketConfig)>),
-    /// The first write arrived and the handshake is in flight. `consumed` is
-    /// how much of that write early data swallowed.
-    Dialing {
-        future: HandshakeFuture,
-        consumed: usize,
-    },
+    /// The first write was copied into owned state and accepted; the task now
+    /// completes the handshake and, when it exceeded the ED budget, sends it
+    /// as the first frame before handing the stream back.
+    Dialing(tokio::task::JoinHandle<Result<WebSocketStream, TransportError>>),
     Ready(Box<WebSocketStream>),
     Failed,
 }
@@ -559,6 +557,81 @@ impl DeferredWebSocketStream {
             parked_reader: None,
         }
     }
+
+    fn start_handshake(&mut self, input: &[u8]) -> usize {
+        let DeferredState::Waiting(held) =
+            std::mem::replace(&mut self.state, DeferredState::Failed)
+        else {
+            unreachable!("start_handshake requires the Waiting state")
+        };
+        let (stream, config) = *held;
+
+        // Xray truncates nothing: a first write past the budget disables early
+        // data for the whole connection. Either way, take ownership before
+        // reporting the bytes as accepted, which is what makes cancellation
+        // safe under AsyncWrite's contract.
+        let budget = config.early_data_bytes as usize;
+        let early = (input.len() <= budget).then(|| input.to_vec());
+        let framed = early.is_none().then(|| input.to_vec());
+        let accepted = input.len();
+
+        self.state = DeferredState::Dialing(tokio::spawn(async move {
+            let mut ready = handshake(stream, config, early).await?;
+            if let Some(payload) = framed {
+                ready
+                    .write_all(&payload)
+                    .await
+                    .map_err(TransportError::Tcp)?;
+                ready.flush().await.map_err(TransportError::Tcp)?;
+            }
+            Ok(ready)
+        }));
+
+        // A reader may have parked before the first write. Wake it so it can
+        // poll the JoinHandle and register for the handshake completion.
+        if let Some(waker) = self.parked_reader.take() {
+            waker.wake();
+        }
+
+        accepted
+    }
+
+    fn poll_finish_handshake(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let outcome = match &mut self.state {
+            DeferredState::Dialing(task) => match Pin::new(task).poll(cx) {
+                Poll::Ready(outcome) => outcome,
+                Poll::Pending => return Poll::Pending,
+            },
+            DeferredState::Ready(_) => return Poll::Ready(Ok(())),
+            DeferredState::Failed => return Poll::Ready(Err(io::ErrorKind::BrokenPipe.into())),
+            DeferredState::Waiting(_) => return Poll::Pending,
+        };
+
+        match outcome {
+            Ok(Ok(stream)) => {
+                self.state = DeferredState::Ready(Box::new(stream));
+                Poll::Ready(Ok(()))
+            }
+            Ok(Err(error)) => {
+                self.state = DeferredState::Failed;
+                Poll::Ready(Err(protocol_io_error(error)))
+            }
+            Err(error) => {
+                self.state = DeferredState::Failed;
+                Poll::Ready(Err(io::Error::other(format!(
+                    "websocket handshake task failed: {error}"
+                ))))
+            }
+        }
+    }
+}
+
+impl Drop for DeferredWebSocketStream {
+    fn drop(&mut self) {
+        if let DeferredState::Dialing(task) = &self.state {
+            task.abort();
+        }
+    }
 }
 
 impl AsyncRead for DeferredWebSocketStream {
@@ -573,10 +646,20 @@ impl AsyncRead for DeferredWebSocketStream {
             DeferredState::Failed => Poll::Ready(Err(io::ErrorKind::BrokenPipe.into())),
             // No connection exists yet, and reading must not create one: park
             // until the first write dials.
-            DeferredState::Waiting(_) | DeferredState::Dialing { .. } => {
+            DeferredState::Waiting(_) => {
                 this.parked_reader = Some(cx.waker().clone());
                 Poll::Pending
             }
+            DeferredState::Dialing(_) => match this.poll_finish_handshake(cx) {
+                Poll::Ready(Ok(())) => {
+                    let DeferredState::Ready(stream) = &mut this.state else {
+                        unreachable!("a completed handshake must install its stream")
+                    };
+                    Pin::new(stream.as_mut()).poll_read(cx, output)
+                }
+                Poll::Ready(Err(error)) => Poll::Ready(Err(error)),
+                Poll::Pending => Poll::Pending,
+            },
         }
     }
 }
@@ -588,48 +671,19 @@ impl AsyncWrite for DeferredWebSocketStream {
         input: &[u8],
     ) -> Poll<io::Result<usize>> {
         let this = self.get_mut();
+        if input.is_empty() {
+            return Poll::Ready(Ok(0));
+        }
         loop {
             match &mut this.state {
                 DeferredState::Waiting(_) => {
-                    let DeferredState::Waiting(held) =
-                        std::mem::replace(&mut this.state, DeferredState::Failed)
-                    else {
-                        unreachable!("just matched Waiting")
-                    };
-                    let (stream, config) = *held;
-
-                    // Xray truncates nothing: a first write past the budget
-                    // disables early data for the whole connection.
-                    let budget = config.early_data_bytes as usize;
-                    let early = (input.len() <= budget).then(|| input.to_vec());
-                    let consumed = early.as_ref().map_or(0, Vec::len);
-
-                    this.state = DeferredState::Dialing {
-                        future: Box::pin(handshake(stream, config, early)),
-                        consumed,
-                    };
+                    return Poll::Ready(Ok(this.start_handshake(input)));
                 }
-                DeferredState::Dialing { future, consumed } => {
-                    let ready = match future.as_mut().poll(cx) {
-                        Poll::Ready(Ok(ready)) => ready,
-                        Poll::Ready(Err(error)) => {
-                            this.state = DeferredState::Failed;
-                            return Poll::Ready(Err(protocol_io_error(error)));
-                        }
-                        Poll::Pending => return Poll::Pending,
-                    };
-
-                    let consumed = *consumed;
-                    this.state = DeferredState::Ready(Box::new(ready));
-                    if let Some(waker) = this.parked_reader.take() {
-                        waker.wake();
-                    }
-                    if consumed > 0 {
-                        // The whole write went out inside the handshake, so no
-                        // frame is sent for it.
-                        return Poll::Ready(Ok(consumed));
-                    }
-                }
+                DeferredState::Dialing(_) => match this.poll_finish_handshake(cx) {
+                    Poll::Ready(Ok(())) => continue,
+                    Poll::Ready(Err(error)) => return Poll::Ready(Err(error)),
+                    Poll::Pending => return Poll::Pending,
+                },
                 DeferredState::Ready(stream) => {
                     return Pin::new(stream.as_mut()).poll_write(cx, input)
                 }
@@ -639,20 +693,35 @@ impl AsyncWrite for DeferredWebSocketStream {
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        match &mut self.get_mut().state {
+        let this = self.get_mut();
+        if matches!(this.state, DeferredState::Dialing(_)) {
+            match this.poll_finish_handshake(cx) {
+                Poll::Ready(Ok(())) => {}
+                other => return other,
+            }
+        }
+        match &mut this.state {
             DeferredState::Ready(stream) => Pin::new(stream.as_mut()).poll_flush(cx),
             // Nothing has been written, so there is nothing to flush.
-            _ => Poll::Ready(Ok(())),
+            DeferredState::Waiting(_) => Poll::Ready(Ok(())),
+            DeferredState::Failed => Poll::Ready(Err(io::ErrorKind::BrokenPipe.into())),
+            DeferredState::Dialing(_) => unreachable!("the handshake was resolved above"),
         }
     }
 
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         let this = self.get_mut();
+        if matches!(this.state, DeferredState::Dialing(_)) {
+            match this.poll_finish_handshake(cx) {
+                Poll::Ready(Ok(())) => {}
+                other => return other,
+            }
+        }
         match &mut this.state {
             DeferredState::Ready(stream) => Pin::new(stream.as_mut()).poll_shutdown(cx),
             DeferredState::Waiting(held) => Pin::new(&mut held.0).poll_shutdown(cx),
-            // Abandoning a handshake mid-flight drops its stream with it.
-            DeferredState::Dialing { .. } | DeferredState::Failed => Poll::Ready(Ok(())),
+            DeferredState::Failed => Poll::Ready(Err(io::ErrorKind::BrokenPipe.into())),
+            DeferredState::Dialing(_) => unreachable!("the handshake was resolved above"),
         }
     }
 }

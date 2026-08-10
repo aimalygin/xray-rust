@@ -20,7 +20,7 @@ use std::task::{ready, Context, Poll};
 use bytes::Bytes;
 use h2::client::ResponseFuture;
 use h2::{RecvStream, SendStream};
-use http::HeaderMap;
+use http::{header::CONTENT_TYPE, HeaderMap, StatusCode};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 use super::framing::{encode_hunk, HunkDecoder, HunkMode, MAX_HUNK_PAYLOAD_LEN};
@@ -47,6 +47,10 @@ enum Downlink {
     /// The response is still outstanding, because the dial did not wait for
     /// it. Polled on the first read.
     Awaiting(ResponseFuture),
+    /// The response head was not a successful gRPC response. Keep the verdict
+    /// so every later read fails the same way rather than polling a completed
+    /// response future or exposing DATA queued behind the rejected head.
+    Rejected(String),
     Reading(RecvStream),
 }
 
@@ -102,6 +106,21 @@ pub struct GrpcStream {
     /// waker per send half, so a reader that reserved capacity would overwrite
     /// a writer's and strand it.
     accepted: Option<usize>,
+    /// The prefix of the caller's buffer [`Self::accepted`] describes, once
+    /// [`Self::pending_write`] no longer holds that prefix itself.
+    ///
+    /// This is a slice of the same allocation as [`Self::pending_write`], not a
+    /// second copy. It is populated only before the first partial send, or when
+    /// flush/shutdown must retain the identity after a full send; the common
+    /// one-window write therefore keeps `Bytes::from(Vec)`'s one-allocation
+    /// path. Together those two representations distinguish a retry from a
+    /// caller that cancelled the pending write and started another one.
+    accepted_input: Option<Bytes>,
+    /// Whether any part of [`Self::pending_write`] has been handed to h2.
+    ///
+    /// Before that point a cancelled write can be replaced. Afterwards its
+    /// frame cannot be changed without leaving a truncated `Hunk` on the wire.
+    pending_write_started: bool,
     /// The response HEADERS, held from the moment they arrive.
     ///
     /// h2 hands the block over as the response head and keeps nothing of it,
@@ -188,6 +207,8 @@ impl GrpcStream {
             pending_read_pos: 0,
             pending_write: Bytes::new(),
             accepted: None,
+            accepted_input: None,
+            pending_write_started: false,
             response_head: None,
             trailers: None,
             head_ended_the_call: false,
@@ -253,6 +274,38 @@ impl GrpcStream {
         true
     }
 
+    fn retries_accepted_input(&self, input: &[u8], accepted: usize) -> bool {
+        if input.len() < accepted {
+            return false;
+        }
+
+        let expected = match self.accepted_input.as_deref() {
+            Some(input) => input,
+            None => {
+                let Some(offset) = self.pending_write.len().checked_sub(accepted) else {
+                    return false;
+                };
+                &self.pending_write[offset..]
+            }
+        };
+        input[..accepted] == *expected
+    }
+
+    fn remember_accepted_input(&mut self) {
+        if self.accepted_input.is_some() {
+            return;
+        }
+
+        let Some(accepted) = self.accepted else {
+            return;
+        };
+        debug_assert!(!self.pending_write_started);
+        let Some(offset) = self.pending_write.len().checked_sub(accepted) else {
+            return;
+        };
+        self.accepted_input = Some(self.pending_write.slice(offset..));
+    }
+
     /// Hands whatever is left of the current frame to h2, a window's worth at
     /// a time.
     ///
@@ -269,7 +322,11 @@ impl GrpcStream {
     /// because the two callers answer for it differently: see
     /// [`Self::poll_drain_uplink_for_write`] and
     /// [`Self::poll_drain_uplink_for_end_of_call`].
-    fn poll_drain_uplink(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<Uplink>> {
+    fn poll_drain_uplink(
+        &mut self,
+        cx: &mut Context<'_>,
+        preserve_accepted_input: bool,
+    ) -> Poll<io::Result<Uplink>> {
         while !self.pending_write.is_empty() {
             self.uplink.reserve_capacity(self.pending_write.len());
             let granted = match ready!(self.uplink.poll_capacity(cx)) {
@@ -279,9 +336,15 @@ impl GrpcStream {
             };
 
             let take = granted.min(self.pending_write.len());
+            if !self.pending_write_started
+                && (take < self.pending_write.len() || preserve_accepted_input)
+            {
+                self.remember_accepted_input();
+            }
             self.uplink
                 .send_data(self.pending_write.split_to(take), false)
                 .map_err(|error| h2_io_error("could not send a Hunk", &error))?;
+            self.pending_write_started = true;
         }
 
         Poll::Ready(Ok(Uplink::Drained))
@@ -294,7 +357,7 @@ impl GrpcStream {
     /// with nothing said, and the relay would go on pumping its source into
     /// the void until the downlink noticed.
     fn poll_drain_uplink_for_write(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        match ready!(self.poll_drain_uplink(cx))? {
+        match ready!(self.poll_drain_uplink(cx, false))? {
             Uplink::Drained => Poll::Ready(Ok(())),
             Uplink::Closed => Poll::Ready(Err(protocol_io_error(
                 "the gRPC uplink is closed".to_owned(),
@@ -321,7 +384,7 @@ impl GrpcStream {
     /// mid-stream a send half that will take no more means the stream is gone,
     /// and the very next `poll_write` says so rather than swallowing bytes.
     fn poll_drain_uplink_for_end_of_call(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        match ready!(self.poll_drain_uplink(cx))? {
+        match ready!(self.poll_drain_uplink(cx, true))? {
             Uplink::Drained => Poll::Ready(Ok(())),
             Uplink::Closed => {
                 // Dropped rather than kept: nothing will ever carry them, and
@@ -339,6 +402,8 @@ impl GrpcStream {
                 // caller's bytes on the wire.
                 self.pending_write = Bytes::new();
                 self.accepted = None;
+                self.accepted_input = None;
+                self.pending_write_started = false;
                 Poll::Ready(Ok(()))
             }
         }
@@ -449,19 +514,21 @@ impl GrpcStream {
             ));
         };
 
-        let Some(status) = grpc_status(ending) else {
-            return Err(protocol_io_error(
-                "the gRPC call ended with no grpc-status".to_owned(),
-            ));
+        let status = match grpc_status(ending) {
+            Ok(Some(status)) => status,
+            Ok(None) => {
+                return Err(protocol_io_error(
+                    "the gRPC call ended with no grpc-status".to_owned(),
+                ));
+            }
+            Err(error) => return Err(protocol_io_error(error)),
         };
 
-        if status != "0" {
-            let message = ending
-                .get("grpc-message")
-                .and_then(|message| message.to_str().ok())
-                .unwrap_or("no message");
+        if status.code != 0 {
+            let message = grpc_message(ending).unwrap_or_else(|| "no message".to_owned());
             return Err(protocol_io_error(format!(
-                "the gRPC call failed with status {status}: {message}"
+                "the gRPC call failed with status {}: {message}",
+                status.wire
             )));
         }
 
@@ -481,11 +548,14 @@ impl GrpcStream {
     /// `serviceName` typo and the remote that closed without a byte arrive
     /// this way.
     ///
-    /// The error *code* is deliberately not part of the test, even though
-    /// `writeStatus` always uses `ErrCodeNo` and h2 picks NO_ERROR for the
-    /// same situation (`h2-0.4.15/src/proto/streams/streams.rs:1601-1619`):
-    /// grpc-go ignores it too once the call is over, and answers the same
-    /// frames with `io.EOF` whether the reset says NO_ERROR or CANCEL.
+    /// The error code is part of the conservative inference. grpc-go's server
+    /// and h2 both use `NO_ERROR` for the reset behind completed trailers
+    /// (`h2-0.4.15/src/proto/streams/streams.rs:1601-1619`). grpc-go would also
+    /// ignore a later CANCEL once it had already processed END_STREAM, but h2
+    /// has erased that ordering evidence here; accepting CANCEL would turn a
+    /// response head that merely mentioned `grpc-status: 0` before being
+    /// cancelled into a false success. Restricting the workaround to the only
+    /// code a real Xray/grpc-go server emits keeps that ambiguity fail-closed.
     ///
     /// It has to be inferred, because h2 destroys the evidence. The END_STREAM
     /// header block leaves the stream `HalfClosedRemote`; `recv_reset` then
@@ -524,16 +594,123 @@ impl GrpcStream {
     fn the_reset_behind_a_trailers_only_response(&self, error: &h2::Error) -> bool {
         error.is_reset()
             && error.is_remote()
+            && error.reason() == Some(h2::Reason::NO_ERROR)
             && !self.downlink_carried_data
             && self
                 .response_head
                 .as_ref()
-                .is_some_and(|head| grpc_status(head).is_some())
+                .is_some_and(|head| head.contains_key("grpc-status"))
     }
 }
 
-fn grpc_status(trailers: &HeaderMap) -> Option<&str> {
-    trailers.get("grpc-status")?.to_str().ok()
+struct GrpcStatus<'a> {
+    code: i32,
+    wire: &'a str,
+}
+
+/// Parses a complete header block the same way grpc-go's `operateHeaders`
+/// does: every occurrence is parsed as a signed 32-bit decimal integer, and
+/// the last valid occurrence wins. An earlier malformed duplicate is still a
+/// protocol error rather than something a later value can hide.
+fn grpc_status(trailers: &HeaderMap) -> Result<Option<GrpcStatus<'_>>, String> {
+    let mut parsed = None;
+
+    for value in trailers.get_all("grpc-status").iter() {
+        let wire = value
+            .to_str()
+            .map_err(|error| format!("the gRPC call ended with malformed grpc-status: {error}"))?;
+        let code = wire.parse::<i32>().map_err(|error| {
+            format!("the gRPC call ended with malformed grpc-status {wire:?}: {error}")
+        })?;
+        parsed = Some(GrpcStatus { code, wire });
+    }
+
+    Ok(parsed)
+}
+
+/// grpc-go percent-decodes each `grpc-message` while walking the header block,
+/// with the last duplicate taking precedence. Invalid `%` escapes are kept
+/// literally; decoded invalid UTF-8 is rendered lossily because Rust errors
+/// must contain valid UTF-8.
+fn grpc_message(trailers: &HeaderMap) -> Option<String> {
+    trailers
+        .get_all("grpc-message")
+        .iter()
+        .next_back()
+        .map(|value| decode_grpc_message(value.as_bytes()))
+}
+
+fn decode_grpc_message(message: &[u8]) -> String {
+    fn hex_nibble(byte: u8) -> Option<u8> {
+        match byte {
+            b'0'..=b'9' => Some(byte - b'0'),
+            b'a'..=b'f' => Some(byte - b'a' + 10),
+            b'A'..=b'F' => Some(byte - b'A' + 10),
+            _ => None,
+        }
+    }
+
+    let mut decoded = Vec::with_capacity(message.len());
+    let mut position = 0;
+    while position < message.len() {
+        if message[position] == b'%' && position + 2 < message.len() {
+            let escaped = (
+                hex_nibble(message[position + 1]),
+                hex_nibble(message[position + 2]),
+            );
+            if let (Some(high), Some(low)) = escaped {
+                decoded.push((high << 4) | low);
+                position += 3;
+                continue;
+            }
+        }
+
+        decoded.push(message[position]);
+        position += 1;
+    }
+
+    String::from_utf8_lossy(&decoded).into_owned()
+}
+
+fn is_grpc_content_type(value: &str) -> bool {
+    const GRPC: &str = "application/grpc";
+
+    value.strip_prefix(GRPC).is_some_and(|suffix| {
+        suffix.is_empty() || suffix.starts_with('+') || suffix.starts_with(';')
+    })
+}
+
+fn validate_response_head(status: StatusCode, headers: &HeaderMap) -> Result<(), String> {
+    let content_types = headers.get_all(CONTENT_TYPE);
+    let Some(first) = content_types.iter().next() else {
+        return if status == StatusCode::OK {
+            Err("the gRPC response is missing content-type".to_owned())
+        } else {
+            Err(format!(
+                "the server returned HTTP status {status} without a gRPC content-type"
+            ))
+        };
+    };
+    if content_types
+        .iter()
+        .any(|value| value.to_str().map(is_grpc_content_type).unwrap_or(false))
+    {
+        // grpc-go switches into gRPC mode as soon as one content-type is
+        // valid, and deliberately stops interpreting the HTTP status. Keep
+        // that seemingly odd behavior: Xray's server and client both inherit
+        // it from grpc-go, including for a non-200 `:status`.
+        return Ok(());
+    }
+
+    if status == StatusCode::OK {
+        Err(format!(
+            "the gRPC response has non-gRPC content-type {first:?}"
+        ))
+    } else {
+        Err(format!(
+            "the server returned HTTP status {status} with non-gRPC content-type {first:?}"
+        ))
+    }
 }
 
 fn protocol_io_error(reason: String) -> io::Error {
@@ -582,20 +759,16 @@ impl AsyncRead for GrpcStream {
             }
 
             let recv = match &mut this.downlink {
-                // Nothing about the response HEADERS is inspected. grpc-go
-                // only evaluates `:status` for a response that is *not*
-                // gRPC-shaped — a valid `content-type` puts it in gRPC mode
-                // and the HTTP status stops mattering
-                // (`grpc@v1.81.0/internal/transport/http2_client.go:
-                // 1529-1573`) — so getting this right means reading
-                // content-type as well, which belongs with the rest of the
-                // header work. Until then a non-gRPC body is caught one layer
-                // down, where its first byte fails `HunkDecoder`'s
-                // payload-format check.
                 Downlink::Awaiting(response) => {
                     let response = ready!(Pin::new(response).poll(cx))
                         .map_err(|error| h2_io_error("no gRPC response", &error))?;
                     let (head, body) = response.into_parts();
+                    if let Err(reason) = validate_response_head(head.status, &head.headers) {
+                        // Drop the receive half and retain only the verdict.
+                        // In particular, no queued DATA reaches the decoder.
+                        this.downlink = Downlink::Rejected(reason);
+                        continue;
+                    }
                     // `is_end_stream()` is exactly "this header block carried
                     // END_STREAM" at this one moment and nowhere later: it is
                     // the recv half being closed *and* nothing queued behind it
@@ -611,6 +784,9 @@ impl AsyncRead for GrpcStream {
                     this.response_head = Some(head.headers);
                     this.downlink = Downlink::Reading(body);
                     continue;
+                }
+                Downlink::Rejected(reason) => {
+                    return Poll::Ready(Err(protocol_io_error(reason.clone())))
                 }
                 Downlink::Reading(recv) => recv,
             };
@@ -656,19 +832,13 @@ impl AsyncWrite for GrpcStream {
         input: &[u8],
     ) -> Poll<io::Result<usize>> {
         let this = self.get_mut();
-        // A frame an earlier poll encoded but could not finish handing over
-        // goes out before anything else — two `Hunk`s are never interleaved on
-        // the wire — and is then reported as the write it was encoded from.
-        //
-        // `input` is not consulted on this path and does not need to be:
-        // `AsyncWrite` callers retry a `Pending` write with the same buffer,
-        // and the count that comes back is the one taken from it. Reading the
-        // retry's buffer instead would let a caller be told a different number
-        // than the frame already on its way carries. A caller that *abandons* a
-        // `Pending` write and then writes something else is told the abandoned
-        // length — which is inside the unspecified state tokio already
-        // documents for a cancelled `write_all`, and is why nothing in this
-        // workspace cancels one.
+        // A frame an earlier poll encoded but could not finish handing over is
+        // reported only when this really is a retry of the bytes it carries.
+        // A caller may cancel the future after `Pending` and start a different
+        // write; before the old frame has started, replacing it is lossless.
+        // Once any of it is h2's, replacement would splice two `Hunk`s together,
+        // so fail the stream instead of attributing the old write to the new
+        // buffer.
         //
         // The count outlives its frame whenever a flush or a half-close drains
         // it first, and that is precisely when it has to be reported rather
@@ -678,9 +848,29 @@ impl AsyncWrite for GrpcStream {
         // [`Self::poll_drain_uplink_for_end_of_call`], which clears it on the
         // one path that empties the queue without sending.
         if let Some(accepted) = this.accepted {
-            ready!(this.poll_drain_uplink_for_write(cx))?;
+            let retries_pending_input = this.retries_accepted_input(input, accepted);
+            if retries_pending_input {
+                ready!(this.poll_drain_uplink_for_write(cx))?;
+                this.accepted = None;
+                this.accepted_input = None;
+                this.pending_write_started = false;
+                return Poll::Ready(Ok(accepted));
+            }
+
+            if this.pending_write_started {
+                return Poll::Ready(Err(protocol_io_error(
+                    "a pending gRPC write was retried with different bytes after its Hunk started"
+                        .to_owned(),
+                )));
+            }
+
+            // `reserve_capacity` is a total, not an increment. Restating zero
+            // releases any capacity h2 assigned between the cancelled poll and
+            // this one before the replacement makes its own reservation.
+            this.uplink.reserve_capacity(0);
+            this.pending_write = Bytes::new();
             this.accepted = None;
-            return Poll::Ready(Ok(accepted));
+            this.accepted_input = None;
         }
 
         if input.is_empty() {
@@ -703,8 +893,11 @@ impl AsyncWrite for GrpcStream {
         // One write, one `Hunk`: `HunkReaderWriter.Write` hands the whole
         // buffer to a single `Send` (`hunkconn.go:131-141`), so the peer's
         // reads see the same boundaries ours did.
-        this.pending_write = Bytes::from(encode_hunk(input));
+        let frame = Bytes::from(encode_hunk(input));
+        this.pending_write = frame;
+        this.pending_write_started = false;
         this.accepted = Some(input.len());
+        this.accepted_input = None;
         // Not reported until the whole frame is h2's. A `Pending` here is the
         // ordinary case rather than the rare one — the connection task assigns
         // the capacity this just reserved, so the grant cannot arrive inside
@@ -713,6 +906,8 @@ impl AsyncWrite for GrpcStream {
         // that costs; the retry lands on the branch above.
         ready!(this.poll_drain_uplink_for_write(cx))?;
         this.accepted = None;
+        this.accepted_input = None;
+        this.pending_write_started = false;
         Poll::Ready(Ok(input.len()))
     }
 

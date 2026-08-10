@@ -15,7 +15,8 @@ use xray_config::{
     CoreConfig, GrpcSettings, HttpUpgradeSettings, InboundConfig, InboundProtocol, Network,
     OutboundConfig, OutboundSettings, RealitySettings, RealityShortId, RoutingConfig,
     StreamSecurity, StreamSettings, StreamTransport, TargetAddr, TlsSettings,
-    VlessOutboundSettings, VlessUser, WebSocketSettings,
+    VlessOutboundSettings, VlessUser, WebSocketSettings, XhttpMode, XhttpSettings,
+    XhttpUplinkDataPlacement, XhttpXmuxSettings,
 };
 use xray_core_rs::Core;
 use xray_transport::{SystemDnsResolver, TlsConnector, TransportDialer};
@@ -601,6 +602,68 @@ async fn run_parallel_socks_echo_workload(
     Ok(())
 }
 
+async fn run_parallel_socks_exact_echo_workload(
+    socks_addr: SocketAddr,
+    flow_count: usize,
+) -> Result<(), Vec<String>> {
+    const PAYLOAD_BYTES: usize = 4 * 1024;
+
+    let (echo_addr, echo_handle) = spawn_multi_exact_echo_server(flow_count, PAYLOAD_BYTES).await;
+    let mut handles = Vec::with_capacity(flow_count);
+    for index in 0..flow_count {
+        handles.push(tokio::spawn(async move {
+            let mut client = timeout(Duration::from_secs(5), TcpStream::connect(socks_addr))
+                .await
+                .map_err(|error| format!("flow {index}: connect rust socks timeout: {error}"))?
+                .map_err(|error| format!("flow {index}: connect rust socks: {error}"))?;
+            timeout(
+                Duration::from_secs(10),
+                socks5_connect(&mut client, echo_addr),
+            )
+            .await
+            .map_err(|error| format!("flow {index}: socks connect timeout: {error}"))?
+            .map_err(|error| format!("flow {index}: socks connect: {error}"))?;
+
+            let payload = bulk_interop_payload(PAYLOAD_BYTES);
+            timeout(Duration::from_secs(10), client.write_all(&payload))
+                .await
+                .map_err(|error| format!("flow {index}: write payload timeout: {error}"))?
+                .map_err(|error| format!("flow {index}: write payload: {error}"))?;
+            let mut echoed = vec![0; payload.len()];
+            timeout(Duration::from_secs(20), client.read_exact(&mut echoed))
+                .await
+                .map_err(|error| format!("flow {index}: read echo timeout: {error}"))?
+                .map_err(|error| format!("flow {index}: read echo: {error}"))?;
+            if echoed != payload {
+                return Err(format!("flow {index}: echoed payload mismatch"));
+            }
+            Ok(())
+        }));
+    }
+
+    let mut failures = Vec::new();
+    for handle in handles {
+        match timeout(Duration::from_secs(30), handle).await {
+            Ok(Ok(Ok(()))) => {}
+            Ok(Ok(Err(error))) => failures.push(error),
+            Ok(Err(error)) => failures.push(format!("join flow task: {error}")),
+            Err(error) => failures.push(format!("flow task timeout: {error}")),
+        }
+    }
+
+    if !failures.is_empty() {
+        echo_handle.abort();
+        let _ = echo_handle.await;
+        return Err(failures);
+    }
+
+    timeout(Duration::from_secs(5), echo_handle)
+        .await
+        .expect("multi exact echo task should finish")
+        .expect("multi exact echo task should not panic");
+    Ok(())
+}
+
 async fn run_rust_core_socks_echo_probe(rust_config: CoreConfig) -> Result<(), String> {
     let (echo_addr, echo_handle) = spawn_echo_server().await;
     let mut core = match Core::new(rust_config) {
@@ -734,7 +797,8 @@ enum XrayInboundSecurity {
 /// refuses everything else with "REALITY only supports RAW, XHTTP and gRPC for
 /// now" (`Xray-core/infra/conf/transport_internet.go:1989`). So the pairing is
 /// unreachable for the two HTTP/1.1 transports below and reachable for
-/// [`Self::Grpc`], which is the rule the compatibility matrix reproduces.
+/// [`Self::Xhttp`] and [`Self::Grpc`], which is the rule the compatibility
+/// matrix reproduces.
 #[derive(Debug, Clone, Copy)]
 enum XrayInboundTransport {
     Raw,
@@ -743,6 +807,13 @@ enum XrayInboundTransport {
     },
     HttpUpgrade {
         path: &'static str,
+    },
+    Xhttp {
+        path: &'static str,
+        mode: &'static str,
+        /// Exact server ALPN for the TLS H1/H2 interop matrix. REALITY ignores
+        /// this because Xray's version decision always selects HTTP/2 there.
+        tls_alpn: Option<&'static str>,
     },
     /// `multiMode` is deliberately not a field. The listener never reads it:
     /// it registers both stream names on one service descriptor —
@@ -838,6 +909,14 @@ fn allocate_loopback_port() -> u16 {
         .expect("bind ephemeral port")
         .local_addr()
         .expect("read local addr")
+        .port()
+}
+
+fn allocate_loopback_udp_port() -> u16 {
+    std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+        .expect("bind ephemeral UDP port")
+        .local_addr()
+        .expect("read local UDP addr")
         .port()
 }
 
@@ -941,6 +1020,29 @@ fn write_xray_vless_config(
         "httpupgradeSettings": {{ "path": "{path}" }}"#
             ),
         ),
+        XrayInboundTransport::Xhttp { path, mode, .. } => (
+            "xhttp",
+            format!(
+                r#",
+        "xhttpSettings": {{
+          "path": "{path}",
+          "mode": "{mode}",
+          "xPaddingBytes": 64,
+          "uplinkHTTPMethod": "POST",
+          "sessionPlacement": "path",
+          "seqPlacement": "path",
+          "uplinkDataPlacement": "body",
+          "uplinkChunkSize": 4096,
+          "scMaxEachPostBytes": 4096,
+          "scMinPostsIntervalMs": 1,
+          "xmux": {{
+            "maxConcurrency": 1,
+            "hMaxRequestTimes": 64,
+            "hMaxReusableSecs": 3600
+          }}
+        }}"#
+            ),
+        ),
         // `network` is the only mandatory half: `grpcSettings` is an optional
         // pointer (`Xray-core/infra/conf/transport_internet.go:1950,2044`) and
         // every field in it has a usable zero — an absent block leaves
@@ -960,9 +1062,17 @@ fn write_xray_vless_config(
             let identity = tls_identity.expect("TLS config requires generated identity");
             let cert_path = identity.cert_path.to_string_lossy();
             let key_path = identity.key_path.to_string_lossy();
+            let alpn = match server_config.transport {
+                XrayInboundTransport::Xhttp {
+                    tls_alpn: Some(alpn),
+                    ..
+                } => format!(r#""alpn": ["{alpn}"],"#),
+                _ => String::new(),
+            };
             format!(
                 r#""security": "tls",
         "tlsSettings": {{
+          {alpn}
           "certificates": [
             {{
               "certificateFile": "{cert_path}",
@@ -1091,7 +1201,18 @@ async fn start_xray_vless_server(
     let config_path = temp_dir.path.join("server.json");
     let stdout_path = temp_dir.path.join("xray.stdout.log");
     let stderr_path = temp_dir.path.join("xray.stderr.log");
-    let port = allocate_loopback_port();
+    let uses_udp_listener = matches!(
+        server_config.transport,
+        XrayInboundTransport::Xhttp {
+            tls_alpn: Some("h3"),
+            ..
+        }
+    );
+    let port = if uses_udp_listener {
+        allocate_loopback_udp_port()
+    } else {
+        allocate_loopback_port()
+    };
     let tls_identity = match server_config.security {
         XrayInboundSecurity::None => None,
         XrayInboundSecurity::Tls => Some(generate_tls_identity(&temp_dir, TLS_SERVER_NAME)),
@@ -1131,7 +1252,11 @@ async fn start_xray_vless_server(
         .expect("start xray process");
 
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
-    wait_for_tcp_listener(&mut child, addr, &stdout_path, &stderr_path).await;
+    if uses_udp_listener {
+        wait_for_udp_listener(&mut child, addr, &stdout_path, &stderr_path).await;
+    } else {
+        wait_for_tcp_listener(&mut child, addr, &stdout_path, &stderr_path).await;
+    }
 
     XrayServer {
         child,
@@ -1229,6 +1354,43 @@ async fn wait_for_tcp_listener(
     }
 }
 
+async fn wait_for_udp_listener(
+    child: &mut Child,
+    addr: SocketAddr,
+    stdout_path: &Path,
+    stderr_path: &Path,
+) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Some(status) = child.try_wait().expect("check xray process status") {
+            let stdout = fs::read_to_string(stdout_path).unwrap_or_default();
+            let stderr = fs::read_to_string(stderr_path).unwrap_or_default();
+            panic!(
+                "xray exited before listening on UDP {addr}: {status}\nstdout:\n{stdout}\nstderr:\n{stderr}"
+            );
+        }
+
+        match std::net::UdpSocket::bind(addr) {
+            Err(error) if error.kind() == ErrorKind::AddrInUse => return,
+            Ok(probe) if Instant::now() < deadline => {
+                drop(probe);
+                sleep(Duration::from_millis(50)).await;
+            }
+            Err(error) if Instant::now() < deadline => {
+                let _ = error;
+                sleep(Duration::from_millis(50)).await;
+            }
+            Ok(probe) => {
+                drop(probe);
+                let stdout = fs::read_to_string(stdout_path).unwrap_or_default();
+                let stderr = fs::read_to_string(stderr_path).unwrap_or_default();
+                panic!("xray did not bind UDP {addr}\nstdout:\n{stdout}\nstderr:\n{stderr}");
+            }
+            Err(error) => panic!("could not probe Xray UDP listener {addr}: {error}"),
+        }
+    }
+}
+
 fn rust_core_config_with_security(
     xray_addr: SocketAddr,
     security: StreamSecurity,
@@ -1259,6 +1421,7 @@ fn rust_core_config_with_transport(
                 network: Network::Tcp,
                 transport,
                 security,
+                quic_params: None,
                 socket_options: None,
             },
             settings: OutboundSettings::Vless(VlessOutboundSettings {
@@ -1377,6 +1540,29 @@ async fn spawn_echo_server() -> (SocketAddr, tokio::task::JoinHandle<()>) {
     (addr, handle)
 }
 
+async fn spawn_exact_echo_server(
+    expected_bytes: usize,
+) -> (SocketAddr, tokio::task::JoinHandle<()>) {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .expect("bind exact echo");
+    let addr = listener.local_addr().expect("exact echo local addr");
+    let handle = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.expect("accept exact echo");
+        let mut payload = vec![0; expected_bytes];
+        stream
+            .read_exact(&mut payload)
+            .await
+            .expect("read exact echo payload");
+        stream
+            .write_all(&payload)
+            .await
+            .expect("write exact echo payload");
+        stream.flush().await.expect("flush exact echo payload");
+    });
+    (addr, handle)
+}
+
 async fn spawn_multi_echo_server(
     expected_connections: usize,
 ) -> (SocketAddr, tokio::task::JoinHandle<()>) {
@@ -1397,6 +1583,43 @@ async fn spawn_multi_echo_server(
         }
         for handle in handles {
             handle.await.expect("echo connection task should not panic");
+        }
+    });
+    (addr, handle)
+}
+
+async fn spawn_multi_exact_echo_server(
+    expected_connections: usize,
+    expected_bytes: usize,
+) -> (SocketAddr, tokio::task::JoinHandle<()>) {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .expect("bind multi exact echo");
+    let addr = listener.local_addr().expect("multi exact echo local addr");
+    let handle = tokio::spawn(async move {
+        let mut handles = Vec::with_capacity(expected_connections);
+        for _ in 0..expected_connections {
+            let (mut stream, _) = listener.accept().await.expect("accept exact echo");
+            handles.push(tokio::spawn(async move {
+                let mut payload = vec![0; expected_bytes];
+                stream
+                    .read_exact(&mut payload)
+                    .await
+                    .expect("read multi exact echo payload");
+                stream
+                    .write_all(&payload)
+                    .await
+                    .expect("write multi exact echo payload");
+                stream
+                    .flush()
+                    .await
+                    .expect("flush multi exact echo payload");
+            }));
+        }
+        for handle in handles {
+            handle
+                .await
+                .expect("exact echo connection task should not panic");
         }
     });
     (addr, handle)
@@ -1599,10 +1822,10 @@ async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_httpupgr
 #[tokio::test]
 #[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
 async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_httpupgrade_early_data() {
-    // `ed` carries no payload on HTTPUpgrade: it only means the dial returns
-    // without waiting for the 101. A real server still sends one, so this
-    // pins that the response is stripped before the VLESS layer reads the
-    // stream — against Xray itself, where the loopback tests can only mock it.
+    // Xray's outbound uses `ed` to return before the 101, but its inbound can
+    // leave application bytes that arrived with the upgrade request stranded
+    // in a bufio.Reader. We intentionally wait for the response: the config is
+    // accepted, and the real-Xray round trip pins that no VLESS bytes are lost.
     timeout(
         Duration::from_secs(120),
         run_local_xray_stream_transport_interop(
@@ -1669,21 +1892,18 @@ async fn run_local_xray_stream_transport_interop(
     .expect("start xray timeout");
 
     let (client_security, dialer) = if over_tls {
-        let tls_client_config = Arc::clone(
-            xray.tls_client_config
-                .as_ref()
-                .expect("TLS Xray server should expose trusted client config"),
-        );
         (
             StreamSecurity::Tls(TlsSettings {
                 server_name: Some(TLS_SERVER_NAME.to_owned()),
-                fingerprint: None,
-                allow_insecure: false,
+                // Use the production shaping path here. A pinned rustls config
+                // bypasses both fingerprint shaping and the transport-aware
+                // ALPN gate, so it cannot catch an h2 selection followed by an
+                // HTTP/1.1 WebSocket/Upgrade request.
+                fingerprint: Some("chrome".to_owned()),
+                allow_insecure: true,
                 alpn: Vec::new(),
             }),
-            Some(TransportDialer::with_tls_connector(
-                TlsConnector::with_pinned_client_config(tls_client_config),
-            )),
+            None,
         )
     } else {
         (StreamSecurity::None, None)
@@ -1691,6 +1911,443 @@ async fn run_local_xray_stream_transport_interop(
 
     let rust_config = rust_core_config_with_transport(xray.addr, client_security, None, outbound);
     run_local_xray_vless_interop_scenario(xray, rust_config, dialer).await;
+}
+
+// ---- xhttp -----------------------------------------------------------------
+
+const XHTTP_PATH: &str = "/interop-xhttp/";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum XhttpInteropSecurity {
+    H1None,
+    H1Tls,
+    H2Tls,
+    H2Reality,
+    H3Tls,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct XhttpInteropCase {
+    id: &'static str,
+    security: XhttpInteropSecurity,
+    mode: XhttpMode,
+}
+
+const XHTTP_INTEROP_CASES: [XhttpInteropCase; 15] = [
+    XhttpInteropCase {
+        id: "h1-none-packet-up",
+        security: XhttpInteropSecurity::H1None,
+        mode: XhttpMode::PacketUp,
+    },
+    XhttpInteropCase {
+        id: "h1-none-stream-up",
+        security: XhttpInteropSecurity::H1None,
+        mode: XhttpMode::StreamUp,
+    },
+    XhttpInteropCase {
+        id: "h1-none-stream-one",
+        security: XhttpInteropSecurity::H1None,
+        mode: XhttpMode::StreamOne,
+    },
+    XhttpInteropCase {
+        id: "h1-tls-packet-up",
+        security: XhttpInteropSecurity::H1Tls,
+        mode: XhttpMode::PacketUp,
+    },
+    XhttpInteropCase {
+        id: "h1-tls-stream-up",
+        security: XhttpInteropSecurity::H1Tls,
+        mode: XhttpMode::StreamUp,
+    },
+    XhttpInteropCase {
+        id: "h1-tls-stream-one",
+        security: XhttpInteropSecurity::H1Tls,
+        mode: XhttpMode::StreamOne,
+    },
+    XhttpInteropCase {
+        id: "h2-tls-packet-up",
+        security: XhttpInteropSecurity::H2Tls,
+        mode: XhttpMode::PacketUp,
+    },
+    XhttpInteropCase {
+        id: "h2-tls-stream-up",
+        security: XhttpInteropSecurity::H2Tls,
+        mode: XhttpMode::StreamUp,
+    },
+    XhttpInteropCase {
+        id: "h2-tls-stream-one",
+        security: XhttpInteropSecurity::H2Tls,
+        mode: XhttpMode::StreamOne,
+    },
+    XhttpInteropCase {
+        id: "h2-reality-packet-up",
+        security: XhttpInteropSecurity::H2Reality,
+        mode: XhttpMode::PacketUp,
+    },
+    XhttpInteropCase {
+        id: "h2-reality-stream-up",
+        security: XhttpInteropSecurity::H2Reality,
+        mode: XhttpMode::StreamUp,
+    },
+    XhttpInteropCase {
+        id: "h2-reality-stream-one",
+        security: XhttpInteropSecurity::H2Reality,
+        mode: XhttpMode::StreamOne,
+    },
+    XhttpInteropCase {
+        id: "h3-tls-packet-up",
+        security: XhttpInteropSecurity::H3Tls,
+        mode: XhttpMode::PacketUp,
+    },
+    XhttpInteropCase {
+        id: "h3-tls-stream-up",
+        security: XhttpInteropSecurity::H3Tls,
+        mode: XhttpMode::StreamUp,
+    },
+    XhttpInteropCase {
+        id: "h3-tls-stream-one",
+        security: XhttpInteropSecurity::H3Tls,
+        mode: XhttpMode::StreamOne,
+    },
+];
+
+/// Runs every reachable H1/H2/H3 security × upload-mode pairing by default:
+/// cleartext H1, TLS-pinned H1/H2/H3, and REALITY H2.
+/// `XRAY_XHTTP_INTEROP_CASES` may select a comma-separated subset by the
+/// stable ids above; `all` is accepted only by itself. Keeping the selection
+/// inside one ignored test prevents `cargo test --ignored` from launching a
+/// process per matrix row and overlapping the REALITY cover-origin probes.
+#[tokio::test]
+#[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
+async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_xhttp_selected_cases() {
+    timeout(Duration::from_secs(3_600), async {
+        for case in selected_xhttp_interop_cases() {
+            eprintln!("running XHTTP interop case={}", case.id);
+            timeout(Duration::from_secs(180), run_local_xray_xhttp_interop(case))
+                .await
+                .unwrap_or_else(|error| panic!("XHTTP case {} timed out: {error}", case.id));
+        }
+    })
+    .await
+    .expect("the selected XHTTP matrix completes");
+}
+
+fn selected_xhttp_interop_cases() -> Vec<XhttpInteropCase> {
+    let Ok(raw) = env::var("XRAY_XHTTP_INTEROP_CASES") else {
+        return XHTTP_INTEROP_CASES.to_vec();
+    };
+    let requested: Vec<_> = raw.split(',').map(str::trim).collect();
+    assert!(
+        !requested.is_empty() && requested.iter().all(|id| !id.is_empty()),
+        "XRAY_XHTTP_INTEROP_CASES must not be empty"
+    );
+    if requested == ["all"] {
+        return XHTTP_INTEROP_CASES.to_vec();
+    }
+    assert!(
+        !requested.contains(&"all"),
+        "XRAY_XHTTP_INTEROP_CASES=all cannot be combined with case ids"
+    );
+
+    let mut selected = Vec::with_capacity(requested.len());
+    for id in requested {
+        let case = XHTTP_INTEROP_CASES
+            .iter()
+            .find(|case| case.id == id)
+            .copied()
+            .unwrap_or_else(|| panic!("unknown XRAY_XHTTP_INTEROP_CASES id {id:?}"));
+        assert!(
+            !selected.contains(&case),
+            "duplicate XRAY_XHTTP_INTEROP_CASES id {id:?}"
+        );
+        selected.push(case);
+    }
+    selected
+}
+
+async fn run_local_xray_xhttp_interop(case: XhttpInteropCase) {
+    let xray_checkout = resolve_xray_checkout();
+    let (server_security, tls_alpn, client_security) = match case.security {
+        XhttpInteropSecurity::H1None => (XrayInboundSecurity::None, None, StreamSecurity::None),
+        XhttpInteropSecurity::H1Tls => (
+            XrayInboundSecurity::Tls,
+            Some("http/1.1"),
+            StreamSecurity::Tls(TlsSettings {
+                server_name: Some(TLS_SERVER_NAME.to_owned()),
+                fingerprint: Some("chrome".to_owned()),
+                allow_insecure: true,
+                alpn: vec!["http/1.1".to_owned()],
+            }),
+        ),
+        XhttpInteropSecurity::H2Tls => (
+            XrayInboundSecurity::Tls,
+            Some("h2"),
+            StreamSecurity::Tls(TlsSettings {
+                server_name: Some(TLS_SERVER_NAME.to_owned()),
+                fingerprint: Some("chrome".to_owned()),
+                allow_insecure: true,
+                alpn: vec!["h2".to_owned()],
+            }),
+        ),
+        XhttpInteropSecurity::H2Reality => (
+            XrayInboundSecurity::Reality,
+            None,
+            reality_security("chrome"),
+        ),
+        XhttpInteropSecurity::H3Tls => (
+            XrayInboundSecurity::Tls,
+            Some("h3"),
+            StreamSecurity::Tls(TlsSettings {
+                server_name: Some(TLS_SERVER_NAME.to_owned()),
+                fingerprint: Some("chrome".to_owned()),
+                allow_insecure: true,
+                alpn: vec!["h3".to_owned()],
+            }),
+        ),
+    };
+    let mode = xhttp_mode_name(case.mode);
+    let xray = timeout(
+        Duration::from_secs(60),
+        start_xray_vless_server(
+            &xray_checkout,
+            XrayVlessServerConfig {
+                security: server_security,
+                transport: XrayInboundTransport::Xhttp {
+                    path: XHTTP_PATH,
+                    mode,
+                    tls_alpn,
+                },
+                flow: None,
+            },
+        ),
+    )
+    .await
+    .expect("start XHTTP Xray server timeout");
+
+    let rust_config = rust_xhttp_core_config(xray.addr, client_security, case.mode);
+    if case.security == XhttpInteropSecurity::H2Reality {
+        // The first REALITY contact may wait for the cover-origin detector.
+        // Warm it with the exact XHTTP mode being tested, never with the raw
+        // Vision helper whose transport this inbound does not serve.
+        warm_up_reality_server_detector(
+            &xray,
+            rust_xhttp_core_config(xray.addr, reality_security("chrome"), case.mode),
+        )
+        .await;
+    }
+    run_local_xray_xhttp_interop_scenario(xray, rust_config, case.mode).await;
+}
+
+fn rust_xhttp_core_config(
+    xray_addr: SocketAddr,
+    security: StreamSecurity,
+    mode: XhttpMode,
+) -> CoreConfig {
+    let exact = |value| xray_config::XhttpRange {
+        from: value,
+        to: value,
+    };
+    rust_core_config_with_transport(
+        xray_addr,
+        security,
+        None,
+        StreamTransport::Xhttp(Box::new(XhttpSettings {
+            path: XHTTP_PATH.to_owned(),
+            mode,
+            x_padding_bytes: exact(64),
+            uplink_http_method: "POST".to_owned(),
+            session_placement: xray_config::XhttpPlacement::Path,
+            seq_placement: xray_config::XhttpPlacement::Path,
+            uplink_data_placement: XhttpUplinkDataPlacement::Body,
+            uplink_chunk_size: exact(4_096),
+            sc_max_each_post_bytes: exact(4_096),
+            sc_min_posts_interval_ms: exact(1),
+            xmux: XhttpXmuxSettings {
+                max_concurrency: exact(1),
+                h_max_request_times: exact(64),
+                h_max_reusable_secs: exact(3_600),
+                ..XhttpXmuxSettings::default()
+            },
+            ..XhttpSettings::default()
+        })),
+    )
+}
+
+const fn xhttp_mode_name(mode: XhttpMode) -> &'static str {
+    match mode {
+        XhttpMode::Auto => "auto",
+        XhttpMode::PacketUp => "packet-up",
+        XhttpMode::StreamUp => "stream-up",
+        XhttpMode::StreamOne => "stream-one",
+    }
+}
+
+async fn run_local_xray_xhttp_interop_scenario(
+    xray: XrayServer,
+    rust_config: CoreConfig,
+    mode: XhttpMode,
+) {
+    let mut core = Core::new(rust_config).expect("create Rust XHTTP core");
+    timeout(Duration::from_secs(5), core.start())
+        .await
+        .expect("start Rust XHTTP core timeout")
+        .expect("start Rust XHTTP core");
+    let socks_addr = core
+        .inbound_addr(Some("socks-in"))
+        .expect("bound XHTTP SOCKS addr");
+
+    // More than one packet-up post, and enough stream data to cross h2 flow
+    // control windows. The directions run concurrently so stream-up/one are
+    // tested as duplex transports rather than as request-then-response RPCs.
+    let payload_len = match mode {
+        XhttpMode::PacketUp => 64 * 1024,
+        XhttpMode::Auto | XhttpMode::StreamUp | XhttpMode::StreamOne => 256 * 1024,
+    };
+    let payload = bulk_interop_payload(payload_len);
+    // packet-up has no terminal POST/session marker in the upstream protocol,
+    // so a target that waits for TCP EOF can never finish. Use a finite target
+    // there and retain the EOF-driven echo server for the streaming modes.
+    let (echo_addr, echo_handle) = if mode == XhttpMode::PacketUp {
+        spawn_exact_echo_server(payload.len()).await
+    } else {
+        spawn_echo_server().await
+    };
+    let mut client = open_socks_flow(&xray, socks_addr, echo_addr).await;
+    let mut echoed = vec![0; payload.len()];
+    let transfer = async {
+        let (mut reader, mut writer) = client.split();
+        let (written, read) = tokio::join!(
+            async {
+                writer.write_all(&payload).await?;
+                writer.flush().await?;
+                writer.shutdown().await
+            },
+            reader.read_exact(&mut echoed),
+        );
+        written.map_err(|error| format!("write XHTTP bulk payload: {error}"))?;
+        read.map_err(|error| format!("read XHTTP bulk echo: {error}"))?;
+        Ok::<(), String>(())
+    };
+    if let Err(error) = timeout(Duration::from_secs(60), transfer)
+        .await
+        .map_err(|error| format!("XHTTP bulk transfer timeout: {error}"))
+        .and_then(|result| result)
+    {
+        eprintln!("{}", xray.logs());
+        panic!("XHTTP bulk flow failed: {error}");
+    }
+    if echoed != payload {
+        let mismatch = echoed
+            .iter()
+            .zip(payload.iter())
+            .position(|(echoed, sent)| echoed != sent)
+            .unwrap_or(echoed.len().min(payload.len()));
+        eprintln!("{}", xray.logs());
+        panic!(
+            "XHTTP bulk echo differs at byte {mismatch} of {}",
+            payload.len()
+        );
+    }
+    drop(client);
+    timeout(Duration::from_secs(5), echo_handle)
+        .await
+        .expect("XHTTP echo task should finish")
+        .expect("XHTTP echo task should not panic");
+
+    // Do not write a single application byte before the target greets us.
+    // The only uplink at this point is the VLESS request header. H1/H3 accept
+    // writes into a bounded worker pipe, so this pins the logical stream's
+    // read-side flush: a server-first protocol must not deadlock waiting for a
+    // header that was accepted locally but never delivered to Xray.
+    run_xhttp_greeting_first_flow(&xray, socks_addr).await;
+
+    // Two simultaneous flows make the live peer exercise xmux pool reuse and
+    // connection fan-out instead of proving only a fresh single flow.
+    let parallel_result = if mode == XhttpMode::PacketUp {
+        run_parallel_socks_exact_echo_workload(socks_addr, 2).await
+    } else {
+        run_parallel_socks_echo_workload(socks_addr, 2).await
+    };
+    if let Err(failures) = parallel_result {
+        eprintln!("{}", xray.logs());
+        panic!(
+            "{} parallel XHTTP flow(s) failed: {failures:?}",
+            failures.len()
+        );
+    }
+
+    core.stop().await.expect("stop Rust XHTTP core");
+    drop(xray);
+}
+
+async fn run_xhttp_greeting_first_flow(xray: &XrayServer, socks_addr: SocketAddr) {
+    const GREETING: &[u8] = b"xhttp-server-first";
+    const CLIENT_MARKER: &[u8] = b"client-after-greeting";
+    const ACK: &[u8] = b"xhttp-ack";
+
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .expect("bind XHTTP greeting-first server");
+    let target = listener.local_addr().expect("XHTTP greeting-first addr");
+    let server = tokio::spawn(async move {
+        let (mut stream, _) = listener
+            .accept()
+            .await
+            .expect("accept XHTTP greeting-first flow");
+        stream
+            .write_all(GREETING)
+            .await
+            .expect("write XHTTP greeting before reading payload");
+        stream
+            .flush()
+            .await
+            .expect("flush XHTTP greeting before reading payload");
+        let mut marker = [0u8; CLIENT_MARKER.len()];
+        stream
+            .read_exact(&mut marker)
+            .await
+            .expect("read client marker after XHTTP greeting");
+        assert_eq!(marker, CLIENT_MARKER);
+        stream
+            .write_all(ACK)
+            .await
+            .expect("write XHTTP greeting ACK");
+        stream.flush().await.expect("flush XHTTP greeting ACK");
+    });
+
+    let mut client = open_socks_flow(xray, socks_addr, target).await;
+    let mut greeting = [0u8; GREETING.len()];
+    match timeout(Duration::from_secs(30), client.read_exact(&mut greeting)).await {
+        Ok(Ok(_)) => {}
+        Ok(Err(error)) => {
+            eprintln!("{}", xray.logs());
+            panic!("read server-first XHTTP greeting: {error}");
+        }
+        Err(error) => {
+            eprintln!("{}", xray.logs());
+            panic!("server-first XHTTP greeting timeout: {error}");
+        }
+    }
+    assert_eq!(greeting, GREETING);
+    client
+        .write_all(CLIENT_MARKER)
+        .await
+        .expect("write marker after XHTTP greeting");
+    client
+        .shutdown()
+        .await
+        .expect("half-close greeting-first XHTTP upload");
+    let mut ack = [0u8; ACK.len()];
+    client
+        .read_exact(&mut ack)
+        .await
+        .expect("read XHTTP greeting ACK");
+    assert_eq!(ack, ACK);
+    drop(client);
+    timeout(Duration::from_secs(5), server)
+        .await
+        .expect("XHTTP greeting-first server should finish")
+        .expect("XHTTP greeting-first server should not panic");
 }
 
 // ---- grpc -------------------------------------------------------------------

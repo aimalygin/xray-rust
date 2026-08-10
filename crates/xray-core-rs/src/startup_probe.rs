@@ -611,6 +611,7 @@ mod https_tests {
                     network: Network::Tcp,
                     transport: StreamTransport::Raw,
                     security: StreamSecurity::None,
+                    quic_params: None,
                     socket_options: None,
                 },
                 settings: OutboundSettings::Freedom,
