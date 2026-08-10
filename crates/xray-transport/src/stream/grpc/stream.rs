@@ -205,10 +205,10 @@ impl GrpcStream {
     /// **A test-only accessor**, like `GrpcTransport::holds_a_live_connection`
     /// next door, and `pub` for the same reason: by this transport's
     /// convention that its tests live in `tests/stream_grpc_tests.rs`, not
-    /// because anything forces them there. An in-src `#[cfg(test)] mod tests`
-    /// — which five modules in this crate carry (`happy_eyeballs.rs`,
-    /// `dns.rs`, `reality_rustls.rs`, `utls_shaping.rs`, `penetrating_tls.rs`)
-    /// and this one does not — would let this be private.
+    /// because anything forces them there. An in-src `#[cfg(test)] mod tests`,
+    /// which no module of this transport has, would let this be private;
+    /// [`super::test_only`] is where that choice is argued and where the
+    /// modules of this crate that went the other way are named.
     /// See [`GrpcTransport::holds_a_live_connection`] for the trade that
     /// convention makes, and note that it is a *different* reason from
     /// `GrpcTransport::config`'s, which really is forced: that one is read from

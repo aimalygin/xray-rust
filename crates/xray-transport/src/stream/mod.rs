@@ -4,6 +4,29 @@
 //! takes an already-secured stream and wraps it. Everything above — the VLESS
 //! request header, Vision, XUDP — is unaware of which transport produced the
 //! stream it was handed.
+//!
+//! **Most of what this module re-exports is test scaffolding.** Every
+//! transport here is driven from a `tests/stream_*_tests.rs`, an integration
+//! test is a separate crate, and so each internal one of them touches has to
+//! be `pub`. What genuinely crosses this package's boundary is
+//! [`TransportLayer`] and what `xray-core-rs` builds it out of —
+//! [`WebSocketConfig`], [`HttpUpgradeConfig`] and the four gRPC names.
+//! Nothing outside this package names anything else here: [`connect_websocket`]
+//! and [`connect_httpupgrade`] have one caller each in `dialer.rs` and would
+//! otherwise be `pub(crate)`, and what `http_headers`, `masquerade` and
+//! `websocket_frame` export is called only from inside this crate and from
+//! `tests/`. The workspace sets `publish = false`, so the cost is not a semver
+//! promise — nothing outside this repository can depend on any of it. The cost
+//! is that every crate inside it can, and can take a frame decoder or a header
+//! builder for an entry point.
+//!
+//! gRPC is the one transport that answers that, with `grpc::test_only`
+//! (re-exported below as `grpc_test_only`): a single `#[doc(hidden)]` module
+//! wearing its purpose in its name, leaving four supported names beside it.
+//! **That is the shape a transport added to this layer should copy.** The
+//! websocket and httpupgrade modules still export their scaffolding flat, and
+//! this pass left it where it is rather than churn working code; the trade is
+//! argued once, on `grpc::test_only`.
 
 mod grpc;
 mod http_headers;
@@ -13,11 +36,10 @@ mod websocket;
 mod websocket_frame;
 
 /// Test scaffolding, not API: `tests/stream_grpc_tests.rs` imports from here
-/// and nothing else should. The nine names behind it are still `pub` and still
-/// in the crate's semver promise — `#[doc(hidden)]` hides them from rustdoc,
-/// not from a downstream `use`. The four gRPC names on the line below are the
-/// transport's whole *supported* surface; `grpc::test_only` says why the rest
-/// is behind a door with its purpose in the name rather than beside them.
+/// and nothing else should. The four gRPC names on the line below are the
+/// transport's whole *supported* surface. `grpc::test_only` says what is
+/// behind this door, why each name is there, and why it is a door and not a
+/// lock.
 #[doc(hidden)]
 pub use grpc::test_only as grpc_test_only;
 pub use grpc::{resolve_user_agent, Authority, GrpcConfig, GrpcTransport};

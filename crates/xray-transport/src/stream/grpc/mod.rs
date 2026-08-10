@@ -12,23 +12,25 @@ mod stream;
 pub use config::{resolve_user_agent, Authority, GrpcConfig};
 pub use pool::GrpcTransport;
 
-/// The internals `tests/stream_grpc_tests.rs` reaches for, and the whole reason
+/// This transport's internals, gathered behind one door, and the whole reason
 /// any of them is `pub`.
 ///
-/// **This is not API**, but it is still in the crate's semver promise: a
-/// `#[doc(hidden)] pub` name is hidden from rustdoc, not from a downstream
-/// `use`. What the module buys is discoverability, not unreachability. Four
-/// names out of this transport are meant to be found: the two types the
-/// outbound builds (`GrpcConfig`, `GrpcTransport`), the [`Authority`] the first
-/// of them holds, and [`resolve_user_agent`], which the outbound calls to fill
-/// it in. The rest are gathered here rather than re-exported beside those four
-/// so that nothing outside a test reaches one by autocomplete and takes it for
-/// a supported entry point.
+/// **This is not API, and `#[doc(hidden)]` is not a visibility.** Every name
+/// in here is still `pub` and still nameable from any crate in this workspace
+/// as `xray_transport::stream::grpc_test_only::*`, and the types drag their
+/// inherent methods and trait impls along with them. What the module buys is
+/// discoverability, not unreachability. Four names out of this transport are
+/// meant to be found: the two types the outbound builds (`GrpcConfig`,
+/// `GrpcTransport`), the [`Authority`] the first of them holds, and
+/// [`resolve_user_agent`], which the outbound calls to fill it in. The rest are
+/// gathered here rather than re-exported beside those four so that nothing
+/// outside a test reaches one by autocomplete and takes it for a supported
+/// entry point.
 ///
-/// Eight of the nine are named by that file. [`GrpcKeepalive`] is the
-/// exception: no test imports it — they reach its fields through the value
-/// [`resolve_keepalive`] returns — and it is here only so that that return
-/// type is nameable by whoever can call the function.
+/// Most of these are here because `tests/stream_grpc_tests.rs` names them.
+/// [`GrpcKeepalive`] is not: no test imports it — the keepalive tests reach its
+/// fields through the value [`resolve_keepalive`] returns — and it is here only
+/// so that that return type stays nameable by whoever can call the function.
 ///
 /// [`open_grpc_h2_stream`](h2client::open_grpc_h2_stream) is why the module
 /// exists rather than a `#[doc(hidden)]` on each name. It takes a
@@ -44,15 +46,19 @@ pub use pool::GrpcTransport;
 /// only stops anyone arriving at it by accident. Making it genuinely
 /// unreachable means an in-src `#[cfg(test)]` module, which is the trade below.
 ///
-/// That alternative — moving these tests into `#[cfg(test)]` modules under
-/// `src/stream/` so nothing has to be `pub` at all — is available and is not
-/// taken. This transport's tests are integration tests by convention, so that
-/// the framing and the pool are exercised across the crate boundary a real
-/// caller sits on; see the header of `tests/stream_grpc_tests.rs`. What is
-/// *not* claimed is that integration tests were forced on it: five modules
-/// elsewhere in this crate are in-src `#[cfg(test)] mod tests`
-/// (`happy_eyeballs.rs`, `dns.rs`, `reality_rustls.rs`, `utls_shaping.rs`,
-/// `penetrating_tls.rs`).
+/// **The alternative, argued here and nowhere else.** Moving these tests into
+/// `#[cfg(test)]` modules under `src/stream/` would make every name above
+/// private, and the shape is available: `happy_eyeballs.rs`, `dns.rs`,
+/// `reality_rustls.rs`, `utls_shaping.rs` and `penetrating_tls.rs` each carry
+/// an in-src `#[cfg(test)] mod tests`, and no module of this transport does.
+/// It is declined so that the framing and the pool are exercised across the
+/// crate boundary a real caller sits on; see the header of
+/// `tests/stream_grpc_tests.rs`. So integration tests here are a convention,
+/// not a constraint — but that is one claim, and it belongs in one place.
+/// [`GrpcTransport::holds_a_live_connection`],
+/// [`GrpcStream::connection_is_finished`](stream::GrpcStream::connection_is_finished)
+/// and that test header each point back here rather than restate it, so this
+/// stays one claim to check instead of four copies to keep in step.
 ///
 /// [`GrpcKeepalive`]: config::GrpcKeepalive
 /// [`resolve_keepalive`]: config::resolve_keepalive

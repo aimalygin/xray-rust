@@ -109,15 +109,15 @@ impl GrpcTransport {
     /// differs from [`Self::config`]. Its only caller is this crate's own
     /// `tests/stream_grpc_tests.rs`, and those are integration tests — a
     /// separate crate, so they cannot reach a `pub(crate)`. But nothing forced
-    /// them to be integration tests: five modules elsewhere in this crate are
-    /// in-src `#[cfg(test)] mod tests` (`happy_eyeballs.rs`, `dns.rs`,
-    /// `reality_rustls.rs`, `utls_shaping.rs`, `penetrating_tls.rs`), and an
-    /// in-src module here would let this be private. The gRPC transport keeps
-    /// its tests outside so that the framing and the pool are driven across the
-    /// crate boundary a real caller sits on, and pays for that with this.
-    /// Hidden rather than left in the rendered API, because nothing outside
-    /// those tests should find it and be tempted to branch on it. Its sibling
-    /// is [`GrpcStream::connection_is_finished`].
+    /// them to be integration tests, and an in-src `#[cfg(test)]` module here
+    /// would let this be private — [`super::test_only`] is where that trade is
+    /// argued and where the modules of this crate that went the other way are
+    /// named. The gRPC transport keeps its tests outside so that the framing
+    /// and the pool are driven across the crate boundary a real caller sits on,
+    /// and pays for that with this. Hidden rather than left in the rendered
+    /// API, because nothing outside those tests should find it and be tempted
+    /// to branch on it. Its sibling is
+    /// [`GrpcStream::connection_is_finished`].
     ///
     /// [`GrpcStream::connection_is_finished`]:
     ///     super::test_only::GrpcStream::connection_is_finished
