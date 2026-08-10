@@ -23,8 +23,11 @@ pub mod reality;
 pub mod reality_connector;
 pub mod reality_runtime;
 mod reality_rustls;
-mod reality_utls_profiles;
+pub mod stream;
 mod tls;
+mod utls_profiles;
+mod utls_shaping;
+mod utls_tls;
 
 pub use dialer::TransportDialer;
 pub use dns::{
@@ -42,7 +45,8 @@ pub use reality_runtime::{
     RealityHandshakeContextProvider, RealityRuntimeEngine, SystemRealityHandshakeContextProvider,
 };
 pub use reality_rustls::RustlsRealityTlsSessionProvider;
-pub use tls::TlsConnector;
+pub use tls::{plain_tls_client_hello_bytes, TlsConnector};
+pub use utls_profiles::draw_modern_fingerprint;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConnectorConfig {
@@ -55,6 +59,16 @@ pub enum ConnectorConfig {
 pub struct TlsClientConfig {
     pub server_name: String,
     pub allow_insecure: bool,
+    /// `tlsSettings.alpn`. The TLS dial combines this list with the stream
+    /// transport's handshake policy: RAW follows Xray's exact-list gate,
+    /// WebSocket/HTTPUpgrade force HTTP/1.1 except for Xray's h2/http1
+    /// compatibility pair, and gRPC forces h2. An unshaped `unsafe` hello uses
+    /// the same transport policy through stock rustls ALPN configuration.
+    pub alpn: Vec<String>,
+    /// Normalized `tlsSettings.fingerprint`. `None` and `Some("unsafe")` both
+    /// mean no shaping; `None` is the value used by call sites that predate
+    /// fingerprint support.
+    pub fingerprint: Option<String>,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -118,8 +132,26 @@ pub enum TransportError {
     InvalidTlsServerName(String),
     #[error("{0} connector config is not supported by TcpConnector")]
     UnsupportedConnectorConfig(&'static str),
+    #[error("HTTP/3 requires stock TLS and cannot use the {0} security connector")]
+    UnsupportedHttp3Security(&'static str),
     #[error("unsupported REALITY fingerprint {0}")]
     UnsupportedRealityFingerprint(String),
+    #[error("unsupported TLS fingerprint {0}")]
+    UnsupportedTlsFingerprint(String),
+    /// A fingerprint this client knows but cannot use: every cipher suite its
+    /// ClientHello advertises is one rustls does not implement, so whichever
+    /// the server picks is one we cannot speak. Distinct from
+    /// `UnsupportedTlsFingerprint`, which means the name itself is unknown.
+    #[error("TLS fingerprint {0} advertises no cipher suite this client implements")]
+    UnnegotiableTlsFingerprint(String),
+    #[error("httpupgrade handshake rejected: {0}")]
+    HttpUpgradeRejected(String),
+    #[error("websocket protocol error: {0}")]
+    WebSocketProtocol(String),
+    #[error("grpc transport error: {0}")]
+    Grpc(String),
+    #[error("xhttp transport error: {0}")]
+    Xhttp(String),
     #[error("reality handshake failed: {0}")]
     Reality(#[from] reality::RealityError),
     #[error("REALITY live TLS completion is not implemented")]

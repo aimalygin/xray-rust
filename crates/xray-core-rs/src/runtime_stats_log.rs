@@ -109,14 +109,17 @@ fn format_tun_stats_debug_lines(stats: &TunStats) -> Vec<String> {
             stats.active_udp_flows
         ),
         format!(
-            "Debug stats queues inboundQueueDepth={} outboundQueueDepth={} inboundQueueMaxPackets={} outboundQueueMaxPackets={} tunFdWriteBatches={} tunFdWriteBatchPackets={} tunFdWriteBatchMaxPackets={}",
+            "Debug stats queues inboundQueueDepth={} outboundQueueDepth={} inboundQueueMaxPackets={} outboundQueueMaxPackets={} tunFdWriteBatches={} tunFdWriteBatchPackets={} tunFdWriteBatchMaxPackets={} tunFdReadLoopExits={} tunFdWriteLoopExits={} tunFdTransientIoErrors={}",
             stats.inbound_queue_depth,
             stats.outbound_queue_depth,
             stats.inbound_queue_max_packets,
             stats.outbound_queue_max_packets,
             stats.tun_fd_write_batches,
             stats.tun_fd_write_batch_packets,
-            stats.tun_fd_write_batch_max_packets
+            stats.tun_fd_write_batch_max_packets,
+            stats.tun_fd_read_loop_exits,
+            stats.tun_fd_write_loop_exits,
+            stats.tun_fd_transient_io_errors
         ),
         format!(
             "Debug stats tcpBytes tcpStackToRemoteBytes={} tcpRemoteWrittenBytes={} tcpRemoteReadBytes={} tcpBackpressure={} tcpStackToRemoteBackpressure={} tcpRemoteToStackBackpressure={}",
@@ -326,6 +329,26 @@ mod tests {
         assert!(lines
             .iter()
             .any(|line| line.contains("udpQuicBlockedPackets=5")));
+    }
+
+    #[test]
+    fn format_tun_stats_debug_lines_includes_pump_give_up_counters() {
+        let stats = TunStats {
+            tun_fd_read_loop_exits: 1,
+            tun_fd_write_loop_exits: 2,
+            tun_fd_transient_io_errors: 9,
+            ..TunStats::default()
+        };
+
+        let lines = format_tun_stats_debug_lines(&stats);
+
+        let queues = lines
+            .iter()
+            .find(|line| line.starts_with("Debug stats queues"))
+            .expect("queues line");
+        assert!(queues.contains("tunFdReadLoopExits=1"));
+        assert!(queues.contains("tunFdWriteLoopExits=2"));
+        assert!(queues.contains("tunFdTransientIoErrors=9"));
     }
 
     #[test]

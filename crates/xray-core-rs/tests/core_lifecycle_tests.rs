@@ -7,7 +7,7 @@ use tokio::time::{timeout, Duration};
 use uuid::Uuid;
 use xray_config::{
     CoreConfig, DnsFakeIpConfig, InboundConfig, InboundProtocol, IpCidr, Network, OutboundConfig,
-    OutboundSettings, RoutingConfig, StreamSecurity, StreamSettings, TargetAddr,
+    OutboundSettings, RoutingConfig, StreamSecurity, StreamSettings, StreamTransport, TargetAddr,
     VlessOutboundSettings, VlessUser,
 };
 use xray_core_rs::{Core, CoreError, CoreState, TunRuntimeOptions, TunRuntimeProfile};
@@ -28,7 +28,9 @@ fn runtime_config() -> CoreConfig {
             tag: Some("proxy".to_owned()),
             stream: StreamSettings {
                 network: Network::Tcp,
+                transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
+                quic_params: None,
                 socket_options: None,
             },
             settings: OutboundSettings::Vless(VlessOutboundSettings {

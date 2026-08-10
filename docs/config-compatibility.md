@@ -73,23 +73,677 @@ runtime currently selects the first user.
 - `xtls-rprx-vision`;
 - `xtls-rprx-vision-udp443`.
 
-`streamSettings.network` is currently `tcp` only. Security values are:
+`streamSettings.network` accepts `tcp`/`raw`, `ws`/`websocket`, `httpupgrade`,
+`grpc`, and `xhttp`/`splithttp`. Xray renamed the TCP transport to `raw` and
+XHTTP from `splithttp`; both pairs are accepted aliases, as are `ws` and
+`websocket`. `gun` is not an accepted alias for `grpc`, because v26.5.9's
+`TransportProtocol.Build` has no such arm either. Security values are:
 
 - `none`;
-- `tls`, with `serverName` and `allowInsecure` (certificate verification is
-  enabled by default);
+- `tls`, with `serverName`, `allowInsecure` (certificate verification is
+  enabled by default), `fingerprint`, and `alpn`, described below;
 - `reality`, with `serverName`, a supported `fingerprint`, base64url
   `publicKey`, hexadecimal `shortId`, optional `spiderX`, and optional
   `mldsa65Verify`.
 
-TLS fingerprint shaping and non-empty custom ALPN lists are not supported.
-`tcpSettings.header.type` may be absent, empty, or `none`. WebSocket, HTTP/2,
-gRPC, QUIC, KCP, and other stream transports are not supported. Outbound mux,
-`proxySettings`, `sendThrough`, multiple VLESS servers, and outbound chaining
-are rejected.
+`tcpSettings.header.type` — equally `rawSettings.header.type` — may be absent,
+empty, or `none`. Generic HTTP/2, QUIC, KCP and other stream transports are not
+supported; HTTP/2 and QUIC v1 are available only as XHTTP's selected wire
+engines. Outbound mux, `proxySettings`, `sendThrough`, multiple VLESS servers,
+and outbound chaining are rejected.
 
 VLESS UDP is carried over the supported TCP transport using VLESS datagram or
 XUDP framing; it does not make `streamSettings.network: "udp"` valid.
+
+### WebSocket and HTTPUpgrade
+
+Both transports carry VLESS over an HTTP/1.1 upgrade and share Xray's
+browser-masquerade header block, so a request from either looks like a
+browser's. Their requests are serialized the way Go writes an `http.Request`:
+request line, `Host`, `User-Agent`, then every remaining header sorted
+case-sensitively by its literal key. Header CR/LF is replaced with spaces,
+invalid field names are dropped, IDN hosts are written as Punycode, and an
+absent `User-Agent` becomes Go's `Go-http-client/1.1` default. Those details
+matter for both wire parity and request-smuggling resistance.
+
+`wsSettings` accepts `path`, `host`, `headers`, `heartbeatPeriod` and
+`acceptProxyProtocol`; `httpupgradeSettings` accepts the same less
+`heartbeatPeriod`. A settings block belonging to another network is validated
+but ignored, with a warning — Xray builds every block that is present and only
+picks between them at dial time, which is how a copy-pasted `wsSettings`
+silently downgrades a profile to plain TCP.
+
+The `Host` header is the transport's own `host`, else `tlsSettings.serverName`,
+else the destination address, and never carries a port. WebSocket also accepts
+a `Host` inside `headers`, folding it into `host` with a deprecation warning;
+HTTPUpgrade rejects it, because Xray reads its `Host` from `host` alone. The
+two also disagree on header casing, deliberately: WebSocket feeds `headers`
+through Go's `header.Add`, which MIME-canonicalizes the key, so `accept`
+reaches the wire as `Accept`; HTTPUpgrade assigns into the map directly and
+keeps whatever casing was written.
+
+**`?ed=N` in the path means different things on the two transports**, despite
+the shared spelling. On both it is stripped from the path and the remaining
+query is re-encoded the way Go's `url.Values.Encode` does. On WebSocket it is
+an early-data budget: nothing touches the network until the first write, and
+if that write is at most `N` bytes it travels inside `Sec-WebSocket-Protocol`
+as unpadded base64url with no frame sent for it. A larger first write disables
+early data for the whole connection rather than being truncated — the boundary
+is inclusive. On HTTPUpgrade it carries no payload at all. The client still
+waits for and validates the `101`: Xray's inbound handler can otherwise leave
+application bytes coalesced behind the request in its buffered reader, causing
+silent loss. A configured HTTPUpgrade `ed` therefore produces a warning.
+
+One more asymmetry worth knowing before writing a path: HTTPUpgrade assigns the
+path to Go's decoded `URL.Path`, which escapes `?`, `%`, `#`, whitespace and
+non-ASCII bytes, so a configured `/ws?foo=bar` goes out as
+`GET /ws%3Ffoo=bar`. When `?ed=` triggered a config rewrite the path was
+already escaped once by `URL.String`, and HTTPUpgrade escapes that `%` again,
+matching Xray's double-escaped wire form. WebSocket reparses a URI instead: it
+keeps valid existing path escapes, sends a real raw query, and omits fragments.
+The Xray server unescapes the transport path back, so both round-trip.
+
+`heartbeatPeriod` is in seconds and applies to WebSocket only. It sends an
+empty ping every period, the first one a full period after connect. Closing
+writes a close frame with code 1000 and no reason before the socket closes.
+
+#### The masqueraded browser version is redrawn on every start
+
+A **known divergence**, and the one place the header block differs from Xray's.
+Xray derives the Chrome, Firefox, Safari and curl versions in its `User-Agent`
+and `Sec-CH-UA` headers from the calendar minus a random offset seeded with the
+host CPU's identity, so one install reports the same versions until its
+hardware changes. Ours draws that offset from the OS CSPRNG once per process,
+which reproduces the spread across Xray's installs — on 2026-08-07, 55% of them
+said Chrome 148 and the rest 145 to 147 — but not its stability per machine.
+
+Within a process the versions never move: a client whose `User-Agent` changed
+between connections would stand out more than one that never changes. What an
+observer can see is a client whose claimed browser version changes across
+restarts, which is ordinary for a browser on a 35-day release cadence and the
+better side of the trade against a whole user base frozen on one version.
+
+Setting a `User-Agent` in `headers` opts out of all of it. Any value other than
+the magic keywords `chrome`, `firefox`, `safari`, `edge`, `curl` and `golang`
+suppresses the entire masquerade block — about ten headers — which is Xray's
+behavior too, and rarely what the author intended.
+
+#### What these transports cannot be combined with
+
+Xray refuses both pairings too, so refusing them here only moves the failure
+earlier — the two land in different places, but neither reaches the wire:
+
+- **REALITY is rejected** at parse time, matching Xray's "REALITY only supports
+  RAW, XHTTP and gRPC for now", which Xray raises while building the stream
+  config (`infra/conf/transport_internet.go:1989`). Plain TLS is the only
+  security these transports take.
+- **`xtls-rprx-vision` is rejected** when the stream is opened, not when the
+  outbound is built: the pairing is a property of the dialer, so the profile
+  parses and the outbound builds, and the guard the connect path runs before it
+  dials is what refuses. Vision splices itself into the security connection's
+  internals, and both transports wrap that connection rather than handing it
+  back, so Vision has nothing to splice into. Xray refuses later still — it
+  gets as far as a successful dial and then fails the flow with "XTLS only
+  supports TLS and REALITY directly for now". That is a property of these two
+  dialers, not a rule about transports in general — see the gRPC section below
+  for the test Xray actually applies.
+
+A `freedom` outbound is also refused these transports, and `grpc` with them.
+Xray would dial the destination itself through them; here they are implemented
+for VLESS only, and refusing is better than silently dialling plain TCP.
+
+### XHTTP
+
+`network: "xhttp"` and the legacy `"splithttp"` spelling select the same
+client transport. Their settings blocks are `xhttpSettings` and
+`splithttpSettings`; when both non-null blocks are present, Xray gives
+`xhttpSettings` unconditional priority and so do we. The ignored legacy block
+must still have JSON-decodable field types, but its mode and cross-field
+semantics cannot affect the selected block. A missing or null selected block
+is the ordinary zero-valued Xray config, not an error.
+
+The configured security and ALPN list choose the wire engine before dialing:
+
+| Stream security and configured ALPN | XHTTP engine |
+| --- | --- |
+| `none` | HTTP/1.1 |
+| TLS with exactly `["http/1.1"]` | HTTP/1.1 |
+| TLS with exactly `["h3"]` | HTTP/3 over QUIC v1 |
+| TLS with any other list, including empty or multi-valued | HTTP/2 |
+| REALITY | HTTP/2 |
+
+This follows Xray's configured-list decision; it is not an ALPN fallback
+ladder. In particular, the H3 branch requires TLS, advertises exactly `h3`, and
+never retries over H2/H1. REALITY is supported on H2. Vision is not: as with
+gRPC, XHTTP returns an HTTP stream wrapper rather than the TLS/REALITY
+connection Vision needs to inspect directly, and xray-core refuses the same
+shape later in its VLESS outbound.
+
+`host` resolves the HTTP authority ahead of `tlsSettings.serverName` or
+`realitySettings.serverName`, then the VLESS server address. The native client
+path does not append the VLESS destination port; a port is sent only when it
+was written explicitly in `host`. IPv6 authorities are bracketed and domain
+names are normalized through IDNA. A `Host` entry inside `headers` is rejected
+because it conflicts with the independent field. Other valid header names are
+MIME-canonicalized as Xray's `http.Header.Add` does.
+
+All three modes are active on HTTP/1.1, HTTP/2, and HTTP/3:
+
+- `packet-up` opens one session downlink and sends numbered, bounded uplink
+  requests. HTTP/1.1 waits for and drains each response before safely reusing
+  that upload socket; H2/H3 may monitor bounded responses concurrently after
+  the corresponding request body has uploaded.
+- `stream-up` opens a separate session downlink and streaming uplink. H1 uses
+  chunked transfer encoding; H2/H3 use streaming DATA. The upload response is
+  drained in the background and participates in cancellation/error teardown.
+- `stream-one` uses one full-duplex request with no session or sequence.
+
+`mode: "auto"` becomes `packet-up` without REALITY and `stream-one` with
+REALITY. `stream-up` remains available explicitly. A session UUID is generated
+for the two split modes; path, cookie, header, and query placements, mandatory
+padding, sequence numbers, packet pacing, and half-close/EOF behavior are all
+handled by the shared request composer.
+
+The HTTP clients also match Go's transparent gzip policy. Stream requests and
+H2/H3 packet requests add `Accept-Encoding: gzip` only when the caller did not
+select another encoding or a non-empty Range and the method is not HEAD; an
+explicit empty encoding has Go's same auto-gzip meaning. Responses are decoded
+only when the transport added that header itself. H1/H2 accept case-insensitive
+`Content-Encoding: gzip`, while H3 keeps quic-go's exact lowercase check. The
+raw H1 packet uploader bypasses both injection and decoding, as Xray's direct
+`Request.Write` path does.
+
+The accepted `xhttpSettings` surface is:
+
+- routing/request identity: `host`, `path`, `mode`, and `headers`;
+- padding: `xPaddingBytes`, `xPaddingObfsMode`, `xPaddingKey`,
+  `xPaddingHeader`, `xPaddingPlacement`, and `xPaddingMethod`;
+- uplink metadata: `uplinkHTTPMethod`, `sessionPlacement`, `sessionKey`,
+  `seqPlacement`, `seqKey`, `uplinkDataPlacement`, `uplinkDataKey`, and
+  `uplinkChunkSize`;
+- packet/stream controls: `noGRPCHeader`, `noSSEHeader`,
+  `scMaxEachPostBytes`, `scMinPostsIntervalMs`, `scMaxBufferedPosts`,
+  `scStreamUpServerSecs`, and `serverMaxHeaderBytes`;
+- `xmux`, with `maxConcurrency`, `maxConnections`, `cMaxReuseTimes`,
+  `hMaxRequestTimes`, `hMaxReusableSecs`, and `hKeepAlivePeriod`.
+
+Range fields accept a JSON integer or Xray's string form such as
+`"100-1000"`; null scalar/range/xmux values retain Go's zero-value semantics.
+`uplinkHTTPMethod` must be an HTTP token and `GET` is allowed only in
+`packet-up`; cookie/header uplink-data placement is also packet-up-only.
+`noSSEHeader` and `serverMaxHeaderBytes` are accepted but have no client-side
+effect because they configure Xray's inbound response/listener. A null
+`downloadSettings` is equivalent to absent; a populated value is rejected
+because it requires a second independent transport stack. `extra` is rejected
+even when null: it is a `json.RawMessage` upstream and its presence replaces
+most outer settings, which cannot be approximated without changing the wire.
+
+The xmux scheduler is implemented rather than merely parsed. Its random ranges
+bound logical concurrency, client-slot count, connection reuse, HTTP request
+count, and reusable lifetime. Enabling positive `maxConnections` together with
+positive `maxConcurrency` is rejected as Xray rejects it. The default is one
+logical flow per client slot, so simultaneous flows get distinct HTTP clients
+while sequential flows can reuse one. H2/H3 keep capacity-aware reusable
+connection pools; H1 reuses only packet-upload sockets whose response was
+fully consumed. The scheduler is shared by every cached selection of one
+outbound, including TCP and UDP sessions, rather than being cloned per flow.
+
+#### HTTP/3 phase-one QUIC surface
+
+The H3 path uses a protected UDP socket and the same resolved-candidate Happy
+Eyeballs policy as the other outbounds. Its stock TLS 1.3 config ignores
+`tlsSettings.fingerprint` and the configured ALPN payload after the exact
+`["h3"]` branch is selected, then advertises exactly `h3`; that is the same
+separation Xray makes between its QUIC TLS path and uTLS TCP callback.
+
+`streamSettings.finalmask.quicParams` is parsed for every stream but applied
+only to H3. The phase-one engine implements QUIC v1, Reno, the default/standard
+BBR selection, initial receive windows, equal explicit maximum windows,
+`maxIdleTimeout`, `keepAlivePeriod`, `disablePathMTUDiscovery`, and
+`maxIncomingStreams`. With no overrides it uses Xray's 2 MiB stream and 3 MiB
+connection initial windows, a 300-second idle timeout, and a ten-second H3
+keepalive.
+
+Receive-window growth is deliberately not claimed: Quinn holds those windows
+static, while quic-go adapts them toward 6 MiB per stream and 15 MiB per
+connection. Standard BBR is likewise a Quinn-BBR approximation with Xray's
+initial congestion window, not quic-go's exact controller. Distinct
+`maxStreamReceiveWindow`/`maxConnectionReceiveWindow` values, QUIC v2 through
+the transport API, conservative/aggressive BBR profiles, Brutal and
+force-Brutal, non-empty `udpHop`, and `debug: true` fail closed before opening
+a socket. Nonempty `finalmask.tcp` or `finalmask.udp` masks also remain
+unsupported. H3 has hermetic mode, wire, pool, lifecycle, TLS, and protected
+UDP tests, and the ignored live Xray-core `packet-up`, `stream-up`, and
+`stream-one` interoperability cases pass. The current pool conservatively
+allows one active HTTP request per QUIC connection and opens another
+connection for concurrent work. That functional evidence does not establish
+performance parity; release throughput plus controlled RTT/loss runs remain
+required for the static-window, pool, and Quinn-BBR differences.
+
+### gRPC
+
+`network: "grpc"` carries VLESS inside `Hunk` messages on one bidirectional
+HTTP/2 POST, and it is shaped unlike the other two transports because of it:
+ws and httpupgrade take a socket and give back a stream, while every gRPC flow
+to one server becomes one more stream on a *shared* HTTP/2 connection. The
+first flow opens that connection and it is held between flows, as Xray holds
+its `*grpc.ClientConn` in `globalDialerMap`.
+
+Upstream marks the transport deprecated — building a `grpc` stream prints a
+non-removal deprecation warning pointing at XHTTP stream-up H2
+(`Xray-core/infra/conf/transport_internet.go:1003-1005`) — so it still works
+and still interoperates, but it is not where xray-core is going. We do not
+print that warning.
+
+`grpcSettings` accepts eight keys and no others. There is no `path`, no `host`,
+no `headers` and no `?ed=`, because `GRPCConfig` has none of them
+(`Xray-core/infra/conf/grpc.go:8-17`). Their spelling is inconsistent, and the
+inconsistency is Xray's: five are snake_case, two are camelCase, and one is
+neither.
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `serviceName` | string | The `:path`, in one of two dialects; see below |
+| `multiMode` | bool | Selects the `TunMulti` RPC and the `MultiHunk` message |
+| `authority` | string | `:authority` outright, ahead of the whole chain below |
+| `user_agent` | string | `chrome`, `firefox`, `edge`, `golang`, or a literal |
+| `idle_timeout` | int32 | Keepalive ping interval, in seconds |
+| `health_check_timeout` | int32 | How long a ping may go unacknowledged, in seconds |
+| `permit_without_stream` | bool | Ping a connection with no call open on it |
+| `initial_windows_size` | int32 | `SETTINGS_INITIAL_WINDOW_SIZE` for the connection |
+
+**A camelCase `idleTimeout` is rejected**, and that is a deliberate refusal of
+something xray-core tolerates. Go matches on the struct tag, so upstream reads
+`idleTimeout` as an unknown key and drops it in silence — the profile loads and
+dials with no keepalive at all. Accepting it here would let a config work that
+does nothing against a real server. The three `int32` values are clamped
+negative-to-zero as `GRPCConfig.Build` clamps them, and a value past `i32::MAX`
+is rejected, as Go's own decoder rejects it.
+
+`user_agent` follows Xray's switch (`transport/internet/grpc/dial.go:193-205`).
+An absent or empty value is *not* the empty case: it shares an arm with
+`chrome` and sends a Chrome user agent, so the default gRPC dial claims to be a
+browser. `golang` is the one value that empties the header, and the header is
+still sent, because grpc-go appends it unconditionally. Anything else is a
+literal and goes out verbatim — `safari` and `curl` included, which are
+masquerade keywords the gRPC table does not know. The `chrome`, `firefox` and
+`edge` strings come from the same table the WebSocket masquerade uses, so the
+redrawn-browser-version divergence described above applies to them too. Xray's
+own comment is worth repeating: a browser UA on gRPC is **not recommended**,
+because browsers cannot initiate gRPC. We match the behaviour anyway. A literal
+that no HTTP header can carry is the one value refused rather than sent; see
+[below](#a-user_agent-no-http-header-can-carry-is-refused-at-startup).
+
+#### `serviceName` has two dialects
+
+The leading `/` picks between them
+(`Xray-core/transport/internet/grpc/config.go:17-59`).
+
+A name **without** a leading `/` is an old-school service name. It is escaped
+whole with Go's `url.PathEscape`, so an inner `/` becomes `%2F` and the result
+is a single path segment; the stream name is then `Tun`, or `TunMulti` under
+`multiMode`. `xray.grpc` dials `/xray.grpc/Tun`.
+
+**The default is the empty string, and it dials `//Tun`** — an empty service
+name between two slashes, not a single slash. A `grpcSettings` block that is
+absent altogether resolves the same way, because Xray falls through to a
+zero-valued transport config rather than treating the block as mandatory. An
+Xray inbound with no `serviceName` registers the same empty name, so the two
+ends agree; a server expecting `/Tun` is a different configuration.
+
+A name **with** a leading `/` is a custom path. Everything between the first
+and the last `/` is the service name, escaped segment by segment so its inner
+slashes survive as separators, and the last segment is the stream name. That
+last segment may carry a `|`: the part before it is the `Tun` name and the part
+after it the `TunMulti` name, so `/a/b/Tun|TunMulti` dials `/a/b/Tun` normally
+and `/a/b/TunMulti` under `multiMode`. With no `|`, the one part is used for
+whichever RPC the mode selects. Upstream calls the one-part form the client
+spelling and the two-part form the server spelling; the client honours both.
+
+#### `multiMode` selects a different message
+
+Not merely a different stream name. `Tun` streams `Hunk`, whose `data` is a
+singular `bytes`; `TunMulti` streams `MultiHunk`, whose `data` is
+`repeated bytes` (`transport/internet/grpc/encoding/stream.proto:6-17`). One
+multi-mode message therefore carries a whole batch of payload chunks
+(`encoding/multiconn.go:115-134` packs one per buffer), and a `Hunk` reader
+handed one of those keeps only the last element — silently, with no error and
+nothing logged. Reaching that state takes a particular `serviceName` spelling,
+and only that one; see below.
+
+**Only the client reads the flag.** `MultiMode` is consulted on the dial path
+(`transport/internet/grpc/dial.go:59`) and nowhere else in the transport. The
+listener never looks at it: it registers *both* RPCs on one service descriptor
+whatever its own setting (`hub.go:127-128`,
+`encoding/customSeviceName.go:9-30,57-60`), and the two stream names it
+registers them under come from `serviceName` (`config.go:36-59`). So for any
+`serviceName` without a leading `/` — the default empty one included, where the
+names are the constants `Tun` and `TunMulti` — a client in either mode reaches
+the handler that matches it, and the server's own `multiMode` is inert. Our
+`multiMode: true` bulk interop scenario runs against an xray-core inbound whose
+only gRPC setting is a `serviceName`.
+
+The one spelling that constrains the client is a **one-part custom path** such
+as `/a/b/Name`. There `getTunStreamName` and `getTunMultiStreamName` both
+return `Name`, the descriptor carries that name twice, and grpc-go keeps the
+last entry when it builds its stream map
+(`google.golang.org/grpc@v1.81.0/server.go:788-791`), so `TunMulti` is the
+handler installed. A single-mode client then talks `Hunk` to a `MultiHunk`
+handler: its own writes survive, because one `bytes` decodes as a one-element
+`repeated bytes`, but a reply that batched several buffers into one message
+loses all but the last. Use the two-part `/a/b/Tun|TunMulti` form, or no
+leading `/` at all, and the mode stays a client-side choice.
+
+#### The `:authority` chain is not the `Host` chain
+
+Xray resolves `:authority` as `grpcSettings.authority`, else
+`tlsSettings.serverName`, else the destination address **but only when it is a
+domain and REALITY is not configured**, else the empty string
+(`transport/internet/grpc/dial.go:159-167`). Under REALITY the third branch is
+skipped rather than answered with `realitySettings.serverName`, and the second
+has nothing to read either, because `tls.ConfigFromStreamSettings` returns nil
+for a REALITY stream.
+
+**The empty string is not an omitted header.** grpc-go then walks its own
+precedence to the dial target, which Xray builds as `passthrough:///host:port`,
+so what reaches the wire is the destination *with its port*:
+`example.com:443`, `198.51.100.7:443`, `[2001:db8::1]:443`. That is the default
+under REALITY and under any configuration whose destination is an IP literal,
+rather than a corner case. We resolve the same chain, once, when the outbound
+is built rather than on every dial.
+
+#### REALITY yes, `xtls-rprx-vision` no
+
+REALITY is accepted with gRPC, matching Xray's "REALITY only supports RAW,
+XHTTP and gRPC for now" — gRPC is on that list where ws and httpupgrade are
+not.
+
+`xtls-rprx-vision` is rejected, and both ends refuse it in different places —
+on neither end at config time. Here the profile parses and the outbound builds;
+what refuses is the guard the connect path runs before it dials, because this
+client admits Vision only on the raw transport under `tls` or `reality`. On
+xray-core the transport dial *succeeds* and the refusal comes later still, from
+the VLESS outbound's `Process`, which accepts exactly two shapes
+(`proxy/vless/outbound/outbound.go:268-285`): a `*encryption.CommonConn` —
+VLESS `encryption` is on — which is tested first and does not care what the
+network is; or, failing that, an `iConn` that is a `*tls.Conn`, `*tls.UConn`
+or `*reality.UConn`. Everything else gets "XTLS only supports TLS and REALITY
+directly for now."
+
+Neither shape is reachable over gRPC here. `conn` becomes a
+`*encryption.CommonConn` whenever `h.encryption != nil`
+(`outbound.go:211-216`), and this client accepts `encryption: "none"` alone,
+so the first branch is out for every profile we parse. The second asks whether
+the transport dialer handed the security conn straight back as `iConn`, which
+is a property of the dialer and not of `network` or of `security`: the gRPC
+dialer feeds that conn to grpc's `ContextDialer`
+(`transport/internet/grpc/dial.go:138-151`) and returns a `HunkConn` or
+`MultiHunkConn` wrapper instead (`dial.go:65,74`). Adding `security: tls` does
+not change that; the wrapper is what the dialer returns either way, and ws,
+httpupgrade and xhttp wrap their TLS conn the same way.
+
+Resist restating that as a list of networks; every such shortcut written here
+so far has been wrong. mKCP carries Vision, because its dialer ends
+`iConn = tls.Client(iConn, ...); return iConn`
+(`transport/internet/kcp/dialer.go:99-103`), and RAW stops carrying it as soon
+as a `tcpSettings.header.type` authenticator wraps the conn on the way out
+(`transport/internet/tcp/dialer.go:105-115`). `docs/benchmarks.md` records the
+four configurations this was measured with against the vendored 26.5.9 binary.
+
+#### Keepalive is three knobs behind one gate
+
+`idle_timeout`, `health_check_timeout` and `permit_without_stream` are one
+setting in three parts, and the gate over them is a **three-way OR** rather
+than a check on the durations: keepalive is attached when any of
+`idle_timeout > 0`, `health_check_timeout > 0`, or `permit_without_stream`
+holds (`dial.go:169-175`).
+
+So `permit_without_stream: true` on its own turns pings on, with both durations
+at zero — and zero is not "no pings". grpc-go's `WithKeepaliveParams` raises a
+zero or small interval to its ten-second floor, and the transport substitutes
+twenty seconds for a zero timeout, so that config pings every ten seconds and
+gives up on a ping unanswered for twenty.
+
+`permit_without_stream` is then read a second time for an unrelated decision:
+with it false, the ping loop goes **dormant** while no call is open on the
+connection. Because this transport holds its connection between flows, "no call
+open" is the ordinary state here and not an edge case — `idle_timeout` on its
+own therefore turns keepalive on and leaves it asleep for as long as no flow is
+using the connection, exactly as grpc-go does. A flow arriving on a dormant
+connection takes a ping out alongside its first request.
+
+This keepalive field is separate from grpc-go's `ClientConn` idleness manager.
+Xray does not override that manager's 30-minute default, so the pooled HTTP/2
+connection here is also retired after thirty minutes with no open call. The
+timer starts when the last call closes; retirement drops the pool's reusable
+handle without aborting a stream that was already opened, and the next flow
+performs a fresh bounded dial.
+
+`initial_windows_size` reaches the wire only *above* grpc-go's own default of
+65535. At or below it, no `SETTINGS_INITIAL_WINDOW_SIZE` entry is written and
+the connection runs on the default — which is also what grpc-go does, so the
+opening bytes match.
+
+#### An authority `http::uri::Authority` cannot hold is refused
+
+**One class of configuration xray-core dials and this client does not.** The
+`h2` crate reads `:authority` out of the request's `http::Uri` and nowhere
+else, and a `Uri`'s authority *is* an `http::uri::Authority`, so a value that
+type rejects is one no request can carry. Two whole classes fall in there and
+grpc-go sends both: any byte above `0x7f`, which makes an
+internationalized name such as `例え.jp` unsendable, and `%` anywhere in a host,
+which rules out grpc-go's own percent-escaped `host:port` fallback for such a
+destination. Both were checked on the wire against grpc-go v1.81.0.
+
+Such a name reaches the chain either as `grpcSettings.authority` or as the
+destination address a later branch derives the authority from, and the refusal
+happens when the outbound is built. Which of two messages you see depends on
+whose value it was:
+
+```text
+grpcSettings.authority `例え.jp` is not a valid HTTP/2 authority
+the gRPC :authority derived from settings.vnext[0].address `例え.jp` is not a valid HTTP/2 authority
+```
+
+The first is a string in the profile, which can be edited. The second is a
+value derived on the profile's behalf, so the message names the key that
+produced it rather than a key the config does not contain; the other two keys
+it can name are `streamSettings.tlsSettings.serverName` and the composed
+`settings.vnext[0].address and settings.vnext[0].port`.
+
+Writing the IDNA A-label (`xn--r8jz45g.jp`) instead is accepted, and is the
+workaround. Nothing here converts one for you: no IDNA implementation is in
+this workspace's dependency graph, and converting silently would put an
+authority on the wire that xray-core does not send.
+
+#### A `user_agent` no HTTP header can carry is refused at startup
+
+**This one refuses a configuration xray-core loads, and loses nothing by it.**
+A literal `user_agent` holding a control character — a `\r`, a `\n`, a NUL, a
+DEL — is rejected when the outbound is built:
+
+```text
+grpcSettings.user_agent "grpc-go/1.81.0\r\nx-injected: 1" is not a valid HTTP header value
+```
+
+xray-core accepts the same profile and dials with it. What it does *not* do is
+carry a single byte of traffic: grpc-go's client never validates the string, so
+it puts it on the wire verbatim, and the gRPC server at the far end then resets
+every stream with `PROTOCOL_ERROR` before the handler sees it. The connection
+is established and cached; each flow opened on it dies. So the profile is dead
+upstream too — the difference is only that upstream reports it once per flow,
+forever, with a message naming neither the key nor the character.
+
+The two rules turn out to be the same rule. `http::HeaderValue` accepts a byte
+when `b >= 32 && b != 127 || b == b'\t'`; Go's `httpguts.ValidHeaderFieldValue`
+accepts one when it is not a control byte other than space or tab, which is the
+same set. Both therefore accept a tab, a leading or trailing space, and any
+byte above `0x7f` — so a non-ASCII user agent such as `Mozilla/5.0 (例え)` is
+fine here, unlike a non-ASCII *authority*. Sixteen values were measured against
+a real grpc-go v1.81.0 client and server, one dial each, and the results are
+committed in `tests/fixtures/grpc/user_agent_validity.json`.
+
+The residual gap is narrower than that rule. RFC 9113 §8.2.1 forbids only NUL,
+CR and LF in a field value; Go rejects DEL and the rest of C0 as well. A gRPC
+server that is not grpc-go could therefore accept a `\x7f` this client refuses.
+An Xray gRPC inbound is grpc-go, so in practice there is no such peer.
+
+Note that the injected-looking case is not header injection. HTTP/2 header
+blocks are length-prefixed, so `\r\n` inside a value stays inside that value and
+no second header appears; what kills the stream is the peer validating the
+field, not parsing a forged one.
+
+### TLS ClientHello shaping
+
+`security: "tls"` sends a uTLS-shaped ClientHello, as Xray-core does on every
+TLS connection. `tlsSettings.fingerprint` selects the shape from the same 58
+names Xray accepts. An absent or empty value means `chrome`, matching Xray's
+`GetFingerprint("")`, so shaping is the default rather than an opt-in; an
+unknown name is rejected at parse time with a JSON path and the offending
+value. Unlike `realitySettings.fingerprint`, no X25519 key share is required,
+so eleven of the fourteen names REALITY rejects are usable here; the other
+three — `hello360_7_5` and its aliases `360` and `hello360_auto`, one profile
+under three names — are refused for a separate reason given below.
+
+Those 58 are the union of the three maps Xray's `GetFingerprint` consults --
+`PresetFingerprints`, `ModernFingerprints`, `OtherFingerprints` -- less
+`unsafe`, described below, and `hellogolang`.
+
+That second exclusion is a **known divergence**, and the one place this set is
+narrower than Xray's: `tlsSettings.fingerprint: "hellogolang"` parses on
+xray-core and is rejected here. It is not a browser shape. In uTLS the name
+means *emit Go's own `crypto/tls` ClientHello and apply no shaping at all*, so
+the nearest thing this implementation can send is `unsafe` -- the same intent
+through a different TLS stack. The divergence is confined to plain TLS; on the
+REALITY path we and Xray agree, because Xray rejects `hellogolang` and `unsafe`
+alike there. Tracked in
+`docs/superpowers/plans/2026-08-07-hellogolang-divergence.md`.
+
+The set is otherwise deliberately not a superset of Xray's: uTLS itself
+knows further `ClientHelloID`s that Xray has never mapped, and accepting one
+would let a profile parse here and then fail on xray-core with
+`unknown "fingerprint"`, which is a break the user only discovers after moving
+the profile. Nothing is given up by matching Xray exactly, because every such
+name is a shape an accepted name already reaches.
+
+`fingerprint: "unsafe"` is Xray's own escape hatch, spelled the same way: it
+disables shaping and sends the TLS stack's own ClientHello.
+
+`tlsSettings.alpn` is an array of strings; a non-string entry is rejected with
+an indexed path. Where the configured list lands follows Xray rather than
+approximating it: uTLS takes ALPN from the fingerprint profile and overwrites
+the configured list, so on this transport the configured list reaches the
+ClientHello only when it is exactly `["http/1.1"]`, the one case Xray rebuilds
+the hello for. Every other list is ignored, leaving whatever ALPN the profile
+itself declares — for some profiles, none at all. With `fingerprint: "unsafe"`
+there is no profile, so a nonempty configured list is sent as-is.
+
+A shaped connection runs on the aws-lc-rs crypto backend rather than ring, and
+offers the post-quantum key share its profile plans — X25519MLKEM768 for
+`chrome`, none at all for a TLS-1.2-era profile. That is what matching a
+current browser requires, but it is a real change both in what goes on the wire
+and in which backend performs the handshake. Session resumption is also
+disabled while shaping, because a resumed handshake emits a second ClientHello
+carrying `pre_shared_key`, an extension the fingerprint never described.
+`fingerprint: "unsafe"` keeps the previous ring path, resumption included.
+
+Fourteen of the 58 names are TLS-1.2-era, which is exactly the set REALITY
+rejects. Eleven of those are shaped but not byte-exact; the other three, the
+`360` aliases refused below, build no ClientHello at all. The uTLS hello behind
+the eleven declares no `supported_versions` extension, while the TLS stack
+emits that extension on every ClientHello it builds — a TLS-1.2-only
+configuration included, where it carries just `0x0303` — and nothing in the
+shaping API can suppress it. The extension order is pinned so uTLS's own order
+survives as an exact prefix and the one extra extension sits last. The
+remaining names declare the extension themselves, so nothing is appended to
+their hellos.
+
+Those hellos go out under a TLS-1.2-only configuration, as uTLS's do: uTLS
+reads the missing extension as a TLS 1.0–1.2 range and caps its own config
+there. Offering TLS 1.3 behind a hello that never mentions it cannot work —
+the server answers with TLS 1.2, its ServerHello carries the RFC 8446 §4.1.3
+downgrade sentinel, and the client is obliged to treat that as an attack.
+
+`hello360_7_5` — with its aliases `360` and `hello360_auto` — is **refused
+before the handshake** rather than dialled. Its twenty cipher suites are CBC,
+RC4 or 3DES, not an AEAD among them, and this client implements none of them,
+so whichever the server picks is one it cannot speak. xray-core completes that
+handshake, because Go still ships the legacy suites; here the fingerprint
+simply cannot be offered on plain TLS. The refusal happens where the rustls
+config is built, which is on each connection attempt rather than at parse time:
+the TCP socket is still opened, but no ClientHello is sent, and the error names
+the fingerprint and the reason instead of arriving a round trip later as a TLS
+alert. It stays refused on REALITY too, as it always was.
+
+An IP-literal `serverName` is supported. As in uTLS, the SNI extension is
+elided and the rest of the shape shifts to match, rather than the handshake
+failing.
+
+#### What `random` and `randomized` resolve to
+
+`fingerprint: "random"` matches Xray: one of the nineteen names in Xray's
+`ModernFingerprints` table is drawn from the OS CSPRNG the first time the name
+is used, and that draw stands for the rest of the process. Two installs
+therefore send different hellos, while a single install never changes its hello
+between connections — a client whose fingerprint moves from one connection to
+the next is easier to pick out than one that never moves, so both halves
+matter. `randomized` behaves the same way, from its own independent draw.
+
+`randomized` is where we diverge from Xray, and a user picking it should know
+which behaviour they get. Xray hands `randomized` to uTLS's randomized-spec
+generator, which synthesizes a novel ClientHello from a fresh PRNG seed and a
+weight table. We have no port of that generator, so we draw a **real browser
+fingerprint** instead of synthesizing one. The practical difference: a
+synthesized hello is unique to the install but belongs to no real client — its
+JA3 is one no browser produces — whereas a drawn one is shared with every real
+user of that browser version and with every Xray user whose `random` landed on
+the same name. Against a detector asking "is this a shape a browser sends", the
+drawn fingerprint is strictly better; against one asking "have I seen this exact
+shape before", nineteen buckets shared with the Xray population is the crowd we
+would rather be in than a bucket of one.
+
+`randomizednoalpn` is the one name still pinned to a fixed shape. Every entry in
+`ModernFingerprints` carries ALPN, so resolving it by the same draw would add
+the extension the name exists to suppress; the honest fix for it is the
+generator port, not an alias. `hellorandomized`, `hellorandomizedalpn` and
+`hellorandomizednoalpn` are likewise fixed. In Xray those three come from the
+`OtherFingerprints` table with no seed pinned, which makes uTLS synthesize a
+*fresh* spec on every connection — a shape that changes per connection, which is
+worse than a fixed one for the reason above. Ours is a recorded snapshot of one
+such spec.
+
+#### ECH GREASE
+
+Six of the profiles carry an `encrypted_client_hello` extension. It is GREASE —
+a decoy outer hello, not real Encrypted Client Hello — because that is what the
+browsers being imitated send by default, and omitting it would itself be the
+tell. We build the whole structure: outer type, HPKE cipher suite, config id, a
+real X25519 encapsulated key, and a random payload of the right length. The
+config id, key and payload are drawn per connection, as uTLS draws them.
+
+uTLS varies two further fields per connection, and we match one of them:
+
+| Field | uTLS | xray-rust |
+| --- | --- | --- |
+| HPKE AEAD, Firefox profiles | draws AES-128-GCM or ChaCha20-Poly1305 | drawn per connection |
+| HPKE AEAD, Chrome profiles | AES-128-GCM only (`BoringGREASEECH` declares one suite) | fixed, matching |
+| Payload length, Firefox | 223, fixed | fixed, matching |
+| Payload length, Chrome | draws 128, 160, 192 or 224 | **pinned to 128** |
+
+The last row is a known divergence. Real Chrome spreads its ClientHello across
+four lengths — and because the ML-KEM key share already pushes the hello past
+BoringSSL's 512-byte padding target, that spread is visible in the total hello
+length rather than absorbed by padding. We send the shortest every time, so a
+censor watching several connections from one client sees a length distribution
+Chrome does not produce.
+
+It is pinned because both the raw-hello and shape fixtures record one length per
+fingerprint, and the Go oracle that generates them runs under a zeroed
+`crypto/rand`, which always picks the first candidate. Drawing per connection
+would fail those byte-exact comparisons three runs in four. Lifting it means
+teaching `clienthello_shape.go` to force a candidate index and committing a
+fixture per candidate, so the comparison can assert the hello matches one of the
+four uTLS can produce rather than dropping to a weaker check.
 
 ### Happy Eyeballs socket option
 

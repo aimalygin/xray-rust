@@ -1,5 +1,7 @@
 use std::{fmt, io, net::SocketAddr, sync::Arc};
 
+use crate::stream::{connect_httpupgrade, connect_websocket, TransportLayer};
+use crate::utls_tls::TlsAlpnPolicy;
 use crate::{
     connect_tcp_happy_eyeballs, connect_tcp_stream, connect_tcp_target, BoxedTransportStream,
     ConnectorConfig, HappyEyeballsConfig, RealityRuntimeEngine, RealityTlsEngine,
@@ -12,6 +14,13 @@ pub struct TransportDialer {
     tls: TlsConnector,
     reality: Option<Arc<dyn RealityTlsEngine>>,
     socket_protector: Option<Arc<dyn SocketProtector>>,
+}
+
+#[derive(Clone)]
+pub(crate) struct H3DialMaterial {
+    pub(crate) server_name: String,
+    pub(crate) tls_config: Arc<rustls::ClientConfig>,
+    pub(crate) socket_protector: Option<Arc<dyn SocketProtector>>,
 }
 
 impl fmt::Debug for TransportDialer {
@@ -51,10 +60,11 @@ impl TransportDialer {
     }
 
     pub fn with_tls_connector(tls: TlsConnector) -> Self {
+        let socket_protector = tls.socket_protector_arc();
         Self {
             tls,
             reality: None,
-            socket_protector: None,
+            socket_protector,
         }
     }
 
@@ -77,6 +87,21 @@ impl TransportDialer {
         self.socket_protector.clone()
     }
 
+    pub(crate) fn h3_dial_material(
+        &self,
+        config: &ConnectorConfig,
+    ) -> Result<H3DialMaterial, TransportError> {
+        match config {
+            ConnectorConfig::Tls(tls) => Ok(H3DialMaterial {
+                server_name: tls.server_name.clone(),
+                tls_config: self.tls.http3_client_config_for(tls)?,
+                socket_protector: self.socket_protector.clone(),
+            }),
+            ConnectorConfig::Tcp => Err(TransportError::UnsupportedHttp3Security("TCP")),
+            ConnectorConfig::Reality(_) => Err(TransportError::UnsupportedHttp3Security("REALITY")),
+        }
+    }
+
     pub async fn connect(
         &self,
         config: &ConnectorConfig,
@@ -94,6 +119,75 @@ impl TransportDialer {
         }
     }
 
+    /// Dials through the security layer, then applies the stream transport.
+    ///
+    /// The candidate race and the REALITY preconnect stay entirely inside
+    /// [`connect_resolved`](Self::connect_resolved), which is why every arm
+    /// below reaches it rather than opening a socket of its own — a socket
+    /// opened anywhere else misses Android's `VpnService.protect(fd)`.
+    ///
+    /// gRPC and XHTTP are the arms that do not dial *first*. Their flows may
+    /// share an HTTP connection, so whether this call needs a socket at all is
+    /// a question only their pools can answer. Both receive this dialer and
+    /// ask through `connect_resolved_with_alpn_policy` when they need one.
+    pub async fn connect_stream(
+        &self,
+        config: &ConnectorConfig,
+        transport: &TransportLayer,
+        original_target: &Target,
+        candidates: &[SocketAddr],
+        happy_eyeballs: Option<&HappyEyeballsConfig>,
+    ) -> Result<BoxedTransportStream, TransportError> {
+        match transport {
+            TransportLayer::Raw => {
+                self.connect_resolved_with_alpn_policy(
+                    config,
+                    original_target,
+                    candidates,
+                    happy_eyeballs,
+                    TlsAlpnPolicy::Raw,
+                )
+                .await
+            }
+            TransportLayer::WebSocket(websocket) => {
+                connect_websocket(
+                    self.connect_resolved_with_alpn_policy(
+                        config,
+                        original_target,
+                        candidates,
+                        happy_eyeballs,
+                        TlsAlpnPolicy::Http1Upgrade,
+                    )
+                    .await?,
+                    websocket,
+                )
+                .await
+            }
+            TransportLayer::HttpUpgrade(upgrade) => {
+                connect_httpupgrade(
+                    self.connect_resolved_with_alpn_policy(
+                        config,
+                        original_target,
+                        candidates,
+                        happy_eyeballs,
+                        TlsAlpnPolicy::Http1Upgrade,
+                    )
+                    .await?,
+                    upgrade,
+                )
+                .await
+            }
+            TransportLayer::Grpc(grpc) => {
+                grpc.open_stream(self, config, original_target, candidates, happy_eyeballs)
+                    .await
+            }
+            TransportLayer::Xhttp(xhttp) => xhttp
+                .open_stream(self, config, original_target, candidates, happy_eyeballs)
+                .await
+                .map_err(|error| TransportError::Xhttp(error.to_string())),
+        }
+    }
+
     /// Connects a transport to an already resolved list of TCP candidates.
     ///
     /// Happy Eyeballs is enabled only when the policy has a non-zero delay and
@@ -105,6 +199,24 @@ impl TransportDialer {
         original_target: &Target,
         candidates: &[SocketAddr],
         happy_eyeballs: Option<&HappyEyeballsConfig>,
+    ) -> Result<BoxedTransportStream, TransportError> {
+        self.connect_resolved_with_alpn_policy(
+            config,
+            original_target,
+            candidates,
+            happy_eyeballs,
+            TlsAlpnPolicy::Raw,
+        )
+        .await
+    }
+
+    pub(crate) async fn connect_resolved_with_alpn_policy(
+        &self,
+        config: &ConnectorConfig,
+        original_target: &Target,
+        candidates: &[SocketAddr],
+        happy_eyeballs: Option<&HappyEyeballsConfig>,
+        alpn_policy: TlsAlpnPolicy,
     ) -> Result<BoxedTransportStream, TransportError> {
         let first = candidates
             .first()
@@ -130,10 +242,19 @@ impl TransportDialer {
             ConnectorConfig::Tls(tls_config) => match race_config {
                 Some(race_config) => {
                     self.tls
-                        .connect_candidates(candidates, tls_config, race_config)
+                        .connect_candidates_with_alpn_policy(
+                            candidates,
+                            tls_config,
+                            race_config,
+                            alpn_policy,
+                        )
                         .await
                 }
-                None => self.tls.connect_socket_addr(first, tls_config).await,
+                None => {
+                    self.tls
+                        .connect_socket_addr_with_alpn_policy(first, tls_config, alpn_policy)
+                        .await
+                }
             },
             ConnectorConfig::Reality(reality_config) => {
                 let Some(reality) = &self.reality else {

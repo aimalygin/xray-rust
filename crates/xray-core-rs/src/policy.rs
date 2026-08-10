@@ -238,7 +238,7 @@ mod tests {
     use tokio::sync::mpsc;
     use xray_config::{
         CoreConfig, OutboundConfig, OutboundSettings, PolicyConfig, PolicyLevelConfig,
-        StreamSecurity, StreamSettings,
+        StreamSecurity, StreamSettings, StreamTransport,
     };
 
     use super::{
@@ -335,7 +335,9 @@ mod tests {
                 tag: Some("direct".to_owned()),
                 stream: StreamSettings {
                     network: xray_config::Network::Tcp,
+                    transport: StreamTransport::Raw,
                     security: StreamSecurity::None,
+                    quic_params: None,
                     socket_options: None,
                 },
                 settings: OutboundSettings::Freedom,

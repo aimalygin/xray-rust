@@ -21,10 +21,14 @@ let package = Package(
             path: "../../target/mobile/apple/XrayRust.xcframework"
         ),
         .target(
+            name: "XrayKernelControl"
+        ),
+        .target(
             name: "XrayMobileAdapter",
             dependencies: [
                 "XrayRust",
                 "XrayAppleShared",
+                "XrayKernelControl",
             ]
         ),
         .target(
@@ -61,7 +65,10 @@ let package = Package(
         ),
         .testTarget(
             name: "XrayMobileAdapterTests",
-            dependencies: ["XrayMobileAdapter"]
+            dependencies: [
+                "XrayMobileAdapter",
+                "XrayKernelControl",
+            ]
         ),
     ]
 )

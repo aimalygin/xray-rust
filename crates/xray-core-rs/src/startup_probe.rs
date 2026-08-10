@@ -167,6 +167,8 @@ async fn run_startup_probe_inner(
                 &TlsClientConfig {
                     server_name: parsed.host.clone(),
                     allow_insecure: false,
+                    alpn: Vec::new(),
+                    fingerprint: None,
                 },
             ),
         )
@@ -546,7 +548,7 @@ mod https_tests {
     use tokio_rustls::TlsAcceptor;
     use xray_config::{
         CoreConfig, InboundConfig, InboundProtocol, Network, OutboundConfig, OutboundSettings,
-        RoutingConfig, StreamSecurity, StreamSettings,
+        RoutingConfig, StreamSecurity, StreamSettings, StreamTransport,
     };
     use xray_transport::{
         DnsResolver, SocketHandle, SocketProtector, TlsConnector, TransportDialer, TransportError,
@@ -607,7 +609,9 @@ mod https_tests {
                 tag: Some("direct".to_owned()),
                 stream: StreamSettings {
                     network: Network::Tcp,
+                    transport: StreamTransport::Raw,
                     security: StreamSecurity::None,
+                    quic_params: None,
                     socket_options: None,
                 },
                 settings: OutboundSettings::Freedom,
@@ -701,7 +705,7 @@ mod https_tests {
             domain: "probe.test",
             addr,
         };
-        let tls = TlsConnector::with_client_config(client_config);
+        let tls = TlsConnector::with_pinned_client_config(client_config);
         let protector = Arc::new(RecordingSocketProtector::default());
         let dialer_protector: Arc<dyn SocketProtector> = protector.clone();
         let transport_dialer =

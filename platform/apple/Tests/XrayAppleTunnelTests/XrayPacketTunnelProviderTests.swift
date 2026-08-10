@@ -1166,17 +1166,19 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
 
     func testNetworkSettingsInstallIPv6DefaultRoute() throws {
         let settings = XrayPacketTunnelProvider.networkSettings(
-            excludingServerAddresses: ["203.0.113.10"],
             resolvedDNSConfiguration: .localDNSAnchor
         )
 
         let ipv6Settings = try XCTUnwrap(settings.ipv6Settings)
         XCTAssertEqual(ipv6Settings.addresses, [XrayPacketTunnelProvider.tunnelLocalIPv6Address])
         XCTAssertEqual(ipv6Settings.networkPrefixLengths.map(\.intValue), [128])
-        let defaultRoute = try XCTUnwrap(ipv6Settings.includedRoutes?.first)
-        XCTAssertEqual(defaultRoute.destinationAddress, "::")
-        XCTAssertEqual(defaultRoute.destinationNetworkPrefixLength.intValue, 0)
-        XCTAssertNil(ipv6Settings.excludedRoutes)
+        XCTAssertEqual(ipv6Settings.includedRoutes?.count, 1)
+        XCTAssertEqual(ipv6Settings.includedRoutes?.first?.destinationAddress, "::")
+        XCTAssertEqual(
+            ipv6Settings.includedRoutes?.first?.destinationNetworkPrefixLength.intValue,
+            0
+        )
+        XCTAssertNotNil(settings.ipv4Settings)
     }
 
     func testPacketIOBackendUsesDiscoveredDarwinUtunFileDescriptor() {

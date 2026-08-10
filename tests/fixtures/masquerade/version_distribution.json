@@ -1,0 +1,60 @@
+{
+  "unix": 1786060800,
+  "installs": 25600,
+  "chrome": [
+    {
+      "version": "145",
+      "share": 0.0146
+    },
+    {
+      "version": "146",
+      "share": 0.1863
+    },
+    {
+      "version": "147",
+      "share": 0.2439
+    },
+    {
+      "version": "148",
+      "share": 0.5552
+    }
+  ],
+  "firefox": [
+    {
+      "version": "150",
+      "share": 0.2913
+    },
+    {
+      "version": "151",
+      "share": 0.7087
+    }
+  ],
+  "safari": [
+    {
+      "version": "26.5",
+      "share": 0.6281
+    },
+    {
+      "version": "26.6",
+      "share": 0.3719
+    }
+  ],
+  "curl": [
+    {
+      "version": "8.17.0",
+      "share": 0.0435
+    },
+    {
+      "version": "8.18.0",
+      "share": 0.2052
+    },
+    {
+      "version": "8.19.0",
+      "share": 0.2785
+    },
+    {
+      "version": "8.20.0",
+      "share": 0.4728
+    }
+  ]
+}

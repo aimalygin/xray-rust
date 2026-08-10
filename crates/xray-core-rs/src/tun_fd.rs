@@ -60,6 +60,7 @@ mod platform {
     use std::io;
     use std::os::fd::{AsRawFd, RawFd};
     use std::sync::Arc;
+    use std::time::Duration;
 
     use bytes::Bytes;
     use tokio::io::unix::AsyncFd;
@@ -143,6 +144,137 @@ mod platform {
         }
     }
 
+    /// Transient fd failures start with a short retry delay so brief network
+    /// transitions recover quickly, then back off to a bounded one-second poll.
+    /// The pump must not give up on them: nobody supervises these tasks, so a
+    /// returned loop would leave the host reporting a connected but dead tunnel.
+    const TUN_FD_IO_RETRY_INITIAL_BACKOFF: Duration = Duration::from_millis(10);
+    const TUN_FD_IO_RETRY_MAX_BACKOFF: Duration = Duration::from_secs(1);
+    const TUN_FD_IO_RETRY_MAX_SHIFT: u32 = 7;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum TunFdIoDisposition {
+        /// The syscall was interrupted and should be reissued at once. Not a
+        /// failure: it neither backs off nor advances the retry state.
+        RetryImmediately,
+        /// The payload cannot be encoded and never will be. Dropping it is the
+        /// only progress available, and it says nothing about the descriptor.
+        DropPacket,
+        Retry,
+        Fatal,
+    }
+
+    /// Classifies a pump I/O error. Everything is retryable except conditions
+    /// that mean the descriptor itself is gone, because a tunnel that stops
+    /// moving packets is far worse than one that retries a doomed read.
+    fn io_disposition(error: &io::Error) -> TunFdIoDisposition {
+        if error.kind() == io::ErrorKind::Interrupted {
+            return TunFdIoDisposition::RetryImmediately;
+        }
+        if error.kind() == io::ErrorKind::InvalidData {
+            return TunFdIoDisposition::DropPacket;
+        }
+        if error.kind() == io::ErrorKind::UnexpectedEof {
+            return TunFdIoDisposition::Fatal;
+        }
+        match error.raw_os_error() {
+            Some(libc::EBADF) | Some(libc::ENXIO) | Some(libc::ENOTCONN) => {
+                TunFdIoDisposition::Fatal
+            }
+            _ => TunFdIoDisposition::Retry,
+        }
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum TunFdLoopAction {
+        Continue,
+        BackOff,
+        Stop,
+    }
+
+    #[derive(Debug)]
+    struct PacketBatchWriteError {
+        error: io::Error,
+        written_packets: usize,
+    }
+
+    impl PacketBatchWriteError {
+        fn new(written_packets: usize, error: io::Error) -> Self {
+            Self {
+                error,
+                written_packets,
+            }
+        }
+    }
+
+    trait PacketBatchWriter {
+        async fn write_batch(
+            &mut self,
+            packet_format: TunFdPacketFormat,
+            packets: &[Bytes],
+        ) -> Result<(), PacketBatchWriteError>;
+    }
+
+    struct AsyncFdPacketBatchWriter<'a> {
+        fd: &'a AsyncFd<TunFd>,
+    }
+
+    impl PacketBatchWriter for AsyncFdPacketBatchWriter<'_> {
+        async fn write_batch(
+            &mut self,
+            packet_format: TunFdPacketFormat,
+            packets: &[Bytes],
+        ) -> Result<(), PacketBatchWriteError> {
+            write_packet_batch(self.fd, packet_format, packets).await
+        }
+    }
+
+    /// Advances the consecutive-failure state for one I/O outcome and reports
+    /// what the pump should do next. Only `Retry` advances the backoff: an
+    /// interrupt is not a failure, and an unencodable packet says nothing about
+    /// the fd. Transient failures never stop an unsupervised pump.
+    fn advance_failure_state(
+        disposition: TunFdIoDisposition,
+        consecutive_errors: &mut u32,
+    ) -> TunFdLoopAction {
+        match disposition {
+            TunFdIoDisposition::RetryImmediately | TunFdIoDisposition::DropPacket => {
+                TunFdLoopAction::Continue
+            }
+            TunFdIoDisposition::Fatal => TunFdLoopAction::Stop,
+            TunFdIoDisposition::Retry => {
+                *consecutive_errors = (*consecutive_errors).saturating_add(1);
+                TunFdLoopAction::BackOff
+            }
+        }
+    }
+
+    fn retry_backoff(consecutive_errors: u32) -> Duration {
+        let shift = consecutive_errors
+            .saturating_sub(1)
+            .min(TUN_FD_IO_RETRY_MAX_SHIFT);
+        TUN_FD_IO_RETRY_INITIAL_BACKOFF
+            .saturating_mul(1_u32 << shift)
+            .min(TUN_FD_IO_RETRY_MAX_BACKOFF)
+    }
+
+    /// Classifies one pump I/O failure, records it, and advances its backoff
+    /// state. Only a `Retry` reflects on the descriptor, so it is the only
+    /// disposition the stats see: an interrupt is not a failure and an
+    /// unencodable packet is a data defect. The exit counters stay with the
+    /// loops, which are the only ones that know which direction gave up.
+    fn observe_io_failure(
+        tun: &TunEndpoint,
+        error: &io::Error,
+        consecutive_errors: &mut u32,
+    ) -> TunFdLoopAction {
+        let disposition = io_disposition(error);
+        if disposition == TunFdIoDisposition::Retry {
+            tun.record_tun_fd_transient_io_error();
+        }
+        advance_failure_state(disposition, consecutive_errors)
+    }
+
     async fn read_loop(
         fd: Arc<AsyncFd<TunFd>>,
         tun: Arc<TunEndpoint>,
@@ -150,6 +282,7 @@ mod platform {
         packet_format: TunFdPacketFormat,
     ) {
         let mut buffer = vec![0_u8; read_buffer_len(packet_format)];
+        let mut consecutive_errors: u32 = 0;
 
         loop {
             tokio::select! {
@@ -160,13 +293,29 @@ mod platform {
                 }
                 packet = read_packet(&fd, packet_format, &mut buffer) => {
                     match packet {
-                        Ok(Some(packet)) => match tun.push_inbound(packet).await {
-                            Ok(()) | Err(TunError::QueueFull | TunError::PacketTooLarge { .. }) => {}
-                            Err(TunError::QueueClosed) => break,
-                        },
-                        Ok(None) => {}
-                        Err(err) if err.kind() == io::ErrorKind::Interrupted => {}
-                        Err(_) => break,
+                        Ok(Some(packet)) => {
+                            consecutive_errors = 0;
+                            match tun.push_inbound(packet).await {
+                                Ok(())
+                                | Err(TunError::QueueFull | TunError::PacketTooLarge { .. }) => {}
+                                Err(TunError::QueueClosed) => break,
+                            }
+                        }
+                        Ok(None) => {
+                            consecutive_errors = 0;
+                        }
+                        Err(err) => {
+                            match observe_io_failure(&tun, &err, &mut consecutive_errors) {
+                                TunFdLoopAction::Continue => {}
+                                TunFdLoopAction::BackOff => {
+                                    tokio::time::sleep(retry_backoff(consecutive_errors)).await;
+                                }
+                                TunFdLoopAction::Stop => {
+                                    tun.record_tun_fd_read_loop_exit();
+                                    break;
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -180,8 +329,43 @@ mod platform {
         packet_format: TunFdPacketFormat,
     ) {
         let mut batch = Vec::with_capacity(TUN_FD_WRITE_BATCH_MAX_PACKETS);
+        let mut next_packet = 0;
+        let mut written_packets_in_batch = 0;
+        let mut consecutive_errors: u32 = 0;
+        let mut writer = AsyncFdPacketBatchWriter { fd: fd.as_ref() };
 
         loop {
+            if next_packet < batch.len() {
+                tokio::select! {
+                    changed = shutdown.changed() => {
+                        if changed.is_err() || *shutdown.borrow() {
+                            break;
+                        }
+                    }
+                    action = write_pending_packet_batch(
+                        &mut writer,
+                        &tun,
+                        packet_format,
+                        &batch,
+                        &mut next_packet,
+                        &mut written_packets_in_batch,
+                        &mut consecutive_errors,
+                    ) => {
+                        match action {
+                            TunFdLoopAction::Continue => {}
+                            TunFdLoopAction::BackOff => {
+                                tokio::time::sleep(retry_backoff(consecutive_errors)).await;
+                            }
+                            TunFdLoopAction::Stop => {
+                                tun.record_tun_fd_write_loop_exit();
+                                break;
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
+
             tokio::select! {
                 changed = shutdown.changed() => {
                     if changed.is_err() || *shutdown.borrow() {
@@ -194,16 +378,77 @@ mod platform {
                 ) => {
                     match result {
                         Ok(()) => {
-                            if write_packet_batch(&fd, packet_format, &batch).await.is_err() {
-                                break;
-                            }
-                            tun.record_tun_fd_write_batch(batch.len());
+                            next_packet = 0;
+                            written_packets_in_batch = 0;
                         }
                         Err(TunError::QueueClosed) => break,
                         Err(TunError::QueueFull | TunError::PacketTooLarge { .. }) => {}
                     }
                 }
             }
+        }
+    }
+
+    /// Attempts the currently unwritten slice of one dequeued batch. Progress
+    /// is committed to `next_packet` before an error is classified, so the
+    /// following loop iteration retries only the unwritten tail and never polls
+    /// a new batch over it.
+    async fn write_pending_packet_batch<W: PacketBatchWriter>(
+        writer: &mut W,
+        tun: &TunEndpoint,
+        packet_format: TunFdPacketFormat,
+        batch: &[Bytes],
+        next_packet: &mut usize,
+        written_packets_in_batch: &mut usize,
+        consecutive_errors: &mut u32,
+    ) -> TunFdLoopAction {
+        let pending_packets = &batch[*next_packet..];
+        match writer.write_batch(packet_format, pending_packets).await {
+            Ok(()) => {
+                *written_packets_in_batch += pending_packets.len();
+                *next_packet = batch.len();
+                finish_tun_fd_write_batch(tun, written_packets_in_batch);
+                *consecutive_errors = 0;
+                TunFdLoopAction::Continue
+            }
+            Err(PacketBatchWriteError {
+                error,
+                written_packets,
+            }) => {
+                let written_packets = written_packets.min(pending_packets.len());
+                if written_packets > 0 {
+                    *written_packets_in_batch += written_packets;
+                    *next_packet += written_packets;
+                    *consecutive_errors = 0;
+                }
+
+                if *next_packet == batch.len() {
+                    finish_tun_fd_write_batch(tun, written_packets_in_batch);
+                    return TunFdLoopAction::Continue;
+                }
+
+                let disposition = io_disposition(&error);
+                let action = observe_io_failure(tun, &error, consecutive_errors);
+                if disposition == TunFdIoDisposition::DropPacket {
+                    tun.record_tun_fd_outbound_drops(1);
+                    *next_packet += 1;
+                    if *next_packet == batch.len() {
+                        finish_tun_fd_write_batch(tun, written_packets_in_batch);
+                    }
+                } else if action == TunFdLoopAction::Stop {
+                    tun.record_tun_fd_outbound_drops(batch.len() - *next_packet);
+                    *next_packet = batch.len();
+                    finish_tun_fd_write_batch(tun, written_packets_in_batch);
+                }
+                action
+            }
+        }
+    }
+
+    fn finish_tun_fd_write_batch(tun: &TunEndpoint, written_packets_in_batch: &mut usize) {
+        if *written_packets_in_batch > 0 {
+            tun.record_tun_fd_write_batch(*written_packets_in_batch);
+            *written_packets_in_batch = 0;
         }
     }
 
@@ -248,14 +493,18 @@ mod platform {
         fd: &AsyncFd<TunFd>,
         packet_format: TunFdPacketFormat,
         packets: &[Bytes],
-    ) -> io::Result<()> {
+    ) -> Result<(), PacketBatchWriteError> {
         let mut packet_index = 0;
 
         while packet_index < packets.len() {
-            let mut guard = fd.writable().await?;
+            let mut guard = fd
+                .writable()
+                .await
+                .map_err(|error| PacketBatchWriteError::new(packet_index, error))?;
 
             loop {
-                let packet = EncodedPacket::new(packet_format, packets[packet_index].as_ref())?;
+                let packet = EncodedPacket::new(packet_format, packets[packet_index].as_ref())
+                    .map_err(|error| PacketBatchWriteError::new(packet_index, error))?;
                 let result = guard.try_io(|inner| {
                     let written = packet.write_to_fd(inner.get_ref().as_raw_fd());
                     if written < 0 {
@@ -281,7 +530,9 @@ mod platform {
                         }
                     }
                     Ok(Err(err)) if err.kind() == io::ErrorKind::WouldBlock => break,
-                    Ok(Err(err)) => return Err(err),
+                    Ok(Err(err)) => {
+                        return Err(PacketBatchWriteError::new(packet_index, err));
+                    }
                     Err(_) => break,
                 }
             }
@@ -404,8 +655,68 @@ mod platform {
 
     #[cfg(test)]
     mod tests {
+        use std::collections::VecDeque;
+
         use super::*;
         use xray_tun::TunConfig;
+
+        enum ScriptedBatchWrite {
+            Complete,
+            Fail(PacketBatchWriteError),
+        }
+
+        struct ScriptedPacketBatchWriter {
+            outcomes: VecDeque<ScriptedBatchWrite>,
+            calls: Vec<Vec<Bytes>>,
+            written: Vec<Bytes>,
+        }
+
+        impl ScriptedPacketBatchWriter {
+            fn new(outcomes: impl IntoIterator<Item = ScriptedBatchWrite>) -> Self {
+                Self {
+                    outcomes: outcomes.into_iter().collect(),
+                    calls: Vec::new(),
+                    written: Vec::new(),
+                }
+            }
+        }
+
+        impl PacketBatchWriter for ScriptedPacketBatchWriter {
+            async fn write_batch(
+                &mut self,
+                _packet_format: TunFdPacketFormat,
+                packets: &[Bytes],
+            ) -> Result<(), PacketBatchWriteError> {
+                self.calls.push(packets.to_vec());
+                match self.outcomes.pop_front().expect("missing scripted write") {
+                    ScriptedBatchWrite::Complete => {
+                        self.written.extend(packets.iter().cloned());
+                        Ok(())
+                    }
+                    ScriptedBatchWrite::Fail(failure) => {
+                        assert!(failure.written_packets <= packets.len());
+                        self.written
+                            .extend(packets[..failure.written_packets].iter().cloned());
+                        Err(failure)
+                    }
+                }
+            }
+        }
+
+        fn test_packet_batch() -> Vec<Bytes> {
+            vec![
+                Bytes::from_static(&[0x45, 0x01]),
+                Bytes::from_static(&[0x45, 0x02]),
+                Bytes::from_static(&[0x45, 0x03]),
+            ]
+        }
+
+        fn test_tun_endpoint() -> TunEndpoint {
+            TunEndpoint::new(TunConfig {
+                mtu: 1500,
+                queue_depth: 4,
+            })
+        }
 
         #[test]
         fn darwin_utun_encoded_packet_borrows_payload_and_adds_family_header() {
@@ -415,6 +726,397 @@ mod platform {
             assert_eq!(encoded.len(), DARWIN_UTUN_HEADER_LEN + packet.len());
             assert_eq!(encoded.header(), Some([0, 0, 0, libc::AF_INET as u8]));
             assert!(std::ptr::eq(encoded.payload().as_ptr(), packet.as_ptr()));
+        }
+
+        #[test]
+        fn transient_tun_fd_errors_are_retried_not_fatal() {
+            for errno in [
+                libc::ENOBUFS,
+                libc::ENOMEM,
+                libc::ENETDOWN,
+                libc::ENETUNREACH,
+                libc::EHOSTDOWN,
+                libc::EHOSTUNREACH,
+                libc::ETIMEDOUT,
+                libc::EIO,
+            ] {
+                assert_eq!(
+                    io_disposition(&io::Error::from_raw_os_error(errno)),
+                    TunFdIoDisposition::Retry,
+                    "errno {errno} must be retried"
+                );
+            }
+        }
+
+        #[test]
+        fn a_closed_descriptor_is_fatal() {
+            assert_eq!(
+                io_disposition(&io::Error::from_raw_os_error(libc::EBADF)),
+                TunFdIoDisposition::Fatal
+            );
+            assert_eq!(
+                io_disposition(&io::Error::from_raw_os_error(libc::ENXIO)),
+                TunFdIoDisposition::Fatal
+            );
+            assert_eq!(
+                io_disposition(&io::Error::from_raw_os_error(libc::ENOTCONN)),
+                TunFdIoDisposition::Fatal
+            );
+            assert_eq!(
+                io_disposition(&io::Error::new(io::ErrorKind::UnexpectedEof, "eof")),
+                TunFdIoDisposition::Fatal
+            );
+        }
+
+        #[test]
+        fn interrupts_are_retried_without_counting_as_failures() {
+            assert_eq!(
+                io_disposition(&io::Error::from_raw_os_error(libc::EINTR)),
+                TunFdIoDisposition::RetryImmediately
+            );
+            assert_eq!(
+                io_disposition(&io::Error::new(io::ErrorKind::Interrupted, "eintr")),
+                TunFdIoDisposition::RetryImmediately
+            );
+        }
+
+        #[test]
+        fn only_transient_retries_advance_the_backoff_state() {
+            let mut consecutive = 0;
+
+            assert_eq!(
+                advance_failure_state(TunFdIoDisposition::RetryImmediately, &mut consecutive),
+                TunFdLoopAction::Continue
+            );
+            assert_eq!(consecutive, 0);
+
+            assert_eq!(
+                advance_failure_state(TunFdIoDisposition::DropPacket, &mut consecutive),
+                TunFdLoopAction::Continue
+            );
+            assert_eq!(consecutive, 0);
+
+            assert_eq!(
+                advance_failure_state(TunFdIoDisposition::Retry, &mut consecutive),
+                TunFdLoopAction::BackOff
+            );
+            assert_eq!(consecutive, 1);
+
+            assert_eq!(
+                advance_failure_state(TunFdIoDisposition::Fatal, &mut consecutive),
+                TunFdLoopAction::Stop
+            );
+        }
+
+        #[test]
+        fn transient_failures_never_stop_the_unsupervised_pump() {
+            let mut consecutive = 0;
+
+            for _ in 0..64 {
+                assert_eq!(
+                    advance_failure_state(TunFdIoDisposition::Retry, &mut consecutive),
+                    TunFdLoopAction::BackOff
+                );
+            }
+            assert_eq!(consecutive, 64);
+            assert_eq!(retry_backoff(consecutive), TUN_FD_IO_RETRY_MAX_BACKOFF);
+
+            consecutive = u32::MAX;
+            assert_eq!(
+                advance_failure_state(TunFdIoDisposition::Retry, &mut consecutive),
+                TunFdLoopAction::BackOff
+            );
+            assert_eq!(consecutive, u32::MAX);
+        }
+
+        #[test]
+        fn transient_retry_backoff_grows_and_caps_at_one_second() {
+            assert_eq!(retry_backoff(0), Duration::from_millis(10));
+            assert_eq!(retry_backoff(1), Duration::from_millis(10));
+            assert_eq!(retry_backoff(2), Duration::from_millis(20));
+            assert_eq!(retry_backoff(7), Duration::from_millis(640));
+            assert_eq!(retry_backoff(8), Duration::from_secs(1));
+            assert_eq!(retry_backoff(u32::MAX), Duration::from_secs(1));
+        }
+
+        #[test]
+        fn an_unencodable_packet_is_dropped_not_retried() {
+            let malformed = [0x00, 0x00, 0x00, 0x00];
+            // `EncodedPacket` is not `Debug`, so `expect_err` is unavailable here.
+            let error = match EncodedPacket::new(TunFdPacketFormat::DarwinUtun, &malformed) {
+                Ok(_) => panic!("a packet with no IP version must not encode"),
+                Err(error) => error,
+            };
+
+            assert_eq!(io_disposition(&error), TunFdIoDisposition::DropPacket);
+        }
+
+        #[tokio::test]
+        async fn transient_write_error_retries_the_same_pending_batch() {
+            let tun = test_tun_endpoint();
+            let batch = test_packet_batch();
+            let mut writer = ScriptedPacketBatchWriter::new([
+                ScriptedBatchWrite::Fail(PacketBatchWriteError::new(
+                    0,
+                    io::Error::from_raw_os_error(libc::ENOBUFS),
+                )),
+                ScriptedBatchWrite::Complete,
+            ]);
+            let mut next_packet = 0;
+            let mut written_packets_in_batch = 0;
+            let mut consecutive_errors = 0;
+
+            assert_eq!(
+                write_pending_packet_batch(
+                    &mut writer,
+                    &tun,
+                    TunFdPacketFormat::RawIp,
+                    &batch,
+                    &mut next_packet,
+                    &mut written_packets_in_batch,
+                    &mut consecutive_errors,
+                )
+                .await,
+                TunFdLoopAction::BackOff
+            );
+            assert_eq!(next_packet, 0);
+            assert_eq!(consecutive_errors, 1);
+
+            let stats = tun.stats().await;
+            assert_eq!(stats.tun_fd_transient_io_errors, 1);
+            assert_eq!(stats.tun_fd_write_batch_packets, 0);
+            assert_eq!(stats.outbound_dropped_packets, 0);
+
+            assert_eq!(
+                write_pending_packet_batch(
+                    &mut writer,
+                    &tun,
+                    TunFdPacketFormat::RawIp,
+                    &batch,
+                    &mut next_packet,
+                    &mut written_packets_in_batch,
+                    &mut consecutive_errors,
+                )
+                .await,
+                TunFdLoopAction::Continue
+            );
+            assert_eq!(next_packet, batch.len());
+            assert_eq!(consecutive_errors, 0);
+            assert_eq!(writer.calls, vec![batch.clone(), batch.clone()]);
+            assert_eq!(writer.written, batch);
+
+            let stats = tun.stats().await;
+            assert_eq!(stats.tun_fd_transient_io_errors, 1);
+            assert_eq!(stats.tun_fd_write_batches, 1);
+            assert_eq!(stats.tun_fd_write_batch_packets, 3);
+            assert_eq!(stats.outbound_dropped_packets, 0);
+        }
+
+        #[tokio::test]
+        async fn partial_batch_progress_retries_only_the_unwritten_tail() {
+            let tun = test_tun_endpoint();
+            let batch = test_packet_batch();
+            let mut writer = ScriptedPacketBatchWriter::new([
+                ScriptedBatchWrite::Fail(PacketBatchWriteError::new(
+                    1,
+                    io::Error::from_raw_os_error(libc::ENOBUFS),
+                )),
+                ScriptedBatchWrite::Complete,
+            ]);
+            let mut next_packet = 0;
+            let mut written_packets_in_batch = 0;
+            let mut consecutive_errors = 9;
+
+            assert_eq!(
+                write_pending_packet_batch(
+                    &mut writer,
+                    &tun,
+                    TunFdPacketFormat::RawIp,
+                    &batch,
+                    &mut next_packet,
+                    &mut written_packets_in_batch,
+                    &mut consecutive_errors,
+                )
+                .await,
+                TunFdLoopAction::BackOff
+            );
+            assert_eq!(next_packet, 1);
+            assert_eq!(
+                consecutive_errors, 1,
+                "write progress resets the backoff state"
+            );
+
+            assert_eq!(
+                write_pending_packet_batch(
+                    &mut writer,
+                    &tun,
+                    TunFdPacketFormat::RawIp,
+                    &batch,
+                    &mut next_packet,
+                    &mut written_packets_in_batch,
+                    &mut consecutive_errors,
+                )
+                .await,
+                TunFdLoopAction::Continue
+            );
+            assert_eq!(next_packet, batch.len());
+            assert_eq!(writer.calls[0], batch);
+            assert_eq!(writer.calls[1], batch[1..]);
+            assert_eq!(writer.written, batch);
+
+            let stats = tun.stats().await;
+            assert_eq!(stats.tun_fd_transient_io_errors, 1);
+            assert_eq!(stats.tun_fd_write_batches, 1);
+            assert_eq!(stats.tun_fd_write_batch_packets, 3);
+            assert_eq!(stats.tun_fd_write_batch_max_packets, 3);
+            assert_eq!(stats.outbound_dropped_packets, 0);
+        }
+
+        #[tokio::test]
+        async fn invalid_packet_drops_only_it_and_keeps_the_later_tail() {
+            let tun = test_tun_endpoint();
+            let batch = test_packet_batch();
+            let mut writer = ScriptedPacketBatchWriter::new([
+                ScriptedBatchWrite::Fail(PacketBatchWriteError::new(
+                    1,
+                    io::Error::new(io::ErrorKind::InvalidData, "malformed packet"),
+                )),
+                ScriptedBatchWrite::Complete,
+            ]);
+            let mut next_packet = 0;
+            let mut written_packets_in_batch = 0;
+            let mut consecutive_errors = 0;
+
+            assert_eq!(
+                write_pending_packet_batch(
+                    &mut writer,
+                    &tun,
+                    TunFdPacketFormat::DarwinUtun,
+                    &batch,
+                    &mut next_packet,
+                    &mut written_packets_in_batch,
+                    &mut consecutive_errors,
+                )
+                .await,
+                TunFdLoopAction::Continue
+            );
+            assert_eq!(next_packet, 2, "one packet was written and one dropped");
+
+            assert_eq!(
+                write_pending_packet_batch(
+                    &mut writer,
+                    &tun,
+                    TunFdPacketFormat::DarwinUtun,
+                    &batch,
+                    &mut next_packet,
+                    &mut written_packets_in_batch,
+                    &mut consecutive_errors,
+                )
+                .await,
+                TunFdLoopAction::Continue
+            );
+            assert_eq!(writer.calls[1], batch[2..]);
+            assert_eq!(writer.written, vec![batch[0].clone(), batch[2].clone()]);
+
+            let stats = tun.stats().await;
+            assert_eq!(stats.tun_fd_transient_io_errors, 0);
+            assert_eq!(stats.tun_fd_write_batch_packets, 2);
+            assert_eq!(stats.dropped_packets, 1);
+            assert_eq!(stats.outbound_dropped_packets, 1);
+        }
+
+        #[tokio::test]
+        async fn transient_error_at_the_legacy_cutoff_keeps_the_batch_pending() {
+            let tun = test_tun_endpoint();
+            let batch = test_packet_batch();
+            let mut writer = ScriptedPacketBatchWriter::new([
+                ScriptedBatchWrite::Fail(PacketBatchWriteError::new(
+                    0,
+                    io::Error::from_raw_os_error(libc::ENOBUFS),
+                )),
+                ScriptedBatchWrite::Complete,
+            ]);
+            let mut next_packet = 0;
+            let mut written_packets_in_batch = 0;
+            let mut consecutive_errors = 63;
+
+            assert_eq!(
+                write_pending_packet_batch(
+                    &mut writer,
+                    &tun,
+                    TunFdPacketFormat::RawIp,
+                    &batch,
+                    &mut next_packet,
+                    &mut written_packets_in_batch,
+                    &mut consecutive_errors,
+                )
+                .await,
+                TunFdLoopAction::BackOff
+            );
+            assert_eq!(next_packet, 0);
+            assert_eq!(consecutive_errors, 64);
+
+            let stats = tun.stats().await;
+            assert_eq!(stats.tun_fd_transient_io_errors, 1);
+            assert_eq!(stats.tun_fd_write_batch_packets, 0);
+            assert_eq!(stats.outbound_dropped_packets, 0);
+
+            assert_eq!(
+                write_pending_packet_batch(
+                    &mut writer,
+                    &tun,
+                    TunFdPacketFormat::RawIp,
+                    &batch,
+                    &mut next_packet,
+                    &mut written_packets_in_batch,
+                    &mut consecutive_errors,
+                )
+                .await,
+                TunFdLoopAction::Continue
+            );
+            assert_eq!(next_packet, batch.len());
+            assert_eq!(consecutive_errors, 0);
+            assert_eq!(writer.calls, vec![batch.clone(), batch.clone()]);
+            assert_eq!(writer.written, batch);
+
+            let stats = tun.stats().await;
+            assert_eq!(stats.tun_fd_transient_io_errors, 1);
+            assert_eq!(stats.tun_fd_write_batch_packets, 3);
+            assert_eq!(stats.dropped_packets, 0);
+            assert_eq!(stats.outbound_dropped_packets, 0);
+        }
+
+        #[tokio::test]
+        async fn fatal_write_error_counts_the_unwritten_tail_as_dropped() {
+            let tun = test_tun_endpoint();
+            let batch = test_packet_batch();
+            let mut writer = ScriptedPacketBatchWriter::new([ScriptedBatchWrite::Fail(
+                PacketBatchWriteError::new(1, io::Error::from_raw_os_error(libc::EBADF)),
+            )]);
+            let mut next_packet = 0;
+            let mut written_packets_in_batch = 0;
+            let mut consecutive_errors = 0;
+
+            assert_eq!(
+                write_pending_packet_batch(
+                    &mut writer,
+                    &tun,
+                    TunFdPacketFormat::RawIp,
+                    &batch,
+                    &mut next_packet,
+                    &mut written_packets_in_batch,
+                    &mut consecutive_errors,
+                )
+                .await,
+                TunFdLoopAction::Stop
+            );
+            assert_eq!(next_packet, batch.len());
+
+            let stats = tun.stats().await;
+            assert_eq!(stats.tun_fd_transient_io_errors, 0);
+            assert_eq!(stats.tun_fd_write_batch_packets, 1);
+            assert_eq!(stats.dropped_packets, 2);
+            assert_eq!(stats.outbound_dropped_packets, 2);
         }
 
         #[tokio::test]

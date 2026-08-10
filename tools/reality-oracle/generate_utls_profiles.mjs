@@ -1,3 +1,34 @@
+// RETIRED. Kept as the record of how `utls_profiles.rs` was derived from the
+// uTLS parrots; it must not be run against that file as it stands.
+//
+// Running it would revert behaviour the table has grown since: the per-process
+// `random`/`randomized` draw (`process_random_fingerprint`,
+// `process_randomized_fingerprint`, `draw_modern_fingerprint` and their
+// `OnceLock`s). This script emits a plain `profile_for_fingerprint` that maps
+// both names to one fixed profile, which would hand the entire user base a
+// single shared ClientHello — a fingerprint far worse than the one the table
+// exists to avoid. Nothing in the output would look wrong.
+//
+// It is also broken as written: it reads `XRAY_REALITY_FINGERPRINTS`, renamed
+// in 4dae811 to `XRAY_UTLS_FINGERPRINTS` / `XRAY_MODERN_FINGERPRINTS` /
+// `XRAY_REALITY_CAPABLE_FINGERPRINTS`, so the match below returns null. And the
+// REALITY-only list is now the wrong input anyway: the table serves plain TLS
+// too, which accepts every name Xray maps.
+//
+// To revive it, it has to emit that scaffolding as well as the profile data,
+// and read the full accepted set. Until then, edit `utls_profiles.rs` by hand.
+console.error(
+  [
+    "generate_utls_profiles.mjs is retired and refuses to run.",
+    "",
+    "crates/xray-transport/src/utls_profiles.rs is hand-maintained: it carries a",
+    "per-process random/randomized draw this generator does not emit, and",
+    "regenerating over it would silently revert that. See the header of either",
+    "file for what reviving this script would require.",
+  ].join("\n"),
+);
+process.exit(1);
+
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -17,7 +48,7 @@ const fingerprints = fingerprintsSource
 const oracleBinary = process.argv[2] ?? "/tmp/clienthello_shape";
 const outputPath =
   process.argv[3] ??
-  resolve(workspaceRoot, "crates/xray-transport/src/reality_utls_profiles.rs");
+  resolve(workspaceRoot, "crates/xray-transport/src/utls_profiles.rs");
 
 function numericValue(value) {
   return value === "GREASE" ? 0x0a0a : Number.parseInt(value, 16);
@@ -63,7 +94,7 @@ for (const fingerprint of fingerprints) {
 }
 
 let output = `#[derive(Clone, Copy, Debug)]
-pub(super) struct UtlsClientHelloProfile {
+pub(crate) struct UtlsClientHelloProfile {
     pub cipher_suites: &'static [u16],
     pub supported_versions: &'static [u16],
     pub supported_groups: &'static [u16],
@@ -80,19 +111,19 @@ pub(super) struct UtlsClientHelloProfile {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(super) struct UtlsKeyShare {
+pub(crate) struct UtlsKeyShare {
     pub group: u16,
     pub key_exchange_len: usize,
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(super) struct UtlsApplicationSettings {
+pub(crate) struct UtlsApplicationSettings {
     pub extension_type: u16,
     pub protocols: &'static [&'static [u8]],
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(super) struct UtlsExtension {
+pub(crate) struct UtlsExtension {
     pub extension_type: u16,
     pub payload_len: usize,
 }
@@ -183,7 +214,7 @@ for (const profileGroup of profileGroups.values()) {
   } };\n\n`;
 }
 
-output += `pub(super) fn profile_for_fingerprint(fingerprint: &str) -> Option<&'static UtlsClientHelloProfile> {
+output += `pub(crate) fn profile_for_fingerprint(fingerprint: &str) -> Option<&'static UtlsClientHelloProfile> {
     match fingerprint {
 `;
 

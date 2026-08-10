@@ -238,14 +238,11 @@ public struct XrayRealityFingerprintMode: RawRepresentable,
     public static let random = Self("random")
     public static let randomized = Self("randomized")
     public static let hellofirefox120 = Self("hellofirefox_120")
-    public static let hellofirefox148 = Self("hellofirefox_148")
     public static let hellochrome120 = Self("hellochrome_120")
     public static let hellochrome131 = Self("hellochrome_131")
-    public static let hellochrome133 = Self("hellochrome_133")
     public static let helloios13 = Self("helloios_13")
     public static let helloios14 = Self("helloios_14")
     public static let helloedge106 = Self("helloedge_106")
-    public static let hellosafari263 = Self("hellosafari_26_3")
     public static let hello360110 = Self("hello360_11_0")
     public static let helloqq111 = Self("helloqq_11_1")
     public static let hellorandomized = Self("hellorandomized")
@@ -287,14 +284,11 @@ public struct XrayRealityFingerprintMode: RawRepresentable,
         .random,
         .randomized,
         .hellofirefox120,
-        .hellofirefox148,
         .hellochrome120,
         .hellochrome131,
-        .hellochrome133,
         .helloios13,
         .helloios14,
         .helloedge106,
-        .hellosafari263,
         .hello360110,
         .helloqq111,
         .hellorandomized,
@@ -723,8 +717,11 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
             required: mode.requiresUpstream
         )
         let sourceDNS = root["dns"] as? [String: Any]
+        // `queryStrategy` belongs to the profile, not to the DNS mode override:
+        // an IPv4-only pin exists because the tunnel cannot carry IPv6, and a
+        // mode switch must not quietly re-enable it.
         var dns: [String: Any] = [
-            "queryStrategy": "UseIP",
+            "queryStrategy": sourceDNS?["queryStrategy"] ?? "UseIP",
         ]
         if let hosts = sourceDNS?["hosts"] {
             dns["hosts"] = hosts
@@ -1280,6 +1277,9 @@ public struct XrayClientRuntimeStats: Codable, Equatable, Sendable {
     public var tunFdWriteBatches: UInt64
     public var tunFdWriteBatchPackets: UInt64
     public var tunFdWriteBatchMaxPackets: UInt64
+    public var tunFdReadLoopExits: UInt64
+    public var tunFdWriteLoopExits: UInt64
+    public var tunFdTransientIoErrors: UInt64
 
     private enum CodingKeys: String, CodingKey {
         case inboundPackets
@@ -1320,6 +1320,9 @@ public struct XrayClientRuntimeStats: Codable, Equatable, Sendable {
         case tunFdWriteBatches
         case tunFdWriteBatchPackets
         case tunFdWriteBatchMaxPackets
+        case tunFdReadLoopExits
+        case tunFdWriteLoopExits
+        case tunFdTransientIoErrors
     }
 
     public init(
@@ -1360,7 +1363,10 @@ public struct XrayClientRuntimeStats: Codable, Equatable, Sendable {
         outboundQueueMaxPackets: UInt64 = 0,
         tunFdWriteBatches: UInt64 = 0,
         tunFdWriteBatchPackets: UInt64 = 0,
-        tunFdWriteBatchMaxPackets: UInt64 = 0
+        tunFdWriteBatchMaxPackets: UInt64 = 0,
+        tunFdReadLoopExits: UInt64 = 0,
+        tunFdWriteLoopExits: UInt64 = 0,
+        tunFdTransientIoErrors: UInt64 = 0
     ) {
         self.inboundPackets = inboundPackets
         self.outboundPackets = outboundPackets
@@ -1400,6 +1406,9 @@ public struct XrayClientRuntimeStats: Codable, Equatable, Sendable {
         self.tunFdWriteBatches = tunFdWriteBatches
         self.tunFdWriteBatchPackets = tunFdWriteBatchPackets
         self.tunFdWriteBatchMaxPackets = tunFdWriteBatchMaxPackets
+        self.tunFdReadLoopExits = tunFdReadLoopExits
+        self.tunFdWriteLoopExits = tunFdWriteLoopExits
+        self.tunFdTransientIoErrors = tunFdTransientIoErrors
     }
 
     public init(from decoder: Decoder) throws {
@@ -1525,6 +1534,18 @@ public struct XrayClientRuntimeStats: Codable, Equatable, Sendable {
         tunFdWriteBatchMaxPackets = try container.decodeIfPresent(
             UInt64.self,
             forKey: .tunFdWriteBatchMaxPackets
+        ) ?? 0
+        tunFdReadLoopExits = try container.decodeIfPresent(
+            UInt64.self,
+            forKey: .tunFdReadLoopExits
+        ) ?? 0
+        tunFdWriteLoopExits = try container.decodeIfPresent(
+            UInt64.self,
+            forKey: .tunFdWriteLoopExits
+        ) ?? 0
+        tunFdTransientIoErrors = try container.decodeIfPresent(
+            UInt64.self,
+            forKey: .tunFdTransientIoErrors
         ) ?? 0
     }
 }

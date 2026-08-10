@@ -9,6 +9,8 @@ use std::sync::{
 };
 use std::task::{Context, Poll};
 
+use xray_transport::stream::TransportLayer;
+
 use aes::cipher::{BlockEncrypt, KeyInit};
 use aes::Aes128;
 use aes_gcm::aead::{Aead, Payload as AeadPayload};
@@ -46,13 +48,12 @@ use xray_config::{
     InboundConfig, InboundProtocol, InboundSniffingConfig, IpCidr, IpMatcher, Network,
     OutboundConfig, OutboundSettings, PolicyConfig, PolicyLevelConfig, RealitySettings,
     RealityShortId, RoutingConfig, RoutingDomainStrategy, RoutingPortRange, RoutingRule,
-    SniffingDestination, StreamSecurity, StreamSettings, TargetAddr, TlsSettings,
+    SniffingDestination, StreamSecurity, StreamSettings, StreamTransport, TargetAddr, TlsSettings,
     VlessOutboundSettings, VlessUser,
 };
 use xray_core_rs::{
-    select_tcp_outbound_for_session, select_tcp_outbound_for_session_with_resolver,
-    select_vless_tcp_outbound, Core, CoreError, DnsBootstrapMode, RuntimeLogConfig, RuntimeLogger,
-    TcpOutbound, TunRuntimeOptions, TunRuntimeProfile,
+    Core, CoreError, DnsBootstrapMode, OutboundRouter, RuntimeLogConfig, RuntimeLogger,
+    TcpOutbound, TunRuntimeOptions, TunRuntimeProfile, VlessTcpOutbound,
 };
 use xray_proxy::inbound::{encode_socks5_udp_datagram, parse_socks5_udp_datagram};
 use xray_proxy::vless::{
@@ -73,12 +74,25 @@ const TEST_UUID_BYTES: [u8; 16] = [
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
 ];
 
+/// Compile-only config assertions deliberately do not exercise runtime pool
+/// reuse. Runtime code must retain one `OutboundRouter` for the config lifetime.
+fn compile_vless_tcp_outbound_one_shot(config: &CoreConfig) -> Result<VlessTcpOutbound, CoreError> {
+    match OutboundRouter::new(Arc::new(config.clone())).select_tcp_outbound()? {
+        TcpOutbound::Vless(outbound) => Ok(*outbound),
+        TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => {
+            Err(CoreError::NoSupportedOutbound)
+        }
+    }
+}
+
 fn vless_outbound(security: StreamSecurity, server: TargetAddr, port: u16) -> OutboundConfig {
     OutboundConfig {
         tag: Some("proxy".to_owned()),
         stream: StreamSettings {
             network: Network::Tcp,
+            transport: StreamTransport::Raw,
             security,
+            quic_params: None,
             socket_options: None,
         },
         settings: OutboundSettings::Vless(VlessOutboundSettings {
@@ -99,7 +113,9 @@ fn freedom_outbound() -> OutboundConfig {
         tag: Some("direct".to_owned()),
         stream: StreamSettings {
             network: Network::Tcp,
+            transport: StreamTransport::Raw,
             security: StreamSecurity::None,
+            quic_params: None,
             socket_options: None,
         },
         settings: OutboundSettings::Freedom,
@@ -111,7 +127,9 @@ fn dns_outbound(settings: DnsOutboundSettings) -> OutboundConfig {
         tag: Some("dns-out".to_owned()),
         stream: StreamSettings {
             network: Network::Tcp,
+            transport: StreamTransport::Raw,
             security: StreamSecurity::None,
+            quic_params: None,
             socket_options: None,
         },
         settings: OutboundSettings::Dns(settings),
@@ -689,6 +707,7 @@ fn runtime_tun_config_with_tls_vision_vless_domain_server(
             server_name: Some(server_name.to_owned()),
             fingerprint: None,
             allow_insecure: false,
+            alpn: Vec::new(),
         }),
         TargetAddr::Domain(domain.to_owned()),
         port,
@@ -1024,6 +1043,7 @@ fn runtime_config_with_tls_vless_domain_server(
                 server_name: Some(server_name.to_owned()),
                 fingerprint: None,
                 allow_insecure: false,
+                alpn: Vec::new(),
             }),
             TargetAddr::Domain(domain.to_owned()),
             port,
@@ -1050,14 +1070,6 @@ fn reality_security_with_fingerprint(fingerprint: &str) -> StreamSecurity {
     })
 }
 
-fn tls_security() -> StreamSecurity {
-    StreamSecurity::Tls(TlsSettings {
-        server_name: Some("example.com".to_owned()),
-        fingerprint: Some("chrome".to_owned()),
-        allow_insecure: false,
-    })
-}
-
 #[test]
 fn selects_raw_tcp_vless_outbound_with_ip_server() {
     let config = config_with_outbound(vless_outbound(
@@ -1066,7 +1078,7 @@ fn selects_raw_tcp_vless_outbound_with_ip_server() {
         443,
     ));
 
-    let selected = select_vless_tcp_outbound(&config).unwrap();
+    let selected = compile_vless_tcp_outbound_one_shot(&config).unwrap();
 
     assert_eq!(selected.server().port, 443);
 }
@@ -1081,13 +1093,15 @@ fn full_xray_core_fixture_builds_core() {
 #[test]
 fn full_xray_core_fixture_routes_reserved_domain_direct() {
     let config = full_xray_core_fixture_config();
+    let router = OutboundRouter::new(Arc::new(config));
     let target = Target::new(
         RoutingTargetAddr::Domain("api.direct.example".to_owned()),
         443,
         RoutingNetwork::Tcp,
     );
 
-    let outbound = select_tcp_outbound_for_session(&config, None, &target)
+    let outbound = router
+        .select_tcp_outbound_for_session(None, &target)
         .expect("reserved domain rule should select direct");
 
     assert!(matches!(outbound, TcpOutbound::Freedom));
@@ -1096,13 +1110,15 @@ fn full_xray_core_fixture_routes_reserved_domain_direct() {
 #[test]
 fn full_xray_core_fixture_routes_reserved_cidr_direct() {
     let config = full_xray_core_fixture_config();
+    let router = OutboundRouter::new(Arc::new(config));
     let target = Target::new(
         RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 42))),
         443,
         RoutingNetwork::Tcp,
     );
 
-    let outbound = select_tcp_outbound_for_session(&config, None, &target)
+    let outbound = router
+        .select_tcp_outbound_for_session(None, &target)
         .expect("reserved CIDR rule should select direct");
 
     assert!(matches!(outbound, TcpOutbound::Freedom));
@@ -1111,20 +1127,21 @@ fn full_xray_core_fixture_routes_reserved_cidr_direct() {
 #[tokio::test]
 async fn full_xray_core_fixture_routes_inbound_rule_before_ip_if_non_match_dns() {
     let config = full_xray_core_fixture_config();
+    let router = OutboundRouter::new(Arc::new(config));
     let target = Target::new(
         RoutingTargetAddr::Domain("not-ru.example".to_owned()),
         443,
         RoutingNetwork::Tcp,
     );
 
-    let outbound = select_tcp_outbound_for_session_with_resolver(
-        &config,
-        Some("inbound_49783"),
-        &target,
-        &EmptyDnsResolver,
-    )
-    .await
-    .expect("inbound-tag rule should select proxy before DNS second pass");
+    let outbound = router
+        .select_tcp_outbound_for_session_with_resolver(
+            Some("inbound_49783"),
+            &target,
+            &EmptyDnsResolver,
+        )
+        .await
+        .expect("inbound-tag rule should select proxy before DNS second pass");
 
     assert!(matches!(outbound, TcpOutbound::Vless(_)));
 }
@@ -1132,13 +1149,16 @@ async fn full_xray_core_fixture_routes_inbound_rule_before_ip_if_non_match_dns()
 #[test]
 fn full_xray_core_fixture_missing_api_outbound_fails_only_when_selected() {
     let config = full_xray_core_fixture_config();
+    let router = OutboundRouter::new(Arc::new(config));
     let target = Target::new(
         RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
         443,
         RoutingNetwork::Tcp,
     );
 
-    let error = select_tcp_outbound_for_session(&config, Some("api"), &target).unwrap_err();
+    let error = router
+        .select_tcp_outbound_for_session(Some("api"), &target)
+        .unwrap_err();
 
     assert!(matches!(error, CoreError::NoSupportedOutbound));
 }
@@ -1166,7 +1186,7 @@ fn selects_default_outbound_tag_when_present() {
         policy: Default::default(),
     };
 
-    let selected = select_vless_tcp_outbound(&config).unwrap();
+    let selected = compile_vless_tcp_outbound_one_shot(&config).unwrap();
 
     assert_eq!(selected.server().port, 443);
 }
@@ -1179,7 +1199,7 @@ fn selects_reality_vless_outbound_for_handshake_provider_path() {
         443,
     ));
 
-    let selected = select_vless_tcp_outbound(&config).unwrap();
+    let selected = compile_vless_tcp_outbound_one_shot(&config).unwrap();
 
     assert_eq!(selected.server().port, 443);
     assert!(matches!(
@@ -1201,7 +1221,7 @@ fn selects_reality_vless_outbound_preserves_non_default_fingerprint() {
         443,
     ));
 
-    let selected = select_vless_tcp_outbound(&config).unwrap();
+    let selected = compile_vless_tcp_outbound_one_shot(&config).unwrap();
 
     assert!(matches!(
         selected.transport(),
@@ -1249,7 +1269,7 @@ fn parsed_config_reality_fingerprint_reaches_transport_config() {
     }"#;
     let parsed = parse_xray_json(raw).unwrap();
 
-    let selected = select_vless_tcp_outbound(&parsed.config).unwrap();
+    let selected = compile_vless_tcp_outbound_one_shot(&parsed.config).unwrap();
 
     assert!(matches!(
         selected.transport(),
@@ -1258,20 +1278,131 @@ fn parsed_config_reality_fingerprint_reaches_transport_config() {
     ));
 }
 
+/// The gap this closes: for a while every piece of a plain-TLS config parsed
+/// cleanly and then failed to build, because the parser had started filling in
+/// the default `chrome` fingerprint while the builder still rejected any
+/// fingerprint at all. Nothing caught it, because nothing ran a plain-TLS
+/// config through both halves.
 #[test]
-fn rejects_tls_fingerprint_for_runtime_path() {
-    let config = config_with_outbound(vless_outbound(
-        tls_security(),
-        TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
-        443,
-    ));
+fn parsed_plain_tls_config_builds_an_outbound_with_the_default_fingerprint() {
+    let raw = r#"{
+        "inbounds": [],
+        "outbounds": [
+            {
+                "tag": "proxy",
+                "protocol": "vless",
+                "settings": {
+                    "vnext": [
+                        {
+                            "address": "203.0.113.10",
+                            "port": 443,
+                            "users": [
+                                {
+                                    "id": "00010203-0405-0607-0809-0a0b0c0d0e0f",
+                                    "encryption": "none"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "streamSettings": {
+                    "network": "tcp",
+                    "security": "tls",
+                    "tlsSettings": {
+                        "serverName": "server.example"
+                    }
+                }
+            }
+        ]
+    }"#;
+    let parsed = parse_xray_json(raw).expect("a plain-TLS config should parse");
 
-    let result = select_vless_tcp_outbound(&config);
+    let selected = compile_vless_tcp_outbound_one_shot(&parsed.config)
+        .expect("a plain-TLS config should also build");
 
+    let xray_transport::ConnectorConfig::Tls(tls) = selected.transport() else {
+        panic!("expected a TLS transport");
+    };
+    assert_eq!(tls.server_name, "server.example");
+    // An absent `tlsSettings.fingerprint` means chrome, as it does in Xray.
+    assert_eq!(tls.fingerprint.as_deref(), Some("chrome"));
+    assert!(tls.alpn.is_empty());
+
+    // The parser and the transport normalize fingerprints separately; this
+    // proves the name one emits is a name the other can still shape with.
+    TlsConnector::system()
+        .expect("build a system TLS connector")
+        .client_config_for(tls)
+        .expect("the parsed fingerprint must build a client config");
+
+    // The per-session router compiles the same outbound through its own cache,
+    // and that is the path a live tunnel takes.
+    let router = OutboundRouter::new(Arc::new(parsed.config));
+    let routed = router
+        .select_tcp_outbound_for_session(
+            None,
+            &Target::new(
+                RoutingTargetAddr::Domain("destination.example".to_owned()),
+                443,
+                RoutingNetwork::Tcp,
+            ),
+        )
+        .expect("a plain-TLS outbound should be selectable for a session");
+    let TcpOutbound::Vless(routed) = routed else {
+        panic!("expected the VLESS outbound");
+    };
     assert!(matches!(
-        result,
-        Err(CoreError::UnsupportedOutboundSecurity)
+        routed.transport(),
+        xray_transport::ConnectorConfig::Tls(config)
+            if config.fingerprint.as_deref() == Some("chrome")
     ));
+}
+
+#[test]
+fn parsed_config_tls_fingerprint_and_alpn_reach_transport_config() {
+    let raw = r#"{
+        "inbounds": [],
+        "outbounds": [
+            {
+                "tag": "proxy",
+                "protocol": "vless",
+                "settings": {
+                    "vnext": [
+                        {
+                            "address": "203.0.113.10",
+                            "port": 443,
+                            "users": [
+                                {
+                                    "id": "00010203-0405-0607-0809-0a0b0c0d0e0f",
+                                    "encryption": "none",
+                                    "flow": "xtls-rprx-vision"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "streamSettings": {
+                    "network": "tcp",
+                    "security": "tls",
+                    "tlsSettings": {
+                        "serverName": "server.example",
+                        "fingerprint": "firefox",
+                        "alpn": ["h2", "http/1.1"]
+                    }
+                }
+            }
+        ]
+    }"#;
+    let parsed = parse_xray_json(raw).expect("an explicitly shaped TLS config should parse");
+
+    let selected =
+        compile_vless_tcp_outbound_one_shot(&parsed.config).expect("build the shaped outbound");
+
+    let xray_transport::ConnectorConfig::Tls(tls) = selected.transport() else {
+        panic!("expected a TLS transport");
+    };
+    assert_eq!(tls.fingerprint.as_deref(), Some("firefox"));
+    assert_eq!(tls.alpn, vec!["h2".to_owned(), "http/1.1".to_owned()]);
 }
 
 #[test]
@@ -1281,12 +1412,13 @@ fn selects_tls_vless_outbound_without_fingerprint() {
             server_name: Some("server.example".to_owned()),
             fingerprint: None,
             allow_insecure: false,
+            alpn: Vec::new(),
         }),
         TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
         443,
     ));
 
-    let selected = select_vless_tcp_outbound(&config).unwrap();
+    let selected = compile_vless_tcp_outbound_one_shot(&config).unwrap();
 
     assert_eq!(selected.server().port, 443);
     assert!(matches!(
@@ -1302,12 +1434,13 @@ fn selects_tls_explicit_server_name_over_domain_outbound() {
             server_name: Some("override.example".to_owned()),
             fingerprint: None,
             allow_insecure: false,
+            alpn: Vec::new(),
         }),
         TargetAddr::Domain("vless.test".to_owned()),
         443,
     ));
 
-    let selected = select_vless_tcp_outbound(&config).unwrap();
+    let selected = compile_vless_tcp_outbound_one_shot(&config).unwrap();
 
     assert!(matches!(
         selected.transport(),
@@ -1322,12 +1455,13 @@ fn selects_tls_server_name_from_domain_outbound_when_missing() {
             server_name: None,
             fingerprint: None,
             allow_insecure: false,
+            alpn: Vec::new(),
         }),
         TargetAddr::Domain("vless.test".to_owned()),
         443,
     ));
 
-    let selected = select_vless_tcp_outbound(&config).unwrap();
+    let selected = compile_vless_tcp_outbound_one_shot(&config).unwrap();
 
     assert!(matches!(
         selected.transport(),
@@ -1342,12 +1476,13 @@ fn rejects_tls_empty_server_name() {
             server_name: Some("".to_owned()),
             fingerprint: None,
             allow_insecure: false,
+            alpn: Vec::new(),
         }),
         TargetAddr::Domain("vless.test".to_owned()),
         443,
     ));
 
-    let result = select_vless_tcp_outbound(&config);
+    let result = compile_vless_tcp_outbound_one_shot(&config);
 
     assert!(matches!(
         result,
@@ -1362,32 +1497,13 @@ fn rejects_tls_ip_server_without_server_name() {
             server_name: None,
             fingerprint: None,
             allow_insecure: false,
+            alpn: Vec::new(),
         }),
         TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
         443,
     ));
 
-    let result = select_vless_tcp_outbound(&config);
-
-    assert!(matches!(
-        result,
-        Err(CoreError::UnsupportedOutboundSecurity)
-    ));
-}
-
-#[test]
-fn rejects_tls_fingerprint_without_plain_rustls_downgrade() {
-    let config = config_with_outbound(vless_outbound(
-        StreamSecurity::Tls(TlsSettings {
-            server_name: Some("server.example".to_owned()),
-            fingerprint: Some("chrome".to_owned()),
-            allow_insecure: false,
-        }),
-        TargetAddr::Domain("vless.test".to_owned()),
-        443,
-    ));
-
-    let result = select_vless_tcp_outbound(&config);
+    let result = compile_vless_tcp_outbound_one_shot(&config);
 
     assert!(matches!(
         result,
@@ -1403,7 +1519,7 @@ fn selects_domain_vless_server_for_dns_resolution() {
         443,
     ));
 
-    let selected = select_vless_tcp_outbound(&config).unwrap();
+    let selected = compile_vless_tcp_outbound_one_shot(&config).unwrap();
 
     assert_eq!(selected.server().port, 443);
     assert_eq!(
@@ -1425,7 +1541,7 @@ fn rejects_vision_flow_for_raw_tcp_runtime_path() {
     settings.users[0].flow = Some("xtls-rprx-vision".to_owned());
     let config = config_with_outbound(outbound);
 
-    let result = select_vless_tcp_outbound(&config);
+    let result = compile_vless_tcp_outbound_one_shot(&config);
 
     assert!(matches!(result, Err(CoreError::UnsupportedOutboundFlow)));
 }
@@ -1437,6 +1553,7 @@ fn selects_tls_vision_outbound_for_protected_stream_boundary() {
             server_name: Some("example.com".to_owned()),
             fingerprint: None,
             allow_insecure: false,
+            alpn: Vec::new(),
         }),
         TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
         443,
@@ -1447,7 +1564,7 @@ fn selects_tls_vision_outbound_for_protected_stream_boundary() {
     settings.users[0].flow = Some("xtls-rprx-vision".to_owned());
     let config = config_with_outbound(outbound);
 
-    let selected = select_vless_tcp_outbound(&config).unwrap();
+    let selected = compile_vless_tcp_outbound_one_shot(&config).unwrap();
 
     assert_eq!(selected.user().flow.as_deref(), Some("xtls-rprx-vision"));
     assert!(matches!(
@@ -1469,7 +1586,7 @@ fn selects_reality_vision_outbound_for_protected_stream_boundary() {
     settings.users[0].flow = Some("xtls-rprx-vision".to_owned());
     let config = config_with_outbound(outbound);
 
-    let selected = select_vless_tcp_outbound(&config).unwrap();
+    let selected = compile_vless_tcp_outbound_one_shot(&config).unwrap();
 
     assert_eq!(selected.user().flow.as_deref(), Some("xtls-rprx-vision"));
     assert!(matches!(
@@ -1485,7 +1602,7 @@ async fn vless_tcp_open_reports_dns_failure_for_unresolved_server_domain() {
         TargetAddr::Domain("missing.test".to_owned()),
         443,
     ));
-    let outbound = select_vless_tcp_outbound(&config).unwrap();
+    let outbound = compile_vless_tcp_outbound_one_shot(&config).unwrap();
     let target = Target::new(
         RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
         80,
@@ -3086,7 +3203,7 @@ async fn run_socks_udp_vision_xudp_echo_scenario() {
         "vless.test",
     );
     let dialer =
-        TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config));
+        TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(client_config));
     let mut core =
         Core::with_runtime_dependencies(config, Arc::new(resolver), Arc::new(dialer)).unwrap();
     core.start().await.unwrap();
@@ -3256,7 +3373,7 @@ async fn run_tun_tcp_vless_echo_scenario() {
 async fn run_tun_tcp_upload_backpressure_scenario() {
     let (client_config, _) = tls_test_configs();
     let dialer =
-        TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config))
+        TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(client_config))
             .with_reality_engine(Arc::new(StalledWriteRealityEngine));
     let mut core = Core::with_runtime_dependencies(
         runtime_tun_config_with_reality_vision_vless_server(443),
@@ -3305,7 +3422,7 @@ async fn start_tun_reality_blackhole(
     let state = Arc::new(PendingRealityOpenState::default());
     let (client_config, _) = tls_test_configs();
     let dialer =
-        TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config))
+        TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(client_config))
             .with_reality_engine(Arc::new(PendingRealityEngine {
                 state: Arc::clone(&state),
             }));
@@ -3385,7 +3502,7 @@ async fn run_tun_reality_pending_open_budget_scenario() {
     let state = Arc::new(PendingRealityOpenState::default());
     let (client_config, _) = tls_test_configs();
     let dialer =
-        TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config))
+        TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(client_config))
             .with_reality_engine(Arc::new(PendingRealityEngine {
                 state: Arc::clone(&state),
             }));
@@ -3449,7 +3566,7 @@ async fn run_tun_reality_open_error_burst_scenario() {
     let attempts = Arc::new(AtomicUsize::new(0));
     let (client_config, _) = tls_test_configs();
     let dialer =
-        TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config))
+        TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(client_config))
             .with_reality_engine(Arc::new(FailingRealityEngine {
                 attempts: Arc::clone(&attempts),
             }));
@@ -3508,7 +3625,7 @@ async fn run_tun_reality_bridge_panic_scenario() {
     let log_dir = create_runtime_log_temp_dir("xray-rust-tun-bridge-panic");
     let (client_config, _) = tls_test_configs();
     let dialer =
-        TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config))
+        TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(client_config))
             .with_reality_engine(Arc::new(PanickingRealityEngine));
     let mut core = Core::with_runtime_dependencies(
         runtime_tun_config_with_reality_vision_vless_server(443),
@@ -6517,7 +6634,7 @@ async fn run_tun_dns_proxy_udp_vision_xudp_scenario() {
     );
     config.dns.servers = vec![DnsServerConfig::Ip(upstream)];
     let dialer =
-        TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config));
+        TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(client_config));
     let mut core =
         Core::with_runtime_dependencies(config, Arc::new(resolver), Arc::new(dialer)).unwrap();
     core.start().await.unwrap();
@@ -7739,7 +7856,7 @@ async fn run_tun_udp_vision_xudp_echo_scenario() {
         "vless.test",
     );
     let dialer =
-        TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config));
+        TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(client_config));
 
     let mut core =
         Core::with_runtime_dependencies(config, Arc::new(resolver), Arc::new(dialer)).unwrap();
@@ -7797,7 +7914,7 @@ async fn run_tun_regular_vision_udp443_rejection_scenario() {
         "vless.test",
     );
     let dialer =
-        TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config));
+        TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(client_config));
     let mut core = Core::with_runtime_dependencies_and_tun_options(
         config,
         Arc::new(resolver),
@@ -7845,8 +7962,9 @@ async fn run_tun_regular_vision_udp443_rejection_storm_scenario() {
             vless_addr.port(),
             "vless.test",
         );
-        let dialer =
-            TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config));
+        let dialer = TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(
+            client_config,
+        ));
         let mut core = Core::with_runtime_dependencies_and_tun_options(
             config,
             Arc::new(resolver),
@@ -8293,7 +8411,7 @@ async fn run_socks_to_vless_tls_echo_scenario() {
     let config =
         runtime_config_with_tls_vless_domain_server("vless.test", vless_addr.port(), "vless.test");
     let dialer =
-        TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config));
+        TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(client_config));
 
     let mut core =
         Core::with_runtime_dependencies(config, Arc::new(resolver), Arc::new(dialer)).unwrap();
@@ -10766,4 +10884,97 @@ where
         panic!("this E2E expects an IP VLESS target");
     };
     SocketAddr::new(ip, target.port)
+}
+
+#[test]
+fn ws_config_builds_an_outbound_carrying_the_transport() {
+    let raw = r#"{
+        "inbounds": [],
+        "outbounds": [
+            {
+                "tag": "proxy",
+                "protocol": "vless",
+                "settings": {
+                    "vnext": [
+                        {
+                            "address": "203.0.113.10",
+                            "port": 443,
+                            "users": [
+                                {
+                                    "id": "00010203-0405-0607-0809-0a0b0c0d0e0f",
+                                    "encryption": "none"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "streamSettings": {
+                    "network": "ws",
+                    "security": "tls",
+                    "tlsSettings": { "serverName": "server.example" },
+                    "wsSettings": {
+                        "path": "/chat?ed=2048",
+                        "headers": { "X-Extra": "value" }
+                    }
+                }
+            }
+        ]
+    }"#;
+    let parsed = parse_xray_json(raw).expect("a ws config should parse");
+
+    let selected = compile_vless_tcp_outbound_one_shot(&parsed.config)
+        .expect("a ws config must now build an outbound rather than fail closed");
+
+    let TransportLayer::WebSocket(websocket) = selected.transport_layer() else {
+        panic!("expected the WebSocket transport layer");
+    };
+    assert_eq!(websocket.path, "/chat");
+    assert_eq!(
+        websocket.early_data_bytes, 2048,
+        "`?ed=N` is stripped from the path and becomes the early-data budget"
+    );
+    // Host falls back to the TLS server name when wsSettings.host is absent.
+    assert_eq!(websocket.host, "server.example");
+    assert_eq!(
+        websocket.headers,
+        vec![("X-Extra".to_owned(), "value".to_owned())]
+    );
+}
+
+#[test]
+fn httpupgrade_host_falls_back_past_tls_to_the_destination() {
+    let raw = r#"{
+        "inbounds": [],
+        "outbounds": [
+            {
+                "tag": "proxy",
+                "protocol": "vless",
+                "settings": {
+                    "vnext": [
+                        {
+                            "address": "203.0.113.10",
+                            "port": 443,
+                            "users": [{ "id": "00010203-0405-0607-0809-0a0b0c0d0e0f" }]
+                        }
+                    ]
+                },
+                "streamSettings": {
+                    "network": "httpupgrade",
+                    "httpupgradeSettings": { "path": "/up" }
+                }
+            }
+        ]
+    }"#;
+    let parsed = parse_xray_json(raw).expect("an httpupgrade config should parse");
+
+    let selected = compile_vless_tcp_outbound_one_shot(&parsed.config)
+        .expect("an httpupgrade config must build");
+
+    let TransportLayer::HttpUpgrade(upgrade) = selected.transport_layer() else {
+        panic!("expected the HTTPUpgrade transport layer");
+    };
+    assert_eq!(upgrade.path, "/up");
+    // No wsSettings.host and no TLS, so the destination address stands in --
+    // and never with a port.
+    assert_eq!(upgrade.host, "203.0.113.10");
 }

@@ -117,8 +117,17 @@ XrayTunStats stats = {0};
 stats.struct_size = sizeof(stats);
 ```
 
-The library rejects a smaller struct with `XRAY_STATUS_BUFFER_TOO_SMALL`. Do
-not reuse a header from a different ABI major.
+Within ABI major 1, `XrayTunStats` is append-only. The library accepts the
+original prefix ending with `tun_fd_write_batch_max_packets` (560 bytes on the
+supported 64-bit targets) and writes at most
+`min(stats.struct_size, sizeof(XrayTunStats))` bytes. The current layout is 584
+bytes on those targets; an older caller receives every field in its prefix and
+the allocation size in `struct_size` is preserved, so the same object remains
+safe to reuse. A future caller's unknown tail remains untouched. Buffers shorter
+than the original prefix are rejected with `XRAY_STATUS_BUFFER_TOO_SMALL`.
+
+This prefix rule applies only to append-only growth of `XrayTunStats`. Do not
+reuse a header from a different ABI major.
 
 ## Direct TUN file descriptors
 

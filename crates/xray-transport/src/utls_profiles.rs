@@ -1,5 +1,27 @@
+//! uTLS ClientHello profiles, one per fingerprint Xray accepts.
+//!
+//! The profile data was first emitted by
+//! `tools/reality-oracle/generate_utls_profiles.mjs` from the oracle's dump of
+//! each uTLS parrot. **This file is hand-maintained now.** It carries behaviour
+//! that generator never produced and cannot reproduce, so regenerating over it
+//! would silently revert it — the generator refuses to run for that reason.
+//!
+//! Held by hand:
+//!
+//! * `process_random_fingerprint` and `process_randomized_fingerprint`, which
+//!   draw a shape once per process through `draw_modern_fingerprint` rather
+//!   than pinning `random`/`randomized` to one fixed profile. The generator
+//!   emitted a plain match arm mapping both names to a constant, which would
+//!   give the whole user base a single shared hello.
+//!
+//! Adding a profile by hand is the expected way to change this file.
+
+use std::sync::OnceLock;
+
+use rand::{rngs::OsRng, RngCore};
+
 #[derive(Clone, Copy, Debug)]
-pub(super) struct UtlsClientHelloProfile {
+pub(crate) struct UtlsClientHelloProfile {
     pub cipher_suites: &'static [u16],
     pub supported_versions: &'static [u16],
     pub supported_groups: &'static [u16],
@@ -12,23 +34,70 @@ pub(super) struct UtlsClientHelloProfile {
     pub application_settings: &'static [UtlsApplicationSettings],
     pub extensions: &'static [UtlsExtension],
     pub padding_length: Option<usize>,
-    pub encrypted_client_hello_length: Option<usize>,
+    pub encrypted_client_hello: Option<UtlsEchGrease>,
 }
 
+/// What a profile's ECH GREASE extension draws from, per connection.
+///
+/// uTLS varies two fields and holds the rest of the extension fixed, so both
+/// are candidate lists rather than values: `GREASEEncryptedClientHelloExtension`
+/// picks an index into each with `crypto/rand` when the extension is built.
 #[derive(Clone, Copy, Debug)]
-pub(super) struct UtlsKeyShare {
+pub(crate) struct UtlsEchGrease {
+    /// HPKE AEAD ids, each paired with HKDF-SHA256 — uTLS never varies the KDF.
+    pub aead_ids: &'static [u16],
+    /// Extension body lengths. uTLS draws a pre-encryption payload length and
+    /// the AEAD tag adds 16; these are the resulting body lengths.
+    pub lengths: &'static [usize],
+}
+
+/// `BoringGREASEECH`, the scheme BoringSSL — and so Chrome — uses by default.
+///
+/// One cipher suite, so the AEAD really is fixed here: AES-128-GCM is what
+/// Chrome always sends, not a simplification on our part.
+///
+/// uTLS draws the payload length from `{128, 160, 192, 224}`, which is
+/// `{186, 218, 250, 282}` once the tag and the outer header are added. We pin
+/// the first: both the raw-hello and the shape fixtures record one length per
+/// fingerprint, so a per-connection draw would fail those byte-exact
+/// comparisons three runs in four. Unpinning it means teaching
+/// `clienthello_shape.go` to force a candidate index and committing a fixture
+/// per candidate, so the guard can assert the hello matches one of the four
+/// uTLS can produce. Until then this is a known divergence, recorded in
+/// `docs/config-compatibility.md`.
+pub(crate) const ECH_GREASE_BORING: UtlsEchGrease = UtlsEchGrease {
+    aead_ids: &[HPKE_AEAD_AES_128_GCM],
+    lengths: &[186],
+};
+
+/// Firefox's own GREASE scheme (`u_parrots.go`).
+///
+/// Two cipher suites, drawn per connection, and a single payload length of 223
+/// — so the length is genuinely fixed while the AEAD is genuinely a coin flip.
+/// Sending AES-128-GCM every time would make a handful of connections from one
+/// client conclusive: real Firefox picks ChaCha20 half the time.
+pub(crate) const ECH_GREASE_FIREFOX: UtlsEchGrease = UtlsEchGrease {
+    aead_ids: &[HPKE_AEAD_AES_128_GCM, HPKE_AEAD_CHACHA20_POLY1305],
+    lengths: &[281],
+};
+
+pub(crate) const HPKE_AEAD_AES_128_GCM: u16 = 0x0001;
+pub(crate) const HPKE_AEAD_CHACHA20_POLY1305: u16 = 0x0003;
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct UtlsKeyShare {
     pub group: u16,
     pub key_exchange_len: usize,
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(super) struct UtlsApplicationSettings {
+pub(crate) struct UtlsApplicationSettings {
     pub extension_type: u16,
     pub protocols: &'static [&'static [u8]],
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(super) struct UtlsExtension {
+pub(crate) struct UtlsExtension {
     pub extension_type: u16,
     pub payload_len: usize,
 }
@@ -154,7 +223,7 @@ const PROFILE_0: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_0_APPS,
     extensions: PROFILE_0_EXTENSIONS,
     padding_length: None,
-    encrypted_client_hello_length: Some(186),
+    encrypted_client_hello: Some(ECH_GREASE_BORING),
 };
 
 const PROFILE_1_CIPHERS: &[u16] = &[
@@ -259,7 +328,7 @@ const PROFILE_1: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_1_APPS,
     extensions: PROFILE_1_EXTENSIONS,
     padding_length: None,
-    encrypted_client_hello_length: Some(281),
+    encrypted_client_hello: Some(ECH_GREASE_FIREFOX),
 };
 
 const PROFILE_2_CIPHERS: &[u16] = &[
@@ -364,7 +433,7 @@ const PROFILE_2: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_2_APPS,
     extensions: PROFILE_2_EXTENSIONS,
     padding_length: None,
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_3_CIPHERS: &[u16] = &[
@@ -466,7 +535,7 @@ const PROFILE_3: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_3_APPS,
     extensions: PROFILE_3_EXTENSIONS,
     padding_length: Some(190),
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_4_CIPHERS: &[u16] = &[
@@ -525,7 +594,7 @@ const PROFILE_4: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_4_APPS,
     extensions: PROFILE_4_EXTENSIONS,
     padding_length: None,
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_5_CIPHERS: &[u16] = &[
@@ -634,7 +703,7 @@ const PROFILE_5: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_5_APPS,
     extensions: PROFILE_5_EXTENSIONS,
     padding_length: Some(209),
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_6_CIPHERS: &[u16] = &[
@@ -706,7 +775,7 @@ const PROFILE_6: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_6_APPS,
     extensions: PROFILE_6_EXTENSIONS,
     padding_length: None,
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_7_CIPHERS: &[u16] = &[
@@ -823,7 +892,7 @@ const PROFILE_7: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_7_APPS,
     extensions: PROFILE_7_EXTENSIONS,
     padding_length: Some(200),
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_8_CIPHERS: &[u16] = &[
@@ -912,7 +981,7 @@ const PROFILE_8: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_8_APPS,
     extensions: PROFILE_8_EXTENSIONS,
     padding_length: None,
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_9_CIPHERS: &[u16] = &[
@@ -974,7 +1043,7 @@ const PROFILE_9: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_9_APPS,
     extensions: PROFILE_9_EXTENSIONS,
     padding_length: None,
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_10_CIPHERS: &[u16] = &[
@@ -1075,7 +1144,7 @@ const PROFILE_10: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_10_APPS,
     extensions: PROFILE_10_EXTENSIONS,
     padding_length: None,
-    encrypted_client_hello_length: Some(281),
+    encrypted_client_hello: Some(ECH_GREASE_FIREFOX),
 };
 
 const PROFILE_11_CIPHERS: &[u16] = &[
@@ -1196,7 +1265,7 @@ const PROFILE_11: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_11_APPS,
     extensions: PROFILE_11_EXTENSIONS,
     padding_length: Some(14),
-    encrypted_client_hello_length: Some(186),
+    encrypted_client_hello: Some(ECH_GREASE_BORING),
 };
 
 const PROFILE_12_CIPHERS: &[u16] = &[
@@ -1317,7 +1386,7 @@ const PROFILE_12: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_12_APPS,
     extensions: PROFILE_12_EXTENSIONS,
     padding_length: None,
-    encrypted_client_hello_length: Some(186),
+    encrypted_client_hello: Some(ECH_GREASE_BORING),
 };
 
 const PROFILE_13_CIPHERS: &[u16] = &[
@@ -1405,7 +1474,7 @@ const PROFILE_13: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_13_APPS,
     extensions: PROFILE_13_EXTENSIONS,
     padding_length: Some(210),
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_14_CIPHERS: &[u16] = &[
@@ -1522,7 +1591,7 @@ const PROFILE_14: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_14_APPS,
     extensions: PROFILE_14_EXTENSIONS,
     padding_length: Some(204),
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_15_CIPHERS: &[u16] = &[
@@ -1635,7 +1704,7 @@ const PROFILE_15: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_15_APPS,
     extensions: PROFILE_15_EXTENSIONS,
     padding_length: Some(201),
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_16_CIPHERS: &[u16] = &[
@@ -1701,7 +1770,7 @@ const PROFILE_16: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_16_APPS,
     extensions: PROFILE_16_EXTENSIONS,
     padding_length: None,
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_17_CIPHERS: &[u16] = &[
@@ -1769,7 +1838,7 @@ const PROFILE_17: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_17_APPS,
     extensions: PROFILE_17_EXTENSIONS,
     padding_length: None,
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_18_CIPHERS: &[u16] = &[
@@ -1837,7 +1906,7 @@ const PROFILE_18: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_18_APPS,
     extensions: PROFILE_18_EXTENSIONS,
     padding_length: None,
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_19_CIPHERS: &[u16] = &[
@@ -1934,7 +2003,7 @@ const PROFILE_19: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_19_APPS,
     extensions: PROFILE_19_EXTENSIONS,
     padding_length: Some(147),
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_20_CIPHERS: &[u16] = &[
@@ -2031,7 +2100,7 @@ const PROFILE_20: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_20_APPS,
     extensions: PROFILE_20_EXTENSIONS,
     padding_length: Some(147),
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_21_CIPHERS: &[u16] = &[
@@ -2132,7 +2201,7 @@ const PROFILE_21: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_21_APPS,
     extensions: PROFILE_21_EXTENSIONS,
     padding_length: Some(133),
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_22_CIPHERS: &[u16] = &[
@@ -2233,7 +2302,7 @@ const PROFILE_22: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_22_APPS,
     extensions: PROFILE_22_EXTENSIONS,
     padding_length: Some(148),
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_23_CIPHERS: &[u16] = &[
@@ -2334,7 +2403,7 @@ const PROFILE_23: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_23_APPS,
     extensions: PROFILE_23_EXTENSIONS,
     padding_length: Some(139),
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_24_CIPHERS: &[u16] = &[
@@ -2418,7 +2487,7 @@ const PROFILE_24: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_24_APPS,
     extensions: PROFILE_24_EXTENSIONS,
     padding_length: None,
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_25_CIPHERS: &[u16] = &[
@@ -2502,7 +2571,7 @@ const PROFILE_25: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_25_APPS,
     extensions: PROFILE_25_EXTENSIONS,
     padding_length: None,
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_26_CIPHERS: &[u16] = &[
@@ -2615,7 +2684,7 @@ const PROFILE_26: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_26_APPS,
     extensions: PROFILE_26_EXTENSIONS,
     padding_length: Some(201),
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_27_CIPHERS: &[u16] = &[
@@ -2724,7 +2793,7 @@ const PROFILE_27: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_27_APPS,
     extensions: PROFILE_27_EXTENSIONS,
     padding_length: Some(205),
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_28_CIPHERS: &[u16] = &[
@@ -2833,7 +2902,7 @@ const PROFILE_28: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_28_APPS,
     extensions: PROFILE_28_EXTENSIONS,
     padding_length: Some(209),
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_29_CIPHERS: &[u16] = &[
@@ -2942,7 +3011,7 @@ const PROFILE_29: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_29_APPS,
     extensions: PROFILE_29_EXTENSIONS,
     padding_length: Some(209),
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_30_CIPHERS: &[u16] = &[
@@ -3059,7 +3128,7 @@ const PROFILE_30: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_30_APPS,
     extensions: PROFILE_30_EXTENSIONS,
     padding_length: Some(200),
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_31_CIPHERS: &[u16] = &[
@@ -3176,7 +3245,7 @@ const PROFILE_31: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_31_APPS,
     extensions: PROFILE_31_EXTENSIONS,
     padding_length: Some(204),
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_32_CIPHERS: &[u16] = &[
@@ -3293,7 +3362,7 @@ const PROFILE_32: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_32_APPS,
     extensions: PROFILE_32_EXTENSIONS,
     padding_length: Some(204),
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_33_CIPHERS: &[u16] = &[
@@ -3410,7 +3479,7 @@ const PROFILE_33: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_33_APPS,
     extensions: PROFILE_33_EXTENSIONS,
     padding_length: Some(204),
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_34_CIPHERS: &[u16] = &[
@@ -3490,7 +3559,7 @@ const PROFILE_34: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_34_APPS,
     extensions: PROFILE_34_EXTENSIONS,
     padding_length: None,
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_35_CIPHERS: &[u16] = &[
@@ -3570,7 +3639,7 @@ const PROFILE_35: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_35_APPS,
     extensions: PROFILE_35_EXTENSIONS,
     padding_length: None,
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_36_CIPHERS: &[u16] = &[
@@ -3675,7 +3744,7 @@ const PROFILE_36: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_36_APPS,
     extensions: PROFILE_36_EXTENSIONS,
     padding_length: Some(195),
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_37_CIPHERS: &[u16] = &[
@@ -3788,7 +3857,7 @@ const PROFILE_37: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_37_APPS,
     extensions: PROFILE_37_EXTENSIONS,
     padding_length: None,
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_38_CIPHERS: &[u16] = &[
@@ -3901,7 +3970,7 @@ const PROFILE_38: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_38_APPS,
     extensions: PROFILE_38_EXTENSIONS,
     padding_length: None,
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_39_CIPHERS: &[u16] = &[
@@ -4018,7 +4087,7 @@ const PROFILE_39: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_39_APPS,
     extensions: PROFILE_39_EXTENSIONS,
     padding_length: Some(204),
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_40_CIPHERS: &[u16] = &[
@@ -4135,7 +4204,7 @@ const PROFILE_40: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_40_APPS,
     extensions: PROFILE_40_EXTENSIONS,
     padding_length: None,
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_41_CIPHERS: &[u16] = &[
@@ -4252,7 +4321,7 @@ const PROFILE_41: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_41_APPS,
     extensions: PROFILE_41_EXTENSIONS,
     padding_length: None,
-    encrypted_client_hello_length: None,
+    encrypted_client_hello: None,
 };
 
 const PROFILE_42_CIPHERS: &[u16] = &[
@@ -4373,21 +4442,86 @@ const PROFILE_42: UtlsClientHelloProfile = UtlsClientHelloProfile {
     application_settings: PROFILE_42_APPS,
     extensions: PROFILE_42_EXTENSIONS,
     padding_length: None,
-    encrypted_client_hello_length: Some(186),
+    encrypted_client_hello: Some(ECH_GREASE_BORING),
 };
 
-pub(super) fn profile_for_fingerprint(
+/// Resolves a fingerprint name to the ClientHello shape it stands for.
+///
+/// `random` and `randomized` do not name a fixed shape. Xray's `init()` draws
+/// one of `ModernFingerprints` from `crypto/rand` at process start and pins it
+/// for the process's lifetime, so those names mean a different real browser on
+/// every install; this reproduces that. Both properties matter, and they pull
+/// in opposite directions: a name that never varies gives our whole user base
+/// one shared signature, while a name that varies *between connections* makes
+/// a single client stand out more than a fixed one ever would. Hence one draw,
+/// cached forever.
+///
+/// The drawn name is then resolved as an ordinary fingerprint, which is what
+/// keeps the drawn shape identical to the one that name emits on its own.
+pub(crate) fn profile_for_fingerprint(
     fingerprint: &str,
 ) -> Option<&'static UtlsClientHelloProfile> {
     match fingerprint {
+        "random" => named_profile(process_random_fingerprint()),
+        "randomized" => named_profile(process_randomized_fingerprint()),
+        name => named_profile(name),
+    }
+}
+
+/// The name `random` resolves to for the rest of this process.
+fn process_random_fingerprint() -> &'static str {
+    static DRAWN: OnceLock<&'static str> = OnceLock::new();
+    DRAWN.get_or_init(draw_modern_fingerprint)
+}
+
+/// The name `randomized` resolves to for the rest of this process.
+///
+/// Drawn separately from `random`'s, because Xray's `init()` fills the two map
+/// entries from two independent draws. A config naming both therefore gets two
+/// shapes there, and gets two here.
+fn process_randomized_fingerprint() -> &'static str {
+    static DRAWN: OnceLock<&'static str> = OnceLock::new();
+    DRAWN.get_or_init(draw_modern_fingerprint)
+}
+
+/// Draws one of Xray's `ModernFingerprints` from the OS CSPRNG.
+///
+/// Every call is an independent draw. Production code reaches the *cached*
+/// draw through `fingerprint: "random"`; this is public so tests can sample
+/// the distribution without spawning processes.
+pub fn draw_modern_fingerprint() -> &'static str {
+    let names = xray_utls::XRAY_MODERN_FINGERPRINTS;
+    let mut entropy = [0u8; 8];
+    if OsRng.try_fill_bytes(&mut entropy).is_err() {
+        // Xray discards this error too -- `bigInt, _ := rand.Int(...)` leaves
+        // `bigInt` nil and the loop stops at index 0. An OS RNG this broken has
+        // already broken the handshake that follows, so refusing to dial here
+        // would only bury the real cause.
+        return names[0];
+    }
+
+    modern_fingerprint_at(u64::from_be_bytes(entropy))
+}
+
+/// Maps 64 bits of entropy onto the name table.
+///
+/// Multiply-shift rather than `% len`: 19 divides neither 2^64 nor any power of
+/// two, so a modulo would make the first names likelier than the last. This
+/// keeps the skew under `len / 2^64` -- around 1e-18 -- and, unlike the
+/// rejection sampling an exactly-uniform draw needs, it cannot loop.
+fn modern_fingerprint_at(entropy: u64) -> &'static str {
+    let names = xray_utls::XRAY_MODERN_FINGERPRINTS;
+    let index = (u128::from(entropy) * names.len() as u128) >> 64;
+    names[index as usize]
+}
+
+fn named_profile(fingerprint: &str) -> Option<&'static UtlsClientHelloProfile> {
+    match fingerprint {
         "chrome" => Some(&PROFILE_0),
-        "hellochrome_133" => Some(&PROFILE_0),
         "hellochrome_auto" => Some(&PROFILE_0),
         "firefox" => Some(&PROFILE_1),
-        "hellofirefox_148" => Some(&PROFILE_1),
         "hellofirefox_auto" => Some(&PROFILE_1),
         "safari" => Some(&PROFILE_2),
-        "hellosafari_26_3" => Some(&PROFILE_2),
         "hellosafari_auto" => Some(&PROFILE_2),
         "ios" => Some(&PROFILE_3),
         "helloios_14" => Some(&PROFILE_3),
@@ -4403,8 +4537,10 @@ pub(super) fn profile_for_fingerprint(
         "qq" => Some(&PROFILE_7),
         "helloqq_11_1" => Some(&PROFILE_7),
         "helloqq_auto" => Some(&PROFILE_7),
-        "random" => Some(&PROFILE_8),
-        "randomized" => Some(&PROFILE_8),
+        // `random` and `randomized` are resolved by the caller: they name a
+        // per-process draw, not a fixed shape. `hellorandomized` and its two
+        // siblings keep their frozen snapshots -- see
+        // `docs/config-compatibility.md`.
         "hellorandomized" => Some(&PROFILE_8),
         "randomizednoalpn" => Some(&PROFILE_9),
         "hellorandomizednoalpn" => Some(&PROFILE_9),

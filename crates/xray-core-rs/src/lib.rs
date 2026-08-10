@@ -52,11 +52,8 @@ pub use dns_outbound::{
 pub use outbound::{
     open_tcp_stream_with_resolver_and_dialer, open_vless_tcp_stream,
     open_vless_tcp_stream_with_resolver, open_vless_tcp_stream_with_resolver_and_dialer,
-    open_vless_udp_stream_with_resolver_and_dialer, select_tcp_outbound,
-    select_tcp_outbound_for_session, select_tcp_outbound_for_session_with_resolver,
-    select_udp_outbound_for_session, select_udp_outbound_for_session_with_resolver,
-    select_vless_tcp_outbound, DnsOutbound, OutboundRouter, TcpOutbound, UdpOutbound,
-    VlessTcpOutbound, VlessUdpFraming,
+    open_vless_udp_stream_with_resolver_and_dialer, DnsOutbound, OutboundRouter, TcpOutbound,
+    UdpOutbound, VlessTcpOutbound, VlessUdpFraming,
 };
 pub use runtime_log::{RuntimeLogConfig, RuntimeLogger};
 pub use startup_probe::{StartupProbeError, StartupProbeOptions};
@@ -234,6 +231,86 @@ pub enum CoreError {
     UnsupportedOutboundServerAddress,
     #[error("outbound flow is not supported")]
     UnsupportedOutboundFlow,
+    /// Carries the offending value because the other outbound-config errors
+    /// above cannot: told only that "outbound network is not supported", a user
+    /// whose `grpcSettings.authority` holds a `/` would conclude that
+    /// `network: "grpc"` is unimplemented, which is now the wrong answer to a
+    /// question about one character in one string.
+    ///
+    /// Names the key as well as the value, because
+    /// [`Self::UnrepresentableGrpcAuthority`] is the same complaint about a
+    /// value the user never wrote and the two have to be told apart from the
+    /// message alone.
+    ///
+    /// **Debug-formatted, as are both variants below it, and for a reason all
+    /// three share.** Each carries a value that arrived as free-form profile
+    /// JSON, and no layer between that JSON and this message checks any of them
+    /// for control characters: this one is filtered for emptiness and nothing
+    /// else (`crates/xray-config/src/parser.rs:2869-2872`), and the sources
+    /// [`Self::UnrepresentableGrpcAuthority`] derives from are no better off.
+    /// So each value can hold a CR LF, and under `{0}` the message would render
+    /// as two lines rather than one — the second of them written by the
+    /// profile, wherever the error is shown. `xray-cli` prints it to stderr
+    /// (`crates/xray-cli/src/main.rs:10`) and `xray-ffi` hands `to_string()` to
+    /// the error struct the host app logs (`crates/xray-ffi/src/lib.rs:866` on
+    /// load, `lib.rs:1542` on start). Escaping costs the message nothing:
+    /// `{0:?}` also quotes the value, which is all the backticks it replaced
+    /// were doing.
+    #[error("grpcSettings.authority {0:?} is not a valid HTTP/2 authority")]
+    InvalidGrpcAuthority(String),
+    /// The rest of Xray's `:authority` chain — `tlsSettings.serverName`, the
+    /// destination domain, the `host:port` last resort
+    /// (`Xray-core/transport/internet/grpc/dial.go:159-167`) — resolving to
+    /// something `http::uri::Authority` will not hold.
+    ///
+    /// Separate from [`Self::InvalidGrpcAuthority`] because the *cause* is
+    /// separate. That one is a string in `grpcSettings.authority` and the user
+    /// can edit the character that is wrong. This one is a value we derived on
+    /// their behalf, so naming `grpcSettings.authority` would send them
+    /// looking for a key their config does not contain; `key` names the one it
+    /// does. Why it is still a refusal rather than a fallback is in
+    /// `outbound::grpc_authority` — briefly, `h2` reads `:authority` out of an
+    /// `http::Uri` and nothing else, so a value no `Authority` can hold is one
+    /// no request can carry.
+    ///
+    /// `value` is Debug-formatted for the reason
+    /// [`Self::InvalidGrpcAuthority`] gives. Deriving the value is no
+    /// sanitisation of it: `tlsSettings.serverName` is copied out of the JSON
+    /// unchecked (`crates/xray-config/src/parser.rs:3157-3160`) and
+    /// `settings.vnext[0].address` becomes a domain verbatim whenever it does
+    /// not parse as an `IpAddr` (`parser.rs:2439-2451`), so every branch of the
+    /// chain can hand this variant a CR LF.
+    #[error("the gRPC :authority derived from {key} {value:?} is not a valid HTTP/2 authority")]
+    UnrepresentableGrpcAuthority {
+        /// The config key that produced the value, so the message hands the
+        /// user something to search their profile for. Names *two* keys on the
+        /// last-resort branch, where the authority is composed rather than
+        /// copied and neither key on its own holds `value`.
+        key: &'static str,
+        /// The resolved authority: the named key's value verbatim on the
+        /// branches that copy one, and `address:port` on the last-resort
+        /// branch, which is why `key` names the port key there too.
+        value: String,
+    },
+    /// A `grpcSettings.user_agent` that no HTTP header can carry, refused when
+    /// the outbound is built rather than on every dial for as long as the
+    /// config stands. `xray_transport::stream::GrpcConfig::user_agent` has the
+    /// reasoning and the measurements behind it — briefly, grpc-go's client
+    /// sends the value unvalidated and a grpc-go peer then resets every stream
+    /// it opens, so refusing here costs no profile that worked upstream.
+    ///
+    /// **Debug-formatted, as its two `:authority` neighbours now are** — but
+    /// this variant came by it first, because the values it rejects are exactly
+    /// the ones holding control characters. That made the exposure impossible to
+    /// miss here and easy to miss next door, where a CR LF is only one of many
+    /// ways to fail an `Authority` parse; [`Self::InvalidGrpcAuthority`] now
+    /// states the rule for all three.
+    #[error("grpcSettings.user_agent {0:?} is not a valid HTTP header value")]
+    InvalidGrpcUserAgent(String),
+    /// An XHTTP setting that parsed successfully but cannot be represented by
+    /// the selected HTTP engine without silently changing its behavior.
+    #[error("invalid or unsupported XHTTP configuration: {0:?}")]
+    InvalidXhttpConfiguration(String),
     #[error("XTLS rejected UDP/443 traffic")]
     VisionUdp443Rejected,
     #[error("transport error: {0}")]

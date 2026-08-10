@@ -417,7 +417,7 @@ final class XrayClientProfileTests: XCTestCase {
         let fakeIP = try XCTUnwrap(dns["fakeIp"] as? [String: Any])
 
         XCTAssertEqual(Set(dns.keys), Set(["fakeIp", "hosts", "queryStrategy"]))
-        XCTAssertEqual(dns["queryStrategy"] as? String, "UseIP")
+        XCTAssertEqual(dns["queryStrategy"] as? String, "UseIPv6")
         XCTAssertNil(dns["servers"])
         XCTAssertEqual(
             dns["hosts"] as? [String: String],
@@ -504,6 +504,38 @@ final class XrayClientProfileTests: XCTestCase {
             let dns = try Self.dnsObject(in: profile.effectiveConfigJSON())
             XCTAssertEqual(dns["tag"] as? String, "dns-route", "mode=\(mode.rawValue)")
         }
+    }
+
+    func testEffectiveConfigPreservesSourceQueryStrategyInGeneratedModes() throws {
+        let profile = XrayClientProfile(
+            name: "IPv4 DNS",
+            providerBundleIdentifier: "org.example.XrayClient.Tunnel",
+            serverAddress: "xray-rust",
+            configJSON: #"{"dns":{"queryStrategy":"UseIPv4"},"outbounds":[]}"#,
+            dnsTestMode: .fakeIP,
+            dnsTestTransport: .routedTCP,
+            dnsTestUpstream: "192.0.2.53"
+        )
+
+        let dns = try Self.dnsObject(in: profile.effectiveConfigJSON())
+
+        XCTAssertEqual(dns["queryStrategy"] as? String, "UseIPv4")
+    }
+
+    func testEffectiveConfigDefaultsQueryStrategyWhenSourceOmitsIt() throws {
+        let profile = XrayClientProfile(
+            name: "Unpinned DNS",
+            providerBundleIdentifier: "org.example.XrayClient.Tunnel",
+            serverAddress: "xray-rust",
+            configJSON: #"{"dns":{"tag":"dns-route"},"outbounds":[]}"#,
+            dnsTestMode: .fakeIP,
+            dnsTestTransport: .routedTCP,
+            dnsTestUpstream: "192.0.2.53"
+        )
+
+        let dns = try Self.dnsObject(in: profile.effectiveConfigJSON())
+
+        XCTAssertEqual(dns["queryStrategy"] as? String, "UseIP")
     }
 
     func testEffectiveConfigBracketsBareIPv6ForTCPTransports() throws {
@@ -605,7 +637,7 @@ final class XrayClientProfileTests: XCTestCase {
         let dns = try Self.dnsObject(in: effectiveConfigJSON)
         let rules = try Self.routingRules(in: effectiveConfigJSON)
 
-        XCTAssertEqual(dns["queryStrategy"] as? String, "UseIP")
+        XCTAssertEqual(dns["queryStrategy"] as? String, "UseIPv4")
         XCTAssertEqual(dns["servers"] as? [String], ["tcp://192.0.2.53"])
         XCTAssertEqual(rules[0]["domain"] as? [String], ["geosite:cn"])
         XCTAssertEqual(rules[0]["outboundTag"] as? String, "direct")
@@ -782,6 +814,22 @@ final class XrayClientProfileTests: XCTestCase {
         XCTAssertEqual(profile.serverAddress, "203.0.113.10")
     }
 
+    func testVlessURLImporterAcceptsRawTransportAlias() throws {
+        let url = Self.sampleVlessURL.replacingOccurrences(of: "type=tcp", with: "type=raw")
+
+        let profile = try XrayVlessURLImporter.profile(
+            from: url,
+            hostBundleIdentifier: "org.example.XrayClient"
+        )
+
+        let root = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(profile.configJSON.utf8)) as? [String: Any]
+        )
+        let outbounds = try XCTUnwrap(root["outbounds"] as? [[String: Any]])
+        let stream = try XCTUnwrap(outbounds[0]["streamSettings"] as? [String: Any])
+        XCTAssertEqual(stream["network"] as? String, "tcp")
+    }
+
     func testVlessURLImporterAcceptsVisionUdp443Flow() throws {
         let url = Self.sampleVlessURL.replacingOccurrences(
             of: "flow=xtls-rprx-vision",
@@ -822,6 +870,30 @@ final class XrayClientProfileTests: XCTestCase {
         let vnext = try XCTUnwrap(settings["vnext"] as? [[String: Any]])
         let users = try XCTUnwrap(vnext.first?["users"] as? [[String: Any]])
         XCTAssertEqual(users.first?["flow"] as? String, "xtls-rprx-vision")
+    }
+
+    func testImportedConfigEnablesSniffingAndPinsDnsToIPv4() throws {
+        let url = "vless://49c1a053-d257-466d-a900-048ff5173866@203.0.113.7:443"
+            + "?flow=xtls-rprx-vision&type=tcp&security=reality&fp=chrome"
+            + "&sni=example.com&pbk=3jNx5A3WTFKhvCj3IPljaxbcBjCxhH2dVCNobKv_X1c&sid=1c5694e878"
+
+        let profile = try XrayVlessURLImporter.profile(
+            from: url,
+            providerBundleIdentifier: "com.example.tunnel",
+            hostBundleIdentifier: "com.example"
+        )
+        let root = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(profile.configJSON.utf8)) as? [String: Any]
+        )
+
+        let inbounds = try XCTUnwrap(root["inbounds"] as? [[String: Any]])
+        let sniffing = try XCTUnwrap(inbounds.first?["sniffing"] as? [String: Any])
+        XCTAssertEqual(sniffing["enabled"] as? Bool, true)
+        XCTAssertEqual(sniffing["destOverride"] as? [String], ["http", "tls", "quic"])
+        XCTAssertEqual(sniffing["metadataOnly"] as? Bool, false)
+
+        let dns = try XCTUnwrap(root["dns"] as? [String: Any])
+        XCTAssertEqual(dns["queryStrategy"] as? String, "UseIPv4")
     }
 
     private static func routingRules(in configJSON: String) throws -> [[String: Any]] {

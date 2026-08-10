@@ -196,6 +196,34 @@ def json_path(parts: tuple[str, ...]) -> str:
     return ".".join(parts) if parts else "$"
 
 
+def anchored_version_quad(document: Any) -> str | None:
+    """The dotted quad a masquerade fixture's own `versions` block anchors.
+
+    Chrome and Edge print their major version as four parts --
+    `Chrome/148.0.0.0` -- which is textually an IPv4 literal, and the resulting
+    address is globally routable. It is a version, not an endpoint, so failing
+    the fixture would be wrong; exempting the masquerade family outright would
+    be worse, because an endpoint smuggled into a header value is exactly what
+    this scanner exists to catch.
+
+    So the quad is derived rather than trusted. Each header fixture records the
+    browser versions it was generated from, and only `<versions.chrome>.0.0.0`
+    is excused, only in a document carrying that block. `8.8.8.8` never matches
+    it, nor does the quad of any other Chrome release, so a fixture cannot slip
+    an address past the scan by dressing it as a User-Agent. Because the
+    exemption tracks the recorded version, it also survives the regeneration
+    that moves it -- the version is date-derived and climbs on its own.
+
+    Chrome is the only browser here whose version reaches four parts. One that
+    starts to will trip the scan rather than slip through it.
+    """
+    versions = document.get("versions") if isinstance(document, dict) else None
+    if not isinstance(versions, dict):
+        return None
+    major = str(versions.get("chrome", "")).split(".", 1)[0]
+    return f"{major}.0.0.0" if major.isdigit() else None
+
+
 def scan_scalar(
     *,
     file_path: Path,
@@ -203,13 +231,14 @@ def scan_scalar(
     owner_field: str,
     value: str,
     is_config_fixture: bool,
+    anchored_quad: str | None = None,
 ) -> list[str]:
     relative_path = file_path.relative_to(REPOSITORY_ROOT)
     location = f"{relative_path}:{json_path(path)}"
     violations = [
         f"{location}: globally routable IP literals are forbidden in fixtures"
         for address in addresses_in(value)
-        if address.is_global
+        if address.is_global and str(address) != anchored_quad
     ]
 
     if not is_config_fixture:
@@ -236,6 +265,8 @@ def scan_scalar(
 def scan_document(file_path: Path, document: Any) -> list[str]:
     violations: list[str] = []
     is_config_fixture = file_path.is_relative_to(CONFIG_FIXTURE_ROOT)
+    # Keys stay strict: only a header *value* can legitimately carry a version.
+    anchored_quad = anchored_version_quad(document)
 
     def visit(value: Any, path: tuple[str, ...], owner_field: str) -> None:
         if isinstance(value, dict):
@@ -261,6 +292,7 @@ def scan_document(file_path: Path, document: Any) -> list[str]:
                     owner_field=owner_field,
                     value=value,
                     is_config_fixture=is_config_fixture,
+                    anchored_quad=anchored_quad,
                 )
             )
 
@@ -429,6 +461,84 @@ class JsonFixtureSafetyTests(unittest.TestCase):
                     is_config_fixture=True,
                 )
                 self.assertEqual([], violations)
+
+    def masquerade_document(self, *header_values: str) -> dict[str, Any]:
+        """A masquerade header fixture in miniature, anchored on Chrome 148."""
+        return {
+            "variant": "ws",
+            "user_agent": "chrome",
+            "versions": {
+                "chrome": 148,
+                "firefox": 151,
+                "safari": "26.6",
+                "curl": "8.19.0",
+            },
+            "headers": [
+                {"key": f"X-Probe-{index}", "value": value}
+                for index, value in enumerate(header_values)
+            ],
+        }
+
+    def test_anchored_browser_version_is_not_read_as_an_ip_literal(self) -> None:
+        document = self.masquerade_document(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+        )
+
+        violations = scan_document(
+            FIXTURE_ROOT / "masquerade" / "synthetic.json", document
+        )
+
+        self.assertEqual([], violations)
+
+    def test_global_ip_in_a_masquerade_header_is_still_rejected(self) -> None:
+        # The version exemption must not become a blanket pass for the family:
+        # a real endpoint hidden in a header value is what this scanner exists
+        # to catch, User-Agent or not.
+        document = self.masquerade_document("Chrome/148.0.0.0", "8.8.8.8")
+
+        violations = scan_document(
+            FIXTURE_ROOT / "masquerade" / "synthetic.json", document
+        )
+
+        self.assertEqual(
+            [
+                "tests/fixtures/masquerade/synthetic.json:headers.1.value: "
+                "globally routable IP literals are forbidden in fixtures"
+            ],
+            violations,
+        )
+
+    def test_quad_the_fixture_does_not_anchor_is_rejected(self) -> None:
+        # Only the recorded Chrome version is excused, so a quad from any other
+        # release cannot ride in on the same exemption.
+        document = self.masquerade_document("Chrome/149.0.0.0")
+
+        violations = scan_document(
+            FIXTURE_ROOT / "masquerade" / "synthetic.json", document
+        )
+
+        self.assertEqual(
+            [
+                "tests/fixtures/masquerade/synthetic.json:headers.0.value: "
+                "globally routable IP literals are forbidden in fixtures"
+            ],
+            violations,
+        )
+
+    def test_documents_without_a_versions_block_excuse_nothing(self) -> None:
+        violations = scan_document(
+            FIXTURE_ROOT / "masquerade" / "synthetic.json",
+            {"headers": [{"key": "X", "value": "148.0.0.0"}]},
+        )
+
+        self.assertEqual(
+            [
+                "tests/fixtures/masquerade/synthetic.json:headers.0.value: "
+                "globally routable IP literals are forbidden in fixtures"
+            ],
+            violations,
+        )
 
     def test_unreviewed_credential_is_rejected_without_echoing_it(self) -> None:
         violations = scan_scalar(

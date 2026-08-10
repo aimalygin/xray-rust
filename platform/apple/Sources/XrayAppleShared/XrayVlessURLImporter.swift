@@ -57,6 +57,9 @@ public enum XrayVlessURLImporter {
 private struct VlessEndpoint {
     private static let visionFlow = XrayClientProfile.defaultRealityVisionFlow
     private static let visionUdp443Flow = XrayClientProfile.realityVisionUDP443Flow
+    /// Xray renamed the `tcp` transport to `raw`; share links carry either name.
+    private static let canonicalNetwork = "tcp"
+    private static let networkAliases = [canonicalNetwork, "raw"]
 
     var userID: String
     var host: String
@@ -99,8 +102,8 @@ private struct VlessEndpoint {
         }
 
         let query = QueryValues(items: components.queryItems ?? [])
-        let network = query.optional("type", default: "tcp")
-        try Self.require(network, named: "type", toEqual: "tcp")
+        let network = query.optional("type", default: Self.canonicalNetwork)
+        try Self.require(network, named: "type", toEqualOneOf: Self.networkAliases)
 
         let encryption = query.optional("encryption", default: "none")
         try Self.require(encryption, named: "encryption", toEqual: "none")
@@ -120,7 +123,7 @@ private struct VlessEndpoint {
         self.userID = userID
         self.host = host
         self.port = port
-        self.network = network
+        self.network = Self.canonicalNetwork
         self.encryption = encryption
         self.security = security
         self.publicKey = try query.required("pbk")
@@ -163,6 +166,14 @@ private struct VlessEndpoint {
                     "listen": "127.0.0.1",
                     "port": 0,
                     "settings": [:],
+                    // Sniffing is the only way a flow recovers its domain when
+                    // the fake-IP mapping is missing — after a tunnel restart the
+                    // table is empty while clients still hold cached fake IPs.
+                    "sniffing": [
+                        "enabled": true,
+                        "destOverride": ["http", "tls", "quic"],
+                        "metadataOnly": false,
+                    ],
                 ],
             ],
             "outbounds": [
@@ -201,6 +212,7 @@ private struct VlessEndpoint {
                 ],
             ],
             "dns": [
+                "queryStrategy": "UseIPv4",
                 "fakeIp": [
                     "enabled": true,
                     "ipv4Pool": "198.19.0.0/16",

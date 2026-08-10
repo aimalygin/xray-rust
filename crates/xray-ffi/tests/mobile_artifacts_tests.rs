@@ -89,6 +89,11 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
     ] {
         assert!(header.contains(field), "header missing `{field}`");
     }
+    // Swift reads the counters positionally through the C struct, so the tail
+    // must stay in the same order as the Rust declaration.
+    assert!(header.contains(
+        "  uint64_t tun_fd_write_batch_max_packets;\n  uint64_t tun_fd_read_loop_exits;\n  uint64_t tun_fd_write_loop_exits;\n  uint64_t tun_fd_transient_io_errors;\n"
+    ));
 }
 
 #[test]
@@ -253,8 +258,50 @@ fn apple_packet_pump_reuses_poll_storage_and_fails_outside_worker_queue() {
     assert!(provider.contains("if rejectsTunnelOwnedAddress || port == 53"));
     assert!(provider.contains("protectedDNSDomains.contains(domain)"));
     assert!(provider.contains("excludingServerAddresses: resolvedConfig.excludedServerAddresses"));
-    assert!(provider.contains("ipv4Settings.excludedRoutes = ipv4ExcludedRoutes"));
-    assert!(provider.contains("ipv6Settings.excludedRoutes = ipv6ExcludedRoutes"));
+    // Full-tunnel privacy fails closed only when both default routes are
+    // installed, the resolved outer endpoints bypass those routes narrowly,
+    // and every DNS query is captured by an explicit tunnel DNS destination.
+    for token in [
+        "ipv4Settings.includedRoutes = [NEIPv4Route.default()]",
+        "ipv4Settings.excludedRoutes = ipv4ExcludedRoutes",
+        "settings.ipv4Settings = ipv4Settings",
+        "let ipv6Settings = NEIPv6Settings(",
+        "networkPrefixLengths: [128]",
+        "ipv6Settings.includedRoutes = [NEIPv6Route.default()]",
+        "let ipv6ExcludedRoutes = ipv6ExcludedRoutes(for: serverAddresses)",
+        "ipv6Settings.excludedRoutes = ipv6ExcludedRoutes",
+        "settings.ipv6Settings = ipv6Settings",
+        "case .localDNSAnchor:",
+        "servers = [tunnelRemoteAddress]",
+        "let dnsSettings = NEDNSSettings(servers: servers)",
+        "dnsSettings.matchDomains = [\"\"]",
+        "settings.dnsSettings = dnsSettings",
+    ] {
+        assert!(
+            provider.contains(token),
+            "Apple provider missing fail-closed route/DNS contract `{token}`"
+        );
+    }
+
+    let ipv6_exclusion_start = provider
+        .find("private static func ipv6ExcludedRoutes")
+        .expect("Apple provider should build outer IPv6 route exclusions");
+    let ipv6_exclusion_end = provider[ipv6_exclusion_start..]
+        .find("private static func canonicalIPAddress")
+        .map(|offset| ipv6_exclusion_start + offset)
+        .expect("Apple IPv6 exclusion helper should precede IP canonicalization");
+    let ipv6_exclusion_helper = &provider[ipv6_exclusion_start..ipv6_exclusion_end];
+    for token in [
+        "isIPAddress(address, family: AF_INET6)",
+        "!isTunnelOwnedIPAddress(address)",
+        "seen.insert(address).inserted",
+        "networkPrefixLength: 128",
+    ] {
+        assert!(
+            ipv6_exclusion_helper.contains(token),
+            "Apple IPv6 outer-route protection missing `{token}`"
+        );
+    }
     let apply_network_settings = provider
         .find("setTunnelNetworkSettings(")
         .expect("Apple provider should apply packet-tunnel routes");
@@ -1048,6 +1095,9 @@ static void use_xray_ffi_api(void) {
   stats_probe += stats.tcp_remote_flush_wait_events;
   stats_probe += stats.tcp_remote_flush_wait_ms_total;
   stats_probe += stats.tcp_remote_flush_wait_ms_max;
+  stats_probe += stats.tun_fd_read_loop_exits;
+  stats_probe += stats.tun_fd_write_loop_exits;
+  stats_probe += stats.tun_fd_transient_io_errors;
   (void)stats_probe;
   (void)xray_error_code(error);
   (void)xray_error_message(error);

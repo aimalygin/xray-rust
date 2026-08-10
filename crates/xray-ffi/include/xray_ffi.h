@@ -23,7 +23,9 @@ typedef enum XrayStatus {
 } XrayStatus;
 
 typedef struct XrayTunStats {
-  /* Set to sizeof(XrayTunStats) before calling xray_tun_stats. */
+  /* Set to the writable allocation size before calling xray_tun_stats. ABI
+   * major 1 accepts the original prefix through
+   * tun_fd_write_batch_max_packets and never writes more than this size. */
   size_t struct_size;
   uint64_t inbound_packets;
   uint64_t outbound_packets;
@@ -94,6 +96,9 @@ typedef struct XrayTunStats {
   uint64_t tun_fd_write_batches;
   uint64_t tun_fd_write_batch_packets;
   uint64_t tun_fd_write_batch_max_packets;
+  uint64_t tun_fd_read_loop_exits;
+  uint64_t tun_fd_write_loop_exits;
+  uint64_t tun_fd_transient_io_errors;
 } XrayTunStats;
 
 typedef enum XrayTunFdPacketFormat {
@@ -340,6 +345,7 @@ XrayStatus xray_tun_poll_udp_quic_blocked_event(
     size_t target_buffer_len,
     size_t *target_written,
     XrayError **error);
+/* Writes at most min(stats->struct_size, sizeof(XrayTunStats)) bytes. */
 XrayStatus xray_tun_stats(
     XrayCoreHandle *handle,
     XrayTunStats *stats,

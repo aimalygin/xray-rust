@@ -22,9 +22,21 @@ import (
 	utls "github.com/refraction-networking/utls"
 )
 
-const (
-	serverName = "example.com"
+// serverName is the SNI uTLS is asked to shape around. It defaults to a domain
+// so every committed fixture keeps checking out unchanged; `-server-name` moves
+// it, which is how the IP-literal case -- where RFC 6066 forbids SNI and uTLS
+// emits a zero-length, and therefore absent, server_name extension -- is read
+// off the reference implementation.
+var serverName = "example.com"
 
+// websocketALPN mirrors Xray's `UConn.WebsocketHandshakeContext` ALPN rebuild.
+// It defaults off so every committed fixture keeps checking out unchanged;
+// `-websocket-alpn` turns it on, which is how the `http/1.1` override -- the
+// one shape the per-fingerprint oracle never sees -- is read off the reference
+// implementation.
+var websocketALPN = false
+
+const (
 	clientHelloHandshakeType = byte(0x01)
 
 	extensionServerName             = uint16(0x0000)
@@ -69,6 +81,7 @@ type clientHelloShape struct {
 	Fingerprint                      string            `json:"fingerprint"`
 	UTLSID                           string            `json:"utls_id"`
 	ServerName                       string            `json:"server_name"`
+	WebsocketALPN                    bool              `json:"websocket_alpn,omitempty"`
 	HandshakeLength                  int               `json:"handshake_length"`
 	LegacyVersion                    string            `json:"legacy_version"`
 	CipherSuites                     []string          `json:"cipher_suites"`
@@ -116,7 +129,12 @@ func main() {
 	fingerprint := flag.String("fingerprint", "hellochrome_100", "uTLS fingerprint to shape")
 	checkPath := flag.String("check", "", "compare generated shape with a committed JSON file")
 	rawOutput := flag.Bool("raw", false, "emit deterministic raw ClientHello bytes as hex JSON")
+	sni := flag.String("server-name", serverName, "SNI to shape around; an IP literal suppresses the server_name extension")
+	websocket := flag.Bool("websocket-alpn", websocketALPN,
+		"rebuild the hello with ALPN forced to http/1.1, as UConn.WebsocketHandshakeContext does")
 	flag.Parse()
+	serverName = *sni
+	websocketALPN = *websocket
 
 	if *rawOutput {
 		raw, utlsID, err := buildRawClientHello(*fingerprint)
@@ -134,8 +152,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "marshal raw ClientHello: %v\n", err)
 			os.Exit(1)
 		}
-		generated = append(generated, '\n')
-		_, _ = os.Stdout.Write(generated)
+		emitOrCheck(append(generated, '\n'), *checkPath)
 		return
 	}
 
@@ -150,20 +167,29 @@ func main() {
 		fmt.Fprintf(os.Stderr, "marshal shape: %v\n", err)
 		os.Exit(1)
 	}
-	generated = append(generated, '\n')
 
-	if *checkPath == "" {
+	emitOrCheck(append(generated, '\n'), *checkPath)
+}
+
+// emitOrCheck writes the generated artefact to stdout, or compares it with a
+// committed fixture when -check names one.
+//
+// Both output modes go through this, because both have committed fixtures:
+// scripts/verify-oracle-fixtures.py regenerates every one of them, and a mode
+// that could only print would leave its fixtures unverifiable.
+func emitOrCheck(generated []byte, checkPath string) {
+	if checkPath == "" {
 		_, _ = os.Stdout.Write(generated)
 		return
 	}
 
-	expected, err := os.ReadFile(*checkPath)
+	expected, err := os.ReadFile(checkPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "read fixture: %v\n", err)
 		os.Exit(1)
 	}
 	if !bytes.Equal(expected, generated) {
-		fmt.Fprintf(os.Stderr, "fixture mismatch: %s\n", *checkPath)
+		fmt.Fprintf(os.Stderr, "fixture mismatch: %s\n", checkPath)
 		os.Exit(1)
 	}
 }
@@ -200,11 +226,41 @@ func buildRawClientHello(fingerprint string) ([]byte, string, error) {
 		return nil, "", err
 	}
 
+	if websocketALPN {
+		if err := applyWebsocketALPNOverride(uConn); err != nil {
+			return nil, "", err
+		}
+	}
+
 	hello := uConn.HandshakeState.Hello
 	if hello == nil {
 		return nil, "", errors.New("uTLS did not build a ClientHello")
 	}
 	return append([]byte(nil), hello.Raw...), id.Str(), nil
+}
+
+// applyWebsocketALPNOverride mirrors `UConn.WebsocketHandshakeContext` in
+// Xray-core/transport/internet/tls/tls.go: the ALPN of an already-built hello
+// is forced to `http/1.1`, overwriting the fingerprint profile's own list --
+// or, for a profile that declares no ALPN extension at all, appending one --
+// and the hello is then rebuilt from the amended extension list.
+//
+// The ECH branch Xray takes before this is left out: it needs an
+// `EncryptedClientHelloConfigList`, which nothing here configures.
+func applyWebsocketALPNOverride(uConn *utls.UConn) error {
+	forced := []string{"http/1.1"}
+	hasALPN := false
+	for _, extension := range uConn.Extensions {
+		if alpn, ok := extension.(*utls.ALPNExtension); ok {
+			hasALPN = true
+			alpn.AlpnProtocols = forced
+			break
+		}
+	}
+	if !hasALPN {
+		uConn.Extensions = append(uConn.Extensions, &utls.ALPNExtension{AlpnProtocols: forced})
+	}
+	return uConn.BuildHandshakeState()
 }
 
 func clientHelloID(fingerprint string) (utls.ClientHelloID, error) {
@@ -247,8 +303,6 @@ func clientHelloID(fingerprint string) (utls.ClientHelloID, error) {
 		return utls.HelloFirefox_105, nil
 	case "hellofirefox_120":
 		return utls.HelloFirefox_120, nil
-	case "hellofirefox_148":
-		return utls.HelloFirefox_148, nil
 	case "hellochrome_58":
 		return utls.HelloChrome_58, nil
 	case "hellochrome_62":
@@ -285,8 +339,6 @@ func clientHelloID(fingerprint string) (utls.ClientHelloID, error) {
 		return utls.HelloChrome_120_PQ, nil
 	case "hellochrome_131":
 		return utls.HelloChrome_131, nil
-	case "hellochrome_133":
-		return utls.HelloChrome_133, nil
 	case "helloios_11_1":
 		return utls.HelloIOS_11_1, nil
 	case "helloios_12_1":
@@ -301,8 +353,6 @@ func clientHelloID(fingerprint string) (utls.ClientHelloID, error) {
 		return utls.HelloEdge_106, nil
 	case "hellosafari_16_0":
 		return utls.HelloSafari_16_0, nil
-	case "hellosafari_26_3":
-		return utls.HelloSafari_26_3, nil
 	case "hello360_7_5":
 		return utls.Hello360_7_5, nil
 	case "hello360_11_0":
@@ -380,6 +430,7 @@ func parseClientHelloShape(fingerprint string, utlsID string, raw []byte) (clien
 		Fingerprint:        fingerprint,
 		UTLSID:             utlsID,
 		ServerName:         serverName,
+		WebsocketALPN:      websocketALPN,
 		HandshakeLength:    len(raw),
 		LegacyVersion:      formatU16(uint16(legacyVersion)),
 		CipherSuites:       formatU16s(cipherSuites),

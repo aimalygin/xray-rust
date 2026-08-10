@@ -1,4 +1,4 @@
-use std::{env, fmt::Write as _, fs, path::Path, process::Command};
+use std::{collections::BTreeSet, env, fmt::Write as _, fs, path::Path, process::Command};
 
 use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret as X25519StaticSecret};
 use xray_transport::{
@@ -10,6 +10,7 @@ use xray_transport::{
 };
 
 const TLS_GROUP_X25519: u16 = 0x001d;
+const TLS_GROUP_SECP256R1: u16 = 0x0017;
 const TLS_GROUP_X25519_MLKEM768: u16 = 0x11ec;
 const TLS_GROUP_X25519_MLKEM768_DRAFT: u16 = 0x6399;
 const X25519_PUBLIC_KEY_LEN: usize = 32;
@@ -68,6 +69,46 @@ struct KeyShareShape {
 struct KeySharePayload {
     group: u16,
     key_exchange: Vec<u8>,
+}
+
+/// Applies the one deliberate divergence from the uTLS shape oracle: suites
+/// this build cannot negotiate are removed from the wire. BoringSSL padding
+/// absorbs the shorter cipher vector when the profile carries it; otherwise
+/// the handshake itself becomes shorter.
+fn apply_provider_cipher_filter(shape: &mut ClientHelloShape) {
+    let offers_tls13 = shape
+        .supported_versions
+        .iter()
+        .any(|version| version == "0x0304");
+    let supported = rustls::crypto::aws_lc_rs::default_provider()
+        .cipher_suites
+        .iter()
+        .filter(|suite| {
+            suite.version().version == rustls::ProtocolVersion::TLSv1_2
+                || (offers_tls13 && suite.version().version == rustls::ProtocolVersion::TLSv1_3)
+        })
+        .map(|suite| format!("0x{:04x}", u16::from(suite.suite())))
+        .collect::<BTreeSet<_>>();
+    let before = shape.cipher_suites.len();
+    shape
+        .cipher_suites
+        .retain(|suite| suite == "GREASE" || supported.contains(suite));
+    let removed_bytes = (before - shape.cipher_suites.len()) * 2;
+    if removed_bytes == 0 {
+        return;
+    }
+
+    if let Some(padding_length) = shape.padding_length.as_mut() {
+        *padding_length += removed_bytes;
+        shape
+            .extensions
+            .iter_mut()
+            .find(|extension| extension.r#type == "0x0015")
+            .expect("a recorded padding length must have a padding extension")
+            .length += removed_bytes;
+    } else {
+        shape.handshake_length -= removed_bytes;
+    }
 }
 
 #[derive(Clone, Debug, serde::Deserialize, PartialEq, Eq)]
@@ -153,6 +194,30 @@ fn rustls_reality_provider_uses_real_hybrid_key_share_for_chrome() {
 }
 
 #[test]
+fn rustls_reality_provider_uses_real_p256_alongside_fixed_x25519() {
+    let provider = RustlsRealityTlsSessionProvider::new();
+
+    let session = provider
+        .create_session(RealityClientHelloRequest {
+            server_name: "www.example.com",
+            fingerprint: "firefox",
+        })
+        .expect("Firefox REALITY session should be created");
+    let prepared = session
+        .prepared_client_hello()
+        .expect("prepared ClientHello should be available");
+    let p256 = key_share_payload(&prepared.raw_client_hello, TLS_GROUP_SECP256R1)
+        .expect("Firefox ClientHello should advertise P-256");
+
+    assert_eq!(p256.len(), 65);
+    assert_eq!(p256[0], 0x04, "P-256 uses an uncompressed SEC1 point");
+    assert!(
+        p256[1..].iter().any(|byte| *byte != 0),
+        "the P-256 share must be provider-generated, not a zero placeholder"
+    );
+}
+
+#[test]
 fn rustls_reality_provider_uses_prepared_x25519_material_for_all_reality_capable_fingerprints() {
     let provider = RustlsRealityTlsSessionProvider::new();
 
@@ -227,8 +292,10 @@ fn rustls_reality_provider_uses_prepared_x25519_material_for_all_reality_capable
 
 #[test]
 fn rustls_reality_provider_matches_utls_hellochrome_100_shape_oracle() {
-    let expected: ClientHelloShape = serde_json::from_str(CLIENTHELLO_SHAPE_HELLOCHROME_100_JSON)
-        .expect("uTLS ClientHello shape fixture should decode");
+    let mut expected: ClientHelloShape =
+        serde_json::from_str(CLIENTHELLO_SHAPE_HELLOCHROME_100_JSON)
+            .expect("uTLS ClientHello shape fixture should decode");
+    apply_provider_cipher_filter(&mut expected);
     let provider = RustlsRealityTlsSessionProvider::new();
 
     let session = provider
@@ -257,7 +324,15 @@ fn rustls_reality_provider_matches_utls_xray_fingerprints_in_order() {
     let provider = RustlsRealityTlsSessionProvider::new();
 
     for fingerprint in xray_utls::XRAY_REALITY_CAPABLE_FINGERPRINTS {
-        let expected = utls_client_hello_shape_from_oracle(fingerprint);
+        if DRAWN_PER_PROCESS_FINGERPRINTS.contains(fingerprint) {
+            // No fixed shape to compare: these resolve to a per-process draw
+            // over Xray's ModernFingerprints, each of which this loop already
+            // checks under its own name.
+            continue;
+        }
+
+        let mut expected = utls_client_hello_shape_from_oracle(fingerprint);
+        apply_provider_cipher_filter(&mut expected);
         let session = provider
             .create_session(RealityClientHelloRequest {
                 server_name: "example.com",
@@ -281,25 +356,74 @@ fn rustls_reality_provider_matches_utls_xray_fingerprints_in_order() {
     }
 }
 
+/// The fingerprints whose raw bytes are compared with the Go uTLS oracle, each
+/// paired with the oracle output committed for it.
+///
+/// "Risky" is the shaping we would not trust a shape comparison to police:
+/// normalised shape JSON records an extension as a type and a length, so any
+/// divergence inside a body of the right length is invisible to it. ECH GREASE
+/// spent from before v0.1.1 until this table existed emitting a zero-length
+/// `enc` -- a body no ECH parser accepts -- at exactly the promised 186 bytes.
+///
+/// Reading committed fixtures rather than spawning `go run` is what lets these
+/// tests run in the plain `cargo test --workspace` CI job instead of sitting
+/// behind `#[ignore]`. The fixtures are held to the real thing from the other
+/// side: `scripts/verify-oracle-fixtures.py` regenerates every one of them
+/// against live uTLS in the `go-oracles` job, so neither half can drift alone.
+const RISKY_FINGERPRINT_RAW_ORACLES: &[(&str, &str)] = &[
+    (
+        "chrome",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_chrome.json"),
+    ),
+    (
+        "helloios_13",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_helloios_13.json"),
+    ),
+    (
+        "hellochrome_120_pq",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_hellochrome_120_pq.json"),
+    ),
+    (
+        "hello360_11_0",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_hello360_11_0.json"),
+    ),
+    (
+        "hellofirefox_63",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_hellofirefox_63.json"),
+    ),
+    (
+        "hellofirefox_65",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_hellofirefox_65.json"),
+    ),
+    (
+        "hellofirefox_99",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_hellofirefox_99.json"),
+    ),
+    (
+        "hellofirefox_102",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_hellofirefox_102.json"),
+    ),
+    (
+        "hellofirefox_105",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_hellofirefox_105.json"),
+    ),
+    (
+        "hellofirefox_120",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_hellofirefox_120.json"),
+    ),
+    (
+        "hellofirefox_auto",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_hellofirefox_auto.json"),
+    ),
+];
+
 #[test]
-#[ignore = "requires Go uTLS oracle; deep raw-byte comparison for risky fingerprints"]
 fn rustls_reality_provider_raw_clienthello_matches_utls_oracle_for_risky_fingerprints() {
     let provider = RustlsRealityTlsSessionProvider::new();
 
-    for fingerprint in [
-        "chrome",
-        "helloios_13",
-        "hellochrome_120_pq",
-        "hello360_11_0",
-        "hellofirefox_63",
-        "hellofirefox_65",
-        "hellofirefox_99",
-        "hellofirefox_102",
-        "hellofirefox_105",
-        "hellofirefox_120",
-        "hellofirefox_148",
-    ] {
-        let expected = utls_client_hello_raw_from_oracle(fingerprint);
+    for (fingerprint, oracle) in RISKY_FINGERPRINT_RAW_ORACLES {
+        let fingerprint = *fingerprint;
+        let expected = utls_client_hello_raw_from_fixture(fingerprint, oracle);
         let session = provider
             .create_session(RealityClientHelloRequest {
                 server_name: "example.com",
@@ -319,25 +443,13 @@ fn rustls_reality_provider_raw_clienthello_matches_utls_oracle_for_risky_fingerp
 }
 
 #[test]
-#[ignore = "requires Go uTLS oracle; deep raw-byte comparison for finalized REALITY ClientHello"]
 fn rustls_reality_provider_final_reality_clienthello_matches_utls_oracle_for_risky_fingerprints() {
     let provider = RustlsRealityTlsSessionProvider::new();
     let server_public_key = X25519PublicKey::from(&X25519StaticSecret::from([7u8; 32])).to_bytes();
 
-    for fingerprint in [
-        "chrome",
-        "helloios_13",
-        "hellochrome_120_pq",
-        "hello360_11_0",
-        "hellofirefox_63",
-        "hellofirefox_65",
-        "hellofirefox_99",
-        "hellofirefox_102",
-        "hellofirefox_105",
-        "hellofirefox_120",
-        "hellofirefox_148",
-    ] {
-        let expected = utls_client_hello_raw_from_oracle(fingerprint);
+    for (fingerprint, oracle) in RISKY_FINGERPRINT_RAW_ORACLES {
+        let fingerprint = *fingerprint;
+        let expected = utls_client_hello_raw_from_fixture(fingerprint, oracle);
         let expected_raw = decode_hex(&expected.client_hello_hex)
             .unwrap_or_else(|error| panic!("{fingerprint}: Go raw hex decode: {error}"));
         let session = provider
@@ -387,10 +499,14 @@ fn rustls_reality_provider_reports_utls_xray_fingerprint_parity() {
         println!("{report}");
     }
 
-    assert_eq!(results.len(), xray_utls::XRAY_REALITY_FINGERPRINTS.len());
+    assert_eq!(results.len(), xray_utls::XRAY_UTLS_FINGERPRINTS.len());
     assert!(
         results.iter().all(|result| !result.is_tooling_error()),
         "report includes oracle or rustls generation errors"
+    );
+    assert!(
+        results.iter().all(|result| result.status() != "mismatch"),
+        "report includes a fixed fingerprint whose provider-filtered shape differs from uTLS"
     );
 }
 
@@ -437,6 +553,10 @@ fn try_utls_client_hello_shape_from_oracle(fingerprint: &str) -> Result<ClientHe
         .current_dir(workspace_root())
         .args([
             "run",
+            // The repository's root `vendor/` contains a patched Rust crate,
+            // not a Go module vendor tree. Keep the oracle on go.mod/go.sum
+            // instead of letting Go mis-detect that directory.
+            "-mod=readonly",
             "-tags",
             "reality_oracle_clienthello_shape",
             "./tools/reality-oracle/clienthello_shape.go",
@@ -459,39 +579,25 @@ fn try_utls_client_hello_shape_from_oracle(fingerprint: &str) -> Result<ClientHe
         .map_err(|error| format!("uTLS ClientHello shape JSON: {error}"))
 }
 
-fn utls_client_hello_raw_from_oracle(fingerprint: &str) -> RawClientHelloOracle {
-    try_utls_client_hello_raw_from_oracle(fingerprint)
-        .unwrap_or_else(|error| panic!("{fingerprint}: {error}"))
-}
+/// Parses one committed `clienthello_shape.go -raw` fixture.
+///
+/// The fingerprint and SNI the fixture records are checked against the ones it
+/// was looked up under, so a table entry pointing at the wrong file compares
+/// two unrelated hellos loudly rather than quietly.
+fn utls_client_hello_raw_from_fixture(fingerprint: &str, oracle: &str) -> RawClientHelloOracle {
+    let oracle: RawClientHelloOracle = serde_json::from_str(oracle)
+        .unwrap_or_else(|error| panic!("{fingerprint}: raw ClientHello fixture JSON: {error}"));
 
-fn try_utls_client_hello_raw_from_oracle(
-    fingerprint: &str,
-) -> Result<RawClientHelloOracle, String> {
-    let output = Command::new("go")
-        .current_dir(workspace_root())
-        .args([
-            "run",
-            "-tags",
-            "reality_oracle_clienthello_shape",
-            "./tools/reality-oracle/clienthello_shape.go",
-            "-fingerprint",
-            fingerprint,
-            "-raw",
-        ])
-        .output()
-        .map_err(|error| format!("failed to run Go uTLS raw oracle: {error}"))?;
+    assert_eq!(
+        oracle.fingerprint, fingerprint,
+        "raw ClientHello fixture records another fingerprint"
+    );
+    assert_eq!(
+        oracle.server_name, "example.com",
+        "{fingerprint}: raw ClientHello fixture records another SNI"
+    );
 
-    if !output.status.success() {
-        return Err(format!(
-            "Go uTLS raw oracle failed with status {}\nstdout:\n{}\nstderr:\n{}",
-            output.status,
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        ));
-    }
-
-    serde_json::from_slice(&output.stdout)
-        .map_err(|error| format!("uTLS raw ClientHello JSON: {error}"))
+    oracle
 }
 
 fn decode_hex(input: &str) -> Result<Vec<u8>, String> {
@@ -509,10 +615,66 @@ fn decode_hex(input: &str) -> Result<Vec<u8>, String> {
 }
 
 fn assert_masked_client_hello_eq(fingerprint: &str, actual: &[u8], expected: &[u8]) {
-    let actual_masked = masked_client_hello_for_raw_oracle(actual)
-        .unwrap_or_else(|error| panic!("{fingerprint}: mask actual ClientHello: {error}"));
-    let expected_masked = masked_client_hello_for_raw_oracle(expected)
-        .unwrap_or_else(|error| panic!("{fingerprint}: mask expected ClientHello: {error}"));
+    let actual_ciphers = raw_client_hello_cipher_suites(actual)
+        .unwrap_or_else(|error| panic!("{fingerprint}: parse actual cipher suites: {error}"));
+    let expected_ciphers = raw_client_hello_cipher_suites(expected)
+        .unwrap_or_else(|error| panic!("{fingerprint}: parse expected cipher suites: {error}"));
+    let expected_offers_tls13 = raw_client_hello_offers_tls13(expected)
+        .unwrap_or_else(|error| panic!("{fingerprint}: parse expected TLS versions: {error}"));
+    let supported = rustls::crypto::aws_lc_rs::default_provider()
+        .cipher_suites
+        .iter()
+        .filter(|suite| {
+            suite.version().version == rustls::ProtocolVersion::TLSv1_2
+                || (expected_offers_tls13
+                    && suite.version().version == rustls::ProtocolVersion::TLSv1_3)
+        })
+        .map(|suite| u16::from(suite.suite()))
+        .collect::<BTreeSet<_>>();
+    let removed_cipher_bytes = expected_ciphers
+        .len()
+        .checked_sub(actual_ciphers.len())
+        .and_then(|removed| removed.checked_mul(2))
+        .expect("provider filtering cannot add cipher suites");
+    let expected_ciphers = expected_ciphers
+        .into_iter()
+        .filter(|suite| is_grease(*suite) || supported.contains(suite))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        actual_ciphers, expected_ciphers,
+        "{fingerprint}: provider-filtered cipher suite vector differs from the uTLS profile"
+    );
+
+    let actual_padding = raw_client_hello_padding(actual)
+        .unwrap_or_else(|error| panic!("{fingerprint}: parse actual padding: {error}"));
+    let expected_padding = raw_client_hello_padding(expected)
+        .unwrap_or_else(|error| panic!("{fingerprint}: parse expected padding: {error}"));
+    assert_eq!(
+        actual_padding.is_some(),
+        expected_padding.is_some(),
+        "{fingerprint}: padding extension presence differs from uTLS"
+    );
+    if let (Some(actual_padding), Some(expected_padding)) = (actual_padding, expected_padding) {
+        assert!(
+            actual_padding.iter().all(|byte| *byte == 0),
+            "{fingerprint}: provider padding contains a non-zero byte"
+        );
+        assert!(
+            expected_padding.iter().all(|byte| *byte == 0),
+            "{fingerprint}: committed uTLS padding contains a non-zero byte"
+        );
+        assert_eq!(
+            actual_padding.len(),
+            expected_padding.len() + removed_cipher_bytes,
+            "{fingerprint}: padding did not absorb exactly the filtered cipher bytes"
+        );
+    }
+
+    let actual_masked = canonical_client_hello_for_raw_oracle(actual)
+        .unwrap_or_else(|error| panic!("{fingerprint}: canonicalize actual ClientHello: {error}"));
+    let expected_masked = canonical_client_hello_for_raw_oracle(expected).unwrap_or_else(|error| {
+        panic!("{fingerprint}: canonicalize expected ClientHello: {error}")
+    });
 
     if actual_masked == expected_masked {
         return;
@@ -537,6 +699,180 @@ fn assert_masked_client_hello_eq(fingerprint: &str, actual: &[u8], expected: &[u
         });
 
     panic!("{fingerprint}: masked raw ClientHello differs: {difference}");
+}
+
+/// Removes the two byte ranges whose lengths intentionally change when the
+/// local rustls provider cannot negotiate every suite in a uTLS profile.
+///
+/// The cipher vector is asserted independently above. BoringSSL-style
+/// profiles absorb its shorter wire length by growing their all-zero padding
+/// payload. Padding presence, position, header and exact growth are asserted
+/// independently too; only its already-checked payload is removed here.
+/// Length fields are rewritten before removal, leaving a canonical
+/// ClientHello in which every other byte, extension, and ordering decision
+/// remains byte-exact.
+fn canonical_client_hello_for_raw_oracle(raw: &[u8]) -> Result<Vec<u8>, String> {
+    let mut canonical = masked_client_hello_for_raw_oracle(raw)?;
+    let mut cursor = ByteCursor::new(raw);
+    let handshake_type = cursor.read_u8("missing handshake type")?;
+    if handshake_type != 0x01 {
+        return Err(format!(
+            "not a ClientHello handshake: 0x{handshake_type:02x}"
+        ));
+    }
+    cursor.read_u24("missing handshake length")?;
+    cursor.read_u16("missing legacy version")?;
+    cursor.take(32, "missing ClientHello random")?;
+    let session_id_len = cursor.read_u8("missing legacy session id length")?;
+    cursor.take(session_id_len, "truncated legacy session id")?;
+
+    let cipher_length_offset = cursor.offset;
+    let cipher_bytes = cursor.read_u16("missing cipher suites length")?;
+    if cipher_bytes % 2 != 0 {
+        return Err(format!("cipher suites length is odd: {cipher_bytes}"));
+    }
+    let cipher_data_offset = cursor.offset;
+    cursor.take(cipher_bytes, "truncated cipher suites")?;
+    let cipher_data_end = cursor.offset;
+
+    let compression_methods_len = cursor.read_u8("missing compression methods length")?;
+    cursor.take(compression_methods_len, "truncated compression methods")?;
+    let extensions_length_offset = cursor.offset;
+    let extensions_len = cursor.read_u16("missing extensions length")?;
+    let extensions_end = cursor.checked_end(extensions_len, "truncated extensions")?;
+    if extensions_end != raw.len() {
+        return Err(format!(
+            "extensions length mismatch: ended at {extensions_end} expected raw length {}",
+            raw.len()
+        ));
+    }
+
+    let mut padding = None;
+    while cursor.offset < extensions_end {
+        let extension_type = cursor.read_u16("missing extension type")? as u16;
+        let extension_length_offset = cursor.offset;
+        let extension_len = cursor.read_u16("missing extension length")?;
+        let extension_data_offset = cursor.offset;
+        cursor.take(extension_len, "truncated extension data")?;
+        if extension_type == 0x0015
+            && padding
+                .replace((
+                    extension_length_offset,
+                    extension_data_offset,
+                    cursor.offset,
+                ))
+                .is_some()
+        {
+            return Err("ClientHello contains more than one padding extension".to_owned());
+        }
+    }
+
+    let padding_bytes = padding.map_or(0, |(_, start, end)| end - start);
+    let canonical_handshake_len = raw
+        .len()
+        .checked_sub(4 + cipher_bytes + padding_bytes)
+        .ok_or_else(|| "canonical ClientHello length underflow".to_owned())?;
+    let canonical_extensions_len = extensions_len
+        .checked_sub(padding_bytes)
+        .ok_or_else(|| "canonical extensions length underflow".to_owned())?;
+    if canonical_handshake_len > 0x00ff_ffff || canonical_extensions_len > u16::MAX as usize {
+        return Err("canonical ClientHello length does not fit its wire field".to_owned());
+    }
+
+    canonical[1] = ((canonical_handshake_len >> 16) & 0xff) as u8;
+    canonical[2] = ((canonical_handshake_len >> 8) & 0xff) as u8;
+    canonical[3] = (canonical_handshake_len & 0xff) as u8;
+    canonical[cipher_length_offset..cipher_length_offset + 2].copy_from_slice(&[0, 0]);
+    canonical[extensions_length_offset..extensions_length_offset + 2]
+        .copy_from_slice(&(canonical_extensions_len as u16).to_be_bytes());
+    if let Some((padding_length_offset, _, _)) = padding {
+        canonical[padding_length_offset..padding_length_offset + 2].copy_from_slice(&[0, 0]);
+    }
+
+    let mut ranges = vec![(cipher_data_offset, cipher_data_end)];
+    if let Some((_, padding_start, padding_end)) = padding {
+        ranges.push((padding_start, padding_end));
+    }
+    ranges.sort_unstable_by_key(|(start, _)| *start);
+    for (start, end) in ranges.into_iter().rev() {
+        canonical.drain(start..end);
+    }
+
+    Ok(canonical)
+}
+
+fn raw_client_hello_cipher_suites(raw: &[u8]) -> Result<Vec<u16>, String> {
+    let mut cursor = ByteCursor::new(raw);
+    let handshake_type = cursor.read_u8("missing handshake type")?;
+    if handshake_type != 0x01 {
+        return Err(format!(
+            "not a ClientHello handshake: 0x{handshake_type:02x}"
+        ));
+    }
+    cursor.read_u24("missing handshake length")?;
+    cursor.read_u16("missing legacy version")?;
+    cursor.take(32, "missing ClientHello random")?;
+    let session_id_len = cursor.read_u8("missing legacy session id length")?;
+    cursor.take(session_id_len, "truncated legacy session id")?;
+    cursor.read_u16_list("cipher suites")
+}
+
+fn raw_client_hello_offers_tls13(raw: &[u8]) -> Result<bool, String> {
+    let Some(versions) = raw_client_hello_extension(raw, 0x002b)? else {
+        return Ok(false);
+    };
+    let Some((&listed_len, listed)) = versions.split_first() else {
+        return Err("supported_versions extension is empty".to_owned());
+    };
+    if listed_len as usize != listed.len() || listed.len() % 2 != 0 {
+        return Err(format!(
+            "supported_versions list length is invalid: header={listed_len} payload={}",
+            listed.len()
+        ));
+    }
+    Ok(listed.chunks_exact(2).any(|pair| pair == [0x03, 0x04]))
+}
+
+fn raw_client_hello_padding(raw: &[u8]) -> Result<Option<&[u8]>, String> {
+    raw_client_hello_extension(raw, 0x0015)
+}
+
+fn raw_client_hello_extension(raw: &[u8], wanted: u16) -> Result<Option<&[u8]>, String> {
+    let mut cursor = ByteCursor::new(raw);
+    let handshake_type = cursor.read_u8("missing handshake type")?;
+    if handshake_type != 0x01 {
+        return Err(format!(
+            "not a ClientHello handshake: 0x{handshake_type:02x}"
+        ));
+    }
+    cursor.read_u24("missing handshake length")?;
+    cursor.read_u16("missing legacy version")?;
+    cursor.take(32, "missing ClientHello random")?;
+    let session_id_len = cursor.read_u8("missing legacy session id length")?;
+    cursor.take(session_id_len, "truncated legacy session id")?;
+    cursor.read_u16_list("cipher suites")?;
+    let compression_methods_len = cursor.read_u8("missing compression methods length")?;
+    cursor.take(compression_methods_len, "truncated compression methods")?;
+    let extensions_len = cursor.read_u16("missing extensions length")?;
+    let extensions_end = cursor.checked_end(extensions_len, "truncated extensions")?;
+    if extensions_end != raw.len() {
+        return Err(format!(
+            "extensions length mismatch: ended at {extensions_end} expected raw length {}",
+            raw.len()
+        ));
+    }
+    let mut found = None;
+    while cursor.offset < extensions_end {
+        let extension_type = cursor.read_u16("missing extension type")? as u16;
+        let extension_len = cursor.read_u16("missing extension length")?;
+        let payload = cursor.take(extension_len, "truncated extension data")?;
+        if extension_type == wanted && found.replace(payload).is_some() {
+            return Err(format!(
+                "ClientHello contains more than one 0x{wanted:04x} extension"
+            ));
+        }
+    }
+    Ok(found)
 }
 
 fn masked_client_hello_for_raw_oracle(raw: &[u8]) -> Result<Vec<u8>, String> {
@@ -585,6 +921,11 @@ fn masked_client_hello_for_raw_oracle(raw: &[u8]) -> Result<Vec<u8>, String> {
         let extension_data_offset = cursor.offset;
         cursor.take(extension_len, "truncated extension data")?;
 
+        // Padding (0x0015) is deliberately absent: both sides zero fill it --
+        // uTLS through `FakePaddingExtension`, rustls through `zero_padding`
+        // -- so there is nothing per-connection to hide, and comparing it
+        // keeps the BoringSSL pad-to-512 arithmetic under the same guard as
+        // everything else. Seven of the eleven fingerprints below carry one.
         match extension_type {
             0x0033 => {
                 mask_key_share_exchange_ranges(
@@ -594,8 +935,13 @@ fn masked_client_hello_for_raw_oracle(raw: &[u8]) -> Result<Vec<u8>, String> {
                     &mut masked,
                 )?;
             }
-            0x0015 | 0xfe0d => {
-                mask_range(&mut masked, extension_data_offset, extension_len);
+            0xfe0d => {
+                mask_encrypted_client_hello_random_ranges(
+                    raw,
+                    extension_data_offset,
+                    extension_len,
+                    &mut masked,
+                )?;
             }
             value if is_grease(value) => {
                 mask_range(&mut masked, extension_data_offset, extension_len);
@@ -649,6 +995,80 @@ fn mask_key_share_exchange_ranges(
     Ok(())
 }
 
+/// Masks the three ECH GREASE fields uTLS redraws per connection, leaving the
+/// structure around them to be compared byte for byte.
+///
+/// Blanking the whole extension instead -- which this used to do -- hides
+/// everything that makes an outer ECH well formed: the `enc` length prefix in
+/// particular, which spent several releases reading 0 with no key behind it
+/// while the extension still measured the length the profile promised. What is
+/// left comparable here is exactly what a DPI reading past the length header
+/// sees: the outer type, the HPKE cipher suite, and the two length prefixes.
+///
+/// The Go oracle runs under a zeroed `crypto/rand`, so its config id is 0, its
+/// key is the one X25519 point a zero seed derives, and its payload is zero
+/// filled. None of those are what a real client sends, which is why they are
+/// masked rather than compared.
+fn mask_encrypted_client_hello_random_ranges(
+    raw: &[u8],
+    extension_data_offset: usize,
+    extension_len: usize,
+    masked: &mut [u8],
+) -> Result<(), String> {
+    let extension_end = extension_data_offset
+        .checked_add(extension_len)
+        .filter(|end| *end <= raw.len())
+        .ok_or_else(|| {
+            format!(
+                "encrypted_client_hello extension range out of bounds: offset={extension_data_offset} len={extension_len} raw={}",
+                raw.len()
+            )
+        })?;
+    let mut cursor = ByteCursor::new(&raw[extension_data_offset..extension_end]);
+
+    let client_hello_type = cursor.read_u8("missing ECHClientHello type")?;
+    if client_hello_type != 0 {
+        return Err(format!(
+            "encrypted_client_hello is not an outer hello: type={client_hello_type}"
+        ));
+    }
+    cursor.read_u16("missing ECH HPKE KDF id")?;
+
+    // The AEAD id is masked, unlike the KDF id beside it, because uTLS draws it
+    // per connection wherever a profile offers more than one: Firefox picks
+    // between AES-128-GCM and ChaCha20-Poly1305, so this side legitimately
+    // disagrees with the oracle half the time. The oracle runs under a zeroed
+    // `crypto/rand` and so always records the first candidate, which means this
+    // comparison could only ever pin one of the two -- it cannot see the draw at
+    // all. `ech_grease_draws_every_candidate_aead` guards that instead.
+    let aead_id_offset = extension_data_offset + cursor.offset;
+    cursor.read_u16("missing ECH HPKE AEAD id")?;
+    mask_range(masked, aead_id_offset, 2);
+
+    let config_id_offset = extension_data_offset + cursor.offset;
+    cursor.read_u8("missing ECH config id")?;
+    mask_range(masked, config_id_offset, 1);
+
+    let encapsulated_key_len = cursor.read_u16("missing ECH enc length")?;
+    let encapsulated_key_offset = extension_data_offset + cursor.offset;
+    cursor.take(encapsulated_key_len, "truncated ECH enc")?;
+    mask_range(masked, encapsulated_key_offset, encapsulated_key_len);
+
+    let payload_len = cursor.read_u16("missing ECH payload length")?;
+    let payload_offset = extension_data_offset + cursor.offset;
+    cursor.take(payload_len, "truncated ECH payload")?;
+    mask_range(masked, payload_offset, payload_len);
+
+    if cursor.offset != extension_len {
+        return Err(format!(
+            "encrypted_client_hello has {} trailing byte(s) after the payload",
+            extension_len - cursor.offset
+        ));
+    }
+
+    Ok(())
+}
+
 fn mask_range(raw: &mut [u8], offset: usize, len: usize) {
     for byte in &mut raw[offset..offset + len] {
         *byte = 0xa5;
@@ -686,8 +1106,19 @@ struct FingerprintParityResult {
     actual: Result<ClientHelloShape, String>,
 }
 
+/// Names that stand for a per-process draw over Xray's `ModernFingerprints`
+/// rather than a fixed shape, so there is nothing for the oracle to compare
+/// them against: the oracle answers `random` with `utls.HelloRandomized` under
+/// a zeroed `crypto/rand`, which is neither what Xray's `init()` produces nor
+/// what we produce. See `docs/config-compatibility.md`.
+const DRAWN_PER_PROCESS_FINGERPRINTS: &[&str] = &["random", "randomized"];
+
 impl FingerprintParityResult {
     fn status(&self) -> &'static str {
+        if DRAWN_PER_PROCESS_FINGERPRINTS.contains(&self.fingerprint) {
+            return "drawn-per-process";
+        }
+
         match (&self.expected, &self.actual) {
             (Err(_), _) => "oracle-error",
             _ if !xray_utls::is_reality_fingerprint_supported(self.fingerprint) => {
@@ -723,11 +1154,19 @@ impl FingerprintParityResult {
 fn collect_fingerprint_parity_results() -> Vec<FingerprintParityResult> {
     let provider = RustlsRealityTlsSessionProvider::new();
 
-    xray_utls::XRAY_REALITY_FINGERPRINTS
+    xray_utls::XRAY_UTLS_FINGERPRINTS
         .iter()
         .map(|&fingerprint| {
-            let expected = try_utls_client_hello_shape_from_oracle(fingerprint);
-            let actual = if !xray_utls::is_reality_fingerprint_supported(fingerprint) {
+            let expected = try_utls_client_hello_shape_from_oracle(fingerprint).map(|mut shape| {
+                apply_provider_cipher_filter(&mut shape);
+                shape
+            });
+            let actual = if DRAWN_PER_PROCESS_FINGERPRINTS.contains(&fingerprint) {
+                Err(
+                    "skipped: resolved from a per-process draw over Xray's ModernFingerprints, so it has no fixed shape to compare"
+                        .to_owned(),
+                )
+            } else if !xray_utls::is_reality_fingerprint_supported(fingerprint) {
                 Err(
                     "skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share"
                         .to_owned(),
@@ -795,12 +1234,27 @@ fn build_fingerprint_parity_report(results: &[FingerprintParityResult]) -> Strin
         .iter()
         .filter(|result| result.status() == "not-reality-capable")
         .count();
+    let drawn_per_process = results
+        .iter()
+        .filter(|result| result.status() == "drawn-per-process")
+        .count();
     let mut report = String::new();
 
     writeln!(report, "# shaped-rustls uTLS Fingerprint Parity Report\n").unwrap();
     writeln!(
         report,
-        "This report compares every fingerprint in `xray_utls::XRAY_REALITY_FINGERPRINTS` against the Go uTLS oracle used by xray-core-compatible REALITY tests.\n"
+        "This report compares every fingerprint in `xray_utls::XRAY_UTLS_FINGERPRINTS` against the Go uTLS oracle used by xray-core-compatible REALITY tests.\n"
+    )
+    .unwrap();
+    writeln!(report, "## What a `match` here does and does not mean\n").unwrap();
+    writeln!(
+        report,
+        "Every row below compares normalised shape JSON, in which an extension is a type and a length. Anything wrong *inside* a body of the right length is a `match` here. ECH is the worked example: this report recorded `encrypted_client_hello_length: 186` and called it parity while the body underneath declared a zero-length `enc`, carried no X25519 key, and padded the remaining 176 bytes with zeroes -- a structure no ECH parser accepts and a DPI can pick out deterministically. It shipped that way from before v0.1.1.\n"
+    )
+    .unwrap();
+    writeln!(
+        report,
+        "Byte-level agreement is a separate guard, and the one to reach for when a body's contents matter: `rustls_reality_provider_raw_clienthello_matches_utls_oracle_for_risky_fingerprints` compares whole ClientHellos against committed oracle output, masking only what uTLS redraws per connection, and runs in the ordinary `cargo test --workspace` CI job.\n"
     )
     .unwrap();
     writeln!(report, "## Reproduce\n").unwrap();
@@ -818,6 +1272,11 @@ fn build_fingerprint_parity_report(results: &[FingerprintParityResult]) -> Strin
         "- Not REALITY-capable fingerprints: `{not_reality_capable}`"
     )
     .unwrap();
+    writeln!(
+        report,
+        "- Drawn per process (no fixed shape to compare): `{drawn_per_process}`"
+    )
+    .unwrap();
     writeln!(report, "- Go uTLS oracle errors: `{oracle_errors}`").unwrap();
     writeln!(report, "- Rust generation errors: `{rustls_errors}`\n").unwrap();
     writeln!(report, "## Agent Task\n").unwrap();
@@ -828,7 +1287,7 @@ fn build_fingerprint_parity_report(results: &[FingerprintParityResult]) -> Strin
     .unwrap();
     writeln!(
         report,
-        "- Use this report as the current wire-parity oracle after xray-rust adopted the shaped-rustls primitives for advertised cipher suites, advertised versions/groups, raw key shares, exact extension payloads, duplicate signature algorithms, ALPS, ECH, and GREASE."
+        "- Use this report as the current wire-parity oracle after applying xray-rust's deliberate provider-capability cipher filter to the uTLS expectation. Every other tracked field remains the shaped-rustls byte-shape oracle: advertised versions/groups, real key shares, exact extension payloads, duplicate signature algorithms, ALPS, ECH, and GREASE."
     )
     .unwrap();
     writeln!(
@@ -843,7 +1302,7 @@ fn build_fingerprint_parity_report(results: &[FingerprintParityResult]) -> Strin
     .unwrap();
     writeln!(
         report,
-        "- Acceptance criterion: rerun the reproduce command from this report and get all REALITY-capable fingerprints as `match`, `0` mismatches, `0` Go uTLS oracle errors, `0` Rust generation errors, and keep the known TLS1.2-only rows as `not-reality-capable`.\n"
+        "- Acceptance criterion: rerun the reproduce command from this report and get all REALITY-capable provider-filtered fingerprints as `match`, `0` mismatches, `0` Go uTLS oracle errors, `0` Rust generation errors, and keep the known TLS1.2-only rows as `not-reality-capable`.\n"
     )
     .unwrap();
     writeln!(report, "## Current Findings\n").unwrap();
@@ -854,12 +1313,12 @@ fn build_fingerprint_parity_report(results: &[FingerprintParityResult]) -> Strin
     .unwrap();
     writeln!(
         report,
-        "- All REALITY-capable xray-core/uTLS fingerprints currently match the Go uTLS oracle byte-shape fields tracked by this report."
+        "- All REALITY-capable xray-core/uTLS fingerprints currently match the provider-filtered Go uTLS byte-shape fields tracked by this report."
     )
     .unwrap();
     writeln!(
         report,
-        "- xray-rust uses real rustls key shares for X25519, final `X25519MLKEM768`, and draft `X25519Kyber768Draft00`; P-256/P-384 shares remain raw wire-shape entries where needed. `FixedX25519KeyShare` keeps REALITY's X25519 public key stable inside X25519 and both hybrid shares."
+        "- xray-rust uses real rustls key shares for X25519, P-256, P-384, final `X25519MLKEM768`, and draft `X25519Kyber768Draft00`. `FixedX25519KeyShare` keeps REALITY's X25519 public key stable inside X25519 and both hybrid shares."
     )
     .unwrap();
     writeln!(
@@ -926,10 +1385,10 @@ fn build_fingerprint_parity_report(results: &[FingerprintParityResult]) -> Strin
                 writeln!(report, "Go uTLS oracle error:\n\n```text\n{}\n```", error).unwrap();
             }
             (_, Err(error)) => {
-                let heading = if result.status() == "not-reality-capable" {
-                    "REALITY capability skip"
-                } else {
-                    "Rust generation error"
+                let heading = match result.status() {
+                    "not-reality-capable" => "REALITY capability skip",
+                    "drawn-per-process" => "Per-process draw skip",
+                    _ => "Rust generation error",
                 };
                 writeln!(report, "{heading}:\n\n```text\n{}\n```", error).unwrap();
             }

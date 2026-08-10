@@ -1,7 +1,7 @@
 import Foundation
 import XrayRust
 
-public enum XrayCoreError: Error, CustomStringConvertible {
+public enum XrayCoreError: Error, CustomStringConvertible, CustomNSError, LocalizedError {
     case status(code: XrayStatus, message: String)
     case incompatibleFFIMajorVersion(expected: UInt32, actual: UInt32)
     case invalidPacketPollSize(Int)
@@ -33,6 +33,43 @@ public enum XrayCoreError: Error, CustomStringConvertible {
         case .invalidUtf8:
             return "xray returned an invalid UTF-8 error message"
         }
+    }
+
+    // Without CustomNSError, Swift bridges this enum to NSError using only the
+    // type name and case index, so the engine status and message — the only
+    // parts that say what failed — never reach the NEVPNManager error a user
+    // sees. Both conformances reuse `description` rather than duplicating it.
+    public static let errorDomain = "XrayMobileAdapter.XrayCoreError"
+
+    public var errorCode: Int {
+        switch self {
+        case .status:
+            return 0
+        case .incompatibleFFIMajorVersion:
+            return 1
+        case .invalidPacketPollSize:
+            return 2
+        case .invalidPacketBatchLimits:
+            return 3
+        case .packetBatchSizeOverflow:
+            return 4
+        case .packetBatchTooLarge:
+            return 5
+        case .missingHandle:
+            return 6
+        case .notRunning:
+            return 7
+        case .invalidUtf8:
+            return 8
+        }
+    }
+
+    public var errorUserInfo: [String: Any] {
+        [NSLocalizedDescriptionKey: description]
+    }
+
+    public var errorDescription: String? {
+        description
     }
 }
 
@@ -290,13 +327,16 @@ public struct XrayTunStatsSnapshot: Equatable, Sendable {
     public let tunFdWriteBatches: UInt64
     public let tunFdWriteBatchPackets: UInt64
     public let tunFdWriteBatchMaxPackets: UInt64
+    public let tunFdReadLoopExits: UInt64
+    public let tunFdWriteLoopExits: UInt64
+    public let tunFdTransientIoErrors: UInt64
 }
 
 public extension XrayTunStatsSnapshot {
     func debugLogMessages(prefix: String = "Debug stats") -> [String] {
         [
             "\(prefix) core inbound=\(inboundPackets) outbound=\(outboundPackets) dropped=\(droppedPackets) inboundDropped=\(inboundDroppedPackets) outboundDropped=\(outboundDroppedPackets) activeTCPFlows=\(activeTCPFlows) activeUDPFlows=\(activeUDPFlows)",
-            "\(prefix) queues inboundQueueDepth=\(inboundQueueDepth) outboundQueueDepth=\(outboundQueueDepth) inboundQueueMaxPackets=\(inboundQueueMaxPackets) outboundQueueMaxPackets=\(outboundQueueMaxPackets) tunFdWriteBatches=\(tunFdWriteBatches) tunFdWriteBatchPackets=\(tunFdWriteBatchPackets) tunFdWriteBatchMaxPackets=\(tunFdWriteBatchMaxPackets)",
+            "\(prefix) queues inboundQueueDepth=\(inboundQueueDepth) outboundQueueDepth=\(outboundQueueDepth) inboundQueueMaxPackets=\(inboundQueueMaxPackets) outboundQueueMaxPackets=\(outboundQueueMaxPackets) tunFdWriteBatches=\(tunFdWriteBatches) tunFdWriteBatchPackets=\(tunFdWriteBatchPackets) tunFdWriteBatchMaxPackets=\(tunFdWriteBatchMaxPackets) tunFdReadLoopExits=\(tunFdReadLoopExits) tunFdWriteLoopExits=\(tunFdWriteLoopExits) tunFdTransientIoErrors=\(tunFdTransientIoErrors)",
             "\(prefix) tcpBytes tcpStackToRemoteBytes=\(tcpStackToRemoteBytes) tcpRemoteWrittenBytes=\(tcpRemoteWrittenBytes) tcpRemoteReadBytes=\(tcpRemoteReadBytes) tcpBackpressure=\(tcpBackpressureEvents) tcpStackToRemoteBackpressure=\(tcpStackToRemoteBackpressureEvents) tcpRemoteToStackBackpressure=\(tcpRemoteToStackBackpressureEvents)",
             "\(prefix) tcpBuffers tcpRemoteWriteBatches=\(tcpRemoteWriteBatches) tcpRemoteWriteBatchMessages=\(tcpRemoteWriteBatchMessages) tcpRemoteWriteBatchMaxMessages=\(tcpRemoteWriteBatchMaxMessages) tcpRemoteWriteBatchMaxBytes=\(tcpRemoteWriteBatchMaxBytes) tcpPendingRemoteBytes=\(tcpPendingRemoteBytes) tcpPendingRemoteFlows=\(tcpPendingRemoteFlows) tcpPendingRemoteMaxBytes=\(tcpPendingRemoteMaxBytes) tcpWriteErrors=\(tcpRemoteWriteErrors) tcpRemoteClosed=\(tcpRemoteClosedEvents) tcpReadErrors=\(tcpRemoteReadErrors) tcpOpenErrors=\(tcpOpenErrors)",
             "\(prefix) tcpBudget tcpPendingUploadBytes=\(tcpPendingUploadBytes) tcpPendingUploadMaxBytes=\(tcpPendingUploadMaxBytes) tcpPendingTotalBytes=\(tcpPendingTotalBytes) tcpRemoteBufferLimitBytes=\(tcpRemoteBufferLimitBytes) tcpBufferHardLimitBytes=\(tcpBufferHardLimitBytes) tcpRemoteBufferPressureActive=\(tcpRemoteBufferPressureActive)",
@@ -894,7 +934,10 @@ public final class XrayCore: @unchecked Sendable {
                 outboundQueueMaxPackets: stats.outbound_queue_max_packets,
                 tunFdWriteBatches: stats.tun_fd_write_batches,
                 tunFdWriteBatchPackets: stats.tun_fd_write_batch_packets,
-                tunFdWriteBatchMaxPackets: stats.tun_fd_write_batch_max_packets
+                tunFdWriteBatchMaxPackets: stats.tun_fd_write_batch_max_packets,
+                tunFdReadLoopExits: stats.tun_fd_read_loop_exits,
+                tunFdWriteLoopExits: stats.tun_fd_write_loop_exits,
+                tunFdTransientIoErrors: stats.tun_fd_transient_io_errors
             )
         }
     }

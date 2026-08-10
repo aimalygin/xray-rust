@@ -12,12 +12,16 @@ use crate::{
     CoreConfig, Diagnostic, DnsConfig, DnsFakeIpConfig, DnsHostMapping, DnsHostTarget, DnsIpFilter,
     DnsNameServerConfig, DnsOutboundRule, DnsOutboundRuleAction, DnsOutboundSettings,
     DnsQTypeRange, DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint, DnsServerTransport,
-    DomainMatcher, HappyEyeballsSettings, InboundConfig, InboundProtocol, InboundSniffingConfig,
-    IpCidr, IpMatcher, Network, OutboundConfig, OutboundProtocol, OutboundSettings, PolicyConfig,
-    PolicyLevelConfig, PolicySystemConfig, RealitySettings, RealityShortId, RegexMatcher,
-    RoutingConfig, RoutingDomainStrategy, RoutingPortRange, RoutingRule, SniffingDestination,
-    SocketOptions, StreamSecurity, StreamSettings, TargetAddr, TlsSettings, VlessOutboundSettings,
-    VlessUser, MAX_DNS_SERVER_TIMEOUT_MS,
+    DomainMatcher, GrpcSettings, HappyEyeballsSettings, HttpUpgradeSettings, InboundConfig,
+    InboundProtocol, InboundSniffingConfig, IpCidr, IpMatcher, Network, OutboundConfig,
+    OutboundProtocol, OutboundSettings, PolicyConfig, PolicyLevelConfig, PolicySystemConfig,
+    QuicBbrProfile, QuicCongestion, QuicIntervalRange, QuicParamsSettings, QuicUdpHopSettings,
+    RealitySettings, RealityShortId, RegexMatcher, RoutingConfig, RoutingDomainStrategy,
+    RoutingPortRange, RoutingRule, SniffingDestination, SocketOptions, StreamSecurity,
+    StreamSettings, StreamTransport, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
+    WebSocketSettings, XhttpMode, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpPlacement,
+    XhttpRange, XhttpSettings, XhttpUplinkDataPlacement, XhttpXmuxSettings,
+    MAX_DNS_SERVER_TIMEOUT_MS,
 };
 
 const MAX_ROUTING_RULES: usize = 4_096;
@@ -33,6 +37,72 @@ const MAX_DNS_SERVERS: usize = 8;
 const DEFAULT_FAKE_IP_POOL_SIZE: u32 = 32_768;
 const TUN_DNS_ANCHOR: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 1);
 const TUN_CLIENT_IPV4: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 2);
+const XHTTP_SETTINGS_FIELDS: &[&str] = &[
+    "host",
+    "path",
+    "mode",
+    "headers",
+    "xPaddingBytes",
+    "xPaddingObfsMode",
+    "xPaddingKey",
+    "xPaddingHeader",
+    "xPaddingPlacement",
+    "xPaddingMethod",
+    "uplinkHTTPMethod",
+    "sessionPlacement",
+    "sessionKey",
+    "seqPlacement",
+    "seqKey",
+    "uplinkDataPlacement",
+    "uplinkDataKey",
+    "uplinkChunkSize",
+    "noGRPCHeader",
+    "noSSEHeader",
+    "scMaxEachPostBytes",
+    "scMinPostsIntervalMs",
+    "scMaxBufferedPosts",
+    "scStreamUpServerSecs",
+    "serverMaxHeaderBytes",
+    "xmux",
+    "downloadSettings",
+    "extra",
+];
+const XHTTP_XMUX_FIELDS: &[&str] = &[
+    "maxConcurrency",
+    "maxConnections",
+    "cMaxReuseTimes",
+    "hMaxRequestTimes",
+    "hMaxReusableSecs",
+    "hKeepAlivePeriod",
+];
+const QUIC_PARAMS_FIELDS: &[&str] = &[
+    "congestion",
+    "debug",
+    "bbrProfile",
+    "brutalUp",
+    "brutalDown",
+    "udpHop",
+    "initStreamReceiveWindow",
+    "maxStreamReceiveWindow",
+    "initConnectionReceiveWindow",
+    "maxConnectionReceiveWindow",
+    "maxIdleTimeout",
+    "keepAlivePeriod",
+    "disablePathMTUDiscovery",
+    "maxIncomingStreams",
+];
+
+/// The transport `streamSettings.network` names, before their settings block
+/// has been read. All of them dial TCP; the variant only says what gets
+/// layered on top.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StreamNetwork {
+    Raw,
+    WebSocket,
+    HttpUpgrade,
+    Grpc,
+    Xhttp,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum IpMatcherParseMode {
@@ -2551,18 +2621,1366 @@ impl Parser<'_> {
 
     fn parse_stream_settings(&mut self, outbound: &Value, index: usize) -> Option<StreamSettings> {
         let stream = outbound.get("streamSettings");
-        let network = self.parse_network(stream, index)?;
+        let stream_network = self.parse_network(stream, index)?;
         let security = self.parse_security(stream, index)?;
+        // Xray refuses this in `StreamConfig.Build`, so a profile pairing them
+        // would build cleanly here and then fail against a real server. The
+        // check lives here rather than in `validate_stream_settings_compatibility`
+        // because only this function has both halves parsed.
+        //
+        // Xray permits REALITY on raw, XHTTP and gRPC
+        // (`infra/conf/transport_internet.go`). The alias `splithttp` is
+        // normalized to the XHTTP variant by `parse_network` below.
+        if matches!(security, StreamSecurity::Reality(_))
+            && !matches!(
+                stream_network,
+                StreamNetwork::Raw | StreamNetwork::Grpc | StreamNetwork::Xhttp
+            )
+        {
+            self.error(
+                format!("$.outbounds[{index}].streamSettings.security"),
+                "REALITY only supports RAW, XHTTP and gRPC for now",
+            );
+        }
+        let quic_params = self.parse_quic_params(stream, index);
         let socket_options = self.parse_socket_options(stream, index);
         if let Some(stream) = stream {
             self.validate_stream_settings_compatibility(stream, index);
         }
+        self.validate_unconsumed_transport_settings(stream, stream_network, index);
+        let transport = self.parse_stream_transport(stream, stream_network, index)?;
 
         Some(StreamSettings {
-            network,
+            // Every transport we accept dials TCP; `transport` carries what
+            // gets layered on top of it.
+            network: Network::Tcp,
+            transport,
             security,
+            quic_params,
             socket_options,
         })
+    }
+
+    fn parse_stream_transport(
+        &mut self,
+        stream: Option<&Value>,
+        network: StreamNetwork,
+        index: usize,
+    ) -> Option<StreamTransport> {
+        match network {
+            StreamNetwork::Raw => Some(StreamTransport::Raw),
+            StreamNetwork::WebSocket => self
+                .parse_websocket_settings(stream, index)
+                .map(StreamTransport::WebSocket),
+            StreamNetwork::HttpUpgrade => self
+                .parse_httpupgrade_settings(stream, index)
+                .map(StreamTransport::HttpUpgrade),
+            StreamNetwork::Grpc => self
+                .parse_grpc_settings(stream, index)
+                .map(StreamTransport::Grpc),
+            StreamNetwork::Xhttp => self
+                .parse_xhttp_settings(stream, index)
+                .map(Box::new)
+                .map(StreamTransport::Xhttp),
+        }
+    }
+
+    /// Flags a settings block the selected network will never read.
+    ///
+    /// Xray's `StreamConfig.Build` builds *every* block that is present, not
+    /// just the selected one, and only picks between them by protocol name at
+    /// dial time. So the block is still validated — under `network: "raw"` an
+    /// Xray config with `httpupgradeSettings.headers.Host` still fails to
+    /// build — but it is also inert, which is how a copy-pasted `wsSettings`
+    /// silently downgrades a profile to plain TCP. Hence a warning for its
+    /// presence plus the block's own validation, which is exactly as strict as
+    /// Xray and no stricter.
+    fn validate_unconsumed_transport_settings(
+        &mut self,
+        stream: Option<&Value>,
+        network: StreamNetwork,
+        index: usize,
+    ) {
+        let Some(stream) = stream else {
+            return;
+        };
+        // `rawSettings` is `tcpSettings` renamed, so the raw transport reads
+        // either spelling. Both are validated for every network already.
+        let consumed: &[&str] = match network {
+            StreamNetwork::Raw => &["tcpSettings", "rawSettings"],
+            StreamNetwork::WebSocket => &["wsSettings"],
+            StreamNetwork::HttpUpgrade => &["httpupgradeSettings"],
+            StreamNetwork::Grpc => &["grpcSettings"],
+            StreamNetwork::Xhttp => &["xhttpSettings", "splithttpSettings"],
+        };
+
+        for key in [
+            "tcpSettings",
+            "rawSettings",
+            "wsSettings",
+            "httpupgradeSettings",
+            "grpcSettings",
+            "xhttpSettings",
+            "splithttpSettings",
+        ] {
+            let value = stream.get(key);
+            let null_xhttp_pointer = matches!(key, "xhttpSettings" | "splithttpSettings")
+                && value.is_some_and(Value::is_null);
+            if consumed.contains(&key) || value.is_none() || null_xhttp_pointer {
+                continue;
+            }
+
+            self.warning(
+                format!("$.outbounds[{index}].streamSettings.{key}"),
+                format!("`{key}` is ignored because `network` selects another transport"),
+            );
+            match key {
+                "wsSettings" => {
+                    let _ = self.parse_websocket_settings(Some(stream), index);
+                }
+                "httpupgradeSettings" => {
+                    let _ = self.parse_httpupgrade_settings(Some(stream), index);
+                }
+                "grpcSettings" => {
+                    let _ = self.parse_grpc_settings(Some(stream), index);
+                }
+                "xhttpSettings" => {
+                    let _ = self.parse_xhttp_settings(Some(stream), index);
+                }
+                "splithttpSettings" if stream.get("xhttpSettings").is_none_or(Value::is_null) => {
+                    let _ = self.parse_xhttp_settings(Some(stream), index);
+                }
+                // `xhttpSettings` has priority over the legacy spelling, so
+                // the lower-priority block is inert when both are present.
+                "splithttpSettings" => {}
+                // `validate_tcp_settings` already ran for both spellings.
+                _ => {}
+            }
+        }
+    }
+
+    fn parse_websocket_settings(
+        &mut self,
+        stream: Option<&Value>,
+        index: usize,
+    ) -> Option<WebSocketSettings> {
+        let settings_path = format!("$.outbounds[{index}].streamSettings.wsSettings");
+        let Some(settings) = stream.and_then(|stream| stream.get("wsSettings")) else {
+            // Xray builds a zero-valued config when the block is absent, and a
+            // zero path normalizes to `/`.
+            return Some(WebSocketSettings {
+                path: "/".to_owned(),
+                ..WebSocketSettings::default()
+            });
+        };
+        if !settings.is_object() {
+            self.error(settings_path, "wsSettings must be an object");
+            return None;
+        }
+        self.reject_unknown_fields(
+            settings,
+            &settings_path,
+            &[
+                "path",
+                "host",
+                "headers",
+                "acceptProxyProtocol",
+                "heartbeatPeriod",
+            ],
+        );
+
+        let (path, early_data_bytes) = split_early_data_from_path(
+            self.optional_string_at(settings, "path", format!("{settings_path}.path"))
+                .unwrap_or_default(),
+        );
+        let mut host = self
+            .optional_string_at(settings, "host", format!("{settings_path}.host"))
+            .filter(|host| !host.is_empty())
+            .map(ToOwned::to_owned);
+        let mut headers = self.parse_transport_headers(settings, &settings_path)?;
+
+        // Xray folds a `Host` key of any casing out of `headers` and into
+        // `host`, keeping the explicit `host` when both are set, and warns.
+        if let Some(position) = headers
+            .iter()
+            .position(|(name, _)| name.eq_ignore_ascii_case("host"))
+        {
+            let (_, value) = headers.remove(position);
+            headers.retain(|(name, _)| !name.eq_ignore_ascii_case("host"));
+            if host.is_none() {
+                host = Some(value);
+            }
+            self.warning(
+                format!("{settings_path}.headers"),
+                "`host` in `headers` is deprecated; use the independent `host` field",
+            );
+        }
+
+        Some(WebSocketSettings {
+            path,
+            host,
+            // Go's `header.Add` MIME-canonicalizes the key on the way in, so a
+            // config that writes `accept` puts `Accept` on the wire.
+            headers: headers
+                .into_iter()
+                .map(|(name, value)| (canonical_header_name(&name), value))
+                .collect(),
+            early_data_bytes,
+            heartbeat_period_secs: self
+                .optional_u32_at(
+                    settings,
+                    "heartbeatPeriod",
+                    format!("{settings_path}.heartbeatPeriod"),
+                )
+                .unwrap_or_default(),
+        })
+    }
+
+    fn parse_httpupgrade_settings(
+        &mut self,
+        stream: Option<&Value>,
+        index: usize,
+    ) -> Option<HttpUpgradeSettings> {
+        let settings_path = format!("$.outbounds[{index}].streamSettings.httpupgradeSettings");
+        let Some(settings) = stream.and_then(|stream| stream.get("httpupgradeSettings")) else {
+            return Some(HttpUpgradeSettings {
+                path: "/".to_owned(),
+                ..HttpUpgradeSettings::default()
+            });
+        };
+        if !settings.is_object() {
+            self.error(settings_path, "httpupgradeSettings must be an object");
+            return None;
+        }
+        self.reject_unknown_fields(
+            settings,
+            &settings_path,
+            &["path", "host", "headers", "acceptProxyProtocol"],
+        );
+
+        let (path, early_data_bytes) = split_early_data_from_path(
+            self.optional_string_at(settings, "path", format!("{settings_path}.path"))
+                .unwrap_or_default(),
+        );
+        if early_data_bytes != 0 {
+            self.warning(
+                format!("{settings_path}.path"),
+                "httpupgrade `ed` is parsed for compatibility, but the client waits for the 101 response to avoid losing coalesced payload bytes in Xray's inbound handler",
+            );
+        }
+        let headers = self.parse_transport_headers(settings, &settings_path)?;
+
+        // Where websocket folds it away with a warning, httpupgrade refuses:
+        // its `Host` comes from `host` alone.
+        if headers
+            .iter()
+            .any(|(name, _)| name.eq_ignore_ascii_case("host"))
+        {
+            self.error(
+                format!("{settings_path}.headers"),
+                "`headers` can't contain `host`; use the independent `host` field",
+            );
+            return None;
+        }
+
+        Some(HttpUpgradeSettings {
+            path,
+            host: self
+                .optional_string_at(settings, "host", format!("{settings_path}.host"))
+                .filter(|host| !host.is_empty())
+                .map(ToOwned::to_owned),
+            // No canonicalization here: Xray assigns straight into the header
+            // map so that a config keeps the casing it wrote.
+            headers,
+            early_data_bytes,
+        })
+    }
+
+    /// Reads `grpcSettings`. No `path`, no `host`, no `headers`, no `?ed=`:
+    /// `GRPCConfig` has eight fields and none of them are those
+    /// (`Xray-core/infra/conf/grpc.go:8-17`).
+    fn parse_grpc_settings(
+        &mut self,
+        stream: Option<&Value>,
+        index: usize,
+    ) -> Option<GrpcSettings> {
+        let settings_path = format!("$.outbounds[{index}].streamSettings.grpcSettings");
+        let Some(settings) = stream.and_then(|stream| stream.get("grpcSettings")) else {
+            // `StreamConfig.Build` only appends a transport entry for a block
+            // that is present, and `GetTransportSettingsFor` then falls
+            // through to a zero-valued `CreateTransportConfig`
+            // (`transport/internet/config.go:71-81`) — which is a legal gRPC
+            // outbound dialing `//Tun`, not a missing one.
+            return Some(GrpcSettings::default());
+        };
+        if !settings.is_object() {
+            self.error(settings_path, "grpcSettings must be an object");
+            return None;
+        }
+        // Spelled exactly as the struct tags spell them: five snake_case,
+        // `serviceName` and `multiMode` camelCase, `authority` neither. Go
+        // matches on the tag, so `idleTimeout` is an unknown key upstream that
+        // is silently dropped, and accepting it here would let a profile work
+        // that does nothing against a real server.
+        self.reject_unknown_fields(
+            settings,
+            &settings_path,
+            &[
+                "authority",
+                "serviceName",
+                "multiMode",
+                "user_agent",
+                "idle_timeout",
+                "health_check_timeout",
+                "permit_without_stream",
+                "initial_windows_size",
+            ],
+        );
+
+        Some(GrpcSettings {
+            // Passed through untouched, including a leading `/`: which of the
+            // two `:path` dialects it selects is the transport's decision, not
+            // the parser's.
+            service_name: self
+                .optional_string_at(
+                    settings,
+                    "serviceName",
+                    format!("{settings_path}.serviceName"),
+                )
+                .unwrap_or_default()
+                .to_owned(),
+            multi_mode: self
+                .optional_bool_at(settings, "multiMode", format!("{settings_path}.multiMode"))
+                .unwrap_or_default(),
+            authority: self
+                .optional_string_at(settings, "authority", format!("{settings_path}.authority"))
+                .filter(|authority| !authority.is_empty())
+                .map(ToOwned::to_owned),
+            // Not validated against `chrome`/`firefox`/`edge`/`golang`: those
+            // are resolved when the outbound is built and anything else is a
+            // literal UA (`transport/internet/grpc/dial.go:193-205`).
+            //
+            // Nor validated as a header value, which it has to be to reach the
+            // wire. That refusal is a layer up, in `xray-core-rs`'s
+            // `grpc_user_agent`, for the reason the authority above is parsed
+            // there: the value's ceiling is `http::HeaderValue`'s, and stating
+            // that rule a second time here is how the two come to disagree.
+            // The cost is the `$.outbounds[N]` prefix this layer could have
+            // put on the message, which is the cost `authority` already pays.
+            user_agent: self
+                .optional_string_at(
+                    settings,
+                    "user_agent",
+                    format!("{settings_path}.user_agent"),
+                )
+                .filter(|user_agent| !user_agent.is_empty())
+                .map(ToOwned::to_owned),
+            idle_timeout_secs: self.grpc_clamped_int32_at(settings, "idle_timeout", &settings_path),
+            health_check_timeout_secs: self.grpc_clamped_int32_at(
+                settings,
+                "health_check_timeout",
+                &settings_path,
+            ),
+            permit_without_stream: self
+                .optional_bool_at(
+                    settings,
+                    "permit_without_stream",
+                    format!("{settings_path}.permit_without_stream"),
+                )
+                .unwrap_or_default(),
+            initial_windows_size: self.grpc_clamped_int32_at(
+                settings,
+                "initial_windows_size",
+                &settings_path,
+            ),
+        })
+    }
+
+    /// Reads the current `xhttpSettings` spelling or its legacy
+    /// `splithttpSettings` alias. When both exist Xray gives the former
+    /// unconditional priority (`StreamConfig.Build`), so only that block may
+    /// influence the normalized model.
+    fn parse_xhttp_settings(
+        &mut self,
+        stream: Option<&Value>,
+        index: usize,
+    ) -> Option<XhttpSettings> {
+        let Some(stream) = stream else {
+            return Some(XhttpSettings::default());
+        };
+
+        // Both fields are Go pointers. JSON null therefore means nil, not a
+        // present higher-priority block.
+        let current = stream
+            .get("xhttpSettings")
+            .filter(|settings| !settings.is_null());
+        let legacy = stream
+            .get("splithttpSettings")
+            .filter(|settings| !settings.is_null());
+        let (settings_key, settings) = match (current, legacy) {
+            (Some(settings), Some(legacy_settings)) => {
+                // encoding/json decodes both typed pointer targets before
+                // StreamConfig.Build applies alias priority. Validate that
+                // the ignored block could be decoded, without applying its
+                // mode/default/conflict semantics.
+                self.validate_xhttp_settings_shape(
+                    legacy_settings,
+                    &format!("$.outbounds[{index}].streamSettings.splithttpSettings"),
+                );
+                self.warning(
+                    format!("$.outbounds[{index}].streamSettings.splithttpSettings"),
+                    "`splithttpSettings` is ignored because `xhttpSettings` takes priority",
+                );
+                ("xhttpSettings", settings)
+            }
+            (Some(settings), None) => ("xhttpSettings", settings),
+            (None, Some(settings)) => ("splithttpSettings", settings),
+            (None, None) => return Some(XhttpSettings::default()),
+        };
+        let settings_path = format!("$.outbounds[{index}].streamSettings.{settings_key}");
+        if !settings.is_object() {
+            self.error(settings_path, format!("{settings_key} must be an object"));
+            return None;
+        }
+
+        self.reject_unknown_fields(settings, &settings_path, XHTTP_SETTINGS_FIELDS);
+
+        if settings
+            .get("downloadSettings")
+            .is_some_and(|download| !download.is_null())
+        {
+            self.error(
+                format!("{settings_path}.downloadSettings"),
+                "xhttp `downloadSettings` is not supported by the runtime yet",
+            );
+        }
+        // Even JSON null is significant for RawMessage: Xray replaces all
+        // outer fields other than host/path/mode with a zero-valued config.
+        // Accepting it and retaining the outer fields would be a silent and
+        // wire-visible reinterpretation.
+        if settings.get("extra").is_some() {
+            self.error(
+                format!("{settings_path}.extra"),
+                "xhttp `extra` is not supported by the runtime yet",
+            );
+        }
+
+        let mode = match self
+            .nullable_string_at(settings, "mode", format!("{settings_path}.mode"))
+            .unwrap_or_default()
+        {
+            "" | "auto" => XhttpMode::Auto,
+            "packet-up" => XhttpMode::PacketUp,
+            "stream-up" => XhttpMode::StreamUp,
+            "stream-one" => XhttpMode::StreamOne,
+            mode => {
+                self.error(
+                    format!("{settings_path}.mode"),
+                    format!("unsupported xhttp mode `{mode}`"),
+                );
+                return None;
+            }
+        };
+
+        let headers = self.parse_transport_headers(settings, &settings_path)?;
+        if headers
+            .iter()
+            .any(|(name, _)| name.eq_ignore_ascii_case("host"))
+        {
+            self.error(
+                format!("{settings_path}.headers"),
+                "`headers` can't contain `host`; use the independent `host` field",
+            );
+            return None;
+        }
+        // XHTTP, like websocket, feeds configured headers through
+        // `http.Header.Add`, which MIME-canonicalizes valid field names.
+        let headers = headers
+            .into_iter()
+            .map(|(name, value)| (canonical_header_name(&name), value))
+            .collect();
+
+        let x_padding_bytes = self.xhttp_range_at(settings, "xPaddingBytes", &settings_path)?;
+        if x_padding_bytes != XhttpRange::default()
+            && (x_padding_bytes.from <= 0 || x_padding_bytes.to <= 0)
+        {
+            self.error(
+                format!("{settings_path}.xPaddingBytes"),
+                "xPaddingBytes cannot be disabled or contain a non-positive bound",
+            );
+        }
+
+        let x_padding_placement = match self
+            .nullable_string_at(
+                settings,
+                "xPaddingPlacement",
+                format!("{settings_path}.xPaddingPlacement"),
+            )
+            .unwrap_or_default()
+        {
+            "" | "queryInHeader" => XhttpPaddingPlacement::QueryInHeader,
+            "cookie" => XhttpPaddingPlacement::Cookie,
+            "header" => XhttpPaddingPlacement::Header,
+            "query" => XhttpPaddingPlacement::Query,
+            placement => {
+                self.error(
+                    format!("{settings_path}.xPaddingPlacement"),
+                    format!("unsupported xhttp padding placement `{placement}`"),
+                );
+                return None;
+            }
+        };
+
+        let x_padding_method = match self
+            .nullable_string_at(
+                settings,
+                "xPaddingMethod",
+                format!("{settings_path}.xPaddingMethod"),
+            )
+            .unwrap_or_default()
+        {
+            "" | "repeat-x" => XhttpPaddingMethod::RepeatX,
+            "tokenish" => XhttpPaddingMethod::Tokenish,
+            method => {
+                self.error(
+                    format!("{settings_path}.xPaddingMethod"),
+                    format!("unsupported xhttp padding method `{method}`"),
+                );
+                return None;
+            }
+        };
+
+        let uplink_data_placement = match self
+            .nullable_string_at(
+                settings,
+                "uplinkDataPlacement",
+                format!("{settings_path}.uplinkDataPlacement"),
+            )
+            .unwrap_or_default()
+        {
+            "" | "auto" => XhttpUplinkDataPlacement::Auto,
+            "body" => XhttpUplinkDataPlacement::Body,
+            "cookie" if mode == XhttpMode::PacketUp => XhttpUplinkDataPlacement::Cookie,
+            "header" if mode == XhttpMode::PacketUp => XhttpUplinkDataPlacement::Header,
+            placement @ ("cookie" | "header") => {
+                self.error(
+                    format!("{settings_path}.uplinkDataPlacement"),
+                    format!(
+                        "uplinkDataPlacement `{placement}` is only supported in packet-up mode"
+                    ),
+                );
+                return None;
+            }
+            placement => {
+                self.error(
+                    format!("{settings_path}.uplinkDataPlacement"),
+                    format!("unsupported xhttp uplink data placement `{placement}`"),
+                );
+                return None;
+            }
+        };
+
+        let uplink_http_method = self
+            .nullable_string_at(
+                settings,
+                "uplinkHTTPMethod",
+                format!("{settings_path}.uplinkHTTPMethod"),
+            )
+            .filter(|method| !method.is_empty())
+            .unwrap_or("POST");
+        if !is_http_token(uplink_http_method) {
+            self.error(
+                format!("{settings_path}.uplinkHTTPMethod"),
+                "uplinkHTTPMethod must be a valid ASCII HTTP token",
+            );
+            return None;
+        }
+        let uplink_http_method = uplink_http_method.to_ascii_uppercase();
+        if uplink_http_method == "GET" && mode != XhttpMode::PacketUp {
+            self.error(
+                format!("{settings_path}.uplinkHTTPMethod"),
+                "uplinkHTTPMethod can be GET only in packet-up mode",
+            );
+        }
+
+        let session_placement =
+            self.xhttp_metadata_placement_at(settings, "sessionPlacement", &settings_path)?;
+        let seq_placement =
+            self.xhttp_metadata_placement_at(settings, "seqPlacement", &settings_path)?;
+
+        let session_key = self
+            .nullable_string_at(
+                settings,
+                "sessionKey",
+                format!("{settings_path}.sessionKey"),
+            )
+            .unwrap_or_default();
+        let session_key = if session_key.is_empty() {
+            match session_placement {
+                XhttpPlacement::Cookie | XhttpPlacement::Query => "x_session",
+                XhttpPlacement::Header => "X-Session",
+                XhttpPlacement::Path => "",
+            }
+        } else {
+            session_key
+        }
+        .to_owned();
+
+        let seq_key = self
+            .nullable_string_at(settings, "seqKey", format!("{settings_path}.seqKey"))
+            .unwrap_or_default();
+        let seq_key = if seq_key.is_empty() {
+            match seq_placement {
+                XhttpPlacement::Cookie | XhttpPlacement::Query => "x_seq",
+                XhttpPlacement::Header => "X-Seq",
+                XhttpPlacement::Path => "",
+            }
+        } else {
+            seq_key
+        }
+        .to_owned();
+
+        let uplink_data_key = self
+            .nullable_string_at(
+                settings,
+                "uplinkDataKey",
+                format!("{settings_path}.uplinkDataKey"),
+            )
+            .unwrap_or_default();
+        let uplink_data_key = if uplink_data_key.is_empty() {
+            match uplink_data_placement {
+                XhttpUplinkDataPlacement::Cookie => "x_data",
+                XhttpUplinkDataPlacement::Auto | XhttpUplinkDataPlacement::Header => "X-Data",
+                XhttpUplinkDataPlacement::Body => "",
+            }
+        } else {
+            uplink_data_key
+        }
+        .to_owned();
+
+        let server_max_header_bytes = self
+            .xhttp_nullable_i32_at(
+                settings,
+                "serverMaxHeaderBytes",
+                format!("{settings_path}.serverMaxHeaderBytes"),
+            )
+            .unwrap_or_default();
+        if server_max_header_bytes < 0 {
+            self.error(
+                format!("{settings_path}.serverMaxHeaderBytes"),
+                "serverMaxHeaderBytes cannot be negative",
+            );
+        }
+
+        Some(XhttpSettings {
+            host: self
+                .nullable_string_at(settings, "host", format!("{settings_path}.host"))
+                .filter(|host| !host.is_empty())
+                .map(ToOwned::to_owned),
+            path: self
+                .nullable_string_at(settings, "path", format!("{settings_path}.path"))
+                .unwrap_or_default()
+                .to_owned(),
+            mode,
+            headers,
+            x_padding_bytes,
+            x_padding_obfs_mode: self
+                .xhttp_nullable_bool_at(
+                    settings,
+                    "xPaddingObfsMode",
+                    format!("{settings_path}.xPaddingObfsMode"),
+                )
+                .unwrap_or_default(),
+            x_padding_key: non_empty_or(
+                self.nullable_string_at(
+                    settings,
+                    "xPaddingKey",
+                    format!("{settings_path}.xPaddingKey"),
+                ),
+                "x_padding",
+            ),
+            x_padding_header: non_empty_or(
+                self.nullable_string_at(
+                    settings,
+                    "xPaddingHeader",
+                    format!("{settings_path}.xPaddingHeader"),
+                ),
+                "X-Padding",
+            ),
+            x_padding_placement,
+            x_padding_method,
+            uplink_http_method,
+            session_placement,
+            session_key,
+            seq_placement,
+            seq_key,
+            uplink_data_placement,
+            uplink_data_key,
+            uplink_chunk_size: self.xhttp_range_at(settings, "uplinkChunkSize", &settings_path)?,
+            no_grpc_header: self
+                .xhttp_nullable_bool_at(
+                    settings,
+                    "noGRPCHeader",
+                    format!("{settings_path}.noGRPCHeader"),
+                )
+                .unwrap_or_default(),
+            no_sse_header: self
+                .xhttp_nullable_bool_at(
+                    settings,
+                    "noSSEHeader",
+                    format!("{settings_path}.noSSEHeader"),
+                )
+                .unwrap_or_default(),
+            sc_max_each_post_bytes: self.xhttp_range_at(
+                settings,
+                "scMaxEachPostBytes",
+                &settings_path,
+            )?,
+            sc_min_posts_interval_ms: self.xhttp_range_at(
+                settings,
+                "scMinPostsIntervalMs",
+                &settings_path,
+            )?,
+            sc_max_buffered_posts: self
+                .xhttp_nullable_i64_at(
+                    settings,
+                    "scMaxBufferedPosts",
+                    format!("{settings_path}.scMaxBufferedPosts"),
+                )
+                .unwrap_or_default(),
+            sc_stream_up_server_secs: self.xhttp_range_at(
+                settings,
+                "scStreamUpServerSecs",
+                &settings_path,
+            )?,
+            server_max_header_bytes,
+            xmux: self.parse_xhttp_xmux(settings, &settings_path)?,
+        })
+    }
+
+    /// Validates the JSON decoding surface of a lower-priority XHTTP alias.
+    /// This deliberately does not apply `SplitHTTPConfig.Build`: an invalid
+    /// mode or conflicting xmux values in the ignored block never reach that
+    /// method upstream, while a wrong JSON type fails before alias priority is
+    /// considered.
+    fn validate_xhttp_settings_shape(&mut self, settings: &Value, settings_path: &str) {
+        if !settings.is_object() {
+            self.error(settings_path, "splithttpSettings must be an object");
+            return;
+        }
+        self.reject_unknown_fields(settings, settings_path, XHTTP_SETTINGS_FIELDS);
+
+        for key in [
+            "host",
+            "path",
+            "mode",
+            "xPaddingKey",
+            "xPaddingHeader",
+            "xPaddingPlacement",
+            "xPaddingMethod",
+            "uplinkHTTPMethod",
+            "sessionPlacement",
+            "sessionKey",
+            "seqPlacement",
+            "seqKey",
+            "uplinkDataPlacement",
+            "uplinkDataKey",
+        ] {
+            let _ = self.nullable_string_at(settings, key, format!("{settings_path}.{key}"));
+        }
+        for key in ["xPaddingObfsMode", "noGRPCHeader", "noSSEHeader"] {
+            let _ = self.xhttp_nullable_bool_at(settings, key, format!("{settings_path}.{key}"));
+        }
+        for key in [
+            "xPaddingBytes",
+            "uplinkChunkSize",
+            "scMaxEachPostBytes",
+            "scMinPostsIntervalMs",
+            "scStreamUpServerSecs",
+        ] {
+            let _ = self.xhttp_range_at(settings, key, settings_path);
+        }
+        let _ = self.parse_transport_headers(settings, settings_path);
+        let _ = self.xhttp_nullable_i64_at(
+            settings,
+            "scMaxBufferedPosts",
+            format!("{settings_path}.scMaxBufferedPosts"),
+        );
+        let _ = self.xhttp_nullable_i32_at(
+            settings,
+            "serverMaxHeaderBytes",
+            format!("{settings_path}.serverMaxHeaderBytes"),
+        );
+        self.validate_xhttp_xmux_shape(settings, settings_path);
+
+        if settings
+            .get("downloadSettings")
+            .is_some_and(|download| !download.is_null() && !download.is_object())
+        {
+            self.error(
+                format!("{settings_path}.downloadSettings"),
+                "downloadSettings must be an object or null",
+            );
+        }
+        // `extra` is json.RawMessage, so every JSON value has a valid decode
+        // shape. Its runtime support is considered only for the winning block.
+    }
+
+    fn validate_xhttp_xmux_shape(&mut self, settings: &Value, settings_path: &str) {
+        let xmux = match settings.get("xmux") {
+            None | Some(Value::Null) => return,
+            Some(xmux) => xmux,
+        };
+        let xmux_path = format!("{settings_path}.xmux");
+        if !xmux.is_object() {
+            self.error(xmux_path, "xmux must be an object");
+            return;
+        }
+        self.reject_unknown_fields(xmux, &xmux_path, XHTTP_XMUX_FIELDS);
+        for key in [
+            "maxConcurrency",
+            "maxConnections",
+            "cMaxReuseTimes",
+            "hMaxRequestTimes",
+            "hMaxReusableSecs",
+        ] {
+            let _ = self.xhttp_range_at(xmux, key, &xmux_path);
+        }
+        let _ = self.xhttp_nullable_i64_at(
+            xmux,
+            "hKeepAlivePeriod",
+            format!("{xmux_path}.hKeepAlivePeriod"),
+        );
+    }
+
+    fn xhttp_metadata_placement_at(
+        &mut self,
+        settings: &Value,
+        key: &str,
+        settings_path: &str,
+    ) -> Option<XhttpPlacement> {
+        match self
+            .nullable_string_at(settings, key, format!("{settings_path}.{key}"))
+            .unwrap_or_default()
+        {
+            "" | "path" => Some(XhttpPlacement::Path),
+            "cookie" => Some(XhttpPlacement::Cookie),
+            "header" => Some(XhttpPlacement::Header),
+            "query" => Some(XhttpPlacement::Query),
+            placement => {
+                self.error(
+                    format!("{settings_path}.{key}"),
+                    format!("unsupported xhttp {key} `{placement}`"),
+                );
+                None
+            }
+        }
+    }
+
+    fn xhttp_range_at(
+        &mut self,
+        settings: &Value,
+        key: &str,
+        settings_path: &str,
+    ) -> Option<XhttpRange> {
+        let raw = match settings.get(key) {
+            None | Some(Value::Null) => return Some(XhttpRange::default()),
+            Some(raw) => raw,
+        };
+        let range = if let Some(value) = raw.as_i64() {
+            i32::try_from(value).ok().map(|value| (value, value))
+        } else if let Some(value) = raw.as_str() {
+            parse_xhttp_range_string(value)
+        } else {
+            None
+        };
+        let Some((left, right)) = range else {
+            self.error(
+                format!("{settings_path}.{key}"),
+                format!(
+                    "field `{key}` must be an i32, an i32 range string such as `100-1000`, or null"
+                ),
+            );
+            return None;
+        };
+        Some(XhttpRange {
+            from: left.min(right),
+            to: left.max(right),
+        })
+    }
+
+    fn parse_xhttp_xmux(
+        &mut self,
+        settings: &Value,
+        settings_path: &str,
+    ) -> Option<XhttpXmuxSettings> {
+        let xmux = match settings.get("xmux") {
+            None | Some(Value::Null) => return Some(XhttpXmuxSettings::default()),
+            Some(xmux) => xmux,
+        };
+        let xmux_path = format!("{settings_path}.xmux");
+        if !xmux.is_object() {
+            self.error(xmux_path, "xmux must be an object");
+            return None;
+        }
+        self.reject_unknown_fields(xmux, &xmux_path, XHTTP_XMUX_FIELDS);
+
+        let parsed = XhttpXmuxSettings {
+            max_concurrency: self.xhttp_range_at(xmux, "maxConcurrency", &xmux_path)?,
+            max_connections: self.xhttp_range_at(xmux, "maxConnections", &xmux_path)?,
+            c_max_reuse_times: self.xhttp_range_at(xmux, "cMaxReuseTimes", &xmux_path)?,
+            h_max_request_times: self.xhttp_range_at(xmux, "hMaxRequestTimes", &xmux_path)?,
+            h_max_reusable_secs: self.xhttp_range_at(xmux, "hMaxReusableSecs", &xmux_path)?,
+            h_keep_alive_period_secs: self
+                .xhttp_nullable_i64_at(
+                    xmux,
+                    "hKeepAlivePeriod",
+                    format!("{xmux_path}.hKeepAlivePeriod"),
+                )
+                .unwrap_or_default(),
+        };
+
+        if parsed.max_connections.to > 0 && parsed.max_concurrency.to > 0 {
+            self.error(
+                xmux_path,
+                "maxConnections cannot be specified together with maxConcurrency",
+            );
+        }
+
+        let zero = XhttpXmuxSettings {
+            max_concurrency: XhttpRange::default(),
+            max_connections: XhttpRange::default(),
+            c_max_reuse_times: XhttpRange::default(),
+            h_max_request_times: XhttpRange::default(),
+            h_max_reusable_secs: XhttpRange::default(),
+            h_keep_alive_period_secs: 0,
+        };
+        Some(if parsed == zero {
+            XhttpXmuxSettings::default()
+        } else {
+            parsed
+        })
+    }
+
+    /// Xray's `SplitHTTPConfig` fields are non-pointer Go scalars. The Go JSON
+    /// decoder treats `null` as a no-op for those fields, leaving their zero
+    /// value behind, so XHTTP must distinguish that case from a wrong type.
+    fn xhttp_nullable_bool_at(&mut self, value: &Value, key: &str, path: String) -> Option<bool> {
+        match value.get(key) {
+            None | Some(Value::Null) => Some(false),
+            Some(Value::Bool(value)) => Some(*value),
+            Some(_) => {
+                self.error(path, format!("field `{key}` must be a boolean or null"));
+                None
+            }
+        }
+    }
+
+    fn xhttp_nullable_i32_at(&mut self, value: &Value, key: &str, path: String) -> Option<i32> {
+        match value.get(key) {
+            None | Some(Value::Null) => Some(0),
+            Some(raw) => match raw.as_i64().and_then(|value| i32::try_from(value).ok()) {
+                Some(value) => Some(value),
+                None => {
+                    self.error(path, format!("field `{key}` must fit in i32 or be null"));
+                    None
+                }
+            },
+        }
+    }
+
+    fn xhttp_nullable_i64_at(&mut self, value: &Value, key: &str, path: String) -> Option<i64> {
+        match value.get(key) {
+            None | Some(Value::Null) => Some(0),
+            Some(raw) => match raw.as_i64() {
+                Some(value) => Some(value),
+                None => {
+                    self.error(path, format!("field `{key}` must fit in i64 or be null"));
+                    None
+                }
+            },
+        }
+    }
+
+    /// One of `grpcSettings`' three `int32` numbers, clamped the way
+    /// `GRPCConfig.Build` clamps it.
+    ///
+    /// All three are negative-to-zero there (`Xray-core/infra/conf/
+    /// grpc.go:20-29`), so nothing negative survives into `grpc.Config` and an
+    /// unsigned field loses no reachable value. Reading through `i32` rather
+    /// than `u32` is what keeps that true in both directions: it accepts the
+    /// negatives Xray accepts, and it still refuses anything past `i32::MAX`,
+    /// which Go's decoder refuses too ("cannot unmarshal number 2147483648
+    /// into Go struct field GRPCConfig.idle_timeout of type int32").
+    fn grpc_clamped_int32_at(&mut self, settings: &Value, key: &str, settings_path: &str) -> u32 {
+        self.optional_i32_at(settings, key, format!("{settings_path}.{key}"))
+            .unwrap_or_default()
+            .max(0) as u32
+    }
+
+    /// Reads a transport `headers` object. Xray types it as
+    /// `map[string]string`: object/map null becomes an empty map, and a null
+    /// map value becomes Go's zero string. Every other non-string value fails.
+    fn parse_transport_headers(
+        &mut self,
+        settings: &Value,
+        settings_path: &str,
+    ) -> Option<Vec<(String, String)>> {
+        let headers = match settings.get("headers") {
+            None | Some(Value::Null) => return Some(Vec::new()),
+            Some(headers) => headers,
+        };
+        let headers_path = format!("{settings_path}.headers");
+        let Some(headers) = headers.as_object() else {
+            self.error(headers_path, "headers must be an object");
+            return None;
+        };
+
+        let mut parsed = Vec::with_capacity(headers.len());
+        let mut rejected = false;
+        for (name, value) in headers {
+            match value {
+                Value::String(value) => parsed.push((name.clone(), value.to_owned())),
+                Value::Null => parsed.push((name.clone(), String::new())),
+                _ => {
+                    self.error(
+                        format!("{headers_path}.{name}"),
+                        "header value must be a string or null",
+                    );
+                    rejected = true;
+                }
+            }
+        }
+
+        if rejected {
+            return None;
+        }
+        Some(parsed)
+    }
+
+    /// Parses Xray v26.5.9's stream-wide `finalmask.quicParams` block.
+    ///
+    /// `quicParams` is a Go pointer, so `None` deliberately distinguishes an
+    /// absent/null pointer from an explicitly present, default-valued object.
+    /// TCP/UDP masks require runtime plugins we do not implement and therefore
+    /// fail closed instead of being silently discarded.
+    fn parse_quic_params(
+        &mut self,
+        stream: Option<&Value>,
+        index: usize,
+    ) -> Option<QuicParamsSettings> {
+        let finalmask = stream?.get("finalmask")?;
+        if finalmask.is_null() {
+            return None;
+        }
+
+        let finalmask_path = format!("$.outbounds[{index}].streamSettings.finalmask");
+        if !finalmask.is_object() {
+            self.error(finalmask_path, "finalmask must be an object or null");
+            return None;
+        }
+        self.reject_unknown_fields(finalmask, &finalmask_path, &["tcp", "udp", "quicParams"]);
+        self.reject_finalmask_masks(finalmask, "tcp", &finalmask_path);
+        self.reject_finalmask_masks(finalmask, "udp", &finalmask_path);
+
+        let quic = finalmask.get("quicParams")?;
+        if quic.is_null() {
+            return None;
+        }
+        let quic_path = format!("{finalmask_path}.quicParams");
+        if !quic.is_object() {
+            self.error(quic_path, "quicParams must be an object or null");
+            return None;
+        }
+        self.reject_unknown_fields(quic, &quic_path, QUIC_PARAMS_FIELDS);
+
+        // Go's encoding/json treats null for scalar struct fields as their
+        // existing zero value. The nullable helpers below preserve that rule.
+        let congestion = match self
+            .nullable_string_at(quic, "congestion", format!("{quic_path}.congestion"))?
+            .to_lowercase()
+            .as_str()
+        {
+            "" => QuicCongestion::Default,
+            "brutal" => QuicCongestion::Brutal,
+            "reno" => QuicCongestion::Reno,
+            "bbr" => QuicCongestion::Bbr,
+            "force-brutal" => QuicCongestion::ForceBrutal,
+            unsupported => {
+                self.error(
+                    format!("{quic_path}.congestion"),
+                    format!("unsupported QUIC congestion control `{unsupported}`"),
+                );
+                return None;
+            }
+        };
+        let bbr_profile = match self
+            .nullable_string_at(quic, "bbrProfile", format!("{quic_path}.bbrProfile"))?
+            .to_lowercase()
+            .as_str()
+        {
+            "" | "standard" => QuicBbrProfile::Standard,
+            "conservative" => QuicBbrProfile::Conservative,
+            "aggressive" => QuicBbrProfile::Aggressive,
+            unsupported => {
+                self.error(
+                    format!("{quic_path}.bbrProfile"),
+                    format!("unsupported QUIC BBR profile `{unsupported}`"),
+                );
+                return None;
+            }
+        };
+
+        let brutal_up_bytes_per_sec = self.quic_bandwidth_at(quic, "brutalUp", &quic_path)?;
+        let brutal_down_bytes_per_sec = self.quic_bandwidth_at(quic, "brutalDown", &quic_path)?;
+        if brutal_up_bytes_per_sec > 0 && brutal_up_bytes_per_sec < 65_536 {
+            self.error(
+                format!("{quic_path}.brutalUp"),
+                "brutalUp must be at least 65536 bytes per second",
+            );
+        }
+        if brutal_down_bytes_per_sec > 0 && brutal_down_bytes_per_sec < 65_536 {
+            self.error(
+                format!("{quic_path}.brutalDown"),
+                "brutalDown must be at least 65536 bytes per second",
+            );
+        }
+        if congestion == QuicCongestion::ForceBrutal && brutal_up_bytes_per_sec == 0 {
+            self.error(
+                format!("{quic_path}.congestion"),
+                "force-brutal requires nonzero brutalUp",
+            );
+        }
+
+        let udp_hop = self.parse_quic_udp_hop(quic, &quic_path)?;
+        let init_stream_receive_window =
+            self.quic_u64_at(quic, "initStreamReceiveWindow", &quic_path)?;
+        let max_stream_receive_window =
+            self.quic_u64_at(quic, "maxStreamReceiveWindow", &quic_path)?;
+        let init_connection_receive_window =
+            self.quic_u64_at(quic, "initConnectionReceiveWindow", &quic_path)?;
+        let max_connection_receive_window =
+            self.quic_u64_at(quic, "maxConnectionReceiveWindow", &quic_path)?;
+        for (key, value) in [
+            ("initStreamReceiveWindow", init_stream_receive_window),
+            ("maxStreamReceiveWindow", max_stream_receive_window),
+            (
+                "initConnectionReceiveWindow",
+                init_connection_receive_window,
+            ),
+            ("maxConnectionReceiveWindow", max_connection_receive_window),
+        ] {
+            if value > 0 && value < 16_384 {
+                self.error(
+                    format!("{quic_path}.{key}"),
+                    format!("{key} must be at least 16384"),
+                );
+            }
+        }
+
+        let max_idle_timeout_secs = self.quic_i64_at(quic, "maxIdleTimeout", &quic_path)?;
+        if max_idle_timeout_secs != 0 && !(4..=120).contains(&max_idle_timeout_secs) {
+            self.error(
+                format!("{quic_path}.maxIdleTimeout"),
+                "maxIdleTimeout must be zero or between 4 and 120 seconds",
+            );
+        }
+        let keep_alive_period_secs = self.quic_i64_at(quic, "keepAlivePeriod", &quic_path)?;
+        if keep_alive_period_secs != 0 && !(2..=60).contains(&keep_alive_period_secs) {
+            self.error(
+                format!("{quic_path}.keepAlivePeriod"),
+                "keepAlivePeriod must be zero or between 2 and 60 seconds",
+            );
+        }
+        let max_incoming_streams = self.quic_i64_at(quic, "maxIncomingStreams", &quic_path)?;
+        if max_incoming_streams != 0 && max_incoming_streams < 8 {
+            self.error(
+                format!("{quic_path}.maxIncomingStreams"),
+                "maxIncomingStreams must be zero or at least 8",
+            );
+        }
+
+        Some(QuicParamsSettings {
+            congestion,
+            bbr_profile,
+            brutal_up_bytes_per_sec,
+            brutal_down_bytes_per_sec,
+            udp_hop,
+            init_stream_receive_window,
+            max_stream_receive_window,
+            init_connection_receive_window,
+            max_connection_receive_window,
+            max_idle_timeout_secs,
+            keep_alive_period_secs,
+            disable_path_mtu_discovery: self.quic_bool_at(
+                quic,
+                "disablePathMTUDiscovery",
+                &quic_path,
+            )?,
+            max_incoming_streams,
+            debug: self.quic_bool_at(quic, "debug", &quic_path)?,
+        })
+    }
+
+    fn reject_finalmask_masks(&mut self, finalmask: &Value, key: &str, finalmask_path: &str) {
+        match finalmask.get(key) {
+            None | Some(Value::Null) => {}
+            Some(Value::Array(masks)) if masks.is_empty() => {}
+            Some(Value::Array(_)) => self.error(
+                format!("{finalmask_path}.{key}"),
+                format!("nonempty finalmask.{key} masks are unsupported"),
+            ),
+            Some(_) => self.error(
+                format!("{finalmask_path}.{key}"),
+                format!("finalmask.{key} must be an array or null"),
+            ),
+        }
+    }
+
+    fn quic_bandwidth_at(&mut self, quic: &Value, key: &str, quic_path: &str) -> Option<u64> {
+        let Some(raw) = quic.get(key) else {
+            return Some(0);
+        };
+        let value = match raw {
+            Value::Null => return Some(0),
+            Value::String(value) => value,
+            _ => {
+                self.error(
+                    format!("{quic_path}.{key}"),
+                    format!("field `{key}` must be a bandwidth string or null"),
+                );
+                return None;
+            }
+        };
+        match parse_quic_bandwidth(value) {
+            Ok(bytes_per_sec) => Some(bytes_per_sec),
+            Err(message) => {
+                self.error(format!("{quic_path}.{key}"), message);
+                None
+            }
+        }
+    }
+
+    fn parse_quic_udp_hop(&mut self, quic: &Value, quic_path: &str) -> Option<QuicUdpHopSettings> {
+        let Some(udp_hop) = quic.get("udpHop") else {
+            return Some(QuicUdpHopSettings::default());
+        };
+        if udp_hop.is_null() {
+            return Some(QuicUdpHopSettings::default());
+        }
+        let udp_hop_path = format!("{quic_path}.udpHop");
+        if !udp_hop.is_object() {
+            self.error(udp_hop_path, "udpHop must be an object or null");
+            return None;
+        }
+        self.reject_unknown_fields(udp_hop, &udp_hop_path, &["ports", "interval"]);
+
+        let ports = match udp_hop.get("ports") {
+            None | Some(Value::Null) => Vec::new(),
+            Some(Value::Number(number)) => match number.as_u64() {
+                Some(0) => Vec::new(),
+                Some(port) if port <= u16::MAX as u64 => vec![port as u16],
+                _ => {
+                    self.error(
+                        format!("{udp_hop_path}.ports"),
+                        "udpHop ports must be 0 or a port in 1..=65535",
+                    );
+                    return None;
+                }
+            },
+            Some(Value::String(ports)) => match parse_quic_udp_hop_ports(ports) {
+                Ok(ports) => ports,
+                Err(message) => {
+                    self.error(format!("{udp_hop_path}.ports"), message);
+                    return None;
+                }
+            },
+            Some(_) => {
+                self.error(
+                    format!("{udp_hop_path}.ports"),
+                    "udpHop ports must be an integer, comma-separated string, or null",
+                );
+                return None;
+            }
+        };
+
+        let interval = match udp_hop.get("interval") {
+            None | Some(Value::Null) => QuicIntervalRange::default(),
+            Some(raw) => {
+                let range = if let Some(value) = raw.as_i64() {
+                    i32::try_from(value).ok().map(|value| (value, value))
+                } else if let Some(value) = raw.as_str() {
+                    parse_xhttp_range_string(value)
+                } else {
+                    None
+                };
+                let Some((left, right)) = range else {
+                    self.error(
+                        format!("{udp_hop_path}.interval"),
+                        "udpHop interval must be an i32, i32 range string, or null",
+                    );
+                    return None;
+                };
+                QuicIntervalRange {
+                    from: left.min(right),
+                    to: left.max(right),
+                }
+            }
+        };
+        if (interval.from != 0 && interval.from < 5) || (interval.to != 0 && interval.to < 5) {
+            self.error(
+                format!("{udp_hop_path}.interval"),
+                "udpHop interval bounds must be zero or at least 5 seconds",
+            );
+        }
+
+        Some(QuicUdpHopSettings { ports, interval })
+    }
+
+    fn quic_u64_at(&mut self, quic: &Value, key: &str, quic_path: &str) -> Option<u64> {
+        match quic.get(key) {
+            None | Some(Value::Null) => Some(0),
+            Some(raw) => match raw.as_u64() {
+                Some(value) => Some(value),
+                None => {
+                    self.error(
+                        format!("{quic_path}.{key}"),
+                        format!("field `{key}` must fit in u64"),
+                    );
+                    None
+                }
+            },
+        }
+    }
+
+    fn quic_i64_at(&mut self, quic: &Value, key: &str, quic_path: &str) -> Option<i64> {
+        match quic.get(key) {
+            None | Some(Value::Null) => Some(0),
+            Some(raw) => match raw.as_i64() {
+                Some(value) => Some(value),
+                None => {
+                    self.error(
+                        format!("{quic_path}.{key}"),
+                        format!("field `{key}` must fit in i64"),
+                    );
+                    None
+                }
+            },
+        }
+    }
+
+    fn quic_bool_at(&mut self, quic: &Value, key: &str, quic_path: &str) -> Option<bool> {
+        match quic.get(key) {
+            None | Some(Value::Null) => Some(false),
+            Some(Value::Bool(value)) => Some(*value),
+            Some(_) => {
+                self.error(
+                    format!("{quic_path}.{key}"),
+                    format!("field `{key}` must be a boolean or null"),
+                );
+                None
+            }
+        }
     }
 
     fn parse_socket_options(
@@ -2639,14 +4057,51 @@ impl Parser<'_> {
         })
     }
 
-    fn parse_network(&mut self, stream: Option<&Value>, index: usize) -> Option<Network> {
+    fn parse_network(&mut self, stream: Option<&Value>, index: usize) -> Option<StreamNetwork> {
         let network_path = format!("$.outbounds[{index}].streamSettings.network");
-        match stream
-            .and_then(|stream| stream.get("network"))
-            .and_then(Value::as_str)
-            .unwrap_or("tcp")
-        {
-            "tcp" => Some(Network::Tcp),
+        // Only an absent `network` falls back to `tcp`, the way Xray's nil
+        // `*TransportProtocol` does. A present one has to be a string, or
+        // `"network": 5` quietly dials plain TCP instead of the transport the
+        // rest of `streamSettings` was written for.
+        let Some(stream_settings) = stream.filter(|stream| stream.get("network").is_some()) else {
+            return Some(StreamNetwork::Raw);
+        };
+        // `TransportProtocol.Build` lowercases before matching, so `WS` and
+        // `RAW` are as valid as `ws` and `raw`.
+        let network = self
+            .optional_string_at(stream_settings, "network", network_path.clone())?
+            .to_ascii_lowercase();
+
+        match network.as_str() {
+            // Xray renamed the `tcp` transport to `raw`; both names stay valid.
+            "tcp" | "raw" => Some(StreamNetwork::Raw),
+            "ws" | "websocket" => Some(StreamNetwork::WebSocket),
+            "httpupgrade" => Some(StreamNetwork::HttpUpgrade),
+            // No `gun` alias: v26.5.9's `TransportProtocol.Build` has only the
+            // `grpc` arm, and `gun` falls through to "unknown transport
+            // protocol" there.
+            "grpc" => Some(StreamNetwork::Grpc),
+            // Xray still accepts the original protocol spelling, but both
+            // names select the same SplitHTTP/XHTTP transport.
+            "xhttp" | "splithttp" => Some(StreamNetwork::Xhttp),
+            // Xray deleted these outright, so `unsupported` would send someone
+            // hunting for a flag to turn them on.
+            network @ ("h2" | "h3" | "http" | "quic") => {
+                self.error(
+                    network_path,
+                    format!(
+                        "stream network `{network}` was removed from Xray; use `xhttp` instead"
+                    ),
+                );
+                None
+            }
+            network @ ("kcp" | "mkcp" | "hysteria") => {
+                self.error(
+                    network_path,
+                    format!("stream network `{network}` is not supported by xray-rust"),
+                );
+                None
+            }
             network => {
                 self.error(
                     network_path,
@@ -2659,12 +4114,22 @@ impl Parser<'_> {
 
     fn parse_security(&mut self, stream: Option<&Value>, index: usize) -> Option<StreamSecurity> {
         let security_path = format!("$.outbounds[{index}].streamSettings.security");
-        match stream
-            .and_then(|stream| stream.get("security"))
-            .and_then(Value::as_str)
-            .unwrap_or("none")
-        {
-            "none" => Some(StreamSecurity::None),
+        // As with `network`, only an absent key defaults. A silent fallback
+        // here is worse than a wrong transport: `"security": 5` would strip a
+        // REALITY or TLS outbound down to plaintext.
+        let Some(stream_settings) = stream.filter(|stream| stream.get("security").is_some()) else {
+            return Some(StreamSecurity::None);
+        };
+        // Xray switches on `strings.ToLower(c.Security)`, so `TLS` and
+        // `REALITY` are as valid as their lowercase spellings.
+        let security = self
+            .optional_string_at(stream_settings, "security", security_path.clone())?
+            .to_ascii_lowercase();
+
+        match security.as_str() {
+            // Xray's arm is `case "", "none":` — an explicitly empty security
+            // is how a lot of generated configs spell "no TLS".
+            "" | "none" => Some(StreamSecurity::None),
             "tls" => {
                 let tls_settings = stream.and_then(|stream| stream.get("tlsSettings"));
                 self.validate_tls_settings(tls_settings, index);
@@ -2685,19 +4150,54 @@ impl Parser<'_> {
                         "allowInsecure=true disables TLS certificate verification; the proxy connection can be intercepted",
                     );
                 }
+                // An absent fingerprint normalizes to chrome, matching Xray's
+                // GetFingerprint(""): shaping is the default, not an opt-in.
+                let raw_fingerprint = tls_settings
+                    .and_then(|settings| self.string_at(settings, "fingerprint"))
+                    .unwrap_or_default();
+                let fingerprint = match xray_utls::normalize_tls_fingerprint(raw_fingerprint) {
+                    Some(fingerprint) => Some(fingerprint.to_owned()),
+                    None => {
+                        self.error(
+                            format!("$.outbounds[{index}].streamSettings.tlsSettings.fingerprint"),
+                            format!("unsupported tls fingerprint `{raw_fingerprint}`"),
+                        );
+                        None
+                    }
+                };
+                let alpn = tls_settings
+                    .and_then(|settings| settings.get("alpn"))
+                    .and_then(Value::as_array)
+                    .map(|values| {
+                        values
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .map(ToOwned::to_owned)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
                 Some(StreamSecurity::Tls(TlsSettings {
                     server_name: tls_settings
                         .and_then(|settings| self.string_at(settings, "serverName"))
                         .map(ToOwned::to_owned),
-                    fingerprint: tls_settings
-                        .and_then(|settings| self.string_at(settings, "fingerprint"))
-                        .map(ToOwned::to_owned),
+                    fingerprint,
                     allow_insecure,
+                    alpn,
                 }))
             }
             "reality" => self
                 .parse_reality_settings(stream, index)
                 .map(StreamSecurity::Reality),
+            // Xray deleted legacy XTLS outright, so `unsupported` would send
+            // someone hunting for a flag to turn it back on.
+            "xtls" => {
+                self.error(
+                    security_path,
+                    "stream security `xtls` was removed from Xray; use `tls` or `reality` with the `xtls-rprx-vision` flow",
+                );
+                None
+            }
             security => {
                 self.error(
                     security_path,
@@ -2724,10 +4224,18 @@ impl Parser<'_> {
                 "tlsSettings",
                 "realitySettings",
                 "tcpSettings",
+                "rawSettings",
+                "wsSettings",
+                "httpupgradeSettings",
+                "grpcSettings",
+                "xhttpSettings",
+                "splithttpSettings",
+                "finalmask",
                 "sockopt",
             ],
         );
-        self.validate_tcp_settings(stream, index);
+        self.validate_tcp_settings(stream, "tcpSettings", index);
+        self.validate_tcp_settings(stream, "rawSettings", index);
     }
 
     fn validate_tls_settings(&mut self, settings: Option<&Value>, index: usize) {
@@ -2746,29 +4254,47 @@ impl Parser<'_> {
             &["serverName", "allowInsecure", "fingerprint", "alpn"],
         );
 
-        if settings.get("fingerprint").is_some() {
+        // Go unmarshals this field into a string and rejects every other JSON
+        // type. `string_at` intentionally has no diagnostics, so without an
+        // explicit check a typo such as `"fingerprint": 42` falls through to
+        // the empty-string default and silently enables the Chrome profile.
+        if settings
+            .get("fingerprint")
+            .is_some_and(|fingerprint| !fingerprint.is_string())
+        {
             self.error(
                 format!("{settings_path}.fingerprint"),
-                "tls fingerprint is unsupported",
+                "tls fingerprint must be a string",
             );
         }
 
         if let Some(alpn) = settings.get("alpn") {
             match alpn.as_array() {
-                Some(values) if values.is_empty() => {}
-                Some(_) => self.error(format!("{settings_path}.alpn"), "tls alpn is unsupported"),
                 None => self.error(format!("{settings_path}.alpn"), "tls alpn must be an array"),
+                // Xray unmarshals `alpn` into a `[]string` and fails outright on
+                // an entry that is not one; dropping it silently would put a
+                // list on the wire that the config never asked for.
+                Some(values) => {
+                    for (index, value) in values.iter().enumerate() {
+                        if !value.is_string() {
+                            self.error(
+                                format!("{settings_path}.alpn[{index}]"),
+                                "tls alpn entry must be a string",
+                            );
+                        }
+                    }
+                }
             }
         }
     }
 
-    fn validate_tcp_settings(&mut self, stream: &Value, index: usize) {
-        let Some(settings) = stream.get("tcpSettings") else {
+    fn validate_tcp_settings(&mut self, stream: &Value, key: &str, index: usize) {
+        let Some(settings) = stream.get(key) else {
             return;
         };
-        let settings_path = format!("$.outbounds[{index}].streamSettings.tcpSettings");
+        let settings_path = format!("$.outbounds[{index}].streamSettings.{key}");
         if !settings.is_object() {
-            self.error(settings_path, "tcpSettings must be an object");
+            self.error(settings_path, format!("{key} must be an object"));
             return;
         }
 
@@ -2779,7 +4305,7 @@ impl Parser<'_> {
         };
         let header_path = format!("{settings_path}.header");
         if !header.is_object() {
-            self.error(header_path, "tcpSettings header must be an object");
+            self.error(header_path, format!("{key} header must be an object"));
             return;
         }
         self.reject_unknown_fields(header, &header_path, &["type", "request", "response"]);
@@ -2822,7 +4348,7 @@ impl Parser<'_> {
         let raw_fingerprint = settings
             .and_then(|settings| self.string_at(settings, "fingerprint"))
             .unwrap_or_default();
-        let Some(fingerprint) = xray_utls::normalize_reality_fingerprint(raw_fingerprint) else {
+        let Some(fingerprint) = xray_utls::normalize_utls_fingerprint(raw_fingerprint) else {
             self.error(
                 fingerprint_path,
                 format!("unsupported reality fingerprint `{raw_fingerprint}`"),
@@ -3718,6 +5244,371 @@ fn normalize_u16_ranges(mut ranges: Vec<(u16, u16)>) -> Vec<(u16, u16)> {
     normalized
 }
 
+fn non_empty_or(value: Option<&str>, default: &str) -> String {
+    value
+        .filter(|value| !value.is_empty())
+        .unwrap_or(default)
+        .to_owned()
+}
+
+/// Parses Xray's `Bandwidth` spelling. JSON values are bits per second with
+/// binary unit multipliers; the normalized runtime value is bytes per second.
+fn parse_quic_bandwidth(value: &str) -> Result<u64, String> {
+    let normalized = value.trim().to_lowercase();
+    if normalized.is_empty() {
+        return Ok(0);
+    }
+
+    let unit_start = normalized
+        .char_indices()
+        .find(|(_, character)| !character.is_ascii_digit() && *character != '.')
+        .map_or(normalized.len(), |(index, _)| index);
+    let (number, unit) = normalized.split_at(unit_start);
+    let bits = number
+        .parse::<f64>()
+        .map_err(|_| "bandwidth must start with a decimal number".to_owned())?;
+    let multiplier = match unit.trim() {
+        "" | "b" | "bps" => 1_u64,
+        "k" | "kb" | "kbps" => 1_024,
+        "m" | "mb" | "mbps" => 1_024_u64.pow(2),
+        "g" | "gb" | "gbps" => 1_024_u64.pow(3),
+        "t" | "tb" | "tbps" => 1_024_u64.pow(4),
+        unit => return Err(format!("unsupported bandwidth unit `{unit}`")),
+    };
+    let scaled_bits = bits * multiplier as f64;
+    // The grammar cannot express a sign or exponent, but a very long decimal
+    // can still overflow f64/u64. Reject it rather than relying on a target-
+    // dependent float-to-integer conversion.
+    if !scaled_bits.is_finite() || scaled_bits < 0.0 || scaled_bits >= u64::MAX as f64 {
+        return Err("bandwidth is outside the supported u64 range".to_owned());
+    }
+    Ok((scaled_bits.trunc() as u64) / 8)
+}
+
+/// Dedicated `PortList` parser for UDP hopping. Unlike routing selectors,
+/// order and duplicates are wire/runtime significant and must be preserved.
+fn parse_quic_udp_hop_ports(value: &str) -> Result<Vec<u16>, String> {
+    let mut ports = Vec::new();
+    for token in value
+        .split(',')
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
+    {
+        if token.contains("env:") {
+            return Err("environment-backed udpHop ports are unsupported".to_owned());
+        }
+
+        let (from, to) = match token.split_once('-') {
+            Some((from, to)) => (parse_quic_udp_hop_port(from)?, parse_quic_udp_hop_port(to)?),
+            None => {
+                let port = parse_quic_udp_hop_port(token)?;
+                (port, port)
+            }
+        };
+        if from > to {
+            return Err(format!("udpHop port range is reversed: {from}-{to}"));
+        }
+        ports.extend(from..=to);
+    }
+    Ok(ports)
+}
+
+fn parse_quic_udp_hop_port(value: &str) -> Result<u16, String> {
+    let port = value
+        .parse::<u32>()
+        .map_err(|_| format!("invalid udpHop port `{value}`"))?;
+    if !(1..=u16::MAX as u32).contains(&port) {
+        return Err(format!("udpHop port `{value}` must be in 1..=65535"));
+    }
+    Ok(port as u16)
+}
+
+/// Xray's `Int32Range` syntax accepts a single signed number, an ordered or
+/// reversed pair, and the empty string as its zero value. Parsing directly to
+/// i32 also prevents the reference implementation's lossy `int`-to-`int32`
+/// cast for an oversized string from turning into a surprising wire setting.
+fn parse_xhttp_range_string(value: &str) -> Option<(i32, i32)> {
+    if value.is_empty() {
+        return Some((0, 0));
+    }
+    if let Ok(single) = value.parse::<i32>() {
+        return Some((single, single));
+    }
+
+    let separator = value
+        .char_indices()
+        .find(|(index, character)| *character == '-' && *index != 0)?
+        .0;
+    let (left, right_with_separator) = value.split_at(separator);
+    let right = right_with_separator.strip_prefix('-')?;
+    Some((left.parse::<i32>().ok()?, right.parse::<i32>().ok()?))
+}
+
+/// Splits `?ed=N` out of a configured path, returning the normalized path and
+/// the early-data budget.
+///
+/// Xray strips `ed` at config-build time, so it never reaches the wire, and
+/// re-encodes whatever query remains through Go's `url.Values.Encode()` —
+/// which sorts parameters alphabetically. The server compares the whole path,
+/// so both halves of that are load-bearing.
+///
+/// The rewrite is gated on `q.Get("ed") != ""`, which is narrower than it
+/// looks: a path with no `ed`, or with an empty `ed=`, is passed through
+/// byte-for-byte with its original parameter order. Sorting those too would
+/// itself be a path mismatch.
+///
+/// Everything that makes Xray *skip* the rewrite is reproduced, because those
+/// are the cases where rewriting anyway silently changes the path: a query
+/// with no usable `ed`, a `url.Parse` failure (a control byte or a truncated
+/// `%` escape), and a `?` that is really inside a `#` fragment.
+///
+/// When the rewrite fires, Xray stores `u.String()` rather than the decoded
+/// path. That percent-escapes the path (and fragment) once at config-build
+/// time while preserving an already-valid escape. HTTPUpgrade later assigns
+/// that stored string to a fresh `URL.Path`, deliberately producing a second
+/// escape; WebSocket reparses it as a URI and therefore keeps only one.
+fn split_early_data_from_path(raw: &str) -> (String, u32) {
+    let normalized_path = |path: &str| {
+        if path.is_empty() {
+            "/".to_owned()
+        } else if path.starts_with('/') {
+            path.to_owned()
+        } else {
+            format!("/{path}")
+        }
+    };
+
+    // Go runs the value through `url.Parse` first and leaves the path
+    // untouched when that fails, which a control byte does.
+    if raw.bytes().any(|byte| byte < 0x20 || byte == 0x7F) {
+        return (normalized_path(raw), 0);
+    }
+
+    // `url.Parse` splits the fragment off before the query, so a `?` that
+    // follows a `#` is part of the fragment and never carries an `ed`.
+    let (before_fragment, fragment) = match raw.split_once('#') {
+        Some((before_fragment, fragment)) => (before_fragment, Some(fragment)),
+        None => (raw, None),
+    };
+
+    let Some((path, query)) = before_fragment.split_once('?') else {
+        return (normalized_path(raw), 0);
+    };
+    // The other way `url.Parse` fails: a `%` in the path that is not a
+    // complete hex escape.
+    if !has_valid_percent_escapes(path)
+        || fragment.is_some_and(|fragment| !has_valid_percent_escapes(fragment))
+    {
+        return (normalized_path(raw), 0);
+    }
+
+    let parsed = parse_go_query(query);
+    // `q.Get("ed")` reads the first value stored under the key, whatever it
+    // is. A first `ed` that is empty ends the rewrite even when a later one
+    // carries a number: `/x?ed=&ed=7` keeps its whole query and no early data.
+    let Some(early_data) = parsed
+        .iter()
+        .find(|(key, _)| key == b"ed")
+        .map(|(_, value)| value)
+        .filter(|value| !value.is_empty())
+    else {
+        return (normalized_path(raw), 0);
+    };
+
+    // Go's `Ed, _ := strconv.Atoi(...); ed = uint32(Ed)` keeps zero on a
+    // non-numeric value, truncates a wider one, wraps a negative one, and
+    // saturates at `int` range on overflow — and deletes the parameter
+    // regardless of which happened. Parsing wide and clamping reproduces all
+    // four.
+    let early_data = std::str::from_utf8(early_data)
+        .ok()
+        .and_then(|value| value.parse::<i128>().ok())
+        .unwrap_or(0)
+        .clamp(i64::MIN as i128, i64::MAX as i128) as i64 as u32;
+    let kept = encode_go_query(parsed.into_iter().filter(|(key, _)| key != b"ed"));
+
+    let mut normalized = escape_go_url_component(&normalized_path(path), GoUrlComponent::Path);
+    if !kept.is_empty() {
+        normalized.push('?');
+        normalized.push_str(&kept);
+    }
+    if let Some(fragment) = fragment {
+        normalized.push('#');
+        normalized.push_str(&escape_go_url_component(fragment, GoUrlComponent::Fragment));
+    }
+    (normalized, early_data)
+}
+
+#[derive(Clone, Copy)]
+enum GoUrlComponent {
+    Path,
+    Fragment,
+}
+
+/// The part of `url.URL.String()` relevant to an already-parsed path. A valid
+/// `%XX` triplet is `RawPath`/`RawFragment` and keeps its original spelling;
+/// other bytes follow Go's `shouldEscape` tables byte-for-byte.
+fn escape_go_url_component(value: &str, component: GoUrlComponent) -> String {
+    let bytes = value.as_bytes();
+    let mut out = String::with_capacity(value.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if byte == b'%'
+            && bytes
+                .get(index + 1..index + 3)
+                .is_some_and(|hex| hex.iter().all(u8::is_ascii_hexdigit))
+        {
+            out.push('%');
+            out.push(bytes[index + 1] as char);
+            out.push(bytes[index + 2] as char);
+            index += 3;
+            continue;
+        }
+
+        let unreserved = byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~');
+        let reserved = matches!(
+            byte,
+            b'$' | b'&' | b'+' | b',' | b'/' | b':' | b';' | b'=' | b'?' | b'@'
+        );
+        let safe = unreserved
+            || match component {
+                GoUrlComponent::Path => reserved && byte != b'?',
+                GoUrlComponent::Fragment => reserved || matches!(byte, b'!' | b'(' | b')' | b'*'),
+            };
+        if safe {
+            out.push(byte as char);
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
+        }
+        index += 1;
+    }
+    out
+}
+
+/// Whether every `%` in the value begins a complete two-digit hex escape.
+/// Go's `url.Parse` rejects a path where one does not, which makes Xray leave
+/// the whole path alone.
+fn has_valid_percent_escapes(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] != b'%' {
+            index += 1;
+            continue;
+        }
+        let valid = bytes
+            .get(index + 1)
+            .zip(bytes.get(index + 2))
+            .is_some_and(|(high, low)| hex_value(*high).is_ok() && hex_value(*low).is_ok());
+        if !valid {
+            return false;
+        }
+        index += 3;
+    }
+    true
+}
+
+/// Go's `url.ParseQuery`: `&`-separated pairs, percent-decoded with `+` as a
+/// space. Segments that are empty, contain `;`, or carry a broken escape are
+/// dropped, and `url.URL.Query()` discards the resulting error.
+///
+/// Keys and values stay raw bytes. `%FF` decodes to one byte in Go and
+/// re-encodes to `%FF`; forcing it through a `String` would replace it with
+/// U+FFFD and put `%EF%BF%BD` on the wire.
+fn parse_go_query(query: &str) -> Vec<(Vec<u8>, Vec<u8>)> {
+    query
+        .split('&')
+        .filter(|segment| !segment.is_empty() && !segment.contains(';'))
+        .filter_map(|segment| {
+            let (key, value) = segment.split_once('=').unwrap_or((segment, ""));
+            Some((query_unescape(key)?, query_unescape(value)?))
+        })
+        .collect()
+}
+
+/// Go's `url.Values.Encode`: keys sorted, values kept in their original order
+/// within a key, every pair emitted as `key=value` even when the value is
+/// empty.
+fn encode_go_query(pairs: impl Iterator<Item = (Vec<u8>, Vec<u8>)>) -> String {
+    let mut pairs: Vec<(Vec<u8>, Vec<u8>)> = pairs.collect();
+    pairs.sort_by(|(left, _), (right, _)| left.cmp(right));
+    pairs
+        .iter()
+        .map(|(key, value)| format!("{}={}", query_escape(key), query_escape(value)))
+        .collect::<Vec<_>>()
+        .join("&")
+}
+
+/// Go's `url.QueryUnescape`. `None` on a truncated or non-hex `%` escape,
+/// which is how Go signals the segment should be dropped.
+fn query_unescape(value: &str) -> Option<Vec<u8>> {
+    let bytes = value.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'%' => {
+                let high = hex_value(*bytes.get(index + 1)?).ok()?;
+                let low = hex_value(*bytes.get(index + 2)?).ok()?;
+                out.push((high << 4) | low);
+                index += 3;
+            }
+            b'+' => {
+                out.push(b' ');
+                index += 1;
+            }
+            byte => {
+                out.push(byte);
+                index += 1;
+            }
+        }
+    }
+    Some(out)
+}
+
+/// Go's `url.QueryEscape`: only unreserved characters survive, and a space
+/// becomes `+`. Takes bytes, since a decoded escape need not be UTF-8.
+fn query_escape(value: &[u8]) -> String {
+    let mut out = String::with_capacity(value.len());
+    for &byte in value {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char)
+            }
+            b' ' => out.push('+'),
+            byte => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
+}
+
+/// Go's `textproto.CanonicalMIMEHeaderKey`, which `http.Header.Add` applies:
+/// the first letter and every letter after a `-` is upper-cased and the rest
+/// lower-cased. A key holding a byte that is invalid in a header name is left
+/// exactly as it came in, matching Go's bail-out.
+fn canonical_header_name(name: &str) -> String {
+    let valid = name
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte));
+    if !valid {
+        return name.to_owned();
+    }
+
+    let mut canonical = String::with_capacity(name.len());
+    let mut upper = true;
+    for byte in name.bytes() {
+        let byte = if upper {
+            byte.to_ascii_uppercase()
+        } else {
+            byte.to_ascii_lowercase()
+        };
+        upper = byte == b'-';
+        canonical.push(byte as char);
+    }
+    canonical
+}
+
 fn child_path(base_path: &str, key: &str) -> String {
     if base_path == "$" {
         format!("$.{key}")
@@ -3778,6 +5669,33 @@ fn is_loopback_listener(listen: &str) -> bool {
         || listen
             .parse::<IpAddr>()
             .is_ok_and(|address| address.is_loopback())
+}
+
+/// RFC 9110 `token` / RFC 7230 `tchar`, used for the HTTP request method.
+/// Keeping this ASCII-only is security-critical because XHTTP's H1 engine
+/// writes the method directly into the request line.
+fn is_http_token(value: &str) -> bool {
+    !value.is_empty()
+        && value.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric()
+                || matches!(
+                    byte,
+                    b'!' | b'#'
+                        | b'$'
+                        | b'%'
+                        | b'&'
+                        | b'\''
+                        | b'*'
+                        | b'+'
+                        | b'-'
+                        | b'.'
+                        | b'^'
+                        | b'_'
+                        | b'`'
+                        | b'|'
+                        | b'~'
+                )
+        })
 }
 
 fn decode_base64url_no_padding(encoded: &str) -> Result<Vec<u8>, String> {
@@ -3866,12 +5784,116 @@ mod tests {
     use prost::Message;
 
     use super::{
-        configured_geodata_dirs, default_geodata_dirs, geodata_dirs_with_defaults,
-        parse_xray_json_with_loader_and_limits, GeodataLoader, MatcherBudget, MatcherBudgetLimits,
-        Parser, SelectorBudget, DEFAULT_MATCHER_BUDGET_LIMITS, MAX_CONFIG_GEODATA_ATTRIBUTE_SIZE,
+        canonical_header_name, configured_geodata_dirs, default_geodata_dirs,
+        geodata_dirs_with_defaults, parse_xray_json_with_loader_and_limits,
+        split_early_data_from_path, GeodataLoader, MatcherBudget, MatcherBudgetLimits, Parser,
+        SelectorBudget, DEFAULT_MATCHER_BUDGET_LIMITS, MAX_CONFIG_GEODATA_ATTRIBUTE_SIZE,
         MAX_CONFIG_GEODATA_ATTR_FILTERS, MAX_DNS_OUTBOUND_RULES, MAX_DNS_QTYPE_SELECTORS,
         MAX_ROUTING_PORT_SELECTORS,
     };
+
+    /// Every expectation below is the printed output of a Go program running
+    /// Xray's own `WebSocketConfig.Build` ed block followed by
+    /// `Config.GetNormalizedPath` — the two steps that decide what path the
+    /// server is asked for.
+    #[test]
+    fn path_normalization_matches_the_go_config_builder() {
+        let oracle = [
+            ("", "/", 0),
+            ("/", "/", 0),
+            ("chat", "/chat", 0),
+            ("/chat", "/chat", 0),
+            ("/x?ed=2048", "/x", 2048),
+            ("/x?zulu=1&alpha=2&ed=64", "/x?alpha=2&zulu=1", 64),
+            ("/x?ed=lots&keep=1", "/x?keep=1", 0),
+            ("/x?zulu=1&alpha=2", "/x?zulu=1&alpha=2", 0),
+            ("/x?ed=&zulu=1", "/x?ed=&zulu=1", 0),
+            ("/x?ed=16&ed=32", "/x", 16),
+            ("/x?b=a+b&a&ed=8", "/x?a=&b=a+b", 8),
+            ("?ed=2048", "/", 2048),
+            ("/x?ed=0", "/x", 0),
+            ("/x?ed=-1", "/x", 4294967295),
+            ("/x?ed=4294967296", "/x", 0),
+            ("/x?a%2Fb=1&ed=1", "/x?a%2Fb=1", 1),
+            ("/x?flag&ed=1", "/x?flag=", 1),
+            ("/x?a=1;b=2&ed=1", "/x", 1),
+            ("/x?ed=1&%zz=1", "/x", 1),
+            ("/x?a b=c&ed=1", "/x?a+b=c", 1),
+            // `q.Get` reads the first value under the key whatever it is, so a
+            // leading empty `ed` ends the rewrite and a trailing one does not.
+            ("/x?ed=&ed=7", "/x?ed=&ed=7", 0),
+            ("/x?ed=7&ed=", "/x", 7),
+            ("/x?ed=2048&ed=", "/x", 2048),
+            ("/x?a=1&ed", "/x?a=1&ed", 0),
+            // Raw bytes survive the decode/encode round trip.
+            ("/x?k=%FF&ed=1", "/x?k=%FF", 1),
+            ("/x?%FF=1&ed=1", "/x?%FF=1", 1),
+            ("/x?ed=%37", "/x", 7),
+            // Key matching is case-sensitive.
+            ("/x?ED=8&ed=9", "/x?ED=8", 9),
+            ("/x?ED=8", "/x?ED=8", 0),
+            // Fragments are split off before the query is read.
+            ("/x?ed=1#frag", "/x#frag", 1),
+            ("/x#frag?ed=1", "/x#frag?ed=1", 0),
+            // A path `url.Parse` rejects is left entirely alone.
+            ("/%zz?ed=1", "/%zz?ed=1", 0),
+            // `strconv.Atoi` saturates at int range before the uint32 cast.
+            ("/x?ed=99999999999999999999", "/x", 4294967295),
+            ("/x?ed=2147483648", "/x", 2147483648),
+            ("/x?ed=+5", "/x", 0),
+            ("/x?ed=0x10", "/x", 0),
+            ("/x?ed= 5", "/x", 0),
+            ("//host/x?ed=1", "//host/x", 1),
+            ("/x%2Fy?ed=1", "/x%2Fy", 1),
+            ("/x?ed=1&a=%2F", "/x?a=%2F", 1),
+        ];
+
+        for (raw, path, early_data) in oracle {
+            assert_eq!(
+                split_early_data_from_path(raw),
+                (path.to_owned(), early_data),
+                "path {raw:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_rewritten_path_and_fragment_are_escaped_like_go_url_string() {
+        for (raw, expected) in [
+            ("/a b?ed=1", "/a%20b"),
+            ("/日本?ed=1", "/%E6%97%A5%E6%9C%AC"),
+            ("/x%2fy?ed=1#日本", "/x%2fy#%E6%97%A5%E6%9C%AC"),
+            ("/x?ed=1#a b!()'*", "/x#a%20b!()%27*"),
+        ] {
+            let (path, early_data) = split_early_data_from_path(raw);
+            assert_eq!((path.as_str(), early_data), (expected, 1), "path {raw:?}");
+        }
+    }
+
+    #[test]
+    fn an_invalid_fragment_escape_makes_go_leave_early_data_untouched() {
+        assert_eq!(
+            split_early_data_from_path("/x?ed=1#%zz"),
+            ("/x?ed=1#%zz".to_owned(), 0)
+        );
+    }
+
+    /// Go's `http.Header.Add` runs the key through
+    /// `textproto.CanonicalMIMEHeaderKey`, which websocket depends on and
+    /// httpupgrade deliberately skips.
+    #[test]
+    fn header_names_are_canonicalized_the_way_go_canonicalizes_them() {
+        assert_eq!(canonical_header_name("accept"), "Accept");
+        assert_eq!(canonical_header_name("SEC-ch-ua"), "Sec-Ch-Ua");
+        assert_eq!(canonical_header_name("X-Thing"), "X-Thing");
+        assert_eq!(canonical_header_name("x--y"), "X--Y");
+        assert_eq!(canonical_header_name("-x"), "-X");
+        assert_eq!(canonical_header_name(""), "");
+        // A byte that cannot appear in a header name makes Go give up and
+        // return the key untouched.
+        assert_eq!(canonical_header_name("bad key"), "bad key");
+        assert_eq!(canonical_header_name("naïve"), "naïve");
+    }
 
     #[test]
     fn explicit_geodata_dirs_are_searched_before_defaults() {

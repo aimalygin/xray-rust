@@ -10,8 +10,11 @@ use xray_config::{
     parse_xray_json, parse_xray_json_with_geodata_dirs, DiagnosticSeverity, DnsFakeIpConfig,
     DnsHostTarget, DnsIpFilter, DnsNameServerConfig, DnsOutboundRuleAction, DnsOutboundSettings,
     DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint, DnsServerTransport,
-    HappyEyeballsSettings, InboundProtocol, IpCidr, Network, OutboundSettings, RealityShortId,
-    RoutingDomainStrategy, SniffingDestination, StreamSecurity, TargetAddr,
+    HappyEyeballsSettings, InboundProtocol, IpCidr, Network, OutboundSettings, QuicBbrProfile,
+    QuicCongestion, QuicIntervalRange, QuicParamsSettings, QuicUdpHopSettings, RealityShortId,
+    RoutingDomainStrategy, SniffingDestination, StreamSecurity, StreamTransport, TargetAddr,
+    XhttpMode, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpPlacement, XhttpRange,
+    XhttpSettings, XhttpUplinkDataPlacement,
 };
 
 #[test]
@@ -134,6 +137,101 @@ fn parses_tun_inbound_without_port_as_packet_boundary_inbound() {
 
     assert_eq!(parsed.config.inbounds[0].port, 0);
     assert!(parsed.diagnostics.is_empty());
+}
+
+#[test]
+fn parses_the_config_the_apple_vless_url_importer_generates() {
+    // Unknown keys are a hard config error, so the importer's sniffing and
+    // queryStrategy blocks have to match what the parser accepts verbatim.
+    let raw = r#"{
+      "dns" : {
+        "fakeIp" : {
+          "enabled" : true,
+          "ipv4Pool" : "198.19.0.0/16",
+          "poolSize" : 32768,
+          "ttl" : 60
+        },
+        "queryStrategy" : "UseIPv4"
+      },
+      "inbounds" : [
+        {
+          "listen" : "127.0.0.1",
+          "port" : 0,
+          "protocol" : "tun",
+          "settings" : {},
+          "sniffing" : {
+            "destOverride" : ["http", "tls", "quic"],
+            "enabled" : true,
+            "metadataOnly" : false
+          },
+          "tag" : "tun-in"
+        }
+      ],
+      "outbounds" : [
+        {
+          "protocol" : "vless",
+          "settings" : {
+            "vnext" : [
+              {
+                "address" : "203.0.113.7",
+                "port" : 443,
+                "users" : [
+                  {
+                    "encryption" : "none",
+                    "flow" : "xtls-rprx-vision",
+                    "id" : "49c1a053-d257-466d-a900-048ff5173866"
+                  }
+                ]
+              }
+            ]
+          },
+          "streamSettings" : {
+            "network" : "tcp",
+            "realitySettings" : {
+              "fingerprint" : "chrome",
+              "publicKey" : "3jNx5A3WTFKhvCj3IPljaxbcBjCxhH2dVCNobKv_X1c",
+              "serverName" : "example.com",
+              "shortId" : "1c5694e878",
+              "spiderX" : ""
+            },
+            "security" : "reality"
+          },
+          "tag" : "proxy"
+        },
+        {
+          "protocol" : "freedom",
+          "settings" : {},
+          "tag" : "direct"
+        }
+      ],
+      "routing" : {
+        "domainStrategy" : "AsIs",
+        "rules" : [
+          {
+            "ip" : ["geoip:private", "127.0.0.0/8", "fd00::/8"],
+            "outboundTag" : "direct",
+            "type" : "field"
+          }
+        ]
+      }
+    }"#;
+
+    let parsed = parse_xray_json(raw).expect("importer config should parse");
+
+    let sniffing = parsed.config.inbounds[0]
+        .sniffing
+        .as_ref()
+        .expect("enabled sniffing should be modeled");
+    assert_eq!(
+        sniffing.dest_override,
+        [
+            SniffingDestination::Http,
+            SniffingDestination::Tls,
+            SniffingDestination::Quic
+        ]
+    );
+    assert!(!sniffing.metadata_only);
+    assert_eq!(parsed.config.dns.query_strategy, DnsQueryStrategy::UseIpv4);
 }
 
 #[test]
@@ -1290,13 +1388,101 @@ fn rejects_tls_allow_insecure_non_bool_with_path() {
 }
 
 #[test]
-fn rejects_tls_fingerprint_with_path() {
-    let raw = raw_with_tls_settings(r#""serverName": "server.example", "fingerprint": "chrome""#);
+fn parses_tls_fingerprint() {
+    let raw = raw_with_tls_settings(r#""serverName": "server.example", "fingerprint": "firefox""#);
+    let parsed = parse_xray_json(&raw).expect("a TLS fingerprint should be accepted");
 
-    assert_parse_error_path(
-        &raw,
-        "$.outbounds[0].streamSettings.tlsSettings.fingerprint",
+    let StreamSecurity::Tls(tls) = &parsed.config.outbounds[0].stream.security else {
+        panic!("expected tls security");
+    };
+    assert_eq!(tls.fingerprint.as_deref(), Some("firefox"));
+}
+
+#[test]
+fn defaults_missing_tls_fingerprint_to_chrome() {
+    let raw = raw_with_tls_settings(r#""serverName": "server.example""#);
+    let parsed = parse_xray_json(&raw).expect("TLS without a fingerprint should parse");
+
+    let StreamSecurity::Tls(tls) = &parsed.config.outbounds[0].stream.security else {
+        panic!("expected tls security");
+    };
+    assert_eq!(
+        tls.fingerprint.as_deref(),
+        Some("chrome"),
+        "an absent fingerprint means chrome, matching Xray's GetFingerprint(\"\")"
     );
+}
+
+/// `unsafe` is a sentinel, not a profile name: it has to survive normalization
+/// intact so the transport can recognize it and leave the hello unshaped.
+#[test]
+fn passes_the_unsafe_tls_fingerprint_sentinel_through() {
+    let raw = raw_with_tls_settings(r#""serverName": "server.example", "fingerprint": "UNSAFE""#);
+    let parsed = parse_xray_json(&raw).expect("the unsafe sentinel should be accepted");
+
+    let StreamSecurity::Tls(tls) = &parsed.config.outbounds[0].stream.security else {
+        panic!("expected tls security");
+    };
+    assert_eq!(tls.fingerprint.as_deref(), Some("unsafe"));
+}
+
+#[test]
+fn parses_tls_alpn_list() {
+    let raw =
+        raw_with_tls_settings(r#""serverName": "server.example", "alpn": ["h2", "http/1.1"]"#);
+    let parsed = parse_xray_json(&raw).expect("a TLS alpn list should be accepted");
+
+    let StreamSecurity::Tls(tls) = &parsed.config.outbounds[0].stream.security else {
+        panic!("expected tls security");
+    };
+    assert_eq!(tls.alpn, ["h2".to_owned(), "http/1.1".to_owned()]);
+}
+
+#[test]
+fn rejects_unsupported_tls_fingerprint_with_path() {
+    let raw =
+        raw_with_tls_settings(r#""serverName": "server.example", "fingerprint": "nosuchbrowser""#);
+
+    let error = parse_xray_json(&raw).expect_err("an unknown fingerprint must be rejected");
+
+    assert_eq!(error.diagnostics[0].severity, DiagnosticSeverity::Error);
+    assert_eq!(
+        error.diagnostics[0].path.as_deref(),
+        Some("$.outbounds[0].streamSettings.tlsSettings.fingerprint")
+    );
+    assert!(
+        error.diagnostics[0].message.contains("nosuchbrowser"),
+        "the error must name the fingerprint, got: {}",
+        error.diagnostics[0].message
+    );
+}
+
+#[test]
+fn rejects_non_string_tls_fingerprint_with_path() {
+    for value in ["42", "false", r#"{"browser":"chrome"}"#] {
+        let raw = raw_with_tls_settings(&format!(
+            r#""serverName": "server.example", "fingerprint": {value}"#
+        ));
+
+        assert_parse_error_path(
+            &raw,
+            "$.outbounds[0].streamSettings.tlsSettings.fingerprint",
+        );
+    }
+}
+
+#[test]
+fn rejects_non_array_tls_alpn_with_path() {
+    let raw = raw_with_tls_settings(r#""serverName": "server.example", "alpn": "h2""#);
+
+    assert_parse_error_path(&raw, "$.outbounds[0].streamSettings.tlsSettings.alpn");
+}
+
+#[test]
+fn rejects_non_string_tls_alpn_entry_with_path() {
+    let raw = raw_with_tls_settings(r#""serverName": "server.example", "alpn": ["h2", 42]"#);
+
+    assert_parse_error_path(&raw, "$.outbounds[0].streamSettings.tlsSettings.alpn[1]");
 }
 
 #[test]
@@ -1306,6 +1492,25 @@ fn rejects_tcp_header_type_with_path() {
     assert_parse_error_path(
         &raw,
         "$.outbounds[0].streamSettings.tcpSettings.header.type",
+    );
+}
+
+#[test]
+fn parses_raw_settings_alias() {
+    let raw = raw_with_raw_settings(r#""header": { "type": "none" }"#);
+
+    let parsed = parse_xray_json(&raw).expect("rawSettings alias should parse");
+
+    assert_eq!(parsed.config.outbounds[0].stream.network, Network::Tcp);
+}
+
+#[test]
+fn rejects_raw_header_type_with_path() {
+    let raw = raw_with_raw_settings(r#""header": { "type": "http" }"#);
+
+    assert_parse_error_path(
+        &raw,
+        "$.outbounds[0].streamSettings.rawSettings.header.type",
     );
 }
 
@@ -2802,6 +3007,23 @@ fn rejects_vless_port_overflow_with_path() {
 }
 
 #[test]
+fn parses_raw_stream_network_alias() {
+    let raw = vless_raw_with_network(
+        "raw",
+        r#""users": [{ "id": "00010203-0405-0607-0809-0a0b0c0d0e0f" }]"#,
+        "",
+        443,
+        valid_public_key(),
+        "02030405",
+    );
+
+    let parsed = parse_xray_json(&raw).expect("`raw` network alias should parse");
+
+    assert_eq!(parsed.config.outbounds[0].stream.network, Network::Tcp);
+    assert!(parsed.diagnostics.is_empty());
+}
+
+#[test]
 fn rejects_udp_stream_network_with_path() {
     let raw = vless_raw_with_network(
         "udp",
@@ -2817,8 +3039,10 @@ fn rejects_udp_stream_network_with_path() {
 
 #[test]
 fn rejects_other_stream_network_with_path() {
+    // The example moved off `grpc` when this crate learned to parse it; `kcp`
+    // is still a network xray-core has and xray-rust does not.
     let raw = vless_raw_with_network(
-        "ws",
+        "kcp",
         r#""users": [{ "id": "00010203-0405-0607-0809-0a0b0c0d0e0f" }]"#,
         "",
         443,
@@ -2827,6 +3051,1522 @@ fn rejects_other_stream_network_with_path() {
     );
 
     assert_parse_error_path(&raw, "$.outbounds[0].streamSettings.network");
+}
+
+#[test]
+fn rejects_non_string_stream_network_with_path() {
+    // Falling back to `tcp` here would dial plain TCP against a server
+    // expecting the transport the rest of `streamSettings` describes.
+    assert_parse_error_path(
+        &raw_with_stream_settings(r#""network": 5, "security": "none""#),
+        "$.outbounds[0].streamSettings.network",
+    );
+}
+
+#[test]
+fn rejects_null_stream_network_with_path() {
+    assert_parse_error_path(
+        &raw_with_stream_settings(r#""network": null, "security": "none""#),
+        "$.outbounds[0].streamSettings.network",
+    );
+}
+
+#[test]
+fn uppercase_stream_networks_parse_the_way_xray_lowercases_them() {
+    for network in ["RAW", "TCP", "Raw"] {
+        let parsed = parse_xray_json(&raw_with_stream_settings(&format!(
+            r#""network": "{network}", "security": "none""#
+        )))
+        .unwrap_or_else(|_| panic!("`{network}` must parse as the raw transport"));
+
+        assert_eq!(
+            parsed.config.outbounds[0].stream.transport,
+            StreamTransport::Raw
+        );
+    }
+
+    for network in ["WS", "WebSocket"] {
+        let parsed = parse_xray_json(&raw_with_stream_settings(&format!(
+            r#""network": "{network}", "security": "none""#
+        )))
+        .unwrap_or_else(|_| panic!("`{network}` must parse as the websocket transport"));
+
+        assert!(matches!(
+            parsed.config.outbounds[0].stream.transport,
+            StreamTransport::WebSocket(_)
+        ));
+    }
+}
+
+#[test]
+fn rejects_non_string_stream_security_with_path() {
+    // Defaulting to `none` would silently strip TLS off the outbound and send
+    // the tunnel out in plaintext.
+    assert_parse_error_path(
+        &raw_with_stream_settings(r#""network": "tcp", "security": 5"#),
+        "$.outbounds[0].streamSettings.security",
+    );
+}
+
+#[test]
+fn rejects_null_stream_security_with_path() {
+    assert_parse_error_path(
+        &raw_with_stream_settings(r#""network": "tcp", "security": null"#),
+        "$.outbounds[0].streamSettings.security",
+    );
+}
+
+#[test]
+fn uppercase_stream_security_parses_the_way_xray_lowercases_it() {
+    for security in ["NONE", "None"] {
+        let parsed = parse_xray_json(&raw_with_stream_settings(&format!(
+            r#""network": "tcp", "security": "{security}""#
+        )))
+        .unwrap_or_else(|_| panic!("`{security}` must parse as no stream security"));
+
+        assert_eq!(
+            parsed.config.outbounds[0].stream.security,
+            StreamSecurity::None
+        );
+    }
+
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "tcp", "security": "TLS",
+           "tlsSettings": {"serverName": "server.example"}"#,
+    ))
+    .expect("`TLS` must parse as tls");
+
+    assert!(matches!(
+        parsed.config.outbounds[0].stream.security,
+        StreamSecurity::Tls(_)
+    ));
+}
+
+#[test]
+fn empty_stream_security_means_none_like_xray() {
+    // Xray's arm is `case "", "none":`, and generated configs lean on it.
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "tcp", "security": """#,
+    ))
+    .expect("an empty security must parse as no stream security");
+
+    assert_eq!(
+        parsed.config.outbounds[0].stream.security,
+        StreamSecurity::None
+    );
+}
+
+#[test]
+fn removed_xtls_security_says_it_was_removed() {
+    let error = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "tcp", "security": "xtls""#,
+    ))
+    .expect_err("legacy xtls must be rejected");
+
+    assert_eq!(
+        error.diagnostics[0].path.as_deref(),
+        Some("$.outbounds[0].streamSettings.security")
+    );
+    assert!(
+        error.diagnostics[0].message.contains("removed"),
+        "xtls must say it was removed, got: {:?}",
+        error.diagnostics
+    );
+}
+
+#[test]
+fn tcp_and_raw_networks_parse_as_the_raw_transport() {
+    for network in ["tcp", "raw"] {
+        let parsed = parse_xray_json(&raw_with_stream_settings(&format!(
+            r#""network": "{network}", "security": "none""#
+        )))
+        .expect("the raw transport must parse");
+
+        assert_eq!(
+            parsed.config.outbounds[0].stream.transport,
+            StreamTransport::Raw
+        );
+    }
+}
+
+#[test]
+fn ws_network_parses_with_its_settings() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "ws", "security": "none",
+           "wsSettings": {"path": "/chat", "host": "cdn.example.com",
+                          "headers": {"X-Thing": "v"}, "heartbeatPeriod": 30}"#,
+    ))
+    .expect("a ws outbound must parse");
+
+    let StreamTransport::WebSocket(ws) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected a websocket transport");
+    };
+    assert_eq!(ws.path, "/chat");
+    assert_eq!(ws.host.as_deref(), Some("cdn.example.com"));
+    assert_eq!(ws.headers, vec![("X-Thing".to_owned(), "v".to_owned())]);
+    assert_eq!(ws.heartbeat_period_secs, 30);
+    assert_eq!(ws.early_data_bytes, 0);
+    assert!(parsed.diagnostics.is_empty());
+}
+
+#[test]
+fn websocket_is_an_alias_for_ws() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "websocket", "security": "none""#,
+    ))
+    .expect("the websocket alias must parse");
+
+    assert!(matches!(
+        parsed.config.outbounds[0].stream.transport,
+        StreamTransport::WebSocket(_)
+    ));
+    assert_eq!(parsed.config.outbounds[0].stream.network, Network::Tcp);
+}
+
+#[test]
+fn httpupgrade_network_parses_with_its_settings() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "httpupgrade", "security": "none",
+           "httpupgradeSettings": {"path": "/up?ed=32", "host": "cdn.example.com",
+                                   "headers": {"X-Thing": "v"}}"#,
+    ))
+    .expect("an httpupgrade outbound must parse");
+
+    let StreamTransport::HttpUpgrade(httpupgrade) = &parsed.config.outbounds[0].stream.transport
+    else {
+        panic!("expected an httpupgrade transport");
+    };
+    assert_eq!(httpupgrade.path, "/up");
+    assert_eq!(httpupgrade.host.as_deref(), Some("cdn.example.com"));
+    assert_eq!(
+        httpupgrade.headers,
+        vec![("X-Thing".to_owned(), "v".to_owned())]
+    );
+    assert_eq!(httpupgrade.early_data_bytes, 32);
+    assert_eq!(parsed.config.outbounds[0].stream.network, Network::Tcp);
+}
+
+#[test]
+fn a_network_without_its_settings_block_still_gets_a_transport() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "httpupgrade", "security": "none""#,
+    ))
+    .expect("an omitted settings block must parse");
+
+    let StreamTransport::HttpUpgrade(httpupgrade) = &parsed.config.outbounds[0].stream.transport
+    else {
+        panic!("expected an httpupgrade transport");
+    };
+    assert_eq!(httpupgrade.path, "/");
+    assert_eq!(httpupgrade.host, None);
+    assert!(httpupgrade.headers.is_empty());
+}
+
+#[test]
+fn grpc_network_parses_with_its_settings() {
+    // Every key `GRPCConfig` declares, spelled as it is spelled there
+    // (`Xray-core/infra/conf/grpc.go:8-17`): five snake_case, `serviceName`
+    // and `multiMode` camelCase, `authority` neither. Go's decoder matches the
+    // tag, so a camelCase `idleTimeout` reaches xray-core as nothing at all.
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "grpc", "security": "none",
+           "grpcSettings": {"authority": "authority.example",
+                            "serviceName": "GunService",
+                            "multiMode": true,
+                            "user_agent": "custom-agent/1.0",
+                            "idle_timeout": 60,
+                            "health_check_timeout": 20,
+                            "permit_without_stream": true,
+                            "initial_windows_size": 65536}"#,
+    ))
+    .expect("a grpc outbound must parse");
+
+    let StreamTransport::Grpc(grpc) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected a grpc transport");
+    };
+    assert_eq!(grpc.authority.as_deref(), Some("authority.example"));
+    assert_eq!(grpc.service_name, "GunService");
+    assert!(grpc.multi_mode);
+    assert_eq!(grpc.user_agent.as_deref(), Some("custom-agent/1.0"));
+    assert_eq!(grpc.idle_timeout_secs, 60);
+    assert_eq!(grpc.health_check_timeout_secs, 20);
+    assert!(grpc.permit_without_stream);
+    assert_eq!(grpc.initial_windows_size, 65_536);
+    assert_eq!(parsed.config.outbounds[0].stream.network, Network::Tcp);
+    assert!(parsed.diagnostics.is_empty());
+}
+
+#[test]
+fn a_grpc_network_without_its_settings_block_still_gets_a_transport() {
+    // `StreamConfig.Build` only appends a transport entry when the block is
+    // present, and `GetTransportSettingsFor` then falls through to
+    // `CreateTransportConfig` for a zero-valued one
+    // (`Xray-core/transport/internet/config.go:71-81`). A zero `serviceName`
+    // is what makes the stock client dial `//Tun`.
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "grpc", "security": "none""#,
+    ))
+    .expect("an omitted grpcSettings block must parse");
+
+    let StreamTransport::Grpc(grpc) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected a grpc transport");
+    };
+    assert_eq!(grpc.authority, None);
+    assert_eq!(grpc.service_name, "");
+    assert!(!grpc.multi_mode);
+    assert_eq!(grpc.user_agent, None);
+    assert_eq!(grpc.idle_timeout_secs, 0);
+    assert_eq!(grpc.health_check_timeout_secs, 0);
+    assert!(!grpc.permit_without_stream);
+    assert_eq!(grpc.initial_windows_size, 0);
+    assert!(parsed.diagnostics.is_empty());
+}
+
+#[test]
+fn negative_grpc_numbers_clamp_to_zero_instead_of_failing() {
+    // The only validation `GRPCConfig.Build` performs: three negative-to-zero
+    // clamps (`Xray-core/infra/conf/grpc.go:20-29`). Rejecting these would
+    // refuse a config xray-core accepts and quietly normalizes.
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "grpc", "security": "none",
+           "grpcSettings": {"idle_timeout": -1,
+                            "health_check_timeout": -5,
+                            "initial_windows_size": -100}"#,
+    ))
+    .expect("negative grpc numbers must parse");
+
+    let StreamTransport::Grpc(grpc) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected a grpc transport");
+    };
+    assert_eq!(grpc.idle_timeout_secs, 0);
+    assert_eq!(grpc.health_check_timeout_secs, 0);
+    assert_eq!(grpc.initial_windows_size, 0);
+    assert!(parsed.diagnostics.is_empty());
+}
+
+#[test]
+fn rejects_grpc_numbers_past_int32_with_path() {
+    // The clamp is the *only* normalization; the width still binds. Go's
+    // decoder refuses one past `int32` outright — "cannot unmarshal number
+    // 2147483648 into Go struct field GRPCConfig.idle_timeout of type int32" —
+    // so silently truncating would be more permissive than the reference.
+    for key in [
+        "idle_timeout",
+        "health_check_timeout",
+        "initial_windows_size",
+    ] {
+        assert_parse_error_path(
+            &raw_with_stream_settings(&format!(
+                r#""network": "grpc", "security": "none",
+                   "grpcSettings": {{"{key}": 2147483648}}"#
+            )),
+            &format!("$.outbounds[0].streamSettings.grpcSettings.{key}"),
+        );
+    }
+}
+
+#[test]
+fn an_arbitrary_grpc_user_agent_is_passed_through() {
+    // `user_agent` reaches `grpc.Config` untouched; the magic values are
+    // resolved at dial time (`transport/internet/grpc/dial.go:193-205`), so
+    // anything else is a literal UA rather than a config error.
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "grpc", "security": "none",
+           "grpcSettings": {"user_agent": "not-a-known-browser"}"#,
+    ))
+    .expect("an arbitrary grpc user agent must parse");
+
+    let StreamTransport::Grpc(grpc) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected a grpc transport");
+    };
+    assert_eq!(grpc.user_agent.as_deref(), Some("not-a-known-browser"));
+}
+
+#[test]
+fn rejects_non_string_grpc_service_name_with_path() {
+    // Go fails the whole config here — "cannot unmarshal number into Go struct
+    // field GRPCConfig.serviceName of type string" — so a silent default would
+    // dial `//Tun` against a server expecting a named service.
+    assert_parse_error_path(
+        &raw_with_stream_settings(
+            r#""network": "grpc", "security": "none", "grpcSettings": {"serviceName": 5}"#,
+        ),
+        "$.outbounds[0].streamSettings.grpcSettings.serviceName",
+    );
+}
+
+#[test]
+fn rejects_camel_case_grpc_key_spellings_with_path() {
+    // The camelCase spelling of each of the five snake_case keys. Go's decoder
+    // matches the struct tag, so `idleTimeout` is an unknown key upstream and
+    // is dropped without a word; accepting it would make a config work here
+    // that does nothing there.
+    for key in [
+        "idleTimeout",
+        "healthCheckTimeout",
+        "permitWithoutStream",
+        "initialWindowsSize",
+        "userAgent",
+    ] {
+        assert_parse_error_path(
+            &raw_with_stream_settings(&format!(
+                r#""network": "grpc", "security": "none", "grpcSettings": {{"{key}": 1}}"#
+            )),
+            &format!("$.outbounds[0].streamSettings.grpcSettings.{key}"),
+        );
+    }
+}
+
+#[test]
+fn rejects_the_gun_stream_network_with_path() {
+    // `gun` was the transport's original name, but v26.5.9 has no such arm in
+    // `TransportProtocol.Build` and no `gunSettings` key anywhere in the tree:
+    // both are "unknown transport protocol: gun". Accepting either would let a
+    // profile parse here and fail against a real server.
+    assert_parse_error_path(
+        &raw_with_stream_settings(r#""network": "gun", "security": "none""#),
+        "$.outbounds[0].streamSettings.network",
+    );
+    assert_parse_error_path(
+        &raw_with_stream_settings(
+            r#""network": "grpc", "security": "none", "gunSettings": {"serviceName": "S"}"#,
+        ),
+        "$.outbounds[0].streamSettings.gunSettings",
+    );
+}
+
+#[test]
+fn xhttp_and_splithttp_aliases_parse_with_xray_defaults() {
+    for (network, settings_key) in [
+        ("xhttp", "xhttpSettings"),
+        ("splithttp", "splithttpSettings"),
+    ] {
+        let parsed = parse_xray_json(&raw_with_stream_settings(&format!(
+            r#""network": "{network}", "security": "none", "{settings_key}": {{}}"#
+        )))
+        .unwrap_or_else(|error| panic!("{network} must parse: {error:?}"));
+
+        let StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport else {
+            panic!("expected xhttp for {network}");
+        };
+        assert_eq!(xhttp.mode, XhttpMode::Auto);
+        assert_eq!(xhttp.x_padding_key, "x_padding");
+        assert_eq!(xhttp.x_padding_header, "X-Padding");
+        assert_eq!(
+            xhttp.x_padding_placement,
+            XhttpPaddingPlacement::QueryInHeader
+        );
+        assert_eq!(xhttp.x_padding_method, XhttpPaddingMethod::RepeatX);
+        assert_eq!(xhttp.uplink_http_method, "POST");
+        assert_eq!(xhttp.session_placement, XhttpPlacement::Path);
+        assert_eq!(xhttp.seq_placement, XhttpPlacement::Path);
+        assert_eq!(xhttp.uplink_data_placement, XhttpUplinkDataPlacement::Auto);
+        assert_eq!(xhttp.uplink_data_key, "X-Data");
+        assert_eq!(xhttp.xmux.max_concurrency, XhttpRange { from: 1, to: 1 });
+        assert_eq!(
+            xhttp.xmux.h_max_request_times,
+            XhttpRange { from: 600, to: 900 }
+        );
+        assert_eq!(
+            xhttp.xmux.h_max_reusable_secs,
+            XhttpRange {
+                from: 1_800,
+                to: 3_000
+            }
+        );
+        assert!(
+            parsed.diagnostics.is_empty(),
+            "{network}: {:?}",
+            parsed.diagnostics
+        );
+    }
+}
+
+#[test]
+fn xhttp_null_value_fields_normalize_to_go_zero_defaults() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "xhttp", "security": "none",
+           "xhttpSettings": {
+             "host": null, "path": null, "mode": null, "headers": null,
+             "xPaddingBytes": null, "xPaddingObfsMode": null,
+             "xPaddingKey": null, "xPaddingHeader": null,
+             "xPaddingPlacement": null, "xPaddingMethod": null,
+             "uplinkHTTPMethod": null,
+             "sessionPlacement": null, "sessionKey": null,
+             "seqPlacement": null, "seqKey": null,
+             "uplinkDataPlacement": null, "uplinkDataKey": null,
+             "uplinkChunkSize": null,
+             "noGRPCHeader": null, "noSSEHeader": null,
+             "scMaxEachPostBytes": null, "scMinPostsIntervalMs": null,
+             "scMaxBufferedPosts": null, "scStreamUpServerSecs": null,
+             "serverMaxHeaderBytes": null, "xmux": null,
+             "downloadSettings": null
+           }"#,
+    ))
+    .expect("null must leave every non-pointer Go field at its zero value");
+
+    let StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected xhttp");
+    };
+    assert_eq!(xhttp.as_ref(), &XhttpSettings::default());
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+}
+
+#[test]
+fn xhttp_null_header_value_and_xmux_fields_follow_go_decoding() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "xhttp", "security": "none",
+           "xhttpSettings": {
+             "headers": {"X-Null": null},
+             "xmux": {
+               "maxConcurrency": null, "maxConnections": null,
+               "cMaxReuseTimes": null, "hMaxRequestTimes": null,
+               "hMaxReusableSecs": null, "hKeepAlivePeriod": null
+             }
+           }"#,
+    ))
+    .expect("null map values and xmux fields must decode to Go zero values");
+
+    let StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected xhttp");
+    };
+    let expected = XhttpSettings {
+        headers: vec![("X-Null".to_owned(), String::new())],
+        ..XhttpSettings::default()
+    };
+    assert_eq!(xhttp.as_ref(), &expected);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+}
+
+#[test]
+fn xhttp_case_variant_headers_canonicalize_without_losing_values() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "xhttp", "security": "none",
+           "xhttpSettings": {
+             "headers": {"X-Foo": "first", "x-foo": "second"}
+           }"#,
+    ))
+    .expect("case-variant XHTTP headers must preserve both Add values");
+
+    let StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected xhttp");
+    };
+    assert_eq!(
+        xhttp.headers,
+        vec![
+            ("X-Foo".to_owned(), "first".to_owned()),
+            ("X-Foo".to_owned(), "second".to_owned()),
+        ]
+    );
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+}
+
+#[test]
+fn xhttp_full_v26_config_surface_is_normalized() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "xhttp", "security": "none",
+           "xhttpSettings": {
+             "host": "cdn.example.com", "path": "/split", "mode": "packet-up",
+             "headers": {"X-Test": "yes"},
+             "xPaddingBytes": "1000-100", "xPaddingObfsMode": true,
+             "xPaddingKey": "pad", "xPaddingHeader": "X-Pad",
+             "xPaddingPlacement": "cookie", "xPaddingMethod": "tokenish",
+             "uplinkHTTPMethod": "get",
+             "sessionPlacement": "header", "seqPlacement": "query",
+             "uplinkDataPlacement": "cookie", "uplinkChunkSize": 4096,
+             "noGRPCHeader": true, "noSSEHeader": true,
+             "scMaxEachPostBytes": "2000000-1000000",
+             "scMinPostsIntervalMs": "20", "scMaxBufferedPosts": 31,
+             "scStreamUpServerSecs": "90-120", "serverMaxHeaderBytes": 8192,
+             "xmux": {
+               "maxConnections": "4-2", "cMaxReuseTimes": 8,
+               "hMaxRequestTimes": "50-60", "hMaxReusableSecs": 300,
+               "hKeepAlivePeriod": 15
+             }
+           }"#,
+    ))
+    .expect("the complete supported XHTTP surface must parse");
+
+    let StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected xhttp");
+    };
+    assert_eq!(xhttp.host.as_deref(), Some("cdn.example.com"));
+    assert_eq!(xhttp.path, "/split");
+    assert_eq!(xhttp.mode, XhttpMode::PacketUp);
+    assert_eq!(xhttp.headers, vec![("X-Test".to_owned(), "yes".to_owned())]);
+    assert_eq!(
+        xhttp.x_padding_bytes,
+        XhttpRange {
+            from: 100,
+            to: 1000
+        }
+    );
+    assert!(xhttp.x_padding_obfs_mode);
+    assert_eq!(xhttp.x_padding_key, "pad");
+    assert_eq!(xhttp.x_padding_header, "X-Pad");
+    assert_eq!(xhttp.x_padding_placement, XhttpPaddingPlacement::Cookie);
+    assert_eq!(xhttp.x_padding_method, XhttpPaddingMethod::Tokenish);
+    assert_eq!(xhttp.uplink_http_method, "GET");
+    assert_eq!(xhttp.session_placement, XhttpPlacement::Header);
+    assert_eq!(xhttp.session_key, "X-Session");
+    assert_eq!(xhttp.seq_placement, XhttpPlacement::Query);
+    assert_eq!(xhttp.seq_key, "x_seq");
+    assert_eq!(
+        xhttp.uplink_data_placement,
+        XhttpUplinkDataPlacement::Cookie
+    );
+    assert_eq!(xhttp.uplink_data_key, "x_data");
+    assert_eq!(
+        xhttp.uplink_chunk_size,
+        XhttpRange {
+            from: 4096,
+            to: 4096
+        }
+    );
+    assert!(xhttp.no_grpc_header);
+    assert!(xhttp.no_sse_header);
+    assert_eq!(
+        xhttp.sc_max_each_post_bytes,
+        XhttpRange {
+            from: 1_000_000,
+            to: 2_000_000
+        }
+    );
+    assert_eq!(
+        xhttp.sc_min_posts_interval_ms,
+        XhttpRange { from: 20, to: 20 }
+    );
+    assert_eq!(xhttp.sc_max_buffered_posts, 31);
+    assert_eq!(
+        xhttp.sc_stream_up_server_secs,
+        XhttpRange { from: 90, to: 120 }
+    );
+    assert_eq!(xhttp.server_max_header_bytes, 8192);
+    assert_eq!(xhttp.xmux.max_connections, XhttpRange { from: 2, to: 4 });
+    assert_eq!(xhttp.xmux.max_concurrency, XhttpRange::default());
+    assert_eq!(xhttp.xmux.c_max_reuse_times, XhttpRange { from: 8, to: 8 });
+    assert_eq!(xhttp.xmux.h_keep_alive_period_secs, 15);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+}
+
+#[test]
+fn xhttp_settings_take_priority_over_splithttp_settings() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "splithttp", "security": "none",
+           "splithttpSettings": {"host": "legacy.example", "mode": "packet-up"},
+           "xhttpSettings": {"host": "current.example", "mode": "stream-one"}"#,
+    ))
+    .expect("the current XHTTP spelling must win");
+
+    let StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected xhttp");
+    };
+    assert_eq!(xhttp.host.as_deref(), Some("current.example"));
+    assert_eq!(xhttp.mode, XhttpMode::StreamOne);
+    assert!(parsed.diagnostics.iter().any(|diagnostic| {
+        diagnostic.severity == DiagnosticSeverity::Warning
+            && diagnostic.path.as_deref() == Some("$.outbounds[0].streamSettings.splithttpSettings")
+            && diagnostic.message.contains("takes priority")
+    }));
+}
+
+#[test]
+fn null_xhttp_aliases_are_absent_go_pointers() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "xhttp", "security": "none",
+           "xhttpSettings": null,
+           "splithttpSettings": {"host": "legacy.example", "mode": "packet-up"}"#,
+    ))
+    .expect("a null current pointer must fall through to the legacy block");
+    let StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected xhttp");
+    };
+    assert_eq!(xhttp.host.as_deref(), Some("legacy.example"));
+    assert_eq!(xhttp.mode, XhttpMode::PacketUp);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "splithttp", "security": "none",
+           "xhttpSettings": {"host": "current.example"},
+           "splithttpSettings": null"#,
+    ))
+    .expect("a null legacy pointer must not trigger an alias warning");
+    let StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected xhttp");
+    };
+    assert_eq!(xhttp.host.as_deref(), Some("current.example"));
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "xhttp", "security": "none",
+           "xhttpSettings": null, "splithttpSettings": null"#,
+    ))
+    .expect("two null pointers must select the zero-valued XHTTP config");
+    let StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected xhttp");
+    };
+    assert_eq!(xhttp.mode, XhttpMode::Auto);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "raw", "security": "none", "xhttpSettings": null"#,
+    ))
+    .expect("a null XHTTP pointer is not an ignored transport block");
+    assert!(matches!(
+        parsed.config.outbounds[0].stream.transport,
+        StreamTransport::Raw
+    ));
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+}
+
+#[test]
+fn lower_priority_splithttp_settings_are_shape_checked_only() {
+    // These values are invalid under SplitHTTPConfig.Build, but that method is
+    // invoked only for xhttpSettings after priority is applied. Their JSON
+    // types are valid, so Go accepts the config and ignores the legacy block.
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "xhttp", "security": "none",
+           "xhttpSettings": {"host": "current.example", "mode": "stream-one"},
+           "splithttpSettings": {
+             "mode": "not-a-mode", "headers": {"Host": "ignored.example"},
+             "xPaddingBytes": "0-100", "uplinkDataPlacement": "cookie",
+             "xmux": {"maxConcurrency": 1, "maxConnections": 1}
+           }"#,
+    ))
+    .expect("semantic validation must apply only to the winning alias");
+    let StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected xhttp");
+    };
+    assert_eq!(xhttp.host.as_deref(), Some("current.example"));
+    assert_eq!(xhttp.mode, XhttpMode::StreamOne);
+    assert_eq!(parsed.diagnostics.len(), 1, "{:?}", parsed.diagnostics);
+    assert_eq!(parsed.diagnostics[0].severity, DiagnosticSeverity::Warning);
+}
+
+#[test]
+fn lower_priority_splithttp_null_fields_are_valid_decode_shapes() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "xhttp", "security": "none",
+           "xhttpSettings": {"host": "current.example", "mode": "stream-one"},
+           "splithttpSettings": {
+             "host": null, "path": null, "mode": null,
+             "headers": {"X-Null": null},
+             "xPaddingBytes": null, "xPaddingObfsMode": null,
+             "xPaddingKey": null, "xPaddingHeader": null,
+             "xPaddingPlacement": null, "xPaddingMethod": null,
+             "uplinkHTTPMethod": null,
+             "sessionPlacement": null, "sessionKey": null,
+             "seqPlacement": null, "seqKey": null,
+             "uplinkDataPlacement": null, "uplinkDataKey": null,
+             "uplinkChunkSize": null,
+             "noGRPCHeader": null, "noSSEHeader": null,
+             "scMaxEachPostBytes": null, "scMinPostsIntervalMs": null,
+             "scMaxBufferedPosts": null, "scStreamUpServerSecs": null,
+             "serverMaxHeaderBytes": null,
+             "xmux": {
+               "maxConcurrency": null, "maxConnections": null,
+               "cMaxReuseTimes": null, "hMaxRequestTimes": null,
+               "hMaxReusableSecs": null, "hKeepAlivePeriod": null
+             },
+             "downloadSettings": null
+           }"#,
+    ))
+    .expect("the ignored alias must still accept every Go-valid null decode shape");
+
+    let StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected xhttp");
+    };
+    assert_eq!(xhttp.host.as_deref(), Some("current.example"));
+    assert_eq!(xhttp.mode, XhttpMode::StreamOne);
+    assert_eq!(parsed.diagnostics.len(), 1, "{:?}", parsed.diagnostics);
+    assert_eq!(parsed.diagnostics[0].severity, DiagnosticSeverity::Warning);
+    assert_eq!(
+        parsed.diagnostics[0].path.as_deref(),
+        Some("$.outbounds[0].streamSettings.splithttpSettings")
+    );
+}
+
+#[test]
+fn lower_priority_splithttp_settings_still_require_decodable_types() {
+    for (fragment, path) in [
+        (r#""host": 5"#, "host"),
+        (r#""xPaddingBytes": "not-a-range""#, "xPaddingBytes"),
+        (r#""headers": {"X-Test": 5}"#, "headers.X-Test"),
+        (
+            r#""xmux": {"hKeepAlivePeriod": "forever"}"#,
+            "xmux.hKeepAlivePeriod",
+        ),
+    ] {
+        assert_parse_error_path(
+            &raw_with_stream_settings(&format!(
+                r#""network": "xhttp", "security": "none",
+                   "xhttpSettings": {{"mode": "stream-one"}},
+                   "splithttpSettings": {{{fragment}}}"#
+            )),
+            &format!("$.outbounds[0].streamSettings.splithttpSettings.{path}"),
+        );
+    }
+}
+
+#[test]
+fn xhttp_rejects_invalid_modes_placements_methods_and_limits() {
+    for (fragment, path) in [
+        (r#""mode": "burst""#, "mode"),
+        (r#""xPaddingPlacement": "body""#, "xPaddingPlacement"),
+        (r#""xPaddingMethod": "random""#, "xPaddingMethod"),
+        (r#""sessionPlacement": "body""#, "sessionPlacement"),
+        (r#""seqPlacement": "auto""#, "seqPlacement"),
+        (r#""uplinkDataPlacement": "query""#, "uplinkDataPlacement"),
+        (
+            r#""mode": "stream-up", "uplinkDataPlacement": "cookie""#,
+            "uplinkDataPlacement",
+        ),
+        (
+            r#""mode": "stream-one", "uplinkHTTPMethod": "GET""#,
+            "uplinkHTTPMethod",
+        ),
+        (r#""xPaddingBytes": "0-100""#, "xPaddingBytes"),
+        (r#""serverMaxHeaderBytes": -1"#, "serverMaxHeaderBytes"),
+    ] {
+        assert_parse_error_path(
+            &raw_with_stream_settings(&format!(
+                r#""network": "xhttp", "security": "none", "xhttpSettings": {{{fragment}}}"#
+            )),
+            &format!("$.outbounds[0].streamSettings.xhttpSettings.{path}"),
+        );
+    }
+}
+
+#[test]
+fn xhttp_uplink_http_method_is_a_valid_ascii_token() {
+    for method in [
+        r#""POST\r\nX-Evil: 1""#,
+        r#""POST GET""#,
+        r#""méthod""#,
+        r#""\u0000PING""#,
+    ] {
+        assert_parse_error_path(
+            &raw_with_stream_settings(&format!(
+                r#""network": "xhttp", "security": "none",
+                   "xhttpSettings": {{"mode": "packet-up", "uplinkHTTPMethod": {method}}}"#
+            )),
+            "$.outbounds[0].streamSettings.xhttpSettings.uplinkHTTPMethod",
+        );
+    }
+
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "xhttp", "security": "none",
+           "xhttpSettings": {"mode": "packet-up", "uplinkHTTPMethod": "m-search*"}"#,
+    ))
+    .expect("RFC tchar extension methods must remain supported");
+    let StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected xhttp");
+    };
+    assert_eq!(xhttp.uplink_http_method, "M-SEARCH*");
+}
+
+#[test]
+fn xhttp_rejects_invalid_ranges_and_conflicting_xmux_limits() {
+    for value in [r#""1-two""#, r#"1.5"#, r#""2147483648""#] {
+        assert_parse_error_path(
+            &raw_with_stream_settings(&format!(
+                r#""network": "xhttp", "security": "none",
+                   "xhttpSettings": {{"uplinkChunkSize": {value}}}"#
+            )),
+            "$.outbounds[0].streamSettings.xhttpSettings.uplinkChunkSize",
+        );
+    }
+
+    assert_parse_error_path(
+        &raw_with_stream_settings(
+            r#""network": "xhttp", "security": "none",
+               "xhttpSettings": {"xmux": {"maxConcurrency": 2, "maxConnections": 3}}"#,
+        ),
+        "$.outbounds[0].streamSettings.xhttpSettings.xmux",
+    );
+}
+
+#[test]
+fn xhttp_ranges_accept_signed_single_empty_and_reversed_forms() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "xhttp", "security": "none",
+           "xhttpSettings": {
+             "uplinkChunkSize": "-1919--810",
+             "scMaxEachPostBytes": "",
+             "scMinPostsIntervalMs": -7,
+             "scStreamUpServerSecs": "120-90"
+           }"#,
+    ))
+    .expect("all Int32Range forms accepted by Xray must parse");
+
+    let StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected xhttp");
+    };
+    assert_eq!(
+        xhttp.uplink_chunk_size,
+        XhttpRange {
+            from: -1919,
+            to: -810
+        }
+    );
+    assert_eq!(xhttp.sc_max_each_post_bytes, XhttpRange::default());
+    assert_eq!(
+        xhttp.sc_min_posts_interval_ms,
+        XhttpRange { from: -7, to: -7 }
+    );
+    assert_eq!(
+        xhttp.sc_stream_up_server_secs,
+        XhttpRange { from: 90, to: 120 }
+    );
+}
+
+#[test]
+fn xhttp_rejects_host_header_download_settings_and_extra_explicitly() {
+    for (fragment, path) in [
+        (r#""headers": {"hOsT": "bad.example"}"#, "headers"),
+        (r#""downloadSettings": {}"#, "downloadSettings"),
+        (r#""extra": {}"#, "extra"),
+        (r#""extra": null"#, "extra"),
+    ] {
+        assert_parse_error_path(
+            &raw_with_stream_settings(&format!(
+                r#""network": "xhttp", "security": "none", "xhttpSettings": {{{fragment}}}"#
+            )),
+            &format!("$.outbounds[0].streamSettings.xhttpSettings.{path}"),
+        );
+    }
+}
+
+#[test]
+fn finalmask_quic_params_full_v26_surface_is_normalized() {
+    let parsed = parse_xray_json(&raw_with_quic_params(
+        r#"
+          "congestion": "BRUTAL",
+          "bbrProfile": "AGGRESSIVE",
+          "brutalUp": "512 kbps",
+          "brutalDown": "8 Mbps",
+          "udpHop": { "ports": "443, 1000-1002, 443", "interval": "30-10" },
+          "initStreamReceiveWindow": 16384,
+          "maxStreamReceiveWindow": 32768,
+          "initConnectionReceiveWindow": 65536,
+          "maxConnectionReceiveWindow": 131072,
+          "maxIdleTimeout": 120,
+          "keepAlivePeriod": 60,
+          "disablePathMTUDiscovery": true,
+          "maxIncomingStreams": 8,
+          "debug": true
+        "#,
+    ))
+    .expect("full finalmask QUIC parameters should parse");
+
+    assert!(parsed.diagnostics.is_empty());
+    assert_eq!(
+        parsed.config.outbounds[0].stream.quic_params,
+        Some(QuicParamsSettings {
+            congestion: QuicCongestion::Brutal,
+            bbr_profile: QuicBbrProfile::Aggressive,
+            brutal_up_bytes_per_sec: 65_536,
+            brutal_down_bytes_per_sec: 1_048_576,
+            udp_hop: QuicUdpHopSettings {
+                ports: vec![443, 1000, 1001, 1002, 443],
+                interval: QuicIntervalRange { from: 10, to: 30 },
+            },
+            init_stream_receive_window: 16_384,
+            max_stream_receive_window: 32_768,
+            init_connection_receive_window: 65_536,
+            max_connection_receive_window: 131_072,
+            max_idle_timeout_secs: 120,
+            keep_alive_period_secs: 60,
+            disable_path_mtu_discovery: true,
+            max_incoming_streams: 8,
+            debug: true,
+        })
+    );
+}
+
+#[test]
+fn finalmask_quic_params_preserves_pointer_presence_and_xray_defaults() {
+    for stream_settings in [
+        r#""network": "xhttp", "security": "none""#,
+        r#""network": "xhttp", "security": "none", "finalmask": null"#,
+        r#""network": "xhttp", "security": "none", "finalmask": {}"#,
+        r#""network": "xhttp", "security": "none", "finalmask": {"quicParams": null}"#,
+    ] {
+        let parsed = parse_xray_json(&raw_with_stream_settings(stream_settings))
+            .expect("absent QUIC pointer should parse");
+        assert_eq!(parsed.config.outbounds[0].stream.quic_params, None);
+    }
+
+    let parsed = parse_xray_json(&raw_with_quic_params(
+        r#"
+          "congestion": null,
+          "bbrProfile": null,
+          "brutalUp": null,
+          "brutalDown": null,
+          "udpHop": null,
+          "initStreamReceiveWindow": null,
+          "maxStreamReceiveWindow": null,
+          "initConnectionReceiveWindow": null,
+          "maxConnectionReceiveWindow": null,
+          "maxIdleTimeout": null,
+          "keepAlivePeriod": null,
+          "disablePathMTUDiscovery": null,
+          "maxIncomingStreams": null,
+          "debug": null
+        "#,
+    ))
+    .expect("null scalar values should retain Go zero defaults");
+    assert_eq!(
+        parsed.config.outbounds[0].stream.quic_params,
+        Some(QuicParamsSettings::default())
+    );
+}
+
+#[test]
+fn finalmask_empty_masks_are_accepted_but_nonempty_masks_fail_closed() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "xhttp", "security": "none",
+           "finalmask": {"tcp": [], "udp": [], "quicParams": {}}"#,
+    ))
+    .expect("empty final masks should parse");
+    assert_eq!(
+        parsed.config.outbounds[0].stream.quic_params,
+        Some(QuicParamsSettings::default())
+    );
+
+    for mask in ["tcp", "udp"] {
+        assert_parse_error_path(
+            &raw_with_stream_settings(&format!(
+                r#""network": "xhttp", "security": "none",
+                   "finalmask": {{"{mask}": [{{"type": "example"}}]}}"#
+            )),
+            &format!("$.outbounds[0].streamSettings.finalmask.{mask}"),
+        );
+    }
+}
+
+#[test]
+fn finalmask_udp_hop_zero_and_null_normalize_to_empty_defaults() {
+    for udp_hop in [
+        r#""udpHop": {"ports": 0, "interval": 0}"#,
+        r#""udpHop": {"ports": null, "interval": null}"#,
+    ] {
+        let parsed = parse_xray_json(&raw_with_quic_params(udp_hop))
+            .expect("zero and null are Xray's empty UDP-hop values");
+        let quic = parsed.config.outbounds[0]
+            .stream
+            .quic_params
+            .as_ref()
+            .expect("explicit QUIC params");
+        assert!(quic.udp_hop.ports.is_empty());
+        assert_eq!(quic.udp_hop.interval, QuicIntervalRange::default());
+    }
+}
+
+#[test]
+fn finalmask_accepts_every_upstream_congestion_name_case_insensitively() {
+    for (configured, expected) in [
+        ("", QuicCongestion::Default),
+        ("brutal", QuicCongestion::Brutal),
+        ("RENO", QuicCongestion::Reno),
+        ("BbR", QuicCongestion::Bbr),
+        ("force-brutal", QuicCongestion::ForceBrutal),
+    ] {
+        let parsed = parse_xray_json(&raw_with_quic_params(&format!(
+            r#""congestion": "{configured}", "brutalUp": "512kbps""#
+        )))
+        .expect("upstream congestion spelling should parse");
+        assert_eq!(
+            parsed.config.outbounds[0]
+                .stream
+                .quic_params
+                .as_ref()
+                .expect("explicit QUIC params")
+                .congestion,
+            expected
+        );
+    }
+}
+
+#[test]
+fn finalmask_quic_params_rejects_invalid_values_at_exact_paths() {
+    let cases = [
+        (r#""congestion": "cubic""#, "congestion"),
+        (r#""bbrProfile": "fast""#, "bbrProfile"),
+        (r#""brutalUp": 524288"#, "brutalUp"),
+        (r#""brutalUp": "not-a-rate""#, "brutalUp"),
+        (r#""brutalUp": "524287bps""#, "brutalUp"),
+        (r#""brutalDown": "524287bps""#, "brutalDown"),
+        (r#""congestion": "force-brutal""#, "congestion"),
+        (r#""udpHop": {"ports": "0"}"#, "udpHop.ports"),
+        (r#""udpHop": {"ports": "65536"}"#, "udpHop.ports"),
+        (r#""udpHop": {"ports": "10-9"}"#, "udpHop.ports"),
+        (r#""udpHop": {"ports": "env:QUIC_PORTS"}"#, "udpHop.ports"),
+        (r#""udpHop": {"interval": 4}"#, "udpHop.interval"),
+        (
+            r#""initStreamReceiveWindow": 16383"#,
+            "initStreamReceiveWindow",
+        ),
+        (
+            r#""maxStreamReceiveWindow": 16383"#,
+            "maxStreamReceiveWindow",
+        ),
+        (
+            r#""initConnectionReceiveWindow": 16383"#,
+            "initConnectionReceiveWindow",
+        ),
+        (
+            r#""maxConnectionReceiveWindow": 16383"#,
+            "maxConnectionReceiveWindow",
+        ),
+        (r#""maxIdleTimeout": 3"#, "maxIdleTimeout"),
+        (r#""maxIdleTimeout": 121"#, "maxIdleTimeout"),
+        (r#""keepAlivePeriod": 1"#, "keepAlivePeriod"),
+        (r#""keepAlivePeriod": 61"#, "keepAlivePeriod"),
+        (r#""maxIncomingStreams": -1"#, "maxIncomingStreams"),
+        (r#""maxIncomingStreams": 7"#, "maxIncomingStreams"),
+        (
+            r#""disablePathMTUDiscovery": "true""#,
+            "disablePathMTUDiscovery",
+        ),
+        (r#""debug": 1"#, "debug"),
+    ];
+
+    for (fragment, path) in cases {
+        assert_parse_error_path(
+            &raw_with_quic_params(fragment),
+            &format!("$.outbounds[0].streamSettings.finalmask.quicParams.{path}"),
+        );
+    }
+}
+
+#[test]
+fn finalmask_json_field_casing_is_exact_and_unknown_fields_fail_closed() {
+    for (stream_settings, path) in [
+        (
+            r#""network": "xhttp", "security": "none", "finalMask": {}"#,
+            "$.outbounds[0].streamSettings.finalMask",
+        ),
+        (
+            r#""network": "xhttp", "security": "none",
+               "finalmask": {"quicparams": {}}"#,
+            "$.outbounds[0].streamSettings.finalmask.quicparams",
+        ),
+        (
+            r#""network": "xhttp", "security": "none",
+               "finalmask": {"quicParams": {"disablePathMtuDiscovery": true}}"#,
+            "$.outbounds[0].streamSettings.finalmask.quicParams.disablePathMtuDiscovery",
+        ),
+    ] {
+        assert_parse_error_path(&raw_with_stream_settings(stream_settings), path);
+    }
+}
+
+#[test]
+fn the_ed_query_parameter_is_stripped_from_the_path() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "ws", "security": "none",
+           "wsSettings": {"path": "/x?ed=2048"}"#,
+    ))
+    .expect("an ed path must parse");
+
+    let StreamTransport::WebSocket(ws) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected a websocket transport");
+    };
+    assert_eq!(ws.path, "/x", "ed never reaches the wire");
+    assert_eq!(ws.early_data_bytes, 2048);
+}
+
+#[test]
+fn the_remaining_query_is_re_encoded_alphabetically() {
+    // Go's url.Values.Encode() sorts, so a path that keeps its query comes out
+    // reordered. The server compares the whole path, so we must match.
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "ws", "security": "none",
+           "wsSettings": {"path": "/x?zulu=1&alpha=2&ed=64"}"#,
+    ))
+    .expect("a multi-parameter path must parse");
+
+    let StreamTransport::WebSocket(ws) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected a websocket transport");
+    };
+    assert_eq!(ws.path, "/x?alpha=2&zulu=1");
+    assert_eq!(ws.early_data_bytes, 64);
+}
+
+#[test]
+fn a_non_numeric_ed_value_is_still_stripped() {
+    // Go's `Ed, _ := strconv.Atoi(...)` swallows the error and leaves ed zero,
+    // but the deletion happens either way.
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "ws", "security": "none",
+           "wsSettings": {"path": "/x?ed=lots&keep=1"}"#,
+    ))
+    .expect("a non-numeric ed must parse");
+
+    let StreamTransport::WebSocket(ws) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected a websocket transport");
+    };
+    assert_eq!(ws.path, "/x?keep=1");
+    assert_eq!(ws.early_data_bytes, 0);
+}
+
+#[test]
+fn a_query_without_ed_is_left_byte_for_byte_alone() {
+    // Xray only rewrites the path inside the `q.Get("ed") != ""` branch, so a
+    // path that never mentions ed keeps its original parameter order and
+    // escaping. Sorting it here would be a path mismatch on the wire.
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "ws", "security": "none",
+           "wsSettings": {"path": "/x?zulu=1&alpha=2"}"#,
+    ))
+    .expect("a query without ed must parse");
+
+    let StreamTransport::WebSocket(ws) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected a websocket transport");
+    };
+    assert_eq!(ws.path, "/x?zulu=1&alpha=2");
+    assert_eq!(ws.early_data_bytes, 0);
+}
+
+#[test]
+fn an_empty_ed_value_is_not_an_ed_at_all() {
+    // `q.Get("ed")` returns "" for `?ed=`, so Xray skips the whole rewrite and
+    // sends `ed=` verbatim.
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "ws", "security": "none",
+           "wsSettings": {"path": "/x?ed=&zulu=1"}"#,
+    ))
+    .expect("an empty ed must parse");
+
+    let StreamTransport::WebSocket(ws) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected a websocket transport");
+    };
+    assert_eq!(ws.path, "/x?ed=&zulu=1");
+    assert_eq!(ws.early_data_bytes, 0);
+}
+
+#[test]
+fn a_repeated_ed_takes_the_first_value_and_drops_every_copy() {
+    // `Values.Get` reads the first entry and `Values.Del` removes them all.
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "ws", "security": "none",
+           "wsSettings": {"path": "/x?ed=16&ed=32"}"#,
+    ))
+    .expect("a repeated ed must parse");
+
+    let StreamTransport::WebSocket(ws) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected a websocket transport");
+    };
+    assert_eq!(ws.path, "/x");
+    assert_eq!(ws.early_data_bytes, 16);
+}
+
+#[test]
+fn the_kept_query_is_percent_encoded_the_way_go_encodes_it() {
+    // url.Values round-trips through QueryUnescape/QueryEscape, so `+` means a
+    // space on the way in and comes back out as `+`, and a bare key gains `=`.
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "ws", "security": "none",
+           "wsSettings": {"path": "/x?b=a+b&a&ed=8"}"#,
+    ))
+    .expect("an escaped query must parse");
+
+    let StreamTransport::WebSocket(ws) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected a websocket transport");
+    };
+    assert_eq!(ws.path, "/x?a=&b=a+b");
+    assert_eq!(ws.early_data_bytes, 8);
+}
+
+#[test]
+fn an_empty_path_becomes_a_single_slash() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "ws", "security": "none", "wsSettings": {}"#,
+    ))
+    .expect("wsSettings may be empty");
+
+    let StreamTransport::WebSocket(ws) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected a websocket transport");
+    };
+    assert_eq!(ws.path, "/");
+}
+
+#[test]
+fn a_relative_path_gains_its_leading_slash() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "ws", "security": "none", "wsSettings": {"path": "chat"}"#,
+    ))
+    .expect("a relative path must parse");
+
+    let StreamTransport::WebSocket(ws) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected a websocket transport");
+    };
+    assert_eq!(ws.path, "/chat");
+}
+
+#[test]
+fn ws_folds_a_host_header_into_host_with_a_deprecation_warning() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "ws", "security": "none",
+           "wsSettings": {"headers": {"host": "cdn.example.com", "X-Thing": "v"}}"#,
+    ))
+    .expect("headers.host must parse for ws");
+
+    let StreamTransport::WebSocket(ws) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected a websocket transport");
+    };
+    assert_eq!(ws.host.as_deref(), Some("cdn.example.com"));
+    assert_eq!(ws.headers, vec![("X-Thing".to_owned(), "v".to_owned())]);
+    assert_eq!(parsed.diagnostics.len(), 1);
+    assert_eq!(
+        parsed.diagnostics[0].severity,
+        DiagnosticSeverity::Warning,
+        "{:?}",
+        parsed.diagnostics
+    );
+    assert_eq!(
+        parsed.diagnostics[0].path.as_deref(),
+        Some("$.outbounds[0].streamSettings.wsSettings.headers")
+    );
+}
+
+#[test]
+fn an_explicit_ws_host_wins_over_a_host_header() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "ws", "security": "none",
+           "wsSettings": {"host": "wins.example.com",
+                          "headers": {"Host": "loses.example.com"}}"#,
+    ))
+    .expect("headers.Host must parse for ws");
+
+    let StreamTransport::WebSocket(ws) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected a websocket transport");
+    };
+    assert_eq!(ws.host.as_deref(), Some("wins.example.com"));
+    assert!(ws.headers.is_empty(), "the folded header is still removed");
+}
+
+#[test]
+fn httpupgrade_rejects_a_host_header_inside_headers() {
+    // ws folds headers.Host into host with a deprecation warning; httpupgrade
+    // makes it a hard error.
+    assert_parse_error_path(
+        &raw_with_stream_settings(
+            r#""network": "httpupgrade", "security": "none",
+               "httpupgradeSettings": {"headers": {"Host": "x"}}"#,
+        ),
+        "$.outbounds[0].streamSettings.httpupgradeSettings.headers",
+    );
+}
+
+#[test]
+fn ws_canonicalizes_header_names_but_httpupgrade_keeps_them_literal() {
+    // Xray's ws config goes through Go's `header.Add`, which MIME-canonicalizes
+    // the key; httpupgrade assigns into the map directly so that people can
+    // send `Sec-WebSocket-*` with their own casing. The split is deliberate and
+    // visible on the wire.
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "ws", "security": "none",
+           "wsSettings": {"headers": {"accept-language": "en", "SEC-ch-ua": "x"}}"#,
+    ))
+    .expect("lowercase ws headers must parse");
+
+    let StreamTransport::WebSocket(ws) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected a websocket transport");
+    };
+    assert_eq!(
+        sorted_header_names(&ws.headers),
+        vec!["Accept-Language", "Sec-Ch-Ua"]
+    );
+
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "httpupgrade", "security": "none",
+           "httpupgradeSettings": {"headers": {"accept-language": "en", "SEC-ch-ua": "x"}}"#,
+    ))
+    .expect("lowercase httpupgrade headers must parse");
+
+    let StreamTransport::HttpUpgrade(httpupgrade) = &parsed.config.outbounds[0].stream.transport
+    else {
+        panic!("expected an httpupgrade transport");
+    };
+    assert_eq!(
+        sorted_header_names(&httpupgrade.headers),
+        vec!["SEC-ch-ua", "accept-language"]
+    );
+}
+
+/// Header order in the model is whatever the JSON object iteration produced;
+/// only the serializer's sort is observable on the wire, so tests compare the
+/// names sorted the same way it sorts them.
+fn sorted_header_names(headers: &[(String, String)]) -> Vec<&str> {
+    let mut names: Vec<&str> = headers.iter().map(|(name, _)| name.as_str()).collect();
+    names.sort_unstable_by_key(|name| name.as_bytes());
+    names
+}
+
+#[test]
+fn removed_transports_say_they_were_removed() {
+    for network in ["h2", "h3", "http", "quic"] {
+        let error = parse_xray_json(&raw_with_stream_settings(&format!(
+            r#""network": "{network}", "security": "none""#
+        )))
+        .expect_err("a removed transport must be rejected");
+        assert!(
+            error
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.message.contains("removed")),
+            "{network} must say it was removed, got: {:?}",
+            error.diagnostics
+        );
+    }
+}
+
+#[test]
+fn transports_xray_still_has_but_we_do_not_say_so() {
+    for network in ["kcp", "mkcp", "hysteria"] {
+        let error = parse_xray_json(&raw_with_stream_settings(&format!(
+            r#""network": "{network}", "security": "none""#
+        )))
+        .expect_err("an unimplemented transport must be rejected");
+        assert_eq!(
+            error.diagnostics[0].path.as_deref(),
+            Some("$.outbounds[0].streamSettings.network")
+        );
+        assert!(
+            error.diagnostics[0].message.contains("not supported"),
+            "{network} got: {:?}",
+            error.diagnostics
+        );
+    }
+}
+
+#[test]
+fn a_settings_block_the_network_will_not_consume_warns() {
+    // Xray's StreamConfig.Build builds every block that is present and only
+    // picks one at dial time, so this parses — but silently as plain TCP,
+    // which is the copy-paste worth naming.
+    for (network, ignored) in [
+        ("raw", "wsSettings"),
+        ("raw", "httpupgradeSettings"),
+        ("ws", "httpupgradeSettings"),
+        ("ws", "tcpSettings"),
+        ("httpupgrade", "wsSettings"),
+        ("httpupgrade", "rawSettings"),
+        ("raw", "grpcSettings"),
+        ("grpc", "wsSettings"),
+        ("raw", "xhttpSettings"),
+        ("grpc", "splithttpSettings"),
+    ] {
+        let parsed = parse_xray_json(&raw_with_stream_settings(&format!(
+            r#""network": "{network}", "security": "none", "{ignored}": {{}}"#
+        )))
+        .unwrap_or_else(|error| panic!("{network} with {ignored} must parse: {error:?}"));
+
+        let warning = parsed
+            .diagnostics
+            .iter()
+            .find(|diagnostic| {
+                diagnostic.path.as_deref()
+                    == Some(&format!("$.outbounds[0].streamSettings.{ignored}"))
+            })
+            .unwrap_or_else(|| {
+                panic!(
+                    "{network} must flag {ignored}, got: {:?}",
+                    parsed.diagnostics
+                )
+            });
+        assert_eq!(warning.severity, DiagnosticSeverity::Warning);
+    }
+}
+
+#[test]
+fn a_settings_block_the_network_will_not_consume_is_still_validated() {
+    // Xray builds the block regardless of the network, so a config that fails
+    // to build there must fail here; skipping it would make us more lenient
+    // than the reference, not equal to it.
+    let error = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "raw", "security": "none",
+           "httpupgradeSettings": {"headers": {"Host": "x"}}"#,
+    ))
+    .expect_err("an unconsumed block still has to build");
+
+    assert!(
+        error.diagnostics.iter().any(|diagnostic| {
+            diagnostic.severity == DiagnosticSeverity::Error
+                && diagnostic.path.as_deref()
+                    == Some("$.outbounds[0].streamSettings.httpupgradeSettings.headers")
+        }),
+        "got: {:?}",
+        error.diagnostics
+    );
+}
+
+#[test]
+fn a_consumed_settings_block_does_not_warn() {
+    for (network, consumed) in [
+        ("raw", "tcpSettings"),
+        ("raw", "rawSettings"),
+        ("ws", "wsSettings"),
+        ("httpupgrade", "httpupgradeSettings"),
+        ("grpc", "grpcSettings"),
+        ("xhttp", "xhttpSettings"),
+        ("splithttp", "splithttpSettings"),
+    ] {
+        let parsed = parse_xray_json(&raw_with_stream_settings(&format!(
+            r#""network": "{network}", "security": "none", "{consumed}": {{}}"#
+        )))
+        .expect("a matching settings block must parse");
+
+        assert!(
+            parsed.diagnostics.is_empty(),
+            "{network} with {consumed} got: {:?}",
+            parsed.diagnostics
+        );
+    }
+}
+
+#[test]
+fn rejects_unknown_ws_settings_field_with_path() {
+    assert_parse_error_path(
+        &raw_with_stream_settings(
+            r#""network": "ws", "security": "none", "wsSettings": {"nope": 1}"#,
+        ),
+        "$.outbounds[0].streamSettings.wsSettings.nope",
+    );
+}
+
+#[test]
+fn rejects_non_string_ws_path_with_path() {
+    // A silently ignored path would dial `/` and 404 against a real server.
+    assert_parse_error_path(
+        &raw_with_stream_settings(
+            r#""network": "ws", "security": "none", "wsSettings": {"path": 8}"#,
+        ),
+        "$.outbounds[0].streamSettings.wsSettings.path",
+    );
+}
+
+#[test]
+fn rejects_non_string_httpupgrade_host_with_path() {
+    assert_parse_error_path(
+        &raw_with_stream_settings(
+            r#""network": "httpupgrade", "security": "none",
+               "httpupgradeSettings": {"host": true}"#,
+        ),
+        "$.outbounds[0].streamSettings.httpupgradeSettings.host",
+    );
+}
+
+#[test]
+fn rejects_non_string_ws_header_value_with_path() {
+    assert_parse_error_path(
+        &raw_with_stream_settings(
+            r#""network": "ws", "security": "none", "wsSettings": {"headers": {"X-Thing": 1}}"#,
+        ),
+        "$.outbounds[0].streamSettings.wsSettings.headers.X-Thing",
+    );
 }
 
 #[test]
@@ -3246,6 +4986,35 @@ fn raw_with_tls_settings(tls_settings: &str) -> String {
     )
 }
 
+fn raw_with_stream_settings(stream_settings: &str) -> String {
+    format!(
+        r#"{{
+          "inbounds": [],
+          "outbounds": [{{
+            "tag": "proxy",
+            "protocol": "vless",
+            "settings": {{
+              "vnext": [
+                {{
+                  "address": "server.example",
+                  "port": 443,
+                  "users": [{{ "id": "00010203-0405-0607-0809-0a0b0c0d0e0f" }}]
+                }}
+              ]
+            }},
+            "streamSettings": {{ {stream_settings} }}
+          }}]
+        }}"#
+    )
+}
+
+fn raw_with_quic_params(quic_params: &str) -> String {
+    raw_with_stream_settings(&format!(
+        r#""network": "xhttp", "security": "none",
+           "finalmask": {{"quicParams": {{{quic_params}}}}}"#
+    ))
+}
+
 fn raw_with_tcp_settings(tcp_settings: &str) -> String {
     format!(
         r#"{{
@@ -3266,6 +5035,32 @@ fn raw_with_tcp_settings(tcp_settings: &str) -> String {
               "network": "tcp",
               "security": "none",
               "tcpSettings": {{ {tcp_settings} }}
+            }}
+          }}]
+        }}"#
+    )
+}
+
+fn raw_with_raw_settings(raw_settings: &str) -> String {
+    format!(
+        r#"{{
+          "inbounds": [],
+          "outbounds": [{{
+            "tag": "proxy",
+            "protocol": "vless",
+            "settings": {{
+              "vnext": [
+                {{
+                  "address": "server.example",
+                  "port": 443,
+                  "users": [{{ "id": "00010203-0405-0607-0809-0a0b0c0d0e0f" }}]
+                }}
+              ]
+            }},
+            "streamSettings": {{
+              "network": "raw",
+              "security": "none",
+              "rawSettings": {{ {raw_settings} }}
             }}
           }}]
         }}"#
@@ -3540,4 +5335,109 @@ fn explicit_lan_opt_in_accepts_non_loopback_listener_with_warning() {
             && diagnostic.path.as_deref() == Some("$.inbounds[0].listen")
             && diagnostic.message.contains("explicitly exposed")
     }));
+}
+
+#[test]
+fn reality_is_rejected_for_ws_and_httpupgrade() {
+    // Xray refuses this at config-build time
+    // (`infra/conf/transport_internet.go`, "REALITY only supports RAW, XHTTP
+    // and gRPC for now."). Without the same refusal a profile builds cleanly
+    // here and then fails on the wire against a real server.
+    for network in ["ws", "httpupgrade"] {
+        let error = parse_xray_json(&raw_with_stream_settings(&format!(
+            r#""network": "{network}", "security": "reality",
+               "realitySettings": {{"serverName": "server.example",
+                                    "fingerprint": "chrome",
+                                    "publicKey": "E59WjnvZcQMu7tR7_BgyhycuEdBS-CtKxfImRCdAvFM",
+                                    "shortId": "02030405"}}"#
+        )))
+        .expect_err("REALITY must be rejected for this transport");
+
+        assert!(
+            error
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.message.contains("REALITY only supports")),
+            "{network} must echo Xray's message, got: {:?}",
+            error.diagnostics
+        );
+        assert!(
+            error.diagnostics.iter().any(|diagnostic| {
+                diagnostic.path.as_deref() == Some("$.outbounds[0].streamSettings.security")
+            }),
+            "{network} must point at the security field, got: {:?}",
+            error.diagnostics
+        );
+    }
+}
+
+#[test]
+fn reality_is_accepted_on_grpc() {
+    // `if config.ProtocolName != "tcp" && config.ProtocolName != "splithttp"
+    // && config.ProtocolName != "grpc"` (`Xray-core/infra/conf/
+    // transport_internet.go:1989`) — so the message our guard has always
+    // quoted names gRPC because Xray really does build it, and REALITY over
+    // gRPC is the deployment this transport mostly exists for.
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "grpc", "security": "reality",
+           "grpcSettings": {"serviceName": "GunService"},
+           "realitySettings": {"serverName": "server.example",
+                               "fingerprint": "chrome",
+                               "publicKey": "E59WjnvZcQMu7tR7_BgyhycuEdBS-CtKxfImRCdAvFM",
+                               "shortId": "02030405"}"#,
+    ))
+    .expect("REALITY + gRPC is a configuration xray-core builds");
+
+    assert!(matches!(
+        parsed.config.outbounds[0].stream.security,
+        StreamSecurity::Reality(_)
+    ));
+    assert!(matches!(
+        parsed.config.outbounds[0].stream.transport,
+        StreamTransport::Grpc(_)
+    ));
+}
+
+#[test]
+fn reality_is_accepted_on_both_xhttp_network_spellings() {
+    for (network, settings_key) in [
+        ("xhttp", "xhttpSettings"),
+        ("splithttp", "splithttpSettings"),
+    ] {
+        let parsed = parse_xray_json(&raw_with_stream_settings(&format!(
+            r#""network": "{network}", "security": "reality",
+               "{settings_key}": {{"mode": "stream-one"}},
+               "realitySettings": {{"serverName": "server.example",
+                                     "fingerprint": "chrome",
+                                     "publicKey": "E59WjnvZcQMu7tR7_BgyhycuEdBS-CtKxfImRCdAvFM",
+                                     "shortId": "02030405"}}"#
+        )))
+        .unwrap_or_else(|error| panic!("REALITY + {network} must parse: {error:?}"));
+
+        assert!(matches!(
+            parsed.config.outbounds[0].stream.security,
+            StreamSecurity::Reality(_)
+        ));
+        assert!(matches!(
+            parsed.config.outbounds[0].stream.transport,
+            StreamTransport::Xhttp(_)
+        ));
+    }
+}
+
+#[test]
+fn reality_stays_valid_on_the_raw_transport() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "raw", "security": "reality",
+           "realitySettings": {"serverName": "server.example",
+                               "fingerprint": "chrome",
+                               "publicKey": "E59WjnvZcQMu7tR7_BgyhycuEdBS-CtKxfImRCdAvFM",
+                               "shortId": "02030405"}"#,
+    ))
+    .expect("REALITY over raw must keep parsing");
+
+    assert!(matches!(
+        parsed.config.outbounds[0].stream.security,
+        StreamSecurity::Reality(_)
+    ));
 }

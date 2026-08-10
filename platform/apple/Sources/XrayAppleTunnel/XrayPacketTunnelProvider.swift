@@ -787,7 +787,10 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             outboundQueueMaxPackets: stats.outboundQueueMaxPackets,
             tunFdWriteBatches: stats.tunFdWriteBatches,
             tunFdWriteBatchPackets: stats.tunFdWriteBatchPackets,
-            tunFdWriteBatchMaxPackets: stats.tunFdWriteBatchMaxPackets
+            tunFdWriteBatchMaxPackets: stats.tunFdWriteBatchMaxPackets,
+            tunFdReadLoopExits: stats.tunFdReadLoopExits,
+            tunFdWriteLoopExits: stats.tunFdWriteLoopExits,
+            tunFdTransientIoErrors: stats.tunFdTransientIoErrors
         )
         XrayAppleLog.info(
             "PacketTunnelProvider",
@@ -1911,6 +1914,10 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         }
         settings.ipv4Settings = ipv4Settings
 
+        // Full-tunnel means both address families. Leaving IPv6 unadvertised
+        // here silently bypasses the VPN for IPv6 literals and AAAA results.
+        // The Rust TUN path understands IPv6 TCP/UDP, while the proxy server's
+        // own bootstrap address is excluded below to avoid routing recursion.
         let ipv6Settings = NEIPv6Settings(
             addresses: [tunnelLocalIPv6Address],
             networkPrefixLengths: [128]
@@ -2472,9 +2479,10 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         let pump: XrayPacketTunnelPump?
         switch backend {
         case let .darwinUtunFileDescriptor(fd):
+            let interfaceName = XrayDarwinTunFileDescriptor.interfaceName(for: fd) ?? "unknown"
             XrayAppleLog.info(
                 "PacketTunnelProvider",
-                "Using Darwin utun file descriptor for packet I/O"
+                "Using Darwin utun file descriptor for packet I/O fd=\(fd) interface=\(interfaceName)"
             )
             core = try Self.makeCore(
                 resolvedConfig: resolvedConfig,

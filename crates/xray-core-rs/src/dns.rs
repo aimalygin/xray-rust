@@ -885,7 +885,7 @@ mod tests {
         CoreConfig, DnsConfig, DnsHostMapping, DnsHostTarget, DnsOutboundRule,
         DnsOutboundRuleAction, DnsOutboundSettings, DnsQTypeRange, DnsServerConfig, DomainMatcher,
         IpCidr, IpMatcher, Network, OutboundConfig, OutboundSettings, PolicyConfig, RoutingConfig,
-        RoutingDomainStrategy, RoutingRule, StreamSecurity, StreamSettings,
+        RoutingDomainStrategy, RoutingRule, StreamSecurity, StreamSettings, StreamTransport,
         TargetAddr as ConfigTargetAddr, TlsSettings,
     };
     use xray_transport::{
@@ -975,7 +975,9 @@ mod tests {
             dns,
             StreamSettings {
                 network: Network::Tcp,
+                transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
+                quic_params: None,
                 socket_options: None,
             },
         )
@@ -1010,7 +1012,9 @@ mod tests {
             tag: Some("direct".to_owned()),
             stream: StreamSettings {
                 network: Network::Tcp,
+                transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
+                quic_params: None,
                 socket_options: None,
             },
             settings: OutboundSettings::Freedom,
@@ -1019,7 +1023,9 @@ mod tests {
             tag: Some("dns-out".to_owned()),
             stream: StreamSettings {
                 network: Network::Tcp,
+                transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
+                quic_params: None,
                 socket_options: None,
             },
             settings: OutboundSettings::Dns(DnsOutboundSettings {
@@ -1063,7 +1069,9 @@ mod tests {
             settings,
             StreamSettings {
                 network: Network::Tcp,
+                transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
+                quic_params: None,
                 socket_options: None,
             },
         )
@@ -1436,7 +1444,9 @@ mod tests {
                 tag: Some("direct".to_owned()),
                 stream: StreamSettings {
                     network: Network::Tcp,
+                    transport: StreamTransport::Raw,
                     security: StreamSecurity::None,
+                    quic_params: None,
                     socket_options: None,
                 },
                 settings: OutboundSettings::Freedom,
@@ -1808,11 +1818,14 @@ mod tests {
             },
             StreamSettings {
                 network: Network::Tcp,
+                transport: StreamTransport::Raw,
                 security: StreamSecurity::Tls(TlsSettings {
                     server_name: Some("explicit-sni.test".to_owned()),
                     fingerprint: None,
                     allow_insecure: true,
+                    alpn: Vec::new(),
                 }),
+                quic_params: None,
                 socket_options: None,
             },
         );
@@ -1861,11 +1874,14 @@ mod tests {
             },
             StreamSettings {
                 network: Network::Tcp,
+                transport: StreamTransport::Raw,
                 security: StreamSecurity::Tls(TlsSettings {
                     server_name: None,
                     fingerprint: None,
                     allow_insecure: false,
+                    alpn: Vec::new(),
                 }),
+                quic_params: None,
                 socket_options: None,
             },
         );
@@ -1881,9 +1897,10 @@ mod tests {
             RoutingNetwork::Udp,
         );
         let protector = Arc::new(CountingSocketProtector::default());
-        let dialer =
-            TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config))
-                .with_socket_protector(protector.clone());
+        let dialer = TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(
+            client_config,
+        ))
+        .with_socket_protector(protector.clone());
 
         let response = tokio::time::timeout(
             Duration::from_secs(2),
@@ -1964,11 +1981,14 @@ mod tests {
             },
             StreamSettings {
                 network: Network::Tcp,
+                transport: StreamTransport::Raw,
                 security: StreamSecurity::Tls(TlsSettings {
                     server_name: None,
                     fingerprint: None,
                     allow_insecure: false,
+                    alpn: Vec::new(),
                 }),
+                quic_params: None,
                 socket_options: None,
             },
         );
@@ -1983,8 +2003,9 @@ mod tests {
             53,
             RoutingNetwork::Tcp,
         );
-        let dialer =
-            TransportDialer::with_tls_connector(TlsConnector::with_client_config(client_config));
+        let dialer = TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(
+            client_config,
+        ));
 
         let mut session = DirectDnsTcpSession::open(&original, &outbound, &bootstrap, &dialer, &[])
             .await
@@ -2025,11 +2046,14 @@ mod tests {
             },
             StreamSettings {
                 network: Network::Tcp,
+                transport: StreamTransport::Raw,
                 security: StreamSecurity::Tls(TlsSettings {
                     server_name: Some("resolver.test".to_owned()),
                     fingerprint: None,
                     allow_insecure: true,
+                    alpn: Vec::new(),
                 }),
+                quic_params: None,
                 socket_options: None,
             },
         );
@@ -2467,7 +2491,9 @@ mod tests {
                 tag: Some("direct".to_owned()),
                 stream: StreamSettings {
                     network: Network::Tcp,
+                    transport: StreamTransport::Raw,
                     security: StreamSecurity::None,
+                    quic_params: None,
                     socket_options: None,
                 },
                 settings: OutboundSettings::Freedom,
