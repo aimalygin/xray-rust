@@ -1,0 +1,127 @@
+{
+  "wire": "user_agent_validity",
+  "modules": {
+    "google.golang.org/grpc": "v1.81.0",
+    "golang.org/x/net": "v0.53.0"
+  },
+  "call": {
+    "service_name": "xray.grpc",
+    "stream_name": "Tun",
+    "authority": "grpc.example.com",
+    "user_agent": ""
+  },
+  "cases": [
+    {
+      "name": "printable_ascii",
+      "user_agent_hex": "787261792d677270632d6f7261636c652f31",
+      "sent_verbatim": true,
+      "peer_received_message": true,
+      "call_error": "EOF"
+    },
+    {
+      "name": "empty",
+      "user_agent_hex": "",
+      "sent_verbatim": true,
+      "peer_received_message": true,
+      "call_error": "EOF"
+    },
+    {
+      "name": "tilde_0x7e",
+      "user_agent_hex": "787261792d677270632d6f7261636c652f317e",
+      "sent_verbatim": true,
+      "peer_received_message": true,
+      "call_error": "EOF"
+    },
+    {
+      "name": "htab_interior",
+      "user_agent_hex": "787261792d677270632d6f7261636c650931",
+      "sent_verbatim": true,
+      "peer_received_message": true,
+      "call_error": "EOF"
+    },
+    {
+      "name": "htab_trailing",
+      "user_agent_hex": "787261792d677270632d6f7261636c652f3109",
+      "sent_verbatim": true,
+      "peer_received_message": true,
+      "call_error": "EOF"
+    },
+    {
+      "name": "space_leading",
+      "user_agent_hex": "20787261792d677270632d6f7261636c652f31",
+      "sent_verbatim": true,
+      "peer_received_message": true,
+      "call_error": "EOF"
+    },
+    {
+      "name": "space_trailing",
+      "user_agent_hex": "787261792d677270632d6f7261636c652f3120",
+      "sent_verbatim": true,
+      "peer_received_message": true,
+      "call_error": "EOF"
+    },
+    {
+      "name": "utf8_multibyte",
+      "user_agent_hex": "4d6f7a696c6c612f352e302028e4be8be3818829",
+      "sent_verbatim": true,
+      "peer_received_message": true,
+      "call_error": "EOF"
+    },
+    {
+      "name": "high_byte_0x80",
+      "user_agent_hex": "787261792d677270632d6f7261636c652f3180",
+      "sent_verbatim": true,
+      "peer_received_message": true,
+      "call_error": "EOF"
+    },
+    {
+      "name": "nul_0x00",
+      "user_agent_hex": "787261792d677270632d6f7261636c652f3100737566666978",
+      "sent_verbatim": true,
+      "peer_received_message": false,
+      "call_error": "rpc error: code = Internal desc = stream terminated by RST_STREAM with error code: PROTOCOL_ERROR"
+    },
+    {
+      "name": "ctl_0x01",
+      "user_agent_hex": "787261792d677270632d6f7261636c652f3101",
+      "sent_verbatim": true,
+      "peer_received_message": false,
+      "call_error": "rpc error: code = Internal desc = stream terminated by RST_STREAM with error code: PROTOCOL_ERROR"
+    },
+    {
+      "name": "lf_0x0a",
+      "user_agent_hex": "787261792d677270632d6f7261636c652f310a782d696e6a65637465643a2031",
+      "sent_verbatim": true,
+      "peer_received_message": false,
+      "call_error": "rpc error: code = Internal desc = stream terminated by RST_STREAM with error code: PROTOCOL_ERROR"
+    },
+    {
+      "name": "cr_0x0d",
+      "user_agent_hex": "787261792d677270632d6f7261636c652f310d737566666978",
+      "sent_verbatim": true,
+      "peer_received_message": false,
+      "call_error": "rpc error: code = Internal desc = stream terminated by RST_STREAM with error code: PROTOCOL_ERROR"
+    },
+    {
+      "name": "crlf_header_injection",
+      "user_agent_hex": "787261792d677270632d6f7261636c652f310d0a782d696e6a65637465643a2031",
+      "sent_verbatim": true,
+      "peer_received_message": false,
+      "call_error": "rpc error: code = Internal desc = stream terminated by RST_STREAM with error code: PROTOCOL_ERROR"
+    },
+    {
+      "name": "ctl_0x1f",
+      "user_agent_hex": "787261792d677270632d6f7261636c652f311f",
+      "sent_verbatim": true,
+      "peer_received_message": false,
+      "call_error": "rpc error: code = Internal desc = stream terminated by RST_STREAM with error code: PROTOCOL_ERROR"
+    },
+    {
+      "name": "del_0x7f",
+      "user_agent_hex": "787261792d677270632d6f7261636c652f317f",
+      "sent_verbatim": true,
+      "peer_received_message": false,
+      "call_error": "rpc error: code = Internal desc = stream terminated by RST_STREAM with error code: PROTOCOL_ERROR"
+    }
+  ]
+}

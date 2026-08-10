@@ -2,6 +2,8 @@
 
 use std::time::Duration;
 
+use http::header::InvalidHeaderValue;
+
 use crate::stream::masquerade::{
     anchored_chrome_user_agent, anchored_edge_user_agent, anchored_firefox_user_agent,
 };
@@ -11,6 +13,10 @@ use crate::stream::masquerade::{
 /// Handing it out from here also means there is only ever one `http` in the
 /// chain: a second, differently-versioned `Authority` would not be this type.
 pub use http::uri::Authority;
+/// Re-exported for [`GrpcConfig::user_agent`], for the reason above: it is a
+/// `pub` field, and a `pub` field of a type no caller can name is one they
+/// cannot construct either.
+pub use http::HeaderValue;
 
 /// Everything the gRPC dial needs, resolved from config plus the security
 /// layer's server name.
@@ -86,7 +92,52 @@ pub struct GrpcConfig {
     pub authority: Authority,
     /// Already resolved through Xray's table by [`resolve_user_agent`], so
     /// `golang` has become the empty string by the time it lands here.
-    pub user_agent: String,
+    ///
+    /// **A [`HeaderValue`] rather than a `String`, for the reason
+    /// [`Self::authority`] is an [`Authority`]**: the value is free-form JSON
+    /// that the config layer only rejects for emptiness
+    /// (`crates/xray-config/src/parser.rs:2884-2891`), and it is static —
+    /// settled once, when the outbound is built. Carried as a `String` it would
+    /// be turned into a `HeaderValue` inside `build_grpc_call` instead, so a
+    /// control character in it would fail *every flow at dial time*: on a warm
+    /// pool that is indistinguishable from "this connection refused the call",
+    /// which retires a healthy shared connection, and on a cold one it is a TCP
+    /// connect plus a TLS or REALITY handshake paid to arrive at the same error
+    /// again, once per flow, for as long as the config stands. As a type it is
+    /// one error, at startup, from `xray_core_rs`'s `build_transport_layer`,
+    /// which is the layer that can still name the config key it came from —
+    /// `CoreError::InvalidGrpcUserAgent`.
+    ///
+    /// **Refusing the config costs nothing that worked upstream, and this is
+    /// measured rather than argued.** grpc-go's client never validates the
+    /// string `WithUserAgent` was given, so xray-core accepts the profile
+    /// (`Xray-core/infra/conf/grpc.go:19-40` passes `UserAgent` through
+    /// untouched), dials, caches the connection in `globalDialerMap` — and then
+    /// every *stream* on it is reset by the peer with RST_STREAM
+    /// PROTOCOL_ERROR before the handler is entered. Sixteen values, one real
+    /// dial each, are pinned in `tests/fixtures/grpc/user_agent_validity.json`,
+    /// and the boundary is exact: `http`'s rule is
+    /// `b >= 32 && b != 127 || b == b'\t'`
+    /// (`http-1.5.0/src/header/value.rs:563-565`) and Go's
+    /// `ValidHeaderFieldValue` is `!(isCTL(b) && !isLWS(b))`
+    /// (`x/net@v0.53.0/http/httpguts/httplex.go:173-183,303-311`), which is the
+    /// same set once `isLWS`'s space is folded into `b >= 32`. So the values
+    /// this type refuses are the values a grpc-go peer refuses. What changes is
+    /// when the user is told, not which profiles run.
+    ///
+    /// **The `\r\n` case is not header injection**, which is worth saying
+    /// because it looks like it. HPACK is length-prefixed: the field decoded
+    /// off the wire is byte-identical to the configured string and no second
+    /// header appears (`sent_verbatim` in the fixture, on every case). What
+    /// kills the stream is field-value validation at the peer.
+    ///
+    /// **The one residual divergence is narrower than the predicate.** RFC 9113
+    /// section 8.2.1 forbids only NUL, LF and CR in a field value; Go rejects
+    /// DEL and the rest of C0 on top of that. A gRPC server that is *not*
+    /// grpc-go could therefore accept a `\x7f` we refuse. An Xray gRPC inbound
+    /// is `grpc.NewServer` (`Xray-core/transport/internet/grpc/hub.go:93`), so
+    /// that peer is hypothetical, and it is the only one there is.
+    pub user_agent: HeaderValue,
     /// `grpcSettings.idle_timeout`. A connection property: grpc-go turns the
     /// three of these into `keepalive.ClientParameters` (`dial.go:169-175`),
     /// which [`resolve_keepalive`] resolves for the connection the pool holds.
@@ -178,7 +229,7 @@ pub fn resolve_keepalive(config: &GrpcConfig) -> Option<GrpcKeepalive> {
 ///   and `case "chrome", ""` sends it to `utils.ChromeUA`, so the default gRPC
 ///   dial claims to be a browser. `None` here is that same absent key — the
 ///   config layer collapses an explicitly empty string into it
-///   (`crates/xray-config/src/parser.rs:2876-2883`) — and `Some("")` is kept
+///   (`crates/xray-config/src/parser.rs:2884-2891`) — and `Some("")` is kept
 ///   on the same arm anyway, so the port holds for a caller that does not.
 /// * **`golang` is the one value that empties the header**, and the header is
 ///   still sent: grpc-go appends `user-agent` unconditionally
@@ -195,12 +246,23 @@ pub fn resolve_keepalive(config: &GrpcConfig) -> Option<GrpcKeepalive> {
 /// UA on gRPC is **not recommended**, because browsers are fundamentally
 /// incapable of initiating gRPC. We match the behaviour anyway. Parity with the
 /// population a censor is looking at is the goal here, not defensible taste.
-pub fn resolve_user_agent(configured: Option<&str>) -> String {
+///
+/// **Only the verbatim arm can fail.** The other four resolve to values this
+/// function chose: three from the masquerade table, which builds browser user
+/// agents out of printable ASCII, and `golang`'s empty string, which has no
+/// byte to be wrong. Nothing here proves that of the table, so the guarantee is
+/// a test rather than an `expect`:
+/// `the_user_agent_table_resolves_the_way_xrays_switch_does` puts every keyword
+/// through this function and fails on an `Err`, which is what a template change
+/// in the masquerade block would trip. The signature is fallible because the one
+/// arm that reads a user-typed string is, and [`GrpcConfig::user_agent`] has why
+/// that arm is refused here instead of at the dial.
+pub fn resolve_user_agent(configured: Option<&str>) -> Result<HeaderValue, InvalidHeaderValue> {
     match configured.unwrap_or_default() {
-        "chrome" | "" => anchored_chrome_user_agent(),
-        "firefox" => anchored_firefox_user_agent(),
-        "edge" => anchored_edge_user_agent(),
-        "golang" => String::new(),
-        verbatim => verbatim.to_owned(),
+        "chrome" | "" => HeaderValue::try_from(anchored_chrome_user_agent()),
+        "firefox" => HeaderValue::try_from(anchored_firefox_user_agent()),
+        "edge" => HeaderValue::try_from(anchored_edge_user_agent()),
+        "golang" => Ok(HeaderValue::from_static("")),
+        verbatim => HeaderValue::try_from(verbatim),
     }
 }

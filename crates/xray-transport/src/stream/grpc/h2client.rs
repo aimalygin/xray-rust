@@ -305,6 +305,17 @@ pub(crate) struct GrpcCall {
 /// because a HEADERS immediately followed by a RST_STREAM is not a shape
 /// grpc-go produces.
 ///
+/// **That argument is now also the reason nothing reaching here can fail.** It
+/// applied twice over to a config error, so both config-shaped inputs are
+/// parsed a layer up instead, when the outbound is built:
+/// [`GrpcConfig::authority`] as an `Authority` and [`GrpcConfig::user_agent`]
+/// as a `HeaderValue`, each refused once at startup by a caller that can name
+/// the key it came from. What is left is the derived `:path`, which
+/// [`grpc_request_path`] escapes and no config can make invalid. The
+/// `Result` stays because that is a property of the escaping, not of the
+/// signature, and the separation above is what should decide where a future
+/// fallible input goes.
+///
 /// The seven fields this puts in the frame are the seven a grpc-go v1.81.0
 /// client sends and nothing more; which of them a server actually reads, and
 /// which are there only to fit the population, is pinned in
@@ -321,7 +332,9 @@ pub(crate) struct GrpcCall {
 /// when empty, because grpc-go appends the header unconditionally
 /// (`grpc@v1.81.0/internal/transport/http2_client.go:578`), which is how
 /// Xray's `"golang"` setting — mapped to `""` by
-/// [`super::resolve_user_agent`] — reaches the wire.
+/// [`super::resolve_user_agent`] — reaches the wire; a value no header could
+/// carry never reaches this function either, for the same reason the authority
+/// does not.
 pub(crate) fn build_grpc_call(config: &GrpcConfig) -> Result<GrpcCall, TransportError> {
     // The one place `multiMode` becomes a mode. Everything downstream takes
     // this value rather than reading the config again, which is what makes a
@@ -360,12 +373,19 @@ pub(crate) fn build_grpc_call(config: &GrpcConfig) -> Result<GrpcCall, Transport
     // (`http2_server.go:417-427,495-497,548-556`) — but grpc-go's *client*
     // sends both on every call, unconditionally, so a dial missing either
     // stands out from the population it is hiding in.
+    //
+    // None of the three headers can fail the builder: every name is a
+    // constant, two of the values are, and `config.user_agent` arrived already
+    // parsed for the same reason the authority did. So the `map_err` guards the
+    // path alone, and is kept because the path is the one part a future caller
+    // could supply — see the `Uri` above, which fails first and says which
+    // path.
     let request = Request::builder()
         .version(Version::HTTP_2)
         .method(Method::POST)
         .uri(uri)
         .header("content-type", "application/grpc")
-        .header("user-agent", &config.user_agent)
+        .header("user-agent", config.user_agent.clone())
         .header("te", "trailers")
         .body(())
         .map_err(|error| grpc_error("could not build the gRPC request", &error))?;

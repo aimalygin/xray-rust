@@ -36,13 +36,13 @@ mod websocket;
 mod websocket_frame;
 
 /// Test scaffolding, not API: `tests/stream_grpc_tests.rs` imports from here
-/// and nothing else should. The four gRPC names on the line below are the
+/// and nothing else should. The five gRPC names on the line below are the
 /// transport's whole *supported* surface. `grpc::test_only` says what is
 /// behind this door, why each name is there, and why it is a door and not a
 /// lock.
 #[doc(hidden)]
 pub use grpc::test_only as grpc_test_only;
-pub use grpc::{resolve_user_agent, Authority, GrpcConfig, GrpcTransport};
+pub use grpc::{resolve_user_agent, Authority, GrpcConfig, GrpcTransport, HeaderValue};
 pub use http_headers::{serialize_request, HeaderMap};
 pub use httpupgrade::{connect_httpupgrade, HttpUpgradeConfig};
 pub use masquerade::{

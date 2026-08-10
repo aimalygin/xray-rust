@@ -2871,8 +2871,16 @@ impl Parser<'_> {
                 .filter(|authority| !authority.is_empty())
                 .map(ToOwned::to_owned),
             // Not validated against `chrome`/`firefox`/`edge`/`golang`: those
-            // are resolved at dial time and anything else is a literal UA
-            // (`transport/internet/grpc/dial.go:193-205`).
+            // are resolved when the outbound is built and anything else is a
+            // literal UA (`transport/internet/grpc/dial.go:193-205`).
+            //
+            // Nor validated as a header value, which it has to be to reach the
+            // wire. That refusal is a layer up, in `xray-core-rs`'s
+            // `grpc_user_agent`, for the reason the authority above is parsed
+            // there: the value's ceiling is `http::HeaderValue`'s, and stating
+            // that rule a second time here is how the two come to disagree.
+            // The cost is the `$.outbounds[N]` prefix this layer could have
+            // put on the message, which is the cost `authority` already pays.
             user_agent: self
                 .optional_string_at(
                     settings,

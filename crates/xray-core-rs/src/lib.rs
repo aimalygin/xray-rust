@@ -272,6 +272,20 @@ pub enum CoreError {
         /// branch, which is why `key` names the port key there too.
         value: String,
     },
+    /// A `grpcSettings.user_agent` that no HTTP header can carry, refused when
+    /// the outbound is built rather than on every dial for as long as the
+    /// config stands. `xray_transport::stream::GrpcConfig::user_agent` has the
+    /// reasoning and the measurements behind it — briefly, grpc-go's client
+    /// sends the value unvalidated and a grpc-go peer then resets every stream
+    /// it opens, so refusing here costs no profile that worked upstream.
+    ///
+    /// **Debug-formatted, unlike its two `:authority` neighbours, and that is
+    /// the whole point of the variant.** The values this rejects are exactly
+    /// the ones holding control characters, so a `{0}` here would let a profile
+    /// string put a CR LF into whatever log or dialog renders the error and
+    /// forge a line after it.
+    #[error("grpcSettings.user_agent {0:?} is not a valid HTTP header value")]
+    InvalidGrpcUserAgent(String),
     #[error("XTLS rejected UDP/443 traffic")]
     VisionUdp443Rejected,
     #[error("transport error: {0}")]

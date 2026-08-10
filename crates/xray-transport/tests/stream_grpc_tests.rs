@@ -688,7 +688,7 @@ mod stream_grpc_h2_tests {
     use bytes::Bytes;
     use h2::server::{self, SendResponse};
     use h2::{RecvStream, SendStream};
-    use http::{HeaderMap, Method, Response};
+    use http::{HeaderMap, HeaderValue, Method, Response};
     use tokio::io::{duplex, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream};
     use tokio::sync::oneshot;
     use xray_transport::stream::grpc_test_only::{
@@ -746,7 +746,7 @@ mod stream_grpc_h2_tests {
             service_name: SERVICE_NAME.to_owned(),
             multi_mode,
             authority: AUTHORITY.parse().expect("a literal authority"),
-            user_agent: user_agent.to_owned(),
+            user_agent: HeaderValue::from_str(user_agent).expect("a sendable user agent"),
             idle_timeout_secs: 0,
             health_check_timeout_secs: 0,
             permit_without_stream: false,
@@ -2218,7 +2218,7 @@ mod stream_grpc_request_headers_tests {
         grpc_request_path, open_grpc_h2_stream, HunkMode,
     };
     use xray_transport::stream::{
-        apply_masquerade, resolve_user_agent, Authority, GrpcConfig, HeaderMap,
+        apply_masquerade, resolve_user_agent, Authority, GrpcConfig, HeaderMap, HeaderValue,
     };
     use xray_transport::BoxedTransportStream;
 
@@ -2232,16 +2232,18 @@ mod stream_grpc_request_headers_tests {
     /// path reads them yet, and a value that changed no byte of the request
     /// would only suggest one did.
     ///
-    /// The `expect` is not a shortcut around the error path: `authority` is an
-    /// [`Authority`], so a value that is not one cannot be built into a config
-    /// here or anywhere else, which is the whole of
-    /// [`an_authority_that_is_not_an_authority_never_reaches_a_dial`].
+    /// Neither `expect` is a shortcut around an error path. `authority` is an
+    /// [`Authority`] and `user_agent` is a [`HeaderValue`], so a value that is
+    /// not one cannot be built into a config here or anywhere else — which is
+    /// the whole of [`an_authority_that_is_not_an_authority_never_reaches_a_dial`],
+    /// and, for the user agent, of
+    /// [`super::stream_grpc_user_agent_validity_tests`].
     fn config(authority: &str) -> GrpcConfig {
         GrpcConfig {
             service_name: "xray.grpc".to_owned(),
             multi_mode: false,
             authority: authority.parse().expect("a literal authority"),
-            user_agent: resolve_user_agent(Some(USER_AGENT)),
+            user_agent: resolve_user_agent(Some(USER_AGENT)).expect("a sendable user agent"),
             idle_timeout_secs: 0,
             health_check_timeout_secs: 0,
             permit_without_stream: false,
@@ -2313,6 +2315,21 @@ mod stream_grpc_request_headers_tests {
             .get("User-Agent")
             .expect("the profile sets a User-Agent")
             .to_owned()
+    }
+
+    /// [`resolve_user_agent`], with its "this arm cannot fail" claim checked
+    /// rather than unwrapped past.
+    ///
+    /// Three of the table's arms hand back a value the masquerade draw
+    /// produced, and nothing in `resolve_user_agent` proves a draw is a
+    /// sendable header value — its doc points here for exactly that. Routing
+    /// every keyword through this means a template that ever grew a control
+    /// character fails the test that says it cannot, rather than an outbound
+    /// build months later.
+    fn resolved(keyword: Option<&str>) -> HeaderValue {
+        resolve_user_agent(keyword).unwrap_or_else(|error| {
+            panic!("the table resolved {keyword:?} to a value no header can carry: {error}")
+        })
     }
 
     fn header<'a>(head: &'a http::request::Parts, name: &str) -> Option<&'a str> {
@@ -2454,30 +2471,27 @@ mod stream_grpc_request_headers_tests {
     /// population is the goal rather than defensible taste.
     #[test]
     fn the_user_agent_table_resolves_the_way_xrays_switch_does() {
-        assert_eq!(resolve_user_agent(None), masqueraded_user_agent(None));
+        assert_eq!(resolved(None), masqueraded_user_agent(None));
         assert_eq!(
-            resolve_user_agent(Some("chrome")),
+            resolved(Some("chrome")),
             masqueraded_user_agent(Some("chrome"))
         );
         // Xray cannot tell an absent `user_agent` from an empty one — both
         // leave the Go string `""` and hit the same `case "chrome", ""` — so
         // the empty string is Chrome too, not an empty header.
-        assert_eq!(resolve_user_agent(Some("")), masqueraded_user_agent(None));
+        assert_eq!(resolved(Some("")), masqueraded_user_agent(None));
         assert_eq!(
-            resolve_user_agent(Some("firefox")),
+            resolved(Some("firefox")),
             masqueraded_user_agent(Some("firefox"))
         );
-        assert_eq!(
-            resolve_user_agent(Some("edge")),
-            masqueraded_user_agent(Some("edge"))
-        );
-        assert_eq!(resolve_user_agent(Some("golang")), "");
+        assert_eq!(resolved(Some("edge")), masqueraded_user_agent(Some("edge")));
+        assert_eq!(resolved(Some("golang")), "");
 
         // Everything else falls off the switch untouched, `safari` and `curl`
         // included: those are masquerade keywords, and the gRPC table does not
         // know them.
         for verbatim in ["safari", "curl", "grpc-go/1.81.0", "Chrome", " chrome"] {
-            assert_eq!(resolve_user_agent(Some(verbatim)), verbatim);
+            assert_eq!(resolved(Some(verbatim)), verbatim);
         }
     }
 
@@ -2497,14 +2511,14 @@ mod stream_grpc_request_headers_tests {
             Some("golang"),
             Some("grpc-go/1.81.0"),
         ] {
-            let resolved = resolve_user_agent(configured);
+            let expected = resolved(configured);
             let mut config = config("grpc.example.com");
-            config.user_agent = resolved.clone();
+            config.user_agent = expected.clone();
 
             let head = captured_head(&config).await;
             assert_eq!(
                 header(&head, "user-agent"),
-                Some(resolved.as_str()),
+                Some(expected.to_str().expect("a printable user agent")),
                 "user_agent {configured:?}"
             );
         }
@@ -2614,7 +2628,7 @@ mod stream_grpc_oracle_tests {
     use xray_transport::stream::grpc_test_only::{
         encode_hunk, grpc_request_path, open_grpc_h2_stream, HunkDecoder, HunkMode,
     };
-    use xray_transport::stream::GrpcConfig;
+    use xray_transport::stream::{GrpcConfig, HeaderValue};
     use xray_transport::BoxedTransportStream;
 
     const CONNECTION_PREAMBLE_JSON: &str =
@@ -2769,7 +2783,8 @@ mod stream_grpc_oracle_tests {
                 .authority
                 .parse()
                 .expect("the oracle dialled an authority"),
-            user_agent: call.user_agent.clone(),
+            user_agent: HeaderValue::from_str(&call.user_agent)
+                .expect("the oracle dialled a sendable user agent"),
             idle_timeout_secs: 0,
             health_check_timeout_secs: 0,
             permit_without_stream: false,
@@ -3604,6 +3619,149 @@ mod stream_grpc_oracle_tests {
     }
 }
 
+/// The `grpcSettings.user_agent` boundary: which values this transport will
+/// carry, held against which values a real grpc-go peer will accept.
+///
+/// [`xray_transport::stream::GrpcConfig::user_agent`] is a [`HeaderValue`] so
+/// that an unsendable user agent is refused once, when the outbound is built,
+/// instead of on every dial for as long as the config stands. The whole
+/// justification for refusing rather than passing the string through is that
+/// the value was unusable anyway — that the set `HeaderValue` rejects is the
+/// set a grpc-go peer rejects. That is a claim about two predicates in two
+/// languages, in two dependencies that move independently, and nothing else in
+/// this repository would notice if either changed its mind.
+///
+/// This block is what notices. It is the only Rust-side reader of
+/// `tests/fixtures/grpc/user_agent_validity.json`, which
+/// `tools/reality-oracle/grpc/grpc_user_agent.go` regenerates from sixteen real
+/// grpc-go dials — one per case, because the user agent is fixed when the
+/// connection is built and sixteen values mean sixteen connections.
+mod stream_grpc_user_agent_validity_tests {
+    use xray_transport::stream::{resolve_user_agent, HeaderValue};
+
+    const USER_AGENT_VALIDITY_JSON: &str =
+        include_str!("../../../tests/fixtures/grpc/user_agent_validity.json");
+
+    #[derive(serde::Deserialize)]
+    struct ValidityFixture {
+        cases: Vec<ValidityCase>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct ValidityCase {
+        name: String,
+        /// Hex, not a string: `high_byte_0x80` is a lone `0x80`, which is not
+        /// valid UTF-8 and so not representable in JSON at all.
+        user_agent_hex: String,
+        /// Whether grpc-go's client encoded the configured bytes into its
+        /// HEADERS block unchanged.
+        sent_verbatim: bool,
+        /// Whether the peer's handler received the tunnel's first message.
+        /// False means the stream was reset before the handler was entered.
+        peer_received_message: bool,
+    }
+
+    fn fixture() -> ValidityFixture {
+        serde_json::from_str(USER_AGENT_VALIDITY_JSON).expect("the committed validity fixture")
+    }
+
+    fn decode_hex(hex: &str) -> Vec<u8> {
+        assert!(
+            hex.len().is_multiple_of(2),
+            "a fixture hex string of odd length {}",
+            hex.len()
+        );
+        (0..hex.len())
+            .step_by(2)
+            .map(|index| {
+                u8::from_str_radix(&hex[index..index + 2], 16).expect("a fixture hex byte")
+            })
+            .collect()
+    }
+
+    /// The claim the type rests on: `HeaderValue` accepts a user agent exactly
+    /// when a grpc-go peer does.
+    ///
+    /// Both directions matter and they fail differently. A value `HeaderValue`
+    /// rejects and the peer accepts is a profile that runs on xray-core and not
+    /// here — a parity gap. A value `HeaderValue` accepts and the peer rejects
+    /// is worse: a config we called fine that fails every flow at the far end,
+    /// which is the failure this whole change exists to stop reporting one dial
+    /// at a time.
+    #[test]
+    fn the_header_value_boundary_is_the_peers_boundary() {
+        let fixture = fixture();
+        assert_eq!(
+            fixture.cases.len(),
+            16,
+            "the fixture covers every transition of the predicate"
+        );
+
+        for case in fixture.cases {
+            let bytes = decode_hex(&case.user_agent_hex);
+            assert_eq!(
+                HeaderValue::from_bytes(&bytes).is_ok(),
+                case.peer_received_message,
+                "{}: `http` and grpc-go disagree about {:?}",
+                case.name,
+                String::from_utf8_lossy(&bytes)
+            );
+        }
+    }
+
+    /// grpc-go's client does not validate what `WithUserAgent` was given.
+    ///
+    /// Recorded and asserted because it is what makes the case above a
+    /// *boundary* rather than a coincidence. If the client sanitised the string
+    /// instead, the peer would be judging a value the config never named, and
+    /// agreeing with `HeaderValue` about it would mean nothing.
+    #[test]
+    fn grpc_go_sends_every_user_agent_it_is_given_verbatim() {
+        for case in fixture().cases {
+            assert!(
+                case.sent_verbatim,
+                "{}: grpc-go no longer sends the configured user agent unchanged",
+                case.name
+            );
+        }
+    }
+
+    /// Every case the peer refuses is a case this transport refuses to build a
+    /// config from, and every case it accepts is one we will dial with.
+    ///
+    /// The test above is about `HeaderValue`; this one is about the function
+    /// the outbound actually calls, which is the thing a regression would go
+    /// through. The two are only the same while `resolve_user_agent`'s verbatim
+    /// arm stays verbatim — which is the arm Xray's switch defines
+    /// (`dial.go:193-205`) and the arm every case here lands on, none of them
+    /// being a keyword.
+    ///
+    /// `high_byte_0x80` is skipped, and only that one: a lone `0x80` is not
+    /// valid UTF-8, so it cannot survive JSON parsing into a `String` and no
+    /// profile can express it. It stays in the fixture because grpc-go's
+    /// verdict on it is what places the top of the accepted range.
+    #[test]
+    fn resolve_user_agent_refuses_exactly_what_the_peer_refuses() {
+        for case in fixture().cases {
+            let bytes = decode_hex(&case.user_agent_hex);
+            let Ok(configured) = String::from_utf8(bytes) else {
+                assert_eq!(
+                    case.name, "high_byte_0x80",
+                    "a new case is unrepresentable in a config and says nothing about why"
+                );
+                continue;
+            };
+
+            assert_eq!(
+                resolve_user_agent(Some(&configured)).is_ok(),
+                case.peer_received_message,
+                "{}: the resolved user agent disagrees with the peer",
+                case.name
+            );
+        }
+    }
+}
+
 /// The pool and the dial seam: where a gRPC connection comes from, and what
 /// the connection-level settings put on the wire.
 ///
@@ -3622,7 +3780,7 @@ mod stream_grpc_pool_tests {
     use bytes::Bytes;
     use h2::server::{self, SendResponse};
     use h2::{Reason, RecvStream, SendStream};
-    use http::{HeaderMap, Response};
+    use http::{HeaderMap, HeaderValue, Response};
     use tokio::io::{duplex, AsyncReadExt, AsyncWriteExt, DuplexStream};
     use tokio::net::{TcpListener, TcpStream};
     use xray_routing::{Network, Target, TargetAddr};
@@ -3671,7 +3829,7 @@ mod stream_grpc_pool_tests {
             service_name: "xray.grpc".to_owned(),
             multi_mode: false,
             authority: "grpc.example.com".parse().expect("a literal authority"),
-            user_agent: "grpc-go/1.81.0".to_owned(),
+            user_agent: HeaderValue::from_static("grpc-go/1.81.0"),
             idle_timeout_secs: 0,
             health_check_timeout_secs: 0,
             permit_without_stream: false,
@@ -4103,58 +4261,15 @@ mod stream_grpc_pool_tests {
         assert_eq!(peer.accepted(), 2, "the unusable connection was replaced");
     }
 
-    /// A request that cannot be built is a config error, and the pool has to
-    /// answer it as one rather than as a connection that went bad.
-    ///
-    /// This is reachable, not theoretical: `user_agent` arrives as free-form
-    /// JSON that the config layer only drops when it is empty
-    /// (`crates/xray-config/src/parser.rs:2876-2883`), so a control character
-    /// in it makes the HEADERS block unbuildable on every flow for as long as
-    /// the config stands. Built inside the call, that failure would be
-    /// indistinguishable from "this connection refused the call": a warm pool
-    /// would retire a healthy shared connection and a cold one would pay a TCP
-    /// connect and a TLS or REALITY handshake, each flow, to arrive back at
-    /// the same error.
-    ///
-    /// The dial is aimed at a closed port rather than at a [`GrpcPeer`], which
-    /// is what makes "never reaches a dial" observable rather than raced: a
-    /// build that happened after the dial would report the refused connection
-    /// instead, and a peer's accept count answers too late to tell the two
-    /// apart.
-    #[tokio::test]
-    async fn a_request_that_cannot_be_built_never_reaches_a_dial() {
-        let listener = TcpListener::bind(("127.0.0.1", 0))
-            .await
-            .expect("a loopback listener");
-        let addr = listener.local_addr().expect("the listener's address");
-        drop(listener);
-
-        let dialer = dialer();
-        let mut config = config();
-        config.user_agent = "grpc-go/1.81.0\r\nx-injected: 1".to_owned();
-        let transport = TransportLayer::Grpc(GrpcTransport::new(config));
-
-        let target = Target::new(TargetAddr::Ip(addr.ip()), addr.port(), Network::Tcp);
-        let opened = within_deadline(dialer.connect_stream(
-            &ConnectorConfig::Tcp,
-            &transport,
-            &target,
-            &[addr],
-            None,
-        ))
-        .await;
-        // `BoxedTransportStream` is not `Debug`, so `expect_err` is out.
-        let Err(error) = opened else {
-            panic!("an unbuildable request is an error, not a flow");
-        };
-
-        assert!(
-            error
-                .to_string()
-                .contains("could not build the gRPC request"),
-            "the error names the request, not the socket it never opened, got: {error}"
-        );
-    }
+    // There is no test here for a request that cannot be built, and its
+    // absence is the point. The one reachable way to reach that error was a
+    // control character in `grpcSettings.user_agent`, which made the HEADERS
+    // block unbuildable on every flow for as long as the config stood.
+    // `GrpcConfig::user_agent` is now a `HeaderValue`, so such a config cannot
+    // be constructed to dial with — the refusal happens once, in
+    // `xray_core_rs`'s `grpc_user_agent`, and is tested there. What is left of
+    // `build_grpc_call`'s error is the derived `:path`, which
+    // `grpc_request_path` escapes and no config can make invalid.
 
     /// `initialWindowsSize` passes three independent gates in grpc-go before a
     /// byte of it reaches the wire, and only the third is about the wire.
@@ -4665,7 +4780,7 @@ mod stream_grpc_flow_control_tests {
     use bytes::Bytes;
     use h2::server::{self, SendResponse};
     use h2::SendStream;
-    use http::Response;
+    use http::{HeaderValue, Response};
     use tokio::io::AsyncReadExt;
     use tokio::net::{TcpListener, TcpStream};
     use tokio::sync::oneshot;
@@ -4699,7 +4814,7 @@ mod stream_grpc_flow_control_tests {
             service_name: "xray.grpc".to_owned(),
             multi_mode: false,
             authority: "grpc.example.com".parse().expect("a literal authority"),
-            user_agent: "grpc-go/1.81.0".to_owned(),
+            user_agent: HeaderValue::from_static("grpc-go/1.81.0"),
             idle_timeout_secs: 0,
             health_check_timeout_secs: 0,
             permit_without_stream: false,

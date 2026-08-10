@@ -152,7 +152,7 @@ def claims_version_distribution(document: Any) -> bool:
 
 
 def claims_grpc_wire(artefact: str) -> Callable[[Any], bool]:
-    """Recognise one of the gRPC oracle's three artefacts by its own `wire` key.
+    """Recognise one of the gRPC oracle's artefacts by its own `wire` key.
 
     Keyed on `wire` rather than on the shape of the payload, because the
     payload shapes collide with oracles already here. The header artefact
@@ -211,10 +211,11 @@ def masquerade_headers_flags(document: Any) -> list[str]:
 def grpc_wire_flags(document: Any) -> list[str]:
     """Read `grpc_wire.go`'s one flag back out of its output.
 
-    One capture produces all three artefacts, so `-wire` only selects which of
-    them is printed. Reading it back off the fixture rather than hard-coding it
-    per oracle keeps the pairing honest: a fixture renamed or re-keyed by hand
-    is checked against the artefact it says it is.
+    `-wire` selects the artefact -- which of the shared capture's four views is
+    printed, or the separate capture `user_agent_validity` runs. Reading it back
+    off the fixture rather than hard-coding it per oracle keeps the pairing
+    honest: a fixture renamed or re-keyed by hand is checked against the
+    artefact it says it is.
     """
     return ["-wire", require_string(document, "wire")]
 
@@ -283,11 +284,13 @@ ORACLES: tuple[Oracle, ...] = (
         claims=claims_version_distribution,
         flags=no_flags,
     ),
-    # Four oracles over one program: the capture that produces a connection
-    # preamble is the same capture that produces the HEADERS block and the
-    # framed Hunks of both calls on it, and splitting it into four programs
-    # would be four transcriptions of one dial. `-wire` picks which artefact is
-    # printed.
+    # Five oracles over one program. Four of them share a capture: the dial
+    # that produces a connection preamble is the dial that produces the HEADERS
+    # block and the framed Hunks of both calls on it, and splitting it into
+    # four programs would be four transcriptions of one dial. The fifth,
+    # `grpc-user-agent-validity`, is a dial per case rather than a view of one,
+    # so it captures separately -- but it is the same program and the same
+    # build tag, so `-wire` still picks which artefact is printed.
     Oracle(
         name="grpc-connection-preamble",
         command=grpc_oracle("reality_oracle_grpc_wire"),
@@ -310,6 +313,12 @@ ORACLES: tuple[Oracle, ...] = (
         name="grpc-multi-hunk-framing",
         command=grpc_oracle("reality_oracle_grpc_wire"),
         claims=claims_grpc_wire("multi_hunk_framing"),
+        flags=grpc_wire_flags,
+    ),
+    Oracle(
+        name="grpc-user-agent-validity",
+        command=grpc_oracle("reality_oracle_grpc_wire"),
+        claims=claims_grpc_wire("user_agent_validity"),
         flags=grpc_wire_flags,
     ),
 )

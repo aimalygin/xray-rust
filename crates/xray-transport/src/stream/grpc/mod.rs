@@ -9,7 +9,7 @@ mod path;
 mod pool;
 mod stream;
 
-pub use config::{resolve_user_agent, Authority, GrpcConfig};
+pub use config::{resolve_user_agent, Authority, GrpcConfig, HeaderValue};
 pub use pool::GrpcTransport;
 
 /// This transport's internals, gathered behind one door, and the whole reason
@@ -19,11 +19,13 @@ pub use pool::GrpcTransport;
 /// in here is still `pub` and still nameable from any crate in this workspace
 /// as `xray_transport::stream::grpc_test_only::*`, and the types drag their
 /// inherent methods and trait impls along with them. What the module buys is
-/// discoverability, not unreachability. Four names out of this transport are
+/// discoverability, not unreachability. Five names out of this transport are
 /// meant to be found: the two types the outbound builds (`GrpcConfig`,
-/// `GrpcTransport`), the [`Authority`] the first of them holds, and
-/// [`resolve_user_agent`], which the outbound calls to fill it in. The rest are
-/// gathered here rather than re-exported beside those four so that nothing
+/// `GrpcTransport`), the [`Authority`] and [`HeaderValue`] the first of them
+/// holds, and [`resolve_user_agent`], which the outbound calls to fill the
+/// second of those in. The two `http` types are there because a `pub` field of
+/// a type no caller can name is one they cannot construct. The rest are
+/// gathered here rather than re-exported beside those five so that nothing
 /// outside a test reaches one by autocomplete and takes it for a supported
 /// entry point.
 ///

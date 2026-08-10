@@ -232,7 +232,9 @@ masquerade keywords the gRPC table does not know. The `chrome`, `firefox` and
 `edge` strings come from the same table the WebSocket masquerade uses, so the
 redrawn-browser-version divergence described above applies to them too. Xray's
 own comment is worth repeating: a browser UA on gRPC is **not recommended**,
-because browsers cannot initiate gRPC. We match the behaviour anyway.
+because browsers cannot initiate gRPC. We match the behaviour anyway. A literal
+that no HTTP header can carry is the one value refused rather than sent; see
+[below](#a-user_agent-no-http-header-can-carry-is-refused-at-startup).
 
 #### `serviceName` has two dialects
 
@@ -408,6 +410,43 @@ Writing the IDNA A-label (`xn--r8jz45g.jp`) instead is accepted, and is the
 workaround. Nothing here converts one for you: no IDNA implementation is in
 this workspace's dependency graph, and converting silently would put an
 authority on the wire that xray-core does not send.
+
+#### A `user_agent` no HTTP header can carry is refused at startup
+
+**This one refuses a configuration xray-core loads, and loses nothing by it.**
+A literal `user_agent` holding a control character — a `\r`, a `\n`, a NUL, a
+DEL — is rejected when the outbound is built:
+
+```text
+grpcSettings.user_agent "grpc-go/1.81.0\r\nx-injected: 1" is not a valid HTTP header value
+```
+
+xray-core accepts the same profile and dials with it. What it does *not* do is
+carry a single byte of traffic: grpc-go's client never validates the string, so
+it puts it on the wire verbatim, and the gRPC server at the far end then resets
+every stream with `PROTOCOL_ERROR` before the handler sees it. The connection
+is established and cached; each flow opened on it dies. So the profile is dead
+upstream too — the difference is only that upstream reports it once per flow,
+forever, with a message naming neither the key nor the character.
+
+The two rules turn out to be the same rule. `http::HeaderValue` accepts a byte
+when `b >= 32 && b != 127 || b == b'\t'`; Go's `httpguts.ValidHeaderFieldValue`
+accepts one when it is not a control byte other than space or tab, which is the
+same set. Both therefore accept a tab, a leading or trailing space, and any
+byte above `0x7f` — so a non-ASCII user agent such as `Mozilla/5.0 (例え)` is
+fine here, unlike a non-ASCII *authority*. Sixteen values were measured against
+a real grpc-go v1.81.0 client and server, one dial each, and the results are
+committed in `tests/fixtures/grpc/user_agent_validity.json`.
+
+The residual gap is narrower than that rule. RFC 9113 §8.2.1 forbids only NUL,
+CR and LF in a field value; Go rejects DEL and the rest of C0 as well. A gRPC
+server that is not grpc-go could therefore accept a `\x7f` this client refuses.
+An Xray gRPC inbound is grpc-go, so in practice there is no such peer.
+
+Note that the injected-looking case is not header injection. HTTP/2 header
+blocks are length-prefixed, so `\r\n` inside a value stays inside that value and
+no second header appears; what kills the stream is the peer validating the
+field, not parsing a forged one.
 
 ### TLS ClientHello shaping
 

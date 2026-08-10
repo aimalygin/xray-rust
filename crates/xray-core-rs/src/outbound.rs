@@ -20,8 +20,8 @@ use xray_proxy::vless::{
 };
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::stream::{
-    resolve_user_agent, Authority, GrpcConfig, GrpcTransport, HttpUpgradeConfig, TransportLayer,
-    WebSocketConfig,
+    resolve_user_agent, Authority, GrpcConfig, GrpcTransport, HeaderValue, HttpUpgradeConfig,
+    TransportLayer, WebSocketConfig,
 };
 use xray_transport::{
     BoxedTransportStream, ConnectorConfig, DnsResolver, HappyEyeballsConfig, RealityClientConfig,
@@ -534,8 +534,8 @@ impl TcpOutbound {
 
 /// Every build failure the router is allowed to memoize.
 ///
-/// **Not `Copy` since the two gRPC authority errors joined it**, which is the
-/// price of an error that names the value it rejected. `from_core_error` panics on
+/// **Not `Copy` since the gRPC config errors joined it**, which is the price of
+/// an error that names the value it rejected. `from_core_error` panics on
 /// anything absent from this list, so a new `CoreError` returned by a builder
 /// has to be added here too or the cached path turns a config error into a
 /// crash.
@@ -548,6 +548,7 @@ enum CachedOutboundError {
     UnsupportedOutboundFlow,
     InvalidGrpcAuthority(String),
     UnrepresentableGrpcAuthority { key: &'static str, value: String },
+    InvalidGrpcUserAgent(String),
 }
 
 impl CachedOutboundError {
@@ -562,6 +563,7 @@ impl CachedOutboundError {
             CoreError::UnrepresentableGrpcAuthority { key, value } => {
                 Self::UnrepresentableGrpcAuthority { key, value }
             }
+            CoreError::InvalidGrpcUserAgent(user_agent) => Self::InvalidGrpcUserAgent(user_agent),
             other => unreachable!("outbound compilation returned non-cacheable error: {other}"),
         }
     }
@@ -577,6 +579,7 @@ impl CachedOutboundError {
             Self::UnrepresentableGrpcAuthority { key, value } => {
                 CoreError::UnrepresentableGrpcAuthority { key, value }
             }
+            Self::InvalidGrpcUserAgent(user_agent) => CoreError::InvalidGrpcUserAgent(user_agent),
         }
     }
 }
@@ -1377,7 +1380,7 @@ fn build_transport_layer(
                 &settings.server,
                 settings.port,
             )?,
-            user_agent: resolve_user_agent(grpc.user_agent.as_deref()),
+            user_agent: grpc_user_agent(grpc.user_agent.as_deref())?,
             idle_timeout_secs: grpc.idle_timeout_secs,
             health_check_timeout_secs: grpc.health_check_timeout_secs,
             permit_without_stream: grpc.permit_without_stream,
@@ -1519,6 +1522,31 @@ fn grpc_authority(
         key,
         value: derived,
     })
+}
+
+/// The `user-agent` one gRPC outbound sends, through Xray's keyword table.
+///
+/// A wrapper over [`resolve_user_agent`] and not much else: what it adds is the
+/// error, and the error is the reason the resolution happens here rather than
+/// at the dial. [`xray_transport::stream::GrpcConfig::user_agent`] has why the
+/// value is refused at all — measured against grpc-go rather than reasoned
+/// about, and the short version is that every value refused here is a value
+/// whose every stream a grpc-go peer resets, so no profile that ran upstream
+/// stops running.
+///
+/// **Only [`CoreError::InvalidGrpcUserAgent`] and no derived-value twin**,
+/// which is where this parts company with [`grpc_authority`]. That chain has
+/// two error variants because three of its four branches produce a value the
+/// user never typed, and blaming `grpcSettings.authority` for the destination
+/// address would send them looking for a key their config does not hold. This
+/// one has no such branch: the three browser keywords resolve through the
+/// masquerade table to printable ASCII and `golang` to the empty string, so
+/// the only arm that can fail is the one that hands back the configured string
+/// verbatim. Naming the key is therefore always right, and the value in the
+/// message is always one they can search their profile for.
+fn grpc_user_agent(configured: Option<&str>) -> Result<HeaderValue, CoreError> {
+    resolve_user_agent(configured)
+        .map_err(|_| CoreError::InvalidGrpcUserAgent(configured.unwrap_or_default().to_owned()))
 }
 
 /// `tlsSettings.serverName`, read from the config the way `dial.go:162` reads
@@ -3961,6 +3989,98 @@ mod tests {
         let message = error.to_string();
         assert!(message.contains("grpcSettings.authority"), "{message}");
         assert!(message.contains("例え.jp"), "{message}");
+    }
+
+    /// `grpcSettings.user_agent` gets the same treatment as the authority, for
+    /// the same reason: it is free-form JSON the config layer only checks for
+    /// emptiness, it is settled once when the outbound is built, and it reaches
+    /// the HEADERS block verbatim.
+    ///
+    /// Unlike the authority this costs no parity. grpc-go's client sends an
+    /// unvalidated user agent byte for byte and a grpc-go peer then resets
+    /// every stream carrying one with a control character in it, which
+    /// `tests/fixtures/grpc/user_agent_validity.json` records from sixteen real
+    /// dials. So the profiles refused here are the profiles that failed
+    /// upstream — every flow, forever, with an error naming neither the key nor
+    /// the character.
+    ///
+    /// Like the authority, it has to survive `CachedOutboundError`, which
+    /// memoizes build failures and panics on any `CoreError` it cannot
+    /// represent.
+    #[test]
+    fn an_unsendable_user_agent_refuses_the_outbound_once_instead_of_every_dial() {
+        let unsendable = "grpc-go/1.81.0\r\nx-injected: 1";
+        let outbound = grpc_vless(
+            GrpcSettings {
+                user_agent: Some(unsendable.to_owned()),
+                ..grpc_settings(None)
+            },
+            StreamSecurity::None,
+            TargetAddr::Domain("dest.example.com".to_owned()),
+        );
+
+        let error = build_vless_tcp_outbound(&outbound)
+            .expect_err("a control character cannot live in a header value");
+        assert!(matches!(
+            &error,
+            CoreError::InvalidGrpcUserAgent(value) if value == unsendable
+        ));
+
+        let message = error.to_string();
+        assert!(message.contains("grpcSettings.user_agent"), "{message}");
+        // Debug-formatted, so the CR LF the value carries is escaped rather
+        // than printed. A `{0}` here would let a profile string forge a line in
+        // whatever renders the error, which is the one thing this variant's
+        // values are all guaranteed to be able to do.
+        assert!(message.contains(r"\r\n"), "{message}");
+        assert!(!message.contains('\r'), "{message:?}");
+
+        let mut config = direct_selection_config();
+        config.outbounds = vec![outbound];
+        config.default_outbound_tag = Some("proxy".to_owned());
+        config.routing.rules.clear();
+        let router = OutboundRouter::new(Arc::new(config));
+        assert!(matches!(
+            router.select_tcp_outbound().unwrap_err(),
+            CoreError::InvalidGrpcUserAgent(_)
+        ));
+    }
+
+    /// The keywords are not caught by the refusal above, and one boundary case
+    /// is not either.
+    ///
+    /// `resolve_user_agent`'s three browser arms resolve through the masquerade
+    /// draw rather than through the configured string, so a refusal that fired
+    /// on one of them would be refusing a value the user did not write. The
+    /// last row is the other half: `http` and `httpguts` both accept a byte
+    /// above `0x7f`, so an outbound whose user agent is not ASCII at all still
+    /// builds — a divergence would be silently narrowing what runs.
+    #[test]
+    fn a_sendable_user_agent_still_builds_whatever_it_looks_like() {
+        for configured in [
+            None,
+            Some("chrome"),
+            Some("firefox"),
+            Some("edge"),
+            Some("golang"),
+            Some(""),
+            Some("Mozilla/5.0 (例え)"),
+            Some("grpc-go/1.81.0\tspaced"),
+        ] {
+            let outbound = grpc_vless(
+                GrpcSettings {
+                    user_agent: configured.map(str::to_owned),
+                    ..grpc_settings(None)
+                },
+                StreamSecurity::None,
+                TargetAddr::Domain("dest.example.com".to_owned()),
+            );
+
+            assert!(
+                build_vless_tcp_outbound(&outbound).is_ok(),
+                "user_agent {configured:?} is one grpc-go sends and a grpc-go peer accepts"
+            );
+        }
     }
 
     /// A pool that every selection rebuilt would be a pool of one flow. The

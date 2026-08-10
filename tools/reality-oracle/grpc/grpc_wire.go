@@ -1012,27 +1012,41 @@ func render(wire string, captured *capture) (any, error) {
 		return captured.multiHunkFraming()
 	default:
 		return nil, fmt.Errorf(
-			"unknown -wire %q: want connection_preamble, request_headers, hunk_framing or multi_hunk_framing",
-			wire)
+			"unknown -wire %q: want connection_preamble, request_headers, hunk_framing, multi_hunk_framing or %s",
+			wire, userAgentValidityWire)
 	}
+}
+
+// capture runs whichever capture the artefact needs.
+//
+// Four of the five artefacts are views of one dial and share it; the fifth is
+// a dial per case and has its own, for the reason `grpc_user_agent.go` gives.
+// Each picks its own deadline, because sixteen dials is not one dial's worth of
+// work.
+func capturedArtefact(wire string) (any, error) {
+	if wire == userAgentValidityWire {
+		ctx, cancel := context.WithTimeout(context.Background(), userAgentDeadline)
+		defer cancel()
+		return captureUserAgentValidity(ctx)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), deadline)
+	defer cancel()
+	captured, err := captureDial(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("capture a gRPC dial: %w", err)
+	}
+	return render(wire, captured)
 }
 
 func main() {
 	wire := flag.String("wire", "connection_preamble",
-		"which artefact to print: connection_preamble, request_headers, hunk_framing or multi_hunk_framing")
+		"which artefact to print: connection_preamble, request_headers, hunk_framing, multi_hunk_framing or "+
+			userAgentValidityWire)
 	checkPath := flag.String("check", "", "compare the generated artefact with a committed JSON file")
 	flag.Parse()
 
-	ctx, cancel := context.WithTimeout(context.Background(), deadline)
-	defer cancel()
-
-	captured, err := captureDial(ctx)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "capture a gRPC dial: %v\n", err)
-		os.Exit(1)
-	}
-
-	fixture, err := render(*wire, captured)
+	fixture, err := capturedArtefact(*wire)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "render the artefact: %v\n", err)
 		os.Exit(1)
