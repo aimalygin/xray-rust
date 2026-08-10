@@ -3991,6 +3991,56 @@ mod tests {
         assert!(message.contains("例え.jp"), "{message}");
     }
 
+    /// Neither `:authority` refusal may print the value it rejected raw.
+    ///
+    /// Both values are profile strings the config layer passes through: it
+    /// rejects `grpcSettings.authority` only for emptiness
+    /// (`crates/xray-config/src/parser.rs:2869-2872`) and copies
+    /// `tlsSettings.serverName` unchecked (`parser.rs:3157-3160`), so a CR LF in
+    /// either arrives here intact. Rendered with `{0}` or `{value}` it would let
+    /// a profile forge a line in whatever shows the error — the exposure
+    /// [`CoreError::InvalidGrpcUserAgent`] was born Debug-formatted to avoid and
+    /// its two older neighbours carried until this test.
+    ///
+    /// One input covers both because a CR LF is what makes each string
+    /// unrepresentable in the first place: the values that reach these two
+    /// errors at all are drawn from the same set as the values that can forge.
+    #[test]
+    fn a_refused_authority_is_escaped_rather_than_printed() {
+        let forged = "dest.example.com\r\nx-injected: 1";
+        for (key, outbound) in [
+            (
+                "grpcSettings.authority",
+                grpc_vless(
+                    grpc_settings(Some(forged)),
+                    StreamSecurity::None,
+                    TargetAddr::Domain("dest.example.com".to_owned()),
+                ),
+            ),
+            (
+                TLS_SERVER_NAME_KEY,
+                grpc_vless(
+                    grpc_settings(None),
+                    StreamSecurity::Tls(TlsSettings {
+                        server_name: Some(forged.to_owned()),
+                        fingerprint: None,
+                        allow_insecure: false,
+                        alpn: Vec::new(),
+                    }),
+                    TargetAddr::Domain("dest.example.com".to_owned()),
+                ),
+            ),
+        ] {
+            let error = build_vless_tcp_outbound(&outbound)
+                .expect_err("a CR LF cannot live in an authority");
+            let message = error.to_string();
+            assert!(message.contains(key), "{key}: {message}");
+            assert!(message.contains(r"\r\n"), "{key}: {message}");
+            assert!(!message.contains('\r'), "{key}: {message:?}");
+            assert!(!message.contains('\n'), "{key}: {message:?}");
+        }
+    }
+
     /// `grpcSettings.user_agent` gets the same treatment as the authority, for
     /// the same reason: it is free-form JSON the config layer only checks for
     /// emptiness, it is settled once when the outbound is built, and it reaches

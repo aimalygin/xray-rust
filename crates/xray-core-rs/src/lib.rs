@@ -244,7 +244,22 @@ pub enum CoreError {
     /// [`Self::UnrepresentableGrpcAuthority`] is the same complaint about a
     /// value the user never wrote and the two have to be told apart from the
     /// message alone.
-    #[error("grpcSettings.authority `{0}` is not a valid HTTP/2 authority")]
+    ///
+    /// **Debug-formatted, as are both variants below it, and for a reason all
+    /// three share.** Each carries a value that arrived as free-form profile
+    /// JSON, and no layer between that JSON and this message checks any of them
+    /// for control characters: this one is filtered for emptiness and nothing
+    /// else (`crates/xray-config/src/parser.rs:2869-2872`), and the sources
+    /// [`Self::UnrepresentableGrpcAuthority`] derives from are no better off.
+    /// So each value can hold a CR LF, and under `{0}` the message would render
+    /// as two lines rather than one — the second of them written by the
+    /// profile, wherever the error is shown. `xray-cli` prints it to stderr
+    /// (`crates/xray-cli/src/main.rs:10`) and `xray-ffi` hands `to_string()` to
+    /// the error struct the host app logs (`crates/xray-ffi/src/lib.rs:866` on
+    /// load, `lib.rs:1542` on start). Escaping costs the message nothing:
+    /// `{0:?}` also quotes the value, which is all the backticks it replaced
+    /// were doing.
+    #[error("grpcSettings.authority {0:?} is not a valid HTTP/2 authority")]
     InvalidGrpcAuthority(String),
     /// The rest of Xray's `:authority` chain — `tlsSettings.serverName`, the
     /// destination domain, the `host:port` last resort
@@ -260,7 +275,15 @@ pub enum CoreError {
     /// `outbound::grpc_authority` — briefly, `h2` reads `:authority` out of an
     /// `http::Uri` and nothing else, so a value no `Authority` can hold is one
     /// no request can carry.
-    #[error("the gRPC :authority derived from {key} `{value}` is not a valid HTTP/2 authority")]
+    ///
+    /// `value` is Debug-formatted for the reason
+    /// [`Self::InvalidGrpcAuthority`] gives. Deriving the value is no
+    /// sanitisation of it: `tlsSettings.serverName` is copied out of the JSON
+    /// unchecked (`crates/xray-config/src/parser.rs:3157-3160`) and
+    /// `settings.vnext[0].address` becomes a domain verbatim whenever it does
+    /// not parse as an `IpAddr` (`parser.rs:2439-2451`), so every branch of the
+    /// chain can hand this variant a CR LF.
+    #[error("the gRPC :authority derived from {key} {value:?} is not a valid HTTP/2 authority")]
     UnrepresentableGrpcAuthority {
         /// The config key that produced the value, so the message hands the
         /// user something to search their profile for. Names *two* keys on the
@@ -279,11 +302,12 @@ pub enum CoreError {
     /// sends the value unvalidated and a grpc-go peer then resets every stream
     /// it opens, so refusing here costs no profile that worked upstream.
     ///
-    /// **Debug-formatted, unlike its two `:authority` neighbours, and that is
-    /// the whole point of the variant.** The values this rejects are exactly
-    /// the ones holding control characters, so a `{0}` here would let a profile
-    /// string put a CR LF into whatever log or dialog renders the error and
-    /// forge a line after it.
+    /// **Debug-formatted, as its two `:authority` neighbours now are** — but
+    /// this variant came by it first, because the values it rejects are exactly
+    /// the ones holding control characters. That made the exposure impossible to
+    /// miss here and easy to miss next door, where a CR LF is only one of many
+    /// ways to fail an `Authority` parse; [`Self::InvalidGrpcAuthority`] now
+    /// states the rule for all three.
     #[error("grpcSettings.user_agent {0:?} is not a valid HTTP header value")]
     InvalidGrpcUserAgent(String),
     #[error("XTLS rejected UDP/443 traffic")]
