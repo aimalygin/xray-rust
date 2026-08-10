@@ -7,6 +7,8 @@ prerelease-quality and do not establish a supported release series.
 
 ## Unreleased
 
+## 0.3.0 - 2026-08-10
+
 - Fixed the fd-backed TUN pump giving up permanently on a single transient I/O
   error. Both the read and the write loop used to break on anything that was
   not `EINTR`, and nothing supervises those tasks, so one `ENOBUFS` or
