@@ -3,6 +3,7 @@ package org.xrayrust.mobile
 import android.net.VpnService
 import android.util.Log
 import java.io.Closeable
+import java.io.File
 import java.nio.ByteBuffer
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
@@ -26,6 +27,7 @@ class XrayCore private constructor(handle: Long) : Closeable {
             tunRuntimeProfile: XrayTunRuntimeProfile = XrayTunRuntimeProfile.Default,
             startupProbe: XrayStartupProbeOptions? = null,
             dnsBootstrapMode: XrayDnsBootstrapMode = XrayDnsBootstrapMode.System,
+            fileLoggingDirectory: File? = null,
         ): XrayCore {
             val core = XrayCore(nativeNew())
             try {
@@ -40,6 +42,9 @@ class XrayCore private constructor(handle: Long) : Closeable {
                 core.setDnsBootstrapMode(dnsBootstrapMode)
                 if (startupProbe != null) {
                     core.setStartupProbe(startupProbe)
+                }
+                if (fileLoggingDirectory != null) {
+                    core.setFileLogging(fileLoggingDirectory)
                 }
                 core.loadConfig(configJson)
                 return core
@@ -191,6 +196,13 @@ class XrayCore private constructor(handle: Long) : Closeable {
         }
     }
 
+    private fun setFileLogging(directory: File) {
+        require(directory.isDirectory) { "file logging directory must already exist" }
+        withLifecycleHandle {
+            nativeSetFileLogging(it, directory.absolutePath, true)
+        }
+    }
+
     private inline fun <T> withLifecycleHandle(block: (Long) -> T): T =
         lifecycleLock.write {
             check(nativeHandle != 0L) { "xray core is closed" }
@@ -218,6 +230,11 @@ class XrayCore private constructor(handle: Long) : Closeable {
     private external fun nativeSetTunRuntimeProfile(handle: Long, profile: Int)
     private external fun nativeSetTunCollectTcpTimings(handle: Long, collect: Boolean)
     private external fun nativeSetDnsBootstrapMode(handle: Long, mode: Int)
+    private external fun nativeSetFileLogging(
+        handle: Long,
+        directory: String,
+        enabled: Boolean,
+    )
     private external fun nativeSetStartupProbe(
         handle: Long,
         url: String,

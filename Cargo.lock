@@ -2350,7 +2350,7 @@ dependencies = [
 
 [[package]]
 name = "xray-bench"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "async-trait",
  "bytes",
@@ -2374,7 +2374,7 @@ dependencies = [
 
 [[package]]
 name = "xray-cli"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "libc",
  "thiserror",
@@ -2385,7 +2385,7 @@ dependencies = [
 
 [[package]]
 name = "xray-config"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "libc",
  "prost",
@@ -2399,7 +2399,7 @@ dependencies = [
 
 [[package]]
 name = "xray-core-rs"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -2426,7 +2426,7 @@ dependencies = [
 
 [[package]]
 name = "xray-ffi"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "bytes",
  "libc",
@@ -2439,7 +2439,7 @@ dependencies = [
 
 [[package]]
 name = "xray-proxy"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "bytes",
  "prost",
@@ -2452,7 +2452,7 @@ dependencies = [
 
 [[package]]
 name = "xray-routing"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "bytes",
  "thiserror",
@@ -2460,7 +2460,7 @@ dependencies = [
 
 [[package]]
 name = "xray-runtime"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "thiserror",
  "tokio",
@@ -2468,7 +2468,7 @@ dependencies = [
 
 [[package]]
 name = "xray-transport"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -2509,7 +2509,7 @@ dependencies = [
 
 [[package]]
 name = "xray-tun"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "bytes",
  "thiserror",
@@ -2518,7 +2518,7 @@ dependencies = [
 
 [[package]]
 name = "xray-utls"
-version = "0.3.0"
+version = "0.3.1"
 
 [[package]]
 name = "yasna"

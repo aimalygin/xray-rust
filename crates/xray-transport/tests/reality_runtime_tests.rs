@@ -20,7 +20,8 @@ use xray_transport::{
     },
     ConnectorConfig, DnsResolver, HappyEyeballsConfig, RealityClientConfig,
     RealityHandshakeContextProvider, RealityRuntimeEngine, RealityTlsEngine, SocketHandle,
-    SocketProtector, TlsConnector, TransportDialer, TransportError,
+    SocketProtector, SystemRealityHandshakeContextProvider, TlsConnector, TransportDialer,
+    TransportError,
 };
 
 const CLIENTHELLO_FIXTURE_JSON: &str =
@@ -337,6 +338,13 @@ fn fixed_context() -> RealityHandshakeContext {
         version: [1, 8, 0],
         unix_time: 1_700_000_000,
     }
+}
+
+#[test]
+fn system_reality_context_advertises_xray_v26_7_28_compatibility() {
+    let context = SystemRealityHandshakeContextProvider.context();
+
+    assert_eq!(context.version, [26, 7, 28]);
 }
 
 async fn spawn_accept_once() -> (SocketAddr, tokio::task::JoinHandle<()>) {

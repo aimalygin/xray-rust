@@ -303,6 +303,8 @@ func clientHelloID(fingerprint string) (utls.ClientHelloID, error) {
 		return utls.HelloFirefox_105, nil
 	case "hellofirefox_120":
 		return utls.HelloFirefox_120, nil
+	case "hellofirefox_148":
+		return utls.HelloFirefox_148, nil
 	case "hellochrome_58":
 		return utls.HelloChrome_58, nil
 	case "hellochrome_62":
@@ -339,6 +341,8 @@ func clientHelloID(fingerprint string) (utls.ClientHelloID, error) {
 		return utls.HelloChrome_120_PQ, nil
 	case "hellochrome_131":
 		return utls.HelloChrome_131, nil
+	case "hellochrome_133":
+		return utls.HelloChrome_133, nil
 	case "helloios_11_1":
 		return utls.HelloIOS_11_1, nil
 	case "helloios_12_1":
@@ -347,6 +351,8 @@ func clientHelloID(fingerprint string) (utls.ClientHelloID, error) {
 		return utls.HelloIOS_13, nil
 	case "helloios_14":
 		return utls.HelloIOS_14, nil
+	case "hellosafari_26_3":
+		return utls.HelloSafari_26_3, nil
 	case "helloedge_85":
 		return utls.HelloEdge_85, nil
 	case "helloedge_106":

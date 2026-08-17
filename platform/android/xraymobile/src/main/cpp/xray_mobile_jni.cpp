@@ -509,6 +509,32 @@ Java_org_xrayrust_mobile_XrayCore_nativeSetDnsBootstrapMode(
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_org_xrayrust_mobile_XrayCore_nativeSetFileLogging(
+    JNIEnv *env,
+    jobject,
+    jlong handle,
+    jstring directory,
+    jboolean enabled) {
+  NativeCore *native = core_from_handle(handle);
+  if (native == nullptr || native->core == nullptr) {
+    return;
+  }
+
+  std::string utf8_directory;
+  if (!jstring_to_utf8(env, directory, &utf8_directory)) {
+    return;
+  }
+
+  XrayError *error = nullptr;
+  XrayStatus status = xray_core_set_file_logging(
+      native->core,
+      utf8_directory.c_str(),
+      enabled == JNI_TRUE ? 1 : 0,
+      &error);
+  check_status(env, status, error);
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativeStart(JNIEnv *env, jobject, jlong handle) {
   NativeCore *native = core_from_handle(handle);
   if (native == nullptr || native->core == nullptr) {

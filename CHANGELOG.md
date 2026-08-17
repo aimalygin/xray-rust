@@ -7,6 +7,24 @@ prerelease-quality and do not establish a supported release series.
 
 ## Unreleased
 
+## 0.3.1 - 2026-08-16
+
+- Updated the REALITY client version advertised in the authenticated handshake
+  from `1.8.0` to the implemented Xray-core compatibility baseline `26.7.28`.
+  This prevents current Xray-core servers from rejecting xray-rust under the
+  default `minClientVer` of `26.3.27`.
+- Synchronized the uTLS fingerprint namespace and `ModernFingerprints` pool
+  with Xray-core v26.7.28. The explicit `hellochrome_133`,
+  `hellofirefox_148`, and `hellosafari_26_3` names are accepted again, while
+  `random` now draws from the current eleven-profile pool. Older profiles that
+  moved out of that pool remain available by explicit name. All supported
+  REALITY-capable shapes match the Go uTLS oracle, and all eleven modern
+  profiles complete VLESS + REALITY + Vision interoperability against
+  Xray-core v26.7.28.
+- Added optional Android `XrayCore.create(fileLoggingDirectory = ...)` support
+  for bounded, app-controlled diagnostic exports. File logging remains off
+  unless the host supplies an existing private directory.
+
 ## 0.3.0 - 2026-08-10
 
 - Fixed the fd-backed TUN pump giving up permanently on a single transient I/O

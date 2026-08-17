@@ -585,8 +585,8 @@ mod utls_tls_shaping_tests {
     /// hand our whole user base one shared signature -- the opposite of what
     /// the name promises.
     ///
-    /// A thousand draws from nineteen names leave a given name unseen with
-    /// probability `(18/19)^1000`, about `1e-23`, so requiring all nineteen is
+    /// A thousand draws from eleven names leave a given name unseen with
+    /// probability `(10/11)^1000`, about `4e-42`, so requiring all eleven is
     /// not a flaky assertion; it is how a stuck draw gets caught.
     #[test]
     fn the_random_draw_covers_every_modern_fingerprint() {
@@ -626,10 +626,10 @@ mod utls_tls_shaping_tests {
     /// unpinning as intended work, and the day that lands `chrome`'s hello
     /// varies per connection while `hellofirefox_120`'s still does not.
     ///
-    /// Only a handful of the nineteen names carry ECH at all, so a field left
+    /// Only a handful of the eleven names carry ECH at all, so a field left
     /// unblanked reaches
     /// `random_names_are_stable_for_the_life_of_the_process` as a failure on
-    /// the few runs in nineteen that draw an affected name. Repeating each draw
+    /// the few runs in eleven that draw an affected name. Repeating each draw
     /// makes this guard itself deterministic instead: sixteen further hellos
     /// agree with the first by chance with probability 2^-16.
     #[test]

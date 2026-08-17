@@ -373,6 +373,8 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
     assert!(core.contains("nativeSetTunFd"));
     assert!(core.contains("nativeSetTunCollectTcpTimings"));
     assert!(core.contains("nativeSetTunRuntimeProfile"));
+    assert!(core.contains("fileLoggingDirectory: File? = null"));
+    assert!(core.contains("nativeSetFileLogging"));
     assert!(core.contains("XrayTunRuntimeProfile"));
     assert!(service.contains("VpnService"));
     assert!(service.contains("startupProbe"));
@@ -389,11 +391,13 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
     assert!(jni.contains("xray_core_set_tun_fd"));
     assert!(jni.contains("xray_core_set_tun_collect_tcp_timings"));
     assert!(jni.contains("xray_core_set_tun_runtime_profile"));
+    assert!(jni.contains("xray_core_set_file_logging"));
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetSocketProtector"));
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetStartupProbe"));
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetTunFd"));
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetTunCollectTcpTimings"));
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetTunRuntimeProfile"));
+    assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetFileLogging"));
 
     let jni_new = jni
         .find("Java_org_xrayrust_mobile_XrayCore_nativeNew")
@@ -407,6 +411,30 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
     assert!(
         jni_version_check < jni_core_new,
         "JNI adapter must validate the FFI ABI before creating a core"
+    );
+}
+
+#[test]
+fn android_core_enables_file_logging_before_loading_config() {
+    let core = fs::read_to_string(
+        workspace_root()
+            .join("platform/android/xraymobile/src/main/java/org/xrayrust/mobile/XrayCore.kt"),
+    )
+    .expect("read Kotlin core wrapper");
+
+    let create = core
+        .find("fun create(")
+        .expect("Kotlin wrapper should define create");
+    let create_body = &core[create..];
+    let set_file_logging = create_body
+        .find("core.setFileLogging(fileLoggingDirectory)")
+        .expect("Kotlin wrapper should enable requested file logging");
+    let load_config = create_body
+        .find("core.loadConfig(configJson)")
+        .expect("Kotlin wrapper should load the config");
+    assert!(
+        set_file_logging < load_config,
+        "Kotlin wrapper must configure file logging before config load"
     );
 }
 

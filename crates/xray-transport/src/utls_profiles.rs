@@ -4505,9 +4505,9 @@ pub fn draw_modern_fingerprint() -> &'static str {
 
 /// Maps 64 bits of entropy onto the name table.
 ///
-/// Multiply-shift rather than `% len`: 19 divides neither 2^64 nor any power of
+/// Multiply-shift rather than `% len`: 11 divides neither 2^64 nor any power of
 /// two, so a modulo would make the first names likelier than the last. This
-/// keeps the skew under `len / 2^64` -- around 1e-18 -- and, unlike the
+/// keeps the skew under `len / 2^64` -- around 6e-19 -- and, unlike the
 /// rejection sampling an exactly-uniform draw needs, it cannot loop.
 fn modern_fingerprint_at(entropy: u64) -> &'static str {
     let names = xray_utls::XRAY_MODERN_FINGERPRINTS;
@@ -4519,10 +4519,13 @@ fn named_profile(fingerprint: &str) -> Option<&'static UtlsClientHelloProfile> {
     match fingerprint {
         "chrome" => Some(&PROFILE_0),
         "hellochrome_auto" => Some(&PROFILE_0),
+        "hellochrome_133" => Some(&PROFILE_0),
         "firefox" => Some(&PROFILE_1),
         "hellofirefox_auto" => Some(&PROFILE_1),
+        "hellofirefox_148" => Some(&PROFILE_1),
         "safari" => Some(&PROFILE_2),
         "hellosafari_auto" => Some(&PROFILE_2),
+        "hellosafari_26_3" => Some(&PROFILE_2),
         "ios" => Some(&PROFILE_3),
         "helloios_14" => Some(&PROFILE_3),
         "helloios_auto" => Some(&PROFILE_3),

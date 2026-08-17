@@ -596,7 +596,7 @@ field, not parsing a forged one.
 ### TLS ClientHello shaping
 
 `security: "tls"` sends a uTLS-shaped ClientHello, as Xray-core does on every
-TLS connection. `tlsSettings.fingerprint` selects the shape from the same 58
+TLS connection. `tlsSettings.fingerprint` selects the shape from the same 61
 names Xray accepts. An absent or empty value means `chrome`, matching Xray's
 `GetFingerprint("")`, so shaping is the default rather than an opt-in; an
 unknown name is rejected at parse time with a JSON path and the offending
@@ -605,7 +605,7 @@ so eleven of the fourteen names REALITY rejects are usable here; the other
 three — `hello360_7_5` and its aliases `360` and `hello360_auto`, one profile
 under three names — are refused for a separate reason given below.
 
-Those 58 are the union of the three maps Xray's `GetFingerprint` consults --
+Those 61 are the union of the three maps Xray's `GetFingerprint` consults --
 `PresetFingerprints`, `ModernFingerprints`, `OtherFingerprints` -- less
 `unsafe`, described below, and `hellogolang`.
 
@@ -647,7 +647,7 @@ disabled while shaping, because a resumed handshake emits a second ClientHello
 carrying `pre_shared_key`, an extension the fingerprint never described.
 `fingerprint: "unsafe"` keeps the previous ring path, resumption included.
 
-Fourteen of the 58 names are TLS-1.2-era, which is exactly the set REALITY
+Fourteen of the 61 names are TLS-1.2-era, which is exactly the set REALITY
 rejects. Eleven of those are shaped but not byte-exact; the other three, the
 `360` aliases refused below, build no ClientHello at all. The uTLS hello behind
 the eleven declares no `supported_versions` extension, while the TLS stack
@@ -681,7 +681,7 @@ failing.
 
 #### What `random` and `randomized` resolve to
 
-`fingerprint: "random"` matches Xray: one of the nineteen names in Xray's
+`fingerprint: "random"` matches Xray: one of the eleven names in Xray's
 `ModernFingerprints` table is drawn from the OS CSPRNG the first time the name
 is used, and that draw stands for the rest of the process. Two installs
 therefore send different hellos, while a single install never changes its hello
@@ -699,7 +699,7 @@ JA3 is one no browser produces — whereas a drawn one is shared with every real
 user of that browser version and with every Xray user whose `random` landed on
 the same name. Against a detector asking "is this a shape a browser sends", the
 drawn fingerprint is strictly better; against one asking "have I seen this exact
-shape before", nineteen buckets shared with the Xray population is the crowd we
+shape before", eleven buckets shared with the Xray population is the crowd we
 would rather be in than a bucket of one.
 
 `randomizednoalpn` is the one name still pinned to a fixed shape. Every entry in
