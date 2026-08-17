@@ -866,7 +866,7 @@ final class XrayClientProfileTests: XCTestCase {
         XCTAssertEqual(users.first?["flow"] as? String, "xtls-rprx-vision-udp443")
     }
 
-    func testVlessURLImporterDefaultsRealityFlowToVisionWhenOmitted() throws {
+    func testVlessURLImporterPreservesMissingRealityFlow() throws {
         let url = Self.sampleVlessURL.replacingOccurrences(
             of: "&flow=xtls-rprx-vision",
             with: ""
@@ -884,7 +884,7 @@ final class XrayClientProfileTests: XCTestCase {
         let settings = try XCTUnwrap(outbounds[0]["settings"] as? [String: Any])
         let vnext = try XCTUnwrap(settings["vnext"] as? [[String: Any]])
         let users = try XCTUnwrap(vnext.first?["users"] as? [[String: Any]])
-        XCTAssertEqual(users.first?["flow"] as? String, "xtls-rprx-vision")
+        XCTAssertNil(users.first?["flow"])
     }
 
     func testImportedConfigEnablesSniffingAndPinsDnsToIPv4() throws {

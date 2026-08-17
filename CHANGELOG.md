@@ -7,6 +7,13 @@ prerelease-quality and do not establish a supported release series.
 
 ## Unreleased
 
+## 0.3.2 - 2026-08-16
+
+- Preserved an omitted VLESS `flow` when importing Apple share links instead
+  of silently enabling `xtls-rprx-vision`. This matches the link semantics and
+  prevents an early EOF when the server-side client is configured without a
+  flow. Explicit Vision and Vision UDP/443 values remain supported.
+
 ## 0.3.1 - 2026-08-16
 
 - Updated the REALITY client version advertised in the authenticated handshake

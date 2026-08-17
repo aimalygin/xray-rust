@@ -111,7 +111,7 @@ private struct VlessEndpoint {
         let security = query.optional("security", default: "none")
         try Self.require(security, named: "security", toEqual: "reality")
 
-        let flow = query.optional("flow", default: Self.visionFlow)
+        let flow = query.optional("flow", default: "")
         if !flow.isEmpty {
             try Self.require(
                 flow,
