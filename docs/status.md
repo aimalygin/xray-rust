@@ -1,10 +1,9 @@
 # Project status
 
-`xray-rust` is an experimental mobile/client-first core, not a complete Rust
-port of Xray-core. The current objective is a small, testable surface for local
-proxy and mobile TUN integrations. The architecture is intended to grow into
-one embeddable client/server library; server-side Xray protocols are not
-implemented yet.
+`xray-rust` is a mobile/client-first core with a focused compatibility surface
+for local proxy and mobile TUN integrations. The architecture is designed for
+an embeddable client runtime today and can grow to cover server-side protocols
+in future releases.
 
 The implementation has extensive automated tests, including optional local
 interoperability tests against a user-supplied Xray-core checkout. It has not

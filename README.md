@@ -1,14 +1,11 @@
 # xray-rust
 
-`xray-rust` is an experimental, mobile/client-first Rust implementation of a
-focused subset of the Xray configuration and proxy protocols. It provides a
-native runtime, a C ABI, and reference adapters for Apple platforms and
-Android. The long-term direction is one embeddable client/server library;
-server-side Xray protocols are not implemented yet.
+`xray-rust` is a mobile/client-first Rust implementation of Xray configuration
+and proxy protocols. It provides a native runtime, a C ABI, and integrations
+for Apple platforms and Android. The current release focuses on an embeddable
+client runtime; its supported compatibility surface is documented below.
 
-This project is unofficial and is not affiliated with XTLS or Xray-core. It is
-not a drop-in replacement for Xray-core, has not been independently security
-audited, and should not yet be treated as a production-ready VPN SDK.
+This project is unofficial and is not affiliated with XTLS or Xray-core.
 
 ## Benchmarks
 
@@ -136,13 +133,31 @@ This produces
 `platform/android/xraymobile/build/outputs/aar/xraymobile-debug.aar`. See
 [Android integration](platform/android/README.md).
 
-## Distribution model
+## Prebuilt mobile SDK
 
-The repository is currently source-only. It does not publish crates, a Maven
-artifact, or a downloadable Swift binary target. In particular,
-`platform/apple/Package.swift` references a locally built XCFramework, so adding
-this repository as a remote Swift Package is not sufficient by itself. Build
-the native artifact first.
+Ready-to-integrate Apple and Android packages are published from
+[`xray-rust-mobile`](https://github.com/aimalygin/xray-rust-mobile). Each mobile
+release pins a reviewed core commit and includes checksums and a release
+manifest that identify the corresponding source.
+
+Add the Apple SDK with Swift Package Manager:
+
+```swift
+dependencies: [
+    .package(
+        url: "https://github.com/aimalygin/xray-rust-mobile.git",
+        exact: "0.3.2"
+    ),
+]
+```
+
+The package provides the low-level `XrayMobileAdapter`, shared profile and
+storage APIs in `XrayAppleShared`, and the ready-to-subclass
+`XrayAppleTunnel` packet-tunnel provider. Android applications can consume
+`io.github.aimalygin:xray-rust-mobile:0.3.2` from GitHub Packages or download
+the standalone AAR from the matching release. See the
+[`xray-rust-mobile` integration guide](https://github.com/aimalygin/xray-rust-mobile#readme)
+for setup details.
 
 ## Documentation
 

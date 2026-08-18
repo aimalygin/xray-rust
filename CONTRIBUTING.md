@@ -1,8 +1,7 @@
 # Contributing
 
-Thanks for helping improve `xray-rust`. The project is experimental and keeps
-security, protocol compatibility, and bounded resource use ahead of feature
-breadth.
+Thanks for helping improve `xray-rust`. The project prioritizes security,
+protocol compatibility, and bounded resource use over feature breadth.
 
 ## Development setup
 

@@ -1,8 +1,7 @@
 # Security Policy
 
-`xray-rust` is experimental networking software and has not received an
-independent security audit. Only the current `main` branch receives security
-fixes; no stable release series is supported yet.
+Only the current `main` branch receives security fixes. The project has not
+received an independent security audit.
 
 ## Reporting a vulnerability
 
@@ -31,9 +30,8 @@ Repository maintainers should keep GitHub secret scanning, push protection,
 and private vulnerability reporting enabled. CI also rejects unreviewed
 credential-shaped JSON fixtures and known retired live-profile values.
 
-Reports are handled on a best-effort basis until a formal release and support
-policy exists. Please allow the maintainer time to reproduce and coordinate a
-fix before public disclosure.
+Please allow the maintainer time to reproduce the report and coordinate a fix
+before public disclosure.
 
 ## Disclosed: pre-release live profile in repository history
 
