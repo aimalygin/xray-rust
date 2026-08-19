@@ -4,14 +4,14 @@ This directory contains a local Swift Package and an Xcode reference app for
 iOS, tvOS, and macOS. It embeds the Rust core through the C ABI and a locally
 built static XCFramework.
 
-The integration is source-only. `Package.swift` points to:
+For development inside this source tree, `Package.swift` points to:
 
 ```text
 target/mobile/apple/XrayRust.xcframework
 ```
 
-Swift Package Manager does not download or build that binary target. Build it
-before opening or building the package:
+Swift Package Manager does not download or build this local binary target.
+Build it before opening or building the package:
 
 ```sh
 scripts/check-mobile-toolchains.sh --apple
@@ -370,9 +370,14 @@ Attach Xcode manually to `XrayClientMacTunnel`, then press Connect in the app.
 If the provider is not discovered, verify that only the intended app copy is
 registered and that both targets use matching signing and bundle identifiers.
 
+Prebuilt, versioned XCFramework releases for remote Swift Package Manager
+integration are published from
+[`xray-rust-mobile`](https://github.com/aimalygin/xray-rust-mobile).
+
 ## Current limits
 
-- The package is not published as a remote binary Swift Package.
+- The local package in this repository expects a locally built XCFramework;
+  use `xray-rust-mobile` for remote binary distribution.
 - Signing/provisioning and App Store policy are not automated.
 - The reference UI and provider are integration samples, not a production VPN
   product.

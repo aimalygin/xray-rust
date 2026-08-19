@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish.workspace = true
-description = "Command-line client for the experimental xray-rust core"
+description = "Command-line client for the xray-rust VLESS, REALITY, and Vision core"
 
 [[bin]]
 name = "xray-rust"

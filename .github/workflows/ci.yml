@@ -108,6 +108,11 @@ jobs:
       - name: Test
         run: cargo test --workspace --all-targets --locked
 
+      - name: Build public API documentation
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --no-deps --locked
+
       - name: Test mobile build-script guards
         run: bash scripts/tests/check-mobile-toolchains.test.sh
 

@@ -127,7 +127,7 @@ A `Benchmarks` section after `Current scope`:
   hardware/version line;
 - the reproduction command chain and a link to `docs/benchmarks.md`.
 
-The tone stays consistent with the existing README: experimental project,
+The tone stays consistent with the existing README: open-source project,
 numbers are informative rather than promotional.
 
 ## Error Handling

@@ -4,7 +4,9 @@ This Gradle project builds an Android library around the Rust C ABI. It provides
 a Kotlin wrapper, JNI bridge, and reference `VpnService`; it does not contain a
 runnable Android application target.
 
-The integration is source-only. No Maven artifact is currently published.
+For development inside this source tree, build the AAR locally as described
+below. Prebuilt, versioned AAR and Maven release bundles are published from
+[`xray-rust-mobile`](https://github.com/aimalygin/xray-rust-mobile).
 
 ## Prerequisites
 
