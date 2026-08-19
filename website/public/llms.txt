@@ -1,0 +1,19 @@
+# xray-rust
+
+> xray-rust is an open-source, embeddable Rust client core for VLESS, REALITY, Vision, TUN, routing, and DNS, with native Apple and Android SDK packages.
+
+## Primary links
+
+- [Core repository](https://github.com/aimalygin/xray-rust): Source, compatibility boundary, benchmark methodology, and core documentation.
+- [Mobile SDK repository](https://github.com/aimalygin/xray-rust-mobile): Apple Network Extension and Android VpnService adapters, installation, and release verification.
+- [Benchmark results](https://github.com/aimalygin/xray-rust/blob/main/docs/benchmarks/results.md): Reproducible process-level benchmark results and raw output.
+- [Releases](https://github.com/aimalygin/xray-rust-mobile/releases): Mobile binary releases and checksums.
+
+## Key facts
+
+- License: Mozilla Public License 2.0 (MPL-2.0).
+- Language: Rust, with native Apple and Android bindings.
+- Protocol path: VLESS, TLS, REALITY, xtls-rprx-vision, UDP, and XUDP.
+- Mobile packages: SwiftPM, XCFramework, and Android AAR.
+- Platforms: iOS 15+, tvOS 17+, macOS 11+, and Android API 24+.
+- Independence: not affiliated with or endorsed by XTLS or Xray-core.

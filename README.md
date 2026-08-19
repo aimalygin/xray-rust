@@ -1,5 +1,7 @@
 # xray-rust
 
+Project website: [xray-rust.aimalygin.chatgpt.site](https://xray-rust.aimalygin.chatgpt.site)
+
 `xray-rust` is a mobile/client-first Rust implementation of Xray configuration
 and proxy protocols. It provides a native runtime, a C ABI, and integrations
 for Apple platforms and Android. The current release focuses on an embeddable

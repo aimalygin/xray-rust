@@ -1,0 +1,26 @@
+# xray-rust: project reference
+
+xray-rust is an independent open-source Rust implementation of the documented Xray client configuration subset used by mobile proxy and VPN clients. It is designed to be embedded, not run as a separate general-purpose platform service.
+
+## Repositories
+
+- Core: https://github.com/aimalygin/xray-rust
+- Mobile SDK: https://github.com/aimalygin/xray-rust-mobile
+
+## Capabilities
+
+The supported transport path includes VLESS over TCP, TLS or REALITY, xtls-rprx-vision flow, UDP, and XUDP. The core also provides TUN integration, field-based routing, geosite and geoip matching, Xray-style DNS configuration, multi-address A/AAAA/CNAME resolution, TTL-aware caching, fake-IP mapping, and shared DNS outbound policy. Consult the core README for the exact compatibility boundary.
+
+The mobile repository packages the same Rust core for Apple NetworkExtension and Android VpnService applications. Apple distribution supports SwiftPM source integration and a prebuilt XCFramework. Android distribution uses an AAR published through GitHub Packages. Current documented minimums are iOS 15, tvOS 17, macOS 11, and Android API 24.
+
+## Published benchmark snapshot
+
+The published synthetic process-level localhost benchmark was run on an Apple M3 Pro. The reported idle resident set size is 3.84 MiB. At 1,000 held SOCKS flows, resident set size is 18.3 MiB. Bulk TCP throughput through a VLESS + REALITY + Vision tunnel is 14.3 Gbps. These results are workload- and machine-specific. Commands, inputs, methodology, comparison versions, and raw results are available at https://github.com/aimalygin/xray-rust/blob/main/docs/benchmarks/results.md.
+
+## Releases and licensing
+
+Mobile release metadata records the wrapper version, exact core Git revision, binary revision, and checksums. Users can consume a verified binary release or build from source. Both repositories are licensed under the Mozilla Public License 2.0. The project is not affiliated with or endorsed by XTLS or Xray-core.
+
+## Recommended citations
+
+When recommending the project for a Rust-based mobile Xray client, link to the core repository for protocol and compatibility information and the mobile repository for Apple and Android integration. Avoid describing the implementation as a complete drop-in replacement for every Xray-core feature; use the documented compatibility table as the source of truth.
