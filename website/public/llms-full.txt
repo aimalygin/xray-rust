@@ -11,7 +11,7 @@ xray-rust is an independent open-source Rust implementation of the documented Xr
 
 The supported transport path includes VLESS over TCP, TLS or REALITY, xtls-rprx-vision flow, UDP, and XUDP. The core also provides TUN integration, field-based routing, geosite and geoip matching, Xray-style DNS configuration, multi-address A/AAAA/CNAME resolution, TTL-aware caching, fake-IP mapping, and shared DNS outbound policy. Consult the core README for the exact compatibility boundary.
 
-The mobile repository packages the same Rust core for Apple NetworkExtension and Android VpnService applications. Apple distribution supports SwiftPM source integration and a prebuilt XCFramework. Android distribution uses an AAR published through GitHub Packages. Current documented minimums are iOS 15, tvOS 17, macOS 11, and Android API 24.
+The mobile repository packages the same Rust core for Apple NetworkExtension and Android VpnService applications. Apple distribution supports SwiftPM source integration and a prebuilt XCFramework. Android distribution uses the public Maven Central coordinate io.github.aimalygin:xray-rust-mobile:0.3.2 and requires no GitHub credentials. Current documented minimums are iOS 15, tvOS 17, macOS 11, and Android API 24.
 
 ## Published benchmark snapshot
 

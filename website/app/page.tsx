@@ -39,7 +39,7 @@ const faqs = [
   {
     question: "Is there an Android SDK?",
     answer:
-      "Yes. The Android adapter targets VpnService and is published as an AAR through GitHub Packages, with reproducible release metadata in the repository.",
+      "Yes. The Android adapter targets VpnService and is published as an AAR on Maven Central, with reproducible release metadata in the repository.",
   },
   {
     question: "Is this project affiliated with XTLS or Xray-core?",

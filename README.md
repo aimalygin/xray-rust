@@ -156,8 +156,8 @@ dependencies: [
 The package provides the low-level `XrayMobileAdapter`, shared profile and
 storage APIs in `XrayAppleShared`, and the ready-to-subclass
 `XrayAppleTunnel` packet-tunnel provider. Android applications can consume
-`io.github.aimalygin:xray-rust-mobile:0.3.2` from GitHub Packages or download
-the standalone AAR from the matching release. See the
+`io.github.aimalygin:xray-rust-mobile:0.3.2` from Maven Central without GitHub
+credentials, or download the standalone AAR from the matching release. See the
 [`xray-rust-mobile` integration guide](https://github.com/aimalygin/xray-rust-mobile#readme)
 for setup details.
 
