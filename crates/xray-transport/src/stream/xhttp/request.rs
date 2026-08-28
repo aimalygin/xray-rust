@@ -577,6 +577,112 @@ mod tests {
     }
 
     #[test]
+    fn xhttp_custom_session_id_uses_target_placement_and_key_encoding() {
+        let endpoint = XhttpEndpoint::new(XhttpScheme::Https, "example.com").unwrap();
+        for (placement, key, expected_target, expected_header) in [
+            (
+                XhttpMetadataPlacement::Path,
+                "ignored",
+                "/api/a/b%20c?old=1",
+                None,
+            ),
+            (
+                XhttpMetadataPlacement::Query,
+                "sid",
+                "/api/?old=1&sid=a%2Fb+c",
+                None,
+            ),
+            (
+                XhttpMetadataPlacement::Header,
+                "X-Custom-Sid",
+                "/api/?old=1",
+                Some(("X-Custom-Sid", "a/b c")),
+            ),
+            (
+                XhttpMetadataPlacement::Cookie,
+                "sid",
+                "/api/?old=1",
+                Some(("Cookie", "sid=\"a/b c\"")),
+            ),
+        ] {
+            let mut config = config_with_padding(5);
+            config.session = XhttpMetadataConfig {
+                placement,
+                key: key.to_owned(),
+            };
+            let mut rng = StepRng::new(0, 0);
+            let request = compose_stream_request(
+                &config,
+                &endpoint,
+                "a/b c",
+                XhttpStreamBody::None,
+                &mut rng,
+            )
+            .unwrap();
+
+            assert_eq!(request.target, expected_target, "placement={placement:?}");
+            if let Some((header, value)) = expected_header {
+                assert_eq!(
+                    request.headers.get(header),
+                    Some(value),
+                    "placement={placement:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn xhttp_request_path_and_padding_base_follow_metadata_placement() {
+        let endpoint = XhttpEndpoint::new(XhttpScheme::Http, "example.test").unwrap();
+        for (session_placement, seq_placement, expected_target, expected_referer) in [
+            (
+                XhttpMetadataPlacement::Query,
+                XhttpMetadataPlacement::Header,
+                "/stream?sid=session",
+                "http://example.test/stream?x_padding=X",
+            ),
+            (
+                XhttpMetadataPlacement::Path,
+                XhttpMetadataPlacement::Header,
+                "/stream/session",
+                "http://example.test/stream/?x_padding=X",
+            ),
+            (
+                XhttpMetadataPlacement::Query,
+                XhttpMetadataPlacement::Path,
+                "/stream/9?sid=session",
+                "http://example.test/stream/?x_padding=X",
+            ),
+        ] {
+            let mut input = XhttpConfigInput {
+                path: "/stream".to_owned(),
+                x_padding_bytes: XhttpRange::exact(1),
+                session_placement,
+                session_key: "sid".to_owned(),
+                seq_placement,
+                seq_key: "X-Seq".to_owned(),
+                ..XhttpConfigInput::default()
+            };
+            input.headers.set("User-Agent", "composer-test");
+            let config = XhttpConfig::normalize(input).unwrap();
+            let mut rng = StepRng::new(0, 0);
+            let request =
+                compose_packet_request(&config, &endpoint, "session", "9", Vec::new(), &mut rng)
+                    .unwrap();
+
+            assert_eq!(
+                request.target, expected_target,
+                "session={session_placement:?} seq={seq_placement:?}"
+            );
+            assert_eq!(
+                request.headers.get("Referer"),
+                Some(expected_referer),
+                "session={session_placement:?} seq={seq_placement:?}"
+            );
+        }
+    }
+
+    #[test]
     fn xhttp_packet_composer_chunks_base64url_into_headers_and_cookies() {
         let payload: Vec<u8> = (0_u8..100).collect();
         let endpoint = XhttpEndpoint::new(XhttpScheme::Http, "example.com:8080").unwrap();

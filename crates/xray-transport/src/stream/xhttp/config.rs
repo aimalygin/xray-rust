@@ -168,6 +168,26 @@ pub struct XhttpUplinkDataConfig {
     pub chunk_size: NormalizedRange,
 }
 
+/// Normalized logical-session identifier policy.
+///
+/// An empty table selects Xray's UUID v4 fallback. A non-empty table is the
+/// expanded byte alphabet used for independent uniform draws, and `length`
+/// retains Xray's half-open range semantics (or an exact value when equal).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct XhttpSessionIdConfig {
+    pub table: String,
+    pub length: NormalizedRange,
+}
+
+impl Default for XhttpSessionIdConfig {
+    fn default() -> Self {
+        Self {
+            table: String::new(),
+            length: NormalizedRange::exact(0),
+        }
+    }
+}
+
 /// Inputs copied from the config model plus the security kind needed to
 /// resolve `mode: auto`.
 #[derive(Debug, Clone)]
@@ -185,6 +205,8 @@ pub struct XhttpConfigInput {
     pub uplink_http_method: String,
     pub session_placement: XhttpMetadataPlacement,
     pub session_key: String,
+    pub session_id_table: String,
+    pub session_id_length: XhttpRange,
     pub seq_placement: XhttpMetadataPlacement,
     pub seq_key: String,
     pub uplink_data_placement: XhttpUplinkDataPlacement,
@@ -213,6 +235,8 @@ impl Default for XhttpConfigInput {
             uplink_http_method: "POST".to_owned(),
             session_placement: XhttpMetadataPlacement::Path,
             session_key: String::new(),
+            session_id_table: String::new(),
+            session_id_length: XhttpRange::default(),
             seq_placement: XhttpMetadataPlacement::Path,
             seq_key: String::new(),
             uplink_data_placement: XhttpUplinkDataPlacement::Auto,
@@ -230,7 +254,9 @@ impl Default for XhttpConfigInput {
 #[derive(Debug, Clone)]
 pub struct XhttpConfig {
     pub mode: XhttpMode,
-    /// Decoded URL path, normalized to both a leading and trailing slash.
+    /// Decoded URL path with a leading slash. A trailing slash is added only
+    /// when session or sequence metadata is placed in the path, matching
+    /// Xray's `GetNormalizedPath`.
     pub path: String,
     /// Configured query kept byte-for-byte until a placement mutates it.
     pub raw_query: String,
@@ -241,6 +267,7 @@ pub struct XhttpConfig {
     pub padding: XhttpPaddingConfig,
     pub uplink_http_method: String,
     pub session: XhttpMetadataConfig,
+    pub session_id: XhttpSessionIdConfig,
     pub sequence: XhttpMetadataConfig,
     pub uplink_data: XhttpUplinkDataConfig,
     pub no_grpc_header: bool,
@@ -282,7 +309,10 @@ impl XhttpConfig {
         } else {
             format!("/{path}")
         };
-        if !path.ends_with('/') {
+        if (input.session_placement == XhttpMetadataPlacement::Path
+            || input.seq_placement == XhttpMetadataPlacement::Path)
+            && !path.ends_with('/')
+        {
             path.push('/');
         }
 
@@ -336,6 +366,7 @@ impl XhttpConfig {
             placement: input.session_placement,
             key: metadata_key(input.session_key, input.session_placement, true),
         };
+        let session_id = normalize_session_id(input.session_id_table, input.session_id_length)?;
         let sequence = XhttpMetadataConfig {
             placement: input.seq_placement,
             key: metadata_key(input.seq_key, input.seq_placement, false),
@@ -356,6 +387,7 @@ impl XhttpConfig {
             padding,
             uplink_http_method: uplink_http_method.to_ascii_uppercase(),
             session,
+            session_id,
             sequence,
             uplink_data,
             no_grpc_header: input.no_grpc_header,
@@ -387,6 +419,97 @@ pub enum XhttpConfigError {
     NegativeRange(&'static str),
     #[error("XHTTP limit `{0}` must not be negative")]
     NegativeLimit(&'static str),
+    #[error("XHTTP sessionIDLength must contain positive bounds when sessionIDTable is set")]
+    NonPositiveSessionIdLength,
+    #[error("XHTTP sessionIDTable must contain only ASCII characters")]
+    NonAsciiSessionIdTable,
+    #[error("XHTTP sessionIDTable or sessionIDLength is too small")]
+    InsufficientSessionIdEntropy,
+}
+
+fn normalize_session_id(
+    table: String,
+    length: XhttpRange,
+) -> Result<XhttpSessionIdConfig, XhttpConfigError> {
+    if table.is_empty() {
+        return Ok(XhttpSessionIdConfig::default());
+    }
+
+    let table = predefined_session_id_table(&table)
+        .unwrap_or(&table)
+        .to_owned();
+    if !table.is_ascii() {
+        return Err(XhttpConfigError::NonAsciiSessionIdTable);
+    }
+    let length = length.ordered();
+    if length.from <= 0 || length.to <= 0 {
+        return Err(XhttpConfigError::NonPositiveSessionIdLength);
+    }
+    let length = NormalizedRange {
+        from: length.from as u32,
+        to: length.to as u32,
+    };
+    if !session_id_room_is_large_enough(table.len(), length) {
+        return Err(XhttpConfigError::InsufficientSessionIdEntropy);
+    }
+
+    Ok(XhttpSessionIdConfig { table, length })
+}
+
+fn predefined_session_id_table(table: &str) -> Option<&'static str> {
+    match table {
+        "ALPHABET" => Some("ABCDEFGHIJKLMNOPQRSTUVWXYZ"),
+        "Alphabet" => Some("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"),
+        "BASE36" => Some("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"),
+        "Base62" => Some("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"),
+        "HEX" => Some("0123456789ABCDEF"),
+        "alphabet" => Some("abcdefghijklmnopqrstuvwxyz"),
+        "base36" => Some("0123456789abcdefghijklmnopqrstuvwxyz"),
+        "hex" => Some("0123456789abcdef"),
+        "number" => Some("0123456789"),
+        _ => None,
+    }
+}
+
+/// Mirrors Xray's `roomSize(tableSize, min, max) >= 2 << 30` guard without
+/// allocating a big integer or iterating an attacker-controlled i32 range.
+pub(super) fn session_id_room_is_large_enough(table_size: usize, length: NormalizedRange) -> bool {
+    const MINIMUM_ROOM: u64 = 2 << 30;
+
+    let Some(span) = length.to.checked_sub(length.from) else {
+        return false;
+    };
+    let count = u64::from(span) + 1;
+    if table_size == 1 {
+        return count >= MINIMUM_ROOM;
+    }
+    if table_size == 0 {
+        return false;
+    }
+
+    let base = table_size as u64;
+    let mut exponent = length.from;
+    let mut factor = base.min(MINIMUM_ROOM);
+    let mut term = 1_u64;
+    while exponent > 0 {
+        if exponent & 1 == 1 {
+            term = term.saturating_mul(factor).min(MINIMUM_ROOM);
+        }
+        exponent >>= 1;
+        if exponent > 0 {
+            factor = factor.saturating_mul(factor).min(MINIMUM_ROOM);
+        }
+    }
+
+    let mut room = 0_u64;
+    for _ in 0..count {
+        room = room.saturating_add(term).min(MINIMUM_ROOM);
+        if room == MINIMUM_ROOM {
+            return true;
+        }
+        term = term.saturating_mul(base).min(MINIMUM_ROOM);
+    }
+    false
 }
 
 fn normalize_positive_range(
@@ -800,6 +923,164 @@ mod tests {
             NormalizedRange { from: 20, to: 80 }
         );
         assert_eq!(config.max_buffered_posts, 30);
+        assert_eq!(config.session_id, XhttpSessionIdConfig::default());
+    }
+
+    #[test]
+    fn xhttp_path_trailing_slash_matches_metadata_placement() {
+        for (path, session_placement, seq_placement, expected) in [
+            (
+                "stream",
+                XhttpMetadataPlacement::Query,
+                XhttpMetadataPlacement::Header,
+                "/stream",
+            ),
+            (
+                "/stream/filename.extension",
+                XhttpMetadataPlacement::Query,
+                XhttpMetadataPlacement::Header,
+                "/stream/filename.extension",
+            ),
+            (
+                "/stream",
+                XhttpMetadataPlacement::Path,
+                XhttpMetadataPlacement::Header,
+                "/stream/",
+            ),
+            (
+                "/stream",
+                XhttpMetadataPlacement::Query,
+                XhttpMetadataPlacement::Path,
+                "/stream/",
+            ),
+            (
+                "/stream/",
+                XhttpMetadataPlacement::Query,
+                XhttpMetadataPlacement::Header,
+                "/stream/",
+            ),
+            (
+                "/",
+                XhttpMetadataPlacement::Query,
+                XhttpMetadataPlacement::Header,
+                "/",
+            ),
+        ] {
+            let config = XhttpConfig::normalize(XhttpConfigInput {
+                path: path.to_owned(),
+                session_placement,
+                seq_placement,
+                ..XhttpConfigInput::default()
+            })
+            .unwrap();
+
+            assert_eq!(
+                config.path, expected,
+                "path={path:?} session={session_placement:?} seq={seq_placement:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn xhttp_session_id_config_expands_target_predefined_tables_and_orders_length() {
+        for (name, expected) in [
+            ("ALPHABET", "ABCDEFGHIJKLMNOPQRSTUVWXYZ"),
+            (
+                "Alphabet",
+                "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
+            ),
+            ("BASE36", "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"),
+            (
+                "Base62",
+                "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
+            ),
+            ("HEX", "0123456789ABCDEF"),
+            ("alphabet", "abcdefghijklmnopqrstuvwxyz"),
+            ("base36", "0123456789abcdefghijklmnopqrstuvwxyz"),
+            ("hex", "0123456789abcdef"),
+            ("number", "0123456789"),
+        ] {
+            let config = XhttpConfig::normalize(XhttpConfigInput {
+                session_id_table: name.to_owned(),
+                session_id_length: XhttpRange { from: 12, to: 10 },
+                ..XhttpConfigInput::default()
+            })
+            .unwrap();
+
+            assert_eq!(config.session_id.table, expected, "predefined table {name}");
+            assert_eq!(
+                config.session_id.length,
+                NormalizedRange { from: 10, to: 12 },
+                "predefined table {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn xhttp_session_id_config_matches_target_ascii_positive_and_entropy_guards() {
+        let valid = XhttpConfig::normalize(XhttpConfigInput {
+            session_id_table: "ab".to_owned(),
+            session_id_length: XhttpRange::exact(31),
+            ..XhttpConfigInput::default()
+        })
+        .unwrap();
+        assert_eq!(valid.session_id.table, "ab");
+        assert_eq!(valid.session_id.length, NormalizedRange::exact(31));
+
+        // Xray's entropy guard sums the inclusive range, while its generator
+        // draws the unequal range half-open. Preserve that target quirk: the
+        // upper 31 term makes this pass even though generated IDs are length 30.
+        let target_boundary = XhttpConfig::normalize(XhttpConfigInput {
+            session_id_table: "ab".to_owned(),
+            session_id_length: XhttpRange { from: 30, to: 31 },
+            ..XhttpConfigInput::default()
+        })
+        .unwrap();
+        assert_eq!(
+            target_boundary.session_id.length,
+            NormalizedRange { from: 30, to: 31 }
+        );
+
+        for (table, length, expected) in [
+            (
+                "ab",
+                XhttpRange::exact(30),
+                XhttpConfigError::InsufficientSessionIdEntropy,
+            ),
+            (
+                "number",
+                XhttpRange::exact(9),
+                XhttpConfigError::InsufficientSessionIdEntropy,
+            ),
+            (
+                "ab",
+                XhttpRange::exact(0),
+                XhttpConfigError::NonPositiveSessionIdLength,
+            ),
+            (
+                "é",
+                XhttpRange::exact(31),
+                XhttpConfigError::NonAsciiSessionIdTable,
+            ),
+        ] {
+            assert_eq!(
+                XhttpConfig::normalize(XhttpConfigInput {
+                    session_id_table: table.to_owned(),
+                    session_id_length: length,
+                    ..XhttpConfigInput::default()
+                })
+                .unwrap_err(),
+                expected,
+                "table={table:?} length={length:?}"
+            );
+        }
+
+        let uuid = XhttpConfig::normalize(XhttpConfigInput {
+            session_id_length: XhttpRange::exact(-1),
+            ..XhttpConfigInput::default()
+        })
+        .unwrap();
+        assert_eq!(uuid.session_id, XhttpSessionIdConfig::default());
     }
 
     #[test]

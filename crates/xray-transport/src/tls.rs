@@ -8,12 +8,16 @@ use std::{
 };
 
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+use rustls::client::WebPkiServerVerifier;
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{
-    crypto, ClientConnection, DigitallySignedStruct, Error as RustlsError, SignatureScheme,
+    crypto, CertificateError, ClientConnection, DigitallySignedStruct, Error as RustlsError,
+    SignatureScheme,
 };
+use sha2::{Digest, Sha256};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio_rustls::TlsConnector as TokioTlsConnector;
+use x509_parser::prelude::{FromDer, X509Certificate};
 use xray_routing::{Target, TargetAddr};
 
 use crate::{
@@ -26,7 +30,7 @@ use crate::{
 };
 
 /// Identifies one rustls configuration shape. Two connections that agree on
-/// all four fields share a config, which matters less for build cost —
+/// all six fields share a config, which matters less for build cost —
 /// webpki-roots ships pre-parsed statics, so building one is microseconds —
 /// than for continuity: a `ClientConfig` owns the resumption session store, so
 /// splitting configs splits session tickets and kx hints along with them.
@@ -38,14 +42,20 @@ use crate::{
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 struct ClientConfigKey {
     allow_insecure: bool,
+    pinned_peer_cert_sha256: Vec<[u8; 32]>,
+    verify_peer_cert_by_name: Vec<String>,
     alpn: Vec<String>,
     fingerprint: Option<String>,
     alpn_policy: TlsAlpnPolicy,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 enum Http3ClientConfigKey {
-    System { allow_insecure: bool },
+    System {
+        allow_insecure: bool,
+        pinned_peer_cert_sha256: Vec<[u8; 32]>,
+        verify_peer_cert_by_name: Vec<String>,
+    },
     Pinned,
 }
 
@@ -98,8 +108,11 @@ impl TlsConnector {
     /// Such a connector has no config cache and performs no fingerprint
     /// validation: it ignores `TlsClientConfig::fingerprint` entirely, so it
     /// sends an unshaped ClientHello and returns `Ok` even for a fingerprint
-    /// that `system()` would reject with `UnsupportedTlsFingerprint`. A test
-    /// that means to exercise shaping must use `system()` — with
+    /// that `system()` would reject with `UnsupportedTlsFingerprint`.
+    /// Custom certificate verification is different: silently ignoring trust
+    /// policy would be unsafe, so non-empty pins or verification names are
+    /// rejected. A test
+    /// that means to exercise shaping or certificate pins must use `system()` — with
     /// `allow_insecure: true` if it needs to reach a self-signed local
     /// listener.
     pub fn with_pinned_client_config(client_config: Arc<rustls::ClientConfig>) -> Self {
@@ -138,9 +151,17 @@ impl TlsConnector {
         &self,
         config: &TlsClientConfig,
     ) -> Result<Arc<rustls::ClientConfig>, TransportError> {
+        // A prebuilt config cannot carry Xray's per-outbound verification
+        // policy. Reject before consulting its shape-independent H3 cache so
+        // a previously cached permissive config cannot bypass this guard.
+        if matches!(&*self.source, ConfigSource::Pinned(_)) {
+            reject_custom_verification_with_prebuilt_config(config)?;
+        }
         let key = match &*self.source {
             ConfigSource::Cached(_) => Http3ClientConfigKey::System {
                 allow_insecure: config.allow_insecure,
+                pinned_peer_cert_sha256: config.pinned_peer_cert_sha256.clone(),
+                verify_peer_cert_by_name: config.verify_peer_cert_by_name.clone(),
             },
             ConfigSource::Pinned(_) => Http3ClientConfigKey::Pinned,
         };
@@ -156,6 +177,8 @@ impl TlsConnector {
             ConfigSource::Cached(_) => client_config_with_provider(
                 Arc::new(rustls::crypto::ring::default_provider()),
                 config.allow_insecure,
+                &config.pinned_peer_cert_sha256,
+                &config.verify_peer_cert_by_name,
                 &[&rustls::version::TLS13],
             )?,
             ConfigSource::Pinned(pinned) => (**pinned).clone(),
@@ -174,17 +197,24 @@ impl TlsConnector {
         alpn_policy: TlsAlpnPolicy,
     ) -> Result<Arc<rustls::ClientConfig>, TransportError> {
         match &*self.source {
-            ConfigSource::Pinned(pinned) => Ok(Arc::clone(pinned)),
+            ConfigSource::Pinned(pinned) => {
+                reject_custom_verification_with_prebuilt_config(config)?;
+                Ok(Arc::clone(pinned))
+            }
             ConfigSource::Cached(configs) => {
                 let TlsClientConfig {
                     // Per-connection, not per-config: rustls receives it at `connect`.
                     server_name: _,
                     allow_insecure,
+                    pinned_peer_cert_sha256,
+                    verify_peer_cert_by_name,
                     alpn,
                     fingerprint,
                 } = config;
                 let key = ClientConfigKey {
                     allow_insecure: *allow_insecure,
+                    pinned_peer_cert_sha256: pinned_peer_cert_sha256.clone(),
+                    verify_peer_cert_by_name: verify_peer_cert_by_name.clone(),
                     alpn: alpn.clone(),
                     fingerprint: fingerprint.clone(),
                     alpn_policy,
@@ -387,6 +417,169 @@ struct NoCertificateVerification {
     provider: Arc<crypto::CryptoProvider>,
 }
 
+/// Xray-compatible verifier for `pinnedPeerCertSha256` and
+/// `verifyPeerCertByName`.
+///
+/// The pins cover complete DER certificates. A leaf match intentionally
+/// short-circuits all PKI and name checks, matching Xray. Otherwise the first
+/// matching CA from the peer-presented chain becomes the only trust anchor.
+/// With no CA pin the ordinary system roots remain in force. The configured
+/// verification names are ORed and deliberately do not affect the SNI passed
+/// to the handshake.
+#[derive(Debug)]
+struct XrayCertificateVerification {
+    provider: Arc<crypto::CryptoProvider>,
+    system_roots: Arc<rustls::RootCertStore>,
+    pins: Vec<[u8; 32]>,
+    verification_names: Vec<String>,
+}
+
+impl ServerCertVerifier for XrayCertificateVerification {
+    fn verify_server_cert(
+        &self,
+        end_entity: &CertificateDer<'_>,
+        intermediates: &[CertificateDer<'_>],
+        server_name: &ServerName<'_>,
+        ocsp_response: &[u8],
+        now: UnixTime,
+    ) -> Result<ServerCertVerified, RustlsError> {
+        // Xray parses the complete presented chain before considering even a
+        // leaf pin. Keep malformed DER from turning a matching digest into an
+        // acceptance shortcut.
+        certificate_ca_flag(end_entity)?;
+        let intermediate_ca_flags = intermediates
+            .iter()
+            .map(certificate_ca_flag)
+            .collect::<Result<Vec<_>, _>>()?;
+
+        if self.matches_pin(end_entity) {
+            return Ok(ServerCertVerified::assertion());
+        }
+
+        let roots =
+            if self.pins.is_empty() {
+                Arc::clone(&self.system_roots)
+            } else {
+                let Some(pinned_ca) = intermediates.iter().zip(intermediate_ca_flags).find_map(
+                    |(certificate, is_ca)| {
+                        (is_ca && self.matches_pin(certificate)).then_some(certificate)
+                    },
+                ) else {
+                    return Err(certificate_verification_error());
+                };
+
+                let mut roots = rustls::RootCertStore::empty();
+                roots
+                    .add(pinned_ca.clone())
+                    .map_err(|_| certificate_verification_error())?;
+                Arc::new(roots)
+            };
+        let verifier =
+            WebPkiServerVerifier::builder_with_provider(roots, Arc::clone(&self.provider))
+                .build()
+                .map_err(|_| certificate_verification_error())?;
+
+        if self.verification_names.is_empty() {
+            return verifier.verify_server_cert(
+                end_entity,
+                intermediates,
+                server_name,
+                ocsp_response,
+                now,
+            );
+        }
+
+        for verification_name in &self.verification_names {
+            let Ok(verification_name) = ServerName::try_from(verification_name.clone()) else {
+                continue;
+            };
+            if verifier
+                .verify_server_cert(
+                    end_entity,
+                    intermediates,
+                    &verification_name,
+                    ocsp_response,
+                    now,
+                )
+                .is_ok()
+            {
+                return Ok(ServerCertVerified::assertion());
+            }
+        }
+
+        Err(certificate_verification_error())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, RustlsError> {
+        crypto::verify_tls12_signature(
+            message,
+            cert,
+            dss,
+            &self.provider.signature_verification_algorithms,
+        )
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, RustlsError> {
+        crypto::verify_tls13_signature(
+            message,
+            cert,
+            dss,
+            &self.provider.signature_verification_algorithms,
+        )
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        self.provider
+            .signature_verification_algorithms
+            .supported_schemes()
+    }
+}
+
+impl XrayCertificateVerification {
+    fn matches_pin(&self, certificate: &CertificateDer<'_>) -> bool {
+        let digest: [u8; 32] = Sha256::digest(certificate.as_ref()).into();
+        self.pins.contains(&digest)
+    }
+}
+
+fn certificate_ca_flag(certificate: &CertificateDer<'_>) -> Result<bool, RustlsError> {
+    let (remaining, certificate) = X509Certificate::from_der(certificate.as_ref())
+        .map_err(|_| RustlsError::InvalidCertificate(CertificateError::BadEncoding))?;
+    if !remaining.is_empty() {
+        return Err(RustlsError::InvalidCertificate(
+            CertificateError::BadEncoding,
+        ));
+    }
+    Ok(certificate.is_ca())
+}
+
+fn certificate_verification_error() -> RustlsError {
+    RustlsError::InvalidCertificate(CertificateError::ApplicationVerificationFailure)
+}
+
+fn reject_custom_verification_with_prebuilt_config(
+    config: &TlsClientConfig,
+) -> Result<(), TransportError> {
+    if config.pinned_peer_cert_sha256.is_empty() && config.verify_peer_cert_by_name.is_empty() {
+        Ok(())
+    } else {
+        Err(TransportError::TlsConfig(
+            "pinnedPeerCertSha256 and verifyPeerCertByName cannot be combined with a prebuilt TLS client config"
+                .to_owned(),
+        ))
+    }
+}
+
 impl ServerCertVerifier for NoCertificateVerification {
     fn verify_server_cert(
         &self,
@@ -448,8 +641,13 @@ fn build_client_config(
             let provider = Arc::new(shaping_crypto_provider());
             reject_unnegotiable_fingerprint(fingerprint, profile, &provider, versions)?;
 
-            let mut client_config =
-                shaped_client_config(provider, config.allow_insecure, versions)?;
+            let mut client_config = shaped_client_config(
+                provider,
+                config.allow_insecure,
+                &config.pinned_peer_cert_sha256,
+                &config.verify_peer_cert_by_name,
+                versions,
+            )?;
             crate::utls_shaping::retain_profile_certificate_decompressors(
                 profile,
                 &mut client_config.cert_decompressors,
@@ -460,7 +658,11 @@ fn build_client_config(
             client_config
         }
         None => {
-            let mut client_config = unshaped_client_config(config.allow_insecure)?;
+            let mut client_config = unshaped_client_config(
+                config.allow_insecure,
+                &config.pinned_peer_cert_sha256,
+                &config.verify_peer_cert_by_name,
+            )?;
             // Xray's `unsafe` sentinel falls through to stock `tls.Client`,
             // which sends `tlsConfig.NextProtos`, so an unshaped hello has to
             // advertise the configured list too. Gated on the list rather than
@@ -565,10 +767,16 @@ fn reject_unnegotiable_fingerprint(
 /// ClientHello, on the *ring* provider plain TLS has always used. Keeping this
 /// branch on *ring* is what makes "no shaping" reproduce the pre-shaping
 /// ClientHello exactly.
-fn unshaped_client_config(allow_insecure: bool) -> Result<rustls::ClientConfig, TransportError> {
+fn unshaped_client_config(
+    allow_insecure: bool,
+    pinned_peer_cert_sha256: &[[u8; 32]],
+    verify_peer_cert_by_name: &[String],
+) -> Result<rustls::ClientConfig, TransportError> {
     client_config_with_provider(
         Arc::new(rustls::crypto::ring::default_provider()),
         allow_insecure,
+        pinned_peer_cert_sha256,
+        verify_peer_cert_by_name,
         rustls::DEFAULT_VERSIONS,
     )
 }
@@ -582,9 +790,17 @@ fn unshaped_client_config(allow_insecure: bool) -> Result<rustls::ClientConfig, 
 fn shaped_client_config(
     provider: Arc<crypto::CryptoProvider>,
     allow_insecure: bool,
+    pinned_peer_cert_sha256: &[[u8; 32]],
+    verify_peer_cert_by_name: &[String],
     versions: &[&'static rustls::SupportedProtocolVersion],
 ) -> Result<rustls::ClientConfig, TransportError> {
-    let mut config = client_config_with_provider(provider, allow_insecure, versions)?;
+    let mut config = client_config_with_provider(
+        provider,
+        allow_insecure,
+        pinned_peer_cert_sha256,
+        verify_peer_cert_by_name,
+        versions,
+    )?;
     // A resumed handshake sends a second ClientHello carrying pre_shared_key,
     // which is outside the shape the fingerprint describes.
     config.resumption = rustls::client::Resumption::disabled();
@@ -595,16 +811,59 @@ fn shaped_client_config(
 fn client_config_with_provider(
     provider: Arc<crypto::CryptoProvider>,
     allow_insecure: bool,
+    pinned_peer_cert_sha256: &[[u8; 32]],
+    verify_peer_cert_by_name: &[String],
     versions: &[&'static rustls::SupportedProtocolVersion],
 ) -> Result<rustls::ClientConfig, TransportError> {
+    if allow_insecure
+        && (!pinned_peer_cert_sha256.is_empty() || !verify_peer_cert_by_name.is_empty())
+    {
+        return Err(TransportError::TlsConfig(
+            "allow_insecure cannot be combined with pinnedPeerCertSha256 or verifyPeerCertByName"
+                .to_owned(),
+        ));
+    }
     if allow_insecure {
         return insecure_rustls_client_config(provider, versions);
     }
-
     let root_store = rustls::RootCertStore {
         roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
     };
+    if !pinned_peer_cert_sha256.is_empty() || !verify_peer_cert_by_name.is_empty() {
+        return custom_verification_rustls_client_config(
+            provider,
+            root_store,
+            pinned_peer_cert_sha256,
+            verify_peer_cert_by_name,
+            versions,
+        );
+    }
+
     rustls_client_config(provider, root_store, versions)
+}
+
+fn custom_verification_rustls_client_config(
+    provider: Arc<crypto::CryptoProvider>,
+    system_roots: rustls::RootCertStore,
+    pinned_peer_cert_sha256: &[[u8; 32]],
+    verify_peer_cert_by_name: &[String],
+    versions: &[&'static rustls::SupportedProtocolVersion],
+) -> Result<rustls::ClientConfig, TransportError> {
+    let verifier = Arc::new(XrayCertificateVerification {
+        provider: Arc::clone(&provider),
+        system_roots: Arc::new(system_roots),
+        pins: pinned_peer_cert_sha256.to_vec(),
+        verification_names: verify_peer_cert_by_name.to_vec(),
+    });
+    rustls::ClientConfig::builder_with_provider(provider)
+        .with_protocol_versions(versions)
+        .map_err(|error| TransportError::TlsConfig(error.to_string()))
+        .map(|builder| {
+            builder
+                .dangerous()
+                .with_custom_certificate_verifier(verifier)
+                .with_no_client_auth()
+        })
 }
 
 /// The provider every uTLS-shaped handshake runs on.
@@ -664,11 +923,57 @@ fn insecure_rustls_client_config(
 #[cfg(test)]
 mod http3_tests {
     use super::*;
+    use rcgen::{
+        BasicConstraints, CertificateParams, ExtendedKeyUsagePurpose, IsCa, Issuer, KeyPair,
+        KeyUsagePurpose,
+    };
+
+    fn verification_chain() -> (CertificateDer<'static>, CertificateDer<'static>) {
+        let mut ca_params = CertificateParams::new(Vec::<String>::new())
+            .expect("empty CA subject alt names are valid");
+        ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        ca_params.key_usages = vec![
+            KeyUsagePurpose::DigitalSignature,
+            KeyUsagePurpose::KeyCertSign,
+            KeyUsagePurpose::CrlSign,
+        ];
+        let ca_key = KeyPair::generate().expect("generate CA key");
+        let ca_cert = ca_params.self_signed(&ca_key).expect("self-sign CA");
+        let ca_issuer = Issuer::new(ca_params, ca_key);
+
+        let leaf_key = KeyPair::generate().expect("generate leaf key");
+        let mut leaf_params =
+            CertificateParams::new(vec!["server.test".to_owned(), "127.0.0.1".to_owned()])
+                .expect("valid leaf names");
+        leaf_params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
+        leaf_params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
+        let leaf_cert = leaf_params
+            .signed_by(&leaf_key, &ca_issuer)
+            .expect("sign leaf with CA");
+
+        (leaf_cert.der().clone(), ca_cert.der().clone())
+    }
+
+    fn ordinary_root_verifier(
+        ca: &CertificateDer<'static>,
+        names: &[&str],
+    ) -> XrayCertificateVerification {
+        let mut roots = rustls::RootCertStore::empty();
+        roots.add(ca.clone()).expect("add test root");
+        XrayCertificateVerification {
+            provider: Arc::new(rustls::crypto::ring::default_provider()),
+            system_roots: Arc::new(roots),
+            pins: Vec::new(),
+            verification_names: names.iter().map(|name| (*name).to_owned()).collect(),
+        }
+    }
 
     fn input(allow_insecure: bool, alpn: &[&str], fingerprint: Option<&str>) -> TlsClientConfig {
         TlsClientConfig {
             server_name: "example.com".to_owned(),
             allow_insecure,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
             alpn: alpn.iter().map(|value| (*value).to_owned()).collect(),
             fingerprint: fingerprint.map(str::to_owned),
         }
@@ -702,11 +1007,56 @@ mod http3_tests {
             .http3_client_config_for(&input(true, &[], None))
             .expect("insecure H3 config");
         assert!(!Arc::ptr_eq(&first, &insecure));
+
+        let mut named = input(false, &[], None);
+        named.verify_peer_cert_by_name = vec!["cert.example".to_owned()];
+        let named_config = connector
+            .http3_client_config_for(&named)
+            .expect("H3 verification-name config");
+        let named_again = connector
+            .http3_client_config_for(&named)
+            .expect("cached H3 verification-name config");
+        assert!(Arc::ptr_eq(&named_config, &named_again));
+        assert!(!Arc::ptr_eq(&first, &named_config));
+    }
+
+    #[test]
+    fn ordinary_roots_or_dns_and_ip_verification_names_without_reusing_sni() {
+        let (leaf, ca) = verification_chain();
+        let presented_chain = [ca.clone()];
+        let handshake_name = ServerName::try_from("wrong-sni.test".to_owned()).expect("valid SNI");
+
+        for names in [
+            &["wrong.test", "SERVER.TEST."][..],
+            &["wrong.test", "127.0.0.1"][..],
+        ] {
+            ordinary_root_verifier(&ca, names)
+                .verify_server_cert(
+                    &leaf,
+                    &presented_chain,
+                    &handshake_name,
+                    &[],
+                    UnixTime::now(),
+                )
+                .expect("one matching DNS/IP SAN must satisfy the OR list");
+        }
+
+        assert!(
+            ordinary_root_verifier(&ca, &["wrong-one.test", "wrong-two.test"])
+                .verify_server_cert(
+                    &leaf,
+                    &presented_chain,
+                    &handshake_name,
+                    &[],
+                    UnixTime::now(),
+                )
+                .is_err()
+        );
     }
 
     #[test]
     fn pinned_http3_tls_is_cloned_sanitized_and_requires_tls13() {
-        let mut pinned = unshaped_client_config(false).expect("pinned TLS config");
+        let mut pinned = unshaped_client_config(false, &[], &[]).expect("pinned TLS config");
         pinned.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
         let pinned = Arc::new(pinned);
         let connector = TlsConnector::with_pinned_client_config(Arc::clone(&pinned));
@@ -717,9 +1067,24 @@ mod http3_tests {
         assert_eq!(h3.alpn_protocols, [b"h3".to_vec()]);
         assert!(h3.client_hello_customizer.is_none());
 
+        let mut named = input(false, &[], None);
+        named.verify_peer_cert_by_name = vec!["cert.example".to_owned()];
+        assert!(matches!(
+            connector.http3_client_config_for(&named),
+            Err(TransportError::TlsConfig(_))
+        ));
+        let mut pinned_policy = input(false, &[], None);
+        pinned_policy.pinned_peer_cert_sha256 = vec![[0x11; 32]];
+        assert!(matches!(
+            connector.http3_client_config_for(&pinned_policy),
+            Err(TransportError::TlsConfig(_))
+        ));
+
         let tls12_only = client_config_with_provider(
             Arc::new(rustls::crypto::ring::default_provider()),
             false,
+            &[],
+            &[],
             &[&rustls::version::TLS12],
         )
         .expect("TLS 1.2-only pinned config");

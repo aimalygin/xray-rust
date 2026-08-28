@@ -6,12 +6,13 @@ mod h2;
 mod h3;
 mod padding;
 mod request;
+mod session;
 mod transport;
 
 pub use config::{
     XhttpConfig, XhttpConfigInput, XhttpEndpoint, XhttpMetadataPlacement, XhttpMode,
     XhttpModeSelection, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpRange, XhttpScheme,
-    XhttpUplinkDataPlacement,
+    XhttpSessionIdConfig, XhttpUplinkDataPlacement,
 };
 pub use h3::{H3Congestion, H3QuicConfig, H3QuicVersion, H3UdpHopConfig};
 pub use transport::{XhttpHttpVersion, XhttpTransport, XhttpXmuxPolicy};
@@ -58,7 +59,7 @@ pub mod composer_test_only {
         NormalizedRange, XhttpConfig, XhttpConfigError, XhttpConfigInput, XhttpEndpoint,
         XhttpMetadataConfig, XhttpMetadataPlacement, XhttpMode, XhttpModeSelection,
         XhttpPaddingConfig, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpRange, XhttpScheme,
-        XhttpUplinkDataConfig, XhttpUplinkDataPlacement,
+        XhttpSessionIdConfig, XhttpUplinkDataConfig, XhttpUplinkDataPlacement,
     };
     pub use super::padding::{draw_range, generate_padding, PaddingError};
     pub use super::request::{

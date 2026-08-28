@@ -149,44 +149,11 @@ fn parses_mobile_vless_xhttp_packet_up_legacy_extra_fixture() {
 }
 
 #[test]
-fn parses_apple_importer_vless_xhttp_tls_fields_and_extra() {
+fn rejects_apple_importer_tls_allow_insecure_fail_closed() {
     let raw = include_str!("../../../tests/fixtures/configs/vless_xhttp_tls_importer.json");
-    let parsed = parse_xray_json(raw).expect("Apple XHTTP+TLS config should parse");
-    let outbound = &parsed.config.outbounds[0];
-
-    let StreamSecurity::Tls(tls) = &outbound.stream.security else {
-        panic!("expected TLS security");
-    };
-    assert_eq!(tls.server_name.as_deref(), Some("remote.example"));
-    assert_eq!(tls.fingerprint.as_deref(), Some("chrome"));
-    assert_eq!(tls.alpn, ["http/1.1"]);
-    assert!(tls.allow_insecure);
-
-    let OutboundSettings::Vless(vless) = &outbound.settings else {
-        panic!("expected VLESS outbound");
-    };
-    assert!(vless.users[0].flow.is_none());
-
-    let StreamTransport::Xhttp(xhttp) = &outbound.stream.transport else {
-        panic!("expected XHTTP transport");
-    };
-    assert_eq!(xhttp.host.as_deref(), Some("edge.example"));
-    assert_eq!(xhttp.path, "/api");
-    assert_eq!(xhttp.mode, XhttpMode::PacketUp);
-    assert_eq!(
-        xhttp.sc_max_each_post_bytes,
-        XhttpRange {
-            from: 500_000,
-            to: 500_000,
-        }
-    );
-    assert_eq!(xhttp.xmux.max_connections, XhttpRange { from: 16, to: 16 });
-
-    assert_eq!(parsed.diagnostics.len(), 1, "{:?}", parsed.diagnostics);
-    assert_eq!(parsed.diagnostics[0].severity, DiagnosticSeverity::Warning);
-    assert_eq!(
-        parsed.diagnostics[0].path.as_deref(),
-        Some("$.outbounds[0].streamSettings.tlsSettings.allowInsecure")
+    assert_parse_error_path(
+        raw,
+        "$.outbounds[0].streamSettings.tlsSettings.allowInsecure",
     );
 }
 
@@ -229,16 +196,18 @@ fn unsupported_modern_tls_fields_fail_closed_on_apple_xhttp_shape() {
     .unwrap();
 
     for (key, value) in [
-        ("pinnedPeerCertSha256", "unsupported-pcs"),
-        ("verifyPeerCertByName", "unsupported-vcn.example"),
         ("echConfigList", "unsupported-ech"),
+        ("disableSystemRoot", "unsupported-root-policy"),
+        ("certificates", "unsupported-custom-trust"),
+        ("pinnedPeerCertChainSha256", "unsupported-chain-pin"),
     ] {
         let mut candidate = base.clone();
-        candidate
+        let tls_settings = candidate
             .pointer_mut("/outbounds/0/streamSettings/tlsSettings")
             .and_then(serde_json::Value::as_object_mut)
-            .unwrap()
-            .insert(key.to_owned(), serde_json::Value::String(value.to_owned()));
+            .unwrap();
+        tls_settings.remove("allowInsecure");
+        tls_settings.insert(key.to_owned(), serde_json::Value::String(value.to_owned()));
 
         let error = match parse_xray_json(&candidate.to_string()) {
             Ok(_) => panic!("unsupported TLS field {key} must fail closed"),
@@ -458,11 +427,11 @@ fn parses_xray_dns_outbound_rules_rewrite_and_user_level() {
           "userLevel": 7,
           "rules": [{
             "action": "DiReCt",
-            "qtype": "1,3,23-24,24",
+            "qType": "1,3,23-24,24",
             "domain": ["domain:example.com", "full:exact.test"]
           }, {
             "action": "drop",
-            "qtype": 28,
+            "qType": 28,
             "domain": "keyword:ads"
           }]
         }"#,
@@ -618,11 +587,11 @@ fn omitted_or_null_dns_outbound_settings_use_xray_defaults() {
 #[test]
 fn dns_outbound_numeric_zero_qtype_is_wildcard_but_string_zero_is_type_zero() {
     let numeric = parse_xray_json(&raw_with_dns_outbound_settings(
-        r#"{ "rules": [{ "action": "direct", "qtype": 0 }] }"#,
+        r#"{ "rules": [{ "action": "direct", "qType": 0 }] }"#,
     ))
     .expect("numeric zero should parse");
     let string = parse_xray_json(&raw_with_dns_outbound_settings(
-        r#"{ "rules": [{ "action": "direct", "qtype": "0" }] }"#,
+        r#"{ "rules": [{ "action": "direct", "qType": "0" }] }"#,
     ))
     .expect("string zero should parse");
     let OutboundSettings::Dns(numeric) = &numeric.config.outbounds[0].settings else {
@@ -642,8 +611,76 @@ fn dns_outbound_numeric_zero_qtype_is_wildcard_but_string_zero_is_type_zero() {
     );
     assert_eq!(
         string.action_for(65, "example.com"),
-        DnsOutboundRuleAction::Reject
+        DnsOutboundRuleAction::Return
     );
+}
+
+#[test]
+fn parses_canonical_dns_outbound_return_qtype_and_rcode() {
+    let parsed = parse_xray_json(&raw_with_dns_outbound_settings(
+        r#"{
+          "rules": [{
+            "action": "ReTuRn",
+            "qType": "16,64-65",
+            "rCode": 3
+          }]
+        }"#,
+    ))
+    .expect("canonical DNS outbound rule should parse");
+    let OutboundSettings::Dns(settings) = &parsed.config.outbounds[0].settings else {
+        panic!("expected dns outbound");
+    };
+
+    assert!(parsed.diagnostics.is_empty());
+    assert_eq!(settings.rules[0].action, DnsOutboundRuleAction::Return);
+    assert_eq!(settings.rules[0].r_code, 3);
+    assert_eq!(settings.rules[0].qtype_ranges.len(), 2);
+    assert_eq!(
+        settings.action_for(65, "example.com"),
+        DnsOutboundRuleAction::Return
+    );
+}
+
+#[test]
+fn dns_outbound_lowercase_qtype_and_reject_remain_warned_aliases() {
+    let parsed = parse_xray_json(&raw_with_dns_outbound_settings(
+        r#"{ "rules": [{ "action": "Reject", "qtype": 65 }] }"#,
+    ))
+    .expect("unambiguous legacy aliases should parse");
+    let OutboundSettings::Dns(settings) = &parsed.config.outbounds[0].settings else {
+        panic!("expected dns outbound");
+    };
+
+    assert_eq!(settings.rules[0].action, DnsOutboundRuleAction::Return);
+    assert_eq!(settings.rules[0].r_code, 5);
+    assert_eq!(parsed.diagnostics.len(), 2);
+    assert!(parsed
+        .diagnostics
+        .iter()
+        .all(|diagnostic| diagnostic.severity == DiagnosticSeverity::Warning));
+}
+
+#[test]
+fn dns_outbound_reject_alias_allows_explicit_rcode_override() {
+    let parsed = parse_xray_json(&raw_with_dns_outbound_settings(
+        r#"{ "rules": [{ "action": "Reject", "rCode": 2 }] }"#,
+    ))
+    .expect("explicit rCode should disambiguate the legacy action");
+    let OutboundSettings::Dns(settings) = &parsed.config.outbounds[0].settings else {
+        panic!("expected dns outbound");
+    };
+
+    assert_eq!(settings.rules[0].action, DnsOutboundRuleAction::Return);
+    assert_eq!(settings.rules[0].r_code, 2);
+}
+
+#[test]
+fn rejects_mixed_canonical_and_legacy_dns_qtype_spellings() {
+    let raw = raw_with_dns_outbound_settings(
+        r#"{ "rules": [{ "action": "return", "qType": 16, "qtype": 65 }] }"#,
+    );
+
+    assert_parse_error_path(&raw, "$.outbounds[0].settings.rules[0].qtype");
 }
 
 #[test]
@@ -670,6 +707,22 @@ fn normalizes_legacy_dns_outbound_policy_with_deprecation_warning() {
     );
     assert_eq!(parsed.diagnostics.len(), 1);
     assert_eq!(parsed.diagnostics[0].severity, DiagnosticSeverity::Warning);
+}
+
+#[test]
+fn legacy_dns_outbound_reject_mode_maps_to_return_refused() {
+    let parsed = parse_xray_json(&raw_with_dns_outbound_settings(
+        r#"{ "nonIPQuery": "reject", "blockTypes": [65] }"#,
+    ))
+    .expect("legacy reject policy should parse");
+    let OutboundSettings::Dns(settings) = &parsed.config.outbounds[0].settings else {
+        panic!("expected dns outbound");
+    };
+
+    assert_eq!(settings.rules[0].action, DnsOutboundRuleAction::Return);
+    assert_eq!(settings.rules[0].r_code, 5);
+    assert_eq!(settings.rules[2].action, DnsOutboundRuleAction::Return);
+    assert_eq!(settings.rules[2].r_code, 5);
 }
 
 #[test]
@@ -711,16 +764,20 @@ fn rejects_invalid_dns_outbound_fields_with_precise_paths() {
             "$.outbounds[0].settings.rules[0].action",
         ),
         (
-            r#"{ "rules": [{ "action": "drop", "qtype": "24-23" }] }"#,
-            "$.outbounds[0].settings.rules[0].qtype[0]",
+            r#"{ "rules": [{ "action": "drop", "qType": "24-23" }] }"#,
+            "$.outbounds[0].settings.rules[0].qType[0]",
         ),
         (
-            r#"{ "rules": [{ "action": "drop", "qtype": "65536" }] }"#,
-            "$.outbounds[0].settings.rules[0].qtype[0]",
+            r#"{ "rules": [{ "action": "drop", "qType": "65536" }] }"#,
+            "$.outbounds[0].settings.rules[0].qType[0]",
         ),
         (
-            r#"{ "rules": [{ "action": "drop", "qtype": [] }] }"#,
-            "$.outbounds[0].settings.rules[0].qtype",
+            r#"{ "rules": [{ "action": "drop", "qType": [] }] }"#,
+            "$.outbounds[0].settings.rules[0].qType",
+        ),
+        (
+            r#"{ "rules": [{ "action": "return", "rCode": 65536 }] }"#,
+            "$.outbounds[0].settings.rules[0].rCode",
         ),
         (
             r#"{ "rules": [{ "action": "drop", "domain": [42] }] }"#,
@@ -1505,14 +1562,27 @@ fn rejects_send_through_with_path() {
 }
 
 #[test]
-fn parses_tls_allow_insecure_for_compatibility() {
+fn rejects_tls_allow_insecure_true_with_path() {
     let raw = raw_with_tls_settings(r#""serverName": "server.example", "allowInsecure": true"#);
-    let parsed = parse_xray_json(&raw).unwrap();
 
-    let StreamSecurity::Tls(tls) = &parsed.config.outbounds[0].stream.security else {
-        panic!("expected tls security");
-    };
-    assert!(tls.allow_insecure);
+    assert_parse_error_path(
+        &raw,
+        "$.outbounds[0].streamSettings.tlsSettings.allowInsecure",
+    );
+}
+
+#[test]
+fn tls_allow_insecure_false_and_null_keep_verification_enabled() {
+    for value in ["false", "null"] {
+        let raw = raw_with_tls_settings(&format!(
+            r#""serverName": "server.example", "allowInsecure": {value}"#
+        ));
+        let parsed = parse_xray_json(&raw).expect("false/null preserve certificate verification");
+        let StreamSecurity::Tls(tls) = &parsed.config.outbounds[0].stream.security else {
+            panic!("expected TLS security");
+        };
+        assert!(!tls.allow_insecure);
+    }
 }
 
 #[test]
@@ -1526,6 +1596,33 @@ fn rejects_tls_allow_insecure_non_bool_with_path() {
 }
 
 #[test]
+fn rejects_non_string_tls_server_name_with_path() {
+    let raw = raw_with_tls_settings(r#""serverName": 42"#);
+
+    assert_parse_error_path(&raw, "$.outbounds[0].streamSettings.tlsSettings.serverName");
+}
+
+#[test]
+fn rejects_tls_from_mitm_context_sentinels_with_paths() {
+    let server_name = raw_with_tls_settings(r#""serverName": "FrOmMiTm""#);
+    assert_parse_error_path(
+        &server_name,
+        "$.outbounds[0].streamSettings.tlsSettings.serverName",
+    );
+
+    let alpn = raw_with_tls_settings(r#""serverName": "server.example", "alpn": ["FROMMITM"]"#);
+    assert_parse_error_path(&alpn, "$.outbounds[0].streamSettings.tlsSettings.alpn[0]");
+
+    let verification_name = raw_with_tls_settings(
+        r#""serverName": "server.example", "verifyPeerCertByName": "cert.example, FrOmMiTm""#,
+    );
+    assert_parse_error_path(
+        &verification_name,
+        "$.outbounds[0].streamSettings.tlsSettings.verifyPeerCertByName",
+    );
+}
+
+#[test]
 fn parses_tls_fingerprint() {
     let raw = raw_with_tls_settings(r#""serverName": "server.example", "fingerprint": "firefox""#);
     let parsed = parse_xray_json(&raw).expect("a TLS fingerprint should be accepted");
@@ -1534,6 +1631,105 @@ fn parses_tls_fingerprint() {
         panic!("expected tls security");
     };
     assert_eq!(tls.fingerprint.as_deref(), Some("firefox"));
+}
+
+#[test]
+fn parses_tls_peer_certificate_pins_with_xray_hex_grammar() {
+    let openssl = (0u8..32)
+        .map(|byte| format!("{byte:02X}"))
+        .collect::<Vec<_>>()
+        .join(":");
+    let compact = "aa".repeat(32);
+    let raw = raw_with_tls_settings(&format!(
+        r#""serverName": "server.example", "pinnedPeerCertSha256": " , {openssl},, {compact} , ""#
+    ));
+    let parsed = parse_xray_json(&raw).expect("valid full-DER SHA-256 pins should parse");
+
+    let StreamSecurity::Tls(tls) = &parsed.config.outbounds[0].stream.security else {
+        panic!("expected tls security");
+    };
+    assert_eq!(
+        tls.pinned_peer_cert_sha256,
+        vec![std::array::from_fn(|index| index as u8), [0xaa; 32]]
+    );
+    assert!(!tls.allow_insecure);
+}
+
+#[test]
+fn parses_tls_verification_names_with_xray_comma_and_trim_grammar() {
+    let raw = raw_with_tls_settings(
+        r#""serverName": "sni.example", "verifyPeerCertByName": " first.example , , 127.0.0.1, SECOND.example ""#,
+    );
+    let parsed = parse_xray_json(&raw).expect("valid TLS verification names should parse");
+
+    let StreamSecurity::Tls(tls) = &parsed.config.outbounds[0].stream.security else {
+        panic!("expected tls security");
+    };
+    assert_eq!(
+        tls.verify_peer_cert_by_name,
+        ["first.example", "127.0.0.1", "SECOND.example"]
+    );
+    assert_eq!(tls.server_name.as_deref(), Some("sni.example"));
+}
+
+#[test]
+fn accepts_empty_and_null_tls_verification_name_strings() {
+    for value in [r#"" , , ""#, "null"] {
+        let raw = raw_with_tls_settings(&format!(
+            r#""serverName": "server.example", "verifyPeerCertByName": {value}"#
+        ));
+        let parsed = parse_xray_json(&raw).expect("empty Xray verification names should be inert");
+        let StreamSecurity::Tls(tls) = &parsed.config.outbounds[0].stream.security else {
+            panic!("expected tls security");
+        };
+        assert!(tls.verify_peer_cert_by_name.is_empty());
+    }
+}
+
+#[test]
+fn rejects_non_string_tls_verification_names_with_path() {
+    for value in ["42", r#"["server.example"]"#] {
+        let raw = raw_with_tls_settings(&format!(
+            r#""serverName": "server.example", "verifyPeerCertByName": {value}"#
+        ));
+        assert_parse_error_path(
+            &raw,
+            "$.outbounds[0].streamSettings.tlsSettings.verifyPeerCertByName",
+        );
+    }
+}
+
+#[test]
+fn accepts_empty_and_null_tls_peer_certificate_pin_strings() {
+    for value in ["\" , , \"", "null"] {
+        let raw = raw_with_tls_settings(&format!(
+            r#""serverName": "server.example", "pinnedPeerCertSha256": {value}"#
+        ));
+        let parsed = parse_xray_json(&raw).expect("empty Xray pin settings should be inert");
+        let StreamSecurity::Tls(tls) = &parsed.config.outbounds[0].stream.security else {
+            panic!("expected tls security");
+        };
+        assert!(tls.pinned_peer_cert_sha256.is_empty());
+    }
+}
+
+#[test]
+fn rejects_invalid_tls_peer_certificate_pins_with_path() {
+    let too_short = "00".repeat(31);
+    for value in [
+        "42".to_owned(),
+        r#""abcd""#.to_owned(),
+        format!(r#""{too_short}""#),
+        r#""gg""#.to_owned(),
+    ] {
+        let raw = raw_with_tls_settings(&format!(
+            r#""serverName": "server.example", "pinnedPeerCertSha256": {value}"#
+        ));
+        assert_parse_error_path(
+            &raw,
+            "$.outbounds[0].streamSettings.tlsSettings.pinnedPeerCertSha256",
+        );
+    }
 }
 
 #[test]
@@ -3036,6 +3232,78 @@ fn accepts_missing_none_and_explicit_none_vless_user_encryption() {
 }
 
 #[test]
+fn plaintext_vless_accepts_xray_private_test_and_dotless_servers() {
+    for address in [
+        "10.42.0.1",
+        "192.0.2.10",
+        "::1",
+        "[::1]",
+        "[ ::1 ]",
+        "fc00::1",
+        "printer.LAN.",
+        "EDGE",
+    ] {
+        let raw = raw_with_stream_settings_and_address(
+            address,
+            r#""network": "tcp", "security": "none""#,
+        );
+        parse_xray_json(&raw).unwrap_or_else(|error| panic!("{address} should be exempt: {error}"));
+    }
+}
+
+#[test]
+fn plaintext_vless_intentionally_rejects_public_legacy_vnext_servers() {
+    // Xray v26.7.28 accidentally applies this guard only to its simplified
+    // top-level VLESS shape. The supported xray-rust `vnext` shape is stricter
+    // by design so a legacy profile cannot silently retain public plaintext.
+    for address in [
+        "8.8.8.8",
+        "2606:4700:4700::1111",
+        "[2606:4700:4700::1111]",
+        "proxy.example.com",
+        "123",
+    ] {
+        let raw = raw_with_stream_settings_and_address(
+            address,
+            r#""network": "tcp", "security": "none""#,
+        );
+        let error = parse_xray_json(&raw).unwrap_err();
+        assert_eq!(
+            error.diagnostics[0].path.as_deref(),
+            Some("$.outbounds[0].settings.vnext[0].address")
+        );
+        assert_eq!(
+            error.diagnostics[0].message,
+            "vless without TLS or other encryption is prohibited unless the server address is a private IP or domain"
+        );
+    }
+
+    for stream_settings in [r#""network": "tcp""#, r#""network": "tcp", "security": """#] {
+        let raw = raw_with_stream_settings_and_address("proxy.example.com", stream_settings);
+        assert_parse_error_path(&raw, "$.outbounds[0].settings.vnext[0].address");
+    }
+}
+
+#[test]
+fn public_vless_servers_remain_valid_with_tls_or_reality() {
+    let tls = raw_with_stream_settings_and_address(
+        "proxy.example.com",
+        r#""network": "tcp", "security": "tls", "tlsSettings": { "serverName": "proxy.example.com" }"#,
+    );
+    parse_xray_json(&tls).expect("TLS should permit a public VLESS server");
+
+    let reality = vless_raw_with_address(
+        "2606:4700:4700::1111",
+        r#""users": [{ "id": "00010203-0405-0607-0809-0a0b0c0d0e0f", "encryption": "none" }]"#,
+        "",
+        443,
+        valid_public_key(),
+        "02030405",
+    );
+    parse_xray_json(&reality).expect("REALITY should permit a public VLESS server");
+}
+
+#[test]
 fn accepts_vless_user_security_auto_and_parses_level() {
     let raw = vless_raw(
         r#""users": [{
@@ -3747,7 +4015,8 @@ fn xhttp_full_v26_7_28_config_surface_is_normalized() {
              "xPaddingKey": "pad", "xPaddingHeader": "X-Pad",
              "xPaddingPlacement": "cookie", "xPaddingMethod": "tokenish",
              "uplinkHTTPMethod": "get",
-             "sessionIDPlacement": "header", "seqPlacement": "query",
+             "sessionIDPlacement": "header", "sessionIDTable": "Base62",
+             "sessionIDLength": "9-6", "seqPlacement": "query",
              "uplinkDataPlacement": "cookie", "uplinkChunkSize": 4096,
              "noGRPCHeader": true, "noSSEHeader": true,
              "scMaxEachPostBytes": "2000000-1000000",
@@ -3784,6 +4053,8 @@ fn xhttp_full_v26_7_28_config_surface_is_normalized() {
     assert_eq!(xhttp.uplink_http_method, "GET");
     assert_eq!(xhttp.session_placement, XhttpPlacement::Header);
     assert_eq!(xhttp.session_key, "X-Session");
+    assert_eq!(xhttp.session_id_table, "Base62");
+    assert_eq!(xhttp.session_id_length, XhttpRange { from: 6, to: 9 });
     assert_eq!(xhttp.seq_placement, XhttpPlacement::Query);
     assert_eq!(xhttp.seq_key, "x_seq");
     assert_eq!(
@@ -4034,14 +4305,19 @@ fn xhttp_rejects_invalid_modes_placements_methods_and_limits() {
 }
 
 #[test]
-fn xhttp_rejects_custom_session_id_generation_until_runtime_supports_it() {
-    assert_parse_error_path(
-        &raw_with_stream_settings(
-            r#""method": "xhttp", "security": "none",
-               "xhttpSettings": {"sessionIDTable": "Base62", "sessionIDLength": 8}"#,
-        ),
-        "$.outbounds[0].streamSettings.xhttpSettings.sessionIDTable",
-    );
+fn selected_xhttp_custom_session_id_generation_reaches_the_normalized_model() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""method": "xhttp", "security": "none",
+           "xhttpSettings": {"sessionIDTable": "Base62", "sessionIDLength": "9-6"}"#,
+    ))
+    .expect("a valid custom session ID generator must be available to the XHTTP runtime");
+
+    let StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected xhttp");
+    };
+    assert_eq!(xhttp.session_id_table, "Base62");
+    assert_eq!(xhttp.session_id_length, XhttpRange { from: 6, to: 9 });
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
 }
 
 #[test]
@@ -5429,6 +5705,10 @@ fn raw_with_tls_settings(tls_settings: &str) -> String {
 }
 
 fn raw_with_stream_settings(stream_settings: &str) -> String {
+    raw_with_stream_settings_and_address("server.example", stream_settings)
+}
+
+fn raw_with_stream_settings_and_address(address: &str, stream_settings: &str) -> String {
     format!(
         r#"{{
           "inbounds": [],
@@ -5438,7 +5718,7 @@ fn raw_with_stream_settings(stream_settings: &str) -> String {
             "settings": {{
               "vnext": [
                 {{
-                  "address": "server.example",
+                  "address": "{address}",
                   "port": 443,
                   "users": [{{ "id": "00010203-0405-0607-0809-0a0b0c0d0e0f" }}]
                 }}
@@ -5653,7 +5933,7 @@ fn vless_raw_with_reality_settings(reality_settings: &str) -> String {
 }
 
 #[test]
-fn allow_insecure_tls_produces_warning_diagnostic() {
+fn allow_insecure_tls_is_a_hard_error() {
     let raw = r#"{
         "inbounds": [
             {
@@ -5686,14 +5966,10 @@ fn allow_insecure_tls_produces_warning_diagnostic() {
         ]
     }"#;
 
-    let parsed = parse_xray_json(raw).expect("config should parse");
-
-    assert!(!parsed.config.inbounds[0].allow_unauthenticated_lan);
-    assert!(parsed.diagnostics.iter().any(|diagnostic| {
-        diagnostic.severity == DiagnosticSeverity::Warning
-            && diagnostic.path.as_deref()
-                == Some("$.outbounds[0].streamSettings.tlsSettings.allowInsecure")
-    }));
+    assert_parse_error_path(
+        raw,
+        "$.outbounds[0].streamSettings.tlsSettings.allowInsecure",
+    );
 }
 
 #[test]

@@ -1964,6 +1964,27 @@ impl Parser<'_> {
         };
         let stream = self.parse_stream_settings(outbound, index)?;
 
+        // Xray v26.7.28 applies this policy only to its simplified top-level
+        // VLESS settings. Its legacy `vnext` path bypasses that validation.
+        // xray-rust supports the legacy shape and deliberately applies the
+        // same fail-closed security policy here instead of preserving that
+        // unsafe compatibility gap.
+        let rejects_plaintext_server = match &settings {
+            OutboundSettings::Vless(vless) => {
+                matches!(&stream.security, StreamSecurity::None)
+                    && vless.users.iter().all(|user| user.encryption == "none")
+                    && !vless.server.is_xray_plaintext_server_exempt()
+            }
+            OutboundSettings::Freedom | OutboundSettings::Dns(_) => false,
+        };
+        if rejects_plaintext_server {
+            self.error(
+                format!("$.outbounds[{index}].settings.vnext[0].address"),
+                "vless without TLS or other encryption is prohibited unless the server address is a private IP or domain",
+            );
+            return None;
+        }
+
         Some(OutboundConfig {
             tag: self.string_at(outbound, "tag").map(ToOwned::to_owned),
             stream,
@@ -2237,21 +2258,32 @@ impl Parser<'_> {
             self.error(rule_path, "dns outbound rule must be an object");
             return None;
         }
-        self.reject_unknown_fields(rule, rule_path, &["action", "qtype", "domain"]);
+        self.reject_unknown_fields(
+            rule,
+            rule_path,
+            &["action", "qType", "qtype", "domain", "rCode"],
+        );
 
         let action_path = format!("{rule_path}.action");
-        let action = match rule.get("action") {
+        let (action, legacy_reject) = match rule.get("action") {
             Some(Value::String(action)) if action.eq_ignore_ascii_case("direct") => {
-                DnsOutboundRuleAction::Direct
+                (DnsOutboundRuleAction::Direct, false)
             }
             Some(Value::String(action)) if action.eq_ignore_ascii_case("drop") => {
-                DnsOutboundRuleAction::Drop
+                (DnsOutboundRuleAction::Drop, false)
+            }
+            Some(Value::String(action)) if action.eq_ignore_ascii_case("return") => {
+                (DnsOutboundRuleAction::Return, false)
             }
             Some(Value::String(action)) if action.eq_ignore_ascii_case("reject") => {
-                DnsOutboundRuleAction::Reject
+                self.warning(
+                    &action_path,
+                    "dns outbound action Reject is deprecated; use Return with rCode 5",
+                );
+                (DnsOutboundRuleAction::Return, true)
             }
             Some(Value::String(action)) if action.eq_ignore_ascii_case("hijack") => {
-                DnsOutboundRuleAction::Hijack
+                (DnsOutboundRuleAction::Hijack, false)
             }
             Some(Value::String(action)) => {
                 self.error(
@@ -2270,11 +2302,35 @@ impl Parser<'_> {
             }
         };
 
-        let qtype_ranges = self.parse_dns_qtype_ranges(rule.get("qtype"), rule_path)?;
+        let canonical_qtype = rule.get("qType").filter(|value| !value.is_null());
+        let legacy_qtype = rule.get("qtype").filter(|value| !value.is_null());
+        if canonical_qtype.is_some() && legacy_qtype.is_some() {
+            self.error(
+                format!("{rule_path}.qtype"),
+                "dns outbound qType cannot be combined with deprecated qtype",
+            );
+            return None;
+        }
+        let (raw_qtype, qtype_path) = if let Some(raw) = legacy_qtype {
+            let path = format!("{rule_path}.qtype");
+            self.warning(&path, "dns outbound qtype is deprecated; use qType");
+            (Some(raw), path)
+        } else {
+            (canonical_qtype, format!("{rule_path}.qType"))
+        };
+        let qtype_ranges = self.parse_dns_qtype_ranges(raw_qtype, &qtype_path)?;
         let domain_matchers =
             self.parse_dns_outbound_domain_matchers(rule.get("domain"), rule_path)?;
+        let explicit_r_code = rule.get("rCode").is_some();
+        let parsed_r_code = self.nullable_u16_at(rule, "rCode", format!("{rule_path}.rCode"))?;
+        let r_code = if legacy_reject && !explicit_r_code {
+            5
+        } else {
+            parsed_r_code
+        };
         Some(DnsOutboundRule {
             action,
+            r_code,
             qtype_ranges,
             domain_matchers,
         })
@@ -2283,16 +2339,15 @@ impl Parser<'_> {
     fn parse_dns_qtype_ranges(
         &mut self,
         raw: Option<&Value>,
-        rule_path: &str,
+        path: &str,
     ) -> Option<Vec<DnsQTypeRange>> {
-        let path = format!("{rule_path}.qtype");
-        let pairs = self.parse_u16_selector_ranges(raw, &path, U16SelectorKind::DnsQType)?;
+        let pairs = self.parse_u16_selector_ranges(raw, path, U16SelectorKind::DnsQType)?;
         let mut ranges = Vec::with_capacity(pairs.len());
         for (start, end) in pairs {
             match DnsQTypeRange::new(start, end) {
                 Ok(range) => ranges.push(range),
                 Err(error) => {
-                    self.error(&path, error.to_string());
+                    self.error(path, error.to_string());
                     return None;
                 }
             }
@@ -2442,9 +2497,14 @@ impl Parser<'_> {
             }
             rules.push(DnsOutboundRule {
                 action: if mode == LegacyDnsNonIpMode::Reject {
-                    DnsOutboundRuleAction::Reject
+                    DnsOutboundRuleAction::Return
                 } else {
                     DnsOutboundRuleAction::Drop
+                },
+                r_code: if mode == LegacyDnsNonIpMode::Reject {
+                    5
+                } else {
+                    0
                 },
                 qtype_ranges,
                 domain_matchers: Vec::new(),
@@ -2452,14 +2512,20 @@ impl Parser<'_> {
         }
         rules.push(DnsOutboundRule {
             action: DnsOutboundRuleAction::Hijack,
+            r_code: 0,
             qtype_ranges: vec![DnsQTypeRange::single(1), DnsQTypeRange::single(28)],
             domain_matchers: Vec::new(),
         });
         rules.push(DnsOutboundRule {
             action: match mode {
-                LegacyDnsNonIpMode::Reject => DnsOutboundRuleAction::Reject,
+                LegacyDnsNonIpMode::Reject => DnsOutboundRuleAction::Return,
                 LegacyDnsNonIpMode::Drop => DnsOutboundRuleAction::Drop,
                 LegacyDnsNonIpMode::Skip => DnsOutboundRuleAction::Direct,
+            },
+            r_code: if mode == LegacyDnsNonIpMode::Reject {
+                5
+            } else {
+                0
             },
             qtype_ranges: Vec::new(),
             domain_matchers: Vec::new(),
@@ -2506,6 +2572,7 @@ impl Parser<'_> {
             self.error(address_path, "missing vless server address");
             return None;
         };
+        let address = normalize_xray_address_text(address);
         if address.is_empty() {
             self.error(address_path, "vless server address must not be empty");
             return None;
@@ -2685,7 +2752,7 @@ impl Parser<'_> {
                 .parse_grpc_settings(stream, index)
                 .map(StreamTransport::Grpc),
             StreamNetwork::Xhttp => self
-                .parse_xhttp_settings(stream, index, true)
+                .parse_xhttp_settings(stream, index)
                 .map(Box::new)
                 .map(StreamTransport::Xhttp),
         }
@@ -2753,10 +2820,10 @@ impl Parser<'_> {
                     let _ = self.parse_grpc_settings(Some(stream), index);
                 }
                 "xhttpSettings" => {
-                    let _ = self.parse_xhttp_settings(Some(stream), index, false);
+                    let _ = self.parse_xhttp_settings(Some(stream), index);
                 }
                 "splithttpSettings" if stream.get("xhttpSettings").is_none_or(Value::is_null) => {
-                    let _ = self.parse_xhttp_settings(Some(stream), index, false);
+                    let _ = self.parse_xhttp_settings(Some(stream), index);
                 }
                 // `xhttpSettings` has priority over the legacy spelling, so
                 // the lower-priority block is inert when both are present.
@@ -3012,7 +3079,6 @@ impl Parser<'_> {
         &mut self,
         stream: Option<&Value>,
         index: usize,
-        selected_for_runtime: bool,
     ) -> Option<XhttpSettings> {
         let Some(stream) = stream else {
             return Some(xhttp_settings_without_config_block());
@@ -3157,7 +3223,6 @@ impl Parser<'_> {
             session_id_table,
             session_id_length,
             &settings_path,
-            selected_for_runtime,
         );
         let headers = self.parse_transport_headers(settings, &settings_path)?;
         if headers
@@ -3383,6 +3448,8 @@ impl Parser<'_> {
             uplink_http_method,
             session_placement,
             session_key,
+            session_id_table: session_id_table.to_owned(),
+            session_id_length,
             seq_placement,
             seq_key,
             uplink_data_placement,
@@ -3434,7 +3501,6 @@ impl Parser<'_> {
         table: &str,
         length: XhttpRange,
         settings_path: &str,
-        selected_for_runtime: bool,
     ) {
         if table.is_empty() {
             return;
@@ -3460,14 +3526,6 @@ impl Parser<'_> {
             self.error(
                 format!("{settings_path}.sessionIDTable"),
                 "sessionIDTable or sessionIDLength is too small",
-            );
-            return;
-        }
-
-        if selected_for_runtime {
-            self.error(
-                format!("{settings_path}.sessionIDTable"),
-                "custom XHTTP session ID generation is not supported by the runtime yet",
             );
         }
     }
@@ -4283,23 +4341,33 @@ impl Parser<'_> {
             "tls" => {
                 let tls_settings = stream.and_then(|stream| stream.get("tlsSettings"));
                 self.validate_tls_settings(tls_settings, index);
-                let allow_insecure = tls_settings
-                    .and_then(|settings| {
-                        self.optional_bool_at(
-                            settings,
-                            "allowInsecure",
-                            format!(
-                                "$.outbounds[{index}].streamSettings.tlsSettings.allowInsecure"
-                            ),
-                        )
-                    })
-                    .unwrap_or(false);
-                if allow_insecure {
-                    self.warning(
-                        format!("$.outbounds[{index}].streamSettings.tlsSettings.allowInsecure"),
-                        "allowInsecure=true disables TLS certificate verification; the proxy connection can be intercepted",
-                    );
-                }
+                let allow_insecure_path =
+                    format!("$.outbounds[{index}].streamSettings.tlsSettings.allowInsecure");
+                let allow_insecure = match tls_settings
+                    .and_then(|settings| settings.get("allowInsecure"))
+                {
+                    None | Some(Value::Null) | Some(Value::Bool(false)) => false,
+                    Some(Value::Bool(true)) => {
+                        self.error(
+                            allow_insecure_path,
+                            "allowInsecure=true was removed by Xray; use pinnedPeerCertSha256 instead",
+                        );
+                        // Never let a rejected canonical config carry an
+                        // insecure verifier into a partially built model.
+                        false
+                    }
+                    Some(_) => {
+                        self.error(
+                            allow_insecure_path,
+                            "field `allowInsecure` must be a boolean or null",
+                        );
+                        false
+                    }
+                };
+                let pinned_peer_cert_sha256 =
+                    self.parse_tls_pinned_peer_cert_sha256(tls_settings, index);
+                let verify_peer_cert_by_name =
+                    self.parse_tls_verify_peer_cert_by_name(tls_settings, index);
                 // An absent fingerprint normalizes to chrome, matching Xray's
                 // GetFingerprint(""): shaping is the default, not an opt-in.
                 let raw_fingerprint = tls_settings
@@ -4332,6 +4400,8 @@ impl Parser<'_> {
                         .and_then(|settings| self.string_at(settings, "serverName"))
                         .map(ToOwned::to_owned),
                     fingerprint,
+                    pinned_peer_cert_sha256,
+                    verify_peer_cert_by_name,
                     allow_insecure,
                     alpn,
                 }))
@@ -4402,16 +4472,44 @@ impl Parser<'_> {
         self.reject_unknown_fields(
             settings,
             &settings_path,
-            &["serverName", "allowInsecure", "fingerprint", "alpn"],
+            &[
+                "serverName",
+                "allowInsecure",
+                "fingerprint",
+                "alpn",
+                "pinnedPeerCertSha256",
+                "verifyPeerCertByName",
+            ],
         );
 
-        // Go unmarshals this field into a string and rejects every other JSON
-        // type. `string_at` intentionally has no diagnostics, so without an
-        // explicit check a typo such as `"fingerprint": 42` falls through to
-        // the empty-string default and silently enables the Chrome profile.
+        if settings
+            .get("serverName")
+            .is_some_and(|server_name| !server_name.is_string() && !server_name.is_null())
+        {
+            self.error(
+                format!("{settings_path}.serverName"),
+                "tls server name must be a string or null",
+            );
+        }
+        if settings
+            .get("serverName")
+            .and_then(Value::as_str)
+            .is_some_and(|server_name| server_name.eq_ignore_ascii_case("frommitm"))
+        {
+            self.error(
+                format!("{settings_path}.serverName"),
+                "tls serverName `fromMitm` requires Xray's MITM context and is not supported",
+            );
+        }
+
+        // Go unmarshals this field into a string and rejects every JSON type
+        // other than string/null. `string_at` intentionally has no diagnostics,
+        // so without an explicit check a typo such as `"fingerprint": 42`
+        // falls through to the empty-string default and silently enables the
+        // Chrome profile.
         if settings
             .get("fingerprint")
-            .is_some_and(|fingerprint| !fingerprint.is_string())
+            .is_some_and(|fingerprint| !fingerprint.is_string() && !fingerprint.is_null())
         {
             self.error(
                 format!("{settings_path}.fingerprint"),
@@ -4419,7 +4517,7 @@ impl Parser<'_> {
             );
         }
 
-        if let Some(alpn) = settings.get("alpn") {
+        if let Some(alpn) = settings.get("alpn").filter(|alpn| !alpn.is_null()) {
             match alpn.as_array() {
                 None => self.error(format!("{settings_path}.alpn"), "tls alpn must be an array"),
                 // Xray unmarshals `alpn` into a `[]string` and fails outright on
@@ -4432,11 +4530,108 @@ impl Parser<'_> {
                                 format!("{settings_path}.alpn[{index}]"),
                                 "tls alpn entry must be a string",
                             );
+                        } else if value
+                            .as_str()
+                            .is_some_and(|protocol| protocol.eq_ignore_ascii_case("frommitm"))
+                        {
+                            self.error(
+                                format!("{settings_path}.alpn[{index}]"),
+                                "tls alpn `fromMitm` requires Xray's MITM context and is not supported",
+                            );
                         }
                     }
                 }
             }
         }
+    }
+
+    fn parse_tls_pinned_peer_cert_sha256(
+        &mut self,
+        settings: Option<&Value>,
+        index: usize,
+    ) -> Vec<[u8; 32]> {
+        let path = format!("$.outbounds[{index}].streamSettings.tlsSettings.pinnedPeerCertSha256");
+        let Some(value) = settings.and_then(|settings| settings.get("pinnedPeerCertSha256")) else {
+            return Vec::new();
+        };
+        let encoded = match value {
+            // encoding/json unmarshals JSON null into the Go string zero value.
+            Value::Null => return Vec::new(),
+            Value::String(encoded) => encoded,
+            _ => {
+                self.error(
+                    path,
+                    "field `pinnedPeerCertSha256` must be a string or null",
+                );
+                return Vec::new();
+            }
+        };
+
+        let mut fingerprints = Vec::new();
+        for fingerprint in encoded
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            // Xray accepts both compact hex and OpenSSL's colon-separated
+            // representation, removing every colon before decoding.
+            let compact = fingerprint.replace(':', "");
+            let bytes = match decode_hex(&compact) {
+                Ok(bytes) => bytes,
+                Err(message) => {
+                    self.error(path.clone(), message);
+                    return Vec::new();
+                }
+            };
+            let Ok(fingerprint) = <[u8; 32]>::try_from(bytes) else {
+                self.error(
+                    path,
+                    "pinned peer certificate SHA-256 must decode to 32 bytes",
+                );
+                return Vec::new();
+            };
+            fingerprints.push(fingerprint);
+        }
+        fingerprints
+    }
+
+    fn parse_tls_verify_peer_cert_by_name(
+        &mut self,
+        settings: Option<&Value>,
+        index: usize,
+    ) -> Vec<String> {
+        let path = format!("$.outbounds[{index}].streamSettings.tlsSettings.verifyPeerCertByName");
+        let Some(value) = settings.and_then(|settings| settings.get("verifyPeerCertByName")) else {
+            return Vec::new();
+        };
+        let encoded = match value {
+            // encoding/json unmarshals JSON null into the Go string zero value.
+            Value::Null => return Vec::new(),
+            Value::String(encoded) => encoded,
+            _ => {
+                self.error(
+                    path,
+                    "field `verifyPeerCertByName` must be a string or null",
+                );
+                return Vec::new();
+            }
+        };
+
+        let mut names = Vec::new();
+        for name in encoded.split(',').map(str::trim) {
+            if name.is_empty() {
+                continue;
+            }
+            if name.eq_ignore_ascii_case("frommitm") {
+                self.error(
+                    path.clone(),
+                    "tls verifyPeerCertByName `fromMitm` requires Xray's MITM context and is not supported",
+                );
+                continue;
+            }
+            names.push(name.to_owned());
+        }
+        names
     }
 
     fn validate_tcp_settings(&mut self, stream: &Value, key: &str, index: usize) {
@@ -5854,13 +6049,16 @@ fn dns_ip_rule_uses_geodata(value: &str) -> bool {
 }
 
 fn normalize_xray_address_text(mut value: &str) -> &str {
-    let bytes = value.as_bytes();
-    if bytes.first() == Some(&b'[') && bytes.last() == Some(&b']') {
+    let original_bytes = value.as_bytes();
+    if original_bytes.first() == Some(&b'[') && original_bytes.last() == Some(&b']') {
         value = &value[1..value.len() - 1];
-    } else if bytes
+    }
+
+    let normalized_bytes = value.as_bytes();
+    if normalized_bytes
         .first()
         .is_some_and(|byte| !byte.is_ascii_alphanumeric())
-        || bytes
+        || normalized_bytes
             .last()
             .is_some_and(|byte| !byte.is_ascii_alphanumeric())
     {

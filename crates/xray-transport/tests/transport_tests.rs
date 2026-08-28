@@ -5,8 +5,13 @@ mod transport_tests {
     use std::time::Duration;
 
     use async_trait::async_trait;
-    use rcgen::{generate_simple_self_signed, CertifiedKey};
+    use rcgen::{
+        date_time_ymd, generate_simple_self_signed, BasicConstraints, CertificateParams,
+        CertifiedKey, ExtendedKeyUsagePurpose, IsCa, Issuer, KeyPair, KeyUsagePurpose,
+        PublicKeyData,
+    };
     use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
+    use sha2::{Digest, Sha256};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
     use tokio_rustls::TlsAcceptor;
@@ -205,6 +210,55 @@ mod transport_tests {
         (Arc::new(client_config), Arc::new(server_config))
     }
 
+    fn tls_pin_test_config(
+        expired_leaf: bool,
+    ) -> (Arc<rustls::ServerConfig>, [u8; 32], [u8; 32], [u8; 32]) {
+        let mut ca_params = CertificateParams::new(Vec::<String>::new())
+            .expect("empty CA subject alt names are valid");
+        ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        ca_params.key_usages = vec![
+            KeyUsagePurpose::DigitalSignature,
+            KeyUsagePurpose::KeyCertSign,
+            KeyUsagePurpose::CrlSign,
+        ];
+        let ca_key = KeyPair::generate().expect("generate CA key");
+        let ca_cert = ca_params.self_signed(&ca_key).expect("self-sign CA");
+        let ca_issuer = Issuer::new(ca_params, ca_key);
+
+        let leaf_key = KeyPair::generate().expect("generate leaf key");
+        let mut leaf_params = CertificateParams::new(vec![
+            "server.test".to_owned(),
+            Ipv4Addr::LOCALHOST.to_string(),
+        ])
+        .expect("valid leaf names");
+        leaf_params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
+        leaf_params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
+        if expired_leaf {
+            leaf_params.not_before = date_time_ymd(2000, 1, 1);
+            leaf_params.not_after = date_time_ymd(2001, 1, 1);
+        }
+        let leaf_cert = leaf_params
+            .signed_by(&leaf_key, &ca_issuer)
+            .expect("sign leaf with CA");
+
+        let leaf_der = leaf_cert.der().clone();
+        let ca_der = ca_cert.der().clone();
+        let leaf_pin = Sha256::digest(leaf_der.as_ref()).into();
+        let ca_pin = Sha256::digest(ca_der.as_ref()).into();
+        let leaf_spki_pin = Sha256::digest(leaf_key.subject_public_key_info()).into();
+        let key_der = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(leaf_key.serialize_der()));
+        let server_config = rustls::ServerConfig::builder_with_provider(Arc::new(
+            rustls::crypto::ring::default_provider(),
+        ))
+        .with_safe_default_protocol_versions()
+        .expect("ring provider should support default TLS versions")
+        .with_no_client_auth()
+        .with_single_cert(vec![leaf_der, ca_der], key_der)
+        .expect("build chained TLS server config");
+
+        (Arc::new(server_config), leaf_pin, ca_pin, leaf_spki_pin)
+    }
+
     async fn spawn_tls_echo_once(
         server_config: Arc<rustls::ServerConfig>,
     ) -> (SocketAddr, tokio::task::JoinHandle<()>) {
@@ -223,6 +277,157 @@ mod transport_tests {
         });
 
         (addr, handle)
+    }
+
+    async fn spawn_tls_handshake_once(
+        server_config: Arc<rustls::ServerConfig>,
+    ) -> (SocketAddr, tokio::task::JoinHandle<bool>) {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind TLS handshake listener");
+        let addr = listener.local_addr().expect("read listener address");
+        let acceptor = TlsAcceptor::from(server_config);
+
+        let handle = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("accept TLS client");
+            acceptor.accept(stream).await.is_ok()
+        });
+        (addr, handle)
+    }
+
+    fn pinned_tls_config(server_name: &str, pin: [u8; 32]) -> TlsClientConfig {
+        TlsClientConfig {
+            server_name: server_name.to_owned(),
+            allow_insecure: false,
+            pinned_peer_cert_sha256: vec![pin],
+            verify_peer_cert_by_name: Vec::new(),
+            alpn: Vec::new(),
+            fingerprint: None,
+        }
+    }
+
+    fn pinned_tls_config_with_verification_names(
+        server_name: &str,
+        pin: [u8; 32],
+        names: &[&str],
+    ) -> TlsClientConfig {
+        let mut config = pinned_tls_config(server_name, pin);
+        config.verify_peer_cert_by_name = names.iter().map(|name| (*name).to_owned()).collect();
+        config
+    }
+
+    #[tokio::test]
+    async fn tls_leaf_der_pin_short_circuits_name_and_chain_verification() {
+        let (server_config, leaf_pin, _, _) = tls_pin_test_config(true);
+        let (addr, handle) = spawn_tls_handshake_once(server_config).await;
+        let connector = TlsConnector::system().expect("system TLS connector");
+
+        let config = pinned_tls_config_with_verification_names(
+            "wrong-sni.test",
+            leaf_pin,
+            &["also-wrong.test"],
+        );
+        connector
+            .connect_socket_addr(addr, &config)
+            .await
+            .expect("Xray accepts an exact leaf DER pin before checking names or validity");
+        assert!(handle.await.expect("TLS server task"));
+    }
+
+    #[tokio::test]
+    async fn tls_ca_pin_ors_verification_names_independently_from_sni_for_dns_and_ip_sans() {
+        let (server_config, _, ca_pin, _) = tls_pin_test_config(false);
+        let connector = TlsConnector::system().expect("system TLS connector");
+
+        for names in [["bad name", "server.test"], ["wrong.test", "127.0.0.1"]] {
+            let (addr, handle) = spawn_tls_handshake_once(Arc::clone(&server_config)).await;
+            let config =
+                pinned_tls_config_with_verification_names("wrong-sni.test", ca_pin, &names);
+            connector
+                .connect_socket_addr(addr, &config)
+                .await
+                .expect("one matching DNS/IP SAN must satisfy the OR list despite a different SNI");
+            assert!(handle.await.expect("TLS server task"));
+        }
+    }
+
+    #[tokio::test]
+    async fn tls_ca_pin_rejects_when_every_verification_name_misses() {
+        let (server_config, _, ca_pin, _) = tls_pin_test_config(false);
+        let (addr, handle) = spawn_tls_handshake_once(server_config).await;
+        let connector = TlsConnector::system().expect("system TLS connector");
+        let config = pinned_tls_config_with_verification_names(
+            "server.test",
+            ca_pin,
+            &["wrong-one.test", "wrong-two.test"],
+        );
+
+        assert!(connector.connect_socket_addr(addr, &config).await.is_err());
+        assert!(!handle.await.expect("TLS server task"));
+    }
+
+    #[tokio::test]
+    async fn tls_ca_der_pin_verifies_dns_name_and_ip_san() {
+        let (server_config, _, ca_pin, _) = tls_pin_test_config(false);
+        let connector = TlsConnector::system().expect("system TLS connector");
+
+        for server_name in ["server.test", "127.0.0.1"] {
+            let (addr, handle) = spawn_tls_handshake_once(Arc::clone(&server_config)).await;
+            connector
+                .connect_socket_addr(addr, &pinned_tls_config(server_name, ca_pin))
+                .await
+                .expect("a pinned presented CA still verifies the configured DNS/IP name");
+            assert!(handle.await.expect("TLS server task"));
+        }
+    }
+
+    #[tokio::test]
+    async fn tls_ca_pin_wrong_name_and_unmatched_pin_fail_closed() {
+        let (server_config, _, ca_pin, leaf_spki_pin) = tls_pin_test_config(false);
+        let connector = TlsConnector::system().expect("system TLS connector");
+
+        for config in [
+            pinned_tls_config("wrong.test", ca_pin),
+            pinned_tls_config("server.test", leaf_spki_pin),
+        ] {
+            let (addr, handle) = spawn_tls_handshake_once(Arc::clone(&server_config)).await;
+            if connector.connect_socket_addr(addr, &config).await.is_ok() {
+                panic!("a wrong CA name or unmatched certificate pin must reject TLS");
+            }
+            assert!(!handle.await.expect("TLS server task"));
+        }
+    }
+
+    #[test]
+    fn tls_pins_cannot_be_combined_with_allow_insecure_or_a_prebuilt_config() {
+        let mut config = pinned_tls_config("server.test", [0x11; 32]);
+        config.allow_insecure = true;
+        let system = TlsConnector::system().expect("system TLS connector");
+        assert!(matches!(
+            system.client_config_for(&config),
+            Err(TransportError::TlsConfig(_))
+        ));
+
+        config.allow_insecure = false;
+        let (prebuilt, _) = tls_test_configs();
+        let prebuilt = TlsConnector::with_pinned_client_config(prebuilt);
+        assert!(matches!(
+            prebuilt.client_config_for(&config),
+            Err(TransportError::TlsConfig(_))
+        ));
+
+        let mut verification_names = pinned_tls_config("server.test", [0x11; 32]);
+        verification_names.pinned_peer_cert_sha256.clear();
+        verification_names.verify_peer_cert_by_name = vec!["server.test".to_owned()];
+        assert!(matches!(
+            prebuilt.client_config_for(&verification_names),
+            Err(TransportError::TlsConfig(_))
+        ));
+        verification_names.allow_insecure = true;
+        assert!(matches!(
+            system.client_config_for(&verification_names),
+            Err(TransportError::TlsConfig(_))
+        ));
     }
 
     #[tokio::test]
@@ -281,6 +486,8 @@ mod transport_tests {
         let config = TlsClientConfig {
             server_name: "server.test".to_owned(),
             allow_insecure: false,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
             alpn: Vec::new(),
             fingerprint: None,
         };
@@ -313,6 +520,8 @@ mod transport_tests {
         let config = TlsClientConfig {
             server_name: "server.test".to_owned(),
             allow_insecure: false,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
             alpn: Vec::new(),
             fingerprint: None,
         };
@@ -337,6 +546,8 @@ mod transport_tests {
         let config = TlsClientConfig {
             server_name: "server.test".to_owned(),
             allow_insecure: false,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
             alpn: Vec::new(),
             fingerprint: None,
         };
@@ -364,6 +575,8 @@ mod transport_tests {
         let config = TlsClientConfig {
             server_name: "server.test".to_owned(),
             allow_insecure: false,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
             alpn: Vec::new(),
             fingerprint: None,
         };
@@ -385,6 +598,8 @@ mod transport_tests {
         let config = TlsClientConfig {
             server_name: "bad name".to_owned(),
             allow_insecure: false,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
             alpn: Vec::new(),
             fingerprint: None,
         };
@@ -408,6 +623,8 @@ mod transport_tests {
         let config = ConnectorConfig::Tls(TlsClientConfig {
             server_name: "server.test".to_owned(),
             allow_insecure: false,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
             alpn: Vec::new(),
             fingerprint: None,
         });
@@ -518,6 +735,8 @@ mod transport_tests {
         let config = ConnectorConfig::Tls(TlsClientConfig {
             server_name: "server.test".to_owned(),
             allow_insecure: false,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
             alpn: Vec::new(),
             fingerprint: None,
         });
@@ -565,6 +784,8 @@ mod transport_tests {
         let config = TlsClientConfig {
             server_name: "server.test".to_owned(),
             allow_insecure: false,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
             alpn: Vec::new(),
             fingerprint: None,
         };
@@ -590,6 +811,8 @@ mod transport_tests {
         let config = TlsClientConfig {
             server_name: "bad name".to_owned(),
             allow_insecure: false,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
             alpn: Vec::new(),
             fingerprint: None,
         };
@@ -781,6 +1004,8 @@ mod transport_tests {
         let connector = TcpConnector::new(ConnectorConfig::Tls(TlsClientConfig {
             server_name: "example.com".to_owned(),
             allow_insecure: false,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
             alpn: Vec::new(),
             fingerprint: None,
         }));
@@ -863,6 +1088,8 @@ mod transport_tests {
         let chrome = TlsClientConfig {
             server_name: "example.com".to_owned(),
             allow_insecure: false,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
             alpn: Vec::new(),
             fingerprint: Some("chrome".to_owned()),
         };
@@ -900,6 +1127,8 @@ mod transport_tests {
         let chrome = TlsClientConfig {
             server_name: "example.com".to_owned(),
             allow_insecure: false,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
             alpn: Vec::new(),
             fingerprint: Some("chrome".to_owned()),
         };
@@ -925,6 +1154,8 @@ mod transport_tests {
         let h2 = TlsClientConfig {
             server_name: "example.com".to_owned(),
             allow_insecure: false,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
             alpn: vec!["h2".to_owned()],
             fingerprint: Some("unsafe".to_owned()),
         };
@@ -963,6 +1194,8 @@ mod transport_tests {
         let verifying = TlsClientConfig {
             server_name: "example.com".to_owned(),
             allow_insecure: false,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
             alpn: Vec::new(),
             fingerprint: Some("chrome".to_owned()),
         };
@@ -984,6 +1217,54 @@ mod transport_tests {
         );
     }
 
+    #[test]
+    fn tls_connector_keys_configs_on_certificate_pins() {
+        let connector = TlsConnector::system().expect("system roots must load");
+        let first = pinned_tls_config("example.com", [0x11; 32]);
+        let second = pinned_tls_config("example.com", [0x22; 32]);
+
+        let first_config = connector
+            .client_config_for(&first)
+            .expect("first pin config");
+        let first_again = connector
+            .client_config_for(&first)
+            .expect("cached first pin config");
+        let second_config = connector
+            .client_config_for(&second)
+            .expect("second pin config");
+
+        assert!(Arc::ptr_eq(&first_config, &first_again));
+        assert!(
+            !Arc::ptr_eq(&first_config, &second_config),
+            "different trust pins must never share a verifier or session cache"
+        );
+    }
+
+    #[test]
+    fn tls_connector_keys_configs_on_verification_name_lists() {
+        let connector = TlsConnector::system().expect("system roots must load");
+        let mut first = pinned_tls_config("example.com", [0x11; 32]);
+        first.verify_peer_cert_by_name = vec!["first.example".to_owned()];
+        let mut second = first.clone();
+        second.verify_peer_cert_by_name = vec!["second.example".to_owned()];
+
+        let first_config = connector
+            .client_config_for(&first)
+            .expect("first verification-name config");
+        let first_again = connector
+            .client_config_for(&first)
+            .expect("cached first verification-name config");
+        let second_config = connector
+            .client_config_for(&second)
+            .expect("second verification-name config");
+
+        assert!(Arc::ptr_eq(&first_config, &first_again));
+        assert!(
+            !Arc::ptr_eq(&first_config, &second_config),
+            "different verification-name lists must never share a verifier or session cache"
+        );
+    }
+
     /// The pinned config wins over every shape, including one that
     /// `system()` would reject outright.
     #[test]
@@ -994,6 +1275,8 @@ mod transport_tests {
         let chrome = TlsClientConfig {
             server_name: "example.com".to_owned(),
             allow_insecure: false,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
             alpn: Vec::new(),
             fingerprint: Some("chrome".to_owned()),
         };
@@ -1021,6 +1304,8 @@ mod transport_tests {
             .client_config_for(&TlsClientConfig {
                 server_name: "example.com".to_owned(),
                 allow_insecure: false,
+                pinned_peer_cert_sha256: Vec::new(),
+                verify_peer_cert_by_name: Vec::new(),
                 alpn: Vec::new(),
                 fingerprint: Some("nosuchbrowser".to_owned()),
             })

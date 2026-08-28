@@ -996,13 +996,7 @@ fn xray_client_config(
     max_post_bytes: usize,
 ) -> Result<String, BenchError> {
     let tls_settings = match engine {
-        EngineKind::XrayRust => json!({
-            "serverName": BENCH_SERVER_NAME,
-            "allowInsecure": true,
-            "fingerprint": "chrome",
-            "alpn": [scenario.transport.alpn()]
-        }),
-        EngineKind::XrayCore => json!({
+        EngineKind::XrayRust | EngineKind::XrayCore => json!({
             "serverName": BENCH_SERVER_NAME,
             "pinnedPeerCertSha256": cert_sha256,
             "fingerprint": "chrome",
@@ -1508,7 +1502,7 @@ mod tests {
             EngineKind::XrayRust,
             1080,
             "127.0.0.1:80".parse().unwrap(),
-            "unused",
+            "fixture-sha256",
             scenario,
             500_000,
         )
@@ -1619,7 +1613,7 @@ mod tests {
             EngineKind::XrayRust,
             1080,
             "127.0.0.1:443".parse().unwrap(),
-            "unused",
+            "fixture-sha256",
             scenario,
             16_384,
         )
@@ -1633,7 +1627,7 @@ mod tests {
                 "security": "tls",
                 "tlsSettings": {
                     "serverName": BENCH_SERVER_NAME,
-                    "allowInsecure": true,
+                    "pinnedPeerCertSha256": "fixture-sha256",
                     "fingerprint": "chrome",
                     "alpn": ["h3"]
                 },

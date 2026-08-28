@@ -46,8 +46,8 @@ const TUN_OUTBOUND_QUEUE_DEPTH: usize = 4096;
 const GENERATED_DNS_TAG_PREFIX: &str = "xray.system.";
 
 pub use dns_outbound::{
-    build_refused_response, parse_dns_query, CompiledDnsOutboundPolicy, DnsHijackUnsafe,
-    DnsOutboundDecision, DnsOutboundQuery, DnsQueryParseError,
+    build_refused_response, build_return_response, parse_dns_query, CompiledDnsOutboundPolicy,
+    DnsHijackUnsafe, DnsOutboundDecision, DnsOutboundQuery, DnsQueryParseError,
 };
 pub use outbound::{
     open_tcp_stream_with_resolver_and_dialer, open_vless_tcp_stream,

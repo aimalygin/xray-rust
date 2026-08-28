@@ -37,8 +37,8 @@ flowchart LR
 ## Configuration path
 
 1. JSON is parsed into `CoreConfig`.
-2. Unsupported modeled fields become path-aware errors; security-sensitive
-   compatibility choices such as `allowInsecure` become warnings.
+2. Unsupported modeled fields become path-aware errors; removed
+   security-sensitive choices such as `allowInsecure: true` fail closed.
 3. `geosite` and `geoip` references are resolved during parsing from configured
    search directories.
 4. `Core` builds the DNS resolver, outbound router, TUN queues, and listeners
@@ -220,13 +220,15 @@ transport and tag.
 
 The general DNS outbound is a separate, compiled core handler rather than a
 mutation of that fixed hybrid contract. Configuration accepts Xray's ordered
-`Direct`/`Drop`/`Reject`/`Hijack` rules, compact QTYPE ranges, domain/geosite
-matchers, component-wise rewrite target, deprecated legacy policy, and
+`Direct`/`Drop`/`Return`/`Hijack` rules, compact QTYPE ranges, per-rule response
+codes, domain/geosite matchers, component-wise rewrite target, deprecated
+legacy policy, and
 `userLevel`. Routing now includes `network` and `port`, so TCP and UDP port 53
 can select the handler without hard-coding the TUN anchor. First match wins;
-the miss policy is Hijack for A/AAAA and Reject for every other QTYPE.
+the miss policy is Hijack for A/AAAA and an empty NOERROR Return for every
+other QTYPE.
 
-The policy parser reads only the first question before Direct, Drop, or Reject.
+The policy parser reads only the first question before Direct, Drop, or Return.
 Direct therefore forwards the original message byte-for-byte, including
 unknown DNSSEC, EDNS, and future extension data. Full envelope validation is
 deferred until Hijack. A synthesis-unsafe A/AAAA query (AD/CD, EDNS DO,
@@ -262,8 +264,9 @@ optional FakeIP mapper, then shares them with TUN, SOCKS TCP/UDP, and HTTP
 CONNECT. UDP queries remain owned by their ingress flow/task. Explicit DNS/TCP
 policy uses one cancellation-owned, bounded decoder per client flow and
 processes pipelined frames sequentially: Drop consumes a frame without
-replying, Reject returns REFUSED without closing the flow, and no policy
-operation creates a detached task. UDP clients rewritten to TCP/TLS reuse a
+replying, Return sends an empty response with the configured `rCode` without
+closing the flow, and no policy operation creates a detached task. UDP clients
+rewritten to TCP/TLS reuse a
 bounded per-Core idle pool. Ordinary TCP clients check out that same pool for
 each message and recycle immediately after the matching response, preserving
 in-order/coalesced framing without letting client think-time pin control-plane

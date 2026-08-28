@@ -814,11 +814,12 @@ impl DnsOutboundRuntime {
 
         match decision {
             DnsOutboundDecision::Drop => DnsMessageOutcome::Drop,
-            DnsOutboundDecision::Reject | DnsOutboundDecision::HijackUnsafe(_) => {
-                crate::build_refused_response(&query)
-                    .ok()
-                    .map_or(DnsMessageOutcome::Drop, DnsMessageOutcome::Reply)
-            }
+            DnsOutboundDecision::Return(r_code) => crate::build_return_response(&query, r_code)
+                .ok()
+                .map_or(DnsMessageOutcome::Drop, DnsMessageOutcome::Reply),
+            DnsOutboundDecision::HijackUnsafe(_) => crate::build_refused_response(&query)
+                .ok()
+                .map_or(DnsMessageOutcome::Drop, DnsMessageOutcome::Reply),
             DnsOutboundDecision::Hijack => {
                 let Some(_permit) = Arc::clone(&self.operation_permits).try_acquire_owned().ok()
                 else {
@@ -1382,6 +1383,7 @@ mod tests {
             rewrite_port: server.port(),
             rules: vec![DnsOutboundRule {
                 action: DnsOutboundRuleAction::Direct,
+                r_code: 0,
                 qtype_ranges: Vec::new(),
                 domain_matchers: Vec::new(),
             }],

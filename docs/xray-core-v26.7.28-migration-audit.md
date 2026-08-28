@@ -40,10 +40,9 @@ date-labelled result groups and sections.
   UDP ASSOCIATE instead of assuming that UDP shares the TCP listener port.
 - The config parser accepts `streamSettings.method`, gives it precedence over
   `network`, and still validates the decode shape of both fields.
-- XHTTP parsing uses `sessionIDPlacement`/`sessionIDKey`. It decode-validates
-  and applies upstream entropy checks to `sessionIDTable`/`sessionIDLength`.
-  A non-empty custom table is rejected only when XHTTP is selected, until
-  non-UUID session-ID generation exists.
+- XHTTP parsing uses `sessionIDPlacement`/`sessionIDKey`, applies upstream
+  validation to `sessionIDTable`/`sessionIDLength`, and carries the normalized
+  policy into target-compatible UUID/custom-table runtime generation.
 - The Rust XHTTP model and scheduler use the target explicit-settings default
   `maxConnections=3` with zero implicit `maxConcurrency`, while preserving the
   all-zero XMUX policy produced when both settings pointers are absent/null.
@@ -108,12 +107,14 @@ Verified evidence:
 - `sessionIDTable` and `sessionIDLength` were added, including entropy
   validation.
 
-The source adaptation is present: xray-rust accepts the target `sessionID*`
-names and no longer models the old names. Xray's custom-table ASCII, positive
-length, and entropy checks apply even to an unselected block. A valid non-empty
-table fails explicitly when XHTTP is selected because the runtime does not yet
-generate target-compatible custom session IDs. This is a deliberate boundary
-of the supported subset rather than a silent fallback to UUID/path defaults.
+The source and runtime adaptation is present: xray-rust accepts the target
+`sessionID*` names and no longer models the old names. Xray's custom-table
+ASCII, positive-length, and entropy checks apply even to an unselected block.
+For a selected XHTTP transport, all nine predefined aliases and literal ASCII
+tables feed the session generator, unequal lengths retain Xray's half-open
+range, and an empty table retains the UUID v4 fallback. One fresh ID is created
+per split-mode flow and placed with the configured target key; `stream-one`
+continues to omit session metadata.
 
 The net XMUX default changed from `maxConcurrency=1` to
 `maxConnections=3`: it first changed to six in
@@ -148,19 +149,37 @@ workload.
 `allowInsecure: true` is now a configuration error, and
 `verifyPeerCertInNames` and `echForceQuery` are gone. Target-tag oracle and
 benchmark configs must use a real trust chain or `pinnedPeerCertSha256` and
-must not depend on these fields. xray-rust deliberately retains
-`allowInsecure` for legacy imported profiles, with its existing warning. That
-is a remaining import-compatibility exception and must not be presented as
-target Xray-core config compatibility.
+must not depend on these fields. xray-rust now rejects canonical
+`allowInsecure: true` at its exact JSON path. Legacy importer output carrying
+that flag is rejected too; there is no implicit host-policy exception.
 
 [A CA certificate pin now requires a valid server name](https://github.com/XTLS/Xray-core/commit/64fada32b5b9e6ae064a038fa0e4e2b766499bd5).
-Leaf pins remain directly usable. Add positive and negative SNI coverage if a
-fixture pins a CA rather than a leaf.
+The supported `pinnedPeerCertSha256` slice hashes the whole DER certificate,
+accepts an exact leaf pin before PKI/name checks, and otherwise trusts only the
+first matching presented CA while preserving chain, time, and DNS/IP name
+verification. Positive DNS/IP SAN and negative SNI/mismatch coverage exercises
+that boundary. `verifyPeerCertByName` now follows the target grammar (split on
+commas, trim whitespace, ignore empty entries) and ORs DNS/IP SAN names against
+ordinary roots or the pinned CA without replacing handshake SNI. A leaf pin
+still bypasses the list. Parser, runtime, cache-key, destination-fallback, and
+DNS/VLESS propagation tests cover the boundary. `fromMitm`, ECH, custom trust
+stores, and removed pin forms remain unsupported and fail closed.
 
 [Plaintext VLESS and Trojan outbounds to public destinations are rejected](https://github.com/XTLS/Xray-core/commit/d7fa2076c3e5401173bf9b58f7b07f9aa5174443).
-Loopback, private, reserved, and test destinations are exempt, so local oracle
-fixtures remain valid. Decide whether xray-rust should match this fail-closed
-policy or document it as a deliberate config/runtime divergence.
+The target implementation invokes this validator only for simplified
+top-level VLESS settings; its legacy `vnext` form leaves the checked `Address`
+field nil and is accepted even for a public plaintext endpoint. xray-rust
+supports `vnext` and deliberately closes that upstream gap: absent/empty/`none`
+stream security rejects a public IPv4, IPv6, or domain server during parsing,
+while TLS and REALITY stay valid. This is an intentional security-policy
+divergence, not an exact parser-parity claim. The exemption uses Xray's exact
+18 private/reserved/test CIDRs and its
+private/test/domain-suffix plus dotless-host matcher, including lowercase and
+single-trailing-dot normalization. Model boundary tests cover every CIDR class,
+IPv4-mapped IPv6, domain suffixes, dotless syntax, and normalization; parser
+tests cover rejection, bracket-then-whitespace address normalization, and both
+protected security modes. Trojan remains out of scope because xray-rust does
+not implement that outbound.
 
 ### SOCKS5 UDP and XUDP
 
@@ -185,11 +204,12 @@ separate gate.
 [DNS outbound `reject` became `return`](https://github.com/XTLS/Xray-core/commit/cb8cd048c12f902b673a0e4ed6e4c51017a85439),
 with configurable `rCode` and JSON spelling `qType`. The target default for
 non-A/AAAA queries is an empty `NOERROR`; legacy `nonIPQuery=reject` maps to
-`REFUSED` (`RCODE=5`). This remains a deliberate gap: xray-rust currently
-models lower-case `qtype`, `Reject`, and no per-rule `rCode`; target
-`qType`/`Return`/`rCode` input is rejected rather than approximated. Closing
-that gap requires response-code and empty-answer cases. Also retain a negative
-case for overlong names, which now return an error instead of panicking after
+`REFUSED` (`RCODE=5`). xray-rust now accepts the canonical
+`qType`/`Return`/`rCode` surface, returns empty `NOERROR` on the default
+non-address path, and preserves lower-case `qtype` plus `Reject` only as warned,
+unambiguous input aliases. Parser, policy, wire-response, and TUN UDP/TCP cases
+cover configured response codes and the default. Also retain a negative case
+for overlong names, which now return an error instead of panicking after
 [`a2cec2e5`](https://github.com/XTLS/Xray-core/commit/a2cec2e580e8ea1900701b11b425e0351de2ec71).
 
 ### Routing, config, and server-side transports

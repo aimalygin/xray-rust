@@ -22,6 +22,29 @@ binary, live credentials, or external network access. The fixture safety check
 rejects routable endpoints and unreviewed credential-shaped values without
 printing their contents.
 
+Release-candidate tags add two blocking jobs after the ordinary jobs pass.
+`rc-interop` checks out the exact Xray-core commit recorded below and invokes
+`scripts/check-rc-interop.sh`; `fuzz-smoke` runs bounded libFuzzer campaigns.
+Neither job runs for an ordinary branch or pull request.
+
+## Release-candidate fuzz gate
+
+Four `cargo-fuzz` targets cover the configuration parser, DNS wire parser and
+response builder, Vision plus UDP/XUDP framing, and the public FFI
+create/load/free lifecycle. The corpus and targets live under `fuzz/`. To
+reproduce a bounded configuration-parser campaign:
+
+```sh
+cargo install cargo-fuzz --version 0.13.2 --locked
+cargo +nightly-2026-05-22 fuzz run config_json -- \
+  -runs=512 -max_len=65536 -timeout=10
+```
+
+Use the same command with `dns_wire`, `vless_wire`, or `ffi_lifecycle`. The CI
+run counts are smoke gates, not a claim of exhaustive fuzzing; longer local or
+scheduled campaigns should retain a crashing input, minimize it, and add a
+deterministic regression before closing the finding.
+
 The supply-chain CI job additionally runs:
 
 ```sh
@@ -193,9 +216,21 @@ selected fingerprints, parallel flows, and the WebSocket, HTTPUpgrade and gRPC
 stream transports, plus the 15-case XHTTP H1/H2/H3 matrix below. They do not
 establish compatibility with every Xray-core revision or configuration.
 
-**No CI job runs any of them.** They are `#[ignore]`d, and the Rust job runs
-`cargo test --workspace --all-targets --locked` without `--ignored`, so every
-scenario below is evidence only once someone has run it locally and said so.
+The ordinary Rust CI job still excludes these `#[ignore]`d tests. An RC tag is
+different: the blocking `rc-interop` job runs every interop test function with
+two selected REALITY fingerprints, an eight-flow burst, and five XHTTP cases
+covering all three modes plus H1/H2/H3. It then runs bounded VLESS UDP and XUDP
+process-level workloads through both implementations and the end-to-end DNS
+outbound runtime slice. Reproduce that exact gate with:
+
+```sh
+XRAY_CORE_CHECKOUT="$XRAY_CORE_CHECKOUT" \
+  bash scripts/check-rc-interop.sh
+```
+
+The DNS slice is an explicit Rust runtime/oracle gate rather than a claim of a
+cross-process DNS protocol test; the current harness has no compatible Xray
+process boundary for the DNS-outbound policy itself.
 
 ### XHTTP interoperability
 
@@ -212,7 +247,7 @@ are:
 | Share-link security and ALPN | Imported security fields | Runtime HTTP version | Live matrix ids |
 | --- | --- | --- | --- |
 | `security=none` | no security settings | H1 | `h1-none-*` |
-| `security=tls&alpn=http/1.1` | `sni`, `fp`, `alpn`, optional legacy `allowInsecure` | H1 | `h1-tls-*` |
+| `security=tls&alpn=http/1.1` | `sni`, `fp`, `alpn`; `allowInsecure=true` is rejected by canonical parsing | H1 | `h1-tls-*` |
 | `security=tls` with absent `alpn`, `h2`, or any non-special list | same TLS fields | H2 | `h2-tls-*` |
 | `security=tls&alpn=h3` as the exact one-element list | same TLS fields | H3 over QUIC/UDP | `h3-tls-*` |
 | `security=reality` | `sni`, `fp`, `pbk`, `sid`, `spx`, `pqv` | H2 | `h2-reality-*` |
@@ -234,12 +269,15 @@ same 32-byte key, so this difference does not change the handshake wire.
 
 This is deliberately not a claim of complete support for every field in the
 current Xray share-link proposal. Non-`none` VLESS encryption is not
-implemented. Non-empty modern TLS `pcs`, `vcn`, and `ech`/`echQuery` fields are
-rejected at import rather than silently discarded because the Rust TLS model
-cannot honor them; an explicitly empty occurrence is treated as absent because
-it has no effective setting to preserve. `allowInsecure` is retained only for
-legacy xray-rust profiles; current Xray-core releases direct users to
-`pinnedPeerCertSha256` and `verifyPeerCertByName` instead. XHTTP with a Vision
+implemented. The Apple share-link importer still rejects non-empty modern TLS
+`pcs`, `vcn`, and `ech`/`echQuery` rather than guessing a host-verification
+policy; canonical Xray JSON supports `pinnedPeerCertSha256` directly, while
+canonical Xray JSON also supports comma-separated `verifyPeerCertByName` with
+ORed DNS/IP SAN checks independent of SNI. The Apple importer still rejects a
+non-empty `vcn` because it has no explicit host-policy seam; ECH remains
+fail-closed in both paths. An explicitly empty share parameter is treated as
+absent. Canonical `allowInsecure: true`, including
+legacy importer output, is rejected. XHTTP with a Vision
 flow is rejected; current Xray guidance pairs XHTTP with VLESS encryption
 rather than the raw-transport Vision flow. The importer also retains its
 pre-existing case-insensitive query-name lookup even though the current share
@@ -248,8 +286,8 @@ proposal specifies case-sensitive names; duplicate consumed fields are rejected.
 Coverage is layered rather than one cross-language executable test. Apple
 tests verify URL-to-JSON mapping and fail-closed behavior, the
 `vless_xhttp_tls_importer.json` and `vless_xhttp_reality_importer.json`
-fixtures are parsed and compiled into dial-ready Rust transports, and the
-ignored matrix below exchanges bytes with a real local Xray-core. The live
+fixtures cover fail-closed legacy TLS import and dial-ready REALITY transport,
+and the ignored matrix below exchanges bytes with a real local Xray-core. The live
 matrix starts from a Rust `CoreConfig`; it does not invoke the Swift importer.
 The supplemental `vless_xhttp_tls_h2.json` and
 `vless_xhttp_reality_h2.json` fixtures pin a normally verified TLS/H2 shape

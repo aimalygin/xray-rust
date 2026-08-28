@@ -80,19 +80,19 @@ fn quick_start_freedom_example_loads() {
 }
 
 #[test]
-fn load_config_preserves_and_formats_security_warnings() {
+fn load_config_preserves_and_formats_warnings() {
     let temp_dir =
         std::env::temp_dir().join(format!("xray-cli-warning-config-{}", std::process::id()));
     fs::create_dir_all(&temp_dir).unwrap();
     let config_path = temp_dir.join("warning.json");
-    fs::write(&config_path, config_with_allow_insecure_warning()).unwrap();
+    fs::write(&config_path, config_with_wildcard_listen_warning()).unwrap();
 
     let (_config, diagnostics) = load_config_with_diagnostics(&config_path).unwrap();
     let rendered = format_config_warnings(&diagnostics);
 
     assert!(rendered.contains("warning:"));
-    assert!(rendered.contains("$.outbounds[0].streamSettings.tlsSettings.allowInsecure"));
-    assert!(rendered.contains("disables TLS certificate verification"));
+    assert!(rendered.contains("$.inbounds[0].listen"));
+    assert!(rendered.contains("wildcard listen address"));
     let _ = fs::remove_dir_all(temp_dir);
 }
 
@@ -119,14 +119,14 @@ fn format_bound_inbounds_includes_tag_and_address() {
     assert_eq!(rendered, "bound inbound socks-in at 127.0.0.1:1080");
 }
 
-fn config_with_allow_insecure_warning() -> &'static str {
+fn config_with_wildcard_listen_warning() -> &'static str {
     r#"{
       "inbounds": [{
         "tag": "socks-in",
         "protocol": "socks",
-        "listen": "127.0.0.1",
+        "listen": "0.0.0.0",
         "port": 0,
-        "settings": { "udp": false }
+        "settings": { "udp": false, "allowUnauthenticatedLan": true }
       }],
       "outbounds": [{
         "tag": "proxy",
@@ -142,8 +142,7 @@ fn config_with_allow_insecure_warning() -> &'static str {
           "network": "tcp",
           "security": "tls",
           "tlsSettings": {
-            "serverName": "example.com",
-            "allowInsecure": true
+            "serverName": "example.com"
           }
         }
       }]

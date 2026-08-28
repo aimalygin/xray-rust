@@ -172,7 +172,7 @@ fn ffi_rejects_reloading_config_while_core_is_running() {
 fn ffi_exposes_config_warnings_without_truncation() {
     let mut err = std::ptr::null_mut();
     let core = unsafe { xray_core_new(&mut err) };
-    let raw = CString::new(config_with_allow_insecure_warning()).unwrap();
+    let raw = CString::new(config_with_wildcard_listen_warning()).unwrap();
     let status = unsafe { xray_core_load_config_json(core, raw.as_ptr(), &mut err) };
     assert_eq!(status, XrayStatus::Ok, "load error: {}", error_message(err));
 
@@ -210,8 +210,8 @@ fn ffi_exposes_config_warnings_without_truncation() {
     let warning = unsafe { CStr::from_ptr(warning.as_ptr()) }
         .to_str()
         .unwrap();
-    assert!(warning.contains("$.outbounds[0].streamSettings.tlsSettings.allowInsecure"));
-    assert!(warning.contains("disables TLS certificate verification"));
+    assert!(warning.contains("$.inbounds[0].listen"));
+    assert!(warning.contains("wildcard listen address"));
 
     unsafe {
         xray_core_free(core);
@@ -2047,15 +2047,15 @@ fn client_config_with_freedom_outbound() -> String {
     .to_owned()
 }
 
-fn config_with_allow_insecure_warning() -> String {
+fn config_with_wildcard_listen_warning() -> String {
     r#"{
       "inbounds": [
         {
           "tag": "socks-in",
           "protocol": "socks",
-          "listen": "127.0.0.1",
+          "listen": "0.0.0.0",
           "port": 0,
-          "settings": { "udp": false }
+          "settings": { "udp": false, "allowUnauthenticatedLan": true }
         }
       ],
       "outbounds": [
@@ -2077,8 +2077,7 @@ fn config_with_allow_insecure_warning() -> String {
             "network": "tcp",
             "security": "tls",
             "tlsSettings": {
-              "serverName": "example.com",
-              "allowInsecure": true
+              "serverName": "example.com"
             }
           }
         }

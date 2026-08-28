@@ -170,6 +170,7 @@ for setup details.
 
 ## Documentation
 
+- [Development roadmap](docs/roadmap.md)
 - [Status and supported features](docs/status.md)
 - [Architecture](docs/architecture.md)
 - [Configuration compatibility](docs/config-compatibility.md)

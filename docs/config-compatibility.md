@@ -81,9 +81,10 @@ TCP transport to `raw` and XHTTP from `splithttp`; both pairs are accepted alias
 `TransportProtocol.Build` has no such arm either. Security values are:
 
 - `none`;
-- `tls`, with `serverName`, legacy-only `allowInsecure` (verification is on by
-  default; Xray-core v26.7.28 rejects `true`), `fingerprint`, and `alpn`,
-  described below;
+- `tls`, with `serverName`, `fingerprint`, `alpn`, and
+  `pinnedPeerCertSha256` and `verifyPeerCertByName`; `allowInsecure` may be
+  absent, `null`, or `false`, while `true` is a hard error matching Xray-core
+  v26.7.28;
 - `reality`, with `serverName`, a supported `fingerprint`, base64url
   `publicKey`, hexadecimal `shortId`, optional `spiderX`, and optional
   `mldsa65Verify`.
@@ -94,8 +95,52 @@ supported; HTTP/2 and QUIC v1 are available only as XHTTP's selected wire
 engines. Outbound mux, `proxySettings`, `sendThrough`, multiple VLESS servers,
 and outbound chaining are rejected.
 
+VLESS with `encryption: "none"` and no stream security fails closed for a
+public server address. This adopts Xray-core v26.7.28's policy but deliberately
+closes an upstream legacy-schema gap: Xray invokes the guard for simplified
+top-level VLESS settings, while its legacy `vnext` shape bypasses it.
+xray-rust supports `vnext` and applies the guard there as an intentional
+security hardening, so this one unsafe legacy profile is rejected even though
+the pinned Xray binary accepts it. Such a server must use TLS or REALITY unless
+its IP is in Xray's exemption set (`0.0.0.0/8`, `10/8`,
+`100.64/10`, `127/8`, `169.254/16`, `172.16/12`, `192.0.0/24`,
+`192.0.2/24`, `192.88.99/24`, `192.168/16`, `198.18/15`,
+`198.51.100/24`, `203.0.113/24`, `224/3`, `::/127`, `fc00::/7`,
+`fe80::/10`, or `ff00::/8`). Domain exemptions are `lan`, `localdomain`,
+`example`, `invalid`, `localhost`, `test`, `local`, `home.arpa`, and
+`internal`, including their subdomains, plus a valid dotless ASCII hostname
+label. Domain matching lowercases the name and removes one trailing dot.
+Bracketed address parsing removes the brackets before trimming surrounding
+space, matching Xray address normalization. TLS and REALITY outbounds are
+unaffected.
+
 VLESS UDP is carried over the supported TCP transport using VLESS datagram or
 XUDP framing; it does not make `streamSettings.network: "udp"` valid.
+
+`pinnedPeerCertSha256` is one comma-separated string. Entries are trimmed,
+empty entries are ignored, every `:` is removed, and each remaining value must
+be a 32-byte hexadecimal SHA-256 digest. The digest covers the complete DER
+certificate, not its SPKI. A matching leaf certificate is accepted immediately,
+as in Xray, without chain, time, or name verification. Otherwise the first
+matching CA in the peer-presented chain becomes the sole root and rustls still
+verifies the leaf chain, validity period, and effective TLS server name. An
+absent or empty `serverName` uses the VLESS/DNS destination, including an IP
+literal; IP names verify the IP SAN and are not emitted as SNI.
+
+`verifyPeerCertByName` is also one comma-separated string. Entries are trimmed,
+empty entries are ignored, and the resulting DNS/IP names are ORed: one SAN
+match succeeds. The list changes certificate verification only; explicit or
+destination-derived `serverName` remains the handshake SNI. Without pins the
+ordinary system roots, chain, and time checks remain active. With a CA pin the
+pinned CA is the sole root and the same OR list is checked. A matching leaf pin
+still short-circuits every PKI and name check before the list is considered.
+IP literals match IP SANs rather than DNS SANs.
+
+The TLS slice deliberately does not implement the `fromMitm` sentinel, ECH,
+custom certificate stores, or removed chain/SPKI pin fields. They are rejected
+with a path-aware error instead of being ignored. The programmatic
+`allow_insecure` model field exists only for hermetic local tests and cannot be
+produced by canonical JSON parsing.
 
 ### WebSocket and HTTPUpgrade
 
@@ -241,10 +286,11 @@ All three modes are active on HTTP/1.1, HTTP/2, and HTTP/3:
 - `stream-one` uses one full-duplex request with no session or sequence.
 
 `mode: "auto"` becomes `packet-up` without REALITY and `stream-one` with
-REALITY. `stream-up` remains available explicitly. A session UUID is generated
-for the two split modes; path, cookie, header, and query placements, mandatory
-padding, sequence numbers, packet pacing, and half-close/EOF behavior are all
-handled by the shared request composer.
+REALITY. `stream-up` remains available explicitly. The two split modes generate
+one fresh logical-session ID per flow and reuse it across that flow's downlink
+and uplink requests; `stream-one` has no session ID. Path, cookie, header, and
+query placements, mandatory padding, sequence numbers, packet pacing, and
+half-close/EOF behavior are all handled by the shared request composer.
 
 The HTTP clients also match Go's transparent gzip policy. Stream requests and
 H2/H3 packet requests add `Accept-Encoding: gzip` only when the caller did not
@@ -261,19 +307,22 @@ The accepted `xhttpSettings` surface is:
 - padding: `xPaddingBytes`, `xPaddingObfsMode`, `xPaddingKey`,
   `xPaddingHeader`, `xPaddingPlacement`, and `xPaddingMethod`;
 - uplink metadata: `uplinkHTTPMethod`, `sessionIDPlacement`, `sessionIDKey`,
-  `seqPlacement`, `seqKey`, `uplinkDataPlacement`, `uplinkDataKey`, and
-  `uplinkChunkSize`;
+  `sessionIDTable`, `sessionIDLength`, `seqPlacement`, `seqKey`,
+  `uplinkDataPlacement`, `uplinkDataKey`, and `uplinkChunkSize`;
 - packet/stream controls: `noGRPCHeader`, `noSSEHeader`,
   `scMaxEachPostBytes`, `scMinPostsIntervalMs`, `scMaxBufferedPosts`,
   `scStreamUpServerSecs`, and `serverMaxHeaderBytes`;
 - `xmux`, with `maxConcurrency`, `maxConnections`, `cMaxReuseTimes`,
   `hMaxRequestTimes`, `hMaxReusableSecs`, and `hKeepAlivePeriod`.
 
-`sessionIDTable` and `sessionIDLength` receive Xray's ASCII, positive-length,
-and entropy validation. A non-empty custom table on the selected XHTTP
-transport is then rejected until the runtime can generate the corresponding
-non-UUID session IDs. A valid table in an unselected transport block remains
-inert, as it does in Xray.
+An empty `sessionIDTable` selects Xray's lowercase UUID v4 fallback. A non-empty
+table selects target-compatible custom IDs after Xray's ASCII, positive-length,
+and entropy validation. The nine upstream aliases (`ALPHABET`, `Alphabet`,
+`BASE36`, `Base62`, `HEX`, `alphabet`, `base36`, `hex`, and `number`) expand to
+their exact alphabets; any other ASCII string is used literally, including
+duplicate bytes. Equal length bounds are exact, while unequal bounds are drawn
+from Xray's half-open `[from, to)` range after ordering. A valid table in an
+unselected transport block remains inert, as it does in Xray.
 
 Range fields accept a JSON integer or Xray's string form such as
 `"100-1000"`; null scalar/range/xmux values retain Go's zero-value semantics.
@@ -1081,8 +1130,9 @@ Xray DNS client.
     "userLevel": 0,
     "rules": [
       {
-        "action": "direct",
-        "qtype": "1,28,64-65",
+        "action": "return",
+        "qType": "64-65",
+        "rCode": 3,
         "domain": ["domain:example.com", "geosite:private"]
       }
     ]
@@ -1092,19 +1142,22 @@ Xray DNS client.
 
 The compatibility aliases `network`/`address`/`port` override their
 `rewrite*` counterparts exactly as in Xray; a zero port preserves the original
-port. `action` is case-insensitive and must be Direct, Drop, Reject, or Hijack.
-QTYPE accepts a number or comma/range string over `0..=65535`; ranges stay
-compact and are normalized instead of being eagerly expanded. Domain accepts a
-string or array and supports the same `keyword`, `domain`, `full`, `regexp`,
-`dotless`, `geosite`, and `ext` grammar as other DNS matchers. Bare values are
-keywords. Rules are ordered, selectors inside a rule are ANDed, and empty
-QTYPE/domain selectors are wildcards. A miss Hijacks A/AAAA and Rejects other
-types. Explicit Hijack of a non-address type also Rejects.
+port. `action` is case-insensitive and must be Direct, Drop, Return, or Hijack.
+`qType` accepts a number or comma/range string over `0..=65535`; ranges stay
+compact and are normalized instead of being eagerly expanded. `rCode` accepts
+`0..=65535`, defaults to zero, and is used by Return and by Hijack when the
+selected query is not A/AAAA. Domain accepts a string or array and supports the
+same `keyword`, `domain`, `full`, `regexp`, `dotless`, `geosite`, and `ext`
+grammar as other DNS matchers. Bare values are keywords. Rules are ordered,
+selectors inside a rule are ANDed, and empty QTYPE/domain selectors are
+wildcards. A miss Hijacks A/AAAA and Returns an empty NOERROR response for
+other types.
 
-This rule surface retains a deliberate pre-v26.7.28 compatibility gap:
-xray-rust accepts lower-case `qtype`, `Reject`, and no per-rule `rCode`, while
-Xray-core v26.7.28 spells these `qType` and `Return` with configurable `rCode`.
-The target spellings are rejected here rather than silently approximated.
+Lower-case `qtype` remains an input-only compatibility alias and emits a
+warning; supplying non-null `qType` and `qtype` together is rejected as
+ambiguous. The former `Reject` action is also accepted with a warning and maps
+to Return with `rCode: 5` unless an explicit `rCode` overrides it. Canonical
+configuration and normalized runtime state use `qType`, Return, and `rCode`.
 
 Deprecated `nonIPQuery`/`blockTypes` are normalized to ordered modern rules and
 emit a warning. They cannot be mixed with non-null `rules`. Config parsing caps
@@ -1167,9 +1220,10 @@ UDP-socket cap with the same profile values. These budgets are separate from
 the ingress DNS policy semaphore and from TCP pool permits, so a Hijack that
 performs a managed lookup cannot self-deadlock by reacquiring its own permit.
 
-Drop sends no response. Reject synthesizes REFUSED while preserving the query
-ID and question. Hijack uses the shared destination resolver or the per-Core
-FakeIP mapper when configured and remains family-specific. A mapping allocated
+Drop sends no response. Return synthesizes an empty response with the selected
+`rCode` while preserving the query ID and question. Hijack uses the shared
+destination resolver or the per-Core FakeIP mapper when configured and remains
+family-specific. A mapping allocated
 through any supported ingress is available to every other ingress in that
 `Core`. Unlike Xray's
 lossy synthesis, a Hijack that would discard AD/CD, DNSSEC DO, EDNS options or

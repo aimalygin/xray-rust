@@ -82,6 +82,8 @@ const TEST_VLESS_UUID: [u8; 16] = [
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
 ];
 const TEST_VLESS_UUID_STRING: &str = "00010203-0405-0607-0809-0a0b0c0d0e0f";
+const PLACEHOLDER_TLS_CERT_SHA256: &str =
+    "0000000000000000000000000000000000000000000000000000000000000000";
 // The PQ benchmark cases need a cover origin that accepts X25519MLKEM;
 // RFC 2606 example origins reject the `hellochrome_120_pq` handshake.
 const REALITY_SERVER_NAME: &str = "www.google.com";
@@ -6191,9 +6193,11 @@ pub fn xray_rust_config(port: u16, workload: WorkloadKind) -> String {
         WorkloadKind::UdpVless | WorkloadKind::UdpXudp => {
             vless_udp_config(port, SocketAddr::from((Ipv4Addr::LOCALHOST, 443)))
         }
-        WorkloadKind::VisionXudp => {
-            vision_xudp_config(port, SocketAddr::from((Ipv4Addr::LOCALHOST, 443)))
-        }
+        WorkloadKind::VisionXudp => vision_xudp_config(
+            port,
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 443)),
+            PLACEHOLDER_TLS_CERT_SHA256,
+        ),
         WorkloadKind::RealityVisionXudp | WorkloadKind::RealityVisionBulkThroughput => {
             reality_vision_xudp_config(port, SocketAddr::from((Ipv4Addr::LOCALHOST, 443)))
         }
@@ -6304,16 +6308,15 @@ fn engine_config_with_dns_upstream(
                 )
             })?;
             match engine {
-                EngineKind::XrayRust => Ok(vision_xudp_config(port, vless_addr)),
-                EngineKind::XrayCore => {
+                EngineKind::XrayRust | EngineKind::XrayCore => {
                     let cert_sha256 =
                         fixture.vless_tls_cert_sha256.as_deref().ok_or_else(|| {
                             BenchError::InvalidArguments(
-                            "xray-core vision-xudp workload requires fake VLESS TLS certificate pin"
-                                .to_owned(),
-                        )
+                                "vision-xudp workload requires fake VLESS TLS certificate pin"
+                                    .to_owned(),
+                            )
                         })?;
-                    Ok(xray_core_vision_xudp_config(port, vless_addr, cert_sha256))
+                    Ok(vision_xudp_config(port, vless_addr, cert_sha256))
                 }
                 EngineKind::SingBox => Err(BenchError::InvalidArguments(
                     "vision-xudp workload is not supported by sing-box process engine".to_owned(),
@@ -6748,19 +6751,7 @@ fn vless_udp_config(port: u16, vless_addr: SocketAddr) -> String {
     )
 }
 
-fn vision_xudp_config(port: u16, vless_addr: SocketAddr) -> String {
-    vision_xudp_config_with_tls_settings(
-        port,
-        vless_addr,
-        r#""tlsSettings": { "serverName": "vless.test", "allowInsecure": true }"#,
-    )
-}
-
-fn xray_core_vision_xudp_config(
-    port: u16,
-    vless_addr: SocketAddr,
-    pinned_peer_cert_sha256: &str,
-) -> String {
+fn vision_xudp_config(port: u16, vless_addr: SocketAddr, pinned_peer_cert_sha256: &str) -> String {
     vision_xudp_config_with_tls_settings(
         port,
         vless_addr,
@@ -8250,8 +8241,9 @@ fn dns_outbound_probe_common_settings(rule_count: usize) -> DnsOutboundSettings 
             action: if index == 0 {
                 DnsOutboundRuleAction::Direct
             } else {
-                DnsOutboundRuleAction::Reject
+                DnsOutboundRuleAction::Return
             },
+            r_code: 0,
             qtype_ranges: Vec::new(),
             domain_matchers: vec![DomainMatcher::Full(DNS_POLICY_PROBE_DOMAIN.to_owned())],
         })
@@ -8271,6 +8263,7 @@ fn dns_outbound_probe_worst_case_settings(
     let mut rules = (0..rule_count.saturating_sub(1))
         .map(|index| DnsOutboundRule {
             action: DnsOutboundRuleAction::Direct,
+            r_code: 0,
             qtype_ranges: Vec::new(),
             domain_matchers: vec![DomainMatcher::Keyword(format!(
                 "rule-{index}-ordered-miss.invalid"
@@ -8282,7 +8275,8 @@ fn dns_outbound_probe_worst_case_settings(
         .collect::<Vec<_>>();
     domain_matchers.push(DomainMatcher::Keyword(DNS_POLICY_PROBE_DOMAIN.to_owned()));
     rules.push(DnsOutboundRule {
-        action: DnsOutboundRuleAction::Reject,
+        action: DnsOutboundRuleAction::Return,
+        r_code: 0,
         qtype_ranges: Vec::new(),
         domain_matchers,
     });
@@ -8330,7 +8324,7 @@ fn dns_outbound_decision_name(decision: DnsOutboundDecision) -> &'static str {
     match decision {
         DnsOutboundDecision::Direct => "direct",
         DnsOutboundDecision::Drop => "drop",
-        DnsOutboundDecision::Reject => "reject",
+        DnsOutboundDecision::Return(_) => "return",
         DnsOutboundDecision::Hijack => "hijack",
         DnsOutboundDecision::HijackUnsafe(_) => "hijack-unsafe",
     }
@@ -8717,7 +8711,7 @@ fn measure_dns_policy_probe(
     let outbound_worst_ordered_rule_matchers = measure_dns_outbound_policy(
         &outbound_worst_settings,
         &outbound_query,
-        DnsOutboundDecision::Reject,
+        DnsOutboundDecision::Return(0),
         options.iterations,
     )?;
     let outbound_selector_prefilter = DNS_OUTBOUND_SELECTOR_PROBE_RULE_COUNTS
@@ -12832,16 +12826,20 @@ mod tests {
         let config = vision_xudp_config(
             18084,
             SocketAddr::from((Ipv4Addr::new(127, 0, 0, 1), 19091)),
+            "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
         );
         assert!(config.contains(r#""protocol": "vless""#));
         assert!(config.contains(r#""flow": "xtls-rprx-vision""#));
         assert!(config.contains(r#""security": "tls""#));
-        assert!(config.contains(r#""allowInsecure": true"#));
+        assert!(config.contains(
+            r#""pinnedPeerCertSha256": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff""#
+        ));
+        assert!(!config.contains("allowInsecure"));
         assert!(config.contains(r#""port": 19091"#));
     }
 
     #[test]
-    fn xray_core_vision_xudp_config_uses_tls_cert_pin() {
+    fn process_vision_xudp_config_uses_tls_cert_pin() {
         let fixture = WorkloadFixture {
             vless_addr: Some(SocketAddr::from((Ipv4Addr::new(127, 0, 0, 1), 19091))),
             vless_tls_cert_sha256: Some(
@@ -12853,7 +12851,7 @@ mod tests {
             processes: Vec::new(),
         };
         let config = engine_config(
-            EngineKind::XrayCore,
+            EngineKind::XrayRust,
             18084,
             WorkloadKind::VisionXudp,
             &fixture,
@@ -13457,7 +13455,7 @@ mod tests {
         assert_eq!(result.outbound_common_first_rule.decision, "direct");
         assert_eq!(
             result.outbound_worst_ordered_rule_matchers.decision,
-            "reject"
+            "return"
         );
         assert_eq!(
             result

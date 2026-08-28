@@ -76,6 +76,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2a4385e2e34eb35d6b3efe798b9eb88096925d87726c0798709bf56d9ed84af3"
 
 [[package]]
+name = "arbitrary"
+version = "1.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3d036a3c4ab069c7b410a2ce876bd74808d2d0888a82667669f8e783a898bf1"
+
+[[package]]
 name = "asn1-rs"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -556,7 +562,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1074,6 +1080,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
 
 [[package]]
+name = "libfuzzer-sys"
+version = "0.4.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a9fd2f41a1cba099f79a0b6b6c35656cf7c03351a7bae8ff0f28f25270f929d2"
+dependencies = [
+ "arbitrary",
+ "cc",
+]
+
+[[package]]
 name = "litemap"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1398,7 +1414,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2350,7 +2366,7 @@ dependencies = [
 
 [[package]]
 name = "xray-bench"
-version = "0.4.0"
+version = "0.4.1-rc.1"
 dependencies = [
  "async-trait",
  "bytes",
@@ -2374,7 +2390,7 @@ dependencies = [
 
 [[package]]
 name = "xray-cli"
-version = "0.4.0"
+version = "0.4.1-rc.1"
 dependencies = [
  "libc",
  "thiserror",
@@ -2385,7 +2401,7 @@ dependencies = [
 
 [[package]]
 name = "xray-config"
-version = "0.4.0"
+version = "0.4.1-rc.1"
 dependencies = [
  "libc",
  "prost",
@@ -2399,7 +2415,7 @@ dependencies = [
 
 [[package]]
 name = "xray-core-rs"
-version = "0.4.0"
+version = "0.4.1-rc.1"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -2426,7 +2442,7 @@ dependencies = [
 
 [[package]]
 name = "xray-ffi"
-version = "0.4.0"
+version = "0.4.1-rc.1"
 dependencies = [
  "bytes",
  "libc",
@@ -2439,7 +2455,7 @@ dependencies = [
 
 [[package]]
 name = "xray-proxy"
-version = "0.4.0"
+version = "0.4.1-rc.1"
 dependencies = [
  "bytes",
  "prost",
@@ -2452,7 +2468,7 @@ dependencies = [
 
 [[package]]
 name = "xray-routing"
-version = "0.4.0"
+version = "0.4.1-rc.1"
 dependencies = [
  "bytes",
  "thiserror",
@@ -2460,15 +2476,27 @@ dependencies = [
 
 [[package]]
 name = "xray-runtime"
-version = "0.4.0"
+version = "0.4.1-rc.1"
 dependencies = [
  "thiserror",
  "tokio",
 ]
 
 [[package]]
+name = "xray-rust-fuzz"
+version = "0.0.0"
+dependencies = [
+ "libfuzzer-sys",
+ "tokio",
+ "xray-config",
+ "xray-core-rs",
+ "xray-ffi",
+ "xray-proxy",
+]
+
+[[package]]
 name = "xray-transport"
-version = "0.4.0"
+version = "0.4.1-rc.1"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -2509,7 +2537,7 @@ dependencies = [
 
 [[package]]
 name = "xray-tun"
-version = "0.4.0"
+version = "0.4.1-rc.1"
 dependencies = [
  "bytes",
  "thiserror",
@@ -2518,7 +2546,7 @@ dependencies = [
 
 [[package]]
 name = "xray-utls"
-version = "0.4.0"
+version = "0.4.1-rc.1"
 
 [[package]]
 name = "yasna"

@@ -7,16 +7,39 @@ prerelease-quality and do not establish a supported release series.
 
 ## Unreleased
 
+## 0.4.1-rc.1 - 2026-08-28
+
 - Retargeted the Xray-core oracle, ignored interoperability suite, and
   benchmark harness from v26.5.9 to exact v26.7.28 commit
   `5ca6f4b7d4dc20a881d4330e498892697627ec0c`. Oracle Go modules and committed
   REALITY/gRPC fixtures now use the target dependency graph, while benchmark
   auto-builds reject any other or source-modified checkout.
 - Synchronized supported v26.7.28 behavior for `streamSettings.method`, XHTTP
-  `sessionID*` names and `maxConnections=3` explicit-settings default, and DNS
-  TTLs above 300 seconds. Target DNS `qType`/`Return`/`rCode`, plaintext-public
-  destination policy, and non-empty selected XHTTP session-ID tables remain
-  documented compatibility boundaries.
+  `sessionID*` names and `maxConnections=3` explicit-settings default, DNS TTLs
+  above 300 seconds, DNS-outbound `qType`/`Return`/`rCode`, and fail-closed
+  plaintext VLESS servers. The DNS default for non-A/AAAA queries is now an
+  empty NOERROR response; legacy `qtype` and `Reject` remain warned aliases,
+  with `Reject` preserving REFUSED unless an explicit `rCode` overrides it.
+  VLESS without TLS/REALITY is now limited to Xray's exact
+  private/reserved/test IP and private/test/dotless-domain exemption set.
+  This is intentionally stricter than Xray v26.7.28 for legacy `vnext` input:
+  upstream applies the guard only to its simplified top-level settings, while
+  xray-rust applies it to the legacy shape it supports.
+  TLS now rejects canonical `allowInsecure: true` and supports Xray's
+  comma-separated full-DER `pinnedPeerCertSha256` model. Exact leaf pins
+  short-circuit PKI/name checks; presented CA pins retain chain, time, and
+  destination-derived DNS/IP name verification. Comma-separated
+  `verifyPeerCertByName` now trims and ORs DNS/IP SAN names against ordinary
+  roots or a pinned CA without changing SNI; leaf pins retain their upstream
+  short-circuit. Unsupported `fromMitm`, ECH, custom trust stores, and removed
+  pin forms remain fail-closed.
+  XHTTP now generates target-compatible custom session IDs for all nine
+  predefined tables and literal ASCII alphabets, preserving exact/half-open
+  length semantics, per-flow freshness, placement keys, the UUID fallback, and
+  Xray's conditional trailing-slash behavior for path metadata.
+- Added release-candidate-only blocking interoperability and bounded libFuzzer
+  gates, plus idempotent source-only GitHub prerelease publication. The RC path
+  does not publish a crate or invoke any package registry.
 
 ## 0.4.0 - 2026-08-27
 

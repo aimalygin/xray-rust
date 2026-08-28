@@ -62,6 +62,8 @@ mod utls_tls_shaping_tests {
         TlsClientConfig {
             server_name: "example.com".to_owned(),
             allow_insecure: false,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
             alpn: alpn.iter().map(|value| (*value).to_owned()).collect(),
             fingerprint: Some(fingerprint.to_owned()),
         }
@@ -399,6 +401,8 @@ mod utls_tls_shaping_tests {
         let hello = plain_tls_client_hello_bytes(&TlsClientConfig {
             server_name: "example.com".to_owned(),
             allow_insecure: false,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
             alpn: Vec::new(),
             fingerprint: Some("unsafe".to_owned()),
         })
@@ -421,6 +425,8 @@ mod utls_tls_shaping_tests {
             let hello = plain_tls_client_hello_bytes(&TlsClientConfig {
                 server_name: "example.com".to_owned(),
                 allow_insecure: false,
+                pinned_peer_cert_sha256: Vec::new(),
+                verify_peer_cert_by_name: Vec::new(),
                 alpn: vec!["h2".to_owned(), "http/1.1".to_owned()],
                 fingerprint: fingerprint.clone(),
             })
@@ -445,6 +451,8 @@ mod utls_tls_shaping_tests {
             let hello = plain_tls_client_hello_bytes(&TlsClientConfig {
                 server_name: "example.com".to_owned(),
                 allow_insecure: false,
+                pinned_peer_cert_sha256: Vec::new(),
+                verify_peer_cert_by_name: Vec::new(),
                 alpn: Vec::new(),
                 fingerprint: fingerprint.clone(),
             })
@@ -891,6 +899,8 @@ mod utls_tls_shaping_tests {
                 let ip = plain_tls_client_hello_bytes(&TlsClientConfig {
                     server_name: "203.0.113.10".to_owned(),
                     allow_insecure: true,
+                    pinned_peer_cert_sha256: Vec::new(),
+                    verify_peer_cert_by_name: Vec::new(),
                     alpn: alpn.iter().map(|value| (*value).to_owned()).collect(),
                     fingerprint: Some(fingerprint.to_owned()),
                 })
@@ -991,6 +1001,8 @@ mod utls_tls_shaping_tests {
         let config = TlsClientConfig {
             server_name: "example.com".to_owned(),
             allow_insecure: true,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
             alpn: Vec::new(),
             fingerprint: Some("chrome".to_owned()),
         };
@@ -1264,6 +1276,8 @@ mod utls_tls_shaping_tests {
         let config = TlsClientConfig {
             server_name: "server.test".to_owned(),
             allow_insecure: true,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
             alpn: Vec::new(),
             fingerprint: Some(fingerprint.to_owned()),
         };

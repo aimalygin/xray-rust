@@ -156,11 +156,13 @@ fn dns_outbound_rules_use_first_match_and_xray_defaults() {
         rules: vec![
             DnsOutboundRule {
                 action: DnsOutboundRuleAction::Direct,
+                r_code: 0,
                 qtype_ranges: vec![DnsQTypeRange::single(1)],
                 domain_matchers: vec![DomainMatcher::Suffix("internal.example".to_owned())],
             },
             DnsOutboundRule {
                 action: DnsOutboundRuleAction::Drop,
+                r_code: 0,
                 qtype_ranges: vec![DnsQTypeRange::single(1)],
                 domain_matchers: Vec::new(),
             },
@@ -182,12 +184,13 @@ fn dns_outbound_rules_use_first_match_and_xray_defaults() {
     );
     assert_eq!(
         settings.action_for(65, "public.example"),
-        DnsOutboundRuleAction::Reject
+        DnsOutboundRuleAction::Return
     );
 
     let regexp_settings = DnsOutboundSettings {
         rules: vec![DnsOutboundRule {
             action: DnsOutboundRuleAction::Direct,
+            r_code: 0,
             qtype_ranges: vec![DnsQTypeRange::single(1)],
             domain_matchers: vec![DomainMatcher::Regex(
                 RegexMatcher::new(r"^api\.internal\.example$").expect("valid domain regexp"),
@@ -415,6 +418,114 @@ fn ip_cidr_canonicalizes_ipv4_mapped_ipv6_addresses() {
         }
     );
     assert_eq!(IpCidr::full(mapped).prefix(), 32);
+}
+
+#[test]
+fn xray_plaintext_server_ip_exemptions_match_v26_7_28_ranges() {
+    for address in [
+        "0.42.0.1",
+        "10.42.0.1",
+        "100.64.0.1",
+        "127.0.0.1",
+        "169.254.1.1",
+        "172.31.255.254",
+        "192.0.0.1",
+        "192.0.2.1",
+        "192.88.99.1",
+        "192.168.1.1",
+        "198.18.0.1",
+        "198.51.100.1",
+        "203.0.113.1",
+        "224.0.0.1",
+        "255.255.255.255",
+        "::",
+        "::1",
+        "fc00::1",
+        "fdff::1",
+        "fe80::1",
+        "febf::1",
+        "ff02::1",
+        "::ffff:192.0.2.1",
+    ] {
+        let server = TargetAddr::Ip(address.parse().unwrap());
+        assert!(
+            server.is_xray_plaintext_server_exempt(),
+            "{address} should be exempt"
+        );
+    }
+
+    for address in [
+        "1.1.1.1",
+        "100.128.0.1",
+        "169.253.255.255",
+        "172.32.0.1",
+        "192.0.1.1",
+        "192.0.3.1",
+        "192.88.100.1",
+        "198.17.255.255",
+        "198.20.0.1",
+        "203.0.114.1",
+        "223.255.255.255",
+        "::2",
+        "2001:db8::1",
+        "fe7f::1",
+        "fec0::1",
+    ] {
+        let server = TargetAddr::Ip(address.parse().unwrap());
+        assert!(
+            !server.is_xray_plaintext_server_exempt(),
+            "{address} should require transport security"
+        );
+    }
+}
+
+#[test]
+fn xray_plaintext_server_domain_exemptions_normalize_case_and_one_trailing_dot() {
+    for domain in [
+        "lan",
+        "printer.lan",
+        "localdomain",
+        "service.example",
+        "invalid",
+        "localhost",
+        "host.test",
+        "host.local",
+        "resolver.home.arpa",
+        "service.internal",
+        "router",
+        "a",
+        "a-1",
+        "PRINTER.LAN.",
+        "ROUTER.",
+    ] {
+        let server = TargetAddr::Domain(domain.to_owned());
+        assert!(
+            server.is_xray_plaintext_server_exempt(),
+            "{domain:?} should be exempt"
+        );
+    }
+
+    for domain in [
+        "example.com",
+        "lan.example.com",
+        "public.invalid.example.com",
+        "123",
+        "-router",
+        "router-",
+        "under_score",
+        "router..",
+    ] {
+        let server = TargetAddr::Domain(domain.to_owned());
+        assert!(
+            !server.is_xray_plaintext_server_exempt(),
+            "{domain:?} should require transport security"
+        );
+    }
+
+    let max_dotless = TargetAddr::Domain(format!("a{}z", "-".repeat(61)));
+    assert!(max_dotless.is_xray_plaintext_server_exempt());
+    let overlong_dotless = TargetAddr::Domain("a".repeat(64));
+    assert!(!overlong_dotless.is_xray_plaintext_server_exempt());
 }
 
 #[test]

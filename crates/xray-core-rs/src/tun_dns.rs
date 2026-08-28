@@ -740,13 +740,20 @@ pub(super) fn udp_action(
                 decision
                 @ (crate::DnsOutboundDecision::Direct | crate::DnsOutboundDecision::Hijack),
             ) => DnsUdpAction::Outbound { outbound, decision },
-            Ok(
-                crate::DnsOutboundDecision::Reject | crate::DnsOutboundDecision::HijackUnsafe(_),
-            ) => crate::build_refused_response(&packet.payload)
-                .ok()
-                .and_then(|response| build_udp_packet(packet.target, packet.client, &response))
-                .map(DnsUdpAction::Reply)
-                .unwrap_or(DnsUdpAction::Drop),
+            Ok(crate::DnsOutboundDecision::Return(r_code)) => {
+                crate::build_return_response(&packet.payload, r_code)
+                    .ok()
+                    .and_then(|response| build_udp_packet(packet.target, packet.client, &response))
+                    .map(DnsUdpAction::Reply)
+                    .unwrap_or(DnsUdpAction::Drop)
+            }
+            Ok(crate::DnsOutboundDecision::HijackUnsafe(_)) => {
+                crate::build_refused_response(&packet.payload)
+                    .ok()
+                    .and_then(|response| build_udp_packet(packet.target, packet.client, &response))
+                    .map(DnsUdpAction::Reply)
+                    .unwrap_or(DnsUdpAction::Drop)
+            }
             Err(_) => dns_error_reply_packet(packet, DNS_RCODE_FORMERR)
                 .map(DnsUdpAction::Reply)
                 .unwrap_or(DnsUdpAction::Drop),
@@ -6187,7 +6194,7 @@ mod tests {
     }
 
     #[test]
-    fn udp_outbound_classifies_drop_and_reject_before_task_admission() {
+    fn udp_outbound_classifies_drop_and_return_before_task_admission() {
         let anchor = IpEndpoint::new(IpAddress::Ipv4(TUN_DNS_ANCHOR), DNS_PORT);
         let packet = UdpTunPacket {
             client: IpEndpoint::new(IpAddress::Ipv4(TUN_CLIENT_IPV4), 40_001),
@@ -6198,6 +6205,11 @@ mod tests {
             DnsOutbound::new(xray_config::DnsOutboundSettings {
                 rules: vec![xray_config::DnsOutboundRule {
                     action,
+                    r_code: if action == xray_config::DnsOutboundRuleAction::Return {
+                        5
+                    } else {
+                        0
+                    },
                     qtype_ranges: Vec::new(),
                     domain_matchers: Vec::new(),
                 }],
@@ -6217,7 +6229,7 @@ mod tests {
             udp_action(
                 &TunDnsMode::Disabled,
                 &packet,
-                Some(outbound_for(xray_config::DnsOutboundRuleAction::Reject)),
+                Some(outbound_for(xray_config::DnsOutboundRuleAction::Return)),
             ),
             DnsUdpAction::Reply(_)
         ));

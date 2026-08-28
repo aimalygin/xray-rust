@@ -744,7 +744,7 @@ impl DnsOutboundSettings {
                     if matches!(qtype, 1 | 28) {
                         DnsOutboundRuleAction::Hijack
                     } else {
-                        DnsOutboundRuleAction::Reject
+                        DnsOutboundRuleAction::Return
                     }
                 },
                 |rule| rule.action,
@@ -755,6 +755,8 @@ impl DnsOutboundSettings {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DnsOutboundRule {
     pub action: DnsOutboundRuleAction,
+    /// DNS response code used by `Return` and by non-address `Hijack` rules.
+    pub r_code: u16,
     pub qtype_ranges: Vec<DnsQTypeRange>,
     pub domain_matchers: Vec<DomainMatcher>,
 }
@@ -784,7 +786,7 @@ fn normalize_dns_qname(domain: &str) -> String {
 pub enum DnsOutboundRuleAction {
     Direct,
     Drop,
-    Reject,
+    Return,
     Hijack,
 }
 
@@ -1059,6 +1061,10 @@ pub struct XhttpSettings {
     pub uplink_http_method: String,
     pub session_placement: XhttpPlacement,
     pub session_key: String,
+    /// Empty selects Xray's UUID v4 fallback. Non-empty values retain the
+    /// configured alias/custom table for transport-side expansion.
+    pub session_id_table: String,
+    pub session_id_length: XhttpRange,
     pub seq_placement: XhttpPlacement,
     pub seq_key: String,
     pub uplink_data_placement: XhttpUplinkDataPlacement,
@@ -1090,6 +1096,8 @@ impl Default for XhttpSettings {
             uplink_http_method: "POST".to_owned(),
             session_placement: XhttpPlacement::Path,
             session_key: String::new(),
+            session_id_table: String::new(),
+            session_id_length: XhttpRange::default(),
             seq_placement: XhttpPlacement::Path,
             seq_key: String::new(),
             uplink_data_placement: XhttpUplinkDataPlacement::Auto,
@@ -1212,6 +1220,15 @@ pub struct TlsSettings {
     /// shaping. `None` reaches here only from call sites that build the model
     /// directly, where it also means no shaping.
     pub fingerprint: Option<String>,
+    /// SHA-256 fingerprints of complete DER-encoded peer certificates from
+    /// Xray's comma-separated `pinnedPeerCertSha256` setting.
+    pub pinned_peer_cert_sha256: Vec<[u8; 32]>,
+    /// Alternative certificate verification names parsed from Xray's
+    /// comma-separated `verifyPeerCertByName` setting. Any one matching DNS
+    /// or IP SAN is sufficient; this list is independent of the TLS SNI.
+    pub verify_peer_cert_by_name: Vec<String>,
+    /// Programmatic-only escape hatch retained for local test fixtures. The
+    /// canonical Xray JSON parser rejects `allowInsecure: true`.
     pub allow_insecure: bool,
     /// `tlsSettings.alpn`, verbatim.
     pub alpn: Vec<String>,
@@ -1256,4 +1273,137 @@ impl RealityShortId {
 pub enum TargetAddr {
     Ip(std::net::IpAddr),
     Domain(String),
+}
+
+impl TargetAddr {
+    /// Whether Xray-core exempts this server address from its outbound
+    /// transport-security requirement.
+    ///
+    /// This intentionally uses Xray's broader private/reserved/test set, not
+    /// the routing-oriented [`IpMatcher::Private`] set. Xray normalizes one
+    /// trailing domain dot and domain case before applying these rules.
+    pub fn is_xray_plaintext_server_exempt(&self) -> bool {
+        match self {
+            Self::Ip(ip) => {
+                let ip = canonicalize_ip_matcher_address(*ip);
+                xray_plaintext_server_cidrs()
+                    .iter()
+                    .any(|cidr| cidr.matches(&ip))
+            }
+            Self::Domain(domain) => xray_plaintext_server_domain_matches(domain),
+        }
+    }
+}
+
+fn xray_plaintext_server_domain_matches(domain: &str) -> bool {
+    let normalized = domain.to_lowercase();
+    let normalized = normalized.strip_suffix('.').unwrap_or(&normalized);
+    const PRIVATE_SUFFIXES: [&str; 9] = [
+        "lan",
+        "localdomain",
+        "example",
+        "invalid",
+        "localhost",
+        "test",
+        "local",
+        "home.arpa",
+        "internal",
+    ];
+
+    PRIVATE_SUFFIXES
+        .iter()
+        .any(|suffix| domain_matches_suffix(normalized, suffix))
+        || xray_dotless_domain_matches(normalized)
+}
+
+fn xray_dotless_domain_matches(domain: &str) -> bool {
+    let bytes = domain.as_bytes();
+    if bytes.is_empty() || bytes.len() > 63 || !bytes[0].is_ascii_lowercase() {
+        return false;
+    }
+    if bytes.len() == 1 {
+        return true;
+    }
+
+    bytes[1..bytes.len() - 1]
+        .iter()
+        .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-')
+        && bytes[bytes.len() - 1].is_ascii_alphanumeric()
+}
+
+fn xray_plaintext_server_cidrs() -> [IpCidr; 18] {
+    [
+        IpCidr {
+            network: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+            prefix: 8,
+        },
+        IpCidr {
+            network: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 0)),
+            prefix: 8,
+        },
+        IpCidr {
+            network: IpAddr::V4(Ipv4Addr::new(100, 64, 0, 0)),
+            prefix: 10,
+        },
+        IpCidr {
+            network: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 0)),
+            prefix: 8,
+        },
+        IpCidr {
+            network: IpAddr::V4(Ipv4Addr::new(169, 254, 0, 0)),
+            prefix: 16,
+        },
+        IpCidr {
+            network: IpAddr::V4(Ipv4Addr::new(172, 16, 0, 0)),
+            prefix: 12,
+        },
+        IpCidr {
+            network: IpAddr::V4(Ipv4Addr::new(192, 0, 0, 0)),
+            prefix: 24,
+        },
+        IpCidr {
+            network: IpAddr::V4(Ipv4Addr::new(192, 0, 2, 0)),
+            prefix: 24,
+        },
+        IpCidr {
+            network: IpAddr::V4(Ipv4Addr::new(192, 88, 99, 0)),
+            prefix: 24,
+        },
+        IpCidr {
+            network: IpAddr::V4(Ipv4Addr::new(192, 168, 0, 0)),
+            prefix: 16,
+        },
+        IpCidr {
+            network: IpAddr::V4(Ipv4Addr::new(198, 18, 0, 0)),
+            prefix: 15,
+        },
+        IpCidr {
+            network: IpAddr::V4(Ipv4Addr::new(198, 51, 100, 0)),
+            prefix: 24,
+        },
+        IpCidr {
+            network: IpAddr::V4(Ipv4Addr::new(203, 0, 113, 0)),
+            prefix: 24,
+        },
+        IpCidr {
+            network: IpAddr::V4(Ipv4Addr::new(224, 0, 0, 0)),
+            prefix: 3,
+        },
+        IpCidr {
+            network: IpAddr::V6(Ipv6Addr::UNSPECIFIED),
+            prefix: 127,
+        },
+        IpCidr {
+            network: IpAddr::V6(Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 0)),
+            prefix: 7,
+        },
+        IpCidr {
+            network: IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 0)),
+            prefix: 10,
+        },
+        IpCidr {
+            network: IpAddr::V6(Ipv6Addr::new(0xff00, 0, 0, 0, 0, 0, 0, 0)),
+            prefix: 8,
+        },
+    ]
 }

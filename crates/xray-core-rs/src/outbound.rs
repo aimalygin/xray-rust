@@ -284,6 +284,8 @@ pub(crate) enum DnsTcpConnector {
     /// of the shape is carried here rather than rebuilt per dial.
     TlsFromTarget {
         allow_insecure: bool,
+        pinned_peer_cert_sha256: Vec<[u8; 32]>,
+        verify_peer_cert_by_name: Vec<String>,
         alpn: Vec<String>,
         fingerprint: Option<String>,
     },
@@ -421,6 +423,8 @@ impl DnsOutbound {
             DnsTcpConnector::Static(connector) => Ok(connector.clone()),
             DnsTcpConnector::TlsFromTarget {
                 allow_insecure,
+                pinned_peer_cert_sha256,
+                verify_peer_cert_by_name,
                 alpn,
                 fingerprint,
             } => {
@@ -434,6 +438,8 @@ impl DnsOutbound {
                 Ok(ConnectorConfig::Tls(TlsClientConfig {
                     server_name,
                     allow_insecure: *allow_insecure,
+                    pinned_peer_cert_sha256: pinned_peer_cert_sha256.clone(),
+                    verify_peer_cert_by_name: verify_peer_cert_by_name.clone(),
                     alpn: alpn.clone(),
                     fingerprint: fingerprint.clone(),
                 }))
@@ -1439,6 +1445,8 @@ fn xhttp_config(settings: &XhttpSettings, is_reality: bool) -> Result<XhttpConfi
         uplink_http_method: settings.uplink_http_method.clone(),
         session_placement: xhttp_metadata_placement(settings.session_placement),
         session_key: settings.session_key.clone(),
+        session_id_table: settings.session_id_table.clone(),
+        session_id_length: xhttp_range(settings.session_id_length),
         seq_placement: xhttp_metadata_placement(settings.seq_placement),
         seq_key: settings.seq_key.clone(),
         uplink_data_placement: xhttp_uplink_data_placement(settings.uplink_data_placement),
@@ -1847,17 +1855,10 @@ fn grpc_user_agent(configured: Option<&str>) -> Result<HeaderValue, CoreError> {
 /// difference is only observable once that key reaches a message, which is the
 /// last row of `a_derived_authority_is_not_refused_as_the_configured_one`.
 ///
-/// The one input where the two would part in *value* is a TLS stream over an IP
-/// destination: upstream leaves the authority empty and falls to `host:port`,
-/// and the connector has nothing to offer. `build_vless_tcp_outbound` refuses
-/// that config with `UnsupportedOutboundSecurity` before the authority is
-/// resolved at all, so it is unreachable from here either way.
-///
-/// The empty-name arm is likewise unreachable — the same function refuses an
-/// explicitly empty `serverName` — and is kept because `dial.go:162` tests
-/// emptiness too: without it this would encode an invariant of one caller
-/// rather than Xray's rule, and a caller that stops holding it would send
-/// `:authority: ` empty instead of falling through to the destination.
+/// The distinction becomes visible for a TLS stream over an IP destination:
+/// the connector carries that IP for certificate-name verification, while
+/// upstream gRPC still sees the raw absent/empty setting and falls through to
+/// `host:port`. Reading this function from the config preserves that split.
 fn configured_tls_server_name(security: &StreamSecurity) -> Option<&str> {
     match security {
         StreamSecurity::Tls(tls) => tls
@@ -2019,16 +2020,17 @@ fn build_vless_tcp_outbound(outbound: &OutboundConfig) -> Result<VlessTcpOutboun
         StreamSecurity::Tls(tls) => {
             let server_name = match tls.server_name.as_deref() {
                 Some(name) if !name.is_empty() => name.to_owned(),
-                Some(_) => return Err(CoreError::UnsupportedOutboundSecurity),
-                None => match &settings.server {
+                Some(_) | None => match &settings.server {
                     TargetAddr::Domain(domain) => domain.clone(),
-                    TargetAddr::Ip(_) => return Err(CoreError::UnsupportedOutboundSecurity),
+                    TargetAddr::Ip(ip) => ip.to_string(),
                 },
             };
 
             ConnectorConfig::Tls(TlsClientConfig {
                 server_name,
                 allow_insecure: tls.allow_insecure,
+                pinned_peer_cert_sha256: tls.pinned_peer_cert_sha256.clone(),
+                verify_peer_cert_by_name: tls.verify_peer_cert_by_name.clone(),
                 alpn: tls.alpn.clone(),
                 fingerprint: tls.fingerprint.clone(),
             })
@@ -2074,12 +2076,16 @@ fn dns_tcp_connector(stream: &StreamSettings) -> Result<DnsTcpConnector, CoreErr
                 ConnectorConfig::Tls(TlsClientConfig {
                     server_name: server_name.to_owned(),
                     allow_insecure: tls.allow_insecure,
+                    pinned_peer_cert_sha256: tls.pinned_peer_cert_sha256.clone(),
+                    verify_peer_cert_by_name: tls.verify_peer_cert_by_name.clone(),
                     alpn: tls.alpn.clone(),
                     fingerprint: tls.fingerprint.clone(),
                 }),
             )),
             Some(_) | None => Ok(DnsTcpConnector::TlsFromTarget {
                 allow_insecure: tls.allow_insecure,
+                pinned_peer_cert_sha256: tls.pinned_peer_cert_sha256.clone(),
+                verify_peer_cert_by_name: tls.verify_peer_cert_by_name.clone(),
                 alpn: tls.alpn.clone(),
                 fingerprint: tls.fingerprint.clone(),
             }),
@@ -2778,7 +2784,9 @@ mod tests {
                 security: StreamSecurity::Tls(TlsSettings {
                     server_name: Some("resolver.example".to_owned()),
                     fingerprint: None,
-                    allow_insecure: true,
+                    allow_insecure: false,
+                    pinned_peer_cert_sha256: vec![[0x11; 32]],
+                    verify_peer_cert_by_name: vec!["resolver-cert.example".to_owned()],
                     alpn: Vec::new(),
                 }),
                 quic_params: None,
@@ -2798,7 +2806,9 @@ mod tests {
                 .expect("build explicit DNS connector"),
             ConnectorConfig::Tls(TlsClientConfig {
                 server_name: "resolver.example".to_owned(),
-                allow_insecure: true,
+                allow_insecure: false,
+                pinned_peer_cert_sha256: vec![[0x11; 32]],
+                verify_peer_cert_by_name: vec!["resolver-cert.example".to_owned()],
                 alpn: Vec::new(),
                 fingerprint: None,
             })
@@ -2815,6 +2825,8 @@ mod tests {
                         server_name,
                         fingerprint: None,
                         allow_insecure: false,
+                        pinned_peer_cert_sha256: vec![[0x22; 32]],
+                        verify_peer_cert_by_name: vec!["dynamic-cert.example".to_owned()],
                         alpn: Vec::new(),
                     }),
                     quic_params: None,
@@ -2830,6 +2842,8 @@ mod tests {
                 ConnectorConfig::Tls(TlsClientConfig {
                     server_name: "rewritten.example".to_owned(),
                     allow_insecure: false,
+                    pinned_peer_cert_sha256: vec![[0x22; 32]],
+                    verify_peer_cert_by_name: vec!["dynamic-cert.example".to_owned()],
                     alpn: Vec::new(),
                     fingerprint: None,
                 })
@@ -2838,7 +2852,7 @@ mod tests {
     }
 
     #[test]
-    fn tls_outbound_carries_the_fingerprint_into_the_connector() {
+    fn tls_outbound_carries_the_tls_shape_into_the_static_dns_connector() {
         let stream = StreamSettings {
             network: Network::Tcp,
             transport: StreamTransport::Raw,
@@ -2846,6 +2860,8 @@ mod tests {
                 server_name: Some("example.com".to_owned()),
                 fingerprint: Some("firefox".to_owned()),
                 allow_insecure: false,
+                pinned_peer_cert_sha256: vec![[0x33; 32]],
+                verify_peer_cert_by_name: vec!["cert.example".to_owned()],
                 alpn: vec!["http/1.1".to_owned()],
             }),
             quic_params: None,
@@ -2858,11 +2874,13 @@ mod tests {
             panic!("expected a static TLS connector");
         };
         assert_eq!(tls.fingerprint.as_deref(), Some("firefox"));
+        assert_eq!(tls.pinned_peer_cert_sha256, vec![[0x33; 32]]);
+        assert_eq!(tls.verify_peer_cert_by_name, ["cert.example"]);
         assert_eq!(tls.alpn, vec!["http/1.1".to_owned()]);
     }
 
     #[test]
-    fn target_derived_tls_connector_carries_the_fingerprint() {
+    fn target_derived_dns_tls_connector_carries_the_full_tls_shape() {
         // An omitted server name defers the whole config to dial time, so the
         // shape has to survive the deferral, not just the static branch.
         let outbound = DnsOutbound::new_with_stream(
@@ -2874,6 +2892,8 @@ mod tests {
                     server_name: None,
                     fingerprint: Some("firefox".to_owned()),
                     allow_insecure: false,
+                    pinned_peer_cert_sha256: vec![[0x44; 32]],
+                    verify_peer_cert_by_name: vec!["cert.example".to_owned()],
                     alpn: vec!["h2".to_owned()],
                 }),
                 quic_params: None,
@@ -2890,10 +2910,55 @@ mod tests {
             ConnectorConfig::Tls(TlsClientConfig {
                 server_name: "rewritten.example".to_owned(),
                 allow_insecure: false,
+                pinned_peer_cert_sha256: vec![[0x44; 32]],
+                verify_peer_cert_by_name: vec!["cert.example".to_owned()],
                 alpn: vec!["h2".to_owned()],
                 fingerprint: Some("firefox".to_owned()),
             })
         );
+    }
+
+    #[test]
+    fn vless_tls_carries_pins_and_derives_dns_or_ip_verification_name() {
+        for (server, configured_name, expected_name) in [
+            (
+                TargetAddr::Domain("origin.example".to_owned()),
+                None,
+                "origin.example",
+            ),
+            (
+                TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
+                Some(String::new()),
+                "127.0.0.1",
+            ),
+        ] {
+            let mut outbound = direct_selection_vless("proxy");
+            let OutboundSettings::Vless(settings) = &mut outbound.settings else {
+                panic!("expected VLESS settings");
+            };
+            settings.server = server;
+            outbound.stream.security = StreamSecurity::Tls(TlsSettings {
+                server_name: configured_name,
+                fingerprint: Some("unsafe".to_owned()),
+                pinned_peer_cert_sha256: vec![[0x55; 32]],
+                verify_peer_cert_by_name: vec!["cert.example".to_owned()],
+                allow_insecure: false,
+                alpn: vec!["h2".to_owned()],
+            });
+
+            let built = build_vless_tcp_outbound(&outbound).expect("build pinned VLESS TLS");
+            assert_eq!(
+                built.transport(),
+                &ConnectorConfig::Tls(TlsClientConfig {
+                    server_name: expected_name.to_owned(),
+                    allow_insecure: false,
+                    pinned_peer_cert_sha256: vec![[0x55; 32]],
+                    verify_peer_cert_by_name: vec!["cert.example".to_owned()],
+                    alpn: vec!["h2".to_owned()],
+                    fingerprint: Some("unsafe".to_owned()),
+                })
+            );
+        }
     }
 
     #[test]
@@ -3036,6 +3101,8 @@ mod tests {
                     server_name: Some("resolver.example".to_owned()),
                     fingerprint: None,
                     allow_insecure: false,
+                    pinned_peer_cert_sha256: Vec::new(),
+                    verify_peer_cert_by_name: Vec::new(),
                     alpn: Vec::new(),
                 }),
                 quic_params: None,
@@ -3843,6 +3910,8 @@ mod tests {
             server_name: server_name.map(str::to_owned),
             fingerprint: Some("chrome".to_owned()),
             allow_insecure: false,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
             alpn: alpn.iter().map(|protocol| (*protocol).to_owned()).collect(),
         })
     }
@@ -4048,6 +4117,8 @@ mod tests {
             uplink_http_method: "PUT".to_owned(),
             session_placement: xray_config::XhttpPlacement::Cookie,
             session_key: "session_key".to_owned(),
+            session_id_table: "Base62".to_owned(),
+            session_id_length: xray_config::XhttpRange { from: 6, to: 9 },
             seq_placement: xray_config::XhttpPlacement::Header,
             seq_key: "X-Sequence-Key".to_owned(),
             uplink_data_placement: xray_config::XhttpUplinkDataPlacement::Body,
@@ -4075,7 +4146,7 @@ mod tests {
 
         let config = xhttp_config(&settings, false).unwrap();
         assert_eq!(config.mode, xray_transport::stream::XhttpMode::StreamUp);
-        assert_eq!(config.path, "/wire/");
+        assert_eq!(config.path, "/wire");
         assert_eq!(config.raw_query, "existing=1");
         assert_eq!(config.fragment, "part");
         assert_eq!(config.headers.get("X-First"), Some("one"));
@@ -4090,6 +4161,12 @@ mod tests {
         assert_eq!(config.uplink_http_method, "PUT");
         assert_eq!(config.session.placement, XhttpMetadataPlacement::Cookie);
         assert_eq!(config.session.key, "session_key");
+        assert_eq!(
+            config.session_id.table,
+            "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+        );
+        assert_eq!(config.session_id.length.from, 6);
+        assert_eq!(config.session_id.length.to, 9);
         assert_eq!(config.sequence.placement, XhttpMetadataPlacement::Header);
         assert_eq!(config.sequence.key, "X-Sequence-Key");
         assert_eq!(config.uplink_data.placement, XhttpUplinkDataPlacement::Body);
@@ -4336,6 +4413,8 @@ mod tests {
                     server_name: Some(name.to_owned()),
                     fingerprint: None,
                     allow_insecure: false,
+                    pinned_peer_cert_sha256: Vec::new(),
+                    verify_peer_cert_by_name: Vec::new(),
                     alpn: Vec::new(),
                 }),
                 (None, true) => StreamSecurity::Reality(reality_settings()),
@@ -4369,11 +4448,10 @@ mod tests {
     /// upstream takes branch 3 where a connector-driven port would take
     /// branch 2, and both land on the destination domain.
     ///
-    /// The one input where they would part is a TLS stream over an *IP*
-    /// destination — upstream leaves the authority empty and falls to
-    /// `host:port`, a connector-driven port has nothing to read — and
-    /// `build_vless_tcp_outbound` refuses that config with
-    /// `UnsupportedOutboundSecurity` before the authority is resolved at all.
+    /// For an IP destination the branches do differ by value: the connector
+    /// carries the IP for TLS certificate-name verification, but this authority
+    /// path reads the raw absent name and therefore keeps upstream's
+    /// `host:port` fallback. The next test pins that reachable case.
     #[test]
     fn a_tls_stream_without_a_server_name_takes_the_destination_branch() {
         let outbound = grpc_vless(
@@ -4382,6 +4460,8 @@ mod tests {
                 server_name: None,
                 fingerprint: None,
                 allow_insecure: false,
+                pinned_peer_cert_sha256: Vec::new(),
+                verify_peer_cert_by_name: Vec::new(),
                 alpn: Vec::new(),
             }),
             TargetAddr::Domain("dest.example.com".to_owned()),
@@ -4415,6 +4495,11 @@ mod tests {
                 TargetAddr::Ip(IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1))),
                 StreamSecurity::Reality(reality_settings()),
                 "[2001:db8::1]:443",
+            ),
+            (
+                TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 2))),
+                tls_security(None, &[]),
+                "192.0.2.2:443",
             ),
             (
                 TargetAddr::Ip(IpAddr::V6(Ipv6Addr::new(
@@ -4555,6 +4640,8 @@ mod tests {
                     server_name: Some("例え.jp".to_owned()),
                     fingerprint: None,
                     allow_insecure: false,
+                    pinned_peer_cert_sha256: Vec::new(),
+                    verify_peer_cert_by_name: Vec::new(),
                     alpn: Vec::new(),
                 }),
                 TargetAddr::Domain("dest.example.com".to_owned()),
@@ -4566,6 +4653,8 @@ mod tests {
                     server_name: None,
                     fingerprint: None,
                     allow_insecure: false,
+                    pinned_peer_cert_sha256: Vec::new(),
+                    verify_peer_cert_by_name: Vec::new(),
                     alpn: Vec::new(),
                 }),
                 TargetAddr::Domain("例え.jp".to_owned()),
@@ -4669,6 +4758,8 @@ mod tests {
                         server_name: Some(forged.to_owned()),
                         fingerprint: None,
                         allow_insecure: false,
+                        pinned_peer_cert_sha256: Vec::new(),
+                        verify_peer_cert_by_name: Vec::new(),
                         alpn: Vec::new(),
                     }),
                     TargetAddr::Domain("dest.example.com".to_owned()),
@@ -5433,6 +5524,8 @@ mod tests {
             &ConnectorConfig::Tls(TlsClientConfig {
                 server_name: "example.com".to_owned(),
                 allow_insecure: false,
+                pinned_peer_cert_sha256: Vec::new(),
+                verify_peer_cert_by_name: Vec::new(),
                 alpn: Vec::new(),
                 fingerprint: Some("chrome".to_owned()),
             }),
@@ -5545,6 +5638,8 @@ mod tests {
             &ConnectorConfig::Tls(TlsClientConfig {
                 server_name: "example.com".to_owned(),
                 allow_insecure: false,
+                pinned_peer_cert_sha256: Vec::new(),
+                verify_peer_cert_by_name: Vec::new(),
                 alpn: Vec::new(),
                 fingerprint: Some("chrome".to_owned()),
             }),

@@ -183,6 +183,8 @@ async fn run_local_xray_vless_tls_interop(flow: Option<&'static str>) {
             server_name: Some(TLS_SERVER_NAME.to_owned()),
             fingerprint: None,
             allow_insecure: false,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
             alpn: Vec::new(),
         }),
         flow,
@@ -1935,6 +1937,8 @@ async fn run_local_xray_stream_transport_interop(
                 // HTTP/1.1 WebSocket/Upgrade request.
                 fingerprint: Some("chrome".to_owned()),
                 allow_insecure: true,
+                pinned_peer_cert_sha256: Vec::new(),
+                verify_peer_cert_by_name: Vec::new(),
                 alpn: Vec::new(),
             }),
             None,
@@ -2110,6 +2114,8 @@ async fn run_local_xray_xhttp_interop(case: XhttpInteropCase) {
                 server_name: Some(TLS_SERVER_NAME.to_owned()),
                 fingerprint: Some("chrome".to_owned()),
                 allow_insecure: true,
+                pinned_peer_cert_sha256: Vec::new(),
+                verify_peer_cert_by_name: Vec::new(),
                 alpn: vec!["http/1.1".to_owned()],
             }),
         ),
@@ -2120,6 +2126,8 @@ async fn run_local_xray_xhttp_interop(case: XhttpInteropCase) {
                 server_name: Some(TLS_SERVER_NAME.to_owned()),
                 fingerprint: Some("chrome".to_owned()),
                 allow_insecure: true,
+                pinned_peer_cert_sha256: Vec::new(),
+                verify_peer_cert_by_name: Vec::new(),
                 alpn: vec!["h2".to_owned()],
             }),
         ),
@@ -2135,6 +2143,8 @@ async fn run_local_xray_xhttp_interop(case: XhttpInteropCase) {
                 server_name: Some(TLS_SERVER_NAME.to_owned()),
                 fingerprint: Some("chrome".to_owned()),
                 allow_insecure: true,
+                pinned_peer_cert_sha256: Vec::new(),
+                verify_peer_cert_by_name: Vec::new(),
                 alpn: vec!["h3".to_owned()],
             }),
         ),
@@ -2655,6 +2665,8 @@ fn grpc_client_security(security: XrayInboundSecurity) -> StreamSecurity {
             server_name: Some(TLS_SERVER_NAME.to_owned()),
             fingerprint: Some(GRPC_TLS_FINGERPRINT.to_owned()),
             allow_insecure: true,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
             // Left empty on purpose. An `alpn` of `["h2"]` would also reach
             // the server, but by a route no profile takes: the shaped path
             // narrows the profile's list only for exactly `["http/1.1"]`

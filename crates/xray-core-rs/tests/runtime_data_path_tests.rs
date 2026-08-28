@@ -707,6 +707,8 @@ fn runtime_tun_config_with_tls_vision_vless_domain_server(
             server_name: Some(server_name.to_owned()),
             fingerprint: None,
             allow_insecure: false,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
             alpn: Vec::new(),
         }),
         TargetAddr::Domain(domain.to_owned()),
@@ -1043,6 +1045,8 @@ fn runtime_config_with_tls_vless_domain_server(
                 server_name: Some(server_name.to_owned()),
                 fingerprint: None,
                 allow_insecure: false,
+                pinned_peer_cert_sha256: Vec::new(),
+                verify_peer_cert_by_name: Vec::new(),
                 alpn: Vec::new(),
             }),
             TargetAddr::Domain(domain.to_owned()),
@@ -1359,7 +1363,7 @@ fn parsed_plain_tls_config_builds_an_outbound_with_the_default_fingerprint() {
 }
 
 #[test]
-fn parsed_config_tls_fingerprint_and_alpn_reach_transport_config() {
+fn parsed_config_tls_shape_and_pin_reach_transport_config() {
     let raw = r#"{
         "inbounds": [],
         "outbounds": [
@@ -1387,6 +1391,8 @@ fn parsed_config_tls_fingerprint_and_alpn_reach_transport_config() {
                     "tlsSettings": {
                         "serverName": "server.example",
                         "fingerprint": "firefox",
+                        "pinnedPeerCertSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                        "verifyPeerCertByName": "cert-a.example, 127.0.0.1",
                         "alpn": ["h2", "http/1.1"]
                     }
                 }
@@ -1402,38 +1408,25 @@ fn parsed_config_tls_fingerprint_and_alpn_reach_transport_config() {
         panic!("expected a TLS transport");
     };
     assert_eq!(tls.fingerprint.as_deref(), Some("firefox"));
+    assert_eq!(tls.pinned_peer_cert_sha256, vec![[0x11; 32]]);
+    assert_eq!(
+        tls.verify_peer_cert_by_name,
+        ["cert-a.example", "127.0.0.1"]
+    );
     assert_eq!(tls.alpn, vec!["h2".to_owned(), "http/1.1".to_owned()]);
 }
 
 #[test]
-fn parsed_apple_xhttp_tls_config_reaches_the_dial_ready_h1_transport() {
+fn parsed_apple_xhttp_tls_allow_insecure_fails_closed() {
     let raw = include_str!("../../../tests/fixtures/configs/vless_xhttp_tls_importer.json");
-    let parsed = parse_xray_json(raw).expect("Apple XHTTP+TLS config should parse");
-    let selected = compile_vless_tcp_outbound_one_shot(&parsed.config)
-        .expect("Apple XHTTP+TLS config should compile");
-
-    let xray_transport::ConnectorConfig::Tls(tls) = selected.transport() else {
-        panic!("expected TLS connector");
+    let error = match parse_xray_json(raw) {
+        Ok(_) => panic!("legacy allowInsecure must not reach a dial-ready TLS transport"),
+        Err(error) => error,
     };
-    assert_eq!(tls.server_name, "remote.example");
-    assert_eq!(tls.fingerprint.as_deref(), Some("chrome"));
-    assert_eq!(tls.alpn, ["http/1.1"]);
-    assert!(tls.allow_insecure);
-    assert!(selected.user().flow.is_none());
-
-    let TransportLayer::Xhttp(xhttp) = selected.transport_layer() else {
-        panic!("expected XHTTP transport");
-    };
-    assert_eq!(xhttp.http_version(), XhttpHttpVersion::Http1);
-    assert_eq!(xhttp.endpoint().scheme, XhttpScheme::Https);
-    assert_eq!(xhttp.endpoint().authority, "edge.example");
-    assert_eq!(
-        xhttp.config().mode,
-        xray_transport::stream::XhttpMode::PacketUp
-    );
-    assert_eq!(xhttp.config().path, "/api/");
-    assert_eq!(xhttp.config().max_each_post_bytes.from, 500_000);
-    assert_eq!(xhttp.config().max_each_post_bytes.to, 500_000);
+    assert!(error.diagnostics.iter().any(|diagnostic| {
+        diagnostic.path.as_deref()
+            == Some("$.outbounds[0].streamSettings.tlsSettings.allowInsecure")
+    }));
 }
 
 #[test]
@@ -1468,6 +1461,40 @@ fn parsed_apple_xhttp_reality_config_reaches_the_dial_ready_h2_transport() {
     assert_eq!(xhttp.config().path, "/reality/");
     assert_eq!(xhttp.config().padding.range.from, 10);
     assert_eq!(xhttp.config().padding.range.to, 20);
+}
+
+#[test]
+fn parsed_xhttp_custom_session_id_policy_reaches_the_dial_ready_transport() {
+    let mut candidate: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/configs/vless_xhttp_reality_importer.json"
+    ))
+    .unwrap();
+    let extra = candidate
+        .pointer_mut("/outbounds/0/streamSettings/xhttpSettings/extra")
+        .and_then(serde_json::Value::as_object_mut)
+        .expect("effective XHTTP extra object");
+    extra.insert(
+        "sessionIDTable".to_owned(),
+        serde_json::Value::String("Base62".to_owned()),
+    );
+    extra.insert(
+        "sessionIDLength".to_owned(),
+        serde_json::Value::String("9-6".to_owned()),
+    );
+
+    let parsed = parse_xray_json(&candidate.to_string()).expect("custom session ID config");
+    let selected = compile_vless_tcp_outbound_one_shot(&parsed.config)
+        .expect("custom session ID config should compile");
+    let TransportLayer::Xhttp(xhttp) = selected.transport_layer() else {
+        panic!("expected XHTTP transport");
+    };
+
+    assert_eq!(
+        xhttp.config().session_id.table,
+        "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+    );
+    assert_eq!(xhttp.config().session_id.length.from, 6);
+    assert_eq!(xhttp.config().session_id.length.to, 9);
 }
 
 #[test]
@@ -1506,10 +1533,14 @@ fn parsed_apple_xhttp_reality_optional_mldsa_reaches_the_connector() {
 
 #[test]
 fn parsed_apple_xhttp_tls_alpn_selects_h1_h2_and_h3_exactly_like_xray() {
-    let base: serde_json::Value = serde_json::from_str(include_str!(
+    let mut base: serde_json::Value = serde_json::from_str(include_str!(
         "../../../tests/fixtures/configs/vless_xhttp_tls_importer.json"
     ))
     .unwrap();
+    base.pointer_mut("/outbounds/0/streamSettings/tlsSettings")
+        .and_then(serde_json::Value::as_object_mut)
+        .expect("TLS settings")
+        .remove("allowInsecure");
     let cases: Vec<(Option<Vec<&str>>, XhttpHttpVersion)> = vec![
         (None, XhttpHttpVersion::Http2),
         (Some(vec![]), XhttpHttpVersion::Http2),
@@ -1557,6 +1588,12 @@ async fn parsed_xhttp_vision_is_rejected_before_dns_or_transport_dial() {
         include_str!("../../../tests/fixtures/configs/vless_xhttp_reality_importer.json"),
     ] {
         let mut candidate: serde_json::Value = serde_json::from_str(raw).unwrap();
+        if let Some(tls) = candidate
+            .pointer_mut("/outbounds/0/streamSettings/tlsSettings")
+            .and_then(serde_json::Value::as_object_mut)
+        {
+            tls.remove("allowInsecure");
+        }
         candidate
             .pointer_mut("/outbounds/0/settings/vnext/0/users/0")
             .and_then(serde_json::Value::as_object_mut)
@@ -1596,6 +1633,8 @@ fn selects_tls_vless_outbound_without_fingerprint() {
             server_name: Some("server.example".to_owned()),
             fingerprint: None,
             allow_insecure: false,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
             alpn: Vec::new(),
         }),
         TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
@@ -1618,6 +1657,8 @@ fn selects_tls_explicit_server_name_over_domain_outbound() {
             server_name: Some("override.example".to_owned()),
             fingerprint: None,
             allow_insecure: false,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
             alpn: Vec::new(),
         }),
         TargetAddr::Domain("vless.test".to_owned()),
@@ -1639,6 +1680,8 @@ fn selects_tls_server_name_from_domain_outbound_when_missing() {
             server_name: None,
             fingerprint: None,
             allow_insecure: false,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
             alpn: Vec::new(),
         }),
         TargetAddr::Domain("vless.test".to_owned()),
@@ -1654,44 +1697,48 @@ fn selects_tls_server_name_from_domain_outbound_when_missing() {
 }
 
 #[test]
-fn rejects_tls_empty_server_name() {
+fn empty_tls_server_name_falls_back_to_domain_outbound() {
     let config = config_with_outbound(vless_outbound(
         StreamSecurity::Tls(TlsSettings {
             server_name: Some("".to_owned()),
             fingerprint: None,
             allow_insecure: false,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
             alpn: Vec::new(),
         }),
         TargetAddr::Domain("vless.test".to_owned()),
         443,
     ));
 
-    let result = compile_vless_tcp_outbound_one_shot(&config);
+    let selected = compile_vless_tcp_outbound_one_shot(&config).unwrap();
 
     assert!(matches!(
-        result,
-        Err(CoreError::UnsupportedOutboundSecurity)
+        selected.transport(),
+        xray_transport::ConnectorConfig::Tls(config) if config.server_name == "vless.test"
     ));
 }
 
 #[test]
-fn rejects_tls_ip_server_without_server_name() {
+fn missing_tls_server_name_falls_back_to_ip_outbound() {
     let config = config_with_outbound(vless_outbound(
         StreamSecurity::Tls(TlsSettings {
             server_name: None,
             fingerprint: None,
             allow_insecure: false,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
             alpn: Vec::new(),
         }),
         TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
         443,
     ));
 
-    let result = compile_vless_tcp_outbound_one_shot(&config);
+    let selected = compile_vless_tcp_outbound_one_shot(&config).unwrap();
 
     assert!(matches!(
-        result,
-        Err(CoreError::UnsupportedOutboundSecurity)
+        selected.transport(),
+        xray_transport::ConnectorConfig::Tls(config) if config.server_name == "203.0.113.10"
     ));
 }
 
@@ -1737,6 +1784,8 @@ fn selects_tls_vision_outbound_for_protected_stream_boundary() {
             server_name: Some("example.com".to_owned()),
             fingerprint: None,
             allow_insecure: false,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
             alpn: Vec::new(),
         }),
         TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
@@ -2251,10 +2300,10 @@ async fn tun_in_pool_unmapped_quic_sniffing_dispatches_to_dns_outbound() {
 }
 
 #[tokio::test]
-async fn tun_dns_outbound_udp_reject_rule_returns_refused_without_upstream_io() {
+async fn tun_dns_outbound_udp_return_rule_uses_configured_rcode_without_upstream_io() {
     timeout(
         Duration::from_secs(2),
-        run_tun_dns_outbound_udp_reject_scenario(),
+        run_tun_dns_outbound_udp_return_scenario(),
     )
     .await
     .unwrap();
@@ -2291,10 +2340,10 @@ async fn tun_dns_outbound_udp_direct_preserves_update_opcode_wire_message() {
 }
 
 #[tokio::test]
-async fn tun_dns_outbound_tcp_drop_then_reject_keeps_connection_open() {
+async fn tun_dns_outbound_tcp_drop_then_return_keeps_connection_open() {
     timeout(
         Duration::from_secs(2),
-        run_tun_dns_outbound_tcp_drop_then_reject_scenario(),
+        run_tun_dns_outbound_tcp_drop_then_return_scenario(),
     )
     .await
     .unwrap();
@@ -2331,7 +2380,7 @@ async fn tun_dns_outbound_tcp_direct_streams_axfr_after_regular_query() {
 }
 
 #[tokio::test]
-async fn tun_dns_outbound_default_hijacks_a_and_rejects_non_ip_query() {
+async fn tun_dns_outbound_default_hijacks_a_and_returns_noerror_for_non_ip_query() {
     timeout(
         Duration::from_secs(2),
         run_tun_dns_outbound_default_policy_scenario(),
@@ -4629,12 +4678,13 @@ async fn run_tun_fake_dns_full_pool_fail_closed_scenario() {
     core.stop().await.unwrap();
 }
 
-async fn run_tun_dns_outbound_udp_reject_scenario() {
+async fn run_tun_dns_outbound_udp_return_scenario() {
     let upstream = spawn_observed_udp_dns_a_server(Ipv4Addr::new(192, 0, 2, 40)).await;
     let upstream_probe = upstream.probe();
     let settings = DnsOutboundSettings {
         rules: vec![DnsOutboundRule {
-            action: DnsOutboundRuleAction::Reject,
+            action: DnsOutboundRuleAction::Return,
+            r_code: 3,
             qtype_ranges: Vec::new(),
             domain_matchers: Vec::new(),
         }],
@@ -4645,8 +4695,8 @@ async fn run_tun_dns_outbound_udp_reject_scenario() {
     let mut core = Core::new(config).unwrap();
     core.start().await.unwrap();
 
-    let query = build_dns_a_query(0x2230, "reject-rule.example");
-    let expected = dns_response_for_query_with_flags(&query, 0x8585);
+    let query = build_dns_a_query(0x2230, "return-rule.example");
+    let expected = dns_response_for_query_with_flags(&query, 0x8583);
     send_tun_dns_udp_query(&core, 53_030, &query, &expected).await;
 
     sleep(Duration::from_millis(50)).await;
@@ -4658,7 +4708,8 @@ async fn run_tun_dns_outbound_udp_reject_scenario() {
 async fn run_tun_dns_outbound_nonstandard_port_scenario() {
     let settings = DnsOutboundSettings {
         rules: vec![DnsOutboundRule {
-            action: DnsOutboundRuleAction::Reject,
+            action: DnsOutboundRuleAction::Return,
+            r_code: 5,
             qtype_ranges: Vec::new(),
             domain_matchers: Vec::new(),
         }],
@@ -4710,6 +4761,7 @@ async fn run_tun_dns_outbound_udp_direct_tcp_rewrite_scenario() {
         rewrite_port: upstream.port(),
         rules: vec![DnsOutboundRule {
             action: DnsOutboundRuleAction::Direct,
+            r_code: 0,
             qtype_ranges: Vec::new(),
             domain_matchers: Vec::new(),
         }],
@@ -4746,6 +4798,7 @@ async fn run_tun_dns_outbound_udp_direct_update_scenario() {
         rewrite_port: server.addr().port(),
         rules: vec![DnsOutboundRule {
             action: DnsOutboundRuleAction::Direct,
+            r_code: 0,
             qtype_ranges: Vec::new(),
             domain_matchers: Vec::new(),
         }],
@@ -4761,16 +4814,18 @@ async fn run_tun_dns_outbound_udp_direct_update_scenario() {
     server.finish().await;
 }
 
-async fn run_tun_dns_outbound_tcp_drop_then_reject_scenario() {
+async fn run_tun_dns_outbound_tcp_drop_then_return_scenario() {
     let settings = DnsOutboundSettings {
         rules: vec![
             DnsOutboundRule {
                 action: DnsOutboundRuleAction::Drop,
+                r_code: 0,
                 qtype_ranges: vec![DnsQTypeRange::single(1)],
                 domain_matchers: Vec::new(),
             },
             DnsOutboundRule {
-                action: DnsOutboundRuleAction::Reject,
+                action: DnsOutboundRuleAction::Return,
+                r_code: 3,
                 qtype_ranges: vec![DnsQTypeRange::single(65)],
                 domain_matchers: Vec::new(),
             },
@@ -4791,15 +4846,15 @@ async fn run_tun_dns_outbound_tcp_drop_then_reject_scenario() {
     assert!(unexpected.is_empty());
     assert!(client.is_open());
 
-    let rejected = build_dns_https_query(0x2331, "reject-frame.example");
+    let returned = build_dns_https_query(0x2331, "return-frame.example");
     client.send_payload(&dns_tcp_stream_for_messages(std::slice::from_ref(
-        &rejected,
+        &returned,
     )));
     let responses =
         receive_dns_tcp_frames(&mut client, core.tun(), 1, Duration::from_secs(1)).await;
     assert_eq!(
         responses,
-        vec![dns_response_for_query_with_flags(&rejected, 0x8585)]
+        vec![dns_response_for_query_with_flags(&returned, 0x8583)]
     );
     assert!(client.is_open());
 
@@ -4835,6 +4890,7 @@ async fn run_tun_dns_outbound_tcp_direct_transfer_scenarios() {
             rewrite_port: server.addr().port(),
             rules: vec![DnsOutboundRule {
                 action: DnsOutboundRuleAction::Direct,
+                r_code: 0,
                 qtype_ranges: vec![DnsQTypeRange::single(query_type)],
                 domain_matchers: Vec::new(),
             }],
@@ -4866,6 +4922,7 @@ async fn run_tun_dns_outbound_tcp_direct_reuse_scenario() {
         rewrite_port: server_addr.port(),
         rules: vec![DnsOutboundRule {
             action: DnsOutboundRuleAction::Direct,
+            r_code: 0,
             qtype_ranges: Vec::new(),
             domain_matchers: Vec::new(),
         }],
@@ -4928,6 +4985,7 @@ async fn run_tun_dns_outbound_tcp_late_transfer_scenario() {
         rewrite_port: server.addr().port(),
         rules: vec![DnsOutboundRule {
             action: DnsOutboundRuleAction::Direct,
+            r_code: 0,
             qtype_ranges: Vec::new(),
             domain_matchers: Vec::new(),
         }],
@@ -4992,9 +5050,9 @@ async fn run_tun_dns_outbound_default_policy_scenario() {
     let response = ipv4_udp_payload(&reply).unwrap();
     assert_ipv4_udp_packet(&reply, anchor, 53, client_addr, client_port, response);
 
-    let non_ip_query = build_dns_https_query(0x2233, "default-reject.example");
-    let refused = dns_response_for_query_with_flags(&non_ip_query, 0x8585);
-    send_tun_dns_udp_query(&core, 53_033, &non_ip_query, &refused).await;
+    let non_ip_query = build_dns_https_query(0x2233, "default-return.example");
+    let noerror = dns_response_for_query_with_flags(&non_ip_query, 0x8580);
+    send_tun_dns_udp_query(&core, 53_033, &non_ip_query, &noerror).await;
 
     let upstream_queries = upstream_probe.snapshot();
     assert_eq!(upstream_queries.len(), 1);
@@ -5024,6 +5082,7 @@ async fn run_socks_udp_dns_outbound_direct_tcp_scenario() {
         rewrite_port: server.addr().port(),
         rules: vec![DnsOutboundRule {
             action: DnsOutboundRuleAction::Direct,
+            r_code: 0,
             qtype_ranges: Vec::new(),
             domain_matchers: Vec::new(),
         }],
@@ -5078,16 +5137,19 @@ async fn run_socks_tcp_dns_outbound_policy_stream_scenario() {
         rules: vec![
             DnsOutboundRule {
                 action: DnsOutboundRuleAction::Drop,
+                r_code: 0,
                 qtype_ranges: Vec::new(),
                 domain_matchers: vec![DomainMatcher::Full("drop.listener.example".to_owned())],
             },
             DnsOutboundRule {
-                action: DnsOutboundRuleAction::Reject,
+                action: DnsOutboundRuleAction::Return,
+                r_code: 5,
                 qtype_ranges: Vec::new(),
                 domain_matchers: vec![DomainMatcher::Full("reject.listener.example".to_owned())],
             },
             DnsOutboundRule {
                 action: DnsOutboundRuleAction::Direct,
+                r_code: 0,
                 qtype_ranges: Vec::new(),
                 domain_matchers: Vec::new(),
             },
@@ -5155,6 +5217,7 @@ async fn run_http_dns_outbound_direct_udp_scenario() {
         rewrite_port: upstream.port(),
         rules: vec![DnsOutboundRule {
             action: DnsOutboundRuleAction::Direct,
+            r_code: 0,
             qtype_ranges: Vec::new(),
             domain_matchers: Vec::new(),
         }],
@@ -5194,6 +5257,7 @@ async fn run_external_dns_tag_cannot_bypass_drop_scenario() {
     let settings = DnsOutboundSettings {
         rules: vec![DnsOutboundRule {
             action: DnsOutboundRuleAction::Drop,
+            r_code: 0,
             qtype_ranges: Vec::new(),
             domain_matchers: Vec::new(),
         }],
@@ -5364,6 +5428,7 @@ async fn run_tun_dns_outbound_fake_ip_domain_scenario() {
     let settings = DnsOutboundSettings {
         rules: vec![DnsOutboundRule {
             action: DnsOutboundRuleAction::Direct,
+            r_code: 0,
             qtype_ranges: Vec::new(),
             domain_matchers: Vec::new(),
         }],
@@ -5438,6 +5503,7 @@ async fn run_tun_dns_outbound_tcp_fake_ip_domain_scenario() {
     let settings = DnsOutboundSettings {
         rules: vec![DnsOutboundRule {
             action: DnsOutboundRuleAction::Direct,
+            r_code: 0,
             qtype_ranges: Vec::new(),
             domain_matchers: Vec::new(),
         }],

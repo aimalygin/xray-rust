@@ -59,6 +59,14 @@ pub enum ConnectorConfig {
 pub struct TlsClientConfig {
     pub server_name: String,
     pub allow_insecure: bool,
+    /// SHA-256 hashes of complete DER-encoded peer certificates. A matching
+    /// leaf is accepted directly; a matching presented CA becomes the sole
+    /// trust anchor and still verifies the leaf chain, time, and server name.
+    pub pinned_peer_cert_sha256: Vec<[u8; 32]>,
+    /// Alternative certificate verification names. Verification succeeds
+    /// when any DNS or IP SAN matches; the handshake still sends
+    /// `server_name` as SNI independently.
+    pub verify_peer_cert_by_name: Vec<String>,
     /// `tlsSettings.alpn`. The TLS dial combines this list with the stream
     /// transport's handshake policy: RAW follows Xray's exact-list gate,
     /// WebSocket/HTTPUpgrade force HTTP/1.1 except for Xray's h2/http1

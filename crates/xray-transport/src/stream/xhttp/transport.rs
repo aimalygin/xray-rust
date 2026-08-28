@@ -45,6 +45,7 @@ use super::request::{
     compose_packet_request, compose_stream_request, XhttpRequest, XhttpRequestBody,
     XhttpRequestError, XhttpStreamBody,
 };
+use super::session::{generate_session_id, XhttpSessionIdError};
 use crate::{
     utls_tls::TlsAlpnPolicy, BoxedTransportStream, ConnectorConfig, HappyEyeballsConfig,
     TransportDialer, TransportError, TransportStream,
@@ -263,6 +264,8 @@ pub enum XhttpTransportError {
     Random(#[source] rand::Error),
     #[error("XHTTP random source lock is poisoned")]
     RandomStatePoisoned,
+    #[error(transparent)]
+    SessionId(#[from] XhttpSessionIdError),
     #[error("XHTTP xmux range has descending bounds")]
     DescendingXmuxRange,
     #[error("XHTTP xmux maxConnections cannot be enabled with maxConcurrency")]
@@ -1365,17 +1368,8 @@ impl XhttpTransport {
     }
 
     fn new_session_id(&self) -> Result<String, XhttpTransportError> {
-        let mut bytes = [0_u8; 16];
-        self.rng_guard()?
-            .try_fill_bytes(&mut bytes)
-            .map_err(XhttpTransportError::Random)?;
-        bytes[6] = (bytes[6] & 0x0f) | 0x40;
-        bytes[8] = (bytes[8] & 0x3f) | 0x80;
-        Ok(format!(
-            "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
-            bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]
-        ))
+        generate_session_id(&self.config.session_id, &mut **self.rng_guard()?)
+            .map_err(XhttpTransportError::from)
     }
 
     fn rng_guard(&self) -> Result<StdMutexGuard<'_, Box<dyn RngCore + Send>>, XhttpTransportError> {

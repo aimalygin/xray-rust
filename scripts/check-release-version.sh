@@ -56,6 +56,29 @@ if ! grep -Eq "^## \\[$VERSION_PATTERN\\] - [0-9]{4}-[0-9]{2}-[0-9]{2}$|^## $VER
   exit 1
 fi
 
+TAG_REF="refs/tags/$TAG"
+if ! git -C "$WORKSPACE_ROOT" show-ref --verify --quiet "$TAG_REF"; then
+  echo "release tag does not exist in the local Git checkout: $TAG" >&2
+  exit 1
+fi
+
+TAG_TYPE="$(git -C "$WORKSPACE_ROOT" cat-file -t "$TAG_REF")"
+if [[ "$TAG_TYPE" != "tag" ]]; then
+  echo "release tag must be annotated: $TAG" >&2
+  exit 1
+fi
+
+if ! TAG_COMMIT="$(git -C "$WORKSPACE_ROOT" rev-parse --verify "$TAG_REF^{commit}")"; then
+  echo "release tag does not resolve to a commit: $TAG" >&2
+  exit 1
+fi
+
+HEAD_COMMIT="$(git -C "$WORKSPACE_ROOT" rev-parse --verify HEAD)"
+if [[ "$TAG_COMMIT" != "$HEAD_COMMIT" ]]; then
+  echo "release tag $TAG does not point at the checked-out commit" >&2
+  exit 1
+fi
+
 if [[ -n "$(git -C "$WORKSPACE_ROOT" status --porcelain --untracked-files=normal)" ]]; then
   echo "release verification requires a clean Git worktree" >&2
   exit 1

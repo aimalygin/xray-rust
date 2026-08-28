@@ -4472,6 +4472,8 @@ mod stream_grpc_pool_tests {
         let connector = ConnectorConfig::Tls(TlsClientConfig {
             server_name: "localhost".to_owned(),
             allow_insecure: true,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
             alpn: Vec::new(),
             fingerprint: None,
         });

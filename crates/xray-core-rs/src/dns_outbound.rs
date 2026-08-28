@@ -144,7 +144,7 @@ impl DnsHijackUnsafe {
 pub enum DnsOutboundDecision {
     Direct,
     Drop,
-    Reject,
+    Return(u16),
     Hijack,
     HijackUnsafe(DnsHijackUnsafe),
 }
@@ -210,23 +210,23 @@ impl CompiledDnsOutboundPolicy {
             return DnsOutboundDecision::Direct;
         }
 
-        let action = self.selected_action(query.qtype, &query.domain);
-        decision_for_action(action, query)
+        let (action, r_code) = self.selected_action(query.qtype, &query.domain);
+        decision_for_action(action, r_code, query)
     }
 
-    fn selected_action(&self, qtype: u16, domain: &str) -> DnsOutboundRuleAction {
+    fn selected_action(&self, qtype: u16, domain: &str) -> (DnsOutboundRuleAction, u16) {
         self.rules
             .iter()
             .find(|rule| rule.matches(qtype, domain))
             .map_or_else(
                 || {
                     if is_address_qtype(qtype) {
-                        DnsOutboundRuleAction::Hijack
+                        (DnsOutboundRuleAction::Hijack, 0)
                     } else {
-                        DnsOutboundRuleAction::Reject
+                        (DnsOutboundRuleAction::Return, 0)
                     }
                 },
-                |rule| rule.action,
+                |rule| (rule.action, rule.r_code),
             )
     }
 
@@ -234,7 +234,7 @@ impl CompiledDnsOutboundPolicy {
     ///
     /// Own-link traffic bypasses parsing, matching Xray's recursion guard: the
     /// original bytes must be forwarded directly even when the local resolver
-    /// would not understand them. Direct, Drop, and Reject deliberately require
+    /// would not understand them. Direct, Drop, and Return deliberately require
     /// only the first question; full RR and EDNS validation is deferred until a
     /// query is actually selected for Hijack.
     pub fn decide_message(
@@ -247,29 +247,30 @@ impl CompiledDnsOutboundPolicy {
         }
 
         let mut query = parse_dns_query_prefix(message)?;
-        let action = self.selected_action(query.qtype, &query.domain);
+        let (action, r_code) = self.selected_action(query.qtype, &query.domain);
         if action != DnsOutboundRuleAction::Hijack {
-            return Ok(decision_for_action(action, &query));
+            return Ok(decision_for_action(action, r_code, &query));
         }
         if !is_address_qtype(query.qtype) {
-            return Ok(DnsOutboundDecision::Reject);
+            return Ok(DnsOutboundDecision::Return(r_code));
         }
 
         validate_dns_query_envelope(message, &mut query)?;
-        Ok(decision_for_action(action, &query))
+        Ok(decision_for_action(action, r_code, &query))
     }
 }
 
 fn decision_for_action(
     action: DnsOutboundRuleAction,
+    r_code: u16,
     query: &DnsOutboundQuery,
 ) -> DnsOutboundDecision {
     match action {
         DnsOutboundRuleAction::Direct => DnsOutboundDecision::Direct,
         DnsOutboundRuleAction::Drop => DnsOutboundDecision::Drop,
-        DnsOutboundRuleAction::Reject => DnsOutboundDecision::Reject,
+        DnsOutboundRuleAction::Return => DnsOutboundDecision::Return(r_code),
         DnsOutboundRuleAction::Hijack if !is_address_qtype(query.qtype) => {
-            DnsOutboundDecision::Reject
+            DnsOutboundDecision::Return(r_code)
         }
         DnsOutboundRuleAction::Hijack => query.hijack_unsafe().map_or(
             DnsOutboundDecision::Hijack,
@@ -281,6 +282,7 @@ fn decision_for_action(
 #[derive(Debug)]
 struct CompiledDnsOutboundRule {
     action: DnsOutboundRuleAction,
+    r_code: u16,
     all_qtypes: bool,
     qtype_ranges: Box<[(u16, u16)]>,
     all_domains: bool,
@@ -291,6 +293,7 @@ impl CompiledDnsOutboundRule {
     fn new(rule: &DnsOutboundRule) -> Self {
         Self {
             action: rule.action,
+            r_code: rule.r_code,
             all_qtypes: rule.qtype_ranges.is_empty(),
             qtype_ranges: compile_qtype_ranges(&rule.qtype_ranges),
             all_domains: rule.domain_matchers.is_empty(),
@@ -671,8 +674,8 @@ fn read_u32(message: &[u8], offset: usize) -> Option<u32> {
     Some(u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
 }
 
-/// Builds a REFUSED response for one complete, unframed DNS QUERY.
-pub fn build_refused_response(message: &[u8]) -> Result<Bytes, DnsQueryParseError> {
+/// Builds an empty response with `r_code` for one complete, unframed DNS QUERY.
+pub fn build_return_response(message: &[u8], r_code: u16) -> Result<Bytes, DnsQueryParseError> {
     let query = parse_dns_query_prefix(message)?;
     let mut response = Vec::with_capacity(query.first_question_end);
     response.extend_from_slice(&message[..query.first_question_end]);
@@ -681,11 +684,16 @@ pub fn build_refused_response(message: &[u8]) -> Result<Bytes, DnsQueryParseErro
         | DNS_FLAG_AA
         | DNS_FLAG_RA
         | (query.request_flags & (DNS_FLAG_RD | DNS_FLAG_CD))
-        | DNS_RCODE_REFUSED;
+        | r_code;
     response[2..4].copy_from_slice(&response_flags.to_be_bytes());
     response[4..6].copy_from_slice(&1_u16.to_be_bytes());
     response[6..12].fill(0);
     Ok(Bytes::from(response))
+}
+
+/// Builds a REFUSED response for one complete, unframed DNS QUERY.
+pub fn build_refused_response(message: &[u8]) -> Result<Bytes, DnsQueryParseError> {
+    build_return_response(message, DNS_RCODE_REFUSED)
 }
 
 #[cfg(test)]
@@ -743,6 +751,7 @@ mod tests {
     ) -> DnsOutboundRule {
         DnsOutboundRule {
             action,
+            r_code: 0,
             qtype_ranges,
             domain_matchers,
         }
@@ -806,7 +815,7 @@ mod tests {
                 vec![DnsQTypeRange::single(DNS_TYPE_A)],
                 vec![],
             ),
-            rule(DnsOutboundRuleAction::Reject, vec![], vec![]),
+            rule(DnsOutboundRuleAction::Return, vec![], vec![]),
         ]));
 
         assert_eq!(
@@ -825,7 +834,7 @@ mod tests {
             policy
                 .decide_message(&query(1, "other.test", 16, 0), false)
                 .unwrap(),
-            DnsOutboundDecision::Reject
+            DnsOutboundDecision::Return(0)
         );
     }
 
@@ -859,7 +868,7 @@ mod tests {
             policy
                 .decide_message(&query(1, "example.com", 16, 0), false)
                 .unwrap(),
-            DnsOutboundDecision::Reject
+            DnsOutboundDecision::Return(0)
         );
     }
 
@@ -955,18 +964,19 @@ mod tests {
     }
 
     #[test]
-    fn explicit_hijack_of_non_address_query_is_rejected() {
-        let policy = CompiledDnsOutboundPolicy::new(&settings(vec![rule(
-            DnsOutboundRuleAction::Hijack,
-            vec![],
-            vec![],
-        )]));
+    fn explicit_hijack_of_non_address_query_returns_the_rule_rcode() {
+        let policy = CompiledDnsOutboundPolicy::new(&settings(vec![DnsOutboundRule {
+            action: DnsOutboundRuleAction::Hijack,
+            r_code: 3,
+            qtype_ranges: Vec::new(),
+            domain_matchers: Vec::new(),
+        }]));
 
         assert_eq!(
             policy
                 .decide_message(&query(1, "example.com", 16, 0), false)
                 .unwrap(),
-            DnsOutboundDecision::Reject
+            DnsOutboundDecision::Return(3)
         );
     }
 
@@ -1068,5 +1078,19 @@ mod tests {
             &response[DNS_HEADER_LEN..],
             &message[DNS_HEADER_LEN..parsed.question_section_end]
         );
+    }
+
+    #[test]
+    fn return_response_serializes_configured_rcode_and_no_answers() {
+        let message = query(0x4321, "missing.example", 16, DNS_FLAG_RD);
+        let response = build_return_response(&message, 3).unwrap();
+        let flags = read_u16(&response, 2).unwrap();
+
+        assert_eq!(&response[..2], &0x4321_u16.to_be_bytes());
+        assert_eq!(flags & DNS_FLAG_RCODE, 3);
+        assert_eq!(read_u16(&response, 4), Some(1));
+        assert_eq!(read_u16(&response, 6), Some(0));
+        assert_eq!(read_u16(&response, 8), Some(0));
+        assert_eq!(read_u16(&response, 10), Some(0));
     }
 }

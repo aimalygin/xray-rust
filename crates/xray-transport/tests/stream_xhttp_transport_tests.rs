@@ -14,8 +14,8 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream
 use tokio::time::{timeout, Instant};
 
 use xray_transport::stream::xhttp_composer_test_only::{
-    NormalizedRange, XhttpConfig, XhttpConfigInput, XhttpEndpoint, XhttpModeSelection, XhttpRange,
-    XhttpScheme,
+    NormalizedRange, XhttpConfig, XhttpConfigInput, XhttpEndpoint, XhttpMetadataPlacement,
+    XhttpModeSelection, XhttpRange, XhttpScheme,
 };
 use xray_transport::stream::xhttp_transport_test_only::{
     XhttpClock, XhttpDial, XhttpHttpVersion, XhttpTransport, XhttpXmuxPolicy,
@@ -199,6 +199,79 @@ async fn h1_stream_up_uses_separate_downlink_and_uplink_sockets_with_one_session
     assert!(contains(&up_head, b"Accept-Encoding: gzip\r\n"));
     assert_eq!(h1_path(&down_head), h1_path(&up_head));
     assert_eq!(upload, b"ping");
+}
+
+#[tokio::test]
+async fn h1_custom_session_ids_share_one_flow_then_refresh_for_the_next_flow() {
+    let (first_down_client, first_down_server) = tokio::io::duplex(64 * 1024);
+    let (first_up_client, first_up_server) = tokio::io::duplex(64 * 1024);
+    let first_server = tokio::spawn(serve_h1_stream_up_session(
+        first_down_server,
+        first_up_server,
+    ));
+    let (second_down_client, second_down_server) = tokio::io::duplex(64 * 1024);
+    let (second_up_client, second_up_server) = tokio::io::duplex(64 * 1024);
+    let second_server = tokio::spawn(serve_h1_stream_up_session(
+        second_down_server,
+        second_up_server,
+    ));
+
+    let config = XhttpConfig::normalize(XhttpConfigInput {
+        mode: XhttpModeSelection::StreamUp,
+        path: "/api".to_owned(),
+        x_padding_bytes: XhttpRange::exact(1),
+        session_placement: XhttpMetadataPlacement::Header,
+        session_key: "X-Custom-Session".to_owned(),
+        session_id_table: "Base62".to_owned(),
+        session_id_length: XhttpRange::exact(6),
+        ..XhttpConfigInput::default()
+    })
+    .unwrap();
+    let endpoint = XhttpEndpoint::new(XhttpScheme::Http, "example.com").unwrap();
+    let transport =
+        XhttpTransport::new(config, endpoint, XhttpHttpVersion::Http1, unlimited_xmux())
+            .unwrap()
+            .with_rng(Box::new(StepRng::new(0, 1)))
+            .unwrap();
+    let dial = queued_dial([
+        first_down_client,
+        first_up_client,
+        second_down_client,
+        second_up_client,
+    ]);
+
+    for payload in [b"first".as_slice(), b"second".as_slice()] {
+        let mut stream = transport
+            .open_stream_with_dial(Arc::clone(&dial))
+            .await
+            .unwrap();
+        stream.write_all(payload).await.unwrap();
+        stream.shutdown().await.unwrap();
+        let mut response = Vec::new();
+        stream.read_to_end(&mut response).await.unwrap();
+        assert!(response.is_empty());
+    }
+
+    let (first_down, first_up, first_body) = first_server.await.unwrap().unwrap();
+    let (second_down, second_up, second_body) = second_server.await.unwrap().unwrap();
+    let first_id = h1_header_value(&first_down, "X-Custom-Session").unwrap();
+    let second_id = h1_header_value(&second_down, "X-Custom-Session").unwrap();
+
+    assert_eq!(
+        h1_header_value(&first_up, "X-Custom-Session"),
+        Some(first_id)
+    );
+    assert_eq!(
+        h1_header_value(&second_up, "X-Custom-Session"),
+        Some(second_id)
+    );
+    assert_eq!(first_id.len(), 6);
+    assert_eq!(second_id.len(), 6);
+    assert!(first_id.bytes().all(|byte| byte.is_ascii_alphanumeric()));
+    assert!(second_id.bytes().all(|byte| byte.is_ascii_alphanumeric()));
+    assert_ne!(first_id, second_id);
+    assert_eq!(first_body, b"first");
+    assert_eq!(second_body, b"second");
 }
 
 #[tokio::test]
@@ -1303,6 +1376,23 @@ fn status_response(status: StatusCode) -> Response<()> {
     Response::builder().status(status).body(()).unwrap()
 }
 
+async fn serve_h1_stream_up_session(
+    mut downlink: DuplexStream,
+    mut uplink: DuplexStream,
+) -> io::Result<(Vec<u8>, Vec<u8>, Vec<u8>)> {
+    let down_head = read_h1_head(&mut downlink).await?;
+    downlink
+        .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+        .await?;
+
+    let up_head = read_h1_head(&mut uplink).await?;
+    let body = read_h1_chunked(&mut uplink).await?;
+    let _ = uplink
+        .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+        .await;
+    Ok((down_head, up_head, body))
+}
+
 async fn read_h1_head<R: AsyncRead + Unpin>(reader: &mut R) -> io::Result<Vec<u8>> {
     let mut output = Vec::new();
     loop {
@@ -1383,6 +1473,15 @@ fn h1_target(head: &[u8]) -> &str {
 
 fn h1_path(head: &[u8]) -> &str {
     h1_target(head).split('?').next().unwrap()
+}
+
+fn h1_header_value<'a>(head: &'a [u8], name: &str) -> Option<&'a str> {
+    std::str::from_utf8(head)
+        .ok()?
+        .split("\r\n")
+        .filter_map(|line| line.split_once(':'))
+        .find(|(candidate, _)| candidate.eq_ignore_ascii_case(name))
+        .map(|(_, value)| value.trim())
 }
 
 fn contains(haystack: &[u8], needle: &[u8]) -> bool {

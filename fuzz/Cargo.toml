@@ -1,0 +1,44 @@
+[package]
+name = "xray-rust-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+tokio = { version = "1.52.3", features = ["io-util", "rt"] }
+xray-config = { path = "../crates/xray-config" }
+xray-core-rs = { path = "../crates/xray-core-rs" }
+xray-ffi = { path = "../crates/xray-ffi" }
+xray-proxy = { path = "../crates/xray-proxy" }
+
+[[bin]]
+name = "config_json"
+path = "fuzz_targets/config_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dns_wire"
+path = "fuzz_targets/dns_wire.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vless_wire"
+path = "fuzz_targets/vless_wire.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ffi_lifecycle"
+path = "fuzz_targets/ffi_lifecycle.rs"
+test = false
+doc = false
+bench = false
