@@ -126,6 +126,8 @@ grep -Fq 'ref: 5ca6f4b7d4dc20a881d4330e498892697627ec0c' "$WORKFLOW" || \
   die "RC interoperability does not pin the audited Xray-core commit"
 grep -Fq 'bash scripts/check-rc-interop.sh' "$WORKFLOW" || \
   die "RC interoperability script is not part of the tag workflow"
+grep -Fq 'bash scripts/tests/check-rc-interop.test.sh' "$WORKFLOW" || \
+  die "clean-target RC interoperability regression test is not part of CI"
 grep -Fq 'cargo +nightly-2026-05-22 install cargo-fuzz --version 0.13.2 --locked' "$WORKFLOW" || \
   die "RC fuzz gate does not pin cargo-fuzz"
 grep -Fq 'cargo +nightly-2026-05-22 fuzz run ffi_lifecycle' "$WORKFLOW" || \

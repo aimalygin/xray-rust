@@ -165,6 +165,7 @@ jobs:
           done
           bash scripts/tests/check-release-version.test.sh
           bash scripts/tests/check-prerelease-workflow.test.sh
+          bash scripts/tests/check-rc-interop.test.sh
           bash scripts/tests/check-public-fixtures.test.sh
 
       - name: Install pinned Rust toolchain

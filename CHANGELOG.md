@@ -7,6 +7,14 @@ prerelease-quality and do not establish a supported release series.
 
 ## Unreleased
 
+## 0.4.1-rc.3 - 2026-08-28
+
+- Made the blocking RC interoperability gate self-contained on a clean runner:
+  it now builds the `xray-rust` CLI in the release profile and passes that
+  exact binary to the benchmark harness while keeping implicit builds disabled.
+  A hermetic clean-target regression test prevents stale `target/debug`
+  artifacts from masking this release-gate failure again.
+
 ## 0.4.1-rc.2 - 2026-08-28
 
 - Declared the fuzz workspace package under the repository's MPL-2.0 license
