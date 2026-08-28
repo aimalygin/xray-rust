@@ -273,10 +273,15 @@ Range fields accept a JSON integer or Xray's string form such as
 `packet-up`; cookie/header uplink-data placement is also packet-up-only.
 `noSSEHeader` and `serverMaxHeaderBytes` are accepted but have no client-side
 effect because they configure Xray's inbound response/listener. A null
-`downloadSettings` is equivalent to absent; a populated value is rejected
-because it requires a second independent transport stack. `extra` is rejected
-even when null: it is a `json.RawMessage` upstream and its presence replaces
-most outer settings, which cannot be approximated without changing the wire.
+`downloadSettings` is equivalent to absent; a populated effective value is
+rejected because it requires a second independent transport stack. `extra`
+follows Xray's one-level `SplitHTTPConfig.Build` replacement: its object (or a
+zero-valued config for JSON null) replaces every outer field except `host`,
+`path`, and `mode`, which always come from the outer object. A nested `extra`
+is inert because Xray does not invoke `Build` recursively. The removed legacy
+`scMaxConcurrentPosts` key is accepted with a compatibility warning and
+ignored, matching current Xray; it is not reinterpreted as the server-only
+`scMaxBufferedPosts` setting.
 
 The xmux scheduler is implemented rather than merely parsed. Its random ranges
 bound logical concurrency, client-slot count, connection reuse, HTTP request

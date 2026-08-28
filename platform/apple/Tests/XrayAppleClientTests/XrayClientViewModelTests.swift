@@ -52,6 +52,49 @@ final class XrayClientViewModelTests: XCTestCase {
         XCTAssertEqual(outbounds.first?["protocol"] as? String, "vless")
     }
 
+    func testImportXHTTPRealityValidatesAndSavesWithoutVisionFlow() throws {
+        let store = try makeStore()
+        let initialProfile = XrayClientProfile(
+            name: "Existing",
+            providerBundleIdentifier: "org.example.XrayClientTv.Tunnel",
+            serverAddress: "old-server",
+            configJSON: XrayClientProfile.directTunConfigJSON
+        )
+        try store.save(initialProfile)
+        let viewModel = XrayClientViewModel(
+            store: store,
+            tunnelController: MockTunnelController()
+        )
+
+        XCTAssertTrue(viewModel.importVlessURL(Self.sampleXHTTPRealityURL))
+        XCTAssertNil(viewModel.lastErrorMessage)
+        XCTAssertEqual(viewModel.profile.name, "example-xhttp-reality")
+        XCTAssertEqual(viewModel.profile.serverAddress, "203.0.113.30")
+        XCTAssertNil(viewModel.realityVisionFlowMode)
+        XCTAssertEqual(viewModel.realityFingerprintMode, .chrome)
+        XCTAssertNil(try Self.firstVlessUserFlow(in: viewModel.profile.configJSON))
+
+        let root = try XCTUnwrap(
+            try JSONSerialization.jsonObject(
+                with: Data(viewModel.profile.configJSON.utf8)
+            ) as? [String: Any]
+        )
+        let outbounds = try XCTUnwrap(root["outbounds"] as? [[String: Any]])
+        let stream = try XCTUnwrap(outbounds[0]["streamSettings"] as? [String: Any])
+        XCTAssertEqual(stream["network"] as? String, "xhttp")
+        XCTAssertEqual(stream["security"] as? String, "reality")
+        XCTAssertEqual(store.load().configJSON, viewModel.profile.configJSON)
+
+        let reloadedViewModel = XrayClientViewModel(
+            store: store,
+            tunnelController: MockTunnelController()
+        )
+        XCTAssertNil(reloadedViewModel.realityVisionFlowMode)
+        XCTAssertNil(try Self.firstVlessUserFlow(in: reloadedViewModel.profile.configJSON))
+        XCTAssertEqual(reloadedViewModel.profile.configJSON, viewModel.profile.configJSON)
+        XCTAssertEqual(store.load().configJSON, viewModel.profile.configJSON)
+    }
+
     func testImportVlessURLIfPresentIgnoresBlankInput() throws {
         let store = try makeStore()
         let initialProfile = XrayClientProfile(
@@ -712,6 +755,7 @@ final class XrayClientViewModelTests: XCTestCase {
     }
 
     private static let sampleVlessURL = "vless://11111111-1111-4111-8111-111111111111@203.0.113.10:32134?type=tcp&encryption=none&security=reality&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&fp=chrome&sni=example.com&sid=0123456789ab&spx=%2F&flow=xtls-rprx-vision#example-reality"
+    private static let sampleXHTTPRealityURL = "vless://11111111-1111-4111-8111-111111111111@203.0.113.30:443?type=xhttp&encryption=none&security=reality&host=edge.example&path=%2Fxhttp&mode=packet-up&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&fp=chrome&sni=reality.example&sid=0123456789ab&spx=%2F#example-xhttp-reality"
 }
 
 private final class TestSecureConfigStore: XraySecureConfigStoring, @unchecked Sendable {

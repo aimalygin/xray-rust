@@ -54,7 +54,8 @@ target/benchmarks/<run-id>/<engine>/<workload>/run-003/
 Current `result.json` and `summary.json` files carry the generated `run_id`
 and a `provenance` object. Its JSON fields are `harness_profile` (`debug` or
 `release`), optional `workspace_git` with `revision` and optional `dirty`,
-optional `harness_binary_path`, `harness_binary_sha256`,
+optional `engine_source_git` with the measured engine checkout's `revision`
+and optional `dirty`, optional `harness_binary_path`, `harness_binary_sha256`,
 `engine_binary_path`, `engine_binary_sha256`, and `working_directory`, plus
 `invocation_args`. `workspace_git` is the runtime checkout state observed at
 the end of the run; it is not an embedded build revision and can differ from
@@ -68,7 +69,9 @@ raw result has the same run ID and provenance; fields default cleanly when
 older stored results are read.
 
 For `stream-transport`, both result files also record `stream_transport`,
-`stream_traffic`, and (for XHTTP) `xhttp_mode`. Packet-up pressure runs add
+`stream_traffic`, and (for XHTTP) `xhttp_mode`, `xhttp_profile`, and the
+effective `xhttp_max_post_bytes`; `settle_ms` records the post-flow sampling
+window. Packet-up pressure runs add
 `uplink_write_ops` and `uplink_write_ops_per_second`. The effective axes are
 also present in `provenance.invocation_args`, so summaries from different
 transport, traffic, or XHTTP-mode cases are rejected instead of being merged.
@@ -122,9 +125,18 @@ Use `--xray-rust-bin <path>` to point at an already built binary.
 over WebSocket, HTTPUpgrade, gRPC, or XHTTP. The currently executable axes are:
 
 - `--stream-transport ws|httpupgrade|grpc|xhttp-h1|xhttp-h2|xhttp-h3`.
-- `--traffic upload|download|full-duplex|packet-up`.
+- `--traffic upload|download|full-duplex|packet-up|held-open`. `held-open`
+  establishes every requested logical flow, keeps it open for
+  `--duration-ms`, and closes it without application payload. `packet-up`
+  waits for a target acknowledgement after every payload write so iterations
+  cannot collapse into a few large buffered POSTs.
 - `--xhttp-mode packet-up|stream-up|stream-one`, valid only for XHTTP and
   defaulting to `packet-up`.
+- `--xhttp-profile legacy-extra-h1-packet-up` selects the legacy share-link
+  memory profile described below and implies `xhttp-h1` plus `packet-up`.
+- `--xhttp-max-post-bytes N` changes XHTTP `scMaxEachPostBytes` independently
+  from `--payload-size`; the named legacy profile defaults it to `500000`.
+- `--settle-ms N` keeps sampling after logical flows close.
 - The existing `--connections`, `--iterations`, `--payload-size`, `--runs`,
   and process-sampling options. One iteration is one validated payload chunk
   per logical flow.
@@ -135,8 +147,9 @@ back through VLESS, so an engine that acknowledges SOCKS before completing a
 lazy transport handshake cannot hide that delay between setup and the
 payload-only transfer window.
 
-The fixture is a local Xray-core VLESS server with a generated self-signed TLS
-certificate. Each run stores the certificate, private key, fixture config,
+Except for the explicit plaintext legacy profile below, the fixture is a local
+Xray-core VLESS server with a generated self-signed TLS certificate. Each run
+stores the certificate, private key, fixture config,
 and fixture logs below `fixture/<transport>-server/`. Only the client engine
 process is sampled; the fixture is excluded from RSS/CPU counters but still
 shares loopback CPU with it. The generated matrix is:
@@ -162,6 +175,125 @@ sing-box use their explicit local-fixture insecure mode. This keeps every
 case encrypted and ALPN-equivalent without depending on a public CA. The
 legacy `grpc-bulk-throughput` workload remains unchanged for historical
 comparisons: it still uses cleartext gRPC and its old one-way traffic driver.
+
+### Legacy XHTTP H1 packet-up memory profile
+
+`--xhttp-profile legacy-extra-h1-packet-up` reproduces the effective transport
+shape of the reported share link without retaining its customer address or
+UUID. It is intentionally plaintext HTTP/1.1 (`security: none`) and emits the
+legacy one-level `extra` object exactly as follows; the outer synthetic host is
+`vless.test` and the path is `/`:
+
+```json
+{
+  "host": "vless.test",
+  "path": "/",
+  "mode": "packet-up",
+  "extra": {
+    "noGRPCHeader": false,
+    "scMaxConcurrentPosts": 100,
+    "scMaxEachPostBytes": "500000",
+    "scMinPostsIntervalMs": "60",
+    "xmux": {
+      "cMaxReuseTimes": 0,
+      "hKeepAlivePeriod": 0,
+      "hMaxRequestTimes": "600-900",
+      "hMaxReusableSecs": "1800-3000",
+      "maxConnections": 16
+    },
+    "xPaddingBytes": "100-1000"
+  }
+}
+```
+
+`scMaxConcurrentPosts` remains in the emitted profile because it is part of
+the legacy input, but current Xray ignores that removed field. The separate
+`--xhttp-max-post-bytes` flag replaces only the string value above, allowing a
+controlled 16 KiB comparison while leaving every other profile field intact.
+
+Run the local memory matrix with:
+
+```sh
+XRAY_CORE_DIR=/path/to/Xray-core scripts/bench-xhttp-memory.sh
+```
+
+The script runs five repeats by default: held-open cases at 1, 16, and 32
+flows; a 16-flow, 16 KiB max-POST control; and 1000 acknowledged packet-up
+iterations at 1 and 16 flows. One thousand iterations crosses the profile's
+`hMaxRequestTimes` upper bound of 900. Its environment variables can change
+durations, repeats, sample rate, payload size, traffic iterations, and output
+directory. Each raw `samples.csv` appends a
+`phase` column (`startup`, `workload`, `opening`, `traffic`, `held-open`,
+`settle`, or `complete`). `result.json` also contains `memory_phases`, with
+sample count and first/median/peak/last RSS for every observed phase. Only the
+client engine process is sampled: the Xray-core fixture and the Apple Network
+Extension container overhead are excluded.
+
+Use these regression guardrails on five-run medians. They are designed to
+catch transport-buffer regressions, not to claim a universal Network
+Extension memory ceiling:
+
+- every run finishes with `status: ok`, contains a `held-open` or `traffic`
+  phase as appropriate, and contains `settle` when `--settle-ms` is non-zero;
+- at 16 held flows, the 500000-byte profile's held-open median RSS is no more
+  than 4096 KiB above the otherwise identical 16384-byte control; a roughly
+  8 MiB difference is the expected signature of an eager 500000-byte buffer
+  per flow;
+- during sustained traffic, the final 20% median RSS is no more than
+  `max(4096 KiB, 5%)` above the first 20% median after opening;
+- final settle RSS does not exceed the preceding held/traffic peak by more
+  than 4096 KiB. Allocator retention is allowed; RSS need not return to its
+  startup level.
+
+Provenance records the executable SHA-256 and
+`engine_source_git.revision`/`dirty`. Always pass the checkout used for an
+Xray-core comparison with `--xray-core-dir` (the script does this), especially
+when separating v26.5.9 from revisions before or after `4c384271`. With only an
+opaque `--xray-core-bin`, source provenance cannot be inferred and its binary
+SHA-256 is the exact identifier.
+
+Abrupt OOM/SIGKILL is a known artifact gap. The sampler currently writes
+`samples.csv` and `result.json` only after the workload future returns, so a
+killed engine can leave logs and a run directory without partial samples.
+Preserving samples during arbitrary process death needs a broader streaming
+artifact-writer refactor and is deliberately outside this benchmark change.
+
+#### Branch-local XHTTP memory validation (2026-08-27)
+
+A release-mode macOS loopback run validated the profile while it was added.
+The xray-rust workspace was dirty at `e8825ed`; Xray-core was v26.5.9 at
+`1bdb488`. These numbers measure only the engine process and are development
+regression anchors, not an Apple Network Extension memory budget.
+
+Five-run medians for 16 held flows (`duration=3 s`, `settle=1 s`) were:
+
+| Engine | max POST | held-open RSS | peak RSS |
+| --- | ---: | ---: | ---: |
+| xray-rust | 500000 | 7,312 KiB | 7,376 KiB |
+| xray-rust | 16384 control | 7,216 KiB | 7,280 KiB |
+| Xray-core v26.5.9 | 500000 | 34,960 KiB | 35,008 KiB |
+| Xray-core v26.5.9 | 16384 control | 34,784 KiB | 34,800 KiB |
+
+The xray-rust 500000-to-control held-flow delta was therefore 96 KiB, well
+below the 4 MiB guardrail. An earlier development build that materialized one
+500000-byte vector per active flow showed about a 7.5 MiB delta in the same
+single-run comparison; that result directly motivated the data-proportional
+8 KiB H1 packet buffer.
+
+One 16-flow rollover stress run used 1000 acknowledged 16 KiB writes per flow
+(16,000 operations and 250 MiB total), crossing every configured
+`hMaxRequestTimes=600-900` limit:
+
+| Engine | Result | Duration | Ops/s | Peak RSS | first-to-last 20% traffic RSS |
+| --- | --- | ---: | ---: | ---: | ---: |
+| xray-rust | ok | 64.7 s | 256 | 9,760 KiB | +48 KiB |
+| Xray-core v26.5.9 | ok | 78.0 s | 213 | 41,696 KiB | +1,776 KiB |
+
+Both engines completed the rollover workload in this topology; the run did
+not reproduce an Xray-core process failure. The xray-rust release binary was
+identified by SHA-256 `5e170018395254b7468ca238d92c8a8e94318157c51d80a57b0b6176aa4e7624`;
+the local Xray-core binary was
+`abc61e1ecaef469d0a0f1c841abf746366058a835ca998b7e287aaea37da03aa`.
 
 ### Recorded branch-local release smoke (2026-08-10)
 
@@ -616,8 +748,10 @@ The first scoreboard is intentionally portable and comparable across Go and Rust
 - setup microsecond breakdown for SOCKS TCP setup workloads: local TCP connect to the inbound, SOCKS method negotiation, SOCKS CONNECT request/response, full SOCKS setup, and total setup time.
 - min, median, and p95 aggregates across repeated runs.
 - for `stream-transport --traffic packet-up`, logical uplink write operations
-  and operations per second over the same merged transfer window. These are
-  client write operations, not observed HTTP request counts.
+  and operations per second over the same merged transfer window. Every write
+  is target-acknowledged before the next begins, preventing cross-iteration
+  batching; these are still client operations rather than HTTP-server request
+  instrumentation.
 
 `tcp-freedom`, `udp-freedom`, `tun-udp-freedom`, `tun-fake-dns`, `tun-fake-dns-tcp`, `tun-dns-proxy`, `udp-vless`, `udp-xudp`, `vision-xudp`, and `reality-vision-xudp` record round-trip latency samples for validated traffic. Both fake-DNS workloads record two samples per connection per iteration, one for A and one for HTTPS. `tun-dns-proxy` records the same two samples for each selected client transport, so `--transport both` records four samples per connection per iteration. `summary.json` aggregates each run's latency min/median/p95/p99 across repeated runs. Both JSON files record `dns_transport` (`udp` for `tun-fake-dns`, `tcp` for `tun-fake-dns-tcp`, and the selected client transport for `tun-dns-proxy`). For `tun-dns-proxy`, both files also record `dns_upstream_transport`, so classic, routed TCP, and local TCP runs cannot be accidentally aggregated together.
 

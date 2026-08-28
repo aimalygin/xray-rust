@@ -119,6 +119,144 @@ fn parses_mobile_vless_reality_vision_split_routing_fixture() {
 }
 
 #[test]
+fn parses_mobile_vless_xhttp_packet_up_legacy_extra_fixture() {
+    let raw =
+        include_str!("../../../tests/fixtures/configs/vless_xhttp_packet_up_legacy_extra.json");
+    let parsed = parse_xray_json(raw).expect("XHTTP mobile config should parse");
+
+    assert_eq!(parsed.config.inbounds.len(), 1);
+    assert_eq!(parsed.config.inbounds[0].protocol, InboundProtocol::Tun);
+    assert_eq!(parsed.config.outbounds.len(), 2);
+    let StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected xhttp");
+    };
+    assert_eq!(xhttp.host.as_deref(), Some("edge.example"));
+    assert_eq!(xhttp.path, "/");
+    assert_eq!(xhttp.mode, XhttpMode::PacketUp);
+    assert_eq!(
+        xhttp.sc_max_each_post_bytes,
+        XhttpRange {
+            from: 500_000,
+            to: 500_000
+        }
+    );
+    assert_eq!(xhttp.xmux.max_connections, XhttpRange { from: 16, to: 16 });
+    assert_eq!(parsed.diagnostics.len(), 1, "{:?}", parsed.diagnostics);
+    assert_eq!(parsed.diagnostics[0].severity, DiagnosticSeverity::Warning);
+    assert!(parsed.diagnostics[0]
+        .message
+        .contains("scMaxConcurrentPosts"));
+}
+
+#[test]
+fn parses_apple_importer_vless_xhttp_tls_fields_and_extra() {
+    let raw = include_str!("../../../tests/fixtures/configs/vless_xhttp_tls_importer.json");
+    let parsed = parse_xray_json(raw).expect("Apple XHTTP+TLS config should parse");
+    let outbound = &parsed.config.outbounds[0];
+
+    let StreamSecurity::Tls(tls) = &outbound.stream.security else {
+        panic!("expected TLS security");
+    };
+    assert_eq!(tls.server_name.as_deref(), Some("remote.example"));
+    assert_eq!(tls.fingerprint.as_deref(), Some("chrome"));
+    assert_eq!(tls.alpn, ["http/1.1"]);
+    assert!(tls.allow_insecure);
+
+    let OutboundSettings::Vless(vless) = &outbound.settings else {
+        panic!("expected VLESS outbound");
+    };
+    assert!(vless.users[0].flow.is_none());
+
+    let StreamTransport::Xhttp(xhttp) = &outbound.stream.transport else {
+        panic!("expected XHTTP transport");
+    };
+    assert_eq!(xhttp.host.as_deref(), Some("edge.example"));
+    assert_eq!(xhttp.path, "/api");
+    assert_eq!(xhttp.mode, XhttpMode::PacketUp);
+    assert_eq!(
+        xhttp.sc_max_each_post_bytes,
+        XhttpRange {
+            from: 500_000,
+            to: 500_000,
+        }
+    );
+    assert_eq!(xhttp.xmux.max_connections, XhttpRange { from: 16, to: 16 });
+
+    assert_eq!(parsed.diagnostics.len(), 1, "{:?}", parsed.diagnostics);
+    assert_eq!(parsed.diagnostics[0].severity, DiagnosticSeverity::Warning);
+    assert_eq!(
+        parsed.diagnostics[0].path.as_deref(),
+        Some("$.outbounds[0].streamSettings.tlsSettings.allowInsecure")
+    );
+}
+
+#[test]
+fn parses_apple_importer_vless_xhttp_reality_fields_and_extra() {
+    let raw = include_str!("../../../tests/fixtures/configs/vless_xhttp_reality_importer.json");
+    let parsed = parse_xray_json(raw).expect("Apple XHTTP+REALITY config should parse");
+    let outbound = &parsed.config.outbounds[0];
+
+    let StreamSecurity::Reality(reality) = &outbound.stream.security else {
+        panic!("expected REALITY security");
+    };
+    assert_eq!(reality.server_name, "reality.example");
+    assert_eq!(reality.fingerprint, "chrome");
+    assert_eq!(reality.public_key, [1; 32]);
+    assert_eq!(reality.short_id.as_slice(), &[2, 3, 4, 5]);
+    assert_eq!(reality.spider_x, "/spider");
+    assert!(reality.mldsa65_verify.is_none());
+
+    let OutboundSettings::Vless(vless) = &outbound.settings else {
+        panic!("expected VLESS outbound");
+    };
+    assert!(vless.users[0].flow.is_none());
+
+    let StreamTransport::Xhttp(xhttp) = &outbound.stream.transport else {
+        panic!("expected XHTTP transport");
+    };
+    assert_eq!(xhttp.host.as_deref(), Some("front.example"));
+    assert_eq!(xhttp.path, "/reality");
+    assert_eq!(xhttp.mode, XhttpMode::Auto);
+    assert_eq!(xhttp.x_padding_bytes, XhttpRange { from: 10, to: 20 });
+    assert!(parsed.diagnostics.is_empty());
+}
+
+#[test]
+fn unsupported_modern_tls_fields_fail_closed_on_apple_xhttp_shape() {
+    let base: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/configs/vless_xhttp_tls_importer.json"
+    ))
+    .unwrap();
+
+    for (key, value) in [
+        ("pinnedPeerCertSha256", "unsupported-pcs"),
+        ("verifyPeerCertByName", "unsupported-vcn.example"),
+        ("echConfigList", "unsupported-ech"),
+    ] {
+        let mut candidate = base.clone();
+        candidate
+            .pointer_mut("/outbounds/0/streamSettings/tlsSettings")
+            .and_then(serde_json::Value::as_object_mut)
+            .unwrap()
+            .insert(key.to_owned(), serde_json::Value::String(value.to_owned()));
+
+        let error = match parse_xray_json(&candidate.to_string()) {
+            Ok(_) => panic!("unsupported TLS field {key} must fail closed"),
+            Err(error) => error,
+        };
+        let expected_path = format!("$.outbounds[0].streamSettings.tlsSettings.{key}");
+        assert!(
+            error.diagnostics.iter().any(|diagnostic| {
+                diagnostic.severity == DiagnosticSeverity::Error
+                    && diagnostic.path.as_deref() == Some(expected_path.as_str())
+            }),
+            "{key}: {:?}",
+            error.diagnostics
+        );
+    }
+}
+
+#[test]
 fn parses_tun_inbound_without_port_as_packet_boundary_inbound() {
     let raw = r#"{
         "inbounds": [
@@ -3921,12 +4059,14 @@ fn xhttp_ranges_accept_signed_single_empty_and_reversed_forms() {
 }
 
 #[test]
-fn xhttp_rejects_host_header_download_settings_and_extra_explicitly() {
+fn xhttp_rejects_host_header_and_effective_download_settings() {
     for (fragment, path) in [
         (r#""headers": {"hOsT": "bad.example"}"#, "headers"),
         (r#""downloadSettings": {}"#, "downloadSettings"),
-        (r#""extra": {}"#, "extra"),
-        (r#""extra": null"#, "extra"),
+        (
+            r#""extra": {"downloadSettings": {}}"#,
+            "extra.downloadSettings",
+        ),
     ] {
         assert_parse_error_path(
             &raw_with_stream_settings(&format!(
@@ -3935,6 +4075,193 @@ fn xhttp_rejects_host_header_download_settings_and_extra_explicitly() {
             &format!("$.outbounds[0].streamSettings.xhttpSettings.{path}"),
         );
     }
+}
+
+#[test]
+fn xhttp_extra_supports_the_legacy_packet_up_share_profile() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "xhttp", "security": "none",
+           "xhttpSettings": {
+             "host": "edge.example", "path": "/", "mode": "packet-up",
+             "headers": {"X-Outer": "discarded"},
+             "scMaxEachPostBytes": 1,
+             "extra": {
+               "noGRPCHeader": false,
+               "scMaxConcurrentPosts": 100,
+               "scMaxEachPostBytes": "500000",
+               "scMinPostsIntervalMs": "60",
+               "xmux": {
+                 "cMaxReuseTimes": 0,
+                 "hKeepAlivePeriod": 0,
+                 "hMaxRequestTimes": "600-900",
+                 "hMaxReusableSecs": "1800-3000",
+                 "maxConnections": 16
+               },
+               "xPaddingBytes": "100-1000"
+             }
+           }"#,
+    ))
+    .expect("the legacy packet-up share profile must parse");
+
+    let StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected xhttp");
+    };
+    assert_eq!(xhttp.host.as_deref(), Some("edge.example"));
+    assert_eq!(xhttp.path, "/");
+    assert_eq!(xhttp.mode, XhttpMode::PacketUp);
+    assert!(
+        xhttp.headers.is_empty(),
+        "outer non-identity fields are replaced"
+    );
+    assert!(!xhttp.no_grpc_header);
+    assert_eq!(
+        xhttp.sc_max_each_post_bytes,
+        XhttpRange {
+            from: 500_000,
+            to: 500_000
+        }
+    );
+    assert_eq!(
+        xhttp.sc_min_posts_interval_ms,
+        XhttpRange { from: 60, to: 60 }
+    );
+    assert_eq!(
+        xhttp.x_padding_bytes,
+        XhttpRange {
+            from: 100,
+            to: 1_000
+        }
+    );
+    assert_eq!(xhttp.xmux.max_connections, XhttpRange { from: 16, to: 16 });
+    assert_eq!(xhttp.xmux.max_concurrency, XhttpRange::default());
+    assert_eq!(xhttp.xmux.c_max_reuse_times, XhttpRange::default());
+    assert_eq!(
+        xhttp.xmux.h_max_request_times,
+        XhttpRange { from: 600, to: 900 }
+    );
+    assert_eq!(
+        xhttp.xmux.h_max_reusable_secs,
+        XhttpRange {
+            from: 1_800,
+            to: 3_000
+        }
+    );
+    assert_eq!(xhttp.xmux.h_keep_alive_period_secs, 0);
+    assert_eq!(parsed.diagnostics.len(), 1, "{:?}", parsed.diagnostics);
+    assert_eq!(parsed.diagnostics[0].severity, DiagnosticSeverity::Warning);
+    assert_eq!(
+        parsed.diagnostics[0].path.as_deref(),
+        Some("$.outbounds[0].streamSettings.xhttpSettings.extra.scMaxConcurrentPosts")
+    );
+    assert!(parsed.diagnostics[0].message.contains("ignored"));
+}
+
+#[test]
+fn xhttp_extra_replaces_outer_fields_but_preserves_outer_identity() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "xhttp", "security": "none",
+           "xhttpSettings": {
+             "host": "outer.example", "path": "/outer", "mode": "stream-one",
+             "xPaddingBytes": "0-100",
+             "downloadSettings": {},
+             "extra": {
+               "host": "inner.example", "path": "/inner", "mode": "not-a-mode",
+               "xPaddingBytes": "10-20"
+             }
+           }"#,
+    ))
+    .expect("outer non-identity semantics are discarded before Build validation");
+
+    let StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected xhttp");
+    };
+    assert_eq!(xhttp.host.as_deref(), Some("outer.example"));
+    assert_eq!(xhttp.path, "/outer");
+    assert_eq!(xhttp.mode, XhttpMode::StreamOne);
+    assert_eq!(xhttp.x_padding_bytes, XhttpRange { from: 10, to: 20 });
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+}
+
+#[test]
+fn xhttp_extra_null_and_missing_outer_identity_follow_xray_build() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "xhttp", "security": "none",
+           "xhttpSettings": {"extra": null}"#,
+    ))
+    .expect("extra null is a zero-valued replacement");
+    let StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected xhttp");
+    };
+    assert_eq!(xhttp.as_ref(), &XhttpSettings::default());
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "xhttp", "security": "none",
+           "xhttpSettings": {
+             "extra": {
+               "host": "discarded.example", "path": "/discarded", "mode": "packet-up",
+               "xPaddingBytes": 25
+             }
+           }"#,
+    ))
+    .expect("missing outer identity must erase the replacement identity");
+    let StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected xhttp");
+    };
+    assert_eq!(xhttp.host, None);
+    assert_eq!(xhttp.path, "");
+    assert_eq!(xhttp.mode, XhttpMode::Auto);
+    assert_eq!(xhttp.x_padding_bytes, XhttpRange { from: 25, to: 25 });
+}
+
+#[test]
+fn xhttp_extra_rejects_non_object_and_decode_invalid_fields() {
+    for (fragment, path) in [
+        (r#""extra": []"#, "extra"),
+        (r#""extra": "{}""#, "extra"),
+        (r#""extra": 7"#, "extra"),
+        (r#""extra": {"host": 7}"#, "extra.host"),
+        (r#""extra": {"futureField": 7}"#, "extra.futureField"),
+        (r#""host": 7, "extra": {}"#, "host"),
+    ] {
+        assert_parse_error_path(
+            &raw_with_stream_settings(&format!(
+                r#""network": "xhttp", "security": "none", "xhttpSettings": {{{fragment}}}"#
+            )),
+            &format!("$.outbounds[0].streamSettings.xhttpSettings.{path}"),
+        );
+    }
+}
+
+#[test]
+fn xhttp_nested_extra_is_inert_and_legacy_concurrent_posts_is_never_mapped() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": "xhttp", "security": "none",
+           "xhttpSettings": {
+             "mode": "packet-up",
+             "scMaxConcurrentPosts": {"old": true},
+             "extra": {
+               "scMaxConcurrentPosts": "100",
+               "extra": {"scMaxEachPostBytes": 999999},
+               "scMaxEachPostBytes": 123
+             }
+           }"#,
+    ))
+    .expect("removed and nested RawMessage fields must remain import-compatible");
+    let StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected xhttp");
+    };
+    assert_eq!(
+        xhttp.sc_max_each_post_bytes,
+        XhttpRange { from: 123, to: 123 }
+    );
+    assert_eq!(xhttp.sc_max_buffered_posts, 0);
+    assert_eq!(parsed.diagnostics.len(), 3, "{:?}", parsed.diagnostics);
+    assert!(parsed.diagnostics.iter().all(|diagnostic| {
+        diagnostic.severity == DiagnosticSeverity::Warning
+            && (diagnostic.message.contains("ignored")
+                || diagnostic.message.contains("replacement only once"))
+    }));
 }
 
 #[test]

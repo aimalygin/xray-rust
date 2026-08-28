@@ -1,0 +1,53 @@
+{
+  "inbounds": [
+    {
+      "tag": "socks-in",
+      "protocol": "socks",
+      "listen": "127.0.0.1",
+      "port": 1080,
+      "settings": { "udp": false }
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "proxy",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "192.0.2.20",
+            "port": 443,
+            "users": [
+              {
+                "id": "00010203-0405-0607-0809-0a0b0c0d0e0f",
+                "encryption": "none"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "reality",
+        "realitySettings": {
+          "serverName": "www.example.com",
+          "fingerprint": "chrome",
+          "publicKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
+          "shortId": "02030405",
+          "spiderX": "/"
+        },
+        "xhttpSettings": {
+          "path": "/share-link",
+          "mode": "auto",
+          "extra": {
+            "xmux": {
+              "maxConnections": 16
+            },
+            "xPaddingBytes": "100-1000"
+          }
+        }
+      }
+    }
+  ],
+  "routing": { "domainStrategy": "AsIs" }
+}

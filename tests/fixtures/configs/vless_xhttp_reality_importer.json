@@ -1,0 +1,79 @@
+{
+  "inbounds": [
+    {
+      "tag": "tun-in",
+      "protocol": "tun",
+      "listen": "127.0.0.1",
+      "port": 0,
+      "settings": {},
+      "sniffing": {
+        "enabled": true,
+        "destOverride": ["http", "tls", "quic"],
+        "metadataOnly": false
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "proxy",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "203.0.113.20",
+            "port": 443,
+            "users": [
+              {
+                "id": "00010203-0405-0607-0809-0a0b0c0d0e0f",
+                "encryption": "none"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "reality",
+        "realitySettings": {
+          "serverName": "reality.example",
+          "fingerprint": "chrome",
+          "publicKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
+          "shortId": "02030405",
+          "spiderX": "/spider"
+        },
+        "xhttpSettings": {
+          "host": "front.example",
+          "path": "/reality",
+          "mode": "auto",
+          "extra": {
+            "xPaddingBytes": "10-20"
+          }
+        }
+      }
+    },
+    {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {}
+    }
+  ],
+  "routing": {
+    "domainStrategy": "AsIs",
+    "rules": [
+      {
+        "type": "field",
+        "ip": ["geoip:private", "127.0.0.0/8", "fd00::/8"],
+        "outboundTag": "direct"
+      }
+    ]
+  },
+  "dns": {
+    "queryStrategy": "UseIPv4",
+    "fakeIp": {
+      "enabled": true,
+      "ipv4Pool": "198.19.0.0/16",
+      "poolSize": 32768,
+      "ttl": 60
+    }
+  }
+}

@@ -805,7 +805,7 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
         }
 
         var selectedMode: XrayRealityVisionFlowMode?
-        for outbound in outbounds where isRealityVlessOutbound(outbound) {
+        for outbound in outbounds where isRawRealityVlessOutbound(outbound) {
             guard let settings = outbound["settings"] as? [String: Any],
                   let vnext = settings["vnext"] as? [[String: Any]]
             else {
@@ -887,7 +887,7 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
 
         var didChange = false
         for outboundIndex in outbounds.indices {
-            guard isRealityVlessOutbound(outbounds[outboundIndex]),
+            guard isRawRealityVlessOutbound(outbounds[outboundIndex]),
                   var settings = outbounds[outboundIndex]["settings"] as? [String: Any],
                   var vnext = settings["vnext"] as? [[String: Any]]
             else {
@@ -940,7 +940,7 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
         var didFindRealityVlessUser = false
         var didChange = false
         for outboundIndex in outbounds.indices {
-            guard isRealityVlessOutbound(outbounds[outboundIndex]),
+            guard isRawRealityVlessOutbound(outbounds[outboundIndex]),
                   var settings = outbounds[outboundIndex]["settings"] as? [String: Any],
                   var vnext = settings["vnext"] as? [[String: Any]]
             else {
@@ -1157,6 +1157,21 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
             return false
         }
         return true
+    }
+
+    private static func isRawRealityVlessOutbound(_ outbound: [String: Any]) -> Bool {
+        guard isRealityVlessOutbound(outbound),
+              let streamSettings = outbound["streamSettings"] as? [String: Any]
+        else {
+            return false
+        }
+        guard let rawNetwork = streamSettings["network"] else {
+            return true
+        }
+        guard let network = rawNetwork as? String else {
+            return false
+        }
+        return network == "tcp" || network == "raw"
     }
 
     private static func regionalRules(

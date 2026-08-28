@@ -9,7 +9,7 @@ use std::sync::{
 };
 use std::task::{Context, Poll};
 
-use xray_transport::stream::TransportLayer;
+use xray_transport::stream::{TransportLayer, XhttpHttpVersion, XhttpScheme};
 
 use aes::cipher::{BlockEncrypt, KeyInit};
 use aes::Aes128;
@@ -1403,6 +1403,190 @@ fn parsed_config_tls_fingerprint_and_alpn_reach_transport_config() {
     };
     assert_eq!(tls.fingerprint.as_deref(), Some("firefox"));
     assert_eq!(tls.alpn, vec!["h2".to_owned(), "http/1.1".to_owned()]);
+}
+
+#[test]
+fn parsed_apple_xhttp_tls_config_reaches_the_dial_ready_h1_transport() {
+    let raw = include_str!("../../../tests/fixtures/configs/vless_xhttp_tls_importer.json");
+    let parsed = parse_xray_json(raw).expect("Apple XHTTP+TLS config should parse");
+    let selected = compile_vless_tcp_outbound_one_shot(&parsed.config)
+        .expect("Apple XHTTP+TLS config should compile");
+
+    let xray_transport::ConnectorConfig::Tls(tls) = selected.transport() else {
+        panic!("expected TLS connector");
+    };
+    assert_eq!(tls.server_name, "remote.example");
+    assert_eq!(tls.fingerprint.as_deref(), Some("chrome"));
+    assert_eq!(tls.alpn, ["http/1.1"]);
+    assert!(tls.allow_insecure);
+    assert!(selected.user().flow.is_none());
+
+    let TransportLayer::Xhttp(xhttp) = selected.transport_layer() else {
+        panic!("expected XHTTP transport");
+    };
+    assert_eq!(xhttp.http_version(), XhttpHttpVersion::Http1);
+    assert_eq!(xhttp.endpoint().scheme, XhttpScheme::Https);
+    assert_eq!(xhttp.endpoint().authority, "edge.example");
+    assert_eq!(
+        xhttp.config().mode,
+        xray_transport::stream::XhttpMode::PacketUp
+    );
+    assert_eq!(xhttp.config().path, "/api/");
+    assert_eq!(xhttp.config().max_each_post_bytes.from, 500_000);
+    assert_eq!(xhttp.config().max_each_post_bytes.to, 500_000);
+}
+
+#[test]
+fn parsed_apple_xhttp_reality_config_reaches_the_dial_ready_h2_transport() {
+    let raw = include_str!("../../../tests/fixtures/configs/vless_xhttp_reality_importer.json");
+    let parsed = parse_xray_json(raw).expect("Apple XHTTP+REALITY config should parse");
+    let selected = compile_vless_tcp_outbound_one_shot(&parsed.config)
+        .expect("Apple XHTTP+REALITY config should compile");
+
+    let xray_transport::ConnectorConfig::Reality(reality) = selected.transport() else {
+        panic!("expected REALITY connector");
+    };
+    assert_eq!(reality.server_name, "reality.example");
+    assert_eq!(reality.fingerprint, "chrome");
+    assert_eq!(reality.public_key, [1; 32]);
+    assert_eq!(reality.short_id, [2, 3, 4, 5]);
+    assert_eq!(reality.spider_x, "/spider");
+    assert!(reality.mldsa65_verify.is_none());
+    assert!(selected.user().flow.is_none());
+
+    let TransportLayer::Xhttp(xhttp) = selected.transport_layer() else {
+        panic!("expected XHTTP transport");
+    };
+    assert_eq!(xhttp.http_version(), XhttpHttpVersion::Http2);
+    assert_eq!(xhttp.endpoint().scheme, XhttpScheme::Https);
+    assert_eq!(xhttp.endpoint().authority, "front.example");
+    assert_eq!(
+        xhttp.config().mode,
+        xray_transport::stream::XhttpMode::StreamOne,
+        "REALITY turns importer mode=auto into Xray's stream-one mode"
+    );
+    assert_eq!(xhttp.config().path, "/reality/");
+    assert_eq!(xhttp.config().padding.range.from, 10);
+    assert_eq!(xhttp.config().padding.range.to, 20);
+}
+
+#[test]
+fn parsed_apple_xhttp_reality_optional_mldsa_reaches_the_connector() {
+    let mut candidate: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/configs/vless_xhttp_reality_importer.json"
+    ))
+    .unwrap();
+    // 1952 bytes of 0x5a encoded as unpadded base64url. Keeping this generated
+    // avoids burying the representative importer fixture under a 2603-byte key.
+    let mldsa65_verify = format!("{}Wlo", "Wlpa".repeat(650));
+    candidate
+        .pointer_mut("/outbounds/0/streamSettings/realitySettings")
+        .and_then(serde_json::Value::as_object_mut)
+        .unwrap()
+        .insert(
+            "mldsa65Verify".to_owned(),
+            serde_json::Value::String(mldsa65_verify),
+        );
+
+    let parsed = parse_xray_json(&candidate.to_string())
+        .expect("Apple XHTTP+REALITY config with pqv should parse");
+    let selected = compile_vless_tcp_outbound_one_shot(&parsed.config)
+        .expect("Apple XHTTP+REALITY config with pqv should compile");
+
+    let xray_transport::ConnectorConfig::Reality(reality) = selected.transport() else {
+        panic!("expected REALITY connector");
+    };
+    let verifying_key = reality
+        .mldsa65_verify
+        .as_deref()
+        .expect("mldsa65Verify must reach the dial-ready connector");
+    assert_eq!(verifying_key.len(), 1952);
+    assert!(verifying_key.iter().all(|byte| *byte == 0x5a));
+}
+
+#[test]
+fn parsed_apple_xhttp_tls_alpn_selects_h1_h2_and_h3_exactly_like_xray() {
+    let base: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/configs/vless_xhttp_tls_importer.json"
+    ))
+    .unwrap();
+    let cases: Vec<(Option<Vec<&str>>, XhttpHttpVersion)> = vec![
+        (None, XhttpHttpVersion::Http2),
+        (Some(vec![]), XhttpHttpVersion::Http2),
+        (Some(vec!["http/1.1"]), XhttpHttpVersion::Http1),
+        (Some(vec!["h2"]), XhttpHttpVersion::Http2),
+        (Some(vec!["h2", "http/1.1"]), XhttpHttpVersion::Http2),
+        (Some(vec!["h3", "h2"]), XhttpHttpVersion::Http2),
+        (Some(vec!["h3"]), XhttpHttpVersion::Http3),
+    ];
+
+    for (alpn, expected) in cases {
+        let mut candidate = base.clone();
+        let tls = candidate
+            .pointer_mut("/outbounds/0/streamSettings/tlsSettings")
+            .and_then(serde_json::Value::as_object_mut)
+            .unwrap();
+        match &alpn {
+            Some(alpn) => {
+                tls.insert("alpn".to_owned(), serde_json::json!(alpn));
+            }
+            None => {
+                tls.remove("alpn");
+            }
+        }
+
+        let parsed = parse_xray_json(&candidate.to_string())
+            .unwrap_or_else(|error| panic!("importer ALPN {alpn:?} should parse: {error:?}"));
+        let selected = compile_vless_tcp_outbound_one_shot(&parsed.config)
+            .unwrap_or_else(|error| panic!("importer ALPN {alpn:?} should compile: {error:?}"));
+        let xray_transport::ConnectorConfig::Tls(connector) = selected.transport() else {
+            panic!("expected TLS connector for ALPN {alpn:?}");
+        };
+        assert_eq!(connector.alpn, alpn.clone().unwrap_or_default());
+        let TransportLayer::Xhttp(xhttp) = selected.transport_layer() else {
+            panic!("expected XHTTP transport for ALPN {alpn:?}");
+        };
+        assert_eq!(xhttp.http_version(), expected, "ALPN {alpn:?}");
+    }
+}
+
+#[tokio::test]
+async fn parsed_xhttp_vision_is_rejected_before_dns_or_transport_dial() {
+    for raw in [
+        include_str!("../../../tests/fixtures/configs/vless_xhttp_tls_importer.json"),
+        include_str!("../../../tests/fixtures/configs/vless_xhttp_reality_importer.json"),
+    ] {
+        let mut candidate: serde_json::Value = serde_json::from_str(raw).unwrap();
+        candidate
+            .pointer_mut("/outbounds/0/settings/vnext/0/users/0")
+            .and_then(serde_json::Value::as_object_mut)
+            .unwrap()
+            .insert(
+                "flow".to_owned(),
+                serde_json::Value::String("xtls-rprx-vision".to_owned()),
+            );
+        let parsed = parse_xray_json(&candidate.to_string())
+            .expect("Xray config-build accepts Vision with XHTTP");
+        let selected = compile_vless_tcp_outbound_one_shot(&parsed.config)
+            .expect("the connector guard runs when the stream is opened");
+        let target = Target::new(
+            RoutingTargetAddr::Domain("destination.example".to_owned()),
+            443,
+            RoutingNetwork::Tcp,
+        );
+
+        let error = match xray_core_rs::open_vless_tcp_stream_with_resolver(
+            &selected,
+            &target,
+            &EmptyDnsResolver,
+        )
+        .await
+        {
+            Ok(_) => panic!("Vision over XHTTP must not reach a transport dial"),
+            Err(error) => error,
+        };
+        assert!(matches!(error, CoreError::UnsupportedOutboundFlow));
+    }
 }
 
 #[test]

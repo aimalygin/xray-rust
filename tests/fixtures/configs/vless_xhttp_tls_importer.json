@@ -1,0 +1,86 @@
+{
+  "inbounds": [
+    {
+      "tag": "tun-in",
+      "protocol": "tun",
+      "listen": "127.0.0.1",
+      "port": 0,
+      "settings": {},
+      "sniffing": {
+        "enabled": true,
+        "destOverride": ["http", "tls", "quic"],
+        "metadataOnly": false
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "proxy",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "remote.example",
+            "port": 443,
+            "users": [
+              {
+                "id": "00010203-0405-0607-0809-0a0b0c0d0e0f",
+                "encryption": "none"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "tls",
+        "tlsSettings": {
+          "serverName": "remote.example",
+          "fingerprint": "chrome",
+          "alpn": ["http/1.1"],
+          "allowInsecure": true
+        },
+        "xhttpSettings": {
+          "host": "edge.example",
+          "path": "/api",
+          "mode": "packet-up",
+          "extra": {
+            "noGRPCHeader": false,
+            "scMaxEachPostBytes": "500000",
+            "scMinPostsIntervalMs": "60",
+            "xmux": {
+              "hMaxRequestTimes": "600-900",
+              "hMaxReusableSecs": "1800-3000",
+              "maxConnections": 16
+            },
+            "xPaddingBytes": "100-1000"
+          }
+        }
+      }
+    },
+    {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {}
+    }
+  ],
+  "routing": {
+    "domainStrategy": "AsIs",
+    "rules": [
+      {
+        "type": "field",
+        "ip": ["geoip:private", "127.0.0.0/8", "fd00::/8"],
+        "outboundTag": "direct"
+      }
+    ]
+  },
+  "dns": {
+    "queryStrategy": "UseIPv4",
+    "fakeIp": {
+      "enabled": true,
+      "ipv4Pool": "198.19.0.0/16",
+      "poolSize": 32768,
+      "ttl": 60
+    }
+  }
+}

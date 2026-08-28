@@ -12,7 +12,7 @@
 //! flows separate HTTP clients even though sequential flows may reuse one.
 
 use std::fmt;
-use std::future::Future;
+use std::future::{poll_fn, Future};
 use std::io;
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -51,6 +51,10 @@ use crate::{
 };
 
 const PACKET_RESPONSE_CAP_FALLBACK: usize = 1;
+// Xray's packet-up pipe is made from pooled 8 KiB buffers. Grow the H1 body
+// only while bytes are actually available instead of materializing the
+// configured (potentially multi-megabyte) POST ceiling for every flow.
+const H1_PACKET_READ_CHUNK_BYTES: usize = 8 * 1024;
 const MAX_PACKET_RESPONSE_TASKS: usize = 256;
 const MAX_H1_IDLE_UPLOAD_STREAMS: usize = 256;
 const HTTP_MULTIPLEXED_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
@@ -90,12 +94,91 @@ struct PreparedRequest {
 
 struct PacketWorkerContext {
     input: tokio::io::DuplexStream,
+    first_uplink: Option<oneshot::Receiver<FirstUplink>>,
     session: String,
     max_packet: u32,
     response_cap: usize,
     upload_client: Arc<XmuxClient>,
     dial: XhttpModeDial,
     failure: Arc<SharedFailure>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FirstUplink {
+    Data,
+    Closed,
+}
+
+/// Keeps an idle H1 packet-up stream allocation-free on its worker side.
+///
+/// Tokio's in-memory duplex buffer grows lazily, but the packet worker used to
+/// reserve and zero `scMaxEachPostBytes` as soon as the logical stream opened.
+/// Notify the worker only after this side has actually accepted a byte. A
+/// clean shutdown before any write is distinct so the worker can exit without
+/// constructing its packet buffer at all.
+struct FirstUplinkWriter {
+    inner: tokio::io::DuplexStream,
+    first_uplink: Option<oneshot::Sender<FirstUplink>>,
+}
+
+impl FirstUplinkWriter {
+    fn new(inner: tokio::io::DuplexStream, first_uplink: oneshot::Sender<FirstUplink>) -> Self {
+        Self {
+            inner,
+            first_uplink: Some(first_uplink),
+        }
+    }
+
+    fn notify(&mut self, event: FirstUplink) {
+        if let Some(first_uplink) = self.first_uplink.take() {
+            let _ = first_uplink.send(event);
+        }
+    }
+}
+
+impl AsyncWrite for FirstUplinkWriter {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        input: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        let this = self.get_mut();
+        let result = Pin::new(&mut this.inner).poll_write(cx, input);
+        if matches!(result, Poll::Ready(Ok(written)) if written > 0) {
+            this.notify(FirstUplink::Data);
+        }
+        result
+    }
+
+    fn poll_write_vectored(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        input: &[io::IoSlice<'_>],
+    ) -> Poll<io::Result<usize>> {
+        let this = self.get_mut();
+        let result = Pin::new(&mut this.inner).poll_write_vectored(cx, input);
+        if matches!(result, Poll::Ready(Ok(written)) if written > 0) {
+            this.notify(FirstUplink::Data);
+        }
+        result
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        self.inner.is_write_vectored()
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.get_mut().inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let this = self.get_mut();
+        let result = Pin::new(&mut this.inner).poll_shutdown(cx);
+        if result.is_ready() {
+            this.notify(FirstUplink::Closed);
+        }
+        result
+    }
 }
 
 #[derive(Clone)]
@@ -336,6 +419,21 @@ impl XhttpTransport {
     #[doc(hidden)]
     pub fn config(&self) -> &XhttpConfig {
         &self.config
+    }
+
+    /// Read-only seam for parser-to-runtime compatibility tests. The HTTP
+    /// engine is selected while the outbound is compiled, before any socket
+    /// exists, so exposing that decision avoids inferring it from network I/O.
+    #[doc(hidden)]
+    pub fn http_version(&self) -> XhttpHttpVersion {
+        self.http_version
+    }
+
+    /// Read-only seam for verifying the effective scheme and authority after
+    /// XHTTP host, TLS/REALITY SNI, and destination fallbacks are resolved.
+    #[doc(hidden)]
+    pub fn endpoint(&self) -> &XhttpEndpoint {
+        &self.endpoint
     }
 
     #[doc(hidden)]
@@ -680,6 +778,16 @@ impl XhttpTransport {
             .map_err(|_| XhttpTransportError::WorkerLimitTooLarge)?
             .clamp(PACKET_RESPONSE_CAP_FALLBACK, MAX_PACKET_RESPONSE_TASKS);
         let (uplink, worker_input) = tokio::io::duplex(pipe_capacity);
+        let (uplink, first_uplink): (BoxedWrite, _) = match self.http_version {
+            XhttpHttpVersion::Http1 => {
+                let (first_uplink_tx, first_uplink_rx) = oneshot::channel();
+                (
+                    Box::new(FirstUplinkWriter::new(uplink, first_uplink_tx)),
+                    Some(first_uplink_rx),
+                )
+            }
+            XhttpHttpVersion::Http2 | XhttpHttpVersion::Http3 => (Box::new(uplink), None),
+        };
         let worker_failure = Arc::clone(&failure);
         let response_failure = Arc::clone(&failure);
         let transport = self.clone();
@@ -687,6 +795,7 @@ impl XhttpTransport {
             if let Err(error) = transport
                 .run_packet_worker(PacketWorkerContext {
                     input: worker_input,
+                    first_uplink,
                     session,
                     max_packet,
                     response_cap,
@@ -702,7 +811,7 @@ impl XhttpTransport {
 
         Ok(Box::new(XhttpLogicalStream::new(
             downlink,
-            Box::new(uplink),
+            uplink,
             failure,
             vec![downlink_opener.into_handle(), worker],
             connection_activity,
@@ -763,6 +872,7 @@ impl XhttpTransport {
     ) -> Result<(), XhttpTransportError> {
         let PacketWorkerContext {
             mut input,
+            first_uplink,
             session,
             max_packet,
             response_cap,
@@ -770,13 +880,18 @@ impl XhttpTransport {
             dial,
             failure,
         } = context;
+        if let Some(first_uplink) = first_uplink {
+            match first_uplink.await {
+                Ok(FirstUplink::Data) => {}
+                Ok(FirstUplink::Closed) | Err(_) => return Ok(()),
+            }
+        }
         let max_packet =
             usize::try_from(max_packet).map_err(|_| XhttpTransportError::PacketSizeTooLarge)?;
-        let mut buffer = Vec::new();
-        buffer
-            .try_reserve_exact(max_packet)
-            .map_err(|error| XhttpTransportError::BackgroundTask(error.to_string()))?;
-        buffer.resize(max_packet, 0);
+        let mut buffer = match self.http_version {
+            XhttpHttpVersion::Http1 => h1_packet_buffer(max_packet)?,
+            XhttpHttpVersion::Http2 | XhttpHttpVersion::Http3 => fixed_packet_buffer(max_packet)?,
+        };
 
         let mut sequence = 0_i64;
         let mut last_request = None;
@@ -787,25 +902,23 @@ impl XhttpTransport {
         let mut rotated_upload_usage = None;
         match self.http_version {
             XhttpHttpVersion::Http1 => loop {
-                let read = input
-                    .read(&mut buffer)
-                    .await
-                    .map_err(XhttpTransportError::Io)?;
+                let read = read_h1_packet_input(&mut input, &mut buffer, max_packet).await?;
                 if read == 0 {
                     return Ok(());
                 }
                 self.wait_packet_interval(&mut last_request).await?;
                 self.rotate_packet_client_if_needed(&mut upload_client, &mut rotated_upload_usage)
                     .await?;
-                let request =
-                    self.compose_packet(&session, &sequence.to_string(), buffer[..read].to_vec())?;
+                let request = self.compose_packet(&session, &sequence.to_string(), buffer)?;
                 sequence = sequence.wrapping_add(1);
                 // The upstream H1 raw pool writes one request, then consumes
                 // its response before that same connection can be checked out
                 // again. Waiting here preserves that ordering and is what
                 // makes returning a socket to our safe pool possible.
-                self.send_h1_packet(&upload_client, dial.stream()?, request)
+                let request = self
+                    .send_h1_packet(&upload_client, dial.stream()?, request)
                     .await?;
+                buffer = reclaim_packet_buffer(request, max_packet)?;
             },
             XhttpHttpVersion::Http2 | XhttpHttpVersion::Http3 => {
                 // `scMaxBufferedPosts` is an inbound reassembly bound in Xray,
@@ -924,7 +1037,7 @@ impl XhttpTransport {
         client: &Arc<XmuxClient>,
         dial: XhttpDial,
         prepared: PreparedRequest,
-    ) -> Result<(), XhttpTransportError> {
+    ) -> Result<PreparedRequest, XhttpTransportError> {
         debug_assert!(!prepared.auto_gzip);
         let body = fixed_packet_body(&prepared.request)?;
         let mut retry_stale_pool_entry = true;
@@ -972,7 +1085,7 @@ impl XhttpTransport {
             if let Some(stream) = reusable {
                 client.h1_pool.put(stream).await;
             }
-            return Ok(());
+            return Ok(prepared);
         }
     }
 
@@ -1356,6 +1469,99 @@ fn fixed_packet_body(request: &XhttpRequest) -> Result<&[u8], XhttpTransportErro
             "packet composer returned a streaming body".to_owned(),
         )),
     }
+}
+
+fn h1_packet_buffer(max_packet: usize) -> Result<Vec<u8>, XhttpTransportError> {
+    let mut buffer = Vec::new();
+    buffer
+        .try_reserve_exact(max_packet.min(H1_PACKET_READ_CHUNK_BYTES))
+        .map_err(|error| XhttpTransportError::BackgroundTask(error.to_string()))?;
+    Ok(buffer)
+}
+
+fn fixed_packet_buffer(max_packet: usize) -> Result<Vec<u8>, XhttpTransportError> {
+    resize_fixed_packet_buffer(Vec::new(), max_packet)
+}
+
+fn reclaim_packet_buffer(
+    prepared: PreparedRequest,
+    max_packet: usize,
+) -> Result<Vec<u8>, XhttpTransportError> {
+    let buffer = match prepared.request.body {
+        XhttpRequestBody::Bytes(body) => body,
+        XhttpRequestBody::None | XhttpRequestBody::Streaming => Vec::new(),
+    };
+    if buffer.capacity() > max_packet {
+        return h1_packet_buffer(max_packet);
+    }
+    let mut buffer = buffer;
+    buffer.clear();
+    Ok(buffer)
+}
+
+fn resize_fixed_packet_buffer(
+    mut buffer: Vec<u8>,
+    max_packet: usize,
+) -> Result<Vec<u8>, XhttpTransportError> {
+    if buffer.capacity() < max_packet {
+        buffer
+            .try_reserve_exact(max_packet.saturating_sub(buffer.len()))
+            .map_err(|error| XhttpTransportError::BackgroundTask(error.to_string()))?;
+    }
+    buffer.resize(max_packet, 0);
+    Ok(buffer)
+}
+
+/// Drains the bytes currently available from the packet pipe into one H1
+/// request, up to the configured ceiling. The vector grows in the same 8 KiB
+/// units used by Xray's pooled MultiBuffer implementation, so an idle flow
+/// that has sent only its small VLESS header does not pin 500 KiB merely
+/// because `scMaxEachPostBytes` allows a future request that large.
+async fn read_h1_packet_input(
+    input: &mut tokio::io::DuplexStream,
+    buffer: &mut Vec<u8>,
+    max_packet: usize,
+) -> Result<usize, XhttpTransportError> {
+    buffer.clear();
+    poll_fn(|cx| loop {
+        if buffer.len() == max_packet {
+            return Poll::Ready(Ok(buffer.len()));
+        }
+
+        let filled = buffer.len();
+        let next = filled
+            .saturating_add(H1_PACKET_READ_CHUNK_BYTES)
+            .min(max_packet);
+        if buffer.capacity() < next {
+            if let Err(error) = buffer.try_reserve_exact(next - buffer.len()) {
+                return Poll::Ready(Err(XhttpTransportError::BackgroundTask(error.to_string())));
+            }
+        }
+        buffer.resize(next, 0);
+
+        let mut read_buf = ReadBuf::new(&mut buffer[filled..next]);
+        match Pin::new(&mut *input).poll_read(cx, &mut read_buf) {
+            Poll::Pending => {
+                buffer.truncate(filled);
+                if filled == 0 {
+                    return Poll::Pending;
+                }
+                return Poll::Ready(Ok(filled));
+            }
+            Poll::Ready(Err(error)) => {
+                buffer.truncate(filled);
+                return Poll::Ready(Err(XhttpTransportError::Io(error)));
+            }
+            Poll::Ready(Ok(())) => {
+                let read = read_buf.filled().len();
+                buffer.truncate(filled + read);
+                if read == 0 {
+                    return Poll::Ready(Ok(buffer.len()));
+                }
+            }
+        }
+    })
+    .await
 }
 
 fn gzip_response_reader<R>(reader: R) -> BoxedRead
@@ -2702,6 +2908,85 @@ impl H3DialAttempt {
                 ));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod packet_buffer_tests {
+    use tokio::io::AsyncWriteExt;
+    use tokio::sync::oneshot::error::TryRecvError;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn first_uplink_writer_waits_for_data_and_distinguishes_clean_shutdown() {
+        let (inner, mut peer) = tokio::io::duplex(16);
+        let (first_uplink_tx, mut first_uplink_rx) = oneshot::channel();
+        let mut writer = FirstUplinkWriter::new(inner, first_uplink_tx);
+
+        writer.flush().await.unwrap();
+        assert_eq!(first_uplink_rx.try_recv(), Err(TryRecvError::Empty));
+
+        writer.write_all(b"x").await.unwrap();
+        assert_eq!(first_uplink_rx.await.unwrap(), FirstUplink::Data);
+        let mut byte = [0_u8; 1];
+        peer.read_exact(&mut byte).await.unwrap();
+        assert_eq!(byte, *b"x");
+
+        let (inner, _peer) = tokio::io::duplex(16);
+        let (first_uplink_tx, first_uplink_rx) = oneshot::channel();
+        let mut writer = FirstUplinkWriter::new(inner, first_uplink_tx);
+        writer.shutdown().await.unwrap();
+        assert_eq!(first_uplink_rx.await.unwrap(), FirstUplink::Closed);
+    }
+
+    #[tokio::test]
+    async fn dropping_an_idle_first_uplink_writer_releases_the_worker_gate() {
+        let (inner, _peer) = tokio::io::duplex(16);
+        let (first_uplink_tx, first_uplink_rx) = oneshot::channel();
+        let writer = FirstUplinkWriter::new(inner, first_uplink_tx);
+
+        drop(writer);
+        assert!(first_uplink_rx.await.is_err());
+    }
+
+    #[tokio::test]
+    async fn h1_packet_buffer_grows_with_available_bytes_not_the_ceiling() {
+        const MAX_PACKET: usize = 500_000;
+        let (mut writer, mut input) = tokio::io::duplex(MAX_PACKET);
+        writer.write_all(b"vless-header").await.unwrap();
+
+        let mut buffer = h1_packet_buffer(MAX_PACKET).unwrap();
+        let read = read_h1_packet_input(&mut input, &mut buffer, MAX_PACKET)
+            .await
+            .unwrap();
+
+        assert_eq!(read, b"vless-header".len());
+        assert_eq!(buffer, b"vless-header");
+        assert!(buffer.capacity() < MAX_PACKET);
+    }
+
+    #[test]
+    fn h1_body_packet_reclaims_the_actual_allocation_without_expanding_it() {
+        const MAX_PACKET: usize = 500_000;
+
+        let mut body = h1_packet_buffer(MAX_PACKET).unwrap();
+        let allocation = body.as_ptr();
+        body.extend_from_slice(b"data");
+        let request = PreparedRequest {
+            request: XhttpRequest {
+                method: "POST".to_owned(),
+                target: "/upload".to_owned(),
+                headers: XhttpHeaderMap::new(),
+                body: XhttpRequestBody::Bytes(body),
+            },
+            auto_gzip: false,
+        };
+
+        let reclaimed = reclaim_packet_buffer(request, MAX_PACKET).unwrap();
+        assert_eq!(reclaimed.as_ptr(), allocation);
+        assert!(reclaimed.is_empty());
+        assert_eq!(reclaimed.capacity(), H1_PACKET_READ_CHUNK_BYTES);
     }
 }
 

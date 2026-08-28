@@ -14,8 +14,9 @@ use tokio::task::JoinSet;
 
 use super::{
     allocate_loopback_port, bulk_pattern_template, ensure_xray_core_binary, hex_lower,
-    socks5_connect_measured, wait_for_process_log_contains, BenchError, BenchOptions, EngineKind,
-    FixtureProcess, FlowSetupSample, WorkloadFixture, WorkloadOutcome,
+    socks5_connect_measured, wait_for_process_log_contains, BenchError, BenchOptions,
+    BenchmarkPhase, BenchmarkPhaseTracker, EngineKind, FixtureProcess, FlowSetupSample,
+    WorkloadFixture, WorkloadOutcome,
 };
 
 const BENCH_SERVER_NAME: &str = "vless.test";
@@ -137,6 +138,7 @@ pub enum StreamBenchTraffic {
     Download,
     FullDuplex,
     PacketUp,
+    HeldOpen,
 }
 
 impl StreamBenchTraffic {
@@ -146,6 +148,7 @@ impl StreamBenchTraffic {
             Self::Download => "download",
             Self::FullDuplex => "full-duplex",
             Self::PacketUp => "packet-up",
+            Self::HeldOpen => "held-open",
         }
     }
 
@@ -155,8 +158,9 @@ impl StreamBenchTraffic {
             "download" => Ok(Self::Download),
             "full-duplex" | "duplex" => Ok(Self::FullDuplex),
             "packet-up" => Ok(Self::PacketUp),
+            "held-open" => Ok(Self::HeldOpen),
             other => Err(BenchError::InvalidArguments(format!(
-                "unsupported stream traffic `{other}`; expected upload|download|full-duplex|packet-up"
+                "unsupported stream traffic `{other}`; expected upload|download|full-duplex|packet-up|held-open"
             ))),
         }
     }
@@ -167,6 +171,34 @@ impl StreamBenchTraffic {
 
     fn has_downlink(self) -> bool {
         matches!(self, Self::Download | Self::FullDuplex)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreamBenchXhttpProfile {
+    LegacyExtraH1PacketUp,
+}
+
+impl StreamBenchXhttpProfile {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::LegacyExtraH1PacketUp => "legacy-extra-h1-packet-up",
+        }
+    }
+
+    pub(crate) fn parse(raw: &str) -> Result<Self, BenchError> {
+        match raw {
+            "legacy-extra-h1-packet-up" => Ok(Self::LegacyExtraH1PacketUp),
+            other => Err(BenchError::InvalidArguments(format!(
+                "unsupported XHTTP benchmark profile `{other}`; expected legacy-extra-h1-packet-up"
+            ))),
+        }
+    }
+
+    pub fn default_max_post_bytes(self) -> usize {
+        match self {
+            Self::LegacyExtraH1PacketUp => 500_000,
+        }
     }
 }
 
@@ -203,6 +235,7 @@ pub struct StreamBenchScenario {
     pub transport: StreamBenchTransport,
     pub traffic: StreamBenchTraffic,
     pub xhttp_mode: Option<StreamBenchXhttpMode>,
+    pub xhttp_profile: Option<StreamBenchXhttpProfile>,
 }
 
 impl StreamBenchScenario {
@@ -210,12 +243,15 @@ impl StreamBenchScenario {
         transport: Option<StreamBenchTransport>,
         traffic: Option<StreamBenchTraffic>,
         xhttp_mode: Option<StreamBenchXhttpMode>,
+        xhttp_profile: Option<StreamBenchXhttpProfile>,
     ) -> Result<Self, BenchError> {
-        let transport = transport.ok_or_else(|| {
-            BenchError::InvalidArguments(
-                "stream-transport workload requires --stream-transport".to_owned(),
-            )
-        })?;
+        let transport = transport
+            .or_else(|| xhttp_profile.map(|_| StreamBenchTransport::XhttpHttp1))
+            .ok_or_else(|| {
+                BenchError::InvalidArguments(
+                    "stream-transport workload requires --stream-transport".to_owned(),
+                )
+            })?;
         let traffic = traffic.ok_or_else(|| {
             BenchError::InvalidArguments("stream-transport workload requires --traffic".to_owned())
         })?;
@@ -228,6 +264,15 @@ impl StreamBenchScenario {
         } else {
             None
         };
+        if xhttp_profile.is_some()
+            && (transport != StreamBenchTransport::XhttpHttp1
+                || xhttp_mode != Some(StreamBenchXhttpMode::PacketUp))
+        {
+            return Err(BenchError::InvalidArguments(
+                "--xhttp-profile legacy-extra-h1-packet-up requires xhttp-h1 in packet-up mode"
+                    .to_owned(),
+            ));
+        }
         if traffic == StreamBenchTraffic::PacketUp
             && (xhttp_mode != Some(StreamBenchXhttpMode::PacketUp) || !transport.is_xhttp())
         {
@@ -239,13 +284,36 @@ impl StreamBenchScenario {
             transport,
             traffic,
             xhttp_mode,
+            xhttp_profile,
         })
     }
 
-    pub(crate) fn validate_payload_size(self, payload_size: usize) -> Result<(), BenchError> {
-        if self.transport.is_xhttp() && i32::try_from(payload_size).is_err() {
+    pub(crate) fn effective_xhttp_max_post_bytes(
+        self,
+        payload_size: usize,
+        override_bytes: Option<usize>,
+    ) -> Option<usize> {
+        self.transport.is_xhttp().then(|| {
+            override_bytes.unwrap_or_else(|| {
+                self.xhttp_profile
+                    .map(StreamBenchXhttpProfile::default_max_post_bytes)
+                    .unwrap_or(payload_size)
+            })
+        })
+    }
+
+    pub(crate) fn validate_max_post_bytes(
+        self,
+        payload_size: usize,
+        override_bytes: Option<usize>,
+    ) -> Result<(), BenchError> {
+        if self
+            .effective_xhttp_max_post_bytes(payload_size, override_bytes)
+            .is_some_and(|bytes| i32::try_from(bytes).is_err())
+        {
             return Err(BenchError::InvalidArguments(
-                "XHTTP benchmark payload size must fit signed 32-bit scMaxEachPostBytes".to_owned(),
+                "XHTTP benchmark max POST bytes must fit signed 32-bit scMaxEachPostBytes"
+                    .to_owned(),
             ));
         }
         Ok(())
@@ -268,7 +336,7 @@ pub(super) async fn start_fixture(
     run_dir: &Path,
     binary_dir: &Path,
 ) -> Result<StreamTransportFixture, BenchError> {
-    scenario.validate_payload_size(options.payload_size)?;
+    scenario.validate_max_post_bytes(options.payload_size, options.xhttp_max_post_bytes)?;
     let fixture_dir = run_dir
         .join("fixture")
         .join(format!("{}-server", scenario.transport.as_str()));
@@ -315,7 +383,15 @@ pub(super) async fn start_fixture(
     let fixture_startup = scenario.transport.fixture_startup();
     let port = fixture_startup.allocate_port()?;
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
-    let config = xray_server_config(port, scenario, options.payload_size, &cert_path, &key_path)?;
+    let config = xray_server_config(
+        port,
+        scenario,
+        scenario
+            .effective_xhttp_max_post_bytes(options.payload_size, options.xhttp_max_post_bytes)
+            .unwrap_or(options.payload_size),
+        &cert_path,
+        &key_path,
+    )?;
     let config_path = fixture_dir.join("config.json");
     fs::write(&config_path, config).map_err(|source| BenchError::Io {
         action: format!("writing fixture config `{}`", config_path.display()),
@@ -366,7 +442,7 @@ pub(super) fn engine_config(
     scenario: StreamBenchScenario,
     fixture: &WorkloadFixture,
 ) -> Result<String, BenchError> {
-    scenario.validate_payload_size(options.payload_size)?;
+    scenario.validate_max_post_bytes(options.payload_size, options.xhttp_max_post_bytes)?;
     if !scenario.supports_engine(engine) {
         return Err(BenchError::InvalidArguments(format!(
             "sing-box does not support the {} stream transport",
@@ -391,7 +467,9 @@ pub(super) fn engine_config(
             vless_addr,
             cert_sha256,
             scenario,
-            options.payload_size,
+            scenario
+                .effective_xhttp_max_post_bytes(options.payload_size, options.xhttp_max_post_bytes)
+                .unwrap_or(options.payload_size),
         ),
         EngineKind::SingBox => sing_box_client_config(port, vless_addr, scenario),
     }
@@ -401,8 +479,9 @@ pub(super) async fn run_workload(
     socks_addr: SocketAddr,
     options: &BenchOptions,
     scenario: StreamBenchScenario,
+    phase: BenchmarkPhaseTracker,
 ) -> Result<WorkloadOutcome, BenchError> {
-    scenario.validate_payload_size(options.payload_size)?;
+    scenario.validate_max_post_bytes(options.payload_size, options.xhttp_max_post_bytes)?;
     let template = Arc::new(bulk_pattern_template(options.payload_size));
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
         .await
@@ -422,6 +501,48 @@ pub(super) async fn run_workload(
         run_target_server(listener, traffic, server_template, iterations, connections).await
     });
 
+    phase.set(BenchmarkPhase::Opening);
+    if scenario.traffic == StreamBenchTraffic::HeldOpen {
+        let mut clients = JoinSet::new();
+        for _ in 0..options.connections {
+            clients.spawn(connect_client_flow(socks_addr, target_addr));
+        }
+        let mut held_clients = Vec::with_capacity(options.connections);
+        let mut outcome = WorkloadOutcome::empty();
+        while let Some(result) = clients.join_next().await {
+            match result {
+                Ok(Ok((client, setup_sample))) => {
+                    held_clients.push(client);
+                    outcome.setup_samples.push(setup_sample);
+                }
+                Ok(Err(error)) => {
+                    server_task.abort();
+                    return Err(error);
+                }
+                Err(error) => {
+                    server_task.abort();
+                    return Err(BenchError::InvalidArguments(format!(
+                        "stream-transport held-open task failed: {error}"
+                    )));
+                }
+            }
+        }
+        phase.set(BenchmarkPhase::HeldOpen);
+        tokio::time::sleep(options.duration).await;
+        drop(held_clients);
+        // A packet-up transport can keep its downstream GET alive after the
+        // local SOCKS peer disappears. Waiting for target-side EOF would make
+        // a memory probe depend on that transport-specific teardown cadence
+        // and can hold the harness until its outer timeout. The held phase has
+        // already established every end-to-end flow through the READY marker;
+        // terminate the synthetic target now so settle measures cleanup from
+        // a closed flow on both sides.
+        server_task.abort();
+        let _ = server_task.await;
+        settle(options, &phase).await;
+        return Ok(outcome);
+    }
+
     let mut clients = JoinSet::new();
     for _ in 0..options.connections {
         let template = Arc::clone(&template);
@@ -431,6 +552,7 @@ pub(super) async fn run_workload(
             traffic,
             template,
             options.iterations,
+            phase.clone(),
         ));
     }
 
@@ -453,7 +575,16 @@ pub(super) async fn run_workload(
     server_task.await.map_err(|error| {
         BenchError::InvalidArguments(format!("stream-transport target task failed: {error}"))
     })??;
+    settle(options, &phase).await;
     Ok(outcome)
+}
+
+async fn settle(options: &BenchOptions, phase: &BenchmarkPhaseTracker) {
+    if !options.settle.is_zero() {
+        phase.set(BenchmarkPhase::Settle);
+        tokio::time::sleep(options.settle).await;
+    }
+    phase.set(BenchmarkPhase::Complete);
 }
 
 async fn run_target_server(
@@ -494,7 +625,7 @@ async fn run_target_flow(
             source,
         })?;
     match traffic {
-        StreamBenchTraffic::Upload | StreamBenchTraffic::PacketUp => {
+        StreamBenchTraffic::Upload => {
             read_pattern(
                 &mut stream,
                 template,
@@ -509,6 +640,24 @@ async fn run_target_flow(
                     action: "writing stream-transport completion marker".to_owned(),
                     source,
                 })?;
+        }
+        StreamBenchTraffic::PacketUp => {
+            for _ in 0..iterations {
+                read_pattern(
+                    &mut stream,
+                    template,
+                    1,
+                    "reading benchmark packet-up upload",
+                )
+                .await?;
+                stream
+                    .write_all(&[COMPLETE_BYTE])
+                    .await
+                    .map_err(|source| BenchError::Io {
+                        action: "writing benchmark packet-up acknowledgement".to_owned(),
+                        source,
+                    })?;
+            }
         }
         StreamBenchTraffic::Download => {
             write_pattern(
@@ -543,6 +692,21 @@ async fn run_target_flow(
                     source,
                 })?;
         }
+        StreamBenchTraffic::HeldOpen => {
+            let mut buffer = [0_u8; 1024];
+            loop {
+                let read = stream
+                    .read(&mut buffer)
+                    .await
+                    .map_err(|source| BenchError::Io {
+                        action: "holding stream-transport target connection open".to_owned(),
+                        source,
+                    })?;
+                if read == 0 {
+                    break;
+                }
+            }
+        }
     }
     stream.shutdown().await.map_err(|source| BenchError::Io {
         action: "shutting down stream-transport target".to_owned(),
@@ -556,7 +720,17 @@ async fn run_client_flow(
     traffic: StreamBenchTraffic,
     template: Arc<Vec<u8>>,
     iterations: usize,
+    phase: BenchmarkPhaseTracker,
 ) -> Result<WorkloadOutcome, BenchError> {
+    let (client, setup_sample) = connect_client_flow(socks_addr, target_addr).await?;
+    phase.set(BenchmarkPhase::Traffic);
+    run_connected_client_flow(client, setup_sample, traffic, template, iterations).await
+}
+
+async fn connect_client_flow(
+    socks_addr: SocketAddr,
+    target_addr: SocketAddr,
+) -> Result<(TcpStream, FlowSetupSample), BenchError> {
     let setup_started = Instant::now();
     let tcp_started = Instant::now();
     let mut client = TcpStream::connect(socks_addr)
@@ -592,11 +766,24 @@ async fn run_client_flow(
         total_us: setup_started.elapsed().as_micros(),
     };
 
+    Ok((client, setup_sample))
+}
+
+async fn run_connected_client_flow(
+    mut client: TcpStream,
+    setup_sample: FlowSetupSample,
+    traffic: StreamBenchTraffic,
+    template: Arc<Vec<u8>>,
+    iterations: usize,
+) -> Result<WorkloadOutcome, BenchError> {
     let started = Instant::now();
     let bytes_per_direction = checked_payload_bytes(template.len(), iterations)?;
     match traffic {
-        StreamBenchTraffic::Upload | StreamBenchTraffic::PacketUp => {
+        StreamBenchTraffic::Upload => {
             run_client_upload(&mut client, &template, iterations).await?;
+        }
+        StreamBenchTraffic::PacketUp => {
+            run_client_packet_up(&mut client, &template, iterations).await?;
         }
         StreamBenchTraffic::Download => {
             read_pattern(
@@ -610,6 +797,11 @@ async fn run_client_flow(
         StreamBenchTraffic::FullDuplex => {
             let (mut reader, mut writer) = client.into_split();
             run_client_full_duplex(&mut reader, &mut writer, &template, iterations).await?;
+        }
+        StreamBenchTraffic::HeldOpen => {
+            return Err(BenchError::InvalidArguments(
+                "internal error: held-open flow entered traffic driver".to_owned(),
+            ));
         }
     }
     let ended = Instant::now();
@@ -650,6 +842,31 @@ where
     // a portable half-close: framed transports such as WebSocket can close the
     // whole session and discard the completion marker.
     read_completion_marker(client).await
+}
+
+async fn run_client_packet_up<S>(
+    client: &mut S,
+    template: &[u8],
+    iterations: usize,
+) -> Result<(), BenchError>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    for _ in 0..iterations {
+        client
+            .write_all(template)
+            .await
+            .map_err(|source| BenchError::Io {
+                action: "writing benchmark packet-up payload".to_owned(),
+                source,
+            })?;
+        // The acknowledgement cannot arrive until the corresponding bytes
+        // have crossed the XHTTP uplink and reached the target. Serializing
+        // iterations this way prevents the benchmark driver from coalescing
+        // thousands of nominal writes into only a handful of POSTs.
+        read_completion_marker(client).await?;
+    }
+    Ok(())
 }
 
 async fn run_client_full_duplex<R, W>(
@@ -776,7 +993,7 @@ fn xray_client_config(
     vless_addr: SocketAddr,
     cert_sha256: &str,
     scenario: StreamBenchScenario,
-    payload_size: usize,
+    max_post_bytes: usize,
 ) -> Result<String, BenchError> {
     let tls_settings = match engine {
         EngineKind::XrayRust => json!({
@@ -797,15 +1014,22 @@ fn xray_client_config(
             ))
         }
     };
-    let mut stream_settings = json!({
-        "network": scenario.transport.xray_network(),
-        "security": "tls",
-        "tlsSettings": tls_settings
-    });
+    let mut stream_settings = if scenario.xhttp_profile.is_some() {
+        json!({
+            "network": scenario.transport.xray_network(),
+            "security": "none"
+        })
+    } else {
+        json!({
+            "network": scenario.transport.xray_network(),
+            "security": "tls",
+            "tlsSettings": tls_settings
+        })
+    };
     if engine == EngineKind::XrayRust && scenario.transport == StreamBenchTransport::XhttpHttp3 {
         stream_settings["finalmask"] = json!({ "quicParams": {} });
     }
-    insert_xray_transport_settings(&mut stream_settings, scenario, payload_size)?;
+    insert_xray_transport_settings(&mut stream_settings, scenario, max_post_bytes)?;
     serialize_config(json!({
         "log": { "loglevel": "warning" },
         "inbounds": [{
@@ -891,22 +1115,29 @@ fn sing_box_client_config(
 fn xray_server_config(
     port: u16,
     scenario: StreamBenchScenario,
-    payload_size: usize,
+    max_post_bytes: usize,
     cert_path: &Path,
     key_path: &Path,
 ) -> Result<String, BenchError> {
-    let mut stream_settings = json!({
-        "network": scenario.transport.xray_network(),
-        "security": "tls",
-        "tlsSettings": {
-            "alpn": [scenario.transport.alpn()],
-            "certificates": [{
-                "certificateFile": cert_path.to_string_lossy(),
-                "keyFile": key_path.to_string_lossy()
-            }]
-        }
-    });
-    insert_xray_transport_settings(&mut stream_settings, scenario, payload_size)?;
+    let mut stream_settings = if scenario.xhttp_profile.is_some() {
+        json!({
+            "network": scenario.transport.xray_network(),
+            "security": "none"
+        })
+    } else {
+        json!({
+            "network": scenario.transport.xray_network(),
+            "security": "tls",
+            "tlsSettings": {
+                "alpn": [scenario.transport.alpn()],
+                "certificates": [{
+                    "certificateFile": cert_path.to_string_lossy(),
+                    "keyFile": key_path.to_string_lossy()
+                }]
+            }
+        })
+    };
+    insert_xray_transport_settings(&mut stream_settings, scenario, max_post_bytes)?;
     serialize_config(json!({
         "log": { "loglevel": "warning" },
         "inbounds": [{
@@ -929,7 +1160,7 @@ fn xray_server_config(
 fn insert_xray_transport_settings(
     stream_settings: &mut Value,
     scenario: StreamBenchScenario,
-    payload_size: usize,
+    max_post_bytes: usize,
 ) -> Result<(), BenchError> {
     let (key, settings) = match scenario.transport {
         StreamBenchTransport::WebSocket => (
@@ -946,24 +1177,45 @@ fn insert_xray_transport_settings(
         StreamBenchTransport::XhttpHttp1
         | StreamBenchTransport::XhttpHttp2
         | StreamBenchTransport::XhttpHttp3 => {
-            let post_bytes = i32::try_from(payload_size).map_err(|_| {
+            let post_bytes = i32::try_from(max_post_bytes).map_err(|_| {
                 BenchError::InvalidArguments(
-                    "XHTTP benchmark payload size must fit signed 32-bit scMaxEachPostBytes"
+                    "XHTTP benchmark max POST bytes must fit signed 32-bit scMaxEachPostBytes"
                         .to_owned(),
                 )
             })?;
             let mode = scenario.xhttp_mode.ok_or_else(|| {
                 BenchError::InvalidArguments("XHTTP benchmark mode is missing".to_owned())
             })?;
-            (
-                "xhttpSettings",
-                json!({
-                    "host": BENCH_SERVER_NAME,
-                    "path": BENCH_PATH,
-                    "mode": mode.as_str(),
-                    "scMaxEachPostBytes": post_bytes
-                }),
-            )
+            let settings =
+                if scenario.xhttp_profile == Some(StreamBenchXhttpProfile::LegacyExtraH1PacketUp) {
+                    json!({
+                        "host": BENCH_SERVER_NAME,
+                        "path": "/",
+                        "mode": "packet-up",
+                        "extra": {
+                            "noGRPCHeader": false,
+                            "scMaxConcurrentPosts": 100,
+                            "scMaxEachPostBytes": post_bytes.to_string(),
+                            "scMinPostsIntervalMs": "60",
+                            "xmux": {
+                                "cMaxReuseTimes": 0,
+                                "hKeepAlivePeriod": 0,
+                                "hMaxRequestTimes": "600-900",
+                                "hMaxReusableSecs": "1800-3000",
+                                "maxConnections": 16
+                            },
+                            "xPaddingBytes": "100-1000"
+                        }
+                    })
+                } else {
+                    json!({
+                        "host": BENCH_SERVER_NAME,
+                        "path": BENCH_PATH,
+                        "mode": mode.as_str(),
+                        "scMaxEachPostBytes": post_bytes
+                    })
+                };
+            ("xhttpSettings", settings)
         }
     };
     stream_settings[key] = settings;
@@ -1143,11 +1395,64 @@ mod tests {
         assert!(!state.lock().unwrap().write_shutdown);
     }
 
+    #[tokio::test]
+    async fn held_open_target_waits_for_client_close_without_payload() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let target = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            run_target_flow(stream, StreamBenchTraffic::HeldOpen, &[], 1).await
+        });
+        let mut client = TcpStream::connect(addr).await.unwrap();
+        let mut ready = [0_u8; 1];
+        client.read_exact(&mut ready).await.unwrap();
+        assert_eq!(ready[0], READY_BYTE);
+        tokio::task::yield_now().await;
+        assert!(!target.is_finished());
+
+        drop(client);
+        tokio::time::timeout(std::time::Duration::from_secs(1), target)
+            .await
+            .expect("held-open target did not observe client close")
+            .unwrap()
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn packet_up_replays_one_acknowledged_payload_per_iteration() {
+        let template = b"packet";
+        let iterations = 3;
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let target = tokio::spawn(async move {
+            let (target_stream, _) = listener.accept().await.unwrap();
+            run_target_flow(
+                target_stream,
+                StreamBenchTraffic::PacketUp,
+                template,
+                iterations,
+            )
+            .await
+        });
+
+        let mut client = TcpStream::connect(addr).await.unwrap();
+        let mut ready = [0_u8; 1];
+        client.read_exact(&mut ready).await.unwrap();
+        assert_eq!(ready[0], READY_BYTE);
+        run_client_packet_up(&mut client, template, iterations)
+            .await
+            .unwrap();
+        drop(client);
+
+        target.await.unwrap().unwrap();
+    }
+
     #[test]
     fn packet_up_requires_xhttp_packet_mode() {
         let error = StreamBenchScenario::resolve(
             Some(StreamBenchTransport::Grpc),
             Some(StreamBenchTraffic::PacketUp),
+            None,
             None,
         )
         .unwrap_err();
@@ -1161,10 +1466,114 @@ mod tests {
             Some(StreamBenchTransport::XhttpHttp3),
             Some(StreamBenchTraffic::Download),
             None,
+            None,
         )
         .unwrap();
 
         assert_eq!(scenario.xhttp_mode, Some(StreamBenchXhttpMode::PacketUp));
+    }
+
+    #[test]
+    fn legacy_profile_infers_plaintext_h1_packet_up_and_default_post_size() {
+        let scenario = StreamBenchScenario::resolve(
+            None,
+            Some(StreamBenchTraffic::HeldOpen),
+            None,
+            Some(StreamBenchXhttpProfile::LegacyExtraH1PacketUp),
+        )
+        .unwrap();
+
+        assert_eq!(scenario.transport, StreamBenchTransport::XhttpHttp1);
+        assert_eq!(scenario.xhttp_mode, Some(StreamBenchXhttpMode::PacketUp));
+        assert_eq!(
+            scenario.effective_xhttp_max_post_bytes(1024, None),
+            Some(500_000)
+        );
+        assert_eq!(
+            scenario.effective_xhttp_max_post_bytes(1024, Some(32_768)),
+            Some(32_768)
+        );
+    }
+
+    #[test]
+    fn legacy_profile_emits_exact_plaintext_h1_extra_shape() {
+        let scenario = StreamBenchScenario::resolve(
+            Some(StreamBenchTransport::XhttpHttp1),
+            Some(StreamBenchTraffic::PacketUp),
+            Some(StreamBenchXhttpMode::PacketUp),
+            Some(StreamBenchXhttpProfile::LegacyExtraH1PacketUp),
+        )
+        .unwrap();
+        let config = xray_client_config(
+            EngineKind::XrayRust,
+            1080,
+            "127.0.0.1:80".parse().unwrap(),
+            "unused",
+            scenario,
+            500_000,
+        )
+        .unwrap();
+        let parsed = xray_config::parse_xray_json(&config)
+            .expect("legacy benchmark profile must parse as an engine config");
+        let value: Value = serde_json::from_str(&config).unwrap();
+
+        assert!(parsed.diagnostics.iter().any(|diagnostic| {
+            diagnostic
+                .path
+                .as_deref()
+                .is_some_and(|path| path.ends_with("extra.scMaxConcurrentPosts"))
+                && diagnostic.message.contains("removed")
+        }));
+
+        assert_eq!(
+            value["outbounds"][0]["streamSettings"],
+            json!({
+                "network": "xhttp",
+                "security": "none",
+                "xhttpSettings": {
+                    "host": BENCH_SERVER_NAME,
+                    "path": "/",
+                    "mode": "packet-up",
+                    "extra": {
+                        "noGRPCHeader": false,
+                        "scMaxConcurrentPosts": 100,
+                        "scMaxEachPostBytes": "500000",
+                        "scMinPostsIntervalMs": "60",
+                        "xmux": {
+                            "cMaxReuseTimes": 0,
+                            "hKeepAlivePeriod": 0,
+                            "hMaxRequestTimes": "600-900",
+                            "hMaxReusableSecs": "1800-3000",
+                            "maxConnections": 16
+                        },
+                        "xPaddingBytes": "100-1000"
+                    }
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn legacy_profile_rejects_non_h1_or_non_packet_mode() {
+        for (transport, mode) in [
+            (
+                StreamBenchTransport::XhttpHttp2,
+                StreamBenchXhttpMode::PacketUp,
+            ),
+            (
+                StreamBenchTransport::XhttpHttp1,
+                StreamBenchXhttpMode::StreamUp,
+            ),
+        ] {
+            let error = StreamBenchScenario::resolve(
+                Some(transport),
+                Some(StreamBenchTraffic::HeldOpen),
+                Some(mode),
+                Some(StreamBenchXhttpProfile::LegacyExtraH1PacketUp),
+            )
+            .unwrap_err();
+            assert!(error.to_string().contains("requires xhttp-h1"));
+        }
     }
 
     #[test]
@@ -1173,6 +1582,7 @@ mod tests {
             Some(StreamBenchTransport::XhttpHttp2),
             Some(StreamBenchTraffic::FullDuplex),
             Some(StreamBenchXhttpMode::StreamUp),
+            None,
         )
         .unwrap();
         let config = xray_client_config(
@@ -1202,6 +1612,7 @@ mod tests {
             Some(StreamBenchTransport::XhttpHttp3),
             Some(StreamBenchTraffic::FullDuplex),
             Some(StreamBenchXhttpMode::StreamOne),
+            None,
         )
         .unwrap();
         let config = xray_client_config(
@@ -1243,6 +1654,7 @@ mod tests {
             Some(StreamBenchTransport::XhttpHttp3),
             Some(StreamBenchTraffic::Download),
             Some(StreamBenchXhttpMode::StreamUp),
+            None,
         )
         .unwrap();
         let config = xray_server_config(
@@ -1299,6 +1711,7 @@ mod tests {
             Some(StreamBenchTransport::WebSocket),
             Some(StreamBenchTraffic::Upload),
             None,
+            None,
         )
         .unwrap();
         let config = xray_client_config(
@@ -1324,6 +1737,7 @@ mod tests {
             Some(StreamBenchTransport::XhttpHttp1),
             Some(StreamBenchTraffic::PacketUp),
             Some(StreamBenchXhttpMode::PacketUp),
+            None,
         )
         .unwrap();
         let config = xray_client_config(

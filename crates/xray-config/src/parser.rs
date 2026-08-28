@@ -60,6 +60,10 @@ const XHTTP_SETTINGS_FIELDS: &[&str] = &[
     "noSSEHeader",
     "scMaxEachPostBytes",
     "scMinPostsIntervalMs",
+    // Removed from Xray's client in v24.12.15. Modern Xray decodes it as an
+    // unknown field and ignores it; accepting it keeps older share links
+    // importable without reviving the old packet scheduler.
+    "scMaxConcurrentPosts",
     "scMaxBufferedPosts",
     "scStreamUpServerSecs",
     "serverMaxHeaderBytes",
@@ -3026,6 +3030,7 @@ impl Parser<'_> {
                 self.validate_xhttp_settings_shape(
                     legacy_settings,
                     &format!("$.outbounds[{index}].streamSettings.splithttpSettings"),
+                    true,
                 );
                 self.warning(
                     format!("$.outbounds[{index}].streamSettings.splithttpSettings"),
@@ -3044,44 +3049,97 @@ impl Parser<'_> {
         }
 
         self.reject_unknown_fields(settings, &settings_path, XHTTP_SETTINGS_FIELDS);
+        self.warn_removed_xhttp_concurrent_posts(settings, &settings_path);
 
-        if settings
+        // SplitHTTPConfig.Build always keeps these three values from the
+        // outer object, even when `extra` supplies different values. Decode
+        // and normalize them before selecting the replacement object so the
+        // implementation cannot accidentally turn `extra` into a merge.
+        let host = self
+            .nullable_string_at(settings, "host", format!("{settings_path}.host"))?
+            .to_owned();
+        let path = self
+            .nullable_string_at(settings, "path", format!("{settings_path}.path"))?
+            .to_owned();
+        let mode =
+            match self.nullable_string_at(settings, "mode", format!("{settings_path}.mode"))? {
+                "" | "auto" => XhttpMode::Auto,
+                "packet-up" => XhttpMode::PacketUp,
+                "stream-up" => XhttpMode::StreamUp,
+                "stream-one" => XhttpMode::StreamOne,
+                mode => {
+                    self.error(
+                        format!("{settings_path}.mode"),
+                        format!("unsupported xhttp mode `{mode}`"),
+                    );
+                    return None;
+                }
+            };
+
+        // `extra` is a json.RawMessage upstream. When present, Xray decodes a
+        // fresh SplitHTTPConfig from it and discards every outer field except
+        // host/path/mode. JSON null therefore means a zero-valued replacement,
+        // while arrays and scalars fail the second decode. Build is invoked
+        // once, so a nested `extra` in the replacement is inert.
+        let mut effective_storage = None;
+        let mut effective_path = settings_path.clone();
+        if let Some(extra) = settings.get("extra") {
+            let diagnostic_start = self.diagnostics.len();
+            self.validate_xhttp_settings_shape(settings, &settings_path, false);
+            if self.diagnostics[diagnostic_start..]
+                .iter()
+                .any(|diagnostic| diagnostic.severity == crate::DiagnosticSeverity::Error)
+            {
+                return None;
+            }
+
+            let extra_path = format!("{settings_path}.extra");
+            let mut replacement = match extra {
+                Value::Null => serde_json::Map::new(),
+                Value::Object(replacement) => replacement.clone(),
+                _ => {
+                    self.error(extra_path, "xhttp `extra` must be an object or null");
+                    return None;
+                }
+            };
+            let replacement_value = Value::Object(replacement.clone());
+            let diagnostic_start = self.diagnostics.len();
+            self.validate_xhttp_settings_shape(&replacement_value, &extra_path, true);
+            if self.diagnostics[diagnostic_start..]
+                .iter()
+                .any(|diagnostic| diagnostic.severity == crate::DiagnosticSeverity::Error)
+            {
+                return None;
+            }
+            self.warn_removed_xhttp_concurrent_posts(&replacement_value, &extra_path);
+            if replacement.remove("extra").is_some() {
+                self.warning(
+                    format!("{extra_path}.extra"),
+                    "nested xhttp `extra` is ignored because Xray applies replacement only once",
+                );
+            }
+            // These inner values were decode-shape checked above, then are
+            // deliberately erased just as SplitHTTPConfig.Build erases them.
+            replacement.remove("host");
+            replacement.remove("path");
+            replacement.remove("mode");
+            effective_storage = Some(Value::Object(replacement));
+            effective_path = extra_path;
+        }
+        let effective_settings = effective_storage.as_ref().unwrap_or(settings);
+
+        if effective_settings
             .get("downloadSettings")
             .is_some_and(|download| !download.is_null())
         {
             self.error(
-                format!("{settings_path}.downloadSettings"),
+                format!("{effective_path}.downloadSettings"),
                 "xhttp `downloadSettings` is not supported by the runtime yet",
             );
         }
-        // Even JSON null is significant for RawMessage: Xray replaces all
-        // outer fields other than host/path/mode with a zero-valued config.
-        // Accepting it and retaining the outer fields would be a silent and
-        // wire-visible reinterpretation.
-        if settings.get("extra").is_some() {
-            self.error(
-                format!("{settings_path}.extra"),
-                "xhttp `extra` is not supported by the runtime yet",
-            );
-        }
 
-        let mode = match self
-            .nullable_string_at(settings, "mode", format!("{settings_path}.mode"))
-            .unwrap_or_default()
-        {
-            "" | "auto" => XhttpMode::Auto,
-            "packet-up" => XhttpMode::PacketUp,
-            "stream-up" => XhttpMode::StreamUp,
-            "stream-one" => XhttpMode::StreamOne,
-            mode => {
-                self.error(
-                    format!("{settings_path}.mode"),
-                    format!("unsupported xhttp mode `{mode}`"),
-                );
-                return None;
-            }
-        };
-
+        let settings = effective_settings;
+        let settings_path = effective_path;
         let headers = self.parse_transport_headers(settings, &settings_path)?;
         if headers
             .iter()
@@ -3273,14 +3331,8 @@ impl Parser<'_> {
         }
 
         Some(XhttpSettings {
-            host: self
-                .nullable_string_at(settings, "host", format!("{settings_path}.host"))
-                .filter(|host| !host.is_empty())
-                .map(ToOwned::to_owned),
-            path: self
-                .nullable_string_at(settings, "path", format!("{settings_path}.path"))
-                .unwrap_or_default()
-                .to_owned(),
+            host: (!host.is_empty()).then_some(host),
+            path,
             mode,
             headers,
             x_padding_bytes,
@@ -3363,17 +3415,24 @@ impl Parser<'_> {
     /// mode or conflicting xmux values in the ignored block never reach that
     /// method upstream, while a wrong JSON type fails before alias priority is
     /// considered.
-    fn validate_xhttp_settings_shape(&mut self, settings: &Value, settings_path: &str) {
+    fn validate_xhttp_settings_shape(
+        &mut self,
+        settings: &Value,
+        settings_path: &str,
+        validate_identity: bool,
+    ) {
         if !settings.is_object() {
             self.error(settings_path, "splithttpSettings must be an object");
             return;
         }
         self.reject_unknown_fields(settings, settings_path, XHTTP_SETTINGS_FIELDS);
 
-        for key in [
-            "host",
-            "path",
-            "mode",
+        let identity_keys: &[&str] = if validate_identity {
+            &["host", "path", "mode"]
+        } else {
+            &[]
+        };
+        for key in identity_keys.iter().copied().chain([
             "xPaddingKey",
             "xPaddingHeader",
             "xPaddingPlacement",
@@ -3385,7 +3444,7 @@ impl Parser<'_> {
             "seqKey",
             "uplinkDataPlacement",
             "uplinkDataKey",
-        ] {
+        ]) {
             let _ = self.nullable_string_at(settings, key, format!("{settings_path}.{key}"));
         }
         for key in ["xPaddingObfsMode", "noGRPCHeader", "noSSEHeader"] {
@@ -3424,6 +3483,15 @@ impl Parser<'_> {
         }
         // `extra` is json.RawMessage, so every JSON value has a valid decode
         // shape. Its runtime support is considered only for the winning block.
+    }
+
+    fn warn_removed_xhttp_concurrent_posts(&mut self, settings: &Value, settings_path: &str) {
+        if settings.get("scMaxConcurrentPosts").is_some() {
+            self.warning(
+                format!("{settings_path}.scMaxConcurrentPosts"),
+                "xhttp `scMaxConcurrentPosts` was removed in Xray v24.12.15 and is ignored",
+            );
+        }
     }
 
     fn validate_xhttp_xmux_shape(&mut self, settings: &Value, settings_path: &str) {

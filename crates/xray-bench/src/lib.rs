@@ -9,7 +9,7 @@ use std::os::fd::{AsRawFd, RawFd};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{
-    atomic::{AtomicU64, AtomicUsize, Ordering},
+    atomic::{AtomicU64, AtomicU8, AtomicUsize, Ordering},
     Arc,
 };
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -72,6 +72,7 @@ mod stream_transport;
 
 pub use stream_transport::{
     StreamBenchScenario, StreamBenchTraffic, StreamBenchTransport, StreamBenchXhttpMode,
+    StreamBenchXhttpProfile,
 };
 
 const USAGE: &str =
@@ -395,6 +396,9 @@ pub struct BenchOptions {
     pub stream_transport: Option<StreamBenchTransport>,
     pub stream_traffic: Option<StreamBenchTraffic>,
     pub xhttp_mode: Option<StreamBenchXhttpMode>,
+    pub xhttp_profile: Option<StreamBenchXhttpProfile>,
+    pub xhttp_max_post_bytes: Option<usize>,
+    pub settle: Duration,
     pub dns_transport: TunDnsTransport,
     pub dns_upstream_transport: TunDnsUpstreamTransport,
     pub runs: usize,
@@ -558,12 +562,84 @@ struct RealityMatrixTraceEvent<'a> {
     elapsed_us: u128,
 }
 
+#[derive(
+    Debug, Clone, Copy, Default, serde::Serialize, serde::Deserialize, PartialEq, Eq, Hash,
+)]
+#[serde(rename_all = "kebab-case")]
+#[repr(u8)]
+pub enum BenchmarkPhase {
+    #[default]
+    Startup = 0,
+    Workload = 1,
+    Opening = 2,
+    Traffic = 3,
+    HeldOpen = 4,
+    Settle = 5,
+    Complete = 6,
+}
+
+impl BenchmarkPhase {
+    const ALL: [Self; 7] = [
+        Self::Startup,
+        Self::Workload,
+        Self::Opening,
+        Self::Traffic,
+        Self::HeldOpen,
+        Self::Settle,
+        Self::Complete,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Startup => "startup",
+            Self::Workload => "workload",
+            Self::Opening => "opening",
+            Self::Traffic => "traffic",
+            Self::HeldOpen => "held-open",
+            Self::Settle => "settle",
+            Self::Complete => "complete",
+        }
+    }
+
+    fn from_raw(raw: u8) -> Self {
+        Self::ALL
+            .get(usize::from(raw))
+            .copied()
+            .unwrap_or(Self::Startup)
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct BenchmarkPhaseTracker(Arc<AtomicU8>);
+
+impl BenchmarkPhaseTracker {
+    pub(crate) fn set(&self, phase: BenchmarkPhase) {
+        self.0.store(phase as u8, Ordering::Relaxed);
+    }
+
+    fn get(&self) -> BenchmarkPhase {
+        BenchmarkPhase::from_raw(self.0.load(Ordering::Relaxed))
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct ProcessSample {
     pub elapsed_ms: u128,
     pub rss_kib: u64,
     pub cpu_millis: u64,
     pub threads: Option<u64>,
+    #[serde(default)]
+    pub phase: BenchmarkPhase,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct PhaseMemorySummary {
+    pub phase: BenchmarkPhase,
+    pub samples: usize,
+    pub first_rss_kib: u64,
+    pub median_rss_kib: u64,
+    pub peak_rss_kib: u64,
+    pub last_rss_kib: u64,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -580,6 +656,10 @@ pub struct BenchProvenance {
     pub harness_profile: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace_git: Option<WorkspaceGitProvenance>,
+    /// Git state of the checkout used to build the measured engine when that
+    /// checkout can be identified independently from the harness workspace.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine_source_git: Option<WorkspaceGitProvenance>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub harness_binary_path: Option<PathBuf>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -629,6 +709,14 @@ pub struct BenchResult {
     pub stream_traffic: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub xhttp_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub xhttp_profile: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub xhttp_max_post_bytes: Option<u64>,
+    #[serde(default)]
+    pub settle_ms: u128,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub memory_phases: Vec<PhaseMemorySummary>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub uplink_write_ops: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -726,6 +814,12 @@ pub struct BenchSummary {
     pub stream_traffic: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub xhttp_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub xhttp_profile: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub xhttp_max_post_bytes: Option<u64>,
+    #[serde(default)]
+    pub settle_ms: u128,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub uplink_write_ops: Option<MetricSummary>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1103,6 +1197,9 @@ impl Default for BenchOptions {
             stream_transport: None,
             stream_traffic: None,
             xhttp_mode: None,
+            xhttp_profile: None,
+            xhttp_max_post_bytes: None,
+            settle: Duration::ZERO,
             dns_transport: TunDnsTransport::default(),
             dns_upstream_transport: TunDnsUpstreamTransport::default(),
             runs: 1,
@@ -1130,8 +1227,14 @@ impl BenchOptions {
             self.stream_transport,
             self.stream_traffic,
             self.xhttp_mode,
+            self.xhttp_profile,
         )?;
-        scenario.validate_payload_size(self.payload_size)?;
+        if self.xhttp_max_post_bytes.is_some() && !scenario.transport.is_xhttp() {
+            return Err(BenchError::InvalidArguments(
+                "--xhttp-max-post-bytes requires an XHTTP stream transport".to_owned(),
+            ));
+        }
+        scenario.validate_max_post_bytes(self.payload_size, self.xhttp_max_post_bytes)?;
         Ok(scenario)
     }
 
@@ -1141,10 +1244,12 @@ impl BenchOptions {
         } else if self.stream_transport.is_some()
             || self.stream_traffic.is_some()
             || self.xhttp_mode.is_some()
+            || self.xhttp_profile.is_some()
+            || self.xhttp_max_post_bytes.is_some()
+            || !self.settle.is_zero()
         {
             Err(BenchError::InvalidArguments(
-                "--stream-transport, --traffic, and --xhttp-mode require --workload stream-transport"
-                    .to_owned(),
+                "--stream-transport, --traffic, --xhttp-mode, --xhttp-profile, --xhttp-max-post-bytes, and --settle-ms require --workload stream-transport".to_owned(),
             ))
         } else {
             Ok(())
@@ -1361,6 +1466,23 @@ where
                 options.xhttp_mode = Some(StreamBenchXhttpMode::parse(required_value(
                     &rest, &mut index, flag,
                 )?)?);
+            }
+            "--xhttp-profile" => {
+                options.xhttp_profile = Some(StreamBenchXhttpProfile::parse(required_value(
+                    &rest, &mut index, flag,
+                )?)?);
+            }
+            "--xhttp-max-post-bytes" => {
+                options.xhttp_max_post_bytes = Some(parse_nonzero_usize(
+                    required_value(&rest, &mut index, flag)?,
+                    flag,
+                )?);
+            }
+            "--settle-ms" => {
+                options.settle = Duration::from_millis(parse_u64(
+                    required_value(&rest, &mut index, flag)?,
+                    flag,
+                )?);
             }
             "--transport" | "--dns-transport" => {
                 options.dns_transport =
@@ -1702,6 +1824,7 @@ pub fn parse_ps_sample(raw: &str) -> Result<ProcessSample, BenchError> {
         rss_kib,
         cpu_millis,
         threads,
+        phase: BenchmarkPhase::Startup,
     })
 }
 
@@ -1794,15 +1917,19 @@ fn write_json<T: serde::Serialize>(path: &Path, value: &T) -> Result<(), BenchEr
 }
 
 pub fn write_samples_csv(path: &Path, samples: &[ProcessSample]) -> Result<(), BenchError> {
-    let mut csv = String::from("elapsed_ms,rss_kib,cpu_millis,threads\n");
+    let mut csv = String::from("elapsed_ms,rss_kib,cpu_millis,threads,phase\n");
     for sample in samples {
         let threads = sample
             .threads
             .map(|threads| threads.to_string())
             .unwrap_or_default();
         csv.push_str(&format!(
-            "{},{},{},{}\n",
-            sample.elapsed_ms, sample.rss_kib, sample.cpu_millis, threads
+            "{},{},{},{},{}\n",
+            sample.elapsed_ms,
+            sample.rss_kib,
+            sample.cpu_millis,
+            threads,
+            sample.phase.as_str()
         ));
     }
     fs::write(path, csv).map_err(|error| {
@@ -1811,6 +1938,33 @@ pub fn write_samples_csv(path: &Path, samples: &[ProcessSample]) -> Result<(), B
             path.display()
         ))
     })
+}
+
+pub fn summarize_memory_phases(samples: &[ProcessSample]) -> Vec<PhaseMemorySummary> {
+    BenchmarkPhase::ALL
+        .into_iter()
+        .filter_map(|phase| {
+            let phase_samples = samples
+                .iter()
+                .filter(|sample| sample.phase == phase)
+                .collect::<Vec<_>>();
+            let first = phase_samples.first()?;
+            let last = phase_samples.last().expect("phase has at least one sample");
+            let mut rss = phase_samples
+                .iter()
+                .map(|sample| sample.rss_kib)
+                .collect::<Vec<_>>();
+            rss.sort_unstable();
+            Some(PhaseMemorySummary {
+                phase,
+                samples: rss.len(),
+                first_rss_kib: first.rss_kib,
+                median_rss_kib: rss[rss.len() / 2],
+                peak_rss_kib: rss.last().copied().unwrap_or_default(),
+                last_rss_kib: last.rss_kib,
+            })
+        })
+        .collect()
 }
 
 pub fn summarize_samples(samples: &[ProcessSample]) -> WorkloadSummary {
@@ -1860,6 +2014,9 @@ pub fn summarize_results(results: &[BenchResult]) -> Result<BenchSummary, BenchE
             || result.stream_transport != first.stream_transport
             || result.stream_traffic != first.stream_traffic
             || result.xhttp_mode != first.xhttp_mode
+            || result.xhttp_profile != first.xhttp_profile
+            || result.xhttp_max_post_bytes != first.xhttp_max_post_bytes
+            || result.settle_ms != first.settle_ms
             || result.dns_transport != first.dns_transport
             || result.dns_upstream_transport != first.dns_upstream_transport
     }) {
@@ -1901,6 +2058,9 @@ pub fn summarize_results(results: &[BenchResult]) -> Result<BenchSummary, BenchE
         stream_transport: first.stream_transport.clone(),
         stream_traffic: first.stream_traffic.clone(),
         xhttp_mode: first.xhttp_mode.clone(),
+        xhttp_profile: first.xhttp_profile.clone(),
+        xhttp_max_post_bytes: first.xhttp_max_post_bytes,
+        settle_ms: first.settle_ms,
         uplink_write_ops: summarize_optional_metric(
             results
                 .iter()
@@ -5915,25 +6075,41 @@ pub async fn sample_while<F, T>(
 where
     F: Future<Output = Result<T, BenchError>>,
 {
+    sample_while_phased(pid, interval, BenchmarkPhaseTracker::default(), future).await
+}
+
+async fn sample_while_phased<F, T>(
+    pid: u32,
+    interval: Duration,
+    phase: BenchmarkPhaseTracker,
+    future: F,
+) -> Result<(T, Vec<ProcessSample>), BenchError>
+where
+    F: Future<Output = Result<T, BenchError>>,
+{
     let start = Instant::now();
     let mut samples = Vec::new();
-    samples.push(sample_process(pid, start)?);
+    samples.push(sample_process(pid, start, phase.get())?);
     let mut future = Box::pin(future);
     loop {
         tokio::select! {
             result = &mut future => {
                 let result = result?;
-                samples.push(sample_process(pid, start)?);
+                samples.push(sample_process(pid, start, phase.get())?);
                 return Ok((result, samples));
             }
             () = sleep(interval) => {
-                samples.push(sample_process(pid, start)?);
+                samples.push(sample_process(pid, start, phase.get())?);
             }
         }
     }
 }
 
-fn sample_process(pid: u32, start: Instant) -> Result<ProcessSample, BenchError> {
+fn sample_process(
+    pid: u32,
+    start: Instant,
+    phase: BenchmarkPhase,
+) -> Result<ProcessSample, BenchError> {
     let args = ps_args(pid);
     let output = Command::new("ps")
         .args(args)
@@ -5957,6 +6133,7 @@ fn sample_process(pid: u32, start: Instant) -> Result<ProcessSample, BenchError>
         .ok_or_else(|| BenchError::InvalidArguments(format!("ps returned no sample for {pid}")))?;
     let mut sample = parse_ps_sample(line)?;
     sample.elapsed_ms = start.elapsed().as_millis();
+    sample.phase = phase;
     Ok(sample)
 }
 
@@ -9371,16 +9548,44 @@ fn harness_build_profile() -> &'static str {
 
 fn workspace_git_provenance() -> Option<WorkspaceGitProvenance> {
     let root = workspace_root().ok()?;
-    let revision = git_stdout(&root, &["rev-parse", "--verify", "HEAD"])?;
+    git_provenance_at(&root)
+}
+
+fn git_provenance_at(root: &Path) -> Option<WorkspaceGitProvenance> {
+    let revision = git_stdout(root, &["rev-parse", "--verify", "HEAD"])?;
     if revision.is_empty() {
         return None;
     }
     let dirty = git_stdout(
-        &root,
+        root,
         &["status", "--porcelain=v1", "--untracked-files=normal"],
     )
     .map(|status| !status.is_empty());
     Some(WorkspaceGitProvenance { revision, dirty })
+}
+
+fn engine_source_git_provenance(
+    kind: EngineKind,
+    options: &BenchOptions,
+) -> Option<WorkspaceGitProvenance> {
+    let source_dir = match kind {
+        EngineKind::XrayRust => workspace_root().ok(),
+        EngineKind::XrayCore => options.xray_core_dir.clone().or_else(|| {
+            options
+                .xray_core_bin
+                .is_none()
+                .then(default_xray_core_dir)
+                .flatten()
+        }),
+        EngineKind::SingBox => options.sing_box_dir.clone().or_else(|| {
+            options
+                .sing_box_bin
+                .is_none()
+                .then(default_sing_box_dir)
+                .flatten()
+        }),
+    }?;
+    git_provenance_at(&source_dir)
 }
 
 fn git_stdout(root: &Path, args: &[&str]) -> Option<String> {
@@ -9455,6 +9660,21 @@ fn canonical_run_invocation_args(
         if let Some(mode) = scenario.xhttp_mode {
             push_invocation_value(&mut args, "--xhttp-mode", mode.as_str());
         }
+        if let Some(profile) = scenario.xhttp_profile {
+            push_invocation_value(&mut args, "--xhttp-profile", profile.as_str());
+        }
+        if let Some(max_post_bytes) = options.xhttp_max_post_bytes {
+            push_invocation_value(
+                &mut args,
+                "--xhttp-max-post-bytes",
+                max_post_bytes.to_string(),
+            );
+        }
+        push_invocation_value(
+            &mut args,
+            "--settle-ms",
+            options.settle.as_millis().to_string(),
+        );
     }
     push_invocation_value(&mut args, "--transport", options.dns_transport.as_str());
     push_invocation_value(
@@ -9516,6 +9736,7 @@ fn benchmark_provenance(
     BenchProvenance {
         harness_profile: harness_build_profile().to_owned(),
         workspace_git: workspace_git_provenance(),
+        engine_source_git: engine_source_git_provenance(kind, options),
         harness_binary_path,
         harness_binary_sha256,
         engine_binary_path: Some(engine_binary_path.clone()),
@@ -9631,8 +9852,11 @@ async fn run_engine_once(
     let fixture = WorkloadFixture::start(options.workload, options, run_dir, binary_dir).await?;
     let engine = start_engine(kind, options, run_dir, binary_dir, &fixture).await?;
     let started = Instant::now();
+    let phase = BenchmarkPhaseTracker::default();
+    let workload_phase = phase.clone();
     let workload = async {
-        match options.workload {
+        workload_phase.set(BenchmarkPhase::Workload);
+        let outcome = match options.workload {
             WorkloadKind::Idle => run_idle_workload(options.duration).await,
             WorkloadKind::TcpFreedom => run_tcp_freedom_workload(engine.socks_addr, options).await,
             WorkloadKind::TcpBulkThroughput => {
@@ -9692,14 +9916,17 @@ async fn run_engine_once(
                     engine.socks_addr,
                     options,
                     options.stream_scenario()?,
+                    workload_phase.clone(),
                 )
                 .await
             }
-        }
+        };
+        workload_phase.set(BenchmarkPhase::Complete);
+        outcome
     };
     let (workload_outcome, samples) = match timeout(
         options.run_timeout,
-        sample_while(engine.pid, options.sample_interval, workload),
+        sample_while_phased(engine.pid, options.sample_interval, phase, workload),
     )
     .await
     {
@@ -9735,6 +9962,11 @@ async fn run_engine_once(
     let stream_scenario = (options.workload == WorkloadKind::StreamTransport)
         .then(|| options.stream_scenario())
         .transpose()?;
+    let xhttp_max_post_bytes = stream_scenario.and_then(|scenario| {
+        scenario
+            .effective_xhttp_max_post_bytes(options.payload_size, options.xhttp_max_post_bytes)
+            .and_then(|bytes| u64::try_from(bytes).ok())
+    });
     let provenance = benchmark_provenance(kind, options, &engine.binary_path);
 
     let result = BenchResult {
@@ -9759,6 +9991,16 @@ async fn run_engine_once(
         xhttp_mode: stream_scenario
             .and_then(|scenario| scenario.xhttp_mode)
             .map(|mode| mode.as_str().to_owned()),
+        xhttp_profile: stream_scenario
+            .and_then(|scenario| scenario.xhttp_profile)
+            .map(|profile| profile.as_str().to_owned()),
+        xhttp_max_post_bytes,
+        settle_ms: if options.workload == WorkloadKind::StreamTransport {
+            options.settle.as_millis()
+        } else {
+            0
+        },
+        memory_phases: summarize_memory_phases(&samples),
         uplink_write_ops,
         uplink_write_ops_per_second,
         dns_transport: workload_dns_transport(options.workload, options.dns_transport)
@@ -9813,6 +10055,12 @@ fn format_benchmark_provenance(run_id: &str, provenance: &BenchProvenance) -> St
         formatted.push_str(&format!(" workspace_git_revision={}", git.revision));
         if let Some(dirty) = git.dirty {
             formatted.push_str(&format!(" workspace_git_dirty={dirty}"));
+        }
+    }
+    if let Some(git) = provenance.engine_source_git.as_ref() {
+        formatted.push_str(&format!(" engine_source_git_revision={}", git.revision));
+        if let Some(dirty) = git.dirty {
+            formatted.push_str(&format!(" engine_source_git_dirty={dirty}"));
         }
     }
     if let Some(sha256) = provenance.harness_binary_sha256.as_deref() {
@@ -10185,6 +10433,10 @@ mod tests {
             stream_transport: None,
             stream_traffic: None,
             xhttp_mode: None,
+            xhttp_profile: None,
+            xhttp_max_post_bytes: None,
+            settle_ms: 0,
+            memory_phases: Vec::new(),
             uplink_write_ops: None,
             uplink_write_ops_per_second: None,
             dns_transport: None,
@@ -10325,6 +10577,9 @@ mod tests {
                 stream_transport: None,
                 stream_traffic: None,
                 xhttp_mode: None,
+                xhttp_profile: None,
+                xhttp_max_post_bytes: None,
+                settle: Duration::ZERO,
                 dns_transport: TunDnsTransport::Both,
                 dns_upstream_transport: TunDnsUpstreamTransport::Classic,
                 runs: 1,
@@ -10559,6 +10814,105 @@ mod tests {
                 Some(StreamBenchXhttpMode::StreamOne),
             )
         );
+    }
+
+    #[test]
+    fn parses_legacy_xhttp_memory_profile_with_held_open_and_settle() {
+        let args = parse_cli_args([
+            "xray-bench",
+            "run",
+            "--engine",
+            "xray-rust",
+            "--workload",
+            "stream-transport",
+            "--traffic",
+            "held-open",
+            "--xhttp-profile",
+            "legacy-extra-h1-packet-up",
+            "--settle-ms",
+            "750",
+        ])
+        .unwrap();
+
+        let CliArgs::Run(options) = args else {
+            panic!("expected run args");
+        };
+        let scenario = options.stream_scenario().unwrap();
+        assert_eq!(scenario.transport, StreamBenchTransport::XhttpHttp1);
+        assert_eq!(scenario.traffic, StreamBenchTraffic::HeldOpen);
+        assert_eq!(
+            scenario.xhttp_profile,
+            Some(StreamBenchXhttpProfile::LegacyExtraH1PacketUp)
+        );
+        assert_eq!(
+            scenario.effective_xhttp_max_post_bytes(options.payload_size, None),
+            Some(500_000)
+        );
+        assert_eq!(options.settle, Duration::from_millis(750));
+    }
+
+    #[test]
+    fn parses_xhttp_max_post_bytes_independently_from_payload_size() {
+        let args = parse_cli_args([
+            "xray-bench",
+            "run",
+            "--engine",
+            "xray-rust",
+            "--workload",
+            "stream-transport",
+            "--stream-transport",
+            "xhttp-h1",
+            "--traffic",
+            "packet-up",
+            "--payload-size",
+            "16384",
+            "--xhttp-max-post-bytes",
+            "500000",
+        ])
+        .unwrap();
+
+        let CliArgs::Run(options) = args else {
+            panic!("expected run args");
+        };
+        assert_eq!(options.payload_size, 16_384);
+        assert_eq!(options.xhttp_max_post_bytes, Some(500_000));
+    }
+
+    #[test]
+    fn rejects_xhttp_memory_flags_outside_their_transport_scope() {
+        let wrong_transport = parse_cli_args([
+            "xray-bench",
+            "run",
+            "--engine",
+            "xray-rust",
+            "--workload",
+            "stream-transport",
+            "--stream-transport",
+            "ws",
+            "--traffic",
+            "held-open",
+            "--xhttp-max-post-bytes",
+            "500000",
+        ])
+        .unwrap_err();
+        assert!(wrong_transport
+            .to_string()
+            .contains("requires an XHTTP stream transport"));
+
+        let wrong_workload = parse_cli_args([
+            "xray-bench",
+            "run",
+            "--engine",
+            "xray-rust",
+            "--workload",
+            "idle",
+            "--settle-ms",
+            "100",
+        ])
+        .unwrap_err();
+        assert!(wrong_workload
+            .to_string()
+            .contains("require --workload stream-transport"));
     }
 
     #[test]
@@ -12359,17 +12713,93 @@ mod tests {
                 rss_kib: 100,
                 cpu_millis: 10,
                 threads: Some(2),
+                phase: BenchmarkPhase::Startup,
             },
             ProcessSample {
                 elapsed_ms: 10,
                 rss_kib: 150,
                 cpu_millis: 25,
                 threads: Some(2),
+                phase: BenchmarkPhase::Traffic,
             },
         ];
         let summary = summarize_samples(&samples);
         assert_eq!(summary.peak_rss_kib, 150);
         assert_eq!(summary.cpu_millis, 15);
+    }
+
+    #[test]
+    fn summarizes_memory_by_phase_and_writes_phase_csv_column() {
+        let samples = vec![
+            ProcessSample {
+                elapsed_ms: 0,
+                rss_kib: 100,
+                cpu_millis: 10,
+                threads: Some(2),
+                phase: BenchmarkPhase::Opening,
+            },
+            ProcessSample {
+                elapsed_ms: 10,
+                rss_kib: 140,
+                cpu_millis: 11,
+                threads: Some(2),
+                phase: BenchmarkPhase::HeldOpen,
+            },
+            ProcessSample {
+                elapsed_ms: 20,
+                rss_kib: 160,
+                cpu_millis: 12,
+                threads: Some(2),
+                phase: BenchmarkPhase::HeldOpen,
+            },
+            ProcessSample {
+                elapsed_ms: 30,
+                rss_kib: 120,
+                cpu_millis: 13,
+                threads: Some(2),
+                phase: BenchmarkPhase::Settle,
+            },
+        ];
+        let phases = summarize_memory_phases(&samples);
+        assert_eq!(
+            phases,
+            vec![
+                PhaseMemorySummary {
+                    phase: BenchmarkPhase::Opening,
+                    samples: 1,
+                    first_rss_kib: 100,
+                    median_rss_kib: 100,
+                    peak_rss_kib: 100,
+                    last_rss_kib: 100,
+                },
+                PhaseMemorySummary {
+                    phase: BenchmarkPhase::HeldOpen,
+                    samples: 2,
+                    first_rss_kib: 140,
+                    median_rss_kib: 160,
+                    peak_rss_kib: 160,
+                    last_rss_kib: 160,
+                },
+                PhaseMemorySummary {
+                    phase: BenchmarkPhase::Settle,
+                    samples: 1,
+                    first_rss_kib: 120,
+                    median_rss_kib: 120,
+                    peak_rss_kib: 120,
+                    last_rss_kib: 120,
+                },
+            ]
+        );
+
+        let path = std::env::temp_dir().join(format!(
+            "xray-bench-phase-samples-{}.csv",
+            std::process::id()
+        ));
+        write_samples_csv(&path, &samples).unwrap();
+        let csv = fs::read_to_string(&path).unwrap();
+        fs::remove_file(path).unwrap();
+        assert!(csv.starts_with("elapsed_ms,rss_kib,cpu_millis,threads,phase\n"));
+        assert!(csv.contains("10,140,11,2,held-open\n"));
     }
 
     #[test]
@@ -13048,6 +13478,10 @@ mod tests {
             stream_transport: None,
             stream_traffic: None,
             xhttp_mode: None,
+            xhttp_profile: None,
+            xhttp_max_post_bytes: None,
+            settle_ms: 0,
+            memory_phases: Vec::new(),
             uplink_write_ops: None,
             uplink_write_ops_per_second: None,
             dns_transport: Some("udp".to_owned()),
@@ -13074,6 +13508,9 @@ mod tests {
             stream_transport: Some("xhttp-h3".to_owned()),
             stream_traffic: Some("packet-up".to_owned()),
             xhttp_mode: Some("packet-up".to_owned()),
+            xhttp_profile: Some("legacy-extra-h1-packet-up".to_owned()),
+            xhttp_max_post_bytes: Some(500_000),
+            settle_ms: 2_000,
             uplink_write_ops: Some(100),
             uplink_write_ops_per_second: Some(2_000),
             ..minimal_bench_result()
@@ -13088,6 +13525,12 @@ mod tests {
         assert_eq!(summary.stream_transport.as_deref(), Some("xhttp-h3"));
         assert_eq!(summary.stream_traffic.as_deref(), Some("packet-up"));
         assert_eq!(summary.xhttp_mode.as_deref(), Some("packet-up"));
+        assert_eq!(
+            summary.xhttp_profile.as_deref(),
+            Some("legacy-extra-h1-packet-up")
+        );
+        assert_eq!(summary.xhttp_max_post_bytes, Some(500_000));
+        assert_eq!(summary.settle_ms, 2_000);
         assert_eq!(
             summary.uplink_write_ops,
             Some(MetricSummary {
@@ -13140,6 +13583,10 @@ mod tests {
                 revision: "0123456789abcdef".to_owned(),
                 dirty: Some(true),
             }),
+            engine_source_git: Some(WorkspaceGitProvenance {
+                revision: "fedcba9876543210".to_owned(),
+                dirty: Some(false),
+            }),
             harness_binary_path: Some(PathBuf::from("/tmp/xray-bench")),
             harness_binary_sha256: Some("harness-sha256".to_owned()),
             engine_binary_path: Some(PathBuf::from("/tmp/xray-rust")),
@@ -13168,6 +13615,10 @@ mod tests {
     #[test]
     fn provenance_serializes_binary_sha256_fields() {
         let provenance = BenchProvenance {
+            engine_source_git: Some(WorkspaceGitProvenance {
+                revision: "4c384271".to_owned(),
+                dirty: Some(false),
+            }),
             harness_binary_sha256: Some("harness-sha256".to_owned()),
             engine_binary_sha256: Some("engine-sha256".to_owned()),
             ..BenchProvenance::default()
@@ -13177,6 +13628,8 @@ mod tests {
 
         assert_eq!(json["harness_binary_sha256"], "harness-sha256");
         assert_eq!(json["engine_binary_sha256"], "engine-sha256");
+        assert_eq!(json["engine_source_git"]["revision"], "4c384271");
+        assert_eq!(json["engine_source_git"]["dirty"], false);
     }
 
     #[test]
@@ -13188,6 +13641,7 @@ mod tests {
 
         assert_eq!(provenance.harness_binary_sha256, None);
         assert_eq!(provenance.engine_binary_sha256, None);
+        assert_eq!(provenance.engine_source_git, None);
     }
 
     #[test]
@@ -13281,12 +13735,45 @@ mod tests {
     }
 
     #[test]
+    fn canonical_invocation_records_legacy_xhttp_memory_axes() {
+        let options = BenchOptions {
+            workload: WorkloadKind::StreamTransport,
+            stream_traffic: Some(StreamBenchTraffic::HeldOpen),
+            xhttp_profile: Some(StreamBenchXhttpProfile::LegacyExtraH1PacketUp),
+            xhttp_max_post_bytes: Some(500_000),
+            settle: Duration::from_millis(5_000),
+            ..BenchOptions::default()
+        };
+        let invocation = canonical_run_invocation_args(
+            EngineKind::XrayRust,
+            &options,
+            Path::new("/tmp/xray-rust"),
+        );
+        let parsed =
+            parse_cli_args(std::iter::once("xray-bench".to_owned()).chain(invocation)).unwrap();
+        let CliArgs::Run(replayed) = parsed else {
+            panic!("canonical stream invocation must parse as `run`");
+        };
+
+        let scenario = replayed.stream_scenario().unwrap();
+        assert_eq!(scenario.transport, StreamBenchTransport::XhttpHttp1);
+        assert_eq!(scenario.traffic, StreamBenchTraffic::HeldOpen);
+        assert_eq!(scenario.xhttp_profile, options.xhttp_profile);
+        assert_eq!(replayed.xhttp_max_post_bytes, Some(500_000));
+        assert_eq!(replayed.settle, Duration::from_millis(5_000));
+    }
+
+    #[test]
     fn formatted_provenance_identifies_the_measured_binary_and_source() {
         let provenance = BenchProvenance {
             harness_profile: "release".to_owned(),
             workspace_git: Some(WorkspaceGitProvenance {
                 revision: "abc123".to_owned(),
                 dirty: Some(false),
+            }),
+            engine_source_git: Some(WorkspaceGitProvenance {
+                revision: "def456".to_owned(),
+                dirty: Some(true),
             }),
             harness_binary_sha256: Some("harness-sha256".to_owned()),
             engine_binary_path: Some(PathBuf::from("/tmp/xray-rust")),
@@ -13296,7 +13783,7 @@ mod tests {
 
         assert_eq!(
             format_benchmark_provenance("run-42", &provenance),
-            " run_id=run-42 harness_profile=release workspace_git_revision=abc123 workspace_git_dirty=false harness_binary_sha256=harness-sha256 engine_binary_path=/tmp/xray-rust engine_binary_sha256=engine-sha256"
+            " run_id=run-42 harness_profile=release workspace_git_revision=abc123 workspace_git_dirty=false engine_source_git_revision=def456 engine_source_git_dirty=true harness_binary_sha256=harness-sha256 engine_binary_path=/tmp/xray-rust engine_binary_sha256=engine-sha256"
         );
     }
 
@@ -13323,6 +13810,10 @@ mod tests {
                 stream_transport: None,
                 stream_traffic: None,
                 xhttp_mode: None,
+                xhttp_profile: None,
+                xhttp_max_post_bytes: None,
+                settle_ms: 0,
+                memory_phases: Vec::new(),
                 uplink_write_ops: None,
                 uplink_write_ops_per_second: None,
                 dns_transport: None,
@@ -13358,6 +13849,10 @@ mod tests {
                 stream_transport: None,
                 stream_traffic: None,
                 xhttp_mode: None,
+                xhttp_profile: None,
+                xhttp_max_post_bytes: None,
+                settle_ms: 0,
+                memory_phases: Vec::new(),
                 uplink_write_ops: None,
                 uplink_write_ops_per_second: None,
                 dns_transport: None,
@@ -13393,6 +13888,10 @@ mod tests {
                 stream_transport: None,
                 stream_traffic: None,
                 xhttp_mode: None,
+                xhttp_profile: None,
+                xhttp_max_post_bytes: None,
+                settle_ms: 0,
+                memory_phases: Vec::new(),
                 uplink_write_ops: None,
                 uplink_write_ops_per_second: None,
                 dns_transport: None,
@@ -13573,6 +14072,10 @@ mod tests {
             stream_transport: None,
             stream_traffic: None,
             xhttp_mode: None,
+            xhttp_profile: None,
+            xhttp_max_post_bytes: None,
+            settle_ms: 0,
+            memory_phases: Vec::new(),
             uplink_write_ops: None,
             uplink_write_ops_per_second: None,
             dns_transport: None,

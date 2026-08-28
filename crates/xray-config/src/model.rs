@@ -1034,9 +1034,10 @@ impl Default for XhttpXmuxSettings {
 /// the transport must apply its mode/placement-dependent `GetNormalized*`
 /// defaults when it creates a connection.
 ///
-/// `downloadSettings` and `extra` are intentionally absent: both replace or
-/// add an independent transport stack and must be rejected until the runtime
-/// can honor them, rather than being accepted and ignored.
+/// `extra` is intentionally absent from the normalized model: the parser
+/// applies Xray's one-level replacement rule and stores only the effective
+/// settings here. `downloadSettings` remains absent because it adds a second
+/// independent transport stack and is rejected until the runtime can honor it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct XhttpSettings {
     pub host: Option<String>,

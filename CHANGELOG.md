@@ -7,6 +7,23 @@ prerelease-quality and do not establish a supported release series.
 
 ## Unreleased
 
+- Added Apple VLESS share-link import for `xhttp`/`splithttp` with plaintext,
+  TLS, or REALITY transport security, including bounded single- or
+  double-percent-decoded `extra` JSON. TLS/REALITY fields are preserved and
+  unsupported non-empty certificate-pin/ECH parameters fail closed. XHTTP
+  profiles never acquire a raw-only Vision flow from the Apple profile
+  migration helpers. The core now applies Xray's one-level `extra` replacement
+  rule for the modeled v26.5.9 XHTTP surface, preserving outer `host`, `path`,
+  and `mode`. Removed `scMaxConcurrentPosts` values remain import-compatible
+  but are explicitly ignored rather than being misread as
+  `scMaxBufferedPosts`.
+- Reduced plaintext H1 XHTTP packet-up memory pressure: body buffers now grow
+  in Xray-sized 8 KiB steps only while data is available, so a 500000-byte
+  `scMaxEachPostBytes` ceiling is not pinned by every active flow. Body-mode
+  POSTs also reuse the actual allocation instead of cloning every payload;
+  H2/H3 behavior is unchanged. Added an exact-profile RSS harness with
+  held-flow, 16 KiB control, settle, and ACK-gated rollover phases.
+
 ## 0.3.2 - 2026-08-16
 
 - Preserved an omitted VLESS `flow` when importing Apple share links instead

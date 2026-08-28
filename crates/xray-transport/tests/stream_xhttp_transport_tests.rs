@@ -258,6 +258,96 @@ async fn h1_packet_up_batches_and_reuses_only_a_fully_drained_upload_socket() {
 }
 
 #[tokio::test]
+async fn h1_packet_up_idle_flush_and_shutdown_do_not_dial_an_uploader() {
+    let (down_client, mut down_server) = tokio::io::duplex(64 * 1024);
+    let down = tokio::spawn(async move {
+        let head = read_h1_head(&mut down_server).await?;
+        down_server
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+            .await?;
+        Ok::<_, io::Error>(head)
+    });
+
+    let dials = Arc::new(AtomicUsize::new(0));
+    let mut stream = transport(
+        XhttpModeSelection::PacketUp,
+        XhttpHttpVersion::Http1,
+        unlimited_xmux(),
+        500_000,
+    )
+    .open_stream_with_dial(counted_queued_dial([down_client], Arc::clone(&dials)))
+    .await
+    .unwrap();
+
+    stream.flush().await.unwrap();
+    tokio::task::yield_now().await;
+    assert_eq!(dials.load(Ordering::Acquire), 1);
+
+    timeout(DEADLINE, stream.shutdown())
+        .await
+        .expect("idle packet uploader shutdown hung")
+        .unwrap();
+    let mut response = Vec::new();
+    timeout(DEADLINE, stream.read_to_end(&mut response))
+        .await
+        .expect("idle packet-up downlink did not finish")
+        .unwrap();
+    assert!(response.is_empty());
+    assert_eq!(dials.load(Ordering::Acquire), 1);
+
+    let down_head = down.await.unwrap().unwrap();
+    assert!(down_head.starts_with(b"GET "));
+}
+
+#[tokio::test]
+async fn h1_packet_up_exact_500k_limit_splits_without_corrupting_payload() {
+    const MAX_PACKET: usize = 500_000;
+
+    let (down_client, mut down_server) = tokio::io::duplex(64 * 1024);
+    let (up_client, mut up_server) = tokio::io::duplex(64 * 1024);
+    let down = tokio::spawn(async move {
+        let _ = read_h1_head(&mut down_server).await?;
+        down_server
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+            .await
+    });
+    let up = tokio::spawn(async move {
+        let mut packets = Vec::new();
+        for _ in 0..2 {
+            let head = read_h1_head(&mut up_server).await?;
+            let mut body = vec![0; h1_content_length(&head)?];
+            up_server.read_exact(&mut body).await?;
+            up_server
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+                .await?;
+            packets.push((h1_path(&head).to_owned(), body));
+        }
+        Ok::<_, io::Error>(packets)
+    });
+
+    let transport = transport(
+        XhttpModeSelection::PacketUp,
+        XhttpHttpVersion::Http1,
+        unlimited_xmux(),
+        MAX_PACKET as i32,
+    );
+    let mut stream = transport
+        .open_stream_with_dial(queued_dial([down_client, up_client]))
+        .await
+        .unwrap();
+    let payload = vec![0x5a; MAX_PACKET + 1];
+    stream.write_all(&payload).await.unwrap();
+    stream.shutdown().await.unwrap();
+
+    let packets = timeout(DEADLINE, up).await.unwrap().unwrap().unwrap();
+    assert_eq!(packets[0].0.split('/').next_back(), Some("0"));
+    assert_eq!(packets[1].0.split('/').next_back(), Some("1"));
+    assert_eq!(packets[0].1, payload[..MAX_PACKET]);
+    assert_eq!(packets[1].1, payload[MAX_PACKET..]);
+    down.await.unwrap().unwrap();
+}
+
+#[tokio::test]
 async fn h1_pooled_packet_partial_write_is_not_replayed_on_a_fresh_connection() {
     let (down_client, mut down_server) = tokio::io::duplex(64 * 1024);
     let down = tokio::spawn(async move {
@@ -1008,6 +1098,27 @@ fn unlimited_xmux() -> XhttpXmuxPolicy {
 fn queued_dial<const N: usize>(streams: [DuplexStream; N]) -> XhttpDial {
     let streams = Arc::new(Mutex::new(VecDeque::from(streams)));
     Arc::new(move || {
+        let stream = streams.lock().unwrap().pop_front();
+        Box::pin(async move {
+            stream
+                .map(|stream| Box::new(stream) as BoxedTransportStream)
+                .ok_or_else(|| {
+                    TransportError::Tcp(io::Error::new(
+                        io::ErrorKind::NotConnected,
+                        "test dial queue is empty",
+                    ))
+                })
+        })
+    })
+}
+
+fn counted_queued_dial<const N: usize>(
+    streams: [DuplexStream; N],
+    dials: Arc<AtomicUsize>,
+) -> XhttpDial {
+    let streams = Arc::new(Mutex::new(VecDeque::from(streams)));
+    Arc::new(move || {
+        dials.fetch_add(1, Ordering::AcqRel);
         let stream = streams.lock().unwrap().pop_front();
         Box::pin(async move {
             stream

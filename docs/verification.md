@@ -199,8 +199,70 @@ scenario below is evidence only once someone has run it locally and said so.
 ### XHTTP interoperability
 
 The XHTTP matrix has 15 cases: `packet-up`, `stream-up`, and `stream-one` over
-cleartext H1, TLS H1, TLS H2, REALITY H2, and TLS H3. Run the exact complete
-matrix with the stable `all` selector:
+cleartext H1, TLS H1, TLS H2, REALITY H2, and TLS H3.
+
+#### VLESS share-link boundary
+
+The Apple share-link importer and the Rust transport are separate compatibility
+layers. For the VLESS model currently implemented by xray-rust
+(`encryption=none`, and no Vision flow on XHTTP), their supported combinations
+are:
+
+| Share-link security and ALPN | Imported security fields | Runtime HTTP version | Live matrix ids |
+| --- | --- | --- | --- |
+| `security=none` | no security settings | H1 | `h1-none-*` |
+| `security=tls&alpn=http/1.1` | `sni`, `fp`, `alpn`, optional legacy `allowInsecure` | H1 | `h1-tls-*` |
+| `security=tls` with absent `alpn`, `h2`, or any non-special list | same TLS fields | H2 | `h2-tls-*` |
+| `security=tls&alpn=h3` as the exact one-element list | same TLS fields | H3 over QUIC/UDP | `h3-tls-*` |
+| `security=reality` | `sni`, `fp`, `pbk`, `sid`, `spx`, `pqv` | H2 | `h2-reality-*` |
+
+`type=xhttp` and the legacy `type=splithttp` alias both emit
+`streamSettings.network: "xhttp"`. `host`, `path`, and `mode` remain outer
+XHTTP settings. `extra` is a URL-encoded JSON object and follows Xray's
+one-level replacement rule; only the outer identity fields survive that
+replacement. An omitted XHTTP path reaches the transport as an empty string
+and is normalized to `/`, matching Xray's wire behavior.
+
+For TLS, an omitted `sni` reuses the remote host and an omitted `fp` selects
+`chrome`; `alpn` is a comma-separated list without whitespace. For REALITY,
+`fp` and `pbk` are required, `sni` defaults to the remote host, and a present
+`sid=` is a valid empty short ID. The current Xray share-link proposal calls
+`pbk` a `realitySettings.password`; xray-rust stores it in the legacy
+`publicKey` model field. Xray-core v26.5.9 accepts that alias and decodes the
+same 32-byte key, so this difference does not change the handshake wire.
+
+This is deliberately not a claim of complete support for every field in the
+current Xray share-link proposal. Non-`none` VLESS encryption is not
+implemented. Non-empty modern TLS `pcs`, `vcn`, and `ech`/`echQuery` fields are
+rejected at import rather than silently discarded because the Rust TLS model
+cannot honor them; an explicitly empty occurrence is treated as absent because
+it has no effective setting to preserve. `allowInsecure` is retained only for
+legacy xray-rust profiles; current Xray-core releases direct users to
+`pinnedPeerCertSha256` and `verifyPeerCertByName` instead. XHTTP with a Vision
+flow is rejected; current Xray guidance pairs XHTTP with VLESS encryption
+rather than the raw-transport Vision flow. The importer also retains its
+pre-existing case-insensitive query-name lookup even though the current share
+proposal specifies case-sensitive names; duplicate consumed fields are rejected.
+
+Coverage is layered rather than one cross-language executable test. Apple
+tests verify URL-to-JSON mapping and fail-closed behavior, the
+`vless_xhttp_tls_importer.json` and `vless_xhttp_reality_importer.json`
+fixtures are parsed and compiled into dial-ready Rust transports, and the
+ignored matrix below exchanges bytes with a real local Xray-core. The live
+matrix starts from a Rust `CoreConfig`; it does not invoke the Swift importer.
+The supplemental `vless_xhttp_tls_h2.json` and
+`vless_xhttp_reality_h2.json` fixtures pin a normally verified TLS/H2 shape
+and the REALITY/H2 parser-model shape independently of the importer snapshots.
+Keep all three layers when changing this boundary.
+
+The parameter mapping follows the official
+[VLESS share-link proposal](https://github.com/XTLS/Xray-core/discussions/716),
+while the H1/H2/H3 selection follows
+[XHTTP: Beyond REALITY](https://github.com/XTLS/Xray-core/discussions/4113)
+and `Xray-core/transport/internet/splithttp/dialer.go` in the recorded oracle
+checkout.
+
+Run the exact complete matrix with the stable `all` selector:
 
 ```sh
 XRAY_CORE_CHECKOUT="$XRAY_CORE_CHECKOUT" \
@@ -223,7 +285,10 @@ cargo test --locked -p xray-core-rs \
   -- --ignored --nocapture
 ```
 
-The full 15-case matrix, including all three H3 cases, has passed locally.
+The full 15-case matrix, including all three H3 cases, passed on 2026-08-27
+against Xray-core `1bdb488c9ec09ea51e6899697d5b7437f3cf6eb2` (`v26.5.9`),
+from the dirty xray-rust worktree based on
+`e8825ed92f558b870ed5448f9da97df7e0b3bbcd`, in 77.37 seconds.
 This is functional interoperability evidence only; it is not an H3
 throughput, resource-use, congestion-controller, or performance-parity claim.
 
