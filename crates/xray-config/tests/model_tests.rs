@@ -299,6 +299,7 @@ fn normalized_model_can_represent_domain_routing_rule() {
     };
 
     assert!(routing.rules[0].matches_domain(Some("api.example.com")));
+    assert!(routing.rules[0].matches_domain(Some("API.EXAMPLE.COM")));
     assert!(routing.rules[0].matches_domain(Some("example.com")));
     assert!(routing.rules[0].matches_domain(Some("sample.test")));
     assert!(routing.rules[0].matches_domain(Some("EXACT.test")));

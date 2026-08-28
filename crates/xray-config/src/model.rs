@@ -1016,8 +1016,8 @@ pub struct XhttpXmuxSettings {
 impl Default for XhttpXmuxSettings {
     fn default() -> Self {
         Self {
-            max_concurrency: XhttpRange { from: 1, to: 1 },
-            max_connections: XhttpRange::default(),
+            max_concurrency: XhttpRange::default(),
+            max_connections: XhttpRange { from: 3, to: 3 },
             c_max_reuse_times: XhttpRange::default(),
             h_max_request_times: XhttpRange { from: 600, to: 900 },
             h_max_reusable_secs: XhttpRange {
@@ -1030,9 +1030,13 @@ impl Default for XhttpXmuxSettings {
 }
 
 /// Config-build-normalized `xhttpSettings` / `splithttpSettings` from Xray
-/// v26.5.9. Zero ranges remain zero here where Xray's `Build` leaves them;
+/// v26.7.28. Zero ranges remain zero here where Xray's `Build` leaves them;
 /// the transport must apply its mode/placement-dependent `GetNormalized*`
 /// defaults when it creates a connection.
+///
+/// [`Default`] represents an explicit empty settings object after
+/// `SplitHTTPConfig.Build`. The parser separately preserves the zero XMUX
+/// produced when both settings pointers are absent or null.
 ///
 /// `extra` is intentionally absent from the normalized model: the parser
 /// applies Xray's one-level replacement rule and stores only the effective

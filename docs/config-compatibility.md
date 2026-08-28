@@ -73,15 +73,17 @@ runtime currently selects the first user.
 - `xtls-rprx-vision`;
 - `xtls-rprx-vision-udp443`.
 
-`streamSettings.network` accepts `tcp`/`raw`, `ws`/`websocket`, `httpupgrade`,
-`grpc`, and `xhttp`/`splithttp`. Xray renamed the TCP transport to `raw` and
-XHTTP from `splithttp`; both pairs are accepted aliases, as are `ws` and
-`websocket`. `gun` is not an accepted alias for `grpc`, because v26.5.9's
+`streamSettings.method` (preferred in v26.7.28) and its `network` alias accept
+`tcp`/`raw`, `ws`/`websocket`, `httpupgrade`, `grpc`, and
+`xhttp`/`splithttp`; `method` wins when both are populated. Xray renamed the
+TCP transport to `raw` and XHTTP from `splithttp`; both pairs are accepted aliases, as are `ws` and
+`websocket`. `gun` is not an accepted alias for `grpc`, because v26.7.28's
 `TransportProtocol.Build` has no such arm either. Security values are:
 
 - `none`;
-- `tls`, with `serverName`, `allowInsecure` (certificate verification is
-  enabled by default), `fingerprint`, and `alpn`, described below;
+- `tls`, with `serverName`, legacy-only `allowInsecure` (verification is on by
+  default; Xray-core v26.7.28 rejects `true`), `fingerprint`, and `alpn`,
+  described below;
 - `reality`, with `serverName`, a supported `fingerprint`, base64url
   `publicKey`, hexadecimal `shortId`, optional `spiderX`, and optional
   `mldsa65Verify`.
@@ -258,7 +260,7 @@ The accepted `xhttpSettings` surface is:
 - routing/request identity: `host`, `path`, `mode`, and `headers`;
 - padding: `xPaddingBytes`, `xPaddingObfsMode`, `xPaddingKey`,
   `xPaddingHeader`, `xPaddingPlacement`, and `xPaddingMethod`;
-- uplink metadata: `uplinkHTTPMethod`, `sessionPlacement`, `sessionKey`,
+- uplink metadata: `uplinkHTTPMethod`, `sessionIDPlacement`, `sessionIDKey`,
   `seqPlacement`, `seqKey`, `uplinkDataPlacement`, `uplinkDataKey`, and
   `uplinkChunkSize`;
 - packet/stream controls: `noGRPCHeader`, `noSSEHeader`,
@@ -266,6 +268,12 @@ The accepted `xhttpSettings` surface is:
   `scStreamUpServerSecs`, and `serverMaxHeaderBytes`;
 - `xmux`, with `maxConcurrency`, `maxConnections`, `cMaxReuseTimes`,
   `hMaxRequestTimes`, `hMaxReusableSecs`, and `hKeepAlivePeriod`.
+
+`sessionIDTable` and `sessionIDLength` receive Xray's ASCII, positive-length,
+and entropy validation. A non-empty custom table on the selected XHTTP
+transport is then rejected until the runtime can generate the corresponding
+non-UUID session IDs. A valid table in an unselected transport block remains
+inert, as it does in Xray.
 
 Range fields accept a JSON integer or Xray's string form such as
 `"100-1000"`; null scalar/range/xmux values retain Go's zero-value semantics.
@@ -286,12 +294,14 @@ ignored, matching current Xray; it is not reinterpreted as the server-only
 The xmux scheduler is implemented rather than merely parsed. Its random ranges
 bound logical concurrency, client-slot count, connection reuse, HTTP request
 count, and reusable lifetime. Enabling positive `maxConnections` together with
-positive `maxConcurrency` is rejected as Xray rejects it. The default is one
-logical flow per client slot, so simultaneous flows get distinct HTTP clients
-while sequential flows can reuse one. H2/H3 keep capacity-aware reusable
-connection pools; H1 reuses only packet-upload sockets whose response was
-fully consumed. The scheduler is shared by every cached selection of one
-outbound, including TCP and UDP sessions, rather than being cloned per flow.
+positive `maxConcurrency` is rejected as Xray rejects it. An explicit default
+settings block (`"xhttpSettings": {}`) uses v26.7.28's three-client-slot
+`maxConnections` pool. If both settings pointers are absent or null, Xray
+skips `SplitHTTPConfig.Build` and leaves XMUX zero-valued; xray-rust preserves
+that distinction. H2/H3 keep capacity-aware reusable connection pools; H1
+reuses only packet-upload sockets whose response was fully consumed. The
+scheduler is shared by every cached selection of one outbound, including TCP
+and UDP sessions, rather than being cloned per flow.
 
 #### HTTP/3 phase-one QUIC surface
 
@@ -926,8 +936,9 @@ rather than duplicating the DNS parser. A valid UDP response with `TC=1`
 retries over TCP to the same server. UDP transports ignore responses with an unrelated
 transaction ID, opcode, name, type, or class until the attempt deadline.
 Managed destination results use a bounded 256-entry LRU cache. Authoritative
-answer TTLs are clamped to 1–300 seconds and the minimum TTL across the answer
-chain controls expiry; static `dns.hosts` IPs use 10 seconds, while resolvers
+answer TTLs are floored at one second and the minimum TTL across the answer
+chain controls expiry; values above 300 seconds are preserved, matching
+Xray-core v26.7.28. Static `dns.hosts` IPs use 10 seconds, while resolvers
 without TTL metadata use the 300-second policy cap. Cache hits expose the
 remaining TTL rather than extending it. ASCII case is canonicalized, and
 overflow evicts one least-recently-used entry rather than flushing the whole
@@ -1089,6 +1100,11 @@ string or array and supports the same `keyword`, `domain`, `full`, `regexp`,
 keywords. Rules are ordered, selectors inside a rule are ANDed, and empty
 QTYPE/domain selectors are wildcards. A miss Hijacks A/AAAA and Rejects other
 types. Explicit Hijack of a non-address type also Rejects.
+
+This rule surface retains a deliberate pre-v26.7.28 compatibility gap:
+xray-rust accepts lower-case `qtype`, `Reject`, and no per-rule `rCode`, while
+Xray-core v26.7.28 spells these `qType` and `Return` with configurable `rCode`.
+The target spellings are rejected here rather than silently approximated.
 
 Deprecated `nonIPQuery`/`blockTypes` are normalized to ordered modern rules and
 emit a warning. They cannot be mixed with non-null `rules`. Config parsing caps

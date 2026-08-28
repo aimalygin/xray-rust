@@ -262,20 +262,31 @@ fn selected_reality_server_warmup_timeout() -> Duration {
 /// inbound does not serve, and failed in the warmup with the scenario's own
 /// pairing never tried.
 async fn warm_up_reality_server_detector(xray: &XrayServer, probe_config: CoreConfig) {
-    match timeout(
-        selected_reality_server_warmup_timeout(),
-        run_rust_core_socks_echo_probe(probe_config),
+    let warmup_timeout = selected_reality_server_warmup_timeout();
+    let first = timeout(
+        warmup_timeout,
+        run_rust_core_socks_echo_probe(probe_config.clone()),
     )
-    .await
-    {
+    .await;
+    if matches!(first, Ok(Ok(()))) {
+        return;
+    }
+
+    // The first connection is intentionally the one that makes Xray contact
+    // the live cover origin and train its REALITY detector. That connection
+    // may be consumed by detector warm-up and end with an early EOF even
+    // though the listener is ready for the next client. Require a fresh probe
+    // to pass; a persistent protocol failure still fails the test.
+    eprintln!("REALITY detector warmup did not complete on the first probe; retrying once");
+    match timeout(warmup_timeout, run_rust_core_socks_echo_probe(probe_config)).await {
         Ok(Ok(())) => {}
         Ok(Err(error)) => {
             eprintln!("{}", xray.logs());
-            panic!("REALITY server warmup probe failed: {error}");
+            panic!("REALITY server warmup retry failed after {first:?}: {error}");
         }
         Err(error) => {
             eprintln!("{}", xray.logs());
-            panic!("REALITY server warmup probe timed out: {error}");
+            panic!("REALITY server warmup retry timed out after {first:?}: {error}");
         }
     }
 }
@@ -873,6 +884,7 @@ fn resolve_xray_checkout() -> PathBuf {
             path.join("go.mod").exists(),
             "XRAY_CORE_CHECKOUT must point at Xray-core"
         );
+        assert_xray_checkout_revision(&path);
         return path;
     }
 
@@ -886,7 +898,26 @@ fn resolve_xray_checkout() -> PathBuf {
         checkout.join("go.mod").exists(),
         "missing Xray-core checkout; set XRAY_CORE_CHECKOUT"
     );
+    assert_xray_checkout_revision(&checkout);
     checkout
+}
+
+fn assert_xray_checkout_revision(checkout: &Path) {
+    const EXPECTED: &str = "5ca6f4b7d4dc20a881d4330e498892697627ec0c";
+    let output = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(checkout)
+        .output()
+        .expect("read Xray-core checkout revision");
+    assert!(
+        output.status.success(),
+        "git rev-parse failed for Xray-core"
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout).trim(),
+        EXPECTED,
+        "Xray-core interop checkout must be pinned to v26.7.28"
+    );
 }
 
 fn create_temp_dir(prefix: &str) -> TempDir {
@@ -1032,7 +1063,7 @@ fn write_xray_vless_config(
           "mode": "{mode}",
           "xPaddingBytes": 64,
           "uplinkHTTPMethod": "POST",
-          "sessionPlacement": "path",
+          "sessionIDPlacement": "path",
           "seqPlacement": "path",
           "uplinkDataPlacement": "body",
           "uplinkChunkSize": 4096,
@@ -2167,6 +2198,9 @@ fn rust_xhttp_core_config(
             sc_min_posts_interval_ms: exact(1),
             xmux: XhttpXmuxSettings {
                 max_concurrency: exact(1),
+                // The v26.7.28 default is maxConnections=3. Keep this
+                // interop scenario on its explicit maxConcurrency policy.
+                max_connections: exact(0),
                 h_max_request_times: exact(64),
                 h_max_reusable_secs: exact(3_600),
                 ..XhttpXmuxSettings::default()

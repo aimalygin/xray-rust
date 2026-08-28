@@ -40,6 +40,7 @@ which is only a convenience for iterating locally.
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -61,6 +62,18 @@ FIXTURE_DIRECTORIES = (
 
 MASQUERADE_MODULE = "tools/reality-oracle/masquerade"
 GRPC_MODULE = "tools/reality-oracle/grpc"
+
+# The source baseline shared by the two Go modules that import Xray-core and by
+# an optional local reference checkout. Go pseudo-versions only carry twelve
+# hexadecimal characters, so keep the release tag and full object ID here and
+# verify the checkout against the latter whenever one is available.
+XRAY_CORE_TAG = "v26.7.28"
+XRAY_CORE_COMMIT = "5ca6f4b7d4dc20a881d4330e498892697627ec0c"
+XRAY_CORE_MODULE_VERSION = "v1.260327.1-0.20260728075948-5ca6f4b7d4dc"
+XRAY_CORE_MODULE_SUM = "h1:fkOkmgHWbF2Q8MdV9VxrsyxRz4OndcrUXUkh1ANBTg0="
+XRAY_CORE_GO_MOD_SUM = "h1:wukQoBGnQ6GaLTGuKwv8rCTgf80QxPj+6iznDZHQEWo="
+XRAY_CORE_MODULES = (MASQUERADE_MODULE, GRPC_MODULE)
+XRAY_CORE_ALLOWED_UNTRACKED = frozenset(("xray", "xray.exe", "target/"))
 
 # The browsers a masquerade header block draws a version for, in the order the
 # fixture's `versions` object lists them.
@@ -88,6 +101,166 @@ def root_oracle(entry: str, tag: str | None = None) -> tuple[str, ...]:
     return tuple(command)
 
 
+def xray_core_git_stdout(checkout: Path, *arguments: str) -> str:
+    """Run one read-only git query against the optional reference checkout."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(checkout), *arguments],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError as error:
+        raise SystemExit(
+            "git is required to verify the available Xray-core checkout"
+        ) from error
+    if result.returncode != 0:
+        raise SystemExit(
+            f"cannot run `git {' '.join(arguments)}` in Xray-core checkout "
+            f"{checkout}:\n{result.stderr.rstrip()}"
+        )
+    return result.stdout
+
+
+def verify_xray_core_checkout(checkout: Path) -> None:
+    """Require the exact commit with no source-affecting local paths."""
+    actual_commit = xray_core_git_stdout(
+        checkout, "rev-parse", "--verify", "HEAD^{commit}"
+    ).strip()
+    if actual_commit != XRAY_CORE_COMMIT:
+        raise SystemExit(
+            f"Xray-core checkout {checkout} is at {actual_commit}; expected "
+            f"{XRAY_CORE_TAG} ({XRAY_CORE_COMMIT})"
+        )
+
+    tracked = xray_core_git_stdout(
+        checkout,
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "--untracked-files=no",
+    )
+    tracked_changes = [entry for entry in tracked.split("\0") if entry]
+    if tracked_changes:
+        raise SystemExit(
+            f"Xray-core checkout {checkout} has tracked or staged changes; "
+            f"the {XRAY_CORE_TAG} reference must be clean:\n"
+            + "\n".join(tracked_changes)
+        )
+
+    # Do not pass `--exclude-standard`: an ignored Go file can still affect a
+    # build. `--directory` collapses the allowed target/ tree instead of
+    # enumerating every cached module beneath it. `-z` keeps unusual path names
+    # unambiguous rather than relying on git's quoting configuration.
+    untracked = xray_core_git_stdout(
+        checkout,
+        "ls-files",
+        "-z",
+        "--others",
+        "--directory",
+        "--no-empty-directory",
+    )
+    untracked_paths = [path for path in untracked.split("\0") if path]
+    unexpected = [
+        path
+        for path in untracked_paths
+        if path not in XRAY_CORE_ALLOWED_UNTRACKED
+    ]
+    if unexpected:
+        allowed = ", ".join(sorted(XRAY_CORE_ALLOWED_UNTRACKED))
+        raise SystemExit(
+            f"Xray-core checkout {checkout} has untracked paths that may affect "
+            f"the reference build; only {allowed} are allowed:\n"
+            + "\n".join(unexpected)
+        )
+
+
+def verify_xray_core_source_pin() -> None:
+    """Require every oracle source to resolve to Xray-core v26.7.28.
+
+    CI needs no Xray-core checkout because the Go modules consume the immutable
+    pseudo-version. A developer checkout remains optional for the same reason,
+    but if `XRAY_CORE_CHECKOUT` names one, or the conventional `Xray-core`
+    directory exists, silently accepting a different HEAD would make local
+    oracle and interoperability evidence describe different reference sources.
+    """
+    for module in XRAY_CORE_MODULES:
+        resolved = subprocess.run(
+            [
+                "go",
+                "list",
+                "-mod=readonly",
+                "-m",
+                "-json",
+                "github.com/xtls/xray-core",
+            ],
+            cwd=REPOSITORY_ROOT / module,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if resolved.returncode != 0:
+            raise SystemExit(
+                f"cannot resolve the Xray-core source in {module}:\n"
+                f"{resolved.stderr.rstrip()}"
+            )
+        try:
+            metadata = json.loads(resolved.stdout)
+        except ValueError as error:
+            raise SystemExit(
+                f"cannot parse `go list` output for {module}: {error}"
+            ) from error
+
+        if metadata.get("Replace") is not None:
+            raise SystemExit(
+                f"{module} replaces github.com/xtls/xray-core; oracle fixtures "
+                "must come from the pinned upstream source"
+            )
+
+        actual = (
+            metadata.get("Version"),
+            metadata.get("Sum"),
+            metadata.get("GoModSum"),
+        )
+        expected = (
+            XRAY_CORE_MODULE_VERSION,
+            XRAY_CORE_MODULE_SUM,
+            XRAY_CORE_GO_MOD_SUM,
+        )
+        if actual != expected:
+            raise SystemExit(
+                f"{module} resolves the wrong Xray-core source: "
+                f"version={actual[0]!r}, sum={actual[1]!r}, "
+                f"go.mod sum={actual[2]!r}; expected {XRAY_CORE_TAG} "
+                f"({XRAY_CORE_COMMIT}), module {expected[0]!r}, "
+                f"sum={expected[1]!r}, go.mod sum={expected[2]!r}"
+            )
+
+    configured_checkout = os.environ.get("XRAY_CORE_CHECKOUT")
+    if configured_checkout:
+        checkout = Path(configured_checkout).expanduser().resolve()
+        if not checkout.joinpath("go.mod").is_file():
+            raise SystemExit(
+                "XRAY_CORE_CHECKOUT must point at an Xray-core checkout: "
+                f"{checkout}"
+            )
+    else:
+        checkout = REPOSITORY_ROOT / "Xray-core"
+        if not checkout.exists():
+            checkout = None
+        elif not checkout.joinpath("go.mod").is_file():
+            raise SystemExit(f"invalid Xray-core checkout: {checkout}")
+
+    if checkout is not None:
+        verify_xray_core_checkout(checkout)
+
+    checkout_note = f"; checkout {checkout}" if checkout is not None else ""
+    print(
+        f"Xray-core source: {XRAY_CORE_TAG} ({XRAY_CORE_COMMIT}){checkout_note}",
+        flush=True,
+    )
+
+
 def masquerade_oracle(tag: str) -> tuple[str, ...]:
     """Build the `go run` invocation for an oracle in the masquerade module.
 
@@ -98,20 +271,38 @@ def masquerade_oracle(tag: str) -> tuple[str, ...]:
     that module without moving this process, so fixture paths stay resolvable
     from the repository root.
     """
-    return ("go", "run", "-C", MASQUERADE_MODULE, "-tags", tag, ".")
+    return (
+        "go",
+        "run",
+        "-C",
+        MASQUERADE_MODULE,
+        "-mod=readonly",
+        "-tags",
+        tag,
+        ".",
+    )
 
 
 def grpc_oracle(tag: str) -> tuple[str, ...]:
     """Build the `go run` invocation for an oracle in the gRPC module.
 
     A third module for the reason there is a second one, twice over: this
-    oracle imports `google.golang.org/grpc`, which raises the root module's
-    `golang.org/x/crypto` from v0.36.0 to v0.48.0 on its own, and Xray-core,
-    which raises it to v0.50.0 -- and uTLS built against a different
-    `x/crypto` emits different ClientHello bytes. See the header of
+    oracle imports `google.golang.org/grpc`, which brings a newer transport
+    dependency graph, and Xray-core, which raises the root module's
+    `golang.org/x/crypto` from v0.36.0 to v0.54.0. uTLS built against a
+    different `x/crypto` emits different ClientHello bytes. See the header of
     `tools/reality-oracle/grpc/go.mod`.
     """
-    return ("go", "run", "-C", GRPC_MODULE, "-tags", tag, ".")
+    return (
+        "go",
+        "run",
+        "-C",
+        GRPC_MODULE,
+        "-mod=readonly",
+        "-tags",
+        tag,
+        ".",
+    )
 
 
 def claims_raw_clienthello(document: Any) -> bool:
@@ -602,6 +793,8 @@ def owning_oracle(fixture: Path, document: Any) -> Oracle | Outcome:
 
 
 def main(argv: list[str]) -> int:
+    verify_xray_core_source_pin()
+
     if argv:
         fixtures = [Path(argument).resolve() for argument in argv]
         for fixture in fixtures:

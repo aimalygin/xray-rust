@@ -1609,7 +1609,7 @@ mod tests {
             "--xray-rust-version",
             "1659143",
             "--xray-core-version",
-            "v26.5.9",
+            "v26.7.28",
             "--sing-box-version",
             "v1.12.0",
         ])
@@ -1702,7 +1702,7 @@ mod tests {
         assert_eq!(options.groups, vec![PathBuf::from("target/benchmarks/123")]);
         assert_eq!(options.out_dir, PathBuf::from("docs/benchmarks/media"));
         assert_eq!(options.date, "2026-07-29");
-        assert_eq!(options.xray_core_version, "v26.5.9");
+        assert_eq!(options.xray_core_version, "v26.7.28");
 
         let options = parse_chart_args(&args(&[
             "--group",
@@ -1718,7 +1718,7 @@ mod tests {
             "--xray-rust-version",
             "1659143",
             "--xray-core-version",
-            "v26.5.9",
+            "v26.7.28",
             "--sing-box-version",
             "v1.12.0",
         ]))
@@ -2688,7 +2688,7 @@ mod tests {
             hardware: "Apple M4 Pro, 24 GB RAM, macOS 15.5".to_owned(),
             runs_label: "5".to_owned(),
             xray_rust_version: "1659143".to_owned(),
-            xray_core_version: "v26.5.9".to_owned(),
+            xray_core_version: "v26.7.28".to_owned(),
             sing_box_version: "v1.12.0".to_owned(),
             geodata: None,
             comparison_versions: true,
@@ -2747,7 +2747,7 @@ mod tests {
         assert!(svg.contains("sing-box"));
         assert!(svg.contains("synthetic localhost benchmark"));
         assert!(svg.contains("runs=5"));
-        assert!(svg.contains("Xray-core v26.5.9"));
+        assert!(svg.contains("Xray-core v26.7.28"));
         assert!(svg.contains("29.8"));
     }
 

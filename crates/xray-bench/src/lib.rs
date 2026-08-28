@@ -1,4 +1,5 @@
 use std::collections::{HashMap, VecDeque};
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::future::Future;
 use std::hint::black_box;
@@ -98,6 +99,8 @@ const REALITY_FIXTURE_WARMUP: Duration = Duration::from_secs(8);
 /// network-dependent, so the fixed default may need adjusting per environment.
 const REALITY_FIXTURE_WARMUP_MS_ENV: &str = "XRAY_BENCH_REALITY_WARMUP_MS";
 const SING_BOX_BUILD_TAGS: &str = "with_gvisor,with_utls,badlinkname,tfogo_checklinkname0";
+const XRAY_CORE_ORACLE_VERSION: &str = "26.7.28";
+const XRAY_CORE_ORACLE_REVISION: &str = "5ca6f4b7d4dc20a881d4330e498892697627ec0c";
 const TCP_PROTOCOL: u8 = 6;
 const UDP_PROTOCOL: u8 = 17;
 const DARWIN_UTUN_HEADER_LEN: usize = 4;
@@ -7429,12 +7432,21 @@ pub fn ensure_xray_rust_binary(options: &BenchOptions) -> Result<PathBuf, BenchE
     Ok(binary)
 }
 
+/// Resolves the pinned Xray-core benchmark oracle.
+///
+/// A caller-supplied binary can only be tied to the required release and to
+/// the binary SHA-256 stored in benchmark provenance; its source revision is
+/// not inferable. Auto-builds additionally require the exact pinned checkout
+/// revision and the source-tree guards below before rebuilding the scoped
+/// output artifact.
 pub fn ensure_xray_core_binary(
     options: &BenchOptions,
     bin_dir: &Path,
 ) -> Result<PathBuf, BenchError> {
     if let Some(path) = &options.xray_core_bin {
-        return Ok(path.clone());
+        let binary = canonical_xray_core_binary(path)?;
+        verify_xray_core_binary(&binary, None)?;
+        return Ok(binary);
     }
     if options.no_auto_build {
         return Err(BenchError::InvalidArguments(
@@ -7451,25 +7463,263 @@ pub fn ensure_xray_core_binary(
                 "xray-core checkout not found; pass --xray-core-dir or --xray-core-bin".to_owned(),
             )
         })?;
+    verify_xray_core_checkout(&checkout)?;
     let bin_dir = absolute_path(bin_dir)?;
     fs::create_dir_all(&bin_dir).map_err(|source| BenchError::Io {
         action: format!("creating binary directory `{}`", bin_dir.display()),
         source,
     })?;
-    let binary = bin_dir.join(format!("xray-core{}", std::env::consts::EXE_SUFFIX));
-    if binary.exists() {
-        return Ok(binary);
-    }
-    run_command(
-        "go",
-        Command::new("go")
-            .arg("build")
-            .arg("-o")
-            .arg(&binary)
-            .arg("./main")
-            .current_dir(&checkout),
-    )?;
+    let binary = xray_core_oracle_binary_path(&bin_dir);
+    let mut command = xray_core_go_build_command(&checkout, &binary);
+    run_command("go", &mut command)?;
+    // Re-check after compilation so a concurrent edit or a Go-side metadata
+    // update cannot be attributed to the checkout validated before the build.
+    verify_xray_core_checkout(&checkout)?;
+    verify_xray_core_binary(&binary, Some(XRAY_CORE_ORACLE_REVISION))?;
     Ok(binary)
+}
+
+fn canonical_xray_core_binary(path: &Path) -> Result<PathBuf, BenchError> {
+    let binary = fs::canonicalize(path).map_err(|source| BenchError::Io {
+        action: format!(
+            "resolving caller-supplied Xray-core binary `{}`",
+            path.display()
+        ),
+        source,
+    })?;
+    let metadata = fs::metadata(&binary).map_err(|source| BenchError::Io {
+        action: format!(
+            "reading caller-supplied Xray-core binary metadata `{}`",
+            binary.display()
+        ),
+        source,
+    })?;
+    if !metadata.is_file() {
+        return Err(BenchError::InvalidArguments(format!(
+            "caller-supplied Xray-core binary `{}` is not a file",
+            path.display()
+        )));
+    }
+    Ok(binary)
+}
+
+fn xray_core_oracle_binary_path(bin_dir: &Path) -> PathBuf {
+    bin_dir.join(format!(
+        "xray-core-v{XRAY_CORE_ORACLE_VERSION}-{XRAY_CORE_ORACLE_REVISION}{}",
+        std::env::consts::EXE_SUFFIX
+    ))
+}
+
+fn xray_core_go_build_command(checkout: &Path, binary: &Path) -> Command {
+    xray_core_go_build_command_for_env(checkout, binary, std::env::vars_os().map(|(key, _)| key))
+}
+
+fn xray_core_go_build_command_for_env(
+    checkout: &Path,
+    binary: &Path,
+    inherited_env_keys: impl IntoIterator<Item = OsString>,
+) -> Command {
+    let mut command = Command::new("go");
+    command
+        .arg("build")
+        .arg("-o")
+        .arg(binary)
+        .arg("./main")
+        .current_dir(checkout)
+        // Ignore both the persistent Go environment and an ambient workspace:
+        // either can inject flags, overlays, or dependency replacements while
+        // the pinned checkout itself remains clean.
+        .env("GOENV", "off")
+        .env("GOWORK", "off")
+        .env_remove("GOFLAGS")
+        .env_remove("GOEXPERIMENT")
+        .env_remove("GOTOOLCHAIN");
+    for key in inherited_env_keys {
+        if is_cgo_env_key(&key) {
+            command.env_remove(key);
+        }
+    }
+    command.env("CGO_ENABLED", "0");
+    command
+}
+
+fn is_cgo_env_key(key: &OsStr) -> bool {
+    key.to_string_lossy()
+        .get(..4)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("CGO_"))
+}
+
+fn verify_xray_core_checkout(checkout: &Path) -> Result<(), BenchError> {
+    let revision = required_git_stdout(checkout, &["rev-parse", "--verify", "HEAD"])?;
+    // Tracked or staged edits change the pinned source. Untracked paths need a
+    // separate allowlist: an untracked Go file can participate in `go build`,
+    // while the known local binaries and target tree cannot.
+    let tracked_status = xray_core_tracked_status(checkout)?;
+    let untracked_paths = xray_core_untracked_paths(checkout)?;
+    validate_xray_core_checkout_metadata(checkout, &revision, &tracked_status, &untracked_paths)
+}
+
+fn xray_core_tracked_status(checkout: &Path) -> Result<String, BenchError> {
+    required_git_stdout(
+        checkout,
+        &["status", "--porcelain=v1", "--untracked-files=no"],
+    )
+}
+
+fn xray_core_untracked_paths(checkout: &Path) -> Result<String, BenchError> {
+    // Deliberately do not pass `--exclude-standard`: ignored source-like files
+    // must not evade the source guard. `--directory` keeps an allowed target/
+    // tree bounded instead of listing every cached Go module file.
+    required_git_stdout(
+        checkout,
+        &[
+            "ls-files",
+            "--others",
+            "--directory",
+            "--no-empty-directory",
+        ],
+    )
+}
+
+fn validate_xray_core_checkout_metadata(
+    checkout: &Path,
+    revision: &str,
+    tracked_status: &str,
+    untracked_paths: &str,
+) -> Result<(), BenchError> {
+    if revision != XRAY_CORE_ORACLE_REVISION {
+        return Err(BenchError::InvalidArguments(format!(
+            "xray-core checkout `{}` is at revision `{revision}`; benchmark oracle requires v{XRAY_CORE_ORACLE_VERSION} `{XRAY_CORE_ORACLE_REVISION}`",
+            checkout.display()
+        )));
+    }
+    if !tracked_status.trim().is_empty() {
+        return Err(BenchError::InvalidArguments(format!(
+            "xray-core checkout `{}` has tracked changes; benchmark oracle requires a clean v{XRAY_CORE_ORACLE_VERSION} checkout:\n{}",
+            checkout.display(),
+            tracked_status.trim()
+        )));
+    }
+    let unexpected_untracked = xray_core_unexpected_untracked_paths(untracked_paths);
+    if !unexpected_untracked.is_empty() {
+        return Err(BenchError::InvalidArguments(format!(
+            "xray-core checkout `{}` has untracked paths that may affect the oracle build; only root xray/xray.exe binaries and target/ are allowed:\n{}",
+            checkout.display(),
+            unexpected_untracked.join("\n")
+        )));
+    }
+    Ok(())
+}
+
+fn xray_core_unexpected_untracked_paths(untracked_paths: &str) -> Vec<&str> {
+    untracked_paths
+        .lines()
+        .map(str::trim)
+        .filter(|path| !path.is_empty() && !is_allowed_xray_core_untracked_path(path))
+        .collect()
+}
+
+fn is_allowed_xray_core_untracked_path(path: &str) -> bool {
+    matches!(path, "xray" | "xray.exe" | "target/")
+}
+
+fn xray_core_source_is_dirty(tracked_status: &str, untracked_paths: &str) -> bool {
+    !tracked_status.trim().is_empty()
+        || !xray_core_unexpected_untracked_paths(untracked_paths).is_empty()
+}
+
+fn verify_xray_core_binary(
+    binary: &Path,
+    required_revision: Option<&str>,
+) -> Result<(), BenchError> {
+    let output = Command::new(binary)
+        .arg("version")
+        .output()
+        .map_err(|source| BenchError::Io {
+            action: format!("reading Xray-core version from `{}`", binary.display()),
+            source,
+        })?;
+    if !output.status.success() {
+        return Err(BenchError::Process {
+            program: binary.display().to_string(),
+            status: output.status.to_string(),
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        });
+    }
+    validate_xray_core_version_output(
+        binary,
+        &String::from_utf8_lossy(&output.stdout),
+        required_revision,
+    )
+}
+
+fn validate_xray_core_version_output(
+    binary: &Path,
+    stdout: &str,
+    required_revision: Option<&str>,
+) -> Result<(), BenchError> {
+    let first_line = stdout
+        .lines()
+        .find(|line| !line.trim().is_empty())
+        .map(str::trim)
+        .ok_or_else(|| {
+            BenchError::InvalidArguments(format!(
+                "xray-core binary `{}` returned empty version output",
+                binary.display()
+            ))
+        })?;
+    let fields = first_line.split_whitespace().collect::<Vec<_>>();
+    if fields.first() != Some(&"Xray") || fields.get(1) != Some(&XRAY_CORE_ORACLE_VERSION) {
+        return Err(BenchError::InvalidArguments(format!(
+            "xray-core binary `{}` reported `{first_line}`; benchmark oracle requires Xray {XRAY_CORE_ORACLE_VERSION}",
+            binary.display()
+        )));
+    }
+
+    if let Some(revision) = required_revision {
+        let expected_short_revision = revision.get(..7).unwrap_or(revision);
+        let expected_dirty_short_revision = format!("{expected_short_revision}-dirty");
+        let expected_dirty_revision = format!("{revision}-dirty");
+        let embedded_revision = fields
+            .iter()
+            .position(|field| field.starts_with("(go"))
+            .and_then(|index| index.checked_sub(1))
+            .and_then(|index| fields.get(index))
+            .copied();
+        if embedded_revision != Some(expected_short_revision)
+            && embedded_revision != Some(revision)
+            && embedded_revision != Some(expected_dirty_short_revision.as_str())
+            && embedded_revision != Some(expected_dirty_revision.as_str())
+        {
+            return Err(BenchError::InvalidArguments(format!(
+                "xray-core binary `{}` reported `{first_line}`; auto-built oracle requires revision `{expected_short_revision}` from `{revision}`",
+                binary.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn required_git_stdout(root: &Path, args: &[&str]) -> Result<String, BenchError> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(args)
+        .output()
+        .map_err(|source| BenchError::Io {
+            action: format!("running git {} in `{}`", args.join(" "), root.display()),
+            source,
+        })?;
+    if !output.status.success() {
+        return Err(BenchError::Process {
+            program: "git".to_owned(),
+            status: output.status.to_string(),
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        });
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
 }
 
 pub fn ensure_sing_box_binary(
@@ -9564,19 +9814,27 @@ fn git_provenance_at(root: &Path) -> Option<WorkspaceGitProvenance> {
     Some(WorkspaceGitProvenance { revision, dirty })
 }
 
+fn xray_core_git_provenance_at(root: &Path) -> Option<WorkspaceGitProvenance> {
+    let revision = git_stdout(root, &["rev-parse", "--verify", "HEAD"])?;
+    if revision.is_empty() {
+        return None;
+    }
+    let tracked_status = xray_core_tracked_status(root).ok()?;
+    let untracked_paths = xray_core_untracked_paths(root).ok()?;
+    Some(WorkspaceGitProvenance {
+        revision,
+        dirty: Some(xray_core_source_is_dirty(&tracked_status, &untracked_paths)),
+    })
+}
+
 fn engine_source_git_provenance(
     kind: EngineKind,
     options: &BenchOptions,
 ) -> Option<WorkspaceGitProvenance> {
     let source_dir = match kind {
         EngineKind::XrayRust => workspace_root().ok(),
-        EngineKind::XrayCore => options.xray_core_dir.clone().or_else(|| {
-            options
-                .xray_core_bin
-                .is_none()
-                .then(default_xray_core_dir)
-                .flatten()
-        }),
+        EngineKind::XrayCore if options.xray_core_bin.is_some() => None,
+        EngineKind::XrayCore => options.xray_core_dir.clone().or_else(default_xray_core_dir),
         EngineKind::SingBox => options.sing_box_dir.clone().or_else(|| {
             options
                 .sing_box_bin
@@ -9585,7 +9843,10 @@ fn engine_source_git_provenance(
                 .flatten()
         }),
     }?;
-    git_provenance_at(&source_dir)
+    match kind {
+        EngineKind::XrayCore => xray_core_git_provenance_at(&source_dir),
+        EngineKind::XrayRust | EngineKind::SingBox => git_provenance_at(&source_dir),
+    }
 }
 
 fn git_stdout(root: &Path, args: &[&str]) -> Option<String> {
@@ -10411,6 +10672,257 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
     use std::time::Duration;
+
+    #[test]
+    fn xray_core_output_path_is_scoped_to_the_pinned_oracle() {
+        let path = xray_core_oracle_binary_path(Path::new("target/bench-bin"));
+
+        assert_eq!(
+            path,
+            PathBuf::from(format!(
+                "target/bench-bin/xray-core-v{XRAY_CORE_ORACLE_VERSION}-{XRAY_CORE_ORACLE_REVISION}{}",
+                std::env::consts::EXE_SUFFIX
+            ))
+        );
+        assert!(!path.ends_with(format!("xray-core{}", std::env::consts::EXE_SUFFIX)));
+    }
+
+    #[test]
+    fn xray_core_go_build_command_sanitizes_source_affecting_environment() {
+        let checkout = Path::new("Xray-core");
+        let binary = Path::new("target/bench-bin/xray-core");
+        let command = xray_core_go_build_command_for_env(
+            checkout,
+            binary,
+            [
+                OsString::from("HOME"),
+                OsString::from("CGO_CFLAGS"),
+                OsString::from("cgo_ldflags"),
+                OsString::from("CGO_ENABLED"),
+            ],
+        );
+        let args = command.get_args().collect::<Vec<_>>();
+        let env = command
+            .get_envs()
+            .map(|(key, value)| {
+                (
+                    key.to_string_lossy().to_ascii_uppercase(),
+                    value.map(|value| value.to_string_lossy().into_owned()),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+
+        assert_eq!(command.get_program(), OsStr::new("go"));
+        assert_eq!(command.get_current_dir(), Some(checkout));
+        assert_eq!(
+            args,
+            [
+                OsStr::new("build"),
+                OsStr::new("-o"),
+                binary.as_os_str(),
+                OsStr::new("./main"),
+            ]
+        );
+        assert_eq!(
+            env.get("GOENV").and_then(|value| value.as_deref()),
+            Some("off")
+        );
+        assert_eq!(
+            env.get("GOWORK").and_then(|value| value.as_deref()),
+            Some("off")
+        );
+        assert_eq!(env.get("GOFLAGS"), Some(&None));
+        assert_eq!(env.get("GOEXPERIMENT"), Some(&None));
+        assert_eq!(env.get("GOTOOLCHAIN"), Some(&None));
+        assert_eq!(env.get("CGO_CFLAGS"), Some(&None));
+        assert_eq!(env.get("CGO_LDFLAGS"), Some(&None));
+        assert_eq!(
+            env.get("CGO_ENABLED").and_then(|value| value.as_deref()),
+            Some("0")
+        );
+        assert!(!env.contains_key("HOME"));
+    }
+
+    #[test]
+    fn caller_supplied_xray_core_binary_must_resolve_to_a_file() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "xray-bench-explicit-binary-{}-{unique}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let binary = root.join("xray");
+        fs::write(&binary, b"not executed by this test").unwrap();
+
+        let canonical = canonical_xray_core_binary(&binary).unwrap();
+        assert_eq!(canonical, fs::canonicalize(&binary).unwrap());
+        assert!(canonical_xray_core_binary(&root)
+            .unwrap_err()
+            .to_string()
+            .contains("is not a file"));
+        assert!(canonical_xray_core_binary(&root.join("missing")).is_err());
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn xray_core_checkout_metadata_requires_the_exact_clean_revision() {
+        let checkout = Path::new("Xray-core");
+
+        assert!(validate_xray_core_checkout_metadata(
+            checkout,
+            XRAY_CORE_ORACLE_REVISION,
+            "",
+            "target/\nxray"
+        )
+        .is_ok());
+
+        let wrong_revision = validate_xray_core_checkout_metadata(
+            checkout,
+            "1bdb488c9ec09ea51e6899697d5b7437f3cf6eb2",
+            "",
+            "",
+        )
+        .unwrap_err();
+        assert!(wrong_revision
+            .to_string()
+            .contains(XRAY_CORE_ORACLE_REVISION));
+
+        let tracked_change = validate_xray_core_checkout_metadata(
+            checkout,
+            XRAY_CORE_ORACLE_REVISION,
+            " M go.mod",
+            "",
+        )
+        .unwrap_err();
+        assert!(tracked_change.to_string().contains("tracked changes"));
+
+        let untracked_source = validate_xray_core_checkout_metadata(
+            checkout,
+            XRAY_CORE_ORACLE_REVISION,
+            "",
+            "target/\nxray\nlocal_override.go",
+        )
+        .unwrap_err();
+        assert!(untracked_source.to_string().contains("local_override.go"));
+    }
+
+    #[test]
+    fn xray_core_source_dirty_ignores_only_guarded_build_artifacts() {
+        assert!(!xray_core_source_is_dirty("", "target/\nxray\nxray.exe"));
+        assert!(xray_core_source_is_dirty(" M go.mod", "target/\nxray"));
+        assert!(xray_core_source_is_dirty("", "target/\nlocal_override.go"));
+    }
+
+    #[test]
+    fn explicit_xray_core_binary_never_claims_checkout_provenance() {
+        let options = BenchOptions {
+            xray_core_bin: Some(PathBuf::from("/tmp/xray-core")),
+            xray_core_dir: Some(PathBuf::from("Xray-core")),
+            ..BenchOptions::default()
+        };
+
+        assert_eq!(
+            engine_source_git_provenance(EngineKind::XrayCore, &options),
+            None
+        );
+    }
+
+    #[test]
+    fn xray_core_checkout_status_allows_only_known_untracked_artifacts() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let checkout = std::env::temp_dir().join(format!(
+            "xray-bench-checkout-status-{}-{unique}",
+            std::process::id()
+        ));
+        fs::create_dir_all(checkout.join("target")).unwrap();
+        required_git_stdout(&checkout, &["init", "--quiet"]).unwrap();
+        fs::write(checkout.join("target/oracle"), b"untracked build product").unwrap();
+        fs::write(checkout.join("xray"), b"local binary").unwrap();
+
+        let untracked_only = xray_core_tracked_status(&checkout).unwrap();
+        assert!(untracked_only.is_empty());
+        let allowed_paths = xray_core_untracked_paths(&checkout).unwrap();
+        assert!(validate_xray_core_checkout_metadata(
+            Path::new("Xray-core"),
+            XRAY_CORE_ORACLE_REVISION,
+            "",
+            &allowed_paths,
+        )
+        .is_ok());
+
+        fs::write(checkout.join("local_override.go"), b"package main").unwrap();
+        let source_paths = xray_core_untracked_paths(&checkout).unwrap();
+        let untracked_source = validate_xray_core_checkout_metadata(
+            Path::new("Xray-core"),
+            XRAY_CORE_ORACLE_REVISION,
+            "",
+            &source_paths,
+        )
+        .unwrap_err();
+        assert!(untracked_source.to_string().contains("local_override.go"));
+
+        fs::write(checkout.join("tracked.txt"), b"staged source").unwrap();
+        required_git_stdout(&checkout, &["add", "tracked.txt"]).unwrap();
+        let tracked = xray_core_tracked_status(&checkout).unwrap();
+        fs::remove_dir_all(&checkout).unwrap();
+
+        assert!(tracked.contains("tracked.txt"));
+    }
+
+    #[test]
+    fn xray_core_version_output_requires_the_pinned_release() {
+        let binary = Path::new("/tmp/xray-core");
+        let pinned = "Xray 26.7.28 (Xray, Penetrates Everything.) 5ca6f4b (go1.26.0 darwin/arm64)\nA unified platform for anti-censorship.\n";
+
+        assert!(validate_xray_core_version_output(binary, pinned, None).is_ok());
+        assert!(
+            validate_xray_core_version_output(binary, pinned, Some(XRAY_CORE_ORACLE_REVISION))
+                .is_ok()
+        );
+
+        let old = "Xray 26.5.9 (Xray, Penetrates Everything.) 1bdb488 (go1.26.0 darwin/arm64)\n";
+        let error = validate_xray_core_version_output(binary, old, None).unwrap_err();
+        assert!(error.to_string().contains("requires Xray 26.7.28"));
+    }
+
+    #[test]
+    fn auto_built_xray_core_version_output_requires_the_pinned_revision() {
+        let binary = Path::new("/tmp/xray-core");
+        let wrong_revision =
+            "Xray 26.7.28 (Xray, Penetrates Everything.) deadbee (go1.26.0 darwin/arm64)\n";
+
+        let error = validate_xray_core_version_output(
+            binary,
+            wrong_revision,
+            Some(XRAY_CORE_ORACLE_REVISION),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("requires revision `5ca6f4b`"));
+
+        // A caller-supplied official binary must report the pinned release,
+        // but it may not carry the checkout's VCS build token.
+        let custom = "Xray 26.7.28 (Xray, Penetrates Everything.) Custom (go1.26.0 darwin/arm64)\n";
+        assert!(validate_xray_core_version_output(binary, custom, None).is_ok());
+
+        // Go includes untracked checkout artifacts in its VCS dirty bit. The
+        // auto-build path has already verified exact HEAD and no tracked or
+        // staged edits, so this form is still the pinned source oracle.
+        let untracked_dirty =
+            "Xray 26.7.28 (Xray, Penetrates Everything.) 5ca6f4b-dirty (go1.26.0 darwin/arm64)\n";
+        assert!(validate_xray_core_version_output(
+            binary,
+            untracked_dirty,
+            Some(XRAY_CORE_ORACLE_REVISION)
+        )
+        .is_ok());
+    }
 
     fn minimal_bench_result() -> BenchResult {
         BenchResult {
@@ -13141,7 +13653,7 @@ mod tests {
             "--xray-rust-version",
             "1659143",
             "--xray-core-version",
-            "v26.5.9",
+            "v26.7.28",
             "--sing-box-version",
             "v1.12.0",
         ])

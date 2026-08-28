@@ -711,7 +711,7 @@ async fn delayed_get_response_does_not_block_open_stream() {
 }
 
 #[tokio::test]
-async fn default_xmux_separates_concurrent_flows_then_reuses_the_released_slot() {
+async fn default_xmux_fans_out_three_clients_then_reuses_a_released_slot() {
     let dials = Arc::new(AtomicUsize::new(0));
     let dial = success_h2_dial(Arc::clone(&dials));
     let transport = transport(
@@ -733,11 +733,18 @@ async fn default_xmux_separates_concurrent_flows_then_reuses_the_released_slot()
     assert_eq!(transport.xmux_open_usages().await, vec![1, 1]);
 
     drop(first);
-    let third = transport.open_stream_with_dial(dial).await.unwrap();
-    assert_eq!(dials.load(Ordering::Acquire), 2);
-    assert_eq!(transport.xmux_client_count().await, 2);
-    drop((second, third));
-    assert_eq!(transport.xmux_open_usages().await, vec![0, 0]);
+    let third = transport
+        .open_stream_with_dial(Arc::clone(&dial))
+        .await
+        .unwrap();
+    assert_eq!(dials.load(Ordering::Acquire), 3);
+    assert_eq!(transport.xmux_client_count().await, 3);
+
+    let fourth = transport.open_stream_with_dial(dial).await.unwrap();
+    assert_eq!(dials.load(Ordering::Acquire), 3);
+    assert_eq!(transport.xmux_open_usages().await, vec![1, 1, 1]);
+    drop((second, third, fourth));
+    assert_eq!(transport.xmux_open_usages().await, vec![0, 0, 0]);
 }
 
 #[tokio::test]

@@ -3202,10 +3202,45 @@ fn rejects_non_string_stream_network_with_path() {
 }
 
 #[test]
-fn rejects_null_stream_network_with_path() {
+fn null_stream_network_selects_raw_like_xray_pointer_config() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""network": null, "security": "none""#,
+    ))
+    .expect("null network is an absent TransportProtocol pointer");
+
+    assert!(matches!(
+        parsed.config.outbounds[0].stream.transport,
+        StreamTransport::Raw
+    ));
+}
+
+#[test]
+fn stream_method_alias_has_priority_but_both_fields_require_string_shape() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""method": "raw", "network": "not-a-transport", "security": "none""#,
+    ))
+    .expect("method must override the legacy network spelling");
+    assert!(matches!(
+        parsed.config.outbounds[0].stream.transport,
+        StreamTransport::Raw
+    ));
+
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""method": null, "network": "ws", "security": "none", "wsSettings": {}"#,
+    ))
+    .expect("null method must fall through to network");
+    assert!(matches!(
+        parsed.config.outbounds[0].stream.transport,
+        StreamTransport::WebSocket(_)
+    ));
+
     assert_parse_error_path(
-        &raw_with_stream_settings(r#""network": null, "security": "none""#),
+        &raw_with_stream_settings(r#""method": "raw", "network": 5, "security": "none""#),
         "$.outbounds[0].streamSettings.network",
+    );
+    assert_parse_error_path(
+        &raw_with_stream_settings(r#""method": 5, "network": "raw", "security": "none""#),
+        "$.outbounds[0].streamSettings.method",
     );
 }
 
@@ -3557,7 +3592,7 @@ fn rejects_camel_case_grpc_key_spellings_with_path() {
 
 #[test]
 fn rejects_the_gun_stream_network_with_path() {
-    // `gun` was the transport's original name, but v26.5.9 has no such arm in
+    // `gun` was the transport's original name, but v26.7.28 has no such arm in
     // `TransportProtocol.Build` and no `gunSettings` key anywhere in the tree:
     // both are "unknown transport protocol: gun". Accepting either would let a
     // profile parse here and fail against a real server.
@@ -3600,7 +3635,8 @@ fn xhttp_and_splithttp_aliases_parse_with_xray_defaults() {
         assert_eq!(xhttp.seq_placement, XhttpPlacement::Path);
         assert_eq!(xhttp.uplink_data_placement, XhttpUplinkDataPlacement::Auto);
         assert_eq!(xhttp.uplink_data_key, "X-Data");
-        assert_eq!(xhttp.xmux.max_concurrency, XhttpRange { from: 1, to: 1 });
+        assert_eq!(xhttp.xmux.max_concurrency, XhttpRange::default());
+        assert_eq!(xhttp.xmux.max_connections, XhttpRange { from: 3, to: 3 });
         assert_eq!(
             xhttp.xmux.h_max_request_times,
             XhttpRange { from: 600, to: 900 }
@@ -3630,7 +3666,8 @@ fn xhttp_null_value_fields_normalize_to_go_zero_defaults() {
              "xPaddingKey": null, "xPaddingHeader": null,
              "xPaddingPlacement": null, "xPaddingMethod": null,
              "uplinkHTTPMethod": null,
-             "sessionPlacement": null, "sessionKey": null,
+             "sessionIDPlacement": null, "sessionIDKey": null,
+             "sessionIDTable": null, "sessionIDLength": null,
              "seqPlacement": null, "seqKey": null,
              "uplinkDataPlacement": null, "uplinkDataKey": null,
              "uplinkChunkSize": null,
@@ -3700,7 +3737,7 @@ fn xhttp_case_variant_headers_canonicalize_without_losing_values() {
 }
 
 #[test]
-fn xhttp_full_v26_config_surface_is_normalized() {
+fn xhttp_full_v26_7_28_config_surface_is_normalized() {
     let parsed = parse_xray_json(&raw_with_stream_settings(
         r#""network": "xhttp", "security": "none",
            "xhttpSettings": {
@@ -3710,7 +3747,7 @@ fn xhttp_full_v26_config_surface_is_normalized() {
              "xPaddingKey": "pad", "xPaddingHeader": "X-Pad",
              "xPaddingPlacement": "cookie", "xPaddingMethod": "tokenish",
              "uplinkHTTPMethod": "get",
-             "sessionPlacement": "header", "seqPlacement": "query",
+             "sessionIDPlacement": "header", "seqPlacement": "query",
              "uplinkDataPlacement": "cookie", "uplinkChunkSize": 4096,
              "noGRPCHeader": true, "noSSEHeader": true,
              "scMaxEachPostBytes": "2000000-1000000",
@@ -3810,6 +3847,15 @@ fn xhttp_settings_take_priority_over_splithttp_settings() {
 
 #[test]
 fn null_xhttp_aliases_are_absent_go_pointers() {
+    let assert_zero_xmux = |xhttp: &XhttpSettings| {
+        assert_eq!(xhttp.xmux.max_concurrency, XhttpRange::default());
+        assert_eq!(xhttp.xmux.max_connections, XhttpRange::default());
+        assert_eq!(xhttp.xmux.c_max_reuse_times, XhttpRange::default());
+        assert_eq!(xhttp.xmux.h_max_request_times, XhttpRange::default());
+        assert_eq!(xhttp.xmux.h_max_reusable_secs, XhttpRange::default());
+        assert_eq!(xhttp.xmux.h_keep_alive_period_secs, 0);
+    };
+
     let parsed = parse_xray_json(&raw_with_stream_settings(
         r#""network": "xhttp", "security": "none",
            "xhttpSettings": null,
@@ -3844,6 +3890,17 @@ fn null_xhttp_aliases_are_absent_go_pointers() {
         panic!("expected xhttp");
     };
     assert_eq!(xhttp.mode, XhttpMode::Auto);
+    assert_zero_xmux(xhttp);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""method": "xhttp", "security": "none""#,
+    ))
+    .expect("missing settings pointers must select the registry's zero-valued XHTTP config");
+    let StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport else {
+        panic!("expected xhttp");
+    };
+    assert_zero_xmux(xhttp);
     assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
 
     let parsed = parse_xray_json(&raw_with_stream_settings(
@@ -3893,7 +3950,8 @@ fn lower_priority_splithttp_null_fields_are_valid_decode_shapes() {
              "xPaddingKey": null, "xPaddingHeader": null,
              "xPaddingPlacement": null, "xPaddingMethod": null,
              "uplinkHTTPMethod": null,
-             "sessionPlacement": null, "sessionKey": null,
+             "sessionIDPlacement": null, "sessionIDKey": null,
+             "sessionIDTable": null, "sessionIDLength": null,
              "seqPlacement": null, "seqKey": null,
              "uplinkDataPlacement": null, "uplinkDataKey": null,
              "uplinkChunkSize": null,
@@ -3952,7 +4010,7 @@ fn xhttp_rejects_invalid_modes_placements_methods_and_limits() {
         (r#""mode": "burst""#, "mode"),
         (r#""xPaddingPlacement": "body""#, "xPaddingPlacement"),
         (r#""xPaddingMethod": "random""#, "xPaddingMethod"),
-        (r#""sessionPlacement": "body""#, "sessionPlacement"),
+        (r#""sessionIDPlacement": "body""#, "sessionIDPlacement"),
         (r#""seqPlacement": "auto""#, "seqPlacement"),
         (r#""uplinkDataPlacement": "query""#, "uplinkDataPlacement"),
         (
@@ -3972,6 +4030,63 @@ fn xhttp_rejects_invalid_modes_placements_methods_and_limits() {
             )),
             &format!("$.outbounds[0].streamSettings.xhttpSettings.{path}"),
         );
+    }
+}
+
+#[test]
+fn xhttp_rejects_custom_session_id_generation_until_runtime_supports_it() {
+    assert_parse_error_path(
+        &raw_with_stream_settings(
+            r#""method": "xhttp", "security": "none",
+               "xhttpSettings": {"sessionIDTable": "Base62", "sessionIDLength": 8}"#,
+        ),
+        "$.outbounds[0].streamSettings.xhttpSettings.sessionIDTable",
+    );
+}
+
+#[test]
+fn unselected_xhttp_custom_session_id_uses_upstream_validation_only() {
+    let parsed = parse_xray_json(&raw_with_stream_settings(
+        r#""method": "raw", "network": "xhttp", "security": "none",
+           "xhttpSettings": {"sessionIDTable": "Base62", "sessionIDLength": 8}"#,
+    ))
+    .expect("a valid custom session ID generator is inert when XHTTP is not selected");
+    assert!(matches!(
+        parsed.config.outbounds[0].stream.transport,
+        StreamTransport::Raw
+    ));
+    assert!(parsed.diagnostics.iter().any(|diagnostic| {
+        diagnostic.severity == DiagnosticSeverity::Warning
+            && diagnostic.path.as_deref() == Some("$.outbounds[0].streamSettings.xhttpSettings")
+            && diagnostic.message.contains("selected stream transport")
+    }));
+
+    for (table, length, path) in [
+        (
+            "Base62",
+            r#""0-8""#,
+            "$.outbounds[0].streamSettings.xhttpSettings.sessionIDLength",
+        ),
+        (
+            "Base62",
+            "5",
+            "$.outbounds[0].streamSettings.xhttpSettings.sessionIDTable",
+        ),
+        (
+            "\u{e9}",
+            "32",
+            "$.outbounds[0].streamSettings.xhttpSettings.sessionIDTable",
+        ),
+    ] {
+        let error = parse_xray_json(&raw_with_stream_settings(&format!(
+            r#""method": "raw", "network": "xhttp", "security": "none",
+                   "xhttpSettings": {{"sessionIDTable": "{table}", "sessionIDLength": {length}}}"#,
+        )))
+        .unwrap_err();
+        assert!(error.diagnostics.iter().any(|diagnostic| {
+            diagnostic.severity == DiagnosticSeverity::Error
+                && diagnostic.path.as_deref() == Some(path)
+        }));
     }
 }
 

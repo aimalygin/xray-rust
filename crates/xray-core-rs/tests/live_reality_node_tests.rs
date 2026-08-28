@@ -719,15 +719,31 @@ async fn wait_for_tcp_listener(
 }
 
 fn resolve_xray_checkout() -> PathBuf {
-    if let Ok(path) = env::var("XRAY_CORE_CHECKOUT") {
-        return PathBuf::from(path);
-    }
-
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .ancestors()
-        .nth(2)
-        .expect("crate lives under workspace/crates/xray-core-rs")
-        .join("Xray-core")
+    let checkout = if let Ok(path) = env::var("XRAY_CORE_CHECKOUT") {
+        PathBuf::from(path)
+    } else {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .expect("crate lives under workspace/crates/xray-core-rs")
+            .join("Xray-core")
+    };
+    const EXPECTED: &str = "5ca6f4b7d4dc20a881d4330e498892697627ec0c";
+    let output = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(&checkout)
+        .output()
+        .expect("read Xray-core checkout revision");
+    assert!(
+        output.status.success(),
+        "git rev-parse failed for Xray-core"
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout).trim(),
+        EXPECTED,
+        "live REALITY oracle checkout must be pinned to v26.7.28"
+    );
+    checkout
 }
 
 fn allocate_loopback_port() -> u16 {

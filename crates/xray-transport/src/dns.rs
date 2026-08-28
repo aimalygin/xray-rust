@@ -105,6 +105,13 @@ impl DnsLookup {
         self
     }
 
+    fn with_fallback_ttl(mut self, fallback: Duration) -> Self {
+        let now = Instant::now();
+        self.ttl = Some(self.remaining_ttl_at(now).unwrap_or(fallback));
+        self.observed_at = now;
+        self
+    }
+
     fn with_remaining_ttl(&self, ttl: Duration) -> Self {
         Self {
             socket_addrs: Arc::clone(&self.socket_addrs),
@@ -192,6 +199,7 @@ const MAX_DNS_ALIAS_DEPTH: usize = 8;
 pub struct CachingDnsResolver {
     inner: Arc<dyn DnsResolver>,
     ttl: Duration,
+    cap_authoritative_ttl: bool,
     state: Mutex<DnsCacheState>,
 }
 
@@ -397,13 +405,19 @@ impl Drop for InFlightDnsLeader<'_> {
 
 impl CachingDnsResolver {
     pub fn new(inner: Arc<dyn DnsResolver>) -> Self {
-        Self::with_ttl(inner, DNS_DEFAULT_TTL)
+        Self {
+            inner,
+            ttl: DNS_DEFAULT_TTL,
+            cap_authoritative_ttl: false,
+            state: Mutex::new(DnsCacheState::default()),
+        }
     }
 
     pub fn with_ttl(inner: Arc<dyn DnsResolver>, ttl: Duration) -> Self {
         Self {
             inner,
             ttl,
+            cap_authoritative_ttl: true,
             state: Mutex::new(DnsCacheState::default()),
         }
     }
@@ -496,7 +510,13 @@ impl DnsResolver for CachingDnsResolver {
             }
         }
         .and_then(|lookup| lookup.ensure_non_empty(domain, port))
-        .map(|lookup| lookup.with_ttl_cap(self.ttl));
+        .map(|lookup| {
+            if self.cap_authoritative_ttl {
+                lookup.with_ttl_cap(self.ttl)
+            } else {
+                lookup.with_fallback_ttl(self.ttl)
+            }
+        });
         leader.finish(InFlightDnsOutcome::from_result(&resolved));
         resolved
     }
@@ -2630,17 +2650,15 @@ fn parse_dns_response(
         return Ok(ParsedDnsResponse::Truncated);
     }
 
-    let mut response_ttl = DNS_DEFAULT_TTL;
+    let mut response_ttl = None;
     let mut addresses = Vec::new();
     let mut cnames = Vec::new();
     for _ in 0..answer_count {
         let owner_name = read_dns_name(packet, &mut offset)?;
         let record_type = read_u16(packet, offset)?;
         let record_class = read_u16(packet, offset + 2)?;
-        let ttl = Duration::from_secs(u64::from(
-            read_u32(packet, offset + 4)?.clamp(1, DNS_DEFAULT_TTL.as_secs() as u32),
-        ));
-        response_ttl = response_ttl.min(ttl);
+        let ttl = Duration::from_secs(u64::from(read_u32(packet, offset + 4)?.max(1)));
+        response_ttl = Some(response_ttl.map_or(ttl, |current: Duration| current.min(ttl)));
         let data_len = usize::from(read_u16(packet, offset + 8)?);
         offset = offset
             .checked_add(10)
@@ -2718,7 +2736,12 @@ fn parse_dns_response(
         offset = data_end;
     }
 
-    resolve_parsed_dns_answers(&expected_question, addresses, cnames, response_ttl)
+    resolve_parsed_dns_answers(
+        &expected_question,
+        addresses,
+        cnames,
+        response_ttl.unwrap_or(DNS_DEFAULT_TTL),
+    )
 }
 
 struct ParsedDnsAddress {
@@ -3448,6 +3471,28 @@ mod tests {
                 ConfiguredDnsAddresses {
                     addresses: vec![IpAddr::V4(Ipv4Addr::new(192, 0, 2, 84))],
                     ttl: Duration::from_secs(20),
+                },
+            ))
+        );
+    }
+
+    #[test]
+    fn dns_parser_preserves_authoritative_ttl_above_300_seconds() {
+        let query = build_dns_query_with_id("long-ttl.example", DnsRecordType::A, 0xA180)
+            .expect("build query");
+        let response = build_test_address_response(
+            &query,
+            &[(1, 900, Ipv4Addr::new(192, 0, 2, 85).octets().to_vec())],
+        );
+
+        let parsed = parse_dns_response(&query, &response, DnsRecordType::A).unwrap();
+
+        assert_eq!(
+            parsed,
+            super::ParsedDnsResponse::Answer(ConfiguredDnsAnswer::Addresses(
+                ConfiguredDnsAddresses {
+                    addresses: vec![IpAddr::V4(Ipv4Addr::new(192, 0, 2, 85))],
+                    ttl: Duration::from_secs(900),
                 },
             ))
         );
@@ -4452,6 +4497,21 @@ mod tests {
             ttl <= Duration::from_secs(1) && ttl > Duration::from_millis(900)
         }));
         assert_eq!(inner.calls.load(Ordering::Relaxed), 2);
+    }
+
+    #[tokio::test]
+    async fn default_cache_preserves_authoritative_ttl_above_policy_fallback() {
+        let inner = Arc::new(TtlCountingResolver {
+            calls: AtomicUsize::new(0),
+            ttl: Duration::from_secs(900),
+        });
+        let resolver = CachingDnsResolver::new(inner);
+
+        let lookup = resolver.resolve_all("long-ttl.example", 443).await.unwrap();
+
+        assert!(lookup.ttl().is_some_and(|ttl| {
+            ttl <= Duration::from_secs(900) && ttl > Duration::from_secs(899)
+        }));
     }
 
     struct DelayedCountingResolver {

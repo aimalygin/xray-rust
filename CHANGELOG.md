@@ -7,6 +7,17 @@ prerelease-quality and do not establish a supported release series.
 
 ## Unreleased
 
+- Retargeted the Xray-core oracle, ignored interoperability suite, and
+  benchmark harness from v26.5.9 to exact v26.7.28 commit
+  `5ca6f4b7d4dc20a881d4330e498892697627ec0c`. Oracle Go modules and committed
+  REALITY/gRPC fixtures now use the target dependency graph, while benchmark
+  auto-builds reject any other or source-modified checkout.
+- Synchronized supported v26.7.28 behavior for `streamSettings.method`, XHTTP
+  `sessionID*` names and `maxConnections=3` explicit-settings default, and DNS
+  TTLs above 300 seconds. Target DNS `qType`/`Return`/`rCode`, plaintext-public
+  destination policy, and non-empty selected XHTTP session-ID tables remain
+  documented compatibility boundaries.
+
 ## 0.4.0 - 2026-08-27
 
 - Added Apple VLESS share-link import for `xhttp`/`splithttp` with plaintext,

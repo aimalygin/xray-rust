@@ -11,7 +11,7 @@
 // The four artefacts in `grpc_wire.go` come from one dial, because they are
 // four views of one client's behaviour. This one is a boundary, and a boundary
 // needs a dial per point: the user agent is fixed when the connection is built
-// (`Xray-core/transport/internet/grpc/dial.go:193-218`), so sixteen values mean
+// (`Xray-core/transport/internet/grpc/dial.go:190-215`), so sixteen values mean
 // sixteen connections.
 //
 // # What it answers
@@ -131,7 +131,7 @@ type userAgentFixture struct {
 // the accepted shapes first, then every rejected byte.
 //
 // `printable_ascii` and `empty` are the two an unmodified Xray produces --
-// `dial.go:193-204` maps every keyword onto a browser UA or onto `""` -- and
+// `dial.go:190-203` maps every keyword onto a browser UA or onto `""` -- and
 // they are here as the control, not as the interesting part.
 var userAgentCases = []userAgentCase{
 	{"printable_ascii", []byte("xray-grpc-oracle/1")},
@@ -217,7 +217,7 @@ func captureOneUserAgent(ctx context.Context, probe userAgentCase) (userAgentVer
 		<-served
 	}()
 
-	// Transcribed from `dial.go:93-167` exactly as `captureDial` transcribes
+	// Transcribed from `dial.go:93-164` exactly as `captureDial` transcribes
 	// it, minus the two conditional options no case here configures.
 	conn, err := grpc.NewClient(dialTarget,
 		grpc.WithConnectParams(grpc.ConnectParams{

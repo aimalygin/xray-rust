@@ -68,9 +68,11 @@ func buildVectors() []vector {
 	xrayHelloRandom := append(repeat(0x09, 20), repeat(0x0b, 12)...)
 
 	return []vector{
+		// Xray-core v26.7.28, commit
+		// 5ca6f4b7d4dc20a881d4330e498892697627ec0c.
 		buildVector(input{
 			name:            "xray_offset_39_short_id_4",
-			version:         []byte{26, 5, 9},
+			version:         []byte{26, 7, 28},
 			unixTime:        1700000000,
 			shortID:         []byte{2, 3, 4, 5},
 			sharedSecret:    repeat(0x07, 32),

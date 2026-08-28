@@ -11,8 +11,15 @@ This project is unofficial and is not affiliated with XTLS or Xray-core.
 
 ## Benchmarks
 
-Synthetic localhost comparison against Xray-core `v26.5.9` and sing-box
-`v1.13.15` with the process-level [benchmark harness](docs/benchmarks.md)
+The active oracle, interoperability, and benchmark harnesses pin Xray-core
+`v26.7.28` (`5ca6f4b7d4dc20a881d4330e498892697627ec0c`). The charts below remain the
+last published measurements against `v26.5.9`; replacement numbers will be
+published as a new result group rather than relabelling historical data. See
+the [migration audit](docs/xray-core-v26.7.28-migration-audit.md).
+
+The last published synthetic localhost comparison used Xray-core `v26.5.9`
+and sing-box `v1.13.15` with the process-level
+[benchmark harness](docs/benchmarks.md)
 (medians across 5 runs; measured 2026-08-01 on Apple M3 Pro, macOS 26.5.2,
 xray-rust `af33ae8`).
 

@@ -154,13 +154,14 @@ root.
 
 ## Local Xray-core interoperability
 
-The repository does not vendor or declare a pinned Xray-core oracle revision.
-For reproducible results, choose a revision yourself, record its full commit
-SHA in the test report, and provide an absolute checkout path. The tests expect
-an `xray` executable at the checkout root:
+The local interop suite pins Xray-core `v26.7.28` at
+`5ca6f4b7d4dc20a881d4330e498892697627ec0c` and rejects a checkout at any
+other `HEAD`. Provide an absolute checkout path and record its full commit SHA
+in the test report. The tests expect an `xray` executable at the checkout root:
 
 ```sh
 export XRAY_CORE_CHECKOUT=/absolute/path/to/Xray-core
+git -C "$XRAY_CORE_CHECKOUT" switch --detach v26.7.28
 git -C "$XRAY_CORE_CHECKOUT" rev-parse HEAD
 (
   cd "$XRAY_CORE_CHECKOUT"
@@ -228,7 +229,7 @@ For TLS, an omitted `sni` reuses the remote host and an omitted `fp` selects
 `fp` and `pbk` are required, `sni` defaults to the remote host, and a present
 `sid=` is a valid empty short ID. The current Xray share-link proposal calls
 `pbk` a `realitySettings.password`; xray-rust stores it in the legacy
-`publicKey` model field. Xray-core v26.5.9 accepts that alias and decodes the
+`publicKey` model field. Xray-core v26.7.28 accepts that alias and decodes the
 same 32-byte key, so this difference does not change the handshake wire.
 
 This is deliberately not a claim of complete support for every field in the
@@ -291,6 +292,13 @@ from the dirty xray-rust worktree based on
 `e8825ed92f558b870ed5448f9da97df7e0b3bbcd`, in 77.37 seconds.
 This is functional interoperability evidence only; it is not an H3
 throughput, resource-use, congestion-controller, or performance-parity claim.
+
+The complete 20-case ignored suite passed again on 2026-08-28 against the
+pinned Xray-core `v26.7.28` commit
+`5ca6f4b7d4dc20a881d4330e498892697627ec0c` in 236.02 seconds. That run
+included the full 15-case XHTTP matrix. A separate explicit 11-fingerprint
+REALITY/Vision run passed in 94.54 seconds. These are functional compatibility
+results from the migration worktree, not benchmark measurements.
 
 ### gRPC interoperability
 

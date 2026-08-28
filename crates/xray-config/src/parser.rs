@@ -49,8 +49,10 @@ const XHTTP_SETTINGS_FIELDS: &[&str] = &[
     "xPaddingPlacement",
     "xPaddingMethod",
     "uplinkHTTPMethod",
-    "sessionPlacement",
-    "sessionKey",
+    "sessionIDPlacement",
+    "sessionIDKey",
+    "sessionIDTable",
+    "sessionIDLength",
     "seqPlacement",
     "seqKey",
     "uplinkDataPlacement",
@@ -2683,7 +2685,7 @@ impl Parser<'_> {
                 .parse_grpc_settings(stream, index)
                 .map(StreamTransport::Grpc),
             StreamNetwork::Xhttp => self
-                .parse_xhttp_settings(stream, index)
+                .parse_xhttp_settings(stream, index, true)
                 .map(Box::new)
                 .map(StreamTransport::Xhttp),
         }
@@ -2736,7 +2738,9 @@ impl Parser<'_> {
 
             self.warning(
                 format!("$.outbounds[{index}].streamSettings.{key}"),
-                format!("`{key}` is ignored because `network` selects another transport"),
+                format!(
+                    "`{key}` is ignored because it doesn't match the selected stream transport"
+                ),
             );
             match key {
                 "wsSettings" => {
@@ -2749,10 +2753,10 @@ impl Parser<'_> {
                     let _ = self.parse_grpc_settings(Some(stream), index);
                 }
                 "xhttpSettings" => {
-                    let _ = self.parse_xhttp_settings(Some(stream), index);
+                    let _ = self.parse_xhttp_settings(Some(stream), index, false);
                 }
                 "splithttpSettings" if stream.get("xhttpSettings").is_none_or(Value::is_null) => {
-                    let _ = self.parse_xhttp_settings(Some(stream), index);
+                    let _ = self.parse_xhttp_settings(Some(stream), index, false);
                 }
                 // `xhttpSettings` has priority over the legacy spelling, so
                 // the lower-priority block is inert when both are present.
@@ -3008,9 +3012,10 @@ impl Parser<'_> {
         &mut self,
         stream: Option<&Value>,
         index: usize,
+        selected_for_runtime: bool,
     ) -> Option<XhttpSettings> {
         let Some(stream) = stream else {
-            return Some(XhttpSettings::default());
+            return Some(xhttp_settings_without_config_block());
         };
 
         // Both fields are Go pointers. JSON null therefore means nil, not a
@@ -3040,7 +3045,7 @@ impl Parser<'_> {
             }
             (Some(settings), None) => ("xhttpSettings", settings),
             (None, Some(settings)) => ("splithttpSettings", settings),
-            (None, None) => return Some(XhttpSettings::default()),
+            (None, None) => return Some(xhttp_settings_without_config_block()),
         };
         let settings_path = format!("$.outbounds[{index}].streamSettings.{settings_key}");
         if !settings.is_object() {
@@ -3140,6 +3145,20 @@ impl Parser<'_> {
 
         let settings = effective_settings;
         let settings_path = effective_path;
+        let session_id_table = self
+            .nullable_string_at(
+                settings,
+                "sessionIDTable",
+                format!("{settings_path}.sessionIDTable"),
+            )
+            .unwrap_or_default();
+        let session_id_length = self.xhttp_range_at(settings, "sessionIDLength", &settings_path)?;
+        self.validate_xhttp_session_id_generation(
+            session_id_table,
+            session_id_length,
+            &settings_path,
+            selected_for_runtime,
+        );
         let headers = self.parse_transport_headers(settings, &settings_path)?;
         if headers
             .iter()
@@ -3262,15 +3281,15 @@ impl Parser<'_> {
         }
 
         let session_placement =
-            self.xhttp_metadata_placement_at(settings, "sessionPlacement", &settings_path)?;
+            self.xhttp_metadata_placement_at(settings, "sessionIDPlacement", &settings_path)?;
         let seq_placement =
             self.xhttp_metadata_placement_at(settings, "seqPlacement", &settings_path)?;
 
         let session_key = self
             .nullable_string_at(
                 settings,
-                "sessionKey",
-                format!("{settings_path}.sessionKey"),
+                "sessionIDKey",
+                format!("{settings_path}.sessionIDKey"),
             )
             .unwrap_or_default();
         let session_key = if session_key.is_empty() {
@@ -3410,6 +3429,49 @@ impl Parser<'_> {
         })
     }
 
+    fn validate_xhttp_session_id_generation(
+        &mut self,
+        table: &str,
+        length: XhttpRange,
+        settings_path: &str,
+        selected_for_runtime: bool,
+    ) {
+        if table.is_empty() {
+            return;
+        }
+
+        if length.from <= 0 {
+            self.error(
+                format!("{settings_path}.sessionIDLength"),
+                "sessionIDLength.from must be greater than zero when sessionIDTable is set",
+            );
+            return;
+        }
+        if !table.is_ascii() {
+            self.error(
+                format!("{settings_path}.sessionIDTable"),
+                "sessionIDTable must contain only ASCII characters",
+            );
+            return;
+        }
+
+        let table_size = predefined_xhttp_session_id_table_size(table).unwrap_or(table.len());
+        if !xhttp_session_id_room_is_large_enough(table_size, length) {
+            self.error(
+                format!("{settings_path}.sessionIDTable"),
+                "sessionIDTable or sessionIDLength is too small",
+            );
+            return;
+        }
+
+        if selected_for_runtime {
+            self.error(
+                format!("{settings_path}.sessionIDTable"),
+                "custom XHTTP session ID generation is not supported by the runtime yet",
+            );
+        }
+    }
+
     /// Validates the JSON decoding surface of a lower-priority XHTTP alias.
     /// This deliberately does not apply `SplitHTTPConfig.Build`: an invalid
     /// mode or conflicting xmux values in the ignored block never reach that
@@ -3438,8 +3500,9 @@ impl Parser<'_> {
             "xPaddingPlacement",
             "xPaddingMethod",
             "uplinkHTTPMethod",
-            "sessionPlacement",
-            "sessionKey",
+            "sessionIDPlacement",
+            "sessionIDKey",
+            "sessionIDTable",
             "seqPlacement",
             "seqKey",
             "uplinkDataPlacement",
@@ -3452,6 +3515,7 @@ impl Parser<'_> {
         }
         for key in [
             "xPaddingBytes",
+            "sessionIDLength",
             "uplinkChunkSize",
             "scMaxEachPostBytes",
             "scMinPostsIntervalMs",
@@ -3615,14 +3679,7 @@ impl Parser<'_> {
             );
         }
 
-        let zero = XhttpXmuxSettings {
-            max_concurrency: XhttpRange::default(),
-            max_connections: XhttpRange::default(),
-            c_max_reuse_times: XhttpRange::default(),
-            h_max_request_times: XhttpRange::default(),
-            h_max_reusable_secs: XhttpRange::default(),
-            h_keep_alive_period_secs: 0,
-        };
+        let zero = zero_xhttp_xmux_settings();
         Some(if parsed == zero {
             XhttpXmuxSettings::default()
         } else {
@@ -3726,7 +3783,7 @@ impl Parser<'_> {
         Some(parsed)
     }
 
-    /// Parses Xray v26.5.9's stream-wide `finalmask.quicParams` block.
+    /// Parses Xray v26.7.28's stream-wide `finalmask.quicParams` block.
     ///
     /// `quicParams` is a Go pointer, so `None` deliberately distinguishes an
     /// absent/null pointer from an explicitly present, default-valued object.
@@ -4126,26 +4183,51 @@ impl Parser<'_> {
     }
 
     fn parse_network(&mut self, stream: Option<&Value>, index: usize) -> Option<StreamNetwork> {
-        let network_path = format!("$.outbounds[{index}].streamSettings.network");
-        // Only an absent `network` falls back to `tcp`, the way Xray's nil
-        // `*TransportProtocol` does. A present one has to be a string, or
-        // `"network": 5` quietly dials plain TCP instead of the transport the
-        // rest of `streamSettings` was written for.
-        let Some(stream_settings) = stream.filter(|stream| stream.get("network").is_some()) else {
+        let Some(stream_settings) = stream else {
             return Some(StreamNetwork::Raw);
         };
+        let stream_path = format!("$.outbounds[{index}].streamSettings");
+
+        // v26.7.28 accepts both names and gives `method` priority. Both are
+        // pointers, so JSON null is the same as an absent key. Decode-shape
+        // validation still applies to the lower-priority `network` value.
+        let method = match stream_settings.get("method") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(value)) => Some(value.as_str()),
+            Some(_) => {
+                self.error(
+                    format!("{stream_path}.method"),
+                    "field `method` must be a string or null",
+                );
+                return None;
+            }
+        };
+        let network = match stream_settings.get("network") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(value)) => Some(value.as_str()),
+            Some(_) => {
+                self.error(
+                    format!("{stream_path}.network"),
+                    "field `network` must be a string or null",
+                );
+                return None;
+            }
+        };
+        let (network_key, network) = method
+            .map(|value| ("method", value))
+            .or_else(|| network.map(|value| ("network", value)))
+            .unwrap_or(("network", "tcp"));
+        let network_path = format!("{stream_path}.{network_key}");
         // `TransportProtocol.Build` lowercases before matching, so `WS` and
         // `RAW` are as valid as `ws` and `raw`.
-        let network = self
-            .optional_string_at(stream_settings, "network", network_path.clone())?
-            .to_ascii_lowercase();
+        let network = network.to_ascii_lowercase();
 
         match network.as_str() {
             // Xray renamed the `tcp` transport to `raw`; both names stay valid.
             "tcp" | "raw" => Some(StreamNetwork::Raw),
             "ws" | "websocket" => Some(StreamNetwork::WebSocket),
             "httpupgrade" => Some(StreamNetwork::HttpUpgrade),
-            // No `gun` alias: v26.5.9's `TransportProtocol.Build` has only the
+            // No `gun` alias: v26.7.28's `TransportProtocol.Build` has only the
             // `grpc` arm, and `gun` falls through to "unknown transport
             // protocol" there.
             "grpc" => Some(StreamNetwork::Grpc),
@@ -4287,6 +4369,7 @@ impl Parser<'_> {
             stream,
             &stream_path,
             &[
+                "method",
                 "network",
                 "security",
                 "tlsSettings",
@@ -5317,6 +5400,77 @@ fn non_empty_or(value: Option<&str>, default: &str) -> String {
         .filter(|value| !value.is_empty())
         .unwrap_or(default)
         .to_owned()
+}
+
+fn zero_xhttp_xmux_settings() -> XhttpXmuxSettings {
+    XhttpXmuxSettings {
+        max_concurrency: XhttpRange::default(),
+        max_connections: XhttpRange::default(),
+        c_max_reuse_times: XhttpRange::default(),
+        h_max_request_times: XhttpRange::default(),
+        h_max_reusable_secs: XhttpRange::default(),
+        h_keep_alive_period_secs: 0,
+    }
+}
+
+/// Xray only applies `SplitHTTPConfig.Build` defaults when either JSON settings
+/// pointer is non-nil. With no settings block the transport registry creates a
+/// zero-valued protobuf config instead, whose XMUX policy must remain zero.
+fn xhttp_settings_without_config_block() -> XhttpSettings {
+    XhttpSettings {
+        xmux: zero_xhttp_xmux_settings(),
+        ..XhttpSettings::default()
+    }
+}
+
+fn predefined_xhttp_session_id_table_size(table: &str) -> Option<usize> {
+    match table {
+        "ALPHABET" | "alphabet" => Some(26),
+        "Alphabet" => Some(52),
+        "BASE36" | "base36" => Some(36),
+        "Base62" => Some(62),
+        "HEX" | "hex" => Some(16),
+        "number" => Some(10),
+        _ => None,
+    }
+}
+
+/// Mirrors Xray's `roomSize(tableSize, min, max) >= 2 << 30` check without
+/// allocating a big integer or iterating an attacker-controlled i32 range.
+fn xhttp_session_id_room_is_large_enough(table_size: usize, length: XhttpRange) -> bool {
+    const MINIMUM_ROOM: u64 = 2 << 30;
+
+    let count = (i64::from(length.to) - i64::from(length.from) + 1) as u64;
+    if table_size == 1 {
+        return count >= MINIMUM_ROOM;
+    }
+    if table_size == 0 {
+        return false;
+    }
+
+    let base = table_size as u64;
+    let mut exponent = length.from as u32;
+    let mut factor = base.min(MINIMUM_ROOM);
+    let mut term = 1_u64;
+    while exponent > 0 {
+        if exponent & 1 == 1 {
+            term = term.saturating_mul(factor).min(MINIMUM_ROOM);
+        }
+        exponent >>= 1;
+        if exponent > 0 {
+            factor = factor.saturating_mul(factor).min(MINIMUM_ROOM);
+        }
+    }
+
+    let mut room = 0_u64;
+    for _ in 0..count {
+        room = room.saturating_add(term).min(MINIMUM_ROOM);
+        if room == MINIMUM_ROOM {
+            return true;
+        }
+        term = term.saturating_mul(base).min(MINIMUM_ROOM);
+    }
+    false
 }
 
 /// Parses Xray's `Bandwidth` spelling. JSON values are bits per second with

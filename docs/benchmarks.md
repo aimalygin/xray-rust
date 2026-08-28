@@ -2,6 +2,20 @@
 
 The benchmark harness compares `xray-rust`, the cloned Xray-core, and sing-box under the same local workloads. It is a process-level harness: each engine runs as a child process with an equivalent generated config, the workload sends validated traffic through SOCKS5, and the harness samples OS RSS/CPU counters while the process is alive.
 
+The active Xray-core oracle is `v26.7.28` at
+`5ca6f4b7d4dc20a881d4330e498892697627ec0c`. Auto-builds require that exact
+checkout and reject source changes; caller-supplied binaries must report Xray
+`26.7.28` and are identified by their executable SHA-256. Published
+`v26.5.9` sections below are retained as historical result groups, not as the
+current harness target.
+
+A bounded migration smoke on 2026-08-28 passed all 19 workloads available to
+the Xray-core engine, all six stream transports, five stream traffic drivers,
+three XHTTP modes, `reality-matrix` 7/7, and all six cases in
+`bench-xhttp-memory.sh` for both engines. The ignored artifacts are under
+`target/benchmarks/v26728-smoke/`; they validate compatibility and harness
+coverage, not publication-quality performance numbers.
+
 ## First Slice
 
 Supported workloads:
@@ -246,11 +260,12 @@ Extension memory ceiling:
   startup level.
 
 Provenance records the executable SHA-256 and
-`engine_source_git.revision`/`dirty`. Always pass the checkout used for an
-Xray-core comparison with `--xray-core-dir` (the script does this), especially
-when separating v26.5.9 from revisions before or after `4c384271`. With only an
-opaque `--xray-core-bin`, source provenance cannot be inferred and its binary
-SHA-256 is the exact identifier.
+`engine_source_git.revision`/`dirty`. For a source-backed Xray-core comparison,
+pass the checkout with `--xray-core-dir` and do not also select an explicit
+binary (the script does this), especially when separating the active v26.7.28
+reference from older groups such as v26.5.9 across `4c384271`. Whenever
+`--xray-core-bin` is present, source provenance is deliberately omitted even if
+`--xray-core-dir` is also present; the binary SHA-256 is the exact identifier.
 
 Abrupt OOM/SIGKILL is a known artifact gap. The sampler currently writes
 `samples.csv` and `result.json` only after the workload future returns, so a
@@ -551,7 +566,7 @@ cargo run -p xray-bench -- compare --workload udp-xudp --xray-core-dir ../../Xra
 cargo run -p xray-bench -- compare --workload vision-xudp --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 ```
 
-The compare command auto-builds `target/debug/xray-rust`, an Xray-core binary, and a sing-box binary under the run directory unless `--no-auto-build` is provided. Repeated runs reuse binaries built for that benchmark group. Use `--xray-core-bin <path>` and `--sing-box-bin <path>` to benchmark existing binaries without rebuilding.
+The compare command auto-builds `target/debug/xray-rust`, an Xray-core binary, and a sing-box binary under the run directory unless `--no-auto-build` is provided. Every guarded Xray-core auto-build recompiles the exact pinned checkout and replaces its revision-scoped output artifact; xray-rust and sing-box outputs may be reused within a benchmark group. Use `--xray-core-bin <path>` and `--sing-box-bin <path>` to benchmark existing binaries without rebuilding.
 
 ## Publishing Numbers and Charts
 
@@ -594,7 +609,7 @@ cargo run --release -p xray-bench -- chart \
   --date 2026-07-29 \
   --hardware "Apple M4 Pro, 24 GB RAM, macOS 15.5" \
   --xray-rust-version <git-short-rev> \
-  --xray-core-version v26.5.9 \
+  --xray-core-version v26.7.28 \
   --sing-box-version <sing-box-tag> \
   --geodata-version "geosite-<tag> geoip-<tag>"
 ```

@@ -3,8 +3,8 @@
 // golang.org/x/crypto at v0.36.0, and uTLS compiled against a different
 // x/crypto emits different ClientHello bytes -- enough to break the committed
 // tests/fixtures/reality/clienthello_chrome_auto.json. Both requirements below
-// move it: adding google.golang.org/grpc v1.81.0 to the root module selects
-// x/crypto v0.48.0 through its own graph, and xray-core requires v0.50.0
+// move it: adding google.golang.org/grpc v1.82.1 to the root module selects
+// a newer x/crypto through its own graph, and xray-core requires v0.54.0
 // outright. Keeping this oracle out of the root module keeps the two
 // dependency graphs from colliding.
 //
@@ -20,20 +20,23 @@
 //
 // `go mod tidy` drops the requirements below, because the only file that needs
 // them sits behind a build tag. Edit this file by hand.
+//
+// The Xray-core requirement is release v26.7.28, commit
+// 5ca6f4b7d4dc20a881d4330e498892697627ec0c.
 module xray-rust-tools/grpc-oracle
 
 go 1.26
 
 require (
-	github.com/xtls/xray-core v1.260327.1-0.20260509173629-1bdb488c9ec0
-	golang.org/x/net v0.53.0
-	google.golang.org/grpc v1.81.0
+	github.com/xtls/xray-core v1.260327.1-0.20260728075948-5ca6f4b7d4dc
+	golang.org/x/net v0.57.0
+	google.golang.org/grpc v1.82.1
 )
 
 require (
-	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.43.0 // indirect
-	golang.org/x/text v0.36.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260226221140-a57be14db171 // indirect
+	golang.org/x/sync v0.22.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/text v0.40.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260414002931-afd174a4e478 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )

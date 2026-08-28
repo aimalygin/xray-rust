@@ -711,7 +711,7 @@ fn validate_generated_names(
             XhttpPaddingPlacement::Query => {}
         }
     }
-    validate_metadata_name(session, "sessionKey")?;
+    validate_metadata_name(session, "sessionIDKey")?;
     validate_metadata_name(sequence, "seqKey")?;
     match uplink_data.placement {
         XhttpUplinkDataPlacement::Header => {

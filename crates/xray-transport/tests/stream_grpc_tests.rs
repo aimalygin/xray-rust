@@ -2994,7 +2994,7 @@ mod stream_grpc_oracle_tests {
     /// `stream_grpc_h2_tests` fences its exchanges.
     const DEADLINE: Duration = Duration::from_secs(10);
 
-    /// RFC 9113 section 3.4, and `grpc@v1.81.0/internal/transport/
+    /// RFC 9113 section 3.4, and `grpc@v1.82.1/internal/transport/
     /// http_util.go:53`. Held as a constant so the frame reader can step over
     /// it; the fixture's own copy is what
     /// [`the_connection_preamble_matches_the_go_oracle_byte_for_byte`]

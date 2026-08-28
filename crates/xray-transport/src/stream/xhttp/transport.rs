@@ -8,8 +8,8 @@
 //! Xmux is a client-slot manager, not one transport-wide connection pool.
 //! Every slot owns its HTTP/2 connection and safe HTTP/1.1 packet pool; the
 //! logical stream owns an open-usage lease. That distinction is load-bearing
-//! because Xray's default `maxConcurrency = 1` gives simultaneous logical
-//! flows separate HTTP clients even though sequential flows may reuse one.
+//! because Xray's default `maxConnections = 3` bounds the shared HTTP-client
+//! pool while still allowing simultaneous logical flows to reuse connections.
 
 use std::fmt;
 use std::future::{poll_fn, Future};
@@ -230,8 +230,8 @@ pub struct XhttpXmuxPolicy {
 impl Default for XhttpXmuxPolicy {
     fn default() -> Self {
         Self {
-            max_concurrency: XhttpRange::exact(1),
-            max_connections: XhttpRange::default(),
+            max_concurrency: XhttpRange::default(),
+            max_connections: XhttpRange::exact(3),
             c_max_reuse_times: XhttpRange::default(),
             h_max_request_times: XhttpRange { from: 600, to: 900 },
             h_max_reusable_secs: XhttpRange {
@@ -2274,8 +2274,8 @@ impl AsyncRead for DeferredReader {
 /// Manager-level max concurrency/connections are sampled exactly once. The
 /// other three ranges are sampled for every new client slot. A slot owns its
 /// HTTP/2 connection pool and HTTP/1.1 raw upload pool; moving either pool to
-/// the transport would accidentally multiplex default-xmux flows which must
-/// use separate clients while `maxConcurrency == 1`.
+/// the transport would collapse distinct XMUX client slots into one shared
+/// pool, bypassing limits such as the v26.7.28 default `maxConnections == 3`.
 struct XmuxManager {
     policy: XhttpXmuxPolicy,
     concurrency: i32,
@@ -3231,7 +3231,7 @@ mod xmux_reservation_tests {
         // `join!` polls both selections before this test can construct any
         // follow-up state. If reservation happened after selection, both
         // futures would deterministically observe usage zero and return the
-        // same maxConcurrency=1 client.
+        // same explicitly selected maxConcurrency=1 client.
         let (first, second) = tokio::time::timeout(Duration::from_secs(1), async {
             tokio::join!(manager.select_client(), manager.select_client())
         })

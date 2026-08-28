@@ -27,7 +27,7 @@
 // transcriptions of one.
 //
 // The dial options are transcribed from `Xray-core/transport/internet/grpc/
-// dial.go:93-179` rather than called, because `dialgRPC` wants a
+// dial.go:93-176` rather than called, because `dialgRPC` wants a
 // `*internet.MemoryStreamConfig`, a registered transport dialer and a real
 // socket. The list is kept in the same order as the reference so the two can be
 // diffed by eye; `grpc.WithConnectParams` changes no byte on a connection that
@@ -39,11 +39,11 @@
 //     opening burst is the 24-byte client preface and an *empty* SETTINGS
 //     frame, which is a signature in itself: `initialWindowSize` reaches the
 //     wire only above grpc-go's own default and `MaxHeaderListSize` only when
-//     a dial option sets it (`grpc@v1.81.0/internal/transport/
-//     http2_client.go:433-451`), and neither is configured here. No connection
+//     a dial option sets it (`grpc@v1.82.1/internal/transport/
+//     http2_client.go:442-452`), and neither is configured here. No connection
 //     WINDOW_UPDATE follows either, because `icwz` is left at
-//     `defaultWindowSize` and the delta is zero (`http2_client.go:315-317,
-//     453-458`). `frames_before_first_headers` records the burst as frames so
+//     `defaultWindowSize` and the delta is zero (`http2_client.go:316-318,
+//     459-465`). `frames_before_first_headers` records the burst as frames so
 //     that a future grpc-go adding one to it fails the check rather than
 //     passing unnoticed; the SETTINGS ACK in there is a reply to the server's
 //     own SETTINGS, queued on the control buffer before `newHTTP2Client`
@@ -78,7 +78,7 @@
 //
 // # What it does not claim
 //
-// The user agent is a literal rather than Xray's default. `dial.go:193-204`
+// The user agent is a literal rather than Xray's default. `dial.go:190-203`
 // maps an unset `userAgent` onto `utils.ChromeUA`, which is derived from the
 // current date and from a PRNG seeded with the host CPU, so a fixture
 // generated from it would drift with the calendar and between machines --
@@ -119,10 +119,10 @@ import (
 // literal anywhere under `tests/fixtures`, and this string is copied into the
 // fixture verbatim.
 //
-// `dialTarget` is the shape `dial.go:188-191` builds, a `passthrough:///` URL
+// `dialTarget` is the shape `dial.go:178-188` builds, a `passthrough:///` URL
 // around the outbound's own `host:port`. It reaches no byte of the wire here
 // and so is not recorded in the fixture: `WithAuthority` wins the `:authority`
-// outright (`grpc@v1.81.0/clientconn.go:1977-1978`), and the context dialer
+// outright (`grpc@v1.82.1/clientconn.go`), and the context dialer
 // ignores the address it is handed.
 //
 // `serviceName` is already in the escaped form `Config.getServiceName()`
@@ -138,7 +138,7 @@ const (
 	userAgent          = "xray-grpc-oracle/1"
 )
 
-// The client connection preface, `grpc@v1.81.0/internal/transport/
+// The client connection preface, `grpc@v1.82.1/internal/transport/
 // http_util.go:53` by way of RFC 9113 section 3.4.
 const clientPreface = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
 
@@ -166,7 +166,7 @@ const payloadRule = "payload[i] = i mod 256"
 //   - The empty set is what `WriteMultiBuffer` sends for a `buf.MultiBuffer`
 //     with nothing in it, or with nothing but zero-length buffers, since it
 //     filters those out before it builds the slice
-//     (`encoding/multiconn.go:121-129`). A slice with no elements gives
+//     (`encoding/multiconn.go:97-103`). A slice with no elements gives
 //     `appendBytesSlice` nothing to loop over, so the body vanishes exactly as
 //     a `Hunk`'s does -- by a different route, since that loop does not skip a
 //     zero-length element the way the singular coder skips a zero-length value.
@@ -430,11 +430,11 @@ func (s *drainServer) TunMulti(stream encoding.GRPCService_TunMultiServer) error
 	}
 }
 
-// setUserAgent is `Xray-core/transport/internet/grpc/dial.go:212-218`, copied
+// setUserAgent is `Xray-core/transport/internet/grpc/dial.go:209-215`, copied
 // because it reaches an unexported field and there is no exported way to do
 // what it does. It removes the "grpc-go/<version>" suffix that
 // `grpc.WithUserAgent` appends unconditionally
-// (`grpc@v1.81.0/dialoptions.go:551-555`), which is why the captured
+// (`grpc@v1.82.1/dialoptions.go`), which is why the captured
 // `user-agent` is the configured string alone. `requestHeaders` checks that it
 // took effect rather than trusting it: a reflection walk that quietly found
 // nothing would bake the suffix into the fixture.
@@ -462,7 +462,7 @@ func multiPayloadOf(element, length int) []byte {
 }
 
 // multiHunkOf is `WriteMultiBuffer`'s `&MultiHunk{Data: hunks}` for a
-// `buf.MultiBuffer` of buffers these lengths (`encoding/multiconn.go:121-129`).
+// `buf.MultiBuffer` of buffers these lengths (`encoding/multiconn.go:97-105`).
 func multiHunkOf(lengths []int) *encoding.MultiHunk {
 	elements := make([][]byte, 0, len(lengths))
 	for element, length := range lengths {
@@ -475,7 +475,7 @@ func captureDial(ctx context.Context) (*capture, error) {
 	// The call runs on a context that can be cancelled but carries no
 	// deadline, and `ctx` reaches it only as a cancellation. grpc-go writes a
 	// `grpc-timeout` header for any context that has one
-	// (`grpc@v1.81.0/internal/transport/http2_client.go:600-608`), and Xray's
+	// (`grpc@v1.82.1/internal/transport/http2_client.go`), and Xray's
 	// outbound dial path installs none -- there is no `context.WithTimeout`
 	// between the proxy handler and `internet.Dial`. Handing the deadline
 	// straight to the RPC would put a header in the fixture that no Xray dial
@@ -506,7 +506,7 @@ func captureDial(ctx context.Context) (*capture, error) {
 		<-served
 	}()
 
-	// Transcribed from `dial.go:93-167`, in its order. The context dialer is
+	// Transcribed from `dial.go:93-164`, in its order. The context dialer is
 	// the one option with different contents: Xray's reaches
 	// `internet.DialSystem` and then layers TLS or REALITY on top, all of
 	// which is below the bytes this oracle is about.
@@ -526,7 +526,7 @@ func captureDial(ctx context.Context) (*capture, error) {
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithAuthority(authority),
 		// `WithKeepaliveParams` and `WithInitialWindowSize` are attached only
-		// when the matching `grpcSettings` field is set (`dial.go:169-179`),
+		// when the matching `grpcSettings` field is set (`dial.go:166-176`),
 		// and this capture is of the defaults, so both are absent here as
 		// well.
 	}

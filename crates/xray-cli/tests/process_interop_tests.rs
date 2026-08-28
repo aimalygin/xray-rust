@@ -326,6 +326,7 @@ fn resolve_xray_checkout() -> PathBuf {
             path.join("go.mod").exists(),
             "XRAY_CORE_CHECKOUT must point at Xray-core"
         );
+        assert_xray_checkout_revision(&path);
         return path;
     }
 
@@ -339,7 +340,26 @@ fn resolve_xray_checkout() -> PathBuf {
         checkout.join("go.mod").exists(),
         "missing Xray-core checkout; set XRAY_CORE_CHECKOUT"
     );
+    assert_xray_checkout_revision(&checkout);
     checkout
+}
+
+fn assert_xray_checkout_revision(checkout: &Path) {
+    const EXPECTED: &str = "5ca6f4b7d4dc20a881d4330e498892697627ec0c";
+    let output = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(checkout)
+        .output()
+        .expect("read Xray-core checkout revision");
+    assert!(
+        output.status.success(),
+        "git rev-parse failed for Xray-core"
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout).trim(),
+        EXPECTED,
+        "Xray-core process interop checkout must be pinned to v26.7.28"
+    );
 }
 
 fn create_temp_dir(prefix: &str) -> TempDir {
