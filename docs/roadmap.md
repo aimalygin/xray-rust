@@ -71,13 +71,15 @@ Goal: publish aligned Xray-core `v26.7.28` release candidates from `xray-rust`
 and `xray-rust-mobile` before adding another proxy protocol or making a stable
 public package release.
 
-The initial delivery target is `v0.4.1-rc.1`, followed by `-rc.N` tags when a
-fix requires another candidate. Both repositories use the same pre-release
-version whenever the core or its adapters change.
+The initial `v0.4.1-rc.1` tag exercised the release gates; its supply-chain job
+correctly rejected an undeclared fuzz-package license and the missing NCSA
+allowlist entry. The corrected delivery target is `v0.4.1-rc.2`, followed by
+later `-rc.N` tags when another fix requires a candidate. Both repositories use
+the same pre-release version whenever the core or its adapters change.
 
 ### Current execution status (2026-08-28)
 
-Implemented in the `v0.4.1-rc.1` candidate source:
+Implemented in the `v0.4.1-rc.2` candidate source:
 
 - source-only, non-latest GitHub RC publication for `xray-rust`, with an
   idempotent draft/resume/verify path and no registry publication;
@@ -99,7 +101,7 @@ Implemented in the `v0.4.1-rc.1` candidate source:
   VLESS UDP/XUDP and the DNS-outbound runtime; fuzzing starts with config JSON,
   DNS wire, Vision/UDP/XUDP, and the FFI lifecycle.
 
-Release procedure for `v0.4.1-rc.1`:
+Release procedure for `v0.4.1-rc.2`:
 
 - bump the core version and dated changelog, create the reviewed annotated core
   tag, then pin and rebuild the mobile SDK from that exact tag/commit/tree and

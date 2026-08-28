@@ -7,6 +7,12 @@ prerelease-quality and do not establish a supported release series.
 
 ## Unreleased
 
+## 0.4.1-rc.2 - 2026-08-28
+
+- Declared the fuzz workspace package under the repository's MPL-2.0 license
+  and allowed the OSI-approved NCSA component required by `libfuzzer-sys`, so
+  the blocking `cargo deny` release gate covers the fuzz targets successfully.
+
 ## 0.4.1-rc.1 - 2026-08-28
 
 - Retargeted the Xray-core oracle, ignored interoperability suite, and
