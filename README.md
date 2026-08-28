@@ -148,7 +148,7 @@ Add the Apple SDK with Swift Package Manager:
 dependencies: [
     .package(
         url: "https://github.com/aimalygin/xray-rust-mobile.git",
-        exact: "0.3.2"
+        exact: "0.4.0"
     ),
 ]
 ```
@@ -156,7 +156,7 @@ dependencies: [
 The package provides the low-level `XrayMobileAdapter`, shared profile and
 storage APIs in `XrayAppleShared`, and the ready-to-subclass
 `XrayAppleTunnel` packet-tunnel provider. Android applications can consume
-`io.github.aimalygin:xray-rust-mobile:0.3.2` from Maven Central without GitHub
+`io.github.aimalygin:xray-rust-mobile:0.4.0` from Maven Central without GitHub
 credentials, or download the standalone AAR from the matching release. See the
 [`xray-rust-mobile` integration guide](https://github.com/aimalygin/xray-rust-mobile#readme)
 for setup details.
