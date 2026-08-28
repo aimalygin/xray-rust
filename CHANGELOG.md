@@ -7,6 +7,8 @@ prerelease-quality and do not establish a supported release series.
 
 ## Unreleased
 
+## 0.4.0 - 2026-08-27
+
 - Added Apple VLESS share-link import for `xhttp`/`splithttp` with plaintext,
   TLS, or REALITY transport security, including bounded single- or
   double-percent-decoded `extra` JSON. TLS/REALITY fields are preserved and
@@ -23,6 +25,8 @@ prerelease-quality and do not establish a supported release series.
   POSTs also reuse the actual allocation instead of cloning every payload;
   H2/H3 behavior is unchanged. Added an exact-profile RSS harness with
   held-flow, 16 KiB control, settle, and ACK-gated rollover phases.
+- Updated `h2` to 0.4.16 for its upstream RustSec fix and refreshed the
+  transitive `chacha20` lock entry to 0.10.2 after 0.10.1 was yanked.
 
 ## 0.3.2 - 2026-08-16
 
