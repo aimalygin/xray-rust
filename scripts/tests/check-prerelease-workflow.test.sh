@@ -122,9 +122,11 @@ done
 (( finalize_line < post_finalize_verify_line && post_finalize_verify_line < final_check_line )) || \
   die "remote tag is not reverified after prerelease finalization"
 
-grep -Fq 'ref: 5ca6f4b7d4dc20a881d4330e498892697627ec0c' "$WORKFLOW" || \
+rc_interop_job="$(job_body rc-interop)"
+[[ -n "$rc_interop_job" ]] || die "RC interoperability job is missing"
+grep -Fxq '          ref: 5ca6f4b7d4dc20a881d4330e498892697627ec0c' <<<"$rc_interop_job" || \
   die "RC interoperability does not pin the audited Xray-core commit"
-grep -Fq 'bash scripts/check-rc-interop.sh' "$WORKFLOW" || \
+grep -Fxq '        run: bash scripts/check-rc-interop.sh' <<<"$rc_interop_job" || \
   die "RC interoperability script is not part of the tag workflow"
 grep -Fq 'bash scripts/tests/check-rc-interop.test.sh' "$WORKFLOW" || \
   die "clean-target RC interoperability regression test is not part of CI"
