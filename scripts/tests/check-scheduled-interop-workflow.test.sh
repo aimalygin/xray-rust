@@ -369,6 +369,11 @@ expected_rust="$(cat <<'EXPECTED'
           bash scripts/tests/check-xray-main-smoke.test.sh
           bash scripts/tests/check-scheduled-interop-workflow.test.sh
           bash scripts/tests/check-public-fixtures.test.sh
+          bash scripts/tests/check-benchmark-publication.test.sh
+          bash scripts/tests/bench-xhttp-memory.test.sh
+          if [[ -f docs/benchmarks/results/2026-08-29-v26.7.28/manifest.json ]]; then
+            python3 scripts/check-benchmark-publication.py docs/benchmarks/results/2026-08-29-v26.7.28
+          fi
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.96.0 --profile minimal --component clippy,rustfmt
       - name: Select pinned Rust toolchain

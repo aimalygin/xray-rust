@@ -72,6 +72,11 @@ bash scripts/tests/check-scheduled-pinned-interop.test.sh
 bash scripts/tests/check-xray-main-smoke.test.sh
 bash scripts/tests/check-scheduled-interop-workflow.test.sh
 bash scripts/tests/check-public-fixtures.test.sh
+bash scripts/tests/check-benchmark-publication.test.sh
+bash scripts/tests/bench-xhttp-memory.test.sh
+if [[ -f docs/benchmarks/results/2026-08-29-v26.7.28/manifest.json ]]; then
+  python3 scripts/check-benchmark-publication.py docs/benchmarks/results/2026-08-29-v26.7.28
+fi
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features --locked -- \
   -D warnings -W clippy::perf -W clippy::suspicious
