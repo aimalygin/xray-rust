@@ -23,6 +23,8 @@ use xray_transport::{SystemDnsResolver, TlsConnector, TransportDialer};
 
 const TEST_UUID: &str = "00010203-0405-0607-0809-0a0b0c0d0e0f";
 const TLS_SERVER_NAME: &str = "vless.test";
+const XRAY_CORE_EXPECTED_REVISION_ENV: &str = "XRAY_CORE_EXPECTED_REVISION";
+const PINNED_XRAY_CORE_REVISION: &str = "5ca6f4b7d4dc20a881d4330e498892697627ec0c";
 // The PQ interop oracle needs a cover origin that accepts X25519MLKEM;
 // RFC 2606 example origins reject the `hellochrome_120_pq` handshake.
 const REALITY_SERVER_NAME: &str = "www.google.com";
@@ -36,6 +38,46 @@ const REALITY_PUBLIC_KEY: [u8; 32] = [
 ];
 const REALITY_SHORT_ID: [u8; 8] = [1, 35, 69, 103, 137, 171, 205, 239];
 const REALITY_SHORT_ID_HEX: &str = "0123456789abcdef";
+
+#[test]
+fn xray_checkout_revision_defaults_to_the_release_pin() {
+    assert_eq!(
+        expected_xray_checkout_revision(None),
+        Ok(PINNED_XRAY_CORE_REVISION)
+    );
+}
+
+#[test]
+fn xray_checkout_revision_accepts_an_explicit_full_lowercase_commit() {
+    const REVISION: &str = "0123456789abcdef0123456789abcdef01234567";
+
+    assert_eq!(
+        expected_xray_checkout_revision(Some(REVISION)),
+        Ok(REVISION)
+    );
+}
+
+#[test]
+fn xray_checkout_revision_rejects_symbolic_abbreviated_or_malformed_values() {
+    for value in [
+        "",
+        "main",
+        "HEAD",
+        "5ca6f4b",
+        "5CA6F4B7D4DC20A881D4330E498892697627EC0C",
+        "5ca6f4b7d4dc20a881d4330e498892697627ec0g",
+    ] {
+        let error = expected_xray_checkout_revision(Some(value))
+            .expect_err("invalid revision override should be rejected");
+
+        assert_eq!(
+            error,
+            format!(
+                "XRAY_CORE_EXPECTED_REVISION must be an exact 40-character lowercase hexadecimal commit, got `{value}`"
+            )
+        );
+    }
+}
 
 #[tokio::test]
 #[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
@@ -905,9 +947,19 @@ fn resolve_xray_checkout() -> PathBuf {
 }
 
 fn assert_xray_checkout_revision(checkout: &Path) {
-    const EXPECTED: &str = "5ca6f4b7d4dc20a881d4330e498892697627ec0c";
+    let override_value = match env::var(XRAY_CORE_EXPECTED_REVISION_ENV) {
+        Ok(value) => Some(value),
+        Err(env::VarError::NotPresent) => None,
+        Err(error) => panic!("read {XRAY_CORE_EXPECTED_REVISION_ENV}: {error}"),
+    };
+    let expected = expected_xray_checkout_revision(override_value.as_deref())
+        .unwrap_or_else(|error| panic!("{error}"));
+    if override_value.is_some() {
+        eprintln!("using {XRAY_CORE_EXPECTED_REVISION_ENV} override `{expected}`");
+    }
+
     let output = Command::new("git")
-        .args(["rev-parse", "HEAD"])
+        .args(["rev-parse", "--verify", "HEAD"])
         .current_dir(checkout)
         .output()
         .expect("read Xray-core checkout revision");
@@ -917,9 +969,26 @@ fn assert_xray_checkout_revision(checkout: &Path) {
     );
     assert_eq!(
         String::from_utf8_lossy(&output.stdout).trim(),
-        EXPECTED,
+        expected,
         "Xray-core interop checkout must be pinned to v26.7.28"
     );
+}
+
+fn expected_xray_checkout_revision(override_value: Option<&str>) -> Result<&str, String> {
+    match override_value {
+        None => Ok(PINNED_XRAY_CORE_REVISION),
+        Some(value)
+            if value.len() == 40
+                && value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)) =>
+        {
+            Ok(value)
+        }
+        Some(value) => Err(format!(
+            "{XRAY_CORE_EXPECTED_REVISION_ENV} must be an exact 40-character lowercase hexadecimal commit, got `{value}`"
+        )),
+    }
 }
 
 fn create_temp_dir(prefix: &str) -> TempDir {
