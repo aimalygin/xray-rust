@@ -34,6 +34,18 @@ if (( $# == 5 )) &&
   exit 0
 fi
 
+if (( $# == 5 )) &&
+  [[ "$1" == "-C" ]] &&
+  [[ "$2" == "$FAKE_EXPECTED_CORE" ]] &&
+  [[ "$3" == "status" ]] &&
+  [[ "$4" == "--porcelain" ]] &&
+  [[ "$5" == "--untracked-files=all" ]]; then
+  if [[ -n "${FAKE_GIT_STATUS_OUTPUT:-}" ]]; then
+    printf '%s\n' "$FAKE_GIT_STATUS_OUTPUT"
+  fi
+  exit 0
+fi
+
 printf 'unexpected git invocation: %s\n' "$*" >&2
 exit 90
 EOF
@@ -41,6 +53,8 @@ EOF
 cat >"$FAKE_BIN/go" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+
+printf '%s\n' 'xray-core-build' >>"$FAKE_INVOCATION_LOG"
 
 [[ -z "${GOFLAGS+x}" ]] || {
   echo 'Xray-core build inherited GOFLAGS' >&2
@@ -141,12 +155,15 @@ case "${1:-}" in
 
     [[ -z "${GOFLAGS+x}" ]] || die 'scheduled interop test inherited GOFLAGS'
     [[ -z "${GOEXPERIMENT+x}" ]] || die 'scheduled interop test inherited GOEXPERIMENT'
+    [[ -z "${XRAY_CORE_EXPECTED_REVISION+x}" ]] || \
+      die 'scheduled interop test inherited XRAY_CORE_EXPECTED_REVISION'
     [[ "${GOENV:-}" == "off" ]] || die 'scheduled interop test did not set GOENV=off'
     [[ "${GOWORK:-}" == "off" ]] || die 'scheduled interop test did not set GOWORK=off'
     [[ "${GOTOOLCHAIN:-}" == "local" ]] || die 'scheduled interop test did not set GOTOOLCHAIN=local'
     [[ "${CGO_ENABLED:-}" == "0" ]] || die 'scheduled interop test did not set CGO_ENABLED=0'
 
-    printf 'test|command=%s|fingerprints=%s|burst_fingerprints=%s|burst_flows=%s|xhttp_cases=%s|goflags=unset|goexperiment=unset|goenv=%s|gowork=%s|gotoolchain=%s|cgo=%s\n' \
+    printf '%s\n' 'serial-ignored-interop' >>"$FAKE_INVOCATION_LOG"
+    printf 'test|command=%s|fingerprints=%s|burst_fingerprints=%s|burst_flows=%s|xhttp_cases=%s|goflags=unset|goexperiment=unset|core_expected_revision=unset|goenv=%s|gowork=%s|gotoolchain=%s|cgo=%s\n' \
       "$*" \
       "${XRAY_REALITY_INTEROP_FINGERPRINTS:-}" \
       "${XRAY_REALITY_INTEROP_BURST_FINGERPRINTS:-}" \
@@ -157,9 +174,23 @@ case "${1:-}" in
   build)
     assert_args "scheduled xray-rust build" \
       build --locked --release -p xray-cli --bin xray-rust
-    mkdir -p "$CARGO_TARGET_DIR/release"
-    printf '%s\n' '#!/usr/bin/env bash' 'exit 0' >"$CARGO_TARGET_DIR/release/xray-rust"
-    chmod +x "$CARGO_TARGET_DIR/release/xray-rust"
+    case "$FAKE_EXPECTED_CARGO_TARGET_MODE" in
+      unset)
+        [[ -z "${CARGO_TARGET_DIR+x}" ]] || \
+          die "CARGO_TARGET_DIR should be unset, got: $CARGO_TARGET_DIR"
+        ;;
+      set)
+        [[ "${CARGO_TARGET_DIR:-}" == "$FAKE_EXPECTED_CARGO_TARGET_VALUE" ]] || \
+          die "unexpected CARGO_TARGET_DIR: ${CARGO_TARGET_DIR:-unset}"
+        ;;
+      *)
+        die "unexpected target fixture mode: $FAKE_EXPECTED_CARGO_TARGET_MODE"
+        ;;
+    esac
+    mkdir -p "$(dirname "$FAKE_EXPECTED_XRAY_RUST_BIN")"
+    printf '%s\n' '#!/usr/bin/env bash' 'exit 0' >"$FAKE_EXPECTED_XRAY_RUST_BIN"
+    chmod +x "$FAKE_EXPECTED_XRAY_RUST_BIN"
+    printf '%s\n' 'release-xray-rust-build' >>"$FAKE_INVOCATION_LOG"
     printf 'build|command=%s\n' "$*" >>"$FAKE_CARGO_LOG"
     ;;
   run)
@@ -171,7 +202,7 @@ case "${1:-}" in
 
     [[ "$engine" == "xray-rust" || "$engine" == "xray-core" ]] || \
       die "unexpected scheduled engine: $engine"
-    [[ "$xray_rust_bin" == "$CARGO_TARGET_DIR/release/xray-rust" ]] || \
+    [[ "$xray_rust_bin" == "$FAKE_EXPECTED_XRAY_RUST_BIN" ]] || \
       die "unexpected xray-rust binary: $xray_rust_bin"
     [[ -x "$xray_rust_bin" ]] || die "xray-rust binary was not built: $xray_rust_bin"
     [[ -x "$xray_core_bin" ]] || die "xray-core binary was not built: $xray_core_bin"
@@ -186,6 +217,7 @@ case "${1:-}" in
           --xray-rust-bin "$xray_rust_bin" --xray-core-bin "$xray_core_bin" \
           --no-auto-build --runs 1 --connections 100 --duration-ms 1000 \
           --out-dir "$out_dir"
+        printf 'resource:%s:many-idle-flows\n' "$engine" >>"$FAKE_INVOCATION_LOG"
         printf 'resource|engine=%s|workload=many-idle-flows|xray_rust_bin=%s|xray_core_bin=%s|no_auto_build=true|runs=1|connections=100|duration_ms=1000|out=%s\n' \
           "$engine" "$xray_rust_bin" "$xray_core_bin" "$out_dir" >>"$FAKE_CARGO_LOG"
         ;;
@@ -201,6 +233,7 @@ case "${1:-}" in
           --duration-ms 2000 --settle-ms 500 --sample-interval-ms 100 \
           --payload-size 16384 --run-timeout-ms 120000 \
           --out-dir "$out_dir"
+        printf 'resource:%s:xhttp-h2-held-open\n' "$engine" >>"$FAKE_INVOCATION_LOG"
         printf 'resource|engine=%s|workload=xhttp-h2-held-open|xray_rust_bin=%s|xray_core_bin=%s|no_auto_build=true|runs=1|connections=32|iterations=1|duration_ms=2000|settle_ms=500|sample_interval_ms=100|payload_size=16384|run_timeout_ms=120000|out=%s\n' \
           "$engine" "$xray_rust_bin" "$xray_core_bin" "$out_dir" >>"$FAKE_CARGO_LOG"
         ;;
@@ -224,8 +257,14 @@ PATH="$FAKE_BIN:$PATH" \
   FAKE_CARGO_LOG="$FAKE_CARGO_LOG" \
   FAKE_GO_LOG="$FAKE_GO_LOG" \
   FAKE_CORE_PATH_LOG="$FAKE_CORE_PATH_LOG" \
+  FAKE_INVOCATION_LOG="$TEST_ROOT/invocations.log" \
+  FAKE_EXPECTED_XRAY_RUST_BIN="$FAKE_TARGET/release/xray-rust" \
+  FAKE_EXPECTED_CARGO_TARGET_MODE='set' \
+  FAKE_EXPECTED_CARGO_TARGET_VALUE="$FAKE_TARGET" \
   FAKE_EXPECTED_CORE="$FAKE_CORE" \
   FAKE_GIT_REVISION="$EXPECTED_XRAY_CORE_REVISION" \
+  FAKE_GIT_STATUS_OUTPUT='' \
+  XRAY_CORE_EXPECTED_REVISION='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' \
   GOFLAGS='contaminated-goflags' \
   GOEXPERIMENT='contaminated-goexperiment' \
   GOENV='contaminated-goenv' \
@@ -263,7 +302,7 @@ assert_prefix_count() {
 }
 
 assert_line_count 1 \
-  "test|command=test --locked -p xray-core-rs --test local_xray_interop_tests -- --ignored --nocapture --test-threads=1|fingerprints=$BROAD_FINGERPRINTS|burst_fingerprints=hellofirefox_99|burst_flows=32|xhttp_cases=all|goflags=unset|goexperiment=unset|goenv=off|gowork=off|gotoolchain=local|cgo=0"
+  "test|command=test --locked -p xray-core-rs --test local_xray_interop_tests -- --ignored --nocapture --test-threads=1|fingerprints=$BROAD_FINGERPRINTS|burst_fingerprints=hellofirefox_99|burst_flows=32|xhttp_cases=all|goflags=unset|goexperiment=unset|core_expected_revision=unset|goenv=off|gowork=off|gotoolchain=local|cgo=0"
 assert_line_count 1 \
   'build|command=build --locked --release -p xray-cli --bin xray-rust'
 
@@ -279,16 +318,117 @@ assert_prefix_count 1 'build|'
 assert_prefix_count 4 'resource|'
 assert_prefix_count 6 'invoke|'
 
+expected_invocations=$'xray-core-build\nserial-ignored-interop\nrelease-xray-rust-build\nresource:xray-rust:many-idle-flows\nresource:xray-rust:xhttp-h2-held-open\nresource:xray-core:many-idle-flows\nresource:xray-core:xhttp-h2-held-open'
+if [[ "$(<"$TEST_ROOT/invocations.log")" != "$expected_invocations" ]]; then
+  echo 'scheduled interop operations ran out of order' >&2
+  exit 102
+fi
+
 expected_go_log="build|core=$FAKE_CORE|output=$scheduled_xray_core_binary|goflags=unset|goexperiment=unset|goenv=off|gowork=off|gotoolchain=local|cgo=0"
 if [[ "$(<"$FAKE_GO_LOG")" != "$expected_go_log" ]]; then
   echo 'scheduled Xray-core build was not pinned and hermetic' >&2
-  exit 102
+  exit 103
 fi
 
 if [[ -e "$scheduled_tmp" ]]; then
   echo "scheduled interop temporary directory was not cleaned up: $scheduled_tmp" >&2
-  exit 103
+  exit 104
 fi
+
+# Use a fixture-local script root so the unset/default target case cannot write
+# into the repository's real target directory.
+run_target_dir_case() {
+  local case_name="$1"
+  local target_mode="$2"
+  local case_root="$TEST_ROOT/success-$case_name"
+  local case_workspace="$case_root/workspace"
+  local case_cargo_log="$case_root/cargo.log"
+  local case_go_log="$case_root/go.log"
+  local case_core_path_log="$case_root/xray-core-path.log"
+  local case_invocation_log="$case_root/invocations.log"
+  local case_script="$case_workspace/scripts/check-scheduled-pinned-interop.sh"
+  local expected_xray_rust_binary
+  local expected_target_mode
+  local expected_target_value=''
+  local target_env=()
+
+  mkdir -p "$case_workspace/scripts" "$case_root/tmp"
+  cp "$SCRIPT_UNDER_TEST" "$case_script"
+
+  case "$target_mode" in
+    unset)
+      target_env=(-u CARGO_TARGET_DIR)
+      expected_target_mode='unset'
+      expected_xray_rust_binary="$case_workspace/target/release/xray-rust"
+      ;;
+    relative)
+      expected_target_value='relative-cargo-target'
+      expected_target_mode='set'
+      target_env=("CARGO_TARGET_DIR=$expected_target_value")
+      expected_xray_rust_binary="$case_workspace/$expected_target_value/release/xray-rust"
+      ;;
+    *)
+      echo "unexpected target test mode: $target_mode" >&2
+      exit 105
+      ;;
+  esac
+
+  env "${target_env[@]}" \
+    PATH="$FAKE_BIN:$PATH" \
+    TMPDIR="$case_root/tmp" \
+    XRAY_CORE_CHECKOUT="$FAKE_CORE_LINK" \
+    FAKE_CARGO_LOG="$case_cargo_log" \
+    FAKE_GO_LOG="$case_go_log" \
+    FAKE_CORE_PATH_LOG="$case_core_path_log" \
+    FAKE_INVOCATION_LOG="$case_invocation_log" \
+    FAKE_EXPECTED_XRAY_RUST_BIN="$expected_xray_rust_binary" \
+    FAKE_EXPECTED_CARGO_TARGET_MODE="$expected_target_mode" \
+    FAKE_EXPECTED_CARGO_TARGET_VALUE="$expected_target_value" \
+    FAKE_EXPECTED_CORE="$FAKE_CORE" \
+    FAKE_GIT_REVISION="$EXPECTED_XRAY_CORE_REVISION" \
+    FAKE_GIT_STATUS_OUTPUT='' \
+    XRAY_CORE_EXPECTED_REVISION='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' \
+    GOFLAGS='contaminated-goflags' \
+    GOEXPERIMENT='contaminated-goexperiment' \
+    GOENV='contaminated-goenv' \
+    GOWORK='contaminated-gowork' \
+    GOTOOLCHAIN='contaminated-gotoolchain' \
+    CGO_ENABLED=1 \
+    bash "$case_script" >/dev/null
+
+  local case_xray_core_binary
+  local case_scheduled_tmp
+  local resource_count
+  local resolved_binary_count
+  case_xray_core_binary="$(<"$case_core_path_log")"
+  case_scheduled_tmp="$(dirname "$case_xray_core_binary")"
+  resource_count="$(grep -c '^resource|' "$case_cargo_log" || true)"
+  resolved_binary_count="$(grep -Fc "|xray_rust_bin=$expected_xray_rust_binary|" "$case_cargo_log" || true)"
+
+  if [[ "$resource_count" -ne 4 || "$resolved_binary_count" -ne 4 ]]; then
+    echo "$case_name target fixture did not pass the resolved xray-rust binary to all resource runs" >&2
+    exit 106
+  fi
+  if [[ "$(grep -c '^invoke|' "$case_cargo_log" || true)" -ne 6 ]]; then
+    echo "$case_name target fixture did not preserve Cargo command cardinality" >&2
+    exit 107
+  fi
+  if [[ "$(<"$case_invocation_log")" != "$expected_invocations" ]]; then
+    echo "$case_name target fixture ran scheduled operations out of order" >&2
+    exit 108
+  fi
+  if [[ "$(<"$case_go_log")" != "build|core=$FAKE_CORE|output=$case_xray_core_binary|goflags=unset|goexperiment=unset|goenv=off|gowork=off|gotoolchain=local|cgo=0" ]]; then
+    echo "$case_name target fixture did not keep the Xray-core build hermetic" >&2
+    exit 109
+  fi
+  if [[ -e "$case_scheduled_tmp" ]]; then
+    echo "$case_name target fixture leaked its scheduled temporary directory" >&2
+    exit 110
+  fi
+}
+
+run_target_dir_case default unset
+run_target_dir_case relative relative
 
 MISMATCH_CARGO_LOG="$TEST_ROOT/mismatch-cargo.log"
 MISMATCH_OUTPUT="$TEST_ROOT/mismatch-output.log"
@@ -307,15 +447,51 @@ set -e
 
 if [[ "$mismatch_status" -eq 0 ]]; then
   echo 'scheduled interop accepted a mismatched Xray-core revision' >&2
-  exit 104
+  exit 105
 fi
 if ! grep -Fq "expected $EXPECTED_XRAY_CORE_REVISION" "$MISMATCH_OUTPUT"; then
   echo 'scheduled interop mismatch did not name the expected pinned revision' >&2
-  exit 105
+  exit 106
 fi
 if [[ -s "$MISMATCH_CARGO_LOG" ]]; then
   echo 'scheduled interop invoked Cargo before rejecting a mismatched Xray-core revision' >&2
-  exit 106
+  exit 107
+fi
+
+DIRTY_CARGO_LOG="$TEST_ROOT/dirty-cargo.log"
+DIRTY_GO_LOG="$TEST_ROOT/dirty-go.log"
+DIRTY_INVOCATION_LOG="$TEST_ROOT/dirty-invocations.log"
+DIRTY_OUTPUT="$TEST_ROOT/dirty-output.log"
+set +e
+PATH="$FAKE_BIN:$PATH" \
+  XRAY_CORE_CHECKOUT="$FAKE_CORE_LINK" \
+  CARGO_TARGET_DIR="$TEST_ROOT/dirty-target" \
+  FAKE_CARGO_LOG="$DIRTY_CARGO_LOG" \
+  FAKE_GO_LOG="$DIRTY_GO_LOG" \
+  FAKE_CORE_PATH_LOG="$TEST_ROOT/dirty-xray-core-path.log" \
+  FAKE_INVOCATION_LOG="$DIRTY_INVOCATION_LOG" \
+  FAKE_EXPECTED_CORE="$FAKE_CORE" \
+  FAKE_GIT_REVISION="$EXPECTED_XRAY_CORE_REVISION" \
+  FAKE_GIT_STATUS_OUTPUT='?? local-untracked-file' \
+  bash "$SCRIPT_UNDER_TEST" >"$DIRTY_OUTPUT" 2>&1
+dirty_status=$?
+set -e
+
+if [[ "$dirty_status" -eq 0 ]]; then
+  echo 'scheduled interop accepted a dirty Xray-core checkout' >&2
+  exit 108
+fi
+if ! grep -Fq 'Xray-core checkout has uncommitted or untracked changes' "$DIRTY_OUTPUT"; then
+  echo 'scheduled interop dirty-checkout failure was not diagnostic' >&2
+  exit 109
+fi
+if [[ -s "$DIRTY_GO_LOG" || -s "$DIRTY_INVOCATION_LOG" ]]; then
+  echo 'scheduled interop built Xray-core before rejecting a dirty checkout' >&2
+  exit 110
+fi
+if [[ -s "$DIRTY_CARGO_LOG" ]]; then
+  echo 'scheduled interop invoked Cargo before rejecting a dirty Xray-core checkout' >&2
+  exit 111
 fi
 
 echo 'scheduled pinned interop is broad, hermetic, and resource-bounded'

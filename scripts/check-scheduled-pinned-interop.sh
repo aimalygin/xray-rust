@@ -20,6 +20,13 @@ if [[ "$actual_revision" != "$EXPECTED_XRAY_CORE_REVISION" ]]; then
   exit 1
 fi
 
+checkout_status="$(git -C "$XRAY_CORE_CHECKOUT" status --porcelain --untracked-files=all)"
+if [[ -n "$checkout_status" ]]; then
+  echo "Xray-core checkout has uncommitted or untracked changes" >&2
+  printf '%s\n' "$checkout_status" >&2
+  exit 1
+fi
+
 scheduled_tmp="$(mktemp -d "${TMPDIR:-/tmp}/xray-rust-scheduled-pinned-interop.XXXXXX")"
 trap 'rm -rf -- "$scheduled_tmp"' EXIT
 xray_core_binary="$scheduled_tmp/xray"
@@ -43,6 +50,7 @@ env \
   -u GOFLAGS \
   -u GOEXPERIMENT \
   -u GOTOOLCHAIN \
+  -u XRAY_CORE_EXPECTED_REVISION \
   GOENV=off \
   GOWORK=off \
   GOTOOLCHAIN=local \
