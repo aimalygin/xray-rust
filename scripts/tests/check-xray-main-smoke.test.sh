@@ -22,8 +22,19 @@ FAKE_GIT_LOG="$TEST_ROOT/git.log"
 FAKE_CARGO_ENTRY_LOG="$TEST_ROOT/cargo-entry.log"
 FAKE_CARGO_LOG="$TEST_ROOT/cargo.log"
 RUN_FROM="$TEST_ROOT/run from here"
-mkdir -p "$FAKE_BIN" "$FAKE_CORE" "$RUN_FROM"
+RELATIVE_RUN_FROM="$TEST_ROOT/relative caller"
+CDPATH_TRAP="$TEST_ROOT/cdpath trap"
+WRONG_CORE="$TEST_ROOT/wrong Xray core"
+mkdir -p \
+  "$FAKE_BIN" \
+  "$FAKE_CORE" \
+  "$RUN_FROM" \
+  "$RELATIVE_RUN_FROM" \
+  "$CDPATH_TRAP" \
+  "$WRONG_CORE"
 ln -s "$FAKE_CORE" "$FAKE_CORE_LINK"
+ln -s "$FAKE_CORE" "$RELATIVE_RUN_FROM/relative-core"
+ln -s "$WRONG_CORE" "$CDPATH_TRAP/relative-core"
 
 cat >"$FAKE_BIN/git" <<'EOF'
 #!/usr/bin/env bash
@@ -40,6 +51,18 @@ if (( $# == 5 )) &&
   [[ "$4" == '--verify' ]] &&
   [[ "$5" == 'HEAD' ]]; then
   printf '%s\n' "$FAKE_GIT_REVISION"
+  exit 0
+fi
+
+if (( $# == 5 )) &&
+  [[ "$1" == '-C' ]] &&
+  [[ "$2" == "$FAKE_EXPECTED_CORE" ]] &&
+  [[ "$3" == 'status' ]] &&
+  [[ "$4" == '--porcelain' ]] &&
+  [[ "$5" == '--untracked-files=all' ]]; then
+  if [[ -n "${FAKE_GIT_STATUS:-}" ]]; then
+    printf '%s\n' "$FAKE_GIT_STATUS"
+  fi
   exit 0
 fi
 
@@ -110,11 +133,12 @@ reset_logs() {
   : >"$FAKE_CARGO_LOG"
 }
 
-run_smoke() {
-  local output_file="$1"
-  shift
+run_smoke_from() {
+  local run_from="$1"
+  local output_file="$2"
+  shift 2
   (
-    cd "$RUN_FROM"
+    cd "$run_from"
     env "$@" \
       PATH="$FAKE_BIN:$PATH" \
       FAKE_EXPECTED_CORE="$FAKE_CORE" \
@@ -124,6 +148,12 @@ run_smoke() {
       FAKE_CARGO_LOG="$FAKE_CARGO_LOG" \
       bash "$SCRIPT_UNDER_TEST"
   ) >"$output_file" 2>&1
+}
+
+run_smoke() {
+  local output_file="$1"
+  shift
+  run_smoke_from "$RUN_FROM" "$output_file" "$@"
 }
 
 assert_no_tools_invoked() {
@@ -217,6 +247,82 @@ expected_git_log="git|-C|$FAKE_CORE|rev-parse|--verify|HEAD"
 }
 
 reset_logs
+dirty_output="$TEST_ROOT/dirty.log"
+dirty_status=$' M proxy/xhttp/client.go\n?? local-smoke-note.txt'
+if run_smoke "$dirty_output" \
+  XRAY_CORE_CHECKOUT="$FAKE_CORE_LINK" \
+  XRAY_CORE_EXPECTED_REVISION="$VALID_REVISION" \
+  FAKE_GIT_REVISION="$VALID_REVISION" \
+  FAKE_GIT_STATUS="$dirty_status"; then
+  [[ -s "$FAKE_CARGO_ENTRY_LOG" ]] || {
+    echo 'dirty checkout was accepted without reaching Cargo' >&2
+    exit 104
+  }
+  echo 'Xray-core main smoke accepted a dirty checkout and reached Cargo' >&2
+  exit 105
+fi
+grep -Fq 'Xray-core checkout must be clean before smoke testing' "$dirty_output" || {
+  echo 'dirty checkout failure was not diagnostic' >&2
+  exit 106
+}
+grep -Fq 'proxy/xhttp/client.go' "$dirty_output" || {
+  echo 'dirty checkout failure did not name the tracked change' >&2
+  exit 107
+}
+grep -Fq 'local-smoke-note.txt' "$dirty_output" || {
+  echo 'dirty checkout failure did not name the untracked change' >&2
+  exit 108
+}
+if grep -Fq 'Xray-core main smoke revision:' "$dirty_output"; then
+  echo 'dirty checkout printed a tested revision before failing' >&2
+  exit 109
+fi
+expected_clean_git_log="$expected_git_log"$'\n'"git|-C|$FAKE_CORE|status|--porcelain|--untracked-files=all"
+[[ "$(<"$FAKE_GIT_LOG")" == "$expected_clean_git_log" ]] || {
+  echo 'dirty checkout did not check HEAD then exact porcelain status' >&2
+  exit 110
+}
+[[ ! -s "$FAKE_CARGO_ENTRY_LOG" ]] || {
+  echo 'dirty checkout attempted to invoke Cargo before failing' >&2
+  exit 111
+}
+[[ ! -s "$FAKE_CARGO_LOG" ]] || {
+  echo 'dirty checkout completed fake Cargo validation before failing' >&2
+  exit 112
+}
+
+expected_cargo_entry_log="cargo-entry|test|--locked|-p|xray-core-rs|--test|local_xray_interop_tests|rust_socks_client_reaches_echo_server_through_local_xray_vless_xhttp_selected_cases|--|--ignored|--nocapture|--test-threads=1"
+expected_cargo_log="cargo|test|--locked|-p|xray-core-rs|--test|local_xray_interop_tests|rust_socks_client_reaches_echo_server_through_local_xray_vless_xhttp_selected_cases|--|--ignored|--nocapture|--test-threads=1|checkout=$FAKE_CORE|expected_revision=$VALID_REVISION|xhttp_cases=h2-tls-stream-one"
+
+reset_logs
+relative_output="$TEST_ROOT/relative.log"
+if ! run_smoke_from "$RELATIVE_RUN_FROM" "$relative_output" \
+  XRAY_CORE_CHECKOUT='relative-core' \
+  XRAY_CORE_EXPECTED_REVISION="$VALID_REVISION" \
+  FAKE_GIT_REVISION="$VALID_REVISION" \
+  CDPATH="$CDPATH_TRAP"; then
+  echo 'relative checkout was not resolved from the caller working directory' >&2
+  exit 113
+fi
+expected_output="Xray-core main smoke revision: $VALID_REVISION"
+[[ "$(<"$relative_output")" == "$expected_output" ]] || {
+  echo 'relative checkout success did not print only the tested revision' >&2
+  exit 114
+}
+[[ "$(<"$FAKE_GIT_LOG")" == "$expected_clean_git_log" ]] || {
+  echo 'relative checkout did not canonicalize before Git validation' >&2
+  exit 115
+}
+[[ "$(<"$FAKE_CARGO_ENTRY_LOG")" == "$expected_cargo_entry_log" ]] || {
+  echo 'relative checkout did not attempt exactly one focused Cargo test' >&2
+  exit 116
+}
+[[ "$(<"$FAKE_CARGO_LOG")" == "$expected_cargo_log" ]] || {
+  echo 'relative checkout did not preserve the hermetic Cargo contract' >&2
+  exit 117
+}
+
+reset_logs
 success_output="$TEST_ROOT/success.log"
 run_smoke "$success_output" \
   XRAY_CORE_CHECKOUT="$FAKE_CORE_LINK" \
@@ -229,21 +335,18 @@ run_smoke "$success_output" \
   GOTOOLCHAIN='contaminated-gotoolchain' \
   CGO_ENABLED=1
 
-expected_output="Xray-core main smoke revision: $VALID_REVISION"
 [[ "$(<"$success_output")" == "$expected_output" ]] || {
   echo 'success output did not contain the exact full tested revision' >&2
   exit 103
 }
-[[ "$(<"$FAKE_GIT_LOG")" == "$expected_git_log" ]] || {
-  echo 'success did not resolve exactly one canonical checkout HEAD' >&2
+[[ "$(<"$FAKE_GIT_LOG")" == "$expected_clean_git_log" ]] || {
+  echo 'success did not resolve HEAD and verify an exact clean checkout' >&2
   exit 104
 }
-expected_cargo_entry_log="cargo-entry|test|--locked|-p|xray-core-rs|--test|local_xray_interop_tests|rust_socks_client_reaches_echo_server_through_local_xray_vless_xhttp_selected_cases|--|--ignored|--nocapture|--test-threads=1"
 [[ "$(<"$FAKE_CARGO_ENTRY_LOG")" == "$expected_cargo_entry_log" ]] || {
   echo 'success did not attempt exactly one focused Cargo test' >&2
   exit 105
 }
-expected_cargo_log="cargo|test|--locked|-p|xray-core-rs|--test|local_xray_interop_tests|rust_socks_client_reaches_echo_server_through_local_xray_vless_xhttp_selected_cases|--|--ignored|--nocapture|--test-threads=1|checkout=$FAKE_CORE|expected_revision=$VALID_REVISION|xhttp_cases=h2-tls-stream-one"
 [[ "$(<"$FAKE_CARGO_LOG")" == "$expected_cargo_log" ]] || {
   echo 'success did not run exactly one focused, hermetic Cargo test' >&2
   exit 106

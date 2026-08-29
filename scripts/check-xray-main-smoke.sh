@@ -17,14 +17,21 @@ if [[ ! "$XRAY_CORE_EXPECTED_REVISION" =~ ^[0123456789abcdef]{40}$ ]]; then
   exit 1
 fi
 
-repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-cd "$repository_root"
+XRAY_CORE_CHECKOUT="$(CDPATH= cd -- "$XRAY_CORE_CHECKOUT" && pwd -P)"
+repository_root="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+cd -- "$repository_root"
 
-XRAY_CORE_CHECKOUT="$(cd -- "$XRAY_CORE_CHECKOUT" && pwd -P)"
 actual_revision="$(git -C "$XRAY_CORE_CHECKOUT" rev-parse --verify HEAD)"
 if [[ "$actual_revision" != "$XRAY_CORE_EXPECTED_REVISION" ]]; then
   printf 'Xray-core checkout is %s; expected %s\n' \
     "$actual_revision" "$XRAY_CORE_EXPECTED_REVISION" >&2
+  exit 1
+fi
+
+checkout_status="$(git -C "$XRAY_CORE_CHECKOUT" status --porcelain --untracked-files=all)"
+if [[ -n "$checkout_status" ]]; then
+  printf 'Xray-core checkout must be clean before smoke testing:\n%s\n' \
+    "$checkout_status" >&2
   exit 1
 fi
 
