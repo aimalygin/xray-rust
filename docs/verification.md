@@ -4,9 +4,12 @@
 
 ### Ordinary CI
 
-Ordinary pull-request and branch CI is hermetic: it does not need a live
-proxy, external network access, or a Go Xray-core checkout. Tests that require
-one of those inputs remain ignored in this path.
+The ordinary pull-request and branch compatibility contract is hermetic: its
+runtime tests do not need a live proxy, external test targets, or a Go
+Xray-core checkout. Tests that require one of those inputs remain ignored in
+this path. Workflow setup can still download pinned actions, toolchains, and
+dependencies, so this does not mean that provisioning a fresh CI runner is an
+offline operation.
 
 ### Tagged release candidates
 
@@ -29,9 +32,9 @@ Reproduce the pinned scheduled gate from the xray-rust repository root with a
 clean checkout at the audited commit:
 
 ```sh
-git -C /absolute/path/to/Xray-core-v26.7.28 switch --detach \
+git -C "/absolute/path/to/Xray-core-v26.7.28" switch --detach \
   5ca6f4b7d4dc20a881d4330e498892697627ec0c
-XRAY_CORE_CHECKOUT=/absolute/path/to/Xray-core-v26.7.28 \
+XRAY_CORE_CHECKOUT="/absolute/path/to/Xray-core-v26.7.28" \
   bash scripts/check-scheduled-pinned-interop.sh
 ```
 
@@ -41,8 +44,8 @@ an RC publication gate. Resolve the clean checkout's `HEAD` before invoking
 the focused smoke locally:
 
 ```sh
-xray_main_revision="$(git -C /absolute/path/to/Xray-core-main rev-parse --verify HEAD)"
-XRAY_CORE_CHECKOUT=/absolute/path/to/Xray-core-main \
+xray_main_revision="$(git -C "/absolute/path/to/Xray-core-main" rev-parse --verify HEAD)"
+XRAY_CORE_CHECKOUT="/absolute/path/to/Xray-core-main" \
 XRAY_CORE_EXPECTED_REVISION="$xray_main_revision" \
   bash scripts/check-xray-main-smoke.sh
 ```
@@ -52,24 +55,35 @@ lowercase commit that equals the checkout's `HEAD`. Symbolic names such as
 `main` and `HEAD`, abbreviated commits, uppercase hashes, and malformed values
 are rejected. Callers must resolve a symbolic ref before passing the override.
 
-## CI-equivalent Rust checks
+## Rust CI checks
 
-Run from the repository root:
+After selecting the pinned Rust toolchain, the `rust` job in
+`.github/workflows/ci.yml` runs these repository checks. Run them from the
+repository root; the workflow remains authoritative if this list changes:
 
 ```sh
+for script in scripts/*.sh scripts/tests/*.sh; do
+  bash -n "$script"
+done
+bash scripts/tests/check-release-version.test.sh
+bash scripts/tests/check-prerelease-workflow.test.sh
+bash scripts/tests/check-rc-interop.test.sh
+bash scripts/tests/check-scheduled-pinned-interop.test.sh
+bash scripts/tests/check-xray-main-smoke.test.sh
+bash scripts/tests/check-scheduled-interop-workflow.test.sh
+bash scripts/tests/check-public-fixtures.test.sh
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features --locked -- \
   -D warnings -W clippy::perf -W clippy::suspicious
 cargo test --workspace --exclude xray-rust-fuzz --all-targets --locked
-bash scripts/tests/check-public-fixtures.test.sh
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
 bash scripts/tests/check-mobile-toolchains.test.sh
 ```
 
-These commands match the Rust job in `.github/workflows/ci.yml`. Tests marked
-`#[ignore]` are intentionally excluded because they require a local reference
-binary, live credentials, or external network access. The fixture safety check
-rejects routable endpoints and unreviewed credential-shaped values without
-printing their contents.
+Tests marked `#[ignore]` are intentionally excluded because they require a
+local reference binary, live credentials, or external network access. The
+fixture safety check rejects routable endpoints and unreviewed
+credential-shaped values without printing their contents.
 
 Release-candidate tags also add the `fuzz-smoke` blocking job after the
 ordinary jobs pass. It runs bounded libFuzzer campaigns and, like
@@ -231,16 +245,13 @@ other `HEAD`. The scheduled `main` smoke may override that default only with
 the full lowercase commit already resolved from, and equal to, the selected
 checkout's `HEAD`; it never accepts `main` or `HEAD` as the override. Provide an
 absolute checkout path and record its full commit SHA in the test report. The
-tests expect an `xray` executable at the checkout root:
+tests build their reference binaries in temporary directories, so keep the
+checkout itself clean:
 
 ```sh
-export XRAY_CORE_CHECKOUT=/absolute/path/to/Xray-core
+export XRAY_CORE_CHECKOUT="/absolute/path/to/Xray-core"
 git -C "$XRAY_CORE_CHECKOUT" switch --detach v26.7.28
-git -C "$XRAY_CORE_CHECKOUT" rev-parse HEAD
-(
-  cd "$XRAY_CORE_CHECKOUT"
-  go build -o xray ./main
-)
+git -C "$XRAY_CORE_CHECKOUT" rev-parse --verify HEAD
 ```
 
 Run a focused REALITY+Vision interoperability test:
