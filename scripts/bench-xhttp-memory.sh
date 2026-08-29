@@ -6,8 +6,8 @@ set -euo pipefail
 # XRAY_BENCH_MAX_POST_BYTES, XRAY_BENCH_PAYLOAD_SIZE, and
 # XRAY_BENCH_TRAFFIC_ITERATIONS. Set XRAY_BENCH_XRAY_RUST_BIN and
 # XRAY_BENCH_XRAY_CORE_BIN together to reuse exact release binaries.
-repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-cd "$repo_root"
+repo_root=$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+CDPATH= cd -- "$repo_root"
 
 xray_core_dir=${XRAY_CORE_DIR:-Xray-core}
 out_dir=${XRAY_BENCH_OUT_DIR:-target/benchmarks/xhttp-memory}

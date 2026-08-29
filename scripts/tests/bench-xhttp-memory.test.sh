@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+repo_root="$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 recipe="$repo_root/scripts/bench-xhttp-memory.sh"
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
@@ -35,17 +35,38 @@ printf '#!/usr/bin/env bash\nexit 0\n' >"$rust_bin"
 printf '#!/usr/bin/env bash\nexit 0\n' >"$core_bin"
 chmod +x "$rust_bin" "$core_bin"
 
+# Exercise every recipe invocation under hostile inherited overrides. The
+# runner below must pin every consumed input so the fixtures remain hermetic.
+export CDPATH=.
+export CARGO_TARGET_DIR="$tmp_dir/hostile cargo target"
+export XRAY_CORE_DIR="$tmp_dir/hostile core"
+export XRAY_BENCH_OUT_DIR="$tmp_dir/hostile output"
+export XRAY_BENCH_RUNS=99
+export XRAY_BENCH_HELD_MS=98
+export XRAY_BENCH_SETTLE_MS=97
+export XRAY_BENCH_SAMPLE_MS=96
+export XRAY_BENCH_MAX_POST_BYTES=95
+export XRAY_BENCH_PAYLOAD_SIZE=94
+export XRAY_BENCH_TRAFFIC_ITERATIONS=93
+export XRAY_BENCH_XRAY_RUST_BIN="$tmp_dir/hostile rust binary"
+export XRAY_BENCH_XRAY_CORE_BIN="$tmp_dir/hostile core binary"
+
 run_recipe() {
   local log_file="$1"
   shift
   env \
     PATH="$fake_bin:$PATH" \
     CARGO_LOG="$log_file" \
+    CARGO_TARGET_DIR= \
     XRAY_CORE_DIR="$core_dir" \
+    XRAY_BENCH_OUT_DIR="$tmp_dir/pinned output" \
+    XRAY_BENCH_RUNS=5 \
+    XRAY_BENCH_HELD_MS=30000 \
     XRAY_BENCH_SAMPLE_MS=101 \
     XRAY_BENCH_SETTLE_MS=1 \
-    XRAY_BENCH_RUNS=5 \
     XRAY_BENCH_MAX_POST_BYTES=500000 \
+    XRAY_BENCH_PAYLOAD_SIZE=16384 \
+    XRAY_BENCH_TRAFFIC_ITERATIONS=1000 \
     XRAY_BENCH_XRAY_RUST_BIN= \
     XRAY_BENCH_XRAY_CORE_BIN= \
     "$@" \
@@ -117,24 +138,75 @@ if commands != expected:
     )
 PY
 
+relative_log="$tmp_dir/relative-cdpath.jsonl"
+(
+  cd "$repo_root"
+  recipe=scripts/bench-xhttp-memory.sh
+  run_recipe "$relative_log" \
+    XRAY_BENCH_OUT_DIR="$explicit_out" \
+    XRAY_BENCH_XRAY_RUST_BIN="$rust_bin" \
+    XRAY_BENCH_XRAY_CORE_BIN="$core_bin"
+)
+cmp -s "$explicit_log" "$relative_log" \
+  || fail "relative invocation with exported CDPATH produced different commands"
+
 default_log="$tmp_dir/default.jsonl"
 default_out="$tmp_dir/default output"
 run_recipe "$default_log" XRAY_BENCH_OUT_DIR="$default_out"
-python3 - "$default_log" <<'PY'
+python3 - "$default_log" "$default_out" "$core_dir" <<'PY'
 import json
 import pathlib
 import sys
 
-commands = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
-if len(commands) != 7:
-    raise SystemExit(f"default mode expected one build plus six runs, got {len(commands)}")
-if commands[0] != ["build", "--locked", "--release", "-p", "xray-cli", "--bin", "xray-rust"]:
-    raise SystemExit(f"unexpected default build: {commands[0]}")
-for index, command in enumerate(commands[1:], start=1):
-    if command[:3] != ["run", "--locked", "--release"]:
-        raise SystemExit(f"run {index} is not release+locked: {command}")
-    if "--xray-core-bin" in command or "--no-auto-build" in command:
-        raise SystemExit(f"default run {index} unexpectedly disabled auto-build: {command}")
+log_path, output, core_dir = sys.argv[1:]
+commands = [json.loads(line) for line in pathlib.Path(log_path).read_text().splitlines()]
+common = [
+    "run", "--locked", "--release", "-p", "xray-bench", "--", "compare",
+    "--workload", "stream-transport",
+    "--xhttp-profile", "legacy-extra-h1-packet-up",
+    "--sample-interval-ms", "101",
+    "--settle-ms", "1",
+    "--runs", "5",
+    "--out-dir", output,
+    "--xray-rust-bin", "target/release/xray-rust",
+    "--xray-core-dir", core_dir,
+]
+expected = [["build", "--locked", "--release", "-p", "xray-cli", "--bin", "xray-rust"]]
+for flows in (1, 16, 32):
+    expected.append(common + [
+        "--xhttp-max-post-bytes", "500000",
+        "--traffic", "held-open",
+        "--connections", str(flows),
+        "--iterations", "1",
+        "--payload-size", "16384",
+        "--duration-ms", "30000",
+        "--run-timeout-ms", "150001",
+    ])
+expected.append(common + [
+    "--xhttp-max-post-bytes", "16384",
+    "--traffic", "held-open",
+    "--connections", "16",
+    "--iterations", "1",
+    "--payload-size", "16384",
+    "--duration-ms", "30000",
+    "--run-timeout-ms", "150001",
+])
+for flows in (1, 16):
+    expected.append(common + [
+        "--xhttp-max-post-bytes", "500000",
+        "--traffic", "packet-up",
+        "--connections", str(flows),
+        "--iterations", "1000",
+        "--payload-size", "16384",
+        "--duration-ms", "0",
+        "--run-timeout-ms", "300000",
+    ])
+if commands != expected:
+    raise SystemExit(
+        "default recipe commands differ\n"
+        f"expected={json.dumps(expected, indent=2)}\n"
+        f"actual={json.dumps(commands, indent=2)}"
+    )
 PY
 
 expect_failure() {
