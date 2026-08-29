@@ -18,16 +18,6 @@ job_body() {
   ' "$WORKFLOW"
 }
 
-step_body() {
-  local body="$1"
-  local step="$2"
-  awk -v header="      - name: $step" '
-    $0 == header { capture = 1 }
-    capture && $0 != header && /^      - / { exit }
-    capture { print }
-  ' <<<"$body"
-}
-
 normalize_yaml_body() {
   local body="$1"
   awk '
@@ -358,14 +348,15 @@ expected_main_smoke="$(cat <<'EXPECTED'
 EXPECTED
 )"
 
-expected_rust_fields="$(cat <<'EXPECTED'
+expected_rust="$(cat <<'EXPECTED'
+  rust:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-EXPECTED
-)"
-
-expected_repository_scripts_step="$(cat <<'EXPECTED'
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - name: Check repository scripts
         run: |
           for script in scripts/*.sh scripts/tests/*.sh; do
@@ -378,6 +369,22 @@ expected_repository_scripts_step="$(cat <<'EXPECTED'
           bash scripts/tests/check-xray-main-smoke.test.sh
           bash scripts/tests/check-scheduled-interop-workflow.test.sh
           bash scripts/tests/check-public-fixtures.test.sh
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.96.0 --profile minimal --component clippy,rustfmt
+      - name: Select pinned Rust toolchain
+        run: rustup default 1.96.0
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Lint
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings -W clippy::perf -W clippy::suspicious
+      - name: Test
+        run: cargo test --workspace --exclude xray-rust-fuzz --all-targets --locked
+      - name: Build public API documentation
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --no-deps --locked
+      - name: Test mobile build-script guards
+        run: bash scripts/tests/check-mobile-toolchains.test.sh
 EXPECTED
 )"
 
@@ -436,12 +443,6 @@ assert_equal 'prerelease publication fields' "$(job_field_lines "$normalized_pub
 assert_equal 'prerelease publication dependencies' "$(needs_body "$normalized_publish_job")" "$expected_publish_needs"
 
 normalized_rust_job="$(normalize_yaml_body "$rust_job")"
-assert_equal 'Rust CI job fields' "$(job_field_lines "$normalized_rust_job")" "$expected_rust_fields"
-repository_scripts_step="$(step_body "$normalized_rust_job" 'Check repository scripts')"
-[[ -n "$repository_scripts_step" ]] || die 'Rust CI repository-script check step is missing'
-assert_equal 'Rust CI repository-script check step' "$repository_scripts_step" "$expected_repository_scripts_step"
-for script_test in check-scheduled-pinned-interop.test.sh check-xray-main-smoke.test.sh check-scheduled-interop-workflow.test.sh; do
-  require_exact "$normalized_rust_job" "          bash scripts/tests/$script_test" "Rust CI job does not run $script_test"
-done
+assert_equal 'Rust CI job' "$normalized_rust_job" "$expected_rust"
 
 echo 'scheduled interoperability workflow matches its reviewed canonical policy'
