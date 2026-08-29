@@ -14,6 +14,11 @@ prerelease-quality and do not establish a supported release series.
   cancellation.
 - Added weekly broad pinned Xray-core interoperability and resource gates plus
   a warning-only upstream-main compatibility smoke check.
+- Marked stable sing-box v1.13.19 unavailable for the RC4 REALITY/Vision
+  comparisons: Xray-core v26.7.28's default `minClientVer` 26.3.27 rejects
+  sing-box's REALITY `ClientVer` 1.8.1. The two REALITY workloads therefore
+  publish xray-rust/Xray-core results only; the fixture and timeout remain
+  unchanged.
 - RC4 publication remains gated on fresh, validated benchmark evidence against
   Xray-core v26.7.28 and the stable sing-box release resolved at measurement
   time.

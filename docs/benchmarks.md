@@ -1,6 +1,6 @@
 # Benchmarks
 
-The benchmark harness compares `xray-rust`, the cloned Xray-core, and sing-box under the same local workloads. It is a process-level harness: each engine runs as a child process with an equivalent generated config, the workload sends validated traffic through SOCKS5, and the harness samples OS RSS/CPU counters while the process is alive.
+The benchmark harness compares `xray-rust`, the cloned Xray-core, and sing-box under the same compatible local workloads. It is a process-level harness: each engine runs as a child process with an equivalent generated config, the workload sends validated traffic through SOCKS5, and the harness samples OS RSS/CPU counters while the process is alive.
 
 The active Xray-core oracle is `v26.7.28` at
 `5ca6f4b7d4dc20a881d4330e498892697627ec0c`. Auto-builds require that exact
@@ -500,7 +500,20 @@ cargo run -p xray-bench -- run --engine sing-box --sing-box-bin "$SING_BOX_BIN" 
 cargo run -p xray-bench -- run --engine sing-box --sing-box-bin "$SING_BOX_BIN" --workload many-idle-flows --connections 100 --duration-ms 1000 --no-auto-build
 ```
 
-The first sing-box slice supports the SOCKS/process-level workloads: `idle`, `tcp-freedom`, `tcp-bulk-throughput`, `many-idle-flows`, `reconnect-burst`, `mixed-long-lived`, `udp-freedom`, `reality-vision-xudp`, `reality-vision-bulk-throughput`, `grpc-bulk-throughput`, and the WS/HTTPUpgrade/gRPC cases of `stream-transport`. The Reality/Vision and stream-transport workloads start an Xray-core VLESS server fixture and sample only the client engine process. XHTTP is compared only between xray-rust and Xray-core because sing-box does not implement that transport. The sing-box binary must include `with_utls`; the harness uses `with_gvisor,with_utls,badlinkname,tfogo_checklinkname0` when auto-building sing-box. TUN and fake VLESS/XUDP sing-box workloads are intentionally not part of this slice because they need a different topology than the rootless fd-backed harness.
+The sing-box slice supports the SOCKS/process-level workloads: `idle`, `tcp-freedom`, `tcp-bulk-throughput`, `many-idle-flows`, `reconnect-burst`, `mixed-long-lived`, `udp-freedom`, `grpc-bulk-throughput`, and the WS/HTTPUpgrade/gRPC cases of `stream-transport`. Stream-transport workloads start an Xray-core VLESS server fixture and sample only the client engine process. XHTTP is compared only between xray-rust and Xray-core because sing-box does not implement that transport. The sing-box binary must include `with_utls`; the harness uses `with_gvisor,with_utls,badlinkname,tfogo_checklinkname0` when auto-building sing-box. TUN and fake VLESS/XUDP sing-box workloads are intentionally not part of this slice because they need a different topology than the rootless fd-backed harness.
+
+Stable sing-box v1.13.19 is also unavailable for `reality-vision-xudp` and
+`reality-vision-bulk-throughput` against the pinned Xray-core v26.7.28 fixture.
+The server's default `minClientVer` 26.3.27 rejects sing-box's REALITY
+`ClientVer` 1.8.1. The harness rejects a direct sing-box run and skips that leg
+of `compare` with this compatibility reason. Do not weaken the fixture or
+increase the timeout: both workloads are intentionally two-engine
+xray-rust/Xray-core comparisons.
+
+The RC4 publication contract therefore contains exactly 141 benchmark series
+and 705 embedded five-run results. Its base matrix contributes 27 summaries
+and 135 results; historical v26.5.9 charts and summaries remain unchanged and
+must be read as historical evidence for their recorded comparator versions.
 
 Each run has a watchdog timeout. The default is 30 seconds; override it with
 `--run-timeout-ms <milliseconds>` when exercising intentionally slow workloads.
@@ -509,7 +522,8 @@ terminated instead of leaving a stuck benchmark behind.
 
 ## Compare Engines
 
-From the main repository checkout, these process-level workloads compare all three engines:
+From the main repository checkout, these compatible process-level workloads
+compare all three engines:
 
 ```sh
 export SING_BOX_BIN=/path/to/sing-box
@@ -519,9 +533,14 @@ cargo run -p xray-bench -- compare --workload many-idle-flows --xray-core-dir Xr
 cargo run -p xray-bench -- compare --workload reconnect-burst --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 16 --iterations 25
 cargo run -p xray-bench -- compare --workload mixed-long-lived --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 8 --iterations 20 --duration-ms 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload udp-freedom --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 1 --iterations 1000 --payload-size 512
-cargo run -p xray-bench -- compare --workload reality-vision-xudp --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 1 --iterations 1000 --payload-size 512
-cargo run --release -p xray-bench -- compare --workload reality-vision-bulk-throughput --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 1 --iterations 256 --payload-size 4194304 --run-timeout-ms 120000
 cargo run --release -p xray-bench -- compare --workload grpc-bulk-throughput --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 1 --iterations 256 --payload-size 4194304 --run-timeout-ms 120000
+```
+
+Run the two REALITY workloads without any sing-box argument:
+
+```sh
+cargo run -p xray-bench -- compare --workload reality-vision-xudp --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
+cargo run --release -p xray-bench -- compare --workload reality-vision-bulk-throughput --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 256 --payload-size 4194304 --run-timeout-ms 120000
 ```
 
 The TUN and fake VLESS/XUDP workloads remain comparable between `xray-rust` and Xray-core in this slice, except for `tun-fake-dns`, `tun-fake-dns-tcp`, and `tun-dns-proxy`. These workloads deliberately exercise the xray-rust local DNS extensions (`dns.fakeIp` and anchor proxying through `dns.servers`, respectively); run them with `run --engine xray-rust`, since `compare` rejects them until equivalent cross-engine configurations are defined. The compare command skips sing-box for the other TUN workloads because sing-box's CLI TUN path uses a real platform TUN topology, while the older VLESS/XUDP fake-server workloads use Xray JSON configs instead of sing-box outbound schema. `routed-tcp-freedom` is also xray-rust vs Xray-core only: sing-box ≥1.8 does not read Xray-format `.dat` geodata, and semantically equivalent `.srs` rule-sets cannot be guaranteed.
@@ -556,7 +575,7 @@ cargo run -p xray-bench -- compare --workload many-idle-flows --xray-core-dir ..
 cargo run -p xray-bench -- compare --workload reconnect-burst --xray-core-dir ../../Xray-core --runs 5 --connections 16 --iterations 25
 cargo run -p xray-bench -- compare --workload mixed-long-lived --xray-core-dir ../../Xray-core --runs 5 --connections 8 --iterations 20 --duration-ms 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload udp-freedom --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
-cargo run -p xray-bench -- compare --workload reality-vision-xudp --xray-core-dir ../../Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 1 --iterations 1000 --payload-size 512
+cargo run -p xray-bench -- compare --workload reality-vision-xudp --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload tun-udp-freedom --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload tun-tcp-freedom --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 100 --payload-size 512
 cargo run -p xray-bench -- compare --workload tun-tcp-stale-flows --xray-core-dir ../../Xray-core --runs 5 --connections 500 --iterations 1 --duration-ms 5000 --payload-size 512
@@ -588,14 +607,16 @@ cargo run --release -p xray-bench -- compare --workload tcp-bulk-throughput \
   --runs 5 --connections 1 --iterations 2048 --payload-size 4194304 --run-timeout-ms 300000
 ```
 
-Run the same release-binary compare for each charted workload — `idle`,
+Run a release-binary compare for each charted workload — `idle`,
 `many-idle-flows` ×100 and ×1000 (the ×1000 run needs a raised `ulimit -n`;
 see the workload note), `tcp-freedom`, `udp-freedom`, `reality-vision-xudp`,
 `tcp-bulk-throughput`, `reality-vision-bulk-throughput`, and
-`routed-tcp-freedom` (nine series in total; the last needs `--geodata-dir`
+`routed-tcp-freedom` (nine chart-input workload groups; the last needs `--geodata-dir`
 after fetching geodata with
 `scripts/fetch-geodata.sh --output-dir /private/tmp/bench-geodata`, see
-above). Each compare invocation writes one `target/benchmarks/<run-id>`
+above). Use the two-engine REALITY commands shown above rather than carrying
+the sing-box flags from the ordinary example into those workloads. Each
+compare invocation writes one `target/benchmarks/<run-id>`
 group; the `--group` flags passed to `chart` must jointly cover all nine
 series.
 
@@ -617,8 +638,12 @@ cargo run --release -p xray-bench -- chart \
 It reads `<group>/<engine>/<workload>/summary.json` for `idle`,
 `many-idle-flows` (once per charted connection count), `tcp-freedom`,
 `udp-freedom`, `reality-vision-xudp`, `tcp-bulk-throughput`,
-`reality-vision-bulk-throughput` across all three engines, and
-`routed-tcp-freedom` across xray-rust and Xray-core only, and writes
+`reality-vision-bulk-throughput`, and `routed-tcp-freedom`. The two REALITY
+workloads and routed geodata use xray-rust and Xray-core only; the other slots
+use all three engines. The mixed latency chart retains the three-engine legend
+for its direct TCP/UDP groups and explicitly notes why the REALITY group has no
+sing-box bar. The REALITY throughput chart uses only two engine labels and the
+same compatibility note. The renderer writes
 light/dark SVG pairs (`memory-rss`, `latency`, `throughput`,
 `reality-throughput`, `cpu-per-gib`, `geo-setup-latency`, `geo-memory`) to
 `docs/benchmarks/media/` (override with
@@ -756,7 +781,7 @@ The first scoreboard is intentionally portable and comparable across Go and Rust
 - peak resident set size from `ps` RSS.
 - CPU time delta from `ps` cumulative process time.
 - CPU milliseconds per GiB transferred when a workload moves payload bytes.
-- throughput megabits per second when a workload moves payload bytes, computed from validated bytes over the transfer window only — first byte to last validated byte, excluding connection setup. This rate is exact only at `--connections 1`; with concurrent connections it is the aggregate over the union of the per-connection transfer windows, not a per-connection average. The whole-run window stays available as `duration_ms` and the transfer window as `transfer_duration_ms`, so their difference exposes the setup cost instead of hiding it. This matters for tunneled workloads such as `reality-vision-bulk-throughput`: against the shared local REALITY fixture, Xray-core spends roughly 640 ms before the first byte, against roughly 90-120 ms for sing-box and xray-rust — folded into the denominator, that gap would be amortized into the rate and understate the engine that dials slowly but streams quickly. Most of that 640 ms is not the handshake. It is the same VLESS header hold described under `grpc-bulk-throughput` below: these bulk workloads are server-first, so Xray-core's outbound waits out its full 500 ms `ReadMultiBufferTimeout` looking for a first client payload to pack with the header (`Xray-core/proxy/vless/outbound/outbound.go:334-336`; `xtls-rprx-vision` only changes the else branch at :343-349, not the timeout). Probed against the fixture, first byte lands 595-649 ms after the SOCKS reply when the client only reads, and 72-73 ms when it writes one byte first — so roughly 500 ms is the header hold and only the remainder is Xray-core answering SOCKS eagerly and dialing REALITY lazily. Workloads that do not measure a transfer window fall back to the whole-run window. `cpu_millis_per_gib` is still measured over the whole-run window rather than the transfer window; at gigabyte scale this is immaterial (setup burns a few milliseconds of CPU) but is worth noting since the two metrics sit adjacent and now cover different windows. The byte count aggregates both directions, matching the CPU-per-GiB convention, so echo-style workloads read roughly twice their one-way goodput; quote streaming throughput from `tcp-bulk-throughput`, where traffic is one-directional.
+- throughput megabits per second when a workload moves payload bytes, computed from validated bytes over the transfer window only — first byte to last validated byte, excluding connection setup. This rate is exact only at `--connections 1`; with concurrent connections it is the aggregate over the union of the per-connection transfer windows, not a per-connection average. The whole-run window stays available as `duration_ms` and the transfer window as `transfer_duration_ms`, so their difference exposes the setup cost instead of hiding it. In the historical v26.5.9 `reality-vision-bulk-throughput` evidence, Xray-core spent roughly 640 ms before the first byte, against roughly 90-120 ms for the then-tested sing-box and xray-rust — folded into the denominator, that gap would have amortized setup into the rate. Those sing-box measurements are historical only and are not a v26.7.28 performance claim; RC4 omits the incompatible stable sing-box REALITY leg described above. Most of that historical 640 ms was not the handshake. It was the same VLESS header hold described under `grpc-bulk-throughput` below: these bulk workloads are server-first, so Xray-core's outbound waits out its full 500 ms `ReadMultiBufferTimeout` looking for a first client payload to pack with the header (`Xray-core/proxy/vless/outbound/outbound.go:334-336`; `xtls-rprx-vision` only changes the else branch at :343-349, not the timeout). In that historical probe, first byte landed 595-649 ms after the SOCKS reply when the client only read, and 72-73 ms when it wrote one byte first — roughly 500 ms was the header hold and only the remainder was Xray-core answering SOCKS eagerly and dialing REALITY lazily. Workloads that do not measure a transfer window fall back to the whole-run window. `cpu_millis_per_gib` is still measured over the whole-run window rather than the transfer window; at gigabyte scale this is immaterial (setup burns a few milliseconds of CPU) but is worth noting since the two metrics sit adjacent and now cover different windows. The byte count aggregates both directions, matching the CPU-per-GiB convention, so echo-style workloads read roughly twice their one-way goodput; quote streaming throughput from `tcp-bulk-throughput`, where traffic is one-directional.
 - thread count when the local `ps` implementation exposes it.
 - validated bytes sent and received by the workload.
 - latency microsecond percentiles for traffic workloads. For `many-idle-flows`, latency is SOCKS TCP flow setup time.

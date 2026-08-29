@@ -494,9 +494,13 @@ def expected_matrix() -> dict[tuple[str, str], dict[str, Any]]:
         ),
     }
     for scenario, values in base.items():
+        supports_sing_box = scenario not in {
+            "reality-vision-xudp",
+            "reality-vision-bulk-throughput",
+        }
         add(
             scenario,
-            all_engines,
+            all_engines if supports_sing_box else ("xray-rust", "xray-core"),
             workload=values[0],
             connections=values[1],
             iterations=values[2],
@@ -504,6 +508,7 @@ def expected_matrix() -> dict[tuple[str, str], dict[str, Any]]:
             duration_ms=values[4],
             run_timeout_ms=values[5],
             output_name=values[6],
+            supports_sing_box=supports_sing_box,
         )
 
     add(
@@ -636,7 +641,7 @@ def expected_matrix() -> dict[tuple[str, str], dict[str, Any]]:
             supports_sing_box=False,
         )
 
-    if len(matrix) != 143:
+    if len(matrix) != 141:
         raise AssertionError(f"benchmark publication matrix has {len(matrix)} entries")
     return matrix
 

@@ -224,6 +224,8 @@ pub(crate) const DARK: Theme = Theme {
 const SERIES_LABELS_ALL: [&str; 3] = ["xray-rust", "Xray-core", "sing-box"];
 const SERIES_LABELS_GEO: [&str; 2] = ["xray-rust", "Xray-core"];
 const GEO_ENGINES: [EngineKind; 2] = [EngineKind::XrayRust, EngineKind::XrayCore];
+const REALITY_SING_BOX_NOTE: &str =
+    "sing-box v1.13.19 ClientVer 1.8.1 is rejected by Xray-core v26.7.28 minClientVer 26.3.27";
 const FONT_FAMILY: &str = "system-ui, -apple-system, 'Segoe UI', sans-serif";
 
 const CANVAS_WIDTH: f64 = 760.0;
@@ -494,6 +496,15 @@ const ENGINES: [EngineKind; 3] = [
     EngineKind::XrayCore,
     EngineKind::SingBox,
 ];
+
+fn chart_engines(workload: WorkloadKind) -> &'static [EngineKind] {
+    match workload {
+        WorkloadKind::RoutedTcpFreedom
+        | WorkloadKind::RealityVisionXudp
+        | WorkloadKind::RealityVisionBulkThroughput => &GEO_ENGINES,
+        _ => &ENGINES,
+    }
+}
 
 const CHART_SLOTS: [(WorkloadKind, Option<u64>); 9] = [
     (WorkloadKind::Idle, None),
@@ -1171,7 +1182,16 @@ fn latency_group(
     workload: WorkloadKind,
     connections: Option<u64>,
 ) -> Result<BarGroup, BenchError> {
-    let bars = ENGINES
+    latency_group_for_engines(loaded, workload, connections, &ENGINES)
+}
+
+fn latency_group_for_engines(
+    loaded: &LoadedSummaries,
+    workload: WorkloadKind,
+    connections: Option<u64>,
+    engines: &[EngineKind],
+) -> Result<BarGroup, BenchError> {
+    let bars = engines
         .iter()
         .enumerate()
         .map(|(series, engine)| {
@@ -1213,10 +1233,11 @@ fn optional_metric_group(
     workload: WorkloadKind,
     connections: Option<u64>,
     metric_name: &str,
+    engines: &[EngineKind],
     select: impl Fn(&BenchSummary) -> Option<&crate::MetricSummary>,
     divisor: f64,
 ) -> Result<BarGroup, BenchError> {
-    let bars = ENGINES
+    let bars = engines
         .iter()
         .enumerate()
         .map(|(series, engine)| {
@@ -1291,12 +1312,7 @@ pub fn run_chart(options: &ChartOptions) -> Result<(), BenchError> {
     } else {
         let mut entries = Vec::new();
         for (workload, connections) in CHART_SLOTS {
-            let engines: &[EngineKind] = if workload == WorkloadKind::RoutedTcpFreedom {
-                &GEO_ENGINES
-            } else {
-                &ENGINES
-            };
-            for engine in engines {
+            for engine in chart_engines(workload) {
                 let summary = load_summary(&options.groups, *engine, workload, connections)?;
                 entries.push(((*engine, workload, connections), summary));
             }
@@ -1406,9 +1422,14 @@ pub fn run_chart(options: &ChartOptions) -> Result<(), BenchError> {
                 groups: vec![
                     latency_group(loaded, WorkloadKind::TcpFreedom, None)?,
                     latency_group(loaded, WorkloadKind::UdpFreedom, None)?,
-                    latency_group(loaded, WorkloadKind::RealityVisionXudp, None)?,
+                    latency_group_for_engines(
+                        loaded,
+                        WorkloadKind::RealityVisionXudp,
+                        None,
+                        &GEO_ENGINES,
+                    )?,
                 ],
-                note: None,
+                note: Some(REALITY_SING_BOX_NOTE.to_owned()),
             },
         ),
         (
@@ -1421,6 +1442,7 @@ pub fn run_chart(options: &ChartOptions) -> Result<(), BenchError> {
                     WorkloadKind::TcpBulkThroughput,
                     None,
                     "throughput",
+                    &ENGINES,
                     |summary| summary.throughput_mbps.as_ref(),
                     1000.0,
                 )?],
@@ -1433,16 +1455,17 @@ pub fn run_chart(options: &ChartOptions) -> Result<(), BenchError> {
                 title:
                     "Bulk TCP throughput through VLESS + REALITY + Vision — Gbps (higher is better)"
                         .to_owned(),
-                series_labels: &SERIES_LABELS_ALL,
+                series_labels: &SERIES_LABELS_GEO,
                 groups: vec![optional_metric_group(
                     loaded,
                     WorkloadKind::RealityVisionBulkThroughput,
                     None,
                     "throughput",
+                    &GEO_ENGINES,
                     |summary| summary.throughput_mbps.as_ref(),
                     1000.0,
                 )?],
-                note: None,
+                note: Some(REALITY_SING_BOX_NOTE.to_owned()),
             },
         ),
         (
@@ -1455,6 +1478,7 @@ pub fn run_chart(options: &ChartOptions) -> Result<(), BenchError> {
                     WorkloadKind::TcpBulkThroughput,
                     None,
                     "cpu-per-GiB",
+                    &ENGINES,
                     |summary| summary.cpu_millis_per_gib.as_ref(),
                     1.0,
                 )?],
@@ -1794,6 +1818,19 @@ mod tests {
     }
 
     #[test]
+    fn reality_chart_slots_require_two_engines_while_common_slots_require_three() {
+        for workload in [
+            WorkloadKind::RealityVisionXudp,
+            WorkloadKind::RealityVisionBulkThroughput,
+        ] {
+            assert_eq!(chart_engines(workload), &GEO_ENGINES);
+        }
+        for workload in [WorkloadKind::Idle, WorkloadKind::TcpBulkThroughput] {
+            assert_eq!(chart_engines(workload), &ENGINES);
+        }
+    }
+
+    #[test]
     fn load_summary_rejects_missing_and_non_ok() {
         let root = temp_root("load-bad");
         write_group(&root, "xray-rust", "idle", "mixed");
@@ -1906,7 +1943,10 @@ mod tests {
                 Some(conn) => root.join(format!("g-{workload}-{conn}")),
                 None => root.join(format!("g-{workload}")),
             };
-            let engines: Vec<&str> = if workload == "routed-tcp-freedom" {
+            let engines: Vec<&str> = if matches!(
+                workload,
+                "routed-tcp-freedom" | "reality-vision-xudp" | "reality-vision-bulk-throughput"
+            ) {
                 vec!["xray-rust", "xray-core"]
             } else {
                 vec!["xray-rust", "xray-core", "sing-box"]
@@ -2564,9 +2604,15 @@ mod tests {
             latency.find("reality-vision-xudp").unwrap(),
         );
         assert!(tcp < udp && udp < xudp, "latency groups out of order");
+        assert!(latency.contains(">sing-box<"));
+        assert!(latency.contains("sing-box v1.13.19 ClientVer 1.8.1"));
+        assert!(latency.contains("Xray-core v26.7.28 minClientVer 26.3.27"));
         let reality = fs::read_to_string(out_dir.join("reality-throughput-light.svg")).unwrap();
         assert!(reality.contains(">4.30<"));
         assert!(reality.contains("reality-vision-bulk-throughput"));
+        assert!(!reality.contains(">sing-box<"));
+        assert!(reality.contains("sing-box v1.13.19 ClientVer 1.8.1"));
+        assert!(reality.contains("Xray-core v26.7.28 minClientVer 26.3.27"));
 
         let cpu = fs::read_to_string(out_dir.join("cpu-per-gib-light.svg")).unwrap();
         assert!(cpu.contains("tcp-bulk-throughput"));

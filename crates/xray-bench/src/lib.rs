@@ -101,6 +101,7 @@ const REALITY_FIXTURE_WARMUP: Duration = Duration::from_secs(8);
 /// network-dependent, so the fixed default may need adjusting per environment.
 const REALITY_FIXTURE_WARMUP_MS_ENV: &str = "XRAY_BENCH_REALITY_WARMUP_MS";
 const SING_BOX_BUILD_TAGS: &str = "with_gvisor,with_utls,badlinkname,tfogo_checklinkname0";
+const SING_BOX_REALITY_INCOMPATIBILITY: &str = "Xray-core v26.7.28 default minClientVer 26.3.27 rejects stable sing-box v1.13.19 ClientVer 1.8.1";
 const XRAY_CORE_ORACLE_VERSION: &str = "26.7.28";
 const XRAY_CORE_ORACLE_REVISION: &str = "5ca6f4b7d4dc20a881d4330e498892697627ec0c";
 const TCP_PROTOCOL: u8 = 6;
@@ -306,12 +307,27 @@ impl WorkloadKind {
                 | Self::ReconnectBurst
                 | Self::MixedLongLived
                 | Self::UdpFreedom
-                | Self::RealityVisionXudp
-                | Self::RealityVisionBulkThroughput
                 | Self::GrpcBulkThroughput
                 | Self::StreamTransport
         )
     }
+
+    fn sing_box_compatibility_error(&self) -> Option<BenchError> {
+        matches!(
+            self,
+            Self::RealityVisionXudp | Self::RealityVisionBulkThroughput
+        )
+        .then(|| BenchError::InvalidArguments(SING_BOX_REALITY_INCOMPATIBILITY.to_owned()))
+    }
+}
+
+fn validate_engine_workload(engine: EngineKind, workload: WorkloadKind) -> Result<(), BenchError> {
+    if engine == EngineKind::SingBox {
+        if let Some(error) = workload.sing_box_compatibility_error() {
+            return Err(error);
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -1551,11 +1567,12 @@ where
 
     match command.as_str() {
         "run" => {
-            if options.engine.is_none() {
+            let Some(engine) = options.engine else {
                 return Err(BenchError::InvalidArguments(
                     "run requires --engine xray-rust|xray-core|sing-box".to_owned(),
                 ));
-            }
+            };
+            validate_engine_workload(engine, options.workload)?;
             Ok(CliArgs::Run(options))
         }
         "compare" => {
@@ -6262,13 +6279,9 @@ fn sing_box_config(
 ) -> Result<String, BenchError> {
     match workload {
         WorkloadKind::RealityVisionXudp | WorkloadKind::RealityVisionBulkThroughput => {
-            let vless_addr = fixture.vless_addr.ok_or_else(|| {
-                BenchError::InvalidArguments(format!(
-                    "{} workload requires a VLESS Reality server fixture",
-                    workload.as_str()
-                ))
-            })?;
-            Ok(sing_box_reality_vision_xudp_config(port, vless_addr))
+            Err(workload
+                .sing_box_compatibility_error()
+                .expect("REALITY workloads have a pinned sing-box compatibility error"))
         }
         WorkloadKind::GrpcBulkThroughput => {
             let vless_addr = grpc_fixture_vless_addr(workload, fixture)?;
@@ -6458,49 +6471,6 @@ fn sing_box_vless_grpc_config(port: u16, vless_addr: SocketAddr) -> String {
       "transport": {{
         "type": "grpc",
         "service_name": "{GRPC_BENCH_SERVICE_NAME}"
-      }}
-    }}
-  ],
-  "route": {{ "final": "proxy" }}
-}}"#,
-        vless_addr.ip(),
-        vless_addr.port()
-    )
-}
-
-fn sing_box_reality_vision_xudp_config(port: u16, vless_addr: SocketAddr) -> String {
-    format!(
-        r#"{{
-  "log": {{ "level": "warn" }},
-  "inbounds": [
-    {{
-      "type": "socks",
-      "tag": "socks-in",
-      "listen": "127.0.0.1",
-      "listen_port": {port}
-    }}
-  ],
-  "outbounds": [
-    {{
-      "type": "vless",
-      "tag": "proxy",
-      "server": "{}",
-      "server_port": {},
-      "uuid": "{TEST_VLESS_UUID_STRING}",
-      "flow": "xtls-rprx-vision",
-      "packet_encoding": "xudp",
-      "tls": {{
-        "enabled": true,
-        "server_name": "{REALITY_SERVER_NAME}",
-        "utls": {{
-          "enabled": true,
-          "fingerprint": "chrome"
-        }},
-        "reality": {{
-          "enabled": true,
-          "public_key": "{REALITY_PUBLIC_KEY}",
-          "short_id": "{REALITY_SHORT_ID_HEX}"
-        }}
       }}
     }}
   ],
@@ -10040,6 +10010,11 @@ pub async fn run_compare(options: BenchOptions) -> Result<(), BenchError> {
     if benchmark_supports_sing_box(&options)? {
         let sing_box_summary = run_engine_series(EngineKind::SingBox, &options, &run_id).await?;
         print_summary(&sing_box_summary);
+    } else if let Some(error) = options.workload.sing_box_compatibility_error() {
+        eprintln!(
+            "sing-box {} unavailable: {error}",
+            options.workload.as_str()
+        );
     } else {
         eprintln!(
             "sing-box {} skipped: workload uses topology outside the process-level sing-box slice",
@@ -10113,6 +10088,7 @@ async fn run_engine_once(
     run_dir: &Path,
     binary_dir: &Path,
 ) -> Result<BenchResult, BenchError> {
+    validate_engine_workload(kind, options.workload)?;
     if options.workload == WorkloadKind::StreamTransport {
         let scenario = options.stream_scenario()?;
         if !scenario.supports_engine(kind) {
@@ -13068,7 +13044,7 @@ mod tests {
     }
 
     #[test]
-    fn sing_box_reality_vision_xudp_config_uses_vless_reality_schema() {
+    fn sing_box_reality_workloads_report_pinned_version_incompatibility() {
         let fixture = WorkloadFixture {
             vless_addr: Some(SocketAddr::from((Ipv4Addr::new(127, 0, 0, 1), 19094))),
             vless_tls_cert_sha256: None,
@@ -13077,33 +13053,30 @@ mod tests {
             tasks: Vec::new(),
             processes: Vec::new(),
         };
-        let config = sing_box_config(18087, WorkloadKind::RealityVisionXudp, &fixture).unwrap();
-        let value = serde_json::from_str::<serde_json::Value>(&config).unwrap();
+        for workload in [
+            WorkloadKind::RealityVisionXudp,
+            WorkloadKind::RealityVisionBulkThroughput,
+        ] {
+            assert!(!workload.supports_sing_box_process_engine());
+            assert!(!benchmark_supports_sing_box(&BenchOptions {
+                workload,
+                ..BenchOptions::default()
+            })
+            .unwrap());
 
-        assert_eq!(value["inbounds"][0]["type"], "socks");
-        assert_eq!(value["outbounds"][0]["type"], "vless");
-        assert_eq!(value["outbounds"][0]["server"], "127.0.0.1");
-        assert_eq!(value["outbounds"][0]["server_port"], 19094);
-        assert_eq!(value["outbounds"][0]["flow"], "xtls-rprx-vision");
-        assert_eq!(value["outbounds"][0]["packet_encoding"], "xudp");
-        assert_eq!(value["outbounds"][0]["tls"]["enabled"], true);
-        assert_eq!(
-            value["outbounds"][0]["tls"]["server_name"],
-            REALITY_SERVER_NAME
-        );
-        assert_eq!(value["outbounds"][0]["tls"]["utls"]["enabled"], true);
-        assert_eq!(
-            value["outbounds"][0]["tls"]["reality"]["public_key"],
-            REALITY_PUBLIC_KEY
-        );
-        assert_eq!(
-            value["outbounds"][0]["tls"]["reality"]["short_id"],
-            REALITY_SHORT_ID_HEX
-        );
+            let error = sing_box_config(18087, workload, &fixture).unwrap_err();
+            let message = error.to_string();
+            assert!(message.contains("Xray-core v26.7.28"), "{message}");
+            assert!(message.contains("minClientVer 26.3.27"), "{message}");
+            assert!(
+                message.contains("sing-box v1.13.19 ClientVer 1.8.1"),
+                "{message}"
+            );
+        }
     }
 
     #[test]
-    fn reality_vision_bulk_reuses_reality_vision_configs() {
+    fn reality_vision_bulk_reuses_reality_vision_config_for_xray_engines() {
         let fixture = WorkloadFixture {
             vless_addr: Some(SocketAddr::from((Ipv4Addr::new(127, 0, 0, 1), 19094))),
             vless_tls_cert_sha256: None,
@@ -13112,19 +13085,16 @@ mod tests {
             tasks: Vec::new(),
             processes: Vec::new(),
         };
-        let sb =
-            sing_box_config(18091, WorkloadKind::RealityVisionBulkThroughput, &fixture).unwrap();
-        let value = serde_json::from_str::<serde_json::Value>(&sb).unwrap();
-        assert_eq!(value["outbounds"][0]["type"], "vless");
-
-        let xr = engine_config(
-            EngineKind::XrayRust,
-            18092,
-            WorkloadKind::RealityVisionBulkThroughput,
-            &fixture,
-        )
-        .unwrap();
-        assert!(xr.contains("xtls-rprx-vision"));
+        for engine in [EngineKind::XrayRust, EngineKind::XrayCore] {
+            let config = engine_config(
+                engine,
+                18092,
+                WorkloadKind::RealityVisionBulkThroughput,
+                &fixture,
+            )
+            .unwrap();
+            assert!(config.contains("xtls-rprx-vision"));
+        }
     }
 
     #[test]
@@ -13252,15 +13222,28 @@ mod tests {
     }
 
     #[test]
-    fn sing_box_auto_build_tags_include_utls_for_reality() {
+    fn sing_box_auto_build_tags_retain_utls_for_supported_stream_workloads() {
         assert!(sing_box_build_tags()
             .split(',')
             .any(|tag| tag == "with_utls"));
     }
 
     #[test]
-    fn reality_vision_xudp_supports_sing_box_compare() {
-        assert!(WorkloadKind::RealityVisionXudp.supports_sing_box_process_engine());
+    fn direct_sing_box_reality_runs_are_rejected_before_execution() {
+        for workload in ["reality-vision-xudp", "reality-vision-bulk-throughput"] {
+            let error = parse_cli_args([
+                "xray-bench",
+                "run",
+                "--engine",
+                "sing-box",
+                "--workload",
+                workload,
+            ])
+            .unwrap_err();
+            let message = error.to_string();
+            assert!(message.contains("Xray-core v26.7.28"), "{message}");
+            assert!(message.contains("sing-box v1.13.19"), "{message}");
+        }
     }
 
     #[test]

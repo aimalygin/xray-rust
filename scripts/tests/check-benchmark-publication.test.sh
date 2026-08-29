@@ -89,9 +89,15 @@ base = {
     ),
 }
 for scenario, (workload, connections, iterations, payload_size) in base.items():
+    selected_engines = (
+        ("xray-rust", "xray-core")
+        if scenario
+        in {"reality-vision-xudp", "reality-vision-bulk-throughput"}
+        else engines
+    )
     add(
         scenario,
-        engines,
+        selected_engines,
         workload=workload,
         connections=connections,
         iterations=iterations,
@@ -247,7 +253,12 @@ def scenario_config(scenario, fields):
             "settle_ms": 0,
             "explicit_max_post_bytes": None,
             "output_name": output_name,
-            "supports_sing_box": scenario != "routed-tcp-freedom",
+            "supports_sing_box": scenario
+            not in {
+                "routed-tcp-freedom",
+                "reality-vision-xudp",
+                "reality-vision-bulk-throughput",
+            },
             "geodata": scenario == "routed-tcp-freedom",
         }
     if scenario.startswith("stream-"):
@@ -909,6 +920,20 @@ elif mutation == "invocation_binary_path_mismatch":
     )
 elif mutation == "invocation_missing_binary":
     mutate_invocation(target, lambda args: remove_flag(args, "--xray-rust-bin"))
+elif mutation == "reality_invocation_with_sing_box":
+    reality_entry = next(
+        entry
+        for entry in manifest["series"]
+        if entry["scenario"] == "reality-vision-xudp"
+        and entry["engine"] == "xray-rust"
+    )
+    reality_summary = summaries[reality_entry["summary"]]
+
+    def add_sing_box_binary(args):
+        index = args.index("--xray-core-dir")
+        args[index:index] = ["--sing-box-bin", str(engine_paths["sing-box"])]
+
+    mutate_invocation(reality_summary, add_sing_box_binary)
 elif mutation == "invocation_source_path_mismatch":
     mutate_invocation(
         target,
@@ -961,6 +986,16 @@ elif mutation == "missing_combination":
 elif mutation == "extra_combination":
     extra = copy.deepcopy(manifest["series"][0])
     extra["scenario"] = "unreviewed-scenario"
+    manifest["series"].append(extra)
+elif mutation == "extra_sing_reality_series":
+    xray_entry = next(
+        entry
+        for entry in manifest["series"]
+        if entry["scenario"] == "reality-vision-xudp"
+        and entry["engine"] == "xray-rust"
+    )
+    extra = copy.deepcopy(xray_entry)
+    extra["engine"] = "sing-box"
     manifest["series"].append(extra)
 elif mutation == "unknown_top_level":
     manifest["unexpected"] = True
@@ -1150,7 +1185,7 @@ expect_rejected() {
 valid_fixture="$tmp_dir/valid/2026-08-29-v26.7.28"
 make_fixture "$valid_fixture"
 valid_output="$(python3 "$validator" "$valid_fixture")"
-grep -Fq "validated benchmark publication: 143 series" <<<"$valid_output" \
+grep -Fq "validated benchmark publication: 141 series" <<<"$valid_output" \
   || fail "valid publication did not report the complete matrix: $valid_output"
 
 for valid_variant in \
@@ -1162,7 +1197,7 @@ for valid_variant in \
   variant_fixture="$tmp_dir/$valid_variant/2026-08-29-v26.7.28"
   make_fixture "$variant_fixture" "$valid_variant"
   variant_output="$(python3 "$validator" "$variant_fixture")"
-  grep -Fq "validated benchmark publication: 143 series" <<<"$variant_output" \
+  grep -Fq "validated benchmark publication: 141 series" <<<"$variant_output" \
     || fail "$valid_variant did not validate: $variant_output"
 done
 
@@ -1253,6 +1288,7 @@ expect_rejected invocation_effective_config_mismatch "invocation --duration-ms d
 expect_rejected invocation_runs_mismatch "invocation --runs does not match scenario"
 expect_rejected invocation_binary_path_mismatch "invocation binary path does not match provenance"
 expect_rejected invocation_missing_binary "invocation_args flags do not match canonical harness order"
+expect_rejected reality_invocation_with_sing_box "invocation_args flags do not match canonical harness order"
 expect_rejected invocation_source_path_mismatch "xray-core source path must end in Xray-core"
 expect_rejected invocation_output_mismatch "invocation output path does not match scenario"
 expect_rejected result_status "embedded result 1 status must be ok"
@@ -1275,6 +1311,7 @@ expect_rejected impossible_setup_metric "embedded result 1.setup_us availability
 expect_rejected missing_required_setup_metric "embedded result 5.setup_us availability does not match workload"
 expect_rejected missing_combination "missing required combination"
 expect_rejected extra_combination "unexpected series combination"
+expect_rejected extra_sing_reality_series "unexpected series combination: reality-vision-xudp/sing-box"
 expect_rejected unknown_top_level "manifest has unexpected field"
 
 echo "benchmark publication policy tests passed"
