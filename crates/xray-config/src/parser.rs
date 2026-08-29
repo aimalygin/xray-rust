@@ -8,6 +8,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::{
+    compile_ip_matchers,
     geodata::{default_geodata_dirs, GeodataLoader},
     CoreConfig, Diagnostic, DnsConfig, DnsFakeIpConfig, DnsHostMapping, DnsHostTarget, DnsIpFilter,
     DnsNameServerConfig, DnsOutboundRule, DnsOutboundRuleAction, DnsOutboundSettings,
@@ -1507,7 +1508,7 @@ impl Parser<'_> {
             networks,
             port_ranges,
             domain_matchers,
-            ip_matchers,
+            ip_matchers: compile_ip_matchers(&ip_matchers),
             outbound_tag: outbound_tag.to_owned(),
         })
     }

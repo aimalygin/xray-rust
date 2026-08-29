@@ -2410,6 +2410,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "uuid",
+ "xray-routing",
  "xray-utls",
 ]
 

@@ -7,6 +7,23 @@ prerelease-quality and do not establish a supported release series.
 
 ## Unreleased
 
+- Routing `ip` matchers are compiled once at load time into a shared sorted
+  range index (`xray-routing::IpRangeSet`/`IpMatcherSet`), also used by DNS
+  `expectedIPs`/`unexpectedIPs` filters. Outbound selection cost no longer
+  grows with the size of a `geoip:` list (route-probe, 16 rules x 5000 CIDRs:
+  ~152 us -> ~0.5 us per selection).
+- Routing IP matching now follows Xray-core `HeuristicIPMatcher` exactly, as
+  the DNS filters already did: IPv4-mapped IPv6 targets (`::ffff:a.b.c.d`) are
+  matched as IPv4; an inverse matcher only applies to targets of an address
+  family it has networks for, so `!10.0.0.0/8` no longer matches an IPv6
+  target; a doubly negated matcher is treated as positive (not expressible in
+  configuration, so parsed configs are unaffected).
+- CIDR prefixes longer than the address family width are rejected with an
+  error at every construction site instead of being clamped.
+- `xray-bench route-probe --cidrs-per-rule N` generates N distinct
+  non-merging CIDRs per rule to expose per-matcher routing cost; `0` is
+  rejected.
+
 ## 0.4.1-rc.3 - 2026-08-28
 
 - Made the blocking RC interoperability gate self-contained on a clean runner:

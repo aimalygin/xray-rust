@@ -1,6 +1,13 @@
 use std::net::IpAddr;
 use thiserror::Error;
 
+pub mod ip_range_set;
+
+pub use ip_range_set::{
+    canonicalize_ip, Cidr, InvalidCidrPrefix, IpMatcherSet, IpMatcherSetBuilder, IpRangeSet,
+    IpRangeSetBuilder, PRIVATE_NETWORKS,
+};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Network {
     Tcp,
