@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import os
 import pathlib
 import re
 import stat
@@ -89,6 +90,7 @@ SUMMARY_OPTIONAL_FIELDS = {
 
 RESULT_REQUIRED_FIELDS = {
     "run_id",
+    "run_index",
     "provenance",
     "engine",
     "workload",
@@ -228,14 +230,34 @@ def validate_json_limits(value: Any, label: str) -> None:
 
 
 def read_json(path: pathlib.Path, label: str) -> Any:
+    descriptor: int | None = None
     try:
-        if path.stat().st_size > MAX_JSON_BYTES:
+        flags = os.O_RDONLY
+        flags |= getattr(os, "O_CLOEXEC", 0)
+        flags |= getattr(os, "O_NOFOLLOW", 0)
+        flags |= getattr(os, "O_NONBLOCK", 0)
+        descriptor = os.open(path, flags)
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            fail(f"cannot read {label}: path is not a regular file")
+        if metadata.st_size > MAX_JSON_BYTES:
             fail(f"{label} exceeds validation size limit")
-        text = path.read_text(encoding="utf-8")
+        with os.fdopen(descriptor, "rb") as handle:
+            descriptor = None
+            data = handle.read(MAX_JSON_BYTES + 1)
+        if len(data) > MAX_JSON_BYTES:
+            fail(f"{label} exceeds validation size limit")
+        text = data.decode("utf-8")
     except ValidationError:
         raise
     except (OSError, UnicodeError, ValueError) as error:
         fail(f"cannot read {label}: {error}")
+    finally:
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
     try:
         value = json.loads(
             text,
@@ -825,10 +847,8 @@ def validate_provenance(
     }[engine]
     engine_source = provenance.get("engine_source_git")
     if engine_source is None:
-        if engine != "xray-core":
-            fail(f"{engine} engine source provenance is required")
-    else:
-        validate_git_state(engine_source, "engine_source_git", engine_revision)
+        fail(f"{engine} engine source provenance is required")
+    validate_git_state(engine_source, "engine_source_git", engine_revision)
 
     for field, message in (
         ("harness_binary_path", "harness binary path is required"),
@@ -1107,10 +1127,30 @@ def validate_setup_aggregate(
     }
 
 
+def expected_memory_phases(expected: dict[str, Any]) -> tuple[set[str], set[str]]:
+    allowed = {"startup", "workload", "complete"}
+    required = {"startup", "complete"}
+    workload = expected["workload"]
+    if workload in {"idle", "many-idle-flows"}:
+        required.add("workload")
+    if workload == "stream-transport":
+        allowed.add("opening")
+        if expected["stream_traffic"] == "held-open":
+            allowed.add("held-open")
+            required.add("held-open")
+        else:
+            allowed.add("traffic")
+        if expected["settle_ms"] > 0:
+            allowed.add("settle")
+            required.add("settle")
+    return allowed, required
+
+
 def validate_memory_phases(
     value: Any,
     result_samples: int,
     result_peak_rss_kib: int,
+    expected: dict[str, Any],
     label: str,
 ) -> None:
     if not isinstance(value, list) or not value:
@@ -1119,13 +1159,16 @@ def validate_memory_phases(
     sample_total = 0
     peak_rss_kib_values: list[int] = []
     phase_names: list[str] = []
+    allowed_phases, required_phases = expected_memory_phases(expected)
     for index, phase_value in enumerate(value, start=1):
         phase_label = f"{label}[{index}]"
         phase = require_object(phase_value, phase_label)
         require_exact_fields(phase, MEMORY_PHASE_FIELDS, phase_label)
         phase_name = phase["phase"]
-        if phase_name not in MEMORY_PHASE_ORDER:
+        if not isinstance(phase_name, str) or phase_name not in MEMORY_PHASE_ORDER:
             fail(f"{phase_label}.phase is not a serialized BenchmarkPhase")
+        if phase_name not in allowed_phases:
+            fail(f"{phase_label}.phase is not available for this workload")
         phase_order = MEMORY_PHASE_ORDER[phase_name]
         if phase_order <= prior_order:
             fail(f"{label} phases must be unique and in harness order")
@@ -1144,6 +1187,10 @@ def validate_memory_phases(
             fail(f"{phase_label}.peak_rss_kib exceeds result peak_rss_kib")
     if phase_names[0] != "startup" or phase_names[-1] != "complete":
         fail(f"{label} must begin at startup and end at complete")
+    missing_phases = required_phases - set(phase_names)
+    if missing_phases:
+        missing_phase = min(missing_phases, key=MEMORY_PHASE_ORDER.__getitem__)
+        fail(f"{label} is missing required {missing_phase} phase")
     if sample_total != result_samples:
         fail(f"{label} sample counts do not match result samples")
     if max(peak_rss_kib_values) != result_peak_rss_kib:
@@ -1176,6 +1223,45 @@ def expected_workload_bytes(expected: dict[str, Any]) -> tuple[int, int]:
     }:
         return 0, total
     return total, total
+
+
+def expected_metric_availability(expected: dict[str, Any]) -> dict[str, bool]:
+    workload = expected["workload"]
+    transfer = workload in {
+        "tcp-bulk-throughput",
+        "reality-vision-bulk-throughput",
+    } or (
+        workload == "stream-transport"
+        and expected["stream_traffic"] != "held-open"
+    )
+    latency = workload in {
+        "tcp-freedom",
+        "udp-freedom",
+        "many-idle-flows",
+        "reconnect-burst",
+        "reality-vision-xudp",
+        "routed-tcp-freedom",
+    }
+    setup = workload == "stream-transport" or workload in {
+        "many-idle-flows",
+        "reconnect-burst",
+        "routed-tcp-freedom",
+    }
+    return {"transfer_duration_ms": transfer, "latency_us": latency, "setup_us": setup}
+
+
+def minimum_result_duration_ms(expected: dict[str, Any]) -> int:
+    workload = expected["workload"]
+    if workload in {"idle", "many-idle-flows"}:
+        return expected["duration_ms_option"]
+    if workload == "stream-transport":
+        # The harness samples both the initial cleanup window and a second
+        # stable post-cleanup window, each lasting the configured settle time.
+        minimum = expected["settle_ms"] * 2
+        if expected["stream_traffic"] == "held-open":
+            minimum += expected["duration_ms_option"]
+        return minimum
+    return 0
 
 
 def summarize_metric(values: Iterable[int]) -> dict[str, int]:
@@ -1227,9 +1313,14 @@ def validate_result_metrics(
 ) -> dict[str, Any]:
     label = f"embedded result {index}"
     duration_ms = require_u128(result["duration_ms"], f"{label}.duration_ms")
+    if duration_ms < minimum_result_duration_ms(expected):
+        fail(f"{label}.duration_ms is shorter than the canonical workload minimum")
     transfer_duration_ms = require_optional_u128(
         result["transfer_duration_ms"], f"{label}.transfer_duration_ms"
     )
+    availability = expected_metric_availability(expected)
+    if (transfer_duration_ms is not None) != availability["transfer_duration_ms"]:
+        fail(f"{label}.transfer_duration_ms availability does not match workload")
     if transfer_duration_ms is not None and transfer_duration_ms > duration_ms:
         fail(f"{label}.transfer_duration_ms exceeds duration_ms")
     bytes_sent = require_u64(result["bytes_sent"], f"{label}.bytes_sent")
@@ -1278,12 +1369,17 @@ def validate_result_metrics(
         if result["setup_us"] is None
         else validate_setup(result["setup_us"], f"{label}.setup_us")
     )
+    if (latency is not None) != availability["latency_us"]:
+        fail(f"{label}.latency_us availability does not match workload")
+    if (setup is not None) != availability["setup_us"]:
+        fail(f"{label}.setup_us availability does not match workload")
     if "memory_phases" not in result:
         fail(f"{label}.memory_phases is required for a successful harness run")
     validate_memory_phases(
         result["memory_phases"],
         samples,
         peak_rss_kib,
+        expected,
         f"{label}.memory_phases",
     )
 
@@ -1441,6 +1537,14 @@ def validate_summary(
         if summary["setup_us"] is None
         else validate_setup_aggregate(summary["setup_us"], "summary.setup_us")
     )
+    availability = expected_metric_availability(expected)
+    for field, value in (
+        ("transfer_duration_ms", summary_metrics["transfer_duration_ms"]),
+        ("latency_us", summary_latency),
+        ("setup_us", summary_setup),
+    ):
+        if (value is not None) != availability[field]:
+            fail(f"summary.{field} availability does not match workload")
 
     result_metrics: list[dict[str, Any]] = []
     for index, result_value in enumerate(results_value, start=1):
@@ -1453,6 +1557,11 @@ def validate_summary(
             RESULT_OPTIONAL_FIELDS,
             f"embedded result {index}",
         )
+        run_index = require_positive_u64(
+            result["run_index"], f"embedded result {index}.run_index"
+        )
+        if run_index != index:
+            fail("embedded result run_index values must be exactly 1..5")
         if result["status"] != "ok":
             fail(f"embedded result {index} status must be ok")
         if (
@@ -1504,7 +1613,7 @@ def validate_summary(
         "summary.setup_us",
     )
 
-    return {**provenance, **invocation_paths}
+    return {"run_id": run_id, **provenance, **invocation_paths}
 
 
 def require_consistent(
@@ -1553,6 +1662,8 @@ def validate_publication(publication_root: pathlib.Path) -> int:
         fail(f"missing required combination: {scenario}/{engine}")
 
     consistency: dict[str, str] = {}
+    scenario_run_ids: dict[str, str] = {}
+    run_id_scenarios: dict[str, str] = {}
     for scenario, engine in sorted(actual):
         summary_path = actual[(scenario, engine)]
         summary = read_json(summary_path, f"summary {summary_path.relative_to(root)}")
@@ -1563,6 +1674,12 @@ def validate_publication(publication_root: pathlib.Path) -> int:
             expected[(scenario, engine)],
             manifest,
         )
+        prior_run_id = scenario_run_ids.setdefault(scenario, info["run_id"])
+        if prior_run_id != info["run_id"]:
+            fail("scenario run_id is inconsistent across engines")
+        prior_scenario = run_id_scenarios.setdefault(info["run_id"], scenario)
+        if prior_scenario != scenario:
+            fail("run_id must be distinct across benchmark scenarios")
         require_consistent(
             consistency,
             "working_directory",

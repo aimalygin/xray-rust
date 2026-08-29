@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+repo_root="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 validator="$repo_root/scripts/check-benchmark-publication.py"
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
@@ -450,13 +450,20 @@ for index, (scenario, engine, fields) in enumerate(series):
         "working_directory": str(workspace),
         "invocation_args": canonical_invocation(scenario, engine, fields, config),
     }
-    if engine != "xray-core":
-        provenance["engine_source_git"] = {
-            "revision": engine_revisions[engine],
-            "dirty": False,
-        }
+    provenance["engine_source_git"] = {
+        "revision": engine_revisions[engine],
+        "dirty": False,
+    }
     bytes_sent, bytes_received = workload_bytes(fields)
     total_bytes = bytes_sent + bytes_received
+    run_id = f"publication-run-{scenario}"
+    has_transfer = fields["workload"] in {
+        "tcp-bulk-throughput",
+        "reality-vision-bulk-throughput",
+    } or (
+        fields["workload"] == "stream-transport"
+        and fields.get("stream_traffic") != "held-open"
+    )
     has_latency = fields["workload"] in {
         "tcp-freedom",
         "udp-freedom",
@@ -465,15 +472,22 @@ for index, (scenario, engine, fields) in enumerate(series):
         "reality-vision-xudp",
         "routed-tcp-freedom",
     }
-    has_setup = fields["workload"] == "stream-transport" or has_latency
+    has_setup = fields["workload"] == "stream-transport" or fields["workload"] in {
+        "many-idle-flows",
+        "reconnect-burst",
+        "routed-tcp-freedom",
+    }
     results = []
     for run in range(5):
-        duration_ms = config["duration_ms"] + config["settle_ms"] + 100 + run
-        transfer_duration_ms = (
-            50 + run
-            if total_bytes > 0 and fields.get("stream_traffic") != "held-open"
-            else None
-        )
+        duration_floor_ms = 0
+        if fields["workload"] in {"idle", "many-idle-flows"}:
+            duration_floor_ms = config["duration_ms"]
+        elif fields["workload"] == "stream-transport":
+            duration_floor_ms = config["settle_ms"] * 2
+            if fields.get("stream_traffic") == "held-open":
+                duration_floor_ms += config["duration_ms"]
+        duration_ms = duration_floor_ms + 100 + run
+        transfer_duration_ms = 50 + run if has_transfer else None
         cpu_millis = 20 + run
         cpu_per_gib = (
             ceil_div(cpu_millis * 1024 * 1024 * 1024, total_bytes)
@@ -491,8 +505,35 @@ for index, (scenario, engine, fields) in enumerate(series):
             if fields.get("stream_traffic") == "packet-up"
             else None
         )
+        phase_names = ["startup"]
+        if fields["workload"] == "stream-transport":
+            phase_names += [
+                "held-open"
+                if fields.get("stream_traffic") == "held-open"
+                else "traffic"
+            ]
+            if config["settle_ms"] > 0:
+                phase_names.append("settle")
+        else:
+            phase_names.append("workload")
+        phase_names.append("complete")
+        memory_phases = []
+        for phase_index, phase_name in enumerate(phase_names):
+            is_peak_phase = phase_index == len(phase_names) - 2
+            phase_rss = 1_000 + run if is_peak_phase else 900 + run + phase_index
+            memory_phases.append(
+                {
+                    "phase": phase_name,
+                    "samples": 8 + run if is_peak_phase else 1,
+                    "first_rss_kib": phase_rss,
+                    "median_rss_kib": phase_rss,
+                    "peak_rss_kib": phase_rss,
+                    "last_rss_kib": phase_rss,
+                }
+            )
         result = {
-            "run_id": "publication-run",
+            "run_id": run_id,
+            "run_index": run + 1,
             "provenance": copy.deepcopy(provenance),
             "engine": engine,
             "workload": fields["workload"],
@@ -509,35 +550,10 @@ for index, (scenario, engine, fields) in enumerate(series):
             "iterations": fields["iterations"],
             "payload_size": fields["payload_size"],
             "settle_ms": config["settle_ms"],
-            "memory_phases": [
-                {
-                    "phase": "startup",
-                    "samples": 1,
-                    "first_rss_kib": 900 + run,
-                    "median_rss_kib": 900 + run,
-                    "peak_rss_kib": 900 + run,
-                    "last_rss_kib": 900 + run,
-                },
-                {
-                    "phase": "workload",
-                    "samples": 8 + run,
-                    "first_rss_kib": 920 + run,
-                    "median_rss_kib": 950 + run,
-                    "peak_rss_kib": 1_000 + run,
-                    "last_rss_kib": 930 + run,
-                },
-                {
-                    "phase": "complete",
-                    "samples": 1,
-                    "first_rss_kib": 925 + run,
-                    "median_rss_kib": 925 + run,
-                    "peak_rss_kib": 925 + run,
-                    "last_rss_kib": 925 + run,
-                }
-            ],
+            "memory_phases": memory_phases,
             "latency_us": latency(10 + run) if has_latency else None,
             "setup_us": setup(20 + run) if has_setup else None,
-            "samples": 10 + run,
+            "samples": sum(phase["samples"] for phase in memory_phases),
         }
         for field in (
             "stream_transport",
@@ -555,7 +571,7 @@ for index, (scenario, engine, fields) in enumerate(series):
             )
         results.append(result)
     summary = {
-        "run_id": "publication-run",
+        "run_id": run_id,
         "provenance": provenance,
         "engine": engine,
         "workload": fields["workload"],
@@ -795,11 +811,54 @@ elif mutation == "uplink_rate_above_bound":
 elif mutation == "missing_memory_phases":
     target["results"][0].pop("memory_phases")
 elif mutation == "memory_peak_mismatch":
-    target["results"][0]["memory_phases"][1]["peak_rss_kib"] -= 1
+    peak_phase = target["results"][0]["memory_phases"][1]
+    for field in (
+        "first_rss_kib",
+        "median_rss_kib",
+        "peak_rss_kib",
+        "last_rss_kib",
+    ):
+        peak_phase[field] -= 1
 elif mutation == "memory_phase_boundaries":
     phases = target["results"][0]["memory_phases"]
     phases[1]["samples"] += phases[0]["samples"]
     phases.pop(0)
+elif mutation == "memory_phase_unhashable":
+    target["results"][0]["memory_phases"][0]["phase"] = []
+elif mutation == "memory_phase_impossible_for_workload":
+    target["results"][0]["memory_phases"][1]["phase"] = "traffic"
+elif mutation == "memory_phase_missing_settle":
+    packet_entry = next(
+        entry
+        for entry in manifest["series"]
+        if entry["scenario"] == "xhttp-memory-packet-up-1-max-500000"
+        and entry["engine"] == "xray-rust"
+    )
+    packet_result = summaries[packet_entry["summary"]]["results"][0]
+    traffic_phase = packet_result["memory_phases"][-3]
+    settle_phase = packet_result["memory_phases"].pop(-2)
+    traffic_phase["samples"] += settle_phase["samples"]
+    traffic_phase["peak_rss_kib"] = max(
+        traffic_phase["peak_rss_kib"], settle_phase["peak_rss_kib"]
+    )
+elif mutation == "idle_duration_below_floor":
+    target["results"][0]["duration_ms"] = 1
+elif mutation == "held_open_duration_below_floor":
+    held_entry = next(
+        entry
+        for entry in manifest["series"]
+        if entry["scenario"] == "xhttp-memory-held-open-1-max-500000"
+        and entry["engine"] == "xray-rust"
+    )
+    summaries[held_entry["summary"]]["results"][0]["duration_ms"] = 39_999
+elif mutation == "settled_stream_duration_below_floor":
+    packet_entry = next(
+        entry
+        for entry in manifest["series"]
+        if entry["scenario"] == "xhttp-memory-packet-up-1-max-500000"
+        and entry["engine"] == "xray-rust"
+    )
+    summaries[packet_entry["summary"]]["results"][0]["duration_ms"] = 9_999
 elif mutation == "parameter_collapse_1_1_0":
     stream_entry = next(
         entry
@@ -862,6 +921,33 @@ elif mutation == "result_provenance":
     target["results"][0]["provenance"]["workspace_git"]["dirty"] = True
 elif mutation == "result_run_id":
     target["results"][0]["run_id"] = "different-run"
+elif mutation == "missing_run_index":
+    target["results"][0].pop("run_index")
+elif mutation == "run_index_boolean":
+    target["results"][0]["run_index"] = True
+elif mutation == "copied_result_repeat":
+    target["results"][1] = copy.deepcopy(target["results"][0])
+elif mutation == "run_index_gap":
+    target["results"][-1]["run_index"] = 6
+elif mutation == "scenario_engine_run_id_mismatch":
+    mismatched_entry = next(
+        entry
+        for entry in manifest["series"]
+        if entry["scenario"] == "idle" and entry["engine"] == "xray-core"
+    )
+    mismatched = summaries[mismatched_entry["summary"]]
+    mismatched["run_id"] = "publication-run-idle-other-engine"
+    for result in mismatched["results"]:
+        result["run_id"] = mismatched["run_id"]
+elif mutation == "scenario_run_id_reuse":
+    reused_run_id = "publication-run-idle"
+    for entry in manifest["series"]:
+        if entry["scenario"] != "many-idle-flows-100":
+            continue
+        reused = summaries[entry["summary"]]
+        reused["run_id"] = reused_run_id
+        for result in reused["results"]:
+            result["run_id"] = reused_run_id
 elif mutation == "missing_combination":
     manifest["series"].pop()
 elif mutation == "extra_combination":
@@ -902,6 +988,14 @@ elif mutation == "xray_core_without_source":
         summary["provenance"].pop("engine_source_git", None)
         for result in summary["results"]:
             result["provenance"].pop("engine_source_git", None)
+elif mutation == "xray_core_source_revision_mismatch":
+    xray_entry = next(
+        entry for entry in manifest["series"] if entry["engine"] == "xray-core"
+    )
+    xray_summary = summaries[xray_entry["summary"]]
+    xray_summary["provenance"]["engine_source_git"]["revision"] = "1" * 40
+    for result in xray_summary["results"]:
+        result["provenance"]["engine_source_git"]["revision"] = "1" * 40
 elif mutation == "missing_sing_source":
     sing_entry = next(
         entry for entry in manifest["series"] if entry["engine"] == "sing-box"
@@ -916,11 +1010,11 @@ elif mutation == "deep_provenance":
         result["provenance"]["unexpected_deep_data"] = copy.deepcopy(nested)
 elif mutation == "omitted_optional_serde_fields":
     # The base fixture already omits every Serde skip field whose effective
-    # value is None: stream/DNS/blackhole axes and Xray-core source provenance.
+    # value is None: stream/DNS/blackhole axes. Source provenance is required
+    # for every publication engine, including an explicitly supplied Xray binary.
     assert all(
-        "engine_source_git" not in summary["provenance"]
-        for path, summary in summaries.items()
-        if "-xray-core.json" in path
+        "engine_source_git" in summary["provenance"]
+        for summary in summaries.values()
     )
 elif mutation == "mixed_optional_metric_runs":
     data_entry = next(
@@ -932,6 +1026,32 @@ elif mutation == "mixed_optional_metric_runs":
     mixed_summary["results"][-1]["latency_us"] = None
     mixed_summary["latency_us"] = latency_aggregate(
         [result["latency_us"] for result in mixed_summary["results"]]
+    )
+elif mutation == "impossible_transfer_metric":
+    data_entry = next(
+        entry
+        for entry in manifest["series"]
+        if entry["scenario"] == "tcp-freedom" and entry["engine"] == "xray-rust"
+    )
+    summaries[data_entry["summary"]]["results"][0]["transfer_duration_ms"] = 1
+elif mutation == "impossible_setup_metric":
+    data_entry = next(
+        entry
+        for entry in manifest["series"]
+        if entry["scenario"] == "tcp-freedom" and entry["engine"] == "xray-rust"
+    )
+    summaries[data_entry["summary"]]["results"][0]["setup_us"] = setup(99)
+elif mutation == "missing_required_setup_metric":
+    stream_entry = next(
+        entry
+        for entry in manifest["series"]
+        if entry["scenario"] == "stream-ws-upload-1"
+        and entry["engine"] == "xray-rust"
+    )
+    stream_summary = summaries[stream_entry["summary"]]
+    stream_summary["results"][-1]["setup_us"] = None
+    stream_summary["setup_us"] = setup_aggregate(
+        [result["setup_us"] for result in stream_summary["results"]]
     )
 elif mutation not in {
     "valid",
@@ -1020,9 +1140,7 @@ grep -Fq "validated benchmark publication: 143 series" <<<"$valid_output" \
 for valid_variant in \
   additive_series_metadata \
   alternate_sing_pin \
-  xray_core_without_source \
-  omitted_optional_serde_fields \
-  mixed_optional_metric_runs; do
+  omitted_optional_serde_fields; do
   variant_fixture="$tmp_dir/$valid_variant/2026-08-29-v26.7.28"
   make_fixture "$variant_fixture" "$valid_variant"
   variant_output="$(python3 "$validator" "$variant_fixture")"
@@ -1101,6 +1219,12 @@ expect_rejected uplink_rate_above_bound "embedded result 1.uplink_write_ops_per_
 expect_rejected missing_memory_phases "embedded result 1.memory_phases is required for a successful harness run"
 expect_rejected memory_peak_mismatch "embedded result 1.memory_phases peak does not match result peak_rss_kib"
 expect_rejected memory_phase_boundaries "embedded result 1.memory_phases must begin at startup and end at complete"
+expect_rejected memory_phase_unhashable "embedded result 1.memory_phases[1].phase is not a serialized BenchmarkPhase"
+expect_rejected memory_phase_impossible_for_workload "embedded result 1.memory_phases[2].phase is not available for this workload"
+expect_rejected memory_phase_missing_settle "embedded result 1.memory_phases is missing required settle phase"
+expect_rejected idle_duration_below_floor "embedded result 1.duration_ms is shorter than the canonical workload minimum"
+expect_rejected held_open_duration_below_floor "embedded result 1.duration_ms is shorter than the canonical workload minimum"
+expect_rejected settled_stream_duration_below_floor "embedded result 1.duration_ms is shorter than the canonical workload minimum"
 expect_rejected parameter_collapse_1_1_0 "summary connections does not match scenario"
 expect_rejected invocation_wrong_subcommand "invocation_args must begin with run"
 expect_rejected invocation_unrelated_flag "invocation_args contains unexpected flag"
@@ -1118,7 +1242,19 @@ expect_rejected result_parameters "embedded result 1 parameters do not match sum
 expect_rejected result_connections_boolean "embedded result 1 parameters do not match summary"
 expect_rejected result_provenance "embedded result 1 provenance does not match summary"
 expect_rejected result_run_id "embedded result 1 parameters do not match summary"
+expect_rejected missing_run_index "embedded result 1.run_index is required"
+expect_rejected run_index_boolean "embedded result 1.run_index must be a positive integer"
+expect_rejected copied_result_repeat "embedded result run_index values must be exactly 1..5"
+expect_rejected run_index_gap "embedded result run_index values must be exactly 1..5"
+expect_rejected scenario_engine_run_id_mismatch "scenario run_id is inconsistent across engines"
+expect_rejected scenario_run_id_reuse "run_id must be distinct across benchmark scenarios"
+expect_rejected xray_core_without_source "xray-core engine source provenance is required"
+expect_rejected xray_core_source_revision_mismatch "engine_source_git.revision does not match publication provenance"
 expect_rejected missing_sing_source "sing-box engine source provenance is required"
+expect_rejected mixed_optional_metric_runs "embedded result 5.latency_us availability does not match workload"
+expect_rejected impossible_transfer_metric "embedded result 1.transfer_duration_ms availability does not match workload"
+expect_rejected impossible_setup_metric "embedded result 1.setup_us availability does not match workload"
+expect_rejected missing_required_setup_metric "embedded result 5.setup_us availability does not match workload"
 expect_rejected missing_combination "missing required combination"
 expect_rejected extra_combination "unexpected series combination"
 expect_rejected unknown_top_level "manifest has unexpected field"

@@ -661,8 +661,9 @@ pub struct BenchProvenance {
     pub harness_profile: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace_git: Option<WorkspaceGitProvenance>,
-    /// Git state of the checkout used to build the measured engine when that
-    /// checkout can be identified independently from the harness workspace.
+    /// Git state of the engine checkout selected or explicitly supplied for
+    /// the run. The binary hash identifies the measured executable separately;
+    /// this checkout metadata is not proof that the binary was built from it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub engine_source_git: Option<WorkspaceGitProvenance>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -685,6 +686,12 @@ pub struct BenchProvenance {
 pub struct BenchResult {
     #[serde(default)]
     pub run_id: String,
+    /// One-based identity of this repeat within its benchmark series.
+    ///
+    /// The default preserves deserialization of pre-identity result JSON. New
+    /// harness output always records a positive, contiguous index.
+    #[serde(default)]
+    pub run_index: usize,
     #[serde(default)]
     pub provenance: BenchProvenance,
     pub engine: String,
@@ -1996,6 +2003,15 @@ pub fn summarize_results(results: &[BenchResult]) -> Result<BenchSummary, BenchE
             "cannot summarize an empty benchmark result set".to_owned(),
         ));
     };
+    if results
+        .iter()
+        .enumerate()
+        .any(|(index, result)| result.run_index != index + 1)
+    {
+        return Err(BenchError::InvalidArguments(
+            "cannot summarize non-contiguous benchmark repeat indexes".to_owned(),
+        ));
+    }
     if results
         .iter()
         .any(|result| result.engine != first.engine || result.workload != first.workload)
@@ -9827,8 +9843,13 @@ fn engine_source_git_provenance(
 ) -> Option<WorkspaceGitProvenance> {
     let source_dir = match kind {
         EngineKind::XrayRust => workspace_root().ok(),
-        EngineKind::XrayCore if options.xray_core_bin.is_some() => None,
-        EngineKind::XrayCore => options.xray_core_dir.clone().or_else(default_xray_core_dir),
+        EngineKind::XrayCore => options.xray_core_dir.clone().or_else(|| {
+            options
+                .xray_core_bin
+                .is_none()
+                .then(default_xray_core_dir)
+                .flatten()
+        }),
         EngineKind::SingBox => options.sing_box_dir.clone().or_else(|| {
             options
                 .sing_box_bin
@@ -10054,7 +10075,8 @@ pub async fn run_engine_series(
         } else {
             numbered_run_directory(&base_dir, run_index)
         };
-        results.push(run_engine_once(kind, options, run_id, &run_dir, &binary_dir).await?);
+        results
+            .push(run_engine_once(kind, options, run_id, run_index, &run_dir, &binary_dir).await?);
     }
     let summary = summarize_results(&results)?;
     write_summary_json(&base_dir.join("summary.json"), &summary)?;
@@ -10068,7 +10090,7 @@ pub async fn run_single_engine(
 ) -> Result<BenchResult, BenchError> {
     let run_dir = run_directory(&options.out_dir, run_id, kind, options.workload);
     let binary_dir = run_dir.join("bin");
-    run_engine_once(kind, options, run_id, &run_dir, &binary_dir).await
+    run_engine_once(kind, options, run_id, 1, &run_dir, &binary_dir).await
 }
 
 fn workload_dns_transport(
@@ -10087,6 +10109,7 @@ async fn run_engine_once(
     kind: EngineKind,
     options: &BenchOptions,
     run_id: &str,
+    run_index: usize,
     run_dir: &Path,
     binary_dir: &Path,
 ) -> Result<BenchResult, BenchError> {
@@ -10226,6 +10249,7 @@ async fn run_engine_once(
 
     let result = BenchResult {
         run_id: run_id.to_owned(),
+        run_index,
         provenance,
         engine: kind.as_str().to_owned(),
         workload: options.workload.as_str().to_owned(),
@@ -10812,17 +10836,48 @@ mod tests {
     }
 
     #[test]
-    fn explicit_xray_core_binary_never_claims_checkout_provenance() {
+    fn explicit_xray_core_binary_records_supplied_checkout_provenance() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let checkout = std::env::temp_dir().join(format!(
+            "xray-bench-explicit-source-provenance-{}-{unique}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&checkout).unwrap();
+        required_git_stdout(&checkout, &["init", "--quiet"]).unwrap();
+        fs::write(checkout.join("go.mod"), b"module example.invalid/xray\n").unwrap();
+        required_git_stdout(&checkout, &["add", "go.mod"]).unwrap();
+        required_git_stdout(
+            &checkout,
+            &[
+                "-c",
+                "user.name=xray-bench test",
+                "-c",
+                "user.email=xray-bench@example.invalid",
+                "commit",
+                "--quiet",
+                "-m",
+                "fixture",
+            ],
+        )
+        .unwrap();
+        let revision = required_git_stdout(&checkout, &["rev-parse", "--verify", "HEAD"]).unwrap();
         let options = BenchOptions {
             xray_core_bin: Some(PathBuf::from("/tmp/xray-core")),
-            xray_core_dir: Some(PathBuf::from("Xray-core")),
+            xray_core_dir: Some(checkout.clone()),
             ..BenchOptions::default()
         };
 
         assert_eq!(
             engine_source_git_provenance(EngineKind::XrayCore, &options),
-            None
+            Some(WorkspaceGitProvenance {
+                revision,
+                dirty: Some(false),
+            })
         );
+        fs::remove_dir_all(&checkout).unwrap();
     }
 
     #[test]
@@ -10921,6 +10976,7 @@ mod tests {
     fn minimal_bench_result() -> BenchResult {
         BenchResult {
             run_id: String::new(),
+            run_index: 1,
             provenance: BenchProvenance::default(),
             engine: "xray-rust".to_owned(),
             workload: "tcp-freedom".to_owned(),
@@ -13963,6 +14019,7 @@ mod tests {
         assert_eq!(result.dns_transport, None);
         assert_eq!(result.dns_upstream_transport, None);
         assert_eq!(result.run_id, "");
+        assert_eq!(result.run_index, 0);
         assert_eq!(result.provenance, BenchProvenance::default());
     }
 
@@ -13970,6 +14027,7 @@ mod tests {
     fn records_dns_upstream_transport_in_result_and_summary_json() {
         let result = BenchResult {
             run_id: String::new(),
+            run_index: 1,
             provenance: BenchProvenance::default(),
             engine: "xray-rust".to_owned(),
             workload: "tun-dns-proxy".to_owned(),
@@ -14007,6 +14065,7 @@ mod tests {
         let summary_json = serde_json::to_value(&summary).unwrap();
 
         assert_eq!(result_json["dns_upstream_transport"], "tcp-routed");
+        assert_eq!(result_json["run_index"], 1);
         assert_eq!(summary_json["dns_transport"], "udp");
         assert_eq!(summary_json["dns_upstream_transport"], "tcp-routed");
     }
@@ -14026,6 +14085,7 @@ mod tests {
             ..minimal_bench_result()
         };
         let second = BenchResult {
+            run_index: 2,
             uplink_write_ops: Some(120),
             uplink_write_ops_per_second: Some(3_000),
             ..first.clone()
@@ -14302,6 +14362,7 @@ mod tests {
         let results = vec![
             BenchResult {
                 run_id: String::new(),
+                run_index: 1,
                 provenance: BenchProvenance::default(),
                 engine: "xray-rust".to_owned(),
                 workload: "tcp-freedom".to_owned(),
@@ -14341,6 +14402,7 @@ mod tests {
             },
             BenchResult {
                 run_id: String::new(),
+                run_index: 2,
                 provenance: BenchProvenance::default(),
                 engine: "xray-rust".to_owned(),
                 workload: "tcp-freedom".to_owned(),
@@ -14380,6 +14442,7 @@ mod tests {
             },
             BenchResult {
                 run_id: String::new(),
+                run_index: 3,
                 provenance: BenchProvenance::default(),
                 engine: "xray-rust".to_owned(),
                 workload: "tcp-freedom".to_owned(),
@@ -14564,6 +14627,7 @@ mod tests {
     fn summarize_rejects_mixed_workload_parameters() {
         let first = BenchResult {
             run_id: String::new(),
+            run_index: 1,
             provenance: BenchProvenance::default(),
             engine: "xray-rust".to_owned(),
             workload: "tcp-freedom".to_owned(),
@@ -14597,13 +14661,16 @@ mod tests {
             blackhole_connections_active: None,
         };
         let mut second = first.clone();
+        second.run_index = 2;
         second.connections = 1000;
         let error = summarize_results(&[first.clone(), second]).unwrap_err();
         assert!(error
             .to_string()
             .contains("cannot summarize mixed workload parameters"));
 
-        let same = summarize_results(&[first.clone(), first.clone()]).unwrap();
+        let mut same_second = first.clone();
+        same_second.run_index = 2;
+        let same = summarize_results(&[first.clone(), same_second]).unwrap();
         assert_eq!(same.connections, 100);
         assert_eq!(same.payload_size, 512);
     }
@@ -14619,6 +14686,7 @@ mod tests {
             ..minimal_bench_result()
         };
         let mut second = first.clone();
+        second.run_index = 2;
         second.provenance.harness_profile = "debug".to_owned();
 
         let error = summarize_results(&[first, second]).unwrap_err();
@@ -14626,6 +14694,45 @@ mod tests {
         assert!(error
             .to_string()
             .contains("cannot summarize mixed benchmark provenance"));
+    }
+
+    #[test]
+    fn summarize_requires_contiguous_repeat_indexes() {
+        let first = BenchResult {
+            run_id: "run-42".to_owned(),
+            run_index: 1,
+            ..minimal_bench_result()
+        };
+        let second = BenchResult {
+            run_index: 2,
+            ..first.clone()
+        };
+        assert_eq!(
+            summarize_results(&[first.clone(), second.clone()])
+                .unwrap()
+                .runs,
+            2
+        );
+
+        for invalid in [
+            vec![BenchResult {
+                run_index: 0,
+                ..first.clone()
+            }],
+            vec![first.clone(), first.clone()],
+            vec![
+                first.clone(),
+                BenchResult {
+                    run_index: 3,
+                    ..second.clone()
+                },
+            ],
+        ] {
+            let error = summarize_results(&invalid).unwrap_err();
+            assert!(error
+                .to_string()
+                .contains("cannot summarize non-contiguous benchmark repeat indexes"));
+        }
     }
 
     #[test]

@@ -2014,6 +2014,7 @@ mod tests {
                 key.scenario.label().to_ascii_lowercase(),
                 key.client.as_str()
             ),
+            run_index: run + 1,
             provenance: dns_provenance(key),
             engine: "xray-rust".to_owned(),
             workload: key.scenario.workload(key.client).as_str().to_owned(),
