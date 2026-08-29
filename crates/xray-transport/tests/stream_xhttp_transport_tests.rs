@@ -7,11 +7,11 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 
 use bytes::Bytes;
-use h2::{client, server, Ping, RecvStream};
+use h2::{client, server, Ping, Reason, RecvStream};
 use http::{header, Response, StatusCode};
 use rand::rngs::mock::StepRng;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream, ReadBuf};
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 use tokio::time::{timeout, Instant};
 
 use xray_transport::stream::xhttp_composer_test_only::{
@@ -727,6 +727,302 @@ async fn h1_pooled_packet_partial_write_is_not_replayed_on_a_fresh_connection() 
         .to_string()
         .contains("request write failed after 8 bytes"));
     down.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn h2_packet_up_retries_once_when_goaway_refuses_uncommitted_pooled_request() {
+    let stale_post_count = Arc::new(AtomicUsize::new(0));
+    let (stale_client, stale_server_io) = tokio::io::duplex(1024 * 1024);
+    let (stale_client, _settings_ack, goaway_ping_ack) = FrameObservedStream::new(stale_client);
+    let (downlink_ready, downlink_ready_rx) = oneshot::channel();
+    let (start_goaway, start_goaway_rx) = oneshot::channel();
+    let stale_server = tokio::spawn({
+        let stale_post_count = Arc::clone(&stale_post_count);
+        async move {
+            let mut connection = server::handshake::<_>(stale_server_io)
+                .await
+                .expect("stale server HTTP/2 handshake");
+            let (download, mut respond) = connection
+                .accept()
+                .await
+                .expect("stale connection closed before GET")
+                .expect("stale connection failed before GET");
+            assert_eq!(download.method(), http::Method::GET);
+            let _held_downlink = respond
+                .send_response(ok_response(), false)
+                .expect("send persistent stale downlink headers");
+            let _ = downlink_ready.send(());
+
+            start_goaway_rx
+                .await
+                .expect("GOAWAY controller was dropped");
+            connection.graceful_shutdown();
+
+            // `accept` polls the connection driver through `poll_closed`, so
+            // the graceful-shutdown PING can be acknowledged while any
+            // request which slipped past GOAWAY is still recorded.
+            while let Some(exchange) = connection.accept().await {
+                let (request, mut respond) =
+                    exchange.expect("stale connection failed after GOAWAY");
+                stale_post_count.fetch_add(1, Ordering::AcqRel);
+                tokio::spawn(async move {
+                    drain_h2_request(request.into_body()).await;
+                    let _ = respond.send_response(ok_response(), true);
+                });
+            }
+        }
+    });
+
+    let (fresh_client, fresh_server_io) = tokio::io::duplex(1024 * 1024);
+    let (fresh_record, mut fresh_record_rx) = mpsc::unbounded_channel();
+    let fresh_server = tokio::spawn(async move {
+        let Ok(mut connection) = server::handshake::<_>(fresh_server_io).await else {
+            return;
+        };
+        let mut accepted = VecDeque::new();
+        loop {
+            let (request, mut respond) = match accepted.pop_front() {
+                Some(exchange) => exchange,
+                None => connection
+                    .accept()
+                    .await
+                    .expect("fresh connection closed while awaiting packet")
+                    .expect("fresh connection failed while awaiting packet"),
+            };
+            assert_eq!(request.method(), http::Method::POST);
+            let path = request.uri().path().to_owned();
+            let drain = drain_h2_request(request.into_body());
+            tokio::pin!(drain);
+            let body = loop {
+                tokio::select! {
+                    body = &mut drain => break body,
+                    exchange = connection.accept() => {
+                        let exchange = exchange
+                            .expect("fresh connection closed while draining packet")
+                            .expect("fresh connection failed while draining packet");
+                        accepted.push_back(exchange);
+                    }
+                }
+            };
+            respond
+                .send_response(ok_response(), true)
+                .expect("send fresh packet response");
+            fresh_record
+                .send((path, body))
+                .expect("fresh packet record receiver");
+        }
+    });
+
+    let (dial, dials) = scripted_h2_dial([
+        (Box::new(stale_client) as BoxedTransportStream, stale_server),
+        (Box::new(fresh_client) as BoxedTransportStream, fresh_server),
+    ]);
+    let transport = transport(
+        XhttpModeSelection::PacketUp,
+        XhttpHttpVersion::Http2,
+        unlimited_xmux(),
+        5,
+    );
+    let mut stream = transport.open_stream_with_dial(dial).await.unwrap();
+    timeout(DEADLINE, downlink_ready_rx)
+        .await
+        .expect("stale server did not accept the persistent GET")
+        .expect("stale GET readiness sender");
+    start_goaway
+        .send(())
+        .expect("stale GOAWAY controller receiver");
+    timeout(DEADLINE, goaway_ping_ack)
+        .await
+        .expect("client did not acknowledge graceful-shutdown PING")
+        .expect("GOAWAY PING observation sender");
+
+    stream
+        .write_all(b"firstsecon")
+        .await
+        .unwrap_or_else(|error| {
+            panic!(
+                "pre-commit GOAWAY was not retried on a fresh H2 connection: {error}; dials={}, stale_posts={}",
+                dials.load(Ordering::Acquire),
+                stale_post_count.load(Ordering::Acquire)
+            )
+        });
+    let first_two = timeout(DEADLINE, async {
+        let first = fresh_record_rx
+            .recv()
+            .await
+            .expect("fresh server stopped before sequence 0");
+        let second = fresh_record_rx
+            .recv()
+            .await
+            .expect("fresh server stopped before sequence 1");
+        [first, second]
+    })
+    .await
+    .unwrap_or_else(|_| {
+        panic!(
+            "fresh server did not receive both refused packets; dials={}, stale_posts={}",
+            dials.load(Ordering::Acquire),
+            stale_post_count.load(Ordering::Acquire)
+        )
+    });
+    let fresh_packets = Arc::new(Mutex::new(Vec::new()));
+    for (expected_sequence, (path, body)) in ["0", "1"].into_iter().zip(first_two) {
+        assert_eq!(path.split('/').next_back(), Some(expected_sequence));
+        fresh_packets.lock().unwrap().push(body);
+    }
+    assert_eq!(dials.load(Ordering::Acquire), 2);
+    assert_eq!(stale_post_count.load(Ordering::Acquire), 0);
+    assert_eq!(
+        fresh_packets.lock().unwrap().as_slice(),
+        [b"first", b"secon"]
+    );
+
+    stream.write_all(b"d").await.unwrap();
+    stream.shutdown().await.unwrap();
+    let (third_path, third_body) = timeout(DEADLINE, fresh_record_rx.recv())
+        .await
+        .expect("fresh server did not receive sequence 2")
+        .expect("fresh server stopped before sequence 2");
+    assert_eq!(third_path.split('/').next_back(), Some("2"));
+    assert_eq!(third_body, b"d");
+    assert_eq!(dials.load(Ordering::Acquire), 2);
+    assert_eq!(stale_post_count.load(Ordering::Acquire), 0);
+}
+
+#[tokio::test]
+async fn h2_packet_up_does_not_replay_when_goaway_follows_request_data() {
+    const MAX_PACKET: usize = 16;
+    const PAYLOAD: &[u8] = b"0123456789abcdef0123456789abcdefx";
+
+    let (first_client, first_server_io) = tokio::io::duplex(1024 * 1024);
+    let (first_client, settings_ack, _ping_ack) = FrameObservedStream::new(first_client);
+    let (downlink_ready, downlink_ready_rx) = oneshot::channel();
+    let (body_seen, body_seen_rx) = oneshot::channel();
+    let (goaway_flushed, goaway_flushed_rx) = oneshot::channel();
+    let first_server = tokio::spawn(async move {
+        let mut builder = server::Builder::new();
+        builder.initial_window_size(8);
+        let mut connection = builder
+            .handshake::<_, Bytes>(first_server_io)
+            .await
+            .expect("post-commit server HTTP/2 handshake");
+        let (download, mut download_response) = connection
+            .accept()
+            .await
+            .expect("post-commit connection closed before GET")
+            .expect("post-commit connection failed before GET");
+        assert_eq!(download.method(), http::Method::GET);
+        let _held_downlink = download_response
+            .send_response(ok_response(), false)
+            .expect("send persistent post-commit downlink headers");
+        let _ = downlink_ready.send(());
+
+        let (upload, _upload_response) = connection
+            .accept()
+            .await
+            .expect("post-commit connection closed before POST")
+            .expect("post-commit connection failed before POST");
+        assert_eq!(upload.method(), http::Method::POST);
+        let path = upload.uri().path().to_owned();
+        let mut body = upload.into_body();
+        let bytes = tokio::select! {
+            data = body.data() => data
+                .expect("POST ended before its first DATA frame")
+                .expect("POST first DATA frame failed"),
+            exchange = connection.accept() => {
+                match exchange {
+                    Some(Ok((request, _))) => {
+                        panic!("unexpected request before post-commit GOAWAY: {}", request.uri());
+                    }
+                    Some(Err(error)) => {
+                        panic!("post-commit connection failed before DATA: {error}");
+                    }
+                    None => panic!("post-commit connection closed before DATA"),
+                }
+            }
+        };
+        body_seen
+            .send((path, bytes.to_vec()))
+            .expect("post-commit body record receiver");
+
+        connection.abrupt_shutdown(Reason::NO_ERROR);
+        std::future::poll_fn(|cx| connection.poll_closed(cx))
+            .await
+            .expect("flush post-commit GOAWAY");
+        let _ = goaway_flushed.send(());
+    });
+
+    let replay_seen = Arc::new(AtomicBool::new(false));
+    let (replay_client, replay_server_io) = tokio::io::duplex(1024 * 1024);
+    let replay_server = tokio::spawn({
+        let replay_seen = Arc::clone(&replay_seen);
+        async move {
+            let Ok(mut connection) = server::handshake::<_>(replay_server_io).await else {
+                return;
+            };
+            if let Some(Ok((_request, _respond))) = connection.accept().await {
+                replay_seen.store(true, Ordering::Release);
+                connection.abrupt_shutdown(Reason::NO_ERROR);
+                let _ = std::future::poll_fn(|cx| connection.poll_closed(cx)).await;
+            }
+        }
+    });
+
+    let (dial, dials) = scripted_h2_dial([
+        (Box::new(first_client) as BoxedTransportStream, first_server),
+        (
+            Box::new(replay_client) as BoxedTransportStream,
+            replay_server,
+        ),
+    ]);
+    let transport = transport(
+        XhttpModeSelection::PacketUp,
+        XhttpHttpVersion::Http2,
+        unlimited_xmux(),
+        MAX_PACKET as i32,
+    );
+    let mut stream = transport.open_stream_with_dial(dial).await.unwrap();
+    timeout(DEADLINE, async {
+        downlink_ready_rx
+            .await
+            .expect("post-commit GET readiness sender");
+        settings_ack.await.expect("SETTINGS ACK observation sender");
+    })
+    .await
+    .expect("post-commit server was not ready for the bounded upload");
+
+    // More than two pipe capacities keeps this public write pending until the
+    // first packet either commits or fails. Its terminal error therefore also
+    // proves the packet worker has settled before replay is ruled out.
+    let writer = tokio::spawn(async move {
+        stream
+            .write_all(PAYLOAD)
+            .await
+            .expect_err("post-commit packet worker must fail the public write")
+    });
+    let (path, first_data) = timeout(DEADLINE, body_seen_rx)
+        .await
+        .expect("post-commit server did not observe POST DATA")
+        .expect("post-commit body record sender");
+    assert_eq!(path.split('/').next_back(), Some("0"));
+    assert!(!first_data.is_empty());
+    assert!(first_data.len() <= 8);
+    assert!(PAYLOAD.starts_with(&first_data));
+    timeout(DEADLINE, goaway_flushed_rx)
+        .await
+        .expect("post-commit GOAWAY did not flush")
+        .expect("post-commit GOAWAY flush sender");
+
+    let error = timeout(DEADLINE, writer)
+        .await
+        .expect("post-commit terminal error did not reach the public stream")
+        .expect("post-commit public writer task");
+    assert!(matches!(
+        error.kind(),
+        io::ErrorKind::ConnectionReset | io::ErrorKind::BrokenPipe
+    ));
+    assert_eq!(dials.load(Ordering::Acquire), 1);
+    assert!(!replay_seen.load(Ordering::Acquire));
 }
 
 #[tokio::test]
