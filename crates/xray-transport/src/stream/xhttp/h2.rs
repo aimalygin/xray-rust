@@ -59,6 +59,20 @@ pub enum H2Error {
     ZeroCapacityGrant,
 }
 
+impl H2Error {
+    pub(crate) fn is_remote_goaway_before_request_commit(&self) -> bool {
+        matches!(
+            self,
+            Self::Protocol { context, source }
+                if matches!(
+                    *context,
+                    "connection is not ready" | "request HEADERS could not be sent"
+                ) && source.is_go_away()
+                    && source.is_remote()
+        )
+    }
+}
+
 /// A reusable HTTP/2 client connection.
 ///
 /// Clones share the underlying connection. Each request clones the h2
