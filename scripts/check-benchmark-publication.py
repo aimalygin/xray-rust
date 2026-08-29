@@ -15,7 +15,8 @@ from typing import Any, Iterable
 
 XRAY_CORE_VERSION = "v26.7.28"
 XRAY_CORE_REVISION = "5ca6f4b7d4dc20a881d4330e498892697627ec0c"
-SING_BOX_VERSION = "v1.13.19"
+SING_BOX_VERSION = "v1.13.20"
+SING_BOX_REVISION = "56f91dfeabd6f4edbd437dfcc1e5b0ebc856b778"
 SING_BOX_BUILD_TAGS = "with_gvisor,with_utls,badlinkname,tfogo_checklinkname0"
 SING_BOX_SOURCE_URL = "https://github.com/SagerNet/sing-box"
 CANONICAL_DATE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
@@ -707,6 +708,8 @@ def validate_manifest_shape(manifest: Any) -> dict[str, Any]:
     if sing["version"] != SING_BOX_VERSION:
         fail(f"comparators.sing-box.version must be {SING_BOX_VERSION}")
     require_sha40(sing["revision"], "comparators.sing-box.revision")
+    if sing["revision"] != SING_BOX_REVISION:
+        fail(f"comparators.sing-box.revision must be {SING_BOX_REVISION}")
     require_sha256(sing["binarySha256"], "comparators.sing-box.binarySha256")
     if sing["buildTags"] != SING_BOX_BUILD_TAGS:
         fail("comparators.sing-box.buildTags does not match the pinned build")

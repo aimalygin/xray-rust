@@ -15,7 +15,7 @@ prerelease-quality and do not establish a supported release series.
 - Added weekly broad pinned Xray-core interoperability and resource gates plus
   a warning-only upstream-main compatibility smoke check.
 - Scoped the RC4 REALITY/Vision comparator omission to the measured stable
-  sing-box v1.13.19 evidence: Xray-core v26.7.28's default `minClientVer`
+  sing-box v1.13.20 evidence: Xray-core v26.7.28's default `minClientVer`
   26.3.27 rejects that build's REALITY `ClientVer` 1.8.1. RC4 records
   `--skip-sing-box` and publishes xray-rust/Xray-core results only for those
   two workloads, while the generic harness retains sing-box REALITY support

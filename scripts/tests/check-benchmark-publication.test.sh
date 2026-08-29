@@ -27,7 +27,7 @@ root.mkdir(parents=True)
 
 candidate_revision = "0123456789abcdef0123456789abcdef01234567"
 xray_revision = "5ca6f4b7d4dc20a881d4330e498892697627ec0c"
-sing_revision = "b5ebaa1fc0f2b94256180b95468e73ef53caa27d"
+sing_revision = "56f91dfeabd6f4edbd437dfcc1e5b0ebc856b778"
 
 manifest = {
     "schemaVersion": 1,
@@ -49,7 +49,7 @@ manifest = {
             "buildCommand": "go build ./main",
         },
         "sing-box": {
-            "version": "v1.13.19",
+            "version": "v1.13.20",
             "revision": sing_revision,
             "binarySha256": "b" * 64,
             "buildTags": "with_gvisor,with_utls,badlinkname,tfogo_checklinkname0",
@@ -219,7 +219,7 @@ engine_paths = {
     "xray-rust": workspace / "target/release/xray-rust",
     "xray-core": workspace / "target/bench-bin/xray-core-v26.7.28",
     "sing-box": workspace
-    / "target/benchmarks/2026-08-29-v26.7.28/comparators/bin/sing-box-v1.13.19",
+    / "target/benchmarks/2026-08-29-v26.7.28/comparators/bin/sing-box-v1.13.20",
 }
 xray_core_dir = workspace / "Xray-core"
 raw_root = workspace / "target/benchmarks/2026-08-29-v26.7.28"
@@ -699,6 +699,8 @@ elif mutation == "wrong_sing_version":
     manifest["comparators"]["sing-box"]["version"] = "v1.13.15"
 elif mutation == "malformed_sing_revision":
     manifest["comparators"]["sing-box"]["revision"] = "R" * 40
+elif mutation == "wrong_sing_revision":
+    manifest["comparators"]["sing-box"]["revision"] = "f" * 40
 elif mutation == "malformed_archive_digest":
     manifest["rawArchive"]["sha256"] = "sha256:bad"
 elif mutation == "empty_environment":
@@ -1248,10 +1250,11 @@ expect_rejected malformed_candidate_digest "candidate.revision must be 40 lowerc
 expect_rejected candidate_dirty "candidate.dirty must be false"
 expect_rejected malformed_xray_digest "comparators.xray-core.binarySha256 must be 64 lowercase hexadecimal characters"
 expect_rejected malformed_sing_digest "comparators.sing-box.binarySha256 must be 64 lowercase hexadecimal characters"
-expect_rejected malformed_sing_version "comparators.sing-box.version must be v1.13.19"
-expect_rejected wrong_sing_version "comparators.sing-box.version must be v1.13.19"
-expect_rejected alternate_sing_pin "comparators.sing-box.version must be v1.13.19"
+expect_rejected malformed_sing_version "comparators.sing-box.version must be v1.13.20"
+expect_rejected wrong_sing_version "comparators.sing-box.version must be v1.13.20"
+expect_rejected alternate_sing_pin "comparators.sing-box.version must be v1.13.20"
 expect_rejected malformed_sing_revision "comparators.sing-box.revision must be 40 lowercase hexadecimal characters"
+expect_rejected wrong_sing_revision "comparators.sing-box.revision must be 56f91dfeabd6f4edbd437dfcc1e5b0ebc856b778"
 expect_rejected malformed_archive_digest "rawArchive.sha256 must be 64 lowercase hexadecimal characters"
 expect_rejected empty_environment "environment.hardware must be non-empty"
 expect_rejected empty_raw_location "rawArchive.location must be non-empty"

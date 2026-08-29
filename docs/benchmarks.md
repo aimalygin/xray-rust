@@ -502,7 +502,7 @@ cargo run -p xray-bench -- run --engine sing-box --sing-box-bin "$SING_BOX_BIN" 
 
 The sing-box slice supports the SOCKS/process-level workloads: `idle`, `tcp-freedom`, `tcp-bulk-throughput`, `many-idle-flows`, `reconnect-burst`, `mixed-long-lived`, `udp-freedom`, `reality-vision-xudp`, `reality-vision-bulk-throughput`, `grpc-bulk-throughput`, and the WS/HTTPUpgrade/gRPC cases of `stream-transport`. Stream-transport and REALITY workloads start an Xray-core server fixture and sample only the client engine process. XHTTP is compared only between xray-rust and Xray-core because sing-box does not implement that transport. The sing-box binary must include `with_utls`; the harness uses `with_gvisor,with_utls,badlinkname,tfogo_checklinkname0` when auto-building sing-box. TUN and fake VLESS/XUDP sing-box workloads are intentionally not part of this slice because they need a different topology than the rootless fd-backed harness.
 
-The stable sing-box v1.13.19 build selected for RC4 is incompatible with
+The stable sing-box v1.13.20 build selected for RC4 is incompatible with
 `reality-vision-xudp` and `reality-vision-bulk-throughput` against the pinned
 Xray-core v26.7.28 fixture. The server's default `minClientVer` 26.3.27 rejects
 that build's REALITY `ClientVer` 1.8.1. This is an evidence-specific boundary,
@@ -635,7 +635,7 @@ cargo run --release -p xray-bench -- chart \
   --hardware "<recorded RC4 hardware and OS>" \
   --xray-rust-version <RC4-git-short-rev> \
   --xray-core-version v26.7.28 \
-  --sing-box-version v1.13.19 \
+  --sing-box-version v1.13.20 \
   --omit-sing-box-reality \
   --geodata-version "geosite-<tag> geoip-<tag>"
 ```
