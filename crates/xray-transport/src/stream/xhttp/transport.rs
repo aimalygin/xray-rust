@@ -918,10 +918,11 @@ impl XhttpTransport {
                 // its response before that same connection can be checked out
                 // again. Waiting here preserves that ordering and is what
                 // makes returning a socket to our safe pool possible.
-                let request = self
-                    .send_h1_packet(&upload_client, dial.stream()?, request)
-                    .await?;
-                buffer = reclaim_packet_buffer(request, max_packet)?;
+                buffer = reclaim_after_h1_packet_send(
+                    self.send_h1_packet(&upload_client, dial.stream()?, request),
+                    max_packet,
+                )
+                .await?;
             },
             XhttpHttpVersion::Http2 | XhttpHttpVersion::Http3 => {
                 // `scMaxBufferedPosts` is an inbound reassembly bound in Xray,
@@ -1485,6 +1486,17 @@ fn h1_packet_buffer(max_packet: usize) -> Result<Vec<u8>, XhttpTransportError> {
 
 fn fixed_packet_buffer(max_packet: usize) -> Result<Vec<u8>, XhttpTransportError> {
     resize_fixed_packet_buffer(Vec::new(), max_packet)
+}
+
+async fn reclaim_after_h1_packet_send<F>(
+    send: F,
+    max_packet: usize,
+) -> Result<Vec<u8>, XhttpTransportError>
+where
+    F: Future<Output = Result<PreparedRequest, XhttpTransportError>>,
+{
+    let request = send.await?;
+    reclaim_packet_buffer(request, max_packet)
 }
 
 fn reclaim_packet_buffer(
@@ -2966,6 +2978,14 @@ mod packet_buffer_tests {
 
     use super::*;
 
+    struct DropProbe(Arc<AtomicUsize>);
+
+    impl Drop for DropProbe {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
     #[tokio::test]
     async fn first_uplink_writer_waits_for_data_and_distinguishes_clean_shutdown() {
         let (inner, mut peer) = tokio::io::duplex(16);
@@ -3035,6 +3055,73 @@ mod packet_buffer_tests {
         assert_eq!(reclaimed.as_ptr(), allocation);
         assert!(reclaimed.is_empty());
         assert_eq!(reclaimed.capacity(), H1_PACKET_READ_CHUNK_BYTES);
+    }
+
+    #[tokio::test]
+    async fn h1_packet_reclaim_waits_for_send_completion_and_cancellation_drops_owner_once() {
+        const MAX_PACKET: usize = 500_000;
+
+        let mut body = h1_packet_buffer(MAX_PACKET).unwrap();
+        body.extend_from_slice(b"cancelled");
+        let request = PreparedRequest {
+            request: XhttpRequest {
+                method: "POST".to_owned(),
+                target: "/upload".to_owned(),
+                headers: XhttpHeaderMap::new(),
+                body: XhttpRequestBody::Bytes(body),
+            },
+            auto_gzip: false,
+        };
+        let cancelled_drops = Arc::new(AtomicUsize::new(0));
+        let probe = DropProbe(Arc::clone(&cancelled_drops));
+        let (owned_tx, owned_rx) = oneshot::channel();
+        let (_release_tx, release_rx) = oneshot::channel::<()>();
+        let send = async move {
+            let _probe = probe;
+            owned_tx.send(()).unwrap();
+            release_rx.await.unwrap();
+            Ok::<PreparedRequest, XhttpTransportError>(request)
+        };
+        let cancelled = tokio::spawn(reclaim_after_h1_packet_send(send, MAX_PACKET));
+
+        owned_rx.await.unwrap();
+        assert!(!cancelled.is_finished());
+        cancelled.abort();
+        let cancelled = cancelled.await.unwrap_err();
+        assert!(cancelled.is_cancelled());
+        assert_eq!(cancelled_drops.load(Ordering::SeqCst), 1);
+
+        let mut body = h1_packet_buffer(MAX_PACKET).unwrap();
+        let allocation = body.as_ptr();
+        body.extend_from_slice(b"completed");
+        let request = PreparedRequest {
+            request: XhttpRequest {
+                method: "POST".to_owned(),
+                target: "/upload".to_owned(),
+                headers: XhttpHeaderMap::new(),
+                body: XhttpRequestBody::Bytes(body),
+            },
+            auto_gzip: false,
+        };
+        let completed_drops = Arc::new(AtomicUsize::new(0));
+        let probe = DropProbe(Arc::clone(&completed_drops));
+        let (owned_tx, owned_rx) = oneshot::channel();
+        let (release_tx, release_rx) = oneshot::channel();
+        let send = async move {
+            let _probe = probe;
+            owned_tx.send(()).unwrap();
+            release_rx.await.unwrap();
+            Ok::<PreparedRequest, XhttpTransportError>(request)
+        };
+        let completed = tokio::spawn(reclaim_after_h1_packet_send(send, MAX_PACKET));
+
+        owned_rx.await.unwrap();
+        assert!(!completed.is_finished());
+        release_tx.send(()).unwrap();
+        let reclaimed = completed.await.unwrap().unwrap();
+        assert_eq!(reclaimed.as_ptr(), allocation);
+        assert!(reclaimed.is_empty());
+        assert_eq!(completed_drops.load(Ordering::SeqCst), 1);
     }
 }
 
