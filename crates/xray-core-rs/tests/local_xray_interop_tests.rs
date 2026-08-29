@@ -970,7 +970,7 @@ fn assert_xray_checkout_revision(checkout: &Path) {
     assert_eq!(
         String::from_utf8_lossy(&output.stdout).trim(),
         expected,
-        "Xray-core interop checkout must be pinned to v26.7.28"
+        "Xray-core interop checkout must match the expected revision"
     );
 }
 
