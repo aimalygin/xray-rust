@@ -1,8 +1,9 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use xray_config::{
-    CoreConfig, Diagnostic, DiagnosticSeverity, DnsConfig, DnsIpFilter, DnsOutboundRule,
-    DnsOutboundRuleAction, DnsOutboundSettings, DnsQTypeRange, DnsQueryStrategy, DomainMatcher,
+    compile_dns_domain_matchers, compile_domain_matchers, CoreConfig, Diagnostic,
+    DiagnosticSeverity, DnsConfig, DnsIpFilter, DnsOutboundRule, DnsOutboundRuleAction,
+    DnsOutboundSettings, DnsQTypeRange, DnsQueryStrategy, DomainMatcher, DomainMatcherSet,
     HappyEyeballsSettings, InboundConfig, InboundProtocol, IpCidr, IpMatcherSet, Network,
     OutboundConfig, OutboundProtocol, OutboundSettings, RealitySettings, RealityShortId,
     RegexMatcher, RoutingConfig, RoutingPortRange, RoutingRule, SocketOptions, StreamSecurity,
@@ -163,13 +164,16 @@ fn dns_outbound_rules_use_first_match_and_xray_defaults() {
                 action: DnsOutboundRuleAction::Direct,
                 r_code: 0,
                 qtype_ranges: vec![DnsQTypeRange::single(1)],
-                domain_matchers: vec![DomainMatcher::Suffix("internal.example".to_owned())],
+                domain_matchers: compile_dns_domain_matchers(&[DomainMatcher::Suffix(
+                    "internal.example".to_owned(),
+                )])
+                .unwrap(),
             },
             DnsOutboundRule {
                 action: DnsOutboundRuleAction::Drop,
                 r_code: 0,
                 qtype_ranges: vec![DnsQTypeRange::single(1)],
-                domain_matchers: Vec::new(),
+                domain_matchers: DomainMatcherSet::default(),
             },
         ],
         ..Default::default()
@@ -197,9 +201,10 @@ fn dns_outbound_rules_use_first_match_and_xray_defaults() {
             action: DnsOutboundRuleAction::Direct,
             r_code: 0,
             qtype_ranges: vec![DnsQTypeRange::single(1)],
-            domain_matchers: vec![DomainMatcher::Regex(
+            domain_matchers: compile_dns_domain_matchers(&[DomainMatcher::Regex(
                 RegexMatcher::new(r"^api\.internal\.example$").expect("valid domain regexp"),
-            )],
+            )])
+            .unwrap(),
         }],
         ..Default::default()
     };
@@ -227,7 +232,7 @@ fn routing_network_and_port_selectors_fail_closed_without_target_metadata() {
         inbound_tags: Vec::new(),
         networks: vec![Network::Udp],
         port_ranges: vec![RoutingPortRange::single(53)],
-        domain_matchers: Vec::new(),
+        domain_matchers: DomainMatcherSet::default(),
         ip_matchers: Default::default(),
         outbound_tag: "dns-out".to_owned(),
     };
@@ -275,7 +280,7 @@ fn normalized_model_can_represent_inbound_tag_routing_rule() {
             inbound_tags: vec!["socks-in".to_owned()],
             networks: Vec::new(),
             port_ranges: Vec::new(),
-            domain_matchers: Vec::new(),
+            domain_matchers: DomainMatcherSet::default(),
             ip_matchers: Default::default(),
             outbound_tag: "direct".to_owned(),
         }],
@@ -294,12 +299,13 @@ fn normalized_model_can_represent_domain_routing_rule() {
             inbound_tags: Vec::new(),
             networks: Vec::new(),
             port_ranges: Vec::new(),
-            domain_matchers: vec![
+            domain_matchers: compile_domain_matchers(&[
                 DomainMatcher::Keyword("ample".to_owned()),
                 DomainMatcher::Suffix("example.com".to_owned()),
                 DomainMatcher::Full("exact.test".to_owned()),
                 DomainMatcher::Regex(RegexMatcher::new("^re-[a-z]+\\.test$").unwrap()),
-            ],
+            ])
+            .unwrap(),
             ip_matchers: Default::default(),
             outbound_tag: "proxy".to_owned(),
         }],
@@ -323,7 +329,7 @@ fn normalized_model_can_represent_ip_routing_rule() {
             inbound_tags: Vec::new(),
             networks: Vec::new(),
             port_ranges: Vec::new(),
-            domain_matchers: Vec::new(),
+            domain_matchers: DomainMatcherSet::default(),
             ip_matchers: {
                 let mut matchers = IpMatcherSet::builder();
                 matchers.insert_cidr(cidr(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 0)), 8), false);
@@ -349,7 +355,7 @@ fn normalized_model_applies_inverse_ip_matchers_as_a_conjunction() {
             inbound_tags: Vec::new(),
             networks: Vec::new(),
             port_ranges: Vec::new(),
-            domain_matchers: Vec::new(),
+            domain_matchers: DomainMatcherSet::default(),
             ip_matchers: {
                 let mut matchers = IpMatcherSet::builder();
                 matchers.insert_cidr(cidr(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 0)), 8), true);

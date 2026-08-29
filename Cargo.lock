@@ -2405,7 +2405,6 @@ version = "0.4.1-rc.3"
 dependencies = [
  "libc",
  "prost",
- "regex",
  "serde",
  "serde_json",
  "thiserror",
@@ -2471,7 +2470,9 @@ dependencies = [
 name = "xray-routing"
 version = "0.4.1-rc.3"
 dependencies = [
+ "aho-corasick",
  "bytes",
+ "regex",
  "thiserror",
 ]
 

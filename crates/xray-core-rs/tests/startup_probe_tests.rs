@@ -7,9 +7,9 @@ use async_trait::async_trait;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use xray_config::{
-    CoreConfig, DnsQueryStrategy, DnsServerConfig, InboundConfig, InboundProtocol, Network,
-    OutboundConfig, OutboundSettings, PolicyConfig, PolicyLevelConfig, RoutingConfig, RoutingRule,
-    StreamSecurity, StreamSettings, StreamTransport,
+    CoreConfig, DnsQueryStrategy, DnsServerConfig, DomainMatcherSet, InboundConfig,
+    InboundProtocol, Network, OutboundConfig, OutboundSettings, PolicyConfig, PolicyLevelConfig,
+    RoutingConfig, RoutingRule, StreamSecurity, StreamSettings, StreamTransport,
 };
 use xray_core_rs::{
     Core, CoreError, CoreState, DnsBootstrapMode, RuntimeLogConfig, RuntimeLogger,
@@ -476,7 +476,7 @@ async fn startup_probe_uses_default_outbound_directly_without_routing_rules() {
             inbound_tags: Vec::new(),
             networks: Vec::new(),
             port_ranges: Vec::new(),
-            domain_matchers: Vec::new(),
+            domain_matchers: DomainMatcherSet::default(),
             ip_matchers: Default::default(),
             outbound_tag: "missing".to_owned(),
         }],

@@ -9,5 +9,7 @@ publish.workspace = true
 description = "Routing matchers and policy evaluation for xray-rust"
 
 [dependencies]
+aho-corasick.workspace = true
 bytes.workspace = true
+regex.workspace = true
 thiserror.workspace = true

@@ -1,7 +1,8 @@
 use bytes::Bytes;
 use thiserror::Error;
-use xray_config::{DnsOutboundRule, DnsOutboundRuleAction, DnsOutboundSettings, DnsQTypeRange};
-use xray_transport::CompiledDomainMatcherSet;
+use xray_config::{
+    DnsOutboundRule, DnsOutboundRuleAction, DnsOutboundSettings, DnsQTypeRange, DomainMatcherSet,
+};
 
 const DNS_HEADER_LEN: usize = 12;
 const DNS_TYPE_A: u16 = 1;
@@ -286,7 +287,7 @@ struct CompiledDnsOutboundRule {
     all_qtypes: bool,
     qtype_ranges: Box<[(u16, u16)]>,
     all_domains: bool,
-    domain_matchers: CompiledDomainMatcherSet,
+    domain_matchers: DomainMatcherSet,
 }
 
 impl CompiledDnsOutboundRule {
@@ -297,12 +298,7 @@ impl CompiledDnsOutboundRule {
             all_qtypes: rule.qtype_ranges.is_empty(),
             qtype_ranges: compile_qtype_ranges(&rule.qtype_ranges),
             all_domains: rule.domain_matchers.is_empty(),
-            domain_matchers: CompiledDomainMatcherSet::new(
-                rule.domain_matchers
-                    .iter()
-                    .map(crate::transport_domain_matcher)
-                    .collect(),
-            ),
+            domain_matchers: rule.domain_matchers.clone(),
         }
     }
 
@@ -699,7 +695,7 @@ pub fn build_refused_response(message: &[u8]) -> Result<Bytes, DnsQueryParseErro
 #[cfg(test)]
 mod tests {
     use super::*;
-    use xray_config::DomainMatcher;
+    use xray_config::{compile_dns_domain_matchers, DomainMatcher};
 
     fn query(id: u16, domain: &str, qtype: u16, flags: u16) -> Vec<u8> {
         let mut message = Vec::new();
@@ -753,7 +749,7 @@ mod tests {
             action,
             r_code: 0,
             qtype_ranges,
-            domain_matchers,
+            domain_matchers: compile_dns_domain_matchers(&domain_matchers).unwrap(),
         }
     }
 
@@ -969,7 +965,7 @@ mod tests {
             action: DnsOutboundRuleAction::Hijack,
             r_code: 3,
             qtype_ranges: Vec::new(),
-            domain_matchers: Vec::new(),
+            domain_matchers: DomainMatcherSet::default(),
         }]));
 
         assert_eq!(

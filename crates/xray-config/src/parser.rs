@@ -6,29 +6,31 @@ use std::{
 
 use serde_json::Value;
 use uuid::Uuid;
-use xray_routing::{IpMatcherSet, IpMatcherSetBuilder};
+use xray_routing::{DomainMatcherSet, DomainMatcherSetBuilder, IpMatcherSet, IpMatcherSetBuilder};
 
+use crate::model::build_domain_matcher_set;
 use crate::{
     geodata::{default_geodata_dirs, GeodataLoader},
-    CoreConfig, Diagnostic, DnsConfig, DnsFakeIpConfig, DnsHostMapping, DnsHostTarget, DnsIpFilter,
+    CoreConfig, Diagnostic, DnsConfig, DnsFakeIpConfig, DnsHostTarget, DnsIpFilter,
     DnsNameServerConfig, DnsOutboundRule, DnsOutboundRuleAction, DnsOutboundSettings,
     DnsQTypeRange, DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint, DnsServerTransport,
-    DomainMatcher, GrpcSettings, HappyEyeballsSettings, HttpUpgradeSettings, InboundConfig,
-    InboundProtocol, InboundSniffingConfig, IpCidr, Network, OutboundConfig, OutboundProtocol,
-    OutboundSettings, PolicyConfig, PolicyLevelConfig, PolicySystemConfig, QuicBbrProfile,
-    QuicCongestion, QuicIntervalRange, QuicParamsSettings, QuicUdpHopSettings, RealitySettings,
-    RealityShortId, RegexMatcher, RoutingConfig, RoutingDomainStrategy, RoutingPortRange,
-    RoutingRule, SniffingDestination, SocketOptions, StreamSecurity, StreamSettings,
-    StreamTransport, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser, WebSocketSettings,
-    XhttpMode, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpPlacement, XhttpRange,
-    XhttpSettings, XhttpUplinkDataPlacement, XhttpXmuxSettings, MAX_DNS_SERVER_TIMEOUT_MS,
+    DomainHostIndex, DomainMatcher, DomainNameMode, GrpcSettings, HappyEyeballsSettings,
+    HttpUpgradeSettings, InboundConfig, InboundProtocol, InboundSniffingConfig, IpCidr, Network,
+    OutboundConfig, OutboundProtocol, OutboundSettings, PolicyConfig, PolicyLevelConfig,
+    PolicySystemConfig, QuicBbrProfile, QuicCongestion, QuicIntervalRange, QuicParamsSettings,
+    QuicUdpHopSettings, RealitySettings, RealityShortId, RegexMatcher, RoutingConfig,
+    RoutingDomainStrategy, RoutingPortRange, RoutingRule, SniffingDestination, SocketOptions,
+    StreamSecurity, StreamSettings, StreamTransport, TargetAddr, TlsSettings,
+    VlessOutboundSettings, VlessUser, WebSocketSettings, XhttpMode, XhttpPaddingMethod,
+    XhttpPaddingPlacement, XhttpPlacement, XhttpRange, XhttpSettings, XhttpUplinkDataPlacement,
+    XhttpXmuxSettings, MAX_DNS_SERVER_TIMEOUT_MS,
 };
 
 const MAX_ROUTING_RULES: usize = 4_096;
 const MAX_DNS_OUTBOUND_RULES: usize = 4_096;
 const MAX_DNS_QTYPE_SELECTORS: usize = 65_536;
 const MAX_ROUTING_PORT_SELECTORS: usize = 65_536;
-const MAX_CONFIG_DOMAIN_MATCHERS: usize = 250_000;
+pub const MAX_CONFIG_DOMAIN_MATCHERS: usize = 250_000;
 const MAX_CONFIG_IP_MATCHERS: usize = 300_000;
 const MAX_CONFIG_MATCHERS: usize = 500_000;
 const MAX_CONFIG_GEODATA_ATTR_FILTERS: usize = 32;
@@ -127,6 +129,16 @@ enum LegacyDnsNonIpMode {
     Reject,
     Drop,
     Skip,
+}
+
+fn insert_domain_matchers(
+    builder: &mut DomainMatcherSetBuilder,
+    matchers: &[DomainMatcher],
+    mode: DomainNameMode,
+) {
+    for matcher in matchers {
+        builder.insert(matcher, mode);
+    }
 }
 
 fn is_tun_reserved_ip(ip: IpAddr) -> bool {
@@ -263,7 +275,7 @@ fn dns_tcp_server_policy(
     DnsServerConfig::Policy(Box::new(DnsNameServerConfig {
         endpoint,
         transport,
-        domains: Vec::new(),
+        domains: DomainMatcherSet::default(),
         expected_ips: DnsIpFilter::default(),
         unexpected_ips: DnsIpFilter::default(),
         tag: String::new(),
@@ -903,16 +915,12 @@ impl Parser<'_> {
         })
     }
 
-    fn parse_dns_server_domains(
-        &mut self,
-        server: &Value,
-        path: &str,
-    ) -> Option<Vec<DomainMatcher>> {
+    fn parse_dns_server_domains(&mut self, server: &Value, path: &str) -> Option<DomainMatcherSet> {
         let domains_path = format!("{path}.domains");
         let Some(raw_domains) = server.get("domains") else {
-            return Some(Vec::new());
+            return Some(DomainMatcherSet::default());
         };
-        let mut matchers = Vec::new();
+        let mut matchers = DomainMatcherSet::builder();
         match raw_domains {
             Value::String(domains) => {
                 for (index, domain) in domains.split(',').enumerate() {
@@ -921,11 +929,6 @@ impl Parser<'_> {
                 }
             }
             Value::Array(domains) => {
-                matchers.reserve(
-                    domains
-                        .len()
-                        .min(self.matcher_budget.remaining_domain_matchers()),
-                );
                 for (index, domain) in domains.iter().enumerate() {
                     let item_path = format!("{domains_path}[{index}]");
                     let Some(domain) = domain.as_str() else {
@@ -940,14 +943,14 @@ impl Parser<'_> {
                 return None;
             }
         }
-        Some(matchers)
+        self.build_domain_matcher_set(matchers, &domains_path)
     }
 
     fn parse_dns_server_domain_matcher(
         &mut self,
         domain: &str,
         path: &str,
-        matchers: &mut Vec<DomainMatcher>,
+        matchers: &mut DomainMatcherSetBuilder,
     ) -> Option<()> {
         if domain.is_empty() {
             self.error(path, "dns server domain matcher cannot be empty");
@@ -966,8 +969,22 @@ impl Parser<'_> {
             self.domain_matcher_budget_error(path);
             return None;
         }
-        matchers.extend(parsed_matchers);
+        insert_domain_matchers(matchers, &parsed_matchers, DomainNameMode::Dns);
         Some(())
+    }
+
+    fn build_domain_matcher_set(
+        &mut self,
+        builder: DomainMatcherSetBuilder,
+        path: &str,
+    ) -> Option<DomainMatcherSet> {
+        match build_domain_matcher_set(builder) {
+            Ok(matchers) => Some(matchers),
+            Err(error) => {
+                self.error(path, error.to_string());
+                None
+            }
+        }
     }
 
     fn parse_dns_server(&mut self, server: &str, path: &str) -> Option<DnsServerConfig> {
@@ -1041,16 +1058,16 @@ impl Parser<'_> {
         })
     }
 
-    fn parse_dns_hosts(&mut self, dns: &Value) -> Vec<DnsHostMapping> {
+    fn parse_dns_hosts(&mut self, dns: &Value) -> DomainHostIndex<DnsHostTarget> {
+        let mut index = DomainHostIndex::new();
         let Some(raw_hosts) = dns.get("hosts") else {
-            return Vec::new();
+            return index;
         };
         let Some(hosts) = raw_hosts.as_object() else {
             self.error("$.dns.hosts", "field `hosts` must be an object");
-            return Vec::new();
+            return index;
         };
 
-        let mut mappings = Vec::new();
         for (host, target) in hosts {
             let path = format!("$.dns.hosts.{host}");
             let Some(target) = self.parse_dns_host_target(target, &path) else {
@@ -1068,13 +1085,14 @@ impl Parser<'_> {
                 self.domain_matcher_budget_error(&path);
                 continue;
             }
-            mappings.extend(matchers.into_iter().map(|matcher| DnsHostMapping {
-                matcher,
-                target: target.clone(),
-            }));
+            index.extend(
+                matchers
+                    .into_iter()
+                    .map(|matcher| (matcher, target.clone())),
+            );
         }
 
-        mappings
+        index
     }
 
     fn parse_dns_host_matcher(
@@ -2357,11 +2375,11 @@ impl Parser<'_> {
         &mut self,
         raw: Option<&Value>,
         rule_path: &str,
-    ) -> Option<Vec<DomainMatcher>> {
+    ) -> Option<DomainMatcherSet> {
         let path = format!("{rule_path}.domain");
-        let mut matchers = Vec::new();
+        let mut matchers = DomainMatcherSet::builder();
         match raw {
-            None | Some(Value::Null) => return Some(matchers),
+            None | Some(Value::Null) => return Some(DomainMatcherSet::default()),
             Some(Value::String(domains)) => {
                 for (index, domain) in domains.split(',').enumerate() {
                     self.push_dns_outbound_domain_matcher(
@@ -2372,11 +2390,6 @@ impl Parser<'_> {
                 }
             }
             Some(Value::Array(domains)) => {
-                matchers.reserve(
-                    domains
-                        .len()
-                        .min(self.matcher_budget.remaining_domain_matchers()),
-                );
                 for (index, domain) in domains.iter().enumerate() {
                     let item_path = format!("{path}[{index}]");
                     let Some(domain) = domain.as_str() else {
@@ -2391,14 +2404,14 @@ impl Parser<'_> {
                 return None;
             }
         }
-        Some(matchers)
+        self.build_domain_matcher_set(matchers, &path)
     }
 
     fn push_dns_outbound_domain_matcher(
         &mut self,
         domain: &str,
         path: &str,
-        matchers: &mut Vec<DomainMatcher>,
+        matchers: &mut DomainMatcherSetBuilder,
     ) -> Option<()> {
         let remaining = self.matcher_budget.remaining_domain_matchers();
         if remaining == 0 {
@@ -2410,7 +2423,7 @@ impl Parser<'_> {
             self.domain_matcher_budget_error(path);
             return None;
         }
-        matchers.extend(parsed);
+        insert_domain_matchers(matchers, &parsed, DomainNameMode::Dns);
         Some(())
     }
 
@@ -2505,14 +2518,14 @@ impl Parser<'_> {
                     0
                 },
                 qtype_ranges,
-                domain_matchers: Vec::new(),
+                domain_matchers: DomainMatcherSet::default(),
             });
         }
         rules.push(DnsOutboundRule {
             action: DnsOutboundRuleAction::Hijack,
             r_code: 0,
             qtype_ranges: vec![DnsQTypeRange::single(1), DnsQTypeRange::single(28)],
-            domain_matchers: Vec::new(),
+            domain_matchers: DomainMatcherSet::default(),
         });
         rules.push(DnsOutboundRule {
             action: match mode {
@@ -2526,7 +2539,7 @@ impl Parser<'_> {
                 0
             },
             qtype_ranges: Vec::new(),
-            domain_matchers: Vec::new(),
+            domain_matchers: DomainMatcherSet::default(),
         });
         Some(rules)
     }
@@ -4895,19 +4908,15 @@ impl Parser<'_> {
         value: &Value,
         key: &str,
         path: String,
-    ) -> Option<Vec<DomainMatcher>> {
+        matchers: &mut DomainMatcherSetBuilder,
+    ) -> Option<()> {
         let Some(raw) = value.get(key) else {
-            return Some(Vec::new());
+            return Some(());
         };
         let Some(values) = raw.as_array() else {
             self.error(path, format!("field `{key}` must be an array"));
             return None;
         };
-        let mut matchers = Vec::with_capacity(
-            values
-                .len()
-                .min(self.matcher_budget.remaining_domain_matchers()),
-        );
 
         for (index, value) in values.iter().enumerate() {
             let item_path = format!("{path}[{index}]");
@@ -4933,25 +4942,26 @@ impl Parser<'_> {
                 self.domain_matcher_budget_error(&item_path);
                 return None;
             }
-            matchers.extend(parsed_matchers);
+            insert_domain_matchers(matchers, &parsed_matchers, DomainNameMode::Routing);
         }
 
-        Some(matchers)
+        Some(())
     }
 
     fn parse_routing_rule_domain_matchers(
         &mut self,
         rule: &Value,
         rule_path: &str,
-    ) -> Option<Vec<DomainMatcher>> {
-        let mut matchers =
-            self.parse_domain_matchers(rule, "domain", format!("{rule_path}.domain"))?;
-        matchers.extend(self.parse_domain_matchers(
+    ) -> Option<DomainMatcherSet> {
+        let mut matchers = DomainMatcherSet::builder();
+        self.parse_domain_matchers(rule, "domain", format!("{rule_path}.domain"), &mut matchers)?;
+        self.parse_domain_matchers(
             rule,
             "domains",
             format!("{rule_path}.domains"),
-        )?);
-        Some(matchers)
+            &mut matchers,
+        )?;
+        self.build_domain_matcher_set(matchers, &format!("{rule_path}.domain"))
     }
 
     fn parse_domain_matcher(
