@@ -1,8 +1,10 @@
 use std::net::IpAddr;
 use thiserror::Error;
 
+pub mod ip_filter;
 pub mod ip_range_set;
 
+pub use ip_filter::{DnsIpFilter, DnsIpFilterBuilder};
 pub use ip_range_set::{
     canonicalize_ip, Cidr, InvalidCidrPrefix, IpMatcherSet, IpMatcherSetBuilder, IpRangeSet,
     IpRangeSetBuilder, PRIVATE_NETWORKS,

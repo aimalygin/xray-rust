@@ -9,8 +9,9 @@ use std::{
 
 use prost::Message;
 use thiserror::Error;
+use xray_routing::IpMatcherSetBuilder;
 
-use crate::{ConfigModelError, DomainMatcher, IpCidr, IpMatcher, RegexMatcher};
+use crate::{ConfigModelError, DomainMatcher, IpCidr, RegexMatcher};
 
 const MAX_GEODATA_FILE_SIZE: u64 = 128 * 1024 * 1024;
 const MAX_GEODATA_ENTRY_SIZE: usize = 32 * 1024 * 1024;
@@ -149,14 +150,24 @@ impl GeodataLoader {
         }
     }
 
+    /// Inserts the routing IP rules of `file_name:code` into `matchers` and
+    /// returns how many were inserted.
     pub(crate) fn load_ip_matchers(
         &mut self,
         file_name: &str,
         code: &str,
         inverse: bool,
         max_matchers: usize,
-    ) -> Result<Vec<IpMatcher>, GeodataError> {
-        self.load_ip_matchers_with_asset_reverse(file_name, code, inverse, max_matchers, true)
+        matchers: &mut IpMatcherSetBuilder,
+    ) -> Result<usize, GeodataError> {
+        self.load_ip_matchers_with_asset_reverse(
+            file_name,
+            code,
+            inverse,
+            max_matchers,
+            true,
+            matchers,
+        )
     }
 
     /// Loads Xray DNS IP rules without the legacy asset-level `reverse_match` flag.
@@ -166,8 +177,16 @@ impl GeodataLoader {
         code: &str,
         inverse: bool,
         max_matchers: usize,
-    ) -> Result<Vec<IpMatcher>, GeodataError> {
-        self.load_ip_matchers_with_asset_reverse(file_name, code, inverse, max_matchers, false)
+        matchers: &mut IpMatcherSetBuilder,
+    ) -> Result<usize, GeodataError> {
+        self.load_ip_matchers_with_asset_reverse(
+            file_name,
+            code,
+            inverse,
+            max_matchers,
+            false,
+            matchers,
+        )
     }
 
     fn load_ip_matchers_with_asset_reverse(
@@ -177,7 +196,8 @@ impl GeodataLoader {
         inverse: bool,
         max_matchers: usize,
         apply_asset_reverse: bool,
-    ) -> Result<Vec<IpMatcher>, GeodataError> {
+        matchers: &mut IpMatcherSetBuilder,
+    ) -> Result<usize, GeodataError> {
         let code = normalize_code(code);
         let geoip = self.load_ip(file_name, &code)?;
         if geoip.cidr.len() > max_matchers {
@@ -189,18 +209,14 @@ impl GeodataLoader {
             });
         }
         let inverse = inverse ^ (apply_asset_reverse && geoip.reverse_match);
-        geoip
-            .cidr
-            .iter()
-            .map(|cidr| {
-                let matcher = IpMatcher::Cidr(cidr_to_ip_cidr(cidr, file_name, &code)?);
-                #[cfg(test)]
-                {
-                    self.ip_matcher_builds += 1;
-                }
-                Ok(wrap_inverse(matcher, inverse))
-            })
-            .collect()
+        for cidr in &geoip.cidr {
+            matchers.insert_cidr(cidr_to_ip_cidr(cidr, file_name, &code)?.cidr(), inverse);
+            #[cfg(test)]
+            {
+                self.ip_matcher_builds += 1;
+            }
+        }
+        Ok(geoip.cidr.len())
     }
 
     fn load_site(&mut self, file_name: &str, code: &str) -> Result<Arc<GeoSite>, GeodataError> {
@@ -1069,14 +1085,6 @@ fn cidr_to_ip_cidr(cidr: &GeoCidr, file_name: &str, code: &str) -> Result<IpCidr
     })
 }
 
-fn wrap_inverse(matcher: IpMatcher, inverse: bool) -> IpMatcher {
-    if inverse {
-        IpMatcher::Not(Box::new(matcher))
-    } else {
-        matcher
-    }
-}
-
 fn normalize_code(code: &str) -> String {
     code.to_ascii_uppercase()
 }
@@ -1143,6 +1151,7 @@ mod tests {
     };
 
     use prost::Message;
+    use xray_routing::IpMatcherSet;
 
     use super::{
         find_entry_body, scan_entry_code, validate_geo_site_body, GeoCidr, GeoDomain,
@@ -1524,14 +1533,16 @@ mod tests {
         let mut loader = GeodataLoader::from_dirs(Vec::new());
         loader.ips.insert(key, cached);
 
+        let mut matchers = IpMatcherSet::builder();
         let first = loader
-            .load_ip_matchers("geoip.dat", "TEST", false, 2)
+            .load_ip_matchers("geoip.dat", "TEST", false, 2, &mut matchers)
             .unwrap();
         let error = loader
-            .load_ip_matchers("geoip.dat", "TEST", false, 1)
+            .load_ip_matchers("geoip.dat", "TEST", false, 1, &mut matchers)
             .unwrap_err();
 
-        assert_eq!(first.len(), 2);
+        assert_eq!(first, 2);
+        assert_eq!(matchers.matcher_count(), 2);
         assert!(matches!(
             error,
             GeodataError::IpMatcherBudgetExceeded {

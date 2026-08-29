@@ -9,15 +9,13 @@ use thiserror::Error;
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 use xray_config::{
-    CoreConfig, DnsHostTarget, DnsIpFilter as ConfigDnsIpFilter,
-    DnsQueryStrategy as ConfigDnsQueryStrategy, DnsServerConfig, DnsServerEndpoint,
-    DnsServerTransport as ConfigDnsServerTransport, DomainMatcher, InboundProtocol,
-    IpMatcher as ConfigIpMatcher,
+    CoreConfig, DnsHostTarget, DnsIpFilter, DnsQueryStrategy as ConfigDnsQueryStrategy,
+    DnsServerConfig, DnsServerEndpoint, DnsServerTransport as ConfigDnsServerTransport,
+    DomainMatcher, InboundProtocol,
 };
 use xray_runtime::Shutdown;
 use xray_transport::{
     CachingDnsResolver, CompiledNameServerPolicies, ConfiguredDnsResolver,
-    DnsIpFilter as TransportDnsIpFilter, DnsIpMatcher as TransportDnsIpMatcher,
     DnsQueryStrategy as TransportDnsQueryStrategy, DnsQueryTransport, DnsResolver, NameServer,
     NameServerPolicy, NameServerTransport, SocketProtector, StaticHostRule, StaticHostTarget,
     SystemDnsResolver, TransportDialer, TransportDomainMatcher, TransportError,
@@ -894,11 +892,9 @@ fn take_name_server_policy_set(config: &mut CoreConfig) -> Arc<CompiledNameServe
                     std::mem::take(&mut policy.expected_ips),
                     std::mem::take(&mut policy.unexpected_ips),
                 ),
-                DnsServerConfig::Ip(_) | DnsServerConfig::Domain { .. } => (
-                    Vec::new(),
-                    ConfigDnsIpFilter::default(),
-                    ConfigDnsIpFilter::default(),
-                ),
+                DnsServerConfig::Ip(_) | DnsServerConfig::Domain { .. } => {
+                    (Vec::new(), DnsIpFilter::default(), DnsIpFilter::default())
+                }
             };
             Some(NameServerPolicy {
                 server: name_server,
@@ -908,8 +904,8 @@ fn take_name_server_policy_set(config: &mut CoreConfig) -> Arc<CompiledNameServe
                     .into_iter()
                     .map(into_transport_domain_matcher)
                     .collect(),
-                expected_ips: into_transport_dns_ip_filter(expected_ips),
-                unexpected_ips: into_transport_dns_ip_filter(unexpected_ips),
+                expected_ips,
+                unexpected_ips,
                 timeout,
                 skip_fallback,
                 query_strategy,
@@ -1083,33 +1079,6 @@ fn into_transport_domain_matcher(matcher: DomainMatcher) -> TransportDomainMatch
     }
 }
 
-fn into_transport_dns_ip_filter(filter: ConfigDnsIpFilter) -> TransportDnsIpFilter {
-    TransportDnsIpFilter {
-        custom_matchers: filter
-            .custom_matchers
-            .into_iter()
-            .map(into_transport_dns_ip_matcher)
-            .collect(),
-        geoip_matchers: filter
-            .geoip_matchers
-            .into_iter()
-            .map(into_transport_dns_ip_matcher)
-            .collect(),
-        soft: filter.soft,
-    }
-}
-
-fn into_transport_dns_ip_matcher(matcher: ConfigIpMatcher) -> TransportDnsIpMatcher {
-    match matcher {
-        ConfigIpMatcher::Cidr(cidr) => TransportDnsIpMatcher::cidr(cidr.network(), cidr.prefix())
-            .expect("xray-config DNS IP matcher should contain a prevalidated CIDR"),
-        ConfigIpMatcher::Private => TransportDnsIpMatcher::Private,
-        ConfigIpMatcher::Not(matcher) => {
-            TransportDnsIpMatcher::Not(Box::new(into_transport_dns_ip_matcher(*matcher)))
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::io;
@@ -1128,9 +1097,9 @@ mod tests {
 
     use super::{
         configured_dns_resolver_for_config, configured_dns_resolver_from_config_with_transport,
-        host_only_dns_resolver_for_config, into_transport_dns_ip_filter,
-        static_only_dns_resolver_for_config, take_name_server_policy_set, Core, DnsRuntimeLimits,
-        TransportDnsQueryStrategy, TunRuntimeOptions, TunRuntimeProfile,
+        host_only_dns_resolver_for_config, static_only_dns_resolver_for_config,
+        take_name_server_policy_set, Core, DnsRuntimeLimits, TransportDnsQueryStrategy,
+        TunRuntimeOptions, TunRuntimeProfile,
     };
 
     struct StaticResolver;
@@ -1450,31 +1419,6 @@ mod tests {
                 ),
             ]
         );
-    }
-
-    #[test]
-    fn dns_ip_filter_conversion_preserves_categories_inverse_and_soft_mode() {
-        let config_filter = xray_config::DnsIpFilter {
-            custom_matchers: vec![xray_config::IpMatcher::Cidr(
-                xray_config::IpCidr::new(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 0)), 24).unwrap(),
-            )],
-            geoip_matchers: vec![xray_config::IpMatcher::Not(Box::new(
-                xray_config::IpMatcher::Cidr(
-                    xray_config::IpCidr::new(IpAddr::V4(Ipv4Addr::new(198, 51, 100, 0)), 24)
-                        .unwrap(),
-                ),
-            ))],
-            soft: true,
-        };
-
-        let filter =
-            xray_transport::CompiledDnsIpFilter::new(into_transport_dns_ip_filter(config_filter));
-
-        assert!(filter.is_soft());
-        assert_eq!(filter.matcher_count(), 2);
-        assert!(filter.matches(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))));
-        assert!(filter.matches(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 1))));
-        assert!(!filter.matches(IpAddr::V4(Ipv4Addr::new(198, 51, 100, 1))));
     }
 
     #[test]

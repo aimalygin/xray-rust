@@ -48,11 +48,10 @@ use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::{sleep, timeout};
 use tokio_rustls::TlsAcceptor;
 use xray_config::{
-    compile_ip_matchers, parse_xray_json, CoreConfig, DnsOutboundRule, DnsOutboundRuleAction,
-    DnsOutboundSettings, DomainMatcher, InboundConfig, InboundProtocol, IpCidr, IpMatcher,
-    Network as ConfigNetwork, OutboundConfig, OutboundSettings, RoutingConfig,
-    RoutingDomainStrategy, RoutingPortRange, RoutingRule, StreamSecurity, StreamSettings,
-    StreamTransport,
+    parse_xray_json, CoreConfig, DnsOutboundRule, DnsOutboundRuleAction, DnsOutboundSettings,
+    DomainMatcher, InboundConfig, InboundProtocol, IpCidr, Network as ConfigNetwork,
+    OutboundConfig, OutboundSettings, RoutingConfig, RoutingDomainStrategy, RoutingPortRange,
+    RoutingRule, StreamSecurity, StreamSettings, StreamTransport,
 };
 use xray_core_rs::{
     CompiledDnsOutboundPolicy, Core, DnsOutboundDecision, OutboundRouter, StartupProbeOptions,
@@ -61,11 +60,13 @@ use xray_proxy::vless::{
     encode_udp_packet, encode_xudp_keep_packet, read_udp_packet, read_xudp_packet,
     unpad_vision_block, VisionCommand, VisionPadding,
 };
-use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
+use xray_routing::{
+    Cidr, DnsIpFilter, IpMatcherSet, Network as RoutingNetwork, Target,
+    TargetAddr as RoutingTargetAddr,
+};
 use xray_transport::{
-    select_name_server_indices, CachingDnsResolver, CompiledDnsIpFilter,
-    CompiledNameServerPolicies, DnsIpFilter, DnsIpMatcher, DnsLookup, DnsResolver, NameServer,
-    NameServerPolicy, TransportDomainMatcher, TransportError,
+    select_name_server_indices, CachingDnsResolver, CompiledNameServerPolicies, DnsLookup,
+    DnsResolver, NameServer, NameServerPolicy, TransportDomainMatcher, TransportError,
 };
 use xray_utls::{normalize_reality_supported_fingerprint, XRAY_REALITY_CAPABLE_FINGERPRINTS};
 
@@ -8592,14 +8593,18 @@ fn measure_dns_ip_filter(
     matcher_count: usize,
     iterations: usize,
 ) -> Result<DnsIpFilterProbeMetric, BenchError> {
-    let matchers = (0..matcher_count)
-        .map(|index| DnsIpMatcher::host(dns_ip_filter_probe_address(index)))
-        .collect();
     let target = dns_ip_filter_probe_address(matcher_count - 1);
     let non_match = dns_ip_filter_probe_miss(target);
 
+    let addresses = (0..matcher_count)
+        .map(dns_ip_filter_probe_address)
+        .collect::<Vec<_>>();
     let started = Instant::now();
-    let filter = CompiledDnsIpFilter::new(DnsIpFilter::hard(matchers, Vec::new()));
+    let mut builder = DnsIpFilter::builder();
+    for address in addresses {
+        builder.custom().insert_ip(address, false);
+    }
+    let filter = builder.build();
     let compile_us = started.elapsed().as_micros();
     let hit_matched = filter.matches(target);
     let miss_rejected = !filter.matches(non_match);
@@ -9771,23 +9776,23 @@ fn route_probe_config(
 
     let mut routing_rules = Vec::with_capacity(rules);
     for index in 0..rules {
-        let ip_matchers = if index + 1 == rules {
-            vec![IpMatcher::Cidr(IpCidr::full(IpAddr::V4(
-                ROUTE_PROBE_TARGET_IP,
-            )))]
+        let mut ip_matchers = IpMatcherSet::builder();
+        if index + 1 == rules {
+            ip_matchers.insert_cidr(Cidr::host(IpAddr::V4(ROUTE_PROBE_TARGET_IP)), false);
         } else {
-            (0..cidrs_per_rule)
-                .map(|cidr_index| {
-                    route_probe_miss_cidr(index, cidr_index, cidrs_per_rule).map(IpMatcher::Cidr)
-                })
-                .collect::<Result<Vec<_>, _>>()?
-        };
+            for cidr_index in 0..cidrs_per_rule {
+                ip_matchers.insert_cidr(
+                    route_probe_miss_cidr(index, cidr_index, cidrs_per_rule)?.cidr(),
+                    false,
+                );
+            }
+        }
         routing_rules.push(RoutingRule {
             inbound_tags: vec!["bench-in".to_owned()],
             networks: Vec::new(),
             port_ranges: Vec::new(),
             domain_matchers: Vec::new(),
-            ip_matchers: compile_ip_matchers(&ip_matchers),
+            ip_matchers: ip_matchers.build(),
             outbound_tag: selected_tag.clone(),
         });
     }

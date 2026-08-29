@@ -7,20 +7,15 @@ use std::{
 
 use prost::Message;
 use xray_config::{
-    compile_ip_matchers, parse_xray_json, parse_xray_json_with_geodata_dirs, DiagnosticSeverity,
-    DnsFakeIpConfig, DnsHostTarget, DnsIpFilter, DnsNameServerConfig, DnsOutboundRuleAction,
-    DnsOutboundSettings, DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint, DnsServerTransport,
+    parse_xray_json, parse_xray_json_with_geodata_dirs, DiagnosticSeverity, DnsFakeIpConfig,
+    DnsHostTarget, DnsIpFilter, DnsNameServerConfig, DnsOutboundRuleAction, DnsOutboundSettings,
+    DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint, DnsServerTransport,
     HappyEyeballsSettings, InboundProtocol, IpCidr, Network, OutboundSettings, QuicBbrProfile,
     QuicCongestion, QuicIntervalRange, QuicParamsSettings, QuicUdpHopSettings, RealityShortId,
     RoutingDomainStrategy, SniffingDestination, StreamSecurity, StreamTransport, TargetAddr,
     XhttpMode, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpPlacement, XhttpRange,
     XhttpSettings, XhttpUplinkDataPlacement,
 };
-
-fn dns_filter_matches(filter: &DnsIpFilter, ip: IpAddr) -> bool {
-    compile_ip_matchers(&filter.custom_matchers).matches(ip)
-        || compile_ip_matchers(&filter.geoip_matchers).matches(ip)
-}
 
 #[test]
 fn parses_vless_reality_vision_subset() {
@@ -2089,7 +2084,7 @@ fn parses_tcp_dns_string_shorthand_as_default_policy() {
     let parsed = parse_xray_json(&raw).expect("TCP DNS shorthand should parse");
     assert_eq!(
         parsed.config.dns.servers,
-        [DnsServerConfig::Policy(DnsNameServerConfig {
+        [DnsServerConfig::Policy(Box::new(DnsNameServerConfig {
             endpoint: DnsServerEndpoint::Ip(SocketAddr::from(([192, 0, 2, 53], 53))),
             transport: DnsServerTransport::TcpRouted,
             domains: Vec::new(),
@@ -2100,7 +2095,7 @@ fn parses_tcp_dns_string_shorthand_as_default_policy() {
             skip_fallback: false,
             query_strategy: DnsQueryStrategy::UseIp,
             final_query: false,
-        })]
+        }))]
     );
 }
 
@@ -2313,8 +2308,8 @@ fn parses_xray_dns_server_objects_and_fallback_policy() {
         panic!("expected policy DNS server");
     };
     assert_eq!(
-        second,
-        &DnsNameServerConfig {
+        **second,
+        DnsNameServerConfig {
             endpoint: DnsServerEndpoint::Domain {
                 domain: "dns.example".to_owned(),
                 port: 53,
@@ -2412,29 +2407,24 @@ fn parses_xray_dns_ip_filter_string_lists_and_soft_markers() {
         panic!("expected policy DNS server");
     };
 
-    assert!(server.expected_ips.soft);
-    assert_eq!(server.expected_ips.custom_matchers.len(), 2);
-    assert!(dns_filter_matches(
-        &server.expected_ips,
-        IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))
-    ));
-    assert!(dns_filter_matches(
-        &server.expected_ips,
-        IpAddr::V4(Ipv4Addr::new(203, 0, 113, 1))
-    ));
-    assert!(!dns_filter_matches(
-        &server.expected_ips,
-        IpAddr::V4(Ipv4Addr::new(198, 51, 100, 1))
-    ));
-    assert!(server.unexpected_ips.soft);
-    assert!(dns_filter_matches(
-        &server.unexpected_ips,
-        IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))
-    ));
-    assert!(!dns_filter_matches(
-        &server.unexpected_ips,
-        IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))
-    ));
+    assert!(server.expected_ips.is_soft());
+    assert_eq!(server.expected_ips.matcher_count(), 2);
+    assert!(server
+        .expected_ips
+        .matches(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))));
+    assert!(server
+        .expected_ips
+        .matches(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 1))));
+    assert!(!server
+        .expected_ips
+        .matches(IpAddr::V4(Ipv4Addr::new(198, 51, 100, 1))));
+    assert!(server.unexpected_ips.is_soft());
+    assert!(server
+        .unexpected_ips
+        .matches(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))));
+    assert!(!server
+        .unexpected_ips
+        .matches(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))));
 }
 
 #[test]
@@ -2450,10 +2440,9 @@ fn dns_ip_filters_canonicalize_ipv4_mapped_literals_like_xray() {
     let DnsServerConfig::Policy(server) = &parsed.config.dns.servers[0] else {
         panic!("expected policy DNS server");
     };
-    assert!(dns_filter_matches(
-        &server.expected_ips,
-        IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))
-    ));
+    assert!(server
+        .expected_ips
+        .matches(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))));
 
     let invalid = raw_with_dns_servers(
         r#"{
@@ -2478,19 +2467,16 @@ fn dns_ip_filters_accept_xray_address_whitespace_brackets_and_empty_prefix() {
         panic!("expected policy DNS server");
     };
 
-    assert_eq!(server.expected_ips.custom_matchers.len(), 3);
-    assert!(dns_filter_matches(
-        &server.expected_ips,
-        IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))
-    ));
-    assert!(dns_filter_matches(
-        &server.expected_ips,
-        IpAddr::V4(Ipv4Addr::new(198, 51, 100, 1))
-    ));
-    assert!(dns_filter_matches(
-        &server.expected_ips,
-        IpAddr::V6("2001:db8::1".parse().unwrap())
-    ));
+    assert_eq!(server.expected_ips.matcher_count(), 3);
+    assert!(server
+        .expected_ips
+        .matches(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))));
+    assert!(server
+        .expected_ips
+        .matches(IpAddr::V4(Ipv4Addr::new(198, 51, 100, 1))));
+    assert!(server
+        .expected_ips
+        .matches(IpAddr::V6("2001:db8::1".parse().unwrap())));
 }
 
 #[test]
@@ -2508,10 +2494,9 @@ fn uses_expect_ips_alias_only_when_expected_ips_is_empty() {
         panic!("expected policy DNS server");
     };
 
-    assert!(dns_filter_matches(
-        &server.expected_ips,
-        IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))
-    ));
+    assert!(server
+        .expected_ips
+        .matches(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))));
 }
 
 #[test]
@@ -2533,10 +2518,9 @@ fn treats_null_dns_ip_string_lists_as_empty() {
         panic!("expected policy DNS server");
     };
 
-    assert!(dns_filter_matches(
-        &server.expected_ips,
-        IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))
-    ));
+    assert!(server
+        .expected_ips
+        .matches(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))));
     assert!(server.unexpected_ips.is_empty());
     let DnsServerConfig::Policy(server_with_null_alias) = &parsed.config.dns.servers[1] else {
         panic!("expected policy DNS server");
@@ -2559,7 +2543,7 @@ fn nonempty_expected_ips_wins_without_parsing_expect_ips_rules() {
         panic!("expected policy DNS server");
     };
 
-    assert!(server.expected_ips.soft);
+    assert!(server.expected_ips.is_soft());
     assert!(server.expected_ips.is_empty());
 }
 
@@ -2597,22 +2581,18 @@ fn parses_dns_geoip_ext_rules_and_repeated_inverse_prefixes() {
     let DnsServerConfig::Policy(server) = &parsed.config.dns.servers[0] else {
         panic!("expected policy DNS server");
     };
-    assert!(dns_filter_matches(
-        &server.expected_ips,
-        IpAddr::V4(Ipv4Addr::new(203, 0, 113, 1))
-    ));
-    assert!(dns_filter_matches(
-        &server.expected_ips,
-        IpAddr::V4(Ipv4Addr::new(198, 51, 100, 1))
-    ));
-    assert!(dns_filter_matches(
-        &server.unexpected_ips,
-        IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))
-    ));
-    assert!(!dns_filter_matches(
-        &server.unexpected_ips,
-        IpAddr::V4(Ipv4Addr::new(198, 51, 100, 1))
-    ));
+    assert!(server
+        .expected_ips
+        .matches(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 1))));
+    assert!(server
+        .expected_ips
+        .matches(IpAddr::V4(Ipv4Addr::new(198, 51, 100, 1))));
+    assert!(server
+        .unexpected_ips
+        .matches(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))));
+    assert!(!server
+        .unexpected_ips
+        .matches(IpAddr::V4(Ipv4Addr::new(198, 51, 100, 1))));
 
     fs::remove_dir_all(asset_dir).unwrap();
 }
@@ -2654,8 +2634,8 @@ fn dns_ip_filters_ignore_geoip_asset_reverse_flag() {
     let inside = IpAddr::V4(Ipv4Addr::new(203, 0, 113, 1));
     let outside = IpAddr::V4(Ipv4Addr::new(198, 51, 100, 1));
 
-    assert!(dns_filter_matches(&server.expected_ips, inside));
-    assert!(!dns_filter_matches(&server.expected_ips, outside));
+    assert!(server.expected_ips.matches(inside));
+    assert!(!server.expected_ips.matches(outside));
     assert!(!parsed.config.routing.rules[0].matches_ip(Some(&inside)));
     assert!(parsed.config.routing.rules[0].matches_ip(Some(&outside)));
 
@@ -2687,14 +2667,12 @@ fn dns_geoip_private_uses_the_configured_xray_asset() {
         panic!("expected policy DNS server");
     };
 
-    assert!(dns_filter_matches(
-        &server.expected_ips,
-        IpAddr::V4(Ipv4Addr::new(203, 0, 113, 1))
-    ));
-    assert!(!dns_filter_matches(
-        &server.expected_ips,
-        IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))
-    ));
+    assert!(server
+        .expected_ips
+        .matches(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 1))));
+    assert!(!server
+        .expected_ips
+        .matches(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))));
 
     fs::remove_dir_all(asset_dir).unwrap();
 }
