@@ -11,11 +11,21 @@ die() {
 
 job_body() {
   local job="$1"
-  awk -v header="  $job:" '
-    $0 == header { capture = 1 }
-    capture && $0 != header && /^  [A-Za-z0-9_-]+:/ { exit }
+  awk -v header="^  $job:[[:space:]]*(#.*)?$" '
+    $0 ~ header { capture = 1; print; next }
+    capture && /^  [A-Za-z0-9_-]+:/ { exit }
     capture { print }
   ' "$WORKFLOW"
+}
+
+step_body() {
+  local body="$1"
+  local step="$2"
+  awk -v header="      - name: $step" '
+    $0 == header { capture = 1 }
+    capture && $0 != header && /^      - / { exit }
+    capture { print }
+  ' <<<"$body"
 }
 
 normalize_yaml_body() {
@@ -128,7 +138,37 @@ assert_equal() {
   local label="$1"
   local actual="$2"
   local expected="$3"
-  [[ "$actual" == "$expected" ]] || die "$label differs from its reviewed canonical policy"
+  if [[ "$actual" == "$expected" ]]; then
+    return
+  fi
+
+  echo "$label differs from its reviewed canonical policy" >&2
+  awk '
+    FNR == NR {
+      expected[FNR] = $0
+      expected_count = FNR
+      next
+    }
+    {
+      actual[FNR] = $0
+      actual_count = FNR
+    }
+    END {
+      count = expected_count > actual_count ? expected_count : actual_count
+      for (line = 1; line <= count; line++) {
+        if (expected[line] != actual[line] ||
+            line > expected_count || line > actual_count) {
+          expected_line = line <= expected_count ? expected[line] : "<end>"
+          actual_line = line <= actual_count ? actual[line] : "<end>"
+          print "  first difference at line " line
+          print "  expected: " expected_line
+          print "  actual:   " actual_line
+          exit
+        }
+      }
+    }
+  ' <(printf '%s\n' "$expected") <(printf '%s\n' "$actual") >&2
+  exit 1
 }
 
 needs_body() {
@@ -318,6 +358,29 @@ expected_main_smoke="$(cat <<'EXPECTED'
 EXPECTED
 )"
 
+expected_rust_fields="$(cat <<'EXPECTED'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+EXPECTED
+)"
+
+expected_repository_scripts_step="$(cat <<'EXPECTED'
+      - name: Check repository scripts
+        run: |
+          for script in scripts/*.sh scripts/tests/*.sh; do
+            bash -n "$script"
+          done
+          bash scripts/tests/check-release-version.test.sh
+          bash scripts/tests/check-prerelease-workflow.test.sh
+          bash scripts/tests/check-rc-interop.test.sh
+          bash scripts/tests/check-scheduled-pinned-interop.test.sh
+          bash scripts/tests/check-xray-main-smoke.test.sh
+          bash scripts/tests/check-scheduled-interop-workflow.test.sh
+          bash scripts/tests/check-public-fixtures.test.sh
+EXPECTED
+)"
+
 expected_publish_needs="$(cat <<'EXPECTED'
     needs:
       - release-metadata
@@ -373,6 +436,10 @@ assert_equal 'prerelease publication fields' "$(job_field_lines "$normalized_pub
 assert_equal 'prerelease publication dependencies' "$(needs_body "$normalized_publish_job")" "$expected_publish_needs"
 
 normalized_rust_job="$(normalize_yaml_body "$rust_job")"
+assert_equal 'Rust CI job fields' "$(job_field_lines "$normalized_rust_job")" "$expected_rust_fields"
+repository_scripts_step="$(step_body "$normalized_rust_job" 'Check repository scripts')"
+[[ -n "$repository_scripts_step" ]] || die 'Rust CI repository-script check step is missing'
+assert_equal 'Rust CI repository-script check step' "$repository_scripts_step" "$expected_repository_scripts_step"
 for script_test in check-scheduled-pinned-interop.test.sh check-xray-main-smoke.test.sh check-scheduled-interop-workflow.test.sh; do
   require_exact "$normalized_rust_job" "          bash scripts/tests/$script_test" "Rust CI job does not run $script_test"
 done
