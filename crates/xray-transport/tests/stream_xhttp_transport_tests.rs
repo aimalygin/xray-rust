@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use h2::{client, server, Ping, Reason, RecvStream};
-use http::{header, Response, StatusCode};
+use http::{header, Method, Response, StatusCode};
 use rand::rngs::mock::StepRng;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream, ReadBuf};
 use tokio::sync::{mpsc, oneshot};
@@ -1023,6 +1023,323 @@ async fn h2_packet_up_does_not_replay_when_goaway_follows_request_data() {
     ));
     assert_eq!(dials.load(Ordering::Acquire), 1);
     assert!(!replay_seen.load(Ordering::Acquire));
+}
+
+#[tokio::test]
+async fn dropping_h2_packet_up_while_upload_is_flow_controlled_cancels_once_and_releases_pool() {
+    const MAX_PACKET: usize = 16;
+    const BLOCKED_UPLOAD: [u8; 64] = [0x5a; 64];
+    const REPLACEMENT_UPLOAD: &[u8] = b"replacement";
+    const REPLACEMENT_DOWNLINK: &[u8] = b"reused";
+
+    #[derive(Debug)]
+    enum PublicHalfTerminal {
+        Io(io::Result<()>),
+        Cancelled,
+    }
+
+    fn expect_cancelled(direction: &str, result: PublicHalfTerminal) {
+        match result {
+            PublicHalfTerminal::Cancelled => {}
+            PublicHalfTerminal::Io(result) => {
+                panic!("{direction} completed I/O before cancellation: {result:?}")
+            }
+        }
+    }
+
+    let (client_io, server_io) = tokio::io::duplex(1024 * 1024);
+    let (client_io, settings_ack, _ping_ack) = FrameObservedStream::new(client_io);
+    let (post_blocked, post_blocked_rx) = oneshot::channel();
+    let (replacement_post, replacement_post_rx) = oneshot::channel();
+    let (reset_tx, mut reset_rx) = mpsc::unbounded_channel::<(Method, Reason)>();
+    let server_task = tokio::spawn(async move {
+        let mut builder = server::Builder::new();
+        builder.initial_window_size(8);
+        let mut connection = builder
+            .handshake::<_, Bytes>(server_io)
+            .await
+            .expect("flow-controlled server HTTP/2 handshake");
+        let mut reset_observers = Vec::new();
+        let mut post_blocked = Some(post_blocked);
+        let mut replacement_post = Some(replacement_post);
+        let mut accepted = 0_usize;
+
+        while let Some(exchange) = connection.accept().await {
+            let (request, mut respond) =
+                exchange.expect("flow-controlled server connection failed");
+            match accepted {
+                0 => {
+                    assert_eq!(request.method(), Method::GET);
+                    let mut response = respond
+                        .send_response(ok_response(), false)
+                        .expect("send persistent original downlink headers");
+                    let reset_tx = reset_tx.clone();
+                    reset_observers.push(tokio::spawn(async move {
+                        let reason = std::future::poll_fn(|cx| response.poll_reset(cx))
+                            .await
+                            .expect("observe original GET reset");
+                        reset_tx
+                            .send((Method::GET, reason))
+                            .expect("original GET reset receiver");
+                    }));
+                }
+                1 => {
+                    assert_eq!(request.method(), Method::POST);
+                    let post_blocked = post_blocked
+                        .take()
+                        .expect("original POST is accepted only once");
+                    let reset_tx = reset_tx.clone();
+                    reset_observers.push(tokio::spawn(async move {
+                        let mut body = request.into_body();
+                        let first_data = body
+                            .data()
+                            .await
+                            .expect("original POST ended before DATA")
+                            .expect("read original POST DATA");
+                        assert_eq!(first_data.as_ref(), &[0x5a; 8]);
+                        post_blocked
+                            .send(())
+                            .expect("original POST blocked receiver");
+
+                        // Retain both the DATA and its RecvStream without
+                        // releasing capacity. The client's remaining eight
+                        // bytes therefore stay flow-controlled until drop.
+                        let reason = std::future::poll_fn(|cx| respond.poll_reset(cx))
+                            .await
+                            .expect("observe original POST reset");
+                        reset_tx
+                            .send((Method::POST, reason))
+                            .expect("original POST reset receiver");
+                        drop((first_data, body));
+                    }));
+                }
+                2 => {
+                    assert_eq!(request.method(), Method::GET);
+                    let mut response = respond
+                        .send_response(ok_response(), false)
+                        .expect("send replacement downlink headers");
+                    response
+                        .send_data(Bytes::from_static(REPLACEMENT_DOWNLINK), true)
+                        .expect("send replacement downlink body");
+                }
+                3 => {
+                    assert_eq!(request.method(), Method::POST);
+                    let replacement_post = replacement_post
+                        .take()
+                        .expect("replacement POST is accepted only once");
+                    reset_observers.push(tokio::spawn(async move {
+                        let body = drain_h2_request(request.into_body()).await;
+                        respond
+                            .send_response(ok_response(), true)
+                            .expect("send replacement POST response");
+                        replacement_post
+                            .send(body)
+                            .expect("replacement POST body receiver");
+                    }));
+                }
+                _ => panic!("unexpected fifth request on reused H2 connection"),
+            }
+            accepted += 1;
+        }
+
+        assert_eq!(accepted, 4);
+        for observer in reset_observers {
+            observer.await.expect("server stream observer task");
+        }
+    });
+
+    let client_io = Arc::new(Mutex::new(
+        Some(Box::new(client_io) as BoxedTransportStream),
+    ));
+    let dials = Arc::new(AtomicUsize::new(0));
+    let dial: XhttpDial = {
+        let client_io = Arc::clone(&client_io);
+        let dials = Arc::clone(&dials);
+        Arc::new(move || {
+            dials.fetch_add(1, Ordering::AcqRel);
+            let stream = client_io.lock().unwrap().take();
+            Box::pin(async move {
+                stream.ok_or_else(|| {
+                    TransportError::Tcp(io::Error::new(
+                        io::ErrorKind::NotConnected,
+                        "flow-controlled test dial is exhausted",
+                    ))
+                })
+            })
+        })
+    };
+    let transport = transport(
+        XhttpModeSelection::PacketUp,
+        XhttpHttpVersion::Http2,
+        unlimited_xmux(),
+        MAX_PACKET as i32,
+    );
+    let stream = transport
+        .open_stream_with_dial(Arc::clone(&dial))
+        .await
+        .expect("open original packet-up flow");
+
+    timeout(DEADLINE, settings_ack)
+        .await
+        .expect("client did not acknowledge the eight-byte receive window")
+        .expect("SETTINGS ACK observation sender");
+
+    let (mut public_reader, mut public_writer) = tokio::io::split(stream);
+    let (read_cancel, mut read_cancel_rx) = oneshot::channel();
+    let reader_task = tokio::spawn(async move {
+        let mut byte = [0_u8; 1];
+        let terminal = tokio::select! {
+            biased;
+            cancel = &mut read_cancel_rx => {
+                cancel.expect("read cancellation sender");
+                PublicHalfTerminal::Cancelled
+            }
+            result = public_reader.read(&mut byte) => {
+                PublicHalfTerminal::Io(result.map(|_| ()))
+            }
+        };
+        drop(public_reader);
+        terminal
+    });
+
+    let (write_cancel, mut write_cancel_rx) = oneshot::channel();
+    let (writer_started, writer_started_rx) = oneshot::channel();
+    let (writer_done, mut writer_done_rx) = oneshot::channel();
+    let writer_task = tokio::spawn(async move {
+        writer_started.send(()).expect("writer-started receiver");
+        let terminal = tokio::select! {
+            biased;
+            cancel = &mut write_cancel_rx => {
+                cancel.expect("write cancellation sender");
+                PublicHalfTerminal::Cancelled
+            }
+            result = public_writer.write_all(&BLOCKED_UPLOAD) => {
+                PublicHalfTerminal::Io(result)
+            }
+        };
+        drop(public_writer);
+        let _ = writer_done.send(());
+        terminal
+    });
+
+    timeout(DEADLINE, async {
+        writer_started_rx
+            .await
+            .expect("writer-started observation sender");
+        post_blocked_rx
+            .await
+            .expect("original POST blocked observation sender");
+    })
+    .await
+    .expect("public writer did not reach deterministic H2 flow control");
+    assert!(matches!(
+        writer_done_rx.try_recv(),
+        Err(oneshot::error::TryRecvError::Empty)
+    ));
+
+    read_cancel.send(()).expect("read cancellation receiver");
+    write_cancel.send(()).expect("write cancellation receiver");
+    let (reader_result, writer_result) =
+        timeout(DEADLINE, async { tokio::join!(reader_task, writer_task) })
+            .await
+            .expect("public split halves did not stop after cancellation");
+    expect_cancelled(
+        "read half",
+        reader_result.expect("public reader task panicked"),
+    );
+    expect_cancelled(
+        "write half",
+        writer_result.expect("public writer task panicked"),
+    );
+    writer_done_rx
+        .await
+        .expect("writer completion observation sender");
+
+    let resets = timeout(DEADLINE, async {
+        [
+            reset_rx.recv().await.expect("first reset event"),
+            reset_rx.recv().await.expect("second reset event"),
+        ]
+    })
+    .await
+    .expect("server did not observe both original stream resets");
+    assert_eq!(
+        resets
+            .iter()
+            .filter(|event| **event == (Method::GET, Reason::CANCEL))
+            .count(),
+        1
+    );
+    assert_eq!(
+        resets
+            .iter()
+            .filter(|event| **event == (Method::POST, Reason::CANCEL))
+            .count(),
+        1
+    );
+    assert!(matches!(
+        reset_rx.try_recv(),
+        Err(mpsc::error::TryRecvError::Empty)
+    ));
+
+    timeout(DEADLINE, async {
+        loop {
+            if transport.h2_connection_activity_counts().await == vec![0] {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("cancelled packet-up flow did not release H2 reservations");
+
+    let mut replacement = transport
+        .open_stream_with_dial(Arc::clone(&dial))
+        .await
+        .expect("reuse healthy H2 connection for replacement flow");
+    replacement
+        .write_all(REPLACEMENT_UPLOAD)
+        .await
+        .expect("write replacement packet");
+    replacement
+        .shutdown()
+        .await
+        .expect("finish replacement uplink");
+    let mut downlink = Vec::new();
+    replacement
+        .read_to_end(&mut downlink)
+        .await
+        .expect("read replacement downlink to EOF");
+    assert_eq!(downlink, REPLACEMENT_DOWNLINK);
+    let replacement_body = timeout(DEADLINE, replacement_post_rx)
+        .await
+        .expect("replacement POST did not complete")
+        .expect("replacement POST body sender");
+    assert_eq!(replacement_body, REPLACEMENT_UPLOAD);
+    drop(replacement);
+
+    timeout(DEADLINE, async {
+        loop {
+            if transport.h2_connection_activity_counts().await == vec![0] {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("replacement packet-up flow did not release H2 reservations");
+    assert_eq!(
+        dials.load(Ordering::Acquire),
+        1,
+        "local cancellation must preserve the healthy H2 connection"
+    );
+
+    drop(transport);
+    drop(dial);
+    timeout(DEADLINE, server_task)
+        .await
+        .expect("flow-controlled server did not stop")
+        .expect("flow-controlled server task panicked");
 }
 
 #[tokio::test]
