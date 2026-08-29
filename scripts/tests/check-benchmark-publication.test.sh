@@ -208,64 +208,401 @@ engine_hashes = {
     "xray-core": "a" * 64,
     "sing-box": "b" * 64,
 }
+workspace = pathlib.Path("/tmp/xray-rust-benchmark-workspace")
+engine_paths = {
+    "xray-rust": workspace / "target/release/xray-rust",
+    "xray-core": workspace / "target/bench-bin/xray-core-v26.7.28",
+    "sing-box": workspace
+    / "target/benchmarks/2026-08-29-v26.7.28/comparators/bin/sing-box-v1.13.15",
+}
+xray_core_dir = workspace / "Xray-core"
+raw_root = workspace / "target/benchmarks/2026-08-29-v26.7.28"
+sing_box_dir = raw_root / "comparators/sing-box"
+geodata_dir = raw_root / "comparators/geodata"
+
+
+def scenario_config(scenario, fields):
+    base = {
+        "idle": (5_000, 30_000, "base-idle"),
+        "many-idle-flows-100": (5_000, 30_000, "base-flows-100"),
+        "many-idle-flows-1000": (5_000, 30_000, "base-flows-1000"),
+        "tcp-freedom": (2_000, 30_000, "base-tcp"),
+        "udp-freedom": (2_000, 30_000, "base-udp"),
+        "reconnect-burst": (2_000, 30_000, "base-reconnect"),
+        "reality-vision-xudp": (2_000, 30_000, "base-reality-xudp"),
+        "tcp-bulk-throughput": (2_000, 300_000, "base-tcp-bulk"),
+        "reality-vision-bulk-throughput": (
+            2_000,
+            120_000,
+            "base-reality-bulk",
+        ),
+        "routed-tcp-freedom": (2_000, 120_000, "base-geodata"),
+    }
+    if scenario in base:
+        duration_ms, timeout_ms, output_name = base[scenario]
+        return {
+            "duration_ms": duration_ms,
+            "sample_interval_ms": 100,
+            "run_timeout_ms": timeout_ms,
+            "settle_ms": 0,
+            "explicit_max_post_bytes": None,
+            "output_name": output_name,
+            "supports_sing_box": scenario != "routed-tcp-freedom",
+            "geodata": scenario == "routed-tcp-freedom",
+        }
+    if scenario.startswith("stream-"):
+        return {
+            "duration_ms": 2_000,
+            "sample_interval_ms": 100,
+            "run_timeout_ms": 300_000,
+            "settle_ms": 0,
+            "explicit_max_post_bytes": None,
+            "output_name": scenario,
+            "supports_sing_box": not fields["stream_transport"].startswith("xhttp-"),
+            "geodata": False,
+        }
+    if scenario.startswith("xhttp-pressure-"):
+        return {
+            "duration_ms": 2_000,
+            "sample_interval_ms": 100,
+            "run_timeout_ms": 300_000,
+            "settle_ms": 0,
+            "explicit_max_post_bytes": None,
+            "output_name": scenario,
+            "supports_sing_box": False,
+            "geodata": False,
+        }
+    held_open = "-held-open-" in scenario
+    return {
+        "duration_ms": 30_000 if held_open else 0,
+        "sample_interval_ms": 100,
+        "run_timeout_ms": 155_000 if held_open else 300_000,
+        "settle_ms": 5_000,
+        "explicit_max_post_bytes": fields["xhttp_max_post_bytes"],
+        "output_name": "xhttp-memory",
+        "supports_sing_box": False,
+        "geodata": False,
+    }
+
+
+def canonical_invocation(scenario, engine, fields, config):
+    args = [
+        "run",
+        "--engine",
+        engine,
+        "--workload",
+        fields["workload"],
+        "--duration-ms",
+        str(config["duration_ms"]),
+        "--sample-interval-ms",
+        str(config["sample_interval_ms"]),
+        "--run-timeout-ms",
+        str(config["run_timeout_ms"]),
+        "--connections",
+        str(fields["connections"]),
+        "--iterations",
+        str(fields["iterations"]),
+        "--payload-size",
+        str(fields["payload_size"]),
+    ]
+    if fields["workload"] == "stream-transport":
+        args += [
+            "--stream-transport",
+            fields["stream_transport"],
+            "--traffic",
+            fields["stream_traffic"],
+        ]
+        if fields.get("xhttp_mode") is not None:
+            args += ["--xhttp-mode", fields["xhttp_mode"]]
+        if fields.get("xhttp_profile") is not None:
+            args += ["--xhttp-profile", fields["xhttp_profile"]]
+        if config["explicit_max_post_bytes"] is not None:
+            args += [
+                "--xhttp-max-post-bytes",
+                str(config["explicit_max_post_bytes"]),
+            ]
+        args += ["--settle-ms", str(config["settle_ms"])]
+    args += [
+        "--transport",
+        "both",
+        "--dns-upstream-transport",
+        "classic",
+        "--runs",
+        "5",
+        "--out-dir",
+        str(raw_root / config["output_name"]),
+        "--xray-rust-bin",
+        str(engine_paths["xray-rust"]),
+        "--xray-core-bin",
+        str(engine_paths["xray-core"]),
+    ]
+    if config["supports_sing_box"]:
+        args += ["--sing-box-bin", str(engine_paths["sing-box"])]
+    args += ["--xray-core-dir", str(xray_core_dir)]
+    if config["supports_sing_box"]:
+        args += ["--sing-box-dir", str(sing_box_dir)]
+    args.append("--no-auto-build")
+    if config["geodata"]:
+        args += ["--geodata-dir", str(geodata_dir)]
+    return args
+
+
+def ceil_div(numerator, denominator):
+    return (numerator + denominator - 1) // denominator
+
+
+def metric(values):
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    median = (
+        ordered[middle]
+        if len(ordered) % 2
+        else (ordered[middle - 1] + ordered[middle]) // 2
+    )
+    return {
+        "min": ordered[0],
+        "median": median,
+        "p95": ordered[ceil_div(len(ordered) * 95, 100) - 1],
+    }
+
+
+def optional_metric(values):
+    present = [value for value in values if value is not None]
+    return metric(present) if present else None
+
+
+def latency(seed):
+    return {"min": seed, "median": seed + 2, "p95": seed + 4, "p99": seed + 5}
+
+
+def latency_aggregate(values):
+    present = [value for value in values if value is not None]
+    if not present:
+        return None
+    return {
+        field: metric([value[field] for value in present])
+        for field in ("min", "median", "p95", "p99")
+    }
+
+
+def setup(seed):
+    return {
+        field: latency(seed + offset * 10)
+        for offset, field in enumerate(
+            (
+                "tcp_connect_us",
+                "socks_method_us",
+                "socks_connect_us",
+                "socks_setup_us",
+                "total_us",
+            )
+        )
+    }
+
+
+def setup_aggregate(values):
+    present = [value for value in values if value is not None]
+    if not present:
+        return None
+    return {
+        field: latency_aggregate([value[field] for value in present])
+        for field in (
+            "tcp_connect_us",
+            "socks_method_us",
+            "socks_connect_us",
+            "socks_setup_us",
+            "total_us",
+        )
+    }
+
+
+def workload_bytes(fields):
+    total = fields["connections"] * fields["iterations"] * fields["payload_size"]
+    if fields["workload"] == "stream-transport":
+        traffic = fields["stream_traffic"]
+        if traffic == "held-open":
+            return 0, 0
+        return (
+            total if traffic in {"upload", "full-duplex", "packet-up"} else 0,
+            total if traffic in {"download", "full-duplex"} else 0,
+        )
+    if fields["workload"] in {"idle", "many-idle-flows", "reconnect-burst"}:
+        return 0, 0
+    if fields["workload"] in {
+        "tcp-bulk-throughput",
+        "reality-vision-bulk-throughput",
+    }:
+        return 0, total
+    return total, total
+
+
 summaries = {}
 for index, (scenario, engine, fields) in enumerate(series):
     summary_path = f"summaries/{index:03d}-{scenario}-{engine}.json"
+    config = scenario_config(scenario, fields)
     provenance = {
         "harness_profile": "release",
         "workspace_git": {"revision": candidate_revision, "dirty": False},
-        "engine_source_git": {
+        "harness_binary_path": str(workspace / "target/release/xray-bench"),
+        "harness_binary_sha256": "d" * 64,
+        "engine_binary_path": str(engine_paths[engine]),
+        "engine_binary_sha256": engine_hashes[engine],
+        "working_directory": str(workspace),
+        "invocation_args": canonical_invocation(scenario, engine, fields, config),
+    }
+    if engine != "xray-core":
+        provenance["engine_source_git"] = {
             "revision": engine_revisions[engine],
             "dirty": False,
-        },
-        "harness_binary_path": "/tmp/xray-bench",
-        "harness_binary_sha256": "d" * 64,
-        "engine_binary_path": f"/tmp/{engine}",
-        "engine_binary_sha256": engine_hashes[engine],
-        "working_directory": "/tmp/xray-rust",
-        "invocation_args": ["compare", "--engine", engine],
+        }
+    bytes_sent, bytes_received = workload_bytes(fields)
+    total_bytes = bytes_sent + bytes_received
+    has_latency = fields["workload"] in {
+        "tcp-freedom",
+        "udp-freedom",
+        "many-idle-flows",
+        "reconnect-burst",
+        "reality-vision-xudp",
+        "routed-tcp-freedom",
     }
+    has_setup = fields["workload"] == "stream-transport" or has_latency
+    results = []
+    for run in range(5):
+        duration_ms = config["duration_ms"] + config["settle_ms"] + 100 + run
+        transfer_duration_ms = (
+            50 + run
+            if total_bytes > 0 and fields.get("stream_traffic") != "held-open"
+            else None
+        )
+        cpu_millis = 20 + run
+        cpu_per_gib = (
+            ceil_div(cpu_millis * 1024 * 1024 * 1024, total_bytes)
+            if total_bytes > 0
+            else None
+        )
+        throughput_duration = transfer_duration_ms or duration_ms
+        throughput = (
+            ceil_div(total_bytes * 8, throughput_duration * 1_000)
+            if total_bytes > 0 and throughput_duration > 0
+            else None
+        )
+        uplink_ops = (
+            fields["connections"] * fields["iterations"]
+            if fields.get("stream_traffic") == "packet-up"
+            else None
+        )
+        result = {
+            "run_id": "publication-run",
+            "provenance": copy.deepcopy(provenance),
+            "engine": engine,
+            "workload": fields["workload"],
+            "status": "ok",
+            "duration_ms": duration_ms,
+            "transfer_duration_ms": transfer_duration_ms,
+            "bytes_sent": bytes_sent,
+            "bytes_received": bytes_received,
+            "peak_rss_kib": 1_000 + run,
+            "cpu_millis": cpu_millis,
+            "cpu_millis_per_gib": cpu_per_gib,
+            "throughput_mbps": throughput,
+            "connections": fields["connections"],
+            "iterations": fields["iterations"],
+            "payload_size": fields["payload_size"],
+            "settle_ms": config["settle_ms"],
+            "memory_phases": [
+                {
+                    "phase": "startup",
+                    "samples": 1,
+                    "first_rss_kib": 900 + run,
+                    "median_rss_kib": 900 + run,
+                    "peak_rss_kib": 900 + run,
+                    "last_rss_kib": 900 + run,
+                },
+                {
+                    "phase": "workload",
+                    "samples": 8 + run,
+                    "first_rss_kib": 920 + run,
+                    "median_rss_kib": 950 + run,
+                    "peak_rss_kib": 1_000 + run,
+                    "last_rss_kib": 930 + run,
+                },
+                {
+                    "phase": "complete",
+                    "samples": 1,
+                    "first_rss_kib": 925 + run,
+                    "median_rss_kib": 925 + run,
+                    "peak_rss_kib": 925 + run,
+                    "last_rss_kib": 925 + run,
+                }
+            ],
+            "latency_us": latency(10 + run) if has_latency else None,
+            "setup_us": setup(20 + run) if has_setup else None,
+            "samples": 10 + run,
+        }
+        for field in (
+            "stream_transport",
+            "stream_traffic",
+            "xhttp_mode",
+            "xhttp_profile",
+            "xhttp_max_post_bytes",
+        ):
+            if fields.get(field) is not None:
+                result[field] = fields[field]
+        if uplink_ops is not None:
+            result["uplink_write_ops"] = uplink_ops
+            result["uplink_write_ops_per_second"] = ceil_div(
+                uplink_ops * 1_000, transfer_duration_ms
+            )
+        results.append(result)
     summary = {
         "run_id": "publication-run",
+        "provenance": provenance,
         "engine": engine,
         "workload": fields["workload"],
         "status": "ok",
         "runs": 5,
+        "duration_ms": metric([result["duration_ms"] for result in results]),
+        "transfer_duration_ms": optional_metric(
+            [result["transfer_duration_ms"] for result in results]
+        ),
+        "peak_rss_kib": metric([result["peak_rss_kib"] for result in results]),
+        "cpu_millis": metric([result["cpu_millis"] for result in results]),
+        "cpu_millis_per_gib": optional_metric(
+            [result["cpu_millis_per_gib"] for result in results]
+        ),
+        "throughput_mbps": optional_metric(
+            [result["throughput_mbps"] for result in results]
+        ),
         "connections": fields["connections"],
         "iterations": fields["iterations"],
         "payload_size": fields["payload_size"],
-        "stream_transport": fields.get("stream_transport"),
-        "stream_traffic": fields.get("stream_traffic"),
-        "xhttp_mode": fields.get("xhttp_mode"),
-        "xhttp_profile": fields.get("xhttp_profile"),
-        "xhttp_max_post_bytes": fields.get("xhttp_max_post_bytes"),
-        "settle_ms": 5_000 if scenario.startswith("xhttp-memory-") else 0,
-        "dns_transport": None,
-        "dns_upstream_transport": None,
-        "provenance": provenance,
+        "settle_ms": config["settle_ms"],
+        "latency_us": latency_aggregate(
+            [result["latency_us"] for result in results]
+        ),
+        "setup_us": setup_aggregate([result["setup_us"] for result in results]),
+        "bytes_sent": metric([result["bytes_sent"] for result in results]),
+        "bytes_received": metric(
+            [result["bytes_received"] for result in results]
+        ),
+        "results": results,
     }
-    result_template = {
-        "engine": summary["engine"],
-        "workload": summary["workload"],
-        "status": summary["status"],
-        "connections": summary["connections"],
-        "iterations": summary["iterations"],
-        "payload_size": summary["payload_size"],
-        "stream_transport": summary["stream_transport"],
-        "stream_traffic": summary["stream_traffic"],
-        "xhttp_mode": summary["xhttp_mode"],
-        "xhttp_profile": summary["xhttp_profile"],
-        "xhttp_max_post_bytes": summary["xhttp_max_post_bytes"],
-        "settle_ms": summary["settle_ms"],
-        "dns_transport": summary["dns_transport"],
-        "dns_upstream_transport": summary["dns_upstream_transport"],
-        "provenance": copy.deepcopy(provenance),
-    }
-    summary["results"] = []
-    for _ in range(5):
-        result = copy.deepcopy(result_template)
-        result["run_id"] = "publication-run"
-        summary["results"].append(result)
+    for field in (
+        "stream_transport",
+        "stream_traffic",
+        "xhttp_mode",
+        "xhttp_profile",
+        "xhttp_max_post_bytes",
+    ):
+        if fields.get(field) is not None:
+            summary[field] = fields[field]
+    if any("uplink_write_ops" in result for result in results):
+        summary["uplink_write_ops"] = optional_metric(
+            [result.get("uplink_write_ops") for result in results]
+        )
+        summary["uplink_write_ops_per_second"] = optional_metric(
+            [result.get("uplink_write_ops_per_second") for result in results]
+        )
     summaries[summary_path] = summary
     manifest["series"].append(
         {"scenario": scenario, "engine": engine, "summary": summary_path}
@@ -273,10 +610,39 @@ for index, (scenario, engine, fields) in enumerate(series):
 
 target_path = manifest["series"][0]["summary"]
 target = summaries[target_path]
+
+
+def mutate_invocation(summary, callback):
+    callback(summary["provenance"]["invocation_args"])
+    for result in summary["results"]:
+        callback(result["provenance"]["invocation_args"])
+
+
+def remove_flag(args, flag):
+    index = args.index(flag)
+    del args[index : index + 2]
+
+
+def replace_flag(args, flag, value):
+    args[args.index(flag) + 1] = value
+
+
 if mutation == "wrong_xray_revision":
     manifest["comparators"]["xray-core"]["revision"] = "0" * 40
 elif mutation == "wrong_xray_version":
     manifest["comparators"]["xray-core"]["version"] = "v0.0.0"
+elif mutation == "compact_date":
+    manifest["measuredAt"] = "20260829"
+    manifest["publicationId"] = "20260829-v26.7.28"
+elif mutation == "week_date":
+    manifest["measuredAt"] = "2026-W35-6"
+    manifest["publicationId"] = "2026-W35-6-v26.7.28"
+elif mutation == "invalid_calendar_date":
+    manifest["measuredAt"] = "2026-02-30"
+    manifest["publicationId"] = "2026-02-30-v26.7.28"
+elif mutation == "root_basename_mismatch":
+    manifest["measuredAt"] = "2026-08-30"
+    manifest["publicationId"] = "2026-08-30-v26.7.28"
 elif mutation == "malformed_candidate_digest":
     manifest["candidate"]["revision"] = "not-a-revision"
 elif mutation == "candidate_dirty":
@@ -297,6 +663,8 @@ elif mutation == "empty_raw_location":
     manifest["rawArchive"]["location"] = ""
 elif mutation == "duplicate_series":
     manifest["series"].append(copy.deepcopy(manifest["series"][0]))
+elif mutation == "reused_summary_path":
+    manifest["series"][1]["summary"] = manifest["series"][0]["summary"]
 elif mutation == "escaping_path":
     manifest["series"][0]["summary"] = "../outside.json"
 elif mutation == "absolute_path":
@@ -364,6 +732,126 @@ elif mutation == "summary_connections_boolean":
     target["connections"] = True
 elif mutation == "summary_iterations_boolean":
     target["iterations"] = True
+elif mutation == "missing_summary_metric":
+    target.pop("duration_ms")
+elif mutation == "missing_result_metric":
+    target["results"][0].pop("duration_ms")
+elif mutation == "metric_boolean":
+    target["results"][0]["bytes_sent"] = True
+elif mutation == "metric_negative":
+    target["results"][0]["cpu_millis"] = -1
+elif mutation == "workload_byte_direction":
+    bulk_entry = next(
+        entry
+        for entry in manifest["series"]
+        if entry["scenario"] == "tcp-bulk-throughput"
+        and entry["engine"] == "xray-rust"
+    )
+    bulk_summary = summaries[bulk_entry["summary"]]
+    bulk_summary["results"][0]["bytes_sent"] = bulk_summary["results"][0][
+        "bytes_received"
+    ]
+elif mutation == "metric_shape":
+    target["duration_ms"].pop("p95")
+elif mutation == "optional_metric_shape":
+    data_entry = next(
+        entry
+        for entry in manifest["series"]
+        if entry["scenario"] == "tcp-freedom" and entry["engine"] == "xray-rust"
+    )
+    summaries[data_entry["summary"]]["throughput_mbps"].pop("p95")
+elif mutation == "metric_order":
+    target["duration_ms"]["min"] = target["duration_ms"]["median"] + 1
+elif mutation == "aggregate_tamper":
+    target["duration_ms"]["median"] += 1
+elif mutation == "derived_metric_tamper":
+    data_entry = next(
+        entry
+        for entry in manifest["series"]
+        if entry["scenario"] == "tcp-freedom" and entry["engine"] == "xray-rust"
+    )
+    summaries[data_entry["summary"]]["results"][0]["cpu_millis_per_gib"] += 1
+elif mutation == "uplink_rate_below_bound":
+    packet_entry = next(
+        entry
+        for entry in manifest["series"]
+        if entry["scenario"] == "xhttp-pressure-xhttp-h1-1"
+        and entry["engine"] == "xray-rust"
+    )
+    summaries[packet_entry["summary"]]["results"][0][
+        "uplink_write_ops_per_second"
+    ] = 1
+elif mutation == "uplink_rate_above_bound":
+    packet_entry = next(
+        entry
+        for entry in manifest["series"]
+        if entry["scenario"] == "xhttp-pressure-xhttp-h1-1"
+        and entry["engine"] == "xray-rust"
+    )
+    packet_result = summaries[packet_entry["summary"]]["results"][0]
+    packet_result["uplink_write_ops_per_second"] = (
+        packet_result["uplink_write_ops"] * 1_000_000_000 + 1
+    )
+elif mutation == "missing_memory_phases":
+    target["results"][0].pop("memory_phases")
+elif mutation == "memory_peak_mismatch":
+    target["results"][0]["memory_phases"][1]["peak_rss_kib"] -= 1
+elif mutation == "memory_phase_boundaries":
+    phases = target["results"][0]["memory_phases"]
+    phases[1]["samples"] += phases[0]["samples"]
+    phases.pop(0)
+elif mutation == "parameter_collapse_1_1_0":
+    stream_entry = next(
+        entry
+        for entry in manifest["series"]
+        if entry["scenario"] == "stream-ws-upload-32"
+        and entry["engine"] == "xray-rust"
+    )
+    collapsed = summaries[stream_entry["summary"]]
+    for field, value in (("connections", 1), ("iterations", 1), ("payload_size", 0)):
+        collapsed[field] = value
+        for result in collapsed["results"]:
+            result[field] = value
+        mutate_invocation(
+            collapsed,
+            lambda args, flag=f"--{field.replace('_', '-')}", replacement=value: replace_flag(
+                args, flag, str(replacement)
+            ),
+        )
+elif mutation == "invocation_wrong_subcommand":
+    mutate_invocation(target, lambda args: args.__setitem__(0, "compare"))
+elif mutation == "invocation_unrelated_flag":
+    mutate_invocation(target, lambda args: args.extend(["--unrelated", "value"]))
+elif mutation == "invocation_missing_flag":
+    mutate_invocation(target, lambda args: remove_flag(args, "--runs"))
+elif mutation == "invocation_duplicate_flag":
+    mutate_invocation(target, lambda args: args.extend(["--runs", "5"]))
+elif mutation == "invocation_missing_no_auto_build":
+    mutate_invocation(target, lambda args: args.remove("--no-auto-build"))
+elif mutation == "invocation_effective_config_mismatch":
+    mutate_invocation(
+        target,
+        lambda args: replace_flag(args, "--duration-ms", "999"),
+    )
+elif mutation == "invocation_runs_mismatch":
+    mutate_invocation(target, lambda args: replace_flag(args, "--runs", "4"))
+elif mutation == "invocation_binary_path_mismatch":
+    mutate_invocation(
+        target,
+        lambda args: replace_flag(args, "--xray-rust-bin", "/tmp/wrong-xray-rust"),
+    )
+elif mutation == "invocation_missing_binary":
+    mutate_invocation(target, lambda args: remove_flag(args, "--xray-rust-bin"))
+elif mutation == "invocation_source_path_mismatch":
+    mutate_invocation(
+        target,
+        lambda args: replace_flag(args, "--xray-core-dir", "/tmp/not-the-core"),
+    )
+elif mutation == "invocation_output_mismatch":
+    mutate_invocation(
+        target,
+        lambda args: replace_flag(args, "--out-dir", "/tmp/unrelated-output"),
+    )
 elif mutation == "result_status":
     target["results"][0]["status"] = "failed"
 elif mutation == "result_parameters":
@@ -389,26 +877,62 @@ elif mutation == "alternate_sing_pin":
     alternate_revision = "f" * 40
     manifest["comparators"]["sing-box"]["version"] = "v9.8.7"
     manifest["comparators"]["sing-box"]["revision"] = alternate_revision
+    alternate_binary = raw_root / "comparators/bin/sing-box-v9.8.7"
     for entry in manifest["series"]:
+        summary = summaries[entry["summary"]]
+        if "--sing-box-bin" in summary["provenance"]["invocation_args"]:
+            mutate_invocation(
+                summary,
+                lambda args: replace_flag(
+                    args, "--sing-box-bin", str(alternate_binary)
+                ),
+            )
         if entry["engine"] != "sing-box":
             continue
-        summary = summaries[entry["summary"]]
+        summary["provenance"]["engine_binary_path"] = str(alternate_binary)
         summary["provenance"]["engine_source_git"]["revision"] = alternate_revision
         for result in summary["results"]:
+            result["provenance"]["engine_binary_path"] = str(alternate_binary)
             result["provenance"]["engine_source_git"]["revision"] = alternate_revision
 elif mutation == "xray_core_without_source":
     for entry in manifest["series"]:
         if entry["engine"] != "xray-core":
             continue
         summary = summaries[entry["summary"]]
-        summary["provenance"].pop("engine_source_git")
+        summary["provenance"].pop("engine_source_git", None)
         for result in summary["results"]:
-            result["provenance"].pop("engine_source_git")
+            result["provenance"].pop("engine_source_git", None)
 elif mutation == "missing_sing_source":
     sing_entry = next(
         entry for entry in manifest["series"] if entry["engine"] == "sing-box"
     )
     summaries[sing_entry["summary"]]["provenance"].pop("engine_source_git")
+elif mutation == "deep_provenance":
+    nested = {"leaf": True}
+    for _ in range(96):
+        nested = {"nested": nested}
+    target["provenance"]["unexpected_deep_data"] = nested
+    for result in target["results"]:
+        result["provenance"]["unexpected_deep_data"] = copy.deepcopy(nested)
+elif mutation == "omitted_optional_serde_fields":
+    # The base fixture already omits every Serde skip field whose effective
+    # value is None: stream/DNS/blackhole axes and Xray-core source provenance.
+    assert all(
+        "engine_source_git" not in summary["provenance"]
+        for path, summary in summaries.items()
+        if "-xray-core.json" in path
+    )
+elif mutation == "mixed_optional_metric_runs":
+    data_entry = next(
+        entry
+        for entry in manifest["series"]
+        if entry["scenario"] == "tcp-freedom" and entry["engine"] == "xray-rust"
+    )
+    mixed_summary = summaries[data_entry["summary"]]
+    mixed_summary["results"][-1]["latency_us"] = None
+    mixed_summary["latency_us"] = latency_aggregate(
+        [result["latency_us"] for result in mixed_summary["results"]]
+    )
 elif mutation not in {
     "valid",
     "missing_manifest",
@@ -416,6 +940,12 @@ elif mutation not in {
     "malformed_summary_json",
     "manifest_wrong_root",
     "summary_wrong_root",
+    "manifest_symlink_outside",
+    "manifest_symlink_inside",
+    "manifest_directory",
+    "manifest_broken_symlink",
+    "unreadable_summary",
+    "deep_parser_json",
 }:
     raise SystemExit(f"unknown mutation: {mutation}")
 
@@ -438,13 +968,35 @@ elif mutation == "manifest_wrong_root":
     (root / "manifest.json").write_text("[]\n", encoding="utf-8")
 elif mutation == "summary_wrong_root":
     (root / target_path).write_text("[]\n", encoding="utf-8")
+elif mutation == "manifest_symlink_outside":
+    outside_manifest = root.parent / "outside-manifest.json"
+    (root / "manifest.json").replace(outside_manifest)
+    (root / "manifest.json").symlink_to(outside_manifest)
+elif mutation == "manifest_symlink_inside":
+    real_manifest = root / "real-manifest.json"
+    (root / "manifest.json").replace(real_manifest)
+    (root / "manifest.json").symlink_to(real_manifest)
+elif mutation == "manifest_directory":
+    (root / "manifest.json").unlink()
+    (root / "manifest.json").mkdir()
+elif mutation == "manifest_broken_symlink":
+    (root / "manifest.json").unlink()
+    (root / "manifest.json").symlink_to(root / "missing-manifest.json")
+elif mutation == "unreadable_summary":
+    # Invalid UTF-8 gives a portable, controlled read failure even for root.
+    (root / target_path).write_bytes(b"\xff\xfe\xfd")
+elif mutation == "deep_parser_json":
+    (root / target_path).write_text(
+        "[" * 2_000 + "0" + "]" * 2_000,
+        encoding="utf-8",
+    )
 PY
 }
 
 expect_rejected() {
   local mutation="$1"
   local expected_reason="$2"
-  local fixture="$tmp_dir/$mutation"
+  local fixture="$tmp_dir/$mutation/2026-08-29-v26.7.28"
   local output
 
   make_fixture "$fixture" "$mutation"
@@ -454,9 +1006,12 @@ expect_rejected() {
   if ! grep -Fq "$expected_reason" <<<"$output"; then
     fail "$mutation did not report '$expected_reason': $output"
   fi
+  if grep -Fq "Traceback (most recent call last)" <<<"$output"; then
+    fail "$mutation emitted an uncontrolled Python traceback: $output"
+  fi
 }
 
-valid_fixture="$tmp_dir/valid"
+valid_fixture="$tmp_dir/valid/2026-08-29-v26.7.28"
 make_fixture "$valid_fixture"
 valid_output="$(python3 "$validator" "$valid_fixture")"
 grep -Fq "validated benchmark publication: 143 series" <<<"$valid_output" \
@@ -465,8 +1020,10 @@ grep -Fq "validated benchmark publication: 143 series" <<<"$valid_output" \
 for valid_variant in \
   additive_series_metadata \
   alternate_sing_pin \
-  xray_core_without_source; do
-  variant_fixture="$tmp_dir/$valid_variant"
+  xray_core_without_source \
+  omitted_optional_serde_fields \
+  mixed_optional_metric_runs; do
+  variant_fixture="$tmp_dir/$valid_variant/2026-08-29-v26.7.28"
   make_fixture "$variant_fixture" "$valid_variant"
   variant_output="$(python3 "$validator" "$variant_fixture")"
   grep -Fq "validated benchmark publication: 143 series" <<<"$variant_output" \
@@ -475,6 +1032,10 @@ done
 
 expect_rejected wrong_xray_revision "xray-core revision must be"
 expect_rejected wrong_xray_version "xray-core version must be v26.7.28"
+expect_rejected compact_date "measuredAt must use canonical YYYY-MM-DD format"
+expect_rejected week_date "measuredAt must use canonical YYYY-MM-DD format"
+expect_rejected invalid_calendar_date "measuredAt must be a valid YYYY-MM-DD date"
+expect_rejected root_basename_mismatch "publication root basename must match publicationId"
 expect_rejected malformed_candidate_digest "candidate.revision must be 40 lowercase hexadecimal characters"
 expect_rejected candidate_dirty "candidate.dirty must be false"
 expect_rejected malformed_xray_digest "comparators.xray-core.binarySha256 must be 64 lowercase hexadecimal characters"
@@ -485,6 +1046,7 @@ expect_rejected malformed_archive_digest "rawArchive.sha256 must be 64 lowercase
 expect_rejected empty_environment "environment.hardware must be non-empty"
 expect_rejected empty_raw_location "rawArchive.location must be non-empty"
 expect_rejected duplicate_series "duplicate series"
+expect_rejected reused_summary_path "summary engine does not match manifest"
 expect_rejected escaping_path "summary path escapes publication root"
 expect_rejected absolute_path "summary path escapes publication root"
 expect_rejected malformed_path "invalid summary path"
@@ -493,8 +1055,15 @@ expect_rejected symlink_escape "summary path escapes publication root"
 expect_rejected missing_summary "summary file does not exist"
 expect_rejected summary_directory "summary file does not exist"
 expect_rejected missing_manifest "publication manifest.json does not exist"
+expect_rejected manifest_symlink_outside "manifest.json must be an in-root regular non-symlink file"
+expect_rejected manifest_symlink_inside "manifest.json must be an in-root regular non-symlink file"
+expect_rejected manifest_directory "manifest.json must be an in-root regular non-symlink file"
+expect_rejected manifest_broken_symlink "manifest.json must be an in-root regular non-symlink file"
 expect_rejected malformed_manifest_json "invalid JSON in manifest.json"
 expect_rejected malformed_summary_json "invalid JSON in summary"
+expect_rejected unreadable_summary "cannot read summary"
+expect_rejected deep_parser_json "invalid JSON in summary"
+expect_rejected deep_provenance "JSON nesting exceeds validation limit"
 expect_rejected manifest_wrong_root "manifest must be an object"
 expect_rejected summary_wrong_root "must be an object"
 expect_rejected fewer_results "must embed exactly 5 results"
@@ -517,6 +1086,33 @@ expect_rejected summary_engine "summary engine does not match manifest"
 expect_rejected missing_summary_run_id "summary run_id must be non-empty"
 expect_rejected summary_connections_boolean "summary connections must be a positive integer"
 expect_rejected summary_iterations_boolean "summary iterations must be a positive integer"
+expect_rejected missing_summary_metric "summary.duration_ms is required"
+expect_rejected missing_result_metric "embedded result 1.duration_ms is required"
+expect_rejected metric_boolean "embedded result 1.bytes_sent must be a non-negative integer"
+expect_rejected metric_negative "embedded result 1.cpu_millis must be a non-negative integer"
+expect_rejected workload_byte_direction "embedded result 1 bytes do not match workload parameters"
+expect_rejected metric_shape "summary.duration_ms must contain exactly min, median, and p95"
+expect_rejected optional_metric_shape "summary.throughput_mbps must contain exactly min, median, and p95"
+expect_rejected metric_order "summary.duration_ms must satisfy min <= median <= p95"
+expect_rejected aggregate_tamper "summary.duration_ms does not match embedded results"
+expect_rejected derived_metric_tamper "embedded result 1.cpu_millis_per_gib does not match bytes and CPU"
+expect_rejected uplink_rate_below_bound "embedded result 1.uplink_write_ops_per_second is outside transfer-duration bounds"
+expect_rejected uplink_rate_above_bound "embedded result 1.uplink_write_ops_per_second is outside transfer-duration bounds"
+expect_rejected missing_memory_phases "embedded result 1.memory_phases is required for a successful harness run"
+expect_rejected memory_peak_mismatch "embedded result 1.memory_phases peak does not match result peak_rss_kib"
+expect_rejected memory_phase_boundaries "embedded result 1.memory_phases must begin at startup and end at complete"
+expect_rejected parameter_collapse_1_1_0 "summary connections does not match scenario"
+expect_rejected invocation_wrong_subcommand "invocation_args must begin with run"
+expect_rejected invocation_unrelated_flag "invocation_args contains unexpected flag"
+expect_rejected invocation_missing_flag "invocation_args flags do not match canonical harness order"
+expect_rejected invocation_duplicate_flag "invocation_args contains duplicate flag"
+expect_rejected invocation_missing_no_auto_build "invocation_args flags do not match canonical harness order"
+expect_rejected invocation_effective_config_mismatch "invocation --duration-ms does not match scenario"
+expect_rejected invocation_runs_mismatch "invocation --runs does not match scenario"
+expect_rejected invocation_binary_path_mismatch "invocation binary path does not match provenance"
+expect_rejected invocation_missing_binary "invocation_args flags do not match canonical harness order"
+expect_rejected invocation_source_path_mismatch "xray-core source path must end in Xray-core"
+expect_rejected invocation_output_mismatch "invocation output path does not match scenario"
 expect_rejected result_status "embedded result 1 status must be ok"
 expect_rejected result_parameters "embedded result 1 parameters do not match summary"
 expect_rejected result_connections_boolean "embedded result 1 parameters do not match summary"
