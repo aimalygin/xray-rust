@@ -500,15 +500,17 @@ cargo run -p xray-bench -- run --engine sing-box --sing-box-bin "$SING_BOX_BIN" 
 cargo run -p xray-bench -- run --engine sing-box --sing-box-bin "$SING_BOX_BIN" --workload many-idle-flows --connections 100 --duration-ms 1000 --no-auto-build
 ```
 
-The sing-box slice supports the SOCKS/process-level workloads: `idle`, `tcp-freedom`, `tcp-bulk-throughput`, `many-idle-flows`, `reconnect-burst`, `mixed-long-lived`, `udp-freedom`, `grpc-bulk-throughput`, and the WS/HTTPUpgrade/gRPC cases of `stream-transport`. Stream-transport workloads start an Xray-core VLESS server fixture and sample only the client engine process. XHTTP is compared only between xray-rust and Xray-core because sing-box does not implement that transport. The sing-box binary must include `with_utls`; the harness uses `with_gvisor,with_utls,badlinkname,tfogo_checklinkname0` when auto-building sing-box. TUN and fake VLESS/XUDP sing-box workloads are intentionally not part of this slice because they need a different topology than the rootless fd-backed harness.
+The sing-box slice supports the SOCKS/process-level workloads: `idle`, `tcp-freedom`, `tcp-bulk-throughput`, `many-idle-flows`, `reconnect-burst`, `mixed-long-lived`, `udp-freedom`, `reality-vision-xudp`, `reality-vision-bulk-throughput`, `grpc-bulk-throughput`, and the WS/HTTPUpgrade/gRPC cases of `stream-transport`. Stream-transport and REALITY workloads start an Xray-core server fixture and sample only the client engine process. XHTTP is compared only between xray-rust and Xray-core because sing-box does not implement that transport. The sing-box binary must include `with_utls`; the harness uses `with_gvisor,with_utls,badlinkname,tfogo_checklinkname0` when auto-building sing-box. TUN and fake VLESS/XUDP sing-box workloads are intentionally not part of this slice because they need a different topology than the rootless fd-backed harness.
 
-Stable sing-box v1.13.19 is also unavailable for `reality-vision-xudp` and
-`reality-vision-bulk-throughput` against the pinned Xray-core v26.7.28 fixture.
-The server's default `minClientVer` 26.3.27 rejects sing-box's REALITY
-`ClientVer` 1.8.1. The harness rejects a direct sing-box run and skips that leg
-of `compare` with this compatibility reason. Do not weaken the fixture or
-increase the timeout: both workloads are intentionally two-engine
-xray-rust/Xray-core comparisons.
+The stable sing-box v1.13.19 build selected for RC4 is incompatible with
+`reality-vision-xudp` and `reality-vision-bulk-throughput` against the pinned
+Xray-core v26.7.28 fixture. The server's default `minClientVer` 26.3.27 rejects
+that build's REALITY `ClientVer` 1.8.1. This is an evidence-specific boundary,
+not a generic harness limitation: direct sing-box runs and ordinary compares
+remain available for compatible or patched binaries. RC4 uses the explicit
+compare-only `--skip-sing-box` flag, without sing-box binary/source arguments,
+to record why those two publication series are xray-rust/Xray-core only. Do
+not weaken the fixture or increase the timeout.
 
 The RC4 publication contract therefore contains exactly 141 benchmark series
 and 705 embedded five-run results. Its base matrix contributes 27 summaries
@@ -536,11 +538,12 @@ cargo run -p xray-bench -- compare --workload udp-freedom --xray-core-dir Xray-c
 cargo run --release -p xray-bench -- compare --workload grpc-bulk-throughput --xray-core-dir Xray-core --sing-box-bin "$SING_BOX_BIN" --runs 5 --connections 1 --iterations 256 --payload-size 4194304 --run-timeout-ms 120000
 ```
 
-Run the two REALITY workloads without any sing-box argument:
+For the pinned RC4 comparator, run the two REALITY workloads without sing-box
+binary/source arguments and explicitly record the omission:
 
 ```sh
-cargo run -p xray-bench -- compare --workload reality-vision-xudp --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
-cargo run --release -p xray-bench -- compare --workload reality-vision-bulk-throughput --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 256 --payload-size 4194304 --run-timeout-ms 120000
+cargo run -p xray-bench -- compare --skip-sing-box --workload reality-vision-xudp --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
+cargo run --release -p xray-bench -- compare --skip-sing-box --workload reality-vision-bulk-throughput --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 256 --payload-size 4194304 --run-timeout-ms 120000
 ```
 
 The TUN and fake VLESS/XUDP workloads remain comparable between `xray-rust` and Xray-core in this slice, except for `tun-fake-dns`, `tun-fake-dns-tcp`, and `tun-dns-proxy`. These workloads deliberately exercise the xray-rust local DNS extensions (`dns.fakeIp` and anchor proxying through `dns.servers`, respectively); run them with `run --engine xray-rust`, since `compare` rejects them until equivalent cross-engine configurations are defined. The compare command skips sing-box for the other TUN workloads because sing-box's CLI TUN path uses a real platform TUN topology, while the older VLESS/XUDP fake-server workloads use Xray JSON configs instead of sing-box outbound schema. `routed-tcp-freedom` is also xray-rust vs Xray-core only: sing-box ≥1.8 does not read Xray-format `.dat` geodata, and semantically equivalent `.srs` rule-sets cannot be guaranteed.
@@ -575,7 +578,7 @@ cargo run -p xray-bench -- compare --workload many-idle-flows --xray-core-dir ..
 cargo run -p xray-bench -- compare --workload reconnect-burst --xray-core-dir ../../Xray-core --runs 5 --connections 16 --iterations 25
 cargo run -p xray-bench -- compare --workload mixed-long-lived --xray-core-dir ../../Xray-core --runs 5 --connections 8 --iterations 20 --duration-ms 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload udp-freedom --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
-cargo run -p xray-bench -- compare --workload reality-vision-xudp --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
+cargo run -p xray-bench -- compare --skip-sing-box --workload reality-vision-xudp --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload tun-udp-freedom --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run -p xray-bench -- compare --workload tun-tcp-freedom --xray-core-dir ../../Xray-core --runs 5 --connections 1 --iterations 100 --payload-size 512
 cargo run -p xray-bench -- compare --workload tun-tcp-stale-flows --xray-core-dir ../../Xray-core --runs 5 --connections 500 --iterations 1 --duration-ms 5000 --payload-size 512
@@ -615,35 +618,39 @@ see the workload note), `tcp-freedom`, `udp-freedom`, `reality-vision-xudp`,
 after fetching geodata with
 `scripts/fetch-geodata.sh --output-dir /private/tmp/bench-geodata`, see
 above). Use the two-engine REALITY commands shown above rather than carrying
-the sing-box flags from the ordinary example into those workloads. Each
+the sing-box binary/source flags from the ordinary example into those
+workloads. Each
 compare invocation writes one `target/benchmarks/<run-id>`
 group; the `--group` flags passed to `chart` must jointly cover all nine
 series.
 
 `chart` renders the published SVG charts (README highlights plus the rest in
 [docs/benchmarks/results.md](benchmarks/results.md)) from one or more compare
-run groups:
+run groups. The current RC4 invocation records its exact comparator boundary:
 
 ```sh
 cargo run --release -p xray-bench -- chart \
   --group target/benchmarks/<run-id-1> --group target/benchmarks/<run-id-2> \
-  --date 2026-07-29 \
-  --hardware "Apple M4 Pro, 24 GB RAM, macOS 15.5" \
-  --xray-rust-version <git-short-rev> \
+  --date 2026-08-29 \
+  --hardware "<recorded RC4 hardware and OS>" \
+  --xray-rust-version <RC4-git-short-rev> \
   --xray-core-version v26.7.28 \
-  --sing-box-version <sing-box-tag> \
+  --sing-box-version v1.13.19 \
+  --omit-sing-box-reality \
   --geodata-version "geosite-<tag> geoip-<tag>"
 ```
 
 It reads `<group>/<engine>/<workload>/summary.json` for `idle`,
 `many-idle-flows` (once per charted connection count), `tcp-freedom`,
 `udp-freedom`, `reality-vision-xudp`, `tcp-bulk-throughput`,
-`reality-vision-bulk-throughput`, and `routed-tcp-freedom`. The two REALITY
-workloads and routed geodata use xray-rust and Xray-core only; the other slots
-use all three engines. The mixed latency chart retains the three-engine legend
-for its direct TCP/UDP groups and explicitly notes why the REALITY group has no
-sing-box bar. The REALITY throughput chart uses only two engine labels and the
-same compatibility note. The renderer writes
+`reality-vision-bulk-throughput`, and `routed-tcp-freedom`. By default the two
+REALITY slots retain historical three-engine loading and rendering. RC4 passes
+`--omit-sing-box-reality`, so those slots require only xray-rust and Xray-core;
+routed geodata is always two-engine and the other slots use all three engines.
+With the flag, the mixed latency chart retains the three-engine legend for its
+direct TCP/UDP groups and dynamically notes, using the supplied comparator
+versions, why the REALITY group has no sing-box bar. The REALITY throughput
+chart uses only two engine labels and the same note. The renderer writes
 light/dark SVG pairs (`memory-rss`, `latency`, `throughput`,
 `reality-throughput`, `cpu-per-gib`, `geo-setup-latency`, `geo-memory`) to
 `docs/benchmarks/media/` (override with

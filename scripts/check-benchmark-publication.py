@@ -15,9 +15,9 @@ from typing import Any, Iterable
 
 XRAY_CORE_VERSION = "v26.7.28"
 XRAY_CORE_REVISION = "5ca6f4b7d4dc20a881d4330e498892697627ec0c"
+SING_BOX_VERSION = "v1.13.19"
 SING_BOX_BUILD_TAGS = "with_gvisor,with_utls,badlinkname,tfogo_checklinkname0"
 SING_BOX_SOURCE_URL = "https://github.com/SagerNet/sing-box"
-SEMVER_TAG = re.compile(r"^v[0-9]+\.[0-9]+\.[0-9]+$")
 CANONICAL_DATE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 LOWER_SHA40 = re.compile(r"^[0-9a-f]{40}$")
 LOWER_SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -189,7 +189,7 @@ VALUE_FLAGS = {
     "--sing-box-dir",
     "--geodata-dir",
 }
-BOOLEAN_FLAGS = {"--no-auto-build"}
+BOOLEAN_FLAGS = {"--skip-sing-box", "--no-auto-build"}
 
 
 class ValidationError(Exception):
@@ -405,6 +405,7 @@ def expected_matrix() -> dict[tuple[str, str], dict[str, Any]]:
         explicit_xhttp_max_post_bytes: int | None = None,
         settle_ms: int = 0,
         supports_sing_box: bool = True,
+        skip_sing_box: bool = False,
         geodata: bool = False,
     ) -> None:
         fields = {
@@ -426,6 +427,7 @@ def expected_matrix() -> dict[tuple[str, str], dict[str, Any]]:
             "explicit_xhttp_max_post_bytes": explicit_xhttp_max_post_bytes,
             "output_name": output_name,
             "supports_sing_box": supports_sing_box,
+            "skip_sing_box": skip_sing_box,
             "geodata": geodata,
         }
         for engine in engines:
@@ -509,6 +511,7 @@ def expected_matrix() -> dict[tuple[str, str], dict[str, Any]]:
             run_timeout_ms=values[5],
             output_name=values[6],
             supports_sing_box=supports_sing_box,
+            skip_sing_box=not supports_sing_box,
         )
 
     add(
@@ -701,8 +704,8 @@ def validate_manifest_shape(manifest: Any) -> dict[str, Any]:
         {"version", "revision", "binarySha256", "buildTags", "sourceUrl"},
         "comparators.sing-box",
     )
-    if not isinstance(sing["version"], str) or SEMVER_TAG.fullmatch(sing["version"]) is None:
-        fail("comparators.sing-box.version must be a stable vMAJOR.MINOR.PATCH tag")
+    if sing["version"] != SING_BOX_VERSION:
+        fail(f"comparators.sing-box.version must be {SING_BOX_VERSION}")
     require_sha40(sing["revision"], "comparators.sing-box.revision")
     require_sha256(sing["binarySha256"], "comparators.sing-box.binarySha256")
     if sing["buildTags"] != SING_BOX_BUILD_TAGS:
@@ -764,7 +767,71 @@ def safe_summary_path(root: pathlib.Path, relative: Any) -> pathlib.Path:
         fail(f"summary file does not exist: {relative}")
     if not stat.S_ISREG(metadata.st_mode):
         fail(f"summary file does not exist: {relative}")
+    chart_inputs = root / "chart-inputs"
+    try:
+        resolved.relative_to(chart_inputs.resolve(strict=True))
+    except (OSError, RuntimeError, ValueError):
+        fail("summary path must be contained in publication chart-inputs")
+    if resolved.name != "summary.json":
+        fail("publication series must reference chart-inputs summary.json files")
     return resolved
+
+
+def inventory_chart_input_summaries(root: pathlib.Path) -> set[pathlib.Path]:
+    chart_inputs = root / "chart-inputs"
+    try:
+        metadata = chart_inputs.lstat()
+        resolved_chart_inputs = chart_inputs.resolve(strict=True)
+        resolved_chart_inputs.relative_to(root)
+    except FileNotFoundError:
+        fail("publication chart-inputs directory does not exist")
+    except (OSError, RuntimeError, ValueError) as error:
+        fail(f"cannot inspect publication chart-inputs: {error}")
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+        fail("publication chart-inputs must be an in-root non-symlink directory")
+
+    summaries: set[pathlib.Path] = set()
+
+    def walk_error(error: OSError) -> None:
+        fail(f"cannot inspect publication chart-inputs: {error}")
+
+    for current_text, dir_names, file_names in os.walk(
+        resolved_chart_inputs,
+        topdown=True,
+        followlinks=False,
+        onerror=walk_error,
+    ):
+        current = pathlib.Path(current_text)
+        for name in dir_names:
+            directory = current / name
+            try:
+                directory_metadata = directory.lstat()
+                resolved_directory = directory.resolve(strict=True)
+                resolved_directory.relative_to(resolved_chart_inputs)
+                resolved_directory.relative_to(root)
+            except (OSError, RuntimeError, ValueError) as error:
+                fail(f"cannot inspect publication chart-inputs: {error}")
+            if stat.S_ISLNK(directory_metadata.st_mode):
+                fail("publication chart-inputs must not contain symlink directories")
+            if not stat.S_ISDIR(directory_metadata.st_mode):
+                fail("publication chart-inputs contains a non-directory path component")
+        for name in file_names:
+            if name != "summary.json":
+                continue
+            summary = current / name
+            try:
+                summary_metadata = summary.lstat()
+                resolved_summary = summary.resolve(strict=True)
+                resolved_summary.relative_to(resolved_chart_inputs)
+                resolved_summary.relative_to(root)
+            except (OSError, RuntimeError, ValueError) as error:
+                fail(f"cannot inspect publication chart-input summary: {error}")
+            if stat.S_ISLNK(summary_metadata.st_mode) or not stat.S_ISREG(
+                summary_metadata.st_mode
+            ):
+                fail("publication chart-input summary must be a regular non-symlink file")
+            summaries.add(resolved_summary)
+    return summaries
 
 
 def validate_git_state(value: Any, label: str, expected_revision: str) -> None:
@@ -954,6 +1021,8 @@ def expected_invocation_flags(expected: dict[str, Any]) -> list[str]:
     flags.append("--xray-core-dir")
     if expected["supports_sing_box"]:
         flags.append("--sing-box-dir")
+    if expected["skip_sing_box"]:
+        flags.append("--skip-sing-box")
     flags.append("--no-auto-build")
     if expected["geodata"]:
         flags.append("--geodata-dir")
@@ -1731,6 +1800,21 @@ def validate_publication(publication_root: pathlib.Path) -> int:
                     info[key],
                     f"{key.replace('_', ' ')} is inconsistent across summaries",
                 )
+
+    chart_input_summaries = inventory_chart_input_summaries(root)
+    referenced_summaries = set(actual.values())
+    unreferenced = sorted(chart_input_summaries - referenced_summaries)
+    if unreferenced:
+        fail(
+            "unreferenced chart-input summary: "
+            f"{unreferenced[0].relative_to(root)}"
+        )
+    missing_from_inventory = sorted(referenced_summaries - chart_input_summaries)
+    if missing_from_inventory:
+        fail(
+            "manifest references a summary outside the chart-input inventory: "
+            f"{missing_from_inventory[0].relative_to(root)}"
+        )
 
     return len(actual)
 

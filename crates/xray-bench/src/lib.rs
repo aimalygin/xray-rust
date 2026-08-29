@@ -76,8 +76,7 @@ pub use stream_transport::{
     StreamBenchXhttpProfile,
 };
 
-const USAGE: &str =
-    "usage: xray-bench run|compare|route-probe|dns-policy-probe|reality-matrix|chart [options]";
+const USAGE: &str = "usage: xray-bench run|compare|route-probe|dns-policy-probe|reality-matrix|chart [options]\ncompare options: [--skip-sing-box]\nchart options: [--omit-sing-box-reality]";
 const TEST_VLESS_UUID: [u8; 16] = [
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
 ];
@@ -101,7 +100,6 @@ const REALITY_FIXTURE_WARMUP: Duration = Duration::from_secs(8);
 /// network-dependent, so the fixed default may need adjusting per environment.
 const REALITY_FIXTURE_WARMUP_MS_ENV: &str = "XRAY_BENCH_REALITY_WARMUP_MS";
 const SING_BOX_BUILD_TAGS: &str = "with_gvisor,with_utls,badlinkname,tfogo_checklinkname0";
-const SING_BOX_REALITY_INCOMPATIBILITY: &str = "Xray-core v26.7.28 default minClientVer 26.3.27 rejects stable sing-box v1.13.19 ClientVer 1.8.1";
 const XRAY_CORE_ORACLE_VERSION: &str = "26.7.28";
 const XRAY_CORE_ORACLE_REVISION: &str = "5ca6f4b7d4dc20a881d4330e498892697627ec0c";
 const TCP_PROTOCOL: u8 = 6;
@@ -307,27 +305,12 @@ impl WorkloadKind {
                 | Self::ReconnectBurst
                 | Self::MixedLongLived
                 | Self::UdpFreedom
+                | Self::RealityVisionXudp
+                | Self::RealityVisionBulkThroughput
                 | Self::GrpcBulkThroughput
                 | Self::StreamTransport
         )
     }
-
-    fn sing_box_compatibility_error(&self) -> Option<BenchError> {
-        matches!(
-            self,
-            Self::RealityVisionXudp | Self::RealityVisionBulkThroughput
-        )
-        .then(|| BenchError::InvalidArguments(SING_BOX_REALITY_INCOMPATIBILITY.to_owned()))
-    }
-}
-
-fn validate_engine_workload(engine: EngineKind, workload: WorkloadKind) -> Result<(), BenchError> {
-    if engine == EngineKind::SingBox {
-        if let Some(error) = workload.sing_box_compatibility_error() {
-            return Err(error);
-        }
-    }
-    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -430,6 +413,7 @@ pub struct BenchOptions {
     pub sing_box_bin: Option<PathBuf>,
     pub sing_box_dir: Option<PathBuf>,
     pub tun_profile: Option<String>,
+    pub skip_sing_box: bool,
     pub no_auto_build: bool,
     pub geodata_dir: Option<PathBuf>,
 }
@@ -1238,6 +1222,7 @@ impl Default for BenchOptions {
             sing_box_bin: None,
             sing_box_dir: None,
             tun_profile: None,
+            skip_sing_box: false,
             no_auto_build: false,
             geodata_dir: None,
         }
@@ -1549,6 +1534,9 @@ where
                 options.sing_box_dir =
                     Some(PathBuf::from(required_value(&rest, &mut index, flag)?));
             }
+            "--skip-sing-box" => {
+                options.skip_sing_box = true;
+            }
             "--no-auto-build" => {
                 options.no_auto_build = true;
             }
@@ -1567,16 +1555,21 @@ where
 
     match command.as_str() {
         "run" => {
-            let Some(engine) = options.engine else {
+            if options.skip_sing_box {
+                return Err(BenchError::InvalidArguments(
+                    "--skip-sing-box is compare-only and cannot be used with `run`".to_owned(),
+                ));
+            }
+            if options.engine.is_none() {
                 return Err(BenchError::InvalidArguments(
                     "run requires --engine xray-rust|xray-core|sing-box".to_owned(),
                 ));
-            };
-            validate_engine_workload(engine, options.workload)?;
+            }
             Ok(CliArgs::Run(options))
         }
         "compare" => {
             options.engine = None;
+            validate_compare_options(&options)?;
             Ok(CliArgs::Compare(options))
         }
         "route-probe" => unreachable!("route-probe is parsed before engine benchmark options"),
@@ -1590,6 +1583,22 @@ where
             "unknown command `{other}`\n{USAGE}"
         ))),
     }
+}
+
+fn validate_compare_options(options: &BenchOptions) -> Result<(), BenchError> {
+    if options.skip_sing_box {
+        if options.sing_box_bin.is_some() {
+            return Err(BenchError::InvalidArguments(
+                "--skip-sing-box cannot be combined with --sing-box-bin".to_owned(),
+            ));
+        }
+        if options.sing_box_dir.is_some() {
+            return Err(BenchError::InvalidArguments(
+                "--skip-sing-box cannot be combined with --sing-box-dir".to_owned(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn parse_route_probe_args(args: &[String]) -> Result<RouteProbeOptions, BenchError> {
@@ -6279,9 +6288,13 @@ fn sing_box_config(
 ) -> Result<String, BenchError> {
     match workload {
         WorkloadKind::RealityVisionXudp | WorkloadKind::RealityVisionBulkThroughput => {
-            Err(workload
-                .sing_box_compatibility_error()
-                .expect("REALITY workloads have a pinned sing-box compatibility error"))
+            let vless_addr = fixture.vless_addr.ok_or_else(|| {
+                BenchError::InvalidArguments(format!(
+                    "{} workload requires a VLESS Reality server fixture",
+                    workload.as_str()
+                ))
+            })?;
+            Ok(sing_box_reality_vision_xudp_config(port, vless_addr))
         }
         WorkloadKind::GrpcBulkThroughput => {
             let vless_addr = grpc_fixture_vless_addr(workload, fixture)?;
@@ -6471,6 +6484,49 @@ fn sing_box_vless_grpc_config(port: u16, vless_addr: SocketAddr) -> String {
       "transport": {{
         "type": "grpc",
         "service_name": "{GRPC_BENCH_SERVICE_NAME}"
+      }}
+    }}
+  ],
+  "route": {{ "final": "proxy" }}
+}}"#,
+        vless_addr.ip(),
+        vless_addr.port()
+    )
+}
+
+fn sing_box_reality_vision_xudp_config(port: u16, vless_addr: SocketAddr) -> String {
+    format!(
+        r#"{{
+  "log": {{ "level": "warn" }},
+  "inbounds": [
+    {{
+      "type": "socks",
+      "tag": "socks-in",
+      "listen": "127.0.0.1",
+      "listen_port": {port}
+    }}
+  ],
+  "outbounds": [
+    {{
+      "type": "vless",
+      "tag": "proxy",
+      "server": "{}",
+      "server_port": {},
+      "uuid": "{TEST_VLESS_UUID_STRING}",
+      "flow": "xtls-rprx-vision",
+      "packet_encoding": "xudp",
+      "tls": {{
+        "enabled": true,
+        "server_name": "{REALITY_SERVER_NAME}",
+        "utls": {{
+          "enabled": true,
+          "fingerprint": "chrome"
+        }},
+        "reality": {{
+          "enabled": true,
+          "public_key": "{REALITY_PUBLIC_KEY}",
+          "short_id": "{REALITY_SHORT_ID_HEX}"
+        }}
       }}
     }}
   ],
@@ -9943,20 +9999,27 @@ fn canonical_run_invocation_args(
     if let Some(path) = xray_core_bin {
         push_invocation_path(&mut args, "--xray-core-bin", path);
     }
-    let sing_box_bin = (kind == EngineKind::SingBox)
-        .then_some(engine_binary_path)
-        .or(options.sing_box_bin.as_deref());
-    if let Some(path) = sing_box_bin {
-        push_invocation_path(&mut args, "--sing-box-bin", path);
+    if !options.skip_sing_box {
+        let sing_box_bin = (kind == EngineKind::SingBox)
+            .then_some(engine_binary_path)
+            .or(options.sing_box_bin.as_deref());
+        if let Some(path) = sing_box_bin {
+            push_invocation_path(&mut args, "--sing-box-bin", path);
+        }
     }
     if let Some(path) = options.xray_core_dir.as_deref() {
         push_invocation_path(&mut args, "--xray-core-dir", path);
     }
-    if let Some(path) = options.sing_box_dir.as_deref() {
-        push_invocation_path(&mut args, "--sing-box-dir", path);
+    if !options.skip_sing_box {
+        if let Some(path) = options.sing_box_dir.as_deref() {
+            push_invocation_path(&mut args, "--sing-box-dir", path);
+        }
     }
     if let Some(profile) = options.tun_profile.as_deref() {
         push_invocation_value(&mut args, "--tun-profile", profile);
+    }
+    if options.skip_sing_box {
+        args.push("--skip-sing-box".to_owned());
     }
     if options.no_auto_build {
         args.push("--no-auto-build".to_owned());
@@ -9993,6 +10056,7 @@ fn benchmark_provenance(
 }
 
 pub async fn run_compare(options: BenchOptions) -> Result<(), BenchError> {
+    validate_compare_options(&options)?;
     if matches!(
         options.workload,
         WorkloadKind::TunFakeDns | WorkloadKind::TunFakeDnsTcp | WorkloadKind::TunDnsProxy
@@ -10010,9 +10074,9 @@ pub async fn run_compare(options: BenchOptions) -> Result<(), BenchError> {
     if benchmark_supports_sing_box(&options)? {
         let sing_box_summary = run_engine_series(EngineKind::SingBox, &options, &run_id).await?;
         print_summary(&sing_box_summary);
-    } else if let Some(error) = options.workload.sing_box_compatibility_error() {
+    } else if options.skip_sing_box {
         eprintln!(
-            "sing-box {} unavailable: {error}",
+            "sing-box {} skipped: explicitly disabled by --skip-sing-box",
             options.workload.as_str()
         );
     } else {
@@ -10025,7 +10089,9 @@ pub async fn run_compare(options: BenchOptions) -> Result<(), BenchError> {
 }
 
 fn benchmark_supports_sing_box(options: &BenchOptions) -> Result<bool, BenchError> {
-    if options.workload == WorkloadKind::StreamTransport {
+    if options.skip_sing_box {
+        Ok(false)
+    } else if options.workload == WorkloadKind::StreamTransport {
         Ok(options.stream_scenario()?.transport.supports_sing_box())
     } else {
         Ok(options.workload.supports_sing_box_process_engine())
@@ -10088,7 +10154,6 @@ async fn run_engine_once(
     run_dir: &Path,
     binary_dir: &Path,
 ) -> Result<BenchResult, BenchError> {
-    validate_engine_workload(kind, options.workload)?;
     if options.workload == WorkloadKind::StreamTransport {
         let scenario = options.stream_scenario()?;
         if !scenario.supports_engine(kind) {
@@ -11128,6 +11193,7 @@ mod tests {
                 sing_box_bin: None,
                 sing_box_dir: None,
                 tun_profile: None,
+                skip_sing_box: false,
                 no_auto_build: false,
                 geodata_dir: None,
             })
@@ -13044,7 +13110,7 @@ mod tests {
     }
 
     #[test]
-    fn sing_box_reality_workloads_report_pinned_version_incompatibility() {
+    fn sing_box_reality_workloads_remain_available_for_compatible_binaries() {
         let fixture = WorkloadFixture {
             vless_addr: Some(SocketAddr::from((Ipv4Addr::new(127, 0, 0, 1), 19094))),
             vless_tls_cert_sha256: None,
@@ -13057,21 +13123,22 @@ mod tests {
             WorkloadKind::RealityVisionXudp,
             WorkloadKind::RealityVisionBulkThroughput,
         ] {
-            assert!(!workload.supports_sing_box_process_engine());
-            assert!(!benchmark_supports_sing_box(&BenchOptions {
+            assert!(workload.supports_sing_box_process_engine());
+            assert!(benchmark_supports_sing_box(&BenchOptions {
                 workload,
                 ..BenchOptions::default()
             })
             .unwrap());
 
-            let error = sing_box_config(18087, workload, &fixture).unwrap_err();
-            let message = error.to_string();
-            assert!(message.contains("Xray-core v26.7.28"), "{message}");
-            assert!(message.contains("minClientVer 26.3.27"), "{message}");
-            assert!(
-                message.contains("sing-box v1.13.19 ClientVer 1.8.1"),
-                "{message}"
-            );
+            let config = sing_box_config(18087, workload, &fixture).unwrap();
+            let value = serde_json::from_str::<serde_json::Value>(&config).unwrap();
+            assert_eq!(value["inbounds"][0]["type"], "socks");
+            assert_eq!(value["outbounds"][0]["type"], "vless");
+            assert_eq!(value["outbounds"][0]["server"], "127.0.0.1");
+            assert_eq!(value["outbounds"][0]["server_port"], 19094);
+            assert_eq!(value["outbounds"][0]["flow"], "xtls-rprx-vision");
+            assert_eq!(value["outbounds"][0]["packet_encoding"], "xudp");
+            assert_eq!(value["outbounds"][0]["tls"]["reality"]["enabled"], true);
         }
     }
 
@@ -13229,9 +13296,9 @@ mod tests {
     }
 
     #[test]
-    fn direct_sing_box_reality_runs_are_rejected_before_execution() {
+    fn direct_sing_box_reality_runs_remain_available_for_compatible_binaries() {
         for workload in ["reality-vision-xudp", "reality-vision-bulk-throughput"] {
-            let error = parse_cli_args([
+            let args = parse_cli_args([
                 "xray-bench",
                 "run",
                 "--engine",
@@ -13239,10 +13306,64 @@ mod tests {
                 "--workload",
                 workload,
             ])
-            .unwrap_err();
+            .unwrap();
+            let CliArgs::Run(options) = args else {
+                panic!("expected direct sing-box run");
+            };
+            assert_eq!(options.engine, Some(EngineKind::SingBox));
+        }
+    }
+
+    #[test]
+    fn explicit_sing_box_skip_is_compare_only_and_recorded_canonically() {
+        for workload in ["reality-vision-xudp", "tcp-freedom"] {
+            let args = parse_cli_args([
+                "xray-bench",
+                "compare",
+                "--workload",
+                workload,
+                "--skip-sing-box",
+            ])
+            .unwrap();
+            let CliArgs::Compare(options) = args else {
+                panic!("expected compare options");
+            };
+            assert!(options.skip_sing_box);
+            assert!(!benchmark_supports_sing_box(&options).unwrap());
+
+            for (engine, binary) in [
+                (EngineKind::XrayRust, "/tmp/xray-rust"),
+                (EngineKind::XrayCore, "/tmp/xray-core"),
+            ] {
+                let invocation = canonical_run_invocation_args(engine, &options, Path::new(binary));
+                assert!(invocation.iter().any(|arg| arg == "--skip-sing-box"));
+                assert!(!invocation.iter().any(|arg| arg == "--sing-box-bin"));
+                assert!(!invocation.iter().any(|arg| arg == "--sing-box-dir"));
+            }
+        }
+
+        let error = parse_cli_args([
+            "xray-bench",
+            "run",
+            "--engine",
+            "xray-rust",
+            "--skip-sing-box",
+        ])
+        .unwrap_err();
+        assert!(error.to_string().contains("compare-only"));
+    }
+
+    #[test]
+    fn explicit_sing_box_skip_rejects_conflicting_comparator_paths() {
+        for (flag, value) in [
+            ("--sing-box-bin", "/tmp/sing-box"),
+            ("--sing-box-dir", "/tmp/sing-box-source"),
+        ] {
+            let error = parse_cli_args(["xray-bench", "compare", "--skip-sing-box", flag, value])
+                .unwrap_err();
             let message = error.to_string();
-            assert!(message.contains("Xray-core v26.7.28"), "{message}");
-            assert!(message.contains("sing-box v1.13.19"), "{message}");
+            assert!(message.contains("--skip-sing-box"), "{message}");
+            assert!(message.contains(flag), "{message}");
         }
     }
 

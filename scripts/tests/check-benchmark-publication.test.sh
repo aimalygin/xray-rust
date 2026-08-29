@@ -27,7 +27,7 @@ root.mkdir(parents=True)
 
 candidate_revision = "0123456789abcdef0123456789abcdef01234567"
 xray_revision = "5ca6f4b7d4dc20a881d4330e498892697627ec0c"
-sing_revision = "3708fa18766cda1f11b77f6ed9c7bd61688f17df"
+sing_revision = "b5ebaa1fc0f2b94256180b95468e73ef53caa27d"
 
 manifest = {
     "schemaVersion": 1,
@@ -49,7 +49,7 @@ manifest = {
             "buildCommand": "go build ./main",
         },
         "sing-box": {
-            "version": "v1.13.15",
+            "version": "v1.13.19",
             "revision": sing_revision,
             "binarySha256": "b" * 64,
             "buildTags": "with_gvisor,with_utls,badlinkname,tfogo_checklinkname0",
@@ -219,7 +219,7 @@ engine_paths = {
     "xray-rust": workspace / "target/release/xray-rust",
     "xray-core": workspace / "target/bench-bin/xray-core-v26.7.28",
     "sing-box": workspace
-    / "target/benchmarks/2026-08-29-v26.7.28/comparators/bin/sing-box-v1.13.15",
+    / "target/benchmarks/2026-08-29-v26.7.28/comparators/bin/sing-box-v1.13.19",
 }
 xray_core_dir = workspace / "Xray-core"
 raw_root = workspace / "target/benchmarks/2026-08-29-v26.7.28"
@@ -259,6 +259,8 @@ def scenario_config(scenario, fields):
                 "reality-vision-xudp",
                 "reality-vision-bulk-throughput",
             },
+            "skip_sing_box": scenario
+            in {"reality-vision-xudp", "reality-vision-bulk-throughput"},
             "geodata": scenario == "routed-tcp-freedom",
         }
     if scenario.startswith("stream-"):
@@ -270,6 +272,7 @@ def scenario_config(scenario, fields):
             "explicit_max_post_bytes": None,
             "output_name": scenario,
             "supports_sing_box": not fields["stream_transport"].startswith("xhttp-"),
+            "skip_sing_box": False,
             "geodata": False,
         }
     if scenario.startswith("xhttp-pressure-"):
@@ -281,6 +284,7 @@ def scenario_config(scenario, fields):
             "explicit_max_post_bytes": None,
             "output_name": scenario,
             "supports_sing_box": False,
+            "skip_sing_box": False,
             "geodata": False,
         }
     held_open = "-held-open-" in scenario
@@ -292,6 +296,7 @@ def scenario_config(scenario, fields):
         "explicit_max_post_bytes": fields["xhttp_max_post_bytes"],
         "output_name": "xhttp-memory",
         "supports_sing_box": False,
+        "skip_sing_box": False,
         "geodata": False,
     }
 
@@ -352,6 +357,8 @@ def canonical_invocation(scenario, engine, fields, config):
     args += ["--xray-core-dir", str(xray_core_dir)]
     if config["supports_sing_box"]:
         args += ["--sing-box-dir", str(sing_box_dir)]
+    if config["skip_sing_box"]:
+        args.append("--skip-sing-box")
     args.append("--no-auto-build")
     if config["geodata"]:
         args += ["--geodata-dir", str(geodata_dir)]
@@ -448,8 +455,8 @@ def workload_bytes(fields):
 
 
 summaries = {}
-for index, (scenario, engine, fields) in enumerate(series):
-    summary_path = f"summaries/{index:03d}-{scenario}-{engine}.json"
+for scenario, engine, fields in series:
+    summary_path = f"chart-inputs/{scenario}/{engine}/summary.json"
     config = scenario_config(scenario, fields)
     provenance = {
         "harness_profile": "release",
@@ -688,6 +695,8 @@ elif mutation == "malformed_sing_digest":
     manifest["comparators"]["sing-box"]["binarySha256"] = "b" * 63
 elif mutation == "malformed_sing_version":
     manifest["comparators"]["sing-box"]["version"] = "main"
+elif mutation == "wrong_sing_version":
+    manifest["comparators"]["sing-box"]["version"] = "v1.13.15"
 elif mutation == "malformed_sing_revision":
     manifest["comparators"]["sing-box"]["revision"] = "R" * 40
 elif mutation == "malformed_archive_digest":
@@ -920,6 +929,28 @@ elif mutation == "invocation_binary_path_mismatch":
     )
 elif mutation == "invocation_missing_binary":
     mutate_invocation(target, lambda args: remove_flag(args, "--xray-rust-bin"))
+elif mutation == "missing_reality_skip_sing_box":
+    reality_entry = next(
+        entry
+        for entry in manifest["series"]
+        if entry["scenario"] == "reality-vision-xudp"
+        and entry["engine"] == "xray-rust"
+    )
+    mutate_invocation(
+        summaries[reality_entry["summary"]],
+        lambda args: args.remove("--skip-sing-box"),
+    )
+elif mutation == "extra_skip_sing_box_on_unsupported":
+    routed_entry = next(
+        entry
+        for entry in manifest["series"]
+        if entry["scenario"] == "routed-tcp-freedom"
+        and entry["engine"] == "xray-rust"
+    )
+    mutate_invocation(
+        summaries[routed_entry["summary"]],
+        lambda args: args.insert(args.index("--no-auto-build"), "--skip-sing-box"),
+    )
 elif mutation == "reality_invocation_with_sing_box":
     reality_entry = next(
         entry
@@ -997,6 +1028,12 @@ elif mutation == "extra_sing_reality_series":
     extra = copy.deepcopy(xray_entry)
     extra["engine"] = "sing-box"
     manifest["series"].append(extra)
+elif mutation == "unreferenced_chart_input_summary":
+    summaries[
+        "chart-inputs/reality-vision-xudp/sing-box/summary.json"
+    ] = copy.deepcopy(target)
+elif mutation == "unrelated_document_summary":
+    summaries["docs/example/summary.json"] = copy.deepcopy(target)
 elif mutation == "unknown_top_level":
     manifest["unexpected"] = True
 elif mutation == "additive_series_metadata":
@@ -1190,9 +1227,9 @@ grep -Fq "validated benchmark publication: 141 series" <<<"$valid_output" \
 
 for valid_variant in \
   additive_series_metadata \
-  alternate_sing_pin \
   held_open_duration_boundary \
   settled_stream_duration_boundary \
+  unrelated_document_summary \
   omitted_optional_serde_fields; do
   variant_fixture="$tmp_dir/$valid_variant/2026-08-29-v26.7.28"
   make_fixture "$variant_fixture" "$valid_variant"
@@ -1211,7 +1248,9 @@ expect_rejected malformed_candidate_digest "candidate.revision must be 40 lowerc
 expect_rejected candidate_dirty "candidate.dirty must be false"
 expect_rejected malformed_xray_digest "comparators.xray-core.binarySha256 must be 64 lowercase hexadecimal characters"
 expect_rejected malformed_sing_digest "comparators.sing-box.binarySha256 must be 64 lowercase hexadecimal characters"
-expect_rejected malformed_sing_version "comparators.sing-box.version must be a stable vMAJOR.MINOR.PATCH tag"
+expect_rejected malformed_sing_version "comparators.sing-box.version must be v1.13.19"
+expect_rejected wrong_sing_version "comparators.sing-box.version must be v1.13.19"
+expect_rejected alternate_sing_pin "comparators.sing-box.version must be v1.13.19"
 expect_rejected malformed_sing_revision "comparators.sing-box.revision must be 40 lowercase hexadecimal characters"
 expect_rejected malformed_archive_digest "rawArchive.sha256 must be 64 lowercase hexadecimal characters"
 expect_rejected empty_environment "environment.hardware must be non-empty"
@@ -1288,6 +1327,8 @@ expect_rejected invocation_effective_config_mismatch "invocation --duration-ms d
 expect_rejected invocation_runs_mismatch "invocation --runs does not match scenario"
 expect_rejected invocation_binary_path_mismatch "invocation binary path does not match provenance"
 expect_rejected invocation_missing_binary "invocation_args flags do not match canonical harness order"
+expect_rejected missing_reality_skip_sing_box "invocation_args flags do not match canonical harness order"
+expect_rejected extra_skip_sing_box_on_unsupported "invocation_args flags do not match canonical harness order"
 expect_rejected reality_invocation_with_sing_box "invocation_args flags do not match canonical harness order"
 expect_rejected invocation_source_path_mismatch "xray-core source path must end in Xray-core"
 expect_rejected invocation_output_mismatch "invocation output path does not match scenario"
@@ -1312,6 +1353,7 @@ expect_rejected missing_required_setup_metric "embedded result 5.setup_us availa
 expect_rejected missing_combination "missing required combination"
 expect_rejected extra_combination "unexpected series combination"
 expect_rejected extra_sing_reality_series "unexpected series combination: reality-vision-xudp/sing-box"
+expect_rejected unreferenced_chart_input_summary "unreferenced chart-input summary"
 expect_rejected unknown_top_level "manifest has unexpected field"
 
 echo "benchmark publication policy tests passed"
