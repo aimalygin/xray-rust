@@ -1,7 +1,56 @@
 # Verification
 
-The default verification path is hermetic: it does not need a live proxy,
-external network access, or a Go Xray-core checkout.
+## Compatibility contracts
+
+### Ordinary CI
+
+Ordinary pull-request and branch CI is hermetic: it does not need a live
+proxy, external network access, or a Go Xray-core checkout. Tests that require
+one of those inputs remain ignored in this path.
+
+### Tagged release candidates
+
+A tagged release candidate adds a blocking `rc-interop` gate. That job checks
+out Xray-core `v26.7.28` at the exact commit
+`5ca6f4b7d4dc20a881d4330e498892697627ec0c` and invokes only
+`scripts/check-rc-interop.sh` for release interoperability. The script verifies
+the checkout independently and does not accept a revision override. A tagged
+RC therefore cannot publish unless this exact compatibility gate passes.
+
+### Weekly scheduled compatibility
+
+The weekly schedule runs two contracts that are independent of RC
+publication. `scheduled-pinned-interop` uses the same exact Xray-core commit as
+the RC gate, but exercises the broader ignored interop matrix and bounded
+resource workloads. It is blocking for that scheduled run only; it is not a
+prerelease dependency and cannot substitute for `rc-interop`.
+
+Reproduce the pinned scheduled gate from the xray-rust repository root with a
+clean checkout at the audited commit:
+
+```sh
+git -C /absolute/path/to/Xray-core-v26.7.28 switch --detach \
+  5ca6f4b7d4dc20a881d4330e498892697627ec0c
+XRAY_CORE_CHECKOUT=/absolute/path/to/Xray-core-v26.7.28 \
+  bash scripts/check-scheduled-pinned-interop.sh
+```
+
+`xray-core-main-smoke` is a warning-only early-compatibility signal. It tests
+the Xray-core `main` checkout's resolved commit, but it cannot satisfy or fail
+an RC publication gate. Resolve the clean checkout's `HEAD` before invoking
+the focused smoke locally:
+
+```sh
+xray_main_revision="$(git -C /absolute/path/to/Xray-core-main rev-parse --verify HEAD)"
+XRAY_CORE_CHECKOUT=/absolute/path/to/Xray-core-main \
+XRAY_CORE_EXPECTED_REVISION="$xray_main_revision" \
+  bash scripts/check-xray-main-smoke.sh
+```
+
+`XRAY_CORE_EXPECTED_REVISION` accepts only the resolved, full 40-character
+lowercase commit that equals the checkout's `HEAD`. Symbolic names such as
+`main` and `HEAD`, abbreviated commits, uppercase hashes, and malformed values
+are rejected. Callers must resolve a symbolic ref before passing the override.
 
 ## CI-equivalent Rust checks
 
@@ -11,7 +60,7 @@ Run from the repository root:
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features --locked -- \
   -D warnings -W clippy::perf -W clippy::suspicious
-cargo test --workspace --all-targets --locked
+cargo test --workspace --exclude xray-rust-fuzz --all-targets --locked
 bash scripts/tests/check-public-fixtures.test.sh
 bash scripts/tests/check-mobile-toolchains.test.sh
 ```
@@ -22,10 +71,9 @@ binary, live credentials, or external network access. The fixture safety check
 rejects routable endpoints and unreviewed credential-shaped values without
 printing their contents.
 
-Release-candidate tags add two blocking jobs after the ordinary jobs pass.
-`rc-interop` checks out the exact Xray-core commit recorded below and invokes
-`scripts/check-rc-interop.sh`; `fuzz-smoke` runs bounded libFuzzer campaigns.
-Neither job runs for an ordinary branch or pull request.
+Release-candidate tags also add the `fuzz-smoke` blocking job after the
+ordinary jobs pass. It runs bounded libFuzzer campaigns and, like
+`rc-interop`, does not run for an ordinary branch or pull request.
 
 ## Release-candidate fuzz gate
 
@@ -177,10 +225,13 @@ root.
 
 ## Local Xray-core interoperability
 
-The local interop suite pins Xray-core `v26.7.28` at
+By default, the local interop suite pins Xray-core `v26.7.28` at
 `5ca6f4b7d4dc20a881d4330e498892697627ec0c` and rejects a checkout at any
-other `HEAD`. Provide an absolute checkout path and record its full commit SHA
-in the test report. The tests expect an `xray` executable at the checkout root:
+other `HEAD`. The scheduled `main` smoke may override that default only with
+the full lowercase commit already resolved from, and equal to, the selected
+checkout's `HEAD`; it never accepts `main` or `HEAD` as the override. Provide an
+absolute checkout path and record its full commit SHA in the test report. The
+tests expect an `xray` executable at the checkout root:
 
 ```sh
 export XRAY_CORE_CHECKOUT=/absolute/path/to/Xray-core
