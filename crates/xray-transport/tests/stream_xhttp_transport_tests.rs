@@ -7,10 +7,11 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 
 use bytes::Bytes;
-use h2::{server, RecvStream};
+use h2::{client, server, Ping, RecvStream};
 use http::{header, Response, StatusCode};
 use rand::rngs::mock::StepRng;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream, ReadBuf};
+use tokio::sync::oneshot;
 use tokio::time::{timeout, Instant};
 
 use xray_transport::stream::xhttp_composer_test_only::{
@@ -24,10 +25,229 @@ use xray_transport::stream::HeaderMap;
 use xray_transport::{BoxedTransportStream, TransportError, TransportStream};
 
 const DEADLINE: Duration = Duration::from_secs(3);
+const H2_PREFACE: &[u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
+const H2_FRAME_HEADER_LEN: usize = 9;
+const H2_SETTINGS_FRAME: u8 = 0x4;
+const H2_PING_FRAME: u8 = 0x6;
+const H2_ACK_FLAG: u8 = 0x1;
 const GZIP_PONG: &[u8] = &[
     0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x2b, 0xc8, 0xcf, 0x4b, 0x07, 0x00,
     0x4f, 0x41, 0x58, 0x21, 0x04, 0x00, 0x00, 0x00,
 ];
+
+struct FrameObservedStream {
+    inner: DuplexStream,
+    writes: Vec<u8>,
+    preface_observed: bool,
+    settings_ack: Option<oneshot::Sender<()>>,
+    ping_ack: Option<oneshot::Sender<()>>,
+}
+
+impl FrameObservedStream {
+    fn new(inner: DuplexStream) -> (Self, oneshot::Receiver<()>, oneshot::Receiver<()>) {
+        let (settings_ack, settings_observed) = oneshot::channel();
+        let (ping_ack, ping_observed) = oneshot::channel();
+        (
+            Self {
+                inner,
+                writes: Vec::new(),
+                preface_observed: false,
+                settings_ack: Some(settings_ack),
+                ping_ack: Some(ping_ack),
+            },
+            settings_observed,
+            ping_observed,
+        )
+    }
+
+    fn observe_complete_frames(&mut self) {
+        if !self.preface_observed {
+            if self.writes.len() < H2_PREFACE.len() {
+                return;
+            }
+            assert!(
+                self.writes.starts_with(H2_PREFACE),
+                "observed client write did not start with the HTTP/2 preface"
+            );
+            self.writes.drain(..H2_PREFACE.len());
+            self.preface_observed = true;
+        }
+
+        while self.writes.len() >= H2_FRAME_HEADER_LEN {
+            let payload_len = usize::from(self.writes[0]) << 16
+                | usize::from(self.writes[1]) << 8
+                | usize::from(self.writes[2]);
+            let frame_len = H2_FRAME_HEADER_LEN + payload_len;
+            if self.writes.len() < frame_len {
+                return;
+            }
+
+            let frame_type = self.writes[3];
+            let flags = self.writes[4];
+            if flags & H2_ACK_FLAG != 0 {
+                let notification = match frame_type {
+                    H2_SETTINGS_FRAME => &mut self.settings_ack,
+                    H2_PING_FRAME => &mut self.ping_ack,
+                    _ => {
+                        self.writes.drain(..frame_len);
+                        continue;
+                    }
+                };
+                if let Some(notification) = notification.take() {
+                    let _ = notification.send(());
+                }
+            }
+            self.writes.drain(..frame_len);
+        }
+    }
+}
+
+impl AsyncRead for FrameObservedStream {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        output: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.inner).poll_read(cx, output)
+    }
+}
+
+impl AsyncWrite for FrameObservedStream {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        input: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        let written = match Pin::new(&mut self.inner).poll_write(cx, input) {
+            Poll::Ready(Ok(written)) => written,
+            Poll::Ready(Err(error)) => return Poll::Ready(Err(error)),
+            Poll::Pending => return Poll::Pending,
+        };
+        self.writes.extend_from_slice(&input[..written]);
+        self.observe_complete_frames();
+        Poll::Ready(Ok(written))
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.inner).poll_shutdown(cx)
+    }
+}
+
+impl TransportStream for FrameObservedStream {
+    fn poll_read_direct(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        output: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        AsyncRead::poll_read(self, cx, output)
+    }
+
+    fn poll_write_direct(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        input: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        AsyncWrite::poll_write(self, cx, input)
+    }
+}
+
+#[tokio::test]
+async fn h2_frame_observer_reports_settings_and_ping_ack_once() {
+    let (client_io, server_io) = tokio::io::duplex(16);
+    let (client_io, settings_ack, ping_ack) = FrameObservedStream::new(client_io);
+    let (client, server) = tokio::join!(client::handshake(client_io), server::handshake(server_io));
+    let (send_request, client_connection) = client.expect("client HTTP/2 handshake");
+    let mut server_connection = server.expect("server HTTP/2 handshake");
+    let client_driver = tokio::spawn(client_connection);
+
+    let mut ping_pong = server_connection
+        .ping_pong()
+        .expect("server connection PingPong");
+    let ping = ping_pong.ping(Ping::opaque());
+    tokio::pin!(ping);
+    let drive_server_until_pong = async {
+        tokio::select! {
+            result = &mut ping => result,
+            exchange = server_connection.accept() => {
+                match exchange {
+                    Some(Ok((request, _))) => {
+                        panic!("unexpected request while awaiting PING ACK: {}", request.uri());
+                    }
+                    Some(Err(error)) => {
+                        panic!("server connection failed while awaiting PING ACK: {error}");
+                    }
+                    None => panic!("server connection closed before PING ACK"),
+                }
+            }
+        }
+    };
+
+    let (settings_result, ping_result, pong_result) = timeout(DEADLINE, async {
+        tokio::join!(settings_ack, ping_ack, drive_server_until_pong)
+    })
+    .await
+    .expect("client SETTINGS and PING acknowledgements");
+    settings_result.expect("SETTINGS ACK observation sender");
+    ping_result.expect("PING ACK observation sender");
+    pong_result.expect("server consumed PING ACK");
+
+    drop(server_connection);
+    drop(send_request);
+    client_driver.abort();
+    let _ = client_driver.await;
+}
+
+#[tokio::test]
+async fn scripted_h2_dial_uses_fifo_and_reports_exhaustion() {
+    let (first_client, mut first_server_io) = tokio::io::duplex(64);
+    let first_server = tokio::spawn(async move {
+        let mut request = [0_u8; 1];
+        first_server_io.read_exact(&mut request).await.unwrap();
+        assert_eq!(request, [1]);
+        first_server_io.write_all(&[11]).await.unwrap();
+    });
+    let (second_client, mut second_server_io) = tokio::io::duplex(64);
+    let second_server = tokio::spawn(async move {
+        let mut request = [0_u8; 1];
+        second_server_io.read_exact(&mut request).await.unwrap();
+        assert_eq!(request, [2]);
+        second_server_io.write_all(&[22]).await.unwrap();
+    });
+    let (dial, dials) = scripted_h2_dial([
+        (Box::new(first_client) as BoxedTransportStream, first_server),
+        (
+            Box::new(second_client) as BoxedTransportStream,
+            second_server,
+        ),
+    ]);
+
+    timeout(DEADLINE, async {
+        for (request, expected_response) in [(1, 11), (2, 22)] {
+            let mut stream = dial().await.unwrap();
+            stream.write_all(&[request]).await.unwrap();
+            let mut response = [0_u8; 1];
+            stream.read_exact(&mut response).await.unwrap();
+            assert_eq!(response, [expected_response]);
+        }
+    })
+    .await
+    .expect("scripted H2 dial entries");
+    assert_eq!(dials.load(Ordering::Acquire), 2);
+
+    let error = match dial().await {
+        Ok(_) => panic!("exhausted scripted H2 dial must fail"),
+        Err(error) => error,
+    };
+    match error {
+        TransportError::Tcp(error) => assert_eq!(error.kind(), io::ErrorKind::NotConnected),
+        other => panic!("unexpected exhausted dial error: {other}"),
+    }
+    assert_eq!(dials.load(Ordering::Acquire), 3);
+}
 
 #[tokio::test]
 async fn h1_stream_one_is_full_duplex_and_uses_only_the_supplied_dial() {
@@ -1325,6 +1545,35 @@ fn success_h2_dial(dials: Arc<AtomicUsize>) -> XhttpDial {
         }
         drain_h2_request(request.into_body()).await;
     })
+}
+
+fn scripted_h2_dial<const N: usize>(
+    connections: [(BoxedTransportStream, tokio::task::JoinHandle<()>); N],
+) -> (XhttpDial, Arc<AtomicUsize>) {
+    assert!(
+        matches!(N, 2 | 3),
+        "scripted H2 dial requires two connections and permits one replay detector"
+    );
+    let connections = Arc::new(Mutex::new(VecDeque::from(connections)));
+    let dials = Arc::new(AtomicUsize::new(0));
+    let dial: XhttpDial = {
+        let connections = Arc::clone(&connections);
+        let dials = Arc::clone(&dials);
+        Arc::new(move || {
+            dials.fetch_add(1, Ordering::AcqRel);
+            let connection = connections.lock().unwrap().pop_front();
+            Box::pin(async move {
+                let (stream, _server_task) = connection.ok_or_else(|| {
+                    TransportError::Tcp(io::Error::new(
+                        io::ErrorKind::NotConnected,
+                        "test dial queue is empty",
+                    ))
+                })?;
+                Ok(stream)
+            })
+        })
+    };
+    (dial, dials)
 }
 
 fn h2_dial<F, Fut>(dials: Arc<AtomicUsize>, handler: F) -> XhttpDial
