@@ -477,7 +477,7 @@ async fn startup_probe_uses_default_outbound_directly_without_routing_rules() {
             networks: Vec::new(),
             port_ranges: Vec::new(),
             domain_matchers: Vec::new(),
-            ip_matchers: Vec::new(),
+            ip_matchers: Default::default(),
             outbound_tag: "missing".to_owned(),
         }],
         ..Default::default()

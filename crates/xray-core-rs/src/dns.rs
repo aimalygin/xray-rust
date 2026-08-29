@@ -882,7 +882,7 @@ mod tests {
     use tokio::sync::oneshot;
     use tokio_rustls::TlsAcceptor;
     use xray_config::{
-        CoreConfig, DnsConfig, DnsHostMapping, DnsHostTarget, DnsOutboundRule,
+        compile_ip_matchers, CoreConfig, DnsConfig, DnsHostMapping, DnsHostTarget, DnsOutboundRule,
         DnsOutboundRuleAction, DnsOutboundSettings, DnsQTypeRange, DnsServerConfig, DomainMatcher,
         IpCidr, IpMatcher, Network, OutboundConfig, OutboundSettings, PolicyConfig, RoutingConfig,
         RoutingDomainStrategy, RoutingRule, StreamSecurity, StreamSettings, StreamTransport,
@@ -1045,9 +1045,9 @@ mod tests {
                     networks: vec![network],
                     port_ranges: Vec::new(),
                     domain_matchers: Vec::new(),
-                    ip_matchers: vec![IpMatcher::Cidr(
+                    ip_matchers: compile_ip_matchers(&[IpMatcher::Cidr(
                         IpCidr::new(server.ip(), if server.is_ipv4() { 32 } else { 128 }).unwrap(),
-                    )],
+                    )]),
                     outbound_tag: "dns-out".to_owned(),
                 }],
                 domain_strategy: RoutingDomainStrategy::IpIfNonMatch,

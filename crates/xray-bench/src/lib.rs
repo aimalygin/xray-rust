@@ -48,10 +48,11 @@ use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::{sleep, timeout};
 use tokio_rustls::TlsAcceptor;
 use xray_config::{
-    parse_xray_json, CoreConfig, DnsOutboundRule, DnsOutboundRuleAction, DnsOutboundSettings,
-    DomainMatcher, InboundConfig, InboundProtocol, IpCidr, IpMatcher, Network as ConfigNetwork,
-    OutboundConfig, OutboundSettings, RoutingConfig, RoutingDomainStrategy, RoutingPortRange,
-    RoutingRule, StreamSecurity, StreamSettings, StreamTransport,
+    compile_ip_matchers, parse_xray_json, CoreConfig, DnsOutboundRule, DnsOutboundRuleAction,
+    DnsOutboundSettings, DomainMatcher, InboundConfig, InboundProtocol, IpCidr, IpMatcher,
+    Network as ConfigNetwork, OutboundConfig, OutboundSettings, RoutingConfig,
+    RoutingDomainStrategy, RoutingPortRange, RoutingRule, StreamSecurity, StreamSettings,
+    StreamTransport,
 };
 use xray_core_rs::{
     CompiledDnsOutboundPolicy, Core, DnsOutboundDecision, OutboundRouter, StartupProbeOptions,
@@ -424,6 +425,10 @@ pub struct RouteProbeOptions {
     pub rules: usize,
     pub outbounds: usize,
     pub dns_candidates: usize,
+    /// Distinct non-matching CIDRs generated per non-final rule. `1` keeps the
+    /// original one-`/16`-per-rule shape; larger values expose the per-matcher
+    /// cost of `geoip:`-sized rules.
+    pub cidrs_per_rule: usize,
     pub out_dir: PathBuf,
 }
 
@@ -1269,6 +1274,7 @@ impl Default for RouteProbeOptions {
             rules: 64,
             outbounds: 8,
             dns_candidates: 0,
+            cidrs_per_rule: 1,
             out_dir: PathBuf::from("target/benchmarks"),
         }
     }
@@ -1314,9 +1320,15 @@ pub struct RouteProbeResult {
     pub outbounds: usize,
     #[serde(default)]
     pub dns_candidates: usize,
+    #[serde(default = "default_route_probe_cidrs_per_rule")]
+    pub cidrs_per_rule: usize,
     pub selected: usize,
     pub total_us: u128,
     pub avg_ns: u128,
+}
+
+fn default_route_probe_cidrs_per_rule() -> usize {
+    1
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -1589,6 +1601,10 @@ fn parse_route_probe_args(args: &[String]) -> Result<RouteProbeOptions, BenchErr
             "--dns-candidates" => {
                 options.dns_candidates =
                     parse_usize(required_value(args, &mut index, flag)?, flag)?;
+            }
+            "--cidrs-per-rule" => {
+                options.cidrs_per_rule =
+                    parse_nonzero_usize(required_value(args, &mut index, flag)?, flag)?;
             }
             "--out-dir" => {
                 options.out_dir = PathBuf::from(required_value(args, &mut index, flag)?);
@@ -8166,7 +8182,7 @@ pub async fn run_route_probe(options: &RouteProbeOptions) -> Result<RouteProbeRe
             "route-probe --dns-candidates must not exceed {MAX_ROUTE_PROBE_DNS_CANDIDATES}"
         )));
     }
-    let mut config = route_probe_config(options.rules, options.outbounds)?;
+    let mut config = route_probe_config(options.rules, options.outbounds, options.cidrs_per_rule)?;
     if options.dns_candidates > 0 {
         if options.rules == 0 {
             return Err(BenchError::InvalidArguments(
@@ -8190,6 +8206,7 @@ pub async fn run_route_probe(options: &RouteProbeOptions) -> Result<RouteProbeRe
         rules: options.rules,
         outbounds: options.outbounds,
         dns_candidates: options.dns_candidates,
+        cidrs_per_rule: options.cidrs_per_rule,
         selected,
         total_us: elapsed.as_micros(),
         avg_ns: elapsed.as_nanos() / options.iterations as u128,
@@ -8410,7 +8427,7 @@ fn dns_outbound_selector_probe_config(rule_count: usize) -> CoreConfig {
                 networks: vec![ConfigNetwork::Udp],
                 port_ranges: vec![RoutingPortRange::single(53)],
                 domain_matchers,
-                ip_matchers: Vec::new(),
+                ip_matchers: Default::default(),
                 outbound_tag: "dns-out".to_owned(),
             }
         })
@@ -9726,7 +9743,16 @@ fn summarize_reality_matrix_cases(
     }
 }
 
-fn route_probe_config(rules: usize, outbounds: usize) -> Result<CoreConfig, BenchError> {
+fn route_probe_config(
+    rules: usize,
+    outbounds: usize,
+    cidrs_per_rule: usize,
+) -> Result<CoreConfig, BenchError> {
+    if cidrs_per_rule == 0 {
+        return Err(BenchError::InvalidArguments(
+            "route-probe --cidrs-per-rule must be at least 1".to_owned(),
+        ));
+    }
     let outbound_count = outbounds.max(1);
     let selected_tag = format!("out-{}", outbound_count - 1);
     let outbounds = (0..outbound_count)
@@ -9745,18 +9771,23 @@ fn route_probe_config(rules: usize, outbounds: usize) -> Result<CoreConfig, Benc
 
     let mut routing_rules = Vec::with_capacity(rules);
     for index in 0..rules {
-        let cidr = if index + 1 == rules {
-            IpCidr::full(IpAddr::V4(ROUTE_PROBE_TARGET_IP))
+        let ip_matchers = if index + 1 == rules {
+            vec![IpMatcher::Cidr(IpCidr::full(IpAddr::V4(
+                ROUTE_PROBE_TARGET_IP,
+            )))]
         } else {
-            IpCidr::new(IpAddr::V4(Ipv4Addr::new(10, (index % 256) as u8, 0, 0)), 16)
-                .map_err(|error| BenchError::InvalidArguments(error.to_string()))?
+            (0..cidrs_per_rule)
+                .map(|cidr_index| {
+                    route_probe_miss_cidr(index, cidr_index, cidrs_per_rule).map(IpMatcher::Cidr)
+                })
+                .collect::<Result<Vec<_>, _>>()?
         };
         routing_rules.push(RoutingRule {
             inbound_tags: vec!["bench-in".to_owned()],
             networks: Vec::new(),
             port_ranges: Vec::new(),
             domain_matchers: Vec::new(),
-            ip_matchers: vec![IpMatcher::Cidr(cidr)],
+            ip_matchers: compile_ip_matchers(&ip_matchers),
             outbound_tag: selected_tag.clone(),
         });
     }
@@ -9780,6 +9811,39 @@ fn route_probe_config(rules: usize, outbounds: usize) -> Result<CoreConfig, Benc
         dns: Default::default(),
         policy: Default::default(),
     })
+}
+
+/// A CIDR inside `10.0.0.0/8` that never contains [`ROUTE_PROBE_TARGET_IP`].
+///
+/// With one CIDR per rule this keeps the historical `10.<rule>.0.0/16` shape.
+/// With more, every rule gets `cidrs_per_rule` distinct `/28` blocks separated
+/// by a one-block gap so that no two blocks overlap or merge into one range.
+/// 2^19 such blocks fit inside `10.0.0.0/8`; `rules x cidrs_per_rule` beyond
+/// that is rejected here.
+fn route_probe_miss_cidr(
+    rule_index: usize,
+    cidr_index: usize,
+    cidrs_per_rule: usize,
+) -> Result<IpCidr, BenchError> {
+    let (network, prefix) = if cidrs_per_rule == 1 {
+        (Ipv4Addr::new(10, (rule_index % 256) as u8, 0, 0), 16)
+    } else {
+        let block = rule_index * cidrs_per_rule + cidr_index;
+        let offset = u32::try_from(block * 32)
+            .ok()
+            .filter(|offset| *offset < (1 << 24))
+            .ok_or_else(|| {
+                BenchError::InvalidArguments(format!(
+                    "route-probe miss CIDR {block} does not fit inside 10.0.0.0/8"
+                ))
+            })?;
+        (
+            Ipv4Addr::from(u32::from(Ipv4Addr::new(10, 0, 0, 0)) + offset),
+            28,
+        )
+    };
+    IpCidr::new(IpAddr::V4(network), prefix)
+        .map_err(|error| BenchError::InvalidArguments(error.to_string()))
 }
 
 fn harness_build_profile() -> &'static str {
@@ -10429,11 +10493,12 @@ fn print_result(result: &BenchResult) {
 
 fn print_route_probe_result(result: &RouteProbeResult) {
     println!(
-        "route-probe iterations={} rules={} outbounds={} dns_candidates={} selected={} total_us={} avg_ns={}",
+        "route-probe iterations={} rules={} outbounds={} dns_candidates={} cidrs_per_rule={} selected={} total_us={} avg_ns={}",
         result.iterations,
         result.rules,
         result.outbounds,
         result.dns_candidates,
+        result.cidrs_per_rule,
         result.selected,
         result.total_us,
         result.avg_ns
@@ -13384,9 +13449,63 @@ mod tests {
                 rules: 64,
                 outbounds: 8,
                 dns_candidates: 0,
+                cidrs_per_rule: 1,
                 out_dir: PathBuf::from("target/benchmarks/route-probe"),
             })
         );
+    }
+
+    #[test]
+    fn parses_route_probe_cidrs_per_rule() {
+        let args =
+            parse_cli_args(["xray-bench", "route-probe", "--cidrs-per-rule", "5000"]).unwrap();
+
+        let CliArgs::RouteProbe(options) = args else {
+            panic!("expected route-probe arguments");
+        };
+        assert_eq!(options.cidrs_per_rule, 5000);
+
+        let error = parse_cli_args(["xray-bench", "route-probe", "--cidrs-per-rule", "0"])
+            .expect_err("zero CIDRs per rule must be rejected");
+        assert!(matches!(error, BenchError::InvalidArguments(_)));
+    }
+
+    #[test]
+    fn route_probe_miss_cidrs_never_contain_the_target_and_do_not_touch() {
+        let target = IpAddr::V4(ROUTE_PROBE_TARGET_IP);
+        let single = route_probe_miss_cidr(3, 0, 1).unwrap();
+        assert_eq!(single.network(), IpAddr::V4(Ipv4Addr::new(10, 3, 0, 0)));
+        assert_eq!(single.prefix(), 16);
+        assert!(!single.matches(&target));
+
+        let mut networks = Vec::new();
+        for rule_index in 0..3 {
+            for cidr_index in 0..5 {
+                let cidr = route_probe_miss_cidr(rule_index, cidr_index, 5).unwrap();
+                assert_eq!(cidr.prefix(), 28);
+                assert!(!cidr.matches(&target));
+                let IpAddr::V4(network) = cidr.network() else {
+                    panic!("expected an IPv4 network");
+                };
+                networks.push(u32::from(network));
+            }
+        }
+        networks.sort_unstable();
+        networks.dedup();
+        assert_eq!(networks.len(), 15);
+        for pair in networks.windows(2) {
+            // A /28 spans 16 addresses; a gap of another 16 keeps blocks from merging.
+            assert!(pair[1] - pair[0] >= 32);
+        }
+
+        let config = route_probe_config(4, 2, 5).unwrap();
+        for rule in &config.routing.rules[..3] {
+            assert!(!rule.matches_ip(Some(&target)));
+            assert_eq!(rule.ip_matchers.range_count(), 5);
+        }
+        assert!(config.routing.rules[3].matches_ip(Some(&target)));
+        assert!(route_probe_config(1 << 15, 2, 17).is_err());
+        assert!(route_probe_config(4, 2, 0).is_err());
     }
 
     #[test]
@@ -13562,7 +13681,7 @@ mod tests {
 
     #[test]
     fn direct_route_probe_remains_the_zero_candidate_baseline() {
-        let config = Arc::new(route_probe_config(4, 2).unwrap());
+        let config = Arc::new(route_probe_config(4, 2, 1).unwrap());
         let router = OutboundRouter::new(config);
 
         let (selected, _) = measure_direct_route_probe(&router, 3).unwrap();
@@ -13572,7 +13691,7 @@ mod tests {
 
     #[tokio::test]
     async fn cached_dns_route_probe_matches_the_final_candidate_from_the_warmed_cache() {
-        let mut config = route_probe_config(4, 2).unwrap();
+        let mut config = route_probe_config(4, 2, 1).unwrap();
         config.routing.domain_strategy = RoutingDomainStrategy::IpIfNonMatch;
         config.default_outbound_tag = Some(ROUTE_PROBE_UNMATCHED_TAG.to_owned());
         let router = OutboundRouter::new(Arc::new(config));

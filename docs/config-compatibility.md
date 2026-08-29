@@ -873,6 +873,20 @@ IP matchers:
 - `ext:file.dat:code` and `ext-ip:file.dat:code`;
 - the supported inverse `!` forms.
 
+IP matchers are compiled once at load time into merged address-range sets, so a
+rule's lookup cost is logarithmic in the number of distinct ranges and does not
+grow with the size of a `geoip:` list. Matching follows Xray-core's
+`HeuristicIPMatcher`:
+
+- an IPv4-mapped IPv6 target (`::ffff:a.b.c.d`) is unmapped and matched as
+  IPv4, so it hits IPv4 CIDR and `geoip:private` rules;
+- a positive matcher matches when the target is inside any of its networks; an
+  inverse matcher matches when the target is outside every negated network
+  **of the same address family** — a rule whose negated networks are all IPv4
+  never matches an IPv6 target, and vice versa;
+- a CIDR prefix longer than the address family allows (for example `/33` for
+  IPv4) is rejected at load time rather than clamped.
+
 Balancers and non-`field` rules are unsupported. Rules are evaluated in order;
 if none matches, the first outbound tag is used as the default.
 

@@ -11,6 +11,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UdpSocket;
 use tokio::sync::Notify;
 use tokio::time;
+use xray_routing::{Cidr, IpMatcherSet, IpMatcherSetBuilder};
 
 use crate::{
     canonicalize_socket_addr, connect_tcp_happy_eyeballs, HappyEyeballsConfig, SocketHandle,
@@ -604,63 +605,33 @@ pub enum NameServer {
 
 /// A normalized IP network used by managed-DNS response filters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct DnsIpCidr {
-    network: IpAddr,
-    prefix_len: u8,
-}
+pub struct DnsIpCidr(Cidr);
 
 impl DnsIpCidr {
     pub fn new(network: IpAddr, prefix_len: u8) -> Result<Self, DnsIpCidrError> {
-        let network = canonicalize_dns_filter_ip(network);
-        let max_prefix = match network {
-            IpAddr::V4(_) => 32,
-            IpAddr::V6(_) => 128,
-        };
-        if prefix_len > max_prefix {
-            return Err(DnsIpCidrError::PrefixTooLong {
-                address: network,
-                prefix_len,
-                max_prefix,
-            });
-        }
-
-        Ok(Self {
-            network: normalize_ip_network(network, prefix_len),
-            prefix_len,
-        })
+        Cidr::new(network, prefix_len)
+            .map(|cidr| Self(cidr.normalized()))
+            .map_err(|error| DnsIpCidrError::PrefixTooLong {
+                address: error.address,
+                prefix_len: error.prefix_len,
+                max_prefix: error.max_prefix,
+            })
     }
 
     pub fn host(address: IpAddr) -> Self {
-        let address = canonicalize_dns_filter_ip(address);
-        Self {
-            network: address,
-            prefix_len: match address {
-                IpAddr::V4(_) => 32,
-                IpAddr::V6(_) => 128,
-            },
-        }
+        Self(Cidr::host(address))
     }
 
     pub fn network(self) -> IpAddr {
-        self.network
+        self.0.network()
     }
 
     pub fn prefix_len(self) -> u8 {
-        self.prefix_len
+        self.0.prefix_len()
     }
 
     pub fn contains(self, address: IpAddr) -> bool {
-        match (self.network, canonicalize_dns_filter_ip(address)) {
-            (IpAddr::V4(network), IpAddr::V4(address)) => {
-                let mask = ipv4_prefix_mask(self.prefix_len);
-                u32::from(address) & mask == u32::from(network)
-            }
-            (IpAddr::V6(network), IpAddr::V6(address)) => {
-                let mask = ipv6_prefix_mask(self.prefix_len);
-                u128::from(address) & mask == u128::from(network)
-            }
-            (IpAddr::V4(_), IpAddr::V6(_)) | (IpAddr::V6(_), IpAddr::V4(_)) => false,
-        }
+        self.0.contains(address)
     }
 }
 
@@ -741,8 +712,8 @@ impl DnsIpFilter {
 /// Query-ready managed-DNS IP filter compiled into merged address ranges.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompiledDnsIpFilter {
-    custom: CompiledDnsIpMatcherCategory,
-    geoip: CompiledDnsIpMatcherCategory,
+    custom: IpMatcherSet,
+    geoip: IpMatcherSet,
     soft: bool,
     matcher_count: usize,
 }
@@ -751,8 +722,8 @@ impl CompiledDnsIpFilter {
     pub fn new(filter: DnsIpFilter) -> Self {
         let matcher_count = filter.custom_matchers.len() + filter.geoip_matchers.len();
         Self {
-            custom: CompiledDnsIpMatcherCategory::new(filter.custom_matchers),
-            geoip: CompiledDnsIpMatcherCategory::new(filter.geoip_matchers),
+            custom: compile_dns_ip_matchers(filter.custom_matchers),
+            geoip: compile_dns_ip_matchers(filter.geoip_matchers),
             soft: filter.soft,
             matcher_count,
         }
@@ -811,261 +782,20 @@ impl CompiledDnsIpFilter {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-struct CompiledDnsIpMatcherCategory {
-    positive: DnsIpRangeSet,
-    inverse: DnsIpRangeSet,
+fn compile_dns_ip_matchers(matchers: Vec<DnsIpMatcher>) -> IpMatcherSet {
+    let mut builder = IpMatcherSet::builder();
+    for matcher in matchers {
+        insert_dns_ip_matcher(&mut builder, matcher, false);
+    }
+    builder.build()
 }
 
-impl CompiledDnsIpMatcherCategory {
-    fn new(matchers: Vec<DnsIpMatcher>) -> Self {
-        let mut positive = DnsIpRangeSetBuilder::default();
-        let mut inverse = DnsIpRangeSetBuilder::default();
-        for matcher in matchers {
-            add_dns_ip_matcher(matcher, false, &mut positive, &mut inverse);
-        }
-        Self {
-            positive: positive.build(),
-            inverse: inverse.build(),
-        }
-    }
-
-    fn is_empty(&self) -> bool {
-        self.positive.is_empty() && self.inverse.is_empty()
-    }
-
-    fn range_count(&self) -> usize {
-        self.positive.range_count() + self.inverse.range_count()
-    }
-
-    fn matches(&self, address: IpAddr) -> bool {
-        self.positive.contains(address)
-            || self.inverse.supports_family(address) && !self.inverse.contains(address)
-    }
-}
-
-fn add_dns_ip_matcher(
-    matcher: DnsIpMatcher,
-    inverted: bool,
-    positive: &mut DnsIpRangeSetBuilder,
-    inverse: &mut DnsIpRangeSetBuilder,
-) {
+fn insert_dns_ip_matcher(builder: &mut IpMatcherSetBuilder, matcher: DnsIpMatcher, inverted: bool) {
     match matcher {
-        DnsIpMatcher::Cidr(cidr) => {
-            if inverted {
-                inverse.insert(cidr);
-            } else {
-                positive.insert(cidr);
-            }
-        }
-        DnsIpMatcher::Private => {
-            for cidr in private_dns_ip_cidrs() {
-                if inverted {
-                    inverse.insert(cidr);
-                } else {
-                    positive.insert(cidr);
-                }
-            }
-        }
-        DnsIpMatcher::Not(matcher) => {
-            add_dns_ip_matcher(*matcher, !inverted, positive, inverse);
-        }
+        DnsIpMatcher::Cidr(cidr) => builder.insert_cidr(cidr.0, inverted),
+        DnsIpMatcher::Private => builder.insert_private_networks(inverted),
+        DnsIpMatcher::Not(matcher) => insert_dns_ip_matcher(builder, *matcher, !inverted),
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Ipv4Range {
-    start: u32,
-    end: u32,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Ipv6Range {
-    start: u128,
-    end: u128,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-struct DnsIpRangeSet {
-    ipv4: Box<[Ipv4Range]>,
-    ipv6: Box<[Ipv6Range]>,
-}
-
-impl DnsIpRangeSet {
-    fn is_empty(&self) -> bool {
-        self.ipv4.is_empty() && self.ipv6.is_empty()
-    }
-
-    fn range_count(&self) -> usize {
-        self.ipv4.len() + self.ipv6.len()
-    }
-
-    fn supports_family(&self, address: IpAddr) -> bool {
-        match canonicalize_dns_filter_ip(address) {
-            IpAddr::V4(_) => !self.ipv4.is_empty(),
-            IpAddr::V6(_) => !self.ipv6.is_empty(),
-        }
-    }
-
-    fn contains(&self, address: IpAddr) -> bool {
-        match canonicalize_dns_filter_ip(address) {
-            IpAddr::V4(address) => {
-                let address = u32::from(address);
-                let insertion = self.ipv4.partition_point(|range| range.start <= address);
-                insertion > 0 && address <= self.ipv4[insertion - 1].end
-            }
-            IpAddr::V6(address) => {
-                let address = u128::from(address);
-                let insertion = self.ipv6.partition_point(|range| range.start <= address);
-                insertion > 0 && address <= self.ipv6[insertion - 1].end
-            }
-        }
-    }
-}
-
-#[derive(Default)]
-struct DnsIpRangeSetBuilder {
-    ipv4: Vec<Ipv4Range>,
-    ipv6: Vec<Ipv6Range>,
-}
-
-impl DnsIpRangeSetBuilder {
-    fn insert(&mut self, cidr: DnsIpCidr) {
-        match cidr.network {
-            IpAddr::V4(network) => {
-                let mask = ipv4_prefix_mask(cidr.prefix_len);
-                let start = u32::from(network) & mask;
-                self.ipv4.push(Ipv4Range {
-                    start,
-                    end: start | !mask,
-                });
-            }
-            IpAddr::V6(network) => {
-                let mask = ipv6_prefix_mask(cidr.prefix_len);
-                let start = u128::from(network) & mask;
-                self.ipv6.push(Ipv6Range {
-                    start,
-                    end: start | !mask,
-                });
-            }
-        }
-    }
-
-    fn build(mut self) -> DnsIpRangeSet {
-        merge_ipv4_ranges(&mut self.ipv4);
-        merge_ipv6_ranges(&mut self.ipv6);
-        DnsIpRangeSet {
-            ipv4: self.ipv4.into_boxed_slice(),
-            ipv6: self.ipv6.into_boxed_slice(),
-        }
-    }
-}
-
-fn merge_ipv4_ranges(ranges: &mut Vec<Ipv4Range>) {
-    ranges.sort_unstable_by_key(|range| (range.start, range.end));
-    let mut write = 0;
-    for read in 0..ranges.len() {
-        let current = ranges[read];
-        if write > 0 && current.start <= ranges[write - 1].end.saturating_add(1) {
-            ranges[write - 1].end = ranges[write - 1].end.max(current.end);
-        } else {
-            ranges[write] = current;
-            write += 1;
-        }
-    }
-    ranges.truncate(write);
-}
-
-fn merge_ipv6_ranges(ranges: &mut Vec<Ipv6Range>) {
-    ranges.sort_unstable_by_key(|range| (range.start, range.end));
-    let mut write = 0;
-    for read in 0..ranges.len() {
-        let current = ranges[read];
-        if write > 0 && current.start <= ranges[write - 1].end.saturating_add(1) {
-            ranges[write - 1].end = ranges[write - 1].end.max(current.end);
-        } else {
-            ranges[write] = current;
-            write += 1;
-        }
-    }
-    ranges.truncate(write);
-}
-
-fn normalize_ip_network(network: IpAddr, prefix_len: u8) -> IpAddr {
-    match network {
-        IpAddr::V4(network) => IpAddr::V4(Ipv4Addr::from(
-            u32::from(network) & ipv4_prefix_mask(prefix_len),
-        )),
-        IpAddr::V6(network) => IpAddr::V6(Ipv6Addr::from(
-            u128::from(network) & ipv6_prefix_mask(prefix_len),
-        )),
-    }
-}
-
-fn ipv4_prefix_mask(prefix_len: u8) -> u32 {
-    if prefix_len == 0 {
-        0
-    } else {
-        u32::MAX << (32 - prefix_len)
-    }
-}
-
-fn ipv6_prefix_mask(prefix_len: u8) -> u128 {
-    if prefix_len == 0 {
-        0
-    } else {
-        u128::MAX << (128 - prefix_len)
-    }
-}
-
-fn canonicalize_dns_filter_ip(address: IpAddr) -> IpAddr {
-    match address {
-        IpAddr::V6(address) => address
-            .to_ipv4_mapped()
-            .map_or(IpAddr::V6(address), IpAddr::V4),
-        IpAddr::V4(_) => address,
-    }
-}
-
-fn private_dns_ip_cidrs() -> [DnsIpCidr; 9] {
-    [
-        DnsIpCidr {
-            network: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 0)),
-            prefix_len: 8,
-        },
-        DnsIpCidr {
-            network: IpAddr::V4(Ipv4Addr::new(100, 64, 0, 0)),
-            prefix_len: 10,
-        },
-        DnsIpCidr {
-            network: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 0)),
-            prefix_len: 8,
-        },
-        DnsIpCidr {
-            network: IpAddr::V4(Ipv4Addr::new(169, 254, 0, 0)),
-            prefix_len: 16,
-        },
-        DnsIpCidr {
-            network: IpAddr::V4(Ipv4Addr::new(172, 16, 0, 0)),
-            prefix_len: 12,
-        },
-        DnsIpCidr {
-            network: IpAddr::V4(Ipv4Addr::new(192, 168, 0, 0)),
-            prefix_len: 16,
-        },
-        DnsIpCidr {
-            network: IpAddr::V6(Ipv6Addr::LOCALHOST),
-            prefix_len: 128,
-        },
-        DnsIpCidr {
-            network: IpAddr::V6(Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 0)),
-            prefix_len: 7,
-        },
-        DnsIpCidr {
-            network: IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 0)),
-            prefix_len: 10,
-        },
-    ]
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
