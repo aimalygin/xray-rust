@@ -2,7 +2,7 @@
 set -euo pipefail
 
 WORKSPACE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
-WORKFLOW="$WORKSPACE_ROOT/.github/workflows/ci.yml"
+WORKFLOW="${SCHEDULED_INTEROP_WORKFLOW_UNDER_TEST:-$WORKSPACE_ROOT/.github/workflows/ci.yml}"
 PINNED_XRAY_REVISION='5ca6f4b7d4dc20a881d4330e498892697627ec0c'
 CHECKOUT_ACTION='        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1'
 SETUP_GO_ACTION='        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0'
@@ -19,6 +19,16 @@ job_body() {
     capture && $0 != header && /^  [A-Za-z0-9_-]+:/ { exit }
     capture { print }
   ' "$WORKFLOW"
+}
+
+step_body() {
+  local body="$1"
+  local step="$2"
+  awk -v header="      - name: $step" '
+    $0 == header { capture = 1 }
+    capture && $0 != header && /^      - name:/ { exit }
+    capture { print }
+  ' <<<"$body"
 }
 
 require_exact() {
@@ -46,6 +56,17 @@ exact_count() {
 checkout_count() {
   local body="$1"
   awk 'index($0, "uses: actions/checkout@") { count++ } END { print count + 0 }' <<<"$body"
+}
+
+action_count() {
+  local body="$1"
+  awk '/^        uses: / { count++ } END { print count + 0 }' <<<"$body"
+}
+
+contains_count() {
+  local body="$1"
+  local text="$2"
+  awk -v needle="$text" 'index($0, needle) { count++ } END { print count + 0 }' <<<"$body"
 }
 
 checkout_path_count() {
@@ -102,6 +123,15 @@ require_exact "$scheduled_pinned_job" '    timeout-minutes: 90' \
 reject_text "$scheduled_pinned_job" 'continue-on-error:' \
   'scheduled pinned interoperability is non-blocking'
 
+pinned_source_checkout="$(step_body "$scheduled_pinned_job" 'Check out scheduled xray-rust revision')"
+pinned_core_checkout="$(step_body "$scheduled_pinned_job" 'Check out pinned Xray-core oracle')"
+[[ -n "$pinned_source_checkout" && -n "$pinned_core_checkout" ]] || \
+  die 'scheduled pinned checkout steps are missing'
+reject_text "$pinned_source_checkout" 'ref:' \
+  'scheduled pinned xray-rust checkout overrides the scheduled event revision'
+require_exact "$pinned_core_checkout" "          ref: $PINNED_XRAY_REVISION" \
+  'scheduled pinned Xray-core checkout does not use the audited commit'
+
 [[ "$(checkout_count "$scheduled_pinned_job")" == 2 ]] || \
   die 'scheduled pinned interoperability must perform exactly two checkouts'
 [[ "$(exact_count "$scheduled_pinned_job" "$CHECKOUT_ACTION")" == 2 ]] || \
@@ -135,6 +165,24 @@ require_exact "$scheduled_pinned_job" \
 require_exact "$scheduled_pinned_job" \
   '        run: rustup default 1.96.0' \
   'scheduled pinned interoperability does not select Rust 1.96.0'
+[[ "$(action_count "$scheduled_pinned_job")" == 3 ]] || \
+  die 'scheduled pinned interoperability has an additional setup action'
+[[ "$(contains_count "$scheduled_pinned_job" 'uses: actions/setup-go@')" == 1 ]] || \
+  die 'scheduled pinned interoperability does not have exactly one Go setup action'
+[[ "$(exact_count "$scheduled_pinned_job" "$SETUP_GO_ACTION")" == 1 ]] || \
+  die 'scheduled pinned interoperability has an ambiguous pinned Go setup action'
+[[ "$(contains_count "$scheduled_pinned_job" '          go-version:')" == 1 ]] || \
+  die 'scheduled pinned interoperability does not have exactly one Go version'
+[[ "$(exact_count "$scheduled_pinned_job" '          go-version: "1.26.5"')" == 1 ]] || \
+  die 'scheduled pinned interoperability has an ambiguous Go 1.26.5 pin'
+[[ "$(contains_count "$scheduled_pinned_job" 'rustup toolchain install')" == 1 ]] || \
+  die 'scheduled pinned interoperability does not have exactly one Rust install'
+[[ "$(exact_count "$scheduled_pinned_job" '        run: rustup toolchain install 1.96.0 --profile minimal')" == 1 ]] || \
+  die 'scheduled pinned interoperability has an ambiguous Rust 1.96.0 install'
+[[ "$(contains_count "$scheduled_pinned_job" 'rustup default')" == 1 ]] || \
+  die 'scheduled pinned interoperability does not have exactly one Rust selection'
+[[ "$(exact_count "$scheduled_pinned_job" '        run: rustup default 1.96.0')" == 1 ]] || \
+  die 'scheduled pinned interoperability has an ambiguous Rust 1.96.0 selection'
 require_exact "$scheduled_pinned_job" \
   '          XRAY_CORE_CHECKOUT: ${{ github.workspace }}/Xray-core' \
   'scheduled pinned interoperability does not pass the absolute Xray-core checkout'
@@ -156,6 +204,15 @@ require_exact "$main_smoke_job" '    continue-on-error: true' \
   'Xray-core main smoke is not warning-only at job scope'
 [[ "$(exact_count "$main_smoke_job" '    continue-on-error: true')" == 1 ]] || \
   die 'Xray-core main smoke has an ambiguous continue-on-error policy'
+
+main_source_checkout="$(step_body "$main_smoke_job" 'Check out scheduled xray-rust revision')"
+main_core_checkout="$(step_body "$main_smoke_job" 'Check out Xray-core main')"
+[[ -n "$main_source_checkout" && -n "$main_core_checkout" ]] || \
+  die 'Xray-core main checkout steps are missing'
+reject_text "$main_source_checkout" 'ref:' \
+  'Xray-core main smoke xray-rust checkout overrides the scheduled event revision'
+require_exact "$main_core_checkout" '          ref: main' \
+  'Xray-core main checkout does not explicitly follow main'
 
 [[ "$(checkout_count "$main_smoke_job")" == 2 ]] || \
   die 'Xray-core main smoke must perform exactly two checkouts'
@@ -190,20 +247,49 @@ require_exact "$main_smoke_job" \
 require_exact "$main_smoke_job" \
   '        run: rustup default 1.96.0' \
   'Xray-core main smoke does not select Rust 1.96.0'
+[[ "$(action_count "$main_smoke_job")" == 3 ]] || \
+  die 'Xray-core main smoke has an additional setup action'
+[[ "$(contains_count "$main_smoke_job" 'uses: actions/setup-go@')" == 1 ]] || \
+  die 'Xray-core main smoke does not have exactly one Go setup action'
+[[ "$(exact_count "$main_smoke_job" "$SETUP_GO_ACTION")" == 1 ]] || \
+  die 'Xray-core main smoke has an ambiguous pinned Go setup action'
+[[ "$(contains_count "$main_smoke_job" '          go-version:')" == 1 ]] || \
+  die 'Xray-core main smoke does not have exactly one Go version'
+[[ "$(exact_count "$main_smoke_job" '          go-version: "1.26.5"')" == 1 ]] || \
+  die 'Xray-core main smoke has an ambiguous Go 1.26.5 pin'
+[[ "$(contains_count "$main_smoke_job" 'rustup toolchain install')" == 1 ]] || \
+  die 'Xray-core main smoke does not have exactly one Rust install'
+[[ "$(exact_count "$main_smoke_job" '        run: rustup toolchain install 1.96.0 --profile minimal')" == 1 ]] || \
+  die 'Xray-core main smoke has an ambiguous Rust 1.96.0 install'
+[[ "$(contains_count "$main_smoke_job" 'rustup default')" == 1 ]] || \
+  die 'Xray-core main smoke does not have exactly one Rust selection'
+[[ "$(exact_count "$main_smoke_job" '        run: rustup default 1.96.0')" == 1 ]] || \
+  die 'Xray-core main smoke has an ambiguous Rust 1.96.0 selection'
 
-require_exact "$main_smoke_job" '        id: xray' \
+main_revision_step="$(step_body "$main_smoke_job" 'Resolve Xray-core main revision')"
+[[ -n "$main_revision_step" ]] || \
+  die 'Xray-core main revision step is missing'
+require_exact "$main_revision_step" '        id: xray' \
   'Xray-core main revision step does not expose id xray'
-require_exact "$main_smoke_job" \
+require_exact "$main_revision_step" \
   '          revision="$(git -C Xray-core rev-parse --verify HEAD)"' \
   'Xray-core main revision step does not resolve checkout HEAD'
-require_exact "$main_smoke_job" \
+require_exact "$main_revision_step" \
   '          if [[ ! "$revision" =~ ^[0-9a-f]{40}$ ]]; then' \
   'Xray-core main revision step does not validate a full lowercase SHA'
-require_exact "$main_smoke_job" \
+require_exact "$main_revision_step" \
   '          echo "revision=$revision" >>"$GITHUB_OUTPUT"' \
   'Xray-core main revision step does not publish its output'
 grep -Fq '$GITHUB_STEP_SUMMARY' <<<"$main_smoke_job" || \
   die 'Xray-core main revision step does not record the tested revision in the summary'
+revision_summary_count="$(
+  awk '
+    index($0, "$GITHUB_STEP_SUMMARY") && index($0, "$revision") { count++ }
+    END { print count + 0 }
+  ' <<<"$main_revision_step"
+)"
+[[ "$revision_summary_count" == 1 ]] || \
+  die 'Xray-core main summary does not record the validated revision'
 require_exact "$main_smoke_job" \
   '          XRAY_CORE_CHECKOUT: ${{ github.workspace }}/Xray-core' \
   'Xray-core main smoke does not pass the absolute Xray-core checkout'
@@ -241,6 +327,10 @@ fi
 if grep -Fxq 'xray-core-main-smoke' <<<"$publish_needs"; then
   die 'Xray-core main smoke blocks prerelease publication'
 fi
+reject_text "$publish_job" 'scheduled-pinned-interop' \
+  'scheduled pinned interoperability appears in the prerelease publication job'
+reject_text "$publish_job" 'xray-core-main-smoke' \
+  'Xray-core main smoke appears in the prerelease publication job'
 
 require_exact "$rc_interop_job" "          ref: $PINNED_XRAY_REVISION" \
   'RC interoperability no longer pins the audited Xray-core commit'
