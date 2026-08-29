@@ -38,11 +38,18 @@ require_exact() {
   grep -Fxq -- "$line" <<<"$body" || die "$message"
 }
 
+without_full_line_comments() {
+  local body="$1"
+  awk '!/^[[:space:]]*#/' <<<"$body"
+}
+
 reject_text() {
   local body="$1"
   local text="$2"
   local message="$3"
-  if grep -Fq -- "$text" <<<"$body"; then
+  local active_body
+  active_body="$(without_full_line_comments "$body")"
+  if grep -Fq -- "$text" <<<"$active_body"; then
     die "$message"
   fi
 }
@@ -55,7 +62,10 @@ exact_count() {
 
 checkout_count() {
   local body="$1"
-  awk 'index($0, "uses: actions/checkout@") { count++ } END { print count + 0 }' <<<"$body"
+  awk '
+    !/^[[:space:]]*#/ && index($0, "uses: actions/checkout@") { count++ }
+    END { print count + 0 }
+  ' <<<"$body"
 }
 
 action_count() {
@@ -66,7 +76,35 @@ action_count() {
 contains_count() {
   local body="$1"
   local text="$2"
-  awk -v needle="$text" 'index($0, needle) { count++ } END { print count + 0 }' <<<"$body"
+  awk -v needle="$text" '
+    !/^[[:space:]]*#/ && index($0, needle) { count++ }
+    END { print count + 0 }
+  ' <<<"$body"
+}
+
+yaml_key_count() {
+  local body="$1"
+  local key="$2"
+  awk -v key="$key" '
+    /^[[:space:]]*#/ { next }
+    {
+      line = $0
+      sub(/^[[:space:]]*/, "", line)
+      if (line ~ ("^" key "[[:space:]]*:[[:space:]]*")) {
+        count++
+      }
+    }
+    END { print count + 0 }
+  ' <<<"$body"
+}
+
+yaml_reference_count() {
+  local body="$1"
+  awk '
+    /^[[:space:]]*#/ { next }
+    /[&*][A-Za-z_][A-Za-z0-9_-]*/ { count++ }
+    END { print count + 0 }
+  ' <<<"$body"
 }
 
 checkout_path_count() {
@@ -104,6 +142,15 @@ publish_job="$(job_body publish-prerelease)"
 [[ -n "$rc_interop_job" ]] || die 'RC interoperability job is missing'
 [[ -n "$publish_job" ]] || die 'prerelease publication job is missing'
 
+[[ "$(yaml_reference_count "$scheduled_pinned_job")" == 0 ]] || \
+  die 'scheduled pinned interoperability uses a YAML anchor or alias'
+[[ "$(yaml_reference_count "$main_smoke_job")" == 0 ]] || \
+  die 'Xray-core main smoke uses a YAML anchor or alias'
+[[ "$(yaml_reference_count "$rc_interop_job")" == 0 ]] || \
+  die 'RC interoperability uses a YAML anchor or alias'
+[[ "$(yaml_reference_count "$publish_job")" == 0 ]] || \
+  die 'prerelease publication uses a YAML anchor or alias'
+
 workflow_header="$(awk '/^jobs:/ { exit } { print }' "$WORKFLOW")"
 require_exact "$workflow_header" '  schedule:' \
   'CI workflow does not declare a schedule event'
@@ -129,6 +176,8 @@ pinned_core_checkout="$(step_body "$scheduled_pinned_job" 'Check out pinned Xray
   die 'scheduled pinned checkout steps are missing'
 reject_text "$pinned_source_checkout" 'ref:' \
   'scheduled pinned xray-rust checkout overrides the scheduled event revision'
+[[ "$(yaml_key_count "$pinned_source_checkout" ref)" == 0 ]] || \
+  die 'scheduled pinned xray-rust checkout overrides the scheduled event revision'
 require_exact "$pinned_core_checkout" "          ref: $PINNED_XRAY_REVISION" \
   'scheduled pinned Xray-core checkout does not use the audited commit'
 
@@ -183,6 +232,10 @@ require_exact "$scheduled_pinned_job" \
   die 'scheduled pinned interoperability does not have exactly one Rust selection'
 [[ "$(exact_count "$scheduled_pinned_job" '        run: rustup default 1.96.0')" == 1 ]] || \
   die 'scheduled pinned interoperability has an ambiguous Rust 1.96.0 selection'
+[[ "$(yaml_key_count "$scheduled_pinned_job" GOTOOLCHAIN)" == 0 ]] || \
+  die 'scheduled pinned interoperability overrides the pinned Go toolchain'
+[[ "$(yaml_key_count "$scheduled_pinned_job" RUSTUP_TOOLCHAIN)" == 0 ]] || \
+  die 'scheduled pinned interoperability overrides the pinned Rust toolchain'
 require_exact "$scheduled_pinned_job" \
   '          XRAY_CORE_CHECKOUT: ${{ github.workspace }}/Xray-core' \
   'scheduled pinned interoperability does not pass the absolute Xray-core checkout'
@@ -211,6 +264,8 @@ main_core_checkout="$(step_body "$main_smoke_job" 'Check out Xray-core main')"
   die 'Xray-core main checkout steps are missing'
 reject_text "$main_source_checkout" 'ref:' \
   'Xray-core main smoke xray-rust checkout overrides the scheduled event revision'
+[[ "$(yaml_key_count "$main_source_checkout" ref)" == 0 ]] || \
+  die 'Xray-core main smoke xray-rust checkout overrides the scheduled event revision'
 require_exact "$main_core_checkout" '          ref: main' \
   'Xray-core main checkout does not explicitly follow main'
 
@@ -265,6 +320,10 @@ require_exact "$main_smoke_job" \
   die 'Xray-core main smoke does not have exactly one Rust selection'
 [[ "$(exact_count "$main_smoke_job" '        run: rustup default 1.96.0')" == 1 ]] || \
   die 'Xray-core main smoke has an ambiguous Rust 1.96.0 selection'
+[[ "$(yaml_key_count "$main_smoke_job" GOTOOLCHAIN)" == 0 ]] || \
+  die 'Xray-core main smoke overrides the pinned Go toolchain'
+[[ "$(yaml_key_count "$main_smoke_job" RUSTUP_TOOLCHAIN)" == 0 ]] || \
+  die 'Xray-core main smoke overrides the pinned Rust toolchain'
 
 main_revision_step="$(step_body "$main_smoke_job" 'Resolve Xray-core main revision')"
 [[ -n "$main_revision_step" ]] || \
@@ -284,12 +343,16 @@ grep -Fq '$GITHUB_STEP_SUMMARY' <<<"$main_smoke_job" || \
   die 'Xray-core main revision step does not record the tested revision in the summary'
 revision_summary_count="$(
   awk '
-    index($0, "$GITHUB_STEP_SUMMARY") && index($0, "$revision") { count++ }
+    /^[[:space:]]*#/ { next }
+    /^[[:space:]]*(printf|echo)[[:space:]]/ &&
+      index($0, "$revision") &&
+      index($0, "$GITHUB_STEP_SUMMARY") &&
+      index($0, ">>") { count++ }
     END { print count + 0 }
   ' <<<"$main_revision_step"
 )"
 [[ "$revision_summary_count" == 1 ]] || \
-  die 'Xray-core main summary does not record the validated revision'
+  die 'Xray-core main summary does not executably append the validated revision'
 require_exact "$main_smoke_job" \
   '          XRAY_CORE_CHECKOUT: ${{ github.workspace }}/Xray-core' \
   'Xray-core main smoke does not pass the absolute Xray-core checkout'
@@ -303,7 +366,7 @@ require_exact "$main_smoke_job" \
 failure_line="$(line_number_exact "$main_smoke_job" '        if: failure()')"
 warning_command='        run: echo "::warning title=Xray-core main compatibility smoke failed::revision=${{ steps.xray.outputs.revision }} run=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"'
 warning_line="$(line_number_exact "$main_smoke_job" "$warning_command")"
-last_job_line="$(awk 'NF { line = NR } END { print line }' <<<"$main_smoke_job")"
+last_job_line="$(awk '!/^[[:space:]]*#/ && NF { line = NR } END { print line }' <<<"$main_smoke_job")"
 [[ "$failure_line" =~ ^[0-9]+$ && "$warning_line" =~ ^[0-9]+$ ]] || \
   die 'Xray-core main smoke warning step is missing'
 (( failure_line + 1 == warning_line && warning_line == last_job_line )) || \
@@ -311,6 +374,7 @@ last_job_line="$(awk 'NF { line = NR } END { print line }' <<<"$main_smoke_job")
 
 publish_needs="$(
   awk '
+    /^[[:space:]]*#/ { next }
     /^    needs:/ { in_needs = 1; next }
     in_needs && /^      - / {
       line = $0
