@@ -6,8 +6,8 @@ use std::{
 
 use regex::Regex;
 use uuid::Uuid;
-pub use xray_routing::IpMatcherSet;
-use xray_routing::{Cidr, IpMatcherSetBuilder};
+use xray_routing::Cidr;
+pub use xray_routing::{DnsIpFilter, IpMatcherSet};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ConfigModelError {
@@ -93,7 +93,7 @@ pub const MAX_DNS_SERVER_TIMEOUT_MS: u64 = i64::MAX as u64 / 2 / 1_000_000;
 pub enum DnsServerConfig {
     Ip(SocketAddr),
     Domain { domain: String, port: u16 },
-    Policy(DnsNameServerConfig),
+    Policy(Box<DnsNameServerConfig>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -110,19 +110,6 @@ pub struct DnsNameServerConfig {
     pub skip_fallback: bool,
     pub query_strategy: DnsQueryStrategy,
     pub final_query: bool,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct DnsIpFilter {
-    pub custom_matchers: Vec<IpMatcher>,
-    pub geoip_matchers: Vec<IpMatcher>,
-    pub soft: bool,
-}
-
-impl DnsIpFilter {
-    pub fn is_empty(&self) -> bool {
-        self.custom_matchers.is_empty() && self.geoip_matchers.is_empty()
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -341,22 +328,6 @@ impl RoutingPortRange {
     }
 }
 
-pub fn compile_ip_matchers(matchers: &[IpMatcher]) -> IpMatcherSet {
-    let mut builder = IpMatcherSet::builder();
-    for matcher in matchers {
-        insert_ip_matcher(&mut builder, matcher, false);
-    }
-    builder.build()
-}
-
-fn insert_ip_matcher(builder: &mut IpMatcherSetBuilder, matcher: &IpMatcher, inverted: bool) {
-    match matcher {
-        IpMatcher::Cidr(cidr) => builder.insert_cidr(cidr.0, inverted),
-        IpMatcher::Private => builder.insert_private_networks(inverted),
-        IpMatcher::Not(inner) => insert_ip_matcher(builder, inner, !inverted),
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DomainMatcher {
     Keyword(String),
@@ -443,13 +414,6 @@ fn domain_matches_suffix(domain: &str, suffix: &str) -> bool {
         && domain_bytes[boundary_index + 1..].eq_ignore_ascii_case(suffix.as_bytes())
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum IpMatcher {
-    Cidr(IpCidr),
-    Private,
-    Not(Box<IpMatcher>),
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct IpCidr(Cidr);
 
@@ -465,6 +429,10 @@ impl IpCidr {
 
     pub const fn full(ip: IpAddr) -> Self {
         Self(Cidr::host(ip))
+    }
+
+    pub const fn cidr(self) -> Cidr {
+        self.0
     }
 
     pub fn network(&self) -> IpAddr {
@@ -1107,7 +1075,7 @@ impl TargetAddr {
     /// transport-security requirement.
     ///
     /// This intentionally uses Xray's broader private/reserved/test set, not
-    /// the routing-oriented [`IpMatcher::Private`] set. Xray normalizes one
+    /// the routing-oriented `geoip:private` set ([`xray_routing::PRIVATE_NETWORKS`]). Xray normalizes one
     /// trailing domain dot and domain case before applying these rules.
     pub fn is_xray_plaintext_server_exempt(&self) -> bool {
         match self {
@@ -1213,12 +1181,28 @@ const XRAY_PLAINTEXT_SERVER_CIDRS: [IpCidr; 18] = [
 mod tests {
     use super::*;
 
-    fn cidr(a: u8, b: u8, c: u8, d: u8, prefix: u8) -> IpMatcher {
-        IpMatcher::Cidr(IpCidr::new(IpAddr::V4(Ipv4Addr::new(a, b, c, d)), prefix).unwrap())
+    #[derive(Clone, Copy)]
+    enum Matcher {
+        Cidr(Cidr, bool),
+        Private(bool),
     }
 
-    fn not(matcher: IpMatcher) -> IpMatcher {
-        IpMatcher::Not(Box::new(matcher))
+    fn cidr(a: u8, b: u8, c: u8, d: u8, prefix: u8) -> Matcher {
+        Matcher::Cidr(
+            Cidr::new(IpAddr::V4(Ipv4Addr::new(a, b, c, d)), prefix).unwrap(),
+            false,
+        )
+    }
+
+    fn private() -> Matcher {
+        Matcher::Private(false)
+    }
+
+    fn not(matcher: Matcher) -> Matcher {
+        match matcher {
+            Matcher::Cidr(cidr, inverted) => Matcher::Cidr(cidr, !inverted),
+            Matcher::Private(inverted) => Matcher::Private(!inverted),
+        }
     }
 
     fn v4(a: u8, b: u8, c: u8, d: u8) -> IpAddr {
@@ -1233,8 +1217,15 @@ mod tests {
         IpAddr::V6(Ipv4Addr::new(a, b, c, d).to_ipv6_mapped())
     }
 
-    fn set(matchers: Vec<IpMatcher>) -> IpMatcherSet {
-        compile_ip_matchers(&matchers)
+    fn set(matchers: Vec<Matcher>) -> IpMatcherSet {
+        let mut builder = IpMatcherSet::builder();
+        for matcher in matchers {
+            match matcher {
+                Matcher::Cidr(cidr, inverted) => builder.insert_cidr(cidr, inverted),
+                Matcher::Private(inverted) => builder.insert_private_networks(inverted),
+            }
+        }
+        builder.build()
     }
 
     #[test]
@@ -1313,10 +1304,14 @@ mod tests {
         assert!(!matchers.matches(mapped(203, 0, 114, 7)));
         assert!(set(vec![cidr(203, 0, 113, 0, 24)]).matches(mapped(203, 0, 113, 7)));
 
-        let mapped_network =
-            IpMatcher::Cidr(IpCidr::new(mapped(203, 0, 113, 0), 24).expect("v4 prefix"));
+        let mapped_network = Matcher::Cidr(
+            IpCidr::new(mapped(203, 0, 113, 0), 24)
+                .expect("v4 prefix")
+                .cidr(),
+            false,
+        );
         assert_eq!(
-            set(vec![mapped_network.clone()]),
+            set(vec![mapped_network]),
             set(vec![cidr(203, 0, 113, 0, 24)])
         );
         assert!(set(vec![mapped_network]).matches(v4(203, 0, 113, 7)));
@@ -1337,9 +1332,11 @@ mod tests {
             !set(vec![not(cidr(10, 0, 0, 0, 8))]).matches(v6([0x2001, 0xdb8, 0, 0, 0, 0, 0, 1]))
         );
 
-        let fc00 =
-            IpMatcher::Cidr(IpCidr::new(v6([0xfc00, 0, 0, 0, 0, 0, 0, 0]), 7).expect("v6 prefix"));
-        let matchers = set(vec![not(cidr(10, 0, 0, 0, 8)), not(fc00.clone())]);
+        let fc00 = Matcher::Cidr(
+            Cidr::new(v6([0xfc00, 0, 0, 0, 0, 0, 0, 0]), 7).expect("v6 prefix"),
+            false,
+        );
+        let matchers = set(vec![not(cidr(10, 0, 0, 0, 8)), not(fc00)]);
         assert!(matchers.matches(v6([0x2001, 0xdb8, 0, 0, 0, 0, 0, 1])));
         assert!(!matchers.matches(v6([0xfd00, 0, 0, 0, 0, 0, 0, 1])));
         assert!(matchers.matches(v4(8, 8, 8, 8)));
@@ -1390,14 +1387,14 @@ mod tests {
 
     #[test]
     fn ip_matcher_set_private_and_its_inverse() {
-        let private = set(vec![IpMatcher::Private]);
-        assert_eq!(private.range_count(), 9);
-        assert!(private.matches(v4(10, 1, 2, 3)));
-        assert!(private.matches(mapped(192, 168, 1, 1)));
-        assert!(private.matches(v6([0xfe80, 0, 0, 0, 0, 0, 0, 1])));
-        assert!(!private.matches(v4(8, 8, 8, 8)));
+        let private_set = set(vec![private()]);
+        assert_eq!(private_set.range_count(), 9);
+        assert!(private_set.matches(v4(10, 1, 2, 3)));
+        assert!(private_set.matches(mapped(192, 168, 1, 1)));
+        assert!(private_set.matches(v6([0xfe80, 0, 0, 0, 0, 0, 0, 1])));
+        assert!(!private_set.matches(v4(8, 8, 8, 8)));
 
-        let public = set(vec![not(IpMatcher::Private)]);
+        let public = set(vec![not(private())]);
         assert_eq!(public.range_count(), 9);
         assert!(public.matches(v4(8, 8, 8, 8)));
         assert!(public.matches(v6([0x2001, 0xdb8, 0, 0, 0, 0, 0, 1])));
@@ -1405,26 +1402,28 @@ mod tests {
         assert!(!public.matches(mapped(192, 168, 1, 1)));
         assert!(!public.matches(IpAddr::V6(Ipv6Addr::LOCALHOST)));
         assert!(!public.matches(v6([0xfe80, 0, 0, 0, 0, 0, 0, 1])));
-        assert!(set(vec![not(IpMatcher::Private)]).matches(v4(8, 8, 8, 8)));
-        assert!(!set(vec![not(IpMatcher::Private)]).matches(v4(10, 0, 0, 1)));
+        assert!(set(vec![not(private())]).matches(v4(8, 8, 8, 8)));
+        assert!(!set(vec![not(private())]).matches(v4(10, 0, 0, 1)));
     }
 
     #[test]
     fn private_matcher_uses_shared_private_networks() {
-        assert!(set(vec![IpMatcher::Private]).matches(v4(10, 1, 2, 3)));
-        assert!(set(vec![IpMatcher::Private]).matches(v4(100, 64, 0, 1)));
-        assert!(set(vec![IpMatcher::Private]).matches(v4(127, 0, 0, 1)));
-        assert!(set(vec![IpMatcher::Private]).matches(v4(169, 254, 1, 1)));
-        assert!(set(vec![IpMatcher::Private]).matches(v4(172, 31, 255, 255)));
-        assert!(set(vec![IpMatcher::Private]).matches(v4(192, 168, 0, 1)));
-        assert!(set(vec![IpMatcher::Private]).matches(IpAddr::V6(Ipv6Addr::LOCALHOST)));
-        assert!(set(vec![IpMatcher::Private])
-            .matches(IpAddr::V6(Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 1))));
-        assert!(set(vec![IpMatcher::Private])
-            .matches(IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1))));
-        assert!(!set(vec![IpMatcher::Private]).matches(v4(8, 8, 8, 8)));
-        assert!(!set(vec![IpMatcher::Private]).matches(v4(172, 32, 0, 1)));
-        assert!(!set(vec![IpMatcher::Private])
+        assert!(set(vec![private()]).matches(v4(10, 1, 2, 3)));
+        assert!(set(vec![private()]).matches(v4(100, 64, 0, 1)));
+        assert!(set(vec![private()]).matches(v4(127, 0, 0, 1)));
+        assert!(set(vec![private()]).matches(v4(169, 254, 1, 1)));
+        assert!(set(vec![private()]).matches(v4(172, 31, 255, 255)));
+        assert!(set(vec![private()]).matches(v4(192, 168, 0, 1)));
+        assert!(set(vec![private()]).matches(IpAddr::V6(Ipv6Addr::LOCALHOST)));
+        assert!(
+            set(vec![private()]).matches(IpAddr::V6(Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 1)))
+        );
+        assert!(
+            set(vec![private()]).matches(IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1)))
+        );
+        assert!(!set(vec![private()]).matches(v4(8, 8, 8, 8)));
+        assert!(!set(vec![private()]).matches(v4(172, 32, 0, 1)));
+        assert!(!set(vec![private()])
             .matches(IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1))));
     }
 

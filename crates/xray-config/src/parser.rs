@@ -6,23 +6,22 @@ use std::{
 
 use serde_json::Value;
 use uuid::Uuid;
+use xray_routing::{IpMatcherSet, IpMatcherSetBuilder};
 
 use crate::{
-    compile_ip_matchers,
     geodata::{default_geodata_dirs, GeodataLoader},
     CoreConfig, Diagnostic, DnsConfig, DnsFakeIpConfig, DnsHostMapping, DnsHostTarget, DnsIpFilter,
     DnsNameServerConfig, DnsOutboundRule, DnsOutboundRuleAction, DnsOutboundSettings,
     DnsQTypeRange, DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint, DnsServerTransport,
     DomainMatcher, GrpcSettings, HappyEyeballsSettings, HttpUpgradeSettings, InboundConfig,
-    InboundProtocol, InboundSniffingConfig, IpCidr, IpMatcher, Network, OutboundConfig,
-    OutboundProtocol, OutboundSettings, PolicyConfig, PolicyLevelConfig, PolicySystemConfig,
-    QuicBbrProfile, QuicCongestion, QuicIntervalRange, QuicParamsSettings, QuicUdpHopSettings,
-    RealitySettings, RealityShortId, RegexMatcher, RoutingConfig, RoutingDomainStrategy,
-    RoutingPortRange, RoutingRule, SniffingDestination, SocketOptions, StreamSecurity,
-    StreamSettings, StreamTransport, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
-    WebSocketSettings, XhttpMode, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpPlacement,
-    XhttpRange, XhttpSettings, XhttpUplinkDataPlacement, XhttpXmuxSettings,
-    MAX_DNS_SERVER_TIMEOUT_MS,
+    InboundProtocol, InboundSniffingConfig, IpCidr, Network, OutboundConfig, OutboundProtocol,
+    OutboundSettings, PolicyConfig, PolicyLevelConfig, PolicySystemConfig, QuicBbrProfile,
+    QuicCongestion, QuicIntervalRange, QuicParamsSettings, QuicUdpHopSettings, RealitySettings,
+    RealityShortId, RegexMatcher, RoutingConfig, RoutingDomainStrategy, RoutingPortRange,
+    RoutingRule, SniffingDestination, SocketOptions, StreamSecurity, StreamSettings,
+    StreamTransport, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser, WebSocketSettings,
+    XhttpMode, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpPlacement, XhttpRange,
+    XhttpSettings, XhttpUplinkDataPlacement, XhttpXmuxSettings, MAX_DNS_SERVER_TIMEOUT_MS,
 };
 
 const MAX_ROUTING_RULES: usize = 4_096;
@@ -261,7 +260,7 @@ fn dns_tcp_server_policy(
     transport: DnsServerTransport,
     endpoint: DnsServerEndpoint,
 ) -> DnsServerConfig {
-    DnsServerConfig::Policy(DnsNameServerConfig {
+    DnsServerConfig::Policy(Box::new(DnsNameServerConfig {
         endpoint,
         transport,
         domains: Vec::new(),
@@ -272,7 +271,7 @@ fn dns_tcp_server_policy(
         skip_fallback: false,
         query_strategy: DnsQueryStrategy::UseIp,
         final_query: false,
-    })
+    }))
 }
 
 fn fake_ip_usable_address_count(pool: IpCidr) -> u64 {
@@ -752,7 +751,7 @@ impl Parser<'_> {
             return None;
         }
 
-        Some(DnsServerConfig::Policy(DnsNameServerConfig {
+        Some(DnsServerConfig::Policy(Box::new(DnsNameServerConfig {
             endpoint,
             transport,
             domains,
@@ -770,7 +769,7 @@ impl Parser<'_> {
             final_query: self
                 .optional_bool_at(server, "finalQuery", format!("{path}.finalQuery"))
                 .unwrap_or(false),
-        }))
+        })))
     }
 
     fn parse_dns_server_ip_filters(
@@ -830,32 +829,30 @@ impl Parser<'_> {
     }
 
     fn parse_dns_ip_filter(&mut self, values: &[&str], path: &str) -> Option<DnsIpFilter> {
-        let mut filter = DnsIpFilter::default();
+        let mut filter = DnsIpFilter::builder();
         for (index, value) in values.iter().copied().enumerate() {
             if value == "*" {
-                filter.soft = true;
+                filter.set_soft(true);
                 continue;
             }
 
             let item_path = format!("{path}[{index}]");
-            let remaining = self.matcher_budget.remaining_ip_matchers();
-            if remaining == 0 {
+            if self.matcher_budget.remaining_ip_matchers() == 0 {
                 self.ip_matcher_budget_error(&item_path);
                 return None;
             }
-            let is_geoip = dns_ip_rule_uses_geodata(value);
-            let matchers = self.parse_dns_ip_matcher(value, &item_path, remaining)?;
-            if !self.matcher_budget.consume_ip_matchers(matchers.len()) {
-                self.ip_matcher_budget_error(&item_path);
-                return None;
-            }
-            if is_geoip {
-                filter.geoip_matchers.extend(matchers);
+            let matchers = if dns_ip_rule_uses_geodata(value) {
+                filter.geoip()
             } else {
-                filter.custom_matchers.extend(matchers);
+                filter.custom()
+            };
+            let inserted = self.parse_dns_ip_matcher(value, &item_path, matchers)?;
+            if !self.matcher_budget.consume_ip_matchers(inserted) {
+                self.ip_matcher_budget_error(&item_path);
+                return None;
             }
         }
-        Some(filter)
+        Some(filter.build())
     }
 
     fn parse_dns_server_endpoint(
@@ -1508,7 +1505,7 @@ impl Parser<'_> {
             networks,
             port_ranges,
             domain_matchers,
-            ip_matchers: compile_ip_matchers(&ip_matchers),
+            ip_matchers,
             outbound_tag: outbound_tag.to_owned(),
         })
     }
@@ -5054,19 +5051,15 @@ impl Parser<'_> {
         value: &Value,
         key: &str,
         path: String,
-    ) -> Option<Vec<IpMatcher>> {
+    ) -> Option<IpMatcherSet> {
         let Some(raw) = value.get(key) else {
-            return Some(Vec::new());
+            return Some(IpMatcherSet::default());
         };
         let Some(values) = raw.as_array() else {
             self.error(path, format!("field `{key}` must be an array"));
             return None;
         };
-        let mut matchers = Vec::with_capacity(
-            values
-                .len()
-                .min(self.matcher_budget.remaining_ip_matchers()),
-        );
+        let mut matchers = IpMatcherSet::builder();
 
         for (index, value) in values.iter().enumerate() {
             let item_path = format!("{path}[{index}]");
@@ -5079,50 +5072,45 @@ impl Parser<'_> {
                 return None;
             }
 
-            let remaining = self.matcher_budget.remaining_ip_matchers();
-            if remaining == 0 {
+            if self.matcher_budget.remaining_ip_matchers() == 0 {
                 self.ip_matcher_budget_error(&item_path);
                 return None;
             }
-            let parsed_matchers = self.parse_ip_matcher(value, &item_path, remaining)?;
-            if !self
-                .matcher_budget
-                .consume_ip_matchers(parsed_matchers.len())
-            {
+            let inserted = self.parse_ip_matcher(value, &item_path, &mut matchers)?;
+            if !self.matcher_budget.consume_ip_matchers(inserted) {
                 self.ip_matcher_budget_error(&item_path);
                 return None;
             }
-            matchers.extend(parsed_matchers);
         }
 
-        Some(matchers)
+        Some(matchers.build())
     }
 
     fn parse_ip_matcher(
         &mut self,
         value: &str,
         path: &str,
-        max_matchers: usize,
-    ) -> Option<Vec<IpMatcher>> {
-        self.parse_ip_matcher_with_mode(value, path, max_matchers, IpMatcherParseMode::Routing)
+        matchers: &mut IpMatcherSetBuilder,
+    ) -> Option<usize> {
+        self.parse_ip_matcher_with_mode(value, path, IpMatcherParseMode::Routing, matchers)
     }
 
     fn parse_dns_ip_matcher(
         &mut self,
         value: &str,
         path: &str,
-        max_matchers: usize,
-    ) -> Option<Vec<IpMatcher>> {
-        self.parse_ip_matcher_with_mode(value, path, max_matchers, IpMatcherParseMode::XrayDns)
+        matchers: &mut IpMatcherSetBuilder,
+    ) -> Option<usize> {
+        self.parse_ip_matcher_with_mode(value, path, IpMatcherParseMode::XrayDns, matchers)
     }
 
     fn parse_ip_matcher_with_mode(
         &mut self,
         value: &str,
         path: &str,
-        max_matchers: usize,
         mode: IpMatcherParseMode,
-    ) -> Option<Vec<IpMatcher>> {
+        matchers: &mut IpMatcherSetBuilder,
+    ) -> Option<usize> {
         let (value, inverse) = strip_inverse_prefix(value);
         if let Some(code) = value.strip_prefix("geoip:") {
             let (code, code_inverse) = strip_inverse_prefix(code);
@@ -5132,20 +5120,22 @@ impl Parser<'_> {
                 return None;
             }
             if mode == IpMatcherParseMode::Routing && code.eq_ignore_ascii_case("private") {
-                return Some(vec![wrap_ip_matcher_inverse(IpMatcher::Private, inverse)]);
+                matchers.insert_private_networks(inverse);
+                return Some(1);
             }
-            return self.parse_geoip_matchers("geoip.dat", code, inverse, path, max_matchers, mode);
+            return self.parse_geoip_matchers("geoip.dat", code, inverse, path, mode, matchers);
         }
 
         if let Some(spec) = value.strip_prefix("ext-ip:") {
-            return self.parse_external_geoip_matchers(spec, inverse, path, max_matchers, mode);
+            return self.parse_external_geoip_matchers(spec, inverse, path, mode, matchers);
         }
         if let Some(spec) = value.strip_prefix("ext:") {
-            return self.parse_external_geoip_matchers(spec, inverse, path, max_matchers, mode);
+            return self.parse_external_geoip_matchers(spec, inverse, path, mode, matchers);
         }
 
-        self.parse_ip_cidr(value, path)
-            .map(|cidr| vec![wrap_ip_matcher_inverse(IpMatcher::Cidr(cidr), inverse)])
+        let cidr = self.parse_ip_cidr(value, path)?;
+        matchers.insert_cidr(cidr.cidr(), inverse);
+        Some(1)
     }
 
     fn parse_external_geoip_matchers(
@@ -5153,9 +5143,9 @@ impl Parser<'_> {
         spec: &str,
         inverse: bool,
         path: &str,
-        max_matchers: usize,
         mode: IpMatcherParseMode,
-    ) -> Option<Vec<IpMatcher>> {
+        matchers: &mut IpMatcherSetBuilder,
+    ) -> Option<usize> {
         let (file_name, code) = self.parse_external_geodata_ref(spec, path)?;
         let (code, code_inverse) = strip_inverse_prefix(code);
         let inverse = inverse ^ code_inverse;
@@ -5164,7 +5154,7 @@ impl Parser<'_> {
             return None;
         }
 
-        self.parse_geoip_matchers(file_name, code, inverse, path, max_matchers, mode)
+        self.parse_geoip_matchers(file_name, code, inverse, path, mode, matchers)
     }
 
     fn parse_geoip_matchers(
@@ -5173,28 +5163,35 @@ impl Parser<'_> {
         code: &str,
         inverse: bool,
         path: &str,
-        max_matchers: usize,
         mode: IpMatcherParseMode,
-    ) -> Option<Vec<IpMatcher>> {
-        let matchers = match mode {
-            IpMatcherParseMode::Routing => {
-                self.geodata_loader
-                    .load_ip_matchers(file_name, code, inverse, max_matchers)
-            }
-            IpMatcherParseMode::XrayDns => {
-                self.geodata_loader
-                    .load_dns_ip_matchers(file_name, code, inverse, max_matchers)
-            }
+        matchers: &mut IpMatcherSetBuilder,
+    ) -> Option<usize> {
+        let max_matchers = self.matcher_budget.remaining_ip_matchers();
+        let inserted = match mode {
+            IpMatcherParseMode::Routing => self.geodata_loader.load_ip_matchers(
+                file_name,
+                code,
+                inverse,
+                max_matchers,
+                matchers,
+            ),
+            IpMatcherParseMode::XrayDns => self.geodata_loader.load_dns_ip_matchers(
+                file_name,
+                code,
+                inverse,
+                max_matchers,
+                matchers,
+            ),
         };
-        match matchers {
-            Ok(matchers) if matchers.is_empty() => {
+        match inserted {
+            Ok(0) => {
                 self.error(
                     path,
                     format!("geoip `{file_name}:{code}` produced no IP matchers"),
                 );
                 None
             }
-            Ok(matchers) => Some(matchers),
+            Ok(inserted) => Some(inserted),
             Err(error) => {
                 self.error(path, error.to_string());
                 None
@@ -6071,14 +6068,6 @@ fn normalize_xray_address_text(mut value: &str) -> &str {
 
 fn parse_xray_ip_address(value: &str) -> Option<IpAddr> {
     normalize_xray_address_text(value).parse().ok()
-}
-
-fn wrap_ip_matcher_inverse(matcher: IpMatcher, inverse: bool) -> IpMatcher {
-    if inverse {
-        IpMatcher::Not(Box::new(matcher))
-    } else {
-        matcher
-    }
 }
 
 fn is_loopback_listener(listen: &str) -> bool {

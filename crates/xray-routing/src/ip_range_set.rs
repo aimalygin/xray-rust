@@ -96,22 +96,6 @@ impl Cidr {
         }
     }
 
-    /// The same CIDR with the host bits below `prefix_len` cleared.
-    pub fn normalized(self) -> Self {
-        let network = match self.network {
-            IpAddr::V4(network) => IpAddr::V4(Ipv4Addr::from(
-                InclusiveRange::from_prefix(u32::from(network), self.prefix_len).start,
-            )),
-            IpAddr::V6(network) => IpAddr::V6(Ipv6Addr::from(
-                InclusiveRange::from_prefix(u128::from(network), self.prefix_len).start,
-            )),
-        };
-        Self {
-            network,
-            prefix_len: self.prefix_len,
-        }
-    }
-
     pub const fn network(self) -> IpAddr {
         self.network
     }
@@ -338,15 +322,26 @@ impl IpMatcherSet {
 pub struct IpMatcherSetBuilder {
     positive: IpRangeSetBuilder,
     inverse: IpRangeSetBuilder,
+    matcher_count: usize,
 }
 
 impl IpMatcherSetBuilder {
     pub fn insert_cidr(&mut self, cidr: Cidr, inverted: bool) {
         self.ranges(inverted).insert_cidr(cidr);
+        self.matcher_count += 1;
+    }
+
+    pub fn insert_ip(&mut self, address: IpAddr, inverted: bool) {
+        self.insert_cidr(Cidr::host(address), inverted);
     }
 
     pub fn insert_private_networks(&mut self, inverted: bool) {
         self.ranges(inverted).insert_private_networks();
+        self.matcher_count += 1;
+    }
+
+    pub fn matcher_count(&self) -> usize {
+        self.matcher_count
     }
 
     pub fn build(self) -> IpMatcherSet {
@@ -404,25 +399,7 @@ mod tests {
     }
 
     #[test]
-    fn cidr_helpers_mask_host_bits_and_reject_mixed_families() {
-        assert_eq!(
-            cidr(v4(10, 1, 2, 3), 8).normalized().network(),
-            v4(10, 0, 0, 0)
-        );
-        assert_eq!(
-            cidr(mapped(10, 1, 2, 3), 16).normalized().network(),
-            v4(10, 1, 0, 0)
-        );
-        assert_eq!(
-            cidr(v6([0x2001, 0xdb8, 0xabcd, 1, 2, 3, 4, 5]), 32)
-                .normalized()
-                .network(),
-            v6([0x2001, 0xdb8, 0, 0, 0, 0, 0, 0])
-        );
-        assert_eq!(
-            cidr(v4(10, 1, 2, 3), 0).normalized().network(),
-            v4(0, 0, 0, 0)
-        );
+    fn cidr_rejects_invalid_prefixes_and_mixed_families() {
         assert_eq!(
             Cidr::new(v4(10, 1, 2, 3), 33),
             Err(InvalidCidrPrefix {

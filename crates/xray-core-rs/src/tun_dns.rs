@@ -5964,7 +5964,7 @@ mod tests {
                     domain: "Resolver.Example".to_owned(),
                     port: 53,
                 },
-                DnsServerConfig::Policy(xray_config::DnsNameServerConfig {
+                DnsServerConfig::Policy(Box::new(xray_config::DnsNameServerConfig {
                     endpoint: xray_config::DnsServerEndpoint::Domain {
                         domain: "policy.example.".to_owned(),
                         port: 5_353,
@@ -5980,7 +5980,7 @@ mod tests {
                     skip_fallback: true,
                     query_strategy: xray_config::DnsQueryStrategy::UseIpv6,
                     final_query: true,
-                }),
+                })),
                 DnsServerConfig::Ip(first),
                 DnsServerConfig::Ip(first),
                 DnsServerConfig::Ip(SocketAddr::from((Ipv4Addr::new(9, 9, 9, 9), 0))),

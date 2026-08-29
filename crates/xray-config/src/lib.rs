@@ -5,19 +5,19 @@ mod parser;
 
 pub use diagnostic::{Diagnostic, DiagnosticSeverity};
 pub use model::{
-    compile_ip_matchers, ConfigModelError, CoreConfig, DnsConfig, DnsFakeIpConfig, DnsHostMapping,
-    DnsHostTarget, DnsIpFilter, DnsNameServerConfig, DnsOutboundRule, DnsOutboundRuleAction,
-    DnsOutboundSettings, DnsQTypeRange, DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint,
-    DnsServerTransport, DomainMatcher, GrpcSettings, HappyEyeballsSettings, HttpUpgradeSettings,
-    InboundConfig, InboundProtocol, InboundSniffingConfig, IpCidr, IpMatcher, IpMatcherSet,
-    Network, OutboundConfig, OutboundProtocol, OutboundSettings, PolicyConfig, PolicyLevelConfig,
-    PolicySystemConfig, QuicBbrProfile, QuicCongestion, QuicIntervalRange, QuicParamsSettings,
-    QuicUdpHopSettings, RealitySettings, RealityShortId, RegexMatcher, RoutingConfig,
-    RoutingDomainStrategy, RoutingPortRange, RoutingRule, SniffingDestination, SocketOptions,
-    StreamSecurity, StreamSettings, StreamTransport, TargetAddr, TlsSettings,
-    VlessOutboundSettings, VlessUser, WebSocketSettings, XhttpMode, XhttpPaddingMethod,
-    XhttpPaddingPlacement, XhttpPlacement, XhttpRange, XhttpSettings, XhttpUplinkDataPlacement,
-    XhttpXmuxSettings, DEFAULT_DNS_SERVER_TIMEOUT_MS, MAX_DNS_SERVER_TIMEOUT_MS,
+    ConfigModelError, CoreConfig, DnsConfig, DnsFakeIpConfig, DnsHostMapping, DnsHostTarget,
+    DnsIpFilter, DnsNameServerConfig, DnsOutboundRule, DnsOutboundRuleAction, DnsOutboundSettings,
+    DnsQTypeRange, DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint, DnsServerTransport,
+    DomainMatcher, GrpcSettings, HappyEyeballsSettings, HttpUpgradeSettings, InboundConfig,
+    InboundProtocol, InboundSniffingConfig, IpCidr, IpMatcherSet, Network, OutboundConfig,
+    OutboundProtocol, OutboundSettings, PolicyConfig, PolicyLevelConfig, PolicySystemConfig,
+    QuicBbrProfile, QuicCongestion, QuicIntervalRange, QuicParamsSettings, QuicUdpHopSettings,
+    RealitySettings, RealityShortId, RegexMatcher, RoutingConfig, RoutingDomainStrategy,
+    RoutingPortRange, RoutingRule, SniffingDestination, SocketOptions, StreamSecurity,
+    StreamSettings, StreamTransport, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
+    WebSocketSettings, XhttpMode, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpPlacement,
+    XhttpRange, XhttpSettings, XhttpUplinkDataPlacement, XhttpXmuxSettings,
+    DEFAULT_DNS_SERVER_TIMEOUT_MS, MAX_DNS_SERVER_TIMEOUT_MS,
 };
 pub use parser::{
     parse_xray_json, parse_xray_json_with_exclusive_geodata_dirs, parse_xray_json_with_geodata_dir,

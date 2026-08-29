@@ -882,16 +882,22 @@ mod tests {
     use tokio::sync::oneshot;
     use tokio_rustls::TlsAcceptor;
     use xray_config::{
-        compile_ip_matchers, CoreConfig, DnsConfig, DnsHostMapping, DnsHostTarget, DnsOutboundRule,
+        CoreConfig, DnsConfig, DnsHostMapping, DnsHostTarget, DnsOutboundRule,
         DnsOutboundRuleAction, DnsOutboundSettings, DnsQTypeRange, DnsServerConfig, DomainMatcher,
-        IpCidr, IpMatcher, Network, OutboundConfig, OutboundSettings, PolicyConfig, RoutingConfig,
-        RoutingDomainStrategy, RoutingRule, StreamSecurity, StreamSettings, StreamTransport,
-        TargetAddr as ConfigTargetAddr, TlsSettings,
+        IpCidr, IpMatcherSet, Network, OutboundConfig, OutboundSettings, PolicyConfig,
+        RoutingConfig, RoutingDomainStrategy, RoutingRule, StreamSecurity, StreamSettings,
+        StreamTransport, TargetAddr as ConfigTargetAddr, TlsSettings,
     };
     use xray_transport::{
         DnsQueryMetadata, DnsQueryTransportKind, SocketHandle, SocketProtector, TlsConnector,
         TransportError,
     };
+
+    fn ip_matcher_set(cidr: IpCidr) -> IpMatcherSet {
+        let mut matchers = IpMatcherSet::builder();
+        matchers.insert_cidr(cidr.cidr(), false);
+        matchers.build()
+    }
 
     use super::*;
     use crate::dns_outbound_runtime::{
@@ -1045,9 +1051,9 @@ mod tests {
                     networks: vec![network],
                     port_ranges: Vec::new(),
                     domain_matchers: Vec::new(),
-                    ip_matchers: compile_ip_matchers(&[IpMatcher::Cidr(
+                    ip_matchers: ip_matcher_set(
                         IpCidr::new(server.ip(), if server.is_ipv4() { 32 } else { 128 }).unwrap(),
-                    )]),
+                    ),
                     outbound_tag: "dns-out".to_owned(),
                 }],
                 domain_strategy: RoutingDomainStrategy::IpIfNonMatch,

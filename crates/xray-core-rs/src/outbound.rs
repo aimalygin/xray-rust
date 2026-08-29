@@ -2445,10 +2445,10 @@ mod tests {
     use tokio::net::TcpListener;
     use uuid::Uuid;
     use xray_config::{
-        compile_ip_matchers, DnsConfig, DnsServerConfig, DomainMatcher, GrpcSettings,
-        HappyEyeballsSettings, HttpUpgradeSettings, IpCidr, IpMatcher, RealitySettings,
-        RealityShortId, RoutingConfig, RoutingDomainStrategy, RoutingPortRange, RoutingRule,
-        SocketOptions, StreamSettings, TlsSettings, VlessOutboundSettings, WebSocketSettings,
+        DnsConfig, DnsServerConfig, DomainMatcher, GrpcSettings, HappyEyeballsSettings,
+        HttpUpgradeSettings, IpCidr, IpMatcherSet, RealitySettings, RealityShortId, RoutingConfig,
+        RoutingDomainStrategy, RoutingPortRange, RoutingRule, SocketOptions, StreamSettings,
+        TlsSettings, VlessOutboundSettings, WebSocketSettings,
     };
     use xray_proxy::vless::{unpad_vision_block, VisionCommand};
     use xray_transport::{CachingDnsResolver, DnsLookup, RealityTlsEngine, TransportError};
@@ -2643,13 +2643,19 @@ mod tests {
         )
     }
 
+    fn ip_matcher_set(cidr: IpCidr) -> IpMatcherSet {
+        let mut matchers = IpMatcherSet::builder();
+        matchers.insert_cidr(cidr.cidr(), false);
+        matchers.build()
+    }
+
     fn ip_rule(tag: &str, ip: Ipv4Addr) -> RoutingRule {
         RoutingRule {
             inbound_tags: Vec::new(),
             networks: Vec::new(),
             port_ranges: Vec::new(),
             domain_matchers: Vec::new(),
-            ip_matchers: compile_ip_matchers(&[IpMatcher::Cidr(IpCidr::full(IpAddr::V4(ip)))]),
+            ip_matchers: ip_matcher_set(IpCidr::full(IpAddr::V4(ip))),
             outbound_tag: tag.to_owned(),
         }
     }
@@ -2660,7 +2666,7 @@ mod tests {
             networks: Vec::new(),
             port_ranges: Vec::new(),
             domain_matchers: vec![DomainMatcher::Full(domain.to_owned())],
-            ip_matchers: compile_ip_matchers(&[IpMatcher::Cidr(IpCidr::full(IpAddr::V4(ip)))]),
+            ip_matchers: ip_matcher_set(IpCidr::full(IpAddr::V4(ip))),
             outbound_tag: tag.to_owned(),
         }
     }

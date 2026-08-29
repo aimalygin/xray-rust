@@ -32,8 +32,7 @@ mod utls_tls;
 pub use dialer::TransportDialer;
 pub use dns::{
     dns_response_matches_query, select_name_server_indices, CachingDnsResolver,
-    CompiledDnsIpFilter, CompiledDomainMatcherSet, CompiledNameServerPolicies,
-    ConfiguredDnsResolver, DnsIpCidr, DnsIpCidrError, DnsIpFilter, DnsIpMatcher, DnsLookup,
+    CompiledDomainMatcherSet, CompiledNameServerPolicies, ConfiguredDnsResolver, DnsLookup,
     DnsQueryDispatch, DnsQueryMetadata, DnsQueryStrategy, DnsQueryTransport, DnsQueryTransportKind,
     DnsResolver, NameServer, NameServerPolicy, NameServerTransport, StaticHostRule,
     StaticHostTarget, SystemDnsResolver, TransportDomainMatcher, TransportRegexMatcher,
