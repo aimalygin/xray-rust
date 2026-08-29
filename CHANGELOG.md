@@ -14,10 +14,12 @@ prerelease-quality and do not establish a supported release series.
   cancellation.
 - Added weekly broad pinned Xray-core interoperability and resource gates plus
   a warning-only upstream-main compatibility smoke check.
-- Added fresh, validated benchmark evidence against Xray-core v26.7.28 and the
-  stable sing-box release resolved at measurement time.
-- Corrected roadmap, implementation-status, and release documentation to match
-  the RC4 candidate.
+- RC4 publication remains gated on fresh, validated benchmark evidence against
+  Xray-core v26.7.28 and the stable sing-box release resolved at measurement
+  time.
+- RC4 publication also remains gated on corrected roadmap,
+  implementation-status, and release documentation landing in reviewed
+  documentation commits.
 
 ## 0.4.1-rc.3 - 2026-08-28
 
