@@ -19,6 +19,7 @@ FAKE_BIN="$TEST_ROOT/bin"
 FAKE_CORE="$TEST_ROOT/Xray core"
 FAKE_CORE_LINK="$TEST_ROOT/Xray-core-link"
 FAKE_GIT_LOG="$TEST_ROOT/git.log"
+FAKE_CARGO_ENTRY_LOG="$TEST_ROOT/cargo-entry.log"
 FAKE_CARGO_LOG="$TEST_ROOT/cargo.log"
 RUN_FROM="$TEST_ROOT/run from here"
 mkdir -p "$FAKE_BIN" "$FAKE_CORE" "$RUN_FROM"
@@ -49,6 +50,14 @@ EOF
 cat >"$FAKE_BIN/cargo" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+
+{
+  printf 'cargo-entry'
+  for argument in "$@"; do
+    printf '|%s' "$argument"
+  done
+  printf '\n'
+} >>"$FAKE_CARGO_ENTRY_LOG"
 
 die() {
   echo "$*" >&2
@@ -97,6 +106,7 @@ chmod +x "$FAKE_BIN/git" "$FAKE_BIN/cargo"
 
 reset_logs() {
   : >"$FAKE_GIT_LOG"
+  : >"$FAKE_CARGO_ENTRY_LOG"
   : >"$FAKE_CARGO_LOG"
 }
 
@@ -110,6 +120,7 @@ run_smoke() {
       FAKE_EXPECTED_CORE="$FAKE_CORE" \
       FAKE_EXPECTED_WORKSPACE_ROOT="$WORKSPACE_ROOT" \
       FAKE_GIT_LOG="$FAKE_GIT_LOG" \
+      FAKE_CARGO_ENTRY_LOG="$FAKE_CARGO_ENTRY_LOG" \
       FAKE_CARGO_LOG="$FAKE_CARGO_LOG" \
       bash "$SCRIPT_UNDER_TEST"
   ) >"$output_file" 2>&1
@@ -121,9 +132,13 @@ assert_no_tools_invoked() {
     echo "$context invoked Git" >&2
     exit 92
   }
-  [[ ! -s "$FAKE_CARGO_LOG" ]] || {
-    echo "$context invoked Cargo" >&2
+  [[ ! -s "$FAKE_CARGO_ENTRY_LOG" ]] || {
+    echo "$context attempted to invoke Cargo" >&2
     exit 93
+  }
+  [[ ! -s "$FAKE_CARGO_LOG" ]] || {
+    echo "$context completed fake Cargo validation" >&2
+    exit 94
   }
 }
 
@@ -192,9 +207,13 @@ expected_git_log="git|-C|$FAKE_CORE|rev-parse|--verify|HEAD"
   echo 'revision mismatch did not resolve exactly one canonical checkout HEAD' >&2
   exit 101
 }
-[[ ! -s "$FAKE_CARGO_LOG" ]] || {
-  echo 'revision mismatch invoked Cargo before failing' >&2
+[[ ! -s "$FAKE_CARGO_ENTRY_LOG" ]] || {
+  echo 'revision mismatch attempted to invoke Cargo before failing' >&2
   exit 102
+}
+[[ ! -s "$FAKE_CARGO_LOG" ]] || {
+  echo 'revision mismatch completed fake Cargo validation before failing' >&2
+  exit 103
 }
 
 reset_logs
@@ -219,10 +238,15 @@ expected_output="Xray-core main smoke revision: $VALID_REVISION"
   echo 'success did not resolve exactly one canonical checkout HEAD' >&2
   exit 104
 }
+expected_cargo_entry_log="cargo-entry|test|--locked|-p|xray-core-rs|--test|local_xray_interop_tests|rust_socks_client_reaches_echo_server_through_local_xray_vless_xhttp_selected_cases|--|--ignored|--nocapture|--test-threads=1"
+[[ "$(<"$FAKE_CARGO_ENTRY_LOG")" == "$expected_cargo_entry_log" ]] || {
+  echo 'success did not attempt exactly one focused Cargo test' >&2
+  exit 105
+}
 expected_cargo_log="cargo|test|--locked|-p|xray-core-rs|--test|local_xray_interop_tests|rust_socks_client_reaches_echo_server_through_local_xray_vless_xhttp_selected_cases|--|--ignored|--nocapture|--test-threads=1|checkout=$FAKE_CORE|expected_revision=$VALID_REVISION|xhttp_cases=h2-tls-stream-one"
 [[ "$(<"$FAKE_CARGO_LOG")" == "$expected_cargo_log" ]] || {
   echo 'success did not run exactly one focused, hermetic Cargo test' >&2
-  exit 105
+  exit 106
 }
 
 echo 'Xray-core main smoke is revision-exact, hermetic, and focused'
