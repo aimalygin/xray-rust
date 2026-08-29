@@ -73,6 +73,84 @@ run_recipe() {
     bash "$recipe"
 }
 
+clean_repo="$tmp_dir/clean default repo"
+clean_recipe="$clean_repo/scripts/bench-xhttp-memory.sh"
+clean_default_log="$tmp_dir/clean-default.jsonl"
+mkdir -p "$clean_repo/scripts" "$clean_repo/Xray-core"
+ln -s "$recipe" "$clean_recipe"
+env \
+  -u CDPATH \
+  -u CARGO_TARGET_DIR \
+  -u XRAY_CORE_DIR \
+  -u XRAY_BENCH_OUT_DIR \
+  -u XRAY_BENCH_RUNS \
+  -u XRAY_BENCH_HELD_MS \
+  -u XRAY_BENCH_SETTLE_MS \
+  -u XRAY_BENCH_SAMPLE_MS \
+  -u XRAY_BENCH_MAX_POST_BYTES \
+  -u XRAY_BENCH_PAYLOAD_SIZE \
+  -u XRAY_BENCH_TRAFFIC_ITERATIONS \
+  -u XRAY_BENCH_XRAY_RUST_BIN \
+  -u XRAY_BENCH_XRAY_CORE_BIN \
+  PATH="$fake_bin:$PATH" \
+  CARGO_LOG="$clean_default_log" \
+  bash "$clean_recipe"
+
+python3 - "$clean_default_log" <<'PY'
+import json
+import pathlib
+import sys
+
+commands = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+common = [
+    "run", "--locked", "--release", "-p", "xray-bench", "--", "compare",
+    "--workload", "stream-transport",
+    "--xhttp-profile", "legacy-extra-h1-packet-up",
+    "--sample-interval-ms", "100",
+    "--settle-ms", "5000",
+    "--runs", "5",
+    "--out-dir", "target/benchmarks/xhttp-memory",
+    "--xray-rust-bin", "target/release/xray-rust",
+    "--xray-core-dir", "Xray-core",
+]
+expected = [["build", "--locked", "--release", "-p", "xray-cli", "--bin", "xray-rust"]]
+for flows in (1, 16, 32):
+    expected.append(common + [
+        "--xhttp-max-post-bytes", "500000",
+        "--traffic", "held-open",
+        "--connections", str(flows),
+        "--iterations", "1",
+        "--payload-size", "16384",
+        "--duration-ms", "30000",
+        "--run-timeout-ms", "155000",
+    ])
+expected.append(common + [
+    "--xhttp-max-post-bytes", "16384",
+    "--traffic", "held-open",
+    "--connections", "16",
+    "--iterations", "1",
+    "--payload-size", "16384",
+    "--duration-ms", "30000",
+    "--run-timeout-ms", "155000",
+])
+for flows in (1, 16):
+    expected.append(common + [
+        "--xhttp-max-post-bytes", "500000",
+        "--traffic", "packet-up",
+        "--connections", str(flows),
+        "--iterations", "1000",
+        "--payload-size", "16384",
+        "--duration-ms", "0",
+        "--run-timeout-ms", "300000",
+    ])
+if commands != expected:
+    raise SystemExit(
+        "clean-environment default recipe commands differ\n"
+        f"expected={json.dumps(expected, indent=2)}\n"
+        f"actual={json.dumps(commands, indent=2)}"
+    )
+PY
+
 explicit_log="$tmp_dir/explicit.jsonl"
 explicit_out="$tmp_dir/explicit output"
 run_recipe "$explicit_log" \
@@ -150,10 +228,10 @@ relative_log="$tmp_dir/relative-cdpath.jsonl"
 cmp -s "$explicit_log" "$relative_log" \
   || fail "relative invocation with exported CDPATH produced different commands"
 
-default_log="$tmp_dir/default.jsonl"
-default_out="$tmp_dir/default output"
-run_recipe "$default_log" XRAY_BENCH_OUT_DIR="$default_out"
-python3 - "$default_log" "$default_out" "$core_dir" <<'PY'
+hostile_default_log="$tmp_dir/hostile-default.jsonl"
+hostile_default_out="$tmp_dir/hostile default output"
+run_recipe "$hostile_default_log" XRAY_BENCH_OUT_DIR="$hostile_default_out"
+python3 - "$hostile_default_log" "$hostile_default_out" "$core_dir" <<'PY'
 import json
 import pathlib
 import sys
@@ -203,7 +281,7 @@ for flows in (1, 16):
     ])
 if commands != expected:
     raise SystemExit(
-        "default recipe commands differ\n"
+        "hostile-environment deterministic recipe commands differ\n"
         f"expected={json.dumps(expected, indent=2)}\n"
         f"actual={json.dumps(commands, indent=2)}"
     )
