@@ -27,6 +27,7 @@ use xray_transport::{BoxedTransportStream, TransportError, TransportStream};
 const DEADLINE: Duration = Duration::from_secs(3);
 const H2_PREFACE: &[u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 const H2_FRAME_HEADER_LEN: usize = 9;
+const H2_RST_STREAM_FRAME: u8 = 0x3;
 const H2_SETTINGS_FRAME: u8 = 0x4;
 const H2_PING_FRAME: u8 = 0x6;
 const H2_ACK_FLAG: u8 = 0x1;
@@ -35,12 +36,19 @@ const GZIP_PONG: &[u8] = &[
     0x4f, 0x41, 0x58, 0x21, 0x04, 0x00, 0x00, 0x00,
 ];
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ObservedH2Reset {
+    stream_id: u32,
+    reason: Reason,
+}
+
 struct FrameObservedStream {
     inner: DuplexStream,
     writes: Vec<u8>,
     preface_observed: bool,
     settings_ack: Option<oneshot::Sender<()>>,
     ping_ack: Option<oneshot::Sender<()>>,
+    resets: Option<mpsc::UnboundedSender<ObservedH2Reset>>,
 }
 
 impl FrameObservedStream {
@@ -54,10 +62,25 @@ impl FrameObservedStream {
                 preface_observed: false,
                 settings_ack: Some(settings_ack),
                 ping_ack: Some(ping_ack),
+                resets: None,
             },
             settings_observed,
             ping_observed,
         )
+    }
+
+    fn new_with_reset_observation(
+        inner: DuplexStream,
+    ) -> (
+        Self,
+        oneshot::Receiver<()>,
+        oneshot::Receiver<()>,
+        mpsc::UnboundedReceiver<ObservedH2Reset>,
+    ) {
+        let (mut stream, settings_ack, ping_ack) = Self::new(inner);
+        let (resets, observed_resets) = mpsc::unbounded_channel();
+        stream.resets = Some(resets);
+        (stream, settings_ack, ping_ack, observed_resets)
     }
 
     fn observe_complete_frames(&mut self) {
@@ -84,6 +107,24 @@ impl FrameObservedStream {
 
             let frame_type = self.writes[3];
             let flags = self.writes[4];
+            if frame_type == H2_RST_STREAM_FRAME {
+                assert_eq!(payload_len, 4, "outbound RST_STREAM payload length");
+                let stream_id = u32::from_be_bytes([
+                    self.writes[5],
+                    self.writes[6],
+                    self.writes[7],
+                    self.writes[8],
+                ]) & 0x7fff_ffff;
+                let reason = Reason::from(u32::from_be_bytes([
+                    self.writes[9],
+                    self.writes[10],
+                    self.writes[11],
+                    self.writes[12],
+                ]));
+                if let Some(resets) = &self.resets {
+                    let _ = resets.send(ObservedH2Reset { stream_id, reason });
+                }
+            }
             if flags & H2_ACK_FLAG != 0 {
                 let notification = match frame_type {
                     H2_SETTINGS_FRAME => &mut self.settings_ack,
@@ -199,6 +240,43 @@ async fn h2_frame_observer_reports_settings_and_ping_ack_once() {
     drop(send_request);
     client_driver.abort();
     let _ = client_driver.await;
+}
+
+#[tokio::test]
+async fn h2_frame_observer_reports_one_fragmented_rst_stream() {
+    let (client_io, _server_io) = tokio::io::duplex(64);
+    let (mut client_io, _settings_ack, _ping_ack, mut resets) =
+        FrameObservedStream::new_with_reset_observation(client_io);
+    let reset = [
+        0, 0, 4, 0x3, 0, // four-byte RST_STREAM payload
+        0, 0, 0, 7, // stream ID 7
+        0, 0, 0, 8, // CANCEL
+    ];
+
+    client_io.write_all(H2_PREFACE).await.unwrap();
+    client_io.write_all(&reset[..5]).await.unwrap();
+    assert!(matches!(
+        resets.try_recv(),
+        Err(mpsc::error::TryRecvError::Empty)
+    ));
+    client_io.write_all(&reset[5..11]).await.unwrap();
+    assert!(matches!(
+        resets.try_recv(),
+        Err(mpsc::error::TryRecvError::Empty)
+    ));
+    client_io.write_all(&reset[11..]).await.unwrap();
+
+    assert_eq!(
+        resets.recv().await,
+        Some(ObservedH2Reset {
+            stream_id: 7,
+            reason: Reason::CANCEL,
+        })
+    );
+    assert!(matches!(
+        resets.try_recv(),
+        Err(mpsc::error::TryRecvError::Empty)
+    ));
 }
 
 #[tokio::test]
@@ -1048,7 +1126,8 @@ async fn dropping_h2_packet_up_while_upload_is_flow_controlled_cancels_once_and_
     }
 
     let (client_io, server_io) = tokio::io::duplex(1024 * 1024);
-    let (client_io, settings_ack, _ping_ack) = FrameObservedStream::new(client_io);
+    let (client_io, settings_ack, _ping_ack, mut outbound_resets) =
+        FrameObservedStream::new_with_reset_observation(client_io);
     let (post_blocked, post_blocked_rx) = oneshot::channel();
     let (replacement_post, replacement_post_rx) = oneshot::channel();
     let (reset_tx, mut reset_rx) = mpsc::unbounded_channel::<(Method, Reason)>();
@@ -1293,6 +1372,23 @@ async fn dropping_h2_packet_up_while_upload_is_flow_controlled_cancels_once_and_
     .await
     .expect("cancelled packet-up flow did not release H2 reservations");
 
+    let wire_resets = timeout(DEADLINE, async {
+        [
+            outbound_resets.recv().await.expect("first outbound reset"),
+            outbound_resets.recv().await.expect("second outbound reset"),
+        ]
+    })
+    .await
+    .expect("client did not emit both original stream resets");
+    assert!(wire_resets
+        .iter()
+        .all(|reset| reset.reason == Reason::CANCEL));
+    assert_ne!(wire_resets[0].stream_id, wire_resets[1].stream_id);
+    assert!(matches!(
+        outbound_resets.try_recv(),
+        Err(mpsc::error::TryRecvError::Empty)
+    ));
+
     let mut replacement = transport
         .open_stream_with_dial(Arc::clone(&dial))
         .await
@@ -1328,6 +1424,10 @@ async fn dropping_h2_packet_up_while_upload_is_flow_controlled_cancels_once_and_
     })
     .await
     .expect("replacement packet-up flow did not release H2 reservations");
+    assert!(matches!(
+        outbound_resets.try_recv(),
+        Err(mpsc::error::TryRecvError::Empty)
+    ));
     assert_eq!(
         dials.load(Ordering::Acquire),
         1,
