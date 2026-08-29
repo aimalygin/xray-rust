@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::BTreeMap,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
 };
@@ -192,7 +193,7 @@ fn dns_ip_matcher_matches(matcher: &IpMatcher, target_ip: IpAddr) -> bool {
                     (IpAddr::V4(_), IpAddr::V6(_)) | (IpAddr::V6(_), IpAddr::V4(_)) => false,
                 }
         }
-        IpMatcher::Private => private_cidrs()
+        IpMatcher::Private => PRIVATE_CIDRS
             .iter()
             .any(|private_cidr| private_cidr.matches(&target_ip)),
         IpMatcher::Not(_) => unreachable!("DNS IP matcher negation should be flattened"),
@@ -422,27 +423,29 @@ impl RoutingPortRange {
     }
 }
 
+/// Positive matchers form a disjunction, inverse (`Not`) matchers form a conjunction,
+/// and the rule matches when either clause holds:
+/// `(any positive matched) || (has inverse && all inverse matched)`.
+///
+/// The loop short-circuits: the first positive hit decides the result, and once an
+/// inverse matcher fails the inverse clause is dead, so remaining inverse matchers are
+/// skipped and only positives are still evaluated.
 fn ip_matcher_group_matches(matchers: &[IpMatcher], target_ip: &IpAddr) -> bool {
-    let mut has_positive = false;
-    let mut positive_matched = false;
     let mut has_inverse = false;
     let mut all_inverse_matched = true;
 
     for matcher in matchers {
         if matcher.is_inverse() {
             has_inverse = true;
-            if !matcher.matches(target_ip) {
+            if all_inverse_matched && !matcher.matches(target_ip) {
                 all_inverse_matched = false;
             }
-        } else {
-            has_positive = true;
-            if matcher.matches(target_ip) {
-                positive_matched = true;
-            }
+        } else if matcher.matches(target_ip) {
+            return true;
         }
     }
 
-    (has_positive && positive_matched) || (has_inverse && all_inverse_matched)
+    has_inverse && all_inverse_matched
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -486,7 +489,14 @@ impl RegexMatcher {
     }
 
     pub fn matches(&self, domain: &str) -> bool {
-        self.regex.is_match(&domain.to_ascii_lowercase())
+        // Patterns are matched against the ASCII-lowercased domain. Only pay for the
+        // allocation when the input actually contains uppercase ASCII.
+        let domain: Cow<'_, str> = if domain.bytes().any(|b| b.is_ascii_uppercase()) {
+            Cow::Owned(domain.to_ascii_lowercase())
+        } else {
+            Cow::Borrowed(domain)
+        };
+        self.regex.is_match(&domain)
     }
 }
 
@@ -535,7 +545,7 @@ impl IpMatcher {
     pub fn matches(&self, ip: &IpAddr) -> bool {
         match self {
             Self::Cidr(cidr) => cidr.matches(ip),
-            Self::Private => private_cidrs()
+            Self::Private => PRIVATE_CIDRS
                 .iter()
                 .any(|private_cidr| private_cidr.matches(ip)),
             Self::Not(matcher) => !matcher.matches(ip),
@@ -612,46 +622,44 @@ fn prefix_matches(network: u128, ip: u128, prefix: u8, width: u8) -> bool {
     (network >> shift) == (ip >> shift)
 }
 
-fn private_cidrs() -> [IpCidr; 9] {
-    [
-        IpCidr {
-            network: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 0)),
-            prefix: 8,
-        },
-        IpCidr {
-            network: IpAddr::V4(Ipv4Addr::new(100, 64, 0, 0)),
-            prefix: 10,
-        },
-        IpCidr {
-            network: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 0)),
-            prefix: 8,
-        },
-        IpCidr {
-            network: IpAddr::V4(Ipv4Addr::new(169, 254, 0, 0)),
-            prefix: 16,
-        },
-        IpCidr {
-            network: IpAddr::V4(Ipv4Addr::new(172, 16, 0, 0)),
-            prefix: 12,
-        },
-        IpCidr {
-            network: IpAddr::V4(Ipv4Addr::new(192, 168, 0, 0)),
-            prefix: 16,
-        },
-        IpCidr {
-            network: IpAddr::V6(Ipv6Addr::LOCALHOST),
-            prefix: 128,
-        },
-        IpCidr {
-            network: IpAddr::V6(Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 0)),
-            prefix: 7,
-        },
-        IpCidr {
-            network: IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 0)),
-            prefix: 10,
-        },
-    ]
-}
+const PRIVATE_CIDRS: [IpCidr; 9] = [
+    IpCidr {
+        network: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 0)),
+        prefix: 8,
+    },
+    IpCidr {
+        network: IpAddr::V4(Ipv4Addr::new(100, 64, 0, 0)),
+        prefix: 10,
+    },
+    IpCidr {
+        network: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 0)),
+        prefix: 8,
+    },
+    IpCidr {
+        network: IpAddr::V4(Ipv4Addr::new(169, 254, 0, 0)),
+        prefix: 16,
+    },
+    IpCidr {
+        network: IpAddr::V4(Ipv4Addr::new(172, 16, 0, 0)),
+        prefix: 12,
+    },
+    IpCidr {
+        network: IpAddr::V4(Ipv4Addr::new(192, 168, 0, 0)),
+        prefix: 16,
+    },
+    IpCidr {
+        network: IpAddr::V6(Ipv6Addr::LOCALHOST),
+        prefix: 128,
+    },
+    IpCidr {
+        network: IpAddr::V6(Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 0)),
+        prefix: 7,
+    },
+    IpCidr {
+        network: IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 0)),
+        prefix: 10,
+    },
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InboundConfig {
@@ -1406,4 +1414,111 @@ fn xray_plaintext_server_cidrs() -> [IpCidr; 18] {
             prefix: 8,
         },
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cidr(a: u8, b: u8, c: u8, d: u8, prefix: u8) -> IpMatcher {
+        IpMatcher::Cidr(IpCidr::new(IpAddr::V4(Ipv4Addr::new(a, b, c, d)), prefix).unwrap())
+    }
+
+    fn not(matcher: IpMatcher) -> IpMatcher {
+        IpMatcher::Not(Box::new(matcher))
+    }
+
+    fn v4(a: u8, b: u8, c: u8, d: u8) -> IpAddr {
+        IpAddr::V4(Ipv4Addr::new(a, b, c, d))
+    }
+
+    #[test]
+    fn ip_matcher_group_positive_match_wins_over_failing_inverse() {
+        // Positive matches even though the inverse clause fails (10.0.0.1 is inside the
+        // negated 10.0.0.0/8) — and regardless of matcher ordering.
+        let matchers = [not(cidr(10, 0, 0, 0, 8)), cidr(10, 0, 0, 0, 16)];
+        assert!(ip_matcher_group_matches(&matchers, &v4(10, 0, 0, 1)));
+
+        let matchers = [cidr(10, 0, 0, 0, 16), not(cidr(10, 0, 0, 0, 8))];
+        assert!(ip_matcher_group_matches(&matchers, &v4(10, 0, 0, 1)));
+    }
+
+    #[test]
+    fn ip_matcher_group_only_inverses_with_one_failing_is_false() {
+        let matchers = [
+            not(cidr(10, 0, 0, 0, 8)),
+            not(cidr(192, 168, 0, 0, 16)),
+            not(cidr(172, 16, 0, 0, 12)),
+        ];
+        assert!(!ip_matcher_group_matches(&matchers, &v4(192, 168, 1, 1)));
+        // Failing inverse first, then passing ones: skipped inverses must not flip the result.
+        assert!(!ip_matcher_group_matches(&matchers, &v4(10, 1, 2, 3)));
+        // Failing inverse last.
+        assert!(!ip_matcher_group_matches(&matchers, &v4(172, 20, 0, 1)));
+    }
+
+    #[test]
+    fn ip_matcher_group_only_inverses_all_passing_is_true() {
+        let matchers = [not(cidr(10, 0, 0, 0, 8)), not(cidr(192, 168, 0, 0, 16))];
+        assert!(ip_matcher_group_matches(&matchers, &v4(8, 8, 8, 8)));
+    }
+
+    #[test]
+    fn ip_matcher_group_with_no_matchers_is_false() {
+        // `RoutingRule::matches_ip` handles the empty case (as "no constraint") before
+        // reaching this function; the group itself has nothing to match.
+        assert!(!ip_matcher_group_matches(&[], &v4(8, 8, 8, 8)));
+    }
+
+    #[test]
+    fn ip_matcher_group_positive_miss_and_failing_inverse_is_false() {
+        let matchers = [cidr(203, 0, 113, 0, 24), not(cidr(10, 0, 0, 0, 8))];
+        assert!(!ip_matcher_group_matches(&matchers, &v4(10, 42, 0, 1)));
+        // Positive miss but inverse clause holds.
+        assert!(ip_matcher_group_matches(&matchers, &v4(8, 8, 8, 8)));
+    }
+
+    #[test]
+    fn ip_matcher_group_treats_nested_not_by_outer_layer_only() {
+        // Not(Not(x)) counts as an inverse matcher (outer layer) whose value equals x.
+        let matchers = [not(not(cidr(10, 0, 0, 0, 8)))];
+        assert!(ip_matcher_group_matches(&matchers, &v4(10, 1, 1, 1)));
+        assert!(!ip_matcher_group_matches(&matchers, &v4(8, 8, 8, 8)));
+    }
+
+    #[test]
+    fn private_matcher_uses_const_private_ranges() {
+        assert!(IpMatcher::Private.matches(&v4(10, 1, 2, 3)));
+        assert!(IpMatcher::Private.matches(&v4(100, 64, 0, 1)));
+        assert!(IpMatcher::Private.matches(&v4(127, 0, 0, 1)));
+        assert!(IpMatcher::Private.matches(&v4(169, 254, 1, 1)));
+        assert!(IpMatcher::Private.matches(&v4(172, 31, 255, 255)));
+        assert!(IpMatcher::Private.matches(&v4(192, 168, 0, 1)));
+        assert!(IpMatcher::Private.matches(&IpAddr::V6(Ipv6Addr::LOCALHOST)));
+        assert!(IpMatcher::Private.matches(&IpAddr::V6(Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 1))));
+        assert!(IpMatcher::Private.matches(&IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1))));
+        assert!(!IpMatcher::Private.matches(&v4(8, 8, 8, 8)));
+        assert!(!IpMatcher::Private.matches(&v4(172, 32, 0, 1)));
+        assert!(!IpMatcher::Private
+            .matches(&IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1))));
+        assert_eq!(PRIVATE_CIDRS.len(), 9);
+    }
+
+    #[test]
+    fn regex_matcher_lowercases_input_but_not_pattern() {
+        let matcher = RegexMatcher::new(r"^api\.example\.com$").unwrap();
+        assert!(matcher.matches("api.example.com"));
+        assert!(matcher.matches("API.Example.COM"));
+        assert!(!matcher.matches("api.example.org"));
+
+        // An uppercase literal in the pattern never matches: input is lowercased, the
+        // pattern is not (no case-insensitive flag).
+        let upper = RegexMatcher::new(r"^API\.example\.com$").unwrap();
+        assert!(!upper.matches("api.example.com"));
+        assert!(!upper.matches("API.example.com"));
+
+        // Non-ASCII input takes the borrowed path and is matched as-is.
+        let unicode = RegexMatcher::new("^пример\\.рф$").unwrap();
+        assert!(unicode.matches("пример.рф"));
+    }
 }
