@@ -1255,9 +1255,10 @@ def minimum_result_duration_ms(expected: dict[str, Any]) -> int:
     if workload in {"idle", "many-idle-flows"}:
         return expected["duration_ms_option"]
     if workload == "stream-transport":
-        # The harness samples both the initial cleanup window and a second
-        # stable post-cleanup window, each lasting the configured settle time.
-        minimum = expected["settle_ms"] * 2
+        # Traffic duration is measured rather than prescribed, so the only
+        # fixed floor is the configured settle window. Held-open additionally
+        # spends the configured duration with all flows established.
+        minimum = expected["settle_ms"]
         if expected["stream_traffic"] == "held-open":
             minimum += expected["duration_ms_option"]
         return minimum

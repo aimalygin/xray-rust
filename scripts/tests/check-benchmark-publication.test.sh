@@ -483,7 +483,7 @@ for index, (scenario, engine, fields) in enumerate(series):
         if fields["workload"] in {"idle", "many-idle-flows"}:
             duration_floor_ms = config["duration_ms"]
         elif fields["workload"] == "stream-transport":
-            duration_floor_ms = config["settle_ms"] * 2
+            duration_floor_ms = config["settle_ms"]
             if fields.get("stream_traffic") == "held-open":
                 duration_floor_ms += config["duration_ms"]
         duration_ms = duration_floor_ms + 100 + run
@@ -641,6 +641,14 @@ def remove_flag(args, flag):
 
 def replace_flag(args, flag, value):
     args[args.index(flag) + 1] = value
+
+
+def set_summary_duration(summary, duration_ms):
+    for result in summary["results"]:
+        result["duration_ms"] = duration_ms
+    summary["duration_ms"] = metric(
+        [result["duration_ms"] for result in summary["results"]]
+    )
 
 
 if mutation == "wrong_xray_revision":
@@ -850,7 +858,7 @@ elif mutation == "held_open_duration_below_floor":
         if entry["scenario"] == "xhttp-memory-held-open-1-max-500000"
         and entry["engine"] == "xray-rust"
     )
-    summaries[held_entry["summary"]]["results"][0]["duration_ms"] = 39_999
+    summaries[held_entry["summary"]]["results"][0]["duration_ms"] = 34_999
 elif mutation == "settled_stream_duration_below_floor":
     packet_entry = next(
         entry
@@ -858,7 +866,7 @@ elif mutation == "settled_stream_duration_below_floor":
         if entry["scenario"] == "xhttp-memory-packet-up-1-max-500000"
         and entry["engine"] == "xray-rust"
     )
-    summaries[packet_entry["summary"]]["results"][0]["duration_ms"] = 9_999
+    summaries[packet_entry["summary"]]["results"][0]["duration_ms"] = 4_999
 elif mutation == "parameter_collapse_1_1_0":
     stream_entry = next(
         entry
@@ -1016,6 +1024,14 @@ elif mutation == "omitted_optional_serde_fields":
         "engine_source_git" in summary["provenance"]
         for summary in summaries.values()
     )
+elif mutation == "held_open_duration_boundary":
+    for entry in manifest["series"]:
+        if entry["scenario"].startswith("xhttp-memory-held-open-"):
+            set_summary_duration(summaries[entry["summary"]], 35_000)
+elif mutation == "settled_stream_duration_boundary":
+    for entry in manifest["series"]:
+        if entry["scenario"].startswith("xhttp-memory-packet-up-"):
+            set_summary_duration(summaries[entry["summary"]], 5_000)
 elif mutation == "mixed_optional_metric_runs":
     data_entry = next(
         entry
@@ -1140,6 +1156,8 @@ grep -Fq "validated benchmark publication: 143 series" <<<"$valid_output" \
 for valid_variant in \
   additive_series_metadata \
   alternate_sing_pin \
+  held_open_duration_boundary \
+  settled_stream_duration_boundary \
   omitted_optional_serde_fields; do
   variant_fixture="$tmp_dir/$valid_variant/2026-08-29-v26.7.28"
   make_fixture "$variant_fixture" "$valid_variant"
