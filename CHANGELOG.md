@@ -9,6 +9,10 @@ prerelease-quality and do not establish a supported release series.
 
 ## 0.4.1-rc.4 - 2026-08-29
 
+- Fixed an XHTTP/2 `stream-up` deadlock where a concurrent downlink poll could
+  cancel the uplink's pending flow-control reservation and strand a sustained
+  upload. Added deterministic split read/write coverage and an 8 MiB live
+  Xray-core interoperability regression.
 - Added safe pre-commit HTTP/2 GOAWAY retry handling plus regression coverage
   for non-replay after commitment and request/buffer ownership across
   cancellation.

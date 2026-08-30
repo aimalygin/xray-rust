@@ -4,6 +4,7 @@ use std::io::ErrorKind;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -2370,6 +2371,10 @@ async fn run_local_xray_xhttp_interop_scenario(
         .expect("XHTTP echo task should finish")
         .expect("XHTTP echo task should not panic");
 
+    if mode == XhttpMode::StreamUp {
+        run_xhttp_sustained_upload_flow(&xray, socks_addr).await;
+    }
+
     // Do not write a single application byte before the target greets us.
     // The only uplink at this point is the VLESS request header. H1/H3 accept
     // writes into a bounded worker pipe, so this pins the logical stream's
@@ -2394,6 +2399,78 @@ async fn run_local_xray_xhttp_interop_scenario(
 
     core.stop().await.expect("stop Rust XHTTP core");
     drop(xray);
+}
+
+async fn run_xhttp_sustained_upload_flow(xray: &XrayServer, socks_addr: SocketAddr) {
+    const PAYLOAD_BYTES: usize = 8 * 1024 * 1024;
+    const COMPLETE: u8 = 0xa5;
+
+    let payload = bulk_interop_payload(PAYLOAD_BYTES);
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .expect("bind XHTTP sustained-upload server");
+    let target = listener
+        .local_addr()
+        .expect("XHTTP sustained-upload server addr");
+    let target_bytes = Arc::new(AtomicUsize::new(0));
+    let server_target_bytes = Arc::clone(&target_bytes);
+    let server = tokio::spawn(async move {
+        let (mut stream, _) = listener
+            .accept()
+            .await
+            .expect("accept XHTTP sustained-upload flow");
+        let mut received = Vec::with_capacity(PAYLOAD_BYTES);
+        let mut chunk = [0; 64 * 1024];
+        while received.len() < PAYLOAD_BYTES {
+            let wanted = (PAYLOAD_BYTES - received.len()).min(chunk.len());
+            let read = stream
+                .read(&mut chunk[..wanted])
+                .await
+                .expect("read XHTTP sustained upload");
+            assert_ne!(read, 0, "XHTTP sustained upload ended early");
+            received.extend_from_slice(&chunk[..read]);
+            server_target_bytes.store(received.len(), Ordering::Release);
+        }
+        stream
+            .write_all(&[COMPLETE])
+            .await
+            .expect("write XHTTP sustained-upload completion marker");
+        received
+    });
+
+    let mut client = open_socks_flow(xray, socks_addr, target).await;
+    let transfer = async {
+        client
+            .write_all(&payload)
+            .await
+            .map_err(|error| format!("write XHTTP sustained upload: {error}"))?;
+        let mut marker = [0; 1];
+        client
+            .read_exact(&mut marker)
+            .await
+            .map_err(|error| format!("read XHTTP sustained-upload completion: {error}"))?;
+        if marker != [COMPLETE] {
+            return Err("invalid XHTTP sustained-upload completion marker".to_owned());
+        }
+        Ok::<(), String>(())
+    };
+    if let Err(error) = timeout(Duration::from_secs(60), transfer)
+        .await
+        .map_err(|error| format!("XHTTP sustained-upload timeout: {error}"))
+        .and_then(|result| result)
+    {
+        eprintln!("{}", xray.logs());
+        panic!(
+            "XHTTP sustained-upload flow failed after {}/{} target bytes: {error}",
+            target_bytes.load(Ordering::Acquire),
+            PAYLOAD_BYTES
+        );
+    }
+    assert_eq!(
+        server.await.expect("join XHTTP sustained-upload server"),
+        payload,
+        "XHTTP sustained upload differs at the target"
+    );
 }
 
 async fn run_xhttp_greeting_first_flow(xray: &XrayServer, socks_addr: SocketAddr) {

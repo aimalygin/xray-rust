@@ -304,6 +304,12 @@ process boundary for the DNS-outbound policy itself.
 The XHTTP matrix has 15 cases: `packet-up`, `stream-up`, and `stream-one` over
 cleartext H1, TLS H1, TLS H2, REALITY H2, and TLS H3.
 
+Every `stream-up` case also sends an 8 MiB sustained uplink before reading its
+completion marker. This crosses repeated HTTP flow-control windows and guards
+against a concurrent downlink poll cancelling and stranding the uplink's
+pending reservation; the fast H2 transport suite reproduces the same split
+read/write ordering without a local Xray process.
+
 #### VLESS share-link boundary
 
 The Apple share-link importer and the Rust transport are separate compatibility

@@ -597,7 +597,7 @@ impl AsyncWrite for H2Upload {
     }
 
     fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        let mut state = match self.shared.state.lock() {
+        let state = match self.shared.state.lock() {
             Ok(state) => state,
             Err(_) => return Poll::Ready(Err(state_io_error())),
         };
@@ -607,13 +607,12 @@ impl AsyncWrite for H2Upload {
                 "HTTP/2 request stream is reset",
             )))
         } else {
-            // A cancelled `write` may have left a bounded capacity request
-            // behind after returning Pending. There is no buffered DATA in
-            // this adapter, so flush can and should give that reservation
-            // back rather than waiting for it.
-            state.stream.reserve_capacity(0);
             // DATA is owned by h2 once `poll_write` returns. The connection
-            // driver, rather than this adapter, owns socket flushing.
+            // driver, rather than this adapter, owns socket flushing. Keep a
+            // bounded outstanding capacity request intact: the read half of a
+            // split XHTTP stream may flush while its write half is waiting for
+            // flow control, and cancelling that reservation would strand the
+            // pending writer without a wakeup.
             Poll::Ready(Ok(()))
         }
     }

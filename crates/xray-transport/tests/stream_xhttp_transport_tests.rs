@@ -1494,6 +1494,85 @@ async fn h2_stream_up_is_full_duplex_and_pools_both_requests_on_one_connection()
 }
 
 #[tokio::test]
+async fn h2_stream_up_read_flush_does_not_strand_flow_controlled_writer() {
+    const READY: u8 = 0x41;
+    const COMPLETE: u8 = 0x42;
+    const UPLOAD_BYTES: usize = 2 * 1024 * 1024;
+
+    let dials = Arc::new(AtomicUsize::new(0));
+    let upload_done = Arc::new(AtomicBool::new(false));
+    let upload_notify = Arc::new(tokio::sync::Notify::new());
+    let dial = h2_dial(Arc::clone(&dials), {
+        let upload_done = Arc::clone(&upload_done);
+        let upload_notify = Arc::clone(&upload_notify);
+        move |request, mut respond| {
+            let upload_done = Arc::clone(&upload_done);
+            let upload_notify = Arc::clone(&upload_notify);
+            async move {
+                if request.method() == http::Method::GET {
+                    let mut send = respond
+                        .send_response(ok_response(), false)
+                        .expect("send downlink headers");
+                    send.send_data(Bytes::from_static(&[READY]), false)
+                        .expect("send ready marker");
+                    while !upload_done.load(Ordering::Acquire) {
+                        let notified = upload_notify.notified();
+                        if upload_done.load(Ordering::Acquire) {
+                            break;
+                        }
+                        notified.await;
+                    }
+                    send.send_data(Bytes::from_static(&[COMPLETE]), true)
+                        .expect("send completion marker");
+                    drain_h2_request(request.into_body()).await;
+                } else {
+                    let body = drain_h2_request(request.into_body()).await;
+                    assert_eq!(body, vec![0x5a; UPLOAD_BYTES]);
+                    upload_done.store(true, Ordering::Release);
+                    upload_notify.notify_waiters();
+                    respond
+                        .send_response(ok_response(), true)
+                        .expect("send upload response");
+                }
+            }
+        }
+    });
+    let transport = transport(
+        XhttpModeSelection::StreamUp,
+        XhttpHttpVersion::Http2,
+        unlimited_xmux(),
+        4,
+    );
+    let mut stream = transport.open_stream_with_dial(dial).await.unwrap();
+    let mut ready = [0; 1];
+    stream
+        .read_exact(&mut ready)
+        .await
+        .expect("read ready marker");
+    assert_eq!(ready, [READY]);
+
+    let (mut reader, mut writer) = tokio::io::split(stream);
+    timeout(DEADLINE, async {
+        tokio::try_join!(
+            async {
+                writer.write_all(&vec![0x5a; UPLOAD_BYTES]).await?;
+                writer.shutdown().await
+            },
+            async {
+                let mut complete = [0; 1];
+                reader.read_exact(&mut complete).await?;
+                assert_eq!(complete, [COMPLETE]);
+                Ok::<(), io::Error>(())
+            }
+        )
+    })
+    .await
+    .expect("concurrent H2 stream-up transfer must make flow-control progress")
+    .expect("concurrent H2 stream-up transfer");
+    assert_eq!(dials.load(Ordering::Acquire), 1);
+}
+
+#[tokio::test]
 async fn h2_auto_gzip_decodes_mixed_case_content_encoding() {
     let dials = Arc::new(AtomicUsize::new(0));
     let dial = h2_dial(Arc::clone(&dials), |request, mut respond| async move {
