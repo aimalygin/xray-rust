@@ -27,10 +27,12 @@ use xray_transport::{BoxedTransportStream, TransportError, TransportStream};
 const DEADLINE: Duration = Duration::from_secs(3);
 const H2_PREFACE: &[u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 const H2_FRAME_HEADER_LEN: usize = 9;
+const H2_DATA_FRAME: u8 = 0x0;
 const H2_RST_STREAM_FRAME: u8 = 0x3;
 const H2_SETTINGS_FRAME: u8 = 0x4;
 const H2_PING_FRAME: u8 = 0x6;
 const H2_ACK_FLAG: u8 = 0x1;
+const H2_END_STREAM_FLAG: u8 = 0x1;
 const GZIP_PONG: &[u8] = &[
     0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x2b, 0xc8, 0xcf, 0x4b, 0x07, 0x00,
     0x4f, 0x41, 0x58, 0x21, 0x04, 0x00, 0x00, 0x00,
@@ -49,6 +51,7 @@ struct FrameObservedStream {
     settings_ack: Option<oneshot::Sender<()>>,
     ping_ack: Option<oneshot::Sender<()>>,
     resets: Option<mpsc::UnboundedSender<ObservedH2Reset>>,
+    first_nonempty_data_end_stream: Option<oneshot::Sender<bool>>,
 }
 
 impl FrameObservedStream {
@@ -63,6 +66,7 @@ impl FrameObservedStream {
                 settings_ack: Some(settings_ack),
                 ping_ack: Some(ping_ack),
                 resets: None,
+                first_nonempty_data_end_stream: None,
             },
             settings_observed,
             ping_observed,
@@ -81,6 +85,20 @@ impl FrameObservedStream {
         let (resets, observed_resets) = mpsc::unbounded_channel();
         stream.resets = Some(resets);
         (stream, settings_ack, ping_ack, observed_resets)
+    }
+
+    fn new_with_first_nonempty_data_observation(
+        inner: DuplexStream,
+    ) -> (
+        Self,
+        oneshot::Receiver<()>,
+        oneshot::Receiver<()>,
+        oneshot::Receiver<bool>,
+    ) {
+        let (mut stream, settings_ack, ping_ack) = Self::new(inner);
+        let (first_nonempty_data_end_stream, observed) = oneshot::channel();
+        stream.first_nonempty_data_end_stream = Some(first_nonempty_data_end_stream);
+        (stream, settings_ack, ping_ack, observed)
     }
 
     fn observe_complete_frames(&mut self) {
@@ -107,6 +125,11 @@ impl FrameObservedStream {
 
             let frame_type = self.writes[3];
             let flags = self.writes[4];
+            if frame_type == H2_DATA_FRAME && payload_len > 0 {
+                if let Some(observed) = self.first_nonempty_data_end_stream.take() {
+                    let _ = observed.send(flags & H2_END_STREAM_FLAG != 0);
+                }
+            }
             if frame_type == H2_RST_STREAM_FRAME {
                 assert_eq!(payload_len, 4, "outbound RST_STREAM payload length");
                 let stream_id = u32::from_be_bytes([
@@ -805,6 +828,72 @@ async fn h1_pooled_packet_partial_write_is_not_replayed_on_a_fresh_connection() 
         .to_string()
         .contains("request write failed after 8 bytes"));
     down.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn h2_packet_up_ends_the_fixed_post_on_its_final_data_frame() {
+    const MAX_PACKET: usize = 16 * 1024;
+
+    let (client_io, server_io) = tokio::io::duplex(1024 * 1024);
+    let (client_io, settings_ack, _ping_ack, first_data_end_stream) =
+        FrameObservedStream::new_with_first_nonempty_data_observation(client_io);
+    let server_task = tokio::spawn(async move {
+        let mut connection = server::handshake::<_>(server_io)
+            .await
+            .expect("fixed packet server HTTP/2 handshake");
+        let mut held_downlinks = Vec::new();
+        while let Some(exchange) = connection.accept().await {
+            let (request, mut respond) = exchange.expect("fixed packet H2 exchange");
+            if request.method() == Method::GET {
+                let downlink = respond
+                    .send_response(ok_response(), false)
+                    .expect("send persistent fixed-packet downlink headers");
+                held_downlinks.push(downlink);
+                continue;
+            }
+            tokio::spawn(async move {
+                let body = drain_h2_request(request.into_body()).await;
+                assert_eq!(body, vec![0x5a; MAX_PACKET]);
+                respond
+                    .send_response(ok_response(), true)
+                    .expect("send fixed packet response");
+            });
+        }
+    });
+
+    let (unused_client, unused_server_io) = tokio::io::duplex(1024 * 1024);
+    let unused_server = tokio::spawn(async move {
+        let _ = server::handshake::<_>(unused_server_io).await;
+    });
+    let (dial, dials) = scripted_h2_dial([
+        (Box::new(client_io) as BoxedTransportStream, server_task),
+        (
+            Box::new(unused_client) as BoxedTransportStream,
+            unused_server,
+        ),
+    ]);
+    let transport = transport(
+        XhttpModeSelection::PacketUp,
+        XhttpHttpVersion::Http2,
+        unlimited_xmux(),
+        MAX_PACKET as i32,
+    );
+    let mut stream = transport.open_stream_with_dial(dial).await.unwrap();
+    timeout(DEADLINE, settings_ack)
+        .await
+        .expect("fixed-packet client did not acknowledge H2 settings")
+        .expect("fixed-packet settings observer");
+
+    stream.write_all(&vec![0x5a; MAX_PACKET]).await.unwrap();
+    let ended_on_data = timeout(DEADLINE, first_data_end_stream)
+        .await
+        .expect("fixed packet DATA frame was not observed")
+        .expect("fixed packet DATA observer");
+    assert!(
+        ended_on_data,
+        "a fixed packet POST must set END_STREAM on its final non-empty DATA frame"
+    );
+    assert_eq!(dials.load(Ordering::Acquire), 1);
 }
 
 #[tokio::test]

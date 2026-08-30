@@ -1183,10 +1183,9 @@ impl XhttpTransport {
         let mut uploaded = Some(uploaded);
         let mut upload_future = Box::pin(async move {
             upload
-                .write_all(&body)
+                .send_owned(body)
                 .await
-                .map_err(XhttpTransportError::Io)?;
-            upload.shutdown().await.map_err(XhttpTransportError::Io)
+                .map_err(XhttpTransportError::Http2)
         });
         let mut response_future = Box::pin(pending.open());
         let mut response = None;

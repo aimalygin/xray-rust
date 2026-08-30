@@ -457,7 +457,7 @@ pub struct H2Upload {
 }
 
 impl H2Upload {
-    async fn send_owned(&mut self, mut body: Bytes) -> Result<(), H2Error> {
+    pub(crate) async fn send_owned(&mut self, mut body: Bytes) -> Result<(), H2Error> {
         while !body.is_empty() {
             poll_fn(|cx| {
                 let mut state = match self.shared.lock() {
