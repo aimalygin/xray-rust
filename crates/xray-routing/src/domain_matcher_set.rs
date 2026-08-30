@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::fmt;
+use std::sync::Arc;
 
 use aho_corasick::{AhoCorasick, AhoCorasickKind, StartKind};
 use regex::Regex;
@@ -14,13 +15,16 @@ use crate::{DomainMatcher, DomainNameMode};
 /// Names are matched per label and ASCII case-insensitively: `domain:a.test`
 /// matches `a.test` and `b.a.test` but not `ba.test`. Trailing dots are kept
 /// as-is on both sides, so DNS callers normalize names before matching.
+///
+/// The compiled state is immutable and shared behind an `Arc`, so cloning a
+/// set only bumps a reference count instead of copying its hash tables,
+/// automaton and regexes.
 #[derive(Clone, Default)]
 pub struct DomainMatcherSet {
-    inner: Option<Box<DomainMatcherSetInner>>,
+    inner: Option<Arc<DomainMatcherSetInner>>,
     matcher_count: usize,
 }
 
-#[derive(Clone)]
 struct DomainMatcherSetInner {
     full: HashSet<Box<str>>,
     suffix: HashSet<Box<str>>,
@@ -196,7 +200,7 @@ impl DomainMatcherSetBuilder {
             )
         };
         Ok(DomainMatcherSet {
-            inner: Some(Box::new(DomainMatcherSetInner {
+            inner: Some(Arc::new(DomainMatcherSetInner {
                 full: self.full,
                 suffix: self.suffix,
                 keywords: self.keywords,
@@ -277,6 +281,18 @@ mod tests {
 
     fn heap_bytes(set: &HashSet<Box<str>>) -> usize {
         set.iter().map(|name| name.len()).sum()
+    }
+
+    #[test]
+    fn clone_shares_compiled_state() {
+        let set = compile(&["a.test"], &[], &[], &[]);
+        let cloned = set.clone();
+        assert!(Arc::ptr_eq(
+            set.inner.as_ref().unwrap(),
+            cloned.inner.as_ref().unwrap()
+        ));
+        assert_eq!(cloned, set);
+        assert!(cloned.matches("a.test"));
     }
 
     #[test]
