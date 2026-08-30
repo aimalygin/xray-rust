@@ -1726,9 +1726,8 @@ pub unsafe extern "C" fn xray_tun_poll_packet(
     error: *mut *mut XrayError,
 ) -> XrayStatus {
     unsafe {
-        ffi_status(error, || {
+        ffi_result_status(error, || {
             xray_tun_poll_packet_inner(handle, buffer, buffer_len, written, error)
-                .unwrap_or_else(|status| status)
         })
     }
 }
@@ -1840,7 +1839,7 @@ pub unsafe extern "C" fn xray_tun_poll_packets(
     error: *mut *mut XrayError,
 ) -> XrayStatus {
     unsafe {
-        ffi_status(error, || {
+        ffi_result_status(error, || {
             xray_tun_poll_packets_inner(
                 handle,
                 buffer,
@@ -1851,7 +1850,6 @@ pub unsafe extern "C" fn xray_tun_poll_packets(
                 wait_ms,
                 error,
             )
-            .unwrap_or_else(|status| status)
         })
     }
 }
@@ -1986,7 +1984,7 @@ pub unsafe extern "C" fn xray_tun_poll_tcp_slow_flow_event(
     error: *mut *mut XrayError,
 ) -> XrayStatus {
     unsafe {
-        ffi_status(error, || {
+        ffi_result_status(error, || {
             xray_tun_poll_tcp_slow_flow_event_inner(
                 handle,
                 event,
@@ -1995,7 +1993,6 @@ pub unsafe extern "C" fn xray_tun_poll_tcp_slow_flow_event(
                 target_written,
                 error,
             )
-            .unwrap_or_else(|status| status)
         })
     }
 }
@@ -2066,7 +2063,7 @@ pub unsafe extern "C" fn xray_tun_poll_tcp_flow_summary_event(
     error: *mut *mut XrayError,
 ) -> XrayStatus {
     unsafe {
-        ffi_status(error, || {
+        ffi_result_status(error, || {
             xray_tun_poll_tcp_flow_summary_event_inner(
                 handle,
                 event,
@@ -2078,7 +2075,6 @@ pub unsafe extern "C" fn xray_tun_poll_tcp_flow_summary_event(
                 outbound_tag_written,
                 error,
             )
-            .unwrap_or_else(|status| status)
         })
     }
 }
@@ -2172,7 +2168,7 @@ pub unsafe extern "C" fn xray_tun_poll_tcp_open_error_event(
     error: *mut *mut XrayError,
 ) -> XrayStatus {
     unsafe {
-        ffi_status(error, || {
+        ffi_result_status(error, || {
             xray_tun_poll_tcp_open_error_event_inner(
                 handle,
                 event,
@@ -2187,7 +2183,6 @@ pub unsafe extern "C" fn xray_tun_poll_tcp_open_error_event(
                 error_message_written,
                 error,
             )
-            .unwrap_or_else(|status| status)
         })
     }
 }
@@ -2280,7 +2275,7 @@ pub unsafe extern "C" fn xray_tun_poll_tcp_remote_write_slow_event(
     error: *mut *mut XrayError,
 ) -> XrayStatus {
     unsafe {
-        ffi_status(error, || {
+        ffi_result_status(error, || {
             xray_tun_poll_tcp_remote_write_slow_event_inner(
                 handle,
                 event,
@@ -2292,7 +2287,6 @@ pub unsafe extern "C" fn xray_tun_poll_tcp_remote_write_slow_event(
                 outbound_tag_written,
                 error,
             )
-            .unwrap_or_else(|status| status)
         })
     }
 }
@@ -2373,7 +2367,7 @@ pub unsafe extern "C" fn xray_tun_poll_udp_slow_flow_event(
     error: *mut *mut XrayError,
 ) -> XrayStatus {
     unsafe {
-        ffi_status(error, || {
+        ffi_result_status(error, || {
             xray_tun_poll_udp_slow_flow_event_inner(
                 handle,
                 event,
@@ -2382,7 +2376,6 @@ pub unsafe extern "C" fn xray_tun_poll_udp_slow_flow_event(
                 target_written,
                 error,
             )
-            .unwrap_or_else(|status| status)
         })
     }
 }
@@ -2450,7 +2443,7 @@ pub unsafe extern "C" fn xray_tun_poll_udp_response_gap_event(
     error: *mut *mut XrayError,
 ) -> XrayStatus {
     unsafe {
-        ffi_status(error, || {
+        ffi_result_status(error, || {
             xray_tun_poll_udp_response_gap_event_inner(
                 handle,
                 event,
@@ -2459,7 +2452,6 @@ pub unsafe extern "C" fn xray_tun_poll_udp_response_gap_event(
                 target_written,
                 error,
             )
-            .unwrap_or_else(|status| status)
         })
     }
 }
@@ -2527,7 +2519,7 @@ pub unsafe extern "C" fn xray_tun_poll_udp_quic_blocked_event(
     error: *mut *mut XrayError,
 ) -> XrayStatus {
     unsafe {
-        ffi_status(error, || {
+        ffi_result_status(error, || {
             xray_tun_poll_udp_quic_blocked_event_inner(
                 handle,
                 event,
@@ -2536,7 +2528,6 @@ pub unsafe extern "C" fn xray_tun_poll_udp_quic_blocked_event(
                 target_written,
                 error,
             )
-            .unwrap_or_else(|status| status)
         })
     }
 }
@@ -3062,6 +3053,20 @@ impl OutStrBuf {
             *self.written = copy_len;
         }
     }
+}
+
+/// [`ffi_status`] for bodies that bail out with `?`. Both arms of an
+/// [`FfiResult`] carry a status that has already been reported, so they
+/// collapse to the single status the C ABI returns.
+///
+/// # Safety
+///
+/// `error` must be null or point to an initialized `*mut XrayError`.
+unsafe fn ffi_result_status(
+    error: *mut *mut XrayError,
+    action: impl FnOnce() -> FfiResult,
+) -> XrayStatus {
+    unsafe { ffi_status(error, || action().unwrap_or_else(|status| status)) }
 }
 
 unsafe fn ffi_status(
