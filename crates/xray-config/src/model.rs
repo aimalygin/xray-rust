@@ -1,13 +1,17 @@
 use std::{
-    borrow::Cow,
     collections::BTreeMap,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
 };
 
-use regex::Regex;
 use uuid::Uuid;
-use xray_routing::Cidr;
-pub use xray_routing::{DnsIpFilter, IpMatcherSet};
+use xray_routing::{
+    domain_matcher::domain_matches_suffix, Cidr, DomainMatcherSetBuilder, DomainMatcherSetError,
+    DomainRegexError,
+};
+pub use xray_routing::{
+    DnsHostTarget, DnsIpFilter, DomainHostIndex, DomainMatcher, DomainMatcherSet, DomainNameMode,
+    IpMatcherSet, RegexMatcher,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ConfigModelError {
@@ -17,10 +21,21 @@ pub enum ConfigModelError {
     InvalidCidrPrefix { prefix: u8, max: u8 },
     #[error("invalid domain regex `{pattern}`: {message}")]
     InvalidDomainRegex { pattern: String, message: String },
+    #[error("invalid domain matcher set: {message}")]
+    InvalidDomainMatcherSet { message: String },
     #[error("DNS qtype range start {start} exceeds end {end}")]
     InvalidDnsQTypeRange { start: u16, end: u16 },
     #[error("routing port range start {start} exceeds end {end}")]
     InvalidRoutingPortRange { start: u16, end: u16 },
+}
+
+impl From<DomainRegexError> for ConfigModelError {
+    fn from(error: DomainRegexError) -> Self {
+        Self::InvalidDomainRegex {
+            pattern: error.pattern,
+            message: error.message,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,7 +65,9 @@ pub enum RoutingDomainStrategy {
 pub struct DnsConfig {
     pub fake_ip: Option<DnsFakeIpConfig>,
     pub servers: Vec<DnsServerConfig>,
-    pub hosts: Vec<DnsHostMapping>,
+    /// `dns.hosts` entries, keyed by DNS-normalized `full:` names with the
+    /// remaining matchers scanned in config order.
+    pub hosts: DomainHostIndex<DnsHostTarget>,
     /// Default synthetic inbound tag used by configured DNS clients.
     ///
     /// An empty value asks the runtime to supply Xray's generated internal
@@ -100,7 +117,8 @@ pub enum DnsServerConfig {
 pub struct DnsNameServerConfig {
     pub endpoint: DnsServerEndpoint,
     pub transport: DnsServerTransport,
-    pub domains: Vec<DomainMatcher>,
+    /// Compiled with [`compile_dns_domain_matchers`] semantics.
+    pub domains: DomainMatcherSet,
     pub expected_ips: DnsIpFilter,
     pub unexpected_ips: DnsIpFilter,
     /// Per-client synthetic inbound tag; empty inherits `dns.tag`.
@@ -127,13 +145,6 @@ impl DnsServerConfig {
                 port: *port,
             },
             Self::Policy(server) => server.endpoint.clone(),
-        }
-    }
-
-    pub fn domains(&self) -> &[DomainMatcher] {
-        match self {
-            Self::Policy(server) => &server.domains,
-            Self::Ip(_) | Self::Domain { .. } => &[],
         }
     }
 
@@ -181,19 +192,6 @@ impl DnsServerConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DnsHostMapping {
-    pub matcher: DomainMatcher,
-    pub target: DnsHostTarget,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DnsHostTarget {
-    Ip(IpAddr),
-    Ips(Vec<IpAddr>),
-    Domain(String),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DnsFakeIpConfig {
     pub enabled: bool,
     pub ipv4_pool: IpCidr,
@@ -206,7 +204,7 @@ pub struct RoutingRule {
     pub inbound_tags: Vec<String>,
     pub networks: Vec<Network>,
     pub port_ranges: Vec<RoutingPortRange>,
-    pub domain_matchers: Vec<DomainMatcher>,
+    pub domain_matchers: DomainMatcherSet,
     pub ip_matchers: IpMatcherSet,
     pub outbound_tag: String,
 }
@@ -276,9 +274,7 @@ impl RoutingRule {
             return false;
         };
 
-        self.domain_matchers
-            .iter()
-            .any(|matcher| matcher.matches(target_domain))
+        self.domain_matchers.matches(target_domain)
     }
 
     pub fn matches_ip(&self, target_ip: Option<&IpAddr>) -> bool {
@@ -328,90 +324,30 @@ impl RoutingPortRange {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DomainMatcher {
-    Keyword(String),
-    Full(String),
-    Suffix(String),
-    Regex(RegexMatcher),
+/// Compiles routing matchers ([`DomainNameMode::Routing`]).
+pub fn compile_domain_matchers(
+    matchers: &[DomainMatcher],
+) -> Result<DomainMatcherSet, ConfigModelError> {
+    DomainMatcherSet::compile(matchers, DomainNameMode::Routing).map_err(domain_matcher_set_error)
 }
 
-impl DomainMatcher {
-    pub fn matches(&self, domain: &str) -> bool {
-        match self {
-            Self::Keyword(keyword) => contains_ignore_ascii_case(domain, keyword),
-            Self::Full(expected) => domain.eq_ignore_ascii_case(expected),
-            Self::Suffix(suffix) => domain_matches_suffix(domain, suffix),
-            Self::Regex(matcher) => matcher.matches(domain),
-        }
-    }
+/// Compiles DNS matchers ([`DomainNameMode::Dns`]).
+pub fn compile_dns_domain_matchers(
+    matchers: &[DomainMatcher],
+) -> Result<DomainMatcherSet, ConfigModelError> {
+    DomainMatcherSet::compile(matchers, DomainNameMode::Dns).map_err(domain_matcher_set_error)
 }
 
-#[derive(Debug, Clone)]
-pub struct RegexMatcher {
-    pattern: String,
-    regex: Regex,
+pub(crate) fn build_domain_matcher_set(
+    builder: DomainMatcherSetBuilder,
+) -> Result<DomainMatcherSet, ConfigModelError> {
+    builder.build().map_err(domain_matcher_set_error)
 }
 
-impl RegexMatcher {
-    pub fn new(pattern: impl Into<String>) -> Result<Self, ConfigModelError> {
-        let pattern = pattern.into();
-        let regex = Regex::new(&pattern).map_err(|error| ConfigModelError::InvalidDomainRegex {
-            pattern: pattern.clone(),
-            message: error.to_string(),
-        })?;
-
-        Ok(Self { pattern, regex })
+fn domain_matcher_set_error(error: DomainMatcherSetError) -> ConfigModelError {
+    ConfigModelError::InvalidDomainMatcherSet {
+        message: error.to_string(),
     }
-
-    pub fn pattern(&self) -> &str {
-        &self.pattern
-    }
-
-    pub fn matches(&self, domain: &str) -> bool {
-        // Patterns are matched against the ASCII-lowercased domain. Only pay for the
-        // allocation when the input actually contains uppercase ASCII.
-        let domain: Cow<'_, str> = if domain.bytes().any(|b| b.is_ascii_uppercase()) {
-            Cow::Owned(domain.to_ascii_lowercase())
-        } else {
-            Cow::Borrowed(domain)
-        };
-        self.regex.is_match(&domain)
-    }
-}
-
-impl PartialEq for RegexMatcher {
-    fn eq(&self, other: &Self) -> bool {
-        self.pattern == other.pattern
-    }
-}
-
-impl Eq for RegexMatcher {}
-
-fn contains_ignore_ascii_case(haystack: &str, needle: &str) -> bool {
-    if needle.is_empty() {
-        return true;
-    }
-
-    haystack
-        .as_bytes()
-        .windows(needle.len())
-        .any(|window| window.eq_ignore_ascii_case(needle.as_bytes()))
-}
-
-fn domain_matches_suffix(domain: &str, suffix: &str) -> bool {
-    if domain.eq_ignore_ascii_case(suffix) {
-        return true;
-    }
-
-    if domain.len() <= suffix.len() {
-        return false;
-    }
-
-    let boundary_index = domain.len() - suffix.len() - 1;
-    let domain_bytes = domain.as_bytes();
-    domain_bytes[boundary_index] == b'.'
-        && domain_bytes[boundary_index + 1..].eq_ignore_ascii_case(suffix.as_bytes())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -553,7 +489,8 @@ pub struct DnsOutboundRule {
     /// DNS response code used by `Return` and by non-address `Hijack` rules.
     pub r_code: u16,
     pub qtype_ranges: Vec<DnsQTypeRange>,
-    pub domain_matchers: Vec<DomainMatcher>,
+    /// Compiled with [`compile_dns_domain_matchers`] semantics.
+    pub domain_matchers: DomainMatcherSet,
 }
 
 impl DnsOutboundRule {
@@ -565,11 +502,7 @@ impl DnsOutboundRule {
     fn matches_normalized(&self, qtype: u16, normalized_domain: &str) -> bool {
         (self.qtype_ranges.is_empty()
             || self.qtype_ranges.iter().any(|range| range.contains(qtype)))
-            && (self.domain_matchers.is_empty()
-                || self
-                    .domain_matchers
-                    .iter()
-                    .any(|matcher| matcher.matches(normalized_domain)))
+            && (self.domain_matchers.is_empty() || self.domain_matchers.matches(normalized_domain))
     }
 }
 
@@ -1428,20 +1361,217 @@ mod tests {
     }
 
     #[test]
-    fn regex_matcher_lowercases_input_but_not_pattern() {
-        let matcher = RegexMatcher::new(r"^api\.example\.com$").unwrap();
-        assert!(matcher.matches("api.example.com"));
-        assert!(matcher.matches("API.Example.COM"));
-        assert!(!matcher.matches("api.example.org"));
+    fn invalid_domain_regex_maps_to_the_config_error() {
+        let error = ConfigModelError::from(RegexMatcher::new("(").unwrap_err());
+        assert!(matches!(
+            &error,
+            ConfigModelError::InvalidDomainRegex { pattern, message }
+                if pattern == "(" && !message.is_empty()
+        ));
+        assert!(error.to_string().starts_with("invalid domain regex `(`: "));
+    }
 
-        // An uppercase literal in the pattern never matches: input is lowercased, the
-        // pattern is not (no case-insensitive flag).
-        let upper = RegexMatcher::new(r"^API\.example\.com$").unwrap();
-        assert!(!upper.matches("api.example.com"));
-        assert!(!upper.matches("API.example.com"));
+    fn parity_matchers() -> Vec<DomainMatcher> {
+        let regex = |pattern: &str| DomainMatcher::Regex(RegexMatcher::new(pattern).unwrap());
+        vec![
+            DomainMatcher::Full("example.com".to_owned()),
+            DomainMatcher::Full("Exact.TEST".to_owned()),
+            DomainMatcher::Full("dotted.test.".to_owned()),
+            DomainMatcher::Full("bücher.example".to_owned()),
+            DomainMatcher::Full("single".to_owned()),
+            DomainMatcher::Full("".to_owned()),
+            DomainMatcher::Suffix("suffix.example".to_owned()),
+            DomainMatcher::Suffix("Mixed.Case.Example".to_owned()),
+            DomainMatcher::Suffix("trailing.example.".to_owned()),
+            DomainMatcher::Suffix(".leading.example".to_owned()),
+            DomainMatcher::Suffix("tld".to_owned()),
+            DomainMatcher::Suffix("".to_owned()),
+            DomainMatcher::Suffix("münchen.example".to_owned()),
+            DomainMatcher::Suffix("a..b.example".to_owned()),
+            DomainMatcher::Keyword("track".to_owned()),
+            DomainMatcher::Keyword("ADS".to_owned()),
+            DomainMatcher::Keyword(".metrics.".to_owned()),
+            DomainMatcher::Keyword("straße".to_owned()),
+            DomainMatcher::Keyword("zz-only-tail".to_owned()),
+            DomainMatcher::Keyword("k".to_owned()),
+            regex("^[^.]*intranet[^.]*$"),
+            regex("^[^.]*[^.]*$"),
+            regex(r"^api\.[a-z0-9-]+\.svc$"),
+            regex(r"(^|\.)regex\.example\.?$"),
+            regex(r"^cdn[0-9]+\.static\.example$"),
+            regex(r"^[a-z]{2}\.[a-z]{2}$"),
+            regex(r"\.onion$"),
+            regex(r"^(www\.)?shop\.example$"),
+            regex(r"caf\u{e9}"),
+            regex(r"^x{3,}$"),
+        ]
+    }
 
-        // Non-ASCII input takes the borrowed path and is matched as-is.
-        let unicode = RegexMatcher::new("^пример\\.рф$").unwrap();
-        assert!(unicode.matches("пример.рф"));
+    fn parity_probes() -> Vec<String> {
+        let mut probes = vec![
+            "",
+            ".",
+            "..",
+            "example.com",
+            "EXAMPLE.COM",
+            "example.com.",
+            "www.example.com",
+            "notexample.com",
+            "exact.test",
+            "EXACT.TEST",
+            "exact.test.",
+            "notexact.test",
+            "dotted.test",
+            "dotted.test.",
+            "sub.dotted.test.",
+            "bücher.example",
+            "BÜCHER.example",
+            "single",
+            "single.",
+            "a.single",
+            "suffix.example",
+            "SUB.SUFFIX.EXAMPLE",
+            "notsuffix.example",
+            "suffix.example.evil",
+            "suffix.example.",
+            "mixed.case.example",
+            "deep.MIXED.CASE.EXAMPLE",
+            "trailing.example",
+            "trailing.example.",
+            "a.trailing.example.",
+            "leading.example",
+            ".leading.example",
+            "x..leading.example",
+            "www.leading.example",
+            "tld",
+            "a.tld",
+            "tld.example",
+            "atld",
+            "münchen.example",
+            "MÜNCHEN.example",
+            "www.münchen.example",
+            "a..b.example",
+            "x.a..b.example",
+            "a.b.example",
+            "tracker.test",
+            "TRACKING.test",
+            "ads.example",
+            "ADS",
+            "roads.example",
+            "roadside.example",
+            "a.metrics.b",
+            "metrics.b",
+            "a.metrics",
+            "straße.example",
+            "STRASSE.example",
+            "strasse.example",
+            "zz-only-tail",
+            "zz-only-tai",
+            "k",
+            "K",
+            "no-such-letter",
+            "intranet",
+            "MyIntranetBox",
+            "intranet.corp",
+            "nodots",
+            "api.svc-1.svc",
+            "API.SVC-1.SVC",
+            "api.svc-1.svc.",
+            "regex.example",
+            "regex.example.",
+            "a.regex.example",
+            "aregex.example",
+            "cdn12.static.example",
+            "cdn.static.example",
+            "ab.cd",
+            "ab.cde",
+            "hidden.onion",
+            "onion",
+            "shop.example",
+            "www.shop.example",
+            "m.shop.example",
+            "café.example",
+            "CAFÉ.example",
+            "xxx",
+            "xx",
+            "xxxx.",
+            "XXX",
+            "🙂.example",
+            "😀",
+            "a.b.c.d.e.f.g.h",
+            "trailing.dots...",
+            "...",
+            "mix.Of.EVERYTHING.example.com.",
+            "com",
+            "example",
+            "-",
+            "_dmarc.example.com",
+            "xn--bcher-kva.example",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+        probes.push("y".repeat(300));
+        probes.push("very-long-label-".repeat(4));
+        probes
+    }
+
+    fn dns_reference_matches(matcher: &DomainMatcher, domain: &str) -> bool {
+        let trimmed = |pattern: &str| pattern.trim_end_matches('.').to_owned();
+        match matcher {
+            DomainMatcher::Full(expected) => DomainMatcher::Full(trimmed(expected)),
+            DomainMatcher::Suffix(suffix) => DomainMatcher::Suffix(trimmed(suffix)),
+            other => other.clone(),
+        }
+        .matches(domain.trim_end_matches('.'))
+    }
+
+    #[test]
+    fn compiled_routing_set_matches_the_linear_reference_on_every_probe() {
+        let matchers = parity_matchers();
+        let set = compile_domain_matchers(&matchers).unwrap();
+        assert_eq!(set.matcher_count(), matchers.len());
+        let probes = parity_probes();
+        assert!(probes.len() >= 100);
+        let mut hits = 0;
+        for domain in &probes {
+            let expected = matchers.iter().any(|matcher| matcher.matches(domain));
+            assert_eq!(set.matches(domain), expected, "domain={domain:?}");
+            hits += usize::from(expected);
+        }
+        assert!(hits > 30 && hits < probes.len() - 20, "hits={hits}");
+    }
+
+    #[test]
+    fn compiled_dns_set_matches_the_transport_reference_on_normalized_names() {
+        let matchers = parity_matchers();
+        let set = compile_dns_domain_matchers(&matchers).unwrap();
+        for domain in parity_probes() {
+            let domain = domain.trim_end_matches('.');
+            let expected = matchers
+                .iter()
+                .any(|matcher| dns_reference_matches(matcher, domain));
+            assert_eq!(set.matches(domain), expected, "domain={domain:?}");
+        }
+    }
+
+    #[test]
+    fn routing_and_dns_compilation_differ_only_in_trailing_dot_patterns() {
+        let matchers = [
+            DomainMatcher::Full("dotted.test.".to_owned()),
+            DomainMatcher::Suffix("trailing.example.".to_owned()),
+        ];
+        let routing = compile_domain_matchers(&matchers).unwrap();
+        let dns = compile_dns_domain_matchers(&matchers).unwrap();
+
+        assert!(routing.matches("dotted.test."));
+        assert!(!routing.matches("dotted.test"));
+        assert!(routing.matches("a.trailing.example."));
+        assert!(!routing.matches("a.trailing.example"));
+
+        assert!(dns.matches("dotted.test"));
+        assert!(!dns.matches("dotted.test."));
+        assert!(dns.matches("a.trailing.example"));
+        assert!(!dns.matches("a.trailing.example."));
     }
 }

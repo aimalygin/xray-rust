@@ -1048,7 +1048,7 @@ fn domain_to_matcher(
             .map_err(|source| GeodataError::InvalidDomainMatcher {
                 file_name: file_name.to_owned(),
                 code: code.to_owned(),
-                source,
+                source: source.into(),
             }),
         GeoDomainType::Domain => Ok(DomainMatcher::Suffix(domain.value.clone())),
         GeoDomainType::Full => Ok(DomainMatcher::Full(domain.value.clone())),

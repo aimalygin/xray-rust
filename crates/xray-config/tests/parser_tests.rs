@@ -9,7 +9,7 @@ use prost::Message;
 use xray_config::{
     parse_xray_json, parse_xray_json_with_geodata_dirs, DiagnosticSeverity, DnsFakeIpConfig,
     DnsHostTarget, DnsIpFilter, DnsNameServerConfig, DnsOutboundRuleAction, DnsOutboundSettings,
-    DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint, DnsServerTransport,
+    DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint, DnsServerTransport, DomainMatcherSet,
     HappyEyeballsSettings, InboundProtocol, IpCidr, Network, OutboundSettings, QuicBbrProfile,
     QuicCongestion, QuicIntervalRange, QuicParamsSettings, QuicUdpHopSettings, RealityShortId,
     RoutingDomainStrategy, SniffingDestination, StreamSecurity, StreamTransport, TargetAddr,
@@ -2064,16 +2064,14 @@ fn parses_dns_servers_and_hosts() {
             port: 5353,
         }
     );
-    assert!(parsed.config.dns.hosts[0]
-        .matcher
-        .matches("www.service.example"));
+    assert_eq!(parsed.config.dns.hosts.len(), 2);
     assert_eq!(
-        parsed.config.dns.hosts[0].target,
-        DnsHostTarget::Domain("alias.example".to_owned())
+        parsed.config.dns.hosts.lookup("www.service.example"),
+        Some(&DnsHostTarget::Domain("alias.example".to_owned()))
     );
     assert_eq!(
-        parsed.config.dns.hosts[1].target,
-        DnsHostTarget::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 53)))
+        parsed.config.dns.hosts.lookup("resolver.example"),
+        Some(&DnsHostTarget::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 53))))
     );
 }
 
@@ -2087,7 +2085,7 @@ fn parses_tcp_dns_string_shorthand_as_default_policy() {
         [DnsServerConfig::Policy(Box::new(DnsNameServerConfig {
             endpoint: DnsServerEndpoint::Ip(SocketAddr::from(([192, 0, 2, 53], 53))),
             transport: DnsServerTransport::TcpRouted,
-            domains: Vec::new(),
+            domains: DomainMatcherSet::default(),
             expected_ips: DnsIpFilter::default(),
             unexpected_ips: DnsIpFilter::default(),
             tag: String::new(),
@@ -2163,7 +2161,7 @@ fn tcp_dns_object_ignores_object_port_and_keeps_policy_fields() {
         (
             server.transport,
             &server.endpoint,
-            server.domains[0].matches("internal.example"),
+            server.domains.matches("internal.example"),
             server.skip_fallback,
         ),
         (
@@ -2286,13 +2284,13 @@ fn parses_xray_dns_server_objects_and_fallback_policy() {
         first.endpoint,
         DnsServerEndpoint::Ip(SocketAddr::from(([192, 0, 2, 53], 5353)))
     );
-    assert!(first.domains[0].matches("service.internal.example"));
-    assert!(first.domains[1].matches("resolver.example"));
-    assert!(!first.domains[1].matches("www.resolver.example"));
-    assert!(first.domains[2].matches("my-localhost-service"));
-    assert!(!first.domains[2].matches("localhost.example"));
-    assert!(first.domains[3].matches("printer"));
-    assert!(!first.domains[3].matches("printer.lan"));
+    assert!(first.domains.matches("service.internal.example"));
+    assert!(first.domains.matches("resolver.example"));
+    assert!(!first.domains.matches("www.resolver.example"));
+    assert!(first.domains.matches("my-localhost-service"));
+    assert!(!first.domains.matches("localhost.example"));
+    assert!(first.domains.matches("printer"));
+    assert!(!first.domains.matches("printer.lan"));
     assert!(first.skip_fallback);
     assert_eq!(first.tag, "dns-first");
     assert_eq!(
@@ -2325,8 +2323,8 @@ fn parses_xray_dns_server_objects_and_fallback_policy() {
             final_query: false,
         }
     );
-    assert!(second.domains[0].matches("my-corp-zone.example"));
-    assert!(second.domains[1].matches("exact.example"));
+    assert!(second.domains.matches("my-corp-zone.example"));
+    assert!(second.domains.matches("exact.example"));
     assert_eq!(
         parsed.config.dns.servers[1].effective_tag(&parsed.config.dns.tag),
         "dns-global"
@@ -2890,11 +2888,11 @@ fn parses_dns_host_ip_array_preserving_address_order() {
     let parsed = parse_xray_json(&raw).expect("DNS host IP array should parse");
 
     assert_eq!(
-        parsed.config.dns.hosts[0].target,
-        DnsHostTarget::Ips(vec![
+        parsed.config.dns.hosts.lookup("server.example"),
+        Some(&DnsHostTarget::Ips(vec![
             IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10)),
             IpAddr::V6("2001:db8::10".parse().unwrap()),
-        ])
+        ]))
     );
 }
 
@@ -2906,15 +2904,15 @@ fn unprefixed_dns_host_key_is_an_exact_match_like_xray() {
         "outbounds": [{ "tag": "direct", "protocol": "freedom" }]
     }"#;
     let parsed = parse_xray_json(raw).expect("bare DNS host key should parse");
-    let mapping = &parsed.config.dns.hosts[0];
+    let hosts = &parsed.config.dns.hosts;
 
-    assert!(mapping.matcher.matches("proxy.example"));
-    assert!(!mapping.matcher.matches("www.proxy.example"));
-    assert!(!mapping.matcher.matches("unrelated-proxy.example.test"));
+    assert_eq!(hosts.len(), 1);
     assert_eq!(
-        mapping.target,
-        DnsHostTarget::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10)))
+        hosts.lookup("proxy.example"),
+        Some(&DnsHostTarget::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10))))
     );
+    assert_eq!(hosts.lookup("www.proxy.example"), None);
+    assert_eq!(hosts.lookup("unrelated-proxy.example.test"), None);
 }
 
 #[test]
@@ -2928,13 +2926,12 @@ fn unprefixed_dns_host_key_accepts_ip_arrays() {
     }"#;
     let parsed = parse_xray_json(raw).expect("bare DNS host IP array should parse");
 
-    assert!(parsed.config.dns.hosts[0].matcher.matches("proxy.example"));
     assert_eq!(
-        parsed.config.dns.hosts[0].target,
-        DnsHostTarget::Ips(vec![
+        parsed.config.dns.hosts.lookup("proxy.example"),
+        Some(&DnsHostTarget::Ips(vec![
             IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10)),
             IpAddr::V6("2001:db8::10".parse().unwrap()),
-        ])
+        ]))
     );
 }
 

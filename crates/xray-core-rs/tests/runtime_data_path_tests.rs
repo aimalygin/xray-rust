@@ -42,14 +42,14 @@ use tokio::time::{sleep, timeout, Duration, Instant as TokioInstant};
 use tokio_rustls::TlsAcceptor;
 use uuid::Uuid;
 use xray_config::{
-    parse_xray_json, CoreConfig, DnsConfig, DnsFakeIpConfig, DnsHostMapping, DnsHostTarget,
-    DnsNameServerConfig, DnsOutboundRule, DnsOutboundRuleAction, DnsOutboundSettings,
-    DnsQTypeRange, DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint, DomainMatcher,
-    InboundConfig, InboundProtocol, InboundSniffingConfig, IpCidr, IpMatcherSet, Network,
-    OutboundConfig, OutboundSettings, PolicyConfig, PolicyLevelConfig, RealitySettings,
-    RealityShortId, RoutingConfig, RoutingDomainStrategy, RoutingPortRange, RoutingRule,
-    SniffingDestination, StreamSecurity, StreamSettings, StreamTransport, TargetAddr, TlsSettings,
-    VlessOutboundSettings, VlessUser,
+    compile_dns_domain_matchers, compile_domain_matchers, parse_xray_json, CoreConfig, DnsConfig,
+    DnsFakeIpConfig, DnsHostTarget, DnsNameServerConfig, DnsOutboundRule, DnsOutboundRuleAction,
+    DnsOutboundSettings, DnsQTypeRange, DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint,
+    DomainHostIndex, DomainMatcher, DomainMatcherSet, InboundConfig, InboundProtocol,
+    InboundSniffingConfig, IpCidr, IpMatcherSet, Network, OutboundConfig, OutboundSettings,
+    PolicyConfig, PolicyLevelConfig, RealitySettings, RealityShortId, RoutingConfig,
+    RoutingDomainStrategy, RoutingPortRange, RoutingRule, SniffingDestination, StreamSecurity,
+    StreamSettings, StreamTransport, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
 };
 use xray_core_rs::{
     Core, CoreError, DnsBootstrapMode, OutboundRouter, RuntimeLogConfig, RuntimeLogger,
@@ -154,7 +154,7 @@ fn tagged_dns_server_with_transport(
     DnsServerConfig::Policy(Box::new(DnsNameServerConfig {
         endpoint,
         transport,
-        domains: Vec::new(),
+        domains: DomainMatcherSet::default(),
         expected_ips: Default::default(),
         unexpected_ips: Default::default(),
         tag: tag.to_owned(),
@@ -428,7 +428,7 @@ fn runtime_tun_config_with_dns_outbound(
         inbound_tags: vec!["tun-in".to_owned()],
         networks,
         port_ranges: vec![RoutingPortRange::single(53)],
-        domain_matchers: Vec::new(),
+        domain_matchers: DomainMatcherSet::default(),
         ip_matchers: Default::default(),
         outbound_tag: "dns-out".to_owned(),
     }];
@@ -458,7 +458,7 @@ fn runtime_listener_config_with_dns_outbound(
                 inbound_tags: vec![inbound_tag.to_owned()],
                 networks,
                 port_ranges: vec![RoutingPortRange::single(53)],
-                domain_matchers: Vec::new(),
+                domain_matchers: DomainMatcherSet::default(),
                 ip_matchers: Default::default(),
                 outbound_tag: "dns-out".to_owned(),
             }],
@@ -494,7 +494,7 @@ fn runtime_tun_config_with_routed_freedom_outbound(unused_proxy_port: u16) -> Co
                 inbound_tags: vec!["tun-in".to_owned()],
                 networks: Vec::new(),
                 port_ranges: Vec::new(),
-                domain_matchers: Vec::new(),
+                domain_matchers: DomainMatcherSet::default(),
                 ip_matchers: Default::default(),
                 outbound_tag: "direct".to_owned(),
             }],
@@ -515,7 +515,7 @@ fn runtime_tun_config_with_route_only_quic_sniffing(unused_proxy_port: u16) -> C
     });
     config.routing.rules[0].inbound_tags = Vec::new();
     config.routing.rules[0].domain_matchers =
-        vec![DomainMatcher::Suffix("quic.example".to_owned())];
+        compile_domain_matchers(&[DomainMatcher::Suffix("quic.example".to_owned())]).unwrap();
     config
 }
 
@@ -528,17 +528,17 @@ fn runtime_tun_config_with_fake_ip_route_only_http_sniffing(unused_proxy_port: u
         route_only: true,
     });
     config.routing.rules[0].domain_matchers =
-        vec![DomainMatcher::Full("routed.example".to_owned())];
+        compile_domain_matchers(&[DomainMatcher::Full("routed.example".to_owned())]).unwrap();
     config.dns.fake_ip = Some(DnsFakeIpConfig {
         enabled: true,
         ipv4_pool: IpCidr::new(IpAddr::V4(Ipv4Addr::new(198, 18, 0, 0)), 15).unwrap(),
         pool_size: 32_768,
         ttl: 60,
     });
-    config.dns.hosts = vec![DnsHostMapping {
-        matcher: DomainMatcher::Full("routed.example".to_owned()),
-        target: DnsHostTarget::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
-    }];
+    config.dns.hosts = DomainHostIndex::from_iter([(
+        DomainMatcher::Full("routed.example".to_owned()),
+        DnsHostTarget::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+    )]);
     config
 }
 
@@ -553,7 +553,7 @@ fn runtime_tun_config_with_fake_ip_quic_sniffing_routed_to_dns_outbound() -> Cor
     });
     config.routing.rules[0].port_ranges.clear();
     config.routing.rules[0].domain_matchers =
-        vec![DomainMatcher::Full("dns-route.example".to_owned())];
+        compile_domain_matchers(&[DomainMatcher::Full("dns-route.example".to_owned())]).unwrap();
     config.dns.fake_ip = Some(DnsFakeIpConfig {
         enabled: true,
         ipv4_pool: IpCidr::new(IpAddr::V4(Ipv4Addr::new(198, 18, 0, 0)), 15).unwrap(),
@@ -567,7 +567,8 @@ fn runtime_tun_config_with_fake_ip_domain_routed_freedom_outbound(
     unused_proxy_port: u16,
 ) -> CoreConfig {
     let mut config = runtime_tun_config_with_routed_freedom_outbound(unused_proxy_port);
-    config.routing.rules[0].domain_matchers = vec![DomainMatcher::Suffix("example.com".to_owned())];
+    config.routing.rules[0].domain_matchers =
+        compile_domain_matchers(&[DomainMatcher::Suffix("example.com".to_owned())]).unwrap();
     config.dns = DnsConfig {
         fake_ip: Some(DnsFakeIpConfig {
             enabled: true,
@@ -613,7 +614,7 @@ fn runtime_tun_dns_proxy_config_routing_second_upstream_to_freedom(
         inbound_tags: vec!["dns-route".to_owned()],
         networks: Vec::new(),
         port_ranges: Vec::new(),
-        domain_matchers: Vec::new(),
+        domain_matchers: DomainMatcherSet::default(),
         ip_matchers: ip_matcher_set(IpCidr::new(second.ip(), prefix).unwrap()),
         outbound_tag: "direct".to_owned(),
     }];
@@ -808,7 +809,7 @@ fn runtime_config_with_routed_freedom_outbound(unused_proxy_port: u16) -> CoreCo
                 inbound_tags: vec!["socks-in".to_owned()],
                 networks: Vec::new(),
                 port_ranges: Vec::new(),
-                domain_matchers: Vec::new(),
+                domain_matchers: DomainMatcherSet::default(),
                 ip_matchers: Default::default(),
                 outbound_tag: "direct".to_owned(),
             }],
@@ -844,7 +845,10 @@ fn runtime_config_with_domain_routed_freedom_outbound(unused_proxy_port: u16) ->
                 inbound_tags: Vec::new(),
                 networks: Vec::new(),
                 port_ranges: Vec::new(),
-                domain_matchers: vec![DomainMatcher::Suffix("example.com".to_owned())],
+                domain_matchers: compile_domain_matchers(&[DomainMatcher::Suffix(
+                    "example.com".to_owned(),
+                )])
+                .unwrap(),
                 ip_matchers: Default::default(),
                 outbound_tag: "direct".to_owned(),
             }],
@@ -864,7 +868,7 @@ fn runtime_socks_config_with_route_only_http_sniffing(unused_proxy_port: u16) ->
         route_only: true,
     });
     config.routing.rules[0].domain_matchers =
-        vec![DomainMatcher::Suffix("routed.example".to_owned())];
+        compile_domain_matchers(&[DomainMatcher::Suffix("routed.example".to_owned())]).unwrap();
     config
 }
 
@@ -877,7 +881,7 @@ fn runtime_socks_config_with_route_only_quic_sniffing(unused_proxy_port: u16) ->
         route_only: true,
     });
     config.routing.rules[0].domain_matchers =
-        vec![DomainMatcher::Suffix("quic.example".to_owned())];
+        compile_domain_matchers(&[DomainMatcher::Suffix("quic.example".to_owned())]).unwrap();
     config
 }
 
@@ -906,7 +910,7 @@ fn runtime_config_with_ip_routed_freedom_outbound(unused_proxy_port: u16) -> Cor
                 inbound_tags: Vec::new(),
                 networks: Vec::new(),
                 port_ranges: Vec::new(),
-                domain_matchers: Vec::new(),
+                domain_matchers: DomainMatcherSet::default(),
                 ip_matchers: ip_matcher_set(
                     IpCidr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 0)), 8).unwrap(),
                 ),
@@ -948,7 +952,7 @@ fn runtime_config_with_ip_if_non_match_routed_freedom_outbound(
                 inbound_tags: Vec::new(),
                 networks: Vec::new(),
                 port_ranges: Vec::new(),
-                domain_matchers: Vec::new(),
+                domain_matchers: DomainMatcherSet::default(),
                 ip_matchers: ip_matcher_set(
                     IpCidr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 0)), 8).unwrap(),
                 ),
@@ -4257,7 +4261,7 @@ async fn run_tun_fake_dns_static_only_udp_freedom_scenario() {
             inbound_tags: vec!["dns-route".to_owned()],
             networks: Vec::new(),
             port_ranges: Vec::new(),
-            domain_matchers: Vec::new(),
+            domain_matchers: DomainMatcherSet::default(),
             ip_matchers: Default::default(),
             outbound_tag: "direct".to_owned(),
         },
@@ -4265,7 +4269,10 @@ async fn run_tun_fake_dns_static_only_udp_freedom_scenario() {
             inbound_tags: Vec::new(),
             networks: Vec::new(),
             port_ranges: Vec::new(),
-            domain_matchers: vec![DomainMatcher::Full("mobile-udp.example".to_owned())],
+            domain_matchers: compile_domain_matchers(&[DomainMatcher::Full(
+                "mobile-udp.example".to_owned(),
+            )])
+            .unwrap(),
             ip_matchers: Default::default(),
             outbound_tag: "direct".to_owned(),
         },
@@ -4284,10 +4291,10 @@ async fn run_tun_fake_dns_static_only_udp_freedom_scenario() {
             "dns-route",
         ),
     ];
-    config.dns.hosts = vec![DnsHostMapping {
-        matcher: DomainMatcher::Full("mobile.resolver.test".to_owned()),
-        target: DnsHostTarget::Ip(dns_server.ip()),
-    }];
+    config.dns.hosts = DomainHostIndex::from_iter([(
+        DomainMatcher::Full("mobile.resolver.test".to_owned()),
+        DnsHostTarget::Ip(dns_server.ip()),
+    )]);
     let mut core = Core::with_tun_runtime_options(
         config,
         TunRuntimeOptions {
@@ -4691,7 +4698,7 @@ async fn run_tun_dns_outbound_udp_return_scenario() {
             action: DnsOutboundRuleAction::Return,
             r_code: 3,
             qtype_ranges: Vec::new(),
-            domain_matchers: Vec::new(),
+            domain_matchers: DomainMatcherSet::default(),
         }],
         ..DnsOutboundSettings::default()
     };
@@ -4716,7 +4723,7 @@ async fn run_tun_dns_outbound_nonstandard_port_scenario() {
             action: DnsOutboundRuleAction::Return,
             r_code: 5,
             qtype_ranges: Vec::new(),
-            domain_matchers: Vec::new(),
+            domain_matchers: DomainMatcherSet::default(),
         }],
         ..DnsOutboundSettings::default()
     };
@@ -4768,7 +4775,7 @@ async fn run_tun_dns_outbound_udp_direct_tcp_rewrite_scenario() {
             action: DnsOutboundRuleAction::Direct,
             r_code: 0,
             qtype_ranges: Vec::new(),
-            domain_matchers: Vec::new(),
+            domain_matchers: DomainMatcherSet::default(),
         }],
         ..DnsOutboundSettings::default()
     };
@@ -4805,7 +4812,7 @@ async fn run_tun_dns_outbound_udp_direct_update_scenario() {
             action: DnsOutboundRuleAction::Direct,
             r_code: 0,
             qtype_ranges: Vec::new(),
-            domain_matchers: Vec::new(),
+            domain_matchers: DomainMatcherSet::default(),
         }],
         ..DnsOutboundSettings::default()
     };
@@ -4826,13 +4833,13 @@ async fn run_tun_dns_outbound_tcp_drop_then_return_scenario() {
                 action: DnsOutboundRuleAction::Drop,
                 r_code: 0,
                 qtype_ranges: vec![DnsQTypeRange::single(1)],
-                domain_matchers: Vec::new(),
+                domain_matchers: DomainMatcherSet::default(),
             },
             DnsOutboundRule {
                 action: DnsOutboundRuleAction::Return,
                 r_code: 3,
                 qtype_ranges: vec![DnsQTypeRange::single(65)],
-                domain_matchers: Vec::new(),
+                domain_matchers: DomainMatcherSet::default(),
             },
         ],
         ..DnsOutboundSettings::default()
@@ -4897,7 +4904,7 @@ async fn run_tun_dns_outbound_tcp_direct_transfer_scenarios() {
                 action: DnsOutboundRuleAction::Direct,
                 r_code: 0,
                 qtype_ranges: vec![DnsQTypeRange::single(query_type)],
-                domain_matchers: Vec::new(),
+                domain_matchers: DomainMatcherSet::default(),
             }],
             ..DnsOutboundSettings::default()
         };
@@ -4929,7 +4936,7 @@ async fn run_tun_dns_outbound_tcp_direct_reuse_scenario() {
             action: DnsOutboundRuleAction::Direct,
             r_code: 0,
             qtype_ranges: Vec::new(),
-            domain_matchers: Vec::new(),
+            domain_matchers: DomainMatcherSet::default(),
         }],
         ..DnsOutboundSettings::default()
     };
@@ -4992,7 +4999,7 @@ async fn run_tun_dns_outbound_tcp_late_transfer_scenario() {
             action: DnsOutboundRuleAction::Direct,
             r_code: 0,
             qtype_ranges: Vec::new(),
-            domain_matchers: Vec::new(),
+            domain_matchers: DomainMatcherSet::default(),
         }],
         ..DnsOutboundSettings::default()
     };
@@ -5089,7 +5096,7 @@ async fn run_socks_udp_dns_outbound_direct_tcp_scenario() {
             action: DnsOutboundRuleAction::Direct,
             r_code: 0,
             qtype_ranges: Vec::new(),
-            domain_matchers: Vec::new(),
+            domain_matchers: DomainMatcherSet::default(),
         }],
         ..DnsOutboundSettings::default()
     };
@@ -5144,19 +5151,25 @@ async fn run_socks_tcp_dns_outbound_policy_stream_scenario() {
                 action: DnsOutboundRuleAction::Drop,
                 r_code: 0,
                 qtype_ranges: Vec::new(),
-                domain_matchers: vec![DomainMatcher::Full("drop.listener.example".to_owned())],
+                domain_matchers: compile_dns_domain_matchers(&[DomainMatcher::Full(
+                    "drop.listener.example".to_owned(),
+                )])
+                .unwrap(),
             },
             DnsOutboundRule {
                 action: DnsOutboundRuleAction::Return,
                 r_code: 5,
                 qtype_ranges: Vec::new(),
-                domain_matchers: vec![DomainMatcher::Full("reject.listener.example".to_owned())],
+                domain_matchers: compile_dns_domain_matchers(&[DomainMatcher::Full(
+                    "reject.listener.example".to_owned(),
+                )])
+                .unwrap(),
             },
             DnsOutboundRule {
                 action: DnsOutboundRuleAction::Direct,
                 r_code: 0,
                 qtype_ranges: Vec::new(),
-                domain_matchers: Vec::new(),
+                domain_matchers: DomainMatcherSet::default(),
             },
         ],
         ..DnsOutboundSettings::default()
@@ -5224,7 +5237,7 @@ async fn run_http_dns_outbound_direct_udp_scenario() {
             action: DnsOutboundRuleAction::Direct,
             r_code: 0,
             qtype_ranges: Vec::new(),
-            domain_matchers: Vec::new(),
+            domain_matchers: DomainMatcherSet::default(),
         }],
         ..DnsOutboundSettings::default()
     };
@@ -5264,7 +5277,7 @@ async fn run_external_dns_tag_cannot_bypass_drop_scenario() {
             action: DnsOutboundRuleAction::Drop,
             r_code: 0,
             qtype_ranges: Vec::new(),
-            domain_matchers: Vec::new(),
+            domain_matchers: DomainMatcherSet::default(),
         }],
         ..DnsOutboundSettings::default()
     };
@@ -5327,7 +5340,7 @@ async fn run_core_wide_fake_dns_socks_to_http_scenario() {
         inbound_tags: vec!["http-in".to_owned()],
         networks: vec![Network::Tcp],
         port_ranges: Vec::new(),
-        domain_matchers: Vec::new(),
+        domain_matchers: DomainMatcherSet::default(),
         ip_matchers: ip_matcher_set(fake_ip_pool),
         outbound_tag: "dns-out".to_owned(),
     });
@@ -5335,7 +5348,7 @@ async fn run_core_wide_fake_dns_socks_to_http_scenario() {
         inbound_tags: vec!["socks-in".to_owned()],
         networks: vec![Network::Udp],
         port_ranges: Vec::new(),
-        domain_matchers: Vec::new(),
+        domain_matchers: DomainMatcherSet::default(),
         ip_matchers: ip_matcher_set(fake_ip_pool),
         outbound_tag: "dns-out".to_owned(),
     });
@@ -5345,10 +5358,10 @@ async fn run_core_wide_fake_dns_socks_to_http_scenario() {
         pool_size: 32_768,
         ttl: 60,
     });
-    config.dns.hosts.push(DnsHostMapping {
-        matcher: DomainMatcher::Full(domain.to_owned()),
-        target: DnsHostTarget::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
-    });
+    config.dns.hosts.insert(
+        DomainMatcher::Full(domain.to_owned()),
+        DnsHostTarget::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+    );
     let mut core = Core::new(config).unwrap();
     core.start().await.unwrap();
 
@@ -5435,7 +5448,7 @@ async fn run_tun_dns_outbound_fake_ip_domain_scenario() {
             action: DnsOutboundRuleAction::Direct,
             r_code: 0,
             qtype_ranges: Vec::new(),
-            domain_matchers: Vec::new(),
+            domain_matchers: DomainMatcherSet::default(),
         }],
         ..DnsOutboundSettings::default()
     };
@@ -5445,7 +5458,7 @@ async fn run_tun_dns_outbound_fake_ip_domain_scenario() {
         inbound_tags: vec!["tun-in".to_owned()],
         networks: vec![Network::Udp],
         port_ranges: vec![RoutingPortRange::single(upstream.port())],
-        domain_matchers: Vec::new(),
+        domain_matchers: DomainMatcherSet::default(),
         ip_matchers: ip_matcher_set(
             IpCidr::new(upstream.ip(), if upstream.is_ipv4() { 32 } else { 128 }).unwrap(),
         ),
@@ -5510,7 +5523,7 @@ async fn run_tun_dns_outbound_tcp_fake_ip_domain_scenario() {
             action: DnsOutboundRuleAction::Direct,
             r_code: 0,
             qtype_ranges: Vec::new(),
-            domain_matchers: Vec::new(),
+            domain_matchers: DomainMatcherSet::default(),
         }],
         ..DnsOutboundSettings::default()
     };
@@ -5520,7 +5533,7 @@ async fn run_tun_dns_outbound_tcp_fake_ip_domain_scenario() {
         inbound_tags: vec!["tun-in".to_owned()],
         networks: vec![Network::Tcp],
         port_ranges: vec![RoutingPortRange::single(upstream.port())],
-        domain_matchers: Vec::new(),
+        domain_matchers: DomainMatcherSet::default(),
         ip_matchers: ip_matcher_set(
             IpCidr::new(upstream.ip(), if upstream.is_ipv4() { 32 } else { 128 }).unwrap(),
         ),
@@ -5568,10 +5581,10 @@ async fn run_tun_dns_hijack_udp_static_host_scenario() {
     let answer = Ipv4Addr::new(203, 0, 113, 10);
     let domain = "static-hijack.example";
     let mut config = runtime_tun_config_with_dns_proxy_servers(vec![upstream.addr()]);
-    config.dns.hosts = vec![DnsHostMapping {
-        matcher: DomainMatcher::Full(domain.to_owned()),
-        target: DnsHostTarget::Ip(IpAddr::V4(answer)),
-    }];
+    config.dns.hosts = DomainHostIndex::from_iter([(
+        DomainMatcher::Full(domain.to_owned()),
+        DnsHostTarget::Ip(IpAddr::V4(answer)),
+    )]);
     let mut core = Core::new(config).unwrap();
     core.start().await.unwrap();
 
@@ -5622,7 +5635,8 @@ async fn run_tun_dns_hijack_udp_matched_policy_scenario() {
         DnsServerConfig::Policy(Box::new(DnsNameServerConfig {
             endpoint: DnsServerEndpoint::Ip(matched.addr()),
             transport: xray_config::DnsServerTransport::Classic,
-            domains: vec![DomainMatcher::Full(domain.to_owned())],
+            domains: compile_dns_domain_matchers(&[DomainMatcher::Full(domain.to_owned())])
+                .unwrap(),
             expected_ips: Default::default(),
             unexpected_ips: Default::default(),
             tag: "dns-match".to_owned(),
@@ -6506,10 +6520,10 @@ async fn run_tun_dns_proxy_udp_static_bootstrap_scenario() {
         domain: "resolver.bootstrap.test".to_owned(),
         port: upstream.port(),
     }];
-    config.dns.hosts = vec![DnsHostMapping {
-        matcher: DomainMatcher::Full("resolver.bootstrap.test".to_owned()),
-        target: DnsHostTarget::Ip(upstream.ip()),
-    }];
+    config.dns.hosts = DomainHostIndex::from_iter([(
+        DomainMatcher::Full("resolver.bootstrap.test".to_owned()),
+        DnsHostTarget::Ip(upstream.ip()),
+    )]);
     let mut core = Core::with_tun_runtime_options(
         config,
         TunRuntimeOptions {
@@ -6557,10 +6571,10 @@ async fn run_tun_dns_proxy_udp_bootstrap_alias_scenario() {
         domain: "resolver.bootstrap.test".to_owned(),
         port: upstream.port(),
     }];
-    config.dns.hosts = vec![DnsHostMapping {
-        matcher: DomainMatcher::Full("resolver.bootstrap.test".to_owned()),
-        target: DnsHostTarget::Domain("resolver.bootstrap.target".to_owned()),
-    }];
+    config.dns.hosts = DomainHostIndex::from_iter([(
+        DomainMatcher::Full("resolver.bootstrap.test".to_owned()),
+        DnsHostTarget::Domain("resolver.bootstrap.target".to_owned()),
+    )]);
     let mut core = Core::with_dns_resolver(
         config,
         Arc::new(StaticDnsResolver {
@@ -6615,7 +6629,7 @@ async fn run_tun_dns_proxy_udp_static_ip_skip_routing_scenario() {
         inbound_tags: vec!["dns-route".to_owned()],
         networks: Vec::new(),
         port_ranges: Vec::new(),
-        domain_matchers: Vec::new(),
+        domain_matchers: DomainMatcherSet::default(),
         ip_matchers: ip_matcher_set(
             IpCidr::new(upstream.ip(), if upstream.is_ipv4() { 32 } else { 128 }).unwrap(),
         ),
@@ -6626,10 +6640,10 @@ async fn run_tun_dns_proxy_udp_static_ip_skip_routing_scenario() {
         domain: "resolver.static-route.test".to_owned(),
         port: upstream.port(),
     }];
-    config.dns.hosts = vec![DnsHostMapping {
-        matcher: DomainMatcher::Full("resolver.static-route.test".to_owned()),
-        target: DnsHostTarget::Ip(upstream.ip()),
-    }];
+    config.dns.hosts = DomainHostIndex::from_iter([(
+        DomainMatcher::Full("resolver.static-route.test".to_owned()),
+        DnsHostTarget::Ip(upstream.ip()),
+    )]);
     let mut core = Core::with_tun_runtime_options(
         config,
         TunRuntimeOptions {
@@ -6684,7 +6698,7 @@ async fn run_tun_dns_proxy_udp_dynamic_ip_skip_routing_scenario() {
         inbound_tags: vec!["dns-route".to_owned()],
         networks: Vec::new(),
         port_ranges: Vec::new(),
-        domain_matchers: Vec::new(),
+        domain_matchers: DomainMatcherSet::default(),
         ip_matchers: ip_matcher_set(
             IpCidr::new(upstream.ip(), if upstream.is_ipv4() { 32 } else { 128 }).unwrap(),
         ),
@@ -7005,7 +7019,8 @@ async fn run_tun_dns_hijack_tcp_mixed_pipeline_scenario() {
         DnsServerConfig::Policy(Box::new(DnsNameServerConfig {
             endpoint: DnsServerEndpoint::Ip(hijack_upstream.addr()),
             transport: xray_config::DnsServerTransport::Classic,
-            domains: vec![DomainMatcher::Full(domain.to_owned())],
+            domains: compile_dns_domain_matchers(&[DomainMatcher::Full(domain.to_owned())])
+                .unwrap(),
             expected_ips: Default::default(),
             unexpected_ips: Default::default(),
             tag: "dns-hijack".to_owned(),
@@ -7181,10 +7196,10 @@ async fn run_tun_dns_proxy_tcp_routed_domain_candidate_fallback_scenario() {
         "dns-route",
         xray_config::DnsServerTransport::TcpRouted,
     )];
-    config.dns.hosts = vec![DnsHostMapping {
-        matcher: DomainMatcher::Full(upstream_domain.to_owned()),
-        target: DnsHostTarget::Ips(vec![refused.ip(), upstream.ip()]),
-    }];
+    config.dns.hosts = DomainHostIndex::from_iter([(
+        DomainMatcher::Full(upstream_domain.to_owned()),
+        DnsHostTarget::Ips(vec![refused.ip(), upstream.ip()]),
+    )]);
     let mut core = Core::with_tun_runtime_options(
         config,
         TunRuntimeOptions {
@@ -7447,7 +7462,7 @@ async fn run_tun_dns_proxy_tcp_partial_response_failover_scenario() {
         inbound_tags: vec!["dns-vless".to_owned()],
         networks: Vec::new(),
         port_ranges: Vec::new(),
-        domain_matchers: Vec::new(),
+        domain_matchers: DomainMatcherSet::default(),
         ip_matchers: Default::default(),
         outbound_tag: "proxy".to_owned(),
     }];
@@ -7930,7 +7945,7 @@ async fn run_tun_fake_dns_udp_ip_if_non_match_routed_freedom_scenario() {
             inbound_tags: vec!["dns-route".to_owned()],
             networks: Vec::new(),
             port_ranges: Vec::new(),
-            domain_matchers: Vec::new(),
+            domain_matchers: DomainMatcherSet::default(),
             ip_matchers: Default::default(),
             outbound_tag: "direct".to_owned(),
         },
@@ -7940,10 +7955,10 @@ async fn run_tun_fake_dns_udp_ip_if_non_match_routed_freedom_scenario() {
         domain: "MOBILE.RESOLVER.EXAMPLE.COM.".to_owned(),
         port: dns_server.port(),
     }];
-    config.dns.hosts = vec![DnsHostMapping {
-        matcher: DomainMatcher::Full("mobile.resolver.example.com".to_owned()),
-        target: DnsHostTarget::Ip(dns_server.ip()),
-    }];
+    config.dns.hosts = DomainHostIndex::from_iter([(
+        DomainMatcher::Full("mobile.resolver.example.com".to_owned()),
+        DnsHostTarget::Ip(dns_server.ip()),
+    )]);
     let mut core = Core::with_tun_runtime_options(
         config,
         TunRuntimeOptions {
@@ -8319,10 +8334,10 @@ async fn run_socks_to_domain_routed_freedom_echo_scenario() {
         domain: "MOBILE.RESOLVER.EXAMPLE.COM.".to_owned(),
         port: dns_server.port(),
     }];
-    config.dns.hosts = vec![DnsHostMapping {
-        matcher: DomainMatcher::Full("mobile.resolver.example.com".to_owned()),
-        target: DnsHostTarget::Ip(dns_server.ip()),
-    }];
+    config.dns.hosts = DomainHostIndex::from_iter([(
+        DomainMatcher::Full("mobile.resolver.example.com".to_owned()),
+        DnsHostTarget::Ip(dns_server.ip()),
+    )]);
 
     let mut core = Core::with_tun_runtime_options(
         config,
@@ -8459,10 +8474,10 @@ async fn run_socks_in_pool_unmapped_route_only_http_sniffing_scenario() {
         pool_size: 32_768,
         ttl: 60,
     });
-    config.dns.hosts = vec![DnsHostMapping {
-        matcher: DomainMatcher::Full("routed.example".to_owned()),
-        target: DnsHostTarget::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
-    }];
+    config.dns.hosts = DomainHostIndex::from_iter([(
+        DomainMatcher::Full("routed.example".to_owned()),
+        DnsHostTarget::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+    )]);
     let mut core = Core::new(config).unwrap();
     core.start().await.unwrap();
     let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();

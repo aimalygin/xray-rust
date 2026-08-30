@@ -11,14 +11,14 @@ use tokio::task::JoinHandle;
 use xray_config::{
     CoreConfig, DnsHostTarget, DnsIpFilter, DnsQueryStrategy as ConfigDnsQueryStrategy,
     DnsServerConfig, DnsServerEndpoint, DnsServerTransport as ConfigDnsServerTransport,
-    DomainMatcher, InboundProtocol,
+    DomainHostIndex, DomainMatcherSet, InboundProtocol,
 };
 use xray_runtime::Shutdown;
 use xray_transport::{
     CachingDnsResolver, CompiledNameServerPolicies, ConfiguredDnsResolver,
     DnsQueryStrategy as TransportDnsQueryStrategy, DnsQueryTransport, DnsResolver, NameServer,
-    NameServerPolicy, NameServerTransport, SocketProtector, StaticHostRule, StaticHostTarget,
-    SystemDnsResolver, TransportDialer, TransportDomainMatcher, TransportError,
+    NameServerPolicy, NameServerTransport, SocketProtector, SystemDnsResolver, TransportDialer,
+    TransportError,
 };
 use xray_tun::{TunConfig, TunEndpoint};
 
@@ -329,7 +329,7 @@ pub struct Core {
     runtime: Option<RuntimeState>,
     dns_resolver: Arc<dyn DnsResolver>,
     dns_bootstrap_resolver: Option<Arc<dyn DnsResolver>>,
-    dns_name_server_policies: Arc<CompiledNameServerPolicies>,
+    dns_rules: DnsRules,
     managed_dns_resolver: bool,
     transport_dialer: Arc<TransportDialer>,
     tun_runtime_options: TunRuntimeOptions,
@@ -340,18 +340,19 @@ pub struct Core {
 impl Core {
     pub fn new(mut config: CoreConfig) -> Result<Self, CoreError> {
         let system_resolver = system_dns_resolver();
-        let name_server_policies = take_name_server_policy_set(&mut config);
+        let dns_rules = DnsRules::from_config(&mut config);
         let dns_resolver = configured_dns_resolver_for_config(
             &config,
             Arc::clone(&system_resolver),
-            Arc::clone(&name_server_policies),
+            dns_rules.clone(),
         );
-        let dns_bootstrap_resolver = host_only_dns_resolver_for_config(&config, system_resolver);
+        let dns_bootstrap_resolver =
+            host_only_dns_resolver_for_config(&config, system_resolver, dns_rules.hosts_only());
         Self::build(
             config,
             dns_resolver,
             Some(dns_bootstrap_resolver),
-            name_server_policies,
+            dns_rules,
             Arc::new(TransportDialer::system()?),
             TunRuntimeOptions::default(),
             true,
@@ -364,14 +365,15 @@ impl Core {
     /// integrations. `config.dns` hosts and servers are applied by the default
     /// constructors (`new` and `with_tun_runtime_options`) instead.
     pub fn with_dns_resolver(
-        config: CoreConfig,
+        mut config: CoreConfig,
         dns_resolver: Arc<dyn DnsResolver>,
     ) -> Result<Self, CoreError> {
+        let dns_rules = DnsRules::injected(&mut config);
         Self::build(
             config,
             Arc::clone(&dns_resolver),
             Some(dns_resolver),
-            Arc::default(),
+            dns_rules,
             Arc::new(TransportDialer::system()?),
             TunRuntimeOptions::default(),
             false,
@@ -383,18 +385,25 @@ impl Core {
         tun_runtime_options: TunRuntimeOptions,
     ) -> Result<Self, CoreError> {
         let system_resolver = system_dns_resolver();
-        let name_server_policies = take_name_server_policy_set(&mut config);
+        let dns_rules = DnsRules::from_config(&mut config);
         let (dns_resolver, dns_bootstrap_resolver) = match tun_runtime_options.dns_bootstrap {
             DnsBootstrapMode::System => (
                 configured_dns_resolver_for_config(
                     &config,
                     Arc::clone(&system_resolver),
-                    Arc::clone(&name_server_policies),
+                    dns_rules.clone(),
                 ),
-                Some(host_only_dns_resolver_for_config(&config, system_resolver)),
+                Some(host_only_dns_resolver_for_config(
+                    &config,
+                    system_resolver,
+                    dns_rules.hosts_only(),
+                )),
             ),
             DnsBootstrapMode::StaticOnly => {
-                let resolver = static_only_dns_resolver_for_config(&config);
+                let resolver = static_only_dns_resolver_for_config(
+                    &config,
+                    Arc::clone(&dns_rules.static_hosts),
+                );
                 (Arc::clone(&resolver), Some(resolver))
             }
         };
@@ -402,7 +411,7 @@ impl Core {
             config,
             dns_resolver,
             dns_bootstrap_resolver,
-            name_server_policies,
+            dns_rules,
             Arc::new(TransportDialer::system()?),
             tun_runtime_options,
             true,
@@ -417,19 +426,26 @@ impl Core {
         tun_runtime_options: TunRuntimeOptions,
     ) -> Result<Self, CoreError> {
         let system_resolver = system_dns_resolver();
-        let name_server_policies = take_name_server_policy_set(&mut config);
+        let dns_rules = DnsRules::from_config(&mut config);
         let (dns_resolver, dns_bootstrap_resolver) = match tun_runtime_options.dns_bootstrap {
             DnsBootstrapMode::System => (
                 configured_dns_resolver_for_config_with_socket_protector(
                     &config,
                     Arc::clone(&system_resolver),
-                    Arc::clone(&name_server_policies),
+                    dns_rules.clone(),
                     transport_dialer.socket_protector_arc(),
                 ),
-                Some(host_only_dns_resolver_for_config(&config, system_resolver)),
+                Some(host_only_dns_resolver_for_config(
+                    &config,
+                    system_resolver,
+                    dns_rules.hosts_only(),
+                )),
             ),
             DnsBootstrapMode::StaticOnly => {
-                let resolver = static_only_dns_resolver_for_config(&config);
+                let resolver = static_only_dns_resolver_for_config(
+                    &config,
+                    Arc::clone(&dns_rules.static_hosts),
+                );
                 (Arc::clone(&resolver), Some(resolver))
             }
         };
@@ -437,7 +453,7 @@ impl Core {
             config,
             dns_resolver,
             dns_bootstrap_resolver,
-            name_server_policies,
+            dns_rules,
             transport_dialer,
             tun_runtime_options,
             true,
@@ -445,15 +461,16 @@ impl Core {
     }
 
     pub fn with_runtime_dependencies(
-        config: CoreConfig,
+        mut config: CoreConfig,
         dns_resolver: Arc<dyn DnsResolver>,
         transport_dialer: Arc<TransportDialer>,
     ) -> Result<Self, CoreError> {
+        let dns_rules = DnsRules::injected(&mut config);
         Self::build(
             config,
             Arc::clone(&dns_resolver),
             Some(dns_resolver),
-            Arc::default(),
+            dns_rules,
             transport_dialer,
             TunRuntimeOptions::default(),
             false,
@@ -461,17 +478,18 @@ impl Core {
     }
 
     pub fn with_runtime_dependencies_and_tun_options(
-        config: CoreConfig,
+        mut config: CoreConfig,
         dns_resolver: Arc<dyn DnsResolver>,
         transport_dialer: Arc<TransportDialer>,
         tun_runtime_options: TunRuntimeOptions,
     ) -> Result<Self, CoreError> {
         let dns_bootstrap_resolver = Some(Arc::clone(&dns_resolver));
+        let dns_rules = DnsRules::injected(&mut config);
         Self::build(
             config,
             dns_resolver,
             dns_bootstrap_resolver,
-            Arc::default(),
+            dns_rules,
             transport_dialer,
             tun_runtime_options,
             false,
@@ -482,7 +500,7 @@ impl Core {
         mut config: CoreConfig,
         dns_resolver: Arc<dyn DnsResolver>,
         dns_bootstrap_resolver: Option<Arc<dyn DnsResolver>>,
-        dns_name_server_policies: Arc<CompiledNameServerPolicies>,
+        dns_rules: DnsRules,
         transport_dialer: Arc<TransportDialer>,
         tun_runtime_options: TunRuntimeOptions,
         managed_dns_resolver: bool,
@@ -518,7 +536,7 @@ impl Core {
             runtime: None,
             dns_resolver,
             dns_bootstrap_resolver,
-            dns_name_server_policies,
+            dns_rules,
             managed_dns_resolver,
             transport_dialer,
             tun_runtime_options,
@@ -606,7 +624,7 @@ impl Core {
                 config.as_ref(),
                 fallback,
                 None,
-                Some(Arc::clone(&self.dns_name_server_policies)),
+                self.dns_rules.clone(),
                 Some(query_transport),
                 transport_dns_query_strategy(config.dns.query_strategy),
             );
@@ -619,7 +637,7 @@ impl Core {
                 Arc::clone(&destination),
                 direct_executor,
                 fake_ip_mapper,
-                config.dns.hosts.clone(),
+                Arc::clone(&self.dns_rules.static_hosts),
                 dns_limits.max_concurrent_operations,
             ),
         );
@@ -851,8 +869,15 @@ impl DnsResolver for FailClosedDnsResolver {
     }
 }
 
-fn static_only_dns_resolver_for_config(config: &CoreConfig) -> Arc<dyn DnsResolver> {
-    host_only_dns_resolver_for_config(config, Arc::new(FailClosedDnsResolver))
+fn static_only_dns_resolver_for_config(
+    config: &CoreConfig,
+    static_hosts: Arc<DomainHostIndex<DnsHostTarget>>,
+) -> Arc<dyn DnsResolver> {
+    host_only_dns_resolver_for_config(
+        config,
+        Arc::new(FailClosedDnsResolver),
+        DnsRules::hosts(static_hosts),
+    )
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -892,18 +917,17 @@ fn take_name_server_policy_set(config: &mut CoreConfig) -> Arc<CompiledNameServe
                     std::mem::take(&mut policy.expected_ips),
                     std::mem::take(&mut policy.unexpected_ips),
                 ),
-                DnsServerConfig::Ip(_) | DnsServerConfig::Domain { .. } => {
-                    (Vec::new(), DnsIpFilter::default(), DnsIpFilter::default())
-                }
+                DnsServerConfig::Ip(_) | DnsServerConfig::Domain { .. } => (
+                    DomainMatcherSet::default(),
+                    DnsIpFilter::default(),
+                    DnsIpFilter::default(),
+                ),
             };
             Some(NameServerPolicy {
                 server: name_server,
                 tag: Some(tag),
                 transport,
-                domains: domains
-                    .into_iter()
-                    .map(into_transport_domain_matcher)
-                    .collect(),
+                domains,
                 expected_ips,
                 unexpected_ips,
                 timeout,
@@ -922,15 +946,56 @@ fn ensure_effective_dns_tag(config: &mut CoreConfig) {
     }
 }
 
+/// Converts `dns.hosts` into the transport index once; every resolver built
+/// from this config shares it.
+#[derive(Clone)]
+struct DnsRules {
+    name_servers: Option<Arc<CompiledNameServerPolicies>>,
+    static_hosts: Arc<DomainHostIndex<DnsHostTarget>>,
+}
+
+impl DnsRules {
+    fn from_config(config: &mut CoreConfig) -> Self {
+        Self {
+            name_servers: Some(take_name_server_policy_set(config)),
+            static_hosts: Arc::new(std::mem::take(&mut config.dns.hosts)),
+        }
+    }
+
+    fn injected(config: &mut CoreConfig) -> Self {
+        Self {
+            name_servers: Some(Arc::default()),
+            static_hosts: Arc::new(std::mem::take(&mut config.dns.hosts)),
+        }
+    }
+
+    fn hosts(static_hosts: Arc<DomainHostIndex<DnsHostTarget>>) -> Self {
+        Self {
+            name_servers: None,
+            static_hosts,
+        }
+    }
+
+    fn hosts_only(&self) -> Self {
+        Self::hosts(Arc::clone(&self.static_hosts))
+    }
+}
+
+#[cfg(test)]
+fn static_host_index(config: &CoreConfig) -> Arc<DomainHostIndex<DnsHostTarget>> {
+    Arc::new(config.dns.hosts.clone())
+}
+
 fn host_only_dns_resolver_for_config(
     config: &CoreConfig,
     fallback: Arc<dyn DnsResolver>,
+    dns_rules: DnsRules,
 ) -> Arc<dyn DnsResolver> {
     configured_dns_resolver_from_config_with_transport_mode(
         config,
         fallback,
         None,
-        None,
+        dns_rules,
         None,
         TransportDnsQueryStrategy::UseIp,
         DnsResolverRole::Bootstrap,
@@ -940,22 +1005,22 @@ fn host_only_dns_resolver_for_config(
 fn configured_dns_resolver_for_config(
     config: &CoreConfig,
     fallback: Arc<dyn DnsResolver>,
-    name_servers: Arc<CompiledNameServerPolicies>,
+    dns_rules: DnsRules,
 ) -> Arc<dyn DnsResolver> {
-    configured_dns_resolver_for_config_with_socket_protector(config, fallback, name_servers, None)
+    configured_dns_resolver_for_config_with_socket_protector(config, fallback, dns_rules, None)
 }
 
 fn configured_dns_resolver_for_config_with_socket_protector(
     config: &CoreConfig,
     fallback: Arc<dyn DnsResolver>,
-    name_servers: Arc<CompiledNameServerPolicies>,
+    dns_rules: DnsRules,
     socket_protector: Option<Arc<dyn SocketProtector>>,
 ) -> Arc<dyn DnsResolver> {
     configured_dns_resolver_from_config(
         config,
         fallback,
         socket_protector,
-        Some(name_servers),
+        dns_rules,
         transport_dns_query_strategy(config.dns.query_strategy),
     )
 }
@@ -964,14 +1029,14 @@ fn configured_dns_resolver_from_config(
     config: &CoreConfig,
     fallback: Arc<dyn DnsResolver>,
     socket_protector: Option<Arc<dyn SocketProtector>>,
-    name_servers: Option<Arc<CompiledNameServerPolicies>>,
+    dns_rules: DnsRules,
     query_strategy: TransportDnsQueryStrategy,
 ) -> Arc<dyn DnsResolver> {
     configured_dns_resolver_from_config_with_transport(
         config,
         fallback,
         socket_protector,
-        name_servers,
+        dns_rules,
         None,
         query_strategy,
     )
@@ -981,7 +1046,7 @@ fn configured_dns_resolver_from_config_with_transport(
     config: &CoreConfig,
     fallback: Arc<dyn DnsResolver>,
     socket_protector: Option<Arc<dyn SocketProtector>>,
-    name_servers: Option<Arc<CompiledNameServerPolicies>>,
+    dns_rules: DnsRules,
     query_transport: Option<Arc<dyn DnsQueryTransport>>,
     query_strategy: TransportDnsQueryStrategy,
 ) -> Arc<dyn DnsResolver> {
@@ -989,7 +1054,7 @@ fn configured_dns_resolver_from_config_with_transport(
         config,
         fallback,
         socket_protector,
-        name_servers,
+        dns_rules,
         query_transport,
         query_strategy,
         DnsResolverRole::Destination,
@@ -1000,28 +1065,13 @@ fn configured_dns_resolver_from_config_with_transport_mode(
     config: &CoreConfig,
     fallback: Arc<dyn DnsResolver>,
     socket_protector: Option<Arc<dyn SocketProtector>>,
-    name_servers: Option<Arc<CompiledNameServerPolicies>>,
+    dns_rules: DnsRules,
     query_transport: Option<Arc<dyn DnsQueryTransport>>,
     query_strategy: TransportDnsQueryStrategy,
     role: DnsResolverRole,
 ) -> Arc<dyn DnsResolver> {
-    let host_rules = config
-        .dns
-        .hosts
-        .iter()
-        .map(|host| StaticHostRule {
-            matcher: transport_domain_matcher(&host.matcher),
-            target: match &host.target {
-                DnsHostTarget::Ip(ip) => StaticHostTarget::Ip(*ip),
-                DnsHostTarget::Ips(ips) => StaticHostTarget::Ips(ips.clone()),
-                DnsHostTarget::Domain(domain) => StaticHostTarget::Domain(
-                    dns::normalize_dns_name(domain).unwrap_or_else(|| domain.clone()),
-                ),
-            },
-        })
-        .collect();
-    let mut resolver = ConfiguredDnsResolver::new(host_rules, Vec::new(), fallback);
-    if let Some(name_servers) = name_servers {
+    let mut resolver = ConfiguredDnsResolver::new(dns_rules.static_hosts, Vec::new(), fallback);
+    if let Some(name_servers) = dns_rules.name_servers {
         resolver = resolver.with_name_server_policy_set(name_servers);
     }
     resolver = resolver
@@ -1051,34 +1101,6 @@ fn transport_dns_query_strategy(
     }
 }
 
-fn transport_domain_matcher(matcher: &DomainMatcher) -> TransportDomainMatcher {
-    match matcher {
-        DomainMatcher::Keyword(keyword) => TransportDomainMatcher::Keyword(keyword.clone()),
-        DomainMatcher::Full(domain) => TransportDomainMatcher::Full(
-            dns::normalize_dns_name(domain).unwrap_or_else(|| domain.clone()),
-        ),
-        DomainMatcher::Suffix(suffix) => TransportDomainMatcher::Suffix(
-            dns::normalize_dns_name(suffix).unwrap_or_else(|| suffix.clone()),
-        ),
-        DomainMatcher::Regex(regex) => TransportDomainMatcher::regex(regex.pattern())
-            .expect("xray-config regex matcher should be prevalidated"),
-    }
-}
-
-fn into_transport_domain_matcher(matcher: DomainMatcher) -> TransportDomainMatcher {
-    match matcher {
-        DomainMatcher::Keyword(keyword) => TransportDomainMatcher::Keyword(keyword),
-        DomainMatcher::Full(domain) => {
-            TransportDomainMatcher::Full(dns::normalize_dns_name(&domain).unwrap_or(domain))
-        }
-        DomainMatcher::Suffix(suffix) => {
-            TransportDomainMatcher::Suffix(dns::normalize_dns_name(&suffix).unwrap_or(suffix))
-        }
-        DomainMatcher::Regex(regex) => TransportDomainMatcher::regex(regex.pattern())
-            .expect("xray-config regex matcher should be prevalidated"),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::io;
@@ -1088,7 +1110,7 @@ mod tests {
     use std::time::Duration;
 
     use async_trait::async_trait;
-    use xray_config::{parse_xray_json, DnsServerConfig, DnsServerEndpoint};
+    use xray_config::{parse_xray_json, DnsHostTarget, DnsServerConfig, DnsServerEndpoint};
     use xray_transport::{
         DnsLookup, DnsQueryMetadata, DnsQueryTransport, DnsQueryTransportKind, DnsResolver,
         NameServer, NameServerTransport, SocketHandle, SocketProtector, TransportDialer,
@@ -1097,8 +1119,8 @@ mod tests {
 
     use super::{
         configured_dns_resolver_for_config, configured_dns_resolver_from_config_with_transport,
-        host_only_dns_resolver_for_config, static_only_dns_resolver_for_config,
-        take_name_server_policy_set, Core, DnsRuntimeLimits, TransportDnsQueryStrategy,
+        host_only_dns_resolver_for_config, static_host_index, static_only_dns_resolver_for_config,
+        take_name_server_policy_set, Core, DnsRules, DnsRuntimeLimits, TransportDnsQueryStrategy,
         TunRuntimeOptions, TunRuntimeProfile,
     };
 
@@ -1187,7 +1209,10 @@ mod tests {
         let resolver = configured_dns_resolver_for_config(
             &parsed.config,
             Arc::new(DualStackResolver),
-            Arc::default(),
+            DnsRules {
+                name_servers: Some(Arc::default()),
+                static_hosts: static_host_index(&parsed.config),
+            },
         );
 
         let lookup = resolver.resolve_all("family.example", 443).await.unwrap();
@@ -1214,7 +1239,10 @@ mod tests {
         let resolver = configured_dns_resolver_for_config(
             &parsed.config,
             Arc::new(PendingResolver),
-            Arc::default(),
+            DnsRules {
+                name_servers: Some(Arc::default()),
+                static_hosts: static_host_index(&parsed.config),
+            },
         );
         let started_at = tokio::time::Instant::now();
 
@@ -1238,7 +1266,11 @@ mod tests {
             ]
         }"#;
         let parsed = parse_xray_json(raw).expect("config should parse");
-        let resolver = host_only_dns_resolver_for_config(&parsed.config, Arc::new(PendingResolver));
+        let resolver = host_only_dns_resolver_for_config(
+            &parsed.config,
+            Arc::new(PendingResolver),
+            DnsRules::hosts(static_host_index(&parsed.config)),
+        );
         let started_at = tokio::time::Instant::now();
 
         let result = tokio::time::timeout(
@@ -1268,7 +1300,10 @@ mod tests {
         let resolver = configured_dns_resolver_for_config(
             &parsed.config,
             Arc::new(StaticResolver),
-            Arc::default(),
+            DnsRules {
+                name_servers: Some(Arc::default()),
+                static_hosts: static_host_index(&parsed.config),
+            },
         );
 
         let addr = resolver
@@ -1351,7 +1386,10 @@ mod tests {
             &config,
             Arc::new(StaticResolver),
             None,
-            Some(name_servers),
+            DnsRules {
+                name_servers: Some(name_servers),
+                static_hosts: static_host_index(&config),
+            },
             Some(transport.clone()),
             TransportDnsQueryStrategy::UseIp,
         );
@@ -1396,7 +1434,10 @@ mod tests {
             &config,
             Arc::new(StaticResolver),
             None,
-            Some(name_servers),
+            DnsRules {
+                name_servers: Some(name_servers),
+                static_hosts: static_host_index(&config),
+            },
             Some(transport.clone()),
             TransportDnsQueryStrategy::UseIpv4,
         );
@@ -1418,6 +1459,27 @@ mod tests {
                     Some("dns-global".to_owned()),
                 ),
             ]
+        );
+    }
+
+    #[test]
+    fn dns_rules_move_static_hosts_out_of_core_config() {
+        let raw = r#"{
+            "dns": { "hosts": { "one.example": "192.0.2.1", "domain:two.example": "192.0.2.2" } },
+            "inbounds": [],
+            "outbounds": [{ "tag": "direct", "protocol": "freedom" }]
+        }"#;
+        let parsed = parse_xray_json(raw).expect("dns hosts should parse");
+        let mut config = parsed.config;
+        assert_eq!(config.dns.hosts.len(), 2);
+
+        let rules = DnsRules::from_config(&mut config);
+
+        assert_eq!(rules.static_hosts.len(), 2);
+        assert!(config.dns.hosts.is_empty());
+        assert_eq!(
+            rules.static_hosts.lookup("one.example"),
+            Some(&DnsHostTarget::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))))
         );
     }
 
@@ -1530,7 +1592,8 @@ mod tests {
             ]
         }"#;
         let parsed = parse_xray_json(raw).expect("config should parse");
-        let resolver = static_only_dns_resolver_for_config(&parsed.config);
+        let resolver =
+            static_only_dns_resolver_for_config(&parsed.config, static_host_index(&parsed.config));
 
         assert_eq!(
             resolver.resolve("pinned.example", 443).await.unwrap(),
@@ -1557,7 +1620,8 @@ mod tests {
             ]
         }"#;
         let parsed = parse_xray_json(raw).expect("config should parse");
-        let resolver = static_only_dns_resolver_for_config(&parsed.config);
+        let resolver =
+            static_only_dns_resolver_for_config(&parsed.config, static_host_index(&parsed.config));
 
         assert_eq!(
             resolver.resolve("resolver.example", 443).await.unwrap(),
@@ -1580,7 +1644,8 @@ mod tests {
             ]
         }"#;
         let parsed = parse_xray_json(raw).expect("config should parse");
-        let resolver = static_only_dns_resolver_for_config(&parsed.config);
+        let resolver =
+            static_only_dns_resolver_for_config(&parsed.config, static_host_index(&parsed.config));
 
         let lookup = resolver
             .resolve_all("proxy.example", 443)

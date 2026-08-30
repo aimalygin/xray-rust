@@ -94,11 +94,17 @@ candidates with authoritative or remaining TTL metadata, handles CNAME
 resolution, server failover, UDP truncation with same-server TCP retry, and the
 bounded resolver cache. Object name-server policies select matching domains
 before ordered fallback, with Xray-compatible skip/disable/final behavior; a
-CNAME-only continuation stays on the answering name server. Policies compile
-once into the same mobile-oriented shape used by Xray's Compact matcher: exact
-names use a hash set, suffixes a reverse-label trie, and the less common
-keyword/regex rules retain linear matching. The compiled set is shared by all
-routed resolver contexts instead of cloning geosite expansions.
+CNAME-only continuation stays on the answering name server. Domain rules are
+compiled once by the config parser into `xray_routing::DomainMatcherSet`, the
+same index used by routing rules and DNS outbound rules: exact names and
+label-boundary suffixes use hash sets probed per label, keywords one
+Aho-Corasick automaton, and regexes a `Vec<Regex>` matched with `any` (a
+`RegexSet` is deliberately avoided: its size limit applies to the whole set).
+Static `dns.hosts` compile into `xray_routing::DomainHostIndex`, a hash map of
+DNS-normalized `full:` names that wins over the remaining matchers scanned in
+config order; the core converts it once and shares it with every configured
+resolver. The compiled policy set is shared by all routed resolver contexts
+instead of cloning geosite expansions.
 Per-server expected/unexpected IP rules share that lifecycle and compile into
 merged IPv4/IPv6 ranges, keeping GeoIP-sized filters off the per-answer linear
 path. Hard rejections advance the sticky server plan with the original qname;

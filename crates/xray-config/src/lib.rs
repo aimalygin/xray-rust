@@ -5,10 +5,11 @@ mod parser;
 
 pub use diagnostic::{Diagnostic, DiagnosticSeverity};
 pub use model::{
-    ConfigModelError, CoreConfig, DnsConfig, DnsFakeIpConfig, DnsHostMapping, DnsHostTarget,
-    DnsIpFilter, DnsNameServerConfig, DnsOutboundRule, DnsOutboundRuleAction, DnsOutboundSettings,
-    DnsQTypeRange, DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint, DnsServerTransport,
-    DomainMatcher, GrpcSettings, HappyEyeballsSettings, HttpUpgradeSettings, InboundConfig,
+    compile_dns_domain_matchers, compile_domain_matchers, ConfigModelError, CoreConfig, DnsConfig,
+    DnsFakeIpConfig, DnsHostTarget, DnsIpFilter, DnsNameServerConfig, DnsOutboundRule,
+    DnsOutboundRuleAction, DnsOutboundSettings, DnsQTypeRange, DnsQueryStrategy, DnsServerConfig,
+    DnsServerEndpoint, DnsServerTransport, DomainHostIndex, DomainMatcher, DomainMatcherSet,
+    DomainNameMode, GrpcSettings, HappyEyeballsSettings, HttpUpgradeSettings, InboundConfig,
     InboundProtocol, InboundSniffingConfig, IpCidr, IpMatcherSet, Network, OutboundConfig,
     OutboundProtocol, OutboundSettings, PolicyConfig, PolicyLevelConfig, PolicySystemConfig,
     QuicBbrProfile, QuicCongestion, QuicIntervalRange, QuicParamsSettings, QuicUdpHopSettings,
@@ -21,7 +22,7 @@ pub use model::{
 };
 pub use parser::{
     parse_xray_json, parse_xray_json_with_exclusive_geodata_dirs, parse_xray_json_with_geodata_dir,
-    parse_xray_json_with_geodata_dirs, ConfigParseError, ParsedConfig,
+    parse_xray_json_with_geodata_dirs, ConfigParseError, ParsedConfig, MAX_CONFIG_DOMAIN_MATCHERS,
 };
 
 pub fn version() -> &'static str {

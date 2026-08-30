@@ -12,14 +12,14 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::runtime::Handle;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::{sleep, timeout, Instant};
-use xray_config::{DnsHostMapping, DnsHostTarget, DnsQueryStrategy as ConfigDnsQueryStrategy};
+use xray_config::{DnsHostTarget, DnsQueryStrategy as ConfigDnsQueryStrategy, DomainHostIndex};
 use xray_routing::{Target, TargetAddr};
 use xray_transport::{
     BoxedTransportStream, DnsLookup, DnsQueryStrategy, DnsResolver, TransportDialer, TransportError,
 };
 
 use crate::dns::{
-    exchange_direct_dns_query_with_udp_admission, static_dns_host_target_from_mappings,
+    exchange_direct_dns_query_with_udp_admission, static_dns_host_target_from_index,
     DirectDnsTcpSession,
 };
 use crate::dns_outbound::{parse_dns_query, parse_dns_query_prefix, DnsOutboundQuery};
@@ -690,7 +690,7 @@ pub(crate) struct DnsOutboundRuntime {
     resolver: Arc<dyn DnsResolver>,
     direct_executor: Arc<DnsDirectExecutor>,
     fake_ip_mapper: Option<Arc<Mutex<FakeIpMapper>>>,
-    static_hosts: Arc<[DnsHostMapping]>,
+    static_hosts: Arc<DomainHostIndex<DnsHostTarget>>,
     operation_permits: Arc<Semaphore>,
 }
 
@@ -731,7 +731,7 @@ impl DnsOutboundRuntime {
             resolver,
             direct_executor,
             None,
-            Vec::new(),
+            Arc::new(DomainHostIndex::default()),
             max_concurrent_operations,
         )
     }
@@ -740,16 +740,20 @@ impl DnsOutboundRuntime {
         resolver: Arc<dyn DnsResolver>,
         direct_executor: Arc<DnsDirectExecutor>,
         fake_ip_mapper: Option<Arc<Mutex<FakeIpMapper>>>,
-        static_hosts: Vec<DnsHostMapping>,
+        static_hosts: Arc<DomainHostIndex<DnsHostTarget>>,
         max_concurrent_operations: usize,
     ) -> Self {
         Self {
             resolver,
             direct_executor,
             fake_ip_mapper,
-            static_hosts: static_hosts.into(),
+            static_hosts,
             operation_permits: Arc::new(Semaphore::new(max_concurrent_operations.max(1))),
         }
+    }
+
+    pub(crate) fn static_host_target(&self, domain: &str) -> Option<DnsHostTarget> {
+        static_dns_host_target_from_index(&self.static_hosts, domain)
     }
 
     pub(crate) fn fake_ip_mapper(&self) -> Option<Arc<Mutex<FakeIpMapper>>> {
@@ -914,8 +918,7 @@ impl DnsOutboundRuntime {
         }
 
         let fake_domain =
-            match static_dns_host_target_from_mappings(self.static_hosts.as_ref(), parsed.domain())
-            {
+            match static_dns_host_target_from_index(&self.static_hosts, parsed.domain()) {
                 Some(DnsHostTarget::Ip(address)) => {
                     return Some(static_host_hijack_resolution(parsed.qtype(), [address]));
                 }
@@ -1333,8 +1336,9 @@ mod tests {
     use tokio::net::TcpListener;
     use tokio::sync::oneshot;
     use xray_config::{
-        DnsFakeIpConfig, DnsHostMapping, DnsHostTarget, DnsOutboundRule, DnsOutboundRuleAction,
-        DnsOutboundSettings, DomainMatcher, IpCidr, Network, TargetAddr as ConfigTargetAddr,
+        DnsFakeIpConfig, DnsHostTarget, DnsOutboundRule, DnsOutboundRuleAction,
+        DnsOutboundSettings, DomainMatcher, DomainMatcherSet, IpCidr, Network,
+        TargetAddr as ConfigTargetAddr,
     };
     use xray_routing::{Network as RoutingNetwork, TargetAddr};
     use xray_transport::{SystemDnsResolver, TransportDialer};
@@ -1385,7 +1389,7 @@ mod tests {
                 action: DnsOutboundRuleAction::Direct,
                 r_code: 0,
                 qtype_ranges: Vec::new(),
-                domain_matchers: Vec::new(),
+                domain_matchers: DomainMatcherSet::default(),
             }],
             ..DnsOutboundSettings::default()
         })
@@ -1513,11 +1517,10 @@ mod tests {
     async fn static_hosts_precede_fake_ip_hijack_without_allocating_a_mapping() {
         let (mut runtime, mapper) = test_runtime_with_fake_ip();
         let static_ip = Ipv4Addr::new(192, 0, 2, 44);
-        runtime.static_hosts = vec![DnsHostMapping {
-            matcher: DomainMatcher::Full("blocked.example".to_owned()),
-            target: DnsHostTarget::Ip(IpAddr::V4(static_ip)),
-        }]
-        .into();
+        runtime.static_hosts = Arc::new(DomainHostIndex::from_iter([(
+            DomainMatcher::Full("blocked.example".to_owned()),
+            DnsHostTarget::Ip(IpAddr::V4(static_ip)),
+        )]));
         let request = query(0x2201, "blocked.example");
 
         let outcome = runtime
@@ -1554,11 +1557,10 @@ mod tests {
     #[tokio::test]
     async fn wrong_family_static_host_returns_nodata_instead_of_fake_ip() {
         let (mut runtime, mapper) = test_runtime_with_fake_ip();
-        runtime.static_hosts = vec![DnsHostMapping {
-            matcher: DomainMatcher::Full("ipv6-only.example".to_owned()),
-            target: DnsHostTarget::Ip(IpAddr::V6("2001:db8::44".parse().unwrap())),
-        }]
-        .into();
+        runtime.static_hosts = Arc::new(DomainHostIndex::from_iter([(
+            DomainMatcher::Full("ipv6-only.example".to_owned()),
+            DnsHostTarget::Ip(IpAddr::V6("2001:db8::44".parse().unwrap())),
+        )]));
         let request = query(0x2202, "ipv6-only.example");
 
         let outcome = runtime
@@ -1583,11 +1585,10 @@ mod tests {
     #[tokio::test]
     async fn static_host_alias_allocates_fake_ip_for_the_terminal_name() {
         let (mut runtime, mapper) = test_runtime_with_fake_ip();
-        runtime.static_hosts = vec![DnsHostMapping {
-            matcher: DomainMatcher::Full("public.example".to_owned()),
-            target: DnsHostTarget::Domain("internal.example".to_owned()),
-        }]
-        .into();
+        runtime.static_hosts = Arc::new(DomainHostIndex::from_iter([(
+            DomainMatcher::Full("public.example".to_owned()),
+            DnsHostTarget::Domain("internal.example".to_owned()),
+        )]));
         let request = query(0x2203, "public.example");
 
         let outcome = runtime
