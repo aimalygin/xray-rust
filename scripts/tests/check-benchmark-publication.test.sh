@@ -60,6 +60,17 @@ manifest = {
         "location": "checksum-addressed maintainer archive",
         "sha256": "c" * 64,
     },
+    "omissions": [
+        {
+            "scenario": "stream-grpc-full-duplex-32",
+            "engine": "sing-box",
+            "reasonCode": "nondeterministic-timeout",
+            "failedCampaigns": 2,
+            "completedRunsBeforeTimeout": 7,
+            "timedOutRuns": 2,
+            "timeoutMs": 300_000,
+        }
+    ],
     "series": [],
 }
 
@@ -115,9 +126,14 @@ add(
 for transport in ("ws", "httpupgrade", "grpc"):
     for traffic in ("upload", "download", "full-duplex"):
         for flows in (1, 32):
+            scenario = f"stream-{transport}-{traffic}-{flows}"
             add(
-                f"stream-{transport}-{traffic}-{flows}",
-                engines,
+                scenario,
+                (
+                    ("xray-rust", "xray-core")
+                    if scenario == "stream-grpc-full-duplex-32"
+                    else engines
+                ),
                 workload="stream-transport",
                 connections=flows,
                 iterations=4_096,
@@ -264,6 +280,7 @@ def scenario_config(scenario, fields):
             "geodata": scenario == "routed-tcp-freedom",
         }
     if scenario.startswith("stream-"):
+        omit_sing_box = scenario == "stream-grpc-full-duplex-32"
         return {
             "duration_ms": 2_000,
             "sample_interval_ms": 100,
@@ -271,8 +288,9 @@ def scenario_config(scenario, fields):
             "settle_ms": 0,
             "explicit_max_post_bytes": None,
             "output_name": scenario,
-            "supports_sing_box": not fields["stream_transport"].startswith("xhttp-"),
-            "skip_sing_box": False,
+            "supports_sing_box": not fields["stream_transport"].startswith("xhttp-")
+            and not omit_sing_box,
+            "skip_sing_box": omit_sing_box,
             "geodata": False,
         }
     if scenario.startswith("xhttp-pressure-"):
@@ -707,6 +725,14 @@ elif mutation == "empty_environment":
     manifest["environment"]["hardware"] = ""
 elif mutation == "empty_raw_location":
     manifest["rawArchive"]["location"] = ""
+elif mutation == "missing_omission":
+    manifest["omissions"] = []
+elif mutation == "wrong_omission_reason":
+    manifest["omissions"][0]["reasonCode"] = "unsupported"
+elif mutation == "wrong_omission_evidence":
+    manifest["omissions"][0]["timedOutRuns"] = 1
+elif mutation == "extra_omission":
+    manifest["omissions"].append(copy.deepcopy(manifest["omissions"][0]))
 elif mutation == "duplicate_series":
     manifest["series"].append(copy.deepcopy(manifest["series"][0]))
 elif mutation == "reused_summary_path":
@@ -942,6 +968,17 @@ elif mutation == "missing_reality_skip_sing_box":
         summaries[reality_entry["summary"]],
         lambda args: args.remove("--skip-sing-box"),
     )
+elif mutation == "missing_grpc_omission_skip_sing_box":
+    grpc_entry = next(
+        entry
+        for entry in manifest["series"]
+        if entry["scenario"] == "stream-grpc-full-duplex-32"
+        and entry["engine"] == "xray-rust"
+    )
+    mutate_invocation(
+        summaries[grpc_entry["summary"]],
+        lambda args: args.remove("--skip-sing-box"),
+    )
 elif mutation == "extra_skip_sing_box_on_unsupported":
     routed_entry = next(
         entry
@@ -1025,6 +1062,16 @@ elif mutation == "extra_sing_reality_series":
         entry
         for entry in manifest["series"]
         if entry["scenario"] == "reality-vision-xudp"
+        and entry["engine"] == "xray-rust"
+    )
+    extra = copy.deepcopy(xray_entry)
+    extra["engine"] = "sing-box"
+    manifest["series"].append(extra)
+elif mutation == "extra_sing_grpc_omission_series":
+    xray_entry = next(
+        entry
+        for entry in manifest["series"]
+        if entry["scenario"] == "stream-grpc-full-duplex-32"
         and entry["engine"] == "xray-rust"
     )
     extra = copy.deepcopy(xray_entry)
@@ -1224,7 +1271,7 @@ expect_rejected() {
 valid_fixture="$tmp_dir/valid/2026-08-29-v26.7.28"
 make_fixture "$valid_fixture"
 valid_output="$(python3 "$validator" "$valid_fixture")"
-grep -Fq "validated benchmark publication: 141 series" <<<"$valid_output" \
+grep -Fq "validated benchmark publication: 140 series" <<<"$valid_output" \
   || fail "valid publication did not report the complete matrix: $valid_output"
 
 for valid_variant in \
@@ -1236,7 +1283,7 @@ for valid_variant in \
   variant_fixture="$tmp_dir/$valid_variant/2026-08-29-v26.7.28"
   make_fixture "$variant_fixture" "$valid_variant"
   variant_output="$(python3 "$validator" "$variant_fixture")"
-  grep -Fq "validated benchmark publication: 141 series" <<<"$variant_output" \
+  grep -Fq "validated benchmark publication: 140 series" <<<"$variant_output" \
     || fail "$valid_variant did not validate: $variant_output"
 done
 
@@ -1258,6 +1305,10 @@ expect_rejected wrong_sing_revision "comparators.sing-box.revision must be 56f91
 expect_rejected malformed_archive_digest "rawArchive.sha256 must be 64 lowercase hexadecimal characters"
 expect_rejected empty_environment "environment.hardware must be non-empty"
 expect_rejected empty_raw_location "rawArchive.location must be non-empty"
+expect_rejected missing_omission "manifest omissions must contain exactly one entry"
+expect_rejected wrong_omission_reason "manifest omission does not match the reviewed RC4 exception"
+expect_rejected wrong_omission_evidence "manifest omission does not match the reviewed RC4 exception"
+expect_rejected extra_omission "manifest omissions must contain exactly one entry"
 expect_rejected duplicate_series "duplicate series"
 expect_rejected reused_summary_path "summary engine does not match manifest"
 expect_rejected escaping_path "summary path escapes publication root"
@@ -1331,6 +1382,7 @@ expect_rejected invocation_runs_mismatch "invocation --runs does not match scena
 expect_rejected invocation_binary_path_mismatch "invocation binary path does not match provenance"
 expect_rejected invocation_missing_binary "invocation_args flags do not match canonical harness order"
 expect_rejected missing_reality_skip_sing_box "invocation_args flags do not match canonical harness order"
+expect_rejected missing_grpc_omission_skip_sing_box "invocation_args flags do not match canonical harness order"
 expect_rejected extra_skip_sing_box_on_unsupported "invocation_args flags do not match canonical harness order"
 expect_rejected reality_invocation_with_sing_box "invocation_args flags do not match canonical harness order"
 expect_rejected invocation_source_path_mismatch "xray-core source path must end in Xray-core"
@@ -1356,6 +1408,7 @@ expect_rejected missing_required_setup_metric "embedded result 5.setup_us availa
 expect_rejected missing_combination "missing required combination"
 expect_rejected extra_combination "unexpected series combination"
 expect_rejected extra_sing_reality_series "unexpected series combination: reality-vision-xudp/sing-box"
+expect_rejected extra_sing_grpc_omission_series "unexpected series combination: stream-grpc-full-duplex-32/sing-box"
 expect_rejected unreferenced_chart_input_summary "unreferenced chart-input summary"
 expect_rejected unknown_top_level "manifest has unexpected field"
 

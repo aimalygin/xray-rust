@@ -512,8 +512,18 @@ compare-only `--skip-sing-box` flag, without sing-box binary/source arguments,
 to record why those two publication series are xray-rust/Xray-core only. Do
 not weaken the fixture or increase the timeout.
 
-The RC4 publication contract therefore contains exactly 141 benchmark series
-and 705 embedded five-run results. Its base matrix contributes 27 summaries
+RC4 also omits sing-box only from `stream-grpc-full-duplex-32`. Two frozen
+campaigns completed all five xray-rust and Xray-core runs, but sing-box timed
+out after three and four successful runs, respectively, at the required
+300000 ms timeout. Later isolated diagnostics completed successfully, so the
+publication records a nondeterministic timeout rather than claiming protocol
+incompatibility or substituting a better retry. The canonical two-engine
+invocation uses `--skip-sing-box` without sing-box binary/source arguments;
+the manifest fail-closes on the exact scenario, reason, campaign counts, and
+timeout evidence.
+
+The RC4 publication contract therefore contains exactly 140 benchmark series
+and 700 embedded five-run results. Its base matrix contributes 27 summaries
 and 135 results; historical v26.5.9 charts and summaries remain unchanged and
 must be read as historical evidence for their recorded comparator versions.
 
@@ -544,6 +554,16 @@ binary/source arguments and explicitly record the omission:
 ```sh
 cargo run -p xray-bench -- compare --skip-sing-box --workload reality-vision-xudp --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 1000 --payload-size 512
 cargo run --release -p xray-bench -- compare --skip-sing-box --workload reality-vision-bulk-throughput --xray-core-dir Xray-core --runs 5 --connections 1 --iterations 256 --payload-size 4194304 --run-timeout-ms 120000
+```
+
+The reviewed RC4 gRPC omission is likewise a two-engine command:
+
+```sh
+cargo run --release -p xray-bench -- compare --skip-sing-box \
+  --workload stream-transport --stream-transport grpc \
+  --traffic full-duplex --connections 32 --iterations 4096 \
+  --payload-size 65536 --runs 5 --run-timeout-ms 300000 \
+  --xray-core-dir Xray-core
 ```
 
 The TUN and fake VLESS/XUDP workloads remain comparable between `xray-rust` and Xray-core in this slice, except for `tun-fake-dns`, `tun-fake-dns-tcp`, and `tun-dns-proxy`. These workloads deliberately exercise the xray-rust local DNS extensions (`dns.fakeIp` and anchor proxying through `dns.servers`, respectively); run them with `run --engine xray-rust`, since `compare` rejects them until equivalent cross-engine configurations are defined. The compare command skips sing-box for the other TUN workloads because sing-box's CLI TUN path uses a real platform TUN topology, while the older VLESS/XUDP fake-server workloads use Xray JSON configs instead of sing-box outbound schema. `routed-tcp-freedom` is also xray-rust vs Xray-core only: sing-box ≥1.8 does not read Xray-format `.dat` geodata, and semantically equivalent `.srs` rule-sets cannot be guaranteed.

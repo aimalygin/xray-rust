@@ -37,9 +37,28 @@ MANIFEST_FIELDS = {
     "environment",
     "comparators",
     "rawArchive",
+    "omissions",
     "series",
 }
 ENVIRONMENT_FIELDS = {"hardware", "os", "rustc", "cargo", "go"}
+OMISSION_FIELDS = {
+    "scenario",
+    "engine",
+    "reasonCode",
+    "failedCampaigns",
+    "completedRunsBeforeTimeout",
+    "timedOutRuns",
+    "timeoutMs",
+}
+RC4_SING_BOX_GRPC_OMISSION = {
+    "scenario": "stream-grpc-full-duplex-32",
+    "engine": "sing-box",
+    "reasonCode": "nondeterministic-timeout",
+    "failedCampaigns": 2,
+    "completedRunsBeforeTimeout": 7,
+    "timedOutRuns": 2,
+    "timeoutMs": 300_000,
+}
 
 PROVENANCE_REQUIRED_FIELDS = {"harness_profile", "invocation_args"}
 PROVENANCE_OPTIONAL_FIELDS = {
@@ -532,9 +551,15 @@ def expected_matrix() -> dict[tuple[str, str], dict[str, Any]]:
     for transport in ("ws", "httpupgrade", "grpc"):
         for traffic in ("upload", "download", "full-duplex"):
             for flows in (1, 32):
+                scenario = f"stream-{transport}-{traffic}-{flows}"
+                omit_sing_box = scenario == RC4_SING_BOX_GRPC_OMISSION["scenario"]
                 add(
-                    f"stream-{transport}-{traffic}-{flows}",
-                    all_engines,
+                    scenario,
+                    (
+                        ("xray-rust", "xray-core")
+                        if omit_sing_box
+                        else all_engines
+                    ),
                     workload="stream-transport",
                     connections=flows,
                     iterations=4_096,
@@ -544,6 +569,8 @@ def expected_matrix() -> dict[tuple[str, str], dict[str, Any]]:
                     output_name=f"stream-{transport}-{traffic}-{flows}",
                     stream_transport=transport,
                     stream_traffic=traffic,
+                    supports_sing_box=not omit_sing_box,
+                    skip_sing_box=omit_sing_box,
                 )
 
     for transport in ("xhttp-h1", "xhttp-h2", "xhttp-h3"):
@@ -645,7 +672,7 @@ def expected_matrix() -> dict[tuple[str, str], dict[str, Any]]:
             supports_sing_box=False,
         )
 
-    if len(matrix) != 141:
+    if len(matrix) != 140:
         raise AssertionError(f"benchmark publication matrix has {len(matrix)} entries")
     return matrix
 
@@ -720,6 +747,14 @@ def validate_manifest_shape(manifest: Any) -> dict[str, Any]:
     require_exact_fields(archive, {"location", "sha256"}, "rawArchive")
     require_nonempty_string(archive["location"], "rawArchive.location")
     require_sha256(archive["sha256"], "rawArchive.sha256")
+
+    omissions = manifest["omissions"]
+    if not isinstance(omissions, list) or len(omissions) != 1:
+        fail("manifest omissions must contain exactly one entry")
+    omission = require_object(omissions[0], "manifest omission")
+    require_exact_fields(omission, OMISSION_FIELDS, "manifest omission")
+    if not json_equal_strict(omission, RC4_SING_BOX_GRPC_OMISSION):
+        fail("manifest omission does not match the reviewed RC4 exception")
 
     if not isinstance(manifest["series"], list):
         fail("series must be an array")
