@@ -1811,6 +1811,452 @@ fn ffi_tun_poll_tcp_open_error_event_reports_no_packet() {
 }
 
 #[test]
+fn ffi_tun_poll_tcp_open_error_event_rejects_null_handle_before_other_arguments() {
+    let mut err = std::ptr::null_mut();
+    let mut target = [0x7f_i8; 8];
+    let mut written = 7usize;
+
+    // Every other argument is also invalid; the handle check must still win.
+    let status = unsafe {
+        xray_tun_poll_tcp_open_error_event(
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            target.as_mut_ptr(),
+            0,
+            &mut written,
+            std::ptr::null_mut(),
+            0,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            0,
+            std::ptr::null_mut(),
+            &mut err,
+        )
+    };
+
+    assert_eq!(status, XrayStatus::NullArgument);
+    assert_error(&mut err, XrayStatus::NullArgument, "core handle is null");
+    assert_eq!(written, 0, "written is reset even when validation fails");
+    assert_eq!(target[0], 0x7f, "zero-length buffers are never written to");
+}
+
+#[test]
+fn ffi_tun_poll_tcp_open_error_event_rejects_null_event_pointer() {
+    let mut err = std::ptr::null_mut();
+    let core = loaded_core(&mut err);
+    let mut target = [0x7f_i8; 8];
+    let mut outbound = [0x7f_i8; 8];
+    let mut message = [0x7f_i8; 8];
+    let mut written = 7usize;
+    let mut outbound_written = 9usize;
+    let mut message_written = 11usize;
+
+    let status = unsafe {
+        xray_tun_poll_tcp_open_error_event(
+            core,
+            std::ptr::null_mut(),
+            target.as_mut_ptr(),
+            target.len(),
+            &mut written,
+            outbound.as_mut_ptr(),
+            outbound.len(),
+            &mut outbound_written,
+            message.as_mut_ptr(),
+            message.len(),
+            &mut message_written,
+            &mut err,
+        )
+    };
+
+    assert_eq!(status, XrayStatus::NullArgument);
+    assert_error(
+        &mut err,
+        XrayStatus::NullArgument,
+        "TCP open-error event pointer is null",
+    );
+    // Reset happened for every provided out-param before the failing check.
+    assert_eq!((written, outbound_written, message_written), (0, 0, 0));
+    assert_eq!((target[0], outbound[0], message[0]), (0, 0, 0));
+    assert_eq!((target[1], outbound[1], message[1]), (0x7f, 0x7f, 0x7f));
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_tun_poll_tcp_open_error_event_rejects_null_string_arguments_in_order() {
+    let mut err = std::ptr::null_mut();
+    let core = loaded_core(&mut err);
+    let mut event = XrayTcpOpenErrorEvent::default();
+    let mut target = [0_i8; 8];
+    let mut outbound = [0_i8; 8];
+    let mut message = [0_i8; 8];
+    let mut written = 0usize;
+    let mut outbound_written = 0usize;
+    let mut message_written = 0usize;
+
+    let status = unsafe {
+        xray_tun_poll_tcp_open_error_event(
+            core,
+            &mut event,
+            std::ptr::null_mut(),
+            target.len(),
+            std::ptr::null_mut(),
+            outbound.as_mut_ptr(),
+            outbound.len(),
+            &mut outbound_written,
+            message.as_mut_ptr(),
+            message.len(),
+            &mut message_written,
+            &mut err,
+        )
+    };
+    assert_eq!(status, XrayStatus::NullArgument);
+    assert_error(
+        &mut err,
+        XrayStatus::NullArgument,
+        "TCP open-error target buffer is null",
+    );
+
+    let status = unsafe {
+        xray_tun_poll_tcp_open_error_event(
+            core,
+            &mut event,
+            target.as_mut_ptr(),
+            target.len(),
+            std::ptr::null_mut(),
+            outbound.as_mut_ptr(),
+            outbound.len(),
+            &mut outbound_written,
+            message.as_mut_ptr(),
+            message.len(),
+            &mut message_written,
+            &mut err,
+        )
+    };
+    assert_eq!(status, XrayStatus::NullArgument);
+    assert_error(
+        &mut err,
+        XrayStatus::NullArgument,
+        "TCP open-error target written pointer is null",
+    );
+
+    let status = unsafe {
+        xray_tun_poll_tcp_open_error_event(
+            core,
+            &mut event,
+            target.as_mut_ptr(),
+            target.len(),
+            &mut written,
+            std::ptr::null_mut(),
+            outbound.len(),
+            &mut outbound_written,
+            message.as_mut_ptr(),
+            message.len(),
+            std::ptr::null_mut(),
+            &mut err,
+        )
+    };
+    assert_eq!(status, XrayStatus::NullArgument);
+    assert_error(
+        &mut err,
+        XrayStatus::NullArgument,
+        "TCP open-error outbound tag buffer is null",
+    );
+
+    let status = unsafe {
+        xray_tun_poll_tcp_open_error_event(
+            core,
+            &mut event,
+            target.as_mut_ptr(),
+            target.len(),
+            &mut written,
+            outbound.as_mut_ptr(),
+            outbound.len(),
+            &mut outbound_written,
+            message.as_mut_ptr(),
+            message.len(),
+            std::ptr::null_mut(),
+            &mut err,
+        )
+    };
+    assert_eq!(status, XrayStatus::NullArgument);
+    assert_error(
+        &mut err,
+        XrayStatus::NullArgument,
+        "TCP open-error message written pointer is null",
+    );
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_tun_poll_tcp_open_error_event_checks_all_nulls_before_zero_lengths() {
+    let mut err = std::ptr::null_mut();
+    let core = loaded_core(&mut err);
+    let mut event = XrayTcpOpenErrorEvent::default();
+    let mut target = [0_i8; 8];
+    let mut message = [0_i8; 8];
+    let mut written = 0usize;
+    let mut outbound_written = 0usize;
+    let mut message_written = 0usize;
+
+    // A zero-length target comes first in parameter order, but a null
+    // outbound-tag buffer must still be reported ahead of it.
+    let status = unsafe {
+        xray_tun_poll_tcp_open_error_event(
+            core,
+            &mut event,
+            target.as_mut_ptr(),
+            0,
+            &mut written,
+            std::ptr::null_mut(),
+            8,
+            &mut outbound_written,
+            message.as_mut_ptr(),
+            message.len(),
+            &mut message_written,
+            &mut err,
+        )
+    };
+    assert_eq!(status, XrayStatus::NullArgument);
+    assert_error(
+        &mut err,
+        XrayStatus::NullArgument,
+        "TCP open-error outbound tag buffer is null",
+    );
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_tun_poll_tcp_open_error_event_rejects_zero_lengths_in_order() {
+    let mut err = std::ptr::null_mut();
+    let core = loaded_core(&mut err);
+    let mut event = XrayTcpOpenErrorEvent::default();
+    let mut target = [0_i8; 8];
+    let mut outbound = [0_i8; 8];
+    let mut message = [0_i8; 8];
+    let mut written = 0usize;
+    let mut outbound_written = 0usize;
+    let mut message_written = 0usize;
+
+    let status = unsafe {
+        xray_tun_poll_tcp_open_error_event(
+            core,
+            &mut event,
+            target.as_mut_ptr(),
+            0,
+            &mut written,
+            outbound.as_mut_ptr(),
+            0,
+            &mut outbound_written,
+            message.as_mut_ptr(),
+            0,
+            &mut message_written,
+            &mut err,
+        )
+    };
+    assert_eq!(status, XrayStatus::BufferTooSmall);
+    assert_error(
+        &mut err,
+        XrayStatus::BufferTooSmall,
+        "TCP open-error target buffer length is zero",
+    );
+
+    let status = unsafe {
+        xray_tun_poll_tcp_open_error_event(
+            core,
+            &mut event,
+            target.as_mut_ptr(),
+            target.len(),
+            &mut written,
+            outbound.as_mut_ptr(),
+            0,
+            &mut outbound_written,
+            message.as_mut_ptr(),
+            0,
+            &mut message_written,
+            &mut err,
+        )
+    };
+    assert_eq!(status, XrayStatus::BufferTooSmall);
+    assert_error(
+        &mut err,
+        XrayStatus::BufferTooSmall,
+        "TCP open-error outbound tag buffer length is zero",
+    );
+
+    let status = unsafe {
+        xray_tun_poll_tcp_open_error_event(
+            core,
+            &mut event,
+            target.as_mut_ptr(),
+            target.len(),
+            &mut written,
+            outbound.as_mut_ptr(),
+            outbound.len(),
+            &mut outbound_written,
+            message.as_mut_ptr(),
+            0,
+            &mut message_written,
+            &mut err,
+        )
+    };
+    assert_eq!(status, XrayStatus::BufferTooSmall);
+    assert_error(
+        &mut err,
+        XrayStatus::BufferTooSmall,
+        "TCP open-error message buffer length is zero",
+    );
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_tun_poll_tcp_open_error_event_validates_arguments_before_core_state() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    let mut event = XrayTcpOpenErrorEvent::default();
+    let mut target = [0_i8; 8];
+    let mut outbound = [0_i8; 8];
+    let mut message = [0_i8; 8];
+    let mut written = 0usize;
+    let mut outbound_written = 0usize;
+    let mut message_written = 0usize;
+
+    // No config loaded, but an invalid buffer argument is reported first.
+    let status = unsafe {
+        xray_tun_poll_tcp_open_error_event(
+            core,
+            &mut event,
+            target.as_mut_ptr(),
+            0,
+            &mut written,
+            outbound.as_mut_ptr(),
+            outbound.len(),
+            &mut outbound_written,
+            message.as_mut_ptr(),
+            message.len(),
+            &mut message_written,
+            &mut err,
+        )
+    };
+    assert_eq!(status, XrayStatus::BufferTooSmall);
+    assert_error(
+        &mut err,
+        XrayStatus::BufferTooSmall,
+        "TCP open-error target buffer length is zero",
+    );
+
+    let status = unsafe {
+        xray_tun_poll_tcp_open_error_event(
+            core,
+            &mut event,
+            target.as_mut_ptr(),
+            target.len(),
+            &mut written,
+            outbound.as_mut_ptr(),
+            outbound.len(),
+            &mut outbound_written,
+            message.as_mut_ptr(),
+            message.len(),
+            &mut message_written,
+            &mut err,
+        )
+    };
+    assert_eq!(status, XrayStatus::CoreNotLoaded);
+    assert_error(
+        &mut err,
+        XrayStatus::CoreNotLoaded,
+        "core config is not loaded",
+    );
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_tun_poll_udp_slow_flow_event_rejects_null_target_written_pointer() {
+    let mut err = std::ptr::null_mut();
+    let core = loaded_core(&mut err);
+    let mut event = XrayUdpSlowFlowEvent::default();
+    let mut target = [0x7f_i8; 8];
+
+    let status = unsafe {
+        xray_tun_poll_udp_slow_flow_event(
+            core,
+            &mut event,
+            target.as_mut_ptr(),
+            target.len(),
+            std::ptr::null_mut(),
+            &mut err,
+        )
+    };
+
+    assert_eq!(status, XrayStatus::NullArgument);
+    assert_error(
+        &mut err,
+        XrayStatus::NullArgument,
+        "slow-flow target written pointer is null",
+    );
+    assert_eq!(target[0], 0, "leading NUL is written before validation");
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
+fn ffi_tun_poll_packet_rejects_null_buffer_and_written_pointer() {
+    let mut err = std::ptr::null_mut();
+    let core = loaded_core(&mut err);
+    let mut buffer = [0_u8; 16];
+    let mut written = 7usize;
+
+    let status = unsafe {
+        xray_tun_poll_packet(
+            core,
+            std::ptr::null_mut(),
+            buffer.len(),
+            &mut written,
+            &mut err,
+        )
+    };
+    assert_eq!(status, XrayStatus::NullArgument);
+    assert_error(&mut err, XrayStatus::NullArgument, "packet buffer is null");
+    assert_eq!(written, 0);
+
+    let status = unsafe {
+        xray_tun_poll_packet(
+            core,
+            buffer.as_mut_ptr(),
+            buffer.len(),
+            std::ptr::null_mut(),
+            &mut err,
+        )
+    };
+    assert_eq!(status, XrayStatus::NullArgument);
+    assert_error(
+        &mut err,
+        XrayStatus::NullArgument,
+        "written pointer is null",
+    );
+
+    unsafe {
+        xray_core_free(core);
+    }
+}
+
+#[test]
 fn ffi_tun_poll_tcp_remote_write_slow_event_reports_no_packet() {
     let mut err = std::ptr::null_mut();
     let core = loaded_core(&mut err);
