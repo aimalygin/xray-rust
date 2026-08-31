@@ -1726,7 +1726,7 @@ pub unsafe extern "C" fn xray_tun_poll_packet(
     error: *mut *mut XrayError,
 ) -> XrayStatus {
     unsafe {
-        ffi_status(error, || {
+        ffi_result_status(error, || {
             xray_tun_poll_packet_inner(handle, buffer, buffer_len, written, error)
         })
     }
@@ -1738,7 +1738,7 @@ unsafe fn xray_tun_poll_packet_inner(
     buffer_len: usize,
     written: *mut usize,
     error: *mut *mut XrayError,
-) -> XrayStatus {
+) -> FfiResult {
     unsafe {
         clear_error(error);
     }
@@ -1749,38 +1749,12 @@ unsafe fn xray_tun_poll_packet_inner(
         }
     }
 
-    if handle.is_null() {
-        unsafe {
-            set_error(error, XrayStatus::NullArgument, "core handle is null");
-        }
-        return XrayStatus::NullArgument;
+    let handle = unsafe { shared_handle(handle, error)? };
+    unsafe {
+        ensure_non_null(buffer, error, "packet buffer is null")?;
+        ensure_non_null(written, error, "written pointer is null")?;
     }
-    if buffer.is_null() {
-        unsafe {
-            set_error(error, XrayStatus::NullArgument, "packet buffer is null");
-        }
-        return XrayStatus::NullArgument;
-    }
-    if written.is_null() {
-        unsafe {
-            set_error(error, XrayStatus::NullArgument, "written pointer is null");
-        }
-        return XrayStatus::NullArgument;
-    }
-
-    // Shared access: data-path entry points may run concurrently with each
-    // other (Swift pump push/poll threads); only lifecycle calls take `&mut`.
-    let handle = unsafe { &*handle };
-    let Some(core) = handle.core.as_ref() else {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::CoreNotLoaded,
-                "core config is not loaded",
-            );
-        }
-        return XrayStatus::CoreNotLoaded;
-    };
+    let core = unsafe { loaded_core(handle, error)? };
 
     let pending_packet = match handle.pending_outbound_packets.lock() {
         Ok(mut pending_packets) => pending_packets.pop_front(),
@@ -1798,7 +1772,7 @@ unsafe fn xray_tun_poll_packet_inner(
                 ptr::copy_nonoverlapping(packet.as_ptr(), buffer, packet.len());
                 *written = packet.len();
             }
-            XrayStatus::Ok
+            Ok(XrayStatus::Ok)
         }
         Ok(Some(packet)) => {
             unsafe {
@@ -1816,14 +1790,14 @@ unsafe fn xray_tun_poll_packet_inner(
                 Ok(mut pending_packets) => pending_packets.push_front(packet),
                 Err(poisoned) => poisoned.into_inner().push_front(packet),
             }
-            XrayStatus::BufferTooSmall
+            Err(XrayStatus::BufferTooSmall)
         }
-        Ok(None) => XrayStatus::NoPacket,
+        Ok(None) => Ok(XrayStatus::NoPacket),
         Err(err) => {
             unsafe {
                 set_error(error, XrayStatus::TunError, err.to_string());
             }
-            XrayStatus::TunError
+            Err(XrayStatus::TunError)
         }
     }
 }
@@ -1865,7 +1839,7 @@ pub unsafe extern "C" fn xray_tun_poll_packets(
     error: *mut *mut XrayError,
 ) -> XrayStatus {
     unsafe {
-        ffi_status(error, || {
+        ffi_result_status(error, || {
             xray_tun_poll_packets_inner(
                 handle,
                 buffer,
@@ -1890,7 +1864,7 @@ unsafe fn xray_tun_poll_packets_inner(
     packet_count: *mut usize,
     wait_ms: u32,
     error: *mut *mut XrayError,
-) -> XrayStatus {
+) -> FfiResult {
     unsafe {
         clear_error(error);
     }
@@ -1901,37 +1875,11 @@ unsafe fn xray_tun_poll_packets_inner(
         }
     }
 
-    if handle.is_null() {
-        unsafe {
-            set_error(error, XrayStatus::NullArgument, "core handle is null");
-        }
-        return XrayStatus::NullArgument;
-    }
-    if buffer.is_null() {
-        unsafe {
-            set_error(error, XrayStatus::NullArgument, "packet buffer is null");
-        }
-        return XrayStatus::NullArgument;
-    }
-    if packet_lengths.is_null() {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::NullArgument,
-                "packet lengths pointer is null",
-            );
-        }
-        return XrayStatus::NullArgument;
-    }
-    if packet_count.is_null() {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::NullArgument,
-                "packet count pointer is null",
-            );
-        }
-        return XrayStatus::NullArgument;
+    let handle = unsafe { shared_handle(handle, error)? };
+    unsafe {
+        ensure_non_null(buffer, error, "packet buffer is null")?;
+        ensure_non_null(packet_lengths, error, "packet lengths pointer is null")?;
+        ensure_non_null(packet_count, error, "packet count pointer is null")?;
     }
     if max_packets == 0 {
         unsafe {
@@ -1941,20 +1889,9 @@ unsafe fn xray_tun_poll_packets_inner(
                 "max_packets must be nonzero",
             );
         }
-        return XrayStatus::NullArgument;
+        return Err(XrayStatus::NullArgument);
     }
-
-    let handle = unsafe { &*handle };
-    let Some(core) = handle.core.as_ref() else {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::CoreNotLoaded,
-                "core config is not loaded",
-            );
-        }
-        return XrayStatus::CoreNotLoaded;
-    };
+    let core = unsafe { loaded_core(handle, error)? };
 
     let tun = core.tun();
     // Every outbound packet is bounded by the tun mtu, so reserving one mtu of
@@ -1971,7 +1908,7 @@ unsafe fn xray_tun_poll_packets_inner(
                 ),
             );
         }
-        return XrayStatus::BufferTooSmall;
+        return Err(XrayStatus::BufferTooSmall);
     }
 
     let pending_packet = match handle.pending_outbound_packets.lock() {
@@ -1984,7 +1921,7 @@ unsafe fn xray_tun_poll_packets_inner(
             *packet_lengths = packet.len();
             *packet_count = 1;
         }
-        return XrayStatus::Ok;
+        return Ok(XrayStatus::Ok);
     }
 
     let wait = Duration::from_millis(u64::from(wait_ms));
@@ -1993,14 +1930,14 @@ unsafe fn xray_tun_poll_packets_inner(
     });
 
     match batch {
-        Err(_) => XrayStatus::NoPacket,
+        Err(_) => Ok(XrayStatus::NoPacket),
         Ok(Err(err)) => {
             unsafe {
                 set_error(error, XrayStatus::TunError, err.to_string());
             }
-            XrayStatus::TunError
+            Err(XrayStatus::TunError)
         }
-        Ok(Ok(packets)) if packets.is_empty() => XrayStatus::NoPacket,
+        Ok(Ok(packets)) if packets.is_empty() => Ok(XrayStatus::NoPacket),
         Ok(Ok(packets)) => {
             let mut offset = 0usize;
             let mut written = 0usize;
@@ -2018,7 +1955,7 @@ unsafe fn xray_tun_poll_packets_inner(
             unsafe {
                 *packet_count = written;
             }
-            XrayStatus::Ok
+            Ok(XrayStatus::Ok)
         }
     }
 }
@@ -2047,7 +1984,7 @@ pub unsafe extern "C" fn xray_tun_poll_tcp_slow_flow_event(
     error: *mut *mut XrayError,
 ) -> XrayStatus {
     unsafe {
-        ffi_status(error, || {
+        ffi_result_status(error, || {
             xray_tun_poll_tcp_slow_flow_event_inner(
                 handle,
                 event,
@@ -2067,85 +2004,26 @@ unsafe fn xray_tun_poll_tcp_slow_flow_event_inner(
     target_buffer_len: usize,
     target_written: *mut usize,
     error: *mut *mut XrayError,
-) -> XrayStatus {
+) -> FfiResult {
     unsafe {
         clear_error(error);
     }
-
-    if !target_written.is_null() {
-        unsafe {
-            *target_written = 0;
-        }
-    }
-    if !target_buffer.is_null() && target_buffer_len > 0 {
-        unsafe {
-            *target_buffer = 0;
-        }
-    }
-
-    if handle.is_null() {
-        unsafe {
-            set_error(error, XrayStatus::NullArgument, "core handle is null");
-        }
-        return XrayStatus::NullArgument;
-    }
-    if event.is_null() {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::NullArgument,
-                "slow-flow event pointer is null",
-            );
-        }
-        return XrayStatus::NullArgument;
-    }
-    if target_buffer.is_null() {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::NullArgument,
-                "slow-flow target buffer is null",
-            );
-        }
-        return XrayStatus::NullArgument;
-    }
-    if target_written.is_null() {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::NullArgument,
-                "slow-flow target written pointer is null",
-            );
-        }
-        return XrayStatus::NullArgument;
-    }
-    if target_buffer_len == 0 {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::BufferTooSmall,
-                "slow-flow target buffer length is zero",
-            );
-        }
-        return XrayStatus::BufferTooSmall;
-    }
-
-    // Shared access: data-path entry points may run concurrently with each
-    // other (Swift pump push/poll threads); only lifecycle calls take `&mut`.
-    let handle = unsafe { &*handle };
-    let Some(core) = handle.core.as_ref() else {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::CoreNotLoaded,
-                "core config is not loaded",
-            );
-        }
-        return XrayStatus::CoreNotLoaded;
+    let target = unsafe {
+        OutStrArgs::new(
+            target_buffer,
+            target_buffer_len,
+            target_written,
+            "slow-flow target",
+        )
     };
 
+    let handle = unsafe { shared_handle(handle, error)? };
+    unsafe { ensure_non_null(event, error, "slow-flow event pointer is null")? };
+    let [target] = unsafe { OutStrArgs::validate([target], error)? };
+    let core = unsafe { loaded_core(handle, error)? };
+
     let Some(slow_flow) = core.tun().poll_tcp_slow_flow_event() else {
-        return XrayStatus::NoPacket;
+        return Ok(XrayStatus::NoPacket);
     };
 
     unsafe {
@@ -2154,14 +2032,9 @@ unsafe fn xray_tun_poll_tcp_slow_flow_event_inner(
             open_duration_ms: slow_flow.open_duration_ms,
             first_byte_duration_ms: slow_flow.first_byte_duration_ms,
         };
-        write_c_string_truncated(
-            &slow_flow.target,
-            target_buffer,
-            target_buffer_len,
-            target_written,
-        );
+        target.write(&slow_flow.target);
     }
-    XrayStatus::Ok
+    Ok(XrayStatus::Ok)
 }
 
 /// Polls one debug-only TCP flow-summary event from the TUN endpoint.
@@ -2190,7 +2063,7 @@ pub unsafe extern "C" fn xray_tun_poll_tcp_flow_summary_event(
     error: *mut *mut XrayError,
 ) -> XrayStatus {
     unsafe {
-        ffi_status(error, || {
+        ffi_result_status(error, || {
             xray_tun_poll_tcp_flow_summary_event_inner(
                 handle,
                 event,
@@ -2217,125 +2090,34 @@ unsafe fn xray_tun_poll_tcp_flow_summary_event_inner(
     outbound_tag_buffer_len: usize,
     outbound_tag_written: *mut usize,
     error: *mut *mut XrayError,
-) -> XrayStatus {
+) -> FfiResult {
     unsafe {
         clear_error(error);
     }
-
-    if !target_written.is_null() {
-        unsafe {
-            *target_written = 0;
-        }
-    }
-    if !target_buffer.is_null() && target_buffer_len > 0 {
-        unsafe {
-            *target_buffer = 0;
-        }
-    }
-    if !outbound_tag_written.is_null() {
-        unsafe {
-            *outbound_tag_written = 0;
-        }
-    }
-    if !outbound_tag_buffer.is_null() && outbound_tag_buffer_len > 0 {
-        unsafe {
-            *outbound_tag_buffer = 0;
-        }
-    }
-
-    if handle.is_null() {
-        unsafe {
-            set_error(error, XrayStatus::NullArgument, "core handle is null");
-        }
-        return XrayStatus::NullArgument;
-    }
-    if event.is_null() {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::NullArgument,
-                "TCP flow-summary event pointer is null",
-            );
-        }
-        return XrayStatus::NullArgument;
-    }
-    if target_buffer.is_null() {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::NullArgument,
-                "TCP flow-summary target buffer is null",
-            );
-        }
-        return XrayStatus::NullArgument;
-    }
-    if target_written.is_null() {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::NullArgument,
-                "TCP flow-summary target written pointer is null",
-            );
-        }
-        return XrayStatus::NullArgument;
-    }
-    if outbound_tag_buffer.is_null() {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::NullArgument,
-                "TCP flow-summary outbound tag buffer is null",
-            );
-        }
-        return XrayStatus::NullArgument;
-    }
-    if outbound_tag_written.is_null() {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::NullArgument,
-                "TCP flow-summary outbound tag written pointer is null",
-            );
-        }
-        return XrayStatus::NullArgument;
-    }
-    if target_buffer_len == 0 {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::BufferTooSmall,
-                "TCP flow-summary target buffer length is zero",
-            );
-        }
-        return XrayStatus::BufferTooSmall;
-    }
-    if outbound_tag_buffer_len == 0 {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::BufferTooSmall,
-                "TCP flow-summary outbound tag buffer length is zero",
-            );
-        }
-        return XrayStatus::BufferTooSmall;
-    }
-
-    // Shared access: data-path entry points may run concurrently with each
-    // other (Swift pump push/poll threads); only lifecycle calls take `&mut`.
-    let handle = unsafe { &*handle };
-    let Some(core) = handle.core.as_ref() else {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::CoreNotLoaded,
-                "core config is not loaded",
-            );
-        }
-        return XrayStatus::CoreNotLoaded;
+    let target = unsafe {
+        OutStrArgs::new(
+            target_buffer,
+            target_buffer_len,
+            target_written,
+            "TCP flow-summary target",
+        )
+    };
+    let outbound_tag = unsafe {
+        OutStrArgs::new(
+            outbound_tag_buffer,
+            outbound_tag_buffer_len,
+            outbound_tag_written,
+            "TCP flow-summary outbound tag",
+        )
     };
 
+    let handle = unsafe { shared_handle(handle, error)? };
+    unsafe { ensure_non_null(event, error, "TCP flow-summary event pointer is null")? };
+    let [target, outbound_tag] = unsafe { OutStrArgs::validate([target, outbound_tag], error)? };
+    let core = unsafe { loaded_core(handle, error)? };
+
     let Some(summary) = core.tun().poll_tcp_flow_summary_event() else {
-        return XrayStatus::NoPacket;
+        return Ok(XrayStatus::NoPacket);
     };
 
     unsafe {
@@ -2351,20 +2133,10 @@ unsafe fn xray_tun_poll_tcp_flow_summary_event_inner(
             ms_to_512kib: summary.ms_to_512kib,
             ms_to_1mib: summary.ms_to_1mib,
         };
-        write_c_string_truncated(
-            &summary.target,
-            target_buffer,
-            target_buffer_len,
-            target_written,
-        );
-        write_c_string_truncated(
-            summary.outbound_tag.as_deref().unwrap_or(""),
-            outbound_tag_buffer,
-            outbound_tag_buffer_len,
-            outbound_tag_written,
-        );
+        target.write(&summary.target);
+        outbound_tag.write(summary.outbound_tag.as_deref().unwrap_or(""));
     }
-    XrayStatus::Ok
+    Ok(XrayStatus::Ok)
 }
 
 /// Polls one debug-only TCP open-error event from the TUN endpoint.
@@ -2396,7 +2168,7 @@ pub unsafe extern "C" fn xray_tun_poll_tcp_open_error_event(
     error: *mut *mut XrayError,
 ) -> XrayStatus {
     unsafe {
-        ffi_status(error, || {
+        ffi_result_status(error, || {
             xray_tun_poll_tcp_open_error_event_inner(
                 handle,
                 event,
@@ -2429,189 +2201,52 @@ unsafe fn xray_tun_poll_tcp_open_error_event_inner(
     error_message_buffer_len: usize,
     error_message_written: *mut usize,
     error: *mut *mut XrayError,
-) -> XrayStatus {
+) -> FfiResult {
     unsafe {
         clear_error(error);
     }
-
-    if !target_written.is_null() {
-        unsafe {
-            *target_written = 0;
-        }
-    }
-    if !target_buffer.is_null() && target_buffer_len > 0 {
-        unsafe {
-            *target_buffer = 0;
-        }
-    }
-    if !outbound_tag_written.is_null() {
-        unsafe {
-            *outbound_tag_written = 0;
-        }
-    }
-    if !outbound_tag_buffer.is_null() && outbound_tag_buffer_len > 0 {
-        unsafe {
-            *outbound_tag_buffer = 0;
-        }
-    }
-    if !error_message_written.is_null() {
-        unsafe {
-            *error_message_written = 0;
-        }
-    }
-    if !error_message_buffer.is_null() && error_message_buffer_len > 0 {
-        unsafe {
-            *error_message_buffer = 0;
-        }
-    }
-
-    if handle.is_null() {
-        unsafe {
-            set_error(error, XrayStatus::NullArgument, "core handle is null");
-        }
-        return XrayStatus::NullArgument;
-    }
-    if event.is_null() {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::NullArgument,
-                "TCP open-error event pointer is null",
-            );
-        }
-        return XrayStatus::NullArgument;
-    }
-    if target_buffer.is_null() {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::NullArgument,
-                "TCP open-error target buffer is null",
-            );
-        }
-        return XrayStatus::NullArgument;
-    }
-    if target_written.is_null() {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::NullArgument,
-                "TCP open-error target written pointer is null",
-            );
-        }
-        return XrayStatus::NullArgument;
-    }
-    if outbound_tag_buffer.is_null() {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::NullArgument,
-                "TCP open-error outbound tag buffer is null",
-            );
-        }
-        return XrayStatus::NullArgument;
-    }
-    if outbound_tag_written.is_null() {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::NullArgument,
-                "TCP open-error outbound tag written pointer is null",
-            );
-        }
-        return XrayStatus::NullArgument;
-    }
-    if error_message_buffer.is_null() {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::NullArgument,
-                "TCP open-error message buffer is null",
-            );
-        }
-        return XrayStatus::NullArgument;
-    }
-    if error_message_written.is_null() {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::NullArgument,
-                "TCP open-error message written pointer is null",
-            );
-        }
-        return XrayStatus::NullArgument;
-    }
-    if target_buffer_len == 0 {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::BufferTooSmall,
-                "TCP open-error target buffer length is zero",
-            );
-        }
-        return XrayStatus::BufferTooSmall;
-    }
-    if outbound_tag_buffer_len == 0 {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::BufferTooSmall,
-                "TCP open-error outbound tag buffer length is zero",
-            );
-        }
-        return XrayStatus::BufferTooSmall;
-    }
-    if error_message_buffer_len == 0 {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::BufferTooSmall,
-                "TCP open-error message buffer length is zero",
-            );
-        }
-        return XrayStatus::BufferTooSmall;
-    }
-
-    // Shared access: data-path entry points may run concurrently with each
-    // other (Swift pump push/poll threads); only lifecycle calls take `&mut`.
-    let handle = unsafe { &*handle };
-    let Some(core) = handle.core.as_ref() else {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::CoreNotLoaded,
-                "core config is not loaded",
-            );
-        }
-        return XrayStatus::CoreNotLoaded;
+    let target = unsafe {
+        OutStrArgs::new(
+            target_buffer,
+            target_buffer_len,
+            target_written,
+            "TCP open-error target",
+        )
+    };
+    let outbound_tag = unsafe {
+        OutStrArgs::new(
+            outbound_tag_buffer,
+            outbound_tag_buffer_len,
+            outbound_tag_written,
+            "TCP open-error outbound tag",
+        )
+    };
+    let message = unsafe {
+        OutStrArgs::new(
+            error_message_buffer,
+            error_message_buffer_len,
+            error_message_written,
+            "TCP open-error message",
+        )
     };
 
+    let handle = unsafe { shared_handle(handle, error)? };
+    unsafe { ensure_non_null(event, error, "TCP open-error event pointer is null")? };
+    let [target, outbound_tag, message] =
+        unsafe { OutStrArgs::validate([target, outbound_tag, message], error)? };
+    let core = unsafe { loaded_core(handle, error)? };
+
     let Some(open_error) = core.tun().poll_tcp_open_error_event() else {
-        return XrayStatus::NoPacket;
+        return Ok(XrayStatus::NoPacket);
     };
 
     unsafe {
         *event = XrayTcpOpenErrorEvent { reserved: 0 };
-        write_c_string_truncated(
-            &open_error.target,
-            target_buffer,
-            target_buffer_len,
-            target_written,
-        );
-        write_c_string_truncated(
-            open_error.outbound_tag.as_deref().unwrap_or(""),
-            outbound_tag_buffer,
-            outbound_tag_buffer_len,
-            outbound_tag_written,
-        );
-        write_c_string_truncated(
-            &open_error.error,
-            error_message_buffer,
-            error_message_buffer_len,
-            error_message_written,
-        );
+        target.write(&open_error.target);
+        outbound_tag.write(open_error.outbound_tag.as_deref().unwrap_or(""));
+        message.write(&open_error.error);
     }
-    XrayStatus::Ok
+    Ok(XrayStatus::Ok)
 }
 
 /// Polls one debug-only TCP remote-write slow event from the TUN endpoint.
@@ -2640,7 +2275,7 @@ pub unsafe extern "C" fn xray_tun_poll_tcp_remote_write_slow_event(
     error: *mut *mut XrayError,
 ) -> XrayStatus {
     unsafe {
-        ffi_status(error, || {
+        ffi_result_status(error, || {
             xray_tun_poll_tcp_remote_write_slow_event_inner(
                 handle,
                 event,
@@ -2667,125 +2302,34 @@ unsafe fn xray_tun_poll_tcp_remote_write_slow_event_inner(
     outbound_tag_buffer_len: usize,
     outbound_tag_written: *mut usize,
     error: *mut *mut XrayError,
-) -> XrayStatus {
+) -> FfiResult {
     unsafe {
         clear_error(error);
     }
-
-    if !target_written.is_null() {
-        unsafe {
-            *target_written = 0;
-        }
-    }
-    if !target_buffer.is_null() && target_buffer_len > 0 {
-        unsafe {
-            *target_buffer = 0;
-        }
-    }
-    if !outbound_tag_written.is_null() {
-        unsafe {
-            *outbound_tag_written = 0;
-        }
-    }
-    if !outbound_tag_buffer.is_null() && outbound_tag_buffer_len > 0 {
-        unsafe {
-            *outbound_tag_buffer = 0;
-        }
-    }
-
-    if handle.is_null() {
-        unsafe {
-            set_error(error, XrayStatus::NullArgument, "core handle is null");
-        }
-        return XrayStatus::NullArgument;
-    }
-    if event.is_null() {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::NullArgument,
-                "TCP remote-write slow event pointer is null",
-            );
-        }
-        return XrayStatus::NullArgument;
-    }
-    if target_buffer.is_null() {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::NullArgument,
-                "TCP remote-write slow target buffer is null",
-            );
-        }
-        return XrayStatus::NullArgument;
-    }
-    if target_written.is_null() {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::NullArgument,
-                "TCP remote-write slow target written pointer is null",
-            );
-        }
-        return XrayStatus::NullArgument;
-    }
-    if outbound_tag_buffer.is_null() {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::NullArgument,
-                "TCP remote-write slow outbound tag buffer is null",
-            );
-        }
-        return XrayStatus::NullArgument;
-    }
-    if outbound_tag_written.is_null() {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::NullArgument,
-                "TCP remote-write slow outbound tag written pointer is null",
-            );
-        }
-        return XrayStatus::NullArgument;
-    }
-    if target_buffer_len == 0 {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::BufferTooSmall,
-                "TCP remote-write slow target buffer length is zero",
-            );
-        }
-        return XrayStatus::BufferTooSmall;
-    }
-    if outbound_tag_buffer_len == 0 {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::BufferTooSmall,
-                "TCP remote-write slow outbound tag buffer length is zero",
-            );
-        }
-        return XrayStatus::BufferTooSmall;
-    }
-
-    // Shared access: data-path entry points may run concurrently with each
-    // other (Swift pump push/poll threads); only lifecycle calls take `&mut`.
-    let handle = unsafe { &*handle };
-    let Some(core) = handle.core.as_ref() else {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::CoreNotLoaded,
-                "core config is not loaded",
-            );
-        }
-        return XrayStatus::CoreNotLoaded;
+    let target = unsafe {
+        OutStrArgs::new(
+            target_buffer,
+            target_buffer_len,
+            target_written,
+            "TCP remote-write slow target",
+        )
+    };
+    let outbound_tag = unsafe {
+        OutStrArgs::new(
+            outbound_tag_buffer,
+            outbound_tag_buffer_len,
+            outbound_tag_written,
+            "TCP remote-write slow outbound tag",
+        )
     };
 
+    let handle = unsafe { shared_handle(handle, error)? };
+    unsafe { ensure_non_null(event, error, "TCP remote-write slow event pointer is null")? };
+    let [target, outbound_tag] = unsafe { OutStrArgs::validate([target, outbound_tag], error)? };
+    let core = unsafe { loaded_core(handle, error)? };
+
     let Some(slow_write) = core.tun().poll_tcp_remote_write_slow_event() else {
-        return XrayStatus::NoPacket;
+        return Ok(XrayStatus::NoPacket);
     };
 
     unsafe {
@@ -2794,20 +2338,10 @@ unsafe fn xray_tun_poll_tcp_remote_write_slow_event_inner(
             bytes: slow_write.bytes,
             messages: slow_write.messages,
         };
-        write_c_string_truncated(
-            &slow_write.target,
-            target_buffer,
-            target_buffer_len,
-            target_written,
-        );
-        write_c_string_truncated(
-            slow_write.outbound_tag.as_deref().unwrap_or(""),
-            outbound_tag_buffer,
-            outbound_tag_buffer_len,
-            outbound_tag_written,
-        );
+        target.write(&slow_write.target);
+        outbound_tag.write(slow_write.outbound_tag.as_deref().unwrap_or(""));
     }
-    XrayStatus::Ok
+    Ok(XrayStatus::Ok)
 }
 
 /// Polls one debug-only UDP slow-flow event from the TUN endpoint.
@@ -2833,7 +2367,7 @@ pub unsafe extern "C" fn xray_tun_poll_udp_slow_flow_event(
     error: *mut *mut XrayError,
 ) -> XrayStatus {
     unsafe {
-        ffi_status(error, || {
+        ffi_result_status(error, || {
             xray_tun_poll_udp_slow_flow_event_inner(
                 handle,
                 event,
@@ -2853,85 +2387,26 @@ unsafe fn xray_tun_poll_udp_slow_flow_event_inner(
     target_buffer_len: usize,
     target_written: *mut usize,
     error: *mut *mut XrayError,
-) -> XrayStatus {
+) -> FfiResult {
     unsafe {
         clear_error(error);
     }
-
-    if !target_written.is_null() {
-        unsafe {
-            *target_written = 0;
-        }
-    }
-    if !target_buffer.is_null() && target_buffer_len > 0 {
-        unsafe {
-            *target_buffer = 0;
-        }
-    }
-
-    if handle.is_null() {
-        unsafe {
-            set_error(error, XrayStatus::NullArgument, "core handle is null");
-        }
-        return XrayStatus::NullArgument;
-    }
-    if event.is_null() {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::NullArgument,
-                "slow-flow event pointer is null",
-            );
-        }
-        return XrayStatus::NullArgument;
-    }
-    if target_buffer.is_null() {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::NullArgument,
-                "slow-flow target buffer is null",
-            );
-        }
-        return XrayStatus::NullArgument;
-    }
-    if target_written.is_null() {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::NullArgument,
-                "slow-flow target written pointer is null",
-            );
-        }
-        return XrayStatus::NullArgument;
-    }
-    if target_buffer_len == 0 {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::BufferTooSmall,
-                "slow-flow target buffer length is zero",
-            );
-        }
-        return XrayStatus::BufferTooSmall;
-    }
-
-    // Shared access: data-path entry points may run concurrently with each
-    // other (Swift pump push/poll threads); only lifecycle calls take `&mut`.
-    let handle = unsafe { &*handle };
-    let Some(core) = handle.core.as_ref() else {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::CoreNotLoaded,
-                "core config is not loaded",
-            );
-        }
-        return XrayStatus::CoreNotLoaded;
+    let target = unsafe {
+        OutStrArgs::new(
+            target_buffer,
+            target_buffer_len,
+            target_written,
+            "slow-flow target",
+        )
     };
 
+    let handle = unsafe { shared_handle(handle, error)? };
+    unsafe { ensure_non_null(event, error, "slow-flow event pointer is null")? };
+    let [target] = unsafe { OutStrArgs::validate([target], error)? };
+    let core = unsafe { loaded_core(handle, error)? };
+
     let Some(slow_flow) = core.tun().poll_udp_slow_flow_event() else {
-        return XrayStatus::NoPacket;
+        return Ok(XrayStatus::NoPacket);
     };
 
     unsafe {
@@ -2940,14 +2415,9 @@ unsafe fn xray_tun_poll_udp_slow_flow_event_inner(
             written_bytes: slow_flow.written_bytes,
             read_bytes: slow_flow.read_bytes,
         };
-        write_c_string_truncated(
-            &slow_flow.target,
-            target_buffer,
-            target_buffer_len,
-            target_written,
-        );
+        target.write(&slow_flow.target);
     }
-    XrayStatus::Ok
+    Ok(XrayStatus::Ok)
 }
 
 /// Polls one debug-only UDP response-gap event from the TUN endpoint.
@@ -2973,7 +2443,7 @@ pub unsafe extern "C" fn xray_tun_poll_udp_response_gap_event(
     error: *mut *mut XrayError,
 ) -> XrayStatus {
     unsafe {
-        ffi_status(error, || {
+        ffi_result_status(error, || {
             xray_tun_poll_udp_response_gap_event_inner(
                 handle,
                 event,
@@ -2993,85 +2463,26 @@ unsafe fn xray_tun_poll_udp_response_gap_event_inner(
     target_buffer_len: usize,
     target_written: *mut usize,
     error: *mut *mut XrayError,
-) -> XrayStatus {
+) -> FfiResult {
     unsafe {
         clear_error(error);
     }
-
-    if !target_written.is_null() {
-        unsafe {
-            *target_written = 0;
-        }
-    }
-    if !target_buffer.is_null() && target_buffer_len > 0 {
-        unsafe {
-            *target_buffer = 0;
-        }
-    }
-
-    if handle.is_null() {
-        unsafe {
-            set_error(error, XrayStatus::NullArgument, "core handle is null");
-        }
-        return XrayStatus::NullArgument;
-    }
-    if event.is_null() {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::NullArgument,
-                "response-gap event pointer is null",
-            );
-        }
-        return XrayStatus::NullArgument;
-    }
-    if target_buffer.is_null() {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::NullArgument,
-                "response-gap target buffer is null",
-            );
-        }
-        return XrayStatus::NullArgument;
-    }
-    if target_written.is_null() {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::NullArgument,
-                "response-gap target written pointer is null",
-            );
-        }
-        return XrayStatus::NullArgument;
-    }
-    if target_buffer_len == 0 {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::BufferTooSmall,
-                "response-gap target buffer length is zero",
-            );
-        }
-        return XrayStatus::BufferTooSmall;
-    }
-
-    // Shared access: data-path entry points may run concurrently with each
-    // other (Swift pump push/poll threads); only lifecycle calls take `&mut`.
-    let handle = unsafe { &*handle };
-    let Some(core) = handle.core.as_ref() else {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::CoreNotLoaded,
-                "core config is not loaded",
-            );
-        }
-        return XrayStatus::CoreNotLoaded;
+    let target = unsafe {
+        OutStrArgs::new(
+            target_buffer,
+            target_buffer_len,
+            target_written,
+            "response-gap target",
+        )
     };
 
+    let handle = unsafe { shared_handle(handle, error)? };
+    unsafe { ensure_non_null(event, error, "response-gap event pointer is null")? };
+    let [target] = unsafe { OutStrArgs::validate([target], error)? };
+    let core = unsafe { loaded_core(handle, error)? };
+
     let Some(response_gap) = core.tun().poll_udp_response_gap_event() else {
-        return XrayStatus::NoPacket;
+        return Ok(XrayStatus::NoPacket);
     };
 
     unsafe {
@@ -3080,14 +2491,9 @@ unsafe fn xray_tun_poll_udp_response_gap_event_inner(
             written_bytes: response_gap.written_bytes,
             read_bytes: response_gap.read_bytes,
         };
-        write_c_string_truncated(
-            &response_gap.target,
-            target_buffer,
-            target_buffer_len,
-            target_written,
-        );
+        target.write(&response_gap.target);
     }
-    XrayStatus::Ok
+    Ok(XrayStatus::Ok)
 }
 
 /// Polls one debug-only UDP QUIC-blocked event from the TUN endpoint.
@@ -3113,7 +2519,7 @@ pub unsafe extern "C" fn xray_tun_poll_udp_quic_blocked_event(
     error: *mut *mut XrayError,
 ) -> XrayStatus {
     unsafe {
-        ffi_status(error, || {
+        ffi_result_status(error, || {
             xray_tun_poll_udp_quic_blocked_event_inner(
                 handle,
                 event,
@@ -3133,99 +2539,35 @@ unsafe fn xray_tun_poll_udp_quic_blocked_event_inner(
     target_buffer_len: usize,
     target_written: *mut usize,
     error: *mut *mut XrayError,
-) -> XrayStatus {
+) -> FfiResult {
     unsafe {
         clear_error(error);
     }
-
-    if !target_written.is_null() {
-        unsafe {
-            *target_written = 0;
-        }
-    }
-    if !target_buffer.is_null() && target_buffer_len > 0 {
-        unsafe {
-            *target_buffer = 0;
-        }
-    }
-
-    if handle.is_null() {
-        unsafe {
-            set_error(error, XrayStatus::NullArgument, "core handle is null");
-        }
-        return XrayStatus::NullArgument;
-    }
-    if event.is_null() {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::NullArgument,
-                "QUIC-blocked event pointer is null",
-            );
-        }
-        return XrayStatus::NullArgument;
-    }
-    if target_buffer.is_null() {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::NullArgument,
-                "QUIC-blocked target buffer is null",
-            );
-        }
-        return XrayStatus::NullArgument;
-    }
-    if target_written.is_null() {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::NullArgument,
-                "QUIC-blocked target written pointer is null",
-            );
-        }
-        return XrayStatus::NullArgument;
-    }
-    if target_buffer_len == 0 {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::BufferTooSmall,
-                "QUIC-blocked target buffer length is zero",
-            );
-        }
-        return XrayStatus::BufferTooSmall;
-    }
-
-    // Shared access: data-path entry points may run concurrently with each
-    // other (Swift pump push/poll threads); only lifecycle calls take `&mut`.
-    let handle = unsafe { &*handle };
-    let Some(core) = handle.core.as_ref() else {
-        unsafe {
-            set_error(
-                error,
-                XrayStatus::CoreNotLoaded,
-                "core config is not loaded",
-            );
-        }
-        return XrayStatus::CoreNotLoaded;
+    let target = unsafe {
+        OutStrArgs::new(
+            target_buffer,
+            target_buffer_len,
+            target_written,
+            "QUIC-blocked target",
+        )
     };
 
+    let handle = unsafe { shared_handle(handle, error)? };
+    unsafe { ensure_non_null(event, error, "QUIC-blocked event pointer is null")? };
+    let [target] = unsafe { OutStrArgs::validate([target], error)? };
+    let core = unsafe { loaded_core(handle, error)? };
+
     let Some(blocked) = core.tun().poll_udp_quic_blocked_event() else {
-        return XrayStatus::NoPacket;
+        return Ok(XrayStatus::NoPacket);
     };
 
     unsafe {
         *event = XrayUdpQuicBlockedEvent {
             bytes: blocked.bytes,
         };
-        write_c_string_truncated(
-            &blocked.target,
-            target_buffer,
-            target_buffer_len,
-            target_written,
-        );
+        target.write(&blocked.target);
     }
-    XrayStatus::Ok
+    Ok(XrayStatus::Ok)
 }
 
 /// Writes a TUN packet counter snapshot to `stats`.
@@ -3514,19 +2856,217 @@ unsafe fn free_error(error: *mut XrayError) {
     }
 }
 
-unsafe fn write_c_string_truncated(
-    value: &str,
-    buffer: *mut c_char,
-    buffer_len: usize,
-    written: *mut usize,
-) {
-    let bytes = value.as_bytes();
-    let copy_len = bytes.len().min(buffer_len.saturating_sub(1));
-    unsafe {
-        ptr::copy_nonoverlapping(bytes.as_ptr(), buffer.cast::<u8>(), copy_len);
-        *buffer.add(copy_len) = 0;
-        *written = copy_len;
+/// Outcome of a fallible FFI body. `Err` carries a status that has already
+/// been reported through [`set_error`] and lets the body bail out with `?`;
+/// `Ok` carries the status of the completed call. Both collapse to the same
+/// `XrayStatus` at the C boundary.
+type FfiResult = Result<XrayStatus, XrayStatus>;
+
+/// Dereferences a caller-supplied core handle for shared, data-path access.
+///
+/// # Safety
+///
+/// `handle` must either be null or a pointer returned by `xray_core_new` that
+/// has not been freed and is not freed while the returned reference is alive.
+/// `error` must be null or point to an initialized `*mut XrayError`.
+unsafe fn shared_handle<'a>(
+    handle: *mut XrayCoreHandle,
+    error: *mut *mut XrayError,
+) -> Result<&'a XrayCoreHandle, XrayStatus> {
+    if handle.is_null() {
+        unsafe {
+            set_error(error, XrayStatus::NullArgument, "core handle is null");
+        }
+        return Err(XrayStatus::NullArgument);
     }
+
+    // Shared access: data-path entry points may run concurrently with each
+    // other (Swift pump push/poll threads); only lifecycle calls take `&mut`.
+    Ok(unsafe { &*handle })
+}
+
+/// Returns the loaded core behind `handle`, reporting `CoreNotLoaded` when no
+/// config has been loaded yet.
+///
+/// # Safety
+///
+/// `error` must be null or point to an initialized `*mut XrayError`.
+unsafe fn loaded_core(
+    handle: &XrayCoreHandle,
+    error: *mut *mut XrayError,
+) -> Result<&Core, XrayStatus> {
+    match handle.core.as_ref() {
+        Some(core) => Ok(core),
+        None => {
+            unsafe {
+                set_error(
+                    error,
+                    XrayStatus::CoreNotLoaded,
+                    "core config is not loaded",
+                );
+            }
+            Err(XrayStatus::CoreNotLoaded)
+        }
+    }
+}
+
+/// Reports `NullArgument` with `message` when a caller-provided out pointer is
+/// null.
+///
+/// # Safety
+///
+/// `error` must be null or point to an initialized `*mut XrayError`.
+unsafe fn ensure_non_null<T>(
+    ptr: *mut T,
+    error: *mut *mut XrayError,
+    message: &str,
+) -> Result<(), XrayStatus> {
+    if ptr.is_null() {
+        unsafe {
+            set_error(error, XrayStatus::NullArgument, message);
+        }
+        return Err(XrayStatus::NullArgument);
+    }
+    Ok(())
+}
+
+/// A caller-provided output string buffer exactly as received over the C ABI,
+/// before validation. `name` prefixes the error messages, e.g.
+/// `"TCP open-error target"` yields `"TCP open-error target buffer is null"`.
+struct OutStrArgs<'a> {
+    ptr: *mut c_char,
+    len: usize,
+    written: *mut usize,
+    name: &'a str,
+}
+
+impl<'a> OutStrArgs<'a> {
+    /// Captures the raw arguments and resets whichever out-params the caller
+    /// did provide (`*written = 0`, leading NUL) so they hold well-defined
+    /// values no matter which later check fails.
+    ///
+    /// # Safety
+    ///
+    /// `written` must be null or point to one writable `usize`; `ptr` must be
+    /// null or point to `len` writable bytes.
+    unsafe fn new(ptr: *mut c_char, len: usize, written: *mut usize, name: &'a str) -> Self {
+        if !written.is_null() {
+            unsafe {
+                *written = 0;
+            }
+        }
+        if !ptr.is_null() && len > 0 {
+            unsafe {
+                *ptr = 0;
+            }
+        }
+        Self {
+            ptr,
+            len,
+            written,
+            name,
+        }
+    }
+
+    /// Validates `args` in the order the C ABI has always reported them: every
+    /// null check (buffer, then written pointer, argument by argument) before
+    /// any zero-length check. Returns the validated buffers in the same order.
+    ///
+    /// # Safety
+    ///
+    /// `error` must be null or point to an initialized `*mut XrayError`.
+    unsafe fn validate<const N: usize>(
+        args: [Self; N],
+        error: *mut *mut XrayError,
+    ) -> Result<[OutStrBuf; N], XrayStatus> {
+        for arg in &args {
+            if arg.ptr.is_null() {
+                unsafe {
+                    set_error(
+                        error,
+                        XrayStatus::NullArgument,
+                        format!("{} buffer is null", arg.name),
+                    );
+                }
+                return Err(XrayStatus::NullArgument);
+            }
+            if arg.written.is_null() {
+                unsafe {
+                    set_error(
+                        error,
+                        XrayStatus::NullArgument,
+                        format!("{} written pointer is null", arg.name),
+                    );
+                }
+                return Err(XrayStatus::NullArgument);
+            }
+        }
+        for arg in &args {
+            if arg.len == 0 {
+                unsafe {
+                    set_error(
+                        error,
+                        XrayStatus::BufferTooSmall,
+                        format!("{} buffer length is zero", arg.name),
+                    );
+                }
+                return Err(XrayStatus::BufferTooSmall);
+            }
+        }
+        Ok(args.map(|arg| OutStrBuf {
+            ptr: arg.ptr,
+            len: arg.len,
+            written: arg.written,
+        }))
+    }
+}
+
+/// A validated caller-provided output string buffer: `ptr` and `written` are
+/// non-null and `len > 0`. Only [`OutStrArgs::validate`] constructs one.
+struct OutStrBuf {
+    ptr: *mut c_char,
+    len: usize,
+    written: *mut usize,
+}
+
+impl OutStrBuf {
+    /// Writes `value` as a NUL-terminated C string, truncating on a UTF-8
+    /// character boundary when it does not fit, and stores the number of bytes
+    /// copied (excluding the terminator) in `*written`. A zero-length buffer
+    /// is left untouched, since not even the terminator fits.
+    ///
+    /// # Safety
+    ///
+    /// `self.ptr` must be valid for `self.len` byte writes and `self.written`
+    /// for one `usize` write, and neither may overlap `value`.
+    unsafe fn write(&self, value: &str) {
+        if self.len == 0 {
+            return;
+        }
+        let mut copy_len = value.len().min(self.len - 1);
+        while !value.is_char_boundary(copy_len) {
+            copy_len -= 1;
+        }
+        unsafe {
+            ptr::copy_nonoverlapping(value.as_ptr(), self.ptr.cast::<u8>(), copy_len);
+            *self.ptr.add(copy_len) = 0;
+            *self.written = copy_len;
+        }
+    }
+}
+
+/// [`ffi_status`] for bodies that bail out with `?`. Both arms of an
+/// [`FfiResult`] carry a status that has already been reported, so they
+/// collapse to the single status the C ABI returns.
+///
+/// # Safety
+///
+/// `error` must be null or point to an initialized `*mut XrayError`.
+unsafe fn ffi_result_status(
+    error: *mut *mut XrayError,
+    action: impl FnOnce() -> FfiResult,
+) -> XrayStatus {
+    unsafe { ffi_status(error, || action().unwrap_or_else(|status| status)) }
 }
 
 unsafe fn ffi_status(
@@ -3612,11 +3152,13 @@ mod tests {
     use std::ffi::CStr;
     use std::ptr;
 
+    use libc::c_char;
+
     use super::{
         ffi_panic_message, ffi_status, free_error,
         runtime_worker_threads_for_available_parallelism, xray_core_free, xray_core_new,
-        xray_core_set_dns_bootstrap_mode, DnsBootstrapMode, XrayDnsBootstrapMode, XrayError,
-        XrayStatus,
+        xray_core_set_dns_bootstrap_mode, DnsBootstrapMode, OutStrArgs, OutStrBuf,
+        XrayDnsBootstrapMode, XrayError, XrayStatus,
     };
 
     #[test]
@@ -3665,6 +3207,138 @@ mod tests {
         );
 
         unsafe { xray_core_free(handle) };
+    }
+
+    #[test]
+    fn out_str_buf_write_copies_value_that_fits() {
+        let mut buffer = [0x7f as c_char; 8];
+        let mut written = usize::MAX;
+        let buf = OutStrBuf {
+            ptr: buffer.as_mut_ptr(),
+            len: buffer.len(),
+            written: &mut written,
+        };
+
+        unsafe { buf.write("héllo") };
+
+        assert_eq!(written, 6);
+        let value = unsafe { CStr::from_ptr(buffer.as_ptr()) }.to_str().unwrap();
+        assert_eq!(value, "héllo");
+        assert_eq!(buffer[7], 0x7f, "bytes past the terminator stay untouched");
+    }
+
+    #[test]
+    fn out_str_buf_write_truncates_on_utf8_boundary() {
+        let mut buffer = [0x7f as c_char; 3];
+        let mut written = usize::MAX;
+        let buf = OutStrBuf {
+            ptr: buffer.as_mut_ptr(),
+            len: buffer.len(),
+            written: &mut written,
+        };
+
+        // Two payload bytes would fit, but that would split the two-byte `é`.
+        unsafe { buf.write("héllo") };
+
+        assert_eq!(written, 1);
+        assert_eq!(buffer[0], b'h' as c_char);
+        assert_eq!(buffer[1], 0);
+        assert_eq!(buffer[2], 0x7f);
+    }
+
+    #[test]
+    fn out_str_buf_write_to_zero_length_buffer_is_noop() {
+        let mut buffer = [0x7f as c_char; 1];
+        let mut written = 42usize;
+        let buf = OutStrBuf {
+            ptr: buffer.as_mut_ptr(),
+            len: 0,
+            written: &mut written,
+        };
+
+        unsafe { buf.write("abc") };
+
+        assert_eq!(written, 42);
+        assert_eq!(buffer[0], 0x7f);
+    }
+
+    #[test]
+    fn out_str_args_new_resets_provided_out_params_only() {
+        let mut buffer = [0x7f as c_char; 2];
+        let mut written = 42usize;
+
+        let _ = unsafe { OutStrArgs::new(buffer.as_mut_ptr(), 0, &mut written, "test") };
+        assert_eq!(written, 0);
+        assert_eq!(buffer[0], 0x7f, "zero-length buffers are not written to");
+
+        let _ = unsafe { OutStrArgs::new(buffer.as_mut_ptr(), 2, ptr::null_mut(), "test") };
+        assert_eq!(buffer[0], 0);
+        assert_eq!(buffer[1], 0x7f);
+    }
+
+    #[test]
+    fn out_str_args_validate_reports_every_null_before_any_zero_length() {
+        let mut error: *mut XrayError = ptr::null_mut();
+        let mut target = [0 as c_char; 4];
+        let mut target_written = 0usize;
+        let mut outbound_written = 0usize;
+
+        let result = unsafe {
+            OutStrArgs::validate(
+                [
+                    OutStrArgs::new(target.as_mut_ptr(), 0, &mut target_written, "test target"),
+                    OutStrArgs::new(
+                        ptr::null_mut(),
+                        4,
+                        &mut outbound_written,
+                        "test outbound tag",
+                    ),
+                ],
+                &mut error,
+            )
+        };
+
+        assert!(matches!(result, Err(XrayStatus::NullArgument)));
+        let message = unsafe { CStr::from_ptr((*error).message) }
+            .to_str()
+            .unwrap();
+        assert_eq!(message, "test outbound tag buffer is null");
+        unsafe {
+            free_error(error);
+        }
+    }
+
+    #[test]
+    fn out_str_args_validate_reports_zero_length_in_argument_order() {
+        let mut error: *mut XrayError = ptr::null_mut();
+        let mut target = [0 as c_char; 4];
+        let mut outbound = [0 as c_char; 4];
+        let mut target_written = 0usize;
+        let mut outbound_written = 0usize;
+
+        let result = unsafe {
+            OutStrArgs::validate(
+                [
+                    OutStrArgs::new(target.as_mut_ptr(), 4, &mut target_written, "test target"),
+                    OutStrArgs::new(
+                        outbound.as_mut_ptr(),
+                        0,
+                        &mut outbound_written,
+                        "test outbound tag",
+                    ),
+                ],
+                &mut error,
+            )
+        };
+
+        assert!(matches!(result, Err(XrayStatus::BufferTooSmall)));
+        let message = unsafe { CStr::from_ptr((*error).message) }
+            .to_str()
+            .unwrap();
+        assert_eq!(message, "test outbound tag buffer length is zero");
+        unsafe {
+            free_error(error);
+        }
     }
 
     #[test]
