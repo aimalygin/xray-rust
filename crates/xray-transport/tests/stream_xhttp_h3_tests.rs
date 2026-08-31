@@ -477,6 +477,115 @@ async fn start_fixed_completes_upload_before_delayed_response_headers() {
 }
 
 #[tokio::test]
+async fn fixed_length_upload_accepts_remote_no_error_that_races_request_fin() {
+    let (client, server) = pair().await;
+    let payload = Bytes::from(vec![0x5a; 16 * 1024]);
+    let expected = payload.clone();
+    let (stopped, stopped_rx) = tokio::sync::oneshot::channel();
+    let handler = tokio::spawn({
+        let server = server.clone();
+        async move {
+            let (request, mut stream) = server.accept().await;
+            assert_eq!(
+                request.headers().get(http::header::CONTENT_LENGTH),
+                Some(&http::HeaderValue::from_static("16384"))
+            );
+
+            let mut received = Vec::with_capacity(expected.len());
+            while received.len() < expected.len() {
+                let mut data = stream
+                    .recv_data()
+                    .await
+                    .expect("request DATA")
+                    .expect("request DATA before FIN");
+                while data.has_remaining() {
+                    let chunk = data.chunk();
+                    received.extend_from_slice(chunk);
+                    let consumed = chunk.len();
+                    data.advance(consumed);
+                }
+            }
+            assert_eq!(received, expected);
+
+            stream.stop_sending(Code::H3_NO_ERROR);
+            stream
+                .send_response(response(StatusCode::OK))
+                .await
+                .expect("response headers");
+            stream.finish().await.expect("response FIN");
+            stopped.send(()).expect("publish STOP_SENDING");
+        }
+    });
+
+    let mut request = request(Method::POST, "/fixed-no-error-race");
+    request.headers_mut().insert(
+        http::header::CONTENT_LENGTH,
+        http::HeaderValue::from_static("16384"),
+    );
+    let (mut upload, pending) = client
+        .start_streaming(request)
+        .await
+        .expect("open fixed-length request");
+    upload.write_all(&payload).await.expect("request DATA");
+    upload.flush().await.expect("deliver request DATA");
+    stopped_rx.await.expect("server STOP_SENDING");
+    tokio::task::yield_now().await;
+    upload
+        .shutdown()
+        .await
+        .expect("H3_NO_ERROR after all fixed-length DATA is a successful finish");
+
+    let mut response = pending.open().await.expect("status 200");
+    let mut sink = Vec::new();
+    response.read_to_end(&mut sink).await.expect("response EOF");
+    handler.await.expect("server handler");
+}
+
+#[tokio::test]
+async fn unknown_length_upload_rejects_remote_no_error_that_races_request_fin() {
+    let (client, server) = pair().await;
+    let (stopped, stopped_rx) = tokio::sync::oneshot::channel();
+    let handler = tokio::spawn({
+        let server = server.clone();
+        async move {
+            let (_request, mut stream) = server.accept().await;
+            let mut data = stream
+                .recv_data()
+                .await
+                .expect("request DATA")
+                .expect("request DATA before FIN");
+            assert_eq!(data.copy_to_bytes(data.remaining()), b"body".as_slice());
+            stream.stop_sending(Code::H3_NO_ERROR);
+            stream
+                .send_response(response(StatusCode::OK))
+                .await
+                .expect("response headers");
+            stream.finish().await.expect("response FIN");
+            stopped.send(()).expect("publish STOP_SENDING");
+        }
+    });
+
+    let (mut upload, pending) = client
+        .start_streaming(request(Method::POST, "/unknown-no-error-race"))
+        .await
+        .expect("open unknown-length request");
+    upload.write_all(b"body").await.expect("request DATA");
+    upload.flush().await.expect("deliver request DATA");
+    stopped_rx.await.expect("server STOP_SENDING");
+    tokio::task::yield_now().await;
+    let error = upload
+        .shutdown()
+        .await
+        .expect_err("H3_NO_ERROR must not mask an unknown-length request finish");
+    assert!(
+        error.to_string().contains("Remote reset: H3_NO_ERROR"),
+        "unexpected finish error: {error}"
+    );
+    drop(pending);
+    handler.await.expect("server handler");
+}
+
+#[tokio::test]
 async fn streaming_upload_and_download_progress_full_duplex() {
     let (client, server) = pair().await;
     let handler = tokio::spawn({
