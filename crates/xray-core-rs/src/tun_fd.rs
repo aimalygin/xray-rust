@@ -62,7 +62,7 @@ mod platform {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use bytes::Bytes;
+    use bytes::{Buf, BufMut, Bytes, BytesMut};
     use tokio::io::unix::AsyncFd;
     use tokio::sync::watch;
     use tokio::task::JoinHandle;
@@ -73,6 +73,11 @@ mod platform {
 
     const DARWIN_UTUN_HEADER_LEN: usize = 4;
     const TUN_FD_WRITE_BATCH_MAX_PACKETS: usize = 128;
+    /// Smallest read arena. One allocation serves roughly 40 MTU-sized
+    /// packets, and never exceeds the single maximum-size packet buffer the
+    /// per-packet path used to allocate, which bounds what one long-lived
+    /// packet can pin. A larger MTU raises it to hold one whole read.
+    const TUN_FD_READ_ARENA_MIN: usize = 64 * 1024;
 
     pub struct TunFdRuntime {
         shutdown: watch::Sender<bool>,
@@ -281,7 +286,7 @@ mod platform {
         mut shutdown: watch::Receiver<bool>,
         packet_format: TunFdPacketFormat,
     ) {
-        let mut buffer = vec![0_u8; read_buffer_len(packet_format)];
+        let mut reader = PacketReader::new(packet_format, tun.mtu());
         let mut consecutive_errors: u32 = 0;
 
         loop {
@@ -291,7 +296,7 @@ mod platform {
                         break;
                     }
                 }
-                packet = read_packet(&fd, packet_format, &mut buffer) => {
+                packet = reader.read_packet(&fd) => {
                     match packet {
                         Ok(Some(packet)) => {
                             consecutive_errors = 0;
@@ -452,40 +457,102 @@ mod platform {
         }
     }
 
-    async fn read_packet(
-        fd: &AsyncFd<TunFd>,
-        packet_format: TunFdPacketFormat,
-        buffer: &mut [u8],
-    ) -> io::Result<Option<Bytes>> {
-        loop {
-            let mut guard = fd.readable().await?;
-            let result = guard.try_io(|inner| {
-                let read = unsafe {
-                    libc::read(
-                        inner.get_ref().as_raw_fd(),
-                        buffer.as_mut_ptr().cast(),
-                        buffer.len(),
-                    )
-                };
-                if read < 0 {
-                    Err(io::Error::last_os_error())
-                } else {
-                    Ok(read as usize)
-                }
-            });
+    /// Carves inbound packets out of a shared arena so a packet reaches the
+    /// queue without a per-packet allocation and without a copy: the read
+    /// lands directly in the arena's spare capacity and the packet is split
+    /// off it, sharing the allocation with its neighbours.
+    struct PacketReader {
+        arena: BytesMut,
+        /// Bytes offered to one `read`: one MTU-sized packet plus the format
+        /// header, plus one byte. That extra byte is what makes an oversized
+        /// packet observable — it comes back one byte over the MTU and
+        /// `push_inbound` rejects it, exactly as it did when the whole
+        /// oversized packet was read and rejected.
+        single_read: usize,
+        arena_len: usize,
+        header_len: usize,
+    }
 
-            match result {
-                Ok(Ok(0)) => {
-                    return Err(io::Error::new(
-                        io::ErrorKind::UnexpectedEof,
-                        "tun fd reached EOF",
-                    ))
-                }
-                Ok(Ok(len)) => return Ok(decode_packet(packet_format, &buffer[..len])),
-                Ok(Err(err)) if err.kind() == io::ErrorKind::WouldBlock => continue,
-                Ok(Err(err)) => return Err(err),
-                Err(_) => continue,
+    impl PacketReader {
+        fn new(packet_format: TunFdPacketFormat, mtu: usize) -> Self {
+            let header_len = match packet_format {
+                TunFdPacketFormat::RawIp => 0,
+                TunFdPacketFormat::DarwinUtun => DARWIN_UTUN_HEADER_LEN,
+            };
+            let single_read = mtu
+                .min(MAX_IP_PACKET_SIZE)
+                .saturating_add(header_len)
+                .saturating_add(1);
+            let arena_len = single_read.max(TUN_FD_READ_ARENA_MIN);
+            Self {
+                arena: BytesMut::with_capacity(arena_len),
+                single_read,
+                arena_len,
+                header_len,
             }
+        }
+
+        /// Reads one packet, returning `None` for a read that carries no
+        /// payload once the format header is stripped.
+        async fn read_packet(&mut self, fd: &AsyncFd<TunFd>) -> io::Result<Option<Bytes>> {
+            loop {
+                // A packet is split off whole, so the arena is always empty
+                // here and its capacity is what is left of the allocation.
+                // The exhausted arena is released rather than recycled: the
+                // packets carved from it keep it alive until the stack has
+                // consumed them, so it is never exclusively owned at this
+                // point and `try_reclaim` would always fail.
+                if self.arena.capacity() < self.single_read {
+                    self.arena = BytesMut::with_capacity(self.arena_len);
+                }
+
+                let mut guard = fd.readable().await?;
+                let spare = self.arena.spare_capacity_mut();
+                let result = guard.try_io(|inner| {
+                    // SAFETY: the arena reserved at least `self.single_read`
+                    // spare bytes above, and nothing else references them
+                    // until they are split off.
+                    let read = unsafe {
+                        libc::read(
+                            inner.get_ref().as_raw_fd(),
+                            spare.as_mut_ptr().cast(),
+                            self.single_read,
+                        )
+                    };
+                    if read < 0 {
+                        Err(io::Error::last_os_error())
+                    } else {
+                        Ok(read as usize)
+                    }
+                });
+
+                match result {
+                    Ok(Ok(0)) => {
+                        return Err(io::Error::new(
+                            io::ErrorKind::UnexpectedEof,
+                            "tun fd reached EOF",
+                        ))
+                    }
+                    Ok(Ok(len)) => return Ok(self.split_packet(len)),
+                    Ok(Err(err)) if err.kind() == io::ErrorKind::WouldBlock => continue,
+                    Ok(Err(err)) => return Err(err),
+                    Err(_) => continue,
+                }
+            }
+        }
+
+        /// Splits the `len` bytes just read off the arena and strips the
+        /// format header.
+        fn split_packet(&mut self, len: usize) -> Option<Bytes> {
+            // SAFETY: `read` reported `len` bytes written into the spare
+            // capacity, so they are initialized.
+            unsafe { self.arena.advance_mut(len) };
+            let mut packet = self.arena.split_to(len);
+            if packet.len() <= self.header_len {
+                return None;
+            }
+            packet.advance(self.header_len);
+            Some(packet.freeze())
         }
     }
 
@@ -539,24 +606,6 @@ mod platform {
         }
 
         Ok(())
-    }
-
-    fn read_buffer_len(packet_format: TunFdPacketFormat) -> usize {
-        match packet_format {
-            TunFdPacketFormat::RawIp => MAX_IP_PACKET_SIZE,
-            TunFdPacketFormat::DarwinUtun => MAX_IP_PACKET_SIZE + DARWIN_UTUN_HEADER_LEN,
-        }
-    }
-
-    fn decode_packet(packet_format: TunFdPacketFormat, packet: &[u8]) -> Option<Bytes> {
-        match packet_format {
-            TunFdPacketFormat::RawIp if !packet.is_empty() => Some(Bytes::copy_from_slice(packet)),
-            TunFdPacketFormat::RawIp => None,
-            TunFdPacketFormat::DarwinUtun if packet.len() > DARWIN_UTUN_HEADER_LEN => {
-                Some(Bytes::copy_from_slice(&packet[DARWIN_UTUN_HEADER_LEN..]))
-            }
-            TunFdPacketFormat::DarwinUtun => None,
-        }
     }
 
     enum EncodedPacket<'a> {
@@ -701,6 +750,106 @@ mod platform {
                     }
                 }
             }
+        }
+
+        /// Fills `reader`'s arena with `payload` the way a successful `read`
+        /// would, then carves the packet out of it.
+        fn feed(reader: &mut PacketReader, payload: &[u8]) -> Option<Bytes> {
+            if reader.arena.capacity() < reader.single_read {
+                reader.arena = BytesMut::with_capacity(reader.arena_len);
+            }
+            let spare = reader.arena.spare_capacity_mut();
+            assert!(spare.len() >= payload.len());
+            // SAFETY: `spare` has room for `payload`, which is initialized.
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    payload.as_ptr(),
+                    spare.as_mut_ptr().cast::<u8>(),
+                    payload.len(),
+                );
+            }
+            reader.split_packet(payload.len())
+        }
+
+        #[test]
+        fn consecutive_packets_are_carved_out_of_one_arena() {
+            let mut reader = PacketReader::new(TunFdPacketFormat::RawIp, 1500);
+            let first = feed(&mut reader, &[1_u8; 1200]).expect("first packet");
+            let second = feed(&mut reader, &[2_u8; 300]).expect("second packet");
+
+            assert_eq!(first.len(), 1200);
+            assert_eq!(second.len(), 300);
+            assert!(first.iter().all(|byte| *byte == 1));
+            assert!(second.iter().all(|byte| *byte == 2));
+            // Both packets point into the same allocation, back to back: the
+            // second read neither allocated nor copied.
+            assert_eq!(unsafe { first.as_ptr().add(first.len()) }, second.as_ptr());
+        }
+
+        #[test]
+        fn a_new_arena_is_allocated_only_once_the_old_one_is_exhausted() {
+            const PAYLOAD: usize = 1500;
+            let mut reader = PacketReader::new(TunFdPacketFormat::RawIp, 1500);
+            let capacity = reader.arena.capacity();
+            let expected = (capacity - reader.single_read) / PAYLOAD + 1;
+            assert!(expected > 1, "the arena must amortize allocations");
+
+            let mut previous = feed(&mut reader, &[7_u8; PAYLOAD]).expect("packet");
+            let mut carved = 1;
+            loop {
+                let next = feed(&mut reader, &[7_u8; PAYLOAD]).expect("packet");
+                if unsafe { previous.as_ptr().add(previous.len()) } != next.as_ptr() {
+                    break;
+                }
+                previous = next;
+                carved += 1;
+            }
+
+            assert_eq!(
+                carved, expected,
+                "one arena must serve every read that still fits in it"
+            );
+        }
+
+        #[test]
+        fn the_darwin_utun_header_is_stripped_without_copying_the_payload() {
+            let mut reader = PacketReader::new(TunFdPacketFormat::DarwinUtun, 1500);
+            let mut framed = vec![0, 0, 0, libc::AF_INET as u8];
+            framed.extend_from_slice(&[0x45, 0x11, 0x22, 0x33]);
+
+            let packet = feed(&mut reader, &framed).expect("packet");
+
+            assert_eq!(&packet[..], &[0x45, 0x11, 0x22, 0x33]);
+        }
+
+        #[test]
+        fn a_read_that_carries_no_payload_yields_no_packet() {
+            let mut raw = PacketReader::new(TunFdPacketFormat::RawIp, 1500);
+            assert!(feed(&mut raw, &[]).is_none());
+
+            let mut utun = PacketReader::new(TunFdPacketFormat::DarwinUtun, 1500);
+            assert!(feed(&mut utun, &[0, 0, 0, libc::AF_INET as u8]).is_none());
+        }
+
+        #[test]
+        fn one_read_offers_room_for_an_oversized_packet_so_it_stays_rejectable() {
+            // Reading one byte past the MTU is what keeps an oversized packet
+            // observable: it comes back over the MTU and is dropped by
+            // `push_inbound`, instead of being silently truncated to a
+            // plausible-looking packet.
+            let raw = PacketReader::new(TunFdPacketFormat::RawIp, 1500);
+            assert_eq!(raw.single_read, 1501);
+
+            let utun = PacketReader::new(TunFdPacketFormat::DarwinUtun, 1500);
+            assert_eq!(utun.single_read, 1505);
+        }
+
+        #[test]
+        fn a_jumbo_mtu_arena_still_holds_one_whole_read() {
+            let reader = PacketReader::new(TunFdPacketFormat::DarwinUtun, MAX_IP_PACKET_SIZE);
+            assert_eq!(reader.single_read, MAX_IP_PACKET_SIZE + 5);
+            assert!(reader.arena_len >= reader.single_read);
+            assert!(reader.arena.capacity() >= reader.single_read);
         }
 
         fn test_packet_batch() -> Vec<Bytes> {
