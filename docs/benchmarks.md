@@ -9,6 +9,46 @@ checkout and reject source changes; caller-supplied binaries must report Xray
 `v26.5.9` sections below are retained as historical result groups, not as the
 current harness target.
 
+## Current RC4 publication
+
+The current immutable evidence is the
+[2026-08-29 Xray-core v26.7.28 result group](benchmarks/results/2026-08-29-v26.7.28/README.md).
+It contains exactly 139 release series and 695 embedded results, five clean
+runs per series. Its manifest is checked by
+`scripts/check-benchmark-publication.py`; a publication with a missing case,
+wrong revision/hash, dirty provenance, debug binary, failed run, or modified
+omission is rejected.
+
+The official GitHub latest-release response fetched on 2026-08-29 resolved
+stable sing-box `v1.13.20`. RC4 pins that tag, revision
+`56f91dfeabd6f4edbd437dfcc1e5b0ebc856b778`, the exact
+`with_gvisor,with_utls,badlinkname,tfogo_checklinkname0` build tags, and the
+measured binary SHA-256. Xray-core remains exact `v26.7.28` at the full commit
+above. A new comparator or date must create a new result group; dated evidence
+never overwrites historical charts.
+
+Three reviewed boundaries are disclosed rather than repaired by selecting a
+better retry:
+
+- stable sing-box is omitted from the two REALITY workloads with
+  `--skip-sing-box` because its REALITY `ClientVer` 1.8.1 is below Xray-core's
+  default `minClientVer` 26.3.27; generic harness support remains available
+  for compatible or patched binaries;
+- sing-box is omitted only from `stream-grpc-full-duplex-32` after two frozen
+  campaigns timed out following three and four completed runs; later isolated
+  successes are diagnostics, not substitutes for either campaign;
+- Xray-core is omitted only from `xhttp-pressure-xhttp-h3-32` after a frozen
+  reset, a 300-second exact-retry timeout, and reduced-load failures above four
+  flows. The xray-rust full 32-flow workload still passed five clean campaign
+  runs.
+
+Only reviewed `summary.json` files are committed. The host-specific raw run
+directories remain outside Git in a deterministic checksum-addressed archive;
+its location and digest are in the manifest. The exact absolute inputs and
+argument matrix are in the dated `commands.sh`. Localhost evidence does not
+establish controlled RTT/loss behavior, mobile device energy, or wide-area VPN
+performance.
+
 A bounded migration smoke on 2026-08-28 passed all 19 workloads available to
 the Xray-core engine, all six stream transports, five stream traffic drivers,
 three XHTTP modes, `reality-matrix` 7/7, and all six cases in
@@ -522,10 +562,17 @@ invocation uses `--skip-sing-box` without sing-box binary/source arguments;
 the manifest fail-closes on the exact scenario, reason, campaign counts, and
 timeout evidence.
 
-The RC4 publication contract therefore contains exactly 140 benchmark series
-and 700 embedded five-run results. Its base matrix contributes 27 summaries
-and 135 results; historical v26.5.9 charts and summaries remain unchanged and
-must be read as historical evidence for their recorded comparator versions.
+RC4 additionally omits Xray-core only from
+`xhttp-pressure-xhttp-h3-32`. The pinned comparator reset its completion-marker
+connection after xray-rust completed 5/5, the exact retry timed out at 300000
+ms, and reduced-load diagnostics reset or timed out above four flows. The
+candidate-only full-load run remains mandatory; no reduced diagnostic is
+substituted.
+
+The RC4 publication therefore contains exactly 139 benchmark series and 695
+embedded five-run results. Its base matrix contributes 27 summaries and 135
+results; historical v26.5.9 charts and summaries remain unchanged and must be
+read as historical evidence for their recorded comparator versions.
 
 Each run has a watchdog timeout. The default is 30 seconds; override it with
 `--run-timeout-ms <milliseconds>` when exercising intentionally slow workloads.
@@ -620,6 +667,13 @@ engines are always optimized builds, so a debug Rust binary makes whichever
 number you quote untrustworthy. Build and pass the release binary explicitly,
 and run the harness itself in release so client-side stream validation is not
 the bottleneck:
+
+The complete RC4 replay record, including the resolved comparator paths,
+hashes, geodata identities, all stream/pressure/memory cases, and chart
+command, is the dated
+[`commands.sh`](benchmarks/results/2026-08-29-v26.7.28/commands.sh). The shorter
+commands below are developer examples, not the provenance record for the
+published group.
 
 ```sh
 export SING_BOX_BIN=/path/to/sing-box

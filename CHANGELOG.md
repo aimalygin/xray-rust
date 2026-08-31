@@ -2,8 +2,10 @@
 
 All notable changes will be documented in this file.
 
-The project has not made a stable release. Versions before 1.0 are
-prerelease-quality and do not establish a supported release series.
+In this changelog, the stable channel means a non-prerelease tag eligible for
+registry publication; `v0.4.0` is such a release. All versions below 1.0 remain
+pre-1.0 in API and security maturity and do not imply a long-term supported
+release series.
 
 ## Unreleased
 
@@ -16,6 +18,9 @@ prerelease-quality and do not establish a supported release series.
 - Added safe pre-commit HTTP/2 GOAWAY retry handling plus regression coverage
   for non-replay after commitment and request/buffer ownership across
   cancellation.
+- Accepted an HTTP/3 request reset only after the complete response body and
+  completion marker were received, while preserving failure for premature
+  resets; added transport and full-load interop regressions.
 - Added weekly broad pinned Xray-core interoperability and resource gates plus
   a warning-only upstream-main compatibility smoke check.
 - Scoped the RC4 REALITY/Vision comparator omission to the measured stable
@@ -25,12 +30,14 @@ prerelease-quality and do not establish a supported release series.
   two workloads, while the generic harness retains sing-box REALITY support
   for compatible or patched binaries. The fixture and timeout remain
   unchanged.
-- RC4 publication remains gated on fresh, validated benchmark evidence against
-  Xray-core v26.7.28 and the stable sing-box release resolved at measurement
-  time.
-- RC4 publication also remains gated on corrected roadmap,
-  implementation-status, and release documentation landing in reviewed
-  documentation commits.
+- Published fresh five-run RC4 evidence against exact Xray-core v26.7.28 and
+  stable sing-box v1.13.20: 139 validated series and 695 embedded results with
+  exact revisions, binary hashes, a deterministic raw-archive digest, and new
+  dated charts/tables. The publication records the reviewed sing-box
+  gRPC/full-duplex/32 nondeterministic timeout and Xray-core H3 pressure/32
+  reset/timeout boundaries without substituting isolated diagnostics.
+- Corrected roadmap, implementation-status, verification, configuration,
+  migration, benchmark, and release documentation for RC4.
 
 ## 0.4.1-rc.3 - 2026-08-28
 

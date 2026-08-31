@@ -29,7 +29,7 @@ parity with every Xray-core release.
 | REALITY client | Supported subset | Deterministic primitive tests and optional local Xray-core REALITY+Vision interoperability tests |
 | TCP Happy Eyeballs | Supported subset | Opt-in Xray-compatible Freedom/VLESS raw-TCP candidate race; bounded and cancellation-safe, with one TLS/REALITY handshake after connect |
 | `xtls-rprx-vision` | Supported subset | TCP and XUDP paths; UDP/443 behavior follows the selected Vision flow |
-| Domain/IP routing | Supported subset | `field` rules, inbound tags, domain/CIDR/private/geodata matchers |
+| Domain/IP/network/port routing | Supported subset | Ordered `field` rules with inbound tags, domain/CIDR/private/geodata matchers, network selectors, and numeric/range port selectors; populated selectors inside one rule are ANDed |
 | Configured DNS | Supported subset | Static single/ordered-array hosts, global `UseIP`/`UseIPv4`/`UseIPv6`, routed multi-address A/AAAA/CNAME resolution with one per-Core family-aware TTL cache/single-flight shared by TUN/SOCKS/HTTP/probes, ordered upstream failover, valid UDP-truncation/TCP retry, all-IP `IPIfNonMatch`, and a hybrid TUN anchor with managed ordinary A/AAAA Hijack, raw DNSSEC/non-IP forwarding, bounded persistent RFC 7766 connections, query-aware TCP failover, and transparent zone-transfer fallback for IP/domain servers. Xray DNS-outbound Direct/Drop/Return/Hijack with `qType`/`rCode`, component rewrite, own-link recursion escape, TLS/REALITY stream security, and bounded UDP-to-TCP session reuse execute through one core-wide TUN/SOCKS/HTTP runtime. |
 | Fake IP | Supported subset | Bounded per-Core IPv4 pool with TTL-leased mappings and UDP/TCP synthesis shared by DNS outbound plus TUN/SOCKS/HTTP reverse routing |
 | `geosite.dat` / `geoip.dat` | Supported | Xray-style protobuf data is loaded on demand with size and matcher budgets |
@@ -73,10 +73,21 @@ Packet Tunnel provider APIs require macOS 13.
 ## Compatibility evidence
 
 The default test suite is hermetic and does not require a network connection.
-REALITY and VLESS interoperability tests that launch the Go reference binary are
-ignored by default because the repository does not vendor or pin an Xray-core
-checkout. Live-node tests are also ignored and require credentials supplied
-through local environment variables.
+Local tests that directly launch a user-supplied Go reference binary remain
+ignored by default. Release-candidate tags add a blocking `rc-interop` job that
+checks out exact Xray-core `v26.7.28` commit
+`5ca6f4b7d4dc20a881d4330e498892697627ec0c`, builds the release xray-rust
+binary, and runs the bounded supported-surface matrix. A weekly pinned job runs
+the broader ignored matrix and resource checks; a separate warning-only weekly
+smoke records the resolved Xray-core `main` revision. Upstream-main evidence
+cannot satisfy or fail the pinned RC contract. Live-node tests remain ignored
+and require credentials supplied through local environment variables.
+
+The fresh [RC4 benchmark publication](benchmarks/results/2026-08-29-v26.7.28/README.md)
+adds 139 five-run release series against the exact pinned Xray-core and stable
+sing-box v1.13.20, with fail-closed provenance validation and explicit
+comparator omissions. This is process-level loopback evidence, not controlled
+RTT/loss or mobile energy evidence.
 
 REALITY ClientHello shaping currently depends on a full, immutable Git revision
 of the maintainer's public `shaped-rustls` fork rather than the crates.io
@@ -115,11 +126,13 @@ unequal initial/maximum receive windows, QUIC v2, conservative/aggressive BBR
 profiles, Brutal/force-Brutal, non-empty UDP hopping, and QUIC debug side
 effects fail closed before a socket is opened. The ignored live Xray-core
 matrix has passed all three XHTTP modes, establishing functional
-interoperability for those cases. A branch-local release loopback smoke now
-covers H3 throughput/resource sampling and selected single-flow and 32-flow
-cases, as recorded in the [benchmark guide](benchmarks.md#recorded-branch-local-release-smoke-2026-08-10).
-Controlled RTT/loss runs and the complete 42-case, five-run matrix have not
-been run, so this remains explicitly not a performance-parity claim.
+interoperability for those cases. RC4 publishes five-run H3 upload, download,
+full-duplex, and packet-pressure evidence at one and 32 flows. The 32-flow
+upload/full-duplex RSS values are explicitly reported as an optimization
+target, and the pinned Xray-core pressure/32 reset/timeout boundary is recorded
+as an omission rather than replaced by a reduced-load result. Controlled
+RTT/loss and mobile-device measurements remain open, so this is not a broad
+performance-parity claim.
 
 ### Known gRPC opening-wire divergences from grpc-go
 

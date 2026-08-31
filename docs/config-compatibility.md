@@ -855,8 +855,14 @@ Supported routing configuration:
 
 - `domainStrategy`: `AsIs` or `IPIfNonMatch`;
 - rule `type`: `field`;
-- selectors: `inboundTag`, `domain`/`domains`, and `ip`;
+- selectors: `inboundTag`, `domain`/`domains`, `ip`, `network`, and `port`;
 - destination: `outboundTag`.
+
+`network` accepts Xray-compatible `tcp`/`udp` strings or arrays, including a
+comma-separated string. `port` accepts a number or comma/range string over
+`0..=65535`. Rules are evaluated in declaration order, and every populated
+selector field inside one rule is ANDed; alternatives belong in arrays/ranges
+or separate ordered rules.
 
 Domain matchers:
 
@@ -873,8 +879,8 @@ IP matchers:
 - `ext:file.dat:code` and `ext-ip:file.dat:code`;
 - the supported inverse `!` forms.
 
-Balancers and non-`field` rules are unsupported. Rules are evaluated in order;
-if none matches, the first outbound tag is used as the default.
+Balancers and non-`field` rules are unsupported. If no rule matches, the first
+outbound tag is used as the default.
 
 ## DNS
 

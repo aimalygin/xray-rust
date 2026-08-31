@@ -85,6 +85,10 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
 bash scripts/tests/check-mobile-toolchains.test.sh
 ```
 
+The workspace test command excludes `xray-rust-fuzz` because `--all-targets`
+would otherwise build and launch libFuzzer binaries as ordinary test targets.
+Those targets have their own bounded RC gate and explicit longer-run workflow.
+
 Tests marked `#[ignore]` are intentionally excluded because they require a
 local reference binary, live credentials, or external network access. The
 fixture safety check rejects routable endpoints and unreviewed
