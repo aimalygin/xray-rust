@@ -10,3 +10,11 @@ condition = "AND"
 regexTarget = "line"
 regexes = ['''"key_share_group"\s*:\s*"x25519mlkem768"''']
 paths = ['''^tests/fixtures/reality/clienthello_chrome_auto\.json$''']
+
+[[allowlists]]
+description = "Reviewed benchmark replay records containing binary SHA-256 digests"
+targetRules = ["jfrog-identity-token"]
+paths = [
+  '''^docs/benchmarks/results/2026-08-29-v26\.7\.28/commands\.sh$''',
+  '''^docs/benchmarks/results/2026-08-31-v26\.7\.28/commands\.sh$''',
+]

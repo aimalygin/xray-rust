@@ -1281,6 +1281,7 @@ PY
 expect_rejected() {
   local mutation="$1"
   local expected_reason="$2"
+  local alternate_reason="${3:-}"
   local fixture="$tmp_dir/$mutation/2026-08-29-v26.7.28"
   local output
 
@@ -1289,7 +1290,10 @@ expect_rejected() {
     fail "$mutation was accepted"
   fi
   if ! grep -Fq "$expected_reason" <<<"$output"; then
-    fail "$mutation did not report '$expected_reason': $output"
+    if [[ -z "$alternate_reason" ]] \
+      || ! grep -Fq "$alternate_reason" <<<"$output"; then
+      fail "$mutation did not report '$expected_reason' or '$alternate_reason': $output"
+    fi
   fi
   if grep -Fq "Traceback (most recent call last)" <<<"$output"; then
     fail "$mutation emitted an uncontrolled Python traceback: $output"
@@ -1356,7 +1360,9 @@ expect_rejected manifest_broken_symlink "manifest.json must be an in-root regula
 expect_rejected malformed_manifest_json "invalid JSON in manifest.json"
 expect_rejected malformed_summary_json "invalid JSON in summary"
 expect_rejected unreadable_summary "cannot read summary"
-expect_rejected deep_parser_json "invalid JSON in summary"
+expect_rejected deep_parser_json \
+  "invalid JSON in summary" \
+  "JSON nesting exceeds validation limit"
 expect_rejected deep_provenance "JSON nesting exceeds validation limit"
 expect_rejected manifest_wrong_root "manifest must be an object"
 expect_rejected summary_wrong_root "must be an object"

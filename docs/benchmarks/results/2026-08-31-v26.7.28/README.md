@@ -6,6 +6,13 @@ benchmark campaign for xray-rust `v0.4.1-rc.4`, candidate
 successful release runs with embedded clean-source and binary-hash provenance.
 The manifest contains 139 series and 695 per-run results.
 
+The tagged source may add release-validation-only corrections after this
+candidate: `.gitleaks.toml` may classify the two reviewed dated replay records
+as false positives for the JFrog-token rule, and the publication policy test
+may accept either safe failure reported by platform Python JSON decoders for
+an over-nested input. Neither file builds the runtime or benchmark harness,
+and neither changes this evidence.
+
 The campaign identifier, measurement date, and publication date are
 2026-08-31. It ran on a MacBook Pro (Mac15,7) with an Apple M3 Pro (12 cores),
 18 GB RAM, and macOS 26.5.2. Comparators are Xray-core `v26.7.28` at

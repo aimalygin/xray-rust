@@ -37,6 +37,9 @@ release series.
   dated charts/tables. The publication records the reviewed sing-box
   gRPC/full-duplex/32 nondeterministic timeout and Xray-core H3 pressure/32
   reset/timeout boundaries without substituting isolated diagnostics.
+- Made the benchmark publication depth-limit policy test portable across
+  Python JSON decoders, and constrained JFrog-token secret-scan exemptions to
+  the two reviewed dated benchmark replay records containing binary SHA-256s.
 - Corrected roadmap, implementation-status, verification, configuration,
   migration, benchmark, and release documentation for RC4.
 - Routing `ip` matchers are compiled once at load time into a shared sorted
