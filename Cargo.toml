@@ -24,6 +24,7 @@ repository = "https://github.com/aimalygin/xray-rust"
 publish = false
 
 [workspace.dependencies]
+aho-corasick = "1.1.4"
 aes = { version = "0.8", features = ["zeroize"] }
 aes-gcm = { version = "0.10", features = ["zeroize"] }
 async-compression = { version = "=0.4.42", default-features = false, features = ["gzip", "tokio"] }

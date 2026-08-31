@@ -6,12 +6,19 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use tokio::net::UdpSocket;
-use xray_routing::{Network, Target, TargetAddr};
-use xray_transport::{
-    CachingDnsResolver, ConfiguredDnsResolver, DnsResolver, NameServer, StaticHostRule,
-    StaticHostTarget, SystemDnsResolver, TcpConnector, TransportConnector, TransportDomainMatcher,
-    TransportError,
+use xray_routing::{
+    DnsHostTarget, DomainHostIndex, DomainMatcher, Network, RegexMatcher, Target, TargetAddr,
 };
+use xray_transport::{
+    CachingDnsResolver, ConfiguredDnsResolver, DnsResolver, NameServer, SystemDnsResolver,
+    TcpConnector, TransportConnector, TransportError,
+};
+
+fn hosts<const N: usize>(
+    rules: [(DomainMatcher, DnsHostTarget); N],
+) -> DomainHostIndex<DnsHostTarget> {
+    rules.into_iter().collect()
+}
 
 #[derive(Default)]
 struct CountingResolver {
@@ -115,10 +122,10 @@ async fn tcp_connector_still_rejects_domain_targets_without_dns() {
 async fn configured_dns_hosts_ip_mapping_wins() {
     let fallback = Arc::new(CountingResolver::default());
     let resolver = ConfiguredDnsResolver::new(
-        vec![StaticHostRule {
-            matcher: TransportDomainMatcher::Suffix("example.com".to_owned()),
-            target: StaticHostTarget::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7))),
-        }],
+        hosts([(
+            DomainMatcher::Suffix("example.com".to_owned()),
+            DnsHostTarget::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7))),
+        )]),
         Vec::new(),
         fallback.clone(),
     );
@@ -136,10 +143,10 @@ async fn configured_dns_hosts_domain_alias_uses_inner_resolution() {
             .with_answer("alias.example", IpAddr::V4(Ipv4Addr::new(198, 51, 100, 9))),
     );
     let resolver = ConfiguredDnsResolver::new(
-        vec![StaticHostRule {
-            matcher: TransportDomainMatcher::Suffix("service.example".to_owned()),
-            target: StaticHostTarget::Domain("alias.example".to_owned()),
-        }],
+        hosts([(
+            DomainMatcher::Suffix("service.example".to_owned()),
+            DnsHostTarget::Domain("alias.example".to_owned()),
+        )]),
         Vec::new(),
         fallback,
     );
@@ -156,10 +163,10 @@ async fn configured_dns_hosts_domain_alias_uses_inner_resolution() {
 async fn configured_dns_hosts_regex_matcher_uses_compiled_pattern() {
     let fallback = Arc::new(CountingResolver::default());
     let resolver = ConfiguredDnsResolver::new(
-        vec![StaticHostRule {
-            matcher: TransportDomainMatcher::regex(r"(^|\.)service\.example$").unwrap(),
-            target: StaticHostTarget::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 8))),
-        }],
+        hosts([(
+            DomainMatcher::Regex(RegexMatcher::new(r"(^|\.)service\.example$").unwrap()),
+            DnsHostTarget::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 8))),
+        )]),
         Vec::new(),
         fallback.clone(),
     );
@@ -180,15 +187,17 @@ async fn configured_dns_alias_depth_exhaustion_falls_back_to_terminal_alias_with
         IpAddr::V4(Ipv4Addr::new(198, 51, 100, 10)),
     ));
     let host_rules = (0..8)
-        .map(|index| StaticHostRule {
-            matcher: TransportDomainMatcher::Full(if index == 0 {
-                "start.example".to_owned()
-            } else {
-                format!("alias{index}.example")
-            }),
-            target: StaticHostTarget::Domain(format!("alias{}.example", index + 1)),
+        .map(|index| {
+            (
+                DomainMatcher::Full(if index == 0 {
+                    "start.example".to_owned()
+                } else {
+                    format!("alias{index}.example")
+                }),
+                DnsHostTarget::Domain(format!("alias{}.example", index + 1)),
+            )
         })
-        .collect();
+        .collect::<DomainHostIndex<_>>();
     let resolver = ConfiguredDnsResolver::new(host_rules, Vec::new(), fallback);
 
     let addr = resolver.resolve("start.example", 443).await.unwrap();
@@ -205,7 +214,7 @@ async fn configured_dns_socket_nameserver_answer_is_used() {
     .await;
     let fallback = Arc::new(CountingResolver::default());
     let resolver = ConfiguredDnsResolver::new(
-        Vec::new(),
+        DomainHostIndex::default(),
         vec![NameServer::Socket(dns_server.addr)],
         fallback.clone(),
     );
@@ -224,7 +233,7 @@ async fn configured_dns_ignores_response_for_different_question() {
     .await;
     let fallback = Arc::new(CountingResolver::default());
     let resolver = ConfiguredDnsResolver::new(
-        Vec::new(),
+        DomainHostIndex::default(),
         vec![NameServer::Socket(dns_server.addr)],
         fallback.clone(),
     );
@@ -248,7 +257,7 @@ async fn configured_dns_ignores_answer_for_different_owner_name() {
     .await;
     let fallback = Arc::new(CountingResolver::default());
     let resolver = ConfiguredDnsResolver::new(
-        Vec::new(),
+        DomainHostIndex::default(),
         vec![NameServer::Socket(dns_server.addr)],
         fallback.clone(),
     );
@@ -268,7 +277,7 @@ async fn configured_dns_rejects_cname_that_overruns_rdata() {
     let dns_server = FakeUdpDnsServer::start(FakeDnsResponseMode::ShortCnameRdata).await;
     let fallback = Arc::new(CountingResolver::default());
     let resolver = ConfiguredDnsResolver::new(
-        Vec::new(),
+        DomainHostIndex::default(),
         vec![NameServer::Socket(dns_server.addr)],
         fallback.clone(),
     );
@@ -293,7 +302,7 @@ async fn configured_dns_server_exhaustion_does_not_leak_to_system_fallback() {
 
     let fallback = Arc::new(CountingResolver::default());
     let resolver = ConfiguredDnsResolver::new(
-        Vec::new(),
+        DomainHostIndex::default(),
         vec![NameServer::Socket(dead_server_addr)],
         fallback.clone(),
     )

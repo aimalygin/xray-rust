@@ -2405,11 +2405,11 @@ version = "0.4.1-rc.4"
 dependencies = [
  "libc",
  "prost",
- "regex",
  "serde",
  "serde_json",
  "thiserror",
  "uuid",
+ "xray-routing",
  "xray-utls",
 ]
 
@@ -2470,7 +2470,9 @@ dependencies = [
 name = "xray-routing"
 version = "0.4.1-rc.4"
 dependencies = [
+ "aho-corasick",
  "bytes",
+ "regex",
  "thiserror",
 ]
 

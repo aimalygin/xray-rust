@@ -3781,23 +3781,22 @@ pub(super) async fn resolve_freedom_dns_upstreams(
     let resolved = match upstream {
         DnsProxyUpstream::Ip { addr, .. } => vec![*addr],
         DnsProxyUpstream::Domain { domain, port, .. } => {
-            let bootstrap_domain =
-                match crate::dns::static_dns_host_target(context.config.as_ref(), domain) {
-                    Some(xray_config::DnsHostTarget::Ip(ip)) => {
-                        return Ok(vec![validate_freedom_dns_upstream(SocketAddr::new(
-                            ip, *port,
-                        ))?]);
-                    }
-                    Some(xray_config::DnsHostTarget::Ips(ips)) => {
-                        return ips
-                            .into_iter()
-                            .map(|ip| validate_freedom_dns_upstream(SocketAddr::new(ip, *port)))
-                            .collect::<Result<Vec<_>, _>>()
-                            .and_then(ensure_freedom_dns_upstreams);
-                    }
-                    Some(xray_config::DnsHostTarget::Domain(alias)) => alias,
-                    None => domain.clone(),
-                };
+            let bootstrap_domain = match context.dns_outbound_runtime.static_host_target(domain) {
+                Some(xray_config::DnsHostTarget::Ip(ip)) => {
+                    return Ok(vec![validate_freedom_dns_upstream(SocketAddr::new(
+                        ip, *port,
+                    ))?]);
+                }
+                Some(xray_config::DnsHostTarget::Ips(ips)) => {
+                    return ips
+                        .into_iter()
+                        .map(|ip| validate_freedom_dns_upstream(SocketAddr::new(ip, *port)))
+                        .collect::<Result<Vec<_>, _>>()
+                        .and_then(ensure_freedom_dns_upstreams);
+                }
+                Some(xray_config::DnsHostTarget::Domain(alias)) => alias,
+                None => domain.clone(),
+            };
             let Some(resolver) = context.dns_bootstrap_resolver.as_ref() else {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::NotFound,
@@ -5964,15 +5963,16 @@ mod tests {
                     domain: "Resolver.Example".to_owned(),
                     port: 53,
                 },
-                DnsServerConfig::Policy(xray_config::DnsNameServerConfig {
+                DnsServerConfig::Policy(Box::new(xray_config::DnsNameServerConfig {
                     endpoint: xray_config::DnsServerEndpoint::Domain {
                         domain: "policy.example.".to_owned(),
                         port: 5_353,
                     },
                     transport: xray_config::DnsServerTransport::Classic,
-                    domains: vec![xray_config::DomainMatcher::Suffix(
-                        "internal.example".to_owned(),
-                    )],
+                    domains: xray_config::compile_dns_domain_matchers(&[
+                        xray_config::DomainMatcher::Suffix("internal.example".to_owned()),
+                    ])
+                    .unwrap(),
                     expected_ips: xray_config::DnsIpFilter::default(),
                     unexpected_ips: xray_config::DnsIpFilter::default(),
                     tag: "policy-dns".to_owned(),
@@ -5980,7 +5980,7 @@ mod tests {
                     skip_fallback: true,
                     query_strategy: xray_config::DnsQueryStrategy::UseIpv6,
                     final_query: true,
-                }),
+                })),
                 DnsServerConfig::Ip(first),
                 DnsServerConfig::Ip(first),
                 DnsServerConfig::Ip(SocketAddr::from((Ipv4Addr::new(9, 9, 9, 9), 0))),
@@ -6211,7 +6211,7 @@ mod tests {
                         0
                     },
                     qtype_ranges: Vec::new(),
-                    domain_matchers: Vec::new(),
+                    domain_matchers: xray_config::DomainMatcherSet::default(),
                 }],
                 ..xray_config::DnsOutboundSettings::default()
             })

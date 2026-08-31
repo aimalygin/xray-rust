@@ -11,9 +11,9 @@ description = "Bounded Xray JSON and geodata parser for xray-rust"
 [dependencies]
 libc.workspace = true
 prost.workspace = true
-regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
+xray-routing = { path = "../xray-routing" }
 xray-utls = { path = "../xray-utls" }

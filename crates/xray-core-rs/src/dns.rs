@@ -9,7 +9,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UdpSocket;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::{timeout, Instant};
-use xray_config::{CoreConfig, DnsHostTarget, DomainMatcher};
+use xray_config::{DnsHostTarget, DomainHostIndex};
 use xray_proxy::vless::{
     encode_udp_packet, encode_xudp_new_packet, read_udp_packet, read_xudp_packet,
 };
@@ -799,32 +799,17 @@ fn direct_dns_response_matches_query(query: &[u8], response: &[u8]) -> bool {
         && query_flags & 0x7800 == response_flags & 0x7800
 }
 
-pub(crate) fn static_dns_host_target(config: &CoreConfig, domain: &str) -> Option<DnsHostTarget> {
-    static_dns_host_target_from_mappings(&config.dns.hosts, domain)
-}
-
-pub(crate) fn static_dns_host_target_from_mappings(
-    hosts: &[xray_config::DnsHostMapping],
+pub(crate) fn static_dns_host_target_from_index(
+    hosts: &DomainHostIndex<DnsHostTarget>,
     domain: &str,
 ) -> Option<DnsHostTarget> {
     let mut current = normalize_dns_name(domain)?;
     let mut matched_alias = false;
     for _ in 0..MAX_STATIC_ALIAS_DEPTH {
-        let Some(mapping) = hosts
-            .iter()
-            .find(|mapping| {
-                matches!(&mapping.matcher, DomainMatcher::Full(_))
-                    && dns_host_matcher_matches(&mapping.matcher, &current)
-            })
-            .or_else(|| {
-                hosts
-                    .iter()
-                    .find(|mapping| dns_host_matcher_matches(&mapping.matcher, &current))
-            })
-        else {
+        let Some(target) = hosts.lookup(&current) else {
             return matched_alias.then_some(DnsHostTarget::Domain(current));
         };
-        match &mapping.target {
+        match target {
             DnsHostTarget::Ip(ip) => return Some(DnsHostTarget::Ip(*ip)),
             DnsHostTarget::Ips(ips) => return Some(DnsHostTarget::Ips(ips.clone())),
             DnsHostTarget::Domain(alias) => {
@@ -838,20 +823,6 @@ pub(crate) fn static_dns_host_target_from_mappings(
         }
     }
     matched_alias.then_some(DnsHostTarget::Domain(current))
-}
-
-fn dns_host_matcher_matches(matcher: &DomainMatcher, domain: &str) -> bool {
-    match matcher {
-        DomainMatcher::Full(expected) => normalize_dns_name(expected)
-            .is_some_and(|expected| domain.eq_ignore_ascii_case(&expected)),
-        DomainMatcher::Suffix(suffix) => normalize_dns_name(suffix).is_some_and(|suffix| {
-            domain.eq_ignore_ascii_case(&suffix)
-                || domain
-                    .strip_suffix(&suffix)
-                    .is_some_and(|prefix| prefix.ends_with('.'))
-        }),
-        DomainMatcher::Keyword(_) | DomainMatcher::Regex(_) => matcher.matches(domain),
-    }
 }
 
 pub(crate) fn normalize_dns_name(domain: &str) -> Option<String> {
@@ -882,16 +853,23 @@ mod tests {
     use tokio::sync::oneshot;
     use tokio_rustls::TlsAcceptor;
     use xray_config::{
-        CoreConfig, DnsConfig, DnsHostMapping, DnsHostTarget, DnsOutboundRule,
-        DnsOutboundRuleAction, DnsOutboundSettings, DnsQTypeRange, DnsServerConfig, DomainMatcher,
-        IpCidr, IpMatcher, Network, OutboundConfig, OutboundSettings, PolicyConfig, RoutingConfig,
-        RoutingDomainStrategy, RoutingRule, StreamSecurity, StreamSettings, StreamTransport,
+        compile_dns_domain_matchers, CoreConfig, DnsConfig, DnsHostTarget, DnsOutboundRule,
+        DnsOutboundRuleAction, DnsOutboundSettings, DnsQTypeRange, DnsServerConfig,
+        DomainHostIndex, DomainMatcher, DomainMatcherSet, IpCidr, IpMatcherSet, Network,
+        OutboundConfig, OutboundSettings, PolicyConfig, RoutingConfig, RoutingDomainStrategy,
+        RoutingRule, StreamSecurity, StreamSettings, StreamTransport,
         TargetAddr as ConfigTargetAddr, TlsSettings,
     };
     use xray_transport::{
         DnsQueryMetadata, DnsQueryTransportKind, SocketHandle, SocketProtector, TlsConnector,
         TransportError,
     };
+
+    fn ip_matcher_set(cidr: IpCidr) -> IpMatcherSet {
+        let mut matchers = IpMatcherSet::builder();
+        matchers.insert_cidr(cidr.cidr(), false);
+        matchers.build()
+    }
 
     use super::*;
     use crate::dns_outbound_runtime::{
@@ -1044,10 +1022,10 @@ mod tests {
                     inbound_tags: Vec::new(),
                     networks: vec![network],
                     port_ranges: Vec::new(),
-                    domain_matchers: Vec::new(),
-                    ip_matchers: vec![IpMatcher::Cidr(
+                    domain_matchers: DomainMatcherSet::default(),
+                    ip_matchers: ip_matcher_set(
                         IpCidr::new(server.ip(), if server.is_ipv4() { 32 } else { 128 }).unwrap(),
-                    )],
+                    ),
                     outbound_tag: "dns-out".to_owned(),
                 }],
                 domain_strategy: RoutingDomainStrategy::IpIfNonMatch,
@@ -1178,7 +1156,10 @@ mod tests {
                 action: DnsOutboundRuleAction::Drop,
                 r_code: 0,
                 qtype_ranges: vec![DnsQTypeRange::single(1)],
-                domain_matchers: vec![DomainMatcher::Full("policy.test".to_owned())],
+                domain_matchers: compile_dns_domain_matchers(&[DomainMatcher::Full(
+                    "policy.test".to_owned(),
+                )])
+                .unwrap(),
             }],
         };
         let outbound = selected_dns_outbound(settings);
@@ -1241,7 +1222,7 @@ mod tests {
                 action: DnsOutboundRuleAction::Drop,
                 r_code: 0,
                 qtype_ranges: Vec::new(),
-                domain_matchers: Vec::new(),
+                domain_matchers: DomainMatcherSet::default(),
             }],
         };
         let config = dns_outbound_config(
@@ -1321,7 +1302,7 @@ mod tests {
                 action: DnsOutboundRuleAction::Direct,
                 r_code: 0,
                 qtype_ranges: Vec::new(),
-                domain_matchers: Vec::new(),
+                domain_matchers: DomainMatcherSet::default(),
             }],
             ..DnsOutboundSettings::default()
         };
@@ -1515,7 +1496,7 @@ mod tests {
                 action: DnsOutboundRuleAction::Direct,
                 r_code: 0,
                 qtype_ranges: Vec::new(),
-                domain_matchers: Vec::new(),
+                domain_matchers: DomainMatcherSet::default(),
             }],
             ..DnsOutboundSettings::default()
         });
@@ -1621,7 +1602,7 @@ mod tests {
                 action: DnsOutboundRuleAction::Direct,
                 r_code: 0,
                 qtype_ranges: Vec::new(),
-                domain_matchers: Vec::new(),
+                domain_matchers: DomainMatcherSet::default(),
             }],
         };
         let config = dns_outbound_config(
@@ -2288,23 +2269,23 @@ mod tests {
             default_outbound_tag: None,
             routing: RoutingConfig::default(),
             dns: DnsConfig {
-                hosts: vec![
-                    DnsHostMapping {
-                        matcher: DomainMatcher::Keyword("example".to_owned()),
-                        target: DnsHostTarget::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))),
-                    },
-                    DnsHostMapping {
-                        matcher: DomainMatcher::Full("PROXY.EXAMPLE.".to_owned()),
-                        target: DnsHostTarget::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 2))),
-                    },
-                ],
+                hosts: DomainHostIndex::from_iter([
+                    (
+                        DomainMatcher::Keyword("example".to_owned()),
+                        DnsHostTarget::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))),
+                    ),
+                    (
+                        DomainMatcher::Full("PROXY.EXAMPLE.".to_owned()),
+                        DnsHostTarget::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 2))),
+                    ),
+                ]),
                 ..DnsConfig::default()
             },
             policy: PolicyConfig::default(),
         };
 
         assert_eq!(
-            static_dns_host_target(&config, "PROXY.EXAMPLE."),
+            static_dns_host_target_from_index(&config.dns.hosts, "PROXY.EXAMPLE."),
             Some(DnsHostTarget::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 2))))
         );
     }

@@ -48,10 +48,11 @@ use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::{sleep, timeout};
 use tokio_rustls::TlsAcceptor;
 use xray_config::{
-    parse_xray_json, CoreConfig, DnsOutboundRule, DnsOutboundRuleAction, DnsOutboundSettings,
-    DomainMatcher, InboundConfig, InboundProtocol, IpCidr, IpMatcher, Network as ConfigNetwork,
-    OutboundConfig, OutboundSettings, RoutingConfig, RoutingDomainStrategy, RoutingPortRange,
-    RoutingRule, StreamSecurity, StreamSettings, StreamTransport,
+    compile_dns_domain_matchers, parse_xray_json, CoreConfig, DnsHostTarget, DnsOutboundRule,
+    DnsOutboundRuleAction, DnsOutboundSettings, DomainMatcher, InboundConfig, InboundProtocol,
+    IpCidr, Network as ConfigNetwork, OutboundConfig, OutboundSettings, RoutingConfig,
+    RoutingDomainStrategy, RoutingPortRange, RoutingRule, StreamSecurity, StreamSettings,
+    StreamTransport, MAX_CONFIG_DOMAIN_MATCHERS,
 };
 use xray_core_rs::{
     CompiledDnsOutboundPolicy, Core, DnsOutboundDecision, OutboundRouter, StartupProbeOptions,
@@ -60,16 +61,21 @@ use xray_proxy::vless::{
     encode_udp_packet, encode_xudp_keep_packet, read_udp_packet, read_xudp_packet,
     unpad_vision_block, VisionCommand, VisionPadding,
 };
-use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
+use xray_routing::{
+    Cidr, DnsIpFilter, DomainHostIndex, DomainMatcherSet, DomainNameMode, IpMatcherSet,
+    Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr,
+};
 use xray_transport::{
-    select_name_server_indices, CachingDnsResolver, CompiledDnsIpFilter,
-    CompiledNameServerPolicies, DnsIpFilter, DnsIpMatcher, DnsLookup, DnsResolver, NameServer,
-    NameServerPolicy, TransportDomainMatcher, TransportError,
+    select_name_server_indices, CachingDnsResolver, CompiledNameServerPolicies, DnsLookup,
+    DnsResolver, NameServer, NameServerPolicy, TransportError,
 };
 use xray_utls::{normalize_reality_supported_fingerprint, XRAY_REALITY_CAPABLE_FINGERPRINTS};
 
 pub mod chart;
+mod process_metrics;
 mod stream_transport;
+
+use process_metrics::current_peak_rss_kib;
 
 pub use stream_transport::{
     StreamBenchScenario, StreamBenchTraffic, StreamBenchTransport, StreamBenchXhttpMode,
@@ -424,6 +430,14 @@ pub struct RouteProbeOptions {
     pub rules: usize,
     pub outbounds: usize,
     pub dns_candidates: usize,
+    /// Distinct non-matching CIDRs generated per non-final rule. `1` keeps the
+    /// original one-`/16`-per-rule shape; larger values expose the per-matcher
+    /// cost of `geoip:`-sized rules.
+    pub cidrs_per_rule: usize,
+    /// Distinct non-matching `domain:` suffixes generated per non-final rule.
+    /// `0` keeps the IP-target probe; larger values switch the target to a
+    /// domain and expose the per-matcher cost of `geosite:`-sized rules.
+    pub domains_per_rule: usize,
     pub out_dir: PathBuf,
 }
 
@@ -432,6 +446,9 @@ pub struct DnsPolicyProbeOptions {
     pub iterations: usize,
     pub servers: usize,
     pub matchers: usize,
+    /// Number of synthetic `full:` `dns.hosts` entries to index. `0` skips the
+    /// hosts slice and leaves the report unchanged.
+    pub hosts: usize,
     pub out_dir: PathBuf,
 }
 
@@ -1277,6 +1294,8 @@ impl Default for RouteProbeOptions {
             rules: 64,
             outbounds: 8,
             dns_candidates: 0,
+            cidrs_per_rule: 1,
+            domains_per_rule: 0,
             out_dir: PathBuf::from("target/benchmarks"),
         }
     }
@@ -1288,6 +1307,7 @@ impl Default for DnsPolicyProbeOptions {
             iterations: 10_000,
             servers: 4,
             matchers: 4_096,
+            hosts: 0,
             out_dir: PathBuf::from("target/benchmarks"),
         }
     }
@@ -1322,9 +1342,20 @@ pub struct RouteProbeResult {
     pub outbounds: usize,
     #[serde(default)]
     pub dns_candidates: usize,
+    #[serde(default = "default_route_probe_cidrs_per_rule")]
+    pub cidrs_per_rule: usize,
+    #[serde(default)]
+    pub domains_per_rule: usize,
+    /// Process peak RSS in KiB once the routing config and router are built.
+    #[serde(default)]
+    pub peak_rss_kib: u64,
     pub selected: usize,
     pub total_us: u128,
     pub avg_ns: u128,
+}
+
+fn default_route_probe_cidrs_per_rule() -> usize {
+    1
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -1383,6 +1414,20 @@ pub struct DnsOutboundSelectorProbeMetric {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct DnsHostsProbeMetric {
+    pub hosts: usize,
+    pub hit_matched: bool,
+    pub miss_rejected: bool,
+    pub compile_us: u128,
+    /// Process peak RSS in KiB once the hosts index is built.
+    pub peak_rss_kib: u64,
+    pub hit_total_us: u128,
+    pub hit_avg_ns: u128,
+    pub miss_total_us: u128,
+    pub miss_avg_ns: u128,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct DnsPolicyProbeResult {
     pub iterations: usize,
     pub servers: usize,
@@ -1396,6 +1441,8 @@ pub struct DnsPolicyProbeResult {
     pub outbound_worst_ordered_rule_matchers: DnsOutboundPolicyProbeMetric,
     #[serde(default)]
     pub outbound_selector_prefilter: Vec<DnsOutboundSelectorProbeMetric>,
+    #[serde(default)]
+    pub hosts: Option<DnsHostsProbeMetric>,
 }
 
 pub fn parse_cli_args<I, S>(args: I) -> Result<CliArgs, BenchError>
@@ -1623,6 +1670,14 @@ fn parse_route_probe_args(args: &[String]) -> Result<RouteProbeOptions, BenchErr
                 options.dns_candidates =
                     parse_usize(required_value(args, &mut index, flag)?, flag)?;
             }
+            "--cidrs-per-rule" => {
+                options.cidrs_per_rule =
+                    parse_nonzero_usize(required_value(args, &mut index, flag)?, flag)?;
+            }
+            "--domains-per-rule" => {
+                options.domains_per_rule =
+                    parse_usize(required_value(args, &mut index, flag)?, flag)?;
+            }
             "--out-dir" => {
                 options.out_dir = PathBuf::from(required_value(args, &mut index, flag)?);
             }
@@ -1654,6 +1709,9 @@ fn parse_dns_policy_probe_args(args: &[String]) -> Result<DnsPolicyProbeOptions,
             "--matchers" => {
                 options.matchers =
                     parse_nonzero_usize(required_value(args, &mut index, flag)?, flag)?;
+            }
+            "--hosts" => {
+                options.hosts = parse_usize(required_value(args, &mut index, flag)?, flag)?;
             }
             "--out-dir" => {
                 options.out_dir = PathBuf::from(required_value(args, &mut index, flag)?);
@@ -8068,7 +8126,6 @@ const MAX_ROUTE_PROBE_DNS_CANDIDATES: usize = 4096;
 const ROUTE_PROBE_UNMATCHED_TAG: &str = "route-probe-unmatched";
 const DNS_POLICY_PROBE_DOMAIN: &str = "selected.policy-probe.invalid";
 const MAX_DNS_POLICY_PROBE_SERVERS: usize = 4_096;
-const MAX_DNS_POLICY_PROBE_MATCHERS: usize = 250_000;
 const DNS_OUTBOUND_SELECTOR_PROBE_RULE_COUNTS: [usize; 3] = [0, 64, 4_096];
 const DNS_OUTBOUND_SELECTOR_FIRST_HIT_DOMAIN: &str = "first.selector-probe.invalid";
 const DNS_OUTBOUND_SELECTOR_LAST_HIT_DOMAIN: &str = "last.selector-probe.invalid";
@@ -8125,21 +8182,26 @@ impl DnsResolver for RouteProbeDnsResolver {
     }
 }
 
+fn route_probe_target(domain_target: bool) -> Target {
+    let addr = if domain_target {
+        RoutingTargetAddr::Domain(ROUTE_PROBE_DOMAIN.to_owned())
+    } else {
+        RoutingTargetAddr::Ip(IpAddr::V4(ROUTE_PROBE_TARGET_IP))
+    };
+    Target::new(addr, ROUTE_PROBE_PORT, RoutingNetwork::Tcp)
+}
+
 fn measure_direct_route_probe(
     outbound_router: &OutboundRouter,
     iterations: usize,
+    target: &Target,
 ) -> Result<(usize, Duration), BenchError> {
-    let target = Target::new(
-        RoutingTargetAddr::Ip(IpAddr::V4(ROUTE_PROBE_TARGET_IP)),
-        ROUTE_PROBE_PORT,
-        RoutingNetwork::Tcp,
-    );
     let inbound_tag = Some("bench-in");
     let started = Instant::now();
     let mut selected = 0;
     for _ in 0..iterations {
         let outbound = black_box(outbound_router)
-            .select_tcp_outbound_for_session(inbound_tag, black_box(&target))
+            .select_tcp_outbound_for_session(inbound_tag, black_box(target))
             .map_err(|error| {
                 BenchError::InvalidArguments(format!("route probe failed: {error}"))
             })?;
@@ -8208,7 +8270,17 @@ pub async fn run_route_probe(options: &RouteProbeOptions) -> Result<RouteProbeRe
             "route-probe --dns-candidates must not exceed {MAX_ROUTE_PROBE_DNS_CANDIDATES}"
         )));
     }
-    let mut config = route_probe_config(options.rules, options.outbounds)?;
+    if options.dns_candidates > 0 && options.domains_per_rule > 0 {
+        return Err(BenchError::InvalidArguments(
+            "route-probe --dns-candidates cannot be combined with --domains-per-rule".to_owned(),
+        ));
+    }
+    let mut config = route_probe_config(
+        options.rules,
+        options.outbounds,
+        options.cidrs_per_rule,
+        options.domains_per_rule,
+    )?;
     if options.dns_candidates > 0 {
         if options.rules == 0 {
             return Err(BenchError::InvalidArguments(
@@ -8221,8 +8293,10 @@ pub async fn run_route_probe(options: &RouteProbeOptions) -> Result<RouteProbeRe
         config.default_outbound_tag = Some(ROUTE_PROBE_UNMATCHED_TAG.to_owned());
     }
     let outbound_router = OutboundRouter::new(Arc::new(config));
+    let peak_rss_kib = current_peak_rss_kib();
     let (selected, elapsed) = if options.dns_candidates == 0 {
-        measure_direct_route_probe(&outbound_router, options.iterations)?
+        let target = route_probe_target(options.domains_per_rule > 0);
+        measure_direct_route_probe(&outbound_router, options.iterations, &target)?
     } else {
         measure_cached_dns_route_probe(&outbound_router, options.iterations, options.dns_candidates)
             .await?
@@ -8232,6 +8306,9 @@ pub async fn run_route_probe(options: &RouteProbeOptions) -> Result<RouteProbeRe
         rules: options.rules,
         outbounds: options.outbounds,
         dns_candidates: options.dns_candidates,
+        cidrs_per_rule: options.cidrs_per_rule,
+        domains_per_rule: options.domains_per_rule,
+        peak_rss_kib,
         selected,
         total_us: elapsed.as_micros(),
         avg_ns: elapsed.as_nanos() / options.iterations as u128,
@@ -8265,15 +8342,18 @@ fn dns_policy_probe_worst_case_servers(
     let Some(last) = servers.last_mut() else {
         return servers;
     };
-    last.domains.reserve(matcher_count);
-    last.domains.extend(
-        (0..matcher_count.saturating_sub(1)).map(|index| {
-            TransportDomainMatcher::Full(format!("miss-{index}.policy-probe.invalid"))
-        }),
+    let mut domains = DomainMatcherSet::builder();
+    for index in 0..matcher_count.saturating_sub(1) {
+        domains.insert(
+            &DomainMatcher::Full(format!("miss-{index}.policy-probe.invalid")),
+            DomainNameMode::Dns,
+        );
+    }
+    domains.insert(
+        &DomainMatcher::Full(DNS_POLICY_PROBE_DOMAIN.to_owned()),
+        DomainNameMode::Dns,
     );
-    last.domains.push(TransportDomainMatcher::Full(
-        DNS_POLICY_PROBE_DOMAIN.to_owned(),
-    ));
+    last.domains = domains.build().expect("exact DNS policy matchers compile");
     servers
 }
 
@@ -8287,7 +8367,10 @@ fn dns_outbound_probe_common_settings(rule_count: usize) -> DnsOutboundSettings 
             },
             r_code: 0,
             qtype_ranges: Vec::new(),
-            domain_matchers: vec![DomainMatcher::Full(DNS_POLICY_PROBE_DOMAIN.to_owned())],
+            domain_matchers: compile_dns_domain_matchers(&[DomainMatcher::Full(
+                DNS_POLICY_PROBE_DOMAIN.to_owned(),
+            )])
+            .expect("exact DNS outbound matcher compiles"),
         })
         .collect();
     DnsOutboundSettings {
@@ -8300,27 +8383,37 @@ fn dns_outbound_probe_worst_case_settings(
     rule_count: usize,
     matcher_count: usize,
 ) -> DnsOutboundSettings {
-    // Keyword matchers remain ordered in the compiled policy. Full matchers use
-    // a hash set and would not exercise a scan through the final rule's list.
+    // Keyword matchers compile into one automaton per rule, so the worst case
+    // keeps the largest keyword list on the final rule to cover that path.
     let mut rules = (0..rule_count.saturating_sub(1))
         .map(|index| DnsOutboundRule {
             action: DnsOutboundRuleAction::Direct,
             r_code: 0,
             qtype_ranges: Vec::new(),
-            domain_matchers: vec![DomainMatcher::Keyword(format!(
+            domain_matchers: compile_dns_domain_matchers(&[DomainMatcher::Keyword(format!(
                 "rule-{index}-ordered-miss.invalid"
-            ))],
+            ))])
+            .expect("keyword DNS outbound matcher compiles"),
         })
         .collect::<Vec<_>>();
-    let mut domain_matchers = (0..matcher_count.saturating_sub(1))
-        .map(|index| DomainMatcher::Keyword(format!("matcher-{index}-ordered-miss.invalid")))
-        .collect::<Vec<_>>();
-    domain_matchers.push(DomainMatcher::Keyword(DNS_POLICY_PROBE_DOMAIN.to_owned()));
+    let mut domain_matchers = DomainMatcherSet::builder();
+    for index in 0..matcher_count.saturating_sub(1) {
+        domain_matchers.insert(
+            &DomainMatcher::Keyword(format!("matcher-{index}-ordered-miss.invalid")),
+            DomainNameMode::Dns,
+        );
+    }
+    domain_matchers.insert(
+        &DomainMatcher::Keyword(DNS_POLICY_PROBE_DOMAIN.to_owned()),
+        DomainNameMode::Dns,
+    );
     rules.push(DnsOutboundRule {
         action: DnsOutboundRuleAction::Return,
         r_code: 0,
         qtype_ranges: Vec::new(),
-        domain_matchers,
+        domain_matchers: domain_matchers
+            .build()
+            .expect("keyword DNS outbound matchers compile"),
     });
     DnsOutboundSettings {
         rules,
@@ -8434,25 +8527,31 @@ fn dns_outbound_selector_probe_config(rule_count: usize) -> CoreConfig {
     };
     let rules = (0..rule_count)
         .map(|index| {
-            let mut domain_matchers = vec![DomainMatcher::Full(format!(
-                "rule-{index}.selector-probe.invalid"
-            ))];
+            let mut domain_matchers = DomainMatcherSet::builder();
+            domain_matchers.insert(
+                &DomainMatcher::Full(format!("rule-{index}.selector-probe.invalid")),
+                DomainNameMode::Routing,
+            );
             if index == 0 {
-                domain_matchers.push(DomainMatcher::Full(
-                    DNS_OUTBOUND_SELECTOR_FIRST_HIT_DOMAIN.to_owned(),
-                ));
+                domain_matchers.insert(
+                    &DomainMatcher::Full(DNS_OUTBOUND_SELECTOR_FIRST_HIT_DOMAIN.to_owned()),
+                    DomainNameMode::Routing,
+                );
             }
             if index + 1 == rule_count {
-                domain_matchers.push(DomainMatcher::Full(
-                    DNS_OUTBOUND_SELECTOR_LAST_HIT_DOMAIN.to_owned(),
-                ));
+                domain_matchers.insert(
+                    &DomainMatcher::Full(DNS_OUTBOUND_SELECTOR_LAST_HIT_DOMAIN.to_owned()),
+                    DomainNameMode::Routing,
+                );
             }
             RoutingRule {
                 inbound_tags: vec!["bench-in".to_owned()],
                 networks: vec![ConfigNetwork::Udp],
                 port_ranges: vec![RoutingPortRange::single(53)],
-                domain_matchers,
-                ip_matchers: Vec::new(),
+                domain_matchers: domain_matchers
+                    .build()
+                    .expect("exact DNS selector matchers compile"),
+                ip_matchers: Default::default(),
                 outbound_tag: "dns-out".to_owned(),
             }
         })
@@ -8617,14 +8716,18 @@ fn measure_dns_ip_filter(
     matcher_count: usize,
     iterations: usize,
 ) -> Result<DnsIpFilterProbeMetric, BenchError> {
-    let matchers = (0..matcher_count)
-        .map(|index| DnsIpMatcher::host(dns_ip_filter_probe_address(index)))
-        .collect();
     let target = dns_ip_filter_probe_address(matcher_count - 1);
     let non_match = dns_ip_filter_probe_miss(target);
 
+    let addresses = (0..matcher_count)
+        .map(dns_ip_filter_probe_address)
+        .collect::<Vec<_>>();
     let started = Instant::now();
-    let filter = CompiledDnsIpFilter::new(DnsIpFilter::hard(matchers, Vec::new()));
+    let mut builder = DnsIpFilter::builder();
+    for address in addresses {
+        builder.custom().insert_ip(address, false);
+    }
+    let filter = builder.build();
     let compile_us = started.elapsed().as_micros();
     let hit_matched = filter.matches(target);
     let miss_rejected = !filter.matches(non_match);
@@ -8694,6 +8797,85 @@ fn dns_ip_filter_probe_miss(address: IpAddr) -> IpAddr {
     IpAddr::V4(Ipv4Addr::from(u32::from(address) + 1))
 }
 
+fn dns_hosts_probe_name(index: usize) -> String {
+    format!("host-{index}.hosts-probe.invalid")
+}
+
+fn dns_hosts_probe_miss_name(index: usize) -> String {
+    format!("miss-{index}.hosts-probe.invalid")
+}
+
+fn dns_hosts_probe_target(index: usize) -> IpAddr {
+    const RFC5737_BASES: [Ipv4Addr; 3] = [
+        Ipv4Addr::new(192, 0, 2, 0),
+        Ipv4Addr::new(198, 51, 100, 0),
+        Ipv4Addr::new(203, 0, 113, 0),
+    ];
+    let base = u32::from(RFC5737_BASES[index % RFC5737_BASES.len()]);
+    IpAddr::V4(Ipv4Addr::from(
+        base + (index / RFC5737_BASES.len()) as u32 % 256,
+    ))
+}
+
+fn measure_dns_hosts_index(
+    host_count: usize,
+    iterations: usize,
+) -> Result<DnsHostsProbeMetric, BenchError> {
+    let started = Instant::now();
+    let hosts = (0..host_count)
+        .map(|index| {
+            (
+                DomainMatcher::Full(dns_hosts_probe_name(index)),
+                DnsHostTarget::Ip(dns_hosts_probe_target(index)),
+            )
+        })
+        .collect::<DomainHostIndex<_>>();
+    let compile_us = started.elapsed().as_micros();
+    let peak_rss_kib = current_peak_rss_kib();
+    let lookup = |domain: &str| hosts.lookup(domain);
+
+    let last = host_count - 1;
+    let hit_matched = lookup(&dns_hosts_probe_name(last))
+        == Some(&DnsHostTarget::Ip(dns_hosts_probe_target(last)));
+    let miss_rejected = lookup(&dns_hosts_probe_miss_name(last)).is_none();
+    if !hit_matched || !miss_rejected {
+        return Err(BenchError::InvalidArguments(
+            "DNS hosts probe failed its membership validation".to_owned(),
+        ));
+    }
+
+    let hit_probes = dns_ip_filter_probe_indices(host_count)
+        .into_iter()
+        .map(dns_hosts_probe_name)
+        .collect::<Vec<_>>();
+    let started = Instant::now();
+    for iteration in 0..iterations {
+        black_box(lookup(black_box(&hit_probes[iteration & 63])));
+    }
+    let hit_elapsed = started.elapsed();
+
+    let miss_probes = dns_ip_filter_probe_indices(host_count)
+        .into_iter()
+        .map(dns_hosts_probe_miss_name)
+        .collect::<Vec<_>>();
+    let started = Instant::now();
+    for iteration in 0..iterations {
+        black_box(lookup(black_box(&miss_probes[iteration & 63])));
+    }
+    let miss_elapsed = started.elapsed();
+    Ok(DnsHostsProbeMetric {
+        hosts: host_count,
+        hit_matched,
+        miss_rejected,
+        compile_us,
+        peak_rss_kib,
+        hit_total_us: hit_elapsed.as_micros(),
+        hit_avg_ns: hit_elapsed.as_nanos() / iterations as u128,
+        miss_total_us: miss_elapsed.as_micros(),
+        miss_avg_ns: miss_elapsed.as_nanos() / iterations as u128,
+    })
+}
+
 fn measure_dns_policy_probe(
     options: &DnsPolicyProbeOptions,
 ) -> Result<DnsPolicyProbeResult, BenchError> {
@@ -8707,11 +8889,19 @@ fn measure_dns_policy_probe(
             "dns-policy-probe --servers must be between 1 and {MAX_DNS_POLICY_PROBE_SERVERS}"
         )));
     }
-    if options.matchers == 0 || options.matchers > MAX_DNS_POLICY_PROBE_MATCHERS {
+    if options.matchers == 0 || options.matchers > MAX_CONFIG_DOMAIN_MATCHERS {
         return Err(BenchError::InvalidArguments(format!(
-            "dns-policy-probe --matchers must be between 1 and {MAX_DNS_POLICY_PROBE_MATCHERS}"
+            "dns-policy-probe --matchers must be between 1 and {MAX_CONFIG_DOMAIN_MATCHERS}"
         )));
     }
+    if options.hosts > MAX_CONFIG_DOMAIN_MATCHERS {
+        return Err(BenchError::InvalidArguments(format!(
+            "dns-policy-probe --hosts must not exceed {MAX_CONFIG_DOMAIN_MATCHERS}"
+        )));
+    }
+    let hosts = (options.hosts > 0)
+        .then(|| measure_dns_hosts_index(options.hosts, options.iterations))
+        .transpose()?;
 
     let common = dns_policy_probe_servers(options.servers);
     let expected_common = (0..options.servers).collect::<Vec<_>>();
@@ -8779,6 +8969,7 @@ fn measure_dns_policy_probe(
         outbound_common_first_rule,
         outbound_worst_ordered_rule_matchers,
         outbound_selector_prefilter,
+        hosts,
     })
 }
 
@@ -9768,7 +9959,22 @@ fn summarize_reality_matrix_cases(
     }
 }
 
-fn route_probe_config(rules: usize, outbounds: usize) -> Result<CoreConfig, BenchError> {
+fn route_probe_config(
+    rules: usize,
+    outbounds: usize,
+    cidrs_per_rule: usize,
+    domains_per_rule: usize,
+) -> Result<CoreConfig, BenchError> {
+    if cidrs_per_rule == 0 {
+        return Err(BenchError::InvalidArguments(
+            "route-probe --cidrs-per-rule must be at least 1".to_owned(),
+        ));
+    }
+    if rules.saturating_mul(domains_per_rule) > MAX_CONFIG_DOMAIN_MATCHERS {
+        return Err(BenchError::InvalidArguments(format!(
+            "route-probe rules x --domains-per-rule must not exceed {MAX_CONFIG_DOMAIN_MATCHERS}"
+        )));
+    }
     let outbound_count = outbounds.max(1);
     let selected_tag = format!("out-{}", outbound_count - 1);
     let outbounds = (0..outbound_count)
@@ -9787,18 +9993,41 @@ fn route_probe_config(rules: usize, outbounds: usize) -> Result<CoreConfig, Benc
 
     let mut routing_rules = Vec::with_capacity(rules);
     for index in 0..rules {
-        let cidr = if index + 1 == rules {
-            IpCidr::full(IpAddr::V4(ROUTE_PROBE_TARGET_IP))
+        let final_rule = index + 1 == rules;
+        let mut ip_matchers = IpMatcherSet::builder();
+        let mut domain_matchers = DomainMatcherSet::builder();
+        if domains_per_rule > 0 {
+            if final_rule {
+                domain_matchers.insert(
+                    &DomainMatcher::Full(ROUTE_PROBE_DOMAIN.to_owned()),
+                    DomainNameMode::Routing,
+                );
+            } else {
+                for domain_index in 0..domains_per_rule {
+                    domain_matchers.insert(
+                        &DomainMatcher::Suffix(route_probe_miss_domain(index, domain_index)),
+                        DomainNameMode::Routing,
+                    );
+                }
+            }
+        } else if final_rule {
+            ip_matchers.insert_cidr(Cidr::host(IpAddr::V4(ROUTE_PROBE_TARGET_IP)), false);
         } else {
-            IpCidr::new(IpAddr::V4(Ipv4Addr::new(10, (index % 256) as u8, 0, 0)), 16)
-                .map_err(|error| BenchError::InvalidArguments(error.to_string()))?
-        };
+            for cidr_index in 0..cidrs_per_rule {
+                ip_matchers.insert_cidr(
+                    route_probe_miss_cidr(index, cidr_index, cidrs_per_rule)?.cidr(),
+                    false,
+                );
+            }
+        }
         routing_rules.push(RoutingRule {
             inbound_tags: vec!["bench-in".to_owned()],
             networks: Vec::new(),
             port_ranges: Vec::new(),
-            domain_matchers: Vec::new(),
-            ip_matchers: vec![IpMatcher::Cidr(cidr)],
+            domain_matchers: domain_matchers
+                .build()
+                .expect("route-probe domain matchers compile"),
+            ip_matchers: ip_matchers.build(),
             outbound_tag: selected_tag.clone(),
         });
     }
@@ -9822,6 +10051,44 @@ fn route_probe_config(rules: usize, outbounds: usize) -> Result<CoreConfig, Benc
         dns: Default::default(),
         policy: Default::default(),
     })
+}
+
+/// A `domain:` suffix that never matches [`ROUTE_PROBE_DOMAIN`].
+fn route_probe_miss_domain(rule_index: usize, domain_index: usize) -> String {
+    format!("miss-{rule_index}-{domain_index}.invalid")
+}
+
+/// A CIDR inside `10.0.0.0/8` that never contains [`ROUTE_PROBE_TARGET_IP`].
+///
+/// With one CIDR per rule this keeps the historical `10.<rule>.0.0/16` shape.
+/// With more, every rule gets `cidrs_per_rule` distinct `/28` blocks separated
+/// by a one-block gap so that no two blocks overlap or merge into one range.
+/// 2^19 such blocks fit inside `10.0.0.0/8`; `rules x cidrs_per_rule` beyond
+/// that is rejected here.
+fn route_probe_miss_cidr(
+    rule_index: usize,
+    cidr_index: usize,
+    cidrs_per_rule: usize,
+) -> Result<IpCidr, BenchError> {
+    let (network, prefix) = if cidrs_per_rule == 1 {
+        (Ipv4Addr::new(10, (rule_index % 256) as u8, 0, 0), 16)
+    } else {
+        let block = rule_index * cidrs_per_rule + cidr_index;
+        let offset = u32::try_from(block * 32)
+            .ok()
+            .filter(|offset| *offset < (1 << 24))
+            .ok_or_else(|| {
+                BenchError::InvalidArguments(format!(
+                    "route-probe miss CIDR {block} does not fit inside 10.0.0.0/8"
+                ))
+            })?;
+        (
+            Ipv4Addr::from(u32::from(Ipv4Addr::new(10, 0, 0, 0)) + offset),
+            28,
+        )
+    };
+    IpCidr::new(IpAddr::V4(network), prefix)
+        .map_err(|error| BenchError::InvalidArguments(error.to_string()))
 }
 
 fn harness_build_profile() -> &'static str {
@@ -10494,11 +10761,14 @@ fn print_result(result: &BenchResult) {
 
 fn print_route_probe_result(result: &RouteProbeResult) {
     println!(
-        "route-probe iterations={} rules={} outbounds={} dns_candidates={} selected={} total_us={} avg_ns={}",
+        "route-probe iterations={} rules={} outbounds={} dns_candidates={} cidrs_per_rule={} domains_per_rule={} peak_rss_kib={} selected={} total_us={} avg_ns={}",
         result.iterations,
         result.rules,
         result.outbounds,
         result.dns_candidates,
+        result.cidrs_per_rule,
+        result.domains_per_rule,
+        result.peak_rss_kib,
         result.selected,
         result.total_us,
         result.avg_ns
@@ -10556,6 +10826,20 @@ fn print_dns_policy_probe_result(result: &DnsPolicyProbeResult) {
             selector.miss_avg_ns,
             selector.semantic_miss_total_us,
             selector.semantic_miss_avg_ns,
+        );
+    }
+    if let Some(hosts) = &result.hosts {
+        println!(
+            "dns-policy-probe-hosts hosts={} hit_matched={} miss_rejected={} hosts_compile_us={} peak_rss_kib={} hosts_hit_total_us={} hosts_hit_avg_ns={} hosts_miss_total_us={} hosts_miss_avg_ns={}",
+            hosts.hosts,
+            hosts.hit_matched,
+            hosts.miss_rejected,
+            hosts.compile_us,
+            hosts.peak_rss_kib,
+            hosts.hit_total_us,
+            hosts.hit_avg_ns,
+            hosts.miss_total_us,
+            hosts.miss_avg_ns,
         );
     }
 }
@@ -13544,9 +13828,106 @@ mod tests {
                 rules: 64,
                 outbounds: 8,
                 dns_candidates: 0,
+                cidrs_per_rule: 1,
+                domains_per_rule: 0,
                 out_dir: PathBuf::from("target/benchmarks/route-probe"),
             })
         );
+    }
+
+    #[test]
+    fn parses_route_probe_cidrs_per_rule() {
+        let args =
+            parse_cli_args(["xray-bench", "route-probe", "--cidrs-per-rule", "5000"]).unwrap();
+
+        let CliArgs::RouteProbe(options) = args else {
+            panic!("expected route-probe arguments");
+        };
+        assert_eq!(options.cidrs_per_rule, 5000);
+
+        let error = parse_cli_args(["xray-bench", "route-probe", "--cidrs-per-rule", "0"])
+            .expect_err("zero CIDRs per rule must be rejected");
+        assert!(matches!(error, BenchError::InvalidArguments(_)));
+    }
+
+    #[test]
+    fn route_probe_miss_cidrs_never_contain_the_target_and_do_not_touch() {
+        let target = IpAddr::V4(ROUTE_PROBE_TARGET_IP);
+        let single = route_probe_miss_cidr(3, 0, 1).unwrap();
+        assert_eq!(single.network(), IpAddr::V4(Ipv4Addr::new(10, 3, 0, 0)));
+        assert_eq!(single.prefix(), 16);
+        assert!(!single.matches(&target));
+
+        let mut networks = Vec::new();
+        for rule_index in 0..3 {
+            for cidr_index in 0..5 {
+                let cidr = route_probe_miss_cidr(rule_index, cidr_index, 5).unwrap();
+                assert_eq!(cidr.prefix(), 28);
+                assert!(!cidr.matches(&target));
+                let IpAddr::V4(network) = cidr.network() else {
+                    panic!("expected an IPv4 network");
+                };
+                networks.push(u32::from(network));
+            }
+        }
+        networks.sort_unstable();
+        networks.dedup();
+        assert_eq!(networks.len(), 15);
+        for pair in networks.windows(2) {
+            // A /28 spans 16 addresses; a gap of another 16 keeps blocks from merging.
+            assert!(pair[1] - pair[0] >= 32);
+        }
+
+        let config = route_probe_config(4, 2, 5, 0).unwrap();
+        for rule in &config.routing.rules[..3] {
+            assert!(!rule.matches_ip(Some(&target)));
+            assert_eq!(rule.ip_matchers.range_count(), 5);
+            assert!(rule.domain_matchers.is_empty());
+        }
+        assert!(config.routing.rules[3].matches_ip(Some(&target)));
+        assert!(route_probe_config(1 << 15, 2, 17, 0).is_err());
+        assert!(route_probe_config(4, 2, 0, 0).is_err());
+    }
+
+    #[test]
+    fn parses_route_probe_domains_per_rule() {
+        let args =
+            parse_cli_args(["xray-bench", "route-probe", "--domains-per-rule", "5000"]).unwrap();
+
+        let CliArgs::RouteProbe(options) = args else {
+            panic!("expected route-probe arguments");
+        };
+        assert_eq!(options.domains_per_rule, 5000);
+
+        let zero =
+            parse_cli_args(["xray-bench", "route-probe", "--domains-per-rule", "0"]).unwrap();
+        let CliArgs::RouteProbe(zero) = zero else {
+            panic!("expected route-probe arguments");
+        };
+        assert_eq!(zero.domains_per_rule, 0);
+    }
+
+    #[test]
+    fn route_probe_domain_rules_miss_until_the_final_exact_rule() {
+        let config = route_probe_config(4, 2, 5, 3).unwrap();
+        for (rule_index, rule) in config.routing.rules[..3].iter().enumerate() {
+            assert!(rule.ip_matchers.is_empty());
+            assert!(!rule.matches_domain(Some(ROUTE_PROBE_DOMAIN)));
+            assert!(rule.matches_domain(Some(&format!(
+                "host.{}",
+                route_probe_miss_domain(rule_index, 2)
+            ))));
+        }
+        let last = &config.routing.rules[3];
+        assert!(last.ip_matchers.is_empty());
+        assert!(last.matches_domain(Some(ROUTE_PROBE_DOMAIN)));
+        assert!(!last.matches_domain(Some("sub.route-probe.invalid")));
+        assert!(route_probe_config(1 << 15, 2, 1, 8).is_err());
+
+        let router = OutboundRouter::new(Arc::new(config));
+        let target = route_probe_target(true);
+        let (selected, _) = measure_direct_route_probe(&router, 3, &target).unwrap();
+        assert_eq!(selected, 3);
     }
 
     #[test]
@@ -13570,6 +13951,8 @@ mod tests {
             "8",
             "--matchers",
             "16384",
+            "--hosts",
+            "50000",
             "--out-dir",
             "target/benchmarks/dns-policy-probe",
         ])
@@ -13581,9 +13964,30 @@ mod tests {
                 iterations: 500,
                 servers: 8,
                 matchers: 16_384,
+                hosts: 50_000,
                 out_dir: PathBuf::from("target/benchmarks/dns-policy-probe"),
             })
         );
+    }
+
+    #[test]
+    fn dns_hosts_probe_validates_membership_and_is_skipped_by_default() {
+        let metric = measure_dns_hosts_index(1_000, 2).unwrap();
+        assert!(metric.hit_matched && metric.miss_rejected);
+        assert_eq!(metric.hosts, 1_000);
+
+        let result = measure_dns_policy_probe(&DnsPolicyProbeOptions {
+            iterations: 1,
+            servers: 1,
+            matchers: 1,
+            hosts: 0,
+            out_dir: PathBuf::from("target/benchmarks/test"),
+        })
+        .unwrap();
+        assert_eq!(result.hosts, None);
+        assert!(serde_json::to_string(&result)
+            .unwrap()
+            .contains("\"hosts\":null"));
     }
 
     #[test]
@@ -13592,6 +13996,7 @@ mod tests {
             iterations: 3,
             servers: 4,
             matchers: 4_096,
+            hosts: 0,
             out_dir: PathBuf::from("target/benchmarks/test"),
         })
         .unwrap();
@@ -13644,7 +14049,10 @@ mod tests {
 
         assert_eq!(common.rules.len(), 8);
         assert_eq!(worst.rules.len(), 8);
-        assert_eq!(worst.rules.last().unwrap().domain_matchers.len(), 16_384);
+        assert_eq!(
+            worst.rules.last().unwrap().domain_matchers.matcher_count(),
+            16_384
+        );
     }
 
     #[test]
@@ -13653,6 +14061,7 @@ mod tests {
             iterations: 1,
             servers: 2,
             matchers: 4,
+            hosts: 0,
             out_dir: PathBuf::from("target/benchmarks/test"),
         })
         .unwrap();
@@ -13703,7 +14112,8 @@ mod tests {
         let error = measure_dns_policy_probe(&DnsPolicyProbeOptions {
             iterations: 1,
             servers: 1,
-            matchers: MAX_DNS_POLICY_PROBE_MATCHERS + 1,
+            matchers: MAX_CONFIG_DOMAIN_MATCHERS + 1,
+            hosts: 0,
             out_dir: PathBuf::from("target/benchmarks/test"),
         })
         .unwrap_err();
@@ -13722,17 +14132,18 @@ mod tests {
 
     #[test]
     fn direct_route_probe_remains_the_zero_candidate_baseline() {
-        let config = Arc::new(route_probe_config(4, 2).unwrap());
+        let config = Arc::new(route_probe_config(4, 2, 1, 0).unwrap());
         let router = OutboundRouter::new(config);
 
-        let (selected, _) = measure_direct_route_probe(&router, 3).unwrap();
+        let target = route_probe_target(false);
+        let (selected, _) = measure_direct_route_probe(&router, 3, &target).unwrap();
 
         assert_eq!(selected, 3);
     }
 
     #[tokio::test]
     async fn cached_dns_route_probe_matches_the_final_candidate_from_the_warmed_cache() {
-        let mut config = route_probe_config(4, 2).unwrap();
+        let mut config = route_probe_config(4, 2, 1, 0).unwrap();
         config.routing.domain_strategy = RoutingDomainStrategy::IpIfNonMatch;
         config.default_outbound_tag = Some(ROUTE_PROBE_UNMATCHED_TAG.to_owned());
         let router = OutboundRouter::new(Arc::new(config));

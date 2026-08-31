@@ -3,8 +3,15 @@ use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
 };
 
-use regex::Regex;
 use uuid::Uuid;
+use xray_routing::{
+    domain_matcher::domain_matches_suffix, Cidr, DomainMatcherSetBuilder, DomainMatcherSetError,
+    DomainRegexError,
+};
+pub use xray_routing::{
+    DnsHostTarget, DnsIpFilter, DomainHostIndex, DomainMatcher, DomainMatcherSet, DomainNameMode,
+    IpMatcherSet, RegexMatcher,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ConfigModelError {
@@ -14,10 +21,21 @@ pub enum ConfigModelError {
     InvalidCidrPrefix { prefix: u8, max: u8 },
     #[error("invalid domain regex `{pattern}`: {message}")]
     InvalidDomainRegex { pattern: String, message: String },
+    #[error("invalid domain matcher set: {message}")]
+    InvalidDomainMatcherSet { message: String },
     #[error("DNS qtype range start {start} exceeds end {end}")]
     InvalidDnsQTypeRange { start: u16, end: u16 },
     #[error("routing port range start {start} exceeds end {end}")]
     InvalidRoutingPortRange { start: u16, end: u16 },
+}
+
+impl From<DomainRegexError> for ConfigModelError {
+    fn from(error: DomainRegexError) -> Self {
+        Self::InvalidDomainRegex {
+            pattern: error.pattern,
+            message: error.message,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,7 +65,9 @@ pub enum RoutingDomainStrategy {
 pub struct DnsConfig {
     pub fake_ip: Option<DnsFakeIpConfig>,
     pub servers: Vec<DnsServerConfig>,
-    pub hosts: Vec<DnsHostMapping>,
+    /// `dns.hosts` entries, keyed by DNS-normalized `full:` names with the
+    /// remaining matchers scanned in config order.
+    pub hosts: DomainHostIndex<DnsHostTarget>,
     /// Default synthetic inbound tag used by configured DNS clients.
     ///
     /// An empty value asks the runtime to supply Xray's generated internal
@@ -90,14 +110,15 @@ pub const MAX_DNS_SERVER_TIMEOUT_MS: u64 = i64::MAX as u64 / 2 / 1_000_000;
 pub enum DnsServerConfig {
     Ip(SocketAddr),
     Domain { domain: String, port: u16 },
-    Policy(DnsNameServerConfig),
+    Policy(Box<DnsNameServerConfig>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DnsNameServerConfig {
     pub endpoint: DnsServerEndpoint,
     pub transport: DnsServerTransport,
-    pub domains: Vec<DomainMatcher>,
+    /// Compiled with [`compile_dns_domain_matchers`] semantics.
+    pub domains: DomainMatcherSet,
     pub expected_ips: DnsIpFilter,
     pub unexpected_ips: DnsIpFilter,
     /// Per-client synthetic inbound tag; empty inherits `dns.tag`.
@@ -107,103 +128,6 @@ pub struct DnsNameServerConfig {
     pub skip_fallback: bool,
     pub query_strategy: DnsQueryStrategy,
     pub final_query: bool,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct DnsIpFilter {
-    pub custom_matchers: Vec<IpMatcher>,
-    pub geoip_matchers: Vec<IpMatcher>,
-    pub soft: bool,
-}
-
-impl DnsIpFilter {
-    pub fn matches(&self, ip: &IpAddr) -> bool {
-        dns_ip_matcher_group_matches(&self.custom_matchers, ip)
-            || dns_ip_matcher_group_matches(&self.geoip_matchers, ip)
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.custom_matchers.is_empty() && self.geoip_matchers.is_empty()
-    }
-}
-
-fn dns_ip_matcher_group_matches(matchers: &[IpMatcher], target_ip: &IpAddr) -> bool {
-    let target_ip = canonicalize_ip_matcher_address(*target_ip);
-    let mut positive_matched = false;
-    let mut inverse_supports_family = false;
-    let mut inverse_contains = false;
-
-    for matcher in matchers {
-        let (matcher, inverse) = dns_ip_matcher_base(matcher);
-        if inverse {
-            if dns_ip_matcher_supports_family(matcher, target_ip) {
-                inverse_supports_family = true;
-                inverse_contains |= dns_ip_matcher_matches(matcher, target_ip);
-            }
-        } else {
-            positive_matched |= dns_ip_matcher_matches(matcher, target_ip);
-        }
-    }
-
-    positive_matched || inverse_supports_family && !inverse_contains
-}
-
-fn dns_ip_matcher_base(mut matcher: &IpMatcher) -> (&IpMatcher, bool) {
-    let mut inverse = false;
-    while let IpMatcher::Not(inner) = matcher {
-        inverse = !inverse;
-        matcher = inner;
-    }
-    (matcher, inverse)
-}
-
-fn dns_ip_matcher_supports_family(matcher: &IpMatcher, target_ip: IpAddr) -> bool {
-    match matcher {
-        IpMatcher::Cidr(cidr) => {
-            matches!(
-                (canonicalize_ip_matcher_address(cidr.network()), target_ip),
-                (IpAddr::V4(_), IpAddr::V4(_)) | (IpAddr::V6(_), IpAddr::V6(_))
-            )
-        }
-        IpMatcher::Private => true,
-        IpMatcher::Not(_) => unreachable!("DNS IP matcher negation should be flattened"),
-    }
-}
-
-fn dns_ip_matcher_matches(matcher: &IpMatcher, target_ip: IpAddr) -> bool {
-    match matcher {
-        IpMatcher::Cidr(cidr) => {
-            let network = canonicalize_ip_matcher_address(cidr.network());
-            let width = match network {
-                IpAddr::V4(_) => 32,
-                IpAddr::V6(_) => 128,
-            };
-            cidr.prefix() <= width
-                && match (network, target_ip) {
-                    (IpAddr::V4(network), IpAddr::V4(ip)) => prefix_matches(
-                        u128::from(u32::from(network)),
-                        u128::from(u32::from(ip)),
-                        cidr.prefix(),
-                        32,
-                    ),
-                    (IpAddr::V6(network), IpAddr::V6(ip)) => {
-                        prefix_matches(u128::from(network), u128::from(ip), cidr.prefix(), 128)
-                    }
-                    (IpAddr::V4(_), IpAddr::V6(_)) | (IpAddr::V6(_), IpAddr::V4(_)) => false,
-                }
-        }
-        IpMatcher::Private => private_cidrs()
-            .iter()
-            .any(|private_cidr| private_cidr.matches(&target_ip)),
-        IpMatcher::Not(_) => unreachable!("DNS IP matcher negation should be flattened"),
-    }
-}
-
-fn canonicalize_ip_matcher_address(ip: IpAddr) -> IpAddr {
-    match ip {
-        IpAddr::V6(ip) => ip.to_ipv4_mapped().map_or(IpAddr::V6(ip), IpAddr::V4),
-        IpAddr::V4(_) => ip,
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -221,13 +145,6 @@ impl DnsServerConfig {
                 port: *port,
             },
             Self::Policy(server) => server.endpoint.clone(),
-        }
-    }
-
-    pub fn domains(&self) -> &[DomainMatcher] {
-        match self {
-            Self::Policy(server) => &server.domains,
-            Self::Ip(_) | Self::Domain { .. } => &[],
         }
     }
 
@@ -275,19 +192,6 @@ impl DnsServerConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DnsHostMapping {
-    pub matcher: DomainMatcher,
-    pub target: DnsHostTarget,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DnsHostTarget {
-    Ip(IpAddr),
-    Ips(Vec<IpAddr>),
-    Domain(String),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DnsFakeIpConfig {
     pub enabled: bool,
     pub ipv4_pool: IpCidr,
@@ -300,8 +204,8 @@ pub struct RoutingRule {
     pub inbound_tags: Vec<String>,
     pub networks: Vec<Network>,
     pub port_ranges: Vec<RoutingPortRange>,
-    pub domain_matchers: Vec<DomainMatcher>,
-    pub ip_matchers: Vec<IpMatcher>,
+    pub domain_matchers: DomainMatcherSet,
+    pub ip_matchers: IpMatcherSet,
     pub outbound_tag: String,
 }
 
@@ -370,9 +274,7 @@ impl RoutingRule {
             return false;
         };
 
-        self.domain_matchers
-            .iter()
-            .any(|matcher| matcher.matches(target_domain))
+        self.domain_matchers.matches(target_domain)
     }
 
     pub fn matches_ip(&self, target_ip: Option<&IpAddr>) -> bool {
@@ -384,7 +286,7 @@ impl RoutingRule {
             return false;
         };
 
-        ip_matcher_group_matches(&self.ip_matchers, target_ip)
+        self.ip_matchers.matches(*target_ip)
     }
 }
 
@@ -422,235 +324,64 @@ impl RoutingPortRange {
     }
 }
 
-fn ip_matcher_group_matches(matchers: &[IpMatcher], target_ip: &IpAddr) -> bool {
-    let mut has_positive = false;
-    let mut positive_matched = false;
-    let mut has_inverse = false;
-    let mut all_inverse_matched = true;
-
-    for matcher in matchers {
-        if matcher.is_inverse() {
-            has_inverse = true;
-            if !matcher.matches(target_ip) {
-                all_inverse_matched = false;
-            }
-        } else {
-            has_positive = true;
-            if matcher.matches(target_ip) {
-                positive_matched = true;
-            }
-        }
-    }
-
-    (has_positive && positive_matched) || (has_inverse && all_inverse_matched)
+/// Compiles routing matchers ([`DomainNameMode::Routing`]).
+pub fn compile_domain_matchers(
+    matchers: &[DomainMatcher],
+) -> Result<DomainMatcherSet, ConfigModelError> {
+    DomainMatcherSet::compile(matchers, DomainNameMode::Routing).map_err(domain_matcher_set_error)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DomainMatcher {
-    Keyword(String),
-    Full(String),
-    Suffix(String),
-    Regex(RegexMatcher),
+/// Compiles DNS matchers ([`DomainNameMode::Dns`]).
+pub fn compile_dns_domain_matchers(
+    matchers: &[DomainMatcher],
+) -> Result<DomainMatcherSet, ConfigModelError> {
+    DomainMatcherSet::compile(matchers, DomainNameMode::Dns).map_err(domain_matcher_set_error)
 }
 
-impl DomainMatcher {
-    pub fn matches(&self, domain: &str) -> bool {
-        match self {
-            Self::Keyword(keyword) => contains_ignore_ascii_case(domain, keyword),
-            Self::Full(expected) => domain.eq_ignore_ascii_case(expected),
-            Self::Suffix(suffix) => domain_matches_suffix(domain, suffix),
-            Self::Regex(matcher) => matcher.matches(domain),
-        }
-    }
+pub(crate) fn build_domain_matcher_set(
+    builder: DomainMatcherSetBuilder,
+) -> Result<DomainMatcherSet, ConfigModelError> {
+    builder.build().map_err(domain_matcher_set_error)
 }
 
-#[derive(Debug, Clone)]
-pub struct RegexMatcher {
-    pattern: String,
-    regex: Regex,
-}
-
-impl RegexMatcher {
-    pub fn new(pattern: impl Into<String>) -> Result<Self, ConfigModelError> {
-        let pattern = pattern.into();
-        let regex = Regex::new(&pattern).map_err(|error| ConfigModelError::InvalidDomainRegex {
-            pattern: pattern.clone(),
-            message: error.to_string(),
-        })?;
-
-        Ok(Self { pattern, regex })
-    }
-
-    pub fn pattern(&self) -> &str {
-        &self.pattern
-    }
-
-    pub fn matches(&self, domain: &str) -> bool {
-        self.regex.is_match(&domain.to_ascii_lowercase())
-    }
-}
-
-impl PartialEq for RegexMatcher {
-    fn eq(&self, other: &Self) -> bool {
-        self.pattern == other.pattern
-    }
-}
-
-impl Eq for RegexMatcher {}
-
-fn contains_ignore_ascii_case(haystack: &str, needle: &str) -> bool {
-    if needle.is_empty() {
-        return true;
-    }
-
-    haystack
-        .as_bytes()
-        .windows(needle.len())
-        .any(|window| window.eq_ignore_ascii_case(needle.as_bytes()))
-}
-
-fn domain_matches_suffix(domain: &str, suffix: &str) -> bool {
-    if domain.eq_ignore_ascii_case(suffix) {
-        return true;
-    }
-
-    if domain.len() <= suffix.len() {
-        return false;
-    }
-
-    let boundary_index = domain.len() - suffix.len() - 1;
-    let domain_bytes = domain.as_bytes();
-    domain_bytes[boundary_index] == b'.'
-        && domain_bytes[boundary_index + 1..].eq_ignore_ascii_case(suffix.as_bytes())
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum IpMatcher {
-    Cidr(IpCidr),
-    Private,
-    Not(Box<IpMatcher>),
-}
-
-impl IpMatcher {
-    pub fn matches(&self, ip: &IpAddr) -> bool {
-        match self {
-            Self::Cidr(cidr) => cidr.matches(ip),
-            Self::Private => private_cidrs()
-                .iter()
-                .any(|private_cidr| private_cidr.matches(ip)),
-            Self::Not(matcher) => !matcher.matches(ip),
-        }
-    }
-
-    fn is_inverse(&self) -> bool {
-        matches!(self, Self::Not(_))
+fn domain_matcher_set_error(error: DomainMatcherSetError) -> ConfigModelError {
+    ConfigModelError::InvalidDomainMatcherSet {
+        message: error.to_string(),
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct IpCidr {
-    network: IpAddr,
-    prefix: u8,
-}
+pub struct IpCidr(Cidr);
 
 impl IpCidr {
     pub fn new(network: IpAddr, prefix: u8) -> Result<Self, ConfigModelError> {
-        let network = canonicalize_ip_matcher_address(network);
-        let max = match network {
-            IpAddr::V4(_) => 32,
-            IpAddr::V6(_) => 128,
-        };
-        if prefix > max {
-            return Err(ConfigModelError::InvalidCidrPrefix { prefix, max });
-        }
-
-        Ok(Self { network, prefix })
+        Cidr::new(network, prefix)
+            .map(Self)
+            .map_err(|error| ConfigModelError::InvalidCidrPrefix {
+                prefix,
+                max: error.max_prefix,
+            })
     }
 
-    pub fn full(ip: IpAddr) -> Self {
-        let ip = canonicalize_ip_matcher_address(ip);
-        let prefix = match ip {
-            IpAddr::V4(_) => 32,
-            IpAddr::V6(_) => 128,
-        };
-        Self {
-            network: ip,
-            prefix,
-        }
+    pub const fn full(ip: IpAddr) -> Self {
+        Self(Cidr::host(ip))
+    }
+
+    pub const fn cidr(self) -> Cidr {
+        self.0
     }
 
     pub fn network(&self) -> IpAddr {
-        self.network
+        self.0.network()
     }
 
     pub fn prefix(&self) -> u8 {
-        self.prefix
+        self.0.prefix_len()
     }
 
     pub fn matches(&self, ip: &IpAddr) -> bool {
-        match (self.network, ip) {
-            (IpAddr::V4(network), IpAddr::V4(ip)) => prefix_matches(
-                u128::from(u32::from(network)),
-                u128::from(u32::from(*ip)),
-                self.prefix,
-                32,
-            ),
-            (IpAddr::V6(network), IpAddr::V6(ip)) => {
-                prefix_matches(u128::from(network), u128::from(*ip), self.prefix, 128)
-            }
-            _ => false,
-        }
+        self.0.contains(*ip)
     }
-}
-
-fn prefix_matches(network: u128, ip: u128, prefix: u8, width: u8) -> bool {
-    if prefix == 0 {
-        return true;
-    }
-
-    let shift = u32::from(width - prefix);
-    (network >> shift) == (ip >> shift)
-}
-
-fn private_cidrs() -> [IpCidr; 9] {
-    [
-        IpCidr {
-            network: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 0)),
-            prefix: 8,
-        },
-        IpCidr {
-            network: IpAddr::V4(Ipv4Addr::new(100, 64, 0, 0)),
-            prefix: 10,
-        },
-        IpCidr {
-            network: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 0)),
-            prefix: 8,
-        },
-        IpCidr {
-            network: IpAddr::V4(Ipv4Addr::new(169, 254, 0, 0)),
-            prefix: 16,
-        },
-        IpCidr {
-            network: IpAddr::V4(Ipv4Addr::new(172, 16, 0, 0)),
-            prefix: 12,
-        },
-        IpCidr {
-            network: IpAddr::V4(Ipv4Addr::new(192, 168, 0, 0)),
-            prefix: 16,
-        },
-        IpCidr {
-            network: IpAddr::V6(Ipv6Addr::LOCALHOST),
-            prefix: 128,
-        },
-        IpCidr {
-            network: IpAddr::V6(Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 0)),
-            prefix: 7,
-        },
-        IpCidr {
-            network: IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 0)),
-            prefix: 10,
-        },
-    ]
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -758,7 +489,8 @@ pub struct DnsOutboundRule {
     /// DNS response code used by `Return` and by non-address `Hijack` rules.
     pub r_code: u16,
     pub qtype_ranges: Vec<DnsQTypeRange>,
-    pub domain_matchers: Vec<DomainMatcher>,
+    /// Compiled with [`compile_dns_domain_matchers`] semantics.
+    pub domain_matchers: DomainMatcherSet,
 }
 
 impl DnsOutboundRule {
@@ -770,11 +502,7 @@ impl DnsOutboundRule {
     fn matches_normalized(&self, qtype: u16, normalized_domain: &str) -> bool {
         (self.qtype_ranges.is_empty()
             || self.qtype_ranges.iter().any(|range| range.contains(qtype)))
-            && (self.domain_matchers.is_empty()
-                || self
-                    .domain_matchers
-                    .iter()
-                    .any(|matcher| matcher.matches(normalized_domain)))
+            && (self.domain_matchers.is_empty() || self.domain_matchers.matches(normalized_domain))
     }
 }
 
@@ -1280,16 +1008,13 @@ impl TargetAddr {
     /// transport-security requirement.
     ///
     /// This intentionally uses Xray's broader private/reserved/test set, not
-    /// the routing-oriented [`IpMatcher::Private`] set. Xray normalizes one
+    /// the routing-oriented `geoip:private` set ([`xray_routing::PRIVATE_NETWORKS`]). Xray normalizes one
     /// trailing domain dot and domain case before applying these rules.
     pub fn is_xray_plaintext_server_exempt(&self) -> bool {
         match self {
-            Self::Ip(ip) => {
-                let ip = canonicalize_ip_matcher_address(*ip);
-                xray_plaintext_server_cidrs()
-                    .iter()
-                    .any(|cidr| cidr.matches(&ip))
-            }
+            Self::Ip(ip) => XRAY_PLAINTEXT_SERVER_CIDRS
+                .iter()
+                .any(|cidr| cidr.matches(ip)),
             Self::Domain(domain) => xray_plaintext_server_domain_matches(domain),
         }
     }
@@ -1331,79 +1056,522 @@ fn xray_dotless_domain_matches(domain: &str) -> bool {
         && bytes[bytes.len() - 1].is_ascii_alphanumeric()
 }
 
-fn xray_plaintext_server_cidrs() -> [IpCidr; 18] {
-    [
-        IpCidr {
-            network: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-            prefix: 8,
-        },
-        IpCidr {
-            network: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 0)),
-            prefix: 8,
-        },
-        IpCidr {
-            network: IpAddr::V4(Ipv4Addr::new(100, 64, 0, 0)),
-            prefix: 10,
-        },
-        IpCidr {
-            network: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 0)),
-            prefix: 8,
-        },
-        IpCidr {
-            network: IpAddr::V4(Ipv4Addr::new(169, 254, 0, 0)),
-            prefix: 16,
-        },
-        IpCidr {
-            network: IpAddr::V4(Ipv4Addr::new(172, 16, 0, 0)),
-            prefix: 12,
-        },
-        IpCidr {
-            network: IpAddr::V4(Ipv4Addr::new(192, 0, 0, 0)),
-            prefix: 24,
-        },
-        IpCidr {
-            network: IpAddr::V4(Ipv4Addr::new(192, 0, 2, 0)),
-            prefix: 24,
-        },
-        IpCidr {
-            network: IpAddr::V4(Ipv4Addr::new(192, 88, 99, 0)),
-            prefix: 24,
-        },
-        IpCidr {
-            network: IpAddr::V4(Ipv4Addr::new(192, 168, 0, 0)),
-            prefix: 16,
-        },
-        IpCidr {
-            network: IpAddr::V4(Ipv4Addr::new(198, 18, 0, 0)),
-            prefix: 15,
-        },
-        IpCidr {
-            network: IpAddr::V4(Ipv4Addr::new(198, 51, 100, 0)),
-            prefix: 24,
-        },
-        IpCidr {
-            network: IpAddr::V4(Ipv4Addr::new(203, 0, 113, 0)),
-            prefix: 24,
-        },
-        IpCidr {
-            network: IpAddr::V4(Ipv4Addr::new(224, 0, 0, 0)),
-            prefix: 3,
-        },
-        IpCidr {
-            network: IpAddr::V6(Ipv6Addr::UNSPECIFIED),
-            prefix: 127,
-        },
-        IpCidr {
-            network: IpAddr::V6(Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 0)),
-            prefix: 7,
-        },
-        IpCidr {
-            network: IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 0)),
-            prefix: 10,
-        },
-        IpCidr {
-            network: IpAddr::V6(Ipv6Addr::new(0xff00, 0, 0, 0, 0, 0, 0, 0)),
-            prefix: 8,
-        },
-    ]
+const XRAY_PLAINTEXT_SERVER_CIDRS: [IpCidr; 18] = [
+    IpCidr(Cidr::new_const(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 8)),
+    IpCidr(Cidr::new_const(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 0)), 8)),
+    IpCidr(Cidr::new_const(
+        IpAddr::V4(Ipv4Addr::new(100, 64, 0, 0)),
+        10,
+    )),
+    IpCidr(Cidr::new_const(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 0)), 8)),
+    IpCidr(Cidr::new_const(
+        IpAddr::V4(Ipv4Addr::new(169, 254, 0, 0)),
+        16,
+    )),
+    IpCidr(Cidr::new_const(
+        IpAddr::V4(Ipv4Addr::new(172, 16, 0, 0)),
+        12,
+    )),
+    IpCidr(Cidr::new_const(IpAddr::V4(Ipv4Addr::new(192, 0, 0, 0)), 24)),
+    IpCidr(Cidr::new_const(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 0)), 24)),
+    IpCidr(Cidr::new_const(
+        IpAddr::V4(Ipv4Addr::new(192, 88, 99, 0)),
+        24,
+    )),
+    IpCidr(Cidr::new_const(
+        IpAddr::V4(Ipv4Addr::new(192, 168, 0, 0)),
+        16,
+    )),
+    IpCidr(Cidr::new_const(
+        IpAddr::V4(Ipv4Addr::new(198, 18, 0, 0)),
+        15,
+    )),
+    IpCidr(Cidr::new_const(
+        IpAddr::V4(Ipv4Addr::new(198, 51, 100, 0)),
+        24,
+    )),
+    IpCidr(Cidr::new_const(
+        IpAddr::V4(Ipv4Addr::new(203, 0, 113, 0)),
+        24,
+    )),
+    IpCidr(Cidr::new_const(IpAddr::V4(Ipv4Addr::new(224, 0, 0, 0)), 3)),
+    IpCidr(Cidr::new_const(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 127)),
+    IpCidr(Cidr::new_const(
+        IpAddr::V6(Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 0)),
+        7,
+    )),
+    IpCidr(Cidr::new_const(
+        IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 0)),
+        10,
+    )),
+    IpCidr(Cidr::new_const(
+        IpAddr::V6(Ipv6Addr::new(0xff00, 0, 0, 0, 0, 0, 0, 0)),
+        8,
+    )),
+];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Clone, Copy)]
+    enum Matcher {
+        Cidr(Cidr, bool),
+        Private(bool),
+    }
+
+    fn cidr(a: u8, b: u8, c: u8, d: u8, prefix: u8) -> Matcher {
+        Matcher::Cidr(
+            Cidr::new(IpAddr::V4(Ipv4Addr::new(a, b, c, d)), prefix).unwrap(),
+            false,
+        )
+    }
+
+    fn private() -> Matcher {
+        Matcher::Private(false)
+    }
+
+    fn not(matcher: Matcher) -> Matcher {
+        match matcher {
+            Matcher::Cidr(cidr, inverted) => Matcher::Cidr(cidr, !inverted),
+            Matcher::Private(inverted) => Matcher::Private(!inverted),
+        }
+    }
+
+    fn v4(a: u8, b: u8, c: u8, d: u8) -> IpAddr {
+        IpAddr::V4(Ipv4Addr::new(a, b, c, d))
+    }
+
+    fn v6(segments: [u16; 8]) -> IpAddr {
+        IpAddr::V6(Ipv6Addr::from(segments))
+    }
+
+    fn mapped(a: u8, b: u8, c: u8, d: u8) -> IpAddr {
+        IpAddr::V6(Ipv4Addr::new(a, b, c, d).to_ipv6_mapped())
+    }
+
+    fn set(matchers: Vec<Matcher>) -> IpMatcherSet {
+        let mut builder = IpMatcherSet::builder();
+        for matcher in matchers {
+            match matcher {
+                Matcher::Cidr(cidr, inverted) => builder.insert_cidr(cidr, inverted),
+                Matcher::Private(inverted) => builder.insert_private_networks(inverted),
+            }
+        }
+        builder.build()
+    }
+
+    #[test]
+    fn ip_matcher_set_positive_match_wins_over_failing_inverse() {
+        // Positive matches even though the inverse clause fails (10.0.0.1 is inside the
+        // negated 10.0.0.0/8) — and regardless of matcher ordering.
+        let matchers = set(vec![not(cidr(10, 0, 0, 0, 8)), cidr(10, 0, 0, 0, 16)]);
+        assert!(matchers.matches(v4(10, 0, 0, 1)));
+
+        let matchers = set(vec![cidr(10, 0, 0, 0, 16), not(cidr(10, 0, 0, 0, 8))]);
+        assert!(matchers.matches(v4(10, 0, 0, 1)));
+    }
+
+    #[test]
+    fn ip_matcher_set_only_inverses_with_one_failing_is_false() {
+        let matchers = set(vec![
+            not(cidr(10, 0, 0, 0, 8)),
+            not(cidr(192, 168, 0, 0, 16)),
+            not(cidr(172, 16, 0, 0, 12)),
+        ]);
+        assert!(!matchers.matches(v4(192, 168, 1, 1)));
+        assert!(!matchers.matches(v4(10, 1, 2, 3)));
+        assert!(!matchers.matches(v4(172, 20, 0, 1)));
+    }
+
+    #[test]
+    fn ip_matcher_set_only_inverses_all_passing_is_true() {
+        let matchers = set(vec![
+            not(cidr(10, 0, 0, 0, 8)),
+            not(cidr(192, 168, 0, 0, 16)),
+        ]);
+        assert!(matchers.matches(v4(8, 8, 8, 8)));
+    }
+
+    #[test]
+    fn ip_matcher_set_with_no_matchers_is_empty_and_matches_nothing() {
+        let matchers = set(Vec::new());
+        assert!(matchers.is_empty());
+        assert_eq!(matchers.range_count(), 0);
+        assert!(!matchers.matches(v4(8, 8, 8, 8)));
+        assert_eq!(matchers, IpMatcherSet::default());
+        assert!(!set(vec![cidr(10, 0, 0, 0, 8)]).is_empty());
+        assert!(!set(vec![not(cidr(10, 0, 0, 0, 8))]).is_empty());
+    }
+
+    #[test]
+    fn ip_matcher_set_positive_miss_and_failing_inverse_is_false() {
+        let matchers = set(vec![cidr(203, 0, 113, 0, 24), not(cidr(10, 0, 0, 0, 8))]);
+        assert!(!matchers.matches(v4(10, 42, 0, 1)));
+        // Positive miss but inverse clause holds.
+        assert!(matchers.matches(v4(8, 8, 8, 8)));
+    }
+
+    #[test]
+    fn ip_matcher_set_flattens_nested_not() {
+        let matchers = set(vec![not(not(cidr(10, 0, 0, 0, 8)))]);
+        assert!(matchers.matches(v4(10, 1, 1, 1)));
+        assert!(!matchers.matches(v4(8, 8, 8, 8)));
+        assert_eq!(matchers, set(vec![cidr(10, 0, 0, 0, 8)]));
+
+        let matchers = set(vec![
+            not(not(cidr(10, 0, 0, 0, 8))),
+            not(cidr(192, 168, 0, 0, 16)),
+        ]);
+        assert!(matchers.matches(v4(8, 8, 8, 8)));
+        assert!(matchers.matches(v4(10, 1, 1, 1)));
+        assert!(!matchers.matches(v4(192, 168, 1, 1)));
+        assert!(set(vec![not(not(cidr(10, 0, 0, 0, 8)))]).matches(v4(10, 1, 1, 1)));
+        assert!(!set(vec![not(not(cidr(10, 0, 0, 0, 8)))]).matches(v4(8, 8, 8, 8)));
+    }
+
+    #[test]
+    fn ip_matcher_set_canonicalizes_v4_mapped_targets_and_networks() {
+        let matchers = set(vec![cidr(203, 0, 113, 0, 24)]);
+        assert!(matchers.matches(mapped(203, 0, 113, 7)));
+        assert!(!matchers.matches(mapped(203, 0, 114, 7)));
+        assert!(set(vec![cidr(203, 0, 113, 0, 24)]).matches(mapped(203, 0, 113, 7)));
+
+        let mapped_network = Matcher::Cidr(
+            IpCidr::new(mapped(203, 0, 113, 0), 24)
+                .expect("v4 prefix")
+                .cidr(),
+            false,
+        );
+        assert_eq!(
+            set(vec![mapped_network]),
+            set(vec![cidr(203, 0, 113, 0, 24)])
+        );
+        assert!(set(vec![mapped_network]).matches(v4(203, 0, 113, 7)));
+        assert!(IpCidr::new(mapped(203, 0, 113, 0), 33).is_err());
+
+        let inverse = set(vec![not(cidr(10, 0, 0, 0, 8))]);
+        assert!(!inverse.matches(mapped(10, 1, 1, 1)));
+        assert!(inverse.matches(mapped(8, 8, 8, 8)));
+    }
+
+    #[test]
+    fn ip_matcher_set_inverse_of_foreign_family_matches_nothing() {
+        let matchers = set(vec![not(cidr(10, 0, 0, 0, 8))]);
+        assert!(matchers.matches(v4(8, 8, 8, 8)));
+        assert!(!matchers.matches(v6([0x2001, 0xdb8, 0, 0, 0, 0, 0, 1])));
+        assert!(!matchers.matches(IpAddr::V6(Ipv6Addr::LOCALHOST)));
+        assert!(
+            !set(vec![not(cidr(10, 0, 0, 0, 8))]).matches(v6([0x2001, 0xdb8, 0, 0, 0, 0, 0, 1]))
+        );
+
+        let fc00 = Matcher::Cidr(
+            Cidr::new(v6([0xfc00, 0, 0, 0, 0, 0, 0, 0]), 7).expect("v6 prefix"),
+            false,
+        );
+        let matchers = set(vec![not(cidr(10, 0, 0, 0, 8)), not(fc00)]);
+        assert!(matchers.matches(v6([0x2001, 0xdb8, 0, 0, 0, 0, 0, 1])));
+        assert!(!matchers.matches(v6([0xfd00, 0, 0, 0, 0, 0, 0, 1])));
+        assert!(matchers.matches(v4(8, 8, 8, 8)));
+        assert!(!matchers.matches(v4(10, 0, 0, 1)));
+
+        let matchers = set(vec![not(fc00), cidr(203, 0, 113, 0, 24)]);
+        assert!(matchers.matches(v4(203, 0, 113, 7)));
+        assert!(!matchers.matches(v4(8, 8, 8, 8)));
+    }
+
+    #[test]
+    fn ip_matcher_set_prefix_zero_covers_the_whole_family() {
+        let matchers = set(vec![cidr(0, 0, 0, 0, 0)]);
+        assert_eq!(matchers.range_count(), 1);
+        assert!(matchers.matches(v4(0, 0, 0, 0)));
+        assert!(matchers.matches(v4(255, 255, 255, 255)));
+        assert!(matchers.matches(mapped(8, 8, 8, 8)));
+        assert!(!matchers.matches(v6([0x2001, 0xdb8, 0, 0, 0, 0, 0, 1])));
+
+        let matchers = set(vec![not(cidr(0, 0, 0, 0, 0))]);
+        assert!(!matchers.matches(v4(8, 8, 8, 8)));
+        assert!(!matchers.matches(v6([0x2001, 0xdb8, 0, 0, 0, 0, 0, 1])));
+    }
+
+    #[test]
+    fn ip_matcher_set_merges_adjacent_and_overlapping_ranges() {
+        let matchers = set(vec![
+            cidr(10, 0, 0, 128, 25),
+            cidr(10, 0, 0, 0, 25),
+            cidr(10, 0, 1, 0, 24),
+            cidr(10, 0, 0, 0, 26),
+        ]);
+        assert_eq!(matchers.range_count(), 1);
+        assert!(matchers.matches(v4(10, 0, 0, 0)));
+        assert!(matchers.matches(v4(10, 0, 1, 255)));
+        assert!(!matchers.matches(v4(10, 0, 2, 0)));
+        assert_eq!(matchers, set(vec![cidr(10, 0, 0, 0, 23)]));
+
+        let inverse = set(vec![not(cidr(10, 0, 0, 0, 24)), not(cidr(10, 0, 1, 0, 24))]);
+        assert_eq!(inverse.range_count(), 1);
+        assert!(!inverse.matches(v4(10, 0, 0, 255)));
+        assert!(!inverse.matches(v4(10, 0, 1, 0)));
+        assert!(inverse.matches(v4(10, 0, 2, 0)));
+
+        let both = set(vec![cidr(10, 0, 0, 0, 24), not(cidr(10, 0, 1, 0, 24))]);
+        assert_eq!(both.range_count(), 2);
+    }
+
+    #[test]
+    fn ip_matcher_set_private_and_its_inverse() {
+        let private_set = set(vec![private()]);
+        assert_eq!(private_set.range_count(), 9);
+        assert!(private_set.matches(v4(10, 1, 2, 3)));
+        assert!(private_set.matches(mapped(192, 168, 1, 1)));
+        assert!(private_set.matches(v6([0xfe80, 0, 0, 0, 0, 0, 0, 1])));
+        assert!(!private_set.matches(v4(8, 8, 8, 8)));
+
+        let public = set(vec![not(private())]);
+        assert_eq!(public.range_count(), 9);
+        assert!(public.matches(v4(8, 8, 8, 8)));
+        assert!(public.matches(v6([0x2001, 0xdb8, 0, 0, 0, 0, 0, 1])));
+        assert!(!public.matches(v4(10, 0, 0, 1)));
+        assert!(!public.matches(mapped(192, 168, 1, 1)));
+        assert!(!public.matches(IpAddr::V6(Ipv6Addr::LOCALHOST)));
+        assert!(!public.matches(v6([0xfe80, 0, 0, 0, 0, 0, 0, 1])));
+        assert!(set(vec![not(private())]).matches(v4(8, 8, 8, 8)));
+        assert!(!set(vec![not(private())]).matches(v4(10, 0, 0, 1)));
+    }
+
+    #[test]
+    fn private_matcher_uses_shared_private_networks() {
+        assert!(set(vec![private()]).matches(v4(10, 1, 2, 3)));
+        assert!(set(vec![private()]).matches(v4(100, 64, 0, 1)));
+        assert!(set(vec![private()]).matches(v4(127, 0, 0, 1)));
+        assert!(set(vec![private()]).matches(v4(169, 254, 1, 1)));
+        assert!(set(vec![private()]).matches(v4(172, 31, 255, 255)));
+        assert!(set(vec![private()]).matches(v4(192, 168, 0, 1)));
+        assert!(set(vec![private()]).matches(IpAddr::V6(Ipv6Addr::LOCALHOST)));
+        assert!(
+            set(vec![private()]).matches(IpAddr::V6(Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 1)))
+        );
+        assert!(
+            set(vec![private()]).matches(IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1)))
+        );
+        assert!(!set(vec![private()]).matches(v4(8, 8, 8, 8)));
+        assert!(!set(vec![private()]).matches(v4(172, 32, 0, 1)));
+        assert!(!set(vec![private()])
+            .matches(IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1))));
+    }
+
+    #[test]
+    fn invalid_domain_regex_maps_to_the_config_error() {
+        let error = ConfigModelError::from(RegexMatcher::new("(").unwrap_err());
+        assert!(matches!(
+            &error,
+            ConfigModelError::InvalidDomainRegex { pattern, message }
+                if pattern == "(" && !message.is_empty()
+        ));
+        assert!(error.to_string().starts_with("invalid domain regex `(`: "));
+    }
+
+    fn parity_matchers() -> Vec<DomainMatcher> {
+        let regex = |pattern: &str| DomainMatcher::Regex(RegexMatcher::new(pattern).unwrap());
+        vec![
+            DomainMatcher::Full("example.com".to_owned()),
+            DomainMatcher::Full("Exact.TEST".to_owned()),
+            DomainMatcher::Full("dotted.test.".to_owned()),
+            DomainMatcher::Full("bücher.example".to_owned()),
+            DomainMatcher::Full("single".to_owned()),
+            DomainMatcher::Full("".to_owned()),
+            DomainMatcher::Suffix("suffix.example".to_owned()),
+            DomainMatcher::Suffix("Mixed.Case.Example".to_owned()),
+            DomainMatcher::Suffix("trailing.example.".to_owned()),
+            DomainMatcher::Suffix(".leading.example".to_owned()),
+            DomainMatcher::Suffix("tld".to_owned()),
+            DomainMatcher::Suffix("".to_owned()),
+            DomainMatcher::Suffix("münchen.example".to_owned()),
+            DomainMatcher::Suffix("a..b.example".to_owned()),
+            DomainMatcher::Keyword("track".to_owned()),
+            DomainMatcher::Keyword("ADS".to_owned()),
+            DomainMatcher::Keyword(".metrics.".to_owned()),
+            DomainMatcher::Keyword("straße".to_owned()),
+            DomainMatcher::Keyword("zz-only-tail".to_owned()),
+            DomainMatcher::Keyword("k".to_owned()),
+            regex("^[^.]*intranet[^.]*$"),
+            regex("^[^.]*[^.]*$"),
+            regex(r"^api\.[a-z0-9-]+\.svc$"),
+            regex(r"(^|\.)regex\.example\.?$"),
+            regex(r"^cdn[0-9]+\.static\.example$"),
+            regex(r"^[a-z]{2}\.[a-z]{2}$"),
+            regex(r"\.onion$"),
+            regex(r"^(www\.)?shop\.example$"),
+            regex(r"caf\u{e9}"),
+            regex(r"^x{3,}$"),
+        ]
+    }
+
+    fn parity_probes() -> Vec<String> {
+        let mut probes = vec![
+            "",
+            ".",
+            "..",
+            "example.com",
+            "EXAMPLE.COM",
+            "example.com.",
+            "www.example.com",
+            "notexample.com",
+            "exact.test",
+            "EXACT.TEST",
+            "exact.test.",
+            "notexact.test",
+            "dotted.test",
+            "dotted.test.",
+            "sub.dotted.test.",
+            "bücher.example",
+            "BÜCHER.example",
+            "single",
+            "single.",
+            "a.single",
+            "suffix.example",
+            "SUB.SUFFIX.EXAMPLE",
+            "notsuffix.example",
+            "suffix.example.evil",
+            "suffix.example.",
+            "mixed.case.example",
+            "deep.MIXED.CASE.EXAMPLE",
+            "trailing.example",
+            "trailing.example.",
+            "a.trailing.example.",
+            "leading.example",
+            ".leading.example",
+            "x..leading.example",
+            "www.leading.example",
+            "tld",
+            "a.tld",
+            "tld.example",
+            "atld",
+            "münchen.example",
+            "MÜNCHEN.example",
+            "www.münchen.example",
+            "a..b.example",
+            "x.a..b.example",
+            "a.b.example",
+            "tracker.test",
+            "TRACKING.test",
+            "ads.example",
+            "ADS",
+            "roads.example",
+            "roadside.example",
+            "a.metrics.b",
+            "metrics.b",
+            "a.metrics",
+            "straße.example",
+            "STRASSE.example",
+            "strasse.example",
+            "zz-only-tail",
+            "zz-only-tai",
+            "k",
+            "K",
+            "no-such-letter",
+            "intranet",
+            "MyIntranetBox",
+            "intranet.corp",
+            "nodots",
+            "api.svc-1.svc",
+            "API.SVC-1.SVC",
+            "api.svc-1.svc.",
+            "regex.example",
+            "regex.example.",
+            "a.regex.example",
+            "aregex.example",
+            "cdn12.static.example",
+            "cdn.static.example",
+            "ab.cd",
+            "ab.cde",
+            "hidden.onion",
+            "onion",
+            "shop.example",
+            "www.shop.example",
+            "m.shop.example",
+            "café.example",
+            "CAFÉ.example",
+            "xxx",
+            "xx",
+            "xxxx.",
+            "XXX",
+            "🙂.example",
+            "😀",
+            "a.b.c.d.e.f.g.h",
+            "trailing.dots...",
+            "...",
+            "mix.Of.EVERYTHING.example.com.",
+            "com",
+            "example",
+            "-",
+            "_dmarc.example.com",
+            "xn--bcher-kva.example",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+        probes.push("y".repeat(300));
+        probes.push("very-long-label-".repeat(4));
+        probes
+    }
+
+    fn dns_reference_matches(matcher: &DomainMatcher, domain: &str) -> bool {
+        let trimmed = |pattern: &str| pattern.trim_end_matches('.').to_owned();
+        match matcher {
+            DomainMatcher::Full(expected) => DomainMatcher::Full(trimmed(expected)),
+            DomainMatcher::Suffix(suffix) => DomainMatcher::Suffix(trimmed(suffix)),
+            other => other.clone(),
+        }
+        .matches(domain.trim_end_matches('.'))
+    }
+
+    #[test]
+    fn compiled_routing_set_matches_the_linear_reference_on_every_probe() {
+        let matchers = parity_matchers();
+        let set = compile_domain_matchers(&matchers).unwrap();
+        assert_eq!(set.matcher_count(), matchers.len());
+        let probes = parity_probes();
+        assert!(probes.len() >= 100);
+        let mut hits = 0;
+        for domain in &probes {
+            let expected = matchers.iter().any(|matcher| matcher.matches(domain));
+            assert_eq!(set.matches(domain), expected, "domain={domain:?}");
+            hits += usize::from(expected);
+        }
+        assert!(hits > 30 && hits < probes.len() - 20, "hits={hits}");
+    }
+
+    #[test]
+    fn compiled_dns_set_matches_the_transport_reference_on_normalized_names() {
+        let matchers = parity_matchers();
+        let set = compile_dns_domain_matchers(&matchers).unwrap();
+        for domain in parity_probes() {
+            let domain = domain.trim_end_matches('.');
+            let expected = matchers
+                .iter()
+                .any(|matcher| dns_reference_matches(matcher, domain));
+            assert_eq!(set.matches(domain), expected, "domain={domain:?}");
+        }
+    }
+
+    #[test]
+    fn routing_and_dns_compilation_differ_only_in_trailing_dot_patterns() {
+        let matchers = [
+            DomainMatcher::Full("dotted.test.".to_owned()),
+            DomainMatcher::Suffix("trailing.example.".to_owned()),
+        ];
+        let routing = compile_domain_matchers(&matchers).unwrap();
+        let dns = compile_dns_domain_matchers(&matchers).unwrap();
+
+        assert!(routing.matches("dotted.test."));
+        assert!(!routing.matches("dotted.test"));
+        assert!(routing.matches("a.trailing.example."));
+        assert!(!routing.matches("a.trailing.example"));
+
+        assert!(dns.matches("dotted.test"));
+        assert!(!dns.matches("dotted.test."));
+        assert!(dns.matches("a.trailing.example"));
+        assert!(!dns.matches("a.trailing.example."));
+    }
 }

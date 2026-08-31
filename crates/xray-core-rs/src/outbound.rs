@@ -2445,10 +2445,11 @@ mod tests {
     use tokio::net::TcpListener;
     use uuid::Uuid;
     use xray_config::{
-        DnsConfig, DnsServerConfig, DomainMatcher, GrpcSettings, HappyEyeballsSettings,
-        HttpUpgradeSettings, IpCidr, IpMatcher, RealitySettings, RealityShortId, RoutingConfig,
-        RoutingDomainStrategy, RoutingPortRange, RoutingRule, SocketOptions, StreamSettings,
-        TlsSettings, VlessOutboundSettings, WebSocketSettings,
+        compile_domain_matchers, DnsConfig, DnsServerConfig, DomainMatcher, DomainMatcherSet,
+        GrpcSettings, HappyEyeballsSettings, HttpUpgradeSettings, IpCidr, IpMatcherSet,
+        RealitySettings, RealityShortId, RoutingConfig, RoutingDomainStrategy, RoutingPortRange,
+        RoutingRule, SocketOptions, StreamSettings, TlsSettings, VlessOutboundSettings,
+        WebSocketSettings,
     };
     use xray_proxy::vless::{unpad_vision_block, VisionCommand};
     use xray_transport::{CachingDnsResolver, DnsLookup, RealityTlsEngine, TransportError};
@@ -2545,8 +2546,8 @@ mod tests {
                     inbound_tags: Vec::new(),
                     networks: Vec::new(),
                     port_ranges: Vec::new(),
-                    domain_matchers: Vec::new(),
-                    ip_matchers: Vec::new(),
+                    domain_matchers: DomainMatcherSet::default(),
+                    ip_matchers: Default::default(),
                     outbound_tag: "direct".to_owned(),
                 }],
                 ..Default::default()
@@ -2643,13 +2644,19 @@ mod tests {
         )
     }
 
+    fn ip_matcher_set(cidr: IpCidr) -> IpMatcherSet {
+        let mut matchers = IpMatcherSet::builder();
+        matchers.insert_cidr(cidr.cidr(), false);
+        matchers.build()
+    }
+
     fn ip_rule(tag: &str, ip: Ipv4Addr) -> RoutingRule {
         RoutingRule {
             inbound_tags: Vec::new(),
             networks: Vec::new(),
             port_ranges: Vec::new(),
-            domain_matchers: Vec::new(),
-            ip_matchers: vec![IpMatcher::Cidr(IpCidr::full(IpAddr::V4(ip)))],
+            domain_matchers: DomainMatcherSet::default(),
+            ip_matchers: ip_matcher_set(IpCidr::full(IpAddr::V4(ip))),
             outbound_tag: tag.to_owned(),
         }
     }
@@ -2659,8 +2666,9 @@ mod tests {
             inbound_tags: Vec::new(),
             networks: Vec::new(),
             port_ranges: Vec::new(),
-            domain_matchers: vec![DomainMatcher::Full(domain.to_owned())],
-            ip_matchers: vec![IpMatcher::Cidr(IpCidr::full(IpAddr::V4(ip)))],
+            domain_matchers: compile_domain_matchers(&[DomainMatcher::Full(domain.to_owned())])
+                .unwrap(),
+            ip_matchers: ip_matcher_set(IpCidr::full(IpAddr::V4(ip))),
             outbound_tag: tag.to_owned(),
         }
     }
@@ -2670,8 +2678,8 @@ mod tests {
             inbound_tags: vec![inbound_tag.to_owned()],
             networks: Vec::new(),
             port_ranges: Vec::new(),
-            domain_matchers: Vec::new(),
-            ip_matchers: Vec::new(),
+            domain_matchers: DomainMatcherSet::default(),
+            ip_matchers: Default::default(),
             outbound_tag: outbound_tag.to_owned(),
         }
     }
@@ -2685,8 +2693,8 @@ mod tests {
             inbound_tags: Vec::new(),
             networks: vec![network],
             port_ranges: vec![port_range],
-            domain_matchers: Vec::new(),
-            ip_matchers: Vec::new(),
+            domain_matchers: DomainMatcherSet::default(),
+            ip_matchers: Default::default(),
             outbound_tag: outbound_tag.to_owned(),
         }
     }
@@ -3217,8 +3225,8 @@ mod tests {
                     )
                 })
                 .collect(),
-            domain_matchers: Vec::new(),
-            ip_matchers: Vec::new(),
+            domain_matchers: DomainMatcherSet::default(),
+            ip_matchers: Default::default(),
             outbound_tag: "dns-out".to_owned(),
         }];
 
@@ -3245,7 +3253,8 @@ mod tests {
         ));
         config.default_outbound_tag = Some("direct".to_owned());
         let mut rule = network_port_rule("dns-out", Network::Udp, RoutingPortRange::single(53));
-        rule.domain_matchers = vec![DomainMatcher::Full("dns-only.test".to_owned())];
+        rule.domain_matchers =
+            compile_domain_matchers(&[DomainMatcher::Full("dns-only.test".to_owned())]).unwrap();
         config.routing.rules = vec![rule];
         let router = OutboundRouter::new(Arc::new(config));
         let target = Target::new(
