@@ -13,6 +13,7 @@ pub struct ChartOptions {
     pub xray_rust_version: String,
     pub xray_core_version: String,
     pub sing_box_version: String,
+    pub omit_sing_box_reality: bool,
     pub geodata_version: Option<String>,
 }
 
@@ -25,6 +26,7 @@ pub fn parse_chart_args(args: &[String]) -> Result<ChartOptions, BenchError> {
     let mut xray_rust_version = None;
     let mut xray_core_version = None;
     let mut sing_box_version = None;
+    let mut omit_sing_box_reality = false;
     let mut geodata_version = None;
 
     let mut index = 0;
@@ -55,6 +57,9 @@ pub fn parse_chart_args(args: &[String]) -> Result<ChartOptions, BenchError> {
             }
             "--sing-box-version" => {
                 sing_box_version = Some(required_value(args, &mut index, flag)?.to_owned());
+            }
+            "--omit-sing-box-reality" => {
+                omit_sing_box_reality = true;
             }
             "--geodata-version" => {
                 geodata_version = Some(required_value(args, &mut index, flag)?.to_owned());
@@ -93,6 +98,7 @@ pub fn parse_chart_args(args: &[String]) -> Result<ChartOptions, BenchError> {
         } else {
             sing_box_version.unwrap_or_default()
         },
+        omit_sing_box_reality,
         geodata_version,
     })
 }
@@ -494,6 +500,25 @@ const ENGINES: [EngineKind; 3] = [
     EngineKind::XrayCore,
     EngineKind::SingBox,
 ];
+
+fn chart_engines(workload: WorkloadKind, omit_sing_box_reality: bool) -> &'static [EngineKind] {
+    match workload {
+        WorkloadKind::RoutedTcpFreedom => &GEO_ENGINES,
+        WorkloadKind::RealityVisionXudp | WorkloadKind::RealityVisionBulkThroughput
+            if omit_sing_box_reality =>
+        {
+            &GEO_ENGINES
+        }
+        _ => &ENGINES,
+    }
+}
+
+fn reality_sing_box_omission_note(options: &ChartOptions) -> String {
+    format!(
+        "sing-box {} omitted from REALITY comparison with Xray-core {} at the recorded compatibility boundary",
+        options.sing_box_version, options.xray_core_version
+    )
+}
 
 const CHART_SLOTS: [(WorkloadKind, Option<u64>); 9] = [
     (WorkloadKind::Idle, None),
@@ -1171,7 +1196,16 @@ fn latency_group(
     workload: WorkloadKind,
     connections: Option<u64>,
 ) -> Result<BarGroup, BenchError> {
-    let bars = ENGINES
+    latency_group_for_engines(loaded, workload, connections, &ENGINES)
+}
+
+fn latency_group_for_engines(
+    loaded: &LoadedSummaries,
+    workload: WorkloadKind,
+    connections: Option<u64>,
+    engines: &[EngineKind],
+) -> Result<BarGroup, BenchError> {
+    let bars = engines
         .iter()
         .enumerate()
         .map(|(series, engine)| {
@@ -1213,10 +1247,11 @@ fn optional_metric_group(
     workload: WorkloadKind,
     connections: Option<u64>,
     metric_name: &str,
+    engines: &[EngineKind],
     select: impl Fn(&BenchSummary) -> Option<&crate::MetricSummary>,
     divisor: f64,
 ) -> Result<BarGroup, BenchError> {
-    let bars = ENGINES
+    let bars = engines
         .iter()
         .enumerate()
         .map(|(series, engine)| {
@@ -1291,12 +1326,7 @@ pub fn run_chart(options: &ChartOptions) -> Result<(), BenchError> {
     } else {
         let mut entries = Vec::new();
         for (workload, connections) in CHART_SLOTS {
-            let engines: &[EngineKind] = if workload == WorkloadKind::RoutedTcpFreedom {
-                &GEO_ENGINES
-            } else {
-                &ENGINES
-            };
-            for engine in engines {
+            for engine in chart_engines(workload, options.omit_sing_box_reality) {
                 let summary = load_summary(&options.groups, *engine, workload, connections)?;
                 entries.push(((*engine, workload, connections), summary));
             }
@@ -1373,6 +1403,18 @@ pub fn run_chart(options: &ChartOptions) -> Result<(), BenchError> {
     });
 
     let mut charts: Vec<(&str, ChartSpec)> = if let Some(loaded) = &loaded {
+        let reality_engines = chart_engines(
+            WorkloadKind::RealityVisionXudp,
+            options.omit_sing_box_reality,
+        );
+        let reality_series_labels: &'static [&'static str] = if options.omit_sing_box_reality {
+            &SERIES_LABELS_GEO
+        } else {
+            &SERIES_LABELS_ALL
+        };
+        let reality_note = options
+            .omit_sing_box_reality
+            .then(|| reality_sing_box_omission_note(options));
         vec![
         (
             "memory-rss",
@@ -1406,9 +1448,14 @@ pub fn run_chart(options: &ChartOptions) -> Result<(), BenchError> {
                 groups: vec![
                     latency_group(loaded, WorkloadKind::TcpFreedom, None)?,
                     latency_group(loaded, WorkloadKind::UdpFreedom, None)?,
-                    latency_group(loaded, WorkloadKind::RealityVisionXudp, None)?,
+                    latency_group_for_engines(
+                        loaded,
+                        WorkloadKind::RealityVisionXudp,
+                        None,
+                        reality_engines,
+                    )?,
                 ],
-                note: None,
+                note: reality_note.clone(),
             },
         ),
         (
@@ -1421,6 +1468,7 @@ pub fn run_chart(options: &ChartOptions) -> Result<(), BenchError> {
                     WorkloadKind::TcpBulkThroughput,
                     None,
                     "throughput",
+                    &ENGINES,
                     |summary| summary.throughput_mbps.as_ref(),
                     1000.0,
                 )?],
@@ -1433,16 +1481,17 @@ pub fn run_chart(options: &ChartOptions) -> Result<(), BenchError> {
                 title:
                     "Bulk TCP throughput through VLESS + REALITY + Vision — Gbps (higher is better)"
                         .to_owned(),
-                series_labels: &SERIES_LABELS_ALL,
+                series_labels: reality_series_labels,
                 groups: vec![optional_metric_group(
                     loaded,
                     WorkloadKind::RealityVisionBulkThroughput,
                     None,
                     "throughput",
+                    reality_engines,
                     |summary| summary.throughput_mbps.as_ref(),
                     1000.0,
                 )?],
-                note: None,
+                note: reality_note,
             },
         ),
         (
@@ -1455,6 +1504,7 @@ pub fn run_chart(options: &ChartOptions) -> Result<(), BenchError> {
                     WorkloadKind::TcpBulkThroughput,
                     None,
                     "cpu-per-GiB",
+                    &ENGINES,
                     |summary| summary.cpu_millis_per_gib.as_ref(),
                     1.0,
                 )?],
@@ -1703,6 +1753,7 @@ mod tests {
         assert_eq!(options.out_dir, PathBuf::from("docs/benchmarks/media"));
         assert_eq!(options.date, "2026-07-29");
         assert_eq!(options.xray_core_version, "v26.7.28");
+        assert!(!options.omit_sing_box_reality);
 
         let options = parse_chart_args(&args(&[
             "--group",
@@ -1725,6 +1776,11 @@ mod tests {
         .unwrap();
         assert_eq!(options.groups.len(), 2);
         assert_eq!(options.out_dir, PathBuf::from("custom"));
+
+        let mut omit_args = full_args("target/benchmarks/123");
+        omit_args.push("--omit-sing-box-reality".to_owned());
+        let options = parse_chart_args(&omit_args).unwrap();
+        assert!(options.omit_sing_box_reality);
     }
 
     #[test]
@@ -1791,6 +1847,21 @@ mod tests {
         assert_eq!(summary.engine, "xray-rust");
         assert_eq!(summary.runs, 5);
         fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn reality_chart_slots_are_three_engine_by_default_and_two_engine_when_omitted() {
+        for workload in [
+            WorkloadKind::RealityVisionXudp,
+            WorkloadKind::RealityVisionBulkThroughput,
+        ] {
+            assert_eq!(chart_engines(workload, false), &ENGINES);
+            assert_eq!(chart_engines(workload, true), &GEO_ENGINES);
+        }
+        for workload in [WorkloadKind::Idle, WorkloadKind::TcpBulkThroughput] {
+            assert_eq!(chart_engines(workload, false), &ENGINES);
+            assert_eq!(chart_engines(workload, true), &ENGINES);
+        }
     }
 
     #[test]
@@ -2014,6 +2085,7 @@ mod tests {
                 key.scenario.label().to_ascii_lowercase(),
                 key.client.as_str()
             ),
+            run_index: run + 1,
             provenance: dns_provenance(key),
             engine: "xray-rust".to_owned(),
             workload: key.scenario.workload(key.client).as_str().to_owned(),
@@ -2563,9 +2635,13 @@ mod tests {
             latency.find("reality-vision-xudp").unwrap(),
         );
         assert!(tcp < udp && udp < xudp, "latency groups out of order");
+        assert!(latency.contains(">sing-box<"));
+        assert!(!latency.contains("omitted from REALITY"));
         let reality = fs::read_to_string(out_dir.join("reality-throughput-light.svg")).unwrap();
         assert!(reality.contains(">4.30<"));
         assert!(reality.contains("reality-vision-bulk-throughput"));
+        assert!(reality.contains(">sing-box<"));
+        assert!(!reality.contains("omitted from REALITY"));
 
         let cpu = fs::read_to_string(out_dir.join("cpu-per-gib-light.svg")).unwrap();
         assert!(cpu.contains("tcp-bulk-throughput"));
@@ -2578,6 +2654,36 @@ mod tests {
         let geo = fs::read_to_string(out_dir.join("geo-memory-light.svg")).unwrap();
         assert!(!geo.contains(">sing-box<"));
         assert!(geo.contains("geodata-test"));
+
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn run_chart_explicitly_omits_sing_box_reality_with_dynamic_note() {
+        let root = temp_root("omit-reality");
+        let out_dir = root.join("media");
+        let mut chart_args = full_args(root.to_str().unwrap());
+        chart_args.push("--omit-sing-box-reality".to_owned());
+        let mut options = parse_chart_args(&chart_args).unwrap();
+        options.groups = write_full_group(&root);
+        options.out_dir = out_dir.clone();
+        options.geodata_version = Some("geodata-test".to_owned());
+        for workload in ["reality-vision-xudp", "reality-vision-bulk-throughput"] {
+            fs::remove_dir_all(root.join(format!("g-{workload}/sing-box/{workload}"))).unwrap();
+        }
+
+        run_chart(&options).unwrap();
+
+        let latency = fs::read_to_string(out_dir.join("latency-light.svg")).unwrap();
+        assert!(latency.contains(">sing-box<"));
+        assert!(latency.contains("sing-box v1.12.0 omitted from REALITY"));
+        assert!(latency.contains("Xray-core v26.7.28"));
+
+        let reality = fs::read_to_string(out_dir.join("reality-throughput-light.svg")).unwrap();
+        assert!(!reality.contains(">sing-box<"));
+        assert!(reality.contains("sing-box v1.12.0 omitted from REALITY"));
+        assert!(reality.contains("Xray-core v26.7.28"));
+        assert!(reality.contains("Xray-core v26.7.28 · sing-box v1.12.0"));
 
         fs::remove_dir_all(&root).unwrap();
     }

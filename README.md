@@ -11,45 +11,45 @@ This project is unofficial and is not affiliated with XTLS or Xray-core.
 
 ## Benchmarks
 
-The active oracle, interoperability, and benchmark harnesses pin Xray-core
-`v26.7.28` (`5ca6f4b7d4dc20a881d4330e498892697627ec0c`). The charts below remain the
-last published measurements against `v26.5.9`; replacement numbers will be
-published as a new result group rather than relabelling historical data. See
-the [migration audit](docs/xray-core-v26.7.28-migration-audit.md).
+The current synthetic localhost publication compares RC4 candidate `5895b09`
+with Xray-core `v26.7.28`
+(`5ca6f4b7d4dc20a881d4330e498892697627ec0c`) and stable sing-box `v1.13.20`
+(`56f91dfeabd6f4edbd437dfcc1e5b0ebc856b778`). Values are medians across five
+release runs from the 2026-08-31 result group on an Apple M3 Pro MacBook Pro
+with 18 GB RAM and macOS 26.5.2. The [full dated evidence](docs/benchmarks/results/2026-08-31-v26.7.28/README.md)
+contains 139 validated series, exact binary hashes, tables, omissions, and raw
+archive provenance.
 
-The last published synthetic localhost comparison used Xray-core `v26.5.9`
-and sing-box `v1.13.15` with the process-level
-[benchmark harness](docs/benchmarks.md)
-(medians across 5 runs; measured 2026-08-01 on Apple M3 Pro, macOS 26.5.2,
-xray-rust `af33ae8`).
-
-Lowest resident memory at every scale — 3.84 MiB idle and 18.3 MiB with
-1000 held SOCKS flows, against 79.9 MiB for Xray-core and 46.1 MiB for
-sing-box:
+Lowest resident memory at every measured idle-flow scale — 4.2 MiB idle and
+20.9 MiB with 1,000 held SOCKS flows, against 80.8 MiB for Xray-core and
+48.8 MiB for sing-box:
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/media/memory-rss-dark.svg">
-  <img alt="Peak resident set size, lower is better. Idle: xray-rust 3.84 MiB, Xray-core 28.1, sing-box 20.9. 100 idle flows: xray-rust 5.50, Xray-core 35.2, sing-box 26.4. 1000 idle flows: xray-rust 18.3, Xray-core 79.9, sing-box 46.1." src="docs/benchmarks/media/memory-rss-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/results/2026-08-31-v26.7.28/media/memory-rss-dark.svg">
+  <img alt="Peak resident set size, lower is better. Idle: xray-rust 4.2 MiB, Xray-core 29.5, sing-box 21.8. 100 idle flows: xray-rust 6.2, Xray-core 36.2, sing-box 27.2. 1000 idle flows: xray-rust 20.9, Xray-core 80.8, sing-box 48.8." src="docs/benchmarks/results/2026-08-31-v26.7.28/media/memory-rss-light.svg">
 </picture>
 
-Fastest through a full VLESS + REALITY + Vision tunnel — 14.3 Gbps at the
-lowest CPU cost per GiB (770 ms vs 820/790):
+Through a full VLESS + REALITY + Vision tunnel, xray-rust reaches 15.2 Gbps
+against Xray-core's 14.3 at 760 versus 800 CPU ms/GiB. Stable sing-box is
+omitted here because its REALITY client version is below the pinned server's
+default minimum:
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/media/reality-throughput-dark.svg">
-  <img alt="Bulk TCP throughput through a VLESS + REALITY + Vision tunnel, higher is better: xray-rust 14.3 Gbps, Xray-core 13.7, sing-box 14.0." src="docs/benchmarks/media/reality-throughput-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/results/2026-08-31-v26.7.28/media/reality-throughput-dark.svg">
+  <img alt="Bulk TCP throughput through a VLESS + REALITY + Vision tunnel, higher is better: xray-rust 15.2 Gbps and Xray-core 14.3; stable sing-box omitted at the recorded client-version boundary." src="docs/benchmarks/results/2026-08-31-v26.7.28/media/reality-throughput-light.svg">
 </picture>
 
-About 4× less memory than Xray-core with real V2Fly geodata loaded:
+About 3.9× less memory than Xray-core with the pinned V2Fly geodata loaded:
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/media/geo-memory-dark.svg">
-  <img alt="Peak memory with real geodata loaded, lower is better: xray-rust 8.62 MiB, Xray-core 34.7 MiB." src="docs/benchmarks/media/geo-memory-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/results/2026-08-31-v26.7.28/media/geo-memory-dark.svg">
+  <img alt="Peak memory with real geodata loaded, lower is better: xray-rust 9.2 MiB and Xray-core 35.7 MiB." src="docs/benchmarks/results/2026-08-31-v26.7.28/media/geo-memory-light.svg">
 </picture>
 
-Latency, plain-SOCKS bulk throughput, CPU-per-GiB, and xray-rust DNS charts,
-plus the full narrative and measurement caveats, are in
-[benchmark results](docs/benchmarks/results.md).
+Latency, bulk, all 36 stream cases, XHTTP pressure and bounded-memory tables,
+plus the full caveats are in the [dated result group](docs/benchmarks/results/2026-08-31-v26.7.28/README.md).
+The earlier Xray-core v26.5.9 and xray-rust DNS charts remain available as
+[historical evidence](docs/benchmarks/results.md).
 
 ## Current scope
 
@@ -58,7 +58,7 @@ plus the full narrative and measurement caveats, are in
 | Local inbounds | SOCKS5 no-auth `CONNECT` and `UDP ASSOCIATE`, HTTP `CONNECT`, TUN | No authenticated proxy inbound or server-side Xray protocols |
 | Outbounds | Freedom/direct, VLESS client over TCP, and DNS | No VMess, Trojan, Shadowsocks, WireGuard, balancers, or outbound chaining |
 | Security and flow | TLS and REALITY with uTLS-shaped ClientHellos, `xtls-rprx-vision`, VLESS UDP and XUDP paths | Only the documented config subset; REALITY rejects the 14 fingerprints that carry no X25519 key share, while plain TLS accepts all 61 |
-| Routing and DNS | Field rules with domain/IP/network/port matchers, `geosite`/`geoip`, Xray-style string/object DNS server selection, routed multi-address A/AAAA/CNAME resolution with global/per-server `queryStrategy` and TTL-aware cache, ordered `dns.hosts` IP arrays, one bounded per-Core fake-IP mapper, and ordered DNS-outbound Direct/Drop/Reject/Hijack policy shared by TUN, SOCKS TCP/UDP, and HTTP CONNECT; Direct supports UDP/TCP rewrite plus TCP/TLS/REALITY `streamSettings` | No `UseSystem` route probing, managed `dns.servers` DoH/DoT/DoQ, negative/stale cache, or full Xray DNS/routing parity |
+| Routing and DNS | Field rules with domain/IP/network/port matchers, `geosite`/`geoip`, Xray-style string/object DNS server selection, routed multi-address A/AAAA/CNAME resolution with global/per-server `queryStrategy` and TTL-aware cache, ordered `dns.hosts` IP arrays, one bounded per-Core fake-IP mapper, and ordered DNS-outbound Direct/Drop/Return/Hijack policy shared by TUN, SOCKS TCP/UDP, and HTTP CONNECT; `Reject` is a warned legacy alias for `Return` with REFUSED, while Direct supports UDP/TCP rewrite plus TCP/TLS/REALITY `streamSettings` | No `UseSystem` route probing, managed `dns.servers` DoH/DoT/DoQ, negative/stale cache, or full Xray DNS/routing parity |
 | Mobile | Swift Package/Xcode sample for iOS, tvOS, and macOS; Android library and `VpnService` adapter | Signing, entitlements, VPN consent, foreground policy, and release packaging remain host-app responsibilities |
 
 See [project status](docs/status.md) and
@@ -83,7 +83,7 @@ Run the same Rust checks used by CI:
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features --locked -- \
   -D warnings -W clippy::perf -W clippy::suspicious
-cargo test --workspace --all-targets --locked
+cargo test --workspace --exclude xray-rust-fuzz --all-targets --locked
 ```
 
 For a local CLI smoke run, use the credential-free loopback example:

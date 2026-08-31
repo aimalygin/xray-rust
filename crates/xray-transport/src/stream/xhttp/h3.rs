@@ -378,6 +378,11 @@ impl H3Client {
         request: Request<()>,
     ) -> Result<(H3Upload, H3PendingResponse), H3Error> {
         let response_is_bodyless = request.method() == Method::HEAD;
+        let expected_content_length = request
+            .headers()
+            .get(http::header::CONTENT_LENGTH)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse::<u64>().ok());
         let mut send_request = self.send_request.clone();
         let request_stream =
             send_request
@@ -404,6 +409,7 @@ impl H3Client {
         tokio::spawn(drive_upload(
             send,
             upload_reader,
+            expected_content_length,
             Arc::clone(&shared),
             Arc::clone(&upload_status),
             upload_finished,
@@ -685,6 +691,7 @@ async fn cancelled(receiver: &mut watch::Receiver<bool>) {
 async fn drive_upload(
     mut send: H3SendHalf,
     mut input: DuplexStream,
+    expected_content_length: Option<u64>,
     shared: Arc<ExchangeShared>,
     status: Arc<UploadWorkerStatus>,
     completion: oneshot::Sender<Result<(), H3Error>>,
@@ -705,10 +712,23 @@ async fn drive_upload(
             break tokio::select! {
                 biased;
                 () = cancelled(&mut cancellation) => Err(H3Error::Cancelled),
-                result = send.finish() => result.map_err(|source| H3Error::Http3Stream {
-                    context: "request body could not be finished",
-                    source,
-                }),
+                result = send.finish() => match result {
+                    Ok(()) => Ok(()),
+                    // Xray-core stops reading a fixed-length H3 request with
+                    // H3_NO_ERROR as soon as it has consumed Content-Length.
+                    // That STOP_SENDING can race with our separate QUIC FIN.
+                    // Accept it only when every declared body byte has already
+                    // passed send_data. Unknown-length and partial uploads,
+                    // other codes, and send_data failures remain authoritative.
+                    Err(h3::error::StreamError::RemoteTerminate { code, .. })
+                        if code == Code::H3_NO_ERROR
+                            && expected_content_length
+                                == Some(status.delivered.load(Ordering::Acquire)) => Ok(()),
+                    Err(source) => Err(H3Error::Http3Stream {
+                        context: "request body could not be finished",
+                        source,
+                    }),
+                },
             };
         }
 

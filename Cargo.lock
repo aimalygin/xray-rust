@@ -2366,7 +2366,7 @@ dependencies = [
 
 [[package]]
 name = "xray-bench"
-version = "0.4.1-rc.3"
+version = "0.4.1-rc.4"
 dependencies = [
  "async-trait",
  "bytes",
@@ -2390,7 +2390,7 @@ dependencies = [
 
 [[package]]
 name = "xray-cli"
-version = "0.4.1-rc.3"
+version = "0.4.1-rc.4"
 dependencies = [
  "libc",
  "thiserror",
@@ -2401,7 +2401,7 @@ dependencies = [
 
 [[package]]
 name = "xray-config"
-version = "0.4.1-rc.3"
+version = "0.4.1-rc.4"
 dependencies = [
  "libc",
  "prost",
@@ -2415,7 +2415,7 @@ dependencies = [
 
 [[package]]
 name = "xray-core-rs"
-version = "0.4.1-rc.3"
+version = "0.4.1-rc.4"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -2442,7 +2442,7 @@ dependencies = [
 
 [[package]]
 name = "xray-ffi"
-version = "0.4.1-rc.3"
+version = "0.4.1-rc.4"
 dependencies = [
  "bytes",
  "libc",
@@ -2455,7 +2455,7 @@ dependencies = [
 
 [[package]]
 name = "xray-proxy"
-version = "0.4.1-rc.3"
+version = "0.4.1-rc.4"
 dependencies = [
  "bytes",
  "prost",
@@ -2468,7 +2468,7 @@ dependencies = [
 
 [[package]]
 name = "xray-routing"
-version = "0.4.1-rc.3"
+version = "0.4.1-rc.4"
 dependencies = [
  "aho-corasick",
  "bytes",
@@ -2478,7 +2478,7 @@ dependencies = [
 
 [[package]]
 name = "xray-runtime"
-version = "0.4.1-rc.3"
+version = "0.4.1-rc.4"
 dependencies = [
  "thiserror",
  "tokio",
@@ -2498,7 +2498,7 @@ dependencies = [
 
 [[package]]
 name = "xray-transport"
-version = "0.4.1-rc.3"
+version = "0.4.1-rc.4"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -2539,7 +2539,7 @@ dependencies = [
 
 [[package]]
 name = "xray-tun"
-version = "0.4.1-rc.3"
+version = "0.4.1-rc.4"
 dependencies = [
  "bytes",
  "thiserror",
@@ -2548,7 +2548,7 @@ dependencies = [
 
 [[package]]
 name = "xray-utls"
-version = "0.4.1-rc.3"
+version = "0.4.1-rc.4"
 
 [[package]]
 name = "yasna"

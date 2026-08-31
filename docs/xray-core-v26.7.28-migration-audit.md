@@ -3,8 +3,10 @@
 This is the tracked compatibility and test migration record for changing the
 Xray-core reference from `v26.5.9` to `v26.7.28`. It records the upstream
 delta, implemented adaptations, and executed verification. Compatibility
-benchmark smoke is complete; publication-quality replacement measurements
-remain a separate release exercise.
+benchmark smoke and the publication-quality replacement campaign are complete.
+The immutable [RC4 result group](benchmarks/results/2026-08-31-v26.7.28/README.md)
+contains the exact comparator identities, 139 validated series, 695 embedded
+results, reviewed omissions, and raw-archive digest.
 
 ## Fixed reference
 
@@ -70,9 +72,12 @@ date-labelled result groups and sections.
   engines, followed by a second guarded auto-build smoke that rebuilt the
   pinned target and recorded clean source provenance.
 - Smoke artifacts live only under ignored `target/benchmarks/v26728-smoke/`.
-  No historical `v26.5.9` number or chart was relabelled. Fresh repeated
-  release-mode measurements are still required before publishing performance
-  comparisons against `v26.7.28`.
+  No historical `v26.5.9` number or chart was relabelled.
+- The fresh RC4 release campaign passed its fail-closed publication validator:
+  139 summaries and 695 embedded five-run results against exact Xray-core
+  v26.7.28 and stable sing-box v1.13.20. Results, tables, provenance, and the
+  two runtime omissions are in the
+  [dated evidence](benchmarks/results/2026-08-31-v26.7.28/README.md).
 
 ## High-impact changes on supported surfaces
 
@@ -138,10 +143,11 @@ non-comparable:
 
 Parser and scheduler cases cover the target names/default, the full 15-case
 H1/H2/H3 XHTTP interop matrix passes, and bounded concurrent/rollover smoke is
-green. Fresh repeated release RSS, FD, latency, and throughput runs remain
-necessary for publishable performance claims. Preserve the existing explicit
-`maxConnections=16` legacy memory profile as a separately named historical
-workload.
+green. RC4 now supplies fresh five-run release RSS, setup, duration, CPU, and
+throughput evidence for stream, packet-pressure, and the explicit
+`maxConnections=16` legacy memory profile. The publication does not infer
+network latency/loss or a complete FD-lifetime result from those loopback
+summaries.
 
 ### TLS and transport security
 
@@ -217,7 +223,8 @@ for overlong names, which now return an error instead of panicking after
 - [`domain:` suffix matching is now case-insensitive](https://github.com/XTLS/Xray-core/commit/be8009c62509322682299bfbe969a62cee03f4d5),
   which the existing matcher already implements; mixed-case coverage now
   locks it in. Weakly held geodata matchers also change steady-state RSS;
-  routed-geodata smoke passed, but fresh repeated RSS numbers are still due.
+  routed-geodata smoke passed and RC4 publishes fresh repeated RSS and setup
+  numbers for the exact pinned geodata files.
 - [`streamSettings.method` is the preferred spelling](https://github.com/XTLS/Xray-core/commit/fb548f54d22856446e883c6d13b32d60f0dda9bd),
   while `network` remains an alias and loses when both occur. The parser now
   implements that precedence, treats null pointers as absent, and validates
@@ -258,6 +265,17 @@ does not add parity for:
 
 Out-of-scope features must remain rejected or documented as unsupported; they
 must not be accepted and silently approximated.
+
+## Remaining evidence limits
+
+- [x] Five-run release process evidence against exact Xray-core v26.7.28 and
+  stable sing-box v1.13.20 is published in a new immutable result group.
+- [ ] Controlled RTT/loss and wide-area behavior remain unmeasured; loopback
+  latency is not a substitute.
+- [ ] Mobile-device RSS, energy, thermal, sleep/wake, and network-transition
+  evidence still requires Instruments/Perfetto campaigns.
+- [ ] Long-running fuzz, sanitizer, Miri, and independent security-audit work
+  remains separate from this compatibility migration.
 
 ## Verification gates
 

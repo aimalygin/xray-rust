@@ -7,10 +7,11 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 
 use bytes::Bytes;
-use h2::{server, RecvStream};
-use http::{header, Response, StatusCode};
+use h2::{client, server, Ping, Reason, RecvStream};
+use http::{header, Method, Response, StatusCode};
 use rand::rngs::mock::StepRng;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream, ReadBuf};
+use tokio::sync::{mpsc, oneshot};
 use tokio::time::{timeout, Instant};
 
 use xray_transport::stream::xhttp_composer_test_only::{
@@ -24,10 +25,330 @@ use xray_transport::stream::HeaderMap;
 use xray_transport::{BoxedTransportStream, TransportError, TransportStream};
 
 const DEADLINE: Duration = Duration::from_secs(3);
+const H2_PREFACE: &[u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
+const H2_FRAME_HEADER_LEN: usize = 9;
+const H2_DATA_FRAME: u8 = 0x0;
+const H2_RST_STREAM_FRAME: u8 = 0x3;
+const H2_SETTINGS_FRAME: u8 = 0x4;
+const H2_PING_FRAME: u8 = 0x6;
+const H2_ACK_FLAG: u8 = 0x1;
+const H2_END_STREAM_FLAG: u8 = 0x1;
 const GZIP_PONG: &[u8] = &[
     0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x2b, 0xc8, 0xcf, 0x4b, 0x07, 0x00,
     0x4f, 0x41, 0x58, 0x21, 0x04, 0x00, 0x00, 0x00,
 ];
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ObservedH2Reset {
+    stream_id: u32,
+    reason: Reason,
+}
+
+struct FrameObservedStream {
+    inner: DuplexStream,
+    writes: Vec<u8>,
+    preface_observed: bool,
+    settings_ack: Option<oneshot::Sender<()>>,
+    ping_ack: Option<oneshot::Sender<()>>,
+    resets: Option<mpsc::UnboundedSender<ObservedH2Reset>>,
+    first_nonempty_data_end_stream: Option<oneshot::Sender<bool>>,
+}
+
+impl FrameObservedStream {
+    fn new(inner: DuplexStream) -> (Self, oneshot::Receiver<()>, oneshot::Receiver<()>) {
+        let (settings_ack, settings_observed) = oneshot::channel();
+        let (ping_ack, ping_observed) = oneshot::channel();
+        (
+            Self {
+                inner,
+                writes: Vec::new(),
+                preface_observed: false,
+                settings_ack: Some(settings_ack),
+                ping_ack: Some(ping_ack),
+                resets: None,
+                first_nonempty_data_end_stream: None,
+            },
+            settings_observed,
+            ping_observed,
+        )
+    }
+
+    fn new_with_reset_observation(
+        inner: DuplexStream,
+    ) -> (
+        Self,
+        oneshot::Receiver<()>,
+        oneshot::Receiver<()>,
+        mpsc::UnboundedReceiver<ObservedH2Reset>,
+    ) {
+        let (mut stream, settings_ack, ping_ack) = Self::new(inner);
+        let (resets, observed_resets) = mpsc::unbounded_channel();
+        stream.resets = Some(resets);
+        (stream, settings_ack, ping_ack, observed_resets)
+    }
+
+    fn new_with_first_nonempty_data_observation(
+        inner: DuplexStream,
+    ) -> (
+        Self,
+        oneshot::Receiver<()>,
+        oneshot::Receiver<()>,
+        oneshot::Receiver<bool>,
+    ) {
+        let (mut stream, settings_ack, ping_ack) = Self::new(inner);
+        let (first_nonempty_data_end_stream, observed) = oneshot::channel();
+        stream.first_nonempty_data_end_stream = Some(first_nonempty_data_end_stream);
+        (stream, settings_ack, ping_ack, observed)
+    }
+
+    fn observe_complete_frames(&mut self) {
+        if !self.preface_observed {
+            if self.writes.len() < H2_PREFACE.len() {
+                return;
+            }
+            assert!(
+                self.writes.starts_with(H2_PREFACE),
+                "observed client write did not start with the HTTP/2 preface"
+            );
+            self.writes.drain(..H2_PREFACE.len());
+            self.preface_observed = true;
+        }
+
+        while self.writes.len() >= H2_FRAME_HEADER_LEN {
+            let payload_len = usize::from(self.writes[0]) << 16
+                | usize::from(self.writes[1]) << 8
+                | usize::from(self.writes[2]);
+            let frame_len = H2_FRAME_HEADER_LEN + payload_len;
+            if self.writes.len() < frame_len {
+                return;
+            }
+
+            let frame_type = self.writes[3];
+            let flags = self.writes[4];
+            if frame_type == H2_DATA_FRAME && payload_len > 0 {
+                if let Some(observed) = self.first_nonempty_data_end_stream.take() {
+                    let _ = observed.send(flags & H2_END_STREAM_FLAG != 0);
+                }
+            }
+            if frame_type == H2_RST_STREAM_FRAME {
+                assert_eq!(payload_len, 4, "outbound RST_STREAM payload length");
+                let stream_id = u32::from_be_bytes([
+                    self.writes[5],
+                    self.writes[6],
+                    self.writes[7],
+                    self.writes[8],
+                ]) & 0x7fff_ffff;
+                let reason = Reason::from(u32::from_be_bytes([
+                    self.writes[9],
+                    self.writes[10],
+                    self.writes[11],
+                    self.writes[12],
+                ]));
+                if let Some(resets) = &self.resets {
+                    let _ = resets.send(ObservedH2Reset { stream_id, reason });
+                }
+            }
+            if flags & H2_ACK_FLAG != 0 {
+                let notification = match frame_type {
+                    H2_SETTINGS_FRAME => &mut self.settings_ack,
+                    H2_PING_FRAME => &mut self.ping_ack,
+                    _ => {
+                        self.writes.drain(..frame_len);
+                        continue;
+                    }
+                };
+                if let Some(notification) = notification.take() {
+                    let _ = notification.send(());
+                }
+            }
+            self.writes.drain(..frame_len);
+        }
+    }
+}
+
+impl AsyncRead for FrameObservedStream {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        output: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.inner).poll_read(cx, output)
+    }
+}
+
+impl AsyncWrite for FrameObservedStream {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        input: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        let written = match Pin::new(&mut self.inner).poll_write(cx, input) {
+            Poll::Ready(Ok(written)) => written,
+            Poll::Ready(Err(error)) => return Poll::Ready(Err(error)),
+            Poll::Pending => return Poll::Pending,
+        };
+        self.writes.extend_from_slice(&input[..written]);
+        self.observe_complete_frames();
+        Poll::Ready(Ok(written))
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.inner).poll_shutdown(cx)
+    }
+}
+
+impl TransportStream for FrameObservedStream {
+    fn poll_read_direct(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        output: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        AsyncRead::poll_read(self, cx, output)
+    }
+
+    fn poll_write_direct(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        input: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        AsyncWrite::poll_write(self, cx, input)
+    }
+}
+
+#[tokio::test]
+async fn h2_frame_observer_reports_settings_and_ping_ack_once() {
+    let (client_io, server_io) = tokio::io::duplex(16);
+    let (client_io, settings_ack, ping_ack) = FrameObservedStream::new(client_io);
+    let (client, server) = tokio::join!(client::handshake(client_io), server::handshake(server_io));
+    let (send_request, client_connection) = client.expect("client HTTP/2 handshake");
+    let mut server_connection = server.expect("server HTTP/2 handshake");
+    let client_driver = tokio::spawn(client_connection);
+
+    let mut ping_pong = server_connection
+        .ping_pong()
+        .expect("server connection PingPong");
+    let ping = ping_pong.ping(Ping::opaque());
+    tokio::pin!(ping);
+    let drive_server_until_pong = async {
+        tokio::select! {
+            result = &mut ping => result,
+            exchange = server_connection.accept() => {
+                match exchange {
+                    Some(Ok((request, _))) => {
+                        panic!("unexpected request while awaiting PING ACK: {}", request.uri());
+                    }
+                    Some(Err(error)) => {
+                        panic!("server connection failed while awaiting PING ACK: {error}");
+                    }
+                    None => panic!("server connection closed before PING ACK"),
+                }
+            }
+        }
+    };
+
+    let (settings_result, ping_result, pong_result) = timeout(DEADLINE, async {
+        tokio::join!(settings_ack, ping_ack, drive_server_until_pong)
+    })
+    .await
+    .expect("client SETTINGS and PING acknowledgements");
+    settings_result.expect("SETTINGS ACK observation sender");
+    ping_result.expect("PING ACK observation sender");
+    pong_result.expect("server consumed PING ACK");
+
+    drop(server_connection);
+    drop(send_request);
+    client_driver.abort();
+    let _ = client_driver.await;
+}
+
+#[tokio::test]
+async fn h2_frame_observer_reports_one_fragmented_rst_stream() {
+    let (client_io, _server_io) = tokio::io::duplex(64);
+    let (mut client_io, _settings_ack, _ping_ack, mut resets) =
+        FrameObservedStream::new_with_reset_observation(client_io);
+    let reset = [
+        0, 0, 4, 0x3, 0, // four-byte RST_STREAM payload
+        0, 0, 0, 7, // stream ID 7
+        0, 0, 0, 8, // CANCEL
+    ];
+
+    client_io.write_all(H2_PREFACE).await.unwrap();
+    client_io.write_all(&reset[..5]).await.unwrap();
+    assert!(matches!(
+        resets.try_recv(),
+        Err(mpsc::error::TryRecvError::Empty)
+    ));
+    client_io.write_all(&reset[5..11]).await.unwrap();
+    assert!(matches!(
+        resets.try_recv(),
+        Err(mpsc::error::TryRecvError::Empty)
+    ));
+    client_io.write_all(&reset[11..]).await.unwrap();
+
+    assert_eq!(
+        resets.recv().await,
+        Some(ObservedH2Reset {
+            stream_id: 7,
+            reason: Reason::CANCEL,
+        })
+    );
+    assert!(matches!(
+        resets.try_recv(),
+        Err(mpsc::error::TryRecvError::Empty)
+    ));
+}
+
+#[tokio::test]
+async fn scripted_h2_dial_uses_fifo_and_reports_exhaustion() {
+    let (first_client, mut first_server_io) = tokio::io::duplex(64);
+    let first_server = tokio::spawn(async move {
+        let mut request = [0_u8; 1];
+        first_server_io.read_exact(&mut request).await.unwrap();
+        assert_eq!(request, [1]);
+        first_server_io.write_all(&[11]).await.unwrap();
+    });
+    let (second_client, mut second_server_io) = tokio::io::duplex(64);
+    let second_server = tokio::spawn(async move {
+        let mut request = [0_u8; 1];
+        second_server_io.read_exact(&mut request).await.unwrap();
+        assert_eq!(request, [2]);
+        second_server_io.write_all(&[22]).await.unwrap();
+    });
+    let (dial, dials) = scripted_h2_dial([
+        (Box::new(first_client) as BoxedTransportStream, first_server),
+        (
+            Box::new(second_client) as BoxedTransportStream,
+            second_server,
+        ),
+    ]);
+
+    timeout(DEADLINE, async {
+        for (request, expected_response) in [(1, 11), (2, 22)] {
+            let mut stream = dial().await.unwrap();
+            stream.write_all(&[request]).await.unwrap();
+            let mut response = [0_u8; 1];
+            stream.read_exact(&mut response).await.unwrap();
+            assert_eq!(response, [expected_response]);
+        }
+    })
+    .await
+    .expect("scripted H2 dial entries");
+    assert_eq!(dials.load(Ordering::Acquire), 2);
+
+    let error = match dial().await {
+        Ok(_) => panic!("exhausted scripted H2 dial must fail"),
+        Err(error) => error,
+    };
+    match error {
+        TransportError::Tcp(error) => assert_eq!(error.kind(), io::ErrorKind::NotConnected),
+        other => panic!("unexpected exhausted dial error: {other}"),
+    }
+    assert_eq!(dials.load(Ordering::Acquire), 3);
+}
 
 #[tokio::test]
 async fn h1_stream_one_is_full_duplex_and_uses_only_the_supplied_dial() {
@@ -510,6 +831,707 @@ async fn h1_pooled_packet_partial_write_is_not_replayed_on_a_fresh_connection() 
 }
 
 #[tokio::test]
+async fn h2_packet_up_ends_the_fixed_post_on_its_final_data_frame() {
+    const MAX_PACKET: usize = 16 * 1024;
+
+    let (client_io, server_io) = tokio::io::duplex(1024 * 1024);
+    let (client_io, settings_ack, _ping_ack, first_data_end_stream) =
+        FrameObservedStream::new_with_first_nonempty_data_observation(client_io);
+    let server_task = tokio::spawn(async move {
+        let mut connection = server::handshake::<_>(server_io)
+            .await
+            .expect("fixed packet server HTTP/2 handshake");
+        let mut held_downlinks = Vec::new();
+        while let Some(exchange) = connection.accept().await {
+            let (request, mut respond) = exchange.expect("fixed packet H2 exchange");
+            if request.method() == Method::GET {
+                let downlink = respond
+                    .send_response(ok_response(), false)
+                    .expect("send persistent fixed-packet downlink headers");
+                held_downlinks.push(downlink);
+                continue;
+            }
+            tokio::spawn(async move {
+                let body = drain_h2_request(request.into_body()).await;
+                assert_eq!(body, vec![0x5a; MAX_PACKET]);
+                respond
+                    .send_response(ok_response(), true)
+                    .expect("send fixed packet response");
+            });
+        }
+    });
+
+    let (unused_client, unused_server_io) = tokio::io::duplex(1024 * 1024);
+    let unused_server = tokio::spawn(async move {
+        let _ = server::handshake::<_>(unused_server_io).await;
+    });
+    let (dial, dials) = scripted_h2_dial([
+        (Box::new(client_io) as BoxedTransportStream, server_task),
+        (
+            Box::new(unused_client) as BoxedTransportStream,
+            unused_server,
+        ),
+    ]);
+    let transport = transport(
+        XhttpModeSelection::PacketUp,
+        XhttpHttpVersion::Http2,
+        unlimited_xmux(),
+        MAX_PACKET as i32,
+    );
+    let mut stream = transport.open_stream_with_dial(dial).await.unwrap();
+    timeout(DEADLINE, settings_ack)
+        .await
+        .expect("fixed-packet client did not acknowledge H2 settings")
+        .expect("fixed-packet settings observer");
+
+    stream.write_all(&vec![0x5a; MAX_PACKET]).await.unwrap();
+    let ended_on_data = timeout(DEADLINE, first_data_end_stream)
+        .await
+        .expect("fixed packet DATA frame was not observed")
+        .expect("fixed packet DATA observer");
+    assert!(
+        ended_on_data,
+        "a fixed packet POST must set END_STREAM on its final non-empty DATA frame"
+    );
+    assert_eq!(dials.load(Ordering::Acquire), 1);
+}
+
+#[tokio::test]
+async fn h2_packet_up_retries_once_when_goaway_refuses_uncommitted_pooled_request() {
+    let stale_post_count = Arc::new(AtomicUsize::new(0));
+    let (stale_client, stale_server_io) = tokio::io::duplex(1024 * 1024);
+    let (stale_client, _settings_ack, goaway_ping_ack) = FrameObservedStream::new(stale_client);
+    let (downlink_ready, downlink_ready_rx) = oneshot::channel();
+    let (start_goaway, start_goaway_rx) = oneshot::channel();
+    let stale_server = tokio::spawn({
+        let stale_post_count = Arc::clone(&stale_post_count);
+        async move {
+            let mut connection = server::handshake::<_>(stale_server_io)
+                .await
+                .expect("stale server HTTP/2 handshake");
+            let (download, mut respond) = connection
+                .accept()
+                .await
+                .expect("stale connection closed before GET")
+                .expect("stale connection failed before GET");
+            assert_eq!(download.method(), http::Method::GET);
+            let _held_downlink = respond
+                .send_response(ok_response(), false)
+                .expect("send persistent stale downlink headers");
+            let _ = downlink_ready.send(());
+
+            start_goaway_rx
+                .await
+                .expect("GOAWAY controller was dropped");
+            connection.graceful_shutdown();
+
+            // `accept` polls the connection driver through `poll_closed`, so
+            // the graceful-shutdown PING can be acknowledged while any
+            // request which slipped past GOAWAY is still recorded.
+            while let Some(exchange) = connection.accept().await {
+                let (request, mut respond) =
+                    exchange.expect("stale connection failed after GOAWAY");
+                stale_post_count.fetch_add(1, Ordering::AcqRel);
+                tokio::spawn(async move {
+                    drain_h2_request(request.into_body()).await;
+                    let _ = respond.send_response(ok_response(), true);
+                });
+            }
+        }
+    });
+
+    let (fresh_client, fresh_server_io) = tokio::io::duplex(1024 * 1024);
+    let (fresh_record, mut fresh_record_rx) = mpsc::unbounded_channel();
+    let fresh_server = tokio::spawn(async move {
+        let Ok(mut connection) = server::handshake::<_>(fresh_server_io).await else {
+            return;
+        };
+        let mut accepted = VecDeque::new();
+        loop {
+            let (request, mut respond) = match accepted.pop_front() {
+                Some(exchange) => exchange,
+                None => connection
+                    .accept()
+                    .await
+                    .expect("fresh connection closed while awaiting packet")
+                    .expect("fresh connection failed while awaiting packet"),
+            };
+            assert_eq!(request.method(), http::Method::POST);
+            let path = request.uri().path().to_owned();
+            let drain = drain_h2_request(request.into_body());
+            tokio::pin!(drain);
+            let body = loop {
+                tokio::select! {
+                    body = &mut drain => break body,
+                    exchange = connection.accept() => {
+                        let exchange = exchange
+                            .expect("fresh connection closed while draining packet")
+                            .expect("fresh connection failed while draining packet");
+                        accepted.push_back(exchange);
+                    }
+                }
+            };
+            respond
+                .send_response(ok_response(), true)
+                .expect("send fresh packet response");
+            fresh_record
+                .send((path, body))
+                .expect("fresh packet record receiver");
+        }
+    });
+
+    let (dial, dials) = scripted_h2_dial([
+        (Box::new(stale_client) as BoxedTransportStream, stale_server),
+        (Box::new(fresh_client) as BoxedTransportStream, fresh_server),
+    ]);
+    let transport = transport(
+        XhttpModeSelection::PacketUp,
+        XhttpHttpVersion::Http2,
+        unlimited_xmux(),
+        5,
+    );
+    let mut stream = transport.open_stream_with_dial(dial).await.unwrap();
+    timeout(DEADLINE, downlink_ready_rx)
+        .await
+        .expect("stale server did not accept the persistent GET")
+        .expect("stale GET readiness sender");
+    start_goaway
+        .send(())
+        .expect("stale GOAWAY controller receiver");
+    timeout(DEADLINE, goaway_ping_ack)
+        .await
+        .expect("client did not acknowledge graceful-shutdown PING")
+        .expect("GOAWAY PING observation sender");
+
+    stream
+        .write_all(b"firstsecon")
+        .await
+        .unwrap_or_else(|error| {
+            panic!(
+                "pre-commit GOAWAY was not retried on a fresh H2 connection: {error}; dials={}, stale_posts={}",
+                dials.load(Ordering::Acquire),
+                stale_post_count.load(Ordering::Acquire)
+            )
+        });
+    let first_two = timeout(DEADLINE, async {
+        let first = fresh_record_rx
+            .recv()
+            .await
+            .expect("fresh server stopped before sequence 0");
+        let second = fresh_record_rx
+            .recv()
+            .await
+            .expect("fresh server stopped before sequence 1");
+        [first, second]
+    })
+    .await
+    .unwrap_or_else(|_| {
+        panic!(
+            "fresh server did not receive both refused packets; dials={}, stale_posts={}",
+            dials.load(Ordering::Acquire),
+            stale_post_count.load(Ordering::Acquire)
+        )
+    });
+    let fresh_packets = Arc::new(Mutex::new(Vec::new()));
+    for (expected_sequence, (path, body)) in ["0", "1"].into_iter().zip(first_two) {
+        assert_eq!(path.split('/').next_back(), Some(expected_sequence));
+        fresh_packets.lock().unwrap().push(body);
+    }
+    assert_eq!(dials.load(Ordering::Acquire), 2);
+    assert_eq!(stale_post_count.load(Ordering::Acquire), 0);
+    assert_eq!(
+        fresh_packets.lock().unwrap().as_slice(),
+        [b"first", b"secon"]
+    );
+
+    stream.write_all(b"d").await.unwrap();
+    stream.shutdown().await.unwrap();
+    let (third_path, third_body) = timeout(DEADLINE, fresh_record_rx.recv())
+        .await
+        .expect("fresh server did not receive sequence 2")
+        .expect("fresh server stopped before sequence 2");
+    assert_eq!(third_path.split('/').next_back(), Some("2"));
+    assert_eq!(third_body, b"d");
+    assert_eq!(dials.load(Ordering::Acquire), 2);
+    assert_eq!(stale_post_count.load(Ordering::Acquire), 0);
+}
+
+#[tokio::test]
+async fn h2_packet_up_does_not_replay_when_goaway_follows_request_data() {
+    const MAX_PACKET: usize = 16;
+    const PAYLOAD: &[u8] = b"0123456789abcdef0123456789abcdefx";
+
+    let (first_client, first_server_io) = tokio::io::duplex(1024 * 1024);
+    let (first_client, settings_ack, _ping_ack) = FrameObservedStream::new(first_client);
+    let (downlink_ready, downlink_ready_rx) = oneshot::channel();
+    let (body_seen, body_seen_rx) = oneshot::channel();
+    let (goaway_flushed, goaway_flushed_rx) = oneshot::channel();
+    let first_server = tokio::spawn(async move {
+        let mut builder = server::Builder::new();
+        builder.initial_window_size(8);
+        let mut connection = builder
+            .handshake::<_, Bytes>(first_server_io)
+            .await
+            .expect("post-commit server HTTP/2 handshake");
+        let (download, mut download_response) = connection
+            .accept()
+            .await
+            .expect("post-commit connection closed before GET")
+            .expect("post-commit connection failed before GET");
+        assert_eq!(download.method(), http::Method::GET);
+        let _held_downlink = download_response
+            .send_response(ok_response(), false)
+            .expect("send persistent post-commit downlink headers");
+        let _ = downlink_ready.send(());
+
+        let (upload, _upload_response) = connection
+            .accept()
+            .await
+            .expect("post-commit connection closed before POST")
+            .expect("post-commit connection failed before POST");
+        assert_eq!(upload.method(), http::Method::POST);
+        let path = upload.uri().path().to_owned();
+        let mut body = upload.into_body();
+        let bytes = tokio::select! {
+            data = body.data() => data
+                .expect("POST ended before its first DATA frame")
+                .expect("POST first DATA frame failed"),
+            exchange = connection.accept() => {
+                match exchange {
+                    Some(Ok((request, _))) => {
+                        panic!("unexpected request before post-commit GOAWAY: {}", request.uri());
+                    }
+                    Some(Err(error)) => {
+                        panic!("post-commit connection failed before DATA: {error}");
+                    }
+                    None => panic!("post-commit connection closed before DATA"),
+                }
+            }
+        };
+        body_seen
+            .send((path, bytes.to_vec()))
+            .expect("post-commit body record receiver");
+
+        connection.abrupt_shutdown(Reason::NO_ERROR);
+        std::future::poll_fn(|cx| connection.poll_closed(cx))
+            .await
+            .expect("flush post-commit GOAWAY");
+        let _ = goaway_flushed.send(());
+    });
+
+    let replay_seen = Arc::new(AtomicBool::new(false));
+    let (replay_client, replay_server_io) = tokio::io::duplex(1024 * 1024);
+    let replay_server = tokio::spawn({
+        let replay_seen = Arc::clone(&replay_seen);
+        async move {
+            let Ok(mut connection) = server::handshake::<_>(replay_server_io).await else {
+                return;
+            };
+            if let Some(Ok((_request, _respond))) = connection.accept().await {
+                replay_seen.store(true, Ordering::Release);
+                connection.abrupt_shutdown(Reason::NO_ERROR);
+                let _ = std::future::poll_fn(|cx| connection.poll_closed(cx)).await;
+            }
+        }
+    });
+
+    let (dial, dials) = scripted_h2_dial([
+        (Box::new(first_client) as BoxedTransportStream, first_server),
+        (
+            Box::new(replay_client) as BoxedTransportStream,
+            replay_server,
+        ),
+    ]);
+    let transport = transport(
+        XhttpModeSelection::PacketUp,
+        XhttpHttpVersion::Http2,
+        unlimited_xmux(),
+        MAX_PACKET as i32,
+    );
+    let mut stream = transport.open_stream_with_dial(dial).await.unwrap();
+    timeout(DEADLINE, async {
+        downlink_ready_rx
+            .await
+            .expect("post-commit GET readiness sender");
+        settings_ack.await.expect("SETTINGS ACK observation sender");
+    })
+    .await
+    .expect("post-commit server was not ready for the bounded upload");
+
+    // More than two pipe capacities keeps this public write pending until the
+    // first packet either commits or fails. Its terminal error therefore also
+    // proves the packet worker has settled before replay is ruled out.
+    let writer = tokio::spawn(async move {
+        stream
+            .write_all(PAYLOAD)
+            .await
+            .expect_err("post-commit packet worker must fail the public write")
+    });
+    let (path, first_data) = timeout(DEADLINE, body_seen_rx)
+        .await
+        .expect("post-commit server did not observe POST DATA")
+        .expect("post-commit body record sender");
+    assert_eq!(path.split('/').next_back(), Some("0"));
+    assert!(!first_data.is_empty());
+    assert!(first_data.len() <= 8);
+    assert!(PAYLOAD.starts_with(&first_data));
+    timeout(DEADLINE, goaway_flushed_rx)
+        .await
+        .expect("post-commit GOAWAY did not flush")
+        .expect("post-commit GOAWAY flush sender");
+
+    let error = timeout(DEADLINE, writer)
+        .await
+        .expect("post-commit terminal error did not reach the public stream")
+        .expect("post-commit public writer task");
+    assert!(matches!(
+        error.kind(),
+        io::ErrorKind::ConnectionReset | io::ErrorKind::BrokenPipe
+    ));
+    assert_eq!(dials.load(Ordering::Acquire), 1);
+    assert!(!replay_seen.load(Ordering::Acquire));
+}
+
+#[tokio::test]
+async fn dropping_h2_packet_up_while_upload_is_flow_controlled_cancels_once_and_releases_pool() {
+    const MAX_PACKET: usize = 16;
+    const BLOCKED_UPLOAD: [u8; 64] = [0x5a; 64];
+    const REPLACEMENT_UPLOAD: &[u8] = b"replacement";
+    const REPLACEMENT_DOWNLINK: &[u8] = b"reused";
+
+    #[derive(Debug)]
+    enum PublicHalfTerminal {
+        Io(io::Result<()>),
+        Cancelled,
+    }
+
+    fn expect_cancelled(direction: &str, result: PublicHalfTerminal) {
+        match result {
+            PublicHalfTerminal::Cancelled => {}
+            PublicHalfTerminal::Io(result) => {
+                panic!("{direction} completed I/O before cancellation: {result:?}")
+            }
+        }
+    }
+
+    let (client_io, server_io) = tokio::io::duplex(1024 * 1024);
+    let (client_io, settings_ack, _ping_ack, mut outbound_resets) =
+        FrameObservedStream::new_with_reset_observation(client_io);
+    let (post_blocked, post_blocked_rx) = oneshot::channel();
+    let (replacement_post, replacement_post_rx) = oneshot::channel();
+    let (reset_tx, mut reset_rx) = mpsc::unbounded_channel::<(Method, Reason)>();
+    let server_task = tokio::spawn(async move {
+        let mut builder = server::Builder::new();
+        builder.initial_window_size(8);
+        let mut connection = builder
+            .handshake::<_, Bytes>(server_io)
+            .await
+            .expect("flow-controlled server HTTP/2 handshake");
+        let mut reset_observers = Vec::new();
+        let mut post_blocked = Some(post_blocked);
+        let mut replacement_post = Some(replacement_post);
+        let mut accepted = 0_usize;
+
+        while let Some(exchange) = connection.accept().await {
+            let (request, mut respond) =
+                exchange.expect("flow-controlled server connection failed");
+            match accepted {
+                0 => {
+                    assert_eq!(request.method(), Method::GET);
+                    let mut response = respond
+                        .send_response(ok_response(), false)
+                        .expect("send persistent original downlink headers");
+                    let reset_tx = reset_tx.clone();
+                    reset_observers.push(tokio::spawn(async move {
+                        let reason = std::future::poll_fn(|cx| response.poll_reset(cx))
+                            .await
+                            .expect("observe original GET reset");
+                        reset_tx
+                            .send((Method::GET, reason))
+                            .expect("original GET reset receiver");
+                    }));
+                }
+                1 => {
+                    assert_eq!(request.method(), Method::POST);
+                    let post_blocked = post_blocked
+                        .take()
+                        .expect("original POST is accepted only once");
+                    let reset_tx = reset_tx.clone();
+                    reset_observers.push(tokio::spawn(async move {
+                        let mut body = request.into_body();
+                        let first_data = body
+                            .data()
+                            .await
+                            .expect("original POST ended before DATA")
+                            .expect("read original POST DATA");
+                        assert_eq!(first_data.as_ref(), &[0x5a; 8]);
+                        post_blocked
+                            .send(())
+                            .expect("original POST blocked receiver");
+
+                        // Retain both the DATA and its RecvStream without
+                        // releasing capacity. The client's remaining eight
+                        // bytes therefore stay flow-controlled until drop.
+                        let reason = std::future::poll_fn(|cx| respond.poll_reset(cx))
+                            .await
+                            .expect("observe original POST reset");
+                        reset_tx
+                            .send((Method::POST, reason))
+                            .expect("original POST reset receiver");
+                        drop((first_data, body));
+                    }));
+                }
+                2 => {
+                    assert_eq!(request.method(), Method::GET);
+                    let mut response = respond
+                        .send_response(ok_response(), false)
+                        .expect("send replacement downlink headers");
+                    response
+                        .send_data(Bytes::from_static(REPLACEMENT_DOWNLINK), true)
+                        .expect("send replacement downlink body");
+                }
+                3 => {
+                    assert_eq!(request.method(), Method::POST);
+                    let replacement_post = replacement_post
+                        .take()
+                        .expect("replacement POST is accepted only once");
+                    reset_observers.push(tokio::spawn(async move {
+                        let body = drain_h2_request(request.into_body()).await;
+                        respond
+                            .send_response(ok_response(), true)
+                            .expect("send replacement POST response");
+                        replacement_post
+                            .send(body)
+                            .expect("replacement POST body receiver");
+                    }));
+                }
+                _ => panic!("unexpected fifth request on reused H2 connection"),
+            }
+            accepted += 1;
+        }
+
+        assert_eq!(accepted, 4);
+        for observer in reset_observers {
+            observer.await.expect("server stream observer task");
+        }
+    });
+
+    let client_io = Arc::new(Mutex::new(
+        Some(Box::new(client_io) as BoxedTransportStream),
+    ));
+    let dials = Arc::new(AtomicUsize::new(0));
+    let dial: XhttpDial = {
+        let client_io = Arc::clone(&client_io);
+        let dials = Arc::clone(&dials);
+        Arc::new(move || {
+            dials.fetch_add(1, Ordering::AcqRel);
+            let stream = client_io.lock().unwrap().take();
+            Box::pin(async move {
+                stream.ok_or_else(|| {
+                    TransportError::Tcp(io::Error::new(
+                        io::ErrorKind::NotConnected,
+                        "flow-controlled test dial is exhausted",
+                    ))
+                })
+            })
+        })
+    };
+    let transport = transport(
+        XhttpModeSelection::PacketUp,
+        XhttpHttpVersion::Http2,
+        unlimited_xmux(),
+        MAX_PACKET as i32,
+    );
+    let stream = transport
+        .open_stream_with_dial(Arc::clone(&dial))
+        .await
+        .expect("open original packet-up flow");
+
+    timeout(DEADLINE, settings_ack)
+        .await
+        .expect("client did not acknowledge the eight-byte receive window")
+        .expect("SETTINGS ACK observation sender");
+
+    let (mut public_reader, mut public_writer) = tokio::io::split(stream);
+    let (read_cancel, mut read_cancel_rx) = oneshot::channel();
+    let reader_task = tokio::spawn(async move {
+        let mut byte = [0_u8; 1];
+        let terminal = tokio::select! {
+            biased;
+            cancel = &mut read_cancel_rx => {
+                cancel.expect("read cancellation sender");
+                PublicHalfTerminal::Cancelled
+            }
+            result = public_reader.read(&mut byte) => {
+                PublicHalfTerminal::Io(result.map(|_| ()))
+            }
+        };
+        drop(public_reader);
+        terminal
+    });
+
+    let (write_cancel, mut write_cancel_rx) = oneshot::channel();
+    let (writer_started, writer_started_rx) = oneshot::channel();
+    let (writer_done, mut writer_done_rx) = oneshot::channel();
+    let writer_task = tokio::spawn(async move {
+        writer_started.send(()).expect("writer-started receiver");
+        let terminal = tokio::select! {
+            biased;
+            cancel = &mut write_cancel_rx => {
+                cancel.expect("write cancellation sender");
+                PublicHalfTerminal::Cancelled
+            }
+            result = public_writer.write_all(&BLOCKED_UPLOAD) => {
+                PublicHalfTerminal::Io(result)
+            }
+        };
+        drop(public_writer);
+        let _ = writer_done.send(());
+        terminal
+    });
+
+    timeout(DEADLINE, async {
+        writer_started_rx
+            .await
+            .expect("writer-started observation sender");
+        post_blocked_rx
+            .await
+            .expect("original POST blocked observation sender");
+    })
+    .await
+    .expect("public writer did not reach deterministic H2 flow control");
+    assert!(matches!(
+        writer_done_rx.try_recv(),
+        Err(oneshot::error::TryRecvError::Empty)
+    ));
+
+    read_cancel.send(()).expect("read cancellation receiver");
+    write_cancel.send(()).expect("write cancellation receiver");
+    let (reader_result, writer_result) =
+        timeout(DEADLINE, async { tokio::join!(reader_task, writer_task) })
+            .await
+            .expect("public split halves did not stop after cancellation");
+    expect_cancelled(
+        "read half",
+        reader_result.expect("public reader task panicked"),
+    );
+    expect_cancelled(
+        "write half",
+        writer_result.expect("public writer task panicked"),
+    );
+    writer_done_rx
+        .await
+        .expect("writer completion observation sender");
+
+    let resets = timeout(DEADLINE, async {
+        [
+            reset_rx.recv().await.expect("first reset event"),
+            reset_rx.recv().await.expect("second reset event"),
+        ]
+    })
+    .await
+    .expect("server did not observe both original stream resets");
+    assert_eq!(
+        resets
+            .iter()
+            .filter(|event| **event == (Method::GET, Reason::CANCEL))
+            .count(),
+        1
+    );
+    assert_eq!(
+        resets
+            .iter()
+            .filter(|event| **event == (Method::POST, Reason::CANCEL))
+            .count(),
+        1
+    );
+    assert!(matches!(
+        reset_rx.try_recv(),
+        Err(mpsc::error::TryRecvError::Empty)
+    ));
+
+    timeout(DEADLINE, async {
+        loop {
+            if transport.h2_connection_activity_counts().await == vec![0] {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("cancelled packet-up flow did not release H2 reservations");
+
+    let wire_resets = timeout(DEADLINE, async {
+        [
+            outbound_resets.recv().await.expect("first outbound reset"),
+            outbound_resets.recv().await.expect("second outbound reset"),
+        ]
+    })
+    .await
+    .expect("client did not emit both original stream resets");
+    assert!(wire_resets
+        .iter()
+        .all(|reset| reset.reason == Reason::CANCEL));
+    assert_ne!(wire_resets[0].stream_id, wire_resets[1].stream_id);
+    assert!(matches!(
+        outbound_resets.try_recv(),
+        Err(mpsc::error::TryRecvError::Empty)
+    ));
+
+    let mut replacement = transport
+        .open_stream_with_dial(Arc::clone(&dial))
+        .await
+        .expect("reuse healthy H2 connection for replacement flow");
+    replacement
+        .write_all(REPLACEMENT_UPLOAD)
+        .await
+        .expect("write replacement packet");
+    replacement
+        .shutdown()
+        .await
+        .expect("finish replacement uplink");
+    let mut downlink = Vec::new();
+    replacement
+        .read_to_end(&mut downlink)
+        .await
+        .expect("read replacement downlink to EOF");
+    assert_eq!(downlink, REPLACEMENT_DOWNLINK);
+    let replacement_body = timeout(DEADLINE, replacement_post_rx)
+        .await
+        .expect("replacement POST did not complete")
+        .expect("replacement POST body sender");
+    assert_eq!(replacement_body, REPLACEMENT_UPLOAD);
+    drop(replacement);
+
+    timeout(DEADLINE, async {
+        loop {
+            if transport.h2_connection_activity_counts().await == vec![0] {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("replacement packet-up flow did not release H2 reservations");
+    assert!(matches!(
+        outbound_resets.try_recv(),
+        Err(mpsc::error::TryRecvError::Empty)
+    ));
+    assert_eq!(
+        dials.load(Ordering::Acquire),
+        1,
+        "local cancellation must preserve the healthy H2 connection"
+    );
+
+    drop(transport);
+    drop(dial);
+    timeout(DEADLINE, server_task)
+        .await
+        .expect("flow-controlled server did not stop")
+        .expect("flow-controlled server task panicked");
+}
+
+#[tokio::test]
 async fn h2_stream_up_is_full_duplex_and_pools_both_requests_on_one_connection() {
     let dials = Arc::new(AtomicUsize::new(0));
     let uploads = Arc::new(Mutex::new(Vec::new()));
@@ -557,6 +1579,85 @@ async fn h2_stream_up_is_full_duplex_and_pools_both_requests_on_one_connection()
     assert_eq!(response, b"pong");
     wait_until(|| !uploads.lock().unwrap().is_empty()).await;
     assert_eq!(*uploads.lock().unwrap(), vec![b"ping".to_vec()]);
+    assert_eq!(dials.load(Ordering::Acquire), 1);
+}
+
+#[tokio::test]
+async fn h2_stream_up_read_flush_does_not_strand_flow_controlled_writer() {
+    const READY: u8 = 0x41;
+    const COMPLETE: u8 = 0x42;
+    const UPLOAD_BYTES: usize = 2 * 1024 * 1024;
+
+    let dials = Arc::new(AtomicUsize::new(0));
+    let upload_done = Arc::new(AtomicBool::new(false));
+    let upload_notify = Arc::new(tokio::sync::Notify::new());
+    let dial = h2_dial(Arc::clone(&dials), {
+        let upload_done = Arc::clone(&upload_done);
+        let upload_notify = Arc::clone(&upload_notify);
+        move |request, mut respond| {
+            let upload_done = Arc::clone(&upload_done);
+            let upload_notify = Arc::clone(&upload_notify);
+            async move {
+                if request.method() == http::Method::GET {
+                    let mut send = respond
+                        .send_response(ok_response(), false)
+                        .expect("send downlink headers");
+                    send.send_data(Bytes::from_static(&[READY]), false)
+                        .expect("send ready marker");
+                    while !upload_done.load(Ordering::Acquire) {
+                        let notified = upload_notify.notified();
+                        if upload_done.load(Ordering::Acquire) {
+                            break;
+                        }
+                        notified.await;
+                    }
+                    send.send_data(Bytes::from_static(&[COMPLETE]), true)
+                        .expect("send completion marker");
+                    drain_h2_request(request.into_body()).await;
+                } else {
+                    let body = drain_h2_request(request.into_body()).await;
+                    assert_eq!(body, vec![0x5a; UPLOAD_BYTES]);
+                    upload_done.store(true, Ordering::Release);
+                    upload_notify.notify_waiters();
+                    respond
+                        .send_response(ok_response(), true)
+                        .expect("send upload response");
+                }
+            }
+        }
+    });
+    let transport = transport(
+        XhttpModeSelection::StreamUp,
+        XhttpHttpVersion::Http2,
+        unlimited_xmux(),
+        4,
+    );
+    let mut stream = transport.open_stream_with_dial(dial).await.unwrap();
+    let mut ready = [0; 1];
+    stream
+        .read_exact(&mut ready)
+        .await
+        .expect("read ready marker");
+    assert_eq!(ready, [READY]);
+
+    let (mut reader, mut writer) = tokio::io::split(stream);
+    timeout(DEADLINE, async {
+        tokio::try_join!(
+            async {
+                writer.write_all(&vec![0x5a; UPLOAD_BYTES]).await?;
+                writer.shutdown().await
+            },
+            async {
+                let mut complete = [0; 1];
+                reader.read_exact(&mut complete).await?;
+                assert_eq!(complete, [COMPLETE]);
+                Ok::<(), io::Error>(())
+            }
+        )
+    })
+    .await
+    .expect("concurrent H2 stream-up transfer must make flow-control progress")
+    .expect("concurrent H2 stream-up transfer");
     assert_eq!(dials.load(Ordering::Acquire), 1);
 }
 
@@ -1325,6 +2426,35 @@ fn success_h2_dial(dials: Arc<AtomicUsize>) -> XhttpDial {
         }
         drain_h2_request(request.into_body()).await;
     })
+}
+
+fn scripted_h2_dial<const N: usize>(
+    connections: [(BoxedTransportStream, tokio::task::JoinHandle<()>); N],
+) -> (XhttpDial, Arc<AtomicUsize>) {
+    assert!(
+        matches!(N, 2 | 3),
+        "scripted H2 dial requires two connections and permits one replay detector"
+    );
+    let connections = Arc::new(Mutex::new(VecDeque::from(connections)));
+    let dials = Arc::new(AtomicUsize::new(0));
+    let dial: XhttpDial = {
+        let connections = Arc::clone(&connections);
+        let dials = Arc::clone(&dials);
+        Arc::new(move || {
+            dials.fetch_add(1, Ordering::AcqRel);
+            let connection = connections.lock().unwrap().pop_front();
+            Box::pin(async move {
+                let (stream, _server_task) = connection.ok_or_else(|| {
+                    TransportError::Tcp(io::Error::new(
+                        io::ErrorKind::NotConnected,
+                        "test dial queue is empty",
+                    ))
+                })?;
+                Ok(stream)
+            })
+        })
+    };
+    (dial, dials)
 }
 
 fn h2_dial<F, Fut>(dials: Arc<AtomicUsize>, handler: F) -> XhttpDial

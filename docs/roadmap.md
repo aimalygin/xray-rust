@@ -1,6 +1,6 @@
 # Development roadmap
 
-Status: living document, last reviewed 2026-08-28.
+Status: living document, last reviewed 2026-08-31.
 
 This roadmap describes the intended product direction after `v0.4.0`. It is
 not a promise that every item will ship in the named release. Security,
@@ -71,17 +71,21 @@ Goal: publish aligned Xray-core `v26.7.28` release candidates from `xray-rust`
 and `xray-rust-mobile` before adding another proxy protocol or making a stable
 public package release.
 
-The initial `v0.4.1-rc.1` tag exercised the release gates; its supply-chain job
-correctly rejected an undeclared fuzz-package license and the missing NCSA
-allowlist entry. `v0.4.1-rc.2` corrected that issue, then its clean runner
-exposed that the RC interop script relied on a stale local debug binary. Neither
-candidate was published. Their immutable tags remain as the audit trail, and
-the corrected delivery target is `v0.4.1-rc.3`. Both repositories use the same
-pre-release version whenever the core or its adapters change.
+The release history is intentionally immutable:
 
-### Current execution status (2026-08-28)
+- `v0.4.1-rc.1` failed the supply-chain gate on the fuzz package's undeclared
+  license/NCSA allowance and was not published;
+- `v0.4.1-rc.2` fixed that gate, then failed because clean-runner interop had
+  relied on a stale local debug binary, and was not published;
+- `v0.4.1-rc.3` fixed the clean-runner contract and was successfully published
+  for both the core and mobile repositories;
+- `v0.4.1-rc.4` is the active hardening candidate. The frozen benchmark
+  candidate is `5895b09239ea6d957a3fead814804e361ee6ef6d`.
 
-Implemented in the `v0.4.1-rc.3` candidate source:
+Both repositories use the same pre-release version whenever the core or its
+adapters change.
+
+### Completed in RC3
 
 - source-only, non-latest GitHub RC publication for `xray-rust`, with an
   idempotent draft/resume/verify path and no registry publication;
@@ -104,50 +108,35 @@ Implemented in the `v0.4.1-rc.3` candidate source:
   VLESS UDP/XUDP and the DNS-outbound runtime; fuzzing starts with config JSON,
   DNS wire, Vision/UDP/XUDP, and the FFI lifecycle.
 
-Release procedure for `v0.4.1-rc.3`:
+### Completed in the RC4 candidate
 
-- bump the core version and dated changelog, create the reviewed annotated core
-  tag, then pin and rebuild the mobile SDK from that exact tag/commit/tree and
-  create the matching mobile tag;
-- run both tag workflows and verify the GitHub prereleases without invoking a
-  remote Maven publication path.
+- safe pre-commit H2 GOAWAY retry with non-replay, cancellation, and buffer
+  ownership regressions;
+- fixes for sustained H2 packet-up flow-control completion and completed H3
+  request resets, including local Xray-core interop coverage;
+- weekly broad pinned compatibility/resource coverage plus a distinct
+  warning-only Xray-core `main` smoke;
+- a fresh release-mode publication against exact Xray-core v26.7.28 and stable
+  sing-box v1.13.20: 139 validated five-run series, 695 embedded results,
+  deterministic raw-archive provenance, and reviewed REALITY, gRPC/32, and
+  Xray-core H3 pressure/32 boundaries;
+- corrected roadmap, status, verification, configuration, migration, and
+  release documentation.
 
-### Compatibility and security
+### Deferred beyond RC4
 
-- Complete the DNS outbound migration to canonical `qType`, `Return`, and
-  `rCode` behavior. Deprecated input aliases may remain only when they are
-  unambiguous and tested.
-- Adopt Xray's fail-closed rejection of plaintext VLESS connections to public
-  destinations while retaining explicit local, private, reserved, and test
-  exemptions. Apply it explicitly to the supported legacy `vnext` shape too;
-  Xray v26.7.28 guards only its simplified top-level VLESS settings.
-- Reject `allowInsecure: true` for the canonical `v26.7.28` surface. If legacy
-  import support remains, isolate it behind an explicit host policy and never
-  enable it by default.
-- Implement the minimum modern certificate model, including peer certificate
-  pinning and name verification behavior required by supported Xray profiles.
-- Implement target-compatible custom XHTTP session ID generation for accepted
-  `sessionIDTable` and `sessionIDLength` settings.
-- Add XHTTP regressions for HTTP/2 GOAWAY replay, concurrent close/write, buffer
-  lifetime, and cancellation.
-
-### Verification and release engineering
-
-- Run a small blocking interoperability matrix against the exact pinned
-  Xray-core tag for raw TLS, REALITY, Vision, WebSocket, HTTPUpgrade, gRPC,
-  XHTTP H1/H2/H3, UDP/XUDP, and DNS outbound behavior.
-- Run the broader interop and resource matrix on a schedule. Add a separate
-  non-blocking smoke job against Xray-core `main` for early warning.
-- Add fuzz targets for configuration JSON, SOCKS/HTTP parsing, DNS wire data,
-  VLESS/Vision/XUDP framing, QUIC sniffing, XHTTP framing, and the FFI
-  lifecycle. Add sanitizers where the supported CI runners permit them.
-- Repin and rebuild the companion mobile SDK from the exact core release
-  candidate commit.
-- Publish fresh, repeated benchmarks against Xray-core `v26.7.28` and the then
-  current stable sing-box release. Record full revisions, build options, raw
-  results, RSS, CPU/GiB, latency, loss, TUN behavior, and device energy where
-  available. Historical benchmark charts must remain labelled with their
-  original versions.
+- long-running fuzz campaigns, sanitizers, Miri, and concurrency-model
+  exploration beyond the bounded blocking RC smoke;
+- controlled RTT/loss and wide-area performance experiments;
+- physical-device energy, thermal, memory-pressure, sleep/wake, and network
+  transition campaigns;
+- an independent security audit and a long-term replacement/upstreaming plan
+  for the pinned `shaped-rustls` fork;
+- broader parser fuzz targets for SOCKS/HTTP, QUIC sniffing, and XHTTP framing;
+- stable-channel registry publication, which remains a separate explicitly
+  approved step after RC feedback. Here “stable channel” means a
+  non-prerelease tag eligible for registry publication; a version below 1.0 is
+  still pre-1.0 in API and security maturity.
 
 ### Pre-release packaging policy
 

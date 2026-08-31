@@ -2,11 +2,46 @@
 
 All notable changes will be documented in this file.
 
-The project has not made a stable release. Versions before 1.0 are
-prerelease-quality and do not establish a supported release series.
+In this changelog, the stable channel means a non-prerelease tag eligible for
+registry publication; `v0.4.0` is such a release. All versions below 1.0 remain
+pre-1.0 in API and security maturity and do not imply a long-term supported
+release series.
 
 ## Unreleased
 
+## 0.4.1-rc.4 - 2026-08-31
+
+- Fixed an XHTTP/2 `stream-up` deadlock where a concurrent downlink poll could
+  cancel the uplink's pending flow-control reservation and strand a sustained
+  upload. Added deterministic split read/write coverage and an 8 MiB live
+  Xray-core interoperability regression.
+- Added safe pre-commit HTTP/2 GOAWAY retry handling plus regression coverage
+  for non-replay after commitment and request/buffer ownership across
+  cancellation.
+- Accepted an HTTP/3 `H3_NO_ERROR` request reset only after every declared
+  fixed-length request byte was delivered, while preserving failure for
+  unknown-length or premature resets; added transport and full-load interop
+  regressions.
+- Added weekly broad pinned Xray-core interoperability and resource gates plus
+  a warning-only upstream-main compatibility smoke check.
+- Scoped the RC4 REALITY/Vision comparator omission to the measured stable
+  sing-box v1.13.20 evidence: Xray-core v26.7.28's default `minClientVer`
+  26.3.27 rejects that build's REALITY `ClientVer` 1.8.1. RC4 records
+  `--skip-sing-box` and publishes xray-rust/Xray-core results only for those
+  two workloads, while the generic harness retains sing-box REALITY support
+  for compatible or patched binaries. The fixture and timeout remain
+  unchanged.
+- Published fresh five-run RC4 evidence against exact Xray-core v26.7.28 and
+  stable sing-box v1.13.20: 139 validated series and 695 embedded results with
+  exact revisions, binary hashes, a deterministic raw-archive digest, and new
+  dated charts/tables. The publication records the reviewed sing-box
+  gRPC/full-duplex/32 nondeterministic timeout and Xray-core H3 pressure/32
+  reset/timeout boundaries without substituting isolated diagnostics.
+- Made the benchmark publication depth-limit policy test portable across
+  Python JSON decoders, and constrained JFrog-token secret-scan exemptions to
+  the two reviewed dated benchmark replay records containing binary SHA-256s.
+- Corrected roadmap, implementation-status, verification, configuration,
+  migration, benchmark, and release documentation for RC4.
 - Routing `ip` matchers are compiled once at load time into a shared sorted
   range index (`xray-routing::IpRangeSet`/`IpMatcherSet`), also used by DNS
   `expectedIPs`/`unexpectedIPs` filters. Outbound selection cost no longer

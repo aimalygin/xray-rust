@@ -6,6 +6,9 @@ SCRIPT_UNDER_TEST="$WORKSPACE_ROOT/scripts/check-rc-interop.sh"
 TEST_ROOT="$(mktemp -d)"
 trap 'rm -rf -- "$TEST_ROOT"' EXIT
 
+EXPECTED_XRAY_CORE_REVISION="5ca6f4b7d4dc20a881d4330e498892697627ec0c"
+HOSTILE_XRAY_CORE_EXPECTED_REVISION="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
 FAKE_BIN="$TEST_ROOT/bin"
 FAKE_CORE="$TEST_ROOT/Xray-core"
 FAKE_TARGET="$TEST_ROOT/target"
@@ -16,7 +19,7 @@ cat >"$FAKE_BIN/git" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ "$*" == *"rev-parse --verify HEAD"* ]]; then
-  printf '%s\n' '5ca6f4b7d4dc20a881d4330e498892697627ec0c'
+  printf '%s\n' "$FAKE_GIT_REVISION"
   exit 0
 fi
 printf 'unexpected git invocation: %s\n' "$*" >&2
@@ -57,8 +60,21 @@ cat >"$FAKE_BIN/cargo" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
+printf 'invoke|%s\n' "$*" >>"$FAKE_CARGO_LOG"
+
 case "${1:-}" in
   test)
+    if [[ "$*" == *"--test local_xray_interop_tests"* ]]; then
+      [[ "$*" == *"-- --ignored --nocapture --test-threads=1"* ]] || {
+        echo 'RC interop Cargo invocation did not run the ignored suite serially' >&2
+        exit 91
+      }
+      [[ -z "${XRAY_CORE_EXPECTED_REVISION+x}" ]] || {
+        echo 'RC ignored interop inherited XRAY_CORE_EXPECTED_REVISION' >&2
+        exit 92
+      }
+      printf '%s\n' ignored-interop >>"$FAKE_CARGO_LOG"
+    fi
     exit 0
     ;;
   build)
@@ -126,11 +142,43 @@ PATH="$FAKE_BIN:$PATH" \
   XRAY_CORE_CHECKOUT="$FAKE_CORE" \
   CARGO_TARGET_DIR="$FAKE_TARGET" \
   FAKE_CARGO_LOG="$FAKE_CARGO_LOG" \
+  FAKE_GIT_REVISION="$EXPECTED_XRAY_CORE_REVISION" \
+  XRAY_CORE_EXPECTED_REVISION="$HOSTILE_XRAY_CORE_EXPECTED_REVISION" \
   bash "$SCRIPT_UNDER_TEST" >/dev/null
 
 [[ "$(grep -c '^run$' "$FAKE_CARGO_LOG")" -eq 2 ]] || {
   echo 'RC interop gate did not run both bounded UDP workloads' >&2
   exit 99
 }
+[[ "$(grep -c '^ignored-interop$' "$FAKE_CARGO_LOG")" -eq 1 ]] || {
+  echo 'RC interop gate did not run exactly one ignored interop suite' >&2
+  exit 100
+}
 
-echo 'RC interop uses an explicit freshly built release binary'
+MISMATCH_CARGO_LOG="$TEST_ROOT/mismatch-cargo.log"
+MISMATCH_OUTPUT="$TEST_ROOT/mismatch-output.log"
+set +e
+PATH="$FAKE_BIN:$PATH" \
+  XRAY_CORE_CHECKOUT="$FAKE_CORE" \
+  CARGO_TARGET_DIR="$TEST_ROOT/mismatch-target" \
+  FAKE_CARGO_LOG="$MISMATCH_CARGO_LOG" \
+  FAKE_GIT_REVISION="0123456789abcdef0123456789abcdef01234567" \
+  XRAY_CORE_EXPECTED_REVISION="$HOSTILE_XRAY_CORE_EXPECTED_REVISION" \
+  bash "$SCRIPT_UNDER_TEST" >"$MISMATCH_OUTPUT" 2>&1
+mismatch_status=$?
+set -e
+
+if [[ "$mismatch_status" -eq 0 ]]; then
+  echo 'RC interop accepted a mismatched Xray-core revision' >&2
+  exit 101
+fi
+if ! grep -Fq "expected $EXPECTED_XRAY_CORE_REVISION" "$MISMATCH_OUTPUT"; then
+  echo 'RC interop mismatch did not name the literal release pin' >&2
+  exit 102
+fi
+if [[ -s "$MISMATCH_CARGO_LOG" ]]; then
+  echo 'RC interop invoked Cargo before rejecting a mismatched Xray-core revision' >&2
+  exit 103
+fi
+
+echo 'RC interop sanitizes hostile revision overrides and uses an explicit freshly built release binary'

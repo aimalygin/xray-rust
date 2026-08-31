@@ -82,8 +82,7 @@ pub use stream_transport::{
     StreamBenchXhttpProfile,
 };
 
-const USAGE: &str =
-    "usage: xray-bench run|compare|route-probe|dns-policy-probe|reality-matrix|chart [options]";
+const USAGE: &str = "usage: xray-bench run|compare|route-probe|dns-policy-probe|reality-matrix|chart [options]\ncompare options: [--skip-sing-box]\nchart options: [--omit-sing-box-reality]";
 const TEST_VLESS_UUID: [u8; 16] = [
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
 ];
@@ -420,6 +419,7 @@ pub struct BenchOptions {
     pub sing_box_bin: Option<PathBuf>,
     pub sing_box_dir: Option<PathBuf>,
     pub tun_profile: Option<String>,
+    pub skip_sing_box: bool,
     pub no_auto_build: bool,
     pub geodata_dir: Option<PathBuf>,
 }
@@ -678,8 +678,9 @@ pub struct BenchProvenance {
     pub harness_profile: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace_git: Option<WorkspaceGitProvenance>,
-    /// Git state of the checkout used to build the measured engine when that
-    /// checkout can be identified independently from the harness workspace.
+    /// Git state of the engine checkout selected or explicitly supplied for
+    /// the run. The binary hash identifies the measured executable separately;
+    /// this checkout metadata is not proof that the binary was built from it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub engine_source_git: Option<WorkspaceGitProvenance>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -702,6 +703,12 @@ pub struct BenchProvenance {
 pub struct BenchResult {
     #[serde(default)]
     pub run_id: String,
+    /// One-based identity of this repeat within its benchmark series.
+    ///
+    /// The default preserves deserialization of pre-identity result JSON. New
+    /// harness output always records a positive, contiguous index.
+    #[serde(default)]
+    pub run_index: usize,
     #[serde(default)]
     pub provenance: BenchProvenance,
     pub engine: String,
@@ -1232,6 +1239,7 @@ impl Default for BenchOptions {
             sing_box_bin: None,
             sing_box_dir: None,
             tun_profile: None,
+            skip_sing_box: false,
             no_auto_build: false,
             geodata_dir: None,
         }
@@ -1573,6 +1581,9 @@ where
                 options.sing_box_dir =
                     Some(PathBuf::from(required_value(&rest, &mut index, flag)?));
             }
+            "--skip-sing-box" => {
+                options.skip_sing_box = true;
+            }
             "--no-auto-build" => {
                 options.no_auto_build = true;
             }
@@ -1591,6 +1602,11 @@ where
 
     match command.as_str() {
         "run" => {
+            if options.skip_sing_box {
+                return Err(BenchError::InvalidArguments(
+                    "--skip-sing-box is compare-only and cannot be used with `run`".to_owned(),
+                ));
+            }
             if options.engine.is_none() {
                 return Err(BenchError::InvalidArguments(
                     "run requires --engine xray-rust|xray-core|sing-box".to_owned(),
@@ -1600,6 +1616,7 @@ where
         }
         "compare" => {
             options.engine = None;
+            validate_compare_options(&options)?;
             Ok(CliArgs::Compare(options))
         }
         "route-probe" => unreachable!("route-probe is parsed before engine benchmark options"),
@@ -1613,6 +1630,22 @@ where
             "unknown command `{other}`\n{USAGE}"
         ))),
     }
+}
+
+fn validate_compare_options(options: &BenchOptions) -> Result<(), BenchError> {
+    if options.skip_sing_box {
+        if options.sing_box_bin.is_some() {
+            return Err(BenchError::InvalidArguments(
+                "--skip-sing-box cannot be combined with --sing-box-bin".to_owned(),
+            ));
+        }
+        if options.sing_box_dir.is_some() {
+            return Err(BenchError::InvalidArguments(
+                "--skip-sing-box cannot be combined with --sing-box-dir".to_owned(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn parse_route_probe_args(args: &[String]) -> Result<RouteProbeOptions, BenchError> {
@@ -2054,6 +2087,15 @@ pub fn summarize_results(results: &[BenchResult]) -> Result<BenchSummary, BenchE
             "cannot summarize an empty benchmark result set".to_owned(),
         ));
     };
+    if results
+        .iter()
+        .enumerate()
+        .any(|(index, result)| result.run_index != index + 1)
+    {
+        return Err(BenchError::InvalidArguments(
+            "cannot summarize non-contiguous benchmark repeat indexes".to_owned(),
+        ));
+    }
     if results
         .iter()
         .any(|result| result.engine != first.engine || result.workload != first.workload)
@@ -10094,8 +10136,13 @@ fn engine_source_git_provenance(
 ) -> Option<WorkspaceGitProvenance> {
     let source_dir = match kind {
         EngineKind::XrayRust => workspace_root().ok(),
-        EngineKind::XrayCore if options.xray_core_bin.is_some() => None,
-        EngineKind::XrayCore => options.xray_core_dir.clone().or_else(default_xray_core_dir),
+        EngineKind::XrayCore => options.xray_core_dir.clone().or_else(|| {
+            options
+                .xray_core_bin
+                .is_none()
+                .then(default_xray_core_dir)
+                .flatten()
+        }),
         EngineKind::SingBox => options.sing_box_dir.clone().or_else(|| {
             options
                 .sing_box_bin
@@ -10219,20 +10266,27 @@ fn canonical_run_invocation_args(
     if let Some(path) = xray_core_bin {
         push_invocation_path(&mut args, "--xray-core-bin", path);
     }
-    let sing_box_bin = (kind == EngineKind::SingBox)
-        .then_some(engine_binary_path)
-        .or(options.sing_box_bin.as_deref());
-    if let Some(path) = sing_box_bin {
-        push_invocation_path(&mut args, "--sing-box-bin", path);
+    if !options.skip_sing_box {
+        let sing_box_bin = (kind == EngineKind::SingBox)
+            .then_some(engine_binary_path)
+            .or(options.sing_box_bin.as_deref());
+        if let Some(path) = sing_box_bin {
+            push_invocation_path(&mut args, "--sing-box-bin", path);
+        }
     }
     if let Some(path) = options.xray_core_dir.as_deref() {
         push_invocation_path(&mut args, "--xray-core-dir", path);
     }
-    if let Some(path) = options.sing_box_dir.as_deref() {
-        push_invocation_path(&mut args, "--sing-box-dir", path);
+    if !options.skip_sing_box {
+        if let Some(path) = options.sing_box_dir.as_deref() {
+            push_invocation_path(&mut args, "--sing-box-dir", path);
+        }
     }
     if let Some(profile) = options.tun_profile.as_deref() {
         push_invocation_value(&mut args, "--tun-profile", profile);
+    }
+    if options.skip_sing_box {
+        args.push("--skip-sing-box".to_owned());
     }
     if options.no_auto_build {
         args.push("--no-auto-build".to_owned());
@@ -10269,6 +10323,7 @@ fn benchmark_provenance(
 }
 
 pub async fn run_compare(options: BenchOptions) -> Result<(), BenchError> {
+    validate_compare_options(&options)?;
     if matches!(
         options.workload,
         WorkloadKind::TunFakeDns | WorkloadKind::TunFakeDnsTcp | WorkloadKind::TunDnsProxy
@@ -10286,6 +10341,11 @@ pub async fn run_compare(options: BenchOptions) -> Result<(), BenchError> {
     if benchmark_supports_sing_box(&options)? {
         let sing_box_summary = run_engine_series(EngineKind::SingBox, &options, &run_id).await?;
         print_summary(&sing_box_summary);
+    } else if options.skip_sing_box {
+        eprintln!(
+            "sing-box {} skipped: explicitly disabled by --skip-sing-box",
+            options.workload.as_str()
+        );
     } else {
         eprintln!(
             "sing-box {} skipped: workload uses topology outside the process-level sing-box slice",
@@ -10296,7 +10356,9 @@ pub async fn run_compare(options: BenchOptions) -> Result<(), BenchError> {
 }
 
 fn benchmark_supports_sing_box(options: &BenchOptions) -> Result<bool, BenchError> {
-    if options.workload == WorkloadKind::StreamTransport {
+    if options.skip_sing_box {
+        Ok(false)
+    } else if options.workload == WorkloadKind::StreamTransport {
         Ok(options.stream_scenario()?.transport.supports_sing_box())
     } else {
         Ok(options.workload.supports_sing_box_process_engine())
@@ -10321,7 +10383,8 @@ pub async fn run_engine_series(
         } else {
             numbered_run_directory(&base_dir, run_index)
         };
-        results.push(run_engine_once(kind, options, run_id, &run_dir, &binary_dir).await?);
+        results
+            .push(run_engine_once(kind, options, run_id, run_index, &run_dir, &binary_dir).await?);
     }
     let summary = summarize_results(&results)?;
     write_summary_json(&base_dir.join("summary.json"), &summary)?;
@@ -10335,7 +10398,7 @@ pub async fn run_single_engine(
 ) -> Result<BenchResult, BenchError> {
     let run_dir = run_directory(&options.out_dir, run_id, kind, options.workload);
     let binary_dir = run_dir.join("bin");
-    run_engine_once(kind, options, run_id, &run_dir, &binary_dir).await
+    run_engine_once(kind, options, run_id, 1, &run_dir, &binary_dir).await
 }
 
 fn workload_dns_transport(
@@ -10354,6 +10417,7 @@ async fn run_engine_once(
     kind: EngineKind,
     options: &BenchOptions,
     run_id: &str,
+    run_index: usize,
     run_dir: &Path,
     binary_dir: &Path,
 ) -> Result<BenchResult, BenchError> {
@@ -10493,6 +10557,7 @@ async fn run_engine_once(
 
     let result = BenchResult {
         run_id: run_id.to_owned(),
+        run_index,
         provenance,
         engine: kind.as_str().to_owned(),
         workload: options.workload.as_str().to_owned(),
@@ -11096,17 +11161,48 @@ mod tests {
     }
 
     #[test]
-    fn explicit_xray_core_binary_never_claims_checkout_provenance() {
+    fn explicit_xray_core_binary_records_supplied_checkout_provenance() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let checkout = std::env::temp_dir().join(format!(
+            "xray-bench-explicit-source-provenance-{}-{unique}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&checkout).unwrap();
+        required_git_stdout(&checkout, &["init", "--quiet"]).unwrap();
+        fs::write(checkout.join("go.mod"), b"module example.invalid/xray\n").unwrap();
+        required_git_stdout(&checkout, &["add", "go.mod"]).unwrap();
+        required_git_stdout(
+            &checkout,
+            &[
+                "-c",
+                "user.name=xray-bench test",
+                "-c",
+                "user.email=xray-bench@example.invalid",
+                "commit",
+                "--quiet",
+                "-m",
+                "fixture",
+            ],
+        )
+        .unwrap();
+        let revision = required_git_stdout(&checkout, &["rev-parse", "--verify", "HEAD"]).unwrap();
         let options = BenchOptions {
             xray_core_bin: Some(PathBuf::from("/tmp/xray-core")),
-            xray_core_dir: Some(PathBuf::from("Xray-core")),
+            xray_core_dir: Some(checkout.clone()),
             ..BenchOptions::default()
         };
 
         assert_eq!(
             engine_source_git_provenance(EngineKind::XrayCore, &options),
-            None
+            Some(WorkspaceGitProvenance {
+                revision,
+                dirty: Some(false),
+            })
         );
+        fs::remove_dir_all(&checkout).unwrap();
     }
 
     #[test]
@@ -11205,6 +11301,7 @@ mod tests {
     fn minimal_bench_result() -> BenchResult {
         BenchResult {
             run_id: String::new(),
+            run_index: 1,
             provenance: BenchProvenance::default(),
             engine: "xray-rust".to_owned(),
             workload: "tcp-freedom".to_owned(),
@@ -11380,6 +11477,7 @@ mod tests {
                 sing_box_bin: None,
                 sing_box_dir: None,
                 tun_profile: None,
+                skip_sing_box: false,
                 no_auto_build: false,
                 geodata_dir: None,
             })
@@ -13296,7 +13394,7 @@ mod tests {
     }
 
     #[test]
-    fn sing_box_reality_vision_xudp_config_uses_vless_reality_schema() {
+    fn sing_box_reality_workloads_remain_available_for_compatible_binaries() {
         let fixture = WorkloadFixture {
             vless_addr: Some(SocketAddr::from((Ipv4Addr::new(127, 0, 0, 1), 19094))),
             vless_tls_cert_sha256: None,
@@ -13305,33 +13403,31 @@ mod tests {
             tasks: Vec::new(),
             processes: Vec::new(),
         };
-        let config = sing_box_config(18087, WorkloadKind::RealityVisionXudp, &fixture).unwrap();
-        let value = serde_json::from_str::<serde_json::Value>(&config).unwrap();
+        for workload in [
+            WorkloadKind::RealityVisionXudp,
+            WorkloadKind::RealityVisionBulkThroughput,
+        ] {
+            assert!(workload.supports_sing_box_process_engine());
+            assert!(benchmark_supports_sing_box(&BenchOptions {
+                workload,
+                ..BenchOptions::default()
+            })
+            .unwrap());
 
-        assert_eq!(value["inbounds"][0]["type"], "socks");
-        assert_eq!(value["outbounds"][0]["type"], "vless");
-        assert_eq!(value["outbounds"][0]["server"], "127.0.0.1");
-        assert_eq!(value["outbounds"][0]["server_port"], 19094);
-        assert_eq!(value["outbounds"][0]["flow"], "xtls-rprx-vision");
-        assert_eq!(value["outbounds"][0]["packet_encoding"], "xudp");
-        assert_eq!(value["outbounds"][0]["tls"]["enabled"], true);
-        assert_eq!(
-            value["outbounds"][0]["tls"]["server_name"],
-            REALITY_SERVER_NAME
-        );
-        assert_eq!(value["outbounds"][0]["tls"]["utls"]["enabled"], true);
-        assert_eq!(
-            value["outbounds"][0]["tls"]["reality"]["public_key"],
-            REALITY_PUBLIC_KEY
-        );
-        assert_eq!(
-            value["outbounds"][0]["tls"]["reality"]["short_id"],
-            REALITY_SHORT_ID_HEX
-        );
+            let config = sing_box_config(18087, workload, &fixture).unwrap();
+            let value = serde_json::from_str::<serde_json::Value>(&config).unwrap();
+            assert_eq!(value["inbounds"][0]["type"], "socks");
+            assert_eq!(value["outbounds"][0]["type"], "vless");
+            assert_eq!(value["outbounds"][0]["server"], "127.0.0.1");
+            assert_eq!(value["outbounds"][0]["server_port"], 19094);
+            assert_eq!(value["outbounds"][0]["flow"], "xtls-rprx-vision");
+            assert_eq!(value["outbounds"][0]["packet_encoding"], "xudp");
+            assert_eq!(value["outbounds"][0]["tls"]["reality"]["enabled"], true);
+        }
     }
 
     #[test]
-    fn reality_vision_bulk_reuses_reality_vision_configs() {
+    fn reality_vision_bulk_reuses_reality_vision_config_for_xray_engines() {
         let fixture = WorkloadFixture {
             vless_addr: Some(SocketAddr::from((Ipv4Addr::new(127, 0, 0, 1), 19094))),
             vless_tls_cert_sha256: None,
@@ -13340,19 +13436,16 @@ mod tests {
             tasks: Vec::new(),
             processes: Vec::new(),
         };
-        let sb =
-            sing_box_config(18091, WorkloadKind::RealityVisionBulkThroughput, &fixture).unwrap();
-        let value = serde_json::from_str::<serde_json::Value>(&sb).unwrap();
-        assert_eq!(value["outbounds"][0]["type"], "vless");
-
-        let xr = engine_config(
-            EngineKind::XrayRust,
-            18092,
-            WorkloadKind::RealityVisionBulkThroughput,
-            &fixture,
-        )
-        .unwrap();
-        assert!(xr.contains("xtls-rprx-vision"));
+        for engine in [EngineKind::XrayRust, EngineKind::XrayCore] {
+            let config = engine_config(
+                engine,
+                18092,
+                WorkloadKind::RealityVisionBulkThroughput,
+                &fixture,
+            )
+            .unwrap();
+            assert!(config.contains("xtls-rprx-vision"));
+        }
     }
 
     #[test]
@@ -13480,15 +13573,82 @@ mod tests {
     }
 
     #[test]
-    fn sing_box_auto_build_tags_include_utls_for_reality() {
+    fn sing_box_auto_build_tags_retain_utls_for_supported_stream_workloads() {
         assert!(sing_box_build_tags()
             .split(',')
             .any(|tag| tag == "with_utls"));
     }
 
     #[test]
-    fn reality_vision_xudp_supports_sing_box_compare() {
-        assert!(WorkloadKind::RealityVisionXudp.supports_sing_box_process_engine());
+    fn direct_sing_box_reality_runs_remain_available_for_compatible_binaries() {
+        for workload in ["reality-vision-xudp", "reality-vision-bulk-throughput"] {
+            let args = parse_cli_args([
+                "xray-bench",
+                "run",
+                "--engine",
+                "sing-box",
+                "--workload",
+                workload,
+            ])
+            .unwrap();
+            let CliArgs::Run(options) = args else {
+                panic!("expected direct sing-box run");
+            };
+            assert_eq!(options.engine, Some(EngineKind::SingBox));
+        }
+    }
+
+    #[test]
+    fn explicit_sing_box_skip_is_compare_only_and_recorded_canonically() {
+        for workload in ["reality-vision-xudp", "tcp-freedom"] {
+            let args = parse_cli_args([
+                "xray-bench",
+                "compare",
+                "--workload",
+                workload,
+                "--skip-sing-box",
+            ])
+            .unwrap();
+            let CliArgs::Compare(options) = args else {
+                panic!("expected compare options");
+            };
+            assert!(options.skip_sing_box);
+            assert!(!benchmark_supports_sing_box(&options).unwrap());
+
+            for (engine, binary) in [
+                (EngineKind::XrayRust, "/tmp/xray-rust"),
+                (EngineKind::XrayCore, "/tmp/xray-core"),
+            ] {
+                let invocation = canonical_run_invocation_args(engine, &options, Path::new(binary));
+                assert!(invocation.iter().any(|arg| arg == "--skip-sing-box"));
+                assert!(!invocation.iter().any(|arg| arg == "--sing-box-bin"));
+                assert!(!invocation.iter().any(|arg| arg == "--sing-box-dir"));
+            }
+        }
+
+        let error = parse_cli_args([
+            "xray-bench",
+            "run",
+            "--engine",
+            "xray-rust",
+            "--skip-sing-box",
+        ])
+        .unwrap_err();
+        assert!(error.to_string().contains("compare-only"));
+    }
+
+    #[test]
+    fn explicit_sing_box_skip_rejects_conflicting_comparator_paths() {
+        for (flag, value) in [
+            ("--sing-box-bin", "/tmp/sing-box"),
+            ("--sing-box-dir", "/tmp/sing-box-source"),
+        ] {
+            let error = parse_cli_args(["xray-bench", "compare", "--skip-sing-box", flag, value])
+                .unwrap_err();
+            let message = error.to_string();
+            assert!(message.contains("--skip-sing-box"), "{message}");
+            assert!(message.contains(flag), "{message}");
+        }
     }
 
     #[test]
@@ -14374,6 +14534,7 @@ mod tests {
         assert_eq!(result.dns_transport, None);
         assert_eq!(result.dns_upstream_transport, None);
         assert_eq!(result.run_id, "");
+        assert_eq!(result.run_index, 0);
         assert_eq!(result.provenance, BenchProvenance::default());
     }
 
@@ -14381,6 +14542,7 @@ mod tests {
     fn records_dns_upstream_transport_in_result_and_summary_json() {
         let result = BenchResult {
             run_id: String::new(),
+            run_index: 1,
             provenance: BenchProvenance::default(),
             engine: "xray-rust".to_owned(),
             workload: "tun-dns-proxy".to_owned(),
@@ -14418,6 +14580,7 @@ mod tests {
         let summary_json = serde_json::to_value(&summary).unwrap();
 
         assert_eq!(result_json["dns_upstream_transport"], "tcp-routed");
+        assert_eq!(result_json["run_index"], 1);
         assert_eq!(summary_json["dns_transport"], "udp");
         assert_eq!(summary_json["dns_upstream_transport"], "tcp-routed");
     }
@@ -14437,6 +14600,7 @@ mod tests {
             ..minimal_bench_result()
         };
         let second = BenchResult {
+            run_index: 2,
             uplink_write_ops: Some(120),
             uplink_write_ops_per_second: Some(3_000),
             ..first.clone()
@@ -14713,6 +14877,7 @@ mod tests {
         let results = vec![
             BenchResult {
                 run_id: String::new(),
+                run_index: 1,
                 provenance: BenchProvenance::default(),
                 engine: "xray-rust".to_owned(),
                 workload: "tcp-freedom".to_owned(),
@@ -14752,6 +14917,7 @@ mod tests {
             },
             BenchResult {
                 run_id: String::new(),
+                run_index: 2,
                 provenance: BenchProvenance::default(),
                 engine: "xray-rust".to_owned(),
                 workload: "tcp-freedom".to_owned(),
@@ -14791,6 +14957,7 @@ mod tests {
             },
             BenchResult {
                 run_id: String::new(),
+                run_index: 3,
                 provenance: BenchProvenance::default(),
                 engine: "xray-rust".to_owned(),
                 workload: "tcp-freedom".to_owned(),
@@ -14975,6 +15142,7 @@ mod tests {
     fn summarize_rejects_mixed_workload_parameters() {
         let first = BenchResult {
             run_id: String::new(),
+            run_index: 1,
             provenance: BenchProvenance::default(),
             engine: "xray-rust".to_owned(),
             workload: "tcp-freedom".to_owned(),
@@ -15008,13 +15176,16 @@ mod tests {
             blackhole_connections_active: None,
         };
         let mut second = first.clone();
+        second.run_index = 2;
         second.connections = 1000;
         let error = summarize_results(&[first.clone(), second]).unwrap_err();
         assert!(error
             .to_string()
             .contains("cannot summarize mixed workload parameters"));
 
-        let same = summarize_results(&[first.clone(), first.clone()]).unwrap();
+        let mut same_second = first.clone();
+        same_second.run_index = 2;
+        let same = summarize_results(&[first.clone(), same_second]).unwrap();
         assert_eq!(same.connections, 100);
         assert_eq!(same.payload_size, 512);
     }
@@ -15030,6 +15201,7 @@ mod tests {
             ..minimal_bench_result()
         };
         let mut second = first.clone();
+        second.run_index = 2;
         second.provenance.harness_profile = "debug".to_owned();
 
         let error = summarize_results(&[first, second]).unwrap_err();
@@ -15037,6 +15209,45 @@ mod tests {
         assert!(error
             .to_string()
             .contains("cannot summarize mixed benchmark provenance"));
+    }
+
+    #[test]
+    fn summarize_requires_contiguous_repeat_indexes() {
+        let first = BenchResult {
+            run_id: "run-42".to_owned(),
+            run_index: 1,
+            ..minimal_bench_result()
+        };
+        let second = BenchResult {
+            run_index: 2,
+            ..first.clone()
+        };
+        assert_eq!(
+            summarize_results(&[first.clone(), second.clone()])
+                .unwrap()
+                .runs,
+            2
+        );
+
+        for invalid in [
+            vec![BenchResult {
+                run_index: 0,
+                ..first.clone()
+            }],
+            vec![first.clone(), first.clone()],
+            vec![
+                first.clone(),
+                BenchResult {
+                    run_index: 3,
+                    ..second.clone()
+                },
+            ],
+        ] {
+            let error = summarize_results(&invalid).unwrap_err();
+            assert!(error
+                .to_string()
+                .contains("cannot summarize non-contiguous benchmark repeat indexes"));
+        }
     }
 
     #[test]

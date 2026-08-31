@@ -4,6 +4,7 @@ use std::io::ErrorKind;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -23,6 +24,8 @@ use xray_transport::{SystemDnsResolver, TlsConnector, TransportDialer};
 
 const TEST_UUID: &str = "00010203-0405-0607-0809-0a0b0c0d0e0f";
 const TLS_SERVER_NAME: &str = "vless.test";
+const XRAY_CORE_EXPECTED_REVISION_ENV: &str = "XRAY_CORE_EXPECTED_REVISION";
+const PINNED_XRAY_CORE_REVISION: &str = "5ca6f4b7d4dc20a881d4330e498892697627ec0c";
 // The PQ interop oracle needs a cover origin that accepts X25519MLKEM;
 // RFC 2606 example origins reject the `hellochrome_120_pq` handshake.
 const REALITY_SERVER_NAME: &str = "www.google.com";
@@ -36,6 +39,46 @@ const REALITY_PUBLIC_KEY: [u8; 32] = [
 ];
 const REALITY_SHORT_ID: [u8; 8] = [1, 35, 69, 103, 137, 171, 205, 239];
 const REALITY_SHORT_ID_HEX: &str = "0123456789abcdef";
+
+#[test]
+fn xray_checkout_revision_defaults_to_the_release_pin() {
+    assert_eq!(
+        expected_xray_checkout_revision(None),
+        Ok(PINNED_XRAY_CORE_REVISION)
+    );
+}
+
+#[test]
+fn xray_checkout_revision_accepts_an_explicit_full_lowercase_commit() {
+    const REVISION: &str = "0123456789abcdef0123456789abcdef01234567";
+
+    assert_eq!(
+        expected_xray_checkout_revision(Some(REVISION)),
+        Ok(REVISION)
+    );
+}
+
+#[test]
+fn xray_checkout_revision_rejects_symbolic_abbreviated_or_malformed_values() {
+    for value in [
+        "",
+        "main",
+        "HEAD",
+        "5ca6f4b",
+        "5CA6F4B7D4DC20A881D4330E498892697627EC0C",
+        "5ca6f4b7d4dc20a881d4330e498892697627ec0g",
+    ] {
+        let error = expected_xray_checkout_revision(Some(value))
+            .expect_err("invalid revision override should be rejected");
+
+        assert_eq!(
+            error,
+            format!(
+                "XRAY_CORE_EXPECTED_REVISION must be an exact 40-character lowercase hexadecimal commit, got `{value}`"
+            )
+        );
+    }
+}
 
 #[tokio::test]
 #[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
@@ -905,9 +948,19 @@ fn resolve_xray_checkout() -> PathBuf {
 }
 
 fn assert_xray_checkout_revision(checkout: &Path) {
-    const EXPECTED: &str = "5ca6f4b7d4dc20a881d4330e498892697627ec0c";
+    let override_value = match env::var(XRAY_CORE_EXPECTED_REVISION_ENV) {
+        Ok(value) => Some(value),
+        Err(env::VarError::NotPresent) => None,
+        Err(error) => panic!("read {XRAY_CORE_EXPECTED_REVISION_ENV}: {error}"),
+    };
+    let expected = expected_xray_checkout_revision(override_value.as_deref())
+        .unwrap_or_else(|error| panic!("{error}"));
+    if override_value.is_some() {
+        eprintln!("using {XRAY_CORE_EXPECTED_REVISION_ENV} override `{expected}`");
+    }
+
     let output = Command::new("git")
-        .args(["rev-parse", "HEAD"])
+        .args(["rev-parse", "--verify", "HEAD"])
         .current_dir(checkout)
         .output()
         .expect("read Xray-core checkout revision");
@@ -917,9 +970,26 @@ fn assert_xray_checkout_revision(checkout: &Path) {
     );
     assert_eq!(
         String::from_utf8_lossy(&output.stdout).trim(),
-        EXPECTED,
-        "Xray-core interop checkout must be pinned to v26.7.28"
+        expected,
+        "Xray-core interop checkout must match the expected revision"
     );
+}
+
+fn expected_xray_checkout_revision(override_value: Option<&str>) -> Result<&str, String> {
+    match override_value {
+        None => Ok(PINNED_XRAY_CORE_REVISION),
+        Some(value)
+            if value.len() == 40
+                && value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)) =>
+        {
+            Ok(value)
+        }
+        Some(value) => Err(format!(
+            "{XRAY_CORE_EXPECTED_REVISION_ENV} must be an exact 40-character lowercase hexadecimal commit, got `{value}`"
+        )),
+    }
 }
 
 fn create_temp_dir(prefix: &str) -> TempDir {
@@ -2301,6 +2371,10 @@ async fn run_local_xray_xhttp_interop_scenario(
         .expect("XHTTP echo task should finish")
         .expect("XHTTP echo task should not panic");
 
+    if mode == XhttpMode::StreamUp {
+        run_xhttp_sustained_upload_flow(&xray, socks_addr).await;
+    }
+
     // Do not write a single application byte before the target greets us.
     // The only uplink at this point is the VLESS request header. H1/H3 accept
     // writes into a bounded worker pipe, so this pins the logical stream's
@@ -2325,6 +2399,78 @@ async fn run_local_xray_xhttp_interop_scenario(
 
     core.stop().await.expect("stop Rust XHTTP core");
     drop(xray);
+}
+
+async fn run_xhttp_sustained_upload_flow(xray: &XrayServer, socks_addr: SocketAddr) {
+    const PAYLOAD_BYTES: usize = 8 * 1024 * 1024;
+    const COMPLETE: u8 = 0xa5;
+
+    let payload = bulk_interop_payload(PAYLOAD_BYTES);
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .expect("bind XHTTP sustained-upload server");
+    let target = listener
+        .local_addr()
+        .expect("XHTTP sustained-upload server addr");
+    let target_bytes = Arc::new(AtomicUsize::new(0));
+    let server_target_bytes = Arc::clone(&target_bytes);
+    let server = tokio::spawn(async move {
+        let (mut stream, _) = listener
+            .accept()
+            .await
+            .expect("accept XHTTP sustained-upload flow");
+        let mut received = Vec::with_capacity(PAYLOAD_BYTES);
+        let mut chunk = [0; 64 * 1024];
+        while received.len() < PAYLOAD_BYTES {
+            let wanted = (PAYLOAD_BYTES - received.len()).min(chunk.len());
+            let read = stream
+                .read(&mut chunk[..wanted])
+                .await
+                .expect("read XHTTP sustained upload");
+            assert_ne!(read, 0, "XHTTP sustained upload ended early");
+            received.extend_from_slice(&chunk[..read]);
+            server_target_bytes.store(received.len(), Ordering::Release);
+        }
+        stream
+            .write_all(&[COMPLETE])
+            .await
+            .expect("write XHTTP sustained-upload completion marker");
+        received
+    });
+
+    let mut client = open_socks_flow(xray, socks_addr, target).await;
+    let transfer = async {
+        client
+            .write_all(&payload)
+            .await
+            .map_err(|error| format!("write XHTTP sustained upload: {error}"))?;
+        let mut marker = [0; 1];
+        client
+            .read_exact(&mut marker)
+            .await
+            .map_err(|error| format!("read XHTTP sustained-upload completion: {error}"))?;
+        if marker != [COMPLETE] {
+            return Err("invalid XHTTP sustained-upload completion marker".to_owned());
+        }
+        Ok::<(), String>(())
+    };
+    if let Err(error) = timeout(Duration::from_secs(60), transfer)
+        .await
+        .map_err(|error| format!("XHTTP sustained-upload timeout: {error}"))
+        .and_then(|result| result)
+    {
+        eprintln!("{}", xray.logs());
+        panic!(
+            "XHTTP sustained-upload flow failed after {}/{} target bytes: {error}",
+            target_bytes.load(Ordering::Acquire),
+            PAYLOAD_BYTES
+        );
+    }
+    assert_eq!(
+        server.await.expect("join XHTTP sustained-upload server"),
+        payload,
+        "XHTTP sustained upload differs at the target"
+    );
 }
 
 async fn run_xhttp_greeting_first_flow(xray: &XrayServer, socks_addr: SocketAddr) {

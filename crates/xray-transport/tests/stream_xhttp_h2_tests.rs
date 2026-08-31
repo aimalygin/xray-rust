@@ -1017,6 +1017,54 @@ async fn upload_obeys_partial_flow_control_and_cancel_returns_the_stream() {
 }
 
 #[tokio::test]
+async fn streaming_upload_reuses_released_flow_control_beyond_initial_windows() {
+    const UPLOAD_BYTES: usize = 8 * 1024 * 1024;
+
+    let (client, mut server) = pair().await;
+    let server_task = tokio::spawn(async move {
+        let (mut request, mut respond) = server
+            .accept()
+            .await
+            .expect("request before connection end")
+            .expect("valid request");
+        let mut received = 0;
+        while let Some(chunk) = request.body_mut().data().await {
+            let chunk = chunk.expect("valid upload DATA");
+            received += chunk.len();
+            request
+                .body_mut()
+                .flow_control()
+                .release_capacity(chunk.len())
+                .expect("release upload flow control");
+        }
+        respond
+            .send_response(response(StatusCode::OK), true)
+            .expect("send upload response");
+        received
+    });
+
+    let (mut upload, response) = client
+        .start_streaming(request(
+            Method::POST,
+            "http://example.test/sustained-upload",
+        ))
+        .await
+        .expect("start streaming request");
+    timeout(DEADLINE, async {
+        upload
+            .write_all(&vec![0x5a; UPLOAD_BYTES])
+            .await
+            .expect("write sustained upload");
+        upload.shutdown().await.expect("finish sustained upload");
+    })
+    .await
+    .expect("sustained upload progress deadline");
+    let mut body = response.open().await.expect("status 200");
+    assert_eq!(body.read(&mut [0_u8; 1]).await.expect("response EOF"), 0);
+    assert_eq!(server_task.await.expect("server task"), UPLOAD_BYTES);
+}
+
+#[tokio::test]
 async fn cloned_client_opens_concurrent_streams_without_serializing_headers() {
     let (client, mut server) = pair().await;
     let server_task = tokio::spawn(async move {

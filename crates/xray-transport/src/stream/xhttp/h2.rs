@@ -59,6 +59,20 @@ pub enum H2Error {
     ZeroCapacityGrant,
 }
 
+impl H2Error {
+    pub(crate) fn is_remote_goaway_before_request_commit(&self) -> bool {
+        matches!(
+            self,
+            Self::Protocol { context, source }
+                if matches!(
+                    *context,
+                    "connection is not ready" | "request HEADERS could not be sent"
+                ) && source.is_go_away()
+                    && source.is_remote()
+        )
+    }
+}
+
 /// A reusable HTTP/2 client connection.
 ///
 /// Clones share the underlying connection. Each request clones the h2
@@ -443,7 +457,7 @@ pub struct H2Upload {
 }
 
 impl H2Upload {
-    async fn send_owned(&mut self, mut body: Bytes) -> Result<(), H2Error> {
+    pub(crate) async fn send_owned(&mut self, mut body: Bytes) -> Result<(), H2Error> {
         while !body.is_empty() {
             poll_fn(|cx| {
                 let mut state = match self.shared.lock() {
@@ -583,7 +597,7 @@ impl AsyncWrite for H2Upload {
     }
 
     fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        let mut state = match self.shared.state.lock() {
+        let state = match self.shared.state.lock() {
             Ok(state) => state,
             Err(_) => return Poll::Ready(Err(state_io_error())),
         };
@@ -593,13 +607,12 @@ impl AsyncWrite for H2Upload {
                 "HTTP/2 request stream is reset",
             )))
         } else {
-            // A cancelled `write` may have left a bounded capacity request
-            // behind after returning Pending. There is no buffered DATA in
-            // this adapter, so flush can and should give that reservation
-            // back rather than waiting for it.
-            state.stream.reserve_capacity(0);
             // DATA is owned by h2 once `poll_write` returns. The connection
-            // driver, rather than this adapter, owns socket flushing.
+            // driver, rather than this adapter, owns socket flushing. Keep a
+            // bounded outstanding capacity request intact: the read half of a
+            // split XHTTP stream may flush while its write half is waiting for
+            // flow control, and cancelling that reservation would strand the
+            // pending writer without a wakeup.
             Poll::Ready(Ok(()))
         }
     }

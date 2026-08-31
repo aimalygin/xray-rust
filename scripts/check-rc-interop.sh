@@ -42,7 +42,8 @@ export XRAY_REALITY_INTEROP_BURST_FINGERPRINTS="chrome"
 export XRAY_REALITY_INTEROP_BURST_FLOWS="8"
 export XRAY_XHTTP_INTEROP_CASES="h1-none-packet-up,h1-tls-stream-up,h2-tls-stream-one,h2-reality-packet-up,h3-tls-stream-up"
 
-cargo test --locked -p xray-core-rs \
+env -u XRAY_CORE_EXPECTED_REVISION \
+  cargo test --locked -p xray-core-rs \
   --test local_xray_interop_tests \
   -- \
   --ignored \

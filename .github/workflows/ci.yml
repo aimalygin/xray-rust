@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   # Never cancel a tag run while it may be assembling or publishing a draft.
   # A second run for the same tag waits, then safely resumes or verifies the
   # exact prerelease instead of racing the first run.
@@ -166,7 +166,15 @@ jobs:
           bash scripts/tests/check-release-version.test.sh
           bash scripts/tests/check-prerelease-workflow.test.sh
           bash scripts/tests/check-rc-interop.test.sh
+          bash scripts/tests/check-scheduled-pinned-interop.test.sh
+          bash scripts/tests/check-xray-main-smoke.test.sh
+          bash scripts/tests/check-scheduled-interop-workflow.test.sh
           bash scripts/tests/check-public-fixtures.test.sh
+          bash scripts/tests/check-benchmark-publication.test.sh
+          bash scripts/tests/bench-xhttp-memory.test.sh
+          if [[ -f docs/benchmarks/results/2026-08-29-v26.7.28/manifest.json ]]; then
+            python3 scripts/check-benchmark-publication.py docs/benchmarks/results/2026-08-29-v26.7.28
+          fi
 
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.96.0 --profile minimal --component clippy,rustfmt
@@ -258,6 +266,93 @@ jobs:
         env:
           XRAY_CORE_CHECKOUT: ${{ github.workspace }}/Xray-core
         run: bash scripts/check-rc-interop.sh
+
+  scheduled-pinned-interop:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out scheduled xray-rust revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check out pinned Xray-core oracle
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: XTLS/Xray-core
+          ref: 5ca6f4b7d4dc20a881d4330e498892697627ec0c
+          path: Xray-core
+          persist-credentials: false
+
+      - name: Install pinned Go toolchain
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.5"
+          cache-dependency-path: Xray-core/go.sum
+
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.96.0 --profile minimal
+
+      - name: Select pinned Rust toolchain
+        run: rustup default 1.96.0
+
+      - name: Run broad pinned interoperability and resource gate
+        env:
+          XRAY_CORE_CHECKOUT: ${{ github.workspace }}/Xray-core
+        run: bash scripts/check-scheduled-pinned-interop.sh
+
+  xray-core-main-smoke:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - name: Check out scheduled xray-rust revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check out Xray-core main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: XTLS/Xray-core
+          ref: main
+          path: Xray-core
+          persist-credentials: false
+
+      - name: Resolve Xray-core main revision
+        id: xray
+        run: |
+          revision="$(git -C Xray-core rev-parse --verify HEAD)"
+          if [[ ! "$revision" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Xray-core main resolved to invalid revision: $revision" >&2
+            exit 1
+          fi
+          echo "revision=$revision" >>"$GITHUB_OUTPUT"
+          printf 'Xray-core main revision: `%s`\n' "$revision" >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Install pinned Go toolchain
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.5"
+          cache-dependency-path: Xray-core/go.sum
+
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.96.0 --profile minimal
+
+      - name: Select pinned Rust toolchain
+        run: rustup default 1.96.0
+
+      - name: Run focused Xray-core main compatibility smoke
+        env:
+          XRAY_CORE_CHECKOUT: ${{ github.workspace }}/Xray-core
+          XRAY_CORE_EXPECTED_REVISION: ${{ steps.xray.outputs.revision }}
+        run: bash scripts/check-xray-main-smoke.sh
+
+      - name: Report warning-only compatibility failure
+        if: failure()
+        run: echo "::warning title=Xray-core main compatibility smoke failed::revision=${{ steps.xray.outputs.revision }} run=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
   fuzz-smoke:
     if: needs.release-metadata.outputs.is_rc == 'true'

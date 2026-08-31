@@ -918,10 +918,11 @@ impl XhttpTransport {
                 // its response before that same connection can be checked out
                 // again. Waiting here preserves that ordering and is what
                 // makes returning a socket to our safe pool possible.
-                let request = self
-                    .send_h1_packet(&upload_client, dial.stream()?, request)
-                    .await?;
-                buffer = reclaim_packet_buffer(request, max_packet)?;
+                buffer = reclaim_after_h1_packet_send(
+                    self.send_h1_packet(&upload_client, dial.stream()?, request),
+                    max_packet,
+                )
+                .await?;
             },
             XhttpHttpVersion::Http2 | XhttpHttpVersion::Http3 => {
                 // `scMaxBufferedPosts` is an inbound reassembly bound in Xray,
@@ -1146,36 +1147,45 @@ impl XhttpTransport {
     ) -> Result<(), XhttpTransportError> {
         let body = Bytes::copy_from_slice(fixed_packet_body(&prepared.request)?);
         let auto_gzip = prepared.auto_gzip;
-        let checkout = match client.h2_client(dial).await {
-            Ok(checkout) => checkout,
-            Err(error) => {
-                let _ = uploaded.send(Err(StoredFailure::from_error(&error)));
-                return Err(error);
+        let exchange = async {
+            let mut force_fresh = false;
+            loop {
+                let checkout = if force_fresh {
+                    client.fresh_h2_client(Arc::clone(&dial)).await?
+                } else {
+                    client.h2_client(Arc::clone(&dial)).await?
+                };
+                let request = h2_request(&prepared.request, &self.endpoint, Some(body.len()))?;
+                match checkout.client.start_streaming(request).await {
+                    Ok((upload, pending)) => return Ok((checkout, upload, pending)),
+                    Err(error)
+                        if !force_fresh
+                            && checkout.was_pooled
+                            && error.is_remote_goaway_before_request_commit() =>
+                    {
+                        checkout.retire();
+                        force_fresh = true;
+                    }
+                    Err(error) => return Err(XhttpTransportError::Http2(error)),
+                }
             }
-        };
-        let request = match h2_request(&prepared.request, &self.endpoint, Some(body.len())) {
-            Ok(request) => request,
-            Err(error) => {
-                let _ = uploaded.send(Err(StoredFailure::from_error(&error)));
-                return Err(error);
-            }
-        };
-        let (mut upload, pending) = match checkout.client.start_streaming(request).await {
+        }
+        .await;
+        let (checkout, mut upload, pending) = match exchange {
             Ok(exchange) => exchange,
             Err(error) => {
-                let error = XhttpTransportError::Http2(error);
                 let _ = uploaded.send(Err(StoredFailure::from_error(&error)));
                 return Err(error);
             }
         };
+        let _activity = checkout.activity;
 
         let mut uploaded = Some(uploaded);
         let mut upload_future = Box::pin(async move {
             upload
-                .write_all(&body)
+                .send_owned(body)
                 .await
-                .map_err(XhttpTransportError::Io)?;
-            upload.shutdown().await.map_err(XhttpTransportError::Io)
+                .map_err(XhttpTransportError::Http2)
         });
         let mut response_future = Box::pin(pending.open());
         let mut response = None;
@@ -1475,6 +1485,17 @@ fn h1_packet_buffer(max_packet: usize) -> Result<Vec<u8>, XhttpTransportError> {
 
 fn fixed_packet_buffer(max_packet: usize) -> Result<Vec<u8>, XhttpTransportError> {
     resize_fixed_packet_buffer(Vec::new(), max_packet)
+}
+
+async fn reclaim_after_h1_packet_send<F>(
+    send: F,
+    max_packet: usize,
+) -> Result<Vec<u8>, XhttpTransportError>
+where
+    F: Future<Output = Result<PreparedRequest, XhttpTransportError>>,
+{
+    let request = send.await?;
+    reclaim_packet_buffer(request, max_packet)
 }
 
 fn reclaim_packet_buffer(
@@ -2470,6 +2491,10 @@ impl XmuxClient {
         self.h2_pool.client(dial).await
     }
 
+    async fn fresh_h2_client(&self, dial: XhttpDial) -> Result<H2Checkout, XhttpTransportError> {
+        self.h2_pool.fresh_client(dial).await
+    }
+
     async fn h3_client(&self, dial: XhttpH3Dial) -> Result<H3Checkout, XhttpTransportError> {
         self.h3_pool.client(dial).await
     }
@@ -2580,10 +2605,18 @@ struct H2PoolConnection {
 struct H2Checkout {
     client: H2Client,
     activity: ConnectionActivityLease,
+    was_pooled: bool,
+}
+
+impl H2Checkout {
+    fn retire(&self) {
+        self.activity.lifecycle.retire();
+    }
 }
 
 struct ConnectionLifecycle {
     active: AtomicUsize,
+    retired: AtomicBool,
     last_idle: StdMutex<Instant>,
     clock: XhttpClock,
 }
@@ -2593,6 +2626,7 @@ impl ConnectionLifecycle {
         let now = clock();
         Self {
             active: AtomicUsize::new(0),
+            retired: AtomicBool::new(false),
             last_idle: StdMutex::new(now),
             clock,
         }
@@ -2607,6 +2641,14 @@ impl ConnectionLifecycle {
 
     fn is_active(&self) -> bool {
         self.active.load(Ordering::Acquire) > 0
+    }
+
+    fn is_retired(&self) -> bool {
+        self.retired.load(Ordering::Acquire)
+    }
+
+    fn retire(&self) {
+        self.retired.store(true, Ordering::Release);
     }
 
     fn active(&self) -> usize {
@@ -2645,19 +2687,23 @@ impl H2Pool {
             let mut state = self.state.lock().await;
             let now = (self.clock)();
             state.connections.retain(|connection| {
-                connection.client.is_live()
+                !connection.lifecycle.is_retired()
+                    && connection.client.is_live()
                     && (connection.fresh
                         || connection.lifecycle.is_active()
                         || connection.lifecycle.idle_for(now) < self.idle_timeout)
             });
 
             if let Some(connection) = state.connections.iter_mut().find(|connection| {
-                connection.lifecycle.active() < connection.client.current_max_send_streams()
+                !connection.lifecycle.is_retired()
+                    && connection.lifecycle.active() < connection.client.current_max_send_streams()
             }) {
+                let was_pooled = !connection.fresh;
                 connection.fresh = false;
                 return Ok(H2Checkout {
                     client: connection.client.clone(),
                     activity: connection.lifecycle.checkout(),
+                    was_pooled,
                 });
             }
 
@@ -2673,6 +2719,25 @@ impl H2Pool {
             drop(state);
             attempt.wait().await?;
         }
+    }
+
+    async fn fresh_client(&self, dial: XhttpDial) -> Result<H2Checkout, XhttpTransportError> {
+        let io = dial().await.map_err(XhttpTransportError::Dial)?;
+        let client = connect_h2_with_keepalive(io, self.keep_alive_period)
+            .await
+            .map_err(XhttpTransportError::Http2)?;
+        let lifecycle = Arc::new(ConnectionLifecycle::new(Arc::clone(&self.clock)));
+        let activity = lifecycle.checkout();
+        self.state.lock().await.connections.push(H2PoolConnection {
+            client: client.clone(),
+            lifecycle,
+            fresh: false,
+        });
+        Ok(H2Checkout {
+            client,
+            activity,
+            was_pooled: false,
+        })
     }
 
     fn spawn_dial(&self, dial: XhttpDial, attempt: Arc<H2DialAttempt>) {
@@ -2912,6 +2977,14 @@ mod packet_buffer_tests {
 
     use super::*;
 
+    struct DropProbe(Arc<AtomicUsize>);
+
+    impl Drop for DropProbe {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
     #[tokio::test]
     async fn first_uplink_writer_waits_for_data_and_distinguishes_clean_shutdown() {
         let (inner, mut peer) = tokio::io::duplex(16);
@@ -2981,6 +3054,73 @@ mod packet_buffer_tests {
         assert_eq!(reclaimed.as_ptr(), allocation);
         assert!(reclaimed.is_empty());
         assert_eq!(reclaimed.capacity(), H1_PACKET_READ_CHUNK_BYTES);
+    }
+
+    #[tokio::test]
+    async fn h1_packet_reclaim_waits_for_send_completion_and_cancellation_drops_owner_once() {
+        const MAX_PACKET: usize = 500_000;
+
+        let mut body = h1_packet_buffer(MAX_PACKET).unwrap();
+        body.extend_from_slice(b"cancelled");
+        let request = PreparedRequest {
+            request: XhttpRequest {
+                method: "POST".to_owned(),
+                target: "/upload".to_owned(),
+                headers: XhttpHeaderMap::new(),
+                body: XhttpRequestBody::Bytes(body),
+            },
+            auto_gzip: false,
+        };
+        let cancelled_drops = Arc::new(AtomicUsize::new(0));
+        let probe = DropProbe(Arc::clone(&cancelled_drops));
+        let (owned_tx, owned_rx) = oneshot::channel();
+        let (_release_tx, release_rx) = oneshot::channel::<()>();
+        let send = async move {
+            let _probe = probe;
+            owned_tx.send(()).unwrap();
+            release_rx.await.unwrap();
+            Ok::<PreparedRequest, XhttpTransportError>(request)
+        };
+        let cancelled = tokio::spawn(reclaim_after_h1_packet_send(send, MAX_PACKET));
+
+        owned_rx.await.unwrap();
+        assert!(!cancelled.is_finished());
+        cancelled.abort();
+        let cancelled = cancelled.await.unwrap_err();
+        assert!(cancelled.is_cancelled());
+        assert_eq!(cancelled_drops.load(Ordering::SeqCst), 1);
+
+        let mut body = h1_packet_buffer(MAX_PACKET).unwrap();
+        let allocation = body.as_ptr();
+        body.extend_from_slice(b"completed");
+        let request = PreparedRequest {
+            request: XhttpRequest {
+                method: "POST".to_owned(),
+                target: "/upload".to_owned(),
+                headers: XhttpHeaderMap::new(),
+                body: XhttpRequestBody::Bytes(body),
+            },
+            auto_gzip: false,
+        };
+        let completed_drops = Arc::new(AtomicUsize::new(0));
+        let probe = DropProbe(Arc::clone(&completed_drops));
+        let (owned_tx, owned_rx) = oneshot::channel();
+        let (release_tx, release_rx) = oneshot::channel();
+        let send = async move {
+            let _probe = probe;
+            owned_tx.send(()).unwrap();
+            release_rx.await.unwrap();
+            Ok::<PreparedRequest, XhttpTransportError>(request)
+        };
+        let completed = tokio::spawn(reclaim_after_h1_packet_send(send, MAX_PACKET));
+
+        owned_rx.await.unwrap();
+        assert!(!completed.is_finished());
+        release_tx.send(()).unwrap();
+        let reclaimed = completed.await.unwrap().unwrap();
+        assert_eq!(reclaimed.as_ptr(), allocation);
+        assert!(reclaimed.is_empty());
+        assert_eq!(completed_drops.load(Ordering::SeqCst), 1);
     }
 }
 

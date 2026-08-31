@@ -1,31 +1,102 @@
 # Verification
 
-The default verification path is hermetic: it does not need a live proxy,
-external network access, or a Go Xray-core checkout.
+## Compatibility contracts
 
-## CI-equivalent Rust checks
+### Ordinary CI
 
-Run from the repository root:
+The ordinary pull-request and branch compatibility contract is hermetic: its
+runtime tests do not need a live proxy, external test targets, or a Go
+Xray-core checkout. Tests that require one of those inputs remain ignored in
+this path. Workflow setup can still download pinned actions, toolchains, and
+dependencies, so this does not mean that provisioning a fresh CI runner is an
+offline operation.
+
+### Tagged release candidates
+
+A tagged release candidate adds a blocking `rc-interop` gate. That job checks
+out Xray-core `v26.7.28` at the exact commit
+`5ca6f4b7d4dc20a881d4330e498892697627ec0c` and invokes only
+`scripts/check-rc-interop.sh` for release interoperability. The script verifies
+the checkout independently and does not accept a revision override. A tagged
+RC therefore cannot publish unless this exact compatibility gate passes.
+
+### Weekly scheduled compatibility
+
+The weekly schedule runs two contracts that are independent of RC
+publication. `scheduled-pinned-interop` uses the same exact Xray-core commit as
+the RC gate, but exercises the broader ignored interop matrix and bounded
+resource workloads. It is blocking for that scheduled run only; it is not a
+prerelease dependency and cannot substitute for `rc-interop`.
+
+Reproduce the pinned scheduled gate from the xray-rust repository root with a
+clean checkout at the audited commit:
 
 ```sh
+git -C "/absolute/path/to/Xray-core-v26.7.28" switch --detach \
+  5ca6f4b7d4dc20a881d4330e498892697627ec0c
+XRAY_CORE_CHECKOUT="/absolute/path/to/Xray-core-v26.7.28" \
+  bash scripts/check-scheduled-pinned-interop.sh
+```
+
+`xray-core-main-smoke` is a warning-only early-compatibility signal. It tests
+the Xray-core `main` checkout's resolved commit, but it cannot satisfy or fail
+an RC publication gate. Resolve the clean checkout's `HEAD` before invoking
+the focused smoke locally:
+
+```sh
+xray_main_revision="$(git -C "/absolute/path/to/Xray-core-main" rev-parse --verify HEAD)"
+XRAY_CORE_CHECKOUT="/absolute/path/to/Xray-core-main" \
+XRAY_CORE_EXPECTED_REVISION="$xray_main_revision" \
+  bash scripts/check-xray-main-smoke.sh
+```
+
+`XRAY_CORE_EXPECTED_REVISION` accepts only the resolved, full 40-character
+lowercase commit that equals the checkout's `HEAD`. Symbolic names such as
+`main` and `HEAD`, abbreviated commits, uppercase hashes, and malformed values
+are rejected. Callers must resolve a symbolic ref before passing the override.
+
+## Rust CI checks
+
+After selecting the pinned Rust toolchain, the `rust` job in
+`.github/workflows/ci.yml` runs these repository checks. Run them from the
+repository root; the workflow remains authoritative if this list changes:
+
+```sh
+for script in scripts/*.sh scripts/tests/*.sh; do
+  bash -n "$script"
+done
+bash scripts/tests/check-release-version.test.sh
+bash scripts/tests/check-prerelease-workflow.test.sh
+bash scripts/tests/check-rc-interop.test.sh
+bash scripts/tests/check-scheduled-pinned-interop.test.sh
+bash scripts/tests/check-xray-main-smoke.test.sh
+bash scripts/tests/check-scheduled-interop-workflow.test.sh
+bash scripts/tests/check-public-fixtures.test.sh
+bash scripts/tests/check-benchmark-publication.test.sh
+bash scripts/tests/bench-xhttp-memory.test.sh
+if [[ -f docs/benchmarks/results/2026-08-31-v26.7.28/manifest.json ]]; then
+  python3 scripts/check-benchmark-publication.py docs/benchmarks/results/2026-08-31-v26.7.28
+fi
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features --locked -- \
   -D warnings -W clippy::perf -W clippy::suspicious
-cargo test --workspace --all-targets --locked
-bash scripts/tests/check-public-fixtures.test.sh
+cargo test --workspace --exclude xray-rust-fuzz --all-targets --locked
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
 bash scripts/tests/check-mobile-toolchains.test.sh
 ```
 
-These commands match the Rust job in `.github/workflows/ci.yml`. Tests marked
-`#[ignore]` are intentionally excluded because they require a local reference
-binary, live credentials, or external network access. The fixture safety check
-rejects routable endpoints and unreviewed credential-shaped values without
-printing their contents.
+The workspace test command excludes `xray-rust-fuzz` because `--all-targets`
+would otherwise build and launch libFuzzer binaries as ordinary test targets.
+Those targets have their own bounded RC gate and explicit longer-run workflow.
 
-Release-candidate tags add two blocking jobs after the ordinary jobs pass.
-`rc-interop` checks out the exact Xray-core commit recorded below and invokes
-`scripts/check-rc-interop.sh`; `fuzz-smoke` runs bounded libFuzzer campaigns.
-Neither job runs for an ordinary branch or pull request.
+Tests marked `#[ignore]` are intentionally excluded because they require a
+local reference binary, live credentials, or external network access. The
+fixture safety check rejects routable endpoints and unreviewed
+credential-shaped values without printing their contents.
+
+Release-candidate tags also add the `fuzz-smoke` blocking job after the
+ordinary jobs pass. It runs bounded libFuzzer campaigns and, like
+`rc-interop`, does not run for an ordinary branch or pull request.
 
 ## Release-candidate fuzz gate
 
@@ -177,19 +248,19 @@ root.
 
 ## Local Xray-core interoperability
 
-The local interop suite pins Xray-core `v26.7.28` at
+By default, the local interop suite pins Xray-core `v26.7.28` at
 `5ca6f4b7d4dc20a881d4330e498892697627ec0c` and rejects a checkout at any
-other `HEAD`. Provide an absolute checkout path and record its full commit SHA
-in the test report. The tests expect an `xray` executable at the checkout root:
+other `HEAD`. The scheduled `main` smoke may override that default only with
+the full lowercase commit already resolved from, and equal to, the selected
+checkout's `HEAD`; it never accepts `main` or `HEAD` as the override. Provide an
+absolute checkout path and record its full commit SHA in the test report. The
+tests build their reference binaries in temporary directories, so keep the
+checkout itself clean:
 
 ```sh
-export XRAY_CORE_CHECKOUT=/absolute/path/to/Xray-core
+export XRAY_CORE_CHECKOUT="/absolute/path/to/Xray-core"
 git -C "$XRAY_CORE_CHECKOUT" switch --detach v26.7.28
-git -C "$XRAY_CORE_CHECKOUT" rev-parse HEAD
-(
-  cd "$XRAY_CORE_CHECKOUT"
-  go build -o xray ./main
-)
+git -C "$XRAY_CORE_CHECKOUT" rev-parse --verify HEAD
 ```
 
 Run a focused REALITY+Vision interoperability test:
@@ -236,6 +307,12 @@ process boundary for the DNS-outbound policy itself.
 
 The XHTTP matrix has 15 cases: `packet-up`, `stream-up`, and `stream-one` over
 cleartext H1, TLS H1, TLS H2, REALITY H2, and TLS H3.
+
+Every `stream-up` case also sends an 8 MiB sustained uplink before reading its
+completion marker. This crosses repeated HTTP flow-control windows and guards
+against a concurrent downlink poll cancelling and stranding the uplink's
+pending reservation; the fast H2 transport suite reproduces the same split
+read/write ordering without a local Xray process.
 
 #### VLESS share-link boundary
 
