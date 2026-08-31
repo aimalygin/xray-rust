@@ -18,9 +18,10 @@ release series.
 - Added safe pre-commit HTTP/2 GOAWAY retry handling plus regression coverage
   for non-replay after commitment and request/buffer ownership across
   cancellation.
-- Accepted an HTTP/3 request reset only after the complete response body and
-  completion marker were received, while preserving failure for premature
-  resets; added transport and full-load interop regressions.
+- Accepted an HTTP/3 `H3_NO_ERROR` request reset only after every declared
+  fixed-length request byte was delivered, while preserving failure for
+  unknown-length or premature resets; added transport and full-load interop
+  regressions.
 - Added weekly broad pinned Xray-core interoperability and resource gates plus
   a warning-only upstream-main compatibility smoke check.
 - Scoped the RC4 REALITY/Vision comparator omission to the measured stable
