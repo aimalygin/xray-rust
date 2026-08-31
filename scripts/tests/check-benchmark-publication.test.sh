@@ -69,6 +69,15 @@ manifest = {
             "completedRunsBeforeTimeout": 7,
             "timedOutRuns": 2,
             "timeoutMs": 300_000,
+        },
+        {
+            "scenario": "xhttp-pressure-xhttp-h3-32",
+            "engine": "xray-core",
+            "reasonCode": "upstream-reset-and-timeout",
+            "failedCampaigns": 1,
+            "completedRunsBeforeTimeout": 0,
+            "timedOutRuns": 1,
+            "timeoutMs": 300_000,
         }
     ],
     "series": [],
@@ -164,9 +173,14 @@ for transport in ("xhttp-h1", "xhttp-h2", "xhttp-h3"):
 
 for transport in ("xhttp-h1", "xhttp-h2", "xhttp-h3"):
     for flows in (1, 32):
+        scenario = f"xhttp-pressure-{transport}-{flows}"
         add(
-            f"xhttp-pressure-{transport}-{flows}",
-            ("xray-rust", "xray-core"),
+            scenario,
+            (
+                ("xray-rust",)
+                if scenario == "xhttp-pressure-xhttp-h3-32"
+                else ("xray-rust", "xray-core")
+            ),
             workload="stream-transport",
             connections=flows,
             iterations=4_096,
@@ -731,6 +745,10 @@ elif mutation == "wrong_omission_reason":
     manifest["omissions"][0]["reasonCode"] = "unsupported"
 elif mutation == "wrong_omission_evidence":
     manifest["omissions"][0]["timedOutRuns"] = 1
+elif mutation == "wrong_h3_pressure_omission_reason":
+    manifest["omissions"][1]["reasonCode"] = "unsupported"
+elif mutation == "wrong_h3_pressure_omission_evidence":
+    manifest["omissions"][1]["timedOutRuns"] = 2
 elif mutation == "extra_omission":
     manifest["omissions"].append(copy.deepcopy(manifest["omissions"][0]))
 elif mutation == "duplicate_series":
@@ -1077,6 +1095,16 @@ elif mutation == "extra_sing_grpc_omission_series":
     extra = copy.deepcopy(xray_entry)
     extra["engine"] = "sing-box"
     manifest["series"].append(extra)
+elif mutation == "extra_xray_core_h3_pressure_series":
+    xray_entry = next(
+        entry
+        for entry in manifest["series"]
+        if entry["scenario"] == "xhttp-pressure-xhttp-h3-32"
+        and entry["engine"] == "xray-rust"
+    )
+    extra = copy.deepcopy(xray_entry)
+    extra["engine"] = "xray-core"
+    manifest["series"].append(extra)
 elif mutation == "unreferenced_chart_input_summary":
     summaries[
         "chart-inputs/reality-vision-xudp/sing-box/summary.json"
@@ -1271,7 +1299,7 @@ expect_rejected() {
 valid_fixture="$tmp_dir/valid/2026-08-29-v26.7.28"
 make_fixture "$valid_fixture"
 valid_output="$(python3 "$validator" "$valid_fixture")"
-grep -Fq "validated benchmark publication: 140 series" <<<"$valid_output" \
+grep -Fq "validated benchmark publication: 139 series" <<<"$valid_output" \
   || fail "valid publication did not report the complete matrix: $valid_output"
 
 for valid_variant in \
@@ -1283,7 +1311,7 @@ for valid_variant in \
   variant_fixture="$tmp_dir/$valid_variant/2026-08-29-v26.7.28"
   make_fixture "$variant_fixture" "$valid_variant"
   variant_output="$(python3 "$validator" "$variant_fixture")"
-  grep -Fq "validated benchmark publication: 140 series" <<<"$variant_output" \
+  grep -Fq "validated benchmark publication: 139 series" <<<"$variant_output" \
     || fail "$valid_variant did not validate: $variant_output"
 done
 
@@ -1305,10 +1333,12 @@ expect_rejected wrong_sing_revision "comparators.sing-box.revision must be 56f91
 expect_rejected malformed_archive_digest "rawArchive.sha256 must be 64 lowercase hexadecimal characters"
 expect_rejected empty_environment "environment.hardware must be non-empty"
 expect_rejected empty_raw_location "rawArchive.location must be non-empty"
-expect_rejected missing_omission "manifest omissions must contain exactly one entry"
-expect_rejected wrong_omission_reason "manifest omission does not match the reviewed RC4 exception"
-expect_rejected wrong_omission_evidence "manifest omission does not match the reviewed RC4 exception"
-expect_rejected extra_omission "manifest omissions must contain exactly one entry"
+expect_rejected missing_omission "manifest omissions must contain exactly two entries"
+expect_rejected wrong_omission_reason "manifest omissions do not match the reviewed RC4 exceptions"
+expect_rejected wrong_omission_evidence "manifest omissions do not match the reviewed RC4 exceptions"
+expect_rejected wrong_h3_pressure_omission_reason "manifest omissions do not match the reviewed RC4 exceptions"
+expect_rejected wrong_h3_pressure_omission_evidence "manifest omissions do not match the reviewed RC4 exceptions"
+expect_rejected extra_omission "manifest omissions must contain exactly two entries"
 expect_rejected duplicate_series "duplicate series"
 expect_rejected reused_summary_path "summary engine does not match manifest"
 expect_rejected escaping_path "summary path escapes publication root"
@@ -1409,6 +1439,7 @@ expect_rejected missing_combination "missing required combination"
 expect_rejected extra_combination "unexpected series combination"
 expect_rejected extra_sing_reality_series "unexpected series combination: reality-vision-xudp/sing-box"
 expect_rejected extra_sing_grpc_omission_series "unexpected series combination: stream-grpc-full-duplex-32/sing-box"
+expect_rejected extra_xray_core_h3_pressure_series "unexpected series combination: xhttp-pressure-xhttp-h3-32/xray-core"
 expect_rejected unreferenced_chart_input_summary "unreferenced chart-input summary"
 expect_rejected unknown_top_level "manifest has unexpected field"
 

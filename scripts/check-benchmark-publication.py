@@ -59,6 +59,19 @@ RC4_SING_BOX_GRPC_OMISSION = {
     "timedOutRuns": 2,
     "timeoutMs": 300_000,
 }
+RC4_XRAY_CORE_H3_PRESSURE_OMISSION = {
+    "scenario": "xhttp-pressure-xhttp-h3-32",
+    "engine": "xray-core",
+    "reasonCode": "upstream-reset-and-timeout",
+    "failedCampaigns": 1,
+    "completedRunsBeforeTimeout": 0,
+    "timedOutRuns": 1,
+    "timeoutMs": 300_000,
+}
+RC4_OMISSIONS = [
+    RC4_SING_BOX_GRPC_OMISSION,
+    RC4_XRAY_CORE_H3_PRESSURE_OMISSION,
+]
 
 PROVENANCE_REQUIRED_FIELDS = {"harness_profile", "invocation_args"}
 PROVENANCE_OPTIONAL_FIELDS = {
@@ -595,16 +608,21 @@ def expected_matrix() -> dict[tuple[str, str], dict[str, Any]]:
 
     for transport in ("xhttp-h1", "xhttp-h2", "xhttp-h3"):
         for flows in (1, 32):
+            scenario = f"xhttp-pressure-{transport}-{flows}"
             add(
-                f"xhttp-pressure-{transport}-{flows}",
-                ("xray-rust", "xray-core"),
+                scenario,
+                (
+                    ("xray-rust",)
+                    if scenario == RC4_XRAY_CORE_H3_PRESSURE_OMISSION["scenario"]
+                    else ("xray-rust", "xray-core")
+                ),
                 workload="stream-transport",
                 connections=flows,
                 iterations=4_096,
                 payload_size=16_384,
                 duration_ms=2_000,
                 run_timeout_ms=300_000,
-                output_name=f"xhttp-pressure-{transport}-{flows}",
+                output_name=scenario,
                 stream_transport=transport,
                 stream_traffic="packet-up",
                 xhttp_mode="packet-up",
@@ -672,7 +690,7 @@ def expected_matrix() -> dict[tuple[str, str], dict[str, Any]]:
             supports_sing_box=False,
         )
 
-    if len(matrix) != 140:
+    if len(matrix) != 139:
         raise AssertionError(f"benchmark publication matrix has {len(matrix)} entries")
     return matrix
 
@@ -749,12 +767,13 @@ def validate_manifest_shape(manifest: Any) -> dict[str, Any]:
     require_sha256(archive["sha256"], "rawArchive.sha256")
 
     omissions = manifest["omissions"]
-    if not isinstance(omissions, list) or len(omissions) != 1:
-        fail("manifest omissions must contain exactly one entry")
-    omission = require_object(omissions[0], "manifest omission")
-    require_exact_fields(omission, OMISSION_FIELDS, "manifest omission")
-    if not json_equal_strict(omission, RC4_SING_BOX_GRPC_OMISSION):
-        fail("manifest omission does not match the reviewed RC4 exception")
+    if not isinstance(omissions, list) or len(omissions) != len(RC4_OMISSIONS):
+        fail("manifest omissions must contain exactly two entries")
+    for index, omission_value in enumerate(omissions):
+        omission = require_object(omission_value, f"manifest omission {index + 1}")
+        require_exact_fields(omission, OMISSION_FIELDS, f"manifest omission {index + 1}")
+    if not json_equal_strict(omissions, RC4_OMISSIONS):
+        fail("manifest omissions do not match the reviewed RC4 exceptions")
 
     if not isinstance(manifest["series"], list):
         fail("series must be an array")
