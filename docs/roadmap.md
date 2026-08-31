@@ -80,7 +80,7 @@ The release history is intentionally immutable:
 - `v0.4.1-rc.3` fixed the clean-runner contract and was successfully published
   for both the core and mobile repositories;
 - `v0.4.1-rc.4` is the active hardening candidate. The frozen benchmark
-  candidate is `5b8dca35af08eddd42fdb648a1347ff896b0c59f`.
+  candidate is `5895b09239ea6d957a3fead814804e361ee6ef6d`.
 
 Both repositories use the same pre-release version whenever the core or its
 adapters change.

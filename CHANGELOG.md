@@ -9,7 +9,7 @@ release series.
 
 ## Unreleased
 
-## 0.4.1-rc.4 - 2026-08-29
+## 0.4.1-rc.4 - 2026-08-31
 
 - Fixed an XHTTP/2 `stream-up` deadlock where a concurrent downlink poll could
   cancel the uplink's pending flow-control reservation and strand a sustained

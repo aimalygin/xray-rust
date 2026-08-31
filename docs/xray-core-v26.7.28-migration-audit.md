@@ -4,7 +4,7 @@ This is the tracked compatibility and test migration record for changing the
 Xray-core reference from `v26.5.9` to `v26.7.28`. It records the upstream
 delta, implemented adaptations, and executed verification. Compatibility
 benchmark smoke and the publication-quality replacement campaign are complete.
-The immutable [RC4 result group](benchmarks/results/2026-08-29-v26.7.28/README.md)
+The immutable [RC4 result group](benchmarks/results/2026-08-31-v26.7.28/README.md)
 contains the exact comparator identities, 139 validated series, 695 embedded
 results, reviewed omissions, and raw-archive digest.
 
@@ -77,7 +77,7 @@ date-labelled result groups and sections.
   139 summaries and 695 embedded five-run results against exact Xray-core
   v26.7.28 and stable sing-box v1.13.20. Results, tables, provenance, and the
   two runtime omissions are in the
-  [dated evidence](benchmarks/results/2026-08-29-v26.7.28/README.md).
+  [dated evidence](benchmarks/results/2026-08-31-v26.7.28/README.md).
 
 ## High-impact changes on supported surfaces
 

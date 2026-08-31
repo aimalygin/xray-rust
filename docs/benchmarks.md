@@ -12,14 +12,14 @@ current harness target.
 ## Current RC4 publication
 
 The current immutable evidence is the
-[2026-08-29 Xray-core v26.7.28 result group](benchmarks/results/2026-08-29-v26.7.28/README.md).
+[2026-08-31 Xray-core v26.7.28 result group](benchmarks/results/2026-08-31-v26.7.28/README.md).
 It contains exactly 139 release series and 695 embedded results, five clean
 runs per series. Its manifest is checked by
 `scripts/check-benchmark-publication.py`; a publication with a missing case,
 wrong revision/hash, dirty provenance, debug binary, failed run, or modified
 omission is rejected.
 
-The official GitHub latest-release response fetched on 2026-08-29 resolved
+The official GitHub latest-release response fetched on 2026-08-31 resolved
 stable sing-box `v1.13.20`. RC4 pins that tag, revision
 `56f91dfeabd6f4edbd437dfcc1e5b0ebc856b778`, the exact
 `with_gvisor,with_utls,badlinkname,tfogo_checklinkname0` build tags, and the
@@ -671,7 +671,7 @@ the bottleneck:
 The complete RC4 replay record, including the resolved comparator paths,
 hashes, geodata identities, all stream/pressure/memory cases, and chart
 command, is the dated
-[`commands.sh`](benchmarks/results/2026-08-29-v26.7.28/commands.sh). The shorter
+[`commands.sh`](benchmarks/results/2026-08-31-v26.7.28/commands.sh). The shorter
 commands below are developer examples, not the provenance record for the
 published group.
 

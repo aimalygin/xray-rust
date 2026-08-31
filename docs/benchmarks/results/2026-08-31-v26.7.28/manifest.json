@@ -1,0 +1,752 @@
+{
+  "schemaVersion": 1,
+  "publicationId": "2026-08-31-v26.7.28",
+  "measuredAt": "2026-08-31",
+  "candidate": {
+    "revision": "5895b09239ea6d957a3fead814804e361ee6ef6d",
+    "dirty": false
+  },
+  "environment": {
+    "hardware": "MacBook Pro (Mac15,7), Apple M3 Pro, 12 cores (6 performance + 6 efficiency), 18 GB RAM",
+    "os": "macOS 26.5.2 (25F84), Darwin 25.5.0, arm64",
+    "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25), aarch64-apple-darwin, LLVM 22.1.2",
+    "cargo": "cargo 1.96.0 (30a34c682 2026-05-25)",
+    "go": "Xray-core: go1.26.5 darwin/arm64; sing-box: go1.25.12 darwin/arm64"
+  },
+  "comparators": {
+    "xray-core": {
+      "version": "v26.7.28",
+      "revision": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+      "binarySha256": "ea0f45cf68f70d2131de01acb30c08f039eb5f4c1935d8b4423be55bb8d4ee02",
+      "buildCommand": "go build ./main"
+    },
+    "sing-box": {
+      "version": "v1.13.20",
+      "revision": "56f91dfeabd6f4edbd437dfcc1e5b0ebc856b778",
+      "binarySha256": "553bcc06357999c70c6b06b54d7f8fffc96283cb9a75142ede58dc32a319d8f1",
+      "buildTags": "with_gvisor,with_utls,badlinkname,tfogo_checklinkname0",
+      "sourceUrl": "https://github.com/SagerNet/sing-box"
+    }
+  },
+  "rawArchive": {
+    "location": "checksum-addressed maintainer archive retained outside Git as target/benchmarks/xray-rust-rc4-2026-08-31.tar.gz",
+    "sha256": "e8bb38b473b9a89e52d35094d86e8dc9e17cb7c3e3d735198686db4146c6f044"
+  },
+  "omissions": [
+    {
+      "scenario": "stream-grpc-full-duplex-32",
+      "engine": "sing-box",
+      "reasonCode": "nondeterministic-timeout",
+      "failedCampaigns": 2,
+      "completedRunsBeforeTimeout": 7,
+      "timedOutRuns": 2,
+      "timeoutMs": 300000
+    },
+    {
+      "scenario": "xhttp-pressure-xhttp-h3-32",
+      "engine": "xray-core",
+      "reasonCode": "upstream-reset-and-timeout",
+      "failedCampaigns": 1,
+      "completedRunsBeforeTimeout": 0,
+      "timedOutRuns": 1,
+      "timeoutMs": 300000
+    }
+  ],
+  "series": [
+    {
+      "scenario": "idle",
+      "engine": "sing-box",
+      "summary": "chart-inputs/idle/sing-box/idle/summary.json"
+    },
+    {
+      "scenario": "idle",
+      "engine": "xray-core",
+      "summary": "chart-inputs/idle/xray-core/idle/summary.json"
+    },
+    {
+      "scenario": "idle",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/idle/xray-rust/idle/summary.json"
+    },
+    {
+      "scenario": "many-idle-flows-100",
+      "engine": "sing-box",
+      "summary": "chart-inputs/many-idle-flows-100/sing-box/many-idle-flows/summary.json"
+    },
+    {
+      "scenario": "many-idle-flows-100",
+      "engine": "xray-core",
+      "summary": "chart-inputs/many-idle-flows-100/xray-core/many-idle-flows/summary.json"
+    },
+    {
+      "scenario": "many-idle-flows-100",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/many-idle-flows-100/xray-rust/many-idle-flows/summary.json"
+    },
+    {
+      "scenario": "many-idle-flows-1000",
+      "engine": "sing-box",
+      "summary": "chart-inputs/many-idle-flows-1000/sing-box/many-idle-flows/summary.json"
+    },
+    {
+      "scenario": "many-idle-flows-1000",
+      "engine": "xray-core",
+      "summary": "chart-inputs/many-idle-flows-1000/xray-core/many-idle-flows/summary.json"
+    },
+    {
+      "scenario": "many-idle-flows-1000",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/many-idle-flows-1000/xray-rust/many-idle-flows/summary.json"
+    },
+    {
+      "scenario": "reality-vision-bulk-throughput",
+      "engine": "xray-core",
+      "summary": "chart-inputs/reality-vision-bulk-throughput/xray-core/reality-vision-bulk-throughput/summary.json"
+    },
+    {
+      "scenario": "reality-vision-bulk-throughput",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/reality-vision-bulk-throughput/xray-rust/reality-vision-bulk-throughput/summary.json"
+    },
+    {
+      "scenario": "reality-vision-xudp",
+      "engine": "xray-core",
+      "summary": "chart-inputs/reality-vision-xudp/xray-core/reality-vision-xudp/summary.json"
+    },
+    {
+      "scenario": "reality-vision-xudp",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/reality-vision-xudp/xray-rust/reality-vision-xudp/summary.json"
+    },
+    {
+      "scenario": "reconnect-burst",
+      "engine": "sing-box",
+      "summary": "chart-inputs/reconnect-burst/sing-box/reconnect-burst/summary.json"
+    },
+    {
+      "scenario": "reconnect-burst",
+      "engine": "xray-core",
+      "summary": "chart-inputs/reconnect-burst/xray-core/reconnect-burst/summary.json"
+    },
+    {
+      "scenario": "reconnect-burst",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/reconnect-burst/xray-rust/reconnect-burst/summary.json"
+    },
+    {
+      "scenario": "routed-tcp-freedom",
+      "engine": "xray-core",
+      "summary": "chart-inputs/routed-tcp-freedom/xray-core/routed-tcp-freedom/summary.json"
+    },
+    {
+      "scenario": "routed-tcp-freedom",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/routed-tcp-freedom/xray-rust/routed-tcp-freedom/summary.json"
+    },
+    {
+      "scenario": "stream-grpc-download-1",
+      "engine": "sing-box",
+      "summary": "chart-inputs/stream-grpc-download-1/sing-box/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-grpc-download-1",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-grpc-download-1/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-grpc-download-1",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-grpc-download-1/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-grpc-download-32",
+      "engine": "sing-box",
+      "summary": "chart-inputs/stream-grpc-download-32/sing-box/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-grpc-download-32",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-grpc-download-32/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-grpc-download-32",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-grpc-download-32/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-grpc-full-duplex-1",
+      "engine": "sing-box",
+      "summary": "chart-inputs/stream-grpc-full-duplex-1/sing-box/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-grpc-full-duplex-1",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-grpc-full-duplex-1/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-grpc-full-duplex-1",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-grpc-full-duplex-1/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-grpc-full-duplex-32",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-grpc-full-duplex-32/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-grpc-full-duplex-32",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-grpc-full-duplex-32/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-grpc-upload-1",
+      "engine": "sing-box",
+      "summary": "chart-inputs/stream-grpc-upload-1/sing-box/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-grpc-upload-1",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-grpc-upload-1/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-grpc-upload-1",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-grpc-upload-1/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-grpc-upload-32",
+      "engine": "sing-box",
+      "summary": "chart-inputs/stream-grpc-upload-32/sing-box/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-grpc-upload-32",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-grpc-upload-32/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-grpc-upload-32",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-grpc-upload-32/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-httpupgrade-download-1",
+      "engine": "sing-box",
+      "summary": "chart-inputs/stream-httpupgrade-download-1/sing-box/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-httpupgrade-download-1",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-httpupgrade-download-1/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-httpupgrade-download-1",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-httpupgrade-download-1/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-httpupgrade-download-32",
+      "engine": "sing-box",
+      "summary": "chart-inputs/stream-httpupgrade-download-32/sing-box/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-httpupgrade-download-32",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-httpupgrade-download-32/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-httpupgrade-download-32",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-httpupgrade-download-32/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-httpupgrade-full-duplex-1",
+      "engine": "sing-box",
+      "summary": "chart-inputs/stream-httpupgrade-full-duplex-1/sing-box/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-httpupgrade-full-duplex-1",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-httpupgrade-full-duplex-1/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-httpupgrade-full-duplex-1",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-httpupgrade-full-duplex-1/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-httpupgrade-full-duplex-32",
+      "engine": "sing-box",
+      "summary": "chart-inputs/stream-httpupgrade-full-duplex-32/sing-box/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-httpupgrade-full-duplex-32",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-httpupgrade-full-duplex-32/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-httpupgrade-full-duplex-32",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-httpupgrade-full-duplex-32/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-httpupgrade-upload-1",
+      "engine": "sing-box",
+      "summary": "chart-inputs/stream-httpupgrade-upload-1/sing-box/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-httpupgrade-upload-1",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-httpupgrade-upload-1/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-httpupgrade-upload-1",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-httpupgrade-upload-1/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-httpupgrade-upload-32",
+      "engine": "sing-box",
+      "summary": "chart-inputs/stream-httpupgrade-upload-32/sing-box/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-httpupgrade-upload-32",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-httpupgrade-upload-32/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-httpupgrade-upload-32",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-httpupgrade-upload-32/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-ws-download-1",
+      "engine": "sing-box",
+      "summary": "chart-inputs/stream-ws-download-1/sing-box/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-ws-download-1",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-ws-download-1/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-ws-download-1",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-ws-download-1/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-ws-download-32",
+      "engine": "sing-box",
+      "summary": "chart-inputs/stream-ws-download-32/sing-box/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-ws-download-32",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-ws-download-32/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-ws-download-32",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-ws-download-32/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-ws-full-duplex-1",
+      "engine": "sing-box",
+      "summary": "chart-inputs/stream-ws-full-duplex-1/sing-box/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-ws-full-duplex-1",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-ws-full-duplex-1/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-ws-full-duplex-1",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-ws-full-duplex-1/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-ws-full-duplex-32",
+      "engine": "sing-box",
+      "summary": "chart-inputs/stream-ws-full-duplex-32/sing-box/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-ws-full-duplex-32",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-ws-full-duplex-32/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-ws-full-duplex-32",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-ws-full-duplex-32/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-ws-upload-1",
+      "engine": "sing-box",
+      "summary": "chart-inputs/stream-ws-upload-1/sing-box/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-ws-upload-1",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-ws-upload-1/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-ws-upload-1",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-ws-upload-1/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-ws-upload-32",
+      "engine": "sing-box",
+      "summary": "chart-inputs/stream-ws-upload-32/sing-box/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-ws-upload-32",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-ws-upload-32/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-ws-upload-32",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-ws-upload-32/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h1-download-1",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-xhttp-h1-download-1/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h1-download-1",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-xhttp-h1-download-1/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h1-download-32",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-xhttp-h1-download-32/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h1-download-32",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-xhttp-h1-download-32/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h1-full-duplex-1",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-xhttp-h1-full-duplex-1/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h1-full-duplex-1",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-xhttp-h1-full-duplex-1/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h1-full-duplex-32",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-xhttp-h1-full-duplex-32/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h1-full-duplex-32",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-xhttp-h1-full-duplex-32/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h1-upload-1",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-xhttp-h1-upload-1/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h1-upload-1",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-xhttp-h1-upload-1/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h1-upload-32",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-xhttp-h1-upload-32/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h1-upload-32",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-xhttp-h1-upload-32/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h2-download-1",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-xhttp-h2-download-1/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h2-download-1",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-xhttp-h2-download-1/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h2-download-32",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-xhttp-h2-download-32/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h2-download-32",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-xhttp-h2-download-32/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h2-full-duplex-1",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-xhttp-h2-full-duplex-1/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h2-full-duplex-1",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-xhttp-h2-full-duplex-1/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h2-full-duplex-32",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-xhttp-h2-full-duplex-32/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h2-full-duplex-32",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-xhttp-h2-full-duplex-32/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h2-upload-1",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-xhttp-h2-upload-1/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h2-upload-1",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-xhttp-h2-upload-1/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h2-upload-32",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-xhttp-h2-upload-32/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h2-upload-32",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-xhttp-h2-upload-32/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h3-download-1",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-xhttp-h3-download-1/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h3-download-1",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-xhttp-h3-download-1/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h3-download-32",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-xhttp-h3-download-32/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h3-download-32",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-xhttp-h3-download-32/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h3-full-duplex-1",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-xhttp-h3-full-duplex-1/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h3-full-duplex-1",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-xhttp-h3-full-duplex-1/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h3-full-duplex-32",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-xhttp-h3-full-duplex-32/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h3-full-duplex-32",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-xhttp-h3-full-duplex-32/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h3-upload-1",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-xhttp-h3-upload-1/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h3-upload-1",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-xhttp-h3-upload-1/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h3-upload-32",
+      "engine": "xray-core",
+      "summary": "chart-inputs/stream-xhttp-h3-upload-32/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "stream-xhttp-h3-upload-32",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/stream-xhttp-h3-upload-32/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "tcp-bulk-throughput",
+      "engine": "sing-box",
+      "summary": "chart-inputs/tcp-bulk-throughput/sing-box/tcp-bulk-throughput/summary.json"
+    },
+    {
+      "scenario": "tcp-bulk-throughput",
+      "engine": "xray-core",
+      "summary": "chart-inputs/tcp-bulk-throughput/xray-core/tcp-bulk-throughput/summary.json"
+    },
+    {
+      "scenario": "tcp-bulk-throughput",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/tcp-bulk-throughput/xray-rust/tcp-bulk-throughput/summary.json"
+    },
+    {
+      "scenario": "tcp-freedom",
+      "engine": "sing-box",
+      "summary": "chart-inputs/tcp-freedom/sing-box/tcp-freedom/summary.json"
+    },
+    {
+      "scenario": "tcp-freedom",
+      "engine": "xray-core",
+      "summary": "chart-inputs/tcp-freedom/xray-core/tcp-freedom/summary.json"
+    },
+    {
+      "scenario": "tcp-freedom",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/tcp-freedom/xray-rust/tcp-freedom/summary.json"
+    },
+    {
+      "scenario": "udp-freedom",
+      "engine": "sing-box",
+      "summary": "chart-inputs/udp-freedom/sing-box/udp-freedom/summary.json"
+    },
+    {
+      "scenario": "udp-freedom",
+      "engine": "xray-core",
+      "summary": "chart-inputs/udp-freedom/xray-core/udp-freedom/summary.json"
+    },
+    {
+      "scenario": "udp-freedom",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/udp-freedom/xray-rust/udp-freedom/summary.json"
+    },
+    {
+      "scenario": "xhttp-memory-held-open-1-max-500000",
+      "engine": "xray-core",
+      "summary": "chart-inputs/xhttp-memory-held-open-1-max-500000/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "xhttp-memory-held-open-1-max-500000",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/xhttp-memory-held-open-1-max-500000/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "xhttp-memory-held-open-16-control-16384",
+      "engine": "xray-core",
+      "summary": "chart-inputs/xhttp-memory-held-open-16-control-16384/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "xhttp-memory-held-open-16-control-16384",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/xhttp-memory-held-open-16-control-16384/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "xhttp-memory-held-open-16-max-500000",
+      "engine": "xray-core",
+      "summary": "chart-inputs/xhttp-memory-held-open-16-max-500000/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "xhttp-memory-held-open-16-max-500000",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/xhttp-memory-held-open-16-max-500000/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "xhttp-memory-held-open-32-max-500000",
+      "engine": "xray-core",
+      "summary": "chart-inputs/xhttp-memory-held-open-32-max-500000/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "xhttp-memory-held-open-32-max-500000",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/xhttp-memory-held-open-32-max-500000/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "xhttp-memory-packet-up-1-max-500000",
+      "engine": "xray-core",
+      "summary": "chart-inputs/xhttp-memory-packet-up-1-max-500000/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "xhttp-memory-packet-up-1-max-500000",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/xhttp-memory-packet-up-1-max-500000/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "xhttp-memory-packet-up-16-max-500000",
+      "engine": "xray-core",
+      "summary": "chart-inputs/xhttp-memory-packet-up-16-max-500000/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "xhttp-memory-packet-up-16-max-500000",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/xhttp-memory-packet-up-16-max-500000/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "xhttp-pressure-xhttp-h1-1",
+      "engine": "xray-core",
+      "summary": "chart-inputs/xhttp-pressure-xhttp-h1-1/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "xhttp-pressure-xhttp-h1-1",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/xhttp-pressure-xhttp-h1-1/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "xhttp-pressure-xhttp-h1-32",
+      "engine": "xray-core",
+      "summary": "chart-inputs/xhttp-pressure-xhttp-h1-32/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "xhttp-pressure-xhttp-h1-32",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/xhttp-pressure-xhttp-h1-32/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "xhttp-pressure-xhttp-h2-1",
+      "engine": "xray-core",
+      "summary": "chart-inputs/xhttp-pressure-xhttp-h2-1/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "xhttp-pressure-xhttp-h2-1",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/xhttp-pressure-xhttp-h2-1/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "xhttp-pressure-xhttp-h2-32",
+      "engine": "xray-core",
+      "summary": "chart-inputs/xhttp-pressure-xhttp-h2-32/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "xhttp-pressure-xhttp-h2-32",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/xhttp-pressure-xhttp-h2-32/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "xhttp-pressure-xhttp-h3-1",
+      "engine": "xray-core",
+      "summary": "chart-inputs/xhttp-pressure-xhttp-h3-1/xray-core/stream-transport/summary.json"
+    },
+    {
+      "scenario": "xhttp-pressure-xhttp-h3-1",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/xhttp-pressure-xhttp-h3-1/xray-rust/stream-transport/summary.json"
+    },
+    {
+      "scenario": "xhttp-pressure-xhttp-h3-32",
+      "engine": "xray-rust",
+      "summary": "chart-inputs/xhttp-pressure-xhttp-h3-32/xray-rust/stream-transport/summary.json"
+    }
+  ]
+}

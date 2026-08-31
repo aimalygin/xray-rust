@@ -83,7 +83,7 @@ smoke records the resolved Xray-core `main` revision. Upstream-main evidence
 cannot satisfy or fail the pinned RC contract. Live-node tests remain ignored
 and require credentials supplied through local environment variables.
 
-The fresh [RC4 benchmark publication](benchmarks/results/2026-08-29-v26.7.28/README.md)
+The fresh [RC4 benchmark publication](benchmarks/results/2026-08-31-v26.7.28/README.md)
 adds 139 five-run release series against the exact pinned Xray-core and stable
 sing-box v1.13.20, with fail-closed provenance validation and explicit
 comparator omissions. This is process-level loopback evidence, not controlled

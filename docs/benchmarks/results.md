@@ -3,7 +3,7 @@
 > **Historical publication (2026-08-01).** Every number and chart on this page
 > belongs to xray-rust `af33ae8`, Xray-core `v26.5.9`, and sing-box `v1.13.15`.
 > The current RC4 publication is the immutable
-> [2026-08-29 Xray-core v26.7.28 result group](results/2026-08-29-v26.7.28/README.md).
+> [2026-08-31 Xray-core v26.7.28 result group](results/2026-08-31-v26.7.28/README.md).
 > The historical files below are intentionally preserved rather than
 > overwritten or relabelled.
 

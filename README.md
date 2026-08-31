@@ -11,43 +11,43 @@ This project is unofficial and is not affiliated with XTLS or Xray-core.
 
 ## Benchmarks
 
-The current synthetic localhost publication compares RC4 candidate `5b8dca3`
+The current synthetic localhost publication compares RC4 candidate `5895b09`
 with Xray-core `v26.7.28`
 (`5ca6f4b7d4dc20a881d4330e498892697627ec0c`) and stable sing-box `v1.13.20`
 (`56f91dfeabd6f4edbd437dfcc1e5b0ebc856b778`). Values are medians across five
-release runs from the 2026-08-29 result group on an Apple M3 Pro MacBook Pro
-with 18 GB RAM and macOS 26.5.2. The [full dated evidence](docs/benchmarks/results/2026-08-29-v26.7.28/README.md)
+release runs from the 2026-08-31 result group on an Apple M3 Pro MacBook Pro
+with 18 GB RAM and macOS 26.5.2. The [full dated evidence](docs/benchmarks/results/2026-08-31-v26.7.28/README.md)
 contains 139 validated series, exact binary hashes, tables, omissions, and raw
 archive provenance.
 
-Lowest resident memory at every measured idle-flow scale — 4.14 MiB idle and
+Lowest resident memory at every measured idle-flow scale — 4.2 MiB idle and
 20.9 MiB with 1,000 held SOCKS flows, against 80.8 MiB for Xray-core and
-48.9 MiB for sing-box:
+48.8 MiB for sing-box:
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/results/2026-08-29-v26.7.28/media/memory-rss-dark.svg">
-  <img alt="Peak resident set size, lower is better. Idle: xray-rust 4.14 MiB, Xray-core 29.5, sing-box 21.9. 100 idle flows: xray-rust 6.16, Xray-core 36.4, sing-box 27.4. 1000 idle flows: xray-rust 20.9, Xray-core 80.8, sing-box 48.9." src="docs/benchmarks/results/2026-08-29-v26.7.28/media/memory-rss-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/results/2026-08-31-v26.7.28/media/memory-rss-dark.svg">
+  <img alt="Peak resident set size, lower is better. Idle: xray-rust 4.2 MiB, Xray-core 29.5, sing-box 21.8. 100 idle flows: xray-rust 6.2, Xray-core 36.2, sing-box 27.2. 1000 idle flows: xray-rust 20.9, Xray-core 80.8, sing-box 48.8." src="docs/benchmarks/results/2026-08-31-v26.7.28/media/memory-rss-light.svg">
 </picture>
 
-Through a full VLESS + REALITY + Vision tunnel, xray-rust reaches 15.1 Gbps
-against Xray-core's 14.4 at 760 versus 800 CPU ms/GiB. Stable sing-box is
+Through a full VLESS + REALITY + Vision tunnel, xray-rust reaches 15.2 Gbps
+against Xray-core's 14.3 at 760 versus 800 CPU ms/GiB. Stable sing-box is
 omitted here because its REALITY client version is below the pinned server's
 default minimum:
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/results/2026-08-29-v26.7.28/media/reality-throughput-dark.svg">
-  <img alt="Bulk TCP throughput through a VLESS + REALITY + Vision tunnel, higher is better: xray-rust 15.1 Gbps and Xray-core 14.4; stable sing-box omitted at the recorded client-version boundary." src="docs/benchmarks/results/2026-08-29-v26.7.28/media/reality-throughput-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/results/2026-08-31-v26.7.28/media/reality-throughput-dark.svg">
+  <img alt="Bulk TCP throughput through a VLESS + REALITY + Vision tunnel, higher is better: xray-rust 15.2 Gbps and Xray-core 14.3; stable sing-box omitted at the recorded client-version boundary." src="docs/benchmarks/results/2026-08-31-v26.7.28/media/reality-throughput-light.svg">
 </picture>
 
-About 3.7× less memory than Xray-core with the pinned V2Fly geodata loaded:
+About 3.9× less memory than Xray-core with the pinned V2Fly geodata loaded:
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/results/2026-08-29-v26.7.28/media/geo-memory-dark.svg">
-  <img alt="Peak memory with real geodata loaded, lower is better: xray-rust 9.54 MiB and Xray-core 35.4 MiB." src="docs/benchmarks/results/2026-08-29-v26.7.28/media/geo-memory-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/results/2026-08-31-v26.7.28/media/geo-memory-dark.svg">
+  <img alt="Peak memory with real geodata loaded, lower is better: xray-rust 9.2 MiB and Xray-core 35.7 MiB." src="docs/benchmarks/results/2026-08-31-v26.7.28/media/geo-memory-light.svg">
 </picture>
 
 Latency, bulk, all 36 stream cases, XHTTP pressure and bounded-memory tables,
-plus the full caveats are in the [dated result group](docs/benchmarks/results/2026-08-29-v26.7.28/README.md).
+plus the full caveats are in the [dated result group](docs/benchmarks/results/2026-08-31-v26.7.28/README.md).
 The earlier Xray-core v26.5.9 and xray-rust DNS charts remain available as
 [historical evidence](docs/benchmarks/results.md).
 
