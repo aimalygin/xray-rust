@@ -52,7 +52,9 @@ artifact directory.
 ## Library surface
 
 - `XrayCore`: lifecycle, config warnings, packet push/batched poll, stats,
-  startup probe, runtime profiles, DNS bootstrap policy, and socket protection.
+  selection/health snapshots, connection inventory/accounting/close, seven
+  typed TUN diagnostic queues, startup probe, runtime profiles, DNS bootstrap
+  policy, and socket protection.
 - `XrayVpnService`: reference VPN interface setup and lifecycle coordination.
 - `XrayTunBackend.FileDescriptor`: default direct borrowed raw-IP fd path.
 - `XrayTunBackend.PacketPump`: fallback with reusable direct buffers and

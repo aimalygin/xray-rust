@@ -376,6 +376,9 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
         .expect("read Android settings");
     let build = fs::read_to_string(root.join("platform/android/xraymobile/build.gradle.kts"))
         .expect("read Android library build");
+    let consumer_rules =
+        fs::read_to_string(root.join("platform/android/xraymobile/consumer-rules.pro"))
+            .expect("read Android consumer rules");
     let core = fs::read_to_string(
         root.join("platform/android/xraymobile/src/main/java/org/xrayrust/mobile/XrayCore.kt"),
     )
@@ -395,6 +398,9 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
     assert!(build.contains("externalNativeBuild"));
     assert!(build.contains("ndkVersion"));
     assert!(build.contains("ndkVersion = \"26.3.11579264\""));
+    assert!(build.contains("consumerProguardFiles(\"consumer-rules.pro\")"));
+    assert!(consumer_rules.contains("org.xrayrust.mobile.NativeTunDiagnosticEvent"));
+    assert!(consumer_rules.contains("native <methods>;"));
     assert!(!build.contains("\"src/main/jniLibs\""));
     assert!(build.contains("JvmTarget.JVM_1_8"));
     assert!(core.contains("System.loadLibrary(\"xray_ffi\")"));
@@ -416,6 +422,13 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
     assert!(core.contains("fun connectionSnapshot()"));
     assert!(core.contains("fun outboundAccountingSnapshot()"));
     assert!(core.contains("fun closeConnection(id: Long)"));
+    assert!(core.contains("fun pollTcpSlowFlowEvents("));
+    assert!(core.contains("fun pollTcpFlowSummaryEvents("));
+    assert!(core.contains("fun pollTcpRemoteWriteSlowEvents("));
+    assert!(core.contains("fun pollTcpOpenErrorEvents("));
+    assert!(core.contains("fun pollUdpSlowFlowEvents("));
+    assert!(core.contains("fun pollUdpResponseGapEvents("));
+    assert!(core.contains("fun pollUdpQuicBlockedEvents("));
     assert!(core.contains("OutboundSelection(1L shl 12)"));
     assert!(core.contains("OutboundHealth(1L shl 13)"));
     assert!(core.contains("ConnectionManagement(1L shl 14)"));
@@ -464,6 +477,14 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeConnectionSnapshotJson"));
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeOutboundAccountingSnapshotJson"));
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeCloseConnection"));
+    assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativePollTunDiagnosticEvent"));
+    assert!(jni.contains("xray_tun_poll_tcp_slow_flow_event"));
+    assert!(jni.contains("xray_tun_poll_tcp_flow_summary_event"));
+    assert!(jni.contains("xray_tun_poll_tcp_remote_write_slow_event"));
+    assert!(jni.contains("xray_tun_poll_tcp_open_error_event"));
+    assert!(jni.contains("xray_tun_poll_udp_slow_flow_event"));
+    assert!(jni.contains("xray_tun_poll_udp_response_gap_event"));
+    assert!(jni.contains("xray_tun_poll_udp_quic_blocked_event"));
 
     let jni_new = jni
         .find("Java_org_xrayrust_mobile_XrayCore_nativeNew")

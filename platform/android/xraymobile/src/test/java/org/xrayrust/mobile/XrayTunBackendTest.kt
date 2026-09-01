@@ -130,6 +130,109 @@ class XrayTunBackendTest {
     }
 
     @Test
+    fun nativeTunDiagnosticsProjectToTypedKotlinEvents() {
+        val tcpSlow = NativeTunDiagnosticEvent(
+            kind = NativeTunDiagnosticKind.TcpSlowFlow.ffiValue,
+            subtype = XrayTcpSlowFlowEventKind.FirstByte.ffiValue,
+            target = "example.test:443",
+            outboundTag = null,
+            error = null,
+            values = longArrayOf(12, 34),
+        ).toTcpSlowFlowEvent()
+        assertEquals(XrayTcpSlowFlowEventKind.FirstByte, tcpSlow.kind)
+        assertEquals(34L, tcpSlow.firstByteDurationMs)
+
+        val summary = NativeTunDiagnosticEvent(
+            kind = NativeTunDiagnosticKind.TcpFlowSummary.ffiValue,
+            subtype = 0,
+            target = "example.test:443",
+            outboundTag = "proxy-a",
+            error = null,
+            values = longArrayOf(1, 100, 10, 20, 64, 1, 2, 3, 4, 5),
+        ).toTcpFlowSummaryEvent()
+        assertTrue(summary.closed)
+        assertEquals("proxy-a", summary.outboundTag)
+        assertEquals(5L, summary.msTo1MiB)
+
+        val slowWrite = NativeTunDiagnosticEvent(
+            kind = NativeTunDiagnosticKind.TcpRemoteWriteSlow.ffiValue,
+            subtype = 0,
+            target = "example.test:443",
+            outboundTag = "proxy-a",
+            error = null,
+            values = longArrayOf(75, 4096, 3),
+        ).toTcpRemoteWriteSlowEvent()
+        assertEquals(4096L, slowWrite.bytes)
+
+        val openError = NativeTunDiagnosticEvent(
+            kind = NativeTunDiagnosticKind.TcpOpenError.ffiValue,
+            subtype = 0,
+            target = "example.test:443",
+            outboundTag = "proxy-a",
+            error = "connect timeout",
+            values = longArrayOf(),
+        ).toTcpOpenErrorEvent()
+        assertEquals("connect timeout", openError.error)
+
+        val udpSlow = NativeTunDiagnosticEvent(
+            kind = NativeTunDiagnosticKind.UdpSlowFlow.ffiValue,
+            subtype = 0,
+            target = "resolver.test:53",
+            outboundTag = null,
+            error = null,
+            values = longArrayOf(50, 64, 96),
+        ).toUdpSlowFlowEvent()
+        assertEquals(50L, udpSlow.firstResponseDurationMs)
+
+        val responseGap = NativeTunDiagnosticEvent(
+            kind = NativeTunDiagnosticKind.UdpResponseGap.ffiValue,
+            subtype = 0,
+            target = "resolver.test:53",
+            outboundTag = null,
+            error = null,
+            values = longArrayOf(80, 128, 256),
+        ).toUdpResponseGapEvent()
+        assertEquals(80L, responseGap.responseGapDurationMs)
+
+        val quicBlocked = NativeTunDiagnosticEvent(
+            kind = NativeTunDiagnosticKind.UdpQuicBlocked.ffiValue,
+            subtype = 0,
+            target = "example.test:443",
+            outboundTag = null,
+            error = null,
+            values = longArrayOf(1200),
+        ).toUdpQuicBlockedEvent()
+        assertEquals(1200L, quicBlocked.bytes)
+    }
+
+    @Test
+    fun nativeTunDiagnosticsRejectMismatchedShapes() {
+        val wrongKind = NativeTunDiagnosticEvent(
+            kind = NativeTunDiagnosticKind.UdpSlowFlow.ffiValue,
+            subtype = 0,
+            target = "resolver.test:53",
+            outboundTag = null,
+            error = null,
+            values = longArrayOf(1, 2, 3),
+        )
+        assertThrows(IllegalStateException::class.java) {
+            wrongKind.toTcpRemoteWriteSlowEvent()
+        }
+
+        val missingError = NativeTunDiagnosticEvent(
+            kind = NativeTunDiagnosticKind.TcpOpenError.ffiValue,
+            subtype = 0,
+            target = "example.test:443",
+            outboundTag = null,
+            error = null,
+            values = longArrayOf(),
+        )
+        assertThrows(IllegalStateException::class.java) {
+            missingError.toTcpOpenErrorEvent()
+        }
+    }
+
+    @Test
     fun outboundSnapshotParsersRejectUnknownSchemaVersions() {
         assertThrows(IllegalArgumentException::class.java) {
             parseOutboundSelectionSnapshot(

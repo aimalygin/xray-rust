@@ -255,7 +255,12 @@ ready packets without waiting. Packets are packed back-to-back; use
 
 The event poll functions are diagnostic queues and return
 `XRAY_STATUS_NO_PACKET` when empty. Their string outputs are NUL-terminated and
-may be truncated to the caller's buffer.
+may be truncated to the caller's buffer. The checked-in Swift and Kotlin
+adapters both expose typed bounded-drain methods for TCP slow-flow, flow-summary,
+remote-write-slow, and open-error events plus UDP slow-flow, response-gap, and
+QUIC-blocked events. These methods require the existing
+`XRAY_FFI_CAPABILITY_TUN_DIAGNOSTIC_EVENTS` bit; the Kotlin/JNI projection does
+not change the C ABI version.
 
 Before `xray_tun_stats`, initialize:
 

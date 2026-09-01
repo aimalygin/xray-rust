@@ -168,6 +168,177 @@ data class XrayOutboundAccounting(
     val downlinkBytes: Long,
 )
 
+enum class XrayTcpSlowFlowEventKind(internal val ffiValue: Int) {
+    Unknown(0),
+    Open(1),
+    FirstByte(2),
+    ;
+
+    companion object {
+        internal fun fromFfiValue(value: Int): XrayTcpSlowFlowEventKind =
+            entries.firstOrNull { it.ffiValue == value } ?: Unknown
+    }
+}
+
+data class XrayTcpSlowFlowEvent(
+    val kind: XrayTcpSlowFlowEventKind,
+    val target: String,
+    val openDurationMs: Long,
+    val firstByteDurationMs: Long,
+) {
+    fun debugLogMessage(prefix: String = "Debug tcpSlowFlow"): String =
+        "$prefix kind=${kind.name} target=$target openMs=$openDurationMs firstByteMs=$firstByteDurationMs"
+}
+
+data class XrayTcpFlowSummaryEvent(
+    val target: String,
+    val outboundTag: String?,
+    val closed: Boolean,
+    val durationMs: Long,
+    val openDurationMs: Long,
+    val firstByteDurationMs: Long,
+    val remoteReadBytes: Long,
+    val msTo64KiB: Long,
+    val msTo128KiB: Long,
+    val msTo256KiB: Long,
+    val msTo512KiB: Long,
+    val msTo1MiB: Long,
+)
+
+data class XrayTcpRemoteWriteSlowEvent(
+    val target: String,
+    val outboundTag: String?,
+    val durationMs: Long,
+    val bytes: Long,
+    val messages: Long,
+)
+
+data class XrayTcpOpenErrorEvent(
+    val target: String,
+    val outboundTag: String?,
+    val error: String,
+)
+
+data class XrayUdpSlowFlowEvent(
+    val target: String,
+    val firstResponseDurationMs: Long,
+    val writtenBytes: Long,
+    val readBytes: Long,
+)
+
+data class XrayUdpResponseGapEvent(
+    val target: String,
+    val responseGapDurationMs: Long,
+    val writtenBytes: Long,
+    val readBytes: Long,
+)
+
+data class XrayUdpQuicBlockedEvent(
+    val target: String,
+    val bytes: Long,
+)
+
+internal enum class NativeTunDiagnosticKind(val ffiValue: Int) {
+    TcpSlowFlow(1),
+    TcpFlowSummary(2),
+    TcpRemoteWriteSlow(3),
+    TcpOpenError(4),
+    UdpSlowFlow(5),
+    UdpResponseGap(6),
+    UdpQuicBlocked(7),
+}
+
+internal data class NativeTunDiagnosticEvent(
+    val kind: Int,
+    val subtype: Int,
+    val target: String,
+    val outboundTag: String?,
+    val error: String?,
+    val values: LongArray,
+) {
+    internal fun requireShape(expectedKind: NativeTunDiagnosticKind, valueCount: Int) {
+        check(kind == expectedKind.ffiValue) {
+            "unexpected native TUN diagnostic kind: $kind"
+        }
+        check(values.size == valueCount) {
+            "unexpected native TUN diagnostic value count: ${values.size}"
+        }
+    }
+}
+
+internal fun NativeTunDiagnosticEvent.toTcpSlowFlowEvent(): XrayTcpSlowFlowEvent {
+    requireShape(NativeTunDiagnosticKind.TcpSlowFlow, 2)
+    return XrayTcpSlowFlowEvent(
+        kind = XrayTcpSlowFlowEventKind.fromFfiValue(subtype),
+        target = target,
+        openDurationMs = values[0],
+        firstByteDurationMs = values[1],
+    )
+}
+
+internal fun NativeTunDiagnosticEvent.toTcpFlowSummaryEvent(): XrayTcpFlowSummaryEvent {
+    requireShape(NativeTunDiagnosticKind.TcpFlowSummary, 10)
+    return XrayTcpFlowSummaryEvent(
+        target = target,
+        outboundTag = outboundTag,
+        closed = values[0] != 0L,
+        durationMs = values[1],
+        openDurationMs = values[2],
+        firstByteDurationMs = values[3],
+        remoteReadBytes = values[4],
+        msTo64KiB = values[5],
+        msTo128KiB = values[6],
+        msTo256KiB = values[7],
+        msTo512KiB = values[8],
+        msTo1MiB = values[9],
+    )
+}
+
+internal fun NativeTunDiagnosticEvent.toTcpRemoteWriteSlowEvent(): XrayTcpRemoteWriteSlowEvent {
+    requireShape(NativeTunDiagnosticKind.TcpRemoteWriteSlow, 3)
+    return XrayTcpRemoteWriteSlowEvent(
+        target = target,
+        outboundTag = outboundTag,
+        durationMs = values[0],
+        bytes = values[1],
+        messages = values[2],
+    )
+}
+
+internal fun NativeTunDiagnosticEvent.toTcpOpenErrorEvent(): XrayTcpOpenErrorEvent {
+    requireShape(NativeTunDiagnosticKind.TcpOpenError, 0)
+    return XrayTcpOpenErrorEvent(
+        target = target,
+        outboundTag = outboundTag,
+        error = checkNotNull(error) { "native TCP open-error diagnostic omitted its message" },
+    )
+}
+
+internal fun NativeTunDiagnosticEvent.toUdpSlowFlowEvent(): XrayUdpSlowFlowEvent {
+    requireShape(NativeTunDiagnosticKind.UdpSlowFlow, 3)
+    return XrayUdpSlowFlowEvent(
+        target = target,
+        firstResponseDurationMs = values[0],
+        writtenBytes = values[1],
+        readBytes = values[2],
+    )
+}
+
+internal fun NativeTunDiagnosticEvent.toUdpResponseGapEvent(): XrayUdpResponseGapEvent {
+    requireShape(NativeTunDiagnosticKind.UdpResponseGap, 3)
+    return XrayUdpResponseGapEvent(
+        target = target,
+        responseGapDurationMs = values[0],
+        writtenBytes = values[1],
+        readBytes = values[2],
+    )
+}
+
+internal fun NativeTunDiagnosticEvent.toUdpQuicBlockedEvent(): XrayUdpQuicBlockedEvent {
+    requireShape(NativeTunDiagnosticKind.UdpQuicBlocked, 1)
+    return XrayUdpQuicBlockedEvent(target = target, bytes = values[0])
+}
+
 internal fun parseOutboundSelectionSnapshot(json: String): XrayOutboundSelectionSnapshot {
     val root = JSONObject(json)
     val schemaVersion = root.getInt("schemaVersion")
@@ -419,6 +590,41 @@ class XrayCore private constructor(handle: Long) : Closeable {
         withDataPathHandle { nativeCloseConnection(it, id) }
     }
 
+    fun pollTcpSlowFlowEvents(maxEvents: Int = 16): List<XrayTcpSlowFlowEvent> =
+        pollTunDiagnosticEvents(maxEvents, NativeTunDiagnosticKind.TcpSlowFlow) {
+            it.toTcpSlowFlowEvent()
+        }
+
+    fun pollTcpFlowSummaryEvents(maxEvents: Int = 16): List<XrayTcpFlowSummaryEvent> =
+        pollTunDiagnosticEvents(maxEvents, NativeTunDiagnosticKind.TcpFlowSummary) {
+            it.toTcpFlowSummaryEvent()
+        }
+
+    fun pollTcpRemoteWriteSlowEvents(maxEvents: Int = 16): List<XrayTcpRemoteWriteSlowEvent> =
+        pollTunDiagnosticEvents(maxEvents, NativeTunDiagnosticKind.TcpRemoteWriteSlow) {
+            it.toTcpRemoteWriteSlowEvent()
+        }
+
+    fun pollTcpOpenErrorEvents(maxEvents: Int = 16): List<XrayTcpOpenErrorEvent> =
+        pollTunDiagnosticEvents(maxEvents, NativeTunDiagnosticKind.TcpOpenError) {
+            it.toTcpOpenErrorEvent()
+        }
+
+    fun pollUdpSlowFlowEvents(maxEvents: Int = 16): List<XrayUdpSlowFlowEvent> =
+        pollTunDiagnosticEvents(maxEvents, NativeTunDiagnosticKind.UdpSlowFlow) {
+            it.toUdpSlowFlowEvent()
+        }
+
+    fun pollUdpResponseGapEvents(maxEvents: Int = 16): List<XrayUdpResponseGapEvent> =
+        pollTunDiagnosticEvents(maxEvents, NativeTunDiagnosticKind.UdpResponseGap) {
+            it.toUdpResponseGapEvent()
+        }
+
+    fun pollUdpQuicBlockedEvents(maxEvents: Int = 16): List<XrayUdpQuicBlockedEvent> =
+        pollTunDiagnosticEvents(maxEvents, NativeTunDiagnosticKind.UdpQuicBlocked) {
+            it.toUdpQuicBlockedEvent()
+        }
+
     fun pushPacket(packet: ByteArray, length: Int = packet.size) {
         require(length in 0..packet.size) { "packet length is outside the source buffer" }
         withDataPathHandle { nativePushPacket(it, packet, length) }
@@ -566,6 +772,23 @@ class XrayCore private constructor(handle: Long) : Closeable {
         }
     }
 
+    private fun <T> pollTunDiagnosticEvents(
+        maxEvents: Int,
+        kind: NativeTunDiagnosticKind,
+        convert: (NativeTunDiagnosticEvent) -> T,
+    ): List<T> {
+        requireCapability(XrayFfiCapability.TunDiagnosticEvents)
+        require(maxEvents >= 0) { "maxEvents must not be negative" }
+        return withDataPathHandle { handle ->
+            val events = mutableListOf<T>()
+            while (events.size < maxEvents) {
+                val event = nativePollTunDiagnosticEvent(handle, kind.ffiValue) ?: break
+                events += convert(event)
+            }
+            events
+        }
+    }
+
     private inline fun <T> withLifecycleHandle(block: (Long) -> T): T =
         lifecycleLock.write {
             check(nativeHandle != 0L) { "xray core is closed" }
@@ -594,6 +817,10 @@ class XrayCore private constructor(handle: Long) : Closeable {
     private external fun nativeConnectionSnapshotJson(handle: Long): String
     private external fun nativeOutboundAccountingSnapshotJson(handle: Long): String
     private external fun nativeCloseConnection(handle: Long, connectionId: Long)
+    private external fun nativePollTunDiagnosticEvent(
+        handle: Long,
+        kind: Int,
+    ): NativeTunDiagnosticEvent?
     private external fun nativeSetSocketProtector(handle: Long, protector: SocketProtector)
     private external fun nativeSetTunFd(
         handle: Long,
