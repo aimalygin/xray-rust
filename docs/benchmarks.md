@@ -1127,6 +1127,9 @@ against the fixed thresholds above. Active-flow RSS similarly includes the
 intentional connection inventory, cancellation, and accounting allocations and
 is kept as an explicit budget pending Instruments/Perfetto evidence.
 
+The first clean candidate run and the regression analysis are recorded in
+[`results/2026-09-01-v05-pre-device/README.md`](benchmarks/results/2026-09-01-v05-pre-device/README.md).
+
 On the same machine used while adding the compact index, the final local release run with 4 servers and 4096 exact matchers improved from 27,948 ns to 81 ns per worst-case selection (common path: 128 ns to 67 ns). Compilation took 575 µs and retained 121,769 bytes of pattern payload. The full parser budget of 250,000 exact matchers across 8 servers compiled in 23,644 µs, retained 7,888,887 payload bytes, and selected in 68 ns per iteration. These are regression anchors for this machine, not cross-device performance claims; mobile-native RSS and energy still require Instruments/Perfetto runs.
 
 The added fragmented IP-filter slice compiled 4,096 host rules into 4,096 ranges in a representative 66 µs and measured 11 ns per rotating hit and 13 ns per rotating miss. At 250,000 rules/ranges, representative compilation took 4,107 µs, with 17 ns hits and 19 ns misses. These are medians from repeated local release runs after the rotating probes were spread across the matcher set; they are regression anchors rather than device-independent claims.

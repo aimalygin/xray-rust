@@ -15,7 +15,9 @@ release series.
   accounting/close, structured TUN diagnostics, and TUN statistics. The macOS
   runner also replays v0.4.0 routing, DNS-selector, process-RSS, TCP, and
   inherited-fd TUN anchors under explicit budgets and rejects dirty or
-  mixed-revision evidence before the physical Apple/Android campaign.
+  mixed-revision evidence before the physical Apple/Android campaign. The
+  first clean candidate gate passed and records the remaining 1,000-flow RSS
+  headroom as an explicit device-profiling risk.
 - Restored small-rule routing performance lost before v0.5 when the shared
   domain and IP indexes replaced linear matchers. Domain sets of at most eight
   entries now retain a linear fast path while geosite-sized sets keep their
