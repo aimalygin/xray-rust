@@ -50,8 +50,9 @@ use tokio_rustls::TlsAcceptor;
 use xray_config::{
     compile_dns_domain_matchers, parse_xray_json, CoreConfig, DnsHostTarget, DnsOutboundRule,
     DnsOutboundRuleAction, DnsOutboundSettings, DomainMatcher, InboundConfig, InboundProtocol,
-    IpCidr, Network as ConfigNetwork, OutboundConfig, OutboundSettings, RoutingConfig,
-    RoutingDomainStrategy, RoutingPortRange, RoutingRule, StreamSecurity, StreamSettings,
+    IpCidr, Network as ConfigNetwork, OutboundConfig, OutboundProxySettings, OutboundSettings,
+    RoutingBalancer, RoutingBalancerStrategy, RoutingConfig, RoutingDomainStrategy,
+    RoutingPortRange, RoutingRule, RoutingRuleTarget, StreamSecurity, StreamSettings,
     StreamTransport, MAX_CONFIG_DOMAIN_MATCHERS,
 };
 use xray_core_rs::{
@@ -69,6 +70,7 @@ use xray_transport::{
     select_name_server_indices, CachingDnsResolver, CompiledNameServerPolicies, DnsLookup,
     DnsResolver, NameServer, NameServerPolicy, TransportError,
 };
+use xray_tun::TunTcpOpenErrorEvent;
 use xray_utls::{normalize_reality_supported_fingerprint, XRAY_REALITY_CAPABLE_FINGERPRINTS};
 
 pub mod chart;
@@ -82,7 +84,7 @@ pub use stream_transport::{
     StreamBenchXhttpProfile,
 };
 
-const USAGE: &str = "usage: xray-bench run|compare|route-probe|dns-policy-probe|reality-matrix|chart [options]\ncompare options: [--skip-sing-box]\nchart options: [--omit-sing-box-reality]";
+const USAGE: &str = "usage: xray-bench run|compare|route-probe|dns-policy-probe|phase2-probe|reality-matrix|chart [options]\ncompare options: [--skip-sing-box]\nchart options: [--omit-sing-box-reality]";
 const TEST_VLESS_UUID: [u8; 16] = [
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
 ];
@@ -172,6 +174,7 @@ pub enum CliArgs {
     Compare(BenchOptions),
     RouteProbe(RouteProbeOptions),
     DnsPolicyProbe(DnsPolicyProbeOptions),
+    Phase2Probe(Phase2ProbeOptions),
     RealityMatrix(RealityMatrixOptions),
     Chart(chart::ChartOptions),
 }
@@ -449,6 +452,15 @@ pub struct DnsPolicyProbeOptions {
     /// Number of synthetic `full:` `dns.hosts` entries to index. `0` skips the
     /// hosts slice and leaves the report unchanged.
     pub hosts: usize,
+    pub out_dir: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Phase2ProbeOptions {
+    pub iterations: usize,
+    pub members: usize,
+    pub connections: usize,
+    pub chain_depth: usize,
     pub out_dir: PathBuf,
 }
 
@@ -1313,6 +1325,18 @@ impl Default for DnsPolicyProbeOptions {
     }
 }
 
+impl Default for Phase2ProbeOptions {
+    fn default() -> Self {
+        Self {
+            iterations: 10_000,
+            members: 64,
+            connections: 64,
+            chain_depth: 8,
+            out_dir: PathBuf::from("target/benchmarks"),
+        }
+    }
+}
+
 impl Default for RealityMatrixOptions {
     fn default() -> Self {
         Self {
@@ -1445,6 +1469,39 @@ pub struct DnsPolicyProbeResult {
     pub hosts: Option<DnsHostsProbeMetric>,
 }
 
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct Phase2ProbeMetric {
+    pub operations: usize,
+    pub total_us: u128,
+    pub avg_ns: u128,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct Phase2ProbeResult {
+    pub iterations: usize,
+    pub members: usize,
+    pub connections: usize,
+    pub chain_depth: usize,
+    pub build_profile: String,
+    pub source_revision: Option<String>,
+    pub source_dirty: Option<bool>,
+    pub peak_rss_kib: u64,
+    pub selector_graph_compile_us: u128,
+    pub chain_graph_compile_us: u128,
+    pub round_robin_selection: Phase2ProbeMetric,
+    pub chain_selection: Phase2ProbeMetric,
+    pub override_switch: Phase2ProbeMetric,
+    pub selection_snapshot: Phase2ProbeMetric,
+    pub health_snapshot: Phase2ProbeMetric,
+    pub dns_cache_hit: Phase2ProbeMetric,
+    pub dns_upstream_calls: usize,
+    pub connection_snapshot: Phase2ProbeMetric,
+    pub accounting_snapshot: Phase2ProbeMetric,
+    pub connection_close: Phase2ProbeMetric,
+    pub diagnostic_queue_round_trip: Phase2ProbeMetric,
+    pub tun_stats_snapshot: Phase2ProbeMetric,
+}
+
 pub fn parse_cli_args<I, S>(args: I) -> Result<CliArgs, BenchError>
 where
     I: IntoIterator<Item = S>,
@@ -1463,6 +1520,9 @@ where
     }
     if command == "dns-policy-probe" {
         return parse_dns_policy_probe_args(&rest).map(CliArgs::DnsPolicyProbe);
+    }
+    if command == "phase2-probe" {
+        return parse_phase2_probe_args(&rest).map(CliArgs::Phase2Probe);
     }
     if command == "reality-matrix" {
         return parse_reality_matrix_args(&rest).map(CliArgs::RealityMatrix);
@@ -1623,6 +1683,9 @@ where
         "dns-policy-probe" => {
             unreachable!("dns-policy-probe is parsed before engine benchmark options")
         }
+        "phase2-probe" => {
+            unreachable!("phase2-probe is parsed before engine benchmark options")
+        }
         "reality-matrix" => {
             unreachable!("reality-matrix is parsed before engine benchmark options")
         }
@@ -1712,6 +1775,42 @@ fn parse_dns_policy_probe_args(args: &[String]) -> Result<DnsPolicyProbeOptions,
             }
             "--hosts" => {
                 options.hosts = parse_usize(required_value(args, &mut index, flag)?, flag)?;
+            }
+            "--out-dir" => {
+                options.out_dir = PathBuf::from(required_value(args, &mut index, flag)?);
+            }
+            other => {
+                return Err(BenchError::InvalidArguments(format!(
+                    "unknown argument `{other}`\n{USAGE}"
+                )));
+            }
+        }
+    }
+    Ok(options)
+}
+
+fn parse_phase2_probe_args(args: &[String]) -> Result<Phase2ProbeOptions, BenchError> {
+    let mut options = Phase2ProbeOptions::default();
+    let mut index = 0;
+    while index < args.len() {
+        let flag = args[index].as_str();
+        index += 1;
+        match flag {
+            "--iterations" => {
+                options.iterations =
+                    parse_nonzero_usize(required_value(args, &mut index, flag)?, flag)?;
+            }
+            "--members" => {
+                options.members =
+                    parse_nonzero_usize(required_value(args, &mut index, flag)?, flag)?;
+            }
+            "--connections" => {
+                options.connections =
+                    parse_nonzero_usize(required_value(args, &mut index, flag)?, flag)?;
+            }
+            "--chain-depth" => {
+                options.chain_depth =
+                    parse_nonzero_usize(required_value(args, &mut index, flag)?, flag)?;
             }
             "--out-dir" => {
                 options.out_dir = PathBuf::from(required_value(args, &mut index, flag)?);
@@ -8108,6 +8207,11 @@ where
             print_dns_policy_probe_result(&result);
             Ok(())
         }
+        CliArgs::Phase2Probe(options) => {
+            let result = run_phase2_probe(&options).await?;
+            print_phase2_probe_result(&result);
+            Ok(())
+        }
         CliArgs::RealityMatrix(options) => {
             let result = run_reality_matrix(options).await?;
             print_reality_matrix_result(&result);
@@ -8986,6 +9090,463 @@ pub fn run_dns_policy_probe(
             "creating DNS policy probe directory `{}`",
             run_dir.display()
         ),
+        source,
+    })?;
+    write_json(&run_dir.join("result.json"), &result)?;
+    Ok(result)
+}
+
+const MAX_PHASE2_PROBE_MEMBERS: usize = 4_096;
+const MAX_PHASE2_PROBE_CONNECTIONS: usize = 256;
+const MAX_PHASE2_PROBE_CHAIN_DEPTH: usize = 64;
+const PHASE2_PROBE_DOMAIN: &str = "cache.phase2-probe.invalid";
+const PHASE2_PROBE_PORT: u16 = 443;
+
+fn phase2_probe_metric(operations: usize, elapsed: Duration) -> Phase2ProbeMetric {
+    Phase2ProbeMetric {
+        operations,
+        total_us: elapsed.as_micros(),
+        avg_ns: elapsed.as_nanos() / operations.max(1) as u128,
+    }
+}
+
+fn phase2_probe_outbound(tag: String, proxy_tag: Option<String>) -> OutboundConfig {
+    OutboundConfig {
+        tag: Some(tag),
+        proxy_settings: proxy_tag.map(|tag| OutboundProxySettings {
+            tag,
+            transport_layer: true,
+        }),
+        stream: StreamSettings {
+            network: ConfigNetwork::Tcp,
+            transport: StreamTransport::Raw,
+            security: StreamSecurity::None,
+            quic_params: None,
+            socket_options: None,
+        },
+        settings: OutboundSettings::Freedom,
+    }
+}
+
+fn phase2_selector_config(member_count: usize) -> CoreConfig {
+    let outbounds = (0..member_count)
+        .map(|index| phase2_probe_outbound(format!("proxy-{index:04}"), None))
+        .collect::<Vec<_>>();
+    CoreConfig {
+        inbounds: Vec::new(),
+        outbounds,
+        default_outbound_tag: Some("proxy-0000".to_owned()),
+        routing: RoutingConfig {
+            rules: vec![RoutingRule {
+                inbound_tags: vec!["bench-in".to_owned()],
+                networks: vec![ConfigNetwork::Tcp],
+                port_ranges: Vec::new(),
+                domain_matchers: DomainMatcherSet::default(),
+                ip_matchers: IpMatcherSet::default(),
+                target: RoutingRuleTarget::Balancer("automatic".to_owned()),
+            }],
+            balancers: vec![RoutingBalancer {
+                tag: "automatic".to_owned(),
+                selectors: vec!["proxy-".to_owned()],
+                strategy: RoutingBalancerStrategy::RoundRobin,
+                fallback_tag: Some("proxy-0000".to_owned()),
+            }],
+            ..RoutingConfig::default()
+        },
+        observatory: None,
+        dns: Default::default(),
+        policy: Default::default(),
+    }
+}
+
+fn phase2_chain_config(chain_depth: usize) -> CoreConfig {
+    let outbounds = (0..chain_depth)
+        .map(|index| {
+            let proxy_tag = (index + 1 < chain_depth).then(|| format!("chain-{:04}", index + 1));
+            phase2_probe_outbound(format!("chain-{index:04}"), proxy_tag)
+        })
+        .collect::<Vec<_>>();
+    CoreConfig {
+        inbounds: Vec::new(),
+        outbounds,
+        default_outbound_tag: Some("chain-0000".to_owned()),
+        routing: RoutingConfig::default(),
+        observatory: None,
+        dns: Default::default(),
+        policy: Default::default(),
+    }
+}
+
+struct Phase2ProbeDnsResolver {
+    calls: AtomicUsize,
+    lookup: DnsLookup,
+}
+
+#[async_trait]
+impl DnsResolver for Phase2ProbeDnsResolver {
+    async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+        self.resolve_all(domain, port)
+            .await?
+            .socket_addrs()
+            .first()
+            .copied()
+            .ok_or_else(|| TransportError::NoResolvedAddress(domain.to_owned(), port))
+    }
+
+    async fn resolve_all(&self, domain: &str, port: u16) -> Result<DnsLookup, TransportError> {
+        if domain != PHASE2_PROBE_DOMAIN || port != PHASE2_PROBE_PORT {
+            return Err(TransportError::NoResolvedAddress(domain.to_owned(), port));
+        }
+        self.calls.fetch_add(1, Ordering::Relaxed);
+        Ok(self.lookup.clone())
+    }
+}
+
+async fn measure_phase2_dns_cache(
+    iterations: usize,
+) -> Result<(Phase2ProbeMetric, usize), BenchError> {
+    let upstream = Arc::new(Phase2ProbeDnsResolver {
+        calls: AtomicUsize::new(0),
+        lookup: DnsLookup::single(
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 53)), PHASE2_PROBE_PORT),
+            Some(Duration::from_secs(60)),
+        ),
+    });
+    let resolver = CachingDnsResolver::with_ttl(upstream.clone(), Duration::from_secs(60));
+    resolver
+        .resolve_all(PHASE2_PROBE_DOMAIN, PHASE2_PROBE_PORT)
+        .await
+        .map_err(|error| {
+            BenchError::InvalidArguments(format!("warming Phase 2 DNS cache: {error}"))
+        })?;
+
+    let started = Instant::now();
+    for _ in 0..iterations {
+        let lookup = black_box(&resolver)
+            .resolve_all(black_box(PHASE2_PROBE_DOMAIN), PHASE2_PROBE_PORT)
+            .await
+            .map_err(|error| {
+                BenchError::InvalidArguments(format!("reading Phase 2 DNS cache: {error}"))
+            })?;
+        black_box(lookup);
+    }
+    let elapsed = started.elapsed();
+    let calls = upstream.calls.load(Ordering::Relaxed);
+    if calls != 1 {
+        return Err(BenchError::InvalidArguments(format!(
+            "Phase 2 DNS cache expected one upstream call, observed {calls}"
+        )));
+    }
+    Ok((phase2_probe_metric(iterations, elapsed), calls))
+}
+
+async fn measure_phase2_connection_registry(
+    iterations: usize,
+    connection_count: usize,
+) -> Result<
+    (
+        Phase2ProbeMetric,
+        Phase2ProbeMetric,
+        Phase2ProbeMetric,
+        Phase2ProbeMetric,
+        Phase2ProbeMetric,
+    ),
+    BenchError,
+> {
+    let echo_listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .map_err(|source| BenchError::Io {
+            action: "binding Phase 2 registry echo server".to_owned(),
+            source,
+        })?;
+    let echo_addr = echo_listener
+        .local_addr()
+        .map_err(|source| BenchError::Io {
+            action: "reading Phase 2 registry echo address".to_owned(),
+            source,
+        })?;
+    let echo_task = tokio::spawn(async move {
+        while let Ok((mut stream, _)) = echo_listener.accept().await {
+            tokio::spawn(async move {
+                let (mut reader, mut writer) = stream.split();
+                let _ = tokio::io::copy(&mut reader, &mut writer).await;
+            });
+        }
+    });
+
+    let mut core = Core::new(CoreConfig {
+        inbounds: vec![InboundConfig {
+            tag: Some("bench-in".to_owned()),
+            protocol: InboundProtocol::Socks,
+            listen: Ipv4Addr::LOCALHOST.to_string(),
+            port: 0,
+            allow_unauthenticated_lan: false,
+            sniffing: None,
+            user_level: None,
+        }],
+        outbounds: vec![phase2_probe_outbound("direct".to_owned(), None)],
+        default_outbound_tag: Some("direct".to_owned()),
+        routing: RoutingConfig::default(),
+        observatory: None,
+        dns: Default::default(),
+        policy: Default::default(),
+    })
+    .map_err(|error| BenchError::InvalidArguments(format!("building Phase 2 core: {error}")))?;
+    core.start()
+        .await
+        .map_err(|error| BenchError::InvalidArguments(format!("starting Phase 2 core: {error}")))?;
+    let socks_addr = core.inbound_addr(Some("bench-in")).ok_or_else(|| {
+        BenchError::InvalidArguments("Phase 2 core did not expose its SOCKS address".to_owned())
+    })?;
+
+    let mut client_opens = JoinSet::new();
+    for _ in 0..connection_count {
+        client_opens.spawn(async move {
+            let mut client =
+                TcpStream::connect(socks_addr)
+                    .await
+                    .map_err(|source| BenchError::Io {
+                        action: "connecting Phase 2 registry SOCKS client".to_owned(),
+                        source,
+                    })?;
+            socks5_connect(&mut client, echo_addr).await?;
+            Ok::<_, BenchError>(client)
+        });
+    }
+    let mut clients = Vec::with_capacity(connection_count);
+    while let Some(opened) = client_opens.join_next().await {
+        clients.push(opened.map_err(|error| {
+            BenchError::InvalidArguments(format!("Phase 2 registry client task failed: {error}"))
+        })??);
+    }
+    let inventory = core.connection_snapshot();
+    if inventory.connections.len() != connection_count {
+        return Err(BenchError::InvalidArguments(format!(
+            "Phase 2 registry expected {connection_count} active connections, observed {}",
+            inventory.connections.len()
+        )));
+    }
+
+    let started = Instant::now();
+    for _ in 0..iterations {
+        black_box(core.connection_snapshot());
+    }
+    let connection_snapshot = phase2_probe_metric(iterations, started.elapsed());
+
+    let started = Instant::now();
+    for _ in 0..iterations {
+        black_box(core.outbound_accounting_snapshot());
+    }
+    let accounting_snapshot = phase2_probe_metric(iterations, started.elapsed());
+
+    let tun = core.tun();
+    let diagnostic = TunTcpOpenErrorEvent {
+        target: "203.0.113.7:443".to_owned(),
+        outbound_tag: Some("direct".to_owned()),
+        error: "<redacted>".to_owned(),
+    };
+    let started = Instant::now();
+    for _ in 0..iterations {
+        tun.record_tcp_open_error_event(diagnostic.clone());
+        black_box(tun.poll_tcp_open_error_event()).ok_or_else(|| {
+            BenchError::InvalidArguments("Phase 2 diagnostic queue lost an event".to_owned())
+        })?;
+    }
+    let diagnostic_queue = phase2_probe_metric(iterations, started.elapsed());
+
+    let started = Instant::now();
+    for _ in 0..iterations {
+        black_box(tun.stats().await);
+    }
+    let tun_stats = phase2_probe_metric(iterations, started.elapsed());
+
+    let started = Instant::now();
+    for connection in &inventory.connections {
+        core.close_connection(connection.id).map_err(|error| {
+            BenchError::InvalidArguments(format!("closing Phase 2 connection: {error}"))
+        })?;
+    }
+    let connection_close = phase2_probe_metric(connection_count, started.elapsed());
+    timeout(Duration::from_secs(5), async {
+        while !core.connection_snapshot().connections.is_empty() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .map_err(|_| {
+        BenchError::InvalidArguments("Phase 2 connection close did not drain registry".to_owned())
+    })?;
+    let final_accounting = core.outbound_accounting_snapshot();
+    let direct = final_accounting
+        .outbounds
+        .iter()
+        .find(|outbound| outbound.outbound_tag.as_deref() == Some("direct"))
+        .ok_or_else(|| {
+            BenchError::InvalidArguments("Phase 2 accounting omitted direct outbound".to_owned())
+        })?;
+    if direct.opened_connections != connection_count as u64
+        || direct.host_closed_connections != connection_count as u64
+    {
+        return Err(BenchError::InvalidArguments(format!(
+            "Phase 2 accounting mismatch: opened={}, host_closed={}",
+            direct.opened_connections, direct.host_closed_connections
+        )));
+    }
+
+    drop(clients);
+    core.stop()
+        .await
+        .map_err(|error| BenchError::InvalidArguments(format!("stopping Phase 2 core: {error}")))?;
+    echo_task.abort();
+    Ok((
+        connection_snapshot,
+        accounting_snapshot,
+        connection_close,
+        diagnostic_queue,
+        tun_stats,
+    ))
+}
+
+pub async fn run_phase2_probe(
+    options: &Phase2ProbeOptions,
+) -> Result<Phase2ProbeResult, BenchError> {
+    if options.members > MAX_PHASE2_PROBE_MEMBERS {
+        return Err(BenchError::InvalidArguments(format!(
+            "phase2-probe --members must not exceed {MAX_PHASE2_PROBE_MEMBERS}"
+        )));
+    }
+    if options.connections > MAX_PHASE2_PROBE_CONNECTIONS {
+        return Err(BenchError::InvalidArguments(format!(
+            "phase2-probe --connections must not exceed {MAX_PHASE2_PROBE_CONNECTIONS}"
+        )));
+    }
+    if options.chain_depth > MAX_PHASE2_PROBE_CHAIN_DEPTH {
+        return Err(BenchError::InvalidArguments(format!(
+            "phase2-probe --chain-depth must not exceed {MAX_PHASE2_PROBE_CHAIN_DEPTH}"
+        )));
+    }
+
+    let started = Instant::now();
+    let selector_router = OutboundRouter::new(Arc::new(phase2_selector_config(options.members)));
+    let selector_graph_compile_us = started.elapsed().as_micros();
+    let snapshot = selector_router.selection().snapshot();
+    if snapshot.groups.len() != 1 || snapshot.groups[0].candidates.len() != options.members {
+        return Err(BenchError::InvalidArguments(
+            "Phase 2 selector graph candidate validation failed".to_owned(),
+        ));
+    }
+    let target = Target::new(
+        RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7))),
+        PHASE2_PROBE_PORT,
+        RoutingNetwork::Tcp,
+    );
+    let started = Instant::now();
+    for _ in 0..options.iterations {
+        let selected = selector_router
+            .select_tcp_outbound_for_session(Some("bench-in"), black_box(&target))
+            .map_err(|error| {
+                BenchError::InvalidArguments(format!("selecting Phase 2 outbound: {error}"))
+            })?;
+        if !matches!(black_box(selected), xray_core_rs::TcpOutbound::Freedom) {
+            return Err(BenchError::InvalidArguments(
+                "Phase 2 round-robin selected a non-Freedom outbound".to_owned(),
+            ));
+        }
+    }
+    let round_robin_selection = phase2_probe_metric(options.iterations, started.elapsed());
+
+    let first_tag = "proxy-0000";
+    let last_tag = format!("proxy-{:04}", options.members - 1);
+    let started = Instant::now();
+    for iteration in 0..options.iterations {
+        let tag = if iteration & 1 == 0 {
+            first_tag
+        } else {
+            last_tag.as_str()
+        };
+        selector_router
+            .selection()
+            .set_override("automatic", black_box(tag))
+            .map_err(|error| {
+                BenchError::InvalidArguments(format!("switching Phase 2 override: {error}"))
+            })?;
+    }
+    let override_switch = phase2_probe_metric(options.iterations, started.elapsed());
+    selector_router
+        .selection()
+        .clear_override("automatic")
+        .map_err(|error| {
+            BenchError::InvalidArguments(format!("clearing Phase 2 override: {error}"))
+        })?;
+
+    let started = Instant::now();
+    for _ in 0..options.iterations {
+        black_box(selector_router.selection().snapshot());
+    }
+    let selection_snapshot = phase2_probe_metric(options.iterations, started.elapsed());
+    let started = Instant::now();
+    for _ in 0..options.iterations {
+        black_box(selector_router.selection().health_snapshot());
+    }
+    let health_snapshot = phase2_probe_metric(options.iterations, started.elapsed());
+
+    let started = Instant::now();
+    let chain_graph = Arc::new(xray_core_rs::OutboundGraph::new(Arc::new(
+        phase2_chain_config(options.chain_depth),
+    )));
+    chain_graph.validate_proxy_chains().map_err(|error| {
+        BenchError::InvalidArguments(format!("validating Phase 2 chain: {error}"))
+    })?;
+    let chain_router =
+        OutboundRouter::from_factory(Arc::new(xray_core_rs::OutboundFactory::new(chain_graph)));
+    let chain_graph_compile_us = started.elapsed().as_micros();
+    chain_router
+        .select_tcp_outbound()
+        .map_err(|error| BenchError::InvalidArguments(format!("warming Phase 2 chain: {error}")))?;
+    let started = Instant::now();
+    for _ in 0..options.iterations {
+        black_box(chain_router.select_tcp_outbound().map_err(|error| {
+            BenchError::InvalidArguments(format!("selecting Phase 2 chain: {error}"))
+        })?);
+    }
+    let chain_selection = phase2_probe_metric(options.iterations, started.elapsed());
+
+    let (dns_cache_hit, dns_upstream_calls) = measure_phase2_dns_cache(options.iterations).await?;
+    let (
+        connection_snapshot,
+        accounting_snapshot,
+        connection_close,
+        diagnostic_queue_round_trip,
+        tun_stats_snapshot,
+    ) = measure_phase2_connection_registry(options.iterations, options.connections).await?;
+    let provenance = workspace_git_provenance();
+    let result = Phase2ProbeResult {
+        iterations: options.iterations,
+        members: options.members,
+        connections: options.connections,
+        chain_depth: options.chain_depth,
+        build_profile: harness_build_profile().to_owned(),
+        source_revision: provenance.as_ref().map(|git| git.revision.clone()),
+        source_dirty: provenance.and_then(|git| git.dirty),
+        peak_rss_kib: current_peak_rss_kib(),
+        selector_graph_compile_us,
+        chain_graph_compile_us,
+        round_robin_selection,
+        chain_selection,
+        override_switch,
+        selection_snapshot,
+        health_snapshot,
+        dns_cache_hit,
+        dns_upstream_calls,
+        connection_snapshot,
+        accounting_snapshot,
+        connection_close,
+        diagnostic_queue_round_trip,
+        tun_stats_snapshot,
+    };
+    let run_dir = options.out_dir.join(new_run_id()).join("phase2-probe");
+    fs::create_dir_all(&run_dir).map_err(|source| BenchError::Io {
+        action: format!("creating Phase 2 probe directory `{}`", run_dir.display()),
         source,
     })?;
     write_json(&run_dir.join("result.json"), &result)?;
@@ -10847,6 +11408,32 @@ fn print_dns_policy_probe_result(result: &DnsPolicyProbeResult) {
             hosts.miss_avg_ns,
         );
     }
+}
+
+fn print_phase2_probe_result(result: &Phase2ProbeResult) {
+    println!(
+        "phase2-probe profile={} iterations={} members={} connections={} chain_depth={} peak_rss_kib={} selector_graph_compile_us={} chain_graph_compile_us={} round_robin_avg_ns={} chain_selection_avg_ns={} override_switch_avg_ns={} selection_snapshot_avg_ns={} health_snapshot_avg_ns={} dns_cache_hit_avg_ns={} dns_upstream_calls={} connection_snapshot_avg_ns={} accounting_snapshot_avg_ns={} connection_close_avg_ns={} diagnostic_queue_avg_ns={} tun_stats_avg_ns={}",
+        result.build_profile,
+        result.iterations,
+        result.members,
+        result.connections,
+        result.chain_depth,
+        result.peak_rss_kib,
+        result.selector_graph_compile_us,
+        result.chain_graph_compile_us,
+        result.round_robin_selection.avg_ns,
+        result.chain_selection.avg_ns,
+        result.override_switch.avg_ns,
+        result.selection_snapshot.avg_ns,
+        result.health_snapshot.avg_ns,
+        result.dns_cache_hit.avg_ns,
+        result.dns_upstream_calls,
+        result.connection_snapshot.avg_ns,
+        result.accounting_snapshot.avg_ns,
+        result.connection_close.avg_ns,
+        result.diagnostic_queue_round_trip.avg_ns,
+        result.tun_stats_snapshot.avg_ns,
+    );
 }
 
 fn print_reality_matrix_result(result: &RealityMatrixResult) {
@@ -13973,6 +14560,63 @@ mod tests {
                 out_dir: PathBuf::from("target/benchmarks/dns-policy-probe"),
             })
         );
+    }
+
+    #[test]
+    fn parses_phase2_probe_command() {
+        let args = parse_cli_args([
+            "xray-bench",
+            "phase2-probe",
+            "--iterations",
+            "500",
+            "--members",
+            "32",
+            "--connections",
+            "16",
+            "--chain-depth",
+            "4",
+            "--out-dir",
+            "target/benchmarks/phase2-probe",
+        ])
+        .unwrap();
+
+        assert_eq!(
+            args,
+            CliArgs::Phase2Probe(Phase2ProbeOptions {
+                iterations: 500,
+                members: 32,
+                connections: 16,
+                chain_depth: 4,
+                out_dir: PathBuf::from("target/benchmarks/phase2-probe"),
+            })
+        );
+    }
+
+    #[test]
+    fn phase2_probe_builds_selector_and_cycle_free_chain_graphs() {
+        let selector = OutboundRouter::new(Arc::new(phase2_selector_config(8)));
+        let snapshot = selector.selection().snapshot();
+        assert_eq!(snapshot.groups.len(), 1);
+        assert_eq!(snapshot.groups[0].candidates.len(), 8);
+
+        let chain = xray_core_rs::OutboundGraph::new(Arc::new(phase2_chain_config(8)));
+        chain.validate_proxy_chains().unwrap();
+        assert_eq!(chain.nodes().len(), 8);
+    }
+
+    #[tokio::test]
+    async fn phase2_probe_exercises_cache_registry_diagnostics_and_close() {
+        let (cache, calls) = measure_phase2_dns_cache(3).await.unwrap();
+        assert_eq!(cache.operations, 3);
+        assert_eq!(calls, 1);
+
+        let (connections, accounting, close, diagnostics, tun_stats) =
+            measure_phase2_connection_registry(2, 2).await.unwrap();
+        assert_eq!(connections.operations, 2);
+        assert_eq!(accounting.operations, 2);
+        assert_eq!(close.operations, 2);
+        assert_eq!(diagnostics.operations, 2);
+        assert_eq!(tun_stats.operations, 2);
     }
 
     #[test]

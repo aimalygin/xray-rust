@@ -163,6 +163,8 @@ cargo run -p xray-bench -- run --engine xray-rust --workload tcp-freedom --runs 
 cargo run --release -p xray-bench -- route-probe --iterations 100000 --rules 64 --outbounds 8
 cargo run --release -p xray-bench -- route-probe --iterations 100000 --rules 64 --outbounds 8 --dns-candidates 8
 cargo run --release -p xray-bench -- dns-policy-probe --iterations 10000 --servers 4 --matchers 4096
+cargo run --release -p xray-bench -- phase2-probe --iterations 10000 --members 64 --connections 64 --chain-depth 8
+scripts/run-v05-pre-device-benchmarks.sh target/benchmarks/v05-pre-device
 ```
 
 By default, the harness uses `target/debug/xray-rust` or builds it with:
@@ -1076,6 +1078,54 @@ verification.
 The probe also emits `dns-policy-probe-selector` slices for 0, 64, and 4096 DNS routing rules; 4096 is the parser's routing-rule limit. Every rule is an exact `bench-in`/UDP/53 DNS route. The first-hit target measures the compiled prefilter plus selection of the first DNS rule; the last-hit target forces an ordered scan to the final rule. The structural miss uses UDP/443 and measures the ordinary-packet fast path where no DNS outbound can apply, while the semantic miss uses a nonmatching UDP/53 domain and measures a full DNS-selector miss. With zero rules both hit flags are false; otherwise `hit_selected_dns` and `last_hit_selected_dns` must be true. Every miss must preserve the regular path through `miss_preserved_regular_path` or `semantic_miss_preserved_regular_path`. Rules are compiled before timing, and their router construction cost is reported separately as `compile_us`.
 
 Compilation is excluded from query timing but reported separately as `compile_us`; `pattern_bytes` is the deterministic retained object-server domain-pattern payload and deliberately excludes allocator/hash-table/regex-engine overhead, so it is not an RSS estimate. `ip_filter_ranges` reports retained merged ranges. Object-server selector iterations include result allocation; IP-filter iterations measure membership only. The command validates selector order, DNS-outbound actions, DNS route hit/miss behavior, and both IP hit/miss outcomes before measuring and writes all metrics to `target/benchmarks/<run-id>/dns-policy-probe/result.json`. New outbound fields deserialize with defaults so stored pre-outbound results remain readable. Matcher count is capped at the parser's 250,000-domain budget, and timing runs should use `--release`.
+
+## v0.5 Pre-Device Performance Gate
+
+`phase2-probe` exercises the production Phase 2 management paths without a
+platform host: compiling a 64-member selector graph and an eight-hop chain,
+round-robin selection, atomic override switching, selection/health snapshots,
+a warmed destination-DNS cache, a live 64-connection SOCKS registry with
+accounting and host close, the TUN diagnostic queue, and TUN statistics. It
+records the release/debug profile, source revision and dirty state, peak RSS,
+compile time, operation count, and average time. It does not simulate network
+RTT, encrypted-DNS handshakes, Apple extensions, Android services, or device
+energy and therefore cannot replace the physical-device transition/soak gate.
+
+`scripts/run-v05-pre-device-benchmarks.sh` is the reproducible macOS gate. It
+refuses a dirty worktree or an existing output directory, builds locked release
+binaries, collects five independent route, DNS-selector, and Phase 2 probes,
+then collects five-run process summaries for idle, 100 and 1,000 held flows,
+plain TCP, and the inherited-fd TUN path. The final checker requires all
+evidence to name the same clean `HEAD`. These shared-path limits use the
+locally recorded v0.4.0 results from the same publication host:
+
+| Slice | v0.4.0 anchor | v0.5 pre-device budget |
+| --- | ---: | ---: |
+| 64-rule route selection | 384 ns | 500 ns |
+| 4,096-rule DNS selector, last hit | 21,896 ns | 30,000 ns |
+| 4,096-rule DNS selector, semantic miss | 21,980 ns | 30,000 ns |
+| Idle RSS | 3,932 KiB | 5,120 KiB |
+| 100 held-flow RSS | 5,632 KiB | 7,500 KiB |
+| 1,000 held-flow RSS | 18,708 KiB | 25,000 KiB |
+| Plain TCP median latency | 39 us | 55 us |
+
+The new Phase 2 paths have no v0.4.0 equivalent, so the checker uses explicit
+absolute ceilings instead of inventing a historical comparison: 10 MiB probe
+RSS; 200 ns round-robin; 600 ns chain selection; 250 ns override switching;
+3,000/3,500 ns selection/health snapshots; 300 ns cache hits; 5,000/100/4,000
+ns connection snapshot/accounting/close; 150 ns diagnostic round-trip; and 50
+ns TUN-stat snapshots. The fd-backed TUN process slice has an 8 MiB RSS ceiling.
+
+This matrix was added after tracing a pre-v0.5 regression to the generic domain
+and IP indexes introduced before the Phase 2 work. Thousands of routing rules
+with tiny exact-match sets paid the index lookup cost that was intended for
+large geosite/geoip sets. Small domain sets now keep a linear fast path, single
+IP ranges avoid the generic range search, and empty inverse sets are skipped.
+The broad shared selector still has a looser budget because the v0.5 outbound
+graph/target abstraction adds real work; any further growth must be justified
+against the fixed thresholds above. Active-flow RSS similarly includes the
+intentional connection inventory, cancellation, and accounting allocations and
+is kept as an explicit budget pending Instruments/Perfetto evidence.
 
 On the same machine used while adding the compact index, the final local release run with 4 servers and 4096 exact matchers improved from 27,948 ns to 81 ns per worst-case selection (common path: 128 ns to 67 ns). Compilation took 575 µs and retained 121,769 bytes of pattern payload. The full parser budget of 250,000 exact matchers across 8 servers compiled in 23,644 µs, retained 7,888,887 payload bytes, and selected in 68 ns per iteration. These are regression anchors for this machine, not cross-device performance claims; mobile-native RSS and energy still require Instruments/Perfetto runs.
 

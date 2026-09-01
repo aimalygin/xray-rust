@@ -370,6 +370,8 @@ expected_rust="$(cat <<'EXPECTED'
           bash scripts/tests/check-scheduled-interop-workflow.test.sh
           bash scripts/tests/check-public-fixtures.test.sh
           bash scripts/tests/check-benchmark-publication.test.sh
+          bash scripts/tests/check-v05-performance.test.sh
+          bash scripts/tests/check-mobile-device-evidence.test.sh
           bash scripts/tests/bench-xhttp-memory.test.sh
           if [[ -f docs/benchmarks/results/2026-08-29-v26.7.28/manifest.json ]]; then
             python3 scripts/check-benchmark-publication.py docs/benchmarks/results/2026-08-29-v26.7.28

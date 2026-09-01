@@ -2385,6 +2385,7 @@ dependencies = [
  "xray-proxy",
  "xray-routing",
  "xray-transport",
+ "xray-tun",
  "xray-utls",
 ]
 

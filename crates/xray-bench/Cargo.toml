@@ -30,4 +30,5 @@ xray-core-rs = { path = "../xray-core-rs" }
 xray-proxy = { path = "../xray-proxy" }
 xray-routing = { path = "../xray-routing" }
 xray-transport = { path = "../xray-transport" }
+xray-tun = { path = "../xray-tun" }
 xray-utls = { path = "../xray-utls" }

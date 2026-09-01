@@ -314,6 +314,16 @@ profiler/log/timeline artifacts. This makes the remaining hardware campaign a
 reproducible release gate; it does not count offline devices, simulators, or an
 unexecuted template as passing evidence.
 
+A clean, five-run macOS pre-device performance gate now covers the v0.4.0
+shared routing, DNS-selector, process RSS, plain TCP, and inherited-fd TUN
+anchors plus the new Phase 2 selector/chaining, cache, inventory/accounting,
+close, health/selection snapshot, diagnostic, and TUN-stat paths. The
+pre-v0.5 small-matcher regression was traced to applying geosite/geoip indexes
+to tiny per-rule sets and corrected with bounded linear/single-range fast
+paths. Remaining outbound-graph cost and per-flow management memory have
+explicit ceilings; only clean same-revision evidence passes. This host gate is
+required before, and does not substitute for, the Apple/Android hardware gate.
+
 ### Exit criteria
 
 - A host can switch between healthy nodes atomically without restarting the
