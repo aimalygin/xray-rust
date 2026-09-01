@@ -53,8 +53,8 @@ use xray_config::{
     VlessOutboundSettings, VlessUser,
 };
 use xray_core_rs::{
-    Core, CoreError, DnsBootstrapMode, OutboundRouter, RuntimeLogConfig, RuntimeLogger,
-    TcpOutbound, TunRuntimeOptions, TunRuntimeProfile, VlessTcpOutbound,
+    ConnectionState, Core, CoreError, DnsBootstrapMode, OutboundRouter, RuntimeLogConfig,
+    RuntimeLogger, TcpOutbound, TunRuntimeOptions, TunRuntimeProfile, VlessTcpOutbound,
 };
 use xray_proxy::inbound::{encode_socks5_udp_datagram, parse_socks5_udp_datagram};
 use xray_proxy::vless::{
@@ -1897,6 +1897,108 @@ async fn socks_client_reaches_echo_target_through_freedom_outbound() {
     timeout(Duration::from_secs(2), run_socks_to_freedom_echo_scenario())
         .await
         .unwrap();
+}
+
+#[tokio::test]
+async fn socks_tcp_inventory_close_and_per_outbound_accounting_share_runtime_state() {
+    timeout(Duration::from_secs(3), async {
+        let (echo_addr, echo_handle) = spawn_multi_echo_server(2).await;
+        let mut core = Core::new(runtime_config_with_freedom_outbound()).unwrap();
+        core.start().await.unwrap();
+        let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
+
+        let payload = b"accounted socks flow";
+        let mut graceful = TcpStream::connect(socks_addr).await.unwrap();
+        socks5_connect(&mut graceful, echo_addr).await;
+        graceful.write_all(payload).await.unwrap();
+        let mut echoed = vec![0; payload.len()];
+        graceful.read_exact(&mut echoed).await.unwrap();
+        graceful.shutdown().await.unwrap();
+        let mut eof = Vec::new();
+        graceful.read_to_end(&mut eof).await.unwrap();
+
+        let deadline = TokioInstant::now() + Duration::from_secs(1);
+        while !core.connection_snapshot().connections.is_empty() {
+            assert!(
+                TokioInstant::now() < deadline,
+                "graceful flow stayed registered"
+            );
+            tokio::task::yield_now().await;
+        }
+
+        let mut managed = TcpStream::connect(socks_addr).await.unwrap();
+        socks5_connect(&mut managed, echo_addr).await;
+        let snapshot = core.connection_snapshot();
+        assert_eq!(snapshot.connections.len(), 1);
+        let connection = &snapshot.connections[0];
+        assert_eq!(connection.state, ConnectionState::Active);
+        assert_eq!(connection.inbound_tag.as_deref(), Some("socks-in"));
+        assert_eq!(connection.outbound_tag.as_deref(), Some("direct"));
+        assert_eq!(connection.target.port, echo_addr.port());
+
+        core.close_connection(connection.id).unwrap();
+        let mut byte = [0u8; 1];
+        let read = managed.read(&mut byte).await.unwrap();
+        assert_eq!(read, 0);
+
+        let deadline = TokioInstant::now() + Duration::from_secs(1);
+        while !core.connection_snapshot().connections.is_empty() {
+            assert!(
+                TokioInstant::now() < deadline,
+                "closed flow stayed registered"
+            );
+            tokio::task::yield_now().await;
+        }
+        let accounting = core.outbound_accounting_snapshot();
+        let direct = accounting
+            .outbounds
+            .iter()
+            .find(|outbound| outbound.outbound_tag.as_deref() == Some("direct"))
+            .unwrap();
+        assert_eq!(direct.opened_connections, 2);
+        assert_eq!(direct.completed_connections, 2);
+        assert_eq!(direct.host_closed_connections, 1);
+        assert_eq!(direct.uplink_bytes, payload.len() as u64);
+        assert_eq!(direct.downlink_bytes, payload.len() as u64);
+
+        core.stop().await.unwrap();
+        echo_handle.await.unwrap();
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn http_tcp_connection_is_visible_and_host_close_cancels_the_relay() {
+    timeout(Duration::from_secs(2), async {
+        let (echo_addr, echo_handle) = spawn_echo_server().await;
+        let mut config = runtime_config_with_freedom_outbound();
+        config.inbounds[0].protocol = InboundProtocol::Http;
+        config.inbounds[0].tag = Some("http-in".to_owned());
+        let mut core = Core::new(config).unwrap();
+        core.start().await.unwrap();
+
+        let mut client = TcpStream::connect(core.inbound_addr(Some("http-in")).unwrap())
+            .await
+            .unwrap();
+        http_connect(&mut client, echo_addr).await;
+        let snapshot = core.connection_snapshot();
+        assert_eq!(snapshot.connections.len(), 1);
+        assert_eq!(snapshot.connections[0].state, ConnectionState::Active);
+        assert_eq!(
+            snapshot.connections[0].inbound_tag.as_deref(),
+            Some("http-in")
+        );
+
+        core.close_connection(snapshot.connections[0].id).unwrap();
+        let mut byte = [0u8; 1];
+        assert_eq!(client.read(&mut byte).await.unwrap(), 0);
+
+        core.stop().await.unwrap();
+        echo_handle.await.unwrap();
+    })
+    .await
+    .unwrap();
 }
 
 #[tokio::test]

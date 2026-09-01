@@ -26,15 +26,17 @@ use crate::outbound::{
     open_tcp_stream_with_resolvers_and_dialer, DnsOutbound, TcpSessionOutbound, UdpSessionOutbound,
 };
 use crate::{
+    connection::wait_for_connection_close,
     dns::RuntimeDnsResolvers,
     dns_outbound_runtime::{DnsOutboundRuntime, FakeIpTargetProvenance},
     open_vless_udp_stream_with_resolver_and_dialer,
     policy::{
-        accept_error_wants_backoff, copy_bidirectional_with_idle_timeout,
+        accept_error_wants_backoff, copy_bidirectional_with_idle_timeout_and_traffic,
         effective_policy_for_level, AcceptBackoff, EffectivePolicy,
     },
     runtime_log::{monotonic_millis, LogThrottle},
-    OutboundRouter, RuntimeLogger, TcpOutbound, UdpOutbound, VlessTcpOutbound, VlessUdpFraming,
+    ConnectionRegistry, OutboundRouter, RuntimeLogger, TcpOutbound, UdpOutbound, VlessTcpOutbound,
+    VlessUdpFraming,
 };
 
 const SOCKS_UDP_BUFFER_SIZE: usize = 65_536;
@@ -160,6 +162,7 @@ pub async fn serve_socks_listener(
     sniffing: Option<InboundSniffingConfig>,
     policy: EffectivePolicy,
     runtime_logger: RuntimeLogger,
+    connection_registry: Arc<ConnectionRegistry>,
     mut shutdown: watch::Receiver<bool>,
 ) {
     let mut connections = JoinSet::new();
@@ -214,6 +217,7 @@ pub async fn serve_socks_listener(
                 let runtime_logger = runtime_logger.clone();
                 let connection_shutdown = shutdown.clone();
                 let udp_budgets = udp_budgets.clone();
+                let connection_registry = Arc::clone(&connection_registry);
                 connections.spawn(async move {
                     handle_socks_connection(
                         stream,
@@ -225,6 +229,7 @@ pub async fn serve_socks_listener(
                         sniffing,
                         policy,
                         runtime_logger,
+                        connection_registry,
                         connection_shutdown,
                         udp_budgets,
                     ).await;
@@ -254,6 +259,7 @@ async fn handle_socks_connection(
     sniffing: Option<InboundSniffingConfig>,
     policy: EffectivePolicy,
     runtime_logger: RuntimeLogger,
+    connection_registry: Arc<ConnectionRegistry>,
     shutdown: watch::Receiver<bool>,
     udp_budgets: SocksUdpBudgets,
 ) {
@@ -290,6 +296,7 @@ async fn handle_socks_connection(
                 sniffing,
                 policy,
                 runtime_logger,
+                connection_registry,
             )
             .await;
         }
@@ -325,6 +332,7 @@ async fn handle_socks_connect(
     sniffing: Option<InboundSniffingConfig>,
     policy: EffectivePolicy,
     runtime_logger: RuntimeLogger,
+    connection_registry: Arc<ConnectionRegistry>,
 ) {
     let source = runtime_logger.is_enabled().then(|| {
         inbound
@@ -359,9 +367,10 @@ async fn handle_socks_connect(
     }
 
     let selected = match outbound_router
-        .select_tcp_session_outbound_with_resolver(
+        .select_tcp_session_outbound_with_tag_and_resolver(
             inbound_tag.as_deref(),
             &route_target,
+            true,
             dns_resolvers.destination.as_ref(),
         )
         .await
@@ -382,9 +391,16 @@ async fn handle_socks_connect(
             return;
         }
     };
+    let connection = connection_registry.register(
+        inbound_tag.clone(),
+        selected.tag.clone(),
+        dial_target.clone(),
+    );
+    let mut connection_close = connection.close_receiver();
+    let connection_traffic = connection.traffic();
 
     if runtime_logger.is_enabled() {
-        let selected_outbound = match &selected {
+        let selected_outbound = match &selected.outbound {
             TcpSessionOutbound::Transport(outbound) => {
                 crate::debug_log::tcp_outbound_label(outbound)
             }
@@ -404,7 +420,7 @@ async fn handle_socks_connect(
         );
     }
 
-    let outbound = match selected {
+    let outbound = match selected.outbound {
         TcpSessionOutbound::Transport(outbound) => outbound,
         TcpSessionOutbound::Dns(outbound) => {
             if let Some(source) = source.as_deref() {
@@ -413,15 +429,20 @@ async fn handle_socks_connect(
             if !sniff_tcp && write_socks5_success(&mut inbound).await.is_err() {
                 return;
             }
-            let _ = serve_boxed_socks_dns_stream(
-                dns_resolvers.outbound,
-                &mut inbound,
-                initial_payload,
-                outbound,
-                dial_target,
-                policy.conn_idle,
-            )
-            .await;
+            connection.mark_active();
+            let served = tokio::select! {
+                result = serve_boxed_socks_dns_stream(
+                    dns_resolvers.outbound,
+                    &mut inbound,
+                    initial_payload,
+                    outbound,
+                    dial_target,
+                    policy.conn_idle,
+                ) => Some(result),
+                () = wait_for_connection_close(&mut connection_close) => None,
+            };
+            let _ = served;
+            connection.finish();
             return;
         }
     };
@@ -443,42 +464,52 @@ async fn handle_socks_connect(
         TcpOutbound::Chained { .. } => unreachable!("primary outbound is never a chain wrapper"),
     };
     let outbound_label = crate::debug_log::tcp_outbound_label(&outbound);
-    let mut outbound_stream = match tokio::time::timeout(
-        open_timeout,
-        open_tcp_stream_with_resolvers_and_dialer(
-            &outbound,
-            &dial_target,
-            dns_resolvers.destination.as_ref(),
-            dns_resolvers.bootstrap.as_ref(),
-            transport_dialer.as_ref(),
-        ),
-    )
-    .await
-    {
-        Ok(Ok(stream)) => stream,
-        Ok(Err(error)) => {
-            if let Some(source) = source.as_deref() {
-                crate::debug_log::log_access_rejected(&runtime_logger, source, &dial_target, error);
+    let opened = tokio::select! {
+        result = tokio::time::timeout(
+            open_timeout,
+            open_tcp_stream_with_resolvers_and_dialer(
+                &outbound,
+                &dial_target,
+                dns_resolvers.destination.as_ref(),
+                dns_resolvers.bootstrap.as_ref(),
+                transport_dialer.as_ref(),
+            ),
+        ) => Some(result),
+        () = wait_for_connection_close(&mut connection_close) => None,
+    };
+    let mut outbound_stream = match opened {
+        None => return,
+        Some(result) => match result {
+            Ok(Ok(stream)) => stream,
+            Ok(Err(error)) => {
+                if let Some(source) = source.as_deref() {
+                    crate::debug_log::log_access_rejected(
+                        &runtime_logger,
+                        source,
+                        &dial_target,
+                        error,
+                    );
+                }
+                if !sniff_tcp {
+                    let _ = write_socks5_failure(&mut inbound).await;
+                }
+                return;
             }
-            if !sniff_tcp {
-                let _ = write_socks5_failure(&mut inbound).await;
+            Err(_) => {
+                if let Some(source) = source.as_deref() {
+                    crate::debug_log::log_access_rejected(
+                        &runtime_logger,
+                        source,
+                        &dial_target,
+                        "outbound tcp open timed out",
+                    );
+                }
+                if !sniff_tcp {
+                    let _ = write_socks5_failure(&mut inbound).await;
+                }
+                return;
             }
-            return;
-        }
-        Err(_) => {
-            if let Some(source) = source.as_deref() {
-                crate::debug_log::log_access_rejected(
-                    &runtime_logger,
-                    source,
-                    &dial_target,
-                    "outbound tcp open timed out",
-                );
-            }
-            if !sniff_tcp {
-                let _ = write_socks5_failure(&mut inbound).await;
-            }
-            return;
-        }
+        },
     };
     if let Some(source) = source.as_deref() {
         crate::debug_log::log_access_accepted(
@@ -492,17 +523,26 @@ async fn handle_socks_connect(
     if !sniff_tcp && write_socks5_success(&mut inbound).await.is_err() {
         return;
     }
-    if !initial_payload.is_empty() && outbound_stream.write_all(&initial_payload).await.is_err() {
-        return;
+    if !initial_payload.is_empty() {
+        if outbound_stream.write_all(&initial_payload).await.is_err() {
+            return;
+        }
+        connection_traffic.record_uplink(initial_payload.len() as u64);
     }
+    connection.mark_active();
 
-    let _ = copy_bidirectional_with_idle_timeout(
-        &mut inbound,
-        &mut outbound_stream,
-        tunnel_idle,
-        relay_buffer_size,
-    )
-    .await;
+    let copied = tokio::select! {
+        result = copy_bidirectional_with_idle_timeout_and_traffic(
+            &mut inbound,
+            &mut outbound_stream,
+            tunnel_idle,
+            relay_buffer_size,
+            connection_traffic.as_ref(),
+        ) => Some(result),
+        () = wait_for_connection_close(&mut connection_close) => None,
+    };
+    let _ = copied;
+    connection.finish();
 }
 
 async fn read_socks_tcp_sniff_payload(

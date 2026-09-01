@@ -345,6 +345,12 @@ pub(crate) enum TcpSessionOutbound {
     Dns(DnsOutbound),
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct SelectedTcpSessionOutbound {
+    pub(crate) outbound: TcpSessionOutbound,
+    pub(crate) tag: Option<String>,
+}
+
 /// One configured handler selected for a UDP session. Keeping this combined
 /// result avoids performing routing (and an IPIfNonMatch lookup) twice.
 #[derive(Debug, Clone)]
@@ -2147,16 +2153,20 @@ impl OutboundRouter {
         self.factory.cached_tcp_outbound(node)
     }
 
-    pub(crate) async fn select_tcp_session_outbound_with_resolver(
+    pub(crate) async fn select_tcp_session_outbound_with_tag_and_resolver(
         &self,
         inbound_tag: Option<&str>,
         target: &Target,
+        include_tag: bool,
         dns_resolver: &dyn DnsResolver,
-    ) -> Result<TcpSessionOutbound, CoreError> {
+    ) -> Result<SelectedTcpSessionOutbound, CoreError> {
         let node = self
             .select_configured_node_with_resolver(inbound_tag, target, dns_resolver)
             .await?;
-        if self
+        let tag = include_tag
+            .then(|| self.graph().node(node).and_then(|node| node.tag.clone()))
+            .flatten();
+        let outbound = if self
             .graph()
             .node(node)
             .is_some_and(|node| node.kind() == OutboundNodeKind::Dns)
@@ -2168,7 +2178,8 @@ impl OutboundRouter {
             self.factory
                 .cached_tcp_outbound(node)
                 .map(TcpSessionOutbound::Transport)
-        }
+        }?;
+        Ok(SelectedTcpSessionOutbound { outbound, tag })
     }
 
     pub(crate) async fn select_tcp_outbound_for_session_with_tag_and_resolver(

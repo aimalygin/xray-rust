@@ -22,6 +22,7 @@ use xray_transport::{
 };
 use xray_tun::{TunConfig, TunEndpoint};
 
+mod connection;
 mod debug_log;
 mod dns;
 mod dns_outbound;
@@ -44,6 +45,10 @@ const TUN_INBOUND_QUEUE_DEPTH: usize = 1024;
 const TUN_OUTBOUND_QUEUE_DEPTH: usize = 4096;
 const GENERATED_DNS_TAG_PREFIX: &str = "xray.system.";
 
+pub use connection::{
+    ConnectionCloseError, ConnectionId, ConnectionInfo, ConnectionRegistry, ConnectionSnapshot,
+    ConnectionState, OutboundAccounting, OutboundAccountingSnapshot,
+};
 pub use dns_outbound::{
     build_refused_response, build_return_response, parse_dns_query, CompiledDnsOutboundPolicy,
     DnsHijackUnsafe, DnsOutboundDecision, DnsOutboundQuery, DnsQueryParseError,
@@ -348,6 +353,7 @@ pub struct Core {
     managed_dns_resolver: bool,
     transport_dialer: Arc<TransportDialer>,
     outbound_router: Arc<OutboundRouter>,
+    connection_registry: Arc<ConnectionRegistry>,
     tun_runtime_options: TunRuntimeOptions,
     startup_probe: Option<StartupProbeOptions>,
     runtime_logger: RuntimeLogger,
@@ -566,6 +572,7 @@ impl Core {
             managed_dns_resolver,
             transport_dialer,
             outbound_router,
+            connection_registry: Arc::new(ConnectionRegistry::new()),
             tun_runtime_options,
             startup_probe: None,
             runtime_logger: RuntimeLogger::disabled(),
@@ -624,6 +631,18 @@ impl Core {
 
     pub fn outbound_health_snapshot(&self) -> OutboundHealthSnapshot {
         self.outbound_selection().health_snapshot()
+    }
+
+    pub fn connection_snapshot(&self) -> ConnectionSnapshot {
+        self.connection_registry.snapshot()
+    }
+
+    pub fn outbound_accounting_snapshot(&self) -> OutboundAccountingSnapshot {
+        self.connection_registry.accounting_snapshot()
+    }
+
+    pub fn close_connection(&self, id: ConnectionId) -> Result<u64, ConnectionCloseError> {
+        self.connection_registry.close(id)
     }
 
     fn runtime_dns_resolvers(
@@ -798,6 +817,7 @@ impl Core {
                     sniffing,
                     policy,
                     self.runtime_logger.clone(),
+                    Arc::clone(&self.connection_registry),
                     self.shutdown.subscribe(),
                 )),
                 InboundProtocol::Http => tokio::spawn(http::serve_http_listener(
@@ -809,6 +829,7 @@ impl Core {
                     transport_dialer,
                     policy,
                     self.runtime_logger.clone(),
+                    Arc::clone(&self.connection_registry),
                     self.shutdown.subscribe(),
                 )),
                 InboundProtocol::Tun => continue,

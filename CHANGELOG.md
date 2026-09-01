@@ -42,6 +42,12 @@ release series.
   the nested protected stream. Protocol-layer/UDP/DNS, REALITY, and XHTTP
   HTTP/3 chain shapes fail closed while those lifecycle boundaries remain
   unsupported.
+- Added the core-owned connection-management foundation for routed SOCKS and
+  HTTP TCP flows. Revisioned typed snapshots expose opening/active flows,
+  addressable host close cancels both dial and relay work, and cumulative
+  per-outbound counters retain live uplink/downlink bytes across normal,
+  failed, and host-closed completion. TUN/UDP registration and the mobile C
+  ABI surface remain the next layer.
 
 ## 0.4.1-rc.4 - 2026-08-31
 

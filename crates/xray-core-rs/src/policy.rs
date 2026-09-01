@@ -5,6 +5,8 @@ use tokio::io::{split, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadH
 use tokio::sync::mpsc;
 use xray_config::CoreConfig;
 
+use crate::connection::ConnectionTraffic;
+
 const DEFAULT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_CONN_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 const DEFAULT_UPLINK_ONLY_TIMEOUT: Duration = Duration::from_secs(1);
@@ -114,6 +116,7 @@ fn seconds(value: u32) -> Duration {
     Duration::from_secs(u64::from(value))
 }
 
+#[cfg(test)]
 pub(crate) async fn copy_bidirectional_with_idle_timeout<A, B>(
     a: &mut A,
     b: &mut B,
@@ -124,20 +127,50 @@ where
     A: AsyncRead + AsyncWrite + Unpin,
     B: AsyncRead + AsyncWrite + Unpin,
 {
+    copy_bidirectional_with_idle_timeout_inner(a, b, idle, buffer_size, None).await
+}
+
+pub(crate) async fn copy_bidirectional_with_idle_timeout_and_traffic<A, B>(
+    a: &mut A,
+    b: &mut B,
+    idle: Duration,
+    buffer_size: usize,
+    traffic: &ConnectionTraffic,
+) -> io::Result<(u64, u64)>
+where
+    A: AsyncRead + AsyncWrite + Unpin,
+    B: AsyncRead + AsyncWrite + Unpin,
+{
+    copy_bidirectional_with_idle_timeout_inner(a, b, idle, buffer_size, Some(traffic)).await
+}
+
+async fn copy_bidirectional_with_idle_timeout_inner<A, B>(
+    a: &mut A,
+    b: &mut B,
+    idle: Duration,
+    buffer_size: usize,
+    traffic: Option<&ConnectionTraffic>,
+) -> io::Result<(u64, u64)>
+where
+    A: AsyncRead + AsyncWrite + Unpin,
+    B: AsyncRead + AsyncWrite + Unpin,
+{
     let (mut a_read, mut a_write) = split(a);
     let (mut b_read, mut b_write) = split(b);
     let (activity_tx, mut activity_rx) = mpsc::channel(1);
-    let mut a_to_b = Box::pin(copy_direction(
+    let mut a_to_b = Box::pin(copy_direction_with_counter(
         &mut a_read,
         &mut b_write,
         activity_tx.clone(),
         buffer_size,
+        traffic.map(|traffic| &traffic.uplink_bytes),
     ));
-    let mut b_to_a = Box::pin(copy_direction(
+    let mut b_to_a = Box::pin(copy_direction_with_counter(
         &mut b_read,
         &mut a_write,
         activity_tx,
         buffer_size,
+        traffic.map(|traffic| &traffic.downlink_bytes),
     ));
     let mut a_to_b_result = None;
     let mut b_to_a_result = None;
@@ -169,11 +202,26 @@ where
     }
 }
 
+#[cfg(test)]
 async fn copy_direction<R, W>(
     reader: &mut ReadHalf<R>,
     writer: &mut WriteHalf<W>,
     activity: mpsc::Sender<()>,
     buffer_size: usize,
+) -> io::Result<u64>
+where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    copy_direction_with_counter(reader, writer, activity, buffer_size, None).await
+}
+
+async fn copy_direction_with_counter<R, W>(
+    reader: &mut ReadHalf<R>,
+    writer: &mut WriteHalf<W>,
+    activity: mpsc::Sender<()>,
+    buffer_size: usize,
+    counter: Option<&std::sync::atomic::AtomicU64>,
 ) -> io::Result<u64>
 where
     R: AsyncRead + Unpin,
@@ -205,6 +253,9 @@ where
                     buffer.resize((buffer.len() * 2).min(buffer_cap), 0);
                 }
                 total = total.saturating_add(len as u64);
+                if let Some(counter) = counter {
+                    counter.fetch_add(len as u64, std::sync::atomic::Ordering::Relaxed);
+                }
                 let was_clean = unflushed == 0;
                 unflushed = unflushed.saturating_add(len);
                 let _ = activity.try_send(());

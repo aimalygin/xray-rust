@@ -238,8 +238,8 @@ equivalent Swift and Kotlin APIs. Xray `proxySettings` with explicit
 layers supported security/stream transports over the nested carrier without
 bypassing socket protection. UDP/protocol-layer, REALITY, and XHTTP HTTP/3
 chaining remain fail-closed subsets. The next outbound work is connection
-inventory, close/accounting, and structured diagnostics through the management
-surface.
+inventory coverage for TUN/UDP, C/Swift/Kotlin management projection, and
+structured diagnostics.
 
 ### Mobile SDK and management API
 
@@ -254,8 +254,11 @@ surface.
   cancellation, and long-lived XHTTP H2/H3 sessions.
 
 The version/capability foundation and cross-platform selection/health surface
-are implemented. Connection inventory/close, per-outbound accounting,
-structured diagnostics, broader Android host parity, and device soak remain.
+are implemented. A core-owned registry now supplies typed connection
+inventory, addressable cancellation, and cumulative per-outbound accounting
+for routed SOCKS/HTTP TCP flows. TUN/UDP registration, C/Swift/Kotlin
+projection, structured diagnostics, broader Android host parity, and device
+soak remain.
 
 ### Exit criteria
 
