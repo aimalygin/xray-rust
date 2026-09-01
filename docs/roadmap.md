@@ -226,18 +226,20 @@ adding unfinished Phase 2 features.
   replaced rule/geodata snapshots. Full configuration replacement may continue
   to use a new core handle.
 
-The first six selection increments are now implemented on the `v0.5`
+The first seven selection increments are now implemented on the `v0.5`
 development line. Xray-compatible prefix selector groups, random/round-robin/
-`leastPing`, fallback tags, atomic validated overrides, bounded lifecycle-owned
-URL tests, typed health snapshots, and deterministic health failover share the
-graph's existing leaf handler pools. ABI 1.2 exposes capability-gated atomic
+`leastPing`, bounded rolling-window `leastLoad`, fallback tags, atomic validated
+overrides, bounded lifecycle-owned URL tests, typed health snapshots, and
+deterministic health failover share the graph's existing leaf handler pools.
+ABI 1.2 exposes capability-gated atomic
 override/clear plus versioned, redacted selection and health snapshots through
 equivalent Swift and Kotlin APIs. Xray `proxySettings` with explicit
 `transportLayer: true` now creates validated cycle-free TCP graph edges and
 layers supported security/stream transports over the nested carrier without
 bypassing socket protection. UDP/protocol-layer, REALITY, and XHTTP HTTP/3
-chaining remain fail-closed subsets; bounded `leastLoad` is the next selection
-increment.
+chaining remain fail-closed subsets. The next outbound work is connection
+inventory, close/accounting, and structured diagnostics through the management
+surface.
 
 ### Mobile SDK and management API
 

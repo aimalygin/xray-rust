@@ -1573,16 +1573,88 @@ fn parses_least_ping_routing_balancer_strategy() {
 }
 
 #[test]
-fn rejects_least_load_routing_balancer_strategy_until_supported() {
+fn parses_bounded_least_load_routing_balancer_strategy() {
     let raw = raw_with_routing(
+        r#""balancers": [{
+          "tag": "automatic",
+          "selector": ["proxy"],
+          "strategy": {
+            "type": "leastLoad",
+            "settings": {
+              "expected": 3,
+              "maxRTT": "1.5s",
+              "tolerance": 0.125,
+              "baselines": ["20ms", "100ms"],
+              "costs": [{
+                "regexp": false,
+                "match": "premium",
+                "value": 2.5
+              }]
+            }
+          }
+        }]"#,
+    );
+
+    let parsed = parse_xray_json(&raw).expect("bounded leastLoad should parse");
+    let xray_config::RoutingBalancerStrategy::LeastLoad(settings) =
+        &parsed.config.routing.balancers[0].strategy
+    else {
+        panic!("expected leastLoad strategy");
+    };
+    assert_eq!(settings.expected, 3);
+    assert_eq!(settings.max_rtt, Some(Duration::from_millis(1_500)));
+    assert_eq!(settings.tolerance_millionths, 125_000);
+    assert_eq!(
+        settings.baselines,
+        vec![Duration::from_millis(20), Duration::from_millis(100)]
+    );
+    assert_eq!(settings.costs[0].tag_substring, "premium");
+    assert_eq!(settings.costs[0].value_millionths, 2_500_000);
+}
+
+#[test]
+fn least_load_defaults_are_bounded_and_regex_costs_fail_closed() {
+    let defaults = raw_with_routing(
         r#""balancers": [{
           "tag": "automatic",
           "selector": ["proxy"],
           "strategy": { "type": "leastLoad" }
         }]"#,
     );
+    let parsed = parse_xray_json(&defaults).expect("leastLoad defaults should parse");
+    assert_eq!(
+        parsed.config.routing.balancers[0].strategy,
+        xray_config::RoutingBalancerStrategy::LeastLoad(Default::default())
+    );
 
-    assert_parse_error_path(&raw, "$.routing.balancers[0].strategy.type");
+    let too_wide = raw_with_routing(
+        r#""balancers": [{
+          "tag": "automatic",
+          "selector": ["proxy"],
+          "strategy": { "type": "leastLoad", "settings": { "expected": 17 } }
+        }]"#,
+    );
+    assert_parse_error_path(
+        &too_wide,
+        "$.routing.balancers[0].strategy.settings.expected",
+    );
+
+    let regex_cost = raw_with_routing(
+        r#""balancers": [{
+          "tag": "automatic",
+          "selector": ["proxy"],
+          "strategy": {
+            "type": "leastLoad",
+            "settings": {
+              "costs": [{ "regexp": true, "match": "proxy-.*", "value": 1 }]
+            }
+          }
+        }]"#,
+    );
+    assert_parse_error_path(
+        &regex_cost,
+        "$.routing.balancers[0].strategy.settings.costs[0].regexp",
+    );
 }
 
 #[test]

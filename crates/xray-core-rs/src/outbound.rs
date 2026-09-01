@@ -14,8 +14,9 @@ use rand::Rng;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
 use xray_config::{
     CoreConfig, DnsOutboundSettings, Network, OutboundConfig, OutboundSettings, QuicParamsSettings,
-    RoutingBalancerStrategy, RoutingDomainStrategy, RoutingRule, RoutingRuleTarget, StreamSecurity,
-    StreamSettings, StreamTransport, TargetAddr, VlessUser, XhttpSettings,
+    RoutingBalancerStrategy, RoutingDomainStrategy, RoutingLeastLoadSettings, RoutingRule,
+    RoutingRuleTarget, StreamSecurity, StreamSettings, StreamTransport, TargetAddr, VlessUser,
+    XhttpSettings,
 };
 use xray_proxy::vless::{
     encode_request_header, VisionStream, VisionStreamIo, VlessCommand, VlessRequest,
@@ -44,6 +45,10 @@ use xray_config::RoutingBalancer;
 const VISION_FLOW: &str = "xtls-rprx-vision";
 const VISION_UDP443_FLOW: &str = "xtls-rprx-vision-udp443";
 const DNS_OUTBOUND_HARD_OPERATION_TIMEOUT: Duration = Duration::from_secs(5);
+const LEAST_LOAD_HEALTH_WINDOW: usize = 16;
+const COST_MILLIONTHS_ONE: u64 = 1_000_000;
+const LEAST_LOAD_RTT_BITS: u32 = 27;
+const LEAST_LOAD_RTT_MAX: u64 = (1 << LEAST_LOAD_RTT_BITS) - 1;
 static NEXT_DNS_OUTBOUND_RUNTIME_IDENTITY: AtomicU64 = AtomicU64::new(1);
 static NEXT_OUTBOUND_GRAPH_RUNTIME_IDENTITY: AtomicU64 = AtomicU64::new(1);
 
@@ -775,6 +780,7 @@ pub struct OutboundSelectorGroup {
     tag: String,
     members: Box<[OutboundNodeId]>,
     strategy: RoutingBalancerStrategy,
+    least_load_costs: Box<[u64]>,
     fallback_tag: Option<String>,
 }
 
@@ -791,8 +797,8 @@ impl OutboundSelectorGroup {
         &self.members
     }
 
-    pub fn strategy(&self) -> RoutingBalancerStrategy {
-        self.strategy
+    pub fn strategy(&self) -> &RoutingBalancerStrategy {
+        &self.strategy
     }
 
     pub fn fallback_tag(&self) -> Option<&str> {
@@ -990,6 +996,13 @@ impl OutboundGraph {
                 .map(|(tag, node)| (tag.as_str(), *node))
                 .collect::<Vec<_>>();
             selected_tags.sort_unstable_by(|left, right| left.0.cmp(right.0));
+            let least_load_costs = match &balancer.strategy {
+                RoutingBalancerStrategy::LeastLoad(settings) => selected_tags
+                    .iter()
+                    .map(|(tag, _)| least_load_cost_millionths(settings, tag))
+                    .collect::<Vec<_>>(),
+                _ => vec![COST_MILLIONTHS_ONE; selected_tags.len()],
+            };
             let group_node = OutboundNodeId {
                 graph_identity: identity,
                 index: nodes.len(),
@@ -1010,7 +1023,8 @@ impl OutboundGraph {
                     .map(|(_, node)| node)
                     .collect::<Vec<_>>()
                     .into_boxed_slice(),
-                strategy: balancer.strategy,
+                strategy: balancer.strategy.clone(),
+                least_load_costs: least_load_costs.into_boxed_slice(),
                 fallback_tag: balancer.fallback_tag.clone(),
             });
         }
@@ -1239,6 +1253,14 @@ fn outbound_node_label(nodes: &[OutboundNode], index: usize) -> String {
         .unwrap_or_else(|| format!("#{index}"))
 }
 
+fn least_load_cost_millionths(settings: &RoutingLeastLoadSettings, tag: &str) -> u64 {
+    settings
+        .costs
+        .iter()
+        .find(|cost| tag.contains(&cost.tag_substring))
+        .map_or(COST_MILLIONTHS_ONE, |cost| cost.value_millionths)
+}
+
 #[derive(Debug)]
 struct OutboundSelectorGroupState {
     override_member: AtomicUsize,
@@ -1253,6 +1275,92 @@ struct OutboundHealthAtomicState {
     last_seen_unix_ms: AtomicU64,
     consecutive_failures: AtomicU64,
     last_failure: AtomicUsize,
+    least_load_metrics: AtomicU64,
+    history: Mutex<OutboundHealthWindow>,
+}
+
+#[derive(Debug)]
+struct OutboundHealthWindow {
+    samples: [Option<u64>; LEAST_LOAD_HEALTH_WINDOW],
+    next: usize,
+    len: usize,
+}
+
+impl Default for OutboundHealthWindow {
+    fn default() -> Self {
+        Self {
+            samples: [None; LEAST_LOAD_HEALTH_WINDOW],
+            next: 0,
+            len: 0,
+        }
+    }
+}
+
+impl OutboundHealthWindow {
+    fn record(&mut self, delay_ms: Option<u64>) -> OutboundHealthWindowMetrics {
+        self.samples[self.next] = delay_ms;
+        self.next = (self.next + 1) % LEAST_LOAD_HEALTH_WINDOW;
+        self.len = (self.len + 1).min(LEAST_LOAD_HEALTH_WINDOW);
+
+        let samples = &self.samples[..self.len];
+        let successes = samples
+            .iter()
+            .filter_map(|sample| *sample)
+            .collect::<Vec<_>>();
+        let success_count = successes.len() as u64;
+        let failure_count = self.len as u64 - success_count;
+        if successes.is_empty() {
+            return OutboundHealthWindowMetrics {
+                sample_count: self.len as u64,
+                failure_count,
+                average_ms: u64::MAX,
+                deviation_ms: u64::MAX,
+            };
+        }
+        let sum = successes
+            .iter()
+            .fold(0u128, |sum, sample| sum + u128::from(*sample));
+        let average = sum / u128::from(success_count);
+        let variance = successes.iter().fold(0u128, |sum, sample| {
+            let sample = u128::from(*sample);
+            let difference = sample.abs_diff(average);
+            sum.saturating_add(difference.saturating_mul(difference))
+        }) / u128::from(success_count);
+        OutboundHealthWindowMetrics {
+            sample_count: self.len as u64,
+            failure_count,
+            average_ms: u64::try_from(average).unwrap_or(u64::MAX),
+            deviation_ms: u64::try_from(variance.isqrt()).unwrap_or(u64::MAX),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct OutboundHealthWindowMetrics {
+    sample_count: u64,
+    failure_count: u64,
+    average_ms: u64,
+    deviation_ms: u64,
+}
+
+impl OutboundHealthWindowMetrics {
+    fn encode(self) -> u64 {
+        let average = self.average_ms.min(LEAST_LOAD_RTT_MAX);
+        let deviation = self.deviation_ms.min(LEAST_LOAD_RTT_MAX);
+        self.sample_count.min(31)
+            | (self.failure_count.min(31) << 5)
+            | (average << 10)
+            | (deviation << (10 + LEAST_LOAD_RTT_BITS))
+    }
+
+    fn decode(value: u64) -> Self {
+        Self {
+            sample_count: value & 31,
+            failure_count: (value >> 5) & 31,
+            average_ms: (value >> 10) & LEAST_LOAD_RTT_MAX,
+            deviation_ms: (value >> (10 + LEAST_LOAD_RTT_BITS)) & LEAST_LOAD_RTT_MAX,
+        }
+    }
 }
 
 impl Default for OutboundHealthAtomicState {
@@ -1264,7 +1372,21 @@ impl Default for OutboundHealthAtomicState {
             last_seen_unix_ms: AtomicU64::new(0),
             consecutive_failures: AtomicU64::new(0),
             last_failure: AtomicUsize::new(OutboundHealthFailure::NONE),
+            least_load_metrics: AtomicU64::new(0),
+            history: Mutex::new(OutboundHealthWindow::default()),
         }
+    }
+}
+
+impl OutboundHealthAtomicState {
+    fn record_sample(&self, delay_ms: Option<u64>) {
+        let metrics = self
+            .history
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .record(delay_ms);
+        self.least_load_metrics
+            .store(metrics.encode(), Ordering::Release);
     }
 }
 
@@ -1429,6 +1551,7 @@ impl OutboundSelectionOverlay {
             delay.as_millis().min(u128::from(u64::MAX)) as u64,
             Ordering::Release,
         );
+        health.record_sample(Some(delay.as_millis().min(u128::from(u64::MAX)) as u64));
         health
             .last_try_unix_ms
             .store(now_unix_ms, Ordering::Release);
@@ -1458,6 +1581,7 @@ impl OutboundSelectionOverlay {
             .update_lock
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        health.record_sample(None);
         health.delay_ms.store(u64::MAX, Ordering::Release);
         health
             .last_try_unix_ms
@@ -1489,6 +1613,7 @@ impl OutboundSelectionOverlay {
                 self.select_round_robin_eligible(group, cursor)
             }
             RoutingBalancerStrategy::LeastPing => self.select_least_ping(group),
+            RoutingBalancerStrategy::LeastLoad(settings) => self.select_least_load(group, settings),
         };
         selected
             .or_else(|| {
@@ -1577,6 +1702,105 @@ impl OutboundSelectionOverlay {
             })
             .min_by_key(|(delay_ms, _)| *delay_ms)
             .map(|(_, node)| node)
+    }
+
+    fn select_least_load(
+        &self,
+        group: &OutboundSelectorGroup,
+        settings: &RoutingLeastLoadSettings,
+    ) -> Option<OutboundNodeId> {
+        let max_rtt_ms = settings
+            .max_rtt
+            .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64);
+        let mut candidates = group
+            .members()
+            .iter()
+            .copied()
+            .enumerate()
+            .filter_map(|(member_index, node)| {
+                let health = self.health_state(node)?;
+                if OutboundHealthState::from_u8(health.state.load(Ordering::Acquire))
+                    != OutboundHealthState::Healthy
+                {
+                    return None;
+                }
+                let delay_ms = health.delay_ms.load(Ordering::Acquire);
+                if max_rtt_ms.is_some_and(|maximum| delay_ms >= maximum) {
+                    return None;
+                }
+                let metrics = OutboundHealthWindowMetrics::decode(
+                    health.least_load_metrics.load(Ordering::Acquire),
+                );
+                if metrics.sample_count == 0 {
+                    return None;
+                }
+                if settings.tolerance_millionths > 0
+                    && u128::from(metrics.failure_count) * 1_000_000
+                        > u128::from(metrics.sample_count)
+                            * u128::from(settings.tolerance_millionths)
+                {
+                    return None;
+                }
+                let tag = self.graph.node(node)?.tag()?;
+                let cost = group
+                    .least_load_costs
+                    .get(member_index)
+                    .copied()
+                    .unwrap_or(COST_MILLIONTHS_ONE);
+                let deviation = u128::from(metrics.deviation_ms);
+                let weighted_variance = deviation
+                    .saturating_mul(deviation)
+                    .saturating_mul(u128::from(cost));
+                Some((
+                    weighted_variance,
+                    metrics.average_ms,
+                    metrics.failure_count,
+                    metrics.sample_count,
+                    tag,
+                    node,
+                ))
+            })
+            .collect::<Vec<_>>();
+        candidates.sort_unstable_by(|left, right| {
+            left.0
+                .cmp(&right.0)
+                .then_with(|| left.1.cmp(&right.1))
+                .then_with(|| left.2.cmp(&right.2))
+                .then_with(|| right.3.cmp(&left.3))
+                .then_with(|| left.4.cmp(right.4))
+        });
+        if candidates.is_empty() {
+            return None;
+        }
+
+        let expected = usize::from(settings.expected.max(1)).min(candidates.len());
+        let selected_count = if settings.baselines.is_empty() {
+            expected
+        } else {
+            let mut count = 0usize;
+            for baseline in &settings.baselines {
+                let baseline_ms = baseline.as_millis();
+                let threshold = baseline_ms
+                    .saturating_mul(baseline_ms)
+                    .saturating_mul(u128::from(COST_MILLIONTHS_ONE));
+                while count < candidates.len() && candidates[count].0 < threshold {
+                    count += 1;
+                }
+                if count >= expected {
+                    break;
+                }
+            }
+            if settings.expected > 0 {
+                count.max(expected)
+            } else {
+                count
+            }
+        };
+        if selected_count == 0 {
+            return None;
+        }
+        let selected = rand::thread_rng().gen_range(0..selected_count);
+        Some(candidates[selected].5)
     }
 }
 
@@ -5357,6 +5581,166 @@ mod tests {
             .select_tcp_outbound_for_session_with_tag(None, &target, true)
             .unwrap();
         assert_eq!(selected.tag.as_deref(), Some("proxy-a"));
+    }
+
+    #[test]
+    fn least_load_prefers_bounded_window_stability_over_latest_ping() {
+        let settings = RoutingLeastLoadSettings::default();
+        let graph = Arc::new(OutboundGraph::new(Arc::new(selector_group_config(
+            RoutingBalancerStrategy::LeastLoad(settings),
+        ))));
+        let proxy_a = graph.node_for_tag("proxy-a").unwrap();
+        let proxy_b = graph.node_for_tag("proxy-b").unwrap();
+        let router = OutboundRouter::from_factory(Arc::new(OutboundFactory::new(graph)));
+        let target = domain_tcp_target("example.test");
+
+        router
+            .selection()
+            .record_health_success(proxy_a, Duration::from_millis(10), 1_000);
+        router
+            .selection()
+            .record_health_success(proxy_a, Duration::from_millis(50), 2_000);
+        router
+            .selection()
+            .record_health_success(proxy_b, Duration::from_millis(100), 1_000);
+        router
+            .selection()
+            .record_health_success(proxy_b, Duration::from_millis(100), 2_000);
+
+        let selected = router
+            .select_tcp_outbound_for_session_with_tag(None, &target, true)
+            .unwrap();
+        assert_eq!(selected.tag.as_deref(), Some("proxy-b"));
+    }
+
+    #[test]
+    fn least_load_distributes_only_across_the_bounded_top_n() {
+        let settings = RoutingLeastLoadSettings {
+            expected: 2,
+            ..Default::default()
+        };
+        let mut config = selector_group_config(RoutingBalancerStrategy::LeastLoad(settings));
+        config.outbounds.push(direct_selection_vless("proxy-c"));
+        let graph = Arc::new(OutboundGraph::new(Arc::new(config)));
+        let proxy_a = graph.node_for_tag("proxy-a").unwrap();
+        let proxy_b = graph.node_for_tag("proxy-b").unwrap();
+        let proxy_c = graph.node_for_tag("proxy-c").unwrap();
+        let router = OutboundRouter::from_factory(Arc::new(OutboundFactory::new(graph)));
+        let target = domain_tcp_target("example.test");
+
+        for (node, first, second) in [(proxy_a, 10, 10), (proxy_b, 20, 22), (proxy_c, 30, 50)] {
+            router
+                .selection()
+                .record_health_success(node, Duration::from_millis(first), 1_000);
+            router
+                .selection()
+                .record_health_success(node, Duration::from_millis(second), 2_000);
+        }
+
+        for _ in 0..64 {
+            let selected = router
+                .select_tcp_outbound_for_session_with_tag(None, &target, true)
+                .unwrap();
+            assert!(matches!(
+                selected.tag.as_deref(),
+                Some("proxy-a" | "proxy-b")
+            ));
+        }
+    }
+
+    #[test]
+    fn least_load_applies_literal_tag_cost_before_average_tiebreak() {
+        let settings = RoutingLeastLoadSettings {
+            costs: vec![xray_config::RoutingLeastLoadCost {
+                tag_substring: "proxy-a".to_owned(),
+                value_millionths: 25_000_000,
+            }],
+            ..Default::default()
+        };
+        let graph = Arc::new(OutboundGraph::new(Arc::new(selector_group_config(
+            RoutingBalancerStrategy::LeastLoad(settings),
+        ))));
+        let proxy_a = graph.node_for_tag("proxy-a").unwrap();
+        let proxy_b = graph.node_for_tag("proxy-b").unwrap();
+        let router = OutboundRouter::from_factory(Arc::new(OutboundFactory::new(graph)));
+        let target = domain_tcp_target("example.test");
+
+        for (node, first, second) in [(proxy_a, 10, 12), (proxy_b, 100, 104)] {
+            router
+                .selection()
+                .record_health_success(node, Duration::from_millis(first), 1_000);
+            router
+                .selection()
+                .record_health_success(node, Duration::from_millis(second), 2_000);
+        }
+
+        let selected = router
+            .select_tcp_outbound_for_session_with_tag(None, &target, true)
+            .unwrap();
+        assert_eq!(selected.tag.as_deref(), Some("proxy-b"));
+    }
+
+    #[test]
+    fn least_load_baseline_can_fail_closed_to_fallback() {
+        let settings = RoutingLeastLoadSettings {
+            baselines: vec![Duration::from_millis(1)],
+            ..Default::default()
+        };
+        let graph = Arc::new(OutboundGraph::new(Arc::new(selector_group_config(
+            RoutingBalancerStrategy::LeastLoad(settings),
+        ))));
+        let proxy_a = graph.node_for_tag("proxy-a").unwrap();
+        let proxy_b = graph.node_for_tag("proxy-b").unwrap();
+        let router = OutboundRouter::from_factory(Arc::new(OutboundFactory::new(graph)));
+        let target = domain_tcp_target("example.test");
+
+        for (node, first, second) in [(proxy_a, 10, 12), (proxy_b, 100, 104)] {
+            router
+                .selection()
+                .record_health_success(node, Duration::from_millis(first), 1_000);
+            router
+                .selection()
+                .record_health_success(node, Duration::from_millis(second), 2_000);
+        }
+
+        let selected = router
+            .select_tcp_outbound_for_session(None, &target)
+            .unwrap();
+        assert!(matches!(selected, TcpOutbound::Freedom));
+    }
+
+    #[test]
+    fn least_load_filters_max_rtt_and_failure_tolerance_before_ranking() {
+        let settings = RoutingLeastLoadSettings {
+            max_rtt: Some(Duration::from_millis(80)),
+            tolerance_millionths: 250_000,
+            ..Default::default()
+        };
+        let graph = Arc::new(OutboundGraph::new(Arc::new(selector_group_config(
+            RoutingBalancerStrategy::LeastLoad(settings),
+        ))));
+        let proxy_a = graph.node_for_tag("proxy-a").unwrap();
+        let proxy_b = graph.node_for_tag("proxy-b").unwrap();
+        let router = OutboundRouter::from_factory(Arc::new(OutboundFactory::new(graph)));
+        let target = domain_tcp_target("example.test");
+
+        router
+            .selection()
+            .record_health_success(proxy_a, Duration::from_millis(40), 1_000);
+        router
+            .selection()
+            .record_health_failure(proxy_a, OutboundHealthFailure::Timeout, 2_000);
+        router
+            .selection()
+            .record_health_success(proxy_a, Duration::from_millis(40), 3_000);
+        router
+            .selection()
+            .record_health_success(proxy_b, Duration::from_millis(100), 3_000);
+
+        let selected = router
+            .select_tcp_outbound_for_session(None, &target)
+            .unwrap();
+        assert!(matches!(selected, TcpOutbound::Freedom));
     }
 
     #[test]

@@ -20,17 +20,21 @@ use crate::{
     PolicyConfig, PolicyLevelConfig, PolicySystemConfig, QuicBbrProfile, QuicCongestion,
     QuicIntervalRange, QuicParamsSettings, QuicUdpHopSettings, RealitySettings, RealityShortId,
     RegexMatcher, RoutingBalancer, RoutingBalancerStrategy, RoutingConfig, RoutingDomainStrategy,
-    RoutingPortRange, RoutingRule, RoutingRuleTarget, SniffingDestination, SocketOptions,
-    StreamSecurity, StreamSettings, StreamTransport, TargetAddr, TlsSettings,
-    VlessOutboundSettings, VlessUser, WebSocketSettings, XhttpMode, XhttpPaddingMethod,
-    XhttpPaddingPlacement, XhttpPlacement, XhttpRange, XhttpSettings, XhttpUplinkDataPlacement,
-    XhttpXmuxSettings, DEFAULT_OBSERVATORY_PROBE_INTERVAL, DEFAULT_OBSERVATORY_PROBE_URL,
-    MAX_DNS_SERVER_TIMEOUT_MS,
+    RoutingLeastLoadCost, RoutingLeastLoadSettings, RoutingPortRange, RoutingRule,
+    RoutingRuleTarget, SniffingDestination, SocketOptions, StreamSecurity, StreamSettings,
+    StreamTransport, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser, WebSocketSettings,
+    XhttpMode, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpPlacement, XhttpRange,
+    XhttpSettings, XhttpUplinkDataPlacement, XhttpXmuxSettings, DEFAULT_OBSERVATORY_PROBE_INTERVAL,
+    DEFAULT_OBSERVATORY_PROBE_URL, MAX_DNS_SERVER_TIMEOUT_MS, OBSERVATORY_PROBE_TIMEOUT,
 };
 
 const MAX_ROUTING_RULES: usize = 4_096;
 const MAX_ROUTING_BALANCERS: usize = 256;
 const MAX_ROUTING_BALANCER_SELECTORS: usize = 4_096;
+const MAX_LEAST_LOAD_EXPECTED: u64 = 16;
+const MAX_LEAST_LOAD_BASELINES: usize = 16;
+const MAX_LEAST_LOAD_COSTS: usize = 64;
+const MAX_LEAST_LOAD_COST: f64 = 1_000.0;
 const MAX_OBSERVATORY_SUBJECT_SELECTORS: usize = 4_096;
 const MIN_OBSERVATORY_PROBE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 const MAX_OBSERVATORY_PROBE_INTERVAL: std::time::Duration =
@@ -1741,44 +1745,268 @@ impl Parser<'_> {
             return None;
         }
         self.reject_unknown_fields(strategy, &strategy_path, &["type", "settings"]);
+        let kind = match strategy.get("type") {
+            None | Some(Value::Null) => "random",
+            Some(Value::String(kind)) => kind.as_str(),
+            Some(_) => {
+                self.error(
+                    format!("{strategy_path}.type"),
+                    "routing balancer strategy type must be a string or null",
+                );
+                return None;
+            }
+        };
+        if kind.eq_ignore_ascii_case("leastload") {
+            return self
+                .parse_least_load_settings(strategy.get("settings"), &strategy_path)
+                .map(RoutingBalancerStrategy::LeastLoad);
+        }
         if let Some(settings) = strategy.get("settings") {
             match settings {
                 Value::Null => {}
                 Value::Object(settings) if settings.is_empty() => {}
                 _ => self.error(
                     format!("{strategy_path}.settings"),
-                    "routing balancer strategy settings are unsupported",
+                    "routing balancer strategy settings are only supported for leastLoad",
                 ),
             }
         }
-        match strategy.get("type") {
-            None | Some(Value::Null) => Some(RoutingBalancerStrategy::Random),
-            Some(Value::String(kind)) if kind.eq_ignore_ascii_case("random") => {
-                Some(RoutingBalancerStrategy::Random)
-            }
-            Some(Value::String(kind)) if kind.eq_ignore_ascii_case("roundrobin") => {
-                Some(RoutingBalancerStrategy::RoundRobin)
-            }
-            Some(Value::String(kind)) if kind.eq_ignore_ascii_case("leastping") => {
-                Some(RoutingBalancerStrategy::LeastPing)
-            }
-            Some(Value::String(kind)) => {
-                self.error(
-                    format!("{strategy_path}.type"),
-                    format!(
-                        "unsupported routing balancer strategy `{kind}`; leastLoad is not implemented yet"
-                    ),
-                );
-                None
-            }
+        if kind.eq_ignore_ascii_case("random") {
+            Some(RoutingBalancerStrategy::Random)
+        } else if kind.eq_ignore_ascii_case("roundrobin") {
+            Some(RoutingBalancerStrategy::RoundRobin)
+        } else if kind.eq_ignore_ascii_case("leastping") {
+            Some(RoutingBalancerStrategy::LeastPing)
+        } else {
+            self.error(
+                format!("{strategy_path}.type"),
+                format!("unsupported routing balancer strategy `{kind}`"),
+            );
+            None
+        }
+    }
+
+    fn parse_least_load_settings(
+        &mut self,
+        raw_settings: Option<&Value>,
+        strategy_path: &str,
+    ) -> Option<RoutingLeastLoadSettings> {
+        let settings_path = format!("{strategy_path}.settings");
+        let settings_value = match raw_settings {
+            None | Some(Value::Null) => return Some(RoutingLeastLoadSettings::default()),
+            Some(settings @ Value::Object(_)) => settings,
             Some(_) => {
                 self.error(
-                    format!("{strategy_path}.type"),
-                    "routing balancer strategy type must be a string or null",
+                    &settings_path,
+                    "leastLoad settings must be an object or null",
                 );
-                None
+                return None;
             }
-        }
+        };
+        self.reject_unknown_fields(
+            settings_value,
+            &settings_path,
+            &["expected", "maxRTT", "tolerance", "baselines", "costs"],
+        );
+        let settings = settings_value
+            .as_object()
+            .expect("leastLoad settings were validated as an object");
+
+        let expected = match settings.get("expected") {
+            None | Some(Value::Null) => 0,
+            Some(value) => match value.as_u64() {
+                Some(value) if value <= MAX_LEAST_LOAD_EXPECTED => value as u8,
+                _ => {
+                    self.error(
+                        format!("{settings_path}.expected"),
+                        format!(
+                            "leastLoad expected must be an integer between 0 and {MAX_LEAST_LOAD_EXPECTED}"
+                        ),
+                    );
+                    return None;
+                }
+            },
+        };
+        let max_rtt = match settings.get("maxRTT") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(value)) if value.is_empty() => None,
+            Some(Value::String(value)) => match parse_xray_duration(value) {
+                Some(duration) if duration.is_zero() => None,
+                Some(duration) if duration <= OBSERVATORY_PROBE_TIMEOUT => Some(duration),
+                _ => {
+                    self.error(
+                        format!("{settings_path}.maxRTT"),
+                        "leastLoad maxRTT must be a valid duration no greater than the 5s probe timeout",
+                    );
+                    return None;
+                }
+            },
+            Some(_) => {
+                self.error(
+                    format!("{settings_path}.maxRTT"),
+                    "leastLoad maxRTT must be a duration string or null",
+                );
+                return None;
+            }
+        };
+        let tolerance_millionths = match settings.get("tolerance") {
+            None | Some(Value::Null) => 0,
+            Some(value) => match value.as_f64() {
+                Some(value) if value.is_finite() && (0.0..=1.0).contains(&value) => {
+                    if value == 0.0 {
+                        0
+                    } else {
+                        ((value * 1_000_000.0).round() as u32).max(1)
+                    }
+                }
+                _ => {
+                    self.error(
+                        format!("{settings_path}.tolerance"),
+                        "leastLoad tolerance must be a number between 0 and 1",
+                    );
+                    return None;
+                }
+            },
+        };
+        let baselines =
+            self.parse_least_load_baselines(settings.get("baselines"), &settings_path)?;
+        let costs = self.parse_least_load_costs(settings.get("costs"), &settings_path)?;
+
+        Some(RoutingLeastLoadSettings {
+            expected,
+            max_rtt,
+            tolerance_millionths,
+            baselines,
+            costs,
+        })
+    }
+
+    fn parse_least_load_baselines(
+        &mut self,
+        raw: Option<&Value>,
+        settings_path: &str,
+    ) -> Option<Vec<std::time::Duration>> {
+        let path = format!("{settings_path}.baselines");
+        let values = match raw {
+            None | Some(Value::Null) => return Some(Vec::new()),
+            Some(Value::Array(values)) if values.len() <= MAX_LEAST_LOAD_BASELINES => values,
+            Some(Value::Array(_)) => {
+                self.error(
+                    &path,
+                    format!("leastLoad baselines may contain at most {MAX_LEAST_LOAD_BASELINES} entries"),
+                );
+                return None;
+            }
+            Some(_) => {
+                self.error(&path, "leastLoad baselines must be an array or null");
+                return None;
+            }
+        };
+        values
+            .iter()
+            .enumerate()
+            .map(
+                |(index, value)| match value.as_str().and_then(parse_xray_duration) {
+                    Some(duration)
+                        if !duration.is_zero() && duration <= OBSERVATORY_PROBE_TIMEOUT =>
+                    {
+                        Some(duration)
+                    }
+                    _ => {
+                        self.error(
+                            format!("{path}[{index}]"),
+                            "leastLoad baseline must be a positive duration no greater than 5s",
+                        );
+                        None
+                    }
+                },
+            )
+            .collect()
+    }
+
+    fn parse_least_load_costs(
+        &mut self,
+        raw: Option<&Value>,
+        settings_path: &str,
+    ) -> Option<Vec<RoutingLeastLoadCost>> {
+        let path = format!("{settings_path}.costs");
+        let values = match raw {
+            None | Some(Value::Null) => return Some(Vec::new()),
+            Some(Value::Array(values)) if values.len() <= MAX_LEAST_LOAD_COSTS => values,
+            Some(Value::Array(_)) => {
+                self.error(
+                    &path,
+                    format!("leastLoad costs may contain at most {MAX_LEAST_LOAD_COSTS} entries"),
+                );
+                return None;
+            }
+            Some(_) => {
+                self.error(&path, "leastLoad costs must be an array or null");
+                return None;
+            }
+        };
+        values
+            .iter()
+            .enumerate()
+            .map(|(index, value)| {
+                let item_path = format!("{path}[{index}]");
+                let Some(cost) = value.as_object() else {
+                    self.error(&item_path, "leastLoad cost must be an object");
+                    return None;
+                };
+                self.reject_unknown_fields(
+                    value,
+                    &item_path,
+                    &["regexp", "match", "value"],
+                );
+                if cost.get("regexp").and_then(Value::as_bool).unwrap_or(false) {
+                    self.error(
+                        format!("{item_path}.regexp"),
+                        "leastLoad regexp costs are not supported by the bounded mobile profile",
+                    );
+                    return None;
+                }
+                if cost.get("regexp").is_some_and(|value| !value.is_boolean()) {
+                    self.error(
+                        format!("{item_path}.regexp"),
+                        "leastLoad cost regexp must be a boolean",
+                    );
+                    return None;
+                }
+                let Some(tag_substring) = cost.get("match").and_then(Value::as_str) else {
+                    self.error(
+                        format!("{item_path}.match"),
+                        "leastLoad cost match must be a string",
+                    );
+                    return None;
+                };
+                if tag_substring.is_empty() {
+                    self.error(
+                        format!("{item_path}.match"),
+                        "leastLoad cost match cannot be empty",
+                    );
+                    return None;
+                }
+                let Some(value) = cost.get("value").and_then(Value::as_f64) else {
+                    self.error(
+                        format!("{item_path}.value"),
+                        "leastLoad cost value must be a number",
+                    );
+                    return None;
+                };
+                if !value.is_finite() || value <= 0.0 || value > MAX_LEAST_LOAD_COST {
+                    self.error(
+                        format!("{item_path}.value"),
+                        format!("leastLoad cost value must be greater than 0 and no greater than {MAX_LEAST_LOAD_COST}"),
+                    );
+                    return None;
+                }
+                Some(RoutingLeastLoadCost {
+                    tag_substring: tag_substring.to_owned(),
+                    value_millionths: ((value * 1_000_000.0).round() as u64).max(1),
+                })
+            })
+            .collect()
     }
 
     fn parse_routing_domain_strategy(&mut self, routing: &Value) -> RoutingDomainStrategy {

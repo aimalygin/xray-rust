@@ -89,12 +89,36 @@ pub struct RoutingBalancer {
     pub fallback_tag: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum RoutingBalancerStrategy {
     #[default]
     Random,
     RoundRobin,
     LeastPing,
+    LeastLoad(RoutingLeastLoadSettings),
+}
+
+/// Bounded subset of Xray's `leastLoad` strategy settings.
+///
+/// Floating-point JSON values are normalized to millionths so the parsed
+/// model remains deterministic and equality-safe across the FFI build matrix.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RoutingLeastLoadSettings {
+    /// Number of best candidates to distribute new flows across. Zero uses
+    /// Xray's effective default of one.
+    pub expected: u8,
+    pub max_rtt: Option<Duration>,
+    pub tolerance_millionths: u32,
+    pub baselines: Vec<Duration>,
+    pub costs: Vec<RoutingLeastLoadCost>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RoutingLeastLoadCost {
+    /// Literal substring matched against an outbound tag.
+    pub tag_substring: String,
+    /// Positive cost multiplier normalized to millionths.
+    pub value_millionths: u64,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

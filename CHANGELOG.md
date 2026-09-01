@@ -27,7 +27,10 @@ release series.
   snapshots; random and round-robin skip known-dead candidates, while
   `leastPing` deterministically selects the lowest healthy delay and falls back
   when no healthy candidate remains. Explicit overrides remain authoritative.
-  `leastLoad` and the non-TCP chaining shapes remain.
+  `leastLoad` uses a 16-result rolling health window, Xray-compatible
+  deviation/average/failure ordering, bounded top-N distribution, RTT and
+  failure-rate filters, duration baselines, and literal tag costs. Regex costs
+  fail closed; non-TCP chaining shapes remain.
 - Extended C ABI 1.2 with capability-gated atomic selector override/clear and
   two-pass, schema-versioned JSON snapshots for selection and redacted health
   state. The Swift and Kotlin adapters expose equivalent typed APIs; SwiftPM

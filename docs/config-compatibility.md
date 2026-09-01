@@ -878,8 +878,8 @@ Supported routing configuration:
 - selectors: `inboundTag`, `domain`/`domains`, `ip`, `network`, and `port`;
 - destination: exactly one of `outboundTag` or `balancerTag`;
 - `routing.balancers` with `tag`, prefix-based `selector`, optional
-  `fallbackTag`, and `random` (the default), `roundRobin`, or `leastPing`
-  strategy.
+  `fallbackTag`, and `random` (the default), `roundRobin`, `leastPing`, or the
+  bounded `leastLoad` strategy.
 
 `network` accepts Xray-compatible `tcp`/`udp` strings or arrays, including a
 comma-separated string. `port` accepts a number or comma/range string over
@@ -898,12 +898,22 @@ uses one atomic cursor shared by every router backed by the core's factory.
 Both treat unknown health as eligible and skip candidates known to be
 unhealthy. `leastPing` requires a successful observation and deterministically
 chooses the lowest delay, using lexicographic candidate order to break ties.
+`leastLoad` retains the latest 16 probe outcomes per outbound and orders healthy
+candidates by RTT deviation, average RTT, failures, sample count, and tag. It
+accepts `expected` from 0 through 16, `maxRTT` up to the 5-second probe timeout,
+`tolerance` from 0 through 1, at most 16 positive duration `baselines`, and at
+most 64 positive literal-substring `costs`. The cost multiplier is applied to
+the squared deviation, which is ordering-equivalent to Xray's
+`deviation * sqrt(cost)`. New flows are randomly distributed inside the
+resulting bounded top-N. Regex costs and the undocumented zero-value automatic
+cost coefficient fail closed.
+
 If no eligible candidate remains, `fallbackTag` is used; without a valid
 fallback the route fails closed. The core API can install or clear a validated
 per-group override atomically. An explicit override is authoritative even when
 that member is currently unhealthy. It affects only new flows, while already
-opened flows and lazy handler/transport pools remain intact. `leastLoad` and
-non-empty strategy `settings` remain unsupported.
+opened flows and lazy handler/transport pools remain intact. Non-empty strategy
+`settings` remain unsupported outside `leastLoad`.
 
 ## Observatory and outbound health
 
