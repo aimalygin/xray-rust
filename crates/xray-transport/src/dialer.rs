@@ -5,7 +5,8 @@ use crate::utls_tls::TlsAlpnPolicy;
 use crate::{
     connect_tcp_happy_eyeballs, connect_tcp_stream, connect_tcp_target, BoxedTransportStream,
     ConnectorConfig, HappyEyeballsConfig, RealityRuntimeEngine, RealityTlsEngine,
-    RustlsRealityTlsSessionProvider, SocketProtector, TlsConnector, TransportError,
+    ResolvedTcpConnector, RustlsRealityTlsSessionProvider, SocketProtector, TlsConnector,
+    TransportError,
 };
 use xray_routing::{Target, TargetAddr};
 
@@ -14,6 +15,7 @@ pub struct TransportDialer {
     tls: TlsConnector,
     reality: Option<Arc<dyn RealityTlsEngine>>,
     socket_protector: Option<Arc<dyn SocketProtector>>,
+    resolved_tcp_connector: Option<Arc<dyn ResolvedTcpConnector>>,
 }
 
 #[derive(Clone)]
@@ -30,6 +32,10 @@ impl fmt::Debug for TransportDialer {
             .field("tls", &self.tls)
             .field("reality_engine", &self.reality.is_some())
             .field("socket_protector", &self.socket_protector.is_some())
+            .field(
+                "resolved_tcp_connector",
+                &self.resolved_tcp_connector.is_some(),
+            )
             .finish()
     }
 }
@@ -56,6 +62,7 @@ impl TransportDialer {
             tls,
             reality: Some(Arc::new(reality)),
             socket_protector,
+            resolved_tcp_connector: None,
         })
     }
 
@@ -65,6 +72,7 @@ impl TransportDialer {
             tls,
             reality: None,
             socket_protector,
+            resolved_tcp_connector: None,
         }
     }
 
@@ -76,6 +84,11 @@ impl TransportDialer {
     pub fn with_socket_protector(mut self, protector: Arc<dyn SocketProtector>) -> Self {
         self.tls = self.tls.with_socket_protector(Arc::clone(&protector));
         self.socket_protector = Some(protector);
+        self
+    }
+
+    pub fn with_resolved_tcp_connector(mut self, connector: Arc<dyn ResolvedTcpConnector>) -> Self {
+        self.resolved_tcp_connector = Some(connector);
         self
     }
 
@@ -91,6 +104,9 @@ impl TransportDialer {
         &self,
         config: &ConnectorConfig,
     ) -> Result<H3DialMaterial, TransportError> {
+        if self.resolved_tcp_connector.is_some() {
+            return Err(TransportError::UnsupportedChainedTransport("XHTTP HTTP/3"));
+        }
         match config {
             ConnectorConfig::Tls(tls) => Ok(H3DialMaterial {
                 server_name: tls.server_name.clone(),
@@ -218,48 +234,34 @@ impl TransportDialer {
         happy_eyeballs: Option<&HappyEyeballsConfig>,
         alpn_policy: TlsAlpnPolicy,
     ) -> Result<BoxedTransportStream, TransportError> {
-        let first = candidates
-            .first()
-            .copied()
-            .ok_or_else(|| no_resolved_candidates_error(original_target))?;
-        let race_config =
-            happy_eyeballs.filter(|config| !config.try_delay.is_zero() && candidates.len() >= 2);
-
         match config {
-            ConnectorConfig::Tcp => match race_config {
-                Some(race_config) => Ok(Box::new(
-                    connect_tcp_happy_eyeballs(
-                        candidates,
-                        self.socket_protector.as_deref(),
-                        race_config,
-                    )
-                    .await?,
-                )),
-                None => Ok(Box::new(
-                    connect_tcp_stream(first, self.socket_protector.as_deref()).await?,
-                )),
-            },
-            ConnectorConfig::Tls(tls_config) => match race_config {
-                Some(race_config) => {
-                    self.tls
-                        .connect_candidates_with_alpn_policy(
-                            candidates,
-                            tls_config,
-                            race_config,
-                            alpn_policy,
-                        )
-                        .await
-                }
-                None => {
-                    self.tls
-                        .connect_socket_addr_with_alpn_policy(first, tls_config, alpn_policy)
-                        .await
-                }
-            },
+            ConnectorConfig::Tcp => {
+                self.connect_tcp_carrier(original_target, candidates, happy_eyeballs)
+                    .await
+            }
+            ConnectorConfig::Tls(tls_config) => {
+                // Validate the complete TLS shape before the proxy or the
+                // platform socket performs any I/O.
+                let prepared = self.tls.prepare_stream(tls_config, alpn_policy)?;
+                let stream = self
+                    .connect_tcp_carrier(original_target, candidates, happy_eyeballs)
+                    .await?;
+                self.tls.connect_prepared_stream(stream, prepared).await
+            }
             ConnectorConfig::Reality(reality_config) => {
+                if self.resolved_tcp_connector.is_some() {
+                    return Err(TransportError::UnsupportedChainedTransport("REALITY"));
+                }
                 let Some(reality) = &self.reality else {
                     return Err(TransportError::UnsupportedConnectorConfig("reality"));
                 };
+
+                let first = candidates
+                    .first()
+                    .copied()
+                    .ok_or_else(|| no_resolved_candidates_error(original_target))?;
+                let race_config = happy_eyeballs
+                    .filter(|config| !config.try_delay.is_zero() && candidates.len() >= 2);
 
                 let Some(race_config) = race_config else {
                     return reality
@@ -284,6 +286,37 @@ impl TransportDialer {
 
                 prepared.complete(stream).await
             }
+        }
+    }
+
+    async fn connect_tcp_carrier(
+        &self,
+        original_target: &Target,
+        candidates: &[SocketAddr],
+        happy_eyeballs: Option<&HappyEyeballsConfig>,
+    ) -> Result<BoxedTransportStream, TransportError> {
+        if let Some(connector) = &self.resolved_tcp_connector {
+            return connector
+                .connect_resolved(original_target, candidates, happy_eyeballs)
+                .await;
+        }
+
+        let first = candidates
+            .first()
+            .copied()
+            .ok_or_else(|| no_resolved_candidates_error(original_target))?;
+        match happy_eyeballs.filter(|config| !config.try_delay.is_zero() && candidates.len() >= 2) {
+            Some(race_config) => Ok(Box::new(
+                connect_tcp_happy_eyeballs(
+                    candidates,
+                    self.socket_protector.as_deref(),
+                    race_config,
+                )
+                .await?,
+            )),
+            None => Ok(Box::new(
+                connect_tcp_stream(first, self.socket_protector.as_deref()).await?,
+            )),
         }
     }
 }

@@ -333,6 +333,7 @@ mod tests {
             inbounds: Vec::new(),
             outbounds: vec![OutboundConfig {
                 tag: Some("direct".to_owned()),
+                proxy_settings: None,
                 stream: StreamSettings {
                     network: xray_config::Network::Tcp,
                     transport: StreamTransport::Raw,

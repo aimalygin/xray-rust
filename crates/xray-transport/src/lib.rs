@@ -140,6 +140,10 @@ pub enum TransportError {
     UnsupportedConnectorConfig(&'static str),
     #[error("HTTP/3 requires stock TLS and cannot use the {0} security connector")]
     UnsupportedHttp3Security(&'static str),
+    #[error("{0} cannot use a chained TCP carrier")]
+    UnsupportedChainedTransport(&'static str),
+    #[error("chained outbound failed: {0}")]
+    ChainedOutbound(String),
     #[error("unsupported REALITY fingerprint {0}")]
     UnsupportedRealityFingerprint(String),
     #[error("unsupported TLS fingerprint {0}")]
@@ -246,6 +250,24 @@ impl TransportStream for tokio_rustls::client::TlsStream<TcpStream> {
 }
 
 pub type BoxedTransportStream = Box<dyn TransportStream>;
+
+/// Opens the raw TCP carrier used by [`TransportDialer`].
+///
+/// The default dialer opens and protects a platform socket. A core may replace
+/// that one operation with a validated outbound chain; TLS and stream
+/// transports are still applied by `TransportDialer` above the returned
+/// carrier, so they cannot bypass the chain accidentally. `candidates` may be
+/// empty when the replacement is expected to forward `original_target` as a
+/// domain without local resolution.
+#[async_trait]
+pub trait ResolvedTcpConnector: Send + Sync {
+    async fn connect_resolved(
+        &self,
+        original_target: &Target,
+        candidates: &[SocketAddr],
+        happy_eyeballs: Option<&HappyEyeballsConfig>,
+    ) -> Result<BoxedTransportStream, TransportError>;
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SocketHandle {

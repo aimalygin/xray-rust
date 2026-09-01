@@ -632,6 +632,7 @@ mod https_tests {
             }],
             outbounds: vec![OutboundConfig {
                 tag: Some("direct".to_owned()),
+                proxy_settings: None,
                 stream: StreamSettings {
                     network: Network::Tcp,
                     transport: StreamTransport::Raw,

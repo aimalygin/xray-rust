@@ -56,9 +56,9 @@ The earlier Xray-core v26.5.9 and xray-rust DNS charts remain available as
 | Area | Implemented | Important limits |
 | --- | --- | --- |
 | Local inbounds | SOCKS5 no-auth `CONNECT` and `UDP ASSOCIATE`, HTTP `CONNECT`, TUN | No authenticated proxy inbound or server-side Xray protocols |
-| Outbounds | Freedom/direct, VLESS client over TCP, DNS, and health-aware selector groups | No VMess, Trojan, Shadowsocks, WireGuard, `leastLoad`, or outbound chaining |
+| Outbounds | Freedom/direct, VLESS client over TCP, DNS, health-aware selector groups, and validated transport-layer TCP chaining | No VMess, Trojan, Shadowsocks, WireGuard, `leastLoad`, or chaining outside the documented TCP subset |
 | Security and flow | TLS and REALITY with uTLS-shaped ClientHellos, `xtls-rprx-vision`, VLESS UDP and XUDP paths | Only the documented config subset; REALITY rejects the 14 fingerprints that carry no X25519 key share, while plain TLS accepts all 61 |
-| Routing and DNS | Field rules with domain/IP/network/port matchers, `geosite`/`geoip`, Xray `routing.balancers` plus bounded `observatory` URL health checks, Xray-style DNS server selection, routed multi-address resolution, TTL-aware cache, `dns.hosts`, bounded fake IP, and DNS-outbound Direct/Drop/Return/Hijack policy | No `leastLoad`, outbound chaining, `UseSystem` route probing, managed `dns.servers` DoH/DoT/DoQ, negative/stale cache, or full Xray DNS/routing parity |
+| Routing and DNS | Field rules with domain/IP/network/port matchers, `geosite`/`geoip`, Xray `routing.balancers` plus bounded `observatory` URL health checks, cycle-free TCP outbound graph edges, Xray-style DNS server selection, routed multi-address resolution, TTL-aware cache, `dns.hosts`, bounded fake IP, and DNS-outbound Direct/Drop/Return/Hijack policy | No `leastLoad`, UDP/protocol-layer outbound chaining, `UseSystem` route probing, managed `dns.servers` DoH/DoT/DoQ, negative/stale cache, or full Xray DNS/routing parity |
 | Mobile | Swift Package/Xcode sample for iOS, tvOS, and macOS; Android library and `VpnService` adapter | Signing, entitlements, VPN consent, foreground policy, and release packaging remain host-app responsibilities |
 
 See [project status](docs/status.md) and

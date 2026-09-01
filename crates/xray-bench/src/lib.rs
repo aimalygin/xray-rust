@@ -8505,6 +8505,7 @@ fn measure_dns_outbound_policy(
 fn dns_outbound_selector_probe_config(rule_count: usize) -> CoreConfig {
     let direct = OutboundConfig {
         tag: Some("direct".to_owned()),
+        proxy_settings: None,
         stream: StreamSettings {
             network: ConfigNetwork::Tcp,
             transport: StreamTransport::Raw,
@@ -8516,6 +8517,7 @@ fn dns_outbound_selector_probe_config(rule_count: usize) -> CoreConfig {
     };
     let dns = OutboundConfig {
         tag: Some("dns-out".to_owned()),
+        proxy_settings: None,
         stream: StreamSettings {
             network: ConfigNetwork::Tcp,
             transport: StreamTransport::Raw,
@@ -9981,6 +9983,7 @@ fn route_probe_config(
     let outbounds = (0..outbound_count)
         .map(|index| OutboundConfig {
             tag: Some(format!("out-{index}")),
+            proxy_settings: None,
             stream: StreamSettings {
                 network: ConfigNetwork::Tcp,
                 transport: StreamTransport::Raw,

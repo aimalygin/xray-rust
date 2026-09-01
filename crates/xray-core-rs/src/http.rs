@@ -201,7 +201,7 @@ async fn handle_http_connection(
         }
     };
 
-    let (open_timeout, tunnel_idle, relay_buffer_size) = match &outbound {
+    let (open_timeout, tunnel_idle, relay_buffer_size) = match outbound.primary() {
         TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => (
             policy.handshake,
             policy.conn_idle,
@@ -215,6 +215,7 @@ async fn handle_http_connection(
                 outbound_policy.relay_buffer_size(),
             )
         }
+        TcpOutbound::Chained { .. } => unreachable!("primary outbound is never a chain wrapper"),
     };
     let outbound_label = crate::debug_log::tcp_outbound_label(&outbound);
     let mut outbound_stream = match tokio::time::timeout(

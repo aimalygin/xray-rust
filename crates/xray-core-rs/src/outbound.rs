@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::future::Future;
 use std::io;
 use std::net::{IpAddr, SocketAddr};
 use std::num::NonZeroUsize;
@@ -8,6 +9,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
+use async_trait::async_trait;
 use rand::Rng;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
 use xray_config::{
@@ -29,7 +31,8 @@ use xray_transport::stream::{
 };
 use xray_transport::{
     BoxedTransportStream, ConnectorConfig, DnsResolver, HappyEyeballsConfig, RealityClientConfig,
-    SystemDnsResolver, TlsClientConfig, TransportDialer, TransportStream,
+    ResolvedTcpConnector, SystemDnsResolver, TlsClientConfig, TransportDialer, TransportError,
+    TransportStream,
 };
 
 use crate::policy::effective_policy_for_level;
@@ -311,6 +314,10 @@ pub enum TcpOutbound {
     Freedom,
     FreedomHappyEyeballs(HappyEyeballsConfig),
     Vless(Box<VlessTcpOutbound>),
+    Chained {
+        outbound: Box<TcpOutbound>,
+        proxy: Box<TcpOutbound>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -537,12 +544,114 @@ impl VlessTcpOutbound {
 }
 
 impl TcpOutbound {
-    pub(crate) fn freedom_happy_eyeballs(&self) -> Option<&HappyEyeballsConfig> {
+    pub(crate) fn primary(&self) -> &Self {
         match self {
+            Self::Chained { outbound, .. } => outbound.primary(),
+            outbound => outbound,
+        }
+    }
+
+    pub(crate) fn freedom_happy_eyeballs(&self) -> Option<&HappyEyeballsConfig> {
+        match self.primary() {
             Self::Freedom => None,
             Self::FreedomHappyEyeballs(config) => Some(config),
             Self::Vless(_) => None,
+            Self::Chained { .. } => unreachable!("primary outbound is never a chain wrapper"),
         }
+    }
+}
+
+#[derive(Clone)]
+struct OutboundProxyTcpConnector {
+    outbound: TcpOutbound,
+    server_candidates: Box<[SocketAddr]>,
+    transport_dialer: TransportDialer,
+}
+
+#[async_trait]
+impl ResolvedTcpConnector for OutboundProxyTcpConnector {
+    async fn connect_resolved(
+        &self,
+        original_target: &Target,
+        candidates: &[SocketAddr],
+        happy_eyeballs: Option<&HappyEyeballsConfig>,
+    ) -> Result<BoxedTransportStream, TransportError> {
+        match self.outbound.primary() {
+            TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => {
+                self.transport_dialer
+                    .connect_resolved(
+                        &ConnectorConfig::Tcp,
+                        original_target,
+                        candidates,
+                        self.outbound.freedom_happy_eyeballs().or(happy_eyeballs),
+                    )
+                    .await
+            }
+            TcpOutbound::Vless(outbound) => open_vless_tcp_stream_with_resolved_server_and_dialer(
+                outbound,
+                original_target,
+                &self.server_candidates,
+                &self.transport_dialer,
+            )
+            .await
+            .map_err(|error| TransportError::ChainedOutbound(error.to_string())),
+            TcpOutbound::Chained { .. } => {
+                unreachable!("primary outbound is never a chain wrapper")
+            }
+        }
+    }
+}
+
+fn prepare_outbound_proxy_dialer<'a>(
+    proxy: &'a TcpOutbound,
+    dns_resolver: &'a dyn DnsResolver,
+    transport_dialer: &'a TransportDialer,
+) -> Pin<Box<dyn Future<Output = Result<TransportDialer, CoreError>> + Send + 'a>> {
+    Box::pin(async move {
+        let (outbound, nested_proxy) = match proxy {
+            TcpOutbound::Chained { outbound, proxy } => (outbound.as_ref(), Some(proxy.as_ref())),
+            outbound => (outbound, None),
+        };
+        let transport_dialer = match nested_proxy {
+            Some(proxy) => {
+                prepare_outbound_proxy_dialer(proxy, dns_resolver, transport_dialer).await?
+            }
+            None => transport_dialer.clone(),
+        };
+        let requires_local_resolution = nested_proxy
+            .map(proxy_chain_requires_local_resolution)
+            .unwrap_or(true);
+        let server_candidates = match outbound.primary() {
+            TcpOutbound::Vless(vless) if requires_local_resolution => {
+                resolve_server_candidates(vless.server(), dns_resolver)
+                    .await?
+                    .into_boxed_slice()
+            }
+            TcpOutbound::Vless(_) => Box::default(),
+            TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => Box::default(),
+            TcpOutbound::Chained { .. } => {
+                unreachable!("a compiled chain wrapper has one plain primary outbound")
+            }
+        };
+        let connector_dialer = transport_dialer.clone();
+        Ok(
+            transport_dialer.with_resolved_tcp_connector(Arc::new(OutboundProxyTcpConnector {
+                outbound: outbound.clone(),
+                server_candidates,
+                transport_dialer: connector_dialer,
+            })),
+        )
+    })
+}
+
+fn proxy_chain_requires_local_resolution(proxy: &TcpOutbound) -> bool {
+    match proxy.primary() {
+        TcpOutbound::Vless(_) => false,
+        TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => match proxy {
+            TcpOutbound::Chained { proxy, .. } => proxy_chain_requires_local_resolution(proxy),
+            _ => true,
+        },
+        TcpOutbound::Chained { .. } => unreachable!("primary outbound is never a chain wrapper"),
     }
 }
 
@@ -564,6 +673,7 @@ enum CachedOutboundError {
     UnrepresentableGrpcAuthority { key: &'static str, value: String },
     InvalidGrpcUserAgent(String),
     InvalidXhttpConfiguration(String),
+    UnsupportedOutboundProxyNetwork(&'static str),
 }
 
 impl CachedOutboundError {
@@ -581,6 +691,9 @@ impl CachedOutboundError {
             CoreError::InvalidGrpcUserAgent(user_agent) => Self::InvalidGrpcUserAgent(user_agent),
             CoreError::InvalidXhttpConfiguration(message) => {
                 Self::InvalidXhttpConfiguration(message)
+            }
+            CoreError::UnsupportedOutboundProxyNetwork(network) => {
+                Self::UnsupportedOutboundProxyNetwork(network)
             }
             other => unreachable!("outbound compilation returned non-cacheable error: {other}"),
         }
@@ -600,6 +713,9 @@ impl CachedOutboundError {
             Self::InvalidGrpcUserAgent(user_agent) => CoreError::InvalidGrpcUserAgent(user_agent),
             Self::InvalidXhttpConfiguration(message) => {
                 CoreError::InvalidXhttpConfiguration(message)
+            }
+            Self::UnsupportedOutboundProxyNetwork(network) => {
+                CoreError::UnsupportedOutboundProxyNetwork(network)
             }
         }
     }
@@ -629,6 +745,21 @@ pub enum OutboundNodeKind {
     Vless,
     Dns,
     Selector,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum OutboundProxyGraphError {
+    #[error("outbound {outbound:?} proxy target {target:?} was not found")]
+    TargetNotFound { outbound: String, target: String },
+    #[error("outbound {outbound:?} proxySettings.transportLayer must be true")]
+    TransportLayerRequired { outbound: String },
+    #[error("outbound proxy cycle detected: {path:?}")]
+    Cycle { path: Vec<String> },
+    #[error("outbound {outbound:?} cannot participate in a proxy chain: {reason}")]
+    UnsupportedNode {
+        outbound: String,
+        reason: &'static str,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -794,6 +925,8 @@ pub struct OutboundGraph {
     nodes: Box<[OutboundNode]>,
     leaf_count: usize,
     first_tag_node: HashMap<String, OutboundNodeId>,
+    proxy_targets: Box<[Option<OutboundNodeId>]>,
+    proxy_validation_error: Option<OutboundProxyGraphError>,
     selector_groups: Box<[OutboundSelectorGroup]>,
     first_group_node: HashMap<String, OutboundNodeId>,
     default_node: Option<OutboundNodeId>,
@@ -827,6 +960,8 @@ impl OutboundGraph {
                 first_tag_node.entry(tag.clone()).or_insert(node.id);
             }
         }
+        let (proxy_targets, proxy_validation_error) =
+            build_outbound_proxy_edges(&config.outbounds, &nodes, &first_tag_node);
         let default_node = config
             .default_outbound_tag
             .as_deref()
@@ -886,6 +1021,8 @@ impl OutboundGraph {
             nodes: nodes.into_boxed_slice(),
             leaf_count,
             first_tag_node,
+            proxy_targets,
+            proxy_validation_error,
             selector_groups: selector_groups.into_boxed_slice(),
             first_group_node,
             default_node,
@@ -943,6 +1080,20 @@ impl OutboundGraph {
         self.unresolved_default_tag
     }
 
+    pub fn validate_proxy_chains(&self) -> Result<(), OutboundProxyGraphError> {
+        match &self.proxy_validation_error {
+            Some(error) => Err(error.clone()),
+            None => Ok(()),
+        }
+    }
+
+    pub fn proxy_target(&self, id: OutboundNodeId) -> Option<OutboundNodeId> {
+        if id.graph_identity != self.identity || id.index >= self.leaf_count {
+            return None;
+        }
+        self.proxy_targets.get(id.index).copied().flatten()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty()
     }
@@ -957,6 +1108,135 @@ impl OutboundGraph {
         }
         self.config.outbounds.get(id.index)
     }
+}
+
+fn build_outbound_proxy_edges(
+    outbounds: &[OutboundConfig],
+    nodes: &[OutboundNode],
+    first_tag_node: &HashMap<String, OutboundNodeId>,
+) -> (
+    Box<[Option<OutboundNodeId>]>,
+    Option<OutboundProxyGraphError>,
+) {
+    let mut targets = vec![None; outbounds.len()];
+    for (index, outbound) in outbounds.iter().enumerate() {
+        let Some(proxy) = &outbound.proxy_settings else {
+            continue;
+        };
+        let outbound_label = outbound_node_label(nodes, index);
+        if !proxy.transport_layer {
+            return (
+                targets.into_boxed_slice(),
+                Some(OutboundProxyGraphError::TransportLayerRequired {
+                    outbound: outbound_label,
+                }),
+            );
+        }
+        let Some(target) = first_tag_node.get(&proxy.tag).copied() else {
+            return (
+                targets.into_boxed_slice(),
+                Some(OutboundProxyGraphError::TargetNotFound {
+                    outbound: outbound_label,
+                    target: proxy.tag.clone(),
+                }),
+            );
+        };
+        targets[index] = Some(target);
+    }
+
+    let mut chained_nodes = vec![false; outbounds.len()];
+    for (index, target) in targets.iter().enumerate() {
+        if let Some(target) = target {
+            chained_nodes[index] = true;
+            chained_nodes[target.index] = true;
+        }
+    }
+    for (index, outbound) in outbounds.iter().enumerate() {
+        if !chained_nodes[index] {
+            continue;
+        }
+        let reason = match (&outbound.settings, &outbound.stream) {
+            (OutboundSettings::Dns(_), _) => Some("DNS outbounds are not TCP carriers"),
+            (
+                _,
+                StreamSettings {
+                    security: StreamSecurity::Reality(_),
+                    ..
+                },
+            ) => Some("REALITY over a preconnected stream is unsupported"),
+            (
+                _,
+                StreamSettings {
+                    transport: StreamTransport::Xhttp(_),
+                    security: StreamSecurity::Tls(tls),
+                    ..
+                },
+            ) if matches!(tls.alpn.as_slice(), [only] if only == "h3") => {
+                Some("XHTTP HTTP/3 uses QUIC rather than a TCP carrier")
+            }
+            _ => None,
+        };
+        if let Some(reason) = reason {
+            return (
+                targets.into_boxed_slice(),
+                Some(OutboundProxyGraphError::UnsupportedNode {
+                    outbound: outbound_node_label(nodes, index),
+                    reason,
+                }),
+            );
+        }
+    }
+
+    let mut state = vec![0_u8; outbounds.len()];
+    for start in 0..outbounds.len() {
+        if state[start] != 0 {
+            continue;
+        }
+        let mut path = Vec::new();
+        let mut current = start;
+        loop {
+            match state[current] {
+                2 => break,
+                1 => {
+                    let cycle_start = path
+                        .iter()
+                        .position(|candidate| *candidate == current)
+                        .expect("a visiting proxy node belongs to the current path");
+                    let mut cycle = path[cycle_start..]
+                        .iter()
+                        .map(|index| outbound_node_label(nodes, *index))
+                        .collect::<Vec<_>>();
+                    cycle.push(outbound_node_label(nodes, current));
+                    return (
+                        targets.into_boxed_slice(),
+                        Some(OutboundProxyGraphError::Cycle { path: cycle }),
+                    );
+                }
+                _ => {
+                    state[current] = 1;
+                    path.push(current);
+                }
+            }
+
+            let Some(target) = targets[current] else {
+                break;
+            };
+            current = target.index;
+        }
+        for index in path {
+            state[index] = 2;
+        }
+    }
+
+    (targets.into_boxed_slice(), None)
+}
+
+fn outbound_node_label(nodes: &[OutboundNode], index: usize) -> String {
+    nodes
+        .get(index)
+        .and_then(OutboundNode::tag)
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| format!("#{index}"))
 }
 
 #[derive(Debug)]
@@ -1937,6 +2217,7 @@ impl OutboundFactory {
         &self,
         node: OutboundNodeId,
     ) -> Result<TcpOutbound, CoreError> {
+        self.graph.validate_proxy_chains()?;
         let cached = self
             .entry(node)
             .map_err(CachedOutboundError::into_core_error)?
@@ -1949,6 +2230,7 @@ impl OutboundFactory {
         &self,
         node: OutboundNodeId,
     ) -> Result<UdpOutbound, CoreError> {
+        self.graph.validate_proxy_chains()?;
         let cached = self
             .entry(node)
             .map_err(CachedOutboundError::into_core_error)?
@@ -1961,6 +2243,7 @@ impl OutboundFactory {
         &self,
         node: OutboundNodeId,
     ) -> Result<DnsOutbound, CoreError> {
+        self.graph.validate_proxy_chains()?;
         let cached = self
             .entry(node)
             .map_err(CachedOutboundError::into_core_error)?
@@ -1998,7 +2281,7 @@ impl OutboundFactory {
             return Err(CachedOutboundError::UnsupportedOutboundNetwork);
         }
 
-        match &outbound.settings {
+        let compiled = match &outbound.settings {
             OutboundSettings::Dns(_) => Err(CachedOutboundError::NoSupportedOutbound),
             OutboundSettings::Freedom => {
                 if !stream_transport_is_dialable(&outbound.stream) {
@@ -2012,6 +2295,17 @@ impl OutboundFactory {
             OutboundSettings::Vless(_) => self
                 .cached_vless_outbound(node)
                 .map(|outbound| TcpOutbound::Vless(Box::new(outbound))),
+        }?;
+
+        match self.graph.proxy_target(node) {
+            Some(proxy) => self
+                .cached_tcp_outbound(proxy)
+                .map(|proxy| TcpOutbound::Chained {
+                    outbound: Box::new(compiled),
+                    proxy: Box::new(proxy),
+                })
+                .map_err(CachedOutboundError::from_core_error),
+            None => Ok(compiled),
         }
     }
 
@@ -2023,6 +2317,9 @@ impl OutboundFactory {
             .graph
             .configured_outbound(node)
             .ok_or(CachedOutboundError::NoSupportedOutbound)?;
+        if outbound.proxy_settings.is_some() {
+            return Err(CachedOutboundError::UnsupportedOutboundProxyNetwork("UDP"));
+        }
         match &outbound.settings {
             OutboundSettings::Dns(_) => Err(CachedOutboundError::NoSupportedOutbound),
             OutboundSettings::Freedom => {
@@ -2052,6 +2349,9 @@ impl OutboundFactory {
             .graph
             .configured_outbound(node)
             .ok_or(CachedOutboundError::NoSupportedOutbound)?;
+        if configured.proxy_settings.is_some() {
+            return Err(CachedOutboundError::UnsupportedOutboundProxyNetwork("DNS"));
+        }
         match &configured.settings {
             OutboundSettings::Dns(settings) => {
                 let conn_idle =
@@ -3062,9 +3362,46 @@ pub(crate) async fn open_tcp_stream_with_resolvers_and_dialer(
     bootstrap_resolver: &dyn DnsResolver,
     transport_dialer: &TransportDialer,
 ) -> Result<BoxedTransportStream, CoreError> {
+    if let TcpOutbound::Chained { outbound, proxy } = outbound {
+        let proxy_dialer =
+            prepare_outbound_proxy_dialer(proxy, bootstrap_resolver, transport_dialer).await?;
+        return open_plain_tcp_stream_with_resolvers_and_dialer(
+            outbound.primary(),
+            target,
+            destination_resolver,
+            bootstrap_resolver,
+            &proxy_dialer,
+            proxy_chain_requires_local_resolution(proxy),
+        )
+        .await;
+    }
+
+    open_plain_tcp_stream_with_resolvers_and_dialer(
+        outbound,
+        target,
+        destination_resolver,
+        bootstrap_resolver,
+        transport_dialer,
+        true,
+    )
+    .await
+}
+
+async fn open_plain_tcp_stream_with_resolvers_and_dialer(
+    outbound: &TcpOutbound,
+    target: &Target,
+    destination_resolver: &dyn DnsResolver,
+    bootstrap_resolver: &dyn DnsResolver,
+    transport_dialer: &TransportDialer,
+    requires_local_resolution: bool,
+) -> Result<BoxedTransportStream, CoreError> {
     match outbound {
         TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => {
-            let candidates = resolve_server_candidates(target, destination_resolver).await?;
+            let candidates = if requires_local_resolution {
+                resolve_server_candidates(target, destination_resolver).await?
+            } else {
+                Vec::new()
+            };
             Ok(transport_dialer
                 .connect_resolved(
                     &ConnectorConfig::Tcp,
@@ -3074,7 +3411,7 @@ pub(crate) async fn open_tcp_stream_with_resolvers_and_dialer(
                 )
                 .await?)
         }
-        TcpOutbound::Vless(outbound) => {
+        TcpOutbound::Vless(outbound) if requires_local_resolution => {
             open_vless_tcp_stream_with_resolver_and_dialer(
                 outbound,
                 target,
@@ -3082,6 +3419,18 @@ pub(crate) async fn open_tcp_stream_with_resolvers_and_dialer(
                 transport_dialer,
             )
             .await
+        }
+        TcpOutbound::Vless(outbound) => {
+            open_vless_tcp_stream_with_resolved_server_and_dialer(
+                outbound,
+                target,
+                &[],
+                transport_dialer,
+            )
+            .await
+        }
+        TcpOutbound::Chained { .. } => {
+            unreachable!("a chain wrapper is removed before opening its primary outbound")
         }
     }
 }
@@ -3092,19 +3441,42 @@ pub async fn open_vless_tcp_stream_with_resolver_and_dialer(
     dns_resolver: &dyn DnsResolver,
     transport_dialer: &TransportDialer,
 ) -> Result<BoxedTransportStream, CoreError> {
+    // Preserve the validation-before-I/O contract for direct VLESS opens. The
+    // resolved-server helper repeats this check because chained opens enter it
+    // directly with candidates supplied by the outer proxy dialer.
+    validate_connector_flow(
+        outbound.user().flow.as_deref(),
+        outbound.transport(),
+        outbound.transport_layer(),
+    )?;
+    let resolved_server = resolve_server_candidates(outbound.server(), dns_resolver).await?;
+    open_vless_tcp_stream_with_resolved_server_and_dialer(
+        outbound,
+        target,
+        &resolved_server,
+        transport_dialer,
+    )
+    .await
+}
+
+async fn open_vless_tcp_stream_with_resolved_server_and_dialer(
+    outbound: &VlessTcpOutbound,
+    target: &Target,
+    resolved_server: &[SocketAddr],
+    transport_dialer: &TransportDialer,
+) -> Result<BoxedTransportStream, CoreError> {
     let flow = validate_connector_flow(
         outbound.user().flow.as_deref(),
         outbound.transport(),
         outbound.transport_layer(),
     )?;
 
-    let resolved_server = resolve_server_candidates(outbound.server(), dns_resolver).await?;
     let mut stream = transport_dialer
         .connect_stream(
             outbound.transport(),
             outbound.transport_layer(),
             outbound.server(),
-            &resolved_server,
+            resolved_server,
             outbound.happy_eyeballs(),
         )
         .await?;
@@ -3270,12 +3642,14 @@ mod tests {
     use xray_config::{
         compile_domain_matchers, DnsConfig, DnsServerConfig, DomainMatcher, DomainMatcherSet,
         GrpcSettings, HappyEyeballsSettings, HttpUpgradeSettings, IpCidr, IpMatcherSet,
-        RealitySettings, RealityShortId, RoutingConfig, RoutingDomainStrategy, RoutingPortRange,
-        RoutingRule, SocketOptions, StreamSettings, TlsSettings, VlessOutboundSettings,
-        WebSocketSettings,
+        OutboundProxySettings, RealitySettings, RealityShortId, RoutingConfig,
+        RoutingDomainStrategy, RoutingPortRange, RoutingRule, SocketOptions, StreamSettings,
+        TlsSettings, VlessOutboundSettings, WebSocketSettings,
     };
     use xray_proxy::vless::{unpad_vision_block, VisionCommand};
-    use xray_transport::{CachingDnsResolver, DnsLookup, RealityTlsEngine, TransportError};
+    use xray_transport::{
+        CachingDnsResolver, DnsLookup, RealityTlsEngine, ResolvedTcpConnector, TransportError,
+    };
 
     use super::*;
 
@@ -3305,9 +3679,31 @@ mod tests {
         (frame, content_len, padding_len)
     }
 
+    #[derive(Default)]
+    struct RecordingTcpConnector {
+        calls: AtomicUsize,
+        peers: Mutex<Vec<tokio::io::DuplexStream>>,
+    }
+
+    #[async_trait]
+    impl ResolvedTcpConnector for RecordingTcpConnector {
+        async fn connect_resolved(
+            &self,
+            _original_target: &Target,
+            _candidates: &[SocketAddr],
+            _happy_eyeballs: Option<&HappyEyeballsConfig>,
+        ) -> Result<BoxedTransportStream, TransportError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            let (stream, peer) = tokio::io::duplex(4_096);
+            self.peers.lock().unwrap().push(peer);
+            Ok(Box::new(stream))
+        }
+    }
+
     fn direct_selection_freedom(tag: &str) -> OutboundConfig {
         OutboundConfig {
             tag: Some(tag.to_owned()),
+            proxy_settings: None,
             stream: StreamSettings {
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
@@ -3322,6 +3718,7 @@ mod tests {
     fn direct_selection_vless(tag: &str) -> OutboundConfig {
         OutboundConfig {
             tag: Some(tag.to_owned()),
+            proxy_settings: None,
             stream: StreamSettings {
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
@@ -3345,6 +3742,7 @@ mod tests {
     fn dns_selection_outbound(tag: &str, settings: DnsOutboundSettings) -> OutboundConfig {
         OutboundConfig {
             tag: Some(tag.to_owned()),
+            proxy_settings: None,
             stream: StreamSettings {
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
@@ -4472,6 +4870,365 @@ mod tests {
 
         assert_eq!(graph.default_node(), None);
         assert!(graph.has_unresolved_default_tag());
+    }
+
+    #[test]
+    fn outbound_graph_resolves_transport_layer_proxy_edges() {
+        let mut config = direct_selection_config();
+        config.outbounds = vec![
+            direct_selection_freedom("entry"),
+            direct_selection_freedom("exit"),
+        ];
+        config.outbounds[0].proxy_settings = Some(OutboundProxySettings {
+            tag: "exit".to_owned(),
+            transport_layer: true,
+        });
+        let graph = OutboundGraph::new(Arc::new(config));
+
+        graph.validate_proxy_chains().expect("valid chain");
+        assert_eq!(
+            graph.proxy_target(graph.nodes()[0].id()),
+            Some(graph.nodes()[1].id())
+        );
+        assert_eq!(graph.proxy_target(graph.nodes()[1].id()), None);
+    }
+
+    #[test]
+    fn outbound_graph_rejects_a_missing_proxy_target() {
+        let mut config = direct_selection_config();
+        config.outbounds[0].proxy_settings = Some(OutboundProxySettings {
+            tag: "missing".to_owned(),
+            transport_layer: true,
+        });
+        let graph = OutboundGraph::new(Arc::new(config));
+
+        assert_eq!(
+            graph.validate_proxy_chains(),
+            Err(OutboundProxyGraphError::TargetNotFound {
+                outbound: "direct".to_owned(),
+                target: "missing".to_owned(),
+            })
+        );
+    }
+
+    #[test]
+    fn outbound_graph_rejects_programmatic_protocol_layer_proxy_settings() {
+        let mut config = direct_selection_config();
+        config.outbounds[0].proxy_settings = Some(OutboundProxySettings {
+            tag: "proxy".to_owned(),
+            transport_layer: false,
+        });
+
+        assert_eq!(
+            OutboundGraph::new(Arc::new(config)).validate_proxy_chains(),
+            Err(OutboundProxyGraphError::TransportLayerRequired {
+                outbound: "direct".to_owned(),
+            })
+        );
+    }
+
+    #[test]
+    fn outbound_graph_rejects_self_and_multi_node_proxy_cycles() {
+        let mut self_cycle = direct_selection_config();
+        self_cycle.outbounds[0].proxy_settings = Some(OutboundProxySettings {
+            tag: "direct".to_owned(),
+            transport_layer: true,
+        });
+        assert_eq!(
+            OutboundGraph::new(Arc::new(self_cycle)).validate_proxy_chains(),
+            Err(OutboundProxyGraphError::Cycle {
+                path: vec!["direct".to_owned(), "direct".to_owned()],
+            })
+        );
+
+        let mut cycle = direct_selection_config();
+        cycle.outbounds = vec![
+            direct_selection_freedom("a"),
+            direct_selection_freedom("b"),
+            direct_selection_freedom("c"),
+        ];
+        for (index, target) in ["b", "c", "a"].into_iter().enumerate() {
+            cycle.outbounds[index].proxy_settings = Some(OutboundProxySettings {
+                tag: target.to_owned(),
+                transport_layer: true,
+            });
+        }
+        assert_eq!(
+            OutboundGraph::new(Arc::new(cycle)).validate_proxy_chains(),
+            Err(OutboundProxyGraphError::Cycle {
+                path: vec![
+                    "a".to_owned(),
+                    "b".to_owned(),
+                    "c".to_owned(),
+                    "a".to_owned(),
+                ],
+            })
+        );
+    }
+
+    #[test]
+    fn outbound_graph_rejects_reality_inside_a_proxy_chain() {
+        let mut config = direct_selection_config();
+        let mut proxy = direct_selection_vless("proxy");
+        proxy.stream.security = StreamSecurity::Reality(RealitySettings {
+            server_name: "server.example".to_owned(),
+            fingerprint: "chrome".to_owned(),
+            public_key: [7; 32],
+            short_id: RealityShortId::try_from_slice(&[1, 2, 3, 4]).unwrap(),
+            spider_x: "/".to_owned(),
+            mldsa65_verify: None,
+        });
+        config.outbounds = vec![direct_selection_freedom("entry"), proxy];
+        config.outbounds[0].proxy_settings = Some(OutboundProxySettings {
+            tag: "proxy".to_owned(),
+            transport_layer: true,
+        });
+
+        assert!(matches!(
+            OutboundGraph::new(Arc::new(config)).validate_proxy_chains(),
+            Err(OutboundProxyGraphError::UnsupportedNode { outbound, .. }) if outbound == "proxy"
+        ));
+    }
+
+    #[tokio::test]
+    async fn freedom_proxy_chain_uses_the_nested_tcp_carrier() {
+        let mut config = direct_selection_config();
+        config.outbounds = vec![
+            direct_selection_freedom("entry"),
+            direct_selection_freedom("exit"),
+        ];
+        config.outbounds[0].proxy_settings = Some(OutboundProxySettings {
+            tag: "exit".to_owned(),
+            transport_layer: true,
+        });
+        config.default_outbound_tag = Some("entry".to_owned());
+        config.routing.rules.clear();
+        let router = OutboundRouter::new(Arc::new(config));
+        let outbound = router.select_tcp_outbound().expect("compile chain");
+        assert!(matches!(outbound, TcpOutbound::Chained { .. }));
+
+        let connector = Arc::new(RecordingTcpConnector::default());
+        let dialer = TransportDialer::system()
+            .unwrap()
+            .with_resolved_tcp_connector(connector.clone());
+        let target = Target::new(
+            RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 80))),
+            443,
+            RoutingNetwork::Tcp,
+        );
+
+        let _stream = open_tcp_stream_with_resolver_and_dialer(
+            &outbound,
+            &target,
+            &SystemDnsResolver,
+            &dialer,
+        )
+        .await
+        .expect("open through nested freedom carrier");
+
+        assert_eq!(connector.calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn vless_proxy_chain_writes_the_outer_request_over_the_nested_carrier() {
+        let mut config = direct_selection_config();
+        config.outbounds = vec![
+            direct_selection_vless("entry"),
+            direct_selection_freedom("exit"),
+        ];
+        config.outbounds[0].proxy_settings = Some(OutboundProxySettings {
+            tag: "exit".to_owned(),
+            transport_layer: true,
+        });
+        config.default_outbound_tag = Some("entry".to_owned());
+        config.routing.rules.clear();
+        let router = OutboundRouter::new(Arc::new(config));
+        let outbound = router.select_tcp_outbound().expect("compile VLESS chain");
+
+        let connector = Arc::new(RecordingTcpConnector::default());
+        let dialer = TransportDialer::system()
+            .unwrap()
+            .with_resolved_tcp_connector(connector.clone());
+        let target = Target::new(
+            RoutingTargetAddr::Domain("destination.example".to_owned()),
+            8443,
+            RoutingNetwork::Tcp,
+        );
+        let _stream = open_tcp_stream_with_resolver_and_dialer(
+            &outbound,
+            &target,
+            &SystemDnsResolver,
+            &dialer,
+        )
+        .await
+        .expect("open outer VLESS over nested carrier");
+
+        let mut peer = connector.peers.lock().unwrap().pop().expect("nested peer");
+        let primary = outbound.primary();
+        let TcpOutbound::Vless(vless) = primary else {
+            panic!("entry should compile as VLESS");
+        };
+        let expected = encode_request_header(&VlessRequest {
+            user_id: vless.user().id,
+            command: VlessCommand::Tcp,
+            target,
+            flow: None,
+        })
+        .unwrap();
+        let mut received = vec![0; expected.len()];
+        peer.read_exact(&mut received).await.unwrap();
+
+        assert_eq!(received, expected);
+        assert_eq!(connector.calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn freedom_over_vless_chain_does_not_resolve_the_final_domain_locally() {
+        let mut config = direct_selection_config();
+        config.outbounds = vec![
+            direct_selection_freedom("entry"),
+            direct_selection_vless("proxy"),
+        ];
+        config.outbounds[0].proxy_settings = Some(OutboundProxySettings {
+            tag: "proxy".to_owned(),
+            transport_layer: true,
+        });
+        config.default_outbound_tag = Some("entry".to_owned());
+        config.routing.rules.clear();
+        let router = OutboundRouter::new(Arc::new(config));
+        let outbound = router
+            .select_tcp_outbound()
+            .expect("compile VLESS proxy chain");
+
+        let connector = Arc::new(RecordingTcpConnector::default());
+        let dialer = TransportDialer::system()
+            .unwrap()
+            .with_resolved_tcp_connector(connector);
+        let resolver = FakeDnsResolver::failing_with(TransportError::NoResolvedAddress(
+            "destination.example".to_owned(),
+            443,
+        ));
+        let target = Target::new(
+            RoutingTargetAddr::Domain("destination.example".to_owned()),
+            443,
+            RoutingNetwork::Tcp,
+        );
+
+        let _stream =
+            open_tcp_stream_with_resolver_and_dialer(&outbound, &target, &resolver, &dialer)
+                .await
+                .expect("the VLESS proxy should receive the unresolved domain");
+
+        assert_eq!(resolver.calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn multi_hop_vless_chain_layers_each_request_in_graph_order() {
+        let mut config = direct_selection_config();
+        config.outbounds = vec![
+            direct_selection_vless("entry"),
+            direct_selection_vless("middle"),
+            direct_selection_freedom("exit"),
+        ];
+        config.outbounds[0].proxy_settings = Some(OutboundProxySettings {
+            tag: "middle".to_owned(),
+            transport_layer: true,
+        });
+        config.outbounds[1].proxy_settings = Some(OutboundProxySettings {
+            tag: "exit".to_owned(),
+            transport_layer: true,
+        });
+        config.default_outbound_tag = Some("entry".to_owned());
+        config.routing.rules.clear();
+        let router = OutboundRouter::new(Arc::new(config));
+        let outbound = router
+            .select_tcp_outbound()
+            .expect("compile multi-hop chain");
+
+        let connector = Arc::new(RecordingTcpConnector::default());
+        let dialer = TransportDialer::system()
+            .unwrap()
+            .with_resolved_tcp_connector(connector.clone());
+        let target = Target::new(
+            RoutingTargetAddr::Domain("destination.example".to_owned()),
+            8443,
+            RoutingNetwork::Tcp,
+        );
+        let _stream = open_tcp_stream_with_resolver_and_dialer(
+            &outbound,
+            &target,
+            &SystemDnsResolver,
+            &dialer,
+        )
+        .await
+        .expect("open multi-hop VLESS chain");
+
+        let TcpOutbound::Chained {
+            outbound: entry,
+            proxy,
+        } = &outbound
+        else {
+            panic!("entry should be wrapped by its proxy edge");
+        };
+        let TcpOutbound::Vless(entry) = entry.primary() else {
+            panic!("entry should be VLESS");
+        };
+        let TcpOutbound::Vless(middle) = proxy.primary() else {
+            panic!("middle should be VLESS");
+        };
+        let middle_request = encode_request_header(&VlessRequest {
+            user_id: middle.user().id,
+            command: VlessCommand::Tcp,
+            target: entry.server().clone(),
+            flow: None,
+        })
+        .unwrap();
+        let entry_request = encode_request_header(&VlessRequest {
+            user_id: entry.user().id,
+            command: VlessCommand::Tcp,
+            target,
+            flow: None,
+        })
+        .unwrap();
+        let mut expected = middle_request;
+        expected.extend_from_slice(&entry_request);
+        let mut peer = connector
+            .peers
+            .lock()
+            .unwrap()
+            .pop()
+            .expect("terminal peer");
+        let mut received = vec![0; expected.len()];
+        peer.read_exact(&mut received).await.unwrap();
+
+        assert_eq!(received, expected);
+        assert_eq!(connector.calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn udp_selection_rejects_a_tcp_only_proxy_chain() {
+        let mut config = direct_selection_config();
+        config.outbounds = vec![
+            direct_selection_freedom("entry"),
+            direct_selection_freedom("exit"),
+        ];
+        config.outbounds[0].proxy_settings = Some(OutboundProxySettings {
+            tag: "exit".to_owned(),
+            transport_layer: true,
+        });
+        config.default_outbound_tag = Some("entry".to_owned());
+        config.routing.rules.clear();
+        let router = OutboundRouter::new(Arc::new(config));
+        let target = Target::new(
+            RoutingTargetAddr::Domain("dns.example".to_owned()),
+            53,
+            RoutingNetwork::Udp,
+        );
+
+        assert!(matches!(
+            router.select_udp_outbound_for_session(None, &target),
+            Err(CoreError::UnsupportedOutboundProxyNetwork("UDP"))
+        ));
     }
 
     fn selector_group_config(strategy: RoutingBalancerStrategy) -> CoreConfig {

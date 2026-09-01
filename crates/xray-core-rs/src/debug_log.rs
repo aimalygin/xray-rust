@@ -18,9 +18,10 @@ pub(crate) fn log_route_decision(logger: &RuntimeLogger, event: RouteDecisionLog
 }
 
 pub(crate) fn tcp_outbound_label(outbound: &TcpOutbound) -> &'static str {
-    match outbound {
+    match outbound.primary() {
         TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => "freedom",
         TcpOutbound::Vless(_) => "vless",
+        TcpOutbound::Chained { .. } => unreachable!("primary outbound is never a chain wrapper"),
     }
 }
 

@@ -473,8 +473,15 @@ pub enum InboundProtocol {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutboundConfig {
     pub tag: Option<String>,
+    pub proxy_settings: Option<OutboundProxySettings>,
     pub stream: StreamSettings,
     pub settings: OutboundSettings,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutboundProxySettings {
+    pub tag: String,
+    pub transport_layer: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

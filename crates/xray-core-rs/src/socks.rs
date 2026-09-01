@@ -28,7 +28,7 @@ use crate::outbound::{
 use crate::{
     dns::RuntimeDnsResolvers,
     dns_outbound_runtime::{DnsOutboundRuntime, FakeIpTargetProvenance},
-    open_vless_tcp_stream_with_resolver_and_dialer, open_vless_udp_stream_with_resolver_and_dialer,
+    open_vless_udp_stream_with_resolver_and_dialer,
     policy::{
         accept_error_wants_backoff, copy_bidirectional_with_idle_timeout,
         effective_policy_for_level, AcceptBackoff, EffectivePolicy,
@@ -426,147 +426,83 @@ async fn handle_socks_connect(
         }
     };
 
-    match outbound {
-        outbound @ (TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_)) => {
-            let mut outbound_stream = match tokio::time::timeout(
-                policy.handshake,
-                open_tcp_stream_with_resolvers_and_dialer(
-                    &outbound,
-                    &dial_target,
-                    dns_resolvers.destination.as_ref(),
-                    dns_resolvers.bootstrap.as_ref(),
-                    transport_dialer.as_ref(),
-                ),
-            )
-            .await
-            {
-                Ok(Ok(stream)) => stream,
-                Ok(Err(_)) => {
-                    if let Some(source) = source.as_deref() {
-                        crate::debug_log::log_access_rejected(
-                            &runtime_logger,
-                            source,
-                            &dial_target,
-                            "freedom tcp open failed",
-                        );
-                    }
-                    if !sniff_tcp {
-                        let _ = write_socks5_failure(&mut inbound).await;
-                    }
-                    return;
-                }
-                Err(_) => {
-                    if let Some(source) = source.as_deref() {
-                        crate::debug_log::log_access_rejected(
-                            &runtime_logger,
-                            source,
-                            &dial_target,
-                            "freedom tcp open timed out",
-                        );
-                    }
-                    if !sniff_tcp {
-                        let _ = write_socks5_failure(&mut inbound).await;
-                    }
-                    return;
-                }
-            };
-            if let Some(source) = source.as_deref() {
-                crate::debug_log::log_access_accepted(
-                    &runtime_logger,
-                    source,
-                    &dial_target,
-                    "freedom",
-                );
-            }
-
-            if !sniff_tcp && write_socks5_success(&mut inbound).await.is_err() {
-                return;
-            }
-            if !initial_payload.is_empty()
-                && outbound_stream.write_all(&initial_payload).await.is_err()
-            {
-                return;
-            }
-
-            let _ = copy_bidirectional_with_idle_timeout(
-                &mut inbound,
-                &mut outbound_stream,
-                policy.conn_idle,
-                policy.relay_buffer_size(),
-            )
-            .await;
-        }
-        TcpOutbound::Vless(outbound) => {
-            let outbound_policy = effective_policy_for_level(&config, Some(outbound.user().level));
-            let tunnel_idle = policy.conn_idle.min(outbound_policy.conn_idle);
-            let mut outbound_stream = match tokio::time::timeout(
+    let (open_timeout, tunnel_idle, relay_buffer_size) = match outbound.primary() {
+        TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => (
+            policy.handshake,
+            policy.conn_idle,
+            policy.relay_buffer_size(),
+        ),
+        TcpOutbound::Vless(vless) => {
+            let outbound_policy = effective_policy_for_level(&config, Some(vless.user().level));
+            (
                 outbound_policy.handshake,
-                open_vless_tcp_stream_with_resolver_and_dialer(
-                    &outbound,
-                    &dial_target,
-                    dns_resolvers.bootstrap.as_ref(),
-                    transport_dialer.as_ref(),
-                ),
-            )
-            .await
-            {
-                Ok(Ok(stream)) => stream,
-                Ok(Err(error)) => {
-                    if let Some(source) = source.as_deref() {
-                        crate::debug_log::log_access_rejected(
-                            &runtime_logger,
-                            source,
-                            &dial_target,
-                            error,
-                        );
-                    }
-                    if !sniff_tcp {
-                        let _ = write_socks5_failure(&mut inbound).await;
-                    }
-                    return;
-                }
-                Err(_) => {
-                    if let Some(source) = source.as_deref() {
-                        crate::debug_log::log_access_rejected(
-                            &runtime_logger,
-                            source,
-                            &dial_target,
-                            "vless tcp open timed out",
-                        );
-                    }
-                    if !sniff_tcp {
-                        let _ = write_socks5_failure(&mut inbound).await;
-                    }
-                    return;
-                }
-            };
-            if let Some(source) = source.as_deref() {
-                crate::debug_log::log_access_accepted(
-                    &runtime_logger,
-                    source,
-                    &dial_target,
-                    "vless",
-                );
-            }
-
-            if !sniff_tcp && write_socks5_success(&mut inbound).await.is_err() {
-                return;
-            }
-            if !initial_payload.is_empty()
-                && outbound_stream.write_all(&initial_payload).await.is_err()
-            {
-                return;
-            }
-
-            let _ = copy_bidirectional_with_idle_timeout(
-                &mut inbound,
-                &mut outbound_stream,
-                tunnel_idle,
+                policy.conn_idle.min(outbound_policy.conn_idle),
                 outbound_policy.relay_buffer_size(),
             )
-            .await;
         }
+        TcpOutbound::Chained { .. } => unreachable!("primary outbound is never a chain wrapper"),
+    };
+    let outbound_label = crate::debug_log::tcp_outbound_label(&outbound);
+    let mut outbound_stream = match tokio::time::timeout(
+        open_timeout,
+        open_tcp_stream_with_resolvers_and_dialer(
+            &outbound,
+            &dial_target,
+            dns_resolvers.destination.as_ref(),
+            dns_resolvers.bootstrap.as_ref(),
+            transport_dialer.as_ref(),
+        ),
+    )
+    .await
+    {
+        Ok(Ok(stream)) => stream,
+        Ok(Err(error)) => {
+            if let Some(source) = source.as_deref() {
+                crate::debug_log::log_access_rejected(&runtime_logger, source, &dial_target, error);
+            }
+            if !sniff_tcp {
+                let _ = write_socks5_failure(&mut inbound).await;
+            }
+            return;
+        }
+        Err(_) => {
+            if let Some(source) = source.as_deref() {
+                crate::debug_log::log_access_rejected(
+                    &runtime_logger,
+                    source,
+                    &dial_target,
+                    "outbound tcp open timed out",
+                );
+            }
+            if !sniff_tcp {
+                let _ = write_socks5_failure(&mut inbound).await;
+            }
+            return;
+        }
+    };
+    if let Some(source) = source.as_deref() {
+        crate::debug_log::log_access_accepted(
+            &runtime_logger,
+            source,
+            &dial_target,
+            outbound_label,
+        );
     }
+
+    if !sniff_tcp && write_socks5_success(&mut inbound).await.is_err() {
+        return;
+    }
+    if !initial_payload.is_empty() && outbound_stream.write_all(&initial_payload).await.is_err() {
+        return;
+    }
+
+    let _ = copy_bidirectional_with_idle_timeout(
+        &mut inbound,
+        &mut outbound_stream,
+        tunnel_idle,
+        relay_buffer_size,
+    )
+    .await;
 }
 
 async fn read_socks_tcp_sniff_payload(

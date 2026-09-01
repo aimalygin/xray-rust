@@ -30,6 +30,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
 
     let outbound = OutboundConfig {
         tag: Some("proxy".to_owned()),
+        proxy_settings: None,
         stream: StreamSettings {
             network: Network::Tcp,
             transport: StreamTransport::Raw,
@@ -88,6 +89,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
         }],
         outbounds: vec![OutboundConfig {
             tag: Some("proxy".to_owned()),
+            proxy_settings: None,
             stream: StreamSettings {
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
@@ -145,6 +147,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
 fn normalized_model_can_represent_freedom_outbound() {
     let outbound = OutboundConfig {
         tag: Some("direct".to_owned()),
+        proxy_settings: None,
         stream: StreamSettings {
             network: Network::Tcp,
             transport: StreamTransport::Raw,

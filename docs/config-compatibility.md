@@ -93,8 +93,27 @@ TCP transport to `raw` and XHTTP from `splithttp`; both pairs are accepted alias
 `tcpSettings.header.type` — equally `rawSettings.header.type` — may be absent,
 empty, or `none`. Generic HTTP/2, QUIC, KCP and other stream transports are not
 supported; HTTP/2 and QUIC v1 are available only as XHTTP's selected wire
-engines. Outbound mux, `proxySettings`, `sendThrough`, multiple VLESS servers,
-and outbound chaining are rejected.
+engines. Outbound mux, `sendThrough`, multiple VLESS servers, and
+protocol-layer chaining remain unsupported. The supported chaining subset
+uses Xray's outbound `proxySettings` with a non-empty `tag` and an explicit
+`"transportLayer": true`:
+
+```json
+{
+  "tag": "entry",
+  "protocol": "vless",
+  "proxySettings": { "tag": "exit", "transportLayer": true }
+}
+```
+
+The referenced tag is resolved through the immutable outbound graph before the
+core starts. Missing targets, self-cycles, and multi-node cycles fail closed.
+TCP Freedom and VLESS chains can use raw, TLS, WebSocket, HTTPUpgrade, gRPC,
+and TCP-backed XHTTP carriers. Chained UDP/DNS, protocol-layer
+`transportLayer: false`, REALITY inside a chain, and XHTTP HTTP/3 inside a
+chain remain rejected rather than bypassing the configured edge. When a VLESS
+hop can carry the next domain target, the target stays unresolved until that
+hop; only terminal Freedom carriers use local destination resolution.
 
 VLESS with `encryption: "none"` and no stream security fails closed for a
 public server address. This adopts Xray-core v26.7.28's policy but deliberately

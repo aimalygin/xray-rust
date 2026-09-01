@@ -53,9 +53,10 @@ pub use outbound::{
     open_vless_tcp_stream_with_resolver, open_vless_tcp_stream_with_resolver_and_dialer,
     open_vless_udp_stream_with_resolver_and_dialer, DnsOutbound, OutboundFactory, OutboundGraph,
     OutboundHealthFailure, OutboundHealthSnapshot, OutboundHealthState,
-    OutboundHealthStatusSnapshot, OutboundNode, OutboundNodeId, OutboundNodeKind, OutboundRouter,
-    OutboundSelectionOverlay, OutboundSelectionSnapshot, OutboundSelectorGroup,
-    OutboundSelectorGroupSnapshot, TcpOutbound, UdpOutbound, VlessTcpOutbound, VlessUdpFraming,
+    OutboundHealthStatusSnapshot, OutboundNode, OutboundNodeId, OutboundNodeKind,
+    OutboundProxyGraphError, OutboundRouter, OutboundSelectionOverlay, OutboundSelectionSnapshot,
+    OutboundSelectorGroup, OutboundSelectorGroupSnapshot, TcpOutbound, UdpOutbound,
+    VlessTcpOutbound, VlessUdpFraming,
 };
 pub use runtime_log::{RuntimeLogConfig, RuntimeLogger};
 pub use startup_probe::{StartupProbeError, StartupProbeOptions};
@@ -224,6 +225,10 @@ pub enum CoreError {
     OutboundSelectorGroupNotFound(String),
     #[error("outbound {outbound:?} is not a candidate of selector group {group:?}")]
     OutboundSelectorCandidateNotFound { group: String, outbound: String },
+    #[error(transparent)]
+    OutboundProxyGraph(#[from] OutboundProxyGraphError),
+    #[error("outbound chaining does not support {0}")]
+    UnsupportedOutboundProxyNetwork(&'static str),
     #[error("unauthenticated SOCKS/HTTP listener requires explicit LAN exposure permission")]
     UnauthenticatedLanExposure,
     #[error("invalid fake-IP configuration")]
@@ -535,6 +540,7 @@ impl Core {
         ensure_effective_dns_tag(&mut config);
         let config = Arc::new(config);
         let outbound_graph = Arc::new(OutboundGraph::new(Arc::clone(&config)));
+        outbound_graph.validate_proxy_chains()?;
         let outbound_factory = Arc::new(OutboundFactory::new(outbound_graph));
         let outbound_router = Arc::new(OutboundRouter::from_factory(outbound_factory));
         let shutdown = Shutdown::new();

@@ -1523,6 +1523,7 @@ fn rust_core_config_with_transport(
         }],
         outbounds: vec![OutboundConfig {
             tag: Some("proxy".to_owned()),
+            proxy_settings: None,
             stream: StreamSettings {
                 network: Network::Tcp,
                 transport,

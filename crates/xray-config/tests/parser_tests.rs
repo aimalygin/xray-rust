@@ -1713,6 +1713,53 @@ fn rejects_send_through_with_path() {
 }
 
 #[test]
+fn parses_transport_layer_outbound_proxy_settings() {
+    let raw = r#"{
+      "inbounds": [],
+      "outbounds": [
+        {
+          "tag": "entry",
+          "protocol": "freedom",
+          "proxySettings": { "tag": "exit", "transportLayer": true }
+        },
+        { "tag": "exit", "protocol": "freedom" }
+      ]
+    }"#;
+
+    let parsed = parse_xray_json(raw).expect("transport-layer chain should parse");
+    let proxy = parsed.config.outbounds[0]
+        .proxy_settings
+        .as_ref()
+        .expect("proxy settings");
+    assert_eq!(proxy.tag, "exit");
+    assert!(proxy.transport_layer);
+}
+
+#[test]
+fn rejects_protocol_layer_outbound_proxy_settings() {
+    for transport_layer in ["false", "null"] {
+        let raw = raw_with_outbound_extra(&format!(
+            r#""proxySettings": {{ "tag": "exit", "transportLayer": {transport_layer} }}"#
+        ));
+        assert_parse_error_path(&raw, "$.outbounds[0].proxySettings.transportLayer");
+    }
+}
+
+#[test]
+fn rejects_outbound_proxy_settings_without_explicit_transport_layer() {
+    let raw = raw_with_outbound_extra(r#""proxySettings": { "tag": "exit" }"#);
+
+    assert_parse_error_path(&raw, "$.outbounds[0].proxySettings.transportLayer");
+}
+
+#[test]
+fn rejects_outbound_proxy_settings_with_empty_tag() {
+    let raw = raw_with_outbound_extra(r#""proxySettings": { "tag": "", "transportLayer": true }"#);
+
+    assert_parse_error_path(&raw, "$.outbounds[0].proxySettings.tag");
+}
+
+#[test]
 fn rejects_tls_allow_insecure_true_with_path() {
     let raw = raw_with_tls_settings(r#""serverName": "server.example", "allowInsecure": true"#);
 

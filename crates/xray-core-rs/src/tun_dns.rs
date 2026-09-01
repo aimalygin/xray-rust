@@ -3151,13 +3151,14 @@ async fn open_raw_dns_tcp_candidate(
         );
         return RawDnsTcpOpenResult::TimedOut;
     }
-    let policy_timeout = match &outbound {
+    let policy_timeout = match outbound.primary() {
         TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => {
             context.inbound_policy.handshake
         }
         TcpOutbound::Vless(outbound) => {
             effective_policy_for_level(&context.config, Some(outbound.user().level)).handshake
         }
+        TcpOutbound::Chained { .. } => unreachable!("primary outbound is never a chain wrapper"),
     };
     let policy_deadline = TokioInstant::now() + DNS_TCP_PROXY_ATTEMPT_TIMEOUT.min(policy_timeout);
     let open_deadline = candidate_deadline.min(policy_deadline);

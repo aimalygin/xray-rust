@@ -86,15 +86,16 @@ const TEST_UUID_BYTES: [u8; 16] = [
 fn compile_vless_tcp_outbound_one_shot(config: &CoreConfig) -> Result<VlessTcpOutbound, CoreError> {
     match OutboundRouter::new(Arc::new(config.clone())).select_tcp_outbound()? {
         TcpOutbound::Vless(outbound) => Ok(*outbound),
-        TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => {
-            Err(CoreError::NoSupportedOutbound)
-        }
+        TcpOutbound::Freedom
+        | TcpOutbound::FreedomHappyEyeballs(_)
+        | TcpOutbound::Chained { .. } => Err(CoreError::NoSupportedOutbound),
     }
 }
 
 fn vless_outbound(security: StreamSecurity, server: TargetAddr, port: u16) -> OutboundConfig {
     OutboundConfig {
         tag: Some("proxy".to_owned()),
+        proxy_settings: None,
         stream: StreamSettings {
             network: Network::Tcp,
             transport: StreamTransport::Raw,
@@ -118,6 +119,7 @@ fn vless_outbound(security: StreamSecurity, server: TargetAddr, port: u16) -> Ou
 fn freedom_outbound() -> OutboundConfig {
     OutboundConfig {
         tag: Some("direct".to_owned()),
+        proxy_settings: None,
         stream: StreamSettings {
             network: Network::Tcp,
             transport: StreamTransport::Raw,
@@ -132,6 +134,7 @@ fn freedom_outbound() -> OutboundConfig {
 fn dns_outbound(settings: DnsOutboundSettings) -> OutboundConfig {
     OutboundConfig {
         tag: Some("dns-out".to_owned()),
+        proxy_settings: None,
         stream: StreamSettings {
             network: Network::Tcp,
             transport: StreamTransport::Raw,

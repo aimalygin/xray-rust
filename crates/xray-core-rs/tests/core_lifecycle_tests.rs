@@ -7,8 +7,9 @@ use tokio::time::{timeout, Duration};
 use uuid::Uuid;
 use xray_config::{
     CoreConfig, DnsFakeIpConfig, InboundConfig, InboundProtocol, IpCidr, Network, OutboundConfig,
-    OutboundSettings, RoutingBalancer, RoutingBalancerStrategy, RoutingConfig, StreamSecurity,
-    StreamSettings, StreamTransport, TargetAddr, VlessOutboundSettings, VlessUser,
+    OutboundProxySettings, OutboundSettings, RoutingBalancer, RoutingBalancerStrategy,
+    RoutingConfig, StreamSecurity, StreamSettings, StreamTransport, TargetAddr,
+    VlessOutboundSettings, VlessUser,
 };
 use xray_core_rs::{
     Core, CoreError, CoreState, OutboundNodeKind, TunRuntimeOptions, TunRuntimeProfile,
@@ -28,6 +29,7 @@ fn runtime_config() -> CoreConfig {
         }],
         outbounds: vec![OutboundConfig {
             tag: Some("proxy".to_owned()),
+            proxy_settings: None,
             stream: StreamSettings {
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
@@ -83,12 +85,27 @@ fn core_owns_one_outbound_graph_and_factory_before_start() {
     ));
 }
 
+#[test]
+fn core_rejects_an_invalid_outbound_proxy_graph_before_start() {
+    let mut config = runtime_config();
+    config.outbounds[0].proxy_settings = Some(OutboundProxySettings {
+        tag: "missing".to_owned(),
+        transport_layer: true,
+    });
+
+    assert!(matches!(
+        Core::new(config),
+        Err(CoreError::OutboundProxyGraph(_))
+    ));
+}
+
 #[tokio::test]
 async fn core_selector_override_is_available_before_and_during_runtime() {
     let mut config = runtime_config();
     config.outbounds[0].tag = Some("proxy-a".to_owned());
     config.outbounds.push(OutboundConfig {
         tag: Some("proxy-b".to_owned()),
+        proxy_settings: None,
         stream: StreamSettings {
             network: Network::Tcp,
             transport: StreamTransport::Raw,

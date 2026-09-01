@@ -16,10 +16,10 @@ use crate::{
     DnsQTypeRange, DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint, DnsServerTransport,
     DomainHostIndex, DomainMatcher, DomainNameMode, GrpcSettings, HappyEyeballsSettings,
     HttpUpgradeSettings, InboundConfig, InboundProtocol, InboundSniffingConfig, IpCidr, Network,
-    ObservatoryConfig, OutboundConfig, OutboundProtocol, OutboundSettings, PolicyConfig,
-    PolicyLevelConfig, PolicySystemConfig, QuicBbrProfile, QuicCongestion, QuicIntervalRange,
-    QuicParamsSettings, QuicUdpHopSettings, RealitySettings, RealityShortId, RegexMatcher,
-    RoutingBalancer, RoutingBalancerStrategy, RoutingConfig, RoutingDomainStrategy,
+    ObservatoryConfig, OutboundConfig, OutboundProtocol, OutboundProxySettings, OutboundSettings,
+    PolicyConfig, PolicyLevelConfig, PolicySystemConfig, QuicBbrProfile, QuicCongestion,
+    QuicIntervalRange, QuicParamsSettings, QuicUdpHopSettings, RealitySettings, RealityShortId,
+    RegexMatcher, RoutingBalancer, RoutingBalancerStrategy, RoutingConfig, RoutingDomainStrategy,
     RoutingPortRange, RoutingRule, RoutingRuleTarget, SniffingDestination, SocketOptions,
     StreamSecurity, StreamSettings, StreamTransport, TargetAddr, TlsSettings,
     VlessOutboundSettings, VlessUser, WebSocketSettings, XhttpMode, XhttpPaddingMethod,
@@ -2379,6 +2379,14 @@ impl Parser<'_> {
             }
         };
         let stream = self.parse_stream_settings(outbound, index)?;
+        let proxy_settings = self.parse_outbound_proxy_settings(outbound, index);
+
+        if proxy_settings.is_some() && matches!(stream.security, StreamSecurity::Reality(_)) {
+            self.error(
+                format!("$.outbounds[{index}].proxySettings"),
+                "outbound chaining over REALITY is unsupported",
+            );
+        }
 
         // Xray v26.7.28 applies this policy only to its simplified top-level
         // VLESS settings. Its legacy `vnext` path bypasses that validation.
@@ -2403,6 +2411,7 @@ impl Parser<'_> {
 
         Some(OutboundConfig {
             tag: self.string_at(outbound, "tag").map(ToOwned::to_owned),
+            proxy_settings,
             stream,
             settings,
         })
@@ -2431,13 +2440,6 @@ impl Parser<'_> {
             );
         }
 
-        if outbound.get("proxySettings").is_some() {
-            self.error(
-                format!("{outbound_path}.proxySettings"),
-                "outbound proxySettings is unsupported",
-            );
-        }
-
         let Some(mux) = outbound.get("mux") else {
             return;
         };
@@ -2454,6 +2456,45 @@ impl Parser<'_> {
             self.error(format!("{mux_path}.enabled"), "outbound mux is unsupported");
         }
         self.optional_u32_at(mux, "concurrency", format!("{mux_path}.concurrency"));
+    }
+
+    fn parse_outbound_proxy_settings(
+        &mut self,
+        outbound: &Value,
+        index: usize,
+    ) -> Option<OutboundProxySettings> {
+        let proxy = outbound.get("proxySettings")?;
+        let path = format!("$.outbounds[{index}].proxySettings");
+        if !proxy.is_object() {
+            self.error(path, "outbound proxySettings must be an object");
+            return None;
+        }
+        self.reject_unknown_fields(proxy, &path, &["tag", "transportLayer"]);
+
+        let tag = self
+            .optional_string_at(proxy, "tag", format!("{path}.tag"))
+            .filter(|tag| !tag.is_empty())
+            .map(ToOwned::to_owned);
+        if tag.is_none() {
+            self.error(
+                format!("{path}.tag"),
+                "outbound proxySettings tag must be a non-empty string",
+            );
+        }
+
+        let transport_layer =
+            self.optional_bool_at(proxy, "transportLayer", format!("{path}.transportLayer"));
+        if transport_layer != Some(true) {
+            self.error(
+                format!("{path}.transportLayer"),
+                "only transport-layer outbound chaining is supported; transportLayer must be true",
+            );
+        }
+
+        Some(OutboundProxySettings {
+            tag: tag?,
+            transport_layer: transport_layer?,
+        })
     }
 
     fn validate_freedom_settings(&mut self, settings: Option<&Value>, index: usize) {

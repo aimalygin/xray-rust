@@ -27,11 +27,18 @@ release series.
   snapshots; random and round-robin skip known-dead candidates, while
   `leastPing` deterministically selects the lowest healthy delay and falls back
   when no healthy candidate remains. Explicit overrides remain authoritative.
-  `leastLoad` and chaining remain.
+  `leastLoad` and the non-TCP chaining shapes remain.
 - Extended C ABI 1.2 with capability-gated atomic selector override/clear and
   two-pass, schema-versioned JSON snapshots for selection and redacted health
   state. The Swift and Kotlin adapters expose equivalent typed APIs; SwiftPM
   tests and the four-ABI Android JNI/AAR build cover the shared wire contract.
+- Added validated transport-layer TCP outbound chaining through Xray
+  `proxySettings`. The immutable graph resolves tag edges and rejects missing
+  targets or cycles before core start; Freedom/VLESS carriers retain shared
+  handler pools and apply TLS/WebSocket/HTTPUpgrade/gRPC/TCP-backed XHTTP over
+  the nested protected stream. Protocol-layer/UDP/DNS, REALITY, and XHTTP
+  HTTP/3 chain shapes fail closed while those lifecycle boundaries remain
+  unsupported.
 
 ## 0.4.1-rc.4 - 2026-08-31
 

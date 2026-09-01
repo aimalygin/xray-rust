@@ -315,6 +315,24 @@ impl RoutedDnsQueryTransport {
                 .await
                 .map_err(io::Error::other)?
             }
+            outbound @ TcpOutbound::Chained { .. } => {
+                if matches!(outbound.primary(), TcpOutbound::Vless(_))
+                    && server_socket_has_nonzero_scope(server)
+                {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "scoped ipv6 dns server cannot be encoded in a vless target",
+                    ));
+                }
+                open_tcp_stream_with_resolver_and_dialer(
+                    &outbound,
+                    &target,
+                    self.bootstrap_resolver.as_ref(),
+                    self.transport_dialer.as_ref(),
+                )
+                .await
+                .map_err(io::Error::other)?
+            }
         };
 
         exchange_dns_tcp_message(&mut stream, query).await
@@ -970,6 +988,7 @@ mod tests {
             inbounds: Vec::new(),
             outbounds: vec![OutboundConfig {
                 tag: Some("dns-out".to_owned()),
+                proxy_settings: None,
                 stream,
                 settings: OutboundSettings::Dns(settings),
             }],
@@ -989,6 +1008,7 @@ mod tests {
     ) -> Arc<CoreConfig> {
         let direct = OutboundConfig {
             tag: Some("direct".to_owned()),
+            proxy_settings: None,
             stream: StreamSettings {
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
@@ -1000,6 +1020,7 @@ mod tests {
         };
         let dns_outbound = OutboundConfig {
             tag: Some("dns-out".to_owned()),
+            proxy_settings: None,
             stream: StreamSettings {
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
@@ -1429,6 +1450,7 @@ mod tests {
             inbounds: Vec::new(),
             outbounds: vec![OutboundConfig {
                 tag: Some("direct".to_owned()),
+                proxy_settings: None,
                 stream: StreamSettings {
                     network: Network::Tcp,
                     transport: StreamTransport::Raw,
@@ -2490,6 +2512,7 @@ mod tests {
             inbounds: Vec::new(),
             outbounds: vec![OutboundConfig {
                 tag: Some("direct".to_owned()),
+                proxy_settings: None,
                 stream: StreamSettings {
                     network: Network::Tcp,
                     transport: StreamTransport::Raw,

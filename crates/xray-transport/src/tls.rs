@@ -84,6 +84,11 @@ pub struct TlsConnector {
     socket_protector: Option<Arc<dyn SocketProtector>>,
 }
 
+pub(crate) struct PreparedTlsStream {
+    client_config: Arc<rustls::ClientConfig>,
+    server_name: ServerName<'static>,
+}
+
 impl std::fmt::Debug for TlsConnector {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
@@ -250,6 +255,30 @@ impl TlsConnector {
             .await
     }
 
+    pub(crate) fn prepare_stream(
+        &self,
+        config: &TlsClientConfig,
+        alpn_policy: TlsAlpnPolicy,
+    ) -> Result<PreparedTlsStream, TransportError> {
+        Ok(PreparedTlsStream {
+            client_config: self.client_config_for_policy(config, alpn_policy)?,
+            server_name: tls_server_name(config)?,
+        })
+    }
+
+    pub(crate) async fn connect_prepared_stream(
+        &self,
+        stream: BoxedTransportStream,
+        prepared: PreparedTlsStream,
+    ) -> Result<BoxedTransportStream, TransportError> {
+        let stream = TokioTlsConnector::from(prepared.client_config)
+            .connect(prepared.server_name, stream)
+            .await
+            .map_err(TransportError::Tls)?;
+
+        Ok(Box::new(stream))
+    }
+
     pub async fn connect(
         &self,
         target: &Target,
@@ -289,18 +318,6 @@ impl TlsConnector {
         .await
     }
 
-    pub(crate) async fn connect_socket_addr_with_alpn_policy(
-        &self,
-        addr: SocketAddr,
-        config: &TlsClientConfig,
-        alpn_policy: TlsAlpnPolicy,
-    ) -> Result<BoxedTransportStream, TransportError> {
-        let server_name = tls_server_name(config)?;
-        let stream = connect_tcp_stream(addr, self.socket_protector.as_deref()).await?;
-        self.connect_stream_with_server_name(Box::new(stream), config, server_name, alpn_policy)
-            .await
-    }
-
     /// Races raw TCP candidates, then performs exactly one TLS handshake on
     /// the winning stream.
     pub async fn connect_candidates(
@@ -327,25 +344,6 @@ impl TlsConnector {
         .await
     }
 
-    pub(crate) async fn connect_candidates_with_alpn_policy(
-        &self,
-        candidates: &[SocketAddr],
-        config: &TlsClientConfig,
-        happy_eyeballs: &HappyEyeballsConfig,
-        alpn_policy: TlsAlpnPolicy,
-    ) -> Result<BoxedTransportStream, TransportError> {
-        let server_name = tls_server_name(config)?;
-        let stream = connect_tcp_happy_eyeballs(
-            candidates,
-            self.socket_protector.as_deref(),
-            happy_eyeballs,
-        )
-        .await?;
-
-        self.connect_stream_with_server_name(Box::new(stream), config, server_name, alpn_policy)
-            .await
-    }
-
     async fn connect_stream_with_server_name(
         &self,
         stream: BoxedTransportStream,
@@ -353,13 +351,11 @@ impl TlsConnector {
         server_name: ServerName<'static>,
         alpn_policy: TlsAlpnPolicy,
     ) -> Result<BoxedTransportStream, TransportError> {
-        let client_config = self.client_config_for_policy(config, alpn_policy)?;
-        let stream = TokioTlsConnector::from(client_config)
-            .connect(server_name, stream)
-            .await
-            .map_err(TransportError::Tls)?;
-
-        Ok(Box::new(stream))
+        let prepared = PreparedTlsStream {
+            client_config: self.client_config_for_policy(config, alpn_policy)?,
+            server_name,
+        };
+        self.connect_prepared_stream(stream, prepared).await
     }
 }
 

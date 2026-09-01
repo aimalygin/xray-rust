@@ -32,7 +32,7 @@ use xray_tun::{
 use crate::dns_outbound_runtime::{FakeIpTargetProvenance, RestoredClientTarget};
 use crate::fake_dns::FakeIpMapper;
 use crate::outbound::{
-    open_tcp_stream_with_resolver_and_dialer,
+    open_tcp_stream_with_resolvers_and_dialer,
     open_vless_udp_stream_with_resolver_dialer_and_options, DnsOutbound, TcpOutbound, UdpOutbound,
     UdpSessionOutbound, VlessTcpOutbound, VlessUdpFraming, VlessUdpOpenOptions,
 };
@@ -2507,16 +2507,36 @@ async fn open_tcp_bridge_stream(
                 .into());
             }
             TcpOutbound::Vless(_) => {}
+            TcpOutbound::Chained { .. } => {
+                if matches!(outbound.primary(), TcpOutbound::Vless(_))
+                    && upstream
+                        .socket_addr()
+                        .is_some_and(socket_addr_has_nonzero_scope)
+                {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "scoped IPv6 DNS upstream cannot be encoded in a VLESS target",
+                    )
+                    .into());
+                }
+            }
         }
     }
-    let resolver = match outbound {
+    let destination_resolver = match outbound.primary() {
         TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => {
             context.dns_resolver.as_ref()
         }
         TcpOutbound::Vless(_) => context.bootstrap_dns_resolver(),
+        TcpOutbound::Chained { .. } => unreachable!("primary outbound is never a chain wrapper"),
     };
-    open_tcp_stream_with_resolver_and_dialer(outbound, target, resolver, &context.transport_dialer)
-        .await
+    open_tcp_stream_with_resolvers_and_dialer(
+        outbound,
+        target,
+        destination_resolver,
+        context.bootstrap_dns_resolver(),
+        &context.transport_dialer,
+    )
+    .await
 }
 
 fn socket_addr_has_nonzero_scope(addr: SocketAddr) -> bool {
@@ -2854,12 +2874,15 @@ async fn bridge_tcp_flow_inner(
                 continue;
             }
         };
-        let policy_timeout = match &outbound {
+        let policy_timeout = match outbound.primary() {
             TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => {
                 context.inbound_policy.handshake
             }
             TcpOutbound::Vless(outbound) => {
                 effective_policy_for_level(&context.config, Some(outbound.user().level)).handshake
+            }
+            TcpOutbound::Chained { .. } => {
+                unreachable!("primary outbound is never a chain wrapper")
             }
         };
         let open_timeout = match candidate_deadline {

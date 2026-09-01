@@ -20,6 +20,7 @@ use xray_transport::{DnsResolver, TransportDialer, TransportError};
 fn freedom(tag: &str) -> OutboundConfig {
     OutboundConfig {
         tag: Some(tag.to_owned()),
+        proxy_settings: None,
         stream: StreamSettings {
             network: Network::Tcp,
             transport: StreamTransport::Raw,
