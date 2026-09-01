@@ -207,6 +207,16 @@ impl DnsResolver for EmptyDnsResolver {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+struct PendingDnsResolver;
+
+#[async_trait]
+impl DnsResolver for PendingDnsResolver {
+    async fn resolve(&self, _domain: &str, _port: u16) -> Result<SocketAddr, TransportError> {
+        pending().await
+    }
+}
+
 #[derive(Debug, Clone)]
 struct StaticDnsResolver {
     domain: &'static str,
@@ -2106,6 +2116,123 @@ async fn socks_udp_client_reaches_echo_target_through_freedom_outbound() {
 }
 
 #[tokio::test]
+async fn socks_udp_inventory_close_and_accounting_share_runtime_state() {
+    timeout(Duration::from_secs(3), async {
+        let (echo_addr, echo_handle) = spawn_udp_echo_server().await;
+        let mut core = Core::new(runtime_config_with_freedom_outbound()).unwrap();
+        core.start().await.unwrap();
+        let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
+
+        let mut control = TcpStream::connect(socks_addr).await.unwrap();
+        let relay_addr = socks5_udp_associate(&mut control).await;
+        let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let target = Target::new(
+            RoutingTargetAddr::Ip(echo_addr.ip()),
+            echo_addr.port(),
+            RoutingNetwork::Udp,
+        );
+        let payload = b"accounted socks udp";
+        let request = encode_socks5_udp_datagram(&target, payload).unwrap();
+        socket.send_to(&request, relay_addr).await.unwrap();
+        let mut response = vec![0; 2048];
+        let (len, _) = socket.recv_from(&mut response).await.unwrap();
+        let response = parse_socks5_udp_datagram(&response[..len]).unwrap();
+        assert_eq!(response.target, target);
+        assert_eq!(&response.payload[..], payload);
+
+        let snapshot = core.connection_snapshot();
+        assert_eq!(snapshot.connections.len(), 1);
+        let connection = &snapshot.connections[0];
+        assert_eq!(connection.state, ConnectionState::Active);
+        assert_eq!(connection.inbound_tag.as_deref(), Some("socks-in"));
+        assert_eq!(connection.outbound_tag.as_deref(), Some("direct"));
+        assert_eq!(connection.network, RoutingNetwork::Udp);
+        assert_eq!(connection.target, target);
+
+        core.close_connection(connection.id).unwrap();
+        wait_for_empty_connection_snapshot(&core).await;
+        let accounting = core.outbound_accounting_snapshot();
+        let direct = accounting
+            .outbounds
+            .iter()
+            .find(|outbound| outbound.outbound_tag.as_deref() == Some("direct"))
+            .unwrap();
+        assert_eq!(direct.opened_connections, 1);
+        assert_eq!(direct.completed_connections, 1);
+        assert_eq!(direct.host_closed_connections, 1);
+        assert_eq!(direct.uplink_bytes, payload.len() as u64);
+        assert_eq!(direct.downlink_bytes, payload.len() as u64);
+
+        drop(socket);
+        drop(control);
+        core.stop().await.unwrap();
+        echo_handle.await.unwrap();
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn socks_udp_close_cancels_an_opening_flow() {
+    timeout(Duration::from_secs(3), async {
+        let mut core = Core::with_dns_resolver(
+            runtime_config_with_freedom_outbound(),
+            Arc::new(PendingDnsResolver),
+        )
+        .unwrap();
+        core.start().await.unwrap();
+        let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
+
+        let mut control = TcpStream::connect(socks_addr).await.unwrap();
+        let relay_addr = socks5_udp_associate(&mut control).await;
+        let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let target = Target::new(
+            RoutingTargetAddr::Domain("pending.example".to_owned()),
+            53,
+            RoutingNetwork::Udp,
+        );
+        let request = encode_socks5_udp_datagram(&target, b"pending socks udp").unwrap();
+        socket.send_to(&request, relay_addr).await.unwrap();
+
+        let deadline = TokioInstant::now() + Duration::from_secs(1);
+        let connection = loop {
+            let snapshot = core.connection_snapshot();
+            if let Some(connection) = snapshot.connections.into_iter().next() {
+                break connection;
+            }
+            assert!(
+                TokioInstant::now() < deadline,
+                "opening SOCKS UDP flow was not registered"
+            );
+            tokio::task::yield_now().await;
+        };
+        assert_eq!(connection.state, ConnectionState::Opening);
+        assert_eq!(connection.outbound_tag.as_deref(), Some("direct"));
+        assert_eq!(connection.target, target);
+
+        core.close_connection(connection.id).unwrap();
+        wait_for_empty_connection_snapshot(&core).await;
+        let accounting = core.outbound_accounting_snapshot();
+        let direct = accounting
+            .outbounds
+            .iter()
+            .find(|outbound| outbound.outbound_tag.as_deref() == Some("direct"))
+            .unwrap();
+        assert_eq!(direct.opened_connections, 1);
+        assert_eq!(direct.completed_connections, 1);
+        assert_eq!(direct.host_closed_connections, 1);
+        assert_eq!(direct.uplink_bytes, 0);
+        assert_eq!(direct.downlink_bytes, 0);
+
+        drop(socket);
+        drop(control);
+        core.stop().await.unwrap();
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
 async fn socks_udp_client_reaches_echo_target_through_vless_udp_outbound() {
     timeout(Duration::from_secs(2), run_socks_udp_vless_echo_scenario())
         .await
@@ -3626,16 +3753,28 @@ async fn run_socks_udp_route_only_quic_sniffing_echo_scenario() {
 }
 
 async fn run_socks_udp_vless_echo_scenario() {
-    let (vless_addr, vless_handle) =
-        spawn_fake_vless_udp_server_for_payload(b"hello socks vless udp").await;
+    let expected = b"hello socks vless udp";
+    let (vless_addr, vless_handle) = spawn_fake_vless_udp_server_for_payload(expected).await;
     let echo_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 53);
     let mut core = Core::new(runtime_socks_config_with_vless_server(vless_addr)).unwrap();
     core.start().await.unwrap();
     let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
 
-    let payload = socks_udp_roundtrip(socks_addr, echo_addr, b"hello socks vless udp").await;
+    let payload = socks_udp_roundtrip(socks_addr, echo_addr, expected).await;
 
-    assert_eq!(&payload[..], b"hello socks vless udp");
+    assert_eq!(&payload[..], expected);
+    wait_for_empty_connection_snapshot(&core).await;
+    let accounting = core.outbound_accounting_snapshot();
+    let proxy = accounting
+        .outbounds
+        .iter()
+        .find(|outbound| outbound.outbound_tag.as_deref() == Some("proxy"))
+        .unwrap();
+    assert_eq!(proxy.opened_connections, 1);
+    assert_eq!(proxy.completed_connections, 1);
+    assert_eq!(proxy.host_closed_connections, 0);
+    assert_eq!(proxy.uplink_bytes, expected.len() as u64);
+    assert_eq!(proxy.downlink_bytes, expected.len() as u64);
     core.stop().await.unwrap();
     timeout(Duration::from_secs(1), vless_handle)
         .await
@@ -5365,12 +5504,22 @@ async fn run_socks_udp_dns_outbound_direct_tcp_scenario() {
 
     let response = socks_udp_roundtrip_target(socks_addr, target, &query).await;
 
-    assert_eq!(
-        response,
-        Bytes::from(dns_success_response_for_query(&query))
-    );
+    let expected_response = dns_success_response_for_query(&query);
+    assert_eq!(response, Bytes::copy_from_slice(&expected_response));
     probe.wait_for_received_queries(1).await;
-    assert_eq!(probe.snapshot().received_queries, vec![query]);
+    assert_eq!(probe.snapshot().received_queries, vec![query.clone()]);
+    wait_for_empty_connection_snapshot(&core).await;
+    let accounting = core.outbound_accounting_snapshot();
+    let dns = accounting
+        .outbounds
+        .iter()
+        .find(|outbound| outbound.outbound_tag.as_deref() == Some("dns-out"))
+        .unwrap();
+    assert_eq!(dns.opened_connections, 1);
+    assert_eq!(dns.completed_connections, 1);
+    assert_eq!(dns.host_closed_connections, 0);
+    assert_eq!(dns.uplink_bytes, query.len() as u64);
+    assert_eq!(dns.downlink_bytes, expected_response.len() as u64);
     core.stop().await.unwrap();
     server.finish().await;
 }

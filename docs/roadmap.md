@@ -240,10 +240,11 @@ bypassing socket protection. UDP/protocol-layer, REALITY, and XHTTP HTTP/3
 chaining remain fail-closed subsets. Connection inventory now also covers TUN
 TCP/UDP transport sessions with addressable cancellation and byte accounting.
 ABI 1.3 projects its versioned inventory, accounting, and close operations
-through equivalent Swift and Kotlin APIs. The next management work is
-SOCKS UDP registration. The existing seven typed TUN diagnostic queues now
-have equivalent Swift and Kotlin/JNI polling surfaces under the original
-diagnostic capability bit.
+through equivalent Swift and Kotlin APIs. SOCKS UDP now registers one managed
+connection per admitted `(client, target)` flow across Freedom, VLESS/XUDP, and
+DNS outbound paths. The existing seven typed TUN diagnostic queues have
+equivalent Swift and Kotlin/JNI polling surfaces under the original diagnostic
+capability bit.
 
 ### Mobile SDK and management API
 
@@ -261,11 +262,11 @@ diagnostic capability bit.
 The version/capability foundation and cross-platform selection/health surface
 are implemented. A core-owned registry now supplies typed connection
 inventory, addressable cancellation, and cumulative per-outbound accounting
-for routed SOCKS/HTTP/TUN TCP and TUN UDP flows. ABI 1.3 and equivalent Swift/
-Kotlin models expose inventory, cumulative per-outbound accounting, and close.
+for routed SOCKS TCP/UDP, HTTP TCP, and TUN TCP/UDP flows. ABI 1.3 and
+equivalent Swift/Kotlin models expose inventory, cumulative per-outbound
+accounting, and close.
 The seven essential TUN diagnostic queues now have equivalent typed Swift and
-Kotlin polling APIs. SOCKS UDP registration, broader Android host parity, and
-device soak remain.
+Kotlin polling APIs. Broader Android host parity and device soak remain.
 
 ### Exit criteria
 

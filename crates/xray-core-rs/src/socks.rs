@@ -26,7 +26,7 @@ use crate::outbound::{
     open_tcp_stream_with_resolvers_and_dialer, DnsOutbound, TcpSessionOutbound, UdpSessionOutbound,
 };
 use crate::{
-    connection::wait_for_connection_close,
+    connection::{wait_for_connection_close, ConnectionLease},
     dns::RuntimeDnsResolvers,
     dns_outbound_runtime::{DnsOutboundRuntime, FakeIpTargetProvenance},
     open_vless_udp_stream_with_resolver_and_dialer,
@@ -109,6 +109,7 @@ struct SocksUdpFlowContext {
     transport_dialer: Arc<TransportDialer>,
     sniffing: Option<InboundSniffingConfig>,
     runtime_logger: RuntimeLogger,
+    connection_registry: Arc<ConnectionRegistry>,
 }
 
 #[derive(Clone)]
@@ -309,6 +310,7 @@ async fn handle_socks_connection(
                 transport_dialer,
                 sniffing,
                 runtime_logger,
+                connection_registry,
                 shutdown,
                 udp_budgets,
             )
@@ -588,6 +590,7 @@ async fn handle_socks_udp_associate(
     transport_dialer: Arc<TransportDialer>,
     sniffing: Option<InboundSniffingConfig>,
     runtime_logger: RuntimeLogger,
+    connection_registry: Arc<ConnectionRegistry>,
     mut shutdown: watch::Receiver<bool>,
     budgets: SocksUdpBudgets,
 ) {
@@ -698,6 +701,7 @@ async fn handle_socks_udp_associate(
                     transport_dialer: Arc::clone(&transport_dialer),
                     sniffing: sniffing.clone(),
                     runtime_logger: runtime_logger.clone(),
+                    connection_registry: Arc::clone(&connection_registry),
                 };
                 let target = datagram.target;
                 let completion_key = flow_key.clone();
@@ -894,9 +898,10 @@ async fn bridge_socks_udp_flow(
     let dial_target = sniffed_target.dial_target;
     let selected = match context
         .outbound_router
-        .select_udp_session_outbound_with_resolver(
+        .select_udp_session_outbound_with_tag_and_resolver(
             context.inbound_tag.as_deref(),
             &route_target,
+            true,
             context.dns_resolvers.destination.as_ref(),
         )
         .await
@@ -917,12 +922,16 @@ async fn bridge_socks_udp_flow(
     };
 
     if context.runtime_logger.is_enabled() {
-        let selected_outbound = match &selected {
-            UdpSessionOutbound::Transport(outbound) => {
-                crate::debug_log::udp_outbound_label(outbound)
-            }
-            UdpSessionOutbound::Dns(_) => "dns",
-        };
+        let selected_outbound =
+            selected
+                .tag
+                .as_deref()
+                .unwrap_or_else(|| match &selected.outbound {
+                    UdpSessionOutbound::Transport(outbound) => {
+                        crate::debug_log::udp_outbound_label(outbound)
+                    }
+                    UdpSessionOutbound::Dns(_) => "dns",
+                });
         crate::debug_log::log_route_decision(
             &context.runtime_logger,
             crate::debug_log::RouteDecisionLog {
@@ -937,7 +946,14 @@ async fn bridge_socks_udp_flow(
         );
     }
 
-    let outbound = match selected {
+    let connection = context.connection_registry.register(
+        context.inbound_tag.clone(),
+        selected.tag.clone(),
+        dial_target.clone(),
+    );
+    let connection_close = connection.close_receiver();
+
+    let outbound = match selected.outbound {
         UdpSessionOutbound::Transport(outbound) => outbound,
         UdpSessionOutbound::Dns(outbound) => {
             if context.runtime_logger.is_enabled() {
@@ -958,6 +974,8 @@ async fn bridge_socks_udp_flow(
                 from_client,
                 shutdown,
                 first_payload,
+                connection,
+                connection_close,
             )
             .await;
             return;
@@ -983,6 +1001,8 @@ async fn bridge_socks_udp_flow(
                 shutdown,
                 first_payload,
                 pending_open_permit,
+                connection,
+                connection_close,
             )
             .await;
         }
@@ -1005,12 +1025,18 @@ async fn bridge_socks_udp_flow(
                 shutdown,
                 first_payload,
                 pending_open_permit,
+                connection,
+                connection_close,
             )
             .await;
         }
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "SOCKS DNS UDP flow owns client/routed targets, shutdown, and connection state"
+)]
 async fn bridge_socks_udp_dns_flow(
     client_target: Target,
     routed_target: Target,
@@ -1019,23 +1045,29 @@ async fn bridge_socks_udp_dns_flow(
     mut from_client: mpsc::Receiver<Bytes>,
     mut shutdown: watch::Receiver<bool>,
     first_payload: Bytes,
+    connection: ConnectionLease,
+    mut connection_close: watch::Receiver<bool>,
 ) {
     let mut pending_payload = Some(first_payload);
+    let traffic = connection.traffic();
+    connection.mark_active();
     loop {
         let payload = match pending_payload.take() {
             Some(payload) => payload,
             None => {
                 tokio::select! {
+                    biased;
+                    () = wait_for_connection_close(&mut connection_close) => break,
                     changed = shutdown.changed() => {
                         if changed.is_err() || *shutdown.borrow() {
-                            return;
+                            break;
                         }
                         continue;
                     }
-                    _ = tokio::time::sleep(SOCKS_UDP_FLOW_IDLE_TIMEOUT) => return,
+                    _ = tokio::time::sleep(SOCKS_UDP_FLOW_IDLE_TIMEOUT) => break,
                     payload = from_client.recv() => {
                         let Some(payload) = payload else {
-                            return;
+                            break;
                         };
                         payload
                     }
@@ -1043,34 +1075,46 @@ async fn bridge_socks_udp_dns_flow(
             }
         };
 
-        let outcome = context
-            .dns_resolvers
-            .outbound
-            .execute_message(
+        let payload_len = payload.len();
+        let outcome = tokio::select! {
+            biased;
+            () = wait_for_connection_close(&mut connection_close) => break,
+            changed = shutdown.changed() => {
+                if changed.is_err() || *shutdown.borrow() {
+                    break;
+                }
+                continue;
+            }
+            outcome = context.dns_resolvers.outbound.execute_message(
                 &outbound,
                 &routed_target,
                 payload,
                 crate::dns_outbound_runtime::DnsClientTransport::Udp {
                     path_payload_cap: SOCKS_DNS_UDP_PATH_PAYLOAD_CAP,
                 },
-            )
-            .await;
+            ) => outcome,
+        };
+        traffic.record_uplink(payload_len as u64);
         let crate::dns_outbound_runtime::DnsMessageOutcome::Reply(response) = outcome else {
             continue;
         };
+        traffic.record_downlink(response.len() as u64);
         let Ok(response) = encode_socks5_udp_datagram(&client_target, &response) else {
             continue;
         };
         let sent = tokio::select! {
+            biased;
+            () = wait_for_connection_close(&mut connection_close) => false,
             changed = shutdown.changed() => {
                 changed.is_ok() && !*shutdown.borrow()
             }
             sent = context.client_socket.send_to(&response, context.client_addr) => sent.is_ok(),
         };
         if !sent {
-            return;
+            break;
         }
     }
+    connection.finish();
 }
 
 async fn read_first_socks_udp_payload(
@@ -1168,6 +1212,10 @@ fn sniff_socks_udp_target(
     SocksUdpSniffedTarget::from_sniffed(target, provenance, Some(sniffed))
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "SOCKS Freedom UDP flow owns client/dial targets, shutdown, and connection state"
+)]
 async fn bridge_socks_udp_freedom_flow(
     target: Target,
     client_visible_target: Option<Target>,
@@ -1176,34 +1224,51 @@ async fn bridge_socks_udp_freedom_flow(
     mut shutdown: watch::Receiver<bool>,
     first_payload: Bytes,
     pending_open_permit: OwnedSemaphorePermit,
+    connection: ConnectionLease,
+    mut connection_close: watch::Receiver<bool>,
 ) {
-    let Ok(target_addr) =
-        resolve_udp_socket_addr(&target, context.dns_resolvers.destination.as_ref()).await
-    else {
+    let resolved = tokio::select! {
+        biased;
+        () = wait_for_connection_close(&mut connection_close) => return,
+        result = resolve_udp_socket_addr(&target, context.dns_resolvers.destination.as_ref()) => result,
+    };
+    let Ok(target_addr) = resolved else {
         return;
     };
     let bind_addr = match target_addr {
         SocketAddr::V4(_) => SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
         SocketAddr::V6(_) => SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0),
     };
-    let Ok(remote_socket) = UdpSocket::bind(bind_addr).await else {
+    let bound = tokio::select! {
+        biased;
+        () = wait_for_connection_close(&mut connection_close) => return,
+        result = UdpSocket::bind(bind_addr) => result,
+    };
+    let Ok(remote_socket) = bound else {
         return;
     };
     if protect_udp_socket(&remote_socket, context.transport_dialer.socket_protector()).is_err() {
         return;
     }
-    if remote_socket
-        .send_to(&first_payload, target_addr)
-        .await
-        .is_err()
-    {
+    connection.mark_active();
+    let traffic = connection.traffic();
+    let first_payload_len = first_payload.len();
+    let first_sent = tokio::select! {
+        biased;
+        () = wait_for_connection_close(&mut connection_close) => return,
+        result = remote_socket.send_to(&first_payload, target_addr) => result,
+    };
+    if first_sent.is_err() {
         return;
     }
+    traffic.record_uplink(first_payload_len as u64);
     drop(pending_open_permit);
     let mut buffer = vec![0; SOCKS_UDP_BUFFER_SIZE];
 
     loop {
         tokio::select! {
+            biased;
+            () = wait_for_connection_close(&mut connection_close) => break,
             changed = shutdown.changed() => {
                 if changed.is_err() || *shutdown.borrow() {
                     break;
@@ -1216,9 +1281,11 @@ async fn bridge_socks_udp_freedom_flow(
                 let Some(payload) = payload else {
                     break;
                 };
+                let payload_len = payload.len();
                 if remote_socket.send_to(&payload, target_addr).await.is_err() {
                     break;
                 }
+                traffic.record_uplink(payload_len as u64);
             }
             received = remote_socket.recv_from(&mut buffer) => {
                 let Ok((len, source)) = received else {
@@ -1231,6 +1298,7 @@ async fn bridge_socks_udp_freedom_flow(
                         xray_routing::Network::Udp,
                     )
                 });
+                traffic.record_downlink(len as u64);
                 let Ok(response) = encode_socks5_udp_datagram(&source, &buffer[..len]) else {
                     break;
                 };
@@ -1245,6 +1313,7 @@ async fn bridge_socks_udp_freedom_flow(
             }
         }
     }
+    connection.finish();
 }
 
 #[expect(
@@ -1260,36 +1329,47 @@ async fn bridge_socks_udp_vless_flow(
     mut shutdown: watch::Receiver<bool>,
     first_payload: Bytes,
     pending_open_permit: OwnedSemaphorePermit,
+    connection: ConnectionLease,
+    mut connection_close: watch::Receiver<bool>,
 ) {
-    let Ok((stream, framing)) = open_vless_udp_stream_with_resolver_and_dialer(
-        &outbound,
-        &target,
-        context.dns_resolvers.bootstrap.as_ref(),
-        context.transport_dialer.as_ref(),
-    )
-    .await
-    else {
+    let opened = tokio::select! {
+        biased;
+        () = wait_for_connection_close(&mut connection_close) => return,
+        result = open_vless_udp_stream_with_resolver_and_dialer(
+            &outbound,
+            &target,
+            context.dns_resolvers.bootstrap.as_ref(),
+            context.transport_dialer.as_ref(),
+        ) => result,
+    };
+    let Ok((stream, framing)) = opened else {
         return;
     };
+    connection.mark_active();
+    let traffic = connection.traffic();
 
     let (mut remote_reader, mut remote_writer) = tokio::io::split(stream);
     let fallback_source = target.clone();
     let mut sent_xudp_new = false;
     let global_id = socks_udp_flow_global_id(context.client_addr, &target);
-    if write_socks_vless_udp_payload(
-        &mut remote_writer,
-        framing,
-        &target,
-        global_id,
-        &mut sent_xudp_new,
-        first_payload,
-        true,
-    )
-    .await
-    .is_err()
-    {
+    let first_payload_len = first_payload.len();
+    let first_write = tokio::select! {
+        biased;
+        () = wait_for_connection_close(&mut connection_close) => return,
+        result = write_socks_vless_udp_payload(
+            &mut remote_writer,
+            framing,
+            &target,
+            global_id,
+            &mut sent_xudp_new,
+            first_payload,
+            true,
+        ) => result,
+    };
+    if first_write.is_err() {
         return;
     }
+    traffic.record_uplink(first_payload_len as u64);
     drop(pending_open_permit);
 
     let flush_deadline = tokio::time::sleep(SOCKS_VLESS_UDP_FLUSH_INTERVAL);
@@ -1297,6 +1377,8 @@ async fn bridge_socks_udp_vless_flow(
     let mut pending_frames = 0usize;
     loop {
         tokio::select! {
+            biased;
+            () = wait_for_connection_close(&mut connection_close) => break,
             changed = shutdown.changed() => {
                 if changed.is_err() || *shutdown.borrow() {
                     break;
@@ -1315,6 +1397,7 @@ async fn bridge_socks_udp_vless_flow(
                 let Some(payload) = payload else {
                     break;
                 };
+                let payload_len = payload.len();
                 let flush_now = pending_frames + 1 >= SOCKS_VLESS_UDP_FLUSH_BATCH;
                 if write_socks_vless_udp_payload(
                     &mut remote_writer,
@@ -1330,6 +1413,7 @@ async fn bridge_socks_udp_vless_flow(
                 {
                     break;
                 }
+                traffic.record_uplink(payload_len as u64);
                 if flush_now {
                     pending_frames = 0;
                 } else {
@@ -1345,6 +1429,7 @@ async fn bridge_socks_udp_vless_flow(
                 let Ok((mut source, payload)) = packet else {
                     break;
                 };
+                traffic.record_downlink(payload.len() as u64);
                 if let Some(client_visible_target) = client_visible_target.as_ref() {
                     source = client_visible_target.clone();
                 }
@@ -1365,6 +1450,7 @@ async fn bridge_socks_udp_vless_flow(
     if pending_frames > 0 {
         let _ = remote_writer.flush().await;
     }
+    connection.finish();
 }
 
 async fn write_socks_vless_udp_payload<W>(

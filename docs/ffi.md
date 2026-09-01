@@ -210,7 +210,9 @@ concurrent flow exit is still attributed correctly. Zero and IDs that are no
 longer registered return `XRAY_STATUS_INVALID_ARGUMENT`. A successful call is
 idempotent only while that entry remains registered; callers should refresh the
 snapshot rather than retrying a disappeared ID. The current registry covers
-routed SOCKS/HTTP/TUN TCP and TUN UDP sessions.
+routed SOCKS TCP/UDP, HTTP TCP, and TUN TCP/UDP sessions. Each SOCKS UDP
+`(client, target)` flow owns a separate ID; closing the TCP `UDP ASSOCIATE`
+control connection still removes all of its child flows.
 
 ## Threading
 

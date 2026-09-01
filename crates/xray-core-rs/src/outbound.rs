@@ -2304,22 +2304,6 @@ impl OutboundRouter {
         self.factory.cached_udp_outbound(node)
     }
 
-    pub(crate) async fn select_udp_session_outbound_with_resolver(
-        &self,
-        inbound_tag: Option<&str>,
-        target: &Target,
-        dns_resolver: &dyn DnsResolver,
-    ) -> Result<UdpSessionOutbound, CoreError> {
-        self.select_udp_session_outbound_with_tag_and_resolver(
-            inbound_tag,
-            target,
-            false,
-            dns_resolver,
-        )
-        .await
-        .map(|selected| selected.outbound)
-    }
-
     pub(crate) async fn select_udp_session_outbound_with_tag_and_resolver(
         &self,
         inbound_tag: Option<&str>,
